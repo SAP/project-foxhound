@@ -120,7 +120,7 @@ void gfxConfig::Reenable(Feature aFeature, Fallback aFallback) {
 
   const char* message = state.GetRuntimeMessage();
   EnableFallback(aFallback, message);
-  state.SetRuntime(FeatureStatus::Available, nullptr);
+  state.SetRuntime(FeatureStatus::Available, nullptr, nsCString());
 }
 
 /* static */
@@ -149,6 +149,34 @@ void gfxConfig::Inherit(Feature aFeature, FeatureStatus aStatus) {
       gfxConfig::SetDefault(aFeature, false, aStatus,
                             "Disabled in parent process");
       break;
+  }
+}
+
+/* static */
+void gfxConfig::Inherit(EnumSet<Feature> aFeatures,
+                        const DevicePrefs& aDevicePrefs) {
+  for (Feature feature : aFeatures) {
+    FeatureStatus status = FeatureStatus::Unused;
+    switch (feature) {
+      case Feature::HW_COMPOSITING:
+        status = aDevicePrefs.hwCompositing();
+        break;
+      case Feature::D3D11_COMPOSITING:
+        status = aDevicePrefs.d3d11Compositing();
+        break;
+      case Feature::OPENGL_COMPOSITING:
+        status = aDevicePrefs.oglCompositing();
+        break;
+      case Feature::DIRECT2D:
+        status = aDevicePrefs.useD2D1();
+        break;
+      case Feature::WEBGPU:
+        status = aDevicePrefs.webGPU();
+        break;
+      default:
+        break;
+    }
+    gfxConfig::Inherit(feature, status);
   }
 }
 

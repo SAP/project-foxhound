@@ -8,8 +8,7 @@
 #include "mozilla/AnimationComparator.h"
 #include "mozilla/dom/Animation.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 AnimationTimeline::~AnimationTimeline() { mAnimationOrder.clear(); }
 
@@ -49,8 +48,7 @@ void AnimationTimeline::RemoveAnimation(Animation* aAnimation) {
   if (static_cast<LinkedListElement<Animation>*>(aAnimation)->isInList()) {
     static_cast<LinkedListElement<Animation>*>(aAnimation)->remove();
   }
-  mAnimations.RemoveEntry(aAnimation);
+  mAnimations.Remove(aAnimation);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

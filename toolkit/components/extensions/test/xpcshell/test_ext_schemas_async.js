@@ -1,8 +1,5 @@
 "use strict";
 
-const { ExtensionCommon } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionCommon.jsm"
-);
 const { Schemas } = ChromeUtils.import("resource://gre/modules/Schemas.jsm");
 
 let { BaseContext, LocalAPIImplementation } = ExtensionCommon;
@@ -112,6 +109,7 @@ let context;
 function generateAPIs(extraWrapper, apiObj) {
   context = new StubContext();
   let localWrapper = {
+    manifestVersion: 2,
     cloneScope: global,
     shouldInject() {
       return true;

@@ -40,16 +40,30 @@
 }
 
 .notificationbox.border-top .notification {
-   border-top-width: 1px;
+  border-top-width: 1px;
 }
 
 .notificationbox.border-bottom .notification {
-   border-bottom-width: 1px;
+  border-bottom-width: 1px;
 }
 
 .notificationbox .notification[data-type="info"] {
   color: -moz-DialogText;
   background-color: -moz-Dialog;
+}
+
+.notificationbox .notification[data-type="new"] {
+  color: var(--theme-contrast-color);
+  background-color: var(--theme-selection-background-hover);
+}
+
+/**
+ * Remove button borders for notifications highlighting New features.
+ */
+.notification[data-type="new"] .notificationButton {
+  border-radius: 2px;
+  border-width: 0;
+  padding: 4px;
 }
 
 .notificationbox .notification[data-type="critical"] {
@@ -58,6 +72,8 @@
 }
 
 .notificationbox .messageImage {
+  -moz-context-properties: fill;
+  fill: currentColor;
   background-size: 16px;
   width: 16px;
   height: 16px;
@@ -67,15 +83,22 @@
 /* Default icons for notifications */
 
 .notificationbox .messageImage[data-type="info"] {
-  background-image: url("chrome://global/skin/icons/info.svg");
+  background-image: url("chrome://devtools/skin/images/info.svg");
+}
+
+.notificationbox .messageImage[data-type="new"] {
+  background-image: url("chrome://global/skin/icons/whatsnew.svg");
+  fill: var(--theme-highlight-blue);
 }
 
 .notificationbox .messageImage[data-type="warning"] {
-  background-image: url("chrome://global/skin/icons/warning.svg");
+  background-image: url("chrome://devtools/skin/images/alert.svg");
+  /* Keep the icon colored to make it more eye-catching */
+  fill: #ffbf00;
 }
 
 .notificationbox .messageImage[data-type="critical"] {
-  background-image: url("chrome://global/skin/icons/error-16.png");
+  background-image: url("chrome://devtools/skin/images/error.svg");
 }
 
 /* Close button */
@@ -89,13 +112,13 @@
   background-color: transparent;
   background-repeat: no-repeat;
   border-radius: 2px;
+  border-width: 0;
   -moz-context-properties: fill;
-  fill: currentColor;
+  fill: var(--theme-icon-color);
 }
 
 .notificationbox .messageCloseButton:hover {
-  background-color: gray;
-  filter: invert(1);
+  background-color: var(--theme-button-active-background);
 }
 
 .notificationbox .messageCloseButton:active {

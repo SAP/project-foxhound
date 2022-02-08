@@ -24,6 +24,7 @@ module.exports = {
     sendSyncMessage: false,
     tabEventTarget: false,
     RPMGetAppBuildID: false,
+    RPMGetInnerMostURI: false,
     RPMGetIntPref: false,
     RPMGetStringPref: false,
     RPMGetBoolPref: false,
@@ -38,5 +39,7 @@ module.exports = {
     RPMAddToHistogram: false,
     RPMRemoveMessageListener: false,
     RPMGetHttpResponseHeader: false,
+    RPMTryPingSecureWWWLink: false,
+    RPMOpenSecureWWWLink: false,
   },
 };

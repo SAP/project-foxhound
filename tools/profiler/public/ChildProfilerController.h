@@ -9,6 +9,7 @@
 #include "base/process.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ipc/ProtocolUtils.h"
+#include "mozilla/DataMutex.h"
 #include "mozilla/RefPtr.h"
 #include "nsISupportsImpl.h"
 #include "nsStringFwd.h"
@@ -26,6 +27,7 @@ class ChildProfilerController final {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ChildProfilerController)
 
+#ifdef MOZ_GECKO_PROFILER
   static already_AddRefed<ChildProfilerController> Create(
       mozilla::ipc::Endpoint<PProfilerChild>&& aEndpoint);
 
@@ -43,7 +45,20 @@ class ChildProfilerController final {
   void ShutdownProfilerChild(nsCString* aOutShutdownProfile);
 
   RefPtr<ProfilerChild> mProfilerChild;  // only accessed on mThread
-  RefPtr<nsIThread> mThread;
+  DataMutex<RefPtr<nsIThread>> mThread;
+#else
+  static already_AddRefed<ChildProfilerController> Create(
+      mozilla::ipc::Endpoint<PProfilerChild>&& aEndpoint) {
+    return nullptr;
+  }
+  [[nodiscard]] nsCString GrabShutdownProfileAndShutdown() {
+    return EmptyCString();
+  }
+  void Shutdown() {}
+
+ private:
+  ~ChildProfilerController() {}
+#endif  // MOZ_GECKO_PROFILER
 };
 
 }  // namespace mozilla

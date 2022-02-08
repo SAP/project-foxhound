@@ -7,6 +7,7 @@
 #include "nsStringStream.h"
 #include "nsNetUtil.h"
 #include "nsContentUtils.h"
+#include "nsIChannel.h"
 
 NS_IMPL_ISUPPORTS(nsAboutBlank, nsIAboutModule)
 
@@ -16,7 +17,7 @@ nsAboutBlank::NewChannel(nsIURI* aURI, nsILoadInfo* aLoadInfo,
   NS_ENSURE_ARG_POINTER(aURI);
 
   nsCOMPtr<nsIInputStream> in;
-  nsresult rv = NS_NewCStringInputStream(getter_AddRefs(in), EmptyCString());
+  nsresult rv = NS_NewCStringInputStream(getter_AddRefs(in), ""_ns);
   if (NS_FAILED(rv)) return rv;
 
   nsCOMPtr<nsIChannel> channel;
@@ -36,6 +37,11 @@ nsAboutBlank::GetURIFlags(nsIURI* aURI, uint32_t* result) {
             nsIAboutModule::MAKE_LINKABLE |
             nsIAboutModule::HIDE_FROM_ABOUTABOUT;
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsAboutBlank::GetChromeURI(nsIURI* aURI, nsIURI** chromeURI) {
+  return NS_ERROR_ILLEGAL_VALUE;
 }
 
 nsresult nsAboutBlank::Create(nsISupports* aOuter, REFNSIID aIID,

@@ -7,11 +7,10 @@
 "use strict";
 
 const TEST_PATH =
-  "http://example.com/browser/devtools/client/webconsole/" + "test/browser/";
-const TEST_URI = "data:text/html;charset=utf8,<p>test file URI";
+  "https://example.com/browser/devtools/client/webconsole/" + "test/browser/";
+const TEST_URI = "data:text/html;charset=utf8,<!DOCTYPE html><p>test file URI";
 
 add_task(async function() {
-  await pushPref("devtools.target-switching.enabled", true);
   await pushPref("devtools.webconsole.filter.net", true);
 
   const toolbox = await openNewTabAndToolbox(TEST_URI, "webconsole");

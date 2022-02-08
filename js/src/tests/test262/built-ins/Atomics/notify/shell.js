@@ -10,6 +10,7 @@ defines:
   - $262.agent.getReport
   - $262.agent.safeBroadcastAsync
   - $262.agent.safeBroadcast
+  - $262.agent.setTimeout
   - $262.agent.tryYield
   - $262.agent.trySleep
 ---*/
@@ -55,6 +56,8 @@ defines:
       }
     })(this);
   }
+
+  $262.agent.setTimeout = setTimeout;
 
   $262.agent.getReportAsync = function() {
     return new Promise(function(resolve) {
@@ -104,7 +107,7 @@ $262.agent.safeBroadcast = function(typedArray) {
     // want to ensure that this typedArray CAN be waited on and is shareable.
     Atomics.wait(temp, 0, Constructor === Int32Array ? 1 : BigInt(1));
   } catch (error) {
-    $ERROR(`${Constructor.name} cannot be used as a shared typed array. (${error})`);
+    throw new Test262Error(`${Constructor.name} cannot be used as a shared typed array. (${error})`);
   }
 
   $262.agent.broadcast(typedArray.buffer);
@@ -338,6 +341,25 @@ function $DETACHBUFFER(buffer) {
     throw new Test262Error("No method available to detach an ArrayBuffer");
   }
   $262.detachArrayBuffer(buffer);
+}
+
+// file: isConstructor.js
+// Copyright (C) 2017 André Bargull. All rights reserved.
+// This code is governed by the BSD license found in the LICENSE file.
+
+/*---
+description: |
+    Test if a given function is a constructor function.
+defines: [isConstructor]
+---*/
+
+function isConstructor(f) {
+    try {
+        Reflect.construct(function(){}, [], f);
+    } catch (e) {
+        return false;
+    }
+    return true;
 }
 
 // file: nans.js

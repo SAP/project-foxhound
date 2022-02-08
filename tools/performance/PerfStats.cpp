@@ -20,13 +20,19 @@ using namespace mozilla::gfx;
 
 namespace mozilla {
 
-static const char* const sMetricNames[] = {"DisplayList Building",
+static const char* const sMetricNames[] = {"DisplayListBuilding",
                                            "Rasterizing",
                                            "LayerBuilding",
-                                           "Layer Transactions",
+                                           "LayerTransactions",
                                            "Compositing",
                                            "Reflowing",
-                                           "Styling"};
+                                           "Styling",
+                                           "HttpChannelCompletion",
+                                           "HttpChannelCompletion_Network",
+                                           "HttpChannelCompletion_Cache"};
+
+static_assert(sizeof(sMetricNames) / sizeof(sMetricNames[0]) ==
+              static_cast<uint64_t>(PerfStats::Metric::Max));
 
 PerfStats::MetricMask PerfStats::sCollectionMask = 0;
 StaticMutex PerfStats::sMutex;
@@ -90,13 +96,22 @@ void PerfStats::RecordMeasurementEndInternal(Metric aMetric) {
           .ToMilliseconds();
 }
 
+void PerfStats::RecordMeasurementInternal(Metric aMetric,
+                                          TimeDuration aDuration) {
+  StaticMutexAutoLock lock(sMutex);
+
+  MOZ_ASSERT(sSingleton);
+
+  sSingleton->mRecordedTimes[static_cast<size_t>(aMetric)] +=
+      aDuration.ToMilliseconds();
+}
+
 struct StringWriteFunc : public JSONWriteFunc {
   nsCString& mString;
 
   explicit StringWriteFunc(nsCString& aString) : mString(aString) {}
-  virtual void Write(const char* aStr) override { mString.Append(aStr); }
-  virtual void Write(const char* aStr, size_t aLen) override {
-    mString.Append(aStr, aLen);
+  virtual void Write(const Span<const char>& aStr) override {
+    mString.Append(aStr);
   }
 };
 
@@ -121,9 +136,8 @@ struct PerfStatsCollector {
         aParent->ManagedPBrowserParent();
 
     writer.StartArrayProperty("urls");
-    for (auto iter = browsers.ConstIter(); !iter.Done(); iter.Next()) {
-      RefPtr<BrowserParent> parent =
-          BrowserParent::GetFrom(iter.Get()->GetKey());
+    for (const auto& key : browsers) {
+      RefPtr<BrowserParent> parent = BrowserParent::GetFrom(key);
 
       CanonicalBrowsingContext* ctx = parent->GetBrowsingContext();
       if (!ctx) {
@@ -143,7 +157,7 @@ struct PerfStatsCollector {
       nsAutoCString url;
       uri->GetSpec(url);
 
-      writer.StringElement(url.BeginReading());
+      writer.StringElement(url);
     }
     writer.EndArray();
     AppendJSONStringAsProperty(string, "perfstats", aString);
@@ -247,7 +261,7 @@ nsCString PerfStats::CollectLocalPerfStatsJSONInternal() {
         w.StartObjectElement();
         {
           w.IntProperty("id", i);
-          w.StringProperty("metric", sMetricNames[i]);
+          w.StringProperty("metric", MakeStringSpan(sMetricNames[i]));
           w.DoubleProperty("time", mRecordedTimes[i]);
         }
         w.EndObject();

@@ -15,10 +15,10 @@ class InterfaceScanCallbackData {
   explicit InterfaceScanCallbackData(uint32_t numInterfaces)
       : mCurrentlyScanningInterfaces(numInterfaces) {
     mAllInterfacesDoneScanningEvent =
-        ::CreateEvent(nullptr,   // null security
-                      TRUE,      // manual reset event
-                      FALSE,     // initially nonsignaled
-                      nullptr);  // not named
+        ::CreateEventW(nullptr,   // null security
+                       TRUE,      // manual reset event
+                       FALSE,     // initially nonsignaled
+                       nullptr);  // not named
     MOZ_ASSERT(NULL != mAllInterfacesDoneScanningEvent);
   }
 
@@ -138,7 +138,8 @@ nsresult WinWifiScanner::GetAccessPointsFromWLAN(
                              &interface_list->InterfaceInfo[i].InterfaceGuid,
                              nullptr,  // Use all SSIDs.
                              DOT11_BSS_TYPE_UNUSED,
-                             false,    // bSecurityEnabled - unused
+                             false,    // bSecurityEnabled -
+                                       // unused
                              nullptr,  // reserved
                              &bss_list)) {
       continue;

@@ -7,12 +7,14 @@
 #include "gtest/gtest.h"
 #include "gmock/gmock.h"
 #include "mozilla/ContentBlockingLog.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "nsIObserverService.h"
 #include "TelemetryFixture.h"
 #include "TelemetryTestHelpers.h"
+#include "js/PropertyAndElement.h"  // JS_Enumerate, JS_GetProperty
 
 using namespace mozilla;
 using namespace TelemetryTestHelpers;

@@ -2,25 +2,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{ColorU, FontKey, FontRenderMode, FontSize, GlyphDimensions};
+use api::{ColorF, ColorU, FontKey, FontRenderMode, FontSize, GlyphDimensions};
 use api::{FontInstanceFlags, FontVariation, NativeFontHandle};
-use core_foundation::array::{CFArray, CFArrayRef};
-use core_foundation::base::TCFType;
+use core_foundation::data::CFData;
+use core_foundation::base::{CFType, TCFType};
 use core_foundation::dictionary::CFDictionary;
-use core_foundation::number::{CFNumber, CFNumberRef};
+use core_foundation::number::{CFNumber};
 use core_foundation::string::{CFString, CFStringRef};
 use core_graphics::base::{kCGImageAlphaNoneSkipFirst, kCGImageAlphaPremultipliedFirst};
 use core_graphics::base::{kCGBitmapByteOrder32Little};
 use core_graphics::color_space::CGColorSpace;
 use core_graphics::context::CGContext;
 use core_graphics::context::{CGBlendMode, CGTextDrawingMode};
-use core_graphics::data_provider::CGDataProvider;
 use core_graphics::font::{CGFont, CGGlyph};
 use core_graphics::geometry::{CGAffineTransform, CGPoint, CGSize};
 use core_graphics::geometry::{CG_AFFINE_TRANSFORM_IDENTITY, CGRect};
 use core_text;
-use core_text::font::{CTFont, CTFontRef};
-use core_text::font_descriptor::{kCTFontDefaultOrientation, kCTFontColorGlyphsTrait};
+use core_text::font::CTFont;
+use core_text::font_descriptor::{CTFontDescriptor, kCTFontDefaultOrientation};
+use core_text::font_manager;
 use euclid::default::Size2D;
 use crate::gamma_lut::{ColorLut, GammaLut};
 use crate::glyph_rasterizer::{FontInstance, FontTransform, GlyphKey};
@@ -31,8 +31,17 @@ use std::sync::Arc;
 
 const INITIAL_CG_CONTEXT_SIDE_LENGTH: u32 = 32;
 
+// We prefer to create CTFonts from a CTFontDescriptor, but that doesn't work in the case
+// of hidden system fonts on recent macOS versions, so for those we will instead use a
+// native CGFont as the basis.
+enum DescOrFont {
+    Desc(CTFontDescriptor),
+    Font(CGFont),
+}
+
 pub struct FontContext {
-    cg_fonts: FastHashMap<FontKey, CGFont>,
+    desc_or_fonts: FastHashMap<FontKey, DescOrFont>,
+    // Table mapping a sized font key with variations to its instantiated CoreText font.
     ct_fonts: FastHashMap<(FontKey, FontSize, Vec<FontVariation>), CTFont>,
     #[allow(dead_code)]
     graphics_context: GraphicsContext,
@@ -95,12 +104,17 @@ fn determine_font_smoothing_mode() -> Option<FontRenderMode> {
     gray_context.set_should_smooth_fonts(false);
     gray_context.set_should_antialias(true);
     gray_context.set_rgb_fill_color(1.0, 1.0, 1.0, 1.0);
-    // Lucida Grande 12 is the default fallback font in Firefox
-    let ct_font = core_text::font::new_from_name("Lucida Grande", 12.).unwrap();
-    let point = CGPoint { x: 0., y: 0. };
-    let glyph = 'X' as CGGlyph;
-    ct_font.draw_glyphs(&[glyph], &[point], smooth_context.clone());
-    ct_font.draw_glyphs(&[glyph], &[point], gray_context.clone());
+
+    // Autorelease pool for CTFont
+    objc::rc::autoreleasepool(|| {
+        // Lucida Grande 12 is the default fallback font in Firefox
+        let ct_font = core_text::font::new_from_name("Lucida Grande", 12.).unwrap();
+        let point = CGPoint { x: 0., y: 0. };
+        let glyph = 'X' as CGGlyph;
+        ct_font.draw_glyphs(&[glyph], &[point], smooth_context.clone());
+        ct_font.draw_glyphs(&[glyph], &[point], gray_context.clone());
+    });
+
     let mut mode = None;
     for (smooth, gray) in smooth_context.data().chunks(4).zip(gray_context.data().chunks(4)) {
         if smooth[0] != smooth[1] || smooth[1] != smooth[2] {
@@ -202,113 +216,174 @@ fn get_glyph_metrics(
 #[link(name = "ApplicationServices", kind = "framework")]
 extern {
     static kCTFontVariationAxisIdentifierKey: CFStringRef;
-    static kCTFontVariationAxisNameKey: CFStringRef;
     static kCTFontVariationAxisMinimumValueKey: CFStringRef;
     static kCTFontVariationAxisMaximumValueKey: CFStringRef;
     static kCTFontVariationAxisDefaultValueKey: CFStringRef;
+    static kCTFontVariationAttribute: CFStringRef;
 
-    fn CTFontCopyVariationAxes(font: CTFontRef) -> CFArrayRef;
+    static kCGFontVariationAxisName: CFStringRef;
 }
 
-fn new_ct_font_with_variations(cg_font: &CGFont, size: f64, variations: &[FontVariation]) -> CTFont {
-    unsafe {
-        let ct_font = core_text::font::new_from_CGFont(cg_font, size);
-        if variations.is_empty() {
+fn get_tag_from_axis(axis: &CFDictionary<CFString, CFType>, key: CFStringRef) -> Option<i64> {
+    if let Some(number) = axis.find(key as *const _) {
+        if let Some(number) = number.downcast::<CFNumber>() {
+            return number.to_i64();
+        }
+    }
+    None
+}
+
+fn get_value_from_axis(axis: &CFDictionary<CFString, CFType>, key: CFStringRef) -> Option<f64> {
+    if let Some(number) = axis.find(key as *const _) {
+        if let Some(number) = number.downcast::<CFNumber>() {
+            return number.to_f64();
+        }
+    }
+    None
+}
+
+fn get_name_from_axis(axis: &CFDictionary<CFString, CFType>, key: CFStringRef) -> Option<CFString> {
+    if let Some(name) = axis.find(key as *const _) {
+        return name.downcast::<CFString>();
+    }
+    None
+}
+
+fn new_ct_font_with_variations_from_ct_font_desc(ct_font_desc: &CTFontDescriptor, size: f64, variations: &[FontVariation]) -> CTFont {
+    let ct_font = core_text::font::new_from_descriptor(ct_font_desc, size);
+    if variations.is_empty() {
+        return ct_font;
+    }
+    let mut vals: Vec<(CFNumber, CFNumber)> = Vec::with_capacity(variations.len() as usize);
+    let axes = match ct_font.get_variation_axes() {
+        Some(axes) => axes,
+        None => return ct_font,
+    };
+
+    for axis in axes.iter() {
+        let tag = if let Some(tag) = get_tag_from_axis(&axis, unsafe { kCTFontVariationAxisIdentifierKey }) {
+            tag
+        } else {
+            return ct_font;
+        };
+
+        let mut val = match variations.iter().find(|variation| (variation.tag as i64) == tag) {
+            Some(variation) => variation.value as f64,
+            None => continue,
+        };
+
+        let min_val = if let Some(num) = get_value_from_axis(&axis, unsafe { kCTFontVariationAxisMinimumValueKey }) {
+            num
+        } else {
+            return ct_font;
+        };
+        let max_val = if let Some(num) = get_value_from_axis(&axis, unsafe { kCTFontVariationAxisMaximumValueKey }) {
+            num
+        } else {
+            return ct_font;
+        };
+        let def_val = if let Some(num) = get_value_from_axis(&axis, unsafe { kCTFontVariationAxisDefaultValueKey }) {
+            num
+        } else {
+            return ct_font;
+        };
+
+        val = val.max(min_val).min(max_val);
+        if val != def_val {
+            vals.push((CFNumber::from(tag), CFNumber::from(val)));
+        }
+    }
+    if vals.is_empty() {
+        return ct_font;
+    }
+    let vals_dict = CFDictionary::from_CFType_pairs(&vals);
+    let variation_attribute = unsafe { CFString::wrap_under_get_rule(kCTFontVariationAttribute) };
+    let attrs_dict = CFDictionary::from_CFType_pairs(&[(variation_attribute, vals_dict)]);
+    let ct_var_font_desc = ct_font_desc.create_copy_with_attributes(attrs_dict.to_untyped()).unwrap();
+    core_text::font::new_from_descriptor(&ct_var_font_desc, size)
+
+}
+
+fn new_ct_font_with_variations_from_cg_font(cg_font: &CGFont, size: f64, variations: &[FontVariation]) -> CTFont {
+    let ct_font = core_text::font::new_from_CGFont(cg_font, size);
+    if variations.is_empty() {
+        return ct_font;
+    }
+    let mut vals: Vec<(CFString, CFNumber)> = Vec::with_capacity(variations.len() as usize);
+
+    let ct_axes = match ct_font.get_variation_axes() {
+        Some(ct_axes) => ct_axes,
+        None => return ct_font,
+    };
+    let cg_axes = match cg_font.copy_variation_axes() {
+        Some(cg_axes) => cg_axes,
+        None => return ct_font,
+    };
+    if ct_axes.len() != cg_axes.len() {
+        return ct_font;
+    }
+    for (ct_axis, cg_axis) in ct_axes.iter().zip(cg_axes.iter()) {
+        if !ct_axis.instance_of::<CFDictionary>() {
             return ct_font;
         }
-        let axes_ref = CTFontCopyVariationAxes(ct_font.as_concrete_TypeRef());
-        if axes_ref.is_null() {
+
+        let tag = if let Some(tag) = get_tag_from_axis(&ct_axis, unsafe { kCTFontVariationAxisIdentifierKey }) {
+            tag
+        } else {
             return ct_font;
-        }
-        let axes: CFArray<CFDictionary> = TCFType::wrap_under_create_rule(axes_ref);
-        let mut vals: Vec<(CFString, CFNumber)> = Vec::with_capacity(variations.len() as usize);
-        for axis in axes.iter() {
-            if !axis.instance_of::<CFDictionary>() {
-                return ct_font;
-            }
-            let tag_val = match axis.find(kCTFontVariationAxisIdentifierKey as *const _) {
-                Some(tag_ptr) => {
-                    let tag: CFNumber = TCFType::wrap_under_get_rule(*tag_ptr as CFNumberRef);
-                    if !tag.instance_of::<CFNumber>() {
-                        return ct_font;
-                    }
-                    match tag.to_i64() {
-                        Some(val) => val,
-                        None => return ct_font,
-                    }
-                }
-                None => return ct_font,
-            };
-            let mut val = match variations.iter().find(|variation| (variation.tag as i64) == tag_val) {
-                Some(variation) => variation.value as f64,
-                None => continue,
-            };
+        };
 
-            let name: CFString = match axis.find(kCTFontVariationAxisNameKey as *const _) {
-                Some(name_ptr) => TCFType::wrap_under_get_rule(*name_ptr as CFStringRef),
-                None => return ct_font,
-            };
-            if !name.instance_of::<CFString>() {
-                return ct_font;
-            }
+        let mut val = match variations.iter().find(|variation| (variation.tag as i64) == tag) {
+            Some(variation) => variation.value as f64,
+            None => continue,
+        };
 
-            let min_val = match axis.find(kCTFontVariationAxisMinimumValueKey as *const _) {
-                Some(min_ptr) => {
-                    let min: CFNumber = TCFType::wrap_under_get_rule(*min_ptr as CFNumberRef);
-                    if !min.instance_of::<CFNumber>() {
-                        return ct_font;
-                    }
-                    match min.to_f64() {
-                        Some(val) => val,
-                        None => return ct_font,
-                    }
-                }
-                None => return ct_font,
-            };
-            let max_val = match axis.find(kCTFontVariationAxisMaximumValueKey as *const _) {
-                Some(max_ptr) => {
-                    let max: CFNumber = TCFType::wrap_under_get_rule(*max_ptr as CFNumberRef);
-                    if !max.instance_of::<CFNumber>() {
-                        return ct_font;
-                    }
-                    match max.to_f64() {
-                        Some(val) => val,
-                        None => return ct_font,
-                    }
-                }
-                None => return ct_font,
-            };
-            let def_val = match axis.find(kCTFontVariationAxisDefaultValueKey as *const _) {
-                Some(def_ptr) => {
-                    let def: CFNumber = TCFType::wrap_under_get_rule(*def_ptr as CFNumberRef);
-                    if !def.instance_of::<CFNumber>() {
-                        return ct_font;
-                    }
-                    match def.to_f64() {
-                        Some(val) => val,
-                        None => return ct_font,
-                    }
-                }
-                None => return ct_font,
-            };
-
-            val = val.max(min_val).min(max_val);
-            if val != def_val {
-                vals.push((name, CFNumber::from(val)));
-            }
-        }
-        if vals.is_empty() {
+        let name = if let Some(name) = get_name_from_axis(&cg_axis, unsafe { kCGFontVariationAxisName }) {
+            name
+        } else {
             return ct_font;
+        };
+
+        let min_val = if let Some(num) = get_value_from_axis(&ct_axis, unsafe { kCTFontVariationAxisMinimumValueKey }) {
+            num
+        } else {
+            return ct_font;
+        };
+        let max_val = if let Some(num) = get_value_from_axis(&ct_axis, unsafe { kCTFontVariationAxisMaximumValueKey }) {
+            num
+        } else {
+            return ct_font;
+        };
+        let def_val = if let Some(num) = get_value_from_axis(&ct_axis, unsafe { kCTFontVariationAxisDefaultValueKey }) {
+            num
+        } else {
+            return ct_font;
+        };
+
+        val = val.max(min_val).min(max_val);
+        if val != def_val {
+            vals.push((name, CFNumber::from(val)));
         }
-        let vals_dict = CFDictionary::from_CFType_pairs(&vals);
-        let cg_var_font = cg_font.create_copy_from_variations(&vals_dict).unwrap();
-        core_text::font::new_from_CGFont_with_variations(&cg_var_font, size, &vals_dict)
+    }
+    if vals.is_empty() {
+        return ct_font;
+    }
+    let vals_dict = CFDictionary::from_CFType_pairs(&vals);
+    let cg_var_font = cg_font.create_copy_from_variations(&vals_dict).unwrap();
+    core_text::font::new_from_CGFont_with_variations(&cg_var_font, size, &vals_dict)
+}
+
+fn new_ct_font_with_variations(desc_or_font: &DescOrFont, size: f64, variations: &[FontVariation]) -> CTFont {
+    match desc_or_font {
+        DescOrFont::Desc(ct_font_desc) => new_ct_font_with_variations_from_ct_font_desc(ct_font_desc, size, variations),
+        DescOrFont::Font(cg_font) => new_ct_font_with_variations_from_cg_font(cg_font, size, variations)
     }
 }
 
-fn is_bitmap_font(ct_font: &CTFont) -> bool {
-    let traits = ct_font.symbolic_traits();
-    (traits & kCTFontColorGlyphsTrait) != 0
+// We rely on Gecko to determine whether the font may have color glyphs to avoid
+// needing to load the font ahead of time to query its symbolic traits.
+fn is_bitmap_font(font: &FontInstance) -> bool {
+    font.flags.contains(FontInstanceFlags::EMBEDDED_BITMAPS)
 }
 
 impl FontContext {
@@ -320,7 +395,7 @@ impl FontContext {
         let gamma = 0.0;
 
         Ok(FontContext {
-            cg_fonts: FastHashMap::default(),
+            desc_or_fonts: FastHashMap::default(),
             ct_fonts: FastHashMap::default(),
             graphics_context: GraphicsContext::new(),
             gamma_lut: GammaLut::new(contrast, gamma, gamma),
@@ -328,34 +403,47 @@ impl FontContext {
     }
 
     pub fn has_font(&self, font_key: &FontKey) -> bool {
-        self.cg_fonts.contains_key(font_key)
+        self.desc_or_fonts.contains_key(font_key)
     }
 
     pub fn add_raw_font(&mut self, font_key: &FontKey, bytes: Arc<Vec<u8>>, index: u32) {
-        if self.cg_fonts.contains_key(font_key) {
+        if self.desc_or_fonts.contains_key(font_key) {
             return;
         }
 
         assert_eq!(index, 0);
-        let data_provider = CGDataProvider::from_buffer(bytes);
-        let cg_font = match CGFont::from_data_provider(data_provider) {
+        let data = CFData::from_arc(bytes);
+        let ct_font_desc = match font_manager::create_font_descriptor_with_data(data) {
             Err(_) => return,
-            Ok(cg_font) => cg_font,
+            Ok(desc) => desc,
         };
-        self.cg_fonts.insert(*font_key, cg_font);
+        self.desc_or_fonts.insert(*font_key, DescOrFont::Desc(ct_font_desc));
     }
 
     pub fn add_native_font(&mut self, font_key: &FontKey, native_font_handle: NativeFontHandle) {
-        if self.cg_fonts.contains_key(font_key) {
+        if self.desc_or_fonts.contains_key(font_key) {
             return;
         }
 
-        self.cg_fonts
-            .insert(*font_key, native_font_handle.0);
+        // there's no way great way to go from a CGFont to a CTFontDescriptor
+        // so we use the postscript name. Ideally NativeFontHandle would
+        // just use a CTFontDescriptor.
+        let name = native_font_handle.0.postscript_name();
+        // For "hidden" system fonts, whose names start with a period,
+        // we can't instantiate CTFonts via a descriptor. We're really
+        // supposed to use CTFontCreateUIFontForLanguage, but for now
+        // we just use the CGFont.
+        let desc_or_font = if name.to_string().starts_with('.') {
+            DescOrFont::Font(native_font_handle.0)
+        } else {
+            DescOrFont::Desc(core_text::font_descriptor::new_from_postscript_name(&name))
+        };
+
+        self.desc_or_fonts.insert(*font_key, desc_or_font);
     }
 
     pub fn delete_font(&mut self, font_key: &FontKey) {
-        if let Some(_) = self.cg_fonts.remove(font_key) {
+        if let Some(_) = self.desc_or_fonts.remove(font_key) {
             self.ct_fonts.retain(|k, _| k.0 != *font_key);
         }
     }
@@ -372,15 +460,18 @@ impl FontContext {
         size: f64,
         variations: &[FontVariation],
     ) -> Option<CTFont> {
-        match self.ct_fonts.entry((font_key, FontSize::from_f64_px(size), variations.to_vec())) {
-            Entry::Occupied(entry) => Some((*entry.get()).clone()),
-            Entry::Vacant(entry) => {
-                let cg_font = self.cg_fonts.get(&font_key)?;
-                let ct_font = new_ct_font_with_variations(cg_font, size, variations);
-                entry.insert(ct_font.clone());
-                Some(ct_font)
+        // Interacting with CoreText can create autorelease garbage.
+        objc::rc::autoreleasepool(|| {
+            match self.ct_fonts.entry((font_key, FontSize::from_f64_px(size), variations.to_vec())) {
+                Entry::Occupied(entry) => Some((*entry.get()).clone()),
+                Entry::Vacant(entry) => {
+                    let desc_or_font = self.desc_or_fonts.get(&font_key)?;
+                    let ct_font = new_ct_font_with_variations(desc_or_font, size, variations);
+                    entry.insert(ct_font.clone());
+                    Some(ct_font)
+                }
             }
-        }
+        })
     }
 
     pub fn get_glyph_index(&mut self, font_key: FontKey, ch: char) -> Option<u32> {
@@ -388,7 +479,7 @@ impl FontContext {
         let mut glyph = 0;
 
         self.get_ct_font(font_key, 16.0, &[])
-            .and_then(|ref ct_font| {
+            .and_then(|ct_font| {
                 unsafe {
                     let result = ct_font.get_glyphs_for_characters(&character, &mut glyph, 1);
 
@@ -409,9 +500,9 @@ impl FontContext {
         let (x_scale, y_scale) = font.transform.compute_scale().unwrap_or((1.0, 1.0));
         let size = font.size.to_f64_px() * y_scale;
         self.get_ct_font(font.font_key, size, &font.variations)
-            .and_then(|ref ct_font| {
+            .and_then(|ct_font| {
                 let glyph = key.index() as CGGlyph;
-                let bitmap = is_bitmap_font(ct_font);
+                let bitmap = is_bitmap_font(font);
                 let (mut shape, (x_offset, y_offset)) = if bitmap {
                     (FontTransform::identity(), (0.0, 0.0))
                 } else {
@@ -452,7 +543,7 @@ impl FontContext {
                 };
                 let extra_strikes = font.get_extra_strikes(strike_scale);
                 let metrics = get_glyph_metrics(
-                    ct_font,
+                    &ct_font,
                     transform.as_ref(),
                     glyph,
                     x_offset,
@@ -511,6 +602,13 @@ impl FontContext {
     }
 
     pub fn prepare_font(font: &mut FontInstance) {
+        if is_bitmap_font(font) {
+            // Render mode is ignored for bitmap fonts. Also, avoid normalizing the color
+            // in case CoreText needs the current color for rendering glyph color layers.
+            font.render_mode = FontRenderMode::Mono;
+            font.disable_subpixel_position();
+            return;
+        }
         // Sanitize the render mode for font smoothing. If font smoothing is supported,
         // then we just need to ensure the render mode is limited to what is supported.
         // If font smoothing is actually disabled, then we need to fall back to grayscale.
@@ -558,10 +656,12 @@ impl FontContext {
     }
 
     pub fn rasterize_glyph(&mut self, font: &FontInstance, key: &GlyphKey) -> GlyphRasterResult {
+        objc::rc::autoreleasepool(|| {
         let (x_scale, y_scale) = font.transform.compute_scale().unwrap_or((1.0, 1.0));
         let size = font.size.to_f64_px() * y_scale;
-        let ct_font = self.get_ct_font(font.font_key, size, &font.variations).ok_or(GlyphRasterError::LoadFailed)?;
-        let glyph_type = if is_bitmap_font(&ct_font) {
+        let ct_font =
+            self.get_ct_font(font.font_key, size, &font.variations).ok_or(GlyphRasterError::LoadFailed)?;
+        let glyph_type = if is_bitmap_font(font) {
             GlyphType::Bitmap
         } else {
             GlyphType::Vector
@@ -650,20 +750,25 @@ impl FontContext {
         // the text color brightness exceeds a certain threshold. This applies
         // to both the Subpixel and the "Alpha + smoothing" modes, but not to
         // the "Alpha without smoothing" and Mono modes.
+        //
+        // Fonts with color glyphs may, depending on the state within per-glyph
+        // table data, require the current font color to determine the output
+        // color. For such fonts we must thus supply the current font color just
+        // in case it is necessary.
         let use_white_on_black = should_use_white_on_black(font.color);
         let use_font_smoothing = font.flags.contains(FontInstanceFlags::FONT_SMOOTHING);
-        let (antialias, smooth, text_color, bg_color, bg_alpha, invert) = match glyph_type {
-            GlyphType::Bitmap => (true, false, 0.0, 0.0, 0.0, false),
+        let (antialias, smooth, text_color, bg_color, invert) = match glyph_type {
+            GlyphType::Bitmap => (true, false, ColorF::from(font.color), ColorF::TRANSPARENT, false),
             GlyphType::Vector => {
                 match (font.render_mode, use_font_smoothing) {
                     (FontRenderMode::Subpixel, _) |
                     (FontRenderMode::Alpha, true) => if use_white_on_black {
-                        (true, true, 1.0, 0.0, 1.0, false)
+                        (true, true, ColorF::WHITE, ColorF::BLACK, false)
                     } else {
-                        (true, true, 0.0, 1.0, 1.0, true)
+                        (true, true, ColorF::BLACK, ColorF::WHITE, true)
                     },
-                    (FontRenderMode::Alpha, false) => (true, false, 0.0, 1.0, 1.0, true),
-                    (FontRenderMode::Mono, _) => (false, false, 0.0, 1.0, 1.0, true),
+                    (FontRenderMode::Alpha, false) => (true, false, ColorF::BLACK, ColorF::WHITE, true),
+                    (FontRenderMode::Mono, _) => (false, false, ColorF::BLACK, ColorF::WHITE, true),
                 }
             }
         };
@@ -684,7 +789,12 @@ impl FontContext {
 
             // Fill the background. This could be opaque white, opaque black, or
             // transparency.
-            cg_context.set_rgb_fill_color(bg_color, bg_color, bg_color, bg_alpha);
+            cg_context.set_rgb_fill_color(
+                bg_color.r.into(),
+                bg_color.g.into(),
+                bg_color.b.into(),
+                bg_color.a.into(),
+            );
             let rect = CGRect {
                 origin: CGPoint { x: 0.0, y: 0.0 },
                 size: CGSize {
@@ -700,7 +810,12 @@ impl FontContext {
             cg_context.set_blend_mode(CGBlendMode::Normal);
 
             // Set the text color and draw the glyphs.
-            cg_context.set_rgb_fill_color(text_color, text_color, text_color, 1.0);
+            cg_context.set_rgb_fill_color(
+                text_color.r.into(),
+                text_color.g.into(),
+                text_color.b.into(),
+                1.0,
+            );
             cg_context.set_text_drawing_mode(CGTextDrawingMode::CGTextFill);
 
             // CG Origin is bottom left, WR is top left. Need -y offset
@@ -800,7 +915,7 @@ impl FontContext {
                 GlyphType::Vector => font.get_glyph_format(),
             },
             bytes: rasterized_pixels,
-        })
+        })})
     }
 }
 
@@ -909,3 +1024,4 @@ enum GlyphType {
     Vector,
     Bitmap,
 }
+

@@ -65,12 +65,8 @@ async function installExtension(manifest = {}) {
   return extension;
 }
 
-function getAddonCard(doc, id) {
-  return doc.querySelector(`addon-card[addon-id="${id}"]`);
-}
-
 function openDetailView(doc, id) {
-  let card = getAddonCard(doc, id);
+  let card = getAddonCard(doc.defaultView, id);
   card.querySelector('[action="expand"]').click();
 }
 
@@ -93,7 +89,8 @@ async function removeAddonAndUndo(doc, row) {
 
   let undoBanner = doc.querySelector(`message-bar[addon-id="${row.addon.id}"]`);
   undoBanner.querySelector('[action="undo"]').click();
-  await TestUtils.waitForCondition(() => getAddonCard(doc, row.addon.id));
+  const win = doc.defaultView;
+  await TestUtils.waitForCondition(() => getAddonCard(win, row.addon.id));
   await started;
 }
 
@@ -131,8 +128,7 @@ async function init(startPage) {
 
   await gCategoryUtilities.openType(startPage);
 
-  return gManagerWindow.document.getElementById("html-view-browser")
-    .contentDocument;
+  return gManagerWindow.document;
 }
 
 /* Test functions start here. */
@@ -156,7 +152,13 @@ add_task(async function testBasicViewTelemetry() {
 
   assertAboutAddonsTelemetryEvents(
     [
-      ["addonsManager", "view", "aboutAddons", "discover"],
+      [
+        "addonsManager",
+        "view",
+        "aboutAddons",
+        "discover",
+        { taar_enabled: "0" },
+      ],
       ["addonsManager", "view", "aboutAddons", "list", { type: "theme" }],
       [
         "addonsManager",
@@ -185,6 +187,7 @@ add_task(async function testExtensionEvents() {
   let addon = await installExtension();
   let type = "extension";
   let doc = await init("extension");
+  let win = doc.defaultView;
 
   // Check/clear the current telemetry.
   assertAboutAddonsTelemetryEvents(
@@ -192,7 +195,7 @@ add_task(async function testExtensionEvents() {
     { methods: ["view"] }
   );
 
-  let row = getAddonCard(doc, addonId);
+  let row = getAddonCard(win, addonId);
 
   // Check disable/enable.
   await enableAndDisable(doc, row);
@@ -242,7 +245,7 @@ add_task(async function testExtensionEvents() {
   // Open the preferences page.
   let waitForNewTab = BrowserTestUtils.waitForNewTab(gBrowser);
   // Find the row again since it was modified on uninstall.
-  row = getAddonCard(doc, addonId);
+  row = getAddonCard(win, addonId);
   await openPrefs(doc, row);
   BrowserTestUtils.removeTab(await waitForNewTab);
   assertAboutAddonsTelemetryEvents(
@@ -313,7 +316,7 @@ add_task(async function testExtensionEvents() {
 
   // Check that the preferences button includes the view.
   waitForNewTab = BrowserTestUtils.waitForNewTab(gBrowser);
-  row = getAddonCard(doc, addonId);
+  row = getAddonCard(win, addonId);
   await openPrefs(doc, row);
   BrowserTestUtils.removeTab(await waitForNewTab);
 
@@ -340,7 +343,7 @@ add_task(async function testExtensionEvents() {
     options_ui: { page: "options.html" },
     version: "2",
   });
-  row = getAddonCard(doc, addonId);
+  row = getAddonCard(win, addonId);
   await openPrefs(doc, row);
   await wait_for_view_load(gManagerWindow);
 

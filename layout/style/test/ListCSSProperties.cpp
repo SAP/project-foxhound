@@ -10,6 +10,9 @@
 #include <stdlib.h>
 #include "mozilla/ArrayUtils.h"
 
+// Do not consider properties not valid in style rules
+#define CSS_PROP_LIST_EXCLUDE_NOT_IN_STYLE
+
 // Need an extra level of macro nesting to force expansion of method_
 // params before they get pasted.
 #define STRINGIFY_METHOD(method_) #method_
@@ -90,13 +93,9 @@ const char* gInaccessibleProperties[] = {
     "-x-lang",
     "-x-span",
     "-x-text-zoom",
-    "-moz-button-appearance",
-    "-moz-context-properties",
-    "-moz-control-character-visibility",
     "-moz-default-appearance",
     "-moz-inert",
-    "-moz-list-reversed",  // parsed by UA sheets only
-    "-moz-script-level",   // parsed by UA sheets only
+    "-moz-script-level",  // parsed by UA sheets only
     "-moz-script-size-multiplier",
     "-moz-script-min-size",
     "-moz-math-variant",

@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 uz{
     Keys{
         calendar{"taqvim"}
@@ -84,6 +85,7 @@ uz{
         de_CH{"yuqori nemis (Shveytsariya)"}
         dgr{"dogrib"}
         dje{"zarma"}
+        doi{"dogri"}
         dsb{"quyi sorb"}
         dua{"duala"}
         dv{"divexi"}
@@ -273,6 +275,7 @@ uz{
         nmg{"kvasio"}
         nn{"norveg-nyunorsk"}
         nnh{"ngiyembun"}
+        no{"norveg"}
         nog{"no‘g‘ay"}
         nqo{"nko"}
         nr{"janubiy ndebel"}
@@ -301,12 +304,12 @@ uz{
         quc{"kiche"}
         rap{"rapanui"}
         rar{"rarotongan"}
+        rhg{"rohinja"}
         rm{"romansh"}
         rn{"rundi"}
         ro{"rumincha"}
         ro_MD{"moldovan"}
         rof{"rombo"}
-        root{"tub aholi tili"}
         ru{"ruscha"}
         rup{"arumin"}
         rw{"kinyaruanda"}
@@ -548,7 +551,6 @@ uz{
             tibt{"tibet raqamlari"}
         }
     }
-    Version{"37"}
     characterLabelPattern{
         all{"{0} — hammasi"}
         category-list{"{0}: {1}"}
@@ -563,6 +565,8 @@ uz{
             one{"{0} ta chiziq"}
             other{"{0} ta chiziq"}
         }
+        subscript{"{0} pastki yozuv"}
+        superscript{"{0} ustki yozuv"}
     }
     codePatterns{
         language{"Til: {0}"}

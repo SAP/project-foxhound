@@ -77,7 +77,7 @@ describe("Searching in grips", () => {
 
     it("do not match on full url", () => {
       store.dispatch(
-        actions.filterTextSet("http://example.com/browser/devtools")
+        actions.filterTextSet("https://example.com/browser/devtools")
       );
       expect(getVisibleMessages(store.getState()).length).toEqual(0);
     });
@@ -106,7 +106,7 @@ function prepareBaseStore() {
     "console.log('myregex', /a.b.c/)",
     "console.log('mymap')",
     "console.log('myobject', {red: 'redValue', green: 'greenValue', blue: 'blueValue'});",
-    "GET request",
+    "GET request update",
   ]);
 
   return store;

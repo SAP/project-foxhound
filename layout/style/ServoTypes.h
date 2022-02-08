@@ -12,6 +12,7 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/TypedEnumBits.h"
 #include "nsCoord.h"
+#include "X11UndefineNone.h"
 
 struct RawServoFontFaceRule;
 
@@ -147,7 +148,6 @@ struct DeclarationBlockMutationClosure {
 struct MediumFeaturesChangedResult {
   bool mAffectsDocumentRules;
   bool mAffectsNonDocumentRules;
-  bool mUsesViewportUnits;
 };
 
 }  // namespace mozilla

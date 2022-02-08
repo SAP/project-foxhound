@@ -13,13 +13,13 @@ namespace mozilla {
 class KeyEventHandler;
 class WidgetKeyboardEvent;
 
-typedef struct {
+struct ShortcutKeyData {
   const char16_t* event;
   const char16_t* keycode;
   const char16_t* key;
   const char16_t* modifiers;
   const char16_t* command;
-} ShortcutKeyData;
+};
 
 enum class HandlerType {
   eInput,
@@ -39,6 +39,8 @@ class ShortcutKeys : public nsIObserver {
   // Gets the event type for a widget keyboard event.
   static nsAtom* ConvertEventToDOMEventType(
       const WidgetKeyboardEvent* aWidgetKeyboardEvent);
+
+  static void Shutdown();
 
  protected:
   ShortcutKeys();

@@ -45,22 +45,23 @@ function test_sockets(serverSocket) {
     }
     Assert.notEqual(index, -1);
     Assert.equal(data.sockets[index].port, serverSocket.port);
-    Assert.equal(data.sockets[index].tcp, 1);
+    Assert.equal(data.sockets[index].type, "TCP");
 
     do_test_finished();
   });
 }
 
 function run_test() {
-  var ps = Cc["@mozilla.org/preferences-service;1"].getService(
-    Ci.nsIPrefBranch
-  );
+  var ps = Services.prefs;
   // disable network changed events to avoid the the risk of having the dns
   // cache getting flushed behind our back
   ps.setBoolPref("network.notify.changed", false);
+  // Localhost is hardcoded to loopback and isn't cached, disable that with this pref
+  ps.setBoolPref("network.proxy.allow_hijacking_localhost", true);
 
   registerCleanupFunction(function() {
     ps.clearUserPref("network.notify.changed");
+    ps.clearUserPref("network.proxy.allow_hijacking_localhost");
   });
 
   let serverSocket = Cc["@mozilla.org/network/server-socket;1"].createInstance(

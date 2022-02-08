@@ -22,7 +22,10 @@ namespace gfx {
 class SourceSurfaceOffset : public SourceSurface {
  public:
   SourceSurfaceOffset(RefPtr<SourceSurface> aSurface, IntPoint aOffset)
-      : mSurface(aSurface), mOffset(aOffset) {}
+      : mSurface(aSurface), mOffset(aOffset) {
+    MOZ_RELEASE_ASSERT(mSurface);
+  }
+
   virtual SurfaceType GetType() const override { return SurfaceType::OFFSET; }
   virtual IntSize GetSize() const override { return mSurface->GetSize(); }
   virtual IntRect GetRect() const override {
@@ -52,9 +55,6 @@ class DrawTargetOffset : public DrawTarget {
   // We'll pestimistically return true here
   virtual bool IsTiledDrawTarget() const override { return true; }
 
-  virtual bool IsCaptureDT() const override {
-    return mDrawTarget->IsCaptureDT();
-  }
   virtual DrawTargetType GetType() const override {
     return mDrawTarget->GetType();
   }

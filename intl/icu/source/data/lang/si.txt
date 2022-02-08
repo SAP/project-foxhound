@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 si{
     Keys{
         calendar{"දින දර්ශනය"}
@@ -18,7 +19,7 @@ si{
         ada{"අඩන්ග්මෙ"}
         ady{"අඩිඝෙ"}
         aeb{"ටියුනිසියනු අරාබි"}
-        af{"අෆ්රිකාන්ස්"}
+        af{"අෆ්‍රිකාන්ස්"}
         agq{"ඇගම්"}
         ain{"අයිනු"}
         ak{"අකාන්"}
@@ -85,6 +86,7 @@ si{
         de_CH{"ස්විස් උසස් ජර්මන්"}
         dgr{"ඩොග්‍රිබ්"}
         dje{"සර්මා"}
+        doi{"ඩොග්රි"}
         dsb{"පහළ සෝබියානු"}
         dua{"ඩුආලා"}
         dv{"ඩිවෙහි"}
@@ -277,6 +279,7 @@ si{
         nmg{"කුවාසිඔ"}
         nn{"නෝර්වීජියානු නයිනෝර්ස්ක්"}
         nnh{"න්ගියාම්බූන්"}
+        no{"නෝර්වීජියානු"}
         nog{"නොගායි"}
         nqo{"එන්‘කෝ"}
         nr{"සෞත් ඩ්බේල්"}
@@ -305,12 +308,12 @@ si{
         quc{"කියිචේ"}
         rap{"රපනුයි"}
         rar{"රරොටොන්ගන්"}
+        rhg{"රෝහින්ග්‍යා"}
         rm{"රොමෑන්ශ්"}
         rn{"රුන්ඩි"}
         ro{"රොමේනියානු"}
         ro_MD{"මොල්ඩවිආනු"}
         rof{"රෝම්බෝ"}
-        root{"රූට්"}
         ru{"රුසියානු"}
         rup{"ඇරොමානියානු"}
         rw{"කින්යර්වන්ඩා"}
@@ -422,6 +425,7 @@ si{
         zh_Hant{"සාම්ප්‍රදායික මැන්ඩරීන් චීන"}
     }
     Languages%menu{
+        ckb{"කුර්දිෂ්, මධ්‍යම"}
         yue{"චීන, කැන්ටොනීස්"}
         zh{"චීන, මැන්ඩරීන්"}
     }
@@ -429,6 +433,9 @@ si{
         az{"අසීරී"}
         en_GB{"එ.රා ඉංග්‍රීසි"}
         en_US{"එ.ජ ඉංග්‍රීසි"}
+    }
+    Languages%variant{
+        ckb{"කුර්දිෂ්, සොරානි"}
     }
     Scripts{
         Arab{"අරාබි"}
@@ -558,7 +565,6 @@ si{
             tibt{"ටිබෙට ඉලක්කම්"}
         }
     }
-    Version{"37"}
     characterLabelPattern{
         all{"{0} — සියල්ල"}
         category-list{"{0}: {1}"}
@@ -573,6 +579,8 @@ si{
             one{"{0} පහර"}
             other{"{0} පහර"}
         }
+        subscript{"යටකුර {0}"}
+        superscript{"උඩකුර {0}"}
     }
     codePatterns{
         language{"{0} භාෂාව: සිංහල"}

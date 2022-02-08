@@ -16,7 +16,6 @@
 namespace js {
 
 class GlobalObject;
-class RegExpStaticsObject;
 
 class RegExpStatics {
   /* The latest RegExp output, set after execution. */
@@ -43,7 +42,7 @@ class RegExpStatics {
 
  public:
   RegExpStatics() { clear(); }
-  static RegExpStaticsObject* create(JSContext* cx);
+  static UniquePtr<RegExpStatics> create(JSContext* cx);
 
  private:
   bool executeLazy(JSContext* cx);
@@ -60,8 +59,6 @@ class RegExpStatics {
 
  public:
   /* Mutators. */
-  inline void updateLazily(JSContext* cx, JSLinearString* input,
-                           RegExpShared* shared, size_t lastIndex);
   inline bool updateFromMatchPairs(JSContext* cx, JSLinearString* input,
                                    VectorMatchPairs& newPairs);
 
@@ -85,6 +82,10 @@ class RegExpStatics {
     TraceNullableEdge(trc, &matchesInput, "res->matchesInput");
     TraceNullableEdge(trc, &lazySource, "res->lazySource");
     TraceNullableEdge(trc, &pendingInput, "res->pendingInput");
+  }
+
+  size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
+    return mallocSizeOf(this) + matches.sizeOfExcludingThis(mallocSizeOf);
   }
 
   /* Value creators. */
@@ -233,20 +234,6 @@ inline bool RegExpStatics::createRightContext(JSContext* cx,
     return true;
   }
   return createDependent(cx, matches[0].limit, matchesInput->length(), out);
-}
-
-inline void RegExpStatics::updateLazily(JSContext* cx, JSLinearString* input,
-                                        RegExpShared* shared,
-                                        size_t lastIndex) {
-  MOZ_ASSERT(input && shared);
-
-  BarrieredSetPair<JSString, JSLinearString>(cx->zone(), pendingInput, input,
-                                             matchesInput, input);
-
-  lazySource = shared->getSource();
-  lazyFlags = shared->flags;
-  lazyIndex = lastIndex;
-  pendingLazyEvaluation = 1;
 }
 
 inline bool RegExpStatics::updateFromMatchPairs(JSContext* cx,

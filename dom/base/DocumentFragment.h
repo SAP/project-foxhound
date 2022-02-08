@@ -12,6 +12,9 @@
 #include "mozilla/dom/FragmentOrElement.h"
 #include "nsStringFwd.h"
 
+// XXX Avoid including this here by moving function bodies to the cpp file.
+#include "mozilla/dom/Element.h"
+
 class nsAtom;
 class nsIContent;
 
@@ -82,7 +85,7 @@ class DocumentFragment : public FragmentOrElement {
   static already_AddRefed<DocumentFragment> Constructor(
       const GlobalObject& aGlobal, ErrorResult& aRv);
 
-#ifdef DEBUG
+#ifdef MOZ_DOM_LIST
   virtual void List(FILE* out, int32_t aIndent) const override;
   virtual void DumpContent(FILE* out, int32_t aIndent,
                            bool aDumpAll) const override;

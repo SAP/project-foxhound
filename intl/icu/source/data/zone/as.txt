@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 as{
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"আবিডজান"}
@@ -1705,9 +1705,9 @@ as{
             ls{"নিয়ুৰ সময়"}
         }
         "meta:Norfolk"{
-            ld{"ন’ৰফ’ক দ্বীপৰ সময় গ্ৰীষ্মকালীন সময়"}
+            ld{"ন’ৰফ’ক দ্বীপৰ গ্ৰীষ্মকালীন সময়"}
             lg{"ন’ৰফ’ক দ্বীপৰ সময়"}
-            ls{"ন’ৰফ’ক দ্বীপৰ মান সময়"}
+            ls{"ন’ৰফ’ক দ্বীপৰ মান্য সময়"}
         }
         "meta:Noronha"{
             ld{"ফাৰ্নাণ্ডো ডে নোৰোন্‌হাৰ গ্ৰীষ্মকালীন সময়"}
@@ -1877,6 +1877,9 @@ as{
             ld{"য়েকাটেৰিণবাৰ্গৰ গ্ৰীষ্মকালীন সময়"}
             lg{"য়েকাটেৰিণবাৰ্গৰ সময়"}
             ls{"য়েকাটেৰিণবাৰ্গৰ মান সময়"}
+        }
+        "meta:Yukon"{
+            ls{"য়ুকোন সময়"}
         }
         fallbackFormat{"{1} ({0})"}
         gmtFormat{"GMT{0}"}

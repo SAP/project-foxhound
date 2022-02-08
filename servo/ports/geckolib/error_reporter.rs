@@ -38,9 +38,8 @@ impl ErrorReporter {
     ) -> Option<Self> {
         let mut window_id = 0;
 
-        let enabled = unsafe {
-            bindings::Gecko_ErrorReportingEnabled(sheet, loader, &mut window_id)
-        };
+        let enabled =
+            unsafe { bindings::Gecko_ErrorReportingEnabled(sheet, loader, &mut window_id) };
 
         if !enabled {
             return None;
@@ -170,7 +169,6 @@ fn extract_error_params<'a>(err: ErrorKind<'a>) -> Option<ErrorParams<'a>> {
             SelectorParseErrorKind::EmptySelector | SelectorParseErrorKind::DanglingCombinator => {
                 (None, None)
             },
-            SelectorParseErrorKind::EmptyNegation => (None, Some(ErrorString::Snippet(")".into()))),
             err => match extract_error_param(ParseErrorKind::Custom(
                 StyleParseErrorKind::SelectorError(err),
             )) {
@@ -204,6 +202,7 @@ impl<'a> ErrorHelpers<'a> for ContextualParseError<'a> {
             ContextualParseError::UnsupportedCounterStyleDescriptorDeclaration(s, err) |
             ContextualParseError::InvalidMediaRule(s, err) |
             ContextualParseError::UnsupportedValue(s, err) => (s.into(), err.kind),
+            ContextualParseError::NeverMatchingHostSelector(s) |
             ContextualParseError::InvalidCounterStyleWithoutSymbols(s) |
             ContextualParseError::InvalidCounterStyleNotEnoughSymbols(s) => (
                 s.into(),
@@ -365,9 +364,6 @@ impl<'a> ErrorHelpers<'a> for ContextualParseError<'a> {
                             SelectorParseErrorKind::ClassNeedsIdent(_) => {
                                 Some(cstr!("PEClassSelNotIdent"))
                             },
-                            SelectorParseErrorKind::EmptyNegation => {
-                                Some(cstr!("PENegationBadArg"))
-                            },
                             _ => None,
                         }
                     },
@@ -378,7 +374,7 @@ impl<'a> ErrorHelpers<'a> for ContextualParseError<'a> {
             ContextualParseError::InvalidMediaRule(_, ref err) => {
                 let err: &CStr = match err.kind {
                     ParseErrorKind::Custom(StyleParseErrorKind::MediaQueryExpectedFeatureName(
-                        ..
+                        ..,
                     )) => cstr!("PEMQExpectedFeatureName"),
                     ParseErrorKind::Custom(StyleParseErrorKind::MediaQueryExpectedFeatureValue) => {
                         cstr!("PEMQExpectedFeatureValue")
@@ -394,6 +390,9 @@ impl<'a> ErrorHelpers<'a> for ContextualParseError<'a> {
                 (err, Action::Nothing)
             },
             ContextualParseError::UnsupportedRule(..) => (cstr!("PEDeclDropped"), Action::Nothing),
+            ContextualParseError::NeverMatchingHostSelector(..) => {
+                (cstr!("PENeverMatchingHostSelector"), Action::Nothing)
+            },
             ContextualParseError::UnsupportedViewportDescriptorDeclaration(..) |
             ContextualParseError::UnsupportedCounterStyleDescriptorDeclaration(..) |
             ContextualParseError::InvalidCounterStyleWithoutSymbols(..) |
@@ -434,7 +433,8 @@ impl ErrorReporter {
             Action::Drop => cstr!("PEDeclDropped").as_ptr(),
         };
         let selector_list = error.selector_list().map(|l| l.to_css_string());
-        let selector_list_ptr = selector_list.as_ref().map_or(ptr::null(), |s| s.as_ptr()) as *const _;
+        let selector_list_ptr =
+            selector_list.as_ref().map_or(ptr::null(), |s| s.as_ptr()) as *const _;
         let params = error.error_params();
         let param = params.main_param;
         let pre_param = params.prefix_param;

@@ -5,7 +5,7 @@
 "use strict";
 
 var { loader, require, DevToolsLoader } = ChromeUtils.import(
-  "resource://devtools/shared/Loader.jsm"
+  "resource://devtools/shared/loader/Loader.jsm"
 );
 
 // Require this module to setup core modules
@@ -51,14 +51,7 @@ function appendStatusMessage(msg) {
 }
 
 function toggleStatusMessage(visible = true) {
-  const statusMessageContainer = document.getElementById(
-    "status-message-container"
-  );
-  if (visible) {
-    statusMessageContainer.removeAttribute("hidden");
-  } else {
-    statusMessageContainer.setAttribute("hidden", "true");
-  }
+  document.getElementById("status-message-container").hidden = !visible;
 }
 
 function revealStatusMessage() {
@@ -114,8 +107,7 @@ var connect = async function() {
 
   appendStatusMessage("Get root form for toolbox");
   const mainProcessDescriptor = await gClient.mainRoot.getMainProcess();
-  const mainProcessTargetFront = await mainProcessDescriptor.getTarget();
-  await openToolbox(mainProcessTargetFront);
+  await openToolbox(mainProcessDescriptor);
 };
 
 // Certain options should be toggled since we can assume chrome debugging here
@@ -190,10 +182,10 @@ function onDebugBrowserToolbox() {
   BrowserToolboxLauncher.init();
 }
 
-async function openToolbox(targetFront) {
-  const form = targetFront.targetForm;
+async function openToolbox(descriptorFront) {
+  const form = descriptorFront._form;
   appendStatusMessage(
-    `Create toolbox target: ${JSON.stringify({ form }, null, 2)}`
+    `Create toolbox for target descriptor: ${JSON.stringify({ form }, null, 2)}`
   );
 
   // Remember the last panel that was used inside of this profile.
@@ -206,12 +198,11 @@ async function openToolbox(targetFront) {
   const toolboxOptions = { doc: document };
   appendStatusMessage(`Show toolbox with ${selectedTool} selected`);
 
-  gToolbox = await gDevTools.showToolbox(
-    targetFront,
-    selectedTool,
-    Toolbox.HostType.BROWSERTOOLBOX,
-    toolboxOptions
-  );
+  gToolbox = await gDevTools.showToolbox(descriptorFront, {
+    toolId: selectedTool,
+    hostType: Toolbox.HostType.BROWSERTOOLBOX,
+    hostOptions: toolboxOptions,
+  });
 
   bindToolboxHandlers();
   gToolbox.raise();

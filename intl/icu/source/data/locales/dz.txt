@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 dz{
     AuxExemplarCharacters{
         "[\u0F84 ཊ ཋ ཌ ཎ \u0F7E ཥ \u0F80 \u0F7B \u0F7D \u0F9A \u0F9B \u0F9C \u0F9E "
@@ -87,7 +88,7 @@ dz{
         }
         minimalPairs{
             plural{
-                other{"ཉིནམ་ {0} "}
+                other{"ཉིནམ་ {0}"}
             }
         }
         native{"tibt"}
@@ -106,7 +107,6 @@ dz{
             }
         }
     }
-    Version{"37"}
     calendar{
         generic{
             DateTimePatterns{
@@ -123,6 +123,16 @@ dz{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "ahmmsszzzz",
+                "ahmmssz",
+                "ahmmss",
+                "ahmm",
+                "GyMMMMEEEEdd",
+                "GyMMMMdd",
+                "GyMMMdd",
+                "GGGGGyMMdd",
             }
             availableFormats{
                 Ed{"d E"}
@@ -278,6 +288,16 @@ dz{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "ahmmsszzzz",
+                "ahmmssz",
+                "ahmmss",
+                "ahmm",
+                "yMMMMEEEEdd",
+                "yMMMMdd",
+                "yMMMdd",
+                "yMMdd",
             }
             availableFormats{
                 Ed{"d E"}

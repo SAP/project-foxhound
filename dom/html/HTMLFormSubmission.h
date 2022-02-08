@@ -8,7 +8,6 @@
 #define mozilla_dom_HTMLFormSubmission_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/Element.h"
 #include "mozilla/dom/UserActivation.h"
 #include "mozilla/dom/HTMLDialogElement.h"
 #include "nsCOMPtr.h"
@@ -24,7 +23,9 @@ namespace mozilla {
 namespace dom {
 
 class Blob;
+class DialogFormSubmission;
 class Directory;
+class Element;
 class HTMLFormElement;
 
 /**
@@ -62,11 +63,10 @@ class HTMLFormSubmission {
    *
    * @param aName the name of the parameter
    * @param aBlob the blob to submit. The file's name will be used if the Blob
-   * is actually a File, otherwise 'blob' string is used instead if the aBlob is
-   * not null.
+   * is actually a File, otherwise 'blob' string is used instead. Must not be
+   * null.
    */
-  virtual nsresult AddNameBlobOrNullPair(const nsAString& aName,
-                                         Blob* aBlob) = 0;
+  virtual nsresult AddNameBlobPair(const nsAString& aName, Blob* aBlob) = 0;
 
   /**
    * Submit a name/directory pair
@@ -94,8 +94,6 @@ class HTMLFormSubmission {
    */
   void GetCharset(nsACString& aCharset) { mEncoding->Name(aCharset); }
 
-  Element* GetSubmitterElement() const { return mSubmitter.get(); }
-
   /**
    * Get the action URI that will be used for submission.
    */
@@ -118,18 +116,9 @@ class HTMLFormSubmission {
    * Can only be constructed by subclasses.
    *
    * @param aEncoding the character encoding of the form
-   * @param aSubmitter the submitter element (can be null)
    */
   HTMLFormSubmission(nsIURI* aActionURL, const nsAString& aTarget,
-                     mozilla::NotNull<const mozilla::Encoding*> aEncoding,
-                     Element* aSubmitter)
-      : mActionURL(aActionURL),
-        mTarget(aTarget),
-        mEncoding(aEncoding),
-        mSubmitter(aSubmitter),
-        mInitiatedFromUserInput(UserActivation::IsHandlingUserInput()) {
-    MOZ_COUNT_CTOR(HTMLFormSubmission);
-  }
+                     mozilla::NotNull<const mozilla::Encoding*> aEncoding);
 
   // The action url.
   nsCOMPtr<nsIURI> mActionURL;
@@ -139,9 +128,6 @@ class HTMLFormSubmission {
 
   // The character encoding of this form submission
   mozilla::NotNull<const mozilla::Encoding*> mEncoding;
-
-  // Submitter element.
-  RefPtr<Element> mSubmitter;
 
   // Keep track of whether this form submission was user-initiated or not
   bool mInitiatedFromUserInput;
@@ -155,26 +141,39 @@ class EncodingFormSubmission : public HTMLFormSubmission {
 
   virtual ~EncodingFormSubmission();
 
+  // Indicates the type of newline normalization and escaping to perform in
+  // `EncodeVal`, in addition to encoding the string into bytes.
+  enum EncodeType {
+    // Normalizes newlines to CRLF and then escapes for use in
+    // `Content-Disposition`. (Useful for `multipart/form-data` entry names.)
+    eNameEncode,
+    // Escapes for use in `Content-Disposition`. (Useful for
+    // `multipart/form-data` filenames.)
+    eFilenameEncode,
+    // Normalizes newlines to CRLF.
+    eValueEncode,
+  };
+
   /**
-   * Encode a Unicode string to bytes using the encoder (or just copy the input
-   * if there is no encoder).
+   * Encode a Unicode string to bytes, additionally performing escapes or
+   * normalizations.
    * @param aStr the string to encode
-   * @param aResult the encoded string [OUT]
-   * @param aHeaderEncode If true, turns all linebreaks into spaces and escapes
-   *                      all quotes
+   * @param aOut the encoded string [OUT]
+   * @param aEncodeType The type of escapes or normalizations to perform on the
+   *                    encoded string.
    * @throws an error if UnicodeToNewBytes fails
    */
-  nsresult EncodeVal(const nsAString& aStr, nsCString& aResult,
-                     bool aHeaderEncode);
+  nsresult EncodeVal(const nsAString& aStr, nsCString& aOut,
+                     EncodeType aEncodeType);
 };
 
 class DialogFormSubmission final : public HTMLFormSubmission {
  public:
   DialogFormSubmission(nsAString& aResult, nsIURI* aActionURL,
                        const nsAString& aTarget,
-                       NotNull<const Encoding*> aEncoding, Element* aSubmitter,
+                       NotNull<const Encoding*> aEncoding,
                        HTMLDialogElement* aDialogElement)
-      : HTMLFormSubmission(aActionURL, aTarget, aEncoding, aSubmitter),
+      : HTMLFormSubmission(aActionURL, aTarget, aEncoding),
         mDialogElement(aDialogElement),
         mReturnValue(aResult) {}
   nsresult AddNameValuePair(const nsAString& aName,
@@ -183,7 +182,7 @@ class DialogFormSubmission final : public HTMLFormSubmission {
     return NS_OK;
   }
 
-  nsresult AddNameBlobOrNullPair(const nsAString& aName, Blob* aBlob) override {
+  nsresult AddNameBlobPair(const nsAString& aName, Blob* aBlob) override {
     MOZ_CRASH("This method should not be called");
     return NS_OK;
   }
@@ -228,8 +227,8 @@ class FSMultipartFormData : public EncodingFormSubmission {
   virtual nsresult AddNameValuePair(const nsAString& aName,
                                     const nsAString& aValue) override;
 
-  virtual nsresult AddNameBlobOrNullPair(const nsAString& aName,
-                                         Blob* aBlob) override;
+  virtual nsresult AddNameBlobPair(const nsAString& aName,
+                                   Blob* aBlob) override;
 
   virtual nsresult AddNameDirectoryPair(const nsAString& aName,
                                         Directory* aDirectory) override;

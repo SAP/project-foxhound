@@ -234,19 +234,13 @@ void NotifyScreenConfigurationChange(
  * Lock the screen orientation to the specific orientation.
  * @return Whether the lock has been accepted.
  */
-MOZ_MUST_USE bool LockScreenOrientation(
+[[nodiscard]] bool LockScreenOrientation(
     const hal::ScreenOrientation& aOrientation);
 
 /**
  * Unlock the screen orientation.
  */
 void UnlockScreenOrientation();
-
-/**
- * Return true if the current platform supports the setting of process
- * priority.
- */
-bool SetProcessPrioritySupported();
 
 /**
  * Set the priority of the given process.

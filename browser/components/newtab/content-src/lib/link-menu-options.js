@@ -30,6 +30,14 @@ export const LinkMenuOptions = {
     },
     userEvent: "SHOW_PRIVACY_INFO",
   }),
+  AboutSponsored: site => ({
+    id: "newtab-menu-show-privacy-info",
+    icon: "info",
+    action: ac.AlsoToMain({
+      type: at.ABOUT_SPONSORED_TOP_SITES,
+    }),
+    userEvent: "TOPSITE_SPONSOR_INFO",
+  }),
   RemoveBookmark: site => ({
     id: "newtab-menu-remove-bookmark",
     icon: "bookmark-added",
@@ -75,9 +83,11 @@ export const LinkMenuOptions = {
     action: ac.AlsoToMain({
       type: at.BLOCK_URL,
       data: tiles.map(site => ({
-        url: site.open_url || site.url,
+        url: site.original_url || site.open_url || site.url,
         // pocket_id is only for pocket stories being in highlights, and then dismissed.
         pocket_id: site.pocket_id,
+        // used by PlacesFeed and TopSitesFeed for sponsored top sites blocking.
+        isSponsoredTopSite: site.sponsored_position,
         ...(site.flight_id ? { flight_id: site.flight_id } : {}),
       })),
     }),
@@ -180,28 +190,13 @@ export const LinkMenuOptions = {
       data: { url: site.url },
     }),
   }),
-  PinSpocTopSite: (site, index) => ({
+  PinTopSite: (site, index) => ({
     id: "newtab-menu-pin",
     icon: "pin",
     action: ac.AlsoToMain({
       type: at.TOP_SITES_PIN,
       data: {
         site,
-        index,
-      },
-    }),
-    userEvent: "PIN",
-  }),
-  PinTopSite: ({ url, searchTopSite, label }, index) => ({
-    id: "newtab-menu-pin",
-    icon: "pin",
-    action: ac.AlsoToMain({
-      type: at.TOP_SITES_PIN,
-      data: {
-        site: {
-          url,
-          ...(searchTopSite && { searchTopSite, label }),
-        },
         index,
       },
     }),
@@ -216,7 +211,7 @@ export const LinkMenuOptions = {
     }),
     userEvent: "UNPIN",
   }),
-  SaveToPocket: (site, index, eventSource) => ({
+  SaveToPocket: (site, index, eventSource = "CARDGRID") => ({
     id: "newtab-menu-save-to-pocket",
     icon: "pocket-save",
     action: ac.AlsoToMain({
@@ -270,14 +265,22 @@ export const LinkMenuOptions = {
     site.isPinned
       ? LinkMenuOptions.UnpinTopSite(site)
       : LinkMenuOptions.PinTopSite(site, index),
-  CheckSavedToPocket: (site, index) =>
+  CheckSavedToPocket: (site, index, source) =>
     site.pocket_id
       ? LinkMenuOptions.DeleteFromPocket(site)
-      : LinkMenuOptions.SaveToPocket(site, index),
+      : LinkMenuOptions.SaveToPocket(site, index, source),
   CheckBookmarkOrArchive: site =>
     site.pocket_id
       ? LinkMenuOptions.ArchiveFromPocket(site)
       : LinkMenuOptions.CheckBookmark(site),
+  CheckArchiveFromPocket: site =>
+    site.pocket_id
+      ? LinkMenuOptions.ArchiveFromPocket(site)
+      : LinkMenuOptions.EmptyItem(),
+  CheckDeleteFromPocket: site =>
+    site.pocket_id
+      ? LinkMenuOptions.DeleteFromPocket(site)
+      : LinkMenuOptions.EmptyItem(),
   OpenInPrivateWindow: (site, index, eventSource, isEnabled) =>
     isEnabled ? _OpenInPrivateWindow(site) : LinkMenuOptions.EmptyItem(),
 };

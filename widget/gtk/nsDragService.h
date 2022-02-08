@@ -9,41 +9,25 @@
 
 #include "mozilla/RefPtr.h"
 #include "nsBaseDragService.h"
+#include "nsCOMArray.h"
 #include "nsIObserver.h"
-#include "nsAutoRef.h"
 #include <gtk/gtk.h>
+#include "nsITimer.h"
 
+class nsICookieJarSettings;
 class nsWindow;
-class nsWaylandDragContext;
+
+#ifdef MOZ_WAYLAND
+class DataOffer;
+#else
+typedef nsISupports DataOffer;
+#endif
 
 namespace mozilla {
 namespace gfx {
 class SourceSurface;
 }
 }  // namespace mozilla
-
-#ifndef HAVE_NSGOBJECTREFTRAITS
-#  define HAVE_NSGOBJECTREFTRAITS
-template <class T>
-class nsGObjectRefTraits : public nsPointerRefTraits<T> {
- public:
-  static void Release(T* aPtr) { g_object_unref(aPtr); }
-  static void AddRef(T* aPtr) { g_object_ref(aPtr); }
-};
-#endif
-
-#ifndef HAVE_NSAUTOREFTRAITS_GTKWIDGET
-#  define HAVE_NSAUTOREFTRAITS_GTKWIDGET
-template <>
-class nsAutoRefTraits<GtkWidget> : public nsGObjectRefTraits<GtkWidget> {};
-#endif
-
-#ifndef HAVE_NSAUTOREFTRAITS_GDKDRAGCONTEXT
-#  define HAVE_NSAUTOREFTRAITS_GDKDRAGCONTEXT
-template <>
-class nsAutoRefTraits<GdkDragContext>
-    : public nsGObjectRefTraits<GdkDragContext> {};
-#endif
 
 /**
  * Native GTK DragService wrapper
@@ -54,7 +38,6 @@ class nsDragService final : public nsBaseDragService, public nsIObserver {
   nsDragService();
 
   NS_DECL_ISUPPORTS_INHERITED
-
   NS_DECL_NSIOBSERVER
 
   // nsBaseDragService
@@ -65,8 +48,9 @@ class nsDragService final : public nsBaseDragService, public nsIObserver {
   // nsIDragService
   MOZ_CAN_RUN_SCRIPT NS_IMETHOD InvokeDragSession(
       nsINode* aDOMNode, nsIPrincipal* aPrincipal,
-      nsIContentSecurityPolicy* aCsp, nsIArray* anArrayTransferables,
-      uint32_t aActionType, nsContentPolicyType aContentPolicyType) override;
+      nsIContentSecurityPolicy* aCsp, nsICookieJarSettings* aCookieJarSettings,
+      nsIArray* anArrayTransferables, uint32_t aActionType,
+      nsContentPolicyType aContentPolicyType) override;
   NS_IMETHOD StartDragSession() override;
   MOZ_CAN_RUN_SCRIPT NS_IMETHOD EndDragSession(bool aDoneDrag,
                                                uint32_t aKeyModifiers) override;
@@ -80,6 +64,10 @@ class nsDragService final : public nsBaseDragService, public nsIObserver {
   NS_IMETHOD IsDataFlavorSupported(const char* aDataFlavor,
                                    bool* _retval) override;
 
+  // Update Drag&Drop state according child process state.
+  // UpdateDragEffect() is called by IPC bridge when child process
+  // accepts/denies D&D operation and uses stored
+  // mTargetDragContextForRemote context.
   NS_IMETHOD UpdateDragEffect() override;
 
   // Methods called from nsWindow to handle responding to GTK drag
@@ -92,12 +80,12 @@ class nsDragService final : public nsBaseDragService, public nsIObserver {
                           guint aInfo, guint32 aTime);
 
   gboolean ScheduleMotionEvent(nsWindow* aWindow, GdkDragContext* aDragContext,
-                               nsWaylandDragContext* aPendingWaylandDragContext,
+                               RefPtr<DataOffer> aPendingWaylandDataOffer,
                                mozilla::LayoutDeviceIntPoint aWindowPoint,
                                guint aTime);
   void ScheduleLeaveEvent();
   gboolean ScheduleDropEvent(nsWindow* aWindow, GdkDragContext* aDragContext,
-                             nsWaylandDragContext* aPendingWaylandDragContext,
+                             RefPtr<DataOffer> aPendingWaylandDataOffer,
                              mozilla::LayoutDeviceIntPoint aWindowPoint,
                              guint aTime);
 
@@ -119,6 +107,11 @@ class nsDragService final : public nsBaseDragService, public nsIObserver {
   // set the drag icon during drag-begin
   void SetDragIcon(GdkDragContext* aContext);
 
+  // Reply to drag_motion event according to recent DragService state.
+  // We need that on Wayland to reply immediately as it's requested
+  // there (see Bug 1730203).
+  void ReplyToDragMotion();
+
  protected:
   virtual ~nsDragService();
 
@@ -138,6 +131,7 @@ class nsDragService final : public nsBaseDragService, public nsIObserver {
   // mTaskSource is the GSource id for the task that is either scheduled
   // or currently running.  It is 0 if no task is scheduled or running.
   guint mTaskSource;
+  bool mScheduledTaskIsRunning;
 
   // target/destination side vars
   // These variables keep track of the state of the current drag.
@@ -148,9 +142,19 @@ class nsDragService final : public nsBaseDragService, public nsIObserver {
   // will be nullptr if the scheduled task is eDragTaskLeave.
   RefPtr<nsWindow> mPendingWindow;
   mozilla::LayoutDeviceIntPoint mPendingWindowPoint;
-  nsCountedRef<GdkDragContext> mPendingDragContext;
+  RefPtr<GdkDragContext> mPendingDragContext;
+
+  // We cache all data for the current drag context,
+  // because waiting for the data in GetTargetDragData can be very slow.
+  nsTHashMap<nsCStringHashKey, nsTArray<uint8_t>> mCachedData;
+  // mCachedData are tied to mCachedDragContext. mCachedDragContext is not
+  // ref counted and may be already deleted on Gtk side.
+  // We used it for mCachedData invalidation only and can't be used for
+  // any D&D operation.
+  uintptr_t mCachedDragContext;
+
 #ifdef MOZ_WAYLAND
-  RefPtr<nsWaylandDragContext> mPendingWaylandDragContext;
+  RefPtr<DataOffer> mPendingWaylandDataOffer;
 #endif
   guint mPendingTime;
 
@@ -161,16 +165,23 @@ class nsDragService final : public nsBaseDragService, public nsIObserver {
   mozilla::LayoutDeviceIntPoint mTargetWindowPoint;
   // mTargetWidget and mTargetDragContext are set only while dispatching
   // motion or drop events.  mTime records the corresponding timestamp.
-  nsCountedRef<GtkWidget> mTargetWidget;
-  nsCountedRef<GdkDragContext> mTargetDragContext;
+  RefPtr<GtkWidget> mTargetWidget;
+  RefPtr<GdkDragContext> mTargetDragContext;
 #ifdef MOZ_WAYLAND
-  RefPtr<nsWaylandDragContext> mTargetWaylandDragContext;
+  RefPtr<DataOffer> mTargetWaylandDataOffer;
 #endif
-  // mTargetDragContextForRemote is set while waiting for a reply from
-  // a child process.
-  nsCountedRef<GdkDragContext> mTargetDragContextForRemote;
+
+  // When we route D'n'D request to child process
+  // (by EventStateManager::DispatchCrossProcessEvent)
+  // we save GdkDragContext to mTargetDragContextForRemote.
+  // When we get a reply from child process we use
+  // the stored GdkDragContext to send reply to OS.
+  //
+  // We need to store GdkDragContext because mTargetDragContext is cleared
+  // after every D'n'D event.
+  RefPtr<GdkDragContext> mTargetDragContextForRemote;
 #ifdef MOZ_WAYLAND
-  RefPtr<nsWaylandDragContext> mTargetWaylandDragContextForRemote;
+  RefPtr<DataOffer> mTargetWaylandDataOfferForRemote;
 #endif
   guint mTargetTime;
 
@@ -186,9 +197,12 @@ class nsDragService final : public nsBaseDragService, public nsIObserver {
   bool IsTargetContextList(void);
   // this will get the native data from the last target given a
   // specific flavor
-  void GetTargetDragData(GdkAtom aFlavor);
+  void GetTargetDragData(GdkAtom aFlavor, nsTArray<nsCString>& aDropFlavors);
   // this will reset all of the target vars
   void TargetResetData(void);
+  // Ensure our data cache belongs to aDragContext and clear the cache if
+  // aDragContext is different than mCachedDragContext.
+  void EnsureCachedDataValidForContext(GdkDragContext* aDragContext);
 
   // source side vars
 
@@ -208,7 +222,7 @@ class nsDragService final : public nsBaseDragService, public nsIObserver {
 
   gboolean Schedule(DragTask aTask, nsWindow* aWindow,
                     GdkDragContext* aDragContext,
-                    nsWaylandDragContext* aPendingWaylandDragContext,
+                    RefPtr<DataOffer> aPendingWaylandDataOffer,
                     mozilla::LayoutDeviceIntPoint aWindowPoint, guint aTime);
 
   // Callback for g_idle_add_full() to run mScheduledTask.
@@ -218,10 +232,27 @@ class nsDragService final : public nsBaseDragService, public nsIObserver {
   MOZ_CAN_RUN_SCRIPT void DispatchMotionEvents();
   void ReplyToDragMotion(GdkDragContext* aDragContext);
 #ifdef MOZ_WAYLAND
-  void ReplyToDragMotion(nsWaylandDragContext* aDragContext);
+  void ReplyToDragMotion(RefPtr<DataOffer> aDragContext);
 #endif
+#ifdef MOZ_LOGGING
+  const char* GetDragServiceTaskName(nsDragService::DragTask aTask);
+#endif
+  void GetDragFlavors(nsTArray<nsCString>& aFlavors);
   gboolean DispatchDropEvent();
   static uint32_t GetCurrentModifiers();
+
+  nsresult CreateTempFile(nsITransferable* aItem,
+                          GtkSelectionData* aSelectionData);
+  bool RemoveTempFiles();
+  static gboolean TaskRemoveTempFiles(gpointer data);
+
+  // the url of the temporary file that has been created in the current drag
+  // session
+  nsCString mTempFileUrl;
+  // stores all temporary files
+  nsCOMArray<nsIFile> mTemporaryFiles;
+  // timer to trigger deletion of temporary files
+  guint mTempFileTimerID;
 };
 
 #endif  // nsDragService_h__

@@ -62,6 +62,10 @@ add_task(async function() {
     }
     await testCopy(testCase.copyVal, testCase.copyExpected);
     gURLBar.blur();
+
+    if (testCase.cleanup) {
+      await testCase.cleanup();
+    }
   }
 });
 
@@ -133,6 +137,33 @@ var tests = [
     copyVal: "<example>.com/foo",
     copyExpected: "example",
   },
+  // Test that partially selected URL is copied with encoded spaces
+  {
+    loadURL: "http://example.com/%20space/test",
+    expectedURL: "example.com/ space/test",
+    copyExpected: "http://example.com/%20space/test",
+  },
+  {
+    copyVal: "<example.com/ space>/test",
+    copyExpected: "http://example.com/%20space",
+  },
+  {
+    copyVal: "<example.com/ space/test>",
+    copyExpected: "http://example.com/%20space/test",
+  },
+  {
+    loadURL: "http://example.com/%20foo%20bar%20baz/",
+    expectedURL: "example.com/ foo bar baz/",
+    copyExpected: "http://example.com/%20foo%20bar%20baz/",
+  },
+  {
+    copyVal: "<example.com/ foo bar> baz/",
+    copyExpected: "http://example.com/%20foo%20bar",
+  },
+  {
+    copyVal: "example.<com/ foo bar> baz/",
+    copyExpected: "com/ foo bar",
+  },
 
   // Test that userPass is stripped out
   {
@@ -176,7 +207,7 @@ var tests = [
   },
   {
     copyVal: "<example.com/\xe9>\xe9",
-    copyExpected: "http://example.com/\xe9",
+    copyExpected: "http://example.com/%C3%A9",
   },
   {
     // Note: it seems BrowserTestUtils.loadURI fails for unicode domains
@@ -190,7 +221,7 @@ var tests = [
   },
   {
     copyVal: "<sub2.ält.mochi.test:8888/f>oo",
-    copyExpected: "http://sub2.ält.mochi.test:8888/f",
+    copyExpected: "http://sub2.%C3%A4lt.mochi.test:8888/f",
   },
 
   {
@@ -204,7 +235,7 @@ var tests = [
   },
   {
     copyVal: "<example.com/?\xf7>\xf7",
-    copyExpected: "http://example.com/?\xf7",
+    copyExpected: "http://example.com/?%C3%B7",
   },
   {
     loadURL: "http://example.com/a%20test",
@@ -255,11 +286,15 @@ var tests = [
     copyVal: "<data:text/html,(%C3%A9 %25P>)",
     copyExpected: "data:text/html,(%C3%A9 %25P",
   },
+
   {
     async setup() {
       await SpecialPowers.pushPrefEnv({
         set: [["browser.urlbar.decodeURLsOnCopy", true]],
       });
+    },
+    async cleanup() {
+      await SpecialPowers.popPrefEnv();
     },
     loadURL:
       "http://example.com/%D0%B1%D0%B8%D0%BE%D0%B3%D1%80%D0%B0%D1%84%D0%B8%D1%8F",
@@ -268,10 +303,14 @@ var tests = [
   },
   {
     copyVal: "<example.com/би>ография",
-    copyExpected: "http://example.com/би",
+    copyExpected: "http://example.com/%D0%B1%D0%B8",
   },
+
   {
-    setup() {
+    async setup() {
+      await SpecialPowers.pushPrefEnv({
+        set: [["browser.urlbar.decodeURLsOnCopy", true]],
+      });
       // Setup a valid intranet url that resolves but is not yet known.
       const proxyService = Cc[
         "@mozilla.org/network/protocol-proxy-service;1"
@@ -286,22 +325,46 @@ var tests = [
         4096,
         null
       );
-      const proxyFilter = {
+      this._proxyFilter = {
         applyFilter(channel, defaultProxyInfo, callback) {
           callback.onProxyFilterResult(
             channel.URI.host === "mytest" ? proxyInfo : defaultProxyInfo
           );
         },
       };
-      proxyService.registerChannelFilter(proxyFilter, 0);
+      proxyService.registerChannelFilter(this._proxyFilter, 0);
       registerCleanupFunction(() => {
-        proxyService.unregisterChannelFilter(proxyFilter);
+        if (this._proxyFilter) {
+          proxyService.unregisterChannelFilter(this._proxyFilter);
+        }
       });
+    },
+    async cleanup() {
+      await SpecialPowers.popPrefEnv();
+      const proxyService = Cc[
+        "@mozilla.org/network/protocol-proxy-service;1"
+      ].getService(Ci.nsIProtocolProxyService);
+      proxyService.unregisterChannelFilter(this._proxyFilter);
+      this._proxyFilter = null;
     },
     loadURL: "http://mytest/",
     expectedURL: "mytest",
     expectedValueOnFocus: "http://mytest/",
     copyExpected: "http://mytest/",
+  },
+
+  {
+    async setup() {
+      await SpecialPowers.pushPrefEnv({
+        set: [["browser.urlbar.decodeURLsOnCopy", true]],
+      });
+    },
+    async cleanup() {
+      await SpecialPowers.popPrefEnv();
+    },
+    loadURL: "https://example.com/",
+    expectedURL: "https://example.com",
+    copyExpected: "https://example.com",
   },
 ];
 

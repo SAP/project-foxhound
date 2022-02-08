@@ -1,5 +1,9 @@
-import ConfigParser
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 import argparse
+import configparser
 import os
 import re
 import subprocess
@@ -9,19 +13,19 @@ import sys
 here = os.path.abspath(os.path.dirname(__file__))
 
 local_requirements = {
-    "mozinfo": "testing/mozbase/mozinfo",
-    "mozlog": "testing/mozbase/mozlog",
-    "mozdebug": "testing/mozbase/mozdebug",
-    "marionette_driver": "testing/marionette/client/",
-    "mozprofile": "testing/mozbase/mozprofile",
-    "mozprocess": "testing/mozbase/mozprocess",
-    "mozcrash": "testing/mozbase/mozcrash",
-    "mozrunner": "testing/mozbase/mozrunner",
-    "mozleak": "testing/mozbase/mozleak",
-    "mozversion": "testing/mozbase/mozversion",
+    b"mozinfo": "testing/mozbase/mozinfo",
+    b"mozlog": "testing/mozbase/mozlog",
+    b"mozdebug": "testing/mozbase/mozdebug",
+    b"marionette_driver": "testing/marionette/client/",
+    b"mozprofile": "testing/mozbase/mozprofile",
+    b"mozprocess": "testing/mozbase/mozprocess",
+    b"mozcrash": "testing/mozbase/mozcrash",
+    b"mozrunner": "testing/mozbase/mozrunner",
+    b"mozleak": "testing/mozbase/mozleak",
+    b"mozversion": "testing/mozbase/mozversion",
 }
 
-requirements_re = re.compile(r"(%s)[^\w]" % "|".join(local_requirements.keys()))
+requirements_re = re.compile(rb"(%s)[^\w]" % b"|".join(local_requirements.keys()))
 
 
 class ReplaceRequirements(object):
@@ -37,13 +41,13 @@ class ReplaceRequirements(object):
             self.replace_path(dep)
 
     def __exit__(self, *args, **kwargs):
-        for path, data in self.file_cache.iteritems():
+        for path, data in self.file_cache.items():
             with open(path, "wb") as f:
                 f.write(data)
 
     def read_deps(self):
         rv = []
-        parser = ConfigParser.ConfigParser()
+        parser = configparser.ConfigParser()
         path = os.path.join(self.tox_path, "tox.ini")
         with open(path) as f:
             parser.readfp(f)
@@ -69,11 +73,14 @@ class ReplaceRequirements(object):
                 else:
                     key = m.group(1)
                     path = local_requirements[key]
-                    lines.append("-e %s\n" % (os.path.join(self.top_src_path, path),))
+                    lines.append(
+                        b"-e %s\n"
+                        % (os.path.join(self.top_src_path, path).encode("utf8"),)
+                    )
 
         with open(requirements_path, "wb") as f:
             for line in lines:
-                f.write(line.encode("utf8"))
+                f.write(line)
 
         with open(requirements_path, "rb") as f:
             print(f.read())
@@ -81,12 +88,23 @@ class ReplaceRequirements(object):
 
 def get_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--no-tools", dest="tools", action="store_false",
-                        default=True, help="Don't run the tools unittests")
-    parser.add_argument("--no-wptrunner", dest="wptrunner", action="store_false",
-                        default=True, help="Don't run the wptrunner unittests")
-    parser.add_argument("tox_kwargs", nargs=argparse.REMAINDER,
-                        help="Arguments to pass through to tox")
+    parser.add_argument(
+        "--no-tools",
+        dest="tools",
+        action="store_false",
+        default=True,
+        help="Don't run the tools unittests",
+    )
+    parser.add_argument(
+        "--no-wptrunner",
+        dest="wptrunner",
+        action="store_false",
+        default=True,
+        help="Don't run the wptrunner unittests",
+    )
+    parser.add_argument(
+        "tox_kwargs", nargs=argparse.REMAINDER, help="Arguments to pass through to tox"
+    )
     return parser
 
 
@@ -95,18 +113,15 @@ def run(top_src_dir, tools=True, wptrunner=True, tox_kwargs=None, **kwargs):
     if tox_kwargs is None:
         tox_kwargs = []
     if tools:
-        tox_paths.append(os.path.join(top_src_dir,
-                                      "testing",
-                                      "web-platform",
-                                      "tests",
-                                      "tools"))
+        tox_paths.append(
+            os.path.join(top_src_dir, "testing", "web-platform", "tests", "tools")
+        )
     if wptrunner:
-        tox_paths.append(os.path.join(top_src_dir,
-                                      "testing",
-                                      "web-platform",
-                                      "tests",
-                                      "tools",
-                                      "wptrunner"))
+        tox_paths.append(
+            os.path.join(
+                top_src_dir, "testing", "web-platform", "tests", "tools", "wptrunner"
+            )
+        )
 
     success = True
 

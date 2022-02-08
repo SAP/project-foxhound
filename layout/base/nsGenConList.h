@@ -34,7 +34,6 @@ struct nsGenConNode : public mozilla::LinkedListElement<nsGenConNode> {
   // null for:
   //  * content: no-open-quote / content: no-close-quote
   //  * counter nodes for increments and resets
-  //  * counter nodes for bullets (mPseudoFrame->IsBulletFrame()).
   RefPtr<nsTextNode> mText;
 
   explicit nsGenConNode(int32_t aContentIndex)
@@ -62,31 +61,7 @@ struct nsGenConNode : public mozilla::LinkedListElement<nsGenConNode> {
   virtual ~nsGenConNode() = default;  // XXX Avoid, perhaps?
 
  protected:
-  void CheckFrameAssertions() {
-    NS_ASSERTION(
-        mContentIndex < int32_t(mPseudoFrame->StyleContent()->ContentCount()) ||
-            // Special-case for the use node created for the legacy markers,
-            // which don't use the content property.
-            (mPseudoFrame->IsBulletFrame() && mContentIndex == 0 &&
-             mPseudoFrame->Style()->GetPseudoType() ==
-                 mozilla::PseudoStyleType::marker &&
-             !mPseudoFrame->StyleContent()->ContentCount()),
-        "index out of range");
-    // We allow negative values of mContentIndex for 'counter-reset' and
-    // 'counter-increment'.
-
-    NS_ASSERTION(mContentIndex < 0 ||
-                     mPseudoFrame->Style()->GetPseudoType() ==
-                         mozilla::PseudoStyleType::before ||
-                     mPseudoFrame->Style()->GetPseudoType() ==
-                         mozilla::PseudoStyleType::after ||
-                     mPseudoFrame->Style()->GetPseudoType() ==
-                         mozilla::PseudoStyleType::marker,
-                 "not CSS generated content and not counter change");
-    NS_ASSERTION(mContentIndex < 0 ||
-                     mPseudoFrame->HasAnyStateBits(NS_FRAME_GENERATED_CONTENT),
-                 "not generated content and not counter change");
-  }
+  void CheckFrameAssertions();
 };
 
 class nsGenConList {
@@ -112,6 +87,11 @@ class nsGenConList {
   // have been destroyed; otherwise false.
   bool DestroyNodesFor(nsIFrame* aFrame);
 
+  // Return the first node for aFrame on this list, or nullptr.
+  nsGenConNode* GetFirstNodeFor(nsIFrame* aFrame) const {
+    return mNodes.Get(aFrame);
+  }
+
   // Return true if |aNode1| is after |aNode2|.
   static bool NodeAfter(const nsGenConNode* aNode1, const nsGenConNode* aNode2);
 
@@ -133,7 +113,7 @@ class nsGenConList {
   }
 
   // Map from frame to the first nsGenConNode of it in the list.
-  nsDataHashtable<nsPtrHashKey<nsIFrame>, nsGenConNode*> mNodes;
+  nsTHashMap<nsPtrHashKey<nsIFrame>, nsGenConNode*> mNodes;
 
   // A weak pointer to the node most recently inserted, used to avoid repeated
   // list traversals in Insert().

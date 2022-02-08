@@ -59,8 +59,8 @@ add_task(async function test_add_bookmark_tags_from_bookmarkProperties() {
     // Click the bookmark star to bookmark the page.
     await clickBookmarkStar();
     Assert.equal(
-      bookmarkPanelTitle.value,
-      gNavigatorBundle.getString("editBookmarkPanel.newBookmarkTitle"),
+      bookmarkPanelTitle.dataset.l10nId,
+      "bookmarks-add-bookmark",
       "Bookmark title is correct"
     );
     Assert.equal(
@@ -73,8 +73,8 @@ add_task(async function test_add_bookmark_tags_from_bookmarkProperties() {
   // Click the bookmark star again to add tags.
   await clickBookmarkStar();
   Assert.equal(
-    bookmarkPanelTitle.value,
-    gNavigatorBundle.getString("editBookmarkPanel.editBookmarkTitle"),
+    bookmarkPanelTitle.dataset.l10nId,
+    "bookmarks-edit-bookmark",
     "Bookmark title is correct"
   );
   let promiseNotification = PlacesTestUtils.waitForNotification(
@@ -103,8 +103,9 @@ add_task(async function test_add_bookmark_tags_from_bookmarkProperties() {
   // Click the bookmark star again, add more tags.
   await clickBookmarkStar();
   promiseNotification = PlacesTestUtils.waitForNotification(
-    "onItemChanged",
-    (id, property) => property == "tags"
+    "bookmark-tags-changed",
+    () => true,
+    "places"
   );
   await fillBookmarkTextField(
     "editBMPanel_tagsField",
@@ -160,7 +161,7 @@ add_task(async function test_add_bookmark_tags_from_library() {
   // Add a tag to the bookmark.
   fillBookmarkTextField("editBMPanel_tagsField", "tag1", library);
 
-  await waitForCondition(
+  await TestUtils.waitForCondition(
     () => bookmarkNode.tags === "tag1",
     "Node tag is correct"
   );
@@ -168,7 +169,7 @@ add_task(async function test_add_bookmark_tags_from_library() {
   // Add a new tag to the bookmark.
   fillBookmarkTextField("editBMPanel_tagsField", "tag1, tag2", library);
 
-  await waitForCondition(
+  await TestUtils.waitForCondition(
     () => bookmarkNode.tags === "tag1, tag2",
     "Node tag is correct"
   );
@@ -178,6 +179,7 @@ add_task(async function test_add_bookmark_tags_from_library() {
   Assert.equal(tags.length, 2, "Found the right number of tags");
   Assert.deepEqual(tags, ["tag1", "tag2"], "Found the expected tags");
 
+  await promiseLibraryClosed(library);
   // Cleanup.
   await PlacesUtils.bookmarks.eraseEverything();
 });

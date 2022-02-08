@@ -10,6 +10,7 @@
 #include "mozilla/Attributes.h"
 #include "ImgDrawResult.h"
 #include "nsContainerFrame.h"
+#include "nsIScrollableFrame.h"
 
 class nsFieldSetFrame final : public nsContainerFrame {
   typedef mozilla::image::ImgDrawResult ImgDrawResult;
@@ -21,7 +22,7 @@ class nsFieldSetFrame final : public nsContainerFrame {
   explicit nsFieldSetFrame(ComputedStyle* aStyle, nsPresContext* aPresContext);
 
   nscoord GetIntrinsicISize(gfxContext* aRenderingContext,
-                            nsLayoutUtils::IntrinsicISizeType);
+                            mozilla::IntrinsicISizeType);
   virtual nscoord GetMinISize(gfxContext* aRenderingContext) override;
   virtual nscoord GetPrefISize(gfxContext* aRenderingContext) override;
 
@@ -49,7 +50,6 @@ class nsFieldSetFrame final : public nsContainerFrame {
                             gfxContext& aRenderingContext, nsPoint aPt,
                             const nsRect& aDirtyRect);
 
-#ifdef DEBUG
   virtual void SetInitialChildList(ChildListID aListID,
                                    nsFrameList& aChildList) override;
   virtual void AppendFrames(ChildListID aListID,
@@ -57,6 +57,7 @@ class nsFieldSetFrame final : public nsContainerFrame {
   virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                             const nsLineList::iterator* aPrevFrameLine,
                             nsFrameList& aFrameList) override;
+#ifdef DEBUG
   virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
 #endif
 
@@ -64,7 +65,7 @@ class nsFieldSetFrame final : public nsContainerFrame {
     return nsContainerFrame::IsFrameOfType(
         aFlags & ~nsIFrame::eCanContainOverflowContainers);
   }
-  virtual nsIScrollableFrame* GetScrollTargetFrame() override {
+  virtual nsIScrollableFrame* GetScrollTargetFrame() const override {
     return do_QueryFrame(GetInner());
   }
 
@@ -92,9 +93,8 @@ class nsFieldSetFrame final : public nsContainerFrame {
   nsContainerFrame* GetInner() const;
 
   /**
-   * Return the frame that represents the legend if any.  This may be
-   * a nsLegendFrame or a nsHTMLScrollFrame with the nsLegendFrame as the
-   * scrolled frame (aka content insertion frame).
+   * Return the frame that represents the rendered legend if any.
+   * https://html.spec.whatwg.org/multipage/rendering.html#rendered-legend
    */
   nsIFrame* GetLegend() const;
 

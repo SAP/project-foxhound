@@ -33,9 +33,7 @@ server.registerPathHandler("/inline-cache.html", (request, response) => {
   `);
 });
 
-const SOURCE_URL = `http://localhost:${
-  server.identity.primaryPort
-}/inline-cache.html`;
+const SOURCE_URL = `http://localhost:${server.identity.primaryPort}/inline-cache.html`;
 
 add_task(async function() {
   info("Load document with inline script");
@@ -44,8 +42,9 @@ add_task(async function() {
   clearDebuggerPreferences();
   const toolbox = await openToolboxForTab(tab, "jsdebugger");
   const dbg = createDebuggerContext(toolbox);
+  await waitForSource(dbg, "inline-cache.html");
   info("Reload tab to ensure debugger finds script");
-  await reloadTabAndDebugger(tab, dbg);
+  await reloadBrowser();
   let pageValue = await getPageValue(tab);
   is(pageValue, "let x = 1;", "Content loads from network, has doc value 1");
   await waitForSource(dbg, "inline-cache.html");
@@ -59,11 +58,13 @@ add_task(async function() {
   );
 
   info("Disable HTTP cache for page");
-  await toolbox.target.reconfigure({ options: { cacheDisabled: true } });
+  await toolbox.commands.targetConfigurationCommand.updateConfiguration({
+    cacheDisabled: true,
+  });
   makeChanges();
 
   info("Reload inside debugger with toolbox caching disabled (attempt 1)");
-  await reloadTabAndDebugger(tab, dbg);
+  await reloadBrowser();
   pageValue = await getPageValue(tab);
   is(pageValue, "let x = 2;", "Content loads from network, has doc value 2");
   await waitForLoadedSource(dbg, "inline-cache.html");
@@ -78,7 +79,7 @@ add_task(async function() {
   makeChanges();
 
   info("Reload inside debugger with toolbox caching disabled (attempt 2)");
-  await reloadTabAndDebugger(tab, dbg);
+  await reloadBrowser();
   pageValue = await getPageValue(tab);
   is(pageValue, "let x = 3;", "Content loads from network, has doc value 3");
   await waitForLoadedSource(dbg, "inline-cache.html");
@@ -90,7 +91,9 @@ add_task(async function() {
   );
 
   info("Enable HTTP cache for page");
-  await toolbox.target.reconfigure({ options: { cacheDisabled: false } });
+  await toolbox.commands.targetConfigurationCommand.updateConfiguration({
+    cacheDisabled: false,
+  });
   makeChanges();
 
   // Even though the HTTP cache is now enabled, Gecko sets the VALIDATE_ALWAYS flag when
@@ -98,7 +101,7 @@ add_task(async function() {
   // document contents.
 
   info("Reload inside debugger with toolbox caching enabled (attempt 1)");
-  await reloadTabAndDebugger(tab, dbg);
+  await reloadBrowser();
   pageValue = await getPageValue(tab);
   is(pageValue, "let x = 4;", "Content loads from network, has doc value 4");
   await waitForLoadedSource(dbg, "inline-cache.html");
@@ -112,7 +115,7 @@ add_task(async function() {
   makeChanges();
 
   info("Reload inside debugger with toolbox caching enabled (attempt 2)");
-  await reloadTabAndDebugger(tab, dbg);
+  await reloadBrowser();
   pageValue = await getPageValue(tab);
   is(pageValue, "let x = 5;", "Content loads from network, has doc value 5");
   await waitForLoadedSource(dbg, "inline-cache.html");
@@ -140,11 +143,4 @@ function getPageValue(tab) {
   return SpecialPowers.spawn(tab.linkedBrowser, [], function() {
     return content.document.querySelector("script").textContent.trim();
   });
-}
-
-async function reloadTabAndDebugger(tab, dbg) {
-  let navigated = waitForDispatch(dbg, "NAVIGATE");
-  let loaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-  await reload(dbg, "inline-cache.html");
-  return Promise.all([navigated, loaded]);
 }

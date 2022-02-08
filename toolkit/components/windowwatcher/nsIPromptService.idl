@@ -277,6 +277,9 @@ interface nsIPromptService : nsISupports
   const unsigned long MODAL_TYPE_CONTENT = 1;
   const unsigned long MODAL_TYPE_TAB = 2;
   const unsigned long MODAL_TYPE_WINDOW = 3;
+  // Like MODAL_TYPE_WINDOW, but shown inside a parent window (with similar
+  // styles as _TAB and _CONTENT types) rather than as a new window:
+  const unsigned long MODAL_TYPE_INTERNAL_WINDOW = 4;
 
   /**
    * Puts up a dialog with up to 3 buttons and an optional, labeled checkbox.
@@ -364,7 +367,8 @@ interface nsIPromptService : nsISupports
                       in wstring aButton1Title,
                       in wstring aButton2Title,
                       in wstring aCheckMsg,
-                      in boolean aCheckState);
+                      in boolean aCheckState,
+                      [optional] in jsval aExtraArgs);
   /**
    * Puts up a dialog with an edit field and an optional, labeled checkbox.
    *
@@ -424,8 +428,7 @@ interface nsIPromptService : nsISupports
                    in boolean aCheckState);
 
   /**
-   * Puts up a dialog with an edit field, a password field, and an optional,
-   * labeled checkbox.
+   * Puts up a dialog with an edit field and a password field.
    *
    * @param aParent
    *        The parent window or null.
@@ -443,11 +446,6 @@ interface nsIPromptService : nsISupports
    *        is called (null value is ok).  Upon return, if the user pressed OK,
    *        then this parameter contains a newly allocated string value.
    *        Otherwise, the parameter's value is unmodified.
-   * @param aCheckMsg
-   *        Text to appear with the checkbox.  If null, check box will not be shown.
-   * @param aCheckState
-   *        Contains the initial checked state of the checkbox when this method
-   *        is called and the final checked state after this method returns.
    *
    * @return true for OK, false for Cancel.
    */
@@ -455,9 +453,7 @@ interface nsIPromptService : nsISupports
                                     in wstring aDialogTitle,
                                     in wstring aText,
                                     inout wstring aUsername,
-                                    inout wstring aPassword,
-                                    in wstring aCheckMsg,
-                                    inout boolean aCheckState);
+                                    inout wstring aPassword);
   /**
    * Like promptUsernameAndPassword, but with a BrowsingContext as parent.
    *
@@ -471,27 +467,23 @@ interface nsIPromptService : nsISupports
                                       in wstring aDialogTitle,
                                       in wstring aText,
                                       inout wstring aUsername,
-                                      inout wstring aPassword,
-                                      in wstring aCheckMsg,
-                                      inout boolean aCheckState);
+                                      inout wstring aPassword);
   /**
    * Async version of promptUsernameAndPasswordBC
    *
    * @return A promise which resolves when the prompt is dismissed.
    *
-   * @resolves nsIPropertyBag { checked: boolean, user: string, pass: string, ok: boolean }
+   * @resolves nsIPropertyBag { user: string, pass: string, ok: boolean }
    */
   Promise asyncPromptUsernameAndPassword(in BrowsingContext aBrowsingContext,
                                       in unsigned long modalType,
                                       in wstring aDialogTitle,
                                       in wstring aText,
                                       in wstring aUsername,
-                                      in wstring aPassword,
-                                      in wstring aCheckMsg,
-                                      in boolean aCheckState);
+                                      in wstring aPassword);
 
   /**
-   * Puts up a dialog with a password field and an optional, labeled checkbox.
+   * Puts up a dialog with a password field.
    *
    * @param aParent
    *        The parent window or null.
@@ -504,20 +496,13 @@ interface nsIPromptService : nsISupports
    *        is called (null value is ok).  Upon return, if the user pressed OK,
    *        then this parameter contains a newly allocated string value.
    *        Otherwise, the parameter's value is unmodified.
-   * @param aCheckMsg
-   *        Text to appear with the checkbox.  If null, check box will not be shown.
-   * @param aCheckState
-   *        Contains the initial checked state of the checkbox when this method
-   *        is called and the final checked state after this method returns.
    *
    * @return true for OK, false for Cancel.
    */
   boolean promptPassword(in mozIDOMWindowProxy aParent,
                          in wstring aDialogTitle,
                          in wstring aText,
-                         inout wstring aPassword,
-                         in wstring aCheckMsg,
-                         inout boolean aCheckState);
+                         inout wstring aPassword);
   /**
    * Like promptPassword, but with a BrowsingContext as parent.
    *
@@ -530,23 +515,19 @@ interface nsIPromptService : nsISupports
                            in unsigned long modalType,
                            in wstring aDialogTitle,
                            in wstring aText,
-                           inout wstring aPassword,
-                           in wstring aCheckMsg,
-                           inout boolean aCheckState);
+                           inout wstring aPassword);
   /**
    * Async version of promptPasswordBC
    *
    * @return A promise which resolves when the prompt is dismissed.
    *
-   * @resolves nsIPropertyBag { checked: boolean, pass: string, ok: boolean }
+   * @resolves nsIPropertyBag { pass: string, ok: boolean }
    */
   Promise asyncPromptPassword(in BrowsingContext aBrowsingContext,
                            in unsigned long modalType,
                            in wstring aDialogTitle,
                            in wstring aText,
-                           in wstring aPassword,
-                           in wstring aCheckMsg,
-                           in boolean aCheckState);
+                           in wstring aPassword);
   /**
    * Puts up a dialog box which has a list box of strings from which the user
    * may make a single selection.
@@ -599,18 +580,13 @@ interface nsIPromptService : nsISupports
 
   // NOTE: These functions differ from their nsIAuthPrompt counterparts by
   // having additional checkbox parameters
-  // checkValue can be null meaning to show no checkbox
-  // checkboxLabel is a wstring so that it can be null from both JS and C++ in
-  // a convenient way
   //
   // See nsIAuthPrompt2 for documentation on the semantics of the other
   // parameters.
   boolean promptAuth(in mozIDOMWindowProxy aParent,
                      in nsIChannel aChannel,
                      in uint32_t level,
-                     in nsIAuthInformation authInfo,
-                     in wstring checkboxLabel,
-                     inout boolean checkValue);
+                     in nsIAuthInformation authInfo);
   /**
    * Like promptAuth, but with a BrowsingContext as parent.
    *
@@ -623,32 +599,17 @@ interface nsIPromptService : nsISupports
                        in unsigned long modalType,
                        in nsIChannel aChannel,
                        in uint32_t level,
-                       in nsIAuthInformation authInfo,
-                       in wstring checkboxLabel,
-                       inout boolean checkValue);
-  nsICancelable asyncPromptAuth(in mozIDOMWindowProxy aParent,
-                                in nsIChannel aChannel,
-                                in nsIAuthPromptCallback aCallback,
-                                in nsISupports aContext,
-                                in uint32_t level,
-                                in nsIAuthInformation authInfo,
-                                in wstring checkboxLabel,
-                                inout boolean checkValue);
+                       in nsIAuthInformation authInfo);
   /**
-   * Like asyncPromptAuth, but with a BrowsingContext as parent.
+   * Async version of promptAuthBC
    *
-   * @param aBrowsingContext
-   *        The browsing context the prompt should be opened for.
-   * @param modalType
-   *        Whether the prompt should be window, tab or content modal.
+   * @return A promise which resolves when the prompt is dismissed.
+   *
+   * @resolves nsIPropertyBag { ok: boolean }
    */
-  nsICancelable asyncPromptAuthBC(in BrowsingContext aBrowsingContext,
-                                  in unsigned long modalType,
-                                  in nsIChannel aChannel,
-                                  in nsIAuthPromptCallback aCallback,
-                                  in nsISupports aContext,
-                                  in uint32_t level,
-                                  in nsIAuthInformation authInfo,
-                                  in wstring checkboxLabel,
-                                  inout boolean checkValue);
+  Promise asyncPromptAuth(in BrowsingContext aBrowsingContext,
+                      in unsigned long modalType,
+                      in nsIChannel aChannel,
+                      in uint32_t level,
+                      in nsIAuthInformation authInfo);
 };

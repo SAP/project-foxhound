@@ -45,6 +45,11 @@ function URLFetcher(url, timeout) {
   // We don't want to follow _any_ redirects
   xhr.channel.QueryInterface(Ci.nsIHttpChannel).redirectionLimit = 0;
 
+  // bug 1666072 - firefox.com returns a HSTS header triggering a https upgrade
+  // but the upgrade triggers an internal redirect causing an incorrect locked
+  // portal notification. We exclude CP detection from STS.
+  xhr.channel.QueryInterface(Ci.nsIHttpChannel).allowSTS = false;
+
   // The Cache-Control header is only interpreted by proxies and the
   // final destination. It does not help if a resource is already
   // cached locally.
@@ -237,6 +242,7 @@ function CaptivePortalDetector() {
   // Load preference
   this._canonicalSiteURL = null;
   this._canonicalSiteExpectedContent = null;
+  this._telemetryService = Services.telemetry;
 
   try {
     this._canonicalSiteURL = Services.prefs.getCharPref(
@@ -275,6 +281,11 @@ function CaptivePortalDetector() {
   this._runningRequest = null;
   this._requestQueue = []; // Maintain a progress table, store callbacks and the ongoing XHR
   this._interfaceNames = {}; // Maintain names of the requested network interfaces
+
+  this._telemetryService.setEventRecordingEnabled(
+    "networking.captive_portal",
+    true
+  );
 
   debug(
     "CaptiveProtalDetector initiated, waiting for network connection established"
@@ -432,6 +443,12 @@ CaptivePortalDetector.prototype = {
       // Only when the request has a event id and |success| is true
       // do we need to notify the login-success event.
       if (this._runningRequest.hasOwnProperty("eventId") && success) {
+        this._telemetryService.recordEvent(
+          "networking.captive_portal",
+          "login_successful",
+          "detector"
+        );
+
         let details = {
           type: kCaptivePortalLoginSuccessEvent,
           id: this._runningRequest.eventId,

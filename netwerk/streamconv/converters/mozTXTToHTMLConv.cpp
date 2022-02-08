@@ -195,8 +195,9 @@ bool mozTXTToHTMLConv::FindURLStart(const char16_t* aInString,
               IsAsciiDigit(aInString[uint32_t(i)]) ||
               aInString[uint32_t(i)] == '+' || aInString[uint32_t(i)] == '-' ||
               aInString[uint32_t(i)] == '.');
-           i--)
+           i--) {
         ;
+      }
       if (++i >= 0 && uint32_t(i) < pos &&
           IsAsciiAlpha(aInString[uint32_t(i)])) {
         start = uint32_t(i);
@@ -219,8 +220,9 @@ bool mozTXTToHTMLConv::FindURLStart(const char16_t* aInString,
              !IsSpace(aInString[uint32_t(i)]) &&
              (!isEmail || IsAscii(aInString[uint32_t(i)])) &&
              (!isEmail || aInString[uint32_t(i)] != ')');
-           i--)
+           i--) {
         ;
+      }
       if (++i >= 0 && uint32_t(i) < pos &&
           (IsAsciiAlpha(aInString[uint32_t(i)]) ||
            IsAsciiDigit(aInString[uint32_t(i)]))) {
@@ -268,13 +270,15 @@ bool mozTXTToHTMLConv::FindURLEnd(const char16_t* aInString,
             // Allow IPv6 adresses like http://[1080::8:800:200C:417A]/foo.
             (aInString[i] == '[' && i > 2 &&
              (aInString[i - 1] != '/' || aInString[i - 2] != '/')) ||
-            IsSpace(aInString[i]))
+            IsSpace(aInString[i])) {
           break;
+        }
         // Disallow non-ascii-characters for email.
         // Currently correct, but revisit later after standards changed.
         if (isEmail && (aInString[i] == '(' || aInString[i] == '\'' ||
-                        !IsAscii(aInString[i])))
+                        !IsAscii(aInString[i]))) {
           break;
+        }
         if (aInString[i] == '(') seenOpeningParenthesis = true;
         if (aInString[i] == '[') seenOpeningSquareBracket = true;
       }
@@ -283,8 +287,9 @@ bool mozTXTToHTMLConv::FindURLEnd(const char16_t* aInString,
       while (--i > pos && (aInString[i] == '.' || aInString[i] == ',' ||
                            aInString[i] == ';' || aInString[i] == '!' ||
                            aInString[i] == '?' || aInString[i] == '-' ||
-                           aInString[i] == ':' || aInString[i] == '\''))
+                           aInString[i] == ':' || aInString[i] == '\'')) {
         ;
+      }
       if (i > pos) {
         end = i;
         return true;
@@ -452,8 +457,9 @@ bool mozTXTToHTMLConv::FindURL(const char16_t* aInString, int32_t aInLength,
   /* all modes but abbreviated are checked for text[pos] == ':',
      only abbreviated for '.', RFC2396E and abbreviated for '@' */
   for (modetype iState = unknown; iState <= mozTXTToHTMLConv_lastMode;
-       iState = modetype(iState + 1))
+       iState = modetype(iState + 1)) {
     state[iState] = aInString[pos] == ':' ? unchecked : invalid;
+  }
   switch (aInString[pos]) {
     case '@':
       state[RFC2396E] = unchecked;
@@ -480,13 +486,17 @@ bool mozTXTToHTMLConv::FindURL(const char16_t* aInString, int32_t aInLength,
 
     uint32_t start, end;
 
-    if (state[check] == unchecked)
-      if (FindURLStart(aInString, aInLength, pos, check, start))
+    if (state[check] == unchecked) {
+      if (FindURLStart(aInString, aInLength, pos, check, start)) {
         state[check] = startok;
+      }
+    }
 
-    if (state[check] == startok)
-      if (FindURLEnd(aInString, aInLength, pos, check, start, end))
+    if (state[check] == startok) {
+      if (FindURLEnd(aInString, aInLength, pos, check, start, end)) {
         state[check] = endok;
+      }
+    }
 
     if (state[check] == endok) {
       nsAutoString txtURL, desc;
@@ -536,8 +546,9 @@ bool mozTXTToHTMLConv::ItMatchesDelimited(const char16_t* aInString,
       ((before != LT_IGNORE || (after != LT_IGNORE && after != LT_DELIMITER)) &&
        textLen < aRepLen + 1) ||
       (before != LT_IGNORE && after != LT_IGNORE && after != LT_DELIMITER &&
-       textLen < aRepLen + 2))
+       textLen < aRepLen + 2)) {
     return false;
+  }
 
   uint32_t text0 = aInString[0];
   if (aInLength > 1 && NS_IS_SURROGATE_PAIR(text0, aInString[1])) {
@@ -558,22 +569,19 @@ bool mozTXTToHTMLConv::ItMatchesDelimited(const char16_t* aInString,
     textAfterPos = SURROGATE_TO_UCS4(textAfterPos, aInString[afterIndex + 1]);
   }
 
-  if ((before == LT_ALPHA && !IsAlpha(text0)) ||
-      (before == LT_DIGIT && !IsDigit(text0)) ||
-      (before == LT_DELIMITER &&
-       (IsAlpha(text0) || IsDigit(text0) || text0 == *rep)) ||
-      (after == LT_ALPHA && !IsAlpha(textAfterPos)) ||
-      (after == LT_DIGIT && !IsDigit(textAfterPos)) ||
-      (after == LT_DELIMITER &&
-       (IsAlpha(textAfterPos) || IsDigit(textAfterPos) ||
-        textAfterPos == *rep)) ||
-      !Substring(Substring(aInString, aInString + aInLength), ignoreLen,
-                 aRepLen)
-           .Equals(Substring(rep, rep + aRepLen),
-                   nsCaseInsensitiveStringComparator))
-    return false;
-
-  return true;
+  return !((before == LT_ALPHA && !IsAlpha(text0)) ||
+           (before == LT_DIGIT && !IsDigit(text0)) ||
+           (before == LT_DELIMITER &&
+            (IsAlpha(text0) || IsDigit(text0) || text0 == *rep)) ||
+           (after == LT_ALPHA && !IsAlpha(textAfterPos)) ||
+           (after == LT_DIGIT && !IsDigit(textAfterPos)) ||
+           (after == LT_DELIMITER &&
+            (IsAlpha(textAfterPos) || IsDigit(textAfterPos) ||
+             textAfterPos == *rep)) ||
+           !Substring(Substring(aInString, aInString + aInLength), ignoreLen,
+                      aRepLen)
+                .Equals(Substring(rep, rep + aRepLen),
+                        nsCaseInsensitiveStringComparator));
 }
 
 uint32_t mozTXTToHTMLConv::NumberOfMatches(const char16_t* aInString,
@@ -631,9 +639,8 @@ bool mozTXTToHTMLConv::StructPhraseHit(
   }
 
   // closing tag
-  else if (openTags > 0 &&
-           ItMatchesDelimited(aInString, aInStringLength, tagTXT, aTagTXTLen,
-                              LT_ALPHA, LT_DELIMITER)) {
+  if (openTags > 0 && ItMatchesDelimited(aInString, aInStringLength, tagTXT,
+                                         aTagTXTLen, LT_ALPHA, LT_DELIMITER)) {
     openTags--;
     aOutString.AppendLiteral("<span class=\"moz-txt-tag\">");
     aOutString.Append(tagTXT);
@@ -648,9 +655,9 @@ bool mozTXTToHTMLConv::StructPhraseHit(
 
 bool mozTXTToHTMLConv::SmilyHit(const char16_t* aInString, int32_t aLength,
                                 bool col0, const char* tagTXT,
-                                const char* imageName, nsString& outputHTML,
+                                const nsString& imageName, nsString& outputHTML,
                                 int32_t& glyphTextLen) {
-  if (!aInString || !tagTXT || !imageName) return false;
+  if (!aInString || !tagTXT || imageName.IsEmpty()) return false;
 
   int32_t tagLen = strlen(tagTXT);
 
@@ -674,13 +681,7 @@ bool mozTXTToHTMLConv::SmilyHit(const char16_t* aInString, int32_t aLength,
       outputHTML.Append(char16_t(' '));
     }
 
-    outputHTML.AppendLiteral("<span class=\"");  // <span class="
-    outputHTML.AppendASCII(imageName);           // e.g. smiley-frown
-    outputHTML.AppendLiteral("\" title=\"");     // " title="
-    outputHTML.AppendASCII(tagTXT);              // smiley tooltip
-    outputHTML.AppendLiteral("\"><span>");       // "><span>
-    outputHTML.AppendASCII(tagTXT);              // original text
-    outputHTML.AppendLiteral("</span></span>");  // </span></span>
+    outputHTML.Append(imageName);  // emoji unicode
     glyphTextLen = (col0 ? 0 : 1) + tagLen;
     return true;
   }
@@ -725,87 +726,87 @@ bool mozTXTToHTMLConv::GlyphHit(const char16_t* aInString, int32_t aInLength,
       bArg = false;
     }
     if (bTestSmilie && (SmilyHit(aInString, aInLength, bArg, ":-)",
-                                 "moz-smiley-s1",  // smile
+                                 u"😄"_ns,  // smile, U+1F604
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ":)",
-                                 "moz-smiley-s1",  // smile
+                                 u"😄"_ns,  // smile, U+1F604
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ":-D",
-                                 "moz-smiley-s5",  // laughing
+                                 u"😂"_ns,  // laughing, U+1F602
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ":-(",
-                                 "moz-smiley-s2",  // frown
+                                 u"🙁"_ns,  // frown, U+1F641
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ":(",
-                                 "moz-smiley-s2",  // frown
+                                 u"🙁"_ns,  // frown, U+1F641
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ":-[",
-                                 "moz-smiley-s6",  // embarassed
+                                 u"😅"_ns,  // embarassed, U+1F605
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ";-)",
-                                 "moz-smiley-s3",  // wink
+                                 u"😉"_ns,  // wink, U+1F609
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, col0, ";)",
-                                 "moz-smiley-s3",  // wink
+                                 u"😉"_ns,  // wink, U+1F609
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ":-\\",
-                                 "moz-smiley-s7",  // undecided
+                                 u"😕"_ns,  // undecided, U+1F615
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ":-P",
-                                 "moz-smiley-s4",  // tongue
+                                 u"😛"_ns,  // tongue, U+1F61B
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ";-P",
-                                 "moz-smiley-s4",  // tongue
+                                 u"😜"_ns,  // winking face with tongue, U+1F61C
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, "=-O",
-                                 "moz-smiley-s8",  // surprise
+                                 u"😮"_ns,  // surprise, U+1F62E
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ":-*",
-                                 "moz-smiley-s9",  // kiss
+                                 u"😘"_ns,  // kiss, U+1F618
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ">:o",
-                                 "moz-smiley-s10",  // yell
+                                 u"😄"_ns,  // yell, U+1F620
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ">:-o",
-                                 "moz-smiley-s10",  // yell
+                                 u"😠"_ns,  // yell, U+1F620
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, "8-)",
-                                 "moz-smiley-s11",  // cool
+                                 u"😎"_ns,  // cool, U+1F60E
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ":-$",
-                                 "moz-smiley-s12",  // money
+                                 u"🤑"_ns,  // money, U+1F911
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ":-!",
-                                 "moz-smiley-s13",  // foot
+                                 u"😬"_ns,  // foot, U+1F62C
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, "O:-)",
-                                 "moz-smiley-s14",  // innocent
+                                 u"😇"_ns,  // innocent, U+1F607
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ":'(",
-                                 "moz-smiley-s15",  // cry
+                                 u"😭"_ns,  // cry, U+1F62D
                                  outputHTML, glyphTextLen) ||
 
                         SmilyHit(aInString, aInLength, bArg, ":-X",
-                                 "moz-smiley-s16",  // sealed
+                                 u"😷"_ns,  // sealed, U+1F637
                                  outputHTML, glyphTextLen))) {
       aOutputString.Append(outputHTML);
       return true;
@@ -845,8 +846,9 @@ bool mozTXTToHTMLConv::GlyphHit(const char16_t* aInString, int32_t aInLength,
            (IsAsciiDigit(aInString[delimPos]) ||
             (aInString[delimPos] == '.' && delimPos + 1 < aInLength &&
              IsAsciiDigit(aInString[delimPos + 1])));
-         delimPos++)
+         delimPos++) {
       ;
+    }
 
     if (delimPos < aInLength && IsAsciiAlpha(aInString[delimPos])) {
       return false;
@@ -933,15 +935,16 @@ int32_t mozTXTToHTMLConv::CiteLevelTXT(const char16_t* line,
       uint32_t minlength = std::min(uint32_t(6), NS_strlen(indexString));
       if (Substring(indexString, indexString + minlength)
               .Equals(Substring(u">From "_ns, 0, minlength),
-                      nsCaseInsensitiveStringComparator))
+                      nsCaseInsensitiveStringComparator)) {
         // XXX RFC2646
         moreCites = false;
-      else {
+      } else {
         result++;
         logLineStart = i;
       }
-    } else
+    } else {
       moreCites = false;
+    }
   }
 
   return result;
@@ -1129,28 +1132,31 @@ mozTXTToHTMLConv::ScanHTML(const nsAString& input, uint32_t whattodo,
       // Make sure there's a white-space character after, not to match "abbr".
       {
         i = aInString.Find("</a>", true, i);
-        if (i == kNotFound)
+        if (i == kNotFound) {
           i = lengthOfInString;
-        else
+        } else {
           i += 4;
+        }
       } else if (Substring(aInString, i + 1, 3).LowerCaseEqualsASCII("!--"))
       // if out-commended code, skip until -->
       {
         i = aInString.Find("-->", false, i);
-        if (i == kNotFound)
+        if (i == kNotFound) {
           i = lengthOfInString;
-        else
+        } else {
           i += 3;
+        }
       } else if (i + 6 < lengthOfInString &&
                  Substring(aInString, i + 1, 5).LowerCaseEqualsASCII("style") &&
                  canFollow.FindChar(aInString[i + 6]) != kNotFound)
       // if style tag, skip until </style>
       {
         i = aInString.Find("</style>", true, i);
-        if (i == kNotFound)
+        if (i == kNotFound) {
           i = lengthOfInString;
-        else
+        } else {
           i += 8;
+        }
       } else if (i + 7 < lengthOfInString &&
                  Substring(aInString, i + 1, 6)
                      .LowerCaseEqualsASCII("script") &&
@@ -1158,10 +1164,11 @@ mozTXTToHTMLConv::ScanHTML(const nsAString& input, uint32_t whattodo,
       // if script tag, skip until </script>
       {
         i = aInString.Find("</script>", true, i);
-        if (i == kNotFound)
+        if (i == kNotFound) {
           i = lengthOfInString;
-        else
+        } else {
           i += 9;
+        }
       } else if (i + 5 < lengthOfInString &&
                  Substring(aInString, i + 1, 4).LowerCaseEqualsASCII("head") &&
                  canFollow.FindChar(aInString[i + 5]) != kNotFound)
@@ -1169,17 +1176,19 @@ mozTXTToHTMLConv::ScanHTML(const nsAString& input, uint32_t whattodo,
       // Make sure not to match <header>.
       {
         i = aInString.Find("</head>", true, i);
-        if (i == kNotFound)
+        if (i == kNotFound) {
           i = lengthOfInString;
-        else
+        } else {
           i += 7;
+        }
       } else  // just skip tag (attributes etc.)
       {
         i = aInString.FindChar('>', i);
-        if (i == kNotFound)
+        if (i == kNotFound) {
           i = lengthOfInString;
-        else
+        } else {
           i++;
+        }
       }
       aOutString.Append(&uniBuffer[start], i - start);
     } else {

@@ -100,7 +100,7 @@ class AudioNodeTrack : public ProcessedMediaTrack {
                          const dom::AudioTimelineEvent& aEvent);
   // This consumes the contents of aData.  aData will be emptied after this
   // returns.
-  void SetRawArrayData(nsTArray<float>& aData);
+  void SetRawArrayData(nsTArray<float>&& aData);
   void SetChannelMixingParameters(uint32_t aNumberOfChannels,
                                   ChannelCountMode aChannelCountMoe,
                                   ChannelInterpretation aChannelInterpretation);
@@ -115,7 +115,7 @@ class AudioNodeTrack : public ProcessedMediaTrack {
     mAudioParamTrack = true;
   }
   // The value for channelCount on an AudioNode, but on the audio thread side.
-  uint32_t NumberOfChannels() const;
+  uint32_t NumberOfChannels() const override;
 
   /*
    * Resume track after updating its concept of current time by aAdvance.
@@ -178,7 +178,7 @@ class AudioNodeTrack : public ProcessedMediaTrack {
   class AdvanceAndResumeMessage;
   class CheckForInactiveMessage;
 
-  void NotifyForcedShutdown() override;
+  void OnGraphThreadDone() override;
   void DestroyImpl() override;
 
   /*

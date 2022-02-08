@@ -22,7 +22,7 @@ class InProcessCompositorWidget : public CompositorWidget {
   virtual RefPtr<layers::NativeLayerRoot> GetNativeLayerRoot() override;
   virtual already_AddRefed<gfx::DrawTarget> StartRemoteDrawing() override;
   virtual already_AddRefed<gfx::DrawTarget> StartRemoteDrawingInRegion(
-      LayoutDeviceIntRegion& aInvalidRegion,
+      const LayoutDeviceIntRegion& aInvalidRegion,
       layers::BufferMode* aBufferMode) override;
   virtual void EndRemoteDrawing() override;
   virtual void EndRemoteDrawingInRegion(
@@ -41,6 +41,12 @@ class InProcessCompositorWidget : public CompositorWidget {
 
  protected:
   nsBaseWidget* mWidget;
+  // Bug 1679368: Maintain an additional widget pointer, constant, and
+  // function for sanity checking while we chase a crash.
+  static const char* CANARY_VALUE;
+  const char* mCanary;
+  nsBaseWidget* mWidgetSanity;
+  void CheckWidgetSanity();
 };
 
 }  // namespace widget

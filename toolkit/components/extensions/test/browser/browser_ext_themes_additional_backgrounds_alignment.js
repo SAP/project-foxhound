@@ -25,24 +25,35 @@ add_task(async function test_default_additional_backgrounds_alignment() {
 
   await extension.startup();
 
-  let docEl = document.documentElement;
-  let rootCS = window.getComputedStyle(docEl);
-
-  Assert.equal(
-    rootCS.getPropertyValue("background-position"),
-    RIGHT_TOP,
-    "root only contains theme_frame alignment property"
-  );
-
   let toolbox = document.querySelector("#navigator-toolbox");
   let toolboxCS = window.getComputedStyle(toolbox);
+  if (backgroundColorSetOnRoot()) {
+    let docEl = document.documentElement;
+    let rootCS = window.getComputedStyle(docEl);
 
-  Assert.equal(
-    toolboxCS.getPropertyValue("background-position"),
-    RIGHT_TOP,
-    toolbox.id +
-      " only contains default additional backgrounds alignment property"
-  );
+    Assert.equal(
+      rootCS.getPropertyValue("background-position"),
+      `${RIGHT_TOP}, ${RIGHT_TOP}`,
+      "root contains theme_frame and lwt-background-alignment properties"
+    );
+    Assert.equal(
+      toolboxCS.getPropertyValue("background-position"),
+      RIGHT_TOP,
+      toolbox.id + " contains lwt-background-alignment properties"
+    );
+  } else {
+    /**
+     * We expect duplicate background-position values because we apply `right top`
+     * once for theme_frame, and again as the default value of
+     * --lwt-background-alignment.
+     */
+    Assert.equal(
+      toolboxCS.getPropertyValue("background-position"),
+      `${RIGHT_TOP}, ${RIGHT_TOP}`,
+      toolbox.id +
+        " contains theme_frame and default lwt-background-alignment properties"
+    );
+  }
 
   await extension.unload();
 });
@@ -80,23 +91,29 @@ add_task(async function test_additional_backgrounds_alignment() {
 
   await extension.startup();
 
-  let docEl = document.documentElement;
-  let rootCS = window.getComputedStyle(docEl);
-
-  Assert.equal(
-    rootCS.getPropertyValue("background-position"),
-    RIGHT_TOP,
-    "root only contains theme_frame alignment property"
-  );
-
   let toolbox = document.querySelector("#navigator-toolbox");
   let toolboxCS = window.getComputedStyle(toolbox);
-
-  Assert.equal(
-    toolboxCS.getPropertyValue("background-position"),
-    LEFT_BOTTOM + ", " + CENTER_CENTER + ", " + RIGHT_TOP,
-    toolbox.id + " contains additional backgrounds alignment properties"
-  );
+  if (backgroundColorSetOnRoot()) {
+    let docEl = document.documentElement;
+    let rootCS = window.getComputedStyle(docEl);
+    Assert.equal(
+      rootCS.getPropertyValue("background-position"),
+      `${RIGHT_TOP}, ${LEFT_BOTTOM}, ${CENTER_CENTER}, ${RIGHT_TOP}`,
+      "root contains theme_frame and additional_backgrounds alignment properties"
+    );
+    Assert.equal(
+      toolboxCS.getPropertyValue("background-position"),
+      LEFT_BOTTOM + ", " + CENTER_CENTER + ", " + RIGHT_TOP,
+      toolbox.id + " contains additional_backgrounds alignment properties"
+    );
+  } else {
+    Assert.equal(
+      toolboxCS.getPropertyValue("background-position"),
+      RIGHT_TOP + ", " + LEFT_BOTTOM + ", " + CENTER_CENTER + ", " + RIGHT_TOP,
+      toolbox.id +
+        " contains theme_frame and additional_backgrounds alignment properties"
+    );
+  }
 
   await extension.unload();
 });

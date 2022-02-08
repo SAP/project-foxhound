@@ -11,7 +11,7 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/FromParser.h"
 #include "mozilla/StaticPtr.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsHashKeys.h"
 
 using namespace mozilla;
@@ -19,7 +19,7 @@ using namespace mozilla::dom;
 
 // Hash table that maps nsAtom* SVG tags to a SVGContentCreatorFunction.
 using TagAtomTable =
-    nsDataHashtable<nsPtrHashKey<nsAtom>, SVGContentCreatorFunction>;
+    nsTHashMap<nsPtrHashKey<nsAtom>, SVGContentCreatorFunction>;
 StaticAutoPtr<TagAtomTable> sTagAtomTable;
 
 #define SVG_TAG(_tag, _classname)                                         \
@@ -56,9 +56,13 @@ void SVGElementFactory::Init() {
   sTagAtomTable = new TagAtomTable(64);
 
 #define SVG_TAG(_tag, _classname) \
-  sTagAtomTable->Put(nsGkAtoms::_tag, NS_NewSVG##_classname##Element);
+  sTagAtomTable->InsertOrUpdate(  \
+      nsGkAtoms::_tag,            \
+      SVGContentCreatorFunction(NS_NewSVG##_classname##Element));
 #define SVG_FROM_PARSER_TAG(_tag, _classname) \
-  sTagAtomTable->Put(nsGkAtoms::_tag, NS_NewSVG##_classname##Element);
+  sTagAtomTable->InsertOrUpdate(              \
+      nsGkAtoms::_tag,                        \
+      SVGContentCreatorFunction(NS_NewSVG##_classname##Element));
 #include "SVGTagList.h"
 #undef SVG_TAG
 #undef SVG_FROM_PARSER_TAG

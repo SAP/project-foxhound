@@ -51,9 +51,8 @@
 #define js_SourceText_h
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
-#include "mozilla/Attributes.h"  // MOZ_COLD, MOZ_IS_CLASS_INIT, MOZ_MUST_USE
+#include "mozilla/Attributes.h"  // MOZ_COLD, MOZ_IS_CLASS_INIT
 #include "mozilla/Likely.h"      // MOZ_UNLIKELY
-#include "mozilla/Utf8.h"        // mozilla::Utf8Unit
 
 #include <stddef.h>     // size_t
 #include <stdint.h>     // UINT32_MAX
@@ -63,6 +62,10 @@
 
 #include "js/UniquePtr.h"  // js::UniquePtr
 #include "js/Utility.h"    // JS::FreePolicy
+
+namespace mozilla {
+union Utf8Unit;
+}
 
 namespace JS {
 
@@ -146,9 +149,9 @@ class SourceText final : public TaintableString {
    * |units| may be null if |unitsLength == 0|; if so, this will silently be
    * initialized using non-null, unowned units.
    */
-  MOZ_IS_CLASS_INIT MOZ_MUST_USE bool init(JSContext* cx, const Unit* units,
-                                           size_t unitsLength,
-                                           SourceOwnership ownership) {
+  [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JSContext* cx, const Unit* units,
+                                            size_t unitsLength,
+                                            SourceOwnership ownership) {
     MOZ_ASSERT_IF(units == nullptr, unitsLength == 0);
 
     // Ideally we'd use |Unit| and not cast below, but the risk of a static
@@ -182,7 +185,7 @@ class SourceText final : public TaintableString {
   /**
    * Taintfox: init with additional taint information
    */
-  MOZ_IS_CLASS_INIT MOZ_MUST_USE bool init(JSContext* cx, const Unit* units,
+  [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JSContext* cx, const Unit* units,
                                            size_t unitsLength, StringTaint taint,
                                            SourceOwnership ownership) {
     setTaint(taint);
@@ -200,9 +203,9 @@ class SourceText final : public TaintableString {
   template <typename Char,
             typename = std::enable_if_t<std::is_same_v<Char, CharT> &&
                                         !std::is_same_v<Char, Unit>>>
-  MOZ_IS_CLASS_INIT MOZ_MUST_USE bool init(JSContext* cx, const Char* chars,
-                                           size_t charsLength,
-                                           SourceOwnership ownership) {
+  [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JSContext* cx, const Char* chars,
+                                            size_t charsLength,
+                                            SourceOwnership ownership) {
     return init(cx, reinterpret_cast<const Unit*>(chars), charsLength,
                 ownership);
   }
@@ -213,7 +216,7 @@ class SourceText final : public TaintableString {
   template <typename Char, typename = typename std::enable_if<
                                std::is_same<Char, CharT>::value &&
                                !std::is_same<Char, Unit>::value>::type>
-  MOZ_IS_CLASS_INIT MOZ_MUST_USE bool init(JSContext* cx, const Char* chars,
+  [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JSContext* cx, const Char* chars,
                                            size_t charsLength, StringTaint taint,
                                            SourceOwnership ownership) {
     setTaint(taint);
@@ -223,9 +226,9 @@ class SourceText final : public TaintableString {
   /**
    * Initialize this using source units transferred out of |data|.
    */
-  MOZ_MUST_USE bool init(JSContext* cx,
-                         js::UniquePtr<Unit[], JS::FreePolicy> data,
-                         size_t dataLength) {
+  [[nodiscard]] bool init(JSContext* cx,
+                          js::UniquePtr<Unit[], JS::FreePolicy> data,
+                          size_t dataLength) {
     return init(cx, data.release(), dataLength, SourceOwnership::TakeOwnership);
   }
 
@@ -241,9 +244,9 @@ class SourceText final : public TaintableString {
   template <typename Char,
             typename = std::enable_if_t<std::is_same_v<Char, CharT> &&
                                         !std::is_same_v<Char, Unit>>>
-  MOZ_MUST_USE bool init(JSContext* cx,
-                         js::UniquePtr<Char[], JS::FreePolicy> data,
-                         size_t dataLength) {
+  [[nodiscard]] bool init(JSContext* cx,
+                          js::UniquePtr<Char[], JS::FreePolicy> data,
+                          size_t dataLength) {
     return init(cx, data.release(), dataLength, SourceOwnership::TakeOwnership);
   }
 

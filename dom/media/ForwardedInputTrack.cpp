@@ -66,6 +66,11 @@ void ForwardedInputTrack::RemoveInput(MediaInputPort* aPort) {
                this, listener.get(), aPort->GetSource()));
     source->RemoveDirectListenerImpl(listener);
   }
+
+  DisabledTrackMode oldMode = CombinedDisabledMode();
+  mInputDisabledMode = DisabledTrackMode::ENABLED;
+  NotifyIfDisabledModeChangedFrom(oldMode);
+
   mInputPort = nullptr;
   ProcessedMediaTrack::RemoveInput(aPort);
 }
@@ -75,6 +80,8 @@ void ForwardedInputTrack::SetInput(MediaInputPort* aPort) {
   MOZ_ASSERT(aPort->GetSource());
   MOZ_ASSERT(aPort->GetSource()->GetData());
   MOZ_ASSERT(!mInputPort);
+  MOZ_ASSERT(mInputDisabledMode == DisabledTrackMode::ENABLED);
+
   mInputPort = aPort;
 
   for (const auto& listener : mOwnedDirectListeners) {
@@ -84,6 +91,10 @@ void ForwardedInputTrack::SetInput(MediaInputPort* aPort) {
                                 this, listener.get(), aPort->GetSource()));
     source->AddDirectListenerImpl(do_AddRef(listener));
   }
+
+  DisabledTrackMode oldMode = CombinedDisabledMode();
+  mInputDisabledMode = mInputPort->GetSource()->CombinedDisabledMode();
+  NotifyIfDisabledModeChangedFrom(oldMode);
 }
 
 void ForwardedInputTrack::ProcessInputImpl(MediaTrack* aSource,
@@ -128,7 +139,7 @@ void ForwardedInputTrack::ProcessInputImpl(MediaTrack* aSource,
     } else if (InMutedCycle()) {
       aSegment->AppendNullData(ticks);
     } else if (aSource->IsSuspended()) {
-      aSegment->AppendNullData(aTo - aFrom);
+      aSegment->AppendNullData(ticks);
     } else {
       MOZ_ASSERT(GetEnd() == GraphTimeToTrackTimeWithBlocking(interval.mStart),
                  "Samples missing");
@@ -148,7 +159,8 @@ void ForwardedInputTrack::ProcessInputImpl(MediaTrack* aSource,
 
 void ForwardedInputTrack::ProcessInput(GraphTime aFrom, GraphTime aTo,
                                        uint32_t aFlags) {
-  TRACE_COMMENT("ForwardedInputTrack %p", this);
+  TRACE_COMMENT("ForwardedInputTrack::ProcessInput", "ForwardedInputTrack %p",
+                this);
   if (mEnded) {
     return;
   }
@@ -170,7 +182,19 @@ void ForwardedInputTrack::ProcessInput(GraphTime aFrom, GraphTime aTo,
   }
 }
 
-void ForwardedInputTrack::SetEnabledImpl(DisabledTrackMode aMode) {
+DisabledTrackMode ForwardedInputTrack::CombinedDisabledMode() const {
+  if (mDisabledMode == DisabledTrackMode::SILENCE_BLACK ||
+      mInputDisabledMode == DisabledTrackMode::SILENCE_BLACK) {
+    return DisabledTrackMode::SILENCE_BLACK;
+  }
+  if (mDisabledMode == DisabledTrackMode::SILENCE_FREEZE ||
+      mInputDisabledMode == DisabledTrackMode::SILENCE_FREEZE) {
+    return DisabledTrackMode::SILENCE_FREEZE;
+  }
+  return DisabledTrackMode::ENABLED;
+}
+
+void ForwardedInputTrack::SetDisabledTrackModeImpl(DisabledTrackMode aMode) {
   bool enabled = aMode == DisabledTrackMode::ENABLED;
   TRACK_LOG(LogLevel::Info, ("ForwardedInputTrack %p was explicitly %s", this,
                              enabled ? "enabled" : "disabled"));
@@ -189,7 +213,30 @@ void ForwardedInputTrack::SetEnabledImpl(DisabledTrackMode aMode) {
       listener->IncreaseDisabled(aMode);
     }
   }
-  MediaTrack::SetEnabledImpl(aMode);
+  MediaTrack::SetDisabledTrackModeImpl(aMode);
+}
+
+void ForwardedInputTrack::OnInputDisabledModeChanged(
+    DisabledTrackMode aInputMode) {
+  MOZ_ASSERT(mInputs.Length() == 1);
+  MOZ_ASSERT(mInputs[0]->GetSource());
+  DisabledTrackMode oldMode = CombinedDisabledMode();
+  if (mInputDisabledMode == DisabledTrackMode::SILENCE_BLACK &&
+      aInputMode == DisabledTrackMode::SILENCE_FREEZE) {
+    // Don't allow demoting from SILENCE_BLACK to SILENCE_FREEZE. Frames will
+    // remain black so we shouldn't notify that the track got enabled.
+    aInputMode = DisabledTrackMode::SILENCE_BLACK;
+  }
+  mInputDisabledMode = aInputMode;
+  NotifyIfDisabledModeChangedFrom(oldMode);
+}
+
+uint32_t ForwardedInputTrack::NumberOfChannels() const {
+  MOZ_DIAGNOSTIC_ASSERT(mSegment->GetType() == MediaSegment::AUDIO);
+  if (!mInputPort || !mInputPort->GetSource()) {
+    return GetData<AudioSegment>()->MaxChannelCount();
+  }
+  return mInputPort->GetSource()->NumberOfChannels();
 }
 
 void ForwardedInputTrack::AddDirectListenerImpl(

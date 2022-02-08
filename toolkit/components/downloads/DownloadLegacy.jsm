@@ -14,10 +14,17 @@
 
 "use strict";
 
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
 ChromeUtils.defineModuleGetter(
   this,
   "Downloads",
   "resource://gre/modules/Downloads.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "DownloadError",
+  "resource://gre/modules/DownloadCore.jsm"
 );
 
 /**
@@ -117,11 +124,6 @@ DownloadLegacyTransfer.prototype = {
             // Only cancel if the object executing the download is still running.
             if (this._cancelable && !this._componentFailed) {
               this._cancelable.cancel(Cr.NS_ERROR_ABORT);
-              if (this._cancelable instanceof Ci.nsIWebBrowserPersist) {
-                // This component will not send the STATE_STOP notification.
-                download.saver.onTransferFinished(Cr.NS_ERROR_ABORT);
-                this._cancelable = null;
-              }
             }
           });
         })
@@ -269,7 +271,9 @@ DownloadLegacyTransfer.prototype = {
     aStartTime,
     aTempFile,
     aCancelable,
-    aIsPrivate
+    aIsPrivate,
+    aDownloadClassification,
+    aReferrerInfo
   ) {
     return this._nsITransferInitInternal(
       aSource,
@@ -279,7 +283,9 @@ DownloadLegacyTransfer.prototype = {
       aStartTime,
       aTempFile,
       aCancelable,
-      aIsPrivate
+      aIsPrivate,
+      aDownloadClassification,
+      aReferrerInfo
     );
   },
 
@@ -293,6 +299,8 @@ DownloadLegacyTransfer.prototype = {
     aTempFile,
     aCancelable,
     aIsPrivate,
+    aDownloadClassification,
+    aReferrerInfo,
     aBrowsingContext,
     aHandleInternally
   ) {
@@ -313,6 +321,8 @@ DownloadLegacyTransfer.prototype = {
       aTempFile,
       aCancelable,
       aIsPrivate,
+      aDownloadClassification,
+      aReferrerInfo,
       userContextId,
       browsingContextId,
       aHandleInternally
@@ -328,12 +338,13 @@ DownloadLegacyTransfer.prototype = {
     aTempFile,
     aCancelable,
     isPrivate,
+    aDownloadClassification,
+    referrerInfo,
     userContextId = 0,
     browsingContextId = 0,
     handleInternally = false
   ) {
     this._cancelable = aCancelable;
-
     let launchWhenSucceeded = false,
       contentType = null,
       launcherPath = null;
@@ -351,16 +362,16 @@ DownloadLegacyTransfer.prototype = {
         launcherPath = appHandler.executable.path;
       }
     }
-
     // Create a new Download object associated to a DownloadLegacySaver, and
     // wait for it to be available.  This operation may cause the entire
     // download system to initialize before the object is created.
-    Downloads.createDownload({
+    let serialisedDownload = {
       source: {
         url: aSource.spec,
         isPrivate,
         userContextId,
         browsingContextId,
+        referrerInfo,
       },
       target: {
         path: aTarget.QueryInterface(Ci.nsIFileURL).file.path,
@@ -371,8 +382,36 @@ DownloadLegacyTransfer.prototype = {
       contentType,
       launcherPath,
       handleInternally,
-    })
-      .then(aDownload => {
+    };
+
+    // In case the Download was classified as insecure/dangerous
+    // it is already canceled, so we need to generate and attach the
+    // corresponding error to the download.
+    if (aDownloadClassification == Ci.nsITransfer.DOWNLOAD_POTENTIALLY_UNSAFE) {
+      Services.telemetry
+        .getKeyedHistogramById("DOWNLOADS_USER_ACTION_ON_BLOCKED_DOWNLOAD")
+        .add(DownloadError.BLOCK_VERDICT_INSECURE, 0);
+
+      serialisedDownload.errorObj = {
+        becauseBlockedByReputationCheck: true,
+        reputationCheckVerdict: DownloadError.BLOCK_VERDICT_INSECURE,
+      };
+      // hasBlockedData needs to be true
+      // because the unblock UI is hidden if there is
+      // no data to be unblocked.
+      serialisedDownload.hasBlockedData = true;
+      // We cannot use the legacy saver here, as the original channel
+      // is already closed. A copy saver would create a new channel once
+      // start() is called.
+      serialisedDownload.saver = "copy";
+
+      // Since the download is canceled already, we do not need to keep refrences
+      this._download = null;
+      this._cancelable = null;
+    }
+
+    Downloads.createDownload(serialisedDownload)
+      .then(async aDownload => {
         // Legacy components keep partial data when they use a ".part" file.
         if (aTempFile) {
           aDownload.tryToKeepPartialData = true;
@@ -386,9 +425,14 @@ DownloadLegacyTransfer.prototype = {
         this._resolveDownload(aDownload);
 
         // Add the download to the list, allowing it to be seen and canceled.
-        return Downloads.getList(Downloads.ALL).then(list =>
-          list.add(aDownload)
-        );
+        await (await Downloads.getList(Downloads.ALL)).add(aDownload);
+        if (serialisedDownload.errorObj) {
+          // In case we added an already canceled dummy download
+          // we need to manually trigger a change event
+          // as all the animations for finishing downloads are
+          // listening on onChange.
+          aDownload._notifyChange();
+        }
       })
       .catch(Cu.reportError);
   },

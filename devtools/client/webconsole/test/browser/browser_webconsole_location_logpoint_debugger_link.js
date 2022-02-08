@@ -7,7 +7,7 @@
 "use strict";
 
 const TEST_URI =
-  "http://example.com/browser/devtools/client/webconsole/" +
+  "https://example.com/browser/devtools/client/webconsole/" +
   "test/browser/test-location-debugger-link-logpoint.html";
 
 add_task(async function() {
@@ -161,11 +161,12 @@ add_task(async function() {
 
 async function setLogPoint(dbg, index, expression) {
   rightClickElement(dbg, "gutter", index);
+  await waitForContextMenu(dbg);
   selectContextMenuItem(
     dbg,
     `${selectors.addLogItem},${selectors.editLogItem}`
   );
-  const onBreakpointSet = waitForDispatch(dbg, "SET_BREAKPOINT");
+  const onBreakpointSet = waitForDispatch(dbg.store, "SET_BREAKPOINT");
   await typeInPanel(dbg, expression);
   await onBreakpointSet;
 }

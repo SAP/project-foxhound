@@ -22,9 +22,7 @@ static const uint8_t kCommandLengths[] = {3, 3, 3, 3, 2, 2, 3};
 // Taken from MIDI Spec v1.0, Pg. 105, Table 5
 static const uint8_t kSystemLengths[] = {0, 2, 3, 2, 1, 1, 1, 1};
 
-namespace mozilla {
-namespace dom {
-namespace MIDIUtils {
+namespace mozilla::dom::MIDIUtils {
 
 // Checks validity of MIDIMessage passed to it. Throws debug warnings and
 // returns false if message is not valid.
@@ -80,7 +78,7 @@ uint32_t ParseMessages(const nsTArray<uint8_t>& aByteBuffer,
   uint32_t bytesRead = 0;
   bool inSysexMessage = false;
   UniquePtr<MIDIMessage> currentMsg;
-  for (auto& byte : aByteBuffer) {
+  for (const auto& byte : aByteBuffer) {
     bytesRead++;
     if ((byte & kSystemRealtimeMessage) == kSystemRealtimeMessage) {
       MIDIMessage rt_msg;
@@ -118,11 +116,6 @@ bool IsSysexMessage(const MIDIMessage& aMsg) {
   if (aMsg.data().Length() == 0) {
     return false;
   }
-  if (aMsg.data()[0] == kSysexMessageStart) {
-    return true;
-  }
-  return false;
+  return aMsg.data()[0] == kSysexMessageStart;
 }
-}  // namespace MIDIUtils
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::MIDIUtils

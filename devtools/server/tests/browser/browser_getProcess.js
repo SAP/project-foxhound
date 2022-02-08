@@ -48,7 +48,7 @@ add_task(async () => {
     ok(descriptor, "Got the new process descriptor");
 
     // Connect to the first content process available
-    const content = processes.filter(p => !p.isParent)[0];
+    const content = processes.filter(p => !p.isParentProcessDescriptor)[0];
 
     const processDescriptor = await client.mainRoot.getProcess(content.id);
     const front = await processDescriptor.getTarget();
@@ -56,9 +56,11 @@ add_task(async () => {
     ok(targetForm.consoleActor, "Got the console actor");
     ok(targetForm.threadActor, "Got the thread actor");
 
-    // Ensure sending at least one request to an actor...
-    const consoleFront = await front.getFront("console");
-    const { result } = await consoleFront.evaluateJSAsync("var a = 42; a");
+    // Ensure sending at least one request to an actor
+    const commands = await CommandsFactory.forProcess(osPid);
+    await commands.targetCommand.startListening();
+    const { result } = await commands.scriptCommand.execute("var a = 42; a");
+
     is(result, 42, "console.eval worked");
 
     return [front, content.id];

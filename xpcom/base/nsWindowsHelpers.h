@@ -11,6 +11,7 @@
 #define nsWindowsHelpers_h
 
 #include <windows.h>
+#include <msi.h>
 #include "nsAutoRef.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/UniquePtr.h"
@@ -53,6 +54,19 @@ class nsAutoRefTraits<HDC> {
   static void Release(RawRef aFD) {
     if (aFD != Void()) {
       ::DeleteDC(aFD);
+    }
+  }
+};
+
+template <>
+class nsAutoRefTraits<HFONT> {
+ public:
+  typedef HFONT RawRef;
+  static HFONT Void() { return nullptr; }
+
+  static void Release(RawRef aFD) {
+    if (aFD != Void()) {
+      ::DeleteObject(aFD);
     }
   }
 };
@@ -159,6 +173,19 @@ class nsAutoRefTraits<DEVMODEW*> {
   }
 };
 
+template <>
+class nsAutoRefTraits<MSIHANDLE> {
+ public:
+  typedef MSIHANDLE RawRef;
+  static RawRef Void() { return 0; }
+
+  static void Release(RawRef aHandle) {
+    if (aHandle != Void()) {
+      ::MsiCloseHandle(aHandle);
+    }
+  }
+};
+
 // HGLOBAL is just a typedef of HANDLE which nsSimpleRef has a specialization
 // of, that means having a nsAutoRefTraits specialization for HGLOBAL is
 // useless. Therefore we create a wrapper class for HGLOBAL to make
@@ -214,6 +241,7 @@ class nsAutoRefTraits<nsHPRINTER> {
 
 typedef nsAutoRef<HKEY> nsAutoRegKey;
 typedef nsAutoRef<HDC> nsAutoHDC;
+typedef nsAutoRef<HFONT> nsAutoFont;
 typedef nsAutoRef<HBRUSH> nsAutoBrush;
 typedef nsAutoRef<HRGN> nsAutoRegion;
 typedef nsAutoRef<HBITMAP> nsAutoBitmap;
@@ -223,6 +251,7 @@ typedef nsAutoRef<HMODULE> nsModuleHandle;
 typedef nsAutoRef<DEVMODEW*> nsAutoDevMode;
 typedef nsAutoRef<nsHGLOBAL> nsAutoGlobalMem;
 typedef nsAutoRef<nsHPRINTER> nsAutoPrinter;
+typedef nsAutoRef<MSIHANDLE> nsAutoMsiHandle;
 
 namespace {
 
@@ -283,6 +312,10 @@ HMODULE inline LoadLibrarySystem32(LPCWSTR aModule) {
 // for UniquePtr
 struct LocalFreeDeleter {
   void operator()(void* aPtr) { ::LocalFree(aPtr); }
+};
+
+struct VirtualFreeDeleter {
+  void operator()(void* aPtr) { ::VirtualFree(aPtr, 0, MEM_RELEASE); }
 };
 
 // for UniquePtr to store a PSID

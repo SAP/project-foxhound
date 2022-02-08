@@ -61,13 +61,7 @@ loader.lazyGetter(this, "NotificationBox", () =>
 );
 loader.lazyRequireGetter(
   this,
-  "getNotificationWithValue",
-  "devtools/client/shared/components/NotificationBox",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "PriorityLevels",
+  ["getNotificationWithValue", "PriorityLevels"],
   "devtools/client/shared/components/NotificationBox",
   true
 );
@@ -151,6 +145,8 @@ class App extends Component {
         actions.reverseSearchInputToggle({ initialValue, access: "keyboard" })
       );
       event.stopPropagation();
+      // Prevent Reader Mode to be enabled (See Bug 1682340)
+      event.preventDefault();
     }
 
     if (

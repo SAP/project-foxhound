@@ -10,7 +10,9 @@
 #include "mozilla/dom/MIDIOutputBinding.h"
 #include "mozilla/dom/MIDIUtils.h"
 #include "nsDOMNavigationTiming.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Performance.h"
 
 using namespace mozilla;
@@ -27,7 +29,7 @@ MIDIOutput* MIDIOutput::Create(nsPIDOMWindowInner* aWindow,
                                const bool aSysexEnabled) {
   MOZ_ASSERT(static_cast<MIDIPortType>(aPortInfo.type()) ==
              MIDIPortType::Output);
-  auto port = new MIDIOutput(aWindow, aMIDIAccessParent);
+  auto* port = new MIDIOutput(aWindow, aMIDIAccessParent);
   if (NS_WARN_IF(!port->Initialize(aPortInfo, aSysexEnabled))) {
     return nullptr;
   }

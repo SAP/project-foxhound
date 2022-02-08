@@ -24,6 +24,7 @@ namespace mozilla {
 class AudioThreadRegistry final {
  public:
   AudioThreadRegistry() : mThreadIds("AudioThreadId") {}
+
   ~AudioThreadRegistry() {
     // It would be nice to be able to assert that all threads have be
     // unregistered, but we can't: it's legal to suspend an audio stream, so
@@ -32,7 +33,12 @@ class AudioThreadRegistry final {
 
   // This is intended to be called when an object starts an audio callback
   // thread.
-  void Register(int aThreadId) {
+  void Register(ProfilerThreadId aThreadId) {
+    if (!aThreadId.IsSpecified()) {
+      // profiler_current_thread_id is unspecified on unsupported platforms.
+      return;
+    }
+
     auto threadIds = mThreadIds.Lock();
     for (uint32_t i = 0; i < threadIds->Length(); i++) {
       if ((*threadIds)[i].mId == aThreadId) {
@@ -48,7 +54,12 @@ class AudioThreadRegistry final {
   }
 
   // This is intended to be called when an object stops an audio callback thread
-  void Unregister(int aThreadId) {
+  void Unregister(ProfilerThreadId aThreadId) {
+    if (!aThreadId.IsSpecified()) {
+      // profiler_current_thread_id is unspedified on unsupported platforms.
+      return;
+    }
+
     auto threadIds = mThreadIds.Lock();
     for (uint32_t i = 0; i < threadIds->Length(); i++) {
       if ((*threadIds)[i].mId == aThreadId) {
@@ -72,7 +83,7 @@ class AudioThreadRegistry final {
   AudioThreadRegistry& operator=(AudioThreadRegistry&&) = delete;
 
   struct ThreadUserCount {
-    int mId;  // from profiler_current_thread_id
+    ProfilerThreadId mId;  // from profiler_current_thread_id
     int mUserCount;
   };
   DataMutex<nsTArray<ThreadUserCount>> mThreadIds;

@@ -4,7 +4,6 @@
 
 "use strict";
 
-const promise = require("promise");
 const {
   FrontClassWithSpec,
   types,
@@ -122,6 +121,8 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
     this._next = null;
     // The previous sibling of this node.
     this._prev = null;
+    // Store the flag to use it after destroy, where targetFront is set to null.
+    this._hasParentProcessTarget = targetFront.isParentProcess;
   }
 
   /**
@@ -185,6 +186,28 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
    */
   parentOrHost() {
     return this.isShadowRoot ? this.host : this._parent;
+  }
+
+  /**
+   * Returns the owner DocumentElement|ShadowRootElement NodeFront for this NodeFront,
+   * or null if such element can't be found.
+   *
+   * @returns {NodeFront|null}
+   */
+  getOwnerRootNodeFront() {
+    let currentNode = this;
+    while (currentNode) {
+      if (
+        currentNode.isShadowRoot ||
+        currentNode.nodeType === Node.DOCUMENT_NODE
+      ) {
+        return currentNode;
+      }
+
+      currentNode = currentNode.parentNode();
+    }
+
+    return null;
   }
 
   /**
@@ -270,6 +293,10 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
     return this._form.baseURI;
   }
 
+  get browsingContextID() {
+    return this._form.browsingContextID;
+  }
+
   get className() {
     return this.getAttribute("class") || "";
   }
@@ -280,8 +307,12 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
   get numChildren() {
     return this._form.numChildren;
   }
-  get remoteFrame() {
-    return BROWSER_TOOLBOX_FISSION_ENABLED && this._form.remoteFrame;
+  get useChildTargetToFetchChildren() {
+    if (!BROWSER_TOOLBOX_FISSION_ENABLED && this._hasParentProcessTarget) {
+      return false;
+    }
+
+    return this._form.useChildTargetToFetchChildren;
   }
   get hasEventListeners() {
     return this._form.hasEventListeners;
@@ -315,6 +346,10 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
 
   get isDocumentElement() {
     return !!this._form.isDocumentElement;
+  }
+
+  get isTopLevelDocument() {
+    return this._form.isTopLevelDocument;
   }
 
   get isShadowRoot() {
@@ -389,6 +424,10 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
     return this._form.isScrollable;
   }
 
+  get causesOverflow() {
+    return this._form.causesOverflow;
+  }
+
   get isTreeDisplayed() {
     let parent = this;
     while (parent) {
@@ -404,10 +443,6 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
     return this.parentFront.parentFront;
   }
 
-  get highlighterFront() {
-    return this.inspectorFront.highlighter;
-  }
-
   get walkerFront() {
     return this.parentFront;
   }
@@ -420,7 +455,7 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
     }
 
     const str = this._form.nodeValue || "";
-    return promise.resolve(new SimpleStringFront(str));
+    return Promise.resolve(new SimpleStringFront(str));
   }
 
   /**
@@ -520,31 +555,23 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
     return actor.rawNode;
   }
 
-  async connectToRemoteFrame() {
-    if (!this.remoteFrame) {
-      console.warn("Tried to open remote connection to an invalid frame.");
+  async connectToFrame() {
+    if (!this.useChildTargetToFetchChildren) {
+      console.warn("Tried to open connection to an invalid frame.");
       return null;
     }
-    if (this._remoteFrameTarget && this._remoteFrameTarget.actorID) {
-      return this._remoteFrameTarget;
+    if (
+      this._childBrowsingContextTarget &&
+      !this._childBrowsingContextTarget.isDestroyed()
+    ) {
+      return this._childBrowsingContextTarget;
     }
 
-    // Get the target for this remote frame element
-    this._remoteFrameTarget = await this.targetFront.getBrowsingContextTarget(
+    // Get the target for this frame element
+    this._childBrowsingContextTarget = await this.targetFront.getWindowGlobalTarget(
       this._form.browsingContextID
     );
-    return this._remoteFrameTarget;
-  }
-
-  async getAllSelectors() {
-    if (!this.traits.supportsGetAllSelectors) {
-      // Backward compatibility: if the server does not support getAllSelectors
-      // fallback on getUniqueSelector and wrap the response in an array.
-      // getAllSelectors was added in FF72.
-      const selector = await super.getUniqueSelector();
-      return [selector];
-    }
-    return super.getAllSelectors();
+    return this._childBrowsingContextTarget;
   }
 }
 

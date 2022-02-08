@@ -22,10 +22,6 @@ let promptService;
 
 AddonTestUtils.initMochitest(this);
 
-function getAddonCard(doc, addonId) {
-  return doc.querySelector(`addon-card[addon-id="${addonId}"]`);
-}
-
 function getDetailRows(card) {
   return Array.from(
     card.querySelectorAll('[name="details"] .addon-detail-row:not([hidden])')
@@ -45,6 +41,14 @@ function checkLabel(row, name) {
     id,
     `The ${name} label is set`
   );
+}
+
+function formatUrl(contentAttribute, url) {
+  let parsedUrl = new URL(url);
+  parsedUrl.searchParams.set("utm_source", "firefox-browser");
+  parsedUrl.searchParams.set("utm_medium", "firefox-browser");
+  parsedUrl.searchParams.set("utm_content", contentAttribute);
+  return parsedUrl.href;
 }
 
 function checkLink(link, url, text = url) {
@@ -115,11 +119,8 @@ async function hasPrivateAllowed(id) {
 }
 
 async function assertBackButtonIsDisabled(win) {
-  await win.htmlBrowserLoaded;
-
   let backButton = await BrowserTestUtils.waitForCondition(async () => {
-    let doc = win.getHtmlBrowser().contentDocument;
-    let backButton = doc.querySelector(".back-button");
+    let backButton = win.document.querySelector(".back-button");
 
     // Wait until the button is visible in the page.
     return backButton && !backButton.hidden ? backButton : false;
@@ -130,16 +131,12 @@ async function assertBackButtonIsDisabled(win) {
 }
 
 add_task(async function enableHtmlViews() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.allowPrivateBrowsingByDefault", false]],
-  });
-
   gProvider = new MockProvider();
   gProvider.createAddons([
     {
       id: "addon1@mochi.test",
       name: "Test add-on 1",
-      creator: { name: "The creator", url: "http://example.com/me" },
+      creator: { name: "The creator", url: "http://addons.mozilla.org/me" },
       version: "3.1",
       description: "Short description",
       fullDescription: "Longer description\nWith brs!",
@@ -151,7 +148,7 @@ add_task(async function enableHtmlViews() {
         permissions: ["alarms", "contextMenus", "tabs", "webNavigation"],
       },
       reviewCount: 5,
-      reviewURL: "http://example.com/reviews",
+      reviewURL: "http://addons.mozilla.org/reviews",
       homepageURL: "http://example.com/addon1",
       updateDate: new Date("2019-03-07T01:00:00"),
       applyBackgroundUpdates: AddonManager.AUTOUPDATE_ENABLE,
@@ -222,32 +219,31 @@ add_task(async function testOpenDetailView() {
   };
 
   let win = await loadInitialView("extension");
-  let doc = win.document;
 
   // Test click on card to open details.
-  let card = getAddonCard(doc, id);
+  let card = getAddonCard(win, id);
   ok(!card.querySelector("addon-details"), "The card doesn't have details");
   let loaded = waitForViewLoad(win);
   EventUtils.synthesizeMouseAtCenter(card, { clickCount: 1 }, win);
   await loaded;
 
-  card = getAddonCard(doc, id);
+  card = getAddonCard(win, id);
   ok(card.querySelector("addon-details"), "The card now has details");
 
   await goBack(win);
 
   // Test using more options menu.
-  card = getAddonCard(doc, id);
+  card = getAddonCard(win, id);
   loaded = waitForViewLoad(win);
   card.querySelector('[action="expand"]').click();
   await loaded;
 
-  card = getAddonCard(doc, id);
+  card = getAddonCard(win, id);
   ok(card.querySelector("addon-details"), "The card now has details");
 
   await goBack(win);
 
-  card = getAddonCard(doc, id2);
+  card = getAddonCard(win, id2);
   loaded = waitForViewLoad(win);
   card.querySelector('[action="expand"]').click();
   await loaded;
@@ -255,13 +251,13 @@ add_task(async function testOpenDetailView() {
   await goBack(win);
 
   // Test click on add-on name.
-  card = getAddonCard(doc, id2);
+  card = getAddonCard(win, id2);
   ok(!card.querySelector("addon-details"), "The card isn't expanded");
   let addonName = card.querySelector(".addon-name");
   loaded = waitForViewLoad(win);
   EventUtils.synthesizeMouseAtCenter(addonName, {}, win);
   await loaded;
-  card = getAddonCard(doc, id2);
+  card = getAddonCard(win, id2);
   ok(card.querySelector("addon-details"), "The card is expanded");
 
   await closeView(win);
@@ -320,13 +316,13 @@ add_task(async function testDetailOperations() {
   let win = await loadInitialView("extension");
   let doc = win.document;
 
-  let card = getAddonCard(doc, id);
+  let card = getAddonCard(win, id);
   ok(!card.querySelector("addon-details"), "The card doesn't have details");
   let loaded = waitForViewLoad(win);
   EventUtils.synthesizeMouseAtCenter(card, { clickCount: 1 }, win);
   await loaded;
 
-  card = getAddonCard(doc, id);
+  card = getAddonCard(win, id);
   let panel = card.querySelector("panel-list");
 
   // Check button visibility.
@@ -384,7 +380,7 @@ add_task(async function testDetailOperations() {
   // We're on the list view now and there's no card for this extension.
   const addonList = doc.querySelector("addon-list");
   ok(addonList, "There's an addon-list now");
-  ok(!getAddonCard(doc, id), "The extension no longer has a card");
+  ok(!getAddonCard(win, id), "The extension no longer has a card");
   let addon = await AddonManager.getAddonByID(id);
   ok(
     addon && !!(addon.pendingOperations & AddonManager.PENDING_UNINSTALL),
@@ -402,7 +398,7 @@ add_task(async function testDetailOperations() {
   info("Wait for the pending uninstall addon complete restart");
   await extensionStarted;
 
-  card = getAddonCard(doc, addon.id);
+  card = getAddonCard(win, addon.id);
   ok(card, "Addon card rendered after clicking pending uninstall undo button");
 
   await closeView(win);
@@ -463,7 +459,7 @@ add_task(async function testFullDetails() {
   let doc = win.document;
 
   // The list card.
-  let card = getAddonCard(doc, id);
+  let card = getAddonCard(win, id);
   ok(!card.hasAttribute("expanded"), "The list card is not expanded");
 
   // Make sure the preview is hidden.
@@ -476,7 +472,7 @@ add_task(async function testFullDetails() {
   await loaded;
 
   // This is now the detail card.
-  card = getAddonCard(doc, id);
+  card = getAddonCard(win, id);
   ok(card.hasAttribute("expanded"), "The detail card is expanded");
 
   // Make sure the preview is hidden.
@@ -537,7 +533,11 @@ add_task(async function testFullDetails() {
   row = rows.shift();
   checkLabel(row, "author");
   let link = row.querySelector("a");
-  checkLink(link, "http://example.com/me", "The creator");
+  let authorLink = formatUrl(
+    "addons-manager-user-profile-link",
+    "http://addons.mozilla.org/me"
+  );
+  checkLink(link, authorLink, "The creator");
 
   // Version.
   row = rows.shift();
@@ -568,7 +568,11 @@ add_task(async function testFullDetails() {
   let fullAttrs = stars.map(star => star.getAttribute("fill")).join(",");
   is(fullAttrs, "full,full,full,full,half", "Four and a half stars are full");
   link = rating.querySelector("a");
-  checkLink(link, "http://example.com/reviews", {
+  let reviewsLink = formatUrl(
+    "addons-manager-reviews-link",
+    "http://addons.mozilla.org/reviews"
+  );
+  checkLink(link, reviewsLink, {
     id: "addon-detail-reviews-link",
     args: { numberOfReviews: 5 },
   });
@@ -629,13 +633,13 @@ add_task(async function testMinimalExtension() {
   let win = await loadInitialView("extension");
   let doc = win.document;
 
-  let card = getAddonCard(doc, "addon2@mochi.test");
+  let card = getAddonCard(win, "addon2@mochi.test");
   ok(!card.hasAttribute("expanded"), "The list card is not expanded");
   let loaded = waitForViewLoad(win);
   card.querySelector('[action="expand"]').click();
   await loaded;
 
-  card = getAddonCard(doc, "addon2@mochi.test");
+  card = getAddonCard(win, "addon2@mochi.test");
   let details = card.querySelector("addon-details");
 
   // Check all the deck buttons are hidden.
@@ -681,10 +685,9 @@ add_task(async function testMinimalExtension() {
 
 add_task(async function testDefaultTheme() {
   let win = await loadInitialView("theme");
-  let doc = win.document;
 
   // The list card.
-  let card = getAddonCard(doc, DEFAULT_THEME_ID);
+  let card = getAddonCard(win, DEFAULT_THEME_ID);
   ok(!card.hasAttribute("expanded"), "The list card is not expanded");
 
   let preview = card.querySelector(".card-heading-image");
@@ -695,7 +698,7 @@ add_task(async function testDefaultTheme() {
   card.querySelector('[action="expand"]').click();
   await loaded;
 
-  card = getAddonCard(doc, DEFAULT_THEME_ID);
+  card = getAddonCard(win, DEFAULT_THEME_ID);
 
   preview = card.querySelector(".card-heading-image");
   ok(preview, "There is a preview");
@@ -715,7 +718,7 @@ add_task(async function testDefaultTheme() {
   // Version.
   let version = rows.shift();
   checkLabel(version, "version");
-  is(version.lastChild.textContent, "1.0", "It's always version 1.0");
+  is(version.lastChild.textContent, "1.3", "It's always version 1.3");
 
   // Last updated.
   let lastUpdated = rows.shift();
@@ -731,18 +734,17 @@ add_task(async function testDefaultTheme() {
 
 add_task(async function testStaticTheme() {
   let win = await loadInitialView("theme");
-  let doc = win.document;
 
   // The list card.
-  let card = getAddonCard(doc, "theme1@mochi.test");
+  let card = getAddonCard(win, "theme1@mochi.test");
   ok(!card.hasAttribute("expanded"), "The list card is not expanded");
 
   // Make sure the preview is set.
   let preview = card.querySelector(".card-heading-image");
   ok(preview, "There is a preview");
   is(preview.src, "http://example.com/preview.png", "The preview URL is set");
-  is(preview.width, "664", "The width is set");
-  is(preview.height, "90", "The height is set");
+  is(preview.width, 664, "The width is set");
+  is(preview.height, 90, "The height is set");
   is(preview.hidden, false, "The preview is visible");
 
   // Load the detail view.
@@ -750,14 +752,14 @@ add_task(async function testStaticTheme() {
   card.querySelector('[action="expand"]').click();
   await loaded;
 
-  card = getAddonCard(doc, "theme1@mochi.test");
+  card = getAddonCard(win, "theme1@mochi.test");
 
   // Make sure the preview is still set.
   preview = card.querySelector(".card-heading-image");
   ok(preview, "There is a preview");
   is(preview.src, "http://example.com/preview.png", "The preview URL is set");
-  is(preview.width, "664", "The width is set");
-  is(preview.height, "90", "The height is set");
+  is(preview.width, 664, "The width is set");
+  is(preview.height, 90, "The height is set");
   is(preview.hidden, false, "The preview is visible");
 
   // Check all the deck buttons are hidden.
@@ -797,7 +799,7 @@ add_task(async function testPrivateBrowsingExtension() {
   let doc = win.document;
 
   // The add-on shouldn't show that it's allowed yet.
-  let card = getAddonCard(doc, id);
+  let card = getAddonCard(win, id);
   let badge = card.querySelector(".addon-badge-private-browsing-allowed");
   ok(badge.hidden, "The PB badge is hidden initially");
   ok(!(await hasPrivateAllowed(id)), "PB is not allowed");
@@ -808,7 +810,7 @@ add_task(async function testPrivateBrowsingExtension() {
   await loaded;
 
   // The badge is still hidden on the detail view.
-  card = getAddonCard(doc, id);
+  card = getAddonCard(win, id);
   badge = card.querySelector(".addon-badge-private-browsing-allowed");
   ok(badge.hidden, "The PB badge is hidden on the detail view");
   ok(!(await hasPrivateAllowed(id)), "PB is not allowed");
@@ -852,8 +854,8 @@ add_task(async function testPrivateBrowsingExtension() {
   await updated;
 
   // It's still allowed in PB.
-  ok(!badge.hidden, "The PB badge is shown");
   ok(await hasPrivateAllowed(id), "PB is allowed");
+  ok(!badge.hidden, "The PB badge is shown");
 
   // Disallow PB.
   updated = BrowserTestUtils.waitForEvent(card, "update");
@@ -1053,78 +1055,14 @@ add_task(async function testPrivateBrowsingAllowedListView() {
   await addon.reload();
 
   let win = await loadInitialView("extension");
-  let doc = win.document;
 
   // The allowed extension should have a badge on load.
-  let card = getAddonCard(doc, "allowed@mochi.test");
+  let card = getAddonCard(win, "allowed@mochi.test");
   let badge = card.querySelector(".addon-badge-private-browsing-allowed");
   ok(!badge.hidden, "The PB badge is shown for the allowed add-on");
 
   await extension.unload();
   await closeView(win);
-});
-
-add_task(async function testPermissions() {
-  async function runTest(id, permissions) {
-    let win = await loadInitialView("extension");
-    let doc = win.document;
-
-    let card = getAddonCard(doc, id);
-    ok(!card.hasAttribute("expanded"), "The list card is not expanded");
-    let loaded = waitForViewLoad(win);
-    card.querySelector('[action="expand"]').click();
-    await loaded;
-
-    card = getAddonCard(doc, id);
-    let { deck, tabGroup } = card.details;
-
-    // Check all the deck buttons are hidden.
-    assertDeckHeadingButtons(tabGroup, ["details", "permissions"]);
-
-    let permsBtn = tabGroup.querySelector('[name="permissions"]');
-    let permsShown = BrowserTestUtils.waitForEvent(deck, "view-changed");
-    permsBtn.click();
-    await permsShown;
-
-    let permsSection = card.querySelector("addon-permissions-list");
-    let rows = Array.from(permsSection.querySelectorAll(".addon-detail-row"));
-
-    info("Check displayed permissions");
-    if (permissions) {
-      for (let name in permissions) {
-        // Check the permission-info class to make sure it's for a permission.
-        let row = rows.shift();
-        ok(
-          row.classList.contains("permission-info"),
-          `There's a row for ${name}`
-        );
-      }
-    } else {
-      let row = rows.shift();
-      is(
-        doc.l10n.getAttributes(row).id,
-        "addon-permissions-empty",
-        "There's a message when no permissions are shown"
-      );
-    }
-
-    info("Check learn more link");
-    let row = rows.shift();
-    is(row.children.length, 1, "There's one child for learn more");
-    let link = row.firstElementChild;
-    let rootUrl = Services.urlFormatter.formatURLPref("app.support.baseURL");
-    let url = rootUrl + "extension-permissions";
-    is(link.href, url, "The URL is set");
-    is(link.getAttribute("target"), "_blank", "The link opens in a new tab");
-
-    await closeView(win);
-  }
-
-  info("Check permissions for add-on with permission message");
-  await runTest("addon1@mochi.test", ["<all_urls>", "tabs", "webNavigation"]);
-
-  info("Check permissions for add-on without permission messages");
-  await runTest("addon2@mochi.test");
 });
 
 // When the back button is used, its disabled state will be updated. If it
@@ -1141,7 +1079,7 @@ add_task(async function testGoBackButton() {
 
   let loadDetailView = () => {
     let loaded = waitForViewLoad(win);
-    getAddonCard(doc, id)
+    getAddonCard(win, id)
       .querySelector("[action=expand]")
       .click();
     return loaded;
@@ -1173,9 +1111,8 @@ add_task(async function testEmptyMoreOptionsMenu() {
   ok(theme.isActive, "The default theme is enabled");
 
   let win = await loadInitialView("theme");
-  let doc = win.document;
 
-  let card = getAddonCard(doc, DEFAULT_THEME_ID);
+  let card = getAddonCard(win, DEFAULT_THEME_ID);
   let enabledItems = card.options.visibleItems;
   is(enabledItems.length, 1, "There is one enabled item");
   is(enabledItems[0].getAttribute("action"), "expand", "Expand is enabled");
@@ -1186,7 +1123,7 @@ add_task(async function testEmptyMoreOptionsMenu() {
   enabledItems[0].click();
   await loaded;
 
-  card = getAddonCard(doc, DEFAULT_THEME_ID);
+  card = getAddonCard(win, DEFAULT_THEME_ID);
   let toggleDisabledButton = card.querySelector('[action="toggle-disabled"]');
   enabledItems = card.options.visibleItems;
   is(enabledItems.length, 0, "There are no enabled items");

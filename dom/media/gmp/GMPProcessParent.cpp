@@ -20,6 +20,7 @@
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
 #  include "mozilla/dom/ContentChild.h"
+#  include "mozilla/Preferences.h"
 #  include "mozilla/Sandbox.h"
 #  include "mozilla/SandboxSettings.h"
 #  include "nsMacUtilsImpl.h"
@@ -31,10 +32,11 @@ using std::vector;
 using mozilla::gmp::GMPProcessParent;
 using mozilla::ipc::GeckoChildProcessHost;
 
+#ifdef MOZ_WIDGET_ANDROID
 static const int kInvalidFd = -1;
+#endif
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
 bool GMPProcessParent::sLaunchWithMacSandbox = true;
@@ -68,6 +70,10 @@ GMPProcessParent::GMPProcessParent(const std::string& aGMPPath)
       ,
       mRequiresWindowServer(false)
 #endif
+#if defined(XP_MACOSX) && defined(__aarch64__)
+      ,
+      mChildLaunchArch(base::PROCESS_ARCH_INVALID)
+#endif
 {
   MOZ_COUNT_CTOR(GMPProcessParent);
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
@@ -80,6 +86,15 @@ GMPProcessParent::~GMPProcessParent() { MOZ_COUNT_DTOR(GMPProcessParent); }
 
 bool GMPProcessParent::Launch(int32_t aTimeoutMs) {
   vector<string> args;
+
+#if defined(XP_MACOSX) && defined(__aarch64__)
+  GMP_LOG_DEBUG("GMPProcessParent::Launch() mChildLaunchArch: %d",
+                mChildLaunchArch);
+  mLaunchOptions->arch = mChildLaunchArch;
+  if (mChildLaunchArch == base::PROCESS_ARCH_X86_64) {
+    mLaunchOptions->env_map["MOZ_SHMEM_PAGESIZE_16K"] = 1;
+  }
+#endif
 
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
   std::wstring wGMPPath = UTF8ToWide(mGMPPath.c_str());
@@ -263,5 +278,4 @@ nsresult GMPProcessParent::NormalizePath(const char* aPath,
 }
 #endif
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp

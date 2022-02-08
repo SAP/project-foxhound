@@ -9,22 +9,75 @@
 
 menupopup,
 panel {
-  border: 1px solid ThreeDShadow;
-  padding: 0;
   min-width: 1px;
-  background: Menu;
-  color: MenuText;
+  --panel-background: Menu;
+  --panel-color: MenuText;
+  --panel-padding: 0;
+  --panel-border-radius: 0;
+  --panel-border-color: ThreeDShadow;
+  --panel-width: initial;
+  --windows-panel-box-shadow: 0 0 4px hsla(0,0%,0%,.2);
+}
+
+@media (-moz-windows-default-theme) {
+  panel, menupopup {
+    --windows-panel-box-shadow: 0 0 4px hsla(210,4%,10%,.2);
+  }
 }
 
 menupopup {
   appearance: auto;
   -moz-default-appearance: menupopup;
+
+  /* Native menus are always light */
+  color-scheme: light;
+
+  /* We set the background-color / border here so that it doesn't interfere with native styling. */
+  background-color: Menu;
+  border: 1px solid ThreeDShadow;
+  --panel-background: transparent;
+  --panel-border-color: transparent;
+  --nested-margin: -3px;
+}
+
+@media (-moz-windows-non-native-menus) {
+  menupopup {
+    /* Disable the default appearance so we can override the native styling. */
+    appearance: none;
+    color-scheme: unset;
+
+    /* Force a rounded-rect dropshadow to appear. */
+    -moz-window-shadow: cliprounded;
+
+    /* Prevent any background or border around the outside of the shadow. */
+    background-color: transparent;
+    border: none;
+    border-radius: 4px;
+
+    --panel-color: var(--menu-color);
+    --panel-border-radius: 4px;
+    --panel-padding: 4px 0;
+    --panel-border-color: var(--menu-border-color);
+    --panel-background: var(--menu-background-color);
+    --nested-margin: -6px;
+  }
+
+  menupopup > menuitem,
+  menupopup > menu {
+    padding-block: 0.5em;
+    padding-inline-start: 1em;
+  }
+
+  menupopup::part(content) {
+    /* Prevent contained items from drawing over the border-radius. */
+    overflow: clip;
+  }
 }
 
 menupopup > menu > menupopup {
  /* align submenus */
-  margin-inline-start: -3px;
-  margin-top: -3px;
+  margin-inline-start: var(--nested-margin);
+  margin-top: var(--nested-margin);
 }
 
 panel[type="arrow"] {
@@ -43,90 +96,45 @@ panel[type="arrow"][side="right"] {
   margin-block: -20px;
 }
 
-.panel-arrowcontent {
-  padding: var(--arrowpanel-padding);
-  color: var(--arrowpanel-color);
-  background: var(--arrowpanel-background);
-  background-clip: padding-box;
-  border: 1px solid var(--arrowpanel-border-color);
-  box-shadow: 0 0 4px hsla(0,0%,0%,.2);
-  margin: 4px;
+:is(panel, menupopup)::part(content) {
+  display: -moz-box;
+  -moz-box-flex: 1;
+  padding: var(--panel-padding);
+  color: var(--panel-color);
+  background: var(--panel-background);
+  border-radius: var(--panel-border-radius);
+  border: 1px solid var(--panel-border-color);
+  width: var(--panel-width);
 }
 
-.panel-arrowcontent > html|slot {
-  /* propagate border-radius from arrowcontent to slotted children */
-  border-radius: inherit;
-}
-
-:host([orient=vertical]) .panel-arrowcontent {
+:is(panel, menupopup)[orient=vertical]::part(content) {
   -moz-box-orient: vertical;
 }
 
-%ifdef XP_WIN
-@media (-moz-os-version: windows-win7) {
-%endif
-.panel-arrowcontent {
-  border-radius: 4px;
+:is(panel, menupopup)[type="arrow"]::part(content) {
+  margin: 4px;
+  box-shadow: var(--windows-panel-box-shadow);
 }
-%ifdef XP_WIN
-}
-%endif
 
-panel[type="arrow"].panel-no-padding::part(arrowcontent) {
+panel[type="arrow"].panel-no-padding::part(content) {
   padding: 0;
   overflow: hidden; /* Don't let panel content overflow the border-radius */
 }
-
-:-moz-any(panel, menupopup)::part(arrow) {
-  -moz-context-properties: fill, stroke;
-  fill: var(--arrowpanel-background);
-  stroke: var(--arrowpanel-border-color);
-}
-
-:-moz-any(panel, menupopup)[side="top"]::part(arrow),
-:-moz-any(panel, menupopup)[side="bottom"]::part(arrow) {
-  list-style-image: url("chrome://global/skin/arrow/panelarrow-vertical.svg");
-  position: relative;
-  margin-inline: 10px;
-}
-
-:-moz-any(panel, menupopup)[side="top"]::part(arrow) {
-  margin-bottom: -5px;
-}
-
-:-moz-any(panel, menupopup)[side="bottom"]::part(arrow) {
-  transform: scaleY(-1);
-  margin-top: -5px;
-}
-
-:-moz-any(panel, menupopup)[side="left"]::part(arrow),
-:-moz-any(panel, menupopup)[side="right"]::part(arrow) {
-  list-style-image: url("chrome://global/skin/arrow/panelarrow-horizontal.svg");
-  position: relative;
-  margin-block: 10px;
-}
-
-:-moz-any(panel, menupopup)[side="left"]::part(arrow) {
-  margin-right: -5px;
-}
-
-:-moz-any(panel, menupopup)[side="right"]::part(arrow) {
-  transform: scaleX(-1);
-  margin-left: -5px;
-}
-
-%ifdef XP_WIN
-@media (-moz-windows-default-theme) {
-  .panel-arrowcontent {
-    box-shadow: 0 0 4px hsla(210,4%,10%,.2);
-  }
-}
-%endif
 
 /* rules for popups associated with menulists */
 
 menulist > menupopup {
   appearance: none;
+  background-color: transparent;
+  border: none;
   min-width: 0;
-  background-color: -moz-Field;
+}
+
+@media not (-moz-windows-non-native-menus) {
+  /* For Win10, the popup itself needs to have a transparent background because
+     otherwise the background color would appear behind the drop shadow. */
+  menulist > menupopup {
+    --panel-background: Field;
+    --panel-border-color: ThreeDShadow;
+  }
 }

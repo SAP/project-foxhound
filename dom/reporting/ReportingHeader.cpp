@@ -8,9 +8,11 @@
 
 #include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
 #include "js/JSON.h"
+#include "js/PropertyAndElement.h"  // JS_GetElement
 #include "mozilla/dom/ReportingBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SimpleGlobalObject.h"
+#include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -194,7 +196,7 @@ void ReportingHeader::ReportingFromChannel(nsIHttpChannel* aChannel) {
   }
 
   // Here we override the previous data.
-  mOrigins.Put(origin, client.release());
+  mOrigins.InsertOrUpdate(origin, std::move(client));
 
   MaybeCreateCleanupTimer();
 }
@@ -225,8 +227,7 @@ void ReportingHeader::ReportingFromChannel(nsIHttpChannel* aChannel) {
 
   JSContext* cx = jsapi.cx();
   JS::Rooted<JS::Value> jsonValue(cx);
-  bool ok = JS_ParseJSON(cx, PromiseFlatString(json).get(), json.Length(),
-                         &jsonValue);
+  bool ok = JS_ParseJSON(cx, json.BeginReading(), json.Length(), &jsonValue);
   if (!ok) {
     LogToConsoleInvalidJSON(aChannel, aURI);
     return nullptr;
@@ -731,6 +732,12 @@ ReportingHeader::Notify(nsITimer* aTimer) {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+ReportingHeader::GetName(nsACString& aName) {
+  aName.AssignLiteral("ReportingHeader");
+  return NS_OK;
+}
+
 void ReportingHeader::MaybeCreateCleanupTimer() {
   if (mCleanupTimer) {
     return;
@@ -764,6 +771,7 @@ NS_INTERFACE_MAP_BEGIN(ReportingHeader)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIObserver)
   NS_INTERFACE_MAP_ENTRY(nsIObserver)
   NS_INTERFACE_MAP_ENTRY(nsITimerCallback)
+  NS_INTERFACE_MAP_ENTRY(nsINamed)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_ADDREF(ReportingHeader)

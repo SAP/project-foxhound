@@ -4,7 +4,24 @@
 
 "use strict";
 
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
 document.addEventListener("dialogaccept", onResetProfileAccepted);
+document
+  .getElementById("refreshProfileLearnMore")
+  .addEventListener("click", e => {
+    e.preventDefault();
+    let retVals = window.arguments[0];
+    retVals.learnMore = true;
+    window.close();
+  });
+
+document.addEventListener("DOMContentLoaded", function() {
+  document
+    .getElementById("resetProfileDialog")
+    .getButton("accept")
+    .classList.add("danger-button");
+});
 
 function onResetProfileAccepted() {
   let retVals = window.arguments[0];

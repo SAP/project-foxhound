@@ -72,7 +72,7 @@ class TRRServiceChannel : public HttpBaseChannel,
   NS_IMETHOD LogMimeTypeMismatch(const nsACString& aMessageName, bool aWarning,
                                  const nsAString& aURL,
                                  const nsAString& aContentType) override;
-  NS_IMETHOD SetupFallbackChannel(const char* aFallbackKey) override;
+  NS_IMETHOD GetIsAuthChannel(bool* aIsAuthChannel) override;
 
   NS_IMETHOD SetNotificationCallbacks(
       nsIInterfaceRequestor* aCallbacks) override;
@@ -84,6 +84,9 @@ class TRRServiceChannel : public HttpBaseChannel,
   NS_IMETHOD ClearClassFlags(uint32_t inFlags) override;
   // nsIResumableChannel
   NS_IMETHOD ResumeAt(uint64_t startPos, const nsACString& entityID) override;
+  NS_IMETHOD SetEarlyHintObserver(nsIEarlyHintObserver* aObserver) override {
+    return NS_OK;
+  }
 
   [[nodiscard]] nsresult OnPush(uint32_t aPushedStreamId,
                                 const nsACString& aUrl,
@@ -112,7 +115,6 @@ class TRRServiceChannel : public HttpBaseChannel,
   virtual ~TRRServiceChannel();
 
   void CancelNetworkRequest(nsresult aStatus);
-  const nsCString& GetTopWindowOrigin();
   nsresult BeginConnect();
   nsresult ContinueOnBeforeConnect();
   nsresult Connect();
@@ -138,20 +140,14 @@ class TRRServiceChannel : public HttpBaseChannel,
   virtual bool SameOriginWithOriginalUri(nsIURI* aURI) override;
   bool DispatchRelease();
 
-  // True only when we have computed the value of the top window origin.
-  bool mTopWindowOriginComputed;
-
   nsCString mUsername;
-  // The origin of the top window, only valid when mTopWindowOriginComputed is
-  // true.
-  nsCString mTopWindowOrigin;
 
   // Needed for accurate DNS timing
   RefPtr<nsDNSPrefetch> mDNSPrefetch;
 
   nsCOMPtr<nsIRequest> mTransactionPump;
   RefPtr<HttpTransactionShell> mTransaction;
-  uint32_t mPushedStreamId;
+  uint32_t mPushedStreamId{0};
   RefPtr<HttpTransactionShell> mTransWithPushedStream;
   DataMutex<nsCOMPtr<nsICancelable>> mProxyRequest;
   nsCOMPtr<nsIEventTarget> mCurrentEventTarget;

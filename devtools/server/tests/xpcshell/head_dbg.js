@@ -18,12 +18,12 @@ appInfo.updateAppInfo({
 });
 
 const { require, loader } = ChromeUtils.import(
-  "resource://devtools/shared/Loader.jsm"
+  "resource://devtools/shared/loader/Loader.jsm"
 );
 const { worker } = ChromeUtils.import(
-  "resource://devtools/shared/worker/loader.js"
+  "resource://devtools/shared/loader/worker-loader.js"
 );
-const defer = require("devtools/shared/defer");
+
 const { NetUtil } = require("resource://gre/modules/NetUtil.jsm");
 
 const Services = require("Services");
@@ -45,7 +45,7 @@ const { DevToolsServer: WorkerDevToolsServer } = worker.require(
 const { DevToolsClient } = require("devtools/client/devtools-client");
 const { ObjectFront } = require("devtools/client/fronts/object");
 const { LongStringFront } = require("devtools/client/fronts/string");
-const { TargetFactory } = require("devtools/client/framework/target");
+const { createCommandsDictionary } = require("devtools/shared/commands/index");
 
 const { addDebuggerToGlobal } = ChromeUtils.import(
   "resource://gre/modules/jsdebugger.jsm"
@@ -75,8 +75,6 @@ async function startupAddonsManager() {
   const profileDir = do_get_profile().clone();
   profileDir.append("extensions");
 
-  /* global globalThis */
-  /* See Bug 1595810 to add globalThis to eslint */
   AddonTestUtils.init(globalThis);
   AddonTestUtils.overrideCertDB();
   AddonTestUtils.appInfo = getAppInfo();
@@ -89,6 +87,12 @@ async function createTargetForFakeTab(title) {
 
   const tabs = await listTabs(client);
   const tabDescriptor = findTab(tabs, title);
+
+  // These xpcshell tests use mocked actors (xpcshell-test/testactors)
+  // which still don't support watcher actor.
+  // Because of that we still can't enable server side targets and target swiching.
+  tabDescriptor.disableTargetSwitching();
+
   return tabDescriptor.getTarget();
 }
 
@@ -167,6 +171,13 @@ function createTestGlobal(name) {
     Cc["@mozilla.org/systemprincipal;1"].createInstance(Ci.nsIPrincipal)
   );
   sandbox.__name = name;
+  // Expose a few mocks to better represent a Window object.
+  // These attributes will be used by DOCUMENT_EVENT resource listener.
+  sandbox.performance = { timing: {} };
+  sandbox.document = {
+    readyState: "complete",
+    defaultView: sandbox,
+  };
   return sandbox;
 }
 
@@ -348,22 +359,14 @@ var listener = {
 
 Services.console.registerListener(listener);
 
-function testGlobal(name) {
-  const sandbox = Cu.Sandbox(
-    Cc["@mozilla.org/systemprincipal;1"].createInstance(Ci.nsIPrincipal)
-  );
-  sandbox.__name = name;
-  return sandbox;
-}
-
 function addTestGlobal(name, server = DevToolsServer) {
-  const global = testGlobal(name);
+  const global = createTestGlobal(name);
   server.addTestGlobal(global);
   return global;
 }
 
 // List the DevToolsClient |client|'s tabs, look for one whose title is
-// |title|, and apply |callback| to the packet's entry for that tab.
+// |title|.
 async function getTestTab(client, title) {
   const tabs = await client.mainRoot.listTabs();
   for (const tab of tabs) {
@@ -373,44 +376,44 @@ async function getTestTab(client, title) {
   }
   return null;
 }
-
-// Attach to |client|'s tab whose title is |title|; and return the targetFront instance
-// referring to that tab.
+/**
+ *  Attach to the client's tab whose title is specified
+ * @param {Object} client
+ * @param {Object} title
+ * @returns commands
+ */
 async function attachTestTab(client, title) {
   const descriptorFront = await getTestTab(client, title);
-  const targetFront = await descriptorFront.getTarget();
-  await targetFront.attach();
-  return targetFront;
+
+  // These xpcshell tests use mocked actors (xpcshell-test/testactors)
+  // which still don't support watcher actor.
+  // Because of that we still can't enable server side targets and target swiching.
+  descriptorFront.disableTargetSwitching();
+
+  const commands = await createCommandsDictionary(descriptorFront);
+  await commands.targetCommand.startListening();
+  return commands;
 }
 
-// Attach to |client|'s tab whose title is |title|, and then attach to
-// that tab's thread. Pass |callback| the thread attach response packet, a
-// TargetFront referring to the tab, and a ThreadFront referring to the
-// thread.
-async function attachTestThread(client, title, callback = () => {}) {
-  const targetFront = await attachTestTab(client, title);
+/**
+ * Attach to the client's tab whose title is specified, and then attach to
+ * that tab's thread.
+ * @param {Object} client
+ * @param {Object} title
+ * @returns {Object}
+ *         targetFront
+ *         threadFront
+ *         commands
+ */
+async function attachTestThread(client, title) {
+  const commands = await attachTestTab(client, title);
+  const targetFront = commands.targetCommand.targetFront;
   const threadFront = await targetFront.getFront("thread");
-  const onPaused = threadFront.once("paused");
   await targetFront.attachThread({
     autoBlackBox: true,
   });
-  const response = await onPaused;
-  Assert.equal(threadFront.state, "paused", "Thread client is paused");
-  Assert.ok("why" in response);
-  Assert.equal(response.why.type, "attached");
-  callback(response, targetFront, threadFront);
-  return { targetFront, threadFront };
-}
-
-// Attach to |client|'s tab whose title is |title|, attach to the tab's
-// thread, and then resume it. Pass |callback| the thread's response to
-// the 'resume' packet, a TargetFront for the tab, and a ThreadFront for the
-// thread.
-async function attachTestTabAndResume(client, title, callback = () => {}) {
-  const { targetFront, threadFront } = await attachTestThread(client, title);
-  const response = await threadFront.resume();
-  callback(response, targetFront, threadFront);
-  return { targetFront, threadFront };
+  Assert.equal(threadFront.state, "attached", "Thread front is attached");
+  return { targetFront, threadFront, commands };
 }
 
 /**
@@ -754,6 +757,15 @@ async function getSourceFormById(threadFront, id) {
   return sources.find(source => source.actor == id);
 }
 
+async function checkFramesLength(threadFront, expectedFrames) {
+  const frameResponse = await threadFront.getFrames(0, null);
+  Assert.equal(
+    frameResponse.frames.length,
+    expectedFrames,
+    "Thread front has the expected number of frames"
+  );
+}
+
 /**
  * Do a reload which clears the thread debugger
  *
@@ -810,11 +822,15 @@ async function setupTestFromUrl(url) {
 
   const tabs = await listTabs(devToolsClient);
   const descriptorFront = findTab(tabs, "test");
+
+  // These xpcshell tests use mocked actors (xpcshell-test/testactors)
+  // which still don't support watcher actor.
+  // Because of that we still can't enable server side targets and target swiching.
+  descriptorFront.disableTargetSwitching();
+
   const targetFront = await descriptorFront.getTarget();
-  await targetFront.attach();
 
   const threadFront = await attachThread(targetFront);
-  await resume(threadFront);
 
   const sourceUrl = getFileUrl(url);
   const promise = waitForNewSource(threadFront, sourceUrl);
@@ -878,7 +894,7 @@ function threadFrontTest(test, options = {}) {
 
     // Attach to the fake tab target and retrieve the ThreadFront instance.
     // Automatically resume as the thread is paused by default after attach.
-    const { targetFront, threadFront } = await attachTestTabAndResume(
+    const { targetFront, threadFront, commands } = await attachTestThread(
       client,
       scriptName
     );
@@ -899,6 +915,7 @@ function threadFrontTest(test, options = {}) {
       client,
       server,
       targetFront,
+      commands,
     };
     if (waitForFinish) {
       // Use dispatchToMainThread so that the test function does not have to

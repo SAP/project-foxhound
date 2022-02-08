@@ -7,12 +7,6 @@ var gConsoleErrors = 0;
 
 add_task(async function() {
   registerCleanupFunction(function() {
-    clearAllPluginPermissions();
-    setTestPluginEnabledState(Ci.nsIPluginTag.STATE_ENABLED, "Test Plug-in");
-    setTestPluginEnabledState(
-      Ci.nsIPluginTag.STATE_ENABLED,
-      "Second Test Plug-in"
-    );
     Services.console.unregisterListener(errorListener);
     gBrowser.removeCurrentTab();
     window.focus();
@@ -38,8 +32,8 @@ add_task(async function() {
 
   let pluginInfo = await promiseForPluginInfo("plugin");
   is(
-    pluginInfo.pluginFallbackType,
-    Ci.nsIObjectLoadingContent.PLUGIN_UNSUPPORTED,
+    pluginInfo.displayedType,
+    Ci.nsIObjectLoadingContent.TYPE_NULL,
     "plugin should not have been found."
   );
 

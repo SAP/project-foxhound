@@ -28,6 +28,11 @@ av_get_pcm_codec
 av_get_profile_name
 av_grow_packet
 av_hwaccel_next
+av_hwdevice_ctx_init
+av_hwdevice_ctx_alloc
+av_hwdevice_ctx_create_derived
+av_hwframe_transfer_get_formats
+av_hwframe_ctx_alloc
 av_init_packet
 av_lockmgr_register
 av_new_packet
@@ -51,9 +56,11 @@ av_parser_close
 av_parser_init
 av_parser_next
 av_parser_parse2
+#ifdef MOZ_LIBAV_FFT
 av_rdft_calc
 av_rdft_end
 av_rdft_init
+#endif
 av_register_codec_parser
 av_register_hwaccel
 av_shrink_packet
@@ -91,6 +98,7 @@ avcodec_free_context
 avcodec_get_class
 avcodec_get_context_defaults3
 avcodec_get_frame_class
+avcodec_get_hw_config
 avcodec_get_name
 avcodec_get_subtitle_rect_class
 avcodec_get_type

@@ -16,6 +16,7 @@
 #include "mozilla/HoldDropJSObjects.h"
 #include "nsISocketTransport.h"
 #include "nsNetUtil.h"
+#include "TCPSocket.h"
 
 namespace IPC {
 
@@ -79,7 +80,7 @@ mozilla::ipc::IPCResult TCPSocketParent::RecvOpen(
     const bool& aUseArrayBuffers) {
   mSocket = new TCPSocket(nullptr, aHost, aPort, aUseSSL, aUseArrayBuffers);
   mSocket->SetSocketBridgeParent(this);
-  NS_ENSURE_SUCCESS(mSocket->Init(), IPC_OK());
+  NS_ENSURE_SUCCESS(mSocket->Init(nullptr), IPC_OK());
   return IPC_OK();
 }
 
@@ -151,9 +152,9 @@ mozilla::ipc::IPCResult TCPSocketParent::RecvClose() {
 }
 
 void TCPSocketParent::FireErrorEvent(const nsAString& aName,
-                                     const nsAString& aType,
+                                     const nsAString& aType, nsresult aError,
                                      TCPReadyState aReadyState) {
-  SendEvent(u"error"_ns, TCPError(nsString(aName), nsString(aType)),
+  SendEvent(u"error"_ns, TCPError(nsString(aName), nsString(aType), aError),
             aReadyState);
 }
 
@@ -164,8 +165,7 @@ void TCPSocketParent::FireEvent(const nsAString& aType,
 
 void TCPSocketParent::FireArrayBufferDataEvent(nsTArray<uint8_t>& aBuffer,
                                                TCPReadyState aReadyState) {
-  nsTArray<uint8_t> arr;
-  arr.SwapElements(aBuffer);
+  nsTArray<uint8_t> arr = std::move(aBuffer);
 
   SendableData data(arr);
   SendEvent(u"data"_ns, data, aReadyState);

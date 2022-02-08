@@ -9,8 +9,8 @@
 "use strict";
 
 function doom(url, callback) {
-  get_cache_service()
-    .diskCacheStorage(Services.loadContextInfo.default, false)
+  Services.cache2
+    .diskCacheStorage(Services.loadContextInfo.default)
     .asyncDoomURI(createURI(url), "", {
       onCacheEntryDoomed(result) {
         callback(result);

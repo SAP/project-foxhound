@@ -13,14 +13,15 @@ const { CommonUtils } = ChromeUtils.import(
 );
 const { ClientID } = ChromeUtils.import("resource://gre/modules/ClientID.jsm");
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetrySession.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryStorage.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryEnvironment.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryReportingPolicy.jsm", this);
+const { TelemetrySession } = ChromeUtils.import(
+  "resource://gre/modules/TelemetrySession.jsm"
+);
+const { TelemetryEnvironment } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryEnvironment.jsm"
+);
+const { TelemetryReportingPolicy } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryReportingPolicy.jsm"
+);
 const { Preferences } = ChromeUtils.import(
   "resource://gre/modules/Preferences.jsm"
 );
@@ -36,11 +37,6 @@ const REASON_TEST_PING = "test-ping";
 const REASON_DAILY = "daily";
 const REASON_ENVIRONMENT_CHANGE = "environment-change";
 
-const PLATFORM_VERSION = "1.9.2";
-const APP_VERSION = "1";
-const APP_ID = "xpcshell@tests.mozilla.org";
-const APP_NAME = "XPCShell";
-
 const IGNORE_HISTOGRAM_TO_CLONE = "MEMORY_HEAP_ALLOCATED";
 const IGNORE_CLONED_HISTOGRAM = "test::ignore_me_also";
 // Add some unicode characters here to ensure that sending them works correctly.
@@ -52,9 +48,6 @@ const PR_WRONLY = 0x2;
 const PR_CREATE_FILE = 0x8;
 const PR_TRUNCATE = 0x20;
 const RW_OWNER = parseInt("0600", 8);
-
-const NUMBER_OF_THREADS_TO_LAUNCH = 30;
-var gNumberOfThreadsLaunched = 0;
 
 const MS_IN_ONE_HOUR = 60 * 60 * 1000;
 const MS_IN_ONE_DAY = 24 * MS_IN_ONE_HOUR;
@@ -81,20 +74,15 @@ function sendPing() {
 }
 
 function fakeGenerateUUID(sessionFunc, subsessionFunc) {
-  let session = ChromeUtils.import(
-    "resource://gre/modules/TelemetrySession.jsm",
-    null
+  const { Policy } = ChromeUtils.import(
+    "resource://gre/modules/TelemetrySession.jsm"
   );
-  session.Policy.generateSessionUUID = sessionFunc;
-  session.Policy.generateSubsessionUUID = subsessionFunc;
+  Policy.generateSessionUUID = sessionFunc;
+  Policy.generateSubsessionUUID = subsessionFunc;
 }
 
 function fakeIdleNotification(topic) {
-  let scheduler = ChromeUtils.import(
-    "resource://gre/modules/TelemetryScheduler.jsm",
-    null
-  );
-  return scheduler.TelemetryScheduler.observe(null, topic, null);
+  return TelemetryScheduler.observe(null, topic, null);
 }
 
 function setupTestData() {
@@ -363,11 +351,6 @@ function checkPayload(payload, reason, successfulPings) {
   Assert.ok(payload.simpleMeasurements.totalTime >= 0);
   Assert.equal(payload.simpleMeasurements.startupInterrupted, 1);
   Assert.equal(payload.simpleMeasurements.shutdownDuration, SHUTDOWN_TIME);
-  Assert.ok("maximalNumberOfConcurrentThreads" in payload.simpleMeasurements);
-  Assert.ok(
-    payload.simpleMeasurements.maximalNumberOfConcurrentThreads >=
-      gNumberOfThreadsLaunched
-  );
 
   let activeTicks = payload.simpleMeasurements.activeTicks;
   Assert.ok(activeTicks >= 0);
@@ -536,7 +519,7 @@ function write_fake_failedprofilelocks_file() {
 add_task(async function test_setup() {
   // Addon manager needs a profile directory
   do_get_profile();
-  loadAddonManager(APP_ID, APP_NAME, APP_VERSION, PLATFORM_VERSION);
+  await loadAddonManager(APP_ID, APP_NAME, APP_VERSION, PLATFORM_VERSION);
   finishAddonManagerStartup();
   fakeIntlReady();
   // Make sure we don't generate unexpected pings due to pref changes.
@@ -549,30 +532,6 @@ add_task(async function test_setup() {
 
   // Make it look like we've shutdown before.
   write_fake_shutdown_file();
-
-  let currentMaxNumberOfThreads = Telemetry.maximalNumberOfConcurrentThreads;
-  Assert.ok(currentMaxNumberOfThreads > 0);
-
-  // Try to augment the maximal number of threads currently launched
-  let threads = [];
-  try {
-    for (let i = 0; i < currentMaxNumberOfThreads + 10; ++i) {
-      threads.push(Services.tm.newThread(0));
-    }
-  } catch (ex) {
-    // If memory is too low, it is possible that not all threads will be launched.
-  }
-  gNumberOfThreadsLaunched = threads.length;
-
-  Assert.ok(
-    Telemetry.maximalNumberOfConcurrentThreads >= gNumberOfThreadsLaunched
-  );
-
-  registerCleanupFunction(function() {
-    threads.forEach(function(thread) {
-      thread.shutdown();
-    });
-  });
 
   await new Promise(resolve =>
     Telemetry.asyncFetchTelemetryData(wrapWithExceptionHandler(resolve))
@@ -595,6 +554,64 @@ add_task(async function test_expiredHistogram() {
     TelemetrySession.getPayload().histograms.TELEMETRY_TEST_EXPIRED,
     undefined
   );
+});
+
+add_task(async function sessionTimeExcludingAndIncludingSuspend() {
+  if (gIsAndroid) {
+    // We don't support this new probe on android at the moment.
+    return;
+  }
+  Preferences.set("toolkit.telemetry.testing.overrideProductsCheck", true);
+  await TelemetryController.testReset();
+  let subsession = TelemetrySession.getPayload("environment-change", true);
+  let parentScalars = subsession.processes.parent.scalars;
+
+  let withSuspend =
+    parentScalars["browser.engagement.session_time_including_suspend"];
+  let withoutSuspend =
+    parentScalars["browser.engagement.session_time_excluding_suspend"];
+
+  Assert.ok(
+    withSuspend > 0,
+    "The session time including suspend should be positive"
+  );
+
+  Assert.ok(
+    withoutSuspend > 0,
+    "The session time excluding suspend should be positive"
+  );
+
+  // Two things about the next assertion:
+  // 1. The two calls to get the two different uptime values are made
+  //    separately, so we can't guarantee equality, even if we know the machine
+  //    has not been suspended (for example because it's running in infra and
+  //    was just booted). In this case the value should be close to each other.
+  // 2. This test will fail if the device running this has been suspended in
+  //    between booting the Firefox process running this test, and doing the
+  //    following assertion test, but that's unlikely in practice.
+  const max_delta_ms = 100;
+
+  Assert.ok(
+    withSuspend - withoutSuspend <= max_delta_ms,
+    "In test condition, the two uptimes should be close to each other"
+  );
+
+  // This however should always hold, except on Windows < 10, where the two
+  // clocks are from different system calls, and it can fail in test condition
+  // because the machine has not been suspended.
+  if (
+    AppConstants.platform != "win" ||
+    AppConstants.isPlatformAndVersionAtLeast("win", "10.0")
+  ) {
+    Assert.greaterOrEqual(
+      withSuspend,
+      withoutSuspend,
+      `The uptime with suspend must always been greater or equal to the uptime
+       without suspend`
+    );
+  }
+
+  Preferences.set("toolkit.telemetry.testing.overrideProductsCheck", false);
 });
 
 // Sends a ping to a non existing server. If we remove this test, we won't get
@@ -2053,10 +2070,6 @@ add_task(async function test_pingExtendedStats() {
     "addonDetails",
   ];
 
-  if (AppConstants.platform == "android") {
-    EXTENDED_PAYLOAD_FIELDS.push("UIMeasurements");
-  }
-
   // Reset telemetry and disable sending extended statistics.
   await TelemetryStorage.testClearPendingPings();
   PingServer.clearRequests();
@@ -2286,12 +2299,6 @@ add_task(async function test_changeThrottling() {
     return TelemetrySession.getPayload().info.subsessionCounter;
   };
 
-  const PREF_TEST = "toolkit.telemetry.test.pref1";
-  const PREFS_TO_WATCH = new Map([
-    [PREF_TEST, { what: TelemetryEnvironment.RECORD_PREF_STATE }],
-  ]);
-  Preferences.reset(PREF_TEST);
-
   let now = fakeNow(2050, 1, 2, 0, 0, 0);
   gMonotonicNow = fakeMonotonicNow(
     gMonotonicNow + 10 * MILLISECONDS_PER_MINUTE
@@ -2299,11 +2306,8 @@ add_task(async function test_changeThrottling() {
   await TelemetryController.testReset();
   Assert.equal(getSubsessionCount(), 1);
 
-  // Set the Environment preferences to watch.
-  await TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
-
   // The first pref change should not trigger a notification.
-  Preferences.set(PREF_TEST, 1);
+  TelemetrySession.testOnEnvironmentChange("test", {});
   Assert.equal(getSubsessionCount(), 1);
 
   // We should get a change notification after the 5min throttling interval.
@@ -2311,13 +2315,13 @@ add_task(async function test_changeThrottling() {
   gMonotonicNow = fakeMonotonicNow(
     gMonotonicNow + 5 * MILLISECONDS_PER_MINUTE + 1
   );
-  Preferences.set(PREF_TEST, 2);
+  TelemetrySession.testOnEnvironmentChange("test", {});
   Assert.equal(getSubsessionCount(), 2);
 
   // After that, changes should be throttled again.
   now = fakeNow(futureDate(now, 1 * MILLISECONDS_PER_MINUTE));
   gMonotonicNow = fakeMonotonicNow(gMonotonicNow + 1 * MILLISECONDS_PER_MINUTE);
-  Preferences.set(PREF_TEST, 3);
+  TelemetrySession.testOnEnvironmentChange("test", {});
   Assert.equal(getSubsessionCount(), 2);
 
   // ... for 5min.
@@ -2325,11 +2329,8 @@ add_task(async function test_changeThrottling() {
   gMonotonicNow = fakeMonotonicNow(
     gMonotonicNow + 4 * MILLISECONDS_PER_MINUTE + 1
   );
-  Preferences.set(PREF_TEST, 4);
+  TelemetrySession.testOnEnvironmentChange("test", {});
   Assert.equal(getSubsessionCount(), 3);
-
-  // Unregister the listener.
-  TelemetryEnvironment.unregisterChangeListener("testWatchPrefs_throttling");
 });
 
 add_task(async function stopServer() {

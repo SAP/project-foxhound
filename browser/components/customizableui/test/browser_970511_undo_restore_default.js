@@ -6,56 +6,70 @@
 
 requestLongerTimeout(2);
 
-// Restoring default should reset theme and show an "undo" option which undoes the restoring operation.
+// Restoring default should reset density and show an "undo" option which undoes
+// the restoring operation.
 add_task(async function() {
-  let homeButtonId = "home-button";
-  CustomizableUI.removeWidgetFromArea(homeButtonId);
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.compactmode.show", true]],
+  });
+  let stopReloadButtonId = "stop-reload-button";
+  CustomizableUI.removeWidgetFromArea(stopReloadButtonId);
   await startCustomizing();
   ok(!CustomizableUI.inDefaultState, "Not in default state to begin with");
   is(
-    CustomizableUI.getPlacementOfWidget(homeButtonId),
+    CustomizableUI.getPlacementOfWidget(stopReloadButtonId),
     null,
-    "Home button is in palette"
+    "Stop/reload button is in palette"
   );
   let undoResetButton = document.getElementById(
     "customization-undo-reset-button"
   );
   is(undoResetButton.hidden, true, "The undo button is hidden before reset");
 
-  let themesButton = document.getElementById("customization-lwtheme-button");
-  let popup = document.getElementById("customization-lwtheme-menu");
+  let densityButton = document.getElementById("customization-uidensity-button");
+  let popup = document.getElementById("customization-uidensity-menu");
   let popupShownPromise = popupShown(popup);
-  EventUtils.synthesizeMouseAtCenter(themesButton, {});
-  info("Clicked on themes button");
+  EventUtils.synthesizeMouseAtCenter(densityButton, {});
+  info("Clicked on density button");
   await popupShownPromise;
 
-  let header = document.getElementById("customization-lwtheme-menu-header");
-  let firstLWTheme = header.nextElementSibling.nextElementSibling;
-  let firstLWThemeId = firstLWTheme.theme.id;
-  let themeChangedPromise = promiseObserverNotified(
-    "lightweight-theme-styling-update"
+  let compactModeItem = document.getElementById(
+    "customization-uidensity-menuitem-compact"
   );
-  firstLWTheme.doCommand();
-  info("Clicked on first theme");
-  await themeChangedPromise;
+  let win = document.getElementById("main-window");
+  let densityChangedPromise = new Promise(resolve => {
+    let observer = new MutationObserver(() => {
+      if (win.getAttribute("uidensity") == "compact") {
+        resolve();
+        observer.disconnect();
+      }
+    });
+    observer.observe(win, {
+      attributes: true,
+      attributeFilter: ["uidensity"],
+    });
+  });
 
-  let theme = await AddonManager.getAddonByID(firstLWThemeId);
-  is(theme.isActive, true, "Theme changed to first option");
+  compactModeItem.doCommand();
+  info("Clicked on compact density");
+  await densityChangedPromise;
 
   await gCustomizeMode.reset();
 
   ok(CustomizableUI.inDefaultState, "In default state after reset");
   is(undoResetButton.hidden, false, "The undo button is visible after reset");
-  theme = await AddonManager.getAddonByID("default-theme@mozilla.org");
-  is(theme.isActive, true, "Theme reset to default");
+  is(
+    win.hasAttribute("uidensity"),
+    false,
+    "The window has been restored to normal density."
+  );
 
   await gCustomizeMode.undoReset();
 
-  theme = await AddonManager.getAddonByID(firstLWThemeId);
   is(
-    theme.isActive,
-    true,
-    "Theme has been reset from default to original choice"
+    win.getAttribute("uidensity"),
+    "compact",
+    "Density has been reset to compact."
   );
   ok(!CustomizableUI.inDefaultState, "Not in default state after undo-reset");
   is(
@@ -64,23 +78,24 @@ add_task(async function() {
     "The undo button is hidden after clicking on the undo button"
   );
   is(
-    CustomizableUI.getPlacementOfWidget(homeButtonId),
+    CustomizableUI.getPlacementOfWidget(stopReloadButtonId),
     null,
-    "Home button is in palette"
+    "Stop/reload button is in palette"
   );
 
   await gCustomizeMode.reset();
+  await SpecialPowers.popPrefEnv();
 });
 
 // Performing an action after a reset will hide the undo button.
 add_task(async function action_after_reset_hides_undo() {
-  let homeButtonId = "home-button";
-  CustomizableUI.removeWidgetFromArea(homeButtonId);
+  let stopReloadButtonId = "stop-reload-button";
+  CustomizableUI.removeWidgetFromArea(stopReloadButtonId);
   ok(!CustomizableUI.inDefaultState, "Not in default state to begin with");
   is(
-    CustomizableUI.getPlacementOfWidget(homeButtonId),
+    CustomizableUI.getPlacementOfWidget(stopReloadButtonId),
     null,
-    "Home button is in palette"
+    "Stop/reload button is in palette"
   );
   let undoResetButton = document.getElementById(
     "customization-undo-reset-button"
@@ -93,7 +108,7 @@ add_task(async function action_after_reset_hides_undo() {
   is(undoResetButton.hidden, false, "The undo button is visible after reset");
 
   CustomizableUI.addWidgetToArea(
-    homeButtonId,
+    stopReloadButtonId,
     CustomizableUI.AREA_FIXED_OVERFLOW_PANEL
   );
   is(
@@ -127,11 +142,16 @@ add_task(async function() {
 
 // Bug 971626 - Restore Defaults should collapse the Title Bar
 add_task(async function() {
-  if (Services.appinfo.OS != "WINNT" && Services.appinfo.OS != "Darwin") {
-    return;
+  {
+    const supported = TabsInTitlebar.systemSupported;
+    is(typeof supported, "boolean");
+    info("TabsInTitlebar support: " + supported);
+    if (!supported) {
+      return;
+    }
   }
-  let prefName = "browser.tabs.drawInTitlebar";
-  let defaultValue = Services.prefs.getBoolPref(prefName);
+
+  const kDefaultValue = Services.appinfo.drawInTitlebar;
   let restoreDefaultsButton = document.getElementById(
     "customization-reset-button"
   );
@@ -151,7 +171,7 @@ add_task(async function() {
   );
   is(
     titlebarCheckbox.hasAttribute("checked"),
-    !defaultValue,
+    !kDefaultValue,
     "Title bar checkbox should reflect pref value"
   );
   is(
@@ -160,14 +180,20 @@ add_task(async function() {
     "Undo reset button should be hidden at start of test"
   );
 
-  Services.prefs.setBoolPref(prefName, !defaultValue);
+  let prefName = "browser.tabs.inTitlebar";
+  Services.prefs.setIntPref(prefName, !kDefaultValue);
   ok(
     !restoreDefaultsButton.disabled,
     "Restore defaults button should be enabled when pref changed"
   );
   is(
+    Services.appinfo.drawInTitlebar,
+    !kDefaultValue,
+    "Title bar checkbox should reflect changed pref value"
+  );
+  is(
     titlebarCheckbox.hasAttribute("checked"),
-    defaultValue,
+    kDefaultValue,
     "Title bar checkbox should reflect changed pref value"
   );
   ok(
@@ -187,13 +213,18 @@ add_task(async function() {
   );
   is(
     titlebarCheckbox.hasAttribute("checked"),
-    !defaultValue,
+    !kDefaultValue,
     "Title bar checkbox should reflect default value after reset"
   );
   is(
-    Services.prefs.getBoolPref(prefName),
-    defaultValue,
+    Services.prefs.getIntPref(prefName),
+    2,
     "Reset should reset drawInTitlebar"
+  );
+  is(
+    Services.appinfo.drawInTitlebar,
+    kDefaultValue,
+    "Default state should be restored"
   );
   ok(CustomizableUI.inDefaultState, "In default state after titlebar reset");
   is(
@@ -213,13 +244,13 @@ add_task(async function() {
   );
   is(
     titlebarCheckbox.hasAttribute("checked"),
-    defaultValue,
+    kDefaultValue,
     "Title bar checkbox should reflect undo-reset value"
   );
   ok(!CustomizableUI.inDefaultState, "No longer in default state after undo");
   is(
-    Services.prefs.getBoolPref(prefName),
-    !defaultValue,
+    Services.prefs.getIntPref(prefName),
+    kDefaultValue ? 0 : 1,
     "Undo-reset goes back to previous pref value"
   );
   is(

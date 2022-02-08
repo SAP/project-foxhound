@@ -742,7 +742,6 @@
     class BaseText extends MozElements.BaseControlMixin(Base) {
       set label(val) {
         this.setAttribute("label", val);
-        return val;
       }
 
       get label() {
@@ -751,7 +750,6 @@
 
       set crop(val) {
         this.setAttribute("crop", val);
-        return val;
       }
 
       get crop() {
@@ -760,7 +758,6 @@
 
       set image(val) {
         this.setAttribute("image", val);
-        return val;
       }
 
       get image() {
@@ -769,7 +766,6 @@
 
       set command(val) {
         this.setAttribute("command", val);
-        return val;
       }
 
       get command() {
@@ -784,7 +780,6 @@
         if (this.labelElement) {
           this.labelElement.accessKey = val;
         }
-        return val;
       }
 
       get accessKey() {
@@ -840,13 +835,21 @@
     }
 
     for (let [tag, script] of [
+      ["button-group", "chrome://global/content/elements/named-deck.js"],
       ["findbar", "chrome://global/content/elements/findbar.js"],
       ["menulist", "chrome://global/content/elements/menulist.js"],
+      ["message-bar", "chrome://global/content/elements/message-bar.js"],
+      ["named-deck", "chrome://global/content/elements/named-deck.js"],
+      ["named-deck-button", "chrome://global/content/elements/named-deck.js"],
       ["search-textbox", "chrome://global/content/elements/search-textbox.js"],
       ["stringbundle", "chrome://global/content/elements/stringbundle.js"],
       [
         "printpreview-toolbar",
         "chrome://global/content/printPreviewToolbar.js",
+      ],
+      [
+        "printpreview-pagination",
+        "chrome://global/content/printPreviewPagination.js",
       ],
       [
         "autocomplete-input",

@@ -5,8 +5,15 @@ const RELATIVE_DIR = "toolkit/components/pdfjs/test/";
 const TESTROOT = "http://example.com/browser/" + RELATIVE_DIR;
 
 function test() {
+  // When the download panel improvements pref is true, we expect the PDF to be simply downloaded
+  // So it only makes sense to run this test with the pref set false
+  Services.prefs.setBoolPref(
+    "browser.download.improvements_to_download_panel",
+    false
+  );
   var oldAction = changeMimeHandler(Ci.nsIHandlerInfo.useSystemDefault, true);
   var tab = BrowserTestUtils.addTab(gBrowser, TESTROOT + "file_pdfjs_test.pdf");
+
   // Test: "Open with" dialog comes up when pdf.js is not selected as the default
   // handler.
   addWindowListener(
@@ -16,46 +23,12 @@ function test() {
 
   waitForExplicitFinish();
   registerCleanupFunction(function() {
+    Services.prefs.clearUserPref(
+      "browser.download.improvements_to_download_panel"
+    );
     changeMimeHandler(oldAction[0], oldAction[1]);
     gBrowser.removeTab(tab);
   });
-}
-
-function changeMimeHandler(preferredAction, alwaysAskBeforeHandling) {
-  let handlerService = Cc[
-    "@mozilla.org/uriloader/handler-service;1"
-  ].getService(Ci.nsIHandlerService);
-  let mimeService = Cc["@mozilla.org/mime;1"].getService(Ci.nsIMIMEService);
-  let handlerInfo = mimeService.getFromTypeAndExtension(
-    "application/pdf",
-    "pdf"
-  );
-  var oldAction = [
-    handlerInfo.preferredAction,
-    handlerInfo.alwaysAskBeforeHandling,
-  ];
-
-  // Change and save mime handler settings
-  handlerInfo.alwaysAskBeforeHandling = alwaysAskBeforeHandling;
-  handlerInfo.preferredAction = preferredAction;
-  handlerService.store(handlerInfo);
-
-  // Refresh data
-  handlerInfo = mimeService.getFromTypeAndExtension("application/pdf", "pdf");
-
-  // Test: Mime handler was updated
-  is(
-    handlerInfo.alwaysAskBeforeHandling,
-    alwaysAskBeforeHandling,
-    "always-ask prompt change successful"
-  );
-  is(
-    handlerInfo.preferredAction,
-    preferredAction,
-    "mime handler change successful"
-  );
-
-  return oldAction;
 }
 
 function addWindowListener(aURL, aCallback) {

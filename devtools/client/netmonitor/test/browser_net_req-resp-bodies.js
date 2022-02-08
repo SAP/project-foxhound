@@ -8,6 +8,11 @@
  */
 
 add_task(async function() {
+  // Using https-first for this test is blocked on Bug 1733420.
+  // We cannot assert status text "OK" with HTTPS requests to httpd.js, instead
+  // we get "Connected"
+  await pushPref("dom.security.https_first", false);
+
   const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
 
   const { tab, monitor } = await initNetMonitor(JSON_LONG_URL, {
@@ -40,7 +45,7 @@ add_task(async function() {
 
   // Reload debugee.
   const wait = waitForNetworkEvents(monitor, 1);
-  tab.linkedBrowser.reload();
+  await reloadBrowser();
   await wait;
 
   // Perform another batch of requests.

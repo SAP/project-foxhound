@@ -30,13 +30,13 @@ const FILE_URL = (() => {
   return Services.io.newFileURI(file).spec;
 })();
 
-const CROSS_ORIGIN = "http://example.com";
+const CROSS_ORIGIN = "https://example.com";
 const CROSS_ORIGIN_URL = SW_REGISTER_PAGE_URL.replace(ORIGIN, CROSS_ORIGIN);
 const CROSS_ORIGIN_REDIRECT_URL = `${TEST_ROOT}redirect.sjs?${CROSS_ORIGIN_URL}`;
 
 async function loadURI(aXULBrowser, aURI) {
   const browserLoadedPromise = BrowserTestUtils.browserLoaded(aXULBrowser);
-  await BrowserTestUtils.loadURI(aXULBrowser, aURI);
+  BrowserTestUtils.loadURI(aXULBrowser, aURI);
 
   return browserLoadedPromise;
 }
@@ -46,7 +46,6 @@ async function runTest() {
   // requests to `ORIGIN` will be marked as controlled.
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["browser.tabs.documentchannel", true],
       ["dom.serviceWorkers.enabled", true],
       ["dom.serviceWorkers.exemptFromPerDomainMax", true],
       ["dom.serviceWorkers.testing.enabled", true],

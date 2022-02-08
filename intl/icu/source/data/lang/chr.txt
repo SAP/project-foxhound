@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 chr{
     Keys{
         calendar{"ᏅᏙ ᏗᏎᏍᏗ"}
@@ -84,6 +85,7 @@ chr{
         de_CH{"ᏍᏫᏏ ᎦᎸᎳᏗ ᎠᏂᏓᏥ"}
         dgr{"ᎩᏟ ᎤᏄᎳᏥ"}
         dje{"ᏌᎹ"}
+        doi{"ᏙᎦᎵ"}
         dsb{"ᎡᎳᏗ ᏐᏈᎠᏂ"}
         dua{"ᏚᎠᎳ"}
         dv{"ᏗᏪᎯ"}
@@ -270,6 +272,7 @@ chr{
         nmg{"ᏆᏏᏲ"}
         nn{"ᏃᎵᏪᏥᏂ ᎾᎵᏍᎩ"}
         nnh{"ᎾᏥᏰᎹᏊᏂ"}
+        no{"ᏃᎵᏪᏥᏂ"}
         nog{"ᏃᎦᏱ"}
         nqo{"ᎾᎪ"}
         nr{"ᏧᎦᎾᏮ ᏂᏕᏇᎴ"}
@@ -298,12 +301,12 @@ chr{
         quc{"ᎩᏤ"}
         rap{"ᎳᏆᏄᏫ"}
         rar{"ᎳᎶᏙᎾᎦᏂ"}
+        rhg{"ᎶᎯᏂᏯ"}
         rm{"ᎠᏂᎶᎺᏂ"}
         rn{"ᎷᏂᏗ"}
         ro{"ᎶᎹᏂᎠᏂ"}
         ro_MD{"ᎹᎵᏙᏫᎠ ᏣᎹᏂᎠᏂ"}
         rof{"ᎶᎹᏉ"}
-        root{"ᎤᎾᏍᎦᎸ"}
         ru{"ᏲᏅᎯ"}
         rup{"ᎠᏬᎹᏂᎠᏂ"}
         rw{"ᎩᏂᏯᏩᏂᏓ"}
@@ -549,13 +552,13 @@ chr{
             tibt{"ᏘᏇᏔᏂ ᏗᏎᏍᏗ"}
         }
     }
-    Version{"37"}
     characterLabelPattern{
         all{"{0} — ᏂᎦᏓ"}
         category-list{"{0}: {1}"}
         compatibility{"{0} — ᎤᏠᏯᏉᏗᏙᎵᎩ"}
         enclosed{"{0} — ᎠᏠᏯᏍᏔᏅ"}
         extended{"{0} — ᎦᏅᎯᏓ"}
+        historic{"{0} — ᏄᎵᏍᏔᏅᏅᎢ"}
         miscellaneous{"{0} — ᏧᏓᎴᏅᏛ"}
         other{"{0} — ᏐᎢ"}
         scripts{"ᏗᎧᏁᎢᏍᏗ — {0}"}
@@ -563,6 +566,8 @@ chr{
             one{"{0} ᏗᎬᏂᎸᎯ"}
             other{"{0} ᏗᎬᏂᎸᎯ"}
         }
+        subscript{"ᎡᎳᏗ ᎤᏍᏗ ᎪᏪᎳ {0}"}
+        superscript{"ᎦᎸᎳᏗ ᎤᏍᏗ ᎪᏪᎳ {0}"}
     }
     codePatterns{
         language{"ᎦᏬᏂᎯᏍᏗ: {0}"}

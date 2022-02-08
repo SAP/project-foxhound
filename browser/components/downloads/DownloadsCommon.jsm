@@ -37,7 +37,6 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   NetUtil: "resource://gre/modules/NetUtil.jsm",
-  PluralForm: "resource://gre/modules/PluralForm.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   DownloadHistory: "resource://gre/modules/DownloadHistory.jsm",
   Downloads: "resource://gre/modules/Downloads.jsm",
@@ -63,8 +62,20 @@ XPCOMUtils.defineLazyGetter(this, "DownloadsLogger", () => {
   return new ConsoleAPI(consoleOptions);
 });
 
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "gAlwaysOpenPanel",
+  "browser.download.alwaysOpenPanel",
+  true
+);
+
 const kDownloadsStringBundleUrl =
   "chrome://browser/locale/downloads/downloads.properties";
+
+const kDownloadsFluentStrings = new Localization(
+  ["browser/downloads.ftl"],
+  true
+);
 
 const kDownloadsStringsRequiringFormatting = {
   sizeWithUnits: true,
@@ -72,127 +83,15 @@ const kDownloadsStringsRequiringFormatting = {
   statusSeparatorBeforeNumber: true,
 };
 
-const kDownloadsStringsRequiringPluralForm = {
-  otherDownloads3: true,
-};
-
 const kMaxHistoryResultsForLimitedView = 42;
 
 const kPrefBranch = Services.prefs.getBranch("browser.download.");
-
-const kFileExtensions = [
-  "aac",
-  "adt",
-  "adts",
-  "accdb",
-  "accde",
-  "accdr",
-  "accdt",
-  "aif",
-  "aifc",
-  "aiff",
-  "aspx",
-  "avi",
-  "bat",
-  "bin",
-  "bmp",
-  "cab",
-  "cda",
-  "csv",
-  "dif",
-  "dll",
-  "doc",
-  "docm",
-  "docx",
-  "dot",
-  "dotx",
-  "eml",
-  "eps",
-  "exe",
-  "flv",
-  "gif",
-  "htm",
-  "html",
-  "ini",
-  "iso",
-  "jar",
-  "jpg",
-  "jpeg",
-  "m4a",
-  "mdb",
-  "mid",
-  "midi",
-  "mov",
-  "mp3",
-  "mp4",
-  "mpeg",
-  "mpg",
-  "msi",
-  "mui",
-  "pdf",
-  "png",
-  "pot",
-  "potm",
-  "potx",
-  "ppam",
-  "pps",
-  "ppsm",
-  "ppsx",
-  "ppt",
-  "pptm",
-  "pptx",
-  "psd",
-  "pst",
-  "pub",
-  "rar",
-  "rtf",
-  "sldm",
-  "sldx",
-  "swf",
-  "sys",
-  "tif",
-  "tiff",
-  "tmp",
-  "txt",
-  "vob",
-  "vsd",
-  "vsdm",
-  "vsdx",
-  "vss",
-  "vssm",
-  "vst",
-  "vstm",
-  "vstx",
-  "wav",
-  "wbk",
-  "wks",
-  "wma",
-  "wmd",
-  "wmv",
-  "wmz",
-  "wms",
-  "wpd",
-  "wp5",
-  "xla",
-  "xlam",
-  "xll",
-  "xlm",
-  "xls",
-  "xlsm",
-  "xlsx",
-  "xlt",
-  "xltm",
-  "xltx",
-  "zip",
-];
 
 const kGenericContentTypes = [
   "application/octet-stream",
   "binary/octet-stream",
   "application/unknown",
 ];
-
-const TELEMETRY_EVENT_CATEGORY = "downloads";
 
 var PrefObserver = {
   QueryInterface: ChromeUtils.generateQI([
@@ -255,6 +154,7 @@ var DownloadsCommon = {
   // The following are the possible values of the "attention" property.
   ATTENTION_NONE: "",
   ATTENTION_SUCCESS: "success",
+  ATTENTION_INFO: "info",
   ATTENTION_WARNING: "warning",
   ATTENTION_SEVERE: "severe",
 
@@ -272,15 +172,6 @@ var DownloadsCommon = {
         strings[stringName] = function() {
           // Convert "arguments" to a real array before calling into XPCOM.
           return sb.formatStringFromName(stringName, Array.from(arguments));
-        };
-      } else if (stringName in kDownloadsStringsRequiringPluralForm) {
-        strings[stringName] = function(aCount) {
-          // Convert "arguments" to a real array before calling into XPCOM.
-          let formattedString = sb.formatStringFromName(
-            stringName,
-            Array.from(arguments)
-          );
-          return PluralForm.get(aCount, formattedString);
         };
       } else {
         strings[stringName] = string.value;
@@ -426,6 +317,17 @@ var DownloadsCommon = {
    * Removes a Download object from both session and history downloads.
    */
   async deleteDownload(download) {
+    // Check hasBlockedData to avoid double counting if you click the X button
+    // in the Libarary view and then delete the download from the history.
+    if (
+      download.error?.becauseBlockedByReputationCheck &&
+      download.hasBlockedData
+    ) {
+      Services.telemetry
+        .getKeyedHistogramById("DOWNLOADS_USER_ACTION_ON_BLOCKED_DOWNLOAD")
+        .add(download.error.reputationCheckVerdict, 1); // confirm block
+    }
+
     // Remove the associated history element first, if any, so that the views
     // that combine history and session downloads won't resurrect the history
     // download into the view just before it is deleted permanently.
@@ -683,7 +585,10 @@ var DownloadsCommon = {
       // the OS handler try to open the directory.
       Cc["@mozilla.org/uriloader/external-protocol-service;1"]
         .getService(Ci.nsIExternalProtocolService)
-        .loadURI(NetUtil.newURI(aDirectory));
+        .loadURI(
+          NetUtil.newURI(aDirectory),
+          Services.scriptSecurityManager.getSystemPrincipal()
+        );
     }
   },
 
@@ -761,6 +666,9 @@ var DownloadsCommon = {
         break;
       case Downloads.Error.BLOCK_VERDICT_POTENTIALLY_UNWANTED:
         message = s.unblockTypePotentiallyUnwanted2;
+        break;
+      case Downloads.Error.BLOCK_VERDICT_INSECURE:
+        message = s.unblockInsecure;
         break;
       default:
         // Assume Downloads.Error.BLOCK_VERDICT_MALWARE
@@ -930,26 +838,6 @@ DownloadsDataCtor.prototype = {
   // Integration with the asynchronous Downloads back-end
 
   onDownloadAdded(download) {
-    let extension = download.target.path.split(".").pop();
-
-    if (!kFileExtensions.includes(extension)) {
-      extension = "other";
-    }
-
-    try {
-      Services.telemetry.recordEvent(
-        TELEMETRY_EVENT_CATEGORY,
-        "added",
-        "fileExtension",
-        extension,
-        {}
-      );
-    } catch (ex) {
-      Cu.reportError(
-        "DownloadsCommon: error recording telemetry event. " + ex.message
-      );
-    }
-
     // Download objects do not store the end time of downloads, as the Downloads
     // API does not need to persist this information for all platforms. Once a
     // download terminates on a Desktop browser, it becomes a history download,
@@ -960,6 +848,9 @@ DownloadsDataCtor.prototype = {
       download,
       DownloadsCommon.stateOfDownload(download)
     );
+    if (download.error?.becauseBlockedByReputationCheck) {
+      this._notifyDownloadEvent("error");
+    }
   },
 
   onDownloadChanged(download) {
@@ -1040,7 +931,6 @@ DownloadsDataCtor.prototype = {
 
   set panelHasShownBefore(aValue) {
     Services.prefs.setBoolPref("browser.download.panel.shown", aValue);
-    return aValue;
   },
 
   /**
@@ -1048,7 +938,8 @@ DownloadsDataCtor.prototype = {
    * window, if one is currently available with the required privacy type.
    *
    * @param aType
-   *        Set to "start" for new downloads, "finish" for completed downloads.
+   *        Set to "start" for new downloads, "finish" for completed downloads,
+   *        "error" for downloads that failed and need attention
    */
   _notifyDownloadEvent(aType) {
     DownloadsCommon.log(
@@ -1063,7 +954,19 @@ DownloadsDataCtor.prototype = {
       return;
     }
 
-    if (this.panelHasShownBefore) {
+    let shouldOpenDownloadsPanel =
+      aType == "start" &&
+      Services.prefs.getBoolPref(
+        "browser.download.improvements_to_download_panel"
+      ) &&
+      DownloadsCommon.summarizeDownloads(this.downloads).numDownloading <= 1 &&
+      gAlwaysOpenPanel;
+
+    if (
+      this.panelHasShownBefore &&
+      aType != "error" &&
+      !shouldOpenDownloadsPanel
+    ) {
       // For new downloads after the first one, don't show the panel
       // automatically, but provide a visible notification in the topmost
       // browser window, if the status indicator is already visible.
@@ -1359,8 +1262,18 @@ DownloadsIndicatorDataCtor.prototype = {
       download.error.reputationCheckVerdict
     ) {
       switch (download.error.reputationCheckVerdict) {
-        case Downloads.Error.BLOCK_VERDICT_UNCOMMON: // fall-through
-        case Downloads.Error.BLOCK_VERDICT_POTENTIALLY_UNWANTED:
+        case Downloads.Error.BLOCK_VERDICT_UNCOMMON:
+          // Existing higher level attention indication trumps ATTENTION_INFO.
+          if (
+            this._attention != DownloadsCommon.ATTENTION_SEVERE &&
+            this._attention != DownloadsCommon.ATTENTION_WARNING
+          ) {
+            this.attention = DownloadsCommon.ATTENTION_INFO;
+          }
+          break;
+        case Downloads.Error.BLOCK_VERDICT_POTENTIALLY_UNWANTED: // fall-through
+        case Downloads.Error.BLOCK_VERDICT_INSECURE:
+        case Downloads.Error.BLOCK_VERDICT_DOWNLOAD_SPAM:
           // Existing higher level attention indication trumps ATTENTION_WARNING.
           if (this._attention != DownloadsCommon.ATTENTION_SEVERE) {
             this.attention = DownloadsCommon.ATTENTION_WARNING;
@@ -1415,7 +1328,6 @@ DownloadsIndicatorDataCtor.prototype = {
   set attention(aValue) {
     this._attention = aValue;
     this._updateViews();
-    return aValue;
   },
   _attention: DownloadsCommon.ATTENTION_NONE,
 
@@ -1427,7 +1339,6 @@ DownloadsIndicatorDataCtor.prototype = {
     this._attentionSuppressed = aValue;
     this._attention = DownloadsCommon.ATTENTION_NONE;
     this._updateViews();
-    return aValue;
   },
   _attentionSuppressed: false,
 
@@ -1630,8 +1541,13 @@ DownloadsSummaryData.prototype = {
       this._downloadsForSummary()
     );
 
-    this._description = DownloadsCommon.strings.otherDownloads3(
-      summary.numDownloading
+    // Run sync to update view right away and get correct description.
+    // See refreshView for more details.
+    this._description = kDownloadsFluentStrings.formatValueSync(
+      "downloads-more-downloading",
+      {
+        count: summary.numDownloading,
+      }
     );
     this._percentComplete = summary.percentComplete;
 

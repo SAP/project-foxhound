@@ -4,24 +4,41 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "StructuredCloneHolder.h"
+#include "mozilla/dom/StructuredCloneHolder.h"
 
-#include "ImageContainer.h"
+#include <new>
+#include "ErrorList.h"
+#include "MainThreadUtils.h"
+#include "js/CallArgs.h"
+#include "js/Value.h"
+#include "js/WasmModule.h"
+#include "js/Wrapper.h"
+#include "jsapi.h"
+#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/AutoRestore.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/OwningNonNull.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/Blob.h"
 #include "mozilla/dom/BlobBinding.h"
+#include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/BrowsingContextBinding.h"
 #include "mozilla/dom/ClonedErrorHolder.h"
 #include "mozilla/dom/ClonedErrorHolderBinding.h"
-#include "mozilla/dom/StructuredCloneBlob.h"
-#include "mozilla/dom/DocGroup.h"
-#include "mozilla/dom/Directory.h"
 #include "mozilla/dom/DirectoryBinding.h"
+#include "mozilla/dom/DOMJSClass.h"
+#include "mozilla/dom/DOMTypes.h"
+#include "mozilla/dom/Directory.h"
+#include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FileList.h"
 #include "mozilla/dom/FileListBinding.h"
 #include "mozilla/dom/FormData.h"
+#include "mozilla/dom/FormDataBinding.h"
 #include "mozilla/dom/ImageBitmap.h"
 #include "mozilla/dom/ImageBitmapBinding.h"
 #include "mozilla/dom/JSExecutionManager.h"
@@ -29,23 +46,36 @@
 #include "mozilla/dom/MessagePortBinding.h"
 #include "mozilla/dom/OffscreenCanvas.h"
 #include "mozilla/dom/OffscreenCanvasBinding.h"
-#include "mozilla/dom/PMessagePort.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/StructuredCloneBlob.h"
+#include "mozilla/dom/StructuredCloneHolderBinding.h"
 #include "mozilla/dom/StructuredCloneTags.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/WebIDLSerializable.h"
+#include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/fallible.h"
 #include "mozilla/gfx/2D.h"
-#include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/ipc/BackgroundUtils.h"
-#include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "MultipartBlobImpl.h"
-#include "nsQueryObject.h"
+#include "nsContentUtils.h"
+#include "nsDebug.h"
+#include "nsError.h"
+#include "nsID.h"
+#include "nsIEventTarget.h"
+#include "nsIFile.h"
+#include "nsIGlobalObject.h"
+#include "nsIInputStream.h"
+#include "nsIPrincipal.h"
+#include "nsISupports.h"
+#include "nsJSPrincipals.h"
+#include "nsPIDOMWindow.h"
+#include "nsString.h"
+#include "nsThreadUtils.h"
+#include "nsXPCOM.h"
+#include "xpcpublic.h"
 
 using namespace mozilla::ipc;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -482,10 +512,11 @@ bool StructuredCloneHolder::ReadString(JSStructuredCloneReader* aReader,
 
 /* static */
 bool StructuredCloneHolder::WriteString(JSStructuredCloneWriter* aWriter,
-                                        const nsString& aString) {
+                                        const nsAString& aString) {
   size_t charSize = sizeof(nsString::char_type);
   return JS_WriteUint32Pair(aWriter, aString.Length(), 0) &&
-         JS_WriteBytes(aWriter, aString.get(), aString.Length() * charSize);
+         JS_WriteBytes(aWriter, aString.BeginReading(),
+                       aString.Length() * charSize);
 }
 
 namespace {
@@ -1337,5 +1368,4 @@ void StructuredCloneHolder::SameProcessScopeRequired(
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

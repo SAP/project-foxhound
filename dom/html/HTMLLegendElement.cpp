@@ -12,8 +12,7 @@
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Legend)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 HTMLLegendElement::~HTMLLegendElement() = default;
 
@@ -68,48 +67,69 @@ void HTMLLegendElement::UnbindFromTree(bool aNullParent) {
 }
 
 void HTMLLegendElement::Focus(const FocusOptions& aOptions,
-                              const mozilla::dom::CallerType aCallerType,
+                              const CallerType aCallerType,
                               ErrorResult& aError) {
   nsIFrame* frame = GetPrimaryFrame();
   if (!frame) {
     return;
   }
 
-  int32_t tabIndex;
-  if (frame->IsFocusable(&tabIndex, false)) {
+  if (frame->IsFocusable()) {
     nsGenericHTMLElement::Focus(aOptions, aCallerType, aError);
     return;
   }
 
   // If the legend isn't focusable, focus whatever is focusable following
   // the legend instead, bug 81481.
-  nsIFocusManager* fm = nsFocusManager::GetFocusManager();
+  nsFocusManager* fm = nsFocusManager::GetFocusManager();
   if (!fm) {
     return;
   }
 
   RefPtr<Element> result;
-  aError = fm->MoveFocus(
-      nullptr, this, nsIFocusManager::MOVEFOCUS_FORWARD,
-      nsIFocusManager::FLAG_NOPARENTFRAME |
-          nsFocusManager::FocusOptionsToFocusManagerFlags(aOptions),
-      getter_AddRefs(result));
+  aError = fm->MoveFocus(nullptr, this, nsIFocusManager::MOVEFOCUS_FORWARD,
+                         nsIFocusManager::FLAG_NOPARENTFRAME |
+                             nsFocusManager::ProgrammaticFocusFlags(aOptions),
+                         getter_AddRefs(result));
 }
 
-bool HTMLLegendElement::PerformAccesskey(bool aKeyCausesActivation,
-                                         bool aIsTrustedEvent) {
+Result<bool, nsresult> HTMLLegendElement::PerformAccesskey(
+    bool aKeyCausesActivation, bool aIsTrustedEvent) {
   FocusOptions options;
   ErrorResult rv;
 
   Focus(options, CallerType::System, rv);
-  return NS_SUCCEEDED(rv.StealNSResult());
+  if (rv.Failed()) {
+    return Err(rv.StealNSResult());
+  }
+
+  // XXXedgar, do we need to check whether the focus is really changed?
+  return true;
 }
 
-already_AddRefed<HTMLFormElement> HTMLLegendElement::GetForm() {
-  Element* form = GetFormElement();
-  MOZ_ASSERT_IF(form, form->IsHTMLElement(nsGkAtoms::form));
-  RefPtr<HTMLFormElement> ret = static_cast<HTMLFormElement*>(form);
-  return ret.forget();
+HTMLLegendElement::LegendAlignValue HTMLLegendElement::LogicalAlign(
+    mozilla::WritingMode aCBWM) const {
+  const nsAttrValue* attr = GetParsedAttr(nsGkAtoms::align);
+  if (!attr || attr->Type() != nsAttrValue::eEnum) {
+    return LegendAlignValue::InlineStart;
+  }
+
+  auto value = static_cast<LegendAlignValue>(attr->GetEnumValue());
+  switch (value) {
+    case LegendAlignValue::Left:
+      return aCBWM.IsBidiLTR() ? LegendAlignValue::InlineStart
+                               : LegendAlignValue::InlineEnd;
+    case LegendAlignValue::Right:
+      return aCBWM.IsBidiLTR() ? LegendAlignValue::InlineEnd
+                               : LegendAlignValue::InlineStart;
+    default:
+      return value;
+  }
+}
+
+HTMLFormElement* HTMLLegendElement::GetForm() const {
+  nsCOMPtr<nsIFormControl> fieldsetControl = do_QueryInterface(GetFieldSet());
+  return fieldsetControl ? fieldsetControl->GetForm() : nullptr;
 }
 
 JSObject* HTMLLegendElement::WrapNode(JSContext* aCx,
@@ -117,5 +137,4 @@ JSObject* HTMLLegendElement::WrapNode(JSContext* aCx,
   return HTMLLegendElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

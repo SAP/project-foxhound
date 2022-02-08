@@ -19,7 +19,7 @@ use qlog::{
 use crate::Role;
 
 #[allow(clippy::module_name_repetitions)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct NeqoQlog {
     inner: Rc<RefCell<Option<NeqoQlogShared>>>,
 }
@@ -51,9 +51,7 @@ impl NeqoQlog {
     /// Create a disabled `NeqoQlog` configuration.
     #[must_use]
     pub fn disabled() -> Self {
-        Self {
-            inner: Rc::new(RefCell::new(None)),
-        }
+        Self::default()
     }
 
     /// If logging enabled, closure may generate an event to be logged.
@@ -61,19 +59,12 @@ impl NeqoQlog {
     where
         F: FnOnce() -> Option<qlog::event::Event>,
     {
-        if let Some(inner) = self.inner.borrow_mut().as_mut() {
+        self.add_event_with_stream(|s| {
             if let Some(evt) = f() {
-                let res = inner.streamer.add_event(evt);
-                if let Err(e) = res {
-                    crate::do_log!(
-                        ::log::Level::Error,
-                        "Qlog streaming failed with error {}; closing qlog.",
-                        e
-                    );
-                    *self.inner.borrow_mut() = None;
-                }
+                s.add_event(evt)?;
             }
-        }
+            Ok(())
+        });
     }
 
     /// If logging enabled, closure is given the Qlog stream to write events and
@@ -104,7 +95,7 @@ impl fmt::Debug for NeqoQlogShared {
 impl Drop for NeqoQlogShared {
     fn drop(&mut self) {
         if let Err(e) = self.streamer.finish_log() {
-            crate::do_log!(::log::Level::Error, "Error dropping NeqoQlog: {}", e)
+            crate::do_log!(::log::Level::Error, "Error dropping NeqoQlog: {}", e);
         }
     }
 }

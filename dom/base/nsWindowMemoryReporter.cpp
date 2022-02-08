@@ -169,7 +169,7 @@ static void AppendWindowURI(nsGlobalWindowInner* aWindow, nsACString& aStr,
 MOZ_DEFINE_MALLOC_SIZE_OF(WindowsMallocSizeOf)
 
 // The key is the window ID.
-typedef nsDataHashtable<nsUint64HashKey, nsCString> WindowPaths;
+using WindowPaths = nsTHashMap<nsUint64HashKey, nsCString>;
 
 static void ReportAmount(const nsCString& aBasePath, const char* aPathTail,
                          size_t aAmount, const nsCString& aDescription,
@@ -183,8 +183,8 @@ static void ReportAmount(const nsCString& aBasePath, const char* aPathTail,
   nsAutoCString path(aBasePath);
   path += aPathTail;
 
-  aHandleReport->Callback(EmptyCString(), path, aKind, aUnits, aAmount,
-                          aDescription, aData);
+  aHandleReport->Callback(""_ns, path, aKind, aUnits, aAmount, aDescription,
+                          aData);
 }
 
 static void ReportSize(const nsCString& aBasePath, const char* aPathTail,
@@ -205,9 +205,57 @@ static void ReportCount(const nsCString& aBasePath, const char* aPathTail,
                aHandleReport, aData);
 }
 
+static void ReportDOMSize(const nsCString& aBasePath,
+                          nsDOMSizes& aTotalDOMSizes,
+                          nsIHandleReportCallback* aHandleReport,
+                          nsISupports* aData, nsDOMSizes aDOMSizes) {
+#define REPORT_DOM_SIZE(_windowPath, _pathTail, _field, _desc) \
+  ReportSize(_windowPath, _pathTail, aDOMSizes._field,         \
+             nsLiteralCString(_desc), aHandleReport, aData);   \
+  aTotalDOMSizes._field += aDOMSizes._field;
+
+  REPORT_DOM_SIZE(aBasePath, "/dom/element-nodes", mDOMElementNodesSize,
+                  "Memory used by the element nodes in a window's DOM.");
+
+  REPORT_DOM_SIZE(aBasePath, "/dom/text-nodes", mDOMTextNodesSize,
+                  "Memory used by the text nodes in a window's DOM.");
+
+  REPORT_DOM_SIZE(aBasePath, "/dom/cdata-nodes", mDOMCDATANodesSize,
+                  "Memory used by the CDATA nodes in a window's DOM.");
+
+  REPORT_DOM_SIZE(aBasePath, "/dom/comment-nodes", mDOMCommentNodesSize,
+                  "Memory used by the comment nodes in a window's DOM.");
+
+  REPORT_DOM_SIZE(
+      aBasePath, "/dom/event-targets", mDOMEventTargetsSize,
+      "Memory used by the event targets table in a window's DOM, and "
+      "the objects it points to, which include XHRs.");
+
+  REPORT_DOM_SIZE(aBasePath, "/dom/performance/user-entries",
+                  mDOMPerformanceUserEntries,
+                  "Memory used for performance user entries.");
+
+  REPORT_DOM_SIZE(aBasePath, "/dom/performance/resource-entries",
+                  mDOMPerformanceResourceEntries,
+                  "Memory used for performance resource entries.");
+
+  REPORT_DOM_SIZE(aBasePath, "/dom/media-query-lists", mDOMMediaQueryLists,
+                  "Memory used by MediaQueryList objects for the window's "
+                  "document.");
+
+  REPORT_DOM_SIZE(aBasePath, "/dom/resize-observers",
+                  mDOMResizeObserverControllerSize,
+                  "Memory used for resize observers.");
+
+  REPORT_DOM_SIZE(aBasePath, "/dom/other", mDOMOtherSize,
+                  "Memory used by a window's DOM that isn't measured by the "
+                  "other 'dom/' numbers.");
+#undef REPORT_DOM_SIZE
+}
+
 static void CollectWindowReports(nsGlobalWindowInner* aWindow,
                                  nsWindowSizes* aWindowTotalSizes,
-                                 nsTHashtable<nsUint64HashKey>* aGhostWindowIDs,
+                                 nsTHashSet<uint64_t>* aGhostWindowIDs,
                                  WindowPaths* aWindowPaths,
                                  WindowPaths* aTopWindowPaths,
                                  nsIHandleReportCallback* aHandleReport,
@@ -232,7 +280,7 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
                     aAnonymize);
     windowPath.AppendPrintf(", id=%" PRIu64 ")", top->WindowID());
 
-    aTopWindowPaths->Put(aWindow->WindowID(), windowPath);
+    aTopWindowPaths->InsertOrUpdate(aWindow->WindowID(), windowPath);
 
     windowPath += aWindow->IsFrozen() ? "/cached/"_ns : "/active/"_ns;
   } else {
@@ -252,7 +300,7 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
   censusWindowPath.ReplaceLiteral(0, strlen("explicit"), "event-counts");
 
   // Remember the path for later.
-  aWindowPaths->Put(aWindow->WindowID(), windowPath);
+  aWindowPaths->InsertOrUpdate(aWindow->WindowID(), windowPath);
 
 // Report the size from windowSizes and add to the appropriate total in
 // aWindowTotalSizes.
@@ -279,39 +327,15 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
   nsWindowSizes windowSizes(state);
   aWindow->AddSizeOfIncludingThis(windowSizes);
 
-  REPORT_SIZE("/dom/element-nodes", mDOMElementNodesSize,
-              "Memory used by the element nodes in a window's DOM.");
+  ReportDOMSize(windowPath, aWindowTotalSizes->mDOMSizes, aHandleReport, aData,
+                windowSizes.mDOMSizes);
 
-  REPORT_SIZE("/dom/text-nodes", mDOMTextNodesSize,
-              "Memory used by the text nodes in a window's DOM.");
-
-  REPORT_SIZE("/dom/cdata-nodes", mDOMCDATANodesSize,
-              "Memory used by the CDATA nodes in a window's DOM.");
-
-  REPORT_SIZE("/dom/comment-nodes", mDOMCommentNodesSize,
-              "Memory used by the comment nodes in a window's DOM.");
-
-  REPORT_SIZE("/dom/event-targets", mDOMEventTargetsSize,
-              "Memory used by the event targets table in a window's DOM, and "
-              "the objects it points to, which include XHRs.");
-
-  REPORT_SIZE("/dom/performance/user-entries", mDOMPerformanceUserEntries,
-              "Memory used for performance user entries.");
-
-  REPORT_SIZE("/dom/performance/resource-entries",
-              mDOMPerformanceResourceEntries,
-              "Memory used for performance resource entries.");
-
-  REPORT_SIZE("/dom/media-query-lists", mDOMMediaQueryLists,
-              "Memory used by MediaQueryList objects for the window's "
-              "document.");
-
-  REPORT_SIZE("/dom/resize-observers", mDOMResizeObserverControllerSize,
-              "Memory used for resize observers.");
-
-  REPORT_SIZE("/dom/other", mDOMOtherSize,
-              "Memory used by a window's DOM that isn't measured by the "
-              "other 'dom/' numbers.");
+  nsCString dataDocumentPath(windowPath);
+  dataDocumentPath += "/data-documents";
+  nsWindowSizes dataDocumentSizes(state);
+  aWindow->CollectDOMSizesForDataDocuments(dataDocumentSizes);
+  ReportDOMSize(dataDocumentPath, aWindowTotalSizes->mDOMSizes, aHandleReport,
+                aData, dataDocumentSizes.mDOMSizes);
 
   REPORT_SIZE("/layout/style-sheets", mLayoutStyleSheetsSize,
               "Memory used by document style sheets within a window.");
@@ -486,7 +510,7 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
 #undef REPORT_COUNT
 }
 
-typedef nsTArray<RefPtr<nsGlobalWindowInner>> WindowArray;
+using WindowArray = nsTArray<RefPtr<nsGlobalWindowInner>>;
 
 NS_IMETHODIMP
 nsWindowMemoryReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
@@ -497,24 +521,15 @@ nsWindowMemoryReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
 
   // Hold on to every window in memory so that window objects can't be
   // destroyed while we're calling the memory reporter callback.
-  WindowArray windows;
-  for (auto iter = windowsById->Iter(); !iter.Done(); iter.Next()) {
-    windows.AppendElement(iter.Data());
-  }
+  const auto windows = ToTArray<WindowArray>(windowsById->Values());
 
-  // Get the IDs of all the "ghost" windows, and call aHandleReport->Callback()
-  // for each one.
-  nsTHashtable<nsUint64HashKey> ghostWindows;
+  // Get the IDs of all the "ghost" windows, and call
+  // aHandleReport->Callback() for each one.
+  nsTHashSet<uint64_t> ghostWindows;
   CheckForGhostWindows(&ghostWindows);
-  for (auto iter = ghostWindows.ConstIter(); !iter.Done(); iter.Next()) {
-    nsGlobalWindowInner::InnerWindowByIdTable* windowsById =
-        nsGlobalWindowInner::GetWindowsTable();
-    if (!windowsById) {
-      NS_WARNING("Couldn't get window-by-id hashtable?");
-      continue;
-    }
 
-    nsGlobalWindowInner* window = windowsById->Get(iter.Get()->GetKey());
+  for (const auto& key : ghostWindows) {
+    nsGlobalWindowInner* window = windowsById->Get(key);
     if (!window) {
       NS_WARNING("Could not look up window?");
       continue;
@@ -525,7 +540,7 @@ nsWindowMemoryReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
     AppendWindowURI(window, path, aAnonymize);
 
     aHandleReport->Callback(
-        /* process = */ EmptyCString(), path, nsIMemoryReporter::KIND_OTHER,
+        /* process = */ ""_ns, path, nsIMemoryReporter::KIND_OTHER,
         nsIMemoryReporter::UNITS_COUNT,
         /* amount = */ 1,
         /* description = */ "A ghost window."_ns, aData);
@@ -565,35 +580,37 @@ nsWindowMemoryReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
   nsXULPrototypeCache::CollectMemoryReports(aHandleReport, aData);
 #endif
 
-#define REPORT(_path, _amount, _desc)                                          \
-  aHandleReport->Callback(EmptyCString(), nsLiteralCString(_path), KIND_OTHER, \
-                          UNITS_BYTES, _amount, nsLiteralCString(_desc),       \
+#define REPORT(_path, _amount, _desc)                                    \
+  aHandleReport->Callback(""_ns, nsLiteralCString(_path), KIND_OTHER,    \
+                          UNITS_BYTES, _amount, nsLiteralCString(_desc), \
                           aData);
 
   REPORT("window-objects/dom/element-nodes",
-         windowTotalSizes.mDOMElementNodesSize,
+         windowTotalSizes.mDOMSizes.mDOMElementNodesSize,
          "This is the sum of all windows' 'dom/element-nodes' numbers.");
 
-  REPORT("window-objects/dom/text-nodes", windowTotalSizes.mDOMTextNodesSize,
+  REPORT("window-objects/dom/text-nodes",
+         windowTotalSizes.mDOMSizes.mDOMTextNodesSize,
          "This is the sum of all windows' 'dom/text-nodes' numbers.");
 
-  REPORT("window-objects/dom/cdata-nodes", windowTotalSizes.mDOMCDATANodesSize,
+  REPORT("window-objects/dom/cdata-nodes",
+         windowTotalSizes.mDOMSizes.mDOMCDATANodesSize,
          "This is the sum of all windows' 'dom/cdata-nodes' numbers.");
 
   REPORT("window-objects/dom/comment-nodes",
-         windowTotalSizes.mDOMCommentNodesSize,
+         windowTotalSizes.mDOMSizes.mDOMCommentNodesSize,
          "This is the sum of all windows' 'dom/comment-nodes' numbers.");
 
   REPORT("window-objects/dom/event-targets",
-         windowTotalSizes.mDOMEventTargetsSize,
+         windowTotalSizes.mDOMSizes.mDOMEventTargetsSize,
          "This is the sum of all windows' 'dom/event-targets' numbers.");
 
   REPORT("window-objects/dom/performance",
-         windowTotalSizes.mDOMPerformanceUserEntries +
-             windowTotalSizes.mDOMPerformanceResourceEntries,
+         windowTotalSizes.mDOMSizes.mDOMPerformanceUserEntries +
+             windowTotalSizes.mDOMSizes.mDOMPerformanceResourceEntries,
          "This is the sum of all windows' 'dom/performance/' numbers.");
 
-  REPORT("window-objects/dom/other", windowTotalSizes.mDOMOtherSize,
+  REPORT("window-objects/dom/other", windowTotalSizes.mDOMSizes.mDOMOtherSize,
          "This is the sum of all windows' 'dom/other' numbers.");
 
   REPORT("window-objects/layout/style-sheets",
@@ -711,7 +728,7 @@ void nsWindowMemoryReporter::ObserveDOMWindowDetached(
     return;
   }
 
-  mDetachedWindows.Put(weakWindow, TimeStamp());
+  mDetachedWindows.InsertOrUpdate(weakWindow, TimeStamp());
 
   AsyncCheckForGhostWindows();
 }
@@ -787,7 +804,7 @@ void nsWindowMemoryReporter::ObserveAfterMinimizeMemoryUsage() {
  * all ghost windows we found.
  */
 void nsWindowMemoryReporter::CheckForGhostWindows(
-    nsTHashtable<nsUint64HashKey>* aOutGhostIDs /* = nullptr */) {
+    nsTHashSet<uint64_t>* aOutGhostIDs /* = nullptr */) {
   nsGlobalWindowInner::InnerWindowByIdTable* windowsById =
       nsGlobalWindowInner::GetWindowsTable();
   if (!windowsById) {
@@ -798,14 +815,13 @@ void nsWindowMemoryReporter::CheckForGhostWindows(
   mLastCheckForGhostWindows = TimeStamp::NowLoRes();
   KillCheckTimer();
 
-  nsTHashtable<nsPtrHashKey<BrowsingContextGroup>>
-      nonDetachedBrowsingContextGroups;
+  nsTHashSet<BrowsingContextGroup*> nonDetachedBrowsingContextGroups;
 
   // Populate nonDetachedBrowsingContextGroups.
-  for (auto iter = windowsById->Iter(); !iter.Done(); iter.Next()) {
+  for (const auto& entry : *windowsById) {
     // Null outer window implies null top, but calling GetInProcessTop() when
     // there's no outer window causes us to spew debug warnings.
-    nsGlobalWindowInner* window = iter.UserData();
+    nsGlobalWindowInner* window = entry.GetWeak();
     if (!window->GetOuterWindow() || !window->GetInProcessTopInternal() ||
         !window->GetBrowsingContextGroup()) {
       // This window is detached, so we don't care about its browsing
@@ -813,8 +829,7 @@ void nsWindowMemoryReporter::CheckForGhostWindows(
       continue;
     }
 
-    nonDetachedBrowsingContextGroups.PutEntry(
-        window->GetBrowsingContextGroup());
+    nonDetachedBrowsingContextGroups.Insert(window->GetBrowsingContextGroup());
   }
 
   // Update mDetachedWindows and write the ghost window IDs into aOutGhostIDs,
@@ -852,7 +867,7 @@ void nsWindowMemoryReporter::CheckForGhostWindows(
     BrowsingContextGroup* browsingContextGroup =
         window->GetBrowsingContextGroup();
     if (browsingContextGroup &&
-        nonDetachedBrowsingContextGroups.GetEntry(browsingContextGroup)) {
+        nonDetachedBrowsingContextGroups.Contains(browsingContextGroup)) {
       // This window is in the same browsing context group as a non-detached
       // window, so reset its clock.
       timeStamp = TimeStamp();
@@ -867,7 +882,7 @@ void nsWindowMemoryReporter::CheckForGhostWindows(
         // that is not null.
         mGhostWindowCount++;
         if (aOutGhostIDs && window) {
-          aOutGhostIDs->PutEntry(window->WindowID());
+          aOutGhostIDs->Insert(window->WindowID());
         }
       }
     }
@@ -904,22 +919,19 @@ void nsWindowMemoryReporter::UnlinkGhostWindows() {
 
   // Hold on to every window in memory so that window objects can't be
   // destroyed while we're calling the UnlinkGhostWindows callback.
-  WindowArray windows;
-  for (auto iter = windowsById->Iter(); !iter.Done(); iter.Next()) {
-    windows.AppendElement(iter.Data());
-  }
+  const auto windows = ToTArray<WindowArray>(windowsById->Values());
 
   // Get the IDs of all the "ghost" windows, and unlink them all.
-  nsTHashtable<nsUint64HashKey> ghostWindows;
+  nsTHashSet<uint64_t> ghostWindows;
   sWindowReporter->CheckForGhostWindows(&ghostWindows);
-  for (auto iter = ghostWindows.ConstIter(); !iter.Done(); iter.Next()) {
+  for (const auto& key : ghostWindows) {
     nsGlobalWindowInner::InnerWindowByIdTable* windowsById =
         nsGlobalWindowInner::GetWindowsTable();
     if (!windowsById) {
       continue;
     }
 
-    RefPtr<nsGlobalWindowInner> window = windowsById->Get(iter.Get()->GetKey());
+    RefPtr<nsGlobalWindowInner> window = windowsById->Get(key);
     if (window) {
       window->RiskyUnlink();
     }

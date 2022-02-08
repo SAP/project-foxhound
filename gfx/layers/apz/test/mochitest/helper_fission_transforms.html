@@ -16,8 +16,8 @@ FissionTestHelper.startTestPromise
   .then(waitUntilApzStable)
   .then(loadOOPIFrame("testframe", "helper_fission_empty.html"))
   .then(waitUntilApzStable)
-  .then(runAsyncContinuation(test))
-  .then(FissionTestHelper.subtestDone, FissionTestHelper.subtestDone);
+  .then(test)
+  .then(FissionTestHelper.subtestDone, FissionTestHelper.subtestFailed);
 
 
 let code_for_oopif_to_run = function() {
@@ -41,7 +41,7 @@ function failsafe() {
   }, {once: true});
 }
 
-async function* test() {
+async function test() {
   let iframeElement = document.getElementById("testframe");
 
   let iframeResponse = await FissionTestHelper.sendToOopif(iframeElement, `(${code_for_oopif_to_run})()`);
@@ -49,9 +49,10 @@ async function* test() {
   ok(iframeResponse, "code_for_oopif_to_run successfully installed");
 
   iframePromise = promiseOneEvent(window, "OOPIF:ClickData", null);
-  synthesizeNativeClick(document.body, 400, 400, function() {
-    dump("Finished synthesizing click, waiting for OOPIF message...\n");
-  });
+  synthesizeNativeMouseEventWithAPZ(
+    { type: "click", target: document.body, offsetX: 400, offsetY: 400 },
+    () => dump("Finished synthesizing click, waiting for OOPIF message...\n")
+  );
   iframeResponse = await iframePromise;
   dump("OOPIF response: " + JSON.stringify(iframeResponse.data) + "\n");
 
@@ -69,12 +70,15 @@ async function* test() {
     }
     div {
         transform-origin: top left;
-        transform: translateX(400px) scale(2) rotate(45deg);
+        transform: translateX(400px) scale(2) rotate(45deg) translate(-50px, -50px);
         width: 500px;
     }
     iframe {
         width: 400px;
         height: 300px;
+        position: absolute;
+        top: 50px;
+        left: 50px;
         border: solid 1px black;
     }
   </style>

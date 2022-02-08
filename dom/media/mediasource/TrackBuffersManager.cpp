@@ -14,6 +14,8 @@
 #include "WebMDemuxer.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "nsMimeTypes.h"
 
@@ -427,6 +429,8 @@ void TrackBuffersManager::Detach() {
 
 void TrackBuffersManager::CompleteResetParserState() {
   MOZ_ASSERT(OnTaskQueue());
+  AUTO_PROFILER_LABEL("TrackBuffersManager::CompleteResetParserState",
+                      MEDIA_PLAYBACK);
   MSE_DEBUG("");
 
   // We shouldn't change mInputDemuxer while a demuxer init/reset request is
@@ -487,6 +491,7 @@ int64_t TrackBuffersManager::EvictionThreshold() const {
 void TrackBuffersManager::DoEvictData(const TimeUnit& aPlaybackTime,
                                       int64_t aSizeToEvict) {
   MOZ_ASSERT(OnTaskQueue());
+  AUTO_PROFILER_LABEL("TrackBuffersManager::DoEvictData", MEDIA_PLAYBACK);
 
   mEvictionState = EvictionState::EVICTION_COMPLETED;
 
@@ -597,6 +602,7 @@ TrackBuffersManager::CodedFrameRemovalWithPromise(TimeInterval aInterval) {
 
 bool TrackBuffersManager::CodedFrameRemoval(TimeInterval aInterval) {
   MOZ_ASSERT(OnTaskQueue());
+  AUTO_PROFILER_LABEL("TrackBuffersManager::CodedFrameRemoval", MEDIA_PLAYBACK);
   MSE_DEBUG("From %.2fs to %.2f", aInterval.mStart.ToSeconds(),
             aInterval.mEnd.ToSeconds());
 
@@ -682,6 +688,8 @@ void TrackBuffersManager::RemoveAllCodedFrames() {
   // below coincide with Remove Coded Frames algorithm from the spec.
   MSE_DEBUG("RemoveAllCodedFrames called.");
   MOZ_ASSERT(OnTaskQueue());
+  AUTO_PROFILER_LABEL("TrackBuffersManager::RemoveAllCodedFrames",
+                      MEDIA_PLAYBACK);
 
   // 1. Let start be the starting presentation timestamp for the removal range.
   TimeUnit start{};
@@ -770,6 +778,7 @@ void TrackBuffersManager::UpdateBufferedRanges() {
 
 void TrackBuffersManager::SegmentParserLoop() {
   MOZ_ASSERT(OnTaskQueue());
+  AUTO_PROFILER_LABEL("TrackBuffersManager::SegmentParserLoop", MEDIA_PLAYBACK);
 
   while (true) {
     // 1. If the input buffer is empty, then jump to the need more data step
@@ -1013,6 +1022,8 @@ void TrackBuffersManager::CreateDemuxerforMIMEType() {
 void TrackBuffersManager::ResetDemuxingState() {
   MOZ_ASSERT(OnTaskQueue());
   MOZ_ASSERT(mParser && mParser->HasInitData());
+  AUTO_PROFILER_LABEL("TrackBuffersManager::ResetDemuxingState",
+                      MEDIA_PLAYBACK);
   RecreateParser(true);
   mCurrentInputBuffer = new SourceBufferResource();
   // The demuxer isn't initialized yet ; we don't want to notify it
@@ -1094,6 +1105,8 @@ void TrackBuffersManager::AppendDataToCurrentInputBuffer(
 void TrackBuffersManager::InitializationSegmentReceived() {
   MOZ_ASSERT(OnTaskQueue());
   MOZ_ASSERT(mParser->HasCompleteInitData());
+  AUTO_PROFILER_LABEL("TrackBuffersManager::InitializationSegmentReceived",
+                      MEDIA_PLAYBACK);
 
   int64_t endInit = mParser->InitSegmentRange().mEnd;
   if (mInputBuffer->Length() > mProcessedInput ||
@@ -1126,9 +1139,73 @@ void TrackBuffersManager::InitializationSegmentReceived() {
       ->Track(mDemuxerInitRequest);
 }
 
+bool TrackBuffersManager::IsRepeatInitData(
+    const MediaInfo& aNewMediaInfo) const {
+  MOZ_ASSERT(OnTaskQueue());
+  if (!mInitData) {
+    // There is no previous init data, so this cannot be a repeat.
+    return false;
+  }
+
+  if (mChangeTypeReceived) {
+    // If we're received change type we want to reprocess init data.
+    return false;
+  }
+
+  MOZ_DIAGNOSTIC_ASSERT(mInitData, "Init data should be non-null");
+  if (*mInitData == *mParser->InitData()) {
+    // We have previous init data, and it's the same binary data as we've just
+    // parsed.
+    return true;
+  }
+
+  // At this point the binary data doesn't match, but it's possible to have the
+  // different binary representations for the same logical init data. These
+  // checks can be revised as we encounter such cases in the wild.
+
+  bool audioInfoIsRepeat = false;
+  if (aNewMediaInfo.HasAudio()) {
+    if (!mAudioTracks.mLastInfo) {
+      // There is no old audio info, so this can't be a repeat.
+      return false;
+    }
+    audioInfoIsRepeat =
+        *mAudioTracks.mLastInfo->GetAsAudioInfo() == aNewMediaInfo.mAudio;
+    if (!aNewMediaInfo.HasVideo()) {
+      // Only have audio.
+      return audioInfoIsRepeat;
+    }
+  }
+
+  bool videoInfoIsRepeat = false;
+  if (aNewMediaInfo.HasVideo()) {
+    if (!mVideoTracks.mLastInfo) {
+      // There is no old video info, so this can't be a repeat.
+      return false;
+    }
+    videoInfoIsRepeat =
+        *mVideoTracks.mLastInfo->GetAsVideoInfo() == aNewMediaInfo.mVideo;
+    if (!aNewMediaInfo.HasAudio()) {
+      // Only have video.
+      return videoInfoIsRepeat;
+    }
+  }
+
+  if (audioInfoIsRepeat && videoInfoIsRepeat) {
+    MOZ_DIAGNOSTIC_ASSERT(
+        aNewMediaInfo.HasVideo() && aNewMediaInfo.HasAudio(),
+        "This should only be reachable if audio and video are present");
+    // Video + audio are present and both have the same init data.
+    return true;
+  }
+
+  return false;
+}
+
 void TrackBuffersManager::OnDemuxerInitDone(const MediaResult& aResult) {
   MOZ_ASSERT(OnTaskQueue());
   MOZ_DIAGNOSTIC_ASSERT(mInputDemuxer, "mInputDemuxer has been destroyed");
+  AUTO_PROFILER_LABEL("TrackBuffersManager::OnDemuxerInitDone", MEDIA_PLAYBACK);
 
   mDemuxerInitRequest.Complete();
 
@@ -1205,18 +1282,7 @@ void TrackBuffersManager::OnDemuxerInitDone(const MediaResult& aResult) {
   // resend the same data. In these cases we don't need to change the stream
   // id as it's the same stream. Doing so would recreate decoders, possibly
   // leading to gaps in audio and/or video (see bug 1450952).
-  //
-  // It's possible to have the different binary representations for the same
-  // logical init data. If this case is encountered in the wild then these
-  // checks could be revised to compare MediaInfo rather than init segment
-  // bytes.
-  // For audio only source buffer we can check that only the AudioInfo has
-  // changed.
-  bool isRepeatInitData =
-      !mChangeTypeReceived && mInitData &&
-      ((*mInitData.get() == *mParser->InitData()) ||
-       (numVideos == 0 && numAudios > 0 && mAudioTracks.mLastInfo &&
-        *mAudioTracks.mLastInfo->GetAsAudioInfo() == info.mAudio));
+  bool isRepeatInitData = IsRepeatInitData(info);
 
   MOZ_ASSERT(mFirstInitializationSegmentReceived || !isRepeatInitData,
              "Should never detect repeat init data for first segment!");
@@ -1233,6 +1299,7 @@ void TrackBuffersManager::OnDemuxerInitDone(const MediaResult& aResult) {
     // 5. If the first initialization segment received flag is false, then run
     // the following steps:
     if (!mFirstInitializationSegmentReceived) {
+      MSE_DEBUG("Get first init data");
       mAudioTracks.mNumTracks = numAudios;
       // TODO:
       // 1. If the initialization segment contains tracks with codecs the user
@@ -1368,6 +1435,7 @@ void TrackBuffersManager::OnDemuxerInitDone(const MediaResult& aResult) {
       // 6. Set first initialization segment received flag to true.
       mFirstInitializationSegmentReceived = true;
     } else {
+      MSE_DEBUG("Get new init data");
       mAudioTracks.mLastInfo = new TrackInfoSharedPtr(info.mAudio, streamID);
       mVideoTracks.mLastInfo = new TrackInfoSharedPtr(info.mVideo, streamID);
     }
@@ -1392,10 +1460,9 @@ void TrackBuffersManager::OnDemuxerInitDone(const MediaResult& aResult) {
       MutexAutoLock mut(mMutex);
       mInfo = info;
     }
-
-    // We now have a valid init data ; we can store it for later use.
-    mInitData = mParser->InitData();
   }
+  // We now have a valid init data ; we can store it for later use.
+  mInitData = mParser->InitData();
 
   // We have now completed the changeType operation.
   mChangeTypeReceived = false;
@@ -1424,6 +1491,7 @@ void TrackBuffersManager::OnDemuxerInitDone(const MediaResult& aResult) {
 }
 
 void TrackBuffersManager::OnDemuxerInitFailed(const MediaResult& aError) {
+  MSE_DEBUG("");
   MOZ_ASSERT(aError != NS_ERROR_DOM_MEDIA_WAITING_FOR_DATA);
   mDemuxerInitRequest.Complete();
 
@@ -1434,6 +1502,8 @@ RefPtr<TrackBuffersManager::CodedFrameProcessingPromise>
 TrackBuffersManager::CodedFrameProcessing() {
   MOZ_ASSERT(OnTaskQueue());
   MOZ_ASSERT(mProcessingPromise.IsEmpty());
+  AUTO_PROFILER_LABEL("TrackBuffersManager::CodedFrameProcessing",
+                      MEDIA_PLAYBACK);
 
   MediaByteRange mediaRange = mParser->MediaSegmentRange();
   if (mediaRange.IsEmpty()) {
@@ -1554,6 +1624,8 @@ void TrackBuffersManager::OnAudioDemuxCompleted(
 
 void TrackBuffersManager::CompleteCodedFrameProcessing() {
   MOZ_ASSERT(OnTaskQueue());
+  AUTO_PROFILER_LABEL("TrackBuffersManager::CompleteCodedFrameProcessing",
+                      MEDIA_PLAYBACK);
 
   // 1. For each coded frame in the media segment run the following steps:
   // Coded Frame Processing steps 1.1 to 1.21.
@@ -1690,6 +1762,7 @@ TimeInterval TrackBuffersManager::PresentationInterval(
 
 void TrackBuffersManager::ProcessFrames(TrackBuffer& aSamples,
                                         TrackData& aTrackData) {
+  AUTO_PROFILER_LABEL("TrackBuffersManager::ProcessFrames", MEDIA_PLAYBACK);
   if (!aSamples.Length()) {
     return;
   }
@@ -2041,6 +2114,7 @@ bool TrackBuffersManager::CheckNextInsertionIndex(TrackData& aTrackData,
 void TrackBuffersManager::InsertFrames(TrackBuffer& aSamples,
                                        const TimeIntervals& aIntervals,
                                        TrackData& aTrackData) {
+  AUTO_PROFILER_LABEL("TrackBuffersManager::InsertFrames", MEDIA_PLAYBACK);
   // 5. Let track buffer equal the track buffer that the coded frame will be
   // added to.
   auto& trackBuffer = aTrackData;
@@ -2049,6 +2123,14 @@ void TrackBuffersManager::InsertFrames(TrackBuffer& aSamples,
              aSamples.Length(), aTrackData.mInfo->mMimeType.get(),
              aIntervals.GetStart().ToMicroseconds(),
              aIntervals.GetEnd().ToMicroseconds());
+  if (profiler_thread_is_being_profiled_for_markers()) {
+    nsPrintfCString markerString(
+        "Processing %zu %s frames(start:%" PRId64 " end:%" PRId64 ")",
+        aSamples.Length(), aTrackData.mInfo->mMimeType.get(),
+        aIntervals.GetStart().ToMicroseconds(),
+        aIntervals.GetEnd().ToMicroseconds());
+    PROFILER_MARKER_TEXT("InsertFrames", MEDIA_PLAYBACK, {}, markerString);
+  }
 
   // 11. Let spliced audio frame be an unset variable for holding audio splice
   // information
@@ -2080,10 +2162,7 @@ void TrackBuffersManager::InsertFrames(TrackBuffer& aSamples,
   // the previous step and the next random access point after those removed
   // frames.
 
-  TimeIntervals intersection = trackBuffer.mBufferedRanges;
-  intersection.Intersection(aIntervals);
-
-  if (!intersection.IsEmpty()) {
+  if (trackBuffer.mBufferedRanges.IntersectsStrict(aIntervals)) {
     if (aSamples[0]->mKeyframe &&
         (mType.Type() == MEDIAMIMETYPE("video/webm") ||
          mType.Type() == MEDIAMIMETYPE("audio/webm"))) {
@@ -2160,6 +2239,7 @@ uint32_t TrackBuffersManager::RemoveFrames(const TimeIntervals& aIntervals,
                                            TrackData& aTrackData,
                                            uint32_t aStartIndex,
                                            RemovalMode aMode) {
+  AUTO_PROFILER_LABEL("TrackBuffersManager::RemoveFrames", MEDIA_PLAYBACK);
   TrackBuffer& data = aTrackData.GetTrackBuffer();
   Maybe<uint32_t> firstRemovedIndex;
   uint32_t lastRemovedIndex = 0;
@@ -2212,6 +2292,7 @@ uint32_t TrackBuffersManager::RemoveFrames(const TimeIntervals& aIntervals,
       }
       MOZ_ASSERT(startTime > sample->mTime);
       sample->mDuration = startTime - sample->mTime;
+      MOZ_DIAGNOSTIC_ASSERT(sample->mDuration.IsValid());
       MSE_DEBUGV("partial overwrite of frame [%" PRId64 ",%" PRId64
                  "] with [%" PRId64 ",%" PRId64
                  "] trim to "
@@ -2267,6 +2348,14 @@ uint32_t TrackBuffersManager::RemoveFrames(const TimeIntervals& aIntervals,
             lastRemovedIndex - firstRemovedIndex.ref() + 1,
             removedIntervals.GetStart().ToSeconds(),
             removedIntervals.GetEnd().ToSeconds());
+  if (profiler_thread_is_being_profiled_for_markers()) {
+    nsPrintfCString markerString(
+        "Removing frames from:%u (frames:%u) ([%f, %f))",
+        firstRemovedIndex.ref(), lastRemovedIndex - firstRemovedIndex.ref() + 1,
+        removedIntervals.GetStart().ToSeconds(),
+        removedIntervals.GetEnd().ToSeconds());
+    PROFILER_MARKER_TEXT("RemoveFrames", MEDIA_PLAYBACK, {}, markerString);
+  }
 
   if (aTrackData.mNextGetSampleIndex.isSome()) {
     if (aTrackData.mNextGetSampleIndex.ref() >= firstRemovedIndex.ref() &&
@@ -2487,6 +2576,7 @@ TimeUnit TrackBuffersManager::Seek(TrackInfo::TrackType aTrack,
                                    const TimeUnit& aTime,
                                    const TimeUnit& aFuzz) {
   MOZ_ASSERT(OnTaskQueue());
+  AUTO_PROFILER_LABEL("TrackBuffersManager::Seek", MEDIA_PLAYBACK);
   auto& trackBuffer = GetTracksData(aTrack);
   const TrackBuffersManager::TrackBuffer& track = GetTrackBuffer(aTrack);
 
@@ -2552,6 +2642,8 @@ uint32_t TrackBuffersManager::SkipToNextRandomAccessPoint(
     TrackInfo::TrackType aTrack, const TimeUnit& aTimeThreadshold,
     const media::TimeUnit& aFuzz, bool& aFound) {
   MOZ_ASSERT(OnTaskQueue());
+  AUTO_PROFILER_LABEL("TrackBuffersManager::SkipToNextRandomAccessPoint",
+                      MEDIA_PLAYBACK);
   uint32_t parsed = 0;
   auto& trackData = GetTracksData(aTrack);
   const TrackBuffer& track = GetTrackBuffer(aTrack);
@@ -2651,6 +2743,7 @@ const MediaRawData* TrackBuffersManager::GetSample(TrackInfo::TrackType aTrack,
 already_AddRefed<MediaRawData> TrackBuffersManager::GetSample(
     TrackInfo::TrackType aTrack, const TimeUnit& aFuzz, MediaResult& aResult) {
   MOZ_ASSERT(OnTaskQueue());
+  AUTO_PROFILER_LABEL("TrackBuffersManager::GetSample", MEDIA_PLAYBACK);
   auto& trackData = GetTracksData(aTrack);
   const TrackBuffer& track = GetTrackBuffer(aTrack);
 
@@ -2712,6 +2805,7 @@ already_AddRefed<MediaRawData> TrackBuffersManager::GetSample(
     aResult = MediaResult(NS_ERROR_OUT_OF_MEMORY, __func__);
     return nullptr;
   }
+  MOZ_DIAGNOSTIC_ASSERT(p->HasValidTime());
 
   // Find the previous keyframe to calculate the evictable amount.
   uint32_t i = trackData.mNextGetSampleIndex.ref();
@@ -2862,7 +2956,7 @@ void TrackBuffersManager::TrackData::AddSizeOfResources(
 
 void TrackBuffersManager::GetDebugInfo(
     dom::TrackBuffersManagerDebugInfo& aInfo) {
-  aInfo.mType = NS_ConvertUTF8toUTF16(mType.Type().AsString());
+  CopyUTF8toUTF16(mType.Type().AsString(), aInfo.mType);
 
   if (HasAudio()) {
     aInfo.mNextSampleTime = mAudioTracks.mNextSampleTime.ToSeconds();

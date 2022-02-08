@@ -35,11 +35,6 @@ const DIALOG_URL = "chrome://browser/content/places/bookmarkProperties.xhtml";
 const DIALOG_URL_MINIMAL_UI =
   "chrome://browser/content/places/bookmarkProperties2.xhtml";
 
-const { BrowserWindowTracker } = ChromeUtils.import(
-  "resource:///modules/BrowserWindowTracker.jsm"
-);
-var win = BrowserWindowTracker.getTopWindow();
-
 function add_bookmark(url) {
   return PlacesUtils.bookmarks.insert({
     parentGuid: PlacesUtils.bookmarks.unfiledGuid,
@@ -314,6 +309,7 @@ gTests.push({
   desc:
     " Bug 491269 - Test that editing folder name in bookmarks properties dialog does not accept the dialog",
   sidebar: SIDEBAR_HISTORY_ID,
+  dialogUrl: DIALOG_URL_MINIMAL_UI,
   action: ACTION_ADD,
   historyView: SIDEBAR_HISTORY_BYLASTVISITED_VIEW,
   window: null,
@@ -387,7 +383,7 @@ gTests.push({
         newFolderButton.doCommand();
 
         // Wait for the folder to be created and for editing to start.
-        await BrowserTestUtils.waitForCondition(
+        await TestUtils.waitForCondition(
           () => folderTree.hasAttribute("editing"),
           "We are editing new folder name in folder tree"
         );
@@ -473,6 +469,19 @@ function execute_test_in_sidebar(test) {
   });
 }
 
+async function promise_properties_window(dialogUrl = DIALOG_URL) {
+  let win = await BrowserTestUtils.promiseAlertDialogOpen(null, dialogUrl, {
+    isSubDialog: true,
+  });
+  await SimpleTest.promiseFocus(win);
+  await TestUtils.waitForCondition(
+    () => win.gEditItemOverlay.initialized,
+    "EditItemOverlay is initialized"
+  );
+  await new Promise(executeSoon);
+  return win;
+}
+
 async function open_properties_dialog(test) {
   var sidebar = document.getElementById("sidebar");
 
@@ -489,10 +498,7 @@ async function open_properties_dialog(test) {
   var tree = sidebar.contentDocument.getElementById(sidebarTreeID);
   // The sidebar may take a moment to open from the doCommand, therefore wait
   // until it has opened before continuing.
-  await BrowserTestUtils.waitForCondition(
-    () => tree,
-    "Sidebar tree has been loaded"
-  );
+  await TestUtils.waitForCondition(() => tree, "Sidebar tree has been loaded");
 
   // Ask current test to select the node to edit.
   test.selectNode(tree);
@@ -502,28 +508,6 @@ async function open_properties_dialog(test) {
   );
 
   return new Promise(resolve => {
-    // Wait for the Properties dialog.
-    function windowObserver(observerWindow, aTopic, aData) {
-      if (aTopic != "domwindowopened") {
-        return;
-      }
-      Services.ww.unregisterNotification(windowObserver);
-      waitForFocus(async () => {
-        // Ensure overlay is loaded
-        await BrowserTestUtils.waitForCondition(
-          () => observerWindow.gEditItemOverlay.initialized,
-          "EditItemOverlay is initialized"
-        );
-        test.window = observerWindow;
-        try {
-          executeSoon(resolve);
-        } catch (ex) {
-          Assert.ok(false, "An error occured during test run: " + ex.message);
-        }
-      }, observerWindow);
-    }
-    Services.ww.registerNotification(windowObserver);
-
     var command = null;
     switch (test.action) {
       case ACTION_EDIT:
@@ -554,6 +538,10 @@ async function open_properties_dialog(test) {
       " command '" + command + "' on current selected node is enabled"
     );
 
+    promise_properties_window(test.dialogUrl).then(win => {
+      test.window = win;
+      resolve();
+    });
     // This will open the dialog. For some reason this needs to be executed
     // later, as otherwise opening the dialog throws an exception.
     executeSoon(() => {

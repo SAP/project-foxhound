@@ -6,12 +6,17 @@
 
 #include "ScriptLoadRequest.h"
 
+#include "mozilla/dom/Document.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Unused.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 
+#include "js/OffThreadScriptCompilation.h"
+
+#include "ModuleLoadRequest.h"
 #include "nsContentUtils.h"
+#include "nsICacheInfoChannel.h"
 #include "nsIClassOfService.h"
 #include "nsISupportsPriority.h"
 #include "ScriptLoadRequest.h"
@@ -24,7 +29,8 @@ namespace dom {
 // ScriptFetchOptions
 //////////////////////////////////////////////////////////////
 
-NS_IMPL_CYCLE_COLLECTION(ScriptFetchOptions, mElement, mTriggeringPrincipal)
+NS_IMPL_CYCLE_COLLECTION(ScriptFetchOptions, mElement, mTriggeringPrincipal,
+                         mWebExtGlobal)
 
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(ScriptFetchOptions, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(ScriptFetchOptions, Release)
@@ -32,12 +38,14 @@ NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(ScriptFetchOptions, Release)
 ScriptFetchOptions::ScriptFetchOptions(mozilla::CORSMode aCORSMode,
                                        ReferrerPolicy aReferrerPolicy,
                                        Element* aElement,
-                                       nsIPrincipal* aTriggeringPrincipal)
+                                       nsIPrincipal* aTriggeringPrincipal,
+                                       nsIGlobalObject* aWebExtGlobal)
     : mCORSMode(aCORSMode),
       mReferrerPolicy(aReferrerPolicy),
       mIsPreload(false),
       mElement(aElement),
-      mTriggeringPrincipal(aTriggeringPrincipal) {
+      mTriggeringPrincipal(aTriggeringPrincipal),
+      mWebExtGlobal(aWebExtGlobal) {
   MOZ_ASSERT(mTriggeringPrincipal);
 }
 
@@ -56,8 +64,12 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(ScriptLoadRequest)
 NS_IMPL_CYCLE_COLLECTION_CLASS(ScriptLoadRequest)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(ScriptLoadRequest)
+  // XXX missing mLoadBlockedDocument ?
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFetchOptions, mCacheInfo)
   tmp->mScript = nullptr;
+  if (Runnable* runnable = tmp->mRunnable.exchange(nullptr)) {
+    runnable->Release();
+  }
   tmp->DropBytecodeCacheReferences();
   tmp->MaybeUnblockOnload();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
@@ -85,11 +97,13 @@ ScriptLoadRequest::ScriptLoadRequest(ScriptKind aKind, nsIURI* aURI,
       mInAsyncList(false),
       mIsNonAsyncScriptInserted(false),
       mIsXSLT(false),
+      mInCompilingList(false),
       mIsCanceled(false),
       mWasCompiledOMT(false),
       mIsTracking(false),
       mFetchOptions(aFetchOptions),
       mOffThreadToken(nullptr),
+      mRunnable(nullptr),
       mScriptTextLength(0),
       mScriptBytecode(),
       mBytecodeOffset(0),
@@ -120,14 +134,27 @@ ScriptLoadRequest::~ScriptLoadRequest() {
   DropJSObjects(this);
 }
 
+void ScriptLoadRequest::BlockOnload(Document* aDocument) {
+  MOZ_ASSERT(!mLoadBlockedDocument);
+  aDocument->BlockOnload();
+  mLoadBlockedDocument = aDocument;
+}
+
+void ScriptLoadRequest::MaybeUnblockOnload() {
+  if (mLoadBlockedDocument) {
+    mLoadBlockedDocument->UnblockOnload(false);
+    mLoadBlockedDocument = nullptr;
+  }
+}
+
 void ScriptLoadRequest::SetReady() {
   MOZ_ASSERT(mProgress != Progress::eReady);
   mProgress = Progress::eReady;
 }
 
 void ScriptLoadRequest::Cancel() {
-  MaybeCancelOffThreadScript();
   mIsCanceled = true;
+  MaybeCancelOffThreadScript();
 }
 
 void ScriptLoadRequest::MaybeCancelOffThreadScript() {
@@ -147,16 +174,23 @@ void ScriptLoadRequest::MaybeCancelOffThreadScript() {
     MOZ_ASSERT(IsBytecode());
     JS::CancelOffThreadScriptDecoder(cx, mOffThreadToken);
   }
+
+  // Cancellation request above should guarantee removal of the parse task, so
+  // releasing the runnable should be safe to do here.
+  if (Runnable* runnable = mRunnable.exchange(nullptr)) {
+    runnable->Release();
+  }
+
+  MaybeUnblockOnload();
   mOffThreadToken = nullptr;
 }
 
 void ScriptLoadRequest::DropBytecodeCacheReferences() {
   mCacheInfo = nullptr;
-  mScript = nullptr;
   DropJSObjects(this);
 }
 
-inline ModuleLoadRequest* ScriptLoadRequest::AsModuleRequest() {
+ModuleLoadRequest* ScriptLoadRequest::AsModuleRequest() {
   MOZ_ASSERT(IsModuleRequest());
   return static_cast<ModuleLoadRequest*>(this);
 }
@@ -189,22 +223,14 @@ void ScriptLoadRequest::SetTextSource() {
   }
 }
 
-void ScriptLoadRequest::SetBinASTSource() { MOZ_CRASH("BinAST not supported"); }
-
 void ScriptLoadRequest::SetBytecode() {
   MOZ_ASSERT(IsUnknownDataType());
   mDataType = DataType::eBytecode;
 }
 
-bool ScriptLoadRequest::ShouldAcceptBinASTEncoding() const {
-  MOZ_CRASH("BinAST not supported");
-}
-
 void ScriptLoadRequest::ClearScriptSource() {
   if (IsTextSource()) {
     ClearScriptText();
-  } else if (IsBinASTSource()) {
-    ScriptBinASTData().clearAndFree();
   }
 }
 
@@ -232,13 +258,27 @@ void ScriptLoadRequest::PrioritizeAsPreload() {
   }
 }
 
+nsIScriptElement* ScriptLoadRequest::GetScriptElement() const {
+  nsCOMPtr<nsIScriptElement> scriptElement =
+      do_QueryInterface(mFetchOptions->mElement);
+  return scriptElement;
+}
+
+void ScriptLoadRequest::SetIsLoadRequest(nsIScriptElement* aElement) {
+  MOZ_ASSERT(aElement);
+  MOZ_ASSERT(!GetScriptElement());
+  MOZ_ASSERT(IsPreload());
+  mFetchOptions->mElement = do_QueryInterface(aElement);
+  mFetchOptions->mIsPreload = false;
+}
+
 //////////////////////////////////////////////////////////////
 // ScriptLoadRequestList
 //////////////////////////////////////////////////////////////
 
-ScriptLoadRequestList::~ScriptLoadRequestList() { Clear(); }
+ScriptLoadRequestList::~ScriptLoadRequestList() { CancelRequestsAndClear(); }
 
-void ScriptLoadRequestList::Clear() {
+void ScriptLoadRequestList::CancelRequestsAndClear() {
   while (!isEmpty()) {
     RefPtr<ScriptLoadRequest> first = StealFirst();
     first->Cancel();
@@ -257,21 +297,6 @@ bool ScriptLoadRequestList::Contains(ScriptLoadRequest* aElem) const {
   return false;
 }
 #endif  // DEBUG
-
-inline void ImplCycleCollectionUnlink(ScriptLoadRequestList& aField) {
-  while (!aField.isEmpty()) {
-    RefPtr<ScriptLoadRequest> first = aField.StealFirst();
-  }
-}
-
-inline void ImplCycleCollectionTraverse(
-    nsCycleCollectionTraversalCallback& aCallback,
-    ScriptLoadRequestList& aField, const char* aName, uint32_t aFlags) {
-  for (ScriptLoadRequest* request = aField.getFirst(); request;
-       request = request->getNext()) {
-    CycleCollectionNoteChild(aCallback, request, aName, aFlags);
-  }
-}
 
 }  // namespace dom
 }  // namespace mozilla

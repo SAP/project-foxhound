@@ -15,6 +15,7 @@
 #include "mozilla/Maybe.h"
 
 #include "js/HashTable.h"
+#include "js/Stack.h"
 #include "js/Wrapper.h"
 #include "vm/JSContext.h"
 #include "vm/SavedFrame.h"
@@ -168,13 +169,13 @@ class SavedStacks {
         bernoulli(1.0, 0x59fdad7f6b4cc573, 0x91adf38db96a9354),
         creatingSavedFrame(false) {}
 
-  MOZ_MUST_USE bool saveCurrentStack(
+  [[nodiscard]] bool saveCurrentStack(
       JSContext* cx, MutableHandleSavedFrame frame,
       JS::StackCapture&& capture = JS::StackCapture(JS::AllFrames()));
-  MOZ_MUST_USE bool copyAsyncStack(JSContext* cx, HandleObject asyncStack,
-                                   HandleString asyncCause,
-                                   MutableHandleSavedFrame adoptedStack,
-                                   const mozilla::Maybe<size_t>& maxFrameCount);
+  [[nodiscard]] bool copyAsyncStack(
+      JSContext* cx, HandleObject asyncStack, HandleString asyncCause,
+      MutableHandleSavedFrame adoptedStack,
+      const mozilla::Maybe<size_t>& maxFrameCount);
   void traceWeak(JSTracer* trc);
   void trace(JSTracer* trc);
   uint32_t count();
@@ -210,25 +211,21 @@ class SavedStacks {
   // reentrancy, just change the behavior of SavedStacks::saveCurrentStack to
   // return a nullptr SavedFrame.
   struct MOZ_RAII AutoReentrancyGuard {
-    MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER;
     SavedStacks& stacks;
 
-    explicit AutoReentrancyGuard(
-        SavedStacks& stacks MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-        : stacks(stacks) {
-      MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+    explicit AutoReentrancyGuard(SavedStacks& stacks) : stacks(stacks) {
       stacks.creatingSavedFrame = true;
     }
 
     ~AutoReentrancyGuard() { stacks.creatingSavedFrame = false; }
   };
 
-  MOZ_MUST_USE bool insertFrames(JSContext* cx, MutableHandleSavedFrame frame,
-                                 JS::StackCapture&& capture);
-  MOZ_MUST_USE bool adoptAsyncStack(
+  [[nodiscard]] bool insertFrames(JSContext* cx, MutableHandleSavedFrame frame,
+                                  JS::StackCapture&& capture);
+  [[nodiscard]] bool adoptAsyncStack(
       JSContext* cx, MutableHandleSavedFrame asyncStack, HandleAtom asyncCause,
       const mozilla::Maybe<size_t>& maxFrameCount);
-  MOZ_MUST_USE bool checkForEvalInFramePrev(
+  [[nodiscard]] bool checkForEvalInFramePrev(
       JSContext* cx, MutableHandle<SavedFrame::Lookup> lookup);
   SavedFrame* getOrCreateSavedFrame(JSContext* cx,
                                     Handle<SavedFrame::Lookup> lookup);
@@ -241,7 +238,7 @@ class SavedStacks {
   struct PCKey {
     PCKey(JSScript* script, jsbytecode* pc) : script(script), pc(pc) {}
 
-    HeapPtr<JSScript*> script;
+    WeakHeapPtr<JSScript*> script;
     jsbytecode* pc;
 
     void trace(JSTracer* trc) { /* PCKey is weak. */
@@ -269,7 +266,7 @@ class SavedStacks {
       return TraceWeakEdge(trc, &source, "traceWeak");
     }
 
-    HeapPtr<JSAtom*> source;
+    WeakHeapPtr<JSAtom*> source;
     uint32_t sourceId;
     size_t line;
     uint32_t column;
@@ -302,8 +299,8 @@ class SavedStacks {
       GCHashMap<PCKey, LocationValue, PCLocationHasher, SystemAllocPolicy>;
   PCLocationMap pcLocationMap;
 
-  MOZ_MUST_USE bool getLocation(JSContext* cx, const FrameIter& iter,
-                                MutableHandle<LocationValue> locationp);
+  [[nodiscard]] bool getLocation(JSContext* cx, const FrameIter& iter,
+                                 MutableHandle<LocationValue> locationp);
 };
 
 template <typename Wrapper>

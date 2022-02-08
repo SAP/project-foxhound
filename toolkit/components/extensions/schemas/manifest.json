@@ -11,35 +11,19 @@
           "manifest_version": {
             "type": "integer",
             "minimum": 2,
-            "maximum": 2
+            "maximum": 3,
+            "postprocess": "manifestVersionCheck"
           },
 
           "applications": {
-            "type": "object",
-            "optional": true,
-            "properties": {
-              "gecko": {
-                "$ref": "FirefoxSpecificProperties",
-                "optional": true
-              }
-            }
+            "$ref": "BrowserSpecificSettings",
+            "description": "The applications property is deprecated, please use 'browser_specific_settings'",
+            "optional": true
           },
 
           "browser_specific_settings": {
-            "type": "object",
-            "optional": true,
-            "properties": {
-              "gecko": {
-                "$ref": "FirefoxSpecificProperties",
-                "optional": true
-              },
-              "edge": {
-                "type": "object",
-                "additionalProperties": { "type": "any" },
-                "optional": true
-              }
-            },
-            "additionalProperties": { "$ref": "UnrecognizedProperty" }
+            "$ref": "BrowserSpecificSettings",
+            "optional": true
           },
 
           "name": {
@@ -77,6 +61,34 @@
             "format": "url",
             "optional": true,
             "preprocess": "localize"
+          },
+
+          "install_origins": {
+            "type": "array",
+            "optional": true,
+            "items": {
+              "type": "string",
+              "format": "origin"
+            }
+          },
+
+          "developer": {
+            "type": "object",
+            "optional": true,
+            "properties": {
+              "name": {
+                "type": "string",
+                "optional": true,
+                "preprocess": "localize"
+              },
+              "url": {
+                "type": "string",
+                "format": "url",
+                "optional": true,
+                "preprocess": "localize",
+                "onError": "warn"
+              }
+            }
           }
         }
       },
@@ -189,10 +201,12 @@
             "onError": "warn",
             "choices": [
               {
+                "max_manifest_version": 2,
                 "type": "string",
                 "format": "contentSecurityPolicy"
               },
               {
+                "min_manifest_version": 3,
                 "type": "object",
                 "additionalProperties": {
                   "$ref": "UnrecognizedProperty"
@@ -203,18 +217,6 @@
                     "optional": true,
                     "format": "contentSecurityPolicy",
                     "description": "The Content Security Policy used for extension pages."
-                  },
-                  "content_scripts": {
-                    "type": "string",
-                    "optional": true,
-                    "format": "contentSecurityPolicy",
-                    "description": "The Content Security Policy used for content scripts."
-                  },
-                  "isolated_world": {
-                    "type": "string",
-                    "optional": true,
-                    "format": "contentSecurityPolicy",
-                    "description": "An alias for content_scripts to support Chrome compatibility.  Content Security Policy implementations may differ between Firefox and Chrome.  If both isolated_world and content_scripts exist, the value from content_scripts will be used."
                   }
                 }
               }
@@ -222,13 +224,37 @@
           },
 
           "permissions": {
-            "type": "array",
             "default": [],
+            "optional": true,
+            "choices": [
+              {
+                "max_manifest_version": 2,
+                "type": "array",
+                "items": {
+                  "$ref": "PermissionOrOrigin",
+                  "onError": "warn"
+                }
+              },
+              {
+                "min_manifest_version": 3,
+                "type": "array",
+                "items": {
+                  "$ref": "Permission",
+                  "onError": "warn"
+                }
+              }
+            ]
+          },
+
+          "host_permissions": {
+            "min_manifest_version": 3,
+            "type": "array",
             "items": {
-              "$ref": "PermissionOrOrigin",
+              "$ref": "MatchPattern",
               "onError": "warn"
             },
-            "optional": true
+            "optional": true,
+            "default": []
           },
 
           "optional_permissions": {
@@ -242,26 +268,31 @@
           },
 
           "web_accessible_resources": {
-            "type": "array",
-            "items": { "type": "string" },
-            "optional": true
-          },
-
-          "developer": {
-            "type": "object",
             "optional": true,
-            "properties": {
-              "name": {
-                "type": "string",
-                "optional": true,
-                "preprocess": "localize"
+            "choices": [
+              {
+                "max_manifest_version": 2,
+                "type": "array",
+                "items": { "type": "string" }
               },
-              "url": {
-                "type": "string",
-                "optional": true,
-                "preprocess": "localize"
+              {
+                "min_manifest_version": 3,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "resources": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    },
+                    "matches": {
+                      "type": "array",
+                      "items": { "$ref": "MatchPatternRestricted" }
+                    }
+                  }
+                }
               }
-            }
+            ]
           },
 
           "hidden": {
@@ -517,6 +548,17 @@
             "optional": true
           }
         }
+      },
+      {
+        "id": "BrowserSpecificSettings",
+        "type": "object",
+        "properties": {
+          "gecko": {
+            "$ref": "FirefoxSpecificProperties",
+            "optional": true
+          }
+        },
+        "additionalProperties": { "type": "any" }
       },
       {
         "id": "MatchPattern",

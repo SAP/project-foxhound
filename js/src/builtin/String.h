@@ -7,8 +7,6 @@
 #ifndef builtin_String_h
 #define builtin_String_h
 
-#include "mozilla/Attributes.h"
-
 #include "NamespaceImports.h"
 
 #include "js/RootingAPI.h"
@@ -18,7 +16,6 @@ namespace js {
 
 class ArrayObject;
 class GlobalObject;
-class ObjectGroup;
 
 /* Initialize the String class, returning its prototype object. */
 extern JSObject* InitStringClass(JSContext* cx, Handle<GlobalObject*> global);
@@ -60,8 +57,8 @@ extern bool str_endsWith(JSContext* cx, unsigned argc, Value* vp);
  *
  * Usage: lowerCase = intl_toLocaleLowerCase(string, locale)
  */
-extern MOZ_MUST_USE bool intl_toLocaleLowerCase(JSContext* cx, unsigned argc,
-                                                Value* vp);
+[[nodiscard]] extern bool intl_toLocaleLowerCase(JSContext* cx, unsigned argc,
+                                                 Value* vp);
 
 /**
  * Returns the input string converted to upper case based on the language
@@ -69,13 +66,12 @@ extern MOZ_MUST_USE bool intl_toLocaleLowerCase(JSContext* cx, unsigned argc,
  *
  * Usage: upperCase = intl_toLocaleUpperCase(string, locale)
  */
-extern MOZ_MUST_USE bool intl_toLocaleUpperCase(JSContext* cx, unsigned argc,
-                                                Value* vp);
+[[nodiscard]] extern bool intl_toLocaleUpperCase(JSContext* cx, unsigned argc,
+                                                 Value* vp);
 #endif
 
-ArrayObject* StringSplitString(JSContext* cx, Handle<ObjectGroup*> group,
-                               HandleString str, HandleString sep,
-                               uint32_t limit);
+ArrayObject* StringSplitString(JSContext* cx, HandleString str,
+                               HandleString sep, uint32_t limit);
 
 JSString* StringFlatReplaceString(JSContext* cx, HandleString string,
                                   HandleString pattern,

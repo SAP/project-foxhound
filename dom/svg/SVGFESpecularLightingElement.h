@@ -7,7 +7,7 @@
 #ifndef DOM_SVG_SVGFESPECULARLIGHTINGELEMENT_H_
 #define DOM_SVG_SVGFESPECULARLIGHTINGELEMENT_H_
 
-#include "SVGFilters.h"
+#include "mozilla/dom/SVGFilters.h"
 
 nsresult NS_NewSVGFESpecularLightingElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -33,6 +33,8 @@ class SVGFESpecularLightingElement : public SVGFESpecularLightingElementBase {
 
  public:
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
 
   virtual FilterPrimitiveDescription GetPrimitiveDescription(
       SVGFilterInstance* aInstance, const IntRect& aFilterSubregion,

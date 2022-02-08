@@ -60,6 +60,7 @@ bool AnimationFrameRetainedBuffer::ResetInternal() {
 bool AnimationFrameRetainedBuffer::MarkComplete(
     const gfx::IntRect& aFirstFrameRefreshArea) {
   MOZ_ASSERT(!mSizeKnown);
+  mFirstFrameRefreshArea = aFirstFrameRefreshArea;
   mSizeKnown = true;
   mPending = 0;
   mFrames.Compact();
@@ -191,6 +192,11 @@ bool AnimationFrameDiscardingQueue::MarkComplete(
     mRedecodeError = true;
     mPending = 0;
   }
+
+  // If we encounter a redecode error, just make the first frame refresh area to
+  // be the full frame, because we don't really know what we can safely recycle.
+  mFirstFrameRefreshArea =
+      mRedecodeError ? mFirstFrame->GetRect() : aFirstFrameRefreshArea;
 
   // We reached the end of the animation, the next frame we get, if we get
   // another, will be the first frame again.
@@ -408,8 +414,11 @@ RawAccessFrameRef AnimationFrameRecyclingQueue::RecycleFrame(
     // area. We know that all of the frames still in the recycling queue
     // need to take into account the same dirty rect because they are also
     // frames which cross the boundary.
+    //
+    // Note that this may actually shrink the dirty rect if we estimated it
+    // earlier with the full frame size and now we have the actual, more
+    // conservative aggregate for the animation.
     for (RecycleEntry& entry : mRecycle) {
-      MOZ_ASSERT(mFirstFrameRefreshArea.Contains(entry.mDirtyRect));
       entry.mDirtyRect = mFirstFrameRefreshArea;
     }
     // Until we advance to the first frame again, any subsequent recycled
@@ -456,18 +465,6 @@ RawAccessFrameRef AnimationFrameRecyclingQueue::RecycleFrame(
   }
 
   return recycledFrame;
-}
-
-bool AnimationFrameRecyclingQueue::MarkComplete(
-    const gfx::IntRect& aFirstFrameRefreshArea) {
-  bool continueDecoding =
-      AnimationFrameDiscardingQueue::MarkComplete(aFirstFrameRefreshArea);
-
-  // If we encounter a redecode error, just make the first frame refresh area to
-  // be the full frame, because we don't really know what we can safely recycle.
-  mFirstFrameRefreshArea =
-      mRedecodeError ? mFirstFrame->GetRect() : aFirstFrameRefreshArea;
-  return continueDecoding;
 }
 
 }  // namespace image

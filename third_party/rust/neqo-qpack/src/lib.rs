@@ -8,8 +8,6 @@
 #![warn(clippy::pedantic)]
 // This is because of Encoder and Decoder structs. TODO: think about a better namings for crate and structs.
 #![allow(clippy::module_name_repetitions)]
-// We need this because of TransportError.
-#![allow(clippy::pub_enum_variant_names)]
 
 pub mod decoder;
 mod decoder_instructions;
@@ -24,10 +22,13 @@ mod qlog;
 mod qpack_send_buf;
 pub mod reader;
 mod static_table;
-pub mod stats;
+mod stats;
 mod table;
 
-pub type Header = (String, String);
+pub use decoder::QPackDecoder;
+pub use encoder::QPackEncoder;
+pub use stats::Stats;
+
 type Res<T> = Result<T, Error>;
 
 #[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone, Copy)]
@@ -38,12 +39,17 @@ pub struct QpackSettings {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[allow(
+    renamed_and_removed_lints,
+    clippy::pub_enum_variant_names,
+    clippy::enum_variant_names
+)]
 pub enum Error {
     DecompressionFailed,
     EncoderStream,
     DecoderStream,
     ClosedCriticalStream,
-    InternalError,
+    InternalError(u16),
 
     // These are internal errors, they will be transformed into one of the above.
     NeedMoreData, // Return when an input stream does not have more data that a decoder needs.(It does not mean that a stream is closed.)
@@ -74,6 +80,18 @@ impl Error {
             // These are all internal errors.
             _ => 3,
         }
+    }
+
+    /// # Errors
+    ///   Any error is mapped to the indicated type.
+    fn map_error<R>(r: Result<R, Self>, err: Self) -> Result<R, Self> {
+        r.map_err(|e| {
+            if matches!(e, Self::ClosedCriticalStream) {
+                e
+            } else {
+                err
+            }
+        })
     }
 }
 

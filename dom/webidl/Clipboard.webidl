@@ -10,16 +10,52 @@
  * liability, trademark and document use rules apply.
  */
 
+typedef sequence<ClipboardItem> ClipboardItems;
 
 [SecureContext, Exposed=Window, Pref="dom.events.asyncClipboard"]
 interface Clipboard : EventTarget {
-  [Pref="dom.events.asyncClipboard.dataTransfer", Throws, NeedsSubjectPrincipal]
-  Promise<DataTransfer> read();
+  [Pref="dom.events.asyncClipboard.read", Throws, NeedsSubjectPrincipal]
+  Promise<ClipboardItems> read();
   [Func="Clipboard::ReadTextEnabled", Throws, NeedsSubjectPrincipal]
   Promise<DOMString> readText();
 
-  [Pref="dom.events.asyncClipboard.dataTransfer", Throws, NeedsSubjectPrincipal]
-  Promise<void> write(DataTransfer data);
+  [Pref="dom.events.asyncClipboard.clipboardItem", Throws, NeedsSubjectPrincipal]
+  Promise<void> write(ClipboardItems data);
+
   [Throws, NeedsSubjectPrincipal]
   Promise<void> writeText(DOMString data);
+};
+
+typedef (DOMString or Blob) ClipboardItemDataType;
+// typedef Promise<ClipboardItemDataType> ClipboardItemData;
+// callback ClipboardItemDelayedCallback = ClipboardItemData ();
+
+[SecureContext, Exposed=Window, Pref="dom.events.asyncClipboard.clipboardItem"]
+interface ClipboardItem {
+  // Note: The spec uses Promise<ClipboardItemDataType>.
+  [Throws]
+  constructor(record<DOMString, ClipboardItemDataType> items,
+              optional ClipboardItemOptions options = {});
+
+  // static ClipboardItem createDelayed(
+  //     record<DOMString, ClipboardItemDelayedCallback> items,
+  //     optional ClipboardItemOptions options = {});
+
+  readonly attribute PresentationStyle presentationStyle;
+  // readonly attribute long long lastModified;
+  // readonly attribute boolean delayed;
+
+  // TODO: Use FrozenArray once available. (Bug 1236777)
+  // readonly attribute FrozenArray<DOMString> types;
+  [Frozen, Cached, Pure]
+  readonly attribute sequence<DOMString> types;
+
+  [Throws]
+  Promise<Blob> getType(DOMString type);
+};
+
+enum PresentationStyle { "unspecified", "inline", "attachment" };
+
+dictionary ClipboardItemOptions {
+  PresentationStyle presentationStyle = "unspecified";
 };

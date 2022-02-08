@@ -14,6 +14,7 @@
 #include "AnimationTimeline.h"
 #include "nsDOMNavigationTiming.h"  // for DOMHighResTimeStamp
 #include "nsRefreshDriver.h"
+#include "nsRefreshObservers.h"
 
 struct JSContext;
 
@@ -25,25 +26,10 @@ class DocumentTimeline final : public AnimationTimeline,
                                public nsATimerAdjustmentObserver,
                                public LinkedListElement<DocumentTimeline> {
  public:
-  DocumentTimeline(Document* aDocument, const TimeDuration& aOriginTime)
-      : AnimationTimeline(aDocument->GetParentObject()),
-        mDocument(aDocument),
-        mIsObservingRefreshDriver(false),
-        mOriginTime(aOriginTime) {
-    if (mDocument) {
-      mDocument->Timelines().insertBack(this);
-    }
-  }
+  DocumentTimeline(Document* aDocument, const TimeDuration& aOriginTime);
 
  protected:
-  virtual ~DocumentTimeline() {
-    MOZ_ASSERT(!mIsObservingRefreshDriver,
-               "Timeline should have disassociated"
-               " from the refresh driver before being destroyed");
-    if (isInList()) {
-      remove();
-    }
-  }
+  virtual ~DocumentTimeline();
 
  public:
   NS_DECL_ISUPPORTS_INHERITED
@@ -63,11 +49,7 @@ class DocumentTimeline final : public AnimationTimeline,
   // with a macro defined in winbase.h
   virtual Nullable<TimeDuration> GetCurrentTimeAsDuration() const override;
 
-  bool TracksWallclockTime() const override {
-    nsRefreshDriver* refreshDriver = GetRefreshDriver();
-    return !refreshDriver ||
-           !refreshDriver->IsTestControllingRefreshesEnabled();
-  }
+  bool TracksWallclockTime() const override;
   Nullable<TimeDuration> ToTimelineTime(
       const TimeStamp& aTimeStamp) const override;
   TimeStamp ToTimeStamp(const TimeDuration& aTimelineTime) const override;

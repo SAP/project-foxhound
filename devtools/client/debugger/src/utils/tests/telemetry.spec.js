@@ -2,18 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
-jest.mock("devtools-modules", () => {
+jest.mock("devtools/client/shared/telemetry", () => {
   function MockTelemetry() {}
   MockTelemetry.prototype.recordEvent = jest.fn();
 
-  return {
-    Telemetry: MockTelemetry,
-  };
+  return MockTelemetry;
 });
 
-import { Telemetry } from "devtools-modules";
+const Telemetry = require("devtools/client/shared/telemetry");
+
 import { recordEvent } from "../telemetry";
 
 const telemetry = new Telemetry();

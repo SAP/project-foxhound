@@ -27,8 +27,7 @@
 #include "nsError.h"
 #include "ReportInternalError.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace mozilla::dom::indexedDB;
 using namespace mozilla::dom::quota;
@@ -46,13 +45,13 @@ IDBMutableFile::IDBMutableFile(IDBDatabase* aDatabase,
   aDatabase->AssertIsOnOwningThread();
   MOZ_ASSERT(aActor);
 
-  mDatabase->NoteLiveMutableFile(this);
+  mDatabase->NoteLiveMutableFile(*this);
 }
 
 IDBMutableFile::~IDBMutableFile() {
   AssertIsOnOwningThread();
 
-  mDatabase->NoteFinishedMutableFile(this);
+  mDatabase->NoteFinishedMutableFile(*this);
 
   if (mBackgroundActor) {
     mBackgroundActor->SendDeleteMeInternal();
@@ -96,7 +95,7 @@ void IDBMutableFile::RegisterFileHandle(IDBFileHandle* aFileHandle) {
   aFileHandle->AssertIsOnOwningThread();
   MOZ_ASSERT(!mFileHandles.Contains(aFileHandle));
 
-  mFileHandles.PutEntry(aFileHandle);
+  mFileHandles.Insert(aFileHandle);
 }
 
 void IDBMutableFile::UnregisterFileHandle(IDBFileHandle* aFileHandle) {
@@ -105,7 +104,7 @@ void IDBMutableFile::UnregisterFileHandle(IDBFileHandle* aFileHandle) {
   aFileHandle->AssertIsOnOwningThread();
   MOZ_ASSERT(mFileHandles.Contains(aFileHandle));
 
-  mFileHandles.RemoveEntry(aFileHandle);
+  mFileHandles.Remove(aFileHandle);
 }
 
 void IDBMutableFile::AbortFileHandles() {
@@ -118,8 +117,7 @@ void IDBMutableFile::AbortFileHandles() {
   nsTArray<RefPtr<IDBFileHandle>> fileHandlesToAbort;
   fileHandlesToAbort.SetCapacity(mFileHandles.Count());
 
-  for (const auto& entry : mFileHandles) {
-    IDBFileHandle* const fileHandle = entry.GetKey();
+  for (IDBFileHandle* const fileHandle : mFileHandles) {
     MOZ_ASSERT(fileHandle);
 
     fileHandle->AssertIsOnOwningThread();
@@ -198,5 +196,4 @@ JSObject* IDBMutableFile::WrapObject(JSContext* aCx,
   return IDBMutableFile_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

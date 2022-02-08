@@ -4,77 +4,125 @@
 
 // Test that iframes are correctly highlighted.
 
-const IFRAME_SRC =
-  "<style>" +
-  "body {" +
-  "margin:0;" +
-  "height:100%;" +
-  "background-color:red" +
-  "}" +
-  "</style><body>hello from iframe</body>";
+const IFRAME_SRC = `<style>
+    body {
+      margin:0;
+      height:100%;
+      background-color:tomato;
+    }
+  </style>
+  <body class=remote>hello from iframe</body>`;
 
-const DOCUMENT_SRC =
-  "<style>" +
-  "iframe {" +
-  "height:200px;" +
-  "border: 11px solid black;" +
-  "padding: 13px;" +
-  "}" +
-  "body,iframe {" +
-  "margin:0" +
-  "}" +
-  "</style>" +
-  "<body>" +
-  "<iframe src='data:text/html;charset=utf-8," +
-  IFRAME_SRC +
-  "'></iframe>" +
-  "</body>";
+const DOCUMENT_SRC = `<style>
+    iframe {
+      height:200px;
+      border: 11px solid black;
+      padding: 13px;
+    }
+    body,iframe,h1 {
+      margin:0;
+      padding: 0;
+    }
+  </style>
+  <body>
+    <iframe src='https://example.com/document-builder.sjs?html=${encodeURIComponent(
+      IFRAME_SRC
+    )}'></iframe>
+  </body>`;
 
 const TEST_URI = "data:text/html;charset=utf-8," + DOCUMENT_SRC;
 
 add_task(async function() {
-  const { inspector, toolbox, testActor } = await openInspectorForURL(TEST_URI);
+  const {
+    inspector,
+    toolbox,
+    highlighterTestFront,
+  } = await openInspectorForURL(TEST_URI);
 
   info("Waiting for box mode to show.");
-  const body = await getNodeFront("body", inspector);
-  await inspector.highlighter.showBoxModel(body);
+  const topLevelBodyNodeFront = await getNodeFront("body", inspector);
+  await inspector.highlighters.showHighlighterTypeForNode(
+    inspector.highlighters.TYPES.BOXMODEL,
+    topLevelBodyNodeFront
+  );
 
   info("Waiting for element picker to become active.");
   await startPicker(toolbox);
 
-  info("Moving mouse over iframe padding.");
-  await moveMouseOver("iframe", 1, 1);
+  info("Check that hovering iframe padding does highlight the iframe element");
+  // the iframe has 13px of padding, so hovering at [1,1] should be enough.
+  await hoverElement(inspector, "iframe", 1, 1);
 
-  info("Performing checks");
-  await testActor.isNodeCorrectlyHighlighted("iframe", is);
+  await isNodeCorrectlyHighlighted(highlighterTestFront, "iframe");
 
   info("Scrolling the document");
-  await testActor.setProperty("iframe", "style", "margin-bottom: 2000px");
-  await testActor.eval("window.scrollBy(0, 40);");
+  await setContentPageElementProperty(
+    "iframe",
+    "style",
+    "margin-bottom: 2000px"
+  );
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () =>
+    content.scrollBy(0, 40)
+  );
 
   // target the body within the iframe
   const iframeBodySelector = ["iframe", "body"];
+  let iframeHighlighterTestFront = highlighterTestFront;
+  let bodySelectorWithinHighlighterEnv = iframeBodySelector;
 
-  info("Moving mouse over iframe body");
-  await moveMouseOver("iframe", 40, 40);
+  if (isFissionEnabled() || isEveryFrameTargetEnabled()) {
+    const target = toolbox.commands.targetCommand
+      .getAllTargets([toolbox.commands.targetCommand.TYPES.FRAME])
+      .find(t => t.url.startsWith("https://example.com"));
+
+    // We need to retrieve the highlighterTestFront for the frame target.
+    iframeHighlighterTestFront = await getHighlighterTestFront(toolbox, {
+      target,
+    });
+
+    bodySelectorWithinHighlighterEnv = ["body"];
+  }
+
+  info("Check that hovering the iframe <body> highlights the expected element");
+  await hoverElement(inspector, iframeBodySelector, 40, 40);
 
   ok(
-    await testActor.assertHighlightedNode(iframeBodySelector),
-    "highlighter shows the right node"
+    await iframeHighlighterTestFront.assertHighlightedNode(
+      bodySelectorWithinHighlighterEnv
+    ),
+    "highlighter is shown on the iframe body"
   );
-  await testActor.isNodeCorrectlyHighlighted(iframeBodySelector, is);
+  await isNodeCorrectlyHighlighted(
+    iframeHighlighterTestFront,
+    iframeBodySelector
+  );
 
-  info("Waiting for the element picker to deactivate.");
-  await toolbox.nodePicker.stop();
+  info("Scrolling the document up");
+  // scroll up so we can inspect the top level document again
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () =>
+    content.scrollTo(0, 0)
+  );
 
-  function moveMouseOver(selector, x, y) {
-    info("Waiting for element " + selector + " to be highlighted");
-    testActor.synthesizeMouse({
-      selector,
-      x,
-      y,
-      options: { type: "mousemove" },
-    });
-    return toolbox.nodePicker.once("picker-node-hovered");
-  }
+  info("Check that hovering iframe padding again does work");
+  // the iframe has 13px of padding, so hovering at [1,1] should be enough.
+  await hoverElement(inspector, "iframe", 1, 1);
+  await isNodeCorrectlyHighlighted(highlighterTestFront, "iframe");
+
+  info("And finally check that hovering the iframe <body> again does work");
+  info("Check that hovering the iframe <body> highlights the expected element");
+  await hoverElement(inspector, iframeBodySelector, 40, 40);
+
+  ok(
+    await iframeHighlighterTestFront.assertHighlightedNode(
+      bodySelectorWithinHighlighterEnv
+    ),
+    "highlighter is shown on the iframe body"
+  );
+  await isNodeCorrectlyHighlighted(
+    iframeHighlighterTestFront,
+    iframeBodySelector
+  );
+
+  info("Stop the element picker.");
+  await toolbox.nodePicker.stop({ canceled: true });
 });

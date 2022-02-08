@@ -4,6 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+#define MOZ_USE_LAUNCHER_ERROR
+
 #include "LauncherProcessWin.h"
 
 #include <string.h>
@@ -45,6 +47,34 @@ static mozilla::LauncherVoidResult PostCreationSetup(
     HANDLE aChildMainThread, const bool aIsSafeMode) {
   return mozilla::InitializeDllBlocklistOOPFromLauncher(aFullImagePath,
                                                         aChildProcess);
+}
+
+/**
+ * Create a new Job object and assign |aProcess| to it.  If something fails
+ * in this function, we return nullptr but continue without recording
+ * a launcher failure because it's not a critical problem to launch
+ * the browser process.
+ */
+static nsReturnRef<HANDLE> CreateJobAndAssignProcess(HANDLE aProcess) {
+  nsAutoHandle empty;
+  nsAutoHandle job(::CreateJobObjectW(nullptr, nullptr));
+
+  // Set JOB_OBJECT_LIMIT_BREAKAWAY_OK to allow the browser process
+  // to put child processes into a job on Win7, which does not support
+  // nested jobs.  See CanUseJob() in sandboxBroker.cpp.
+  JOBOBJECT_EXTENDED_LIMIT_INFORMATION jobInfo = {};
+  jobInfo.BasicLimitInformation.LimitFlags =
+      JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+  if (!::SetInformationJobObject(job.get(), JobObjectExtendedLimitInformation,
+                                 &jobInfo, sizeof(jobInfo))) {
+    return empty.out();
+  }
+
+  if (!::AssignProcessToJobObject(job.get(), aProcess)) {
+    return empty.out();
+  }
+
+  return job.out();
 }
 
 #if !defined( \
@@ -94,7 +124,13 @@ static mozilla::LauncherFlags ProcessCmdLine(int& aArgc, wchar_t* aArgv[]) {
       mozilla::CheckArg(aArgc, aArgv, L"marionette",
                         static_cast<const wchar_t**>(nullptr),
                         mozilla::CheckArgFlag::None) == mozilla::ARG_FOUND ||
+      mozilla::CheckArg(aArgc, aArgv, L"backgroundtask",
+                        static_cast<const wchar_t**>(nullptr),
+                        mozilla::CheckArgFlag::None) == mozilla::ARG_FOUND ||
       mozilla::CheckArg(aArgc, aArgv, L"headless",
+                        static_cast<const wchar_t**>(nullptr),
+                        mozilla::CheckArgFlag::None) == mozilla::ARG_FOUND ||
+      mozilla::CheckArg(aArgc, aArgv, L"remote-debugging-port",
                         static_cast<const wchar_t**>(nullptr),
                         mozilla::CheckArgFlag::None) == mozilla::ARG_FOUND ||
       mozilla::EnvHasValue("MOZ_AUTOMATION") ||
@@ -163,15 +199,6 @@ static mozilla::Maybe<bool> RunAsLauncherProcess(
 #else
 static mozilla::Maybe<bool> RunAsLauncherProcess(int& argc, wchar_t** argv) {
 #endif  // defined(MOZ_LAUNCHER_PROCESS)
-  // return fast when we're a child process.
-  // (The remainder of this function has some side effects that are
-  // undesirable for content processes)
-  if (mozilla::CheckArg(argc, argv, L"contentproc",
-                        static_cast<const wchar_t**>(nullptr),
-                        mozilla::CheckArgFlag::None) == mozilla::ARG_FOUND) {
-    return mozilla::Some(false);
-  }
-
   bool runAsLauncher = DoLauncherProcessChecks(argc, argv);
 
 #if defined(MOZ_LAUNCHER_PROCESS)
@@ -226,6 +253,16 @@ Maybe<int> LauncherMain(int& argc, wchar_t* argv[],
     SetLauncherErrorForceEventLog();
   }
 
+  // return fast when we're a child process.
+  // (The remainder of this function has some side effects that are
+  // undesirable for content processes)
+  if (mozilla::CheckArg(argc, argv, L"contentproc",
+                        static_cast<const wchar_t**>(nullptr),
+                        mozilla::CheckArgFlag::None) == mozilla::ARG_FOUND) {
+    // A child process should not instantiate LauncherRegistryInfo.
+    return Nothing();
+  }
+
 #if defined(MOZ_LAUNCHER_PROCESS)
   LauncherRegistryInfo regInfo;
   Maybe<bool> runAsLauncher = RunAsLauncherProcess(regInfo, argc, argv);
@@ -245,8 +282,8 @@ Maybe<int> LauncherMain(int& argc, wchar_t* argv[],
 
   // Make sure that the launcher process itself has image load policies set
   if (IsWin10AnniversaryUpdateOrLater()) {
-    static const StaticDynamicallyLinkedFunctionPtr<decltype(
-        &SetProcessMitigationPolicy)>
+    static const StaticDynamicallyLinkedFunctionPtr<
+        decltype(&SetProcessMitigationPolicy)>
         pSetProcessMitigationPolicy(L"kernel32.dll",
                                     "SetProcessMitigationPolicy");
     if (pSetProcessMitigationPolicy) {
@@ -351,6 +388,15 @@ Maybe<int> LauncherMain(int& argc, wchar_t* argv[],
     }
   }
 
+  // Pass on the path of the shortcut used to launch this process, if any.
+  STARTUPINFOW currentStartupInfo;
+  GetStartupInfoW(&currentStartupInfo);
+  if ((currentStartupInfo.dwFlags & STARTF_TITLEISLINKNAME) &&
+      currentStartupInfo.lpTitle) {
+    siex.StartupInfo.dwFlags |= STARTF_TITLEISLINKNAME;
+    siex.StartupInfo.lpTitle = currentStartupInfo.lpTitle;
+  }
+
   PROCESS_INFORMATION pi = {};
   BOOL createOk;
 
@@ -372,6 +418,11 @@ Maybe<int> LauncherMain(int& argc, wchar_t* argv[],
 
   nsAutoHandle process(pi.hProcess);
   nsAutoHandle mainThread(pi.hThread);
+
+  nsAutoHandle job;
+  if (flags & LauncherFlags::eWaitForBrowser) {
+    job = CreateJobAndAssignProcess(process.get());
+  }
 
   LauncherVoidResult setupResult = PostCreationSetup(
       argv[0], process.get(), mainThread.get(), isSafeMode.value());

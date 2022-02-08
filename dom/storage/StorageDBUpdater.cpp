@@ -13,6 +13,8 @@
 #include "mozilla/BasePrincipal.h"
 #include "nsVariant.h"
 #include "mozilla/Tokenizer.h"
+#include "mozIStorageConnection.h"
+#include "mozStorageHelper.h"
 
 // Current version of the database schema
 #define CURRENT_SCHEMA_VERSION 2
@@ -226,10 +228,6 @@ StripOriginAddonId::OnFunctionCall(mozIStorageValueArray* aFunctionArguments,
   return NS_OK;
 }
 
-}  // namespace
-
-namespace StorageDBUpdater {
-
 nsresult CreateSchema1Tables(mozIStorageConnection* aWorkerConnection) {
   nsresult rv;
 
@@ -250,10 +248,74 @@ nsresult CreateSchema1Tables(mozIStorageConnection* aWorkerConnection) {
   return NS_OK;
 }
 
-nsresult Update(mozIStorageConnection* aWorkerConnection) {
-  nsresult rv;
+nsresult TablesExist(mozIStorageConnection* aWorkerConnection,
+                     bool* aWebappsstore2Exists, bool* aWebappsstoreExists,
+                     bool* aMoz_webappsstoreExists) {
+  nsresult rv =
+      aWorkerConnection->TableExists("webappsstore2"_ns, aWebappsstore2Exists);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = aWorkerConnection->TableExists("webappsstore"_ns, aWebappsstoreExists);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = aWorkerConnection->TableExists("moz_webappsstore"_ns,
+                                      aMoz_webappsstoreExists);
+  NS_ENSURE_SUCCESS(rv, rv);
 
+  return NS_OK;
+}
+
+nsresult CreateCurrentSchemaOnEmptyTableInternal(
+    mozIStorageConnection* aWorkerConnection) {
+  nsresult rv = CreateSchema1Tables(aWorkerConnection);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = aWorkerConnection->SetSchemaVersion(CURRENT_SCHEMA_VERSION);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+}  // namespace
+
+namespace StorageDBUpdater {
+
+nsresult CreateCurrentSchema(mozIStorageConnection* aConnection) {
+  mozStorageTransaction transaction(aConnection, false);
+
+  nsresult rv = transaction.Start();
+  NS_ENSURE_SUCCESS(rv, rv);
+
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  {
+    int32_t schemaVer;
+    nsresult rv = aConnection->GetSchemaVersion(&schemaVer);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    MOZ_DIAGNOSTIC_ASSERT(0 == schemaVer);
+
+    bool webappsstore2Exists, webappsstoreExists, moz_webappsstoreExists;
+    rv = TablesExist(aConnection, &webappsstore2Exists, &webappsstoreExists,
+                     &moz_webappsstoreExists);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    MOZ_DIAGNOSTIC_ASSERT(!webappsstore2Exists && !webappsstoreExists &&
+                          !moz_webappsstoreExists);
+  }
+#endif
+
+  rv = CreateCurrentSchemaOnEmptyTableInternal(aConnection);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = transaction.Commit();
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+nsresult Update(mozIStorageConnection* aWorkerConnection) {
   mozStorageTransaction transaction(aWorkerConnection, false);
+
+  nsresult rv = transaction.Start();
+  NS_ENSURE_SUCCESS(rv, rv);
 
   bool doVacuum = false;
 
@@ -282,15 +344,8 @@ nsresult Update(mozIStorageConnection* aWorkerConnection) {
   switch (schemaVer) {
     case 0: {
       bool webappsstore2Exists, webappsstoreExists, moz_webappsstoreExists;
-
-      rv = aWorkerConnection->TableExists("webappsstore2"_ns,
-                                          &webappsstore2Exists);
-      NS_ENSURE_SUCCESS(rv, rv);
-      rv = aWorkerConnection->TableExists("webappsstore"_ns,
-                                          &webappsstoreExists);
-      NS_ENSURE_SUCCESS(rv, rv);
-      rv = aWorkerConnection->TableExists("moz_webappsstore"_ns,
-                                          &moz_webappsstoreExists);
+      rv = TablesExist(aWorkerConnection, &webappsstore2Exists,
+                       &webappsstoreExists, &moz_webappsstoreExists);
       NS_ENSURE_SUCCESS(rv, rv);
 
       if (!webappsstore2Exists && !webappsstoreExists &&
@@ -299,10 +354,12 @@ nsresult Update(mozIStorageConnection* aWorkerConnection) {
         // schema table and break to the next version to update to, i.e. bypass
         // update from the old version.
 
-        rv = CreateSchema1Tables(aWorkerConnection);
-        NS_ENSURE_SUCCESS(rv, rv);
+        // XXX What does "break to the next version to update to" mean here? It
+        // seems to refer to the 'break' statement below, but that breaks out of
+        // the 'switch' statement and continues with committing the transaction.
+        // Either this is wrong, or the comment above is misleading.
 
-        rv = aWorkerConnection->SetSchemaVersion(CURRENT_SCHEMA_VERSION);
+        rv = CreateCurrentSchemaOnEmptyTableInternal(aWorkerConnection);
         NS_ENSURE_SUCCESS(rv, rv);
 
         break;

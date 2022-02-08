@@ -28,15 +28,14 @@ namespace js {
  * memory.
  */
 template <typename T>
-class MOZ_RAII FakeRooted : public RootedBase<T, FakeRooted<T>> {
+class MOZ_RAII FakeRooted : public RootedOperations<T, FakeRooted<T>> {
  public:
   using ElementType = T;
 
-  template <typename CX>
-  explicit FakeRooted(CX* cx) : ptr(JS::SafelyInitialized<T>()) {}
+  explicit FakeRooted(JSContext* cx)
+      : ptr(JS::SafelyInitialized<T>::create()) {}
 
-  template <typename CX>
-  FakeRooted(CX* cx, T initial) : ptr(initial) {}
+  FakeRooted(JSContext* cx, T initial) : ptr(initial) {}
 
   DECLARE_POINTER_CONSTREF_OPS(T);
   DECLARE_POINTER_ASSIGN_OPS(FakeRooted, T);
@@ -74,7 +73,7 @@ namespace js {
  */
 template <typename T>
 class FakeMutableHandle
-    : public js::MutableHandleBase<T, FakeMutableHandle<T>> {
+    : public js::MutableHandleOperations<T, FakeMutableHandle<T>> {
  public:
   using ElementType = T;
 
@@ -127,11 +126,6 @@ class MaybeRooted<T, CanGC> {
   using HandleType = JS::Handle<T>;
   using RootType = JS::Rooted<T>;
   using MutableHandleType = JS::MutableHandle<T>;
-
-  template <typename T2>
-  static JS::Handle<T2*> downcastHandle(HandleType v) {
-    return v.template as<T2>();
-  }
 };
 
 template <typename T>
@@ -140,11 +134,6 @@ class MaybeRooted<T, NoGC> {
   using HandleType = const T&;
   using RootType = FakeRooted<T>;
   using MutableHandleType = FakeMutableHandle<T>;
-
-  template <typename T2>
-  static T2* downcastHandle(HandleType v) {
-    return &v->template as<T2>();
-  }
 };
 
 }  // namespace js

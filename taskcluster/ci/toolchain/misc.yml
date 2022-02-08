@@ -7,50 +7,37 @@ job-defaults:
     worker:
         max-run-time: 1800
 
-linux64-infer:
-    description: "infer build"
-    index:
-        product: static-analysis
-        job-name: linux64-infer
+linux64-binutils-2.31.1:
+    description: "Binutils toolchain build"
     treeherder:
-        symbol: TL(infer)
-    worker:
-        docker-image: {in-tree: static-analysis-build}
-        max-run-time: 3600
+        symbol: TL(binutil2.31)
     run:
-        script: build-infer-linux.sh
+        script: build-binutils-linux.sh
         resources:
-            - 'build/build-infer/build-infer.py'
-            - 'build/build-infer/infer-linux64.json'
-        toolchain-artifact: public/build/infer.tar.xz
-
-linux64-llvm-dsymutil:
-    description: "llvm-dsymutil toolchain build"
-    treeherder:
-        symbol: TL(dsymutil)
-    run:
-        script: build-llvm-dsymutil.sh
-        toolchain-artifact: public/build/llvm-dsymutil.tar.xz
+            - 'build/unix/build-binutils/build-binutils.sh'
+        toolchain-artifact: public/build/binutils.tar.zst
     fetches:
         fetch:
-            - clang-10
+            - binutils-2.31.1
         toolchain:
+            # C++ code in gold doesn't compile with recent versions of GCC.
             - linux64-gcc-7
+            - linux64-toolchain-sysroot
 
 linux64-binutils:
     description: "Binutils toolchain build"
     treeherder:
         symbol: TL(binutil)
-    worker:
-        max-run-time: 3600
     run:
         script: build-binutils-linux.sh
         resources:
             - 'build/unix/build-binutils/build-binutils.sh'
-        toolchain-artifact: public/build/binutils.tar.xz
+        toolchain-artifact: public/build/binutils.tar.zst
     fetches:
         fetch:
-            - binutils-2.31.1
+            - binutils-2.36.1
+        toolchain:
+            - linux64-toolchain-sysroot
 
 linux64-hfsplus:
     description: "hfsplus toolchain build"
@@ -60,12 +47,12 @@ linux64-hfsplus:
         script: build-hfsplus-linux.sh
         resources:
             - 'build/unix/build-hfsplus/build-hfsplus.sh'
-        toolchain-artifact: public/build/hfsplus-tools.tar.xz
+        toolchain-artifact: public/build/hfsplus-tools.tar.zst
     fetches:
         fetch:
             - hfsplus-tools
         toolchain:
-            - linux64-clang-9
+            - linux64-clang-13
 
 linux64-libdmg:
     description: "libdmg-hfsplus toolchain build"
@@ -73,10 +60,13 @@ linux64-libdmg:
         symbol: TL(libdmg-hfs+)
     run:
         script: build-libdmg-hfsplus.sh
-        toolchain-artifact: public/build/dmg.tar.xz
+        toolchain-artifact: public/build/dmg.tar.zst
     fetches:
         fetch:
             - libdmg-hfsplus
+        toolchain:
+            - linux64-clang-13
+            - linux64-toolchain-sysroot
 
 linux64-mar-tools:
     description: "mar-tools toolchain build"
@@ -89,10 +79,9 @@ linux64-mar-tools:
     run:
         script: build-mar-tools.sh
         sparse-profile: null
-        toolchain-artifact: public/build/mar-tools.tar.xz
+        toolchain-artifact: public/build/mar-tools.tar.zst
         resources:
             - build/moz.configure
-            - mfbt
             - modules/libmar/
             - moz.configure
             - other-licenses/bsdiff/
@@ -107,7 +96,22 @@ linux64-upx:
         tier: 1
     run:
         script: build-upx.sh
-        toolchain-artifact: public/build/upx.tar.xz
+        toolchain-artifact: public/build/upx.tar.zst
+
+linux64-msix-packaging:
+    description: "msix-packaging build"
+    treeherder:
+        symbol: TL(msix-packaging)
+        tier: 1
+    run:
+        script: build-msix-packaging.sh
+        toolchain-artifact: public/build/msix-packaging.tar.zst
+    fetches:
+        fetch:
+            - msix-packaging
+        toolchain:
+            - linux64-clang
+            - linux64-toolchain-sysroot
 
 linux64-custom-v8:
     description: "Custom v8 build"
@@ -119,11 +123,11 @@ linux64-custom-v8:
     run:
         script: build-custom-v8.sh
         arguments: [
-            d8.zip,
+            d8.tar.zst,
             is_debug=false,
             target_cpu="x64"
         ]
-        toolchain-artifact: public/build/d8.zip
+        toolchain-artifact: public/build/d8.tar.zst
 
 browsertime:
     description: "npm install browsertime node_modules"
@@ -134,30 +138,12 @@ browsertime:
         sparse-profile: null
         resources:
             - 'tools/browsertime/package.json'
+            - 'tools/browsertime/package-lock.json'
             - 'tools/browsertime/mach_commands.py'
-        toolchain-artifact: public/build/browsertime.tar.bz2
+        toolchain-artifact: public/build/browsertime.tar.zst
     fetches:
         toolchain:
             - linux64-node
-
-wasi-sysroot:
-    description: "wasi sysroot build process"
-    attributes:
-        local-toolchain: true
-    treeherder:
-        symbol: TL(wasi-sysroot)
-    run-on-projects: [trunk]
-    run:
-        script: build-wasi-sysroot.sh
-        sparse-profile: null
-        toolchain-artifact: public/build/wasi-sysroot.tar.xz
-    fetches:
-        fetch:
-            - clang-9
-            - wasi-sdk
-        toolchain:
-            - linux64-binutils
-            - linux64-gcc-7
 
 wrench-deps:
     description: "Downloads all the crates needed for building wrench"
@@ -170,49 +156,13 @@ wrench-deps:
         sparse-profile: null
         resources:
             - 'gfx/wr/Cargo.lock'
-        toolchain-artifact: public/build/wrench-deps.tar.bz2
+            - 'gfx/wr/ci-scripts/install-meson.sh'
+        toolchain-artifact: public/build/wrench-deps.tar.zst
     fetches:
         fetch:
             - android-rs-glue
         toolchain:
-            - linux64-rust-1.43  # whatever m-c is built with
-
-wgpu-deps:
-    description: "Downloads all the crates needed for testing wgpu"
-    treeherder:
-        symbol: Wgpu(deps)
-    worker:
-        docker-image: {in-tree: wgpu}
-    run:
-        script: wgpu-deps-vendoring.sh
-        sparse-profile: null
-        resources:
-            - 'gfx/wgpu/Cargo.lock'
-        toolchain-artifact: public/build/wgpu-deps.tar.bz2
-    fetches:
-        fetch:
-            - android-rs-glue
-        toolchain:
-            - linux64-rust-1.43  # whatever m-c is built with
-
-linux64-lucetc:
-    description: "lucetc build process"
-    attributes:
-        local-toolchain: true
-    treeherder:
-        symbol: TL(lucetc)
-    run-on-projects: [trunk]
-    run:
-        script: build-lucetc.sh
-        toolchain-artifact: public/build/lucetc.tar.xz
-    fetches:
-        fetch:
-            - cmake
-            - lucetc-source
-        toolchain:
-            - linux64-binutils
-            - linux64-clang
-            - linux64-rust
+            - linux64-rust-1.47  # whatever m-c is built with
 
 linux64-liblowercase:
     description: "liblowercase"
@@ -221,12 +171,12 @@ linux64-liblowercase:
     run:
         script: build-liblowercase.sh
         sparse-profile: liblowercase
-        toolchain-artifact: public/build/liblowercase.tar.xz
+        toolchain-artifact: public/build/liblowercase.tar.zst
         resources:
             - build/liblowercase/
     fetches:
         toolchain:
-            - linux64-rust-1.41
+            - linux64-rust-1.47
 
 linux64-wine:
     description: "Wine build for Windows Cross Compile"
@@ -234,14 +184,13 @@ linux64-wine:
         symbol: TL(wine)
         tier: 1
     worker:
-        docker-image: {in-tree: deb10-toolchain-build}
         max-run-time: 10800
     run:
         script: build-wine.sh
-        toolchain-artifact: public/build/wine.tar.xz
+        toolchain-artifact: public/build/wine.tar.zst
     fetches:
         fetch:
-            - wine-5.0
+            - wine
 
 win32-pdbstr:
     description: "pdbstr for 32-bits Windows"
@@ -250,13 +199,13 @@ win32-pdbstr:
     worker-type: b-win2012
     worker:
         artifacts:
-            - name: project/gecko/pdbstr/pdbstr.tar.bz2
-              path: pdbstr.tar.bz2
+            - name: project/gecko/pdbstr/pdbstr.tar.zst
+              path: pdbstr.tar.zst
               type: file
     run:
         script: exfiltrate-pdbstr.sh
         arguments: ['x86']
-        toolchain-artifact: project/gecko/pdbstr/pdbstr.tar.bz2
+        toolchain-artifact: project/gecko/pdbstr/pdbstr.tar.zst
 
 win64-pdbstr:
     description: "pdbstr for 64-bits Windows"
@@ -265,23 +214,21 @@ win64-pdbstr:
     worker-type: b-win2012
     worker:
         artifacts:
-            - name: project/gecko/pdbstr/pdbstr.tar.bz2
-              path: pdbstr.tar.bz2
+            - name: project/gecko/pdbstr/pdbstr.tar.zst
+              path: pdbstr.tar.zst
               type: file
     run:
         script: exfiltrate-pdbstr.sh
         arguments: ['x64']
-        toolchain-artifact: project/gecko/pdbstr/pdbstr.tar.bz2
+        toolchain-artifact: project/gecko/pdbstr/pdbstr.tar.zst
 
 linux64-winchecksec:
     description: "winchecksec"
     treeherder:
         symbol: TL(winchecksec)
-    worker:
-        docker-image: {in-tree: deb10-toolchain-build}
     run:
         script: build-winchecksec.sh
-        toolchain-artifact: public/build/winchecksec.tar.bz2
+        toolchain-artifact: public/build/winchecksec.tar.zst
         tooltool-downloads: internal
     fetches:
         fetch:
@@ -292,12 +239,11 @@ win64-winchecksec:
     treeherder:
         symbol: TW64(winchecksec)
     worker:
-        docker-image: {in-tree: deb10-toolchain-build}
         env:
-            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/vs2017.manifest"
+            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/vs2017-15.9.manifest"
     run:
         script: build-winchecksec.sh
-        toolchain-artifact: public/build/winchecksec.tar.bz2
+        toolchain-artifact: public/build/winchecksec.tar.zst
         tooltool-downloads: internal
     fetches:
         fetch:
@@ -305,3 +251,47 @@ win64-winchecksec:
         toolchain:
             - linux64-clang-win-cross
             - linux64-liblowercase
+
+linux64-makecab:
+    description: "makecab toolchain build"
+    treeherder:
+        symbol: TL(cab)
+    run:
+        script: build-makecab.sh
+        toolchain-artifact: public/build/makecab.tar.zst
+    fetches:
+        fetch:
+            - makecab
+        toolchain:
+            - linux64-rust-1.47
+
+win64-mozmake:
+    description: "mozmake for Windows"
+    treeherder:
+        symbol: TW64(mozmake)
+    worker:
+        env:
+            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/vs2017-15.9.manifest"
+    worker-type: b-win2012
+    run:
+        script: build-mozmake.sh
+        toolchain-artifact: public/build/mozmake.tar.zst
+        tooltool-downloads: internal
+    fetches:
+        fetch:
+            - gnumake
+
+nsis:
+    description: "NSIS for Linux and Windows"
+    treeherder:
+        symbol: TL(nsis)
+    run:
+        script: build-nsis.sh
+        toolchain-artifact: public/build/nsis.tar.zst
+    fetches:
+        fetch:
+            - nsis-3.07
+            - nsis-3.07-win
+        toolchain:
+            - linux64-clang-13
+            - sysroot-x86_64-linux-gnu

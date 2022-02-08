@@ -17,7 +17,7 @@
 #include "mozilla/MruCache.h"
 #include "nsCOMPtr.h"                      // for member
 #include "nsCycleCollectionParticipant.h"  // for NS_DECL_CYCLE_*
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsStringFwd.h"
 
 class nsAtom;
@@ -101,13 +101,16 @@ class nsNodeInfoManager final {
   /**
    * Returns true if SVG nodes in this document have real SVG semantics.
    */
-  bool SVGEnabled() { return mSVGEnabled.valueOr(InternalSVGEnabled()); }
+  bool SVGEnabled() {
+    return mSVGEnabled.valueOrFrom([this] { return InternalSVGEnabled(); });
+  }
 
   /**
    * Returns true if MathML nodes in this document have real MathML semantics.
    */
   bool MathMLEnabled() {
-    return mMathMLEnabled.valueOr(InternalMathMLEnabled());
+    return mMathMLEnabled.valueOrFrom(
+        [this] { return InternalMathMLEnabled(); });
   }
 
   mozilla::dom::DOMArena* GetArenaAllocator() { return mArena; }
@@ -157,7 +160,7 @@ class nsNodeInfoManager final {
     }
   };
 
-  nsDataHashtable<NodeInfoInnerKey, mozilla::dom::NodeInfo*> mNodeInfoHash;
+  nsTHashMap<NodeInfoInnerKey, mozilla::dom::NodeInfo*> mNodeInfoHash;
   mozilla::dom::Document* MOZ_NON_OWNING_REF mDocument;  // WEAK
   uint32_t mNonDocumentNodeInfos;
   nsCOMPtr<nsIPrincipal> mPrincipal;  // Never null after Init() succeeds.

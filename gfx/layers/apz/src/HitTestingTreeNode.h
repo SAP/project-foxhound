@@ -13,8 +13,8 @@
 #include "mozilla/layers/LayersTypes.h"          // for EventRegions
 #include "mozilla/layers/ScrollableLayerGuid.h"  // for ScrollableLayerGuid
 #include "mozilla/Maybe.h"                       // for Maybe
+#include "mozilla/RecursiveMutex.h"              // for RecursiveMutexAutoLock
 #include "mozilla/RefPtr.h"                      // for nsRefPtr
-
 namespace mozilla {
 namespace layers {
 
@@ -26,7 +26,8 @@ class AsyncPanZoomController;
  * to do hit testing. The tree is roughly a copy of the layer tree, but will
  * contain multiple nodes in cases where the layer has multiple FrameMetrics.
  * In other words, the structure of this tree should be identical to the
- * LayerMetrics tree (see documentation in LayerMetricsWrapper.h).
+ * WebRenderScrollDataWrapper tree (see documentation in
+ * WebRenderScrollDataWrapper.h).
  *
  * Not all HitTestingTreeNode instances will have an APZC associated with them;
  * only HitTestingTreeNodes that correspond to layers with scrollable metrics
@@ -101,20 +102,19 @@ class HitTestingTreeNode {
 
   /* Hit test related methods */
 
-  void SetHitTestData(const EventRegions& aRegions,
-                      const LayerIntRegion& aVisibleRegion,
-                      const LayerIntSize& aRemoteDocumentSize,
-                      const CSSTransformMatrix& aTransform,
-                      const Maybe<ParentLayerIntRegion>& aClipRegion,
-                      const EventRegionsOverride& aOverride,
-                      bool aIsBackfaceHidden, bool aIsAsyncZoomContainer);
-  bool IsOutsideClip(const ParentLayerPoint& aPoint) const;
+  void SetHitTestData(
+      const LayerIntRegion& aVisibleRegion,
+      const LayerIntSize& aRemoteDocumentSize,
+      const CSSTransformMatrix& aTransform,
+      const EventRegionsOverride& aOverride,
+      const Maybe<ScrollableLayerGuid::ViewID>& aAsyncZoomContainerId);
 
   /* Scrollbar info */
 
   void SetScrollbarData(const Maybe<uint64_t>& aScrollbarAnimationId,
                         const ScrollbarData& aScrollbarData);
-  bool MatchesScrollDragMetrics(const AsyncDragMetrics& aDragMetrics) const;
+  bool MatchesScrollDragMetrics(const AsyncDragMetrics& aDragMetrics,
+                                LayersId aLayersId) const;
   bool IsScrollbarNode() const;  // Scroll thumb or scrollbar container layer.
   bool IsScrollbarContainerNode() const;  // Scrollbar container layer.
   // This can only be called if IsScrollbarNode() is true
@@ -143,15 +143,6 @@ class HitTestingTreeNode {
   const LayerRectAbsolute& GetStickyScrollRangeInner() const;
   Maybe<uint64_t> GetStickyPositionAnimationId() const;
 
-  /* Convert |aPoint| into the LayerPixel space for the layer corresponding to
-   * this node. |aTransform| is the complete (content + async) transform for
-   * this node. */
-  Maybe<LayerPoint> Untransform(
-      const ParentLayerPoint& aPoint,
-      const LayerToParentLayerMatrix4x4& aTransform) const;
-  /* Assuming aPoint is inside the clip region for this node, check which of the
-   * event region spaces it falls inside. */
-  gfx::CompositorHitTestInfo HitTest(const LayerPoint& aPoint) const;
   /* Returns the mOverride flag. */
   EventRegionsOverride GetEventRegionsOverride() const;
   const CSSTransformMatrix& GetTransform() const;
@@ -166,7 +157,7 @@ class HitTestingTreeNode {
    * scrolling. */
   ScreenRect GetRemoteDocumentScreenRect() const;
 
-  bool IsAsyncZoomContainer() const;
+  Maybe<ScrollableLayerGuid::ViewID> GetAsyncZoomContainerId() const;
 
   /* Debug helpers */
   void Dump(const char* aPrefix = "") const;
@@ -211,15 +202,6 @@ class HitTestingTreeNode {
   // we use to adjust sticky position content for the toolbar.
   Maybe<uint64_t> mStickyPositionAnimationId;
 
-  /* Let {L,M} be the {layer, scrollable metrics} pair that this node
-   * corresponds to in the layer tree. mEventRegions contains the event regions
-   * from L, in the case where event-regions are enabled. If event-regions are
-   * disabled, it will contain the visible region of L, which we use as an
-   * approximation to the hit region for the purposes of obscuring other layers.
-   * This value is in L's LayerPixels.
-   */
-  EventRegions mEventRegions;
-
   LayerIntRegion mVisibleRegion;
 
   /* The size of remote iframe on the corresponding layer coordinate.
@@ -230,23 +212,9 @@ class HitTestingTreeNode {
    * transforms. */
   CSSTransformMatrix mTransform;
 
-  /* Whether layer L is backface-visibility:hidden, and its backface is
-   * currently visible. It's true that the latter depends on the layer's
-   * shadow transform, but the sorts of changes APZ makes to the shadow
-   * transform shouldn't change the backface from hidden to visible or
-   * vice versa, so it's sufficient to record this at hit test tree
-   * building time. */
-  bool mIsBackfaceHidden;
-
-  /* Whether layer L is the async zoom container layer. */
-  bool mIsAsyncZoomContainer;
-
-  /* This is clip rect for L that we wish to use for hit-testing purposes. Note
-   * that this may not be exactly the same as the clip rect on layer L because
-   * of the touch-sensitive region provided by the GeckoContentController, or
-   * because we may use the composition bounds of the layer if the clip is not
-   * present. This value is in L's ParentLayerPixels. */
-  Maybe<ParentLayerIntRegion> mClipRegion;
+  /* If the layer is the async zoom container layer then this will hold the id.
+   */
+  Maybe<ScrollableLayerGuid::ViewID> mAsyncZoomContainerId;
 
   /* Indicates whether or not the event regions on this node need to be
    * overridden in a certain way. */

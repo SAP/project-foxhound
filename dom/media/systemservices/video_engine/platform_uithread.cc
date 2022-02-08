@@ -13,9 +13,7 @@
 namespace rtc {
 
 #if defined(WEBRTC_WIN)
-// For use in ThreadWindowsUI callbacks
-static UINT static_reg_windows_msg =
-    RegisterWindowMessageW(L"WebrtcWindowsUIThreadEvent");
+
 // timer id used in delayed callbacks
 static const UINT_PTR kTimerId = 1;
 static const wchar_t kThisProperty[] = L"ThreadWindowsUIPtr";
@@ -48,12 +46,6 @@ bool PlatformUIThread::InternalInit() {
   return !!hwnd_;
 }
 
-void PlatformUIThread::RequestCallback() {
-  RTC_DCHECK(hwnd_);
-  RTC_DCHECK(static_reg_windows_msg);
-  PostMessage(hwnd_, static_reg_windows_msg, 0, 0);
-}
-
 bool PlatformUIThread::RequestCallbackTimer(unsigned int milliseconds) {
   CritScope scoped_lock(&cs_);
   if (!hwnd_) {
@@ -83,9 +75,10 @@ void PlatformUIThread::Stop() {
 
   PostMessage(hwnd_, WM_CLOSE, 0, 0);
 
-  hwnd_ = NULL;
-
   PlatformThread::Stop();
+
+  // do this after stop to make sure in-progress operations are finished.
+  hwnd_ = NULL;
 }
 
 void PlatformUIThread::Run() {
@@ -93,7 +86,7 @@ void PlatformUIThread::Run() {
   // The interface contract of Start/Stop is that for a successful call to
   // Start, there should be at least one call to the run function.  So we
   // call the function before checking |stop_|.
-  run_function_deprecated_(obj_);
+  run_function_(obj_);
 
   do {
     // Alertable sleep to permit RaiseFlag to run and update |stop_|.
@@ -115,11 +108,11 @@ void PlatformUIThread::Run() {
 }
 
 void PlatformUIThread::NativeEventCallback() {
-  if (!run_function_deprecated_) {
+  if (!run_function_) {
     stop_ = true;
     return;
   }
-  run_function_deprecated_(obj_);
+  run_function_(obj_);
 }
 
 /* static */
@@ -138,8 +131,7 @@ LRESULT CALLBACK PlatformUIThread::EventWindowProc(HWND hwnd, UINT uMsg,
     return DefWindowProc(hwnd, uMsg, wParam, lParam);
   }
 
-  if ((uMsg == static_reg_windows_msg && uMsg != WM_NULL) ||
-      (uMsg == WM_TIMER && wParam == kTimerId)) {
+  if (uMsg == WM_TIMER && wParam == kTimerId) {
     twui->NativeEventCallback();
     return 0;
   }

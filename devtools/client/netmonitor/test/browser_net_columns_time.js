@@ -8,7 +8,12 @@
  * header is visible only if there are requests in the list.
  */
 add_task(async function() {
-  const { tab, monitor } = await initNetMonitor(SIMPLE_URL, {
+  // Using https-first for this test is blocked on Bug 1733420.
+  // We expect a > 0 latency, but we always get -1 for HTTPS requests using
+  // httpd.js.
+  await pushPref("dom.security.https_first", false);
+
+  const { monitor } = await initNetMonitor(SIMPLE_URL, {
     requestCount: 1,
   });
   info("Starting test... ");
@@ -20,7 +25,7 @@ add_task(async function() {
   const visibleColumns = store.getState().ui.columns;
 
   const wait = waitForNetworkEvents(monitor, 1);
-  tab.linkedBrowser.reload();
+  await reloadBrowser();
   await wait;
 
   // Hide the waterfall column to make sure timing data are fetched
@@ -39,7 +44,7 @@ add_task(async function() {
   });
 
   const onNetworkEvents = waitForNetworkEvents(monitor, 1);
-  tab.linkedBrowser.reload();
+  await reloadBrowser();
   await onNetworkEvents;
 
   // There should be one request in the list.

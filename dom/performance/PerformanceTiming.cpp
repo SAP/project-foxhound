@@ -11,12 +11,12 @@
 #include "mozilla/Telemetry.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
+#include "nsIHttpChannel.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Document.h"
 #include "nsITimedChannel.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(PerformanceTiming, mPerformance)
 
@@ -62,7 +62,7 @@ PerformanceTimingData* PerformanceTimingData::Create(
 
   nsAutoCString name;
   originalURI->GetSpec(name);
-  aEntryName = NS_ConvertUTF8toUTF16(name);
+  CopyUTF8toUTF16(name, aEntryName);
 
   // The nsITimedChannel argument will be used to gather all the timings.
   // The nsIHttpChannel argument will be used to check if any cross-origin
@@ -109,7 +109,7 @@ PerformanceTimingData::PerformanceTimingData(nsITimedChannel* aChannel,
       mDecodedBodySize(0),
       mRedirectCount(0),
       mAllRedirectsSameOrigin(true),
-      mReportCrossOriginRedirect(true),
+      mAllRedirectsPassTAO(true),
       mSecureConnection(false),
       mTimingAllowed(true),
       mInitialized(false) {
@@ -211,7 +211,7 @@ void PerformanceTimingData::SetPropertiesFromHttpChannel(
 
   nsAutoCString protocol;
   Unused << aHttpChannel->GetProtocolVersion(protocol);
-  mNextHopProtocol = NS_ConvertUTF8toUTF16(protocol);
+  CopyUTF8toUTF16(protocol, mNextHopProtocol);
 
   Unused << aHttpChannel->GetEncodedBodySize(&mEncodedBodySize);
   Unused << aHttpChannel->GetTransferSize(&mTransferSize);
@@ -221,9 +221,7 @@ void PerformanceTimingData::SetPropertiesFromHttpChannel(
   }
 
   mTimingAllowed = CheckAllowedOrigin(aHttpChannel, aChannel);
-  bool redirectsPassCheck = false;
-  aChannel->GetAllRedirectsPassTimingAllowCheck(&redirectsPassCheck);
-  mReportCrossOriginRedirect = mTimingAllowed && redirectsPassCheck;
+  aChannel->GetAllRedirectsPassTimingAllowCheck(&mAllRedirectsPassTAO);
 
   aChannel->GetNativeServerTiming(mServerTiming);
 }
@@ -269,7 +267,7 @@ bool PerformanceTimingData::CheckAllowedOrigin(nsIHttpChannel* aResourceChannel,
 
   // TYPE_DOCUMENT loads have no loadingPrincipal.
   if (loadInfo->GetExternalContentPolicyType() ==
-      nsIContentPolicy::TYPE_DOCUMENT) {
+      ExtContentPolicy::TYPE_DOCUMENT) {
     return true;
   }
 
@@ -292,16 +290,22 @@ uint8_t PerformanceTimingData::GetRedirectCount() const {
   return mRedirectCount;
 }
 
-bool PerformanceTimingData::ShouldReportCrossOriginRedirect() const {
+bool PerformanceTimingData::ShouldReportCrossOriginRedirect(
+    bool aEnsureSameOriginAndIgnoreTAO) const {
   if (!StaticPrefs::dom_enable_performance() || !IsInitialized() ||
       nsContentUtils::ShouldResistFingerprinting()) {
+    return false;
+  }
+
+  if (!mTimingAllowed || mRedirectCount == 0) {
     return false;
   }
 
   // If the redirect count is 0, or if one of the cross-origin
   // redirects doesn't have the proper Timing-Allow-Origin header,
   // then RedirectStart and RedirectEnd will be set to zero
-  return (mRedirectCount != 0) && mReportCrossOriginRedirect;
+  return aEnsureSameOriginAndIgnoreTAO ? mAllRedirectsSameOrigin
+                                       : mAllRedirectsPassTAO;
 }
 
 DOMHighResTimeStamp PerformanceTimingData::AsyncOpenHighRes(
@@ -481,7 +485,7 @@ DOMHighResTimeStamp PerformanceTimingData::SecureConnectionStartHighRes(
                // navigation start time.
   }
   if (mSecureConnectionStart.IsNull()) {
-    return mZeroTime;
+    return ConnectStartHighRes(aPerformance);
   }
   DOMHighResTimeStamp rawValue =
       TimeStampToDOMHighRes(aPerformance, mSecureConnectionStart);
@@ -614,5 +618,4 @@ nsTArray<nsCOMPtr<nsIServerTiming>> PerformanceTimingData::GetServerTiming() {
   return mServerTiming.Clone();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

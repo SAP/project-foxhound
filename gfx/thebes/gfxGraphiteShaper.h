@@ -9,6 +9,7 @@
 #include "gfxFont.h"
 
 #include "mozilla/gfx/2D.h"
+#include "nsTHashSet.h"
 
 #include "ThebesRLBoxTypes.h"
 
@@ -23,7 +24,7 @@ class gfxGraphiteShaper : public gfxFontShaper {
 
   bool ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
                  uint32_t aOffset, uint32_t aLength, Script aScript,
-                 bool aVertical, RoundingFlags aRounding,
+                 nsAtom* aLanguage, bool aVertical, RoundingFlags aRounding,
                  gfxShapedText* aShapedText) override;
 
   static void Shutdown();
@@ -68,7 +69,7 @@ class gfxGraphiteShaper : public gfxFontShaper {
 
   // Convert HTML 'lang' (BCP47) to Graphite language code
   static uint32_t GetGraphiteTagForLang(const nsCString& aLang);
-  static nsTHashtable<nsUint32HashKey>* sLanguageTags;
+  static nsTHashSet<uint32_t>* sLanguageTags;
 };
 
 #endif /* GFX_GRAPHITESHAPER_H */

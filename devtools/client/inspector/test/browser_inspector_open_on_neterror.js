@@ -9,38 +9,26 @@ const TEST_URL_1 = "http://127.0.0.1:36325/";
 const TEST_URL_2 = "data:text/html,<html><body>test-doc-2</body></html>";
 
 add_task(async function() {
-  // Unfortunately, net error page are not firing load event, so that we can't
-  // use addTab helper and have to do that:
-  const tab = (gBrowser.selectedTab = BrowserTestUtils.addTab(
-    gBrowser,
-    "data:text/html,empty"
-  ));
-  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-  await SpecialPowers.spawn(
-    tab.linkedBrowser,
-    [{ url: TEST_URL_1 }],
-    async function({ url }) {
-      // Also, the neterror being privileged, the DOMContentLoaded only fires on
-      // the chromeEventHandler.
-      const { chromeEventHandler } = docShell; // eslint-disable-line no-undef
-      const onDOMContentLoaded = ContentTaskUtils.waitForEvent(
-        chromeEventHandler,
-        "DOMContentLoaded",
-        true
-      );
-      content.location = url;
-      await onDOMContentLoaded;
-    }
-  );
+  // We cannot directly use addTab here as waiting for error pages requires
+  // a specific code path.
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, TEST_URL_1);
+  await BrowserTestUtils.waitForErrorPage(gBrowser.selectedBrowser);
 
-  const { inspector, testActor } = await openInspector();
+  const { inspector } = await openInspector();
   ok(true, "Inspector loaded on the already opened net error");
 
-  const documentURI = await testActor.eval("document.documentURI;");
+  const documentURI = await SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [],
+    () => content.document.documentURI
+  );
   ok(
     documentURI.startsWith("about:neterror"),
     "content is really a net error page."
   );
+
+  const netErrorNode = await getNodeFront("#errorPageContainer", inspector);
+  ok(netErrorNode, "The inspector can get a node front from the neterror page");
 
   info("Navigate to a valid url");
   await navigateTo(TEST_URL_2);

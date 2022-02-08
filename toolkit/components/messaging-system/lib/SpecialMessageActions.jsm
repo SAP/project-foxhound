@@ -80,6 +80,95 @@ const SpecialMessageActions = {
   },
 
   /**
+   * Pin Firefox to taskbar.
+   *
+   * @param {Window} window Reference to a window object
+   */
+  pinFirefoxToTaskbar(window) {
+    window.getShellService().pinToTaskbar();
+  },
+
+  /**
+   *  Set browser as the operating system default browser.
+   *
+   *  @param {Window} window Reference to a window object
+   */
+  setDefaultBrowser(window) {
+    window.getShellService().setAsDefault();
+  },
+
+  /**
+   * Reset browser homepage and newtab to default with a certain section configuration
+   *
+   * @param {"default"|null} home Value to set for browser homepage
+   * @param {"default"|null} newtab Value to set for browser newtab
+   * @param {obj} layout Configuration options for newtab sections
+   * @returns {undefined}
+   */
+  configureHomepage({ homePage = null, newtab = null, layout = null }) {
+    // Homepage can be default, blank or a custom url
+    if (homePage === "default") {
+      Services.prefs.clearUserPref("browser.startup.homepage");
+    }
+    // Newtab page can only be default or blank
+    if (newtab === "default") {
+      Services.prefs.clearUserPref("browser.newtabpage.enabled");
+    }
+    if (layout) {
+      // Existing prefs that interact with the newtab page layout, we default to true
+      // or payload configuration
+      let newtabConfigurations = [
+        [
+          // controls the search bar
+          "browser.newtabpage.activity-stream.showSearch",
+          layout.search,
+        ],
+        [
+          // controls the topsites
+          "browser.newtabpage.activity-stream.feeds.topsites",
+          layout.topsites,
+          // User can control number of topsite rows
+          ["browser.newtabpage.activity-stream.topSitesRows"],
+        ],
+        [
+          // controls the highlights section
+          "browser.newtabpage.activity-stream.feeds.section.highlights",
+          layout.highlights,
+          // User can control number of rows and highlight sources
+          [
+            "browser.newtabpage.activity-stream.section.highlights.rows",
+            "browser.newtabpage.activity-stream.section.highlights.includeVisited",
+            "browser.newtabpage.activity-stream.section.highlights.includePocket",
+            "browser.newtabpage.activity-stream.section.highlights.includeDownloads",
+            "browser.newtabpage.activity-stream.section.highlights.includeBookmarks",
+          ],
+        ],
+        [
+          // controls the snippets section
+          "browser.newtabpage.activity-stream.feeds.snippets",
+          layout.snippets,
+        ],
+        [
+          // controls the topstories section
+          "browser.newtabpage.activity-stream.feeds.system.topstories",
+          layout.topstories,
+        ],
+      ].filter(
+        // If a section has configs that the user changed we will skip that section
+        ([, , sectionConfigs]) =>
+          !sectionConfigs ||
+          sectionConfigs.every(
+            prefName => !Services.prefs.prefHasUserValue(prefName)
+          )
+      );
+
+      for (let [prefName, prefValue] of newtabConfigurations) {
+        Services.prefs.setBoolPref(prefName, prefValue);
+      }
+    }
+  },
+
+  /**
    * Processes "Special Message Actions", which are definitions of behaviors such as opening tabs
    * installing add-ons, or focusing the awesome bar that are allowed to can be triggered from
    * Messaging System interactions.
@@ -93,6 +182,7 @@ const SpecialMessageActions = {
       case "SHOW_MIGRATION_WIZARD":
         MigrationUtils.showMigrationWizard(window, [
           MigrationUtils.MIGRATION_ENTRYPOINT_NEWTAB,
+          action.data?.source,
         ]);
         break;
       case "OPEN_PRIVATE_BROWSER_WINDOW":
@@ -148,6 +238,16 @@ const SpecialMessageActions = {
           action.data.telemetrySource
         );
         break;
+      case "PIN_FIREFOX_TO_TASKBAR":
+        this.pinFirefoxToTaskbar(window);
+        break;
+      case "PIN_AND_DEFAULT":
+        this.pinFirefoxToTaskbar(window);
+        this.setDefaultBrowser(window);
+        break;
+      case "SET_DEFAULT_BROWSER":
+        this.setDefaultBrowser(window);
+        break;
       case "PIN_CURRENT_TAB":
         let tab = window.gBrowser.selectedTab;
         window.gBrowser.pinTab(tab);
@@ -156,8 +256,10 @@ const SpecialMessageActions = {
         });
         break;
       case "SHOW_FIREFOX_ACCOUNTS":
+        const data = action.data;
         const url = await FxAccounts.config.promiseConnectAccountURI(
-          (action.data && action.data.entrypoint) || "snippets"
+          (data && data.entrypoint) || "snippets",
+          (data && data.extraParams) || {}
         );
         // We want to replace the current tab.
         window.openLinkIn(url, "current", {
@@ -198,6 +300,29 @@ const SpecialMessageActions = {
       case "CANCEL":
         // A no-op used by CFRs that minimizes the notification but does not
         // trigger a dismiss or block (it keeps the notification around)
+        break;
+      case "CONFIGURE_HOMEPAGE":
+        this.configureHomepage(action.data);
+        const topWindow = browser.ownerGlobal.window.BrowserWindowTracker.getTopWindow();
+        if (topWindow) {
+          topWindow.BrowserHome();
+        }
+        break;
+      case "ENABLE_TOTAL_COOKIE_PROTECTION":
+        Services.prefs.setBoolPref(
+          "privacy.restrict3rdpartystorage.rollout.enabledByDefault",
+          true
+        );
+        break;
+      case "ENABLE_TOTAL_COOKIE_PROTECTION_SECTION_AND_OPT_OUT":
+        Services.prefs.setBoolPref(
+          "privacy.restrict3rdpartystorage.rollout.enabledByDefault",
+          false
+        );
+        Services.prefs.setBoolPref(
+          "privacy.restrict3rdpartystorage.rollout.preferences.TCPToggleInStandard",
+          true
+        );
         break;
       default:
         throw new Error(

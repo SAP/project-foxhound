@@ -2,10 +2,19 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-include $(topsrcdir)/mozglue/build/replace_malloc.mk
+ifdef MOZ_CODE_COVERAGE
+SKIP = 1
+endif
 
-ifndef CROSS_COMPILE
-ifndef MOZ_CODE_COVERAGE
+ifdef CROSS_COMPILE
+SKIP = 1
+endif
+
+ifdef CODEQL_DIST
+SKIP = 1
+endif
+
+ifneq ($(SKIP),1)
 
 ifeq ($(OS_TARGET),WINNT)
 LOGALLOC_VAR = MOZ_REPLACE_MALLOC_LIB
@@ -40,5 +49,4 @@ check:: $(srcdir)/replay.log expected_output.log $(srcdir)/expected_output_minim
 
 	MALLOC_LOG=1 MALLOC_LOG_MINIMAL=1 $(LOGALLOC) ./$(PROGRAM) < $< | sed -n '/jemalloc_stats/,$$p' | $(PYTHON3) $(srcdir)/logalloc_munge.py | diff -w - $(srcdir)/expected_output_minimal.log
 
-endif
 endif

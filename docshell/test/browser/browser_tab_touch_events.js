@@ -9,31 +9,35 @@ add_task(async function() {
   await BrowserTestUtils.withNewTab({ gBrowser, url: URI }, async function(
     browser
   ) {
+    await SpecialPowers.spawn(browser, [], test_init);
+
+    browser.browsingContext.touchEventsOverride = "disabled";
+
     await SpecialPowers.spawn(browser, [], test_body);
   });
 });
 
-async function test_body() {
-  let docshell = docShell;
-
+async function test_init() {
   is(
-    docshell.touchEventsOverride,
-    Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_NONE,
+    content.browsingContext.touchEventsOverride,
+    "none",
     "touchEventsOverride flag should be initially set to NONE"
   );
+}
 
-  docshell.touchEventsOverride = Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_DISABLED;
+async function test_body() {
+  let bc = content.browsingContext;
   is(
-    docshell.touchEventsOverride,
-    Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_DISABLED,
+    bc.touchEventsOverride,
+    "disabled",
     "touchEventsOverride flag should be changed to DISABLED"
   );
 
   let frameWin = content.document.querySelector("#test-iframe").contentWindow;
-  docshell = frameWin.docShell;
+  bc = frameWin.browsingContext;
   is(
-    docshell.touchEventsOverride,
-    Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_DISABLED,
+    bc.touchEventsOverride,
+    "disabled",
     "touchEventsOverride flag should be passed on to frames."
   );
 
@@ -41,20 +45,30 @@ async function test_body() {
   content.document.body.appendChild(newFrame);
 
   let newFrameWin = newFrame.contentWindow;
-  docshell = newFrameWin.docShell;
+  bc = newFrameWin.browsingContext;
   is(
-    docshell.touchEventsOverride,
-    Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_DISABLED,
+    bc.touchEventsOverride,
+    "disabled",
+    "Newly created frames should use the new touchEventsOverride flag"
+  );
+
+  // Wait for the non-transient about:blank to load.
+  await ContentTaskUtils.waitForEvent(newFrame, "load");
+  newFrameWin = newFrame.contentWindow;
+  bc = newFrameWin.browsingContext;
+  is(
+    bc.touchEventsOverride,
+    "disabled",
     "Newly created frames should use the new touchEventsOverride flag"
   );
 
   newFrameWin.location.reload();
-  await ContentTaskUtils.waitForEvent(newFrameWin, "load");
-
-  docshell = newFrameWin.docShell;
+  await ContentTaskUtils.waitForEvent(newFrame, "load");
+  newFrameWin = newFrame.contentWindow;
+  bc = newFrameWin.browsingContext;
   is(
-    docshell.touchEventsOverride,
-    Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_DISABLED,
+    bc.touchEventsOverride,
+    "disabled",
     "New touchEventsOverride flag should persist across reloads"
   );
 }

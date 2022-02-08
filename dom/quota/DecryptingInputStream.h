@@ -7,14 +7,34 @@
 #ifndef mozilla_dom_quota_DecryptingInputStream_h
 #define mozilla_dom_quota_DecryptingInputStream_h
 
+// Local includes
+#include "EncryptedBlock.h"
+
+// Global includes
+#include <cstddef>
+#include <cstdint>
+#include "ErrorList.h"
 #include "mozilla/InitializedOnce.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/NotNull.h"
+#include "mozilla/ipc/InputStreamParams.h"
 #include "nsCOMPtr.h"
 #include "nsICloneableInputStream.h"
-#include "nsIInputStream.h"
 #include "nsIIPCSerializableInputStream.h"
+#include "nsIInputStream.h"
 #include "nsISeekableStream.h"
+#include "nsISupports.h"
+#include "nsITellableStream.h"
+#include "nsTArray.h"
+#include "nscore.h"
 
-#include "EncryptedBlock.h"
+namespace mozilla::ipc {
+class ChildToParentStreamActorManager;
+class ParentToChildStreamActorManager;
+}  // namespace mozilla::ipc
+
+template <class T>
+class nsCOMPtr;
 
 namespace mozilla::dom::quota {
 
@@ -86,11 +106,11 @@ class DecryptingInputStream final : public DecryptingInputStreamBase {
   // base stream must also be blocking.  The base stream does not have to be
   // buffered.
   DecryptingInputStream(MovingNotNull<nsCOMPtr<nsIInputStream>> aBaseStream,
-                        size_t aBlockSize, CipherStrategy aCipherStrategy,
+                        size_t aBlockSize,
                         typename CipherStrategy::KeyType aKey);
 
   // For deserialization only.
-  explicit DecryptingInputStream(CipherStrategy aCipherStrategy);
+  explicit DecryptingInputStream();
 
   NS_IMETHOD Close() override;
   NS_IMETHOD Available(uint64_t* _retval) override;
@@ -137,7 +157,7 @@ class DecryptingInputStream final : public DecryptingInputStreamBase {
 
   bool EnsureBuffers();
 
-  const CipherStrategy mCipherStrategy;
+  CipherStrategy mCipherStrategy;
   LazyInitializedOnce<const typename CipherStrategy::KeyType> mKey;
 
   // Buffer to hold encrypted data.  Must copy here since we need a

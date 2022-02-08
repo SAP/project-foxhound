@@ -4,7 +4,7 @@
 
 // Test that style editor loads correctly.
 
-const TESTCASE_URI = TEST_BASE_HTTP + "longload.html";
+const TESTCASE_URI = TEST_BASE_HTTPS + "longload.html";
 
 add_task(async function() {
   // launch Style Editor right when the tab is created (before load)
@@ -12,12 +12,14 @@ add_task(async function() {
   // opened *while* the page is still loading. The Style Editor should not
   // signal that it is loaded until the accompanying content page is loaded.
   const tabAdded = addTab(TESTCASE_URI);
-  const target = await TargetFactory.forTab(gBrowser.selectedTab);
-  const styleEditorLoaded = gDevTools.showToolbox(target, "styleeditor");
+  const tab = gBrowser.selectedTab;
+  const styleEditorLoaded = gDevTools.showToolboxForTab(tab, {
+    toolId: "styleeditor",
+  });
 
   await Promise.all([tabAdded, styleEditorLoaded]);
 
-  const toolbox = gDevTools.getToolbox(target);
+  const toolbox = await gDevTools.getToolboxForTab(tab);
   const panel = toolbox.getPanel("styleeditor");
   const { panelWindow, UI: ui } = panel;
 

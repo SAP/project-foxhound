@@ -24,6 +24,7 @@
       ", url_hash INTEGER DEFAULT 0 NOT NULL "         \
       ", description TEXT"                             \
       ", preview_image_url TEXT"                       \
+      ", site_name TEXT"                               \
       ", origin_id INTEGER REFERENCES moz_origins(id)" \
       ")")
 
@@ -251,6 +252,7 @@
       "CREATE TABLE moz_icons_to_pages ( "                                     \
       "page_id INTEGER NOT NULL, "                                             \
       "icon_id INTEGER NOT NULL, "                                             \
+      "expire_ms INTEGER NOT NULL DEFAULT 0, "                                 \
       "PRIMARY KEY (page_id, icon_id), "                                       \
       "FOREIGN KEY (page_id) REFERENCES moz_pages_w_icons ON DELETE CASCADE, " \
       "FOREIGN KEY (icon_id) REFERENCES moz_icons ON DELETE CASCADE "          \
@@ -271,5 +273,102 @@
 #define MOZ_META_KEY_ORIGIN_FRECENCY_SUM "origin_frecency_sum"
 #define MOZ_META_KEY_ORIGIN_FRECENCY_SUM_OF_SQUARES \
   "origin_frecency_sum_of_squares"
+
+// This table holds history interactions that will be used to achieve improved
+// history recalls.
+#define CREATE_MOZ_PLACES_METADATA                                           \
+  nsLiteralCString(                                                          \
+      "CREATE TABLE moz_places_metadata ("                                   \
+      "id INTEGER PRIMARY KEY, "                                             \
+      "place_id INTEGER NOT NULL, "                                          \
+      "referrer_place_id INTEGER, "                                          \
+      "created_at INTEGER NOT NULL DEFAULT 0, "                              \
+      "updated_at INTEGER NOT NULL DEFAULT 0, "                              \
+      "total_view_time INTEGER NOT NULL DEFAULT 0, "                         \
+      "typing_time INTEGER NOT NULL DEFAULT 0, "                             \
+      "key_presses INTEGER NOT NULL DEFAULT 0, "                             \
+      "scrolling_time INTEGER NOT NULL DEFAULT 0, "                          \
+      "scrolling_distance INTEGER NOT NULL DEFAULT 0, "                      \
+      "document_type INTEGER NOT NULL DEFAULT 0, "                           \
+      "search_query_id INTEGER, "                                            \
+      "FOREIGN KEY (place_id) REFERENCES moz_places(id) ON DELETE CASCADE, " \
+      "FOREIGN KEY (referrer_place_id) REFERENCES moz_places(id) ON DELETE " \
+      "CASCADE, "                                                            \
+      "FOREIGN KEY(search_query_id) REFERENCES "                             \
+      "moz_places_metadata_search_queries(id) ON DELETE CASCADE "            \
+      "CHECK(place_id != referrer_place_id) "                                \
+      ")")
+
+#define CREATE_MOZ_PLACES_METADATA_SEARCH_QUERIES                        \
+  nsLiteralCString(                                                      \
+      "CREATE TABLE IF NOT EXISTS moz_places_metadata_search_queries ( " \
+      "id INTEGER PRIMARY KEY, "                                         \
+      "terms TEXT NOT NULL UNIQUE "                                      \
+      ")")
+
+#define CREATE_MOZ_PLACES_METADATA_SNAPSHOTS                                  \
+  nsLiteralCString(                                                           \
+      "CREATE TABLE IF NOT EXISTS moz_places_metadata_snapshots ( "           \
+      "  place_id INTEGER PRIMARY KEY, "                                      \
+      "  created_at INTEGER NOT NULL, "                                       \
+      "  removed_at INTEGER, "                                                \
+      "  first_interaction_at INTEGER NOT NULL, "                             \
+      "  last_interaction_at INTEGER NOT NULL, "                              \
+      "  document_type INTEGER NOT NULL DEFAULT 0, "                          \
+      "  user_persisted INTEGER NOT NULL DEFAULT 0, "                         \
+      "  FOREIGN KEY (place_id) REFERENCES moz_places(id) ON DELETE CASCADE " \
+      ")")
+
+#define CREATE_MOZ_PLACES_METADATA_SNAPSHOTS_EXTRA                        \
+  nsLiteralCString(                                                       \
+      "CREATE TABLE IF NOT EXISTS moz_places_metadata_snapshots_extra ( " \
+      "  place_id INTEGER NOT NULL, "                                     \
+      "  type INTEGER NOT NULL DEFAULT 0, "                               \
+      "  data TEXT NOT NULL, "                                            \
+      "  PRIMARY KEY (place_id, type), "                                  \
+      "  FOREIGN KEY (place_id) REFERENCES "                              \
+      "moz_places_metadata_snapshots(place_id) ON DELETE CASCADE "        \
+      ") WITHOUT ROWID ")
+
+#define CREATE_MOZ_PLACES_METADATA_SNAPSHOTS_GROUPS                        \
+  nsLiteralCString(                                                        \
+      "CREATE TABLE IF NOT EXISTS moz_places_metadata_snapshots_groups ( " \
+      "  id INTEGER PRIMARY KEY, "                                         \
+      "  title TEXT NOT NULL "                                             \
+      ")")
+
+#define CREATE_MOZ_PLACES_METADATA_GROUPS_TO_SNAPSHOTS                        \
+  nsLiteralCString(                                                           \
+      "CREATE TABLE IF NOT EXISTS moz_places_metadata_groups_to_snapshots ( " \
+      "  group_id INTEGER NOT NULL, "                                         \
+      "  place_id INTEGER NOT NULL, "                                         \
+      "  PRIMARY KEY (group_id, place_id), "                                  \
+      "  FOREIGN KEY (group_id) REFERENCES "                                  \
+      "    moz_places_metadata_snapshots_groups(id) ON DELETE CASCADE, "      \
+      "  FOREIGN KEY (place_id) REFERENCES "                                  \
+      "    moz_places_metadata_snapshots(place_id) ON DELETE CASCADE "        \
+      ") WITHOUT ROWID")
+
+#define CREATE_MOZ_SESSION_METADATA                        \
+  nsLiteralCString(                                        \
+      "CREATE TABLE IF NOT EXISTS moz_session_metadata ( " \
+      "  id INTEGER PRIMARY KEY, "                         \
+      "  guid TEXT NOT NULL UNIQUE, "                      \
+      "  last_saved_at INTEGER NOT NULL DEFAULT 0, "       \
+      "  data TEXT "                                       \
+      ")")
+
+#define CREATE_MOZ_SESSION_TO_PLACES                                       \
+  nsLiteralCString(                                                        \
+      "CREATE TABLE IF NOT EXISTS moz_session_to_places ( "                \
+      "  session_id INTEGER NOT NULL, "                                    \
+      "  place_id INTEGER NOT NULL , "                                     \
+      "  position INTEGER, "                                               \
+      "  PRIMARY KEY (session_id, place_id), "                             \
+      "  FOREIGN KEY (place_id) REFERENCES moz_places(id) ON DELETE "      \
+      "CASCADE "                                                           \
+      "  FOREIGN KEY (session_id) REFERENCES moz_session_metadata(id) ON " \
+      "DELETE CASCADE "                                                    \
+      ") WITHOUT ROWID")
 
 #endif  // __nsPlacesTables_h__

@@ -10,8 +10,7 @@
 #include "mozilla/dom/MediaList.h"
 #include "mozilla/ServoBindings.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 CSSMediaRule::CSSMediaRule(RefPtr<RawServoMediaRule> aRawRule,
                            StyleSheet* aSheet, css::Rule* aParentRule,
@@ -56,6 +55,19 @@ void CSSMediaRule::DropSheetReference() {
   ConditionRule::DropSheetReference();
 }
 
+void CSSMediaRule::SetRawAfterClone(RefPtr<RawServoMediaRule> aRaw) {
+  mRawRule = std::move(aRaw);
+  if (mMediaList) {
+    mMediaList->SetRawAfterClone(Servo_MediaRule_GetMedia(mRawRule).Consume());
+    mMediaList->SetStyleSheet(nullptr);
+    mMediaList->SetStyleSheet(GetStyleSheet());
+  }
+  css::ConditionRule::SetRawAfterClone(
+      Servo_MediaRule_GetRules(mRawRule).Consume());
+}
+
+StyleCssRuleType CSSMediaRule::Type() const { return StyleCssRuleType::Media; }
+
 #ifdef DEBUG
 /* virtual */
 void CSSMediaRule::List(FILE* out, int32_t aIndent) const {
@@ -68,11 +80,11 @@ void CSSMediaRule::List(FILE* out, int32_t aIndent) const {
 }
 #endif
 
-void CSSMediaRule::GetConditionText(nsAString& aConditionText) {
+void CSSMediaRule::GetConditionText(nsACString& aConditionText) {
   Media()->GetMediaText(aConditionText);
 }
 
-void CSSMediaRule::SetConditionText(const nsAString& aConditionText,
+void CSSMediaRule::SetConditionText(const nsACString& aConditionText,
                                     ErrorResult& aRv) {
   if (IsReadOnly()) {
     return;
@@ -81,7 +93,7 @@ void CSSMediaRule::SetConditionText(const nsAString& aConditionText,
 }
 
 /* virtual */
-void CSSMediaRule::GetCssText(nsAString& aCssText) const {
+void CSSMediaRule::GetCssText(nsACString& aCssText) const {
   Servo_MediaRule_GetCssText(mRawRule, &aCssText);
 }
 
@@ -105,5 +117,4 @@ JSObject* CSSMediaRule::WrapObject(JSContext* aCx,
   return CSSMediaRule_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

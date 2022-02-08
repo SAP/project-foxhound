@@ -2,13 +2,10 @@ const HELPER_PAGE_URL =
   "http://example.com/browser/dom/tests/browser/page_localstorage_snapshotting_e10s.html";
 const HELPER_PAGE_ORIGIN = "http://example.com/";
 
-/* import-globals-from helper_localStorage_e10s.js */
+/* import-globals-from helper_localStorage.js */
 
 let testDir = gTestPath.substr(0, gTestPath.lastIndexOf("/"));
-Services.scriptloader.loadSubScript(
-  testDir + "/helper_localStorage_e10s.js",
-  this
-);
+Services.scriptloader.loadSubScript(testDir + "/helper_localStorage.js", this);
 
 function clearOrigin() {
   let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
@@ -97,6 +94,10 @@ add_task(async function() {
       // Enable LocalStorage's testing API so we can explicitly create
       // snapshots when needed.
       ["dom.storage.testing", true],
+      // Force multiple web and webIsolated content processes so that the
+      // multi-e10s logic works correctly.
+      ["dom.ipc.processCount", 8],
+      ["dom.ipc.processCount.webIsolated", 4],
     ],
   });
 
@@ -106,25 +107,29 @@ add_task(async function() {
 
   // - Open tabs.  Don't configure any of them yet.
   const knownTabs = new KnownTabs();
-  const writerTab1 = await openTestTabInOwnProcess(
+  const writerTab1 = await openTestTab(
     HELPER_PAGE_URL,
     "writer1",
-    knownTabs
+    knownTabs,
+    true
   );
-  const writerTab2 = await openTestTabInOwnProcess(
+  const writerTab2 = await openTestTab(
     HELPER_PAGE_URL,
     "writer2",
-    knownTabs
+    knownTabs,
+    true
   );
-  const readerTab1 = await openTestTabInOwnProcess(
+  const readerTab1 = await openTestTab(
     HELPER_PAGE_URL,
     "reader1",
-    knownTabs
+    knownTabs,
+    true
   );
-  const readerTab2 = await openTestTabInOwnProcess(
+  const readerTab2 = await openTestTab(
     HELPER_PAGE_URL,
     "reader2",
-    knownTabs
+    knownTabs,
+    true
   );
 
   const initialMutations = [

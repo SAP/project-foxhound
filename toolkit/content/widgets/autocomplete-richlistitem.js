@@ -606,16 +606,50 @@
         LoginHelper.openPasswordManager(this.ownerGlobal, {
           entryPoint: "autocomplete",
         });
-        Services.telemetry.recordEvent(
-          "exp_import",
-          "event",
-          "click",
-          "loginsFooter"
-        );
       }
 
       this.addEventListener("click", handleEvent);
     }
+  }
+
+  class MozAutocompleteImportableLearnMoreRichlistitem extends MozElements.MozAutocompleteRichlistitem {
+    constructor() {
+      super();
+      MozXULElement.insertFTLIfNeeded("toolkit/main-window/autocomplete.ftl");
+
+      this.addEventListener("click", event => {
+        window.openTrustedLinkIn(
+          Services.urlFormatter.formatURLPref("app.support.baseURL") +
+            "password-import",
+          "tab",
+          { relatedToCurrent: true }
+        );
+      });
+    }
+
+    static get markup() {
+      return `
+      <image class="ac-type-icon"/>
+      <image class="ac-site-icon"/>
+      <vbox class="ac-title" align="left">
+        <description class="ac-text-overflow-container">
+          <description class="ac-title-text"
+                       data-l10n-id="autocomplete-import-learn-more"/>
+        </description>
+      </vbox>
+      <hbox class="ac-separator" align="center">
+        <description class="ac-separator-text" value="—"/>
+      </hbox>
+      <hbox class="ac-url" align="center">
+        <description class="ac-text-overflow-container">
+          <description class="ac-url-text"/>
+        </description>
+      </hbox>
+    `;
+    }
+
+    // Override to avoid clearing out fluent description.
+    _setUpDescription() {}
   }
 
   class MozAutocompleteTwoLineRichlistitem extends MozElements.MozRichlistitem {
@@ -658,9 +692,12 @@
       const minWidth = getComputedStyle(popup).minWidth.replace("px", "");
       // Make item fit in popup as XUL box could not constrain
       // item's width
-      // popup.width is equal to the input field's width from the content process
+      // --panel-width is equal to the input field's width from the content process
       this.firstElementChild.style.width =
-        Math.max(minWidth, popup.width) + "px";
+        Math.max(
+          minWidth,
+          parseFloat(popup.style.getPropertyValue("--panel-width") || "0")
+        ) + "px";
     }
 
     _onOverflow() {}
@@ -741,49 +778,20 @@
       super();
       MozXULElement.insertFTLIfNeeded("toolkit/main-window/autocomplete.ftl");
 
-      ChromeUtils.defineModuleGetter(
-        this,
-        "MigrationUtils",
-        "resource:///modules/MigrationUtils.jsm"
-      );
-
       this.addEventListener("click", event => {
-        const browserId = this.getAttribute("ac-value");
-
-        // Handle clicks on the info icon to show support article.
-        if (event.target.classList.contains("ac-info-icon")) {
-          window.openTrustedLinkIn(
-            Services.urlFormatter.formatURLPref("app.support.baseURL") +
-              "password-import",
-            "tab",
-            {
-              relatedToCurrent: true,
-            }
-          );
-          Services.telemetry.recordEvent(
-            "exp_import",
-            "event",
-            "info",
-            browserId
-          );
-          return;
-        }
-
         if (event.button != 0) {
           return;
         }
 
-        // Open the migration wizard pre-selecting the appropriate browser.
-        this.MigrationUtils.showMigrationWizard(window, [
-          this.MigrationUtils.MIGRATION_ENTRYPOINT_PASSWORDS,
-          browserId,
-        ]);
-        Services.telemetry.recordEvent(
-          "exp_import",
-          "event",
-          "click",
-          browserId
-        );
+        // Let the login manager parent handle this importable browser click.
+        gBrowser.selectedBrowser.browsingContext.currentWindowGlobal
+          .getActor("LoginManager")
+          .receiveMessage({
+            name: "PasswordManager:HandleImportable",
+            data: {
+              browserId: this.getAttribute("ac-value"),
+            },
+          });
       });
     }
 
@@ -797,31 +805,15 @@
           <div class="label-row line1-label" data-l10n-name="line1" />
           <div class="label-row line2-label" data-l10n-name="line2" />
         </div>
-        <xul:image class="ac-info-icon"
-                   data-l10n-id="autocomplete-import-logins-info" />
       </div>
     `;
     }
 
     _adjustAcItem() {
-      // Bug 1649180 to localize this when no longer an experiment.
-      let browser = this.getAttribute("ac-value");
-      switch (browser) {
-        case "chrome":
-          browser = "Google Chrome";
-          break;
-        case "chromium-edge":
-          browser = "Microsoft Edge";
-          break;
-        case "chromium":
-          browser = "Chromium";
-          break;
-      }
       document.l10n.setAttributes(
         this.querySelector(".labels-wrapper"),
-        "autocomplete-import-logins",
+        `autocomplete-import-logins-${this.getAttribute("ac-value")}`,
         {
-          browser,
           host: this.getAttribute("ac-label").replace(/^www\./, ""),
         }
       );
@@ -872,6 +864,14 @@
   customElements.define(
     "autocomplete-generated-password-richlistitem",
     MozAutocompleteGeneratedPasswordRichlistitem,
+    {
+      extends: "richlistitem",
+    }
+  );
+
+  customElements.define(
+    "autocomplete-importable-learn-more-richlistitem",
+    MozAutocompleteImportableLearnMoreRichlistitem,
     {
       extends: "richlistitem",
     }

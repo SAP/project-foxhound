@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
 import { prefs } from "../prefs";
 import { log } from "../log.js";
 
@@ -21,7 +19,7 @@ describe("log()", () => {
     prefs.logging = false;
   });
 
-  describe("when isDevelopment", () => {
+  describe("when logging pref is true", () => {
     it("prints arguments", () => {
       prefs.logging = true;
       log(logArgArray);

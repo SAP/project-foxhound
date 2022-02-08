@@ -10,8 +10,13 @@ const { GeckoViewUtils } = ChromeUtils.import(
   "resource://gre/modules/GeckoViewUtils.jsm"
 );
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { PrincipalsCollector } = ChromeUtils.import(
+  "resource://gre/modules/PrincipalsCollector.jsm"
+);
+const { E10SUtils } = ChromeUtils.import(
+  "resource://gre/modules/E10SUtils.jsm"
+);
 
-// eslint-disable-next-line no-unused-vars
 const { debug, warn } = GeckoViewUtils.initLogging(
   "GeckoViewStorageController"
 );
@@ -22,7 +27,6 @@ const ClearFlags = [
     // COOKIES
     1 << 0,
     Ci.nsIClearDataService.CLEAR_COOKIES |
-      Ci.nsIClearDataService.CLEAR_PLUGIN_DATA |
       Ci.nsIClearDataService.CLEAR_MEDIA_DEVICES,
   ],
   [
@@ -39,8 +43,7 @@ const ClearFlags = [
     // HISTORY
     1 << 3,
     Ci.nsIClearDataService.CLEAR_HISTORY |
-      Ci.nsIClearDataService.CLEAR_SESSION_HISTORY |
-      Ci.nsIClearDataService.CLEAR_STORAGE_ACCESS,
+      Ci.nsIClearDataService.CLEAR_SESSION_HISTORY,
   ],
   [
     // DOM_STORAGES
@@ -106,12 +109,110 @@ const GeckoViewStorageController = {
         this.clearHostData(aData.host, aData.flags, aCallback);
         break;
       }
+      case "GeckoView:ClearBaseDomainData": {
+        this.clearBaseDomainData(aData.baseDomain, aData.flags, aCallback);
+        break;
+      }
+      case "GeckoView:GetAllPermissions": {
+        const rawPerms = Services.perms.all;
+        const permissions = rawPerms.map(p => {
+          return {
+            uri: Services.io.createExposableURI(p.principal.URI).displaySpec,
+            principal: E10SUtils.serializePrincipal(p.principal),
+            perm: p.type,
+            value: p.capability,
+            contextId: p.principal.originAttributes.geckoViewSessionContextId,
+            privateMode: p.principal.privateBrowsingId != 0,
+          };
+        });
+        aCallback.onSuccess({ permissions });
+        break;
+      }
+      case "GeckoView:GetPermissionsByURI": {
+        const uri = Services.io.newURI(aData.uri);
+        const principal = Services.scriptSecurityManager.createContentPrincipal(
+          uri,
+          aData.contextId ? { geckoViewSessionContextId: aData.contextId } : {}
+        );
+        const rawPerms = Services.perms.getAllForPrincipal(principal);
+        const permissions = rawPerms.map(p => {
+          return {
+            uri: Services.io.createExposableURI(p.principal.URI).displaySpec,
+            principal: E10SUtils.serializePrincipal(p.principal),
+            perm: p.type,
+            value: p.capability,
+            contextId: p.principal.originAttributes.geckoViewSessionContextId,
+            privateMode: p.principal.privateBrowsingId != 0,
+          };
+        });
+        aCallback.onSuccess({ permissions });
+        break;
+      }
+      case "GeckoView:SetPermission": {
+        const principal = E10SUtils.deserializePrincipal(aData.principal);
+        let key = aData.perm;
+        if (key == "storage-access") {
+          key = "3rdPartyStorage^" + aData.thirdPartyOrigin;
+        }
+        if (aData.allowPermanentPrivateBrowsing) {
+          Services.perms.addFromPrincipalAndPersistInPrivateBrowsing(
+            principal,
+            key,
+            aData.newValue
+          );
+        } else {
+          Services.perms.addFromPrincipal(
+            principal,
+            key,
+            aData.newValue,
+            Ci.nsIPermissionManager.EXPIRE_NEVER
+          );
+        }
+        break;
+      }
+      case "GeckoView:SetPermissionByURI": {
+        const uri = Services.io.newURI(aData.uri);
+        const principal = Services.scriptSecurityManager.createContentPrincipal(
+          uri,
+          {
+            geckoViewSessionContextId: aData.contextId ?? undefined,
+            privateBrowsingId: aData.privateId,
+          }
+        );
+        Services.perms.addFromPrincipal(
+          principal,
+          aData.perm,
+          aData.newValue,
+          Ci.nsIPermissionManager.EXPIRE_NEVER
+        );
+        break;
+      }
     }
   },
 
-  clearData(aFlags, aCallback) {
+  async clearData(aFlags, aCallback) {
+    const flags = convertFlags(aFlags);
+
+    // storageAccessAPI permissions record every site that the user
+    // interacted with and thus mirror history quite closely. It makes
+    // sense to clear them when we clear history. However, since their absence
+    // indicates that we can purge cookies and site data for tracking origins without
+    // user interaction, we need to ensure that we only delete those permissions that
+    // do not have any existing storage.
+    if (flags & Ci.nsIClearDataService.CLEAR_HISTORY) {
+      const principalsCollector = new PrincipalsCollector();
+      const principals = await principalsCollector.getAllPrincipals();
+      await new Promise(resolve => {
+        Services.clearData.deleteUserInteractionForClearingHistory(
+          principals,
+          0,
+          resolve
+        );
+      });
+    }
+
     new Promise(resolve => {
-      Services.clearData.deleteData(convertFlags(aFlags), resolve);
+      Services.clearData.deleteData(flags, resolve);
     }).then(resultFlags => {
       aCallback.onSuccess();
     });
@@ -121,6 +222,19 @@ const GeckoViewStorageController = {
     new Promise(resolve => {
       Services.clearData.deleteDataFromHost(
         aHost,
+        /* isUserRequest */ true,
+        convertFlags(aFlags),
+        resolve
+      );
+    }).then(resultFlags => {
+      aCallback.onSuccess();
+    });
+  },
+
+  clearBaseDomainData(aBaseDomain, aFlags, aCallback) {
+    new Promise(resolve => {
+      Services.clearData.deleteDataFromBaseDomain(
+        aBaseDomain,
         /* isUserRequest */ true,
         convertFlags(aFlags),
         resolve

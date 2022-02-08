@@ -7,25 +7,36 @@
 #ifndef mozilla_dom_StructuredCloneHolder_h
 #define mozilla_dom_StructuredCloneHolder_h
 
+#include <cstddef>
+#include <cstdint>
 #include <utility>
-
 #include "js/StructuredClone.h"
-#include "js/WasmModule.h"
-#include "jsapi.h"
+#include "js/TypeDecls.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/dom/BindingDeclarations.h"
+#include "nsCOMPtr.h"
+#include "nsString.h"
 #include "nsTArray.h"
 
-#ifdef DEBUG
-#  include "nsIThread.h"
-#endif
-
+class nsIEventTarget;
 class nsIGlobalObject;
 class nsIInputStream;
+struct JSStructuredCloneReader;
+struct JSStructuredCloneWriter;
+
+namespace JS {
+class Value;
+struct WasmModule;
+}  // namespace JS
 
 namespace mozilla {
 class ErrorResult;
+template <class T>
+class OwningNonNull;
+
 namespace layers {
 class Image;
 }
@@ -35,6 +46,12 @@ class DataSourceSurface;
 }
 
 namespace dom {
+
+class BlobImpl;
+class MessagePort;
+class MessagePortIdentifier;
+template <typename T>
+class Sequence;
 
 class StructuredCloneHolderBase {
  public:
@@ -296,7 +313,7 @@ class StructuredCloneHolder : public StructuredCloneHolderBase {
   // Helper functions for reading and writing strings.
   static bool ReadString(JSStructuredCloneReader* aReader, nsString& aString);
   static bool WriteString(JSStructuredCloneWriter* aWriter,
-                          const nsString& aString);
+                          const nsAString& aString);
 
   static const JSStructuredCloneCallbacks sCallbacks;
 

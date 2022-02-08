@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 hy{
     Keys{
         calendar{"օրացույց"}
@@ -95,6 +96,7 @@ hy{
         de_CH{"շվեյցարական վերին գերմաներեն"}
         dgr{"դոգրիբ"}
         dje{"զարմա"}
+        doi{"դոգրի"}
         dsb{"ստորին սորբերեն"}
         dua{"դուալա"}
         dv{"մալդիվերեն"}
@@ -342,6 +344,7 @@ hy{
         rap{"ռապանուի"}
         rar{"ռարոտոնգաներեն"}
         rgn{"ռոմանիոլերեն"}
+        rhg{"Ռոհինջա"}
         rif{"ռիֆերեն"}
         rm{"ռոմանշերեն"}
         rn{"ռունդի"}
@@ -349,7 +352,6 @@ hy{
         ro_MD{"մոլդովերեն"}
         rof{"ռոմբո"}
         rom{"ռոմաներեն"}
-        root{"ռուտերեն"}
         rtm{"ռոտուման"}
         ru{"ռուսերեն"}
         rue{"ռուսիներեն"}
@@ -491,10 +493,14 @@ hy{
         zh_Hant{"չինարեն (ավանդական չինարեն)"}
     }
     Languages%menu{
+        ckb{"քրդերեն (սորանի)"}
         yue{"չինարեն, կանտոներեն"}
     }
     Languages%short{
         en_GB{"անգլերեն (Բրիտանիա)"}
+    }
+    Languages%variant{
+        ckb{"սորանի"}
     }
     Scripts{
         Arab{"արաբական"}
@@ -623,21 +629,22 @@ hy{
         AREVELA{"արևելահայերեն"}
         AREVMDA{"արեւմտահայերէն"}
     }
-    Version{"37"}
     characterLabelPattern{
         all{"{0} — բոլորը"}
         category-list{"{0}․ {1}"}
-        compatibility{"{0} — համատեղելի"}
-        enclosed{"{0} — ներդրված"}
+        compatibility{"{0} — համատեղելիություն"}
+        enclosed{"{0} — փակված"}
         extended{"{0} — ընդլայնված"}
         historic{"{0} — պատմական"}
         miscellaneous{"{0} — խառը"}
         other{"{0} — այլ"}
         scripts{"Գրեր — {0}"}
         strokes{
-            one{"{0} — Գծեր"}
+            one{"{0} — Գիծ"}
             other{"{0} — Գծեր"}
         }
+        subscript{"ենթատողային {0}"}
+        superscript{"վերգիր {0}"}
     }
     codePatterns{
         language{"Լեզու՝ {0}"}

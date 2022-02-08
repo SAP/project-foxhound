@@ -9,8 +9,8 @@
   <script src="/tests/SimpleTest/paint_listener.js"></script>
   <script type="application/javascript">
 
-function* testPreventDefault(testDriver, aTouchStartToCancel) {
-  var initial_resolution = getResolution();
+async function testPreventDefault(aTouchStartToCancel) {
+  var initial_resolution = await getResolution();
   ok(initial_resolution > 0,
       "The initial_resolution is " + initial_resolution + ", which is some sane value");
 
@@ -27,21 +27,19 @@ function* testPreventDefault(testDriver, aTouchStartToCancel) {
   };
   document.documentElement.addEventListener("touchstart", canceller, {passive: false});
 
-  var waitForTouchEnd = function(e) {
-    dump("touchend listener hit\n");
-    setTimeout(testDriver, 0);
-  };
-  document.documentElement.addEventListener("touchend", waitForTouchEnd, {passive: true, once: true});
+  let touchEndPromise = new Promise(resolve => {
+    document.documentElement.addEventListener("touchend", resolve, {passive: true, once: true});
+  });
 
   // Ensure that APZ gets updated hit-test info
-  yield waitForAllPaints(testDriver);
+  await promiseAllPaintsDone();
 
-  yield* pinchZoomInTouchSequence(150, 300);
-  yield; // wait for the touchend listener to fire
+  pinchZoomInTouchSequence(150, 300);
+  await touchEndPromise; // wait for the touchend listener to fire
 
   // Flush state and get the resolution we're at now
-  yield waitForApzFlushedRepaints(testDriver);
-  let final_resolution = getResolution();
+  await promiseApzFlushedRepaints();
+  let final_resolution = await getResolution();
   is(final_resolution, initial_resolution, "The final resolution (" + final_resolution + ") matches the initial resolution");
 }
 
@@ -49,13 +47,13 @@ function transformFailer() {
   ok(false, "The test fired an unexpected APZ:TransformEnd");
 }
 
-function* test(testDriver) {
+async function test() {
   // Register a listener that fails the test if the APZ:TransformEnd event fires,
   // because this test shouldn't actually be triggering any transforms
   SpecialPowers.Services.obs.addObserver(transformFailer, "APZ:TransformEnd");
 
-  yield* testPreventDefault(testDriver, 1);
-  yield* testPreventDefault(testDriver, 2);
+  await testPreventDefault(1);
+  await testPreventDefault(2);
 }
 
 function cleanup() {
@@ -63,9 +61,9 @@ function cleanup() {
 }
 
 waitUntilApzStable()
-.then(runContinuation(test))
-.then(cleanup)
-.then(subtestDone);
+.then(test)
+.finally(cleanup)
+.then(subtestDone, subtestFailed);
 
   </script>
 </head>

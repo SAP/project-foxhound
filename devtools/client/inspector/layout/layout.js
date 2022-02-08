@@ -41,15 +41,10 @@ class LayoutView {
       return;
     }
 
-    const {
-      onShowBoxModelHighlighterForNode,
-      setSelectedNode,
-    } = this.inspector.getCommonComponentProps();
+    const { setSelectedNode } = this.inspector.getCommonComponentProps();
 
     const {
-      onHideBoxModelHighlighter,
       onShowBoxModelEditor,
-      onShowBoxModelHighlighter,
       onShowRulePreviewTooltip,
       onToggleGeometryEditor,
     } = this.inspector.getPanel("boxmodel").getComponentProps();
@@ -60,7 +55,6 @@ class LayoutView {
     );
     const {
       onSetFlexboxOverlayColor,
-      onToggleFlexboxHighlighter,
     } = this.flexboxInspector.getComponentProps();
 
     this.gridInspector = new GridInspector(
@@ -69,7 +63,6 @@ class LayoutView {
     );
     const {
       onSetGridOverlayColor,
-      onShowGridOutlineHighlight,
       onToggleGridHighlighter,
       onToggleShowGridAreas,
       onToggleShowGridLineNumbers,
@@ -78,15 +71,10 @@ class LayoutView {
 
     const layoutApp = LayoutApp({
       getSwatchColorPickerTooltip: () => this.swatchColorPickerTooltip,
-      onHideBoxModelHighlighter,
       onSetFlexboxOverlayColor,
       onSetGridOverlayColor,
       onShowBoxModelEditor,
-      onShowBoxModelHighlighter,
-      onShowBoxModelHighlighterForNode,
       onShowRulePreviewTooltip,
-      onShowGridOutlineHighlight,
-      onToggleFlexboxHighlighter,
       onToggleGeometryEditor,
       onToggleGridHighlighter,
       onToggleShowGridAreas,

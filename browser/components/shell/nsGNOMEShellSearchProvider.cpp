@@ -14,7 +14,9 @@
 #include "base/message_loop.h"  // for MessageLoop
 #include "base/task.h"          // for NewRunnableMethod, etc
 #include "nsIServiceManager.h"
+#include "nsIURI.h"
 #include "nsNetCID.h"
+#include "nsPrintfCString.h"
 #include "nsIIOService.h"
 
 #include <dbus/dbus.h>

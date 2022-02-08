@@ -10,15 +10,20 @@
   <script src="/tests/SimpleTest/paint_listener.js"></script>
   <script type="application/javascript">
 
-function* test(testDriver) {
+async function test() {
   var utils = SpecialPowers.getDOMWindowUtils(window);
   var subframe = document.getElementById('subframe');
 
   // layerize subframe
-  yield synthesizeNativeClickAndWaitForClickEvent(subframe, 10, 10, testDriver);
+  await promiseNativeMouseEventWithAPZAndWaitForEvent({
+    type: "click",
+    target: subframe,
+    offsetX: 10,
+    offsetY: 10,
+  });
 
   // verify layerization
-  yield waitForAllPaints(() => setTimeout(testDriver, 0));
+  await promiseAllPaintsDone();
   ok(isLayerized("subframe"), "subframe should be layerized at this point");
   var subframeScrollId = utils.getViewId(subframe);
   ok(subframeScrollId > 0, "subframe should have a scroll id");
@@ -27,7 +32,7 @@ function* test(testDriver) {
   utils.disableApzForElement(subframe);
 
   // wait for the dust to settle
-  yield waitForAllPaints(() => setTimeout(testDriver, 0));
+  await promiseAllPaintsDone();
 
   // Check that the root element's displayport has at least 500px of vertical
   // displayport margin on either side. This will ensure that we can scroll
@@ -53,7 +58,7 @@ function* test(testDriver) {
   window.scrollBy({top: 500, left: 0, behavior: 'auto'});
   is(window.scrollY, 500, "document got scrolled instantly");
 
-  // Note that at this point we must NOT call flushApzRepaints, because
+  // Note that at this point we must NOT call promiseOnlyApzControllerFlushed, because
   // otherwise APZCCallbackHelper::NotifyFlushComplete will trigger a repaint
   // (for unrelated reasons), and the repaint will clear the checkerboard
   // state. We do, however, want to wait for a "steady state" here that
@@ -63,27 +68,13 @@ function* test(testDriver) {
   // advanceTimeAndRefresh has the additional advantage of freezing the refresh
   // driver which avoids any additional externally-triggered repaints from
   // erasing the symptoms of the bug.
-  yield waitForAllPaints(() => setTimeout(testDriver, 0));
-  utils.advanceTimeAndRefresh(0);
-
-  var data = utils.getCompositorAPZTestData();
-  //dump(JSON.stringify(data, null, 4));
-
-  var found = false;
-  for (apzcData of data.additionalData) {
-    if (apzcData.key == subframeScrollId) {
-      var checkerboarding = apzcData.value.split(',').includes("checkerboarding");
-      ok(!checkerboarding, "subframe is not checkerboarding");
-      found = true;
-    }
-  }
-  ok(found, "Found the checkerboarding subframe");
-
-  utils.restoreNormalRefresh();
-  subtestDone();
+  await promiseAllPaintsDone();
+  assertNotCheckerboarded(utils, subframeScrollId, "subframe");
 }
 
-waitUntilApzStable().then(runContinuation(test));
+waitUntilApzStable()
+.then(test)
+.then(subtestDone, subtestFailed);
 
   </script>
   <style>

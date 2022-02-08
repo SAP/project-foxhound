@@ -1,22 +1,6 @@
-#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/VK_MAKE_VERSION.html>"]
-pub const fn make_version(major: u32, minor: u32, patch: u32) -> u32 {
-    (major << 22) | (minor << 12) | patch
-}
-#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/VK_VERSION_MAJOR.html>"]
-pub const fn version_major(version: u32) -> u32 {
-    version >> 22
-}
-#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/VK_VERSION_MINOR.html>"]
-pub const fn version_minor(version: u32) -> u32 {
-    (version >> 12) & 0x3ff
-}
-#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/VK_VERSION_PATCH.html>"]
-pub const fn version_patch(version: u32) -> u32 {
-    version & 0xfff
-}
 #[macro_export]
 macro_rules! vk_bitflags_wrapped {
-    ( $ name : ident , $ all : expr , $ flag_type : ty ) => {
+    ($ name : ident , $ all : expr , $ flag_type : ty) => {
         impl Default for $name {
             fn default() -> $name {
                 $name(0)
@@ -120,10 +104,10 @@ macro_rules! vk_bitflags_wrapped {
 }
 #[macro_export]
 macro_rules! handle_nondispatchable {
-    ( $ name : ident , $ ty : ident ) => {
+    ($ name : ident , $ ty : ident) => {
         handle_nondispatchable!($name, $ty, doc = "");
     };
-    ( $ name : ident , $ ty : ident , $ doc_link : meta ) => {
+    ($ name : ident , $ ty : ident , $ doc_link : meta) => {
         #[repr(transparent)]
         #[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Hash, Default)]
         #[$doc_link]
@@ -156,10 +140,10 @@ macro_rules! handle_nondispatchable {
 }
 #[macro_export]
 macro_rules! define_handle {
-    ( $ name : ident , $ ty : ident ) => {
+    ($ name : ident , $ ty : ident) => {
         define_handle!($name, $ty, doc = "");
     };
-    ( $ name : ident , $ ty : ident , $ doc_link : meta ) => {
+    ($ name : ident , $ ty : ident , $ doc_link : meta) => {
         #[repr(transparent)]
         #[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Hash)]
         #[$doc_link]

@@ -1,6 +1,10 @@
 const { ContentTaskUtils } = ChromeUtils.import(
   "resource://testing-common/ContentTaskUtils.jsm"
 );
+
+const TEST_URL =
+  "https://example.com/browser/browser/base/content/test/fullscreen/open_and_focus_helper.html";
+
 function waitForFullScreenState(browser, state) {
   return new Promise(resolve => {
     let eventReceived = false;
@@ -38,7 +42,7 @@ async function changeFullscreen(browser, fullScreenState) {
   SpecialPowers.spawn(browser, [fullScreenState], async state => {
     // Wait for document focus before requesting full-screen
     await ContentTaskUtils.waitForCondition(
-      () => docShell.isActive && content.document.hasFocus(),
+      () => content.browsingContext.isActive && content.document.hasFocus(),
       "Waiting for document focus"
     );
     if (state) {
@@ -51,7 +55,7 @@ async function changeFullscreen(browser, fullScreenState) {
 }
 
 async function testExpectFullScreenExit(browser, leaveFS, action) {
-  let fsPromise = waitForFullScreenState(browser, !leaveFS);
+  let fsPromise = waitForFullScreenState(browser, false);
   if (leaveFS) {
     if (action) {
       await action();
@@ -88,9 +92,26 @@ function jsWindowFocus(browser, iframeId) {
   });
 }
 
-async function jsWindowOpen(browser, iframeId) {
-  let windowOpened = BrowserTestUtils.waitForNewWindow();
-  ContentTask.spawn(browser, { iframeId }, async args => {
+function jsElementFocus(browser, iframeId) {
+  return ContentTask.spawn(browser, { iframeId }, async args => {
+    let destWin = content;
+    if (args.iframeId) {
+      let iframe = content.document.getElementById(args.iframeId);
+      if (!iframe) {
+        throw new Error("iframe not set");
+      }
+      destWin = iframe.contentWindow;
+    }
+    await content.wrappedJSObject.sendMessage(destWin, "elementfocus");
+  });
+}
+
+async function jsWindowOpen(browser, isPopup, iframeId) {
+  //let windowOpened = BrowserTestUtils.waitForNewWindow();
+  let windowOpened = isPopup
+    ? BrowserTestUtils.waitForNewWindow({ url: TEST_URL })
+    : BrowserTestUtils.waitForNewTab(gBrowser, TEST_URL, true);
+  ContentTask.spawn(browser, { isPopup, iframeId }, async args => {
     let destWin = content;
     if (args.iframeId) {
       // Create a cross origin iframe
@@ -99,7 +120,10 @@ async function jsWindowOpen(browser, iframeId) {
       ).contentWindow;
     }
     // Send message to either the iframe or the current page to open a popup
-    await content.wrappedJSObject.sendMessage(destWin, "open");
+    await content.wrappedJSObject.sendMessage(
+      destWin,
+      args.isPopup ? "openpopup" : "open"
+    );
   });
   return windowOpened;
 }

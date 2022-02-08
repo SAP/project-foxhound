@@ -31,7 +31,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/SandboxReporter.h"
 #include "mozilla/SandboxSettings.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/Unused.h"
@@ -47,6 +47,7 @@
 #  ifndef MOZ_WIDGET_GTK
 #    error "Unknown toolkit"
 #  endif
+#  include "mozilla/WidgetUtilsGtk.h"
 #  include <gdk/gdk.h>
 #  include <gdk/gdkx.h>
 #  include "X11UndefineNone.h"
@@ -63,20 +64,27 @@ namespace mozilla {
 //
 // (Longer-term we intend to either proxy or remove X11 access from
 // content processes, at which point this will stop being an issue.)
-static bool IsDisplayLocal() {
+static bool IsGraphicsOkWithoutNetwork() {
   // For X11, check whether the parent's connection is a Unix-domain
   // socket.  This is done instead of trying to parse the display name
   // because an empty hostname (e.g., ":0") will fall back to TCP in
   // case of failure to connect using Unix-domain sockets.
 #ifdef MOZ_X11
   // First, ensure that the parent process's graphics are initialized.
-  Unused << gfxPlatform::GetPlatform();
+  DebugOnly<gfxPlatform*> gfxPlatform = gfxPlatform::GetPlatform();
 
   const auto display = gdk_display_get_default();
-  if (NS_WARN_IF(display == nullptr)) {
-    return false;
+  if (!display) {
+    // In this case, the browser is headless, but WebGL could still
+    // try to use X11.  However, WebGL isn't supported with remote
+    // X11, and in any case these connections are made after sandbox
+    // startup (lazily when WebGL is used), so they aren't being done
+    // directly by the process anyway.  (For local X11, they're
+    // brokered.)
+    MOZ_ASSERT(gfxPlatform->IsHeadless());
+    return true;
   }
-  if (GDK_IS_X11_DISPLAY(display)) {
+  if (mozilla::widget::GdkIsX11Display(display)) {
     const int xSocketFd = ConnectionNumber(GDK_DISPLAY_XDISPLAY(display));
     if (NS_WARN_IF(xSocketFd < 0)) {
       return false;
@@ -137,7 +145,7 @@ static bool IsDisplayLocal() {
 }
 
 bool HasAtiDrivers() {
-  nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
   nsAutoString vendorID;
   static const Array<nsresult (nsIGfxInfo::*)(nsAString&), 2> kMethods = {
       &nsIGfxInfo::GetAdapterVendorID,
@@ -318,7 +326,8 @@ void SandboxLaunchPrepare(GeckoProcessType aType,
     case GeckoProcessType_RDD:
       if (level >= 1) {
         canChroot = true;
-        flags |= CLONE_NEWNET | CLONE_NEWIPC;
+        // Can't use CLONE_NEWIPC because of intel-media-driver.
+        flags |= CLONE_NEWNET;
       }
       break;
     case GeckoProcessType_Content:
@@ -330,7 +339,8 @@ void SandboxLaunchPrepare(GeckoProcessType aType,
         // local-ness is cached because it won't change.)
         static const bool canCloneNet =
             StaticPrefs::security_sandbox_content_headless_AtStartup() ||
-            (IsDisplayLocal() && !PR_GetEnv("RENDERDOC_CAPTUREOPTS"));
+            (IsGraphicsOkWithoutNetwork() &&
+             !PR_GetEnv("RENDERDOC_CAPTUREOPTS"));
 
         if (canCloneNet) {
           flags |= CLONE_NEWNET;
@@ -499,7 +509,8 @@ static int CloneCallee(void* aPtr) {
 // we don't currently support sandboxing under valgrind.
 MOZ_NEVER_INLINE MOZ_ASAN_BLACKLIST static pid_t DoClone(int aFlags,
                                                          jmp_buf* aCtx) {
-  uint8_t miniStack[PTHREAD_STACK_MIN];
+  static constexpr size_t kStackAlignment = 16;
+  uint8_t miniStack[4096] __attribute__((aligned(kStackAlignment)));
 #ifdef __hppa__
   void* stackPtr = miniStack;
 #else
@@ -520,13 +531,19 @@ static pid_t ForkWithFlags(int aFlags) {
                                CLONE_CHILD_CLEARTID;
   MOZ_RELEASE_ASSERT((aFlags & kBadFlags) == 0);
 
+  // Block signals due to small stack in DoClone.
+  sigset_t oldSigs;
+  BlockAllSignals(&oldSigs);
+
+  int ret = 0;
   jmp_buf ctx;
   if (setjmp(ctx) == 0) {
     // In the parent and just called setjmp:
-    return DoClone(aFlags | SIGCHLD, &ctx);
+    ret = DoClone(aFlags | SIGCHLD, &ctx);
   }
+  RestoreSignals(&oldSigs);
   // In the child and have longjmp'ed:
-  return 0;
+  return ret;
 }
 
 static bool WriteStringToFile(const char* aPath, const char* aStr,

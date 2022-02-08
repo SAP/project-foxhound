@@ -6,7 +6,7 @@
 
 // Definitions needed to run eslint on this file.
 /* global AppConstants, DATA_URI_SPEC, LOG_FUNCTION */
-/* global Services, URL_HOST */
+/* global Services, URL_HOST, TestUtils */
 
 const { FileUtils } = ChromeUtils.import(
   "resource://gre/modules/FileUtils.jsm"
@@ -49,6 +49,7 @@ const PREF_APP_UPDATE_STAGING_ENABLED = "app.update.staging.enabled";
 const PREF_APP_UPDATE_UNSUPPORTED_URL = "app.update.unsupported.url";
 const PREF_APP_UPDATE_URL_DETAILS = "app.update.url.details";
 const PREF_APP_UPDATE_URL_MANUAL = "app.update.url.manual";
+const PREF_APP_UPDATE_LANGPACK_ENABLED = "app.update.langpack.enabled";
 
 const PREFBRANCH_APP_PARTNER = "app.partner.";
 const PREF_DISTRIBUTION_ID = "distribution.id";
@@ -74,6 +75,7 @@ const DIR_UPDATED =
 const FILE_ACTIVE_UPDATE_XML = "active-update.xml";
 const FILE_ACTIVE_UPDATE_XML_TMP = "active-update.xml.tmp";
 const FILE_APPLICATION_INI = "application.ini";
+const FILE_BACKUP_UPDATE_CONFIG_JSON = "backup-update-config.json";
 const FILE_BACKUP_UPDATE_LOG = "backup-update.log";
 const FILE_BT_RESULT = "bt.result";
 const FILE_LAST_UPDATE_LOG = "last-update.log";
@@ -261,49 +263,16 @@ function setUpdateURL(aURL) {
     Services.appinfo = origAppInfo;
   });
 
-  let mockAppInfo = {
-    // nsIXULAppInfo
-    vendor: origAppInfo.vendor,
-    name: origAppInfo.name,
-    ID: origAppInfo.ID,
-    version: origAppInfo.version,
-    appBuildID: origAppInfo.appBuildID,
-    updateURL: url,
-
-    // nsIPlatformInfo
-    platformVersion: origAppInfo.platformVersion,
-    platformBuildID: origAppInfo.platformBuildID,
-
-    // nsIXULRuntime
-    inSafeMode: origAppInfo.inSafeMode,
-    logConsoleErrors: origAppInfo.logConsoleErrors,
-    OS: origAppInfo.OS,
-    XPCOMABI: origAppInfo.XPCOMABI,
-    invalidateCachesOnRestart() {},
-    shouldBlockIncompatJaws: origAppInfo.shouldBlockIncompatJaws,
-    processType: origAppInfo.processType,
-    processID: origAppInfo.processID,
-    uniqueProcessID: origAppInfo.uniqueProcessID,
-
-    // nsIWinAppHelper
-    get userCanElevate() {
-      return origAppInfo.userCanElevate;
+  // Override the appinfo object with an object that exposes all of the same
+  // properties overriding just the updateURL.
+  let mockAppInfo = Object.create(origAppInfo, {
+    updateURL: {
+      configurable: true,
+      enumerable: true,
+      writable: false,
+      value: url,
     },
-  };
-  let interfaces = [Ci.nsIXULAppInfo, Ci.nsIPlatformInfo, Ci.nsIXULRuntime];
-  if ("nsIWinAppHelper" in Ci) {
-    interfaces.push(Ci.nsIWinAppHelper);
-  }
-  if ("crashReporter" in origAppInfo && origAppInfo.crashReporter) {
-    // nsICrashReporter
-    mockAppInfo.crashReporter = {};
-    mockAppInfo.annotations = {};
-    mockAppInfo.annotateCrashReport = function(key, data) {
-      this.annotations[key] = data;
-    };
-    interfaces.push(Ci.nsICrashReporter);
-  }
-  mockAppInfo.QueryInterface = ChromeUtils.generateQI(interfaces);
+  });
 
   Services.appinfo = mockAppInfo;
 }
@@ -484,6 +453,7 @@ function getUpdateDirFile(aLeafName) {
     case FILE_ACTIVE_UPDATE_XML:
     case FILE_ACTIVE_UPDATE_XML_TMP:
     case FILE_UPDATE_CONFIG_JSON:
+    case FILE_BACKUP_UPDATE_CONFIG_JSON:
     case FILE_UPDATE_TEST:
     case FILE_UPDATES_XML:
     case FILE_UPDATES_XML_TMP:
@@ -875,4 +845,88 @@ function debugDump(aText, aCaller) {
     let caller = aCaller ? aCaller : Components.stack.caller;
     logTestInfo(aText, caller);
   }
+}
+
+/**
+ * Creates the continue file used to signal that update staging or the mock http
+ * server should continue. The delay this creates allows the tests to verify the
+ * user interfaces before they auto advance to other phases of an update. The
+ * continue file for staging will be deleted by the test updater and the
+ * continue file for the update check and update download requests will be
+ * deleted by the test http server handler implemented in app_update.sjs. The
+ * test returns a promise so the test can wait on the deletion of the continue
+ * file when necessary. If the continue file still exists at the end of a test
+ * it will be removed to prevent it from affecting tests that run after the test
+ * that created it.
+ *
+ * @param  leafName
+ *         The leafName of the file to create. This should be one of the
+ *         folowing constants that are defined in testConstants.js:
+ *         CONTINUE_CHECK
+ *         CONTINUE_DOWNLOAD
+ *         CONTINUE_STAGING
+ * @return Promise
+ *         Resolves when the file is deleted or if the file is not deleted when
+ *         the check for the file's existence times out. If the file isn't
+ *         deleted before the check for the file's existence times out it will
+ *         be deleted when the test ends so it doesn't affect tests that run
+ *         after the test that created the continue file.
+ * @throws If the file already exists.
+ */
+async function continueFileHandler(leafName) {
+  // The total time to wait with 300 retries and the default interval of 100 is
+  // approximately 30 seconds.
+  let interval = 100;
+  let retries = 300;
+  let continueFile;
+  if (leafName == CONTINUE_STAGING) {
+    // The total time to wait with 600 retries and an interval of 200 is
+    // approximately 120 seconds.
+    interval = 200;
+    retries = 600;
+    continueFile = getGREBinDir();
+    if (AppConstants.platform == "macosx") {
+      continueFile = continueFile.parent.parent;
+    }
+    continueFile.append(leafName);
+  } else {
+    continueFile = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
+    let continuePath = REL_PATH_DATA + leafName;
+    let continuePathParts = continuePath.split("/");
+    for (let i = 0; i < continuePathParts.length; ++i) {
+      continueFile.append(continuePathParts[i]);
+    }
+  }
+  if (continueFile.exists()) {
+    logTestInfo(
+      "The continue file should not exist, path: " + continueFile.path
+    );
+    continueFile.remove(false);
+  }
+  debugDump("Creating continue file, path: " + continueFile.path);
+  continueFile.create(Ci.nsIFile.NORMAL_FILE_TYPE, PERMS_FILE);
+  // If for whatever reason the continue file hasn't been removed when a test
+  // has finished remove it during cleanup so it doesn't affect tests that run
+  // after the test that created it.
+  registerCleanupFunction(() => {
+    if (continueFile.exists()) {
+      logTestInfo(
+        "Removing continue file during test cleanup, path: " + continueFile.path
+      );
+      continueFile.remove(false);
+    }
+  });
+  return TestUtils.waitForCondition(
+    () => !continueFile.exists(),
+    "Waiting for file to be deleted, path: " + continueFile.path,
+    interval,
+    retries
+  ).catch(e => {
+    logTestInfo(
+      "Continue file was not removed after checking " +
+        retries +
+        " times, path: " +
+        continueFile.path
+    );
+  });
 }

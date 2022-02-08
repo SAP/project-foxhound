@@ -70,8 +70,7 @@ static bool IsPreviousSibling(nsINode* aSubject, nsINode* aNode) {
 }
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // Calls LoadSelectedImage on host element unless it has been superseded or
 // canceled -- this is the synchronous section of "update the image data".
@@ -92,15 +91,7 @@ class ImageLoadTask final : public MicroTaskRunnable {
     if (mElement->mPendingImageLoadTask == this) {
       mElement->mPendingImageLoadTask = nullptr;
       mElement->mUseUrgentStartForChannel = mUseUrgentStartForChannel;
-      // Defer loading this image if loading="lazy" was set after this microtask
-      // was queued.
-      // NOTE: Using ShouldLoadImage() will violate the HTML standard spec
-      // because ShouldLoadImage() checks the document active state which should
-      // have done just once before this queue is created as per the spec, so
-      // we just check the lazy loading state here.
-      if (!mElement->IsLazyLoading()) {
-        mElement->LoadSelectedImage(true, true, mAlwaysLoad);
-      }
+      mElement->LoadSelectedImage(true, true, mAlwaysLoad);
     }
     mDocument->UnblockOnload(false);
   }
@@ -360,17 +351,13 @@ nsresult HTMLImageElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
 
   bool forceReload = false;
 
-  if (aName == nsGkAtoms::loading) {
-    if (aValue &&
-        static_cast<HTMLImageElement::Loading>(aValue->GetEnumValue()) ==
-            Loading::Lazy &&
-        !ImageState().HasState(NS_EVENT_STATE_LOADING)) {
+  if (aName == nsGkAtoms::loading &&
+      !ImageState().HasState(NS_EVENT_STATE_LOADING)) {
+    if (aValue && Loading(aValue->GetEnumValue()) == Loading::Lazy) {
       SetLazyLoading();
     } else if (aOldValue &&
-               static_cast<HTMLImageElement::Loading>(
-                   aOldValue->GetEnumValue()) == Loading::Lazy &&
-               !ImageState().HasState(NS_EVENT_STATE_LOADING)) {
-      StopLazyLoadingAndStartLoadIfNeeded();
+               Loading(aOldValue->GetEnumValue()) == Loading::Lazy) {
+      StopLazyLoading(FromIntersectionObserver::No, StartLoading::Yes);
     }
   } else if (aName == nsGkAtoms::src && !aValue) {
     // NOTE: regular src value changes are handled in AfterMaybeChangeAttr, so
@@ -507,8 +494,8 @@ void HTMLImageElement::AfterMaybeChangeAttr(
     // when aNotify is true, and 2) When this function is called by
     // OnAttrSetButNotChanged, SetAttrAndNotify will not subsequently call
     // UpdateState.
-    LoadImage(aValue.String(), true, aNotify, eImageLoadType_Normal,
-              mSrcTriggeringPrincipal);
+    LoadSelectedImage(/* aForce = */ true, aNotify,
+                      /* aAlwaysLoad = */ true);
 
     mNewRequestsWillNeedAnimationReset = false;
   }
@@ -546,11 +533,8 @@ bool HTMLImageElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
     *aTabIndex = (sTabFocusModel & eTabFocus_formElementsMask) ? tabIndex : -1;
   }
 
-  *aIsFocusable =
-#ifdef XP_MACOSX
-      (!aWithMouse || nsFocusManager::sMouseFocusesFormControl) &&
-#endif
-      (tabIndex >= 0 || GetTabIndexAttrValue().isSome());
+  *aIsFocusable = IsFormControlDefaultFocusable(aWithMouse) &&
+                  (tabIndex >= 0 || GetTabIndexAttrValue().isSome());
 
   return false;
 }
@@ -577,8 +561,7 @@ nsresult HTMLImageElement::BindToTree(BindContext& aContext, nsINode& aParent) {
     // in order to react to changes in the environment. See note of
     // https://html.spec.whatwg.org/multipage/embedded-content.html#img-environment-changes
     QueueImageLoadTask(false);
-  } else if (!InResponsiveMode() &&
-             HasAttr(kNameSpaceID_None, nsGkAtoms::src)) {
+  } else if (!InResponsiveMode() && HasAttr(nsGkAtoms::src)) {
     // We skip loading when our attributes were set from parser land,
     // so trigger a aForce=false load now to check if things changed.
     // This isn't necessary for responsive mode, since creating the
@@ -671,8 +654,18 @@ EventStates HTMLImageElement::IntrinsicState() const {
 void HTMLImageElement::NodeInfoChanged(Document* aOldDoc) {
   nsGenericHTMLElement::NodeInfoChanged(aOldDoc);
 
+  // Unlike the LazyLoadImageObserver, the intersection observer
+  // for the viewport could contain the element even if
+  // it's not lazy-loading. For instance, the element has
+  // started to load, but haven't reached to the viewport.
+  // So here we always try to unobserve it.
+  if (auto* observer = aOldDoc->GetLazyLoadImageObserverViewport()) {
+    observer->Unobserve(*this);
+  }
+
   if (mLazyLoading) {
     aOldDoc->GetLazyLoadImageObserver()->Unobserve(*this);
+    aOldDoc->DecLazyLoadImageCount();
     mLazyLoading = false;
     SetLazyLoading();
   }
@@ -717,38 +710,37 @@ already_AddRefed<HTMLImageElement> HTMLImageElement::Image(
   return img.forget();
 }
 
-uint32_t HTMLImageElement::Height() {
-  RefPtr<imgRequestProxy> currentRequest(mCurrentRequest);
-  return GetWidthHeightForImage(currentRequest).height;
-}
+uint32_t HTMLImageElement::Height() { return GetWidthHeightForImage().height; }
 
-uint32_t HTMLImageElement::Width() {
-  RefPtr<imgRequestProxy> currentRequest(mCurrentRequest);
-  return GetWidthHeightForImage(currentRequest).width;
-}
+uint32_t HTMLImageElement::Width() { return GetWidthHeightForImage().width; }
 
-uint32_t HTMLImageElement::NaturalHeight() {
-  uint32_t height = nsImageLoadingContent::NaturalHeight();
-
-  if (mResponsiveSelector) {
-    double density = mResponsiveSelector->GetSelectedImageDensity();
-    MOZ_ASSERT(density >= 0.0);
-    height = NSToIntRound(double(height) / density);
+nsIntSize HTMLImageElement::NaturalSize() {
+  if (!mCurrentRequest) {
+    return {};
   }
 
-  return height;
-}
-
-uint32_t HTMLImageElement::NaturalWidth() {
-  uint32_t width = nsImageLoadingContent::NaturalWidth();
-
-  if (mResponsiveSelector) {
-    double density = mResponsiveSelector->GetSelectedImageDensity();
-    MOZ_ASSERT(density >= 0.0);
-    width = NSToIntRound(double(width) / density);
+  nsCOMPtr<imgIContainer> image;
+  mCurrentRequest->GetImage(getter_AddRefs(image));
+  if (!image) {
+    return {};
   }
 
-  return width;
+  nsIntSize size;
+  Unused << image->GetHeight(&size.height);
+  Unused << image->GetWidth(&size.width);
+
+  ImageResolution resolution = image->GetResolution();
+  // NOTE(emilio): What we implement here matches the image-set() spec, but it's
+  // unclear whether this is the right thing to do, see
+  // https://github.com/whatwg/html/pull/5574#issuecomment-826335244.
+  if (mResponsiveSelector) {
+    float density = mResponsiveSelector->GetSelectedImageDensity();
+    MOZ_ASSERT(density >= 0.0);
+    resolution.ScaleBy(density);
+  }
+
+  resolution.ApplyTo(size.width, size.height);
+  return size;
 }
 
 nsresult HTMLImageElement::CopyInnerTo(HTMLImageElement* aDest) {
@@ -761,16 +753,15 @@ nsresult HTMLImageElement::CopyInnerTo(HTMLImageElement* aDest) {
   // doing the image load because we passed in false for aNotify.  But we
   // really do want it to do the load, so set it up to happen once the cloning
   // reaches a stable state.
-  if (!aDest->InResponsiveMode() &&
-      aDest->HasAttr(kNameSpaceID_None, nsGkAtoms::src) &&
+  if (!aDest->InResponsiveMode() && aDest->HasAttr(nsGkAtoms::src) &&
       aDest->ShouldLoadImage()) {
     // Mark channel as urgent-start before load image if the image load is
     // initaiated by a user interaction.
     mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
-    nsContentUtils::AddScriptRunner(NewRunnableMethod<bool>(
-        "dom::HTMLImageElement::MaybeLoadImage", aDest,
-        &HTMLImageElement::MaybeLoadImage, false));
+    nsContentUtils::AddScriptRunner(
+        NewRunnableMethod<bool>("dom::HTMLImageElement::MaybeLoadImage", aDest,
+                                &HTMLImageElement::MaybeLoadImage, false));
   }
 
   return NS_OK;
@@ -847,12 +838,12 @@ void HTMLImageElement::QueueImageLoadTask(bool aAlwaysLoad) {
 }
 
 bool HTMLImageElement::HaveSrcsetOrInPicture() {
-  if (HasAttr(kNameSpaceID_None, nsGkAtoms::srcset)) {
+  if (HasAttr(nsGkAtoms::srcset)) {
     return true;
   }
 
-  Element* parent = nsINode::GetParentElement();
-  return (parent && parent->IsHTMLElement(nsGkAtoms::picture));
+  Element* parent = GetParentElement();
+  return parent && parent->IsHTMLElement(nsGkAtoms::picture);
 }
 
 bool HTMLImageElement::InResponsiveMode() {
@@ -914,43 +905,53 @@ nsresult HTMLImageElement::LoadSelectedImage(bool aForce, bool aNotify,
     currentDensity = mResponsiveSelector->GetSelectedImageDensity();
   }
 
-  nsresult rv = NS_ERROR_FAILURE;
   nsCOMPtr<nsIURI> selectedSource;
+  nsCOMPtr<nsIPrincipal> triggeringPrincipal;
+  ImageLoadType type = eImageLoadType_Normal;
+  bool hasSrc = false;
   if (mResponsiveSelector) {
-    nsCOMPtr<nsIURI> url = mResponsiveSelector->GetSelectedImageURL();
-    nsCOMPtr<nsIPrincipal> triggeringPrincipal =
+    selectedSource = mResponsiveSelector->GetSelectedImageURL();
+    triggeringPrincipal =
         mResponsiveSelector->GetSelectedImageTriggeringPrincipal();
-    selectedSource = url;
-    if (!aAlwaysLoad && SelectedSourceMatchesLast(selectedSource)) {
-      UpdateDensityOnly();
-      return NS_OK;
-    }
-    if (url) {
-      rv = LoadImage(url, aForce, aNotify, eImageLoadType_Imageset,
-                     triggeringPrincipal);
-    }
+    type = eImageLoadType_Imageset;
   } else {
     nsAutoString src;
-    if (!GetAttr(kNameSpaceID_None, nsGkAtoms::src, src)) {
-      CancelImageRequests(aNotify);
-      rv = NS_OK;
-    } else {
+    hasSrc = GetAttr(nsGkAtoms::src, src);
+    if (hasSrc && !src.IsEmpty()) {
       Document* doc = OwnerDoc();
       StringToURI(src, doc, getter_AddRefs(selectedSource));
-      if (!aAlwaysLoad && SelectedSourceMatchesLast(selectedSource)) {
-        UpdateDensityOnly();
-        return NS_OK;
+      if (HaveSrcsetOrInPicture()) {
+        // If we have a srcset attribute or are in a <picture> element, we
+        // always use the Imageset load type, even if we parsed no valid
+        // responsive sources from either, per spec.
+        type = eImageLoadType_Imageset;
       }
-
-      // If we have a srcset attribute or are in a <picture> element,
-      // we always use the Imageset load type, even if we parsed no
-      // valid responsive sources from either, per spec.
-      rv = LoadImage(src, aForce, aNotify,
-                     HaveSrcsetOrInPicture() ? eImageLoadType_Imageset
-                                             : eImageLoadType_Normal,
-                     mSrcTriggeringPrincipal);
+      triggeringPrincipal = mSrcTriggeringPrincipal;
     }
   }
+
+  if (!aAlwaysLoad && SelectedSourceMatchesLast(selectedSource)) {
+    UpdateDensityOnly();
+    return NS_OK;
+  }
+
+  // Before we actually defer the lazy-loading
+  if (mLazyLoading) {
+    if (!selectedSource ||
+        !nsContentUtils::IsImageAvailable(this, selectedSource,
+                                          triggeringPrincipal, GetCORSMode())) {
+      return NS_OK;
+    }
+    StopLazyLoading(FromIntersectionObserver::No, StartLoading::No);
+  }
+
+  nsresult rv = NS_ERROR_FAILURE;
+
+  // src triggers an error event on invalid URI, unlike other loads.
+  if (selectedSource || hasSrc) {
+    rv = LoadImage(selectedSource, aForce, aNotify, type, triggeringPrincipal);
+  }
+
   mLastSelectedSource = selectedSource;
   mCurrentDensity = currentDensity;
 
@@ -1115,8 +1116,7 @@ bool HTMLImageElement::SupportedPictureSourceType(const nsAString& aType) {
   }
 
   return imgLoader::SupportImageWithMimeType(
-      NS_ConvertUTF16toUTF8(type).get(),
-      AcceptedMimeTypes::IMAGES_AND_DOCUMENTS);
+      NS_ConvertUTF16toUTF8(type), AcceptedMimeTypes::IMAGES_AND_DOCUMENTS);
 }
 
 bool HTMLImageElement::SourceElementMatches(Element* aSourceElement) {
@@ -1160,7 +1160,7 @@ bool HTMLImageElement::TryCreateResponsiveSelector(Element* aSourceElement) {
 
   // Skip if has no srcset or an empty srcset
   nsString srcset;
-  if (!aSourceElement->GetAttr(kNameSpaceID_None, nsGkAtoms::srcset, srcset)) {
+  if (!aSourceElement->GetAttr(nsGkAtoms::srcset, srcset)) {
     return false;
   }
 
@@ -1177,14 +1177,14 @@ bool HTMLImageElement::TryCreateResponsiveSelector(Element* aSourceElement) {
   }
 
   nsAutoString sizes;
-  aSourceElement->GetAttr(kNameSpaceID_None, nsGkAtoms::sizes, sizes);
+  aSourceElement->GetAttr(nsGkAtoms::sizes, sizes);
   sel->SetSizesFromDescriptor(sizes);
 
   // If this is the <img> tag, also pull in src as the default source
   if (!isSourceTag) {
     MOZ_ASSERT(aSourceElement == this);
     nsAutoString src;
-    if (GetAttr(kNameSpaceID_None, nsGkAtoms::src, src) && !src.IsEmpty()) {
+    if (GetAttr(nsGkAtoms::src, src) && !src.IsEmpty()) {
       sel->SetDefaultSource(src, mSrcTriggeringPrincipal);
     }
   }
@@ -1259,7 +1259,7 @@ void HTMLImageElement::MediaFeatureValuesChanged() {
 }
 
 bool HTMLImageElement::ShouldLoadImage() const {
-  return OwnerDoc()->ShouldLoadImages() && !mLazyLoading;
+  return OwnerDoc()->ShouldLoadImages();
 }
 
 void HTMLImageElement::SetLazyLoading() {
@@ -1280,10 +1280,9 @@ void HTMLImageElement::SetLazyLoading() {
     return;
   }
 
-  // There (maybe) is a race condition that we have no LazyLoadImageObserver
-  // when the root document has been removed from the docshell.
-  // In the case we don't need to worry about lazy-loading.
-  OwnerDoc()->EnsureLazyLoadImageObserver().Observe(*this);
+  doc->EnsureLazyLoadImageObserver().Observe(*this);
+  doc->EnsureLazyLoadImageObserverViewport().Observe(*this);
+  doc->IncLazyLoadImageCount();
   mLazyLoading = true;
   UpdateImageState(true);
 }
@@ -1293,7 +1292,7 @@ void HTMLImageElement::StartLoadingIfNeeded() {
     // Use script runner for the case the adopt is from appendChild.
     // Bug 1076583 - We still behave synchronously in the non-responsive case
     nsContentUtils::AddScriptRunner(
-        (InResponsiveMode())
+        InResponsiveMode()
             ? NewRunnableMethod<bool>(
                   "dom::HTMLImageElement::QueueImageLoadTask", this,
                   &HTMLImageElement::QueueImageLoadTask, true)
@@ -1303,14 +1302,38 @@ void HTMLImageElement::StartLoadingIfNeeded() {
   }
 }
 
-void HTMLImageElement::StopLazyLoadingAndStartLoadIfNeeded() {
+void HTMLImageElement::StopLazyLoading(
+    FromIntersectionObserver aFromIntersectionObserver,
+    StartLoading aStartLoading) {
   if (!mLazyLoading) {
     return;
   }
   mLazyLoading = false;
-  OwnerDoc()->GetLazyLoadImageObserver()->Unobserve(*this);
-  StartLoadingIfNeeded();
+  Document* doc = OwnerDoc();
+  if (auto* obs = doc->GetLazyLoadImageObserver()) {
+    obs->Unobserve(*this);
+  }
+
+  if (bool(aFromIntersectionObserver)) {
+    doc->IncLazyLoadImageStarted();
+  } else {
+    doc->DecLazyLoadImageCount();
+    if (auto* obs = doc->GetLazyLoadImageObserverViewport()) {
+      obs->Unobserve(*this);
+    }
+  }
+
+  if (bool(aStartLoading)) {
+    StartLoadingIfNeeded();
+  }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+void HTMLImageElement::LazyLoadImageReachedViewport() {
+  Document* doc = OwnerDoc();
+  if (auto* obs = doc->GetLazyLoadImageObserverViewport()) {
+    obs->Unobserve(*this);
+  }
+  doc->IncLazyLoadImageReachViewport(!Complete());
+}
+
+}  // namespace mozilla::dom

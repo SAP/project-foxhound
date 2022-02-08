@@ -6,9 +6,7 @@
 
 #include "mozilla/dom/cache/StreamControl.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 void StreamControl::AddReadStream(
     SafeRefPtr<ReadStream::Controllable> aReadStream) {
@@ -34,24 +32,6 @@ void StreamControl::NoteClosed(SafeRefPtr<ReadStream::Controllable> aReadStream,
 StreamControl::~StreamControl() {
   // owning thread only, but can't call virtual AssertOwningThread in destructor
   MOZ_DIAGNOSTIC_ASSERT(mReadStreamList.IsEmpty());
-}
-
-void StreamControl::CloseReadStreams(const nsID& aId) {
-  AssertOwningThread();
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
-  uint32_t closedCount = 0;
-#endif
-
-  for (const auto& stream : mReadStreamList.ForwardRange()) {
-    if (stream->MatchId(aId)) {
-      stream->CloseStream();
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
-      closedCount += 1;
-#endif
-    }
-  }
-
-  MOZ_DIAGNOSTIC_ASSERT(closedCount > 0);
 }
 
 void StreamControl::CloseAllReadStreams() {
@@ -85,6 +65,4 @@ bool StreamControl::HasEverBeenRead() const {
   });
 }
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache

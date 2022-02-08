@@ -36,7 +36,12 @@ add_task(async function setup() {
   info("Setting the prefs.");
 
   await SpecialPowers.pushPrefEnv({
-    set: [["privacy.firstparty.isolate", true]],
+    set: [
+      ["privacy.firstparty.isolate", true],
+      ["dom.security.https_first", false],
+      // Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
+      ["network.cookie.sameSite.laxByDefault", false],
+    ],
   });
 
   info("Setting MockFilePicker.");
@@ -109,18 +114,19 @@ function createPromiseForTransferComplete() {
 async function doCommandForFrameType() {
   info("Opening the frame sub-menu under the context menu.");
   let contextMenu = document.getElementById("contentAreaContextMenu");
-  let frameMenuPopup = contextMenu.querySelector("#frame").menupopup;
+  let frameMenu = contextMenu.querySelector("#frame");
+  let frameMenuPopup = frameMenu.menupopup;
   let frameMenuPopupPromise = BrowserTestUtils.waitForEvent(
     frameMenuPopup,
     "popupshown"
   );
 
-  frameMenuPopup.openPopup();
+  frameMenu.openMenu(true);
   await frameMenuPopupPromise;
 
   info("Triggering the save process.");
   let saveFrameCommand = contextMenu.querySelector("#context-saveframe");
-  saveFrameCommand.doCommand();
+  frameMenuPopup.activateItem(saveFrameCommand);
 }
 
 add_task(async function test_setup() {
@@ -182,11 +188,17 @@ add_task(async function testContextMenuSaveAs() {
       TEST_FIRST_PARTY
     );
 
+    let contextMenu = document.getElementById("contentAreaContextMenu");
+    let popupHiddenPromise = BrowserTestUtils.waitForEvent(
+      contextMenu,
+      "popuphidden"
+    );
+
     // Select "Save As" option from context menu.
     if (!data.doCommandFunc) {
       let saveElement = document.getElementById(`context-save${data.type}`);
       info("Triggering the save process.");
-      saveElement.doCommand();
+      contextMenu.activateItem(saveElement);
     } else {
       await data.doCommandFunc();
     }
@@ -197,13 +209,7 @@ add_task(async function testContextMenuSaveAs() {
     info("Wait until the save is finished.");
     await transferCompletePromise;
 
-    info("Close the context menu.");
-    let contextMenu = document.getElementById("contentAreaContextMenu");
-    let popupHiddenPromise = BrowserTestUtils.waitForEvent(
-      contextMenu,
-      "popuphidden"
-    );
-    contextMenu.hidePopup();
+    info("Wait until the menu is closed.");
     await popupHiddenPromise;
 
     BrowserTestUtils.removeTab(tab);

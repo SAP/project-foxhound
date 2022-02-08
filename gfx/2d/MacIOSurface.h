@@ -48,26 +48,32 @@ class MacIOSurface final
   typedef mozilla::gfx::SourceSurface SourceSurface;
   typedef mozilla::gfx::DrawTarget DrawTarget;
   typedef mozilla::gfx::BackendType BackendType;
+  typedef mozilla::gfx::IntSize IntSize;
+  typedef mozilla::gfx::YUVColorSpace YUVColorSpace;
+  typedef mozilla::gfx::ColorRange ColorRange;
 
   // The usage count of the IOSurface is increased by 1 during the lifetime
   // of the MacIOSurface instance.
   // MacIOSurface holds a reference to the corresponding IOSurface.
 
-  static already_AddRefed<MacIOSurface> CreateIOSurface(
-      int aWidth, int aHeight, double aContentsScaleFactor = 1.0,
-      bool aHasAlpha = true);
+  static already_AddRefed<MacIOSurface> CreateIOSurface(int aWidth, int aHeight,
+                                                        bool aHasAlpha = true);
+  static already_AddRefed<MacIOSurface> CreateNV12Surface(
+      const IntSize& aYSize, const IntSize& aCbCrSize,
+      YUVColorSpace aColorSpace, ColorRange aColorRange);
+  static already_AddRefed<MacIOSurface> CreateYUV422Surface(
+      const IntSize& aSize, YUVColorSpace aColorSpace, ColorRange aColorRange);
   static void ReleaseIOSurface(MacIOSurface* aIOSurface);
   static already_AddRefed<MacIOSurface> LookupSurface(
-      IOSurfaceID aSurfaceID, double aContentsScaleFactor = 1.0,
-      bool aHasAlpha = true,
+      IOSurfaceID aSurfaceID, bool aHasAlpha = true,
       mozilla::gfx::YUVColorSpace aColorSpace =
-          mozilla::gfx::YUVColorSpace::UNKNOWN);
+          mozilla::gfx::YUVColorSpace::Identity);
 
   explicit MacIOSurface(CFTypeRefPtr<IOSurfaceRef> aIOSurfaceRef,
-                        double aContentsScaleFactor = 1.0,
                         bool aHasAlpha = true,
                         mozilla::gfx::YUVColorSpace aColorSpace =
-                            mozilla::gfx::YUVColorSpace::UNKNOWN);
+                            mozilla::gfx::YUVColorSpace::Identity);
+
   ~MacIOSurface();
   IOSurfaceID GetIOSurfaceID() const;
   void* GetBaseAddress() const;
@@ -80,10 +86,13 @@ class MacIOSurface final
   // device pixel.  Use GetDevicePixel**() to get device pixels.
   size_t GetWidth(size_t plane = 0) const;
   size_t GetHeight(size_t plane = 0) const;
-  double GetContentsScaleFactor() const { return mContentsScaleFactor; }
+  IntSize GetSize(size_t plane = 0) const {
+    return IntSize(GetWidth(plane), GetHeight(plane));
+  }
   size_t GetDevicePixelWidth(size_t plane = 0) const;
   size_t GetDevicePixelHeight(size_t plane = 0) const;
   size_t GetBytesPerRow(size_t plane = 0) const;
+  size_t GetAllocSize() const;
   void Lock(bool aReadOnly = true);
   void Unlock(bool aReadOnly = true);
   bool IsLocked() const { return mIsLocked; }
@@ -95,12 +104,16 @@ class MacIOSurface final
   // This would be better suited on MacIOSurfaceImage type, however due to the
   // current data structure, this is not possible as only the IOSurfaceRef is
   // being used across.
-  void SetYUVColorSpace(mozilla::gfx::YUVColorSpace aColorSpace) {
+  void SetYUVColorSpace(YUVColorSpace aColorSpace) {
     mColorSpace = aColorSpace;
   }
-  mozilla::gfx::YUVColorSpace GetYUVColorSpace() const { return mColorSpace; }
+  YUVColorSpace GetYUVColorSpace() const { return mColorSpace; }
   bool IsFullRange() const {
     return GetPixelFormat() == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
+  }
+  mozilla::gfx::ColorRange GetColorRange() const {
+    if (IsFullRange()) return mozilla::gfx::ColorRange::FULL;
+    return mozilla::gfx::ColorRange::LIMITED;
   }
 
   // We would like to forward declare NSOpenGLContext, but it is an @interface
@@ -129,11 +142,9 @@ class MacIOSurface final
 
  private:
   CFTypeRefPtr<IOSurfaceRef> mIOSurfaceRef;
-  double mContentsScaleFactor;
-  bool mHasAlpha;
+  const bool mHasAlpha;
+  YUVColorSpace mColorSpace = YUVColorSpace::Identity;
   bool mIsLocked = false;
-  mozilla::gfx::YUVColorSpace mColorSpace =
-      mozilla::gfx::YUVColorSpace::UNKNOWN;
 };
 
 #endif

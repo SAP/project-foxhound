@@ -25,8 +25,8 @@ namespace image {
  *
  * SUCCESS_NOT_COMPLETE: The image was drawn successfully and completely, but
  * it hasn't notified about the sync-decode yet. This can only happen when
- * layout pokes at the internal image state beforehand via
- * StyleImage::StartDecoding. This should probably go away eventually, somehow,
+ * layout pokes at the internal image state beforehand via the result of
+ * StartDecodingWithResult. This should probably go away eventually, somehow,
  * see bug 1471583.
  *
  * INCOMPLETE: We successfully drew a frame that was partially decoded. (Note
@@ -55,17 +55,10 @@ namespace image {
  * NOT_SUPPORTED: The requested operation is not supported, but the image is
  *                otherwise valid.
  */
-enum class MOZ_MUST_USE_TYPE ImgDrawResult : uint8_t {
-  SUCCESS,
-  SUCCESS_NOT_COMPLETE,
-  INCOMPLETE,
-  WRONG_SIZE,
-  NOT_READY,
-  TEMPORARY_ERROR,
-  BAD_IMAGE,
-  BAD_ARGS,
-  NOT_SUPPORTED
-};
+enum class [[nodiscard]] ImgDrawResult : uint8_t{
+    SUCCESS,      SUCCESS_NOT_COMPLETE, INCOMPLETE, WRONG_SIZE,
+    NOT_READY,    TEMPORARY_ERROR,      BAD_IMAGE,  BAD_ARGS,
+    NOT_SUPPORTED};
 
 /**
  * You can combine ImgDrawResults with &. By analogy to bitwise-&, the result is

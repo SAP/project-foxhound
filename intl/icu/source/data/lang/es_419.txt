@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 es_419{
     Keys{
         colNormalization{"orden normalizado"}
@@ -31,7 +32,9 @@ es_419{
         ht{"haitiano"}
         kbd{"cabardiano"}
         krc{"karachái-bálkaro"}
+        ks{"cachemiro"}
         lo{"laosiano"}
+        ml{"malabar"}
         nl_BE{"flamenco"}
         nr{"ndebele del sur"}
         nso{"sesotho del norte"}
@@ -65,11 +68,11 @@ es_419{
         ug{"uighur"}
     }
     Scripts{
-        Hanb{"han con bopomofo"}
+        Gujr{"gujarati"}
         Hrkt{"katakana o hiragana"}
         Laoo{"lao"}
         Latn{"latín"}
-        Mlym{"malayalam"}
+        Mlym{"malabar"}
         Olck{"ol chiki"}
     }
     Types{
@@ -105,7 +108,6 @@ es_419{
             wara{"dígitos en Warang Citi"}
         }
     }
-    Version{"37"}
     characterLabelPattern{
         enclosed{"{0} — Adjunto"}
         extended{"{0} — Extendido"}

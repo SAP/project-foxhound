@@ -168,10 +168,11 @@ printSecurityInfo(PRFileDesc *fd)
                                         &suite, sizeof suite);
         if (result == SECSuccess) {
             FPRINTF(stderr,
-                    "tstclnt: SSL version %d.%d using %d-bit %s with %d-bit %s MAC\n",
+                    "tstclnt: SSL version %d.%d using %d-bit %s with %d-bit %s MAC%s\n",
                     channel.protocolVersion >> 8, channel.protocolVersion & 0xff,
                     suite.effectiveKeyBits, suite.symCipherName,
-                    suite.macBits, suite.macAlgorithmName);
+                    suite.macBits, suite.macAlgorithmName,
+                    channel.isFIPS ? " FIPS" : "");
             FPRINTF(stderr,
                     "tstclnt: Server Auth: %d-bit %s, Key Exchange: %d-bit %s\n"
                     "         Compression: %s, Extended Master Secret: %s\n"
@@ -231,7 +232,7 @@ PrintUsageHeader()
             "  [-r N] [-w passwd] [-W pwfile] [-q [-t seconds]]\n"
             "  [-I groups] [-J signatureschemes]\n"
             "  [-A requestfile] [-L totalconnections] [-P {client,server}]\n"
-            "  [-N encryptedSniKeys] [-Q] [-z externalPsk]\n"
+            "  [-N echConfigs] [-Q] [-z externalPsk]\n"
             "\n",
             progName);
 }
@@ -313,10 +314,9 @@ PrintParameterUsage()
                     "%-20s rsa_pss_pss_sha256, rsa_pss_pss_sha384, rsa_pss_pss_sha512,\n"
                     "%-20s dsa_sha1, dsa_sha256, dsa_sha384, dsa_sha512\n",
             "-J", "", "", "", "", "", "", "");
-    fprintf(stderr, "%-20s Enable alternative TLS 1.3 handshake\n", "-X alt-server-hello");
     fprintf(stderr, "%-20s Use DTLS\n", "-P {client, server}");
     fprintf(stderr, "%-20s Exit after handshake\n", "-Q");
-    fprintf(stderr, "%-20s Encrypted SNI Keys\n", "-N");
+    fprintf(stderr, "%-20s Use Encrypted Client Hello with the given Base64-encoded ECHConfigs\n", "-N");
     fprintf(stderr, "%-20s Enable post-handshake authentication\n"
                     "%-20s for TLS 1.3; need to specify -n\n",
             "-E", "");
@@ -333,6 +333,7 @@ PrintParameterUsage()
             "%-20s 0xAAAABBBBCCCCDDDD:mylabel. Otherwise, the default label of\n"
             "%-20s 'Client_identity' will be used.\n",
             "-z externalPsk", "", "", "");
+    fprintf(stderr, "%-20s Enable middlebox compatibility mode (TLS 1.3 only)\n", "-e");
 }
 
 static void
@@ -987,6 +988,7 @@ int enableSignedCertTimestamps = 0;
 int forceFallbackSCSV = 0;
 int enableExtendedMasterSecret = 0;
 PRBool requireDHNamedGroups = 0;
+PRBool middleboxCompatMode = 0;
 PRSocketOptionData opt;
 PRNetAddr addr;
 PRBool allowIPv4 = PR_TRUE;
@@ -1010,7 +1012,7 @@ PRBool stopAfterHandshake = PR_FALSE;
 PRBool requestToExit = PR_FALSE;
 char *versionString = NULL;
 PRBool handshakeComplete = PR_FALSE;
-char *encryptedSNIKeys = NULL;
+char *echConfigs = NULL;
 PRBool enablePostHandshakeAuth = PR_FALSE;
 PRBool enableDelegatedCredentials = PR_FALSE;
 const secuExporter *enabledExporters = NULL;
@@ -1263,6 +1265,35 @@ importPsk(PRFileDesc *s)
     return rv;
 }
 
+static SECStatus
+printEchRetryConfigs(PRFileDesc *s)
+{
+    if (PORT_GetError() == SSL_ERROR_ECH_RETRY_WITH_ECH) {
+        SECItem retries = { siBuffer, NULL, 0 };
+        SECStatus rv = SSL_GetEchRetryConfigs(s, &retries);
+        if (rv != SECSuccess) {
+            SECU_PrintError(progName, "SSL_GetEchRetryConfigs failed");
+            return SECFailure;
+        }
+        char *retriesBase64 = NSSBase64_EncodeItem(NULL, NULL, 0, &retries);
+        if (!retriesBase64) {
+            SECU_PrintError(progName, "NSSBase64_EncodeItem on retry_configs failed");
+            SECITEM_FreeItem(&retries, PR_FALSE);
+            return SECFailure;
+        }
+
+        // Remove the newline characters that NSSBase64_EncodeItem unhelpfully inserts.
+        char *newline = strstr(retriesBase64, "\r\n");
+        if (newline) {
+            memmove(newline, newline + 2, strlen(newline + 2) + 1);
+        }
+        fprintf(stderr, "Received ECH retry_configs: \n%s\n", retriesBase64);
+        PORT_Free(retriesBase64);
+        SECITEM_FreeItem(&retries, PR_FALSE);
+    }
+    return SECSuccess;
+}
+
 static int
 run()
 {
@@ -1465,6 +1496,16 @@ run()
         }
     }
 
+    /* Middlebox compatibility mode (TLS 1.3 only) */
+    if (middleboxCompatMode) {
+        rv = SSL_OptionSet(s, SSL_ENABLE_TLS13_COMPAT_MODE, PR_TRUE);
+        if (rv != SECSuccess) {
+            SECU_PrintError(progName, "error enabling middlebox compatibility mode");
+            error = 1;
+            goto done;
+        }
+    }
+
     /* require the use of fixed finite-field DH groups */
     if (requireDHNamedGroups) {
         rv = SSL_OptionSet(s, SSL_REQUIRE_DH_NAMED_GROUPS, PR_TRUE);
@@ -1511,21 +1552,20 @@ run()
         }
     }
 
-    if (encryptedSNIKeys) {
-        SECItem esniKeysBin = { siBuffer, NULL, 0 };
+    if (echConfigs) {
+        SECItem echConfigsBin = { siBuffer, NULL, 0 };
 
-        if (!NSSBase64_DecodeBuffer(NULL, &esniKeysBin, encryptedSNIKeys,
-                                    strlen(encryptedSNIKeys))) {
-            SECU_PrintError(progName, "ESNIKeys record is invalid base64");
+        if (!NSSBase64_DecodeBuffer(NULL, &echConfigsBin, echConfigs,
+                                    strlen(echConfigs))) {
+            SECU_PrintError(progName, "ECHConfigs record is invalid base64");
             error = 1;
             goto done;
         }
 
-        rv = SSL_EnableESNI(s, esniKeysBin.data, esniKeysBin.len,
-                            "dummy.invalid");
-        SECITEM_FreeItem(&esniKeysBin, PR_FALSE);
+        rv = SSL_SetClientEchConfigs(s, echConfigsBin.data, echConfigsBin.len);
+        SECITEM_FreeItem(&echConfigsBin, PR_FALSE);
         if (rv < 0) {
-            SECU_PrintError(progName, "SSL_EnableESNI failed");
+            SECU_PrintError(progName, "SSL_SetClientEchConfigs failed");
             error = 1;
             goto done;
         }
@@ -1702,6 +1742,9 @@ run()
             } else {
                 error = writeBytesToServer(s, buf, nb);
                 if (error) {
+                    if (echConfigs) {
+                        (void)printEchRetryConfigs(s);
+                    }
                     goto done;
                 }
                 pollset[SSOCK_FD].in_flags = PR_POLL_READ;
@@ -1795,7 +1838,7 @@ main(int argc, char **argv)
     }
 
     optstate = PL_CreateOptState(argc, argv,
-                                 "46A:BCDEFGHI:J:KL:M:N:OP:QR:STUV:W:X:YZa:bc:d:fgh:m:n:op:qr:st:uvw:x:z:");
+                                 "46A:BCDEFGHI:J:KL:M:N:OP:QR:STUV:W:X:YZa:bc:d:efgh:m:n:op:qr:st:uvw:x:z:");
     while ((optstatus = PL_GetNextOpt(optstate)) == PL_OPT_OK) {
         switch (optstate->option) {
             case '?':
@@ -1881,7 +1924,7 @@ main(int argc, char **argv)
                 break;
 
             case 'N':
-                encryptedSNIKeys = PORT_Strdup(optstate->value);
+                echConfigs = PORT_Strdup(optstate->value);
                 break;
 
             case 'P':
@@ -1964,6 +2007,10 @@ main(int argc, char **argv)
 
             case 'd':
                 certDir = PORT_Strdup(optstate->value);
+                break;
+
+            case 'e':
+                middleboxCompatMode = PR_TRUE;
                 break;
 
             case 'f':
@@ -2257,7 +2304,7 @@ done:
     PORT_Free(pwdata.data);
     PORT_Free(host);
     PORT_Free(zeroRttData);
-    PORT_Free(encryptedSNIKeys);
+    PORT_Free(echConfigs);
     SECITEM_ZfreeItem(&psk, PR_FALSE);
     SECITEM_ZfreeItem(&pskLabel, PR_FALSE);
 

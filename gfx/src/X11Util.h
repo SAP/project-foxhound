@@ -12,6 +12,7 @@
 #if defined(MOZ_WIDGET_GTK)
 #  include <gdk/gdk.h>
 #  include <gdk/gdkx.h>
+#  include "mozilla/WidgetUtilsGtk.h"
 #  include "X11UndefineNone.h"
 #else
 #  error Unknown toolkit
@@ -27,8 +28,12 @@ namespace mozilla {
  */
 inline Display* DefaultXDisplay() {
 #if defined(MOZ_WIDGET_GTK)
-  return GDK_DISPLAY_XDISPLAY(gdk_display_get_default());
+  GdkDisplay* gdkDisplay = gdk_display_get_default();
+  if (mozilla::widget::GdkIsX11Display(gdkDisplay)) {
+    return GDK_DISPLAY_XDISPLAY(gdkDisplay);
+  }
 #endif
+  return nullptr;
 }
 
 /**

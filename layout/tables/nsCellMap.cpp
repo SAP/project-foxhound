@@ -6,7 +6,7 @@
 #include "nsCellMap.h"
 
 #include "mozilla/PresShell.h"
-
+#include "mozilla/StaticPtr.h"
 #include "nsTArray.h"
 #include "nsTableFrame.h"
 #include "nsTableCellFrame.h"
@@ -30,7 +30,7 @@ static void SetDamageArea(int32_t aStartCol, int32_t aStartRow,
 }
 
 // Empty static array used for SafeElementAt() calls on mRows.
-static nsCellMap::CellDataArray* sEmptyRow;
+static StaticAutoPtr<nsCellMap::CellDataArray> sEmptyRow;
 
 // CellData
 
@@ -1058,10 +1058,7 @@ void nsCellMap::Init() {
 }
 
 /* static */
-void nsCellMap::Shutdown() {
-  delete sEmptyRow;
-  sEmptyRow = nullptr;
-}
+void nsCellMap::Shutdown() { sEmptyRow = nullptr; }
 
 nsTableCellFrame* nsCellMap::GetCellFrame(int32_t aRowIndexIn,
                                           int32_t aColIndexIn, CellData& aData,
@@ -1953,8 +1950,7 @@ void nsCellMap::RebuildConsideringRows(
   NS_ASSERTION(!!aMap.mBCInfo == mIsBC, "BC state mismatch");
   // copy the old cell map into a new array
   uint32_t numOrigRows = mRows.Length();
-  nsTArray<CellDataArray> origRows;
-  mRows.SwapElements(origRows);
+  nsTArray<CellDataArray> origRows = std::move(mRows);
 
   int32_t rowNumberChange;
   if (aRowsToInsert) {
@@ -2053,8 +2049,7 @@ void nsCellMap::RebuildConsideringCells(
   NS_ASSERTION(!!aMap.mBCInfo == mIsBC, "BC state mismatch");
   // copy the old cell map into a new array
   int32_t numOrigRows = mRows.Length();
-  nsTArray<CellDataArray> origRows;
-  mRows.SwapElements(origRows);
+  nsTArray<CellDataArray> origRows = std::move(mRows);
 
   int32_t numNewCells = (aCellFrames) ? aCellFrames->Length() : 0;
 

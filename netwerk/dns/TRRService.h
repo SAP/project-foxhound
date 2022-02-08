@@ -9,8 +9,13 @@
 #include "mozilla/DataMutex.h"
 #include "nsHostResolver.h"
 #include "nsIObserver.h"
+#include "nsITimer.h"
 #include "nsWeakReference.h"
+#include "ODoHService.h"
 #include "TRRServiceBase.h"
+#include "nsICaptivePortalService.h"
+#include "nsTHashSet.h"
+#include "TRR.h"
 
 class nsDNSService;
 class nsIPrefBranch;
@@ -25,37 +30,32 @@ class TRRServiceParent;
 
 class TRRService : public TRRServiceBase,
                    public nsIObserver,
-                   public nsITimerCallback,
                    public nsSupportsWeakReference,
                    public AHostResolver {
  public:
-  NS_DECL_THREADSAFE_ISUPPORTS
+  NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIOBSERVER
-  NS_DECL_NSITIMERCALLBACK
+  NS_DECL_NSIPROXYCONFIGCHANGEDCALLBACK
 
   TRRService();
+  static TRRService* Get();
+
   nsresult Init();
   nsresult Start();
-  bool Enabled(nsIRequest::TRRMode aMode = nsIRequest::TRR_FIRST_MODE);
-  bool IsConfirmed() { return mConfirmationState == CONFIRM_OK; }
+  bool Enabled(nsIRequest::TRRMode aRequestMode = nsIRequest::TRR_DEFAULT_MODE);
+  bool IsConfirmed() { return mConfirmation.State() == CONFIRM_OK; }
+  uint32_t ConfirmationState() { return mConfirmation.State(); }
 
-  bool AllowRFC1918() { return mRfc1918; }
-  bool UseGET() { return mUseGET; }
-  bool EarlyAAAA() { return mEarlyAAAA; }
-  bool CheckIPv6Connectivity() { return mCheckIPv6Connectivity; }
-  bool WaitForAllResponses() { return mWaitForAllResponses; }
   bool DisableIPv6() { return mDisableIPv6; }
-  bool DisableECS() { return mDisableECS; }
-  bool SkipTRRWhenParentalControlEnabled() {
-    return mSkipTRRWhenParentalControlEnabled;
-  }
-  nsresult GetURI(nsACString& result);
+  void GetURI(nsACString& result) override;
   nsresult GetCredentials(nsCString& result);
   uint32_t GetRequestTimeout();
+  void StrictModeConfirm();
 
   LookupStatus CompleteLookup(nsHostRecord*, nsresult, mozilla::net::AddrInfo*,
                               bool pb, const nsACString& aOriginSuffix,
-                              nsHostRecord::TRRSkippedReason aReason) override;
+                              TRRSkippedReason aReason,
+                              TRR* aTrrRequest) override;
   LookupStatus CompleteLookupByType(nsHostRecord*, nsresult,
                                     mozilla::net::TypeRecordResultType&,
                                     uint32_t, bool pb) override;
@@ -67,8 +67,7 @@ class TRRService : public TRRServiceBase,
   bool IsExcludedFromTRR(const nsACString& aHost);
 
   bool MaybeBootstrap(const nsACString& possible, nsACString& result);
-  enum TrrOkay { OKAY_NORMAL = 0, OKAY_TIMEOUT = 1, OKAY_BAD = 2 };
-  void TRRIsOkay(enum TrrOkay aReason);
+  void RecordTRRStatus(nsresult aChannelStatus);
   bool ParentalControlEnabled() const { return mParentalControlEnabled; }
 
   nsresult DispatchTRRRequest(TRR* aTrrRequest);
@@ -76,13 +75,19 @@ class TRRService : public TRRServiceBase,
   bool IsOnTRRThread();
 
   bool IsUsingAutoDetectedURL() { return mURISetByDetection; }
-  static const nsCString& AutoDetectedKey();
+
+  // Returns a reference to a static string identifying the current DoH server
+  // If the DoH server is not one of the built-in ones it will return "(other)"
+  static const nsCString& ProviderKey();
+
+  void InitTRRConnectionInfo() override;
 
  private:
   virtual ~TRRService();
 
   friend class TRRServiceChild;
   friend class TRRServiceParent;
+  friend class ODoHService;
   static void AddObserver(nsIObserver* aObserver,
                           nsIObserverService* aObserverService = nullptr);
   static bool CheckCaptivePortalIsPassed();
@@ -91,8 +96,6 @@ class TRRService : public TRRServiceBase,
 
   nsresult ReadPrefs(const char* name);
   void GetPrefBranch(nsIPrefBranch** result);
-  void MaybeConfirm();
-  void MaybeConfirm_locked();
   friend class ::nsDNSService;
   void SetDetectedTrrURI(const nsACString& aURI);
 
@@ -104,6 +107,7 @@ class TRRService : public TRRServiceBase,
 
   nsresult DispatchTRRRequestInternal(TRR* aTrrRequest, bool aWithLock);
   already_AddRefed<nsIThread> TRRThread_locked();
+  already_AddRefed<nsIThread> MainThreadOrTRRThread(bool aWithLock = true);
 
   // This method will process the URI and try to set mPrivateURI to that value.
   // Will return true if performed the change (if the value was different)
@@ -111,57 +115,225 @@ class TRRService : public TRRServiceBase,
   bool MaybeSetPrivateURI(const nsACString& aURI) override;
   void ClearEntireCache();
 
-  bool mInitialized;
-  Atomic<uint32_t, Relaxed> mBlocklistDurationSeconds;
+  virtual void ReadEtcHostsFile() override;
+  void AddEtcHosts(const nsTArray<nsCString>&);
 
-  Mutex mLock;
+  bool mInitialized{false};
+  Atomic<uint32_t, Relaxed> mBlocklistDurationSeconds{60};
+
+  Mutex mLock{"TRRService"};
 
   nsCString mPrivateCred;  // main thread only
-  nsCString mConfirmationNS;
+  nsCString mConfirmationNS{"example.com"_ns};
   nsCString mBootstrapAddr;
 
-  Atomic<bool, Relaxed> mWaitForCaptive;  // wait for the captive portal to say
-                                          // OK before using TRR
-  Atomic<bool, Relaxed>
-      mRfc1918;  // okay with local IP addresses in DOH responses?
-  Atomic<bool, Relaxed>
-      mCaptiveIsPassed;           // set when captive portal check is passed
-  Atomic<bool, Relaxed> mUseGET;  // do DOH using GET requests (instead of POST)
-  Atomic<bool, Relaxed> mEarlyAAAA;  // allow use of AAAA results before A is in
-  Atomic<bool, Relaxed> mCheckIPv6Connectivity;  // check IPv6 connectivity
-  Atomic<bool, Relaxed> mWaitForAllResponses;  // Don't notify until all are in
-  Atomic<bool, Relaxed> mDisableIPv6;          // don't even try
-  Atomic<bool, Relaxed> mDisableECS;  // disable EDNS Client Subnet in requests
-  Atomic<bool, Relaxed> mSkipTRRWhenParentalControlEnabled;
-  Atomic<uint32_t, Relaxed>
-      mDisableAfterFails;  // this many fails in a row means failed TRR service
-  Atomic<bool, Relaxed> mPlatformDisabledTRR;
+  Atomic<bool, Relaxed> mCaptiveIsPassed{
+      false};  // set when captive portal check is passed
+  Atomic<bool, Relaxed> mDisableIPv6;  // don't even try
 
   // TRR Blocklist storage
   // mTRRBLStorage is only modified on the main thread, but we query whether it
   // is initialized or not off the main thread as well. Therefore we need to
   // lock while creating it and while accessing it off the main thread.
-  DataMutex<nsDataHashtable<nsCStringHashKey, int32_t>> mTRRBLStorage;
+  DataMutex<nsTHashMap<nsCStringHashKey, int32_t>> mTRRBLStorage{
+      "DataMutex::TRRBlocklist"};
 
   // A set of domains that we should not use TRR for.
-  nsTHashtable<nsCStringHashKey> mExcludedDomains;
-  nsTHashtable<nsCStringHashKey> mDNSSuffixDomains;
+  nsTHashSet<nsCString> mExcludedDomains;
+  nsTHashSet<nsCString> mDNSSuffixDomains;
+  nsTHashSet<nsCString> mEtcHostsDomains;
 
-  enum ConfirmationState {
-    CONFIRM_INIT = 0,
-    CONFIRM_TRYING = 1,
-    CONFIRM_OK = 2,
-    CONFIRM_FAILED = 3
+  enum class ConfirmationEvent {
+    Init,
+    PrefChange,
+    Retry,
+    FailedLookups,
+    StrictMode,
+    URIChange,
+    CaptivePortalConnectivity,
+    NetworkUp,
+    ConfirmOK,
+    ConfirmFail,
   };
-  Atomic<ConfirmationState, Relaxed> mConfirmationState;
-  RefPtr<TRR> mConfirmer;
-  nsCOMPtr<nsITimer> mRetryConfirmTimer;
-  uint32_t mRetryConfirmInterval;  // milliseconds until retry
-  Atomic<uint32_t, Relaxed> mTRRFailures;
-  bool mParentalControlEnabled;
-};
 
-extern TRRService* gTRRService;
+  //                            (FailedLookups/StrictMode/URIChange/NetworkUp)
+  //                                    +-------------------------+
+  // +-----------+                      |                         |
+  // |   (Init)  |               +------v---------+             +-+--+
+  // |           | TRR turned on |                | (ConfirmOK) |    |
+  // |    OFF    +--------------->     TRY-OK     +-------------> OK |
+  // |           |  (PrefChange) |                |             |    |
+  // +-----^-----+               +^-^----+--------+             +-^--+
+  //       |    (PrefChange/CP)   | |    |                        |
+  //   TRR +   +------------------+ |    |                        |
+  //   off |   |               +----+    |(ConfirmFail)           |(ConfirmOK)
+  // (Pref)|   |               |         |                        |
+  // +---------+-+             |         |                        |
+  // |           |    (CPConn) | +-------v--------+         +-----+-----+
+  // | ANY-STATE |  (NetworkUp)| |                |  timer  |           |
+  // |           |  (URIChange)+-+      FAIL      +--------->  TRY-FAIL |
+  // +-----+-----+               |                | (Retry) |           |
+  //       |                     +------^---------+         +------+----+
+  //       | (PrefChange)               |                         |
+  //       | TRR_ONLY mode or           +-------------------------+
+  //       | confirmationNS = skip                (ConfirmFail)
+  // +-----v-----+
+  // |           |
+  // |  DISABLED |
+  // |           |
+  // +-----------+
+  //
+  enum ConfirmationState {
+    CONFIRM_OFF = 0,
+    CONFIRM_TRYING_OK = 1,
+    CONFIRM_OK = 2,
+    CONFIRM_FAILED = 3,
+    CONFIRM_TRYING_FAILED = 4,
+    CONFIRM_DISABLED = 5,
+  };
+
+  class ConfirmationContext final : public nsITimerCallback, public nsINamed {
+    NS_DECL_ISUPPORTS_INHERITED
+    NS_DECL_NSITIMERCALLBACK
+    NS_DECL_NSINAMED
+
+   private:
+    static const size_t RESULTS_SIZE = 32;
+
+    RefPtr<TRR> mTask;
+    nsCOMPtr<nsITimer> mTimer;
+    uint32_t mRetryInterval = 125;  // milliseconds until retry
+    // The number of TRR requests that failed in a row.
+    Atomic<uint32_t, Relaxed> mTRRFailures{0};
+
+    // This buffer holds consecutive TRR failures reported by calling
+    // RecordTRRStatus(). It is only meant for reporting event telemetry.
+    char mFailureReasons[RESULTS_SIZE] = {0};
+
+    // The number of confirmation retries.
+    uint32_t mAttemptCount = 0;
+
+    // The results of past confirmation attempts.
+    // This is circular buffer ending at mAttemptCount.
+    char mResults[RESULTS_SIZE] = {0};
+
+    // Time when first confirmation started. Needed so we can
+    // record the time from start to confirmed.
+    TimeStamp mFirstRequestTime;
+    // The network ID at the start of the last confirmation attempt
+    nsCString mNetworkId;
+    // Captive portal status at the time of recording.
+    int32_t mCaptivePortalStatus = nsICaptivePortalService::UNKNOWN;
+
+    // The reason the confirmation context changed.
+    nsCString mContextChangeReason;
+
+    // What triggered the confirmation
+    nsCString mTrigger;
+
+    // String representation of consecutive failed lookups that triggered
+    // confirmation.
+    nsCString mFailedLookups;
+
+    void SetState(enum ConfirmationState aNewState);
+
+   public:
+    // Called when a confirmation completes successfully or when the
+    // confirmation context changes.
+    void RecordEvent(const char* aReason);
+
+    // Called when a confirmation request is completed. The status is recorded
+    // in the results.
+    void RequestCompleted(nsresult aLookupStatus, nsresult aChannelStatus);
+
+    enum ConfirmationState State() { return mState; }
+
+    void CompleteConfirmation(nsresult aStatus, TRR* aTrrRequest);
+
+    void RecordTRRStatus(nsresult aChannelStatus);
+
+    void HandleEvent(ConfirmationEvent aEvent);
+    void HandleEvent(ConfirmationEvent aEvent, const MutexAutoLock&);
+
+    void SetCaptivePortalStatus(int32_t aStatus) {
+      mCaptivePortalStatus = aStatus;
+    }
+
+    uintptr_t TaskAddr() { return uintptr_t(mTask.get()); }
+
+   private:
+    // Since the ConfirmationContext is embedded in the TRRService object
+    // we can easily get a pointer to the TRRService. ConfirmationContext
+    // delegates AddRef/Release calls to the owning object since they are
+    // guaranteed to have the same lifetime.
+    TRRService* OwningObject() {
+      return reinterpret_cast<TRRService*>(
+          reinterpret_cast<uint8_t*>(this) -
+          offsetof(TRRService, mConfirmation) -
+          offsetof(ConfirmationWrapper, mConfirmation));
+    }
+
+    Atomic<enum ConfirmationState, Relaxed> mState{CONFIRM_OFF};
+
+    // TRRService needs to be a friend class because it needs to access the
+    // destructor.
+    friend class TRRService;
+    ~ConfirmationContext() = default;
+  };
+
+  // Because TRRService needs to be a friend class to ConfirmationContext that
+  // means it can access member variables. In order to properly separate logic
+  // and prevent direct access to its member variables we embed it in a wrapper
+  // class.
+  class ConfirmationWrapper {
+   public:
+    // Called when a confirmation completes successfully or when the
+    // confirmation context changes.
+    void RecordEvent(const char* aReason) {
+      mConfirmation.RecordEvent(aReason);
+    }
+
+    // Called when a confirmation request is completed. The status is recorded
+    // in the results.
+    void RequestCompleted(nsresult aLookupStatus, nsresult aChannelStatus) {
+      mConfirmation.RequestCompleted(aLookupStatus, aChannelStatus);
+    }
+
+    enum ConfirmationState State() { return mConfirmation.State(); }
+
+    void CompleteConfirmation(nsresult aStatus, TRR* aTrrRequest) {
+      mConfirmation.CompleteConfirmation(aStatus, aTrrRequest);
+    }
+
+    void RecordTRRStatus(nsresult aChannelStatus) {
+      mConfirmation.RecordTRRStatus(aChannelStatus);
+    }
+
+    void HandleEvent(ConfirmationEvent aEvent) {
+      mConfirmation.HandleEvent(aEvent);
+    }
+
+    void HandleEvent(ConfirmationEvent aEvent, const MutexAutoLock& lock) {
+      mConfirmation.HandleEvent(aEvent, lock);
+    }
+
+    void SetCaptivePortalStatus(int32_t aStatus) {
+      mConfirmation.SetCaptivePortalStatus(aStatus);
+    }
+
+    uintptr_t TaskAddr() { return mConfirmation.TaskAddr(); }
+
+   private:
+    friend TRRService* ConfirmationContext::OwningObject();
+    ConfirmationContext mConfirmation;
+  };
+
+  ConfirmationWrapper mConfirmation;
+
+  bool mParentalControlEnabled{false};
+  RefPtr<ODoHService> mODoHService;
+  nsCOMPtr<nsINetworkLinkService> mLinkService;
+};
 
 }  // namespace net
 }  // namespace mozilla

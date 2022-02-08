@@ -33,9 +33,7 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
 
  public:
   explicit ContentCompositorBridgeParent(CompositorManagerParent* aManager)
-      : CompositorBridgeParentBase(aManager),
-        mNotifyAfterRemotePaint(false),
-        mDestroyCalled(false) {}
+      : CompositorBridgeParentBase(aManager), mDestroyCalled(false) {}
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
@@ -63,20 +61,18 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
   mozilla::ipc::IPCResult RecvAdoptChild(const LayersId& child) override {
     return IPC_FAIL_NO_REASON(this);
   }
-  mozilla::ipc::IPCResult RecvMakeSnapshot(const SurfaceDescriptor& aInSnapshot,
-                                           const gfx::IntRect& aRect) override {
+  mozilla::ipc::IPCResult RecvFlushRendering(
+      const wr::RenderReasons&) override {
     return IPC_OK();
   }
-  mozilla::ipc::IPCResult RecvFlushRendering() override { return IPC_OK(); }
-  mozilla::ipc::IPCResult RecvFlushRenderingAsync() override {
+  mozilla::ipc::IPCResult RecvFlushRenderingAsync(
+      const wr::RenderReasons&) override {
     return IPC_OK();
   }
-  mozilla::ipc::IPCResult RecvForcePresent() override { return IPC_OK(); }
+  mozilla::ipc::IPCResult RecvForcePresent(const wr::RenderReasons&) override {
+    return IPC_OK();
+  }
   mozilla::ipc::IPCResult RecvWaitOnTransactionProcessed() override {
-    return IPC_OK();
-  }
-  mozilla::ipc::IPCResult RecvNotifyRegionInvalidated(
-      const nsIntRegion& aRegion) override {
     return IPC_OK();
   }
   mozilla::ipc::IPCResult RecvStartFrameTimeRecording(
@@ -90,8 +86,6 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
 
   mozilla::ipc::IPCResult RecvCheckContentOnlyTDR(
       const uint32_t& sequenceNum, bool* isContentOnlyTDR) override;
-
-  mozilla::ipc::IPCResult RecvAllPluginsCaptured() override { return IPC_OK(); }
 
   mozilla::ipc::IPCResult RecvBeginRecording(
       const TimeStamp& aRecordingStart,
@@ -112,36 +106,8 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
     return IPC_OK();
   }
 
-  mozilla::ipc::IPCResult RecvGetFrameUniformity(
-      FrameUniformityData* aOutData) override {
-    // Don't support calculating frame uniformity on the child process and
-    // this is just a stub for now.
-    MOZ_ASSERT(false);
-    return IPC_OK();
-  }
-
-  /**
-   * Tells this CompositorBridgeParent to send a message when the compositor has
-   * received the transaction.
-   */
-  mozilla::ipc::IPCResult RecvRequestNotifyAfterRemotePaint() override;
-
-  PLayerTransactionParent* AllocPLayerTransactionParent(
-      const nsTArray<LayersBackend>& aBackendHints,
-      const LayersId& aId) override;
-
-  bool DeallocPLayerTransactionParent(
-      PLayerTransactionParent* aLayers) override;
-
-  void ShadowLayersUpdated(LayerTransactionParent* aLayerTree,
-                           const TransactionInfo& aInfo,
-                           bool aHitTestUpdate) override;
-  void ScheduleComposite(LayerTransactionParent* aLayerTree) override;
-  void NotifyClearCachedResources(LayerTransactionParent* aLayerTree) override;
   bool SetTestSampleTime(const LayersId& aId, const TimeStamp& aTime) override;
   void LeaveTestMode(const LayersId& aId) override;
-  void ApplyAsyncProperties(LayerTransactionParent* aLayerTree,
-                            TransformsToSkip aSkip) override;
   void SetTestAsyncScrollOffset(const LayersId& aLayersId,
                                 const ScrollableLayerGuid::ViewID& aScrollId,
                                 const CSSPoint& aPoint) override;
@@ -151,17 +117,11 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
   void FlushApzRepaints(const LayersId& aLayersId) override;
   void GetAPZTestData(const LayersId& aLayersId,
                       APZTestData* aOutData) override;
+  void GetFrameUniformity(const LayersId& aLayersId,
+                          FrameUniformityData* aOutData) override;
   void SetConfirmedTargetAPZC(
       const LayersId& aLayersId, const uint64_t& aInputBlockId,
-      const nsTArray<ScrollableLayerGuid>& aTargets) override;
-
-  AsyncCompositionManager* GetCompositionManager(
-      LayerTransactionParent* aParent) override;
-  mozilla::ipc::IPCResult RecvRemotePluginsReady() override {
-    return IPC_FAIL_NO_REASON(this);
-  }
-
-  already_AddRefed<dom::PWebGLParent> AllocPWebGLParent() override;
+      nsTArray<ScrollableLayerGuid>&& aTargets) override;
 
   // Use DidCompositeLocked if you already hold a lock on
   // sIndirectLayerTreesLock; Otherwise use DidComposite, which would request
@@ -170,7 +130,7 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
                           TimeStamp& aCompositeStart, TimeStamp& aCompositeEnd);
 
   PTextureParent* AllocPTextureParent(
-      const SurfaceDescriptor& aSharedData, const ReadLockDescriptor& aReadLock,
+      const SurfaceDescriptor& aSharedData, ReadLockDescriptor& aReadLock,
       const LayersBackend& aLayersBackend, const TextureFlags& aFlags,
       const LayersId& aId, const uint64_t& aSerial,
       const wr::MaybeExternalImageId& aExternalImageId) override;
@@ -202,14 +162,9 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
   PAPZParent* AllocPAPZParent(const LayersId& aLayersId) override;
   bool DeallocPAPZParent(PAPZParent* aActor) override;
 
-  void UpdatePaintTime(LayerTransactionParent* aLayerTree,
-                       const TimeDuration& aPaintTime) override;
-  void RegisterPayloads(LayerTransactionParent* aLayerTree,
-                        const nsTArray<CompositionPayload>& aPayload) override;
-
   PWebRenderBridgeParent* AllocPWebRenderBridgeParent(
-      const wr::PipelineId& aPipelineId,
-      const LayoutDeviceIntSize& aSize) override;
+      const wr::PipelineId& aPipelineId, const LayoutDeviceIntSize& aSize,
+      const WindowKind& aWindowKind) override;
   bool DeallocPWebRenderBridgeParent(PWebRenderBridgeParent* aActor) override;
 
   webgpu::PWebGPUParent* AllocPWebGPUParent() override;
@@ -220,12 +175,8 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
 
   bool IsRemote() const override { return true; }
 
-  UniquePtr<SurfaceDescriptor> LookupSurfaceDescriptorForClientDrawTarget(
-      const uintptr_t aDrawTarget) final;
-
-  mozilla::ipc::IPCResult RecvSupportsAsyncDXGISurface(bool* value) override;
-  mozilla::ipc::IPCResult RecvPreferredDXGIAdapter(
-      DxgiAdapterDesc* desc) override;
+  UniquePtr<SurfaceDescriptor> LookupSurfaceDescriptorForClientTexture(
+      const int64_t aTextureId) final;
 
  private:
   // Private destructor, to discourage deletion outside of Release():
@@ -238,9 +189,6 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
   // ourself.  This is released (deferred) in ActorDestroy().
   RefPtr<ContentCompositorBridgeParent> mSelfRef;
 
-  // If true, we should send a RemotePaintIsReady message when the layer
-  // transaction is received
-  bool mNotifyAfterRemotePaint;
   bool mDestroyCalled;
 
   RefPtr<CanvasTranslator> mCanvasTranslator;

@@ -15,7 +15,6 @@
 #include "mozilla/TimeStamp.h"                 // for TimeStamp
 #include "mozilla/TimingParams.h"
 #include "mozilla/Types.h"  // for SideBits
-#include "mozilla/Variant.h"
 #include "X11UndefineNone.h"
 #include <unordered_map>
 
@@ -141,7 +140,7 @@ class AnimationHelper {
    * composited in |aClipRect| there appears area which wasn't pre-rendered
    * on the main-thread. I.e. checkerboarding.
    */
-  static bool ShouldBeJank(const LayoutDeviceIntRect& aPrerenderedRect,
+  static bool ShouldBeJank(const LayoutDeviceRect& aPrerenderedRect,
                            SideBits aOverflowedSides,
                            const gfx::Matrix4x4& aTransform,
                            const ParentLayerRect& aClipRect);

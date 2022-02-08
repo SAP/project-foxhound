@@ -107,32 +107,23 @@ var BookmarkPropertiesPanel = {
   _hiddenRows: [],
 
   /**
-   * This method returns the correct label for the dialog's "accept"
-   * button based on the variant of the dialog.
+   * @returns {string}
+   *   This method returns the correct label for the dialog's "accept"
+   *   button based on the variant of the dialog.
    */
   _getAcceptLabel: function BPP__getAcceptLabel() {
-    if (this._action == ACTION_ADD) {
-      if (this._URIs.length) {
-        return this._strings.getString("dialogAcceptLabelAddMulti");
-      }
-
-      if (this._dummyItem) {
-        return this._strings.getString("dialogAcceptLabelAddItem");
-      }
-
-      return this._strings.getString("dialogAcceptLabelSaveItem");
-    }
-    return this._strings.getString("dialogAcceptLabelEdit");
+    return this._strings.getString("dialogAcceptLabelSaveItem");
   },
 
   /**
-   * This method returns the correct title for the current variant
-   * of this dialog.
+   * @returns {string}
+   *   This method returns the correct title for the current variant
+   *   of this dialog.
    */
   _getDialogTitle: function BPP__getDialogTitle() {
     if (this._action == ACTION_ADD) {
       if (this._itemType == BOOKMARK_ITEM) {
-        return this._strings.getString("dialogTitleAddBookmark");
+        return this._strings.getString("dialogTitleAddNewBookmark2");
       }
 
       // add folder
@@ -143,10 +134,14 @@ var BookmarkPropertiesPanel = {
         return this._strings.getString("dialogTitleAddMulti");
       }
 
-      return this._strings.getString("dialogTitleAddFolder");
+      return this._strings.getString("dialogTitleAddBookmarkFolder");
     }
     if (this._action == ACTION_EDIT) {
-      return this._strings.getFormattedString("dialogTitleEdit", [this._title]);
+      if (this._itemType === BOOKMARK_ITEM) {
+        return this._strings.getString("dialogTitleEditBookmark2");
+      }
+
+      return this._strings.getString("dialogTitleEditBookmarkFolder");
     }
     return "";
   },
@@ -170,9 +165,10 @@ var BookmarkPropertiesPanel = {
       if ("defaultInsertionPoint" in dialogInfo) {
         this._defaultInsertionPoint = dialogInfo.defaultInsertionPoint;
       } else {
+        let guid = await PlacesUIUtils.defaultParentGuid;
         this._defaultInsertionPoint = new PlacesInsertionPoint({
-          parentId: PlacesUtils.bookmarksMenuFolderId,
-          parentGuid: PlacesUtils.bookmarks.menuGuid,
+          parentId: await PlacesUtils.promiseItemId(guid),
+          parentGuid: guid,
         });
       }
 
@@ -236,9 +232,6 @@ var BookmarkPropertiesPanel = {
    * dialog to initialize the state of the panel.
    */
   async onDialogLoad() {
-    await this._determineItemInfo();
-
-    document.title = this._getDialogTitle();
     document.addEventListener("dialogaccept", function() {
       BookmarkPropertiesPanel.onDialogAccept();
     });
@@ -251,12 +244,36 @@ var BookmarkPropertiesPanel = {
       .getElementById("bookmarkpropertiesdialog")
       .getButton("accept");
     acceptButton.disabled = true;
+    await this._determineItemInfo();
+    document.title = this._getDialogTitle();
+
+    // Set adjustable title
+    let title = { raw: document.title };
+    document.documentElement.setAttribute("headertitle", JSON.stringify(title));
+
+    let iconUrl = this._getIconUrl();
+    if (iconUrl) {
+      document.documentElement.style.setProperty(
+        "--icon-url",
+        `url(${iconUrl})`
+      );
+    }
 
     // Allow initialization to complete in a truely async manner so that we're
     // not blocking the main thread.
-    this._initDialog().catch(ex => {
+    document.mozSubdialogReady = this._initDialog().catch(ex => {
       Cu.reportError(`Failed to initialize dialog: ${ex}`);
     });
+  },
+
+  _getIconUrl() {
+    let url = "chrome://browser/skin/bookmark-hollow.svg";
+
+    if (this._action === ACTION_EDIT && this._itemType === BOOKMARK_ITEM) {
+      url = window.arguments[0]?.node?.icon;
+    }
+
+    return url;
   },
 
   /**
@@ -274,7 +291,6 @@ var BookmarkPropertiesPanel = {
     // grow at every opening.
     // Since elements can be uncollapsed asynchronously, we must observe their
     // mutations and resize the dialog using a cached element size.
-    this._height = window.outerHeight;
     this._mutationObserver = new MutationObserver(mutations => {
       for (let mutation of mutations) {
         let target = mutation.target;
@@ -289,14 +305,15 @@ var BookmarkPropertiesPanel = {
           continue;
         }
 
+        let heightDiff;
         if (collapsed) {
-          this._height -= elementsHeight.get(id);
+          heightDiff = -elementsHeight.get(id);
           elementsHeight.delete(id);
         } else {
-          elementsHeight.set(id, target.getBoundingClientRect().height);
-          this._height += elementsHeight.get(id);
+          heightDiff = target.getBoundingClientRect().height;
+          elementsHeight.set(id, heightDiff);
         }
-        window.resizeTo(window.outerWidth, this._height);
+        window.resizeBy(0, heightDiff);
       }
     });
 
@@ -374,11 +391,9 @@ var BookmarkPropertiesPanel = {
         }
         break;
       case "resize":
-        for (let [id, oldHeight] of elementsHeight) {
-          let newHeight = document.getElementById(id).getBoundingClientRect()
-            .height;
-          this._height += -oldHeight + newHeight;
-          elementsHeight.set(id, newHeight);
+        for (let id of elementsHeight.keys()) {
+          let { height } = document.getElementById(id).getBoundingClientRect();
+          elementsHeight.set(id, height);
         }
         break;
     }
@@ -424,7 +439,7 @@ var BookmarkPropertiesPanel = {
   /**
    * This method checks to see if the input fields are in a valid state.
    *
-   * @returns  true if the input is valid, false otherwise
+   * @returns {boolean} true if the input is valid, false otherwise
    */
   _inputIsValid: function BPP__inputIsValid() {
     if (
@@ -447,16 +462,16 @@ var BookmarkPropertiesPanel = {
    * Determines whether the input with the given ID contains a
    * string that can be converted into an nsIURI.
    *
-   * @param aTextboxID
+   * @param {number} aTextboxID
    *        the ID of the textbox element whose contents we'll test
    *
-   * @returns true if the textbox contains a valid URI string, false otherwise
+   * @returns {boolean} true if the textbox contains a valid URI string, false otherwise
    */
   _containsValidURI: function BPP__containsValidURI(aTextboxID) {
     try {
       var value = this._element(aTextboxID).value;
       if (value) {
-        PlacesUIUtils.createFixedURI(value);
+        Services.uriFixup.getFixupURIInfo(value);
         return true;
       }
     } catch (e) {}
@@ -530,3 +545,7 @@ var BookmarkPropertiesPanel = {
     });
   },
 };
+
+document.addEventListener("DOMContentLoaded", function() {
+  BookmarkPropertiesPanel.onDialogLoad();
+});

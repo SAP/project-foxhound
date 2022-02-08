@@ -8,11 +8,15 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/BasicCardPaymentBinding.h"
 #include "mozilla/dom/PaymentRequestParent.h"
+#include "nsArrayUtils.h"
+#include "nsComponentManagerUtils.h"
+#include "nsCOMPtr.h"
+#include "nsIMutableArray.h"
+#include "nsServiceManagerUtils.h"
 #include "nsSimpleEnumerator.h"
 #include "PaymentRequestService.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 StaticRefPtr<PaymentRequestService> gPaymentService;
 
@@ -302,7 +306,7 @@ nsresult PaymentRequestService::RequestPayment(
         return rv;
       }
       if (completeStatus.Equals(u"initial"_ns)) {
-        request->SetCompleteStatus(EmptyString());
+        request->SetCompleteStatus(u""_ns);
       }
       MOZ_ASSERT(mShowingRequest && mShowingRequest == request);
       rv = LaunchUIAction(aRequestId, type);
@@ -557,8 +561,8 @@ nsresult PaymentRequestService::ShowPayment(const nsAString& aRequestId,
     nsCOMPtr<nsIPaymentShowActionResponse> showResponse =
         do_CreateInstance(NS_PAYMENT_SHOW_ACTION_RESPONSE_CONTRACT_ID);
     MOZ_ASSERT(showResponse);
-    rv = showResponse->Init(aRequestId, responseStatus, EmptyString(), nullptr,
-                            EmptyString(), EmptyString(), EmptyString());
+    rv = showResponse->Init(aRequestId, responseStatus, u""_ns, nullptr, u""_ns,
+                            u""_ns, u""_ns);
     rv = RespondPayment(showResponse.get());
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
@@ -599,5 +603,4 @@ bool PaymentRequestService::IsBasicCardPayment(const nsAString& aRequestId) {
   return false;
 }
 
-}  // end of namespace dom
-}  // end of namespace mozilla
+}  // namespace mozilla::dom

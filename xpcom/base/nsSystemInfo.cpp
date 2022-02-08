@@ -13,8 +13,10 @@
 #include "mozilla/SSE.h"
 #include "mozilla/arm.h"
 #include "mozilla/LazyIdleThread.h"
+#include "mozilla/LookAndFeel.h"
 #include "mozilla/Sprintf.h"
 #include "jsapi.h"
+#include "js/PropertyAndElement.h"  // JS_SetProperty
 #include "mozilla/dom/Promise.h"
 
 #ifdef XP_WIN
@@ -26,13 +28,18 @@
 #  include <windows.h>
 #  include <winioctl.h>
 #  ifndef __MINGW32__
+#    include <wrl.h>
 #    include <wscapi.h>
 #  endif  // __MINGW32__
 #  include "base/scoped_handle_win.h"
+#  include "mozilla/DynamicallyLinkedFunctionPtr.h"
+#  include "mozilla/WindowsVersion.h"
 #  include "nsAppDirectoryServiceDefs.h"
 #  include "nsDirectoryServiceDefs.h"
 #  include "nsDirectoryServiceUtils.h"
 #  include "nsWindowsHelpers.h"
+#  include "WinUtils.h"
+#  include "mozilla/NotNull.h"
 
 #endif
 
@@ -77,6 +84,16 @@
 uint32_t nsSystemInfo::gUserUmask = 0;
 
 using namespace mozilla::dom;
+
+#if defined(XP_WIN)
+#  define RuntimeClass_Windows_System_Profile_WindowsIntegrityPolicy \
+    L"Windows.System.Profile.WindowsIntegrityPolicy"
+#  ifndef __MINGW32__
+using namespace Microsoft::WRL;
+using namespace Microsoft::WRL::Wrappers;
+using namespace ABI::Windows::Foundation;
+#  endif  // __MINGW32__
+#endif
 
 #if defined(XP_LINUX) && !defined(ANDROID)
 static void SimpleParseKeyValuePairs(
@@ -407,8 +424,8 @@ nsresult CollectCountryCode(nsAString& aCountryCode) {
 
 #  ifndef __MINGW32__
 
-static HRESULT EnumWSCProductList(nsAString& aOutput,
-                                  NotNull<IWSCProductList*> aProdList) {
+static HRESULT EnumWSCProductList(
+    nsAString& aOutput, mozilla::NotNull<IWSCProductList*> aProdList) {
   MOZ_ASSERT(aOutput.IsEmpty());
 
   LONG count;
@@ -477,10 +494,12 @@ static nsresult GetWindowsSecurityCenterInfo(nsAString& aAVInfo,
   // Each output must match the corresponding entry in providerTypes.
   nsAString* outputs[] = {&aAVInfo, &aAntiSpyInfo, &aFirewallInfo};
 
-  static_assert(ArrayLength(providerTypes) == ArrayLength(outputs),
-                "Length of providerTypes and outputs arrays must match");
+  static_assert(
+      mozilla::ArrayLength(providerTypes) == mozilla::ArrayLength(outputs),
+      "Length of providerTypes and outputs arrays must match");
 
-  for (uint32_t index = 0; index < ArrayLength(providerTypes); ++index) {
+  for (uint32_t index = 0; index < mozilla::ArrayLength(providerTypes);
+       ++index) {
     RefPtr<IWSCProductList> prodList;
     HRESULT hr = ::CoCreateInstance(clsid, nullptr, CLSCTX_INPROC_SERVER, iid,
                                     getter_AddRefs(prodList));
@@ -493,7 +512,8 @@ static nsresult GetWindowsSecurityCenterInfo(nsAString& aAVInfo,
       return NS_ERROR_UNEXPECTED;
     }
 
-    hr = EnumWSCProductList(*outputs[index], WrapNotNull(prodList.get()));
+    hr = EnumWSCProductList(*outputs[index],
+                            mozilla::WrapNotNull(prodList.get()));
     if (FAILED(hr)) {
       return NS_ERROR_UNEXPECTED;
     }
@@ -521,6 +541,25 @@ static nsresult GetAppleModelId(nsAutoCString& aModelId) {
   }
   // numChars includes null terminator
   aModelId.Truncate(numChars - 1);
+  return NS_OK;
+}
+
+static nsresult ProcessIsRosettaTranslated(bool& isRosetta) {
+#  if defined(__aarch64__)
+  // There is no need to call sysctlbyname() if we are running as arm64.
+  isRosetta = false;
+#  else
+  int ret = 0;
+  size_t size = sizeof(ret);
+  if (sysctlbyname("sysctl.proc_translated", &ret, &size, NULL, 0) == -1) {
+    if (errno != ENOENT) {
+      fprintf(stderr, "Failed to check for translation environment\n");
+    }
+    isRosetta = false;
+  } else {
+    isRosetta = (ret == 1);
+  }
+#  endif
   return NS_OK;
 }
 #endif
@@ -597,6 +636,32 @@ nsresult CollectProcessInfo(ProcessInfo& info) {
     info.isWowARM64 = (processMachine == IMAGE_FILE_MACHINE_I386 &&
                        nativeMachine == IMAGE_FILE_MACHINE_ARM64);
   }
+
+  // S Mode
+
+#  ifndef __MINGW32__
+  // WindowsIntegrityPolicy is only available on newer versions
+  // of Windows 10, so there's no point in trying to check this
+  // on earlier versions. We know GetActivationFactory crashes on
+  // Windows 7 when trying to retrieve this class, and may also
+  // crash on very old versions of Windows 10.
+  if (IsWin10Sep2018UpdateOrLater()) {
+    ComPtr<IWindowsIntegrityPolicyStatics> wip;
+    HRESULT hr = GetActivationFactory(
+        HStringReference(
+            RuntimeClass_Windows_System_Profile_WindowsIntegrityPolicy)
+            .Get(),
+        &wip);
+    if (SUCCEEDED(hr)) {
+      // info.isWindowsSMode ends up true if Windows is in S mode, otherwise
+      // false
+      // https://docs.microsoft.com/en-us/uwp/api/windows.system.profile.windowsintegritypolicy.isenabled?view=winrt-22000
+      hr = wip->get_IsEnabled(&info.isWindowsSMode);
+      NS_WARNING_ASSERTION(SUCCEEDED(hr),
+                           "WindowsIntegrityPolicy.IsEnabled failed");
+    }
+  }
+#  endif  // __MINGW32__
 
   // CPU speed
   HKEY key;
@@ -717,7 +782,7 @@ nsresult CollectProcessInfo(ProcessInfo& info) {
       Tokenizer p(keyValuePairs["cpu family"_ns]);
       if (p.Next(t) && t.Type() == Tokenizer::TOKEN_INTEGER &&
           t.AsInteger() <= INT32_MAX) {
-        cpuFamily = static_cast<int>(t.AsInteger());
+        cpuFamily = static_cast<int32_t>(t.AsInteger());
       }
     }
 
@@ -727,7 +792,7 @@ nsresult CollectProcessInfo(ProcessInfo& info) {
       Tokenizer p(keyValuePairs["model"_ns]);
       if (p.Next(t) && t.Type() == Tokenizer::TOKEN_INTEGER &&
           t.AsInteger() <= INT32_MAX) {
-        cpuModel = static_cast<int>(t.AsInteger());
+        cpuModel = static_cast<int32_t>(t.AsInteger());
       }
     }
 
@@ -737,7 +802,7 @@ nsresult CollectProcessInfo(ProcessInfo& info) {
       Tokenizer p(keyValuePairs["stepping"_ns]);
       if (p.Next(t) && t.Type() == Tokenizer::TOKEN_INTEGER &&
           t.AsInteger() <= INT32_MAX) {
-        cpuStepping = static_cast<int>(t.AsInteger());
+        cpuStepping = static_cast<int32_t>(t.AsInteger());
       }
     }
 
@@ -747,7 +812,7 @@ nsresult CollectProcessInfo(ProcessInfo& info) {
       Tokenizer p(keyValuePairs["cpu cores"_ns]);
       if (p.Next(t) && t.Type() == Tokenizer::TOKEN_INTEGER &&
           t.AsInteger() <= INT32_MAX) {
-        physicalCPUs = static_cast<int>(t.AsInteger());
+        physicalCPUs = static_cast<int32_t>(t.AsInteger());
       }
     }
   }
@@ -762,7 +827,7 @@ nsresult CollectProcessInfo(ProcessInfo& info) {
       Tokenizer p(line.c_str());
       if (p.Next(t) && t.Type() == Tokenizer::TOKEN_INTEGER &&
           t.AsInteger() <= INT32_MAX) {
-        cpuSpeed = static_cast<int>(t.AsInteger() / 1000);
+        cpuSpeed = static_cast<int32_t>(t.AsInteger() / 1000);
       }
     }
   }
@@ -776,7 +841,7 @@ nsresult CollectProcessInfo(ProcessInfo& info) {
       Tokenizer p(line.c_str(), nullptr, "K");
       if (p.Next(t) && t.Type() == Tokenizer::TOKEN_INTEGER &&
           t.AsInteger() <= INT32_MAX) {
-        cacheSizeL2 = static_cast<int>(t.AsInteger());
+        cacheSizeL2 = static_cast<int32_t>(t.AsInteger());
       }
     }
   }
@@ -790,7 +855,7 @@ nsresult CollectProcessInfo(ProcessInfo& info) {
       Tokenizer p(line.c_str(), nullptr, "K");
       if (p.Next(t) && t.Type() == Tokenizer::TOKEN_INTEGER &&
           t.AsInteger() <= INT32_MAX) {
-        cacheSizeL3 = static_cast<int>(t.AsInteger());
+        cacheSizeL3 = static_cast<int32_t>(t.AsInteger());
       }
     }
   }
@@ -834,6 +899,13 @@ nsresult CollectProcessInfo(ProcessInfo& info) {
 
   return NS_OK;
 }
+
+#if defined(XP_WIN) && (_WIN32_WINNT < 0x0A00)
+WINBASEAPI
+BOOL WINAPI IsUserCetAvailableInEnvironment(_In_ DWORD UserCetEnvironment);
+
+#  define USER_CET_ENVIRONMENT_WIN32_PROCESS 0x00000000
+#endif
 
 nsresult nsSystemInfo::Init() {
   // check that it is called from the main thread on all platforms.
@@ -905,6 +977,18 @@ nsresult nsSystemInfo::Init() {
     return rv;
   }
 
+  rv = SetPropertyAsBool(u"hasWinPackageId"_ns,
+                         widget::WinUtils::HasPackageIdentity());
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  rv = SetPropertyAsAString(u"winPackageFamilyName"_ns,
+                            widget::WinUtils::GetPackageFamilyName());
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
 #  ifndef __MINGW32__
   nsAutoString avInfo, antiSpyInfo, firewallInfo;
   if (NS_SUCCEEDED(
@@ -931,6 +1015,18 @@ nsresult nsSystemInfo::Init() {
     }
   }
 #  endif  // __MINGW32__
+
+  mozilla::DynamicallyLinkedFunctionPtr<
+      decltype(&IsUserCetAvailableInEnvironment)>
+      isUserCetAvailable(L"api-ms-win-core-sysinfo-l1-2-6.dll",
+                         "IsUserCetAvailableInEnvironment");
+  bool hasUserCET = isUserCetAvailable &&
+                    isUserCetAvailable(USER_CET_ENVIRONMENT_WIN32_PROCESS);
+  rv = SetPropertyAsBool(u"hasUserCET"_ns, hasUserCET);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
 #endif
 
 #if defined(XP_MACOSX)
@@ -939,7 +1035,18 @@ nsresult nsSystemInfo::Init() {
     rv = SetPropertyAsACString(u"appleModelId"_ns, modelId);
     NS_ENSURE_SUCCESS(rv, rv);
   }
+  bool isRosetta;
+  if (NS_SUCCEEDED(ProcessIsRosettaTranslated(isRosetta))) {
+    rv = SetPropertyAsBool(u"rosettaStatus"_ns, isRosetta);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 #endif
+
+  {
+    nsAutoCString themeInfo;
+    LookAndFeel::GetThemeInfo(themeInfo);
+    MOZ_TRY(SetPropertyAsACString(u"osThemeInfo"_ns, themeInfo));
+  }
 
 #if defined(MOZ_WIDGET_GTK)
   // This must be done here because NSPR can only separate OS's when compiled,
@@ -1195,6 +1302,10 @@ JSObject* GetJSObjForProcessInfo(JSContext* aCx, const ProcessInfo& info) {
 
   JS::Rooted<JS::Value> valisWowARM64(aCx, JS::BooleanValue(info.isWowARM64));
   JS_SetProperty(aCx, jsInfo, "isWowARM64", valisWowARM64);
+
+  JS::Rooted<JS::Value> valisWindowsSMode(
+      aCx, JS::BooleanValue(info.isWindowsSMode));
+  JS_SetProperty(aCx, jsInfo, "isWindowsSMode", valisWindowsSMode);
 #endif
 
   JS::Rooted<JS::Value> valCountInfo(aCx, JS::Int32Value(info.cpuCount));

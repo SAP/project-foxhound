@@ -229,6 +229,23 @@ const POLICIES_TESTS = [
 
   {
     policies: {
+      SanitizeOnShutdown: false,
+    },
+    lockedPrefs: {
+      "privacy.sanitize.sanitizeOnShutdown": false,
+      "privacy.clearOnShutdown.cache": false,
+      "privacy.clearOnShutdown.cookies": false,
+      "privacy.clearOnShutdown.downloads": false,
+      "privacy.clearOnShutdown.formdata": false,
+      "privacy.clearOnShutdown.history": false,
+      "privacy.clearOnShutdown.sessions": false,
+      "privacy.clearOnShutdown.siteSettings": false,
+      "privacy.clearOnShutdown.offlineApps": false,
+    },
+  },
+
+  {
+    policies: {
       SanitizeOnShutdown: {
         Cache: true,
       },
@@ -430,14 +447,14 @@ const POLICIES_TESTS = [
     policies: {
       DNSOverHTTPS: {
         Enabled: true,
-        ProviderURL: "http://example.com/provider",
+        ProviderURL: "https://example.com/provider",
         ExcludedDomains: ["example.com", "example.org"],
         Locked: true,
       },
     },
     lockedPrefs: {
       "network.trr.mode": 2,
-      "network.trr.uri": "http://example.com/provider",
+      "network.trr.uri": "https://example.com/provider",
       "network.trr.excluded-domains": "example.com,example.org",
     },
   },
@@ -447,13 +464,13 @@ const POLICIES_TESTS = [
     policies: {
       DNSOverHTTPS: {
         Enabled: false,
-        ProviderURL: "http://example.com/provider",
+        ProviderURL: "https://example.com/provider",
         ExcludedDomains: ["example.com", "example.org"],
       },
     },
     unlockedPrefs: {
       "network.trr.mode": 5,
-      "network.trr.uri": "http://example.com/provider",
+      "network.trr.uri": "https://example.com/provider",
       "network.trr.excluded-domains": "example.com,example.org",
     },
   },
@@ -575,11 +592,25 @@ const POLICIES_TESTS = [
     policies: {
       UserMessaging: {
         WhatsNew: false,
+        SkipOnboarding: true,
         Locked: true,
       },
     },
     lockedPrefs: {
       "browser.messaging-system.whatsNewPanel.enabled": false,
+      "browser.aboutwelcome.enabled": false,
+    },
+  },
+
+  // POLICY: UserMessaging->SkipOnboarding false (bug 1697566)
+  {
+    policies: {
+      UserMessaging: {
+        SkipOnboarding: false,
+      },
+    },
+    unlockedPrefs: {
+      "browser.aboutwelcome.enabled": true,
     },
   },
 
@@ -741,7 +772,7 @@ const POLICIES_TESTS = [
       "security.ssl3.ecdhe_ecdsa_aes_128_gcm_sha256": true,
       "security.ssl3.rsa_aes_128_sha": true,
       "security.ssl3.rsa_aes_256_sha": true,
-      "security.ssl3.rsa_des_ede3_sha": true,
+      "security.ssl3.deprecated.rsa_des_ede3_sha": true,
       "security.ssl3.rsa_aes_128_gcm_sha256": true,
       "security.ssl3.rsa_aes_256_gcm_sha384": true,
     },
@@ -772,9 +803,102 @@ const POLICIES_TESTS = [
       "security.ssl3.ecdhe_ecdsa_aes_128_gcm_sha256": false,
       "security.ssl3.rsa_aes_128_sha": false,
       "security.ssl3.rsa_aes_256_sha": false,
-      "security.ssl3.rsa_des_ede3_sha": false,
+      "security.ssl3.deprecated.rsa_des_ede3_sha": false,
       "security.ssl3.rsa_aes_128_gcm_sha256": false,
       "security.ssl3.rsa_aes_256_gcm_sha384": false,
+    },
+  },
+
+  {
+    policies: {
+      WindowsSSO: true,
+    },
+    lockedPrefs: {
+      "network.http.windows-sso.enabled": true,
+    },
+  },
+
+  {
+    policies: {
+      Cookies: {
+        Behavior: "accept",
+        BehaviorPrivateBrowsing: "reject-foreign",
+        Locked: true,
+      },
+    },
+    lockedPrefs: {
+      "network.cookie.cookieBehavior": 0,
+      "network.cookie.cookieBehavior.pbmode": 1,
+    },
+  },
+
+  {
+    policies: {
+      Cookies: {
+        Behavior: "reject-foreign",
+        BehaviorPrivateBrowsing: "reject",
+        Locked: true,
+      },
+    },
+    lockedPrefs: {
+      "network.cookie.cookieBehavior": 1,
+      "network.cookie.cookieBehavior.pbmode": 2,
+    },
+  },
+
+  {
+    policies: {
+      Cookies: {
+        Behavior: "reject",
+        BehaviorPrivateBrowsing: "limit-foreign",
+        Locked: true,
+      },
+    },
+    lockedPrefs: {
+      "network.cookie.cookieBehavior": 2,
+      "network.cookie.cookieBehavior.pbmode": 3,
+    },
+  },
+
+  {
+    policies: {
+      Cookies: {
+        Behavior: "limit-foreign",
+        BehaviorPrivateBrowsing: "reject-tracker",
+        Locked: true,
+      },
+    },
+    lockedPrefs: {
+      "network.cookie.cookieBehavior": 3,
+      "network.cookie.cookieBehavior.pbmode": 4,
+    },
+  },
+
+  {
+    policies: {
+      Cookies: {
+        Behavior: "reject-tracker",
+        BehaviorPrivateBrowsing: "reject-tracker-and-partition-foreign",
+        Locked: true,
+      },
+    },
+    lockedPrefs: {
+      "network.cookie.cookieBehavior": 4,
+      "network.cookie.cookieBehavior.pbmode": 5,
+    },
+  },
+
+  {
+    policies: {
+      Cookies: {
+        Behavior: "reject-tracker-and-partition-foreign",
+        BehaviorPrivateBrowsing: "accept",
+        Locked: true,
+      },
+    },
+    lockedPrefs: {
+      "network.cookie.cookieBehavior": 5,
+      "network.cookie.cookieBehavior.pbmode": 0,
     },
   },
 ];

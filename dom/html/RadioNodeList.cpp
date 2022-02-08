@@ -12,8 +12,7 @@
 
 #include "HTMLInputElement.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /* virtual */
 JSObject* RadioNodeList::WrapObject(JSContext* aCx,
@@ -22,8 +21,8 @@ JSObject* RadioNodeList::WrapObject(JSContext* aCx,
 }
 
 HTMLInputElement* GetAsRadio(nsIContent* node) {
-  HTMLInputElement* el = HTMLInputElement::FromNode(node);
-  if (el && el->ControlType() == NS_FORM_INPUT_RADIO) {
+  auto* el = HTMLInputElement::FromNode(node);
+  if (el && el->ControlType() == FormControlType::InputRadio) {
     return el;
   }
   return nullptr;
@@ -58,5 +57,4 @@ void RadioNodeList::SetValue(const nsAString& value, CallerType aCallerType) {
 
 NS_IMPL_ISUPPORTS_INHERITED(RadioNodeList, nsSimpleContentList, RadioNodeList)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

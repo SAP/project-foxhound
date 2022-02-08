@@ -168,7 +168,6 @@
 
     set buttons(val) {
       this._configureButtons(val);
-      return val;
     }
 
     get buttons() {
@@ -177,7 +176,6 @@
 
     set defaultButton(val) {
       this._setDefaultButton(val);
-      return val;
     }
 
     get defaultButton() {
@@ -266,7 +264,12 @@
         // give focus to the first focusable element in the dialog
         let focusedElt = document.commandDispatcher.focusedElement;
         if (!focusedElt) {
-          document.commandDispatcher.advanceFocusIntoSubtree(this);
+          Services.focus.moveFocus(
+            window,
+            null,
+            Services.focus.MOVEFOCUS_FORWARD,
+            Services.focus.FLAG_NOPARENTFRAME
+          );
 
           focusedElt = document.commandDispatcher.focusedElement;
           if (focusedElt) {
@@ -275,7 +278,12 @@
               focusedElt.localName == "tab" ||
               focusedElt.getAttribute("noinitialfocus") == "true"
             ) {
-              document.commandDispatcher.advanceFocusIntoSubtree(focusedElt);
+              Services.focus.moveFocus(
+                window,
+                focusedElt,
+                Services.focus.MOVEFOCUS_FORWARD,
+                Services.focus.FLAG_NOPARENTFRAME
+              );
               focusedElt = document.commandDispatcher.focusedElement;
               if (focusedElt) {
                 if (focusedElt == initialFocusedElt) {

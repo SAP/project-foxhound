@@ -10,6 +10,8 @@
 #include "nsIStringStream.h"
 #include "nsComponentManagerUtils.h"
 
+#include <tuple>
+
 using namespace mozilla;
 
 /* Implementation file */
@@ -38,18 +40,16 @@ nsScriptableUnicodeConverter::ConvertFromUnicode(const nsAString& aSrc,
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  if (!_retval.SetLength(needed.value(), fallible)) {
+  auto dstChars = _retval.GetMutableData(needed.value(), fallible);
+  if (!dstChars) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  auto src = MakeSpan(aSrc);
-  auto dst = AsWritableBytes(MakeSpan(_retval));
+  auto src = Span(aSrc);
+  auto dst = AsWritableBytes(*dstChars);
   size_t totalWritten = 0;
   for (;;) {
-    uint32_t result;
-    size_t read;
-    size_t written;
-    Tie(result, read, written) =
+    auto [result, read, written] =
         mEncoder->EncodeFromUTF16WithoutReplacement(src, dst, false);
     if (result != kInputEmpty && result != kOutputFull) {
       MOZ_RELEASE_ASSERT(written < dst.Length(),
@@ -88,14 +88,13 @@ nsScriptableUnicodeConverter::Finish(nsACString& _retval) {
   // needs to be large enough for an additional NCR,
   // though.
   _retval.SetLength(13);
+  auto dst = AsWritableBytes(_retval.GetMutableData(13));
   Span<char16_t> src(nullptr);
   uint32_t result;
   size_t read;
   size_t written;
-  bool hadErrors;
-  Tie(result, read, written, hadErrors) =
-      mEncoder->EncodeFromUTF16(src, _retval, true);
-  Unused << hadErrors;
+  std::tie(result, read, written, std::ignore) =
+      mEncoder->EncodeFromUTF16(src, dst, true);
   MOZ_ASSERT(!read);
   MOZ_ASSERT(result == kInputEmpty);
   _retval.SetLength(written);
@@ -117,34 +116,33 @@ nsScriptableUnicodeConverter::ConvertToUnicode(const nsACString& aSrc,
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  if (!_retval.SetLength(needed.value(), fallible)) {
+  auto dst = _retval.GetMutableData(needed.value(), fallible);
+  if (!dst) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
   auto src =
-      MakeSpan(reinterpret_cast<const uint8_t*>(aSrc.BeginReading()), length);
+      Span(reinterpret_cast<const uint8_t*>(aSrc.BeginReading()), length);
   uint32_t result;
   size_t read;
   size_t written;
-  bool hadErrors;
   // The UTF-8 decoder used to throw regardless of the error behavior.
   // Simulating the old behavior for compatibility with legacy callers.
   // If callers want control over the behavior, they should switch to
   // TextDecoder.
   if (mDecoder->Encoding() == UTF_8_ENCODING) {
-    Tie(result, read, written) =
-        mDecoder->DecodeToUTF16WithoutReplacement(src, _retval, false);
+    std::tie(result, read, written) =
+        mDecoder->DecodeToUTF16WithoutReplacement(src, *dst, false);
     if (result != kInputEmpty) {
       return NS_ERROR_UDEC_ILLEGALINPUT;
     }
   } else {
-    Tie(result, read, written, hadErrors) =
-        mDecoder->DecodeToUTF16(src, _retval, false);
+    std::tie(result, read, written, std::ignore) =
+        mDecoder->DecodeToUTF16(src, *dst, false);
   }
   MOZ_ASSERT(result == kInputEmpty);
   MOZ_ASSERT(read == length);
   MOZ_ASSERT(written <= needed.value());
-  Unused << hadErrors;
   if (!_retval.SetLength(written, fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
@@ -167,14 +165,11 @@ nsScriptableUnicodeConverter::ConvertToByteArray(const nsAString& aString,
   if (!data) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
-  auto src = MakeSpan(aString);
-  auto dst = MakeSpan(data, needed.value());
+  auto src = Span(aString);
+  auto dst = Span(data, needed.value());
   size_t totalWritten = 0;
   for (;;) {
-    uint32_t result;
-    size_t read;
-    size_t written;
-    Tie(result, read, written) =
+    auto [result, read, written] =
         mEncoder->EncodeFromUTF16WithoutReplacement(src, dst, true);
     if (result != kInputEmpty && result != kOutputFull) {
       // There's always room for one byte in the case of

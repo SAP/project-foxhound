@@ -10,11 +10,21 @@ async function noStorageAccessInitially() {
   ok(!hasAccess, "Doesn't yet have storage access");
 }
 
+async function stillNoStorageAccess() {
+  let hasAccess = await document.hasStorageAccess();
+  ok(!hasAccess, "Still doesn't have storage access");
+}
+
 async function callRequestStorageAccess(callback, expectFail) {
-  let dwu = SpecialPowers.getDOMWindowUtils(window);
-  let helper = dwu.setHandlingUserInput(true);
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
 
   let origin = new URL(location.href).origin;
+
+  let effectiveCookieBehavior = SpecialPowers.isContentWindowPrivate(window)
+    ? SpecialPowers.Services.prefs.getIntPref(
+        "network.cookie.cookieBehavior.pbmode"
+      )
+    : SpecialPowers.Services.prefs.getIntPref("network.cookie.cookieBehavior");
 
   let success = true;
   // We only grant storage exceptions when the reject tracker behavior is enabled.
@@ -23,9 +33,7 @@ async function callRequestStorageAccess(callback, expectFail) {
       SpecialPowers.Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
       SpecialPowers.Ci.nsICookieService
         .BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
-    ].includes(
-      SpecialPowers.Services.prefs.getIntPref("network.cookie.cookieBehavior")
-    ) && !isOnContentBlockingAllowList();
+    ].includes(effectiveCookieBehavior) && !isOnContentBlockingAllowList();
   const TEST_ANOTHER_3RD_PARTY_ORIGIN = SpecialPowers.useRemoteSubframes
     ? "http://another-tracking.example.net"
     : "https://another-tracking.example.net";
@@ -38,23 +46,23 @@ async function callRequestStorageAccess(callback, expectFail) {
         p = document.requestStorageAccess();
       } catch (e) {
         threw = true;
-      } finally {
-        helper.destruct();
       }
       ok(!threw, "requestStorageAccess should not throw");
       try {
         if (callback) {
           if (expectFail) {
-            await p.catch(_ => callback(dwu));
+            await p.catch(_ => callback());
             success = false;
           } else {
-            await p.then(_ => callback(dwu));
+            await p.then(_ => callback());
           }
         } else {
           await p;
         }
       } catch (e) {
         success = false;
+      } finally {
+        SpecialPowers.wrap(document).clearUserGestureActivation();
       }
       ok(!success, "Should not have worked without user interaction");
 
@@ -62,21 +70,20 @@ async function callRequestStorageAccess(callback, expectFail) {
 
       await interactWithTracker();
 
-      helper = dwu.setHandlingUserInput(true);
+      SpecialPowers.wrap(document).notifyUserGestureActivation();
     }
     if (
-      SpecialPowers.Services.prefs.getIntPref(
-        "network.cookie.cookieBehavior"
-      ) == SpecialPowers.Ci.nsICookieService.BEHAVIOR_ACCEPT &&
+      effectiveCookieBehavior ==
+        SpecialPowers.Ci.nsICookieService.BEHAVIOR_ACCEPT &&
       !isOnContentBlockingAllowList()
     ) {
       try {
         if (callback) {
           if (expectFail) {
-            await document.requestStorageAccess().catch(_ => callback(dwu));
+            await document.requestStorageAccess().catch(_ => callback());
             success = false;
           } else {
-            await document.requestStorageAccess().then(_ => callback(dwu));
+            await document.requestStorageAccess().then(_ => callback());
           }
         } else {
           await document.requestStorageAccess();
@@ -84,7 +91,7 @@ async function callRequestStorageAccess(callback, expectFail) {
       } catch (e) {
         success = false;
       } finally {
-        helper.destruct();
+        SpecialPowers.wrap(document).clearUserGestureActivation();
       }
       ok(success, "Should not have thrown");
 
@@ -92,7 +99,7 @@ async function callRequestStorageAccess(callback, expectFail) {
 
       await interactWithTracker();
 
-      helper = dwu.setHandlingUserInput(true);
+      SpecialPowers.wrap(document).notifyUserGestureActivation();
     }
   }
 
@@ -102,23 +109,23 @@ async function callRequestStorageAccess(callback, expectFail) {
     p = document.requestStorageAccess();
   } catch (e) {
     threw = true;
-  } finally {
-    helper.destruct();
   }
   let rejected = false;
   try {
     if (callback) {
       if (expectFail) {
-        await p.catch(_ => callback(dwu));
+        await p.catch(_ => callback());
         rejected = true;
       } else {
-        await p.then(_ => callback(dwu));
+        await p.then(_ => callback());
       }
     } else {
       await p;
     }
   } catch (e) {
     rejected = true;
+  } finally {
+    SpecialPowers.wrap(document).clearUserGestureActivation();
   }
 
   success = !threw && !rejected;
@@ -194,4 +201,35 @@ function isOnContentBlockingAllowList() {
   // not in the preload list.
 
   return window.allowListed;
+}
+
+async function registerServiceWorker(win, url) {
+  let reg = await win.navigator.serviceWorker.register(url);
+  if (reg.installing.state !== "activated") {
+    await new Promise(resolve => {
+      let w = reg.installing;
+      w.addEventListener("statechange", function onStateChange() {
+        if (w.state === "activated") {
+          w.removeEventListener("statechange", onStateChange);
+          resolve();
+        }
+      });
+    });
+  }
+
+  return reg.active;
+}
+
+function sendAndWaitWorkerMessage(target, worker, message) {
+  return new Promise(resolve => {
+    worker.addEventListener(
+      "message",
+      msg => {
+        resolve(msg.data);
+      },
+      { once: true }
+    );
+
+    target.postMessage(message);
+  });
 }

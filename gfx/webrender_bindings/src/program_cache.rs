@@ -7,7 +7,7 @@ use std::ffi::OsString;
 use std::fs::{create_dir_all, read_dir, read_to_string, File};
 use std::io::{Error, ErrorKind};
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -19,7 +19,7 @@ use webrender::{ProgramBinary, ProgramCache, ProgramCacheObserver, ProgramSource
 
 const MAX_LOAD_TIME_MS: u64 = 400;
 
-fn deserialize_program_binary(path: &PathBuf) -> Result<Arc<ProgramBinary>, Error> {
+fn deserialize_program_binary(path: &Path) -> Result<Arc<ProgramBinary>, Error> {
     let mut buf = vec![];
     let mut file = File::open(path)?;
     file.read_to_end(&mut buf)?;
@@ -55,7 +55,7 @@ fn deserialize_program_binary(path: &PathBuf) -> Result<Arc<ProgramBinary>, Erro
                 ErrorKind::InvalidData,
                 "Failed to deserialize ProgramBinary",
             ))
-        }
+        },
     };
 
     Ok(Arc::new(binary))
@@ -204,10 +204,10 @@ impl WrProgramBinaryDiskCache {
             match deserialize_program_binary(&path) {
                 Ok(program) => {
                     program_cache.load_program_binary(program);
-                }
+                },
                 Err(err) => {
                     error!("shader-cache: Failed to deserialize program binary: {}", err);
-                }
+                },
             };
         } else {
             info!("shader-cache: Program binary not found in disk cache");
@@ -229,7 +229,7 @@ impl WrProgramBinaryDiskCache {
             Err(err) => {
                 info!("shader-cache: Could not read startup whitelist: {}", err);
                 Vec::new()
-            }
+            },
         };
         info!("Loaded startup shader whitelist in {:?}", start.elapsed());
 
@@ -253,7 +253,7 @@ impl WrProgramBinaryDiskCache {
 
             let elapsed = start.elapsed();
             info!("Loaded shader in {:?}", elapsed);
-            let elapsed_ms = (elapsed.as_secs() * 1_000) + (elapsed.subsec_nanos() / 1_000_000) as u64;
+            let elapsed_ms = (elapsed.as_secs() * 1_000) + elapsed.subsec_millis() as u64;
 
             if elapsed_ms > MAX_LOAD_TIME_MS {
                 // Loading the startup shaders is taking too long, so bail out now.
@@ -322,7 +322,7 @@ impl WrProgramCache {
 
         WrProgramCache {
             program_cache,
-            disk_cache: disk_cache,
+            disk_cache,
         }
     }
 

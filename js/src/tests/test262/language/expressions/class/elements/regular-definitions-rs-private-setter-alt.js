@@ -1,4 +1,3 @@
-// |reftest| skip -- class-methods-private is not supported
 // This file was procedurally generated from the following sources:
 // - src/class-elements/rs-private-setter-alt.case
 // - src/class-elements/productions/cls-expr-regular-definitions.template

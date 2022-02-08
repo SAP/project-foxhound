@@ -7,13 +7,14 @@
 #include "BaseProfiler.h"
 
 #include "mozilla/Attributes.h"
+#include "mozilla/BaseProfileJSONWriter.h"
 
 #ifdef MOZ_GECKO_PROFILER
-#  include "BaseProfileJSONWriter.h"
-#  include "BaseProfilerMarkerPayload.h"
+#  include "mozilla/BaseProfilerMarkerTypes.h"
 #  include "mozilla/BlocksRingBuffer.h"
 #  include "mozilla/leb128iterator.h"
 #  include "mozilla/ModuloBuffer.h"
+#  include "mozilla/mozalloc.h"
 #  include "mozilla/PowerOfTwo.h"
 #  include "mozilla/ProfileBufferChunk.h"
 #  include "mozilla/ProfileBufferChunkManagerSingle.h"
@@ -36,9 +37,194 @@
 
 #include <algorithm>
 #include <atomic>
+#include <iostream>
+#include <random>
 #include <thread>
 #include <type_traits>
 #include <utility>
+
+void TestProfilerUtils() {
+  printf("TestProfilerUtils...\n");
+
+  {
+    using mozilla::baseprofiler::BaseProfilerProcessId;
+    using Number = BaseProfilerProcessId::NumberType;
+    static constexpr Number scMaxNumber = std::numeric_limits<Number>::max();
+
+    static_assert(
+        BaseProfilerProcessId{}.ToNumber() == 0,
+        "These tests assume that the unspecified process id number is 0; "
+        "if this fails, please update these tests accordingly");
+
+    static_assert(!BaseProfilerProcessId{}.IsSpecified());
+    static_assert(!BaseProfilerProcessId::FromNumber(0).IsSpecified());
+    static_assert(BaseProfilerProcessId::FromNumber(1).IsSpecified());
+    static_assert(BaseProfilerProcessId::FromNumber(123).IsSpecified());
+    static_assert(BaseProfilerProcessId::FromNumber(scMaxNumber).IsSpecified());
+
+    static_assert(BaseProfilerProcessId::FromNumber(Number(1)).ToNumber() ==
+                  Number(1));
+    static_assert(BaseProfilerProcessId::FromNumber(Number(123)).ToNumber() ==
+                  Number(123));
+    static_assert(BaseProfilerProcessId::FromNumber(scMaxNumber).ToNumber() ==
+                  scMaxNumber);
+
+    static_assert(BaseProfilerProcessId{} == BaseProfilerProcessId{});
+    static_assert(BaseProfilerProcessId::FromNumber(Number(123)) ==
+                  BaseProfilerProcessId::FromNumber(Number(123)));
+    static_assert(BaseProfilerProcessId{} !=
+                  BaseProfilerProcessId::FromNumber(Number(123)));
+    static_assert(BaseProfilerProcessId::FromNumber(Number(123)) !=
+                  BaseProfilerProcessId{});
+    static_assert(BaseProfilerProcessId::FromNumber(Number(123)) !=
+                  BaseProfilerProcessId::FromNumber(scMaxNumber));
+    static_assert(BaseProfilerProcessId::FromNumber(scMaxNumber) !=
+                  BaseProfilerProcessId::FromNumber(Number(123)));
+
+    // Verify trivial-copyability by memcpy'ing to&from same-size storage.
+    static_assert(std::is_trivially_copyable_v<BaseProfilerProcessId>);
+    BaseProfilerProcessId pid;
+    MOZ_RELEASE_ASSERT(!pid.IsSpecified());
+    Number pidStorage;
+    static_assert(sizeof(pidStorage) == sizeof(pid));
+    // Copy from BaseProfilerProcessId to storage. Note: We cannot assume that
+    // this is equal to what ToNumber() gives us. All we can do is verify that
+    // copying from storage back to BaseProfilerProcessId works as expected.
+    std::memcpy(&pidStorage, &pid, sizeof(pidStorage));
+    BaseProfilerProcessId pid2 = BaseProfilerProcessId::FromNumber(2);
+    MOZ_RELEASE_ASSERT(pid2.IsSpecified());
+    std::memcpy(&pid2, &pidStorage, sizeof(pid));
+    MOZ_RELEASE_ASSERT(!pid2.IsSpecified());
+
+    pid = BaseProfilerProcessId::FromNumber(123);
+    std::memcpy(&pidStorage, &pid, sizeof(pidStorage));
+    pid2 = BaseProfilerProcessId{};
+    MOZ_RELEASE_ASSERT(!pid2.IsSpecified());
+    std::memcpy(&pid2, &pidStorage, sizeof(pid));
+    MOZ_RELEASE_ASSERT(pid2.IsSpecified());
+    MOZ_RELEASE_ASSERT(pid2.ToNumber() == 123);
+
+    // No conversions to/from numbers.
+    static_assert(!std::is_constructible_v<BaseProfilerProcessId, Number>);
+    static_assert(!std::is_assignable_v<BaseProfilerProcessId, Number>);
+    static_assert(!std::is_constructible_v<Number, BaseProfilerProcessId>);
+    static_assert(!std::is_assignable_v<Number, BaseProfilerProcessId>);
+
+    static_assert(
+        std::is_same_v<
+            decltype(mozilla::baseprofiler::profiler_current_process_id()),
+            BaseProfilerProcessId>);
+    MOZ_RELEASE_ASSERT(
+        mozilla::baseprofiler::profiler_current_process_id().IsSpecified());
+  }
+
+  {
+    mozilla::baseprofiler::profiler_init_main_thread_id();
+
+    using mozilla::baseprofiler::BaseProfilerThreadId;
+    using Number = BaseProfilerThreadId::NumberType;
+    static constexpr Number scMaxNumber = std::numeric_limits<Number>::max();
+
+    static_assert(
+        BaseProfilerThreadId{}.ToNumber() == 0,
+        "These tests assume that the unspecified thread id number is 0; "
+        "if this fails, please update these tests accordingly");
+
+    static_assert(!BaseProfilerThreadId{}.IsSpecified());
+    static_assert(!BaseProfilerThreadId::FromNumber(0).IsSpecified());
+    static_assert(BaseProfilerThreadId::FromNumber(1).IsSpecified());
+    static_assert(BaseProfilerThreadId::FromNumber(123).IsSpecified());
+    static_assert(BaseProfilerThreadId::FromNumber(scMaxNumber).IsSpecified());
+
+    static_assert(BaseProfilerThreadId::FromNumber(Number(1)).ToNumber() ==
+                  Number(1));
+    static_assert(BaseProfilerThreadId::FromNumber(Number(123)).ToNumber() ==
+                  Number(123));
+    static_assert(BaseProfilerThreadId::FromNumber(scMaxNumber).ToNumber() ==
+                  scMaxNumber);
+
+    static_assert(BaseProfilerThreadId{} == BaseProfilerThreadId{});
+    static_assert(BaseProfilerThreadId::FromNumber(Number(123)) ==
+                  BaseProfilerThreadId::FromNumber(Number(123)));
+    static_assert(BaseProfilerThreadId{} !=
+                  BaseProfilerThreadId::FromNumber(Number(123)));
+    static_assert(BaseProfilerThreadId::FromNumber(Number(123)) !=
+                  BaseProfilerThreadId{});
+    static_assert(BaseProfilerThreadId::FromNumber(Number(123)) !=
+                  BaseProfilerThreadId::FromNumber(scMaxNumber));
+    static_assert(BaseProfilerThreadId::FromNumber(scMaxNumber) !=
+                  BaseProfilerThreadId::FromNumber(Number(123)));
+
+    // Verify trivial-copyability by memcpy'ing to&from same-size storage.
+    static_assert(std::is_trivially_copyable_v<BaseProfilerThreadId>);
+    BaseProfilerThreadId tid;
+    MOZ_RELEASE_ASSERT(!tid.IsSpecified());
+    Number tidStorage;
+    static_assert(sizeof(tidStorage) == sizeof(tid));
+    // Copy from BaseProfilerThreadId to storage. Note: We cannot assume that
+    // this is equal to what ToNumber() gives us. All we can do is verify that
+    // copying from storage back to BaseProfilerThreadId works as expected.
+    std::memcpy(&tidStorage, &tid, sizeof(tidStorage));
+    BaseProfilerThreadId tid2 = BaseProfilerThreadId::FromNumber(2);
+    MOZ_RELEASE_ASSERT(tid2.IsSpecified());
+    std::memcpy(&tid2, &tidStorage, sizeof(tid));
+    MOZ_RELEASE_ASSERT(!tid2.IsSpecified());
+
+    tid = BaseProfilerThreadId::FromNumber(Number(123));
+    std::memcpy(&tidStorage, &tid, sizeof(tidStorage));
+    tid2 = BaseProfilerThreadId{};
+    MOZ_RELEASE_ASSERT(!tid2.IsSpecified());
+    std::memcpy(&tid2, &tidStorage, sizeof(tid));
+    MOZ_RELEASE_ASSERT(tid2.IsSpecified());
+    MOZ_RELEASE_ASSERT(tid2.ToNumber() == Number(123));
+
+    // No conversions to/from numbers.
+    static_assert(!std::is_constructible_v<BaseProfilerThreadId, Number>);
+    static_assert(!std::is_assignable_v<BaseProfilerThreadId, Number>);
+    static_assert(!std::is_constructible_v<Number, BaseProfilerThreadId>);
+    static_assert(!std::is_assignable_v<Number, BaseProfilerThreadId>);
+
+    static_assert(std::is_same_v<
+                  decltype(mozilla::baseprofiler::profiler_current_thread_id()),
+                  BaseProfilerThreadId>);
+    BaseProfilerThreadId mainTestThreadId =
+        mozilla::baseprofiler::profiler_current_thread_id();
+    MOZ_RELEASE_ASSERT(mainTestThreadId.IsSpecified());
+
+    BaseProfilerThreadId mainThreadId =
+        mozilla::baseprofiler::profiler_main_thread_id();
+    MOZ_RELEASE_ASSERT(mainThreadId.IsSpecified());
+
+    MOZ_RELEASE_ASSERT(mainThreadId == mainTestThreadId,
+                       "Test should run on the main thread");
+    MOZ_RELEASE_ASSERT(mozilla::baseprofiler::profiler_is_main_thread());
+
+    std::thread testThread([&]() {
+      const BaseProfilerThreadId testThreadId =
+          mozilla::baseprofiler::profiler_current_thread_id();
+      MOZ_RELEASE_ASSERT(testThreadId.IsSpecified());
+      MOZ_RELEASE_ASSERT(testThreadId != mainThreadId);
+      MOZ_RELEASE_ASSERT(!mozilla::baseprofiler::profiler_is_main_thread());
+    });
+    testThread.join();
+  }
+
+  // No conversions between processes and threads.
+  static_assert(
+      !std::is_constructible_v<mozilla::baseprofiler::BaseProfilerThreadId,
+                               mozilla::baseprofiler::BaseProfilerProcessId>);
+  static_assert(
+      !std::is_assignable_v<mozilla::baseprofiler::BaseProfilerThreadId,
+                            mozilla::baseprofiler::BaseProfilerProcessId>);
+  static_assert(
+      !std::is_constructible_v<mozilla::baseprofiler::BaseProfilerProcessId,
+                               mozilla::baseprofiler::BaseProfilerThreadId>);
+  static_assert(
+      !std::is_assignable_v<mozilla::baseprofiler::BaseProfilerProcessId,
+                            mozilla::baseprofiler::BaseProfilerThreadId>);
+
+  printf("TestProfilerUtils done\n");
+}
 
 #ifdef MOZ_GECKO_PROFILER
 
@@ -58,6 +244,13 @@ MOZ_MAYBE_UNUSED static void SleepMilli(unsigned aMilliseconds) {
     }
   }
 #  endif
+}
+
+MOZ_MAYBE_UNUSED static void WaitUntilTimeStampChanges(
+    const mozilla::TimeStamp& aTimeStampToCompare = mozilla::TimeStamp::Now()) {
+  while (aTimeStampToCompare == mozilla::TimeStamp::Now()) {
+    SleepMilli(1);
+  }
 }
 
 using namespace mozilla;
@@ -299,6 +492,90 @@ void TestLEB128() {
   }
 
   printf("TestLEB128 done\n");
+}
+
+struct StringWriteFunc : public JSONWriteFunc {
+  std::string mString;
+
+  void Write(const mozilla::Span<const char>& aStr) override {
+    mString.append(aStr.data(), aStr.size());
+  }
+};
+
+void CheckJSON(mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
+               const char* aExpected, int aLine) {
+  const std::string& actual =
+      static_cast<StringWriteFunc*>(aWriter.WriteFunc())->mString;
+  if (strcmp(aExpected, actual.c_str()) != 0) {
+    fprintf(stderr,
+            "---- EXPECTED ---- (line %d)\n<<<%s>>>\n"
+            "---- ACTUAL ----\n<<<%s>>>\n",
+            aLine, aExpected, actual.c_str());
+    MOZ_RELEASE_ASSERT(false, "expected and actual output don't match");
+  }
+}
+
+void TestJSONTimeOutput() {
+  printf("TestJSONTimeOutput...\n");
+
+#  define TEST(in, out)                                        \
+    do {                                                       \
+      mozilla::baseprofiler::SpliceableJSONWriter writer(      \
+          mozilla::MakeUnique<StringWriteFunc>());             \
+      writer.Start(mozilla::JSONWriter::SingleLineStyle);      \
+      writer.TimeDoubleMsProperty("time_ms", (in));            \
+      writer.End();                                            \
+      CheckJSON(writer, "{\"time_ms\": " out "}\n", __LINE__); \
+    } while (false);
+
+  TEST(0, "0");
+
+  TEST(0.000'000'1, "0");
+  TEST(0.000'000'4, "0");
+  TEST(0.000'000'499, "0");
+  TEST(0.000'000'5, "0.000001");
+  TEST(0.000'001, "0.000001");
+  TEST(0.000'01, "0.00001");
+  TEST(0.000'1, "0.0001");
+  TEST(0.001, "0.001");
+  TEST(0.01, "0.01");
+  TEST(0.1, "0.1");
+  TEST(1, "1");
+  TEST(2, "2");
+  TEST(10, "10");
+  TEST(100, "100");
+  TEST(1'000, "1000");
+  TEST(10'000, "10000");
+  TEST(100'000, "100000");
+  TEST(1'000'000, "1000000");
+  // 2^53-2 ns in ms. 2^53-1 is the highest integer value representable in
+  // double, -1 again because we're adding 0.5 before truncating.
+  // That's 104 days, after which the nanosecond precision would decrease.
+  TEST(9'007'199'254.740'990, "9007199254.74099");
+
+  TEST(-0.000'000'1, "0");
+  TEST(-0.000'000'4, "0");
+  TEST(-0.000'000'499, "0");
+  TEST(-0.000'000'5, "-0.000001");
+  TEST(-0.000'001, "-0.000001");
+  TEST(-0.000'01, "-0.00001");
+  TEST(-0.000'1, "-0.0001");
+  TEST(-0.001, "-0.001");
+  TEST(-0.01, "-0.01");
+  TEST(-0.1, "-0.1");
+  TEST(-1, "-1");
+  TEST(-2, "-2");
+  TEST(-10, "-10");
+  TEST(-100, "-100");
+  TEST(-1'000, "-1000");
+  TEST(-10'000, "-10000");
+  TEST(-100'000, "-100000");
+  TEST(-1'000'000, "-1000000");
+  TEST(-9'007'199'254.740'990, "-9007199254.74099");
+
+#  undef TEST
+
+  printf("TestJSONTimeOutput done\n");
 }
 
 template <uint8_t byte, uint8_t... tail>
@@ -565,7 +842,7 @@ static void TestChunkManagerSingle() {
 
   // Release the first chunk.
   chunk->MarkDone();
-  cm.ReleaseChunks(std::move(chunk));
+  cm.ReleaseChunk(std::move(chunk));
   MOZ_RELEASE_ASSERT(!chunk, "chunk UniquePtr should have been moved-from");
 
   // Request after release.
@@ -724,6 +1001,10 @@ static void TestChunkManagerWithLocalLimit() {
   extantReleasedChunks = cm.GetExtantReleasedChunks();
   MOZ_RELEASE_ASSERT(!extantReleasedChunks, "Unexpected released chunk(s)");
 
+  // Verify that ReleaseChunk accepts zero chunks.
+  cm.ReleaseChunk(nullptr);
+  MOZ_RELEASE_ASSERT(!extantReleasedChunks, "Unexpected released chunk(s)");
+
   // For this test, we need to be able to get at least 2 chunks without hitting
   // the limit. (If this failed, it wouldn't necessary be a problem with
   // ProfileBufferChunkManagerWithLocalLimit, fiddle with constants at the top
@@ -765,8 +1046,9 @@ static void TestChunkManagerWithLocalLimit() {
     MOZ_RELEASE_ASSERT(!newChunk->GetNext(), "There should only be one chunk");
 
     // Mark previous chunk done and release it.
+    WaitUntilTimeStampChanges();  // Force "done" timestamp to change.
     chunk->MarkDone();
-    cm.ReleaseChunks(std::move(chunk));
+    cm.ReleaseChunk(std::move(chunk));
 
     // And cycle to the new chunk.
     chunk = std::move(newChunk);
@@ -793,15 +1075,18 @@ static void TestChunkManagerWithLocalLimit() {
     ran = true;
     MOZ_RELEASE_ASSERT(!!aChunk, "Chunk request should always work");
     Unused << aChunk->ReserveInitialBlockAsTail(0);
+    WaitUntilTimeStampChanges();  // Force "done" timestamp to change.
     aChunk->MarkDone();
     UniquePtr<ProfileBufferChunk> anotherChunk = cm.GetChunk();
     MOZ_RELEASE_ASSERT(!!anotherChunk);
     Unused << anotherChunk->ReserveInitialBlockAsTail(0);
+    WaitUntilTimeStampChanges();  // Force "done" timestamp to change.
     anotherChunk->MarkDone();
     cm.RequestChunk([&](UniquePtr<ProfileBufferChunk> aChunk) {
       ranInner = true;
       MOZ_RELEASE_ASSERT(!!aChunk, "Chunk request should always work");
       Unused << aChunk->ReserveInitialBlockAsTail(0);
+      WaitUntilTimeStampChanges();  // Force "done" timestamp to change.
       aChunk->MarkDone();
     });
     MOZ_RELEASE_ASSERT(
@@ -823,8 +1108,72 @@ static void TestChunkManagerWithLocalLimit() {
 
   // Enough testing! Clean-up.
   Unused << chunk->ReserveInitialBlockAsTail(0);
+  WaitUntilTimeStampChanges();  // Force "done" timestamp to change.
   chunk->MarkDone();
   cm.ForgetUnreleasedChunks();
+
+  // Special testing of the release algorithm, to make sure released chunks get
+  // sorted.
+  constexpr unsigned RandomReleaseChunkLoop = 100;
+  // Build a vector of chunks, and mark them "done", ready to be released.
+  Vector<UniquePtr<ProfileBufferChunk>> chunksToRelease;
+  MOZ_RELEASE_ASSERT(chunksToRelease.reserve(RandomReleaseChunkLoop));
+  Vector<TimeStamp> chunksTimeStamps;
+  MOZ_RELEASE_ASSERT(chunksTimeStamps.reserve(RandomReleaseChunkLoop));
+  for (unsigned i = 0; i < RandomReleaseChunkLoop; ++i) {
+    UniquePtr<ProfileBufferChunk> chunk = cm.GetChunk();
+    MOZ_RELEASE_ASSERT(chunk);
+    Unused << chunk->ReserveInitialBlockAsTail(0);
+    chunk->MarkDone();
+    MOZ_RELEASE_ASSERT(!chunk->ChunkHeader().mDoneTimeStamp.IsNull());
+    chunksTimeStamps.infallibleEmplaceBack(chunk->ChunkHeader().mDoneTimeStamp);
+    chunksToRelease.infallibleEmplaceBack(std::move(chunk));
+    if (i % 10 == 0) {
+      // "Done" timestamps should *usually* increase, let's make extra sure some
+      // timestamps are actually different.
+      WaitUntilTimeStampChanges();
+    }
+  }
+  // Shuffle the list.
+  std::random_device randomDevice;
+  std::mt19937 generator(randomDevice());
+  std::shuffle(chunksToRelease.begin(), chunksToRelease.end(), generator);
+  // And release chunks one by one, checking that the list of released chunks
+  // is always sorted.
+  printf("TestChunkManagerWithLocalLimit - Shuffle test timestamps:");
+  for (unsigned i = 0; i < RandomReleaseChunkLoop; ++i) {
+    printf(" %f", (chunksToRelease[i]->ChunkHeader().mDoneTimeStamp -
+                   TimeStamp::ProcessCreation())
+                      .ToMicroseconds());
+    cm.ReleaseChunk(std::move(chunksToRelease[i]));
+    cm.PeekExtantReleasedChunks([i](const ProfileBufferChunk* releasedChunks) {
+      MOZ_RELEASE_ASSERT(releasedChunks);
+      unsigned releasedChunkCount = 1;
+      for (;;) {
+        const ProfileBufferChunk* nextChunk = releasedChunks->GetNext();
+        if (!nextChunk) {
+          break;
+        }
+        ++releasedChunkCount;
+        MOZ_RELEASE_ASSERT(releasedChunks->ChunkHeader().mDoneTimeStamp <=
+                           nextChunk->ChunkHeader().mDoneTimeStamp);
+        releasedChunks = nextChunk;
+      }
+      MOZ_RELEASE_ASSERT(releasedChunkCount == i + 1);
+    });
+  }
+  printf("\n");
+  // Finally, the whole list of released chunks should have the exact same
+  // timestamps as the initial list of "done" chunks.
+  extantReleasedChunks = cm.GetExtantReleasedChunks();
+  for (unsigned i = 0; i < RandomReleaseChunkLoop; ++i) {
+    MOZ_RELEASE_ASSERT(extantReleasedChunks, "Not enough released chunks");
+    MOZ_RELEASE_ASSERT(extantReleasedChunks->ChunkHeader().mDoneTimeStamp ==
+                       chunksTimeStamps[i]);
+    Unused << std::exchange(extantReleasedChunks,
+                            extantReleasedChunks->ReleaseNext());
+  }
+  MOZ_RELEASE_ASSERT(!extantReleasedChunks, "Too many released chunks");
 
 #  ifdef DEBUG
   cm.DeregisteredFrom(chunkManagerRegisterer);
@@ -927,8 +1276,7 @@ static void TestControlledChunkManagerUpdate() {
   MOZ_RELEASE_ASSERT(!update1.IsFinal());
 
   auto CreateBiggerChunkAfter = [](const ProfileBufferChunk& aChunkToBeat) {
-    while (TimeStamp::NowUnfuzzed() <=
-           aChunkToBeat.ChunkHeader().mDoneTimeStamp) {
+    while (TimeStamp::Now() <= aChunkToBeat.ChunkHeader().mDoneTimeStamp) {
       ::SleepMilli(1);
     }
     auto chunk = ProfileBufferChunk::Create(aChunkToBeat.BufferBytes() * 2);
@@ -1229,19 +1577,20 @@ static void TestControlledChunkManagerWithLocalLimit() {
 
     // Make sure the "Done" timestamp below cannot be the same as from the
     // previous loop.
-    const TimeStamp now = TimeStamp::NowUnfuzzed();
-    while (TimeStamp::NowUnfuzzed() == now) {
+    const TimeStamp now = TimeStamp::Now();
+    while (TimeStamp::Now() == now) {
       ::SleepMilli(1);
     }
 
     // Mark previous chunk done and release it.
+    WaitUntilTimeStampChanges();  // Force "done" timestamp to change.
     chunk->MarkDone();
     const auto doneTimeStamp = chunk->ChunkHeader().mDoneTimeStamp;
     const auto bufferBytes = chunk->BufferBytes();
-    cm.ReleaseChunks(std::move(chunk));
+    cm.ReleaseChunk(std::move(chunk));
 
     MOZ_RELEASE_ASSERT(updateCount == 1,
-                       "ReleaseChunks() should have triggered an update");
+                       "ReleaseChunk() should have triggered an update");
     MOZ_RELEASE_ASSERT(!update.IsFinal());
     MOZ_RELEASE_ASSERT(!update.IsNotUpdate());
     MOZ_RELEASE_ASSERT(update.UnreleasedBytes() ==
@@ -1298,6 +1647,17 @@ static void TestControlledChunkManagerWithLocalLimit() {
   printf("TestControlledChunkManagerWithLocalLimit done\n");
 }
 
+#  define VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(                         \
+      aProfileChunkedBuffer, aStart, aEnd, aPushed, aCleared, aFailed)        \
+    {                                                                         \
+      ProfileChunkedBuffer::State state = (aProfileChunkedBuffer).GetState(); \
+      MOZ_RELEASE_ASSERT(state.mRangeStart == (aStart));                      \
+      MOZ_RELEASE_ASSERT(state.mRangeEnd == (aEnd));                          \
+      MOZ_RELEASE_ASSERT(state.mPushedBlockCount == (aPushed));               \
+      MOZ_RELEASE_ASSERT(state.mClearedBlockCount == (aCleared));             \
+      MOZ_RELEASE_ASSERT(state.mFailedPutBytes == (aFailed));                 \
+    }
+
 static void TestChunkedBuffer() {
   printf("TestChunkedBuffer...\n");
 
@@ -1310,6 +1670,8 @@ static void TestChunkedBuffer() {
 
   MOZ_RELEASE_ASSERT(cb.BufferLength().isNothing());
 
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cb, 1, 1, 0, 0, 0);
+
   int result = 0;
   result = cb.ReserveAndPut(
       []() {
@@ -1318,20 +1680,25 @@ static void TestChunkedBuffer() {
       },
       [](Maybe<ProfileBufferEntryWriter>& aEW) { return aEW ? 2 : 3; });
   MOZ_RELEASE_ASSERT(result == 3);
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cb, 1, 1, 0, 0, 0);
 
   result = 0;
   result = cb.Put(
       1, [](Maybe<ProfileBufferEntryWriter>& aEW) { return aEW ? 1 : 2; });
   MOZ_RELEASE_ASSERT(result == 2);
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cb, 1, 1, 0, 0, 0);
 
   blockIndex = cb.PutFrom(&result, 1);
   MOZ_RELEASE_ASSERT(!blockIndex);
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cb, 1, 1, 0, 0, 0);
 
   blockIndex = cb.PutObjects(123, result, "hello");
   MOZ_RELEASE_ASSERT(!blockIndex);
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cb, 1, 1, 0, 0, 0);
 
   blockIndex = cb.PutObject(123);
   MOZ_RELEASE_ASSERT(!blockIndex);
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cb, 1, 1, 0, 0, 0);
 
   auto chunks = cb.GetAllChunks();
   static_assert(std::is_same_v<decltype(chunks), UniquePtr<ProfileBufferChunk>>,
@@ -1365,6 +1732,7 @@ static void TestChunkedBuffer() {
   constexpr ProfileChunkedBuffer::Length chunkMinSize = 128;
   ProfileBufferChunkManagerWithLocalLimit cm(bufferMaxSize, chunkMinSize);
   cb.SetChunkManager(cm);
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cb, 1, 1, 0, 0, 0);
 
   // Let the chunk manager fulfill the initial request for an extra chunk.
   cm.FulfillChunkRequests();
@@ -1372,6 +1740,7 @@ static void TestChunkedBuffer() {
   MOZ_RELEASE_ASSERT(cm.MaxTotalSize() == bufferMaxSize);
   MOZ_RELEASE_ASSERT(cb.BufferLength().isSome());
   MOZ_RELEASE_ASSERT(*cb.BufferLength() == bufferMaxSize);
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cb, 1, 1, 0, 0, 0);
 
   // Write an int with the main `ReserveAndPut` function.
   const int test = 123;
@@ -1393,6 +1762,8 @@ static void TestChunkedBuffer() {
   MOZ_RELEASE_ASSERT(ran);
   MOZ_RELEASE_ASSERT(success);
   MOZ_RELEASE_ASSERT(blockIndex.ConvertToProfileBufferIndex() == 1);
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(
+      cb, 1, 1 + ULEB128Size(sizeof(test)) + sizeof(test), 1, 0, 0);
 
   ran = false;
   result = 0;
@@ -1489,6 +1860,16 @@ static void TestChunkedBuffer() {
   MOZ_RELEASE_ASSERT(result == 6);
   MOZ_RELEASE_ASSERT(read == 1);
 
+  MOZ_RELEASE_ASSERT(!cb.IsIndexInCurrentChunk(ProfileBufferIndex{}));
+  MOZ_RELEASE_ASSERT(
+      cb.IsIndexInCurrentChunk(blockIndex.ConvertToProfileBufferIndex()));
+  MOZ_RELEASE_ASSERT(cb.IsIndexInCurrentChunk(cb.GetState().mRangeEnd - 1));
+  MOZ_RELEASE_ASSERT(!cb.IsIndexInCurrentChunk(cb.GetState().mRangeEnd));
+
+  // No changes after reads.
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(
+      cb, 1, 1 + ULEB128Size(sizeof(test)) + sizeof(test), 1, 0, 0);
+
   // Steal the underlying ProfileBufferChunks from the ProfileChunkedBuffer.
   chunks = cb.GetAllChunks();
   MOZ_RELEASE_ASSERT(!!chunks, "Expected at least one chunk");
@@ -1499,6 +1880,10 @@ static void TestChunkedBuffer() {
   MOZ_RELEASE_ASSERT(chunks->RangeStart() == 1);
   MOZ_RELEASE_ASSERT(chunks->OffsetFirstBlock() == 0);
   MOZ_RELEASE_ASSERT(chunks->OffsetPastLastBlock() == 1 + sizeof(test));
+
+  // GetAllChunks() should have advanced the index one full chunk forward.
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cb, 1 + chunkActualSize,
+                                             1 + chunkActualSize, 1, 0, 0);
 
   // Nothing more to read from the now-empty ProfileChunkedBuffer.
   cb.ReadEach([](ProfileBufferEntryReader&) { MOZ_RELEASE_ASSERT(false); });
@@ -1526,6 +1911,10 @@ static void TestChunkedBuffer() {
       });
   MOZ_RELEASE_ASSERT(read == 1);
 
+  // No changes after reads.
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cb, 1 + chunkActualSize,
+                                             1 + chunkActualSize, 1, 0, 0);
+
   // Write lots of numbers (by memcpy), which should trigger Chunk destructions.
   ProfileBufferBlockIndex firstBlockIndex;
   MOZ_RELEASE_ASSERT(!firstBlockIndex);
@@ -1542,6 +1931,22 @@ static void TestChunkedBuffer() {
     MOZ_RELEASE_ASSERT(blockIndex > lastBlockIndex);
     lastBlockIndex = blockIndex;
   }
+
+  ProfileChunkedBuffer::State stateAfterPuts = cb.GetState();
+  ProfileBufferIndex startAfterPuts = stateAfterPuts.mRangeStart;
+  MOZ_RELEASE_ASSERT(startAfterPuts > 1 + chunkActualSize);
+  ProfileBufferIndex endAfterPuts = stateAfterPuts.mRangeEnd;
+  MOZ_RELEASE_ASSERT(endAfterPuts > startAfterPuts);
+  uint64_t pushedAfterPuts = stateAfterPuts.mPushedBlockCount;
+  MOZ_RELEASE_ASSERT(pushedAfterPuts > 0);
+  uint64_t clearedAfterPuts = stateAfterPuts.mClearedBlockCount;
+  MOZ_RELEASE_ASSERT(clearedAfterPuts > 0);
+  MOZ_RELEASE_ASSERT(stateAfterPuts.mFailedPutBytes == 0);
+  MOZ_RELEASE_ASSERT(!cb.IsIndexInCurrentChunk(ProfileBufferIndex{}));
+  MOZ_RELEASE_ASSERT(
+      !cb.IsIndexInCurrentChunk(blockIndex.ConvertToProfileBufferIndex()));
+  MOZ_RELEASE_ASSERT(
+      !cb.IsIndexInCurrentChunk(firstBlockIndex.ConvertToProfileBufferIndex()));
 
   // Read extant numbers, which should at least follow each other.
   read = 0;
@@ -1615,6 +2020,10 @@ static void TestChunkedBuffer() {
   } while (blockIndex);
   MOZ_RELEASE_ASSERT(read > 1);
 
+  // No changes after reads.
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(
+      cb, startAfterPuts, endAfterPuts, pushedAfterPuts, clearedAfterPuts, 0);
+
 #  ifdef DEBUG
   // cb.Dump();
 #  endif
@@ -1624,6 +2033,20 @@ static void TestChunkedBuffer() {
 #  ifdef DEBUG
   // cb.Dump();
 #  endif
+
+  ProfileChunkedBuffer::State stateAfterClear = cb.GetState();
+  ProfileBufferIndex startAfterClear = stateAfterClear.mRangeStart;
+  MOZ_RELEASE_ASSERT(startAfterClear > startAfterPuts);
+  ProfileBufferIndex endAfterClear = stateAfterClear.mRangeEnd;
+  MOZ_RELEASE_ASSERT(endAfterClear == startAfterClear);
+  MOZ_RELEASE_ASSERT(stateAfterClear.mPushedBlockCount == 0);
+  MOZ_RELEASE_ASSERT(stateAfterClear.mClearedBlockCount == 0);
+  MOZ_RELEASE_ASSERT(stateAfterClear.mFailedPutBytes == 0);
+  MOZ_RELEASE_ASSERT(!cb.IsIndexInCurrentChunk(ProfileBufferIndex{}));
+  MOZ_RELEASE_ASSERT(
+      !cb.IsIndexInCurrentChunk(blockIndex.ConvertToProfileBufferIndex()));
+  MOZ_RELEASE_ASSERT(!cb.IsIndexInCurrentChunk(stateAfterClear.mRangeEnd - 1));
+  MOZ_RELEASE_ASSERT(!cb.IsIndexInCurrentChunk(stateAfterClear.mRangeEnd));
 
   // Start writer threads.
   constexpr int ThreadCount = 32;
@@ -1664,8 +2087,26 @@ static void TestChunkedBuffer() {
   // cb.Dump();
 #  endif
 
+  ProfileChunkedBuffer::State stateAfterMTPuts = cb.GetState();
+  ProfileBufferIndex startAfterMTPuts = stateAfterMTPuts.mRangeStart;
+  MOZ_RELEASE_ASSERT(startAfterMTPuts > startAfterClear);
+  ProfileBufferIndex endAfterMTPuts = stateAfterMTPuts.mRangeEnd;
+  MOZ_RELEASE_ASSERT(endAfterMTPuts > startAfterMTPuts);
+  MOZ_RELEASE_ASSERT(stateAfterMTPuts.mPushedBlockCount > 0);
+  MOZ_RELEASE_ASSERT(stateAfterMTPuts.mClearedBlockCount > 0);
+  MOZ_RELEASE_ASSERT(stateAfterMTPuts.mFailedPutBytes == 0);
+
   // Reset to out-of-session.
   cb.ResetChunkManager();
+
+  ProfileChunkedBuffer::State stateAfterReset = cb.GetState();
+  ProfileBufferIndex startAfterReset = stateAfterReset.mRangeStart;
+  MOZ_RELEASE_ASSERT(startAfterReset == endAfterMTPuts);
+  ProfileBufferIndex endAfterReset = stateAfterReset.mRangeEnd;
+  MOZ_RELEASE_ASSERT(endAfterReset == startAfterReset);
+  MOZ_RELEASE_ASSERT(stateAfterReset.mPushedBlockCount == 0);
+  MOZ_RELEASE_ASSERT(stateAfterReset.mClearedBlockCount == 0);
+  MOZ_RELEASE_ASSERT(stateAfterReset.mFailedPutBytes == 0);
 
   success = cb.ReserveAndPut(
       []() {
@@ -1674,30 +2115,46 @@ static void TestChunkedBuffer() {
       },
       [](Maybe<ProfileBufferEntryWriter>& aEW) { return !!aEW; });
   MOZ_RELEASE_ASSERT(!success);
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cb, startAfterReset, endAfterReset,
+                                             0, 0, 0);
 
   success =
       cb.Put(1, [](Maybe<ProfileBufferEntryWriter>& aEW) { return !!aEW; });
   MOZ_RELEASE_ASSERT(!success);
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cb, startAfterReset, endAfterReset,
+                                             0, 0, 0);
 
   blockIndex = cb.PutFrom(&success, 1);
   MOZ_RELEASE_ASSERT(!blockIndex);
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cb, startAfterReset, endAfterReset,
+                                             0, 0, 0);
 
   blockIndex = cb.PutObjects(123, success, "hello");
   MOZ_RELEASE_ASSERT(!blockIndex);
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cb, startAfterReset, endAfterReset,
+                                             0, 0, 0);
 
   blockIndex = cb.PutObject(123);
   MOZ_RELEASE_ASSERT(!blockIndex);
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cb, startAfterReset, endAfterReset,
+                                             0, 0, 0);
 
   chunks = cb.GetAllChunks();
   MOZ_RELEASE_ASSERT(!chunks, "Expected no chunks when out-of-session");
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cb, startAfterReset, endAfterReset,
+                                             0, 0, 0);
 
   cb.ReadEach([](ProfileBufferEntryReader&) { MOZ_RELEASE_ASSERT(false); });
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cb, startAfterReset, endAfterReset,
+                                             0, 0, 0);
 
   success = cb.ReadAt(nullptr, [](Maybe<ProfileBufferEntryReader>&& er) {
     MOZ_RELEASE_ASSERT(er.isNothing());
     return true;
   });
   MOZ_RELEASE_ASSERT(success);
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cb, startAfterReset, endAfterReset,
+                                             0, 0, 0);
 
   printf("TestChunkedBuffer done\n");
 }
@@ -1715,44 +2172,66 @@ static void TestChunkedBufferSingle() {
       MakeUnique<ProfileBufferChunkManagerSingle>(chunkMinSize));
 
   MOZ_RELEASE_ASSERT(cbSingle.BufferLength().isSome());
-  MOZ_RELEASE_ASSERT(*cbSingle.BufferLength() >= chunkMinSize);
+  const ProfileChunkedBuffer::Length bufferBytes = *cbSingle.BufferLength();
+  MOZ_RELEASE_ASSERT(bufferBytes >= chunkMinSize);
 
-  // Write lots of numbers (as objects), which should trigger the release of our
-  // single Chunk.
-  size_t firstIndexToFail = 0;
-  ProfileBufferBlockIndex lastBlockIndex;
-  for (size_t i = 1; i < 3 * chunkMinSize / (1 + sizeof(int)); ++i) {
-    ProfileBufferBlockIndex blockIndex = cbSingle.PutObject(i);
-    if (blockIndex) {
-      MOZ_RELEASE_ASSERT(
-          firstIndexToFail == 0,
-          "We should successfully write after we have failed once");
-      lastBlockIndex = blockIndex;
-    } else if (firstIndexToFail == 0) {
-      firstIndexToFail = i;
-    }
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cbSingle, 1, 1, 0, 0, 0);
+
+  // We will write this many blocks to fill the chunk.
+  constexpr size_t testBlocks = 4;
+  const ProfileChunkedBuffer::Length blockBytes = bufferBytes / testBlocks;
+  MOZ_RELEASE_ASSERT(ULEB128Size(blockBytes) == 1,
+                     "This test assumes block sizes are small enough so that "
+                     "their ULEB128-encoded size is 1 byte");
+  const ProfileChunkedBuffer::Length entryBytes =
+      blockBytes - ULEB128Size(blockBytes);
+
+  // First buffer-filling test: Try to write a too-big entry at the end of the
+  // chunk.
+
+  // Write all but one block.
+  for (size_t i = 0; i < testBlocks - 1; ++i) {
+    cbSingle.Put(entryBytes, [&](Maybe<ProfileBufferEntryWriter>& aEW) {
+      MOZ_RELEASE_ASSERT(aEW.isSome());
+      while (aEW->RemainingBytes() > 0) {
+        **aEW = '0' + i;
+        ++(*aEW);
+      }
+    });
+    VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(
+        cbSingle, 1, 1 + blockBytes * (i + 1), i + 1, 0, 0);
   }
-  MOZ_RELEASE_ASSERT(firstIndexToFail != 0,
-                     "There should be at least one failure");
-  MOZ_RELEASE_ASSERT(firstIndexToFail != 1, "We shouldn't fail from the start");
-  MOZ_RELEASE_ASSERT(!!lastBlockIndex, "We shouldn't fail from the start");
 
-  // Read extant numbers, which should go from 1 to firstIndexToFail-1.
+  // Write the last block so that it's too big (by 1 byte) to fit in the chunk,
+  // this should fail.
+  const ProfileChunkedBuffer::Length remainingBytesForLastBlock =
+      bufferBytes - blockBytes * (testBlocks - 1);
+  MOZ_RELEASE_ASSERT(ULEB128Size(remainingBytesForLastBlock) == 1,
+                     "This test assumes block sizes are small enough so that "
+                     "their ULEB128-encoded size is 1 byte");
+  const ProfileChunkedBuffer::Length entryToFitRemainingBytes =
+      remainingBytesForLastBlock - ULEB128Size(remainingBytesForLastBlock);
+  cbSingle.Put(entryToFitRemainingBytes + 1,
+               [&](Maybe<ProfileBufferEntryWriter>& aEW) {
+                 MOZ_RELEASE_ASSERT(aEW.isNothing());
+               });
+  // The buffer state should not have changed, apart from the failed bytes.
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(
+      cbSingle, 1, 1 + blockBytes * (testBlocks - 1), testBlocks - 1, 0,
+      remainingBytesForLastBlock + 1);
+
   size_t read = 0;
-  cbSingle.ReadEach(
-      [&](ProfileBufferEntryReader& er, ProfileBufferBlockIndex blockIndex) {
-        ++read;
-        MOZ_RELEASE_ASSERT(er.RemainingBytes() == sizeof(size_t));
-        const auto value = er.ReadObject<size_t>();
-        MOZ_RELEASE_ASSERT(value == read);
-        MOZ_RELEASE_ASSERT(er.RemainingBytes() == 0);
-        MOZ_RELEASE_ASSERT(blockIndex <= lastBlockIndex,
-                           "Unexpected block index past the last written one");
-      });
-  MOZ_RELEASE_ASSERT(read == firstIndexToFail - 1,
-                     "We should have read up to before the first failure");
+  cbSingle.ReadEach([&](ProfileBufferEntryReader& aER) {
+    MOZ_RELEASE_ASSERT(aER.RemainingBytes() == entryBytes);
+    while (aER.RemainingBytes() > 0) {
+      MOZ_RELEASE_ASSERT(*aER == '0' + read);
+      ++aER;
+    }
+    ++read;
+  });
+  MOZ_RELEASE_ASSERT(read == testBlocks - 1);
 
-  // Test AppendContent:
+  // ~Interlude~ Test AppendContent:
   // Create another ProfileChunkedBuffer that will use a
   // ProfileBufferChunkManagerWithLocalLimit, which will give away
   // ProfileBufferChunks that can contain 128 bytes, using up to 1KB of memory
@@ -1765,29 +2244,144 @@ static void TestChunkedBufferSingle() {
   // It should start empty.
   cbTarget.ReadEach(
       [](ProfileBufferEntryReader&) { MOZ_RELEASE_ASSERT(false); });
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cbTarget, 1, 1, 0, 0, 0);
 
   // Copy the contents from cbSingle to cbTarget.
   cbTarget.AppendContents(cbSingle);
 
   // And verify that we now have the same contents in cbTarget.
   read = 0;
-  cbTarget.ReadEach(
-      [&](ProfileBufferEntryReader& er, ProfileBufferBlockIndex blockIndex) {
-        ++read;
-        MOZ_RELEASE_ASSERT(er.RemainingBytes() == sizeof(size_t));
-        const auto value = er.ReadObject<size_t>();
-        MOZ_RELEASE_ASSERT(value == read);
-        MOZ_RELEASE_ASSERT(er.RemainingBytes() == 0);
-        MOZ_RELEASE_ASSERT(blockIndex <= lastBlockIndex,
-                           "Unexpected block index past the last written one");
-      });
-  MOZ_RELEASE_ASSERT(read == firstIndexToFail - 1,
-                     "We should have read up to before the first failure");
+  cbTarget.ReadEach([&](ProfileBufferEntryReader& aER) {
+    MOZ_RELEASE_ASSERT(aER.RemainingBytes() == entryBytes);
+    while (aER.RemainingBytes() > 0) {
+      MOZ_RELEASE_ASSERT(*aER == '0' + read);
+      ++aER;
+    }
+    ++read;
+  });
+  MOZ_RELEASE_ASSERT(read == testBlocks - 1);
+  // The state should be the same as the source.
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(
+      cbTarget, 1, 1 + blockBytes * (testBlocks - 1), testBlocks - 1, 0, 0);
 
 #  ifdef DEBUG
   // cbSingle.Dump();
   // cbTarget.Dump();
 #  endif
+
+  // Because we failed to write a too-big chunk above, the chunk was marked
+  // full, so that entries should be consistently rejected from now on.
+  cbSingle.Put(1, [&](Maybe<ProfileBufferEntryWriter>& aEW) {
+    MOZ_RELEASE_ASSERT(aEW.isNothing());
+  });
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(
+      cbSingle, 1, 1 + blockBytes * ((testBlocks - 1)), testBlocks - 1, 0,
+      remainingBytesForLastBlock + 1 + ULEB128Size(1u) + 1);
+
+  // Clear the buffer before the next test.
+
+  cbSingle.Clear();
+  // Clear() should move the index to the next chunk range -- even if it's
+  // really reusing the same chunk.
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cbSingle, 1 + bufferBytes,
+                                             1 + bufferBytes, 0, 0, 0);
+  cbSingle.ReadEach(
+      [&](ProfileBufferEntryReader& aER) { MOZ_RELEASE_ASSERT(false); });
+
+  // Second buffer-filling test: Try to write a final entry that just fits at
+  // the end of the chunk.
+
+  // Write all but one block.
+  for (size_t i = 0; i < testBlocks - 1; ++i) {
+    cbSingle.Put(entryBytes, [&](Maybe<ProfileBufferEntryWriter>& aEW) {
+      MOZ_RELEASE_ASSERT(aEW.isSome());
+      while (aEW->RemainingBytes() > 0) {
+        **aEW = 'a' + i;
+        ++(*aEW);
+      }
+    });
+    VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(
+        cbSingle, 1 + bufferBytes, 1 + bufferBytes + blockBytes * (i + 1),
+        i + 1, 0, 0);
+  }
+
+  read = 0;
+  cbSingle.ReadEach([&](ProfileBufferEntryReader& aER) {
+    MOZ_RELEASE_ASSERT(aER.RemainingBytes() == entryBytes);
+    while (aER.RemainingBytes() > 0) {
+      MOZ_RELEASE_ASSERT(*aER == 'a' + read);
+      ++aER;
+    }
+    ++read;
+  });
+  MOZ_RELEASE_ASSERT(read == testBlocks - 1);
+
+  // Write the last block so that it fits exactly in the chunk.
+  cbSingle.Put(entryToFitRemainingBytes,
+               [&](Maybe<ProfileBufferEntryWriter>& aEW) {
+                 MOZ_RELEASE_ASSERT(aEW.isSome());
+                 while (aEW->RemainingBytes() > 0) {
+                   **aEW = 'a' + (testBlocks - 1);
+                   ++(*aEW);
+                 }
+               });
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(
+      cbSingle, 1 + bufferBytes, 1 + bufferBytes + blockBytes * testBlocks,
+      testBlocks, 0, 0);
+
+  read = 0;
+  cbSingle.ReadEach([&](ProfileBufferEntryReader& aER) {
+    MOZ_RELEASE_ASSERT(
+        aER.RemainingBytes() ==
+        ((read < testBlocks) ? entryBytes : entryToFitRemainingBytes));
+    while (aER.RemainingBytes() > 0) {
+      MOZ_RELEASE_ASSERT(*aER == 'a' + read);
+      ++aER;
+    }
+    ++read;
+  });
+  MOZ_RELEASE_ASSERT(read == testBlocks);
+
+  // Because the single chunk has been filled, it shouldn't be possible to write
+  // more entries.
+  cbSingle.Put(1, [&](Maybe<ProfileBufferEntryWriter>& aEW) {
+    MOZ_RELEASE_ASSERT(aEW.isNothing());
+  });
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(
+      cbSingle, 1 + bufferBytes, 1 + bufferBytes + blockBytes * testBlocks,
+      testBlocks, 0, ULEB128Size(1u) + 1);
+
+  cbSingle.Clear();
+  // Clear() should move the index to the next chunk range -- even if it's
+  // really reusing the same chunk.
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(cbSingle, 1 + bufferBytes * 2,
+                                             1 + bufferBytes * 2, 0, 0, 0);
+  cbSingle.ReadEach(
+      [&](ProfileBufferEntryReader& aER) { MOZ_RELEASE_ASSERT(false); });
+
+  // Clear() recycles the released chunk, so we should be able to record new
+  // entries.
+  cbSingle.Put(entryBytes, [&](Maybe<ProfileBufferEntryWriter>& aEW) {
+    MOZ_RELEASE_ASSERT(aEW.isSome());
+    while (aEW->RemainingBytes() > 0) {
+      **aEW = 'x';
+      ++(*aEW);
+    }
+  });
+  VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(
+      cbSingle, 1 + bufferBytes * 2,
+      1 + bufferBytes * 2 + ULEB128Size(entryBytes) + entryBytes, 1, 0, 0);
+  read = 0;
+  cbSingle.ReadEach([&](ProfileBufferEntryReader& aER) {
+    MOZ_RELEASE_ASSERT(read == 0);
+    MOZ_RELEASE_ASSERT(aER.RemainingBytes() == entryBytes);
+    while (aER.RemainingBytes() > 0) {
+      MOZ_RELEASE_ASSERT(*aER == 'x');
+      ++aER;
+    }
+    ++read;
+  });
+  MOZ_RELEASE_ASSERT(read == 1);
 
   printf("TestChunkedBufferSingle done\n");
 }
@@ -2862,10 +3456,10 @@ void TestBlocksRingBufferSerialization() {
 
   rb.Clear();
   int intArray[] = {1, 2, 3, 4, 5};
-  rb.PutObjects(MakeSpan(intArray));
+  rb.PutObjects(Span(intArray));
   rb.ReadEach([&](ProfileBufferEntryReader& aER) {
     int intArrayOut[sizeof(intArray) / sizeof(intArray[0])] = {0};
-    auto outSpan = MakeSpan(intArrayOut);
+    auto outSpan = Span(intArrayOut);
     aER.ReadIntoObject(outSpan);
     for (size_t i = 0; i < sizeof(intArray) / sizeof(intArray[0]); ++i) {
       MOZ_RELEASE_ASSERT(intArrayOut[i] == intArray[i]);
@@ -2983,10 +3577,265 @@ void TestBlocksRingBufferSerialization() {
   printf("TestBlocksRingBufferSerialization done\n");
 }
 
+void TestLiteralEmptyStringView() {
+  printf("TestLiteralEmptyStringView...\n");
+
+  static_assert(mozilla::LiteralEmptyStringView<char>() ==
+                std::string_view(""));
+  static_assert(!!mozilla::LiteralEmptyStringView<char>().data());
+  static_assert(mozilla::LiteralEmptyStringView<char>().length() == 0);
+
+  static_assert(mozilla::LiteralEmptyStringView<char16_t>() ==
+                std::basic_string_view<char16_t>(u""));
+  static_assert(!!mozilla::LiteralEmptyStringView<char16_t>().data());
+  static_assert(mozilla::LiteralEmptyStringView<char16_t>().length() == 0);
+
+  printf("TestLiteralEmptyStringView done\n");
+}
+
+template <typename CHAR>
+void TestProfilerStringView() {
+  if constexpr (std::is_same_v<CHAR, char>) {
+    printf("TestProfilerStringView<char>...\n");
+  } else if constexpr (std::is_same_v<CHAR, char16_t>) {
+    printf("TestProfilerStringView<char16_t>...\n");
+  } else {
+    MOZ_RELEASE_ASSERT(false,
+                       "TestProfilerStringView only handles char and char16_t");
+  }
+
+  // Used to verify implicit constructions, as this will normally be used in
+  // function parameters.
+  auto BSV = [](mozilla::ProfilerStringView<CHAR>&& aBSV) {
+    return std::move(aBSV);
+  };
+
+  // These look like string literals, as expected by some string constructors.
+  const CHAR empty[0 + 1] = {CHAR('\0')};
+  const CHAR hi[2 + 1] = {
+      CHAR('h'),
+      CHAR('i'),
+      CHAR('\0'),
+  };
+
+  // Literal empty string.
+  MOZ_RELEASE_ASSERT(BSV(empty).Length() == 0);
+  MOZ_RELEASE_ASSERT(BSV(empty).AsSpan().IsEmpty());
+  MOZ_RELEASE_ASSERT(BSV(empty).IsLiteral());
+  MOZ_RELEASE_ASSERT(!BSV(empty).IsReference());
+
+  // Literal non-empty string.
+  MOZ_RELEASE_ASSERT(BSV(hi).Length() == 2);
+  MOZ_RELEASE_ASSERT(BSV(hi).AsSpan().Elements());
+  MOZ_RELEASE_ASSERT(BSV(hi).AsSpan().Elements()[0] == CHAR('h'));
+  MOZ_RELEASE_ASSERT(BSV(hi).AsSpan().Elements()[1] == CHAR('i'));
+  MOZ_RELEASE_ASSERT(BSV(hi).IsLiteral());
+  MOZ_RELEASE_ASSERT(!BSV(hi).IsReference());
+
+  // std::string_view to a literal empty string.
+  MOZ_RELEASE_ASSERT(BSV(std::basic_string_view<CHAR>(empty)).Length() == 0);
+  MOZ_RELEASE_ASSERT(
+      BSV(std::basic_string_view<CHAR>(empty)).AsSpan().IsEmpty());
+  MOZ_RELEASE_ASSERT(!BSV(std::basic_string_view<CHAR>(empty)).IsLiteral());
+  MOZ_RELEASE_ASSERT(BSV(std::basic_string_view<CHAR>(empty)).IsReference());
+
+  // std::string_view to a literal non-empty string.
+  MOZ_RELEASE_ASSERT(BSV(std::basic_string_view<CHAR>(hi)).Length() == 2);
+  MOZ_RELEASE_ASSERT(BSV(std::basic_string_view<CHAR>(hi)).AsSpan().Elements());
+  MOZ_RELEASE_ASSERT(
+      BSV(std::basic_string_view<CHAR>(hi)).AsSpan().Elements()[0] ==
+      CHAR('h'));
+  MOZ_RELEASE_ASSERT(
+      BSV(std::basic_string_view<CHAR>(hi)).AsSpan().Elements()[1] ==
+      CHAR('i'));
+  MOZ_RELEASE_ASSERT(!BSV(std::basic_string_view<CHAR>(hi)).IsLiteral());
+  MOZ_RELEASE_ASSERT(BSV(std::basic_string_view<CHAR>(hi)).IsReference());
+
+  // Default std::string_view points at nullptr, ProfilerStringView converts it
+  // to the literal empty string.
+  MOZ_RELEASE_ASSERT(BSV(std::basic_string_view<CHAR>()).Length() == 0);
+  MOZ_RELEASE_ASSERT(!std::basic_string_view<CHAR>().data());
+  MOZ_RELEASE_ASSERT(BSV(std::basic_string_view<CHAR>()).AsSpan().IsEmpty());
+  MOZ_RELEASE_ASSERT(BSV(std::basic_string_view<CHAR>()).IsLiteral());
+  MOZ_RELEASE_ASSERT(!BSV(std::basic_string_view<CHAR>()).IsReference());
+
+  // std::string to a literal empty string.
+  MOZ_RELEASE_ASSERT(BSV(std::basic_string<CHAR>(empty)).Length() == 0);
+  MOZ_RELEASE_ASSERT(BSV(std::basic_string<CHAR>(empty)).AsSpan().IsEmpty());
+  MOZ_RELEASE_ASSERT(!BSV(std::basic_string<CHAR>(empty)).IsLiteral());
+  MOZ_RELEASE_ASSERT(BSV(std::basic_string<CHAR>(empty)).IsReference());
+
+  // std::string to a literal non-empty string.
+  MOZ_RELEASE_ASSERT(BSV(std::basic_string<CHAR>(hi)).Length() == 2);
+  MOZ_RELEASE_ASSERT(BSV(std::basic_string<CHAR>(hi)).AsSpan().Elements());
+  MOZ_RELEASE_ASSERT(BSV(std::basic_string<CHAR>(hi)).AsSpan().Elements()[0] ==
+                     CHAR('h'));
+  MOZ_RELEASE_ASSERT(BSV(std::basic_string<CHAR>(hi)).AsSpan().Elements()[1] ==
+                     CHAR('i'));
+  MOZ_RELEASE_ASSERT(!BSV(std::basic_string<CHAR>(hi)).IsLiteral());
+  MOZ_RELEASE_ASSERT(BSV(std::basic_string<CHAR>(hi)).IsReference());
+
+  // Default std::string contains an empty null-terminated string.
+  MOZ_RELEASE_ASSERT(BSV(std::basic_string<CHAR>()).Length() == 0);
+  MOZ_RELEASE_ASSERT(std::basic_string<CHAR>().data());
+  MOZ_RELEASE_ASSERT(BSV(std::basic_string<CHAR>()).AsSpan().IsEmpty());
+  MOZ_RELEASE_ASSERT(!BSV(std::basic_string<CHAR>()).IsLiteral());
+  MOZ_RELEASE_ASSERT(BSV(std::basic_string<CHAR>()).IsReference());
+
+  // Class that quacks like nsTString (with Data(), Length(), IsLiteral()), to
+  // check that ProfilerStringView can read from them.
+  class FakeNsTString {
+   public:
+    FakeNsTString(const CHAR* aData, size_t aLength, bool aIsLiteral)
+        : mData(aData), mLength(aLength), mIsLiteral(aIsLiteral) {}
+
+    const CHAR* Data() const { return mData; }
+    size_t Length() const { return mLength; }
+    bool IsLiteral() const { return mIsLiteral; }
+
+   private:
+    const CHAR* mData;
+    size_t mLength;
+    bool mIsLiteral;
+  };
+
+  // FakeNsTString to nullptr.
+  MOZ_RELEASE_ASSERT(BSV(FakeNsTString(nullptr, 0, true)).Length() == 0);
+  MOZ_RELEASE_ASSERT(BSV(FakeNsTString(nullptr, 0, true)).AsSpan().IsEmpty());
+  MOZ_RELEASE_ASSERT(BSV(FakeNsTString(nullptr, 0, true)).IsLiteral());
+  MOZ_RELEASE_ASSERT(!BSV(FakeNsTString(nullptr, 0, true)).IsReference());
+
+  // FakeNsTString to a literal empty string.
+  MOZ_RELEASE_ASSERT(BSV(FakeNsTString(empty, 0, true)).Length() == 0);
+  MOZ_RELEASE_ASSERT(BSV(FakeNsTString(empty, 0, true)).AsSpan().IsEmpty());
+  MOZ_RELEASE_ASSERT(BSV(FakeNsTString(empty, 0, true)).IsLiteral());
+  MOZ_RELEASE_ASSERT(!BSV(FakeNsTString(empty, 0, true)).IsReference());
+
+  // FakeNsTString to a literal non-empty string.
+  MOZ_RELEASE_ASSERT(BSV(FakeNsTString(hi, 2, true)).Length() == 2);
+  MOZ_RELEASE_ASSERT(BSV(FakeNsTString(hi, 2, true)).AsSpan().Elements());
+  MOZ_RELEASE_ASSERT(BSV(FakeNsTString(hi, 2, true)).AsSpan().Elements()[0] ==
+                     CHAR('h'));
+  MOZ_RELEASE_ASSERT(BSV(FakeNsTString(hi, 2, true)).AsSpan().Elements()[1] ==
+                     CHAR('i'));
+  MOZ_RELEASE_ASSERT(BSV(FakeNsTString(hi, 2, true)).IsLiteral());
+  MOZ_RELEASE_ASSERT(!BSV(FakeNsTString(hi, 2, true)).IsReference());
+
+  // FakeNsTString to a non-literal non-empty string.
+  MOZ_RELEASE_ASSERT(BSV(FakeNsTString(hi, 2, false)).Length() == 2);
+  MOZ_RELEASE_ASSERT(BSV(FakeNsTString(hi, 2, false)).AsSpan().Elements());
+  MOZ_RELEASE_ASSERT(BSV(FakeNsTString(hi, 2, false)).AsSpan().Elements()[0] ==
+                     CHAR('h'));
+  MOZ_RELEASE_ASSERT(BSV(FakeNsTString(hi, 2, false)).AsSpan().Elements()[1] ==
+                     CHAR('i'));
+  MOZ_RELEASE_ASSERT(!BSV(FakeNsTString(hi, 2, false)).IsLiteral());
+  MOZ_RELEASE_ASSERT(BSV(FakeNsTString(hi, 2, false)).IsReference());
+
+  // Serialization and deserialization (with ownership).
+  constexpr size_t bufferMaxSize = 1024;
+  constexpr ProfileChunkedBuffer::Length chunkMinSize = 128;
+  ProfileBufferChunkManagerWithLocalLimit cm(bufferMaxSize, chunkMinSize);
+  ProfileChunkedBuffer cb(ProfileChunkedBuffer::ThreadSafety::WithMutex, cm);
+
+  // Literal string, serialized as raw pointer.
+  MOZ_RELEASE_ASSERT(cb.PutObject(BSV(hi)));
+  {
+    unsigned read = 0;
+    ProfilerStringView<CHAR> outerBSV;
+    cb.ReadEach([&](ProfileBufferEntryReader& aER) {
+      ++read;
+      auto bsv = aER.ReadObject<ProfilerStringView<CHAR>>();
+      MOZ_RELEASE_ASSERT(bsv.Length() == 2);
+      MOZ_RELEASE_ASSERT(bsv.AsSpan().Elements());
+      MOZ_RELEASE_ASSERT(bsv.AsSpan().Elements()[0] == CHAR('h'));
+      MOZ_RELEASE_ASSERT(bsv.AsSpan().Elements()[1] == CHAR('i'));
+      MOZ_RELEASE_ASSERT(bsv.IsLiteral());
+      MOZ_RELEASE_ASSERT(!bsv.IsReference());
+      outerBSV = std::move(bsv);
+    });
+    MOZ_RELEASE_ASSERT(read == 1);
+    MOZ_RELEASE_ASSERT(outerBSV.Length() == 2);
+    MOZ_RELEASE_ASSERT(outerBSV.AsSpan().Elements());
+    MOZ_RELEASE_ASSERT(outerBSV.AsSpan().Elements()[0] == CHAR('h'));
+    MOZ_RELEASE_ASSERT(outerBSV.AsSpan().Elements()[1] == CHAR('i'));
+    MOZ_RELEASE_ASSERT(outerBSV.IsLiteral());
+    MOZ_RELEASE_ASSERT(!outerBSV.IsReference());
+  }
+
+  MOZ_RELEASE_ASSERT(cb.GetState().mRangeStart == 1u);
+
+  cb.Clear();
+
+  // Non-literal string, content is serialized.
+
+  // We'll try to write 4 strings, such that the 4th one will cross into the
+  // next chunk.
+  unsigned guessedChunkBytes = unsigned(cb.GetState().mRangeStart) - 1u;
+  static constexpr unsigned stringCount = 4u;
+  const unsigned stringSize =
+      guessedChunkBytes / stringCount / sizeof(CHAR) + 3u;
+
+  std::basic_string<CHAR> longString;
+  longString.reserve(stringSize);
+  for (unsigned i = 0; i < stringSize; ++i) {
+    longString += CHAR('0' + i);
+  }
+
+  for (unsigned i = 0; i < stringCount; ++i) {
+    MOZ_RELEASE_ASSERT(cb.PutObject(BSV(longString)));
+  }
+
+  {
+    unsigned read = 0;
+    ProfilerStringView<CHAR> outerBSV;
+    cb.ReadEach([&](ProfileBufferEntryReader& aER) {
+      ++read;
+      {
+        auto bsv = aER.ReadObject<ProfilerStringView<CHAR>>();
+        MOZ_RELEASE_ASSERT(bsv.Length() == stringSize);
+        MOZ_RELEASE_ASSERT(bsv.AsSpan().Elements());
+        for (unsigned i = 0; i < stringSize; ++i) {
+          MOZ_RELEASE_ASSERT(bsv.AsSpan().Elements()[i] == CHAR('0' + i));
+          longString += '0' + i;
+        }
+        MOZ_RELEASE_ASSERT(!bsv.IsLiteral());
+        // The first 3 should be references (because they fit in one chunk, so
+        // they can be referenced directly), which the 4th one have to be copied
+        // out of two chunks and stitched back together.
+        MOZ_RELEASE_ASSERT(bsv.IsReference() == (read != 4));
+
+        // Test move of ownership.
+        outerBSV = std::move(bsv);
+        // After a move, references stay complete, while a non-reference had a
+        // buffer that has been moved out.
+        // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
+        MOZ_RELEASE_ASSERT(bsv.Length() == ((read != 4) ? stringSize : 0));
+      }
+
+      MOZ_RELEASE_ASSERT(outerBSV.Length() == stringSize);
+      MOZ_RELEASE_ASSERT(outerBSV.AsSpan().Elements());
+      for (unsigned i = 0; i < stringSize; ++i) {
+        MOZ_RELEASE_ASSERT(outerBSV.AsSpan().Elements()[i] == CHAR('0' + i));
+        longString += '0' + i;
+      }
+      MOZ_RELEASE_ASSERT(!outerBSV.IsLiteral());
+      MOZ_RELEASE_ASSERT(outerBSV.IsReference() == (read != 4));
+    });
+    MOZ_RELEASE_ASSERT(read == 4);
+  }
+
+  if constexpr (std::is_same_v<CHAR, char>) {
+    printf("TestProfilerStringView<char> done\n");
+  } else if constexpr (std::is_same_v<CHAR, char16_t>) {
+    printf("TestProfilerStringView<char16_t> done\n");
+  }
+}
+
 void TestProfilerDependencies() {
   TestPowerOfTwoMask();
   TestPowerOfTwo();
   TestLEB128();
+  TestJSONTimeOutput();
   TestChunk();
   TestChunkManagerSingle();
   TestChunkManagerWithLocalLimit();
@@ -2999,100 +3848,9 @@ void TestProfilerDependencies() {
   TestBlocksRingBufferUnderlyingBufferChanges();
   TestBlocksRingBufferThreading();
   TestBlocksRingBufferSerialization();
-}
-
-class BaseTestMarkerPayload : public baseprofiler::ProfilerMarkerPayload {
- public:
-  explicit BaseTestMarkerPayload(int aData) : mData(aData) {}
-
-  int GetData() const { return mData; }
-
-  // Exploded DECL_BASE_STREAM_PAYLOAD, but without `MFBT_API`s.
-  static UniquePtr<ProfilerMarkerPayload> Deserialize(
-      ProfileBufferEntryReader& aEntryReader);
-  ProfileBufferEntryWriter::Length TagAndSerializationBytes() const override;
-  void SerializeTagAndPayload(
-      ProfileBufferEntryWriter& aEntryWriter) const override;
-  void StreamPayload(
-      ::mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
-      const ::mozilla::TimeStamp& aProcessStartTime,
-      ::mozilla::baseprofiler::UniqueStacks& aUniqueStacks) const override;
-
- private:
-  BaseTestMarkerPayload(CommonProps&& aProps, int aData)
-      : baseprofiler::ProfilerMarkerPayload(std::move(aProps)), mData(aData) {}
-
-  int mData;
-};
-
-// static
-UniquePtr<baseprofiler::ProfilerMarkerPayload>
-BaseTestMarkerPayload::Deserialize(ProfileBufferEntryReader& aEntryReader) {
-  CommonProps props = DeserializeCommonProps(aEntryReader);
-  int data = aEntryReader.ReadObject<int>();
-  return UniquePtr<baseprofiler::ProfilerMarkerPayload>(
-      new BaseTestMarkerPayload(std::move(props), data));
-}
-
-ProfileBufferEntryWriter::Length
-BaseTestMarkerPayload::TagAndSerializationBytes() const {
-  return CommonPropsTagAndSerializationBytes() + sizeof(int);
-}
-
-void BaseTestMarkerPayload::SerializeTagAndPayload(
-    ProfileBufferEntryWriter& aEntryWriter) const {
-  static const DeserializerTag tag = TagForDeserializer(Deserialize);
-  SerializeTagAndCommonProps(tag, aEntryWriter);
-  aEntryWriter.WriteObject(mData);
-}
-
-void BaseTestMarkerPayload::StreamPayload(
-    baseprofiler::SpliceableJSONWriter& aWriter,
-    const TimeStamp& aProcessStartTime,
-    baseprofiler::UniqueStacks& aUniqueStacks) const {
-  aWriter.IntProperty("data", mData);
-}
-
-void TestProfilerMarkerSerialization() {
-  printf("TestProfilerMarkerSerialization...\n");
-
-  constexpr uint32_t MBSize = 256;
-  uint8_t buffer[MBSize * 3];
-  for (size_t i = 0; i < MBSize * 3; ++i) {
-    buffer[i] = uint8_t('A' + i);
-  }
-  BlocksRingBuffer rb(BlocksRingBuffer::ThreadSafety::WithMutex,
-                      &buffer[MBSize], MakePowerOfTwo32<MBSize>());
-
-  constexpr int data = 42;
-  {
-    BaseTestMarkerPayload payload(data);
-    rb.PutObject(
-        static_cast<const baseprofiler::ProfilerMarkerPayload*>(&payload));
-  }
-
-  int read = 0;
-  rb.ReadEach([&](ProfileBufferEntryReader& aER) {
-    UniquePtr<baseprofiler::ProfilerMarkerPayload> payload =
-        aER.ReadObject<UniquePtr<baseprofiler::ProfilerMarkerPayload>>();
-    MOZ_RELEASE_ASSERT(!!payload);
-    ++read;
-    BaseTestMarkerPayload* testPayload =
-        static_cast<BaseTestMarkerPayload*>(payload.get());
-    MOZ_RELEASE_ASSERT(testPayload);
-    MOZ_RELEASE_ASSERT(testPayload->GetData() == data);
-  });
-  MOZ_RELEASE_ASSERT(read == 1);
-
-  // Everything around the sub-buffer should be unchanged.
-  for (size_t i = 0; i < MBSize; ++i) {
-    MOZ_RELEASE_ASSERT(buffer[i] == uint8_t('A' + i));
-  }
-  for (size_t i = MBSize * 2; i < MBSize * 3; ++i) {
-    MOZ_RELEASE_ASSERT(buffer[i] == uint8_t('A' + i));
-  }
-
-  printf("TestProfilerMarkerSerialization done\n");
+  TestLiteralEmptyStringView();
+  TestProfilerStringView<char>();
+  TestProfilerStringView<char16_t>();
 }
 
 // Increase the depth, to a maximum (to avoid too-deep recursion).
@@ -3119,31 +3877,28 @@ MOZ_NEVER_INLINE unsigned long long Fibonacci(unsigned long long n) {
   if (DEPTH < 5 && sStopFibonacci) {
     return 1'000'000'000;
   }
-  TimeStamp start = TimeStamp::NowUnfuzzed();
+  TimeStamp start = TimeStamp::Now();
   static constexpr size_t MAX_MARKER_DEPTH = 10;
   unsigned long long f2 = Fibonacci<NextDepth(DEPTH)>(n - 2);
   if (DEPTH == 0) {
-    BASE_PROFILER_ADD_MARKER("Half-way through Fibonacci", OTHER);
+    BASE_PROFILER_MARKER_UNTYPED("Half-way through Fibonacci", OTHER);
   }
   unsigned long long f1 = Fibonacci<NextDepth(DEPTH)>(n - 1);
   if (DEPTH < MAX_MARKER_DEPTH) {
-    baseprofiler::profiler_add_text_marker(
-        "fib", std::to_string(DEPTH),
-        baseprofiler::ProfilingCategoryPair::OTHER, start,
-        TimeStamp::NowUnfuzzed());
+    BASE_PROFILER_MARKER_TEXT("fib", OTHER,
+                              MarkerTiming::IntervalUntilNowFrom(start),
+                              std::to_string(DEPTH));
   }
   return f2 + f1;
 }
 
 void TestProfiler() {
-  printf("TestProfiler starting -- pid: %d, tid: %d\n",
-         baseprofiler::profiler_current_process_id(),
-         baseprofiler::profiler_current_thread_id());
+  printf("TestProfiler starting -- pid: %" PRIu64 ", tid: %" PRIu64 "\n",
+         uint64_t(baseprofiler::profiler_current_process_id().ToNumber()),
+         uint64_t(baseprofiler::profiler_current_thread_id().ToNumber()));
   // ::SleepMilli(10000);
 
   TestProfilerDependencies();
-
-  TestProfilerMarkerSerialization();
 
   {
     printf("profiler_init()...\n");
@@ -3152,6 +3907,24 @@ void TestProfiler() {
     MOZ_RELEASE_ASSERT(!baseprofiler::profiler_is_active());
     MOZ_RELEASE_ASSERT(!baseprofiler::profiler_thread_is_being_profiled());
     MOZ_RELEASE_ASSERT(!baseprofiler::profiler_thread_is_sleeping());
+
+    const baseprofiler::BaseProfilerThreadId mainThreadId =
+        mozilla::baseprofiler::profiler_current_thread_id();
+
+    MOZ_RELEASE_ASSERT(mozilla::baseprofiler::profiler_main_thread_id() ==
+                       mainThreadId);
+    MOZ_RELEASE_ASSERT(mozilla::baseprofiler::profiler_is_main_thread());
+
+    std::thread testThread([&]() {
+      const baseprofiler::BaseProfilerThreadId testThreadId =
+          mozilla::baseprofiler::profiler_current_thread_id();
+      MOZ_RELEASE_ASSERT(testThreadId != mainThreadId);
+
+      MOZ_RELEASE_ASSERT(mozilla::baseprofiler::profiler_main_thread_id() !=
+                         testThreadId);
+      MOZ_RELEASE_ASSERT(!mozilla::baseprofiler::profiler_is_main_thread());
+    });
+    testThread.join();
 
     printf("profiler_start()...\n");
     Vector<const char*> filters;
@@ -3173,18 +3946,14 @@ void TestProfiler() {
     std::thread threadFib([]() {
       AUTO_BASE_PROFILER_REGISTER_THREAD("fibonacci");
       SleepMilli(5);
-      auto cause =
-#  if defined(__linux__) || defined(__ANDROID__)
-          // Currently disabled on these platforms, so just return a null.
-          decltype(baseprofiler::profiler_get_backtrace()){};
-#  else
-          baseprofiler::profiler_get_backtrace();
-#  endif
-      AUTO_BASE_PROFILER_TEXT_MARKER_CAUSE("fibonacci", "First leaf call",
-                                           OTHER, std::move(cause));
+      auto cause = baseprofiler::profiler_capture_backtrace();
+      AUTO_BASE_PROFILER_MARKER_TEXT(
+          "fibonacci", OTHER, MarkerStack::TakeBacktrace(std::move(cause)),
+          "First leaf call");
       static const unsigned long long fibStart = 37;
       printf("Fibonacci(%llu)...\n", fibStart);
       AUTO_BASE_PROFILER_LABEL("Label around Fibonacci", OTHER);
+
       unsigned long long f = Fibonacci(fibStart);
       printf("Fibonacci(%llu) = %llu\n", fibStart, f);
     });
@@ -3192,8 +3961,7 @@ void TestProfiler() {
     std::thread threadCancelFib([]() {
       AUTO_BASE_PROFILER_REGISTER_THREAD("fibonacci canceller");
       SleepMilli(5);
-      AUTO_BASE_PROFILER_TEXT_MARKER_CAUSE("fibonacci", "Canceller", OTHER,
-                                           nullptr);
+      AUTO_BASE_PROFILER_MARKER_TEXT("fibonacci", OTHER, {}, "Canceller");
       static const int waitMaxSeconds = 10;
       for (int i = 0; i < waitMaxSeconds; ++i) {
         if (sStopFibonacci) {
@@ -3210,72 +3978,111 @@ void TestProfiler() {
     });
 
     {
-      AUTO_BASE_PROFILER_TEXT_MARKER_CAUSE(
-          "main thread", "joining fibonacci thread", OTHER, nullptr);
+      AUTO_BASE_PROFILER_MARKER_TEXT("main thread", OTHER, {},
+                                     "joining fibonacci thread");
       AUTO_BASE_PROFILER_THREAD_SLEEP;
       threadFib.join();
     }
 
     {
-      AUTO_BASE_PROFILER_TEXT_MARKER_CAUSE(
-          "main thread", "joining fibonacci-canceller thread", OTHER, nullptr);
+      AUTO_BASE_PROFILER_MARKER_TEXT("main thread", OTHER, {},
+                                     "joining fibonacci-canceller thread");
       sStopFibonacci = true;
       AUTO_BASE_PROFILER_THREAD_SLEEP;
       threadCancelFib.join();
     }
 
     // Just making sure all payloads know how to (de)serialize and stream.
-    baseprofiler::profiler_add_marker(
-        "TracingMarkerPayload", baseprofiler::ProfilingCategoryPair::OTHER,
-        baseprofiler::TracingMarkerPayload("category",
-                                           baseprofiler::TRACING_EVENT));
 
-    auto cause =
-#  if defined(__linux__) || defined(__ANDROID__)
-        // Currently disabled on these platforms, so just return a null.
-        decltype(baseprofiler::profiler_get_backtrace()){};
-#  else
-        baseprofiler::profiler_get_backtrace();
-#  endif
-    baseprofiler::profiler_add_marker(
-        "FileIOMarkerPayload", baseprofiler::ProfilingCategoryPair::OTHER,
-        baseprofiler::FileIOMarkerPayload(
-            "operation", "source", "filename", TimeStamp::NowUnfuzzed(),
-            TimeStamp::NowUnfuzzed(), std::move(cause)));
+    MOZ_RELEASE_ASSERT(
+        baseprofiler::AddMarker("markers 2.0 without options (omitted)",
+                                mozilla::baseprofiler::category::OTHER));
 
-    baseprofiler::profiler_add_marker(
-        "UserTimingMarkerPayload", baseprofiler::ProfilingCategoryPair::OTHER,
-        baseprofiler::UserTimingMarkerPayload("name", TimeStamp::NowUnfuzzed(),
-                                              Nothing{}));
+    MOZ_RELEASE_ASSERT(baseprofiler::AddMarker(
+        "markers 2.0 without options (implicit brace-init)",
+        mozilla::baseprofiler::category::OTHER, {}));
 
-    baseprofiler::profiler_add_marker(
-        "HangMarkerPayload", baseprofiler::ProfilingCategoryPair::OTHER,
-        baseprofiler::HangMarkerPayload(TimeStamp::NowUnfuzzed(),
-                                        TimeStamp::NowUnfuzzed()));
+    MOZ_RELEASE_ASSERT(baseprofiler::AddMarker(
+        "markers 2.0 without options (explicit init)",
+        mozilla::baseprofiler::category::OTHER, MarkerOptions()));
 
-    baseprofiler::profiler_add_marker(
-        "LongTaskMarkerPayload", baseprofiler::ProfilingCategoryPair::OTHER,
-        baseprofiler::LongTaskMarkerPayload(TimeStamp::NowUnfuzzed(),
-                                            TimeStamp::NowUnfuzzed()));
+    MOZ_RELEASE_ASSERT(baseprofiler::AddMarker(
+        "markers 2.0 without options (explicit brace-init)",
+        mozilla::baseprofiler::category::OTHER, MarkerOptions{}));
 
-    {
-      std::string s = "text payload";
-      baseprofiler::profiler_add_marker(
-          "TextMarkerPayload", baseprofiler::ProfilingCategoryPair::OTHER,
-          baseprofiler::TextMarkerPayload(s, TimeStamp::NowUnfuzzed(),
-                                          TimeStamp::NowUnfuzzed()));
-    }
+    MOZ_RELEASE_ASSERT(baseprofiler::AddMarker(
+        "markers 2.0 with one option (implicit)",
+        mozilla::baseprofiler::category::OTHER, MarkerInnerWindowId(123)));
 
-    baseprofiler::profiler_add_marker(
-        "LogMarkerPayload", baseprofiler::ProfilingCategoryPair::OTHER,
-        baseprofiler::LogMarkerPayload("module", "text",
-                                       TimeStamp::NowUnfuzzed()));
+    MOZ_RELEASE_ASSERT(baseprofiler::AddMarker(
+        "markers 2.0 with one option (implicit brace-init)",
+        mozilla::baseprofiler::category::OTHER, {MarkerInnerWindowId(123)}));
+
+    MOZ_RELEASE_ASSERT(
+        baseprofiler::AddMarker("markers 2.0 with one option (explicit init)",
+                                mozilla::baseprofiler::category::OTHER,
+                                MarkerOptions(MarkerInnerWindowId(123))));
+
+    MOZ_RELEASE_ASSERT(baseprofiler::AddMarker(
+        "markers 2.0 with one option (explicit brace-init)",
+        mozilla::baseprofiler::category::OTHER,
+        MarkerOptions{MarkerInnerWindowId(123)}));
+
+    MOZ_RELEASE_ASSERT(baseprofiler::AddMarker(
+        "markers 2.0 with two options (implicit brace-init)",
+        mozilla::baseprofiler::category::OTHER,
+        {MarkerInnerWindowId(123), MarkerStack::Capture()}));
+
+    MOZ_RELEASE_ASSERT(baseprofiler::AddMarker(
+        "markers 2.0 with two options (explicit init)",
+        mozilla::baseprofiler::category::OTHER,
+        MarkerOptions(MarkerInnerWindowId(123), MarkerStack::Capture())));
+
+    MOZ_RELEASE_ASSERT(baseprofiler::AddMarker(
+        "markers 2.0 with two options (explicit brace-init)",
+        mozilla::baseprofiler::category::OTHER,
+        MarkerOptions{MarkerInnerWindowId(123), MarkerStack::Capture()}));
+
+    MOZ_RELEASE_ASSERT(
+        baseprofiler::AddMarker("default-templated markers 2.0 without options",
+                                mozilla::baseprofiler::category::OTHER));
+
+    MOZ_RELEASE_ASSERT(baseprofiler::AddMarker(
+        "default-templated markers 2.0 with option",
+        mozilla::baseprofiler::category::OTHER, MarkerInnerWindowId(123)));
+
+    MOZ_RELEASE_ASSERT(baseprofiler::AddMarker(
+        "explicitly-default-templated markers 2.0 without options",
+        mozilla::baseprofiler::category::OTHER, {},
+        ::mozilla::baseprofiler::markers::NoPayload{}));
+
+    MOZ_RELEASE_ASSERT(baseprofiler::AddMarker(
+        "explicitly-default-templated markers 2.0 with option",
+        mozilla::baseprofiler::category::OTHER, MarkerInnerWindowId(123),
+        ::mozilla::baseprofiler::markers::NoPayload{}));
+
+    MOZ_RELEASE_ASSERT(baseprofiler::AddMarker(
+        "tracing", mozilla::baseprofiler::category::OTHER, {},
+        mozilla::baseprofiler::markers::Tracing{}, "category"));
+
+    MOZ_RELEASE_ASSERT(baseprofiler::AddMarker(
+        "text", mozilla::baseprofiler::category::OTHER, {},
+        mozilla::baseprofiler::markers::TextMarker{}, "text text"));
+
+    MOZ_RELEASE_ASSERT(baseprofiler::AddMarker(
+        "media sample", mozilla::baseprofiler::category::OTHER, {},
+        mozilla::baseprofiler::markers::MediaSampleMarker{}, 123, 456));
 
     printf("Sleep 1s...\n");
     {
       AUTO_BASE_PROFILER_THREAD_SLEEP;
       SleepMilli(1000);
     }
+
+    printf("baseprofiler_pause()...\n");
+    baseprofiler::profiler_pause();
+
+    MOZ_RELEASE_ASSERT(!baseprofiler::profiler_thread_is_being_profiled());
 
     Maybe<baseprofiler::ProfilerBufferInfo> info =
         baseprofiler::profiler_get_buffer_info();
@@ -3287,28 +4094,48 @@ void TestProfiler() {
            (static_cast<unsigned long long>(info->mRangeEnd) -
             static_cast<unsigned long long>(info->mRangeStart)) *
                9);
-    printf("Stats:         min(ns) .. mean(ns) .. max(ns)  [count]\n");
+    printf("Stats:         min(us) .. mean(us) .. max(us)  [count]\n");
     printf("- Intervals:   %7.1f .. %7.1f  .. %7.1f  [%u]\n",
-           info->mIntervalsNs.min,
-           info->mIntervalsNs.sum / info->mIntervalsNs.n,
-           info->mIntervalsNs.max, info->mIntervalsNs.n);
+           info->mIntervalsUs.min,
+           info->mIntervalsUs.sum / info->mIntervalsUs.n,
+           info->mIntervalsUs.max, info->mIntervalsUs.n);
     printf("- Overheads:   %7.1f .. %7.1f  .. %7.1f  [%u]\n",
-           info->mOverheadsNs.min,
-           info->mOverheadsNs.sum / info->mOverheadsNs.n,
-           info->mOverheadsNs.max, info->mOverheadsNs.n);
+           info->mOverheadsUs.min,
+           info->mOverheadsUs.sum / info->mOverheadsUs.n,
+           info->mOverheadsUs.max, info->mOverheadsUs.n);
     printf("  - Locking:   %7.1f .. %7.1f  .. %7.1f  [%u]\n",
-           info->mLockingsNs.min, info->mLockingsNs.sum / info->mLockingsNs.n,
-           info->mLockingsNs.max, info->mLockingsNs.n);
+           info->mLockingsUs.min, info->mLockingsUs.sum / info->mLockingsUs.n,
+           info->mLockingsUs.max, info->mLockingsUs.n);
     printf("  - Clearning: %7.1f .. %7.1f  .. %7.1f  [%u]\n",
-           info->mCleaningsNs.min,
-           info->mCleaningsNs.sum / info->mCleaningsNs.n,
-           info->mCleaningsNs.max, info->mCleaningsNs.n);
+           info->mCleaningsUs.min,
+           info->mCleaningsUs.sum / info->mCleaningsUs.n,
+           info->mCleaningsUs.max, info->mCleaningsUs.n);
     printf("  - Counters:  %7.1f .. %7.1f  .. %7.1f  [%u]\n",
-           info->mCountersNs.min, info->mCountersNs.sum / info->mCountersNs.n,
-           info->mCountersNs.max, info->mCountersNs.n);
+           info->mCountersUs.min, info->mCountersUs.sum / info->mCountersUs.n,
+           info->mCountersUs.max, info->mCountersUs.n);
     printf("  - Threads:   %7.1f .. %7.1f  .. %7.1f  [%u]\n",
-           info->mThreadsNs.min, info->mThreadsNs.sum / info->mThreadsNs.n,
-           info->mThreadsNs.max, info->mThreadsNs.n);
+           info->mThreadsUs.min, info->mThreadsUs.sum / info->mThreadsUs.n,
+           info->mThreadsUs.max, info->mThreadsUs.n);
+
+    printf("baseprofiler_get_profile()...\n");
+    UniquePtr<char[]> profile = baseprofiler::profiler_get_profile();
+
+    // Use a string view over the profile contents, for easier testing.
+    std::string_view profileSV = profile.get();
+
+    constexpr const auto svnpos = std::string_view::npos;
+    // TODO: Properly parse profile and check fields.
+    // Check for some expected marker schema JSON output.
+    MOZ_RELEASE_ASSERT(profileSV.find("\"markerSchema\": [") != svnpos);
+    MOZ_RELEASE_ASSERT(profileSV.find("\"name\": \"Text\",") != svnpos);
+    MOZ_RELEASE_ASSERT(profileSV.find("\"name\": \"tracing\",") != svnpos);
+    MOZ_RELEASE_ASSERT(profileSV.find("\"name\": \"MediaSample\",") != svnpos);
+    MOZ_RELEASE_ASSERT(profileSV.find("\"display\": [") != svnpos);
+    MOZ_RELEASE_ASSERT(profileSV.find("\"marker-chart\"") != svnpos);
+    MOZ_RELEASE_ASSERT(profileSV.find("\"marker-table\"") != svnpos);
+    MOZ_RELEASE_ASSERT(profileSV.find("\"format\": \"string\"") != svnpos);
+    // TODO: Add more checks for what's expected in the profile. Some of them
+    // are done in gtest's.
 
     printf("baseprofiler_save_profile_to_file()...\n");
     baseprofiler::profiler_save_profile_to_file("TestProfiler_profile.json");
@@ -3326,6 +4153,530 @@ void TestProfiler() {
   printf("TestProfiler done\n");
 }
 
+// Minimal string escaping, similar to how C++ stringliterals should be entered,
+// to help update comparison strings in tests below.
+void printEscaped(std::string_view aString) {
+  for (const char c : aString) {
+    switch (c) {
+      case '\n':
+        fprintf(stderr, "\\n\n");
+        break;
+      case '"':
+        fprintf(stderr, "\\\"");
+        break;
+      case '\\':
+        fprintf(stderr, "\\\\");
+        break;
+      default:
+        if (c >= ' ' && c <= '~') {
+          fprintf(stderr, "%c", c);
+        } else {
+          fprintf(stderr, "\\x%02x", unsigned(c));
+        }
+        break;
+    }
+  }
+}
+
+// Run aF(SpliceableChunkedJSONWriter&, UniqueJSONStrings&) from inside a JSON
+// array, then output the string table, and compare the full output to
+// aExpected.
+template <typename F>
+static void VerifyUniqueStringContents(
+    F&& aF, std::string_view aExpectedData,
+    std::string_view aExpectedUniqueStrings,
+    mozilla::baseprofiler::UniqueJSONStrings* aUniqueStringsOrNull = nullptr) {
+  mozilla::baseprofiler::SpliceableChunkedJSONWriter writer;
+
+  // By default use a local UniqueJSONStrings, otherwise use the one provided.
+  mozilla::baseprofiler::UniqueJSONStrings localUniqueStrings(
+      mozilla::JSONWriter::SingleLineStyle);
+  mozilla::baseprofiler::UniqueJSONStrings& uniqueStrings =
+      aUniqueStringsOrNull ? *aUniqueStringsOrNull : localUniqueStrings;
+
+  writer.Start(mozilla::JSONWriter::SingleLineStyle);
+  {
+    writer.StartArrayProperty("data", mozilla::JSONWriter::SingleLineStyle);
+    { std::forward<F>(aF)(writer, uniqueStrings); }
+    writer.EndArray();
+
+    writer.StartArrayProperty("stringTable",
+                              mozilla::JSONWriter::SingleLineStyle);
+    { uniqueStrings.SpliceStringTableElements(writer); }
+    writer.EndArray();
+  }
+  writer.End();
+
+  UniquePtr<char[]> jsonString = writer.ChunkedWriteFunc().CopyData();
+  MOZ_RELEASE_ASSERT(jsonString);
+  std::string_view jsonStringView(jsonString.get());
+  std::string expected = "{\"data\": [";
+  expected += aExpectedData;
+  expected += "], \"stringTable\": [";
+  expected += aExpectedUniqueStrings;
+  expected += "]}\n";
+  if (jsonStringView != expected) {
+    fprintf(stderr,
+            "Expected:\n"
+            "------\n");
+    printEscaped(expected);
+    fprintf(stderr,
+            "\n"
+            "------\n"
+            "Actual:\n"
+            "------\n");
+    printEscaped(jsonStringView);
+    fprintf(stderr,
+            "\n"
+            "------\n");
+  }
+  MOZ_RELEASE_ASSERT(jsonStringView == expected);
+}
+
+void TestUniqueJSONStrings() {
+  printf("TestUniqueJSONStrings...\n");
+
+  using SCJW = mozilla::baseprofiler::SpliceableChunkedJSONWriter;
+  using UJS = mozilla::baseprofiler::UniqueJSONStrings;
+
+  // Empty everything.
+  VerifyUniqueStringContents([](SCJW& aWriter, UJS& aUniqueStrings) {}, "", "");
+
+  // Empty unique strings.
+  VerifyUniqueStringContents(
+      [](SCJW& aWriter, UJS& aUniqueStrings) {
+        aWriter.StringElement("string");
+      },
+      R"("string")", "");
+
+  // One unique string.
+  VerifyUniqueStringContents(
+      [](SCJW& aWriter, UJS& aUniqueStrings) {
+        aUniqueStrings.WriteElement(aWriter, "string");
+      },
+      "0", R"("string")");
+
+  // One unique string twice.
+  VerifyUniqueStringContents(
+      [](SCJW& aWriter, UJS& aUniqueStrings) {
+        aUniqueStrings.WriteElement(aWriter, "string");
+        aUniqueStrings.WriteElement(aWriter, "string");
+      },
+      "0, 0", R"("string")");
+
+  // Two single unique strings.
+  VerifyUniqueStringContents(
+      [](SCJW& aWriter, UJS& aUniqueStrings) {
+        aUniqueStrings.WriteElement(aWriter, "string0");
+        aUniqueStrings.WriteElement(aWriter, "string1");
+      },
+      "0, 1", R"("string0", "string1")");
+
+  // Two unique strings with repetition.
+  VerifyUniqueStringContents(
+      [](SCJW& aWriter, UJS& aUniqueStrings) {
+        aUniqueStrings.WriteElement(aWriter, "string0");
+        aUniqueStrings.WriteElement(aWriter, "string1");
+        aUniqueStrings.WriteElement(aWriter, "string0");
+      },
+      "0, 1, 0", R"("string0", "string1")");
+
+  // Mix some object properties, for coverage.
+  VerifyUniqueStringContents(
+      [](SCJW& aWriter, UJS& aUniqueStrings) {
+        aUniqueStrings.WriteElement(aWriter, "string0");
+        aWriter.StartObjectElement(mozilla::JSONWriter::SingleLineStyle);
+        {
+          aUniqueStrings.WriteProperty(aWriter, "p0", "prop");
+          aUniqueStrings.WriteProperty(aWriter, "p1", "string0");
+          aUniqueStrings.WriteProperty(aWriter, "p2", "prop");
+        }
+        aWriter.EndObject();
+        aUniqueStrings.WriteElement(aWriter, "string1");
+        aUniqueStrings.WriteElement(aWriter, "string0");
+        aUniqueStrings.WriteElement(aWriter, "prop");
+      },
+      R"(0, {"p0": 1, "p1": 0, "p2": 1}, 2, 0, 1)",
+      R"("string0", "prop", "string1")");
+
+  // Unique string table with pre-existing data.
+  {
+    UJS ujs(mozilla::JSONWriter::SingleLineStyle);
+    {
+      SCJW writer;
+      ujs.WriteElement(writer, "external0");
+      ujs.WriteElement(writer, "external1");
+      ujs.WriteElement(writer, "external0");
+    }
+    VerifyUniqueStringContents(
+        [](SCJW& aWriter, UJS& aUniqueStrings) {
+          aUniqueStrings.WriteElement(aWriter, "string0");
+          aUniqueStrings.WriteElement(aWriter, "string1");
+          aUniqueStrings.WriteElement(aWriter, "string0");
+        },
+        "2, 3, 2", R"("external0", "external1", "string0", "string1")", &ujs);
+  }
+
+  // Unique string table with pre-existing data from another table.
+  {
+    UJS ujs(mozilla::JSONWriter::SingleLineStyle);
+    {
+      SCJW writer;
+      ujs.WriteElement(writer, "external0");
+      ujs.WriteElement(writer, "external1");
+      ujs.WriteElement(writer, "external0");
+    }
+    UJS ujsCopy(ujs, mozilla::JSONWriter::SingleLineStyle);
+    VerifyUniqueStringContents(
+        [](SCJW& aWriter, UJS& aUniqueStrings) {
+          aUniqueStrings.WriteElement(aWriter, "string0");
+          aUniqueStrings.WriteElement(aWriter, "string1");
+          aUniqueStrings.WriteElement(aWriter, "string0");
+        },
+        "2, 3, 2", R"("external0", "external1", "string0", "string1")", &ujs);
+  }
+
+  // Unique string table through SpliceableJSONWriter.
+  VerifyUniqueStringContents(
+      [](SCJW& aWriter, UJS& aUniqueStrings) {
+        aWriter.SetUniqueStrings(aUniqueStrings);
+        aWriter.UniqueStringElement("string0");
+        aWriter.StartObjectElement(mozilla::JSONWriter::SingleLineStyle);
+        {
+          aWriter.UniqueStringProperty("p0", "prop");
+          aWriter.UniqueStringProperty("p1", "string0");
+          aWriter.UniqueStringProperty("p2", "prop");
+        }
+        aWriter.EndObject();
+        aWriter.UniqueStringElement("string1");
+        aWriter.UniqueStringElement("string0");
+        aWriter.UniqueStringElement("prop");
+        aWriter.ResetUniqueStrings();
+      },
+      R"(0, {"p0": 1, "p1": 0, "p2": 1}, 2, 0, 1)",
+      R"("string0", "prop", "string1")");
+
+  printf("TestUniqueJSONStrings done\n");
+}
+
+void StreamMarkers(const mozilla::ProfileChunkedBuffer& aBuffer,
+                   mozilla::baseprofiler::SpliceableJSONWriter& aWriter) {
+  aWriter.StartArrayProperty("data");
+  {
+    aBuffer.ReadEach([&](mozilla::ProfileBufferEntryReader& aEntryReader) {
+      mozilla::ProfileBufferEntryKind entryKind =
+          aEntryReader.ReadObject<mozilla::ProfileBufferEntryKind>();
+      MOZ_RELEASE_ASSERT(entryKind == mozilla::ProfileBufferEntryKind::Marker);
+
+      mozilla::base_profiler_markers_detail::DeserializeAfterKindAndStream(
+          aEntryReader,
+          [&](const mozilla::baseprofiler::BaseProfilerThreadId&) {
+            return &aWriter;
+          },
+          [&](mozilla::ProfileChunkedBuffer&) {
+            aWriter.StringElement("Real backtrace would be here");
+          },
+          [&](mozilla::base_profiler_markers_detail::Streaming::
+                  DeserializerTag) {});
+    });
+  }
+  aWriter.EndArray();
+}
+
+void PrintMarkers(const mozilla::ProfileChunkedBuffer& aBuffer) {
+  mozilla::baseprofiler::SpliceableJSONWriter writer(
+      mozilla::MakeUnique<mozilla::baseprofiler::OStreamJSONWriteFunc>(
+          std::cout));
+  mozilla::baseprofiler::UniqueJSONStrings uniqueStrings;
+  writer.SetUniqueStrings(uniqueStrings);
+  writer.Start();
+  {
+    StreamMarkers(aBuffer, writer);
+
+    writer.StartArrayProperty("stringTable");
+    { uniqueStrings.SpliceStringTableElements(writer); }
+    writer.EndArray();
+  }
+  writer.End();
+  writer.ResetUniqueStrings();
+}
+
+static void SubTestMarkerCategory(
+    const mozilla::MarkerCategory& aMarkerCategory,
+    const mozilla::baseprofiler::ProfilingCategoryPair& aProfilingCategoryPair,
+    const mozilla::baseprofiler::ProfilingCategory& aProfilingCategory) {
+  MOZ_RELEASE_ASSERT(aMarkerCategory.CategoryPair() == aProfilingCategoryPair,
+                     "Unexpected MarkerCategory::CategoryPair()");
+
+  MOZ_RELEASE_ASSERT(
+      mozilla::MarkerCategory(aProfilingCategoryPair).CategoryPair() ==
+          aProfilingCategoryPair,
+      "MarkerCategory(<name>).CategoryPair() should return <name>");
+
+  MOZ_RELEASE_ASSERT(aMarkerCategory.GetCategory() == aProfilingCategory,
+                     "Unexpected MarkerCategory::GetCategory()");
+
+  mozilla::ProfileBufferChunkManagerSingle chunkManager(512);
+  mozilla::ProfileChunkedBuffer buffer(
+      mozilla::ProfileChunkedBuffer::ThreadSafety::WithoutMutex, chunkManager);
+  mozilla::ProfileBufferBlockIndex i = buffer.PutObject(aMarkerCategory);
+  MOZ_RELEASE_ASSERT(i != mozilla::ProfileBufferBlockIndex{},
+                     "Failed serialization");
+  buffer.ReadEach([&](mozilla::ProfileBufferEntryReader& aER,
+                      mozilla::ProfileBufferBlockIndex aIndex) {
+    MOZ_RELEASE_ASSERT(aIndex == i, "Unexpected deserialization index");
+    const auto readCategory = aER.ReadObject<mozilla::MarkerCategory>();
+    MOZ_RELEASE_ASSERT(aER.RemainingBytes() == 0,
+                       "Unexpected extra serialized bytes");
+    MOZ_RELEASE_ASSERT(readCategory.CategoryPair() == aProfilingCategoryPair,
+                       "Incorrect deserialization value");
+  });
+}
+
+void TestMarkerCategory() {
+  printf("TestMarkerCategory...\n");
+
+  mozilla::ProfileBufferChunkManagerSingle chunkManager(512);
+  mozilla::ProfileChunkedBuffer buffer(
+      mozilla::ProfileChunkedBuffer::ThreadSafety::WithoutMutex, chunkManager);
+
+#  define CATEGORY_ENUM_BEGIN_CATEGORY(name, labelAsString, color)
+#  define CATEGORY_ENUM_SUBCATEGORY(supercategory, name, labelAsString)     \
+    static_assert(                                                          \
+        std::is_same_v<decltype(mozilla::baseprofiler::category::name),     \
+                       const mozilla::MarkerCategory>,                      \
+        "baseprofiler::category::<name> should be a const MarkerCategory"); \
+                                                                            \
+    SubTestMarkerCategory(                                                  \
+        mozilla::baseprofiler::category::name,                              \
+        mozilla::baseprofiler::ProfilingCategoryPair::name,                 \
+        mozilla::baseprofiler::ProfilingCategory::supercategory);
+#  define CATEGORY_ENUM_END_CATEGORY
+  MOZ_PROFILING_CATEGORY_LIST(CATEGORY_ENUM_BEGIN_CATEGORY,
+                              CATEGORY_ENUM_SUBCATEGORY,
+                              CATEGORY_ENUM_END_CATEGORY)
+#  undef CATEGORY_ENUM_BEGIN_CATEGORY
+#  undef CATEGORY_ENUM_SUBCATEGORY
+#  undef CATEGORY_ENUM_END_CATEGORY
+
+  printf("TestMarkerCategory done\n");
+}
+
+void TestMarkerThreadId() {
+  printf("TestMarkerThreadId...\n");
+
+  MOZ_RELEASE_ASSERT(MarkerThreadId{}.IsUnspecified());
+  MOZ_RELEASE_ASSERT(!MarkerThreadId::MainThread().IsUnspecified());
+  MOZ_RELEASE_ASSERT(!MarkerThreadId::CurrentThread().IsUnspecified());
+
+  MOZ_RELEASE_ASSERT(!MarkerThreadId{
+      mozilla::baseprofiler::BaseProfilerThreadId::FromNumber(42)}
+                          .IsUnspecified());
+  MOZ_RELEASE_ASSERT(
+      MarkerThreadId{
+          mozilla::baseprofiler::BaseProfilerThreadId::FromNumber(42)}
+          .ThreadId()
+          .ToNumber() == 42);
+
+  // We'll assume that this test runs in the main thread (which should be true
+  // when called from the `main` function).
+  MOZ_RELEASE_ASSERT(MarkerThreadId::MainThread().ThreadId() ==
+                     mozilla::baseprofiler::profiler_main_thread_id());
+
+  MOZ_RELEASE_ASSERT(MarkerThreadId::CurrentThread().ThreadId() ==
+                     mozilla::baseprofiler::profiler_current_thread_id());
+
+  MOZ_RELEASE_ASSERT(MarkerThreadId::CurrentThread().ThreadId() ==
+                     mozilla::baseprofiler::profiler_main_thread_id());
+
+  std::thread testThread([]() {
+    MOZ_RELEASE_ASSERT(!MarkerThreadId::MainThread().IsUnspecified());
+    MOZ_RELEASE_ASSERT(!MarkerThreadId::CurrentThread().IsUnspecified());
+
+    MOZ_RELEASE_ASSERT(MarkerThreadId::MainThread().ThreadId() ==
+                       mozilla::baseprofiler::profiler_main_thread_id());
+
+    MOZ_RELEASE_ASSERT(MarkerThreadId::CurrentThread().ThreadId() ==
+                       mozilla::baseprofiler::profiler_current_thread_id());
+
+    MOZ_RELEASE_ASSERT(MarkerThreadId::CurrentThread().ThreadId() !=
+                       mozilla::baseprofiler::profiler_main_thread_id());
+  });
+  testThread.join();
+
+  printf("TestMarkerThreadId done\n");
+}
+
+void TestMarkerNoPayload() {
+  printf("TestMarkerNoPayload...\n");
+
+  mozilla::ProfileBufferChunkManagerSingle chunkManager(512);
+  mozilla::ProfileChunkedBuffer buffer(
+      mozilla::ProfileChunkedBuffer::ThreadSafety::WithoutMutex, chunkManager);
+
+  mozilla::ProfileBufferBlockIndex i0 =
+      mozilla::baseprofiler::AddMarkerToBuffer(
+          buffer, "literal", mozilla::baseprofiler::category::OTHER_Profiling);
+  MOZ_RELEASE_ASSERT(i0);
+
+  const std::string dynamic = "dynamic";
+  mozilla::ProfileBufferBlockIndex i1 =
+      mozilla::baseprofiler::AddMarkerToBuffer(
+          buffer, dynamic,
+          mozilla::baseprofiler::category::GRAPHICS_FlushingAsyncPaints, {});
+  MOZ_RELEASE_ASSERT(i1);
+  MOZ_RELEASE_ASSERT(i1 > i0);
+
+  mozilla::ProfileBufferBlockIndex i2 =
+      mozilla::baseprofiler::AddMarkerToBuffer(
+          buffer, std::string_view("string_view"),
+          mozilla::baseprofiler::category::GRAPHICS_FlushingAsyncPaints, {});
+  MOZ_RELEASE_ASSERT(i2);
+  MOZ_RELEASE_ASSERT(i2 > i1);
+
+#  ifdef DEBUG
+  buffer.Dump();
+#  endif
+
+  PrintMarkers(buffer);
+
+  printf("TestMarkerNoPayload done\n");
+}
+
+void TestUserMarker() {
+  printf("TestUserMarker...\n");
+
+  // User-defined marker type with text.
+  // It's fine to define it right in the function where it's used.
+  struct MarkerTypeTestMinimal {
+    static constexpr Span<const char> MarkerTypeName() {
+      return MakeStringSpan("test-minimal");
+    }
+    static void StreamJSONMarkerData(
+        mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
+        const std::string& aText) {
+      aWriter.StringProperty("text", aText);
+    }
+    static mozilla::MarkerSchema MarkerTypeDisplay() {
+      using MS = mozilla::MarkerSchema;
+      MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
+      schema.SetTooltipLabel("tooltip for test-minimal");
+      schema.AddKeyLabelFormatSearchable("text", "Text", MS::Format::String,
+                                         MS::Searchable::Searchable);
+      return schema;
+    }
+  };
+
+  mozilla::ProfileBufferChunkManagerSingle chunkManager(1024);
+  mozilla::ProfileChunkedBuffer buffer(
+      mozilla::ProfileChunkedBuffer::ThreadSafety::WithoutMutex, chunkManager);
+
+  MOZ_RELEASE_ASSERT(mozilla::baseprofiler::AddMarkerToBuffer(
+      buffer, "test2", mozilla::baseprofiler::category::OTHER_Profiling, {},
+      MarkerTypeTestMinimal{}, std::string("payload text")));
+
+  MOZ_RELEASE_ASSERT(mozilla::baseprofiler::AddMarkerToBuffer(
+      buffer, "test2", mozilla::baseprofiler::category::OTHER_Profiling,
+      mozilla::MarkerThreadId(
+          mozilla::baseprofiler::BaseProfilerThreadId::FromNumber(123)),
+      MarkerTypeTestMinimal{}, std::string("ThreadId(123)")));
+
+  auto start = mozilla::TimeStamp::Now();
+
+  MOZ_RELEASE_ASSERT(mozilla::baseprofiler::AddMarkerToBuffer(
+      buffer, "test2", mozilla::baseprofiler::category::OTHER_Profiling,
+      mozilla::MarkerTiming::InstantAt(start), MarkerTypeTestMinimal{},
+      std::string("InstantAt(start)")));
+
+  auto then = mozilla::TimeStamp::Now();
+
+  MOZ_RELEASE_ASSERT(mozilla::baseprofiler::AddMarkerToBuffer(
+      buffer, "test2", mozilla::baseprofiler::category::OTHER_Profiling,
+      mozilla::MarkerTiming::IntervalStart(start), MarkerTypeTestMinimal{},
+      std::string("IntervalStart(start)")));
+
+  MOZ_RELEASE_ASSERT(mozilla::baseprofiler::AddMarkerToBuffer(
+      buffer, "test2", mozilla::baseprofiler::category::OTHER_Profiling,
+      mozilla::MarkerTiming::IntervalEnd(then), MarkerTypeTestMinimal{},
+      std::string("IntervalEnd(then)")));
+
+  MOZ_RELEASE_ASSERT(mozilla::baseprofiler::AddMarkerToBuffer(
+      buffer, "test2", mozilla::baseprofiler::category::OTHER_Profiling,
+      mozilla::MarkerTiming::Interval(start, then), MarkerTypeTestMinimal{},
+      std::string("Interval(start, then)")));
+
+  MOZ_RELEASE_ASSERT(mozilla::baseprofiler::AddMarkerToBuffer(
+      buffer, "test2", mozilla::baseprofiler::category::OTHER_Profiling,
+      mozilla::MarkerTiming::IntervalUntilNowFrom(start),
+      MarkerTypeTestMinimal{}, std::string("IntervalUntilNowFrom(start)")));
+
+  MOZ_RELEASE_ASSERT(mozilla::baseprofiler::AddMarkerToBuffer(
+      buffer, "test2", mozilla::baseprofiler::category::OTHER_Profiling,
+      mozilla::MarkerStack::NoStack(), MarkerTypeTestMinimal{},
+      std::string("NoStack")));
+  // Note: We cannot test stack-capture here, because the profiler is not
+  // initialized.
+
+  MOZ_RELEASE_ASSERT(mozilla::baseprofiler::AddMarkerToBuffer(
+      buffer, "test2", mozilla::baseprofiler::category::OTHER_Profiling,
+      mozilla::MarkerInnerWindowId(123), MarkerTypeTestMinimal{},
+      std::string("InnerWindowId(123)")));
+
+#  ifdef DEBUG
+  buffer.Dump();
+#  endif
+
+  PrintMarkers(buffer);
+
+  printf("TestUserMarker done\n");
+}
+
+void TestPredefinedMarkers() {
+  printf("TestPredefinedMarkers...\n");
+
+  mozilla::ProfileBufferChunkManagerSingle chunkManager(1024);
+  mozilla::ProfileChunkedBuffer buffer(
+      mozilla::ProfileChunkedBuffer::ThreadSafety::WithoutMutex, chunkManager);
+
+  MOZ_RELEASE_ASSERT(mozilla::baseprofiler::AddMarkerToBuffer(
+      buffer, std::string_view("tracing"),
+      mozilla::baseprofiler::category::OTHER, {},
+      mozilla::baseprofiler::markers::Tracing{}, "category"));
+
+  MOZ_RELEASE_ASSERT(mozilla::baseprofiler::AddMarkerToBuffer(
+      buffer, std::string_view("text"), mozilla::baseprofiler::category::OTHER,
+      {}, mozilla::baseprofiler::markers::TextMarker{}, "text text"));
+
+  MOZ_RELEASE_ASSERT(mozilla::baseprofiler::AddMarkerToBuffer(
+      buffer, std::string_view("media"), mozilla::baseprofiler::category::OTHER,
+      {}, mozilla::baseprofiler::markers::MediaSampleMarker{}, 123, 456));
+
+#  ifdef DEBUG
+  buffer.Dump();
+#  endif
+
+  PrintMarkers(buffer);
+
+  printf("TestPredefinedMarkers done\n");
+}
+
+void TestProfilerMarkers() {
+  printf(
+      "TestProfilerMarkers -- pid: %" PRIu64 ", tid: %" PRIu64 "\n",
+      uint64_t(mozilla::baseprofiler::profiler_current_process_id().ToNumber()),
+      uint64_t(mozilla::baseprofiler::profiler_current_thread_id().ToNumber()));
+  // ::SleepMilli(10000);
+
+  TestUniqueJSONStrings();
+  TestMarkerCategory();
+  TestMarkerThreadId();
+  TestMarkerNoPayload();
+  TestUserMarker();
+  TestPredefinedMarkers();
+
+  printf("TestProfilerMarkers done\n");
+}
+
 #else  // MOZ_GECKO_PROFILER
 
 // Testing that macros are still #defined (but do nothing) when
@@ -3333,14 +4684,53 @@ void TestProfiler() {
 void TestProfiler() {
   // These don't need to make sense, we just want to know that they're defined
   // and don't do anything.
+
+#  ifndef AUTO_BASE_PROFILER_INIT
+#    error AUTO_BASE_PROFILER_INIT not #defined
+#  endif  // AUTO_BASE_PROFILER_INIT
   AUTO_BASE_PROFILER_INIT;
 
-  // This wouldn't build if the macro did output its arguments.
-  AUTO_BASE_PROFILER_TEXT_MARKER_CAUSE(catch, catch, catch, catch);
+#  ifndef AUTO_BASE_PROFILER_MARKER_TEXT
+#    error AUTO_BASE_PROFILER_MARKER_TEXT not #defined
+#  endif  // AUTO_BASE_PROFILER_MARKER_TEXT
 
-  AUTO_BASE_PROFILER_LABEL(catch, catch);
+#  ifndef AUTO_BASE_PROFILER_LABEL
+#    error AUTO_BASE_PROFILER_LABEL not #defined
+#  endif  // AUTO_BASE_PROFILER_LABEL
 
+#  ifndef AUTO_BASE_PROFILER_THREAD_SLEEP
+#    error AUTO_BASE_PROFILER_THREAD_SLEEP not #defined
+#  endif  // AUTO_BASE_PROFILER_THREAD_SLEEP
   AUTO_BASE_PROFILER_THREAD_SLEEP;
+
+#  ifndef BASE_PROFILER_MARKER_UNTYPED
+#    error BASE_PROFILER_MARKER_UNTYPED not #defined
+#  endif  // BASE_PROFILER_MARKER_UNTYPED
+
+#  ifndef BASE_PROFILER_MARKER
+#    error BASE_PROFILER_MARKER not #defined
+#  endif  // BASE_PROFILER_MARKER
+
+#  ifndef BASE_PROFILER_MARKER_TEXT
+#    error BASE_PROFILER_MARKER_TEXT not #defined
+#  endif  // BASE_PROFILER_MARKER_TEXT
+
+  MOZ_RELEASE_ASSERT(!mozilla::baseprofiler::profiler_get_backtrace(),
+                     "profiler_get_backtrace should return nullptr");
+  mozilla::ProfileChunkedBuffer buffer(
+      mozilla::ProfileChunkedBuffer::ThreadSafety::WithoutMutex);
+  MOZ_RELEASE_ASSERT(!mozilla::baseprofiler::profiler_capture_backtrace_into(
+                         buffer, mozilla::StackCaptureOptions::Full),
+                     "profiler_capture_backtrace_into should return false");
+  MOZ_RELEASE_ASSERT(!mozilla::baseprofiler::profiler_capture_backtrace(),
+                     "profiler_capture_backtrace should return nullptr");
+}
+
+// Testing that macros are still #defined (but do nothing) when
+// MOZ_GECKO_PROFILER is disabled.
+void TestProfilerMarkers() {
+  // These don't need to make sense, we just want to know that they're defined
+  // and don't do anything.
 }
 
 #endif  // MOZ_GECKO_PROFILER else
@@ -3352,15 +4742,17 @@ int main()
 #endif  // defined(XP_WIN)
 {
 #ifdef MOZ_GECKO_PROFILER
-  printf("BaseTestProfiler -- pid: %d, tid: %d\n",
-         baseprofiler::profiler_current_process_id(),
-         baseprofiler::profiler_current_thread_id());
+  printf("BaseTestProfiler -- pid: %" PRIu64 ", tid: %" PRIu64 "\n",
+         uint64_t(baseprofiler::profiler_current_process_id().ToNumber()),
+         uint64_t(baseprofiler::profiler_current_thread_id().ToNumber()));
   // ::SleepMilli(10000);
 #endif  // MOZ_GECKO_PROFILER
 
-  // Note that there are two `TestProfiler` functions above, depending on
-  // whether MOZ_GECKO_PROFILER is #defined.
+  TestProfilerUtils();
+  // Note that there are two `TestProfiler{,Markers}` functions above, depending
+  // on whether MOZ_GECKO_PROFILER is #defined.
   TestProfiler();
+  TestProfilerMarkers();
 
   return 0;
 }

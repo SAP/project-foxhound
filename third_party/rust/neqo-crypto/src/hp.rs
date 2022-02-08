@@ -9,14 +9,14 @@ use crate::constants::{
 };
 use crate::err::{secstatus_to_res, Error, Res};
 use crate::p11::{
-    PK11SymKey, PK11_Encrypt, PK11_GetBlockSize, PK11_GetMechanism, SECItem, SECItemType, SymKey,
+    Item, PK11SymKey, PK11_Encrypt, PK11_GetBlockSize, PK11_GetMechanism, SECItem, SymKey,
     CKM_AES_ECB, CKM_NSS_CHACHA20_CTR, CK_MECHANISM_TYPE,
 };
 
 use std::convert::TryFrom;
 use std::fmt::{self, Debug};
 use std::os::raw::{c_char, c_uint};
-use std::ptr::{null, null_mut, NonNull};
+use std::ptr::{null, null_mut};
 
 experimental_api!(SSL_HkdfExpandLabelWithMech(
     version: Version,
@@ -45,6 +45,8 @@ impl HpKey {
     ///
     /// # Errors
     /// Errors if HKDF fails or if the label is too long to fit in a `c_uint`.
+    /// # Panics
+    /// When `cipher` is not known to this code.
     pub fn extract(version: Version, cipher: Cipher, prk: &SymKey, label: &str) -> Res<Self> {
         let l = label.as_bytes();
         let mut secret: *mut PK11SymKey = null_mut();
@@ -65,17 +67,25 @@ impl HpKey {
                 **prk,
                 null(),
                 0,
-                l.as_ptr() as *const c_char,
+                l.as_ptr().cast(),
                 c_uint::try_from(l.len())?,
                 mech,
                 key_size,
                 &mut secret,
             )
         }?;
-        match NonNull::new(secret) {
-            None => Err(Error::HkdfError),
-            Some(p) => Ok(Self(SymKey::new(p))),
-        }
+        let sym_key = SymKey::from_ptr(secret).or(Err(Error::HkdfError))?;
+        Ok(HpKey(sym_key))
+    }
+
+    /// Get the sample size, which is also the output size.
+    #[allow(clippy::cast_sign_loss)]
+    #[must_use]
+    pub fn sample_size(&self) -> usize {
+        let k: *mut PK11SymKey = *self.0;
+        let mech = unsafe { PK11_GetMechanism(k) };
+        // Cast is safe because block size is always greater than or equal to 0
+        (unsafe { PK11_GetBlockSize(mech, null_mut()) }) as usize
     }
 
     /// Generate a header protection mask for QUIC.
@@ -83,27 +93,23 @@ impl HpKey {
     /// # Errors
     /// An error is returned if the NSS functions fail; a sample of the
     /// wrong size is the obvious cause.
-    #[allow(clippy::cast_sign_loss)]
+    /// # Panics
+    /// When the mechanism for our key is not supported.
     pub fn mask(&self, sample: &[u8]) -> Res<Vec<u8>> {
         let k: *mut PK11SymKey = *self.0;
         let mech = unsafe { PK11_GetMechanism(k) };
-        // Cast is safe because block size is always greater than or equal to 0
-        let block_size = unsafe { PK11_GetBlockSize(mech, null_mut()) } as usize;
+        let block_size = self.sample_size();
 
         let mut output = vec![0_u8; block_size];
         let output_slice = &mut output[..];
         let mut output_len: c_uint = 0;
 
-        let mut item = SECItem {
-            type_: SECItemType::siBuffer,
-            data: sample.as_ptr() as *mut u8,
-            len: c_uint::try_from(sample.len())?,
-        };
         let zero = vec![0_u8; block_size];
+        let mut wrapped_sample = Item::wrap(sample);
         let (iv, inbuf) = match () {
             _ if mech == CK_MECHANISM_TYPE::from(CKM_AES_ECB) => (null_mut(), sample),
             _ if mech == CK_MECHANISM_TYPE::from(CKM_NSS_CHACHA20_CTR) => {
-                (&mut item as *mut SECItem, &zero[..])
+                (&mut wrapped_sample as *mut SECItem, &zero[..])
             }
             _ => unreachable!(),
         };
@@ -115,7 +121,7 @@ impl HpKey {
                 output_slice.as_mut_ptr(),
                 &mut output_len,
                 c_uint::try_from(output.len())?,
-                inbuf.as_ptr() as *const u8,
+                inbuf.as_ptr().cast(),
                 c_uint::try_from(inbuf.len())?,
             )
         })?;

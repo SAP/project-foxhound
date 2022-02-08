@@ -4,8 +4,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CanvasRenderingContextHelper.h"
+#include "GLContext.h"
 #include "ImageBitmapRenderingContext.h"
 #include "ImageEncoder.h"
+#include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
 #include "mozilla/GfxMessageUtils.h"
 #include "mozilla/Telemetry.h"
@@ -18,8 +20,7 @@
 #include "nsJSUtils.h"
 #include "ClientWebGLContext.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 CanvasRenderingContextHelper::CanvasRenderingContextHelper()
     : mCurrentContextType(CanvasContextType::NoContext) {}
@@ -131,7 +132,6 @@ CanvasRenderingContextHelper::CreateContextHelper(
       Telemetry::Accumulate(Telemetry::CANVAS_WEBGL_USED, 1);
 
       ret = new ClientWebGLContext(/*webgl2:*/ false);
-      if (!ret) return nullptr;
 
       break;
 
@@ -139,7 +139,6 @@ CanvasRenderingContextHelper::CreateContextHelper(
       Telemetry::Accumulate(Telemetry::CANVAS_WEBGL_USED, 1);
 
       ret = new ClientWebGLContext(/*webgl2:*/ true);
-      if (!ret) return nullptr;
 
       break;
 
@@ -148,7 +147,6 @@ CanvasRenderingContextHelper::CreateContextHelper(
       // Telemetry::Accumulate(Telemetry::CANVAS_WEBGPU_USED, 1);
 
       ret = new webgpu::CanvasContext();
-      if (!ret) return nullptr;
 
       break;
 
@@ -282,5 +280,4 @@ nsresult CanvasRenderingContextHelper::ParseParams(
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

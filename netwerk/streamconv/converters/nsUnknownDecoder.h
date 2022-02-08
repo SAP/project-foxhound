@@ -44,7 +44,7 @@ class nsUnknownDecoder : public nsIStreamConverter,
   // nsIThreadRetargetableStreamListener methods
   NS_DECL_NSITHREADRETARGETABLESTREAMLISTENER
 
-  nsUnknownDecoder();
+  explicit nsUnknownDecoder(nsIStreamListener* aListener = nullptr);
 
  protected:
   virtual ~nsUnknownDecoder();
@@ -103,7 +103,7 @@ class nsUnknownDecoder : public nsIStreamConverter,
    * false otherwise
    */
   struct nsSnifferEntry {
-    typedef bool (nsUnknownDecoder::*TypeSniffFunc)(nsIRequest* aRequest);
+    using TypeSniffFunc = bool (nsUnknownDecoder::*)(nsIRequest*);
 
     const char* mBytes;
     uint32_t mByteLen;

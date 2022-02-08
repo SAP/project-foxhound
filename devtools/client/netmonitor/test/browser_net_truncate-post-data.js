@@ -8,6 +8,9 @@
  * Verifies that requests with large post data are truncated and error is displayed.
  */
 add_task(async function() {
+  // Using https-first for this test is blocked on Bug 1733420.
+  await pushPref("dom.security.https_first", false);
+
   const { monitor, tab } = await initNetMonitor(POST_JSON_URL, {
     requestCount: 1,
   });
@@ -29,24 +32,17 @@ add_task(async function() {
   const item = document.querySelectorAll(".request-list-item")[0];
   await waitUntil(() => item.querySelector(".requests-list-type").title);
 
-  // Make sure the accordion items and editor is loaded
-  const waitAccordionItems = waitForDOM(
-    document,
-    "#request-panel .accordion-item",
-    1
-  );
+  // Make sure the header and editor are loaded
+  const waitHeader = waitForDOM(document, "#request-panel .data-header");
   const waitSourceEditor = waitForDOM(
     document,
     "#request-panel .CodeMirror.cm-s-mozilla"
   );
 
   store.dispatch(Actions.toggleNetworkDetails());
-  EventUtils.sendMouseEvent(
-    { type: "click" },
-    document.querySelector("#request-tab")
-  );
+  clickOnSidebarTab(document, "request");
 
-  await Promise.all([waitAccordionItems, waitSourceEditor]);
+  await Promise.all([waitHeader, waitSourceEditor]);
 
   const tabpanel = document.querySelector("#request-panel");
   is(
@@ -59,8 +55,7 @@ add_task(async function() {
     "Request has been truncated",
     "The error message shown is incorrect"
   );
-  const jsonView =
-    tabpanel.querySelector(".accordion-item .accordion-header-label") || {};
+  const jsonView = tabpanel.querySelector(".data-label") || {};
   is(
     jsonView.textContent === L10N.getStr("jsonScopeName"),
     false,

@@ -9,8 +9,7 @@
 
 interface WindowProxy;
 
-[Pref="dom.w3c_pointer_events.enabled",
- Exposed=Window]
+[Exposed=Window]
 interface PointerEvent : MouseEvent
 {
   constructor(DOMString type, optional PointerEventInit eventInitDict = {});
@@ -37,6 +36,7 @@ interface PointerEvent : MouseEvent
   readonly attribute DOMString pointerType;
   readonly attribute boolean isPrimary;
   sequence<PointerEvent> getCoalescedEvents();
+  sequence<PointerEvent> getPredictedEvents();
 };
 
 dictionary PointerEventInit : MouseEventInit
@@ -52,4 +52,5 @@ dictionary PointerEventInit : MouseEventInit
   DOMString pointerType = "";
   boolean isPrimary = false;
   sequence<PointerEvent> coalescedEvents = [];
+  sequence<PointerEvent> predictedEvents = [];
 };

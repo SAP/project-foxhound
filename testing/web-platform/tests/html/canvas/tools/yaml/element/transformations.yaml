@@ -334,7 +334,6 @@
     @assert pixel 50,25 == 0,255,0,255;
   expected: green
 
-
 - name: 2d.transformation.setTransform.skewed
   testing:
   - 2d.transformation.setTransform
@@ -401,5 +400,3 @@
 
     @assert pixel 50,25 == 0,255,0,255;
   expected: green
-
-

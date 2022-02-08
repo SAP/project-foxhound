@@ -9,6 +9,15 @@ add_task(async function() {
     "Check that performing a search fires a search event and records to Telemetry."
   );
 
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [
+        "browser.newtabpage.activity-stream.improvesearch.handoffToAwesomebar",
+        false,
+      ],
+    ],
+  });
+
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: "about:home" },
     async function(browser) {
@@ -16,14 +25,11 @@ add_task(async function() {
 
       let engine;
       await promiseContentSearchChange(browser, async () => {
-        engine = await promiseNewEngine("searchSuggestionEngine.xml");
+        engine = await SearchTestUtils.promiseNewSearchEngine(
+          getRootDirectory(gTestPath) + "searchSuggestionEngine.xml"
+        );
         await Services.search.setDefault(engine);
         return engine.name;
-      });
-
-      // Make this actually work in healthreport by giving it an ID:
-      Object.defineProperty(engine.wrappedJSObject, "identifier", {
-        value: "org.mozilla.testsearchsuggestions",
       });
 
       await SpecialPowers.spawn(
@@ -42,7 +48,7 @@ add_task(async function() {
 
       let numSearchesBefore = 0;
       // Get the current number of recorded searches.
-      let histogramKey = engine.identifier + ".abouthome";
+      let histogramKey = `other-${engine.name}.abouthome`;
       try {
         let hs = Services.telemetry
           .getKeyedHistogramById("SEARCH_COUNTS")
@@ -94,4 +100,5 @@ add_task(async function() {
       } catch (ex) {}
     }
   );
+  await SpecialPowers.popPrefEnv();
 });

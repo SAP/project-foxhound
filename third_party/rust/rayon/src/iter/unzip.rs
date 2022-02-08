@@ -11,7 +11,7 @@ trait UnzipOp<T>: Sync + Send {
     /// The type of item expected by the right consumer.
     type Right: Send;
 
-    /// Consume one item and feed it to one or both of the underlying folders.
+    /// Consumes one item and feeds it to one or both of the underlying folders.
     fn consume<FA, FB>(&self, item: T, left: FA, right: FB) -> (FA, FB)
     where
         FA: Folder<Self::Left>,
@@ -25,7 +25,7 @@ trait UnzipOp<T>: Sync + Send {
     }
 }
 
-/// Run an unzip-like operation into default `ParallelExtend` collections.
+/// Runs an unzip-like operation into default `ParallelExtend` collections.
 fn execute<I, OP, FromA, FromB>(pi: I, op: OP) -> (FromA, FromB)
 where
     I: ParallelIterator,
@@ -39,7 +39,7 @@ where
     (a, b)
 }
 
-/// Run an unzip-like operation into `ParallelExtend` collections.
+/// Runs an unzip-like operation into `ParallelExtend` collections.
 fn execute_into<I, OP, FromA, FromB>(a: &mut FromA, b: &mut FromB, pi: I, op: OP)
 where
     I: ParallelIterator,
@@ -69,7 +69,7 @@ where
     execute(pi, Unzip)
 }
 
-/// Unzip an `IndexedParallelIterator` into two arbitrary `Consumer`s.
+/// Unzips an `IndexedParallelIterator` into two arbitrary `Consumer`s.
 ///
 /// This is called by `super::collect::unzip_into_vecs`.
 pub(super) fn unzip_indexed<I, A, B, CA, CB>(pi: I, left: CA, right: CB) -> (CA::Result, CB::Result)
@@ -191,7 +191,7 @@ where
 }
 
 /// A fake iterator to intercept the `Consumer` for type `A`.
-struct UnzipA<'b, I, OP, FromB: 'b> {
+struct UnzipA<'b, I, OP, FromB> {
     base: I,
     op: OP,
     b: &'b mut FromB,
@@ -283,7 +283,7 @@ where
 }
 
 /// `Consumer` that unzips into two other `Consumer`s
-struct UnzipConsumer<'a, OP: 'a, CA, CB> {
+struct UnzipConsumer<'a, OP, CA, CB> {
     op: &'a OP,
     left: CA,
     right: CB,
@@ -358,7 +358,7 @@ where
 }
 
 /// `Folder` that unzips into two other `Folder`s
-struct UnzipFolder<'a, OP: 'a, FA, FB> {
+struct UnzipFolder<'a, OP, FA, FB> {
     op: &'a OP,
     left: FA,
     right: FB,
@@ -460,5 +460,66 @@ where
             Either::Left(item) => (left.consume(item), right),
             Either::Right(item) => (left, right.consume(item)),
         }
+    }
+}
+
+impl<A, B, FromA, FromB> FromParallelIterator<(A, B)> for (FromA, FromB)
+where
+    A: Send,
+    B: Send,
+    FromA: Send + FromParallelIterator<A>,
+    FromB: Send + FromParallelIterator<B>,
+{
+    fn from_par_iter<I>(pi: I) -> Self
+    where
+        I: IntoParallelIterator<Item = (A, B)>,
+    {
+        let (a, b): (Collector<FromA>, Collector<FromB>) = pi.into_par_iter().unzip();
+        (a.result.unwrap(), b.result.unwrap())
+    }
+}
+
+impl<L, R, A, B> FromParallelIterator<Either<L, R>> for (A, B)
+where
+    L: Send,
+    R: Send,
+    A: Send + FromParallelIterator<L>,
+    B: Send + FromParallelIterator<R>,
+{
+    fn from_par_iter<I>(pi: I) -> Self
+    where
+        I: IntoParallelIterator<Item = Either<L, R>>,
+    {
+        fn identity<T>(x: T) -> T {
+            x
+        }
+
+        let (a, b): (Collector<A>, Collector<B>) = pi.into_par_iter().partition_map(identity);
+        (a.result.unwrap(), b.result.unwrap())
+    }
+}
+
+/// Shim to implement a one-time `ParallelExtend` using `FromParallelIterator`.
+struct Collector<FromT> {
+    result: Option<FromT>,
+}
+
+impl<FromT> Default for Collector<FromT> {
+    fn default() -> Self {
+        Collector { result: None }
+    }
+}
+
+impl<T, FromT> ParallelExtend<T> for Collector<FromT>
+where
+    T: Send,
+    FromT: Send + FromParallelIterator<T>,
+{
+    fn par_extend<I>(&mut self, pi: I)
+    where
+        I: IntoParallelIterator<Item = T>,
+    {
+        debug_assert!(self.result.is_none());
+        self.result = Some(pi.into_par_iter().collect());
     }
 }

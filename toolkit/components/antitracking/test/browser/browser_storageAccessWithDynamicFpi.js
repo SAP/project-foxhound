@@ -43,10 +43,16 @@ add_task(async function setup() {
         "network.cookie.cookieBehavior",
         Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
       ],
+      [
+        "network.cookie.cookieBehavior.pbmode",
+        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+      ],
       ["privacy.restrict3rdpartystorage.heuristic.redirect", false],
       ["privacy.trackingprotection.enabled", false],
       ["privacy.trackingprotection.pbmode.enabled", false],
       ["privacy.trackingprotection.annotate_channels", true],
+      // Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
+      ["network.cookie.sameSite.laxByDefault", false],
     ],
   });
   registerCleanupFunction(cleanup);
@@ -159,11 +165,14 @@ async function checkData(browser, options) {
   }
 }
 
-add_task(async function testRedirectHeuristic() {
+async function runTestRedirectHeuristic(disableHeuristics) {
   info("Starting Dynamic FPI Redirect Heuristic test...");
 
   await SpecialPowers.pushPrefEnv({
-    set: [["privacy.restrict3rdpartystorage.heuristic.recently_visited", true]],
+    set: [
+      ["privacy.restrict3rdpartystorage.heuristic.recently_visited", true],
+      ["privacy.antitracking.enableWebcompat", !disableHeuristics],
+    ],
   });
 
   // mark third-party as tracker
@@ -234,16 +243,30 @@ add_task(async function testRedirectHeuristic() {
     TEST_TOP_PAGE
   );
 
-  info("third-party page should able to access first-party data");
+  info(
+    `third-party page should ${
+      disableHeuristics ? "not " : ""
+    }be able to access first-party data`
+  );
   await checkData(browser, {
     firstParty: "firstParty",
-    thirdParty: "heuristicFirstParty",
+    thirdParty: disableHeuristics ? "" : "heuristicFirstParty",
   });
 
   info("Removing the tab");
   BrowserTestUtils.removeTab(tab);
 
+  await SpecialPowers.popPrefEnv();
+
   await cleanup();
+}
+
+add_task(async function testRedirectHeuristic() {
+  await runTestRedirectHeuristic(false);
+});
+
+add_task(async function testRedirectHeuristicDisabled() {
+  await runTestRedirectHeuristic(true);
 });
 
 class UpdateEvent extends EventTarget {}
@@ -253,12 +276,13 @@ function waitForEvent(element, eventName) {
   });
 }
 
-add_task(async function testExceptionListPref() {
+async function runTestExceptionListPref(disableHeuristics) {
   info("Starting Dynamic FPI exception list test pref");
 
   await SpecialPowers.pushPrefEnv({
     set: [
       ["privacy.restrict3rdpartystorage.heuristic.recently_visited", false],
+      ["privacy.antitracking.enableWebcompat", !disableHeuristics],
     ],
   });
 
@@ -310,7 +334,34 @@ add_task(async function testExceptionListPref() {
   await Promise.all([
     checkData(browserFirstParty, {
       firstParty: "firstParty",
-      thirdParty: "ExceptionListFirstParty",
+      thirdParty: disableHeuristics ? "thirdParty" : "ExceptionListFirstParty",
+    }),
+    checkData(browserThirdParty, { firstParty: "ExceptionListFirstParty" }),
+  ]);
+
+  info("set incomplete exception list pref");
+  Services.prefs.setStringPref(EXCEPTION_LIST_PREF_NAME, `${TEST_DOMAIN}`);
+
+  info("check data");
+  await Promise.all([
+    checkData(browserFirstParty, {
+      firstParty: "firstParty",
+      thirdParty: "thirdParty",
+    }),
+    checkData(browserThirdParty, { firstParty: "ExceptionListFirstParty" }),
+  ]);
+
+  info("set exception list pref, with extra semicolons");
+  Services.prefs.setStringPref(
+    EXCEPTION_LIST_PREF_NAME,
+    `;${TEST_DOMAIN},${TEST_3RD_PARTY_DOMAIN};;`
+  );
+
+  info("check data");
+  await Promise.all([
+    checkData(browserFirstParty, {
+      firstParty: "firstParty",
+      thirdParty: disableHeuristics ? "thirdParty" : "ExceptionListFirstParty",
     }),
     checkData(browserThirdParty, { firstParty: "ExceptionListFirstParty" }),
   ]);
@@ -319,7 +370,17 @@ add_task(async function testExceptionListPref() {
   BrowserTestUtils.removeTab(tabFirstParty);
   BrowserTestUtils.removeTab(tabThirdParty);
 
+  await SpecialPowers.popPrefEnv();
+
   await cleanup();
+}
+
+add_task(async function testExceptionListPref() {
+  await runTestExceptionListPref(false);
+});
+
+add_task(async function testExceptionListPrefDisabled() {
+  await runTestExceptionListPref(true);
 });
 
 add_task(async function testExceptionListRemoteSettings() {
@@ -397,7 +458,7 @@ add_task(async function testExceptionListRemoteSettings() {
       current: [
         {
           id: "1",
-          last_modified: 100000000000000000001,
+          last_modified: 1000000000000001,
           firstPartyOrigin: TEST_DOMAIN,
           thirdPartyOrigin: TEST_3RD_PARTY_DOMAIN,
         },
@@ -434,5 +495,98 @@ add_task(async function testExceptionListRemoteSettings() {
   is(await promise, "", "Exception list is cleared");
 
   peuService.unregisterExceptionListObserver(obs);
+  await cleanup();
+});
+
+add_task(async function testWildcardExceptionListPref() {
+  info("Starting Dynamic FPI wirdcard exception list test pref");
+
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["privacy.restrict3rdpartystorage.heuristic.recently_visited", false],
+    ],
+  });
+
+  info("Creating new tabs");
+  let tabThirdParty = BrowserTestUtils.addTab(
+    gBrowser,
+    TEST_3RD_PARTY_PARTITIONED_PAGE
+  );
+  gBrowser.selectedTab = tabThirdParty;
+
+  let browserThirdParty = gBrowser.getBrowserForTab(tabThirdParty);
+  await BrowserTestUtils.browserLoaded(browserThirdParty);
+
+  let tabFirstParty = BrowserTestUtils.addTab(gBrowser, TEST_TOP_PAGE);
+  gBrowser.selectedTab = tabFirstParty;
+
+  let browserFirstParty = gBrowser.getBrowserForTab(tabFirstParty);
+  await BrowserTestUtils.browserLoaded(browserFirstParty);
+
+  info("initializing...");
+  await Promise.all([
+    checkData(browserFirstParty, { firstParty: "", thirdParty: "" }),
+    checkData(browserThirdParty, { firstParty: "" }),
+  ]);
+
+  info("fill default data");
+  await Promise.all([
+    createDataInFirstParty(browserFirstParty, "firstParty"),
+    createDataInThirdParty(browserFirstParty, "thirdParty"),
+    createDataInFirstParty(browserThirdParty, "ExceptionListFirstParty"),
+  ]);
+
+  info("check initial data");
+  await Promise.all([
+    checkData(browserFirstParty, {
+      firstParty: "firstParty",
+      thirdParty: "thirdParty",
+    }),
+    checkData(browserThirdParty, { firstParty: "ExceptionListFirstParty" }),
+  ]);
+
+  info("set wildcard (1st-party) pref");
+  Services.prefs.setStringPref(
+    EXCEPTION_LIST_PREF_NAME,
+    `*,${TEST_3RD_PARTY_DOMAIN}`
+  );
+
+  info("check wildcard (1st-party) data");
+  await Promise.all([
+    checkData(browserFirstParty, {
+      firstParty: "firstParty",
+      thirdParty: "ExceptionListFirstParty",
+    }),
+    checkData(browserThirdParty, { firstParty: "ExceptionListFirstParty" }),
+  ]);
+
+  info("set invalid exception list pref");
+  Services.prefs.setStringPref(EXCEPTION_LIST_PREF_NAME, "*,*");
+
+  info("check initial data");
+  await Promise.all([
+    checkData(browserFirstParty, {
+      firstParty: "firstParty",
+      thirdParty: "thirdParty",
+    }),
+    checkData(browserThirdParty, { firstParty: "ExceptionListFirstParty" }),
+  ]);
+
+  info("set wildcard (3rd-party) pref");
+  Services.prefs.setStringPref(EXCEPTION_LIST_PREF_NAME, `${TEST_DOMAIN},*`);
+
+  info("check wildcard (3rd-party) data");
+  await Promise.all([
+    checkData(browserFirstParty, {
+      firstParty: "firstParty",
+      thirdParty: "ExceptionListFirstParty",
+    }),
+    checkData(browserThirdParty, { firstParty: "ExceptionListFirstParty" }),
+  ]);
+
+  info("Removing the tab");
+  BrowserTestUtils.removeTab(tabFirstParty);
+  BrowserTestUtils.removeTab(tabThirdParty);
+
   await cleanup();
 });

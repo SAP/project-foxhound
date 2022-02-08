@@ -9,9 +9,11 @@
 #include "nsICanvasRenderingContextInternal.h"
 #include "nsIHTMLCollection.h"
 #include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/dom/UserActivation.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StaticPrefs_webgl.h"
 #include "nsIPrincipal.h"
@@ -42,10 +44,9 @@
 
 using namespace mozilla::gfx;
 
-namespace mozilla {
-namespace CanvasUtils {
+namespace mozilla::CanvasUtils {
 
-bool IsImageExtractionAllowed(Document* aDocument, JSContext* aCx,
+bool IsImageExtractionAllowed(dom::Document* aDocument, JSContext* aCx,
                               nsIPrincipal& aPrincipal) {
   // Do the rest of the checks only if privacy.resistFingerprinting is on.
   if (!nsContentUtils::ShouldResistFingerprinting(aDocument)) {
@@ -85,7 +86,8 @@ bool IsImageExtractionAllowed(Document* aDocument, JSContext* aCx,
     return true;
   }
 
-  Document* topLevelDocument = aDocument->GetTopLevelContentDocument();
+  dom::Document* topLevelDocument =
+      aDocument->GetTopLevelContentDocumentIfSameProcess();
   nsIURI* topLevelDocURI =
       topLevelDocument ? topLevelDocument->GetDocumentURI() : nullptr;
   nsCString topLevelDocURISpec;
@@ -139,7 +141,7 @@ bool IsImageExtractionAllowed(Document* aDocument, JSContext* aCx,
   bool isAutoBlockCanvas =
       StaticPrefs::
           privacy_resistFingerprinting_autoDeclineNoUserInputCanvasPrompts() &&
-      !UserActivation::IsHandlingUserInput();
+      !dom::UserActivation::IsHandlingUserInput();
 
   if (isAutoBlockCanvas) {
     nsAutoString message;
@@ -166,7 +168,7 @@ bool IsImageExtractionAllowed(Document* aDocument, JSContext* aCx,
   NS_ENSURE_SUCCESS(rv, false);
 
   if (XRE_IsContentProcess()) {
-    BrowserChild* browserChild = BrowserChild::GetFrom(win);
+    dom::BrowserChild* browserChild = dom::BrowserChild::GetFrom(win);
     if (browserChild) {
       browserChild->SendShowCanvasPermissionPrompt(origin, isAutoBlockCanvas);
     }
@@ -205,7 +207,7 @@ bool GetCanvasContextType(const nsAString& str,
   }
 
   if (StaticPrefs::dom_webgpu_enabled()) {
-    if (str.EqualsLiteral("gpupresent")) {
+    if (str.EqualsLiteral("webgpu")) {
       *out_type = dom::CanvasContextType::WebGPU;
       return true;
     }
@@ -320,5 +322,4 @@ bool CheckWriteOnlySecurity(bool aCORSUsed, nsIPrincipal* aPrincipal,
   return false;
 }
 
-}  // namespace CanvasUtils
-}  // namespace mozilla
+}  // namespace mozilla::CanvasUtils

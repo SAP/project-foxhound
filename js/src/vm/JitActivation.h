@@ -26,9 +26,10 @@
 #include "js/HashTable.h"             // js::HashMap
 #include "js/UniquePtr.h"             // js::UniquePtr
 #include "vm/Activation.h"            // js::Activation
+#include "wasm/WasmCodegenTypes.h"    // js::wasm::TrapData
 #include "wasm/WasmConstants.h"       // js::wasm::Trap
+#include "wasm/WasmFrame.h"           // js::wasm::Frame
 #include "wasm/WasmFrameIter.h"  // js::wasm::{ExitReason,RegisterState,WasmFrameIter}
-#include "wasm/WasmTypes.h"  // js::wasm::{Frame,TrapData}
 
 struct JS_PUBLIC_API JSContext;
 class JS_PUBLIC_API JSTracer;
@@ -213,6 +214,9 @@ class JitActivation : public Activation {
     MOZ_ASSERT(hasWasmExitFP());
     return reinterpret_cast<wasm::Frame*>(
         wasm::Frame::toJitEntryCaller(packedExitFP_));
+  }
+  wasm::TlsData* wasmExitTls() const {
+    return wasm::GetNearestEffectiveTls(wasmExitFP());
   }
   void setWasmExitFP(const wasm::Frame* fp) {
     if (fp) {

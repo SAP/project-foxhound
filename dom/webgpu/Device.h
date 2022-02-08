@@ -6,6 +6,8 @@
 #ifndef GPU_DEVICE_H_
 #define GPU_DEVICE_H_
 
+#include "ObjectModel.h"
+#include "nsTHashSet.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/webgpu/WebGPUTypes.h"
@@ -34,7 +36,7 @@ struct GPUComputePipelineDescriptor;
 struct GPURenderBundleEncoderDescriptor;
 struct GPURenderPipelineDescriptor;
 struct GPUCommandEncoderDescriptor;
-struct GPUSwapChainDescriptor;
+struct GPUCanvasConfiguration;
 
 class EventHandlerNonNull;
 class Promise;
@@ -67,7 +69,7 @@ class ShaderModule;
 class Texture;
 class WebGPUChild;
 
-typedef MozPromise<ipc::Shmem, ipc::ResponseRejectReason, true> MappingPromise;
+using MappingPromise = MozPromise<ipc::Shmem, ipc::ResponseRejectReason, true>;
 
 class Device final : public DOMEventTargetHelper {
  public:
@@ -75,38 +77,43 @@ class Device final : public DOMEventTargetHelper {
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(Device, DOMEventTargetHelper)
   GPU_DECL_JS_WRAP(Device)
 
+  const RawId mId;
+
   explicit Device(Adapter* const aParent, RawId aId);
 
   RefPtr<WebGPUChild> GetBridge();
-  static JSObject* CreateExternalArrayBuffer(JSContext* aCx, size_t aSize,
-                                             ipc::Shmem& aShmem);
-  RefPtr<MappingPromise> MapBufferForReadAsync(RawId aId, size_t aSize,
-                                               ErrorResult& aRv);
-  void UnmapBuffer(RawId aId, UniquePtr<ipc::Shmem> aShmem, bool aFlush);
+  static JSObject* CreateExternalArrayBuffer(JSContext* aCx, size_t aOffset,
+                                             size_t aSize,
+                                             const ipc::Shmem& aShmem);
+  RefPtr<MappingPromise> MapBufferAsync(RawId aId, uint32_t aMode,
+                                        size_t aOffset, size_t aSize,
+                                        ErrorResult& aRv);
+  void UnmapBuffer(RawId aId, ipc::Shmem&& aShmem, bool aFlush,
+                   bool aKeepShmem);
   already_AddRefed<Texture> InitSwapChain(
-      const dom::GPUSwapChainDescriptor& aDesc,
-      const dom::GPUExtent3DDict& aExtent3D,
-      wr::ExternalImageId aExternalImageId, gfx::SurfaceFormat aFormat);
+      const dom::GPUCanvasConfiguration& aDesc,
+      wr::ExternalImageId aExternalImageId, gfx::SurfaceFormat aFormat,
+      gfx::IntSize* aDefaultSize);
+  bool CheckNewWarning(const nsACString& aMessage);
 
  private:
   ~Device();
   void Cleanup();
 
   RefPtr<WebGPUChild> mBridge;
-  const RawId mId;
   bool mValid = true;
   nsString mLabel;
   RefPtr<Queue> mQueue;
+  nsTHashSet<nsCString> mKnownWarnings;
 
  public:
   void GetLabel(nsAString& aValue) const;
   void SetLabel(const nsAString& aLabel);
 
-  Queue* DefaultQueue() const;
+  const RefPtr<Queue>& GetQueue() const;
 
-  already_AddRefed<Buffer> CreateBuffer(const dom::GPUBufferDescriptor& aDesc);
-  void CreateBufferMapped(JSContext* aCx, const dom::GPUBufferDescriptor& aDesc,
-                          nsTArray<JS::Value>& aSequence, ErrorResult& aRv);
+  already_AddRefed<Buffer> CreateBuffer(const dom::GPUBufferDescriptor& aDesc,
+                                        ErrorResult& aRv);
 
   already_AddRefed<Texture> CreateTexture(
       const dom::GPUTextureDescriptor& aDesc);
@@ -115,6 +122,8 @@ class Device final : public DOMEventTargetHelper {
 
   already_AddRefed<CommandEncoder> CreateCommandEncoder(
       const dom::GPUCommandEncoderDescriptor& aDesc);
+  already_AddRefed<RenderBundleEncoder> CreateRenderBundleEncoder(
+      const dom::GPURenderBundleEncoderDescriptor& aDesc);
 
   already_AddRefed<BindGroupLayout> CreateBindGroupLayout(
       const dom::GPUBindGroupLayoutDescriptor& aDesc);
@@ -124,13 +133,18 @@ class Device final : public DOMEventTargetHelper {
       const dom::GPUBindGroupDescriptor& aDesc);
 
   already_AddRefed<ShaderModule> CreateShaderModule(
-      const dom::GPUShaderModuleDescriptor& aDesc);
+      JSContext* aCx, const dom::GPUShaderModuleDescriptor& aDesc);
   already_AddRefed<ComputePipeline> CreateComputePipeline(
       const dom::GPUComputePipelineDescriptor& aDesc);
   already_AddRefed<RenderPipeline> CreateRenderPipeline(
       const dom::GPURenderPipelineDescriptor& aDesc);
 
-  // IMPL_EVENT_HANDLER(uncapturederror)
+  void PushErrorScope(const dom::GPUErrorFilter& aFilter);
+  already_AddRefed<dom::Promise> PopErrorScope(ErrorResult& aRv);
+
+  void Destroy();
+
+  IMPL_EVENT_HANDLER(uncapturederror)
 };
 
 }  // namespace webgpu

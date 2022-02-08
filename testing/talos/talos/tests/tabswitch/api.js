@@ -1,8 +1,7 @@
 // -*- Mode: js; tab-width: 2; indent-tabs-mode: nil; js2-basic-offset: 2; js2-skip-preprocessor-directives: t; -*-
 
-/* globals ExtensionAPI */
+/* globals ExtensionAPI, Services */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { RemotePages } = ChromeUtils.import(
   "resource://gre/modules/remotepagemanager/RemotePageManagerParent.jsm"
 );
@@ -283,9 +282,11 @@ async function test(window) {
     await new Promise(resolve => Services.tm.dispatchToMainThread(resolve));
 
     await forceGC(win, tab.linkedBrowser);
-    TalosParentProfiler.resume("start: " + tab.linkedBrowser.currentURI.spec);
+    TalosParentProfiler.resume();
     let time = await switchToTab(tab);
-    TalosParentProfiler.pause("finish: " + tab.linkedBrowser.currentURI.spec);
+    TalosParentProfiler.pause(
+      "TabSwitch Test: " + tab.linkedBrowser.currentURI.spec
+    );
     dump(`${tab.linkedBrowser.currentURI.spec}: ${time}ms\n`);
     times.push(time);
     await switchToTab(initialTab);

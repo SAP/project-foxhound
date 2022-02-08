@@ -40,7 +40,7 @@
 
 /* This lists font tables that the hb_face_t will contain and lazily
  * load.  Don't add a table unless it's used though.  This is not
- * exactly free. */
+ * exactly zero-cost. */
 
 /* v--- Add new tables in the right place here. */
 
@@ -60,7 +60,6 @@ HB_OT_ACCELERATOR (OT, post)
 HB_OT_ACCELERATOR (OT, name)
 #endif
 #ifndef HB_NO_STYLE
-HB_OT_TABLE (AAT, fdsc)
 HB_OT_TABLE (OT, STAT)
 #endif
 #ifndef HB_NO_META
@@ -114,7 +113,6 @@ HB_OT_TABLE (AAT, mort)
 HB_OT_TABLE (AAT, kerx)
 HB_OT_TABLE (AAT, ankr)
 HB_OT_TABLE (AAT, trak)
-HB_OT_TABLE (AAT, lcar)
 HB_OT_TABLE (AAT, ltag)
 HB_OT_TABLE (AAT, feat)
 // HB_OT_TABLE (AAT, opbd)

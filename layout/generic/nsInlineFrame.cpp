@@ -18,6 +18,7 @@
 #include "mozilla/SVGUtils.h"
 #include "nsLineLayout.h"
 #include "nsBlockFrame.h"
+#include "nsLayoutUtils.h"
 #include "nsPlaceholderFrame.h"
 #include "nsGkAtoms.h"
 #include "nsPresContext.h"
@@ -178,30 +179,25 @@ void nsInlineFrame::DestroyFrom(nsIFrame* aDestructRoot,
   nsContainerFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
-nsresult nsInlineFrame::StealFrame(nsIFrame* aChild) {
+void nsInlineFrame::StealFrame(nsIFrame* aChild) {
   if (MaybeStealOverflowContainerFrame(aChild)) {
-    return NS_OK;
+    return;
   }
 
   nsInlineFrame* parent = this;
-  bool removed = false;
   do {
-    removed = parent->mFrames.StartRemoveFrame(aChild);
-    if (removed) {
-      break;
+    if (parent->mFrames.StartRemoveFrame(aChild)) {
+      return;
     }
 
     // We didn't find the child in our principal child list.
     // Maybe it's on the overflow list?
     nsFrameList* frameList = parent->GetOverflowFrames();
-    if (frameList) {
-      removed = frameList->ContinueRemoveFrame(aChild);
+    if (frameList && frameList->ContinueRemoveFrame(aChild)) {
       if (frameList->IsEmpty()) {
         parent->DestroyOverflowList();
       }
-      if (removed) {
-        break;
-      }
+      return;
     }
 
     // Due to our "lazy reparenting" optimization 'aChild' might not actually
@@ -209,8 +205,7 @@ nsresult nsInlineFrame::StealFrame(nsIFrame* aChild) {
     parent = static_cast<nsInlineFrame*>(parent->GetNextInFlow());
   } while (parent);
 
-  MOZ_ASSERT(removed, "nsInlineFrame::StealFrame: can't find aChild");
-  return removed ? NS_OK : NS_ERROR_UNEXPECTED;
+  MOZ_ASSERT_UNREACHABLE("nsInlineFrame::StealFrame: can't find aChild");
 }
 
 void nsInlineFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
@@ -232,24 +227,24 @@ void nsInlineFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 /* virtual */
 void nsInlineFrame::AddInlineMinISize(gfxContext* aRenderingContext,
                                       nsIFrame::InlineMinISizeData* aData) {
-  DoInlineIntrinsicISize(aRenderingContext, aData, nsLayoutUtils::MIN_ISIZE);
+  DoInlineMinISize(aRenderingContext, aData);
 }
 
 /* virtual */
 void nsInlineFrame::AddInlinePrefISize(gfxContext* aRenderingContext,
                                        nsIFrame::InlinePrefISizeData* aData) {
-  DoInlineIntrinsicISize(aRenderingContext, aData, nsLayoutUtils::PREF_ISIZE);
-  aData->mLineIsEmpty = false;
+  DoInlinePrefISize(aRenderingContext, aData);
 }
 
 /* virtual */
-LogicalSize nsInlineFrame::ComputeSize(
+nsIFrame::SizeComputationResult nsInlineFrame::ComputeSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
+    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
     ComputeSizeFlags aFlags) {
   // Inlines and text don't compute size before reflow.
-  return LogicalSize(aWM, NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE);
+  return {LogicalSize(aWM, NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE),
+          AspectRatioUsage::None};
 }
 
 nsRect nsInlineFrame::ComputeTightBounds(DrawTarget* aDrawTarget) const {
@@ -460,7 +455,8 @@ void nsInlineFrame::ReflowFrames(nsPresContext* aPresContext,
   RestyleManager* restyleManager = aPresContext->RestyleManager();
   WritingMode frameWM = aReflowInput.GetWritingMode();
   WritingMode lineWM = aReflowInput.mLineLayout->mRootSpan->mWritingMode;
-  LogicalMargin framePadding = aReflowInput.ComputedLogicalBorderPadding();
+  LogicalMargin framePadding =
+      aReflowInput.ComputedLogicalBorderPadding(frameWM);
   nscoord startEdge = 0;
   const bool boxDecorationBreakClone = MOZ_UNLIKELY(
       StyleBorder()->mBoxDecorationBreak == StyleBoxDecorationBreak::Clone);
@@ -793,8 +789,7 @@ void nsInlineFrame::PushFrames(nsPresContext* aPresContext,
 
 //////////////////////////////////////////////////////////////////////
 
-nsIFrame::LogicalSides nsInlineFrame::GetLogicalSkipSides(
-    const ReflowInput* aReflowInput) const {
+LogicalSides nsInlineFrame::GetLogicalSkipSides() const {
   LogicalSides skip(mWritingMode);
   if (MOZ_UNLIKELY(StyleBorder()->mBoxDecorationBreak ==
                    StyleBoxDecorationBreak::Clone)) {

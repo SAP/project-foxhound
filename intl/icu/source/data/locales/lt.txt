@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 lt{
     AuxExemplarCharacters{
         "[á à ã {ą\u0301} {ą\u0303} {ch} {dz} {dž} é è ẽ {ę\u0301} {ę\u0303} {ė"
@@ -264,6 +265,7 @@ lt{
                 }
             }
             symbols{
+                approximatelySign{"∼"}
                 decimal{","}
                 exponential{"×10^"}
                 group{" "}
@@ -279,6 +281,18 @@ lt{
             }
         }
         minimalPairs{
+            case{
+                accusative{"{0} metrą"}
+                dative{"{0} metrui"}
+                genitive{"{0} metro"}
+                instrumental{"{0} metru"}
+                locative{"{0} metre"}
+                nominative{"{0} metras"}
+            }
+            gender{
+                feminine{"{0} metras"}
+                masculine{"{0} metras"}
+            }
             ordinal{
                 other{"{0}-ame posūkyje sukite į dešinę."}
             }
@@ -292,7 +306,6 @@ lt{
         minimumGroupingDigits{"1"}
         native{"latn"}
     }
-    Version{"37"}
     calendar{
         buddhist{
             eras{
@@ -322,6 +335,16 @@ lt{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "UMMMMEEEEd",
+                "UMMMMd",
+                "UMMMd",
+                "yMMdd",
             }
             availableFormats{
                 Ed{"d, E"}
@@ -779,6 +802,16 @@ lt{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "UMMMMEEEEd",
+                "UMMMMd",
+                "UMMMd",
+                "yMMdd",
             }
             availableFormats{
                 Ed{"d, E"}
@@ -1247,6 +1280,16 @@ lt{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "GyMMMMEEEEd",
+                "GyMMMMd",
+                "GyMMMd",
+                "GyMMdd",
+            }
             availableFormats{
                 Bh{"h B"}
                 Bhm{"h:mm B"}
@@ -1414,6 +1457,16 @@ lt{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "yMMMMEEEEd",
+                "yMMMMd",
+                "yMMdd",
+                "yMMdd",
             }
             appendItems{
                 Timezone{"{0} {1}"}
@@ -1955,6 +2008,16 @@ lt{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "GyMMMMEEEEd",
+                "GyMMMMd",
+                "GyMMMd",
+                "GyMMdd",
             }
             eras{
                 abbreviated{

@@ -16,42 +16,68 @@
 #ifndef mozilla_dom_Element_h__
 #define mozilla_dom_Element_h__
 
+#include <cstdio>
+#include <cstdint>
+#include <cstdlib>
+#include <utility>
 #include "AttrArray.h"
-#include "nsAttrValue.h"
-#include "nsAttrValueInlines.h"
-#include "nsChangeHint.h"
-#include "nsContentUtils.h"
-#include "nsDOMAttributeMap.h"
-#include "nsIScrollableFrame.h"
-#include "nsRect.h"
+#include "ErrorList.h"
 #include "Units.h"
+#include "js/RootingAPI.h"
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/BasicEvents.h"
 #include "mozilla/CORSMode.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/FlushType.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/PseudoStyleType.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/Result.h"
 #include "mozilla/RustCell.h"
-#include "mozilla/SMILAttr.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/BorrowedAttrInfo.h"
+#include "mozilla/dom/DOMString.h"
 #include "mozilla/dom/DirectionalityUtils.h"
 #include "mozilla/dom/FragmentOrElement.h"
-#include "mozilla/dom/PointerEventHandler.h"
+#include "mozilla/dom/NameSpaceConstants.h"
+#include "mozilla/dom/NodeInfo.h"
 #include "mozilla/dom/ShadowRootBinding.h"
+#include "nsAtom.h"
+#include "nsAttrValue.h"
+#include "nsAttrValueInlines.h"
+#include "nsCaseTreatment.h"
+#include "nsChangeHint.h"
+#include "nsTHashMap.h"
+#include "nsDebug.h"
+#include "nsError.h"
+#include "nsGkAtoms.h"
+#include "nsHashKeys.h"
+#include "nsIContent.h"
+#include "nsID.h"
+#include "nsINode.h"
+#include "nsLiteralString.h"
+#include "nsRect.h"
+#include "nsString.h"
+#include "nsStringFlags.h"
+#include "nsTLiteralString.h"
+#include "nscore.h"
 
+class JSObject;
 class mozAutoDocUpdate;
-class nsIFrame;
-class nsIMozBrowserFrame;
-class nsIURI;
+class nsAttrName;
 class nsAttrValueOrString;
 class nsContentList;
+class nsDOMAttributeMap;
+class nsDOMCSSAttributeDeclaration;
+class nsDOMStringMap;
 class nsDOMTokenList;
 class nsFocusManager;
 class nsGlobalWindowInner;
 class nsGlobalWindowOuter;
-class nsDOMCSSAttributeDeclaration;
-class nsDOMStringMap;
-struct ServoNodeData;
-
+class nsIAutoCompletePopup;
+class nsIBrowser;
 class nsIDOMXULButtonElement;
 class nsIDOMXULContainerElement;
 class nsIDOMXULContainerItemElement;
@@ -62,30 +88,57 @@ class nsIDOMXULRadioGroupElement;
 class nsIDOMXULRelatedElement;
 class nsIDOMXULSelectControlElement;
 class nsIDOMXULSelectControlItemElement;
-class nsIBrowser;
-class nsIAutoCompletePopup;
+class nsIFrame;
+class nsIHTMLCollection;
+class nsIMozBrowserFrame;
+class nsIPrincipal;
+class nsIScrollableFrame;
+class nsIURI;
+class nsMappedAttributes;
+class nsPresContext;
+class nsWindowSizes;
+struct JSContext;
+struct ServoNodeData;
+template <class E>
+class nsTArray;
+template <class T>
+class nsGetterAddRefs;
 
 namespace mozilla {
 class DeclarationBlock;
+class ErrorResult;
+class OOMReporter;
+class SMILAttr;
 struct MutationClosureData;
 class TextEditor;
 namespace css {
 struct URLValue;
 }  // namespace css
 namespace dom {
+struct CustomElementData;
+struct SetHTMLOptions;
 struct GetAnimationsOptions;
 struct ScrollIntoViewOptions;
 struct ScrollToOptions;
 struct FocusOptions;
 struct ShadowRootInit;
+struct ScrollOptions;
+class Attr;
 class BooleanOrScrollIntoViewOptions;
+class Document;
 class DOMIntersectionObserver;
 class DOMMatrixReadOnly;
 class Element;
 class ElementOrCSSPseudoElement;
+class Promise;
+class Sanitizer;
+class ShadowRoot;
 class UnrestrictedDoubleOrKeyframeAnimationOptions;
+template <typename T>
+class Optional;
 enum class CallerType : uint32_t;
-typedef nsDataHashtable<nsRefPtrHashKey<DOMIntersectionObserver>, int32_t>
+enum class ReferrerPolicy : uint8_t;
+typedef nsTHashMap<nsRefPtrHashKey<DOMIntersectionObserver>, int32_t>
     IntersectionObserverList;
 }  // namespace dom
 }  // namespace mozilla
@@ -118,8 +171,12 @@ enum {
   // style of an element is up-to-date, even during the same restyle process.
   ELEMENT_HANDLED_SNAPSHOT = ELEMENT_FLAG_BIT(3),
 
+  // If this flag is set on an element, that means that it is a HTML datalist
+  // element or has a HTML datalist element ancestor.
+  ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR = ELEMENT_FLAG_BIT(4),
+
   // Remaining bits are for subclasses
-  ELEMENT_TYPE_SPECIFIC_BITS_OFFSET = NODE_TYPE_SPECIFIC_BITS_OFFSET + 4
+  ELEMENT_TYPE_SPECIFIC_BITS_OFFSET = NODE_TYPE_SPECIFIC_BITS_OFFSET + 5
 };
 
 #undef ELEMENT_FLAG_BIT
@@ -214,6 +271,11 @@ class Element : public FragmentOrElement {
    */
   void UpdateLinkState(EventStates aState);
 
+  /**
+   * Returns the current disabled state of the element.
+   */
+  bool IsDisabled() const { return State().HasState(NS_EVENT_STATE_DISABLED); }
+
   virtual int32_t TabIndexDefault() { return -1; }
 
   /**
@@ -242,8 +304,9 @@ class Element : public FragmentOrElement {
   /**
    * Make focus on this element.
    */
-  virtual void Focus(const FocusOptions& aOptions, const CallerType aCallerType,
-                     ErrorResult& aError);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual void Focus(const FocusOptions& aOptions,
+                                                 const CallerType aCallerType,
+                                                 ErrorResult& aError);
 
   /**
    * Show blur and clear focus.
@@ -351,9 +414,7 @@ class Element : public FragmentOrElement {
    * attribute on this element.
    */
   virtual UniquePtr<SMILAttr> GetAnimatedAttr(int32_t aNamespaceID,
-                                              nsAtom* aName) {
-    return nullptr;
-  }
+                                              nsAtom* aName);
 
   /**
    * Get the SMIL override style for this element. This is a style declaration
@@ -521,7 +582,7 @@ class Element : public FragmentOrElement {
    *
    * @param aData The custom element data.
    */
-  void SetCustomElementData(CustomElementData* aData);
+  void SetCustomElementData(UniquePtr<CustomElementData> aData);
 
   /**
    * Gets the custom element definition used by web components custom element.
@@ -537,7 +598,7 @@ class Element : public FragmentOrElement {
    *
    * @param aDefinition The custom element definition.
    */
-  void SetCustomElementDefinition(CustomElementDefinition* aDefinition);
+  virtual void SetCustomElementDefinition(CustomElementDefinition* aDefinition);
 
   void SetDefined(bool aSet) {
     if (aSet) {
@@ -621,14 +682,16 @@ class Element : public FragmentOrElement {
   already_AddRefed<ShadowRoot> AttachShadowInternal(ShadowRootMode,
                                                     ErrorResult& aError);
 
+ public:
   MOZ_CAN_RUN_SCRIPT
   nsIScrollableFrame* GetScrollFrame(nsIFrame** aStyledFrame = nullptr,
                                      FlushType aFlushType = FlushType::Layout);
 
  private:
-  // Need to allow the ESM, nsGlobalWindow, and the focus manager to
-  // set our state
+  // Need to allow the ESM, nsGlobalWindow, and the focus manager
+  // and Document to set our state
   friend class mozilla::EventStateManager;
+  friend class mozilla::dom::Document;
   friend class ::nsGlobalWindowInner;
   friend class ::nsGlobalWindowOuter;
   friend class ::nsFocusManager;
@@ -647,23 +710,26 @@ class Element : public FragmentOrElement {
   EventStates StyleStateFromLocks() const;
 
  protected:
-  // Methods for the ESM, nsGlobalWindow and focus manager to manage state bits.
+  // Methods for the ESM, nsGlobalWindow, focus manager and Document to
+  // manage state bits.
   // These will handle setting up script blockers when they notify, so no need
   // to do it in the callers unless desired.  States passed here must only be
   // those in EXTERNALLY_MANAGED_STATES.
-  virtual void AddStates(EventStates aStates) {
+  void AddStates(EventStates aStates) {
     MOZ_ASSERT(!aStates.HasAtLeastOneOfStates(INTRINSIC_STATES),
                "Should only be adding externally-managed states here");
+    EventStates old = mState;
     AddStatesSilently(aStates);
-    NotifyStateChange(aStates);
+    NotifyStateChange(old ^ mState);
   }
-  virtual void RemoveStates(EventStates aStates) {
+  void RemoveStates(EventStates aStates) {
     MOZ_ASSERT(!aStates.HasAtLeastOneOfStates(INTRINSIC_STATES),
                "Should only be removing externally-managed states here");
+    EventStates old = mState;
     RemoveStatesSilently(aStates);
-    NotifyStateChange(aStates);
+    NotifyStateChange(old ^ mState);
   }
-  virtual void ToggleStates(EventStates aStates, bool aNotify) {
+  void ToggleStates(EventStates aStates, bool aNotify) {
     MOZ_ASSERT(!aStates.HasAtLeastOneOfStates(INTRINSIC_STATES),
                "Should only be removing externally-managed states here");
     mState ^= aStates;
@@ -984,9 +1050,9 @@ class Element : public FragmentOrElement {
     return GetParsedAttr(nsGkAtoms::_class);
   }
 
-#ifdef DEBUG
+#ifdef MOZ_DOM_LIST
   virtual void List(FILE* out = stdout, int32_t aIndent = 0) const override {
-    List(out, aIndent, EmptyCString());
+    List(out, aIndent, ""_ns);
   }
   virtual void DumpContent(FILE* out, int32_t aIndent,
                            bool aDumpAll) const override;
@@ -1086,14 +1152,7 @@ class Element : public FragmentOrElement {
   nsDOMTokenList* ClassList();
   nsDOMTokenList* Part();
 
-  nsDOMAttributeMap* Attributes() {
-    nsDOMSlots* slots = DOMSlots();
-    if (!slots->mAttributeMap) {
-      slots->mAttributeMap = new nsDOMAttributeMap(this);
-    }
-
-    return slots->mAttributeMap;
-  }
+  nsDOMAttributeMap* Attributes();
 
   void GetAttributeNames(nsTArray<nsString>& aResult);
 
@@ -1117,6 +1176,14 @@ class Element : public FragmentOrElement {
                     ErrorResult& aError) {
     SetAttribute(aName, aValue, nullptr, aError);
   }
+  /**
+   * This method creates a principal that subsumes this element's NodePrincipal
+   * and which has flags set for elevated permissions that devtools needs to
+   * operate on this element. The principal returned by this method is used by
+   * various devtools methods to permit otherwise blocked operations, without
+   * changing any other restrictions the NodePrincipal might have.
+   */
+  already_AddRefed<nsIPrincipal> CreateDevtoolsPrincipal();
   void SetAttributeDevtools(const nsAString& aName, const nsAString& aValue,
                             ErrorResult& aError);
   void SetAttributeDevtoolsNS(const nsAString& aNamespaceURI,
@@ -1132,8 +1199,8 @@ class Element : public FragmentOrElement {
   bool HasAttributeNS(const nsAString& aNamespaceURI,
                       const nsAString& aLocalName) const;
   bool HasAttributes() const { return HasAttrs(); }
-  Element* Closest(const nsAString& aSelector, ErrorResult& aResult);
-  bool Matches(const nsAString& aSelector, ErrorResult& aError);
+  Element* Closest(const nsACString& aSelector, ErrorResult& aResult);
+  bool Matches(const nsACString& aSelector, ErrorResult& aError);
   already_AddRefed<nsIHTMLCollection> GetElementsByTagName(
       const nsAString& aQualifiedName);
   already_AddRefed<nsIHTMLCollection> GetElementsByTagNameNS(
@@ -1165,6 +1232,12 @@ class Element : public FragmentOrElement {
    */
   void GetElementsWithGrid(nsTArray<RefPtr<Element>>& aElements);
 
+  /**
+   * Provide a direct way to determine if this Element has visible
+   * scrollbars. Flushes layout.
+   */
+  MOZ_CAN_RUN_SCRIPT bool HasVisibleScrollbars();
+
  private:
   /**
    * Implement the algorithm specified at
@@ -1181,55 +1254,9 @@ class Element : public FragmentOrElement {
   void InsertAdjacentText(const nsAString& aWhere, const nsAString& aData,
                           ErrorResult& aError);
 
-  void SetPointerCapture(int32_t aPointerId, ErrorResult& aError) {
-    bool activeState = false;
-    if (nsContentUtils::ShouldResistFingerprinting(GetComposedDoc()) &&
-        aPointerId != PointerEventHandler::GetSpoofedPointerIdForRFP()) {
-      aError.Throw(NS_ERROR_DOM_INVALID_POINTER_ERR);
-      return;
-    }
-    if (!PointerEventHandler::GetPointerInfo(aPointerId, activeState)) {
-      aError.Throw(NS_ERROR_DOM_INVALID_POINTER_ERR);
-      return;
-    }
-    if (!IsInComposedDoc()) {
-      aError.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
-      return;
-    }
-    if (OwnerDoc()->GetPointerLockElement()) {
-      // Throw an exception 'InvalidStateError' while the page has a locked
-      // element.
-      aError.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
-      return;
-    }
-    if (!activeState) {
-      return;
-    }
-    PointerEventHandler::SetPointerCaptureById(aPointerId, this);
-  }
-  void ReleasePointerCapture(int32_t aPointerId, ErrorResult& aError) {
-    bool activeState = false;
-    if (nsContentUtils::ShouldResistFingerprinting(GetComposedDoc()) &&
-        aPointerId != PointerEventHandler::GetSpoofedPointerIdForRFP()) {
-      aError.Throw(NS_ERROR_DOM_INVALID_POINTER_ERR);
-      return;
-    }
-    if (!PointerEventHandler::GetPointerInfo(aPointerId, activeState)) {
-      aError.Throw(NS_ERROR_DOM_INVALID_POINTER_ERR);
-      return;
-    }
-    if (HasPointerCapture(aPointerId)) {
-      PointerEventHandler::ReleasePointerCaptureById(aPointerId);
-    }
-  }
-  bool HasPointerCapture(long aPointerId) {
-    PointerCaptureInfo* pointerCaptureInfo =
-        PointerEventHandler::GetPointerCaptureInfo(aPointerId);
-    if (pointerCaptureInfo && pointerCaptureInfo->mPendingContent == this) {
-      return true;
-    }
-    return false;
-  }
+  void SetPointerCapture(int32_t aPointerId, ErrorResult& aError);
+  void ReleasePointerCapture(int32_t aPointerId, ErrorResult& aError);
+  bool HasPointerCapture(long aPointerId);
   void SetCapture(bool aRetargetToElement);
 
   void SetCaptureAlways(bool aRetargetToElement);
@@ -1255,12 +1282,16 @@ class Element : public FragmentOrElement {
                                             ErrorResult& aError);
   bool CanAttachShadowDOM() const;
 
+  enum class DelegatesFocus : bool { No, Yes };
+
   already_AddRefed<ShadowRoot> AttachShadowWithoutNameChecks(
-      ShadowRootMode aMode);
+      ShadowRootMode aMode, DelegatesFocus = DelegatesFocus::No,
+      SlotAssignmentMode aSlotAssignmentMode = SlotAssignmentMode::Named);
 
   // Attach UA Shadow Root if it is not attached.
   enum class NotifyUAWidgetSetup : bool { No, Yes };
-  void AttachAndSetUAShadowRoot(NotifyUAWidgetSetup = NotifyUAWidgetSetup::Yes);
+  void AttachAndSetUAShadowRoot(NotifyUAWidgetSetup = NotifyUAWidgetSetup::Yes,
+                                DelegatesFocus = DelegatesFocus::No);
 
   // Dispatch an event to UAWidgetsChild, triggering construction
   // or onchange callback on the existing widget.
@@ -1287,10 +1318,14 @@ class Element : public FragmentOrElement {
   }
 
  private:
+  // DO NOT USE THIS FUNCTION directly in C++. This function is supposed to be
+  // called from JS. Use PresShell::ScrollContentIntoView instead.
   MOZ_CAN_RUN_SCRIPT void ScrollIntoView(const ScrollIntoViewOptions& aOptions);
 
  public:
   MOZ_CAN_RUN_SCRIPT
+  // DO NOT USE THIS FUNCTION directly in C++. This function is supposed to be
+  // called from JS. Use PresShell::ScrollContentIntoView instead.
   void ScrollIntoView(const BooleanOrScrollIntoViewOptions& aObject);
   MOZ_CAN_RUN_SCRIPT void Scroll(double aXScroll, double aYScroll);
   MOZ_CAN_RUN_SCRIPT void Scroll(const ScrollToOptions& aOptions);
@@ -1317,34 +1352,10 @@ class Element : public FragmentOrElement {
   MOZ_CAN_RUN_SCRIPT int32_t ClientHeight() {
     return CSSPixel::FromAppUnits(GetClientAreaRect().Height()).Rounded();
   }
-  MOZ_CAN_RUN_SCRIPT int32_t ScrollTopMin() {
-    nsIScrollableFrame* sf = GetScrollFrame();
-    if (!sf) {
-      return 0;
-    }
-    return CSSPixel::FromAppUnits(sf->GetScrollRange().y).Rounded();
-  }
-  MOZ_CAN_RUN_SCRIPT int32_t ScrollTopMax() {
-    nsIScrollableFrame* sf = GetScrollFrame();
-    if (!sf) {
-      return 0;
-    }
-    return CSSPixel::FromAppUnits(sf->GetScrollRange().YMost()).Rounded();
-  }
-  MOZ_CAN_RUN_SCRIPT int32_t ScrollLeftMin() {
-    nsIScrollableFrame* sf = GetScrollFrame();
-    if (!sf) {
-      return 0;
-    }
-    return CSSPixel::FromAppUnits(sf->GetScrollRange().x).Rounded();
-  }
-  MOZ_CAN_RUN_SCRIPT int32_t ScrollLeftMax() {
-    nsIScrollableFrame* sf = GetScrollFrame();
-    if (!sf) {
-      return 0;
-    }
-    return CSSPixel::FromAppUnits(sf->GetScrollRange().XMost()).Rounded();
-  }
+  MOZ_CAN_RUN_SCRIPT int32_t ScrollTopMin();
+  MOZ_CAN_RUN_SCRIPT int32_t ScrollTopMax();
+  MOZ_CAN_RUN_SCRIPT int32_t ScrollLeftMin();
+  MOZ_CAN_RUN_SCRIPT int32_t ScrollLeftMax();
 
   MOZ_CAN_RUN_SCRIPT double ClientHeightDouble() {
     return CSSPixel::FromAppUnits(GetClientAreaRect().Height());
@@ -1395,6 +1406,9 @@ class Element : public FragmentOrElement {
   void SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError);
   void InsertAdjacentHTML(const nsAString& aPosition, const nsAString& aText,
                           ErrorResult& aError);
+
+  void SetHTML(const nsAString& aInnerHTML, const SetHTMLOptions& aOptions,
+               ErrorResult& aError);
 
   //----------------------------------------
 
@@ -1477,7 +1491,7 @@ class Element : public FragmentOrElement {
     return slots ? slots->mAttributeMap.get() : nullptr;
   }
 
-  virtual void RecompileScriptEventListeners() {}
+  void RecompileScriptEventListeners();
 
   /**
    * Get the attr info for the given namespace ID and attribute name.  The
@@ -1653,6 +1667,31 @@ class Element : public FragmentOrElement {
   already_AddRefed<nsIDOMXULSelectControlItemElement> AsXULSelectControlItem();
   already_AddRefed<nsIBrowser> AsBrowser();
   already_AddRefed<nsIAutoCompletePopup> AsAutoCompletePopup();
+
+  /**
+   * Get the presentation context for this content node.
+   * @return the presentation context
+   */
+  enum PresContextFor { eForComposedDoc, eForUncomposedDoc };
+  nsPresContext* GetPresContext(PresContextFor aFor);
+
+  /**
+   * The method focuses (or activates) element that accesskey is bound to. It is
+   * called when accesskey is activated.
+   *
+   * @param aKeyCausesActivation - if true then element should be activated
+   * @param aIsTrustedEvent - if true then event that is cause of accesskey
+   *                          execution is trusted.
+   * @return an error if the element isn't able to handle the accesskey (caller
+   *         would look for the next element to handle it).
+   *         a boolean indicates whether the focus moves to the element after
+   *         the element handles the accesskey.
+   */
+  MOZ_CAN_RUN_SCRIPT
+  virtual Result<bool, nsresult> PerformAccesskey(bool aKeyCausesActivation,
+                                                  bool aIsTrustedEvent) {
+    return Err(NS_ERROR_NOT_IMPLEMENTED);
+  }
 
  protected:
   /*
@@ -1974,7 +2013,12 @@ class Element : public FragmentOrElement {
    * content attribute name and returns the corresponding event name, to be used
    * for adding the actual event listener.
    */
-  static nsAtom* GetEventNameForAttr(nsAtom* aAttr);
+  virtual nsAtom* GetEventNameForAttr(nsAtom* aAttr);
+
+  /**
+   * Register/unregister this element to accesskey map if it supports accesskey.
+   */
+  virtual void RegUnRegAccessKey(bool aDoReg);
 
  private:
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED

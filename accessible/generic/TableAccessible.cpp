@@ -6,7 +6,7 @@
 
 #include "TableAccessible.h"
 
-#include "Accessible-inl.h"
+#include "LocalAccessible-inl.h"
 #include "AccIterator.h"
 
 #include "nsTableCellFrame.h"
@@ -40,7 +40,7 @@ bool TableAccessible::IsProbablyLayoutTable() {
     { return isLayout; }
 #endif
 
-  Accessible* thisacc = AsAccessible();
+  LocalAccessible* thisacc = AsAccessible();
 
   MOZ_ASSERT(!thisacc->IsDefunct(), "Table accessible should not be defunct");
 
@@ -75,7 +75,7 @@ bool TableAccessible::IsProbablyLayoutTable() {
   }
 
   // Check for legitimate data table elements.
-  Accessible* caption = thisacc->FirstChild();
+  LocalAccessible* caption = thisacc->LocalFirstChild();
   if (caption && caption->IsHTMLCaption() && caption->HasChildren()) {
     RETURN_LAYOUT_ANSWER(false,
                          "Not empty caption -- legitimate table structures");
@@ -96,6 +96,15 @@ bool TableAccessible::IsProbablyLayoutTable() {
       for (nsIContent* rowElm = childElm->GetFirstChild(); rowElm;
            rowElm = rowElm->GetNextSibling()) {
         if (rowElm->IsHTMLElement(nsGkAtoms::tr)) {
+          if (LocalAccessible* row =
+                  thisacc->Document()->GetAccessible(rowElm)) {
+            if (const nsRoleMapEntry* roleMapEntry = row->ARIARoleMap()) {
+              if (roleMapEntry->role != roles::ROW) {
+                RETURN_LAYOUT_ANSWER(true, "Repurposed tr with different role");
+              }
+            }
+          }
+
           for (nsIContent* cellElm = rowElm->GetFirstChild(); cellElm;
                cellElm = cellElm->GetNextSibling()) {
             if (cellElm->IsHTMLElement()) {
@@ -115,11 +124,22 @@ bool TableAccessible::IsProbablyLayoutTable() {
                                      "legitimate table structures");
               }
 
-              Accessible* cell = thisacc->Document()->GetAccessible(cellElm);
-              if (cell && cell->ChildCount() == 1 &&
-                  cell->FirstChild()->IsAbbreviation()) {
-                RETURN_LAYOUT_ANSWER(false,
-                                     "has abbr -- legitimate table structures");
+              if (LocalAccessible* cell =
+                      thisacc->Document()->GetAccessible(cellElm)) {
+                if (const nsRoleMapEntry* roleMapEntry = cell->ARIARoleMap()) {
+                  if (roleMapEntry->role != roles::CELL &&
+                      roleMapEntry->role != roles::COLUMNHEADER &&
+                      roleMapEntry->role != roles::ROWHEADER &&
+                      roleMapEntry->role != roles::GRID_CELL) {
+                    RETURN_LAYOUT_ANSWER(true,
+                                         "Repurposed cell with different role");
+                  }
+                }
+                if (cell->ChildCount() == 1 &&
+                    cell->LocalFirstChild()->IsAbbreviation()) {
+                  RETURN_LAYOUT_ANSWER(
+                      false, "has abbr -- legitimate table structures");
+                }
               }
             }
           }
@@ -179,7 +199,7 @@ bool TableAccessible::IsProbablyLayoutTable() {
   nscolor rowColor = 0;
   nscolor prevRowColor;
   for (auto childIdx = 0U; childIdx < childCount; childIdx++) {
-    Accessible* child = thisacc->GetChildAt(childIdx);
+    LocalAccessible* child = thisacc->LocalChildAt(childIdx);
     if (child->IsHTMLTableRow()) {
       prevRowColor = rowColor;
       nsIFrame* rowFrame = child->GetFrame();
@@ -237,12 +257,12 @@ bool TableAccessible::IsProbablyLayoutTable() {
                        "No layout factor strong enough, so will guess data");
 }
 
-Accessible* TableAccessible::RowAt(int32_t aRow) {
+LocalAccessible* TableAccessible::RowAt(int32_t aRow) {
   int32_t rowIdx = aRow;
 
   AccIterator rowIter(this->AsAccessible(), filters::GetRow);
 
-  Accessible* row = rowIter.Next();
+  LocalAccessible* row = rowIter.Next();
   while (rowIdx != 0 && (row = rowIter.Next())) {
     rowIdx--;
   }
@@ -250,11 +270,12 @@ Accessible* TableAccessible::RowAt(int32_t aRow) {
   return row;
 }
 
-Accessible* TableAccessible::CellInRowAt(Accessible* aRow, int32_t aColumn) {
+LocalAccessible* TableAccessible::CellInRowAt(LocalAccessible* aRow,
+                                              int32_t aColumn) {
   int32_t colIdx = aColumn;
 
   AccIterator cellIter(aRow, filters::GetCell);
-  Accessible* cell = nullptr;
+  LocalAccessible* cell = nullptr;
 
   while (colIdx >= 0 && (cell = cellIter.Next())) {
     MOZ_ASSERT(cell->IsTableCell(), "No table or grid cell!");

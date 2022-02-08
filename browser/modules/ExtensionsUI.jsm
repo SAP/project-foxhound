@@ -22,13 +22,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Services: "resource://gre/modules/Services.jsm",
 });
 
-XPCOMUtils.defineLazyPreferenceGetter(
-  this,
-  "WEBEXT_PERMISSION_PROMPTS",
-  "extensions.webextPermissionPrompts",
-  false
-);
-
 const DEFAULT_EXTENSION_ICON =
   "chrome://mozapps/skin/extensions/extensionGeneric.svg";
 
@@ -84,31 +77,29 @@ var ExtensionsUI = {
     // happening in a specific order.
     sideloaded.sort((a, b) => a.id.localeCompare(b.id));
 
-    if (WEBEXT_PERMISSION_PROMPTS) {
-      if (!this.sideloadListener) {
-        this.sideloadListener = {
-          onEnabled: addon => {
-            if (!this.sideloaded.has(addon)) {
-              return;
-            }
+    if (!this.sideloadListener) {
+      this.sideloadListener = {
+        onEnabled: addon => {
+          if (!this.sideloaded.has(addon)) {
+            return;
+          }
 
-            this.sideloaded.delete(addon);
-            this._updateNotifications();
+          this.sideloaded.delete(addon);
+          this._updateNotifications();
 
-            if (this.sideloaded.size == 0) {
-              AddonManager.removeAddonListener(this.sideloadListener);
-              this.sideloadListener = null;
-            }
-          },
-        };
-        AddonManager.addAddonListener(this.sideloadListener);
-      }
-
-      for (let addon of sideloaded) {
-        this.sideloaded.add(addon);
-      }
-      this._updateNotifications();
+          if (this.sideloaded.size == 0) {
+            AddonManager.removeAddonListener(this.sideloadListener);
+            this.sideloadListener = null;
+          }
+        },
+      };
+      AddonManager.addAddonListener(this.sideloadListener);
     }
+
+    for (let addon of sideloaded) {
+      this.sideloaded.add(addon);
+    }
+    this._updateNotifications();
   },
 
   _updateNotifications() {
@@ -227,7 +218,7 @@ var ExtensionsUI = {
       }
 
       let icon = info.unsigned
-        ? "chrome://browser/skin/warning.svg"
+        ? "chrome://global/skin/icons/warning.svg"
         : info.icon;
 
       let histkey;
@@ -358,7 +349,7 @@ var ExtensionsUI = {
       collapseOrigins: true,
     });
     strings.addonName = info.addon.name;
-    strings.learnMore = bundle.GetStringFromName("webextPerms.learnMore");
+    strings.learnMore = bundle.GetStringFromName("webextPerms.learnMore2");
     return strings;
   },
 
@@ -381,7 +372,7 @@ var ExtensionsUI = {
 
           let listIntroEl = doc.getElementById("addon-webext-perm-intro");
           listIntroEl.textContent = strings.listIntro;
-          listIntroEl.hidden = !strings.msgs.length;
+          listIntroEl.hidden = !strings.msgs.length || !strings.listIntro;
 
           let listInfoEl = doc.getElementById("addon-webext-perm-info");
           listInfoEl.textContent = strings.learnMore;
@@ -394,11 +385,23 @@ var ExtensionsUI = {
           while (list.firstChild) {
             list.firstChild.remove();
           }
+          let singleEntryEl = doc.getElementById(
+            "addon-webext-perm-single-entry"
+          );
+          singleEntryEl.textContent = "";
+          singleEntryEl.hidden = true;
+          list.hidden = true;
 
-          for (let msg of strings.msgs) {
-            let item = doc.createElementNS(HTML_NS, "li");
-            item.textContent = msg;
-            list.appendChild(item);
+          if (strings.msgs.length === 1) {
+            singleEntryEl.textContent = strings.msgs[0];
+            singleEntryEl.hidden = false;
+          } else if (strings.msgs.length) {
+            for (let msg of strings.msgs) {
+              let item = doc.createElementNS(HTML_NS, "li");
+              item.textContent = msg;
+              list.appendChild(item);
+            }
+            list.hidden = false;
           }
         } else if (topic == "swapping") {
           return true;
@@ -414,6 +417,7 @@ var ExtensionsUI = {
       let popupOptions = {
         hideClose: true,
         popupIconURL: icon || DEFAULT_EXTENSION_ICON,
+        popupIconClass: icon ? "" : "addon-warning-icon",
         persistent: true,
         eventCallback,
         name: strings.addonName,
@@ -477,7 +481,6 @@ var ExtensionsUI = {
       let action = {
         label: strings.acceptText,
         accessKey: strings.acceptKey,
-        disableHighlight: true,
         callback: () => {
           resolve(true);
         },
@@ -507,14 +510,10 @@ var ExtensionsUI = {
 
   async showInstallNotification(target, addon) {
     let { window } = getTabBrowser(target);
-
-    let brandBundle = window.document.getElementById("bundle_brand");
-    let appName = brandBundle.getString("brandShortName");
     let bundle = window.gNavigatorBundle;
 
-    let message = bundle.getFormattedString("addonPostInstall.message1", [
+    let message = bundle.getFormattedString("addonPostInstall.message3", [
       "<>",
-      appName,
     ]);
     const permissionName = "internal:privateBrowsingAllowed";
     const { permissions } = await ExtensionPermissions.get(addon.id);

@@ -36,6 +36,7 @@ class ProfilerParent final : public PProfilerParent {
   static mozilla::ipc::Endpoint<PProfilerChild> CreateForProcess(
       base::ProcessId aOtherPid);
 
+#ifdef MOZ_GECKO_PROFILER
   typedef MozPromise<Shmem, ResponseRejectReason, true>
       SingleProcessProfilePromise;
 
@@ -67,12 +68,14 @@ class ProfilerParent final : public PProfilerParent {
   // Create a "Final" update that the Child can return to its Parent.
   static ProfileBufferChunkManagerUpdate MakeFinalUpdate();
 
+  // True if the ProfilerParent holds a lock on this thread.
+  static bool IsLockedOnCurrentThread();
+
  private:
   friend class ProfileBufferGlobalController;
   friend class ProfilerParentTracker;
 
   explicit ProfilerParent(base::ProcessId aChildPid);
-  virtual ~ProfilerParent();
 
   void Init();
   void ActorDestroy(ActorDestroyReason aActorDestroyReason) override;
@@ -85,6 +88,10 @@ class ProfilerParent final : public PProfilerParent {
   nsTArray<MozPromiseHolder<SingleProcessProfilePromise>>
       mPendingRequestedProfiles;
   bool mDestroyed;
+#endif  // MOZ_GECKO_PROFILER
+
+ private:
+  virtual ~ProfilerParent();
 };
 
 }  // namespace mozilla

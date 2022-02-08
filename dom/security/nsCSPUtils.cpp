@@ -9,15 +9,21 @@
 #include "nsContentUtils.h"
 #include "nsCSPUtils.h"
 #include "nsDebug.h"
+#include "nsCSPParser.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIConsoleService.h"
 #include "nsIChannel.h"
 #include "nsICryptoHash.h"
 #include "nsIScriptError.h"
 #include "nsIStringBundle.h"
 #include "nsIURL.h"
+#include "nsNetUtil.h"
 #include "nsReadableUtils.h"
 #include "nsSandboxFlags.h"
+#include "nsServiceManagerUtils.h"
 
+#include "mozilla/Components.h"
+#include "mozilla/dom/CSPDictionariesBinding.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/StaticPrefs_security.h"
 
@@ -117,7 +123,7 @@ bool CSP_ShouldResponseInheritCSP(nsIChannel* aChannel) {
 
 void CSP_ApplyMetaCSPToDoc(mozilla::dom::Document& aDoc,
                            const nsAString& aPolicyStr) {
-  if (!StaticPrefs::security_csp_enable() || aDoc.IsLoadedAsData()) {
+  if (!mozilla::StaticPrefs::security_csp_enable() || aDoc.IsLoadedAsData()) {
     return;
   }
 
@@ -153,7 +159,7 @@ void CSP_GetLocalizedStr(const char* aName, const nsTArray<nsString>& aParams,
                          nsAString& outResult) {
   nsCOMPtr<nsIStringBundle> keyStringBundle;
   nsCOMPtr<nsIStringBundleService> stringBundleService =
-      mozilla::services::GetStringBundleService();
+      mozilla::components::StringBundle::Service();
 
   NS_ASSERTION(stringBundleService, "String bundle service must be present!");
   stringBundleService->CreateBundle(
@@ -250,9 +256,14 @@ void CSP_LogLocalizedStr(const char* aName, const nsTArray<nsString>& aParams,
 
 /* ===== Helpers ============================ */
 CSPDirective CSP_ContentTypeToDirective(nsContentPolicyType aType) {
+  // We need to know if this is a worker so child-src  can handle that case
+  // correctly.
   switch (aType) {
     case nsIContentPolicy::TYPE_IMAGE:
     case nsIContentPolicy::TYPE_IMAGESET:
+    case nsIContentPolicy::TYPE_INTERNAL_IMAGE:
+    case nsIContentPolicy::TYPE_INTERNAL_IMAGE_PRELOAD:
+    case nsIContentPolicy::TYPE_INTERNAL_IMAGE_FAVICON:
       return nsIContentSecurityPolicy::IMG_SRC_DIRECTIVE;
 
     // BLock XSLT as script, see bug 910139
@@ -266,9 +277,12 @@ CSPDirective CSP_ContentTypeToDirective(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_INTERNAL_AUDIOWORKLET:
     case nsIContentPolicy::TYPE_INTERNAL_PAINTWORKLET:
     case nsIContentPolicy::TYPE_INTERNAL_CHROMEUTILS_COMPILED_SCRIPT:
+    case nsIContentPolicy::TYPE_INTERNAL_FRAME_MESSAGEMANAGER_SCRIPT:
       return nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE;
 
     case nsIContentPolicy::TYPE_STYLESHEET:
+    case nsIContentPolicy::TYPE_INTERNAL_STYLESHEET:
+    case nsIContentPolicy::TYPE_INTERNAL_STYLESHEET_PRELOAD:
       return nsIContentSecurityPolicy::STYLE_SRC_DIRECTIVE;
 
     case nsIContentPolicy::TYPE_FONT:
@@ -276,6 +290,9 @@ CSPDirective CSP_ContentTypeToDirective(nsContentPolicyType aType) {
       return nsIContentSecurityPolicy::FONT_SRC_DIRECTIVE;
 
     case nsIContentPolicy::TYPE_MEDIA:
+    case nsIContentPolicy::TYPE_INTERNAL_AUDIO:
+    case nsIContentPolicy::TYPE_INTERNAL_VIDEO:
+    case nsIContentPolicy::TYPE_INTERNAL_TRACK:
       return nsIContentSecurityPolicy::MEDIA_SRC_DIRECTIVE;
 
     case nsIContentPolicy::TYPE_WEB_MANIFEST:
@@ -287,6 +304,8 @@ CSPDirective CSP_ContentTypeToDirective(nsContentPolicyType aType) {
       return nsIContentSecurityPolicy::WORKER_SRC_DIRECTIVE;
 
     case nsIContentPolicy::TYPE_SUBDOCUMENT:
+    case nsIContentPolicy::TYPE_INTERNAL_FRAME:
+    case nsIContentPolicy::TYPE_INTERNAL_IFRAME:
       return nsIContentSecurityPolicy::FRAME_SRC_DIRECTIVE;
 
     case nsIContentPolicy::TYPE_WEBSOCKET:
@@ -294,10 +313,15 @@ CSPDirective CSP_ContentTypeToDirective(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_BEACON:
     case nsIContentPolicy::TYPE_PING:
     case nsIContentPolicy::TYPE_FETCH:
+    case nsIContentPolicy::TYPE_INTERNAL_XMLHTTPREQUEST:
+    case nsIContentPolicy::TYPE_INTERNAL_EVENTSOURCE:
+    case nsIContentPolicy::TYPE_INTERNAL_FETCH_PRELOAD:
       return nsIContentSecurityPolicy::CONNECT_SRC_DIRECTIVE;
 
     case nsIContentPolicy::TYPE_OBJECT:
     case nsIContentPolicy::TYPE_OBJECT_SUBREQUEST:
+    case nsIContentPolicy::TYPE_INTERNAL_EMBED:
+    case nsIContentPolicy::TYPE_INTERNAL_OBJECT:
       return nsIContentSecurityPolicy::OBJECT_SRC_DIRECTIVE;
 
     case nsIContentPolicy::TYPE_DTD:
@@ -307,6 +331,8 @@ CSPDirective CSP_ContentTypeToDirective(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_INTERNAL_FORCE_ALLOWED_DTD:
       return nsIContentSecurityPolicy::DEFAULT_SRC_DIRECTIVE;
 
+    // CSP does not apply to webrtc connections
+    case nsIContentPolicy::TYPE_PROXIED_WEBRTC_MEDIA:
     // csp shold not block top level loads, e.g. in case
     // of a redirect.
     case nsIContentPolicy::TYPE_DOCUMENT:
@@ -315,12 +341,14 @@ CSPDirective CSP_ContentTypeToDirective(nsContentPolicyType aType) {
       return nsIContentSecurityPolicy::NO_DIRECTIVE;
 
     case nsIContentPolicy::TYPE_SAVEAS_DOWNLOAD:
+    case nsIContentPolicy::TYPE_UA_FONT:
       return nsIContentSecurityPolicy::NO_DIRECTIVE;
 
     // Fall through to error for all other directives
     // Note that we should never end up here for navigate-to
-    default:
+    case nsIContentPolicy::TYPE_INVALID:
       MOZ_ASSERT(false, "Can not map nsContentPolicyType to CSPDirective");
+      // Do not add default: so that compilers can catch the missing case.
   }
   return nsIContentSecurityPolicy::DEFAULT_SRC_DIRECTIVE;
 }
@@ -359,16 +387,6 @@ nsCSPHostSrc* CSP_CreateHostSrcFromSelfURI(nsIURI* aSelfURI) {
 
 bool CSP_IsEmptyDirective(const nsAString& aValue, const nsAString& aDir) {
   return (aDir.Length() == 0 && aValue.Length() == 0);
-}
-bool CSP_IsValidDirective(const nsAString& aDir) {
-  uint32_t numDirs = (sizeof(CSPStrDirectives) / sizeof(CSPStrDirectives[0]));
-
-  for (uint32_t i = 0; i < numDirs; i++) {
-    if (aDir.LowerCaseEqualsASCII(CSPStrDirectives[i])) {
-      return true;
-    }
-  }
-  return false;
 }
 bool CSP_IsDirective(const nsAString& aValue, CSPDirective aDir) {
   return aValue.LowerCaseEqualsASCII(CSP_CSPDirectiveToString(aDir));
@@ -479,9 +497,8 @@ nsresult CSP_AppendCSPFromHeader(nsIContentSecurityPolicy* aCsp,
   // concatenated into one comma-separated list of policies.
   // See RFC2616 section 4.2 (last paragraph)
   nsresult rv = NS_OK;
-  nsCharSeparatedTokenizer tokenizer(aHeaderValue, ',');
-  while (tokenizer.hasMoreTokens()) {
-    const nsAString& policy = tokenizer.nextToken();
+  for (const nsAString& policy :
+       nsCharSeparatedTokenizer(aHeaderValue, ',').ToRange()) {
     rv = aCsp->AppendPolicy(policy, aReportOnly, false);
     NS_ENSURE_SUCCESS(rv, rv);
     {
@@ -1078,13 +1095,10 @@ void nsCSPDirective::toString(nsAString& outStr) const {
   outStr.AppendLiteral(" ");
 
   // Append srcs
-  uint32_t length = mSrcs.Length();
-  for (uint32_t i = 0; i < length; i++) {
-    mSrcs[i]->toString(outStr);
-    if (i != (length - 1)) {
-      outStr.AppendLiteral(" ");
-    }
-  }
+  StringJoinAppend(outStr, u" "_ns, mSrcs,
+                   [](nsAString& dest, nsCSPBaseSrc* cspBaseSrc) {
+                     cspBaseSrc->toString(dest);
+                   });
 }
 
 void nsCSPDirective::toDomCSPStruct(mozilla::dom::CSP& outCSP) const {
@@ -1203,15 +1217,6 @@ void nsCSPDirective::toDomCSPStruct(mozilla::dom::CSP& outCSP) const {
   }
 }
 
-bool nsCSPDirective::restrictsContentType(
-    nsContentPolicyType aContentType) const {
-  // make sure we do not check for the default src before any other sources
-  if (isDefaultDirective()) {
-    return false;
-  }
-  return mDirective == CSP_ContentTypeToDirective(aContentType);
-}
-
 void nsCSPDirective::getReportURIs(nsTArray<nsString>& outReportURIs) const {
   NS_ASSERTION((mDirective == nsIContentSecurityPolicy::REPORT_URI_DIRECTIVE),
                "not a report-uri directive");
@@ -1261,19 +1266,6 @@ nsCSPChildSrcDirective::nsCSPChildSrcDirective(CSPDirective aDirective)
 
 nsCSPChildSrcDirective::~nsCSPChildSrcDirective() = default;
 
-bool nsCSPChildSrcDirective::restrictsContentType(
-    nsContentPolicyType aContentType) const {
-  if (aContentType == nsIContentPolicy::TYPE_SUBDOCUMENT) {
-    return mRestrictFrames;
-  }
-  if (aContentType == nsIContentPolicy::TYPE_INTERNAL_WORKER ||
-      aContentType == nsIContentPolicy::TYPE_INTERNAL_SHARED_WORKER ||
-      aContentType == nsIContentPolicy::TYPE_INTERNAL_SERVICE_WORKER) {
-    return mRestrictWorkers;
-  }
-  return false;
-}
-
 bool nsCSPChildSrcDirective::equals(CSPDirective aDirective) const {
   if (aDirective == nsIContentSecurityPolicy::FRAME_SRC_DIRECTIVE) {
     return mRestrictFrames;
@@ -1290,16 +1282,6 @@ nsCSPScriptSrcDirective::nsCSPScriptSrcDirective(CSPDirective aDirective)
     : nsCSPDirective(aDirective), mRestrictWorkers(false) {}
 
 nsCSPScriptSrcDirective::~nsCSPScriptSrcDirective() = default;
-
-bool nsCSPScriptSrcDirective::restrictsContentType(
-    nsContentPolicyType aContentType) const {
-  if (aContentType == nsIContentPolicy::TYPE_INTERNAL_WORKER ||
-      aContentType == nsIContentPolicy::TYPE_INTERNAL_SHARED_WORKER ||
-      aContentType == nsIContentPolicy::TYPE_INTERNAL_SERVICE_WORKER) {
-    return mRestrictWorkers;
-  }
-  return mDirective == CSP_ContentTypeToDirective(aContentType);
-}
 
 bool nsCSPScriptSrcDirective::equals(CSPDirective aDirective) const {
   if (aDirective == nsIContentSecurityPolicy::WORKER_SRC_DIRECTIVE) {
@@ -1361,13 +1343,6 @@ nsCSPPolicy::~nsCSPPolicy() {
 }
 
 bool nsCSPPolicy::permits(CSPDirective aDir, nsIURI* aUri,
-                          bool aSpecific) const {
-  nsString outp;
-  return this->permits(aDir, aUri, EmptyString(), false, aSpecific, false,
-                       outp);
-}
-
-bool nsCSPPolicy::permits(CSPDirective aDir, nsIURI* aUri,
                           const nsAString& aNonce, bool aWasRedirected,
                           bool aSpecific, bool aParserCreated,
                           nsAString& outViolatedDirective) const {
@@ -1415,8 +1390,7 @@ bool nsCSPPolicy::permits(CSPDirective aDir, nsIURI* aUri,
   return true;
 }
 
-bool nsCSPPolicy::allows(nsContentPolicyType aContentType,
-                         enum CSPKeyword aKeyword,
+bool nsCSPPolicy::allows(CSPDirective aDirective, enum CSPKeyword aKeyword,
                          const nsAString& aHashOrNonce,
                          bool aParserCreated) const {
   CSPUTILSLOG(("nsCSPPolicy::allows, aKeyWord: %s, a HashOrNonce: %s",
@@ -1427,14 +1401,15 @@ bool nsCSPPolicy::allows(nsContentPolicyType aContentType,
 
   // Try to find a matching directive
   for (uint32_t i = 0; i < mDirectives.Length(); i++) {
-    if (mDirectives[i]->restrictsContentType(aContentType)) {
+    if (mDirectives[i]->isDefaultDirective()) {
+      defaultDir = mDirectives[i];
+      continue;
+    }
+    if (mDirectives[i]->equals(aDirective)) {
       if (mDirectives[i]->allows(aKeyword, aHashOrNonce, aParserCreated)) {
         return true;
       }
       return false;
-    }
-    if (mDirectives[i]->isDefaultDirective()) {
-      defaultDir = mDirectives[i];
     }
   }
 
@@ -1462,19 +1437,11 @@ bool nsCSPPolicy::allows(nsContentPolicyType aContentType,
   return true;
 }
 
-bool nsCSPPolicy::allows(nsContentPolicyType aContentType,
-                         enum CSPKeyword aKeyword) const {
-  return allows(aContentType, aKeyword, u""_ns, false);
-}
-
 void nsCSPPolicy::toString(nsAString& outStr) const {
-  uint32_t length = mDirectives.Length();
-  for (uint32_t i = 0; i < length; ++i) {
-    mDirectives[i]->toString(outStr);
-    if (i != (length - 1)) {
-      outStr.AppendLiteral("; ");
-    }
-  }
+  StringJoinAppend(outStr, u"; "_ns, mDirectives,
+                   [](nsAString& dest, nsCSPDirective* cspDirective) {
+                     cspDirective->toString(dest);
+                   });
 }
 
 void nsCSPPolicy::toDomCSPStruct(mozilla::dom::CSP& outCSP) const {
@@ -1504,13 +1471,12 @@ bool nsCSPPolicy::allowsNavigateTo(nsIURI* aURI, bool aWasRedirected,
       // Early return if we can skip the allowlist AND 'unsafe-allow-redirects'
       // is present.
       if (!aEnforceAllowlist &&
-          mDirectives[i]->allows(CSP_UNSAFE_ALLOW_REDIRECTS, EmptyString(),
-                                 false)) {
+          mDirectives[i]->allows(CSP_UNSAFE_ALLOW_REDIRECTS, u""_ns, false)) {
         return true;
       }
       // Otherwise, check against the allowlist.
-      if (!mDirectives[i]->permits(aURI, EmptyString(), aWasRedirected, false,
-                                   false, false)) {
+      if (!mDirectives[i]->permits(aURI, u""_ns, aWasRedirected, false, false,
+                                   false)) {
         allowsNavigateTo = false;
       }
     }
@@ -1526,20 +1492,21 @@ bool nsCSPPolicy::allowsNavigateTo(nsIURI* aURI, bool aWasRedirected,
  * for the ::permits() function family.
  */
 void nsCSPPolicy::getDirectiveStringAndReportSampleForContentType(
-    nsContentPolicyType aContentType, nsAString& outDirective,
+    CSPDirective aDirective, nsAString& outDirective,
     bool* aReportSample) const {
   MOZ_ASSERT(aReportSample);
   *aReportSample = false;
 
   nsCSPDirective* defaultDir = nullptr;
   for (uint32_t i = 0; i < mDirectives.Length(); i++) {
-    if (mDirectives[i]->restrictsContentType(aContentType)) {
+    if (mDirectives[i]->isDefaultDirective()) {
+      defaultDir = mDirectives[i];
+      continue;
+    }
+    if (mDirectives[i]->equals(aDirective)) {
       mDirectives[i]->getDirName(outDirective);
       *aReportSample = mDirectives[i]->hasReportSampleKeyword();
       return;
-    }
-    if (mDirectives[i]->isDefaultDirective()) {
-      defaultDir = mDirectives[i];
     }
   }
   // if we haven't found a matching directive yet,

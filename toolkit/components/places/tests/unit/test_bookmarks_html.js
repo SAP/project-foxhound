@@ -95,9 +95,7 @@ add_task(async function setup() {
     OS.Constants.Path.profileDir,
     "bookmarks.exported.html"
   );
-  if (await OS.File.exists(gBookmarksFileNew)) {
-    await OS.File.remove(gBookmarksFileNew);
-  }
+  await IOUtils.remove(gBookmarksFileNew, { ignoreAbsent: true });
 
   // This test must be the first one, since it setups the new bookmarks.html.
   // Test importing a pre-Places canonical bookmarks file.
@@ -185,10 +183,10 @@ add_task(async function test_import_chromefavicon() {
 
   const PAGE_URI = NetUtil.newURI("http://example.com/chromefavicon_page");
   const CHROME_FAVICON_URI = NetUtil.newURI(
-    "chrome://global/skin/icons/info.svg"
+    "chrome://global/skin/icons/delete.svg"
   );
   const CHROME_FAVICON_URI_2 = NetUtil.newURI(
-    "chrome://global/skin/icons/error-16.png"
+    "chrome://global/skin/icons/error.svg"
   );
 
   info("Importing from html");

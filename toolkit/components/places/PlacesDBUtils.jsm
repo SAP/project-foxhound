@@ -10,23 +10,27 @@ const MS_PER_DAY = 86400000;
 // Corrupt DBs older than this value are removed.
 const CORRUPT_DB_RETAIN_DAYS = 14;
 
+// Seconds between maintenance runs.
+const MAINTENANCE_INTERVAL_SECONDS = 7 * 86400;
+
+const { ComponentUtils } = ChromeUtils.import(
+  "resource://gre/modules/ComponentUtils.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+
 XPCOMUtils.defineLazyModuleGetters(this, {
-  Services: "resource://gre/modules/Services.jsm",
   OS: "resource://gre/modules/osfile.jsm",
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   Sqlite: "resource://gre/modules/Sqlite.jsm",
 });
 
-var EXPORTED_SYMBOLS = ["PlacesDBUtils"];
+var EXPORTED_SYMBOLS = ["PlacesDBUtils", "PlacesDBUtilsIdleMaintenance"];
 
 var PlacesDBUtils = {
   _isShuttingDown: false,
-  shutdown() {
-    PlacesDBUtils._isShuttingDown = true;
-  },
 
   _clearTaskQueue: false,
   clearPendingTasks() {
@@ -99,12 +103,7 @@ var PlacesDBUtils = {
    * @returns {Array} An empty array.
    */
   async _refreshUI() {
-    // Send batch update notifications to update the UI.
-    let observers = PlacesUtils.history.getObservers();
-    for (let observer of observers) {
-      observer.onBeginUpdateBatch();
-      observer.onEndUpdateBatch();
-    }
+    PlacesObservers.notifyListeners([new PlacesPurgeCaches()]);
     return [];
   },
 
@@ -803,7 +802,9 @@ var PlacesDBUtils = {
       {
         query: `UPDATE moz_places SET foreign_count =
           (SELECT count(*) FROM moz_bookmarks WHERE fk = moz_places.id ) +
-          (SELECT count(*) FROM moz_keywords WHERE place_id = moz_places.id )`,
+          (SELECT count(*) FROM moz_keywords WHERE place_id = moz_places.id ) +
+          (SELECT count(*) FROM moz_places_metadata_snapshots WHERE place_id = moz_places.id ) +
+          (SELECT count(*) FROM moz_session_to_places WHERE place_id = moz_places.id )`,
       },
 
       // L.5 recalculate missing hashes.
@@ -936,14 +937,14 @@ var PlacesDBUtils = {
       OS.Constants.Path.profileDir,
       "places.sqlite"
     );
-    let info = await OS.File.stat(placesDbPath);
+    let info = await IOUtils.stat(placesDbPath);
     logs.push(`Initial database size is ${parseInt(info.size / 1024)}KiB`);
     return PlacesUtils.withConnectionWrapper(
       "PlacesDBUtils: vacuum",
       async db => {
         await db.execute("VACUUM");
         logs.push("The database has been vacuumed");
-        info = await OS.File.stat(placesDbPath);
+        info = await IOUtils.stat(placesDbPath);
         logs.push(`Final database size is ${parseInt(info.size / 1024)}KiB`);
         return logs;
       }
@@ -996,13 +997,13 @@ var PlacesDBUtils = {
       OS.Constants.Path.profileDir,
       "places.sqlite"
     );
-    let info = await OS.File.stat(placesDbPath);
+    let info = await IOUtils.stat(placesDbPath);
     logs.push(`Places.sqlite size is ${parseInt(info.size / 1024)}KiB`);
     let faviconsDbPath = OS.Path.join(
       OS.Constants.Path.profileDir,
       "favicons.sqlite"
     );
-    info = await OS.File.stat(faviconsDbPath);
+    info = await IOUtils.stat(faviconsDbPath);
     logs.push(`Favicons.sqlite size is ${parseInt(info.size / 1024)}KiB`);
 
     // Execute each step async.
@@ -1028,9 +1029,9 @@ var PlacesDBUtils = {
 
     // Get maximum number of unique URIs.
     try {
-      let limitURIs = Services.prefs.getIntPref(
-        "places.history.expiration.transient_current_max_pages"
-      );
+      let limitURIs = await Cc["@mozilla.org/places/expiration;1"]
+        .getService(Ci.nsISupports)
+        .wrappedJSObject.getPagesLimit();
       logs.push(
         "History can store a maximum of " + limitURIs + " unique pages"
       );
@@ -1052,18 +1053,24 @@ var PlacesDBUtils = {
       await db.execute(query, params, r =>
         _getTableCount(r.getResultByIndex(0))
       );
-
-      params.type = "index";
-      await db.execute(query, params, r => {
-        logs.push(`Index ${r.getResultByIndex(0)}`);
-      });
-
-      params.type = "trigger";
-      await db.execute(query, params, r => {
-        logs.push(`Trigger ${r.getResultByIndex(0)}`);
-      });
     } catch (ex) {
       throw new Error("Unable to collect stats.");
+    }
+
+    let details = await PlacesDBUtils.getEntitiesStats();
+    logs.push(
+      `Pages sequentiality: ${details.get("moz_places").sequentialityPerc}`
+    );
+    let entities = Array.from(details.keys()).sort((a, b) => {
+      return details.get(a).sizePerc - details.get(b).sizePerc;
+    });
+    for (let key of entities) {
+      let info = details.get(key);
+      logs.push(
+        `${key}: ${info.sizeBytes / 1024}KiB (${info.sizePerc}%), ${
+          info.efficiencyPerc
+        }% eff.`
+      );
     }
 
     return logs;
@@ -1187,7 +1194,7 @@ var PlacesDBUtils = {
             OS.Constants.Path.profileDir,
             "places.sqlite"
           );
-          let info = await OS.File.stat(placesDbPath);
+          let info = await IOUtils.stat(placesDbPath);
           return parseInt(info.size / BYTES_PER_MEBIBYTE);
         },
       },
@@ -1216,7 +1223,7 @@ var PlacesDBUtils = {
             OS.Constants.Path.profileDir,
             "favicons.sqlite"
           );
-          let info = await OS.File.stat(faviconsDbPath);
+          let info = await IOUtils.stat(faviconsDbPath);
           return parseInt(info.size / BYTES_PER_MEBIBYTE);
         },
       },
@@ -1278,41 +1285,81 @@ var PlacesDBUtils = {
         CORRUPT_DB_RETAIN_DAYS +
         " days."
     );
-    let re = /^places\.sqlite(-\d)?\.corrupt$/;
+    let re = /places\.sqlite(-\d)?\.corrupt$/;
     let currentTime = Date.now();
-    let iterator = new OS.File.DirectoryIterator(OS.Constants.Path.profileDir);
+    let children = await IOUtils.getChildren(OS.Constants.Path.profileDir);
     try {
-      await iterator.forEach(async entry => {
+      for (let entry of children) {
+        let fileInfo = await IOUtils.stat(entry);
         let lastModificationDate;
-        if (!entry.isDir && !entry.isSymLink && re.test(entry.name)) {
-          if ("winLastWriteDate" in entry) {
-            // Under Windows, additional information allows us to sort files immediately
-            // without having to perform additional I/O.
-            lastModificationDate = entry.winLastWriteDate.getTime();
-          } else {
-            // Under other OSes, we need to call OS.File.stat
-            let info = await OS.File.stat(entry.path);
-            lastModificationDate = info.lastModificationDate.getTime();
-          }
+        if (fileInfo.type == "regular" && re.test(entry)) {
+          lastModificationDate = fileInfo.lastModified;
           try {
             // Convert milliseconds to days.
             let days = Math.ceil(
               (currentTime - lastModificationDate) / MS_PER_DAY
             );
             if (days >= CORRUPT_DB_RETAIN_DAYS || days < 0) {
-              await OS.File.remove(entry.path);
+              await IOUtils.remove(entry);
             }
           } catch (error) {
-            logs.push("Could not remove file: " + entry.path, error);
+            logs.push("Could not remove file: " + entry, error);
           }
         }
-      });
+      }
     } catch (error) {
       logs.push("removeOldCorruptDBs failed", error);
-    } finally {
-      iterator.close();
     }
     return logs;
+  },
+
+  /**
+   * Gets detailed statistics about database entities like tables and indices.
+   * @returns {Map} a Map by table name, containing an object with the following
+   *          properties:
+   *            - efficiencyPerc: percentage filling of pages, an high
+   *              efficiency means most pages are filled up almost completely.
+   *              This value is not particularly useful with a low number of
+   *              pages.
+   *            - sizeBytes: size of the entity in bytes
+   *            - pages: number of pages of the entity
+   *            - sizePerc: percentage of the total database size
+   *            - sequentialityPerc: percentage of sequential pages, this is
+   *              a global value of the database, thus it's the same for every
+   *              entity, and it can be used to evaluate fragmentation and the
+   *              need for vacuum.
+   */
+  async getEntitiesStats() {
+    let db = await PlacesUtils.promiseDBConnection();
+    let rows = await db.execute(`
+      /* do not warn (bug no): no need for index */
+      SELECT name,
+      round((pgsize - unused) * 100.0 / pgsize, 1) as efficiency_perc,
+      pgsize as size_bytes, pageno as pages,
+      round(pgsize * 100.0 / (SELECT sum(pgsize) FROM dbstat WHERE aggregate = TRUE), 1) as size_perc,
+      round((
+        WITH s(row, pageno) AS (
+          SELECT row_number() OVER (ORDER BY path), pageno FROM dbstat ORDER BY path
+        )
+        SELECT sum(s1.pageno+1==s2.pageno)*100.0/count(*)
+        FROM s AS s1, s AS s2
+        WHERE s1.row+1=s2.row
+      ), 1) AS sequentiality_perc
+      FROM dbstat
+      WHERE aggregate = TRUE
+    `);
+    let entitiesByName = new Map();
+    for (let row of rows) {
+      let details = {
+        efficiencyPerc: row.getResultByName("efficiency_perc"),
+        pages: row.getResultByName("pages"),
+        sizeBytes: row.getResultByName("size_bytes"),
+        sizePerc: row.getResultByName("size_perc"),
+        sequentialityPerc: row.getResultByName("sequentiality_perc"),
+      };
+      entitiesByName.set(row.getResultByName("name"), details);
+    }
+    return entitiesByName;
   },
 
   /**
@@ -1328,6 +1375,12 @@ var PlacesDBUtils = {
    *         - logs: an array of strings containing the messages logged by the task
    */
   async runTasks(tasks) {
+    if (!this._registeredShutdownObserver) {
+      this._registeredShutdownObserver = true;
+      PlacesUtils.registerShutdownFunction(() => {
+        this._isShuttingDown = true;
+      });
+    }
     PlacesDBUtils._clearTaskQueue = false;
     let tasksMap = new Map();
     for (let task of tasks) {
@@ -1400,3 +1453,30 @@ async function integrity(dbName) {
     await db.close();
   }
 }
+
+function PlacesDBUtilsIdleMaintenance() {}
+
+PlacesDBUtilsIdleMaintenance.prototype = {
+  observe(subject, topic, data) {
+    switch (topic) {
+      case "idle-daily":
+        // Once a week run places.sqlite maintenance tasks.
+        let lastMaintenance = Services.prefs.getIntPref(
+          "places.database.lastMaintenance",
+          0
+        );
+        let nowSeconds = parseInt(Date.now() / 1000);
+        if (lastMaintenance < nowSeconds - MAINTENANCE_INTERVAL_SECONDS) {
+          PlacesDBUtils.maintenanceOnIdle();
+        }
+        break;
+      default:
+        throw new Error("Trying to handle an unknown category.");
+    }
+  },
+  _xpcom_factory: ComponentUtils.generateSingletonFactory(
+    PlacesDBUtilsIdleMaintenance
+  ),
+  classID: Components.ID("d38926e0-29c1-11eb-8588-0800200c9a66"),
+  QueryInterface: ChromeUtils.generateQI(["nsIObserver"]),
+};

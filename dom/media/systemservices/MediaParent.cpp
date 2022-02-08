@@ -12,6 +12,7 @@
 #include "MediaUtils.h"
 #include "MediaEngine.h"
 #include "VideoUtils.h"
+#include "nsClassHashtable.h"
 #include "nsThreadUtils.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
@@ -20,6 +21,7 @@
 #include "nsIOutputStream.h"
 #include "nsISafeOutputStream.h"
 #include "nsAppDirectoryServiceDefs.h"
+#include "nsIFile.h"
 #include "nsISupportsImpl.h"
 #include "mozilla/Logging.h"
 
@@ -33,8 +35,7 @@ mozilla::LazyLogModule gMediaParentLog("MediaParent");
 #define ORIGINKEYS_FILE u"enumerate_devices.txt"
 #define ORIGINKEYS_VERSION "1"
 
-namespace mozilla {
-namespace media {
+namespace mozilla::media {
 
 StaticMutex sOriginKeyStoreMutex;
 static OriginKeyStore* sOriginKeyStore = nullptr;
@@ -70,8 +71,8 @@ class OriginKeyStore : public nsISupports {
         if (NS_WARN_IF(NS_FAILED(rv))) {
           return rv;
         }
-        key = new OriginKey(salt);
-        mKeys.Put(principalString, key);
+        key = mKeys.InsertOrUpdate(principalString, MakeUnique<OriginKey>(salt))
+                  .get();
       }
       if (aPersist && !key->mSecondsStamp) {
         key->mSecondsStamp = PR_Now() / PR_USEC_PER_SEC;
@@ -243,7 +244,7 @@ class OriginKeyStore : public nsISupports {
         if (f < 0) {
           continue;
         }
-        int64_t secondsstamp = nsCString(Substring(s, 0, f)).ToInteger64(&rv);
+        int64_t secondsstamp = Substring(s, 0, f).ToInteger64(&rv);
         if (NS_FAILED(rv)) {
           continue;
         }
@@ -258,7 +259,7 @@ class OriginKeyStore : public nsISupports {
         if (NS_FAILED(rv)) {
           continue;
         }
-        mKeys.Put(origin, new OriginKey(key, secondsstamp));
+        mKeys.InsertOrUpdate(origin, MakeUnique<OriginKey>(key, secondsstamp));
       }
       mPersistCount = mKeys.Count();
       return NS_OK;
@@ -289,9 +290,9 @@ class OriginKeyStore : public nsISupports {
       if (count != versionBuffer.Length()) {
         return NS_ERROR_UNEXPECTED;
       }
-      for (auto iter = mKeys.Iter(); !iter.Done(); iter.Next()) {
-        const nsACString& origin = iter.Key();
-        OriginKey* originKey = iter.UserData();
+      for (const auto& entry : mKeys) {
+        const nsACString& origin = entry.GetKey();
+        OriginKey* originKey = entry.GetWeak();
 
         if (!originKey->mSecondsStamp) {
           continue;  // don't write temporal ones
@@ -533,8 +534,7 @@ bool DeallocPMediaParent(media::PMediaParent* aActor) {
   return true;
 }
 
-}  // namespace media
-}  // namespace mozilla
+}  // namespace mozilla::media
 
 // Instantiate templates to satisfy linker
 template class mozilla::media::Parent<mozilla::media::NonE10s>;

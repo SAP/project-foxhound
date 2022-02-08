@@ -7,10 +7,14 @@
 #ifndef mozilla_dom_l10n_L10nMutations_h
 #define mozilla_dom_l10n_L10nMutations_h
 
-#include "nsRefreshDriver.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsHashKeys.h"
+#include "nsRefreshObservers.h"
 #include "nsStubMutationObserver.h"
-#include "nsTHashtable.h"
+#include "nsTHashSet.h"
 #include "mozilla/dom/DOMLocalization.h"
+
+class nsRefreshDriver;
 
 namespace mozilla {
 namespace dom {
@@ -27,6 +31,7 @@ class L10nMutations final : public nsStubMutationObserver,
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(L10nMutations, nsIMutationObserver)
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTAPPENDED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED
+  NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
   NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED
 
   explicit L10nMutations(DOMLocalization* aDOMLocalization);
@@ -60,12 +65,11 @@ class L10nMutations final : public nsStubMutationObserver,
 
  protected:
   bool mObserving = false;
-  bool mRefreshObserver = false;
   RefPtr<nsRefreshDriver> mRefreshDriver;
   DOMLocalization* mDOMLocalization;
 
   // The hash is used to speed up lookups into mPendingElements.
-  nsTHashtable<nsRefPtrHashKey<Element>> mPendingElementsHash;
+  nsTHashSet<RefPtr<Element>> mPendingElementsHash;
   nsTArray<RefPtr<Element>> mPendingElements;
 
   virtual void WillRefresh(mozilla::TimeStamp aTime) override;
@@ -76,11 +80,7 @@ class L10nMutations final : public nsStubMutationObserver,
   void FlushPendingTranslations();
 
  private:
-  ~L10nMutations() {
-    StopRefreshObserver();
-    MOZ_ASSERT(!mDOMLocalization,
-               "DOMLocalization<-->L10nMutations cycle should be broken.");
-  }
+  ~L10nMutations();
   bool IsInRoots(nsINode* aNode);
 };
 

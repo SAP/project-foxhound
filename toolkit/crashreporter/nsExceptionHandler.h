@@ -87,9 +87,10 @@ nsresult SetServerURL(const nsACString& aServerURL);
 bool GetMinidumpPath(nsAString& aPath);
 nsresult SetMinidumpPath(const nsAString& aPath);
 
-// AnnotateCrashReport, RemoveCrashReportAnnotation and
-// AppendAppNotesToCrashReport may be called from any thread in a chrome
-// process, but may only be called from the main thread in a content process.
+// These functions are thread safe and can be called in both the parent and
+// child processes. Annotations added in the main process will be included in
+// child process crashes too unless the child process sets its own annotations.
+// If it does the child-provided annotation overrides the one set in the parent.
 nsresult AnnotateCrashReport(Annotation key, bool data);
 nsresult AnnotateCrashReport(Annotation key, int data);
 nsresult AnnotateCrashReport(Annotation key, unsigned int data);
@@ -100,7 +101,7 @@ nsresult AppendAppNotesToCrashReport(const nsACString& data);
 // RAII class for setting a crash annotation during a limited scope of time.
 // Will reset the named annotation to its previous value when destroyed.
 //
-// This type is subject to the same restrictions as AnnotateCrashReport.
+// This type's behavior is identical to that of AnnotateCrashReport().
 class MOZ_RAII AutoAnnotateCrashReport final {
  public:
   AutoAnnotateCrashReport(Annotation key, bool data);
@@ -121,6 +122,8 @@ void AnnotateTexturesSize(size_t size);
 nsresult SetGarbageCollecting(bool collecting);
 void SetEventloopNestingLevel(uint32_t level);
 void SetMinidumpAnalysisAllThreads();
+void ClearInactiveStateStart();
+void SetInactiveStateStart();
 
 nsresult SetRestartArgs(int argc, char** argv);
 nsresult SetupExtraData(nsIFile* aAppDataDirectory, const nsACString& aBuildID);
@@ -164,22 +167,27 @@ nsresult SetSubmitReports(bool aSubmitReport);
 
 // Out-of-process crash reporter API.
 
+#ifdef XP_WIN
+// This data is stored in the parent process, there is one copy for each child
+// process. The mChildPid and mMinidumpFile fields are filled by the WER runtime
+// exception module when the associated child process crashes.
+struct WindowsErrorReportingData {
+  // Points to the WerNotifyProc function.
+  LPTHREAD_START_ROUTINE mWerNotifyProc;
+  // PID of the child process that crashed.
+  DWORD mChildPid;
+  // Filename of the generated minidump; this is not a 0-terminated string
+  char mMinidumpFile[40];
+  // OOM allocation size for the crash (ignore if zero)
+  size_t mOOMAllocationSize;
+};
+#endif  // XP_WIN
+
 // Initializes out-of-process crash reporting. This method must be called
 // before the platform-specific notification pipe APIs are called. If called
 // from off the main thread, this method will synchronously proxy to the main
 // thread.
 void OOPInit();
-
-/*
- * Takes a minidump for the current process and returns the dump file.
- * Callers are responsible for managing the resulting file.
- *
- * @param aResult - file pointer that holds the resulting minidump.
- * @param aMoveToPending - if true move the report to the report
- *   pending directory.
- * @returns boolean indicating success or failure.
- */
-bool TakeMinidump(nsIFile** aResult, bool aMoveToPending = false);
 
 // Return true if a dump was found for |childPid|, and return the
 // path in |dump|.  The caller owns the last reference to |dump| if it
@@ -210,20 +218,23 @@ typedef HANDLE ProcessHandle;
 typedef DWORD ProcessId;
 typedef DWORD ThreadId;
 typedef HANDLE FileHandle;
+const FileHandle kInvalidFileHandle = INVALID_HANDLE_VALUE;
 #elif defined(XP_MACOSX)
 typedef task_t ProcessHandle;
 typedef pid_t ProcessId;
 typedef mach_port_t ThreadId;
 typedef int FileHandle;
+const FileHandle kInvalidFileHandle = -1;
 #else
 typedef int ProcessHandle;
 typedef pid_t ProcessId;
 typedef int ThreadId;
 typedef int FileHandle;
+const FileHandle kInvalidFileHandle = -1;
 #endif
 
 #if !defined(XP_WIN)
-int GetAnnotationTimeCrashFd();
+FileHandle GetAnnotationTimeCrashFd();
 #endif
 void RegisterChildCrashAnnotationFileDescriptor(ProcessId aProcess,
                                                 PRFileDesc* aFd);
@@ -307,7 +318,7 @@ void UnregisterInjectorCallback(DWORD processID);
 // and the magic fd number it should be remapped to
 // (|childCrashRemapFd|) before exec() in the child process.
 // |SetRemoteExceptionHandler()| in the child process expects to find
-// the server at |childCrashRemapFd|.  Return true iff successful.
+// the server at |childCrashRemapFd|.  Return true if successful.
 //
 // If crash reporting is disabled, both outparams will be set to -1
 // and |true| will be returned.
@@ -315,16 +326,22 @@ bool CreateNotificationPipeForChild(int* childCrashFd, int* childCrashRemapFd);
 
 #endif  // XP_WIN
 
+// Windows Error Reporting helper
+#if defined(XP_WIN)
+DWORD WINAPI WerNotifyProc(LPVOID aParameter);
+#endif
+
 // Child-side API
-bool SetRemoteExceptionHandler(const char* aCrashPipe = nullptr,
-                               uintptr_t aCrashTimeAnnotationFile = 0);
+bool SetRemoteExceptionHandler(
+    const char* aCrashPipe = nullptr,
+    FileHandle aCrashTimeAnnotationFile = kInvalidFileHandle);
 bool UnsetRemoteExceptionHandler();
 
 #if defined(MOZ_WIDGET_ANDROID)
 // Android creates child process as services so we must explicitly set
 // the handle for the pipe since it can't get remapped to a default value.
-void SetNotificationPipeForChild(int childCrashFd);
-void SetCrashAnnotationPipeForChild(int childCrashAnnotationFd);
+void SetNotificationPipeForChild(FileHandle childCrashFd);
+void SetCrashAnnotationPipeForChild(FileHandle childCrashAnnotationFd);
 #endif
 
 // Annotates the crash report with the name of the calling thread.

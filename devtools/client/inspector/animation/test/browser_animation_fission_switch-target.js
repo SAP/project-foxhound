@@ -24,7 +24,6 @@ const PAGE_ON_MAIN = "about:networking";
 
 add_task(async function() {
   await pushPref("devtools.inspector.three-pane-enabled", false);
-  await pushPref("devtools.target-switching.enabled", true);
 
   info("Open a page that runs on the content process and has animations");
   const tab = await addTab(PAGE_ON_CONTENT);
@@ -84,7 +83,7 @@ async function navigateTo(uri, browser, animationInspector, inspector) {
   const previousAnimationsFront = animationInspector.animationsFront;
   const onReloaded = inspector.once("reloaded");
   const onUpdated = inspector.once("inspector-updated");
-  await BrowserTestUtils.loadURI(browser, uri);
+  BrowserTestUtils.loadURI(browser, uri);
   await waitUntil(
     () => previousAnimationsFront !== animationInspector.animationsFront
   );

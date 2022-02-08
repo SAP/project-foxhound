@@ -1,5 +1,9 @@
-ChromeUtils.import("resource://testing-common/OSKeyStoreTestUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/OSKeyStore.jsm", this);
+const { OSKeyStoreTestUtils } = ChromeUtils.import(
+  "resource://testing-common/OSKeyStoreTestUtils.jsm"
+);
+const { OSKeyStore } = ChromeUtils.import(
+  "resource://gre/modules/OSKeyStore.jsm"
+);
 var { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
@@ -16,7 +20,7 @@ add_task(async function() {
   let dialogURL = "";
   let dialogOpened = false;
   XPCOMUtils.defineLazyGetter(win, "gSubDialog", () => ({
-    open(aDialogURL, unused, unused2, aCallback) {
+    open(aDialogURL, { closingCallback: aCallback }) {
       dialogOpened = true;
       dialogURL = aDialogURL;
       masterPasswordSet = masterPasswordNextState;

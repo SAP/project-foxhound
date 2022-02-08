@@ -35,6 +35,7 @@
 #include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/RemoteWorkerControllerChild.h"
 #include "mozilla/dom/RemoteWorkerServiceChild.h"
+#include "mozilla/dom/ServiceWorkerChild.h"
 #include "mozilla/dom/SharedWorkerChild.h"
 #include "mozilla/dom/StorageIPC.h"
 #include "mozilla/dom/GamepadEventChannelChild.h"
@@ -42,13 +43,14 @@
 #include "mozilla/dom/LocalStorage.h"
 #include "mozilla/dom/MessagePortChild.h"
 #include "mozilla/dom/ServiceWorkerActors.h"
+#include "mozilla/dom/ServiceWorkerContainerChild.h"
 #include "mozilla/dom/ServiceWorkerManagerChild.h"
 #include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/VsyncChild.h"
 #include "mozilla/ipc/IPCStreamAlloc.h"
 #include "mozilla/ipc/PBackgroundTestChild.h"
 #include "mozilla/ipc/PChildToParentStreamChild.h"
 #include "mozilla/ipc/PParentToChildStreamChild.h"
-#include "mozilla/layout/VsyncChild.h"
 #include "mozilla/net/HttpBackgroundChannelChild.h"
 #include "mozilla/net/PUDPSocketChild.h"
 #include "mozilla/dom/network/UDPSocketChild.h"
@@ -139,12 +141,12 @@ void BackgroundChildImpl::ProcessingError(Result aCode, const char* aReason) {
     abortMessage.AssignLiteral(#_result); \
     break
 
-    HANDLE_CASE(MsgNotKnown);
-    HANDLE_CASE(MsgNotAllowed);
-    HANDLE_CASE(MsgPayloadError);
-    HANDLE_CASE(MsgProcessingError);
-    HANDLE_CASE(MsgRouteError);
-    HANDLE_CASE(MsgValueError);
+      HANDLE_CASE(MsgNotKnown);
+      HANDLE_CASE(MsgNotAllowed);
+      HANDLE_CASE(MsgPayloadError);
+      HANDLE_CASE(MsgProcessingError);
+      HANDLE_CASE(MsgRouteError);
+      HANDLE_CASE(MsgValueError);
 
 #undef HANDLE_CASE
 
@@ -282,7 +284,7 @@ bool BackgroundChildImpl::DeallocPBackgroundLSSimpleRequestChild(
 
 BackgroundChildImpl::PBackgroundStorageChild*
 BackgroundChildImpl::AllocPBackgroundStorageChild(
-    const nsString& aProfilePath) {
+    const nsString& aProfilePath, const uint32_t& aPrivateBrowsingId) {
   MOZ_CRASH("PBackgroundStorageChild actors should be manually constructed!");
 }
 
@@ -406,8 +408,8 @@ bool BackgroundChildImpl::DeallocPFileDescriptorSetChild(
   return true;
 }
 
-BackgroundChildImpl::PVsyncChild* BackgroundChildImpl::AllocPVsyncChild() {
-  RefPtr<mozilla::layout::VsyncChild> actor = new mozilla::layout::VsyncChild();
+dom::PVsyncChild* BackgroundChildImpl::AllocPVsyncChild() {
+  RefPtr<dom::VsyncChild> actor = new dom::VsyncChild();
   // There still has one ref-count after return, and it will be released in
   // DeallocPVsyncChild().
   return actor.forget().take();
@@ -417,8 +419,8 @@ bool BackgroundChildImpl::DeallocPVsyncChild(PVsyncChild* aActor) {
   MOZ_ASSERT(aActor);
 
   // This actor already has one ref-count. Please check AllocPVsyncChild().
-  RefPtr<mozilla::layout::VsyncChild> actor =
-      dont_AddRef(static_cast<mozilla::layout::VsyncChild*>(aActor));
+  RefPtr<dom::VsyncChild> actor =
+      dont_AddRef(static_cast<dom::VsyncChild*>(aActor));
   return true;
 }
 
@@ -605,33 +607,6 @@ bool BackgroundChildImpl::DeallocPMIDIManagerChild(PMIDIManagerChild* aActor) {
   return true;
 }
 
-// Gamepad API Background IPC
-dom::PGamepadEventChannelChild*
-BackgroundChildImpl::AllocPGamepadEventChannelChild() {
-  MOZ_CRASH("PGamepadEventChannelChild actor should be manually constructed!");
-  return nullptr;
-}
-
-bool BackgroundChildImpl::DeallocPGamepadEventChannelChild(
-    PGamepadEventChannelChild* aActor) {
-  MOZ_ASSERT(aActor);
-  delete static_cast<dom::GamepadEventChannelChild*>(aActor);
-  return true;
-}
-
-dom::PGamepadTestChannelChild*
-BackgroundChildImpl::AllocPGamepadTestChannelChild() {
-  MOZ_CRASH("PGamepadTestChannelChild actor should be manually constructed!");
-  return nullptr;
-}
-
-bool BackgroundChildImpl::DeallocPGamepadTestChannelChild(
-    PGamepadTestChannelChild* aActor) {
-  MOZ_ASSERT(aActor);
-  delete static_cast<dom::GamepadTestChannelChild*>(aActor);
-  return true;
-}
-
 mozilla::dom::PClientManagerChild*
 BackgroundChildImpl::AllocPClientManagerChild() {
   return mozilla::dom::AllocClientManagerChild();
@@ -644,7 +619,7 @@ bool BackgroundChildImpl::DeallocPClientManagerChild(
 
 #ifdef EARLY_BETA_OR_EARLIER
 void BackgroundChildImpl::OnChannelReceivedMessage(const Message& aMsg) {
-  if (aMsg.type() == layout::PVsync::MessageType::Msg_Notify__ID) {
+  if (aMsg.type() == dom::PVsync::MessageType::Msg_Notify__ID) {
     // Not really necessary to look at the message payload, it will be
     // <0.5ms away from TimeStamp::Now()
     SchedulerGroup::MarkVsyncReceived();
@@ -666,35 +641,23 @@ bool BackgroundChildImpl::DeallocPWebAuthnTransactionChild(
   return true;
 }
 
-PServiceWorkerChild* BackgroundChildImpl::AllocPServiceWorkerChild(
+already_AddRefed<PServiceWorkerChild>
+BackgroundChildImpl::AllocPServiceWorkerChild(
     const IPCServiceWorkerDescriptor&) {
-  return dom::AllocServiceWorkerChild();
+  MOZ_CRASH("Shouldn't be called.");
+  return {};
 }
 
-bool BackgroundChildImpl::DeallocPServiceWorkerChild(
-    PServiceWorkerChild* aActor) {
-  return dom::DeallocServiceWorkerChild(aActor);
-}
-
-PServiceWorkerContainerChild*
+already_AddRefed<PServiceWorkerContainerChild>
 BackgroundChildImpl::AllocPServiceWorkerContainerChild() {
-  return dom::AllocServiceWorkerContainerChild();
+  return mozilla::dom::ServiceWorkerContainerChild::Create();
 }
 
-bool BackgroundChildImpl::DeallocPServiceWorkerContainerChild(
-    PServiceWorkerContainerChild* aActor) {
-  return dom::DeallocServiceWorkerContainerChild(aActor);
-}
-
-PServiceWorkerRegistrationChild*
+already_AddRefed<PServiceWorkerRegistrationChild>
 BackgroundChildImpl::AllocPServiceWorkerRegistrationChild(
     const IPCServiceWorkerRegistrationDescriptor&) {
-  return dom::AllocServiceWorkerRegistrationChild();
-}
-
-bool BackgroundChildImpl::DeallocPServiceWorkerRegistrationChild(
-    PServiceWorkerRegistrationChild* aActor) {
-  return dom::DeallocServiceWorkerRegistrationChild(aActor);
+  MOZ_CRASH("Shouldn't be called.");
+  return {};
 }
 
 dom::PEndpointForReportChild* BackgroundChildImpl::AllocPEndpointForReportChild(

@@ -15,7 +15,7 @@ namespace mozilla {
 namespace a11y {
 
 class Accessible;
-class AccessibleOrProxy;
+class LocalAccessible;
 
 /**
  * XPCOM nsIAccessible interface implementation, used by xpcAccessibleGeneric
@@ -96,8 +96,8 @@ class xpcAccessible : public nsIAccessible {
   virtual ~xpcAccessible() {}
 
  private:
-  Accessible* Intl();
-  AccessibleOrProxy IntlGeneric();
+  LocalAccessible* Intl();
+  Accessible* IntlGeneric();
 
   xpcAccessible(const xpcAccessible&) = delete;
   xpcAccessible& operator=(const xpcAccessible&) = delete;

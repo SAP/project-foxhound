@@ -23,11 +23,7 @@ var gTests = [
         "webRTC-shareDevices-notification-icon",
         "anchored to device icon"
       );
-      checkDeviceSelectors(true, true);
-      let iconclass = PopupNotifications.panel.firstElementChild.getAttribute(
-        "iconclass"
-      );
-      ok(iconclass.includes("camera-icon"), "panel using devices icon");
+      checkDeviceSelectors(["microphone", "camera"]);
 
       let indicator = promiseIndicatorWindow();
       let observerPromise1 = expectObserverCalled(
@@ -68,11 +64,7 @@ var gTests = [
         "webRTC-shareMicrophone-notification-icon",
         "anchored to mic icon"
       );
-      checkDeviceSelectors(true);
-      let iconclass = PopupNotifications.panel.firstElementChild.getAttribute(
-        "iconclass"
-      );
-      ok(iconclass.includes("microphone-icon"), "panel using microphone icon");
+      checkDeviceSelectors(["microphone"]);
 
       let indicator = promiseIndicatorWindow();
       let observerPromise1 = expectObserverCalled(
@@ -112,11 +104,7 @@ var gTests = [
         "webRTC-shareDevices-notification-icon",
         "anchored to device icon"
       );
-      checkDeviceSelectors(false, true);
-      let iconclass = PopupNotifications.panel.firstElementChild.getAttribute(
-        "iconclass"
-      );
-      ok(iconclass.includes("camera-icon"), "panel using devices icon");
+      checkDeviceSelectors(["camera"]);
 
       let indicator = promiseIndicatorWindow();
       let observerPromise1 = expectObserverCalled(
@@ -148,7 +136,7 @@ var gTests = [
       await promiseRequestDevice(true, true);
       await promise;
       await observerPromise;
-      checkDeviceSelectors(true, true);
+      checkDeviceSelectors(["microphone", "camera"]);
 
       let observerPromise1 = expectObserverCalled("getUserMedia:response:deny");
       let observerPromise2 = expectObserverCalled("recording-window-ended");
@@ -227,7 +215,7 @@ var gTests = [
       await promiseRequestDevice(true, true);
       await promise;
       await observerPromise;
-      checkDeviceSelectors(true, true);
+      checkDeviceSelectors(["microphone", "camera"]);
 
       let indicator = promiseIndicatorWindow();
       let observerPromise1 = expectObserverCalled(
@@ -259,7 +247,7 @@ var gTests = [
       await promiseRequestDevice(true, true);
       await promise;
       await observerPromise;
-      checkDeviceSelectors(true, true);
+      checkDeviceSelectors(["microphone", "camera"]);
 
       observerPromise1 = expectObserverCalled("getUserMedia:response:deny");
       observerPromise2 = expectObserverCalled("recording-window-ended");
@@ -296,7 +284,7 @@ var gTests = [
       await promiseRequestDevice(true, true);
       await promise;
       await observerPromise;
-      checkDeviceSelectors(true, true);
+      checkDeviceSelectors(["microphone", "camera"]);
 
       let indicator = promiseIndicatorWindow();
       let observerPromise1 = expectObserverCalled(
@@ -325,7 +313,7 @@ var gTests = [
       await promiseRequestDevice(true, true);
       await promise;
       await observerPromise;
-      checkDeviceSelectors(true, true);
+      checkDeviceSelectors(["microphone", "camera"]);
 
       observerPromise1 = expectObserverCalled("getUserMedia:response:deny");
       observerPromise2 = expectObserverCalled("recording-window-ended");
@@ -532,17 +520,15 @@ var gTests = [
         } else {
           let expectedMessage = aExpectStream ? "ok" : permissionError;
 
-          let observerPromises = [];
+          let observerPromises = [expectObserverCalled("getUserMedia:request")];
           if (expectedMessage == "ok") {
-            observerPromises.push(expectObserverCalled("getUserMedia:request"));
             observerPromises.push(
-              expectObserverCalled("getUserMedia:response:allow")
-            );
-            observerPromises.push(
+              expectObserverCalled("getUserMedia:response:allow"),
               expectObserverCalled("recording-device-events")
             );
           } else {
             observerPromises.push(
+              expectObserverCalled("getUserMedia:response:deny"),
               expectObserverCalled("recording-window-ended")
             );
           }
@@ -636,93 +622,221 @@ var gTests = [
   },
 
   {
-    desc: "Stop Sharing removes persistent permissions",
-    run: async function checkStopSharingRemovesPersistentPermissions() {
-      async function stopAndCheckPerm(aRequestAudio, aRequestVideo) {
+    desc: "Stop Sharing removes permissions",
+    run: async function checkStopSharingRemovesPermissions() {
+      async function stopAndCheckPerm(
+        aRequestAudio,
+        aRequestVideo,
+        aStopAudio = aRequestAudio,
+        aStopVideo = aRequestVideo
+      ) {
         let uri = gBrowser.selectedBrowser.documentURI;
 
         // Initially set both permissions to 'allow'.
         PermissionTestUtils.add(uri, "microphone", Services.perms.ALLOW_ACTION);
         PermissionTestUtils.add(uri, "camera", Services.perms.ALLOW_ACTION);
-
-        let indicator = promiseIndicatorWindow();
-        let observerPromise1 = expectObserverCalled("getUserMedia:request");
-        let observerPromise2 = expectObserverCalled(
-          "getUserMedia:response:allow"
+        // Also set device-specific temporary allows.
+        SitePermissions.setForPrincipal(
+          gBrowser.contentPrincipal,
+          "microphone^myDevice",
+          SitePermissions.ALLOW,
+          SitePermissions.SCOPE_TEMPORARY,
+          gBrowser.selectedBrowser,
+          10000000
         );
-        let observerPromise3 = expectObserverCalled("recording-device-events");
-        // Start sharing what's been requested.
-        let promise = promiseMessage("ok");
-        await promiseRequestDevice(aRequestAudio, aRequestVideo);
-        await promise;
-        await observerPromise1;
-        await observerPromise2;
-        await observerPromise3;
+        SitePermissions.setForPrincipal(
+          gBrowser.contentPrincipal,
+          "camera^myDevice2",
+          SitePermissions.ALLOW,
+          SitePermissions.SCOPE_TEMPORARY,
+          gBrowser.selectedBrowser,
+          10000000
+        );
 
-        await indicator;
-        await checkSharingUI({ video: aRequestVideo, audio: aRequestAudio });
+        if (aRequestAudio || aRequestVideo) {
+          let indicator = promiseIndicatorWindow();
+          let observerPromise1 = expectObserverCalled("getUserMedia:request");
+          let observerPromise2 = expectObserverCalled(
+            "getUserMedia:response:allow"
+          );
+          let observerPromise3 = expectObserverCalled(
+            "recording-device-events"
+          );
+          // Start sharing what's been requested.
+          let promise = promiseMessage("ok");
+          await promiseRequestDevice(aRequestAudio, aRequestVideo);
+          await promise;
+          await observerPromise1;
+          await observerPromise2;
+          await observerPromise3;
 
-        await stopSharing(aRequestVideo ? "camera" : "microphone");
+          await indicator;
+          await checkSharingUI(
+            { video: aRequestVideo, audio: aRequestAudio },
+            undefined,
+            undefined,
+            {
+              video: { scope: SitePermissions.SCOPE_PERSISTENT },
+              audio: { scope: SitePermissions.SCOPE_PERSISTENT },
+            }
+          );
+          await stopSharing(aStopVideo ? "camera" : "microphone");
+        } else {
+          await revokePermission(aStopVideo ? "camera" : "microphone");
+        }
 
         // Check that permissions have been removed as expected.
-        let audioPerm = PermissionTestUtils.testExactPermission(
-          uri,
-          "microphone"
+        let audioPerm = SitePermissions.getForPrincipal(
+          gBrowser.contentPrincipal,
+          "microphone",
+          gBrowser.selectedBrowser
         );
-        if (aRequestAudio) {
-          is(
+        let audioPermDevice = SitePermissions.getForPrincipal(
+          gBrowser.contentPrincipal,
+          "microphone^myDevice",
+          gBrowser.selectedBrowser
+        );
+
+        if (
+          aRequestAudio ||
+          aRequestVideo ||
+          aStopAudio ||
+          (aStopVideo && aRequestAudio)
+        ) {
+          Assert.deepEqual(
             audioPerm,
-            Services.perms.UNKNOWN_ACTION,
+            {
+              state: SitePermissions.UNKNOWN,
+              scope: SitePermissions.SCOPE_PERSISTENT,
+            },
             "microphone permissions removed"
           );
+          Assert.deepEqual(
+            audioPermDevice,
+            {
+              state: SitePermissions.UNKNOWN,
+              scope: SitePermissions.SCOPE_PERSISTENT,
+            },
+            "microphone device-specific permissions removed"
+          );
         } else {
-          is(
+          Assert.deepEqual(
             audioPerm,
-            Services.perms.ALLOW_ACTION,
+            {
+              state: SitePermissions.ALLOW,
+              scope: SitePermissions.SCOPE_PERSISTENT,
+            },
             "microphone permissions untouched"
+          );
+          Assert.deepEqual(
+            audioPermDevice,
+            {
+              state: SitePermissions.ALLOW,
+              scope: SitePermissions.SCOPE_TEMPORARY,
+            },
+            "microphone device-specific permissions untouched"
           );
         }
 
-        let videoPerm = PermissionTestUtils.testExactPermission(uri, "camera");
-        if (aRequestVideo) {
-          is(
+        let videoPerm = SitePermissions.getForPrincipal(
+          gBrowser.contentPrincipal,
+          "camera",
+          gBrowser.selectedBrowser
+        );
+        let videoPermDevice = SitePermissions.getForPrincipal(
+          gBrowser.contentPrincipal,
+          "camera^myDevice2",
+          gBrowser.selectedBrowser
+        );
+        if (
+          aRequestAudio ||
+          aRequestVideo ||
+          aStopVideo ||
+          (aStopAudio && aRequestVideo)
+        ) {
+          Assert.deepEqual(
             videoPerm,
-            Services.perms.UNKNOWN_ACTION,
+            {
+              state: SitePermissions.UNKNOWN,
+              scope: SitePermissions.SCOPE_PERSISTENT,
+            },
             "camera permissions removed"
           );
+          Assert.deepEqual(
+            videoPermDevice,
+            {
+              state: SitePermissions.UNKNOWN,
+              scope: SitePermissions.SCOPE_PERSISTENT,
+            },
+            "camera device-specific permissions removed"
+          );
         } else {
-          is(
+          Assert.deepEqual(
             videoPerm,
-            Services.perms.ALLOW_ACTION,
+            {
+              state: SitePermissions.ALLOW,
+              scope: SitePermissions.SCOPE_PERSISTENT,
+            },
             "camera permissions untouched"
           );
+          Assert.deepEqual(
+            videoPermDevice,
+            {
+              state: SitePermissions.ALLOW,
+              scope: SitePermissions.SCOPE_TEMPORARY,
+            },
+            "camera device-specific permissions untouched"
+          );
         }
+        await checkNotSharing();
 
         // Cleanup.
         await closeStream(true);
 
-        PermissionTestUtils.remove(uri, "camera");
-        PermissionTestUtils.remove(uri, "microphone");
+        SitePermissions.removeFromPrincipal(
+          gBrowser.contentPrincipal,
+          "camera",
+          gBrowser.selectedBrowser
+        );
+        SitePermissions.removeFromPrincipal(
+          gBrowser.contentPrincipal,
+          "microphone",
+          gBrowser.selectedBrowser
+        );
       }
 
-      info("request audio+video, stop sharing resets both");
+      info("request audio+video, stop sharing video resets both");
       await stopAndCheckPerm(true, true);
-      info("request audio, stop sharing resets audio only");
+      info("request audio only, stop sharing audio resets both");
       await stopAndCheckPerm(true, false);
-      info("request video, stop sharing resets video only");
+      info("request video only, stop sharing video resets both");
       await stopAndCheckPerm(false, true);
+      info("request audio only, stop sharing video resets both");
+      await stopAndCheckPerm(true, false, false, true);
+      info("request video only, stop sharing audio resets both");
+      await stopAndCheckPerm(false, true, true, false);
+      info("request neither, stop audio affects audio only");
+      await stopAndCheckPerm(false, false, true, false);
+      info("request neither, stop video affects video only");
+      await stopAndCheckPerm(false, false, false, true);
     },
   },
 
   {
-    desc: "test showControlCenter",
-    run: async function checkShowControlCenter() {
+    desc: "test showPermissionPanel",
+    run: async function checkShowPermissionPanel() {
+      if (!USING_LEGACY_INDICATOR) {
+        // The indicator only links to the permission panel for the
+        // legacy indicator.
+        return;
+      }
+
       let observerPromise = expectObserverCalled("getUserMedia:request");
       let promise = promisePopupNotificationShown("webRTC-shareDevices");
       await promiseRequestDevice(false, true);
       await promise;
       await observerPromise;
-      checkDeviceSelectors(false, true);
+      checkDeviceSelectors(["camera"]);
 
       let indicator = promiseIndicatorWindow();
       let observerPromise1 = expectObserverCalled(
@@ -743,8 +857,8 @@ var gTests = [
       await indicator;
       await checkSharingUI({ video: true });
 
-      ok(identityPopupHidden(), "control center should be hidden");
-      if (USING_LEGACY_INDICATOR && IS_MAC) {
+      ok(permissionPopupHidden(), "permission panel should be hidden");
+      if (IS_MAC) {
         let activeStreams = webrtcUI.getActiveStreams(true, false, false);
         webrtcUI.showSharingDoorhanger(activeStreams[0]);
       } else {
@@ -752,22 +866,17 @@ var gTests = [
           "Browser:WebRTCGlobalIndicator"
         );
 
-        // The legacy indicator uses a different button ID when sharing
-        // your camera.
-        let buttonID = USING_LEGACY_INDICATOR
-          ? "audioVideoButton"
-          : "camera-button";
-
-        let elt = win.document.getElementById(buttonID);
+        let elt = win.document.getElementById("audioVideoButton");
         EventUtils.synthesizeMouseAtCenter(elt, {}, win);
       }
-      await TestUtils.waitForCondition(
-        () => !identityPopupHidden(),
-        "wait for control center to open"
-      );
-      ok(!identityPopupHidden(), "control center should be open");
 
-      gIdentityHandler._identityPopup.hidePopup();
+      await TestUtils.waitForCondition(
+        () => !permissionPopupHidden(),
+        "wait for permission panel to open"
+      );
+      ok(!permissionPopupHidden(), "permission panel should be open");
+
+      gPermissionPanel._permissionPopup.hidePopup();
 
       await closeStream();
     },
@@ -781,6 +890,9 @@ var gTests = [
         set: [
           ["media.devices.insecure.enabled", true],
           ["media.getusermedia.insecure.enabled", true],
+          // explicitly testing an http page, setting
+          // https-first to false.
+          ["dom.security.https_first", false],
         ],
       });
 

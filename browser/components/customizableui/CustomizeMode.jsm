@@ -10,8 +10,9 @@ const kPrefCustomizationDebug = "browser.uiCustomization.debug";
 const kPaletteId = "customization-palette";
 const kDragDataTypePrefix = "text/toolbarwrapper-id/";
 const kSkipSourceNodePref = "browser.uiCustomization.skipSourceNodeCheck";
-const kDrawInTitlebarPref = "browser.tabs.drawInTitlebar";
-const kExtraDragSpacePref = "browser.tabs.extraDragSpace";
+const kDrawInTitlebarPref = "browser.tabs.inTitlebar";
+const kCompactModeShowPref = "browser.compactmode.show";
+const kBookmarksToolbarPref = "browser.toolbars.bookmarks.visibility";
 const kKeepBroadcastAttributes = "keepbroadcastattributeswhencustomizing";
 
 const kPanelItemContextMenu = "customizationPanelItemContextMenu";
@@ -48,11 +49,6 @@ ChromeUtils.defineModuleGetter(
   this,
   "DragPositionManager",
   "resource:///modules/DragPositionManager.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "BrowserUtils",
-  "resource://gre/modules/BrowserUtils.jsm"
 );
 ChromeUtils.defineModuleGetter(
   this,
@@ -135,6 +131,9 @@ function CustomizeMode(aWindow) {
   this.browser = aWindow.gBrowser;
   this.areas = new Set();
 
+  this._translationObserver = new aWindow.MutationObserver(mutations =>
+    this._onTranslations(mutations)
+  );
   this._ensureCustomizationPanels();
 
   let content = this.$("customization-content-container");
@@ -155,13 +154,16 @@ function CustomizeMode(aWindow) {
 
   if (this._canDrawInTitlebar()) {
     this._updateTitlebarCheckbox();
-    this._updateDragSpaceCheckbox();
     Services.prefs.addObserver(kDrawInTitlebarPref, this);
-    Services.prefs.addObserver(kExtraDragSpacePref, this);
   } else {
     this.$("customization-titlebar-visibility-checkbox").hidden = true;
-    this.$("customization-extra-drag-space-checkbox").hidden = true;
   }
+
+  // Observe pref changes to the bookmarks toolbar visibility,
+  // since we won't get a toolbarvisibilitychange event if the
+  // toolbar is changing from 'newtab' to 'always' in Customize mode
+  // since the toolbar is shown with the 'newtab' setting.
+  Services.prefs.addObserver(kBookmarksToolbarPref, this);
 
   this.window.addEventListener("unload", this);
 }
@@ -186,6 +188,25 @@ CustomizeMode.prototype = {
   _skipSourceNodeCheck: null,
   _mainViewContext: null,
 
+  // These are the commands we continue to leave enabled while in customize mode.
+  // All other commands are disabled, and we remove the disabled attribute when
+  // leaving customize mode.
+  _enabledCommands: new Set([
+    "cmd_newNavigator",
+    "cmd_newNavigatorTab",
+    "cmd_newNavigatorTabNoEvent",
+    "cmd_close",
+    "cmd_closeWindow",
+    "cmd_quitApplication",
+    "View:FullScreen",
+    "Browser:NextTab",
+    "Browser:PrevTab",
+    "Browser:NewUserContextTab",
+    "Tools:PrivateBrowsing",
+    "minimizeWindow",
+    "zoomWindow",
+  ]),
+
   get _handler() {
     return this.window.CustomizationHandler;
   },
@@ -193,8 +214,8 @@ CustomizeMode.prototype = {
   uninit() {
     if (this._canDrawInTitlebar()) {
       Services.prefs.removeObserver(kDrawInTitlebarPref, this);
-      Services.prefs.removeObserver(kExtraDragSpacePref, this);
     }
+    Services.prefs.removeObserver(kBookmarksToolbarPref, this);
   },
 
   $(id) {
@@ -214,16 +235,6 @@ CustomizeMode.prototype = {
     } else {
       this.enter();
     }
-  },
-
-  async _updateThemeButtonIcon() {
-    let lwthemeButton = this.$("customization-lwtheme-button");
-    let lwthemeIcon = lwthemeButton.icon;
-    let theme = (await AddonManager.getAddonsByTypes(["theme"])).find(
-      addon => addon.isActive
-    );
-    lwthemeIcon.style.backgroundImage =
-      theme && theme.iconURL ? "url(" + theme.iconURL + ")" : "";
   },
 
   setTab(aTab) {
@@ -377,7 +388,7 @@ CustomizeMode.prototype = {
       this.document.documentElement.setAttribute("customizing", true);
 
       let customizableToolbars = document.querySelectorAll(
-        "toolbar[customizable=true]:not([autohide=true]):not([collapsed=true])"
+        "toolbar[customizable=true]:not([autohide=true], [collapsed=true])"
       );
       for (let toolbar of customizableToolbars) {
         toolbar.setAttribute("customizing", true);
@@ -398,6 +409,7 @@ CustomizeMode.prototype = {
       this._updateResetButton();
       this._updateUndoResetButton();
       this._updateTouchBarButton();
+      this._updateDensityMenu();
 
       this._skipSourceNodeCheck =
         Services.prefs.getPrefType(kSkipSourceNodePref) ==
@@ -418,7 +430,6 @@ CustomizeMode.prototype = {
       }, 0);
       this._updateEmptyPaletteNotice();
 
-      this._updateThemeButtonIcon();
       AddonManager.addAddonListener(this);
 
       this._setupDownloadAutoHideToggle();
@@ -463,6 +474,8 @@ CustomizeMode.prototype = {
     }
 
     this._handler.isExitingCustomizeMode = true;
+
+    this._translationObserver.disconnect();
 
     this._teardownDownloadAutoHideToggle();
 
@@ -747,19 +760,14 @@ CustomizeMode.prototype = {
     }
     if (!this.window.gReduceMotion) {
       let overflowButton = this.$("nav-bar-overflow-button");
-      BrowserUtils.setToolbarButtonHeightProperty(overflowButton).then(() => {
-        overflowButton.setAttribute("animate", "true");
-        overflowButton.addEventListener("animationend", function onAnimationEnd(
-          event
-        ) {
-          if (event.animationName.startsWith("overflow-animation")) {
-            this.setAttribute("fade", "true");
-          } else if (event.animationName == "overflow-fade") {
-            this.removeEventListener("animationend", onAnimationEnd);
-            this.removeAttribute("animate");
-            this.removeAttribute("fade");
-          }
-        });
+      overflowButton.setAttribute("animate", "true");
+      overflowButton.addEventListener("animationend", function onAnimationEnd(
+        event
+      ) {
+        if (event.animationName.startsWith("overflow-animation")) {
+          this.removeEventListener("animationend", onAnimationEnd);
+          this.removeAttribute("animate");
+        }
       });
     }
   },
@@ -816,6 +824,11 @@ CustomizeMode.prototype = {
       this.visiblePalette.appendChild(fragment);
       this._stowedPalette = this.window.gNavToolbox.palette;
       this.window.gNavToolbox.palette = this.visiblePalette;
+
+      // Now that the palette items are all here, disable all commands.
+      // We do this here rather than directly in `enter` because we
+      // need to do/undo this when we're called from reset(), too.
+      this._updateCommandsDisabledState(true);
     } catch (ex) {
       log.error(ex);
     }
@@ -844,6 +857,9 @@ CustomizeMode.prototype = {
   },
 
   _depopulatePalette() {
+    // Quick, undo the command disabling before we depopulate completely:
+    this._updateCommandsDisabledState(false);
+
     this.visiblePalette.hidden = true;
     let paletteChild = this.visiblePalette.firstElementChild;
     let nextChild;
@@ -866,6 +882,24 @@ CustomizeMode.prototype = {
     }
     this.visiblePalette.hidden = false;
     this.window.gNavToolbox.palette = this._stowedPalette;
+  },
+
+  _updateCommandsDisabledState(shouldBeDisabled) {
+    for (let command of this.document.querySelectorAll("command")) {
+      if (!command.id || !this._enabledCommands.has(command.id)) {
+        if (shouldBeDisabled) {
+          if (command.getAttribute("disabled") != "true") {
+            command.setAttribute("disabled", true);
+          } else {
+            command.setAttribute("wasdisabled", true);
+          }
+        } else if (command.getAttribute("wasdisabled") != "true") {
+          command.removeAttribute("disabled");
+        } else {
+          command.removeAttribute("wasdisabled");
+        }
+      }
+    }
   },
 
   isCustomizableItem(aNode) {
@@ -907,6 +941,40 @@ CustomizeMode.prototype = {
     }
     wrapper.appendChild(aNode);
     return wrapper;
+  },
+
+  /**
+   * Helper to set the label, either directly or to set up the translation
+   * observer so we can set the label once it's available.
+   */
+  _updateWrapperLabel(aNode, aIsUpdate, aWrapper = aNode.parentElement) {
+    if (aNode.hasAttribute("label")) {
+      aWrapper.setAttribute("title", aNode.getAttribute("label"));
+      aWrapper.setAttribute("tooltiptext", aNode.getAttribute("label"));
+    } else if (aNode.hasAttribute("title")) {
+      aWrapper.setAttribute("title", aNode.getAttribute("title"));
+      aWrapper.setAttribute("tooltiptext", aNode.getAttribute("title"));
+    } else if (aNode.hasAttribute("data-l10n-id") && !aIsUpdate) {
+      this._translationObserver.observe(aNode, {
+        attributes: true,
+        attributeFilter: ["label", "title"],
+      });
+    }
+  },
+
+  /**
+   * Called when a node without a label or title is updated.
+   */
+  _onTranslations(aMutations) {
+    for (let mut of aMutations) {
+      let { target } = mut;
+      if (
+        target.parentElement?.localName == "toolbarpaletteitem" &&
+        (target.hasAttribute("label") || mut.target.hasAttribute("title"))
+      ) {
+        this._updateWrapperLabel(target, true);
+      }
+    }
   },
 
   createOrUpdateWrapper(aNode, aPlace, aIsUpdate) {
@@ -953,13 +1021,7 @@ CustomizeMode.prototype = {
       wrapper.setAttribute("id", "wrapper-" + aNode.getAttribute("id"));
     }
 
-    if (aNode.hasAttribute("label")) {
-      wrapper.setAttribute("title", aNode.getAttribute("label"));
-      wrapper.setAttribute("tooltiptext", aNode.getAttribute("label"));
-    } else if (aNode.hasAttribute("title")) {
-      wrapper.setAttribute("title", aNode.getAttribute("title"));
-      wrapper.setAttribute("tooltiptext", aNode.getAttribute("title"));
-    }
+    this._updateWrapperLabel(aNode, aIsUpdate, wrapper);
 
     if (aNode.hasAttribute("flex")) {
       wrapper.setAttribute("flex", aNode.getAttribute("flex"));
@@ -1136,7 +1198,7 @@ CustomizeMode.prototype = {
     }
     aTarget.addEventListener("dragstart", this, true);
     aTarget.addEventListener("dragover", this, true);
-    aTarget.addEventListener("dragexit", this, true);
+    aTarget.addEventListener("dragleave", this, true);
     aTarget.addEventListener("drop", this, true);
     aTarget.addEventListener("dragend", this, true);
   },
@@ -1157,7 +1219,7 @@ CustomizeMode.prototype = {
     }
     aTarget.removeEventListener("dragstart", this, true);
     aTarget.removeEventListener("dragover", this, true);
-    aTarget.removeEventListener("dragexit", this, true);
+    aTarget.removeEventListener("dragleave", this, true);
     aTarget.removeEventListener("drop", this, true);
     aTarget.removeEventListener("dragend", this, true);
   },
@@ -1337,8 +1399,7 @@ CustomizeMode.prototype = {
     }
   },
 
-  openAddonsManagerThemes(aEvent) {
-    aEvent.target.parentNode.parentNode.hidePopup();
+  openAddonsManagerThemes() {
     AMTelemetry.recordLinkEvent({ object: "customize", value: "manageThemes" });
     this.window.BrowserOpenAddonsMgr("addons://list/theme");
   },
@@ -1392,12 +1453,19 @@ CustomizeMode.prototype = {
     );
     normalItem.mode = gUIDensity.MODE_NORMAL;
 
+    let items = [normalItem];
+
     let compactItem = doc.getElementById(
       "customization-uidensity-menuitem-compact"
     );
     compactItem.mode = gUIDensity.MODE_COMPACT;
 
-    let items = [normalItem, compactItem];
+    if (Services.prefs.getBoolPref(kCompactModeShowPref)) {
+      compactItem.hidden = false;
+      items.push(compactItem);
+    } else {
+      compactItem.hidden = true;
+    }
 
     let touchItem = doc.getElementById(
       "customization-uidensity-menuitem-touch"
@@ -1461,107 +1529,6 @@ CustomizeMode.prototype = {
     this._onUIChange();
   },
 
-  async onThemesMenuShowing(aEvent) {
-    const DEFAULT_THEME_ID = "default-theme@mozilla.org";
-    const LIGHT_THEME_ID = "firefox-compact-light@mozilla.org";
-    const DARK_THEME_ID = "firefox-compact-dark@mozilla.org";
-    const MAX_THEME_COUNT = 6;
-
-    this._clearThemesMenu(aEvent.target);
-
-    let onThemeSelected = panel => {
-      // This causes us to call _onUIChange when the LWT actually changes,
-      // so the restore defaults / undo reset button is updated correctly.
-      this._nextThemeChangeUserTriggered = true;
-      panel.hidePopup();
-    };
-
-    let doc = this.window.document;
-
-    function buildToolbarButton(aTheme) {
-      let tbb = doc.createXULElement("toolbarbutton");
-      tbb.theme = aTheme;
-      tbb.setAttribute("label", aTheme.name);
-      tbb.setAttribute(
-        "image",
-        aTheme.iconURL || "chrome://mozapps/skin/extensions/themeGeneric.svg"
-      );
-      if (aTheme.description) {
-        tbb.setAttribute("tooltiptext", aTheme.description);
-      }
-      tbb.setAttribute("tabindex", "0");
-      tbb.classList.add("customization-lwtheme-menu-theme");
-      let isActive = aTheme.isActive;
-      tbb.setAttribute("aria-checked", isActive);
-      tbb.setAttribute("role", "menuitemradio");
-      if (isActive) {
-        tbb.setAttribute("active", "true");
-      }
-
-      return tbb;
-    }
-
-    let themes = await AddonManager.getAddonsByTypes(["theme"]);
-    let currentTheme = themes.find(theme => theme.isActive);
-
-    // Move the current theme (if any) and the light/dark themes to the start:
-    let importantThemes = new Set([
-      DEFAULT_THEME_ID,
-      LIGHT_THEME_ID,
-      DARK_THEME_ID,
-    ]);
-    if (currentTheme) {
-      importantThemes.add(currentTheme.id);
-    }
-    let importantList = [];
-    for (let importantTheme of importantThemes) {
-      importantList.push(
-        ...themes.splice(
-          themes.findIndex(theme => theme.id == importantTheme),
-          1
-        )
-      );
-    }
-
-    // Sort the remainder alphabetically:
-    themes.sort((a, b) => a.name.localeCompare(b.name));
-    themes = importantList.concat(themes);
-
-    if (themes.length > MAX_THEME_COUNT) {
-      themes.length = MAX_THEME_COUNT;
-    }
-
-    let footer = doc.getElementById("customization-lwtheme-menu-footer");
-    let panel = footer.parentNode;
-    for (let theme of themes) {
-      let button = buildToolbarButton(theme);
-      button.addEventListener("command", async () => {
-        await button.theme.enable();
-        onThemeSelected(panel);
-        AMTelemetry.recordActionEvent({
-          object: "customize",
-          action: "enable",
-          extra: { type: "theme", addonId: theme.id },
-        });
-      });
-      panel.insertBefore(button, footer);
-    }
-  },
-
-  _clearThemesMenu(panel) {
-    let footer = this.$("customization-lwtheme-menu-footer");
-    let element = footer;
-    while (
-      element.previousElementSibling &&
-      element.previousElementSibling.localName == "toolbarbutton"
-    ) {
-      element.previousElementSibling.remove();
-    }
-
-    // Workaround for bug 1059934
-    panel.removeAttribute("height");
-  },
-
   _onUIChange() {
     this._changed = true;
     if (!this.resetting) {
@@ -1611,6 +1578,20 @@ CustomizeMode.prototype = {
     touchBarSpacer.hidden = !isTouchBarInitialized;
   },
 
+  _updateDensityMenu() {
+    // If we're entering Customize Mode, and we're using compact mode,
+    // then show the button after that.
+    let gUIDensity = this.window.gUIDensity;
+    if (gUIDensity.getCurrentDensity().mode == gUIDensity.MODE_COMPACT) {
+      Services.prefs.setBoolPref(kCompactModeShowPref, true);
+    }
+
+    let button = this.document.getElementById("customization-uidensity-button");
+    button.hidden =
+      !Services.prefs.getBoolPref(kCompactModeShowPref) &&
+      !button.querySelector("#customization-uidensity-menuitem-touch");
+  },
+
   handleEvent(aEvent) {
     switch (aEvent.type) {
       case "toolbarvisibilitychange":
@@ -1625,8 +1606,8 @@ CustomizeMode.prototype = {
       case "drop":
         this._onDragDrop(aEvent);
         break;
-      case "dragexit":
-        this._onDragExit(aEvent);
+      case "dragleave":
+        this._onDragLeave(aEvent);
         break;
       case "dragend":
         this._onDragEnd(aEvent);
@@ -1701,7 +1682,6 @@ CustomizeMode.prototype = {
         this._updateUndoResetButton();
         if (this._canDrawInTitlebar()) {
           this._updateTitlebarCheckbox();
-          this._updateDragSpaceCheckbox();
         }
         break;
     }
@@ -1716,7 +1696,6 @@ CustomizeMode.prototype = {
       return;
     }
 
-    await this._updateThemeButtonIcon();
     if (this._nextThemeChangeUserTriggered) {
       this._onUIChange();
     }
@@ -1736,10 +1715,7 @@ CustomizeMode.prototype = {
   },
 
   _updateTitlebarCheckbox() {
-    let drawInTitlebar = Services.prefs.getBoolPref(
-      kDrawInTitlebarPref,
-      this.window.matchMedia("(-moz-gtk-csd-hide-titlebar-by-default)").matches
-    );
+    let drawInTitlebar = Services.appinfo.drawInTitlebar;
     let checkbox = this.$("customization-titlebar-visibility-checkbox");
     // Drawing in the titlebar means 'hiding' the titlebar.
     // We use the attribute rather than a property because if we're not in
@@ -1751,40 +1727,9 @@ CustomizeMode.prototype = {
     }
   },
 
-  _updateDragSpaceCheckbox() {
-    let extraDragSpace = Services.prefs.getBoolPref(kExtraDragSpacePref);
-    let drawInTitlebar = Services.prefs.getBoolPref(
-      kDrawInTitlebarPref,
-      this.window.matchMedia("(-moz-gtk-csd-hide-titlebar-by-default)").matches
-    );
-    let menuBar = this.$("toolbar-menubar");
-    let menuBarEnabled =
-      menuBar &&
-      AppConstants.platform != "macosx" &&
-      menuBar.getAttribute("autohide") != "true";
-
-    let checkbox = this.$("customization-extra-drag-space-checkbox");
-    if (extraDragSpace) {
-      checkbox.setAttribute("checked", "true");
-    } else {
-      checkbox.removeAttribute("checked");
-    }
-
-    if (!drawInTitlebar || menuBarEnabled) {
-      checkbox.setAttribute("disabled", "true");
-    } else {
-      checkbox.removeAttribute("disabled");
-    }
-  },
-
   toggleTitlebar(aShouldShowTitlebar) {
     // Drawing in the titlebar means not showing the titlebar, hence the negation:
-    Services.prefs.setBoolPref(kDrawInTitlebarPref, !aShouldShowTitlebar);
-    this._updateDragSpaceCheckbox();
-  },
-
-  toggleDragSpace(aShouldShowDragSpace) {
-    Services.prefs.setBoolPref(kExtraDragSpacePref, aShouldShowDragSpace);
+    Services.prefs.setIntPref(kDrawInTitlebarPref, !aShouldShowTitlebar);
   },
 
   _getBoundsWithoutFlushing(element) {
@@ -2237,7 +2182,7 @@ CustomizeMode.prototype = {
     }
   },
 
-  _onDragExit(aEvent) {
+  _onDragLeave(aEvent) {
     if (this._isUnwantedDragDrop(aEvent)) {
       return;
     }
@@ -2246,7 +2191,7 @@ CustomizeMode.prototype = {
 
     // When leaving customization areas, cancel the drag on the last dragover item
     // We've attached the listener to areas, so aEvent.currentTarget will be the area.
-    // We don't care about dragexit events fired on descendants of the area,
+    // We don't care about dragleave events fired on descendants of the area,
     // so we check that the event's target is the same as the area to which the listener
     // was attached.
     if (this._dragOverItem && aEvent.target == aEvent.currentTarget) {

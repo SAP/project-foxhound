@@ -81,16 +81,6 @@ class nsWindowBase : public nsBaseWidget {
       mozilla::WidgetContentCommandEvent* aEvent) = 0;
 
   /*
-   * Default dispatch of a plugin event.
-   */
-  virtual bool DispatchPluginEvent(const MSG& aMsg);
-
-  /*
-   * Returns true if this should dispatch a plugin event.
-   */
-  bool ShouldDispatchPluginEvent();
-
-  /*
    * Touch input injection apis
    */
   virtual nsresult SynthesizeNativeTouchPoint(uint32_t aPointerId,
@@ -100,6 +90,14 @@ class nsWindowBase : public nsBaseWidget {
                                               uint32_t aPointerOrientation,
                                               nsIObserver* aObserver) override;
   virtual nsresult ClearNativeTouchSequence(nsIObserver* aObserver) override;
+
+  virtual nsresult SynthesizeNativePenInput(uint32_t aPointerId,
+                                            TouchPointerState aPointerState,
+                                            LayoutDeviceIntPoint aPoint,
+                                            double aPressure,
+                                            uint32_t aRotation, int32_t aTiltX,
+                                            int32_t aTiltY, int32_t aButton,
+                                            nsIObserver* aObserver) override;
 
   /*
    * WM_APPCOMMAND common handler.
@@ -121,11 +119,18 @@ class nsWindowBase : public nsBaseWidget {
 
   class PointerInfo {
    public:
-    PointerInfo(int32_t aPointerId, LayoutDeviceIntPoint& aPoint)
-        : mPointerId(aPointerId), mPosition(aPoint) {}
+    enum class PointerType : uint8_t {
+      TOUCH,
+      PEN,
+    };
+
+    PointerInfo(int32_t aPointerId, LayoutDeviceIntPoint& aPoint,
+                PointerType aType)
+        : mPointerId(aPointerId), mPosition(aPoint), mType(aType) {}
 
     int32_t mPointerId;
     LayoutDeviceIntPoint mPosition;
+    PointerType mType;
   };
 
   nsClassHashtable<nsUint32HashKey, PointerInfo> mActivePointers;

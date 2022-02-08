@@ -10,6 +10,7 @@ import subprocess
 from collections import namedtuple
 from distutils.version import StrictVersion
 
+from mozboot.util import get_tools_dir
 from mozfile import which
 from mozlint import result
 from mozlint.pathutils import expand_exclusions
@@ -59,13 +60,14 @@ def parse_issues(config, output, paths):
             diff += line + "\n"
     # the algorithm above will always skip adding the last issue
     issues.append(RustfmtDiff(file, line_no, diff))
+    file = os.path.normcase(os.path.normpath(file))
     results = []
     for issue in issues:
         # rustfmt can not be supplied the paths to the files we want to analyze
         # therefore, for each issue detected, we check if any of the the paths
         # supplied are part of the file name.
         # This just filters out the issues that are not part of paths.
-        if any([path in file for path in paths]):
+        if any([os.path.normcase(os.path.normpath(path)) in file for path in paths]):
             res = {
                 "path": issue.file,
                 "diff": issue.diff,
@@ -73,7 +75,7 @@ def parse_issues(config, output, paths):
                 "lineno": issue.line,
             }
             results.append(result.from_config(config, **res))
-    return results
+    return {"results": results, "fixed": 0}
 
 
 class RustfmtProcess(ProcessHandler):
@@ -108,7 +110,8 @@ def get_rustfmt_binary():
     if binary:
         return binary
 
-    return which("rustfmt")
+    rust_path = os.path.join(get_tools_dir(), "rustc", "bin")
+    return which("rustfmt", path=os.pathsep.join([rust_path, os.environ["PATH"]]))
 
 
 def get_rustfmt_version(binary):
@@ -117,7 +120,9 @@ def get_rustfmt_version(binary):
     """
     try:
         output = subprocess.check_output(
-            [binary, "--version"], stderr=subprocess.STDOUT, universal_newlines=True,
+            [binary, "--version"],
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
         )
     except subprocess.CalledProcessError as e:
         output = e.output
@@ -157,13 +162,20 @@ def lint(paths, config, fix=None, **lintargs):
         return 1
 
     cmd_args = [binary]
-    if not fix:
-        cmd_args.append("--check")
+    cmd_args.append("--check")
     base_command = cmd_args + paths
     log.debug("Command: {}".format(" ".join(cmd_args)))
     output = run_process(config, base_command)
 
+    issues = parse_issues(config, output, paths)
+
     if fix:
-        # Rustfmt is able to fix all issues so don't bother parsing the output.
-        return []
-    return parse_issues(config, output, paths)
+        issues["fixed"] = len(issues["results"])
+        issues["results"] = []
+        cmd_args.remove("--check")
+
+        base_command = cmd_args + paths
+        log.debug("Command: {}".format(" ".join(cmd_args)))
+        output = run_process(config, base_command)
+
+    return issues

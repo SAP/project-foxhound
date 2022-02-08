@@ -7,6 +7,45 @@
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
 /* import-globals-from ../../shared/test/shared-head.js */
 
+// Sometimes HTML pages have a `clear` function that cleans up the storage they
+// created. To make sure it's always called, we are registering as a cleanup
+// function, but since this needs to run before tabs are closed, we need to
+// do this registration before importing `shared-head`, since declaration
+// order matters.
+registerCleanupFunction(async () => {
+  const browser = gBrowser.selectedBrowser;
+  const contexts = browser.browsingContext.getAllBrowsingContextsInSubtree();
+  for (const context of contexts) {
+    await SpecialPowers.spawn(context, [], async () => {
+      const win = content.wrappedJSObject;
+
+      // Some windows (e.g., about: URLs) don't have storage available
+      try {
+        win.localStorage.clear();
+        win.sessionStorage.clear();
+      } catch (ex) {
+        // ignore
+      }
+
+      if (win.clear) {
+        // Do not get hung into win.clear() forever
+        await Promise.race([
+          new Promise(r => win.setTimeout(r, 10000)),
+          win.clear(),
+        ]);
+      }
+    });
+  }
+
+  Services.cookies.removeAll();
+
+  // Close tabs and force memory collection to happen
+  while (gBrowser.tabs.length > 1) {
+    await closeTabAndToolbox(gBrowser.selectedTab);
+  }
+  forceCollections();
+});
+
 // shared-head.js handles imports, constants, and utility functions
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/shared/test/shared-head.js",
@@ -18,10 +57,12 @@ const STORAGE_PREF = "devtools.storage.enabled";
 const DOM_CACHE = "dom.caches.enabled";
 const DUMPEMIT_PREF = "devtools.dump.emit";
 const DEBUGGERLOG_PREF = "devtools.debugger.log";
+
 // Allows Cache API to be working on usage `http` test page
 const CACHES_ON_HTTP_PREF = "dom.caches.testing.enabled";
 const PATH = "browser/devtools/client/storage/test/";
 const MAIN_DOMAIN = "http://test1.example.org/" + PATH;
+const MAIN_DOMAIN_SECURED = "https://test1.example.org/" + PATH;
 const MAIN_DOMAIN_WITH_PORT = "http://test1.example.org:8000/" + PATH;
 const ALT_DOMAIN = "http://sectest1.example.org/" + PATH;
 const ALT_DOMAIN_SECURED = "https://sectest1.example.org:443/" + PATH;
@@ -59,34 +100,12 @@ registerCleanupFunction(() => {
 async function openTab(url, options = {}) {
   const tab = await addTab(url, options);
 
-  // Setup the async storages in main window and for all its iframes
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
-    /**
-     * Get all windows including frames recursively.
-     *
-     * @param {Window} [baseWindow]
-     *        The base window at which to start looking for child windows
-     *        (optional).
-     * @return {Set}
-     *         A set of windows.
-     */
-    function getAllWindows(baseWindow) {
-      const windows = new Set();
+  const browser = gBrowser.selectedBrowser;
+  const contexts = browser.browsingContext.getAllBrowsingContextsInSubtree();
 
-      const _getAllWindows = function(win) {
-        windows.add(win.wrappedJSObject);
-
-        for (let i = 0; i < win.length; i++) {
-          _getAllWindows(win[i]);
-        }
-      };
-      _getAllWindows(baseWindow);
-
-      return windows;
-    }
-
-    const windows = getAllWindows(content);
-    for (const win of windows) {
+  for (const context of contexts) {
+    await SpecialPowers.spawn(context, [], async () => {
+      const win = content.wrappedJSObject;
       const readyState = win.document.readyState;
       info(`Found a window: ${readyState}`);
       if (readyState != "complete") {
@@ -101,8 +120,8 @@ async function openTab(url, options = {}) {
       if (win.setup) {
         await win.setup();
       }
-    }
-  });
+    });
+  }
 
   return tab;
 }
@@ -129,17 +148,18 @@ async function openTabAndSetupStorage(url, options = {}) {
 /**
  * Open the toolbox, with the storage tool visible.
  *
- * @param cb {Function} Optional callback, if you don't want to use the returned
- *                      promise
- * @param target {Object} Optional, the target for the toolbox; defaults to a tab target
+ * @param tab {XULTab} Optional, the tab for the toolbox; defaults to selected tab
+ * @param descriptor {Object} Optional, the descriptor for the toolbox; defaults to a tab descriptor
  * @param hostType {Toolbox.HostType} Optional, type of host that will host the toolbox
  *
  * @return {Promise} a promise that resolves when the storage inspector is ready
  */
-var openStoragePanel = async function(cb, target, hostType) {
+var openStoragePanel = async function({ tab, descriptor, hostType } = {}) {
   info("Opening the storage inspector");
-  if (!target) {
-    target = await TargetFactory.forTab(gBrowser.selectedTab);
+  if (!descriptor) {
+    descriptor = await TabDescriptorFactory.createDescriptorForTab(
+      tab || gBrowser.selectedTab
+    );
   }
 
   let storage, toolbox;
@@ -147,7 +167,7 @@ var openStoragePanel = async function(cb, target, hostType) {
   // Checking if the toolbox and the storage are already loaded
   // The storage-updated event should only be waited for if the storage
   // isn't loaded yet
-  toolbox = gDevTools.getToolbox(target);
+  toolbox = gDevTools.getToolboxForDescriptor(descriptor);
   if (toolbox) {
     storage = toolbox.getPanel("storage");
     if (storage) {
@@ -155,9 +175,6 @@ var openStoragePanel = async function(cb, target, hostType) {
       gUI = storage.UI;
       gToolbox = toolbox;
       info("Toolbox and storage already open");
-      if (cb) {
-        return cb(storage, toolbox);
-      }
 
       return {
         toolbox: toolbox,
@@ -167,7 +184,10 @@ var openStoragePanel = async function(cb, target, hostType) {
   }
 
   info("Opening the toolbox");
-  toolbox = await gDevTools.showToolbox(target, "storage", hostType);
+  toolbox = await gDevTools.showToolbox(descriptor, {
+    toolId: "storage",
+    hostType,
+  });
   storage = toolbox.getPanel("storage");
   gPanelWindow = storage.panelWindow;
   gUI = storage.UI;
@@ -178,10 +198,6 @@ var openStoragePanel = async function(cb, target, hostType) {
   gUI.animationsEnabled = false;
 
   await waitForToolboxFrameFocus(toolbox);
-
-  if (cb) {
-    return cb(storage, toolbox);
-  }
 
   return {
     toolbox: toolbox,
@@ -212,60 +228,6 @@ function forceCollections() {
   Cu.forceGC();
   Cu.forceCC();
   Cu.forceShrinkingGC();
-}
-
-/**
- * Cleans up and finishes the test
- */
-async function finishTests() {
-  while (gBrowser.tabs.length > 1) {
-    await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
-      /**
-       * Get all windows including frames recursively.
-       *
-       * @param {Window} [baseWindow]
-       *        The base window at which to start looking for child windows
-       *        (optional).
-       * @return {Set}
-       *         A set of windows.
-       */
-      function getAllWindows(baseWindow) {
-        const windows = new Set();
-
-        const _getAllWindows = function(win) {
-          windows.add(win.wrappedJSObject);
-
-          for (let i = 0; i < win.length; i++) {
-            _getAllWindows(win[i]);
-          }
-        };
-        _getAllWindows(baseWindow);
-
-        return windows;
-      }
-
-      const windows = getAllWindows(content);
-      for (const win of windows) {
-        // Some windows (e.g., about: URLs) don't have storage available
-        try {
-          win.localStorage.clear();
-          win.sessionStorage.clear();
-        } catch (ex) {
-          // ignore
-        }
-
-        if (win.clear) {
-          await win.clear();
-        }
-      }
-    });
-
-    await closeTabAndToolbox(gBrowser.selectedTab);
-  }
-
-  Services.cookies.removeAll();
-  forceCollections();
-  finish();
 }
 
 // Sends a click event on the passed DOM node in an async manner
@@ -384,8 +346,7 @@ function findVariableViewProperties(ruleArray, parsed) {
     // Return the results - a promise resolved to hold the updated ruleArray.
     const returnResults = onAllRulesMatched.bind(null, ruleArray);
 
-    return promise
-      .all(outstanding)
+    return Promise.all(outstanding)
       .then(lastStep)
       .then(returnResults);
   }
@@ -480,14 +441,15 @@ function findVariableViewProperties(ruleArray, parsed) {
  */
 function matchVariablesViewProperty(prop, rule) {
   function resolve(result) {
-    return promise.resolve(result);
+    return Promise.resolve(result);
   }
 
   if (!prop) {
     return resolve(false);
   }
 
-  if (rule.name) {
+  // Any kind of string is accepted as name, including empty ones
+  if (typeof rule.name == "string") {
     const match =
       rule.name instanceof RegExp
         ? rule.name.test(prop.name)
@@ -855,12 +817,7 @@ function checkCellUneditable(id, column) {
 function showColumn(id, state) {
   const columns = gUI.table.columns;
   const column = columns.get(id);
-
-  if (state) {
-    column.wrapper.removeAttribute("hidden");
-  } else {
-    column.wrapper.setAttribute("hidden", true);
-  }
+  column.wrapper.hidden = !state;
 }
 
 /**
@@ -981,11 +938,10 @@ async function checkState(state) {
     }
 
     for (const name of names) {
-      ok(items.has(name), `There is item with name '${name}' in ${storeName}`);
-
       if (!items.has(name)) {
         showAvailableIds();
       }
+      ok(items.has(name), `There is item with name '${name}' in ${storeName}`);
     }
   }
 }
@@ -1121,4 +1077,102 @@ async function scroll() {
   const onStoresUpdate = gUI.once("store-objects-updated");
   table.scrollTop += cellHeight * 50;
   await onStoresUpdate;
+}
+
+/**
+ * Asserts that the given tree path exists
+ * @param {Document} doc
+ * @param {Array} path
+ * @param {Boolean} isExpected
+ */
+function checkTree(doc, path, isExpected = true) {
+  const doesExist = isInTree(doc, path);
+  ok(
+    isExpected ? doesExist : !doesExist,
+    `${path.join(" > ")} is ${isExpected ? "" : "not "}in the tree`
+  );
+}
+
+/**
+ * Returns whether a tree path exists
+ * @param {Document} doc
+ * @param {Array} path
+ */
+function isInTree(doc, path) {
+  const treeId = JSON.stringify(path);
+  return !!doc.querySelector(`[data-id='${treeId}']`);
+}
+
+/**
+ * Returns the label of the node for the provided tree path
+ * @param {Document} doc
+ * @param {Array} path
+ * @returns {String}
+ */
+function getTreeNodeLabel(doc, path) {
+  const treeId = JSON.stringify(path);
+  return doc.querySelector(`[data-id='${treeId}'] .tree-widget-item`)
+    .textContent;
+}
+
+/**
+ * Checks that the pair <name, value> is displayed at the data table
+ * @param {String} name
+ * @param {any} value
+ */
+function checkStorageData(name, value) {
+  ok(
+    hasStorageData(name, value),
+    `Table row has an entry for: ${name} with value: ${value}`
+  );
+}
+
+async function waitForStorageData(name, value) {
+  info("Waiting for data to appear in the table");
+  await waitFor(() => hasStorageData(name, value));
+  ok(true, `Table row has an entry for: ${name} with value: ${value}`);
+}
+
+/**
+ * Returns whether the pair <name, value> is displayed at the data table
+ * @param {String} name
+ * @param {any} value
+ */
+function hasStorageData(name, value) {
+  return gUI.table.items.get(name)?.value === value;
+}
+
+/**
+ * Returns an URL of a page that uses the document-builder to generate its content
+ * @param {String} domain
+ * @param {String} html
+ * @param {String} protocol
+ */
+function buildURLWithContent(domain, html, protocol = "https") {
+  return `${protocol}://${domain}/document-builder.sjs?html=${encodeURI(html)}`;
+}
+
+/**
+ * Asserts that the given cookie holds the provided value in the data table
+ * @param {String} name
+ * @param {String} value
+ */
+function checkCookieData(name, value) {
+  ok(
+    hasCookieData(name, value),
+    `Table row has an entry for: ${name} with value: ${value}`
+  );
+}
+
+/**
+ * Returns whether the given cookie holds the provided value in the data table
+ * @param {String} name
+ * @param {String} value
+ */
+function hasCookieData(name, value) {
+  const rows = Array.from(gUI.table.items);
+  const cookie = rows.map(([, data]) => data).find(x => x.name === name);
+
+  info(`found ${cookie?.value}`);
+  return cookie?.value === value;
 }

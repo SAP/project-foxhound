@@ -12,7 +12,9 @@ add_task(async function run_test() {
       crashReporter.annotateCrashReport("TestKey", "Yes");
     },
     function(mdump, extra) {
-      ChromeUtils.import("resource://gre/modules/AppConstants.jsm", this);
+      const { AppConstants } = ChromeUtils.import(
+        "resource://gre/modules/AppConstants.jsm"
+      );
       Assert.equal(extra.TestKey, "Yes");
 
       // A list of pairs [annotation name, must be > 0]
@@ -32,6 +34,7 @@ add_task(async function run_test() {
           break;
         case "linux":
           annotations = [
+            ["OOMAllocationSize", true],
             ["AvailablePageFile", false],
             ["AvailablePhysicalMemory", false],
             ["AvailableSwapMemory", false],
@@ -42,6 +45,7 @@ add_task(async function run_test() {
           break;
         case "macosx":
           annotations = [
+            ["OOMAllocationSize", true],
             ["AvailablePhysicalMemory", false],
             ["AvailableSwapMemory", false],
             ["PurgeablePhysicalMemory", false],
@@ -62,7 +66,6 @@ add_task(async function run_test() {
           Assert.ok(Number(extra[label]) >= 0);
         }
       }
-    },
-    true
+    }
   );
 });

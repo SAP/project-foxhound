@@ -11,22 +11,12 @@
 #  include "mozilla/Atomics.h"
 #  include "mozilla/Sprintf.h"
 
-#  ifdef XP_WIN
-#    include <process.h>
-#    define getpid _getpid
-#  else
-#    include <unistd.h>
-#  endif
-#  include "jit/Ion.h"
 #  include "jit/MIR.h"
 #  include "jit/MIRGenerator.h"
 #  include "jit/MIRGraph.h"
 #  include "threading/LockGuard.h"
-#  include "util/Text.h"
-#  include "vm/HelperThreads.h"
+#  include "util/GetPidProvider.h"  // getpid()
 #  include "vm/MutexIDs.h"
-
-#  include "vm/Realm-inl.h"
 
 #  ifndef JIT_SPEW_DIR
 #    if defined(_WIN32)
@@ -370,6 +360,7 @@ static void PrintHelpAndExit(int status = 0) {
       "  pools         Literal Pools (ARM only for now)\n"
       "  cacheflush    Instruction Cache flushes (ARM only for now)\n"
       "  range         Range Analysis\n"
+      "  wasmbce       Wasm Bounds Check Elimination\n"
       "  logs          JSON visualization logging\n"
       "  logs-sync     Same as logs, but flushes between each pass (sync. "
       "compiled functions only).\n"
@@ -437,6 +428,8 @@ void jit::CheckLogging() {
       EnableChannel(JitSpew_GVN);
     } else if (IsFlag(found, "range")) {
       EnableChannel(JitSpew_Range);
+    } else if (IsFlag(found, "wasmbce")) {
+      EnableChannel(JitSpew_WasmBCE);
     } else if (IsFlag(found, "licm")) {
       EnableChannel(JitSpew_LICM);
     } else if (IsFlag(found, "flac")) {
@@ -625,6 +618,37 @@ void jit::EnableChannel(JitSpewChannel channel) {
 void jit::DisableChannel(JitSpewChannel channel) {
   MOZ_ASSERT(LoggingChecked);
   LoggingBits &= ~(uint64_t(1) << uint32_t(channel));
+}
+
+const char* js::jit::ValTypeToString(JSValueType type) {
+  switch (type) {
+    case JSVAL_TYPE_DOUBLE:
+      return "Double";
+    case JSVAL_TYPE_INT32:
+      return "Int32";
+    case JSVAL_TYPE_BOOLEAN:
+      return "Boolean";
+    case JSVAL_TYPE_UNDEFINED:
+      return "Undefined";
+    case JSVAL_TYPE_NULL:
+      return "Null";
+    case JSVAL_TYPE_MAGIC:
+      return "Magic";
+    case JSVAL_TYPE_STRING:
+      return "String";
+    case JSVAL_TYPE_SYMBOL:
+      return "Symbol";
+    case JSVAL_TYPE_PRIVATE_GCTHING:
+      return "PrivateGCThing";
+    case JSVAL_TYPE_BIGINT:
+      return "BigInt";
+    case JSVAL_TYPE_OBJECT:
+      return "Object";
+    case JSVAL_TYPE_UNKNOWN:
+      return "None";
+    default:
+      MOZ_CRASH("Unknown JSValueType");
+  }
 }
 
 #endif /* JS_JITSPEW */

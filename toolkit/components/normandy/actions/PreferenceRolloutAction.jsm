@@ -55,7 +55,15 @@ class PreferenceRolloutAction extends BaseAction {
   async _run(recipe) {
     const args = recipe.arguments;
 
-    // First determine which preferences are already being managed, to avoid
+    // Check if the rollout is on the list of rollouts to stop applying.
+    if (PreferenceRollouts.GRADUATION_SET.has(args.slug)) {
+      this.log.debug(
+        `Skipping rollout "${args.slug}" because it is in the graduation set.`
+      );
+      return;
+    }
+
+    // Determine which preferences are already being managed, to avoid
     // conflicts between recipes. This will throw if there is a problem.
     await this._verifyRolloutPrefs(args);
 
@@ -65,7 +73,7 @@ class PreferenceRolloutAction extends BaseAction {
       preferences: args.preferences.map(({ preferenceName, value }) => ({
         preferenceName,
         value,
-        previousValue: PrefUtils.getPref("default", preferenceName),
+        previousValue: PrefUtils.getPref(preferenceName, { branch: "default" }),
       })),
     };
 
@@ -137,7 +145,7 @@ class PreferenceRolloutAction extends BaseAction {
       await PreferenceRollouts.add(newRollout);
 
       for (const { preferenceName, value } of args.preferences) {
-        PrefUtils.setPref("default", preferenceName, value);
+        PrefUtils.setPref(preferenceName, value, { branch: "default" });
       }
 
       this.log.debug(`Enrolled in preference rollout ${args.slug}`);
@@ -219,7 +227,7 @@ class PreferenceRolloutAction extends BaseAction {
           `updating ${existingRollout.slug}: ${preferenceName} no longer exists`
         );
         anyChanged = true;
-        PrefUtils.setPref("default", preferenceName, previousValue);
+        PrefUtils.setPref(preferenceName, previousValue, { branch: "default" });
       }
     }
 
@@ -240,7 +248,9 @@ class PreferenceRolloutAction extends BaseAction {
         this.log.debug(
           `updating ${existingRollout.slug}: ${prefSpec.preferenceName} value changed from ${oldValue} to ${prefSpec.value}`
         );
-        PrefUtils.setPref("default", prefSpec.preferenceName, prefSpec.value);
+        PrefUtils.setPref(prefSpec.preferenceName, prefSpec.value, {
+          branch: "default",
+        });
       }
     }
     return anyChanged;

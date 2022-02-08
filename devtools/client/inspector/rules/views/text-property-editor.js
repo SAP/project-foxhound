@@ -25,13 +25,7 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "parseDeclarations",
-  "devtools/shared/css/parsing-utils",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "parseSingleValue",
+  ["parseDeclarations", "parseSingleValue"],
   "devtools/shared/css/parsing-utils",
   true
 );
@@ -43,6 +37,8 @@ loader.lazyRequireGetter(
 );
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
+const INLINE_COMPATIBILITY_WARNING_PREF =
+  "devtools.inspector.ruleview.inline-compatibility-warning.enabled";
 
 const SHARED_SWATCH_CLASS = "ruleview-swatch";
 const COLOR_SWATCH_CLASS = "ruleview-colorswatch";
@@ -157,7 +153,7 @@ TextPropertyEditor.prototype = {
     this.element._textPropertyEditor = this;
 
     this.container = createChild(this.element, "div", {
-      class: "ruleview-propertycontainer inline-tooltip-container",
+      class: "ruleview-propertycontainer",
     });
 
     // The enable checkbox will disable or enable the rule.
@@ -220,6 +216,17 @@ TextPropertyEditor.prototype = {
       class: "ruleview-unused-warning",
       hidden: "",
     });
+
+    const inlineCompatibilityWarningEnabled = Services.prefs.getBoolPref(
+      INLINE_COMPATIBILITY_WARNING_PREF
+    );
+
+    if (inlineCompatibilityWarningEnabled) {
+      this.compatibilityState = createChild(this.container, "div", {
+        class: "ruleview-compatibility-warning",
+        hidden: "",
+      });
+    }
 
     // Filter button that filters for the current property name and is
     // displayed when the property is overridden by another rule.
@@ -486,8 +493,8 @@ TextPropertyEditor.prototype = {
       colorSwatchClass: SHARED_SWATCH_CLASS + " " + COLOR_SWATCH_CLASS,
       filterClass: "ruleview-filter",
       filterSwatchClass: SHARED_SWATCH_CLASS + " " + FILTER_SWATCH_CLASS,
-      flexClass: "ruleview-flex",
-      gridClass: "ruleview-grid",
+      flexClass: "ruleview-flex js-toggle-flexbox-highlighter",
+      gridClass: "ruleview-grid js-toggle-grid-highlighter",
       shapeClass: "ruleview-shape",
       shapeSwatchClass: SHAPE_SWATCH_CLASS,
       // Only ask the parser to convert colors to the default color type specified by the
@@ -647,7 +654,9 @@ TextPropertyEditor.prototype = {
       flexToggle.setAttribute("title", l10n("rule.flexToggle.tooltip"));
       flexToggle.classList.toggle(
         "active",
-        this.ruleView.highlighters.flexboxHighlighterShown === nodeFront
+        this.ruleView.inspector.highlighters.getNodeForActiveHighlighter(
+          this.ruleView.inspector.highlighters.TYPES.FLEXBOX
+        ) === nodeFront
       );
     }
 
@@ -771,6 +780,14 @@ TextPropertyEditor.prototype = {
     }
 
     this.updatePropertyUsedIndicator();
+
+    const inlineCompatibilityWarningEnabled = Services.prefs.getBoolPref(
+      INLINE_COMPATIBILITY_WARNING_PREF
+    );
+
+    if (inlineCompatibilityWarningEnabled) {
+      this.updatePropertyCompatibilityIndicator();
+    }
   },
 
   updatePropertyUsedIndicator: function() {
@@ -782,6 +799,16 @@ TextPropertyEditor.prototype = {
     } else {
       this.element.classList.add("unused");
       this.unusedState.hidden = false;
+    }
+  },
+
+  updatePropertyCompatibilityIndicator: async function() {
+    const { isCompatible } = await this.prop.isCompatible();
+
+    if (this.editing || isCompatible) {
+      this.compatibilityState.hidden = true;
+    } else {
+      this.compatibilityState.hidden = false;
     }
   },
 
@@ -948,12 +975,12 @@ TextPropertyEditor.prototype = {
       this.expander.removeAttribute("open");
       this.computed.removeAttribute("filter-open");
       this.computed.removeAttribute("user-open");
-      this.shorthandOverridden.removeAttribute("hidden");
+      this.shorthandOverridden.hidden = false;
       this._populateShorthandOverridden();
     } else {
       this.expander.setAttribute("open", "true");
       this.computed.setAttribute("user-open", "");
-      this.shorthandOverridden.setAttribute("hidden", "true");
+      this.shorthandOverridden.hidden = true;
       this._populateComputed();
     }
 
@@ -1107,18 +1134,6 @@ TextPropertyEditor.prototype = {
       session_id: this.toolbox.sessionId,
     });
 
-    // Since the value was changed, check if the original property was a flex or grid
-    // display declaration and hide their respective highlighters.
-    if (this.isDisplayFlex()) {
-      this.ruleView.highlighters.hideFlexboxHighlighter();
-    }
-
-    if (this.isDisplayGrid()) {
-      this.ruleView.highlighters.hideGridHighlighter(
-        this.ruleView.inspector.selection.nodeFront
-      );
-    }
-
     // First, set this property value (common case, only modified a property)
     this.prop.setValue(val.value, val.priority);
 
@@ -1256,30 +1271,6 @@ TextPropertyEditor.prototype = {
    */
   isNameValid: function() {
     return this.prop.isNameValid();
-  },
-
-  /**
-   * Returns true if the property is a `display: [inline-]flex` declaration.
-   *
-   * @return {Boolean} true if the property is a `display: [inline-]flex` declaration.
-   */
-  isDisplayFlex: function() {
-    return (
-      this.prop.name === "display" &&
-      (this.prop.value === "flex" || this.prop.value === "inline-flex")
-    );
-  },
-
-  /**
-   * Returns true if the property is a `display: [inline-]grid` declaration.
-   *
-   * @return {Boolean} true if the property is a `display: [inline-]grid` declaration.
-   */
-  isDisplayGrid: function() {
-    return (
-      this.prop.name === "display" &&
-      (this.prop.value === "grid" || this.prop.value === "inline-grid")
-    );
   },
 };
 

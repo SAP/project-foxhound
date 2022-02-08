@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 sl{
     AuxExemplarCharacters{
         "[á à ă â å ä ā æ ç ć đ é è ĕ ê ë ē í ì ĭ î ï ī ñ ó ò ŏ ô ö ø ō œ q ú ù ŭ û ü"
@@ -275,20 +276,32 @@ sl{
             }
         }
         minimalPairs{
+            case{
+                accusative{"čez {0}"}
+                dative{"kljub {0}"}
+                genitive{"brez {0}"}
+                instrumental{"s/z {0}"}
+                locative{"po {0}"}
+                nominative{"{0} je"}
+            }
+            gender{
+                feminine{"Ona {0}"}
+                masculine{"On {0}"}
+                neuter{"Ono {0}"}
+            }
             ordinal{
                 other{"V {0}. križišču zavijte desno."}
             }
             plural{
-                few{"{0} ure"}
-                one{"{0} ura"}
-                other{"{0} ur"}
-                two{"{0} uri"}
+                few{"{0} dnevi"}
+                one{"{0} dan"}
+                other{"{0} dni"}
+                two{"{0} dneva"}
             }
         }
         minimumGroupingDigits{"1"}
         native{"latn"}
     }
-    Version{"37"}
     calendar{
         buddhist{
             eras{
@@ -319,6 +332,16 @@ sl{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "GyMMMMEEEEdd",
+                "GyMMMMdd",
+                "GyMMMd",
+                "GGGGGyyMMd",
+            }
             availableFormats{
                 Bh{"h B"}
                 Bhm{"h:mm B"}
@@ -336,6 +359,7 @@ sl{
                 GyMMM{"MMM y G"}
                 GyMMMEd{"E, d. MMM y G"}
                 GyMMMd{"d. MMM y G"}
+                GyMd{"d. M. y GGGGG"}
                 H{"HH"}
                 Hm{"HH:mm"}
                 Hms{"HH:mm:ss"}
@@ -521,15 +545,25 @@ sl{
                 "HH:mm:ss z",
                 "HH:mm:ss",
                 "HH:mm",
-                "EEEE, dd. MMMM y",
-                "dd. MMMM y",
+                "EEEE, d. MMMM y",
+                "d. MMMM y",
                 "d. MMM y",
                 "d. MM. yy",
+                "{1}, {0}",
                 "{1} {0}",
                 "{1} {0}",
-                "{1} {0}",
-                "{1} {0}",
-                "{1} {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+            }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "yMMMMEEEEdd",
+                "yMMMMdd",
+                "yMMMd",
+                "yyMMd",
             }
             appendItems{
                 Timezone{"{0} {1}"}
@@ -551,6 +585,7 @@ sl{
                 GyMMM{"MMM y G"}
                 GyMMMEd{"E, d. MMM y G"}
                 GyMMMd{"d. MMM y G"}
+                GyMd{"d. M. y GGGGG"}
                 H{"HH'h'"}
                 Hm{"HH:mm"}
                 Hms{"HH:mm:ss"}

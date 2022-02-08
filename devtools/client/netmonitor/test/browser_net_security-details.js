@@ -29,10 +29,7 @@ add_task(async function() {
   await wait;
 
   store.dispatch(Actions.toggleNetworkDetails());
-  EventUtils.sendMouseEvent(
-    { type: "click" },
-    document.querySelector("#security-tab")
-  );
+  clickOnSidebarTab(document, "security");
   await waitUntil(() =>
     document.querySelector("#security-panel .security-info-value")
   );

@@ -22,11 +22,6 @@ RUN apt-get update && \
       less \
       openssh-client \
       procps \
-      python-cryptography \
-      python-dev \
-      python-pip \
-      python-setuptools \
-      python-virtualenv \
       python3-dev \
       rsync \
       screen \
@@ -36,23 +31,15 @@ RUN apt-get update && \
       uuid \
       valgrind \
       vim \
+      x11-utils \
+      xvfb \
       wget \
-      yasm \
-      zip
+      zip \
+      zstd
 
 # Add wrapper scripts for xvfb allowing tasks to easily retry starting up xvfb.
 # %include taskcluster/docker/recipes/xvfb.sh
 COPY topsrcdir/taskcluster/docker/recipes/xvfb.sh /builds/worker/scripts/xvfb.sh
-
-# %include taskcluster/docker/recipes/prepare_openjdk.sh
-COPY topsrcdir/taskcluster/docker/recipes/prepare_openjdk.sh /tmp/prepare_openjdk.sh
-RUN /tmp/prepare_openjdk.sh && rm /tmp/prepare_openjdk.sh
-
-# Observe missing --no-install-recommends, in order to install glib2.0/gconf/etc.
-RUN apt-get install \
-      libgconf-2-4 \
-      libgnome2-0 \
-      openjdk-8-jdk-headless
 
 # Back to the workdir, matching desktop-build.
 WORKDIR /builds/worker

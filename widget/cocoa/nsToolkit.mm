@@ -36,6 +36,8 @@ extern "C" {
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 
+#include "NativeMenuSupport.h"
+
 using namespace mozilla;
 
 static io_connect_t gRootPort = MACH_PORT_NULL;
@@ -62,7 +64,7 @@ void nsToolkit::PostSleepWakeNotification(const char* aNotification) {
 // http://developer.apple.com/documentation/DeviceDrivers/Conceptual/IOKitFundamentals/PowerMgmt/chapter_10_section_3.html
 static void ToolkitSleepWakeCallback(void* refCon, io_service_t service, natural_t messageType,
                                      void* messageArgument) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   switch (messageType) {
     case kIOMessageSystemWillSleep:
@@ -86,11 +88,11 @@ static void ToolkitSleepWakeCallback(void* refCon, io_service_t service, natural
       break;
   }
 
-  NS_OBJC_END_TRY_ABORT_BLOCK;
+  NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
 nsresult nsToolkit::RegisterForSleepWakeNotifications() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   IONotificationPortRef notifyPortRef;
 
@@ -108,11 +110,11 @@ nsresult nsToolkit::RegisterForSleepWakeNotifications() {
 
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 void nsToolkit::RemoveSleepWakeNotifications() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   if (mSleepWakeNotificationRLS) {
     ::IODeregisterForSystemPower(&mPowerNotifier);
@@ -122,7 +124,7 @@ void nsToolkit::RemoveSleepWakeNotifications() {
     mSleepWakeNotificationRLS = nullptr;
   }
 
-  NS_OBJC_END_TRY_ABORT_BLOCK;
+  NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
 // Cocoa Firefox's use of custom context menus requires that we explicitly
@@ -133,18 +135,18 @@ void nsToolkit::RemoveSleepWakeNotifications() {
 // dismiss a context menu when a mouseDown happens in another process (bmo
 // bug 339945).
 void nsToolkit::MonitorAllProcessMouseEvents() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
-  // Don't do this for apps that use native context menus.
-#ifdef MOZ_USE_NATIVE_POPUP_WINDOWS
-  return;
-#endif /* MOZ_USE_NATIVE_POPUP_WINDOWS */
+  if (mozilla::widget::NativeMenuSupport::ShouldUseNativeContextMenus()) {
+    // Don't do this if we are using native context menus.
+    return;
+  }
 
   if (getenv("MOZ_NO_GLOBAL_MOUSE_MONITOR")) return;
 
   if (mAllProcessMouseMonitor == nil) {
     mAllProcessMouseMonitor = [NSEvent
-        addGlobalMonitorForEventsMatchingMask:NSLeftMouseDownMask | NSOtherMouseDownMask
+        addGlobalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown | NSEventMaskLeftMouseDown
                                       handler:^(NSEvent* evt) {
                                         if ([NSApp isActive]) {
                                           return;
@@ -181,25 +183,25 @@ void nsToolkit::MonitorAllProcessMouseEvents() {
                                       }];
   }
 
-  NS_OBJC_END_TRY_ABORT_BLOCK;
+  NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
 void nsToolkit::StopMonitoringAllProcessMouseEvents() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   if (mAllProcessMouseMonitor != nil) {
     [NSEvent removeMonitor:mAllProcessMouseMonitor];
     mAllProcessMouseMonitor = nil;
   }
 
-  NS_OBJC_END_TRY_ABORT_BLOCK;
+  NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
 // Return the nsToolkit instance.  If a toolkit does not yet exist, then one
 // will be created.
 // static
 nsToolkit* nsToolkit::GetToolkit() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if (!gToolkit) {
     gToolkit = new nsToolkit();
@@ -207,7 +209,7 @@ nsToolkit* nsToolkit::GetToolkit() {
 
   return gToolkit;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(nullptr);
+  NS_OBJC_END_TRY_BLOCK_RETURN(nullptr);
 }
 
 // An alternative to [NSObject poseAsClass:] that isn't deprecated on OS X
@@ -227,7 +229,7 @@ nsToolkit* nsToolkit::GetToolkit() {
 // of its subclasses.
 nsresult nsToolkit::SwizzleMethods(Class aClass, SEL orgMethod, SEL posedMethod,
                                    bool classMethods) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   Method original = nil;
   Method posed = nil;
@@ -246,5 +248,5 @@ nsresult nsToolkit::SwizzleMethods(Class aClass, SEL orgMethod, SEL posedMethod,
 
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }

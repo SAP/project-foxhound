@@ -1,22 +1,15 @@
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ASRouter",
-  "resource://activity-stream/lib/ASRouter.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "DoHController",
-  "resource:///modules/DoHController.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "Preferences",
-  "resource://gre/modules/Preferences.jsm"
-);
+XPCOMUtils.defineLazyModuleGetters(this, {
+  ASRouter: "resource://activity-stream/lib/ASRouter.jsm",
+  DoHController: "resource:///modules/DoHController.jsm",
+  DoHConfigController: "resource:///modules/DoHConfig.jsm",
+  DoHTestUtils: "resource://testing-common/DoHTestUtils.jsm",
+  Preferences: "resource://gre/modules/Preferences.jsm",
+  Region: "resource://gre/modules/Region.jsm",
+  RegionTestUtils: "resource://testing-common/RegionTestUtils.jsm",
+  RemoteSettings: "resource://services-settings/remote-settings.js",
+});
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
@@ -39,23 +32,30 @@ const { CommonUtils } = ChromeUtils.import(
 const EXAMPLE_URL = "https://example.com/";
 
 const prefs = {
+  TESTING_PREF: "doh-rollout._testing",
   ENABLED_PREF: "doh-rollout.enabled",
   ROLLOUT_TRR_MODE_PREF: "doh-rollout.mode",
   NETWORK_TRR_MODE_PREF: "network.trr.mode",
+  CONFIRMATION_NS_PREF: "network.trr.confirmationNS",
   BREADCRUMB_PREF: "doh-rollout.self-enabled",
   DOORHANGER_USER_DECISION_PREF: "doh-rollout.doorhanger-decision",
   DISABLED_PREF: "doh-rollout.disable-heuristics",
   SKIP_HEURISTICS_PREF: "doh-rollout.skipHeuristicsCheck",
+  CLEAR_ON_SHUTDOWN_PREF: "doh-rollout.clearModeOnShutdown",
   FIRST_RUN_PREF: "doh-rollout.doneFirstRun",
   BALROG_MIGRATION_PREF: "doh-rollout.balrog-migration-done",
   PREVIOUS_TRR_MODE_PREF: "doh-rollout.previous.trr.mode",
+  PROVIDER_LIST_PREF: "doh-rollout.provider-list",
   TRR_SELECT_ENABLED_PREF: "doh-rollout.trr-selection.enabled",
   TRR_SELECT_URI_PREF: "doh-rollout.uri",
   TRR_SELECT_COMMIT_PREF: "doh-rollout.trr-selection.commit-result",
   TRR_SELECT_DRY_RUN_RESULT_PREF: "doh-rollout.trr-selection.dry-run-result",
   PROVIDER_STEERING_PREF: "doh-rollout.provider-steering.enabled",
   PROVIDER_STEERING_LIST_PREF: "doh-rollout.provider-steering.provider-list",
-  PROFILE_CREATION_THRESHOLD_PREF: "doh-rollout.profileCreationThreshold",
+  NETWORK_DEBOUNCE_TIMEOUT_PREF: "doh-rollout.network-debounce-timeout",
+  HEURISTICS_THROTTLE_TIMEOUT_PREF: "doh-rollout.heuristics-throttle-timeout",
+  HEURISTICS_THROTTLE_RATE_LIMIT_PREF:
+    "doh-rollout.heuristics-throttle-rate-limit",
 };
 
 const CFR_PREF = "browser.newtabpage.activity-stream.asrouter.providers.cfr";
@@ -68,6 +68,8 @@ const CFR_JSON = {
 };
 
 async function setup() {
+  await DoHController._uninit();
+  await DoHConfigController._uninit();
   SpecialPowers.pushPrefEnv({
     set: [["security.notification_enable_delay", 0]],
   });
@@ -78,39 +80,57 @@ async function setup() {
   // Enable the CFR.
   Preferences.set(CFR_PREF, JSON.stringify(CFR_JSON));
 
-  // Enable trr selection for tests. This is off by default so it can be
-  // controlled via Normandy.
+  // Tell DoHController that this isn't real life.
+  Preferences.set(prefs.TESTING_PREF, true);
+
+  // Avoid non-local connections to the TRR endpoint.
+  Preferences.set(prefs.CONFIRMATION_NS_PREF, "skip");
+
+  // Enable trr selection and provider steeringfor tests. This is off
+  // by default so it can be controlled via Normandy.
   Preferences.set(prefs.TRR_SELECT_ENABLED_PREF, true);
+  Preferences.set(prefs.PROVIDER_STEERING_PREF, true);
 
   // Enable committing the TRR selection. This pref ships false by default so
   // it can be controlled e.g. via Normandy, but for testing let's set enable.
   Preferences.set(prefs.TRR_SELECT_COMMIT_PREF, true);
 
-  // Enable provider steering. This pref ships false by default so it can be
-  // controlled e.g. via Normandy, but for testing let's enable.
-  Preferences.set(prefs.PROVIDER_STEERING_PREF, true);
+  // Clear mode on shutdown by default.
+  Preferences.set(prefs.CLEAR_ON_SHUTDOWN_PREF, true);
+
+  // Generally don't bother with debouncing or throttling.
+  // The throttling test will set this explicitly.
+  Preferences.set(prefs.NETWORK_DEBOUNCE_TIMEOUT_PREF, -1);
+  Preferences.set(prefs.HEURISTICS_THROTTLE_TIMEOUT_PREF, -1);
 
   // Set up heuristics, all passing by default.
 
   // Google safesearch overrides
-  gDNSOverride.addIPOverride("www.google.com", "1.1.1.1");
-  gDNSOverride.addIPOverride("google.com", "1.1.1.1");
-  gDNSOverride.addIPOverride("forcesafesearch.google.com", "1.1.1.2");
+  gDNSOverride.addIPOverride("www.google.com.", "1.1.1.1");
+  gDNSOverride.addIPOverride("google.com.", "1.1.1.1");
+  gDNSOverride.addIPOverride("forcesafesearch.google.com.", "1.1.1.2");
 
   // YouTube safesearch overrides
-  gDNSOverride.addIPOverride("www.youtube.com", "2.1.1.1");
-  gDNSOverride.addIPOverride("m.youtube.com", "2.1.1.1");
-  gDNSOverride.addIPOverride("youtubei.googleapis.com", "2.1.1.1");
-  gDNSOverride.addIPOverride("youtube.googleapis.com", "2.1.1.1");
-  gDNSOverride.addIPOverride("www.youtube-nocookie.com", "2.1.1.1");
-  gDNSOverride.addIPOverride("restrict.youtube.com", "2.1.1.2");
-  gDNSOverride.addIPOverride("restrictmoderate.youtube.com", "2.1.1.2");
+  gDNSOverride.addIPOverride("www.youtube.com.", "2.1.1.1");
+  gDNSOverride.addIPOverride("m.youtube.com.", "2.1.1.1");
+  gDNSOverride.addIPOverride("youtubei.googleapis.com.", "2.1.1.1");
+  gDNSOverride.addIPOverride("youtube.googleapis.com.", "2.1.1.1");
+  gDNSOverride.addIPOverride("www.youtube-nocookie.com.", "2.1.1.1");
+  gDNSOverride.addIPOverride("restrict.youtube.com.", "2.1.1.2");
+  gDNSOverride.addIPOverride("restrictmoderate.youtube.com.", "2.1.1.2");
 
   // Zscaler override
-  gDNSOverride.addIPOverride("sitereview.zscaler.com", "3.1.1.1");
+  gDNSOverride.addIPOverride("sitereview.zscaler.com.", "3.1.1.1");
 
   // Global canary
-  gDNSOverride.addIPOverride("use-application-dns.net", "4.1.1.1");
+  gDNSOverride.addIPOverride("use-application-dns.net.", "4.1.1.1");
+
+  await DoHTestUtils.resetRemoteSettingsConfig(false);
+
+  await DoHConfigController.init();
+  await DoHController.init();
+
+  await waitForStateTelemetry(["rollback"]);
 
   registerCleanupFunction(async () => {
     Services.telemetry.canRecordExtended = oldCanRecord;
@@ -125,13 +145,26 @@ async function setup() {
     await DoHController._uninit();
     Services.telemetry.clearEvents();
     Preferences.reset(Object.values(prefs));
+    await DoHTestUtils.resetRemoteSettingsConfig(false);
     await DoHController.init();
   });
 }
 
+const kTestRegion = "DE";
+const kRegionalPrefNamespace = `doh-rollout.${kTestRegion.toLowerCase()}`;
+
+async function setupRegion() {
+  Region._home = null;
+  RegionTestUtils.setNetworkRegion(kTestRegion);
+  await Region._fetchRegion();
+  is(Region.home, kTestRegion, "Should have correct region");
+  Preferences.reset("doh-rollout.home-region");
+  await DoHConfigController.loadRegion();
+}
+
 async function checkTRRSelectionTelemetry() {
   let events;
-  await BrowserTestUtils.waitForCondition(() => {
+  await TestUtils.waitForCondition(() => {
     events = Services.telemetry.snapshotEvents(
       Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS
     ).parent;
@@ -146,7 +179,7 @@ async function checkTRRSelectionTelemetry() {
   is(events.length, 1, "Found the expected trrselect event.");
   is(
     events[0][4],
-    "https://dummytrr.com/query",
+    "https://example.com/dns-query",
     "The event records the expected decision"
   );
 }
@@ -174,15 +207,15 @@ async function checkHeuristicsTelemetry(
   steeredProvider = ""
 ) {
   let events;
-  await BrowserTestUtils.waitForCondition(() => {
+  await TestUtils.waitForCondition(() => {
     events = Services.telemetry.snapshotEvents(
       Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS
     ).parent;
-    return events && events.length;
+    events = events?.filter(
+      e => e[1] == "doh" && e[2] == "evaluate_v2" && e[3] == "heuristics"
+    );
+    return events?.length;
   });
-  events = events.filter(
-    e => e[1] == "doh" && e[2] == "evaluate_v2" && e[3] == "heuristics"
-  );
   is(events.length, 1, "Found the expected heuristics event.");
   is(events[0][4], decision, "The event records the expected decision");
   if (evaluateReason) {
@@ -195,6 +228,34 @@ async function checkHeuristicsTelemetry(
   // TODO: Test events other than heuristics. Those tests would also work the
   // same way, so as to test one event at a time, and this clearEvents() call
   // will continue to exist as-is.
+  Services.telemetry.clearEvents();
+}
+
+async function checkHeuristicsTelemetryMultiple(expectedEvaluateReasons) {
+  let events;
+  await TestUtils.waitForCondition(() => {
+    events = Services.telemetry.snapshotEvents(
+      Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS
+    ).parent;
+    if (events && events.length) {
+      events = events.filter(
+        e => e[1] == "doh" && e[2] == "evaluate_v2" && e[3] == "heuristics"
+      );
+      if (events.length == expectedEvaluateReasons.length) {
+        return true;
+      }
+    }
+    return false;
+  });
+  is(
+    events.length,
+    expectedEvaluateReasons.length,
+    "Found the expected heuristics events."
+  );
+  for (let reason of expectedEvaluateReasons) {
+    let event = events.find(e => e[5].evaluateReason == reason);
+    is(event[5].evaluateReason, reason, `${reason} event found`);
+  }
   Services.telemetry.clearEvents();
 }
 
@@ -214,7 +275,7 @@ function ensureNoHeuristicsTelemetry() {
 
 async function waitForStateTelemetry(expectedStates) {
   let events;
-  await BrowserTestUtils.waitForCondition(() => {
+  await TestUtils.waitForCondition(() => {
     events = Services.telemetry.snapshotEvents(
       Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS
     ).parent;
@@ -230,7 +291,15 @@ async function waitForStateTelemetry(expectedStates) {
 }
 
 async function restartDoHController() {
+  let oldMode = Preferences.get(prefs.ROLLOUT_TRR_MODE_PREF);
   await DoHController._uninit();
+  let newMode = Preferences.get(prefs.ROLLOUT_TRR_MODE_PREF);
+  let expectClear = Preferences.get(prefs.CLEAR_ON_SHUTDOWN_PREF);
+  is(
+    newMode,
+    expectClear ? undefined : oldMode,
+    `Mode was ${expectClear ? "cleared" : "persisted"} on shutdown.`
+  );
   await DoHController.init();
 }
 
@@ -238,13 +307,13 @@ async function restartDoHController() {
 // or disabled correctly. We use the zscaler canary arbitrarily here, individual
 // heuristics are tested separately.
 function setPassingHeuristics() {
-  gDNSOverride.clearHostOverride("sitereview.zscaler.com");
-  gDNSOverride.addIPOverride("sitereview.zscaler.com", "3.1.1.1");
+  gDNSOverride.clearHostOverride("sitereview.zscaler.com.");
+  gDNSOverride.addIPOverride("sitereview.zscaler.com.", "3.1.1.1");
 }
 
 function setFailingHeuristics() {
-  gDNSOverride.clearHostOverride("sitereview.zscaler.com");
-  gDNSOverride.addIPOverride("sitereview.zscaler.com", "213.152.228.242");
+  gDNSOverride.clearHostOverride("sitereview.zscaler.com.");
+  gDNSOverride.addIPOverride("sitereview.zscaler.com.", "213.152.228.242");
 }
 
 async function waitForDoorhanger() {
@@ -275,7 +344,7 @@ function simulateNetworkChange() {
 }
 
 async function ensureTRRMode(mode) {
-  await BrowserTestUtils.waitForCondition(() => {
+  await TestUtils.waitForCondition(() => {
     return Preferences.get(prefs.ROLLOUT_TRR_MODE_PREF) === mode;
   });
   is(Preferences.get(prefs.ROLLOUT_TRR_MODE_PREF), mode, `TRR mode is ${mode}`);
@@ -285,7 +354,7 @@ async function ensureNoTRRModeChange(mode) {
   try {
     // Try and wait for the TRR pref to change... waitForCondition should throw
     // after trying for a while.
-    await BrowserTestUtils.waitForCondition(() => {
+    await TestUtils.waitForCondition(() => {
       return Preferences.get(prefs.ROLLOUT_TRR_MODE_PREF) !== mode;
     });
     // If we reach this, the waitForCondition didn't throw. Fail!

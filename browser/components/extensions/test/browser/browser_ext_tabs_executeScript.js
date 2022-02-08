@@ -4,7 +4,7 @@
 
 add_task(async function testExecuteScript() {
   let { MessageChannel } = ChromeUtils.import(
-    "resource://gre/modules/MessageChannel.jsm"
+    "resource://testing-common/MessageChannel.jsm"
   );
 
   function countMM(messageManagerMap) {
@@ -30,6 +30,21 @@ add_task(async function testExecuteScript() {
 
   async function background() {
     try {
+      // This promise is meant to be resolved when browser.tabs.executeScript({file: "script.js"})
+      // is called and the content script does message back, registering the runtime.onMessage
+      // listener here is meant to prevent intermittent failures due to a race on executing the
+      // array of promises passed to the `await Promise.all(...)` below.
+      const promiseRuntimeOnMessage = new Promise(resolve => {
+        browser.runtime.onMessage.addListener(message => {
+          browser.test.assertEq(
+            "script ran",
+            message,
+            "Expected runtime message"
+          );
+          resolve();
+        });
+      });
+
       let [tab] = await browser.tabs.query({
         active: true,
         currentWindow: true,
@@ -386,16 +401,7 @@ add_task(async function testExecuteScript() {
           await browser.tabs.remove(tab.id);
         }),
 
-        new Promise(resolve => {
-          browser.runtime.onMessage.addListener(message => {
-            browser.test.assertEq(
-              "script ran",
-              message,
-              "Expected runtime message"
-            );
-            resolve();
-          });
-        }),
+        promiseRuntimeOnMessage,
       ]);
 
       browser.test.notifyPass("executeScript");

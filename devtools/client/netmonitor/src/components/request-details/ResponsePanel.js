@@ -14,13 +14,19 @@ const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
 const {
   decodeUnicodeBase64,
   fetchNetworkUpdatePacket,
-  isJSON,
+  parseJSON,
 } = require("devtools/client/netmonitor/src/utils/request-utils");
+const {
+  getCORSErrorURL,
+} = require("devtools/client/netmonitor/src/utils/mdn-utils");
 const {
   Filters,
 } = require("devtools/client/netmonitor/src/utils/filter-predicates");
 const {
   FILTER_SEARCH_DELAY,
+} = require("devtools/client/netmonitor/src/constants");
+const {
+  BLOCKED_REASON_MESSAGES,
 } = require("devtools/client/netmonitor/src/constants");
 
 // Components
@@ -30,31 +36,37 @@ const PropertiesView = createFactory(
 const ImagePreview = createFactory(
   require("devtools/client/netmonitor/src/components/previews/ImagePreview")
 );
+const FontPreview = createFactory(
+  require("devtools/client/netmonitor/src/components/previews/FontPreview")
+);
 const SourcePreview = createFactory(
   require("devtools/client/netmonitor/src/components/previews/SourcePreview")
 );
 const HtmlPreview = createFactory(
   require("devtools/client/netmonitor/src/components/previews/HtmlPreview")
 );
+let {
+  NotificationBox,
+  PriorityLevels,
+} = require("devtools/client/shared/components/NotificationBox");
+NotificationBox = createFactory(NotificationBox);
 const MessagesView = createFactory(
   require("devtools/client/netmonitor/src/components/messages/MessagesView")
-);
-const Accordion = createFactory(
-  require("devtools/client/shared/components/Accordion")
 );
 const SearchBox = createFactory(
   require("devtools/client/shared/components/SearchBox")
 );
 
 loader.lazyGetter(this, "MODE", function() {
-  return require("devtools/client/shared/components/reps/reps").MODE;
+  return require("devtools/client/shared/components/reps/index").MODE;
 });
 
-const { div } = dom;
+const { div, input, label, span, h2 } = dom;
 const JSON_SCOPE_NAME = L10N.getStr("jsonScopeName");
 const JSON_FILTER_TEXT = L10N.getStr("jsonFilterText");
 const RESPONSE_PAYLOAD = L10N.getStr("responsePayload");
-const RESPONSE_PREVIEW = L10N.getStr("responsePreview");
+const RAW_RESPONSE_PAYLOAD = L10N.getStr("netmonitor.response.raw");
+const HTML_RESPONSE = L10N.getStr("netmonitor.response.html");
 const RESPONSE_EMPTY_TEXT = L10N.getStr("responseEmptyText");
 const RESPONSE_TRUNCATED = L10N.getStr("responseTruncated");
 
@@ -80,8 +92,14 @@ class ResponsePanel extends Component {
 
     this.state = {
       filterText: "",
-      currentOpen: undefined,
+      rawResponsePayloadDisplayed: !!props.targetSearchResult,
     };
+
+    this.toggleRawResponsePayload = this.toggleRawResponsePayload.bind(this);
+    this.renderCORSBlockedReason = this.renderCORSBlockedReason.bind(this);
+    this.renderRawResponsePayloadBtn = this.renderRawResponsePayloadBtn.bind(
+      this
+    );
   }
 
   componentDidMount() {
@@ -96,6 +114,12 @@ class ResponsePanel extends Component {
     fetchNetworkUpdatePacket(connector.requestData, request, [
       "responseContent",
     ]);
+
+    if (nextProps.targetSearchResult !== null) {
+      this.setState({
+        rawResponsePayloadDisplayed: !!nextProps.targetSearchResult,
+      });
+    }
   }
 
   /**
@@ -108,8 +132,7 @@ class ResponsePanel extends Component {
     return (
       this.state !== nextState ||
       this.props.request !== nextProps.request ||
-      (this.props.targetSearchResult !== nextProps.targetSearchResult &&
-        nextProps.targetSearchResult !== null)
+      nextProps.targetSearchResult !== null
     );
   }
 
@@ -136,26 +159,12 @@ class ResponsePanel extends Component {
       return result;
     }
 
-    let { json, error } = isJSON(response);
+    const { json, error, jsonpCallback } = parseJSON(response);
 
     if (/\bjson/.test(mimeType) || json) {
-      // Extract the actual json substring in case this might be a "JSONP".
-      // This regex basically parses a function call and captures the
-      // function name and arguments in two separate groups.
-      const jsonpRegex = /^\s*([\w$]+)\s*\(\s*([^]*)\s*\)\s*;?\s*$/;
-      const [, jsonpCallback, jsonp] = response.match(jsonpRegex) || [];
       const result = {};
-
       // Make sure this is a valid JSON object first. If so, nicely display
       // the parsing results in a tree view.
-      if (jsonpCallback && jsonp) {
-        error = null;
-        try {
-          json = JSON.parse(jsonp);
-        } catch (err) {
-          error = err;
-        }
-      }
 
       // Valid JSON
       if (json) {
@@ -176,6 +185,88 @@ class ResponsePanel extends Component {
     return null;
   }
 
+  renderCORSBlockedReason(blockedReason) {
+    // ensure that the blocked reason is in the CORS range
+    if (
+      typeof blockedReason != "number" ||
+      blockedReason < 1000 ||
+      blockedReason > 1015
+    ) {
+      return null;
+    }
+
+    const blockedMessage = BLOCKED_REASON_MESSAGES[blockedReason];
+    const messageText = L10N.getFormatStr(
+      "netmonitor.headers.blockedByCORS",
+      blockedMessage
+    );
+
+    const learnMoreTooltip = L10N.getStr(
+      "netmonitor.headers.blockedByCORSTooltip"
+    );
+
+    // Create a notifications map with the CORS error notification
+    const notifications = new Map();
+    notifications.set("CORS-error", {
+      label: messageText,
+      value: "CORS-error",
+      image: "",
+      priority: PriorityLevels.PRIORITY_INFO_HIGH,
+      type: "info",
+      eventCallback: e => {},
+      buttons: [
+        {
+          mdnUrl: getCORSErrorURL(blockedReason),
+          label: learnMoreTooltip,
+        },
+      ],
+    });
+
+    return NotificationBox({
+      notifications,
+      displayBorderTop: false,
+      displayBorderBottom: true,
+      displayCloseButton: false,
+    });
+  }
+
+  toggleRawResponsePayload() {
+    this.setState({
+      rawResponsePayloadDisplayed: !this.state.rawResponsePayloadDisplayed,
+    });
+  }
+
+  renderRawResponsePayloadBtn(key, checked, onChange) {
+    return [
+      label(
+        {
+          key: `${key}RawResponsePayloadBtn`,
+          className: "raw-data-toggle",
+          htmlFor: `raw-${key}-checkbox`,
+          onClick: event => {
+            // stop the header click event
+            event.stopPropagation();
+          },
+        },
+        span({ className: "raw-data-toggle-label" }, RAW_RESPONSE_PAYLOAD),
+        span(
+          { className: "raw-data-toggle-input" },
+          input({
+            id: `raw-${key}-checkbox`,
+            checked,
+            className: "devtools-checkbox-toggle",
+            onChange,
+            type: "checkbox",
+          })
+        )
+      ),
+    ];
+  }
+
+  renderResponsePayload(component, componentProps) {
+    return component(componentProps);
+  }
+
   render() {
     const {
       connector,
@@ -183,8 +274,13 @@ class ResponsePanel extends Component {
       request,
       targetSearchResult,
     } = this.props;
-    const { responseContent, url } = request;
-    const { filterText } = this.state;
+    const { blockedReason, responseContent, url } = request;
+    const { filterText, rawResponsePayloadDisplayed } = this.state;
+
+    // Display CORS blocked Reason info box
+    const CORSBlockedReasonDetails = this.renderCORSBlockedReason(
+      blockedReason
+    );
 
     if (showMessagesView) {
       return MessagesView({ connector });
@@ -195,17 +291,25 @@ class ResponsePanel extends Component {
       typeof responseContent.content.text !== "string" ||
       !responseContent.content.text
     ) {
-      return div({ className: "empty-notice" }, RESPONSE_EMPTY_TEXT);
+      return div(
+        { className: "panel-container" },
+        CORSBlockedReasonDetails,
+        div({ className: "empty-notice" }, RESPONSE_EMPTY_TEXT)
+      );
     }
 
     let { encoding, mimeType, text } = responseContent.content;
 
-    if (mimeType.includes("image/")) {
+    if (Filters.images({ mimeType })) {
       return ImagePreview({ encoding, mimeType, text, url });
     }
 
+    if (Filters.fonts({ url, mimeType })) {
+      return FontPreview({ connector, mimeType, url });
+    }
+
     // Decode response if it's coming from JSONView.
-    if (mimeType.includes(JSON_VIEW_MIME_TYPE) && encoding === "base64") {
+    if (mimeType?.includes(JSON_VIEW_MIME_TYPE) && encoding === "base64") {
       text = decodeUnicodeBase64(text);
     }
 
@@ -213,117 +317,48 @@ class ResponsePanel extends Component {
     const { json, jsonpCallback, error } =
       this.handleJSONResponse(mimeType, text) || {};
 
-    const items = [];
-    let sectionName;
-
-    const onToggle = (open, item) => {
-      this.setState({ currentOpen: open ? item : null });
-    };
+    let component;
+    let componentProps;
+    let responsePayloadLabel = RESPONSE_PAYLOAD;
+    let hasFormattedDisplay = false;
 
     if (json) {
       if (jsonpCallback) {
-        sectionName = L10N.getFormatStr("jsonpScopeName", jsonpCallback);
+        responsePayloadLabel = L10N.getFormatStr(
+          "jsonpScopeName",
+          jsonpCallback
+        );
       } else {
-        sectionName = JSON_SCOPE_NAME;
+        responsePayloadLabel = JSON_SCOPE_NAME;
       }
 
-      items.push({
-        component: PropertiesView,
-        componentProps: {
-          object: json,
-          useQuotes: true,
-          filterText,
-          targetSearchResult,
-          defaultSelectFirstNode: false,
-          mode: MODE.LONG,
-        },
-        header: sectionName,
-        id: "jsonpScopeName",
-        opened: true,
-        shouldOpen: item => {
-          const { currentOpen } = this.state;
-          if (typeof currentOpen == "undefined" && item.id === items[0].id) {
-            // if this the first and panel just displayed, open this item
-            // by default;
-            return true;
-          } else if (!currentOpen) {
-            if (!targetSearchResult) {
-              return false;
-            }
-            return true;
-          }
-          // Open the item is toggled open or there is a serch result to show
-          if (item.id == currentOpen.id || targetSearchResult) {
-            return true;
-          }
-          return false;
-        },
-        onToggle,
-      });
-    }
-
-    // Display HTML
-    if (Filters.html(this.props.request)) {
-      items.push({
-        component: HtmlPreview,
-        componentProps: { responseContent },
-        header: RESPONSE_PREVIEW,
-        id: "responsePreview",
-        opened: false,
-        shouldOpen: item => {
-          const { currentOpen } = this.state;
-          if (typeof currentOpen == "undefined" && item.id === items[0].id) {
-            // if this the first and panel just displayed, open this item
-            // by default;
-            if (targetSearchResult) {
-              // collapse when we do a search
-              return false;
-            }
-            return true;
-          } else if (!currentOpen) {
-            return false;
-          }
-          // close this if there is a search result since
-          // it does not apply search
-          if (targetSearchResult) {
-            return false;
-          }
-          if (item.id == currentOpen.id) {
-            return true;
-          }
-          return false;
-        },
-        onToggle,
-      });
-    }
-
-    items.push({
-      component: SourcePreview,
-      componentProps: {
-        text,
-        mode: json ? "application/json" : mimeType.replace(/;.+/, ""),
+      component = PropertiesView;
+      componentProps = {
+        object: json,
+        useQuotes: true,
+        filterText,
         targetSearchResult,
-      },
-      header: RESPONSE_PAYLOAD,
-      id: "responsePayload",
-      opened: !!targetSearchResult,
-      shouldOpen: item => {
-        const { currentOpen } = this.state;
-        if (typeof currentOpen == "undefined" && item.id === items[0].id) {
-          return true;
-        } else if (!currentOpen) {
-          if (targetSearchResult) {
-            return true;
-          }
-          return false;
-        }
-        if (item.id == currentOpen.id || targetSearchResult) {
-          return true;
-        }
-        return false;
-      },
-      onToggle,
-    });
+        defaultSelectFirstNode: false,
+        mode: MODE.LONG,
+        useBaseTreeViewExpand: true,
+      };
+      hasFormattedDisplay = true;
+    } else if (Filters.html(this.props.request)) {
+      // Display HTML
+      responsePayloadLabel = HTML_RESPONSE;
+      component = HtmlPreview;
+      componentProps = { responseContent };
+      hasFormattedDisplay = true;
+    }
+
+    if (!hasFormattedDisplay || this.state.rawResponsePayloadDisplayed) {
+      component = SourcePreview;
+      componentProps = {
+        text,
+        mode: json ? "application/json" : mimeType?.replace(/;.+/, ""),
+        targetSearchResult,
+      };
+    }
 
     const classList = ["panel-container"];
     if (Filters.html(this.props.request)) {
@@ -344,7 +379,23 @@ class ResponsePanel extends Component {
             value: filterText,
           })
         ),
-      Accordion({ items })
+      div({ tabIndex: "0" }, CORSBlockedReasonDetails),
+      h2({ className: "data-header", role: "heading" }, [
+        span(
+          {
+            key: "data-label",
+            className: "data-label",
+          },
+          responsePayloadLabel
+        ),
+        hasFormattedDisplay &&
+          this.renderRawResponsePayloadBtn(
+            "response",
+            rawResponsePayloadDisplayed,
+            this.toggleRawResponsePayload
+          ),
+      ]),
+      this.renderResponsePayload(component, componentProps)
     );
   }
 }

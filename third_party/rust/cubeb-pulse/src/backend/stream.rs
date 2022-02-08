@@ -3,21 +3,24 @@
 // This program is made available under an ISC-style license.  See the
 // accompanying file LICENSE for details.
 
-use backend::*;
 use backend::cork_state::CorkState;
-use cubeb_backend::{ffi, log_enabled, ChannelLayout, DeviceId, DeviceRef, Error, Result,
-                    SampleFormat, StreamOps, StreamParamsRef, StreamPrefs};
+use backend::*;
+use cubeb_backend::{
+    ffi, log_enabled, ChannelLayout, DeviceId, DeviceRef, Error, Result, SampleFormat, StreamOps,
+    StreamParamsRef, StreamPrefs,
+};
 use pulse::{self, CVolumeExt, ChannelMapExt, SampleSpecExt, StreamLatency, USecExt};
 use pulse_ffi::*;
-use std::{mem, ptr};
+use ringbuf::RingBuffer;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_long, c_void};
 use std::slice;
-use ringbuf::RingBuffer;
+use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+use std::{mem, ptr};
 
+use self::LinearInputBuffer::*;
 use self::RingBufferConsumer::*;
 use self::RingBufferProducer::*;
-use self::LinearInputBuffer::*;
 
 const PULSE_NO_GAIN: f32 = -1.0;
 
@@ -100,12 +103,10 @@ fn default_layout_for_channels(ch: u32) -> ChannelLayout {
         3 => ChannelLayout::_3F,
         4 => ChannelLayout::QUAD,
         5 => ChannelLayout::_3F2,
-        6 => ChannelLayout::_3F_LFE
-             | ChannelLayout::SIDE_LEFT
-             | ChannelLayout::SIDE_RIGHT,
+        6 => ChannelLayout::_3F_LFE | ChannelLayout::SIDE_LEFT | ChannelLayout::SIDE_RIGHT,
         7 => ChannelLayout::_3F3R_LFE,
         8 => ChannelLayout::_3F4_LFE,
-        _ => panic!("channel must be between 1 to 8.")
+        _ => panic!("channel must be between 1 to 8."),
     }
 }
 
@@ -126,58 +127,63 @@ impl Drop for Device {
 
 enum RingBufferConsumer {
     IntegerRingBufferConsumer(ringbuf::Consumer<i16>),
-    FloatRingBufferConsumer(ringbuf::Consumer<f32>)
+    FloatRingBufferConsumer(ringbuf::Consumer<f32>),
 }
 
 enum RingBufferProducer {
     IntegerRingBufferProducer(ringbuf::Producer<i16>),
-    FloatRingBufferProducer(ringbuf::Producer<f32>)
+    FloatRingBufferProducer(ringbuf::Producer<f32>),
 }
 
 enum LinearInputBuffer {
     IntegerLinearInputBuffer(Vec<i16>),
-    FloatLinearInputBuffer(Vec<f32>)
+    FloatLinearInputBuffer(Vec<f32>),
 }
 
 struct BufferManager {
     consumer: RingBufferConsumer,
     producer: RingBufferProducer,
-    linear_input_buffer: LinearInputBuffer
+    linear_input_buffer: LinearInputBuffer,
 }
 
 impl BufferManager {
     // When opening a duplex stream, the sample-spec are guaranteed to match. It's ok to have
     // either the input or output sample-spec here.
     fn new(input_buffer_size: usize, sample_spec: &pulse::SampleSpec) -> BufferManager {
-        if sample_spec.format == PA_SAMPLE_S16BE ||
-           sample_spec.format == PA_SAMPLE_S16LE  {
-                let ring = RingBuffer::<i16>::new(input_buffer_size);
-                let (prod, cons) = ring.split();
-                return BufferManager {
-                    producer: IntegerRingBufferProducer(prod),
-                    consumer: IntegerRingBufferConsumer(cons),
-                    linear_input_buffer: IntegerLinearInputBuffer(Vec::<i16>::with_capacity(input_buffer_size))
-                };
-            } else {
-                let ring = RingBuffer::<f32>::new(input_buffer_size);
-                let (prod, cons) = ring.split();
-                return BufferManager {
-                    producer: FloatRingBufferProducer(prod),
-                    consumer: FloatRingBufferConsumer(cons),
-                    linear_input_buffer: FloatLinearInputBuffer(Vec::<f32>::with_capacity(input_buffer_size))
-                };
+        if sample_spec.format == PA_SAMPLE_S16BE || sample_spec.format == PA_SAMPLE_S16LE {
+            let ring = RingBuffer::<i16>::new(input_buffer_size);
+            let (prod, cons) = ring.split();
+            BufferManager {
+                producer: IntegerRingBufferProducer(prod),
+                consumer: IntegerRingBufferConsumer(cons),
+                linear_input_buffer: IntegerLinearInputBuffer(Vec::<i16>::with_capacity(
+                    input_buffer_size,
+                )),
             }
+        } else {
+            let ring = RingBuffer::<f32>::new(input_buffer_size);
+            let (prod, cons) = ring.split();
+            BufferManager {
+                producer: FloatRingBufferProducer(prod),
+                consumer: FloatRingBufferConsumer(cons),
+                linear_input_buffer: FloatLinearInputBuffer(Vec::<f32>::with_capacity(
+                    input_buffer_size,
+                )),
+            }
+        }
     }
 
     fn push_input_data(&mut self, input_data: *const c_void, read_samples: usize) {
         match &mut self.producer {
             RingBufferProducer::FloatRingBufferProducer(p) => {
-                let input_data = unsafe { slice::from_raw_parts::<f32>(input_data as *const f32, read_samples) };
+                let input_data =
+                    unsafe { slice::from_raw_parts::<f32>(input_data as *const f32, read_samples) };
                 // we don't do anything in particular if we can't push everything
                 p.push_slice(input_data);
             }
             RingBufferProducer::IntegerRingBufferProducer(p) => {
-                let input_data = unsafe { slice::from_raw_parts::<i16>(input_data as *const i16, read_samples) };
+                let input_data =
+                    unsafe { slice::from_raw_parts::<i16>(input_data as *const i16, read_samples) };
                 p.push_slice(input_data);
             }
         }
@@ -186,7 +192,9 @@ impl BufferManager {
     fn pull_input_data(&mut self, input_data: *mut c_void, needed_samples: usize) {
         match &mut self.consumer {
             IntegerRingBufferConsumer(p) => {
-                let mut input: &mut[i16] = unsafe { slice::from_raw_parts_mut::<i16>(input_data as *mut i16, needed_samples) };
+                let mut input: &mut [i16] = unsafe {
+                    slice::from_raw_parts_mut::<i16>(input_data as *mut i16, needed_samples)
+                };
                 let read = p.pop_slice(&mut input);
                 if read < needed_samples {
                     for i in 0..(needed_samples - read) {
@@ -195,7 +203,9 @@ impl BufferManager {
                 }
             }
             FloatRingBufferConsumer(p) => {
-                let mut input: &mut[f32] = unsafe { slice::from_raw_parts_mut::<f32>(input_data as *mut f32, needed_samples) };
+                let mut input: &mut [f32] = unsafe {
+                    slice::from_raw_parts_mut::<f32>(input_data as *mut f32, needed_samples)
+                };
                 let read = p.pop_slice(&mut input);
                 if read < needed_samples {
                     for i in 0..(needed_samples - read) {
@@ -220,7 +230,30 @@ impl BufferManager {
         }
         self.pull_input_data(p, nsamples);
 
-        return p;
+        p
+    }
+
+    pub fn trim(&mut self, final_size: usize) {
+        match &self.linear_input_buffer {
+            LinearInputBuffer::IntegerLinearInputBuffer(b) => {
+                let length = b.len();
+                assert!(final_size <= length);
+                let nframes_to_pop = length - final_size;
+                self.get_linear_input_data(nframes_to_pop);
+            }
+            LinearInputBuffer::FloatLinearInputBuffer(b) => {
+                let length = b.len();
+                assert!(final_size <= length);
+                let nframes_to_pop = length - final_size;
+                self.get_linear_input_data(nframes_to_pop);
+            }
+        }
+    }
+    pub fn available_samples(&mut self) -> usize {
+        match &self.linear_input_buffer {
+            LinearInputBuffer::IntegerLinearInputBuffer(b) => b.len(),
+            LinearInputBuffer::FloatLinearInputBuffer(b) => b.len(),
+        }
     }
 }
 
@@ -239,17 +272,19 @@ pub struct PulseStream<'ctx> {
     input_stream: Option<pulse::Stream>,
     data_callback: ffi::cubeb_data_callback,
     state_callback: ffi::cubeb_state_callback,
-    drain_timer: *mut pa_time_event,
+    drain_timer: AtomicPtr<pa_time_event>,
     output_sample_spec: pulse::SampleSpec,
     input_sample_spec: pulse::SampleSpec,
+    // output frames count excluding pre-buffering
+    output_frame_count: AtomicUsize,
     shutdown: bool,
     volume: f32,
     state: ffi::cubeb_state,
-    input_buffer_manager: Option<BufferManager>
+    input_buffer_manager: Option<BufferManager>,
 }
 
 impl<'ctx> PulseStream<'ctx> {
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    #[cfg_attr(feature = "cargo-clippy", allow(clippy::too_many_arguments))]
     pub fn new(
         context: &'ctx PulseContext,
         stream_name: Option<&CStr>,
@@ -276,7 +311,7 @@ impl<'ctx> PulseStream<'ctx> {
                 buffer: *mut *const c_void,
                 size: *mut usize,
             ) -> i32 {
-                let readable_size: i32 = s.readable_size().and_then(|s| Ok(s as i32)).unwrap_or(-1);
+                let readable_size = s.readable_size().map(|s| s as i32).unwrap_or(-1);
                 if readable_size > 0 && unsafe { s.peek(buffer, size).is_err() } {
                     return -1;
                 }
@@ -300,7 +335,10 @@ impl<'ctx> PulseStream<'ctx> {
 
                     if stm.output_stream.is_some() {
                         // duplex stream: push the input data to the ring buffer.
-                        stm.input_buffer_manager.as_mut().unwrap().push_input_data(read_data, read_samples);
+                        stm.input_buffer_manager
+                            .as_mut()
+                            .unwrap()
+                            .push_input_data(read_data, read_samples);
                     } else {
                         // input/capture only operation. Call callback directly
                         let got = unsafe {
@@ -338,10 +376,25 @@ impl<'ctx> PulseStream<'ctx> {
                 return;
             }
 
+            let nframes = nbytes / stm.output_sample_spec.frame_size();
+            let first_callback = stm.output_frame_count.fetch_add(nframes, Ordering::SeqCst) == 0;
             if stm.input_stream.is_some() {
-                let nframes = nbytes / stm.output_sample_spec.frame_size();
                 let nsamples_input = nframes * stm.input_sample_spec.channels as usize;
-                let p = stm.input_buffer_manager.as_mut().unwrap().get_linear_input_data(nsamples_input);
+                let input_buffer_manager = stm.input_buffer_manager.as_mut().unwrap();
+
+                if first_callback {
+                    let buffered_input_frames = input_buffer_manager.available_samples()
+                        / stm.input_sample_spec.channels as usize;
+                    if buffered_input_frames > nframes {
+                        // Trim the buffer to ensure minimal roundtrip latency
+                        let popped_frames = buffered_input_frames - nframes;
+                        input_buffer_manager
+                            .trim(nframes * stm.input_sample_spec.channels as usize);
+                        cubeb_log!("Dropping {} frames in input buffer.", popped_frames);
+                    }
+                }
+
+                let p = input_buffer_manager.get_linear_input_data(nsamples_input);
                 stm.trigger_user_callback(p, nbytes);
             } else {
                 // Output/playback only operation.
@@ -352,19 +405,20 @@ impl<'ctx> PulseStream<'ctx> {
         }
 
         let mut stm = Box::new(PulseStream {
-            context: context,
+            context,
             output_stream: None,
             input_stream: None,
-            data_callback: data_callback,
-            state_callback: state_callback,
-            user_ptr: user_ptr,
-            drain_timer: ptr::null_mut(),
+            data_callback,
+            state_callback,
+            user_ptr,
+            drain_timer: AtomicPtr::new(ptr::null_mut()),
             output_sample_spec: pulse::SampleSpec::default(),
             input_sample_spec: pulse::SampleSpec::default(),
+            output_frame_count: AtomicUsize::new(0),
             shutdown: false,
             volume: PULSE_NO_GAIN,
             state: ffi::CUBEB_STATE_ERROR,
-            input_buffer_manager: None
+            input_buffer_manager: None,
         });
 
         if let Some(ref context) = stm.context.context {
@@ -379,14 +433,15 @@ impl<'ctx> PulseStream<'ctx> {
                         s.set_state_callback(check_error, stm.as_mut() as *mut _ as *mut _);
                         s.set_write_callback(write_data, stm.as_mut() as *mut _ as *mut _);
 
-                        let buffer_size_bytes = latency_frames * stm.output_sample_spec.frame_size() as u32;
+                        let buffer_size_bytes =
+                            latency_frames * stm.output_sample_spec.frame_size() as u32;
 
                         let battr = pa_buffer_attr {
                             maxlength: u32::max_value(),
                             prebuf: u32::max_value(),
                             fragsize: u32::max_value(),
                             tlength: buffer_size_bytes * 2,
-                            minreq: buffer_size_bytes / 4
+                            minreq: buffer_size_bytes / 4,
                         };
                         let device_name = super::try_cstr_from(output_device as *const _);
                         let mut stream_flags = pulse::StreamFlags::AUTO_TIMING_UPDATE
@@ -396,16 +451,11 @@ impl<'ctx> PulseStream<'ctx> {
                         if device_name.is_some()
                             || stream_params
                                 .prefs()
-                                .contains(StreamPrefs::DISABLE_DEVICE_SWITCHING) {
-                          stream_flags |= pulse::StreamFlags::DONT_MOVE;
+                                .contains(StreamPrefs::DISABLE_DEVICE_SWITCHING)
+                        {
+                            stream_flags |= pulse::StreamFlags::DONT_MOVE;
                         }
-                        let _ = s.connect_playback(
-                            device_name,
-                            &battr,
-                            stream_flags,
-                            None,
-                            None,
-                        );
+                        let _ = s.connect_playback(device_name, &battr, stream_flags, None, None);
 
                         stm.output_stream = Some(s);
                     }
@@ -418,7 +468,7 @@ impl<'ctx> PulseStream<'ctx> {
             }
 
             // Set up input stream
-            if let Some(ref stream_params) = input_stream_params {
+            if let Some(stream_params) = input_stream_params {
                 match PulseStream::stream_init(context, stream_params, stream_name) {
                     Ok(s) => {
                         stm.input_sample_spec = *s.get_sample_spec();
@@ -426,13 +476,14 @@ impl<'ctx> PulseStream<'ctx> {
                         s.set_state_callback(check_error, stm.as_mut() as *mut _ as *mut _);
                         s.set_read_callback(read_data, stm.as_mut() as *mut _ as *mut _);
 
-                        let buffer_size_bytes = latency_frames * stm.input_sample_spec.frame_size() as u32;
+                        let buffer_size_bytes =
+                            latency_frames * stm.input_sample_spec.frame_size() as u32;
                         let battr = pa_buffer_attr {
                             maxlength: u32::max_value(),
                             prebuf: u32::max_value(),
                             fragsize: buffer_size_bytes,
                             tlength: buffer_size_bytes,
-                            minreq: buffer_size_bytes
+                            minreq: buffer_size_bytes,
                         };
                         let device_name = super::try_cstr_from(input_device as *const _);
                         let mut stream_flags = pulse::StreamFlags::AUTO_TIMING_UPDATE
@@ -442,14 +493,11 @@ impl<'ctx> PulseStream<'ctx> {
                         if device_name.is_some()
                             || stream_params
                                 .prefs()
-                                .contains(StreamPrefs::DISABLE_DEVICE_SWITCHING) {
+                                .contains(StreamPrefs::DISABLE_DEVICE_SWITCHING)
+                        {
                             stream_flags |= pulse::StreamFlags::DONT_MOVE;
                         }
-                        let _ = s.connect_record(
-                            device_name,
-                            &battr,
-                            stream_flags,
-                        );
+                        let _ = s.connect_record(device_name, &battr, stream_flags);
 
                         stm.input_stream = Some(s);
                     }
@@ -464,8 +512,12 @@ impl<'ctx> PulseStream<'ctx> {
             // Duplex, set up the ringbuffer
             if input_stream_params.is_some() && output_stream_params.is_some() {
                 // A bit more room in case of output underrun.
-                let buffer_size_bytes = 2 * latency_frames * stm.input_sample_spec.frame_size() as u32;
-                stm.input_buffer_manager = Some(BufferManager::new(buffer_size_bytes as usize, &stm.input_sample_spec))
+                let buffer_size_bytes =
+                    2 * latency_frames * stm.input_sample_spec.frame_size() as u32;
+                stm.input_buffer_manager = Some(BufferManager::new(
+                    buffer_size_bytes as usize,
+                    &stm.input_sample_spec,
+                ))
             }
 
             let r = if stm.wait_until_ready() {
@@ -522,9 +574,10 @@ impl<'ctx> PulseStream<'ctx> {
         self.context.mainloop.lock();
         {
             if let Some(stm) = self.output_stream.take() {
-                if !self.drain_timer.is_null() {
+                let drain_timer = self.drain_timer.load(Ordering::Acquire);
+                if !drain_timer.is_null() {
                     /* there's no pa_rttime_free, so use this instead. */
-                    self.context.mainloop.get_api().time_free(self.drain_timer);
+                    self.context.mainloop.get_api().time_free(drain_timer);
                 }
                 stm.clear_state_callback();
                 stm.clear_write_callback();
@@ -554,13 +607,13 @@ impl<'ctx> StreamOps for PulseStream<'ctx> {
         fn output_preroll(_: &pulse::MainloopApi, u: *mut c_void) {
             let stm = unsafe { &mut *(u as *mut PulseStream) };
             if !stm.shutdown {
-                let size = stm.output_stream
+                let size = stm
+                    .output_stream
                     .as_ref()
                     .map_or(0, |s| s.writable_size().unwrap_or(0));
                 stm.trigger_user_callback(std::ptr::null(), size);
             }
         }
-
         self.shutdown = false;
         self.cork(CorkState::uncork() | CorkState::notify());
 
@@ -584,18 +637,16 @@ impl<'ctx> StreamOps for PulseStream<'ctx> {
             self.context.mainloop.lock();
             self.shutdown = true;
             // If draining is taking place wait to finish
-            while !self.drain_timer.is_null() {
+            cubeb_log!("Stream stop: waiting for drain.");
+            while !self.drain_timer.load(Ordering::Acquire).is_null() {
                 self.context.mainloop.wait();
             }
+            cubeb_log!("Stream stop: waited for drain.");
             self.context.mainloop.unlock();
         }
         self.cork(CorkState::cork() | CorkState::notify());
 
         Ok(())
-    }
-
-    fn reset_default_device(&mut self) -> Result<()> {
-        Err(not_supported())
     }
 
     fn position(&mut self) -> Result<u64> {
@@ -653,9 +704,7 @@ impl<'ctx> StreamOps for PulseStream<'ctx> {
                 }
                 // Input stream can be negative only if it is attached to a
                 // monitor source device
-                Ok(StreamLatency::Negative(_)) => {
-                    return Ok(0);
-                }
+                Ok(StreamLatency::Negative(_)) => Ok(0),
                 Err(_) => Err(Error::error()),
             },
         }
@@ -705,6 +754,20 @@ impl<'ctx> StreamOps for PulseStream<'ctx> {
                 } else {
                     Err(Error::error())
                 }
+            }
+        }
+    }
+
+    fn set_name(&mut self, name: &CStr) -> Result<()> {
+        match self.output_stream {
+            None => Err(Error::error()),
+            Some(ref stm) => {
+                self.context.mainloop.lock();
+                if let Ok(o) = stm.set_name(name, stream_success, self as *const _ as *mut _) {
+                    self.context.operation_wait(stm, &o);
+                }
+                self.context.mainloop.unlock();
+                Ok(())
             }
         }
     }
@@ -788,15 +851,23 @@ impl<'ctx> PulseStream<'ctx> {
         };
 
         let cm: Option<pa_channel_map> = match stream_params.layout() {
-            ChannelLayout::UNDEFINED =>
+            ChannelLayout::UNDEFINED => {
                 if stream_params.channels() <= 8
-                  && pulse::ChannelMap::init_auto(stream_params.channels(), PA_CHANNEL_MAP_DEFAULT).is_none() {
+                    && pulse::ChannelMap::init_auto(
+                        stream_params.channels(),
+                        PA_CHANNEL_MAP_DEFAULT,
+                    )
+                    .is_none()
+                {
                     cubeb_log!("Layout undefined and PulseAudio's default layout has not been configured, guess one.");
-                    Some(layout_to_channel_map(default_layout_for_channels(stream_params.channels())))
+                    Some(layout_to_channel_map(default_layout_for_channels(
+                        stream_params.channels(),
+                    )))
                 } else {
                     cubeb_log!("Layout undefined, PulseAudio will use its default.");
                     None
-                },
+                }
+            }
             _ => Some(layout_to_channel_map(stream_params.layout())),
         };
 
@@ -908,7 +979,6 @@ impl<'ctx> PulseStream<'ctx> {
         true
     }
 
-
     #[cfg_attr(feature = "cargo-clippy", allow(cyclomatic_complexity))]
     fn trigger_user_callback(&mut self, input_data: *const c_void, nbytes: usize) {
         fn drained_cb(
@@ -917,12 +987,14 @@ impl<'ctx> PulseStream<'ctx> {
             _tv: &pulse::TimeVal,
             u: *mut c_void,
         ) {
+            cubeb_logv!("Drain finished callback.");
             let stm = unsafe { &mut *(u as *mut PulseStream) };
-            debug_assert_eq!(stm.drain_timer, e);
+            let drain_timer = stm.drain_timer.load(Ordering::Acquire);
+            debug_assert_eq!(drain_timer, e);
             stm.state_change_callback(ffi::CUBEB_STATE_DRAINED);
             /* there's no pa_rttime_free, so use this instead. */
-            a.time_free(stm.drain_timer);
-            stm.drain_timer = ptr::null_mut();
+            a.time_free(drain_timer);
+            stm.drain_timer.store(ptr::null_mut(), Ordering::Release);
             stm.context.mainloop.signal();
         }
 
@@ -946,16 +1018,15 @@ impl<'ctx> PulseStream<'ctx> {
                             size,
                             read_offset
                         );
-                        let read_ptr =
-                            unsafe { (input_data as *const u8).offset(read_offset as isize) };
-                        let got = unsafe {
+                        let read_ptr = unsafe { (input_data as *const u8).add(read_offset) };
+                        let mut got = unsafe {
                             self.data_callback.unwrap()(
                                 self as *const _ as *mut _,
                                 self.user_ptr,
                                 read_ptr as *const _ as *mut _,
                                 buffer,
                                 (size / frame_size) as c_long,
-                            )
+                            ) as i64
                         };
                         if got < 0 {
                             let _ = stm.cancel_write();
@@ -988,15 +1059,41 @@ impl<'ctx> PulseStream<'ctx> {
                             }
                         }
 
+                        let should_drain = (got as usize) < size / frame_size;
+
+                        if should_drain && self.output_frame_count.load(Ordering::SeqCst) == 0 {
+                            // Draining during preroll, ensure `prebuf` frames are written so
+                            // the stream starts. If not, pad with a bit of silence.
+                            let prebuf_size_bytes = stm.get_buffer_attr().prebuf as usize;
+                            let got_bytes = got as usize * frame_size;
+                            if prebuf_size_bytes > got_bytes {
+                                let padding_bytes = prebuf_size_bytes - got_bytes;
+                                if padding_bytes + got_bytes <= size {
+                                    // A slice that starts after the data provided by the callback,
+                                    // with just enough room to provide a final buffer big enough.
+                                    let padding_buf: &mut [u8] = unsafe {
+                                        slice::from_raw_parts_mut::<u8>(
+                                            buffer.add(got_bytes) as *mut u8,
+                                            padding_bytes,
+                                        )
+                                    };
+                                    padding_buf.fill(0);
+                                    got += (padding_bytes / frame_size) as i64;
+                                }
+                            } else {
+                                cubeb_log!("Not enough room to pad up to prebuf when prebuffering.")
+                            }
+                        }
+
                         let r = stm.write(
                             buffer,
                             got as usize * frame_size,
                             0,
                             pulse::SeekMode::Relative,
                         );
-                        debug_assert!(r.is_ok());
 
-                        if (got as usize) < size / frame_size {
+                        if should_drain {
+                            cubeb_logv!("Draining {} < {}", got, size / frame_size);
                             let latency = match stm.get_latency() {
                                 Ok(StreamLatency::Positive(l)) => l,
                                 Ok(_) => {
@@ -1014,18 +1111,23 @@ impl<'ctx> PulseStream<'ctx> {
 
                             /* pa_stream_drain is useless, see PA bug# 866. this is a workaround. */
                             /* arbitrary safety margin: double the current latency. */
-                            debug_assert!(self.drain_timer.is_null());
+                            debug_assert!(self.drain_timer.load(Ordering::Acquire).is_null());
                             let stream_ptr = self as *const _ as *mut _;
                             if let Some(ref context) = self.context.context {
-                                self.drain_timer = context.rttime_new(
-                                    pulse::rtclock_now() + 2 * latency,
-                                    drained_cb,
-                                    stream_ptr,
+                                self.drain_timer.store(
+                                    context.rttime_new(
+                                        pulse::rtclock_now() + 2 * latency,
+                                        drained_cb,
+                                        stream_ptr,
+                                    ),
+                                    Ordering::Release,
                                 );
                             }
                             self.shutdown = true;
                             return;
                         }
+
+                        debug_assert!(r.is_ok());
 
                         towrite -= size;
                     }
@@ -1062,9 +1164,9 @@ fn not_supported() -> Error {
 
 #[cfg(all(test, not(feature = "pulse-dlopen")))]
 mod test {
+    use super::layout_to_channel_map;
     use cubeb_backend::ChannelLayout;
     use pulse_ffi::*;
-    use super::layout_to_channel_map;
 
     macro_rules! channel_tests {
         {$($name: ident, $layout: ident => [ $($channels: ident),* ]),+} => {

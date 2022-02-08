@@ -24,7 +24,7 @@ function open_subdialog_and_test_generic_start_state(
     async function(args) {
       let rv = { acceptCount: 0 };
       let win = content.window;
-      content.gSubDialog.open(args.url, null, rv);
+      content.gSubDialog.open(args.url, undefined, rv);
       let subdialog = content.gSubDialog._topDialog;
 
       info("waiting for subdialog DOMFrameContentLoaded");
@@ -121,20 +121,30 @@ async function close_subdialog_and_test_generic_end_state(
       let win = content.window;
       let subdialog = win.gSubDialog._topDialog;
       let frame = subdialog._frame;
+
+      let frameWinUnload = ContentTaskUtils.waitForEvent(
+        frame.contentWindow,
+        "unload",
+        true
+      );
+
+      let actualAcceptCount;
       info("waiting for dialogclosing");
+      info("URI " + frame.currentURI?.spec);
       let closingEvent = await ContentTaskUtils.waitForEvent(
         frame.contentWindow,
-        "dialogclosing"
+        "dialogclosing",
+        true,
+        () => {
+          actualAcceptCount = frame.contentWindow?.arguments[0].acceptCount;
+          return true;
+        }
       );
-      let contentClosingButton = closingEvent.detail.button;
-      let actualAcceptCount =
-        frame.contentWindow.arguments &&
-        frame.contentWindow.arguments[0].acceptCount;
 
-      info("waiting for about:blank load");
-      await ContentTaskUtils.waitForEvent(frame, "load", false, () => {
-        return frame.contentWindow.location.href == "about:blank";
-      });
+      info("Waiting for subdialog unload");
+      await frameWinUnload;
+
+      let contentClosingButton = closingEvent.detail.button;
 
       Assert.notEqual(
         win.getComputedStyle(subdialog._overlay).visibility,
@@ -145,11 +155,6 @@ async function close_subdialog_and_test_generic_end_state(
         frame.getAttribute("style"),
         "",
         "inline styles should be cleared"
-      );
-      Assert.equal(
-        frame.contentWindow.location.href.toString(),
-        "about:blank",
-        "sub-dialog should be unloaded"
       );
       Assert.equal(
         contentClosingButton,
@@ -350,7 +355,7 @@ add_task(async function window_close_on_dialog() {
   await close_subdialog_and_test_generic_end_state(
     tab.linkedBrowser,
     function() {
-      content.window.gSubDialog._topDialog._frame.contentWindow.window.close();
+      content.window.gSubDialog._topDialog._frame.contentWindow.close();
     },
     null,
     0
@@ -409,35 +414,6 @@ add_task(async function background_click_should_close_dialog() {
   );
 });
 
-add_task(async function back_navigation_on_subdialog_should_close_dialog() {
-  await open_subdialog_and_test_generic_start_state(tab.linkedBrowser);
-
-  info("canceling the dialog");
-  await close_subdialog_and_test_generic_end_state(
-    tab.linkedBrowser,
-    function() {
-      content.window.gSubDialog._topDialog._frame.goBack();
-    },
-    null,
-    undefined
-  );
-});
-
-add_task(async function back_navigation_on_browser_tab_should_close_dialog() {
-  await open_subdialog_and_test_generic_start_state(tab.linkedBrowser);
-
-  info("canceling the dialog");
-  await close_subdialog_and_test_generic_end_state(
-    tab.linkedBrowser,
-    function() {
-      tab.linkedBrowser.goBack();
-    },
-    null,
-    undefined,
-    { runClosingFnOutsideOfContentTask: true }
-  );
-});
-
 add_task(async function escape_should_close_dialog() {
   await open_subdialog_and_test_generic_start_state(tab.linkedBrowser);
 
@@ -457,15 +433,27 @@ add_task(async function correct_width_and_height_should_be_used_for_dialog() {
   await open_subdialog_and_test_generic_start_state(tab.linkedBrowser);
 
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
-    let frameStyle = content.window.gSubDialog._topDialog._frame.style;
-    Assert.equal(
-      frameStyle.width,
-      "32em",
+    function fuzzyEqual(value, expectedValue, fuzz, msg) {
+      Assert.greaterOrEqual(expectedValue + fuzz, value, msg);
+      Assert.lessOrEqual(expectedValue - fuzz, value, msg);
+    }
+    let frameStyle = content.getComputedStyle(
+      content.gSubDialog._topDialog._frame
+    );
+    let fontSize = parseFloat(frameStyle.fontSize, 10);
+    let height = parseFloat(frameStyle.height, 10);
+    let width = parseFloat(frameStyle.width, 10);
+
+    fuzzyEqual(
+      width,
+      fontSize * 32,
+      2,
       "Width should be set on the frame from the dialog"
     );
-    Assert.equal(
-      frameStyle.height,
-      "5em",
+    fuzzyEqual(
+      height,
+      fontSize * 5,
+      2,
       "Height should be set on the frame from the dialog"
     );
   });
@@ -473,7 +461,7 @@ add_task(async function correct_width_and_height_should_be_used_for_dialog() {
   await close_subdialog_and_test_generic_end_state(
     tab.linkedBrowser,
     function() {
-      content.window.gSubDialog._topDialog._frame.contentWindow.window.close();
+      content.window.gSubDialog._topDialog._frame.contentWindow.close();
     },
     null,
     0
@@ -508,11 +496,21 @@ add_task(
     await SpecialPowers.spawn(tab.linkedBrowser, [oldHeight], async function(
       contentOldHeight
     ) {
+      function fuzzyEqual(value, expectedValue, fuzz, msg) {
+        Assert.greaterOrEqual(expectedValue + fuzz, value, msg);
+        Assert.lessOrEqual(expectedValue - fuzz, value, msg);
+      }
       let frame = content.window.gSubDialog._topDialog._frame;
+      let frameStyle = content.getComputedStyle(frame);
+      let fontSize = parseFloat(frameStyle.fontSize, 10);
+      let height = parseFloat(frameStyle.height, 10);
+      let width = parseFloat(frameStyle.width, 10);
+
       let docEl = frame.contentDocument.documentElement;
-      Assert.equal(
-        frame.style.width,
-        "32em",
+      fuzzyEqual(
+        width,
+        32 * fontSize,
+        2,
         "Width should be set on the frame from the dialog"
       );
       Assert.ok(
@@ -523,9 +521,10 @@ add_task(
           docEl.scrollHeight +
           ")."
       );
-      Assert.equal(
-        frame.style.height,
-        docEl.scrollHeight + "px",
+      fuzzyEqual(
+        height,
+        docEl.scrollHeight,
+        2,
         "Height on the frame should be higher now. " +
           "This test may fail on certain screen resoluition. " +
           "See bug 1420576 and bug 1205717."
@@ -553,14 +552,24 @@ add_task(async function dialog_too_tall_should_get_reduced_in_height() {
   );
 
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    function fuzzyEqual(value, expectedValue, fuzz, msg) {
+      Assert.greaterOrEqual(expectedValue + fuzz, value, msg);
+      Assert.lessOrEqual(expectedValue - fuzz, value, msg);
+    }
     let frame = content.window.gSubDialog._topDialog._frame;
-    Assert.equal(
-      frame.style.width,
-      "32em",
+    let frameStyle = content.getComputedStyle(frame);
+    let fontSize = parseFloat(frameStyle.fontSize, 10);
+    let height = parseFloat(frameStyle.height, 10);
+    let width = parseFloat(frameStyle.width, 10);
+    fuzzyEqual(
+      width,
+      32 * fontSize,
+      2,
       "Width should be set on the frame from the dialog"
     );
-    Assert.ok(
-      parseInt(frame.style.height, 10) < content.window.innerHeight,
+    Assert.less(
+      height,
+      content.window.innerHeight,
       "Height on the frame should be smaller than window's innerHeight"
     );
   });
@@ -594,10 +603,12 @@ add_task(
           frame.style.width +
           ") should be set to a px value of the scrollWidth from the dialog"
       );
-      Assert.ok(
-        frame.style.height.endsWith("px"),
+      let cs = content.getComputedStyle(frame);
+      Assert.stringMatches(
+        cs.getPropertyValue("--inner-height"),
+        /px$/,
         "Height (" +
-          frame.style.height +
+          cs.getPropertyValue("--inner-height") +
           ") should be set to a px value of the scrollHeight from the dialog"
       );
     });

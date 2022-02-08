@@ -18,9 +18,9 @@ class nsITextToSubURI;
 
 class nsDirIndexParser : public nsIDirIndexParser {
  private:
-  virtual ~nsDirIndexParser();
+  virtual ~nsDirIndexParser() = default;
 
-  nsDirIndexParser();
+  nsDirIndexParser() = default;
   nsresult Init();
 
  public:
@@ -53,12 +53,12 @@ class nsDirIndexParser : public nsIDirIndexParser {
   nsCString mEncoding;
   nsCString mComment;
   nsCString mBuf;
-  int32_t mLineStart;
-  bool mHasDescription;
-  int mFormat[8];
+  int32_t mLineStart{0};
+  bool mHasDescription{false};
+  int mFormat[8]{-1};
 
-  nsresult ProcessData(nsIRequest* aRequest, nsISupports* aCtxt);
-  void ParseFormat(const char* buf);
+  nsresult ProcessData(nsIRequest* aRequest);
+  void ParseFormat(const char* aFormatStr);
   void ParseData(nsIDirIndex* aIdx, char* aDataStr, int32_t lineLen);
 
   struct Field {
@@ -67,9 +67,6 @@ class nsDirIndexParser : public nsIDirIndexParser {
   };
 
   static Field gFieldTable[];
-
-  static nsrefcnt gRefCntParser;
-  static nsITextToSubURI* gTextToSubURI;
 };
 
 #endif

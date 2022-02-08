@@ -6,6 +6,8 @@
 
 #include "nsServerTiming.h"
 
+#include "nsHttp.h"
+
 NS_IMPL_ISUPPORTS(nsServerTiming, nsIServerTiming)
 
 NS_IMETHODIMP
@@ -87,7 +89,7 @@ void ServerTimingParser::Parse() {
         if (!currentValue.IsEmpty()) {
           timingHeader->SetDescription(currentValue);
         } else {
-          timingHeader->SetDescription(EmptyCString());
+          timingHeader->SetDescription(""_ns);
         }
         foundDescription = true;
       }

@@ -32,6 +32,7 @@ Services.scriptloader.loadSubScript(
 var {
   BrowserConsoleManager,
 } = require("devtools/client/webconsole/browser-console-manager");
+
 var WCUL10n = require("devtools/client/webconsole/utils/l10n");
 const DOCS_GA_PARAMS = `?${new URLSearchParams({
   utm_source: "mozilla",
@@ -47,6 +48,10 @@ const GA_PARAMS = `?${new URLSearchParams({
 const wcActions = require("devtools/client/webconsole/actions/index");
 
 registerCleanupFunction(async function() {
+  // Reset all cookies, tests loading sjs_slow-response-test-server.sjs will
+  // set a foo cookie which might have side effects on other tests.
+  Services.cookies.removeAll();
+
   Services.prefs.clearUserPref("devtools.webconsole.ui.filterbar");
 
   // Reset all filter prefs between tests. First flushPrefEnv in case one of the
@@ -55,11 +60,6 @@ registerCleanupFunction(async function() {
   Services.prefs.getChildList("devtools.webconsole.filter").forEach(pref => {
     Services.prefs.clearUserPref(pref);
   });
-  const browserConsole = BrowserConsoleManager.getBrowserConsole();
-  if (browserConsole) {
-    await clearOutput(browserConsole);
-    await BrowserConsoleManager.toggleBrowserConsole();
-  }
 });
 
 /**
@@ -307,6 +307,7 @@ function keyboardExecuteAndWaitForMessage(
   matchingText,
   selector = ".message"
 ) {
+  hud.jsterm.focus();
   setInputValue(hud, input);
   const onMessage = waitForMessage(hud, matchingText, selector);
   if (isEditorModeEnabled(hud)) {
@@ -317,35 +318,6 @@ function keyboardExecuteAndWaitForMessage(
     EventUtils.synthesizeKey("VK_RETURN");
   }
   return onMessage;
-}
-
-/**
- * Wait for a predicate to return a result.
- *
- * @param function condition
- *        Invoked once in a while until it returns a truthy value. This should be an
- *        idempotent function, since we have to run it a second time after it returns
- *        true in order to return the value.
- * @param string message [optional]
- *        A message to output if the condition fails.
- * @param number interval [optional]
- *        How often the predicate is invoked, in milliseconds.
- * @return object
- *         A promise that is resolved with the result of the condition.
- */
-async function waitFor(
-  condition,
-  message = "waitFor",
-  interval = 10,
-  maxTries = 500
-) {
-  await BrowserTestUtils.waitForCondition(
-    condition,
-    message,
-    interval,
-    maxTries
-  );
-  return condition();
 }
 
 /**
@@ -380,6 +352,35 @@ function findMessages(hud, text, selector = ".message") {
     el.textContent.includes(text)
   );
   return elements;
+}
+/**
+ * Wait for a message to be logged and ensure it is logged only once.
+ *
+ * @param object hud
+ *        The web console.
+ * @param string text
+ *        A substring that can be found in the message.
+ * @param selector [optional]
+ *        The selector to use in finding the message.
+ * @return {Node} the node corresponding the found message
+ */
+async function checkUniqueMessageExists(hud, msg, selector) {
+  info(`Checking "${msg}" was logged`);
+  let messages;
+  try {
+    messages = await waitFor(() => {
+      const msgs = findMessages(hud, msg, selector);
+      return msgs.length > 0 ? msgs : null;
+    });
+  } catch (e) {
+    ok(false, `Message "${msg}" wasn't logged\n`);
+    return;
+  }
+
+  is(messages.length, 1, `"${msg}" was logged once`);
+  const [messageEl] = messages;
+  const repeatNode = messageEl.querySelector(".message-repeats");
+  is(repeatNode, null, `"${msg}" wasn't repeated`);
 }
 
 /**
@@ -818,25 +819,26 @@ async function openDebugger(options = {}) {
     options.tab = gBrowser.selectedTab;
   }
 
-  const target = await TargetFactory.forTab(options.tab);
-  let toolbox = gDevTools.getToolbox(target);
+  let toolbox = await gDevTools.getToolboxForTab(options.tab);
   const dbgPanelAlreadyOpen = toolbox && toolbox.getPanel("jsdebugger");
   if (dbgPanelAlreadyOpen) {
     await toolbox.selectTool("jsdebugger");
 
     return {
-      target,
+      target: toolbox.target,
       toolbox,
       panel: toolbox.getCurrentPanel(),
     };
   }
 
-  toolbox = await gDevTools.showToolbox(target, "jsdebugger");
+  toolbox = await gDevTools.showToolboxForTab(options.tab, {
+    toolId: "jsdebugger",
+  });
   const panel = toolbox.getCurrentPanel();
 
   await toolbox.threadFront.getSources();
 
-  return { target, toolbox, panel };
+  return { target: toolbox.target, toolbox, panel };
 }
 
 async function openInspector(options = {}) {
@@ -844,8 +846,9 @@ async function openInspector(options = {}) {
     options.tab = gBrowser.selectedTab;
   }
 
-  const target = await TargetFactory.forTab(options.tab);
-  const toolbox = await gDevTools.showToolbox(target, "inspector");
+  const toolbox = await gDevTools.showToolboxForTab(options.tab, {
+    toolId: "inspector",
+  });
 
   return toolbox.getCurrentPanel();
 }
@@ -860,10 +863,10 @@ async function openInspector(options = {}) {
  *         A promise that is resolved with the netmonitor panel once the netmonitor is open.
  */
 async function openNetMonitor(tab) {
-  const target = await TargetFactory.forTab(tab || gBrowser.selectedTab);
-  let toolbox = await gDevTools.getToolbox(target);
+  tab = tab || gBrowser.selectedTab;
+  let toolbox = await gDevTools.getToolboxForTab(tab);
   if (!toolbox) {
-    toolbox = await gDevTools.showToolbox(target);
+    toolbox = await gDevTools.showToolboxForTab(tab);
   }
   await toolbox.selectTool("netmonitor");
   return toolbox.getCurrentPanel();
@@ -879,8 +882,10 @@ async function openNetMonitor(tab) {
  *         A promise that is resolved with the console hud once the web console is open.
  */
 async function openConsole(tab) {
-  const target = await TargetFactory.forTab(tab || gBrowser.selectedTab);
-  const toolbox = await gDevTools.showToolbox(target, "webconsole");
+  tab = tab || gBrowser.selectedTab;
+  const toolbox = await gDevTools.showToolboxForTab(tab, {
+    toolId: "webconsole",
+  });
   return toolbox.getCurrentPanel().hud;
 }
 
@@ -894,8 +899,7 @@ async function openConsole(tab) {
  *         A promise that is resolved once the web console is closed.
  */
 async function closeConsole(tab = gBrowser.selectedTab) {
-  const target = await TargetFactory.forTab(tab);
-  const toolbox = gDevTools.getToolbox(target);
+  const toolbox = await gDevTools.getToolboxForTab(tab);
   if (toolbox) {
     await toolbox.destroy();
   }
@@ -995,7 +999,9 @@ async function openMessageInNetmonitor(toolbox, hud, url, urlInConsole) {
   // By default urlInConsole should be the same as the complete url.
   urlInConsole = urlInConsole || url;
 
-  const message = await waitFor(() => findMessage(hud, urlInConsole));
+  const message = await waitFor(() =>
+    findMessage(hud, urlInConsole, ".network")
+  );
 
   const onNetmonitorSelected = toolbox.once(
     "netmonitor-selected",
@@ -1009,7 +1015,7 @@ async function openMessageInNetmonitor(toolbox, hud, url, urlInConsole) {
     "#console-menu-open-in-network-panel"
   );
   ok(openInNetMenuItem, "open in network panel item is enabled");
-  openInNetMenuItem.click();
+  menuPopup.activateItem(openInNetMenuItem);
 
   const { panelWin } = await onNetmonitorSelected;
   ok(
@@ -1030,7 +1036,7 @@ async function openMessageInNetmonitor(toolbox, hud, url, urlInConsole) {
   await waitFor(() => {
     const selected = getSelectedRequest(store.getState());
     return selected && selected.url === url;
-  }, "network entry for the URL wasn't found");
+  }, `network entry for the URL "${url}" wasn't found`);
 
   ok(true, "The attached url is correct.");
 
@@ -1268,11 +1274,9 @@ async function waitForNoEagerEvaluationResult(hud) {
  * Selects a node in the inspector.
  *
  * @param {Object} toolbox
- * @param {Object} testActor: A test actor registered on the target. Needed to click on
- *                            the content element.
  * @param {String} selector: The selector for the node we want to select.
  */
-async function selectNodeWithPicker(toolbox, testActor, selector) {
+async function selectNodeWithPicker(toolbox, selector) {
   const inspector = toolbox.getPanel("inspector");
 
   const onPickerStarted = toolbox.nodePicker.once("picker-started");
@@ -1285,11 +1289,7 @@ async function selectNodeWithPicker(toolbox, testActor, selector) {
   const onPickerStopped = toolbox.nodePicker.once("picker-stopped");
   const onInspectorUpdated = inspector.once("inspector-updated");
 
-  testActor.synthesizeMouse({
-    selector,
-    center: true,
-    options: {},
-  });
+  await safeSynthesizeMouseEventAtCenterInContentPage(selector);
 
   await onPickerStopped;
   await onInspectorUpdated;
@@ -1472,7 +1472,7 @@ function isConfirmDialogOpened(toolbox) {
 }
 
 async function selectFrame(dbg, frame) {
-  const onScopes = waitForDispatch(dbg, "ADD_SCOPES");
+  const onScopes = waitForDispatch(dbg.store, "ADD_SCOPES");
   await dbg.actions.selectFrame(dbg.selectors.getThreadContext(), frame);
   await onScopes;
 }
@@ -1734,9 +1734,14 @@ function toggleLayout(hud) {
  * Otherwise test will be shutdown too early and cause failure.
  */
 async function waitForLazyRequests(toolbox) {
-  const { wrapper } = toolbox.getCurrentPanel().hud.ui;
+  const ui = toolbox.getCurrentPanel().hud.ui;
   return waitUntil(() => {
-    return !wrapper.networkDataProvider.lazyRequestData.size;
+    return (
+      !ui.networkDataProvider.lazyRequestData.size &&
+      // Make sure that batched request updates are all complete
+      // as they trigger late lazy data requests.
+      !ui.wrapper.queuedRequestUpdates.length
+    );
   });
 }
 
@@ -1772,7 +1777,7 @@ function getContextSelectorItems(hud) {
   const list = doc.getElementById(
     "webconsole-console-evaluation-context-selector-menu-list"
   );
-  return Array.from(list.querySelectorAll("li.menuitem button"));
+  return Array.from(list.querySelectorAll("li.menuitem button, hr"));
 }
 
 /**
@@ -1830,7 +1835,7 @@ function checkContextSelectorMenu(hud, expected) {
 function selectTargetInContextSelector(hud, targetLabel) {
   const items = getContextSelectorItems(hud);
   const itemToSelect = items.find(
-    item => item.querySelector(".label").innerText === targetLabel
+    item => item.querySelector(".label")?.innerText === targetLabel
   );
   if (!itemToSelect) {
     ok(false, `Couldn't find target with "${targetLabel}" label`);

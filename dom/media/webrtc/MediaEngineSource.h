@@ -28,7 +28,7 @@ class PrincipalInfo;
 
 class MediaEnginePhotoCallback;
 class MediaEnginePrefs;
-class SourceMediaTrack;
+class MediaTrack;
 
 /**
  * Callback interface for TakePhoto(). Either PhotoComplete() or PhotoError()
@@ -113,12 +113,12 @@ class MediaEngineSourceInterface {
                             const char** aOutBadConstraint) = 0;
 
   /**
-   * Called by MediaEngine when a SourceMediaTrack has been provided for the
-   * source to feed data to.
+   * Called by MediaEngine when a MediaTrack has been provided for the source to
+   * feed data to.
    *
    * This must be called before Start.
    */
-  virtual void SetTrack(const RefPtr<SourceMediaTrack>& aTrack,
+  virtual void SetTrack(const RefPtr<MediaTrack>& aTrack,
                         const PrincipalHandle& aPrincipal) = 0;
 
   /**
@@ -177,12 +177,6 @@ class MediaEngineSourceInterface {
   virtual nsresult Deallocate() = 0;
 
   /**
-   * Called by MediaEngine when it knows this MediaEngineSource won't be used
-   * anymore. Use it to clean up anything that needs to be cleaned up.
-   */
-  virtual void Shutdown() = 0;
-
-  /**
    * If implementation of MediaEngineSource supports TakePhoto(), the picture
    * should be returned via aCallback object. Otherwise, it returns
    * NS_ERROR_NOT_IMPLEMENTED.
@@ -234,6 +228,12 @@ class MediaEngineSource : public MediaEngineSourceInterface {
    */
   static bool IsVideo(dom::MediaSourceEnum aSource);
 
+  /**
+   * Returns true if the given source type is for audio, false otherwise.
+   * Only call with real types.
+   */
+  static bool IsAudio(dom::MediaSourceEnum aSource);
+
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MediaEngineSource)
   NS_DECL_OWNINGEVENTTARGET
 
@@ -249,9 +249,6 @@ class MediaEngineSource : public MediaEngineSourceInterface {
 
   // Returns NS_ERROR_NOT_AVAILABLE by default.
   nsresult FocusOnSelectedSource() override;
-
-  // Shutdown does nothing by default.
-  void Shutdown() override;
 
   // TakePhoto returns NS_ERROR_NOT_IMPLEMENTED by default,
   // to tell the caller to fallback to other methods.

@@ -34,7 +34,6 @@ ChromeUtils.defineModuleGetter(
 
 async function createDownloadedFile(pathname, contents) {
   info("createDownloadedFile: " + pathname);
-  let encoder = new TextEncoder();
   let file = new FileUtils.File(pathname);
   if (file.exists()) {
     info(`File at ${pathname} already exists`);
@@ -46,7 +45,7 @@ async function createDownloadedFile(pathname, contents) {
     }
   }
   if (contents) {
-    await OS.File.writeAtomic(pathname, encoder.encode(contents));
+    await IOUtils.writeUTF8(pathname, contents);
     ok(file.exists(), `Created ${pathname}`);
   }
   // No post-test cleanup necessary; tmp downloads directory is already removed after each test
@@ -56,21 +55,23 @@ async function createDownloadedFile(pathname, contents) {
 let gDownloadDir;
 
 async function setDownloadDir() {
-  let tmpDir = Services.dirsvc.get("TmpD", Ci.nsIFile);
-  tmpDir.append("testsavedir");
-  if (!tmpDir.exists()) {
-    tmpDir.create(Ci.nsIFile.DIRECTORY_TYPE, 0o755);
-    registerCleanupFunction(function() {
-      try {
-        tmpDir.remove(true);
-      } catch (e) {
-        // On Windows debug build this may fail.
-      }
-    });
-  }
+  let tmpDir = Services.dirsvc.get("TmpD", Ci.nsIFile).path;
+  tmpDir = PathUtils.join(
+    tmpDir,
+    "testsavedir" + Math.floor(Math.random() * 2 ** 32)
+  );
+  // Create this dir if it doesn't exist (ignores existing dirs)
+  await IOUtils.makeDirectory(tmpDir);
+  registerCleanupFunction(async function() {
+    try {
+      await IOUtils.remove(tmpDir, { recursive: true });
+    } catch (e) {
+      Cu.reportError(e);
+    }
+  });
   Services.prefs.setIntPref("browser.download.folderList", 2);
-  Services.prefs.setCharPref("browser.download.dir", tmpDir.path);
-  return tmpDir.path;
+  Services.prefs.setCharPref("browser.download.dir", tmpDir);
+  return tmpDir;
 }
 
 /**

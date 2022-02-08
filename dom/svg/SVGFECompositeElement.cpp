@@ -6,6 +6,8 @@
 
 #include "mozilla/dom/SVGFECompositeElement.h"
 #include "mozilla/dom/SVGFECompositeElementBinding.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/BindContext.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(FEComposite)
 
@@ -32,6 +34,7 @@ SVGEnumMapping SVGFECompositeElement::sOperatorMap[] = {
     {nsGkAtoms::atop, SVG_FECOMPOSITE_OPERATOR_ATOP},
     {nsGkAtoms::xor_, SVG_FECOMPOSITE_OPERATOR_XOR},
     {nsGkAtoms::arithmetic, SVG_FECOMPOSITE_OPERATOR_ARITHMETIC},
+    {nsGkAtoms::lighter, SVG_FECOMPOSITE_OPERATOR_LIGHTER},
     {nullptr, 0}};
 
 SVGElement::EnumInfo SVGFECompositeElement::sEnumInfo[1] = {
@@ -114,6 +117,15 @@ void SVGFECompositeElement::GetSourceImageNames(
     nsTArray<SVGStringInfo>& aSources) {
   aSources.AppendElement(SVGStringInfo(&mStringAttributes[IN1], this));
   aSources.AppendElement(SVGStringInfo(&mStringAttributes[IN2], this));
+}
+
+nsresult SVGFECompositeElement::BindToTree(BindContext& aCtx,
+                                           nsINode& aParent) {
+  if (aCtx.InComposedDoc()) {
+    aCtx.OwnerDoc().SetUseCounter(eUseCounter_custom_feComposite);
+  }
+
+  return SVGFE::BindToTree(aCtx, aParent);
 }
 
 //----------------------------------------------------------------------

@@ -18,8 +18,7 @@
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(SharedList)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 HTMLSharedListElement::~HTMLSharedListElement() = default;
 
@@ -102,7 +101,7 @@ void HTMLSharedListElement::MapOLAttributesIntoRule(
       }
     }
     if (haveStart || haveReversed) {
-      aDecls.SetCounterResetListItem(start);
+      aDecls.SetCounterResetListItem(start, haveReversed);
     }
   }
 
@@ -164,5 +163,4 @@ JSObject* HTMLSharedListElement::WrapNode(JSContext* aCx,
   return HTMLUListElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

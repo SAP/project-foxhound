@@ -10,7 +10,7 @@
 const { Curl, CurlUtils } = require("devtools/client/shared/curl");
 
 add_task(async function() {
-  const { tab, monitor } = await initNetMonitor(CURL_UTILS_URL, {
+  const { tab, monitor } = await initNetMonitor(HTTPS_CURL_UTILS_URL, {
     requestCount: 1,
   });
   info("Starting test... ");
@@ -25,11 +25,13 @@ add_task(async function() {
   store.dispatch(Actions.batchEnable(false));
 
   const wait = waitForNetworkEvents(monitor, 6);
-  await SpecialPowers.spawn(tab.linkedBrowser, [SIMPLE_SJS], async function(
-    url
-  ) {
-    content.wrappedJSObject.performRequests(url);
-  });
+  await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [HTTPS_SIMPLE_SJS],
+    async function(url) {
+      content.wrappedJSObject.performRequests(url);
+    }
+  );
   await wait;
 
   const requests = {
@@ -326,6 +328,20 @@ function testEscapeStringWin() {
     CurlUtils.escapeStringWin(newLines),
     '"line1"^\u000d\u000A\u000d\u000A"line2"^\u000d\u000A\u000d\u000A"line3"',
     "Newlines should be escaped."
+  );
+
+  const dollarSignCommand = "$(calc.exe)";
+  is(
+    CurlUtils.escapeStringWin(dollarSignCommand),
+    '"`$(calc.exe)"',
+    "Dollar sign should be escaped."
+  );
+
+  const tickSignCommand = "`$(calc.exe)";
+  is(
+    CurlUtils.escapeStringWin(tickSignCommand),
+    '"```$(calc.exe)"',
+    "Both the tick and dollar signs should be escaped."
   );
 }
 

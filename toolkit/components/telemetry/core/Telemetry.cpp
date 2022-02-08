@@ -24,6 +24,7 @@
 #include "jsfriendapi.h"
 #include "js/Array.h"  // JS::NewArrayObject
 #include "js/GCAPI.h"
+#include "js/PropertyAndElement.h"  // JS_DefineElement, JS_DefineProperty
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/Atomics.h"
@@ -42,7 +43,6 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/PoisonIOInterposer.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/ProcessedStack.h"
 #include "mozilla/StartupTimeline.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Unused.h"
@@ -54,7 +54,7 @@
 #include "nsClassHashtable.h"
 #include "nsCOMArray.h"
 #include "nsCOMPtr.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsHashKeys.h"
 #include "nsIDirectoryEnumerator.h"
 #include "nsDirectoryServiceDefs.h"
@@ -74,29 +74,21 @@
 #include "nsReadableUtils.h"
 #include "nsString.h"
 #include "nsTHashtable.h"
-#include "nsThreadManager.h"
 #include "nsThreadUtils.h"
 #if defined(XP_WIN)
 #  include "nsUnicharUtils.h"
 #endif
 #include "nsVersionComparator.h"
 #include "nsXPCOMCIDInternal.h"
-#include "nsXPCOMPrivate.h"
-#include "nsXULAppAPI.h"
-#include "nsIPropertyBag2.h"
-#include "nsIXULAppInfo.h"
 #include "other/CombinedStacks.h"
 #include "other/TelemetryIOInterposeObserver.h"
 #include "plstr.h"
-#if defined(MOZ_GECKO_PROFILER)
-#  include "shared-libraries.h"
-#  include "other/KeyedStackCapturer.h"
-#endif  // MOZ_GECKO_PROFILER
 #include "TelemetryCommon.h"
 #include "TelemetryEvent.h"
 #include "TelemetryHistogram.h"
 #include "TelemetryOrigin.h"
 #include "TelemetryScalar.h"
+#include "TelemetryUserInteraction.h"
 
 namespace {
 
@@ -111,10 +103,6 @@ using Telemetry::Common::GetCurrentProduct;
 using Telemetry::Common::StringHashSet;
 using Telemetry::Common::SupportedProduct;
 using Telemetry::Common::ToJSString;
-
-#if defined(MOZ_GECKO_PROFILER)
-using mozilla::Telemetry::KeyedStackCapturer;
-#endif
 
 // This is not a member of TelemetryImpl because we want to record I/O during
 // startup.
@@ -141,9 +129,6 @@ class TelemetryImpl final : public nsITelemetry, public nsIMemoryReporter {
   static void ShutdownTelemetry();
   static void RecordSlowStatement(const nsACString& sql,
                                   const nsACString& dbName, uint32_t delay);
-#if defined(MOZ_GECKO_PROFILER)
-  static void DoStackCapture(const nsACString& aKey);
-#endif
   struct Stat {
     uint32_t hitCount;
     uint32_t totalTime;
@@ -193,11 +178,6 @@ class TelemetryImpl final : public nsITelemetry, public nsIMemoryReporter {
   Atomic<bool, SequentiallyConsistent> mCanRecordBase;
   Atomic<bool, SequentiallyConsistent> mCanRecordExtended;
 
-#if defined(MOZ_GECKO_PROFILER)
-  // Stores data about stacks captured on demand.
-  KeyedStackCapturer mStackCapturer;
-#endif
-
   CombinedStacks
       mLateWritesStacks;  // This is collected out of the main thread.
   bool mCachedTelemetryData;
@@ -243,12 +223,6 @@ TelemetryImpl::CollectReports(nsIHandleReportCallback* aHandleReport,
                    sTelemetryIOObserver->SizeOfIncludingThis(aMallocSizeOf),
                    "Memory used by the Telemetry IO Observer");
   }
-
-#if defined(MOZ_GECKO_PROFILER)
-  COLLECT_REPORT("explicit/telemetry/StackCapturer",
-                 mStackCapturer.SizeOfExcludingThis(aMallocSizeOf),
-                 "Memory used by the Telemetry Stack capturer");
-#endif
 
   COLLECT_REPORT("explicit/telemetry/LateWritesStacks",
                  mLateWritesStacks.SizeOfExcludingThis(),
@@ -685,31 +659,12 @@ TelemetryImpl::GetDebugSlowSQL(JSContext* cx,
 }
 
 NS_IMETHODIMP
-TelemetryImpl::GetMaximalNumberOfConcurrentThreads(uint32_t* ret) {
-  *ret = nsThreadManager::get().GetHighestNumberOfThreads();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-TelemetryImpl::GetUntrustedModuleLoadEvents(JSContext* cx, Promise** aPromise) {
+TelemetryImpl::GetUntrustedModuleLoadEvents(uint32_t aFlags, JSContext* cx,
+                                            Promise** aPromise) {
 #if defined(XP_WIN)
-  return Telemetry::GetUntrustedModuleLoadEvents(cx, aPromise);
+  return Telemetry::GetUntrustedModuleLoadEvents(aFlags, cx, aPromise);
 #else
   return NS_ERROR_NOT_IMPLEMENTED;
-#endif
-}
-
-NS_IMETHODIMP
-TelemetryImpl::SnapshotCapturedStacks(bool clear, JSContext* cx,
-                                      JS::MutableHandle<JS::Value> ret) {
-#if defined(MOZ_GECKO_PROFILER)
-  nsresult rv = mStackCapturer.ReflectCapturedStacks(cx, ret);
-  if (clear) {
-    mStackCapturer.Clear();
-  }
-  return rv;
-#else
-  return NS_OK;
 #endif
 }
 
@@ -719,7 +674,7 @@ class GetLoadedModulesResultRunnable final : public Runnable {
   SharedLibraryInfo mRawModules;
   nsCOMPtr<nsIThread> mWorkerThread;
 #  if defined(XP_WIN)
-  nsDataHashtable<nsStringHashKey, nsString> mCertSubjects;
+  nsTHashMap<nsStringHashKey, nsString> mCertSubjects;
 #  endif  // defined(XP_WIN)
 
  public:
@@ -837,8 +792,7 @@ class GetLoadedModulesResultRunnable final : public Runnable {
 
 #  if defined(XP_WIN)
       // Cert Subject.
-      nsString* subject = mCertSubjects.GetValue(info.GetModulePath());
-      if (subject) {
+      if (auto subject = mCertSubjects.Lookup(info.GetModulePath())) {
         JS::RootedString jsOrg(cx, ToJSString(cx, *subject));
         if (!jsOrg) {
           mPromise->MaybeReject(NS_ERROR_FAILURE);
@@ -880,8 +834,8 @@ class GetLoadedModulesResultRunnable final : public Runnable {
 
       auto orgName = dllSvc->GetBinaryOrgName(info.GetModulePath().get());
       if (orgName) {
-        mCertSubjects.Put(info.GetModulePath(),
-                          nsDependentString(orgName.get()));
+        mCertSubjects.InsertOrUpdate(info.GetModulePath(),
+                                     nsDependentString(orgName.get()));
       }
     }
   }
@@ -919,9 +873,9 @@ TelemetryImpl::GetLoadedModules(JSContext* cx, Promise** aPromise) {
     return result.StealNSResult();
   }
 
-  nsCOMPtr<nsIThreadManager> tm = do_GetService(NS_THREADMANAGER_CONTRACTID);
   nsCOMPtr<nsIThread> getModulesThread;
-  nsresult rv = tm->NewThread(0, 0, getter_AddRefs(getModulesThread));
+  nsresult rv =
+      NS_NewNamedThread("TelemetryModule", getter_AddRefs(getModulesThread));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     promise->MaybeReject(NS_ERROR_FAILURE);
     return NS_OK;
@@ -1166,73 +1120,6 @@ TelemetryImpl::GetIsOfficialTelemetry(bool* ret) {
   return NS_OK;
 }
 
-#if defined(MOZ_GLEAN)
-// The FOG API is implemented in Rust and exposed to C++ via a set of
-// C functions with the "fog_" prefix.
-// See toolkit/components/glean/*.
-extern "C" {
-nsresult fog_init(const nsACString* dataPath, const nsACString* buildId,
-                  const nsACString* appDisplayVersion, const char* channel,
-                  const nsACString* osVersion, const nsACString* architecture);
-}
-
-static void internal_initGlean() {
-  nsAutoCString dataPath;
-  nsresult rv = Preferences::GetCString(
-      "telemetry.fog.temporary_and_just_for_testing.data_path", dataPath);
-
-  if (NS_FAILED(rv)) {
-    return;
-  }
-
-  nsCOMPtr<nsIXULAppInfo> appInfo =
-      do_GetService("@mozilla.org/xre/app-info;1");
-  if (!appInfo) {
-    NS_WARNING("Can't fetch app info. FOG will not be initialized.");
-    return;
-  }
-
-  nsAutoCString buildID;
-  rv = appInfo->GetAppBuildID(buildID);
-  if (NS_FAILED(rv)) {
-    NS_WARNING("Can't get build ID. FOG will not be initialized.");
-    return;
-  }
-
-  nsAutoCString appVersion;
-  rv = appInfo->GetVersion(appVersion);
-  if (NS_FAILED(rv)) {
-    NS_WARNING("Can't get app version. FOG will not be initialized.");
-    return;
-  }
-
-  nsCOMPtr<nsIPropertyBag2> infoService =
-      do_GetService("@mozilla.org/system-info;1");
-  if (!appInfo) {
-    NS_WARNING("Can't fetch info service. FOG will not be initialized.");
-    return;
-  }
-
-  nsAutoCString osVersion;
-  rv = infoService->GetPropertyAsACString(u"version"_ns, osVersion);
-  if (NS_FAILED(rv)) {
-    NS_WARNING("Can't get OS version. FOG will not be initialized.");
-    return;
-  }
-
-  nsAutoCString architecture;
-  rv = infoService->GetPropertyAsACString(u"arch"_ns, architecture);
-  if (NS_FAILED(rv)) {
-    NS_WARNING("Can't get architecture. FOG will not be initialized.");
-    return;
-  }
-
-  Unused << NS_WARN_IF(NS_FAILED(fog_init(&dataPath, &buildID, &appVersion,
-                                          MOZ_STRINGIFY(MOZ_UPDATE_CHANNEL),
-                                          &osVersion, &architecture)));
-}
-#endif  // defined(MOZ_GLEAN)
-
 already_AddRefed<nsITelemetry> TelemetryImpl::CreateTelemetryInstance() {
   {
     auto lock = sTelemetry.Lock();
@@ -1257,16 +1144,18 @@ already_AddRefed<nsITelemetry> TelemetryImpl::CreateTelemetryInstance() {
   TelemetryEvent::InitializeGlobalState(XRE_IsParentProcess(),
                                         XRE_IsParentProcess());
   TelemetryOrigin::InitializeGlobalState();
+  // Currently, only UserInteractions from the parent process are recorded.
+  TelemetryUserInteraction::InitializeGlobalState(useTelemetry, useTelemetry);
 
   // Now, create and initialize the Telemetry global state.
   TelemetryImpl* telemetry = new TelemetryImpl();
   {
     auto lock = sTelemetry.Lock();
     *lock = telemetry;
+    // AddRef for the local reference before releasing the lock.
+    NS_ADDREF(telemetry);
   }
 
-  // AddRef for the local reference
-  NS_ADDREF(telemetry);
   // AddRef for the caller
   nsCOMPtr<nsITelemetry> ret = telemetry;
 
@@ -1294,6 +1183,7 @@ void TelemetryImpl::ShutdownTelemetry() {
   TelemetryScalar::DeInitializeGlobalState();
   TelemetryEvent::DeInitializeGlobalState();
   TelemetryOrigin::DeInitializeGlobalState();
+  TelemetryUserInteraction::DeInitializeGlobalState();
   TelemetryIPCAccumulator::DeInitializeGlobalState();
 }
 
@@ -1558,24 +1448,6 @@ void TelemetryImpl::RecordSlowStatement(const nsACString& sql,
   StoreSlowSQL(fullSQL, delay, Unsanitized);
 }
 
-#if defined(MOZ_GECKO_PROFILER)
-
-void TelemetryImpl::DoStackCapture(const nsACString& aKey) {
-  if (Telemetry::CanRecordExtended() && XRE_IsParentProcess()) {
-    auto lock = sTelemetry.Lock();
-    auto telemetry = lock.ref();
-    telemetry->mStackCapturer.Capture(aKey);
-  }
-}
-#endif
-
-nsresult TelemetryImpl::CaptureStack(const nsACString& aKey) {
-#ifdef MOZ_GECKO_PROFILER
-  TelemetryImpl::DoStackCapture(aKey);
-#endif
-  return NS_OK;
-}
-
 bool TelemetryImpl::CanRecordBase() {
   auto lock = sTelemetry.Lock();
   auto telemetry = lock.ref();
@@ -1625,6 +1497,16 @@ TelemetryImpl::GetFileIOReports(JSContext* cx, JS::MutableHandleValue ret) {
 NS_IMETHODIMP
 TelemetryImpl::MsSinceProcessStart(double* aResult) {
   return Telemetry::Common::MsSinceProcessStart(aResult);
+}
+
+NS_IMETHODIMP
+TelemetryImpl::MsSinceProcessStartIncludingSuspend(double* aResult) {
+  return Telemetry::Common::MsSinceProcessStartIncludingSuspend(aResult);
+}
+
+NS_IMETHODIMP
+TelemetryImpl::MsSinceProcessStartExcludingSuspend(double* aResult) {
+  return Telemetry::Common::MsSinceProcessStartExcludingSuspend(aResult);
 }
 
 NS_IMETHODIMP
@@ -1801,15 +1683,6 @@ NS_IMETHODIMP
 TelemetryImpl::EarlyInit() {
   Unused << MemoryTelemetry::Get();
 
-#if defined(MOZ_GLEAN)
-  // Initialize FOG during early init, which gets called from
-  // TelemetryController.
-  // At that point we have a working preference store.
-  if (XRE_IsParentProcess()) {
-    internal_initGlean();
-  }
-#endif
-
   return NS_OK;
 }
 
@@ -1859,8 +1732,7 @@ TelemetryImpl::GetAllStores(JSContext* aCx, JS::MutableHandleValue aResult) {
     return NS_ERROR_FAILURE;
   }
 
-  for (auto iter = stores.Iter(); !iter.Done(); iter.Next()) {
-    auto& value = iter.Get()->GetKey();
+  for (const auto& value : stores) {
     JS::RootedValue store(aCx);
 
     store.setString(ToJSString(aCx, value));
@@ -2058,12 +1930,6 @@ void Init() {
       do_GetService("@mozilla.org/base/telemetry;1");
   MOZ_ASSERT(telemetryService);
 }
-
-#if defined(MOZ_GECKO_PROFILER)
-void CaptureStack(const nsACString& aKey) {
-  TelemetryImpl::DoStackCapture(aKey);
-}
-#endif
 
 void WriteFailedProfileLock(nsIFile* aProfileDir) {
   nsCOMPtr<nsIFile> file;

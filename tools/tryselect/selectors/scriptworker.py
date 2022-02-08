@@ -2,15 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
 
 import sys
 
 import requests
 
-from taskgraph.parameters import Parameters
-from taskgraph.util.taskcluster import find_task_id, get_artifact, get_session
-from taskgraph.util.taskgraph import find_existing_tasks
+from gecko_taskgraph.parameters import Parameters
+from gecko_taskgraph.util.taskcluster import find_task_id, get_artifact, get_session
+from gecko_taskgraph.util.taskgraph import find_existing_tasks
 
 from ..cli import BaseTryParser
 from ..push import push_to_try

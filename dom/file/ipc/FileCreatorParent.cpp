@@ -8,9 +8,9 @@
 #include "mozilla/dom/FileBlobImpl.h"
 #include "mozilla/dom/IPCBlobUtils.h"
 #include "mozilla/dom/MultipartBlobImpl.h"
+#include "nsIFile.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 FileCreatorParent::FileCreatorParent()
     : mBackgroundEventTarget(GetCurrentEventTarget()), mIPCActive(true) {}
@@ -127,12 +127,11 @@ nsresult FileCreatorParent::CreateBlobImpl(
   }
 
   if (!aIsFromNsIFile) {
-    impl->SetMozFullPath(EmptyString());
+    impl->SetMozFullPath(u""_ns);
   }
 
   impl.forget(aBlobImpl);
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

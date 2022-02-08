@@ -18,11 +18,8 @@ html|input[nomatch="true"][highlightnonmatches="true"] {
 /* ::::: autocomplete popups ::::: */
 
 panel[type="autocomplete-richlistbox"] {
-  border: 1px solid ThreeDShadow;
-  padding: 0;
-  color: -moz-FieldText;
-  background-color: -moz-Field;
-  appearance: none;
+  --panel-color: FieldText;
+  --panel-background: Field;
 }
 
 /* ::::: richlistbox autocomplete ::::: */
@@ -34,8 +31,8 @@ panel[type="autocomplete-richlistbox"] {
 }
 
 .autocomplete-richlistitem[selected] {
-  background-color: Highlight;
-  color: HighlightText;
+  background-color: SelectedItem;
+  color: SelectedItemText;
 }
 
 .ac-type-icon {
@@ -56,7 +53,7 @@ panel[type="autocomplete-richlistbox"] {
   max-height: 16px;
   margin-inline-start: 6px;
   margin-inline-end: 8px;
-  list-style-image: url("chrome://mozapps/skin/places/defaultFavicon.svg");
+  list-style-image: url("chrome://global/skin/icons/defaultFavicon.svg");
   -moz-context-properties: fill;
   fill: currentColor;
 }

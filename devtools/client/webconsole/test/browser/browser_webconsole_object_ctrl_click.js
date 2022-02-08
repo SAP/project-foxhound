@@ -5,7 +5,7 @@
 
 "use strict";
 
-const TEST_URI = `data:text/html;charset=utf8,<script>
+const TEST_URI = `data:text/html;charset=utf8,<!DOCTYPE html><script>
     console.log({
       a:1,
       b:2,
@@ -27,6 +27,11 @@ add_task(async function() {
   const onSidebarShown = waitFor(() =>
     hud.ui.document.querySelector(".sidebar")
   );
+  AccessibilityUtils.setEnv({
+    // Component that renders an object handles keyboard interactions on the
+    // container level.
+    mustHaveAccessibleRule: false,
+  });
   EventUtils.sendMouseEvent(
     {
       type: "click",
@@ -35,6 +40,7 @@ add_task(async function() {
     object,
     hud.ui.window
   );
+  AccessibilityUtils.resetEnv();
   await onSidebarShown;
   ok(true, "sidebar is displayed after user Ctrl+clicked on it");
 
@@ -76,6 +82,13 @@ add_task(async function() {
   );
   message.querySelector(".node").click();
   const cNode = await waitFor(() => message.querySelectorAll(".node")[3]);
+  AccessibilityUtils.setEnv({
+    // Component that renders an object handles keyboard interactions on the
+    // container level.
+    focusableRule: false,
+    interactiveRule: false,
+    labelRule: false,
+  });
   EventUtils.sendMouseEvent(
     {
       type: "click",
@@ -84,6 +97,7 @@ add_task(async function() {
     cNode,
     hud.ui.window
   );
+  AccessibilityUtils.resetEnv();
 
   objectInspectors = [...sidebarContents.querySelectorAll(".tree")];
   is(objectInspectors.length, 1, "There is still only one object inspector");

@@ -12,10 +12,12 @@ add_task(async function() {
   const ITEM_NAME = "ls1";
   const UPDATE_COUNT = 3;
 
-  await openTabAndSetupStorage(MAIN_DOMAIN + "storage-complex-values.html");
+  await openTabAndSetupStorage(
+    MAIN_DOMAIN_SECURED + "storage-complex-values.html"
+  );
 
   const updated = gUI.once("sidebar-updated");
-  await selectTreeItem(["localStorage", "http://test1.example.org"]);
+  await selectTreeItem(["localStorage", "https://test1.example.org"]);
   await selectTableItem(ITEM_NAME);
   await updated;
 
@@ -28,7 +30,7 @@ add_task(async function() {
     updates.push(gUI.once("sidebar-updated"));
     gUI.updateObjectSidebar();
   }
-  await promise.all(updates);
+  await Promise.all(updates);
 
   info("Updates performed, going to verify result");
   const parsedScope = gUI.view.getScopeAtIndex(1);
@@ -40,6 +42,4 @@ add_task(async function() {
     1,
     `There is only one displayed variable named '${ITEM_NAME}'`
   );
-
-  await finishTests();
 });

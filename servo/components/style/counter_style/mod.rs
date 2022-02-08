@@ -55,7 +55,12 @@ pub fn parse_counter_style_name<'i, 't>(
 }
 
 fn is_valid_name_definition(ident: &CustomIdent) -> bool {
-    ident.0 != atom!("decimal") && ident.0 != atom!("disc")
+    ident.0 != atom!("decimal") &&
+        ident.0 != atom!("disc") &&
+        ident.0 != atom!("circle") &&
+        ident.0 != atom!("square") &&
+        ident.0 != atom!("disclosure-closed") &&
+        ident.0 != atom!("disclosure-open")
 }
 
 /// Parse the prelude of an @counter-style rule
@@ -108,7 +113,7 @@ pub fn parse_counter_style_body<'i, 't>(
             Some(ContextualParseError::InvalidCounterStyleWithoutSymbols(
                 system,
             ))
-        }
+        },
         ref system @ System::Alphabetic | ref system @ System::Numeric
             if rule.symbols().unwrap().0.len() < 2 =>
         {
@@ -116,7 +121,7 @@ pub fn parse_counter_style_body<'i, 't>(
             Some(ContextualParseError::InvalidCounterStyleNotEnoughSymbols(
                 system,
             ))
-        }
+        },
         System::Additive if rule.additive_symbols.is_none() => {
             Some(ContextualParseError::InvalidCounterStyleWithoutAdditiveSymbols)
         },
@@ -143,8 +148,7 @@ struct CounterStyleRuleParser<'a, 'b: 'a> {
 
 /// Default methods reject all at rules.
 impl<'a, 'b, 'i> AtRuleParser<'i> for CounterStyleRuleParser<'a, 'b> {
-    type PreludeNoBlock = ();
-    type PreludeBlock = ();
+    type Prelude = ();
     type AtRule = ();
     type Error = StyleParseErrorKind<'i>;
 }
@@ -232,12 +236,12 @@ macro_rules! counter_style_descriptors {
             fn to_css(&self, _guard: &SharedRwLockReadGuard, dest: &mut CssStringWriter) -> fmt::Result {
                 dest.write_str("@counter-style ")?;
                 self.name.to_css(&mut CssWriter::new(dest))?;
-                dest.write_str(" {\n")?;
+                dest.write_str(" { ")?;
                 $(
                     if let Some(ref value) = self.$ident {
-                        dest.write_str(concat!("  ", $name, ": "))?;
+                        dest.write_str(concat!($name, ": "))?;
                         ToCss::to_css(value, &mut CssWriter::new(dest))?;
-                        dest.write_str(";\n")?;
+                        dest.write_str("; ")?;
                     }
                 )+
                 dest.write_str("}")

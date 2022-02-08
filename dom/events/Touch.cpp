@@ -12,8 +12,7 @@
 #include "nsContentUtils.h"
 #include "nsIContent.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // static
 already_AddRefed<Touch> Touch::Constructor(const GlobalObject& aGlobal,
@@ -104,7 +103,7 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(Touch)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(Touch)
 
 EventTarget* Touch::GetTarget() const {
-  nsCOMPtr<nsIContent> content = do_QueryInterface(mTarget);
+  nsIContent* content = nsIContent::FromEventTargetOrNull(mTarget);
   if (content && content->ChromeOnlyAccess() &&
       !nsContentUtils::LegacyIsCallerNativeCode() &&
       !nsContentUtils::CanAccessNativeAnon()) {
@@ -185,6 +184,14 @@ bool Touch::Equals(Touch* aTouch) const {
          mRadius.x == aTouch->mRadius.x && mRadius.y == aTouch->mRadius.y;
 }
 
+void Touch::SetSameAs(const Touch* aTouch) {
+  mRefPoint = aTouch->mRefPoint;
+  mForce = aTouch->mForce;
+  mRotationAngle = aTouch->mRotationAngle;
+  mRadius.x = aTouch->mRadius.x;
+  mRadius.y = aTouch->mRadius.y;
+}
+
 JSObject* Touch::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
   return Touch_Binding::Wrap(aCx, this, aGivenProto);
 }
@@ -199,5 +206,4 @@ nsIGlobalObject* Touch::GetParentObject() {
   return mOriginalTarget->GetOwnerGlobal();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -74,14 +74,13 @@ async function loadAccessRestrictedURL(browser, url, username, password) {
   let browserLoaded = BrowserTestUtils.browserLoaded(browser);
   BrowserTestUtils.loadURI(browser, url);
 
-  let promptDoc = await waitForAuthPrompt();
-  let dialogUI = promptDoc.defaultView.Dialog.ui;
-  ok(dialogUI, "Got expected HTTP auth dialog Dialog.ui");
+  // Wait for the auth prompt, enter the login details and close the prompt
+  await PromptTestUtils.handleNextPrompt(
+    browser,
+    { modalType: authPromptModalType, promptType: "promptUserAndPass" },
+    { buttonNumClick: 0, loginInput: username, passwordInput: password }
+  );
 
-  // fill and submit the dialog form
-  dialogUI.loginTextbox.value = username;
-  dialogUI.password1Textbox.value = password;
-  promptDoc.getElementById("commonDialog").acceptDialog();
   await SimpleTest.promiseFocus(browser.ownerGlobal);
   await browserLoaded;
 }
@@ -107,14 +106,16 @@ const authUrl = `https://example.com/${DIRECTORY_PATH}authenticate.sjs`;
 
 let normalWin;
 let privateWin;
+let authPromptModalType;
 
 // XXX: Note that tasks are currently run in sequence. Some tests may assume the state
 // resulting from successful or unsuccessful logins in previous tasks
 
 add_task(async function test_setup() {
+  authPromptModalType = Services.prefs.getIntPref("prompts.modalType.httpAuth");
   normalWin = await BrowserTestUtils.openNewBrowserWindow({ private: false });
   privateWin = await BrowserTestUtils.openNewBrowserWindow({ private: true });
-  Services.logins.removeAllLogins();
+  Services.logins.removeAllUserFacingLogins();
 });
 
 add_task(async function test_normal_popup_notification_1() {
@@ -168,7 +169,7 @@ add_task(async function test_private_popup_notification_2() {
   );
 
   // clear existing logins for parity with the previous test
-  Services.logins.removeAllLogins();
+  Services.logins.removeAllUserFacingLogins();
   await focusWindow(privateWin);
   await BrowserTestUtils.withNewTab(
     {
@@ -242,7 +243,7 @@ add_task(async function test_private_popup_notification_no_capture_pref_2b() {
   Services.prefs.setBoolPref(PRIVATE_BROWSING_CAPTURE_PREF, false);
 
   // clear existing logins for parity with the previous test
-  Services.logins.removeAllLogins();
+  Services.logins.removeAllUserFacingLogins();
 
   await focusWindow(privateWin);
   await BrowserTestUtils.withNewTab(
@@ -288,7 +289,7 @@ add_task(async function test_normal_popup_notification_3() {
       "match existing username/password: no popup notification should appear"
   );
 
-  Services.logins.removeAllLogins();
+  Services.logins.removeAllUserFacingLogins();
   Services.logins.addLogin(login);
   let allLogins = Services.logins.getAllLogins();
   // Sanity check the HTTP login exists.
@@ -339,7 +340,7 @@ add_task(async function test_private_popup_notification_3b() {
       " match existing username/password: no popup notification should appear"
   );
 
-  Services.logins.removeAllLogins();
+  Services.logins.removeAllUserFacingLogins();
   Services.logins.addLogin(login);
   let allLogins = Services.logins.getAllLogins();
   // Sanity check the HTTP login exists.
@@ -391,7 +392,7 @@ add_task(async function test_normal_new_password_4() {
     "test 4: run with a login, outside of private mode," +
       " add a new password: popup notification should appear"
   );
-  Services.logins.removeAllLogins();
+  Services.logins.removeAllUserFacingLogins();
   Services.logins.addLogin(login);
   let allLogins = Services.logins.getAllLogins();
   // Sanity check the HTTP login exists.
@@ -568,7 +569,7 @@ add_task(async function test_normal_autofilled_7() {
       // Add the observer before loading the form page
       let formFilled = listenForTestNotification("FormProcessed");
       await SimpleTest.promiseFocus(browser.ownerGlobal);
-      await BrowserTestUtils.loadURI(browser, form1Url);
+      BrowserTestUtils.loadURI(browser, form1Url);
       await formFilled;
 
       // the form should have been autofilled, so submit without updating field values
@@ -683,7 +684,7 @@ add_task(async function test_normal_http_basic_auth() {
   info(
     "test normal/basic-auth: verify that we get a doorhanger after basic-auth login"
   );
-  Services.logins.removeAllLogins();
+  Services.logins.removeAllUserFacingLogins();
   clearHttpAuths();
 
   await focusWindow(normalWin);
@@ -736,7 +737,7 @@ add_task(async function test_private_http_basic_auth() {
   info(
     "test private/basic-auth: verify that we don't get a doorhanger after basic-auth login"
   );
-  Services.logins.removeAllLogins();
+  Services.logins.removeAllUserFacingLogins();
   clearHttpAuths();
 
   const capturePrefValue = Services.prefs.getBoolPref(
@@ -791,7 +792,7 @@ add_task(async function test_private_http_basic_auth_no_capture_pref() {
   );
   Services.prefs.setBoolPref(PRIVATE_BROWSING_CAPTURE_PREF, false);
 
-  Services.logins.removeAllLogins();
+  Services.logins.removeAllUserFacingLogins();
   clearHttpAuths();
 
   await focusWindow(privateWin);

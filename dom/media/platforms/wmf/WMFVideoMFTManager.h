@@ -65,6 +65,17 @@ class WMFVideoMFTManager : public MFTManager {
 
   bool CanUseDXVA(IMFMediaType* aType, float aFramerate);
 
+  // Gets the duration from aSample, and if an unknown or invalid duration is
+  // returned from WMF, this instead returns the last known input duration.
+  // The sample duration is unknown per `IMFSample::GetSampleDuration` docs
+  // 'If the retrieved duration is zero, or if the method returns
+  // MF_E_NO_SAMPLE_DURATION, the duration is unknown'. The same API also
+  // suggests it may return other unspecified error codes, so we handle those
+  // too. It also returns a signed int, but since a negative duration doesn't
+  // make sense, we also handle that case.
+  media::TimeUnit GetSampleDurationOrLastKnownDuration(
+      IMFSample* aSample) const;
+
   // Video frame geometry.
   const VideoInfo mVideoInfo;
   const gfx::IntSize mImageSize;
@@ -87,6 +98,21 @@ class WMFVideoMFTManager : public MFTManager {
   enum StreamType { Unknown, H264, VP8, VP9 };
 
   StreamType mStreamType;
+
+  // Get a string representation of the stream type. Useful for logging.
+  inline const char* StreamTypeString() const {
+    switch (mStreamType) {
+      case StreamType::H264:
+        return "H264";
+      case StreamType::VP8:
+        return "VP8";
+      case StreamType::VP9:
+        return "VP9";
+      default:
+        MOZ_ASSERT(mStreamType == StreamType::Unknown);
+        return "Unknown";
+    }
+  }
 
   const GUID& GetMFTGUID();
   const GUID& GetMediaSubtypeGUID();

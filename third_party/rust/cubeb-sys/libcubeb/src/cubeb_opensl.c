@@ -27,6 +27,7 @@
 #include "cubeb-sles.h"
 #include "cubeb_array_queue.h"
 #include "android/cubeb-output-latency.h"
+#include "cubeb_android.h"
 
 #if defined(__ANDROID__)
 #ifdef LOG
@@ -65,11 +66,6 @@
 
 #define DEFAULT_SAMPLE_RATE 48000
 #define DEFAULT_NUM_OF_FRAMES 480
-// If the latency requested is above this threshold, this stream is considered
-// intended for playback (vs. real-time). Tell Android it should favor saving
-// power over performance or latency.
-// This is around 100ms at 44100 or 48000
-#define POWERSAVE_LATENCY_FRAMES_THRESHOLD 4000
 
 static struct cubeb_ops const opensl_ops;
 
@@ -168,7 +164,8 @@ struct cubeb_stream {
   int64_t lastPosition;
   int64_t lastPositionTimeStamp;
   int64_t lastCompensativePosition;
-  int voice;
+  int voice_input;
+  int voice_output;
 };
 
 /* Forward declaration. */
@@ -959,8 +956,8 @@ opensl_configure_capture(cubeb_stream * stm, cubeb_stream_params * params)
 
     // Voice recognition is the lowest latency, according to the docs. Camcorder
     // uses a microphone that is in the same direction as the camera.
-    SLint32 streamType = stm->voice ? SL_ANDROID_RECORDING_PRESET_VOICE_RECOGNITION
-                                    : SL_ANDROID_RECORDING_PRESET_CAMCORDER;
+    SLint32 streamType = stm->voice_input ? SL_ANDROID_RECORDING_PRESET_VOICE_RECOGNITION
+                                          : SL_ANDROID_RECORDING_PRESET_CAMCORDER;
 
     res = (*recorderConfig)
               ->SetConfiguration(recorderConfig, SL_ANDROID_KEY_RECORDING_PRESET,
@@ -1185,7 +1182,7 @@ opensl_configure_playback(cubeb_stream * stm, cubeb_stream_params * params) {
     }
 
     SLint32 streamType = SL_ANDROID_STREAM_MEDIA;
-    if (stm->voice) {
+    if (stm->voice_output) {
       streamType = SL_ANDROID_STREAM_VOICE;
     }
     res = (*playerConfig)->SetConfiguration(playerConfig,
@@ -1385,10 +1382,11 @@ opensl_stream_init(cubeb * ctx, cubeb_stream ** stream, char const * stream_name
   stm->input_enabled = (input_stream_params) ? 1 : 0;
   stm->output_enabled = (output_stream_params) ? 1 : 0;
   stm->shutdown = 1;
-  stm->voice = has_pref_set(input_stream_params, output_stream_params, CUBEB_STREAM_PREF_VOICE);
+  stm->voice_input = has_pref_set(input_stream_params, NULL, CUBEB_STREAM_PREF_VOICE);
+  stm->voice_output = has_pref_set(NULL, output_stream_params, CUBEB_STREAM_PREF_VOICE);
 
-  LOG("cubeb stream prefs: voice: %s", stm->voice ? "true" : "false");
-
+  LOG("cubeb stream prefs: voice_input: %s voice_output: %s", stm->voice_input ? "true" : "false",
+                                                              stm->voice_output ? "true" : "false");
 
 #ifdef DEBUG
   pthread_mutexattr_t attr;
@@ -1700,7 +1698,7 @@ opensl_stream_get_latency(cubeb_stream * stm, uint32_t * latency)
   assert(latency);
 
   uint32_t stream_latency_frames =
-    stm->user_output_rate * (stm->output_latency_ms / 1000);
+    stm->user_output_rate * stm->output_latency_ms / 1000;
 
   return stream_latency_frames + cubeb_resampler_latency(stm->resampler);
 }
@@ -1749,11 +1747,11 @@ static struct cubeb_ops const opensl_ops = {
   .stream_destroy = opensl_stream_destroy,
   .stream_start = opensl_stream_start,
   .stream_stop = opensl_stream_stop,
-  .stream_reset_default_device = NULL,
   .stream_get_position = opensl_stream_get_position,
   .stream_get_latency = opensl_stream_get_latency,
   .stream_get_input_latency = NULL,
   .stream_set_volume = opensl_stream_set_volume,
+  .stream_set_name = NULL,
   .stream_get_current_device = NULL,
   .stream_device_destroy = NULL,
   .stream_register_device_changed_callback = NULL,

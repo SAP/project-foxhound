@@ -12,12 +12,6 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "BrowserUtils",
-  "resource://gre/modules/BrowserUtils.jsm"
-);
-
 XPCOMUtils.defineLazyGetter(this, "gBrandBundle", function() {
   return Services.strings.createBundle(
     "chrome://branding/locale/brand.properties"
@@ -28,6 +22,10 @@ XPCOMUtils.defineLazyGetter(this, "gNavigatorBundle", function() {
   return Services.strings.createBundle(
     "chrome://browser/locale/browser.properties"
   );
+});
+
+XPCOMUtils.defineLazyGetter(this, "gFluentStrings", function() {
+  return new Localization(["branding/brand.ftl", "browser/browser.ftl"], true);
 });
 
 class EncryptedMediaParent extends JSWindowActorParent {
@@ -59,21 +57,6 @@ class EncryptedMediaParent extends JSWindowActorParent {
       return Services.prefs.getBoolPref("media.gmp-widevinecdm.visible");
     }
     return true;
-  }
-
-  getEMEDisabledFragment(aBrowser) {
-    let mainMessage = gNavigatorBundle.GetStringFromName(
-      "emeNotifications.drmContentDisabled.message"
-    );
-    let text = gNavigatorBundle.GetStringFromName(
-      "emeNotifications.drmContentDisabled.learnMoreLabel"
-    );
-    let document = aBrowser.ownerDocument;
-    let baseURL = Services.urlFormatter.formatURLPref("app.support.baseURL");
-    let link = document.createXULElement("label", { is: "text-link" });
-    link.setAttribute("href", baseURL + "drm-content");
-    link.textContent = text;
-    return BrowserUtils.getLocalizedFragment(document, mainMessage, link);
   }
 
   getMessageWithBrandName(aNotificationId) {
@@ -117,6 +100,7 @@ class EncryptedMediaParent extends JSWindowActorParent {
 
     let notificationId;
     let buttonCallback;
+    let supportPage;
     // Notification message can be either a string or a DOM fragment.
     let notificationMessage;
     switch (status) {
@@ -135,7 +119,10 @@ class EncryptedMediaParent extends JSWindowActorParent {
         buttonCallback = () => {
           this.ensureEMEEnabled(browser, keySystem);
         };
-        notificationMessage = this.getEMEDisabledFragment(browser);
+        notificationMessage = gNavigatorBundle.GetStringFromName(
+          "emeNotifications.drmContentDisabled.message2"
+        );
+        supportPage = "drm-content";
         break;
 
       case "cdm-not-installed":
@@ -167,28 +154,33 @@ class EncryptedMediaParent extends JSWindowActorParent {
     }
 
     let buttons = [];
+    if (supportPage) {
+      buttons.push({ supportPage });
+    }
     if (buttonCallback) {
       let msgPrefix = "emeNotifications." + notificationId + ".";
-      let btnLabelId = msgPrefix + "button.label";
-      let btnAccessKeyId = msgPrefix + "button.accesskey";
+      let manageLabelId = msgPrefix + "button.label";
+      let manageAccessKeyId = msgPrefix + "button.accesskey";
       buttons.push({
-        label: gNavigatorBundle.GetStringFromName(btnLabelId),
-        accessKey: gNavigatorBundle.GetStringFromName(btnAccessKeyId),
+        label: gNavigatorBundle.GetStringFromName(manageLabelId),
+        accessKey: gNavigatorBundle.GetStringFromName(manageAccessKeyId),
         callback: buttonCallback,
       });
     }
 
     let iconURL = "chrome://browser/skin/drm-icon.svg";
     notificationBox.appendNotification(
-      notificationMessage,
       notificationId,
-      iconURL,
-      notificationBox.PRIORITY_WARNING_MEDIUM,
+      {
+        label: notificationMessage,
+        image: iconURL,
+        priority: notificationBox.PRIORITY_INFO_HIGH,
+      },
       buttons
     );
   }
 
-  showPopupNotificationForSuccess(aBrowser) {
+  async showPopupNotificationForSuccess(aBrowser) {
     // We're playing EME content! Remove any "we can't play because..." messages.
     let notificationBox = aBrowser.getTabBrowser().getNotificationBox(aBrowser);
     ["drmContentDisabled", "drmContentCDMInstalling"].forEach(function(value) {
@@ -208,14 +200,27 @@ class EncryptedMediaParent extends JSWindowActorParent {
       return;
     }
 
-    let msgPrefix = "emeNotifications.drmContentPlaying.";
-    let msgId = msgPrefix + "message2";
-    let btnLabelId = msgPrefix + "button.label";
-    let btnAccessKeyId = msgPrefix + "button.accesskey";
+    let msgPrefix = "eme-notifications-drm-content-playing";
+    let msgId = msgPrefix;
+    let manageLabelId = msgPrefix + "-manage";
+    let manageAccessKeyId = msgPrefix + "-manage-accesskey";
+    let dismissLabelId = msgPrefix + "-dismiss";
+    let dismissAccessKeyId = msgPrefix + "-dismiss-accesskey";
 
-    let message = gNavigatorBundle.formatStringFromName(msgId, [
-      gBrandBundle.GetStringFromName("brandShortName"),
+    let [
+      message,
+      manageLabel,
+      manageAccessKey,
+      dismissLabel,
+      dismissAccessKey,
+    ] = await gFluentStrings.formatValues([
+      msgId,
+      manageLabelId,
+      manageAccessKeyId,
+      dismissLabelId,
+      dismissAccessKeyId,
     ]);
+
     let anchorId = "eme-notification-icon";
     let firstPlayPref = "browser.eme.ui.firstContentShown";
     let document = aBrowser.ownerDocument;
@@ -230,19 +235,30 @@ class EncryptedMediaParent extends JSWindowActorParent {
     }
 
     let mainAction = {
-      label: gNavigatorBundle.GetStringFromName(btnLabelId),
-      accessKey: gNavigatorBundle.GetStringFromName(btnAccessKeyId),
+      label: manageLabel,
+      accessKey: manageAccessKey,
       callback() {
         aBrowser.ownerGlobal.openPreferences("general-drm");
       },
       dismiss: true,
     };
+
+    let secondaryActions = [
+      {
+        label: dismissLabel,
+        accessKey: dismissAccessKey,
+        callback: () => {},
+        dismiss: true,
+      },
+    ];
+
     let options = {
       dismissed: true,
       eventCallback: aTopic => aTopic == "swapping",
       learnMoreURL:
         Services.urlFormatter.formatURLPref("app.support.baseURL") +
         "drm-content",
+      hideClose: true,
     };
     aBrowser.ownerGlobal.PopupNotifications.show(
       aBrowser,
@@ -250,7 +266,7 @@ class EncryptedMediaParent extends JSWindowActorParent {
       message,
       anchorId,
       mainAction,
-      null,
+      secondaryActions,
       options
     );
   }

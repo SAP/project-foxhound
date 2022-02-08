@@ -14,19 +14,13 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Region: "resource://gre/modules/Region.jsm",
   SearchUtils: "resource://gre/modules/SearchUtils.jsm",
   Services: "resource://gre/modules/Services.jsm",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
 });
 
 const BinaryInputStream = Components.Constructor(
   "@mozilla.org/binaryinputstream;1",
   "nsIBinaryInputStream",
   "setInputStream"
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  this,
-  "gModernConfig",
-  SearchUtils.BROWSER_SEARCH_PREF + "modernConfig",
-  false
 );
 
 XPCOMUtils.defineLazyGetter(this, "logConsole", () => {
@@ -37,11 +31,6 @@ XPCOMUtils.defineLazyGetter(this, "logConsole", () => {
 });
 
 const USER_DEFINED = "searchTerms";
-
-// Custom search parameters
-const MOZ_PARAM_LOCALE = "moz:locale";
-const MOZ_PARAM_DIST_ID = "moz:distributionID";
-const MOZ_PARAM_OFFICIAL = "moz:official";
 
 // Supported OpenSearch parameters
 // See http://opensearch.a9.com/spec/1.1/querysyntax/#core
@@ -138,21 +127,36 @@ const ParamPreferenceCache = {
       SearchUtils.BROWSER_SEARCH_PREF + "param."
     );
     this.cache = new Map();
+    this.nimbusCache = new Map();
     for (let prefName of this.branch.getChildList("")) {
       this.cache.set(prefName, this.branch.getCharPref(prefName, null));
     }
     this.branch.addObserver("", this, true);
+
+    this.onNimbusUpdate = this.onNimbusUpdate.bind(this);
+    this.onNimbusUpdate();
+    NimbusFeatures.search.onUpdate(this.onNimbusUpdate);
+    NimbusFeatures.search.ready().then(this.onNimbusUpdate);
   },
 
   observe(subject, topic, data) {
     this.cache.set(data, this.branch.getCharPref(data, null));
   },
 
+  onNimbusUpdate() {
+    let extraParams = NimbusFeatures.search.getVariable("extraParams") || [];
+    for (const { key, value } of extraParams) {
+      this.nimbusCache.set(key, value);
+    }
+  },
+
   getPref(prefName) {
     if (!this.cache) {
       this.initCache();
     }
-    return this.cache.get(prefName);
+    return this.nimbusCache.has(prefName)
+      ? this.nimbusCache.get(prefName)
+      : this.cache.get(prefName);
   },
 };
 
@@ -276,18 +280,32 @@ function ParamSubstitution(paramValue, searchTerms, engine) {
 
     // moz: parameters are only available for default search engines.
     if (name.startsWith("moz:") && engine.isAppProvided) {
-      // {moz:locale} and {moz:distributionID} are common
-      if (name == MOZ_PARAM_LOCALE) {
+      // {moz:locale} is common.
+      if (name == SearchUtils.MOZ_PARAM.LOCALE) {
         return Services.locale.requestedLocale;
       }
-      if (name == MOZ_PARAM_DIST_ID) {
+
+      // {moz:date}
+      if (name == SearchUtils.MOZ_PARAM.DATE) {
+        let date = new Date();
+        let pad = number => number.toString().padStart(2, "0");
+        return (
+          String(date.getFullYear()) +
+          pad(date.getMonth() + 1) +
+          pad(date.getDate()) +
+          pad(date.getHours())
+        );
+      }
+
+      // {moz:distributionID} and {moz:official} seem to have little use.
+      if (name == SearchUtils.MOZ_PARAM.DIST_ID) {
         return Services.prefs.getCharPref(
           SearchUtils.BROWSER_SEARCH_PREF + "distributionID",
           Services.appinfo.distributionID || ""
         );
       }
-      // {moz:official} seems to have little use.
-      if (name == MOZ_PARAM_OFFICIAL) {
+
+      if (name == SearchUtils.MOZ_PARAM.OFFICIAL) {
         if (
           Services.prefs.getBoolPref(
             SearchUtils.BROWSER_SEARCH_PREF + "official",
@@ -325,33 +343,6 @@ function ParamSubstitution(paramValue, searchTerms, engine) {
   });
 }
 
-const ENGINE_ALIASES = new Map([
-  ["google", ["@google"]],
-  ["amazondotcom", ["@amazon"]],
-  ["amazon", ["@amazon"]],
-  ["wikipedia", ["@wikipedia"]],
-  ["ebay", ["@ebay"]],
-  ["bing", ["@bing"]],
-  ["ddg", ["@duckduckgo", "@ddg"]],
-  ["yandex", ["@\u044F\u043D\u0434\u0435\u043A\u0441", "@yandex"]],
-  ["baidu", ["@\u767E\u5EA6", "@baidu"]],
-]);
-
-function getInternalAliases(engine) {
-  if (!engine.isAppProvided) {
-    return [];
-  }
-  for (let [name, aliases] of ENGINE_ALIASES) {
-    // This may match multiple engines (amazon vs amazondotcom), they
-    // shouldn't be installed together but if they are the first
-    // is picked.
-    if (engine._shortName.startsWith(name)) {
-      return aliases;
-    }
-  }
-  return [];
-}
-
 /**
  * EngineURL holds a query URL and all associated parameters.
  */
@@ -371,14 +362,12 @@ class EngineURL {
    *   The URL to which search queries should be sent. For GET requests,
    *   must contain the string "{searchTerms}", to indicate where the user
    *   entered search terms should be inserted.
-   * @param {string} [resultDomain]
-   *   The root domain for this URL.  Defaults to the template's host.
    *
    * @see http://opensearch.a9.com/spec/1.1/querysyntax/#urltag
    *
    * @throws NS_ERROR_NOT_IMPLEMENTED if aType is unsupported.
    */
-  constructor(mimeType, requestMethod, template, resultDomain) {
+  constructor(mimeType, requestMethod, template) {
     if (!mimeType || !requestMethod || !template) {
       throw Components.Exception(
         "missing mimeType, method or template for EngineURL!",
@@ -398,6 +387,7 @@ class EngineURL {
 
     this.type = type;
     this.method = method;
+    this._queryCharset = SearchUtils.DEFAULT_QUERY_CHARSET;
 
     var templateURI = SearchUtils.makeURI(template);
     if (!templateURI) {
@@ -410,9 +400,6 @@ class EngineURL {
     switch (templateURI.scheme) {
       case "http":
       case "https":
-        // Disable these for now, see bug 295018
-        // case "file":
-        // case "resource":
         this.template = template;
         break;
       default:
@@ -423,9 +410,6 @@ class EngineURL {
     }
 
     this.templateHost = templateURI.host;
-    // If no resultDomain was specified in the engine definition file, use the
-    // host from the template.
-    this.resultDomain = resultDomain || this.templateHost;
   }
 
   addParam(name, value, purpose) {
@@ -555,10 +539,11 @@ class EngineURL {
 
     for (let i = 0; i < json.params.length; ++i) {
       let param = json.params[i];
-      if (param.mozparam) {
-        this._addMozParam(param);
-      } else {
-        this.addParam(param.name, param.value, param.purpose || undefined);
+      // mozparam and purpose are only supported for app-provided engines.
+      // Since we do not store the details for those engines, we don't want
+      // to handle it here.
+      if (!param.mozparam && !param.purpose) {
+        this.addParam(param.name, param.value);
       }
     }
   }
@@ -573,7 +558,6 @@ class EngineURL {
     var json = {
       params: this.params,
       rels: this.rels,
-      resultDomain: this.resultDomain,
       template: this.template,
     };
 
@@ -613,6 +597,8 @@ class SearchEngine {
   _queryCharset = null;
   // The engine's raw SearchForm value (URL string pointing to a search form).
   __searchForm = null;
+  // Whether or not to send an attribution request to the server.
+  _sendAttributionRequest = false;
   // The number of days between update checks for new versions
   _updateInterval = null;
   // The url to check at for a new update
@@ -633,27 +619,23 @@ class SearchEngine {
   // notification sent. This allows to skip sending notifications during
   // initialization.
   _engineAddedToStore = false;
-  // The alias coming from the engine definition (via webextension
-  // keyword field for example) may be overridden in the metaData
-  // with a user defined alias.
-  _definedAlias = null;
+  // The aliases coming from the engine definition (via webextension
+  // keyword field for example).
+  _definedAliases = [];
   // The urls associated with this engine.
   _urls = [];
-  // Internal aliases for default engines only.
-  __internalAliases = null;
+  // The query parameter name of the search url, cached in memory to avoid
+  // repeated look-ups.
+  _searchUrlQueryParamName = null;
+  // The known public suffix of the search url, cached in memory to avoid
+  // repeated look-ups.
+  _searchUrlPublicSuffix = null;
 
   /**
    * Constructor.
    *
    * @param {object} options
-   *   The options for this search engine. At least one of options.name,
-   *   or options.shortName are required.
-   * @param {string} [options.name]
-   *   The name to base the short name of the engine on. This is typically the
-   *   display name where a pre-defined/sanitized short name is not available.
-   * @param {string} [options.shortName]
-   *   The short name to use for the engine. This should be known to match
-   *   the basic requirements in sanitizeName for a short name.
+   *   The options for this search engine.
    * @param {boolean} options.isAppProvided
    *   Indicates whether the engine is provided by Firefox, either
    *   shipped in omni.ja or via Normandy. If it is, it will
@@ -670,14 +652,6 @@ class SearchEngine {
     }
     this._isAppProvided = options.isAppProvided;
     this._loadPath = options.loadPath;
-
-    if ("name" in options) {
-      this._shortName = SearchUtils.sanitizeName(options.name);
-    } else if ("shortName" in options) {
-      this._shortName = options.shortName;
-    } else {
-      throw new Error("'name' or 'shortName' missing from options.");
-    }
   }
 
   get _searchForm() {
@@ -808,12 +782,10 @@ class SearchEngine {
       case "http":
       case "https":
       case "ftp":
-        var chan = SearchUtils.makeChannel(uri);
-
-        let iconLoadCallback = function(byteArray, engine) {
+        let iconLoadCallback = function(byteArray, contentType) {
           // This callback may run after we've already set a preferred icon,
           // so check again.
-          if (engine._hasPreferredIcon && !isPreferred) {
+          if (this._hasPreferredIcon && !isPreferred) {
             return;
           }
 
@@ -822,7 +794,6 @@ class SearchEngine {
             return;
           }
 
-          let contentType = chan.contentType;
           if (byteArray.length > SearchUtils.MAX_ICON_SIZE) {
             try {
               logConsole.debug("iconLoadCallback: rescaling icon");
@@ -833,36 +804,32 @@ class SearchEngine {
             }
           }
 
-          if (!contentType.startsWith("image/")) {
-            contentType = "image/x-icon";
-          }
           let dataURL =
             "data:" +
             contentType +
             ";base64," +
             btoa(String.fromCharCode.apply(null, byteArray));
 
-          engine._iconURI = SearchUtils.makeURI(dataURL);
+          this._iconURI = SearchUtils.makeURI(dataURL);
 
           if (width && height) {
-            engine._addIconToMap(width, height, dataURL);
+            this._addIconToMap(width, height, dataURL);
           }
 
-          if (engine._engineAddedToStore) {
-            SearchUtils.notifyAction(engine, SearchUtils.MODIFIED_TYPE.CHANGED);
+          if (this._engineAddedToStore) {
+            SearchUtils.notifyAction(this, SearchUtils.MODIFIED_TYPE.CHANGED);
           }
-          engine._hasPreferredIcon = isPreferred;
+          this._hasPreferredIcon = isPreferred;
         };
 
-        // If we're currently acting as an "update engine", then the callback
-        // should set the icon on the engine we're updating and not us, since
-        // |this| might be gone by the time the callback runs.
-        var engineToSet = this._engineToUpdate || this;
-
-        var listener = new SearchUtils.LoadListener(
+        let chan = SearchUtils.makeChannel(uri);
+        let listener = new SearchUtils.LoadListener(
           chan,
-          engineToSet,
-          iconLoadCallback
+          /^image\//,
+          // If we're currently acting as an "update engine", then the callback
+          // should set the icon on the engine we're updating and not us, since
+          // |this| might be gone by the time the callback runs.
+          iconLoadCallback.bind(this._engineToUpdate || this)
         );
         chan.notificationCallbacks = listener;
         chan.asyncOpen(listener);
@@ -889,8 +856,10 @@ class SearchEngine {
    *   an array of objects which have name/value pairs.
    * @param {string} params.template
    *   The url template.
+   * @returns {EngineURL}
+   *   The newly created EngineURL.
    */
-  _initEngineURLFromMetaData(type, params) {
+  _getEngineURLFromMetaData(type, params) {
     let url = new EngineURL(type, params.method || "GET", params.template);
 
     // Do the MozParams first, so that we are more likely to get the query
@@ -927,7 +896,7 @@ class SearchEngine {
       }
     }
 
-    this._urls.push(url);
+    return url;
   }
 
   /**
@@ -977,28 +946,35 @@ class SearchEngine {
         extensionBaseURI.resolve(IconDetails.getPreferredIcon(icons).icon);
     }
 
-    let shortName = extensionID.split("@")[0];
-    if (locale != SearchUtils.DEFAULT_TAG) {
-      shortName += "-" + locale;
-    }
-    // TODO: Bug 1619656. We should no longer need to maintain the short name as
-    // the telemetry id. However, we need to check that this doesn't adversely
-    // affect settings or caches.
-    if ("telemetryId" in configuration && configuration.telemetryId) {
-      shortName = configuration.telemetryId;
+    // We only set _telemetryId for app-provided engines. See also telemetryId
+    // getter.
+    if (this._isAppProvided) {
+      if (configuration.telemetryId) {
+        this._telemetryId = configuration.telemetryId;
+      } else {
+        let telemetryId = extensionID.split("@")[0];
+        if (locale != SearchUtils.DEFAULT_TAG) {
+          telemetryId += "-" + locale;
+        }
+        this._telemetryId = telemetryId;
+      }
     }
 
     this._extensionID = extensionID;
     this._locale = locale;
     this._orderHint = configuration.orderHint;
-    this._telemetryId = configuration.telemetryId;
     this._name = searchProvider.name.trim();
     this._regionParams = configuration.regionParams;
+    this._sendAttributionRequest =
+      configuration.sendAttributionRequest ?? false;
 
-    if (shortName) {
-      this._shortName = shortName;
+    this._definedAliases = [];
+    if (Array.isArray(searchProvider.keyword)) {
+      this._definedAliases = searchProvider.keyword.map(k => k.trim());
+    } else if (searchProvider.keyword?.trim()) {
+      this._definedAliases = [searchProvider.keyword?.trim()];
     }
-    this._definedAlias = searchProvider.keyword?.trim() || null;
+
     this._description = manifest.description;
     if (iconURL) {
       this._setIcon(iconURL, true);
@@ -1037,7 +1013,7 @@ class SearchEngine {
       configuration.params?.searchUrlPostParams ||
       searchProvider.search_url_post_params ||
       "";
-    this._initEngineURLFromMetaData(SearchUtils.URL_TYPE.SEARCH, {
+    let url = this._getEngineURLFromMetaData(SearchUtils.URL_TYPE.SEARCH, {
       method: (postParams && "POST") || "GET",
       // AddonManager will sometimes encode the URL via `new URL()`. We want
       // to ensure we're always dealing with decoded urls.
@@ -1050,12 +1026,14 @@ class SearchEngine {
       mozParams: configuration.extraParams || searchProvider.params || [],
     });
 
+    this._urls.push(url);
+
     if (searchProvider.suggest_url) {
       let suggestPostParams =
         configuration.params?.suggestUrlPostParams ||
         searchProvider.suggest_url_post_params ||
         "";
-      this._initEngineURLFromMetaData(SearchUtils.URL_TYPE.SUGGEST_JSON, {
+      url = this._getEngineURLFromMetaData(SearchUtils.URL_TYPE.SUGGEST_JSON, {
         method: (suggestPostParams && "POST") || "GET",
         // suggest_url doesn't currently get encoded.
         template: searchProvider.suggest_url,
@@ -1065,10 +1043,35 @@ class SearchEngine {
           "",
         postParams: suggestPostParams,
       });
+
+      this._urls.push(url);
     }
 
-    this._queryCharset = searchProvider.encoding || "UTF-8";
+    if (searchProvider.encoding) {
+      this._queryCharset = searchProvider.encoding;
+    }
     this.__searchForm = searchProvider.search_form;
+  }
+
+  checkSearchUrlMatchesManifest(searchProvider) {
+    let existingUrl = this._getURLOfType(SearchUtils.URL_TYPE.SEARCH);
+
+    let newUrl = this._getEngineURLFromMetaData(SearchUtils.URL_TYPE.SEARCH, {
+      method: (searchProvider.search_url_post_params && "POST") || "GET",
+      // AddonManager will sometimes encode the URL via `new URL()`. We want
+      // to ensure we're always dealing with decoded urls.
+      template: decodeURI(searchProvider.search_url),
+      getParams: searchProvider.search_url_get_params || "",
+      postParams: searchProvider.search_url_post_params || "",
+    });
+
+    let existingSubmission = existingUrl.getSubmission("", this);
+    let newSubmission = newUrl.getSubmission("", this);
+
+    return (
+      existingSubmission.uri.equals(newSubmission.uri) &&
+      existingSubmission.postData == newSubmission.postData
+    );
   }
 
   /**
@@ -1108,7 +1111,7 @@ class SearchEngine {
 
   /**
    * Overrides the urls/parameters with those of the provided extension.
-   * The parameters are not saved to the search cache - the code handling
+   * The parameters are not saved to the search settings - the code handling
    * the extension should set these on every restart, this avoids potential
    * third party modifications and means that we can verify the WebExtension is
    * still in the allow list.
@@ -1135,10 +1138,18 @@ class SearchEngine {
    */
   removeExtensionOverride() {
     if (this.getAttr("overriddenBy")) {
-      this._urls = this._overriddenData.urls;
-      this._queryCharset = this._overriddenData.queryCharset;
-      this.__searchForm = this._overriddenData.searchForm;
-      delete this._overriddenData;
+      // If the attribute is set, but there is no data, skip it. Worst case,
+      // the urls will be reset on a restart.
+      if (this._overriddenData) {
+        this._urls = this._overriddenData.urls;
+        this._queryCharset = this._overriddenData.queryCharset;
+        this.__searchForm = this._overriddenData.searchForm;
+        delete this._overriddenData;
+      } else {
+        logConsole.error(
+          `${this._name} had overriddenBy set, but no _overriddenData`
+        );
+      }
       this.clearAttr("overriddenBy");
       SearchUtils.notifyAction(this, SearchUtils.MODIFIED_TYPE.CHANGED);
     }
@@ -1152,7 +1163,6 @@ class SearchEngine {
    */
   _initWithJSON(json) {
     this._name = json._name;
-    this._shortName = json._shortName;
     this._description = json.description;
     this._hasPreferredIcon = json._hasPreferredIcon == undefined;
     this._queryCharset = json.queryCharset || SearchUtils.DEFAULT_QUERY_CHARSET;
@@ -1164,10 +1174,12 @@ class SearchEngine {
     this._iconMapObj = json._iconMapObj;
     this._metaData = json._metaData || {};
     this._orderHint = json._orderHint || null;
-    this._telemetryId = json._telemetryId || null;
-    this._definedAlias = json._definedAlias || null;
+    this._definedAliases = json._definedAliases || [];
     // These changed keys in Firefox 80, maintain the old keys
     // for backwards compatibility.
+    if (json._definedAlias) {
+      this._definedAliases.push(json._definedAlias);
+    }
     this._filePath = json.filePath || json._filePath || null;
     this._extensionID = json.extensionID || json._extensionID || null;
     this._locale = json.extensionLocale || json._locale || null;
@@ -1177,8 +1189,7 @@ class SearchEngine {
       let engineURL = new EngineURL(
         url.type || SearchUtils.URL_TYPE.SEARCH,
         url.method || "GET",
-        url.template,
-        url.resultDomain || undefined
+        url.template
       );
       engineURL._initWithJSON(url);
       this._urls.push(engineURL);
@@ -1191,9 +1202,9 @@ class SearchEngine {
    *   An object suitable for serialization as JSON.
    */
   toJSON() {
-    // For built-in engines we don't want to store all their data in the cache
-    // so just store the relevant metadata.
-    if (gModernConfig && this._isAppProvided) {
+    // For built-in engines we don't want to store all their data in the settings
+    // file so just store the relevant metadata.
+    if (this._isAppProvided) {
       return {
         _name: this.name,
         _isAppProvided: true,
@@ -1203,7 +1214,6 @@ class SearchEngine {
 
     const fieldsToCopy = [
       "_name",
-      "_shortName",
       "_loadPath",
       "description",
       "__searchForm",
@@ -1220,7 +1230,7 @@ class SearchEngine {
       "_filePath",
       "_extensionID",
       "_locale",
-      "_definedAlias",
+      "_definedAliases",
     ];
 
     let json = {};
@@ -1253,29 +1263,55 @@ class SearchEngine {
   }
 
   // nsISearchEngine
+
+  /**
+   * Get the user-defined alias.
+   *
+   * @returns {string}
+   */
   get alias() {
-    return this.getAttr("alias") || this._definedAlias;
+    return this.getAttr("alias") || "";
   }
+
+  /**
+   * Set the user-defined alias.
+   *
+   * @param {string} val
+   */
   set alias(val) {
-    var value = val ? val.trim() : null;
-    this.setAttr("alias", value);
-    SearchUtils.notifyAction(this, SearchUtils.MODIFIED_TYPE.CHANGED);
+    var value = val ? val.trim() : "";
+    if (value != this.alias) {
+      this.setAttr("alias", value);
+      SearchUtils.notifyAction(this, SearchUtils.MODIFIED_TYPE.CHANGED);
+    }
+  }
+
+  /**
+   * Returns a list of aliases, including a user defined alias and
+   * a list defined by webextension keywords.
+   *
+   * @returns {Array}
+   */
+  get aliases() {
+    return [
+      ...(this.getAttr("alias") ? [this.getAttr("alias")] : []),
+      ...this._definedAliases,
+    ];
   }
 
   /**
    * Returns the appropriate identifier to use for telemetry. It is based on
    * the following order:
    *
-   * - telemetryId: The telemetry id from the configuration.
-   * - identifier: The built-in identifier of app-provided engines.
+   * - telemetryId: The telemetry id from the configuration, or derived from
+   *                the WebExtension name.
    * - other-<name>: The engine name prefixed by `other-` for non-app-provided
    *                 engines.
    *
    * @returns {string}
    */
   get telemetryId() {
-    let telemetryId =
-      this._telemetryId || this.identifier || `other-${this.name}`;
+    let telemetryId = this._telemetryId || `other-${this.name}`;
     if (this.getAttr("overriddenBy")) {
       return telemetryId + "-addon";
     }
@@ -1290,7 +1326,7 @@ class SearchEngine {
    */
   get identifier() {
     // No identifier if If the engine isn't app-provided
-    return this.isAppProvided ? this._shortName : null;
+    return this.isAppProvided ? this._telemetryId : null;
   }
 
   get description() {
@@ -1333,40 +1369,15 @@ class SearchEngine {
     return this._loadPath;
   }
 
-  get _isDistribution() {
-    return !!(
-      this._extensionID &&
-      Services.prefs.getCharPref(
-        `extensions.installedDistroAddon.${this._extensionID}`,
-        ""
-      )
-    );
+  get isAppProvided() {
+    return !!(this._extensionID && this._isAppProvided);
   }
 
-  get isAppProvided() {
-    // For the modern configuration, distribution engines are app-provided as
-    // well and we don't have xml files as app-provided engines.
-    if (gModernConfig) {
-      return !!(this._extensionID && this._isAppProvided);
-    }
-
-    if (this._extensionID) {
-      return this._isAppProvided || this._isDistribution;
-    }
-
-    // If we don't have a shortName, the engine is being parsed from a
-    // downloaded file, so this can't be a default engine.
-    if (!this._shortName) {
-      return false;
-    }
-
-    // An engine is a default one if we initially loaded it from the application
-    // or distribution directory.
-    if (/^(?:jar:)?(?:\[app\]|\[distribution\])/.test(this._loadPath)) {
-      return true;
-    }
-
-    return false;
+  get isGeneralPurposeEngine() {
+    return !!(
+      this._extensionID &&
+      SearchUtils.GENERAL_SEARCH_ENGINE_IDS.has(this._extensionID)
+    );
   }
 
   get _hasUpdates() {
@@ -1381,11 +1392,8 @@ class SearchEngine {
     return this._getSearchFormWithPurpose();
   }
 
-  get _internalAliases() {
-    if (!this.__internalAliases) {
-      this.__internalAliases = getInternalAliases(this);
-    }
-    return this.__internalAliases;
+  get sendAttributionRequest() {
+    return this._sendAttributionRequest;
   }
 
   _getSearchFormWithPurpose(purpose) {
@@ -1421,10 +1429,7 @@ class SearchEngine {
   }
 
   get queryCharset() {
-    if (this._queryCharset) {
-      return this._queryCharset;
-    }
-    return (this._queryCharset = "windows-1252"); // the default
+    return this._queryCharset || SearchUtils.DEFAULT_QUERY_CHARSET;
   }
 
   get _defaultMobileResponseType() {
@@ -1491,6 +1496,46 @@ class SearchEngine {
     return url.getSubmission(submissionData, this, purpose);
   }
 
+  get searchUrlQueryParamName() {
+    if (this._searchUrlQueryParamName != null) {
+      return this._searchUrlQueryParamName;
+    }
+
+    let submission = this.getSubmission(
+      "{searchTerms}",
+      SearchUtils.URL_TYPE.SEARCH
+    );
+
+    if (submission.postData) {
+      Cu.reportError("searchUrlQueryParamName can't handle POST urls.");
+      return (this._searchUrlQueryParamName = "");
+    }
+
+    let queryParams = new URLSearchParams(submission.uri.query);
+    let searchUrlQueryParamName = "";
+    for (let [key, value] of queryParams) {
+      if (value == "{searchTerms}") {
+        searchUrlQueryParamName = key;
+      }
+    }
+
+    return (this._searchUrlQueryParamName = searchUrlQueryParamName);
+  }
+
+  get searchUrlPublicSuffix() {
+    if (this._searchUrlPublicSuffix != null) {
+      return this._searchUrlPublicSuffix;
+    }
+    let submission = this.getSubmission(
+      "{searchTerms}",
+      SearchUtils.URL_TYPE.SEARCH
+    );
+    let searchURLPublicSuffix = Services.eTLD.getKnownPublicSuffix(
+      submission.uri
+    );
+    return (this._searchUrlPublicSuffix = searchURLPublicSuffix);
+  }
+
   // from nsISearchEngine
   supportsResponseType(type) {
     return this._getURLOfType(type) != null;
@@ -1507,7 +1552,7 @@ class SearchEngine {
 
     let url = this._getURLOfType(responseType);
     if (url) {
-      return url.resultDomain;
+      return url.templateHost;
     }
     return "";
   }

@@ -45,6 +45,11 @@ loader.lazyRequireGetter(
   true
 );
 loader.lazyRequireGetter(this, "saveAs", "devtools/shared/DevToolsUtils", true);
+loader.lazyRequireGetter(
+  this,
+  "beautify",
+  "devtools/shared/jsbeautify/beautify"
+);
 
 // React & Redux
 const {
@@ -113,6 +118,7 @@ class JSTerm extends Component {
       // Is the input in editor mode.
       editorMode: PropTypes.bool,
       editorWidth: PropTypes.number,
+      editorPrettifiedAt: PropTypes.number,
       showEditorOnboarding: PropTypes.bool,
       autocomplete: PropTypes.bool,
       showEvaluationContextSelector: PropTypes.bool,
@@ -250,7 +256,7 @@ class JSTerm extends Component {
 
       this.editor = new Editor({
         autofocus: true,
-        enableCodeFolding: false,
+        enableCodeFolding: this.props.editorMode,
         lineNumbers: this.props.editorMode,
         lineWrapping: true,
         mode: {
@@ -575,6 +581,7 @@ class JSTerm extends Component {
     if (nextProps.editorMode !== this.props.editorMode) {
       if (this.editor) {
         this.editor.setOption("lineNumbers", nextProps.editorMode);
+        this.editor.setOption("enableCodeFolding", nextProps.editorMode);
       }
 
       if (nextProps.editorMode && nextProps.editorWidth) {
@@ -594,6 +601,23 @@ class JSTerm extends Component {
       this.autocompletePopup
     ) {
       this.autocompletePopup.position = nextProps.autocompletePopupPosition;
+    }
+
+    if (
+      nextProps.editorPrettifiedAt &&
+      nextProps.editorPrettifiedAt !== this.props.editorPrettifiedAt
+    ) {
+      this._setValue(
+        beautify.js(this._getValue(), {
+          // Read directly from prefs because this.editor.config.indentUnit and
+          // this.editor.getOption('indentUnit') are not really synced with
+          // prefs.
+          indent_size: Services.prefs.getIntPref("devtools.editor.tabsize"),
+          indent_with_tabs: !Services.prefs.getBoolPref(
+            "devtools.editor.expandtab"
+          ),
+        })
+      );
     }
   }
 
@@ -887,7 +911,9 @@ class JSTerm extends Component {
     if (state.context) {
       for (let c = state.context; c; c = c.prev) {
         for (let v = c.vars; v; v = v.next) {
-          variables.push(v.name);
+          if (v.name) {
+            variables.push(v.name);
+          }
         }
       }
     }
@@ -896,7 +922,9 @@ class JSTerm extends Component {
     for (const key of keys) {
       if (state[key]) {
         for (let v = state[key]; v; v = v.next) {
-          variables.push(v.name);
+          if (v.name) {
+            variables.push(v.name);
+          }
         }
       }
     }
@@ -1092,10 +1120,24 @@ class JSTerm extends Component {
       const xOffset = -1 * matchProp.length * this._inputCharWidth;
       const yOffset = 5;
       const popupAlignElement = this.props.serviceContainer.getJsTermTooltipAnchor();
-      await popup.openPopup(popupAlignElement, xOffset, yOffset, 0, {
-        preventSelectCallback: true,
-      });
-    } else if (items.length < minimumAutoCompleteLength && popup.isOpen) {
+      this._openPopupPendingPromise = popup.openPopup(
+        popupAlignElement,
+        xOffset,
+        yOffset,
+        0,
+        {
+          preventSelectCallback: true,
+        }
+      );
+      await this._openPopupPendingPromise;
+      this._openPopupPendingPromise = null;
+    } else if (
+      items.length < minimumAutoCompleteLength &&
+      (popup.isOpen || this._openPopupPendingPromise)
+    ) {
+      if (this._openPopupPendingPromise) {
+        await this._openPopupPendingPromise;
+      }
       popup.hidePopup();
     }
 
@@ -1157,9 +1199,16 @@ class JSTerm extends Component {
     if (this.autocompletePopup) {
       this.autocompletePopup.clearItems();
 
-      if (this.autocompletePopup.isOpen) {
+      if (this.autocompletePopup.isOpen || this._openPopupPendingPromise) {
         onPopupClosed = this.autocompletePopup.once("popup-closed");
-        this.autocompletePopup.hidePopup();
+
+        if (this._openPopupPendingPromise) {
+          this._openPopupPendingPromise.then(() =>
+            this.autocompletePopup.hidePopup()
+          );
+        } else {
+          this.autocompletePopup.hidePopup();
+        }
         onPopupClosed.then(() => this.focus());
       }
     }
@@ -1178,6 +1227,15 @@ class JSTerm extends Component {
 
     this.autocompleteUpdate.cancel();
     this.props.autocompleteClear();
+
+    // If the code triggering the opening of the popup was already triggered but not yet
+    // settled, then we need to wait until it's resolved in order to close the popup (See
+    // Bug 1655406).
+    if (this._openPopupPendingPromise) {
+      this._openPopupPendingPromise.then(() =>
+        this.autocompletePopup.hidePopup()
+      );
+    }
 
     if (completionText) {
       this.insertStringAtCursor(
@@ -1398,6 +1456,7 @@ class JSTerm extends Component {
   destroy() {
     this.autocompleteUpdate.cancel();
     this.terminalInputChanged.cancel();
+    this._openPopupPendingPromise = null;
 
     if (this.autocompletePopup) {
       this.autocompletePopup.destroy();
@@ -1516,6 +1575,7 @@ function mapStateToProps(state) {
     showEditorOnboarding: state.ui.showEditorOnboarding,
     showEvaluationContextSelector: state.ui.showEvaluationContextSelector,
     autocompletePopupPosition: state.prefs.eagerEvaluation ? "top" : "bottom",
+    editorPrettifiedAt: state.ui.editorPrettifiedAt,
   };
 }
 

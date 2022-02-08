@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 ja{
-    Version{"37"}
     durationUnits{
         hm{"h:mm"}
         hms{"h:mm:ss"}
@@ -88,15 +88,61 @@ ja{
             }
         }
         compound{
+            1024p1{"キビ{0}"}
+            1024p2{"メビ{0}"}
+            1024p3{"ギビ{0}"}
+            1024p4{"テビ{0}"}
+            1024p5{"ペビ{0}"}
+            1024p6{"エクスビ{0}"}
+            1024p7{"ゼビ{0}"}
+            1024p8{"ヨビ{0}"}
+            10p-1{"デシ{0}"}
+            10p-12{"ピコ{0}"}
+            10p-15{"フェムト{0}"}
+            10p-18{"アト{0}"}
+            10p-2{"センチ{0}"}
+            10p-21{"ゼプト{0}"}
+            10p-24{"ヨクト{0}"}
+            10p-3{"ミリ{0}"}
+            10p-6{"マイクロ{0}"}
+            10p-9{"ナノ{0}"}
+            10p1{"デカ{0}"}
+            10p12{"テラ{0}"}
+            10p15{"ペタ{0}"}
+            10p18{"エクサ{0}"}
+            10p2{"ヘクト{0}"}
+            10p21{"ゼタ{0}"}
+            10p24{"ヨタ{0}"}
+            10p3{"キロ{0}"}
+            10p6{"メガ{0}"}
+            10p9{"ギガ{0}"}
             per{"{0}毎{1}"}
+            power2{
+                other{
+                    _{
+                        _{"平方{0}"}
+                    }
+                }
+            }
+            power3{
+                other{
+                    _{
+                        _{"立方{0}"}
+                    }
+                }
+            }
             times{"{0}⋅{1}"}
         }
         concentr{
+            item{
+                dnam{"項目"}
+                other{"{0} 項目"}
+            }
             karat{
                 dnam{"金"}
                 other{"{0} 金"}
             }
-            milligram-per-deciliter{
+            milligram-ofglucose-per-deciliter{
                 dnam{"ミリグラム毎デシリットル"}
                 other{"{0} ミリグラム毎デシリットル"}
             }
@@ -310,6 +356,10 @@ ja{
             }
         }
         force{
+            kilowatt-hour-per-100-kilometer{
+                dnam{"キロワット時毎100キロメートル"}
+                other{"{0} キロワット時毎100キロメートル"}
+            }
             newton{
                 dnam{"ニュートン"}
                 other{"{0} ニュートン"}
@@ -338,6 +388,9 @@ ja{
             }
         }
         graphics{
+            dot{
+                dnam{"ドット"}
+            }
             dot-per-centimeter{
                 dnam{"ドット/cm"}
                 other{"{0} ドット/cm"}
@@ -379,6 +432,10 @@ ja{
             decimeter{
                 dnam{"デシメートル"}
                 other{"{0} デシメートル"}
+            }
+            earth-radius{
+                dnam{"地球半径"}
+                other{"{0} 地球半径"}
             }
             fathom{
                 dnam{"ファゾム"}
@@ -458,6 +515,14 @@ ja{
             }
         }
         light{
+            candela{
+                dnam{"カンデラ"}
+                other{"{0} カンデラ"}
+            }
+            lumen{
+                dnam{"ルーメン"}
+                other{"{0} ルーメン"}
+            }
             lux{
                 dnam{"ルクス"}
                 other{"{0} ルクス"}
@@ -479,6 +544,10 @@ ja{
             earth-mass{
                 dnam{"地球質量"}
                 other{"{0} 地球質量"}
+            }
+            grain{
+                dnam{"グレーン"}
+                other{"{0} グレーン"}
             }
             gram{
                 dnam{"グラム"}
@@ -702,6 +771,22 @@ ja{
                 dnam{"デシリットル"}
                 other{"{0} デシリットル"}
             }
+            dessert-spoon{
+                dnam{"中さじ"}
+                other{"中さじ {0}"}
+            }
+            dessert-spoon-imperial{
+                dnam{"英デザートスプーン"}
+                other{"{0} 英デザートスプーン"}
+            }
+            dram{
+                dnam{"ドラム"}
+                other{"{0} ドラム"}
+            }
+            drop{
+                dnam{"滴"}
+                other{"{0} 滴"}
+            }
             fluid-ounce{
                 dnam{"液量オンス"}
                 other{"{0} 液量オンス"}
@@ -724,6 +809,10 @@ ja{
                 dnam{"ヘクトリットル"}
                 other{"{0} ヘクトリットル"}
             }
+            jigger{
+                dnam{"ジガー"}
+                other{"{0} ジガー"}
+            }
             liter{
                 dnam{"リットル"}
                 other{"{0} リットル"}
@@ -737,6 +826,10 @@ ja{
                 dnam{"ミリリットル"}
                 other{"{0} ミリリットル"}
             }
+            pinch{
+                dnam{"つまみ"}
+                other{"{0} つまみ"}
+            }
             pint{
                 dnam{"パイント"}
                 other{"{0} パイント"}
@@ -748,6 +841,10 @@ ja{
             quart{
                 dnam{"クォート"}
                 other{"{0} クォート"}
+            }
+            quart-imperial{
+                dnam{"英クォート"}
+                other{"{0} 英クォート"}
             }
             tablespoon{
                 dnam{"大さじ"}
@@ -771,8 +868,22 @@ ja{
             }
         }
         angle{
+            arc-minute{
+                other{"{0}′"}
+            }
+            arc-second{
+                other{"{0}″"}
+            }
+            degree{
+                other{"{0}°"}
+            }
             radian{
+                dnam{"rad"}
                 other{"{0}rad"}
+            }
+            revolution{
+                dnam{"rev"}
+                other{"{0}rev"}
             }
         }
         area{
@@ -786,9 +897,11 @@ ja{
                 other{"{0}cm²"}
             }
             square-foot{
+                dnam{"ft²"}
                 other{"{0}ft²"}
             }
             square-inch{
+                dnam{"in²"}
                 other{"{0}in²"}
             }
             square-kilometer{
@@ -798,23 +911,57 @@ ja{
                 other{"{0}m²"}
             }
             square-mile{
+                dnam{"mi²"}
                 other{"{0}mi²"}
             }
             square-yard{
+                dnam{"yd²"}
                 other{"{0}yd²"}
             }
         }
         compound{
+            1024p1{"Ki{0}"}
+            1024p2{"Mi{0}"}
+            1024p3{"Gi{0}"}
+            1024p4{"Ti{0}"}
+            1024p5{"Pi{0}"}
+            1024p6{"Ei{0}"}
+            1024p7{"Zi{0}"}
+            1024p8{"Yi{0}"}
             per{"{0}/{1}"}
             times{"{0}⋅{1}"}
         }
         concentr{
+            item{
+                other{"{0}項目"}
+            }
             karat{
                 other{"{0}K"}
+            }
+            milligram-ofglucose-per-deciliter{
+                dnam{"mg/dL"}
+                other{"{0}mg/dL"}
+            }
+            millimole-per-liter{
+                dnam{"mmol/L"}
+                other{"{0}mmol/L"}
+            }
+            mole{
+                dnam{"mol"}
+                other{"{0}mol"}
             }
             percent{
                 dnam{"%"}
                 other{"{0}%"}
+            }
+            permille{
+                dnam{"‰"}
+            }
+            permillion{
+                other{"{0}ppm"}
+            }
+            permyriad{
+                dnam{"‱"}
             }
         }
         consumption{
@@ -826,7 +973,12 @@ ja{
                 other{"{0}L/km"}
             }
             mile-per-gallon{
+                dnam{"mpg"}
                 other{"{0}mpg"}
+            }
+            mile-per-gallon-imperial{
+                dnam{"マイル/英ガロン"}
+                other{"{0}mpg Imp."}
             }
         }
         coordinate{
@@ -841,42 +993,55 @@ ja{
                 other{"{0}b"}
             }
             byte{
+                dnam{"B"}
                 other{"{0}B"}
             }
             gigabit{
+                dnam{"Gb"}
                 other{"{0}Gb"}
             }
             gigabyte{
                 other{"{0}GB"}
             }
             kilobit{
+                dnam{"kb"}
                 other{"{0}kb"}
             }
             kilobyte{
-                other{"{0}kB"}
+                other{"{0}KB"}
             }
             megabit{
+                dnam{"Mb"}
                 other{"{0}Mb"}
             }
             megabyte{
                 other{"{0}MB"}
             }
+            petabyte{
+                dnam{"PB"}
+                other{"{0}PB"}
+            }
             terabit{
+                dnam{"Tb"}
                 other{"{0}Tb"}
             }
             terabyte{
+                dnam{"TB"}
                 other{"{0}TB"}
             }
         }
         duration{
             century{
                 dnam{"世紀"}
-                other{"{0} 世紀"}
+                other{"{0}世紀"}
             }
             day{
                 dnam{"日"}
                 other{"{0}d"}
                 per{"{0}/日"}
+            }
+            decade{
+                other{"{0}十年"}
             }
             hour{
                 dnam{"時間"}
@@ -884,7 +1049,7 @@ ja{
                 per{"{0}/時間"}
             }
             microsecond{
-                dnam{"µs"}
+                dnam{"μs"}
                 other{"{0}μs"}
             }
             millisecond{
@@ -902,6 +1067,7 @@ ja{
                 per{"{0}/月"}
             }
             nanosecond{
+                dnam{"ns"}
                 other{"{0}ns"}
             }
             second{
@@ -935,8 +1101,14 @@ ja{
             }
         }
         energy{
+            british-thermal-unit{
+                other{"{0}BTU"}
+            }
             calorie{
                 other{"{0}calth"}
+            }
+            electronvolt{
+                dnam{"eV"}
             }
             foodcalorie{
                 other{"{0}cal"}
@@ -951,7 +1123,25 @@ ja{
                 other{"{0}kJ"}
             }
             kilowatt-hour{
+                dnam{"kWh"}
                 other{"{0}kWh"}
+            }
+            therm-us{
+                other{"{0}米サーム"}
+            }
+        }
+        force{
+            kilowatt-hour-per-100-kilometer{
+                dnam{"kWh/100km"}
+                other{"{0}kWh/100km"}
+            }
+            newton{
+                dnam{"N"}
+                other{"{0}N"}
+            }
+            pound-force{
+                dnam{"lbf"}
+                other{"{0}lbf"}
             }
         }
         frequency{
@@ -968,6 +1158,34 @@ ja{
                 other{"{0}MHz"}
             }
         }
+        graphics{
+            dot{
+                other{"{0}ドット"}
+            }
+            dot-per-centimeter{
+                other{"{0}dpcm"}
+            }
+            dot-per-inch{
+                other{"{0}dpi"}
+            }
+            em{
+                other{"{0}em"}
+            }
+            megapixel{
+                dnam{"MP"}
+                other{"{0}MP"}
+            }
+            pixel{
+                dnam{"px"}
+                other{"{0}px"}
+            }
+            pixel-per-centimeter{
+                other{"{0}ppcm"}
+            }
+            pixel-per-inch{
+                other{"{0}ppi"}
+            }
+        }
         length{
             astronomical-unit{
                 dnam{"天文単位"}
@@ -981,6 +1199,9 @@ ja{
             decimeter{
                 dnam{"デシメートル"}
                 other{"{0}dm"}
+            }
+            earth-radius{
+                other{"{0}R⊕"}
             }
             fathom{
                 other{"{0}fth"}
@@ -1014,7 +1235,7 @@ ja{
             }
             micrometer{
                 dnam{"マイクロメートル"}
-                other{"{0}µm"}
+                other{"{0}μm"}
             }
             mile{
                 dnam{"マイル"}
@@ -1022,7 +1243,7 @@ ja{
             }
             mile-scandinavian{
                 dnam{"スカンジナビアマイル"}
-                other{"{0} smi"}
+                other{"{0}smi"}
             }
             millimeter{
                 dnam{"mm"}
@@ -1045,7 +1266,12 @@ ja{
                 other{"{0}pm"}
             }
             point{
-                other{"{0} pt"}
+                dnam{"pt"}
+                other{"{0}pt"}
+            }
+            solar-radius{
+                dnam{"R☉"}
+                other{"{0}R☉"}
             }
             yard{
                 dnam{"ヤード"}
@@ -1053,13 +1279,37 @@ ja{
             }
         }
         light{
+            candela{
+                dnam{"cd"}
+                other{"{0}cd"}
+            }
+            lumen{
+                dnam{"lm"}
+                other{"{0}lm"}
+            }
             lux{
+                dnam{"ルクス"}
                 other{"{0}lx"}
+            }
+            solar-luminosity{
+                dnam{"L☉"}
+                other{"{0}L☉"}
             }
         }
         mass{
             carat{
                 other{"{0}ct"}
+            }
+            dalton{
+                dnam{"Da"}
+                other{"{0}Da"}
+            }
+            earth-mass{
+                dnam{"M⊕"}
+                other{"{0}M⊕"}
+            }
+            grain{
+                other{"{0}グレーン"}
             }
             gram{
                 dnam{"g"}
@@ -1072,10 +1322,12 @@ ja{
                 per{"{0}/kg"}
             }
             metric-ton{
-                other{"{0}MT"}
+                dnam{"t"}
+                other{"{0}t"}
             }
             microgram{
-                other{"{0}µg"}
+                dnam{"μg"}
+                other{"{0}μg"}
             }
             milligram{
                 other{"{0}mg"}
@@ -1086,6 +1338,7 @@ ja{
                 per{"{0}/oz"}
             }
             ounce-troy{
+                dnam{"oz t"}
                 other{"{0}oz t"}
             }
             pound{
@@ -1093,11 +1346,15 @@ ja{
                 other{"{0}lb"}
                 per{"{0}/lb"}
             }
+            solar-mass{
+                dnam{"M☉"}
+                other{"{0}M☉"}
+            }
             stone{
                 other{"{0}st"}
             }
             ton{
-                other{"{0}t"}
+                other{"{0}s/t"}
             }
         }
         power{
@@ -1108,12 +1365,14 @@ ja{
                 other{"{0}hp"}
             }
             kilowatt{
+                dnam{"kW"}
                 other{"{0}kW"}
             }
             megawatt{
                 other{"{0}MW"}
             }
             milliwatt{
+                dnam{"mW"}
                 other{"{0}mW"}
             }
             watt{
@@ -1121,6 +1380,9 @@ ja{
             }
         }
         pressure{
+            bar{
+                other{"{0}bar"}
+            }
             hectopascal{
                 dnam{"hPa"}
                 other{"{0}hPa"}
@@ -1129,13 +1391,23 @@ ja{
                 dnam{"水銀柱インチ"}
                 other{"{0}\u0022 Hg"}
             }
+            kilopascal{
+                other{"{0}kPa"}
+            }
+            megapascal{
+                other{"{0}MPa"}
+            }
             millibar{
                 dnam{"ミリバール"}
                 other{"{0}mb"}
             }
             millimeter-ofhg{
                 dnam{"水銀柱ミリメートル"}
-                other{"{0}mm Hg"}
+                other{"{0}mmHg"}
+            }
+            pascal{
+                dnam{"Pa"}
+                other{"{0}Pa"}
             }
             pound-force-per-square-inch{
                 dnam{"重量ポンド毎平方インチ"}
@@ -1149,7 +1421,7 @@ ja{
             }
             knot{
                 dnam{"ノット"}
-                other{"{0} kn"}
+                other{"{0}kn"}
             }
             meter-per-second{
                 dnam{"m/s"}
@@ -1178,23 +1450,41 @@ ja{
                 other{"{0}K"}
             }
         }
+        torque{
+            newton-meter{
+                dnam{"N⋅m"}
+                other{"{0}N⋅m"}
+            }
+            pound-force-foot{
+                dnam{"lbf⋅ft"}
+                other{"{0}lbf⋅ft"}
+            }
+        }
         volume{
             acre-foot{
+                dnam{"ac ft"}
                 other{"{0}ac ft"}
+            }
+            barrel{
+                dnam{"bbl"}
+                other{"{0}bbl"}
             }
             bushel{
                 other{"{0}bu"}
             }
             centiliter{
+                dnam{"cL"}
                 other{"{0}cL"}
             }
             cubic-centimeter{
                 other{"{0}cm³"}
             }
             cubic-foot{
+                dnam{"ft³"}
                 other{"{0}ft³"}
             }
             cubic-inch{
+                dnam{"in³"}
                 other{"{0}in³"}
             }
             cubic-kilometer{
@@ -1204,41 +1494,87 @@ ja{
                 other{"{0}m³"}
             }
             cubic-mile{
+                dnam{"mi³"}
                 other{"{0}mi³"}
             }
             cubic-yard{
+                dnam{"yd³"}
                 other{"{0}yd³"}
             }
             cup{
                 other{"{0}カップ"}
             }
+            cup-metric{
+                other{"{0}mc"}
+            }
             deciliter{
+                dnam{"dL"}
                 other{"{0}dL"}
             }
+            dessert-spoon{
+                other{"中さじ{0}"}
+            }
+            dessert-spoon-imperial{
+                other{"{0}英デザートスプーン"}
+            }
+            dram{
+                other{"{0}fl dr"}
+            }
+            drop{
+                other{"{0}滴"}
+            }
             fluid-ounce{
+                dnam{"fl oz"}
                 other{"{0}fl oz"}
             }
+            fluid-ounce-imperial{
+                dnam{"Imp fl oz"}
+                other{"{0}Imp fl oz"}
+            }
             gallon{
+                dnam{"gal"}
                 other{"{0}gal"}
             }
+            gallon-imperial{
+                dnam{"Imp gal"}
+                other{"{0}gal Imp."}
+            }
             hectoliter{
+                dnam{"hL"}
                 other{"{0}hL"}
+            }
+            jigger{
+                other{"{0}ジガー"}
             }
             liter{
                 dnam{"L"}
                 other{"{0}L"}
             }
             megaliter{
+                dnam{"ML"}
                 other{"{0}ML"}
             }
             milliliter{
+                dnam{"mL"}
                 other{"{0}ml"}
             }
+            pinch{
+                other{"{0}つまみ"}
+            }
             pint{
+                dnam{"pt"}
                 other{"{0}pt"}
             }
+            pint-metric{
+                other{"{0}mpt"}
+            }
             quart{
+                dnam{"qt"}
                 other{"{0}qt"}
+            }
+            quart-imperial{
+                dnam{"qt Imp"}
+                other{"{0}qt-Imp."}
             }
             tablespoon{
                 other{"大さじ{0}"}
@@ -1329,15 +1665,27 @@ ja{
             }
         }
         compound{
+            1024p1{"Ki{0}"}
+            1024p2{"Mi{0}"}
+            1024p3{"Gi{0}"}
+            1024p4{"Ti{0}"}
+            1024p5{"Pi{0}"}
+            1024p6{"Ei{0}"}
+            1024p7{"Zi{0}"}
+            1024p8{"Yi{0}"}
             per{"{0}/{1}"}
             times{"{0}⋅{1}"}
         }
         concentr{
+            item{
+                dnam{"項目"}
+                other{"{0} 項目"}
+            }
             karat{
                 dnam{"金"}
                 other{"{0} 金"}
             }
-            milligram-per-deciliter{
+            milligram-ofglucose-per-deciliter{
                 dnam{"ミリグラム毎デシリットル"}
                 other{"{0} mg/dL"}
             }
@@ -1551,6 +1899,10 @@ ja{
             }
         }
         force{
+            kilowatt-hour-per-100-kilometer{
+                dnam{"kWh/100km"}
+                other{"{0} kWh/100km"}
+            }
             newton{
                 dnam{"ニュートン"}
                 other{"{0} N"}
@@ -1579,6 +1931,10 @@ ja{
             }
         }
         graphics{
+            dot{
+                dnam{"ドット"}
+                other{"{0} ドット"}
+            }
             dot-per-centimeter{
                 dnam{"dpcm"}
                 other{"{0} dpcm"}
@@ -1622,6 +1978,10 @@ ja{
                 dnam{"デシメートル"}
                 other{"{0} dm"}
             }
+            earth-radius{
+                dnam{"R⊕"}
+                other{"{0} R⊕"}
+            }
             fathom{
                 dnam{"ファゾム"}
                 other{"{0} fth"}
@@ -1656,7 +2016,7 @@ ja{
             }
             micrometer{
                 dnam{"マイクロメートル"}
-                other{"{0} µm"}
+                other{"{0} μm"}
             }
             mile{
                 dnam{"マイル"}
@@ -1700,6 +2060,14 @@ ja{
             }
         }
         light{
+            candela{
+                dnam{"cd"}
+                other{"{0} cd"}
+            }
+            lumen{
+                dnam{"lm"}
+                other{"{0} lm"}
+            }
             lux{
                 dnam{"ルクス"}
                 other{"{0} lx"}
@@ -1722,6 +2090,10 @@ ja{
                 dnam{"地球質量"}
                 other{"{0} M⊕"}
             }
+            grain{
+                dnam{"グレーン"}
+                other{"{0} グレーン"}
+            }
             gram{
                 dnam{"グラム"}
                 other{"{0} g"}
@@ -1738,7 +2110,7 @@ ja{
             }
             microgram{
                 dnam{"マイクログラム"}
-                other{"{0} µg"}
+                other{"{0} μg"}
             }
             milligram{
                 dnam{"mg"}
@@ -1944,6 +2316,22 @@ ja{
                 dnam{"デシリットル"}
                 other{"{0} dL"}
             }
+            dessert-spoon{
+                dnam{"中さじ"}
+                other{"中さじ {0}"}
+            }
+            dessert-spoon-imperial{
+                dnam{"英デザートスプーン"}
+                other{"{0} 英デザートスプーン"}
+            }
+            dram{
+                dnam{"液量ドラム"}
+                other{"{0} 液量ドラム"}
+            }
+            drop{
+                dnam{"滴"}
+                other{"{0} 滴"}
+            }
             fluid-ounce{
                 dnam{"液量オンス"}
                 other{"{0} fl oz"}
@@ -1966,6 +2354,10 @@ ja{
                 dnam{"ヘクトリットル"}
                 other{"{0} hL"}
             }
+            jigger{
+                dnam{"ジガー"}
+                other{"{0} ジガー"}
+            }
             liter{
                 dnam{"リットル"}
                 other{"{0} L"}
@@ -1979,6 +2371,10 @@ ja{
                 dnam{"ミリリットル"}
                 other{"{0} ml"}
             }
+            pinch{
+                dnam{"つまみ"}
+                other{"{0} つまみ"}
+            }
             pint{
                 dnam{"パイント"}
                 other{"{0} pt"}
@@ -1990,6 +2386,10 @@ ja{
             quart{
                 dnam{"クォート"}
                 other{"{0} qt"}
+            }
+            quart-imperial{
+                dnam{"英クォート"}
+                other{"{0} qt Imp."}
             }
             tablespoon{
                 dnam{"大さじ"}

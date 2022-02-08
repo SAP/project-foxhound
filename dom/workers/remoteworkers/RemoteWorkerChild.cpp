@@ -106,7 +106,7 @@ class SharedWorkerInterfaceRequestor final : public nsIInterfaceRequestor {
 
   SharedWorkerInterfaceRequestor() {
     // This check must match the code nsDocShell::Create.
-    if (!ServiceWorkerParentInterceptEnabled() || XRE_IsParentProcess()) {
+    if (XRE_IsParentProcess()) {
       mSWController = new ServiceWorkerInterceptController();
     }
   }
@@ -358,6 +358,7 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(RemoteWorkerData&& aData) {
   info.mUseRegularPrincipal = aData.useRegularPrincipal();
   info.mHasStorageAccessPermissionGranted =
       aData.hasStorageAccessPermissionGranted();
+  info.mIsThirdPartyContextToTopWindow = aData.isThirdPartyContextToTopWindow();
   info.mOriginAttributes =
       BasePrincipal::Cast(principal)->OriginAttributesRef();
   net::CookieJarSettings::Deserialize(aData.cookieJarSettings(),
@@ -402,7 +403,7 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(RemoteWorkerData&& aData) {
     return rv;
   }
 
-  nsString workerPrivateId = EmptyString();
+  nsString workerPrivateId;
 
   if (mIsServiceWorker) {
     ServiceWorkerData& data = aData.serviceWorkerData().get_ServiceWorkerData();
@@ -436,7 +437,7 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(RemoteWorkerData&& aData) {
   ErrorResult error;
   RefPtr<WorkerPrivate> workerPrivate = WorkerPrivate::Constructor(
       jsapi.cx(), aData.originalScriptURL(), false,
-      mIsServiceWorker ? WorkerTypeService : WorkerTypeShared, aData.name(),
+      mIsServiceWorker ? WorkerKindService : WorkerKindShared, aData.name(),
       VoidCString(), &info, error, std::move(workerPrivateId));
 
   if (NS_WARN_IF(error.Failed())) {
@@ -684,6 +685,21 @@ void RemoteWorkerChild::ErrorPropagationOnMainThread(
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
       "RemoteWorkerChild::ErrorPropagationOnMainThread",
       [self = std::move(self), value]() { self->ErrorPropagation(value); });
+
+  GetOwningEventTarget()->Dispatch(r.forget(), NS_DISPATCH_NORMAL);
+}
+
+void RemoteWorkerChild::NotifyLock(bool aCreated) {
+  nsCOMPtr<nsIRunnable> r =
+      NS_NewRunnableFunction(__func__, [self = RefPtr(this), aCreated] {
+        auto launcherData = self->mLauncherData.Access();
+
+        if (!launcherData->mIPCActive) {
+          return;
+        }
+
+        Unused << self->SendNotifyLock(aCreated);
+      });
 
   GetOwningEventTarget()->Dispatch(r.forget(), NS_DISPATCH_NORMAL);
 }
@@ -998,7 +1014,8 @@ IPCResult RemoteWorkerChild::RecvExecServiceWorkerOp(
     ServiceWorkerOpArgs&& aArgs, ExecServiceWorkerOpResolver&& aResolve) {
   MOZ_ASSERT(mIsServiceWorker);
   MOZ_ASSERT(
-      aArgs.type() != ServiceWorkerOpArgs::TServiceWorkerFetchEventOpArgs,
+      aArgs.type() !=
+          ServiceWorkerOpArgs::TParentToChildServiceWorkerFetchEventOpArgs,
       "FetchEvent operations should be sent via PFetchEventOp(Proxy) actors!");
 
   MaybeReportServiceWorkerShutdownProgress(aArgs);
@@ -1047,31 +1064,20 @@ RemoteWorkerChild::MaybeSendSetServiceWorkerSkipWaitingFlag() {
 /**
  * PFetchEventOpProxy methods
  */
-PFetchEventOpProxyChild* RemoteWorkerChild::AllocPFetchEventOpProxyChild(
-    const ServiceWorkerFetchEventOpArgs& aArgs) {
-  RefPtr<FetchEventOpProxyChild> actor = new FetchEventOpProxyChild();
-
-  return actor.forget().take();
+already_AddRefed<PFetchEventOpProxyChild>
+RemoteWorkerChild::AllocPFetchEventOpProxyChild(
+    const ParentToChildServiceWorkerFetchEventOpArgs& aArgs) {
+  return RefPtr{new FetchEventOpProxyChild()}.forget();
 }
 
 IPCResult RemoteWorkerChild::RecvPFetchEventOpProxyConstructor(
     PFetchEventOpProxyChild* aActor,
-    const ServiceWorkerFetchEventOpArgs& aArgs) {
+    const ParentToChildServiceWorkerFetchEventOpArgs& aArgs) {
   MOZ_ASSERT(aActor);
 
   (static_cast<FetchEventOpProxyChild*>(aActor))->Initialize(aArgs);
 
   return IPC_OK();
-}
-
-bool RemoteWorkerChild::DeallocPFetchEventOpProxyChild(
-    PFetchEventOpProxyChild* aActor) {
-  MOZ_ASSERT(aActor);
-
-  RefPtr<FetchEventOpProxyChild> actor =
-      dont_AddRef(static_cast<FetchEventOpProxyChild*>(aActor));
-
-  return true;
 }
 
 }  // namespace dom

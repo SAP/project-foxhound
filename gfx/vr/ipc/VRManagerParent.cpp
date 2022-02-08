@@ -8,12 +8,15 @@
 
 #include "ipc/VRLayerParent.h"
 #include "mozilla/gfx/PVRManagerParent.h"
+#include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/ProtocolTypes.h"
 #include "mozilla/ipc/ProtocolUtils.h"  // for IToplevelProtocol
 #include "mozilla/TimeStamp.h"          // for TimeStamp
 #include "mozilla/Unused.h"
 #include "VRManager.h"
 #include "VRThread.h"
+
+using mozilla::dom::GamepadHandle;
 
 namespace mozilla {
 using namespace layers;
@@ -142,14 +145,18 @@ void VRManagerParent::Shutdown() {
 
 void VRManagerParent::ActorDestroy(ActorDestroyReason why) {}
 
+void VRManagerParent::ActorAlloc() {
+  // FIXME: This actor should probably use proper refcounting instead of manual
+  // reference management, and probably shouldn't manage
+  // `mCompositorThreadHolder` in the alloc/dealloc methods.
+  PVRManagerParent::ActorAlloc();
+  mCompositorThreadHolder = CompositorThreadHolder::GetSingleton();
+}
+
 void VRManagerParent::ActorDealloc() {
   UnregisterFromManager();
   mCompositorThreadHolder = nullptr;
   mSelfRef = nullptr;
-}
-
-void VRManagerParent::OnChannelConnected(int32_t aPid) {
-  mCompositorThreadHolder = CompositorThreadHolder::GetSingleton();
 }
 
 mozilla::ipc::IPCResult VRManagerParent::RecvDetectRuntimes() {
@@ -239,21 +246,21 @@ mozilla::ipc::IPCResult VRManagerParent::RecvResetPuppet() {
 }
 
 mozilla::ipc::IPCResult VRManagerParent::RecvVibrateHaptic(
-    const uint32_t& aControllerIdx, const uint32_t& aHapticIndex,
-    const double& aIntensity, const double& aDuration,
-    const uint32_t& aPromiseID) {
+    const mozilla::dom::GamepadHandle& aGamepadHandle,
+    const uint32_t& aHapticIndex, const double& aIntensity,
+    const double& aDuration, const uint32_t& aPromiseID) {
   VRManager* vm = VRManager::Get();
   VRManagerPromise promise(this, aPromiseID);
 
-  vm->VibrateHaptic(aControllerIdx, aHapticIndex, aIntensity, aDuration,
+  vm->VibrateHaptic(aGamepadHandle, aHapticIndex, aIntensity, aDuration,
                     promise);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult VRManagerParent::RecvStopVibrateHaptic(
-    const uint32_t& aControllerIdx) {
+    const mozilla::dom::GamepadHandle& aGamepadHandle) {
   VRManager* vm = VRManager::Get();
-  vm->StopVibrateHaptic(aControllerIdx);
+  vm->StopVibrateHaptic(aGamepadHandle);
   return IPC_OK();
 }
 

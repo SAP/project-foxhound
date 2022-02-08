@@ -81,6 +81,10 @@ function testTrackingPageUnblocked() {
 }
 
 add_task(async function testExceptionAddition() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["dom.security.https_first_pbm", false]],
+  });
+
   await UrlClassifierTestUtils.addTestTrackers();
   Services.prefs.setBoolPref(DTSCBN_PREF, true);
   let privateWin = await BrowserTestUtils.openNewBrowserWindow({
@@ -91,7 +95,9 @@ add_task(async function testExceptionAddition() {
 
   gProtectionsHandler = browser.ownerGlobal.gProtectionsHandler;
   ok(gProtectionsHandler, "CB is attached to the private window");
-  TrackingProtection = browser.ownerGlobal.TrackingProtection;
+
+  TrackingProtection =
+    browser.ownerGlobal.gProtectionsHandler.blockers.TrackingProtection;
   ok(TrackingProtection, "TP is attached to the private window");
 
   Services.prefs.setBoolPref(TP_PB_PREF, true);
@@ -126,6 +132,10 @@ add_task(async function testExceptionAddition() {
 });
 
 add_task(async function testExceptionPersistence() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["dom.security.https_first_pbm", false]],
+  });
+
   info("Open another private browsing window");
   let privateWin = await BrowserTestUtils.openNewBrowserWindow({
     private: true,
@@ -135,7 +145,8 @@ add_task(async function testExceptionPersistence() {
 
   gProtectionsHandler = browser.ownerGlobal.gProtectionsHandler;
   ok(gProtectionsHandler, "CB is attached to the private window");
-  TrackingProtection = browser.ownerGlobal.TrackingProtection;
+  TrackingProtection =
+    browser.ownerGlobal.gProtectionsHandler.blockers.TrackingProtection;
   ok(TrackingProtection, "TP is attached to the private window");
 
   ok(TrackingProtection.enabled, "TP is still enabled");

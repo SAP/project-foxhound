@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-//#define DEBUG_FIND 1
+// #define DEBUG_FIND 1
 
 #include "nsFind.h"
 #include "mozilla/Likely.h"
@@ -31,6 +31,7 @@
 #include "mozilla/dom/HTMLOptionElement.h"
 #include "mozilla/dom/HTMLSelectElement.h"
 #include "mozilla/dom/Text.h"
+#include "mozilla/intl/WordBreaker.h"
 #include "mozilla/StaticPrefs_browser.h"
 
 using namespace mozilla;
@@ -39,13 +40,6 @@ using namespace mozilla::unicode;
 
 // Yikes!  Casting a char to unichar can fill with ones!
 #define CHAR_TO_UNICHAR(c) ((char16_t)(unsigned char)c)
-
-#define CH_QUOTE ((char16_t)0x22)
-#define CH_APOSTROPHE ((char16_t)0x27)
-#define CH_LEFT_SINGLE_QUOTE ((char16_t)0x2018)
-#define CH_RIGHT_SINGLE_QUOTE ((char16_t)0x2019)
-#define CH_LEFT_DOUBLE_QUOTE ((char16_t)0x201C)
-#define CH_RIGHT_DOUBLE_QUOTE ((char16_t)0x201D)
 
 #define CH_SHY ((char16_t)0xAD)
 
@@ -62,14 +56,6 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(nsFind)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsFind)
 
 NS_IMPL_CYCLE_COLLECTION(nsFind)
-
-nsFind::nsFind()
-    : mFindBackward(false),
-      mCaseSensitive(false),
-      mMatchDiacritics(false),
-      mWordBreaker(nullptr) {}
-
-nsFind::~nsFind() = default;
 
 #ifdef DEBUG_FIND
 #  define DEBUG_FIND_PRINTF(...) printf(__VA_ARGS__)
@@ -161,7 +147,7 @@ static bool ShouldFindAnonymousContent(const nsIContent& aContent) {
     }
 
     // We want to avoid finding in password inputs anyway, as it is confusing.
-    if (formControl->ControlType() == NS_FORM_INPUT_PASSWORD) {
+    if (formControl->ControlType() == FormControlType::InputPassword) {
       return false;
     }
   }
@@ -218,8 +204,9 @@ static const nsIContent* GetBlockParent(const Text& aNode) {
   return nullptr;
 }
 
-static bool NodeForcesBreak(const nsIContent& aContent) {
-  nsIFrame* frame = aContent.GetPrimaryFrame();
+static bool NonTextNodeForcesBreak(const nsINode& aNode) {
+  nsIFrame* frame =
+      aNode.IsContent() ? aNode.AsContent()->GetPrimaryFrame() : nullptr;
   // TODO(emilio): Maybe we should treat <br> more like a space instead of a
   // forced break? Unclear...
   return frame && frame->IsBrFrame();
@@ -270,25 +257,43 @@ struct nsFind::State final {
   // Sets up the first node position and offset.
   void Initialize();
 
-  static bool ValidTextNode(const nsINode& aNode, const Text* aPrev,
-                            bool aAlreadyMatching) {
+  // Returns whether the node should be used (true) or skipped over (false)
+  static bool AnalyzeNode(const nsINode& aNode, const Text* aPrev,
+                          bool aAlreadyMatching, bool* aForcedBreak) {
     if (!aNode.IsText()) {
+      *aForcedBreak = *aForcedBreak || NonTextNodeForcesBreak(aNode);
       return false;
     }
     if (SkipNode(aNode.AsText())) {
       return false;
     }
+    *aForcedBreak = *aForcedBreak ||
+                    (aPrev && ForceBreakBetweenText(*aPrev, *aNode.AsText()));
+    if (*aForcedBreak) {
+      // If we've already found a break, we can stop searching and just use this
+      // node, regardless of the subtree we're on. There's no point to continue
+      // a match across different blocks, regardless of which subtree you're
+      // looking into.
+      return true;
+    }
+
     // TODO(emilio): We can't represent ranges that span native anonymous /
     // shadow tree boundaries, but if we did the following check could / should
     // be removed.
     if (aAlreadyMatching && aPrev &&
         !nsContentUtils::IsInSameAnonymousTree(&aNode, aPrev)) {
-      DEBUG_FIND_PRINTF("Skipping due to different anon subtrees: ");
-      DumpNode(aPrev);
-      DEBUG_FIND_PRINTF("Next: ");
-      DumpNode(&aNode);
+      // As an optimization, if we were finding inside an native-anonymous
+      // subtree (like a pseudo-element), we know those trees are "atomic" and
+      // can't have any other subtrees in between, so we can just break the
+      // match here.
+      if (aPrev->IsInNativeAnonymousSubtree()) {
+        *aForcedBreak = true;
+        return true;
+      }
+      // Otherwise we can skip the node and keep looking past this subtree.
       return false;
     }
+
     return true;
   }
 
@@ -324,12 +329,9 @@ void nsFind::State::Advance(Initializing aInitializing, bool aAlreadyMatching) {
     if (!current) {
       return;
     }
-    if (ValidTextNode(*current, prev, aAlreadyMatching)) {
-      mFoundBreak = mFoundBreak ||
-                    (prev && ForceBreakBetweenText(*prev, *current->AsText()));
-      return;
+    if (AnalyzeNode(*current, prev, aAlreadyMatching, &mFoundBreak)) {
+      break;
     }
-    mFoundBreak = mFoundBreak || NodeForcesBreak(*current);
   }
 }
 
@@ -363,7 +365,7 @@ void nsFind::State::Initialize() {
   }
 
   const bool kAlreadyMatching = false;
-  if (!ValidTextNode(*current, nullptr, kAlreadyMatching)) {
+  if (!AnalyzeNode(*current, nullptr, kAlreadyMatching, &mFoundBreak)) {
     Advance(Initializing::Yes, kAlreadyMatching);
     current = mIterator.GetCurrent();
     if (!current) {
@@ -440,13 +442,13 @@ NS_IMETHODIMP
 nsFind::GetEntireWord(bool* aEntireWord) {
   if (!aEntireWord) return NS_ERROR_NULL_POINTER;
 
-  *aEntireWord = !!mWordBreaker;
+  *aEntireWord = mEntireWord;
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsFind::SetEntireWord(bool aEntireWord) {
-  mWordBreaker = aEntireWord ? nsContentUtils::WordBreaker() : nullptr;
+  mEntireWord = aEntireWord;
   return NS_OK;
 }
 
@@ -495,25 +497,27 @@ char32_t nsFind::DecodeChar(const char16_t* t2b, int32_t* index) const {
 }
 
 bool nsFind::BreakInBetween(char32_t x, char32_t y) const {
-  char16_t x16[2], y16[2];
-  int32_t x16len, y16len;
+  char16_t text[4];
+  int32_t textLen;
   if (IS_IN_BMP(x)) {
-    x16[0] = (char16_t)x;
-    x16len = 1;
+    text[0] = (char16_t)x;
+    textLen = 1;
   } else {
-    x16[0] = H_SURROGATE(x);
-    x16[1] = L_SURROGATE(x);
-    x16len = 2;
+    text[0] = H_SURROGATE(x);
+    text[1] = L_SURROGATE(x);
+    textLen = 2;
   }
+
+  const int32_t x16Len = textLen;
   if (IS_IN_BMP(y)) {
-    y16[0] = (char16_t)y;
-    y16len = 1;
+    text[textLen] = (char16_t)y;
+    textLen += 1;
   } else {
-    y16[0] = H_SURROGATE(y);
-    y16[1] = L_SURROGATE(y);
-    y16len = 2;
+    text[textLen] = H_SURROGATE(y);
+    text[textLen + 1] = L_SURROGATE(y);
+    textLen += 2;
   }
-  return mWordBreaker->BreakInBetween(x16, x16len, y16, y16len);
+  return intl::WordBreaker::Next(text, textLen, x16Len - 1) == x16Len;
 }
 
 char32_t nsFind::PeekNextChar(State& aState, bool aAlreadyMatching) const {
@@ -595,14 +599,16 @@ nsFind::Find(const nsAString& aPatText, nsRange* aSearchRange,
     return NS_OK;
   }
 
+  const int32_t patternStart = mFindBackward ? patLen : 0;
+
   // current offset into the pattern -- reset to beginning/end:
-  int32_t pindex = (mFindBackward ? patLen : 0);
+  int32_t pindex = patternStart;
 
   // Current offset into the fragment
   int32_t findex = 0;
 
   // Direction to move pindex and ptr*
-  int incr = (mFindBackward ? -1 : 1);
+  int incr = mFindBackward ? -1 : 1;
 
   const nsTextFragment* frag = nullptr;
   int32_t fragLen = 0;
@@ -614,12 +620,11 @@ nsFind::Find(const nsAString& aPatText, nsRange* aSearchRange,
   // Keep track of when we're in whitespace:
   // (only matters when we're matching)
   bool inWhitespace = false;
-  // Keep track of whether the previous char was a word-breaking one.
-  bool wordBreakPrev = false;
 
   // Place to save the range start point in case we find a match:
   Text* matchAnchorNode = nullptr;
   int32_t matchAnchorOffset = 0;
+  char32_t matchAnchorChar = 0;
 
   // Get the end point, so we know when to end searches:
   nsINode* endNode = aEndPoint->GetEndContainer();
@@ -627,18 +632,23 @@ nsFind::Find(const nsAString& aPatText, nsRange* aSearchRange,
 
   char32_t c = 0;
   char32_t patc = 0;
-  char32_t prevChar = 0;
   char32_t prevCharInMatch = 0;
 
   State state(mFindBackward, *root, *aStartPoint);
   Text* current = nullptr;
 
-  auto EndPartialMatch = [&] {
+  auto EndPartialMatch = [&]() -> bool {
     // If we didn't match, go back to the beginning of patStr, and set findex
     // back to the next char after we started the current match.
-    if (matchAnchorNode) {  // we're ending a partial match
+    //
+    // There's no need to do this if we're still at the beginning of the pattern
+    // (this can happen e.g. with whitespace, and prevents exponential
+    // complexity when scanning a pattern that starts with whitespace).
+    const bool restart = !!matchAnchorNode && pindex != patternStart;
+    if (restart) {  // we're ending a partial match
       findex = matchAnchorOffset;
       state.mIterOffset = matchAnchorOffset;
+      c = matchAnchorChar;
       // +incr will be added to findex when we continue
 
       // Are we going back to a previous node?
@@ -653,10 +663,13 @@ nsFind::Find(const nsAString& aPatText, nsRange* aSearchRange,
     }
     matchAnchorNode = nullptr;
     matchAnchorOffset = 0;
+    matchAnchorChar = 0;
     inWhitespace = false;
-    pindex = mFindBackward ? patLen : 0;
+    prevCharInMatch = 0;
+    pindex = patternStart;
     DEBUG_FIND_PRINTF("Setting findex back to %d, pindex to %d\n", findex,
                       pindex);
+    return restart;
   };
 
   while (true) {
@@ -667,8 +680,7 @@ nsFind::Find(const nsAString& aPatText, nsRange* aSearchRange,
       current = state.GetNextNode(!!matchAnchorNode);
       if (!current) {
         DEBUG_FIND_PRINTF("Reached the end, matching: %d\n", !!matchAnchorNode);
-        if (matchAnchorNode) {
-          EndPartialMatch();
+        if (EndPartialMatch()) {
           continue;
         }
         return NS_OK;
@@ -678,14 +690,12 @@ nsFind::Find(const nsAString& aPatText, nsRange* aSearchRange,
       // <br>, different blocks or what not.
       if (state.ForcedBreak()) {
         DEBUG_FIND_PRINTF("Forced break!\n");
-        // End any pending match:
-        matchAnchorNode = nullptr;
-        matchAnchorOffset = 0;
+        if (EndPartialMatch()) {
+          continue;
+        }
+        // This ensures word breaking thinks it has a new word, which is
+        // effectively what we want.
         c = 0;
-        prevChar = 0;
-        prevCharInMatch = 0;
-        pindex = (mFindBackward ? patLen : 0);
-        inWhitespace = false;
       }
 
       frag = &current->TextFragment();
@@ -759,12 +769,13 @@ nsFind::Find(const nsAString& aPatText, nsRange* aSearchRange,
     }
 
     // Save the previous character for word boundary detection
-    prevChar = c;
+    char32_t prevChar = c;
     // The two characters we'll be comparing are c and patc. If not matching
     // diacritics, don't leave c set to a combining diacritical mark. (patc is
     // already guaranteed to not be a combining diacritical mark.)
     c = (t2b ? DecodeChar(t2b, &findex) : CHAR_TO_UNICHAR(t1b[findex]));
-    if (!mMatchDiacritics && IsCombiningDiacritic(c)) {
+    if (!mMatchDiacritics && IsCombiningDiacritic(c) &&
+        !IsMathOrMusicSymbol(prevChar)) {
       continue;
     }
     patc = DecodeChar(patStr, &pindex);
@@ -806,34 +817,8 @@ nsFind::Find(const nsAString& aPatText, nsRange* aSearchRange,
       continue;
     }
 
-    if (!mCaseSensitive) {
-      switch (c) {
-        // treat curly and straight quotes as identical
-        case CH_LEFT_SINGLE_QUOTE:
-        case CH_RIGHT_SINGLE_QUOTE:
-          c = CH_APOSTROPHE;
-          break;
-        case CH_LEFT_DOUBLE_QUOTE:
-        case CH_RIGHT_DOUBLE_QUOTE:
-          c = CH_QUOTE;
-          break;
-      }
-
-      switch (patc) {
-        // treat curly and straight quotes as identical
-        case CH_LEFT_SINGLE_QUOTE:
-        case CH_RIGHT_SINGLE_QUOTE:
-          patc = CH_APOSTROPHE;
-          break;
-        case CH_LEFT_DOUBLE_QUOTE:
-        case CH_RIGHT_DOUBLE_QUOTE:
-          patc = CH_QUOTE;
-          break;
-      }
-    }
-
-    // a '\n' between CJ characters is ignored
-    if (pindex != (mFindBackward ? patLen : 0) && c != patc && !inWhitespace) {
+    if (pindex != patternStart && c != patc && !inWhitespace) {
+      // A non-matching '\n' between CJ characters is ignored
       if (c == '\n' && t2b && IS_CJ_CHAR(prevCharInMatch)) {
         int32_t nindex = findex + incr;
         if (mFindBackward ? (nindex >= 0) : (nindex < fragLen)) {
@@ -842,11 +827,19 @@ nsFind::Find(const nsAString& aPatText, nsRange* aSearchRange,
           }
         }
       }
+
+      // We also ignore ZWSP and other default-ignorable characters.
+      if (IsDefaultIgnorable(c)) {
+        continue;
+      }
     }
 
-    wordBreakPrev = false;
-    if (mWordBreaker) {
-      if (prevChar == NBSP_CHARCODE) prevChar = CHAR_TO_UNICHAR(' ');
+    // Figure whether the previous char is a word-breaking one.
+    bool wordBreakPrev = false;
+    if (mEntireWord) {
+      if (prevChar == NBSP_CHARCODE) {
+        prevChar = CHAR_TO_UNICHAR(' ');
+      }
       wordBreakPrev = BreakInBetween(prevChar, c);
     }
 
@@ -856,7 +849,7 @@ nsFind::Find(const nsAString& aPatText, nsRange* aSearchRange,
     // b) a match has already been stored
     // c) the previous character is a different "class" than the current
     // character.
-    if ((c == patc && (!mWordBreaker || matchAnchorNode || wordBreakPrev)) ||
+    if ((c == patc && (!mEntireWord || matchAnchorNode || wordBreakPrev)) ||
         (inWhitespace && IsSpace(c))) {
       prevCharInMatch = c;
       if (inWhitespace) {
@@ -870,7 +863,10 @@ nsFind::Find(const nsAString& aPatText, nsRange* aSearchRange,
       if (!matchAnchorNode) {
         matchAnchorNode = state.GetCurrentNode();
         matchAnchorOffset = findex;
-        if (!IS_IN_BMP(c)) matchAnchorOffset -= incr;
+        if (!IS_IN_BMP(c)) {
+          matchAnchorOffset -= incr;
+        }
+        matchAnchorChar = c;
       }
 
       // Are we done?
@@ -880,26 +876,35 @@ nsFind::Find(const nsAString& aPatText, nsRange* aSearchRange,
 
         // Make the range:
         // Check for word break (if necessary)
-        if (mWordBreaker) {
+        if (mEntireWord || inWhitespace) {
           int32_t nextfindex = findex + incr;
 
-          char16_t nextChar;
+          char32_t nextChar;
           // If still in array boundaries, get nextChar.
           if (mFindBackward ? (nextfindex >= 0) : (nextfindex < fragLen)) {
-            if (t2b)
+            if (t2b) {
               nextChar = DecodeChar(t2b, &nextfindex);
-            else
+            } else {
               nextChar = CHAR_TO_UNICHAR(t1b[nextfindex]);
+            }
           } else {
             // Get next character from the next node.
             nextChar = PeekNextChar(state, !!matchAnchorNode);
           }
 
-          if (nextChar == NBSP_CHARCODE) nextChar = CHAR_TO_UNICHAR(' ');
+          if (nextChar == NBSP_CHARCODE) {
+            nextChar = CHAR_TO_UNICHAR(' ');
+          }
 
           // If a word break isn't there when it needs to be, reset search.
-          if (!BreakInBetween(c, nextChar)) {
+          if (mEntireWord && !BreakInBetween(c, nextChar)) {
             matchAnchorNode = nullptr;
+            continue;
+          }
+
+          if (inWhitespace && IsSpace(nextChar)) {
+            // If the next character is also an space, keep going, this space
+            // will collapse.
             continue;
           }
         }

@@ -22,6 +22,16 @@ XPCOMUtils.defineLazyServiceGetter(
   Ci.nsIApplicationReputationService
 );
 
+const { Integration } = ChromeUtils.import(
+  "resource://gre/modules/Integration.jsm"
+);
+/* global DownloadIntegration */
+Integration.downloads.defineModuleGetter(
+  this,
+  "DownloadIntegration",
+  "resource://gre/modules/DownloadIntegration.jsm"
+);
+
 // /////////////////////////////////////////////////////////////////////////////
 // // Helper Functions
 
@@ -365,16 +375,15 @@ nsUnknownContentTypeDialog.prototype = {
           result = picker.file;
 
           if (result) {
+            let allowOverwrite = false;
             try {
-              // Remove the file so that it's not there when we ensure non-existence later;
-              // this is safe because for the file to exist, the user would have had to
-              // confirm that he wanted the file overwritten.
-              // Only remove file if final name exists
+              // If we're overwriting, avoid renaming our file, and assume
+              // overwriting it does the right thing.
               if (
                 result.exists() &&
                 this.getFinalLeafName(result.leafName) == result.leafName
               ) {
-                result.remove(false);
+                allowOverwrite = true;
               }
             } catch (ex) {
               // As it turns out, the failure to remove the file, for example due to
@@ -387,7 +396,12 @@ nsUnknownContentTypeDialog.prototype = {
             gDownloadLastDir.setFile(aLauncher.source, newDir);
 
             try {
-              result = this.validateLeafName(newDir, result.leafName, null);
+              result = this.validateLeafName(
+                newDir,
+                result.leafName,
+                null,
+                allowOverwrite
+              );
             } catch (ex) {
               // When the chosen download directory is write-protected,
               // display an informative error message.
@@ -426,12 +440,14 @@ nsUnknownContentTypeDialog.prototype = {
    * @param   aFileExt
    *          the extension of the file, if one is known; this will be ignored
    *          if aLeafName is non-empty
+   * @param   aAllowExisting
+   *          if set to true, avoid creating a unique file.
    * @return  nsIFile
    *          the created file
    * @throw   an error such as permission doesn't allow creation of
    *          file, etc.
    */
-  validateLeafName(aLocalFolder, aLeafName, aFileExt) {
+  validateLeafName(aLocalFolder, aLeafName, aFileExt, aAllowExisting = false) {
     if (!(aLocalFolder && isUsableDirectory(aLocalFolder))) {
       throw new Components.Exception(
         "Destination directory non-existing or permission error",
@@ -442,9 +458,13 @@ nsUnknownContentTypeDialog.prototype = {
     aLeafName = this.getFinalLeafName(aLeafName, aFileExt);
     aLocalFolder.append(aLeafName);
 
-    // The following assignment can throw an exception, but
-    // is now caught properly in the caller of validateLeafName.
-    var createdFile = DownloadPaths.createNiceUniqueFile(aLocalFolder);
+    if (!aAllowExisting) {
+      // The following assignment can throw an exception, but
+      // is now caught properly in the caller of validateLeafName.
+      var validatedFile = DownloadPaths.createNiceUniqueFile(aLocalFolder);
+    } else {
+      validatedFile = aLocalFolder;
+    }
 
     if (AppConstants.platform == "win") {
       let ext;
@@ -455,15 +475,21 @@ nsUnknownContentTypeDialog.prototype = {
 
       // Append a file extension if it's an executable that doesn't have one
       // but make sure we actually have an extension to add
-      let leaf = createdFile.leafName;
-      if (ext && leaf.slice(-ext.length) != ext && createdFile.isExecutable()) {
-        createdFile.remove(false);
+      let leaf = validatedFile.leafName;
+      if (
+        ext &&
+        !leaf.toLowerCase().endsWith(ext.toLowerCase()) &&
+        validatedFile.isExecutable()
+      ) {
+        validatedFile.remove(false);
         aLocalFolder.leafName = leaf + ext;
-        createdFile = DownloadPaths.createNiceUniqueFile(aLocalFolder);
+        if (!aAllowExisting) {
+          validatedFile = DownloadPaths.createNiceUniqueFile(aLocalFolder);
+        }
       }
     }
 
-    return createdFile;
+    return validatedFile;
   },
 
   // ---------- implementation methods ----------
@@ -913,12 +939,26 @@ nsUnknownContentTypeDialog.prototype = {
   },
 
   updateMIMEInfo() {
-    // Don't update mime type preferences when the preferred action is set to
-    // the internal handler -- this dialog is the result of the handler fallback
-    // (e.g. Content-Disposition was set as attachment)
-    var discardUpdate =
-      this.mLauncher.MIMEInfo.preferredAction ==
-        this.nsIMIMEInfo.handleInternally &&
+    let { MIMEInfo } = this.mLauncher;
+
+    // Don't erase the preferred choice being internal handler
+    // -- this dialog is often the result of the handler fallback
+    // (e.g. Content-Disposition was set as attachment) and we don't
+    // want to inadvertently cause that to always show the dialog if
+    // users don't want that behaviour.
+
+    // Note: this is the same condition as the one in initDialog
+    // which avoids ticking the checkbox. The user can still change
+    // the action by ticking the checkbox, or by using the prefs to
+    // manually select always ask (at which point `areAlwaysOpeningInternally`
+    // will be false, which means `discardUpdate` will be false, which means
+    // we'll store the last-selected option even if the filetype's pref is
+    // set to always ask).
+    let areAlwaysOpeningInternally =
+      MIMEInfo.preferredAction == Ci.nsIMIMEInfo.handleInternally &&
+      !MIMEInfo.alwaysAskBeforeHandling;
+    let discardUpdate =
+      areAlwaysOpeningInternally &&
       !this.dialogElement("rememberChoice").checked;
 
     var needUpdate = false;
@@ -990,7 +1030,6 @@ nsUnknownContentTypeDialog.prototype = {
   },
 
   onOK(aEvent) {
-    let shouldLogAction = this.dialogElement("basicBox").collapsed;
     // Verify typed app path, if necessary.
     if (this.useOtherHandler) {
       var helperApp = this.helperAppChoice();
@@ -1020,7 +1059,6 @@ nsUnknownContentTypeDialog.prototype = {
 
         // Leave dialog up.
         aEvent.preventDefault();
-        shouldLogAction = false;
       }
     }
 
@@ -1028,16 +1066,14 @@ nsUnknownContentTypeDialog.prototype = {
     // taking over).
     this.mLauncher.setWebProgressListener(null);
 
-    // saveToDisk and launchWithApplication can return errors in
+    // saveToDisk and setDownloadToLaunch can return errors in
     // certain circumstances (e.g. The user clicks cancel in the
     // "Save to Disk" dialog. In those cases, we don't want to
     // update the helper application preferences in the RDF file.
-    let action;
     try {
       var needUpdate = this.updateMIMEInfo();
 
       if (this.dialogElement("save").selected) {
-        action = "SAVE";
         // see @notify
         // we cannot use opener's setTimeout, see bug 420405
         this._saveToDiskTimer = Cc["@mozilla.org/timer;1"].createInstance(
@@ -1045,8 +1081,7 @@ nsUnknownContentTypeDialog.prototype = {
         );
         this._saveToDiskTimer.initWithCallback(this, 0, nsITimer.TYPE_ONE_SHOT);
       } else {
-        action = this.getOpenWithActionForTelemetry();
-        this.mLauncher.launchWithApplication(this.handleInternally);
+        this.mLauncher.setDownloadToLaunch(this.handleInternally, null);
       }
 
       // Update user pref for this mime type (if necessary). We do not
@@ -1060,19 +1095,12 @@ nsUnknownContentTypeDialog.prototype = {
       ) {
         this.updateHelperAppPref();
       }
-    } catch (e) {
-    } finally {
-      if (shouldLogAction) {
-        this.logActionInTelemetryIfExtensionIsPDF(action);
-      }
-    }
+    } catch (e) {}
 
     this.onUnload();
   },
 
   onCancel() {
-    this.logActionInTelemetryIfExtensionIsPDF("CANCEL");
-
     // Remove our web progress listener.
     this.mLauncher.setWebProgressListener(null);
 
@@ -1258,8 +1286,6 @@ nsUnknownContentTypeDialog.prototype = {
   },
 
   shouldShowInternalHandlerOption() {
-    // This is currently available only for PDF files and when
-    // pdf.js is enabled.
     let browsingContext = this.mDialog.BrowsingContext.get(
       this.mLauncher.browsingContextId
     );
@@ -1269,74 +1295,36 @@ nsUnknownContentTypeDialog.prototype = {
       // known extensions for this mimetype.
       primaryExtension = this.mLauncher.MIMEInfo.primaryExtension;
     } catch (e) {}
+
+    // Only available for PDF files when pdf.js is enabled.
+    // Skip if the current window uses the resource scheme, to avoid
+    // showing the option when using the Download button in pdf.js.
+    if (primaryExtension == "pdf") {
+      return (
+        !(
+          this.mLauncher.source.schemeIs("blob") ||
+          this.mLauncher.source.equalsExceptRef(
+            browsingContext.currentWindowGlobal.documentURI
+          )
+        ) &&
+        !Services.prefs.getBoolPref("pdfjs.disabled", true) &&
+        Services.prefs.getBoolPref(
+          "browser.helperApps.showOpenOptionForPdfJS",
+          false
+        )
+      );
+    }
+
     return (
-      !browsingContext?.currentWindowGlobal?.documentPrincipal?.URI?.schemeIs(
-        "resource"
-      ) &&
-      primaryExtension == "pdf" &&
-      !Services.prefs.getBoolPref("pdfjs.disabled", true) &&
       Services.prefs.getBoolPref(
-        "browser.helperApps.showOpenOptionForPdfJS",
+        "browser.helperApps.showOpenOptionForViewableInternally",
         false
+      ) &&
+      DownloadIntegration.shouldViewDownloadInternally(
+        this.mLauncher.MIMEInfo.MIMEType,
+        primaryExtension
       )
     );
-  },
-
-  getOpenWithActionForTelemetry() {
-    if (this.handleInternally) {
-      return "OPEN_WITH_INTERNAL_HANDLER";
-    }
-    let name = this.mLauncher.MIMEInfo.preferredApplicationHandler?.name;
-    let { defaultDescription } = this.mLauncher.MIMEInfo;
-    if (name) {
-      name = name.toLowerCase();
-      // Reduce "firefox-bin", "Firefox.app", and "firefox.exe" to just "firefox"
-      let delimeter = AppConstants.platform == "linux" ? "-" : ".";
-      name = name.substring(0, name.indexOf(delimeter));
-    } else if (defaultDescription.includes("Edge")) {
-      name = "msedge";
-    } else if (defaultDescription.includes("Chrome")) {
-      name = "chrome";
-    } else if (defaultDescription == "Preview") {
-      name = "preview";
-    }
-    switch (name) {
-      case "acrobat":
-      case "acrord32":
-      case "adobe acrobat reader dc":
-        return "OPEN_WITH_ACROBAT";
-      case "chrome":
-        // Chromium also uses "chrome.exe" as the executable name.
-        return "OPEN_WITH_CHROMIUM";
-      case "foxitreader":
-        return "OPEN_WITH_FOXIT";
-      case "msedge":
-        return "OPEN_WITH_MSEDGE";
-      case "preview":
-        return "OPEN_WITH_PREVIEW";
-      case undefined:
-        if (
-          this.mLauncher.MIMEInfo.preferredAction ==
-          this.mLauncher.MIMEInfo.useSystemDefault
-        ) {
-          return "OPEN_WITH_SYSTEM_DEFAULT";
-        }
-      // Fall through
-      default:
-        return "OPEN_WITH_OTHER";
-    }
-  },
-
-  logActionInTelemetryIfExtensionIsPDF(action) {
-    try {
-      if (this.mLauncher.MIMEInfo.primaryExtension == "pdf") {
-        Services.telemetry.keyedScalarAdd(
-          "unknowncontenttype.pdf_action",
-          action,
-          1
-        );
-      }
-    } catch (ex) {}
   },
 
   // Turn this on to get debugging messages.

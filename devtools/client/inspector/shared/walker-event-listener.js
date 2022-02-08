@@ -6,7 +6,7 @@
 
 /**
  * WalkerEventListener provides a mechanism to listen the walker event of the inspector
- * while reflecting the updating of TargetList.
+ * while reflecting the updating of TargetCommand.
  */
 class WalkerEventListener {
   /**
@@ -32,14 +32,14 @@ class WalkerEventListener {
    * Clean up function.
    */
   destroy() {
-    this._inspector.toolbox.targetList.unwatchTargets(
-      [this._inspector.toolbox.targetList.TYPES.FRAME],
-      this._onTargetAvailable,
-      this._onTargetDestroyed
-    );
+    this._inspector.commands.targetCommand.unwatchTargets({
+      types: [this._inspector.commands.targetCommand.TYPES.FRAME],
+      onAvailable: this._onTargetAvailable,
+      onDestroyed: this._onTargetDestroyed,
+    });
 
-    const targets = this._inspector.toolbox.targetList.getAllTargets([
-      this._inspector.toolbox.targetList.TYPES.FRAME,
+    const targets = this._inspector.commands.targetCommand.getAllTargets([
+      this._inspector.commands.targetCommand.TYPES.FRAME,
     ]);
     for (const targetFront of targets) {
       this._onTargetDestroyed({
@@ -52,15 +52,20 @@ class WalkerEventListener {
   }
 
   _init() {
-    this._inspector.toolbox.targetList.watchTargets(
-      [this._inspector.toolbox.targetList.TYPES.FRAME],
-      this._onTargetAvailable,
-      this._onTargetDestroyed
-    );
+    this._inspector.commands.targetCommand.watchTargets({
+      types: [this._inspector.commands.targetCommand.TYPES.FRAME],
+      onAvailable: this._onTargetAvailable,
+      onDestroyed: this._onTargetDestroyed,
+    });
   }
 
   async _onTargetAvailable({ targetFront }) {
     const inspectorFront = await targetFront.getFront("inspector");
+    // In case of multiple fast navigations, the front may already be destroyed,
+    // in such scenario bail out and ignore this short lived target.
+    if (inspectorFront.isDestroyed() || !this._listenerMap) {
+      return;
+    }
     const { walker } = inspectorFront;
     for (const [name, listener] of Object.entries(this._listenerMap)) {
       walker.on(name, listener);

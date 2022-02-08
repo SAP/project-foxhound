@@ -78,6 +78,7 @@ XPCOMUtils.defineLazyGetter(this, "gAvailableMigratorKeys", function() {
       "firefox",
       "edge",
       "ie",
+      "brave",
       "chrome",
       "chromium-edge",
       "chromium-edge-beta",
@@ -91,6 +92,7 @@ XPCOMUtils.defineLazyGetter(this, "gAvailableMigratorKeys", function() {
     return [
       "firefox",
       "safari",
+      "brave",
       "chrome",
       "chromium-edge",
       "chromium-edge-beta",
@@ -99,7 +101,14 @@ XPCOMUtils.defineLazyGetter(this, "gAvailableMigratorKeys", function() {
     ];
   }
   if (AppConstants.XP_UNIX) {
-    return ["firefox", "chrome", "chrome-beta", "chrome-dev", "chromium"];
+    return [
+      "firefox",
+      "brave",
+      "chrome",
+      "chrome-beta",
+      "chrome-dev",
+      "chromium",
+    ];
   }
   return [];
 });
@@ -240,7 +249,7 @@ var MigratorPrototype = {
   getMigrateData: async function MP_getMigrateData(aProfile) {
     let resources = await this._getMaybeCachedResources(aProfile);
     if (!resources) {
-      return [];
+      return 0;
     }
     let types = resources.map(r => r.type);
     return types.reduce((a, b) => {
@@ -527,7 +536,7 @@ var MigratorPrototype = {
   },
 };
 
-var MigrationUtils = Object.freeze({
+var MigrationUtils = Object.seal({
   resourceTypes: {
     COOKIES: Ci.nsIBrowserProfileMigrator.COOKIES,
     HISTORY: Ci.nsIBrowserProfileMigrator.HISTORY,
@@ -601,64 +610,6 @@ var MigrationUtils = Object.freeze({
   getLocalizedString: function MU_getLocalizedString(aKey, aArgs) {
     let l10n = getL10n();
     return l10n.formatValue(aKey, aArgs);
-  },
-
-  _getLocalePropertyForBrowser(browserId) {
-    switch (browserId) {
-      case "chromium-edge":
-      case "edge":
-        return "source-name-edge";
-      case "ie":
-        return "source-name-ie";
-      case "safari":
-        return "source-name-safari";
-      case "canary":
-        return "source-name-canary";
-      case "chrome":
-        return "source-name-chrome";
-      case "chrome-beta":
-        return "source-name-chrome-beta";
-      case "chrome-dev":
-        return "source-name-chrome-dev";
-      case "chromium":
-        return "source-name-chromium";
-      case "chromium-edge-beta":
-        return "source-name-chromium-edge-beta";
-      case "firefox":
-        return "source-name-firefox";
-      case "360se":
-        return "source-name-360se";
-    }
-    return null;
-  },
-
-  /**
-   * Helper for creating a folder for imported bookmarks from a particular
-   * migration source. The folder is created at the end of the given folder.
-   *
-   * @param sourceNameStr
-   *        the source name (first letter capitalized). This is used
-   *        for reading the localized source name from the migration
-   *        bundle (e.g. if aSourceNameStr is Mosaic, this will try to read
-   *        sourceNameMosaic from the migration bundle).
-   * @param parentGuid
-   *        the GUID of the folder in which the new folder should be created.
-   * @return the GUID of the new folder.
-   */
-  async createImportedBookmarksFolder(sourceNameStr, parentGuid) {
-    let source = await this.getLocalizedString(
-      "source-name-" + sourceNameStr.toLowerCase()
-    );
-    let title = await this.getLocalizedString("imported-bookmarks-source", {
-      source,
-    });
-    return (
-      await PlacesUtils.bookmarks.insert({
-        type: PlacesUtils.bookmarks.TYPE_FOLDER,
-        parentGuid,
-        title,
-      })
-    ).guid;
   },
 
   /**
@@ -754,7 +705,10 @@ var MigrationUtils = Object.freeze({
         done = true;
       });
 
-    Services.tm.spinEventLoopUntil(() => done || gForceExitSpinResolve);
+    Services.tm.spinEventLoopUntil(
+      "MigrationUtils.jsm:MU_spinResolve",
+      () => done || gForceExitSpinResolve
+    );
     if (!done) {
       throw new Error("Forcefully exited event loop.");
     } else if (error) {
@@ -818,6 +772,8 @@ var MigrationUtils = Object.freeze({
       Safari: "safari",
       Firefox: "firefox",
       Nightly: "firefox",
+      "Brave Web Browser": "brave", // Windows, Linux
+      Brave: "brave", // OS X
       "Google Chrome": "chrome", // Windows, Linux
       Chrome: "chrome", // OS X
       Chromium: "chromium", // Windows, OS X
@@ -1108,6 +1064,15 @@ var MigrationUtils = Object.freeze({
     history: 0,
   },
 
+  getImportedCount(type) {
+    if (!this._importQuantities.hasOwnProperty(type)) {
+      throw new Error(
+        `Unknown import data type "${type}" passed to getImportedCount`
+      );
+    }
+    return this._importQuantities[type];
+  },
+
   insertBookmarkWrapper(bookmark) {
     this._importQuantities.bookmarks++;
     let insertionPromise = PlacesUtils.bookmarks.insert(bookmark);
@@ -1287,6 +1252,7 @@ var MigrationUtils = Object.freeze({
   MIGRATION_ENTRYPOINT_NEWTAB: 5,
   MIGRATION_ENTRYPOINT_FILE_MENU: 6,
   MIGRATION_ENTRYPOINT_HELP_MENU: 7,
+  MIGRATION_ENTRYPOINT_BOOKMARKS_TOOLBAR: 8,
 
   _sourceNameToIdMapping: {
     nothing: 1,
@@ -1302,8 +1268,16 @@ var MigrationUtils = Object.freeze({
     "360se": 9,
     "chromium-edge": 10,
     "chromium-edge-beta": 10,
+    brave: 11,
   },
   getSourceIdForTelemetry(sourceName) {
     return this._sourceNameToIdMapping[sourceName] || 0;
   },
+
+  /* Enum of locations where bookmarks were found in the
+     source browser that we import from */
+  SOURCE_BOOKMARK_ROOTS_BOOKMARKS_TOOLBAR: 1,
+  SOURCE_BOOKMARK_ROOTS_BOOKMARKS_MENU: 2,
+  SOURCE_BOOKMARK_ROOTS_READING_LIST: 4,
+  SOURCE_BOOKMARK_ROOTS_UNFILED: 8,
 });

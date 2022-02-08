@@ -1,4 +1,3 @@
-/* jshint moz:true, browser:true */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -253,7 +252,7 @@ setupPrototype(RTCIceCandidate, {
 class RTCSessionDescription {
   init(win) {
     this._win = win;
-    this._winID = this._win.windowUtils.currentInnerWindowID;
+    this._winID = this._win.windowGlobalChild.innerWindowId;
   }
 
   __init({ type, sdp }) {
@@ -389,7 +388,7 @@ class RTCPeerConnection {
   }
 
   __init(rtcConfig) {
-    this._winID = this._win.windowUtils.currentInnerWindowID;
+    this._winID = this._win.windowGlobalChild.innerWindowId;
     // TODO: Update this code once we support pc.setConfiguration, to track
     // setting from content independently from pref (Bug 1181768).
     if (
@@ -406,8 +405,6 @@ class RTCPeerConnection {
             `follow standard "unified-plan".`
         );
       }
-      // Don't let it show up in getConfiguration.
-      delete rtcConfig.sdpSemantics;
     }
     this._config = Object.assign({}, rtcConfig);
 
@@ -531,7 +528,9 @@ class RTCPeerConnection {
   }
 
   getConfiguration() {
-    return this._config;
+    const config = Object.assign({}, this._config);
+    delete config.sdpSemantics;
+    return config;
   }
 
   async _initCertificate(certificate) {
@@ -857,7 +856,7 @@ class RTCPeerConnection {
         return this.getEH(name);
       },
       set(h) {
-        return this.setEH(name, h);
+        this.setEH(name, h);
       },
     });
   }
@@ -869,7 +868,7 @@ class RTCPeerConnection {
       },
       set(h) {
         this.logWarning(name + " is deprecated! " + msg);
-        return this.setEH(name, h);
+        this.setEH(name, h);
       },
     });
   }
@@ -880,9 +879,6 @@ class RTCPeerConnection {
       onSuccess = optionsOrOnSucc;
     } else {
       options = optionsOrOnSucc;
-    }
-    if (this._localUfragsToReplace.size > 0) {
-      options.iceRestart = true;
     }
     // This entry-point handles both new and legacy call sig. Decipher which one
     if (onSuccess) {
@@ -953,6 +949,9 @@ class RTCPeerConnection {
           "InvalidStateError"
         );
     }
+    if (this._localUfragsToReplace.size > 0) {
+      options.iceRestart = true;
+    }
     let haveAssertion;
     if (this._localIdp.enabled) {
       haveAssertion = this._getIdentityAssertion();
@@ -1021,7 +1020,7 @@ class RTCPeerConnection {
       } else {
         this._havePermission = new Promise((resolve, reject) => {
           this._settlePermission = { allow: resolve, deny: reject };
-          let outerId = this._win.windowUtils.outerWindowID;
+          let outerId = this._win.docShell.outerWindowID;
 
           let chrome = new CreateOfferRequest(
             outerId,
@@ -1114,19 +1113,20 @@ class RTCPeerConnection {
     // avoid problems with the fact that identity validation doesn't block the
     // resolution of setRemoteDescription().
     const validate = async () => {
+      // Access this._impl synchronously in case pc is closed later
+      const identity = this._impl.peerIdentity;
       await this._lastIdentityValidation;
       const msg = await this._remoteIdp.verifyIdentityFromSDP(sdp, origin);
       // If this pc has an identity already, then the identity in sdp must match
-      if (
-        this._impl.peerIdentity &&
-        (!msg || msg.identity !== this._impl.peerIdentity)
-      ) {
+      if (identity && (!msg || msg.identity !== identity)) {
         throw new this._win.DOMException(
-          "Peer Identity mismatch, expected: " + this._impl.peerIdentity,
+          "Peer Identity mismatch, expected: " + identity,
           "OperationError"
         );
       }
-
+      if (this._closed) {
+        return;
+      }
       if (msg) {
         // Set new identity and generate an event.
         this._impl.peerIdentity = msg.identity;
@@ -1151,6 +1151,9 @@ class RTCPeerConnection {
     // interfere with the validation chain itself, even if the catch function
     // throws.
     haveValidation.catch(e => {
+      if (this._closed) {
+        return;
+      }
       this._rejectPeerIdentity(e);
 
       // If we don't expect a specific peer identity, failure to get a valid
@@ -1161,6 +1164,9 @@ class RTCPeerConnection {
       }
     });
 
+    if (this._closed) {
+      return;
+    }
     // Only wait for IdP validation if we need identity matching
     if (this._impl.peerIdentity) {
       await haveValidation;
@@ -1197,6 +1203,9 @@ class RTCPeerConnection {
           });
           this._transceivers = this._transceivers.filter(t => !t.shouldRemove);
           this._updateCanTrickle();
+          if (this._closed) {
+            return;
+          }
         }
         this._sanityCheckSdp(sdp);
         const p = this._getPermission();
@@ -1215,6 +1224,9 @@ class RTCPeerConnection {
         await this._validateIdentity(sdp);
       }
       await haveSetRemote;
+      if (this._closed) {
+        return;
+      }
       this._negotiationNeeded = false;
       if (type == "answer") {
         if (this._localUfragsToReplace.size > 0) {
@@ -1333,6 +1345,9 @@ class RTCPeerConnection {
   }
 
   restartIce() {
+    if (this._closed) {
+      return;
+    }
     this._localUfragsToReplace = new Set([
       ...this._getUfragsWithPwds(this._impl.currentLocalDescription),
       ...this._getUfragsWithPwds(this._impl.pendingLocalDescription),
@@ -2020,7 +2035,7 @@ setupPrototype(PeerConnectionObserver, {
 
 class RTCPeerConnectionStatic {
   init(win) {
-    this._winID = win.windowUtils.currentInnerWindowID;
+    this._winID = win.windowGlobalChild.innerWindowId;
   }
 
   registerPeerConnectionLifecycleCallback(cb) {
@@ -2154,6 +2169,10 @@ class RTCRtpSender {
   setTrack(track) {
     this._pc._replaceTrackNoRenegotiation(this._transceiverImpl, track);
     this.track = track;
+  }
+
+  get transport() {
+    return this._transceiverImpl.dtlsTransport;
   }
 
   getStats() {

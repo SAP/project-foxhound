@@ -7,19 +7,16 @@
 #ifndef mozilla_dom_ipc_RemoteBrowser_h
 #define mozilla_dom_ipc_RemoteBrowser_h
 
-#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/ipc/IdType.h"
-#include "mozilla/dom/EffectsInfo.h"
 #include "mozilla/layers/LayersTypes.h"
-#include "nsILoadContext.h"
-#include "nsIPrincipal.h"
 #include "nsISupports.h"
-#include "nsISupportsImpl.h"
-#include "nsIURI.h"
 #include "nsRect.h"
 #include "Units.h"
 
+class nsDocShellLoadState;
 class nsFrameLoader;
+class nsILoadContext;
+class nsIContent;
 
 namespace mozilla {
 
@@ -27,6 +24,8 @@ namespace dom {
 
 class BrowserHost;
 class BrowserBridgeHost;
+class BrowsingContext;
+class EffectsInfo;
 class OwnerShowInfo;
 
 /**
@@ -42,7 +41,7 @@ class OwnerShowInfo;
  */
 class RemoteBrowser : public nsISupports {
  public:
-  typedef mozilla::layers::LayersId LayersId;
+  using LayersId = mozilla::layers::LayersId;
 
   static RemoteBrowser* GetFrom(nsFrameLoader* aFrameLoader);
   static RemoteBrowser* GetFrom(nsIContent* aContent);
@@ -56,8 +55,9 @@ class RemoteBrowser : public nsISupports {
   virtual LayersId GetLayersId() const = 0;
   virtual BrowsingContext* GetBrowsingContext() const = 0;
   virtual nsILoadContext* GetLoadContext() const = 0;
+  virtual bool CanRecv() const = 0;
 
-  virtual void LoadURL(nsIURI* aURI, nsIPrincipal* aTriggeringPrincipal) = 0;
+  virtual void LoadURL(nsDocShellLoadState* aLoadState) = 0;
   virtual void ResumeLoad(uint64_t aPendingSwitchId) = 0;
   virtual void DestroyStart() = 0;
   virtual void DestroyComplete() = 0;

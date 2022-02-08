@@ -5,6 +5,7 @@
 #include "json/json.h"
 #include "json/reader.h"
 #include "mozilla/TextUtils.h"
+#include "nsString.h"
 #include "mozilla/net/MozURL.h"
 #include "nsCOMPtr.h"
 #include "nsDirectoryServiceDefs.h"
@@ -12,6 +13,7 @@
 #include "nsIFile.h"
 #include "nsIURI.h"
 #include "nsStreamUtils.h"
+#include "mozilla/BasePrincipal.h"
 
 using namespace mozilla;
 using namespace mozilla::net;
@@ -343,9 +345,7 @@ TEST(TestMozURL, UrlTestData)
       reader->parse(data.BeginReading(), data.EndReading(), &root, nullptr));
   ASSERT_TRUE(root.isArray());
 
-  for (uint32_t index = 0; index < root.size(); index++) {
-    const Json::Value& item = root[index];
-
+  for (auto& item : root) {
     if (!item.isObject()) {
       continue;
     }

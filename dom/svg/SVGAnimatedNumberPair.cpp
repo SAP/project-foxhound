@@ -11,10 +11,48 @@
 #include "SVGNumberPairSMILType.h"
 #include "mozilla/SMILValue.h"
 #include "mozilla/SVGContentUtils.h"
+#include "nsContentUtils.h"
 
 using namespace mozilla::dom;
 
 namespace mozilla {
+
+//----------------------------------------------------------------------
+// Helper class: AutoChangeNumberPairNotifier
+// Stack-based helper class to pair calls to WillChangeNumberPair and
+// DidChangeNumberPair.
+class MOZ_RAII AutoChangeNumberPairNotifier {
+ public:
+  AutoChangeNumberPairNotifier(SVGAnimatedNumberPair* aNumberPair,
+                               SVGElement* aSVGElement, bool aDoSetAttr = true)
+      : mNumberPair(aNumberPair),
+        mSVGElement(aSVGElement),
+        mDoSetAttr(aDoSetAttr) {
+    MOZ_ASSERT(mNumberPair, "Expecting non-null numberPair");
+    MOZ_ASSERT(mSVGElement, "Expecting non-null element");
+
+    if (mDoSetAttr) {
+      mEmptyOrOldValue =
+          mSVGElement->WillChangeNumberPair(mNumberPair->mAttrEnum);
+    }
+  }
+
+  ~AutoChangeNumberPairNotifier() {
+    if (mDoSetAttr) {
+      mSVGElement->DidChangeNumberPair(mNumberPair->mAttrEnum,
+                                       mEmptyOrOldValue);
+    }
+    if (mNumberPair->mIsAnimated) {
+      mSVGElement->AnimationNeedsResample();
+    }
+  }
+
+ private:
+  SVGAnimatedNumberPair* const mNumberPair;
+  SVGElement* const mSVGElement;
+  nsAttrValue mEmptyOrOldValue;
+  bool mDoSetAttr;
+};
 
 static SVGAttrTearoffTable<SVGAnimatedNumberPair,
                            SVGAnimatedNumberPair::DOMAnimatedNumber>
@@ -25,8 +63,9 @@ static SVGAttrTearoffTable<SVGAnimatedNumberPair,
 
 static nsresult ParseNumberOptionalNumber(const nsAString& aValue,
                                           float aValues[2]) {
-  nsCharSeparatedTokenizerTemplate<nsContentUtils::IsHTMLWhitespace> tokenizer(
-      aValue, ',', nsCharSeparatedTokenizer::SEPARATOR_OPTIONAL);
+  nsCharSeparatedTokenizerTemplate<nsContentUtils::IsHTMLWhitespace,
+                                   nsTokenizerFlags::SeparatorOptional>
+      tokenizer(aValue, ',');
   uint32_t i;
   for (i = 0; i < 2 && tokenizer.hasMoreTokens(); ++i) {
     if (!SVGContentUtils::ParseNumber(tokenizer.nextToken(), aValues[i])) {
@@ -55,19 +94,19 @@ nsresult SVGAnimatedNumberPair::SetBaseValueString(
     return rv;
   }
 
+  // We don't need to call Will/DidChange* here - we're only called by
+  // SVGElement::ParseAttribute under Element::SetAttr,
+  // which takes care of notifying.
+  AutoChangeNumberPairNotifier notifier(this, aSVGElement, false);
+
   mBaseVal[0] = val[0];
   mBaseVal[1] = val[1];
   mIsBaseSet = true;
   if (!mIsAnimated) {
     mAnimVal[0] = mBaseVal[0];
     mAnimVal[1] = mBaseVal[1];
-  } else {
-    aSVGElement->AnimationNeedsResample();
   }
 
-  // We don't need to call Will/DidChange* here - we're only called by
-  // SVGElement::ParseAttribute under Element::SetAttr,
-  // which takes care of notifying.
   return NS_OK;
 }
 
@@ -87,15 +126,14 @@ void SVGAnimatedNumberPair::SetBaseValue(float aValue, PairIndex aPairIndex,
   if (mIsBaseSet && mBaseVal[index] == aValue) {
     return;
   }
-  nsAttrValue emptyOrOldValue = aSVGElement->WillChangeNumberPair(mAttrEnum);
+
+  AutoChangeNumberPairNotifier notifier(this, aSVGElement);
+
   mBaseVal[index] = aValue;
   mIsBaseSet = true;
   if (!mIsAnimated) {
     mAnimVal[index] = aValue;
-  } else {
-    aSVGElement->AnimationNeedsResample();
   }
-  aSVGElement->DidChangeNumberPair(mAttrEnum, emptyOrOldValue);
 }
 
 void SVGAnimatedNumberPair::SetBaseValues(float aValue1, float aValue2,
@@ -103,17 +141,16 @@ void SVGAnimatedNumberPair::SetBaseValues(float aValue1, float aValue2,
   if (mIsBaseSet && mBaseVal[0] == aValue1 && mBaseVal[1] == aValue2) {
     return;
   }
-  nsAttrValue emptyOrOldValue = aSVGElement->WillChangeNumberPair(mAttrEnum);
+
+  AutoChangeNumberPairNotifier notifier(this, aSVGElement);
+
   mBaseVal[0] = aValue1;
   mBaseVal[1] = aValue2;
   mIsBaseSet = true;
   if (!mIsAnimated) {
     mAnimVal[0] = aValue1;
     mAnimVal[1] = aValue2;
-  } else {
-    aSVGElement->AnimationNeedsResample();
   }
-  aSVGElement->DidChangeNumberPair(mAttrEnum, emptyOrOldValue);
 }
 
 void SVGAnimatedNumberPair::SetAnimValue(const float aValue[2],

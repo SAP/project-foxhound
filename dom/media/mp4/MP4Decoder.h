@@ -13,6 +13,7 @@
 namespace mozilla {
 
 class MediaContainerType;
+class MediaResult;
 class DecoderDoctorDiagnostics;
 class TrackInfo;
 
@@ -24,9 +25,6 @@ class MP4Decoder {
   // If provided, codecs are checked for support.
   static bool IsSupportedType(const MediaContainerType& aContainerType,
                               DecoderDoctorDiagnostics* aDiagnostics);
-
-  static bool IsSupportedTypeWithoutDiagnostics(
-      const MediaContainerType& aContainerType);
 
   // Return true if aMimeType is a one of the strings used by our demuxers to
   // identify H264. Does not parse general content type strings, i.e. white

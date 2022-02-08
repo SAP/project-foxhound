@@ -15,14 +15,14 @@
 
 #include "jstypes.h"  // JS_PUBLIC_API
 
-#include "jit/JSJitFrameIter.h"  // js::jit::CalleeToken
-#include "js/CallArgs.h"         // JS::CallArgs
-#include "js/RootingAPI.h"       // JS::Handle, JS::Rooted
-#include "js/TypeDecls.h"        // jsbytecode
-#include "js/UniquePtr.h"        // js::UniquePtr
-#include "js/Value.h"            // JS::Value
-#include "vm/SavedFrame.h"       // js::SavedFrame
-#include "vm/Stack.h"            // js::InterpreterRegs
+#include "jit/CalleeToken.h"  // js::jit::CalleeToken
+#include "js/CallArgs.h"      // JS::CallArgs
+#include "js/RootingAPI.h"    // JS::Handle, JS::Rooted
+#include "js/TypeDecls.h"     // jsbytecode
+#include "js/UniquePtr.h"     // js::UniquePtr
+#include "js/Value.h"         // JS::Value
+#include "vm/SavedFrame.h"    // js::SavedFrame
+#include "vm/Stack.h"         // js::InterpreterRegs
 
 struct JS_PUBLIC_API JSContext;
 
@@ -389,7 +389,7 @@ class LiveSavedFrameCache {
   // youngest. They must all be younger than the frame that the |find| method
   // found a hit for; or you must have cleared the entire cache with the
   // |clear| method.
-  bool insert(JSContext* cx, FramePtr& framePtr, const jsbytecode* pc,
+  bool insert(JSContext* cx, FramePtr&& framePtr, const jsbytecode* pc,
               HandleSavedFrame savedFrame);
 
   // Remove all entries from the cache.
@@ -476,11 +476,6 @@ class Activation {
     hideScriptedCallerCount_--;
   }
   bool scriptedCallerIsHidden() const { return hideScriptedCallerCount_ > 0; }
-
-  static size_t offsetOfPrev() { return offsetof(Activation, prev_); }
-  static size_t offsetOfPrevProfiling() {
-    return offsetof(Activation, prevProfiling_);
-  }
 
   SavedFrame* asyncStack() { return asyncStack_; }
 

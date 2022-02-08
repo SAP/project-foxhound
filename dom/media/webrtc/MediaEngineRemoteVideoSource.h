@@ -34,8 +34,8 @@
 #include "NullTransport.h"
 
 // WebRTC includes
-#include "webrtc/common_video/include/i420_buffer_pool.h"
-#include "webrtc/modules/video_capture/video_capture_defines.h"
+#include "common_video/include/i420_buffer_pool.h"
+#include "modules/video_capture/video_capture_defines.h"
 
 namespace webrtc {
 using CaptureCapability = VideoCaptureCapability;
@@ -99,8 +99,9 @@ class MediaEngineRemoteVideoSource : public MediaEngineSource,
   static void TrimLessFitCandidates(nsTArray<CapabilityCandidate>& aSet);
 
  public:
-  MediaEngineRemoteVideoSource(int aIndex, camera::CaptureEngine aCapEngine,
-                               bool aScary);
+  MediaEngineRemoteVideoSource(const nsAString& aDeviceName,
+                               const nsACString& aDeviceUUID,
+                               camera::CaptureEngine aCapEngine, bool aScary);
 
   // ExternalRenderer
   int DeliverFrame(uint8_t* aBuffer,
@@ -112,7 +113,7 @@ class MediaEngineRemoteVideoSource : public MediaEngineSource,
                     const MediaEnginePrefs& aPrefs, uint64_t aWindowID,
                     const char** aOutBadConstraint) override;
   nsresult Deallocate() override;
-  void SetTrack(const RefPtr<SourceMediaTrack>& aTrack,
+  void SetTrack(const RefPtr<MediaTrack>& aTrack,
                 const PrincipalHandle& aPrincipal) override;
   nsresult Start() override;
   nsresult Reconfigure(const dom::MediaTrackConstraints& aConstraints,
@@ -126,18 +127,11 @@ class MediaEngineRemoteVideoSource : public MediaEngineSource,
       const override;
   void GetSettings(dom::MediaTrackSettings& aOutSettings) const override;
 
-  void Refresh(int aIndex);
-
-  void Shutdown() override;
-
   nsString GetName() const override;
-  void SetName(nsString aName);
 
   nsCString GetUUID() const override;
-  void SetUUID(const char* aUUID);
 
   nsString GetGroupId() const override;
-  void SetGroupId(nsString aGroupId);
 
   bool GetScary() const override { return mScary; }
 
@@ -146,9 +140,6 @@ class MediaEngineRemoteVideoSource : public MediaEngineSource,
   }
 
  private:
-  // Initialize the needed Video engine interfaces.
-  void Init();
-
   /**
    * Returns the number of capabilities for the underlying device.
    *
@@ -165,7 +156,7 @@ class MediaEngineRemoteVideoSource : public MediaEngineSource,
    */
   webrtc::CaptureCapability& GetCapability(size_t aIndex) const;
 
-  int mCaptureIndex;
+  int mCaptureId = -1;
   const camera::CaptureEngine mCapEngine;  // source of media (cam, screen etc)
   const bool mScary;
 
@@ -242,14 +233,9 @@ class MediaEngineRemoteVideoSource : public MediaEngineSource,
    */
   mutable bool mCapabilitiesAreHardcoded = false;
 
-  nsString mDeviceName;
-  nsCString mUniqueId;
+  const nsString mDeviceName;
+  const nsCString mDeviceUUID;
   Maybe<nsString> mFacingMode;
-
-  // Whether init has successfully completed.
-  // Set in Init(), reset in Shutdown().
-  // Owning thread only.
-  bool mInitDone = false;
 };
 
 }  // namespace mozilla

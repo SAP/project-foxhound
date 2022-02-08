@@ -2,10 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use nsstring::nsACString;
-use nsstring::nsCString;
+use nsstring::{nsACString, nsCStr, nsCString};
 use thin_vec::ThinVec;
-pub use unic_langid::{CharacterDirection, LanguageIdentifier, LanguageIdentifierError};
+pub use unic_langid::{subtags, CharacterDirection, LanguageIdentifier, LanguageIdentifierError};
 
 pub fn new_langid_for_mozilla(
     name: &nsACString,
@@ -23,7 +22,7 @@ pub fn new_langid_for_mozilla(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn unic_langid_canonicalize(name: &mut nsACString) -> bool {
+pub extern "C" fn unic_langid_canonicalize(name: &mut nsACString) -> bool {
     let langid = new_langid_for_mozilla(name);
 
     let result = langid.is_ok();
@@ -34,7 +33,7 @@ pub unsafe extern "C" fn unic_langid_canonicalize(name: &mut nsACString) -> bool
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn unic_langid_new(
+pub extern "C" fn unic_langid_new(
     name: &nsACString,
     ret_val: &mut bool,
 ) -> *mut LanguageIdentifier {
@@ -50,107 +49,103 @@ pub unsafe extern "C" fn unic_langid_destroy(langid: *mut LanguageIdentifier) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn unic_langid_as_string(
-    langid: &mut LanguageIdentifier,
-    ret_val: &mut nsACString,
-) {
+pub extern "C" fn unic_langid_as_string(langid: &mut LanguageIdentifier, ret_val: &mut nsACString) {
     ret_val.assign(&langid.to_string());
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn unic_langid_get_language(
-    langid: &LanguageIdentifier,
-    len: *mut u32,
-) -> *const u8 {
-    let lang = langid.language();
-    *len = lang.len() as u32;
-    lang.as_bytes().as_ptr()
+pub extern "C" fn unic_langid_get_language<'a>(
+    langid: &'a LanguageIdentifier,
+    out: &mut nsCStr<'a>,
+) {
+    *out = nsCStr::from(langid.language.as_str());
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn unic_langid_set_language(
+pub extern "C" fn unic_langid_set_language(
     langid: &mut LanguageIdentifier,
     string: &nsACString,
 ) -> bool {
-    langid.set_language(string).is_ok()
+    subtags::Language::from_bytes(string)
+        .map(|lang| langid.language = lang)
+        .is_ok()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn unic_langid_clear_language(langid: &mut LanguageIdentifier) {
-    langid.clear_language()
+pub extern "C" fn unic_langid_clear_language(langid: &mut LanguageIdentifier) {
+    langid.language.clear()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn unic_langid_get_script(
-    langid: &LanguageIdentifier,
-    len: *mut u32,
-) -> *const u8 {
-    let script = langid.script().unwrap_or("");
-    *len = script.len() as u32;
-    script.as_bytes().as_ptr()
+pub extern "C" fn unic_langid_get_script<'a>(langid: &'a LanguageIdentifier, out: &mut nsCStr<'a>) {
+    *out = nsCStr::from(langid.script.as_ref().map_or("", |s| s.as_str()));
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn unic_langid_set_script(
+pub extern "C" fn unic_langid_set_script(
     langid: &mut LanguageIdentifier,
     string: &nsACString,
 ) -> bool {
-    langid.set_script(string).is_ok()
+    subtags::Script::from_bytes(string)
+        .map(|script| langid.script = Some(script))
+        .is_ok()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn unic_langid_clear_script(langid: &mut LanguageIdentifier) {
-    langid.clear_script()
+pub extern "C" fn unic_langid_clear_script(langid: &mut LanguageIdentifier) {
+    langid.script = None;
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn unic_langid_get_region(
-    langid: &LanguageIdentifier,
-    len: *mut u32,
-) -> *const u8 {
-    let region = langid.region().unwrap_or("");
-    *len = region.len() as u32;
-    region.as_bytes().as_ptr()
+pub extern "C" fn unic_langid_get_region<'a>(langid: &'a LanguageIdentifier, out: &mut nsCStr<'a>) {
+    *out = nsCStr::from(langid.region.as_ref().map_or("", |s| s.as_str()));
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn unic_langid_set_region(
+pub extern "C" fn unic_langid_set_region(
     langid: &mut LanguageIdentifier,
     string: &nsACString,
 ) -> bool {
-    langid.set_region(string).is_ok()
+    subtags::Region::from_bytes(string)
+        .map(|region| langid.region = Some(region))
+        .is_ok()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn unic_langid_clear_region(langid: &mut LanguageIdentifier) {
-    langid.clear_region()
+pub extern "C" fn unic_langid_clear_region(langid: &mut LanguageIdentifier) {
+    langid.region = None;
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn unic_langid_get_variants(
+pub extern "C" fn unic_langid_get_variants(
     langid: &LanguageIdentifier,
     variants: &mut ThinVec<nsCString>,
 ) {
     for v in langid.variants() {
-        variants.push(v.into());
+        variants.push(v.as_str().into());
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn unic_langid_set_variants(
+pub extern "C" fn unic_langid_set_variants(
     langid: &mut LanguageIdentifier,
     variants: &ThinVec<nsCString>,
 ) -> bool {
-    langid.set_variants(variants).is_ok()
+    variants
+        .iter()
+        .map(|v| subtags::Variant::from_bytes(v))
+        .collect::<Result<Vec<_>, _>>()
+        .map(|variants| langid.set_variants(&variants))
+        .is_ok()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn unic_langid_clear_variants(langid: &mut LanguageIdentifier) {
+pub extern "C" fn unic_langid_clear_variants(langid: &mut LanguageIdentifier) {
     langid.clear_variants()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn unic_langid_matches(
+pub extern "C" fn unic_langid_matches(
     langid: &LanguageIdentifier,
     other: &LanguageIdentifier,
     self_as_range: bool,
@@ -160,12 +155,12 @@ pub unsafe extern "C" fn unic_langid_matches(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn unic_langid_maximize(langid: &mut LanguageIdentifier) -> bool {
+pub extern "C" fn unic_langid_maximize(langid: &mut LanguageIdentifier) -> bool {
     langid.maximize()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn unic_langid_is_rtl(name: &nsACString) -> bool {
+pub extern "C" fn unic_langid_is_rtl(name: &nsACString) -> bool {
     match new_langid_for_mozilla(name) {
         Ok(langid) => langid.character_direction() == CharacterDirection::RTL,
         Err(_) => false,

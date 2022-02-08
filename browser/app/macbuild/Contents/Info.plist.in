@@ -165,19 +165,19 @@
 	<key>CFBundleExecutable</key>
 	<string>taintfox</string>
 	<key>CFBundleGetInfoString</key>
-	<string>%MAC_APP_NAME% %APP_VERSION%</string>
+	<string>@MAC_APP_NAME@ @APP_VERSION@</string>
 	<key>CFBundleIconFile</key>
 	<string>firefox.icns</string>
 	<key>CFBundleIdentifier</key>
-	<string>%MOZ_MACBUNDLE_ID%</string>
+	<string>@MOZ_MACBUNDLE_ID@</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>%MAC_APP_NAME%</string>
+	<string>@MAC_APP_NAME@</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>%APP_VERSION%</string>
+	<string>@APP_VERSION@</string>
 	<key>CFBundleSignature</key>
 	<string>MOZB</string>
 	<key>CFBundleURLTypes</key>
@@ -204,14 +204,6 @@
 		</dict>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>ftp URL</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>ftp</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleURLName</key>
 			<string>file URL</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
@@ -220,7 +212,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>%MAC_BUNDLE_VERSION%</string>
+	<string>@MAC_BUNDLE_VERSION@</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>NSUserActivityTypeBrowsingWeb</string>
@@ -233,6 +225,8 @@
 	<dict>
 		<key>MallocNanoZone</key>
 		<string>0</string>
+		<key>SYSTEM_VERSION_COMPAT</key>
+		<string>0</string>
 	</dict>
 	<key>LSFileQuarantineEnabled</key>
 	<true/>
@@ -241,7 +235,7 @@
   <key>NSSupportsAutomaticGraphicsSwitching</key>
   <true/>
   <key>NSRequiresAquaSystemAppearance</key>
-  <true/>
+  <false/>
   <key>NSPrincipalClass</key>
   <string>GeckoNSApplication</string>
 	<key>SMPrivilegedExecutables</key>
@@ -250,14 +244,14 @@
 		<string>identifier "org.mozilla.updater" and ((anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.9]) or (anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "43AQ936H96"))</string>
 	</dict>
   <key>MozillaDeveloperRepoPath</key>
-  <string>%MOZ_DEVELOPER_REPO_PATH%</string>
+  <string>@MOZ_DEVELOPER_REPO_PATH@</string>
   <key>MozillaDeveloperObjPath</key>
-  <string>%MOZ_DEVELOPER_OBJ_PATH%</string>
+  <string>@MOZ_DEVELOPER_OBJ_PATH@</string>
 
   <key>NSCameraUsageDescription</key>
-  <string>Only sites you allow within %MAC_APP_NAME% will be able to use the camera.</string>
+  <string>Only sites you allow within @MAC_APP_NAME@ will be able to use the camera.</string>
 
   <key>NSMicrophoneUsageDescription</key>
-  <string>Only sites you allow within %MAC_APP_NAME% will be able to use the microphone.</string>
+  <string>Only sites you allow within @MAC_APP_NAME@ will be able to use the microphone.</string>
 </dict>
 </plist>

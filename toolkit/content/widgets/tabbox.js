@@ -42,7 +42,6 @@
 
     set handleCtrlTab(val) {
       this.setAttribute("handleCtrlTab", val);
-      return val;
     }
 
     get handleCtrlTab() {
@@ -72,7 +71,6 @@
         tabs.selectedIndex = val;
       }
       this.setAttribute("selectedIndex", val);
-      return val;
     }
 
     get selectedIndex() {
@@ -87,7 +85,6 @@
           tabs.selectedItem = val;
         }
       }
-      return val;
     }
 
     get selectedTab() {
@@ -102,7 +99,6 @@
           tabpanels.selectedPanel = val;
         }
       }
-      return val;
     }
 
     get selectedPanel() {
@@ -128,6 +124,15 @@
 
       switch (ShortcutUtils.getSystemActionForEvent(event)) {
         case ShortcutUtils.CYCLE_TABS:
+          Services.telemetry.keyedScalarAdd(
+            "browser.ui.interaction.keyboard",
+            "ctrl-tab",
+            1
+          );
+          Services.prefs.setBoolPref(
+            "browser.engagement.ctrlTab.has-used",
+            true
+          );
           if (this.tabs && this.handleCtrlTab) {
             this.tabs.advanceSelectedTab(event.shiftKey ? -1 : 1, true);
             event.preventDefault();
@@ -181,7 +186,7 @@
 
     set selectedIndex(val) {
       if (val < 0 || val >= this.children.length) {
-        return val;
+        return;
       }
 
       let panel = this._selectedPanel;
@@ -196,7 +201,6 @@
         event.initEvent("select", true, true);
         this.dispatchEvent(event);
       }
-      return val;
     }
 
     get selectedIndex() {
@@ -214,7 +218,6 @@
         ++selectedIndex;
       }
       this.selectedIndex = selectedIndex;
-      return val;
     }
 
     get selectedPanel() {
@@ -400,7 +403,6 @@
 
     set value(val) {
       this.setAttribute("value", val);
-      return val;
     }
 
     get value() {
@@ -424,8 +426,6 @@
         this.removeAttribute("selected");
         this.removeAttribute("visuallyselected");
       }
-
-      return val;
     }
 
     set linkedPanel(val) {
@@ -507,7 +507,6 @@
           break;
         }
       }
-      return val;
     }
 
     get value() {
@@ -545,7 +544,6 @@
           this.tabbox.tabpanels.selectedPanel = linkedPanel;
         }
       }
-      return val;
     }
 
     get selectedIndex() {
@@ -564,7 +562,6 @@
         // such as -1 if |val| isn't one of our child nodes.
         this.selectedIndex = this.getIndexOfItem(val);
       }
-      return val;
     }
 
     get selectedItem() {
@@ -610,8 +607,6 @@
         let evt = new CustomEvent("AriaFocus");
         val.dispatchEvent(evt);
       }
-
-      return val;
     }
 
     get ariaFocusedItem() {

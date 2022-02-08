@@ -28,8 +28,8 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "TargetFactory",
-  "devtools/client/framework/target",
+  "TabDescriptorFactory",
+  "devtools/client/framework/tab-descriptor-factory",
   true
 );
 loader.lazyRequireGetter(
@@ -86,10 +86,17 @@ class ResponsiveUIManager {
    *         the UI has closed, there is no resolution value.
    */
   toggle(window, tab, options = {}) {
-    const action = this.isActiveForTab(tab) ? "close" : "open";
-    const completed = this[action + "IfNeeded"](window, tab, options);
+    const completed = this._toggleForTab(window, tab, options);
     completed.catch(console.error);
     return completed;
+  }
+
+  _toggleForTab(window, tab, options) {
+    if (this.isActiveForTab(tab)) {
+      return this.closeIfNeeded(window, tab, options);
+    }
+
+    return this.openIfNeeded(window, tab, options);
   }
 
   /**
@@ -134,11 +141,10 @@ class ResponsiveUIManager {
    */
   async recordTelemetryOpen(window, tab, options) {
     // Track whether a toolbox was opened before RDM was opened.
-    const isKnownTab = TargetFactory.isKnownTab(tab);
+    const isKnownTab = TabDescriptorFactory.isKnownTab(tab);
     let toolbox;
     if (isKnownTab) {
-      const target = await TargetFactory.forTab(tab);
-      toolbox = gDevTools.getToolbox(target);
+      toolbox = await gDevTools.getToolboxForTab(tab);
     }
     const hostType = toolbox ? toolbox.hostType : "none";
     const hasToolbox = !!toolbox;
@@ -205,11 +211,10 @@ class ResponsiveUIManager {
   }
 
   async recordTelemetryClose(window, tab) {
-    const isKnownTab = TargetFactory.isKnownTab(tab);
+    const isKnownTab = TabDescriptorFactory.isKnownTab(tab);
     let toolbox;
     if (isKnownTab) {
-      const target = await TargetFactory.forTab(tab);
-      toolbox = gDevTools.getToolbox(target);
+      toolbox = await gDevTools.getToolboxForTab(tab);
     }
 
     const hostType = toolbox ? toolbox.hostType : "none";

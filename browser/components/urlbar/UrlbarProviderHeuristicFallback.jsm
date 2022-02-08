@@ -20,6 +20,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
   UrlbarProvider: "resource:///modules/UrlbarUtils.jsm",
   UrlbarResult: "resource:///modules/UrlbarResult.jsm",
+  UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.jsm",
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.jsm",
   UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
 });
@@ -96,20 +97,27 @@ class ProviderHeuristicFallback extends UrlbarProvider {
           }) ||
             UrlbarTokenizer.REGEXP_COMMON_EMAIL.test(str))
         ) {
-          let searchResult = await this._defaultEngineSearchResult(
-            queryContext
-          );
+          let searchResult = this._engineSearchResult(queryContext);
           if (instance != this.queryInstance) {
             return;
           }
           addCallback(this, searchResult);
         }
       }
-    } else {
-      result = await this._defaultEngineSearchResult(queryContext);
-      if (!result || instance != this.queryInstance) {
-        return;
-      }
+      return;
+    }
+
+    result = this._searchModeKeywordResult(queryContext);
+    if (result) {
+      addCallback(this, result);
+      return;
+    }
+
+    result = this._engineSearchResult(queryContext);
+    if (instance != this.queryInstance) {
+      return;
+    }
+    if (result) {
       result.heuristic = true;
       addCallback(this, result);
     }
@@ -118,7 +126,21 @@ class ProviderHeuristicFallback extends UrlbarProvider {
   // TODO (bug 1054814): Use visited URLs to inform which scheme to use, if the
   // scheme isn't specificed.
   _matchUnknownUrl(queryContext) {
-    let unescapedSearchString = Services.textToSubURI.unEscapeURIForUI(
+    // The user may have typed something like "word?" to run a search.  We
+    // should not convert that to a URL.  We should also never convert actual
+    // URLs into URL results when search mode is active or a search mode
+    // restriction token was typed.
+    if (
+      queryContext.restrictSource == UrlbarUtils.RESULT_SOURCE.SEARCH ||
+      UrlbarTokenizer.SEARCH_MODE_RESTRICT.has(
+        queryContext.restrictToken?.value
+      ) ||
+      queryContext.searchMode
+    ) {
+      return null;
+    }
+
+    let unescapedSearchString = UrlbarUtils.unEscapeURIForUI(
       queryContext.searchString
     );
     let [prefix, suffix] = UrlbarUtils.stripURLPrefix(unescapedSearchString);
@@ -127,16 +149,8 @@ class ProviderHeuristicFallback extends UrlbarProvider {
       // like http://http/ for it.
       return null;
     }
-    // The user may have typed something like "word?" to run a search, we should
-    // not convert that to a url.
-    if (
-      queryContext.restrictSource &&
-      queryContext.restrictSource == UrlbarUtils.RESULT_SOURCE.SEARCH
-    ) {
-      return null;
-    }
 
-    let searchUrl = queryContext.searchString.trim();
+    let searchUrl = queryContext.trimmedSearchString;
 
     if (queryContext.fixupError) {
       if (
@@ -147,9 +161,8 @@ class ProviderHeuristicFallback extends UrlbarProvider {
           UrlbarUtils.RESULT_TYPE.URL,
           UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
-            title: [searchUrl, UrlbarUtils.HIGHLIGHT.TYPED],
-            url: [searchUrl, UrlbarUtils.HIGHLIGHT.TYPED],
-            icon: "",
+            title: [searchUrl, UrlbarUtils.HIGHLIGHT.NONE],
+            url: [searchUrl, UrlbarUtils.HIGHLIGHT.NONE],
           })
         );
         result.heuristic = true;
@@ -193,7 +206,7 @@ class ProviderHeuristicFallback extends UrlbarProvider {
     // flicker, since the url keeps changing while the user types.
     // By default we won't provide an icon, but for the subset of urls with a
     // host we'll check for a typed slash and set favicon for the host part.
-    let iconUri = "";
+    let iconUri;
     if (hostExpected && (searchUrl.endsWith("/") || uri.pathname.length > 1)) {
       // Look for an icon with the entire URL except for the pathname, including
       // scheme, usernames, passwords, hostname, and port.
@@ -206,8 +219,8 @@ class ProviderHeuristicFallback extends UrlbarProvider {
       UrlbarUtils.RESULT_TYPE.URL,
       UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
       ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
-        title: [displayURL, UrlbarUtils.HIGHLIGHT.TYPED],
-        url: [escapedURL, UrlbarUtils.HIGHLIGHT.TYPED],
+        title: [displayURL, UrlbarUtils.HIGHLIGHT.NONE],
+        url: [escapedURL, UrlbarUtils.HIGHLIGHT.NONE],
         icon: iconUri,
       })
     );
@@ -215,14 +228,67 @@ class ProviderHeuristicFallback extends UrlbarProvider {
     return result;
   }
 
-  async _defaultEngineSearchResult(queryContext) {
-    let engine;
-    if (queryContext.engineName) {
-      engine = Services.search.getEngineByName(queryContext.engineName);
-    } else if (queryContext.isPrivate) {
-      engine = Services.search.defaultPrivateEngine;
+  _searchModeKeywordResult(queryContext) {
+    if (!queryContext.tokens.length) {
+      return null;
+    }
+
+    let firstToken = queryContext.tokens[0].value;
+    if (!UrlbarTokenizer.SEARCH_MODE_RESTRICT.has(firstToken)) {
+      return null;
+    }
+
+    // At this point, the search string starts with a token that can be
+    // converted into search mode.
+    // Now we need to determine what to do based on the remainder of the search
+    // string.  If the remainder starts with a space, then we should enter
+    // search mode, so we should continue below and create the result.
+    // Otherwise, we should not enter search mode, and in that case, the search
+    // string will look like one of the following:
+    //
+    // * The search string ends with the restriction token (e.g., the user
+    //   has typed only the token by itself, with no trailing spaces).
+    // * More tokens exist, but there's no space between the restriction
+    //   token and the following token.  This is possible because the tokenizer
+    //   does not require spaces between a restriction token and the remainder
+    //   of the search string.  In this case, we should not enter search mode.
+    //
+    // If we return null here and thereby do not enter search mode, then we'll
+    // continue on to _engineSearchResult, and the heuristic will be a
+    // default engine search result.
+    let query = UrlbarUtils.substringAfter(
+      queryContext.searchString,
+      firstToken
+    );
+    if (!UrlbarTokenizer.REGEXP_SPACES_START.test(query)) {
+      return null;
+    }
+
+    let result;
+    if (queryContext.restrictSource == UrlbarUtils.RESULT_SOURCE.SEARCH) {
+      result = this._engineSearchResult(queryContext, firstToken);
     } else {
-      engine = Services.search.defaultEngine;
+      result = new UrlbarResult(
+        UrlbarUtils.RESULT_TYPE.SEARCH,
+        UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
+          query: [query.trimStart(), UrlbarUtils.HIGHLIGHT.NONE],
+          keyword: [firstToken, UrlbarUtils.HIGHLIGHT.NONE],
+        })
+      );
+    }
+    result.heuristic = true;
+    return result;
+  }
+
+  _engineSearchResult(queryContext, keyword = null) {
+    let engine;
+    if (queryContext.searchMode?.engineName) {
+      engine = Services.search.getEngineByName(
+        queryContext.searchMode.engineName
+      );
+    } else {
+      engine = UrlbarSearchUtils.getDefaultEngine(queryContext.isPrivate);
     }
 
     if (!engine) {
@@ -244,26 +310,16 @@ class ProviderHeuristicFallback extends UrlbarProvider {
       ).trim();
     }
 
-    let result = new UrlbarResult(
+    return new UrlbarResult(
       UrlbarUtils.RESULT_TYPE.SEARCH,
       UrlbarUtils.RESULT_SOURCE.SEARCH,
       ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
         engine: [engine.name, UrlbarUtils.HIGHLIGHT.TYPED],
-        icon: [engine.iconURI?.spec || ""],
+        icon: engine.iconURI?.spec,
         query: [query, UrlbarUtils.HIGHLIGHT.NONE],
-        // We're confident that there is no alias, since UnifiedComplete
-        // handles heuristic searches with aliases.
-        keyword: undefined,
-        keywordOffer: UrlbarUtils.KEYWORD_OFFER.NONE,
-        // For test interoperabilty with UrlbarProviderSearchSuggestions.
-        suggestion: undefined,
-        tailPrefix: undefined,
-        tail: undefined,
-        tailOffsetIndex: -1,
-        isSearchHistory: false,
+        keyword: keyword ? [keyword, UrlbarUtils.HIGHLIGHT.NONE] : undefined,
       })
     );
-    return result;
   }
 }
 

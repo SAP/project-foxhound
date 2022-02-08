@@ -10,6 +10,8 @@
 #include "nsIXULRuntime.h"
 #include "nsScriptSecurityManager.h"
 #include "nsQueryObject.h"
+#include "UrlClassifierCommon.h"
+#include "nsIParentChannel.h"
 
 namespace mozilla {
 namespace net {
@@ -46,11 +48,11 @@ UrlClassifierFeatureFlash::UrlClassifierFeatureFlash(
           nsDependentCString(aFlashFeature.mName),
           nsDependentCString(aFlashFeature.mBlocklistPrefTables),
           nsDependentCString(aFlashFeature.mEntitylistPrefTables),
-          EmptyCString(),  // aPrefBlocklistHosts
-          EmptyCString(),  // aPrefEntitylistHosts
-          EmptyCString(),  // aPrefBlocklistTableName
-          EmptyCString(),  // aPrefEntitylistTableName
-          EmptyCString())  // aPrefExceptionHosts
+          ""_ns,  // aPrefBlocklistHosts
+          ""_ns,  // aPrefEntitylistHosts
+          ""_ns,  // aPrefBlocklistTableName
+          ""_ns,  // aPrefEntitylistTableName
+          ""_ns)  // aPrefExceptionHosts
       ,
       mFlashPluginState(aFlashFeature.mFlashPluginState) {
   static_assert(nsIHttpChannel::FlashPluginDeniedInSubdocuments ==
@@ -108,11 +110,11 @@ void UrlClassifierFeatureFlash::MaybeCreate(
 
   // We use Flash feature just for document loading.
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-  nsContentPolicyType contentPolicyType =
+  ExtContentPolicyType contentPolicyType =
       loadInfo->GetExternalContentPolicyType();
 
-  if (contentPolicyType != nsIContentPolicy::TYPE_DOCUMENT &&
-      contentPolicyType != nsIContentPolicy::TYPE_SUBDOCUMENT) {
+  if (contentPolicyType != ExtContentPolicy::TYPE_DOCUMENT &&
+      contentPolicyType != ExtContentPolicy::TYPE_SUBDOCUMENT) {
     return;
   }
 
@@ -129,7 +131,7 @@ void UrlClassifierFeatureFlash::MaybeCreate(
   for (const FlashFeature& flashFeature : sFlashFeaturesMap) {
     MOZ_ASSERT(flashFeature.mFeature);
     if (!flashFeature.mSubdocumentOnly ||
-        contentPolicyType == nsIContentPolicy::TYPE_SUBDOCUMENT) {
+        contentPolicyType == ExtContentPolicy::TYPE_SUBDOCUMENT) {
       aFeatures.AppendElement(flashFeature.mFeature);
     }
   }

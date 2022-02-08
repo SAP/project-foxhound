@@ -8,7 +8,6 @@
 var EXPORTED_SYMBOLS = [
     "OnRefTestLoad",
     "OnRefTestUnload",
-    "getTestPlugin"
 ];
 
 Cu.import("resource://gre/modules/FileUtils.jsm");
@@ -27,6 +26,13 @@ const { E10SUtils } = ChromeUtils.import(
 XPCOMUtils.defineLazyGetter(this, "OS", function() {
     const { OS } = Cu.import("resource://gre/modules/osfile.jsm");
     return OS;
+});
+
+XPCOMUtils.defineLazyServiceGetters(this, {
+  proxyService: [
+    "@mozilla.org/network/protocol-proxy-service;1",
+    "nsIProtocolProxyService",
+  ],
 });
 
 function HasUnexpectedResult()
@@ -70,7 +76,7 @@ function isWebRenderOnAndroidDevice() {
   // more correct detection of this case.
   return xr.OS == "Android" &&
       g.browserIsRemote &&
-      g.windowUtils.layerManagerType == "WebRender";
+      g.windowUtils.layerManagerType.startsWith("WebRender");
 }
 
 function FlushTestBuffer()
@@ -132,20 +138,6 @@ function IDForEventTarget(event)
     }
 }
 
-function getTestPlugin(aName) {
-  var ph = Cc["@mozilla.org/plugin/host;1"].getService(Ci.nsIPluginHost);
-  var tags = ph.getPluginTags();
-
-  // Find the test plugin
-  for (var i = 0; i < tags.length; i++) {
-    if (tags[i].name == aName)
-      return tags[i];
-  }
-
-  logger.warning("Failed to find the test-plugin.");
-  return null;
-}
-
 function OnRefTestLoad(win)
 {
     g.crashDumpDir = Cc[NS_DIRECTORY_SERVICE_CONTRACTID]
@@ -162,12 +154,13 @@ function OnRefTestLoad(win)
     var env = Cc["@mozilla.org/process/environment;1"].
               getService(Ci.nsIEnvironment);
 
+    g.browserIsRemote = Services.appinfo.browserTabsRemoteAutostart;
+    g.browserIsFission = Services.appinfo.fissionAutostart;
+
     var prefs = Cc["@mozilla.org/preferences-service;1"].
                 getService(Ci.nsIPrefBranch);
-    g.browserIsRemote = prefs.getBoolPref("browser.tabs.remote.autostart", false);
-    g.browserIsFission = prefs.getBoolPref("fission.autostart", false);
-
     g.browserIsIframe = prefs.getBoolPref("reftest.browser.iframe.enabled", false);
+    g.useDrawSnapshot = prefs.getBoolPref("reftest.use-draw-snapshot", false);
 
     g.logLevel = prefs.getStringPref("reftest.logLevel", "info");
 
@@ -201,20 +194,8 @@ function OnRefTestLoad(win)
       // TODO Bug 1156817: reftests don't have most of GeckoView infra so we
       // can't register this actor
       ChromeUtils.unregisterWindowActor("LoadURIDelegate");
-      ChromeUtils.unregisterWindowActor("WebBrowserChrome");
     } else {
       document.getElementById("reftest-window").appendChild(g.browser);
-    }
-
-    // reftests should have the test plugins enabled, not click-to-play
-    let plugin1 = getTestPlugin("Test Plug-in");
-    let plugin2 = getTestPlugin("Second Test Plug-in");
-    if (plugin1 && plugin2) {
-      g.testPluginEnabledStates = [plugin1.enabledState, plugin2.enabledState];
-      plugin1.enabledState = Ci.nsIPluginTag.STATE_ENABLED;
-      plugin2.enabledState = Ci.nsIPluginTag.STATE_ENABLED;
-    } else {
-      logger.warning("Could not get test plugin tags.");
     }
 
     g.browserMessageManager = g.browser.frameLoader.messageManager;
@@ -339,6 +320,33 @@ function StartHTTPServer()
 {
     g.server.registerContentType("sjs", "sjs");
     g.server.start(-1);
+
+    g.server.identity.add("http", "example.org", "80");
+    g.server.identity.add("https", "example.org", "443");
+
+    const proxyFilter = {
+        proxyInfo: proxyService.newProxyInfo(
+            "http", // type of proxy
+            "localhost", //proxy host
+            g.server.identity.primaryPort, // proxy host port
+            "", // auth header
+            "", // isolation key
+            0, // flags
+            4096, // timeout
+            null // failover proxy
+        ),
+
+        applyFilter(channel, defaultProxyInfo, callback) {
+            if (channel.URI.host == "example.org") {
+                callback.onProxyFilterResult(this.proxyInfo);
+            } else {
+                callback.onProxyFilterResult(defaultProxyInfo);
+            }
+        },
+    };
+
+    proxyService.registerChannelFilter(proxyFilter, 0);
+
     g.httpServerPort = g.server.identity.primaryPort;
 }
 
@@ -403,8 +411,26 @@ function ReadTests() {
             manifests = JSON.parse(manifests);
             g.urlsFilterRegex = manifests[null];
 
-            var globalFilter = manifests.hasOwnProperty("") ? new RegExp(manifests[""]) : null;
-            delete manifests[""];
+            var globalFilter = null;
+            if (manifests.hasOwnProperty("")) {
+                let filterAndId = manifests[""];
+                if (!Array.isArray(filterAndId)) {
+                    logger.error(`manifest[""] should be an array`);
+                    DoneTests();
+                }
+                if (filterAndId.length === 0) {
+                    logger.error(`manifest[""] should contain a filter pattern in the 1st item`);
+                    DoneTests();
+                }
+                let filter = filterAndId[0];
+                if (typeof filter !== "string") {
+                    logger.error(`The first item of manifest[""] should be a string`);
+                    DoneTests();
+                }
+                globalFilter = new RegExp(filter);
+                delete manifests[""];
+            }
+
             var manifestURLs = Object.keys(manifests);
 
             // Ensure we read manifests from higher up the directory tree first so that we
@@ -561,14 +587,6 @@ function StartTests()
 
 function OnRefTestUnload()
 {
-  let plugin1 = getTestPlugin("Test Plug-in");
-  let plugin2 = getTestPlugin("Second Test Plug-in");
-  if (plugin1 && plugin2) {
-    plugin1.enabledState = g.testPluginEnabledStates[0];
-    plugin2.enabledState = g.testPluginEnabledStates[1];
-  } else {
-    logger.warning("Failed to get test plugin tags.");
-  }
 }
 
 function AddURIUseCount(uri)
@@ -611,13 +629,13 @@ function Focus()
 {
     var fm = Cc["@mozilla.org/focus-manager;1"].getService(Ci.nsIFocusManager);
     fm.focusedWindow = g.containingWindow;
-#ifdef XP_MACOSX
+
     try {
         var dock = Cc["@mozilla.org/widget/macdocksupport;1"].getService(Ci.nsIMacDockSupport);
         dock.activateApplication(true);
     } catch(ex) {
     }
-#endif // XP_MACOSX
+
     return true;
 }
 
@@ -681,12 +699,14 @@ function StartCurrentTest()
 
 // A simplified version of the function with the same name in tabbrowser.js.
 function updateBrowserRemotenessByURL(aBrowser, aURL) {
+  var oa = E10SUtils.predictOriginAttributes({ browser: aBrowser });
   let remoteType = E10SUtils.getRemoteTypeForURI(
     aURL,
     aBrowser.ownerGlobal.docShell.nsILoadContext.useRemoteTabs,
     aBrowser.ownerGlobal.docShell.nsILoadContext.useRemoteSubframes,
     aBrowser.remoteType,
-    aBrowser.currentURI
+    aBrowser.currentURI,
+    oa
   );
   // Things get confused if we switch to not-remote
   // for chrome:// URIs, so lets not for now.
@@ -732,35 +752,48 @@ async function StartCurrentURI(aURLTargetType)
         var badPref = undefined;
         try {
             prefSettings.forEach(function(ps) {
-                var oldVal;
-                if (ps.type == PREF_BOOLEAN) {
-                    try {
-                        oldVal = prefs.getBoolPref(ps.name);
-                    } catch (e) {
-                        badPref = "boolean preference '" + ps.name + "'";
-                        throw "bad pref";
-                    }
-                } else if (ps.type == PREF_STRING) {
-                    try {
-                        oldVal = prefs.getStringPref(ps.name);
-                    } catch (e) {
-                        badPref = "string preference '" + ps.name + "'";
-                        throw "bad pref";
-                    }
-                } else if (ps.type == PREF_INTEGER) {
-                    try {
-                        oldVal = prefs.getIntPref(ps.name);
-                    } catch (e) {
-                        badPref = "integer preference '" + ps.name + "'";
-                        throw "bad pref";
-                    }
-                } else {
-                    throw "internal error - unknown preference type";
+                let prefExists = false;
+                try {
+                    let prefType = prefs.getPrefType(ps.name);
+                    prefExists = (prefType != prefs.PREF_INVALID);
+                } catch (e) {
                 }
-                if (oldVal != ps.value) {
+                if (!prefExists) {
+                    logger.info("Pref " + ps.name + " not found, will be added");
+                }
+
+                let oldVal = undefined;
+                if (prefExists) {
+                    if (ps.type == PREF_BOOLEAN) {
+                        try {
+                            oldVal = prefs.getBoolPref(ps.name);
+                        } catch (e) {
+                            badPref = "boolean preference '" + ps.name + "'";
+                            throw "bad pref";
+                        }
+                    } else if (ps.type == PREF_STRING) {
+                        try {
+                            oldVal = prefs.getStringPref(ps.name);
+                        } catch (e) {
+                            badPref = "string preference '" + ps.name + "'";
+                            throw "bad pref";
+                        }
+                    } else if (ps.type == PREF_INTEGER) {
+                        try {
+                            oldVal = prefs.getIntPref(ps.name);
+                        } catch (e) {
+                            badPref = "integer preference '" + ps.name + "'";
+                            throw "bad pref";
+                        }
+                    } else {
+                        throw "internal error - unknown preference type";
+                    }
+                }
+                if (!prefExists || oldVal != ps.value) {
                     g.prefsToRestore.push( { name: ps.name,
                                             type: ps.type,
-                                            value: oldVal } );
+                                            value: oldVal,
+                                            prefExisted: prefExists } );
                     var value = ps.value;
                     if (ps.type == PREF_BOOLEAN) {
                         prefs.setBoolPref(ps.name, value);
@@ -879,8 +912,14 @@ function UpdateCanvasCache(url, canvas)
 // asynchronously resized (e.g. by the window manager, to make
 // it fit on screen) at unpredictable times.
 // Fortunately this is pretty cheap.
-function DoDrawWindow(ctx, x, y, w, h)
+async function DoDrawWindow(ctx, x, y, w, h)
 {
+    if (g.useDrawSnapshot) {
+      let image = await g.browser.drawSnapshot(x, y, w, h, 1.0, "#fff");
+      ctx.drawImage(image, x, y);
+      return;
+    }
+
     var flags = ctx.DRAWWINDOW_DRAW_CARET | ctx.DRAWWINDOW_DRAW_VIEW;
     var testRect = g.browser.getBoundingClientRect();
     if (g.ignoreWindowSize ||
@@ -915,11 +954,14 @@ function DoDrawWindow(ctx, x, y, w, h)
     }
 
     TestBuffer("DoDrawWindow " + x + "," + y + "," + w + "," + h);
+    ctx.save();
+    ctx.translate(x, y);
     ctx.drawWindow(g.containingWindow, x, y, w, h, "rgb(255,255,255)",
                    g.drawWindowFlags);
+    ctx.restore();
 }
 
-function InitCurrentCanvasWithSnapshot()
+async function InitCurrentCanvasWithSnapshot()
 {
     TestBuffer("Initializing canvas snapshot");
 
@@ -933,11 +975,11 @@ function InitCurrentCanvasWithSnapshot()
     }
 
     var ctx = g.currentCanvas.getContext("2d");
-    DoDrawWindow(ctx, 0, 0, g.currentCanvas.width, g.currentCanvas.height);
+    await DoDrawWindow(ctx, 0, 0, g.currentCanvas.width, g.currentCanvas.height);
     return true;
 }
 
-function UpdateCurrentCanvasForInvalidation(rects)
+async function UpdateCurrentCanvasForInvalidation(rects)
 {
     TestBuffer("Updating canvas for invalidation");
 
@@ -960,14 +1002,11 @@ function UpdateCurrentCanvasForInvalidation(rects)
         right = Math.max(0, Math.min(right, g.currentCanvas.width));
         bottom = Math.max(0, Math.min(bottom, g.currentCanvas.height));
 
-        ctx.save();
-        ctx.translate(left, top);
-        DoDrawWindow(ctx, left, top, right - left, bottom - top);
-        ctx.restore();
+        await DoDrawWindow(ctx, left, top, right - left, bottom - top);
     }
 }
 
-function UpdateWholeCurrentCanvasForInvalidation()
+async function UpdateWholeCurrentCanvasForInvalidation()
 {
     TestBuffer("Updating entire canvas for invalidation");
 
@@ -976,7 +1015,7 @@ function UpdateWholeCurrentCanvasForInvalidation()
     }
 
     var ctx = g.currentCanvas.getContext("2d");
-    DoDrawWindow(ctx, 0, 0, g.currentCanvas.width, g.currentCanvas.height);
+    await DoDrawWindow(ctx, 0, 0, g.currentCanvas.width, g.currentCanvas.height);
 }
 
 function RecordResult(testRunTime, errorMsg, typeSpecificResults)
@@ -1470,16 +1509,21 @@ function RestoreChangedPreferences()
                     getService(Ci.nsIPrefBranch);
         g.prefsToRestore.reverse();
         g.prefsToRestore.forEach(function(ps) {
-            var value = ps.value;
-            if (ps.type == PREF_BOOLEAN) {
-                prefs.setBoolPref(ps.name, value);
-            } else if (ps.type == PREF_STRING) {
-                prefs.setStringPref(ps.name, value);
-                value = '"' + value + '"';
-            } else if (ps.type == PREF_INTEGER) {
-                prefs.setIntPref(ps.name, value);
+            if (ps.prefExisted) {
+                var value = ps.value;
+                if (ps.type == PREF_BOOLEAN) {
+                    prefs.setBoolPref(ps.name, value);
+                } else if (ps.type == PREF_STRING) {
+                    prefs.setStringPref(ps.name, value);
+                    value = '"' + value + '"';
+                } else if (ps.type == PREF_INTEGER) {
+                    prefs.setIntPref(ps.name, value);
+                }
+                logger.info("RESTORE PREFERENCE pref(" + ps.name + "," + value + ")");
+            } else {
+                prefs.clearUserPref(ps.name);
+                logger.info("RESTORE PREFERENCE pref(" + ps.name + ", <no value set>) (clearing user pref)");
             }
-            logger.info("RESTORE PREFERENCE pref(" + ps.name + "," + value + ")");
         });
         g.prefsToRestore = [];
     }
@@ -1525,7 +1569,7 @@ function RegisterMessageListenersAndLoadContentScript(aReload)
     );
     g.browserMessageManager.addMessageListener(
         "reftest:InitCanvasWithSnapshot",
-        function (m) { return RecvInitCanvasWithSnapshot(); }
+        function (m) { RecvInitCanvasWithSnapshot(); }
     );
     g.browserMessageManager.addMessageListener(
         "reftest:Log",
@@ -1634,10 +1678,10 @@ function RecvFailedAssignedLayer(why) {
     g.failedAssignedLayerMessages.push(why);
 }
 
-function RecvInitCanvasWithSnapshot()
+async function RecvInitCanvasWithSnapshot()
 {
-    var painted = InitCurrentCanvasWithSnapshot();
-    return { painted: painted };
+    var painted = await InitCurrentCanvasWithSnapshot();
+    SendUpdateCurrentCanvasWithSnapshotDone(painted);
 }
 
 function RecvLog(type, msg)
@@ -1675,23 +1719,26 @@ function RecvStartPrint(isPrintSelection, printRange)
     ps.showPrintProgress = false;
     ps.printBGImages = true;
     ps.printBGColors = true;
+    ps.unwriteableMarginTop = 0;
+    ps.unwriteableMarginRight = 0;
+    ps.unwriteableMarginLeft = 0;
+    ps.unwriteableMarginBottom = 0;
     ps.printToFile = true;
     ps.toFileName = file.path;
     ps.outputFormat = Ci.nsIPrintSettings.kOutputFormatPDF;
-    if (isPrintSelection) {
-        ps.printRange = Ci.nsIPrintSettings.kRangeSelection;
-    } else if (printRange) {
-        ps.printRange = Ci.nsIPrintSettings.kRangeSpecifiedPageRange;
-        let range = printRange.split('-');
-        ps.startPageRange = +range[0] || 1;
-        ps.endPageRange = +range[1] || 1;
+    ps.printSelectionOnly = isPrintSelection;
+    if (printRange) {
+        ps.pageRanges = printRange.split(',').map(function(r) {
+            let range = r.split('-');
+            return [+range[0] || 1, +range[1] || 1]
+        }).flat();
     }
 
     var prefs = Cc["@mozilla.org/preferences-service;1"].
                 getService(Ci.nsIPrefBranch);
     ps.printInColor = prefs.getBoolPref("print.print_in_color", true);
 
-    g.browser.print(g.browser.outerWindowID, ps)
+    g.browser.browsingContext.print(ps)
         .then(() => SendPrintDone(Cr.NS_OK, file.path))
         .catch(exception => SendPrintDone(exception.code, file.path));
 }
@@ -1710,14 +1757,16 @@ function RecvTestDone(runtimeMs)
     RecordResult(runtimeMs, '', [ ]);
 }
 
-function RecvUpdateCanvasForInvalidation(rects)
+async function RecvUpdateCanvasForInvalidation(rects)
 {
-    UpdateCurrentCanvasForInvalidation(rects);
+    await UpdateCurrentCanvasForInvalidation(rects);
+    SendUpdateCurrentCanvasWithSnapshotDone(true);
 }
 
-function RecvUpdateWholeCanvasForInvalidation()
+async function RecvUpdateWholeCanvasForInvalidation()
 {
-    UpdateWholeCurrentCanvasForInvalidation();
+    await UpdateWholeCurrentCanvasForInvalidation();
+    SendUpdateCurrentCanvasWithSnapshotDone(true);
 }
 
 function OnProcessCrashed(subject, topic, data)
@@ -1726,10 +1775,7 @@ function OnProcessCrashed(subject, topic, data)
     let additionalDumps;
     let propbag = subject.QueryInterface(Ci.nsIPropertyBag2);
 
-    if (topic == "plugin-crashed") {
-        id = propbag.get("pluginDumpID");
-        additionalDumps = propbag.getPropertyAsACString("additionalMinidumps");
-    } else if (topic == "ipc:content-shutdown") {
+    if (topic == "ipc:content-shutdown") {
         id = propbag.get("dumpID");
     }
 
@@ -1749,7 +1795,6 @@ function RegisterProcessCrashObservers()
 {
     var os = Cc[NS_OBSERVER_SERVICE_CONTRACTID]
              .getService(Ci.nsIObserverService);
-    os.addObserver(OnProcessCrashed, "plugin-crashed");
     os.addObserver(OnProcessCrashed, "ipc:content-shutdown");
 }
 
@@ -1792,6 +1837,11 @@ function SendResetRenderingState()
 function SendPrintDone(status, fileName)
 {
     g.browserMessageManager.sendAsyncMessage("reftest:PrintDone", { status, fileName });
+}
+
+function SendUpdateCurrentCanvasWithSnapshotDone(painted)
+{
+    g.browserMessageManager.sendAsyncMessage("reftest:UpdateCanvasWithSnapshotDone", { painted });
 }
 
 var pdfjsHasLoaded;

@@ -23,9 +23,12 @@
 #include "mozilla/ContentBlocking.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/net/HttpBaseChannel.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StyleSheet.h"
+#include "mozilla/Telemetry.h"
+#include "nsIWebProgressListener.h"
 
 static mozilla::LazyLogModule gReferrerInfoLog("ReferrerInfo");
 #define LOG(msg) MOZ_LOG(gReferrerInfoLog, mozilla::LogLevel::Debug, msg)
@@ -124,11 +127,8 @@ ReferrerPolicy ReferrerInfo::ReferrerPolicyFromHeaderString(
     const nsAString& aContent) {
   // Multiple headers could be concatenated into one comma-separated
   // list of policies. Need to tokenize the multiple headers.
-  nsCharSeparatedTokenizer tokenizer(aContent, ',');
-  nsAutoString token;
   ReferrerPolicyEnum referrerPolicy = ReferrerPolicy::_empty;
-  while (tokenizer.hasMoreTokens()) {
-    token = tokenizer.nextToken();
+  for (const auto& token : nsCharSeparatedTokenizer(aContent, ',').ToRange()) {
     if (token.IsEmpty()) {
       continue;
     }
@@ -197,7 +197,9 @@ ReferrerPolicy ReferrerInfo::GetDefaultReferrerPolicy(nsIHttpChannel* aChannel,
     nsCOMPtr<nsICookieJarSettings> cjs;
     Unused << loadInfo->GetCookieJarSettings(getter_AddRefs(cjs));
     if (!cjs) {
-      cjs = net::CookieJarSettings::Create();
+      cjs = privateBrowsing
+                ? net::CookieJarSettings::Create(CookieJarSettings::ePrivate)
+                : net::CookieJarSettings::Create(CookieJarSettings::eRegular);
     }
 
     // We only check if the channel is isolated if it's in the parent process
@@ -256,8 +258,7 @@ bool ReferrerInfo::IsReferrerSchemeAllowed(nsIURI* aReferrer) {
     return false;
   }
 
-  return scheme.EqualsIgnoreCase("https") || scheme.EqualsIgnoreCase("http") ||
-         scheme.EqualsIgnoreCase("ftp");
+  return scheme.EqualsIgnoreCase("https") || scheme.EqualsIgnoreCase("http");
 }
 
 /* static */
@@ -506,6 +507,36 @@ bool ReferrerInfo::IsCrossOriginRequest(nsIHttpChannel* aChannel) {
   return !isSameOrigin;
 }
 
+/* static */
+bool ReferrerInfo::IsCrossSiteRequest(nsIHttpChannel* aChannel) {
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+
+  if (!loadInfo->TriggeringPrincipal()->GetIsContentPrincipal()) {
+    LOG(("no triggering URI via loadInfo, assuming load is cross-site"));
+    return true;
+  }
+
+  if (LOG_ENABLED()) {
+    nsAutoCString triggeringURISpec;
+    loadInfo->TriggeringPrincipal()->GetAsciiSpec(triggeringURISpec);
+    LOG(("triggeringURI=%s\n", triggeringURISpec.get()));
+  }
+
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = aChannel->GetURI(getter_AddRefs(uri));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return true;
+  }
+
+  bool isCrossSite = true;
+  rv = loadInfo->TriggeringPrincipal()->IsThirdPartyURI(uri, &isCrossSite);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return true;
+  }
+
+  return isCrossSite;
+}
+
 ReferrerInfo::TrimmingPolicy ReferrerInfo::ComputeTrimmingPolicy(
     nsIHttpChannel* aChannel) const {
   uint32_t trimmingPolicy = GetUserTrimmingPolicy();
@@ -662,6 +693,72 @@ nsresult ReferrerInfo::TrimReferrerWithPolicy(nsIURI* aReferrer,
   // add it back here.
   aResult.AppendLiteral("/");
   return NS_OK;
+}
+
+bool ReferrerInfo::ShouldIgnoreLessRestrictedPolicies(
+    nsIHttpChannel* aChannel, const ReferrerPolicyEnum aPolicy) const {
+  MOZ_ASSERT(aChannel);
+
+  // We only care about the less restricted policies.
+  if (aPolicy != ReferrerPolicy::Unsafe_url &&
+      aPolicy != ReferrerPolicy::No_referrer_when_downgrade &&
+      aPolicy != ReferrerPolicy::Origin_when_cross_origin) {
+    return false;
+  }
+
+  bool isCrossSite = IsCrossSiteRequest(aChannel);
+  bool isPrivate = NS_UsePrivateBrowsing(aChannel);
+  bool isEnabled =
+      isPrivate
+          ? StaticPrefs::
+                network_http_referer_disallowCrossSiteRelaxingDefault_pbmode()
+          : StaticPrefs::
+                network_http_referer_disallowCrossSiteRelaxingDefault();
+
+  if (!isEnabled) {
+    // Log the warning message to console to inform that we will ignore
+    // less restricted policies for cross-site requests in the future.
+    if (isCrossSite) {
+      nsCOMPtr<nsIURI> uri;
+      nsresult rv = aChannel->GetURI(getter_AddRefs(uri));
+      NS_ENSURE_SUCCESS(rv, false);
+
+      AutoTArray<nsString, 1> params = {
+          NS_ConvertUTF8toUTF16(uri->GetSpecOrDefault())};
+      LogMessageToConsole(aChannel, "ReferrerPolicyDisallowRelaxingWarning",
+                          params);
+    }
+    return false;
+  }
+
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+
+  // Check if the channel is triggered by the system or the extension.
+  auto* triggerBasePrincipal =
+      BasePrincipal::Cast(loadInfo->TriggeringPrincipal());
+  if (triggerBasePrincipal->IsSystemPrincipal() ||
+      triggerBasePrincipal->AddonPolicy()) {
+    return false;
+  }
+
+  if (isCrossSite) {
+    // Log the console message to say that the less restricted policy was
+    // ignored.
+    nsCOMPtr<nsIURI> uri;
+    nsresult rv = aChannel->GetURI(getter_AddRefs(uri));
+    NS_ENSURE_SUCCESS(rv, true);
+
+    uint32_t idx = static_cast<uint32_t>(aPolicy);
+
+    AutoTArray<nsString, 2> params = {
+        NS_ConvertUTF8toUTF16(
+            nsDependentCString(ReferrerPolicyValues::strings[idx].value)),
+        NS_ConvertUTF8toUTF16(uri->GetSpecOrDefault())};
+    LogMessageToConsole(aChannel, "ReferrerPolicyDisallowRelaxingMessage",
+                        params);
+  }
+
+  return isCrossSite;
 }
 
 void ReferrerInfo::LogMessageToConsole(
@@ -939,13 +1036,12 @@ HashNumber ReferrerInfo::Hash() const {
       static_cast<uint32_t>(mPolicy), mSendReferrer, mOverridePolicyByDefault,
       mozilla::HashString(originalReferrerSpec),
       mozilla::HashString(mComputedReferrer.isSome() ? mComputedReferrer.value()
-                                                     : EmptyCString()));
+                                                     : ""_ns));
 }
 
 NS_IMETHODIMP
 ReferrerInfo::Init(nsIReferrerInfo::ReferrerPolicyIDL aReferrerPolicy,
-                   bool aSendReferrer, nsIURI* aOriginalReferrer,
-                   JSContext* aCx) {
+                   bool aSendReferrer, nsIURI* aOriginalReferrer) {
   MOZ_ASSERT(!mInitialized);
   if (mInitialized) {
     return NS_ERROR_ALREADY_INITIALIZED;
@@ -1039,7 +1135,7 @@ ReferrerInfo::CreateFromOtherAndPolicyOverride(
                                   ? aPolicyOverride
                                   : aOther->ReferrerPolicy();
 
-  nsCOMPtr<nsIURI> referrer = aOther->GetOriginalReferrer();
+  nsCOMPtr<nsIURI> referrer = aOther->GetComputedReferrer();
   nsCOMPtr<nsIReferrerInfo> referrerInfo =
       new ReferrerInfo(referrer, policy, aOther->GetSendReferrer());
   return referrerInfo.forget();
@@ -1163,14 +1259,15 @@ nsresult ReferrerInfo::ComputeReferrer(nsIHttpChannel* aChannel) {
   // computed the referrer and the result referrer value is empty (not send
   // referrer). So any early return later than this line will use that empty
   // referrer.
-  mComputedReferrer.emplace(EmptyCString());
+  mComputedReferrer.emplace(""_ns);
 
   if (!mSendReferrer || !mOriginalReferrer ||
       mPolicy == ReferrerPolicy::No_referrer) {
     return NS_OK;
   }
 
-  if (mPolicy == ReferrerPolicy::_empty) {
+  if (mPolicy == ReferrerPolicy::_empty ||
+      ShouldIgnoreLessRestrictedPolicies(aChannel, mPolicy)) {
     nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
     OriginAttributes attrs = loadInfo->GetOriginAttributes();
     bool isPrivate = attrs.mPrivateBrowsingId > 0;
@@ -1199,7 +1296,7 @@ nsresult ReferrerInfo::ComputeReferrer(nsIHttpChannel* aChannel) {
     return NS_OK;
   }
 
-  // Enforce Referrer allowlist, only http, https, ftp scheme are allowed
+  // Enforce Referrer allowlist, only http, https scheme are allowed
   if (!IsReferrerSchemeAllowed(mOriginalReferrer)) {
     return NS_OK;
   }
@@ -1410,6 +1507,23 @@ ReferrerInfo::Write(nsIObjectOutputStream* aStream) {
     return rv;
   }
   return NS_OK;
+}
+
+void ReferrerInfo::RecordTelemetry(nsIHttpChannel* aChannel) {
+#ifdef DEBUG
+  MOZ_ASSERT(!mTelemetryRecorded);
+  mTelemetryRecorded = true;
+#endif  // DEBUG
+
+  // The telemetry probe has 18 buckets. The first 9 buckets are for same-site
+  // requests and the rest 9 buckets are for cross-site requests.
+  uint32_t telemetryOffset =
+      IsCrossSiteRequest(aChannel)
+          ? static_cast<uint32_t>(ReferrerPolicy::EndGuard_)
+          : 0;
+
+  Telemetry::Accumulate(Telemetry::REFERRER_POLICY_COUNT,
+                        static_cast<uint32_t>(mPolicy) + telemetryOffset);
 }
 
 }  // namespace dom

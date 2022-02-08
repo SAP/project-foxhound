@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 use crate::actions::ActionSequence;
 use crate::capabilities::{
     BrowserCapabilities, Capabilities, CapabilitiesMatching, LegacyNewSessionParameters,
@@ -38,6 +42,7 @@ pub enum WebDriverCommand<T: WebDriverExtensionCommand> {
     FindElementElement(WebElement, LocatorParameters),
     FindElementElements(WebElement, LocatorParameters),
     GetActiveElement,
+    GetShadowRoot(WebElement),
     IsDisplayed(WebElement),
     IsSelected(WebElement),
     GetElementAttribute(WebElement, String),
@@ -72,11 +77,11 @@ pub enum WebDriverCommand<T: WebDriverExtensionCommand> {
     Extension(T),
 }
 
-pub trait WebDriverExtensionCommand: Clone + Send + PartialEq {
+pub trait WebDriverExtensionCommand: Clone + Send {
     fn parameters_json(&self) -> Option<Value>;
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct VoidWebDriverExtensionCommand;
 
 impl WebDriverExtensionCommand for VoidWebDriverExtensionCommand {
@@ -163,6 +168,15 @@ impl<U: WebDriverExtensionRoute> WebDriverMessage<U> {
                 WebDriverCommand::FindElementElements(element, serde_json::from_str(raw_body)?)
             }
             Route::GetActiveElement => WebDriverCommand::GetActiveElement,
+            Route::GetShadowRoot => {
+                let element_id = try_opt!(
+                    params.get("elementId"),
+                    ErrorStatus::InvalidArgument,
+                    "Missing elementId parameter"
+                );
+                let element = WebElement(element_id.as_str().into());
+                WebDriverCommand::GetShadowRoot(element)
+            }
             Route::IsDisplayed => {
                 let element_id = try_opt!(
                     params.get("elementId"),
@@ -586,7 +600,7 @@ where
     D: Deserializer<'de>,
 {
     let val = f64::deserialize(deserializer)?;
-    if val < 0.1 || val > 2.0 {
+    if !(0.1..=2.0).contains(&val) {
         return Err(de::Error::custom(format!("{} is outside range 0.1-2", val)));
     };
     Ok(val)
@@ -641,7 +655,7 @@ fn deserialize_to_nullable_u64<'de, D>(deserializer: D) -> Result<Option<Option<
 where
     D: Deserializer<'de>,
 {
-    let opt = Option::deserialize(deserializer)?.map(|value: f64| value);
+    let opt: Option<f64> = Option::deserialize(deserializer)?;
     let value = match opt {
         Some(n) => {
             if n < 0.0 || n.fract() != 0.0 {
@@ -668,7 +682,7 @@ fn deserialize_to_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let opt = Option::deserialize(deserializer)?.map(|value: f64| value);
+    let opt: Option<f64> = Option::deserialize(deserializer)?;
     let value = match opt {
         Some(n) => {
             if n < 0.0 || n.fract() != 0.0 {

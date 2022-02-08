@@ -60,7 +60,12 @@ Push.prototype = {
 
     this._principal = win.document.nodePrincipal;
 
-    this._topLevelPrincipal = win.top.document.nodePrincipal;
+    try {
+      this._topLevelPrincipal = win.top.document.nodePrincipal;
+    } catch (error) {
+      // Accessing the top-level document might fails if cross-origin
+      this._topLevelPrincipal = undefined;
+    }
   },
 
   __init(scope) {
@@ -70,7 +75,7 @@ Push.prototype = {
   askPermission() {
     console.debug("askPermission()");
 
-    let isHandlingUserInput = this._window.document
+    let hasValidTransientUserGestureActivation = this._window.document
       .hasValidTransientUserGestureActivation;
 
     return this.createPromise((resolve, reject) => {
@@ -90,7 +95,11 @@ Push.prototype = {
         return;
       }
 
-      this._requestPermission(isHandlingUserInput, resolve, permissionDenied);
+      this._requestPermission(
+        hasValidTransientUserGestureActivation,
+        resolve,
+        permissionDenied
+      );
     });
   },
 
@@ -194,7 +203,11 @@ Push.prototype = {
     return permission;
   },
 
-  _requestPermission(isHandlingUserInput, allowCallback, cancelCallback) {
+  _requestPermission(
+    hasValidTransientUserGestureActivation,
+    allowCallback,
+    cancelCallback
+  ) {
     // Create an array with a single nsIContentPermissionType element.
     let type = {
       type: "desktop-notification",
@@ -211,7 +224,7 @@ Push.prototype = {
       QueryInterface: ChromeUtils.generateQI(["nsIContentPermissionRequest"]),
       types: typeArray,
       principal: this._principal,
-      isHandlingUserInput,
+      hasValidTransientUserGestureActivation,
       topLevelPrincipal: this._topLevelPrincipal,
       allow: allowCallback,
       cancel: cancelCallback,

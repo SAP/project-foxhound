@@ -1,9 +1,9 @@
 use futures::channel::{mpsc, oneshot};
 use futures::executor::block_on;
-use futures::future::{self, Future, FutureExt, TryFutureExt};
+use futures::future::{self, poll_fn, Future, FutureExt, TryFutureExt};
 use futures::never::Never;
 use futures::ready;
-use futures::sink::{Sink, SinkErrInto, SinkExt};
+use futures::sink::{self, Sink, SinkErrInto, SinkExt};
 use futures::stream::{self, Stream, StreamExt};
 use futures::task::{self, ArcWake, Context, Poll, Waker};
 use futures_test::task::panic_context;
@@ -13,8 +13,8 @@ use std::fmt;
 use std::mem;
 use std::pin::Pin;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 fn sassert_next<S>(s: &mut S, item: S::Item)
 where
@@ -34,66 +34,6 @@ fn unwrap<T, E: fmt::Debug>(x: Poll<Result<T, E>>) -> T {
         Poll::Ready(Err(_)) => panic!("Poll::Ready(Err(_))"),
         Poll::Pending => panic!("Poll::Pending"),
     }
-}
-
-#[test]
-fn either_sink() {
-    let mut s = if true {
-        Vec::<i32>::new().left_sink()
-    } else {
-        VecDeque::<i32>::new().right_sink()
-    };
-
-    Pin::new(&mut s).start_send(0).unwrap();
-}
-
-#[test]
-fn vec_sink() {
-    let mut v = Vec::new();
-    Pin::new(&mut v).start_send(0).unwrap();
-    Pin::new(&mut v).start_send(1).unwrap();
-    assert_eq!(v, vec![0, 1]);
-    block_on(v.flush()).unwrap();
-    assert_eq!(v, vec![0, 1]);
-}
-
-#[test]
-fn vecdeque_sink() {
-    let mut deque = VecDeque::new();
-    Pin::new(&mut deque).start_send(2).unwrap();
-    Pin::new(&mut deque).start_send(3).unwrap();
-
-    assert_eq!(deque.pop_front(), Some(2));
-    assert_eq!(deque.pop_front(), Some(3));
-    assert_eq!(deque.pop_front(), None);
-}
-
-#[test]
-fn send() {
-    let mut v = Vec::new();
-
-    block_on(v.send(0)).unwrap();
-    assert_eq!(v, vec![0]);
-
-    block_on(v.send(1)).unwrap();
-    assert_eq!(v, vec![0, 1]);
-
-    block_on(v.send(2)).unwrap();
-    assert_eq!(v, vec![0, 1, 2]);
-}
-
-#[test]
-fn send_all() {
-    let mut v = Vec::new();
-
-    block_on(v.send_all(&mut stream::iter(vec![0, 1]).map(Ok))).unwrap();
-    assert_eq!(v, vec![0, 1]);
-
-    block_on(v.send_all(&mut stream::iter(vec![2, 3]).map(Ok))).unwrap();
-    assert_eq!(v, vec![0, 1, 2, 3]);
-
-    block_on(v.send_all(&mut stream::iter(vec![4, 5]).map(Ok))).unwrap();
-    assert_eq!(v, vec![0, 1, 2, 3, 4, 5]);
 }
 
 // An Unpark struct that records unpark events for inspection
@@ -150,6 +90,177 @@ impl<S: Sink<Item> + Unpin, Item: Unpin> Future for StartSendFut<S, Item> {
         }
         Poll::Ready(Ok(inner.take().unwrap()))
     }
+}
+
+// Immediately accepts all requests to start pushing, but completion is managed
+// by manually flushing
+struct ManualFlush<T: Unpin> {
+    data: Vec<T>,
+    waiting_tasks: Vec<Waker>,
+}
+
+impl<T: Unpin> Sink<Option<T>> for ManualFlush<T> {
+    type Error = ();
+
+    fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn start_send(mut self: Pin<&mut Self>, item: Option<T>) -> Result<(), Self::Error> {
+        if let Some(item) = item {
+            self.data.push(item);
+        } else {
+            self.force_flush();
+        }
+        Ok(())
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        if self.data.is_empty() {
+            Poll::Ready(Ok(()))
+        } else {
+            self.waiting_tasks.push(cx.waker().clone());
+            Poll::Pending
+        }
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.poll_flush(cx)
+    }
+}
+
+impl<T: Unpin> ManualFlush<T> {
+    fn new() -> Self {
+        Self { data: Vec::new(), waiting_tasks: Vec::new() }
+    }
+
+    fn force_flush(&mut self) -> Vec<T> {
+        for task in self.waiting_tasks.drain(..) {
+            task.wake()
+        }
+        mem::replace(&mut self.data, Vec::new())
+    }
+}
+
+struct ManualAllow<T: Unpin> {
+    data: Vec<T>,
+    allow: Rc<Allow>,
+}
+
+struct Allow {
+    flag: Cell<bool>,
+    tasks: RefCell<Vec<Waker>>,
+}
+
+impl Allow {
+    fn new() -> Self {
+        Self { flag: Cell::new(false), tasks: RefCell::new(Vec::new()) }
+    }
+
+    fn check(&self, cx: &mut Context<'_>) -> bool {
+        if self.flag.get() {
+            true
+        } else {
+            self.tasks.borrow_mut().push(cx.waker().clone());
+            false
+        }
+    }
+
+    fn start(&self) {
+        self.flag.set(true);
+        let mut tasks = self.tasks.borrow_mut();
+        for task in tasks.drain(..) {
+            task.wake();
+        }
+    }
+}
+
+impl<T: Unpin> Sink<T> for ManualAllow<T> {
+    type Error = ();
+
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        if self.allow.check(cx) {
+            Poll::Ready(Ok(()))
+        } else {
+            Poll::Pending
+        }
+    }
+
+    fn start_send(mut self: Pin<&mut Self>, item: T) -> Result<(), Self::Error> {
+        self.data.push(item);
+        Ok(())
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
+fn manual_allow<T: Unpin>() -> (ManualAllow<T>, Rc<Allow>) {
+    let allow = Rc::new(Allow::new());
+    let manual_allow = ManualAllow { data: Vec::new(), allow: allow.clone() };
+    (manual_allow, allow)
+}
+
+#[test]
+fn either_sink() {
+    let mut s =
+        if true { Vec::<i32>::new().left_sink() } else { VecDeque::<i32>::new().right_sink() };
+
+    Pin::new(&mut s).start_send(0).unwrap();
+}
+
+#[test]
+fn vec_sink() {
+    let mut v = Vec::new();
+    Pin::new(&mut v).start_send(0).unwrap();
+    Pin::new(&mut v).start_send(1).unwrap();
+    assert_eq!(v, vec![0, 1]);
+    block_on(v.flush()).unwrap();
+    assert_eq!(v, vec![0, 1]);
+}
+
+#[test]
+fn vecdeque_sink() {
+    let mut deque = VecDeque::new();
+    Pin::new(&mut deque).start_send(2).unwrap();
+    Pin::new(&mut deque).start_send(3).unwrap();
+
+    assert_eq!(deque.pop_front(), Some(2));
+    assert_eq!(deque.pop_front(), Some(3));
+    assert_eq!(deque.pop_front(), None);
+}
+
+#[test]
+fn send() {
+    let mut v = Vec::new();
+
+    block_on(v.send(0)).unwrap();
+    assert_eq!(v, vec![0]);
+
+    block_on(v.send(1)).unwrap();
+    assert_eq!(v, vec![0, 1]);
+
+    block_on(v.send(2)).unwrap();
+    assert_eq!(v, vec![0, 1, 2]);
+}
+
+#[test]
+fn send_all() {
+    let mut v = Vec::new();
+
+    block_on(v.send_all(&mut stream::iter(vec![0, 1]).map(Ok))).unwrap();
+    assert_eq!(v, vec![0, 1]);
+
+    block_on(v.send_all(&mut stream::iter(vec![2, 3]).map(Ok))).unwrap();
+    assert_eq!(v, vec![0, 1, 2, 3]);
+
+    block_on(v.send_all(&mut stream::iter(vec![4, 5]).map(Ok))).unwrap();
+    assert_eq!(v, vec![0, 1, 2, 3, 4, 5]);
 }
 
 // Test that `start_send` on an `mpsc` channel does indeed block when the
@@ -249,59 +360,6 @@ fn with_propagates_poll_ready() {
     }));
 }
 
-// Immediately accepts all requests to start pushing, but completion is managed
-// by manually flushing
-struct ManualFlush<T: Unpin> {
-    data: Vec<T>,
-    waiting_tasks: Vec<Waker>,
-}
-
-impl<T: Unpin> Sink<Option<T>> for ManualFlush<T> {
-    type Error = ();
-
-    fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn start_send(mut self: Pin<&mut Self>, item: Option<T>) -> Result<(), Self::Error> {
-        if let Some(item) = item {
-            self.data.push(item);
-        } else {
-            self.force_flush();
-        }
-        Ok(())
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        if self.data.is_empty() {
-            Poll::Ready(Ok(()))
-        } else {
-            self.waiting_tasks.push(cx.waker().clone());
-            Poll::Pending
-        }
-    }
-
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.poll_flush(cx)
-    }
-}
-
-impl<T: Unpin> ManualFlush<T> {
-    fn new() -> Self {
-        Self {
-            data: Vec::new(),
-            waiting_tasks: Vec::new(),
-        }
-    }
-
-    fn force_flush(&mut self) -> Vec<T> {
-        for task in self.waiting_tasks.drain(..) {
-            task.wake()
-        }
-        mem::replace(&mut self.data, Vec::new())
-    }
-}
-
 // test that the `with` sink doesn't require the underlying sink to flush,
 // but doesn't claim to be flushed until the underlying sink is
 #[test]
@@ -324,6 +382,30 @@ fn with_flush_propagate() {
     })
 }
 
+// test that `Clone` is implemented on `with` sinks
+#[test]
+fn with_implements_clone() {
+    let (mut tx, rx) = mpsc::channel(5);
+
+    {
+        let mut is_positive = tx.clone().with(|item| future::ok::<bool, mpsc::SendError>(item > 0));
+
+        let mut is_long =
+            tx.clone().with(|item: &str| future::ok::<bool, mpsc::SendError>(item.len() > 5));
+
+        block_on(is_positive.clone().send(-1)).unwrap();
+        block_on(is_long.clone().send("123456")).unwrap();
+        block_on(is_long.send("123")).unwrap();
+        block_on(is_positive.send(1)).unwrap();
+    }
+
+    block_on(tx.send(false)).unwrap();
+
+    block_on(tx.close()).unwrap();
+
+    assert_eq!(block_on(rx.collect::<Vec<_>>()), vec![false, true, false, true, false]);
+}
+
 // test that a buffer is a no-nop around a sink that always accepts sends
 #[test]
 fn buffer_noop() {
@@ -336,76 +418,6 @@ fn buffer_noop() {
     block_on(sink.send(0)).unwrap();
     block_on(sink.send(1)).unwrap();
     assert_eq!(sink.get_ref(), &[0, 1]);
-}
-
-struct ManualAllow<T: Unpin> {
-    data: Vec<T>,
-    allow: Rc<Allow>,
-}
-
-struct Allow {
-    flag: Cell<bool>,
-    tasks: RefCell<Vec<Waker>>,
-}
-
-impl Allow {
-    fn new() -> Self {
-        Self {
-            flag: Cell::new(false),
-            tasks: RefCell::new(Vec::new()),
-        }
-    }
-
-    fn check(&self, cx: &mut Context<'_>) -> bool {
-        if self.flag.get() {
-            true
-        } else {
-            self.tasks.borrow_mut().push(cx.waker().clone());
-            false
-        }
-    }
-
-    fn start(&self) {
-        self.flag.set(true);
-        let mut tasks = self.tasks.borrow_mut();
-        for task in tasks.drain(..) {
-            task.wake();
-        }
-    }
-}
-
-impl<T: Unpin> Sink<T> for ManualAllow<T> {
-    type Error = ();
-
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        if self.allow.check(cx) {
-            Poll::Ready(Ok(()))
-        } else {
-            Poll::Pending
-        }
-    }
-
-    fn start_send(mut self: Pin<&mut Self>, item: T) -> Result<(), Self::Error> {
-        self.data.push(item);
-        Ok(())
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-}
-
-fn manual_allow<T: Unpin>() -> (ManualAllow<T>, Rc<Allow>) {
-    let allow = Rc::new(Allow::new());
-    let manual_allow = ManualAllow {
-        data: Vec::new(),
-        allow: allow.clone(),
-    };
-    (manual_allow, allow)
 }
 
 // test basic buffer functionality, including both filling up to capacity,
@@ -483,23 +495,52 @@ fn sink_map_err() {
     }
 
     let tx = mpsc::channel(0).0;
-    assert_eq!(
-        Pin::new(&mut tx.sink_map_err(|_| ())).start_send(()),
-        Err(())
-    );
+    assert_eq!(Pin::new(&mut tx.sink_map_err(|_| ())).start_send(()), Err(()));
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-struct ErrIntoTest;
+#[test]
+fn sink_unfold() {
+    block_on(poll_fn(|cx| {
+        let (tx, mut rx) = mpsc::channel(1);
+        let unfold = sink::unfold((), |(), i: i32| {
+            let mut tx = tx.clone();
+            async move {
+                tx.send(i).await.unwrap();
+                Ok::<_, String>(())
+            }
+        });
+        futures::pin_mut!(unfold);
+        assert_eq!(unfold.as_mut().start_send(1), Ok(()));
+        assert_eq!(unfold.as_mut().poll_flush(cx), Poll::Ready(Ok(())));
+        assert_eq!(rx.try_next().unwrap(), Some(1));
 
-impl From<mpsc::SendError> for ErrIntoTest {
-    fn from(_: mpsc::SendError) -> Self {
-        Self
-    }
+        assert_eq!(unfold.as_mut().poll_ready(cx), Poll::Ready(Ok(())));
+        assert_eq!(unfold.as_mut().start_send(2), Ok(()));
+        assert_eq!(unfold.as_mut().poll_ready(cx), Poll::Ready(Ok(())));
+        assert_eq!(unfold.as_mut().start_send(3), Ok(()));
+        assert_eq!(rx.try_next().unwrap(), Some(2));
+        assert!(rx.try_next().is_err());
+        assert_eq!(unfold.as_mut().poll_ready(cx), Poll::Ready(Ok(())));
+        assert_eq!(unfold.as_mut().start_send(4), Ok(()));
+        assert_eq!(unfold.as_mut().poll_flush(cx), Poll::Pending); // Channel full
+        assert_eq!(rx.try_next().unwrap(), Some(3));
+        assert_eq!(rx.try_next().unwrap(), Some(4));
+
+        Poll::Ready(())
+    }))
 }
 
 #[test]
 fn err_into() {
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+    struct ErrIntoTest;
+
+    impl From<mpsc::SendError> for ErrIntoTest {
+        fn from(_: mpsc::SendError) -> Self {
+            Self
+        }
+    }
+
     {
         let cx = &mut panic_context();
         let (tx, _rx) = mpsc::channel(1);
@@ -509,8 +550,5 @@ fn err_into() {
     }
 
     let tx = mpsc::channel(0).0;
-    assert_eq!(
-        Pin::new(&mut tx.sink_err_into()).start_send(()),
-        Err(ErrIntoTest)
-    );
+    assert_eq!(Pin::new(&mut tx.sink_err_into()).start_send(()), Err(ErrIntoTest));
 }

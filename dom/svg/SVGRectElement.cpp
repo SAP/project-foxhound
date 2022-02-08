@@ -95,11 +95,16 @@ already_AddRefed<DOMSVGAnimatedLength> SVGRectElement::Ry() {
 bool SVGRectElement::HasValidDimensions() const {
   float width, height;
 
-  MOZ_ASSERT(GetPrimaryFrame());
-  SVGGeometryProperty::ResolveAll<SVGT::Width, SVGT::Height>(this, &width,
-                                                             &height);
-
-  return width > 0 && height > 0;
+  if (SVGGeometryProperty::ResolveAll<SVGT::Width, SVGT::Height>(this, &width,
+                                                                 &height)) {
+    return width > 0 && height > 0;
+  }
+  // This function might be called for an element in display:none subtree
+  // (e.g. SMIL animateMotion), we fall back to use SVG attributes.
+  return mLengthAttributes[ATTR_WIDTH].IsExplicitlySet() &&
+         mLengthAttributes[ATTR_WIDTH].GetAnimValInSpecifiedUnits() > 0 &&
+         mLengthAttributes[ATTR_HEIGHT].IsExplicitlySet() &&
+         mLengthAttributes[ATTR_HEIGHT].GetAnimValInSpecifiedUnits() > 0;
 }
 
 SVGElement::LengthAttributesInfo SVGRectElement::GetLengthInfo() {
@@ -117,10 +122,11 @@ bool SVGRectElement::GetGeometryBounds(Rect* aBounds,
   Rect rect;
   Float rx, ry;
 
-  MOZ_ASSERT(GetPrimaryFrame());
-  SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y, SVGT::Width, SVGT::Height,
-                                  SVGT::Rx, SVGT::Ry>(
-      this, &rect.x, &rect.y, &rect.width, &rect.height, &rx, &ry);
+  DebugOnly<bool> ok =
+      SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y, SVGT::Width,
+                                      SVGT::Height, SVGT::Rx, SVGT::Ry>(
+          this, &rect.x, &rect.y, &rect.width, &rect.height, &rx, &ry);
+  MOZ_ASSERT(ok, "SVGGeometryProperty::ResolveAll failed");
 
   if (rect.IsEmpty()) {
     // Rendering of the element disabled
@@ -170,9 +176,11 @@ bool SVGRectElement::GetGeometryBounds(Rect* aBounds,
 void SVGRectElement::GetAsSimplePath(SimplePath* aSimplePath) {
   float x, y, width, height, rx, ry;
 
-  SVGGeometryProperty::ResolveAllAllowFallback<
-      SVGT::X, SVGT::Y, SVGT::Width, SVGT::Height, SVGT::Rx, SVGT::Ry>(
-      this, &x, &y, &width, &height, &rx, &ry);
+  DebugOnly<bool> ok =
+      SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y, SVGT::Width,
+                                      SVGT::Height, SVGT::Rx, SVGT::Ry>(
+          this, &x, &y, &width, &height, &rx, &ry);
+  MOZ_ASSERT(ok, "SVGGeometryProperty::ResolveAll failed");
 
   if (width <= 0 || height <= 0) {
     aSimplePath->Reset();
@@ -193,9 +201,22 @@ void SVGRectElement::GetAsSimplePath(SimplePath* aSimplePath) {
 already_AddRefed<Path> SVGRectElement::BuildPath(PathBuilder* aBuilder) {
   float x, y, width, height, rx, ry;
 
-  SVGGeometryProperty::ResolveAllAllowFallback<
-      SVGT::X, SVGT::Y, SVGT::Width, SVGT::Height, SVGT::Rx, SVGT::Ry>(
-      this, &x, &y, &width, &height, &rx, &ry);
+  if (!SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y, SVGT::Width,
+                                       SVGT::Height, SVGT::Rx, SVGT::Ry>(
+          this, &x, &y, &width, &height, &rx, &ry)) {
+    // This function might be called for element in display:none subtree
+    // (e.g. getTotalLength), we fall back to use SVG attributes.
+    GetAnimatedLengthValues(&x, &y, &width, &height, &rx, &ry, nullptr);
+    // If either the 'rx' or the 'ry' attribute isn't set, then we have to
+    // set it to the value of the other:
+    bool hasRx = mLengthAttributes[ATTR_RX].IsExplicitlySet();
+    bool hasRy = mLengthAttributes[ATTR_RY].IsExplicitlySet();
+    if (hasRx && !hasRy) {
+      ry = rx;
+    } else if (hasRy && !hasRx) {
+      rx = ry;
+    }
+  }
 
   if (width <= 0 || height <= 0) {
     return nullptr;
@@ -226,17 +247,15 @@ already_AddRefed<Path> SVGRectElement::BuildPath(PathBuilder* aBuilder) {
 
 bool SVGRectElement::IsLengthChangedViaCSS(const ComputedStyle& aNewStyle,
                                            const ComputedStyle& aOldStyle) {
-  auto *newSVGReset = aNewStyle.StyleSVGReset(),
-       *oldSVGReset = aOldStyle.StyleSVGReset();
-  auto *newPosition = aNewStyle.StylePosition(),
-       *oldPosition = aOldStyle.StylePosition();
-
-  return newSVGReset->mX != oldSVGReset->mX ||
-         newSVGReset->mY != oldSVGReset->mY ||
-         newPosition->mWidth != oldPosition->mWidth ||
-         newPosition->mHeight != oldPosition->mHeight ||
-         newSVGReset->mRx != oldSVGReset->mRx ||
-         newSVGReset->mRy != oldSVGReset->mRy;
+  const auto& newSVGReset = *aNewStyle.StyleSVGReset();
+  const auto& oldSVGReset = *aOldStyle.StyleSVGReset();
+  const auto& newPosition = *aNewStyle.StylePosition();
+  const auto& oldPosition = *aOldStyle.StylePosition();
+  return newSVGReset.mX != oldSVGReset.mX || newSVGReset.mY != oldSVGReset.mY ||
+         newPosition.mWidth != oldPosition.mWidth ||
+         newPosition.mHeight != oldPosition.mHeight ||
+         newSVGReset.mRx != oldSVGReset.mRx ||
+         newSVGReset.mRy != oldSVGReset.mRy;
 }
 
 nsCSSPropertyID SVGRectElement::GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum) {

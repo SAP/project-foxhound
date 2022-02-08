@@ -15,11 +15,6 @@ interface nsIWebProgressListener2;
 interface nsIInterfaceRequestor;
 webidl BrowsingContext;
 
-[ptr] native ExternalAppHandlerPtr(nsExternalAppHandler);
-%{C++
-class nsExternalAppHandler;
-%}
-
 /**
  * The external helper app service is used for finding and launching
  * platform specific external applications for a given mime content type.
@@ -48,7 +43,7 @@ interface nsIExternalHelperAppService : nsISupports
                                in nsIInterfaceRequestor aContentContext,
                                in boolean aForceSave,
                                [optional] in nsIInterfaceRequestor aWindowContext);
-  
+
   /**
    * Binds an external helper application to a stream listener. The caller
    * should pump data into the returned stream listener. When the OnStopRequest
@@ -67,7 +62,7 @@ interface nsIExternalHelperAppService : nsISupports
    *  in which case dialogs will be parented to aContentContext.
    * @return A nsIStreamListener which the caller should pump the data into.
    */
-  [noscript] ExternalAppHandlerPtr createListener (in ACString aMimeContentType,
+  nsIStreamListener createListener (in ACString aMimeContentType,
                                                    in nsIRequest aRequest,
                                                    in BrowsingContext aContentContext,
                                                    in boolean aForceSave,
@@ -139,8 +134,10 @@ interface nsIHelperAppLauncher : nsICancelable
    * Tell the launcher that we will want to open the file.
    * NOTE: This will release the reference to the nsIHelperAppLauncherDialog.
    * @param aHandleInternally TRUE if we should handle opening this internally.
+   * @param aNewFileLocation a preferred location choosen through the File Picker.
+   * Null if going through the fast save without File Picker.
    */
-  void launchWithApplication(in boolean aHandleInternally);
+  void setDownloadToLaunch(in boolean aHandleInternally, in nsIFile aFile);
 
   /**
    * Callback invoked by nsIHelperAppLauncherDialog::promptForSaveToFileAsync

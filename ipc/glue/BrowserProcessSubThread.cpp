@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ipc/BrowserProcessSubThread.h"
+#include "mozilla/ipc/NodeController.h"
 
 #if defined(OS_WIN)
 #  include <objbase.h>
@@ -19,25 +20,13 @@ namespace ipc {
 
 // Friendly names for the well-known threads.
 static const char* kBrowserThreadNames[BrowserProcessSubThread::ID_COUNT] = {
-    "Gecko_IOThread",  // IO
-//  "Chrome_FileThread",  // FILE
-//  "Chrome_DBThread",  // DB
-//  "Chrome_HistoryThread",  // HISTORY
-#if defined(OS_LINUX) || defined(OS_SOLARIS)
-    "Gecko_Background_X11Thread",  // BACKGROUND_X11
-#endif
+    "IPC I/O Parent",  // IO
 };
 
 /* static */
 StaticMutex BrowserProcessSubThread::sLock;
 BrowserProcessSubThread* BrowserProcessSubThread::sBrowserThreads[ID_COUNT] = {
     nullptr,  // IO
-//  nullptr,  // FILE
-//  nullptr,  // DB
-//  nullptr,  // HISTORY
-#if defined(OS_LINUX) || defined(OS_SOLARIS)
-    nullptr,  // BACKGROUND_X11
-#endif
 };
 
 BrowserProcessSubThread::BrowserProcessSubThread(ID aId)
@@ -61,9 +50,18 @@ void BrowserProcessSubThread::Init() {
   // Initializes the COM library on the current thread.
   CoInitialize(nullptr);
 #endif
+
+  // Initialize the ports library in the current thread.
+  if (mIdentifier == IO) {
+    NodeController::InitBrokerProcess();
+  }
 }
 
 void BrowserProcessSubThread::CleanUp() {
+  if (mIdentifier == IO) {
+    NodeController::CleanUp();
+  }
+
 #if defined(OS_WIN)
   // Closes the COM library on the current thread. CoInitialize must
   // be balanced by a corresponding call to CoUninitialize.

@@ -14,7 +14,9 @@
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "nsContentUtils.h"
+#include "nsSandboxFlags.h"
 #include "nsStyleConsts.h"
+#include "nsIXMLContentSink.h"
 
 static mozilla::LazyLogModule gMetaElementLog("nsMetaElement");
 #define LOG(msg) MOZ_LOG(gMetaElementLog, mozilla::LogLevel::Debug, msg)
@@ -22,8 +24,7 @@ static mozilla::LazyLogModule gMetaElementLog("nsMetaElement");
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Meta)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 HTMLMetaElement::HTMLMetaElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
@@ -33,46 +34,28 @@ HTMLMetaElement::~HTMLMetaElement() = default;
 
 NS_IMPL_ELEMENT_CLONE(HTMLMetaElement)
 
-void HTMLMetaElement::SetMetaReferrer(Document* aDocument) {
-  if (!aDocument || !AttrValueIs(kNameSpaceID_None, nsGkAtoms::name,
-                                 nsGkAtoms::referrer, eIgnoreCase)) {
-    return;
-  }
-  nsAutoString content;
-  GetContent(content);
-
-  Element* headElt = aDocument->GetHeadElement();
-  if (headElt && IsInclusiveDescendantOf(headElt)) {
-    content = nsContentUtils::TrimWhitespace<nsContentUtils::IsHTMLWhitespace>(
-        content);
-    aDocument->UpdateReferrerInfoFromMeta(content, false);
-  }
-}
-
 nsresult HTMLMetaElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                        const nsAttrValue* aValue,
                                        const nsAttrValue* aOldValue,
                                        nsIPrincipal* aSubjectPrincipal,
                                        bool aNotify) {
   if (aNameSpaceID == kNameSpaceID_None) {
-    Document* document = GetUncomposedDoc();
-    if (aName == nsGkAtoms::content) {
-      if (document && AttrValueIs(kNameSpaceID_None, nsGkAtoms::name,
-                                  nsGkAtoms::viewport, eIgnoreCase)) {
-        ProcessViewportContent(document);
+    if (Document* document = GetUncomposedDoc()) {
+      if (aName == nsGkAtoms::content) {
+        if (const nsAttrValue* name = GetParsedAttr(nsGkAtoms::name)) {
+          MetaAddedOrChanged(*document, *name, ChangeKind::ContentChange);
+        }
+        CreateAndDispatchEvent(*document, u"DOMMetaChanged"_ns);
+      } else if (aName == nsGkAtoms::name) {
+        if (aOldValue) {
+          MetaRemoved(*document, *aOldValue, ChangeKind::NameChange);
+        }
+        if (aValue) {
+          MetaAddedOrChanged(*document, *aValue, ChangeKind::NameChange);
+        }
+        CreateAndDispatchEvent(*document, u"DOMMetaChanged"_ns);
       }
-      CreateAndDispatchEvent(document, u"DOMMetaChanged"_ns);
-    } else if (document && aName == nsGkAtoms::name) {
-      if (aValue && aValue->Equals(nsGkAtoms::viewport, eIgnoreCase)) {
-        ProcessViewportContent(document);
-      } else if (aOldValue &&
-                 aOldValue->Equals(nsGkAtoms::viewport, eIgnoreCase)) {
-        DiscardViewportContent(document);
-      }
-      CreateAndDispatchEvent(document, u"DOMMetaChanged"_ns);
     }
-    // Update referrer policy when it got changed from JS
-    SetMetaReferrer(document);
   }
 
   return nsGenericHTMLElement::AfterSetAttr(
@@ -86,9 +69,22 @@ nsresult HTMLMetaElement::BindToTree(BindContext& aContext, nsINode& aParent) {
     return rv;
   }
   Document& doc = aContext.OwnerDoc();
-  if (AttrValueIs(kNameSpaceID_None, nsGkAtoms::name, nsGkAtoms::viewport,
-                  eIgnoreCase)) {
-    ProcessViewportContent(&doc);
+
+  bool shouldProcessMeta = true;
+  // We don't want to call ProcessMETATag when we are pretty print
+  // the document
+  if (doc.IsXMLDocument()) {
+    if (nsCOMPtr<nsIXMLContentSink> xmlSink =
+            do_QueryInterface(doc.GetCurrentContentSink())) {
+      if (xmlSink->IsPrettyPrintXML() &&
+          xmlSink->IsPrettyPrintHasSpecialRoot()) {
+        shouldProcessMeta = false;
+      }
+    }
+  }
+
+  if (shouldProcessMeta) {
+    doc.ProcessMETATag(this);
   }
 
   if (AttrValueIs(kNameSpaceID_None, nsGkAtoms::httpEquiv, nsGkAtoms::headerCSP,
@@ -116,27 +112,25 @@ nsresult HTMLMetaElement::BindToTree(BindContext& aContext, nsINode& aParent) {
     }
   }
 
-  // Referrer Policy spec requires a <meta name="referrer" tag to be in the
-  // <head> element.
-  SetMetaReferrer(&doc);
-  CreateAndDispatchEvent(&doc, u"DOMMetaAdded"_ns);
+  if (const nsAttrValue* name = GetParsedAttr(nsGkAtoms::name)) {
+    MetaAddedOrChanged(doc, *name, ChangeKind::TreeChange);
+  }
+  CreateAndDispatchEvent(doc, u"DOMMetaAdded"_ns);
   return rv;
 }
 
 void HTMLMetaElement::UnbindFromTree(bool aNullParent) {
-  nsCOMPtr<Document> oldDoc = GetUncomposedDoc();
-  if (oldDoc && AttrValueIs(kNameSpaceID_None, nsGkAtoms::name,
-                            nsGkAtoms::viewport, eIgnoreCase)) {
-    DiscardViewportContent(oldDoc);
+  if (Document* oldDoc = GetUncomposedDoc()) {
+    if (const nsAttrValue* name = GetParsedAttr(nsGkAtoms::name)) {
+      MetaRemoved(*oldDoc, *name, ChangeKind::TreeChange);
+    }
+    CreateAndDispatchEvent(*oldDoc, u"DOMMetaRemoved"_ns);
   }
-  CreateAndDispatchEvent(oldDoc, u"DOMMetaRemoved"_ns);
   nsGenericHTMLElement::UnbindFromTree(aNullParent);
 }
 
-void HTMLMetaElement::CreateAndDispatchEvent(Document* aDoc,
+void HTMLMetaElement::CreateAndDispatchEvent(Document&,
                                              const nsAString& aEventName) {
-  if (!aDoc) return;
-
   RefPtr<AsyncEventDispatcher> asyncDispatcher = new AsyncEventDispatcher(
       this, aEventName, CanBubble::eYes, ChromeOnlyDispatch::eYes);
   asyncDispatcher->RunDOMEventWhenSafe();
@@ -147,30 +141,39 @@ JSObject* HTMLMetaElement::WrapNode(JSContext* aCx,
   return HTMLMetaElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void HTMLMetaElement::ProcessViewportContent(Document* aDocument) {
-  if (!HasAttr(kNameSpaceID_None, nsGkAtoms::content)) {
-    // Call Document::RemoveMetaViewportElement for cases that the content
-    // attribute is removed.
-    // NOTE: RemoveMetaViewportElement enumerates all existing meta viewport
-    // tags in the case where this element hasn't been there, i.e. this element
-    // is newly added to the document, but it should be fine because a document
-    // unlikely has a bunch of meta viewport tags.
-    aDocument->RemoveMetaViewportElement(this);
+void HTMLMetaElement::MetaAddedOrChanged(Document& aDoc,
+                                         const nsAttrValue& aName,
+                                         ChangeKind aChangeKind) {
+  nsAutoString content;
+  const bool hasContent = GetAttr(nsGkAtoms::content, content);
+  if (aName.Equals(nsGkAtoms::viewport, eIgnoreCase)) {
+    if (hasContent) {
+      aDoc.SetMetaViewportData(MakeUnique<ViewportMetaData>(content));
+    }
     return;
   }
 
-  nsAutoString content;
-  GetContent(content);
-
-  aDocument->SetHeaderData(nsGkAtoms::viewport, content);
-
-  ViewportMetaData data(content);
-  aDocument->AddMetaViewportElement(this, std::move(data));
+  if (aName.Equals(nsGkAtoms::referrer, eIgnoreCase)) {
+    content = nsContentUtils::TrimWhitespace<nsContentUtils::IsHTMLWhitespace>(
+        content);
+    return aDoc.UpdateReferrerInfoFromMeta(content,
+                                           /* aPreload = */ false);
+  }
+  if (aName.Equals(nsGkAtoms::color_scheme, eIgnoreCase)) {
+    if (aChangeKind != ChangeKind::ContentChange) {
+      return aDoc.AddColorSchemeMeta(*this);
+    }
+    return aDoc.RecomputeColorScheme();
+  }
 }
 
-void HTMLMetaElement::DiscardViewportContent(Document* aDocument) {
-  aDocument->RemoveMetaViewportElement(this);
+void HTMLMetaElement::MetaRemoved(Document& aDoc, const nsAttrValue& aName,
+                                  ChangeKind aChangeKind) {
+  MOZ_ASSERT(aChangeKind != ChangeKind::ContentChange,
+             "Content change can't trigger removal");
+  if (aName.Equals(nsGkAtoms::color_scheme, eIgnoreCase)) {
+    return aDoc.RemoveColorSchemeMeta(*this);
+  }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

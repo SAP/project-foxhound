@@ -110,7 +110,11 @@ struct str_encoder_t
   void copy_str (const byte_str_t &str)
   {
     unsigned int  offset = buff.length;
-    buff.resize (offset + str.length);
+    if (unlikely (!buff.resize (offset + str.length)))
+    {
+      set_error ();
+      return;
+    }
     if (unlikely (buff.length < offset + str.length))
     {
       set_error ();
@@ -255,7 +259,10 @@ struct subr_flattener_t
 	return false;
       cs_interpreter_t<ENV, OPSET, flatten_param_t> interp;
       interp.env.init (str, acc, fd);
-      flatten_param_t  param = { flat_charstrings[i], plan->drop_hints };
+      flatten_param_t  param = {
+        flat_charstrings[i],
+        (bool) (plan->flags & HB_SUBSET_FLAGS_NO_HINTING)
+      };
       if (unlikely (!interp.interpret (param)))
 	return false;
     }
@@ -412,7 +419,8 @@ struct parsed_cs_str_vec_t : hb_vector_t<parsed_cs_str_t>
   void init (unsigned int len_ = 0)
   {
     SUPER::init ();
-    resize (len_);
+    if (unlikely (!resize (len_)))
+      return;
     for (unsigned int i = 0; i < length; i++)
       (*this)[i].init ();
   }
@@ -528,9 +536,14 @@ struct subr_remaps_t
 
   void init (unsigned int fdCount)
   {
-    local_remaps.resize (fdCount);
+    if (unlikely (!local_remaps.resize (fdCount))) return;
     for (unsigned int i = 0; i < fdCount; i++)
       local_remaps[i].init ();
+  }
+
+  bool in_error()
+  {
+    return local_remaps.in_error ();
   }
 
   void create (subr_closures_t& closures)
@@ -591,10 +604,19 @@ struct subr_subsetter_t
 
     parsed_charstrings.init (plan->num_output_glyphs ());
     parsed_global_subrs.init (acc.globalSubrs->count);
-    parsed_local_subrs.resize (acc.fdCount);
+
+    if (unlikely (remaps.in_error()
+                  || parsed_charstrings.in_error ()
+                  || parsed_global_subrs.in_error ())) {
+      return false;
+    }
+
+    if (unlikely (!parsed_local_subrs.resize (acc.fdCount))) return false;
+
     for (unsigned int i = 0; i < acc.fdCount; i++)
     {
       parsed_local_subrs[i].init (acc.privateDicts[i].localSubrs->count);
+      if (unlikely (parsed_local_subrs[i].in_error ())) return false;
     }
     if (unlikely (!closures.valid))
       return false;
@@ -617,7 +639,7 @@ struct subr_subsetter_t
       param.init (&parsed_charstrings[i],
 		  &parsed_global_subrs,  &parsed_local_subrs[fd],
 		  closures.global_closure, closures.local_closures[fd],
-		  plan->drop_hints);
+		  plan->flags & HB_SUBSET_FLAGS_NO_HINTING);
 
       if (unlikely (!interp.interpret (param)))
 	return false;
@@ -626,7 +648,7 @@ struct subr_subsetter_t
       SUBSETTER::complete_parsed_str (interp.env, param, parsed_charstrings[i]);
     }
 
-    if (plan->drop_hints)
+    if (plan->flags & HB_SUBSET_FLAGS_NO_HINTING)
     {
       /* mark hint ops and arguments for drop */
       for (unsigned int i = 0; i < plan->num_output_glyphs (); i++)
@@ -641,7 +663,7 @@ struct subr_subsetter_t
 	param.init (&parsed_charstrings[i],
 		    &parsed_global_subrs,  &parsed_local_subrs[fd],
 		    closures.global_closure, closures.local_closures[fd],
-		    plan->drop_hints);
+                    plan->flags & HB_SUBSET_FLAGS_NO_HINTING);
 
 	drop_hints_param_t  drop;
 	if (drop_hints_in_str (parsed_charstrings[i], param, drop))
@@ -666,7 +688,7 @@ struct subr_subsetter_t
 	param.init (&parsed_charstrings[i],
 		    &parsed_global_subrs,  &parsed_local_subrs[fd],
 		    closures.global_closure, closures.local_closures[fd],
-		    plan->drop_hints);
+                    plan->flags & HB_SUBSET_FLAGS_NO_HINTING);
 	collect_subr_refs_in_str (parsed_charstrings[i], param);
       }
     }

@@ -18,10 +18,9 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 XPCOMUtils.defineLazyModuleGetters(this, {
-  BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
+  BrowserUIUtils: "resource:///modules/BrowserUIUtils.jsm",
   JsonSchemaValidator:
     "resource://gre/modules/components-utils/JsonSchemaValidator.jsm",
-  Services: "resource://gre/modules/Services.jsm",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
   UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
 });
@@ -60,10 +59,6 @@ class UrlbarResult {
 
     // UrlbarView is responsible for updating this.
     this.rowIndex = -1;
-
-    // This is an optional hint to the Muxer that can be set by a provider to
-    // suggest a specific position among the results.
-    this.suggestedIndex = -1;
 
     // May be used to indicate an heuristic result. Heuristic results can bypass
     // source filters in the ProvidersManager, that otherwise may skip them.
@@ -118,15 +113,20 @@ class UrlbarResult {
       case UrlbarUtils.RESULT_TYPE.URL:
       case UrlbarUtils.RESULT_TYPE.OMNIBOX:
       case UrlbarUtils.RESULT_TYPE.REMOTE_TAB:
+        if (this.payload.qsSuggestion) {
+          return [
+            // We will initially only be targetting en-US users with this experiment
+            // but will need to change this to work properly with l10n.
+            this.payload.qsSuggestion + " — " + this.payload.title,
+            this.payloadHighlights.qsSuggestion,
+          ];
+        }
         return this.payload.title
           ? [this.payload.title, this.payloadHighlights.title]
           : [this.payload.url || "", this.payloadHighlights.url || []];
       case UrlbarUtils.RESULT_TYPE.SEARCH:
-        switch (this.payload.keywordOffer) {
-          case UrlbarUtils.KEYWORD_OFFER.SHOW:
-            return [this.payload.keyword, this.payloadHighlights.keyword];
-          case UrlbarUtils.KEYWORD_OFFER.HIDE:
-            return ["", []];
+        if (this.payload.providesSearchMode) {
+          return ["", []];
         }
         if (this.payload.tail && this.payload.tailOffsetIndex >= 0) {
           return [this.payload.tail, this.payloadHighlights.tail];
@@ -145,6 +145,16 @@ class UrlbarResult {
    */
   get icon() {
     return this.payload.icon;
+  }
+
+  /**
+   * Returns whether the result's `suggestedIndex` property is defined.
+   * `suggestedIndex` is an optional hint to the muxer that can be set to
+   * suggest a specific position among the results.
+   * @returns {boolean} Whether `suggestedIndex` is defined.
+   */
+  get hasSuggestedIndex() {
+    return typeof this.suggestedIndex == "number";
   }
 
   /**
@@ -229,7 +239,7 @@ class UrlbarResult {
       payloadInfo.displayUrl = [...payloadInfo.url];
       let url = payloadInfo.displayUrl[0];
       if (url && UrlbarPrefs.get("trimURLs")) {
-        url = BrowserUtils.removeSingleTrailingSlashFromURL(url);
+        url = BrowserUIUtils.removeSingleTrailingSlashFromURL(url);
         if (url.startsWith("https://")) {
           url = url.substring(8);
           if (url.startsWith("www.")) {
@@ -237,17 +247,17 @@ class UrlbarResult {
           }
         }
       }
-      payloadInfo.displayUrl[0] = Services.textToSubURI.unEscapeURIForUI(url);
+      payloadInfo.displayUrl[0] = UrlbarUtils.unEscapeURIForUI(url);
     }
 
     // For performance reasons limit excessive string lengths, to reduce the
     // amount of string matching we do here, and avoid wasting resources to
     // handle long textruns that the user would never see anyway.
-    for (let prop of ["displayUrl", "title"].filter(p => p in payloadInfo)) {
-      payloadInfo[prop][0] = payloadInfo[prop][0].substring(
-        0,
-        UrlbarUtils.MAX_TEXT_LENGTH
-      );
+    for (let prop of ["displayUrl", "title", "suggestion"]) {
+      let val = payloadInfo[prop]?.[0];
+      if (typeof val == "string") {
+        payloadInfo[prop][0] = val.substring(0, UrlbarUtils.MAX_TEXT_LENGTH);
+      }
     }
 
     let entries = Object.entries(payloadInfo);
@@ -286,7 +296,7 @@ class UrlbarResult {
    */
   static addDynamicResultType(name, type = {}) {
     if (/[^a-z0-9_-]/i.test(name)) {
-      Cu.reportError(`Illegal dynamic type name: ${name}`);
+      this.logger.error(`Illegal dynamic type name: ${name}`);
       return;
     }
     this._dynamicResultTypesByName.set(name, type);
@@ -317,5 +327,26 @@ class UrlbarResult {
    */
   static getDynamicResultType(name) {
     return this._dynamicResultTypesByName.get(name);
+  }
+
+  /**
+   * This is useful for logging results. If you need the full payload, then it's
+   * better to JSON.stringify the result object itself.
+   * @returns {string} string representation of the result.
+   */
+  toString() {
+    if (this.payload.url) {
+      return this.payload.title + " - " + this.payload.url.substr(0, 100);
+    }
+    if (this.payload.keyword) {
+      return this.payload.keyword + " - " + this.payload.query;
+    }
+    if (this.payload.suggestion) {
+      return this.payload.engine + " - " + this.payload.suggestion;
+    }
+    if (this.payload.engine) {
+      return this.payload.engine + " - " + this.payload.query;
+    }
+    return JSON.stringify(this);
   }
 }

@@ -80,23 +80,30 @@ var PointerlockFsWarning = {
     }
     let uri = Services.io.newURI(this._origin);
     let host = null;
-    try {
-      host = uri.host;
-    } catch (e) {}
+    // Make an exception for PDF.js - we'll show "This document" instead.
+    if (this._origin != "resource://pdf.js") {
+      try {
+        host = uri.host;
+      } catch (e) {}
+    }
     let textElem = this._element.querySelector(
       ".pointerlockfswarning-domain-text"
     );
     if (!host) {
-      textElem.setAttribute("hidden", true);
+      textElem.hidden = true;
     } else {
       textElem.removeAttribute("hidden");
-      let hostElem = this._element.querySelector(
-        ".pointerlockfswarning-domain"
-      );
       // Document's principal's URI has a host. Display a warning including it.
       let utils = {};
       ChromeUtils.import("resource://gre/modules/DownloadUtils.jsm", utils);
-      hostElem.textContent = utils.DownloadUtils.getURIHost(uri.spec)[0];
+      let displayHost = utils.DownloadUtils.getURIHost(uri.spec)[0];
+      let l10nString = {
+        "fullscreen-warning": "fullscreen-warning-domain",
+        "pointerlock-warning": "pointerlock-warning-domain",
+      }[elementId];
+      document.l10n.setAttributes(textElem, l10nString, {
+        domain: displayHost,
+      });
     }
 
     this._element.dataset.identity =
@@ -115,8 +122,17 @@ var PointerlockFsWarning = {
     this._timeoutHide.start();
   },
 
-  close() {
-    if (!this._element) {
+  /**
+   * Close the full screen or pointerlock warning.
+   * @param {('fullscreen-warning'|'pointerlock-warning')} elementId - Id of the
+   * warning element to close. If the id does not match the currently shown
+   * warning this is a no-op.
+   */
+  close(elementId) {
+    if (!elementId) {
+      throw new Error("Must pass id of warning element to close");
+    }
+    if (!this._element || this._element.id != elementId) {
       return;
     }
     // Cancel any pending timeout
@@ -124,7 +140,11 @@ var PointerlockFsWarning = {
     this._timeoutShow.cancel();
     // Reset state of the warning box
     this._state = "hidden";
-    this._element.setAttribute("hidden", true);
+    // Reset state of the text so we don't persist or retranslate it.
+    this._element
+      .querySelector(".pointerlockfswarning-domain-text")
+      .removeAttribute("data-l10n-id");
+    this._element.hidden = true;
     // Remove all event listeners
     this._element.removeEventListener("transitionend", this);
     window.removeEventListener("mousemove", this, true);
@@ -220,7 +240,7 @@ var PointerlockFsWarning = {
       }
       case "transitionend": {
         if (this._state == "hiding") {
-          this._element.setAttribute("hidden", true);
+          this._element.hidden = true;
         }
         break;
       }
@@ -234,7 +254,7 @@ var PointerLock = {
   },
 
   exited() {
-    PointerlockFsWarning.close();
+    PointerlockFsWarning.close("pointerlock-warning");
   },
 };
 
@@ -255,6 +275,7 @@ var FullScreen = {
     // the content.
     addEventListener("willenterfullscreen", this, true);
     addEventListener("willexitfullscreen", this, true);
+    addEventListener("MacFullscreenMenubarRevealUpdate", this, true);
 
     if (window.fullScreen) {
       this.toggle();
@@ -289,6 +310,7 @@ var FullScreen = {
       // Make sure the menu items are adjusted.
       document.getElementById("enterFullScreenItem").hidden = enterFS;
       document.getElementById("exitFullScreenItem").hidden = !enterFS;
+      this.shiftMacToolbarDown(0);
     }
 
     if (!this._fullScrToggler) {
@@ -310,12 +332,12 @@ var FullScreen = {
         (alwaysUsesNativeFullscreen || !document.fullscreenElement) &&
         AppConstants.platform == "macosx"
       ) {
-        document.documentElement.setAttribute("OSXLionFullscreen", true);
+        document.documentElement.setAttribute("macOSNativeFullscreen", true);
       }
     } else {
       gNavToolbox.removeAttribute("inFullscreen");
       document.documentElement.removeAttribute("inFullscreen");
-      document.documentElement.removeAttribute("OSXLionFullscreen");
+      document.documentElement.removeAttribute("macOSNativeFullscreen");
     }
 
     if (!document.fullscreenElement) {
@@ -338,15 +360,36 @@ var FullScreen = {
       this._isPopupOpen = false;
       this.cleanup();
     }
-
-    if (enterFS && !document.fullscreenElement) {
-      Services.telemetry.scalarAdd("fullscreen.used", 1);
-    }
   },
 
   exitDomFullScreen() {
     if (document.fullscreen) {
       document.exitFullscreen();
+    }
+  },
+
+  /**
+   * Shifts the browser toolbar down when it is moused over on macOS in
+   * fullscreen.
+   * @param {number} shiftSize
+   *   A distance, in pixels, by which to shift the browser toolbar down.
+   */
+  shiftMacToolbarDown(shiftSize) {
+    if (typeof shiftSize !== "number") {
+      Cu.reportError("Tried to shift the toolbar by a non-numeric distance.");
+      return;
+    }
+
+    // shiftSize is sent from Cocoa widget code as a very precise double. We
+    // don't need that kind of precision in our CSS.
+    shiftSize = shiftSize.toFixed(2);
+    let toolbox = document.getElementById("navigator-toolbox");
+    if (shiftSize > 0) {
+      toolbox.style.setProperty("transform", `translateY(${shiftSize}px)`);
+      toolbox.style.setProperty("z-index", "2");
+    } else {
+      toolbox.style.removeProperty("transform");
+      toolbox.style.removeProperty("z-index");
     }
   },
 
@@ -360,6 +403,9 @@ var FullScreen = {
         break;
       case "fullscreen":
         this.toggle();
+        break;
+      case "MacFullscreenMenubarRevealUpdate":
+        this.shiftMacToolbarDown(event.detail);
         break;
     }
   },
@@ -405,7 +451,7 @@ var FullScreen = {
 
     // If we have a current pointerlock warning shown then hide it
     // before transition.
-    PointerlockFsWarning.close();
+    PointerlockFsWarning.close("pointerlock-warning");
 
     // If it is a remote browser, send a message to ask the content
     // to enter fullscreen state. We don't need to do so if it is an
@@ -420,12 +466,27 @@ var FullScreen = {
     // before the check is fine since we also check the activeness of
     // the requesting document in content-side handling code.
     if (this._isRemoteBrowser(aBrowser)) {
-      if (
-        !this._sendMessageToTheRightContent(aActor, "DOMFullscreen:Entered")
-      ) {
+      let [targetActor, inProcessBC] = this._getNextMsgRecipientActor(aActor);
+      if (!targetActor) {
+        // If there is no appropriate actor to send the message we have
+        // no way to complete the transition and should abort by exiting
+        // fullscreen.
+        this._abortEnterFullscreen();
+        return;
+      }
+      targetActor.sendAsyncMessage("DOMFullscreen:Entered", {
+        remoteFrameBC: inProcessBC,
+      });
+
+      if (inProcessBC) {
+        // Record that the actor is waiting for its child to enter
+        // fullscreen so that if it dies we can abort.
+        targetActor.waitingForChildEnterFullscreen = true;
+        // We aren't messaging the request origin yet, skip this time.
         return;
       }
     }
+
     // If we've received a fullscreen notification, we have to ensure that the
     // element that's requesting fullscreen belongs to the browser that's currently
     // active. If not, we exit fullscreen since the "full-screen document" isn't
@@ -437,9 +498,7 @@ var FullScreen = {
       // full-screen was made. Cancel full-screen.
       Services.focus.activeWindow != window
     ) {
-      // This function is called synchronously in fullscreen change, so
-      // we have to avoid calling exitFullscreen synchronously here.
-      setTimeout(() => document.exitFullscreen(), 0);
+      this._abortEnterFullscreen();
       return;
     }
 
@@ -453,7 +512,6 @@ var FullScreen = {
         this._logWarningPermissionPromptFS("promptCanceled");
       }
     }
-
     document.documentElement.setAttribute("inDOMFullscreen", true);
 
     if (gFindBarInitialized) {
@@ -488,9 +546,32 @@ var FullScreen = {
     }
   },
 
+  /**
+   * Clean up full screen, starting from the request origin's first ancestor
+   * frame that is OOP.
+   *
+   * If there are OOP ancestor frames, we notify the first of those and then bail to
+   * be called again in that process when it has dealt with the change. This is
+   * repeated until all ancestor processes have been updated. Once that has happened
+   * we remove our handlers and attributes and notify the request origin to complete
+   * the cleanup.
+   */
   cleanupDomFullscreen(aActor) {
-    if (!this._sendMessageToTheRightContent(aActor, "DOMFullscreen:CleanUp")) {
-      return;
+    let needToWaitForChildExit = false;
+    let [target, inProcessBC] = this._getNextMsgRecipientActor(aActor);
+    if (target) {
+      needToWaitForChildExit = true;
+      if (!target.waitingForChildExitFullscreen) {
+        // Record that the actor is waiting for its child to exit fullscreen so
+        // that if it dies we can continue cleanup.
+        target.waitingForChildExitFullscreen = true;
+        target.sendAsyncMessage("DOMFullscreen:CleanUp", {
+          remoteFrameBC: inProcessBC,
+        });
+      }
+      if (inProcessBC) {
+        return needToWaitForChildExit;
+      }
     }
 
     PopupNotifications.panel.removeEventListener(
@@ -499,49 +580,75 @@ var FullScreen = {
       true
     );
 
-    PointerlockFsWarning.close();
+    PointerlockFsWarning.close("fullscreen-warning");
     gBrowser.tabContainer.removeEventListener(
       "TabSelect",
       this.exitDomFullScreen
     );
 
     document.documentElement.removeAttribute("inDOMFullscreen");
+
+    return needToWaitForChildExit;
+  },
+
+  _abortEnterFullscreen() {
+    // This function is called synchronously in fullscreen change, so
+    // we have to avoid calling exitFullscreen synchronously here.
+    //
+    // This could reject if we're not currently in fullscreen
+    // so just ignore rejection.
+    setTimeout(() => document.exitFullscreen().catch(() => {}), 0);
+    if (TelemetryStopwatch.running("FULLSCREEN_CHANGE_MS")) {
+      // Cancel the stopwatch for any fullscreen change to avoid
+      // errors if it is started again.
+      TelemetryStopwatch.cancel("FULLSCREEN_CHANGE_MS");
+    }
   },
 
   /**
    * Search for the first ancestor of aActor that lives in a different process.
-   * If found, that ancestor is sent the message and return false.
-   * Otherwise, the recipient should be the actor of the request origin and return true
-   * from this function.
-   *
-   * The method will be called again as a result of targeted child process doing
-   * "FullScreen.enterDomFullscreen()" or "FullScreen.cleanupDomFullscreen()".
-   * The return value is used to postpone entering or exiting Full Screen in the parent
-   * until there is no ancestor anymore.
+   * If found, that ancestor actor and the browsing context for its child which
+   * was in process are returned. Otherwise [request origin, null].
    *
    *
    * @param {JSWindowActorParent} aActor
    *        The actor that called this function.
-   * @param {String} message
-   *        Message to be sent.
    *
-   * @return {boolean}
-   *         The return value is used to postpone entering or exiting Full Screen in the
-   *         parent until there is no ancestor anymore.
-   *         Return false if the message is send to the first ancestor of aActor that
-   *         lives in a different process
-   *         Return true if the message is sent to the request source
-   *         or false otherwise.
+   * @return {[JSWindowActorParent, BrowsingContext]}
+   *         The parent actor which should be sent the next msg and the
+   *         in process browsing context which is its child. Will be
+   *         [null, null] if there is no OOP parent actor and request origin
+   *         is unset. [null, null] is also returned if the intended actor or
+   *         the calling actor has been destroyed or its associated
+   *         WindowContext is in BFCache.
    */
-  _sendMessageToTheRightContent(aActor, aMessage) {
+  _getNextMsgRecipientActor(aActor) {
+    // Walk up the cached nextMsgRecipient to find the next available actor if
+    // any.
+    if (aActor.nextMsgRecipient) {
+      let nextMsgRecipient = aActor.nextMsgRecipient;
+      while (nextMsgRecipient) {
+        let [actor] = nextMsgRecipient;
+        if (
+          !actor.hasBeenDestroyed() &&
+          actor.windowContext &&
+          !actor.windowContext.isInBFCache
+        ) {
+          return nextMsgRecipient;
+        }
+        nextMsgRecipient = actor.nextMsgRecipient;
+      }
+    }
+
     if (aActor.hasBeenDestroyed()) {
-      // Just restore the chrome UI when the actor is dead.
-      return true;
+      return [null, null];
     }
 
     let childBC = aActor.browsingContext;
     let parentBC = childBC.parent;
 
+    // Walk up the browsing context tree from aActor's browsing context
+    // to find the first ancestor browsing context that's in a different process.
     while (parentBC) {
       if (!childBC.currentWindowGlobal || !parentBC.currentWindowGlobal) {
         break;
@@ -557,24 +664,25 @@ var FullScreen = {
       }
     }
 
+    let target = null;
+    let inProcessBC = null;
+
     if (parentBC && parentBC.currentWindowGlobal) {
-      let parentActor = parentBC.currentWindowGlobal.getActor("DOMFullscreen");
-      parentActor.sendAsyncMessage(aMessage, {
-        remoteFrameBC: childBC,
-      });
-      return false;
+      target = parentBC.currentWindowGlobal.getActor("DOMFullscreen");
+      inProcessBC = childBC;
+      aActor.nextMsgRecipient = [target, inProcessBC];
+    } else {
+      target = aActor.requestOrigin;
     }
 
-    // All content frames living outside the process where
-    // the element requesting fullscreen lives should
-    // have entered or exited fullscreen at this point.
-    // So let's notify the process where the original request
-    // comes from.
-    if (!aActor.requestOrigin.hasBeenDestroyed()) {
-      aActor.requestOrigin.sendAsyncMessage(aMessage, {});
-      aActor.requestOrigin = null;
+    if (
+      !target ||
+      target.hasBeenDestroyed() ||
+      target.windowContext?.isInBFCache
+    ) {
+      return [null, null];
     }
-    return true;
+    return [target, inProcessBC];
   },
 
   _isRemoteBrowser(aBrowser) {
@@ -677,7 +785,7 @@ var FullScreen = {
     }
 
     // Track whether mouse is near the toolbox
-    if (trackMouse && AppConstants.platform != "macosx") {
+    if (trackMouse) {
       let rect = gBrowser.tabpanels.getBoundingClientRect();
       this._mouseTargetRect = {
         top: rect.top + 50,
@@ -701,10 +809,6 @@ var FullScreen = {
     }
     // a popup menu is open in chrome: don't collapse chrome
     if (this._isPopupOpen) {
-      return;
-    }
-    // On macOS we don't want to hide toolbars.
-    if (AppConstants.platform == "macosx") {
       return;
     }
 
@@ -752,15 +856,6 @@ var FullScreen = {
       !BrowserHandler.kiosk
     ) {
       gNavToolbox.setAttribute("fullscreenShouldAnimate", true);
-      // Hide the fullscreen toggler until the transition ends.
-      let listener = () => {
-        gNavToolbox.removeEventListener("transitionend", listener, true);
-        if (this._isChromeCollapsed) {
-          this._fullScrToggler.hidden = false;
-        }
-      };
-      gNavToolbox.addEventListener("transitionend", listener, true);
-      this._fullScrToggler.hidden = true;
     }
 
     gNavToolbox.style.marginTop =
@@ -798,26 +893,6 @@ var FullScreen = {
     }
 
     ToolbarIconColor.inferFromText("fullscreen", aEnterFS);
-
-    // For macOS, we use native full screen, all full screen controls
-    // are hidden, don't bother to touch them. If we don't stop here,
-    // the following code could cause the native full screen button be
-    // shown unexpectedly. See bug 1165570.
-    if (AppConstants.platform == "macosx") {
-      return;
-    }
-
-    var fullscreenctls = document.getElementById("window-controls");
-    var navbar = document.getElementById("nav-bar");
-    var ctlsOnTabbar = window.toolbar.visible;
-    if (fullscreenctls.parentNode == navbar && ctlsOnTabbar) {
-      fullscreenctls.removeAttribute("flex");
-      document.getElementById("TabsToolbar").appendChild(fullscreenctls);
-    } else if (fullscreenctls.parentNode.id == "TabsToolbar" && !ctlsOnTabbar) {
-      fullscreenctls.setAttribute("flex", "1");
-      navbar.appendChild(fullscreenctls);
-    }
-    fullscreenctls.hidden = !aEnterFS;
   },
 };
 

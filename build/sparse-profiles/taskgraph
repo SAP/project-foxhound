@@ -65,9 +65,7 @@ path:.cron.yml
 
 # for the wrench-deps toolchain task
 path:gfx/wr/Cargo.lock
-
-# for the wgpu-deps toolchain task
-path:gfx/wgpu/Cargo.lock
+path:gfx/wr/ci-scripts/
 
 # for the mar-tools toolchain task
 path:mfbt/
@@ -79,7 +77,6 @@ path:toolkit/mozapps/update/updater
 # for the minidump_stackwalk toolchain task
 path:toolkit/crashreporter
 path:tools/crashreporter/
-path:testing/tools/fileid
 path:mfbt
 path:config/external/zlib
 path:build/moz.configure
@@ -87,6 +84,7 @@ path:build/moz.configure
 # for the browsertime toolchain task
 path:tools/browsertime/mach_commands.py
 path:tools/browsertime/package.json
+path:tools/browsertime/package-lock.json
 
 # for the geckodriver toolchain task
 path:testing/geckodriver

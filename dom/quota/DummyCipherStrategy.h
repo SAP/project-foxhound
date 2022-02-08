@@ -7,11 +7,15 @@
 #ifndef mozilla_dom_quota_DummyCipherStrategy_h
 #define mozilla_dom_quota_DummyCipherStrategy_h
 
-#include "mozilla/dom/quota/CipherStrategy.h"
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+#include "ErrorList.h"
 #include "mozilla/Result.h"
 #include "mozilla/Span.h"
-
-#include <array>
+#include "mozilla/dom/quota/CipherStrategy.h"
 
 namespace mozilla::dom::quota {
 
@@ -28,9 +32,13 @@ struct DummyCipherStrategy {
 
   static Result<KeyType, nsresult> GenerateKey() { return KeyType{}; }
 
-  static nsresult Cipher(const CipherMode aMode, const KeyType& aKey,
-                         Span<uint8_t> aIv, Span<const uint8_t> aIn,
-                         Span<uint8_t> aOut) {
+  nsresult Init(CipherMode aCipherMode, Span<const uint8_t> aKey,
+                Span<const uint8_t> aInitialIv = Span<const uint8_t>{}) {
+    return NS_OK;
+  }
+
+  nsresult Cipher(Span<uint8_t> aIv, Span<const uint8_t> aIn,
+                  Span<uint8_t> aOut) {
     DummyTransform(aIn, aOut);
     return NS_OK;
   }

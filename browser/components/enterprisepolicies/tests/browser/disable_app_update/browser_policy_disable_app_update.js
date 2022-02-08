@@ -2,6 +2,11 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
+
+XPCOMUtils.defineLazyModuleGetters(this, {
+  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
+});
+
 var updateService = Cc["@mozilla.org/updates/update-service;1"].getService(
   Ci.nsIApplicationUpdateService
 );
@@ -43,14 +48,11 @@ add_task(async function test_update_about_ui() {
   let panelId = "policyDisabled";
 
   await BrowserTestUtils.waitForCondition(
-    () =>
-      aboutDialog.document.getElementById("updateDeck").selectedPanel &&
-      aboutDialog.document.getElementById("updateDeck").selectedPanel.id ==
-        panelId,
+    () => aboutDialog.gAppUpdater?.selectedPanel?.id == panelId,
     'Waiting for expected panel ID - expected "' + panelId + '"'
   );
   is(
-    aboutDialog.document.getElementById("updateDeck").selectedPanel.id,
+    aboutDialog.gAppUpdater.selectedPanel.id,
     panelId,
     "The About Dialog panel Id should equal " + panelId
   );
@@ -91,3 +93,20 @@ function waitForAboutDialog() {
     openAboutDialog();
   });
 }
+
+add_task(async function test_no_update_intervention() {
+  await BrowserTestUtils.withNewTab("about:blank", async () => {
+    let context = await UrlbarTestUtils.promiseAutocompleteResultPopup({
+      window,
+      value: "update firefox",
+      waitForFocus,
+      fireInputEvent: true,
+    });
+    for (let result of context.results) {
+      Assert.notEqual(result.type, UrlbarUtils.RESULT_TYPE.TIP);
+    }
+    await UrlbarTestUtils.promisePopupClose(window, () =>
+      window.gURLBar.blur()
+    );
+  });
+});

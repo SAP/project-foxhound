@@ -15,11 +15,12 @@
  */
 import expect from 'expect';
 import {
+  expectCookieEquals,
   getTestState,
   setupTestBrowserHooks,
   setupTestPageAndContextHooks,
   itFailsFirefox,
-} from './mocha-utils';
+} from './mocha-utils'; // eslint-disable-line import/extensions
 
 describe('Cookie specs', () => {
   setupTestBrowserHooks();
@@ -29,7 +30,7 @@ describe('Cookie specs', () => {
     it('should return no cookies in pristine browser context', async () => {
       const { page, server } = getTestState();
       await page.goto(server.EMPTY_PAGE);
-      expect(await page.cookies()).toEqual([]);
+      expectCookieEquals(await page.cookies(), []);
     });
     it('should get a cookie', async () => {
       const { page, server } = getTestState();
@@ -37,17 +38,21 @@ describe('Cookie specs', () => {
       await page.evaluate(() => {
         document.cookie = 'username=John Doe';
       });
-      expect(await page.cookies()).toEqual([
+
+      expectCookieEquals(await page.cookies(), [
         {
           name: 'username',
           value: 'John Doe',
           domain: 'localhost',
           path: '/',
+          sameParty: false,
           expires: -1,
           size: 16,
           httpOnly: false,
           secure: false,
           session: true,
+          sourcePort: 8907,
+          sourceScheme: 'NonSecure',
         },
       ]);
     });
@@ -93,28 +98,34 @@ describe('Cookie specs', () => {
       });
       const cookies = await page.cookies();
       cookies.sort((a, b) => a.name.localeCompare(b.name));
-      expect(cookies).toEqual([
+      expectCookieEquals(cookies, [
         {
           name: 'password',
           value: '1234',
           domain: 'localhost',
           path: '/',
+          sameParty: false,
           expires: -1,
           size: 12,
           httpOnly: false,
           secure: false,
           session: true,
+          sourcePort: 8907,
+          sourceScheme: 'NonSecure',
         },
         {
           name: 'username',
           value: 'John Doe',
           domain: 'localhost',
           path: '/',
+          sameParty: false,
           expires: -1,
           size: 16,
           httpOnly: false,
           secure: false,
           session: true,
+          sourcePort: 8907,
+          sourceScheme: 'NonSecure',
         },
       ]);
     });
@@ -139,28 +150,34 @@ describe('Cookie specs', () => {
       );
       const cookies = await page.cookies('https://foo.com', 'https://baz.com');
       cookies.sort((a, b) => a.name.localeCompare(b.name));
-      expect(cookies).toEqual([
+      expectCookieEquals(cookies, [
         {
           name: 'birdo',
           value: 'tweets',
           domain: 'baz.com',
           path: '/',
+          sameParty: false,
           expires: -1,
           size: 11,
           httpOnly: false,
           secure: true,
           session: true,
+          sourcePort: 443,
+          sourceScheme: 'Secure',
         },
         {
           name: 'doggo',
           value: 'woofs',
           domain: 'foo.com',
           path: '/',
+          sameParty: false,
           expires: -1,
           size: 10,
           httpOnly: false,
           secure: true,
           session: true,
+          sourcePort: 443,
+          sourceScheme: 'Secure',
         },
       ]);
     });
@@ -214,12 +231,12 @@ describe('Cookie specs', () => {
           value: 'bar',
         }
       );
-      expect(
-        await page.evaluate(() => {
-          const cookies = document.cookie.split(';');
-          return cookies.map((cookie) => cookie.trim()).sort();
-        })
-      ).toEqual(['foo=bar', 'password=123456']);
+      const cookieStrings = await page.evaluate(() => {
+        const cookies = document.cookie.split(';');
+        return cookies.map((cookie) => cookie.trim()).sort();
+      });
+
+      expect(cookieStrings).toEqual(['foo=bar', 'password=123456']);
     });
     it('should have |expires| set to |-1| for session cookies', async () => {
       const { page, server } = getTestState();
@@ -242,19 +259,25 @@ describe('Cookie specs', () => {
         value: '123456',
       });
       const cookies = await page.cookies();
-      expect(cookies.sort((a, b) => a.name.localeCompare(b.name))).toEqual([
-        {
-          name: 'password',
-          value: '123456',
-          domain: 'localhost',
-          path: '/',
-          expires: -1,
-          size: 14,
-          httpOnly: false,
-          secure: false,
-          session: true,
-        },
-      ]);
+      expectCookieEquals(
+        cookies.sort((a, b) => a.name.localeCompare(b.name)),
+        [
+          {
+            name: 'password',
+            value: '123456',
+            domain: 'localhost',
+            path: '/',
+            sameParty: false,
+            expires: -1,
+            size: 14,
+            httpOnly: false,
+            secure: false,
+            session: true,
+            sourcePort: 80,
+            sourceScheme: 'NonSecure',
+          },
+        ]
+      );
     });
     it('should set a cookie with a path', async () => {
       const { page, server } = getTestState();
@@ -265,22 +288,25 @@ describe('Cookie specs', () => {
         value: 'GRID',
         path: '/grid.html',
       });
-      expect(await page.cookies()).toEqual([
+      expectCookieEquals(await page.cookies(), [
         {
           name: 'gridcookie',
           value: 'GRID',
           domain: 'localhost',
           path: '/grid.html',
+          sameParty: false,
           expires: -1,
           size: 14,
           httpOnly: false,
           secure: false,
           session: true,
+          sourcePort: 80,
+          sourceScheme: 'NonSecure',
         },
       ]);
       expect(await page.evaluate('document.cookie')).toBe('gridcookie=GRID');
       await page.goto(server.EMPTY_PAGE);
-      expect(await page.cookies()).toEqual([]);
+      expectCookieEquals(await page.cookies(), []);
       expect(await page.evaluate('document.cookie')).toBe('');
       await page.goto(server.PREFIX + '/grid.html');
       expect(await page.evaluate('document.cookie')).toBe('gridcookie=GRID');
@@ -369,18 +395,21 @@ describe('Cookie specs', () => {
         value: 'best',
       });
       expect(await page.evaluate('document.cookie')).toBe('');
-      expect(await page.cookies()).toEqual([]);
-      expect(await page.cookies('https://www.example.com')).toEqual([
+      expectCookieEquals(await page.cookies(), []);
+      expectCookieEquals(await page.cookies('https://www.example.com'), [
         {
           name: 'example-cookie',
           value: 'best',
           domain: 'www.example.com',
           path: '/',
+          sameParty: false,
           expires: -1,
           size: 18,
           httpOnly: false,
           secure: true,
           session: true,
+          sourcePort: 443,
+          sourceScheme: 'Secure',
         },
       ]);
     });
@@ -389,9 +418,9 @@ describe('Cookie specs', () => {
 
       await page.goto(server.PREFIX + '/grid.html');
       await page.setCookie({ name: 'localhost-cookie', value: 'best' });
-      await page.evaluate((src) => {
+      await page.evaluate<(src: string) => Promise<void>>((src) => {
         let fulfill;
-        const promise = new Promise((x) => (fulfill = x));
+        const promise = new Promise<void>((x) => (fulfill = x));
         const iframe = document.createElement('iframe');
         document.body.appendChild(iframe);
         iframe.onload = fulfill;
@@ -408,42 +437,45 @@ describe('Cookie specs', () => {
       );
       expect(await page.frames()[1].evaluate('document.cookie')).toBe('');
 
-      expect(await page.cookies()).toEqual([
+      expectCookieEquals(await page.cookies(), [
         {
           name: 'localhost-cookie',
           value: 'best',
           domain: 'localhost',
           path: '/',
+          sameParty: false,
           expires: -1,
           size: 20,
           httpOnly: false,
           secure: false,
           session: true,
+          sourcePort: 80,
+          sourceScheme: 'NonSecure',
         },
       ]);
 
-      expect(await page.cookies(server.CROSS_PROCESS_PREFIX)).toEqual([
+      expectCookieEquals(await page.cookies(server.CROSS_PROCESS_PREFIX), [
         {
           name: '127-cookie',
           value: 'worst',
           domain: '127.0.0.1',
           path: '/',
+          sameParty: false,
           expires: -1,
           size: 15,
           httpOnly: false,
           secure: false,
           session: true,
+          sourcePort: 80,
+          sourceScheme: 'NonSecure',
         },
       ]);
     });
     it(
       'should set secure same-site cookies from a frame',
       async () => {
-        const {
-          httpsServer,
-          puppeteer,
-          defaultBrowserOptions,
-        } = getTestState();
+        const { httpsServer, puppeteer, defaultBrowserOptions } =
+          getTestState();
 
         const browser = await puppeteer.launch({
           ...defaultBrowserOptions,
@@ -454,9 +486,9 @@ describe('Cookie specs', () => {
 
         try {
           await page.goto(httpsServer.PREFIX + '/grid.html');
-          await page.evaluate((src) => {
+          await page.evaluate<(src: string) => Promise<void>>((src) => {
             let fulfill;
-            const promise = new Promise((x) => (fulfill = x));
+            const promise = new Promise<void>((x) => (fulfill = x));
             const iframe = document.createElement('iframe');
             document.body.appendChild(iframe);
             iframe.onload = fulfill;
@@ -473,20 +505,26 @@ describe('Cookie specs', () => {
           expect(await page.frames()[1].evaluate('document.cookie')).toBe(
             '127-same-site-cookie=best'
           );
-          expect(await page.cookies(httpsServer.CROSS_PROCESS_PREFIX)).toEqual([
-            {
-              name: '127-same-site-cookie',
-              value: 'best',
-              domain: '127.0.0.1',
-              path: '/',
-              expires: -1,
-              size: 24,
-              httpOnly: false,
-              sameSite: 'None',
-              secure: true,
-              session: true,
-            },
-          ]);
+          expectCookieEquals(
+            await page.cookies(httpsServer.CROSS_PROCESS_PREFIX),
+            [
+              {
+                name: '127-same-site-cookie',
+                value: 'best',
+                domain: '127.0.0.1',
+                path: '/',
+                sameParty: false,
+                expires: -1,
+                size: 24,
+                httpOnly: false,
+                sameSite: 'None',
+                secure: true,
+                session: true,
+                sourcePort: 443,
+                sourceScheme: 'Secure',
+              },
+            ]
+          );
         } finally {
           await page.close();
           await browser.close();

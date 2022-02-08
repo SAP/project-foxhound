@@ -5,8 +5,6 @@
 
 /* eslint-disable mozilla/use-chromeutils-generateqi */
 
-const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
-const defer = require("devtools/shared/defer");
 const {
   NetworkThrottleManager,
 } = require("devtools/shared/webconsole/throttle");
@@ -43,7 +41,12 @@ TestStreamListener.prototype = {
 
   onStateChanged: function() {
     if (!this._deferred) {
-      this._deferred = defer();
+      let resolve, reject;
+      const promise = new Promise(function(res, rej) {
+        resolve = res;
+        reject = rej;
+      });
+      this._deferred = { resolve, reject, promise };
     }
     return this._deferred.promise;
   },

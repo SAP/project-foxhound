@@ -7,11 +7,13 @@
 #ifndef __PROFILER_BACKTRACE_H
 #define __PROFILER_BACKTRACE_H
 
-#include "mozilla/UniquePtrExtensions.h"
+#include "mozilla/ProfileChunkedBuffer.h"
+#include "mozilla/UniquePtr.h"
+
+#include <string>
 
 namespace mozilla {
 
-class ProfileChunkedBuffer;
 class TimeStamp;
 
 namespace baseprofiler {
@@ -22,12 +24,41 @@ class ThreadInfo;
 class UniqueStacks;
 
 // ProfilerBacktrace encapsulates a synchronous sample.
+// It can work with a ProfileBuffer and/or a ProfileChunkedBuffer (if both, they
+// must already be linked together). The ProfileChunkedBuffer contains all the
+// data; the ProfileBuffer is not strictly needed, only provide it if it is
+// already available at the call site.
+// And these buffers can either be:
+// - owned here, so that the ProfilerBacktrace object can be kept for later
+//   use), OR
+// - referenced through pointers (in cases where the backtrace is immediately
+//   streamed out, so we only need temporary references to external buffers);
+//   these pointers may be null for empty backtraces.
 class ProfilerBacktrace {
  public:
-  ProfilerBacktrace(const char* aName, int aThreadId,
-                    UniquePtr<ProfileChunkedBuffer> aProfileChunkedBuffer,
-                    UniquePtr<ProfileBuffer> aProfileBuffer);
+  // Take ownership of external buffers and use them to keep, and to stream a
+  // backtrace. If a ProfileBuffer is given, its underlying chunked buffer must
+  // be provided as well.
+  explicit ProfilerBacktrace(
+      const char* aName,
+      UniquePtr<ProfileChunkedBuffer> aProfileChunkedBufferStorage,
+      UniquePtr<ProfileBuffer> aProfileBufferStorageOrNull = nullptr);
+
+  // Take pointers to external buffers and use them to stream a backtrace.
+  // If null, the backtrace is effectively empty.
+  // If both are provided, they must already be connected.
+  explicit ProfilerBacktrace(
+      const char* aName,
+      ProfileChunkedBuffer* aExternalProfileChunkedBufferOrNull = nullptr,
+      ProfileBuffer* aExternalProfileBufferOrNull = nullptr);
+
   ~ProfilerBacktrace();
+
+  [[nodiscard]] bool IsEmpty() const {
+    return !mProfileChunkedBuffer ||
+           ProfileBufferEntryWriter::Serializer<ProfileChunkedBuffer>::Bytes(
+               *mProfileChunkedBuffer) <= ULEB128Size(0u);
+  }
 
   // ProfilerBacktraces' stacks are deduplicated in the context of the
   // profile that contains the backtrace as a marker payload.
@@ -35,55 +66,57 @@ class ProfilerBacktrace {
   // That is, markers that contain backtraces should not need their own stack,
   // frame, and string tables. They should instead reuse their parent
   // profile's tables.
-  void StreamJSON(SpliceableJSONWriter& aWriter,
-                  const TimeStamp& aProcessStartTime,
-                  UniqueStacks& aUniqueStacks);
+  BaseProfilerThreadId StreamJSON(SpliceableJSONWriter& aWriter,
+                                  const TimeStamp& aProcessStartTime,
+                                  UniqueStacks& aUniqueStacks);
 
  private:
   // Used to de/serialize a ProfilerBacktrace.
-  friend struct ProfileBufferEntryWriter::Serializer<ProfilerBacktrace>;
-  friend struct ProfileBufferEntryReader::Deserializer<ProfilerBacktrace>;
+  friend ProfileBufferEntryWriter::Serializer<ProfilerBacktrace>;
+  friend ProfileBufferEntryReader::Deserializer<ProfilerBacktrace>;
 
-  UniqueFreePtr<char> mName;
-  int mThreadId;
+  std::string mName;
+
   // `ProfileChunkedBuffer` in which `mProfileBuffer` stores its data; must be
   // located before `mProfileBuffer` so that it's destroyed after.
-  UniquePtr<ProfileChunkedBuffer> mProfileChunkedBuffer;
-  UniquePtr<ProfileBuffer> mProfileBuffer;
+  UniquePtr<ProfileChunkedBuffer> mOptionalProfileChunkedBufferStorage;
+  // If null, there is no need to check mProfileBuffer's (if present) underlying
+  // buffer because this is done when constructed.
+  ProfileChunkedBuffer* mProfileChunkedBuffer;
+
+  UniquePtr<ProfileBuffer> mOptionalProfileBufferStorage;
+  ProfileBuffer* mProfileBuffer;
 };
 
 }  // namespace baseprofiler
 
-// Format: [ UniquePtr<BlockRingsBuffer> | threadId | name ]
+// Format: [ UniquePtr<BlockRingsBuffer> | name ]
 // Initial len==0 marks a nullptr or empty backtrace.
 template <>
 struct ProfileBufferEntryWriter::Serializer<baseprofiler::ProfilerBacktrace> {
   static Length Bytes(const baseprofiler::ProfilerBacktrace& aBacktrace) {
-    if (!aBacktrace.mProfileBuffer) {
-      // No backtrace buffer.
-      return ULEB128Size<Length>(0);
+    if (!aBacktrace.mProfileChunkedBuffer) {
+      // No buffer.
+      return ULEB128Size(0u);
     }
     auto bufferBytes = SumBytes(*aBacktrace.mProfileChunkedBuffer);
-    if (bufferBytes == 0) {
-      // Empty backtrace buffer.
-      return ULEB128Size<Length>(0);
+    if (bufferBytes <= ULEB128Size(0u)) {
+      // Empty buffer.
+      return ULEB128Size(0u);
     }
-    return bufferBytes +
-           SumBytes(aBacktrace.mThreadId,
-                    WrapProfileBufferUnownedCString(aBacktrace.mName.get()));
+    return bufferBytes + SumBytes(aBacktrace.mName);
   }
 
   static void Write(ProfileBufferEntryWriter& aEW,
                     const baseprofiler::ProfilerBacktrace& aBacktrace) {
-    if (!aBacktrace.mProfileBuffer ||
-        SumBytes(aBacktrace.mProfileChunkedBuffer) == 0) {
-      // No backtrace buffer, or it is empty.
-      aEW.WriteULEB128<Length>(0);
+    if (!aBacktrace.mProfileChunkedBuffer ||
+        SumBytes(*aBacktrace.mProfileChunkedBuffer) <= ULEB128Size(0u)) {
+      // No buffer, or empty buffer.
+      aEW.WriteULEB128(0u);
       return;
     }
-    aEW.WriteObject(aBacktrace.mProfileChunkedBuffer);
-    aEW.WriteObject(aBacktrace.mThreadId);
-    aEW.WriteObject(WrapProfileBufferUnownedCString(aBacktrace.mName.get()));
+    aEW.WriteObject(*aBacktrace.mProfileChunkedBuffer);
+    aEW.WriteObject(aBacktrace.mName);
   }
 };
 
@@ -94,7 +127,7 @@ struct ProfileBufferEntryWriter::Serializer<
                                       Destructor>& aBacktrace) {
     if (!aBacktrace) {
       // Null backtrace pointer (treated like an empty backtrace).
-      return ULEB128Size<Length>(0);
+      return ULEB128Size(0u);
     }
     return SumBytes(*aBacktrace);
   }
@@ -104,7 +137,7 @@ struct ProfileBufferEntryWriter::Serializer<
                                     Destructor>& aBacktrace) {
     if (!aBacktrace) {
       // Null backtrace pointer (treated like an empty backtrace).
-      aEW.WriteULEB128<Length>(0);
+      aEW.WriteULEB128(0u);
       return;
     }
     aEW.WriteObject(*aBacktrace);

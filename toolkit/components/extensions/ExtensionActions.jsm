@@ -48,6 +48,11 @@ class PanelActionBase {
     this.tabContext.on("tab-select", (evt, tab) => {
       this.updateOnChange(tab);
     });
+
+    // When preloading a popup we temporarily grant active tab permissions to
+    // the preloaded popup. If we don't end up opening we need to clear this
+    // permission when clearing the popup.
+    this.activeTabForPreload = null;
   }
 
   onShutdown() {
@@ -157,6 +162,77 @@ class PanelActionBase {
     }
   }
 
+  /**
+   * Gets the popup url for a given tab.
+   *
+   * @param {XULElement} tab
+   *        The tab the popup refers to.
+   * @returns {string}
+   *        The popup URL if a popup is present, undefined otherwise.
+   */
+  getPopupUrl(tab) {
+    if (!this.isShownForTab(tab)) {
+      return undefined;
+    }
+    let popupUrl = this.getProperty(tab, "popup");
+    return popupUrl;
+  }
+
+  /**
+   * Grants activeTab permission for a tab when preloading the popup.
+   *
+   * Will clear any existing activeTab permissions previously granted for any
+   * other tab.
+   *
+   * @param {XULElement} tab
+   *        The tab that should be granted activeTab permission for. Set to
+   *        null to clear previously granted activeTab permission.
+   */
+  setActiveTabForPreload(tab = null) {
+    let oldTab = this.activeTabForPreload;
+    if (oldTab === tab) {
+      return;
+    }
+    this.activeTabForPreload = tab;
+    if (tab) {
+      this.extension.tabManager.addActiveTabPermission(tab);
+    }
+    if (oldTab) {
+      this.extension.tabManager.revokeActiveTabPermission(oldTab);
+    }
+  }
+
+  /**
+   * Triggers this action and sends the appropriate event if needed.
+   *
+   * @param {XULElement} tab
+   *        The tab on which the action was fired.
+   * @param {object} clickInfo
+   *        Extra data passed to the second parameter to the action API's
+   *        onClicked event.
+   * @returns {string}
+   *        the popup URL if a popup should be open, undefined otherwise.
+   */
+  triggerClickOrPopup(tab, clickInfo = undefined) {
+    if (!this.isShownForTab(tab)) {
+      return null;
+    }
+
+    // Now that the action is actually being triggered we can clear any
+    // existing preloaded activeTab permission.
+    this.setActiveTabForPreload(null);
+    this.extension.tabManager.addActiveTabPermission(tab);
+
+    let popupUrl = this.getProperty(tab, "popup");
+    // The "click" event is only dispatched when the popup is not shown. This
+    // is done for compatibility with the Google Chrome onClicked extension
+    // API.
+    if (!popupUrl) {
+      this.dispatchClick(tab, clickInfo);
+    }
+    return popupUrl;
+  }
+
   api(context) {
     let { extension } = context;
     return {
@@ -235,6 +311,28 @@ class PanelActionBase {
    */
   getTargetFromDetails({ tabId, windowId }) {
     return null;
+  }
+
+  /**
+   * Triggers a click event.
+   *
+   * @param {XULElement} tab
+   *        The tab where this event should be fired.
+   * @param {object} clickInfo
+   *        Extra data passed to the second parameter to the action API's
+   *        onClicked event.
+   */
+  dispatchClick(tab, clickInfo) {}
+
+  /**
+   * Checks whether this action is shown.
+   *
+   * @param {XULElement} tab
+   *        The tab to be checked
+   * @returns {boolean}
+   */
+  isShownForTab(tab) {
+    return false;
   }
 }
 
@@ -358,7 +456,8 @@ class PageActionBase extends PanelActionBase {
 
 class BrowserActionBase extends PanelActionBase {
   constructor(tabContext, extension) {
-    const options = extension.manifest.browser_action;
+    const options =
+      extension.manifest.browser_action || extension.manifest.action;
     super(options, tabContext, extension);
 
     this.defaults = {
@@ -374,7 +473,8 @@ class BrowserActionBase extends PanelActionBase {
 
   async loadIconData() {
     const { extension } = this;
-    const options = extension.manifest.browser_action;
+    const options =
+      extension.manifest.browser_action || extension.manifest.action;
     this.defaults.icon = await StartupCache.get(
       extension,
       ["browserAction", "default_icon"],
@@ -462,6 +562,10 @@ class BrowserActionBase extends PanelActionBase {
     }
     values.badgeDefaultColor = result;
     return result;
+  }
+
+  isShownForTab(tab) {
+    return this.getProperty(tab, "enabled");
   }
 
   api(context) {

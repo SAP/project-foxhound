@@ -19,7 +19,8 @@ using namespace mozilla;
 TEST(MediaEventSource, SingleListener)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
+                    "TestMediaEventSource SingleListener");
 
   MediaEventProducer<int> source;
   int i = 0;
@@ -43,7 +44,8 @@ TEST(MediaEventSource, SingleListener)
 TEST(MediaEventSource, MultiListener)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
+                    "TestMediaEventSource MultiListener");
 
   MediaEventProducer<int> source;
   int i = 0;
@@ -74,7 +76,8 @@ TEST(MediaEventSource, MultiListener)
 TEST(MediaEventSource, DisconnectAfterNotification)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
+                    "TestMediaEventSource DisconnectAfterNotification");
 
   MediaEventProducer<int> source;
   int i = 0;
@@ -101,7 +104,8 @@ TEST(MediaEventSource, DisconnectAfterNotification)
 TEST(MediaEventSource, DisconnectBeforeNotification)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
+                    "TestMediaEventSource DisconnectBeforeNotification");
 
   MediaEventProducer<int> source;
   int i = 0;
@@ -132,7 +136,10 @@ TEST(MediaEventSource, DisconnectBeforeNotification)
  */
 TEST(MediaEventSource, DisconnectAndConnect)
 {
-  RefPtr<TaskQueue> queue;
+  RefPtr<TaskQueue> queue =
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
+                    "TestMediaEventSource DisconnectAndConnect");
+
   MediaEventProducerExc<int> source;
   MediaEventListener listener = source.Connect(queue, []() {});
   listener.Disconnect();
@@ -146,7 +153,8 @@ TEST(MediaEventSource, DisconnectAndConnect)
 TEST(MediaEventSource, VoidEventType)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
+                    "TestMediaEventSource VoidEventType");
 
   MediaEventProducer<void> source;
   int i = 0;
@@ -183,7 +191,8 @@ TEST(MediaEventSource, VoidEventType)
 TEST(MediaEventSource, ListenerType1)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
+                    "TestMediaEventSource ListenerType1");
 
   MediaEventProducer<int> source;
   int i = 0;
@@ -211,7 +220,8 @@ TEST(MediaEventSource, ListenerType1)
 TEST(MediaEventSource, ListenerType2)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
+                    "TestMediaEventSource ListenerType2");
 
   MediaEventProducer<int> source;
 
@@ -261,7 +271,8 @@ struct SomeEvent {
 TEST(MediaEventSource, CopyEvent1)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
+                    "TestMediaEventSource CopyEvent1");
 
   MediaEventProducer<SomeEvent> source;
   int i = 0;
@@ -288,7 +299,8 @@ TEST(MediaEventSource, CopyEvent1)
 TEST(MediaEventSource, CopyEvent2)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
+                    "TestMediaEventSource CopyEvent2");
 
   MediaEventProducer<SomeEvent> source;
   int i = 0;
@@ -317,7 +329,8 @@ TEST(MediaEventSource, CopyEvent2)
 TEST(MediaEventSource, MoveOnly)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
+                    "TestMediaEventSource MoveOnly");
 
   MediaEventProducerExc<UniquePtr<int>> source;
 
@@ -351,7 +364,8 @@ struct RefCounter {
 TEST(MediaEventSource, NoMove)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
+                    "TestMediaEventSource NoMove");
 
   MediaEventProducer<RefPtr<RefCounter>> source;
 
@@ -375,7 +389,10 @@ TEST(MediaEventSource, NoMove)
  */
 TEST(MediaEventSource, MoveLambda)
 {
-  RefPtr<TaskQueue> queue;
+  RefPtr<TaskQueue> queue =
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
+                    "TestMediaEventSource MoveLambda");
+
   MediaEventProducer<void> source;
 
   int counter = 0;
@@ -395,4 +412,86 @@ TEST(MediaEventSource, MoveLambda)
 
   listener1.Disconnect();
   listener2.Disconnect();
+}
+
+template <typename Bool>
+struct DestroyChecker {
+  explicit DestroyChecker(Bool* aIsDestroyed) : mIsDestroyed(aIsDestroyed) {
+    EXPECT_FALSE(*mIsDestroyed);
+  }
+  ~DestroyChecker() {
+    EXPECT_FALSE(*mIsDestroyed);
+    *mIsDestroyed = true;
+  }
+
+ private:
+  Bool* const mIsDestroyed;
+};
+
+class ClassForDestroyCheck final : private DestroyChecker<bool> {
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ClassForDestroyCheck);
+
+  explicit ClassForDestroyCheck(bool* aIsDestroyed)
+      : DestroyChecker(aIsDestroyed) {}
+
+  int32_t RefCountNums() const { return mRefCnt; }
+
+ protected:
+  ~ClassForDestroyCheck() = default;
+};
+
+TEST(MediaEventSource, ResetFuncReferenceAfterDisconnect)
+{
+  const RefPtr<TaskQueue> queue =
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
+                    "TestMediaEventSource ResetFuncReferenceAfterDisconnect");
+  MediaEventProducer<void> source;
+
+  // Using a class that supports refcounting to check the object destruction.
+  bool isDestroyed = false;
+  auto object = MakeRefPtr<ClassForDestroyCheck>(&isDestroyed);
+  EXPECT_FALSE(isDestroyed);
+  EXPECT_EQ(object->RefCountNums(), 1);
+
+  // Function holds a strong reference to object.
+  MediaEventListener listener = source.Connect(queue, [ptr = object] {});
+  EXPECT_FALSE(isDestroyed);
+  EXPECT_EQ(object->RefCountNums(), 2);
+
+  // This should destroy the function and release the object reference from the
+  // function on the task queue,
+  listener.Disconnect();
+  queue->BeginShutdown();
+  queue->AwaitShutdownAndIdle();
+  EXPECT_FALSE(isDestroyed);
+  EXPECT_EQ(object->RefCountNums(), 1);
+
+  // No one is holding reference to object, it should be destroyed
+  // immediately.
+  object = nullptr;
+  EXPECT_TRUE(isDestroyed);
+}
+
+class TestTaskQueue : public TaskQueue, private DestroyChecker<Atomic<bool>> {
+ public:
+  TestTaskQueue(already_AddRefed<nsIEventTarget> aTarget,
+                Atomic<bool>* aIsDestroyed)
+      : TaskQueue(std::move(aTarget),
+                  "TestMediaEventSource ResetTargetAfterDisconnect"),
+        DestroyChecker(aIsDestroyed) {}
+};
+
+TEST(MediaEventSource, ResetTargetAfterDisconnect)
+{
+  Atomic<bool> isDestroyed(false);
+  RefPtr<TaskQueue> queue = new TestTaskQueue(
+      GetMediaThreadPool(MediaThreadType::SUPERVISOR), &isDestroyed);
+  MediaEventProducer<void> source;
+  MediaEventListener listener = source.Connect(queue, [] {});
+
+  // MediaEventListener::Disconnect eventually gives up its target
+  listener.Disconnect();
+  queue->AwaitIdle();
+  queue = nullptr;
+  EXPECT_TRUE(isDestroyed);
 }

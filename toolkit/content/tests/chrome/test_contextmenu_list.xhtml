@@ -14,7 +14,7 @@
 <hbox style="padding-left: 10px;">
   <spacer width="5"/>
   <richlistbox id="list" context="themenu" style="padding: 0;" oncontextmenu="checkContextMenu(event)">
-    <richlistitem id="item1" style="padding-top: 3px; margin: 0;"><button label="One"/></richlistitem>
+    <richlistitem id="item1" style="padding-top: 4px; margin: 0;"><button label="One"/></richlistitem>
     <richlistitem id="item2" height="22"><checkbox label="Checkbox"/></richlistitem>
     <richlistitem id="item3"><button label="Three"/></richlistitem>
     <richlistitem id="item4"><checkbox label="Four"/></richlistitem>
@@ -80,8 +80,13 @@ var gTestElement = "list";
 var gSelectionStep = 0;
 var gContextMenuFired = false;
 
-function startTest()
+async function startTest()
 {
+  // These tests check behavior of non-native menus, and use anchored and non-anchored popups
+  // somewhat interchangeably. So disable native context menus for this test.
+  // We will have separate tests for native context menu behavior, see bug 1700727.
+  await SpecialPowers.pushPrefEnv({ set: [["widget.macos.native-context-menus", false]] });
+
   // first, check if the richlistbox selection changes on a contextmenu mouse event
   var element = $("list");
   synthesizeMouse(element.getItemAtIndex(3), 7, 1, { type : "mousedown", button: 2, ctrlKey: true });
@@ -163,12 +168,12 @@ function nextTest()
 
 function isRoundedX(a, b, msg)
 {
-  is(Math.round(a + mozInnerScreenX), Math.round(b + mozInnerScreenX), msg);
+  is(Math.round(a + window.mozInnerScreenX), Math.round(b + window.mozInnerScreenX), msg);
 }
 
 function isRoundedY(a, b, msg)
 {
-  is(Math.round(a + mozInnerScreenY), Math.round(b + mozInnerScreenY), msg);
+  is(Math.round(a + window.mozInnerScreenY), Math.round(b + window.mozInnerScreenY), msg);
 }
 
 function checkContextMenu(event)
@@ -189,6 +194,7 @@ function checkContextMenu(event)
   // context menu from mouse click
   switch (gTestId) {
     case -1:
+      // eslint-disable-next-line no-nested-ternary
       var expected = gSelectionStep == 2 ? 1 : (platformIsMac() ? 3 : 0);
       is($(gTestElement).selectedIndex, expected, "index after click " + gSelectionStep);
       break;
@@ -222,14 +228,16 @@ function checkContextMenuForMenu(event)
 function checkPopup()
 {
   var menurect = $("themenu").getBoundingClientRect();
-  
+
   // Context menus are offset by a number of pixels from the mouse click
   // which activates them. This is so that they don't appear exactly
   // under the mouse which can cause them to be mistakenly dismissed.
-  // The number of pixels depends on the platform  and is defined in
+  // The number of pixels depends on the platform and is defined in
   // each platform's nsLookAndFeel
   var contextMenuOffsetX = platformIsMac() ? 1 : 2;
   var contextMenuOffsetY = platformIsMac() ? -6 : 2;
+  contextMenuOffsetY += parseFloat(getComputedStyle($("themenu")).marginTop);
+  contextMenuOffsetX += parseFloat(getComputedStyle($("themenu")).marginLeft);
 
   if (gTestId == 0) {
     if (gTestElement == "list") {
@@ -251,14 +259,14 @@ function checkPopup()
   }
   else if (gTestId == 1) {
     // activating a context menu with the mouse from position (7, 4).
-    var elementrect = $(gTestElement).getBoundingClientRect();
+    let elementrect = $(gTestElement).getBoundingClientRect();
     isRoundedX(menurect.left, elementrect.left + 7 + contextMenuOffsetX,
        gTestElement + " mouse left");
     isRoundedY(menurect.top, elementrect.top + 4 + contextMenuOffsetY,
        gTestElement + " mouse top");
   }
   else {
-    var elementrect = $(gTestElement).getBoundingClientRect();
+    let elementrect = $(gTestElement).getBoundingClientRect();
     isRoundedX(menurect.left, elementrect.left + contextMenuOffsetX,
        gTestElement + " no selection keyboard left");
     isRoundedY(menurect.top, elementrect.bottom + contextMenuOffsetY,

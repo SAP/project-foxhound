@@ -19,7 +19,12 @@ html|*.addon-webext-perm-list {
   padding-inline-start: 10px;
 }
 
-.addon-webext-perm-text {
+.addon-webext-perm-single-entry {
+  margin-top: 11px;
+}
+
+.addon-webext-perm-text,
+.addon-webext-perm-single-entry {
   margin-inline-start: 0;
 }
 
@@ -44,20 +49,7 @@ html|*.addon-webext-perm-list {
   margin: 0;
 }
 
-.addon-addon-icon,
-.addon-toolbar-icon {
-  width: 14px;
-  height: 14px;
-  vertical-align: bottom;
-  margin-bottom: 1px;
+.addon-warning-icon {
   -moz-context-properties: fill;
-  fill: currentColor;
-}
-
-.addon-addon-icon {
-  list-style-image: url("chrome://mozapps/skin/extensions/extension.svg");
-}
-
-.addon-toolbar-icon {
-  list-style-image: url("chrome://browser/skin/menu.svg");
+  fill: #FFBF00;
 }

@@ -2,6 +2,8 @@
 // is launched from within IntelliJ.
 def topsrcdir = rootProject.projectDir.absolutePath
 
+apply from: "${topsrcdir}/mobile/android/gradle/mach_env.gradle"
+
 def commandLine = ["${topsrcdir}/mach", "environment", "--format", "json", "--verbose"]
 if (System.properties['os.name'].toLowerCase().contains('windows')) {
     // gradle is called before parsing config.status, we cannot use PYTHON
@@ -9,11 +11,12 @@ if (System.properties['os.name'].toLowerCase().contains('windows')) {
     if (System.env.MOZILLABUILD) {
         def mozillabuild = System.env.MOZILLABUILD
         if (mozillabuild) {
-            commandLine.addAll(0, ["${mozillabuild}/python/python.exe"])
+            commandLine.addAll(0, ["${mozillabuild}/python3/python.exe"])
         }
     }
 }
-def proc = commandLine.execute(null, new File(topsrcdir))
+
+def proc = commandLine.execute(machEnv(topsrcdir), new File(topsrcdir))
 def standardOutput = new ByteArrayOutputStream()
 def standardError = new ByteArrayOutputStream()
 proc.consumeProcessOutput(standardOutput, standardError)
@@ -21,7 +24,14 @@ proc.waitFor()
 
 // Only show the output if something went wrong.
 if (proc.exitValue() != 0) {
-    throw new GradleException("Process '${commandLine}' finished with non-zero exit value ${proc.exitValue()}:\n\nstdout:\n${standardOutput.toString()}\n\nstderr:\n${standardError.toString()}")
+    logger.info("Error running ./mach environment: \n\n"
+        + "Process '${commandLine}' finished with non-zero exit value ${proc.exitValue()}:\n\n"
+        + "stdout:\n"
+        + "${standardOutput.toString()}\n\n"
+        + "stderr:\n"
+        + "${standardError.toString()}")
+    throw new StopExecutionException(
+            "Could not run ./mach environment. Try running ./mach build first.")
 }
 
 import groovy.json.JsonSlurper
@@ -43,11 +53,13 @@ System.setProperty('android.home', json.substs.ANDROID_SDK_ROOT)
 include ':annotations', ':messaging_example', ':port_messaging_example'
 include ':geckoview'
 include ':geckoview_example'
+include ':test_runner'
 include ':omnijar'
 
 project(':annotations').projectDir = new File("${json.topsrcdir}/mobile/android/annotations")
 project(':geckoview').projectDir = new File("${json.topsrcdir}/mobile/android/geckoview")
 project(':geckoview_example').projectDir = new File("${json.topsrcdir}/mobile/android/geckoview_example")
+project(':test_runner').projectDir = new File("${json.topsrcdir}/mobile/android/test_runner")
 project(':omnijar').projectDir = new File("${json.topsrcdir}/mobile/android/app/omnijar")
 
 // The Gradle instance is shared between settings.gradle and all the

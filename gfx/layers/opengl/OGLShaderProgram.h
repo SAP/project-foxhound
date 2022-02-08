@@ -7,11 +7,13 @@
 #ifndef GFX_OGLSHADERPROGRAM_H
 #define GFX_OGLSHADERPROGRAM_H
 
-#include "GLContext.h"  // for fast inlines of glUniform*
-#include "OGLShaderConfig.h"
-
+#include <map>
 #include <string>
 #include <utility>
+
+#include "GLContext.h"  // for fast inlines of glUniform*
+#include "mozilla/UniquePtr.h"
+#include "OGLShaderConfig.h"
 
 namespace mozilla {
 namespace layers {
@@ -105,14 +107,6 @@ class ShaderProgramOGL {
     SetMatrixUniform(KnownUniform::LayerTransformInverse, aMatrix);
   }
 
-  void SetMaskLayerTransform(const gfx::Matrix4x4& aMatrix) {
-    SetMatrixUniform(KnownUniform::MaskTransform, aMatrix);
-  }
-
-  void SetBackdropTransform(const gfx::Matrix4x4& aMatrix) {
-    SetMatrixUniform(KnownUniform::BackdropTransform, aMatrix);
-  }
-
   void SetDEAAEdges(const gfx::Point3D* aEdges) {
     SetArrayUniform(KnownUniform::SSEdges, 4, aEdges);
   }
@@ -192,31 +186,6 @@ class ShaderProgramOGL {
     SetUniform(KnownUniform::CbTexture, aCbCrUnit);
   }
 
-  void SetBlackTextureUnit(GLint aUnit) {
-    SetUniform(KnownUniform::BlackTexture, aUnit);
-  }
-
-  void SetWhiteTextureUnit(GLint aUnit) {
-    SetUniform(KnownUniform::WhiteTexture, aUnit);
-  }
-
-  void SetMaskTextureUnit(GLint aUnit) {
-    SetUniform(KnownUniform::MaskTexture, aUnit);
-  }
-
-  void SetBackdropTextureUnit(GLint aUnit) {
-    SetUniform(KnownUniform::BackdropTexture, aUnit);
-  }
-
-  void SetRenderColor(const gfx::DeviceColor& aColor) {
-    SetUniform(KnownUniform::RenderColor, aColor);
-  }
-
-  void SetColorMatrix(const gfx::Matrix5x4& aColorMatrix) {
-    SetMatrixUniform(KnownUniform::ColorMatrix, &aColorMatrix._11);
-    SetUniform(KnownUniform::ColorMatrixVector, 4, &aColorMatrix._51);
-  }
-
   void SetTexCoordMultiplier(float aWidth, float aHeight) {
     float f[] = {aWidth, aHeight};
     SetUniform(KnownUniform::TexCoordMultiplier, 2, f);
@@ -227,30 +196,7 @@ class ShaderProgramOGL {
     SetUniform(KnownUniform::CbCrTexCoordMultiplier, 2, f);
   }
 
-  void SetMaskCoordMultiplier(float aWidth, float aHeight) {
-    float f[] = {aWidth, aHeight};
-    SetUniform(KnownUniform::MaskCoordMultiplier, 2, f);
-  }
-
   void SetYUVColorSpace(gfx::YUVColorSpace aYUVColorSpace);
-
-  // Set whether we want the component alpha shader to return the color
-  // vector (pass 1, false) or the alpha vector (pass2, true). With support
-  // for multiple render targets we wouldn't need two passes here.
-  void SetTexturePass2(bool aFlag) {
-    SetUniform(KnownUniform::TexturePass2, aFlag ? 1 : 0);
-  }
-
-  void SetBlurRadius(float aRX, float aRY);
-
-  void SetBlurAlpha(float aAlpha) {
-    SetUniform(KnownUniform::BlurAlpha, aAlpha);
-  }
-
-  void SetBlurOffset(float aOffsetX, float aOffsetY) {
-    float f[] = {aOffsetX, aOffsetY};
-    SetUniform(KnownUniform::BlurOffset, 2, f);
-  }
 
   size_t GetTextureCount() const { return mProfile.mTextureCount; }
 
@@ -387,10 +333,42 @@ class ShaderProgramOGL {
     }
   }
 
+  void SetVec3fvUniform(KnownUniform::KnownUniformName aKnownUniform,
+                        const float* aFloatValues) {
+    ASSERT_THIS_PROGRAM;
+    NS_ASSERTION(
+        aKnownUniform >= 0 && aKnownUniform < KnownUniform::KnownUniformCount,
+        "Invalid known uniform");
+
+    KnownUniform& ku(mProfile.mUniforms[aKnownUniform]);
+    if (ku.UpdateUniform(3, aFloatValues)) {
+      mGL->fUniform3fv(ku.mLocation, 1, ku.mValue.f16v);
+    }
+  }
+
   void SetMatrixUniform(KnownUniform::KnownUniformName aKnownUniform,
                         const gfx::Matrix4x4& aMatrix) {
     SetMatrixUniform(aKnownUniform, &aMatrix._11);
   }
+};
+
+class ShaderProgramOGLsHolder final {
+ public:
+  NS_INLINE_DECL_REFCOUNTING(ShaderProgramOGLsHolder)
+
+  explicit ShaderProgramOGLsHolder(gl::GLContext* aGL);
+
+  ShaderProgramOGL* GetShaderProgramFor(const ShaderConfigOGL& aConfig);
+  void Clear();
+  ShaderProgramOGL* ActivateProgram(const ShaderConfigOGL& aConfig);
+  void ResetCurrentProgram();
+
+ protected:
+  ~ShaderProgramOGLsHolder();
+
+  const RefPtr<gl::GLContext> mGL;
+  std::map<ShaderConfigOGL, UniquePtr<ShaderProgramOGL>> mPrograms;
+  ShaderProgramOGL* mCurrentProgram = nullptr;
 };
 
 }  // namespace layers

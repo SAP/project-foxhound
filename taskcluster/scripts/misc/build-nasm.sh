@@ -1,16 +1,16 @@
 #!/bin/bash
 set -x -e -v
 
-COMPRESS_EXT=bz2
+COMPRESS_EXT=zst
+
+if [ -n "$TOOLTOOL_MANIFEST" ]; then
+  . $GECKO_PATH/taskcluster/scripts/misc/tooltool-download.sh
+fi
 
 cd $MOZ_FETCHES_DIR/nasm-*
-case "$1" in
-    win64)
-        export PATH="$MOZ_FETCHES_DIR/clang/bin:$PATH"
-        ./configure CC=x86_64-w64-mingw32-clang AR=llvm-ar RANLIB=llvm-ranlib --host=x86_64-w64-mingw32
-        EXE=.exe
-        ;;
-    *)
+
+case $(cat version) in
+2.14.02)
         # Fix for .debug_loc section containing garbage on elf32
         # https://bugzilla.nasm.us/show_bug.cgi?id=3392631
         patch -p1 <<'EOF'
@@ -28,7 +28,31 @@ index de99d076..47031e12 100644
      if (is_elf32()) {
          WRITELONG(pbuf,0);  /* null  beginning offset */
 EOF
-        ./configure
+	;;
+esac
+
+case "$1" in
+    win64)
+        export PATH="$MOZ_FETCHES_DIR/clang/bin:$PATH"
+        ./configure CC=x86_64-w64-mingw32-clang AR=llvm-ar RANLIB=llvm-ranlib --host=x86_64-w64-mingw32
+        EXE=.exe
+        ;;
+    macosx64)
+        export PATH="$MOZ_FETCHES_DIR/clang/bin:$MOZ_FETCHES_DIR/cctools/bin:$PATH"
+        export LD_LIBRARY_PATH="$MOZ_FETCHES_DIR/clang/lib"
+        export MACOSX_DEPLOYMENT_TARGET=10.12
+        ./configure CC="clang --target=x86_64-apple-darwin -isysroot $MOZ_FETCHES_DIR/MacOSX11.0.sdk" --host=x86_64-apple-darwin
+        EXE=
+	;;
+    macosx64-aarch64)
+        export PATH="$MOZ_FETCHES_DIR/clang/bin:$MOZ_FETCHES_DIR/cctools/bin:$PATH"
+        export LD_LIBRARY_PATH="$MOZ_FETCHES_DIR/clang/lib"
+        export MACOSX_DEPLOYMENT_TARGET=11.0
+        ./configure CC="clang --target=aarch64-apple-darwin -isysroot $MOZ_FETCHES_DIR/MacOSX11.0.sdk" --host=aarch64-apple-darwin
+        EXE=
+	;;
+    *)
+        ./configure CC="$MOZ_FETCHES_DIR/clang/bin/clang --sysroot=$MOZ_FETCHES_DIR/sysroot-x86_64-linux-gnu"
         EXE=
         ;;
 esac

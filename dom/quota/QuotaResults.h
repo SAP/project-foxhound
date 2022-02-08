@@ -7,11 +7,29 @@
 #ifndef mozilla_dom_quota_QuotaResults_h
 #define mozilla_dom_quota_QuotaResults_h
 
+#include <cstdint>
+#include "mozilla/dom/quota/CommonMetadata.h"
 #include "nsIQuotaResults.h"
+#include "nsISupports.h"
+#include "nsString.h"
 
 namespace mozilla {
 namespace dom {
 namespace quota {
+
+class FullOriginMetadataResult : public nsIQuotaFullOriginMetadataResult {
+  const FullOriginMetadata mFullOriginMetadata;
+
+ public:
+  explicit FullOriginMetadataResult(
+      const FullOriginMetadata& aFullOriginMetadata);
+
+ private:
+  virtual ~FullOriginMetadataResult() = default;
+
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIQUOTAFULLORIGINMETADATARESULT
+};
 
 class UsageResult : public nsIQuotaUsageResult {
   nsCString mOrigin;

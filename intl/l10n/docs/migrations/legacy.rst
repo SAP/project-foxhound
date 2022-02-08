@@ -11,10 +11,10 @@
 Migrating Legacy Formats
 ========================
 
-Migrating from legacy formats is different from migrating Fluent to Fluent.
-When migrating legacy code paths, you'll need to adjust the Fluent strings
-for the quirks Mozilla uses in the legacy code paths. You'll find a number
-of specialized functionalities here.
+Migrating from legacy formats (.dtd, .properties) is different from migrating
+Fluent to Fluent. When migrating legacy code paths, you'll need to adjust the
+Fluent strings for the quirks Mozilla uses in the legacy code paths. You'll
+find a number of specialized functionalities here.
 
 Basic Migration
 ---------------
@@ -290,8 +290,8 @@ This can be obtained by calling :python:`REPLACE` with
 .. attention::
 
   To avoid any issues :python:`normalize_printf=True` should always be used when
-  replacing :js:`printf` arguments.
-
+  replacing :js:`printf` arguments. This is the default behaviour when working
+  with .properties files.
 
 .. note::
 

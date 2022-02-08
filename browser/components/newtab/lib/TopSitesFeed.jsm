@@ -38,7 +38,7 @@ const {
 
 ChromeUtils.defineModuleGetter(
   this,
-  "filterAdult",
+  "FilterAdult",
   "resource://activity-stream/lib/FilterAdult.jsm"
 );
 ChromeUtils.defineModuleGetter(
@@ -61,6 +61,25 @@ ChromeUtils.defineModuleGetter(
   "PageThumbs",
   "resource://gre/modules/PageThumbs.jsm"
 );
+ChromeUtils.defineModuleGetter(
+  this,
+  "RemoteSettings",
+  "resource://services-settings/remote-settings.js"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "Region",
+  "resource://gre/modules/Region.jsm"
+);
+
+XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
+
+XPCOMUtils.defineLazyGetter(this, "log", () => {
+  const { Logger } = ChromeUtils.import(
+    "resource://messaging-system/lib/Logger.jsm"
+  );
+  return new Logger("TopSitesFeed");
+});
 
 const DEFAULT_SITES_PREF = "default.sites";
 const SHOWN_ON_NEWTAB_PREF = "feeds.topsites";
@@ -75,6 +94,8 @@ const PINNED_FAVICON_PROPS_TO_MIGRATE = [
 ];
 const SECTION_ID = "topsites";
 const ROWS_PREF = "topSitesRows";
+const SHOW_SPONSORED_PREF = "showSponsoredTopSites";
+const MAX_NUM_SPONSORED = 2;
 
 // Search experiment stuff
 const FILTER_DEFAULT_SEARCH_PREF = "improvesearch.noDefaultSearchTile";
@@ -86,24 +107,112 @@ const SEARCH_FILTERS = [
   "ask",
   "duckduckgo",
 ];
-let SEARCH_TILE_OVERRIDE_PREFS = new Map();
-for (let searchProvider of ["amazon", "google"]) {
-  SEARCH_TILE_OVERRIDE_PREFS.set(
-    `browser.newtabpage.searchTileOverride.${searchProvider}.url`,
-    searchProvider
-  );
-}
 
 const REMOTE_SETTING_DEFAULTS_PREF = "browser.topsites.useRemoteSetting";
-const REMOTE_SETTING_OVERRIDE_PREF = "browser.topsites.default";
+const DEFAULT_SITES_OVERRIDE_PREF =
+  "browser.newtabpage.activity-stream.default.sites";
+const DEFAULT_SITES_EXPERIMENTS_PREF_BRANCH = "browser.topsites.experiment.";
+
+// Mozilla Tiles Service (Contile) prefs
+const CONTILE_ENABLED_PREF = "browser.topsites.contile.enabled";
+const CONTILE_ENDPOINT_PREF = "browser.topsites.contile.endpoint";
+const CONTILE_UPDATE_INTERVAL = 15 * 60 * 1000; // 15 minutes
+const TOP_SITES_BLOCKED_SPONSORS_PREF = "browser.topsites.blockedSponsors";
 
 function getShortURLForCurrentSearch() {
   const url = shortURL({ url: Services.search.defaultEngine.searchForm });
   return url;
 }
 
+class ContileIntegration {
+  constructor(topSitesFeed) {
+    this._topSitesFeed = topSitesFeed;
+    this._lastPeriodicUpdate = 0;
+    this._sites = [];
+  }
+
+  get sites() {
+    return this._sites;
+  }
+
+  periodicUpdate() {
+    let now = Date.now();
+    if (now - this._lastPeriodicUpdate >= CONTILE_UPDATE_INTERVAL) {
+      this._lastPeriodicUpdate = now;
+      this.refresh();
+    }
+  }
+
+  async refresh() {
+    let updateDefaultSites = await this._fetchSites();
+    if (updateDefaultSites) {
+      this._topSitesFeed._readDefaults();
+    }
+  }
+
+  /**
+   * Filter the tiles whose sponsor is on the Top Sites sponsor blocklist.
+   *
+   * @param {array} tiles
+   *   An array of the tile objects
+   */
+  _filterBlockedSponsors(tiles) {
+    const blocklist = JSON.parse(
+      Services.prefs.getStringPref(TOP_SITES_BLOCKED_SPONSORS_PREF, "[]")
+    );
+    return tiles.filter(tile => !blocklist.includes(shortURL(tile)));
+  }
+
+  async _fetchSites() {
+    if (
+      !Services.prefs.getBoolPref(CONTILE_ENABLED_PREF) ||
+      !this._topSitesFeed.store.getState().Prefs.values[SHOW_SPONSORED_PREF]
+    ) {
+      if (this._sites.length) {
+        this._sites = [];
+        return true;
+      }
+      return false;
+    }
+    try {
+      let url = Services.prefs.getStringPref(CONTILE_ENDPOINT_PREF);
+      const response = await fetch(url, { credentials: "omit" });
+      if (!response.ok) {
+        log.warn(
+          `Contile endpoint returned unexpected status: ${response.status}`
+        );
+      }
+
+      // Contile returns 204 indicating there is no content at the moment.
+      // If this happens, just return without signifying the change so that the
+      // existing tiles (`this._sites`) could retain. We might want to introduce
+      // other handling for this in the future.
+      if (response.status === 204) {
+        return false;
+      }
+      const body = await response.json();
+      if (body?.tiles && Array.isArray(body.tiles)) {
+        let { tiles } = body;
+        tiles = this._filterBlockedSponsors(tiles);
+        if (tiles.length > MAX_NUM_SPONSORED) {
+          log.warn(
+            `Contile provided more links than permitted. (${tiles.length} received, limit is ${MAX_NUM_SPONSORED})`
+          );
+          tiles.length = MAX_NUM_SPONSORED;
+        }
+        this._sites = tiles;
+        return true;
+      }
+    } catch (error) {
+      log.warn(`Failed to fetch data from Contile server: ${error.message}`);
+    }
+    return false;
+  }
+}
+
 this.TopSitesFeed = class TopSitesFeed {
   constructor() {
+    this._contile = new ContileIntegration(this);
     this._tippyTopProvider = new TippyTopProvider();
     XPCOMUtils.defineLazyGetter(
       this,
@@ -128,25 +237,25 @@ this.TopSitesFeed = class TopSitesFeed {
 
   init() {
     // If the feed was previously disabled PREFS_INITIAL_VALUES was never received
-    this._readDefaults();
+    this._readDefaults({ isStartup: true });
     this._storage = this.store.dbStorage.getDbTable("sectionPrefs");
-    this.refresh({ broadcast: true, isStartup: true });
+    this._contile.refresh();
     Services.obs.addObserver(this, "browser-search-engine-modified");
-    for (let [pref] of SEARCH_TILE_OVERRIDE_PREFS) {
-      Services.prefs.addObserver(pref, this);
-    }
+    Services.obs.addObserver(this, "browser-region-updated");
     Services.prefs.addObserver(REMOTE_SETTING_DEFAULTS_PREF, this);
-    Services.prefs.addObserver(REMOTE_SETTING_OVERRIDE_PREF, this);
+    Services.prefs.addObserver(DEFAULT_SITES_OVERRIDE_PREF, this);
+    Services.prefs.addObserver(DEFAULT_SITES_EXPERIMENTS_PREF_BRANCH, this);
+    Services.prefs.addObserver(CONTILE_ENABLED_PREF, this);
   }
 
   uninit() {
     PageThumbs.removeExpirationFilter(this);
     Services.obs.removeObserver(this, "browser-search-engine-modified");
-    for (let [pref] of SEARCH_TILE_OVERRIDE_PREFS) {
-      Services.prefs.removeObserver(pref, this);
-    }
+    Services.obs.removeObserver(this, "browser-region-updated");
     Services.prefs.removeObserver(REMOTE_SETTING_DEFAULTS_PREF, this);
-    Services.prefs.removeObserver(REMOTE_SETTING_OVERRIDE_PREF, this);
+    Services.prefs.removeObserver(DEFAULT_SITES_OVERRIDE_PREF, this);
+    Services.prefs.removeObserver(DEFAULT_SITES_EXPERIMENTS_PREF_BRANCH, this);
+    Services.prefs.removeObserver(CONTILE_ENABLED_PREF, this);
   }
 
   observe(subj, topic, data) {
@@ -154,24 +263,28 @@ this.TopSitesFeed = class TopSitesFeed {
       case "browser-search-engine-modified":
         // We should update the current top sites if the search engine has been changed since
         // the search engine that gets filtered out of top sites has changed.
+        // We also need to drop search shortcuts when their engine gets removed / hidden.
         if (
           data === "engine-default" &&
           this.store.getState().Prefs.values[FILTER_DEFAULT_SEARCH_PREF]
         ) {
           delete this._currentSearchHostname;
           this._currentSearchHostname = getShortURLForCurrentSearch();
-          this.refresh({ broadcast: true });
         }
+        this.refresh({ broadcast: true });
+        break;
+      case "browser-region-updated":
+        this._readDefaults();
         break;
       case "nsPref:changed":
         if (
           data === REMOTE_SETTING_DEFAULTS_PREF ||
-          data === REMOTE_SETTING_OVERRIDE_PREF
+          data === DEFAULT_SITES_OVERRIDE_PREF ||
+          data.startsWith(DEFAULT_SITES_EXPERIMENTS_PREF_BRANCH)
         ) {
           this._readDefaults();
-          this.refresh({ broadcast: true });
-        } else if (SEARCH_TILE_OVERRIDE_PREFS.has(data)) {
-          this.refresh({ broadcast: true });
+        } else if (data === CONTILE_ENABLED_PREF) {
+          this._contile.refresh();
         }
         break;
     }
@@ -184,29 +297,128 @@ this.TopSitesFeed = class TopSitesFeed {
   /**
    * _readDefaults - sets DEFAULT_TOP_SITES
    */
-  _readDefaults() {
-    this._useRemoteSetting = Services.prefs.getBoolPref(
-      REMOTE_SETTING_DEFAULTS_PREF
-    );
+  async _readDefaults({ isStartup = false } = {}) {
+    this._useRemoteSetting = false;
 
-    if (!this._useRemoteSetting) {
+    if (!Services.prefs.getBoolPref(REMOTE_SETTING_DEFAULTS_PREF)) {
       this.refreshDefaults(
-        this.store.getState().Prefs.values[DEFAULT_SITES_PREF]
+        this.store.getState().Prefs.values[DEFAULT_SITES_PREF],
+        { isStartup }
       );
       return;
     }
 
-    let sites;
-    try {
-      sites = Services.prefs.getStringPref(REMOTE_SETTING_OVERRIDE_PREF);
-    } catch (e) {
-      // Placeholder for the actual remote setting (bug 1653937).
-      sites = "https://mozilla.org/#%YYYYMMDDHH%,https://firefox.com";
+    // Try using default top sites from enterprise policies or tests. The pref
+    // is locked when set via enterprise policy. Tests have no default sites
+    // unless they set them via this pref.
+    if (
+      Services.prefs.prefIsLocked(DEFAULT_SITES_OVERRIDE_PREF) ||
+      Cu.isInAutomation
+    ) {
+      let sites = Services.prefs.getStringPref(DEFAULT_SITES_OVERRIDE_PREF, "");
+      this.refreshDefaults(sites, { isStartup });
+      return;
     }
-    this.refreshDefaults(sites);
+
+    // Clear out the array of any previous defaults.
+    DEFAULT_TOP_SITES.length = 0;
+
+    // Read defaults from contile.
+    const contileEnabled = Services.prefs.getBoolPref(CONTILE_ENABLED_PREF);
+    let hasContileTiles = false;
+    if (contileEnabled) {
+      let sponsoredPosition = 1;
+      for (let site of this._contile.sites) {
+        let hostname = shortURL(site);
+        let link = {
+          isDefault: true,
+          url: site.url,
+          hostname,
+          sendAttributionRequest: false,
+          label: site.name,
+          show_sponsored_label: hostname !== "yandex",
+          sponsored_position: sponsoredPosition++,
+          sponsored_click_url: site.click_url,
+          sponsored_impression_url: site.impression_url,
+          sponsored_tile_id: site.id,
+        };
+        if (site.image_url && site.image_size >= MIN_FAVICON_SIZE) {
+          // Only use the image from Contile if it's hi-res, otherwise, fallback
+          // to the built-in favicons.
+          link.favicon = site.image_url;
+          link.faviconSize = site.image_size;
+        }
+        DEFAULT_TOP_SITES.push(link);
+      }
+      hasContileTiles = sponsoredPosition > 1;
+    }
+
+    // Read defaults from remote settings.
+    this._useRemoteSetting = true;
+    let remoteSettingData = await this._getRemoteConfig();
+
+    const sponsoredBlocklist = JSON.parse(
+      Services.prefs.getStringPref(TOP_SITES_BLOCKED_SPONSORS_PREF, "[]")
+    );
+
+    for (let siteData of remoteSettingData) {
+      let hostname = shortURL(siteData);
+      // Drop default sites when Contile already provided a sponsored one with
+      // the same host name.
+      if (
+        contileEnabled &&
+        DEFAULT_TOP_SITES.findIndex(site => site.hostname === hostname) > -1
+      ) {
+        continue;
+      }
+      // Also drop those sponsored sites that were blocked by the user before
+      // with the same hostname.
+      if (
+        siteData.sponsored_position &&
+        sponsoredBlocklist.includes(hostname)
+      ) {
+        continue;
+      }
+      let link = {
+        isDefault: true,
+        url: siteData.url,
+        hostname,
+        sendAttributionRequest: !!siteData.send_attribution_request,
+      };
+      if (siteData.url_urlbar_override) {
+        link.url_urlbar = siteData.url_urlbar_override;
+      }
+      if (siteData.title) {
+        link.label = siteData.title;
+      }
+      if (siteData.search_shortcut) {
+        link = await this.topSiteToSearchTopSite(link);
+      } else if (siteData.sponsored_position) {
+        if (contileEnabled && hasContileTiles) {
+          continue;
+        }
+        const {
+          sponsored_position,
+          sponsored_tile_id,
+          sponsored_impression_url,
+          sponsored_click_url,
+        } = siteData;
+        link = {
+          sponsored_position,
+          sponsored_tile_id,
+          sponsored_impression_url,
+          sponsored_click_url,
+          show_sponsored_label: link.hostname !== "yandex",
+          ...link,
+        };
+      }
+      DEFAULT_TOP_SITES.push(link);
+    }
+
+    this.refresh({ broadcast: true, isStartup });
   }
 
-  refreshDefaults(sites) {
+  refreshDefaults(sites, { isStartup = false } = {}) {
     // Clear out the array of any previous defaults
     DEFAULT_TOP_SITES.length = 0;
 
@@ -221,6 +433,93 @@ this.TopSitesFeed = class TopSitesFeed {
         DEFAULT_TOP_SITES.push(site);
       }
     }
+
+    this.refresh({ broadcast: true, isStartup });
+  }
+
+  async _getRemoteConfig(firstTime = true) {
+    if (!this._remoteConfig) {
+      this._remoteConfig = await RemoteSettings("top-sites");
+      this._remoteConfig.on("sync", () => {
+        this._readDefaults();
+      });
+    }
+
+    let result = [];
+    let failed = false;
+    try {
+      result = await this._remoteConfig.get();
+    } catch (ex) {
+      Cu.reportError(ex);
+      failed = true;
+    }
+    if (!result.length) {
+      Cu.reportError("Received empty top sites configuration!");
+      failed = true;
+    }
+    // If we failed, or the result is empty, try loading from the local dump.
+    if (firstTime && failed) {
+      await this._remoteConfig.db.clear();
+      // Now call this again.
+      return this._getRemoteConfig(false);
+    }
+
+    // Sort sites based on the "order" attribute.
+    result.sort((a, b) => a.order - b.order);
+
+    result = result.filter(topsite => {
+      // Filter by region.
+      if (topsite.exclude_regions?.includes(Region.home)) {
+        return false;
+      }
+      if (
+        topsite.include_regions?.length &&
+        !topsite.include_regions.includes(Region.home)
+      ) {
+        return false;
+      }
+
+      // Filter by locale.
+      if (topsite.exclude_locales?.includes(Services.locale.appLocaleAsBCP47)) {
+        return false;
+      }
+      if (
+        topsite.include_locales?.length &&
+        !topsite.include_locales.includes(Services.locale.appLocaleAsBCP47)
+      ) {
+        return false;
+      }
+
+      // Filter by experiment.
+      // Exclude this top site if any of the specified experiments are running.
+      if (
+        topsite.exclude_experiments?.some(experimentID =>
+          Services.prefs.getBoolPref(
+            DEFAULT_SITES_EXPERIMENTS_PREF_BRANCH + experimentID,
+            false
+          )
+        )
+      ) {
+        return false;
+      }
+      // Exclude this top site if none of the specified experiments are running.
+      if (
+        topsite.include_experiments?.length &&
+        topsite.include_experiments.every(
+          experimentID =>
+            !Services.prefs.getBoolPref(
+              DEFAULT_SITES_EXPERIMENTS_PREF_BRANCH + experimentID,
+              false
+            )
+        )
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+
+    return result;
   }
 
   filterForThumbnailExpiration(callback) {
@@ -269,9 +568,12 @@ this.TopSitesFeed = class TopSitesFeed {
         .filter(s => s); // Filter out empty strings
       const newInsertedShortcuts = [];
 
-      const shouldPin = this.store
-        .getState()
-        .Prefs.values[SEARCH_SHORTCUTS_SEARCH_ENGINES_PREF].split(",")
+      let shouldPin = this._useRemoteSetting
+        ? DEFAULT_TOP_SITES.filter(s => s.searchTopSite).map(s => s.hostname)
+        : this.store
+            .getState()
+            .Prefs.values[SEARCH_SHORTCUTS_SEARCH_ENGINES_PREF].split(",");
+      shouldPin = shouldPin
         .map(getSearchProvider)
         .filter(s => s && s.shortURL !== this._currentSearchHostname);
 
@@ -302,7 +604,7 @@ this.TopSitesFeed = class TopSitesFeed {
         // haven't previously inserted it, there's space to pin it, and the
         // search engine is available in Firefox
         if (
-          !pinnedSites.find(s => s && s.hostname === shortcut.shortURL) &&
+          !pinnedSites.find(s => s && shortURL(s) === shortcut.shortURL) &&
           !prevInsertedShortcuts.includes(shortcut.shortURL) &&
           nextAvailable > -1 &&
           (await checkHasSearchEngine(shortcut.keyword))
@@ -334,12 +636,9 @@ this.TopSitesFeed = class TopSitesFeed {
 
   // eslint-disable-next-line max-statements
   async getLinksWithDefaults(isStartup = false) {
-    const numItems =
-      this.store.getState().Prefs.values[ROWS_PREF] *
-      TOP_SITES_MAX_SITES_PER_ROW;
-    const searchShortcutsExperiment = this.store.getState().Prefs.values[
-      SEARCH_SHORTCUTS_EXPERIMENT
-    ];
+    const prefValues = this.store.getState().Prefs.values;
+    const numItems = prefValues[ROWS_PREF] * TOP_SITES_MAX_SITES_PER_ROW;
+    const searchShortcutsExperiment = prefValues[SEARCH_SHORTCUTS_EXPERIMENT];
     // We must wait for search services to initialize in order to access default
     // search engine properties without triggering a synchronous initialization
     await Services.search.init();
@@ -366,22 +665,48 @@ this.TopSitesFeed = class TopSitesFeed {
     // Get defaults.
     let date = new Date();
     let pad = number => number.toString().padStart(2, "0");
-    let yyyymmdd =
+    let yyyymmddhh =
       String(date.getFullYear()) +
       pad(date.getMonth() + 1) +
-      pad(date.getDate());
-    let yyyymmddhh = yyyymmdd + pad(date.getHours());
+      pad(date.getDate()) +
+      pad(date.getHours());
     let notBlockedDefaultSites = [];
+    let sponsored = [];
     for (let link of DEFAULT_TOP_SITES) {
+      // For sponsored Yandex links, default filtering is reversed: we only
+      // show them if Yandex is the default search engine.
+      if (link.sponsored_position && link.hostname === "yandex") {
+        if (link.hostname !== this._currentSearchHostname) {
+          continue;
+        }
+      } else if (this.shouldFilterSearchTile(link.hostname)) {
+        continue;
+      }
+      // Drop blocked default sites.
+      if (
+        NewTabUtils.blockedLinks.isBlocked({
+          url: link.url,
+        })
+      ) {
+        continue;
+      }
+      // Process %YYYYMMDDHH% tag in the URL.
+      let url_end;
+      let url_start;
       if (this._useRemoteSetting) {
-        link = { ...link, url: link.url.replace("%YYYYMMDDHH%", yyyymmddhh) };
+        [url_start, url_end] = link.url.split("%YYYYMMDDHH%");
       }
-      // Remove any defaults that have been blocked.
-      if (NewTabUtils.blockedLinks.isBlocked({ url: link.url })) {
-        continue;
-      }
-      if (this.shouldFilterSearchTile(link.hostname)) {
-        continue;
+      if (typeof url_end === "string") {
+        link = {
+          ...link,
+          // Save original URL without %YYYYMMDDHH% replaced so it can be
+          // blocked properly.
+          original_url: link.url,
+          url: url_start + yyyymmddhh + url_end,
+        };
+        if (link.url_urlbar) {
+          link.url_urlbar = link.url_urlbar.replace("%YYYYMMDDHH%", yyyymmddhh);
+        }
       }
       // If we've previously blocked a search shortcut, remove the default top site
       // that matches the hostname
@@ -392,11 +717,22 @@ this.TopSitesFeed = class TopSitesFeed {
       ) {
         continue;
       }
-      notBlockedDefaultSites.push(
-        searchShortcutsExperiment
-          ? await this.topSiteToSearchTopSite(link)
-          : link
-      );
+      if (link.sponsored_position) {
+        if (!prefValues[SHOW_SPONSORED_PREF]) {
+          continue;
+        }
+        sponsored[link.sponsored_position - 1] = link;
+
+        // Unpin search shortcut if present for the sponsored link to be shown
+        // instead.
+        this._unpinSearchShortcut(link.hostname);
+      } else {
+        notBlockedDefaultSites.push(
+          searchShortcutsExperiment
+            ? await this.topSiteToSearchTopSite(link)
+            : link
+        );
+      }
     }
 
     // Get pinned links augmented with desired properties
@@ -414,6 +750,17 @@ this.TopSitesFeed = class TopSitesFeed {
       plainPinned.map(async link => {
         if (!link) {
           return link;
+        }
+
+        // Drop pinned search shortcuts when their engine has been removed / hidden.
+        if (link.searchTopSite) {
+          const searchProvider = getSearchProvider(shortURL(link));
+          if (
+            !searchProvider ||
+            !(await checkHasSearchEngine(searchProvider.keyword))
+          ) {
+            return null;
+          }
         }
 
         // Copy all properties from a frecent link and add more
@@ -454,31 +801,33 @@ this.TopSitesFeed = class TopSitesFeed {
     );
 
     // Remove any duplicates from frecent and default sites
-    const [, dedupedFrecent, dedupedDefaults] = this.dedupe.group(
-      pinned,
-      frecent,
-      notBlockedDefaultSites
-    );
+    const [
+      ,
+      dedupedSponsored,
+      dedupedFrecent,
+      dedupedDefaults,
+    ] = this.dedupe.group(pinned, sponsored, frecent, notBlockedDefaultSites);
     const dedupedUnpinned = [...dedupedFrecent, ...dedupedDefaults];
 
     // Remove adult sites if we need to
-    const checkedAdult = this.store.getState().Prefs.values.filterAdult
-      ? filterAdult(dedupedUnpinned)
-      : dedupedUnpinned;
+    const checkedAdult = FilterAdult.filter(dedupedUnpinned);
 
-    // Insert the original pinned sites into the deduped frecent and defaults
-    const withPinned = insertPinned(checkedAdult, pinned).slice(0, numItems);
-
-    let searchTileOverrideURLs = new Map();
-    for (let [pref, hostname] of SEARCH_TILE_OVERRIDE_PREFS) {
-      let url = Services.prefs.getStringPref(pref, "");
-      if (url) {
-        url = url
-          .replace("%YYYYMMDD%", yyyymmdd)
-          .replace("%YYYYMMDDHH%", yyyymmddhh);
-        searchTileOverrideURLs.set(hostname, url);
+    // Insert the original pinned sites into the deduped frecent and defaults.
+    let withPinned = insertPinned(checkedAdult, pinned);
+    // Insert sponsored sites at their desired position.
+    dedupedSponsored.forEach(link => {
+      if (!link) {
+        return;
       }
-    }
+      let index = link.sponsored_position - 1;
+      if (index > withPinned.length) {
+        withPinned[index] = link;
+      } else {
+        withPinned.splice(index, 0, link);
+      }
+    });
+    // Remove excess items after we inserted sponsored ones.
+    withPinned = withPinned.slice(0, numItems);
 
     // Now, get a tippy top icon, a rich icon, or screenshot for every item
     for (const link of withPinned) {
@@ -487,7 +836,7 @@ this.TopSitesFeed = class TopSitesFeed {
         if (link.customScreenshotURL) {
           this._fetchScreenshot(link, link.customScreenshotURL, isStartup);
         } else if (link.searchTopSite && !link.isDefault) {
-          this._attachTippyTopIconForSearchShortcut(link, link.label);
+          await this._attachTippyTopIconForSearchShortcut(link, link.label);
         } else {
           this._fetchIcon(link, isStartup);
         }
@@ -497,22 +846,10 @@ this.TopSitesFeed = class TopSitesFeed {
 
         // Indicate that these links should get a frecency bonus when clicked
         link.typedBonus = true;
-
-        for (let [hostname, url] of searchTileOverrideURLs) {
-          // The `searchVendor` property is set if the engine was re-added manually.
-          if (
-            link.searchTopSite &&
-            !link.searchVendor &&
-            link.hostname === hostname
-          ) {
-            delete link.searchTopSite;
-            delete link.label;
-            link.url = url;
-            link.overriddenSearchTopSite = true;
-          }
-        }
       }
     }
+
+    this._linksWithDefaults = withPinned;
 
     return withPinned;
   }
@@ -526,12 +863,12 @@ this.TopSitesFeed = class TopSitesFeed {
    * @param {Object} link A link object with a `url` property
    * @param {string} keyword Search keyword
    */
-  _attachTippyTopIconForSearchShortcut(link, keyword) {
+  async _attachTippyTopIconForSearchShortcut(link, keyword) {
     if (
       ["@\u044F\u043D\u0434\u0435\u043A\u0441", "@yandex"].includes(keyword)
     ) {
       let site = { url: link.url };
-      site.url = getSearchFormURL(keyword) || site.url;
+      site.url = (await getSearchFormURL(keyword)) || site.url;
       this._tippyTopProvider.processSite(site);
       link.tippyTopIcon = site.tippyTopIcon;
       link.smallFavicon = site.smallFavicon;
@@ -547,6 +884,12 @@ this.TopSitesFeed = class TopSitesFeed {
    * @param {bool} options.isStartup Being called while TopSitesFeed is initting.
    */
   async refresh(options = {}) {
+    if (!this._startedUp && !options.isStartup) {
+      // Initial refresh still pending.
+      return;
+    }
+    this._startedUp = true;
+
     if (!this._tippyTopProvider.initialized) {
       await this._tippyTopProvider.init();
     }
@@ -589,20 +932,18 @@ this.TopSitesFeed = class TopSitesFeed {
     }
 
     // Populate the state with available search shortcuts
-    const searchShortcuts = (await Services.search.getDefaultEngines()).reduce(
-      (result, engine) => {
-        const shortcut = CUSTOM_SEARCH_SHORTCUTS.find(s =>
-          engine.wrappedJSObject._internalAliases.includes(s.keyword)
-        );
-        if (shortcut) {
-          let clone = { ...shortcut };
-          this._attachTippyTopIconForSearchShortcut(clone, clone.keyword);
-          result.push(clone);
-        }
-        return result;
-      },
-      []
-    );
+    let searchShortcuts = [];
+    for (const engine of await Services.search.getAppProvidedEngines()) {
+      const shortcut = CUSTOM_SEARCH_SHORTCUTS.find(s =>
+        engine.aliases.includes(s.keyword)
+      );
+      if (shortcut) {
+        let clone = { ...shortcut };
+        await this._attachTippyTopIconForSearchShortcut(clone, clone.keyword);
+        searchShortcuts.push(clone);
+      }
+    }
+
     this.store.dispatch(
       ac.BroadcastToContent({
         type: at.UPDATE_SEARCH_SHORTCUTS,
@@ -763,7 +1104,8 @@ this.TopSitesFeed = class TopSitesFeed {
    * Handle a pin action of a site to a position.
    */
   async pin(action) {
-    const { site, index } = action.data;
+    let { site, index } = action.data;
+    index = this._adjustPinIndexForSponsoredLinks(site, index);
     // If valid index provided, pin at that position
     if (index >= 0) {
       await this._pinSiteAt(site, index);
@@ -789,14 +1131,10 @@ this.TopSitesFeed = class TopSitesFeed {
     this._broadcastPinnedSitesUpdated();
   }
 
-  disableSearchImprovements() {
+  unpinAllSearchShortcuts() {
     Services.prefs.clearUserPref(
       `browser.newtabpage.activity-stream.${SEARCH_SHORTCUTS_HAVE_PINNED_PREF}`
     );
-    this.unpinAllSearchShortcuts();
-  }
-
-  unpinAllSearchShortcuts() {
     for (let pinnedLink of NewTabUtils.pinnedLinks.links) {
       if (pinnedLink && pinnedLink.searchTopSite) {
         NewTabUtils.pinnedLinks.unpin(pinnedLink);
@@ -805,10 +1143,59 @@ this.TopSitesFeed = class TopSitesFeed {
     this.pinnedCache.expire();
   }
 
+  _unpinSearchShortcut(vendor) {
+    for (let pinnedLink of NewTabUtils.pinnedLinks.links) {
+      if (
+        pinnedLink &&
+        pinnedLink.searchTopSite &&
+        shortURL(pinnedLink) === vendor
+      ) {
+        NewTabUtils.pinnedLinks.unpin(pinnedLink);
+        this.pinnedCache.expire();
+
+        const prevInsertedShortcuts = this.store
+          .getState()
+          .Prefs.values[SEARCH_SHORTCUTS_HAVE_PINNED_PREF].split(",");
+        this.store.dispatch(
+          ac.SetPref(
+            SEARCH_SHORTCUTS_HAVE_PINNED_PREF,
+            prevInsertedShortcuts.filter(s => s !== vendor).join(",")
+          )
+        );
+        break;
+      }
+    }
+  }
+
+  /**
+   * Reduces the given pinning index by the number of preceding sponsored
+   * sites, to accomodate for sponsored sites pushing pinned ones to the side,
+   * effectively increasing their index again.
+   */
+  _adjustPinIndexForSponsoredLinks(site, index) {
+    if (!this._linksWithDefaults) {
+      return index;
+    }
+    // Adjust insertion index for sponsored sites since their position is
+    // fixed.
+    let adjustedIndex = index;
+    for (let i = 0; i < index; i++) {
+      if (
+        this._linksWithDefaults[i]?.sponsored_position &&
+        this._linksWithDefaults[i]?.url !== site.url
+      ) {
+        adjustedIndex--;
+      }
+    }
+    return adjustedIndex;
+  }
+
   /**
    * Insert a site to pin at a position shifting over any other pinned sites.
    */
-  _insertPin(site, index, draggedFromIndex) {
+  _insertPin(site, originalIndex, draggedFromIndex) {
+    let index = this._adjustPinIndexForSponsoredLinks(site, originalIndex);
+
     // Don't insert any pins past the end of the visible top sites. Otherwise,
     // we can end up with a bunch of pinned sites that can never be unpinned again
     // from the UI.
@@ -913,10 +1300,11 @@ this.TopSitesFeed = class TopSitesFeed {
         break;
       case at.SYSTEM_TICK:
         this.refresh({ broadcast: false });
+        this._contile.periodicUpdate();
         break;
       // All these actions mean we need new top sites
       case at.PLACES_HISTORY_CLEARED:
-      case at.PLACES_LINK_DELETED:
+      case at.PLACES_LINKS_DELETED:
         this.frecentCache.expire();
         this.refresh({ broadcast: true });
         break;
@@ -941,11 +1329,18 @@ this.TopSitesFeed = class TopSitesFeed {
           case SEARCH_SHORTCUTS_SEARCH_ENGINES_PREF:
             this.refresh({ broadcast: true });
             break;
+          case SHOW_SPONSORED_PREF:
+            if (Services.prefs.getBoolPref(CONTILE_ENABLED_PREF)) {
+              this._contile.refresh();
+            } else {
+              this.refresh({ broadcast: true });
+            }
+            break;
           case SEARCH_SHORTCUTS_EXPERIMENT:
             if (action.data.value) {
               this.updateCustomSearchShortcuts();
             } else {
-              this.disableSearchImprovements();
+              this.unpinAllSearchShortcuts();
             }
             this.refresh({ broadcast: true });
         }
@@ -983,4 +1378,8 @@ this.TopSitesFeed = class TopSitesFeed {
 };
 
 this.DEFAULT_TOP_SITES = DEFAULT_TOP_SITES;
-const EXPORTED_SYMBOLS = ["TopSitesFeed", "DEFAULT_TOP_SITES"];
+const EXPORTED_SYMBOLS = [
+  "TopSitesFeed",
+  "DEFAULT_TOP_SITES",
+  "ContileIntegration",
+];

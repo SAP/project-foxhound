@@ -1502,7 +1502,7 @@ function integrateWasmJS(Module) {
     (cacheEntryOrModule instanceof WebAssembly.Module
      ? WebAssembly.instantiate(cacheEntryOrModule, info)
        .then(instance => ({instance, module:cacheEntryOrModule}))
-     : wasmStreamingIsSupported()
+     : wasmStreamingEnabled()
        ? WebAssembly.instantiateStreaming(cacheEntryOrModule, info)
        : WebAssembly.instantiate(cacheEntryOrModule.getBuffer(), info))
     .then(function(output) {
@@ -3059,14 +3059,12 @@ runBox2d(cacheEntry);
 while (!wasmHasTier2CompilationCompleted(cacheEntry.module))
     sleep(1);
 
-// Cranelift code cannot yet be cached, but cranelift tier2 compilation will
-// still populate the cacheEntry.
-if (!wasmCompileMode().match("cranelift")) {
-    assertEq(cacheEntry.cached, wasmCachingIsSupported());
+if (wasmCachingEnabled()) {
+    assertEq(cacheEntry.cached, true)
 }
 
 runBox2d(cacheEntry);
 
-if (wasmCachingIsSupported()) {
+if (wasmCachingEnabled()) {
     runBox2d(wasmCompileInSeparateProcess(bytecode));
 }

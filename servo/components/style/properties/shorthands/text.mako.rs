@@ -10,11 +10,9 @@
                     sub_properties="text-decoration-line
                     ${' text-decoration-style text-decoration-color text-decoration-thickness' if engine == 'gecko' else ''}"
                     spec="https://drafts.csswg.org/css-text-decor/#propdef-text-decoration">
-
     % if engine == "gecko":
         use crate::values::specified;
         use crate::properties::longhands::{text_decoration_style, text_decoration_color, text_decoration_thickness};
-        use crate::properties::{PropertyId, LonghandId};
     % endif
     use crate::properties::longhands::text_decoration_line;
 
@@ -23,9 +21,6 @@
         input: &mut Parser<'i, 't>,
     ) -> Result<Longhands, ParseError<'i>> {
         % if engine == "gecko":
-            let text_decoration_thickness_enabled =
-                PropertyId::Longhand(LonghandId::TextDecorationThickness).enabled_for_all_content();
-
             let (mut line, mut style, mut color, mut thickness, mut any) = (None, None, None, None, false);
         % else:
             let (mut line, mut any) = (None, false);
@@ -49,9 +44,7 @@
             % if engine == "gecko":
                 parse_component!(style, text_decoration_style);
                 parse_component!(color, text_decoration_color);
-                if text_decoration_thickness_enabled {
-                    parse_component!(thickness, text_decoration_thickness);
-                }
+                parse_component!(thickness, text_decoration_thickness);
             % endif
 
             break;
@@ -82,7 +75,7 @@
             % if engine == "gecko":
                 *self.text_decoration_style == text_decoration_style::SpecifiedValue::Solid,
                 *self.text_decoration_color == specified::Color::CurrentColor,
-                self.text_decoration_thickness.map_or(true, |t| t.is_auto())
+                self.text_decoration_thickness.is_auto()
             % else:
                 true, true, true
             % endif
@@ -92,6 +85,14 @@
             let is_none = *self.text_decoration_line == TextDecorationLine::none();
             if (is_solid_style && is_current_color && is_auto_thickness) || !is_none {
                 self.text_decoration_line.to_css(dest)?;
+                has_value = true;
+            }
+
+            if !is_auto_thickness {
+                if has_value {
+                    dest.write_str(" ")?;
+                }
+                self.text_decoration_thickness.to_css(dest)?;
                 has_value = true;
             }
 
@@ -110,13 +111,6 @@
                 }
                 self.text_decoration_color.to_css(dest)?;
                 has_value = true;
-            }
-
-            if !is_auto_thickness {
-                if has_value {
-                    dest.write_str(" ")?;
-                }
-                self.text_decoration_thickness.to_css(dest)?;
             }
             % endif
 

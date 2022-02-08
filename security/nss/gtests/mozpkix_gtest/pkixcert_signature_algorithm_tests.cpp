@@ -7,8 +7,54 @@
 
 #include "mozpkix/pkixder.h"
 
+#include "secoid.h"
+
 using namespace mozilla::pkix;
 using namespace mozilla::pkix::test;
+
+/* These tests generate invalid certificates on the fly, We want to test
+ * validation of those certificates, not the generation, so we
+ * need to temporarily allow disallowed signature policies before
+ * we do the actual certificate or ocsp signing
+ */
+class HashAlgorithmPolicies
+{
+   static const int numberOfHashes = 4; /* sigh */
+   static const SECOidTag hashOids[numberOfHashes];
+
+   PRUint32 savedPolicy[numberOfHashes];
+
+public:
+   void EnableHashSignaturePolicy(void);
+   void RestoreHashSignaturePolicy(void);
+};
+
+const SECOidTag HashAlgorithmPolicies::hashOids[numberOfHashes] = {
+   SEC_OID_MD2,
+   SEC_OID_MD4,
+   SEC_OID_MD5,
+   SEC_OID_SHA1 };
+
+void
+HashAlgorithmPolicies::EnableHashSignaturePolicy(void)
+{
+    for (int i=0;i < numberOfHashes; i++) {
+        ASSERT_EQ(SECSuccess,
+                  NSS_GetAlgorithmPolicy(hashOids[i], &savedPolicy[i]));
+        ASSERT_EQ(SECSuccess,
+                  NSS_SetAlgorithmPolicy(hashOids[i], NSS_USE_ALG_IN_SIGNATURE, 0));
+    }
+}
+
+void
+HashAlgorithmPolicies::RestoreHashSignaturePolicy(void)
+{
+    for (int i=0;i < numberOfHashes; i++) {
+        ASSERT_EQ(SECSuccess,
+                  NSS_SetAlgorithmPolicy(hashOids[i], savedPolicy[i],
+                                        NSS_USE_ALG_IN_SIGNATURE));
+    }
+}
 
 static ByteString
 CreateCert(const char* issuerCN,
@@ -35,15 +81,19 @@ CreateCert(const char* issuerCN,
   }
 
   ScopedTestKeyPair reusedKey(CloneReusedKeyPair());
+  HashAlgorithmPolicies policies;
+  policies.EnableHashSignaturePolicy();
   ByteString certDER(CreateEncodedCertificate(v3, signatureAlgorithm,
                                               serialNumber, issuerDER,
                                               oneDayBeforeNow, oneDayAfterNow,
                                               subjectDER, *reusedKey,
                                               extensions, *reusedKey,
                                               signatureAlgorithm));
+  policies.RestoreHashSignaturePolicy();
   EXPECT_FALSE(ENCODING_FAILED(certDER));
   return certDER;
 }
+
 
 class AlgorithmTestsTrustDomain final : public DefaultCryptoTrustDomain
 {
@@ -92,8 +142,8 @@ private:
     return checker.Check(issuerCert, nullptr, keepGoing);
   }
 
-  Result CheckRevocation(EndEntityOrCA, const CertID&, Time, Time, Duration,
-                         const Input*, const Input*) override
+  Result CheckRevocation(EndEntityOrCA, const CertID&, Time, Duration,
+                         const Input*, const Input*, const Input*) override
   {
     return Success;
   }
@@ -254,6 +304,6 @@ TEST_P(pkixcert_IsValidChainForAlgorithm, IsValidChainForAlgorithm)
                            CertPolicyId::anyPolicy, nullptr));
 }
 
-INSTANTIATE_TEST_CASE_P(pkixcert_IsValidChainForAlgorithm,
+INSTANTIATE_TEST_SUITE_P(pkixcert_IsValidChainForAlgorithm,
                         pkixcert_IsValidChainForAlgorithm,
                         testing::ValuesIn(CHAIN_VALIDITY));

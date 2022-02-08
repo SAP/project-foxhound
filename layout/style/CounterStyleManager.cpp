@@ -585,7 +585,7 @@ void BuiltinCounterStyle::GetSuffix(nsAString& aResult) {
 
 static const char16_t kDiscCharacter = 0x2022;
 static const char16_t kCircleCharacter = 0x25e6;
-static const char16_t kSquareCharacter = 0x25fe;
+static const char16_t kSquareCharacter = 0x25aa;
 static const char16_t kRightPointingCharacter = 0x25b8;
 static const char16_t kLeftPointingCharacter = 0x25c2;
 static const char16_t kDownPointingCharacter = 0x25be;
@@ -1668,12 +1668,6 @@ void CounterStyle::GetCounterText(CounterValue aOrdinal,
 
     // add pad & negative, build the final result
     if (success) {
-      PadType pad;
-      GetPad(pad);
-      // We have to calculate the difference here since suffix part of negative
-      // sign may be appended to initialText later.
-      int32_t diff = pad.width - unicode::CountGraphemeClusters(
-                                     initialText.Data(), initialText.Length());
       aResult.Truncate();
       if (useNegativeSign && aOrdinal < 0) {
         NegativeType negative;
@@ -1683,6 +1677,14 @@ void CounterStyle::GetCounterText(CounterValue aOrdinal,
         // representation, so we append it directly here.
         initialText.Append(negative.after);
       }
+      PadType pad;
+      GetPad(pad);
+      int32_t diff =
+          pad.width -
+          narrow_cast<int32_t>(
+              unicode::CountGraphemeClusters(initialText.Data(),
+                                             initialText.Length()) +
+              unicode::CountGraphemeClusters(aResult.Data(), aResult.Length()));
       if (diff > 0) {
         auto length = pad.symbol.Length();
         if (diff > LENGTH_LIMIT || length > LENGTH_LIMIT ||
@@ -1745,9 +1747,9 @@ void CounterStyle::CallFallbackStyle(CounterValue aOrdinal,
 CounterStyleManager::CounterStyleManager(nsPresContext* aPresContext)
     : mPresContext(aPresContext) {
   // Insert the static styles into cache table
-  mStyles.Put(nsGkAtoms::none, GetNoneStyle());
-  mStyles.Put(nsGkAtoms::decimal, GetDecimalStyle());
-  mStyles.Put(nsGkAtoms::disc, GetDiscStyle());
+  mStyles.InsertOrUpdate(nsGkAtoms::none, GetNoneStyle());
+  mStyles.InsertOrUpdate(nsGkAtoms::decimal, GetDecimalStyle());
+  mStyles.InsertOrUpdate(nsGkAtoms::disc, GetDiscStyle());
 }
 
 CounterStyleManager::~CounterStyleManager() {
@@ -1769,8 +1771,7 @@ void CounterStyleManager::DestroyCounterStyle(CounterStyle* aCounterStyle) {
 
 void CounterStyleManager::Disconnect() {
   CleanRetiredStyles();
-  for (auto iter = mStyles.Iter(); !iter.Done(); iter.Next()) {
-    CounterStyle* style = iter.Data();
+  for (CounterStyle* style : mStyles.Values()) {
     if (style->IsDependentStyle()) {
       DestroyCounterStyle(style);
     }
@@ -1808,7 +1809,7 @@ CounterStyle* CounterStyleManager::ResolveCounterStyle(nsAtom* aName) {
   if (!data) {
     data = GetDecimalStyle();
   }
-  mStyles.Put(aName, data);
+  mStyles.InsertOrUpdate(aName, data);
   return data;
 }
 
@@ -1862,8 +1863,7 @@ bool CounterStyleManager::NotifyRuleChanged() {
   }
 
   if (changed) {
-    for (auto iter = mStyles.Iter(); !iter.Done(); iter.Next()) {
-      CounterStyle* style = iter.Data();
+    for (CounterStyle* style : mStyles.Values()) {
       if (style->IsCustomStyle()) {
         CustomCounterStyle* custom = static_cast<CustomCounterStyle*>(style);
         custom->ResetDependentData();

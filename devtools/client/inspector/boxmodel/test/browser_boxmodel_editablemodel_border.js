@@ -15,16 +15,17 @@ const TEST_URI =
   "<div id='div1'></div><div id='div2'></div><div id='div3'></div>";
 
 add_task(async function() {
-  await addTab("data:text/html," + encodeURIComponent(TEST_URI));
-  const { inspector, boxmodel, testActor } = await openLayoutView();
+  const tab = await addTab("data:text/html," + encodeURIComponent(TEST_URI));
+  const { inspector, boxmodel } = await openLayoutView();
 
+  const browser = tab.linkedBrowser;
   is(
-    await getStyle(testActor, "#div1", "border-top-width"),
+    await getStyle(browser, "#div1", "border-top-width"),
     "",
     "Should have the right border"
   );
   is(
-    await getStyle(testActor, "#div1", "border-top-style"),
+    await getStyle(browser, "#div1", "border-top-style"),
     "",
     "Should have the right border"
   );
@@ -33,7 +34,7 @@ add_task(async function() {
   const span = boxmodel.document.querySelector(
     ".boxmodel-border.boxmodel-top > span"
   );
-  is(span.textContent, "0", "Should have the right value in the box model.");
+  await waitForElementTextContent(span, "0");
 
   EventUtils.synthesizeMouseAtCenter(span, {}, boxmodel.document.defaultView);
   const editor = boxmodel.document.querySelector(
@@ -47,12 +48,12 @@ add_task(async function() {
 
   is(editor.value, "1", "Should have the right value in the editor.");
   is(
-    await getStyle(testActor, "#div1", "border-top-width"),
+    await getStyle(browser, "#div1", "border-top-width"),
     "1px",
     "Should have the right border"
   );
   is(
-    await getStyle(testActor, "#div1", "border-top-style"),
+    await getStyle(browser, "#div1", "border-top-style"),
     "solid",
     "Should have the right border"
   );
@@ -61,14 +62,14 @@ add_task(async function() {
   await waitForUpdate(inspector);
 
   is(
-    await getStyle(testActor, "#div1", "border-top-width"),
+    await getStyle(browser, "#div1", "border-top-width"),
     "",
     "Should be the right padding."
   );
   is(
-    await getStyle(testActor, "#div1", "border-top-style"),
+    await getStyle(browser, "#div1", "border-top-style"),
     "",
     "Should have the right border"
   );
-  is(span.textContent, "0", "Should have the right value in the box model.");
+  await waitForElementTextContent(span, "0");
 });

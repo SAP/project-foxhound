@@ -81,7 +81,9 @@ MockFilePicker.init(window);
 
 // The following lists are from toolkit/content/filepicker.properties which is used by filePicker
 var imageExtensionList = "*.jpe; *.jpg; *.jpeg; *.gif; *.png; *.bmp; *.ico; *.svg; *.svgz; *.tif; *.tiff; *.ai; *.drw; *.pct; *.psp; *.xcf; *.psd; *.raw; *.webp"
-var audioExtensionList = "*.aac; *.aif; *.flac; *.iff; *.m4a; *.m4b; *.mid; *.midi; *.mp3; *.mpa; *.mpc; *.oga; *.ogg; *.ra; *.ram; *.snd; *.wav; *.wma"
+
+var audioExtensionList = "*.aac; *.aif; *.flac; *.iff; *.m4a; *.m4b; *.mid; *.midi; *.mp3; *.mpa; *.mpc; *.oga; *.ogg; *.opus; *.ra; *.ram; *.snd; *.wav; *.wma"
+
 var videoExtensionList = "*.avi; *.divx; *.flv; *.m4v; *.mkv; *.mov; *.mp4; *.mpeg; *.mpg; *.ogm; *.ogv; *.ogx; *.rm; *.rmvb; *.smil; *.webm; *.wmv; *.xvid"
 
 // [ element name | number of filters | extension list or filter mask | filter index ]
@@ -92,8 +94,8 @@ var testData = [["a", 1, MockFilePicker.filterImages, 1],
                 ["e", 3, imageExtensionList + "; " + videoExtensionList, 1],
                 ["f", 3, audioExtensionList + "; " + videoExtensionList, 1],
                 ["g", 4, imageExtensionList + "; " + audioExtensionList + "; " + videoExtensionList, 1],
-                ["h", 1, MockFilePicker.filterImages, 0],
-                ["i", 1, MockFilePicker.filterVideo, 0],
+                ["h", 1, MockFilePicker.filterImages, 1],
+                ["i", 1, MockFilePicker.filterVideo, 1],
                 ["j", 1, MockFilePicker.filterAudio, 1],
                 ["k", 3, "*.gif; *.png", 1],
                 ["l", 4, imageExtensionList + "; " + "*.gif; *.png", 1],

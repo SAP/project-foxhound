@@ -350,7 +350,7 @@ var State = {
 
       let type = "other";
       let name = `${host} (${id})`;
-      let image = "chrome://mozapps/skin/places/defaultFavicon.svg";
+      let image = "chrome://global/skin/icons/defaultFavicon.svg";
       let found = tabFinder.get(parseInt(id));
       if (found) {
         if (found.tabbrowser) {
@@ -504,10 +504,15 @@ var View = {
     // to avoid flicker when resizing.
     await document.l10n.translateFragment(this._fragment);
 
+    // Pause the DOMLocalization mutation observer, or the already translated
+    // content will be translated a second time at the next tick.
+    document.l10n.pauseObserving();
     while (tbody.firstChild) {
       tbody.firstChild.remove();
     }
     tbody.appendChild(this._fragment);
+    document.l10n.resumeObserving();
+
     this._fragment = document.createDocumentFragment();
   },
   insertAfterRow(row) {

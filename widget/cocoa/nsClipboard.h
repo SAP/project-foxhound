@@ -6,8 +6,10 @@
 #ifndef nsClipboard_h_
 #define nsClipboard_h_
 
+#include "nsCOMPtr.h"
 #include "nsIClipboard.h"
 #include "nsString.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/StaticPtr.h"
 
 #import <Cocoa/Cocoa.h>
@@ -34,6 +36,7 @@ class nsClipboard : public nsIClipboard {
   static NSDictionary* PasteboardDictFromTransferable(nsITransferable* aTransferable);
   // aPasteboardType is being retained and needs to be released by the caller.
   static bool IsStringType(const nsCString& aMIMEType, NSString** aPasteboardType);
+  static bool IsImageType(const nsACString& aMIMEType);
   static NSString* WrapHtmlForSystemPasteboard(NSString* aString);
   static nsresult TransferableFromPasteboard(nsITransferable* aTransferable, NSPasteboard* pboard);
 
@@ -46,6 +49,9 @@ class nsClipboard : public nsIClipboard {
 
  private:
   virtual ~nsClipboard();
+
+  static mozilla::Maybe<uint32_t> FindIndexOfImageFlavor(const nsTArray<nsCString>& aMIMETypes);
+
   int32_t mCachedClipboard;
   int32_t mChangeCount;  // Set to the native change count after any modification of the clipboard.
 

@@ -27,8 +27,7 @@
 
 NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(Script)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* HTMLScriptElement::WrapNode(JSContext* aCx,
                                       JS::Handle<JSObject*> aGivenProto) {
@@ -217,8 +216,7 @@ void HTMLScriptElement::FreezeExecutionAttrs(Document* aOwnerDoc) {
         nsContentUtils::ReportToConsole(
             nsIScriptError::warningFlag, "HTML"_ns, OwnerDoc(),
             nsContentUtils::eDOM_PROPERTIES, "ScriptSourceInvalidUri", params,
-            nullptr, EmptyString(), GetScriptLineNumber(),
-            GetScriptColumnNumber());
+            nullptr, u""_ns, GetScriptLineNumber(), GetScriptColumnNumber());
       }
     } else {
       AutoTArray<nsString, 1> params = {u"src"_ns};
@@ -226,7 +224,7 @@ void HTMLScriptElement::FreezeExecutionAttrs(Document* aOwnerDoc) {
       nsContentUtils::ReportToConsole(
           nsIScriptError::warningFlag, "HTML"_ns, OwnerDoc(),
           nsContentUtils::eDOM_PROPERTIES, "ScriptSourceEmpty", params, nullptr,
-          EmptyString(), GetScriptLineNumber(), GetScriptColumnNumber());
+          u""_ns, GetScriptLineNumber(), GetScriptColumnNumber());
     }
 
     // At this point mUri will be null for invalid URLs.
@@ -255,5 +253,11 @@ bool HTMLScriptElement::HasScriptContent() {
          nsContentUtils::HasNonEmptyTextContent(this);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+// https://html.spec.whatwg.org/multipage/scripting.html#dom-script-supports
+/* static */
+bool HTMLScriptElement::Supports(const GlobalObject& aGlobal,
+                                 const nsAString& aType) {
+  return aType.EqualsLiteral("classic") || aType.EqualsLiteral("module");
+}
+
+}  // namespace mozilla::dom

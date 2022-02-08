@@ -27,8 +27,8 @@ class HTMLLegendElement final : public nsGenericHTMLElement {
                      const mozilla::dom::CallerType aCallerType,
                      ErrorResult& aError) override;
 
-  virtual bool PerformAccesskey(bool aKeyCausesActivation,
-                                bool aIsTrustedEvent) override;
+  virtual Result<bool, nsresult> PerformAccesskey(
+      bool aKeyCausesActivation, bool aIsTrustedEvent) override;
 
   // nsIContent
   virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
@@ -42,12 +42,6 @@ class HTMLLegendElement final : public nsGenericHTMLElement {
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  Element* GetFormElement() const {
-    nsCOMPtr<nsIFormControl> fieldsetControl = do_QueryInterface(GetFieldSet());
-
-    return fieldsetControl ? fieldsetControl->GetFormElement() : nullptr;
-  }
-
   enum class LegendAlignValue : uint8_t {
     Left,
     Right,
@@ -57,11 +51,21 @@ class HTMLLegendElement final : public nsGenericHTMLElement {
     InlineStart,
     InlineEnd,
   };
+
+  /**
+   * Return the align value to use for the given fieldset writing-mode.
+   * (This method resolves Left/Right to the appropriate InlineStart/InlineEnd).
+   * @param aCBWM the fieldset writing-mode
+   * @note we only parse left/right/center, so this method returns Center,
+   * InlineStart or InlineEnd.
+   */
+  LegendAlignValue LogicalAlign(mozilla::WritingMode aCBWM) const;
+
   /**
    * WebIDL Interface
    */
 
-  already_AddRefed<HTMLFormElement> GetForm();
+  HTMLFormElement* GetForm() const;
 
   void GetAlign(DOMString& aAlign) { GetHTMLAttr(nsGkAtoms::align, aAlign); }
 
@@ -70,7 +74,7 @@ class HTMLLegendElement final : public nsGenericHTMLElement {
   }
 
   nsINode* GetScopeChainParent() const override {
-    Element* form = GetFormElement();
+    Element* form = GetForm();
     return form ? form : nsGenericHTMLElement::GetScopeChainParent();
   }
 

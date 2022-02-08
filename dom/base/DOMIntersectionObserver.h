@@ -11,7 +11,9 @@
 #include "mozilla/dom/IntersectionObserverBinding.h"
 #include "mozilla/ServoStyleConsts.h"
 #include "mozilla/Variant.h"
+#include "nsDOMNavigationTiming.h"
 #include "nsTArray.h"
+#include "nsTHashSet.h"
 
 namespace mozilla {
 namespace dom {
@@ -83,17 +85,13 @@ class DOMIntersectionObserver final : public nsISupports,
                                       public nsWrapperCache {
   virtual ~DOMIntersectionObserver() { Disconnect(); }
 
-  typedef void (*NativeCallback)(
+  using NativeCallback = void (*)(
       const Sequence<OwningNonNull<DOMIntersectionObserverEntry>>& aEntries);
   DOMIntersectionObserver(Document&, NativeCallback);
 
  public:
   DOMIntersectionObserver(already_AddRefed<nsPIDOMWindowInner>&& aOwner,
-                          dom::IntersectionCallback& aCb)
-      : mOwner(aOwner),
-        mDocument(mOwner->GetExtantDoc()),
-        mCallback(RefPtr<dom::IntersectionCallback>(&aCb)),
-        mConnected(false) {}
+                          dom::IntersectionCallback& aCb);
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DOMIntersectionObserver)
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_DOM_INTERSECTION_OBSERVER_IID)
@@ -109,11 +107,13 @@ class DOMIntersectionObserver final : public nsISupports,
     return IntersectionObserver_Binding::Wrap(aCx, this, aGivenProto);
   }
 
-  nsISupports* GetParentObject() const { return mOwner; }
+  nsISupports* GetParentObject() const;
 
   nsINode* GetRoot() const { return mRoot; }
 
-  void GetRootMargin(DOMString& aRetVal);
+  void GetRootMargin(nsACString&);
+  bool SetRootMargin(const nsACString&);
+
   void GetThresholds(nsTArray<double>& aRetVal);
   void Observe(Element& aTarget);
   void Unobserve(Element& aTarget);
@@ -123,13 +123,13 @@ class DOMIntersectionObserver final : public nsISupports,
 
   void TakeRecords(nsTArray<RefPtr<DOMIntersectionObserverEntry>>& aRetVal);
 
-  bool SetRootMargin(const nsAString& aString);
-
   void Update(Document* aDocument, DOMHighResTimeStamp time);
   MOZ_CAN_RUN_SCRIPT void Notify();
 
   static already_AddRefed<DOMIntersectionObserver> CreateLazyLoadObserver(
       Document&);
+  static already_AddRefed<DOMIntersectionObserver>
+  CreateLazyLoadObserverViewport(Document&);
 
  protected:
   void Connect();
@@ -148,8 +148,12 @@ class DOMIntersectionObserver final : public nsISupports,
   StyleRect<LengthPercentage> mRootMargin;
   nsTArray<double> mThresholds;
 
-  // Holds raw pointers which are explicitly cleared by UnlinkTarget().
+  // These hold raw pointers which are explicitly cleared by UnlinkTarget().
+  //
+  // We keep a set and an array because we need ordered access, but also
+  // constant time lookup.
   nsTArray<Element*> mObservationTargets;
+  nsTHashSet<Element*> mObservationTargetSet;
 
   nsTArray<RefPtr<DOMIntersectionObserverEntry>> mQueuedEntries;
   bool mConnected;

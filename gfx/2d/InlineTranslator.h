@@ -13,7 +13,6 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Filters.h"
 #include "mozilla/gfx/RecordedEvent.h"
-#include "nsRefPtrHashtable.h"
 
 namespace mozilla {
 namespace gfx {
@@ -40,6 +39,9 @@ class InlineTranslator : public Translator {
       nsRefPtrHashtable<nsUint64HashKey, SourceSurface>* aExternalSurfaces) {
     mExternalSurfaces = aExternalSurfaces;
   }
+  void SetReferenceDrawTargetTransform(const Matrix& aTransform) {
+    mBaseDTTransform = aTransform;
+  }
 
   DrawTarget* LookupDrawTarget(ReferencePtr aRefPtr) final {
     DrawTarget* result = mDrawTargets.GetWeak(aRefPtr);
@@ -65,17 +67,9 @@ class InlineTranslator : public Translator {
     return result;
   }
 
-  GradientStops* LookupGradientStops(ReferencePtr aRefPtr) final {
-    DebugOnly<bool> found;
-    GradientStops* result = mGradientStops.GetWeak(aRefPtr
-#if defined(DEBUG)
-                                                   ,
-                                                   &found
-#endif
-    );
-    // GradientStops can be null in some circumstances.
-    MOZ_ASSERT(found);
-    return result;
+  already_AddRefed<GradientStops> LookupGradientStops(
+      ReferencePtr aRefPtr) final {
+    return mGradientStops.Get(aRefPtr);
   }
 
   ScaledFont* LookupScaledFont(ReferencePtr aRefPtr) final {
@@ -96,43 +90,40 @@ class InlineTranslator : public Translator {
     return result;
   }
 
-  already_AddRefed<SourceSurface> LookupExternalSurface(
-      uint64_t aKey) override {
-    return mExternalSurfaces->Get(aKey);
-  }
+  already_AddRefed<SourceSurface> LookupExternalSurface(uint64_t aKey) override;
 
   void AddDrawTarget(ReferencePtr aRefPtr, DrawTarget* aDT) final {
-    mDrawTargets.Put(aRefPtr, RefPtr{aDT});
+    mDrawTargets.InsertOrUpdate(aRefPtr, RefPtr{aDT});
   }
 
   void AddPath(ReferencePtr aRefPtr, Path* aPath) final {
-    mPaths.Put(aRefPtr, RefPtr{aPath});
+    mPaths.InsertOrUpdate(aRefPtr, RefPtr{aPath});
   }
 
   void AddSourceSurface(ReferencePtr aRefPtr, SourceSurface* aSurface) final {
-    mSourceSurfaces.Put(aRefPtr, RefPtr{aSurface});
+    mSourceSurfaces.InsertOrUpdate(aRefPtr, RefPtr{aSurface});
   }
 
   void AddFilterNode(ReferencePtr aRefPtr, FilterNode* aFilter) final {
-    mFilterNodes.Put(aRefPtr, RefPtr{aFilter});
+    mFilterNodes.InsertOrUpdate(aRefPtr, RefPtr{aFilter});
   }
 
   void AddGradientStops(ReferencePtr aRefPtr, GradientStops* aStops) final {
-    mGradientStops.Put(aRefPtr, RefPtr{aStops});
+    mGradientStops.InsertOrUpdate(aRefPtr, RefPtr{aStops});
   }
 
   void AddScaledFont(ReferencePtr aRefPtr, ScaledFont* aScaledFont) final {
-    mScaledFonts.Put(aRefPtr, RefPtr{aScaledFont});
+    mScaledFonts.InsertOrUpdate(aRefPtr, RefPtr{aScaledFont});
   }
 
   void AddUnscaledFont(ReferencePtr aRefPtr,
                        UnscaledFont* aUnscaledFont) final {
-    mUnscaledFonts.Put(aRefPtr, RefPtr{aUnscaledFont});
+    mUnscaledFonts.InsertOrUpdate(aRefPtr, RefPtr{aUnscaledFont});
   }
 
   void AddNativeFontResource(uint64_t aKey,
                              NativeFontResource* aScaledFontResouce) final {
-    mNativeFontResources.Put(aKey, RefPtr{aScaledFontResouce});
+    mNativeFontResources.InsertOrUpdate(aKey, RefPtr{aScaledFontResouce});
   }
 
   void RemoveDrawTarget(ReferencePtr aRefPtr) override {
@@ -169,18 +160,20 @@ class InlineTranslator : public Translator {
     MOZ_ASSERT(mBaseDT, "mBaseDT has not been initialized.");
     return mBaseDT;
   }
+  Matrix GetReferenceDrawTargetTransform() final { return mBaseDTTransform; }
 
   void* GetFontContext() final { return mFontContext; }
   std::string GetError() { return mError; }
 
  protected:
   RefPtr<DrawTarget> mBaseDT;
+  Matrix mBaseDTTransform;
+  nsRefPtrHashtable<nsPtrHashKey<void>, DrawTarget> mDrawTargets;
 
  private:
   void* mFontContext;
   std::string mError;
 
-  nsRefPtrHashtable<nsPtrHashKey<void>, DrawTarget> mDrawTargets;
   nsRefPtrHashtable<nsPtrHashKey<void>, Path> mPaths;
   nsRefPtrHashtable<nsPtrHashKey<void>, SourceSurface> mSourceSurfaces;
   nsRefPtrHashtable<nsPtrHashKey<void>, FilterNode> mFilterNodes;
@@ -188,7 +181,8 @@ class InlineTranslator : public Translator {
   nsRefPtrHashtable<nsPtrHashKey<void>, ScaledFont> mScaledFonts;
   nsRefPtrHashtable<nsPtrHashKey<void>, UnscaledFont> mUnscaledFonts;
   nsRefPtrHashtable<nsUint64HashKey, NativeFontResource> mNativeFontResources;
-  nsRefPtrHashtable<nsUint64HashKey, SourceSurface>* mExternalSurfaces;
+  nsRefPtrHashtable<nsUint64HashKey, SourceSurface>* mExternalSurfaces =
+      nullptr;
 };
 
 }  // namespace gfx

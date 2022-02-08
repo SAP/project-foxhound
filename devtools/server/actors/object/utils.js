@@ -4,6 +4,7 @@
 
 "use strict";
 
+const { Cu } = require("chrome");
 const { DevToolsServer } = require("devtools/server/devtools-server");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 const { assert } = DevToolsUtils;
@@ -326,29 +327,53 @@ function getPropsForEvent(className) {
  *
  * @param obj
  * @param rawObj
- * @returns {Array}
+ * @returns {Array|Iterable} If rawObj is localStorage/sessionStorage, we don't return an
+ *          array but an iterable object (with the proper `length` property) to avoid
+ *          performance issues.
  */
 function getPropNamesFromObject(obj, rawObj) {
-  let names = [];
-
   try {
     if (isStorage(obj)) {
       // local and session storage cannot be iterated over using
       // Object.getOwnPropertyNames() because it skips keys that are duplicated
       // on the prototype e.g. "key", "getKeys" so we need to gather the real
       // keys using the storage.key() function.
-      for (let j = 0; j < rawObj.length; j++) {
-        names.push(rawObj.key(j));
-      }
-    } else {
-      names = obj.getOwnPropertyNames();
+      // As the method is pretty slow, we return an iterator here, so we don't consume
+      // more than we need, especially since we're calling this from previewers in which
+      // we only need the first 10 entries for the preview (See Bug 1741804).
+
+      // Still return the proper number of entries.
+      const length = rawObj.length;
+      const iterable = { length };
+      iterable[Symbol.iterator] = function*() {
+        for (let j = 0; j < length; j++) {
+          yield rawObj.key(j);
+        }
+      };
+      return iterable;
     }
+
+    return obj.getOwnPropertyNames();
   } catch (ex) {
     // Calling getOwnPropertyNames() on some wrapped native prototypes is not
     // allowed: "cannot modify properties of a WrappedNative". See bug 952093.
   }
 
-  return names;
+  return [];
+}
+
+/**
+ * Returns an array of private properties of an object
+ *
+ * @param obj
+ * @returns {Array}
+ */
+function getSafePrivatePropertiesSymbols(obj) {
+  try {
+    return obj.getOwnPrivateProperties();
+  } catch (ex) {
+    return [];
+  }
 }
 
 /**
@@ -411,7 +436,7 @@ function makeDebuggeeValue(targetActor, value) {
     }
   }
   const dbgGlobal = targetActor.dbg.makeGlobalObjectReference(
-    targetActor.window
+    targetActor.window || targetActor.workerGlobal
   );
   return dbgGlobal.makeDebuggeeValue(value);
 }
@@ -510,11 +535,6 @@ function createObjectGrip(targetActor, depth, object, pool) {
       decrementGripDepth: () => gripDepth--,
       createValueGrip: v => createValueGripForTarget(targetActor, v, gripDepth),
       createEnvironmentActor: env => createEnvironmentActor(env, targetActor),
-      sources: () =>
-        DevToolsUtils.reportException(
-          "WebConsoleActor",
-          Error("sources not yet implemented")
-        ),
     },
     targetActor.conn
   );
@@ -537,6 +557,7 @@ module.exports = {
   getPropsForEvent,
   getPropNamesFromObject,
   getSafeOwnPropertySymbols,
+  getSafePrivatePropertiesSymbols,
   getModifiersForEvent,
   isObjectOrFunction,
   createStringGrip,

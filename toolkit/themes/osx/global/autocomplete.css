@@ -12,11 +12,11 @@ html|input[nomatch="true"][highlightnonmatches="true"] {
 /* ::::: autocomplete popups ::::: */
 
 panel[type="autocomplete-richlistbox"] {
-  padding: 0px !important;
-  color: -moz-FieldText;
-  background-color: -moz-Field;
-  font: icon;
   appearance: none;
+  font: icon;
+  --panel-padding: 0px;
+  --panel-color: FieldText;
+  --panel-background: Field;
 }
 
 /* ::::: richlistbox autocomplete ::::: */
@@ -44,7 +44,7 @@ panel[type="autocomplete-richlistbox"] {
   max-height: 16px;
   margin-inline-start: 6px;
   margin-inline-end: 8px;
-  list-style-image: url("chrome://mozapps/skin/places/defaultFavicon.svg");
+  list-style-image: url("chrome://global/skin/icons/defaultFavicon.svg");
   -moz-context-properties: fill;
   fill: currentColor;
 }

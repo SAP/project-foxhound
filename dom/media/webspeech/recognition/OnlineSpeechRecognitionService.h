@@ -47,14 +47,11 @@ class OnlineSpeechRecognitionService : public nsISpeechRecognitionService,
     explicit SpeechEncoderListener(OnlineSpeechRecognitionService* aService)
         : mService(aService), mOwningThread(AbstractThread::GetCurrent()) {}
 
+    void Started(TrackEncoder* aEncoder) override {}
+
     void Initialized(TrackEncoder* aEncoder) override {
       MOZ_ASSERT(mOwningThread->IsCurrentThreadIn());
       mService->EncoderInitialized();
-    }
-
-    void DataAvailable(TrackEncoder* aEncoder) override {
-      MOZ_ASSERT(mOwningThread->IsCurrentThreadIn());
-      mService->EncoderDataAvailable();
     }
 
     void Error(TrackEncoder* aEncoder) override {
@@ -79,10 +76,10 @@ class OnlineSpeechRecognitionService : public nsISpeechRecognitionService,
   void EncoderInitialized();
 
   /**
-   * Called by SpeechEncoderListener when the AudioTrackEncoder has encoded
-   * some data for us to pass along.
+   * Called after the AudioTrackEncoder has encoded all data for us to wrap in a
+   * container and pass along.
    */
-  void EncoderDataAvailable();
+  void EncoderFinished();
 
   /**
    * Called by SpeechEncoderListener when the AudioTrackEncoder has
@@ -113,9 +110,11 @@ class OnlineSpeechRecognitionService : public nsISpeechRecognitionService,
   nsTArray<nsTArray<uint8_t>> mEncodedData;
   // Member responsible for holding a reference to the TrackEncoderListener
   RefPtr<SpeechEncoderListener> mSpeechEncoderListener;
+  // MediaQueue fed encoded data by mAudioEncoder
+  MediaQueue<EncodedFrame> mEncodedAudioQueue;
   // Encoder responsible for encoding the frames from pcm to opus which is the
   // format supported by our backend
-  RefPtr<AudioTrackEncoder> mAudioEncoder;
+  UniquePtr<AudioTrackEncoder> mAudioEncoder;
   // Object responsible for wrapping the opus frames into an ogg container
   UniquePtr<ContainerWriter> mWriter;
   // Member responsible for storing the json string returned by the endpoint

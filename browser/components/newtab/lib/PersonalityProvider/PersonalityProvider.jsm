@@ -9,10 +9,6 @@ ChromeUtils.defineModuleGetter(
   "resource://services-settings/remote-settings.js"
 );
 
-const { actionCreators: ac } = ChromeUtils.import(
-  "resource://activity-stream/common/Actions.jsm"
-);
-
 ChromeUtils.defineModuleGetter(
   this,
   "NewTabUtils",
@@ -24,7 +20,6 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
 XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
 
 const { BasePromiseWorker } = ChromeUtils.import(
@@ -35,28 +30,13 @@ const RECIPE_NAME = "personality-provider-recipe";
 const MODELS_NAME = "personality-provider-models";
 
 this.PersonalityProvider = class PersonalityProvider {
-  constructor(v2Params) {
-    this.v2Params = v2Params || {};
-    this.modelKeys = this.v2Params.modelKeys;
-    this.dispatch = this.v2Params.dispatch;
-    if (!this.dispatch) {
-      this.dispatch = () => {};
-    }
+  constructor(modelKeys) {
+    this.modelKeys = modelKeys;
     this.onSync = this.onSync.bind(this);
     this.setup();
   }
 
-  setAffinities(
-    timeSegments,
-    parameterSets,
-    maxHistoryQueryResults,
-    version,
-    scores
-  ) {
-    this.timeSegments = timeSegments;
-    this.parameterSets = parameterSets;
-    this.maxHistoryQueryResults = maxHistoryQueryResults;
-    this.version = version;
+  setScores(scores) {
     this.scores = scores || {};
     this.interestConfig = this.scores.interestConfig;
     this.interestVector = this.scores.interestVector;
@@ -71,10 +51,6 @@ this.PersonalityProvider = class PersonalityProvider {
       "resource://activity-stream/lib/PersonalityProvider/PersonalityProviderWorker.js"
     );
 
-    // As the PersonalityProviderWorker performs I/O, we can receive instances of
-    // OS.File.Error, so we need to install a decoder.
-    this._personalityProviderWorker.ExceptionHandlers["OS.File.Error"] =
-      OS.File.Error.fromMsg;
     return this._personalityProviderWorker;
   }
 
@@ -141,19 +117,12 @@ this.PersonalityProvider = class PersonalityProvider {
    */
   async getRecipe() {
     if (!this.recipes || !this.recipes.length) {
-      const start = Cu.now();
       const result = await RemoteSettings(RECIPE_NAME).get();
       this.recipes = await Promise.all(
         result.map(async record => ({
           ...(await this.getAttachment(record)),
           recordKey: record.key,
         }))
-      );
-      this.dispatch(
-        ac.PerfEvent({
-          event: "PERSONALIZATION_V2_GET_RECIPE_DURATION",
-          value: Math.round(Cu.now() - start),
-        })
       );
     }
     return this.recipes[0];
@@ -200,13 +169,6 @@ this.PersonalityProvider = class PersonalityProvider {
       endTimeSecs
     );
 
-    this.dispatch(
-      ac.PerfEvent({
-        event: "PERSONALIZATION_V2_HISTORY_SIZE",
-        value: history.length,
-      })
-    );
-
     return history;
   }
 
@@ -235,55 +197,30 @@ this.PersonalityProvider = class PersonalityProvider {
   }
 
   async generateTaggers() {
-    const start = Cu.now();
     await this.personalityProviderWorker.post("generateTaggers", [
       this.modelKeys,
     ]);
-    this.dispatch(
-      ac.PerfEvent({
-        event: "PERSONALIZATION_V2_TAGGERS_DURATION",
-        value: Math.round(Cu.now() - start),
-      })
-    );
   }
 
   async generateRecipeExecutor() {
-    const start = Cu.now();
     await this.personalityProviderWorker.post("generateRecipeExecutor");
-    this.dispatch(
-      ac.PerfEvent({
-        event: "PERSONALIZATION_V2_RECIPE_EXECUTOR_DURATION",
-        value: Math.round(Cu.now() - start),
-      })
-    );
   }
 
   async createInterestVector() {
     const history = await this.getHistory();
 
-    const interestVectorPerfStart = Cu.now();
     const interestVectorResult = await this.personalityProviderWorker.post(
       "createInterestVector",
       [history]
     );
 
-    this.dispatch(
-      ac.PerfEvent({
-        event: "PERSONALIZATION_V2_CREATE_INTEREST_VECTOR_DURATION",
-        value: Math.round(Cu.now() - interestVectorPerfStart),
-      })
-    );
     return interestVectorResult;
   }
 
   async init(callback) {
-    const perfStart = Cu.now();
     await this.setBaseAttachmentsURL();
     await this.setInterestConfig();
     if (!this.interestConfig) {
-      this.dispatch(
-        ac.PerfEvent({ event: "PERSONALIZATION_V2_GET_RECIPE_ERROR" })
-      );
       return;
     }
 
@@ -294,11 +231,6 @@ this.PersonalityProvider = class PersonalityProvider {
     const fetchModelsResult = await this.fetchModels();
     // If this fails, log an error and return.
     if (!fetchModelsResult.ok) {
-      this.dispatch(
-        ac.PerfEvent({
-          event: "PERSONALIZATION_V2_FETCH_MODELS_ERROR",
-        })
-      );
       return;
     }
     await this.generateTaggers();
@@ -309,11 +241,6 @@ this.PersonalityProvider = class PersonalityProvider {
       const interestVectorResult = await this.createInterestVector();
       // If that failed, log an error and return.
       if (!interestVectorResult.ok) {
-        this.dispatch(
-          ac.PerfEvent({
-            event: "PERSONALIZATION_V2_CREATE_INTEREST_VECTOR_ERROR",
-          })
-        );
         return;
       }
       this.interestVector = interestVectorResult.interestVector;
@@ -324,61 +251,41 @@ this.PersonalityProvider = class PersonalityProvider {
     // In that case, the interest vector is provided and not created, so we just set it.
     await this.setInterestVector();
 
-    this.dispatch(
-      ac.PerfEvent({
-        event: "PERSONALIZATION_V2_TOTAL_DURATION",
-        value: Math.round(Cu.now() - perfStart),
-      })
-    );
-
     this.initialized = true;
     if (callback) {
       callback();
     }
   }
 
-  dispatchRelevanceScoreDuration(start) {
-    // If v2 is not yet initialized we don't bother tracking yet.
-    // Before it is initialized it doesn't do any ranking.
-    // Once it's initialized it ensures ranking is done.
-    // v1 doesn't have any initialized issues around ranking,
-    // and should be ready right away.
-    if (this.initialized) {
-      this.dispatch(
-        ac.PerfEvent({
-          event: "PERSONALIZATION_V2_ITEM_RELEVANCE_SCORE_DURATION",
-          value: Math.round(Cu.now() - start),
-        })
-      );
-    }
-  }
-
-  calculateItemRelevanceScore(pocketItem) {
+  async calculateItemRelevanceScore(pocketItem) {
     if (!this.initialized) {
       return pocketItem.item_score || 1;
     }
-    return this.personalityProviderWorker.post("calculateItemRelevanceScore", [
-      pocketItem,
-    ]);
+    const itemRelevanceScore = await this.personalityProviderWorker.post(
+      "calculateItemRelevanceScore",
+      [pocketItem]
+    );
+    if (!itemRelevanceScore) {
+      return -1;
+    }
+    const { scorableItem, rankingVector } = itemRelevanceScore;
+    // Put the results on the item for debugging purposes.
+    pocketItem.scorableItem = scorableItem;
+    pocketItem.rankingVector = rankingVector;
+    return rankingVector.score;
   }
 
   /**
-   * Returns an object holding the settings and affinity scores of this provider instance.
+   * Returns an object holding the personalization scores of this provider instance.
    */
-  getAffinities() {
+  getScores() {
     return {
-      timeSegments: this.timeSegments,
-      parameterSets: this.parameterSets,
-      maxHistoryQueryResults: this.maxHistoryQueryResults,
-      version: this.version,
-      scores: {
-        // We cannot return taggers here.
-        // What we return here goes into persistent cache, and taggers have functions on it.
-        // If we attempted to save taggers into persistent cache, it would store it to disk,
-        // and the next time we load it, it would start thowing function is not defined.
-        interestConfig: this.interestConfig,
-        interestVector: this.interestVector,
-      },
+      // We cannot return taggers here.
+      // What we return here goes into persistent cache, and taggers have functions on it.
+      // If we attempted to save taggers into persistent cache, it would store it to disk,
+      // and the next time we load it, it would start thowing function is not defined.
+      interestConfig: this.interestConfig,
+      interestVector: this.interestVector,
     };
   }
 };

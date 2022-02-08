@@ -3,9 +3,6 @@
 const { AsyncShutdown } = ChromeUtils.import(
   "resource://gre/modules/AsyncShutdown.jsm"
 );
-const { ExtensionCommon } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionCommon.jsm"
-);
 const { NativeManifests } = ChromeUtils.import(
   "resource://gre/modules/NativeManifests.jsm"
 );
@@ -13,9 +10,8 @@ const { FileUtils } = ChromeUtils.import(
   "resource://gre/modules/FileUtils.jsm"
 );
 const { Schemas } = ChromeUtils.import("resource://gre/modules/Schemas.jsm");
-const { Subprocess, SubprocessImpl } = ChromeUtils.import(
-  "resource://gre/modules/Subprocess.jsm",
-  null
+const { Subprocess } = ChromeUtils.import(
+  "resource://gre/modules/Subprocess.jsm"
 );
 const { NativeApp } = ChromeUtils.import(
   "resource://gre/modules/NativeMessaging.jsm"
@@ -31,6 +27,17 @@ if (AppConstants.platform == "win") {
   registerCleanupFunction(() => {
     registry.shutdown();
   });
+  ChromeUtils.defineModuleGetter(
+    this,
+    "SubprocessImpl",
+    "resource://gre/modules/subprocess/subprocess_win.jsm"
+  );
+} else {
+  ChromeUtils.defineModuleGetter(
+    this,
+    "SubprocessImpl",
+    "resource://gre/modules/subprocess/subprocess_unix.jsm"
+  );
 }
 
 const REGPATH = "Software\\Mozilla\\NativeMessagingHosts";
@@ -106,6 +113,7 @@ let context = {
   extension: {
     id: "extension@tests.mozilla.org",
   },
+  manifestVersion: 2,
   envType: "addon_parent",
   url: null,
   jsonStringify(...args) {
@@ -120,7 +128,7 @@ let context = {
 
 class MockContext extends ExtensionCommon.BaseContext {
   constructor(extensionId) {
-    let fakeExtension = { id: extensionId };
+    let fakeExtension = { id: extensionId, manifestVersion: 2 };
     super("addon_parent", fakeExtension);
     this.sandbox = Cu.Sandbox(global);
   }
@@ -364,16 +372,19 @@ import sys
 
 signal.signal(signal.SIGTERM, signal.SIG_IGN)
 
+stdin = getattr(sys.stdin, 'buffer', sys.stdin)
+stdout = getattr(sys.stdout, 'buffer', sys.stdout)
+
 while True:
-    rawlen = sys.stdin.read(4)
+    rawlen = stdin.read(4)
     if len(rawlen) == 0:
         signal.pause()
     msglen = struct.unpack('@I', rawlen)[0]
-    msg = sys.stdin.read(msglen)
+    msg = stdin.read(msglen)
 
-    sys.stdout.write(struct.pack('@I', msglen))
-    sys.stdout.write(msg)
-  `;
+    stdout.write(struct.pack('@I', msglen))
+    stdout.write(msg)
+`;
 
   let scriptPath = OS.Path.join(userDir.path, TYPE_SLUG, "wontdie.py");
   let manifestPath = OS.Path.join(userDir.path, TYPE_SLUG, "wontdie.json");

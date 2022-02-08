@@ -3,6 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 """ Script that launches profiles creation.
 """
+from __future__ import absolute_import
 import os
 import argparse
 import sys
@@ -15,6 +16,8 @@ from condprof.check_install import check  # NOQA
 
 if "MANUAL_MACH_RUN" not in os.environ:
     check()
+
+from condprof import patch  # noqa
 
 
 def main(args=sys.argv[1:]):

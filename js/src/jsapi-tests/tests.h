@@ -7,20 +7,23 @@
 #ifndef jsapi_tests_tests_h
 #define jsapi_tests_tests_h
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Sprintf.h"
 
 #include <errno.h>
+#include <iterator>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <type_traits>
 
+#include "jsapi.h"
+
 #include "gc/GC.h"
 #include "js/AllocPolicy.h"
 #include "js/CharacterEncoding.h"
-#include "js/Equality.h"     // JS::SameValue
-#include "js/RegExpFlags.h"  // JS::RegExpFlags
+#include "js/Equality.h"      // JS::SameValue
+#include "js/GlobalObject.h"  // JS::DefaultGlobalClassOps
+#include "js/RegExpFlags.h"   // JS::RegExpFlags
 #include "js/Vector.h"
 #include "js/Warnings.h"  // JS::SetWarningReporter
 #include "vm/JSContext.h"
@@ -77,7 +80,13 @@ class JSAPITest {
   bool knownFail;
   JSAPITestString msgs;
 
-  JSAPITest() : cx(nullptr), knownFail(false) {
+  // Whether this test is willing to skip its init() and reuse a global (and
+  // JSContext etc.) from a previous test that also has reuseGlobal=true. It
+  // also means this test is willing to skip its uninit() if it is followed by
+  // another reuseGlobal test.
+  bool reuseGlobal;
+
+  JSAPITest() : cx(nullptr), knownFail(false), reuseGlobal(false) {
     next = list;
     list = this;
   }
@@ -87,7 +96,19 @@ class JSAPITest {
     MOZ_RELEASE_ASSERT(!global);
   }
 
-  virtual bool init();
+  // Initialize this test, possibly with the cx from a previously run test.
+  bool init(JSContext* maybeReusedContext);
+
+  // If this test is ok with its cx and global being reused, release this
+  // test's cx to be reused by another test.
+  JSContext* maybeForgetContext();
+
+  static void MaybeFreeContext(JSContext* maybeCx);
+
+  // The real initialization happens in init(JSContext*), above, but this
+  // method may be overridden to perform additional initialization after the
+  // JSContext and global have been created.
+  virtual bool init() { return true; }
   virtual void uninit();
 
   virtual const char* name() = 0;
@@ -168,6 +189,9 @@ class JSAPITest {
 
   JSAPITestString toSource(JS::RegExpFlags flags) {
     JSAPITestString str;
+    if (flags.hasIndices()) {
+      str += "d";
+    }
     if (flags.global()) {
       str += "g";
     }
@@ -264,8 +288,7 @@ class JSAPITest {
   bool fail(const JSAPITestString& msg = JSAPITestString(),
             const char* filename = "-", int lineno = 0) {
     char location[256];
-    snprintf(location, mozilla::ArrayLength(location), "%s:%d:", filename,
-             lineno);
+    snprintf(location, std::size(location), "%s:%d:", filename, lineno);
 
     JSAPITestString message(location);
     message += msg;
@@ -326,37 +349,13 @@ class JSAPITest {
 
   bool definePrint();
 
-  static void setNativeStackQuota(JSContext* cx) {
-    const size_t MAX_STACK_SIZE =
-/* Assume we can't use more than 5e5 bytes of C stack by default. */
-#if (defined(DEBUG) && defined(__SUNPRO_CC)) || defined(__sparc__)
-        /*
-         * Sun compiler uses a larger stack space for js::Interpret() with
-         * debug.  Use a bigger gMaxStackSize to make "make check" happy.
-         */
-        5000000
-#else
-        500000
-#endif
-        ;
-
-    JS_SetNativeStackQuota(cx, MAX_STACK_SIZE);
-  }
-
   virtual JSContext* createContext() {
     JSContext* cx = JS_NewContext(8L * 1024 * 1024);
     if (!cx) {
       return nullptr;
     }
     JS::SetWarningReporter(cx, &reportWarning);
-    setNativeStackQuota(cx);
     return cx;
-  }
-
-  virtual void destroyContext() {
-    MOZ_RELEASE_ASSERT(cx);
-    JS_DestroyContext(cx);
-    cx = nullptr;
   }
 
   static void reportWarning(JSContext* cx, JSErrorReport* report) {
@@ -372,13 +371,21 @@ class JSAPITest {
   virtual JSObject* createGlobal(JSPrincipals* principals = nullptr);
 };
 
-#define BEGIN_TEST_WITH_ATTRIBUTES(testname, attrs)           \
-  class cls_##testname : public JSAPITest {                   \
-   public:                                                    \
-    virtual const char* name() override { return #testname; } \
-    virtual bool run(JS::HandleObject global) override attrs
+#define BEGIN_TEST_WITH_ATTRIBUTES_AND_EXTRA(testname, attrs, extra) \
+  class cls_##testname : public JSAPITest {                          \
+   public:                                                           \
+    virtual const char* name() override { return #testname; }        \
+    extra virtual bool run(JS::HandleObject global) override attrs
+
+#define BEGIN_TEST_WITH_ATTRIBUTES(testname, attrs) \
+  BEGIN_TEST_WITH_ATTRIBUTES_AND_EXTRA(testname, attrs, )
 
 #define BEGIN_TEST(testname) BEGIN_TEST_WITH_ATTRIBUTES(testname, )
+
+#define BEGIN_REUSABLE_TEST(testname)   \
+  BEGIN_TEST_WITH_ATTRIBUTES_AND_EXTRA( \
+      testname, , cls_##testname()      \
+      : JSAPITest() { reuseGlobal = true; })
 
 #define END_TEST(testname) \
   }                        \
@@ -505,6 +512,20 @@ class ExternalData {
   }
 };
 
+class AutoGCParameter {
+  JSContext* cx_;
+  JSGCParamKey key_;
+  uint32_t value_;
+
+ public:
+  explicit AutoGCParameter(JSContext* cx, JSGCParamKey key, uint32_t value)
+      : cx_(cx), key_(key), value_() {
+    value_ = JS_GetGCParameter(cx, key);
+    JS_SetGCParameter(cx, key, value);
+  }
+  ~AutoGCParameter() { JS_SetGCParameter(cx_, key_, value_); }
+};
+
 #ifdef JS_GC_ZEAL
 /*
  * Temporarily disable the GC zeal setting. This is only useful in tests that
@@ -521,7 +542,7 @@ class AutoLeaveZeal {
     JS_GetGCZealBits(cx_, &zealBits_, &frequency_, &dummy);
     JS_SetGCZeal(cx_, 0, 0);
     JS::PrepareForFullGC(cx_);
-    JS::NonIncrementalGC(cx_, GC_SHRINK, JS::GCReason::DEBUG_GC);
+    JS::NonIncrementalGC(cx_, JS::GCOptions::Normal, JS::GCReason::DEBUG_GC);
   }
   ~AutoLeaveZeal() {
     JS_SetGCZeal(cx_, 0, 0);
@@ -539,6 +560,12 @@ class AutoLeaveZeal {
 #  endif
   }
 };
-#endif /* JS_GC_ZEAL */
+
+#else
+class AutoLeaveZeal {
+ public:
+  explicit AutoLeaveZeal(JSContext* cx) {}
+};
+#endif
 
 #endif /* jsapi_tests_tests_h */

@@ -4,7 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-var EXPORTED_SYMBOLS = ["SelectChild"];
+var EXPORTED_SYMBOLS = ["SelectChild", "SelectContentHelper"];
 
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
@@ -12,8 +12,8 @@ const { XPCOMUtils } = ChromeUtils.import(
 
 ChromeUtils.defineModuleGetter(
   this,
-  "BrowserUtils",
-  "resource://gre/modules/BrowserUtils.jsm"
+  "LayoutUtils",
+  "resource://gre/modules/LayoutUtils.jsm"
 );
 ChromeUtils.defineModuleGetter(
   this,
@@ -173,7 +173,7 @@ SelectContentHelper.prototype = {
   },
 
   _getBoundingContentRect() {
-    return BrowserUtils.getElementBoundingScreenRect(this.element);
+    return LayoutUtils.getElementBoundingScreenRect(this.element);
   },
 
   _buildOptionList() {
@@ -259,13 +259,20 @@ SelectContentHelper.prototype = {
         if (this.initialSelection !== selectedOption) {
           let inputEvent = new win.Event("input", {
             bubbles: true,
+            composed: true,
           });
-          element.dispatchEvent(inputEvent);
 
           let changeEvent = new win.Event("change", {
             bubbles: true,
           });
-          element.dispatchEvent(changeEvent);
+
+          let handlingUserInput = win.windowUtils.setHandlingUserInput(true);
+          try {
+            element.dispatchEvent(inputEvent);
+            element.dispatchEvent(changeEvent);
+          } finally {
+            handlingUserInput.destruct();
+          }
         }
 
         // Fire click event
@@ -336,7 +343,10 @@ SelectContentHelper.prototype = {
         }
         break;
       case "transitionend":
-        if (SUPPORTED_SELECT_PROPERTIES.includes(event.propertyName)) {
+        if (
+          this.element === event.target &&
+          SUPPORTED_SELECT_PROPERTIES.includes(event.propertyName)
+        ) {
           this._updateTimer.arm();
         }
         break;

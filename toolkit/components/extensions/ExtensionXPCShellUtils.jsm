@@ -7,21 +7,12 @@
 
 var EXPORTED_SYMBOLS = ["ExtensionTestUtils"];
 
-const { ActorManagerParent } = ChromeUtils.import(
-  "resource://gre/modules/ActorManagerParent.jsm"
-);
-const { ExtensionUtils } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionUtils.jsm"
-);
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
-
-// Windowless browsers can create documents that rely on XUL Custom Elements:
-ChromeUtils.import("resource://gre/modules/CustomElementsListener.jsm", null);
+const { XPCShellContentUtils } = ChromeUtils.import(
+  "resource://testing-common/XPCShellContentUtils.jsm"
+);
 
 ChromeUtils.defineModuleGetter(
   this,
@@ -35,11 +26,6 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
-  "ContentTask",
-  "resource://testing-common/ContentTask.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
   "ExtensionTestCommon",
   "resource://testing-common/ExtensionTestCommon.jsm"
 );
@@ -50,8 +36,8 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
-  "MessageChannel",
-  "resource://gre/modules/MessageChannel.jsm"
+  "Management",
+  "resource://gre/modules/Extension.jsm"
 );
 ChromeUtils.defineModuleGetter(
   this,
@@ -62,41 +48,6 @@ ChromeUtils.defineModuleGetter(
   this,
   "Services",
   "resource://gre/modules/Services.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "TestUtils",
-  "resource://testing-common/TestUtils.jsm"
-);
-
-XPCOMUtils.defineLazyGetter(this, "Management", () => {
-  const { Management } = ChromeUtils.import(
-    "resource://gre/modules/Extension.jsm",
-    null
-  );
-  return Management;
-});
-
-Services.mm.loadFrameScript(
-  "chrome://global/content/browser-content.js",
-  true,
-  true
-);
-
-ActorManagerParent.flush();
-
-/* exported ExtensionTestUtils */
-
-const { promiseDocumentLoaded, promiseEvent, promiseObserved } = ExtensionUtils;
-
-var REMOTE_CONTENT_SCRIPTS = Services.prefs.getBoolPref(
-  "browser.tabs.remote.autostart",
-  false
-);
-
-const REMOTE_CONTENT_SUBFRAMES = Services.prefs.getBoolPref(
-  "fission.autostart",
-  false
 );
 
 let BASE_MANIFEST = Object.freeze({
@@ -111,240 +62,6 @@ let BASE_MANIFEST = Object.freeze({
   name: "name",
   version: "0",
 });
-
-function frameScript() {
-  const { MessageChannel } = ChromeUtils.import(
-    "resource://gre/modules/MessageChannel.jsm"
-  );
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
-  );
-
-  Services.obs.notifyObservers(this, "tab-content-frameloader-created");
-
-  const messageListener = {
-    async receiveMessage({ target, messageName, recipient, data, name }) {
-      /* globals content */
-      let resp = await content.fetch(data.url, data.options);
-      return resp.text();
-    },
-  };
-  MessageChannel.addListener(this, "Test:Fetch", messageListener);
-
-  // eslint-disable-next-line mozilla/balanced-listeners, no-undef
-  addEventListener(
-    "MozHeapMinimize",
-    () => {
-      Services.obs.notifyObservers(null, "memory-pressure", "heap-minimize");
-    },
-    true,
-    true
-  );
-}
-
-let kungFuDeathGrip = new Set();
-function promiseBrowserLoaded(browser, url, redirectUrl) {
-  url = url && Services.io.newURI(url);
-  redirectUrl = redirectUrl && Services.io.newURI(redirectUrl);
-
-  return new Promise(resolve => {
-    const listener = {
-      QueryInterface: ChromeUtils.generateQI([
-        "nsISupportsWeakReference",
-        "nsIWebProgressListener",
-      ]),
-
-      onStateChange(webProgress, request, stateFlags, statusCode) {
-        request.QueryInterface(Ci.nsIChannel);
-
-        let requestURI =
-          request.originalURI ||
-          webProgress.DOMWindow.document.documentURIObject;
-        if (
-          webProgress.isTopLevel &&
-          (url?.equals(requestURI) || redirectUrl?.equals(requestURI)) &&
-          stateFlags & Ci.nsIWebProgressListener.STATE_STOP
-        ) {
-          resolve();
-          kungFuDeathGrip.delete(listener);
-          browser.removeProgressListener(listener);
-        }
-      },
-    };
-
-    // addProgressListener only supports weak references, so we need to
-    // use one. But we also need to make sure it stays alive until we're
-    // done with it, so thunk away a strong reference to keep it alive.
-    kungFuDeathGrip.add(listener);
-    browser.addProgressListener(
-      listener,
-      Ci.nsIWebProgress.NOTIFY_STATE_WINDOW
-    );
-  });
-}
-
-class ContentPage {
-  constructor(
-    remote = REMOTE_CONTENT_SCRIPTS,
-    remoteSubframes = REMOTE_CONTENT_SUBFRAMES,
-    extension = null,
-    privateBrowsing = false,
-    userContextId = undefined
-  ) {
-    this.remote = remote;
-
-    // If an extension has been passed, overwrite remote
-    // with extension.remote to be sure that the ContentPage
-    // will have the same remoteness of the extension.
-    if (extension) {
-      this.remote = extension.remote;
-    }
-
-    this.remoteSubframes = this.remote && remoteSubframes;
-    this.extension = extension;
-    this.privateBrowsing = privateBrowsing;
-    this.userContextId = userContextId;
-
-    this.browserReady = this._initBrowser();
-  }
-
-  async _initBrowser() {
-    let chromeFlags = 0;
-    if (this.remote) {
-      chromeFlags |= Ci.nsIWebBrowserChrome.CHROME_REMOTE_WINDOW;
-    }
-    if (this.remoteSubframes) {
-      chromeFlags |= Ci.nsIWebBrowserChrome.CHROME_FISSION_WINDOW;
-    }
-    if (this.privateBrowsing) {
-      chromeFlags |= Ci.nsIWebBrowserChrome.CHROME_PRIVATE_WINDOW;
-    }
-    this.windowlessBrowser = Services.appShell.createWindowlessBrowser(
-      true,
-      chromeFlags
-    );
-
-    let system = Services.scriptSecurityManager.getSystemPrincipal();
-
-    let chromeShell = this.windowlessBrowser.docShell.QueryInterface(
-      Ci.nsIWebNavigation
-    );
-
-    chromeShell.createAboutBlankContentViewer(system, system);
-    this.windowlessBrowser.browsingContext.useGlobalHistory = false;
-    let loadURIOptions = {
-      triggeringPrincipal: system,
-    };
-    chromeShell.loadURI(
-      "chrome://extensions/content/dummy.xhtml",
-      loadURIOptions
-    );
-
-    await promiseObserved(
-      "chrome-document-global-created",
-      win => win.document == chromeShell.document
-    );
-
-    let chromeDoc = await promiseDocumentLoaded(chromeShell.document);
-
-    let browser = chromeDoc.createXULElement("browser");
-    browser.setAttribute("type", "content");
-    browser.setAttribute("disableglobalhistory", "true");
-    browser.setAttribute("messagemanagergroup", "webext-browsers");
-    if (this.userContextId) {
-      browser.setAttribute("usercontextid", this.userContextId);
-    }
-
-    if (this.extension?.remote) {
-      browser.setAttribute("remote", "true");
-      browser.setAttribute("remoteType", "extension");
-      browser.sameProcessAsFrameLoader = this.extension.groupFrameLoader;
-    }
-
-    let awaitFrameLoader = Promise.resolve();
-    if (this.remote) {
-      awaitFrameLoader = promiseEvent(browser, "XULFrameLoaderCreated");
-      browser.setAttribute("remote", "true");
-
-      browser.setAttribute("maychangeremoteness", "true");
-      browser.addEventListener(
-        "DidChangeBrowserRemoteness",
-        this.didChangeBrowserRemoteness.bind(this)
-      );
-    }
-
-    chromeDoc.documentElement.appendChild(browser);
-
-    // Forcibly flush layout so that we get a pres shell soon enough, see
-    // bug 1274775.
-    browser.getBoundingClientRect();
-
-    await awaitFrameLoader;
-
-    this.browser = browser;
-
-    this.loadFrameScript(frameScript);
-
-    return browser;
-  }
-
-  sendMessage(msg, data) {
-    return MessageChannel.sendMessage(this.browser.messageManager, msg, data);
-  }
-
-  loadFrameScript(func) {
-    let frameScript = `data:text/javascript,(${encodeURI(func)}).call(this)`;
-    this.browser.messageManager.loadFrameScript(frameScript, true, true);
-  }
-
-  addFrameScriptHelper(func) {
-    let frameScript = `data:text/javascript,${encodeURI(func)}`;
-    this.browser.messageManager.loadFrameScript(frameScript, false, true);
-  }
-
-  didChangeBrowserRemoteness(event) {
-    // XXX: Tests can load their own additional frame scripts, so we may need to
-    // track all scripts that have been loaded, and reload them here?
-    this.loadFrameScript(frameScript);
-  }
-
-  async loadURL(url, redirectUrl = undefined) {
-    await this.browserReady;
-
-    this.browser.loadURI(url, {
-      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
-    });
-    return promiseBrowserLoaded(this.browser, url, redirectUrl);
-  }
-
-  async fetch(url, options) {
-    return this.sendMessage("Test:Fetch", { url, options });
-  }
-
-  spawn(params, task) {
-    return ContentTask.spawn(this.browser, params, task);
-  }
-
-  async close() {
-    await this.browserReady;
-
-    let { messageManager } = this.browser;
-
-    this.browser.removeEventListener(
-      "DidChangeBrowserRemoteness",
-      this.didChangeBrowserRemoteness.bind(this)
-    );
-    this.browser = null;
-
-    this.windowlessBrowser.close();
-    this.windowlessBrowser = null;
-
-    await TestUtils.topicObserved(
-      "message-manager-disconnect",
-      subject => subject === messageManager
-    );
-  }
-}
 
 class ExtensionWrapper {
   constructor(testScope, extension = null) {
@@ -899,9 +616,12 @@ var ExtensionTestUtils = {
   ) {
     await Management.lazyInit();
 
+    manifest = Object.assign({}, baseManifest, manifest);
+
     let errors = [];
     let context = {
       url: null,
+      manifestVersion: manifest.manifest_version,
 
       logError: error => {
         errors.push(error);
@@ -909,8 +629,6 @@ var ExtensionTestUtils = {
 
       preprocessors: {},
     };
-
-    manifest = Object.assign({}, baseManifest, manifest);
 
     let normalized = Schemas.normalize(manifest, manifestType, context);
     normalized.errors = errors;
@@ -923,19 +641,11 @@ var ExtensionTestUtils = {
   profileDir: null,
 
   init(scope) {
+    XPCShellContentUtils.init(scope);
+
     this.currentScope = scope;
 
     this.profileDir = scope.do_get_profile();
-
-    this.fetchScopes = new Map();
-
-    // We need to load at least one frame script into every message
-    // manager to ensure that the scriptable wrapper for its global gets
-    // created before we try to access it externally. If we don't, we
-    // fail sanity checks on debug builds the first time we try to
-    // create a wrapper, because we should never have a global without a
-    // cached wrapper.
-    Services.mm.loadFrameScript("data:text/javascript,//", true, true);
 
     let tmpD = this.profileDir.clone();
     tmpD.append("tmp");
@@ -963,12 +673,6 @@ var ExtensionTestUtils = {
       Services.dirsvc.unregisterProvider(dirProvider);
 
       this.currentScope = null;
-
-      return Promise.all(
-        Array.from(this.fetchScopes.values(), promise =>
-          promise.then(scope => scope.close())
-        )
-      );
     });
   },
 
@@ -1031,22 +735,15 @@ var ExtensionTestUtils = {
   },
 
   get remoteContentScripts() {
-    return REMOTE_CONTENT_SCRIPTS;
+    return XPCShellContentUtils.remoteContentScripts;
   },
 
   set remoteContentScripts(val) {
-    REMOTE_CONTENT_SCRIPTS = !!val;
+    XPCShellContentUtils.remoteContentScripts = val;
   },
 
-  async fetch(origin, url, options) {
-    let fetchScopePromise = this.fetchScopes.get(origin);
-    if (!fetchScopePromise) {
-      fetchScopePromise = this.loadContentPage(origin);
-      this.fetchScopes.set(origin, fetchScopePromise);
-    }
-
-    let fetchScope = await fetchScopePromise;
-    return fetchScope.sendMessage("Test:Fetch", { url, options });
+  async fetch(...args) {
+    return XPCShellContentUtils.fetch(...args);
   },
 
   /**
@@ -1070,29 +767,7 @@ var ExtensionTestUtils = {
    *
    * @returns {ContentPage}
    */
-  loadContentPage(
-    url,
-    {
-      extension = undefined,
-      remote = undefined,
-      remoteSubframes = undefined,
-      redirectUrl = undefined,
-      privateBrowsing = false,
-      userContextId = undefined,
-    } = {}
-  ) {
-    ContentTask.setTestScope(this.currentScope);
-
-    let contentPage = new ContentPage(
-      remote,
-      remoteSubframes,
-      extension && extension.extension,
-      privateBrowsing,
-      userContextId
-    );
-
-    return contentPage.loadURL(url, redirectUrl).then(() => {
-      return contentPage;
-    });
+  loadContentPage(...args) {
+    return XPCShellContentUtils.loadContentPage(...args);
   },
 };

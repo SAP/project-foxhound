@@ -6,7 +6,11 @@
 
 #include "L10nMutations.h"
 #include "mozilla/dom/DocumentInlines.h"
+#include "nsRefreshDriver.h"
+#include "mozilla/intl/Localization.h"
 
+using namespace mozilla;
+using namespace mozilla::intl;
 using namespace mozilla::dom;
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(L10nMutations)
@@ -32,6 +36,12 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(L10nMutations)
 L10nMutations::L10nMutations(DOMLocalization* aDOMLocalization)
     : mDOMLocalization(aDOMLocalization) {
   mObserving = true;
+}
+
+L10nMutations::~L10nMutations() {
+  StopRefreshObserver();
+  MOZ_ASSERT(!mDOMLocalization,
+             "DOMLocalization<-->L10nMutations cycle should be broken.");
 }
 
 void L10nMutations::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
@@ -79,8 +89,6 @@ void L10nMutations::ContentInserted(nsIContent* aChild) {
   if (!mObserving) {
     return;
   }
-  ErrorResult rv;
-  Sequence<OwningNonNull<Element>> elements;
 
   if (!aChild->IsElement()) {
     return;
@@ -90,6 +98,9 @@ void L10nMutations::ContentInserted(nsIContent* aChild) {
   if (!IsInRoots(elem)) {
     return;
   }
+
+  ErrorResult rv;
+  Sequence<OwningNonNull<Element>> elements;
   DOMLocalization::GetTranslatables(*aChild, elements, rv);
 
   for (auto& elem : elements) {
@@ -97,13 +108,38 @@ void L10nMutations::ContentInserted(nsIContent* aChild) {
   }
 }
 
+void L10nMutations::ContentRemoved(nsIContent* aChild,
+                                   nsIContent* aPreviousSibling) {
+  if (!mObserving) {
+    return;
+  }
+
+  if (!aChild->IsElement()) {
+    return;
+  }
+  Element* elem = aChild->AsElement();
+
+  if (!IsInRoots(elem)) {
+    return;
+  }
+
+  ErrorResult rv;
+  Sequence<OwningNonNull<Element>> elements;
+  DOMLocalization::GetTranslatables(*aChild, elements, rv);
+
+  for (auto& elem : elements) {
+    mPendingElements.RemoveElement(elem);
+    mPendingElementsHash.EnsureRemoved(elem);
+  }
+}
+
 void L10nMutations::L10nElementChanged(Element* aElement) {
   if (!mPendingElementsHash.Contains(aElement)) {
     mPendingElements.AppendElement(aElement);
-    mPendingElementsHash.PutEntry(aElement);
+    mPendingElementsHash.Insert(aElement);
   }
 
-  if (!mRefreshObserver) {
+  if (!mRefreshDriver) {
     StartRefreshObserver();
   }
 }
@@ -116,6 +152,44 @@ void L10nMutations::WillRefresh(mozilla::TimeStamp aTime) {
   StopRefreshObserver();
   FlushPendingTranslations();
 }
+
+/**
+ * The handler for the `TranslateElements` promise used to turn
+ * a potential rejection into a console warning.
+ **/
+class L10nMutationFinalizationHandler final : public PromiseNativeHandler {
+ public:
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_CLASS(L10nMutationFinalizationHandler)
+
+  explicit L10nMutationFinalizationHandler(nsIGlobalObject* aGlobal)
+      : mGlobal(aGlobal) {}
+
+  void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override {
+  }
+
+  void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override {
+    nsTArray<nsCString> errors{
+        "[dom/l10n] Errors during l10n mutation frame."_ns,
+    };
+    IgnoredErrorResult rv;
+    MaybeReportErrorsToGecko(errors, rv, mGlobal);
+  }
+
+ private:
+  ~L10nMutationFinalizationHandler() = default;
+
+  nsCOMPtr<nsIGlobalObject> mGlobal;
+};
+
+NS_IMPL_CYCLE_COLLECTION(L10nMutationFinalizationHandler, mGlobal)
+
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(L10nMutationFinalizationHandler)
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
+NS_INTERFACE_MAP_END
+
+NS_IMPL_CYCLE_COLLECTING_ADDREF(L10nMutationFinalizationHandler)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(L10nMutationFinalizationHandler)
 
 void L10nMutations::FlushPendingTranslations() {
   if (!mDOMLocalization) {
@@ -140,6 +214,10 @@ void L10nMutations::FlushPendingTranslations() {
   mPendingElements.Clear();
 
   RefPtr<Promise> promise = mDOMLocalization->TranslateElements(elements, rv);
+
+  RefPtr<PromiseNativeHandler> l10nMutationFinalizationHandler =
+      new L10nMutationFinalizationHandler(mDOMLocalization->GetParentObject());
+  promise->AppendNativeHandler(l10nMutationFinalizationHandler);
 }
 
 void L10nMutations::Disconnect() {
@@ -148,19 +226,17 @@ void L10nMutations::Disconnect() {
 }
 
 void L10nMutations::StartRefreshObserver() {
-  if (!mDOMLocalization || mRefreshObserver) {
+  if (!mDOMLocalization || mRefreshDriver) {
     return;
   }
 
-  if (!mRefreshDriver) {
-    nsPIDOMWindowInner* innerWindow =
-        mDOMLocalization->GetParentObject()->AsInnerWindow();
-    Document* doc = innerWindow ? innerWindow->GetExtantDoc() : nullptr;
-    if (doc) {
-      nsPresContext* ctx = doc->GetPresContext();
-      if (ctx) {
-        mRefreshDriver = ctx->RefreshDriver();
-      }
+  nsPIDOMWindowInner* innerWindow =
+      mDOMLocalization->GetParentObject()->AsInnerWindow();
+  Document* doc = innerWindow ? innerWindow->GetExtantDoc() : nullptr;
+  if (doc) {
+    nsPresContext* ctx = doc->GetPresContext();
+    if (ctx) {
+      mRefreshDriver = ctx->RefreshDriver();
     }
   }
 
@@ -169,8 +245,8 @@ void L10nMutations::StartRefreshObserver() {
   // In that case, we'll trigger the flush of pending
   // elements in Document::CreatePresShell.
   if (mRefreshDriver) {
-    mRefreshDriver->AddRefreshObserver(this, FlushType::Style);
-    mRefreshObserver = true;
+    mRefreshDriver->AddRefreshObserver(this, FlushType::Style,
+                                       "L10n mutations");
   } else {
     NS_WARNING("[l10n][mutations] Failed to start a refresh observer.");
   }
@@ -183,7 +259,7 @@ void L10nMutations::StopRefreshObserver() {
 
   if (mRefreshDriver) {
     mRefreshDriver->RemoveRefreshObserver(this, FlushType::Style);
-    mRefreshObserver = false;
+    mRefreshDriver = nullptr;
   }
 }
 

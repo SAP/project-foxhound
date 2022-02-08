@@ -9,11 +9,10 @@
 
 const BASE_URI =
   "browser/devtools/client/webconsole/test/browser/test-console.html";
-const TEST_URI1 = "http://example.com/" + BASE_URI;
-const TEST_URI2 = "http://example.org/" + BASE_URI;
+const TEST_URI1 = "https://example.com/" + BASE_URI;
+const TEST_URI2 = "https://example.org/" + BASE_URI;
 
 add_task(async function() {
-  await pushPref("devtools.target-switching.enabled", true);
   await pushPref("devtools.webconsole.persistlog", false);
 
   const hud = await openNewTabAndConsole(TEST_URI1);
@@ -45,8 +44,8 @@ add_task(async function() {
   // continuing the test or it might destroy messages we wait later on (Bug
   // 1270234).
   const promises = [hud.ui.once("messages-cleared")];
-  if (isTargetSwitchingEnabled()) {
-    promises.push(hud.targetList.once("switched-target"));
+  if (isFissionEnabled() || isServerTargetSwitchingEnabled()) {
+    promises.push(hud.commands.targetCommand.once("switched-target"));
   }
 
   gBrowser.goBack();

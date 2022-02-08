@@ -4,12 +4,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-FINAL_LIBRARY = 'mozglue'
+FINAL_LIBRARY = "mozglue"
 
 EXPORTS.mozilla.mscom += [
-    'ProcessRuntimeShared.h',
+    "ActCtxResource.h",
+    "ProcessRuntimeShared.h",
 ]
 
 UNIFIED_SOURCES += [
-    'ProcessRuntimeShared.cpp',
+    "ActCtxResource.cpp",
+    "ProcessRuntimeShared.cpp",
 ]
+
+REQUIRES_UNIFIED_BUILD = True

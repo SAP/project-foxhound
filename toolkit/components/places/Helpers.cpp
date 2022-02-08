@@ -6,10 +6,12 @@
 #include "Helpers.h"
 #include "mozIStorageError.h"
 #include "prio.h"
+#include "nsReadableUtils.h"
 #include "nsString.h"
 #include "nsNavHistory.h"
 #include "mozilla/Base64.h"
 #include "mozilla/HashFunctions.h"
+#include "mozilla/RandomNum.h"
 #include <algorithm>
 #include "mozilla/Services.h"
 
@@ -185,32 +187,6 @@ void ReverseString(const nsString& aInput, nsString& aReversed) {
   }
 }
 
-static nsresult GenerateRandomBytes(uint32_t aSize, uint8_t* _buffer) {
-  // On Windows, we'll use its built-in cryptographic API.
-#if defined(XP_WIN)
-  const nsNavHistory* history = nsNavHistory::GetConstHistoryService();
-  HCRYPTPROV cryptoProvider;
-  nsresult rv = history->GetCryptoProvider(cryptoProvider);
-  NS_ENSURE_SUCCESS(rv, rv);
-  BOOL rc = CryptGenRandom(cryptoProvider, aSize, _buffer);
-  return rc ? NS_OK : NS_ERROR_FAILURE;
-
-  // On Unix, we'll just read in from /dev/urandom.
-#elif defined(XP_UNIX)
-  NS_ENSURE_ARG_MAX(aSize, INT32_MAX);
-  PRFileDesc* urandom = PR_Open("/dev/urandom", PR_RDONLY, 0);
-  nsresult rv = NS_ERROR_FAILURE;
-  if (urandom) {
-    int32_t bytesRead = PR_Read(urandom, _buffer, aSize);
-    if (bytesRead == static_cast<int32_t>(aSize)) {
-      rv = NS_OK;
-    }
-    (void)PR_Close(urandom);
-  }
-  return rv;
-#endif
-}
-
 nsresult GenerateGUID(nsACString& _guid) {
   _guid.Truncate();
 
@@ -220,11 +196,12 @@ nsresult GenerateGUID(nsACString& _guid) {
       static_cast<uint32_t>(GUID_LENGTH / 4 * 3);
 
   uint8_t buffer[kRequiredBytesLength];
-  nsresult rv = GenerateRandomBytes(kRequiredBytesLength, buffer);
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (!mozilla::GenerateRandomBytesFromOS(buffer, kRequiredBytesLength)) {
+    return NS_ERROR_FAILURE;
+  }
 
-  rv = Base64URLEncode(kRequiredBytesLength, buffer,
-                       Base64URLEncodePaddingPolicy::Omit, _guid);
+  nsresult rv = Base64URLEncode(kRequiredBytesLength, buffer,
+                                Base64URLEncodePaddingPolicy::Omit, _guid);
   NS_ENSURE_SUCCESS(rv, rv);
 
   NS_ASSERTION(_guid.Length() == GUID_LENGTH, "GUID is not the right size!");
@@ -364,14 +341,12 @@ nsresult TokenizeQueryString(const nsACString& aQuery,
 void TokensToQueryString(const nsTArray<QueryKeyValuePair>& aTokens,
                          nsACString& aQuery) {
   aQuery = "place:"_ns;
-  for (uint32_t i = 0; i < aTokens.Length(); i++) {
-    if (i > 0) {
-      aQuery.Append("&");
-    }
-    aQuery.Append(aTokens[i].key);
-    aQuery.AppendLiteral("=");
-    aQuery.Append(aTokens[i].value);
-  }
+  StringJoinAppend(aQuery, "&"_ns, aTokens,
+                   [](nsACString& dst, const QueryKeyValuePair& token) {
+                     dst.Append(token.key);
+                     dst.AppendLiteral("=");
+                     dst.Append(token.value);
+                   });
 }
 
 }  // namespace places

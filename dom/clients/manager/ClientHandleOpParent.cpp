@@ -8,10 +8,10 @@
 
 #include "ClientHandleParent.h"
 #include "ClientSourceParent.h"
+#include "mozilla/dom/ipc/StructuredCloneData.h"
 #include "mozilla/dom/PClientManagerParent.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 ClientSourceParent* ClientHandleOpParent::GetSource() const {
   auto handle = static_cast<ClientHandleParent*>(Manager());
@@ -28,8 +28,16 @@ void ClientHandleOpParent::Init(ClientOpConstructorArgs&& aArgs) {
   handle->EnsureSource()
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
-          [this, args = std::move(aArgs)](ClientSourceParent* source) mutable {
+          [this, handle, args = std::move(aArgs)](bool) mutable {
             mSourcePromiseRequestHolder.Complete();
+
+            auto source = handle->GetSource();
+            if (!source) {
+              CopyableErrorResult rv;
+              rv.ThrowAbortError("Client has been destroyed");
+              Unused << PClientHandleOpParent::Send__delete__(this, rv);
+              return;
+            }
             RefPtr<ClientOpPromise> p;
 
             // ClientPostMessageArgs can contain PBlob actors.  This means we
@@ -44,7 +52,7 @@ void ClientHandleOpParent::Init(ClientOpConstructorArgs&& aArgs) {
               ClientPostMessageArgs rebuild;
               rebuild.serviceWorker() = orig.serviceWorker();
 
-              StructuredCloneData data;
+              ipc::StructuredCloneData data;
               data.BorrowFromClonedMessageDataForBackgroundParent(
                   orig.clonedData());
               if (!data.BuildClonedMessageDataForBackgroundParent(
@@ -87,5 +95,4 @@ void ClientHandleOpParent::Init(ClientOpConstructorArgs&& aArgs) {
       ->Track(mSourcePromiseRequestHolder);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

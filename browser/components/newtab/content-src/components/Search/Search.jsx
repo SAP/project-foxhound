@@ -42,7 +42,7 @@ export class _Search extends React.PureComponent {
     this.props.dispatch({ type: at.FAKE_FOCUS_SEARCH });
     this.props.dispatch(ac.UserEvent({ event: "SEARCH_HANDOFF" }));
     if (text) {
-      this.props.dispatch({ type: at.HIDE_SEARCH });
+      this.props.dispatch({ type: at.DISABLE_SEARCH });
     }
   }
 
@@ -106,10 +106,39 @@ export class _Search extends React.PureComponent {
 
   onInputMountHandoff(input) {
     if (input) {
-      // The handoff UI controller helps usset the search icon and reacts to
+      // The handoff UI controller helps us set the search icon and reacts to
       // changes to default engine to keep everything in sync.
       this._handoffSearchController = new ContentSearchHandoffUIController();
     }
+  }
+
+  getDefaultEngineName() {
+    // _handoffSearchController will manage engine names once it is initialized.
+    return this.props.Prefs.values["urlbar.placeholderName"];
+  }
+
+  getHandoffInputL10nAttributes() {
+    let defaultEngineName = this.getDefaultEngineName();
+    return defaultEngineName
+      ? {
+          "data-l10n-id": "newtab-search-box-handoff-input",
+          "data-l10n-args": `{"engine": "${defaultEngineName}"}`,
+        }
+      : {
+          "data-l10n-id": "newtab-search-box-handoff-input-no-engine",
+        };
+  }
+
+  getHandoffTextL10nAttributes() {
+    let defaultEngineName = this.getDefaultEngineName();
+    return defaultEngineName
+      ? {
+          "data-l10n-id": "newtab-search-box-handoff-text",
+          "data-l10n-args": `{"engine": "${defaultEngineName}"}`,
+        }
+      : {
+          "data-l10n-id": "newtab-search-box-handoff-text-no-engine",
+        };
   }
 
   onSearchHandoffButtonMount(button) {
@@ -125,7 +154,7 @@ export class _Search extends React.PureComponent {
   render() {
     const wrapperClassName = [
       "search-wrapper",
-      this.props.hide && "search-hidden",
+      this.props.disable && "search-disabled",
       this.props.fakeFocus && "fake-focus",
     ]
       .filter(v => v)
@@ -143,7 +172,7 @@ export class _Search extends React.PureComponent {
           <div className="search-inner-wrapper">
             <input
               id="newtab-search-text"
-              data-l10n-id="newtab-search-box-search-the-web-input"
+              data-l10n-id="newtab-search-box-input"
               maxLength="256"
               ref={this.onInputMount}
               type="search"
@@ -160,14 +189,14 @@ export class _Search extends React.PureComponent {
           <div className="search-inner-wrapper">
             <button
               className="search-handoff-button"
-              data-l10n-id="newtab-search-box-search-the-web-input"
+              {...this.getHandoffInputL10nAttributes()}
               ref={this.onSearchHandoffButtonMount}
               onClick={this.onSearchHandoffClick}
               tabIndex="-1"
             >
               <div
                 className="fake-textbox"
-                data-l10n-id="newtab-search-box-search-the-web-text"
+                {...this.getHandoffTextL10nAttributes()}
               />
               <input
                 type="search"
@@ -187,4 +216,6 @@ export class _Search extends React.PureComponent {
   }
 }
 
-export const Search = connect()(_Search);
+export const Search = connect(state => ({
+  Prefs: state.Prefs,
+}))(_Search);

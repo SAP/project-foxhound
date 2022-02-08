@@ -6,17 +6,25 @@
 
 #include "nsStructuredCloneContainer.h"
 
+#include <cstddef>
+#include <utility>
+#include "ErrorList.h"
+#include "js/RootingAPI.h"
+#include "js/StructuredClone.h"
+#include "js/Value.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/Base64.h"
+#include "mozilla/CheckedInt.h"
+#include "mozilla/DebugOnly.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/fallible.h"
 #include "nsCOMPtr.h"
-#include "nsIGlobalObject.h"
+#include "nsDebug.h"
+#include "nsError.h"
 #include "nsIVariant.h"
 #include "nsIXPConnect.h"
-#include "nsServiceManagerUtils.h"
-#include "nsContentUtils.h"
-#include "jsapi.h"
-#include "xpcpublic.h"
-
-#include "mozilla/Base64.h"
-#include "mozilla/dom/ScriptSettings.h"
+#include "nsString.h"
+#include "nscore.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -30,6 +38,8 @@ NS_INTERFACE_MAP_BEGIN(nsStructuredCloneContainer)
 NS_INTERFACE_MAP_END
 
 nsStructuredCloneContainer::nsStructuredCloneContainer() : mVersion(0) {}
+nsStructuredCloneContainer::nsStructuredCloneContainer(uint32_t aVersion)
+    : mVersion(aVersion) {}
 
 nsStructuredCloneContainer::~nsStructuredCloneContainer() = default;
 
@@ -134,19 +144,22 @@ nsStructuredCloneContainer::GetDataAsBase64(nsAString& aOut) {
 
   auto iter = Data().Start();
   size_t size = Data().Size();
-  nsAutoCString binaryData;
-  binaryData.SetLength(size);
-  if (!Data().ReadBytes(iter, binaryData.BeginWriting(), size)) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-  nsAutoCString base64Data;
-  nsresult rv = Base64Encode(binaryData, base64Data);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+  CheckedInt<nsAutoCString::size_type> sizeCheck(size);
+  if (!sizeCheck.isValid()) {
+    return NS_ERROR_FAILURE;
   }
 
-  if (!CopyASCIItoUTF16(base64Data, aOut, fallible)) {
+  nsAutoCString binaryData;
+  if (!binaryData.SetLength(size, fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
+  }
+
+  DebugOnly<bool> res = Data().ReadBytes(iter, binaryData.BeginWriting(), size);
+  MOZ_ASSERT(res);
+
+  nsresult rv = Base64Encode(binaryData, aOut);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
   }
 
   return NS_OK;

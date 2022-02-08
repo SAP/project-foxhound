@@ -5,14 +5,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef _include_dom_media_ipc_RDDProcessManager_h_
 #define _include_dom_media_ipc_RDDProcessManager_h_
+#include "mozilla/MozPromise.h"
+#include "mozilla/PRemoteDecoderManagerChild.h"
 #include "mozilla/RDDProcessHost.h"
-
 #include "mozilla/ipc/TaskFactory.h"
+#include "nsIObserver.h"
 
 namespace mozilla {
 
 class MemoryReportingProcess;
-class PRemoteDecoderManagerChild;
 class RDDChild;
 
 // The RDDProcessManager is a singleton responsible for creating RDD-bound
@@ -28,28 +29,20 @@ class RDDProcessManager final : public RDDProcessHost::Listener {
 
   ~RDDProcessManager();
 
-  // If not using a RDD process, launch a new RDD process asynchronously.
-  bool LaunchRDDProcess();
-  bool IsRDDProcessLaunching();
+  using EnsureRDDPromise =
+      MozPromise<ipc::Endpoint<PRemoteDecoderManagerChild>, nsresult, true>;
+  // Launch a new RDD process asynchronously
+  RefPtr<GenericNonExclusivePromise> LaunchRDDProcess();
+  // If not using a RDD process, launch a new RDD process asynchronously and
+  // create a RemoteDecoderManager bridge
+  RefPtr<EnsureRDDPromise> EnsureRDDProcessAndCreateBridge(
+      base::ProcessId aOtherProcess);
 
-  // Ensure that RDD-bound methods can be used. If no RDD process is being
-  // used, or one is launched and ready, this function returns immediately.
-  // Otherwise it blocks until the RDD process has finished launching.
-  bool EnsureRDDReady();
-
-  bool CreateContentBridge(base::ProcessId aOtherProcess,
-                           mozilla::ipc::Endpoint<PRemoteDecoderManagerChild>*
-                               aOutRemoteDecoderManager);
-
-  void OnProcessLaunchComplete(RDDProcessHost* aHost) override;
   void OnProcessUnexpectedShutdown(RDDProcessHost* aHost) override;
 
   // Notify the RDDProcessManager that a top-level PRDD protocol has been
   // terminated. This may be called from any thread.
   void NotifyRemoteActorDestroyed(const uint64_t& aProcessToken);
-
-  // Used for tests and diagnostics
-  void KillProcess();
 
   // Returns -1 if there is no RDD process, or the platform pid for it.
   base::ProcessId RDDProcessPid();
@@ -68,6 +61,8 @@ class RDDProcessManager final : public RDDProcessHost::Listener {
   RDDProcessHost* Process() { return mProcess; }
 
  private:
+  bool IsRDDProcessLaunching();
+  bool IsRDDProcessDestroyed() const;
   bool CreateVideoBridge();
 
   // Called from our xpcom-shutdown observer.
@@ -79,6 +74,8 @@ class RDDProcessManager final : public RDDProcessHost::Listener {
   // Shutdown the RDD process.
   void CleanShutdown();
   void DestroyProcess();
+
+  bool IsShutdown() const;
 
   DISALLOW_COPY_AND_ASSIGN(RDDProcessManager);
 
@@ -95,19 +92,26 @@ class RDDProcessManager final : public RDDProcessHost::Listener {
   };
   friend class Observer;
 
- private:
-  RefPtr<Observer> mObserver;
-  mozilla::ipc::TaskFactory<RDDProcessManager> mTaskFactory;
-  uint32_t mNumProcessAttempts;
+  bool CreateContentBridge(
+      base::ProcessId aOtherProcess,
+      ipc::Endpoint<PRemoteDecoderManagerChild>* aOutRemoteDecoderManager);
+
+  const RefPtr<Observer> mObserver;
+  ipc::TaskFactory<RDDProcessManager> mTaskFactory;
+  uint32_t mNumProcessAttempts = 0;
+  uint32_t mNumUnexpectedCrashes = 0;
 
   // Fields that are associated with the current RDD process.
-  RDDProcessHost* mProcess;
-  uint64_t mProcessToken;
-  RDDChild* mRDDChild;
+  RDDProcessHost* mProcess = nullptr;
+  uint64_t mProcessToken = 0;
+  RDDChild* mRDDChild = nullptr;
   // Collects any pref changes that occur during process launch (after
   // the initial map is passed in command-line arguments) to be sent
   // when the process can receive IPC messages.
-  nsTArray<mozilla::dom::Pref> mQueuedPrefs;
+  nsTArray<dom::Pref> mQueuedPrefs;
+  // Promise will be resolved when the RDD process has been fully started and
+  // VideoBridge configured. Only accessed on the main thread.
+  RefPtr<GenericNonExclusivePromise> mLaunchRDDPromise;
 };
 
 }  // namespace mozilla

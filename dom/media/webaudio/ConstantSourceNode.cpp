@@ -11,8 +11,7 @@
 #include "AudioNodeEngine.h"
 #include "AudioNodeTrack.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(ConstantSourceNode, AudioScheduledSourceNode,
                                    mOffset)
@@ -156,7 +155,8 @@ ConstantSourceNode::ConstantSourceNode(AudioContext* aContext)
     : AudioScheduledSourceNode(aContext, 2, ChannelCountMode::Max,
                                ChannelInterpretation::Speakers),
       mStartCalled(false) {
-  CreateAudioParam(mOffset, ConstantSourceNodeEngine::OFFSET, u"offset", 1.0f);
+  mOffset =
+      CreateAudioParam(ConstantSourceNodeEngine::OFFSET, u"offset"_ns, 1.0f);
   ConstantSourceNodeEngine* engine =
       new ConstantSourceNodeEngine(this, aContext->Destination());
   mTrack = AudioNodeTrack::Create(aContext, engine,
@@ -190,7 +190,7 @@ already_AddRefed<ConstantSourceNode> ConstantSourceNode::Constructor(
     const GlobalObject& aGlobal, AudioContext& aContext,
     const ConstantSourceOptions& aOptions) {
   RefPtr<ConstantSourceNode> object = new ConstantSourceNode(&aContext);
-  object->mOffset->SetValue(aOptions.mOffset);
+  object->mOffset->SetInitialValue(aOptions.mOffset);
   return object.forget();
 }
 
@@ -274,5 +274,4 @@ void ConstantSourceNode::NotifyMainThreadTrackEnded() {
   MarkInactive();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -12,6 +12,7 @@
 #include "nsIStreamListener.h"
 #include "nsString.h"
 #include "nsCOMPtr.h"
+#include "nsIChannel.h"
 
 class nsIAsyncOutputStream;
 class nsIInputStream;
@@ -39,7 +40,7 @@ class nsAboutCacheEntry final : public nsIAboutModule {
     NS_FORWARD_SAFE_NSICHANNEL(mChannel)
     NS_FORWARD_SAFE_NSIREQUEST(mChannel)
 
-    Channel() : mBuffer(nullptr), mWaitingForData(false), mHexDumpState(0) {}
+    Channel() = default;
 
    private:
     virtual ~Channel() = default;
@@ -66,10 +67,10 @@ class nsAboutCacheEntry final : public nsIAboutModule {
     nsCOMPtr<nsILoadContextInfo> mLoadInfo;
     nsCOMPtr<nsIURI> mCacheURI;
 
-    nsCString* mBuffer;
+    nsCString* mBuffer{nullptr};
     nsCOMPtr<nsIAsyncOutputStream> mOutputStream;
-    bool mWaitingForData;
-    uint32_t mHexDumpState;
+    bool mWaitingForData{false};
+    uint32_t mHexDumpState{0};
 
     nsCOMPtr<nsIChannel> mChannel;
   };

@@ -36,13 +36,8 @@ interface nsICacheStorageService : nsISupports
   /**
    * Get storage where entries will be written to disk when not forbidden by
    * response headers.
-   *
-   * @param aLookupAppCache
-   *    When set true (for top level document loading channels) app cache will
-   *    be first to check on to find entries in.
    */
-  nsICacheStorage diskCacheStorage(in nsILoadContextInfo aLoadContextInfo,
-                                   in bool aLookupAppCache);
+  nsICacheStorage diskCacheStorage(in nsILoadContextInfo aLoadContextInfo);
 
   /**
    * Get storage where entries will be written to disk and marked as pinned.
@@ -52,32 +47,21 @@ interface nsICacheStorageService : nsISupports
   nsICacheStorage pinningCacheStorage(in nsILoadContextInfo aLoadContextInfo);
 
   /**
-   * Get storage for a specified application cache obtained using some different
-   * mechanism.
-   *
-   * @param aLoadContextInfo
-   *    Mandatory reference to a load context information.
-   * @param aApplicationCache
-   *    Optional reference to an existing appcache.  When left null, this will
-   *    work with offline cache as a whole.
-   */
-  nsICacheStorage appCacheStorage(in nsILoadContextInfo aLoadContextInfo,
-                                  in nsIApplicationCache aApplicationCache);
-
-  /**
-   * Get storage for synthesized cache entries that we currently use for ServiceWorker interception in non-e10s mode.
-   *
-   * This cache storage has no limits on file size to allow the ServiceWorker to intercept large files.
-   */
-  nsICacheStorage synthesizedCacheStorage(in nsILoadContextInfo aLoadContextInfo);
-
-  /**
    * Evict any cache entry having the same origin of aPrincipal.
    *
    * @param aPrincipal
    *   The principal to compare the entries with.
    */
   void clearOrigin(in nsIPrincipal aPrincipal);
+
+  /**
+   * Evict any cache entry which belongs to a base domain. This includes entries
+   * partitioned under aBaseDomain and entries which belong to aBaseDomain, but
+   * are partitioned under other top level sites.
+   * @param aBaseDomain
+   *   The base domain to clear cache for.
+   */
+  void clearBaseDomain(in AString aBaseDomain);
 
   /**
    * Evict any cache entry having the same originAttributes.

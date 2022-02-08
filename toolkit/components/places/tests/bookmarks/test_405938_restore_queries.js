@@ -35,8 +35,6 @@ scenarios:
 
 */
 
-const DEFAULT_INDEX = PlacesUtils.bookmarks.DEFAULT_INDEX;
-
 var test = {
   _testRootId: null,
   _testRootTitle: "test root",
@@ -251,5 +249,5 @@ add_task(async function() {
   }
 
   // clean up
-  await OS.File.remove(jsonFile);
+  await IOUtils.remove(jsonFile);
 });

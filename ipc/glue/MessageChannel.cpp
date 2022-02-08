@@ -11,34 +11,37 @@
 
 #include <utility>
 
+#include "CrashAnnotations.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/IntentionalCrash.h"
 #include "mozilla/Logging.h"
+#include "mozilla/Monitor.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Sprintf.h"
+#include "mozilla/StaticMutex.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/ipc/NodeController.h"
 #include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "nsAppRunner.h"
 #include "nsContentUtils.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsDebug.h"
+#include "nsExceptionHandler.h"
 #include "nsIMemoryReporter.h"
 #include "nsISupportsImpl.h"
 #include "nsPrintfCString.h"
+#include "nsThreadUtils.h"
 
-#ifdef MOZ_TASK_TRACER
-#  include "GeckoTaskTracer.h"
-using namespace mozilla::tasktracer;
-#endif
-
-#ifdef MOZ_GECKO_PROFILER
-#  include "ProfilerMarkerPayload.h"
+#ifdef OS_WIN
+#  include "mozilla/gfx/Logging.h"
 #endif
 
 // Undo the damage done by mozzconf.h
@@ -125,7 +128,7 @@ using mozilla::dom::AutoNoJSAPI;
     if (!(_cond)) DebugAbort(__FILE__, __LINE__, #_cond, ##__VA_ARGS__); \
   } while (0)
 
-static MessageChannel* gParentProcessBlocker;
+static MessageChannel* gParentProcessBlocker = nullptr;
 
 namespace mozilla {
 namespace ipc {
@@ -142,8 +145,6 @@ static const uint32_t kMinTelemetryIPCWriteLatencyMs = 1;
 // (IPC_SYNC_MAIN_LATENCY_MS and IPC_SYNC_RECEIVE_MS).
 static const uint32_t kMinTelemetrySyncIPCLatencyMs = 1;
 
-const int32_t MessageChannel::kNoTimeout = INT32_MIN;
-
 // static
 bool MessageChannel::sIsPumpingMessages = false;
 
@@ -157,9 +158,9 @@ class MessageChannel::InterruptFrame {
   InterruptFrame(Direction direction, const Message* msg)
       : mMessageName(msg->name()),
         mMessageRoutingId(msg->routing_id()),
-        mMesageSemantics(msg->is_interrupt()
-                             ? INTR_SEMS
-                             : msg->is_sync() ? SYNC_SEMS : ASYNC_SEMS),
+        mMesageSemantics(msg->is_interrupt() ? INTR_SEMS
+                         : msg->is_sync()    ? SYNC_SEMS
+                                             : ASYNC_SEMS),
         mDirection(direction),
         mMoved(false) {
     MOZ_RELEASE_ASSERT(mMessageName);
@@ -203,9 +204,9 @@ class MessageChannel::InterruptFrame {
                 const char** name) const {
     *id = mMessageRoutingId;
     *dir = (IN_MESSAGE == mDirection) ? "in" : "out";
-    *sems = (INTR_SEMS == mMesageSemantics)
-                ? "intr"
-                : (SYNC_SEMS == mMesageSemantics) ? "sync" : "async";
+    *sems = (INTR_SEMS == mMesageSemantics)   ? "intr"
+            : (SYNC_SEMS == mMesageSemantics) ? "sync"
+                                              : "async";
     *name = mMessageName;
   }
 
@@ -489,7 +490,7 @@ class ChannelCountReporter final : public nsIMemoryReporter {
     }
   };
 
-  using CountTable = nsDataHashtable<nsDepCharHashKey, ChannelCounts>;
+  using CountTable = nsTHashMap<nsDepCharHashKey, ChannelCounts>;
 
   static StaticMutex sChannelCountMutex;
   static CountTable* sChannelCounts;
@@ -500,26 +501,34 @@ class ChannelCountReporter final : public nsIMemoryReporter {
   NS_IMETHOD
   CollectReports(nsIHandleReportCallback* aHandleReport, nsISupports* aData,
                  bool aAnonymize) override {
-    StaticMutexAutoLock countLock(sChannelCountMutex);
-    if (!sChannelCounts) {
-      return NS_OK;
+    AutoTArray<std::pair<const char*, ChannelCounts>, 16> counts;
+    {
+      StaticMutexAutoLock countLock(sChannelCountMutex);
+      if (!sChannelCounts) {
+        return NS_OK;
+      }
+      counts.SetCapacity(sChannelCounts->Count());
+      for (const auto& entry : *sChannelCounts) {
+        counts.AppendElement(std::pair{entry.GetKey(), entry.GetData()});
+      }
     }
-    for (auto iter = sChannelCounts->Iter(); !iter.Done(); iter.Next()) {
-      nsPrintfCString pathNow("ipc-channels/%s", iter.Key());
-      nsPrintfCString pathMax("ipc-channels-peak/%s", iter.Key());
+
+    for (const auto& entry : counts) {
+      nsPrintfCString pathNow("ipc-channels/%s", entry.first);
+      nsPrintfCString pathMax("ipc-channels-peak/%s", entry.first);
       nsPrintfCString descNow(
           "Number of IPC channels for"
           " top-level actor type %s",
-          iter.Key());
+          entry.first);
       nsPrintfCString descMax(
           "Peak number of IPC channels for"
           " top-level actor type %s",
-          iter.Key());
+          entry.first);
 
-      aHandleReport->Callback(EmptyCString(), pathNow, KIND_OTHER, UNITS_COUNT,
-                              iter.Data().mNow, descNow, aData);
-      aHandleReport->Callback(EmptyCString(), pathMax, KIND_OTHER, UNITS_COUNT,
-                              iter.Data().mMax, descMax, aData);
+      aHandleReport->Callback(""_ns, pathNow, KIND_OTHER, UNITS_COUNT,
+                              entry.second.mNow, descNow, aData);
+      aHandleReport->Callback(""_ns, pathMax, KIND_OTHER, UNITS_COUNT,
+                              entry.second.mMax, descMax, aData);
     }
     return NS_OK;
   }
@@ -529,13 +538,13 @@ class ChannelCountReporter final : public nsIMemoryReporter {
     if (!sChannelCounts) {
       sChannelCounts = new CountTable;
     }
-    sChannelCounts->GetOrInsert(aName).Inc();
+    sChannelCounts->LookupOrInsert(aName).Inc();
   }
 
   static void Decrement(const char* aName) {
     StaticMutexAutoLock countLock(sChannelCountMutex);
     MOZ_ASSERT(sChannelCounts);
-    sChannelCounts->GetOrInsert(aName).Dec();
+    sChannelCounts->LookupOrInsert(aName).Dec();
   }
 };
 
@@ -562,43 +571,8 @@ static void TryRegisterStrongMemoryReporter() {
 Atomic<size_t> MessageChannel::gUnresolvedResponses;
 
 MessageChannel::MessageChannel(const char* aName, IToplevelProtocol* aListener)
-    : mName(aName),
-      mListener(aListener),
-      mChannelState(ChannelClosed),
-      mSide(UnknownSide),
-      mIsCrossProcess(false),
-      mChannelErrorTask(nullptr),
-      mTimeoutMs(kNoTimeout),
-      mInTimeoutSecondHalf(false),
-      mNextSeqno(0),
-      mLastSendError(SyncSendError::SendSuccess),
-      mDispatchingAsyncMessage(false),
-      mDispatchingAsyncMessageNestedLevel(0),
-      mTransactionStack(nullptr),
-      mTimedOutMessageSeqno(0),
-      mTimedOutMessageNestedLevel(0),
-      mMaybeDeferredPendingCount(0),
-      mRemoteStackDepthGuess(0),
-      mSawInterruptOutMsg(false),
-      mIsWaitingForIncoming(false),
-      mAbortOnError(false),
-      mNotifiedChannelDone(false),
-      mFlags(REQUIRE_DEFAULT),
-      mPeerPidSet(false),
-      mPeerPid(-1),
-      mIsPostponingSends(false),
-      mBuildIDsConfirmedMatch(false),
-      mIsSameThreadChannel(false) {
+    : mName(aName), mListener(aListener), mMonitor(new RefCountedMonitor()) {
   MOZ_COUNT_CTOR(ipc::MessageChannel);
-
-#ifdef OS_WIN
-  mTopFrame = nullptr;
-  mIsSyncWaitingOnNonMainThread = false;
-#endif
-
-  mOnChannelConnectedTask = NewNonOwningCancelableRunnableMethod(
-      "ipc::MessageChannel::DispatchOnChannelConnected", this,
-      &MessageChannel::DispatchOnChannelConnected);
 
 #ifdef OS_WIN
   mEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -611,6 +585,7 @@ MessageChannel::MessageChannel(const char* aName, IToplevelProtocol* aListener)
 
 MessageChannel::~MessageChannel() {
   MOZ_COUNT_DTOR(ipc::MessageChannel);
+  MonitorAutoLock lock(*mMonitor);
   IPC_ASSERT(mCxxStackFrames.empty(), "mismatched CxxStackFrame ctor/dtors");
 #ifdef OS_WIN
   if (mEvent) {
@@ -627,11 +602,54 @@ MessageChannel::~MessageChannel() {
         << "MessageChannel destructor ran without an mEvent Handle";
   }
 #endif
-  Clear();
+
+  // Make sure that the MessageChannel was closed (and therefore cleared) before
+  // it was destroyed. We can't properly close the channel at this point, as it
+  // would be unsafe to invoke our listener's callbacks, and we may be being
+  // destroyed on a thread other than `mWorkerThread`.
+  if (!Unsound_IsClosed()) {
+    CrashReporter::AnnotateCrashReport(
+        CrashReporter::Annotation::IPCFatalErrorProtocol,
+        nsDependentCString(mName));
+    switch (mChannelState) {
+      case ChannelConnected:
+        MOZ_CRASH(
+            "MessageChannel destroyed without being closed "
+            "(mChannelState == ChannelConnected).");
+        break;
+      case ChannelTimeout:
+        MOZ_CRASH(
+            "MessageChannel destroyed without being closed "
+            "(mChannelState == ChannelTimeout).");
+        break;
+      case ChannelClosing:
+        MOZ_CRASH(
+            "MessageChannel destroyed without being closed "
+            "(mChannelState == ChannelClosing).");
+        break;
+      case ChannelError:
+        MOZ_CRASH(
+            "MessageChannel destroyed without being closed "
+            "(mChannelState == ChannelError).");
+        break;
+      default:
+        MOZ_CRASH("MessageChannel destroyed without being closed.");
+    }
+  }
+
+  // Double-check other properties for thoroughness.
+  MOZ_RELEASE_ASSERT(!mLink);
+  MOZ_RELEASE_ASSERT(mPendingResponses.empty());
+  MOZ_RELEASE_ASSERT(!mChannelErrorTask);
+  MOZ_RELEASE_ASSERT(mPending.isEmpty());
+  MOZ_RELEASE_ASSERT(mOutOfTurnReplies.empty());
+  MOZ_RELEASE_ASSERT(mDeferred.empty());
 }
 
 #ifdef DEBUG
 void MessageChannel::AssertMaybeDeferredCountCorrect() {
+  mMonitor->AssertCurrentThreadOwns();
+
   size_t count = 0;
   for (MessageTask* task : mPending) {
     if (!IsAlwaysDeferred(task->Msg())) {
@@ -693,10 +711,7 @@ static void PrintErrorMessage(Side side, const char* channelName,
 
 bool MessageChannel::Connected() const {
   mMonitor->AssertCurrentThreadOwns();
-
-  // The transport layer allows us to send messages before
-  // receiving the "connected" ack from the remote side.
-  return (ChannelOpening == mChannelState || ChannelConnected == mChannelState);
+  return ChannelConnected == mChannelState;
 }
 
 bool MessageChannel::CanSend() const {
@@ -708,73 +723,34 @@ bool MessageChannel::CanSend() const {
 }
 
 void MessageChannel::Clear() {
-  // Don't clear mWorkerThread; we use it in AssertLinkThread() and
-  // AssertWorkerThread().
+  AssertWorkerThread();
+  mMonitor->AssertCurrentThreadOwns();
+  MOZ_DIAGNOSTIC_ASSERT(Unsound_IsClosed(),
+                        "MessageChannel cleared too early?");
+
+  // Don't clear mWorkerThread; we use it in AssertWorkerThread().
   //
   // Also don't clear mListener.  If we clear it, then sending a message
   // through this channel after it's Clear()'ed can cause this process to
   // crash.
-  //
-  // In practice, mListener owns the channel, so the channel gets deleted
-  // before mListener.  But just to be safe, mListener is a weak pointer.
 
-#if !defined(ANDROID)
-  if (!Unsound_IsClosed()) {
-    CrashReporter::AnnotateCrashReport(
-        CrashReporter::Annotation::IPCFatalErrorProtocol,
-        nsDependentCString(mName));
-    switch (mChannelState) {
-      case ChannelOpening:
-        MOZ_CRASH(
-            "MessageChannel destroyed without being closed "
-            "(mChannelState == ChannelOpening).");
-        break;
-      case ChannelConnected:
-        MOZ_CRASH(
-            "MessageChannel destroyed without being closed "
-            "(mChannelState == ChannelConnected).");
-        break;
-      case ChannelTimeout:
-        MOZ_CRASH(
-            "MessageChannel destroyed without being closed "
-            "(mChannelState == ChannelTimeout).");
-        break;
-      case ChannelClosing:
-        MOZ_CRASH(
-            "MessageChannel destroyed without being closed "
-            "(mChannelState == ChannelClosing).");
-        break;
-      case ChannelError:
-        MOZ_CRASH(
-            "MessageChannel destroyed without being closed "
-            "(mChannelState == ChannelError).");
-        break;
-      default:
-        MOZ_CRASH("MessageChannel destroyed without being closed.");
-    }
-  }
-#endif
-
-  if (gParentProcessBlocker == this) {
+  if (NS_IsMainThread() && gParentProcessBlocker == this) {
     gParentProcessBlocker = nullptr;
   }
 
   gUnresolvedResponses -= mPendingResponses.size();
-  for (auto& pair : mPendingResponses) {
-    pair.second.get()->Reject(ResponseRejectReason::ChannelClosed);
+  {
+    CallbackMap map = std::move(mPendingResponses);
+    MonitorAutoUnlock unlock(*mMonitor);
+    for (auto& pair : map) {
+      pair.second->Reject(ResponseRejectReason::ChannelClosed);
+    }
   }
   mPendingResponses.clear();
 
-  if (mLink != nullptr && mIsCrossProcess) {
-    ChannelCountReporter::Decrement(mName);
-  }
+  SetIsCrossProcess(false);
 
-  if (mLink) {
-    mLink->PrepareToDestroy();
-    mLink = nullptr;
-  }
-
-  mOnChannelConnectedTask->Cancel();
+  mLink = nullptr;
 
   if (mChannelErrorTask) {
     mChannelErrorTask->Cancel();
@@ -782,9 +758,6 @@ void MessageChannel::Clear() {
   }
 
   // Free up any memory used by pending messages.
-  for (MessageTask* task : mPending) {
-    task->Clear();
-  }
   mPending.clear();
 
   mMaybeDeferredPendingCount = 0;
@@ -795,134 +768,84 @@ void MessageChannel::Clear() {
   }
 }
 
-bool MessageChannel::Open(mozilla::UniquePtr<Transport> aTransport,
-                          MessageLoop* aIOLoop, Side aSide) {
-  MOZ_ASSERT(!mLink, "Open() called > once");
+bool MessageChannel::Open(ScopedPort aPort, Side aSide,
+                          nsISerialEventTarget* aEventTarget) {
+  {
+    MonitorAutoLock lock(*mMonitor);
+    MOZ_RELEASE_ASSERT(!mLink, "Open() called > once");
+    MOZ_RELEASE_ASSERT(ChannelClosed == mChannelState, "Not currently closed");
 
-  mMonitor = new RefCountedMonitor();
-  mWorkerThread = GetCurrentSerialEventTarget();
-  MOZ_ASSERT(mWorkerThread, "We should always be on a nsISerialEventTarget");
+    mWorkerThread = aEventTarget ? aEventTarget : GetCurrentSerialEventTarget();
+    MOZ_ASSERT(mWorkerThread, "We should always be on a nsISerialEventTarget");
+
+    mLink = MakeUnique<PortLink>(this, std::move(aPort));
+    mSide = aSide;
+  }
+
+  // Notify our listener that the underlying IPC channel has been established.
+  // IProtocol will use this callback to create the ActorLifecycleProxy, and
+  // perform an `AddRef` call to keep the actor alive until the channel is
+  // disconnected.
+  //
+  // We unlock our monitor before calling `OnIPCChannelOpened` to ensure that
+  // any calls back into `MessageChannel` do not deadlock. At this point, we may
+  // be receiving messages on the IO thread, however we cannot process them on
+  // the worker thread or have notified our listener until after this function
+  // returns.
   mListener->OnIPCChannelOpened();
-
-  auto link = MakeUnique<ProcessLink>(this);
-  link->Open(std::move(aTransport), aIOLoop,
-             aSide);  // :TODO: n.b.: sets mChild
-  mLink = std::move(link);
-  mIsCrossProcess = true;
-  ChannelCountReporter::Increment(mName);
   return true;
+}
+
+static Side GetOppSide(Side aSide) {
+  switch (aSide) {
+    case ChildSide:
+      return ParentSide;
+    case ParentSide:
+      return ChildSide;
+    default:
+      return UnknownSide;
+  }
 }
 
 bool MessageChannel::Open(MessageChannel* aTargetChan,
                           nsISerialEventTarget* aEventTarget, Side aSide) {
   // Opens a connection to another thread in the same process.
 
-  //  This handshake proceeds as follows:
-  //  - Let A be the thread initiating the process (either child or parent)
-  //    and B be the other thread.
-  //  - A spawns thread for B, obtaining B's message loop
-  //  - A creates ProtocolChild and ProtocolParent instances.
-  //    Let PA be the one appropriate to A and PB the side for B.
-  //  - A invokes PA->Open(PB, ...):
-  //    - set state to mChannelOpening
-  //    - this will place a work item in B's worker loop (see next bullet)
-  //      and then spins until PB->mChannelState becomes mChannelConnected
-  //    - meanwhile, on PB's worker loop, the work item is removed and:
-  //      - invokes PB->OpenAsOtherThread(PA, ...):
-  //        - sets its state and that of PA to Connected
   MOZ_ASSERT(aTargetChan, "Need a target channel");
-  MOZ_ASSERT(ChannelClosed == mChannelState, "Not currently closed");
 
-  CommonThreadOpenInit(aTargetChan, GetCurrentSerialEventTarget(), aSide);
+  std::pair<ScopedPort, ScopedPort> ports =
+      NodeController::GetSingleton()->CreatePortPair();
 
-  Side oppSide = UnknownSide;
-  switch (aSide) {
-    case ChildSide:
-      oppSide = ParentSide;
-      break;
-    case ParentSide:
-      oppSide = ChildSide;
-      break;
-    case UnknownSide:
-      break;
-  }
+  // NOTE: This dispatch must be sync as it captures locals by non-owning
+  // reference, however we can't use `NS_DISPATCH_SYNC` as that will spin a
+  // nested event loop, and doesn't work with certain types of calling event
+  // targets.
+  base::WaitableEvent event(/* manual_reset */ true,
+                            /* initially_signaled */ false);
+  MOZ_ALWAYS_SUCCEEDS(aEventTarget->Dispatch(NS_NewCancelableRunnableFunction(
+      "ipc::MessageChannel::OpenAsOtherThread", [&]() {
+        aTargetChan->Open(std::move(ports.second), GetOppSide(aSide),
+                          aEventTarget);
+        event.Signal();
+      })));
+  bool ok = event.Wait();
+  MOZ_RELEASE_ASSERT(ok);
 
-  mMonitor = new RefCountedMonitor();
-
-  MonitorAutoLock lock(*mMonitor);
-  mChannelState = ChannelOpening;
-  MOZ_ALWAYS_SUCCEEDS(aEventTarget->Dispatch(
-      NewNonOwningRunnableMethod<MessageChannel*, nsISerialEventTarget*, Side>(
-          "ipc::MessageChannel::OpenAsOtherThread", aTargetChan,
-          &MessageChannel::OpenAsOtherThread, this, aEventTarget, oppSide)));
-
-  while (ChannelOpening == mChannelState) mMonitor->Wait();
-  MOZ_RELEASE_ASSERT(ChannelConnected == mChannelState,
-                     "not connected when awoken");
-  return (ChannelConnected == mChannelState);
-}
-
-void MessageChannel::OpenAsOtherThread(MessageChannel* aTargetChan,
-                                       nsISerialEventTarget* aThread,
-                                       Side aSide) {
-  // Invoked when the other side has begun the open.
-  MOZ_ASSERT(ChannelClosed == mChannelState, "Not currently closed");
-  MOZ_ASSERT(ChannelOpening == aTargetChan->mChannelState,
-             "Target channel not in the process of opening");
-
-  CommonThreadOpenInit(aTargetChan, aThread, aSide);
-  mMonitor = aTargetChan->mMonitor;
-
-  MonitorAutoLock lock(*mMonitor);
-  MOZ_RELEASE_ASSERT(ChannelOpening == aTargetChan->mChannelState,
-                     "Target channel not in the process of opening");
-  mChannelState = ChannelConnected;
-  aTargetChan->mChannelState = ChannelConnected;
-  aTargetChan->mMonitor->Notify();
-}
-
-void MessageChannel::CommonThreadOpenInit(MessageChannel* aTargetChan,
-                                          nsISerialEventTarget* aThread,
-                                          Side aSide) {
-  MOZ_ASSERT(aThread);
-  mWorkerThread = aThread;
-  mListener->OnIPCChannelOpened();
-
-  mLink = MakeUnique<ThreadLink>(this, aTargetChan);
-  mSide = aSide;
+  // Now that the other side has connected, open the port on our side.
+  return Open(std::move(ports.first), aSide);
 }
 
 bool MessageChannel::OpenOnSameThread(MessageChannel* aTargetChan,
                                       mozilla::ipc::Side aSide) {
-  nsCOMPtr<nsISerialEventTarget> currentThread = GetCurrentSerialEventTarget();
-  CommonThreadOpenInit(aTargetChan, currentThread, aSide);
-
-  Side oppSide = UnknownSide;
-  switch (aSide) {
-    case ChildSide:
-      oppSide = ParentSide;
-      break;
-    case ParentSide:
-      oppSide = ChildSide;
-      break;
-    case UnknownSide:
-      break;
-  }
-  mIsSameThreadChannel = true;
-
-  // XXX(nika): Avoid setting up a monitor for same thread channels? We
-  // shouldn't need it.
-  mMonitor = new RefCountedMonitor();
-
-  mChannelState = ChannelOpening;
-  aTargetChan->CommonThreadOpenInit(this, currentThread, oppSide);
+  auto [porta, portb] = NodeController::GetSingleton()->CreatePortPair();
 
   aTargetChan->mIsSameThreadChannel = true;
-  aTargetChan->mMonitor = mMonitor;
+  mIsSameThreadChannel = true;
 
-  mChannelState = ChannelConnected;
-  aTargetChan->mChannelState = ChannelConnected;
-  return true;
+  auto* currentThread = GetCurrentSerialEventTarget();
+  return aTargetChan->Open(std::move(portb), GetOppSide(aSide),
+                           currentThread) &&
+         Open(std::move(porta), aSide, currentThread);
 }
 
 bool MessageChannel::Send(UniquePtr<Message> aMsg) {
@@ -1073,6 +996,25 @@ bool MessageChannel::SendBuildIDsMatchMessage(const char* aParentBuildID) {
     ReportConnectionError("MessageChannel", msg.get());
     return false;
   }
+
+#if defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
+  // Technically, the behavior is interesting for any kind of process
+  // but when exercising tests, we want to crash only a content process and
+  // avoid making noise with other kind of processes crashing
+  if (const char* dontSend = PR_GetEnv("MOZ_BUILDID_MATCH_DONTSEND")) {
+    if (dontSend[0] == '1') {
+      // Bug 1732999: We are going to crash, so we need to advise leak check
+      // tooling to avoid intermittent missing leakcheck
+      NoteIntentionalCrash(XRE_GetProcessTypeString());
+      if (XRE_IsContentProcess()) {
+        // Make sure we do not die too early, as this causes weird behavior
+        PR_Sleep(PR_MillisecondsToInterval(1000));
+        return false;
+      }
+    }
+  }
+#endif
+
   mLink->SendMessage(std::move(msg));
   return true;
 }
@@ -1090,7 +1032,6 @@ class CancelMessage : public IPC::Message {
 };
 
 bool MessageChannel::MaybeInterceptSpecialIOMessage(const Message& aMsg) {
-  AssertLinkThread();
   mMonitor->AssertCurrentThreadOwns();
 
   if (MSG_ROUTING_NONE == aMsg.routing_id()) {
@@ -1172,10 +1113,11 @@ bool MessageChannel::ShouldDeferMessage(const Message& aMsg) {
 }
 
 void MessageChannel::OnMessageReceivedFromLink(Message&& aMsg) {
-  AssertLinkThread();
   mMonitor->AssertCurrentThreadOwns();
 
-  if (MaybeInterceptSpecialIOMessage(aMsg)) return;
+  if (MaybeInterceptSpecialIOMessage(aMsg)) {
+    return;
+  }
 
   mListener->OnChannelReceivedMessage(aMsg);
 
@@ -1243,8 +1185,7 @@ void MessageChannel::OnMessageReceivedFromLink(Message&& aMsg) {
 
   bool wakeUpSyncSend = AwaitingSyncReply() && !ShouldDeferMessage(aMsg);
 
-  bool shouldWakeUp =
-      AwaitingInterruptReply() || wakeUpSyncSend || AwaitingIncomingMessage();
+  bool shouldWakeUp = AwaitingInterruptReply() || wakeUpSyncSend;
 
   // Although we usually don't need to post a message task if
   // shouldWakeUp is true, it's easier to post anyway than to have to
@@ -1252,8 +1193,8 @@ void MessageChannel::OnMessageReceivedFromLink(Message&& aMsg) {
   // before returning.
   bool shouldPostTask = !shouldWakeUp || wakeUpSyncSend;
 
-  IPC_LOG("Receive on link thread; seqno=%d, xid=%d, shouldWakeUp=%d",
-          aMsg.seqno(), aMsg.transaction_id(), shouldWakeUp);
+  IPC_LOG("Receive from link; seqno=%d, xid=%d, shouldWakeUp=%d", aMsg.seqno(),
+          aMsg.transaction_id(), shouldWakeUp);
 
   if (reuseTask) {
     return;
@@ -1281,9 +1222,6 @@ void MessageChannel::OnMessageReceivedFromLink(Message&& aMsg) {
   // blocked. This is okay, since we always check for pending events before
   // blocking again.
 
-#ifdef MOZ_TASK_TRACER
-  aMsg.TaskTracerDispatch();
-#endif
   RefPtr<MessageTask> task = new MessageTask(this, std::move(aMsg));
   mPending.insertBack(task);
 
@@ -1395,9 +1333,6 @@ bool MessageChannel::Send(UniquePtr<Message> aMsg, Message* aReply) {
   SyncStackFrame frame(this, false);
   NeuteredWindowRegion neuteredRgn(mFlags &
                                    REQUIRE_DEFERRED_MESSAGE_PROTECTION);
-#endif
-#ifdef MOZ_TASK_TRACER
-  AutoScopedLabel autolabel("sync message %s", aMsg->name());
 #endif
 
   CxxStackFrame f(*this, OUT_MESSAGE, aMsg.get());
@@ -1606,9 +1541,6 @@ bool MessageChannel::Call(UniquePtr<Message> aMsg, Message* aReply) {
 #ifdef OS_WIN
   SyncStackFrame frame(this, true);
 #endif
-#ifdef MOZ_TASK_TRACER
-  AutoScopedLabel autolabel("sync message %s", aMsg->name());
-#endif
 
   // This must come before MonitorAutoLock, as its destructor acquires the
   // monitor lock.
@@ -1760,9 +1692,6 @@ bool MessageChannel::Call(UniquePtr<Message> aMsg, Message* aReply) {
     // own the monitor.
     size_t stackDepth = InterruptStackDepth();
     {
-#ifdef MOZ_TASK_TRACER
-      Message::AutoTaskTracerRun tasktracerRun(recvd);
-#endif
       MonitorAutoUnlock unlock(*mMonitor);
 
       CxxStackFrame frame(*this, IN_MESSAGE, &recvd);
@@ -1775,30 +1704,6 @@ bool MessageChannel::Call(UniquePtr<Message> aMsg, Message* aReply) {
       return false;
     }
   }
-
-  return true;
-}
-
-bool MessageChannel::WaitForIncomingMessage() {
-#ifdef OS_WIN
-  SyncStackFrame frame(this, true);
-  NeuteredWindowRegion neuteredRgn(mFlags &
-                                   REQUIRE_DEFERRED_MESSAGE_PROTECTION);
-#endif
-
-  MonitorAutoLock lock(*mMonitor);
-  AutoEnterWaitForIncoming waitingForIncoming(*this);
-  if (mChannelState != ChannelConnected) {
-    return false;
-  }
-  if (!HasPendingEvents()) {
-    return WaitForInterruptNotify();
-  }
-
-  MOZ_RELEASE_ASSERT(!mPending.isEmpty());
-  RefPtr<MessageTask> task = mPending.getFirst();
-  RunMessage(*task);
-  return true;
 }
 
 bool MessageChannel::HasPendingEvents() {
@@ -1928,19 +1833,15 @@ NS_IMPL_ISUPPORTS_INHERITED(MessageChannel::MessageTask, CancelableRunnable,
 MessageChannel::MessageTask::MessageTask(MessageChannel* aChannel,
                                          Message&& aMessage)
     : CancelableRunnable(aMessage.name()),
+      mMonitor(aChannel->mMonitor),
       mChannel(aChannel),
       mMessage(std::move(aMessage)),
       mScheduled(false) {}
 
 nsresult MessageChannel::MessageTask::Run() {
-  if (!mChannel) {
-    return NS_OK;
-  }
+  mMonitor->AssertNotCurrentThreadOwns();
 
-  mChannel->AssertWorkerThread();
-  mChannel->mMonitor->AssertNotCurrentThreadOwns();
-
-  MonitorAutoLock lock(*mChannel->mMonitor);
+  MonitorAutoLock lock(*mMonitor);
 
   // In case we choose not to run this message, we may need to be able to Post
   // it again.
@@ -1950,34 +1851,33 @@ nsresult MessageChannel::MessageTask::Run() {
     return NS_OK;
   }
 
-  mChannel->RunMessage(*this);
+  Channel()->AssertWorkerThread();
+  Channel()->RunMessage(*this);
   return NS_OK;
 }
 
 // Warning: This method removes the receiver from whatever list it might be in.
 nsresult MessageChannel::MessageTask::Cancel() {
-  if (!mChannel) {
-    return NS_OK;
-  }
+  mMonitor->AssertNotCurrentThreadOwns();
 
-  mChannel->AssertWorkerThread();
-  mChannel->mMonitor->AssertNotCurrentThreadOwns();
-
-  MonitorAutoLock lock(*mChannel->mMonitor);
+  MonitorAutoLock lock(*mMonitor);
 
   if (!isInList()) {
     return NS_OK;
   }
-  remove();
 
+  Channel()->AssertWorkerThread();
   if (!IsAlwaysDeferred(Msg())) {
-    mChannel->mMaybeDeferredPendingCount--;
+    Channel()->mMaybeDeferredPendingCount--;
   }
+
+  remove();
 
   return NS_OK;
 }
 
 void MessageChannel::MessageTask::Post() {
+  mMonitor->AssertCurrentThreadOwns();
   MOZ_RELEASE_ASSERT(!mScheduled);
   MOZ_RELEASE_ASSERT(isInList());
 
@@ -1985,19 +1885,13 @@ void MessageChannel::MessageTask::Post() {
 
   RefPtr<MessageTask> self = this;
   nsCOMPtr<nsISerialEventTarget> eventTarget =
-      mChannel->mListener->GetMessageEventTarget(mMessage);
+      Channel()->mListener->GetMessageEventTarget(mMessage);
 
   if (eventTarget) {
     eventTarget->Dispatch(self.forget(), NS_DISPATCH_NORMAL);
   } else {
-    mChannel->mWorkerThread->Dispatch(self.forget());
+    Channel()->mWorkerThread->Dispatch(self.forget());
   }
-}
-
-void MessageChannel::MessageTask::Clear() {
-  mChannel->AssertWorkerThread();
-
-  mChannel = nullptr;
 }
 
 NS_IMETHODIMP
@@ -2009,11 +1903,14 @@ MessageChannel::MessageTask::GetPriority(uint32_t* aPriority) {
     case Message::INPUT_PRIORITY:
       *aPriority = PRIORITY_INPUT_HIGH;
       break;
-    case Message::HIGH_PRIORITY:
-      *aPriority = PRIORITY_HIGH;
+    case Message::VSYNC_PRIORITY:
+      *aPriority = PRIORITY_VSYNC;
       break;
     case Message::MEDIUMHIGH_PRIORITY:
       *aPriority = PRIORITY_MEDIUMHIGH;
+      break;
+    case Message::CONTROL_PRIORITY:
+      *aPriority = PRIORITY_CONTROL;
       break;
     default:
       MOZ_ASSERT(false);
@@ -2058,9 +1955,6 @@ void MessageChannel::DispatchMessage(Message&& aMsg) {
     MOZ_RELEASE_ASSERT(!aMsg.is_sync() || id == transaction.TransactionID());
 
     {
-#ifdef MOZ_TASK_TRACER
-      Message::AutoTaskTracerRun tasktracerRun(aMsg);
-#endif
       MonitorAutoUnlock unlock(*mMonitor);
       CxxStackFrame frame(*this, IN_MESSAGE, &aMsg);
 
@@ -2105,9 +1999,6 @@ void MessageChannel::DispatchSyncMessage(ActorLifecycleProxy* aProxy,
 
   MOZ_RELEASE_ASSERT(nestedLevel == IPC::Message::NOT_NESTED ||
                      NS_IsMainThread());
-#ifdef MOZ_TASK_TRACER
-  AutoScopedLabel autolabel("sync message %s", aMsg.name());
-#endif
 
   MessageChannel* dummy;
   MessageChannel*& blockingVar =
@@ -2138,7 +2029,9 @@ void MessageChannel::DispatchAsyncMessage(ActorLifecycleProxy* aProxy,
   MOZ_RELEASE_ASSERT(!aMsg.is_interrupt() && !aMsg.is_sync());
 
   if (aMsg.routing_id() == MSG_ROUTING_NONE) {
-    MOZ_CRASH("unhandled special message!");
+    NS_WARNING("unhandled special message!");
+    MaybeHandleError(MsgNotKnown, aMsg, "DispatchAsyncMessage");
+    return;
   }
 
   Result rv;
@@ -2207,7 +2100,8 @@ bool MessageChannel::ShouldDeferInterruptMessage(const Message& aMsg,
   // MessageChannel.h. "Remote" stack depth means our side, and "local" means
   // the other side.
   if (aMsg.interrupt_remote_stack_depth_guess() ==
-      RemoteViewOfStackDepth(aStackDepth)) {
+          RemoteViewOfStackDepth(aStackDepth) ||
+      mInterruptStack.empty()) {
     return false;
   }
 
@@ -2322,7 +2216,7 @@ bool MessageChannel::WaitResponse(bool aWaitTimedOut) {
 #ifndef OS_WIN
 bool MessageChannel::WaitForSyncNotify(bool /* aHandleWindowsMessages */) {
 #  ifdef DEBUG
-  // WARNING: We don't release the lock here. We can't because the link thread
+  // WARNING: We don't release the lock here. We can't because the link
   // could signal at this time and we would miss it. Instead we require
   // ArtificialTimeout() to be extremely simple.
   if (mListener->ArtificialTimeout()) {
@@ -2388,20 +2282,6 @@ void MessageChannel::SetReplyTimeoutMs(int32_t aTimeoutMs) {
       (aTimeoutMs <= 0) ? kNoTimeout : (int32_t)ceil((double)aTimeoutMs / 2.0);
 }
 
-void MessageChannel::OnChannelConnected(int32_t peer_id) {
-  MOZ_RELEASE_ASSERT(!mPeerPidSet);
-  mPeerPidSet = true;
-  mPeerPid = peer_id;
-  RefPtr<CancelableRunnable> task = mOnChannelConnectedTask;
-  mWorkerThread->Dispatch(task.forget());
-}
-
-void MessageChannel::DispatchOnChannelConnected() {
-  AssertWorkerThread();
-  MOZ_RELEASE_ASSERT(mPeerPidSet);
-  mListener->OnChannelConnected(mPeerPid);
-}
-
 void MessageChannel::ReportMessageRouteError(const char* channelName) const {
   PrintErrorMessage(mSide, channelName, "Need a route");
   mListener->ProcessingError(MsgRouteError, "MsgRouteError");
@@ -2416,9 +2296,6 @@ void MessageChannel::ReportConnectionError(const char* aChannelName,
   switch (mChannelState) {
     case ChannelClosed:
       errorMsg = "Closed channel: cannot send/recv";
-      break;
-    case ChannelOpening:
-      errorMsg = "Opening channel: not yet ready for send/recv";
       break;
     case ChannelTimeout:
       errorMsg = "Channel timeout: cannot send/recv";
@@ -2504,14 +2381,17 @@ bool MessageChannel::MaybeHandleError(Result code, const Message& aMsg,
 }
 
 void MessageChannel::OnChannelErrorFromLink() {
-  AssertLinkThread();
   mMonitor->AssertCurrentThreadOwns();
 
   IPC_LOG("OnChannelErrorFromLink");
 
-  if (InterruptStackDepth() > 0) NotifyWorkerThread();
+  if (InterruptStackDepth() > 0) {
+    NotifyWorkerThread();
+  }
 
-  if (AwaitingSyncReply() || AwaitingIncomingMessage()) NotifyWorkerThread();
+  if (AwaitingSyncReply()) {
+    NotifyWorkerThread();
+  }
 
   if (ChannelClosing != mChannelState) {
     if (mAbortOnError) {
@@ -2533,15 +2413,17 @@ void MessageChannel::OnChannelErrorFromLink() {
   PostErrorNotifyTask();
 }
 
-void MessageChannel::NotifyMaybeChannelError() {
-  mMonitor->AssertNotCurrentThreadOwns();
+void MessageChannel::NotifyMaybeChannelError(Maybe<MonitorAutoLock>& aLock) {
+  AssertWorkerThread();
+  mMonitor->AssertCurrentThreadOwns();
+  MOZ_RELEASE_ASSERT(aLock.isSome());
 
   // TODO sort out Close() on this side racing with Close() on the other side
   if (ChannelClosing == mChannelState) {
     // the channel closed, but we received a "Goodbye" message warning us
     // about it. no worries
     mChannelState = ChannelClosed;
-    NotifyChannelClosed();
+    NotifyChannelClosed(aLock);
     return;
   }
 
@@ -2557,9 +2439,11 @@ void MessageChannel::NotifyMaybeChannelError() {
   }
   mNotifiedChannelDone = true;
 
-  // After this, the channel may be deleted.  Based on the premise that
-  // mListener owns this channel, any calls back to this class that may
-  // work with mListener should still work on living objects.
+  // Let our listener know that the channel errored. This may cause the
+  // channel to be deleted. Release our caller's `MonitorAutoLock` before
+  // invoking the listener, as this may call back into MessageChannel, and/or
+  // cause the channel to be destroyed.
+  aLock.reset();
   mListener->OnChannelError();
 }
 
@@ -2567,43 +2451,40 @@ void MessageChannel::OnNotifyMaybeChannelError() {
   AssertWorkerThread();
   mMonitor->AssertNotCurrentThreadOwns();
 
+  // This lock guard may be reset by `NotifyMaybeChannelError` before invoking
+  // listener callbacks which may destroy this `MessageChannel`.
+  //
+  // Acquiring the lock here also allows us to ensure that
+  // `OnChannelErrorFromLink` has finished running before this task is allowed
+  // to continue.
+  Maybe<MonitorAutoLock> lock(std::in_place, *mMonitor);
+
   mChannelErrorTask = nullptr;
 
-  // OnChannelError holds mMonitor when it posts this task and this
-  // task cannot be allowed to run until OnChannelError has
-  // exited. We enforce that order by grabbing the mutex here which
-  // should only continue once OnChannelError has completed.
-  {
-    MonitorAutoLock lock(*mMonitor);
-    // nothing to do here
-  }
-
   if (IsOnCxxStack()) {
-    mChannelErrorTask = NewNonOwningCancelableRunnableMethod(
-        "ipc::MessageChannel::OnNotifyMaybeChannelError", this,
-        &MessageChannel::OnNotifyMaybeChannelError);
-    RefPtr<Runnable> task = mChannelErrorTask;
-    // This used to post a 10ms delayed patch; however not all
+    // This used to post a 10ms delayed task; however not all
     // nsISerialEventTarget implementations support delayed dispatch.
     // The delay being completely arbitrary, we may not as well have any.
-    mWorkerThread->Dispatch(task.forget());
+    PostErrorNotifyTask();
     return;
   }
 
-  NotifyMaybeChannelError();
+  // This call may destroy `this`.
+  NotifyMaybeChannelError(lock);
 }
 
 void MessageChannel::PostErrorNotifyTask() {
   mMonitor->AssertCurrentThreadOwns();
 
-  if (mChannelErrorTask) return;
+  if (mChannelErrorTask) {
+    return;
+  }
 
   // This must be the last code that runs on this thread!
   mChannelErrorTask = NewNonOwningCancelableRunnableMethod(
       "ipc::MessageChannel::OnNotifyMaybeChannelError", this,
       &MessageChannel::OnNotifyMaybeChannelError);
-  RefPtr<Runnable> task = mChannelErrorTask;
-  mWorkerThread->Dispatch(task.forget());
+  mWorkerThread->Dispatch(do_AddRef(mChannelErrorTask));
 }
 
 // Special async message.
@@ -2655,69 +2536,53 @@ void MessageChannel::NotifyImpendingShutdown() {
       MakeUnique<Message>(MSG_ROUTING_NONE, IMPENDING_SHUTDOWN_MESSAGE_TYPE);
   MonitorAutoLock lock(*mMonitor);
   if (Connected()) {
-    MOZ_DIAGNOSTIC_ASSERT(mIsCrossProcess);
     mLink->SendMessage(std::move(msg));
   }
 }
 
 void MessageChannel::Close() {
   AssertWorkerThread();
+  mMonitor->AssertNotCurrentThreadOwns();
 
-  {
-    // We don't use MonitorAutoLock here as that causes some sort of
-    // deadlock in the error/timeout-with-a-listener state below when
-    // compiling an optimized msvc build.
-    mMonitor->Lock();
+  // This lock guard may be reset by `Notify{ChannelClosed,MaybeChannelError}`
+  // before invoking listener callbacks which may destroy this `MessageChannel`.
+  Maybe<MonitorAutoLock> lock(std::in_place, *mMonitor);
 
-    // Instead just use a ScopeExit to manage the unlock.
-    RefPtr<RefCountedMonitor> monitor(mMonitor);
-    auto exit = MakeScopeExit([m = std::move(monitor)]() { m->Unlock(); });
-
-    if (ChannelError == mChannelState || ChannelTimeout == mChannelState) {
+  switch (mChannelState) {
+    case ChannelError:
+    case ChannelTimeout:
       // See bug 538586: if the listener gets deleted while the
       // IO thread's NotifyChannelError event is still enqueued
       // and subsequently deletes us, then the error event will
       // also be deleted and the listener will never be notified
       // of the channel error.
-      if (mListener) {
-        exit.release();  // Explicitly unlocking, clear scope exit.
-        mMonitor->Unlock();
-        NotifyMaybeChannelError();
-      }
+      NotifyMaybeChannelError(lock);
       return;
-    }
-
-    if (ChannelOpening == mChannelState) {
-      // SynchronouslyClose() waits for an ack from the other side, so
-      // the opening sequence should complete before this returns.
-      SynchronouslyClose();
-      mChannelState = ChannelError;
-      NotifyMaybeChannelError();
-      return;
-    }
-
-    if (ChannelClosed == mChannelState) {
+    case ChannelClosed:
       // Slightly unexpected but harmless; ignore.  See bug 1554244.
       return;
-    }
 
-    // Notify the other side that we're about to close our socket. If we've
-    // already received a Goodbye from the other side (and our state is
-    // ChannelClosing), there's no reason to send one.
-    if (ChannelConnected == mChannelState) {
-      mLink->SendMessage(MakeUnique<GoodbyeMessage>());
-    }
-    SynchronouslyClose();
+    default:
+      // Notify the other side that we're about to close our socket. If we've
+      // already received a Goodbye from the other side (and our state is
+      // ChannelClosing), there's no reason to send one.
+      if (ChannelConnected == mChannelState) {
+        mLink->SendMessage(MakeUnique<GoodbyeMessage>());
+      }
+      SynchronouslyClose();
+      NotifyChannelClosed(lock);
+      return;
   }
-
-  NotifyChannelClosed();
 }
 
-void MessageChannel::NotifyChannelClosed() {
-  mMonitor->AssertNotCurrentThreadOwns();
+void MessageChannel::NotifyChannelClosed(Maybe<MonitorAutoLock>& aLock) {
+  AssertWorkerThread();
+  mMonitor->AssertCurrentThreadOwns();
+  MOZ_RELEASE_ASSERT(aLock.isSome());
 
-  if (ChannelClosed != mChannelState)
+  if (ChannelClosed != mChannelState) {
     MOZ_CRASH("channel should have been closed!");
+  }
 
   Clear();
 
@@ -2728,9 +2593,11 @@ void MessageChannel::NotifyChannelClosed() {
   }
   mNotifiedChannelDone = true;
 
-  // OK, the IO thread just closed the channel normally.  Let the
-  // listener know about it. After this point the channel may be
-  // deleted.
+  // Let our listener know that the channel was closed. This may cause the
+  // channel to be deleted. Release our caller's `MonitorAutoLock` before
+  // invoking the listener, as this may call back into MessageChannel, and/or
+  // cause the channel to be destroyed.
+  aLock.reset();
   mListener->OnChannelClose();
 }
 
@@ -2784,26 +2651,23 @@ void MessageChannel::DumpInterruptStack(const char* const pfx) const {
 
 void MessageChannel::AddProfilerMarker(const IPC::Message& aMessage,
                                        MessageDirection aDirection) {
-#ifdef MOZ_GECKO_PROFILER
+  mMonitor->AssertCurrentThreadOwns();
+
   if (profiler_feature_active(ProfilerFeature::IPCMessages)) {
-    // If mPeerPid is -1, messages are being sent to the current process.
-    int32_t pid = mPeerPid == -1 ? base::GetCurrentProcId() : mPeerPid;
-    PROFILER_ADD_MARKER_WITH_PAYLOAD(
-        "IPC", IPC, IPCMarkerPayload,
-        (pid, aMessage.seqno(), aMessage.type(), mSide, aDirection,
-         MessagePhase::Endpoint, aMessage.is_sync(), TimeStamp::NowUnfuzzed()));
+    int32_t pid = mListener->OtherPidMaybeInvalid();
+    // Only record markers for IPCs with a valid pid.
+    // And if one of the profiler mutexes is locked on this thread, don't record
+    // markers, because we don't want to expose profiler IPCs due to the
+    // profiler itself, and also to avoid possible re-entrancy issues.
+    if (pid != base::kInvalidProcessId &&
+        !profiler_is_locked_on_current_thread()) {
+      // The current timestamp must be given to the `IPCMarker` payload.
+      [[maybe_unused]] const TimeStamp now = TimeStamp::Now();
+      PROFILER_MARKER("IPC", IPC, MarkerTiming::InstantAt(now), IPCMarker, now,
+                      now, pid, aMessage.seqno(), aMessage.type(), mSide,
+                      aDirection, MessagePhase::Endpoint, aMessage.is_sync());
+    }
   }
-#endif
-}
-
-int32_t MessageChannel::GetTopmostMessageRoutingId() const {
-  AssertWorkerThread();
-
-  if (mCxxStackFrames.empty()) {
-    return MSG_ROUTING_NONE;
-  }
-  const InterruptFrame& frame = mCxxStackFrames.back();
-  return frame.GetRoutingId();
 }
 
 void MessageChannel::EndTimeout() {
@@ -2817,6 +2681,8 @@ void MessageChannel::EndTimeout() {
 }
 
 void MessageChannel::RepostAllMessages() {
+  mMonitor->AssertCurrentThreadOwns();
+
   bool needRepost = false;
   for (MessageTask* task : mPending) {
     if (!task->IsScheduled()) {
@@ -2909,11 +2775,6 @@ void MessageChannel::CancelTransaction(int transaction) {
   AssertMaybeDeferredCountCorrect();
 }
 
-bool MessageChannel::IsInTransaction() const {
-  MonitorAutoLock lock(*mMonitor);
-  return !!mTransactionStack;
-}
-
 void MessageChannel::CancelCurrentTransaction() {
   MonitorAutoLock lock(*mMonitor);
   if (DispatchingSyncMessageNestedLevel() >= IPC::Message::NESTED_INSIDE_SYNC) {
@@ -2935,10 +2796,30 @@ void MessageChannel::CancelCurrentTransaction() {
 }
 
 void CancelCPOWs() {
+  MOZ_ASSERT(NS_IsMainThread());
+
   if (gParentProcessBlocker) {
     mozilla::Telemetry::Accumulate(mozilla::Telemetry::IPC_TRANSACTION_CANCEL,
                                    true);
     gParentProcessBlocker->CancelCurrentTransaction();
+  }
+}
+
+bool MessageChannel::IsCrossProcess() const {
+  mMonitor->AssertCurrentThreadOwns();
+  return mIsCrossProcess;
+}
+
+void MessageChannel::SetIsCrossProcess(bool aIsCrossProcess) {
+  mMonitor->AssertCurrentThreadOwns();
+  if (aIsCrossProcess == mIsCrossProcess) {
+    return;
+  }
+  mIsCrossProcess = aIsCrossProcess;
+  if (mIsCrossProcess) {
+    ChannelCountReporter::Increment(mName);
+  } else {
+    ChannelCountReporter::Decrement(mName);
   }
 }
 

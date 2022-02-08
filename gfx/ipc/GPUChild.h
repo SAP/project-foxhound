@@ -40,6 +40,7 @@ class GPUChild final : public ipc::CrashReporterHelper<GeckoProcessType_GPU>,
 
   // PGPUChild overrides.
   mozilla::ipc::IPCResult RecvInitComplete(const GPUDeviceData& aData);
+  mozilla::ipc::IPCResult RecvDeclareStable();
   mozilla::ipc::IPCResult RecvReportCheckerboard(const uint32_t& aSeverity,
                                                  const nsCString& aLog);
   mozilla::ipc::IPCResult RecvCreateVRProcess();
@@ -62,13 +63,16 @@ class GPUChild final : public ipc::CrashReporterHelper<GeckoProcessType_GPU>,
   mozilla::ipc::IPCResult RecvGraphicsError(const nsCString& aError);
   mozilla::ipc::IPCResult RecvNotifyUiObservers(const nsCString& aTopic);
   mozilla::ipc::IPCResult RecvNotifyDeviceReset(const GPUDeviceData& aData);
+  mozilla::ipc::IPCResult RecvFlushMemory(const nsString& aReason);
   mozilla::ipc::IPCResult RecvAddMemoryReport(const MemoryReport& aReport);
-  mozilla::ipc::IPCResult RecvFinishMemoryReport(const uint32_t& aGeneration);
   mozilla::ipc::IPCResult RecvUpdateFeature(const Feature& aFeature,
                                             const FeatureFailure& aChange);
   mozilla::ipc::IPCResult RecvUsedFallback(const Fallback& aFallback,
                                            const nsCString& aMessage);
   mozilla::ipc::IPCResult RecvBHRThreadHang(const HangDetails& aDetails);
+  mozilla::ipc::IPCResult RecvUpdateMediaCodecsSupported(
+      const PDMFactory::MediaCodecsSupported& aSupported);
+  mozilla::ipc::IPCResult RecvFOGData(ByteBuf&& aBuf);
 
   bool SendRequestMemoryReport(const uint32_t& aGeneration,
                                const bool& aAnonymize,

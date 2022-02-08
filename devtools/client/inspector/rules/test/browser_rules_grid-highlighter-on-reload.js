@@ -26,10 +26,9 @@ add_task(async function() {
   await checkGridHighlighter();
 
   info("Close the toolbox before reloading the tab");
-  const target = await TargetFactory.forTab(gBrowser.selectedTab);
-  await gDevTools.closeToolbox(target);
+  await gDevTools.closeToolboxForTab(gBrowser.selectedTab);
 
-  await refreshTab();
+  await reloadBrowser();
 
   info(
     "Check that the grid highlighter can be displayed after reloading the page"
@@ -39,14 +38,16 @@ add_task(async function() {
 
 async function checkGridHighlighter() {
   const { inspector, view } = await openRuleView();
-  const { highlighters } = view;
+  const { highlighters } = inspector;
+  const HIGHLIGHTER_TYPE = inspector.highlighters.TYPES.GRID;
+  const { waitForHighlighterTypeShown } = getHighlighterTestHelpers(inspector);
 
   await selectNode("#grid", inspector);
   const container = getRuleViewProperty(view, "#grid", "display").valueSpan;
-  const gridToggle = container.querySelector(".ruleview-grid");
+  const gridToggle = container.querySelector(".js-toggle-grid-highlighter");
 
   info("Toggling ON the CSS grid highlighter from the rule-view.");
-  const onHighlighterShown = highlighters.once("grid-highlighter-shown");
+  const onHighlighterShown = waitForHighlighterTypeShown(HIGHLIGHTER_TYPE);
   gridToggle.click();
   await onHighlighterShown;
 

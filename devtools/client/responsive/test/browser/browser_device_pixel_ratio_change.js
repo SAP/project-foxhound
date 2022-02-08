@@ -79,14 +79,15 @@ async function testChangingDevice(ui) {
 async function testResetWhenResizingViewport(ui) {
   info("Test reset when resizing the viewport");
 
-  const deviceRemoved = once(ui, "device-association-removed");
   await testViewportResize(
     ui,
     ".viewport-vertical-resize-handle",
     [-10, -10],
-    [0, -10]
+    [0, -10],
+    {
+      hasDevice: true,
+    }
   );
-  await deviceRemoved;
 
   const dppx = await waitForDevicePixelRatio(ui, DEFAULT_DPPX);
   is(dppx, DEFAULT_DPPX, "Content has expected devicePixelRatio");
@@ -132,29 +133,4 @@ function testViewportDevicePixelRatioSelect(ui, expected) {
       expected.disabled ? "disabled" : "enabled"
     }.`
   );
-}
-
-function waitForDevicePixelRatio(ui, expected) {
-  return SpecialPowers.spawn(ui.getViewportBrowser(), [{ expected }], function(
-    args
-  ) {
-    const initial = content.devicePixelRatio;
-    info(
-      `Listening for pixel ratio change ` +
-        `(current: ${initial}, expected: ${args.expected})`
-    );
-    return new Promise(resolve => {
-      const mql = content.matchMedia(`(resolution: ${args.expected}dppx)`);
-      if (mql.matches) {
-        info(`Ratio already changed to ${args.expected}dppx`);
-        resolve(content.devicePixelRatio);
-        return;
-      }
-      mql.addListener(function listener() {
-        info(`Ratio changed to ${args.expected}dppx`);
-        mql.removeListener(listener);
-        resolve(content.devicePixelRatio);
-      });
-    });
-  });
 }

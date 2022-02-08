@@ -34,7 +34,7 @@ loader.lazyRequireGetter(
 loader.lazyRequireGetter(
   this,
   "WatcherActor",
-  "devtools/server/actors/descriptors/watcher/watcher",
+  "devtools/server/actors/watcher",
   true
 );
 
@@ -45,40 +45,55 @@ const ProcessDescriptorActor = ActorClassWithSpec(processDescriptorSpec, {
     }
     Actor.prototype.initialize.call(this, connection);
     this.id = options.id;
-    this._browsingContextTargetActor = null;
+    this._windowGlobalTargetActor = null;
     this.isParent = options.parent;
     this.destroy = this.destroy.bind(this);
   },
 
   get browsingContextID() {
-    if (this._browsingContextTargetActor) {
-      return this._browsingContextTargetActor.docShell.browsingContext.id;
+    if (this._windowGlobalTargetActor) {
+      return this._windowGlobalTargetActor.docShell.browsingContext.id;
     }
     return null;
   },
 
-  _parentProcessConnect() {
+  get isWindowlessParent() {
+    return this.isParent && this.isXpcshell;
+  },
+
+  get isXpcshell() {
     const env = Cc["@mozilla.org/process/environment;1"].getService(
       Ci.nsIEnvironment
     );
-    const isXpcshell = env.exists("XPCSHELL_TEST_PROFILE_DIR");
+    return env.exists("XPCSHELL_TEST_PROFILE_DIR");
+  },
+
+  _parentProcessConnect() {
     let targetActor;
-    if (isXpcshell) {
+    if (this.isXpcshell) {
       // Check if we are running on xpcshell.
       // When running on xpcshell, there is no valid browsing context to attach to
       // and so ParentProcessTargetActor doesn't make sense as it inherits from
-      // BrowsingContextTargetActor. So instead use ContentProcessTargetActor, which
+      // WindowGlobalTargetActor. So instead use ContentProcessTargetActor, which
       // matches xpcshell needs.
-      targetActor = new ContentProcessTargetActor(this.conn);
+      targetActor = new ContentProcessTargetActor(this.conn, {
+        isXpcShellTarget: true,
+      });
     } else {
       // Create the target actor for the parent process, which is in the same process
       // as this target. Because we are in the same process, we have a true actor that
       // should be managed by the ProcessDescriptorActor.
-      targetActor = new ParentProcessTargetActor(this.conn);
+      targetActor = new ParentProcessTargetActor(this.conn, {
+        // This target actor is special and will stay alive as long
+        // as the toolbox/client is alive. It is the original top level target for
+        // the BrowserToolbox and isTopLevelTarget should always be true here.
+        // (It isn't the typical behavior of WindowGlobalTargetActor's base class)
+        isTopLevelTarget: true,
+      });
       // this is a special field that only parent process with a browsing context
       // have, as they are the only processes at the moment that have child
       // browsing contexts
-      this._browsingContextTargetActor = targetActor;
+      this._windowGlobalTargetActor = targetActor;
     }
     this.manage(targetActor);
     // to be consistent with the return value of the _childProcessConnect, we are returning
@@ -142,7 +157,9 @@ const ProcessDescriptorActor = ActorClassWithSpec(processDescriptorSpec, {
    */
   getWatcher() {
     if (!this.watcher) {
-      this.watcher = new WatcherActor(this.conn);
+      this.watcher = new WatcherActor(this.conn, {
+        type: "all",
+      });
       this.manage(this.watcher);
     }
     return this.watcher;
@@ -153,15 +170,36 @@ const ProcessDescriptorActor = ActorClassWithSpec(processDescriptorSpec, {
       actor: this.actorID,
       id: this.id,
       isParent: this.isParent,
+      isWindowlessParent: this.isWindowlessParent,
       traits: {
-        // FF77+ supports the Watcher actor
+        // Supports the Watcher actor. Can be removed as part of Bug 1680280.
         watcher: true,
+        // ParentProcessTargetActor can be reloaded.
+        supportsReloadDescriptor: this.isParent && !this.isWindowlessParent,
       },
     };
   },
 
+  async reloadDescriptor({ bypassCache }) {
+    if (!this.isParent || this.isWindowlessParent) {
+      throw new Error(
+        "reloadDescriptor is only available for parent process descriptors linked to a window"
+      );
+    }
+
+    // For parent process debugging, we only reload the current top level
+    // browser window.
+    this._windowGlobalTargetActor.browsingContext.reload(
+      bypassCache
+        ? Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CACHE
+        : Ci.nsIWebNavigation.LOAD_FLAGS_NONE
+    );
+  },
+
   destroy() {
-    this._browsingContextTargetActor = null;
+    this.emit("descriptor-destroyed");
+
+    this._windowGlobalTargetActor = null;
     Actor.prototype.destroy.call(this);
   },
 });

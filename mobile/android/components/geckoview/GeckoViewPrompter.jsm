@@ -10,11 +10,19 @@ const { GeckoViewUtils } = ChromeUtils.import(
 );
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
-const { debug, warn } = GeckoViewUtils.initLogging("GeckoViewPrompter"); // eslint-disable-line no-unused-vars
+const { debug, warn } = GeckoViewUtils.initLogging("GeckoViewPrompter");
 
 class GeckoViewPrompter {
   constructor(aParent) {
+    this.id = Services.uuid
+      .generateUUID()
+      .toString()
+      .slice(1, -1); // Discard surrounding braces
+
     if (aParent) {
       if (aParent instanceof Window) {
         this._domWin = aParent;
@@ -36,6 +44,8 @@ class GeckoViewPrompter {
         this._domWin,
       ] = GeckoViewUtils.getActiveDispatcherAndWindow();
     }
+
+    this._innerWindowId = this._domWin?.browsingContext.currentWindowContext.innerWindowId;
   }
 
   get domWin() {
@@ -86,6 +96,7 @@ class GeckoViewPrompter {
 
       // Spin this thread while we wait for a result
       Services.tm.spinEventLoopUntil(
+        "GeckoViewPrompter.jsm:showPrompt",
         () => this._domWin.closed || result !== undefined
       );
     } finally {
@@ -94,13 +105,39 @@ class GeckoViewPrompter {
     return result;
   }
 
+  checkInnerWindow() {
+    // Checks that the innerWindow where this prompt was created still matches
+    // the current innerWindow.
+    // This checks will fail if the page navigates away, making this prompt
+    // obsolete.
+    return (
+      this._innerWindowId ===
+      this._domWin.browsingContext.currentWindowContext.innerWindowId
+    );
+  }
+
+  asyncShowPromptPromise(aMsg) {
+    return new Promise(resolve => {
+      this.asyncShowPrompt(aMsg, resolve);
+    });
+  }
+
+  dismiss() {
+    this._dispatcher.dispatch("GeckoView:Prompt:Dismiss", { id: this.id });
+  }
+
   asyncShowPrompt(aMsg, aCallback) {
     let handled = false;
     const onResponse = response => {
       if (handled) {
         return;
       }
-      aCallback(response);
+      if (!this.checkInnerWindow()) {
+        // Page has navigated away, let's dismiss the prompt
+        aCallback(null);
+      } else {
+        aCallback(response);
+      }
       // This callback object is tied to the Java garbage collector because
       // it is invoked from Java. Manually release the target callback
       // here; otherwise we may hold onto resources for too long, because
@@ -111,11 +148,12 @@ class GeckoViewPrompter {
       handled = true;
     };
 
-    if (!this._dispatcher) {
+    if (!this._dispatcher || !this.checkInnerWindow()) {
       onResponse(null);
       return;
     }
 
+    aMsg.id = this.id;
     this._dispatcher.dispatch("GeckoView:Prompt", aMsg, {
       onSuccess: onResponse,
       onError: error => {

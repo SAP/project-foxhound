@@ -12,8 +12,7 @@
 #include "mozilla/Services.h"
 #include "nsIObserverService.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 static const uint32_t INVALID_PORT = 0xffffffff;
 static uint32_t gId = 0;
@@ -604,13 +603,11 @@ void AudioNode::SetPassThrough(bool aPassThrough) {
   }
 }
 
-void AudioNode::CreateAudioParam(RefPtr<AudioParam>& aParam, uint32_t aIndex,
-                                 const char16_t* aName, float aDefaultValue,
-                                 float aMinValue, float aMaxValue) {
-  aParam =
-      new AudioParam(this, aIndex, aName, aDefaultValue, aMinValue, aMaxValue);
-  mParams.AppendElement(aParam);
+AudioParam* AudioNode::CreateAudioParam(uint32_t aIndex, const nsAString& aName,
+                                        float aDefaultValue, float aMinValue,
+                                        float aMaxValue) {
+  return *mParams.AppendElement(
+      new AudioParam(this, aIndex, aName, aDefaultValue, aMinValue, aMaxValue));
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -7,7 +7,7 @@
 //! value and control stacks during the translation of a single function.
 
 use crate::environ::{FuncEnvironment, GlobalVariable, WasmResult};
-use crate::translation_utils::{FuncIndex, GlobalIndex, MemoryIndex, SignatureIndex, TableIndex};
+use crate::translation_utils::{FuncIndex, GlobalIndex, MemoryIndex, TableIndex, TypeIndex};
 use crate::{HashMap, Occupied, Vacant};
 use cranelift_codegen::ir::{self, Block, Inst, Value};
 use std::vec::Vec;
@@ -128,7 +128,9 @@ impl ControlStackFrame {
             Self::Loop { header, .. } => header,
         }
     }
-    pub fn original_stack_size(&self) -> usize {
+    /// Private helper. Use `truncate_value_stack_to_else_params()` or
+    /// `truncate_value_stack_to_original_size()` to restore value-stack state.
+    fn original_stack_size(&self) -> usize {
         match *self {
             Self::If {
                 original_stack_size,
@@ -178,6 +180,33 @@ impl ControlStackFrame {
             Self::Loop { .. } => {}
         }
     }
+
+    /// Pop values from the value stack so that it is left at the
+    /// input-parameters to an else-block.
+    pub fn truncate_value_stack_to_else_params(&self, stack: &mut Vec<Value>) {
+        debug_assert!(matches!(self, &ControlStackFrame::If { .. }));
+        stack.truncate(self.original_stack_size());
+    }
+
+    /// Pop values from the value stack so that it is left at the state it was
+    /// before this control-flow frame.
+    pub fn truncate_value_stack_to_original_size(&self, stack: &mut Vec<Value>) {
+        // The "If" frame pushes its parameters twice, so they're available to the else block
+        // (see also `FuncTranslationState::push_if`).
+        // Yet, the original_stack_size member accounts for them only once, so that the else
+        // block can see the same number of parameters as the consequent block. As a matter of
+        // fact, we need to substract an extra number of parameter values for if blocks.
+        let num_duplicated_params = match self {
+            &ControlStackFrame::If {
+                num_param_values, ..
+            } => {
+                debug_assert!(num_param_values <= self.original_stack_size());
+                num_param_values
+            }
+            _ => 0,
+        };
+        stack.truncate(self.original_stack_size() - num_duplicated_params);
+    }
 }
 
 /// Contains information passed along during a function's translation and that records:
@@ -207,7 +236,7 @@ pub struct FuncTranslationState {
     // Map of indirect call signatures that have been created by
     // `FuncEnvironment::make_indirect_sig()`.
     // Stores both the signature reference and the number of WebAssembly arguments
-    signatures: HashMap<SignatureIndex, (ir::SigRef, usize)>,
+    signatures: HashMap<TypeIndex, (ir::SigRef, usize)>,
 
     // Imported and local functions that have been created by
     // `FuncEnvironment::make_direct_func()`.
@@ -469,7 +498,7 @@ impl FuncTranslationState {
         index: u32,
         environ: &mut FE,
     ) -> WasmResult<(ir::SigRef, usize)> {
-        let index = SignatureIndex::from_u32(index);
+        let index = TypeIndex::from_u32(index);
         match self.signatures.entry(index) {
             Occupied(entry) => Ok(*entry.get()),
             Vacant(entry) => {

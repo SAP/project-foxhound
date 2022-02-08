@@ -6,8 +6,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1303957
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 1303957</title>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="apz_test_native_event_utils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -23,7 +23,7 @@ function runTests() {
   let utils = SpecialPowers.getDOMWindowUtils(window);
   utils.advanceTimeAndRefresh(0);
 
-  SimpleTest.executeSoon(() => {
+  SimpleTest.executeSoon(async () => {
     // Flush all pending mouse events before synthesizing events.
 
     target0.addEventListener("pointermove", (ev) => {
@@ -36,6 +36,8 @@ function runTests() {
 
       for (let i = 0; i < length; ++i) {
         let coalescedEvent = ev.getCoalescedEvents()[i];
+        isnot(coalescedEvent.timeStamp, 0, "getCoalescedEvents()[" + i + "].timeStamp");
+        is(coalescedEvent.type, "pointermove", "getCoalescedEvents()[" + i + "].type");
         is(coalescedEvent.pointerId, ev.pointerId, "getCoalescedEvents()[" + i + "].pointerId");
         is(coalescedEvent.pointerType, ev.pointerType, "getCoalescedEvents()[" + i + "].pointerType");
         is(coalescedEvent.isPrimary, ev.isPrimary, "getCoalescedEvents()[" + i + "].isPrimary");
@@ -69,21 +71,16 @@ function runTests() {
       SimpleTest.finish();
     }, { once: true });
 
-    synthesizeNativeMouseEvent(target0, 5, 5, nativeMouseMoveEventMsg(), () => {
-      synthesizeNativeMouseEvent(target0, 10, 10, nativeMouseMoveEventMsg(), () => {
-        synthesizeNativeMouseEvent(target0, 15, 15, nativeMouseMoveEventMsg(), () => {
-          synthesizeNativeMouseEvent(target0, 20, 20, nativeMouseMoveEventMsg(), () => {
-            synthesizeNativeClick(target0, 20, 20);
-          });
-        });
-      });
-    });
+    await promiseNativeMouseEvent({ type: "mousemove", target: target0, offsetX: 5, offsetY: 5 });
+    await promiseNativeMouseEvent({ type: "mousemove", target: target0, offsetX: 10, offsetY: 10 });
+    await promiseNativeMouseEvent({ type: "mousemove", target: target0, offsetX: 15, offsetY: 15 });
+    await promiseNativeMouseEvent({ type: "mousemove", target: target0, offsetX: 20, offsetY: 20 });
+    synthesizeNativeMouseEvent({ type: "click", target: target0, offsetX: 20, offsetY: 20 });
   });
 }
 
 SimpleTest.waitForFocus(() => {
-  SpecialPowers.pushPrefEnv({"set": [["dom.w3c_pointer_events.enabled", true],
-                                     ["dom.event.coalesce_mouse_move", true]]}, runTests);
+  SpecialPowers.pushPrefEnv({"set": [["dom.events.coalesce.mousemove", true]]}, runTests);
 });
 
 </script>

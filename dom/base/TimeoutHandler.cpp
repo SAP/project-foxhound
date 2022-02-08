@@ -7,10 +7,10 @@
 #include "TimeoutHandler.h"
 
 #include "mozilla/Assertions.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "nsJSUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 //-----------------------------------------------------------------------------
 // TimeoutHandler
@@ -175,5 +175,4 @@ void CallbackTimeoutHandler::GetDescription(nsACString& aOutString) {
   mFunction->GetDescription(aOutString);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

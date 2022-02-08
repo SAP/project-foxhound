@@ -3,34 +3,43 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/ContentChild.h"
 #include "nsStyleConsts.h"
 #include "nsXULAppAPI.h"
 #include "nsLookAndFeel.h"
+#include "nsNativeBasicTheme.h"
 #include "gfxFont.h"
 #include "gfxFontConstants.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/gfx/2D.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/java/GeckoAppShellWrappers.h"
 #include "mozilla/java/GeckoRuntimeWrappers.h"
 #include "mozilla/java/GeckoSystemStateListenerWrappers.h"
+#include "ThemeColors.h"
 
 using namespace mozilla;
-using mozilla::dom::ContentChild;
+using namespace mozilla::widget;
 
 static const char16_t UNICODE_BULLET = 0x2022;
 
-nsLookAndFeel::nsLookAndFeel() : nsXPLookAndFeel() {}
+static void AccentColorPrefChanged(const char*, void*) {
+  LookAndFeel::NotifyChangedAllWindows(widget::ThemeChangeKind::Style);
+}
 
-nsLookAndFeel::~nsLookAndFeel() {}
+nsLookAndFeel::nsLookAndFeel() {
+  Preferences::RegisterCallback(
+      AccentColorPrefChanged,
+      nsDependentCString(
+          StaticPrefs::GetPrefName_widget_non_native_theme_use_theme_accent()));
+}
 
-#define BG_PRELIGHT_COLOR NS_RGB(0xee, 0xee, 0xee)
-#define FG_PRELIGHT_COLOR NS_RGB(0x77, 0x77, 0x77)
-#define BLACK_COLOR NS_RGB(0x00, 0x00, 0x00)
-#define DARK_GRAY_COLOR NS_RGB(0x40, 0x40, 0x40)
-#define GRAY_COLOR NS_RGB(0x80, 0x80, 0x80)
-#define LIGHT_GRAY_COLOR NS_RGB(0xa0, 0xa0, 0xa0)
-#define RED_COLOR NS_RGB(0xff, 0x00, 0x00)
+nsLookAndFeel::~nsLookAndFeel() {
+  Preferences::UnregisterCallback(
+      AccentColorPrefChanged,
+      nsDependentCString(
+          StaticPrefs::GetPrefName_widget_non_native_theme_use_theme_accent()));
+}
 
 nsresult nsLookAndFeel::GetSystemColors() {
   if (!jni::IsAvailable()) {
@@ -71,19 +80,14 @@ void nsLookAndFeel::NativeInit() {
   RecordTelemetry();
 }
 
-/* virtual */
 void nsLookAndFeel::RefreshImpl() {
-  nsXPLookAndFeel::RefreshImpl();
-
   mInitializedSystemColors = false;
   mInitializedShowPassword = false;
-  mPrefersReducedMotionCached = false;
-  mSystemUsesDarkThemeCached = false;
+  nsXPLookAndFeel::RefreshImpl();
 }
 
-nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
-  nsresult rv = NS_OK;
-
+nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aColorScheme,
+                                       nscolor& aColor) {
   EnsureInitSystemColors();
   if (!mInitializedSystemColors) {
     // Failure to initialize colors is an error condition. Return black.
@@ -91,60 +95,61 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
     return NS_ERROR_FAILURE;
   }
 
+  // Highlight/Highlighttext have native equivalents that we can map to (on
+  // Android) which should work fine, regardless of the color-scheme.
+  switch (aID) {
+    case ColorID::Highlight: {
+      // Matched to action_accent in java codebase. This works fine with both
+      // light and dark color scheme.
+      nscolor accent =
+          Color(ColorID::MozAccentColor, aColorScheme, UseStandins::No);
+      aColor =
+          NS_RGBA(NS_GET_R(accent), NS_GET_G(accent), NS_GET_B(accent), 78);
+      return NS_OK;
+    }
+    case ColorID::Highlighttext:
+      // Selection background is transparent enough that any foreground color
+      // will do.
+      aColor = NS_SAME_AS_FOREGROUND_COLOR;
+      return NS_OK;
+    default:
+      break;
+  }
+
+  if (aColorScheme == ColorScheme::Dark) {
+    if (auto darkColor = GenericDarkColor(aID)) {
+      aColor = *darkColor;
+      return NS_OK;
+    }
+  }
+
   // XXX we'll want to use context.obtainStyledAttributes on the java side to
-  // get all of these; see TextView.java for a good exmaple.
+  // get all of these; see TextView.java for a good example.
+  auto UseNativeAccent = [this] {
+    return mSystemColors.colorAccent &&
+           StaticPrefs::widget_non_native_theme_use_theme_accent();
+  };
 
   switch (aID) {
       // These colors don't seem to be used for anything anymore in Mozilla
-      // (except here at least TextSelectBackground and TextSelectForeground)
       // The CSS2 colors below are used.
-    case ColorID::WindowBackground:
-      aColor = NS_RGB(0xFF, 0xFF, 0xFF);
-      break;
-    case ColorID::WindowForeground:
-      aColor = mSystemColors.textColorPrimary;
-      break;
-    case ColorID::WidgetBackground:
-      aColor = mSystemColors.colorBackground;
-      break;
-    case ColorID::WidgetForeground:
+    case ColorID::MozMenubartext:
       aColor = mSystemColors.colorForeground;
       break;
-    case ColorID::WidgetSelectBackground:
-      aColor = mSystemColors.textColorHighlight;
+
+    case ColorID::ThemedScrollbarThumbInactive:
+    case ColorID::ThemedScrollbarThumb:
+      // We don't need to care about the Active and Hover colors because Android
+      // scrollbars can't be hovered (they always have pointer-events: none).
+      aColor = NS_RGBA(119, 119, 119, 102);
       break;
-    case ColorID::WidgetSelectForeground:
-      aColor = mSystemColors.textColorPrimaryInverse;
-      break;
-    case ColorID::Widget3DHighlight:
-      aColor = LIGHT_GRAY_COLOR;
-      break;
-    case ColorID::Widget3DShadow:
-      aColor = DARK_GRAY_COLOR;
-      break;
-    case ColorID::TextBackground:
-      // not used?
-      aColor = mSystemColors.colorBackground;
-      break;
-    case ColorID::TextForeground:
-      // not used?
-      aColor = mSystemColors.textColorPrimary;
-      break;
-    case ColorID::TextSelectBackground:
-      /* matched to action_accent in java codebase */
-      aColor = NS_RGBA(10, 132, 255, 153);
-      break;
-    case ColorID::TextSelectForeground:
-      aColor = NS_RGB(0, 0, 0);
-      break;
+
     case ColorID::IMESelectedRawTextBackground:
     case ColorID::IMESelectedConvertedTextBackground:
-      // still used
       aColor = mSystemColors.textColorHighlight;
       break;
     case ColorID::IMESelectedRawTextForeground:
     case ColorID::IMESelectedConvertedTextForeground:
-      // still used
       aColor = mSystemColors.textColorPrimaryInverse;
       break;
     case ColorID::IMERawInputBackground:
@@ -153,8 +158,6 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
       break;
     case ColorID::IMERawInputForeground:
     case ColorID::IMEConvertedTextForeground:
-      aColor = NS_SAME_AS_FOREGROUND_COLOR;
-      break;
     case ColorID::IMERawInputUnderline:
     case ColorID::IMEConvertedTextUnderline:
       aColor = NS_SAME_AS_FOREGROUND_COLOR;
@@ -164,49 +167,38 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
       aColor = NS_TRANSPARENT;
       break;
     case ColorID::SpellCheckerUnderline:
-      aColor = RED_COLOR;
+      aColor = NS_RGB(0xff, 0x00, 0x00);
       break;
 
       // css2  http://www.w3.org/TR/REC-CSS2/ui.html#system-colors
-    case ColorID::Activeborder:
-      // active window border
+    case ColorID::Activeborder:     // active window border
+    case ColorID::Appworkspace:     // MDI background color
+    case ColorID::Activecaption:    // active window caption background
+    case ColorID::Background:       // desktop background
+    case ColorID::Inactiveborder:   // inactive window border
+    case ColorID::Inactivecaption:  // inactive window caption
+    case ColorID::Scrollbar:        // scrollbar gray area
       aColor = mSystemColors.colorBackground;
       break;
-    case ColorID::Activecaption:
-      // active window caption background
-      aColor = mSystemColors.colorBackground;
-      break;
-    case ColorID::Appworkspace:
-      // MDI background color
-      aColor = mSystemColors.colorBackground;
-      break;
-    case ColorID::Background:
-      // desktop background
-      aColor = mSystemColors.colorBackground;
-      break;
-    case ColorID::Graytext:
-      // disabled text in windows, menus, etc.
+    case ColorID::Graytext:  // disabled text in windows, menus, etc.
       aColor = NS_RGB(0xb1, 0xa5, 0x98);
       break;
+    // FIXME: -moz-cellhighlight should show some kind of unfocused state.
     case ColorID::MozCellhighlight:
-    case ColorID::MozHtmlCellhighlight:
-    case ColorID::Highlight:
-      // background of selected item
-      aColor = NS_RGB(0xfa, 0xd1, 0x84);
+    case ColorID::Selecteditem:
+    case ColorID::MozAccentColor:
+      aColor = UseNativeAccent() ? mSystemColors.colorAccent
+                                 : widget::sDefaultAccent.ToABGR();
       break;
     case ColorID::MozCellhighlighttext:
-    case ColorID::MozHtmlCellhighlighttext:
-    case ColorID::Highlighttext:
+    case ColorID::Selecteditemtext:
+    case ColorID::MozAccentColorForeground:
+      aColor = UseNativeAccent() ? ThemeColors::ComputeCustomAccentForeground(
+                                       mSystemColors.colorAccent)
+                                 : widget::sDefaultAccentForeground.ToABGR();
+      break;
     case ColorID::Fieldtext:
       aColor = NS_RGB(0x1a, 0x1a, 0x1a);
-      break;
-    case ColorID::Inactiveborder:
-      // inactive window border
-      aColor = mSystemColors.colorBackground;
-      break;
-    case ColorID::Inactivecaption:
-      // inactive window caption
-      aColor = mSystemColors.colorBackground;
       break;
     case ColorID::Inactivecaptiontext:
       // text in inactive window caption
@@ -216,19 +208,19 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
       aColor = NS_RGB(0xf5, 0xf5, 0xb5);
       break;
     case ColorID::Infotext:
-      aColor = BLACK_COLOR;
+    case ColorID::Threeddarkshadow:  // 3-D shadow outer edge color
+    case ColorID::MozButtondefault:  // default button border color
+      aColor = NS_RGB(0x00, 0x00, 0x00);
       break;
     case ColorID::Menu:
       aColor = NS_RGB(0xf7, 0xf5, 0xf3);
       break;
-    case ColorID::Scrollbar:
-      // scrollbar gray area
-      aColor = mSystemColors.colorBackground;
-      break;
 
-    case ColorID::Threedface:
     case ColorID::Buttonface:
+    case ColorID::MozButtondisabledface:
+    case ColorID::Threedface:
     case ColorID::Threedlightshadow:
+    case ColorID::MozDisabledfield:
       aColor = NS_RGB(0xec, 0xe7, 0xe2);
       break;
 
@@ -243,11 +235,6 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
     case ColorID::Buttonshadow:
     case ColorID::Threedshadow:
       aColor = NS_RGB(0xae, 0xa1, 0x94);
-      break;
-
-    case ColorID::Threeddarkshadow:
-      // 3-D shadow outer edge color
-      aColor = BLACK_COLOR;
       break;
 
     case ColorID::MozDialog:
@@ -269,50 +256,51 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
     case ColorID::MozDragtargetzone:
       aColor = mSystemColors.textColorHighlight;
       break;
-    case ColorID::MozButtondefault:
-      // default button border color
-      aColor = BLACK_COLOR;
-      break;
     case ColorID::MozButtonhoverface:
+    case ColorID::MozButtonactiveface:
       aColor = NS_RGB(0xf3, 0xf0, 0xed);
       break;
     case ColorID::MozMenuhover:
-      aColor = BG_PRELIGHT_COLOR;
+      aColor = NS_RGB(0xee, 0xee, 0xee);
       break;
+    case ColorID::MozMenubarhovertext:
     case ColorID::MozMenuhovertext:
-      aColor = FG_PRELIGHT_COLOR;
+      aColor = NS_RGB(0x77, 0x77, 0x77);
       break;
     case ColorID::MozOddtreerow:
       aColor = NS_TRANSPARENT;
       break;
     case ColorID::MozNativehyperlinktext:
-      aColor = NS_SAME_AS_FOREGROUND_COLOR;
-      break;
-    case ColorID::MozMenubartext:
-      aColor = mSystemColors.colorForeground;
-      break;
-    case ColorID::MozMenubarhovertext:
-      aColor = FG_PRELIGHT_COLOR;
+      aColor = NS_RGB(0, 0, 0xee);
       break;
     default:
       /* default color is BLACK */
       aColor = 0;
-      rv = NS_ERROR_FAILURE;
-      break;
+      return NS_ERROR_FAILURE;
   }
 
-  return rv;
+  return NS_OK;
 }
 
-nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
-  nsresult rv = nsXPLookAndFeel::GetIntImpl(aID, aResult);
-  if (NS_SUCCEEDED(rv)) return rv;
-
-  rv = NS_OK;
+nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
+  nsresult rv = NS_OK;
 
   switch (aID) {
+    case IntID::ScrollButtonLeftMouseButtonAction:
+      aResult = 0;
+      break;
+
+    case IntID::ScrollButtonMiddleMouseButtonAction:
+    case IntID::ScrollButtonRightMouseButtonAction:
+      aResult = 3;
+      break;
+
     case IntID::CaretBlinkTime:
       aResult = 500;
+      break;
+
+    case IntID::CaretBlinkCount:
+      aResult = 10;
       break;
 
     case IntID::CaretWidth:
@@ -350,12 +338,11 @@ nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
       aResult = eScrollThumbStyle_Proportional;
       break;
 
-    case IntID::TouchEnabled:
+    case IntID::UseOverlayScrollbars:
       aResult = 1;
       break;
 
     case IntID::WindowsDefaultTheme:
-    case IntID::WindowsThemeIdentifier:
     case IntID::OperatingSystemVersionIdentifier:
       aResult = 0;
       rv = NS_ERROR_NOT_IMPLEMENTED;
@@ -375,39 +362,40 @@ nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
       break;
 
     case IntID::PrefersReducedMotion:
-      if (!mPrefersReducedMotionCached && XRE_IsParentProcess()) {
-        mPrefersReducedMotion =
-            java::GeckoSystemStateListener::PrefersReducedMotion();
-        mPrefersReducedMotionCached = true;
-      }
-      aResult = mPrefersReducedMotion;
+      aResult = java::GeckoSystemStateListener::PrefersReducedMotion();
       break;
 
     case IntID::PrimaryPointerCapabilities:
-      aResult = java::GeckoAppShell::GetPrimaryPointerCapabilities();
+      aResult = java::GeckoAppShell::GetAllPointerCapabilities();
+
+      // We cannot assume what is primary device, so we use Blink's way for web
+      // compatibility (https://crbug.com/136119#c6). If having coarse
+      // capability in any devices, return it.
+      if (aResult & static_cast<int32_t>(PointerCapabilities::Coarse)) {
+        aResult = static_cast<int32_t>(PointerCapabilities::Coarse);
+      }
       break;
+
     case IntID::AllPointerCapabilities:
       aResult = java::GeckoAppShell::GetAllPointerCapabilities();
       break;
 
     case IntID::SystemUsesDarkTheme: {
-      if (!mSystemUsesDarkThemeCached && XRE_IsParentProcess()) {
-        // Bail out if AndroidBridge hasn't initialized since we try to query
-        // this value via nsMediaFeatures::InitSystemMetrics without
-        // initializing AndroidBridge on xpcshell tests.
-        if (!jni::IsAvailable()) {
-          return NS_ERROR_FAILURE;
-        }
-
-        java::GeckoRuntime::LocalRef runtime =
-            java::GeckoRuntime::GetInstance();
-        mSystemUsesDarkTheme = runtime && runtime->UsesDarkTheme();
-        mSystemUsesDarkThemeCached = true;
-      }
-
-      aResult = mSystemUsesDarkTheme;
+      java::GeckoRuntime::LocalRef runtime = java::GeckoRuntime::GetInstance();
+      aResult = runtime && runtime->UsesDarkTheme();
       break;
     }
+
+    case IntID::DragThresholdX:
+    case IntID::DragThresholdY:
+      // Threshold where a tap becomes a drag, in 1/240" reference pixels.
+      aResult = 25;
+      break;
+
+    case IntID::TouchDeviceSupportPresent:
+      // Touch support is always enabled on android.
+      aResult = 1;
+      break;
 
     default:
       aResult = 0;
@@ -417,10 +405,8 @@ nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
   return rv;
 }
 
-nsresult nsLookAndFeel::GetFloatImpl(FloatID aID, float& aResult) {
-  nsresult rv = nsXPLookAndFeel::GetFloatImpl(aID, aResult);
-  if (NS_SUCCEEDED(rv)) return rv;
-  rv = NS_OK;
+nsresult nsLookAndFeel::NativeGetFloat(FloatID aID, float& aResult) {
+  nsresult rv = NS_OK;
 
   switch (aID) {
     case FloatID::IMEUnderlineRelativeSize:
@@ -439,10 +425,9 @@ nsresult nsLookAndFeel::GetFloatImpl(FloatID aID, float& aResult) {
   return rv;
 }
 
-/*virtual*/
-bool nsLookAndFeel::GetFontImpl(FontID aID, nsString& aFontName,
-                                gfxFontStyle& aFontStyle) {
-  aFontName.AssignLiteral("\"Roboto\"");
+bool nsLookAndFeel::NativeGetFont(FontID aID, nsString& aFontName,
+                                  gfxFontStyle& aFontStyle) {
+  aFontName.AssignLiteral("Roboto");
   aFontStyle.style = FontSlantStyle::Normal();
   aFontStyle.weight = FontWeight::Normal();
   aFontStyle.stretch = FontStretch::Normal();
@@ -451,7 +436,6 @@ bool nsLookAndFeel::GetFontImpl(FontID aID, nsString& aFontName,
   return true;
 }
 
-/*virtual*/
 bool nsLookAndFeel::GetEchoPasswordImpl() {
   EnsureInitShowPassword();
   return mShowPassword;
@@ -462,7 +446,6 @@ uint32_t nsLookAndFeel::GetPasswordMaskDelayImpl() {
   return 1500;
 }
 
-/* virtual */
 char16_t nsLookAndFeel::GetPasswordCharacterImpl() {
   // This value is hard-coded in Android OS's PasswordTransformationMethod.java
   return UNICODE_BULLET;
@@ -478,39 +461,5 @@ void nsLookAndFeel::EnsureInitShowPassword() {
   if (!mInitializedShowPassword && jni::IsAvailable()) {
     mShowPassword = java::GeckoAppShell::GetShowPasswordSetting();
     mInitializedShowPassword = true;
-  }
-}
-
-nsTArray<LookAndFeelInt> nsLookAndFeel::GetIntCacheImpl() {
-  nsTArray<LookAndFeelInt> lookAndFeelIntCache =
-      nsXPLookAndFeel::GetIntCacheImpl();
-
-  const IntID kIdsToCache[] = {IntID::PrefersReducedMotion,
-                               IntID::SystemUsesDarkTheme};
-
-  for (IntID id : kIdsToCache) {
-    lookAndFeelIntCache.AppendElement(
-        LookAndFeelInt{.id = id, .value = GetInt(id)});
-  }
-
-  return lookAndFeelIntCache;
-}
-
-void nsLookAndFeel::SetIntCacheImpl(
-    const nsTArray<LookAndFeelInt>& aLookAndFeelIntCache) {
-  for (const auto& entry : aLookAndFeelIntCache) {
-    switch (entry.id) {
-      case IntID::PrefersReducedMotion:
-        mPrefersReducedMotion = entry.value;
-        mPrefersReducedMotionCached = true;
-        break;
-      case IntID::SystemUsesDarkTheme:
-        mSystemUsesDarkTheme = !!entry.value;
-        mSystemUsesDarkThemeCached = true;
-        break;
-      default:
-        MOZ_ASSERT_UNREACHABLE("Bogus Int ID in cache");
-        break;
-    }
   }
 }

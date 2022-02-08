@@ -12,6 +12,8 @@ AddonTestUtils.initMochitest(this);
 hookExtensionsTelemetry();
 AddonTestUtils.hookAMTelemetryEvents();
 
+const kSideloaded = true;
+
 async function createWebExtension(details) {
   let options = {
     manifest: {
@@ -39,11 +41,9 @@ function promiseEvent(eventEmitter, event) {
 }
 
 function getAddonElement(managerWindow, addonId) {
-  const { contentDocument: doc } = managerWindow.document.getElementById(
-    "html-view-browser"
-  );
-  return BrowserTestUtils.waitForCondition(
-    () => doc.querySelector(`addon-card[addon-id="${addonId}"]`),
+  return TestUtils.waitForCondition(
+    () =>
+      managerWindow.document.querySelector(`addon-card[addon-id="${addonId}"]`),
     `Found entry for sideload extension addon "${addonId}" in HTML about:addons`
   );
 }
@@ -59,7 +59,7 @@ function assertSideloadedAddonElementState(addonElement, checked) {
   is(enableBtn.type, "checkbox", "It's a checkbox");
 }
 
-function clickEnableExtension(managerWindow, addonElement) {
+function clickEnableExtension(addonElement) {
   addonElement.querySelector('[action="toggle-disabled"]').click();
 }
 
@@ -72,7 +72,6 @@ add_task(async function test_sideloading() {
       ["xpinstall.signatures.required", false],
       ["extensions.autoDisableScopes", 15],
       ["extensions.ui.ignoreUnsigned", true],
-      ["extensions.allowPrivateBrowsingByDefault", false],
     ],
   });
 
@@ -167,7 +166,7 @@ add_task(async function test_sideloading() {
   const VIEW = "addons://list/extension";
   let win = gBrowser.selectedBrowser.contentWindow;
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !win.gViewController.isLoading,
     "about:addons view is fully loaded"
   );
@@ -178,10 +177,15 @@ add_task(async function test_sideloading() {
   );
 
   // Check the contents of the notification, then choose "Cancel"
-  checkNotification(panel, /\/foo-icon\.png$/, [
-    ["webextPerms.hostDescription.allUrls"],
-    ["webextPerms.description.history"],
-  ]);
+  checkNotification(
+    panel,
+    /\/foo-icon\.png$/,
+    [
+      ["webextPerms.hostDescription.allUrls"],
+      ["webextPerms.description.history"],
+    ],
+    kSideloaded
+  );
 
   panel.secondaryButton.click();
 
@@ -211,14 +215,9 @@ add_task(async function test_sideloading() {
   await gCUITestUtils.hideMainMenu();
 
   win = await BrowserOpenAddonsMgr(VIEW);
+  await waitAboutAddonsViewLoaded(win.document);
 
-  if (win.gViewController.isLoading) {
-    await new Promise(resolve =>
-      win.document.addEventListener("ViewChanged", resolve, { once: true })
-    );
-  }
-
-  // XUL or HTML about:addons addon entry element.
+  // about:addons addon entry element.
   const addonElement = await getAddonElement(win, ID2);
 
   assertSideloadedAddonElementState(addonElement, false);
@@ -227,11 +226,14 @@ add_task(async function test_sideloading() {
 
   // When clicking enable we should see the permissions notification
   popupPromise = promisePopupNotificationShown("addon-webext-permissions");
-  clickEnableExtension(win, addonElement);
+  clickEnableExtension(addonElement);
   panel = await popupPromise;
-  checkNotification(panel, DEFAULT_ICON_URL, [
-    ["webextPerms.hostDescription.allUrls"],
-  ]);
+  checkNotification(
+    panel,
+    DEFAULT_ICON_URL,
+    [["webextPerms.hostDescription.allUrls"]],
+    kSideloaded
+  );
 
   // Test incognito checkbox in post install notification
   function setupPostInstallNotificationTest() {
@@ -294,9 +296,12 @@ add_task(async function test_sideloading() {
   ExtensionsUI.showSideloaded(gBrowser, addon3);
 
   panel = await popupPromise;
-  checkNotification(panel, DEFAULT_ICON_URL, [
-    ["webextPerms.hostDescription.allUrls"],
-  ]);
+  checkNotification(
+    panel,
+    DEFAULT_ICON_URL,
+    [["webextPerms.hostDescription.allUrls"]],
+    kSideloaded
+  );
 
   // Setup async test for post install notification on addon 3
   testPostInstallIncognitoCheckbox = setupPostInstallNotificationTest();

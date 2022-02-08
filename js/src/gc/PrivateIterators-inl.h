@@ -52,10 +52,7 @@ class GCZonesIter {
  public:
   explicit GCZonesIter(GCRuntime* gc) : zone(gc) {
     MOZ_ASSERT(JS::RuntimeHeapIsBusy());
-    MOZ_ASSERT_IF(gc->atomsZone->wasGCStarted(),
-                  !gc->rt->hasHelperThreadZones());
-
-    if (!done() && !zone->isCollectingFromAnyThread()) {
+    if (!done() && !zone->wasGCStarted()) {
       next();
     }
   }
@@ -67,7 +64,7 @@ class GCZonesIter {
     MOZ_ASSERT(!done());
     do {
       zone.next();
-    } while (!zone.done() && !zone->isCollectingFromAnyThread());
+    } while (!zone.done() && !zone->wasGCStarted());
   }
 
   JS::Zone* get() const {
@@ -138,7 +135,7 @@ class ArenaFreeCellIter {
     return !thing;
   }
 
-  TenuredCell* getCell() const {
+  TenuredCell* get() const {
     MOZ_ASSERT(!done());
     return reinterpret_cast<TenuredCell*>(uintptr_t(arena) + thing);
   }
@@ -156,6 +153,9 @@ class ArenaFreeCellIter {
 
     MOZ_ASSERT(thing < ArenaSize);
   }
+
+  operator TenuredCell*() const { return get(); }
+  TenuredCell* operator->() const { return get(); }
 };
 
 }  // namespace gc

@@ -13,6 +13,7 @@
  */
 
 const { Cu } = require("chrome");
+const Services = require("Services");
 const { LocalizationHelper } = require("devtools/shared/l10n");
 const MENUS_L10N = new LocalizationHelper(
   "devtools/client/locales/menus.properties"
@@ -56,10 +57,21 @@ function l10n(key) {
  * @param {Boolean} isCheckbox (optional)
  *        If true, the menuitem will act as a checkbox and have an optional
  *        tick on its left.
+ * @param {String} appMenuL10nId (optional)
+ *        A Fluent key to set the appmenu-data-l10n-id attribute of the menuitem
+ *        to. This can then be used to show a different string when cloning the
+ *        menuitem to show in the AppMenu or panel contexts.
  *
  * @return XULMenuItemElement
  */
-function createMenuItem({ doc, id, label, accesskey, isCheckbox }) {
+function createMenuItem({
+  doc,
+  id,
+  label,
+  accesskey,
+  isCheckbox,
+  appMenuL10nId,
+}) {
   const menuitem = doc.createXULElement("menuitem");
   menuitem.id = id;
   menuitem.setAttribute("label", label);
@@ -69,6 +81,9 @@ function createMenuItem({ doc, id, label, accesskey, isCheckbox }) {
   if (isCheckbox) {
     menuitem.setAttribute("type", "checkbox");
     menuitem.setAttribute("autocheck", "false");
+  }
+  if (appMenuL10nId) {
+    menuitem.setAttribute("appmenu-data-l10n-id", appMenuL10nId);
   }
   return menuitem;
 }
@@ -105,6 +120,7 @@ function createToolMenuElements(toolDefinition, doc) {
     id: "menuitem_" + id,
     label: toolDefinition.menuLabel || toolDefinition.label,
     accesskey: toolDefinition.accesskey,
+    appMenuL10nId: toolDefinition.appMenuL10nId,
   });
   // Refer to the key in order to display the key shortcut at menu ends
   // This <key> element is being created by devtools/client/devtools-startup.js
@@ -158,7 +174,7 @@ function insertToolMenuElements(doc, toolDefinition, prevDef) {
     const menuitem = doc.getElementById("menuitem_" + prevDef.id);
     ref = menuitem?.nextSibling ? menuitem.nextSibling : null;
   } else {
-    ref = doc.getElementById("menu_devtools_separator");
+    ref = doc.getElementById("menu_devtools_remotedebugging");
   }
 
   if (ref) {
@@ -215,7 +231,7 @@ function addAllToolsToMenu(doc) {
     fragMenuItems.appendChild(elements.menuitem);
   }
 
-  const mps = doc.getElementById("menu_devtools_separator");
+  const mps = doc.getElementById("menu_devtools_remotedebugging");
   if (mps) {
     mps.parentNode.insertBefore(fragMenuItems, mps);
   }
@@ -246,6 +262,7 @@ function addTopLevelItems(doc) {
         label: l10n(l10nKey + ".label"),
         accesskey: l10n(l10nKey + ".accesskey"),
         isCheckbox: item.checkbox,
+        appMenuL10nId: item.appMenuL10nId,
       });
       menuitem.addEventListener("command", item.oncommand);
       menuItems.appendChild(menuitem);
@@ -266,12 +283,25 @@ function addTopLevelItems(doc) {
   const menu = doc.getElementById("menuWebDeveloperPopup");
   menu.appendChild(menuItems);
 
-  // There is still "Page Source" menuitem hardcoded into browser.xhtml. Instead
-  // of manually inserting everything around it, move it to the expected
-  // position.
-  const pageSource = doc.getElementById("menu_pageSource");
-  const endSeparator = doc.getElementById("devToolsEndSeparator");
-  menu.insertBefore(pageSource, endSeparator);
+  // There is still "Page Source" and "Task Manager" menuitems hardcoded
+  // into browser.xhtml. Instead of manually inserting everything around it,
+  // move them to the expected position.
+  const pageSourceMenu = doc.getElementById("menu_pageSource");
+  const extensionsForDevelopersMenu = doc.getElementById(
+    "extensionsForDevelopers"
+  );
+  menu.insertBefore(pageSourceMenu, extensionsForDevelopersMenu);
+
+  const taskManagerMenu = doc.getElementById("menu_taskManager");
+  if (Services.prefs.getBoolPref("browser.proton.enabled", false)) {
+    const remoteDebuggingMenu = doc.getElementById(
+      "menu_devtools_remotedebugging"
+    );
+    menu.insertBefore(taskManagerMenu, remoteDebuggingMenu);
+  } else {
+    // When proton is preffed off, this is in the "more" section instead.
+    taskManagerMenu.hidden = true;
+  }
 }
 
 /**

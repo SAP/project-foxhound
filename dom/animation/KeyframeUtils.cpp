@@ -9,8 +9,9 @@
 #include <algorithm>  // For std::stable_sort, std::min
 #include <utility>
 
-#include "js/ForOfIterator.h"  // For JS::ForOfIterator
 #include "jsapi.h"             // For most JSAPI
+#include "js/ForOfIterator.h"  // For JS::ForOfIterator
+#include "js/PropertyAndElement.h"  // JS_Enumerate, JS_GetProperty, JS_GetPropertyById
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/RangedArray.h"
@@ -60,7 +61,7 @@ enum class ListAllowance { eDisallow, eAllow };
  */
 struct PropertyValuesPair {
   nsCSSPropertyID mProperty;
-  nsTArray<nsString> mValues;
+  nsTArray<nsCString> mValues;
 };
 
 /**
@@ -153,13 +154,13 @@ static bool GetPropertyValuesPairs(JSContext* aCx,
 static bool AppendStringOrStringSequenceToArray(JSContext* aCx,
                                                 JS::Handle<JS::Value> aValue,
                                                 ListAllowance aAllowLists,
-                                                nsTArray<nsString>& aValues);
+                                                nsTArray<nsCString>& aValues);
 
-static bool AppendValueAsString(JSContext* aCx, nsTArray<nsString>& aValues,
+static bool AppendValueAsString(JSContext* aCx, nsTArray<nsCString>& aValues,
                                 JS::Handle<JS::Value> aValue);
 
 static Maybe<PropertyValuePair> MakePropertyValuePair(
-    nsCSSPropertyID aProperty, const nsAString& aStringValue,
+    nsCSSPropertyID aProperty, const nsACString& aStringValue,
     dom::Document* aDocument);
 
 static bool HasValidOffsets(const nsTArray<Keyframe>& aKeyframes);
@@ -232,7 +233,8 @@ nsTArray<Keyframe> KeyframeUtils::GetKeyframesFromObject(
   if (!dom::Document::AreWebAnimationsImplicitKeyframesEnabled(aCx, nullptr) &&
       HasImplicitKeyframeValues(keyframes, aDocument)) {
     keyframes.Clear();
-    aRv.Throw(NS_ERROR_DOM_ANIM_MISSING_PROPS_ERR);
+    aRv.ThrowNotSupportedError(
+        "Animation to or from an underlying value is not yet supported");
   }
 
   return keyframes;
@@ -444,8 +446,8 @@ static bool ConvertKeyframeSequence(JSContext* aCx, dom::Document* aDocument,
     }
 
     if (!parseEasingResult.Failed()) {
-      keyframe->mTimingFunction = TimingParams::ParseEasing(
-          keyframeDict.mEasing, aDocument, parseEasingResult);
+      keyframe->mTimingFunction =
+          TimingParams::ParseEasing(keyframeDict.mEasing, parseEasingResult);
       // Even if the above fails, we still need to continue reading off all the
       // properties since checking the validity of easing should be treated as
       // a separate step that happens *after* all the other processing in this
@@ -574,7 +576,7 @@ static bool GetPropertyValuesPairs(JSContext* aCx,
 static bool AppendStringOrStringSequenceToArray(JSContext* aCx,
                                                 JS::Handle<JS::Value> aValue,
                                                 ListAllowance aAllowLists,
-                                                nsTArray<nsString>& aValues) {
+                                                nsTArray<nsCString>& aValues) {
   if (aAllowLists == ListAllowance::eAllow && aValue.isObject()) {
     // The value is an object, and we want to allow lists; convert
     // aValue to (DOMString or sequence<DOMString>).
@@ -613,17 +615,17 @@ static bool AppendStringOrStringSequenceToArray(JSContext* aCx,
 /**
  * Converts aValue to DOMString and appends it to aValues.
  */
-static bool AppendValueAsString(JSContext* aCx, nsTArray<nsString>& aValues,
+static bool AppendValueAsString(JSContext* aCx, nsTArray<nsCString>& aValues,
                                 JS::Handle<JS::Value> aValue) {
   return ConvertJSValueToString(aCx, aValue, dom::eStringify, dom::eStringify,
                                 *aValues.AppendElement());
 }
 
 static void ReportInvalidPropertyValueToConsole(
-    nsCSSPropertyID aProperty, const nsAString& aInvalidPropertyValue,
+    nsCSSPropertyID aProperty, const nsACString& aInvalidPropertyValue,
     dom::Document* aDoc) {
   AutoTArray<nsString, 2> params;
-  params.AppendElement(aInvalidPropertyValue);
+  params.AppendElement(NS_ConvertUTF8toUTF16(aInvalidPropertyValue));
   CopyASCIItoUTF16(nsCSSProps::GetStringValue(aProperty),
                    *params.AppendElement());
   nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "Animation"_ns,
@@ -642,7 +644,7 @@ static void ReportInvalidPropertyValueToConsole(
  *   an invalid property value.
  */
 static Maybe<PropertyValuePair> MakePropertyValuePair(
-    nsCSSPropertyID aProperty, const nsAString& aStringValue,
+    nsCSSPropertyID aProperty, const nsACString& aStringValue,
     dom::Document* aDocument) {
   MOZ_ASSERT(aDocument);
   Maybe<PropertyValuePair> result;
@@ -998,7 +1000,7 @@ static void GetKeyframeListFromPropertyIndexedKeyframe(
   }
 
   // Create a set of keyframes for each property.
-  nsClassHashtable<nsFloatHashKey, Keyframe> processedKeyframes;
+  nsTHashMap<nsFloatHashKey, Keyframe> processedKeyframes;
   for (const PropertyValuesPair& pair : propertyValuesPairs) {
     size_t count = pair.mValues.Length();
     if (count == 0) {
@@ -1010,20 +1012,21 @@ static void GetKeyframeListFromPropertyIndexedKeyframe(
     // but not if the pref for supporting implicit keyframes is disabled.
     if (!StaticPrefs::dom_animations_api_implicit_keyframes_enabled() &&
         count == 1) {
-      aRv.Throw(NS_ERROR_DOM_ANIM_MISSING_PROPS_ERR);
+      aRv.ThrowNotSupportedError(
+          "Animation to or from an underlying value is not yet supported");
       return;
     }
 
     size_t n = pair.mValues.Length() - 1;
     size_t i = 0;
 
-    for (const nsString& stringValue : pair.mValues) {
+    for (const nsCString& stringValue : pair.mValues) {
       // For single-valued lists, the single value should be added to a
       // keyframe with offset 1.
       double offset = n ? i++ / double(n) : 1;
-      Keyframe* keyframe = processedKeyframes.LookupOrAdd(offset);
-      if (keyframe->mPropertyValues.IsEmpty()) {
-        keyframe->mComputedOffset = offset;
+      Keyframe& keyframe = processedKeyframes.LookupOrInsert(offset);
+      if (keyframe.mPropertyValues.IsEmpty()) {
+        keyframe.mComputedOffset = offset;
       }
 
       Maybe<PropertyValuePair> valuePair =
@@ -1031,14 +1034,15 @@ static void GetKeyframeListFromPropertyIndexedKeyframe(
       if (!valuePair) {
         continue;
       }
-      keyframe->mPropertyValues.AppendElement(std::move(valuePair.ref()));
+      keyframe.mPropertyValues.AppendElement(std::move(valuePair.ref()));
     }
   }
 
   aResult.SetCapacity(processedKeyframes.Count());
-  for (auto iter = processedKeyframes.Iter(); !iter.Done(); iter.Next()) {
-    aResult.AppendElement(std::move(*iter.UserData()));
-  }
+  std::transform(processedKeyframes.begin(), processedKeyframes.end(),
+                 MakeBackInserter(aResult), [](auto& entry) {
+                   return std::move(*entry.GetModifiableData());
+                 });
 
   aResult.Sort(ComputedOffsetComparator());
 
@@ -1097,23 +1101,23 @@ static void GetKeyframeListFromPropertyIndexedKeyframe(
   // This corresponds to step 5, "Otherwise," branch, substeps 7-11 of
   // https://drafts.csswg.org/web-animations/#processing-a-keyframes-argument
   FallibleTArray<Maybe<ComputedTimingFunction>> easings;
-  auto parseAndAppendEasing = [&](const nsString& easingString,
+  auto parseAndAppendEasing = [&](const nsACString& easingString,
                                   ErrorResult& aRv) {
-    auto easing = TimingParams::ParseEasing(easingString, aDocument, aRv);
+    auto easing = TimingParams::ParseEasing(easingString, aRv);
     if (!aRv.Failed() && !easings.AppendElement(std::move(easing), fallible)) {
       aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     }
   };
 
   auto& easing = keyframeDict.mEasing;
-  if (easing.IsString()) {
-    parseAndAppendEasing(easing.GetAsString(), aRv);
+  if (easing.IsUTF8String()) {
+    parseAndAppendEasing(easing.GetAsUTF8String(), aRv);
     if (aRv.Failed()) {
       aResult.Clear();
       return;
     }
   } else {
-    for (const nsString& easingString : easing.GetAsStringSequence()) {
+    for (const auto& easingString : easing.GetAsUTF8StringSequence()) {
       parseAndAppendEasing(easingString, aRv);
       if (aRv.Failed()) {
         aResult.Clear();

@@ -14,7 +14,8 @@
 
 #include <objc/objc.h>
 
-#include "Accessible.h"
+#include "LocalAccessible.h"
+#include "PlatformExtTypes.h"
 #include "States.h"
 
 #include "nsCOMPtr.h"
@@ -28,7 +29,7 @@
 namespace mozilla {
 namespace a11y {
 
-class AccessibleWrap : public Accessible {
+class AccessibleWrap : public LocalAccessible {
  public:  // construction, destruction
   AccessibleWrap(nsIContent* aContent, DocAccessible* aDoc);
   virtual ~AccessibleWrap();
@@ -48,6 +49,9 @@ class AccessibleWrap : public Accessible {
   virtual void Shutdown() override;
 
   virtual nsresult HandleAccEvent(AccEvent* aEvent) override;
+
+  bool ApplyPostFilter(const EWhichPostFilter& aSearchKey,
+                       const nsString& aSearchText);
 
  protected:
   friend class xpcAccessibleMacInterface;

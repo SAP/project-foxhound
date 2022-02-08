@@ -72,7 +72,7 @@ function testOnWindow(aTestData, aCallback, aTestCreater) {
       let notification = await BrowserTestUtils.waitForNotificationBar(win.gBrowser, browser, "blocked-badware-page");
       ok(notification, "Notification box should be displayed");
 
-      let buttons = notification.getElementsByTagName("button");
+      let buttons = notification.buttonContainer.getElementsByTagName("button");
       let button = buttons[1];
       if (aTestData.provider != "google" && aTestData.provider != "google4") {
         is(button, undefined, "Report button should not be showed");
@@ -95,7 +95,7 @@ function testOnWindow(aTestData, aCallback, aTestCreater) {
 
 var createBlockedIframe = function(aWindow, aBrowser, aTopUrl, aUrl) {
   (async function() {
-    await BrowserTestUtils.loadURI(aBrowser, aTopUrl);
+    BrowserTestUtils.loadURI(aBrowser, aTopUrl);
     await BrowserTestUtils.browserLoaded(aBrowser);
 
     await SpecialPowers.spawn(aBrowser, [aUrl], async function(url) {
@@ -119,7 +119,7 @@ var createBlockedIframe = function(aWindow, aBrowser, aTopUrl, aUrl) {
 
 var createBlockedPage = function(aWindow, aBrowser, aTopUrl, aUrl) {
   (async function() {
-    await BrowserTestUtils.loadURI(aBrowser, aTopUrl);
+    BrowserTestUtils.loadURI(aBrowser, aTopUrl);
     await BrowserTestUtils.waitForContentEvent(aBrowser, "DOMContentLoaded");
 
     let doc = aWindow.gBrowser.contentDocument;

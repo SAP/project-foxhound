@@ -12,26 +12,10 @@
 #include "mozilla/CheckedInt.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/ProfilerMarkerTypes.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "nsPrintfCString.h"
-
-#ifdef MOZ_GECKO_PROFILER
-#  include "ProfilerMarkerPayload.h"
-#  define PROFILER_MARKER(tag, sample)                                    \
-    do {                                                                  \
-      uint64_t startTime = (sample)->mTime.ToMicroseconds();              \
-      uint64_t endTime = (sample)->GetEndTime().ToMicroseconds();         \
-      auto profilerTag = (tag);                                           \
-      mOwnerThread->Dispatch(NS_NewRunnableFunction(                      \
-          "AudioSink:AddMarker", [profilerTag, startTime, endTime] {      \
-            PROFILER_ADD_MARKER_WITH_PAYLOAD(profilerTag, MEDIA_PLAYBACK, \
-                                             MediaSampleMarkerPayload,    \
-                                             (startTime, endTime));       \
-          }));                                                            \
-    } while (0)
-#else
-#  define PROFILER_MARKER(tag, sample)
-#endif
 
 namespace mozilla {
 
@@ -62,35 +46,21 @@ AudioSink::AudioSink(AbstractThread* aThread,
       mMonitor("AudioSink"),
       mWritten(0),
       mErrored(false),
-      mPlaybackComplete(false),
       mOwnerThread(aThread),
       mProcessedQueueLength(0),
       mFramesParsed(0),
+      mOutputRate(DecideAudioPlaybackSampleRate(aInfo)),
+      mOutputChannels(DecideAudioPlaybackChannels(aInfo)),
+      mAudibilityMonitor(
+          mOutputRate,
+          StaticPrefs::dom_media_silence_duration_for_audibility()),
       mIsAudioDataAudible(false),
-      mAudioQueue(aAudioQueue) {
-  bool resampling = StaticPrefs::media_resampling_enabled();
-
-  if (resampling) {
-    mOutputRate = 48000;
-  } else if (mInfo.mRate == 44100 || mInfo.mRate == 48000) {
-    // The original rate is of good quality and we want to minimize unecessary
-    // resampling. The common scenario being that the sampling rate is one or
-    // the other, this allows to minimize audio quality regression and hoping
-    // content provider want change from those rates mid-stream.
-    mOutputRate = mInfo.mRate;
-  } else {
-    // We will resample all data to match cubeb's preferred sampling rate.
-    mOutputRate = AudioStream::GetPreferredRate();
-  }
-  MOZ_DIAGNOSTIC_ASSERT(mOutputRate, "output rate can't be 0.");
-
-  mOutputChannels = DecideAudioPlaybackChannels(mInfo);
-}
+      mAudioQueue(aAudioQueue) {}
 
 AudioSink::~AudioSink() = default;
 
-nsresult AudioSink::Init(const PlaybackParams& aParams,
-                         RefPtr<MediaSink::EndedPromise>& aEndedPromise) {
+Result<already_AddRefed<MediaSink::EndedPromise>, nsresult> AudioSink::Start(
+    const PlaybackParams& aParams) {
   MOZ_ASSERT(mOwnerThread->IsCurrentThreadIn());
 
   mAudioQueueListener = mAudioQueue.PushEvent().Connect(
@@ -103,12 +73,11 @@ nsresult AudioSink::Init(const PlaybackParams& aParams,
   // To ensure at least one audio packet will be popped from AudioQueue and
   // ready to be played.
   NotifyAudioNeeded();
-  aEndedPromise = mEndedPromise.Ensure(__func__);
   nsresult rv = InitializeAudioStream(aParams);
   if (NS_FAILED(rv)) {
-    mEndedPromise.Reject(rv, __func__);
+    return Err(rv);
   }
-  return rv;
+  return mAudioStream->Start();
 }
 
 TimeUnit AudioSink::GetPosition() {
@@ -154,14 +123,49 @@ void AudioSink::Shutdown() {
     mAudioStream->Shutdown();
     mAudioStream = nullptr;
   }
-  mProcessedQueue.Reset();
+  // Shutdown audio sink doesn't mean the playback is going to stop, so if we
+  // simply discard these data, then we will no longer be able to play them.
+  // Eg. we change to sink to capture-based sink that will need to continue play
+  // remaining data from the audio queue.
+  {
+    MonitorAutoLock mon(mMonitor);
+    while (mProcessedQueue.GetSize() > 0) {
+      RefPtr<AudioData> audio = mProcessedQueue.PopBack();
+      if (audio == mCurrentData) {
+        break;
+      }
+      mAudioQueue.PushFront(audio);
+    }
+    if (mCurrentData) {
+      uint32_t unplayedFrames = mCursor->Available();
+      // If we've consumed some partial content from the first audio data, then
+      // we have to adjust its data offset and frames number in order not to
+      // play the same content again.
+      if (unplayedFrames > 0 && unplayedFrames < mCurrentData->Frames()) {
+        const uint32_t orginalFrames = mCurrentData->Frames();
+        const uint32_t offsetFrames = mCurrentData->Frames() - unplayedFrames;
+        Unused << mCurrentData->SetTrimWindow(
+            {mCurrentData->mTime + FramesToTimeUnit(offsetFrames, mOutputRate),
+             mCurrentData->GetEndTime()});
+        SINK_LOG_V("After adjustment, audio frame from %u to %u", orginalFrames,
+                   mCurrentData->Frames());
+      }
+      mAudioQueue.PushFront(mCurrentData);
+    }
+    MOZ_ASSERT(mProcessedQueue.GetSize() == 0);
+  }
   mProcessedQueue.Finish();
-  mEndedPromise.ResolveIfExists(true, __func__);
 }
 
 void AudioSink::SetVolume(double aVolume) {
   if (mAudioStream) {
     mAudioStream->SetVolume(aVolume);
+  }
+}
+
+void AudioSink::SetStreamName(const nsAString& aStreamName) {
+  if (mAudioStream) {
+    mAudioStream->SetStreamName(aStreamName);
   }
 }
 
@@ -180,7 +184,8 @@ void AudioSink::SetPreservesPitch(bool aPreservesPitch) {
 }
 
 void AudioSink::SetPlaying(bool aPlaying) {
-  if (!mAudioStream || mPlaying == aPlaying || mPlaybackComplete) {
+  if (!mAudioStream || mAudioStream->IsPlaybackCompleted() ||
+      mPlaying == aPlaying) {
     return;
   }
   // pause/resume AudioStream as necessary.
@@ -216,7 +221,7 @@ nsresult AudioSink::InitializeAudioStream(const PlaybackParams& aParams) {
   mAudioStream->SetVolume(aParams.mVolume);
   mAudioStream->SetPlaybackRate(aParams.mPlaybackRate);
   mAudioStream->SetPreservesPitch(aParams.mPreservesPitch);
-  return mAudioStream->Start();
+  return NS_OK;
 }
 
 TimeUnit AudioSink::GetEndTime() const {
@@ -268,9 +273,9 @@ UniquePtr<AudioStream::Chunk> AudioSink::PopFrames(uint32_t aFrames) {
     // to incorrectly return true during the time interval betweeen the
     // when mProcessedQueue is read and mWritten is updated.
     needPopping = true;
-    mCurrentData = mProcessedQueue.PeekFront();
     {
       MonitorAutoLock mon(mMonitor);
+      mCurrentData = mProcessedQueue.PeekFront();
       mCursor = MakeUnique<AudioBufferCursor>(mCurrentData->Data(),
                                               mCurrentData->mChannels,
                                               mCurrentData->Frames());
@@ -285,7 +290,16 @@ UniquePtr<AudioStream::Chunk> AudioSink::PopFrames(uint32_t aFrames) {
   SINK_LOG_V("playing audio at time=%" PRId64 " offset=%u length=%u",
              mCurrentData->mTime.ToMicroseconds(),
              mCurrentData->Frames() - mCursor->Available(), framesToPop);
-  PROFILER_MARKER("PlayAudio", mCurrentData);
+
+  if (profiler_thread_is_being_profiled_for_markers()) {
+    mOwnerThread->Dispatch(NS_NewRunnableFunction(
+        "AudioSink:AddMarker",
+        [startTime = mCurrentData->mTime.ToMicroseconds(),
+         endTime = mCurrentData->GetEndTime().ToMicroseconds()] {
+          PROFILER_MARKER("PlayAudio", MEDIA_PLAYBACK, {}, MediaSampleMarker,
+                          startTime, endTime);
+        }));
+  }
 
   UniquePtr<AudioStream::Chunk> chunk =
       MakeUnique<Chunk>(mCurrentData, framesToPop, mCursor->Ptr());
@@ -294,12 +308,11 @@ UniquePtr<AudioStream::Chunk> AudioSink::PopFrames(uint32_t aFrames) {
     MonitorAutoLock mon(mMonitor);
     mWritten += framesToPop;
     mCursor->Advance(framesToPop);
-  }
-
-  // All frames are popped. Reset mCurrentData so we can pop new elements from
-  // the audio queue in next calls to PopFrames().
-  if (!mCursor->Available()) {
-    mCurrentData = nullptr;
+    // All frames are popped. Reset mCurrentData so we can pop new elements from
+    // the audio queue in next calls to PopFrames().
+    if (!mCursor->Available()) {
+      mCurrentData = nullptr;
+    }
   }
 
   if (needPopping) {
@@ -317,22 +330,12 @@ bool AudioSink::Ended() const {
   return mProcessedQueue.IsFinished() || mErrored;
 }
 
-void AudioSink::Drained() {
-  SINK_LOG("Drained");
-  mPlaybackComplete = true;
-  mEndedPromise.ResolveIfExists(true, __func__);
-}
-
-void AudioSink::Errored() {
-  SINK_LOG("Errored");
-  mPlaybackComplete = true;
-  mEndedPromise.RejectIfExists(NS_ERROR_FAILURE, __func__);
-}
-
 void AudioSink::CheckIsAudible(const AudioData* aData) {
   MOZ_ASSERT(aData);
 
-  bool isAudible = aData->IsAudible();
+  mAudibilityMonitor.Process(aData);
+  bool isAudible = mAudibilityMonitor.RecentlyAudible();
+
   if (isAudible != mIsAudioDataAudible) {
     mIsAudioDataAudible = isAudible;
     mAudibleEvent.Notify(mIsAudioDataAudible);
@@ -542,7 +545,7 @@ void AudioSink::GetDebugInfo(dom::MediaSinkDebugInfo& aInfo) {
   aInfo.mAudioSinkWrapper.mAudioSink.mWritten = mWritten;
   aInfo.mAudioSinkWrapper.mAudioSink.mHasErrored = bool(mErrored);
   aInfo.mAudioSinkWrapper.mAudioSink.mPlaybackComplete =
-      bool(mPlaybackComplete);
+      mAudioStream ? mAudioStream->IsPlaybackCompleted() : false;
 }
 
 }  // namespace mozilla

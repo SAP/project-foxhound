@@ -165,7 +165,7 @@ var AutoCompleteResultView = {
 };
 
 class AutoCompleteParent extends JSWindowActorParent {
-  willDestroy() {
+  didDestroy() {
     if (this.openedPopup) {
       this.openedPopup.closePopup();
     }
@@ -252,7 +252,10 @@ class AutoCompleteParent extends JSWindowActorParent {
     this.openedPopup.setAttribute("resultstyles", [...resultStyles].join(" "));
     this.openedPopup.hidden = false;
     // don't allow the popup to become overly narrow
-    this.openedPopup.setAttribute("width", Math.max(100, rect.width));
+    this.openedPopup.style.setProperty(
+      "--panel-width",
+      Math.max(100, rect.width) + "px"
+    );
     this.openedPopup.style.direction = dir;
 
     AutoCompleteResultView.setResults(this, results);
@@ -333,6 +336,11 @@ class AutoCompleteParent extends JSWindowActorParent {
 
     // Add counts by result style to rawExtraData.
     results.reduce((accumulated, r) => {
+      // Ignore learn more as it is only added after importable logins.
+      if (r.style === "importableLearnMore") {
+        return accumulated;
+      }
+
       // Keys can be a maximum of 15 characters and values must be strings.
       // Also treat both "loginWithOrigin" and "login" as "login" as extra_keys
       // is limited to 10.

@@ -43,16 +43,22 @@ add_task(async function() {
   testInputRelatedElementsAreVisibile(browserConsole);
   await testObjectInspectorPropertiesAreSet(objInspector);
 
-  const browserTab = await addTab("data:text/html;charset=utf8,hello world");
+  const browserTab = await addTab(
+    "data:text/html;charset=utf8,<!DOCTYPE html>hello world"
+  );
   webConsole = await openConsole(browserTab);
   objInspector = await logObject(webConsole);
   testInputRelatedElementsAreVisibile(webConsole);
   await testObjectInspectorPropertiesAreSet(objInspector);
+
+  // Wait for the sourceMap worker target to be fully attached before closing the
+  // Browser Console, otherwise this could lead to failures as the target tries to attach
+  // while the connection is being destroyed.
+  await waitForSourceMapWorker(browserConsole);
   await closeConsole(browserTab);
+  await safeCloseBrowserConsole();
 
-  await BrowserConsoleManager.toggleBrowserConsole();
   Services.prefs.setBoolPref("devtools.chrome.enabled", false);
-
   browserConsole = await BrowserConsoleManager.toggleBrowserConsole();
   objInspector = await logObject(browserConsole);
   testInputRelatedElementsAreNotVisibile(browserConsole);
@@ -63,8 +69,12 @@ add_task(async function() {
   await testObjectInspectorPropertiesAreSet(objInspector);
 
   info("Close webconsole and browser console");
+  // Wait for the sourceMap worker target to be fully attached before closing the
+  // Browser Console, otherwise this could lead to failures as the target tries to attach
+  // while the connection is being destroyed.
+  await waitForSourceMapWorker(browserConsole);
   await closeConsole(browserTab);
-  await BrowserConsoleManager.toggleBrowserConsole();
+  await safeCloseBrowserConsole();
 });
 
 async function logObject(hud) {
@@ -154,4 +164,41 @@ async function testObjectInspectorPropertiesAreSet(objInspector) {
 
   is(name, "browser_console_hide_jsterm_test", "name is set correctly");
   is(value, "true", "value is set correctly");
+}
+
+const seenWorkerTargets = new Set();
+function waitForSourceMapWorker(hud) {
+  const { targetCommand } = hud.commands;
+  // If Fission is not enabled for the Browser Console (e.g. in Beta at this moment),
+  // the target list won't watch for Worker targets, and as a result we won't have issues
+  // with pending connections to the server that we're observing when attaching the target.
+  const isFissionEnabledForBrowserConsole = Services.prefs.getBoolPref(
+    "devtools.browsertoolbox.fission",
+    false
+  );
+  if (!isFissionEnabledForBrowserConsole) {
+    return Promise.resolve();
+  }
+
+  return new Promise(resolve => {
+    const onAvailable = ({ targetFront }) => {
+      if (
+        targetFront.url.endsWith(
+          "devtools/client/shared/source-map/worker.js"
+        ) &&
+        !seenWorkerTargets.has(targetFront)
+      ) {
+        seenWorkerTargets.add(targetFront);
+        targetCommand.unwatchTargets({
+          types: [targetCommand.TYPES.WORKER],
+          onAvailable,
+        });
+        resolve();
+      }
+    };
+    targetCommand.watchTargets({
+      types: [targetCommand.TYPES.WORKER],
+      onAvailable,
+    });
+  });
 }

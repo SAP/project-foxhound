@@ -20,9 +20,11 @@ const POPUP_HEADER = document.getElementById("fill-login");
  */
 add_task(async function test_initialize() {
   Services.prefs.setBoolPref("signon.autofillForms", false);
+  Services.prefs.setBoolPref("signon.usernameOnlyForm.enabled", true);
   registerCleanupFunction(() => {
     Services.prefs.clearUserPref("signon.autofillForms");
     Services.prefs.clearUserPref("signon.schemeUpgrades");
+    Services.prefs.clearUserPref("signon.usernameOnlyForm.enabled");
   });
   for (let login of loginList()) {
     Services.logins.addLogin(login);
@@ -91,7 +93,7 @@ add_task(
           "passwordmgr/test/browser/multiple_forms.html",
       },
       async function(browser) {
-        await openPasswordContextMenu(browser, "#test-username-2");
+        await openPasswordContextMenu(browser, "#test-username-3");
 
         // Check the content of the password manager popup
         let popupMenu = document.getElementById("fill-login-popup");
@@ -118,7 +120,62 @@ add_task(
           "passwordmgr/test/browser/multiple_forms.html",
       },
       async function(browser) {
-        await openPasswordContextMenu(browser, "#test-username-2");
+        await openPasswordContextMenu(browser, "#test-username-3");
+
+        // Check the content of the password manager popup
+        let popupMenu = document.getElementById("fill-login-popup");
+        checkMenu(popupMenu, 3);
+
+        await closePopup(CONTEXT_MENU);
+      }
+    );
+  }
+);
+
+/**
+ * Check if the context menu is populated with the right menuitems
+ * for the target username field without a password field present.
+ */
+add_task(
+  async function test_context_menu_populate_username_with_password_noSchemeUpgrades() {
+    Services.prefs.setBoolPref("signon.schemeUpgrades", false);
+    await BrowserTestUtils.withNewTab(
+      {
+        gBrowser,
+        url:
+          TEST_ORIGIN +
+          "/browser/toolkit/components/" +
+          "passwordmgr/test/browser/multiple_forms.html",
+      },
+      async function(browser) {
+        await openPasswordContextMenu(browser, "#test-username-1");
+
+        // Check the content of the password manager popup
+        let popupMenu = document.getElementById("fill-login-popup");
+        checkMenu(popupMenu, 2);
+
+        await closePopup(CONTEXT_MENU);
+      }
+    );
+  }
+);
+/**
+ * Check if the context menu is populated with the right menuitems
+ * for the target username field without a password field present.
+ */
+add_task(
+  async function test_context_menu_populate_username_with_password_schemeUpgrades() {
+    Services.prefs.setBoolPref("signon.schemeUpgrades", true);
+    await BrowserTestUtils.withNewTab(
+      {
+        gBrowser,
+        url:
+          TEST_ORIGIN +
+          "/browser/toolkit/components/" +
+          "passwordmgr/test/browser/multiple_forms.html",
+      },
+      async function(browser) {
+        await openPasswordContextMenu(browser, "#test-username-1");
 
         // Check the content of the password manager popup
         let popupMenu = document.getElementById("fill-login-popup");
@@ -175,7 +232,7 @@ add_task(async function test_context_menu_password_fill() {
         for (let inputId of passwordInputIds) {
           info("Testing password field: " + inputId);
 
-          // Synthesize a right mouse click over the username input element.
+          // Synthesize a right mouse click over the password input element.
           await openPasswordContextMenu(
             browser,
             "#" + inputId,
@@ -196,8 +253,9 @@ add_task(async function test_context_menu_password_fill() {
                 Assert.ok(POPUP_HEADER.disabled, "Popup menu is disabled.");
                 await closePopup(CONTEXT_MENU);
               }
-              Assert.ok(
-                POPUP_HEADER.label.includes("Password"),
+              Assert.equal(
+                POPUP_HEADER.getAttribute("data-l10n-id"),
+                "main-context-menu-use-saved-password",
                 "top-level label is correct"
               );
 
@@ -281,14 +339,14 @@ add_task(async function test_context_menu_username_login_fill() {
             async function() {
               let headerHidden = POPUP_HEADER.hidden;
               let headerDisabled = POPUP_HEADER.disabled;
-              let headerLabel = POPUP_HEADER.label;
+              let headerLabelID = POPUP_HEADER.getAttribute("data-l10n-id");
 
               let data = {
                 description,
                 inputId,
                 headerHidden,
                 headerDisabled,
-                headerLabel,
+                headerLabelID,
               };
               let shouldContinue = await SpecialPowers.spawn(
                 browser,
@@ -299,7 +357,7 @@ add_task(async function test_context_menu_username_login_fill() {
                     inputId,
                     headerHidden,
                     headerDisabled,
-                    headerLabel,
+                    headerLabelID,
                   } = data;
                   let formElement = content.document.querySelector(
                     `[description="${description}"]`
@@ -321,15 +379,21 @@ add_task(async function test_context_menu_username_login_fill() {
                     passwordField.readOnly
                   ) {
                     if (!passwordField) {
-                      Assert.ok(headerHidden, "Popup menu is hidden.");
+                      // Should show popup for a username-only form.
+                      if (usernameField.autocomplete == "username") {
+                        Assert.ok(!headerHidden, "Popup menu is not hidden.");
+                      } else {
+                        Assert.ok(headerHidden, "Popup menu is hidden.");
+                      }
                     } else {
                       Assert.ok(!headerHidden, "Popup menu is not hidden.");
                       Assert.ok(headerDisabled, "Popup menu is disabled.");
                     }
                     return false;
                   }
-                  Assert.ok(
-                    headerLabel.includes("Login"),
+                  Assert.equal(
+                    headerLabelID,
+                    "main-context-menu-use-saved-login",
                     "top-level label is correct"
                   );
                   return true;

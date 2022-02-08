@@ -2,13 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
 import React, { Component } from "react";
 import { connect } from "../../../utils/connect";
 import classnames from "classnames";
 
-import Reps from "devtools-reps";
+import Reps from "devtools/client/shared/components/reps/index";
 const {
   REPS: { StringRep },
 } = Reps;
@@ -18,26 +16,8 @@ import actions from "../../../actions";
 import { getThreadContext } from "../../../selectors";
 
 import AccessibleImage from "../../shared/AccessibleImage";
-import { DevToolsUtils } from "devtools-modules";
 
-import type { ThreadContext, StacktraceFrame, Exception } from "../../../types";
-
-type Props = {
-  cx: ThreadContext,
-  clearPreview: typeof actions.clearPreview,
-  selectSourceURL: typeof actions.selectSourceURL,
-  exception: Exception,
-  mouseout: Function,
-};
-
-type OwnProps = {|
-  exception: Exception,
-  mouseout: Function,
-|};
-
-type State = {
-  isStacktraceExpanded: boolean,
-};
+const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 
 const POPUP_SELECTOR = ".preview-popup.exception-popup";
 const ANONYMOUS_FN_NAME = "<anonymous>";
@@ -47,10 +27,8 @@ const ANONYMOUS_FN_NAME = "<anonymous>";
 // gets closed when the mouse leaves the popup.
 // b. when the stacktrace is opened the exception popup
 // gets closed only by clicking outside the popup.
-class ExceptionPopup extends Component<Props, State> {
-  topWindow: Object;
-
-  constructor(props: Props) {
+class ExceptionPopup extends Component {
+  constructor(props) {
     super(props);
     this.state = {
       isStacktraceExpanded: false,
@@ -72,7 +50,7 @@ class ExceptionPopup extends Component<Props, State> {
     this.topWindow.addEventListener("mousedown", this.onTopWindowClick, true);
   }
 
-  onTopWindowClick = (e: Object) => {
+  onTopWindowClick = e => {
     const { cx, clearPreview } = this.props;
 
     // When the stactrace is expaned the exception popup gets closed
@@ -89,7 +67,7 @@ class ExceptionPopup extends Component<Props, State> {
     this.setState({ isStacktraceExpanded: !isStacktraceExpanded });
   }
 
-  buildStackFrame(frame: StacktraceFrame) {
+  buildStackFrame(frame) {
     const { cx, selectSourceURL } = this.props;
     const { filename, lineNumber } = frame;
     const functionName = frame.functionName || ANONYMOUS_FN_NAME;
@@ -108,7 +86,7 @@ class ExceptionPopup extends Component<Props, State> {
     );
   }
 
-  renderStacktrace(stacktrace: StacktraceFrame[]) {
+  renderStacktrace(stacktrace) {
     const isStacktraceExpanded = this.state.isStacktraceExpanded;
 
     if (stacktrace.length && isStacktraceExpanded) {
@@ -121,7 +99,7 @@ class ExceptionPopup extends Component<Props, State> {
     return null;
   }
 
-  renderArrowIcon(stacktrace: StacktraceFrame[]) {
+  renderArrowIcon(stacktrace) {
     if (stacktrace.length) {
       return (
         <AccessibleImage
@@ -172,7 +150,4 @@ const mapDispatchToProps = {
   clearPreview: actions.clearPreview,
 };
 
-export default connect<Props, OwnProps, _, _, _, _>(
-  mapStateToProps,
-  mapDispatchToProps
-)(ExceptionPopup);
+export default connect(mapStateToProps, mapDispatchToProps)(ExceptionPopup);

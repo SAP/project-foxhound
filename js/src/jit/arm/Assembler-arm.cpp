@@ -14,8 +14,8 @@
 #include "gc/Marking.h"
 #include "jit/arm/disasm/Disasm-arm.h"
 #include "jit/arm/MacroAssembler-arm.h"
+#include "jit/AutoWritableJitCode.h"
 #include "jit/ExecutableAllocator.h"
-#include "jit/JitRealm.h"
 #include "jit/MacroAssembler.h"
 #include "vm/Realm.h"
 
@@ -2116,6 +2116,30 @@ BufferOffset Assembler::as_vdtm(LoadStore st, Register rn, VFPRegister vd,
 
   return writeVFPInst(sz, dtmLoadStore | RN(rn) | VD(vd) | length | dtmMode |
                               dtmUpdate | dtmCond);
+}
+
+BufferOffset Assembler::as_vldr_unaligned(VFPRegister vd, Register rn) {
+  MOZ_ASSERT(HasNEON());
+  if (vd.isDouble()) {
+    // vld1 (multiple single elements) with align=0, size=3, numregs=1
+    return writeInst(0xF42007CF | RN(rn) | VD(vd));
+  }
+  // vld1 (single element to single lane) with index=0, size=2
+  MOZ_ASSERT(vd.isFloat());
+  MOZ_ASSERT((vd.code() & 1) == 0);
+  return writeInst(0xF4A0080F | RN(rn) | VD(vd.asDouble()));
+}
+
+BufferOffset Assembler::as_vstr_unaligned(VFPRegister vd, Register rn) {
+  MOZ_ASSERT(HasNEON());
+  if (vd.isDouble()) {
+    // vst1 (multiple single elements) with align=0, size=3, numregs=1
+    return writeInst(0xF40007CF | RN(rn) | VD(vd));
+  }
+  // vst1 (single element from one lane) with index=0, size=2
+  MOZ_ASSERT(vd.isFloat());
+  MOZ_ASSERT((vd.code() & 1) == 0);
+  return writeInst(0xF480080F | RN(rn) | VD(vd.asDouble()));
 }
 
 BufferOffset Assembler::as_vimm(VFPRegister vd, VFPImm imm, Condition c) {

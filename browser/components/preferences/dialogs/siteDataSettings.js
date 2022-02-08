@@ -35,7 +35,7 @@ let gSiteDataSettings = {
 
   _createSiteListItem(site) {
     let item = document.createXULElement("richlistitem");
-    item.setAttribute("host", site.host);
+    item.setAttribute("host", site.baseDomain);
     let container = document.createXULElement("hbox");
 
     // Creates a new column item with the specified relative width.
@@ -61,8 +61,8 @@ let gSiteDataSettings = {
     }
 
     // Add "Host" column.
-    let hostData = site.host
-      ? { raw: site.host }
+    let hostData = site.baseDomain
+      ? { raw: site.baseDomain }
       : { id: "site-data-local-file-host" };
     addColumnItem(hostData, "4");
 
@@ -140,11 +140,11 @@ let gSiteDataSettings = {
     setEventListener("usageCol", "click", this.onClickTreeCol);
     setEventListener("lastAccessedCol", "click", this.onClickTreeCol);
     setEventListener("cookiesCol", "click", this.onClickTreeCol);
-    setEventListener("cancel", "command", this.close);
-    setEventListener("save", "command", this.saveChanges);
     setEventListener("searchBox", "command", this.onCommandSearch);
     setEventListener("removeAll", "command", this.onClickRemoveAll);
     setEventListener("removeSelected", "command", this.removeSelected);
+
+    document.addEventListener("dialogaccept", e => this.saveChanges(e));
   },
 
   _updateButtonsState() {
@@ -225,8 +225,7 @@ let gSiteDataSettings = {
     let keyword = this._searchBox.value.toLowerCase().trim();
     let fragment = document.createDocumentFragment();
     for (let site of sites) {
-      let host = site.host;
-      if (keyword && !host.includes(keyword)) {
+      if (keyword && !site.baseDomain.includes(keyword)) {
         continue;
       }
 
@@ -244,57 +243,42 @@ let gSiteDataSettings = {
   _removeSiteItems(items) {
     for (let i = items.length - 1; i >= 0; --i) {
       let item = items[i];
-      let host = item.getAttribute("host");
-      let siteForHost = this._sites.find(site => site.host == host);
-      if (siteForHost) {
-        siteForHost.userAction = "remove";
+      let baseDomain = item.getAttribute("host");
+      let siteForBaseDomain = this._sites.find(
+        site => site.baseDomain == baseDomain
+      );
+      if (siteForBaseDomain) {
+        siteForBaseDomain.userAction = "remove";
       }
       item.remove();
     }
     this._updateButtonsState();
   },
 
-  async saveChanges() {
-    // Tracks whether the user confirmed their decision.
-    let allowed = false;
-
+  async saveChanges(event) {
     let removals = this._sites
       .filter(site => site.userAction == "remove")
-      .map(site => site.host);
+      .map(site => site.baseDomain);
 
     if (removals.length) {
-      if (this._sites.length == removals.length) {
-        allowed = SiteDataManager.promptSiteDataRemoval(window);
-        if (allowed) {
-          try {
-            await SiteDataManager.removeAll();
-          } catch (e) {
-            Cu.reportError(e);
-          }
-        }
-      } else {
-        allowed = SiteDataManager.promptSiteDataRemoval(window, removals);
-        if (allowed) {
-          try {
-            await SiteDataManager.remove(removals);
-          } catch (e) {
-            Cu.reportError(e);
-          }
-        }
+      let removeAll = removals.length == this._sites.length;
+      let promptArg = removeAll ? undefined : removals;
+      if (!SiteDataManager.promptSiteDataRemoval(window, promptArg)) {
+        // If the user cancelled the confirm dialog keep the site data window open,
+        // they can still press cancel again to exit.
+        event.preventDefault();
+        return;
       }
-    } else {
-      allowed = true;
+      try {
+        if (removeAll) {
+          await SiteDataManager.removeAll();
+        } else {
+          await SiteDataManager.remove(removals);
+        }
+      } catch (e) {
+        Cu.reportError(e);
+      }
     }
-
-    // If the user cancelled the confirm dialog keep the site data window open,
-    // they can still press cancel again to exit.
-    if (allowed) {
-      this.close();
-    }
-  },
-
-  close() {
-    window.close();
   },
 
   removeSelected() {
@@ -334,9 +318,7 @@ let gSiteDataSettings = {
   },
 
   onKeyPress(e) {
-    if (e.keyCode == KeyEvent.DOM_VK_ESCAPE) {
-      this.close();
-    } else if (
+    if (
       e.keyCode == KeyEvent.DOM_VK_DELETE ||
       (AppConstants.platform == "macosx" &&
         e.keyCode == KeyEvent.DOM_VK_BACK_SPACE)

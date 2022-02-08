@@ -8,6 +8,10 @@ add_task(async function() {
         "network.cookie.cookieBehavior",
         Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
       ],
+      [
+        "network.cookie.cookieBehavior.pbmode",
+        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
+      ],
       ["privacy.trackingprotection.enabled", false],
       ["privacy.trackingprotection.pbmode.enabled", false],
       ["privacy.trackingprotection.annotate_channels", true],
@@ -15,6 +19,8 @@ add_task(async function() {
         "privacy.restrict3rdpartystorage.userInteractionRequiredForHosts",
         "tracking.example.com,tracking.example.org",
       ],
+      // Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
+      ["network.cookie.sameSite.laxByDefault", false],
     ],
   });
 
@@ -115,6 +121,7 @@ add_task(async function() {
 
 add_task(async function() {
   info("Cleaning up.");
+  SpecialPowers.clearUserPref("network.cookie.sameSite.laxByDefault");
   await new Promise(resolve => {
     Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>
       resolve()

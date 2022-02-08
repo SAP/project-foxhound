@@ -18,16 +18,17 @@ class nsCocoaFeatures {
   static int32_t macOSVersionMajor();
   static int32_t macOSVersionMinor();
   static int32_t macOSVersionBugFix();
-  static bool OnYosemiteOrLater();
-  static bool OnElCapitanOrLater();
   static bool OnSierraExactly();
-  static bool OnSierraOrLater();
   static bool OnHighSierraOrLater();
   static bool OnMojaveOrLater();
   static bool OnCatalinaOrLater();
+  static bool OnBigSurOrLater();
+  static bool OnMontereyOrLater();
 
   static bool IsAtLeastVersion(int32_t aMajor, int32_t aMinor,
                                int32_t aBugFix = 0);
+
+  static bool ProcessIsRosettaTranslated();
 
   // These are utilities that do not change or depend on the value of
   // mOSVersion and instead just encapsulate the encoding algorithm. Note that
@@ -50,7 +51,6 @@ class nsCocoaFeatures {
 // C-callable helper for cairo-quartz-font.c and SkFontHost_mac.cpp
 extern "C" {
 bool Gecko_OnSierraExactly();
-bool Gecko_OnHighSierraOrLater();
 }
 
 #endif  // nsCocoaFeatures_h_

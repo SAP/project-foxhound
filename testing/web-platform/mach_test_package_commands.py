@@ -9,7 +9,6 @@ import sys
 
 from mach_commands_base import WebPlatformTestsRunner, create_parser_wpt
 from mach.decorators import (
-    CommandProvider,
     Command,
 )
 
@@ -22,32 +21,48 @@ class WebPlatformTestsRunnerSetup(object):
 
     def kwargs_firefox(self, kwargs):
         from wptrunner import wptcommandline
+
         if kwargs["config"] is None:
-            kwargs["config"] = os.path.join(self.context.package_root, 'web-platform', 'wptrunner.ini')
+            kwargs["config"] = os.path.join(
+                self.context.package_root, "web-platform", "wptrunner.ini"
+            )
         if kwargs["binary"] is None:
             kwargs["binary"] = self.context.firefox_bin
         if kwargs["prefs_root"] is None:
-            kwargs["prefs_root"] = os.path.join(self.context.package_root, 'web-platform', "prefs")
+            kwargs["prefs_root"] = os.path.join(
+                self.context.package_root, "web-platform", "prefs"
+            )
         if kwargs["certutil_binary"] is None:
-            kwargs["certutil_binary"] = os.path.join(self.context.bin_dir, 'certutil')
+            kwargs["certutil_binary"] = os.path.join(self.context.bin_dir, "certutil")
         if kwargs["stackfix_dir"] is None:
             kwargs["stackfix_dir"] = self.context.bin_dir
         if kwargs["ssl_type"] in (None, "pregenerated"):
-            cert_root = os.path.join(self.context.package_root, "web-platform",
-                                     "tests", "tools", "certs")
+            cert_root = os.path.join(
+                self.context.package_root, "web-platform", "tests", "tools", "certs"
+            )
             if kwargs["ca_cert_path"] is None:
                 kwargs["ca_cert_path"] = os.path.join(cert_root, "cacert.pem")
             if kwargs["host_key_path"] is None:
-                kwargs["host_key_path"] = os.path.join(cert_root, "web-platform.test.key")
+                kwargs["host_key_path"] = os.path.join(
+                    cert_root, "web-platform.test.key"
+                )
             if kwargs["host_cert_path"] is None:
-                kwargs["host_cert_path"] = os.path.join(cert_root, "web-platform.test.pem")
+                kwargs["host_cert_path"] = os.path.join(
+                    cert_root, "web-platform.test.pem"
+                )
         kwargs["capture_stdio"] = True
 
-        if kwargs["exclude"] is None and kwargs["include"] is None and not sys.platform.startswith("linux"):
+        if (
+            kwargs["exclude"] is None
+            and kwargs["include"] is None
+            and not sys.platform.startswith("linux")
+        ):
             kwargs["exclude"] = ["css"]
 
         if kwargs["webdriver_binary"] is None:
-            kwargs["webdriver_binary"] = os.path.join(self.context.bin_dir, "geckodriver")
+            kwargs["webdriver_binary"] = os.path.join(
+                self.context.bin_dir, "geckodriver"
+            )
 
         return wptcommandline.check_args(kwargs)
 
@@ -55,20 +70,14 @@ class WebPlatformTestsRunnerSetup(object):
         raise NotImplementedError
 
 
-@CommandProvider
-class MachCommands(object):
-    def __init__(self, context):
-        self.context = context
+@Command("web-platform-tests", category="testing", parser=create_parser_wpt)
+def run_web_platform_tests(command_context, **kwargs):
+    command_context._mach_context.activate_mozharness_venv()
+    return WebPlatformTestsRunner(
+        WebPlatformTestsRunnerSetup(command_context._mach_context)
+    ).run(**kwargs)
 
-    @Command("web-platform-tests",
-             category="testing",
-             parser=create_parser_wpt)
-    def run_web_platform_tests(self, **kwargs):
-        self.context.activate_mozharness_venv()
-        return WebPlatformTestsRunner(WebPlatformTestsRunnerSetup(self.context)).run(**kwargs)
 
-    @Command("wpt",
-             category="testing",
-             parser=create_parser_wpt)
-    def run_wpt(self, **params):
-        return self.run_web_platform_tests(**params)
+@Command("wpt", category="testing", parser=create_parser_wpt)
+def run_wpt(command_context, **params):
+    return command_context.run_web_platform_tests(**params)

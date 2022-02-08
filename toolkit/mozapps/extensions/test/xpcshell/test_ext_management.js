@@ -10,9 +10,21 @@ add_task(async function setup() {
 function backgroundGetSelf() {
   browser.management.getSelf().then(
     extInfo => {
-      let url = browser.extension.getURL("*");
+      let url = browser.runtime.getURL("*");
       extInfo.hostPermissions = extInfo.hostPermissions.filter(i => i != url);
-      extInfo.url = browser.extension.getURL("");
+
+      // Internal permissions are currently part of the permissions included
+      // in the management.getSelf results, and in non release channels
+      // any temporary installed extension is recognized as privileged
+      // and some internal permission would be added automatically.
+      //
+      // TODO(Bug 1713344): this may become unnecessary if we filter out
+      // the internal permissions from the management API results.
+      extInfo.permissions = extInfo.permissions.filter(
+        i => !i.startsWith("internal:")
+      );
+
+      extInfo.url = browser.runtime.getURL("");
       browser.test.sendMessage("management-getSelf", extInfo);
     },
     error => {

@@ -1,5 +1,6 @@
-use futures::{future, select};
-use futures::future::{FusedFuture, FutureExt};
+use futures::executor::block_on;
+use futures::future::{self, FusedFuture, FutureExt};
+use futures::select;
 use futures::stream::{FuturesUnordered, StreamExt};
 use futures::task::{Context, Poll};
 use futures_test::future::FutureTestExt;
@@ -35,7 +36,7 @@ fn select() {
     // `is_terminated() == true` during the first poll, it manages to toggle
     // back to having items after a future is pushed into it during the second
     // poll (after pending_once completes).
-    futures::executor::block_on(async {
+    block_on(async {
         let mut fut = future::ready(1).pending_once();
         let mut async_tasks = FuturesUnordered::new();
         let mut total = 0;
@@ -64,7 +65,7 @@ fn futures_util_select() {
     // `is_terminated() == true` during the first poll, it manages to toggle
     // back to having items after a future is pushed into it during the second
     // poll (after pending_once completes).
-    futures::executor::block_on(async {
+    block_on(async {
         let mut fut = future::ready(1).pending_once();
         let mut async_tasks = FuturesUnordered::new();
         let mut total = 0;

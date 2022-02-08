@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 # lint_ignore=E501
 config = {
     "products": {
@@ -94,6 +98,30 @@ config = {
         },
         "msi-next-latest": {
             "product-name": "Firefox-esr-next-msi-latest-SSL",
+            "check_uptake": True,
+            "platforms": [
+                "win",
+                "win64",
+            ],
+        },
+        "msix": {
+            "product-name": "Firefox-%(version)s-msix-SSL",
+            "check_uptake": True,
+            "platforms": [
+                "win",
+                "win64",
+            ],
+        },
+        "msix-latest": {
+            "product-name": "Firefox-esr-msix-latest-SSL",
+            "check_uptake": True,
+            "platforms": [
+                "win",
+                "win64",
+            ],
+        },
+        "msix-next-latest": {
+            "product-name": "Firefox-esr-next-msix-latest-SSL",
             "check_uptake": True,
             "platforms": [
                 "win",

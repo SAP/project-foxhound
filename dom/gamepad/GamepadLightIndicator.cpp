@@ -7,9 +7,9 @@
 #include "mozilla/dom/GamepadLightIndicator.h"
 #include "mozilla/dom/GamepadManager.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/HoldDropJSObjects.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(GamepadLightIndicator)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(GamepadLightIndicator)
@@ -22,11 +22,11 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(GamepadLightIndicator, mParent)
 
 GamepadLightIndicator::GamepadLightIndicator(nsISupports* aParent,
-                                             uint32_t aGamepadId,
+                                             GamepadHandle aGamepadHandle,
                                              uint32_t aIndex)
     : mParent(aParent),
       mType(DefaultType()),
-      mGamepadId(aGamepadId),
+      mGamepadHandle(aGamepadHandle),
       mIndex(aIndex) {}
 
 GamepadLightIndicator::~GamepadLightIndicator() {
@@ -49,7 +49,8 @@ already_AddRefed<Promise> GamepadLightIndicator::SetColor(
   MOZ_ASSERT(gamepadManager);
 
   RefPtr<Promise> promise = gamepadManager->SetLightIndicatorColor(
-      mGamepadId, mIndex, color.mRed, color.mGreen, color.mBlue, global, aRv);
+      mGamepadHandle, mIndex, color.mRed, color.mGreen, color.mBlue, global,
+      aRv);
   if (!promise) {
     return nullptr;
   }
@@ -60,10 +61,9 @@ GamepadLightIndicatorType GamepadLightIndicator::Type() const { return mType; }
 
 void GamepadLightIndicator::Set(const GamepadLightIndicator* aOther) {
   MOZ_ASSERT(aOther);
-  mGamepadId = aOther->mGamepadId;
+  mGamepadHandle = aOther->mGamepadHandle;
   mType = aOther->mType;
   mIndex = aOther->mIndex;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

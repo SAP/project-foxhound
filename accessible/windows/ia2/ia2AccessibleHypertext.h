@@ -10,15 +10,32 @@
 
 #include "nsISupports.h"
 
+#include "ia2AccessibleEditableText.h"
 #include "ia2AccessibleText.h"
 #include "AccessibleHypertext2.h"
+#include "IUnknownImpl.h"
+#include "MsaaAccessible.h"
 
 namespace mozilla {
 namespace a11y {
+class HyperTextAccessibleBase;
+class HyperTextAccessibleWrap;
 
 class ia2AccessibleHypertext : public ia2AccessibleText,
-                               public IAccessibleHypertext2 {
+                               public IAccessibleHypertext2,
+                               public ia2AccessibleEditableText,
+                               public MsaaAccessible {
  public:
+  // IUnknown
+  DECL_IUNKNOWN_INHERITED
+  IMPL_IUNKNOWN_REFCOUNTING_INHERITED(MsaaAccessible)
+
+  // IAccessible2
+  // We indirectly inherit IAccessible2, which has a get_attributes method,
+  // but IAccessibleText also has a get_attributes method with a different
+  // signature. We want both.
+  using MsaaAccessible::get_attributes;
+
   // IAccessibleText
   FORWARD_IACCESSIBLETEXT(ia2AccessibleText)
 
@@ -38,6 +55,13 @@ class ia2AccessibleHypertext : public ia2AccessibleText,
   virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_hyperlinks(
       /* [out, size_is(,*nHyperlinks)] */ IAccessibleHyperlink*** hyperlinks,
       /* [out, retval] */ long* nHyperlinks);
+
+ protected:
+  using MsaaAccessible::MsaaAccessible;
+
+ private:
+  HyperTextAccessibleBase* TextAcc();
+  HyperTextAccessibleWrap* LocalTextAcc();
 };
 
 }  // namespace a11y

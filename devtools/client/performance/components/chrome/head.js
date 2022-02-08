@@ -4,15 +4,16 @@
 "use strict";
 
 /* global window, document, SimpleTest, requestAnimationFrame, is, ok */
-/* exported Cc, Ci, Cu, Cr, Assert, Task, TargetFactory, Toolbox, browserRequire,
+/* exported Cc, Ci, Cu, Cr, Assert, Task, Toolbox, browserRequire,
    forceRender, setProps, dumpn, checkOptimizationHeader, checkOptimizationTree */
-const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
+const { require } = ChromeUtils.import(
+  "resource://devtools/shared/loader/Loader.jsm"
+);
 let { Assert } = require("resource://testing-common/Assert.jsm");
 const { BrowserLoader } = ChromeUtils.import(
-  "resource://devtools/client/shared/browser-loader.js"
+  "resource://devtools/shared/loader/browser-loader.js"
 );
 const flags = require("devtools/shared/flags");
-let { TargetFactory } = require("devtools/client/framework/target");
 let { Toolbox } = require("devtools/client/framework/toolbox");
 
 let { require: browserRequire } = BrowserLoader({

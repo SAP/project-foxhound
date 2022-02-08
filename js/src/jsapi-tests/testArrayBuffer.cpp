@@ -2,13 +2,15 @@
  * vim: set ts=8 sts=2 et sw=2 tw=80:
  */
 
-#include "jsfriendapi.h"
-
 #include "builtin/TestingFunctions.h"
 #include "js/Array.h"        // JS::NewArrayObject
 #include "js/ArrayBuffer.h"  // JS::{GetArrayBuffer{ByteLength,Data},IsArrayBufferObject,NewArrayBuffer{,WithContents},StealArrayBufferContents}
+#include "js/CallAndConstruct.h"
 #include "js/Exception.h"
+#include "js/experimental/TypedData.h"  // JS_New{Int32,Uint8}ArrayWithBuffer
+#include "js/friend/ErrorMessages.h"    // JSMSG_*
 #include "js/MemoryFunctions.h"
+#include "js/PropertyAndElement.h"  // JS_GetElement, JS_GetProperty, JS_SetElement
 #include "jsapi-tests/tests.h"
 
 BEGIN_TEST(testArrayBuffer_bug720949_steal) {
@@ -173,7 +175,7 @@ BEGIN_TEST(testArrayBuffer_customFreeFunc) {
   CHECK(buffer);
   CHECK(!data.wasFreed());
 
-  uint32_t len;
+  size_t len;
   bool isShared;
   uint8_t* bufferData;
   JS::GetArrayBufferLengthAndData(buffer, &len, &isShared, &bufferData);
@@ -199,7 +201,7 @@ BEGIN_TEST(testArrayBuffer_staticContents) {
   CHECK(buffer);
   CHECK(!data.wasFreed());
 
-  uint32_t len;
+  size_t len;
   bool isShared;
   uint8_t* bufferData;
   JS::GetArrayBufferLengthAndData(buffer, &len, &isShared, &bufferData);

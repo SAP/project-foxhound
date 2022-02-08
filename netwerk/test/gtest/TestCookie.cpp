@@ -18,13 +18,16 @@
 #include "nsServiceManagerUtils.h"
 #include "nsNetCID.h"
 #include "nsIPrefBranch.h"
+#include "nsIPrefService.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/Unused.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "Cookie.h"
 #include "nsIURI.h"
 
-using mozilla::Unused;
+using namespace mozilla;
+using namespace mozilla::net;
 
 static NS_DEFINE_CID(kCookieServiceCID, NS_COOKIESERVICE_CID);
 static NS_DEFINE_CID(kPrefServiceCID, NS_PREFSERVICE_CID);
@@ -86,7 +89,7 @@ void SetACookieInternal(nsICookieService* aCookieService, const char* aSpec,
                 nsIContentPolicy::TYPE_OTHER);
 
   nsCOMPtr<nsICookieJarSettings> cookieJarSettings =
-      aAllowed ? CookieJarSettings::Create()
+      aAllowed ? CookieJarSettings::Create(CookieJarSettings::eRegular)
                : CookieJarSettings::GetBlockingAll();
   MOZ_ASSERT(cookieJarSettings);
 
@@ -137,9 +140,9 @@ void GetACookieNoHttp(nsICookieService* aCookieService, const char* aSpec,
 
   nsCOMPtr<mozilla::dom::Document> document;
   nsresult rv = NS_NewDOMDocument(getter_AddRefs(document),
-                                  EmptyString(),  // aNamespaceURI
-                                  EmptyString(),  // aQualifiedName
-                                  nullptr,        // aDoctype
+                                  u""_ns,   // aNamespaceURI
+                                  u""_ns,   // aQualifiedName
+                                  nullptr,  // aDoctype
                                   uri, uri, principal,
                                   false,    // aLoadedAsData
                                   nullptr,  // aEventObject
@@ -172,10 +175,10 @@ static inline bool CheckResult(const char* aLhs, uint32_t aRule,
       return PL_strcmp(aLhs, aRhs);
 
     case MUST_CONTAIN:
-      return PL_strstr(aLhs, aRhs) != nullptr;
+      return strstr(aLhs, aRhs) != nullptr;
 
     case MUST_NOT_CONTAIN:
-      return PL_strstr(aLhs, aRhs) == nullptr;
+      return strstr(aLhs, aRhs) == nullptr;
 
     default:
       return false;  // failure
@@ -747,7 +750,7 @@ TEST(TestCookie, TestCookieMain)
       do_GetService(NS_COOKIEMANAGER_CONTRACTID, &rv0);
   ASSERT_TRUE(NS_SUCCEEDED(rv0));
 
-  nsCOMPtr<nsICookieManager> cookieMgr2 = cookieMgr;
+  const nsCOMPtr<nsICookieManager>& cookieMgr2 = cookieMgr;
   ASSERT_TRUE(cookieMgr2);
 
   mozilla::OriginAttributes attrs;
@@ -795,10 +798,11 @@ TEST(TestCookie, TestCookieMain)
   for (const auto& cookie : cookies) {
     nsAutoCString name;
     cookie->GetName(name);
-    if (name.EqualsLiteral("test2"))
+    if (name.EqualsLiteral("test2")) {
       expiredCookie = cookie;
-    else if (name.EqualsLiteral("test3"))
+    } else if (name.EqualsLiteral("test3")) {
       newDomainCookie = cookie;
+    }
   }
   EXPECT_EQ(cookies.Length(), 3ul);
   // check the httpOnly attribute of the second cookie is honored

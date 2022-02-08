@@ -1,4 +1,3 @@
-// |reftest| skip -- class-static-methods-private is not supported
 // This file was procedurally generated from the following sources:
 // - src/class-elements/rs-static-generator-method-privatename-identifier-alt.case
 // - src/class-elements/productions/cls-decl-after-same-line-static-gen.template

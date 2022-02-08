@@ -9,12 +9,13 @@
 
 #include "jit/BaselineFrame.h"
 
-#include "vm/EnvironmentObject.h"
+#include "jit/TrialInlining.h"
 #include "vm/JSContext.h"
 #include "vm/Realm.h"
 
 #include "vm/EnvironmentObject-inl.h"
 #include "vm/JSScript-inl.h"
+#include "vm/NativeObject-inl.h"  // js::NativeObject::initDenseElementsFromRange
 
 namespace js {
 namespace jit {
@@ -40,10 +41,33 @@ inline void BaselineFrame::replaceInnermostEnvironment(EnvironmentObject& env) {
   envChain_ = &env;
 }
 
+inline bool BaselineFrame::saveGeneratorSlots(JSContext* cx, unsigned nslots,
+                                              ArrayObject* dest) const {
+  // By convention, generator slots are stored in interpreter order,
+  // which is the reverse of BaselineFrame order.
+
+  MOZ_ASSERT(nslots == numValueSlots(debugFrameSize()) - 1);
+  const Value* end = reinterpret_cast<const Value*>(this);
+  mozilla::Span<const Value> span{end - nslots, end};
+  return dest->initDenseElementsFromRange(cx, span.rbegin(), span.rend());
+}
+
 inline bool BaselineFrame::pushLexicalEnvironment(JSContext* cx,
                                                   Handle<LexicalScope*> scope) {
-  LexicalEnvironmentObject* env =
-      LexicalEnvironmentObject::createForFrame(cx, scope, this);
+  BlockLexicalEnvironmentObject* env =
+      BlockLexicalEnvironmentObject::createForFrame(cx, scope, this);
+  if (!env) {
+    return false;
+  }
+  pushOnEnvironmentChain(*env);
+
+  return true;
+}
+
+inline bool BaselineFrame::pushClassBodyEnvironment(
+    JSContext* cx, Handle<ClassBodyScope*> scope) {
+  ClassBodyLexicalEnvironmentObject* env =
+      ClassBodyLexicalEnvironmentObject::createForFrame(cx, scope, this);
   if (!env) {
     return false;
   }
@@ -53,10 +77,10 @@ inline bool BaselineFrame::pushLexicalEnvironment(JSContext* cx,
 }
 
 inline bool BaselineFrame::freshenLexicalEnvironment(JSContext* cx) {
-  Rooted<LexicalEnvironmentObject*> current(
-      cx, &envChain_->as<LexicalEnvironmentObject>());
-  LexicalEnvironmentObject* clone =
-      LexicalEnvironmentObject::clone(cx, current);
+  Rooted<BlockLexicalEnvironmentObject*> current(
+      cx, &envChain_->as<BlockLexicalEnvironmentObject>());
+  BlockLexicalEnvironmentObject* clone =
+      BlockLexicalEnvironmentObject::clone(cx, current);
   if (!clone) {
     return false;
   }
@@ -66,10 +90,10 @@ inline bool BaselineFrame::freshenLexicalEnvironment(JSContext* cx) {
 }
 
 inline bool BaselineFrame::recreateLexicalEnvironment(JSContext* cx) {
-  Rooted<LexicalEnvironmentObject*> current(
-      cx, &envChain_->as<LexicalEnvironmentObject>());
-  LexicalEnvironmentObject* clone =
-      LexicalEnvironmentObject::recreate(cx, current);
+  Rooted<BlockLexicalEnvironmentObject*> current(
+      cx, &envChain_->as<BlockLexicalEnvironmentObject>());
+  BlockLexicalEnvironmentObject* clone =
+      BlockLexicalEnvironmentObject::recreate(cx, current);
   if (!clone) {
     return false;
   }
@@ -89,14 +113,7 @@ inline CallObject& BaselineFrame::callObj() const {
   return obj->as<CallObject>();
 }
 
-inline ICScript* BaselineFrame::icScript() const {
-  if (JitOptions.warpBuilder) {
-    return icScript_;
-  }
-  return script()->jitScript()->icScript();
-}
-
-inline JSScript* BaselineFrame::invalidationScript() const {
+inline JSScript* BaselineFrame::outerScript() const {
   if (!icScript()->isInlined()) {
     return script();
   }

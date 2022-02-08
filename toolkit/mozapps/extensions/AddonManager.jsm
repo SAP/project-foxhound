@@ -28,6 +28,8 @@ const MOZ_COMPATIBILITY_NIGHTLY = ![
   "esr",
 ].includes(AppConstants.MOZ_UPDATE_CHANNEL);
 
+const INTL_LOCALES_CHANGED = "intl:app-locales-changed";
+
 const PREF_AMO_ABUSEREPORT = "extensions.abuseReport.amWebAPI.enabled";
 const PREF_BLOCKLIST_PINGCOUNTVERSION = "extensions.blocklist.pingCountVersion";
 const PREF_EM_UPDATE_ENABLED = "extensions.update.enabled";
@@ -41,7 +43,8 @@ const PREF_SYS_ADDON_UPDATE_ENABLED = "extensions.systemAddon.update.enabled";
 const PREF_MIN_WEBEXT_PLATFORM_VERSION =
   "extensions.webExtensionsMinPlatformVersion";
 const PREF_WEBAPI_TESTING = "extensions.webapi.testing";
-const PREF_WEBEXT_PERM_PROMPTS = "extensions.webextPermissionPrompts";
+const PREF_EM_POSTDOWNLOAD_THIRD_PARTY =
+  "extensions.postDownloadThirdPartyPrompt";
 
 const UPDATE_REQUEST_VERSION = 2;
 
@@ -89,8 +92,8 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
-  "WEBEXT_PERMISSION_PROMPTS",
-  PREF_WEBEXT_PERM_PROMPTS,
+  "WEBEXT_POSTDOWNLOAD_THIRD_PARTY",
+  PREF_EM_POSTDOWNLOAD_THIRD_PARTY,
   false
 );
 
@@ -480,18 +483,8 @@ AddonScreenshot.prototype = {
  * @param  aUIPriority
  *         The priority is used by the UI to list the types in order. Lower
  *         values push the type higher in the list.
- * @param  aFlags
- *         An option set of flags that customize the display of the add-on in
- *         the UI.
  */
-function AddonType(
-  aID,
-  aLocaleURI,
-  aLocaleKey,
-  aViewType,
-  aUIPriority,
-  aFlags
-) {
+function AddonType(aID, aLocaleURI, aLocaleKey, aViewType, aUIPriority) {
   if (!aID) {
     throw Components.Exception(
       "An AddonType must have an ID",
@@ -516,7 +509,6 @@ function AddonType(
   this.id = aID;
   this.uiPriority = aUIPriority;
   this.viewType = aViewType;
-  this.flags = aFlags;
 
   if (aLocaleURI) {
     XPCOMUtils.defineLazyGetter(this, "name", () => {
@@ -739,6 +731,9 @@ var AddonManagerInternal = {
         gWebExtensionsMinPlatformVersion
       );
       Services.prefs.addObserver(PREF_MIN_WEBEXT_PLATFORM_VERSION, this);
+
+      // Watch for language changes, refresh the addon cache when it changes.
+      Services.obs.addObserver(this, INTL_LOCALES_CHANGED);
 
       // Ensure all default providers have had a chance to register themselves
       for (let url of DEFAULT_PROVIDERS) {
@@ -1058,6 +1053,8 @@ var AddonManagerInternal = {
     Services.prefs.removeObserver(PREF_EM_UPDATE_ENABLED, this);
     Services.prefs.removeObserver(PREF_EM_AUTOUPDATE_DEFAULT, this);
 
+    Services.obs.removeObserver(this, INTL_LOCALES_CHANGED);
+
     let savedError = null;
     // Only shut down providers if they've been started.
     if (gStarted) {
@@ -1114,6 +1111,14 @@ var AddonManagerInternal = {
    * @see nsIObserver
    */
   observe(aSubject, aTopic, aData) {
+    switch (aTopic) {
+      case INTL_LOCALES_CHANGED: {
+        // Asynchronously fetch and update the addons cache.
+        AddonRepository.backgroundUpdateCheck();
+        return;
+      }
+    }
+
     switch (aData) {
       case PREF_EM_CHECK_COMPATIBILITY: {
         let oldValue = gCheckCompatibility;
@@ -1347,17 +1352,12 @@ var AddonManagerInternal = {
                     // Start installing updates when the add-on can be updated and
                     // background updates should be applied.
                     logger.debug("Found update for add-on ${id}", aAddon);
-                    if (
-                      aAddon.permissions & AddonManager.PERM_CAN_UPGRADE &&
-                      AddonManager.shouldAutoUpdate(aAddon)
-                    ) {
+                    if (AddonManager.shouldAutoUpdate(aAddon)) {
                       // XXX we really should resolve when this install is done,
                       // not when update-available check completes, no?
                       logger.debug(`Starting upgrade install of ${aAddon.id}`);
-                      if (WEBEXT_PERMISSION_PROMPTS) {
-                        aInstall.promptHandler = (...args) =>
-                          AddonManagerInternal._updatePromptHandler(...args);
-                      }
+                      aInstall.promptHandler = (...args) =>
+                        AddonManagerInternal._updatePromptHandler(...args);
                       aInstall.install();
                     }
                   },
@@ -2057,13 +2057,21 @@ var AddonManagerInternal = {
     return !explicit;
   },
 
-  installNotifyObservers(aTopic, aBrowser, aUri, aInstall, aInstallFn) {
+  installNotifyObservers(
+    aTopic,
+    aBrowser,
+    aUri,
+    aInstall,
+    aInstallFn,
+    aCancelFn
+  ) {
     let info = {
       wrappedJSObject: {
         browser: aBrowser,
         originatingURI: aUri,
         installs: [aInstall],
         install: aInstallFn,
+        cancel: aCancelFn,
       },
     };
     Services.obs.notifyObservers(info, aTopic);
@@ -2148,7 +2156,7 @@ var AddonManagerInternal = {
         let needsRestart =
           install.addon.pendingOperations != AddonManager.PENDING_NONE;
 
-        if (WEBEXT_PERMISSION_PROMPTS && !needsRestart) {
+        if (!needsRestart) {
           let subject = {
             wrappedJSObject: { target: browser, addon: install.addon },
           };
@@ -2334,7 +2342,7 @@ var AddonManagerInternal = {
           aInstallingPrincipal.URI,
           aInstall
         );
-      } else {
+      } else if (!WEBEXT_POSTDOWNLOAD_THIRD_PARTY) {
         // Block with prompt
         this.installNotifyObservers(
           "addon-install-blocked",
@@ -2343,6 +2351,12 @@ var AddonManagerInternal = {
           aInstall,
           () => startInstall("other")
         );
+      } else {
+        // We download the addon and validate whether a 3rd party
+        // install prompt should be shown using e.g. recommended
+        // state and install_origins.
+        logger.info(`Addon download before validation.`);
+        startInstall("other");
       }
     } catch (e) {
       // In the event that the weblistener throws during instantiation or when
@@ -3030,7 +3044,6 @@ var AddonManagerInternal = {
     if (aValue != gAutoUpdateDefault) {
       Services.prefs.setBoolPref(PREF_EM_AUTOUPDATE_DEFAULT, aValue);
     }
-    return aValue;
   },
 
   get checkCompatibility() {
@@ -3046,7 +3059,6 @@ var AddonManagerInternal = {
         Services.prefs.clearUserPref(PREF_EM_CHECK_COMPATIBILITY);
       }
     }
-    return aValue;
   },
 
   get strictCompatibility() {
@@ -3058,7 +3070,6 @@ var AddonManagerInternal = {
     if (aValue != gStrictCompatibility) {
       Services.prefs.setBoolPref(PREF_EM_STRICT_COMPATIBILITY, aValue);
     }
-    return aValue;
   },
 
   get checkUpdateSecurityDefault() {
@@ -3078,7 +3089,6 @@ var AddonManagerInternal = {
         Services.prefs.clearUserPref(PREF_EM_CHECK_UPDATE_SECURITY);
       }
     }
-    return aValue;
   },
 
   get updateEnabled() {
@@ -3090,92 +3100,147 @@ var AddonManagerInternal = {
     if (aValue != gUpdateEnabled) {
       Services.prefs.setBoolPref(PREF_EM_UPDATE_ENABLED, aValue);
     }
-    return aValue;
+  },
+
+  /**
+   * Verify whether we need to show the 3rd party install prompt.
+   *
+   * Bypass the third party install prompt if this is an install:
+   *   - is an install from a recognized source
+   *   - is a an addon that can bypass the panel, such as a recommended addon
+   *
+   * @param {browser}      browser browser user is installing from
+   * @param {nsIURI}       url     URI for the principal of the installing source
+   * @param {AddonInstallWrapper} install
+   * @param {Object}       info    information such as addon wrapper
+   * @param {AddonWrapper} info.addon
+   * @param {string}       source  simplified string describing source of install and is
+   *                               generated based on the installing principal and checking
+   *                               against site permissions and enterprise policy.
+   *                               It may be one of "AMO", "local" or "other".
+   * @returns {Promise}            Rejected when the installation should not proceed.
+   */
+  _verifyThirdPartyInstall(browser, url, install, info, source) {
+    // If we are not post-download processing, this panel was already shown.
+    // Otherwise, if this is from AMO or local, bypass the prompt.
+    if (!WEBEXT_POSTDOWNLOAD_THIRD_PARTY || ["AMO", "local"].includes(source)) {
+      return Promise.resolve();
+    }
+
+    // verify both the installing source and the xpi url are allowed.
+    if (
+      !info.addon.validInstallOrigins({
+        installFrom: url,
+        source: install.sourceURI,
+      })
+    ) {
+      install.error = AddonManager.ERROR_INVALID_DOMAIN;
+      return Promise.reject();
+    }
+
+    // Some addons such as recommended addons do not result in this prompt.
+    if (info.addon.canBypassThirdParyInstallPrompt) {
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve, reject) => {
+      this.installNotifyObservers(
+        "addon-install-blocked",
+        browser,
+        url,
+        install,
+        resolve,
+        reject
+      );
+    });
   },
 
   setupPromptHandler(browser, url, install, requireConfirm, source) {
     install.promptHandler = info =>
-      new Promise((resolve, _reject) => {
-        let reject = () => {
-          this.installNotifyObservers(
-            "addon-install-cancelled",
-            browser,
-            url,
-            install
-          );
-          _reject();
-        };
+      new Promise((resolve, reject) => {
+        this._verifyThirdPartyInstall(browser, url, install, info, source)
+          .then(() => {
+            // All installs end up in this callback when the add-on is available
+            // for installation.  There are numerous different things that can
+            // happen from here though.  For webextensions, if the application
+            // implements webextension permission prompts, those always take
+            // precedence.
+            // If this add-on is not a webextension or if the application does not
+            // implement permission prompts, no confirmation is displayed for
+            // installs created from about:addons (in which case requireConfirm
+            // is false).
+            // In the remaining cases, a confirmation prompt is displayed but the
+            // application may override it either by implementing the
+            // "@mozilla.org/addons/web-install-prompt;1" contract or by setting
+            // the customConfirmationUI preference and responding to the
+            // "addon-install-confirmation" notification.  If the application
+            // does not implement its own prompt, use the built-in xul dialog.
+            if (info.addon.userPermissions) {
+              let subject = {
+                wrappedJSObject: {
+                  target: browser,
+                  info: Object.assign({ resolve, reject, source }, info),
+                },
+              };
+              subject.wrappedJSObject.info.permissions =
+                info.addon.userPermissions;
+              Services.obs.notifyObservers(
+                subject,
+                "webextension-permission-prompt"
+              );
+            } else if (requireConfirm) {
+              // The methods below all want to call the install() or cancel()
+              // method on the provided AddonInstall object to either accept
+              // or reject the confirmation.  Fit that into our promise-based
+              // control flow by wrapping the install object.  However,
+              // xpInstallConfirm.xul matches the install object it is passed
+              // with the argument passed to an InstallListener, so give it
+              // access to the underlying object through the .wrapped property.
+              let proxy = new Proxy(install, {
+                get(target, property) {
+                  if (property == "install") {
+                    return resolve;
+                  } else if (property == "cancel") {
+                    return reject;
+                  } else if (property == "wrapped") {
+                    return target;
+                  }
+                  let result = target[property];
+                  return typeof result == "function"
+                    ? result.bind(target)
+                    : result;
+                },
+              });
 
-        // All installs end up in this callback when the add-on is available
-        // for installation.  There are numerous different things that can
-        // happen from here though.  For webextensions, if the application
-        // implements webextension permission prompts, those always take
-        // precedence.
-        // If this add-on is not a webextension or if the application does not
-        // implement permission prompts, no confirmation is displayed for
-        // installs created from about:addons (in which case requireConfirm
-        // is false).
-        // In the remaining cases, a confirmation prompt is displayed but the
-        // application may override it either by implementing the
-        // "@mozilla.org/addons/web-install-prompt;1" contract or by setting
-        // the customConfirmationUI preference and responding to the
-        // "addon-install-confirmation" notification.  If the application
-        // does not implement its own prompt, use the built-in xul dialog.
-        if (info.addon.userPermissions && WEBEXT_PERMISSION_PROMPTS) {
-          let subject = {
-            wrappedJSObject: {
-              target: browser,
-              info: Object.assign({ resolve, reject, source }, info),
-            },
-          };
-          subject.wrappedJSObject.info.permissions = info.addon.userPermissions;
-          Services.obs.notifyObservers(
-            subject,
-            "webextension-permission-prompt"
-          );
-        } else if (requireConfirm) {
-          // The methods below all want to call the install() or cancel()
-          // method on the provided AddonInstall object to either accept
-          // or reject the confirmation.  Fit that into our promise-based
-          // control flow by wrapping the install object.  However,
-          // xpInstallConfirm.xul matches the install object it is passed
-          // with the argument passed to an InstallListener, so give it
-          // access to the underlying object through the .wrapped property.
-          let proxy = new Proxy(install, {
-            get(target, property) {
-              if (property == "install") {
-                return resolve;
-              } else if (property == "cancel") {
-                return reject;
-              } else if (property == "wrapped") {
-                return target;
+              // Check for a custom installation prompt that may be provided by the
+              // applicaton
+              if ("@mozilla.org/addons/web-install-prompt;1" in Cc) {
+                try {
+                  let prompt = Cc[
+                    "@mozilla.org/addons/web-install-prompt;1"
+                  ].getService(Ci.amIWebInstallPrompt);
+                  prompt.confirm(browser, url, [proxy]);
+                  return;
+                } catch (e) {}
               }
-              let result = target[property];
-              return typeof result == "function" ? result.bind(target) : result;
-            },
+
+              this.installNotifyObservers(
+                "addon-install-confirmation",
+                browser,
+                url,
+                proxy
+              );
+            } else {
+              resolve();
+            }
+          })
+          .catch(e => {
+            // Error is undefined if the promise was rejected.
+            if (e) {
+              Cu.reportError(`Install prompt handler error: ${e}`);
+            }
+            reject();
           });
-
-          // Check for a custom installation prompt that may be provided by the
-          // applicaton
-          if ("@mozilla.org/addons/web-install-prompt;1" in Cc) {
-            try {
-              let prompt = Cc[
-                "@mozilla.org/addons/web-install-prompt;1"
-              ].getService(Ci.amIWebInstallPrompt);
-              prompt.confirm(browser, url, [proxy]);
-              return;
-            } catch (e) {}
-          }
-
-          this.installNotifyObservers(
-            "addon-install-confirmation",
-            browser,
-            url,
-            proxy
-          );
-        } else {
-          resolve();
-        }
       });
   },
 
@@ -3380,14 +3445,12 @@ var AddonManagerInternal = {
         await addon.enable();
       }
 
-      if (Services.prefs.getBoolPref(PREF_WEBEXT_PERM_PROMPTS, false)) {
-        await new Promise(resolve => {
-          let subject = {
-            wrappedJSObject: { target, addon, callback: resolve },
-          };
-          Services.obs.notifyObservers(subject, "webextension-install-notify");
-        });
-      }
+      await new Promise(resolve => {
+        let subject = {
+          wrappedJSObject: { target, addon, callback: resolve },
+        };
+        Services.obs.notifyObservers(subject, "webextension-install-notify");
+      });
     },
 
     addonInstallCancel(target, id) {
@@ -3523,7 +3586,7 @@ var AddonManagerPrivate = {
   },
 
   notifyAddonChanged(aID, aType, aPendingRestart) {
-    AddonManagerInternal.notifyAddonChanged(aID, aType, aPendingRestart);
+    return AddonManagerInternal.notifyAddonChanged(aID, aType, aPendingRestart);
   },
 
   updateAddonAppDisabledStates() {
@@ -3741,6 +3804,8 @@ var AddonManager = {
   // Constants representing different types of errors while downloading an
   // add-on.
   // These will show up as AddonManager.ERROR_* (eg, ERROR_NETWORK_FAILURE)
+  // The _errors codes are translated to text for a panel in browser-addons.js.
+  // The text is located in browser.properties.
   _errors: new Map([
     // The download failed due to network problems.
     ["ERROR_NETWORK_FAILURE", -1],
@@ -3753,9 +3818,13 @@ var AddonManager = {
     // The add-on must be signed and isn't.
     ["ERROR_SIGNEDSTATE_REQUIRED", -5],
     // The downloaded add-on had a different type than expected.
+    // TODO Bug 1740792
     ["ERROR_UNEXPECTED_ADDON_TYPE", -6],
     // The addon did not have the expected ID
+    // TODO Bug 1740792
     ["ERROR_INCORRECT_ID", -7],
+    // The addon install_origins does not list the 3rd party domain.
+    ["ERROR_INVALID_DOMAIN", -8],
   ]),
   // The update check timed out
   ERROR_TIMEOUT: -1,
@@ -3831,9 +3900,6 @@ var AddonManager = {
   PERM_CAN_DISABLE: 4,
   // Indicates that the Addon can be upgraded.
   PERM_CAN_UPGRADE: 8,
-  // Indicates that the Addon can be set to be optionally enabled
-  // on a case-by-case basis.
-  PERM_CAN_ASK_TO_ACTIVATE: 16,
   // Indicates that the Addon can be set to be allowed/disallowed
   // in private browsing windows.
   PERM_CAN_CHANGE_PRIVATEBROWSING_ACCESS: 32,
@@ -3857,20 +3923,6 @@ var AddonManager = {
 
   // Add-on type is expected to be displayed in the UI in a list.
   VIEW_TYPE_LIST: "list",
-
-  // Constants describing how add-on types behave.
-
-  // If no add-ons of a type are installed, then the category for that add-on
-  // type should be hidden in the UI.
-  TYPE_UI_HIDE_EMPTY: 16,
-  // Indicates that this add-on type supports the ask-to-activate state.
-  // That is, add-ons of this type can be set to be optionally enabled
-  // on a case-by-case basis.
-  TYPE_SUPPORTS_ASK_TO_ACTIVATE: 32,
-  // The add-on type natively supports undo for restartless uninstalls.
-  // If this flag is not specified, the UI is expected to handle this via
-  // disabling the add-on, and performing the actual uninstall at a later time.
-  TYPE_SUPPORTS_UNDO_RESTARTLESS_UNINSTALL: 64,
 
   // Constants for Addon.applyBackgroundUpdates.
   // Indicates that the Addon should not update automatically.
@@ -3934,12 +3986,6 @@ var AddonManager = {
   SIGNEDSTATE_SYSTEM: 3,
   // Add-on is signed with a "Mozilla Extensions" certificate
   SIGNEDSTATE_PRIVILEGED: 4,
-
-  // Constants for the Addon.userDisabled property
-  // Indicates that the userDisabled state of this add-on is currently
-  // ask-to-activate. That is, it can be conditionally enabled on a
-  // case-by-case basis.
-  STATE_ASK_TO_ACTIVATE: "askToActivate",
 
   get __AddonManagerInternal__() {
     return AppConstants.DEBUG ? AddonManagerInternal : undefined;
@@ -4161,6 +4207,9 @@ var AddonManager = {
     if (!("applyBackgroundUpdates" in aAddon)) {
       return false;
     }
+    if (!(aAddon.permissions & AddonManager.PERM_CAN_UPGRADE)) {
+      return false;
+    }
     if (aAddon.applyBackgroundUpdates == AddonManager.AUTOUPDATE_ENABLE) {
       return true;
     }
@@ -4245,8 +4294,7 @@ AMTelemetry = {
   init() {
     // Enable the addonsManager telemetry event category before the AddonManager
     // has completed its startup, otherwise telemetry events recorded during the
-    // AddonManager/XPIProvider startup will not be recorded (e.g. the telemetry
-    // events for the extension migrated to the private browsing permission).
+    // AddonManager/XPIProvider startup will not be recorded.
     Services.telemetry.setEventRecordingEnabled("addonsManager", true);
   },
 
@@ -4571,6 +4619,16 @@ AMTelemetry = {
       };
     }
 
+    if (
+      telemetryInfo?.source === "disco" &&
+      typeof telemetryInfo?.taarRecommended === "boolean"
+    ) {
+      extra = {
+        ...extra,
+        taar_based: this.convertToString(telemetryInfo.taarRecommended),
+      };
+    }
+
     this.recordEvent({ method, object, value: install.hashedAddonId, extra });
   },
 
@@ -4654,6 +4712,14 @@ AMTelemetry = {
 
     if (install.error) {
       extra.error = AddonManager.errorToString(install.error);
+    }
+
+    if (
+      eventMethod === "install" &&
+      Services.prefs.getBoolPref("extensions.install_origins.enabled", true)
+    ) {
+      // This is converted to "1" / "0".
+      extra.install_origins = Array.isArray(install.addon?.installOrigins);
     }
 
     if (eventMethod === "update") {
@@ -4764,6 +4830,9 @@ AMTelemetry = {
    */
   recordActionEvent({ object, action, value, addon, view, extra }) {
     extra = { ...extra, action, addon, view };
+    if (action === "installFromRecommendation") {
+      extra.taar_based = !!addon.taarRecommended;
+    }
     this.recordEvent({
       method: "action",
       object,
@@ -4786,13 +4855,20 @@ AMTelemetry = {
    * @param {string} opts.type
    *        An optional type for the view. If opts.addon is set it will
    *        overwrite this value with the type of the add-on.
+   * @param {boolean} opts.taarEnabled
+   *        Set to true if taar-based discovery was enabled when the user
+   *        did switch between about:addons views.
    */
-  recordViewEvent({ view, addon, type }) {
+  recordViewEvent({ view, addon, type, taarEnabled }) {
     this.recordEvent({
       method: "view",
       object: "aboutAddons",
       value: view,
-      extra: this.formatExtraVars({ type, addon }),
+      extra: this.formatExtraVars({
+        type,
+        addon,
+        taar_enabled: taarEnabled,
+      }),
     });
   },
 

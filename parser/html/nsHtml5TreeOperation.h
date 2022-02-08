@@ -36,8 +36,11 @@ struct opDetach {
 struct opAppend {
   nsIContent** mChild;
   nsIContent** mParent;
+  mozilla::dom::FromParser mFromNetwork;
 
-  explicit opAppend(nsIContentHandle* aChild, nsIContentHandle* aParent) {
+  explicit opAppend(nsIContentHandle* aChild, nsIContentHandle* aParent,
+                    mozilla::dom::FromParser aFromNetwork)
+      : mFromNetwork(aFromNetwork) {
     mChild = static_cast<nsIContent**>(aChild);
     mParent = static_cast<nsIContent**>(aParent);
   };
@@ -355,14 +358,6 @@ struct opUpdateStyleSheet {
   };
 };
 
-struct opProcessMeta {
-  nsIContent** mElement;
-
-  explicit opProcessMeta(nsIContentHandle* aElement) {
-    mElement = static_cast<nsIContent**>(aElement);
-  };
-};
-
 struct opProcessOfflineManifest {
   char16_t* mUrl;
 
@@ -500,7 +495,7 @@ typedef mozilla::Variant<
     // Gecko-specific on-pop ops
     opMarkAsBroken, opRunScript, opRunScriptAsyncDefer,
     opPreventScriptExecution, opDoneAddingChildren, opDoneCreatingElement,
-    opSetDocumentCharset, opCharsetSwitchTo, opUpdateStyleSheet, opProcessMeta,
+    opSetDocumentCharset, opCharsetSwitchTo, opUpdateStyleSheet,
     opProcessOfflineManifest, opMarkMalformedIfScript, opStreamEnded,
     opSetStyleLineNumber, opSetScriptLineNumberAndFreeze, opSvgLoad,
     opMaybeComplainAboutCharset, opMaybeComplainAboutDeepTree, opAddClass,
@@ -525,6 +520,10 @@ class nsHtml5TreeOperation final {
                              nsHtml5DocumentBuilder* aBuilder);
 
   static nsresult Append(nsIContent* aNode, nsIContent* aParent,
+                         nsHtml5DocumentBuilder* aBuilder);
+
+  static nsresult Append(nsIContent* aNode, nsIContent* aParent,
+                         mozilla::dom::FromParser aFromParser,
                          nsHtml5DocumentBuilder* aBuilder);
 
   static nsresult AppendToDocument(nsIContent* aNode,

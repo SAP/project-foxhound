@@ -8,13 +8,13 @@
 
 #include "gfxTypes.h"
 
-#include "gfxASurface.h"
 #include "gfxPoint.h"
 #include "gfxRect.h"
 #include "gfxMatrix.h"
 #include "gfxPattern.h"
 #include "nsTArray.h"
 
+#include "mozilla/EnumSet.h"
 #include "mozilla/gfx/2D.h"
 
 typedef struct _cairo cairo_t;
@@ -227,11 +227,21 @@ class gfxContext final {
    * fails, the method will return false, and the rect will not be
    * changed.
    *
-   * If ignoreScale is true, then snapping will take place even if
-   * the CTM has a scale applied.  Snapping never takes place if
-   * there is a rotation in the CTM.
+   * aOptions parameter:
+   *   If IgnoreScale is set, then snapping will take place even if the CTM
+   *   has a scale applied. Snapping never takes place if there is a rotation
+   *   in the CTM.
+   *
+   *   If PrioritizeSize is set, the rect's dimensions will first be snapped
+   *   and then its position aligned to device pixels, rather than snapping
+   *   the position of each edge independently.
    */
-  bool UserToDevicePixelSnapped(gfxRect& rect, bool ignoreScale = false) const;
+  enum class SnapOption : uint8_t {
+    IgnoreScale = 1,
+    PrioritizeSize = 2,
+  };
+  using SnapOptions = mozilla::EnumSet<SnapOption>;
+  bool UserToDevicePixelSnapped(gfxRect& rect, SnapOptions aOptions = {}) const;
 
   /**
    * Takes the given point and tries to align it to device pixels.  If
@@ -415,20 +425,6 @@ class gfxContext final {
       mozilla::gfx::SourceSurface* aMask = nullptr,
       const mozilla::gfx::Matrix& aMaskTransform = mozilla::gfx::Matrix());
 
-  /**
-   * Like PushGroupForBlendBack, but if the current surface is
-   * gfxContentType::COLOR and content is gfxContentType::COLOR_ALPHA, makes the
-   * pushed surface gfxContentType::COLOR instead and copies the contents of the
-   * current surface to the pushed surface. This is good for pushing opacity
-   * groups, since blending the group back to the current surface with some
-   * alpha applied will give the correct results and using an opaque pushed
-   * surface gives better quality and performance.
-   */
-  void PushGroupAndCopyBackground(
-      gfxContentType content = gfxContentType::COLOR,
-      mozilla::gfx::Float aOpacity = 1.0f,
-      mozilla::gfx::SourceSurface* aMask = nullptr,
-      const mozilla::gfx::Matrix& aMaskTransform = mozilla::gfx::Matrix());
   void PopGroupAndBlend();
 
   mozilla::gfx::Point GetDeviceOffset() const;
@@ -454,8 +450,6 @@ class gfxContext final {
    */
   void CopyAsDataURI();
 #endif
-
-  static mozilla::gfx::UserDataKey sDontUseAsSourceKey;
 
  private:
   /**

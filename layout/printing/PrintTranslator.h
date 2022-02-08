@@ -13,7 +13,6 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Filters.h"
 #include "mozilla/gfx/RecordedEvent.h"
-#include "nsRefPtrHashtable.h"
 
 class nsDeviceContext;
 
@@ -25,6 +24,7 @@ using gfx::FilterNode;
 using gfx::GradientStops;
 using gfx::NativeFontResource;
 using gfx::Path;
+using gfx::RecordedDependentSurface;
 using gfx::ReferencePtr;
 using gfx::ScaledFont;
 using gfx::SourceSurface;
@@ -61,10 +61,9 @@ class PrintTranslator final : public Translator {
     return result;
   }
 
-  GradientStops* LookupGradientStops(ReferencePtr aRefPtr) final {
-    GradientStops* result = mGradientStops.GetWeak(aRefPtr);
-    MOZ_ASSERT(result);
-    return result;
+  already_AddRefed<GradientStops> LookupGradientStops(
+      ReferencePtr aRefPtr) final {
+    return mGradientStops.Get(aRefPtr);
   }
 
   ScaledFont* LookupScaledFont(ReferencePtr aRefPtr) final {
@@ -86,37 +85,37 @@ class PrintTranslator final : public Translator {
   }
 
   void AddDrawTarget(ReferencePtr aRefPtr, DrawTarget* aDT) final {
-    mDrawTargets.Put(aRefPtr, RefPtr{aDT});
+    mDrawTargets.InsertOrUpdate(aRefPtr, RefPtr{aDT});
   }
 
   void AddPath(ReferencePtr aRefPtr, Path* aPath) final {
-    mPaths.Put(aRefPtr, RefPtr{aPath});
+    mPaths.InsertOrUpdate(aRefPtr, RefPtr{aPath});
   }
 
   void AddSourceSurface(ReferencePtr aRefPtr, SourceSurface* aSurface) final {
-    mSourceSurfaces.Put(aRefPtr, RefPtr{aSurface});
+    mSourceSurfaces.InsertOrUpdate(aRefPtr, RefPtr{aSurface});
   }
 
   void AddFilterNode(ReferencePtr aRefPtr, FilterNode* aFilter) final {
-    mFilterNodes.Put(aRefPtr, RefPtr{aFilter});
+    mFilterNodes.InsertOrUpdate(aRefPtr, RefPtr{aFilter});
   }
 
   void AddGradientStops(ReferencePtr aRefPtr, GradientStops* aStops) final {
-    mGradientStops.Put(aRefPtr, RefPtr{aStops});
+    mGradientStops.InsertOrUpdate(aRefPtr, RefPtr{aStops});
   }
 
   void AddScaledFont(ReferencePtr aRefPtr, ScaledFont* aScaledFont) final {
-    mScaledFonts.Put(aRefPtr, RefPtr{aScaledFont});
+    mScaledFonts.InsertOrUpdate(aRefPtr, RefPtr{aScaledFont});
   }
 
   void AddUnscaledFont(ReferencePtr aRefPtr,
                        UnscaledFont* aUnscaledFont) final {
-    mUnscaledFonts.Put(aRefPtr, RefPtr{aUnscaledFont});
+    mUnscaledFonts.InsertOrUpdate(aRefPtr, RefPtr{aUnscaledFont});
   }
 
   void AddNativeFontResource(uint64_t aKey,
                              NativeFontResource* aScaledFontResouce) final {
-    mNativeFontResources.Put(aKey, RefPtr{aScaledFontResouce});
+    mNativeFontResources.InsertOrUpdate(aKey, RefPtr{aScaledFontResouce});
   }
 
   void RemoveDrawTarget(ReferencePtr aRefPtr) final {

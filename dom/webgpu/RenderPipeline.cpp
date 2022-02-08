@@ -6,6 +6,8 @@
 #include "RenderPipeline.h"
 
 #include "Device.h"
+#include "ipc/WebGPUChild.h"
+#include "mozilla/dom/WebGPUBinding.h"
 
 namespace mozilla {
 namespace webgpu {
@@ -13,8 +15,13 @@ namespace webgpu {
 GPU_IMPL_CYCLE_COLLECTION(RenderPipeline, mParent)
 GPU_IMPL_JS_WRAP(RenderPipeline)
 
-RenderPipeline::RenderPipeline(Device* const aParent, RawId aId)
-    : ChildOf(aParent), mId(aId) {}
+RenderPipeline::RenderPipeline(Device* const aParent, RawId aId,
+                               RawId aImplicitPipelineLayoutId,
+                               nsTArray<RawId>&& aImplicitBindGroupLayoutIds)
+    : ChildOf(aParent),
+      mImplicitPipelineLayoutId(aImplicitPipelineLayoutId),
+      mImplicitBindGroupLayoutIds(std::move(aImplicitBindGroupLayoutIds)),
+      mId(aId) {}
 
 RenderPipeline::~RenderPipeline() { Cleanup(); }
 
@@ -24,8 +31,21 @@ void RenderPipeline::Cleanup() {
     auto bridge = mParent->GetBridge();
     if (bridge && bridge->IsOpen()) {
       bridge->SendRenderPipelineDestroy(mId);
+      if (mImplicitPipelineLayoutId) {
+        bridge->SendImplicitLayoutDestroy(mImplicitPipelineLayoutId,
+                                          mImplicitBindGroupLayoutIds);
+      }
     }
   }
+}
+
+already_AddRefed<BindGroupLayout> RenderPipeline::GetBindGroupLayout(
+    uint32_t index) const {
+  const RawId id = index < mImplicitBindGroupLayoutIds.Length()
+                       ? mImplicitBindGroupLayoutIds[index]
+                       : 0;
+  RefPtr<BindGroupLayout> object = new BindGroupLayout(mParent, id, false);
+  return object.forget();
 }
 
 }  // namespace webgpu

@@ -5,9 +5,9 @@ import sys
 import threading
 import time
 import traceback
-import mock
+from unittest import mock
 import pytest
-from mock import Mock
+from unittest.mock import Mock
 from six import reraise
 
 import mozunit
@@ -59,12 +59,10 @@ class TestBrowserThread(threading.Thread):
         [WebExtensionFirefox, "firefox"],
         [WebExtensionDesktopChrome, "chrome"],
         [WebExtensionDesktopChrome, "chromium"],
-        [WebExtensionAndroid, "fennec"],
         [WebExtensionAndroid, "geckoview"],
         [BrowsertimeDesktop, "firefox"],
         [BrowsertimeDesktop, "chrome"],
         [BrowsertimeDesktop, "chromium"],
-        [BrowsertimeAndroid, "fennec"],
         [BrowsertimeAndroid, "geckoview"],
     ],
 )
@@ -104,7 +102,7 @@ def test_perftest_host_ip(ConcretePerftest, options, get_prefs):
 
 @pytest.mark.parametrize(
     "app_name, expected_e10s_flag",
-    [["firefox", True], ["fennec", False], ["geckoview", True]],
+    [["firefox", True], ["geckoview", True]],
 )
 def test_e10s_enabling(ConcretePerftest, options, app_name, expected_e10s_flag):
     options["app"] = app_name
@@ -123,7 +121,6 @@ def test_profile_was_provided_locally(ConcretePerftest, options):
         ["firefox", "firefox", "firefox"],
         [None, "firefox", "firefox"],
         ["firefox", None, "firefox"],
-        ["firefox", "fennec", "firefox"],
     ],
 )
 def test_profile_class_assignation(
@@ -235,19 +232,31 @@ def test_cmd_arguments(ConcreteBrowsertime, browsertime_options, mock_test):
     expected_cmd = {
         browsertime_options["browsertime_node"],
         browsertime_options["browsertime_browsertimejs"],
-        "--firefox.geckodriverPath", browsertime_options["browsertime_geckodriver"],
-        "--browsertime.page_cycles", "1",
-        "--browsertime.url", mock_test["test_url"],
-        "--browsertime.page_cycle_delay", "1000",
-        "--browsertime.post_startup_delay", str(DEFAULT_TIMEOUT),
+        "--firefox.geckodriverPath",
+        browsertime_options["browsertime_geckodriver"],
+        "--browsertime.page_cycles",
+        "1",
+        "--browsertime.url",
+        mock_test["test_url"],
+        "--browsertime.secondary_url",
+        mock_test["secondary_url"],
+        "--browsertime.page_cycle_delay",
+        "1000",
+        "--browsertime.post_startup_delay",
+        str(DEFAULT_TIMEOUT),
         "--firefox.profileTemplate",
         "--skipHar",
-        "--video", "true",
-        "--visualMetrics", "false",
-        "--timeouts.pageLoad", str(DEFAULT_TIMEOUT),
-        "--timeouts.script", str(DEFAULT_TIMEOUT),
+        "--video",
+        "true",
+        "--visualMetrics",
+        "false",
+        "--timeouts.pageLoad",
+        str(DEFAULT_TIMEOUT),
+        "--timeouts.script",
+        str(DEFAULT_TIMEOUT),
         "--resultDir",
-        "-n", "1",
+        "-n",
+        "1",
     }
     if browsertime_options.get("app") in ["chrome", "chrome-m"]:
         expected_cmd.add(

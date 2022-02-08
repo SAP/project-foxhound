@@ -3,12 +3,16 @@
 <script src="/resources/testharnessreport.js"></script>
 <style id="sheet"></style>
 <script>
+// Even though some of these no longer exist, we still do want to test that
+// they aren't exposed to the web.
 const NON_CONTENT_ACCESIBLE_PSEUDOS = [
+  "::-moz-complex-control-wrapper",
   "::-moz-number-wrapper",
+  "::-moz-number-text",
   "::-moz-number-spin-up",
   "::-moz-number-spin-down",
   "::-moz-number-spin-box",
-  "::-moz-number-text",
+  "::-moz-search-clear-button",
 
   ":-moz-native-anonymous",
   ":-moz-use-shadow-tree-root",
@@ -16,7 +20,6 @@ const NON_CONTENT_ACCESIBLE_PSEUDOS = [
   ":-moz-browser-frame",
   ":-moz-devtools-highlighted",
   ":-moz-styleeditor-transitioning",
-  ":-moz-user-disabled",
   ":-moz-handler-clicktoplay",
   ":-moz-handler-vulnerable-updatable",
   ":-moz-handler-vulnerable-no-update",
@@ -27,13 +30,16 @@ const NON_CONTENT_ACCESIBLE_PSEUDOS = [
   ":-moz-dir-attr-ltr",
   ":-moz-dir-attr-rtl",
   ":-moz-dir-attr-like-auto",
-  ":-moz-autofill",
   ":-moz-autofill-preview",
-];
+  ":-moz-lwtheme",
+  ":-moz-lwtheme-brighttext",
+  ":-moz-lwtheme-darkttext",
+  ":-moz-locale-dir(rtl)",
+  ":-moz-locale-dir(ltr)",
 
-if (!SpecialPowers.getBoolPref("layout.css.xul-tree-pseudos.content.enabled")) {
-  NON_CONTENT_ACCESIBLE_PSEUDOS.push("::-moz-tree-row", "::-moz-tree-row(foo)");
-}
+  "::-moz-tree-row",
+  "::-moz-tree-row(foo)",
+];
 
 test(function() {
   sheet.textContent = `div { color: initial }`;
@@ -46,7 +52,14 @@ for (const pseudo of NON_CONTENT_ACCESIBLE_PSEUDOS) {
     assert_equals(sheet.sheet.cssRules.length, 0,
       pseudo + " shouldn't be accessible to content");
     if (pseudo.indexOf("::") === 0) {
-      let pseudoStyle = getComputedStyle(document.documentElement, pseudo);
+      let pseudoStyle;
+      try {
+        pseudoStyle = getComputedStyle(document.documentElement, pseudo);
+      } catch (ex) {
+        // We can hit this when layout.css.computed-style.throw-on-invalid-pseudo is true
+        assert_true(true, `${pseudo} shouldn't be visible to content`);
+        return;
+      }
       let elementStyle = getComputedStyle(document.documentElement);
       for (prop of pseudoStyle) {
         assert_equals(pseudoStyle[prop], elementStyle[prop],

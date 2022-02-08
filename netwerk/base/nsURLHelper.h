@@ -7,6 +7,8 @@
 #define nsURLHelper_h__
 
 #include "nsString.h"
+#include "nsTArray.h"
+#include "nsASCIIMask.h"
 
 class nsIFile;
 class nsIURLParser;
@@ -66,7 +68,7 @@ void net_CoalesceDirs(netCoalesceFlags flags, char* path);
  * @param inURL     URL spec
  * @return true if the given spec represents an absolute URL
  */
-bool net_IsAbsoluteURL(const nsACString& inURL);
+bool net_IsAbsoluteURL(const nsACString& uri);
 
 /**
  * Extract URI-Scheme if possible
@@ -98,9 +100,11 @@ void net_FilterURIString(const nsACString& input, nsACString& result);
  *
  * @param aInput the URL spec we want to filter
  * @param aFlags the flags which control which characters we escape
+ * @param aFilterMask a mask of characters that should excluded from the result
  * @param aResult the out param to write to if filtering happens
  */
 nsresult net_FilterAndEscapeURI(const nsACString& aInput, uint32_t aFlags,
+                                const ASCIIMaskArray& aFilterMask,
                                 nsACString& aResult);
 
 #if defined(XP_WIN)
@@ -133,7 +137,7 @@ void net_ToLowerCase(char* str);
  * then |end| is returned.  stops prematurely if a null byte is encountered,
  * and returns the address of the null byte.
  */
-char* net_FindCharInSet(const char* str, const char* end, const char* set);
+char* net_FindCharInSet(const char* iter, const char* stop, const char* set);
 
 /**
  * returns pointer to first character of |str| NOT in the given set.  if all
@@ -141,13 +145,14 @@ char* net_FindCharInSet(const char* str, const char* end, const char* set);
  * included in |set|, then stops prematurely if a null byte is encountered,
  * and returns the address of the null byte.
  */
-char* net_FindCharNotInSet(const char* str, const char* end, const char* set);
+char* net_FindCharNotInSet(const char* iter, const char* stop, const char* set);
 
 /**
  * returns pointer to last character of |str| NOT in the given set.  if all
  * characters are in the given set, then |str - 1| is returned.
  */
-char* net_RFindCharNotInSet(const char* str, const char* end, const char* set);
+char* net_RFindCharNotInSet(const char* stop, const char* iter,
+                            const char* set);
 
 /**
  * Parses a content-type header and returns the content type and
@@ -220,5 +225,138 @@ bool net_IsValidIPv4Addr(const nsACString& aAddr);
  * Checks whether the IPv6 address is valid according to RFC 3986 section 3.2.2.
  */
 bool net_IsValidIPv6Addr(const nsACString& aAddr);
+
+namespace mozilla {
+/**
+ * A class for handling form-urlencoded query strings.
+ *
+ * Manages an ordered list of name-value pairs, and allows conversion from and
+ * to the string representation.
+ *
+ * In addition, there are static functions for handling one-shot use cases.
+ */
+class URLParams final {
+ public:
+  /**
+   * \brief Parses a query string and calls a parameter handler for each
+   * name/value pair. The parameter handler can stop processing early by
+   * returning false.
+   *
+   * \param aInput the query string to parse
+   * \param aParamHandler the parameter handler as desribed above
+   * \tparam ParamHandler a function type compatible with signature
+   * bool(nsString, nsString)
+   *
+   * \return false if the parameter handler returned false for any parameter,
+   * true otherwise
+   */
+  template <typename ParamHandler>
+  static bool Parse(const nsACString& aInput, ParamHandler aParamHandler) {
+    const char* start = aInput.BeginReading();
+    const char* const end = aInput.EndReading();
+
+    while (start != end) {
+      nsAutoString decodedName;
+      nsAutoString decodedValue;
+
+      if (!ParseNextInternal(start, end, aInput.Taint(), &decodedName, &decodedValue)) {
+        continue;
+      }
+
+      if (!aParamHandler(std::move(decodedName), std::move(decodedValue))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * \brief Parses a query string and returns the value of a single parameter
+   * specified by name.
+   *
+   * If there are multiple parameters with the same name, the value of the first
+   * is returned.
+   *
+   * \param aInput the query string to parse
+   * \param aName the name of the parameter to extract
+   * \param[out] aValue will be assigned the parameter value, set to void if
+   * there is no match \return true iff there was a parameter with with name
+   * \paramref aName
+   */
+  static bool Extract(const nsACString& aInput, const nsAString& aName,
+                      nsAString& aValue);
+
+  /**
+   * \brief Resets the state of this instance and parses a new query string.
+   *
+   * \param aInput the query string to parse
+   */
+  void ParseInput(const nsACString& aInput);
+
+  /**
+   * Serializes the current state to a query string.
+   *
+   * \param[out] aValue will be assigned the result of the serialization
+   * \param aEncode If this is true, the serialization will encode the string.
+   */
+  void Serialize(nsAString& aValue, bool aEncode) const;
+
+  void Get(const nsAString& aName, nsString& aRetval);
+
+  void GetAll(const nsAString& aName, nsTArray<nsString>& aRetval);
+
+  /**
+   * \brief Sets the value of a given parameter.
+   *
+   * If one or more parameters of the name exist, the value of the first is
+   * replaced, and all further parameters of the name are deleted. Otherwise,
+   * the behaviour is the same as \ref Append.
+   */
+  void Set(const nsAString& aName, const nsAString& aValue);
+
+  void Append(const nsAString& aName, const nsAString& aValue);
+
+  bool Has(const nsAString& aName);
+
+  /**
+   * \brief Deletes all parameters with the given name.
+   */
+  void Delete(const nsAString& aName);
+
+  void DeleteAll() { mParams.Clear(); }
+
+  uint32_t Length() const { return mParams.Length(); }
+
+  const nsAString& GetKeyAtIndex(uint32_t aIndex) const {
+    MOZ_ASSERT(aIndex < mParams.Length());
+    return mParams[aIndex].mKey;
+  }
+
+  const nsAString& GetValueAtIndex(uint32_t aIndex) const {
+    MOZ_ASSERT(aIndex < mParams.Length());
+    return mParams[aIndex].mValue;
+  }
+
+  /**
+   * \brief Performs a stable sort of the parameters, maintaining the order of
+   * multiple parameters with the same name.
+   */
+  void Sort();
+
+ private:
+  static void DecodeString(const nsACString& aInput, nsAString& aOutput);
+  static void ConvertString(const nsACString& aInput, nsAString& aOutput);
+  static bool ParseNextInternal(const char*& aStart, const char* aEnd, const StringTaint& aTaint,
+                                nsAString* aOutDecodedName,
+                                nsAString* aOutDecodedValue);
+
+  struct Param {
+    nsString mKey;
+    nsString mValue;
+  };
+
+  nsTArray<Param> mParams;
+};
+}  // namespace mozilla
 
 #endif  // !nsURLHelper_h__

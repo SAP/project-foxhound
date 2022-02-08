@@ -6,13 +6,13 @@
 
 "use strict";
 
-ChromeUtils.import("resource://testing-common/Task.jsm", this);
-ChromeUtils.import("resource://testing-common/ContentTaskUtils.jsm", this);
+let { ContentTaskUtils } = ChromeUtils.import(
+  "resource://testing-common/ContentTaskUtils.jsm"
+);
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const AssertCls = ChromeUtils.import(
-  "resource://testing-common/Assert.jsm",
-  null
-).Assert;
+const { Assert: AssertCls } = ChromeUtils.import(
+  "resource://testing-common/Assert.jsm"
+);
 
 // Injects EventUtils into ContentTask scope. To avoid leaks, this does not hold on
 // to the window global. This means you **need** to pass the window as an argument to
@@ -61,7 +61,7 @@ try {
   EventUtils = null;
 }
 
-addMessageListener("content-task:spawn", function(msg) {
+addMessageListener("content-task:spawn", async function(msg) {
   let id = msg.data.id;
   let source = msg.data.runnable || "()=>{}";
 
@@ -108,25 +108,15 @@ addMessageListener("content-task:spawn", function(msg) {
 
     // eslint-disable-next-line no-eval
     let runnable = eval(runnablestr);
-    let iterator = runnable.call(this, msg.data.arg);
-    Task.spawn(iterator).then(
-      val => {
-        sendAsyncMessage("content-task:complete", {
-          id,
-          result: val,
-        });
-      },
-      e => {
-        sendAsyncMessage("content-task:complete", {
-          id,
-          error: e.toString(),
-        });
-      }
-    );
-  } catch (e) {
+    let result = await runnable.call(this, msg.data.arg);
     sendAsyncMessage("content-task:complete", {
       id,
-      error: e.toString(),
+      result,
+    });
+  } catch (ex) {
+    sendAsyncMessage("content-task:complete", {
+      id,
+      error: ex.toString(),
     });
   }
 });

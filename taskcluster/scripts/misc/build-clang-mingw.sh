@@ -10,7 +10,7 @@ elif [ "$1" == "x86" ]; then
   machine="i686"
   compiler_rt_machine="i386"
   crt_flags="--enable-lib32 --disable-lib64"
-  WRAPPER_FLAGS="-fsjlj-exceptions"
+  WRAPPER_FLAGS=""
 elif [ "$1" == "x64" ]; then
   machine="x86_64"
   compiler_rt_machine="x86_64"
@@ -22,7 +22,7 @@ else
 fi
 
 TOOLCHAIN_DIR=$MOZ_FETCHES_DIR/llvm-project
-INSTALL_DIR=$TOOLCHAIN_DIR/build/stage4/clang
+INSTALL_DIR=$MOZ_FETCHES_DIR/clang
 CROSS_PREFIX_DIR=$INSTALL_DIR/$machine-w64-mingw32
 
 make_flags="-j$(nproc)"
@@ -37,11 +37,15 @@ default_win32_winnt=0x601
 
 cd $GECKO_PATH
 
-patch_file="$(pwd)/taskcluster/scripts/misc/mingw-winrt.patch"
+patch_file1="$(pwd)/taskcluster/scripts/misc/mingw-winrt.patch"
+patch_file2="$(pwd)/taskcluster/scripts/misc/mingw-dwrite_3.patch"
+patch_file3="$(pwd)/taskcluster/scripts/misc/mingw-unknown.patch"
 
 prepare() {
   pushd $MOZ_FETCHES_DIR/mingw-w64
-  patch -p1 <$patch_file
+  patch -p1 <$patch_file1
+  patch -p1 <$patch_file2
+  patch -p1 <$patch_file3
   popd
 }
 
@@ -145,64 +149,7 @@ build_libcxx() {
   # other options.
   DEBUG_FLAGS="-g -gcodeview"
 
-  mkdir libunwind
-  pushd libunwind
-  cmake \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_INSTALL_PREFIX=$CROSS_PREFIX_DIR \
-      -DCMAKE_C_COMPILER=$CC \
-      -DCMAKE_CXX_COMPILER=$CXX \
-      -DCMAKE_CROSSCOMPILING=TRUE \
-      -DCMAKE_SYSROOT=$CROSS_PREFIX_DIR \
-      -DCMAKE_SYSTEM_NAME=Windows \
-      -DCMAKE_C_COMPILER_WORKS=TRUE \
-      -DCMAKE_CXX_COMPILER_WORKS=TRUE \
-      -DLLVM_COMPILER_CHECKED=TRUE \
-      -DCMAKE_AR=$INSTALL_DIR/bin/llvm-ar \
-      -DCMAKE_RANLIB=$INSTALL_DIR/bin/llvm-ranlib \
-      -DLLVM_NO_OLD_LIBSTDCXX=TRUE \
-      -DCXX_SUPPORTS_CXX11=TRUE \
-      -DCXX_SUPPORTS_CXX_STD=TRUE \
-      -DLIBUNWIND_USE_COMPILER_RT=TRUE \
-      -DLIBUNWIND_ENABLE_THREADS=TRUE \
-      -DLIBUNWIND_ENABLE_SHARED=FALSE \
-      -DLIBUNWIND_ENABLE_CROSS_UNWINDING=FALSE \
-      -DCMAKE_CXX_FLAGS="${DEBUG_FLAGS} -Wno-dll-attribute-on-redeclaration -nostdinc++ -I$TOOLCHAIN_DIR/libcxx/include -DPSAPI_VERSION=2" \
-      -DCMAKE_C_FLAGS="-Wno-dll-attribute-on-redeclaration" \
-      $MOZ_FETCHES_DIR/libunwind
-  make $make_flags
-  make $make_flags install
-  popd
-
-  mkdir libcxxabi
-  pushd libcxxabi
-  cmake \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_INSTALL_PREFIX=$CROSS_PREFIX_DIR \
-      -DCMAKE_C_COMPILER=$CC \
-      -DCMAKE_CXX_COMPILER=$CXX \
-      -DCMAKE_CROSSCOMPILING=TRUE \
-      -DCMAKE_SYSTEM_NAME=Windows \
-      -DCMAKE_C_COMPILER_WORKS=TRUE \
-      -DCMAKE_CXX_COMPILER_WORKS=TRUE \
-      -DCMAKE_SYSROOT=$CROSS_PREFIX_DIR \
-      -DLLVM_COMPILER_CHECKED=TRUE \
-      -DCMAKE_AR=$INSTALL_DIR/bin/llvm-ar \
-      -DCMAKE_RANLIB=$INSTALL_DIR/bin/llvm-ranlib \
-      -DLIBCXXABI_USE_COMPILER_RT=ON \
-      -DLIBCXXABI_ENABLE_EXCEPTIONS=ON \
-      -DLIBCXXABI_ENABLE_THREADS=ON \
-      -DLIBCXXABI_TARGET_TRIPLE=$machine-w64-mingw32 \
-      -DLIBCXXABI_ENABLE_SHARED=OFF \
-      -DLIBCXXABI_LIBCXX_INCLUDES=$TOOLCHAIN_DIR/libcxx/include \
-      -DLLVM_NO_OLD_LIBSTDCXX=TRUE \
-      -DCXX_SUPPORTS_CXX11=TRUE \
-      -DCXX_SUPPORTS_CXX_STD=TRUE \
-      -DCMAKE_CXX_FLAGS="${DEBUG_FLAGS} -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBCPP_HAS_THREAD_API_WIN32" \
-      $TOOLCHAIN_DIR/libcxxabi
-  make $make_flags VERBOSE=1
-  popd
-
+  # First configure libcxx
   mkdir libcxx
   pushd libcxx
   cmake \
@@ -234,6 +181,67 @@ build_libcxx() {
       -DLIBCXX_CXX_ABI_LIBRARY_PATH=../libcxxabi/lib \
       -DCMAKE_CXX_FLAGS="${DEBUG_FLAGS} -D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS" \
       $TOOLCHAIN_DIR/libcxx
+  popd
+
+  mkdir libunwind
+  pushd libunwind
+  cmake \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX=$CROSS_PREFIX_DIR \
+      -DCMAKE_C_COMPILER=$CC \
+      -DCMAKE_CXX_COMPILER=$CXX \
+      -DCMAKE_CROSSCOMPILING=TRUE \
+      -DCMAKE_SYSROOT=$CROSS_PREFIX_DIR \
+      -DCMAKE_SYSTEM_NAME=Windows \
+      -DCMAKE_C_COMPILER_WORKS=TRUE \
+      -DCMAKE_CXX_COMPILER_WORKS=TRUE \
+      -DLLVM_COMPILER_CHECKED=TRUE \
+      -DCMAKE_AR=$INSTALL_DIR/bin/llvm-ar \
+      -DCMAKE_RANLIB=$INSTALL_DIR/bin/llvm-ranlib \
+      -DLLVM_NO_OLD_LIBSTDCXX=TRUE \
+      -DCXX_SUPPORTS_CXX11=TRUE \
+      -DCXX_SUPPORTS_CXX_STD=TRUE \
+      -DLIBUNWIND_USE_COMPILER_RT=TRUE \
+      -DLIBUNWIND_ENABLE_THREADS=TRUE \
+      -DLIBUNWIND_ENABLE_SHARED=FALSE \
+      -DLIBUNWIND_ENABLE_CROSS_UNWINDING=FALSE \
+      -DCMAKE_CXX_FLAGS="${DEBUG_FLAGS} -Wno-dll-attribute-on-redeclaration -nostdinc++ -I$TOOLCHAIN_DIR/build/libcxx/include/c++/v1 -DPSAPI_VERSION=2" \
+      -DCMAKE_C_FLAGS="-Wno-dll-attribute-on-redeclaration" \
+      $MOZ_FETCHES_DIR/libunwind
+  make $make_flags
+  make $make_flags install
+  popd
+
+  mkdir libcxxabi
+  pushd libcxxabi
+  cmake \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX=$CROSS_PREFIX_DIR \
+      -DCMAKE_C_COMPILER=$CC \
+      -DCMAKE_CXX_COMPILER=$CXX \
+      -DCMAKE_CROSSCOMPILING=TRUE \
+      -DCMAKE_SYSTEM_NAME=Windows \
+      -DCMAKE_C_COMPILER_WORKS=TRUE \
+      -DCMAKE_CXX_COMPILER_WORKS=TRUE \
+      -DCMAKE_SYSROOT=$CROSS_PREFIX_DIR \
+      -DLLVM_COMPILER_CHECKED=TRUE \
+      -DCMAKE_AR=$INSTALL_DIR/bin/llvm-ar \
+      -DCMAKE_RANLIB=$INSTALL_DIR/bin/llvm-ranlib \
+      -DLIBCXXABI_USE_COMPILER_RT=ON \
+      -DLIBCXXABI_ENABLE_EXCEPTIONS=ON \
+      -DLIBCXXABI_ENABLE_THREADS=ON \
+      -DLIBCXXABI_TARGET_TRIPLE=$machine-w64-mingw32 \
+      -DLIBCXXABI_ENABLE_SHARED=OFF \
+      -DLIBCXXABI_LIBCXX_INCLUDES=$TOOLCHAIN_DIR/libcxx/include/ \
+      -DLLVM_NO_OLD_LIBSTDCXX=TRUE \
+      -DCXX_SUPPORTS_CXX11=TRUE \
+      -DCXX_SUPPORTS_CXX_STD=TRUE \
+      -DCMAKE_CXX_FLAGS="${DEBUG_FLAGS} -I$TOOLCHAIN_DIR/build/libcxx/include/c++/v1 -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBCPP_HAS_THREAD_API_WIN32" \
+      $TOOLCHAIN_DIR/libcxxabi
+  make $make_flags VERBOSE=1
+  popd
+
+  pushd libcxx
   make $make_flags VERBOSE=1
   make $make_flags install
 
@@ -255,7 +263,7 @@ build_libssp() {
   sed -i 's/(CROSS)gcc/(CROSS)clang/' libssp-Makefile
   sed -i 's/\$(CROSS)ar/llvm-ar/' libssp-Makefile
   OLDPATH=$PATH
-  PATH=$INSTALL_DIR/clang/bin:$PATH
+  PATH=$INSTALL_DIR/bin:$PATH
 
   # Run the script
   TOOLCHAIN_ARCHS=$machine $MOZ_FETCHES_DIR/llvm-mingw/build-libssp.sh .
@@ -269,10 +277,9 @@ build_libssp() {
 
 build_utils() {
   pushd $INSTALL_DIR/bin/
-  ln -s llvm-nm $machine-w64-mingw32-nm
-  ln -s llvm-strip $machine-w64-mingw32-strip
-  ln -s llvm-readobj $machine-w64-mingw32-readobj
-  ln -s llvm-objcopy $machine-w64-mingw32-objcopy
+  for prog in ar nm objcopy ranlib readobj strip; do
+    ln -s llvm-$prog $machine-w64-mingw32-$prog
+  done
   ./clang $MOZ_FETCHES_DIR/llvm-mingw/wrappers/windres-wrapper.c -O2 -Wl,-s -o $machine-w64-mingw32-windres
   popd
 }
@@ -281,14 +288,7 @@ export PATH=$INSTALL_DIR/bin:$PATH
 
 prepare
 
-# gets a bit too verbose here
-set +x
-
-cd $TOOLCHAIN_DIR
-python3 $GECKO_PATH/build/build-clang/build-clang.py -c $GECKO_PATH/$2 --skip-tar
-
-set -x
-
+mkdir $TOOLCHAIN_DIR/build
 pushd $TOOLCHAIN_DIR/build
 
 install_wrappers
@@ -304,6 +304,6 @@ popd
 mkdir -p $UPLOAD_DIR
 
 pushd $(dirname $INSTALL_DIR)
-tar c clang | $GECKO_PATH/taskcluster/scripts/misc/zstdpy > clangmingw.tar.zst
+tar caf clangmingw.tar.zst clang
 mv clangmingw.tar.zst $UPLOAD_DIR
 popd

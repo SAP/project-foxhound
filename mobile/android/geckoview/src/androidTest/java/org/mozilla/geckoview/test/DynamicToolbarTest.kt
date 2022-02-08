@@ -11,10 +11,13 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import android.util.Base64
 import java.io.ByteArrayOutputStream
 import org.hamcrest.Matchers.*
-import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.geckoview.GeckoResult
+import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.GeckoSession.ContentDelegate
+import org.mozilla.geckoview.GeckoSession.ScrollDelegate
+import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.AssertCalled
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDisplay
 import org.hamcrest.Matchers.closeTo
 import org.hamcrest.Matchers.equalTo
@@ -310,5 +313,35 @@ class DynamicToolbarTest : BaseSessionTest() {
         sessionRule.display?.run { setVerticalClipping(-dynamicToolbarMaxHeight) }
 
         assertThat("Got a rezie event", promise.value as Boolean, equalTo(true))
+    }
+
+    @WithDisplay(height = SCREEN_HEIGHT, width = SCREEN_WIDTH)
+    @Test fun showDynamicToolbar() {
+        val dynamicToolbarMaxHeight = SCREEN_HEIGHT / 2
+        sessionRule.display?.run { setDynamicToolbarMaxHeight(dynamicToolbarMaxHeight) }
+
+        // Set active since setVerticalClipping call affects only for forground tab.
+        mainSession.setActive(true)
+
+        mainSession.loadTestPath(SHOW_DYNAMIC_TOOLBAR_HTML_PATH)
+        mainSession.waitForPageStop()
+        mainSession.evaluateJS("window.scrollTo(0, " + dynamicToolbarMaxHeight + ")")
+        mainSession.waitUntilCalled(object : ScrollDelegate {
+            @AssertCalled(count = 1)
+            override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) {
+            }
+        })
+
+        // Simulate the dynamic toolbar being hidden by the scroll
+        sessionRule.display?.run { setVerticalClipping(-dynamicToolbarMaxHeight) }
+
+        mainSession.synthesizeTap(5, 25)
+
+        mainSession.waitUntilCalled(object : ContentDelegate {
+            @AssertCalled(count = 1)
+            override fun onShowDynamicToolbar(session: GeckoSession) {
+            }
+        })
+
     }
 }

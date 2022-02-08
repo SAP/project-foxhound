@@ -7,15 +7,6 @@
 const { Ci, Cc } = require("chrome");
 const Services = require("Services");
 const protocol = require("devtools/shared/protocol");
-const { LongStringActor } = require("devtools/server/actors/string");
-
-const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "swm",
-  "@mozilla.org/serviceworkers/manager;1",
-  "nsIServiceWorkerManager"
-);
 
 const { DevToolsServer } = require("devtools/server/devtools-server");
 const { getSystemInfo } = require("devtools/shared/system");
@@ -44,33 +35,8 @@ exports.DeviceActor = protocol.ActorClassWithSpec(deviceSpec, {
 
   getDescription: function() {
     return Object.assign({}, getSystemInfo(), {
-      // ServiceWorker debugging is only supported when parent-intercept is
-      // enabled. This cannot change at runtime, so it can be treated as a
-      // constant for the device.
-      canDebugServiceWorkers: swm.isParentInterceptEnabled(),
+      canDebugServiceWorkers: true,
     });
-  },
-
-  screenshotToDataURL: function() {
-    const window = this._window;
-    const { devicePixelRatio } = window;
-    const canvas = window.document.createElementNS(
-      "http://www.w3.org/1999/xhtml",
-      "canvas"
-    );
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    canvas.setAttribute("width", Math.round(width * devicePixelRatio));
-    canvas.setAttribute("height", Math.round(height * devicePixelRatio));
-    const context = canvas.getContext("2d");
-    const flags =
-      context.DRAWWINDOW_DRAW_CARET |
-      context.DRAWWINDOW_DRAW_VIEW |
-      context.DRAWWINDOW_USE_WIDGET_LAYERS;
-    context.scale(devicePixelRatio, devicePixelRatio);
-    context.drawWindow(window, 0, 0, width, height, "rgb(255,255,255)", flags);
-    const dataURL = canvas.toDataURL("image/png");
-    return new LongStringActor(this.conn, dataURL);
   },
 
   _acquireWakeLock: function() {

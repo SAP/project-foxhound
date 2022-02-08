@@ -14,6 +14,11 @@ namespace dom {
 
 class RemoteWorkerController;
 
+/**
+ * PBackground-managed parent actor that is mutually associated with a single
+ * RemoteWorkerController.  Relays error/close events to the controller and in
+ * turns is told life-cycle events.
+ */
 class RemoteWorkerParent final : public PRemoteWorkerParent {
   friend class PRemoteWorkerParent;
 
@@ -31,14 +36,14 @@ class RemoteWorkerParent final : public PRemoteWorkerParent {
  private:
   ~RemoteWorkerParent();
 
-  PFetchEventOpProxyParent* AllocPFetchEventOpProxyParent(
-      const ServiceWorkerFetchEventOpArgs& aArgs);
-
-  bool DeallocPFetchEventOpProxyParent(PFetchEventOpProxyParent* aActor);
+  already_AddRefed<PFetchEventOpProxyParent> AllocPFetchEventOpProxyParent(
+      const ParentToChildServiceWorkerFetchEventOpArgs& aArgs);
 
   void ActorDestroy(mozilla::ipc::IProtocol::ActorDestroyReason) override;
 
   mozilla::ipc::IPCResult RecvError(const ErrorValue& aValue);
+
+  mozilla::ipc::IPCResult RecvNotifyLock(const bool& aCreated);
 
   mozilla::ipc::IPCResult RecvClose();
 

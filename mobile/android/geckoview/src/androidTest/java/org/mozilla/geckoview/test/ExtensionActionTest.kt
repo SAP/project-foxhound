@@ -18,6 +18,7 @@ import org.junit.runners.Parameterized
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.WebExtension
+import org.mozilla.geckoview.Image.ImageProcessingException
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.AssertCalled
 
@@ -386,7 +387,7 @@ class ExtensionActionTest : BaseSessionTest() {
             assertEquals(action.title, "Test action default")
             assertEquals(action.enabled, true)
 
-            action.icon!!.get(100).accept { actual ->
+            action.icon!!.getBitmap(100).accept { actual ->
                 compareBitmap("web_extensions/actions/button/expected.png", actual!!)
                 svg.complete(null)
             }
@@ -401,7 +402,7 @@ class ExtensionActionTest : BaseSessionTest() {
 
         val png32 = GeckoResult<Void>()
 
-        default!!.icon!!.get(32).accept ({ actual ->
+        default!!.icon!!.getBitmap(32).accept ({ actual ->
             compareBitmap("web_extensions/actions/button/beasts-32.png", actual!!)
             png32.complete(null)
         }, { error ->
@@ -428,22 +429,22 @@ class ExtensionActionTest : BaseSessionTest() {
             assertEquals(action.title, "Test action default")
             assertEquals(action.enabled, true)
 
-            action.icon!!.get(100).accept { actual ->
+            action.icon!!.getBitmap(100).accept { actual ->
                 compareBitmap("web_extensions/actions/button/geo-38.png", actual!!)
                 png100.complete(null)
             }
 
-            action.icon!!.get(38).accept { actual ->
+            action.icon!!.getBitmap(38).accept { actual ->
                 compareBitmap("web_extensions/actions/button/geo-38.png", actual!!)
                 png38.complete(null)
             }
 
-            action.icon!!.get(19).accept { actual ->
+            action.icon!!.getBitmap(19).accept { actual ->
                 compareBitmap("web_extensions/actions/button/geo-19.png", actual!!)
                 png19.complete(null)
             }
 
-            action.icon!!.get(10).accept { actual ->
+            action.icon!!.getBitmap(10).accept { actual ->
                 compareBitmap("web_extensions/actions/button/geo-19.png", actual!!)
                 png10.complete(null)
             }
@@ -463,10 +464,12 @@ class ExtensionActionTest : BaseSessionTest() {
             "action": "setIcon",
             "path": "invalid/path/image.png"
         }""") { action ->
-            action.icon!!.get(38).accept({
+            action.icon!!.getBitmap(38).accept({
                 error.completeExceptionally(RuntimeException("Should not succeed."))
             }, { exception ->
-                assertTrue(exception is IllegalArgumentException)
+                if (!(exception is ImageProcessingException)) {
+                    throw exception!!;
+                }
                 error.complete(null)
             })
         }

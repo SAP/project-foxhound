@@ -7,16 +7,18 @@
 #ifndef DOM_BASE_MUTATIONOBSERVERS_H_
 #define DOM_BASE_MUTATIONOBSERVERS_H_
 
-#include "nsIContent.h"  // for use in inline function (ParentChainChanged)
-#include "nsIMutationObserver.h"  // for use in inline function (ParentChainChanged)
-#include "mozilla/dom/Document.h"
-#include "js/TypeDecls.h"
-#include "nsContentUtils.h"
+#include "nsIContent.h"  // for use in inline function (NotifyParentChainChanged)
+#include "nsIMutationObserver.h"  // for use in inline function (NotifyParentChainChanged)
+#include "nsINode.h"
+#include "nsTObserverArray.h"
 
-struct CharacterDataChangeInfo;
+class nsAtom;
+class nsAttrValue;
+
 namespace mozilla {
 namespace dom {
 class Animation;
+class Element;
 
 class MutationObservers {
  public:
@@ -119,10 +121,11 @@ class MutationObservers {
    * @see nsIMutationObserver::ParentChainChanged
    */
   static inline void NotifyParentChainChanged(nsIContent* aContent) {
-    nsINode::nsSlots* slots = aContent->GetExistingSlots();
-    if (slots && !slots->mMutationObservers.IsEmpty()) {
-      NS_OBSERVER_ARRAY_NOTIFY_OBSERVERS(slots->mMutationObservers,
-                                         ParentChainChanged, (aContent));
+    nsAutoTObserverArray<nsIMutationObserver*, 1>* observers =
+        aContent->GetMutationObservers();
+    if (observers && !observers->IsEmpty()) {
+      NS_OBSERVER_ARRAY_NOTIFY_OBSERVERS(*observers, ParentChainChanged,
+                                         (aContent));
     }
   }
 

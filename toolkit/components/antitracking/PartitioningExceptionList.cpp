@@ -16,28 +16,38 @@ namespace mozilla {
 
 namespace {
 
-inline void CreateExceptionListKey(const nsACString& aFirstPartyOrigin,
-                                   const nsACString& aThirdPartyOrigin,
-                                   nsACString& aExceptionListKey) {
+inline nsresult CreateExceptionListKey(const nsACString& aFirstPartyOrigin,
+                                       const nsACString& aThirdPartyOrigin,
+                                       nsACString& aExceptionListKey) {
   MOZ_ASSERT(!aFirstPartyOrigin.IsEmpty());
   MOZ_ASSERT(!aThirdPartyOrigin.IsEmpty());
+
+  // Don't allow exceptions for everything
+  if (aFirstPartyOrigin.EqualsLiteral("*") &&
+      aThirdPartyOrigin.EqualsLiteral("*")) {
+    return NS_ERROR_ILLEGAL_VALUE;
+  }
 
   aExceptionListKey.Assign(aFirstPartyOrigin);
   aExceptionListKey.Append(",");
   aExceptionListKey.Append(aThirdPartyOrigin);
+
+  return NS_OK;
 }
 
-inline void CreateExceptionListKey(nsIURI* aFirstPartyURI,
-                                   nsIURI* aThirdPartyURI,
-                                   nsACString& aExceptionListKey) {
-  MOZ_ASSERT(aFirstPartyURI);
-  MOZ_ASSERT(aThirdPartyURI);
+inline nsresult CreateUnifiedOriginString(const nsACString& aInput,
+                                          nsACString& aOutput) {
+  nsCOMPtr<nsIURI> uri;
+  if (aInput.EqualsLiteral("*")) {
+    aOutput.AssignLiteral("*");
+    return NS_OK;
+  }
+  nsresult rv = NS_NewURI(getter_AddRefs(uri), aInput);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
 
-  nsAutoCString firstPartyOrigin, thirdPartyOrigin;
-  nsContentUtils::GetASCIIOrigin(aFirstPartyURI, firstPartyOrigin);
-  nsContentUtils::GetASCIIOrigin(aThirdPartyURI, thirdPartyOrigin);
-
-  CreateExceptionListKey(firstPartyOrigin, thirdPartyOrigin, aExceptionListKey);
+  return nsContentUtils::GetASCIIOrigin(uri, aOutput);
 }
 
 StaticRefPtr<PartitioningExceptionList> gPartitioningExceptionList;
@@ -49,6 +59,11 @@ NS_IMPL_ISUPPORTS(PartitioningExceptionList,
 
 bool PartitioningExceptionList::Check(const nsACString& aFirstPartyOrigin,
                                       const nsACString& aThirdPartyOrigin) {
+  if (!StaticPrefs::privacy_antitracking_enableWebcompat()) {
+    LOG(("Partition exception list disabled via pref"));
+    return false;
+  }
+
   if (aFirstPartyOrigin.IsEmpty() || aThirdPartyOrigin.IsEmpty()) {
     return false;
   }
@@ -57,10 +72,14 @@ bool PartitioningExceptionList::Check(const nsACString& aFirstPartyOrigin,
        PromiseFlatCString(aFirstPartyOrigin).get(),
        PromiseFlatCString(aThirdPartyOrigin).get()));
 
-  nsAutoCString key;
+  nsAutoCString key, wildcardFirstPartyKey, wildcardThirdPartyKey;
   CreateExceptionListKey(aFirstPartyOrigin, aThirdPartyOrigin, key);
+  CreateExceptionListKey("*"_ns, aThirdPartyOrigin, wildcardFirstPartyKey);
+  CreateExceptionListKey(aFirstPartyOrigin, "*"_ns, wildcardThirdPartyKey);
 
-  if (GetOrCreate()->mExceptionList.Contains(key)) {
+  if (GetOrCreate()->mExceptionList.Contains(key) ||
+      GetOrCreate()->mExceptionList.Contains(wildcardFirstPartyKey) ||
+      GetOrCreate()->mExceptionList.Contains(wildcardThirdPartyKey)) {
     LOG(("URI is in exception list"));
     return true;
   }
@@ -109,20 +128,37 @@ PartitioningExceptionList::OnExceptionListUpdate(const nsACString& aList) {
   nsresult rv;
   for (const nsACString& item : aList.Split(';')) {
     auto origins = item.Split(',');
+    auto originsIt = origins.begin();
 
-    nsCOMPtr<nsIURI> firstPartyURI;
-    rv = NS_NewURI(getter_AddRefs(firstPartyURI), origins.Get(0));
+    if (originsIt == origins.end()) {
+      LOG(("Ignoring empty exception entry"));
+      continue;
+    }
+
+    nsAutoCString firstPartyOrigin;
+    rv = CreateUnifiedOriginString(*originsIt, firstPartyOrigin);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
-    nsCOMPtr<nsIURI> thirdPartyURI;
-    rv = NS_NewURI(getter_AddRefs(thirdPartyURI), origins.Get(1));
+
+    ++originsIt;
+
+    if (originsIt == origins.end()) {
+      LOG(("Ignoring incomplete exception entry"));
+      continue;
+    }
+
+    nsAutoCString thirdPartyOrigin;
+    rv = CreateUnifiedOriginString(*originsIt, thirdPartyOrigin);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
 
     nsAutoCString key;
-    CreateExceptionListKey(firstPartyURI, thirdPartyURI, key);
+    rv = CreateExceptionListKey(firstPartyOrigin, thirdPartyOrigin, key);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
     LOG(("onExceptionListUpdate: %s", key.get()));
 
     mExceptionList.AppendElement(key);

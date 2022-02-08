@@ -62,10 +62,7 @@ class ContentBlockingLog final {
         mBuffer;  // The lifetime of the struct must be bound to the buffer
     explicit StringWriteFunc(nsACString& aBuffer) : mBuffer(aBuffer) {}
 
-    void Write(const char* aStr) override { mBuffer.Append(aStr); }
-    void Write(const char* aStr, size_t aLen) override {
-      mBuffer.Append(aStr, aLen);
-    }
+    void Write(const Span<const char>& aStr) override { mBuffer.Append(aStr); }
   };
 
   struct Comparator {
@@ -120,7 +117,7 @@ class ContentBlockingLog final {
         continue;
       }
 
-      w.StartArrayProperty(entry.mOrigin.get(), w.SingleLineStyle);
+      w.StartArrayProperty(entry.mOrigin, w.SingleLineStyle);
 
       StringifyCustomFields(entry, w);
       for (const LogEntry& item : entry.mData->mLogs) {
@@ -192,15 +189,16 @@ class ContentBlockingLog final {
   }
 
   void AddSizeOfExcludingThis(nsWindowSizes& aSizes) const {
-    aSizes.mDOMOtherSize +=
+    aSizes.mDOMSizes.mDOMOtherSize +=
         mLog.ShallowSizeOfExcludingThis(aSizes.mState.mMallocSizeOf);
 
     // Now add the sizes of each origin log queue.
     for (const OriginEntry& entry : mLog) {
       if (entry.mData) {
-        aSizes.mDOMOtherSize += aSizes.mState.mMallocSizeOf(entry.mData.get()) +
-                                entry.mData->mLogs.ShallowSizeOfExcludingThis(
-                                    aSizes.mState.mMallocSizeOf);
+        aSizes.mDOMSizes.mDOMOtherSize +=
+            aSizes.mState.mMallocSizeOf(entry.mData.get()) +
+            entry.mData->mLogs.ShallowSizeOfExcludingThis(
+                aSizes.mState.mMallocSizeOf);
       }
     }
   }

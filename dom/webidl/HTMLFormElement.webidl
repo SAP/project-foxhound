@@ -11,7 +11,7 @@
  * and create derivative works of this document.
  */
 
-[OverrideBuiltins, LegacyUnenumerableNamedProperties,
+[LegacyOverrideBuiltIns, LegacyUnenumerableNamedProperties,
  Exposed=Window]
 interface HTMLFormElement : HTMLElement {
   [HTMLConstructor] constructor();
@@ -46,7 +46,7 @@ interface HTMLFormElement : HTMLElement {
 
   [Throws]
   void submit();
-  [Pref="dom.forms.requestsubmit.enabled", Throws]
+  [Throws]
   void requestSubmit(optional HTMLElement? submitter = null);
   [CEReactions]
   void reset();

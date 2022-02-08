@@ -3,12 +3,12 @@
 
 "use strict";
 
-const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
+const { require } = ChromeUtils.import(
+  "resource://devtools/shared/loader/Loader.jsm"
+);
 const Services = require("Services");
 const { DevToolsServer } = require("devtools/server/devtools-server");
 const { DevToolsClient } = require("devtools/client/devtools-client");
-
-const defer = require("devtools/shared/defer");
 
 function dumpn(msg) {
   dump("DBG-TEST: " + msg + "\n");
@@ -64,8 +64,10 @@ TracingTransport.prototype = {
     });
     this.hooks.onPacket(packet);
   },
-  onClosed: function() {
-    this.hooks.onClosed();
+  onTransportClosed: function() {
+    if (this.hooks.onTransportClosed) {
+      this.hooks.onTransportClosed();
+    }
   },
 
   expectSend: function(expected) {

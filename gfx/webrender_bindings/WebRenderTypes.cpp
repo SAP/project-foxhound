@@ -42,8 +42,6 @@ BorderStyle ToBorderStyle(StyleBorderStyle aStyle) {
       return wr::BorderStyle::Inset;
     case StyleBorderStyle::Outset:
       return wr::BorderStyle::Outset;
-    default:
-      MOZ_ASSERT(false);
   }
   return wr::BorderStyle::None;
 }
@@ -65,6 +63,24 @@ wr::RepeatMode ToRepeatMode(StyleBorderImageRepeat aRepeat) {
   return wr::RepeatMode::Stretch;
 }
 
+ImageRendering ToImageRendering(StyleImageRendering aImageRendering) {
+  switch (aImageRendering) {
+    case StyleImageRendering::Auto:
+    case StyleImageRendering::Smooth:
+    case StyleImageRendering::Optimizequality:
+      return wr::ImageRendering::Auto;
+    case StyleImageRendering::CrispEdges:
+      // FIXME(bug 1728831): Historically we've returned Pixelated here, but
+      // this should arguably pass CrispEdges to WebRender?
+      // return wr::ImageRendering::CrispEdges;
+      [[fallthrough]];
+    case StyleImageRendering::Optimizespeed:
+    case StyleImageRendering::Pixelated:
+      return wr::ImageRendering::Pixelated;
+  }
+  return wr::ImageRendering::Auto;
+}
+
 void Assign_WrVecU8(wr::WrVecU8& aVec, mozilla::ipc::ByteBuf&& aOther) {
   aVec.data = aOther.mData;
   aVec.length = aOther.mLen;
@@ -74,16 +90,18 @@ void Assign_WrVecU8(wr::WrVecU8& aVec, mozilla::ipc::ByteBuf&& aOther) {
   aOther.mCapacity = 0;
 }
 
-WrSpaceAndClip RootScrollNode() {
-  WrSpaceAndClip sac;
-  sac.clip = wr_root_clip_id();
-  sac.space = wr_root_scroll_node_id();
-  return sac;
-}
+WrSpatialId RootScrollNode() { return wr_root_scroll_node_id(); }
 
 WrSpaceAndClipChain RootScrollNodeWithChain() {
   WrSpaceAndClipChain sacc;
   sacc.clip_chain = wr::ROOT_CLIP_CHAIN;
+  sacc.space = wr_root_scroll_node_id();
+  return sacc;
+}
+
+WrSpaceAndClipChain InvalidScrollNodeWithChain() {
+  WrSpaceAndClipChain sacc;
+  sacc.clip_chain = std::numeric_limits<uint64_t>::max();
   sacc.space = wr_root_scroll_node_id();
   return sacc;
 }

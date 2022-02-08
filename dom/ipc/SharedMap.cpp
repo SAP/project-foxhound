@@ -10,6 +10,8 @@
 #include "MemMapSnapshot.h"
 #include "ScriptPreloader-inl.h"
 
+#include "mozilla/dom/AutoEntryScript.h"
+#include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/ContentProcessMessageManager.h"
 #include "mozilla/dom/IPCBlobUtils.h"
@@ -23,8 +25,7 @@ namespace mozilla {
 
 using namespace ipc;
 
-namespace dom {
-namespace ipc {
+namespace dom::ipc {
 
 // Align to size of uintptr_t here, to be safe. It's probably not strictly
 // necessary, though.
@@ -142,8 +143,8 @@ const nsTArray<SharedMap::Entry*>& SharedMap::EntryArray() const {
 
     mEntryArray.emplace(mEntries.Count());
     auto& array = mEntryArray.ref();
-    for (auto& entry : IterHash(mEntries)) {
-      array.AppendElement(entry);
+    for (auto& entry : mEntries) {
+      array.AppendElement(entry.GetWeak());
     }
   }
 
@@ -222,11 +223,11 @@ Result<Ok, nsresult> SharedMap::MaybeRebuild() {
     // indicate memory corruption, and are fatal.
     MOZ_RELEASE_ASSERT(!buffer.error());
 
-    // Note: Order of evaluation of function arguments is not guaranteed, so we
-    // can't use entry.release() in place of entry.get() without entry->Name()
-    // sometimes resulting in a null dereference.
-    mEntries.Put(entry->Name(), entry.get());
-    Unused << entry.release();
+    // Note: While the order of evaluation of the arguments to Put doesn't
+    // matter for this (the actual move will only happen within Put), to be
+    // clear about this, we call entry->Name() before calling Put.
+    const auto& name = entry->Name();
+    mEntries.InsertOrUpdate(name, std::move(entry));
   }
 
   return Ok();
@@ -285,7 +286,7 @@ Result<Ok, nsresult> WritableSharedMap::Serialize() {
   size_t headerSize = sizeof(count);
   size_t blobCount = 0;
 
-  for (auto& entry : IterHash(mEntries)) {
+  for (const auto& entry : mEntries.Values()) {
     headerSize += entry->HeaderSize();
     blobCount += entry->BlobCount();
 
@@ -309,7 +310,7 @@ Result<Ok, nsresult> WritableSharedMap::Serialize() {
   // as indexes into our blobs array.
   nsTArray<RefPtr<BlobImpl>> blobImpls(blobCount);
 
-  for (auto& entry : IterHash(mEntries)) {
+  for (const auto& entry : mEntries.Values()) {
     AlignTo(&offset, kStructuredCloneAlign);
 
     size_t blobOffset = blobImpls.Length();
@@ -397,7 +398,7 @@ void WritableSharedMap::Set(JSContext* aCx, const nsACString& aName,
     return;
   }
 
-  Entry* entry = mEntries.LookupOrAdd(aName, *this, aName);
+  Entry* entry = mEntries.GetOrInsertNew(aName, *this, aName);
   entry->TakeData(std::move(holder));
 
   KeyChanged(aName);
@@ -459,6 +460,5 @@ NS_INTERFACE_MAP_END_INHERITING(SharedMap)
 NS_IMPL_ADDREF_INHERITED(WritableSharedMap, SharedMap)
 NS_IMPL_RELEASE_INHERITED(WritableSharedMap, SharedMap)
 
-}  // namespace ipc
-}  // namespace dom
+}  // namespace dom::ipc
 }  // namespace mozilla

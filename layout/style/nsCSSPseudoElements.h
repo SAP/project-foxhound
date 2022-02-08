@@ -62,10 +62,6 @@ class nsCSSPseudoElements {
   typedef mozilla::CSSEnabledState EnabledState;
 
  public:
-  static bool IsPseudoElement(nsAtom* aAtom);
-
-  static bool IsCSS2PseudoElement(nsAtom* aAtom);
-
   static bool IsEagerlyCascadedInServo(const Type aType) {
     return PseudoElementHasFlags(aType, CSS_PSEUDO_ELEMENT_IS_CSS2);
   }
@@ -85,7 +81,11 @@ class nsCSSPseudoElements {
 #include "nsCSSPseudoElementList.h"
 #undef CSS_PSEUDO_ELEMENT
 
-  static Type GetPseudoType(nsAtom* aAtom, EnabledState aEnabledState);
+  // Returns Nothing() for a syntactically invalid pseudo-element, and NotPseudo
+  // for the empty / null string.
+  static mozilla::Maybe<Type> GetPseudoType(
+      const nsAString& aPseudoElement,
+      EnabledState = EnabledState::ForAllContent);
 
   // Get the atom for a given Type. aType must be <
   // PseudoType::CSSPseudoElementsEnd.
@@ -119,15 +119,8 @@ class nsCSSPseudoElements {
   }
 
   static bool EnabledInContent(Type aType) {
-    switch (aType) {
-      case Type::mozFocusOuter:
-        return mozilla::StaticPrefs::layout_css_moz_focus_outer_enabled();
-      case Type::fileChooserButton:
-        return mozilla::StaticPrefs::layout_css_file_chooser_button_enabled();
-      default:
-        return !PseudoElementHasAnyFlag(
-            aType, CSS_PSEUDO_ELEMENT_ENABLED_IN_UA_SHEETS_AND_CHROME);
-    }
+    return !PseudoElementHasAnyFlag(
+        aType, CSS_PSEUDO_ELEMENT_ENABLED_IN_UA_SHEETS_AND_CHROME);
   }
 
   static bool IsEnabled(Type aType, EnabledState aEnabledState) {

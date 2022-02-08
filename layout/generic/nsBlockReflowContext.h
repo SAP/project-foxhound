@@ -14,6 +14,7 @@
 class nsIFrame;
 class nsLineBox;
 class nsPresContext;
+class nsReflowStatus;
 namespace mozilla {
 class BlockReflowInput;
 }  // namespace mozilla
@@ -40,7 +41,7 @@ class nsBlockReflowContext {
   bool PlaceBlock(const ReflowInput& aReflowInput, bool aForceFit,
                   nsLineBox* aLine,
                   nsCollapsingMargin& aBEndMarginResult /* out */,
-                  nsOverflowAreas& aOverflowAreas,
+                  mozilla::OverflowAreas& aOverflowAreas,
                   const nsReflowStatus& aReflowStatus);
 
   nsCollapsingMargin& GetCarriedOutBEndMargin() {

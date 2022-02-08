@@ -11,6 +11,7 @@
 #include "mozilla/gfx/Tools.h"
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/gfx/Point.h"
+#include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/layers/CanvasDrawEventRecorder.h"
 #include "nsIObserverService.h"
@@ -70,9 +71,6 @@ class SourceSurfaceCanvasRecording final : public gfx::SourceSurface {
     EnsureDataSurfaceOnMainThread();
     return do_AddRef(mDataSourceSurface);
   }
-
- protected:
-  void GuaranteePersistance() final { EnsureDataSurfaceOnMainThread(); }
 
  private:
   void EnsureDataSurfaceOnMainThread() {
@@ -144,11 +142,15 @@ void CanvasChild::EnsureRecorder(TextureType aTextureType) {
     SharedMemoryBasic::Handle handle;
     CrossProcessSemaphoreHandle readerSem;
     CrossProcessSemaphoreHandle writerSem;
-    mRecorder->Init(OtherPid(), &handle, &readerSem, &writerSem,
-                    MakeUnique<RingBufferWriterServices>(this));
+    if (!mRecorder->Init(OtherPid(), &handle, &readerSem, &writerSem,
+                         MakeUnique<RingBufferWriterServices>(this))) {
+      mRecorder = nullptr;
+      return;
+    }
 
     if (CanSend()) {
-      Unused << SendInitTranslator(mTextureType, handle, readerSem, writerSem);
+      Unused << SendInitTranslator(mTextureType, std::move(handle),
+                                   std::move(readerSem), std::move(writerSem));
     }
   }
 
@@ -175,6 +177,7 @@ void CanvasChild::Destroy() {
 }
 
 void CanvasChild::OnTextureWriteLock() {
+  // We drop mRecorder in ActorDestroy to break the reference cycle.
   if (!mRecorder) {
     return;
   }
@@ -184,6 +187,7 @@ void CanvasChild::OnTextureWriteLock() {
 }
 
 void CanvasChild::OnTextureForwarded() {
+  // We drop mRecorder in ActorDestroy to break the reference cycle.
   if (!mRecorder) {
     return;
   }
@@ -199,6 +203,7 @@ void CanvasChild::OnTextureForwarded() {
 }
 
 void CanvasChild::EnsureBeginTransaction() {
+  // We drop mRecorder in ActorDestroy to break the reference cycle.
   if (!mRecorder) {
     return;
   }
@@ -210,6 +215,7 @@ void CanvasChild::EnsureBeginTransaction() {
 }
 
 void CanvasChild::EndTransaction() {
+  // We drop mRecorder in ActorDestroy to break the reference cycle.
   if (!mRecorder) {
     return;
   }
@@ -242,7 +248,10 @@ bool CanvasChild::ShouldBeCleanedUp() const {
 
 already_AddRefed<gfx::DrawTarget> CanvasChild::CreateDrawTarget(
     gfx::IntSize aSize, gfx::SurfaceFormat aFormat) {
-  MOZ_ASSERT(mRecorder);
+  // We drop mRecorder in ActorDestroy to break the reference cycle.
+  if (!mRecorder) {
+    return nullptr;
+  }
 
   RefPtr<gfx::DrawTarget> dummyDt = gfx::Factory::CreateDrawTarget(
       gfx::BackendType::SKIA, gfx::IntSize(1, 1), aFormat);
@@ -252,6 +261,7 @@ already_AddRefed<gfx::DrawTarget> CanvasChild::CreateDrawTarget(
 }
 
 void CanvasChild::RecordEvent(const gfx::RecordedEvent& aEvent) {
+  // We drop mRecorder in ActorDestroy to break the reference cycle.
   if (!mRecorder) {
     return;
   }
@@ -264,6 +274,7 @@ already_AddRefed<gfx::DataSourceSurface> CanvasChild::GetDataSurface(
   MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aSurface);
 
+  // We drop mRecorder in ActorDestroy to break the reference cycle.
   if (!mRecorder) {
     return nullptr;
   }
@@ -300,6 +311,7 @@ already_AddRefed<gfx::DataSourceSurface> CanvasChild::GetDataSurface(
 already_AddRefed<gfx::SourceSurface> CanvasChild::WrapSurface(
     const RefPtr<gfx::SourceSurface>& aSurface) {
   MOZ_ASSERT(aSurface);
+  // We drop mRecorder in ActorDestroy to break the reference cycle.
   if (!mRecorder) {
     return nullptr;
   }

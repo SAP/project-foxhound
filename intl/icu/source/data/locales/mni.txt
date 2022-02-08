@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 mni{
     AuxExemplarCharacters{"[\u200C\u200D]"}
     ExemplarCharacters{
@@ -24,7 +25,6 @@ mni{
             }
         }
     }
-    Version{"37"}
     calendar{
         generic{
             DateTimePatterns{
@@ -41,6 +41,16 @@ mni{
                 "{1} গী {0} দা",
                 "{1} {0}",
                 "{1}, {0}",
+            }
+            DateTimeSkeletons{
+                "ahmmsszzzz",
+                "ahmmssz",
+                "ahmmss",
+                "ahmm",
+                "GyMMMMEEEEd",
+                "GyMMMMd",
+                "GyMMMd",
+                "GGGGGyMd",
             }
             intervalFormats{
                 fallback{"{0} - {1}"}
@@ -70,10 +80,21 @@ mni{
                 "{1}, {0}",
                 "{1}, {0}",
             }
+            DateTimeSkeletons{
+                "ahmmsszzzz",
+                "ahmmssz",
+                "ahmmss",
+                "ahmm",
+                "yMMMMEEEEd",
+                "yMMMMd",
+                "yMMMd",
+                "yyMd",
+            }
             availableFormats{
                 GyMMM{"G y MMM"}
                 GyMMMEd{"G y MMM d, E"}
                 GyMMMd{"G y MMM d"}
+                GyMd{"GGGGG dd-MM-y"}
                 MEd{"d/M, E"}
                 MMMEd{"MMM d, E"}
                 MMMMd{"MMMM d"}
@@ -100,11 +121,11 @@ mni{
                         "থাংজ",
                     }
                     narrow{
-                        "নো",
+                        "নোং",
                         "নিং",
-                        "লৈ",
+                        "লৈবা",
                         "য়ুম",
-                        "শগ",
+                        "শগো",
                         "ইরা",
                         "থাং",
                     }
@@ -240,10 +261,10 @@ mni{
                         "মে",
                         "জুন",
                         "জুলাই",
-                        "আগস্ট",
+                        "ওগষ্ট",
                         "সেপ্টেম্বর",
                         "ওক্টোবর",
-                        "নভেম্বর",
+                        "নবেম্বর",
                         "ডিসেম্বর",
                     }
                 }
@@ -331,9 +352,14 @@ mni{
         }
         year{
             dn{"চহী"}
+            relative{
+                "-1"{"হাকুম/ মমাংগী চহি"}
+                "0"{"কুমশি"}
+                "1"{"মথং চহি"}
+            }
         }
         zone{
-            dn{"জোন"}
+            dn{"টাইম জোন"}
         }
     }
     listPattern{

@@ -15,6 +15,10 @@ menubar {
   font: menu;
 }
 
+menuitem {
+  padding: 4px 6px;
+}
+
 menu,
 menuitem,
 menucaption {
@@ -41,13 +45,6 @@ menuitem[customoptionstyling="true"] {
   appearance: none;
 }
 
-menuitem[customoptionstyling="true"][_moz-menuactive="true"] {
-  /* -moz-menuhovertext and -moz-menuhover only apply
-     when -moz-appearance is set to menuitem. */
-  color: highlighttext;
-  background-color: highlight;
-}
-
 menu[disabled="true"],
 menuitem[disabled="true"],
 menucaption[disabled="true"] {
@@ -56,20 +53,18 @@ menucaption[disabled="true"] {
 
 menubar > menu {
   padding: 0 4px;
-  color: -moz-menubartext;
 }
 
 menubar:-moz-lwtheme > menu {
   text-shadow: none;
 }
 
-menubar:-moz-lwtheme > menu:not([open="true"]) {
-  color: inherit;
+menubar:-moz-lwtheme > menu:not([open]) {
   text-shadow: inherit;
 }
 
-menubar > menu[_moz-menuactive="true"]:not([open]):not([disabled="true"]):not(:-moz-lwtheme) {
-  color: -moz-menubartext;
+menubar > menu:not([open], [disabled="true"]) {
+  color: inherit;
 }
 
 menubar > menu[open] {
@@ -191,3 +186,5 @@ menuseparator {
   appearance: auto !important;
   -moz-default-appearance: menuseparator !important;
 }
+
+%include ../../shared/menu-scrolling.inc.css

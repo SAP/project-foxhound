@@ -8,7 +8,10 @@
  */
 
 add_task(async function() {
-  const { tab, monitor } = await initNetMonitor(SIMPLE_URL, {
+  // Using https-first for this test is blocked on Bug 1733420.
+  await pushPref("dom.security.https_first", false);
+
+  const { monitor } = await initNetMonitor(SIMPLE_URL, {
     requestCount: 1,
   });
   info("Starting test... ");
@@ -19,7 +22,7 @@ add_task(async function() {
   );
 
   const wait = waitForNetworkEvents(monitor, 1);
-  tab.linkedBrowser.reload();
+  await reloadBrowser();
   await wait;
 
   EventUtils.sendMouseEvent(
@@ -42,7 +45,7 @@ add_task(async function() {
     `${method} ${SIMPLE_URL} ${httpVersion}`,
     "Host: example.com",
     "User-Agent: " + navigator.userAgent + "",
-    "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language: " + navigator.languages.join(",") + ";q=0.5",
     "Accept-Encoding: gzip, deflate",
     "Connection: keep-alive",

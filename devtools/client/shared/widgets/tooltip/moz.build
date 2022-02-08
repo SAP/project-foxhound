@@ -5,16 +5,16 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 DevToolsModules(
-    'EventTooltipHelper.js',
-    'HTMLTooltip.js',
-    'ImageTooltipHelper.js',
-    'inactive-css-tooltip-helper.js',
-    'InlineTooltip.js',
-    'RulePreviewTooltip.js',
-    'SwatchBasedEditorTooltip.js',
-    'SwatchColorPickerTooltip.js',
-    'SwatchCubicBezierTooltip.js',
-    'SwatchFilterTooltip.js',
-    'TooltipToggle.js',
-    'VariableTooltipHelper.js'
+    "css-compatibility-tooltip-helper.js",
+    "EventTooltipHelper.js",
+    "HTMLTooltip.js",
+    "ImageTooltipHelper.js",
+    "inactive-css-tooltip-helper.js",
+    "RulePreviewTooltip.js",
+    "SwatchBasedEditorTooltip.js",
+    "SwatchColorPickerTooltip.js",
+    "SwatchCubicBezierTooltip.js",
+    "SwatchFilterTooltip.js",
+    "TooltipToggle.js",
+    "VariableTooltipHelper.js",
 )

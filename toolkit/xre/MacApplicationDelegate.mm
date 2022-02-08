@@ -13,6 +13,7 @@
 // for details.
 
 #import <Cocoa/Cocoa.h>
+#include "NativeMenuMac.h"
 #import <Carbon/Carbon.h>
 
 #include "nsCOMPtr.h"
@@ -34,6 +35,7 @@
 #include "nsString.h"
 #include "nsCommandLineServiceMac.h"
 #include "nsCommandLine.h"
+#include "nsStandaloneNativeMenu.h"
 
 class AutoAutoreleasePool {
  public:
@@ -56,11 +58,11 @@ static bool sProcessedGetURLEvent = false;
 // This is needed, on relaunch, to force the OS to use the "Cocoa Dock API"
 // instead of the "Carbon Dock API".  For more info see bmo bug 377166.
 void EnsureUseCocoaDockAPI() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   [GeckoNSApplication sharedApplication];
 
-  NS_OBJC_END_TRY_ABORT_BLOCK;
+  NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
 void DisableAppNap() {
@@ -77,7 +79,7 @@ void DisableAppNap() {
 }
 
 void SetupMacApplicationDelegate() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   // this is called during startup, outside an event loop, and therefore
   // needs an autorelease pool to avoid cocoa object leakage (bug 559075)
@@ -95,7 +97,7 @@ void SetupMacApplicationDelegate() {
   id<NSApplicationDelegate> delegate = [[MacApplicationDelegate alloc] init];
   [[GeckoNSApplication sharedApplication] setDelegate:delegate];
 
-  NS_OBJC_END_TRY_ABORT_BLOCK;
+  NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
 // Indirectly make the OS process any pending GetURL Apple events.  This is
@@ -110,7 +112,7 @@ void ProcessPendingGetURLAppleEvents() {
   bool keepSpinning = true;
   while (keepSpinning) {
     sProcessedGetURLEvent = false;
-    NSEvent* event = [NSApp nextEventMatchingMask:NSAnyEventMask
+    NSEvent* event = [NSApp nextEventMatchingMask:NSEventMaskAny
                                         untilDate:nil
                                            inMode:NSDefaultRunLoopMode
                                           dequeue:YES];
@@ -122,7 +124,7 @@ void ProcessPendingGetURLAppleEvents() {
 @implementation MacApplicationDelegate
 
 - (id)init {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if ((self = [super init])) {
     NSAppleEventManager* aeMgr = [NSAppleEventManager sharedAppleEventManager];
@@ -152,11 +154,11 @@ void ProcessPendingGetURLAppleEvents() {
   }
   return self;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(nil);
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
 - (void)dealloc {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   NSAppleEventManager* aeMgr = [NSAppleEventManager sharedAppleEventManager];
   [aeMgr removeEventHandlerForEventClass:kInternetEventClass andEventID:kAEGetURL];
@@ -164,7 +166,7 @@ void ProcessPendingGetURLAppleEvents() {
   [aeMgr removeEventHandlerForEventClass:kCoreEventClass andEventID:kAEOpenDocuments];
   [super dealloc];
 
-  NS_OBJC_END_TRY_ABORT_BLOCK;
+  NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
 // The method that NSApplication calls upon a request to reopen, such as when
@@ -185,7 +187,7 @@ void ProcessPendingGetURLAppleEvents() {
 // The method that NSApplication calls when documents are requested to be opened.
 // It will be called once for each selected document.
 - (BOOL)application:(NSApplication*)theApplication openFile:(NSString*)filename {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NSURL* url = [NSURL fileURLWithPath:filename];
   if (!url) return NO;
@@ -208,7 +210,10 @@ void ProcessPendingGetURLAppleEvents() {
 
   nsCOMPtr<nsIFile> workingDir;
   rv = NS_GetSpecialDirectory(NS_OS_CURRENT_WORKING_DIR, getter_AddRefs(workingDir));
-  if (NS_FAILED(rv)) return NO;
+  if (NS_FAILED(rv)) {
+    // Couldn't find a working dir. Uh oh. Good job cmdline::Init can cope.
+    workingDir = nullptr;
+  }
 
   const char* argv[3] = {nullptr, "-file", filePath.get()};
   rv = cmdLine->Init(3, argv, workingDir, nsICommandLine::STATE_REMOTE_EXPLICIT);
@@ -218,7 +223,7 @@ void ProcessPendingGetURLAppleEvents() {
 
   return NO;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(NO);
+  NS_OBJC_END_TRY_BLOCK_RETURN(NO);
 }
 
 // The method that NSApplication calls when documents are requested to be printed
@@ -230,7 +235,7 @@ void ProcessPendingGetURLAppleEvents() {
 
 // Create the menu that shows up in the Dock.
 - (NSMenu*)applicationDockMenu:(NSApplication*)sender {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   // Create the NSMenu that will contain the dock menu items.
   NSMenu* menu = [[[NSMenu alloc] initWithTitle:@""] autorelease];
@@ -243,20 +248,21 @@ void ProcessPendingGetURLAppleEvents() {
       do_GetService("@mozilla.org/widget/macdocksupport;1", &rv);
   if (NS_FAILED(rv) || !dockSupport) return menu;
 
-  nsCOMPtr<nsIStandaloneNativeMenu> dockMenu;
-  rv = dockSupport->GetDockMenu(getter_AddRefs(dockMenu));
-  if (NS_FAILED(rv) || !dockMenu) return menu;
+  nsCOMPtr<nsIStandaloneNativeMenu> dockMenuInterface;
+  rv = dockSupport->GetDockMenu(getter_AddRefs(dockMenuInterface));
+  if (NS_FAILED(rv) || !dockMenuInterface) return menu;
 
-  // Determine if the dock menu items should be displayed. This also gives
-  // the menu the opportunity to update itself before display.
-  bool shouldShowItems;
-  rv = dockMenu->MenuWillOpen(&shouldShowItems);
-  if (NS_FAILED(rv) || !shouldShowItems) return menu;
+  RefPtr<mozilla::widget::NativeMenuMac> dockMenu =
+      static_cast<nsStandaloneNativeMenu*>(dockMenuInterface.get())->GetNativeMenu();
+
+  // Give the menu the opportunity to update itself before display.
+  dockMenu->MenuWillOpen();
 
   // Obtain a copy of the native menu.
-  NSMenu* nativeDockMenu;
-  rv = dockMenu->GetNativeMenu(reinterpret_cast<void**>(&nativeDockMenu));
-  if (NS_FAILED(rv) || !nativeDockMenu) return menu;
+  NSMenu* nativeDockMenu = dockMenu->NativeNSMenu();
+  if (!nativeDockMenu) {
+    return menu;
+  }
 
   // Loop through the application-specific dock menu and insert its
   // contents into the dock menu that we are building for Cocoa.
@@ -273,7 +279,7 @@ void ProcessPendingGetURLAppleEvents() {
 
   return menu;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
 - (void)applicationWillFinishLaunching:(NSNotification*)notification {
@@ -301,7 +307,7 @@ void ProcessPendingGetURLAppleEvents() {
   nsCOMPtr<nsIAppStartup> appService = do_GetService("@mozilla.org/toolkit/app-startup;1");
   if (appService) {
     bool userAllowedQuit = true;
-    appService->Quit(nsIAppStartup::eForceQuit, &userAllowedQuit);
+    appService->Quit(nsIAppStartup::eForceQuit, 0, &userAllowedQuit);
     if (!userAllowedQuit) {
       return NSTerminateCancel;
     }
@@ -383,8 +389,10 @@ void ProcessPendingGetURLAppleEvents() {
   nsCOMPtr<nsIFile> workingDir;
   nsresult rv = NS_GetSpecialDirectory(NS_OS_CURRENT_WORKING_DIR, getter_AddRefs(workingDir));
   if (NS_FAILED(rv)) {
-    return NO;
+    // Couldn't find a working dir. Uh oh. Good job cmdline::Init can cope.
+    workingDir = nullptr;
   }
+
   const char* argv[3] = {nullptr, "-url", urlString};
   rv = cmdLine->Init(3, argv, workingDir, nsICommandLine::STATE_REMOTE_EXPLICIT);
   if (NS_FAILED(rv)) {

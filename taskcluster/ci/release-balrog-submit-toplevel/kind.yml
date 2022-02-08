@@ -2,14 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
-loader: taskgraph.loader.transform:loader
+loader: gecko_taskgraph.loader.transform:loader
 
 transforms:
-    - taskgraph.transforms.release:run_on_releases
-    - taskgraph.transforms.release_deps:transforms
-    - taskgraph.transforms.scriptworker:add_balrog_scopes
-    - taskgraph.transforms.balrog_toplevel:transforms
-    - taskgraph.transforms.task:transforms
+    - gecko_taskgraph.transforms.release:run_on_releases
+    - gecko_taskgraph.transforms.release_deps:transforms
+    - gecko_taskgraph.transforms.scriptworker:add_balrog_scopes
+    - gecko_taskgraph.transforms.balrog_toplevel:transforms
+    - gecko_taskgraph.transforms.task:transforms
 
 job-defaults:
     run-on-projects: []  # to make sure this never runs in CI
@@ -17,7 +17,7 @@ job-defaults:
     worker-type: balrog
     worker:
         implementation: balrog
-        balrog-action: submit-toplevel
+        balrog-action: v2-submit-toplevel
         require-mirrors: true
         archive-domain:
             by-release-level:
@@ -46,8 +46,7 @@ jobs:
                 by-release-type:
                     beta: ["firefox-beta-cdntest", "firefox-beta-localtest"]
                     release(-rc)?: ["firefox-release-cdntest", "firefox-release-localtest"]
-                    esr68: ["firefox-esr68-cdntest", "firefox-esr68-localtest"]
-                    esr78: ["firefox-esr78-cdntest", "firefox-esr78-localtest"]
+                    esr91: ["firefox-esr91-cdntest", "firefox-esr91-localtest"]
                     default: []
             platforms: ["linux", "linux64", "macosx64", "win32", "win64", "win64-aarch64"]
         treeherder:

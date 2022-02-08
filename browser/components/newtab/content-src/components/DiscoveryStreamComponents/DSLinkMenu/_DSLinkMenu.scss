@@ -1,5 +1,3 @@
-.ds-hero-item,
-.ds-list-item,
 .ds-card,
 .ds-signup {
   @include context-menu-button;
@@ -22,7 +20,7 @@
     }
   }
 
-  &:-moz-any(:hover, :focus, .active) {
+  &:is(:hover, :focus, .active) {
     @include context-menu-button-hover;
     outline: none;
 

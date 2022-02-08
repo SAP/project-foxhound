@@ -77,9 +77,8 @@ add_task(async function testAppShutdown() {
   await promiseStartupManager();
   await extension.awaitStartup();
 
-  // Get the action.  Its pinnedToUrlbar should remain false.
   action = PageActions.actionForID(actionID);
-  Assert.equal(action.pinnedToUrlbar, false);
+  Assert.equal(action.pinnedToUrlbar, true);
 
   // Now unload the extension and quit the app.
   await extension.unload();

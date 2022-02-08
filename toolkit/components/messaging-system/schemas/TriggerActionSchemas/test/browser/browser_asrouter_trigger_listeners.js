@@ -16,7 +16,7 @@ ChromeUtils.defineModuleGetter(
 
 async function openURLInWindow(window, url) {
   const { selectedBrowser } = window.gBrowser;
-  await BrowserTestUtils.loadURI(selectedBrowser, url);
+  BrowserTestUtils.loadURI(selectedBrowser, url);
   await BrowserTestUtils.browserLoaded(selectedBrowser, false, url);
 }
 
@@ -99,7 +99,7 @@ add_task(async function check_openURL_listener() {
   });
 
   // Initialise listener
-  await openURLListener.init(triggerHandler, ["example.com"]);
+  openURLListener.init(triggerHandler, ["example.com"]);
 
   await openURLInWindow(normalWindow, TEST_URL);
   await BrowserTestUtils.waitForCondition(
@@ -417,10 +417,10 @@ add_task(async function check_contentBlockingMilestone_listener() {
   const triggerHandler = (target, trigger) => {
     const {
       id,
-      param: { host },
+      param: { type },
     } = trigger;
     is(id, "contentBlocking", "should match event name");
-    is(host, "ContentBlockingMilestone", "Should be the correct event type");
+    is(type, "ContentBlockingMilestone", "Should be the correct event type");
     observerEvent += 1;
   };
   const contentBlockingListener = ASRouterTriggerListeners.get(

@@ -6,12 +6,15 @@
 
 #include "FetchEventOpParent.h"
 
+#include "mozilla/dom/FetchTypes.h"
 #include "nsDebug.h"
 
 #include "mozilla/Assertions.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/FetchEventOpProxyParent.h"
+#include "mozilla/dom/FetchStreamUtils.h"
+#include "mozilla/dom/InternalResponse.h"
 #include "mozilla/dom/RemoteWorkerControllerParent.h"
 #include "mozilla/dom/RemoteWorkerParent.h"
 #include "mozilla/ipc/BackgroundParent.h"
@@ -22,24 +25,38 @@ using namespace ipc;
 
 namespace dom {
 
-void FetchEventOpParent::Initialize(
-    const ServiceWorkerFetchEventOpArgs& aArgs) {
-  AssertIsInMainProcess();
+Maybe<ParentToParentInternalResponse> FetchEventOpParent::OnStart(
+    MovingNotNull<RefPtr<FetchEventOpProxyParent>> aFetchEventOpProxyParent) {
+  Maybe<ParentToParentInternalResponse> preloadResponse =
+      std::move(mState.as<Pending>().mPreloadResponse);
+  mState = AsVariant(Started{std::move(aFetchEventOpProxyParent)});
+  return preloadResponse;
+}
+
+void FetchEventOpParent::OnFinish() {
+  MOZ_ASSERT(mState.is<Started>());
+  mState = AsVariant(Finished());
+}
+
+mozilla::ipc::IPCResult FetchEventOpParent::RecvPreloadResponse(
+    ParentToParentInternalResponse&& aResponse) {
   AssertIsOnBackgroundThread();
 
-  RemoteWorkerControllerParent* manager =
-      static_cast<RemoteWorkerControllerParent*>(Manager());
-  MOZ_ASSERT(manager);
+  mState.match(
+      [&aResponse](Pending& aPending) {
+        MOZ_ASSERT(aPending.mPreloadResponse.isNothing());
+        aPending.mPreloadResponse = Some(std::move(aResponse));
+      },
+      [&aResponse](Started& aStarted) {
+        auto backgroundParent = WrapNotNull(
+            WrapNotNull(aStarted.mFetchEventOpProxyParent->Manager())
+                ->Manager());
+        Unused << aStarted.mFetchEventOpProxyParent->SendPreloadResponse(
+            ToParentToChild(aResponse, backgroundParent));
+      },
+      [](const Finished&) {});
 
-  // This will be null when the manager's RemoteWorkerController has shutdown.
-  RefPtr<RemoteWorkerParent> proxyManager = manager->GetRemoteWorkerParent();
-  if (NS_WARN_IF(!proxyManager)) {
-    Unused << Send__delete__(this, NS_ERROR_DOM_ABORT_ERR);
-
-    return;
-  }
-
-  FetchEventOpProxyParent::Create(proxyManager.get(), aArgs, this);
+  return IPC_OK();
 }
 
 void FetchEventOpParent::ActorDestroy(ActorDestroyReason) {

@@ -7,23 +7,32 @@
 #ifndef mozilla_dom_Promise_h
 #define mozilla_dom_Promise_h
 
+#include <functional>
 #include <type_traits>
 #include <utility>
-
-#include "js/Promise.h"
+#include "ErrorList.h"
+#include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
-#include "jspubtd.h"
-#include "mozilla/Attributes.h"
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/TimeStamp.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/Result.h"
 #include "mozilla/WeakPtr.h"
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/PromiseBinding.h"
+#include "mozilla/dom/AutoEntryScript.h"
+#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
+#include "nsError.h"
+#include "nsISupports.h"
+#include "nsString.h"
 
+class nsCycleCollectionTraversalCallback;
 class nsIGlobalObject;
+
+namespace JS {
+class Value;
+}
 
 namespace mozilla {
 
@@ -173,12 +182,7 @@ class Promise : public SupportsWeakPtr {
 
   // Mark a settled promise as already handled so that rejections will not
   // be reported as unhandled.
-  void SetSettledPromiseIsHandled() {
-    AutoEntryScript aes(mGlobal, "Set settled promise handled");
-    JSContext* cx = aes.cx();
-    JS::RootedObject promiseObj(cx, mPromiseObj);
-    JS::SetSettledPromiseIsHandled(cx, promiseObj);
-  }
+  void SetSettledPromiseIsHandled();
 
   // WebIDL
 
@@ -279,6 +283,9 @@ class Promise : public SupportsWeakPtr {
 
   PromiseState State() const;
 
+  static already_AddRefed<Promise> CreateResolvedWithUndefined(
+      nsIGlobalObject* aGlobal, ErrorResult& aRv);
+
  protected:
   // Legacy method for throwing DOMExceptions.  Only used by media code at this
   // point, via DetailedPromise.  Do NOT add new uses!  When this is removed,
@@ -315,6 +322,7 @@ class Promise : public SupportsWeakPtr {
   void MaybeSomething(T&& aArgument, MaybeFunc aFunc) {
     MOZ_ASSERT(PromiseObj());  // It was preserved!
 
+    AutoAllowLegacyScriptExecution exemption;
     AutoEntryScript aes(mGlobal, "Promise resolution or rejection");
     JSContext* cx = aes.cx();
 
@@ -338,5 +346,16 @@ class Promise : public SupportsWeakPtr {
 
 }  // namespace dom
 }  // namespace mozilla
+
+extern "C" {
+// These functions are used in the implementation of ffi bindings for
+// dom::Promise from Rust in xpcom crate.
+void DomPromise_AddRef(mozilla::dom::Promise* aPromise);
+void DomPromise_Release(mozilla::dom::Promise* aPromise);
+void DomPromise_RejectWithVariant(mozilla::dom::Promise* aPromise,
+                                  nsIVariant* aVariant);
+void DomPromise_ResolveWithVariant(mozilla::dom::Promise* aPromise,
+                                   nsIVariant* aVariant);
+}
 
 #endif  // mozilla_dom_Promise_h

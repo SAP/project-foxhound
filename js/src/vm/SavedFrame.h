@@ -10,8 +10,10 @@
 #include "mozilla/Attributes.h"
 
 #include "js/GCHashTable.h"
+#include "js/Principals.h"
 #include "js/UbiNode.h"
 #include "js/Wrapper.h"
+#include "vm/NativeObject.h"
 
 namespace js {
 
@@ -112,9 +114,9 @@ class SavedFrame : public NativeObject {
 
  private:
   static SavedFrame* create(JSContext* cx);
-  static MOZ_MUST_USE bool finishSavedFrameInit(JSContext* cx,
-                                                HandleObject ctor,
-                                                HandleObject proto);
+  [[nodiscard]] static bool finishSavedFrameInit(JSContext* cx,
+                                                 HandleObject ctor,
+                                                 HandleObject proto);
   void initFromLookup(JSContext* cx, Handle<Lookup> lookup);
   void initSource(JSAtom* source);
   void initSourceId(uint32_t id);
@@ -194,8 +196,8 @@ struct ReconstructedSavedFramePrincipals : public JSPrincipals {
     this->refcount = 1;
   }
 
-  MOZ_MUST_USE bool write(JSContext* cx,
-                          JSStructuredCloneWriter* writer) override {
+  [[nodiscard]] bool write(JSContext* cx,
+                           JSStructuredCloneWriter* writer) override {
     MOZ_ASSERT(false,
                "ReconstructedSavedFramePrincipals should never be exposed to "
                "embedders");
@@ -280,7 +282,7 @@ class ConcreteStackFrame<SavedFrame> : public BaseStackFrame {
 
   bool isSystem() const override;
 
-  MOZ_MUST_USE bool constructSavedFrameStack(
+  [[nodiscard]] bool constructSavedFrameStack(
       JSContext* cx, MutableHandleObject outSavedFrameStack) const override;
 };
 

@@ -21,6 +21,7 @@ namespace layers {
 
 class APZInputBridge;
 class KeyboardMap;
+struct ZoomTarget;
 
 enum AllowedTouchBehavior {
   NONE = 0,
@@ -35,10 +36,11 @@ enum ZoomToRectBehavior : uint32_t {
   DEFAULT_BEHAVIOR = 0,
   DISABLE_ZOOM_OUT = 1 << 0,
   PAN_INTO_VIEW_ONLY = 1 << 1,
-  ONLY_ZOOM_TO_DEFAULT_SCALE = 1 << 2
+  ONLY_ZOOM_TO_DEFAULT_SCALE = 1 << 2,
 };
 
 class AsyncDragMetrics;
+struct APZHandledResult;
 
 class IAPZCTreeManager {
   NS_INLINE_DECL_THREADSAFE_VIRTUAL_REFCOUNTING(IAPZCTreeManager)
@@ -56,7 +58,7 @@ class IAPZCTreeManager {
    * |aFlags| is a combination of the ZoomToRectBehavior enum values.
    */
   virtual void ZoomToRect(const ScrollableLayerGuid& aGuid,
-                          const CSSRect& aRect,
+                          const ZoomTarget& aZoomTarget,
                           const uint32_t aFlags = DEFAULT_BEHAVIOR) = 0;
 
   /**
@@ -130,6 +132,27 @@ class IAPZCTreeManager {
    * It is only valid to call this function in the UI process.
    */
   virtual APZInputBridge* InputBridge() = 0;
+
+  /**
+   * Add a callback to be invoked when |aInputBlockId| is ready for handling,
+   * with a boolean indicating whether the APZC handling the input block is
+   * the root content APZC.
+   *
+   * Should only be used for input blocks that are not yet ready for handling
+   * at the time this is called. If the input block was already handled,
+   * the callback will never be called.
+   *
+   * Only one callback can be registered for an input block at a time.
+   * Subsequent attempts to register a callback for an input block will be
+   * ignored until the existing callback is triggered.
+   *
+   * This is only implemented when the caller is in the same process as
+   * the APZCTreeManager.
+   */
+  using InputBlockCallback = std::function<void(
+      uint64_t aInputBlockId, const APZHandledResult& aHandledResult)>;
+  virtual void AddInputBlockCallback(uint64_t aInputBlockId,
+                                     InputBlockCallback&& aCallback) = 0;
 
  protected:
   // Discourage destruction outside of decref

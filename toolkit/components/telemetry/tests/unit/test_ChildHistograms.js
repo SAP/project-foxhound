@@ -1,14 +1,17 @@
-ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetrySession.jsm", this);
-ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm", this);
-ChromeUtils.import("resource://testing-common/ContentTaskUtils.jsm", this);
+const { TelemetryController } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryController.jsm"
+);
+const { TelemetrySession } = ChromeUtils.import(
+  "resource://gre/modules/TelemetrySession.jsm"
+);
+const { PromiseUtils } = ChromeUtils.import(
+  "resource://gre/modules/PromiseUtils.jsm"
+);
+const { ContentTaskUtils } = ChromeUtils.import(
+  "resource://testing-common/ContentTaskUtils.jsm"
+);
 
 const MESSAGE_CHILD_TEST_DONE = "ChildTest:Done";
-
-const PLATFORM_VERSION = "1.9.2";
-const APP_VERSION = "1";
-const APP_ID = "xpcshell@tests.mozilla.org";
-const APP_NAME = "XPCShell";
 
 function run_child_test() {
   // Setup histograms with some fixed values.
@@ -166,7 +169,7 @@ add_task(async function() {
 
   // Setup.
   do_get_profile(true);
-  loadAddonManager(APP_ID, APP_NAME, APP_VERSION, PLATFORM_VERSION);
+  await loadAddonManager(APP_ID, APP_NAME, APP_VERSION, PLATFORM_VERSION);
   finishAddonManagerStartup();
   fakeIntlReady();
   await TelemetryController.testSetup();

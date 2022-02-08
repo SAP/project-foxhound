@@ -5,16 +5,33 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 DIRS += [
-    'utils',
+    "utils",
 ]
 
 DevToolsModules(
-    'console-messages.js',
-    'css-messages.js',
-    'error-messages.js',
-    'index.js',
-    'platform-messages.js',
+    "console-messages.js",
+    "css-changes.js",
+    "css-messages.js",
+    "document-event.js",
+    "error-messages.js",
+    "index.js",
+    "network-events-content.js",
+    "network-events-stacktraces.js",
+    "network-events.js",
+    "parent-process-document-event.js",
+    "platform-messages.js",
+    "reflow.js",
+    "server-sent-events.js",
+    "sources.js",
+    "storage-cache.js",
+    "storage-cookie.js",
+    "storage-indexed-db.js",
+    "storage-local-storage.js",
+    "storage-session-storage.js",
+    "stylesheets.js",
+    "thread-states.js",
+    "websockets.js",
 )
 
-with Files('*-messages.js'):
-    BUG_COMPONENT = ('DevTools', 'Console')
+with Files("*-messages.js"):
+    BUG_COMPONENT = ("DevTools", "Console")

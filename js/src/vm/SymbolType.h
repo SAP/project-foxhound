@@ -7,11 +7,7 @@
 #ifndef vm_SymbolType_h
 #define vm_SymbolType_h
 
-#include "mozilla/Attributes.h"
-
 #include <stdio.h>
-
-#include "jsapi.h"
 
 #include "gc/Barrier.h"
 #include "gc/Tracer.h"
@@ -19,15 +15,12 @@
 #include "js/GCHashTable.h"
 #include "js/HeapAPI.h"
 #include "js/RootingAPI.h"
+#include "js/shadow/Symbol.h"  // JS::shadow::Symbol
 #include "js/Symbol.h"
 #include "js/TypeDecls.h"
 #include "js/Utility.h"
 #include "vm/Printer.h"
 #include "vm/StringType.h"
-
-namespace js {
-class AutoAccessAtomsZone;
-}  // namespace js
 
 namespace JS {
 
@@ -94,11 +87,8 @@ class Symbol
   }
   inline void finalize(JSFreeOp*) {}
 
-  static MOZ_ALWAYS_INLINE void writeBarrierPre(Symbol* thing) {
-    if (thing && !thing->isWellKnownSymbol()) {
-      thing->asTenured().writeBarrierPre(thing);
-    }
-  }
+  // Override base class implementation to tell GC about well-known symbols.
+  bool isPermanentAndMayBeShared() const { return isWellKnownSymbol(); }
 
   size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
     return mallocSizeOf(this);
@@ -108,6 +98,8 @@ class Symbol
   void dump();  // Debugger-friendly stderr dump.
   void dump(js::GenericPrinter& out);
 #endif
+
+  static constexpr size_t offsetOfHash() { return offsetof(Symbol, hash_); }
 };
 
 } /* namespace JS */

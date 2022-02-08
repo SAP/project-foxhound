@@ -109,4 +109,13 @@ for (let blobify of [page_blobify, worker_blobify]) {
   }
 }
 
-IsolationTestTools.runTests(TEST_PAGE, tests);
+async function setup() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["privacy.partition.bloburl_per_agent_cluster", false],
+      ["dom.security.https_first", false],
+    ],
+  });
+}
+
+IsolationTestTools.runTests(TEST_PAGE, tests, null, setup);

@@ -5,7 +5,9 @@
 
 #include "ctypes.h"
 #include "jsapi.h"
+#include "js/experimental/CTypes.h"  // JS::CTypesCallbacks, JS::InitCTypesClass, JS::SetCTypesCallbacks
 #include "js/MemoryFunctions.h"
+#include "js/PropertyAndElement.h"  // JS_GetProperty
 #include "nsMemory.h"
 #include "nsString.h"
 #include "nsNativeCharsetUtils.h"
@@ -33,7 +35,7 @@ static char* UnicodeToNative(JSContext* cx, const char16_t* source,
   return result;
 }
 
-static JSCTypesCallbacks sCallbacks = {UnicodeToNative};
+static JS::CTypesCallbacks sCallbacks = {UnicodeToNative};
 
 NS_IMPL_ISUPPORTS(Module, nsIXPCScriptable)
 
@@ -66,13 +68,13 @@ static bool SealObjectAndPrototype(JSContext* cx, JS::Handle<JSObject*> parent,
 static bool InitAndSealCTypesClass(JSContext* cx,
                                    JS::Handle<JSObject*> global) {
   // Init the ctypes object.
-  if (!JS_InitCTypesClass(cx, global)) return false;
+  if (!JS::InitCTypesClass(cx, global)) return false;
 
   // Set callbacks for charset conversion and such.
   JS::Rooted<JS::Value> ctypes(cx);
   if (!JS_GetProperty(cx, global, "ctypes", &ctypes)) return false;
 
-  JS_SetCTypesCallbacks(ctypes.toObjectOrNull(), &sCallbacks);
+  JS::SetCTypesCallbacks(ctypes.toObjectOrNull(), &sCallbacks);
 
   // Seal up Object, Function, Array and Error and their prototypes.  (This
   // single object instance is shared amongst everyone who imports the ctypes

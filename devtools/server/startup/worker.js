@@ -17,133 +17,130 @@
 // main thread. It is exposed as a built-in global to every module by the
 // worker loader. To make sure the worker loader can access it, it needs to be
 // defined before loading the worker loader script below.
+let nextId = 0;
 this.rpc = function(method, ...params) {
-  const id = nextId++;
+  return new Promise((resolve, reject) => {
+    const id = nextId++;
+    this.addEventListener("message", function onMessageForRpc(event) {
+      const packet = JSON.parse(event.data);
+      if (packet.type !== "rpc" || packet.id !== id) {
+        return;
+      }
+      if (packet.error) {
+        reject(packet.error);
+      } else {
+        resolve(packet.result);
+      }
+      this.removeEventListener("message", onMessageForRpc);
+    });
 
-  postMessage(
-    JSON.stringify({
-      type: "rpc",
-      method: method,
-      params: params,
-      id: id,
-    })
-  );
+    postMessage(
+      JSON.stringify({
+        type: "rpc",
+        method,
+        params,
+        id,
+      })
+    );
+  });
+}.bind(this);
 
-  const deferred = defer();
-  rpcDeferreds[id] = deferred;
-  return deferred.promise;
-};
+loadSubScript("resource://devtools/shared/loader/worker-loader.js");
 
-loadSubScript("resource://devtools/shared/worker/loader.js");
-
-var defer = worker.require("devtools/shared/defer");
-var EventEmitter = worker.require("devtools/shared/event-emitter");
-const { Pool } = worker.require("devtools/shared/protocol/Pool");
-var { ThreadActor } = worker.require("devtools/server/actors/thread");
-var { WebConsoleActor } = worker.require("devtools/server/actors/webconsole");
-var { TabSources } = worker.require("devtools/server/actors/utils/TabSources");
-var makeDebugger = worker.require("devtools/server/actors/utils/make-debugger");
-var { DevToolsServer } = worker.require("devtools/server/devtools-server");
+const { WorkerTargetActor } = worker.require(
+  "devtools/server/actors/targets/worker"
+);
+const { DevToolsServer } = worker.require("devtools/server/devtools-server");
 
 DevToolsServer.init();
 DevToolsServer.createRootActor = function() {
   throw new Error("Should never get here!");
 };
 
-var connections = Object.create(null);
-var nextId = 0;
-var rpcDeferreds = [];
+// This file is only instanciated once for a given WorkerDebugger, which means that
+// multiple toolbox could end up using the same instance of this script. In order to handle
+// that, we handle a Map of the different connections, keyed by forwarding prefix.
+const connections = new Map();
 
-this.addEventListener("message", function(event) {
+this.addEventListener("message", async function(event) {
   const packet = JSON.parse(event.data);
   switch (packet.type) {
     case "connect":
+      const { forwardingPrefix } = packet;
+
       // Step 3: Create a connection to the parent.
-      const connection = DevToolsServer.connectToParent(packet.id, this);
-      connections[packet.id] = {
+      const connection = DevToolsServer.connectToParent(forwardingPrefix, this);
+
+      // Step 4: Create a WorkerTarget actor.
+      const workerTargetActor = new WorkerTargetActor(
         connection,
-        rpcs: [],
-      };
+        global,
+        packet.workerDebuggerData
+      );
+      // Make the worker manage itself so it is put in a Pool and assigned an actorID.
+      workerTargetActor.manage(workerTargetActor);
 
-      // Step 4: Create a thread actor for the connection to the parent.
-      const pool = new Pool(connection, "workerStartup");
-
-      let sources = null;
-
-      const makeWorkerDebugger = makeDebugger.bind(null, {
-        findDebuggees: () => {
-          return [this.global];
-        },
-
-        shouldAddNewGlobalAsDebuggee: () => {
-          return true;
-        },
-      });
-
-      const parent = {
-        actorID: packet.id,
-        conn: connection,
-
-        get dbg() {
-          if (!this._dbg) {
-            this._dbg = makeWorkerDebugger();
-          }
-          return this._dbg;
-        },
-        makeDebugger: makeWorkerDebugger,
-
-        get sources() {
-          if (sources === null) {
-            sources = new TabSources(threadActor);
-          }
-          return sources;
-        },
-
-        window: global,
-
-        onThreadAttached() {
-          postMessage(JSON.stringify({ type: "attached" }));
-        },
-      };
-
-      EventEmitter.decorate(parent);
-
-      const threadActor = new ThreadActor(parent, global);
-      pool.manage(threadActor);
-
-      // parentActor.threadActor is needed from the webconsole for grip previewing
-      parent.threadActor = threadActor;
-
-      const consoleActor = new WebConsoleActor(connection, parent);
-      pool.manage(consoleActor);
-
-      // needed so the thread actor can communicate with the console
-      // when evaluating logpoints.
-      parent._consoleActor = consoleActor;
+      workerTargetActor.on(
+        "worker-thread-attached",
+        function onThreadAttached() {
+          postMessage(JSON.stringify({ type: "worker-thread-attached" }));
+        }
+      );
+      workerTargetActor.attach();
 
       // Step 5: Send a response packet to the parent to notify
       // it that a connection has been established.
+      connections.set(forwardingPrefix, {
+        connection,
+        workerTargetActor,
+      });
+
       postMessage(
         JSON.stringify({
           type: "connected",
-          id: packet.id,
-          threadActor: threadActor.actorID,
-          consoleActor: consoleActor.actorID,
+          forwardingPrefix,
+          workerTargetForm: workerTargetActor.form(),
         })
       );
+
+      // We might receive data to watch.
+      if (packet.options?.sessionData) {
+        const promises = [];
+        for (const [type, entries] of Object.entries(
+          packet.options.sessionData
+        )) {
+          promises.push(workerTargetActor.addSessionDataEntry(type, entries));
+        }
+        await Promise.all(promises);
+      }
+
+      break;
+
+    case "add-session-data-entry":
+      await connections
+        .get(packet.forwardingPrefix)
+        .workerTargetActor.addSessionDataEntry(
+          packet.dataEntryType,
+          packet.entries
+        );
+      postMessage(JSON.stringify({ type: "session-data-entry-added" }));
+      break;
+
+    case "remove-session-data-entry":
+      await connections
+        .get(packet.forwardingPrefix)
+        .workerTargetActor.removeSessionDataEntry(
+          packet.dataEntryType,
+          packet.entries
+        );
       break;
 
     case "disconnect":
-      connections[packet.id].connection.close();
-      break;
-
-    case "rpc":
-      const deferred = rpcDeferreds[packet.id];
-      delete rpcDeferreds[packet.id];
-      if (packet.error) {
-        deferred.reject(packet.error);
+      // This will destroy the associate WorkerTargetActor (and the actors it manages).
+      if (connections.has(packet.forwardingPrefix)) {
+        connections.get(packet.forwardingPrefix).connection.close();
+        connections.delete(packet.forwardingPrefix);
       }
-      deferred.resolve(packet.result);
       break;
   }
 });

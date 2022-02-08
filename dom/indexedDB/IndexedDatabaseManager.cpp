@@ -11,6 +11,8 @@
 #include "nsIScriptGlobalObject.h"
 
 #include "jsapi.h"
+#include "js/Object.h"              // JS::GetClass
+#include "js/PropertyAndElement.h"  // JS_DefineProperty
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/EventDispatcher.h"
@@ -21,6 +23,8 @@
 #include "mozilla/dom/ErrorEventBinding.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/quota/ResultExtensions.h"
+#include "mozilla/intl/LocaleCanonicalizer.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "nsContentUtils.h"
@@ -28,7 +32,7 @@
 #include "mozilla/Logging.h"
 
 #include "ActorsChild.h"
-#include "FileManager.h"
+#include "DatabaseFileManager.h"
 #include "IDBEvents.h"
 #include "IDBFactory.h"
 #include "IDBKeyRange.h"
@@ -37,7 +41,6 @@
 #include "ProfilerHelpers.h"
 #include "ScriptErrorHelper.h"
 #include "nsCharSeparatedTokenizer.h"
-#include "unicode/locid.h"
 
 // Bindings for ResolveConstructors
 #include "mozilla/dom/IDBCursorBinding.h"
@@ -54,8 +57,7 @@
 
 #define IDB_STR "indexedDB"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 namespace indexedDB {
 
 using namespace mozilla::dom::quota;
@@ -63,10 +65,10 @@ using namespace mozilla::ipc;
 
 class FileManagerInfo {
  public:
-  [[nodiscard]] SafeRefPtr<FileManager> GetFileManager(
+  [[nodiscard]] SafeRefPtr<DatabaseFileManager> GetFileManager(
       PersistenceType aPersistenceType, const nsAString& aName) const;
 
-  void AddFileManager(SafeRefPtr<FileManager> aFileManager);
+  void AddFileManager(SafeRefPtr<DatabaseFileManager> aFileManager);
 
   bool HasFileManagers() const {
     AssertIsOnIOThread();
@@ -84,17 +86,17 @@ class FileManagerInfo {
                                       const nsAString& aName);
 
  private:
-  nsTArray<SafeRefPtr<FileManager> >& GetArray(
+  nsTArray<SafeRefPtr<DatabaseFileManager> >& GetArray(
       PersistenceType aPersistenceType);
 
-  const nsTArray<SafeRefPtr<FileManager> >& GetImmutableArray(
+  const nsTArray<SafeRefPtr<DatabaseFileManager> >& GetImmutableArray(
       PersistenceType aPersistenceType) const {
     return const_cast<FileManagerInfo*>(this)->GetArray(aPersistenceType);
   }
 
-  nsTArray<SafeRefPtr<FileManager> > mPersistentStorageFileManagers;
-  nsTArray<SafeRefPtr<FileManager> > mTemporaryStorageFileManagers;
-  nsTArray<SafeRefPtr<FileManager> > mDefaultStorageFileManagers;
+  nsTArray<SafeRefPtr<DatabaseFileManager> > mPersistentStorageFileManagers;
+  nsTArray<SafeRefPtr<DatabaseFileManager> > mTemporaryStorageFileManagers;
+  nsTArray<SafeRefPtr<DatabaseFileManager> > mDefaultStorageFileManagers;
 };
 
 }  // namespace indexedDB
@@ -140,10 +142,8 @@ const char kPrefMaxPreloadExtraRecords[] =
 const char kPrefLoggingEnabled[] = IDB_PREF_LOGGING_BRANCH_ROOT "enabled";
 const char kPrefLoggingDetails[] = IDB_PREF_LOGGING_BRANCH_ROOT "details";
 
-#if defined(DEBUG) || defined(MOZ_GECKO_PROFILER)
 const char kPrefLoggingProfiler[] =
     IDB_PREF_LOGGING_BRANCH_ROOT "profiler-marks";
-#endif
 
 #undef IDB_PREF_LOGGING_BRANCH_ROOT
 #undef IDB_PREF_BRANCH_ROOT
@@ -255,7 +255,7 @@ IndexedDatabaseManager* IndexedDatabaseManager::GetOrCreate() {
 
     RefPtr<IndexedDatabaseManager> instance(new IndexedDatabaseManager());
 
-    IDB_TRY(instance->Init(), nullptr);
+    QM_TRY(MOZ_TO_RESULT(instance->Init()), nullptr);
 
     if (gInitialized.exchange(true)) {
       NS_ERROR("Initialized more than once?!");
@@ -299,10 +299,10 @@ nsresult IndexedDatabaseManager::Init() {
 
   Preferences::RegisterCallback(LoggingModePrefChangedCallback,
                                 kPrefLoggingDetails);
-#ifdef MOZ_GECKO_PROFILER
+
   Preferences::RegisterCallback(LoggingModePrefChangedCallback,
                                 kPrefLoggingProfiler);
-#endif
+
   Preferences::RegisterCallbackAndCall(LoggingModePrefChangedCallback,
                                        kPrefLoggingEnabled);
 
@@ -323,13 +323,13 @@ nsresult IndexedDatabaseManager::Init() {
   Preferences::GetLocalizedCString("intl.accept_languages", acceptLang);
 
   // Split values on commas.
-  nsCCharSeparatedTokenizer langTokenizer(acceptLang, ',');
-  while (langTokenizer.hasMoreTokens()) {
-    nsAutoCString lang(langTokenizer.nextToken());
-    icu::Locale locale = icu::Locale::createCanonical(lang.get());
-    if (!locale.isBogus()) {
-      // icu::Locale::getBaseName is always ASCII as per BCP 47
-      mLocale.AssignASCII(locale.getBaseName());
+  for (const auto& lang :
+       nsCCharSeparatedTokenizer(acceptLang, ',').ToRange()) {
+    mozilla::intl::LocaleCanonicalizer::Vector asciiString{};
+    auto result = mozilla::intl::LocaleCanonicalizer::CanonicalizeICULevel1(
+        PromiseFlatCString(lang).get(), asciiString);
+    if (result.isOk()) {
+      mLocale.AssignASCII(asciiString);
       break;
     }
   }
@@ -361,10 +361,10 @@ void IndexedDatabaseManager::Destroy() {
 
   Preferences::UnregisterCallback(LoggingModePrefChangedCallback,
                                   kPrefLoggingDetails);
-#ifdef MOZ_GECKO_PROFILER
+
   Preferences::UnregisterCallback(LoggingModePrefChangedCallback,
                                   kPrefLoggingProfiler);
-#endif
+
   Preferences::UnregisterCallback(LoggingModePrefChangedCallback,
                                   kPrefLoggingEnabled);
 
@@ -485,9 +485,9 @@ nsresult IndexedDatabaseManager::CommonPostHandleEvent(
 // static
 bool IndexedDatabaseManager::ResolveSandboxBinding(JSContext* aCx) {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(js::GetObjectClass(JS::CurrentGlobalOrNull(aCx))->flags &
-                 JSCLASS_DOM_GLOBAL,
-             "Passed object is not a global object!");
+  MOZ_ASSERT(
+      JS::GetClass(JS::CurrentGlobalOrNull(aCx))->flags & JSCLASS_DOM_GLOBAL,
+      "Passed object is not a global object!");
 
   // We need to ensure that the manager has been created already here so that we
   // load preferences that may control which properties are exposed.
@@ -518,7 +518,7 @@ bool IndexedDatabaseManager::ResolveSandboxBinding(JSContext* aCx) {
 bool IndexedDatabaseManager::DefineIndexedDB(JSContext* aCx,
                                              JS::Handle<JSObject*> aGlobal) {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(js::GetObjectClass(aGlobal)->flags & JSCLASS_DOM_GLOBAL,
+  MOZ_ASSERT(JS::GetClass(aGlobal)->flags & JSCLASS_DOM_GLOBAL,
              "Passed object is not a global object!");
 
   nsIGlobalObject* global = xpc::CurrentNativeGlobal(aCx);
@@ -526,12 +526,7 @@ bool IndexedDatabaseManager::DefineIndexedDB(JSContext* aCx,
     return false;
   }
 
-  auto res = IDBFactory::CreateForMainThreadJS(global);
-  if (res.isErr()) {
-    return false;
-  }
-
-  auto factory = res.unwrap();
+  QM_TRY_UNWRAP(auto factory, IDBFactory::CreateForMainThreadJS(global), false);
 
   MOZ_ASSERT(factory, "This should never fail for chrome!");
 
@@ -682,7 +677,7 @@ void IndexedDatabaseManager::ClearBackgroundActor() {
   mBackgroundActor = nullptr;
 }
 
-SafeRefPtr<FileManager> IndexedDatabaseManager::GetFileManager(
+SafeRefPtr<DatabaseFileManager> IndexedDatabaseManager::GetFileManager(
     PersistenceType aPersistenceType, const nsACString& aOrigin,
     const nsAString& aDatabaseName) {
   AssertIsOnIOThread();
@@ -696,20 +691,20 @@ SafeRefPtr<FileManager> IndexedDatabaseManager::GetFileManager(
 }
 
 void IndexedDatabaseManager::AddFileManager(
-    SafeRefPtr<FileManager> aFileManager) {
+    SafeRefPtr<DatabaseFileManager> aFileManager) {
   AssertIsOnIOThread();
-  NS_ASSERTION(aFileManager, "Null file manager!");
+  MOZ_ASSERT(aFileManager);
 
   const auto& origin = aFileManager->Origin();
-  mFileManagerInfos.LookupOrAdd(origin)->AddFileManager(
+  mFileManagerInfos.GetOrInsertNew(origin)->AddFileManager(
       std::move(aFileManager));
 }
 
 void IndexedDatabaseManager::InvalidateAllFileManagers() {
   AssertIsOnIOThread();
 
-  for (const auto& fileManagerInfo : mFileManagerInfos) {
-    fileManagerInfo.GetData()->InvalidateAllFileManagers();
+  for (const auto& fileManagerInfo : mFileManagerInfos.Values()) {
+    fileManagerInfo->InvalidateAllFileManagers();
   }
 
   mFileManagerInfos.Clear();
@@ -819,19 +814,14 @@ void IndexedDatabaseManager::LoggingModePrefChangedCallback(
     return;
   }
 
-  bool useProfiler =
-#if defined(DEBUG) || defined(MOZ_GECKO_PROFILER)
-      Preferences::GetBool(kPrefLoggingProfiler);
-#  if !defined(MOZ_GECKO_PROFILER)
+  bool useProfiler = Preferences::GetBool(kPrefLoggingProfiler);
+#if !defined(MOZ_GECKO_PROFILER)
   if (useProfiler) {
     NS_WARNING(
         "IndexedDB cannot create profiler marks because this build does "
         "not have profiler extensions enabled!");
     useProfiler = false;
   }
-#  endif
-#else
-      false;
 #endif
 
   const bool logDetails = Preferences::GetBool(kPrefLoggingDetails);
@@ -852,7 +842,7 @@ const nsCString& IndexedDatabaseManager::GetLocale() {
   return idbManager->mLocale;
 }
 
-SafeRefPtr<FileManager> FileManagerInfo::GetFileManager(
+SafeRefPtr<DatabaseFileManager> FileManagerInfo::GetFileManager(
     PersistenceType aPersistenceType, const nsAString& aName) const {
   AssertIsOnIOThread();
 
@@ -865,10 +855,12 @@ SafeRefPtr<FileManager> FileManagerInfo::GetFileManager(
   return foundIt != end ? foundIt->clonePtr() : nullptr;
 }
 
-void FileManagerInfo::AddFileManager(SafeRefPtr<FileManager> aFileManager) {
+void FileManagerInfo::AddFileManager(
+    SafeRefPtr<DatabaseFileManager> aFileManager) {
   AssertIsOnIOThread();
 
-  nsTArray<SafeRefPtr<FileManager> >& managers = GetArray(aFileManager->Type());
+  nsTArray<SafeRefPtr<DatabaseFileManager> >& managers =
+      GetArray(aFileManager->Type());
 
   NS_ASSERTION(!managers.Contains(aFileManager), "Adding more than once?!");
 
@@ -897,7 +889,8 @@ void FileManagerInfo::InvalidateAndRemoveFileManagers(
     PersistenceType aPersistenceType) {
   AssertIsOnIOThread();
 
-  nsTArray<SafeRefPtr<FileManager> >& managers = GetArray(aPersistenceType);
+  nsTArray<SafeRefPtr<DatabaseFileManager> >& managers =
+      GetArray(aPersistenceType);
 
   for (uint32_t i = 0; i < managers.Length(); i++) {
     managers[i]->Invalidate();
@@ -921,7 +914,7 @@ void FileManagerInfo::InvalidateAndRemoveFileManager(
   }
 }
 
-nsTArray<SafeRefPtr<FileManager> >& FileManagerInfo::GetArray(
+nsTArray<SafeRefPtr<DatabaseFileManager> >& FileManagerInfo::GetArray(
     PersistenceType aPersistenceType) {
   switch (aPersistenceType) {
     case PERSISTENCE_TYPE_PERSISTENT:
@@ -937,5 +930,4 @@ nsTArray<SafeRefPtr<FileManager> >& FileManagerInfo::GetArray(
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

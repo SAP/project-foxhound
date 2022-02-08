@@ -4,6 +4,8 @@
 
 /* eslint-disable no-unused-vars */
 declTest("test observer triggering actor creation", {
+  observers: ["test-js-window-actor-child-observer"],
+
   async test(browser) {
     await SpecialPowers.spawn(browser, [], async function() {
       const TOPIC = "test-js-window-actor-child-observer";
@@ -26,6 +28,8 @@ declTest("test observer triggering actor creation", {
 });
 
 declTest("test observers with null data", {
+  observers: ["test-js-window-actor-child-observer"],
+
   async test(browser) {
     await SpecialPowers.spawn(browser, [], async function() {
       const TOPIC = "test-js-window-actor-child-observer";
@@ -48,7 +52,28 @@ declTest("test observers with null data", {
 });
 
 declTest("observers don't notify with wrong window", {
+  observers: ["test-js-window-actor-child-observer"],
+
   async test(browser) {
+    const MSG_RE = /JSWindowActor TestWindow: expected window subject for topic 'test-js-window-actor-child-observer'/;
+    let expectMessage = new Promise(resolve => {
+      Services.console.registerListener(function consoleListener(msg) {
+        // Run everything async in order to avoid logging messages from the
+        // console listener.
+        Cu.dispatch(() => {
+          if (!MSG_RE.test(msg.message)) {
+            info("ignoring non-matching console message: " + msg.message);
+            return;
+          }
+          info("received console message: " + msg.message);
+          is(msg.logLevel, Ci.nsIConsoleMessage.error, "should be an error");
+
+          Services.console.unregisterListener(consoleListener);
+          resolve();
+        });
+      });
+    });
+
     await SpecialPowers.spawn(browser, [], async function() {
       const TOPIC = "test-js-window-actor-child-observer";
       Services.obs.notifyObservers(null, TOPIC);
@@ -61,10 +86,13 @@ declTest("observers don't notify with wrong window", {
         "Should not receive wrong window's observer notification!"
       );
     });
+
+    await expectMessage;
   },
 });
 
 declTest("observers notify with audio-playback", {
+  observers: ["audio-playback"],
   url:
     "http://example.com/browser/dom/ipc/tests/JSWindowActor/file_mediaPlayback.html",
 

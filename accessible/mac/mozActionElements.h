@@ -1,4 +1,6 @@
+/* clang-format off */
 /* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,9 +34,6 @@
 // override
 - (void)stateChanged:(uint64_t)state isEnabled:(BOOL)enabled;
 
-// override
-- (BOOL)moxIgnoreWithParent:(mozAccessible*)parent;
-
 @end
 
 @interface mozCheckboxAccessible : mozButtonAccessible
@@ -42,11 +41,17 @@
 // override
 - (id)moxValue;
 
+// override
+- (void)stateChanged:(uint64_t)state isEnabled:(BOOL)enabled;
+
 @end
 
-// Accessible for a radio button
+// LocalAccessible for a radio button
 @interface mozRadioButtonAccessible : mozCheckboxAccessible
-- (id)accessibilityAttributeValue:(NSString*)attribute;
+
+// override
+- (NSArray*)moxLinkedUIElements;
+
 @end
 
 /**
@@ -63,6 +68,9 @@
  * Base accessible for an incrementable
  */
 @interface mozIncrementableAccessible : mozAccessible
+
+// override
+- (void)moxSetValue:(id)value;
 
 // override
 - (void)moxPerformIncrement;

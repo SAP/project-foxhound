@@ -12,9 +12,9 @@
 #include "nsIAnonymousContentCreator.h"
 #include "nsIFrame.h"
 #include "nsCSSAnonBoxes.h"
+#include "nsLayoutUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 ExplicitChildIterator::ExplicitChildIterator(const nsIContent* aParent,
                                              bool aStartAtBeginning)
@@ -79,23 +79,19 @@ nsIContent* ExplicitChildIterator::GetNextChild() {
   return mChild;
 }
 
-void FlattenedChildIterator::Init(bool aIgnoreXBL) {
-  if (aIgnoreXBL) {
+void FlattenedChildIterator::Init() {
+  if (!mParent->IsElement()) {
+    // TODO(emilio): I think it probably makes sense to only allow constructing
+    // FlattenedChildIterators with Element.
     return;
   }
-
-  // TODO(emilio): I think it probably makes sense to only allow constructing
-  // FlattenedChildIterators with Element.
-  if (mParent->IsElement()) {
-    if (ShadowRoot* shadow = mParent->AsElement()->GetShadowRoot()) {
-      mParent = shadow;
-      mShadowDOMInvolved = true;
-      return;
-    }
-    if (mParentAsSlot) {
-      mShadowDOMInvolved = true;
-      return;
-    }
+  if (ShadowRoot* shadow = mParent->AsElement()->GetShadowRoot()) {
+    mParent = shadow;
+    mShadowDOMInvolved = true;
+    return;
+  }
+  if (mParentAsSlot) {
+    mShadowDOMInvolved = true;
   }
 }
 
@@ -370,5 +366,4 @@ nsIContent* AllChildrenIterator::GetPreviousChild() {
   return nullptr;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

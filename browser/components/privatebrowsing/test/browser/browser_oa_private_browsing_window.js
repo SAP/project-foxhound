@@ -2,7 +2,7 @@
 
 const PATH = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
-  "http://example.com"
+  "https://example.com"
 );
 const TEST_PAGE = PATH + "file_triggeringprincipal_oa.html";
 const DUMMY_PAGE = PATH + "empty_file.html";
@@ -47,7 +47,7 @@ add_task(
             "sanity check to ensure principal is a contentPrincipal"
           );
           is(
-            triggeringPrincipal.URI.spec,
+            triggeringPrincipal.spec,
             TEST_PAGE,
             "test page must be the triggering page"
           );

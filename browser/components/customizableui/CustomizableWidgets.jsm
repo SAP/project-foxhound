@@ -18,14 +18,12 @@ const { AppConstants } = ChromeUtils.import(
 );
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  PanelView: "resource:///modules/PanelMultiView.jsm",
   RecentlyClosedTabsAndWindowsMenuUtils:
     "resource:///modules/sessionstore/RecentlyClosedTabsAndWindowsMenuUtils.jsm",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.jsm",
-  CharsetMenu: "resource://gre/modules/CharsetMenu.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   Sanitizer: "resource:///modules/Sanitizer.jsm",
-  SyncedTabs: "resource://services-sync/SyncedTabs.jsm",
+  SessionStore: "resource:///modules/sessionstore/SessionStore.jsm",
 });
 
 ChromeUtils.defineModuleGetter(
@@ -35,6 +33,7 @@ ChromeUtils.defineModuleGetter(
 );
 
 const kPrefCustomizationDebug = "browser.uiCustomization.debug";
+const kPrefScreenshots = "extensions.screenshots.disabled";
 
 XPCOMUtils.defineLazyGetter(this, "log", () => {
   let scope = {};
@@ -46,6 +45,20 @@ XPCOMUtils.defineLazyGetter(this, "log", () => {
   };
   return new scope.ConsoleAPI(consoleOptions);
 });
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "screenshotsDisabled",
+  kPrefScreenshots,
+  false
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "SCREENSHOT_BROWSER_COMPONENT",
+  "screenshots.browser.component.enabled",
+  false
+);
 
 function setAttributes(aNode, aAttrs) {
   let doc = aNode.ownerDocument;
@@ -95,6 +108,9 @@ const CustomizableWidgets = [
         case "ViewShowing":
           this.onSubViewShowing(event);
           break;
+        case "unload":
+          this.onWindowUnload(event);
+          break;
         default:
           throw new Error(`Unsupported event for '${this.id}'`);
       }
@@ -107,6 +123,20 @@ const CustomizableWidgets = [
       let panelview = event.target;
       let document = panelview.ownerDocument;
       let window = document.defaultView;
+
+      PanelMultiView.getViewNode(
+        document,
+        "appMenuRecentlyClosedTabs"
+      ).disabled = SessionStore.getClosedTabCount(window) == 0;
+      PanelMultiView.getViewNode(
+        document,
+        "appMenuRecentlyClosedWindows"
+      ).disabled = SessionStore.getClosedWindowCount(window) == 0;
+
+      PanelMultiView.getViewNode(
+        document,
+        "appMenu-restoreSession"
+      ).hidden = !SessionStore.canRestoreLastSession;
 
       // We restrict the amount of results to 42. Not 50, but 42. Why? Because 42.
       let query =
@@ -134,6 +164,7 @@ const CustomizableWidgets = [
       // When the popup is hidden (thus the panelmultiview node as well), make
       // sure to stop listening to PlacesDatabase updates.
       panelview.panelMultiView.addEventListener("PanelMultiViewHidden", this);
+      window.addEventListener("unload", this);
     },
     onViewHiding(event) {
       log.debug("History view is being hidden!");
@@ -155,18 +186,24 @@ const CustomizableWidgets = [
       }
       panelMultiView.removeEventListener("PanelMultiViewHidden", this);
     },
+    onWindowUnload(event) {
+      if (this._panelMenuView) {
+        delete this._panelMenuView;
+      }
+    },
     onSubViewShowing(event) {
       let panelview = event.target;
       let document = event.target.ownerDocument;
       let window = document.defaultView;
-      let viewType =
-        panelview.id == this.recentlyClosedTabsPanel ? "Tabs" : "Windows";
 
       this._panelMenuView.clearAllContents(panelview);
 
-      let utils = RecentlyClosedTabsAndWindowsMenuUtils;
-      let method = `get${viewType}Fragment`;
-      let fragment = utils[method](window, "toolbarbutton", true);
+      let getFragment =
+        panelview.id == this.recentlyClosedTabsPanel
+          ? RecentlyClosedTabsAndWindowsMenuUtils.getTabsFragment
+          : RecentlyClosedTabsAndWindowsMenuUtils.getWindowsFragment;
+
+      let fragment = getFragment(window, "toolbarbutton", true);
       let elementCount = fragment.childElementCount;
       this._panelMenuView._setEmptyPopupStatus(panelview, !elementCount);
       if (!elementCount) {
@@ -176,6 +213,7 @@ const CustomizableWidgets = [
       let body = document.createXULElement("vbox");
       body.className = "panel-subview-body";
       body.appendChild(fragment);
+      let separator = document.createXULElement("toolbarseparator");
       let footer;
       while (--elementCount >= 0) {
         let element = body.children[elementCount];
@@ -183,22 +221,67 @@ const CustomizableWidgets = [
         element.classList.add("subviewbutton");
         if (element.classList.contains("restoreallitem")) {
           footer = element;
-          element.classList.add("panel-subview-footer");
+          element.classList.add("panel-subview-footer-button");
         } else {
           element.classList.add("subviewbutton-iconic", "bookmark-item");
         }
       }
       panelview.appendChild(body);
+      panelview.appendChild(separator);
       panelview.appendChild(footer);
     },
   },
   {
     id: "save-page-button",
+    l10nId: "toolbar-button-save-page",
     shortcutId: "key_savePage",
-    tooltiptext: "save-page-button.tooltiptext3",
     onCommand(aEvent) {
       let win = aEvent.target.ownerGlobal;
       win.saveBrowser(win.gBrowser.selectedBrowser);
+    },
+  },
+  {
+    id: "print-button",
+    l10nId:
+      !Services.prefs.getBoolPref("print.tab_modal.enabled") &&
+      AppConstants.platform !== "macosx"
+        ? "navbar-print-tab-modal-disabled"
+        : "navbar-print",
+    shortcutId: "printKb",
+    keepBroadcastAttributesWhenCustomizing: true,
+    onCreated(aNode) {
+      aNode.setAttribute("command", "cmd_printPreview");
+      Services.prefs.addObserver("print.tab_modal.enabled", this);
+      if (!this.printNodeMap) {
+        this.printNodeMap = new Map();
+      }
+      this.printNodeMap.set(aNode.ownerDocument, aNode);
+
+      let listener = {
+        onWidgetInstanceRemoved: (aWidgetId, aDoc) => {
+          if (!aDoc) {
+            return;
+          }
+          this.printNodeMap.delete(aDoc);
+          CustomizableUI.removeListener(listener);
+        },
+      };
+
+      CustomizableUI.addListener(listener);
+    },
+    observe() {
+      for (let [document, printBtn] of this.printNodeMap) {
+        let keyEl = document.getElementById(this.shortcutId);
+        let shortcut = ShortcutUtils.prettifyShortcut(keyEl);
+        document.l10n.setAttributes(
+          printBtn,
+          !Services.prefs.getBoolPref("print.tab_modal.enabled") &&
+            AppConstants.platform !== "macosx"
+            ? "navbar-print-tab-modal-disabled"
+            : "navbar-print",
+          { shortcut }
+        );
+      }
     },
   },
   {
@@ -214,8 +297,8 @@ const CustomizableWidgets = [
   },
   {
     id: "open-file-button",
+    l10nId: "toolbar-button-open-file",
     shortcutId: "openFileKb",
-    tooltiptext: "open-file-button.tooltiptext3",
     onCommand(aEvent) {
       let win = aEvent.target.ownerGlobal;
       win.BrowserOpenFileWindow();
@@ -245,7 +328,7 @@ const CustomizableWidgets = [
   {
     id: "add-ons-button",
     shortcutId: "key_openAddons",
-    tooltiptext: "add-ons-button.tooltiptext3",
+    l10nId: "toolbar-addons-themes-button",
     onCommand(aEvent) {
       let win = aEvent.target.ownerGlobal;
       win.BrowserOpenAddonsMgr();
@@ -392,179 +475,14 @@ const CustomizableWidgets = [
   },
   {
     id: "characterencoding-button",
-    label: "characterencoding-button2.label",
-    type: "view",
-    viewId: "PanelUI-characterEncodingView",
-    tooltiptext: "characterencoding-button2.tooltiptext",
-    maybeDisableMenu(aDocument) {
-      let window = aDocument.defaultView;
-      return !(
-        window.gBrowser &&
-        window.gBrowser.selectedBrowser.mayEnableCharacterEncodingMenu
-      );
-    },
-    populateList(aDocument, aContainerId, aSection) {
-      let containerElem = aDocument.getElementById(aContainerId);
-
-      containerElem.addEventListener("command", this.onCommand);
-
-      let list = this.charsetInfo[aSection];
-
-      for (let item of list) {
-        let elem = aDocument.createXULElement("toolbarbutton");
-        elem.setAttribute("label", item.label);
-        elem.setAttribute("type", "checkbox");
-        elem.section = aSection;
-        elem.value = item.value;
-        elem.setAttribute("class", "subviewbutton");
-        containerElem.appendChild(elem);
-      }
-    },
-    updateCurrentCharset(aDocument) {
-      let currentCharset =
-        aDocument.defaultView.gBrowser.selectedBrowser.characterSet;
-      let {
-        charsetAutodetected,
-      } = aDocument.defaultView.gBrowser.selectedBrowser;
-      currentCharset = CharsetMenu.foldCharset(
-        currentCharset,
-        charsetAutodetected
-      );
-
-      let pinnedContainer = aDocument.getElementById(
-        "PanelUI-characterEncodingView-pinned"
-      );
-      let charsetContainer = aDocument.getElementById(
-        "PanelUI-characterEncodingView-charsets"
-      );
-      let elements = [
-        ...pinnedContainer.children,
-        ...charsetContainer.children,
-      ];
-
-      this._updateElements(elements, currentCharset);
-    },
-    _updateElements(aElements, aCurrentItem) {
-      if (!aElements.length) {
-        return;
-      }
-      let disabled = this.maybeDisableMenu(aElements[0].ownerDocument);
-      for (let elem of aElements) {
-        if (disabled) {
-          elem.setAttribute("disabled", "true");
-        } else {
-          elem.removeAttribute("disabled");
-        }
-        if (elem.value.toLowerCase() == aCurrentItem.toLowerCase()) {
-          elem.setAttribute("checked", "true");
-        } else {
-          elem.removeAttribute("checked");
-        }
-      }
-    },
-    onViewShowing(aEvent) {
-      if (!this._inited) {
-        this.onInit();
-      }
-      let document = aEvent.target.ownerDocument;
-
-      if (
-        !document.getElementById("PanelUI-characterEncodingView-pinned")
-          .firstChild
-      ) {
-        this.populateList(
-          document,
-          "PanelUI-characterEncodingView-pinned",
-          "pinnedCharsets"
-        );
-        this.populateList(
-          document,
-          "PanelUI-characterEncodingView-charsets",
-          "otherCharsets"
-        );
-      }
-
-      this.updateCurrentCharset(document);
-    },
+    l10nId: "repair-text-encoding-button",
     onCommand(aEvent) {
-      let node = aEvent.target;
-      if (!node.hasAttribute || !node.section) {
-        return;
-      }
-
-      let window = node.ownerGlobal;
-      let value = node.value;
-
-      window.BrowserSetForcedCharacterSet(value);
-    },
-    onCreated(aNode) {
-      let document = aNode.ownerDocument;
-
-      let updateButton = () => {
-        if (this.maybeDisableMenu(document)) {
-          aNode.setAttribute("disabled", "true");
-        } else {
-          aNode.removeAttribute("disabled");
-        }
-      };
-
-      let getPanel = () => {
-        let { PanelUI } = document.ownerGlobal;
-        return PanelUI.overflowPanel;
-      };
-
-      if (
-        CustomizableUI.getAreaType(this.currentArea) ==
-        CustomizableUI.TYPE_MENU_PANEL
-      ) {
-        getPanel().addEventListener("popupshowing", updateButton);
-      }
-
-      let listener = {
-        onWidgetAdded: (aWidgetId, aArea) => {
-          if (aWidgetId != this.id) {
-            return;
-          }
-          if (
-            CustomizableUI.getAreaType(aArea) == CustomizableUI.TYPE_MENU_PANEL
-          ) {
-            getPanel().addEventListener("popupshowing", updateButton);
-          }
-        },
-        onWidgetRemoved: (aWidgetId, aPrevArea) => {
-          if (aWidgetId != this.id) {
-            return;
-          }
-          aNode.removeAttribute("disabled");
-          if (
-            CustomizableUI.getAreaType(aPrevArea) ==
-            CustomizableUI.TYPE_MENU_PANEL
-          ) {
-            getPanel().removeEventListener("popupshowing", updateButton);
-          }
-        },
-        onWidgetInstanceRemoved: (aWidgetId, aDoc) => {
-          if (aWidgetId != this.id || aDoc != document) {
-            return;
-          }
-
-          CustomizableUI.removeListener(listener);
-          getPanel().removeEventListener("popupshowing", updateButton);
-        },
-      };
-      CustomizableUI.addListener(listener);
-      this.onInit();
-    },
-    onInit() {
-      this._inited = true;
-      if (!this.charsetInfo) {
-        this.charsetInfo = CharsetMenu.getData();
-      }
+      aEvent.view.BrowserForceEncodingDetection();
     },
   },
   {
     id: "email-link-button",
-    tooltiptext: "email-link-button.tooltiptext3",
+    l10nId: "toolbar-button-email-link",
     onCommand(aEvent) {
       let win = aEvent.view;
       win.MailIntegration.sendLinkForBrowser(win.gBrowser.selectedBrowser);
@@ -575,283 +493,87 @@ const CustomizableWidgets = [
 if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
   CustomizableWidgets.push({
     id: "sync-button",
-    label: "remotetabs-panelmenu.label",
-    tooltiptext: "remotetabs-panelmenu.tooltiptext2",
+    l10nId: "toolbar-button-synced-tabs",
     type: "view",
     viewId: "PanelUI-remotetabs",
-    deckIndices: {
-      DECKINDEX_TABS: 0,
-      DECKINDEX_TABSDISABLED: 1,
-      DECKINDEX_FETCHING: 2,
-      DECKINDEX_NOCLIENTS: 3,
-    },
-    TABS_PER_PAGE: 25,
-    NEXT_PAGE_MIN_TABS: 5, // Minimum number of tabs displayed when we click "Show All"
     onViewShowing(aEvent) {
-      let doc = aEvent.target.ownerDocument;
-      this._tabsList = doc.getElementById("PanelUI-remotetabs-tabslist");
-      Services.obs.addObserver(this, SyncedTabs.TOPIC_TABS_CHANGED);
+      let panelview = aEvent.target;
+      let doc = panelview.ownerDocument;
 
-      let deck = doc.getElementById("PanelUI-remotetabs-deck");
-      if (SyncedTabs.isConfiguredToSyncTabs) {
-        if (SyncedTabs.hasSyncedThisSession) {
-          deck.selectedIndex = this.deckIndices.DECKINDEX_TABS;
-        } else {
-          // Sync hasn't synced tabs yet, so show the "fetching" panel.
-          deck.selectedIndex = this.deckIndices.DECKINDEX_FETCHING;
-        }
-        // force a background sync.
-        SyncedTabs.syncTabs().catch(ex => {
-          Cu.reportError(ex);
-        });
-        // show the current list - it will be updated by our observer.
-        this._showTabs();
-      } else {
-        // not configured to sync tabs, so no point updating the list.
-        deck.selectedIndex = this.deckIndices.DECKINDEX_TABSDISABLED;
-      }
-    },
-    onViewHiding() {
-      Services.obs.removeObserver(this, SyncedTabs.TOPIC_TABS_CHANGED);
-      this._tabsList = null;
-    },
-    _tabsList: null,
-    observe(subject, topic, data) {
-      switch (topic) {
-        case SyncedTabs.TOPIC_TABS_CHANGED:
-          this._showTabs();
-          break;
-        default:
-          break;
-      }
-    },
+      let syncNowBtn = panelview.querySelector(".syncnow-label");
+      let l10nId = syncNowBtn.getAttribute(
+        panelview.ownerGlobal.gSync._isCurrentlySyncing
+          ? "syncing-data-l10n-id"
+          : "sync-now-data-l10n-id"
+      );
+      syncNowBtn.setAttribute("data-l10n-id", l10nId);
 
-    _showTabsPromise: Promise.resolve(),
-    // Update the tab list after any existing in-flight updates are complete.
-    _showTabs(paginationInfo) {
-      this._showTabsPromise = this._showTabsPromise.then(
-        () => {
-          return this.__showTabs(paginationInfo);
-        },
-        e => {
-          Cu.reportError(e);
-        }
+      let SyncedTabsPanelList = doc.defaultView.SyncedTabsPanelList;
+      panelview.syncedTabsPanelList = new SyncedTabsPanelList(
+        panelview,
+        PanelMultiView.getViewNode(doc, "PanelUI-remotetabs-deck"),
+        PanelMultiView.getViewNode(doc, "PanelUI-remotetabs-tabslist")
       );
     },
-    // Return a new promise to update the tab list.
-    __showTabs(paginationInfo) {
-      if (!this._tabsList) {
-        // Closed between the previous `this._showTabsPromise`
-        // resolving and now.
-        return undefined;
-      }
-      let doc = this._tabsList.ownerDocument;
-      let deck = doc.getElementById("PanelUI-remotetabs-deck");
-      return SyncedTabs.getTabClients()
-        .then(clients => {
-          // The view may have been hidden while the promise was resolving.
-          if (!this._tabsList) {
-            return;
-          }
-          if (clients.length === 0 && !SyncedTabs.hasSyncedThisSession) {
-            // the "fetching tabs" deck is being shown - let's leave it there.
-            // When that first sync completes we'll be notified and update.
-            return;
-          }
-
-          if (clients.length === 0) {
-            deck.selectedIndex = this.deckIndices.DECKINDEX_NOCLIENTS;
-            return;
-          }
-
-          deck.selectedIndex = this.deckIndices.DECKINDEX_TABS;
-          this._clearTabList();
-          SyncedTabs.sortTabClientsByLastUsed(clients);
-          let fragment = doc.createDocumentFragment();
-
-          let clientNumber = 0;
-          for (let client of clients) {
-            // add a menu separator for all clients other than the first.
-            if (fragment.lastElementChild) {
-              let separator = doc.createXULElement("menuseparator");
-              fragment.appendChild(separator);
-            }
-            // We add the client's elements to a container, and indicate which
-            // element labels it.
-            let labelId = `synced-tabs-client-${clientNumber++}`;
-            let container = doc.createXULElement("vbox");
-            container.classList.add("PanelUI-remotetabs-clientcontainer");
-            container.setAttribute("role", "group");
-            container.setAttribute("aria-labelledby", labelId);
-            if (paginationInfo && paginationInfo.clientId == client.id) {
-              this._appendClient(
-                client,
-                container,
-                labelId,
-                paginationInfo.maxTabs
-              );
-            } else {
-              this._appendClient(client, container, labelId);
-            }
-            fragment.appendChild(container);
-          }
-          this._tabsList.appendChild(fragment);
-          PanelView.forNode(
-            this._tabsList.closest("panelview")
-          ).descriptionHeightWorkaround();
-        })
-        .catch(err => {
-          Cu.reportError(err);
-        })
-        .then(() => {
-          // an observer for tests.
-          Services.obs.notifyObservers(
-            null,
-            "synced-tabs-menu:test:tabs-updated"
-          );
-        });
+    onViewHiding(aEvent) {
+      aEvent.target.syncedTabsPanelList.destroy();
+      aEvent.target.syncedTabsPanelList = null;
     },
-    _clearTabList() {
-      let list = this._tabsList;
-      while (list.lastChild) {
-        list.lastChild.remove();
-      }
-    },
-    _showNoClientMessage() {
-      this._appendMessageLabel("notabslabel");
-    },
-    _appendMessageLabel(messageAttr, appendTo = null) {
-      if (!appendTo) {
-        appendTo = this._tabsList;
-      }
-      let message = this._tabsList.getAttribute(messageAttr);
-      let doc = this._tabsList.ownerDocument;
-      let messageLabel = doc.createXULElement("label");
-      messageLabel.textContent = message;
-      appendTo.appendChild(messageLabel);
-      return messageLabel;
-    },
-    _appendClient(client, container, labelId, maxTabs = this.TABS_PER_PAGE) {
-      let doc = container.ownerDocument;
-      // Create the element for the remote client.
-      let clientItem = doc.createXULElement("label");
-      clientItem.setAttribute("id", labelId);
-      clientItem.setAttribute("itemtype", "client");
-      let window = doc.defaultView;
-      clientItem.setAttribute(
-        "tooltiptext",
-        window.gSync.formatLastSyncDate(new Date(client.lastModified))
-      );
-      clientItem.textContent = client.name;
+  });
+}
 
-      container.appendChild(clientItem);
-
-      if (!client.tabs.length) {
-        let label = this._appendMessageLabel("notabsforclientlabel", container);
-        label.setAttribute("class", "PanelUI-remotetabs-notabsforclient-label");
+if (!screenshotsDisabled) {
+  CustomizableWidgets.push({
+    id: "screenshot-button",
+    shortcutId: "key_screenshot",
+    l10nId: "screenshot-toolbarbutton",
+    onCommand(aEvent) {
+      if (SCREENSHOT_BROWSER_COMPONENT) {
+        Services.obs.notifyObservers(
+          aEvent.currentTarget.ownerGlobal,
+          "menuitem-screenshot"
+        );
       } else {
-        // If this page will display all tabs, show no additional buttons.
-        // If the next page will display all the remaining tabs, show a "Show All" button
-        // Otherwise, show a "Shore More" button
-        let hasNextPage = client.tabs.length > maxTabs;
-        let nextPageIsLastPage =
-          hasNextPage && maxTabs + this.TABS_PER_PAGE >= client.tabs.length;
-        if (nextPageIsLastPage) {
-          // When the user clicks "Show All", try to have at least NEXT_PAGE_MIN_TABS more tabs
-          // to display in order to avoid user frustration
-          maxTabs = Math.min(
-            client.tabs.length - this.NEXT_PAGE_MIN_TABS,
-            maxTabs
-          );
-        }
-        if (hasNextPage) {
-          client.tabs = client.tabs.slice(0, maxTabs);
-        }
-        for (let tab of client.tabs) {
-          let tabEnt = this._createTabElement(doc, tab);
-          container.appendChild(tabEnt);
-        }
-        if (hasNextPage) {
-          let showAllEnt = this._createShowMoreElement(
-            doc,
-            client.id,
-            nextPageIsLastPage ? Infinity : maxTabs + this.TABS_PER_PAGE
-          );
-          container.appendChild(showAllEnt);
-        }
+        Services.obs.notifyObservers(
+          null,
+          "menuitem-screenshot-extension",
+          "toolbar"
+        );
       }
     },
-    _createTabElement(doc, tabInfo) {
-      let item = doc.createXULElement("toolbarbutton");
-      let tooltipText =
-        (tabInfo.title ? tabInfo.title + "\n" : "") + tabInfo.url;
-      item.setAttribute("itemtype", "tab");
-      item.setAttribute("class", "subviewbutton");
-      item.setAttribute("targetURI", tabInfo.url);
-      item.setAttribute(
-        "label",
-        tabInfo.title != "" ? tabInfo.title : tabInfo.url
+    onCreated(aNode) {
+      aNode.ownerGlobal.MozXULElement.insertFTLIfNeeded(
+        "browser/screenshots.ftl"
       );
-      item.setAttribute("image", tabInfo.icon);
-      item.setAttribute("tooltiptext", tooltipText);
-      // We need to use "click" instead of "command" here so openUILink
-      // respects different buttons (eg, to open in a new tab).
-      item.addEventListener("click", e => {
-        doc.defaultView.openUILink(tabInfo.url, e, {
-          triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal(
-            {}
-          ),
-        });
-        if (doc.defaultView.whereToOpenLink(e) != "current") {
-          e.preventDefault();
-          e.stopPropagation();
-        } else {
-          CustomizableUI.hidePanelForNode(item);
-        }
-      });
-      return item;
+      Services.obs.addObserver(this, "toggle-screenshot-disable");
     },
-    _createShowMoreElement(doc, clientId, showCount) {
-      let labelAttr, tooltipAttr;
-      if (showCount === Infinity) {
-        labelAttr = "showAllLabel";
-        tooltipAttr = "showAllTooltipText";
-      } else {
-        labelAttr = "showMoreLabel";
-        tooltipAttr = "showMoreTooltipText";
+    observe(subj, topic, data) {
+      let document = subj.document;
+      let button = document.getElementById("screenshot-button");
+
+      if (!button) {
+        return;
       }
-      let showAllItem = doc.createXULElement("toolbarbutton");
-      showAllItem.setAttribute("itemtype", "showmorebutton");
-      showAllItem.setAttribute("class", "subviewbutton");
-      let label = this._tabsList.getAttribute(labelAttr);
-      showAllItem.setAttribute("label", label);
-      let tooltipText = this._tabsList.getAttribute(tooltipAttr);
-      showAllItem.setAttribute("tooltiptext", tooltipText);
-      showAllItem.addEventListener("click", e => {
-        e.preventDefault();
-        e.stopPropagation();
-        this._showTabs({ clientId, maxTabs: showCount });
-      });
-      return showAllItem;
+
+      if (data == "true") {
+        button.setAttribute("disabled", "true");
+      } else {
+        button.removeAttribute("disabled");
+      }
     },
   });
 }
 
 let preferencesButton = {
   id: "preferences-button",
+  l10nId: "toolbar-settings-button",
   onCommand(aEvent) {
     let win = aEvent.target.ownerGlobal;
     win.openPreferences(undefined);
   },
 };
-if (AppConstants.platform == "win") {
-  preferencesButton.label = "preferences-button.labelWin";
-  preferencesButton.tooltiptext = "preferences-button.tooltipWin2";
-} else if (AppConstants.platform == "macosx") {
-  preferencesButton.tooltiptext = "preferences-button.tooltiptext.withshortcut";
+if (AppConstants.platform == "macosx") {
   preferencesButton.shortcutId = "key_preferencesCmdMac";
-} else {
-  preferencesButton.tooltiptext = "preferences-button.tooltiptext2";
 }
 CustomizableWidgets.push(preferencesButton);
 
@@ -932,6 +654,7 @@ if (Services.prefs.getBoolPref("privacy.panicButton.enabled")) {
 if (PrivateBrowsingUtils.enabled) {
   CustomizableWidgets.push({
     id: "privatebrowsing-button",
+    l10nId: "toolbar-button-new-private-window",
     shortcutId: "key_privatebrowsing",
     onCommand(e) {
       let win = e.target.ownerGlobal;

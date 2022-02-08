@@ -3,6 +3,14 @@ file-whitespace:
     description: File content sanity check
     include:
         - .
+        - tools/moztreedocs/requirements.txt
+        - tools/lint/python/flake8_requirements.txt
+        - tools/lint/python/pylint_requirements.txt
+        - tools/lint/python/black_requirements.txt
+        - tools/lint/rst/requirements.txt
+        - tools/lint/tox/tox_requirements.txt
+        - tools/lint/spell/codespell_requirements.txt
+        - tools/tryselect/selectors/chooser/requirements.txt
     exclude:
         - accessible/tests/crashtests
         - accessible/tests/mochitest
@@ -13,9 +21,9 @@ file-whitespace:
         - devtools/client/inspector/markup/test
         - devtools/client/inspector/rules/test
         - devtools/client/inspector/test
-        - devtools/client/shared/test/doc_inline-debugger-statement.html
+        # Excluded because tests were failing unexpectedly
+        - devtools/client/styleeditor/test/sync_with_csp.css
         - devtools/client/webconsole/test/browser/test-message-categories-css-parser.css
-        - devtools/shared/webconsole/test/chrome/test_jsterm.html
         - devtools/shared/webconsole/test/chrome/test_object_actor_native_getters.html
         - docshell/base/crashtests
         - docshell/test
@@ -42,12 +50,11 @@ file-whitespace:
         - dom/html/test
         - dom/jsurl/crashtests/344996-1.xhtml
         - dom/jsurl/test
-        - dom/media/gtest/AudioGenerator.cpp
-        - dom/media/gtest/AudioGenerator.h
         - dom/media/mediasource/test/crashtests/926665.html
         - dom/media/test
         - dom/media/tests
         - dom/media/webaudio/test
+        - dom/media/webrtc/transport/nricectx.cpp
         - dom/media/webspeech/synth/test
         - dom/plugins/test
         - dom/smil/crashtests
@@ -72,7 +79,6 @@ file-whitespace:
         - extensions/universalchardet
         - gfx/tests/crashtests
         - gfx/vr/nsFxrCommandLineHandler.cpp
-        - gfx/vr/vrhost/vrhostapi.cpp
         - image/test/crashtests
         - image/test/mochitest
         - image/test/reftest
@@ -103,13 +109,13 @@ file-whitespace:
         - layout/tables/test/test_bug337124.html
         - layout/tables/crashtests
         - layout/xul/crashtests
-        - layout/xul/grid/crashtests
         - layout/xul/reftest
         - layout/xul/test
         - layout/xul/tree
-        - media/mtransport/nricectx.cpp
         - modules/libjar/zipwriter/test/unit/data/test_bug399727.html
         - netwerk/test/crashtests
+        - netwerk/test/mochitests/test1.css
+        - netwerk/test/mochitests/test2.css
         - netwerk/dns/prepare_tlds.py
         - parser/htmlparser/tests
         - parser/html/java/named-character-references.html
@@ -174,6 +180,13 @@ file-whitespace:
         - xpcom/reflect/xptcall/status.html
         - xpcom/tests/test.properties
         - xpcom/tests/unit/data/bug121341.properties
+        # Excluded below files because tests were failing unexpectedly
+        - dom/bindings/test/test_barewordGetsWindow.html
+        - devtools/client/styleeditor/test/sourcemap-css/sourcemaps.css
+        - devtools/client/styleeditor/test/sourcemap-css/contained.css
+        - devtools/client/styleeditor/test/sourcemap-css/test-stylus.css
+        - dom/bindings/test/file_barewordGetsWindow_frame1.html
+        - dom/bindings/test/file_barewordGetsWindow_frame2.html
     extensions:
         - .c
         - .cc

@@ -5,6 +5,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "FuzzingInterface.h"
+#include "mozilla/BasePrincipal.h"
+#include "nsComponentManagerUtils.h"
 #include "nsCSPContext.h"
 #include "nsNetUtil.h"
 #include "nsStringFwd.h"
@@ -24,8 +26,8 @@ static int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
       do_CreateInstance(NS_CSPCONTEXT_CONTRACTID, &ret);
   if (ret != NS_OK) return 0;
 
-  ret = csp->SetRequestContextWithPrincipal(selfURIPrincipal, selfURI,
-                                            EmptyString(), 0);
+  ret =
+      csp->SetRequestContextWithPrincipal(selfURIPrincipal, selfURI, u""_ns, 0);
   if (ret != NS_OK) return 0;
 
   NS_ConvertASCIItoUTF16 policy(reinterpret_cast<const char*>(data), size);

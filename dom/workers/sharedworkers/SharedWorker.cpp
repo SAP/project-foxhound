@@ -6,7 +6,9 @@
 
 #include "SharedWorker.h"
 
+#include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/Event.h"
@@ -105,7 +107,7 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
   WorkerLoadInfo loadInfo;
   aRv = WorkerPrivate::GetLoadInfo(cx, window, nullptr, aScriptURL, false,
                                    WorkerPrivate::OverrideLoadGroup,
-                                   WorkerTypeShared, &loadInfo);
+                                   WorkerKindShared, &loadInfo);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -200,7 +202,7 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
   net::CookieJarSettings::Cast(loadInfo.mCookieJarSettings)->Serialize(cjsData);
 
   auto remoteType = RemoteWorkerManager::GetRemoteType(
-      loadInfo.mPrincipal, WorkerType::WorkerTypeShared);
+      loadInfo.mPrincipal, WorkerKind::WorkerKindShared);
   if (NS_WARN_IF(remoteType.isErr())) {
     aRv.Throw(remoteType.unwrapErr());
     return nullptr;
@@ -212,6 +214,7 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
       loadInfo.mUseRegularPrincipal,
       loadInfo.mHasStorageAccessPermissionGranted, cjsData, loadInfo.mDomain,
       isSecureContext, ipcClientInfo, loadInfo.mReferrerInfo, storageAllowed,
+      AntiTrackingUtils::IsThirdPartyWindow(window, nullptr),
       void_t() /* OptionalServiceWorkerData */, agentClusterId,
       remoteType.unwrap());
 
@@ -227,6 +230,10 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
   // Let's inform the window about this SharedWorker.
   nsGlobalWindowInner::Cast(window)->StoreSharedWorker(sharedWorker);
   actor->SetParent(sharedWorker);
+
+  if (nsGlobalWindowInner::Cast(window)->IsSuspended()) {
+    sharedWorker->Suspend();
+  }
 
   return sharedWorker.forget();
 }
@@ -266,8 +273,7 @@ void SharedWorker::Thaw() {
   }
 
   if (!mFrozenEvents.IsEmpty()) {
-    nsTArray<RefPtr<Event>> events;
-    mFrozenEvents.SwapElements(events);
+    nsTArray<RefPtr<Event>> events = std::move(mFrozenEvents);
 
     for (uint32_t index = 0; index < events.Length(); index++) {
       RefPtr<Event>& event = events[index];
@@ -368,7 +374,7 @@ void SharedWorker::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
     if (!event) {
       event = EventDispatcher::CreateEvent(aVisitor.mEvent->mOriginalTarget,
                                            aVisitor.mPresContext,
-                                           aVisitor.mEvent, EmptyString());
+                                           aVisitor.mEvent, u""_ns);
     }
 
     QueueEvent(event);

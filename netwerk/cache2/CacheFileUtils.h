@@ -9,6 +9,7 @@
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsTArray.h"
+#include "mozilla/Mutex.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/TimeStamp.h"
 
@@ -104,8 +105,8 @@ class DetailedCacheHitTelemetry {
     void Reset();
 
    private:
-    uint32_t mHitCnt;
-    uint32_t mMissCnt;
+    uint32_t mHitCnt = 0;
+    uint32_t mMissCnt = 0;
   };
 
   // Group the hits and misses statistics by cache files count ranges (0-5000,
@@ -216,6 +217,19 @@ nsresult ParseAlternativeDataInfo(const char* aInfo, int64_t* _offset,
 
 void BuildAlternativeDataInfo(const char* aInfo, int64_t aOffset,
                               nsACString& _retval);
+
+class CacheFileLock final {
+ public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CacheFileLock)
+  CacheFileLock() = default;
+
+  mozilla::Mutex& Lock() { return mLock; }
+
+ private:
+  ~CacheFileLock() = default;
+
+  mozilla::Mutex mLock{"CacheFile.mLock"};
+};
 
 }  // namespace CacheFileUtils
 }  // namespace net

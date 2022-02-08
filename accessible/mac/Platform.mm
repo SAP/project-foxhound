@@ -1,5 +1,6 @@
+/* clang-format off */
 /* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,12 +10,19 @@
 #import "MOXTextMarkerDelegate.h"
 
 #include "Platform.h"
-#include "ProxyAccessible.h"
-#include "AccessibleOrProxy.h"
+#include "RemoteAccessible.h"
 #include "DocAccessibleParent.h"
 #include "mozTableAccessible.h"
+#include "MOXWebAreaAccessible.h"
 
 #include "nsAppShell.h"
+#include "mozilla/Telemetry.h"
+
+// Available from 10.13 onwards; test availability at runtime before using
+@interface NSWorkspace (AvailableSinceHighSierra)
+@property(readonly) BOOL isVoiceOverEnabled;
+@property(readonly) BOOL isSwitchControlEnabled;
+@end
 
 namespace mozilla {
 namespace a11y {
@@ -32,9 +40,8 @@ void PlatformInit() {}
 
 void PlatformShutdown() {}
 
-void ProxyCreated(ProxyAccessible* aProxy, uint32_t) {
-  ProxyAccessible* parent = aProxy->Parent();
-  if ((parent && nsAccUtils::MustPrune(parent)) || aProxy->Role() == roles::WHITESPACE) {
+void ProxyCreated(RemoteAccessible* aProxy) {
+  if (aProxy->Role() == roles::WHITESPACE) {
     // We don't create a native object if we're child of a "flat" accessible;
     // for example, on OS X buttons shouldn't have any children, because that
     // makes the OS confused. We also don't create accessibles for <br>
@@ -43,7 +50,7 @@ void ProxyCreated(ProxyAccessible* aProxy, uint32_t) {
   }
 
   // Pass in dummy state for now as retrieving proxy state requires IPC.
-  // Note that we can use ProxyAccessible::IsTable* functions here because they
+  // Note that we can use RemoteAccessible::IsTable* functions here because they
   // do not use IPC calls but that might change after bug 1210477.
   Class type;
   if (aProxy->IsTable()) {
@@ -52,6 +59,8 @@ void ProxyCreated(ProxyAccessible* aProxy, uint32_t) {
     type = [mozTableRowAccessible class];
   } else if (aProxy->IsTableCell()) {
     type = [mozTableCellAccessible class];
+  } else if (aProxy->IsDoc()) {
+    type = [MOXWebAreaAccessible class];
   } else {
     type = GetTypeFromRole(aProxy->Role());
   }
@@ -60,7 +69,7 @@ void ProxyCreated(ProxyAccessible* aProxy, uint32_t) {
   aProxy->SetWrapper(reinterpret_cast<uintptr_t>(mozWrapper));
 }
 
-void ProxyDestroyed(ProxyAccessible* aProxy) {
+void ProxyDestroyed(RemoteAccessible* aProxy) {
   mozAccessible* wrapper = GetNativeFromGeckoAccessible(aProxy);
   [wrapper expire];
   [wrapper release];
@@ -71,15 +80,20 @@ void ProxyDestroyed(ProxyAccessible* aProxy) {
   }
 }
 
-void ProxyEvent(ProxyAccessible* aProxy, uint32_t aEventType) {
-  // ignore everything but focus-changed, value-changed, caret,
-  // selection, and document load complete events for now.
-  if (aEventType != nsIAccessibleEvent::EVENT_FOCUS &&
+void ProxyEvent(RemoteAccessible* aProxy, uint32_t aEventType) {
+  // Ignore event that we don't escape below, they aren't yet supported.
+  if (aEventType != nsIAccessibleEvent::EVENT_ALERT &&
+      aEventType != nsIAccessibleEvent::EVENT_FOCUS &&
       aEventType != nsIAccessibleEvent::EVENT_VALUE_CHANGE &&
       aEventType != nsIAccessibleEvent::EVENT_TEXT_VALUE_CHANGE &&
       aEventType != nsIAccessibleEvent::EVENT_TEXT_CARET_MOVED &&
       aEventType != nsIAccessibleEvent::EVENT_DOCUMENT_LOAD_COMPLETE &&
-      aEventType != nsIAccessibleEvent::EVENT_REORDER)
+      aEventType != nsIAccessibleEvent::EVENT_REORDER &&
+      aEventType != nsIAccessibleEvent::EVENT_LIVE_REGION_ADDED &&
+      aEventType != nsIAccessibleEvent::EVENT_LIVE_REGION_REMOVED &&
+      aEventType != nsIAccessibleEvent::EVENT_NAME_CHANGE &&
+      aEventType != nsIAccessibleEvent::EVENT_OBJECT_ATTRIBUTE_CHANGED &&
+      aEventType != nsIAccessibleEvent::EVENT_TABLE_STYLING_CHANGED)
     return;
 
   mozAccessible* wrapper = GetNativeFromGeckoAccessible(aProxy);
@@ -88,50 +102,71 @@ void ProxyEvent(ProxyAccessible* aProxy, uint32_t aEventType) {
   }
 }
 
-void ProxyStateChangeEvent(ProxyAccessible* aProxy, uint64_t aState, bool aEnabled) {
+void ProxyStateChangeEvent(RemoteAccessible* aProxy, uint64_t aState,
+                           bool aEnabled) {
   mozAccessible* wrapper = GetNativeFromGeckoAccessible(aProxy);
   if (wrapper) {
     [wrapper stateChanged:aState isEnabled:aEnabled];
   }
 }
 
-void ProxyCaretMoveEvent(ProxyAccessible* aTarget, int32_t aOffset, bool aIsSelectionCollapsed) {
+void ProxyCaretMoveEvent(RemoteAccessible* aTarget, int32_t aOffset,
+                         bool aIsSelectionCollapsed) {
   mozAccessible* wrapper = GetNativeFromGeckoAccessible(aTarget);
+  MOXTextMarkerDelegate* delegate =
+      [MOXTextMarkerDelegate getOrCreateForDoc:aTarget->Document()];
+  [delegate setCaretOffset:aTarget at:aOffset];
   if (aIsSelectionCollapsed) {
     // If selection is collapsed, invalidate selection.
-    MOXTextMarkerDelegate* delegate = [MOXTextMarkerDelegate getOrCreateForDoc:aTarget->Document()];
-    [delegate invalidateSelection];
+    [delegate setSelectionFrom:aTarget at:aOffset to:aTarget at:aOffset];
   }
 
   if (wrapper) {
-    [wrapper handleAccessibleEvent:nsIAccessibleEvent::EVENT_TEXT_CARET_MOVED];
+    if (mozTextAccessible* textAcc =
+            static_cast<mozTextAccessible*>([wrapper moxEditableAncestor])) {
+      [textAcc
+          handleAccessibleEvent:nsIAccessibleEvent::EVENT_TEXT_CARET_MOVED];
+    } else {
+      [wrapper
+          handleAccessibleEvent:nsIAccessibleEvent::EVENT_TEXT_CARET_MOVED];
+    }
   }
 }
 
-void ProxyTextChangeEvent(ProxyAccessible* aTarget, const nsString& aStr, int32_t aStart,
-                          uint32_t aLen, bool aIsInsert, bool aFromUser) {
-  mozAccessible* wrapper = GetNativeFromGeckoAccessible(aTarget);
+void ProxyTextChangeEvent(RemoteAccessible* aTarget, const nsString& aStr,
+                          int32_t aStart, uint32_t aLen, bool aIsInsert,
+                          bool aFromUser) {
+  RemoteAccessible* acc = aTarget;
+  // If there is a text input ancestor, use it as the event source.
+  while (acc && GetTypeFromRole(acc->Role()) != [mozTextAccessible class]) {
+    acc = acc->RemoteParent();
+  }
+  mozAccessible* wrapper = GetNativeFromGeckoAccessible(acc ? acc : aTarget);
   [wrapper handleAccessibleTextChangeEvent:nsCocoaUtils::ToNSString(aStr)
                                   inserted:aIsInsert
+                               inContainer:aTarget
                                         at:aStart];
 }
 
-void ProxyShowHideEvent(ProxyAccessible*, ProxyAccessible*, bool, bool) {}
+void ProxyShowHideEvent(RemoteAccessible*, RemoteAccessible*, bool, bool) {}
 
-void ProxySelectionEvent(ProxyAccessible* aTarget, ProxyAccessible* aWidget, uint32_t aEventType) {
+void ProxySelectionEvent(RemoteAccessible* aTarget, RemoteAccessible* aWidget,
+                         uint32_t aEventType) {
   mozAccessible* wrapper = GetNativeFromGeckoAccessible(aWidget);
   if (wrapper) {
     [wrapper handleAccessibleEvent:aEventType];
   }
 }
 
-void ProxyTextSelectionChangeEvent(ProxyAccessible* aTarget,
+void ProxyTextSelectionChangeEvent(RemoteAccessible* aTarget,
                                    const nsTArray<TextRangeData>& aSelection) {
   if (aSelection.Length()) {
-    MOXTextMarkerDelegate* delegate = [MOXTextMarkerDelegate getOrCreateForDoc:aTarget->Document()];
+    MOXTextMarkerDelegate* delegate =
+        [MOXTextMarkerDelegate getOrCreateForDoc:aTarget->Document()];
     DocAccessibleParent* doc = aTarget->Document();
-    ProxyAccessible* startContainer = doc->GetAccessible(aSelection[0].StartID());
-    ProxyAccessible* endContainer = doc->GetAccessible(aSelection[0].EndID());
+    RemoteAccessible* startContainer =
+        doc->GetAccessible(aSelection[0].StartID());
+    RemoteAccessible* endContainer = doc->GetAccessible(aSelection[0].EndID());
     // Cache the selection.
     [delegate setSelectionFrom:startContainer
                             at:aSelection[0].StartOffset()
@@ -141,7 +176,14 @@ void ProxyTextSelectionChangeEvent(ProxyAccessible* aTarget,
 
   mozAccessible* wrapper = GetNativeFromGeckoAccessible(aTarget);
   if (wrapper) {
-    [wrapper handleAccessibleEvent:nsIAccessibleEvent::EVENT_TEXT_SELECTION_CHANGED];
+    [wrapper
+        handleAccessibleEvent:nsIAccessibleEvent::EVENT_TEXT_SELECTION_CHANGED];
+  }
+}
+
+void ProxyRoleChangedEvent(RemoteAccessible* aTarget, const a11y::role& aRole) {
+  if (mozAccessible* wrapper = GetNativeFromGeckoAccessible(aTarget)) {
+    [wrapper handleRoleChanged:aRole];
   }
 }
 
@@ -155,8 +197,31 @@ void ProxyTextSelectionChangeEvent(ProxyAccessible* aTarget,
 @implementation GeckoNSApplication (a11y)
 
 - (void)accessibilitySetValue:(id)value forAttribute:(NSString*)attribute {
-  if ([attribute isEqualToString:@"AXEnhancedUserInterface"])
+  if ([attribute isEqualToString:@"AXEnhancedUserInterface"]) {
     mozilla::a11y::sA11yShouldBeEnabled = ([value intValue] == 1);
+    if (sA11yShouldBeEnabled) {
+      // If accessibility should be enabled, log the appropriate client
+      nsAutoString client;
+      if ([[NSWorkspace sharedWorkspace]
+              respondsToSelector:@selector(isVoiceOverEnabled)] &&
+          [[NSWorkspace sharedWorkspace] isVoiceOverEnabled]) {
+        client.Assign(u"VoiceOver"_ns);
+      } else if ([[NSWorkspace sharedWorkspace]
+                     respondsToSelector:@selector(isSwitchControlEnabled)] &&
+                 [[NSWorkspace sharedWorkspace] isSwitchControlEnabled]) {
+        client.Assign(u"SwitchControl"_ns);
+      } else {
+        client.Assign(u"Unknown"_ns);
+      }
+
+#if defined(MOZ_TELEMETRY_REPORTING)
+      Telemetry::ScalarSet(Telemetry::ScalarID::A11Y_INSTANTIATORS, client);
+#endif  // defined(MOZ_TELEMETRY_REPORTING)
+      CrashReporter::AnnotateCrashReport(
+          CrashReporter::Annotation::AccessibilityClient,
+          NS_ConvertUTF16toUTF8(client));
+    }
+  }
 
   return [super accessibilitySetValue:value forAttribute:attribute];
 }

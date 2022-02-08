@@ -88,8 +88,6 @@ interface nsIScriptError : nsIConsoleMessage
 
     readonly attribute boolean isFromChromeContext;
 
-    attribute boolean isForwardedFromContentProcess;
-
     // Error created from a Promise rejection.
     readonly attribute boolean isPromiseRejection;
 
@@ -117,8 +115,8 @@ interface nsIScriptError : nsIConsoleMessage
     [noscript] readonly attribute jsval stackGlobal;
 
     /**
-     * The name of a template string, as found in js.msg, associated with the
-     * error message.
+     * The name of a template string associated with the error message.  See
+     * js/public/friend/ErrorNumbers.msg.
      */
     attribute AString errorMessageName;
 

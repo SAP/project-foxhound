@@ -10,6 +10,11 @@
 const HTML_LONG_URL = CONTENT_TYPE_SJS + "?fmt=html-long";
 
 add_task(async function() {
+  // Using https-first for this test is blocked on Bug 1733420.
+  // We cannot assert status text "OK" with HTTPS requests to httpd.js, instead
+  // we get "Connected"
+  await pushPref("dom.security.https_first", false);
+
   const { tab, monitor } = await initNetMonitor(CUSTOM_GET_URL, {
     requestCount: 1,
   });
@@ -54,17 +59,14 @@ add_task(async function() {
     }
   );
 
-  wait = waitForDOM(document, "#response-panel .accordion-item", 2);
+  wait = waitForDOM(document, "#response-panel .data-header");
   store.dispatch(Actions.toggleNetworkDetails());
-  EventUtils.sendMouseEvent(
-    { type: "click" },
-    document.querySelector("#response-tab")
-  );
+  clickOnSidebarTab(document, "response");
   await wait;
 
   wait = waitForDOM(document, "#response-panel .CodeMirror-code");
   const payloadHeader = document.querySelector(
-    "#response-panel .accordion-item:last-child .accordion-header"
+    "#response-panel .raw-data-toggle-input .devtools-checkbox-toggle"
   );
   clickElement(payloadHeader, monitor);
   await wait;

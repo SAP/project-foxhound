@@ -33,6 +33,8 @@ const LINUX = AppConstants.platform == "linux";
 const WIN = AppConstants.platform == "win";
 const MAC = AppConstants.platform == "macosx";
 
+const kSharedFontList = SpecialPowers.getBoolPref("gfx.e10s.font-list.shared");
+
 /* This is an object mapping string phases of startup to lists of known cases
  * of IO happening on the main thread. Ideally, IO should not be on the main
  * thread, and should happen as late as possible (see above).
@@ -212,14 +214,6 @@ const startupPhases = {
       read: 1,
       close: 1,
     },
-    {
-      // bug 1546838
-      path: "ProfD:xulstore/data.mdb",
-      condition: WIN,
-      read: 1,
-      write: 3,
-      fsync: 1,
-    },
   ],
 
   "before opening first browser window": [
@@ -261,13 +255,14 @@ const startupPhases = {
       // Side-effect of bug 1412090, via sandboxing (but the real
       // problem there is main-thread CPU use; see bug 1439412)
       path: "*ld.so.conf*",
-      condition: LINUX,
+      condition: LINUX && !AppConstants.MOZ_CODE_COVERAGE && !kSharedFontList,
       read: 22,
       close: 11,
     },
     {
       // bug 1541246
       path: "ProfD:extensions",
+      ignoreIfUnused: true, // bug 1649590
       condition: WIN,
       stat: 1,
     },
@@ -278,12 +273,6 @@ const startupPhases = {
       // sometimes before first paint
       condition: WIN,
       stat: 1,
-    },
-    {
-      // bug 1546838
-      path: "ProfD:xulstore/data.mdb",
-      condition: WIN,
-      read: 2,
     },
   ],
 
@@ -299,12 +288,6 @@ const startupPhases = {
     {
       // bug 1446012
       path: "UpdRootD:updates/0/update.status",
-      condition: WIN,
-      stat: 1,
-    },
-    {
-      // bug 1586808
-      path: "UserPlugins.parent:",
       condition: WIN,
       stat: 1,
     },
@@ -336,7 +319,7 @@ const startupPhases = {
     {
       // Sandbox policy construction
       path: "*ld.so.conf*",
-      condition: LINUX,
+      condition: LINUX && !AppConstants.MOZ_CODE_COVERAGE,
       read: 22,
       close: 11,
     },
@@ -360,12 +343,6 @@ const startupPhases = {
       condition: WIN && !AppConstants.MOZILLA_OFFICIAL,
       stat: 1,
     },
-    {
-      // bug 1546838
-      path: "ProfD:xulstore/data.mdb",
-      condition: MAC,
-      write: 3,
-    },
   ],
 
   // We are at this phase once we are ready to handle user events.
@@ -380,29 +357,29 @@ const startupPhases = {
     },
     {
       // bug 1370516 - NSS should be initialized off main thread.
-      path: "ProfD:cert9.db",
+      path: `ProfD:cert9.db`,
       condition: WIN,
       read: 5,
-      stat: 2,
+      stat: AppConstants.NIGHTLY_BUILD ? 5 : 4,
     },
     {
       // bug 1370516 - NSS should be initialized off main thread.
-      path: "ProfD:cert9.db",
+      path: `ProfD:cert9.db`,
       condition: WIN,
       ignoreIfUnused: true, // if canonicalize(ProfD) == ProfD, we'll use the previous entry.
       canonicalize: true,
-      stat: 2,
+      stat: 4,
     },
     {
       // bug 1370516 - NSS should be initialized off main thread.
-      path: "ProfD:cert9.db-journal",
+      path: `ProfD:cert9.db-journal`,
       condition: WIN,
       canonicalize: true,
       stat: 3,
     },
     {
       // bug 1370516 - NSS should be initialized off main thread.
-      path: "ProfD:cert9.db-wal",
+      path: `ProfD:cert9.db-wal`,
       condition: WIN,
       canonicalize: true,
       stat: 3,
@@ -415,29 +392,29 @@ const startupPhases = {
     },
     {
       // bug 1370516 - NSS should be initialized off main thread.
-      path: "ProfD:key4.db",
+      path: `ProfD:key4.db`,
       condition: WIN,
       read: 8,
-      stat: 2,
+      stat: AppConstants.NIGHTLY_BUILD ? 5 : 4,
     },
     {
       // bug 1370516 - NSS should be initialized off main thread.
-      path: "ProfD:key4.db",
+      path: `ProfD:key4.db`,
       condition: WIN,
       ignoreIfUnused: true, // if canonicalize(ProfD) == ProfD, we'll use the previous entry.
       canonicalize: true,
-      stat: 2,
+      stat: 4,
     },
     {
       // bug 1370516 - NSS should be initialized off main thread.
-      path: "ProfD:key4.db-journal",
+      path: `ProfD:key4.db-journal`,
       condition: WIN,
       canonicalize: true,
       stat: 5,
     },
     {
       // bug 1370516 - NSS should be initialized off main thread.
-      path: "ProfD:key4.db-wal",
+      path: `ProfD:key4.db-wal`,
       condition: WIN,
       canonicalize: true,
       stat: 5,
@@ -448,6 +425,21 @@ const startupPhases = {
       ignoreIfUnused: true,
       stat: 1,
       close: 1,
+    },
+    {
+      // Bug 1660582 - access while running on windows10 hardware.
+      path: "ProfD:wmfvpxvideo.guard",
+      condition: WIN,
+      ignoreIfUnused: true,
+      stat: 1,
+      close: 1,
+    },
+    {
+      // Bug 1649590
+      path: "ProfD:extensions",
+      ignoreIfUnused: true,
+      condition: WIN,
+      stat: 1,
     },
   ],
 
@@ -481,8 +473,8 @@ const startupPhases = {
       ignoreIfUnused: true,
       stat: 4,
       fsync: 3,
-      read: 36,
-      write: 148,
+      read: 47,
+      write: 170,
     },
     {
       // bug 1391590
@@ -498,7 +490,7 @@ const startupPhases = {
       fsync: 2,
       read: 4,
       stat: 3,
-      write: 1310,
+      write: 1320,
     },
     {
       // bug 1391590
@@ -535,13 +527,13 @@ const startupPhases = {
       write: 1300,
     },
     {
-      path: "ProfD:key4.db-journal",
+      path: `ProfD:key4.db-journal`,
       condition: WIN,
       canonicalize: true,
       stat: 2,
     },
     {
-      path: "ProfD:key4.db-wal",
+      path: `ProfD:key4.db-wal`,
       condition: WIN,
       canonicalize: true,
       stat: 2,
@@ -555,13 +547,7 @@ const startupPhases = {
   ],
 };
 
-for (let name of [
-  "d3d11layers",
-  "d3d9video",
-  "glcontext",
-  "d3d11video",
-  "wmfvpxvideo",
-]) {
+for (let name of ["d3d11layers", "glcontext", "wmfvpxvideo"]) {
   startupPhases["before first paint"].push({
     path: `ProfD:${name}.guard`,
     ignoreIfUnused: true,
@@ -778,16 +764,16 @@ add_task(async function() {
         continue;
       }
 
-      // Convert to lower case before comparing because the OS X test machines
-      // have the 'Firefox' folder in 'Library/Application Support' created
-      // as 'firefox' for some reason.
-      let filename = marker.filename.toLowerCase();
-
-      if (!filename) {
+      if (!marker.filename) {
         // We are still missing the filename on some mainthreadio markers,
         // these markers are currently useless for the purpose of this test.
         continue;
       }
+
+      // Convert to lower case before comparing because the OS X test machines
+      // have the 'Firefox' folder in 'Library/Application Support' created
+      // as 'firefox' for some reason.
+      let filename = marker.filename.toLowerCase();
 
       if (!WIN && filename == "/dev/urandom") {
         continue;
@@ -796,6 +782,14 @@ add_task(async function() {
       // /dev/shm is always tmpfs (a memory filesystem); this isn't
       // really I/O any more than mmap/munmap are.
       if (LINUX && filename.startsWith("/dev/shm/")) {
+        continue;
+      }
+
+      // "Files" from memfd_create() are similar to tmpfs but never
+      // exist in the filesystem; however, they have names which are
+      // exposed in procfs, and the I/O interposer observes when
+      // they're close()d.
+      if (LINUX && filename.startsWith("/memfd:")) {
         continue;
       }
 
@@ -876,12 +870,8 @@ add_task(async function() {
     let path = Cc["@mozilla.org/process/environment;1"]
       .getService(Ci.nsIEnvironment)
       .get("MOZ_UPLOAD_DIR");
-    let encoder = new TextEncoder();
-    let profilePath = OS.Path.join(path, filename);
-    await OS.File.writeAtomic(
-      profilePath,
-      encoder.encode(JSON.stringify(startupRecorder.data.profile))
-    );
+    let profilePath = PathUtils.join(path, filename);
+    await IOUtils.writeJSON(profilePath, startupRecorder.data.profile);
     ok(
       false,
       "Unexpected main thread I/O behavior during startup; open the " +

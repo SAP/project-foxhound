@@ -7,15 +7,15 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { ExtensionUtils } = ChromeUtils.import(
   "resource://gre/modules/ExtensionUtils.jsm"
 );
-const { ExtensionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/ExtensionXPCShellUtils.jsm"
+const { XPCShellContentUtils } = ChromeUtils.import(
+  "resource://testing-common/XPCShellContentUtils.jsm"
 );
 
 const PROCESS_COUNT_PREF = "dom.ipc.processCount";
 
 const remote = AppConstants.platform !== "android";
 
-ExtensionTestUtils.init(this);
+XPCShellContentUtils.init(this);
 
 let contentPage;
 
@@ -45,15 +45,6 @@ function getContents(sharedMap = Services.cpmm.sharedData) {
 
 function checkMap(contents, expected) {
   expected = Array.from(expected);
-
-  // Remove keys already defined by ActorManagerParent.jsm
-  for (let i = contents.keys.length - 1; i >= 0; i--) {
-    if (/^Child(Singleton)?Actors/.test(contents.keys[i])) {
-      contents.keys.splice(i, 1);
-      contents.values.splice(i, 1);
-      contents.entries.splice(i, 1);
-    }
-  }
 
   equal(contents.keys.length, expected.length, "Got correct number of keys");
   equal(
@@ -110,7 +101,7 @@ async function checkContentMaps(expected, parentOnly = false) {
 }
 
 async function loadContentPage() {
-  let page = await ExtensionTestUtils.loadContentPage("about:blank", {
+  let page = await XPCShellContentUtils.loadContentPage("about:blank", {
     remote,
   });
   registerCleanupFunction(() => page.close());

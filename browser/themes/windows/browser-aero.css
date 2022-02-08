@@ -44,40 +44,14 @@
   @media not (-moz-os-version: windows-win7) {
     @media not (-moz-os-version: windows-win8) {
       @media (-moz-windows-default-theme) {
-        :root:not(:-moz-lwtheme) {
-          background-color: hsl(0, 0%, 78%);
-        }
-
-        @media (-moz-windows-accent-color-in-titlebar: 0) {
-          :root[sizemode=normal][tabsintitlebar] {
-            border-top: 1px solid rgba(0,0,0,.7);
-          }
-          :root[sizemode=normal][tabsintitlebar][always-use-accent-color-for-window-border]:not(:-moz-window-inactive) {
-            border-top-color: -moz-win-accentcolor;
-          }
-          :root[tabsintitlebar]:not(:-moz-lwtheme) {
-            background-color: hsl(235,33%,19%);
-            color: hsl(240,9%,98%);
-          }
-        }
-
         @media (-moz-windows-accent-color-in-titlebar) {
-          :root[sizemode=normal][tabsintitlebar] {
-            border-top: 1px solid -moz-win-accentcolor;
-          }
-          :root[tabsintitlebar]:not(:-moz-window-inactive):not(:-moz-lwtheme),
-          :root[tabsintitlebar]:not(:-moz-window-inactive)[lwt-default-theme-in-dark-mode] {
-            background-color: -moz-win-accentcolor;
-            color: -moz-win-accentcolortext;
-          }
-          :root[tabsintitlebar][lwt-default-theme-in-dark-mode] #titlebar {
-            --lwt-toolbarbutton-icon-fill: currentColor;
-            --toolbarbutton-icon-fill-opacity: .7;
+          :root[sizemode=normal][tabsintitlebar] #navigator-toolbox {
+            border-top: .5px solid -moz-accent-color;
           }
         }
 
-        :root[sizemode=normal][tabsintitlebar]:-moz-window-inactive {
-          border-top-color: rgba(0,0,0,.3);
+        :root[sizemode=normal][tabsintitlebar]:-moz-window-inactive #navigator-toolbox {
+          border-top-color: rgb(57,57,57);
         }
 
         :root[tabsintitlebar] .tab-label:-moz-window-inactive {
@@ -85,24 +59,22 @@
              titlebar text change for inactive windows. */
           opacity: .6;
         }
+
+        :root[tabsintitlebar] .tab-secondary-label:-moz-window-inactive {
+          opacity: .6;
+        }
       }
 
-      @media (-moz-windows-default-theme: 0) {
-        :root[tabsintitlebar] {
-          appearance: auto;
-          -moz-default-appearance: -moz-win-glass;
-        }
-
+      /* See bug 1715990 about why we do this ourselves on HCM */
+      @media (prefers-contrast) {
         :root[tabsintitlebar]:not(:-moz-lwtheme) {
-          background-color: transparent;
+          background-color: ActiveCaption;
+          color: CaptionText;
         }
 
-        /* On win10, if we don't set this on the entire browser container including
-         * the sidebar, if the sidebar is open the accent color bleeds through in
-         * the titlebar */
-        :root[tabsintitlebar] #browser {
-          appearance: auto;
-          -moz-default-appearance: -moz-win-exclude-glass;
+        :root[tabsintitlebar]:not(:-moz-lwtheme):-moz-window-inactive {
+          background-color: InactiveCaption;
+          color: InactiveCaptionText;
         }
       }
 
@@ -244,8 +216,8 @@
           stroke: ButtonText;
         }
         .titlebar-button:hover {
-          background-color: Highlight;
-          stroke: HighlightText;
+          background-color: SelectedItem;
+          stroke: SelectedItemText;
         }
 
         .titlebar-min {
@@ -295,54 +267,15 @@
 
   @media (-moz-os-version: windows-win8) {
     /* Artificially draw window borders that are covered by lwtheme, see bug 591930.
-     * Borders for win7 are below, win10 doesn't need them. */
+     * Borders for win7 are below, win10 only needs something like this when
+     * drawing in the titlebar (-moz-windows-accent-color-in-titlebar). */
     #main-window[sizemode="normal"] #navigator-toolbox:-moz-lwtheme {
       border-top: 1px solid @glassShadowColor@;
     }
   }
 
-  :root[darkwindowframe="true"]:not(:-moz-window-inactive):not(:-moz-lwtheme) {
+  :root[darkwindowframe="true"]:not(:-moz-window-inactive, :-moz-lwtheme) {
     color: white;
-  }
-
-  /* Show borders on Win 7 & 8, but not on 10 and later: */
-  @media (-moz-os-version: windows-win7),
-         (-moz-os-version: windows-win8) {
-    /* Vertical toolbar border */
-    #main-window[sizemode=normal] .browser-toolbar:not(.titlebar-color):not(:-moz-lwtheme),
-    #main-window[sizemode=normal] .browser-toolbar:-moz-lwtheme {
-      border-inline: 1px solid @glassShadowColor@;
-      background-clip: padding-box;
-    }
-
-    #navigator-toolbox::after {
-      content: "";
-      display: -moz-box;
-      border-bottom: 1px solid var(--chrome-content-separator-color);
-    }
-
-    #navigator-toolbox,
-    :root[customizing] #navigator-toolbox::after {
-      border-bottom-style: none;
-    }
-
-    :root[sizemode=normal] #navigator-toolbox::after {
-      box-shadow: 1px 0 0 @glassShadowColor@, -1px 0 0 @glassShadowColor@;
-      margin-inline: 1px;
-    }
-
-    #main-window[sizemode=normal] #browser-border-start,
-    #main-window[sizemode=normal] #browser-border-end {
-      display: -moz-box;
-      background-color: @glassShadowColor@;
-      width: 1px;
-    }
-
-    #main-window[sizemode=normal] #browser-bottombox {
-      border: 1px solid @glassShadowColor@;
-      border-top-style: none;
-      background-clip: padding-box;
-    }
   }
 
   #appcontent:not(:-moz-lwtheme) {
@@ -351,23 +284,19 @@
 }
 
 @media (-moz-windows-glass) {
-  /* Set to full fill-opacity to improve visibility of toolbar buttons on aero glass. */
-  #TabsToolbar:not(:-moz-lwtheme) {
-    --toolbarbutton-icon-fill-opacity: 1;
-  }
-
   #toolbar-menubar:not(:-moz-lwtheme) {
     text-shadow: 0 0 .5em white, 0 0 .5em white, 0 1px 0 rgba(255,255,255,.4);
   }
 
-  #main-menubar:not(:-moz-lwtheme):not(:-moz-window-inactive) {
+  #main-menubar:not(:-moz-lwtheme, :-moz-window-inactive) {
     background-color: rgba(255,255,255,.5);
     color: black;
     border-radius: 4px;
   }
 
   /* Artificially draw window borders that are covered by lwtheme, see bug 591930.
-   * We use a different border for win8, and this is not necessary on win10+ */
+   * We use a different border for win8, and this win10+ only needs this if
+   * drawing in the titlebar (-moz-windows-accent-color-in-titlebar). */
   #main-window[sizemode="normal"] #navigator-toolbox:-moz-lwtheme {
     border-top: 1px solid @glassActiveBorderColor@;
     padding-top: 1px;

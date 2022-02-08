@@ -10,7 +10,7 @@ mkdir -p $HOME/artifacts $UPLOAD_DIR
 
 # Populate /builds/worker/.mozbuild/android-emulator-linux.
 cd $GECKO_PATH
-./mach python python/mozboot/mozboot/android.py --emulator-only --no-interactive
+./mach python python/mozboot/mozboot/android.py --emulator-only --no-interactive --list-packages
 
 # Remove extra files we don't need
 rm -rfv /builds/worker/.mozbuild/android-sdk-linux/tools
@@ -18,6 +18,6 @@ mkdir /builds/worker/.mozbuild/android-sdk-linux/system-images
 mkdir /builds/worker/.mozbuild/android-sdk-linux/platforms
 find /builds/worker/.mozbuild/android-sdk-linux/emulator/qemu -type f -not -name "*x86*" -print -delete
 
-tar cv -C /builds/worker/.mozbuild android-sdk-linux | $GECKO_PATH/taskcluster/scripts/misc/zstdpy > $UPLOAD_DIR/android-emulator-linux.tar.zst
+tar cavf $UPLOAD_DIR/android-emulator-linux.tar.zst -C /builds/worker/.mozbuild android-sdk-linux bundletool.jar
 
 ls -al $UPLOAD_DIR

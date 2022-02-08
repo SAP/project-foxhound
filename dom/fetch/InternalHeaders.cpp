@@ -11,12 +11,12 @@
 
 #include "nsCharSeparatedTokenizer.h"
 #include "nsContentUtils.h"
+#include "nsIHttpChannel.h"
 #include "nsIHttpHeaderVisitor.h"
 #include "nsNetUtil.h"
 #include "nsReadableUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 InternalHeaders::InternalHeaders(nsTArray<Entry>&& aHeaders,
                                  HeadersGuardEnum aGuard)
@@ -389,7 +389,7 @@ bool InternalHeaders::IsForbiddenRequestHeader(const nsCString& aName) const {
 bool InternalHeaders::IsForbiddenRequestNoCorsHeader(
     const nsCString& aName) const {
   return mGuard == HeadersGuardEnum::Request_no_cors &&
-         !IsSimpleHeader(aName, EmptyCString());
+         !IsSimpleHeader(aName, ""_ns);
 }
 
 bool InternalHeaders::IsForbiddenRequestNoCorsHeader(
@@ -520,9 +520,8 @@ already_AddRefed<InternalHeaders> InternalHeaders::CORSHeaders(
 
   bool allowAllHeaders = false;
   AutoTArray<nsCString, 5> exposeNamesArray;
-  nsCCharSeparatedTokenizer exposeTokens(acExposedNames, ',');
-  while (exposeTokens.hasMoreTokens()) {
-    const nsDependentCSubstring& token = exposeTokens.nextToken();
+  for (const nsACString& token :
+       nsCCharSeparatedTokenizer(acExposedNames, ',').ToRange()) {
     if (token.IsEmpty()) {
       continue;
     }
@@ -553,6 +552,7 @@ already_AddRefed<InternalHeaders> InternalHeaders::CORSHeaders(
     } else if (entry.mName.EqualsIgnoreCase("cache-control") ||
                entry.mName.EqualsIgnoreCase("content-language") ||
                entry.mName.EqualsIgnoreCase("content-type") ||
+               entry.mName.EqualsIgnoreCase("content-length") ||
                entry.mName.EqualsIgnoreCase("expires") ||
                entry.mName.EqualsIgnoreCase("last-modified") ||
                entry.mName.EqualsIgnoreCase("pragma") ||
@@ -635,5 +635,4 @@ void InternalHeaders::ReuseExistingNameIfExists(nsCString& aName) const {
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

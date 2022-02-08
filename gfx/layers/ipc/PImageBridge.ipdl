@@ -26,6 +26,7 @@ namespace layers {
  * frames directly to the compositor thread/process without relying on the main thread
  * which might be too busy dealing with content script.
  */
+[NeedsOtherPid]
 sync protocol PImageBridge
 {
   manages PTexture;
@@ -49,20 +50,13 @@ parent:
   // it is scheduled in the ImageBridgeChild's message queue in order to ensure
   // that all of the messages from the parent side have been received and processed
   // before sending closing the channel.
-  sync WillClose();
+  async WillClose();
 
   async PTexture(SurfaceDescriptor aSharedData, ReadLockDescriptor aReadLock, LayersBackend aBackend, TextureFlags aTextureFlags, uint64_t aSerial, MaybeExternalImageId aExternalImageId);
   async PMediaSystemResourceManager();
 
-  sync NewCompositable(CompositableHandle aHandle, TextureInfo aInfo, LayersBackend aBackend);
+  sync NewCompositable(CompositableHandle aHandle, TextureInfo aInfo);
   async ReleaseCompositable(CompositableHandle aHandle);
-
-  sync MakeAsyncPluginSurfaces(SurfaceFormat format, IntSize size)
-    returns (SurfaceDescriptorPlugin aSD);
-  async UpdateAsyncPluginSurface(SurfaceDescriptorPlugin aSD);
-  sync ReadbackAsyncPluginSurface(SurfaceDescriptorPlugin aSD)
-    returns (SurfaceDescriptor result);
-  async RemoveAsyncPluginSurface(SurfaceDescriptorPlugin aSD, bool isFrontSurface);
 };
 
 

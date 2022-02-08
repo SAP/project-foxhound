@@ -15,39 +15,34 @@ include protocol PBrowser;
 include protocol PCanvas;
 include protocol PCompositorManager;
 include protocol PCompositorWidget;
-include protocol PLayerTransaction;
 include protocol PTexture;
-include protocol PWebGL;
 include protocol PWebRenderBridge;
 include protocol PWebGPU;
 include "mozilla/GfxMessageUtils.h";
 include "mozilla/layers/LayersMessageUtils.h";
 include "mozilla/layers/WebRenderMessageUtils.h";
 
-using struct mozilla::null_t from "ipc/IPCMessageUtils.h";
+using struct mozilla::null_t from "mozilla/ipc/IPCCore.h";
 using struct mozilla::layers::LayersId from "mozilla/layers/LayersTypes.h";
 using struct mozilla::layers::TextureFactoryIdentifier from "mozilla/layers/CompositorTypes.h";
 using struct mozilla::layers::ScrollableLayerGuid from "mozilla/layers/ScrollableLayerGuid.h";
 using mozilla::layers::ScrollableLayerGuid::ViewID from "mozilla/layers/ScrollableLayerGuid.h";
-using mozilla::layers::MaybeZoomConstraints from "mozilla/layers/ZoomConstraints.h";
+using mozilla::layers::WindowKind from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::LayersBackend from "mozilla/layers/LayersTypes.h";
-using mozilla::CrossProcessMutexHandle from "mozilla/ipc/CrossProcessMutex.h";
-using mozilla::ipc::SharedMemoryBasic::Handle from "mozilla/ipc/SharedMemoryBasic.h";
 using mozilla::CSSIntRegion from "Units.h";
 using mozilla::LayoutDeviceIntPoint from "Units.h";
 using mozilla::LayoutDeviceIntRegion from "Units.h";
 using mozilla::LayoutDeviceIntSize from "Units.h";
 using class mozilla::TimeStamp from "mozilla/TimeStamp.h";
-using class mozilla::layers::FrameUniformityData from "mozilla/layers/FrameUniformityData.h";
 using mozilla::layers::TextureFlags from "mozilla/layers/CompositorTypes.h";
 using mozilla::layers::CompositorOptions from "mozilla/layers/CompositorOptions.h";
 using mozilla::wr::PipelineId from "mozilla/webrender/WebRenderTypes.h";
 using mozilla::wr::IdNamespace from "mozilla/webrender/WebRenderTypes.h";
+using mozilla::wr::RenderReasons from "mozilla/webrender/webrender_ffi.h";
 using base::ProcessId from "base/process.h";
 using mozilla::wr::MaybeExternalImageId from "mozilla/webrender/WebRenderTypes.h";
 using mozilla::layers::LayersObserverEpoch from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::TransactionId from "mozilla/layers/LayersTypes.h";
-using struct DxgiAdapterDesc from "mozilla/D3DMessageUtils.h";
 
 namespace mozilla {
 namespace layers {
@@ -93,18 +88,16 @@ struct FrameStats {
  * protocol, which is per-browser. A lot of the functions in the protocol are
  * basically multiplexing/demultiplexing stuff in PLayerTransaction.
  */
-sync refcounted protocol PCompositorBridge
+[RefCounted] sync protocol PCompositorBridge
 {
   manager PCompositorManager;
 
   manages PAPZ;
   manages PAPZCTreeManager;
   // A Compositor manages a single Layer Manager (PLayerTransaction)
-  manages PLayerTransaction;
   manages PTexture;
   manages PCompositorWidget;
   manages PWebRenderBridge;
-  manages PWebGL;
   manages PWebGPU;
 
 child:
@@ -118,42 +111,12 @@ child:
   // the root layer tree).
   // transactionId is the id of the transaction before this composite, or 0
   // if there was no transaction since the last composite.
-  prio(mediumhigh) async DidComposite(LayersId id, TransactionId transactionId,
-                                      TimeStamp compositeStart,
-                                      TimeStamp compositeEnd);
+  [Priority=control] async DidComposite(LayersId id,
+                                        TransactionId[] transactionId,
+                                        TimeStamp compositeStart,
+                                        TimeStamp compositeEnd);
 
   async NotifyFrameStats(FrameStats[] aFrameStats);
-
-  /**
-   * Parent informs the child that the graphics objects are ready for
-   * compositing.  This usually means that the graphics objects (textures
-   * and the like) are available on the GPU.  This is used for chrome UI.
-   * @see RequestNotifyAfterRemotePaint
-   * @see PBrowser
-   */
-  async RemotePaintIsReady();
-
-  /**
-   * Bounce plugin widget configurations over to the main thread for
-   * application on the widgets. Used on Windows and Linux in managing
-   * plugin widgets.
-   */
-  async UpdatePluginConfigurations(LayoutDeviceIntPoint aContentOffset,
-                                   LayoutDeviceIntRegion aVisibleRegion,
-                                   PluginWindowData[] aPlugins);
-
-  /**
-   * Captures an image for all visible child plugins of a given widget for use
-   * during scrolling.
-   * @param aParentWidget parent of widgets to be captured
-   */
-  async CaptureAllPlugins(uintptr_t aParentWidget);
-
-  /**
-   * Hides all registered plugin widgets associated with a particular chrome
-   * widget.
-   */
-  async HideAllPlugins(uintptr_t aParentWidget);
 
   async ParentAsyncMessages(AsyncParentMessageData[] aMessages);
 
@@ -179,14 +142,6 @@ parent:
   // Constructor for WebGPU IPDL
   // Must be called before Initialize().
   async PWebGPU();
-
-  /**
-   * Confirmation callback for UpdatePluginConfigurations and HideAllPlugins.
-   */
-  async RemotePluginsReady();
-
-  // Child requests frame uniformity measurements
-  sync GetFrameUniformity() returns (FrameUniformityData data);
 
   // The child is about to be destroyed, so perform any necessary cleanup.
   sync WillClose();
@@ -218,56 +173,26 @@ parent:
   sync NotifyChildRecreated(LayersId id)
     returns (CompositorOptions compositorOptions);
 
-  // Make a snapshot of the content that would have been drawn to our
-  // render target at the time this message is received.  If the size
-  // or format of |inSnapshot| doesn't match our render target,
-  // results are undefined.
-  //
-  // NB: this message will result in animations, transforms, effects,
-  // and so forth being interpolated.  That's what we want to happen.
-  sync MakeSnapshot(SurfaceDescriptor inSnapshot, IntRect dirtyRect);
-
   // Make sure any pending composites are started immediately and
   // block until they are completed.
-  sync FlushRendering();
+  sync FlushRendering(RenderReasons aReasons);
 
   // Same as FlushRendering, but asynchronous, since not all platforms require
   // synchronous repaints on resize.
-  async FlushRenderingAsync();
+  async FlushRenderingAsync(RenderReasons aReasons);
 
   // Make sure any pending composites have been received.
   sync WaitOnTransactionProcessed();
 
   // Force an additional frame presentation to be executed. This is used to
   // work around a windows presentation bug (See Bug 1232042)
-  async ForcePresent();
+  async ForcePresent(RenderReasons aReasons);
 
   sync StartFrameTimeRecording(int32_t bufferSize)
     returns (uint32_t startIndex);
 
   sync StopFrameTimeRecording(uint32_t startIndex)
     returns (float[] intervals);
-
-  // layersBackendHints is an ordered list of preffered backends where
-  // layersBackendHints[0] is the best backend. If any hints are LayersBackend::LAYERS_NONE
-  // that hint is ignored.
-  async PLayerTransaction(LayersBackend[] layersBackendHints, LayersId id);
-
-  // Notify the compositor that a region of the screen has been invalidated.
-  async NotifyRegionInvalidated(nsIntRegion region);
-
-  /**
-   * The child (content/chrome thread) requests that the parent inform it when
-   * the graphics objects are ready to display.
-   * @see PBrowser
-   * @see RemotePaintIsReady
-   */
-  async RequestNotifyAfterRemotePaint();
-
-  /**
-   * Sent when the child has finished CaptureAllPlugins.
-   */
-  async AllPluginsCaptured();
 
   async PTexture(SurfaceDescriptor aSharedData, ReadLockDescriptor aReadLock, LayersBackend aBackend, TextureFlags aTextureFlags, LayersId id, uint64_t aSerial, MaybeExternalImageId aExternalImageId);
 
@@ -277,7 +202,7 @@ parent:
   sync SyncWithCompositor();
 
   // The pipelineId is the same as the layersId
-  async PWebRenderBridge(PipelineId pipelineId, LayoutDeviceIntSize aSize);
+  async PWebRenderBridge(PipelineId pipelineId, LayoutDeviceIntSize aSize, WindowKind aKind);
 
   sync CheckContentOnlyTDR(uint32_t sequenceNum)
     returns (bool isContentOnlyTDR);
@@ -291,22 +216,8 @@ parent:
   async EndRecordingToMemory()
     returns (CollectedFramesParams? frames);
 
-  sync SupportsAsyncDXGISurface()
-    returns (bool value);
-  sync PreferredDXGIAdapter()
-    returns (DxgiAdapterDesc desc);
-
   // To set up sharing the composited output to Firefox Reality on Desktop
   async RequestFxrOutput();
-
-  // Actor that represents one WebGL context.
-  async PWebGL();
-
-child:
-  // Send back Compositor Frame Metrics from APZCs so tiled layers can
-  // update progressively.
-  async SharedCompositorFrameMetrics(Handle metrics, CrossProcessMutexHandle mutex, LayersId aLayersId, uint32_t aAPZCId);
-  async ReleaseSharedCompositorFrameMetrics(ViewID aId, uint32_t aAPZCId);
 };
 
 } // layers

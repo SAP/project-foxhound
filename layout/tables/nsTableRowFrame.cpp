@@ -26,6 +26,10 @@
 #include "nsIFrameInlines.h"
 #include <algorithm>
 
+#ifdef ACCESSIBILITY
+#  include "nsAccessibilityService.h"
+#endif
+
 using namespace mozilla;
 
 namespace mozilla {
@@ -33,7 +37,8 @@ namespace mozilla {
 struct TableCellReflowInput : public ReflowInput {
   TableCellReflowInput(nsPresContext* aPresContext,
                        const ReflowInput& aParentReflowInput, nsIFrame* aFrame,
-                       const LogicalSize& aAvailableSpace, uint32_t aFlags = 0)
+                       const LogicalSize& aAvailableSpace,
+                       ReflowInput::InitFlags aFlags = {})
       : ReflowInput(aPresContext, aParentReflowInput, aFrame, aAvailableSpace,
                     Nothing(), aFlags) {}
 
@@ -52,7 +57,7 @@ void TableCellReflowInput::FixUp(const LogicalSize& aAvailSpace) {
   if (NS_UNCONSTRAINEDSIZE != ComputedISize()) {
     nscoord computedISize =
         aAvailSpace.ISize(mWritingMode) -
-        ComputedLogicalBorderPadding().IStartEnd(mWritingMode);
+        ComputedLogicalBorderPadding(mWritingMode).IStartEnd(mWritingMode);
     computedISize = std::max(0, computedISize);
     SetComputedISize(computedISize);
   }
@@ -60,7 +65,7 @@ void TableCellReflowInput::FixUp(const LogicalSize& aAvailSpace) {
       NS_UNCONSTRAINEDSIZE != aAvailSpace.BSize(mWritingMode)) {
     nscoord computedBSize =
         aAvailSpace.BSize(mWritingMode) -
-        ComputedLogicalBorderPadding().BStartEnd(mWritingMode);
+        ComputedLogicalBorderPadding(mWritingMode).BStartEnd(mWritingMode);
     computedBSize = std::max(0, computedBSize);
     SetComputedBSize(computedBSize);
   }
@@ -70,18 +75,16 @@ void nsTableRowFrame::InitChildReflowInput(nsPresContext& aPresContext,
                                            const LogicalSize& aAvailSize,
                                            bool aBorderCollapse,
                                            TableCellReflowInput& aReflowInput) {
-  nsMargin collapseBorder;
-  nsMargin* pCollapseBorder = nullptr;
+  Maybe<LogicalMargin> collapseBorder;
   if (aBorderCollapse) {
     // we only reflow cells, so don't need to check frame type
     nsBCTableCellFrame* bcCellFrame = (nsBCTableCellFrame*)aReflowInput.mFrame;
     if (bcCellFrame) {
-      WritingMode wm = GetWritingMode();
-      collapseBorder = bcCellFrame->GetBorderWidth(wm).GetPhysicalMargin(wm);
-      pCollapseBorder = &collapseBorder;
+      collapseBorder.emplace(
+          bcCellFrame->GetBorderWidth(aReflowInput.GetWritingMode()));
     }
   }
-  aReflowInput.Init(&aPresContext, Nothing(), pCollapseBorder);
+  aReflowInput.Init(&aPresContext, Nothing(), collapseBorder);
   aReflowInput.FixUp(aAvailSize);
 }
 
@@ -174,6 +177,24 @@ void nsTableRowFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
 
   if (!aOldComputedStyle)  // avoid this on init
     return;
+
+#ifdef ACCESSIBILITY
+  if (nsAccessibilityService* accService = GetAccService()) {
+    // If a table row's background color is now different from
+    // the background color of its previous row, it is possible our
+    // table now has alternating row colors. This changes whether or not
+    // the table is classified as a layout table or data table.
+    // We invalidate on every background color change to avoid
+    // walking the tree in search of the nearest row.
+    if (StyleBackground()->BackgroundColor(this) !=
+        aOldComputedStyle->StyleBackground()->BackgroundColor(
+            aOldComputedStyle)) {
+      // We send a notification here to invalidate the a11y cache on the
+      // table so the next fetch of IsProbablyLayoutTable() is accurate.
+      accService->TableLayoutGuessMaybeChanged(PresShell(), mContent);
+    }
+  }
+#endif
 
   nsTableFrame* tableFrame = GetTableFrame();
   if (tableFrame->IsBorderCollapse() &&
@@ -550,18 +571,17 @@ void nsTableRowFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   }
 }
 
-nsIFrame::LogicalSides nsTableRowFrame::GetLogicalSkipSides(
-    const ReflowInput* aReflowInput) const {
+LogicalSides nsTableRowFrame::GetLogicalSkipSides() const {
   LogicalSides skip(mWritingMode);
   if (MOZ_UNLIKELY(StyleBorder()->mBoxDecorationBreak ==
                    StyleBoxDecorationBreak::Clone)) {
     return skip;
   }
 
-  if (nullptr != GetPrevInFlow()) {
+  if (GetPrevInFlow()) {
     skip |= eLogicalSideBitsBStart;
   }
-  if (nullptr != GetNextInFlow()) {
+  if (GetNextInFlow()) {
     skip |= eLogicalSideBitsBEnd;
   }
   return skip;
@@ -714,7 +734,7 @@ void nsTableRowFrame::ReflowChildren(nsPresContext* aPresContext,
       TableCellReflowInput kidReflowInput(
           aPresContext, aReflowInput, kidFrame,
           LogicalSize(kidFrame->GetWritingMode(), 0, 0),
-          ReflowInput::CALLER_WILL_INIT);
+          ReflowInput::InitFlag::CallerWillInit);
       InitChildReflowInput(*aPresContext, LogicalSize(wm), false,
                            kidReflowInput);
       ReflowOutput desiredSize(aReflowInput);
@@ -807,7 +827,8 @@ void nsTableRowFrame::ReflowChildren(nsPresContext* aPresContext,
 
         // Reflow the child
         kidReflowInput.emplace(aPresContext, aReflowInput, kidFrame,
-                               kidAvailSize, ReflowInput::CALLER_WILL_INIT);
+                               kidAvailSize,
+                               ReflowInput::InitFlag::CallerWillInit);
         InitChildReflowInput(*aPresContext, kidAvailSize, borderCollapse,
                              *kidReflowInput);
 
@@ -1066,7 +1087,7 @@ nscoord nsTableRowFrame::ReflowCellFrame(nsPresContext* aPresContext,
                "expected consistent writing-mode within table");
   TableCellReflowInput cellReflowInput(aPresContext, aReflowInput, aCellFrame,
                                        availSize,
-                                       ReflowInput::CALLER_WILL_INIT);
+                                       ReflowInput::InitFlag::CallerWillInit);
   InitChildReflowInput(*aPresContext, availSize, borderCollapse,
                        cellReflowInput);
   cellReflowInput.mFlags.mIsTopOfPage = aIsTopOfPage;
@@ -1124,7 +1145,7 @@ nscoord nsTableRowFrame::CollapseRowIfNecessary(nscoord aRowOffset,
 
   rowRect.BStart(wm) -= aRowOffset;
   rowRect.ISize(wm) = aISize;
-  nsOverflowAreas overflow;
+  OverflowAreas overflow;
   nscoord shift = 0;
   nsSize containerSize = mRect.Size();
 
@@ -1241,7 +1262,7 @@ nscoord nsTableRowFrame::CollapseRowIfNecessary(nscoord aRowOffset,
         LogicalRect cellBounds(wm, 0, 0, cRect.ISize(wm), cRect.BSize(wm));
         nsRect cellPhysicalBounds =
             cellBounds.GetPhysicalRect(wm, containerSize);
-        nsOverflowAreas cellOverflow(cellPhysicalBounds, cellPhysicalBounds);
+        OverflowAreas cellOverflow(cellPhysicalBounds, cellPhysicalBounds);
         cellFrame->FinishAndStoreOverflow(cellOverflow,
                                           cRect.Size(wm).GetPhysicalSize(wm));
         nsTableFrame::RePositionViews(cellFrame);

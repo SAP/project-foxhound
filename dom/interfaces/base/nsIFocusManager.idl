@@ -67,13 +67,17 @@ interface nsIFocusManager : nsISupports
    * that set as the focused element. This process repeats downwards until a
    * non-frame element is found.
    * The setter for this attribute defaults to CallerType::System.
+   * If focus is in another process, this is null in content processes and
+   * the closest ancestor in the parent process.
    */
   attribute mozIDOMWindowProxy focusedWindow;
 
   /**
-   * Setter for focusedWindow with CallerType
+   * Parent-process only: The content BrowsingContext that currently has focus,
+   * if any. Note this can be different from activeBrowsingContext in the case
+   * of subframes.
    */
-  [noscript] void SetFocusedWindowWithCallerType(in mozIDOMWindowProxy aWindow, in CallerType aCallerType);
+  readonly attribute BrowsingContext focusedContentBrowsingContext;
 
   /**
    * The element that is currently focused. This will always be an element
@@ -97,6 +101,7 @@ interface nsIFocusManager : nsISupports
    * descendant of it (e.g., for `<input type="number">` the focus is redirected
    * to its descendant `<input type="text">`).
    */
+  [can_run_script]
   void setFocus(in Element aElement, in unsigned long aFlags);
 
   /**
@@ -216,8 +221,14 @@ interface nsIFocusManager : nsISupports
   const unsigned long FLAG_BYMOVEFOCUS = 0x4000;
 
   /**
+   * Do not show a ring around the element to focus, if this is not a text
+   * control, regardless of other state.
+   */
+  const unsigned long FLAG_NOSHOWRING = 0x8000;
+
+  /**
    * Always show the focus ring or other indicator of focus, regardless of
-   * other state.
+   * other state. Overrides FLAG_NOSHOWRING.
    */
   const unsigned long FLAG_SHOWRING = 0x100000;
 
@@ -227,10 +238,17 @@ interface nsIFocusManager : nsISupports
    */
   const unsigned long FLAG_BYTOUCH = 0x200000;
 
-  /*
-   * Focus is changing due to a long press operation by touch or mouse.
-   */
+  /** Focus is changing due to a JS focus() call or similar operation. */
+  const unsigned long FLAG_BYJS = 0x400000;
+
+  /** Focus is changing due to a long press operation by touch or mouse. */
   const unsigned long FLAG_BYLONGPRESS = 0x800000;
+
+  /** Mask with all the focus methods. */
+  const unsigned long METHOD_MASK = FLAG_BYMOUSE | FLAG_BYKEY | FLAG_BYMOVEFOCUS | FLAG_BYTOUCH | FLAG_BYJS | FLAG_BYLONGPRESS;
+
+  /** Mask with all the focus methods, plus the SHOW / NOSHOWRING flags. */
+  const unsigned long METHODANDRING_MASK = METHOD_MASK | FLAG_SHOWRING | FLAG_NOSHOWRING;
 
   // these constants are used with the aType argument to MoveFocus
 
@@ -257,48 +275,4 @@ interface nsIFocusManager : nsISupports
   const unsigned long MOVEFOCUS_FIRSTDOC = 9;
   /** move focus to the last focusable document */
   const unsigned long MOVEFOCUS_LASTDOC = 10;
-
-  /**
-   * Called when a window has been raised.
-   */
-  [noscript] void windowRaised(in mozIDOMWindowProxy aWindow);
-
-  /**
-   * Called when a window has been lowered.
-   */
-  [noscript] void windowLowered(in mozIDOMWindowProxy aWindow);
-
-  /**
-   * Called when a new document in a window is shown.
-   *
-   * If aNeedsFocus is true, then focus events are expected to be fired on the
-   * window if this window is in the focused window chain.
-   */
-  [noscript] void windowShown(in mozIDOMWindowProxy aWindow,
-                              in boolean aNeedsFocus);
-
-  /**
-   * Called when a document in a window has been hidden or otherwise can no
-   * longer accept focus.
-   */
-  [noscript] void windowHidden(in mozIDOMWindowProxy aWindow);
-
-  /**
-   * Fire any events that have been delayed due to synchronized actions.
-   */
-  [noscript] void fireDelayedEvents(in Document aDocument);
-
-  /**
-   * Indicate that a plugin wishes to take the focus. This is similar to a
-   * normal focus except that the widget focus is not changed. Updating the
-   * widget focus state is the responsibility of the caller.
-   */
-  [noscript] void focusPlugin(in Element aPlugin);
-
-  /**
-   * Used in a child process to indicate that the parent window is now
-   * active or deactive.
-   */
-  [noscript] void parentActivated(in mozIDOMWindowProxy aWindow,
-                                  in bool active);
 };

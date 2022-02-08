@@ -19,9 +19,9 @@
 #include "nsGlobalWindow.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/WindowContext.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 already_AddRefed<nsDocShellLoadState> LocationBase::CheckURL(
     nsIURI* aURI, nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
@@ -102,6 +102,7 @@ already_AddRefed<nsDocShellLoadState> LocationBase::CheckURL(
     principal->CreateReferrerInfo(referrerPolicy, getter_AddRefs(referrerInfo));
   }
   loadState->SetTriggeringPrincipal(triggeringPrincipal);
+  loadState->SetTriggeringSandboxFlags(doc->GetSandboxFlags());
   loadState->SetCsp(doc->GetCsp());
   if (referrerInfo) {
     loadState->SetReferrerInfo(referrerInfo);
@@ -116,6 +117,16 @@ void LocationBase::SetURI(nsIURI* aURI, nsIPrincipal& aSubjectPrincipal,
                           ErrorResult& aRv, bool aReplace) {
   RefPtr<BrowsingContext> bc = GetBrowsingContext();
   if (!bc || bc->IsDiscarded()) {
+    return;
+  }
+
+  CallerType callerType = aSubjectPrincipal.IsSystemPrincipal()
+                              ? CallerType::System
+                              : CallerType::NonSystem;
+
+  nsresult rv = bc->CheckLocationChangeRateLimit(callerType);
+  if (NS_FAILED(rv)) {
+    aRv.Throw(rv);
     return;
   }
 
@@ -135,17 +146,35 @@ void LocationBase::SetURI(nsIURI* aURI, nsIPrincipal& aSubjectPrincipal,
   nsCOMPtr<nsPIDOMWindowInner> sourceWindow =
       nsContentUtils::CallerInnerWindow();
   if (sourceWindow) {
-    RefPtr<BrowsingContext> sourceBC = sourceWindow->GetBrowsingContext();
-    loadState->SetSourceBrowsingContext(sourceBC);
+    WindowContext* context = sourceWindow->GetWindowContext();
+    loadState->SetSourceBrowsingContext(sourceWindow->GetBrowsingContext());
     loadState->SetHasValidUserGestureActivation(
-        sourceBC && sourceBC->HasValidTransientUserGestureActivation());
+        context && context->HasValidTransientUserGestureActivation());
   }
 
   loadState->SetLoadFlags(nsIWebNavigation::LOAD_FLAGS_NONE);
   loadState->SetFirstParty(true);
 
-  nsresult rv = bc->LoadURI(loadState);
+  rv = bc->LoadURI(loadState);
   if (NS_WARN_IF(NS_FAILED(rv))) {
+    if (rv == NS_ERROR_DOM_BAD_CROSS_ORIGIN_URI &&
+        net::SchemeIsJavascript(loadState->URI())) {
+      // Per spec[1], attempting to load a javascript: URI into a cross-origin
+      // BrowsingContext is a no-op, and should not raise an exception.
+      // Technically, Location setters run with exceptions enabled should only
+      // throw an exception[2] when the caller is not allowed to navigate[3] the
+      // target browsing context due to sandboxing flags or not being
+      // closely-related enough, though in practice we currently throw for other
+      // reasons as well.
+      //
+      // [1]:
+      // https://html.spec.whatwg.org/multipage/browsing-the-web.html#javascript-protocol
+      // [2]:
+      // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
+      // [3]:
+      // https://html.spec.whatwg.org/multipage/browsers.html#allowed-to-navigate
+      return;
+    }
     aRv.Throw(rv);
   }
 }
@@ -246,5 +275,4 @@ nsIURI* LocationBase::GetSourceBaseURL() {
   return doc ? doc->GetBaseURI() : nullptr;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

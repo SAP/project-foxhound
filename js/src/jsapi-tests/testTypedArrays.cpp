@@ -5,9 +5,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "jsfriendapi.h"
-
 #include "js/ArrayBuffer.h"  // JS::{NewArrayBuffer,IsArrayBufferObject,GetArrayBuffer{ByteLength,Data}}
+#include "js/experimental/TypedData.h"  // JS_GetArrayBufferViewBuffer, JS_GetTypedArray{Length,ByteOffset,ByteLength}, JS_Get{{Ui,I}nt{8,16,32},Float{32,64},Uint8Clamped}ArrayData, JS_IsTypedArrayObject, JS_New{{Ui,I}nt{8,16,32},Float{32,64},Uint8Clamped}Array{,FromArray,WithBuffer}
+#include "js/PropertyAndElement.h"      // JS_GetElement, JS_SetElement
 #include "js/SharedArrayBuffer.h"  // JS::{NewSharedArrayBuffer,GetSharedArrayBufferData}
 #include "jsapi-tests/tests.h"
 #include "vm/Realm.h"
@@ -110,13 +110,14 @@ BEGIN_TEST(testTypedArrays) {
 // Shared memory can only be mapped by a TypedArray by creating the
 // TypedArray with a SharedArrayBuffer explicitly, so no tests here.
 
-template <JSObject* Create(JSContext*, uint32_t), typename Element,
+template <JSObject* Create(JSContext*, size_t), typename Element,
           Element* GetData(JSObject*, bool* isShared,
                            const JS::AutoRequireNoGC&)>
 bool TestPlainTypedArray(JSContext* cx) {
   {
-    RootedObject notArray(cx, Create(cx, UINT32_MAX));
+    RootedObject notArray(cx, Create(cx, SIZE_MAX));
     CHECK(!notArray);
+    JS_ClearPendingException(cx);
   }
 
   RootedObject array(cx, Create(cx, 7));
@@ -145,7 +146,7 @@ bool TestPlainTypedArray(JSContext* cx) {
 }
 
 template <
-    JSObject* CreateWithBuffer(JSContext*, JS::HandleObject, uint32_t, int32_t),
+    JSObject* CreateWithBuffer(JSContext*, JS::HandleObject, size_t, int64_t),
     JSObject* CreateFromArray(JSContext*, JS::HandleObject), typename Element,
     bool Shared, Element* GetData(JSObject*, bool*, const JS::AutoRequireNoGC&)>
 bool TestArrayFromBuffer(JSContext* cx) {
@@ -170,6 +171,7 @@ bool TestArrayFromBuffer(JSContext* cx) {
   {
     RootedObject notArray(cx, CreateWithBuffer(cx, buffer, UINT32_MAX, -1));
     CHECK(!notArray);
+    JS_ClearPendingException(cx);
   }
 
   RootedObject array(cx, CreateWithBuffer(cx, buffer, 0, -1));

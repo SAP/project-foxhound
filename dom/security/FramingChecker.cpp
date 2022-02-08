@@ -10,6 +10,8 @@
 #include "nsCSPUtils.h"
 #include "nsDocShell.h"
 #include "nsHttpChannel.h"
+#include "nsContentSecurityUtils.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsIChannel.h"
 #include "nsIConsoleReportCollector.h"
 #include "nsIContentSecurityPolicy.h"
@@ -27,6 +29,7 @@
 #include "nsIObserverService.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 /* static */
 void FramingChecker::ReportError(const char* aMessageTag,
@@ -150,10 +153,10 @@ static bool ShouldIgnoreFrameOptions(nsIChannel* aChannel,
   AutoTArray<nsString, 2> params = {u"x-frame-options"_ns,
                                     u"frame-ancestors"_ns};
   CSP_LogLocalizedStr("IgnoringSrcBecauseOfDirective", params,
-                      EmptyString(),  // no sourcefile
-                      EmptyString(),  // no scriptsample
-                      0,              // no linenumber
-                      0,              // no columnnumber
+                      u""_ns,  // no sourcefile
+                      u""_ns,  // no scriptsample
+                      0,       // no linenumber
+                      0,       // no columnnumber
                       nsIScriptError::warningFlag,
                       "IgnoringSrcBecauseOfDirective"_ns, innerWindowID,
                       privateWindow);
@@ -173,18 +176,12 @@ bool FramingChecker::CheckFrameOptions(nsIChannel* aChannel,
   }
 
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-  nsContentPolicyType contentType = loadInfo->GetExternalContentPolicyType();
+  ExtContentPolicyType contentType = loadInfo->GetExternalContentPolicyType();
 
   // xfo check only makes sense for subdocument and object loads, if this is
   // not a load of such type, there is nothing to do here.
-  if (contentType != nsIContentPolicy::TYPE_SUBDOCUMENT &&
-      contentType != nsIContentPolicy::TYPE_OBJECT) {
-    return true;
-  }
-
-  // xfo checks are ignored in case CSP frame-ancestors is present,
-  // if so, there is nothing to do here.
-  if (ShouldIgnoreFrameOptions(aChannel, aCsp)) {
+  if (contentType != ExtContentPolicy::TYPE_SUBDOCUMENT &&
+      contentType != ExtContentPolicy::TYPE_OBJECT) {
     return true;
   }
 
@@ -204,7 +201,9 @@ bool FramingChecker::CheckFrameOptions(nsIChannel* aChannel,
   // ignore XFO checks on channels that will be redirected
   uint32_t responseStatus;
   rv = httpChannel->GetResponseStatus(&responseStatus);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
+  // GetResponseStatus returning failure is expected in several situations, so
+  // do not warn if it fails.
+  if (NS_FAILED(rv)) {
     return true;
   }
   if (mozilla::net::nsHttpChannel::IsRedirectStatus(responseStatus)) {
@@ -218,6 +217,12 @@ bool FramingChecker::CheckFrameOptions(nsIChannel* aChannel,
 
   // if no header value, there's nothing to do.
   if (xfoHeaderValue.IsEmpty()) {
+    return true;
+  }
+
+  // xfo checks are ignored in case CSP frame-ancestors is present,
+  // if so, there is nothing to do here.
+  if (ShouldIgnoreFrameOptions(aChannel, aCsp)) {
     return true;
   }
 

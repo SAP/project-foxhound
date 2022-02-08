@@ -1,7 +1,7 @@
 "use strict";
 
 const ID = "permissions@test.mozilla.org";
-const WARNING_ICON = "chrome://browser/skin/warning.svg";
+const WARNING_ICON = "chrome://global/skin/icons/warning.svg";
 
 add_task(async function test_unsigned() {
   await SpecialPowers.pushPrefEnv({
@@ -34,11 +34,13 @@ add_task(async function test_unsigned() {
   let panel = await promisePopupNotificationShown("addon-webext-permissions");
 
   is(panel.getAttribute("icon"), WARNING_ICON);
+  let description = panel.querySelector(".popup-notification-description")
+    .textContent;
   checkPermissionString(
-    document.getElementById("addon-webext-perm-text").textContent,
-    "webextPerms.unsignedWarning",
-    null,
-    "Install notification includes unsigned warning"
+    description,
+    "webextPerms.headerUnsignedWithPerms",
+    undefined,
+    `Install notification includes unsigned warning`
   );
 
   // cancel the install

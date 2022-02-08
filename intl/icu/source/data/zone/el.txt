@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 el{
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"Αμπιτζάν"}
@@ -1917,6 +1917,9 @@ el{
             ld{"Θερινή ώρα Αικατερίνμπουργκ"}
             lg{"Ώρα Αικατερίνμπουργκ"}
             ls{"Χειμερινή ώρα Αικατερίνμπουργκ"}
+        }
+        "meta:Yukon"{
+            ls{"Ώρα Γιούκον"}
         }
         fallbackFormat{"[{1} ({0})]"}
         gmtFormat{"GMT{0}"}

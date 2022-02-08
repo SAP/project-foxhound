@@ -13,10 +13,11 @@
 #include "mozilla/Module.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/UniquePtr.h"
+#include "nsIMemoryReporter.h"
 #include "nsISupports.h"
 #include "nsIURI.h"
 #include "nsClassHashtable.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "jsapi.h"
 
 #include "xpcIJSGetFactory.h"
@@ -33,9 +34,10 @@ class ScriptPreloader;
 #  define STARTUP_RECORDER_ENABLED
 #endif
 
-class mozJSComponentLoader final {
+class mozJSComponentLoader final : public nsIMemoryReporter {
  public:
-  NS_INLINE_DECL_REFCOUNTING(mozJSComponentLoader);
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIMEMORYREPORTER
 
   void GetLoadedModules(nsTArray<nsCString>& aLoadedModules);
   void GetLoadedComponents(nsTArray<nsCString>& aLoadedComponents);
@@ -72,14 +74,6 @@ class mozJSComponentLoader final {
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf);
 
-  /**
-   * Temporary diagnostic function for startup crashes in bug 1403348:
-   *
-   * Annotate the crash report with the contents of the async shutdown
-   * module/component scripts.
-   */
-  nsresult AnnotateCrashReport();
-
  protected:
   mozJSComponentLoader();
   ~mozJSComponentLoader();
@@ -89,7 +83,6 @@ class mozJSComponentLoader final {
  private:
   static mozilla::StaticRefPtr<mozJSComponentLoader> sSelf;
 
-  nsresult ReallyInit();
   void UnloadModules();
 
   void CreateLoaderGlobal(JSContext* aCx, const nsACString& aLocation,
@@ -178,10 +171,10 @@ class mozJSComponentLoader final {
                           ModuleEntry* aMod, JS::MutableHandleObject aExports);
 
   // Modules are intentionally leaked, but still cleared.
-  nsDataHashtable<nsCStringHashKey, ModuleEntry*> mModules;
+  nsTHashMap<nsCStringHashKey, ModuleEntry*> mModules;
 
   nsClassHashtable<nsCStringHashKey, ModuleEntry> mImports;
-  nsDataHashtable<nsCStringHashKey, ModuleEntry*> mInProgressImports;
+  nsTHashMap<nsCStringHashKey, ModuleEntry*> mInProgressImports;
 
   // A map of on-disk file locations which are loaded as modules to the
   // pre-resolved URIs they were loaded from. Used to prevent the same file

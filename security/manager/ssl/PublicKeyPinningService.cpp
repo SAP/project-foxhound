@@ -10,10 +10,14 @@
 #include "mozilla/BinarySearch.h"
 #include "mozilla/Casting.h"
 #include "mozilla/Logging.h"
+#include "mozilla/Span.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "mozilla/Telemetry.h"
 #include "nsDependentString.h"
 #include "nsServiceManagerUtils.h"
+#include "nsSiteSecurityService.h"
 #include "mozpkix/pkixtypes.h"
+#include "mozpkix/pkixutil.h"
 #include "seccomon.h"
 #include "sechash.h"
 
@@ -25,22 +29,51 @@ using namespace mozilla::psm;
 
 LazyLogModule gPublicKeyPinningLog("PublicKeyPinningService");
 
+NS_IMPL_ISUPPORTS(PublicKeyPinningService, nsIPublicKeyPinningService)
+
+enum class PinningMode : uint32_t {
+  Disabled = 0,
+  AllowUserCAMITM = 1,
+  Strict = 2,
+  EnforceTestMode = 3
+};
+
+PinningMode GetPinningMode() {
+  PinningMode pinningMode = static_cast<PinningMode>(
+      StaticPrefs::security_cert_pinning_enforcement_level_DoNotUseDirectly());
+  switch (pinningMode) {
+    case PinningMode::Disabled:
+      return PinningMode::Disabled;
+    case PinningMode::AllowUserCAMITM:
+      return PinningMode::AllowUserCAMITM;
+    case PinningMode::Strict:
+      return PinningMode::Strict;
+    case PinningMode::EnforceTestMode:
+      return PinningMode::EnforceTestMode;
+    default:
+      return PinningMode::Disabled;
+  }
+}
+
 /**
  Computes in the location specified by base64Out the SHA256 digest
  of the DER Encoded subject Public Key Info for the given cert
 */
-static nsresult GetBase64HashSPKI(const CERTCertificate* cert,
+static nsresult GetBase64HashSPKI(const BackCert& cert,
                                   nsACString& hashSPKIDigest) {
+  Input derPublicKey = cert.GetSubjectPublicKeyInfo();
+
   hashSPKIDigest.Truncate();
-  Digest digest;
-  nsresult rv = digest.DigestBuf(SEC_OID_SHA256, cert->derPublicKey.data,
-                                 cert->derPublicKey.len);
-  if (NS_FAILED(rv)) {
-    return rv;
+  nsTArray<uint8_t> digestArray;
+  nsresult nsrv =
+      Digest::DigestBuf(SEC_OID_SHA256, derPublicKey.UnsafeGetData(),
+                        derPublicKey.GetLength(), digestArray);
+  if (NS_FAILED(nsrv)) {
+    return nsrv;
   }
   return Base64Encode(nsDependentCSubstring(
-                          BitwiseCast<char*, unsigned char*>(digest.get().data),
-                          digest.get().len),
+                          BitwiseCast<char*, uint8_t*>(digestArray.Elements()),
+                          digestArray.Length()),
                       hashSPKIDigest);
 }
 
@@ -48,7 +81,7 @@ static nsresult GetBase64HashSPKI(const CERTCertificate* cert,
  * Sets certMatchesPinset to true if a given cert matches any fingerprints from
  * the given pinset and false otherwise.
  */
-static nsresult EvalCert(const CERTCertificate* cert,
+static nsresult EvalCert(const BackCert& cert,
                          const StaticFingerprints* fingerprints,
                          /*out*/ bool& certMatchesPinset) {
   certMatchesPinset = false;
@@ -83,7 +116,7 @@ static nsresult EvalCert(const CERTCertificate* cert,
  * Sets certListIntersectsPinset to true if a given chain matches any
  * fingerprints from the given static fingerprints and false otherwise.
  */
-static nsresult EvalChain(const nsTArray<RefPtr<nsIX509Cert>>& certList,
+static nsresult EvalChain(const nsTArray<Span<const uint8_t>>& derCertList,
                           const StaticFingerprints* fingerprints,
                           /*out*/ bool& certListIntersectsPinset) {
   certListIntersectsPinset = false;
@@ -92,20 +125,27 @@ static nsresult EvalChain(const nsTArray<RefPtr<nsIX509Cert>>& certList,
     return NS_ERROR_FAILURE;
   }
 
-  for (const auto& cert : certList) {
-    UniqueCERTCertificate nssCert(cert->GetCert());
-    MOZ_LOG(gPublicKeyPinningLog, LogLevel::Debug,
-            ("pkpin: certArray subject: '%s'\n", nssCert->subjectName));
-    MOZ_LOG(gPublicKeyPinningLog, LogLevel::Debug,
-            ("pkpin: certArray issuer: '%s'\n", nssCert->issuerName));
-    nsresult rv =
-        EvalCert(nssCert.get(), fingerprints, certListIntersectsPinset);
-    if (NS_FAILED(rv)) {
-      return rv;
+  EndEntityOrCA endEntityOrCA = EndEntityOrCA::MustBeEndEntity;
+  for (const auto& cert : derCertList) {
+    Input certInput;
+    mozilla::pkix::Result rv = certInput.Init(cert.data(), cert.size());
+    if (rv != mozilla::pkix::Result::Success) {
+      return NS_ERROR_INVALID_ARG;
+    }
+    BackCert backCert(certInput, endEntityOrCA, nullptr);
+    rv = backCert.Init();
+    if (rv != mozilla::pkix::Result::Success) {
+      return NS_ERROR_INVALID_ARG;
+    }
+
+    nsresult nsrv = EvalCert(backCert, fingerprints, certListIntersectsPinset);
+    if (NS_FAILED(nsrv)) {
+      return nsrv;
     }
     if (certListIntersectsPinset) {
       break;
     }
+    endEntityOrCA = EndEntityOrCA::MustBeCA;
   }
 
   if (!certListIntersectsPinset) {
@@ -149,7 +189,6 @@ static void ValidatePinningPreloadList() {
 // information that is valid for the given host at the given time.
 static nsresult FindPinningInformation(
     const char* hostname, mozilla::pkix::Time time,
-    const OriginAttributes& originAttributes,
     /*out*/ const TransportSecurityPreload*& staticFingerprints) {
 #ifdef DEBUG
   ValidatePinningPreloadList();
@@ -203,9 +242,8 @@ static nsresult FindPinningInformation(
 // subject public key info data in the list and the most relevant non-expired
 // pinset for the host or there is no pinning information for the host.
 static nsresult CheckPinsForHostname(
-    const nsTArray<RefPtr<nsIX509Cert>>& certList, const char* hostname,
+    const nsTArray<Span<const uint8_t>>& certList, const char* hostname,
     bool enforceTestMode, mozilla::pkix::Time time,
-    const OriginAttributes& originAttributes,
     /*out*/ bool& chainHasValidPins,
     /*optional out*/ PinningTelemetryInfo* pinningTelemetryInfo) {
   chainHasValidPins = false;
@@ -217,8 +255,10 @@ static nsresult CheckPinsForHostname(
   }
 
   const TransportSecurityPreload* staticFingerprints = nullptr;
-  nsresult rv = FindPinningInformation(hostname, time, originAttributes,
-                                       staticFingerprints);
+  nsresult rv = FindPinningInformation(hostname, time, staticFingerprints);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
   // If we have no pinning information, the certificate chain trivially
   // validates with respect to pinning.
   if (!staticFingerprints) {
@@ -267,23 +307,10 @@ static nsresult CheckPinsForHostname(
 
       // We only collect per-CA pinning statistics upon failures.
       if (!enforceTestModeResult) {
-        nsCOMPtr<nsIX509Cert> rootCert;
-        rv = nsNSSCertificate::GetRootCertificate(certList, rootCert);
-        if (NS_FAILED(rv)) {
-          return rv;
-        }
-        if (rootCert) {
-          UniqueCERTCertificate rootCertObj(rootCert->GetCert());
-          if (!rootCertObj) {
-            return NS_ERROR_FAILURE;
-          }
-          Span<uint8_t> certSpan =
-              MakeSpan(rootCertObj->derCert.data, rootCertObj->derCert.len);
-          int32_t binNumber = RootCABinNumber(certSpan);
-          if (binNumber != ROOT_CERTIFICATE_UNKNOWN) {
-            pinningTelemetryInfo->accumulateForRoot = true;
-            pinningTelemetryInfo->rootBucket = binNumber;
-          }
+        int32_t binNumber = RootCABinNumber(certList.LastElement());
+        if (binNumber != ROOT_CERTIFICATE_UNKNOWN) {
+          pinningTelemetryInfo->accumulateForRoot = true;
+          pinningTelemetryInfo->rootBucket = binNumber;
         }
       }
     }
@@ -299,11 +326,17 @@ static nsresult CheckPinsForHostname(
 }
 
 nsresult PublicKeyPinningService::ChainHasValidPins(
-    const nsTArray<RefPtr<nsIX509Cert>>& certList, const char* hostname,
-    mozilla::pkix::Time time, bool enforceTestMode,
-    const OriginAttributes& originAttributes,
+    const nsTArray<Span<const uint8_t>>& certList, const char* hostname,
+    mozilla::pkix::Time time, bool isBuiltInRoot,
     /*out*/ bool& chainHasValidPins,
     /*optional out*/ PinningTelemetryInfo* pinningTelemetryInfo) {
+  PinningMode pinningMode(GetPinningMode());
+  if (pinningMode == PinningMode::Disabled ||
+      (!isBuiltInRoot && pinningMode == PinningMode::AllowUserCAMITM)) {
+    chainHasValidPins = true;
+    return NS_OK;
+  }
+
   chainHasValidPins = false;
   if (certList.IsEmpty()) {
     return NS_ERROR_INVALID_ARG;
@@ -312,25 +345,38 @@ nsresult PublicKeyPinningService::ChainHasValidPins(
     return NS_ERROR_INVALID_ARG;
   }
   nsAutoCString canonicalizedHostname(CanonicalizeHostname(hostname));
+  bool enforceTestMode = pinningMode == PinningMode::EnforceTestMode;
   return CheckPinsForHostname(certList, canonicalizedHostname.get(),
-                              enforceTestMode, time, originAttributes,
-                              chainHasValidPins, pinningTelemetryInfo);
+                              enforceTestMode, time, chainHasValidPins,
+                              pinningTelemetryInfo);
 }
 
-nsresult PublicKeyPinningService::HostHasPins(
-    const char* hostname, mozilla::pkix::Time time, bool enforceTestMode,
-    const OriginAttributes& originAttributes,
-    /*out*/ bool& hostHasPins) {
-  hostHasPins = false;
-  nsAutoCString canonicalizedHostname(CanonicalizeHostname(hostname));
+NS_IMETHODIMP
+PublicKeyPinningService::HostHasPins(nsIURI* aURI, bool* hostHasPins) {
+  NS_ENSURE_ARG(aURI);
+  NS_ENSURE_ARG(hostHasPins);
+  *hostHasPins = false;
+  PinningMode pinningMode(GetPinningMode());
+  if (pinningMode == PinningMode::Disabled) {
+    return NS_OK;
+  }
+  nsAutoCString hostname;
+  nsresult rv = nsSiteSecurityService::GetHost(aURI, hostname);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+  if (nsSiteSecurityService::HostIsIPAddress(hostname)) {
+    return NS_OK;
+  }
+
   const TransportSecurityPreload* staticFingerprints = nullptr;
-  nsresult rv = FindPinningInformation(canonicalizedHostname.get(), time,
-                                       originAttributes, staticFingerprints);
+  rv = FindPinningInformation(hostname.get(), Now(), staticFingerprints);
   if (NS_FAILED(rv)) {
     return rv;
   }
   if (staticFingerprints) {
-    hostHasPins = !staticFingerprints->mTestMode || enforceTestMode;
+    *hostHasPins = !staticFingerprints->mTestMode ||
+                   pinningMode == PinningMode::EnforceTestMode;
   }
   return NS_OK;
 }

@@ -130,7 +130,6 @@ void DisplayItemCache::FreeUnusedSlots() {
 void DisplayItemCache::SetCapacity(const size_t aInitialSize,
                                    const size_t aMaximumSize) {
   mMaximumSize = aMaximumSize;
-  mSlots.SetCapacity(aMaximumSize);
   mSlots.SetLength(aInitialSize);
   mFreeSlots.SetCapacity(aMaximumSize);
   Clear();
@@ -178,6 +177,12 @@ Maybe<uint16_t> DisplayItemCache::CanReuseItem(
   auto& slot = mSlots[*slotIndex];
   if (!slot.mOccupied) {
     // The display item has a stale cache slot. Recache the item.
+    return Nothing();
+  }
+
+  if (mSuppressed) {
+    slot.mOccupied = false;
+    slotIndex = Nothing();
     return Nothing();
   }
 

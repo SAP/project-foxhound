@@ -4,11 +4,12 @@
 
 "use strict";
 
-const promise = require("promise");
 const flags = require("devtools/shared/flags");
 const ToolDefinitions = require("devtools/client/definitions").Tools;
 const CssLogic = require("devtools/shared/inspector/css-logic");
-const { ELEMENT_STYLE } = require("devtools/shared/specs/styles");
+const {
+  style: { ELEMENT_STYLE },
+} = require("devtools/shared/constants");
 const OutputParser = require("devtools/client/shared/output-parser");
 const { PrefObserver } = require("devtools/client/shared/prefs");
 const { createChild } = require("devtools/client/inspector/shared/utils");
@@ -331,7 +332,7 @@ CssComputedView.prototype = {
    *        The highlighted node to get styles for.
    * @returns a promise that will be resolved when highlighting is complete.
    */
-  selectElement: async function(element) {
+  selectElement: function(element) {
     if (!element) {
       if (this.viewedElementPageStyle) {
         this.viewedElementPageStyle.off(
@@ -350,11 +351,11 @@ CssComputedView.prototype = {
       for (const propView of this.propertyViews) {
         propView.refresh();
       }
-      return promise.resolve(undefined);
+      return Promise.resolve(undefined);
     }
 
     if (element === this._viewedElement) {
-      return promise.resolve(undefined);
+      return Promise.resolve(undefined);
     }
 
     if (this.viewedElementPageStyle) {
@@ -558,25 +559,24 @@ CssComputedView.prototype = {
    */
   refreshPanel: function() {
     if (!this._viewedElement || !this.isPanelVisible()) {
-      return promise.resolve();
+      return Promise.resolve();
     }
 
     // Capture the current viewed element to return from the promise handler
     // early if it changed
     const viewedElement = this._viewedElement;
 
-    return promise
-      .all([
-        this._createPropertyViews(),
-        this.viewedElementPageStyle.getComputed(this._viewedElement, {
-          filter: this._sourceFilter,
-          onlyMatched: !this.includeBrowserStyles,
-          markMatched: true,
-        }),
-      ])
+    return Promise.all([
+      this._createPropertyViews(),
+      this.viewedElementPageStyle.getComputed(this._viewedElement, {
+        filter: this._sourceFilter,
+        onlyMatched: !this.includeBrowserStyles,
+        markMatched: true,
+      }),
+    ])
       .then(([, computed]) => {
         if (viewedElement !== this._viewedElement) {
-          return promise.resolve();
+          return Promise.resolve();
         }
 
         this._matchedProperties = new Set();
@@ -911,8 +911,16 @@ function PropertyInfo(tree, name) {
 }
 
 PropertyInfo.prototype = {
+  get isSupported() {
+    // There can be a mismatch between the list of properties
+    // supported on the server and on the client.
+    // Ideally we should build PropertyInfo only for property names supported on
+    // the server. See Bug 1722348.
+    return this.tree._computed && this.name in this.tree._computed;
+  },
+
   get value() {
-    if (this.tree._computed) {
+    if (this.isSupported) {
       const value = this.tree._computed[this.name].value;
       return value;
     }
@@ -1012,7 +1020,7 @@ PropertyView.prototype = {
       return false;
     }
 
-    return true;
+    return this.propertyInfo.isSupported;
   },
 
   /**
@@ -1237,7 +1245,7 @@ PropertyView.prototype = {
       STYLE_INSPECTOR_L10N.getStr("rule.twistyExpand.label")
     );
     this.tree.inspector.emit("computed-view-property-collapsed");
-    return promise.resolve(undefined);
+    return Promise.resolve(undefined);
   },
 
   get matchedSelectors() {
@@ -1391,7 +1399,8 @@ function SelectorView(tree, selectorInfo) {
     };
     this.sourceMapURLService = this.tree.inspector.toolbox.sourceMapURLService;
     this._unsubscribeCallback = this.sourceMapURLService.subscribeByID(
-      this.generatedLocation.sheet.actorID,
+      this.generatedLocation.sheet.resourceId ||
+        this.generatedLocation.sheet.actorID,
       this.generatedLocation.line,
       this.generatedLocation.column,
       this._updateLocation

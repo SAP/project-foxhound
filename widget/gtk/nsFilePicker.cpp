@@ -24,9 +24,20 @@
 #include "nsNetUtil.h"
 #include "nsReadableUtils.h"
 #include "MozContainer.h"
-#include "gfxPlatformGtk.h"
+#include "WidgetUtilsGtk.h"
 
 #include "nsFilePicker.h"
+
+#undef LOG
+#ifdef MOZ_LOGGING
+#  include "mozilla/Logging.h"
+#  include "nsTArray.h"
+#  include "Units.h"
+extern mozilla::LazyLogModule gWidgetLog;
+#  define LOG(args) MOZ_LOG(gWidgetLog, mozilla::LogLevel::Debug, args)
+#else
+#  define LOG(args)
+#endif /* MOZ_LOGGING */
 
 using namespace mozilla;
 
@@ -162,7 +173,7 @@ nsFilePicker::nsFilePicker()
       mFileChooserDelegate(nullptr) {
   nsCOMPtr<nsIGIOService> giovfs = do_GetService(NS_GIOSERVICE_CONTRACTID);
   // Due to Bug 1635718 always use portal for file dialog on Wayland.
-  if (gfxPlatformGtk::GetPlatform()->IsWaylandDisplay()) {
+  if (widget::GdkIsWaylandDisplay()) {
     mUseNativeFileChooser =
         Preferences::GetBool("widget.use-xdg-desktop-portal", true);
   } else {
@@ -605,7 +616,7 @@ void nsFilePicker::GtkFileChooserShow(void* file_chooser) {
   if (mUseNativeFileChooser && sGtkNativeDialogShowPtr != nullptr) {
     const char* portalEnvString = g_getenv("GTK_USE_PORTAL");
     bool setPortalEnv =
-        (portalEnvString && atoi(portalEnvString) == 0) || !portalEnvString;
+        (portalEnvString && *portalEnvString == '0') || !portalEnvString;
     if (setPortalEnv) {
       setenv("GTK_USE_PORTAL", "1", true);
     }

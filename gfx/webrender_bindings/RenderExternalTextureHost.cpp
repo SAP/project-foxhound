@@ -61,16 +61,18 @@ bool RenderExternalTextureHost::CreateSurfaces() {
         mSize, mFormat);
   } else {
     const layers::YCbCrDescriptor& desc = mDescriptor.get_YCbCrDescriptor();
+    const gfx::SurfaceFormat surfaceFormat =
+        SurfaceFormatForColorDepth(desc.colorDepth());
 
     mSurfaces[0] = gfx::Factory::CreateWrappingDataSourceSurface(
         layers::ImageDataSerializer::GetYChannel(GetBuffer(), desc),
-        desc.yStride(), desc.ySize(), gfx::SurfaceFormat::A8);
+        desc.yStride(), desc.ySize(), surfaceFormat);
     mSurfaces[1] = gfx::Factory::CreateWrappingDataSourceSurface(
         layers::ImageDataSerializer::GetCbChannel(GetBuffer(), desc),
-        desc.cbCrStride(), desc.cbCrSize(), gfx::SurfaceFormat::A8);
+        desc.cbCrStride(), desc.cbCrSize(), surfaceFormat);
     mSurfaces[2] = gfx::Factory::CreateWrappingDataSourceSurface(
         layers::ImageDataSerializer::GetCrChannel(GetBuffer(), desc),
-        desc.cbCrStride(), desc.cbCrSize(), gfx::SurfaceFormat::A8);
+        desc.cbCrStride(), desc.cbCrSize(), surfaceFormat);
   }
 
   for (size_t i = 0; i < PlaneCount(); ++i) {
@@ -195,6 +197,77 @@ void RenderExternalTextureHost::UpdateTextures(wr::ImageRendering aRendering) {
   mTextureSources[0]->MaybeFenceTexture();
   mTextureUpdateNeeded = false;
 }
+
+size_t RenderExternalTextureHost::GetPlaneCount() const { return PlaneCount(); }
+
+gfx::SurfaceFormat RenderExternalTextureHost::GetFormat() const {
+  return mFormat;
+}
+
+gfx::ColorDepth RenderExternalTextureHost::GetColorDepth() const {
+  switch (mDescriptor.type()) {
+    case layers::BufferDescriptor::TYCbCrDescriptor:
+      return mDescriptor.get_YCbCrDescriptor().colorDepth();
+    default:
+      return gfx::ColorDepth::COLOR_8;
+  }
+}
+
+gfx::YUVRangedColorSpace RenderExternalTextureHost::GetYUVColorSpace() const {
+  switch (mDescriptor.type()) {
+    case layers::BufferDescriptor::TYCbCrDescriptor:
+      return gfx::GetYUVRangedColorSpace(mDescriptor.get_YCbCrDescriptor());
+    default:
+      return gfx::YUVRangedColorSpace::Default;
+  }
+}
+
+bool RenderExternalTextureHost::MapPlane(RenderCompositor* aCompositor,
+                                         uint8_t aChannelIndex,
+                                         PlaneInfo& aPlaneInfo) {
+  if (!mBuffer) {
+    // We hit some problems to get the shmem.
+    gfxCriticalNote << "GetBuffer Failed";
+    return false;
+  }
+
+  switch (mDescriptor.type()) {
+    case layers::BufferDescriptor::TYCbCrDescriptor: {
+      const layers::YCbCrDescriptor& desc = mDescriptor.get_YCbCrDescriptor();
+      switch (aChannelIndex) {
+        case 0:
+          aPlaneInfo.mData =
+              layers::ImageDataSerializer::GetYChannel(mBuffer, desc);
+          aPlaneInfo.mStride = desc.yStride();
+          aPlaneInfo.mSize = desc.ySize();
+          break;
+        case 1:
+          aPlaneInfo.mData =
+              layers::ImageDataSerializer::GetCbChannel(mBuffer, desc);
+          aPlaneInfo.mStride = desc.cbCrStride();
+          aPlaneInfo.mSize = desc.cbCrSize();
+          break;
+        case 2:
+          aPlaneInfo.mData =
+              layers::ImageDataSerializer::GetCrChannel(mBuffer, desc);
+          aPlaneInfo.mStride = desc.cbCrStride();
+          aPlaneInfo.mSize = desc.cbCrSize();
+          break;
+      }
+      break;
+    }
+    default: {
+      const layers::RGBDescriptor& desc = mDescriptor.get_RGBDescriptor();
+      aPlaneInfo.mData = mBuffer;
+      aPlaneInfo.mStride = layers::ImageDataSerializer::GetRGBStride(desc);
+      aPlaneInfo.mSize = desc.size();
+      break;
+    }
+  }
+  return true;
+}
+
+void RenderExternalTextureHost::UnmapPlanes() {}
 
 }  // namespace wr
 }  // namespace mozilla

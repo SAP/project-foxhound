@@ -11,8 +11,7 @@ generated automatically by the build phase 'package-tests' using the
 Running tests
 -------------
 See
-https://developer.mozilla.org/en-US/docs/SpiderMonkey/Running_Automated_JavaScript_Tests
-
+https://firefox-source-docs.mozilla.org/js/build.html#testing
 
 Creating a test
 ---------------
@@ -81,7 +80,7 @@ Adjusting when and how a test runs
         // |reftest| <failure-type> -- <comment>
 
     Where <failure-type> is a standard reftest <failure-type> string, as documented by:
-        http://dxr.mozilla.org/mozilla-central/source/layout/tools/reftest/README.txt
+        http://searchfox.org/mozilla-central/source/layout/tools/reftest/README.txt
 
     Example:
         // |reftest| skip-if(!xulRuntime.shell) -- does not always dismiss alert

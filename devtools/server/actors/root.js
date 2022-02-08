@@ -21,12 +21,6 @@ const { rootSpec } = require("devtools/shared/specs/root");
 
 loader.lazyRequireGetter(
   this,
-  "ChromeWindowTargetActor",
-  "devtools/server/actors/targets/chrome-window",
-  true
-);
-loader.lazyRequireGetter(
-  this,
   "ProcessDescriptorActor",
   "devtools/server/actors/descriptors/process",
   true
@@ -125,34 +119,17 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
     this.applicationType = "browser";
 
     this.traits = {
-      sources: true,
       networkMonitor: true,
-      // Whether the storage inspector actor to inspect cookies, etc.
-      storageInspector: true,
-      bulk: true,
-      // Whether root actor exposes chrome target actors and access to any window.
-      // If allowChromeProcess is true, you can:
-      // * get a ParentProcessTargetActor instance to debug chrome and any non-content
-      //   resource via getProcess requests
-      // * get a ChromeWindowTargetActor instance to debug windows which could be chrome,
-      //   like browser windows via getWindow requests
-      // If allowChromeProcess is defined, but not true, it means that root actor
-      // no longer expose chrome target actors, but also that the above requests are
-      // forbidden for security reasons.
-      get allowChromeProcess() {
-        return DevToolsServer.allowChromeProcess;
-      },
-      // Whether or not the MemoryActor's heap snapshot abilities are
-      // fully equipped to handle heap snapshots for the memory tool. Fx44+
-      heapSnapshots: true,
-      // Version of perf actor. Fx65+
-      // Version 1 - Firefox 65: Introduces a duration-based buffer. It can be controlled
-      // by adding a `duration` property (in seconds) to the options passed to
-      // `front.startProfiler`. This is an optional parameter but it will throw an error if
-      // the profiled Firefox doesn't accept it.
-      perfActorVersion: 1,
-      // Supports watchpoints in the server for Fx71+
-      watchpoints: true,
+      // @backward-compat { version 84 } Expose the pref value to the client.
+      // Services.prefs is undefined in xpcshell tests.
+      workerConsoleApiMessagesDispatchedToMainThread: Services.prefs
+        ? Services.prefs.getBoolPref(
+            "dom.worker.console.dispatch_events_to_main_thread"
+          )
+        : true,
+      // @backward-compat { version 86 } ThreadActor.attach no longer pauses the thread,
+      //                                 so that we no longer have to resume.
+      noPauseOnThreadActorAttach: true,
     };
   },
 
@@ -212,14 +189,11 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
     if (this._globalActorPool) {
       this._globalActorPool.destroy();
     }
-    if (this._chromeWindowActorPool) {
-      this._chromeWindowActorPool.destroy();
-    }
     if (this._addonTargetActorPool) {
       this._addonTargetActorPool.destroy();
     }
-    if (this._workerTargetActorPool) {
-      this._workerTargetActorPool.destroy();
+    if (this._workerDescriptorActorPool) {
+      this._workerDescriptorActorPool.destroy();
     }
     if (this._frameDescriptorActorPool) {
       this._frameDescriptorActorPool.destroy();
@@ -232,7 +206,6 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
     this.conn = null;
     this._tabDescriptorActorPool = null;
     this._globalActorPool = null;
-    this._chromeWindowActorPool = null;
     this._parameters = null;
   },
 
@@ -329,32 +302,6 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
     return descriptorActor;
   },
 
-  getWindow: function({ outerWindowID }) {
-    if (!DevToolsServer.allowChromeProcess) {
-      throw {
-        error: "forbidden",
-        message: "You are not allowed to debug windows.",
-      };
-    }
-    const window = Services.wm.getOuterWindowWithId(outerWindowID);
-    if (!window) {
-      throw {
-        error: "notFound",
-        message: `No window found with outerWindowID ${outerWindowID}`,
-      };
-    }
-
-    if (!this._chromeWindowActorPool) {
-      this._chromeWindowActorPool = new Pool(this.conn, "chrome-window");
-    }
-
-    const actor = new ChromeWindowTargetActor(this.conn, window);
-    actor.parentID = this.actorID;
-    this._chromeWindowActorPool.manage(actor);
-
-    return actor;
-  },
-
   onTabListChanged: function() {
     this.conn.send({ from: this.actorID, type: "tabListChanged" });
     /* It's a one-shot notification; no need to watch any more. */
@@ -426,11 +373,11 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
 
       // Do not destroy the pool before transfering ownership to the newly created
       // pool, so that we do not accidently destroy actors that are still in use.
-      if (this._workerTargetActorPool) {
-        this._workerTargetActorPool.destroy();
+      if (this._workerDescriptorActorPool) {
+        this._workerDescriptorActorPool.destroy();
       }
 
-      this._workerTargetActorPool = pool;
+      this._workerDescriptorActorPool = pool;
 
       return {
         workers: actors,
@@ -585,10 +532,6 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
     return id == window.docShell.browsingContext.id;
   },
 
-  protocolDescription: function() {
-    return require("devtools/shared/protocol").dumpProtocolSpec();
-  },
-
   /**
    * Remove the extra actor (added by ActorRegistry.addGlobalActor or
    * ActorRegistry.addTargetScopedActor) name |name|.
@@ -600,7 +543,7 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
         actor.destroy();
       }
       if (this._tabDescriptorActorPool) {
-        // Iterate over BrowsingContextTargetActor instances to also remove target-scoped
+        // Iterate over WindowGlobalTargetActor instances to also remove target-scoped
         // actors created during listTabs for each document.
         for (const tab in this._tabDescriptorActorPool.poolChildren()) {
           tab.removeActorByName(name);

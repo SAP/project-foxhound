@@ -6,33 +6,43 @@
 
 #include "RenderCompositor.h"
 
+#include "gfxConfig.h"
+#include "gfxPlatform.h"
 #include "GLContext.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/SyncObject.h"
+#include "mozilla/webrender/RenderCompositorLayersSWGL.h"
 #include "mozilla/webrender/RenderCompositorOGL.h"
 #include "mozilla/webrender/RenderCompositorSWGL.h"
 #include "mozilla/widget/CompositorWidget.h"
 
 #ifdef XP_WIN
 #  include "mozilla/webrender/RenderCompositorANGLE.h"
+#  include "mozilla/widget/WinCompositorWidget.h"
 #endif
 
-#if defined(MOZ_WAYLAND) || defined(MOZ_WIDGET_ANDROID)
+#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WAYLAND) || defined(MOZ_X11)
 #  include "mozilla/webrender/RenderCompositorEGL.h"
+#endif
+
+#ifdef MOZ_WAYLAND
+#  include "mozilla/webrender/RenderCompositorNative.h"
 #endif
 
 #ifdef XP_MACOSX
 #  include "mozilla/webrender/RenderCompositorNative.h"
 #endif
 
-namespace mozilla {
-namespace wr {
+namespace mozilla::wr {
 
 void wr_compositor_add_surface(void* aCompositor, wr::NativeSurfaceId aId,
-                               wr::DeviceIntPoint aPosition,
-                               wr::DeviceIntRect aClipRect) {
+                               const wr::CompositorSurfaceTransform* aTransform,
+                               wr::DeviceIntRect aClipRect,
+                               wr::ImageRendering aImageRendering) {
   RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
-  compositor->AddSurface(aId, aPosition, aClipRect);
+  compositor->AddSurface(aId, *aTransform, aClipRect, aImageRendering);
 }
 
 void wr_compositor_begin_frame(void* aCompositor) {
@@ -55,6 +65,13 @@ void wr_compositor_create_surface(void* aCompositor, wr::NativeSurfaceId aId,
   compositor->CreateSurface(aId, aVirtualOffset, aTileSize, aIsOpaque);
 }
 
+void wr_compositor_create_external_surface(void* aCompositor,
+                                           wr::NativeSurfaceId aId,
+                                           bool aIsOpaque) {
+  RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
+  compositor->CreateExternalSurface(aId, aIsOpaque);
+}
+
 void wr_compositor_create_tile(void* aCompositor, wr::NativeSurfaceId aId,
                                int32_t aX, int32_t aY) {
   RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
@@ -72,6 +89,23 @@ void wr_compositor_destroy_surface(void* aCompositor, NativeSurfaceId aId) {
   compositor->DestroySurface(aId);
 }
 
+void wr_compositor_attach_external_image(void* aCompositor,
+                                         wr::NativeSurfaceId aId,
+                                         wr::ExternalImageId aExternalImage) {
+  RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
+  compositor->AttachExternalImage(aId, aExternalImage);
+}
+
+void wr_compositor_start_compositing(void* aCompositor, wr::ColorF aClearColor,
+                                     const wr::DeviceIntRect* aDirtyRects,
+                                     size_t aNumDirtyRects,
+                                     const wr::DeviceIntRect* aOpaqueRects,
+                                     size_t aNumOpaqueRects) {
+  RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
+  compositor->StartCompositing(aClearColor, aDirtyRects, aNumDirtyRects,
+                               aOpaqueRects, aNumOpaqueRects);
+}
+
 void wr_compositor_end_frame(void* aCompositor) {
   RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
   compositor->CompositorEndFrame();
@@ -82,9 +116,16 @@ void wr_compositor_enable_native_compositor(void* aCompositor, bool aEnable) {
   compositor->EnableNativeCompositor(aEnable);
 }
 
-CompositorCapabilities wr_compositor_get_capabilities(void* aCompositor) {
+void wr_compositor_get_capabilities(void* aCompositor,
+                                    CompositorCapabilities* aCaps) {
   RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
-  return compositor->GetCompositorCapabilities();
+  compositor->GetCompositorCapabilities(aCaps);
+}
+
+void wr_compositor_get_window_visibility(void* aCompositor,
+                                         WindowVisibility* aVisibility) {
+  RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
+  compositor->GetWindowVisibility(aVisibility);
 }
 
 void wr_compositor_unbind(void* aCompositor) {
@@ -110,27 +151,56 @@ void wr_compositor_unmap_tile(void* aCompositor) {
   compositor->UnmapTile();
 }
 
+void wr_partial_present_compositor_set_buffer_damage_region(
+    void* aCompositor, const wr::DeviceIntRect* aRects, size_t aNRects) {
+  RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
+  compositor->SetBufferDamageRegion(aRects, aNRects);
+}
+
 /* static */
 UniquePtr<RenderCompositor> RenderCompositor::Create(
-    RefPtr<widget::CompositorWidget>&& aWidget) {
-  if (gfx::gfxVars::UseSoftwareWebRender()) {
+    const RefPtr<widget::CompositorWidget>& aWidget, nsACString& aError) {
+  if (aWidget->GetCompositorOptions().UseSoftwareWebRender()) {
 #ifdef XP_MACOSX
     // Mac uses NativeLayerCA
-    return RenderCompositorNativeSWGL::Create(std::move(aWidget));
-#else
-    return RenderCompositorSWGL::Create(std::move(aWidget));
+    if (!gfxPlatform::IsHeadless()) {
+      return RenderCompositorNativeSWGL::Create(aWidget, aError);
+    }
+#elif defined(MOZ_WAYLAND)
+    if (gfx::gfxVars::UseWebRenderCompositor()) {
+      return RenderCompositorNativeSWGL::Create(aWidget, aError);
+    }
 #endif
+    UniquePtr<RenderCompositor> comp =
+        RenderCompositorLayersSWGL::Create(aWidget, aError);
+    if (comp) {
+      return comp;
+    }
+#if defined(MOZ_WIDGET_ANDROID)
+    // On Android, we do not want to fallback from RenderCompositorOGLSWGL to
+    // RenderCompositorSWGL.
+    if (aWidget->GetCompositorOptions().AllowSoftwareWebRenderOGL()) {
+      return nullptr;
+    }
+#endif
+    return RenderCompositorSWGL::Create(aWidget, aError);
   }
 
 #ifdef XP_WIN
   if (gfx::gfxVars::UseWebRenderANGLE()) {
-    return RenderCompositorANGLE::Create(std::move(aWidget));
+    return RenderCompositorANGLE::Create(aWidget, aError);
   }
 #endif
 
-#if defined(MOZ_WAYLAND) || defined(MOZ_WIDGET_ANDROID)
+#if defined(MOZ_WAYLAND)
+  if (gfx::gfxVars::UseWebRenderCompositor()) {
+    return RenderCompositorNativeOGL::Create(aWidget, aError);
+  }
+#endif
+
+#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WAYLAND) || defined(MOZ_X11)
   UniquePtr<RenderCompositor> eglCompositor =
-      RenderCompositorEGL::Create(aWidget);
+      RenderCompositorEGL::Create(aWidget, aError);
   if (eglCompositor) {
     return eglCompositor;
   }
@@ -141,26 +211,56 @@ UniquePtr<RenderCompositor> RenderCompositor::Create(
   return nullptr;
 #elif defined(XP_MACOSX)
   // Mac uses NativeLayerCA
-  return RenderCompositorNativeOGL::Create(std::move(aWidget));
+  return RenderCompositorNativeOGL::Create(aWidget, aError);
 #else
-  return RenderCompositorOGL::Create(std::move(aWidget));
+  return RenderCompositorOGL::Create(aWidget, aError);
 #endif
 }
 
-RenderCompositor::RenderCompositor(RefPtr<widget::CompositorWidget>&& aWidget)
+RenderCompositor::RenderCompositor(
+    const RefPtr<widget::CompositorWidget>& aWidget)
     : mWidget(aWidget) {}
 
 RenderCompositor::~RenderCompositor() = default;
 
 bool RenderCompositor::MakeCurrent() { return gl()->MakeCurrent(); }
 
-bool RenderCompositor::IsContextLost() {
-  auto resetStatus = gl()->fGetGraphicsResetStatus();
+void RenderCompositor::GetCompositorCapabilities(
+    CompositorCapabilities* aCaps) {
+  if (StaticPrefs::gfx_webrender_compositor_max_update_rects_AtStartup() > 0) {
+    aCaps->max_update_rects = 1;
+  } else {
+    aCaps->max_update_rects = 0;
+  }
+}
+
+void RenderCompositor::GetWindowVisibility(WindowVisibility* aVisibility) {
+#ifdef XP_WIN
+  auto* widget = mWidget->AsWindows();
+  if (!widget) {
+    return;
+  }
+  aVisibility->size_mode = ToWrWindowSizeMode(widget->GetWindowSizeMode());
+  aVisibility->is_fully_occluded = widget->GetWindowIsFullyOccluded();
+#endif
+}
+
+GLenum RenderCompositor::IsContextLost(bool aForce) {
+  auto* glc = gl();
+  // GetGraphicsResetStatus may trigger an implicit MakeCurrent if robustness
+  // is not supported, so unless we are forcing, pass on the check.
+  if (!glc || (!aForce && !glc->IsSupported(gl::GLFeature::robustness))) {
+    return LOCAL_GL_NO_ERROR;
+  }
+  auto resetStatus = glc->fGetGraphicsResetStatus();
   switch (resetStatus) {
     case LOCAL_GL_NO_ERROR:
-      return false;
+      break;
     case LOCAL_GL_INNOCENT_CONTEXT_RESET_ARB:
+      NS_WARNING("Device reset due to system / different context");
+      break;
     case LOCAL_GL_PURGED_CONTEXT_RESET_NV:
+      NS_WARNING("Device reset due to NV video memory purged");
       break;
     case LOCAL_GL_GUILTY_CONTEXT_RESET_ARB:
       gfxCriticalError() << "Device reset due to WR context";
@@ -173,8 +273,7 @@ bool RenderCompositor::IsContextLost() {
                          << gfx::hexa(resetStatus);
       break;
   }
-  return true;
+  return resetStatus;
 }
 
-}  // namespace wr
-}  // namespace mozilla
+}  // namespace mozilla::wr

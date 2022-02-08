@@ -16,6 +16,15 @@ registerCleanupFunction(async function resetToolbar() {
   await CustomizableUI.reset();
 });
 
+add_task(async function setupHomeButton() {
+  // Put the home button in the pre-proton placement to test focus states.
+  CustomizableUI.addWidgetToArea(
+    "home-button",
+    "nav-bar",
+    CustomizableUI.getPlacementOfWidget("stop-reload-button").position + 1
+  );
+});
+
 function synthesizeKeyAndWaitForFocus(element, keyCode, options) {
   let focused = BrowserTestUtils.waitForEvent(element, "focus");
   EventUtils.synthesizeKey(keyCode, options);
@@ -68,12 +77,12 @@ add_task(async function testWithNotifications() {
       "tracking protection icon container should be focused"
     );
     await synthesizeKeyAndWaitForFocus(
-      gIdentityHandler._identityBox,
+      gIdentityHandler._identityIconBox,
       "ArrowRight"
     );
     is(
       document.activeElement,
-      gIdentityHandler._identityBox,
+      gIdentityHandler._identityIconBox,
       "identity block should be focused"
     );
     let geoIcon = document.getElementById("geo-notification-icon");

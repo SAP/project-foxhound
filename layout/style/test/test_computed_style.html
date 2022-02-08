@@ -20,18 +20,13 @@ var frame_container = document.getElementById("display");
 var noframe_container = document.getElementById("content");
 
 (function test_bug_595650() {
-  // Test handling of horizontal and vertical percentages for border-radius
-  // and -moz-outline-radius.
+  // Test handling of horizontal and vertical percentages for border-radius.
   var p = document.createElement("p");
   p.setAttribute("style", "width: 256px; height: 128px");
   p.style.borderTopLeftRadius = "1.5625%"; /* 1/64 == 4px 2px */
   p.style.borderTopRightRadius = "5px";
   p.style.borderBottomRightRadius = "5px 3px";
   p.style.borderBottomLeftRadius = "1.5625% 3.125%" /* 1/64 1/32 == 4px 4px */
-  p.style.MozOutlineRadiusTopleft = "1.5625%"; /* 1/64 == 4px 2px */
-  p.style.MozOutlineRadiusTopright = "5px";
-  p.style.MozOutlineRadiusBottomright = "5px 3px";
-  p.style.MozOutlineRadiusBottomleft = "1.5625% 3.125%" /* 1/64 1/32 == 4px 4px */
   var cs = getComputedStyle(p, "");
 
   frame_container.appendChild(p);
@@ -43,14 +38,6 @@ var noframe_container = document.getElementById("content");
      "computed value of px border-radius, with frame");
   is(cs.borderBottomLeftRadius, "1.5625% 3.125%",
      "computed value of % border-radius, with frame");
-  is(cs.MozOutlineRadiusTopleft, "1.5625%",
-     "computed value of % outline-radius, with frame");
-  is(cs.MozOutlineRadiusTopright, "5px",
-     "computed value of px outline-radius, with frame");
-  is(cs.MozOutlineRadiusBottomright, "5px 3px",
-     "computed value of px outline-radius, with frame");
-  is(cs.MozOutlineRadiusBottomleft, "1.5625% 3.125%",
-     "computed value of % outline-radius, with frame");
 
   noframe_container.appendChild(p);
   is(cs.borderTopLeftRadius, "1.5625%",
@@ -61,14 +48,6 @@ var noframe_container = document.getElementById("content");
      "computed value of px border-radius, without frame");
   is(cs.borderBottomLeftRadius, "1.5625% 3.125%",
      "computed value of % border-radius, without frame");
-  is(cs.MozOutlineRadiusTopleft, "1.5625%",
-     "computed value of % outline-radius, without frame");
-  is(cs.MozOutlineRadiusTopright, "5px",
-     "computed value of px outline-radius, without frame");
-  is(cs.MozOutlineRadiusBottomright, "5px 3px",
-     "computed value of px outline-radius, without frame");
-  is(cs.MozOutlineRadiusBottomleft, "1.5625% 3.125%",
-     "computed value of % outline-radius, without frame");
 
   p.remove();
 })();
@@ -238,99 +217,6 @@ var noframe_container = document.getElementById("content");
     is(cs.backgroundImage, test[1], "computed value of " + test[2] + " background-image");
   }
 
-  p.remove();
-})();
-
-(function test_bug_1235015() {
-  // "masks" object contains non-initial mask longhand values.
-  var emptyMasks = {
-    // More then one <mask-reference>, or any mask-image value other then
-    // <mask-source>,
-    "mask-image": [
-      "url(#mask1), url(#mask2)",
-      "linear-gradient(red, yellow)",
-      "-moz-element(#test)"
-    ],
-    // any mask-clip value other than "border-box".
-    "mask-clip": [
-      "content-box", "padding-box", "margin-box", "fill-box", "stroke-box",
-      "view-box", "no-clip"
-    ],
-    // any mask-origin  value other than "border-box".
-    "mask-origin": [
-      "content-box", "padding-box", "margin-box", "fill-box", "stroke-box",
-      "view-box"
-    ],
-    // any mask-composite value other than "add".
-    "mask-composite": [
-      "subtract", "intersect", "exclude"
-    ],
-    // any mask-mode value other than "match-source".
-    "mask-mode": [
-      "alpha", "luminance"
-    ],
-    // any mask-position value other then "0%" "top" "left"
-    // "center center".
-    "mask-position": [
-      "0%", "center", "right", "bottom", "50%", "100%"
-    ],
-    // any mask-repeat value other then "repeat" "repeat repeat".
-    "mask-repeat": [
-      "repeat-x", "repeat-y", "no-repeat", "space", "round"
-    ],
-    // any mask-size value other then "auto" "auto auto".
-    "mask-size": [
-      "10px", "100%", "cover", "contain", "auto 5px"
-    ],
-  };
-
-  // "masks" object contains initial mask longhand values.
-  var nonEmptyMasks = {
-    "mask-image": [
-      "url(#mask1)", "none"
-    ],
-    "mask-clip": [
-      "border-box"
-    ],
-    "mask-origin": [
-      "border-box"
-    ],
-    "mask-composite": [
-      "add"
-    ],
-    "mask-mode": [
-      "match-source"
-    ],
-    "mask-position": [
-      "0% 0%", "left top"
-    ],
-    "mask-repeat": [
-      "repeat", "repeat repeat"
-    ],
-    "mask-size": [
-      "auto", "auto auto"
-    ],
-  };
-
-  var p = document.createElement("p");
-  var cs = getComputedStyle(p, "");
-  frame_container.appendChild(p);
-
-  for (var prop in emptyMasks) {
-    var subProp = emptyMasks[prop];
-    for (var i = 0; i < subProp.length; i++) {
-      p.style.mask = subProp[i];
-      is(cs.mask, "", "computed value of " + subProp[i] + " mask");
-    }
-  }
-
-  for (var prop in nonEmptyMasks) {
-    var subProp = nonEmptyMasks[prop];
-    for (var i = 0; i < subProp.length; i++) {
-      p.style.mask = subProp[i];
-      isnot(cs.mask, "", "computed value of " + subProp[i] + " mask");
-    }
-  }
   p.remove();
 })();
 
@@ -533,7 +419,6 @@ var noframe_container = document.getElementById("content");
 })();
 
 (function test_bug_1293164() {
-
   var p = document.createElement("p");
   var cs = getComputedStyle(p, "");
   frame_container.appendChild(p);
@@ -545,7 +430,8 @@ var noframe_container = document.getElementById("content");
   var resolvedNonLocalURL = "url(\"" + docPath + "foo.svg#foo\")";
 
   var testStyles = [
-    "mask",
+    "maskImage",
+    "backgroundImage",
     "markerStart",
     "markerMid",
     "markerEnd",

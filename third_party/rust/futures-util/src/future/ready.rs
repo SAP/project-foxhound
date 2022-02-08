@@ -1,3 +1,4 @@
+use super::assert_future;
 use core::pin::Pin;
 use futures_core::future::{FusedFuture, Future};
 use futures_core::task::{Context, Poll};
@@ -28,7 +29,7 @@ impl<T> Future for Ready<T> {
 
     #[inline]
     fn poll(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<T> {
-        Poll::Ready(self.0.take().unwrap())
+        Poll::Ready(self.0.take().expect("Ready polled after completion"))
     }
 }
 
@@ -45,7 +46,7 @@ impl<T> Future for Ready<T> {
 /// # });
 /// ```
 pub fn ready<T>(t: T) -> Ready<T> {
-    Ready(Some(t))
+    assert_future::<T, _>(Ready(Some(t)))
 }
 
 /// Create a future that is immediately ready with a success value.

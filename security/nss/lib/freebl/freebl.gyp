@@ -220,6 +220,38 @@
       ]
     },
     {
+      'target_name': 'sha-x86_c_lib',
+      'type': 'static_library',
+      'sources': [
+        'sha256-x86.c'
+      ],
+      'dependencies': [
+        '<(DEPTH)/exports.gyp:nss_exports'
+      ],
+      'cflags': [
+        '-msha',
+        '-mssse3',
+        '-msse4.1'
+      ],
+      'cflags_mozilla': [
+        '-msha',
+        '-mssse3',
+        '-msse4.1'
+      ],
+      'conditions': [
+        # macOS build doesn't use cflags.
+        [ 'OS=="mac" or OS=="ios"', {
+          'xcode_settings': {
+            'OTHER_CFLAGS': [
+              '-msha',
+              '-mssse3',
+              '-msse4.1'
+            ],
+          },
+        }]
+      ]
+    },
+    {
       'target_name': 'gcm-aes-arm32-neon_c_lib',
       'type': 'static_library',
       'sources': [
@@ -264,13 +296,72 @@
       'dependencies': [
         '<(DEPTH)/exports.gyp:nss_exports'
       ],
-      'cflags': [
-        '-mcrypto',
-        '-maltivec'
+      'conditions': [
+        [ 'disable_crypto_vsx==0', {
+          'cflags': [
+            '-mcrypto',
+            '-maltivec'
+           ],
+           'cflags_mozilla': [
+             '-mcrypto',
+             '-maltivec'
+           ],
+        }, 'disable_crypto_vsx==1', {
+          'cflags': [
+            '-maltivec'
+          ],
+          'cflags_mozilla': [
+            '-maltivec'
+          ],
+        }]
+      ]
+    },
+    {
+      'target_name': 'gcm-aes-ppc_lib',
+      'type': 'static_library',
+      'sources': [
+        'ppc-gcm.s',
       ],
-      'cflags_mozilla': [
-        '-mcrypto',
-        '-maltivec'
+      'dependencies': [
+        '<(DEPTH)/exports.gyp:nss_exports'
+      ],
+      'conditions': [
+        [ 'cc_is_clang==1', {
+          'cflags': [
+            '-no-integrated-as',
+          ],
+          'cflags_mozilla': [
+            '-no-integrated-as',
+          ],
+          'asflags_mozilla': [
+            '-no-integrated-as',
+          ],
+        }],
+      ],
+    },
+    {
+      'target_name': 'ppc-gcm-wrap-nodepend_c_lib',
+      'type': 'static_library',
+      'sources': [
+        'ppc-gcm-wrap.c',
+      ],
+      'dependencies': [
+        '<(DEPTH)/exports.gyp:nss_exports',
+        'gcm-aes-ppc_lib',
+      ],
+    },
+    {
+      'target_name': 'ppc-gcm-wrap_c_lib',
+      'type': 'static_library',
+      'sources': [
+        'ppc-gcm-wrap.c',
+      ],
+      'dependencies': [
+        '<(DEPTH)/exports.gyp:nss_exports',
+        'gcm-aes-ppc_lib',
+      ],
+      'defines!': [
+        'FREEBL_NO_DEPEND',
       ],
     },
     {
@@ -282,20 +373,35 @@
       'dependencies': [
         '<(DEPTH)/exports.gyp:nss_exports'
       ],
-      'cflags': [
-        '-mcrypto',
-        '-maltivec',
-        '-mvsx',
-        '-funroll-loops',
-        '-fpeel-loops',
-      ],
-      'cflags_mozilla': [
-        '-mcrypto',
-        '-maltivec',
-        '-mvsx',
-        '-funroll-loops',
-        '-fpeel-loops',
-      ],
+      'conditions': [
+        [ 'disable_crypto_vsx==0', {
+          'cflags': [
+            '-mcrypto',
+            '-maltivec',
+            '-mvsx',
+            '-funroll-loops',
+            '-fpeel-loops'
+           ],
+           'cflags_mozilla': [
+            '-mcrypto',
+            '-maltivec',
+            '-mvsx',
+            '-funroll-loops',
+            '-fpeel-loops'
+           ],
+        }, 'disable_crypto_vsx==1', {
+          'cflags': [
+            '-maltivec',
+            '-funroll-loops',
+            '-fpeel-loops'
+          ],
+          'cflags_mozilla': [
+            '-maltivec',
+            '-funroll-loops',
+            '-fpeel-loops'
+          ],
+        }]
+      ]
     },
     {
       'target_name': 'gcm-sha512-ppc_c_lib',
@@ -306,29 +412,53 @@
       'dependencies': [
         '<(DEPTH)/exports.gyp:nss_exports'
       ],
-      'cflags': [
-        '-mcrypto',
-        '-maltivec',
-        '-mvsx',
-        '-funroll-loops',
-        '-fpeel-loops',
-      ],
-      'cflags_mozilla': [
-        '-mcrypto',
-        '-maltivec',
-        '-mvsx',
-        '-funroll-loops',
-        '-fpeel-loops',
+      'conditions': [
+        [ 'disable_crypto_vsx==0', {
+          'cflags': [
+            '-mcrypto',
+            '-maltivec',
+            '-mvsx',
+            '-funroll-loops',
+            '-fpeel-loops'
+           ],
+           'cflags_mozilla': [
+            '-mcrypto',
+            '-maltivec',
+            '-mvsx',
+            '-funroll-loops',
+            '-fpeel-loops'
+           ],
+        }, 'disable_crypto_vsx==1', {
+          'cflags': [
+            '-maltivec',
+            '-funroll-loops',
+            '-fpeel-loops'
+          ],
+          'cflags_mozilla': [
+            '-maltivec',
+            '-funroll-loops',
+            '-fpeel-loops'
+          ],
+        }]
       ],
       'defines!': [
         'FREEBL_NO_DEPEND',
       ],
     },
     {
+      'target_name': 'chacha20-ppc_lib',
+      'type': 'static_library',
+      'sources': [
+        'chacha20poly1305-ppc.c',
+        'chacha20-ppc64le.S',
+      ]
+    },
+    {
       'target_name': 'armv8_c_lib',
       'type': 'static_library',
       'sources': [
         'aes-armv8.c',
+        'sha1-armv8.c',
         'sha256-armv8.c',
       ],
       'dependencies': [
@@ -385,9 +515,14 @@
           'dependencies': [
             'gcm-aes-x86_c_lib',
           ],
-        }, '(disable_arm_hw_aes==0 or disable_arm_hw_sha2==0) and (target_arch=="arm" or target_arch=="arm64" or target_arch=="aarch64")', {
+        }, '(disable_arm_hw_aes==0 or disable_arm_hw_sha1==0 or disable_arm_hw_sha2==0) and (target_arch=="arm" or target_arch=="arm64" or target_arch=="aarch64")', {
           'dependencies': [
             'armv8_c_lib'
+          ],
+        }],
+        [ '(target_arch=="ia32" or target_arch=="x64") and disable_intel_hw_sha==0', {
+          'dependencies': [
+            'sha-x86_c_lib',
           ],
         }],
         [ 'disable_arm32_neon==0 and target_arch=="arm"', {
@@ -405,15 +540,28 @@
             'gcm-aes-aarch64_c_lib',
           ],
         }],
-        [ 'disable_altivec==0 and (target_arch=="ppc64" or target_arch=="ppc64le")', {
+        [ 'disable_altivec==0 and target_arch=="ppc64"', {
           'dependencies': [
             'gcm-aes-ppc_c_lib',
             'gcm-sha512-ppc_c_lib',
           ],
         }],
+        [ 'disable_altivec==0 and target_arch=="ppc64le"', {
+          'dependencies': [
+            'gcm-aes-ppc_c_lib',
+            'gcm-sha512-ppc_c_lib',
+            'chacha20-ppc_lib',
+            'ppc-gcm-wrap_c_lib',
+          ],
+        }],
         [ 'disable_altivec==1 and (target_arch=="ppc64" or target_arch=="ppc64le")', {
           'defines!': [
             'NSS_DISABLE_ALTIVEC',
+          ],
+        }],
+        [ 'disable_crypto_vsx==1 and (target_arch=="ppc" or target_arch=="ppc64" or target_arch=="ppc64le")', {
+          'defines!': [
+            'NSS_DISABLE_CRYPTO_VSX',
           ],
         }],
         [ 'OS=="linux"', {
@@ -422,6 +570,7 @@
             'FREEBL_LOWHASH',
             'USE_HW_AES',
             'INTEL_GCM',
+            'PPC_GCM',
           ],
           'conditions': [
             [ 'target_arch=="x64"', {
@@ -458,6 +607,11 @@
             'armv8_c_lib',
           ],
         }],
+        [ '(target_arch=="ia32" or target_arch=="x64") and disable_intel_hw_sha==0', {
+          'dependencies': [
+            'sha-x86_c_lib',
+          ],
+        }],
         [ 'disable_arm32_neon==0 and target_arch=="arm"', {
           'dependencies': [
             'gcm-aes-arm32-neon_c_lib',
@@ -473,15 +627,30 @@
             'gcm-aes-aarch64_c_lib',
           ],
         }],
-        [ 'disable_altivec==0 and (target_arch=="ppc64" or target_arch=="ppc64le")', {
-          'dependencies': [
-            'gcm-aes-ppc_c_lib',
-            'gcm-sha512-nodepend-ppc_c_lib',
+        [ 'disable_altivec==0', {
+          'conditions': [
+            [ 'target_arch=="ppc64"', {
+              'dependencies': [
+                'gcm-aes-ppc_c_lib',
+                'gcm-sha512-nodepend-ppc_c_lib',
+              ],
+            }, 'target_arch=="ppc64le"', {
+               'dependencies': [
+                 'gcm-aes-ppc_c_lib',
+                 'gcm-sha512-nodepend-ppc_c_lib',
+                 'ppc-gcm-wrap-nodepend_c_lib',
+               ],
+            }],
           ],
         }],
         [ 'disable_altivec==1 and (target_arch=="ppc64" or target_arch=="ppc64le")', {
           'defines!': [
             'NSS_DISABLE_ALTIVEC',
+          ],
+        }],
+        [ 'disable_crypto_vsx==1 and (target_arch=="ppc" or target_arch=="ppc64" or target_arch=="ppc64le")', {
+          'defines!': [
+            'NSS_DISABLE_CRYPTO_VSX',
           ],
         }],
         [ 'OS!="linux"', {
@@ -638,12 +807,22 @@
           },
         },
       }],
-      [ 'OS=="win" and (target_arch=="arm64" or target_arch=="aarch64") and disable_arm_hw_aes==0', {
+      [ '(OS=="win" or OS=="mac" or OS=="ios") and (target_arch=="ia32" or target_arch=="x64") and disable_intel_hw_sha==0', {
+        'defines': [
+          'USE_HW_SHA2',
+        ],
+      }],
+      [ '(OS=="win" or OS=="mac" or OS=="ios") and (target_arch=="arm64" or target_arch=="aarch64") and disable_arm_hw_aes==0', {
         'defines': [
           'USE_HW_AES',
         ],
       }],
-      [ 'OS=="win" and (target_arch=="arm64" or target_arch=="aarch64") and disable_arm_hw_sha2==0', {
+      [ '(OS=="win" or OS=="mac" or OS=="ios") and (target_arch=="arm64" or target_arch=="aarch64") and disable_arm_hw_sha1==0', {
+        'defines': [
+          'USE_HW_SHA1',
+        ],
+      }],
+      [ '(OS=="win" or OS=="mac" or OS=="ios") and (target_arch=="arm64" or target_arch=="aarch64") and disable_arm_hw_sha2==0', {
         'defines': [
           'USE_HW_SHA2',
         ],
@@ -670,6 +849,13 @@
         'defines': [
           'FREEBL_LOWHASH',
           'FREEBL_NO_DEPEND',
+        ],
+        'conditions': [
+          [ 'disable_altivec==0 and target_arch=="ppc64le"', {
+            'defines': [
+              'PPC_GCM',
+            ],
+          }],
         ],
       }],
       [ 'OS=="linux" or OS=="android"', {
@@ -707,9 +893,19 @@
               'ARMHF',
             ],
           }],
+          [ 'disable_intel_hw_sha==0 and (target_arch=="ia32" or target_arch=="x64")', {
+            'defines': [
+              'USE_HW_SHA2',
+            ],
+          }],
           [ 'disable_arm_hw_aes==0 and (target_arch=="arm" or target_arch=="arm64" or target_arch=="aarch64")', {
             'defines': [
               'USE_HW_AES',
+            ],
+          }],
+          [ 'disable_arm_hw_sha1==0 and (target_arch=="arm" or target_arch=="arm64" or target_arch=="aarch64")', {
+            'defines': [
+              'USE_HW_SHA1',
             ],
           }],
           [ 'disable_arm_hw_sha2==0 and (target_arch=="arm" or target_arch=="arm64" or target_arch=="aarch64")', {

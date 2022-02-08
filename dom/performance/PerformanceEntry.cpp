@@ -21,17 +21,34 @@ NS_INTERFACE_MAP_END
 
 PerformanceEntry::PerformanceEntry(nsISupports* aParent, const nsAString& aName,
                                    const nsAString& aEntryType)
-    : mParent(aParent), mName(aName), mEntryType(aEntryType) {}
+    : mParent(aParent),
+      mName(NS_Atomize(aName)),
+      mEntryType(NS_Atomize(aEntryType)) {}
 
 PerformanceEntry::~PerformanceEntry() = default;
 
 size_t PerformanceEntry::SizeOfExcludingThis(
     mozilla::MallocSizeOf aMallocSizeOf) const {
-  return mName.SizeOfExcludingThisIfUnshared(aMallocSizeOf) +
-         mEntryType.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
+  // mName and mEntryType are considered to be owned by nsAtomTable.
+  return 0;
 }
 
 size_t PerformanceEntry::SizeOfIncludingThis(
     mozilla::MallocSizeOf aMallocSizeOf) const {
   return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
+}
+
+bool PerformanceEntry::ShouldAddEntryToObserverBuffer(
+    PerformanceObserverInit& aOption) const {
+  if (aOption.mType.WasPassed()) {
+    if (GetEntryType()->Equals(aOption.mType.Value())) {
+      return true;
+    }
+  } else {
+    if (aOption.mEntryTypes.Value().Contains(
+            nsDependentAtomString(GetEntryType()))) {
+      return true;
+    }
+  }
+  return false;
 }

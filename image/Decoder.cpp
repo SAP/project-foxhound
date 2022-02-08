@@ -6,11 +6,12 @@
 #include "Decoder.h"
 
 #include "DecodePool.h"
-#include "GeckoProfiler.h"
 #include "IDecodingTask.h"
 #include "ISurfaceProvider.h"
+#include "gfxPlatform.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Point.h"
+#include "mozilla/ProfilerLabels.h"
 #include "mozilla/Telemetry.h"
 #include "nsComponentManagerUtils.h"
 #include "nsProxyRelease.h"
@@ -94,7 +95,7 @@ void Decoder::SetSurfaceFlags(SurfaceFlags aSurfaceFlags) {
   MOZ_ASSERT(!mInitialized);
   mSurfaceFlags = aSurfaceFlags;
   if (mSurfaceFlags & SurfaceFlags::NO_COLORSPACE_CONVERSION) {
-    mCMSMode = eCMSMode_Off;
+    mCMSMode = CMSMode::Off;
   }
 }
 
@@ -110,6 +111,10 @@ qcms_transform* Decoder::GetCMSsRGBTransform(SurfaceFormat aFormat) const {
     // We want a transform to convert from sRGB to device space, but we are
     // already using sRGB as our device space. That means we can skip
     // color management entirely.
+    return nullptr;
+  }
+  if (qcms_profile_is_sRGB(gfxPlatform::GetCMSOutputProfile())) {
+    // Device space is sRGB so we can skip color management as well.
     return nullptr;
   }
 
@@ -243,7 +248,9 @@ void Decoder::CompleteDecode() {
 
   // If PostDecodeDone() has not been called, we may need to send teardown
   // notifications if it is unrecoverable.
-  if (!mDecodeDone) {
+  if (mDecodeDone) {
+    MOZ_ASSERT(HasError() || mCurrentFrame, "Should have an error or a frame");
+  } else {
     // We should always report an error to the console in this case.
     mShouldReportError = true;
 
@@ -257,26 +264,14 @@ void Decoder::CompleteDecode() {
       mProgress |= FLAG_DECODE_COMPLETE | FLAG_HAS_ERROR;
     }
   }
-
-  if (mDecodeDone) {
-    MOZ_ASSERT(HasError() || mCurrentFrame, "Should have an error or a frame");
-
-    // If this image wasn't animated and isn't a transient image, mark its frame
-    // as optimizable. We don't support optimizing animated images and
-    // optimizing transient images isn't worth it.
-    if (!HasAnimation() &&
-        !(mDecoderFlags & DecoderFlags::IMAGE_IS_TRANSIENT) && mCurrentFrame) {
-      mCurrentFrame->SetOptimizable();
-    }
-  }
 }
 
-void Decoder::SetOutputSize(const gfx::IntSize& aSize) {
+void Decoder::SetOutputSize(const OrientedIntSize& aSize) {
   mOutputSize = Some(aSize);
   mHaveExplicitOutputSize = true;
 }
 
-Maybe<gfx::IntSize> Decoder::ExplicitOutputSize() const {
+Maybe<OrientedIntSize> Decoder::ExplicitOutputSize() const {
   MOZ_ASSERT_IF(mHaveExplicitOutputSize, mOutputSize);
   return mHaveExplicitOutputSize ? mOutputSize : Nothing();
 }
@@ -345,11 +340,6 @@ RawAccessFrameRef Decoder::AllocateFrameInternal(
     return RawAccessFrameRef();
   }
 
-  if (frameNum == 1) {
-    MOZ_ASSERT(aPreviousFrame, "Must provide a previous frame when animated");
-    aPreviousFrame->SetRawAccessOnly();
-  }
-
   if (frameNum > 0) {
     if (aPreviousFrame->GetDisposalMethod() !=
         DisposalMethod::RESTORE_PREVIOUS) {
@@ -415,10 +405,6 @@ RawAccessFrameRef Decoder::AllocateFrameInternal(
       frame->Abort();
       return RawAccessFrameRef();
     }
-
-    if (frameNum > 0) {
-      frame->SetRawAccessOnly();
-    }
   }
 
   mFrameCount++;
@@ -444,13 +430,13 @@ nsresult Decoder::FinishWithErrorInternal() {
  */
 
 void Decoder::PostSize(int32_t aWidth, int32_t aHeight,
-                       Orientation aOrientation /* = Orientation()*/) {
+                       Orientation aOrientation, Resolution aResolution) {
   // Validate.
   MOZ_ASSERT(aWidth >= 0, "Width can't be negative!");
   MOZ_ASSERT(aHeight >= 0, "Height can't be negative!");
 
   // Set our intrinsic size.
-  mImageMetadata.SetSize(aWidth, aHeight, aOrientation);
+  mImageMetadata.SetSize(aWidth, aHeight, aOrientation, aResolution);
 
   // Verify it is the expected size, if given. Note that this is only used by
   // the ICO decoder for embedded image types, so only its subdecoders are
@@ -462,10 +448,11 @@ void Decoder::PostSize(int32_t aWidth, int32_t aHeight,
 
   // Set our output size if it's not already set.
   if (!mOutputSize) {
-    mOutputSize = Some(IntSize(aWidth, aHeight));
+    mOutputSize = Some(mImageMetadata.GetSize());
   }
 
-  MOZ_ASSERT(mOutputSize->width <= aWidth && mOutputSize->height <= aHeight,
+  MOZ_ASSERT(mOutputSize->width <= mImageMetadata.GetSize().width &&
+                 mOutputSize->height <= mImageMetadata.GetSize().height,
              "Output size will result in upscaling");
 
   // Record this notification.
@@ -500,7 +487,8 @@ void Decoder::PostFrameStop(Opacity aFrameOpacity) {
     // If we're not sending partial invalidations, then we send an invalidation
     // here when the first frame is complete.
     if (!ShouldSendPartialInvalidations()) {
-      mInvalidRect.UnionRect(mInvalidRect, IntRect(IntPoint(), Size()));
+      mInvalidRect.UnionRect(mInvalidRect,
+                             OrientedIntRect(OrientedIntPoint(), Size()));
     }
 
     // If we dispose of the first frame by clearing it, then the first frame's
@@ -512,7 +500,7 @@ void Decoder::PostFrameStop(Opacity aFrameOpacity) {
       case DisposalMethod::CLEAR:
       case DisposalMethod::CLEAR_ALL:
       case DisposalMethod::RESTORE_PREVIOUS:
-        mFirstFrameRefreshArea = IntRect(IntPoint(), Size());
+        mFirstFrameRefreshArea = IntRect(IntPoint(), Size().ToUnknownSize());
         break;
       case DisposalMethod::KEEP:
       case DisposalMethod::NOT_SPECIFIED:
@@ -526,8 +514,8 @@ void Decoder::PostFrameStop(Opacity aFrameOpacity) {
   }
 }
 
-void Decoder::PostInvalidation(const gfx::IntRect& aRect,
-                               const Maybe<gfx::IntRect>& aRectAtOutputSize
+void Decoder::PostInvalidation(const OrientedIntRect& aRect,
+                               const Maybe<OrientedIntRect>& aRectAtOutputSize
                                /* = Nothing() */) {
   // We should be mid-frame
   MOZ_ASSERT(mInFrame, "Can't invalidate when not mid-frame!");
@@ -537,7 +525,8 @@ void Decoder::PostInvalidation(const gfx::IntRect& aRect,
   // or we're past the first frame.
   if (ShouldSendPartialInvalidations() && mFrameCount == 1) {
     mInvalidRect.UnionRect(mInvalidRect, aRect);
-    mCurrentFrame->ImageUpdated(aRectAtOutputSize.valueOr(aRect));
+    mCurrentFrame->ImageUpdated(
+        aRectAtOutputSize.valueOr(aRect).ToUnknownRect());
   }
 }
 

@@ -1,8 +1,8 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 yue_Hans{
     %%Parent{"root"}
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"阿比让"}
@@ -1940,6 +1940,9 @@ yue_Hans{
             ld{"叶卡捷琳堡夏令时间"}
             lg{"叶卡捷琳堡时间"}
             ls{"叶卡捷琳堡标准时间"}
+        }
+        "meta:Yukon"{
+            ls{"育空时间"}
         }
         fallbackFormat{"{1} ({0})"}
         gmtFormat{"GMT{0}"}

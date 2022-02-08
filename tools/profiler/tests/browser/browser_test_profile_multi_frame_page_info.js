@@ -12,9 +12,6 @@ if (SpecialPowers.useRemoteSubframes) {
 add_task(async function test_profile_multi_frame_page_info() {
   // Requesting the complete log to be able to debug Bug 1586105.
   SimpleTest.requestCompleteLog();
-  if (!AppConstants.MOZ_GECKO_PROFILER) {
-    return;
-  }
   Assert.ok(!Services.profiler.IsActive());
   info("Clear the previous pages just in case we still some open tabs.");
   await Services.profiler.ClearAllPages();
@@ -31,6 +28,10 @@ add_task(async function test_profile_multi_frame_page_info() {
     const contentPid = await SpecialPowers.spawn(contentBrowser, [], () => {
       return Services.appinfo.processID;
     });
+
+    // Getting the active Browser ID to assert the page info tabID later.
+    const win = Services.wm.getMostRecentWindow("navigator:browser");
+    const activeTabID = win.gBrowser.selectedBrowser.browsingContext.browserId;
 
     info("Capture the profile data.");
     const profile = await Services.profiler.getProfileDataAsync();
@@ -57,7 +58,8 @@ add_task(async function test_profile_multi_frame_page_info() {
       // Parent page
       if (page.url == url) {
         Assert.equal(page.url, url);
-        Assert.equal(typeof page.browsingContextID, "number");
+        Assert.equal(typeof page.tabID, "number");
+        Assert.equal(page.tabID, activeTabID);
         Assert.equal(typeof page.innerWindowID, "number");
         // Top level document will have no embedder.
         Assert.equal(page.embedderInnerWindowID, 0);
@@ -73,7 +75,8 @@ add_task(async function test_profile_multi_frame_page_info() {
       // Child page (iframe)
       if (page.url == BASE_URL + "single_frame.html") {
         Assert.equal(page.url, BASE_URL + "single_frame.html");
-        Assert.equal(typeof page.browsingContextID, "number");
+        Assert.equal(typeof page.tabID, "number");
+        Assert.equal(page.tabID, activeTabID);
         Assert.equal(typeof page.innerWindowID, "number");
         Assert.equal(typeof page.embedderInnerWindowID, "number");
         Assert.notEqual(typeof parentPage, "undefined");

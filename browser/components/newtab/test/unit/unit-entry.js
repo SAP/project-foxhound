@@ -44,7 +44,39 @@ const RemoteSettings = name => ({
 });
 RemoteSettings.pollChanges = () => {};
 
+class JSWindowActorParent {
+  sendAsyncMessage(name, data) {
+    return { name, data };
+  }
+}
+
+class JSWindowActorChild {
+  sendAsyncMessage(name, data) {
+    return { name, data };
+  }
+
+  sendQuery(name, data) {
+    return Promise.resolve({ name, data });
+  }
+
+  get contentWindow() {
+    return {
+      Promise,
+    };
+  }
+}
+
+class Logger {
+  constructor(name) {
+    this.name = name;
+  }
+
+  warn() {}
+}
+
 const TEST_GLOBAL = {
+  JSWindowActorParent,
+  JSWindowActorChild,
   AboutReaderParent: {
     addMessageListener: (messageName, listener) => {},
     removeMessageListener: (messageName, listener) => {},
@@ -57,6 +89,9 @@ const TEST_GLOBAL = {
   AppConstants: {
     MOZILLA_OFFICIAL: true,
     MOZ_APP_VERSION: "69.0a1",
+    isPlatformAndVersionAtMost() {
+      return false;
+    },
     platform: "win",
   },
   UpdateUtils: { getUpdateChannel() {} },
@@ -66,6 +101,7 @@ const TEST_GLOBAL = {
     }
     post() {}
   },
+  browserSearchRegion: "US",
   BrowserWindowTracker: { getTopWindow() {} },
   ChromeUtils: {
     defineModuleGetter() {},
@@ -168,6 +204,7 @@ const TEST_GLOBAL = {
     importGlobalProperties() {},
     now: () => window.performance.now(),
     reportError() {},
+    cloneInto: o => JSON.parse(JSON.stringify(o)),
   },
   dump() {},
   EveryWindow: {
@@ -177,6 +214,29 @@ const TEST_GLOBAL = {
   fetch() {},
   // eslint-disable-next-line object-shorthand
   Image: function() {}, // NB: This is a function/constructor
+  IOUtils: {
+    writeJSON() {
+      return Promise.resolve(0);
+    },
+    readJSON() {
+      return Promise.resolve({});
+    },
+    makeDirectory() {
+      return Promise.resolve(0);
+    },
+    write() {
+      return Promise.resolve(0);
+    },
+    exists() {
+      return Promise.resolve(0);
+    },
+    remove() {
+      return Promise.resolve(0);
+    },
+    stat() {
+      return Promise.resolve(0);
+    },
+  },
   NewTabUtils: {
     activityStreamProvider: {
       getTopFrecentSites: () => [],
@@ -203,6 +263,20 @@ const TEST_GLOBAL = {
       Path: {
         localProfileDir: "/",
       },
+    },
+  },
+  PathUtils: {
+    join(...parts) {
+      return parts[parts.length - 1];
+    },
+    joinRelative(...parts) {
+      return parts[parts.length - 1];
+    },
+    getProfileDir() {
+      return Promise.resolve("/");
+    },
+    getLocalProfileDir() {
+      return Promise.resolve("/");
     },
   },
   PlacesUtils: {
@@ -233,8 +307,7 @@ const TEST_GLOBAL = {
   },
   Region: {
     home: "US",
-    REGION_TOPIC: "browser-region",
-    REGION_UPDATED: "region-updated",
+    REGION_TOPIC: "browser-region-updated",
   },
   Services: {
     dirsvc: {
@@ -260,6 +333,12 @@ const TEST_GLOBAL = {
       setEventRecordingEnabled: () => {},
       recordEvent: eventDetails => {},
       scalarSet: () => {},
+      keyedScalarAdd: () => {},
+    },
+    uuid: {
+      generateUUID() {
+        return "{foo-123-foo}";
+      },
     },
     console: { logStringMessage: () => {} },
     prefs: {
@@ -291,6 +370,7 @@ const TEST_GLOBAL = {
           clearUserPref() {},
         };
       },
+      prefIsLocked() {},
     },
     tm: {
       dispatchToMainThread: cb => cb(),
@@ -328,18 +408,14 @@ const TEST_GLOBAL = {
         identifier: "google",
         searchForm:
           "https://www.google.com/search?q=&ie=utf-8&oe=utf-8&client=firefox-b",
-        wrappedJSObject: {
-          __internalAliases: ["@google"],
-        },
+        aliases: ["@google"],
       },
       defaultPrivateEngine: {
         identifier: "bing",
         searchForm: "https://www.bing.com",
-        wrappedJSObject: {
-          __internalAliases: ["@bing"],
-        },
+        aliases: ["@bing"],
       },
-      getEngineByAlias: () => null,
+      getEngineByAlias: async () => null,
     },
     scriptSecurityManager: {
       createNullPrincipal() {},
@@ -389,7 +465,10 @@ const TEST_GLOBAL = {
     },
   },
   EventEmitter,
-  ShellService: { isDefaultBrowser: () => true },
+  ShellService: {
+    doesAppNeedPin: () => false,
+    isDefaultBrowser: () => true,
+  },
   FilterExpressions: {
     eval() {
       return Promise.resolve(false);
@@ -402,6 +481,9 @@ const TEST_GLOBAL = {
         stringsIds.map(({ id, args }) => ({ value: { string_id: id, args } }))
       );
     }
+    async formatValue(stringId) {
+      return Promise.resolve(stringId);
+    }
   },
   FxAccountsConfig: {
     promiseConnectAccountURI(id) {
@@ -409,9 +491,28 @@ const TEST_GLOBAL = {
     },
   },
   FX_MONITOR_OAUTH_CLIENT_ID: "fake_client_id",
+  ExperimentAPI: {
+    getExperiment() {},
+    on: () => {},
+    off: () => {},
+  },
+  NimbusFeatures: {
+    newtab: {
+      isEnabled() {},
+      getVariable() {},
+      getAllVariables() {},
+      onUpdate() {},
+      off() {},
+    },
+  },
   TelemetryEnvironment: {
     setExperimentActive() {},
-    currentEnvironment: { profile: { creationDate: 16587 } },
+    currentEnvironment: {
+      profile: {
+        creationDate: 16587,
+      },
+      settings: {},
+    },
   },
   TelemetryStopwatch: {
     start: () => {},
@@ -439,10 +540,9 @@ const TEST_GLOBAL = {
     addExpirationFilter() {},
     removeExpirationFilter() {},
   },
-  gUUIDGenerator: {
-    generateUUID: () => "{foo-123-foo}",
-  },
+  Logger,
 };
+TEST_GLOBAL.NimbusFeatures.pocketNewtab = TEST_GLOBAL.NimbusFeatures.newtab;
 overrider.set(TEST_GLOBAL);
 
 describe("activity-stream", () => {

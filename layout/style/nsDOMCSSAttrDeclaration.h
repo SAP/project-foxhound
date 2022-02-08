@@ -19,6 +19,7 @@ namespace mozilla {
 
 class SMILValue;
 class SVGAnimatedLength;
+class SVGAnimatedPathSegList;
 
 namespace dom {
 class DomGroup;
@@ -45,11 +46,14 @@ class nsDOMCSSAttributeDeclaration final : public nsDOMCSSDeclaration {
 
   mozilla::css::Rule* GetParentRule() override { return nullptr; }
 
-  nsINode* GetParentObject() override { return mElement; }
+  nsINode* GetAssociatedNode() const override { return mElement; }
+  nsINode* GetParentObject() const override { return mElement; }
 
   nsresult SetSMILValue(const nsCSSPropertyID aPropID, const SMILValue& aValue);
   nsresult SetSMILValue(const nsCSSPropertyID aPropID,
                         const SVGAnimatedLength& aLength);
+  nsresult SetSMILValue(const nsCSSPropertyID,
+                        const mozilla::SVGAnimatedPathSegList& aPath);
 
   void SetPropertyValue(const nsCSSPropertyID aPropID, const nsACString& aValue,
                         nsIPrincipal* aSubjectPrincipal,
@@ -63,7 +67,7 @@ class nsDOMCSSAttributeDeclaration final : public nsDOMCSSDeclaration {
     if (!mIsSMILOverride) {
       aClosure->function = MutationClosureFunction;
       aClosure->data = aClosureData;
-      aClosureData->mClosure = MutationClosureFunction;
+      aClosureData->mShouldBeCalled = true;
       aClosureData->mElement = mElement;
     }
   }

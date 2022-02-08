@@ -72,6 +72,13 @@ class IdlePeriodState {
     mCachedIdleDeadline = GetIdleDeadlineInternal(false, aProofOfUnlock);
   }
 
+  // If we have local idle deadline, but don't have an idle token, this will
+  // request such from the parent process when this is called in a child
+  // process.
+  void RequestIdleDeadlineIfNeeded(const MutexAutoUnlock& aProofOfUnlock) {
+    GetIdleDeadlineInternal(false, aProofOfUnlock);
+  }
+
   // Reset our cached idle deadline, so we stop allowing idle runnables to run.
   void ClearCachedIdleDeadline() { mCachedIdleDeadline = TimeStamp(); }
 
@@ -172,7 +179,7 @@ class IdlePeriodState {
 
   // If we're in a content process, we use mIdleScheduler to communicate with
   // the parent process for purposes of cross-process idle tracking.
-  RefPtr<ipc::IdleSchedulerChild> mIdleScheduler;
+  RefPtr<mozilla::ipc::IdleSchedulerChild> mIdleScheduler;
 
   // Our cached idle deadline.  This is set by UpdateCachedIdleDeadline() and
   // cleared by ClearCachedIdleDeadline().  Consumers should do the former while

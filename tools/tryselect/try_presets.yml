@@ -9,17 +9,28 @@
 
 # yamllint disable rule:line-length
 
-debugger-tests:
+builds:
     selector: fuzzy
     description: >-
-        Runs the tests relevant to the Firefox Devtools Debugger
+        Run builds without any of the extras.
     query:
-        - "'debugger"
-        - "'mozlint-eslint"
-        - "!asan 'devtools !shippable | 'linux32 | 'macosx64"
-        - "!android !asan 'linux32 | 'macosx64 | !shippable 'mochitest-chrome"
-        - "!asan !shippable 'linux '64/ 'xpcshell"
-        - "!qr !macosx !shippable 'damp"
+        - "^build- !fuzzing !notarization !reproduced !rusttests !signing !upload-symbols"
+
+builds-debug:
+    selector: fuzzy
+    description: >-
+        Run the bare minimum of debug build jobs to ensure builds work on
+        all tier-1 platforms.
+    query:
+        - "^build- 'debug !fuzzing !rusttests !signing !plain !asan !tsan !noopt !toolchain !upload-symbols"
+
+builds-debugopt:
+    selector: fuzzy
+    description: >-
+        Run the bare minimum of debug and opt build jobs to ensure builds work on
+        all tier-1 platforms.
+    query:
+        - "^build- !fuzzing !rusttests !signing !plain !asan !tsan !noopt !toolchain !upload-symbols"
 
 devtools:
     selector: fuzzy
@@ -28,10 +39,14 @@ devtools:
     query:
         - "'node-debugger | 'node-devtools"
         - "'mozlint-eslint"
-        - "'mochitest-devtools-chrome-e10s | 'mochitest-chrome-1proc 'windows10-64/ | 'macosx1014-64"
+        # 'mochitest-devtools-chrome matches "-e10s" and "-fis-e10s"
+        # Windows: skip jobs on asan and 32 bits platforms
+        - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'windows10 !asan !-32"
+        # macos: no extra platform to filter out
+        - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'macosx"
         # Linux is being named "linux1804" and may change over time, so use a more flexible search
-        - "'mochitest-devtools-chrome-e10s | 'mochitest-chrome-1proc | 'mochitest-devtools-chrome-fis-e10s linux '64/"
-        - "'xpcshell-e10s 'linux '64/"
+        - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'linux '64-qr/ !swr"
+        - "'xpcshell-e10s 'linux '64-qr/"
 
 devtools-linux:
     selector: fuzzy
@@ -40,8 +55,8 @@ devtools-linux:
     query:
         - "'node-debugger | 'node-devtools"
         - "'mozlint-eslint"
-        - "'mochitest-devtools-chrome-e10s | 'mochitest-chrome-1proc 'linux '64/"
-        - "'xpcshell-e10s 'linux '64/"
+        - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'linux '64-qr/ !swr"
+        - "'xpcshell-e10s 'linux '64-qr/"
 
 fpush-linux-android:
     selector: fuzzy
@@ -56,9 +71,21 @@ fpush-linux-android:
         codebase, while the builds on other platforms catch compilation problems
         that might result from only building locally on one platform.
     query:
-        - "'test-linux1804 'debug- !-shippable !-asan !-fis-"
+        - "'test-linux1804 'debug- !-shippable !-asan"
         - "'test-android-em 'debug"
         - "^build !-shippable !-signing !-asan !-fuzzing !-rusttests !-base-toolchain !-aar-"
+
+geckodriver:
+    selector: fuzzy
+    description: >-
+        Runs the tests relevant to geckodriver, which implements the WebDriver
+        specification. This preset can be filtered down further to limit it to
+        a specific platform or other tasks only. For example:
+        |mach try --preset geckodriver -xq "'linux"|
+    query:
+        - "'rusttests"
+        - "'platform 'wdspec 'debug !fis"
+        - "'browsertime 'amazon 'vismet 'shippable 'firefox !fis"
 
 perf:
     selector: fuzzy
@@ -81,6 +108,27 @@ perf-chrome:
         - "opt-talos- 'chrome | 'svg | 'session | 'tabswitch | 'other | 'g5"
     rebuild: 6
     selector: fuzzy
+
+remote-protocol:
+    selector: fuzzy
+    description: >-
+        Runs the tests relevant to the Remote protocol, which underpins
+        many test harnesses as well as our CDP and WebDriver implementations.
+        This preset can be filtered down further to limit it to a specific
+        platform or to opt/debug tasks only. For example:
+        |mach try --preset remote-protocol -xq "'linux 'opt"|
+    query:
+        - "'awsy-base"
+        - "'firefox-ui"
+        - "'marionette !swr | harness"
+        - "'mochitest-browser !spi !swr 'fis -1$"
+        - "'mochitest-remote !spi !swr"
+        - "'platform 'reftest !swr 'fis | 'android !-lite -1$"
+        - "'platform 'wdspec !swr"
+        - "'platform !reftest !wdspec !swr 'fis | 'android !-lite -1$"
+        - "'puppeteer"
+        - "'reftest !platform !gpu !swr !no-accel 'fis | 'android !-lite -1$"
+        - "'xpcshell !spi !tsan !-lite"
 
 sample-suites:
     selector: fuzzy

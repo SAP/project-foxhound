@@ -2,60 +2,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
-import {
-  getBreakpoint,
-  getSource,
-  getSourceActorsForSource,
-} from "../../selectors";
+import { getSource, getSourceActorsForSource } from "../../selectors";
 import { isGenerated } from "../source";
 import { sortSelectedLocations } from "../location";
 import assert from "../assert";
-import { features } from "../prefs";
-
 export * from "./astBreakpointLocation";
 export * from "./breakpointPositions";
 
-import type {
-  Source,
-  SourceActor,
-  SourceLocation,
-  SourceActorLocation,
-  PendingLocation,
-  Breakpoint,
-  BreakpointLocation,
-  PendingBreakpoint,
-} from "../../types";
-
-import type { State } from "../../reducers/types";
-
-// Return the first argument that is a string, or null if nothing is a
-// string.
-export function firstString(...args: string[]): ?string {
-  for (const arg of args) {
-    if (typeof arg === "string") {
-      return arg;
-    }
-  }
-  return null;
-}
-
 // The ID for a Breakpoint is derived from its location in its Source.
-export function makeBreakpointId(location: SourceLocation): string {
+export function makeBreakpointId(location) {
   const { sourceId, line, column } = location;
   const columnString = column || "";
   return `${sourceId}:${line}:${columnString}`;
 }
 
-export function getLocationWithoutColumn(location: SourceLocation): string {
+export function getLocationWithoutColumn(location) {
   const { sourceId, line } = location;
   return `${sourceId}:${line}`;
 }
 
-type AnySourceLocation = SourceLocation | PendingLocation;
-
-export function makePendingLocationId(location: AnySourceLocation): string {
+export function makePendingLocationId(location) {
   assertPendingLocation(location);
   const { sourceUrl, line, column } = location;
   const sourceUrlString = sourceUrl || "";
@@ -64,15 +30,12 @@ export function makePendingLocationId(location: AnySourceLocation): string {
   return `${sourceUrlString}:${line}:${columnString}`;
 }
 
-export function makeBreakpointLocation(
-  state: State,
-  location: SourceLocation
-): BreakpointLocation {
+export function makeBreakpointLocation(state, location) {
   const source = getSource(state, location.sourceId);
   if (!source) {
     throw new Error("no source");
   }
-  const breakpointLocation: any = {
+  const breakpointLocation = {
     line: location.line,
     column: location.column,
   };
@@ -87,42 +50,12 @@ export function makeBreakpointLocation(
   return breakpointLocation;
 }
 
-export function makeSourceActorLocation(
-  sourceActor: SourceActor,
-  location: SourceLocation
-) {
-  return {
-    sourceActor,
-    line: location.line,
-    column: location.column,
-  };
-}
-
-// The ID for a BreakpointActor is derived from its location in its SourceActor.
-export function makeBreakpointActorId(location: SourceActorLocation): string {
-  const { sourceActor, line, column } = location;
-  return `${sourceActor}:${line}:${column || ""}`;
-}
-
-export function assertBreakpoint(breakpoint: Breakpoint): void {
-  assertLocation(breakpoint.location);
-  assertLocation(breakpoint.generatedLocation);
-}
-
-export function assertPendingBreakpoint(
-  pendingBreakpoint: PendingBreakpoint
-): void {
+export function assertPendingBreakpoint(pendingBreakpoint) {
   assertPendingLocation(pendingBreakpoint.location);
   assertPendingLocation(pendingBreakpoint.generatedLocation);
 }
 
-export function assertLocation(location: SourceLocation): void {
-  assertPendingLocation(location);
-  const { sourceId } = location;
-  assert(!!sourceId, "location must have a source id");
-}
-
-export function assertPendingLocation(location: PendingLocation): void {
+export function assertPendingLocation(location) {
   assert(!!location, "location must exist");
 
   const { sourceUrl } = location;
@@ -136,40 +69,7 @@ export function assertPendingLocation(location: PendingLocation): void {
   );
 }
 
-// syncing
-export function breakpointAtLocation(
-  breakpoints: Breakpoint[],
-  { line, column }: SourceLocation
-): ?Breakpoint {
-  return breakpoints.find(breakpoint => {
-    const sameLine = breakpoint.location.line === line;
-    if (!sameLine) {
-      return false;
-    }
-
-    // NOTE: when column breakpoints are disabled we want to find
-    // the first breakpoint
-    if (!features.columnBreakpoints) {
-      return true;
-    }
-
-    return breakpoint.location.column === column;
-  });
-}
-
-export function breakpointExists(
-  state: State,
-  location: SourceLocation
-): boolean {
-  const currentBp = getBreakpoint(state, location);
-  return !!currentBp && !currentBp.disabled;
-}
-
-export function createXHRBreakpoint(
-  path: string,
-  method: string,
-  overrides?: Object = {}
-) {
+export function createXHRBreakpoint(path, method, overrides = {}) {
   const properties = {
     path,
     method,
@@ -181,12 +81,12 @@ export function createXHRBreakpoint(
   return { ...properties, ...overrides };
 }
 
-function createPendingLocation(location: PendingLocation) {
+function createPendingLocation(location) {
   const { sourceUrl, line, column } = location;
   return { sourceUrl, line, column };
 }
 
-export function createPendingBreakpoint(bp: Breakpoint) {
+export function createPendingBreakpoint(bp) {
   const pendingLocation = createPendingLocation(bp.location);
   const pendingGeneratedLocation = createPendingLocation(bp.generatedLocation);
 
@@ -201,18 +101,12 @@ export function createPendingBreakpoint(bp: Breakpoint) {
   };
 }
 
-export function getSelectedText(
-  breakpoint: Breakpoint,
-  selectedSource: ?Source
-): string {
+export function getSelectedText(breakpoint, selectedSource) {
   return !!selectedSource && isGenerated(selectedSource)
     ? breakpoint.text
     : breakpoint.originalText;
 }
 
-export function sortSelectedBreakpoints(
-  breakpoints: Array<Breakpoint>,
-  selectedSource: ?Source
-): Array<Breakpoint> {
+export function sortSelectedBreakpoints(breakpoints, selectedSource) {
   return sortSelectedLocations(breakpoints, selectedSource);
 }

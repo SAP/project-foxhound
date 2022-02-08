@@ -19,7 +19,8 @@ import {
   getTestState,
   setupTestBrowserHooks,
   setupTestPageAndContextHooks,
-} from './mocha-utils';
+  describeFailsFirefox,
+} from './mocha-utils'; // eslint-disable-line import/extensions
 
 describe('Touchscreen', function () {
   setupTestBrowserHooks();

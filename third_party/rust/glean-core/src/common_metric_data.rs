@@ -5,13 +5,16 @@
 use std::convert::TryFrom;
 
 use crate::error::{Error, ErrorKind};
-use crate::metrics::dynamic_label;
+use crate::metrics::labeled::validate_dynamic_label;
+#[allow(unused_imports)]
+use crate::metrics::LabeledMetric;
 use crate::Glean;
 
 /// The supported metrics' lifetimes.
 ///
 /// A metric's lifetime determines when its stored data gets reset.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[repr(i32)] // Use i32 to be compatible with our JNA definition
 pub enum Lifetime {
     /// The metric is reset with each sent ping
     Ping,
@@ -67,14 +70,16 @@ pub struct CommonMetricData {
     /// Disabled metrics are never recorded.
     pub disabled: bool,
     /// Dynamic label.
-    /// When a LabeledMetric<T> factory creates the specific metric to be
-    /// recorded to, dynamic labels are stored in the specific label so that we
-    /// can validate them when the Glean singleton is available.
+    ///
+    /// When a [`LabeledMetric<T>`](LabeledMetric) factory creates the specific
+    /// metric to be recorded to, dynamic labels are stored in the specific
+    /// label so that we can validate them when the Glean singleton is
+    /// available.
     pub dynamic_label: Option<String>,
 }
 
 impl CommonMetricData {
-    /// Create a new metadata object.
+    /// Creates a new metadata object.
     pub fn new<A: Into<String>, B: Into<String>, C: Into<String>>(
         category: A,
         name: B,
@@ -108,7 +113,7 @@ impl CommonMetricData {
         let base_identifier = self.base_identifier();
 
         if let Some(label) = &self.dynamic_label {
-            dynamic_label(glean, self, &base_identifier, label)
+            validate_dynamic_label(glean, self, &base_identifier, label)
         } else {
             base_identifier
         }

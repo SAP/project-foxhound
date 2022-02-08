@@ -8,12 +8,11 @@
 #ifndef mozilla_WidgetUtils_h
 #define mozilla_WidgetUtils_h
 
-#include "mozilla/EventForwards.h"
+#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/gfx/Matrix.h"
-#include "nsCOMPtr.h"
-#include "nsIWidget.h"
 #include "nsRect.h"
 
+class nsIWidget;
 class nsPIDOMWindowOuter;
 
 namespace mozilla {
@@ -81,11 +80,6 @@ class WidgetUtils {
                                          uint32_t* aShiftedCharCode);
 
   /**
-   * Does device have touch support
-   */
-  static uint32_t IsTouchDeviceSupportPresent();
-
-  /**
    * Send bidi keyboard information to content process
    */
   static void SendBidiKeyboardInfoToContent();
@@ -94,6 +88,11 @@ class WidgetUtils {
    * Get branchShortName from string bundle
    */
   static void GetBrandShortName(nsAString& aBrandName);
+
+  /* When packaged as a snap, strict confinement needs to be accounted for.
+     See https://snapcraft.io/docs for details.
+     Return the snap's instance name, or null when not running as a snap. */
+  static const char* GetSnapInstanceName();
 };
 
 }  // namespace widget

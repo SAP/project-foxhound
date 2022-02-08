@@ -7,11 +7,13 @@
 #ifndef TrustOverrides_h
 #define TrustOverrides_h
 
-#include "nsNSSCertificate.h"
-#include "nsNSSCertValidity.h"
 #include "mozilla/ArrayUtils.h"
+#include "mozpkix/pkix.h"
+#include "mozpkix/pkixnss.h"
+#include "mozpkix/pkixutil.h"
 
 using namespace mozilla;
+using namespace mozilla::pkix;
 
 struct DataAndLength {
   const uint8_t* data;
@@ -19,16 +21,33 @@ struct DataAndLength {
 };
 
 template <size_t T>
-static bool CertDNIsInList(const CERTCertificate* aCert,
+static bool CertDNIsInList(const nsTArray<uint8_t>& aCert,
                            const DataAndLength (&aDnList)[T]) {
-  MOZ_ASSERT(aCert);
-  if (!aCert) {
+  Input certInput;
+  mozilla::pkix::Result rv = certInput.Init(aCert.Elements(), aCert.Length());
+  if (rv != Success) {
     return false;
   }
 
+  // we don't use the certificate for path building, so this parameter doesn't
+  // matter
+  EndEntityOrCA notUsedForPaths = EndEntityOrCA::MustBeEndEntity;
+  BackCert cert(certInput, notUsedForPaths, nullptr);
+  rv = cert.Init();
+  if (rv != Success) {
+    return false;
+  }
+
+  Input subject(cert.GetSubject());
+
   for (auto& dn : aDnList) {
-    if (aCert->derSubject.len == dn.len &&
-        mozilla::ArrayEqual(aCert->derSubject.data, dn.data, dn.len)) {
+    Input dnInput;
+    rv = dnInput.Init(dn.data, dn.len);
+    if (rv != Success) {
+      return false;
+    }
+
+    if (InputsAreEqual(subject, dnInput)) {
       return true;
     }
   }
@@ -36,16 +55,27 @@ static bool CertDNIsInList(const CERTCertificate* aCert,
 }
 
 template <size_t T>
-static bool CertSPKIIsInList(const CERTCertificate* aCert,
+static bool CertSPKIIsInList(Input aCertInput,
                              const DataAndLength (&aSpkiList)[T]) {
-  MOZ_ASSERT(aCert);
-  if (!aCert) {
+  // we don't use the certificate for path building, so this parameter doesn't
+  // matter
+  EndEntityOrCA notUsedForPaths = EndEntityOrCA::MustBeEndEntity;
+  BackCert cert(aCertInput, notUsedForPaths, nullptr);
+  mozilla::pkix::Result rv = cert.Init();
+  if (rv != Success) {
     return false;
   }
 
+  Input publicKey(cert.GetSubjectPublicKeyInfo());
+
   for (auto& spki : aSpkiList) {
-    if (aCert->derPublicKey.len == spki.len &&
-        mozilla::ArrayEqual(aCert->derPublicKey.data, spki.data, spki.len)) {
+    Input spkiInput;
+    rv = spkiInput.Init(spki.data, spki.len);
+    if (rv != Success) {
+      return false;
+    }
+
+    if (InputsAreEqual(publicKey, spkiInput)) {
       return true;
     }
   }
@@ -53,69 +83,62 @@ static bool CertSPKIIsInList(const CERTCertificate* aCert,
 }
 
 template <size_t T, size_t R>
-static bool CertMatchesStaticData(const CERTCertificate* cert,
+static bool CertMatchesStaticData(const nsTArray<uint8_t>& aCert,
                                   const unsigned char (&subject)[T],
                                   const unsigned char (&spki)[R]) {
-  MOZ_ASSERT(cert);
-  if (!cert) {
+  Input certInput;
+  mozilla::pkix::Result rv = certInput.Init(aCert.Elements(), aCert.Length());
+  if (rv != Success) {
     return false;
   }
-  return cert->derSubject.len == T &&
-         mozilla::ArrayEqual(cert->derSubject.data, subject, T) &&
-         cert->derPublicKey.len == R &&
-         mozilla::ArrayEqual(cert->derPublicKey.data, spki, R);
+
+  // we don't use the certificate for path building, so this parameter doesn't
+  // matter
+  EndEntityOrCA notUsedForPaths = EndEntityOrCA::MustBeEndEntity;
+  BackCert cert(certInput, notUsedForPaths, nullptr);
+  rv = cert.Init();
+  if (rv != Success) {
+    return false;
+  }
+
+  Input certSubject(cert.GetSubject());
+  Input certSPKI(cert.GetSubjectPublicKeyInfo());
+
+  Input subjectInput;
+  rv = subjectInput.Init(subject, T);
+  if (rv != Success) {
+    return false;
+  }
+
+  Input spkiInput;
+  rv = spkiInput.Init(spki, R);
+  if (rv != Success) {
+    return false;
+  }
+
+  return InputsAreEqual(certSubject, subjectInput) &&
+         InputsAreEqual(certSPKI, spkiInput);
 }
 
 // Implements the graduated Symantec distrust algorithm from Bug 1409257.
 // This accepts a pre-segmented certificate chain (e.g. SegmentCertificateChain)
-// as |intCerts| and |eeCert|, and pre-assumes that the root has been identified
+// as |intCerts|, and pre-assumes that the root has been identified
 // as being affected (this is to avoid duplicate Segment operations in the
-// NSSCertDBTrustDomain). If |permitAfterDate| is non-zero, this algorithm
-// returns "not distrusted" if the NotBefore date of |eeCert| is after
-// the |permitAfterDate|. Then each of the |intCerts| is evaluated against a
-// |whitelist| of SPKI entries, and if a match is found, then this returns
+// NSSCertDBTrustDomain). Each of the |intCerts| is evaluated against a
+// |allowlist| of SPKI entries, and if a match is found, then this returns
 // "not distrusted." Otherwise, due to the precondition holding, the chain is
 // "distrusted."
 template <size_t T>
-static nsresult CheckForSymantecDistrust(
-    const nsTArray<RefPtr<nsIX509Cert>>& intCerts,
-    const nsCOMPtr<nsIX509Cert>& eeCert, const PRTime& permitAfterDate,
-    const DataAndLength (&whitelist)[T],
-    /* out */ bool& isDistrusted) {
+static nsresult CheckForSymantecDistrust(const nsTArray<Input>& intCerts,
+                                         const DataAndLength (&allowlist)[T],
+                                         /* out */ bool& isDistrusted) {
   // PRECONDITION: The rootCert is already verified as being one of the
   // affected Symantec roots
 
-  // Check the preference to see if this is enabled before proceeding.
-  // TODO in Bug 1437754
-
   isDistrusted = true;
 
-  // Only check the validity period if we're asked
-  if (permitAfterDate > 0) {
-    // We need to verify the age of the end entity
-    nsCOMPtr<nsIX509CertValidity> validity;
-    nsresult rv = eeCert->GetValidity(getter_AddRefs(validity));
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-
-    PRTime notBefore;
-    rv = validity->GetNotBefore(&notBefore);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-
-    // If the end entity's notBefore date is after the permitAfter date, this
-    // algorithm doesn't apply, so exit false before we do any iterating.
-    if (notBefore >= permitAfterDate) {
-      isDistrusted = false;
-      return NS_OK;
-    }
-  }
-
   for (const auto& cert : intCerts) {
-    UniqueCERTCertificate nssCert(cert->GetCert());
-    if (CertSPKIIsInList(nssCert.get(), whitelist)) {
+    if (CertSPKIIsInList(cert, allowlist)) {
       isDistrusted = false;
       break;
     }

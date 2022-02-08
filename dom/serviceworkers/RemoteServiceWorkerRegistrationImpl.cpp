@@ -7,6 +7,10 @@
 #include "RemoteServiceWorkerRegistrationImpl.h"
 
 #include "ServiceWorkerRegistrationChild.h"
+#include "mozilla/dom/NavigationPreloadManagerBinding.h"
+#include "mozilla/ipc/MessageChannel.h"
+#include "mozilla/ipc/PBackgroundChild.h"
+#include "mozilla/ipc/BackgroundChild.h"
 
 namespace mozilla {
 namespace dom {
@@ -106,18 +110,87 @@ void RemoteServiceWorkerRegistrationImpl::Unregister(
       });
 }
 
+void RemoteServiceWorkerRegistrationImpl::SetNavigationPreloadEnabled(
+    bool aEnabled, ServiceWorkerBoolCallback&& aSuccessCB,
+    ServiceWorkerFailureCallback&& aFailureCB) {
+  if (!mActor) {
+    aFailureCB(CopyableErrorResult(NS_ERROR_DOM_INVALID_STATE_ERR));
+    return;
+  }
+
+  mActor->SendSetNavigationPreloadEnabled(
+      aEnabled,
+      [successCB = std::move(aSuccessCB), aFailureCB](bool aResult) {
+        if (!aResult) {
+          aFailureCB(CopyableErrorResult(NS_ERROR_DOM_INVALID_STATE_ERR));
+          return;
+        }
+        successCB(aResult);
+      },
+      [aFailureCB](ResponseRejectReason&& aReason) {
+        aFailureCB(CopyableErrorResult(NS_ERROR_DOM_INVALID_STATE_ERR));
+      });
+}
+
+void RemoteServiceWorkerRegistrationImpl::SetNavigationPreloadHeader(
+    const nsCString& aHeader, ServiceWorkerBoolCallback&& aSuccessCB,
+    ServiceWorkerFailureCallback&& aFailureCB) {
+  if (!mActor) {
+    aFailureCB(CopyableErrorResult(NS_ERROR_DOM_INVALID_STATE_ERR));
+    return;
+  }
+
+  mActor->SendSetNavigationPreloadHeader(
+      aHeader,
+      [successCB = std::move(aSuccessCB), aFailureCB](bool aResult) {
+        if (!aResult) {
+          aFailureCB(CopyableErrorResult(NS_ERROR_DOM_INVALID_STATE_ERR));
+          return;
+        }
+        successCB(aResult);
+      },
+      [aFailureCB](ResponseRejectReason&& aReason) {
+        aFailureCB(CopyableErrorResult(NS_ERROR_DOM_INVALID_STATE_ERR));
+      });
+}
+
+void RemoteServiceWorkerRegistrationImpl::GetNavigationPreloadState(
+    NavigationPreloadGetStateCallback&& aSuccessCB,
+    ServiceWorkerFailureCallback&& aFailureCB) {
+  if (!mActor) {
+    aFailureCB(CopyableErrorResult(NS_ERROR_DOM_INVALID_STATE_ERR));
+    return;
+  }
+
+  mActor->SendGetNavigationPreloadState(
+      [successCB = std::move(aSuccessCB),
+       aFailureCB](Maybe<IPCNavigationPreloadState>&& aState) {
+        if (NS_WARN_IF(!aState)) {
+          aFailureCB(CopyableErrorResult(NS_ERROR_DOM_INVALID_STATE_ERR));
+          return;
+        }
+
+        NavigationPreloadState state;
+        state.mEnabled = aState.ref().enabled();
+        state.mHeaderValue.Construct(std::move(aState.ref().headerValue()));
+        successCB(std::move(state));
+      },
+      [aFailureCB](ResponseRejectReason&& aReason) {
+        aFailureCB(CopyableErrorResult(NS_ERROR_DOM_INVALID_STATE_ERR));
+      });
+}
+
 RemoteServiceWorkerRegistrationImpl::RemoteServiceWorkerRegistrationImpl(
     const ServiceWorkerRegistrationDescriptor& aDescriptor)
-    : mActor(nullptr), mOuter(nullptr), mShutdown(false) {
-  PBackgroundChild* parentActor =
-      BackgroundChild::GetOrCreateForCurrentThread();
+    : mOuter(nullptr), mShutdown(false) {
+  ::mozilla::ipc::PBackgroundChild* parentActor =
+      ::mozilla::ipc::BackgroundChild::GetOrCreateForCurrentThread();
   if (NS_WARN_IF(!parentActor)) {
     Shutdown();
     return;
   }
 
-  ServiceWorkerRegistrationChild* actor =
-      ServiceWorkerRegistrationChild::Create();
+  auto actor = ServiceWorkerRegistrationChild::Create();
   if (NS_WARN_IF(!actor)) {
     Shutdown();
     return;
@@ -132,7 +205,7 @@ RemoteServiceWorkerRegistrationImpl::RemoteServiceWorkerRegistrationImpl(
   }
   MOZ_DIAGNOSTIC_ASSERT(sentActor == actor);
 
-  mActor = actor;
+  mActor = std::move(actor);
   mActor->SetOwner(this);
 }
 

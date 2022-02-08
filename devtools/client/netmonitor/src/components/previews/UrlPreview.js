@@ -22,7 +22,7 @@ const TreeRow = createFactory(
 );
 
 loader.lazyGetter(this, "MODE", function() {
-  return require("devtools/client/shared/components/reps/reps").MODE;
+  return require("devtools/client/shared/components/reps/index").MODE;
 });
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 
@@ -84,9 +84,9 @@ class UrlPreview extends Component {
 
   renderRow(props) {
     const {
-      member: { name },
+      member: { name, level },
     } = props;
-    if (name == "query" || name == "remote") {
+    if ((name == "query" || name == "remote") && level == 1) {
       return tr(
         { key: name, className: "treeRow stringRow" },
         td(
@@ -120,7 +120,43 @@ class UrlPreview extends Component {
         span({ key: "url-filename", className: "url-filename" }, `${filename}`),
         !!queryParamNames.length &&
           span({ key: "url-ques", className: "url-chars" }, "?"),
+
         queryParamNames.map((name, index) => {
+          if (Array.isArray(query[name])) {
+            return query[name].map((item, queryIndex) => {
+              return span(
+                {
+                  key: `url-params-${name}${queryIndex}`,
+                  className: "url-params",
+                },
+                span(
+                  {
+                    key: `url-params${name}${queryIndex}-name`,
+                    className: "url-params-name",
+                  },
+                  `${name}`
+                ),
+                span(
+                  {
+                    key: `url-chars-${name}${queryIndex}-equals`,
+                    className: "url-chars",
+                  },
+                  "="
+                ),
+                span(
+                  {
+                    key: `url-params-${name}${queryIndex}-value`,
+                    className: "url-params-value",
+                  },
+                  `${item}`
+                ),
+                (query[name].length - 1 !== queryIndex ||
+                  queryParamNames.length - 1 !== index) &&
+                  span({ key: "url-amp", className: "url-chars" }, "&")
+              );
+            });
+          }
+
           return span(
             { key: `url-params-${name}`, className: "url-params" },
             span(
@@ -230,6 +266,18 @@ class UrlPreview extends Component {
           if (path == `/${method}`) {
             onTogglePreview(!member.open);
           }
+        },
+        contextMenuFormatters: {
+          copyFormatter: (member, baseCopyFormatter) => {
+            const { value, level, hasChildren } = member;
+            if (hasChildren && level == 0) {
+              const { scheme, filename, host, query } = value;
+              return `${scheme}://${host}${filename}${
+                query ? "?" + new URLSearchParams(query).toString() : ""
+              }`;
+            }
+            return baseCopyFormatter(member);
+          },
         },
       })
     );

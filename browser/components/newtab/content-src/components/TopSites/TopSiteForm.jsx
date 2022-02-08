@@ -238,15 +238,16 @@ export class TopSiteForm extends React.PureComponent {
     const onSubmit = previewMode
       ? this.onPreviewButtonClick
       : this.onDoneButtonClick;
+
+    const addTopsitesHeaderL10nId = "newtab-topsites-add-shortcut-header";
+    const editTopsitesHeaderL10nId = "newtab-topsites-edit-shortcut-header";
     return (
       <form className="topsite-form" onSubmit={onSubmit}>
         <div className="form-input-container">
           <h3
             className="section-title grey-title"
             data-l10n-id={
-              showAsAdd
-                ? "newtab-topsites-add-topsites-header"
-                : "newtab-topsites-edit-topsites-header"
+              showAsAdd ? addTopsitesHeaderL10nId : editTopsitesHeaderL10nId
             }
           />
           <div className="fields-and-preview">

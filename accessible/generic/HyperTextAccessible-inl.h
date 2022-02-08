@@ -13,23 +13,10 @@
 #include "nsIClipboard.h"
 #include "nsFrameSelection.h"
 
-#include "mozilla/TextEditor.h"
+#include "mozilla/EditorBase.h"
 
 namespace mozilla {
 namespace a11y {
-
-inline bool HyperTextAccessible::IsValidOffset(int32_t aOffset) {
-  index_t offset = ConvertMagicOffset(aOffset);
-  return offset.IsValid() && offset <= CharacterCount();
-}
-
-inline bool HyperTextAccessible::IsValidRange(int32_t aStartOffset,
-                                              int32_t aEndOffset) {
-  index_t startOffset = ConvertMagicOffset(aStartOffset);
-  index_t endOffset = ConvertMagicOffset(aEndOffset);
-  return startOffset.IsValid() && endOffset.IsValid() &&
-         startOffset <= endOffset && endOffset <= CharacterCount();
-}
 
 inline void HyperTextAccessible::SetCaretOffset(int32_t aOffset) {
   SetSelectionRange(aOffset, aOffset);
@@ -53,68 +40,59 @@ inline void HyperTextAccessible::ReplaceText(const nsAString& aText) {
 
   SetSelectionRange(0, CharacterCount());
 
-  RefPtr<TextEditor> textEditor = GetEditor();
-  if (!textEditor) {
+  RefPtr<EditorBase> editorBase = GetEditor();
+  if (!editorBase) {
     return;
   }
 
-  DebugOnly<nsresult> rv = textEditor->InsertTextAsAction(aText);
+  DebugOnly<nsresult> rv = editorBase->InsertTextAsAction(aText);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Failed to insert the new text");
 }
 
 inline void HyperTextAccessible::InsertText(const nsAString& aText,
                                             int32_t aPosition) {
-  RefPtr<TextEditor> textEditor = GetEditor();
-  if (textEditor) {
+  RefPtr<EditorBase> editorBase = GetEditor();
+  if (editorBase) {
     SetSelectionRange(aPosition, aPosition);
-    DebugOnly<nsresult> rv = textEditor->InsertTextAsAction(aText);
+    DebugOnly<nsresult> rv = editorBase->InsertTextAsAction(aText);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Failed to insert the text");
   }
 }
 
 inline void HyperTextAccessible::CopyText(int32_t aStartPos, int32_t aEndPos) {
-  RefPtr<TextEditor> textEditor = GetEditor();
-  if (textEditor) {
+  RefPtr<EditorBase> editorBase = GetEditor();
+  if (editorBase) {
     SetSelectionRange(aStartPos, aEndPos);
-    textEditor->Copy();
+    editorBase->Copy();
   }
 }
 
 inline void HyperTextAccessible::CutText(int32_t aStartPos, int32_t aEndPos) {
-  RefPtr<TextEditor> textEditor = GetEditor();
-  if (textEditor) {
+  RefPtr<EditorBase> editorBase = GetEditor();
+  if (editorBase) {
     SetSelectionRange(aStartPos, aEndPos);
-    textEditor->Cut();
+    editorBase->Cut();
   }
 }
 
 inline void HyperTextAccessible::DeleteText(int32_t aStartPos,
                                             int32_t aEndPos) {
-  RefPtr<TextEditor> textEditor = GetEditor();
-  if (!textEditor) {
+  RefPtr<EditorBase> editorBase = GetEditor();
+  if (!editorBase) {
     return;
   }
   SetSelectionRange(aStartPos, aEndPos);
   DebugOnly<nsresult> rv =
-      textEditor->DeleteSelectionAsAction(nsIEditor::eNone, nsIEditor::eStrip);
+      editorBase->DeleteSelectionAsAction(nsIEditor::eNone, nsIEditor::eStrip);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Failed to delete text");
 }
 
 inline void HyperTextAccessible::PasteText(int32_t aPosition) {
-  RefPtr<TextEditor> textEditor = GetEditor();
-  if (textEditor) {
+  RefPtr<EditorBase> editorBase = GetEditor();
+  if (editorBase) {
     SetSelectionRange(aPosition, aPosition);
-    textEditor->PasteAsAction(nsIClipboard::kGlobalClipboard, true);
+    editorBase->PasteAsAction(nsIClipboard::kGlobalClipboard, true);
   }
-}
-
-inline index_t HyperTextAccessible::ConvertMagicOffset(int32_t aOffset) const {
-  if (aOffset == nsIAccessibleText::TEXT_OFFSET_END_OF_TEXT)
-    return CharacterCount();
-
-  if (aOffset == nsIAccessibleText::TEXT_OFFSET_CARET) return CaretOffset();
-
-  return aOffset;
 }
 
 inline uint32_t HyperTextAccessible::AdjustCaretOffset(uint32_t aOffset) const {

@@ -4,8 +4,6 @@
 
 "use strict";
 
-const Services = require("Services");
-
 function generalEvent(groupID, eventType) {
   return {
     id: `event.${groupID}.${eventType}`,
@@ -79,6 +77,13 @@ function animationEvent(operation, name, notificationType) {
   };
 }
 
+const SCRIPT_FIRST_STATEMENT_BREAKPOINT = {
+  id: "script.source.firstStatement",
+  type: "script",
+  name: "Script First Statement",
+  message: "Script First Statement",
+};
+
 const AVAILABLE_BREAKPOINTS = [
   {
     name: "Animation",
@@ -118,6 +123,8 @@ const AVAILABLE_BREAKPOINTS = [
       generalEvent("control", "scroll"),
       generalEvent("control", "zoom"),
       generalEvent("control", "focus"),
+      generalEvent("control", "focusin"),
+      generalEvent("control", "focusout"),
       generalEvent("control", "blur"),
       generalEvent("control", "select"),
       generalEvent("control", "change"),
@@ -168,10 +175,7 @@ const AVAILABLE_BREAKPOINTS = [
   {
     name: "Keyboard",
     items: [
-      Services.prefs &&
-      Services.prefs.getBoolPref("dom.input_events.beforeinput.enabled")
-        ? generalEvent("keyboard", "beforeinput")
-        : null,
+      generalEvent("keyboard", "beforeinput"),
       generalEvent("keyboard", "input"),
       generalEvent("keyboard", "keydown"),
       generalEvent("keyboard", "keyup"),
@@ -250,6 +254,10 @@ const AVAILABLE_BREAKPOINTS = [
       generalEvent("pointer", "gotpointercapture"),
       generalEvent("pointer", "lostpointercapture"),
     ],
+  },
+  {
+    name: "Script",
+    items: [SCRIPT_FIRST_STATEMENT_BREAKPOINT],
   },
   {
     name: "Timer",
@@ -365,6 +373,8 @@ for (const eventBP of FLAT_EVENTS) {
       }
       byEventType[eventType] = eventBP.id;
     }
+  } else if (eventBP.type === "script") {
+    // Nothing to do.
   } else {
     throw new Error("Unknown type: " + eventBP.type);
   }
@@ -430,6 +440,25 @@ function makeEventBreakpointMessage(id) {
   return EVENTS_BY_ID[id].message;
 }
 
+exports.firstStatementBreakpointId = firstStatementBreakpointId;
+function firstStatementBreakpointId() {
+  return SCRIPT_FIRST_STATEMENT_BREAKPOINT.id;
+}
+
+exports.eventsRequireNotifications = eventsRequireNotifications;
+function eventsRequireNotifications(ids) {
+  for (const id of ids) {
+    const eventBreakpoint = EVENTS_BY_ID[id];
+
+    // Script events are implemented directly in the server and do not require
+    // notifications from Gecko, so there is no need to watch for them.
+    if (eventBreakpoint && eventBreakpoint.type !== "script") {
+      return true;
+    }
+  }
+  return false;
+}
+
 exports.getAvailableEventBreakpoints = getAvailableEventBreakpoints;
 function getAvailableEventBreakpoints() {
   const available = [];
@@ -443,4 +472,8 @@ function getAvailableEventBreakpoints() {
     });
   }
   return available;
+}
+exports.validateEventBreakpoint = validateEventBreakpoint;
+function validateEventBreakpoint(id) {
+  return !!EVENTS_BY_ID[id];
 }

@@ -30,10 +30,10 @@ add_task(async function() {
   await clickElement(dbg, "sourceDirectoryLabel", 4);
   await assertSourceCount(dbg, 9);
 
-  const selected = waitForDispatch(dbg, "SET_SELECTED_LOCATION");
+  const selected = waitForDispatch(dbg.store, "SET_SELECTED_LOCATION");
   await clickElement(dbg, "sourceNode", 5);
   await selected;
-  await waitForSelectedSource(dbg);
+  await waitForSelectedSource(dbg, "nested-source.js");
 
   // Ensure the source file clicked is now focused
   await waitForElementWithSelector(dbg, ".sources-list .focused");
@@ -45,7 +45,6 @@ add_task(async function() {
   ok(fourthNode.classList.contains("focused"), "4th node is focused");
   ok(selectedSource.includes("nested-source.js"), "nested-source is selected");
   await assertNodeIsFocused(dbg, 5);
-  await waitForSelectedSource(dbg, "nested-source");
 
   // Make sure new sources appear in the list.
   SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {

@@ -4,8 +4,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![allow(dead_code, non_upper_case_globals, non_snake_case)]
-#![allow(clippy::cognitive_complexity, clippy::too_many_lines)]
+#![allow(
+    dead_code,
+    non_upper_case_globals,
+    non_snake_case,
+    clippy::cognitive_complexity,
+    clippy::too_many_lines,
+    clippy::upper_case_acronyms
+)]
+#![allow(unknown_lints, deref_nullptr)] // Until we require rust 1.53 or bindgen#1651 is fixed.
 
 use crate::constants::Epoch;
 use crate::err::{secstatus_to_res, Res};
@@ -113,6 +120,17 @@ experimental_api!(SSL_SetResumptionTokenCallback(
     fd: *mut PRFileDesc,
     cb: SSLResumptionTokenCallback,
     arg: *mut c_void,
+));
+
+experimental_api!(SSL_GetResumptionTokenInfo(
+    token: *const u8,
+    token_len: c_uint,
+    info: *mut SSLResumptionTokenInfo,
+    len: c_uint,
+));
+
+experimental_api!(SSL_DestroyResumptionTokenInfo(
+    info: *mut SSLResumptionTokenInfo,
 ));
 
 #[cfg(test)]

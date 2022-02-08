@@ -19,10 +19,10 @@ interface IGeckoEditableParent {
 
     // Notify a change in editor state or type.
     void notifyIMEContext(IBinder token, int state, String typeHint, String modeHint,
-                          String actionHint, int flags);
+                          String actionHint, String autocapitalize, int flags);
 
     // Notify a change in editor selection.
-    void onSelectionChange(IBinder token, int start, int end);
+    void onSelectionChange(IBinder token, int start, int end, boolean causedOnlyByComposition);
 
     // Notify a change in editor text.
     void onTextChange(IBinder token, in CharSequence text,

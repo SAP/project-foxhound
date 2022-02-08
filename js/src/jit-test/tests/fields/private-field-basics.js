@@ -1,6 +1,3 @@
-// |jit-test| --enable-private-fields;
-// Very basic InitPrivateElem, SetPrivateElem, GetPrivateElem testing
-
 class A {
   #x = 10
 
@@ -15,6 +12,25 @@ class A {
   }
   static optionalx(o) {
     return o?.#x;
+  }
+
+  static orEqual(o, v) {
+    o.#x ||= v;
+    return o.#x;
+  }
+
+  setX(v) {
+    this.#x = v;
+  }
+
+  compoundInc() {
+    this.#x += 1;
+    return this.#x;
+  }
+
+  compoundDec() {
+    this.#x -= 1;
+    return this.#x;
   }
 
   #y = () => 'hi';
@@ -38,6 +54,14 @@ class A {
   static ssz(o) {
     this.#z = o;
   }
+
+  static six(o) {
+    o.#x++;
+  }
+
+  static dix(o) {
+    o.#x--;
+  }
 };
 
 for (var i = 0; i < 1000; i++) {
@@ -46,6 +70,11 @@ for (var i = 0; i < 1000; i++) {
   a.ix();
   assertEq(a.x(), 11);
   assertEq(A.readx(a), 11);
+  assertEq(a.compoundInc(), 12);
+  assertEq(A.orEqual(a, 13), 12);
+  a.setX(null);
+  assertEq(A.orEqual(a, 12), 12);
+  assertEq(a.compoundDec(), 11);
   assertEq(a.invoke(), 'hi');
   assertEq(a.gz(), 'static');
   assertEq(A.sgz(), 'static');
@@ -75,18 +104,25 @@ function assertThrows(fun, errorType) {
   }
 }
 
-assertThrows(() => A.readx(), TypeError);    // Undefined
-assertThrows(() => A.readx({}), TypeError);  // Random object
-assertThrows(() => A.readx(1), TypeError);   // Random primitive
+function testTypeErrors(v) {
+  assertThrows(() => A.readx(v), TypeError);  // Read value
+  assertThrows(() => A.six(v), TypeError);    // increment
+  assertThrows(() => A.dix(v), TypeError);    // decrement
+}
+
+testTypeErrors(undefined);  // Undefined
+testTypeErrors({});         // Random object
+testTypeErrors(1);          // Random primitive
+
 assertThrows(
-    () => eval('class B extends class { #x; } { g() { return super.#x; } }'),
-    SyntaxError);  // Access super.#private
+  () => eval('class B extends class { #x; } { g() { return super.#x; } }'),
+  SyntaxError);  // Access super.#private
 assertThrows(
-    () => eval('class C { #x = 10; static #x = 14; }'),
-    SyntaxError);  // Duplicate name declaration.
+  () => eval('class C { #x = 10; static #x = 14; }'),
+  SyntaxError);  // Duplicate name declaration.
 assertThrows(
-    () => eval('delete this.#x'),
-    SyntaxError);  // deleting a private field in non-strict mode.
+  () => eval('delete this.#x'),
+  SyntaxError);  // deleting a private field in non-strict mode.
 
 class B extends class {
   constructor(o) {
@@ -209,7 +245,7 @@ for (var index in elements) {
 
 // Megamorphic Cache Testing:
 for (var i = 0; i < 100; i++) {
-  var inputs = [{a: 1}, {b: 2}, {c: 3}, {d: 4}, {e: 5}];
+  var inputs = [{ a: 1 }, { b: 2 }, { c: 3 }, { d: 4 }, { e: 5 }, new Proxy({}, {})];
   for (var o of inputs) {
     assertThrows(() => B.gx(o), TypeError);
     assertThrows(() => B.sx(o), TypeError);

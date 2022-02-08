@@ -151,23 +151,10 @@ class IMEHandler final {
    */
   static void InitInputContext(nsWindow* aWindow, InputContext& aInputContext);
 
-  /*
-   * For windowless plugin helper.
-   */
-  static void SetCandidateWindow(nsWindow* aWindow, CANDIDATEFORM* aForm);
-
-  /*
-   * For WM_IME_*COMPOSITION messages and e10s with windowless plugin
-   */
-  static void DefaultProcOfPluginEvent(nsWindow* aWindow,
-                                       const NPEvent* aPluginEvent);
-
-#ifdef NS_ENABLE_TSF
   /**
    * This is called by TSFStaticSink when active IME is changed.
    */
   static void OnKeyboardLayoutChanged();
-#endif  // #ifdef NS_ENABLE_TSF
 
 #ifdef DEBUG
   /**
@@ -194,7 +181,6 @@ class IMEHandler final {
 
   static bool sMaybeEditable;
   static bool sForceDisableCurrentIMM_IME;
-  static bool sPluginHasFocus;
   static bool sNativeCaretIsCreated;
   static bool sHasNativeCaretBeenRequested;
 
@@ -207,7 +193,6 @@ class IMEHandler final {
    */
   static bool MaybeCreateNativeCaret(nsWindow* aWindow);
 
-#ifdef NS_ENABLE_TSF
   static decltype(SetInputScopes)* sSetInputScopes;
   static void SetInputScopeForIMM32(nsWindow* aWindow,
                                     const nsAString& aHTMLInputType,
@@ -219,8 +204,10 @@ class IMEHandler final {
   static bool sIsIMMEnabled;
   static bool sAssociateIMCOnlyWhenIMM_IMEActive;
 
-  static bool IsTSFAvailable() { return (sIsInTSFMode && !sPluginHasFocus); }
+  static bool IsTSFAvailable() { return sIsInTSFMode; }
   static bool IsIMMActive();
+
+  static bool IsOnScreenKeyboardSupported();
 
   static void MaybeShowOnScreenKeyboard(nsWindow* aWindow,
                                         const InputContext& aInputContext);
@@ -246,13 +233,6 @@ class IMEHandler final {
    * Windows 8 and higher.
    */
   static void DismissOnScreenKeyboard(nsWindow* aWindow);
-
-  /**
-   * Get the HWND for the on-screen keyboard, if it's up. Only
-   * allowed for Windows 8 and higher.
-   */
-  static HWND GetOnScreenKeyboardWindow();
-#endif  // #ifdef NS_ENABLE_TSF
 };
 
 }  // namespace widget

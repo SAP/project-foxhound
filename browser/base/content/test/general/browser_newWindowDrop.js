@@ -1,7 +1,11 @@
+const { SearchTestUtils } = ChromeUtils.import(
+  "resource://testing-common/SearchTestUtils.jsm"
+);
+
+SearchTestUtils.init(this);
+
 registerCleanupFunction(async function cleanup() {
   await Services.search.setDefault(originalEngine);
-  let engine = Services.search.getEngineByName("MozSearch");
-  await Services.search.removeEngine(engine);
 });
 
 let originalEngine;
@@ -10,9 +14,10 @@ add_task(async function test_setup() {
   requestLongerTimeout(10);
 
   // Stop search-engine loads from hitting the network
-  await Services.search.addEngineWithDetails("MozSearch", {
-    method: "GET",
-    template: "http://example.com/?q={searchTerms}",
+  await SearchTestUtils.installSearchExtension({
+    name: "MozSearch",
+    search_url: "https://example.com/",
+    search_url_get_params: "q={searchTerms}",
   });
   let engine = Services.search.getEngineByName("MozSearch");
   originalEngine = await Services.search.getDefault();
@@ -34,11 +39,16 @@ add_task(async function test_setup() {
       CustomizableUI.removeWidgetFromArea("new-window-button");
     });
   }
+
+  CustomizableUI.addWidgetToArea("sidebar-button", "nav-bar");
+  registerCleanupFunction(() =>
+    CustomizableUI.removeWidgetFromArea("sidebar-button")
+  );
 });
 
 // New Window Button opens any link.
 add_task(async function single_url() {
-  await dropText("mochi.test/first", ["http://www.mochi.test/first"]);
+  await dropText("mochi.test/first", ["https://www.mochi.test/first"]);
 });
 add_task(async function single_javascript() {
   await dropText("javascript:'bad'", ["about:blank"]);
@@ -47,31 +57,31 @@ add_task(async function single_javascript_capital() {
   await dropText("jAvascript:'bad'", ["about:blank"]);
 });
 add_task(async function single_url2() {
-  await dropText("mochi.test/second", ["http://www.mochi.test/second"]);
+  await dropText("mochi.test/second", ["https://www.mochi.test/second"]);
 });
 add_task(async function single_data_url() {
   await dropText("data:text/html,bad", ["data:text/html,bad"]);
 });
 add_task(async function single_url3() {
-  await dropText("mochi.test/third", ["http://www.mochi.test/third"]);
+  await dropText("mochi.test/third", ["https://www.mochi.test/third"]);
 });
 
 // Single text/plain item, with multiple links.
 add_task(async function multiple_urls() {
   await dropText("mochi.test/1\nmochi.test/2", [
-    "http://www.mochi.test/1",
-    "http://www.mochi.test/2",
+    "https://www.mochi.test/1",
+    "https://www.mochi.test/2",
   ]);
 });
 add_task(async function multiple_urls_javascript() {
   await dropText("javascript:'bad1'\nmochi.test/3", [
     "about:blank",
-    "http://www.mochi.test/3",
+    "https://www.mochi.test/3",
   ]);
 });
 add_task(async function multiple_urls_data() {
   await dropText("mochi.test/4\ndata:text/html,bad1", [
-    "http://www.mochi.test/4",
+    "https://www.mochi.test/4",
     "data:text/html,bad1",
   ]);
 });
@@ -84,9 +94,9 @@ add_task(async function multiple_items_single_and_multiple_links() {
       [{ type: "text/plain", data: "mochi.test/6\nmochi.test/7" }],
     ],
     [
-      "http://www.mochi.test/5",
-      "http://www.mochi.test/6",
-      "http://www.mochi.test/7",
+      "https://www.mochi.test/5",
+      "https://www.mochi.test/6",
+      "https://www.mochi.test/7",
     ]
   );
 });
@@ -103,7 +113,7 @@ add_task(async function single_moz_url_multiple_links() {
         },
       ],
     ],
-    ["http://www.mochi.test/8", "http://www.mochi.test/9"]
+    ["https://www.mochi.test/8", "https://www.mochi.test/9"]
   );
 });
 
@@ -116,7 +126,7 @@ add_task(async function single_item_multiple_types() {
         { type: "text/x-moz-url", data: "mochi.test/11\nTITLE11" },
       ],
     ],
-    ["http://www.mochi.test/11"]
+    ["https://www.mochi.test/11"]
   );
 });
 
@@ -127,11 +137,11 @@ add_task(async function multiple_tabs_under_max() {
     urls.push("mochi.test/multi" + i);
   }
   await dropText(urls.join("\n"), [
-    "http://www.mochi.test/multi0",
-    "http://www.mochi.test/multi1",
-    "http://www.mochi.test/multi2",
-    "http://www.mochi.test/multi3",
-    "http://www.mochi.test/multi4",
+    "https://www.mochi.test/multi0",
+    "https://www.mochi.test/multi1",
+    "https://www.mochi.test/multi2",
+    "https://www.mochi.test/multi3",
+    "https://www.mochi.test/multi4",
   ]);
 });
 add_task(async function multiple_tabs_over_max_accept() {
@@ -146,11 +156,11 @@ add_task(async function multiple_tabs_over_max_accept() {
   await dropText(
     urls.join("\n"),
     [
-      "http://www.mochi.test/accept0",
-      "http://www.mochi.test/accept1",
-      "http://www.mochi.test/accept2",
-      "http://www.mochi.test/accept3",
-      "http://www.mochi.test/accept4",
+      "https://www.mochi.test/accept0",
+      "https://www.mochi.test/accept1",
+      "https://www.mochi.test/accept2",
+      "https://www.mochi.test/accept3",
+      "https://www.mochi.test/accept4",
     ],
     true
   );

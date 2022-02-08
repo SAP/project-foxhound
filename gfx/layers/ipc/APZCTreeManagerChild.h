@@ -11,6 +11,8 @@
 #include "mozilla/layers/IAPZCTreeManager.h"
 #include "mozilla/layers/PAPZCTreeManagerChild.h"
 
+#include <unordered_map>
+
 namespace mozilla {
 namespace layers {
 
@@ -31,7 +33,8 @@ class APZCTreeManagerChild : public IAPZCTreeManager,
 
   void SetKeyboardMap(const KeyboardMap& aKeyboardMap) override;
 
-  void ZoomToRect(const ScrollableLayerGuid& aGuid, const CSSRect& aRect,
+  void ZoomToRect(const ScrollableLayerGuid& aGuid,
+                  const ZoomTarget& aZoomTarget,
                   const uint32_t aFlags = DEFAULT_BEHAVIOR) override;
 
   void ContentReceivedInputBlock(uint64_t aInputBlockId,
@@ -62,6 +65,9 @@ class APZCTreeManagerChild : public IAPZCTreeManager,
 
   APZInputBridge* InputBridge() override;
 
+  void AddInputBlockCallback(uint64_t aInputBlockId,
+                             InputBlockCallback&& aCallback) override;
+
   void AddIPDLReference();
   void ReleaseIPDLReference();
   void ActorDestroy(ActorDestroyReason aWhy) override;
@@ -82,12 +88,19 @@ class APZCTreeManagerChild : public IAPZCTreeManager,
   mozilla::ipc::IPCResult RecvCancelAutoscroll(
       const ScrollableLayerGuid::ViewID& aScrollId);
 
+  mozilla::ipc::IPCResult RecvCallInputBlockCallback(
+      uint64_t aInputBlockId, const APZHandledResult& handledResult);
+
   virtual ~APZCTreeManagerChild();
 
  private:
   MOZ_NON_OWNING_REF RemoteCompositorSession* mCompositorSession;
   RefPtr<APZInputBridgeChild> mInputBridge;
   bool mIPCOpen;
+
+  using InputBlockCallbackMap =
+      std::unordered_map<uint64_t, InputBlockCallback>;
+  InputBlockCallbackMap mInputBlockCallbacks;
 };
 
 }  // namespace layers

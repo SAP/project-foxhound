@@ -182,6 +182,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=964646
 <script type="application/javascript">
 "use strict";
 
+const { AppConstants } = SpecialPowers.Cu.import(
+  "resource://gre/modules/AppConstants.jsm",
+  {}
+);
 /** Test for css3-animations running on the compositor thread (Bug 964646) **/
  
 // Global state
@@ -224,11 +228,6 @@ runOMTATest(function() {
     SimpleTest.finish();
   });
 }, SimpleTest.finish);
-
-function isGeckoView() {
-  return SpecialPowers.Services.androidBridge &&
-    !SpecialPowers.Services.androidBridge.isFennec;
-}
 
 //----------------------------------------------------------------------
 //
@@ -2099,7 +2098,7 @@ addAsyncAnimTest(async function() {
 // Bug 996796 patch 12 - test for correct visited styles during
 // animation-only style flush.
 addAsyncAnimTest(async function() {
-  if (isGeckoView()) {
+  if (AppConstants.platform === "android") {
     todo(false, "no global history on GeckoView; can't run test");
     return;
   }
@@ -2109,8 +2108,11 @@ addAsyncAnimTest(async function() {
   div1.style.height = "10px";
   div1.style.animation = "anim2 linear 1s";
 
+  const topLocation =
+    await SpecialPowers.spawnChrome([], () => browsingContext.top.currentURI.spec);
+
   var visitedLink = document.createElement("a");
-  visitedLink.setAttribute("href", window.top.location.href);
+  visitedLink.setAttribute("href", topLocation);
   visitedLink.classList.add("visitedLink");
   visitedLink.classList.add("target");
   visitedLink.style.display = "block";
@@ -2118,7 +2120,7 @@ addAsyncAnimTest(async function() {
   visitedLink.style.animation = "anim2 linear 1s";
 
   var refVisitedLink = document.createElement("a");
-  refVisitedLink.setAttribute("href", window.top.location.href);
+  refVisitedLink.setAttribute("href", topLocation);
   refVisitedLink.classList.add("visitedLink");
 
   gDisplay.appendChild(div1);
@@ -2474,7 +2476,7 @@ addAsyncAnimTest(async function() {
 // Tests that a background-color animation from currentColor to a normal color
 // on <a> element is updated when the link is visited.
 addAsyncAnimTest(async function() {
-  if (isGeckoView()) {
+  if (AppConstants.platform === "android") {
     todo(false, "no global history on GeckoView; can't run test");
     return;
   }
@@ -2500,7 +2502,9 @@ addAsyncAnimTest(async function() {
   omta_todo_is("background-color", "rgb(128, 128, 0)", RunningOn.ToDoCompositor,
           "background-color on compositor at 5s");
 
-  gDiv.setAttribute("href", window.top.location.href);
+  const topLocation =
+    await SpecialPowers.spawnChrome([], () => browsingContext.top.currentURI.spec);
+  gDiv.setAttribute("href", topLocation);
   await waitForVisitedLinkColoring(gDiv, "color", "rgb(0, 0, 255)");
   await waitForPaintsFlushed();
 

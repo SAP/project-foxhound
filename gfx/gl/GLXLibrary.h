@@ -7,6 +7,9 @@
 #define GFX_GLXLIBRARY_H
 
 #include "GLContextTypes.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/DataMutex.h"
+#include "mozilla/gfx/XlibDisplay.h"
 #include "prlink.h"
 typedef realGLboolean GLboolean;
 
@@ -32,159 +35,194 @@ class GLContextGLX;
 
 class GLXLibrary final {
  public:
-  bool EnsureInitialized();
+  bool EnsureInitialized(Display* aDisplay);
 
  private:
-  void BeforeGLXCall() const;
-  void AfterGLXCall() const;
+  class WrapperScope final {
+    const GLXLibrary& mGlx;
+    const char* const mFuncName;
+    Display* const mDisplay;
+
+   public:
+    WrapperScope(const GLXLibrary& glx, const char* const funcName,
+                 Display* aDisplay);
+    ~WrapperScope();
+  };
 
  public:
 #ifdef DEBUG
-#  define BEFORE_CALL BeforeGLXCall();
-#  define AFTER_CALL AfterGLXCall();
+#  define DECL_WRAPPER_SCOPE(display) \
+    const WrapperScope wrapperScope(*this, __func__, display);
 #else
-#  define BEFORE_CALL
-#  define AFTER_CALL
+#  define DECL_WRAPPER_SCOPE(display)
 #endif
 
-#define WRAP(X)                  \
-  {                              \
-    BEFORE_CALL                  \
-    const auto ret = mSymbols.X; \
-    AFTER_CALL                   \
-    return ret;                  \
-  }
-#define VOID_WRAP(X) \
-  {                  \
-    BEFORE_CALL      \
-    mSymbols.X;      \
-    AFTER_CALL       \
+  void fDestroyContext(Display* display, GLXContext context) const {
+    DECL_WRAPPER_SCOPE(display)
+    return mSymbols.fDestroyContext(display, context);
   }
 
-  void fDestroyContext(Display* display, GLXContext context) const
-      VOID_WRAP(fDestroyContext(display, context))
+  Bool fMakeCurrent(Display* display, GLXDrawable drawable,
+                    GLXContext context) const {
+    DECL_WRAPPER_SCOPE(display)
+    return mSymbols.fMakeCurrent(display, drawable, context);
+  }
 
-          Bool fMakeCurrent(Display* display, GLXDrawable drawable,
-                            GLXContext context) const
-      WRAP(fMakeCurrent(display, drawable, context))
+  XVisualInfo* fGetConfig(Display* display, XVisualInfo* info, int attrib,
+                          int* value) const {
+    DECL_WRAPPER_SCOPE(display)
+    return mSymbols.fGetConfig(display, info, attrib, value);
+  }
 
-          XVisualInfo* fGetConfig(Display* display, XVisualInfo* info,
-                                  int attrib, int* value) const
-      WRAP(fGetConfig(display, info, attrib, value))
+  GLXContext fGetCurrentContext() const {
+    DECL_WRAPPER_SCOPE(nullptr)
+    return mSymbols.fGetCurrentContext();
+  }
 
-          GLXContext fGetCurrentContext() const WRAP(fGetCurrentContext())
+  GLXFBConfig* fChooseFBConfig(Display* display, int screen,
+                               const int* attrib_list, int* nelements) const {
+    DECL_WRAPPER_SCOPE(display)
+    return mSymbols.fChooseFBConfig(display, screen, attrib_list, nelements);
+  }
 
-              GLXFBConfig* fChooseFBConfig(Display* display, int screen,
-                                           const int* attrib_list,
-                                           int* nelements) const
-      WRAP(fChooseFBConfig(display, screen, attrib_list, nelements))
+  XVisualInfo* fChooseVisual(Display* display, int screen,
+                             int* attrib_list) const {
+    DECL_WRAPPER_SCOPE(display)
+    return mSymbols.fChooseVisual(display, screen, attrib_list);
+  }
 
-          XVisualInfo* fChooseVisual(Display* display, int screen,
-                                     int* attrib_list) const
-      WRAP(fChooseVisual(display, screen, attrib_list))
+  GLXFBConfig* fGetFBConfigs(Display* display, int screen,
+                             int* nelements) const {
+    DECL_WRAPPER_SCOPE(display)
+    return mSymbols.fGetFBConfigs(display, screen, nelements);
+  }
 
-          GLXFBConfig* fGetFBConfigs(Display* display, int screen,
-                                     int* nelements) const
-      WRAP(fGetFBConfigs(display, screen, nelements))
+  GLXContext fCreateNewContext(Display* display, GLXFBConfig config,
+                               int render_type, GLXContext share_list,
+                               Bool direct) const {
+    DECL_WRAPPER_SCOPE(display)
+    return mSymbols.fCreateNewContext(display, config, render_type, share_list,
+                                      direct);
+  }
 
-          GLXContext
-      fCreateNewContext(Display* display, GLXFBConfig config, int render_type,
-                        GLXContext share_list, Bool direct) const
-      WRAP(fCreateNewContext(display, config, render_type, share_list, direct))
+  int fGetFBConfigAttrib(Display* display, GLXFBConfig config, int attribute,
+                         int* value) const {
+    DECL_WRAPPER_SCOPE(display)
+    return mSymbols.fGetFBConfigAttrib(display, config, attribute, value);
+  }
 
-          int fGetFBConfigAttrib(Display* display, GLXFBConfig config,
-                                 int attribute, int* value) const
-      WRAP(fGetFBConfigAttrib(display, config, attribute, value))
+  void fSwapBuffers(Display* display, GLXDrawable drawable) const {
+    DECL_WRAPPER_SCOPE(display)
+    return mSymbols.fSwapBuffers(display, drawable);
+  }
 
-          void fSwapBuffers(Display* display, GLXDrawable drawable) const
-      VOID_WRAP(fSwapBuffers(display, drawable))
+  const char* fQueryExtensionsString(Display* display, int screen) const {
+    DECL_WRAPPER_SCOPE(display)
+    return mSymbols.fQueryExtensionsString(display, screen);
+  }
 
-          void fCopySubBufferMESA(Display* display, GLXDrawable drawable, int x,
-                                  int y, int width, int height) const
-      VOID_WRAP(fCopySubBufferMESA(display, drawable, x, y, width, height))
+  const char* fGetClientString(Display* display, int screen) const {
+    DECL_WRAPPER_SCOPE(display)
+    return mSymbols.fGetClientString(display, screen);
+  }
 
-          const char* fQueryExtensionsString(Display* display, int screen) const
-      WRAP(fQueryExtensionsString(display, screen))
+  const char* fQueryServerString(Display* display, int screen, int name) const {
+    DECL_WRAPPER_SCOPE(display)
+    return mSymbols.fQueryServerString(display, screen, name);
+  }
 
-          const char* fGetClientString(Display* display, int screen) const
-      WRAP(fGetClientString(display, screen))
+  GLXPixmap fCreatePixmap(Display* display, GLXFBConfig config, Pixmap pixmap,
+                          const int* attrib_list) const {
+    DECL_WRAPPER_SCOPE(display)
+    return mSymbols.fCreatePixmap(display, config, pixmap, attrib_list);
+  }
 
-          const
-      char* fQueryServerString(Display* display, int screen, int name) const
-      WRAP(fQueryServerString(display, screen, name))
+  GLXPixmap fCreateGLXPixmapWithConfig(Display* display, GLXFBConfig config,
+                                       Pixmap pixmap) const {
+    DECL_WRAPPER_SCOPE(display)
+    return mSymbols.fCreateGLXPixmapWithConfig(display, config, pixmap);
+  }
 
-          GLXPixmap fCreatePixmap(Display* display, GLXFBConfig config,
-                                  Pixmap pixmap, const int* attrib_list) const
-      WRAP(fCreatePixmap(display, config, pixmap, attrib_list))
+  void fDestroyPixmap(Display* display, GLXPixmap pixmap) const {
+    DECL_WRAPPER_SCOPE(display)
+    return mSymbols.fDestroyPixmap(display, pixmap);
+  }
 
-          GLXPixmap
-      fCreateGLXPixmapWithConfig(Display* display, GLXFBConfig config,
-                                 Pixmap pixmap) const
-      WRAP(fCreateGLXPixmapWithConfig(display, config, pixmap))
+  Bool fQueryVersion(Display* display, int* major, int* minor) const {
+    DECL_WRAPPER_SCOPE(display)
+    return mSymbols.fQueryVersion(display, major, minor);
+  }
 
-          void fDestroyPixmap(Display* display, GLXPixmap pixmap) const
-      VOID_WRAP(fDestroyPixmap(display, pixmap))
+  void fBindTexImage(Display* display, GLXDrawable drawable, int buffer,
+                     const int* attrib_list) const {
+    DECL_WRAPPER_SCOPE(display)
+    return mSymbols.fBindTexImageEXT(display, drawable, buffer, attrib_list);
+  }
 
-          Bool fQueryVersion(Display* display, int* major, int* minor) const
-      WRAP(fQueryVersion(display, major, minor))
+  void fReleaseTexImage(Display* display, GLXDrawable drawable,
+                        int buffer) const {
+    DECL_WRAPPER_SCOPE(display)
+    return mSymbols.fReleaseTexImageEXT(display, drawable, buffer);
+  }
 
-          void fBindTexImage(Display* display, GLXDrawable drawable, int buffer,
-                             const int* attrib_list) const
-      VOID_WRAP(fBindTexImageEXT(display, drawable, buffer, attrib_list))
+  void fWaitGL() const {
+    DECL_WRAPPER_SCOPE(nullptr)
+    return mSymbols.fWaitGL();
+  }
 
-          void fReleaseTexImage(Display* display, GLXDrawable drawable,
-                                int buffer) const
-      VOID_WRAP(fReleaseTexImageEXT(display, drawable, buffer))
+  void fWaitX() const {
+    DECL_WRAPPER_SCOPE(nullptr)
+    return mSymbols.fWaitX();
+  }
 
-          void fWaitGL() const VOID_WRAP(fWaitGL())
+  GLXContext fCreateContextAttribs(Display* display, GLXFBConfig config,
+                                   GLXContext share_list, Bool direct,
+                                   const int* attrib_list) const {
+    DECL_WRAPPER_SCOPE(display)
+    return mSymbols.fCreateContextAttribsARB(display, config, share_list,
+                                             direct, attrib_list);
+  }
 
-              void fWaitX() const VOID_WRAP(fWaitX())
+  int fGetVideoSync(unsigned int* count) const {
+    DECL_WRAPPER_SCOPE(nullptr)
+    return mSymbols.fGetVideoSyncSGI(count);
+  }
 
-                  GLXContext
-      fCreateContextAttribs(Display* display, GLXFBConfig config,
-                            GLXContext share_list, Bool direct,
-                            const int* attrib_list) const
-      WRAP(fCreateContextAttribsARB(display, config, share_list, direct,
-                                    attrib_list))
+  int fWaitVideoSync(int divisor, int remainder, unsigned int* count) const {
+    DECL_WRAPPER_SCOPE(nullptr)
+    return mSymbols.fWaitVideoSyncSGI(divisor, remainder, count);
+  }
 
-          int fGetVideoSync(unsigned int* count) const
-      WRAP(fGetVideoSyncSGI(count))
+  void fSwapInterval(Display* dpy, GLXDrawable drawable, int interval) const {
+    DECL_WRAPPER_SCOPE(dpy)
+    return mSymbols.fSwapIntervalEXT(dpy, drawable, interval);
+  }
 
-          int fWaitVideoSync(int divisor, int remainder,
-                             unsigned int* count) const
-      WRAP(fWaitVideoSyncSGI(divisor, remainder, count))
-
-          void fSwapInterval(Display* dpy, GLXDrawable drawable,
-                             int interval) const
-      VOID_WRAP(fSwapIntervalEXT(dpy, drawable, interval))
-
-#undef WRAP
-#undef VOID_WRAP
-#undef BEFORE_CALL
-#undef AFTER_CALL
-
-      ////
-
-      GLXPixmap CreatePixmap(gfxASurface* aSurface);
-  void DestroyPixmap(Display* aDisplay, GLXPixmap aPixmap);
-  void BindTexImage(Display* aDisplay, GLXPixmap aPixmap);
-  void ReleaseTexImage(Display* aDisplay, GLXPixmap aPixmap);
-  void UpdateTexImage(Display* aDisplay, GLXPixmap aPixmap);
+  int fQueryDrawable(Display* dpy, GLXDrawable drawable, int attribute,
+                     unsigned int* value) const {
+    DECL_WRAPPER_SCOPE(dpy)
+    return mSymbols.fQueryDrawable(dpy, drawable, attribute, value);
+  }
+#undef DECL_WRAPPER_SCOPE
 
   ////
 
-  bool UseTextureFromPixmap() { return mUseTextureFromPixmap; }
   bool HasRobustness() { return mHasRobustness; }
   bool HasVideoMemoryPurge() { return mHasVideoMemoryPurge; }
   bool HasCreateContextAttribs() { return mHasCreateContextAttribs; }
-  bool HasCopySubBuffer() const { return mHasCopySubBuffer; }
   bool SupportsTextureFromPixmap(gfxASurface* aSurface);
-  bool SupportsVideoSync();
+  bool SupportsVideoSync(Display* aDisplay);
   bool SupportsSwapControl() const { return bool(mSymbols.fSwapIntervalEXT); }
+  bool SupportsBufferAge() const {
+    MOZ_ASSERT(mInitialized);
+    return mHasBufferAge;
+  }
   bool IsATI() { return mIsATI; }
   bool IsMesa() { return mClientIsMesa; }
 
   auto GetGetProcAddress() const { return mSymbols.fGetProcAddress; }
+
+  std::shared_ptr<gfx::XlibDisplay> GetDisplay();
 
  private:
   struct {
@@ -200,8 +238,6 @@ class GLXLibrary final {
                                               GLXContext, Bool);
     int(GLAPIENTRY* fGetFBConfigAttrib)(Display*, GLXFBConfig, int, int*);
     void(GLAPIENTRY* fSwapBuffers)(Display*, GLXDrawable);
-    void(GLAPIENTRY* fCopySubBufferMESA)(Display*, GLXDrawable, int, int, int,
-                                         int);
     const char*(GLAPIENTRY* fQueryExtensionsString)(Display*, int);
     const char*(GLAPIENTRY* fGetClientString)(Display*, int);
     const char*(GLAPIENTRY* fQueryServerString)(Display*, int, int);
@@ -221,26 +257,23 @@ class GLXLibrary final {
     int(GLAPIENTRY* fGetVideoSyncSGI)(unsigned int*);
     int(GLAPIENTRY* fWaitVideoSyncSGI)(int, int, unsigned int*);
     void(GLAPIENTRY* fSwapIntervalEXT)(Display*, GLXDrawable, int);
+    int(GLAPIENTRY* fQueryDrawable)(Display*, GLXDrawable, int, unsigned int*);
   } mSymbols = {};
-
-#ifdef DEBUG
-  void BeforeGLXCall();
-  void AfterGLXCall();
-#endif
 
   bool mInitialized = false;
   bool mTriedInitializing = false;
-  bool mUseTextureFromPixmap = false;
   bool mDebug = false;
   bool mHasRobustness = false;
   bool mHasVideoMemoryPurge = false;
   bool mHasCreateContextAttribs = false;
   bool mHasVideoSync = false;
-  bool mHasCopySubBuffer = false;
+  bool mHasBufferAge = false;
   bool mIsATI = false;
   bool mIsNVIDIA = false;
   bool mClientIsMesa = false;
   PRLibrary* mOGLLibrary = nullptr;
+  StaticDataMutex<std::weak_ptr<gfx::XlibDisplay>> mOwnDisplay{
+      "GLXLibrary::mOwnDisplay"};
 };
 
 // a global GLXLibrary instance

@@ -13,6 +13,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Base64.h"
 #include "mozilla/Casting.h"
+#include "mozilla/Logging.h"
 #include "mozilla/Services.h"
 #include "mozilla/Unused.h"
 #include "mozpkix/Time.h"
@@ -305,11 +306,7 @@ nsresult nsNSSCertificateDB::handleCACertDownload(NotNull<nsIArray*> x509Certs,
     return NS_ERROR_FAILURE;
   }
 
-  PRBool isperm;
-  if (CERT_GetCertIsPerm(tmpCert.get(), &isperm) != SECSuccess) {
-    return NS_ERROR_FAILURE;
-  }
-  if (isperm) {
+  if (tmpCert->isperm) {
     DisplayCertificateAlert(ctx, "CaCertExists", certToShow);
     return NS_ERROR_FAILURE;
   }
@@ -620,27 +617,41 @@ nsNSSCertificateDB::DeleteCertificate(nsIX509Cert* aCert) {
   if (!cert) {
     return NS_ERROR_FAILURE;
   }
-  SECStatus srv = SECSuccess;
 
-  uint32_t certType;
-  aCert->GetCertType(&certType);
-  if (NS_FAILED(aCert->MarkForPermDeletion())) {
-    return NS_ERROR_FAILURE;
+  // Temporary certificates aren't on a slot and will go away when the
+  // nsIX509Cert is destructed.
+  if (cert->slot) {
+    uint32_t certType;
+    nsresult rv = aCert->GetCertType(&certType);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+    if (certType == nsIX509Cert::USER_CERT) {
+      SECStatus srv = PK11_Authenticate(cert->slot, true, nullptr);
+      if (srv != SECSuccess) {
+        return NS_ERROR_FAILURE;
+      }
+      srv = PK11_DeleteTokenCertAndKey(cert.get(), nullptr);
+      if (srv != SECSuccess) {
+        return NS_ERROR_FAILURE;
+      }
+    } else {
+      // For certificates that can't be deleted (e.g. built-in roots), un-set
+      // all trust bits.
+      nsNSSCertTrust trust(0, 0);
+      SECStatus srv = ChangeCertTrustWithPossibleAuthentication(
+          cert, trust.GetTrust(), nullptr);
+      if (srv != SECSuccess) {
+        return NS_ERROR_FAILURE;
+      }
+      if (!PK11_IsReadOnly(cert->slot)) {
+        srv = SEC_DeletePermCertificate(cert.get());
+        if (srv != SECSuccess) {
+          return NS_ERROR_FAILURE;
+        }
+      }
+    }
   }
-
-  if (cert->slot && certType != nsIX509Cert::USER_CERT) {
-    // To delete a cert of a slot (builtin, most likely), mark it as
-    // completely untrusted.  This way we keep a copy cached in the
-    // local database, and next time we try to load it off of the
-    // external token/slot, we'll know not to trust it.  We don't
-    // want to do that with user certs, because a user may  re-store
-    // the cert onto the card again at which point we *will* want to
-    // trust that cert if it chains up properly.
-    nsNSSCertTrust trust(0, 0);
-    srv = ChangeCertTrustWithPossibleAuthentication(cert, trust.GetTrust(),
-                                                    nullptr);
-  }
-  MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("cert deleted: %d", srv));
 
   nsCOMPtr<nsIObserverService> observerService =
       mozilla::services::GetObserverService();
@@ -649,7 +660,7 @@ nsNSSCertificateDB::DeleteCertificate(nsIX509Cert* aCert) {
                                      nullptr);
   }
 
-  return (srv) ? NS_ERROR_FAILURE : NS_OK;
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -847,13 +858,13 @@ nsNSSCertificateDB::ConstructX509FromBase64(const nsACString& base64,
     return rv;
   }
 
-  return ConstructX509FromSpan(AsBytes(MakeSpan(certDER)), _retval);
+  return ConstructX509FromSpan(AsBytes(Span(certDER)), _retval);
 }
 
 NS_IMETHODIMP
 nsNSSCertificateDB::ConstructX509(const nsTArray<uint8_t>& certDER,
                                   nsIX509Cert** _retval) {
-  return ConstructX509FromSpan(MakeSpan(certDER.Elements(), certDER.Length()),
+  return ConstructX509FromSpan(Span(certDER.Elements(), certDER.Length()),
                                _retval);
 }
 
@@ -1017,8 +1028,8 @@ nsNSSCertificateDB::AddCert(const nsACString& aCertDER,
   }
 
   nsCOMPtr<nsIX509Cert> newCert;
-  nsresult rv = ConstructX509FromSpan(AsBytes(MakeSpan(aCertDER)),
-                                      getter_AddRefs(newCert));
+  nsresult rv =
+      ConstructX509FromSpan(AsBytes(Span(aCertDER)), getter_AddRefs(newCert));
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -1030,11 +1041,7 @@ nsNSSCertificateDB::AddCert(const nsACString& aCertDER,
 
   // If there's already a certificate that matches this one in the database, we
   // still want to set its trust to the given value.
-  PRBool isperm;
-  if (CERT_GetCertIsPerm(tmpCert.get(), &isperm) != SECSuccess) {
-    return NS_ERROR_FAILURE;
-  }
-  if (isperm) {
+  if (tmpCert->isperm) {
     rv = SetCertTrustFromString(newCert, aTrust);
     if (NS_FAILED(rv)) {
       return rv;
@@ -1173,6 +1180,62 @@ nsNSSCertificateDB::GetCerts(nsTArray<RefPtr<nsIX509Cert>>& _retval) {
                                                                   _retval);
 }
 
+NS_IMETHODIMP
+nsNSSCertificateDB::AsyncHasThirdPartyRoots(nsIAsyncBoolCallback* aCallback) {
+  NS_ENSURE_ARG_POINTER(aCallback);
+  nsMainThreadPtrHandle<nsIAsyncBoolCallback> callback(
+      new nsMainThreadPtrHolder<nsIAsyncBoolCallback>("AsyncHasThirdPartyRoots",
+                                                      aCallback));
+
+  return NS_DispatchBackgroundTask(
+      NS_NewRunnableFunction(
+          "nsNSSCertificateDB::AsyncHasThirdPartyRoots",
+          [cb = std::move(callback), self = RefPtr{this}] {
+            bool hasThirdPartyRoots = [self]() -> bool {
+              nsTArray<RefPtr<nsIX509Cert>> certs;
+              nsresult rv = self->GetCerts(certs);
+              if (NS_FAILED(rv)) {
+                return false;
+              }
+
+              for (const auto& cert : certs) {
+                bool isTrusted = false;
+                nsresult rv =
+                    self->IsCertTrusted(cert, nsIX509Cert::CA_CERT,
+                                        nsIX509CertDB::TRUSTED_SSL, &isTrusted);
+                if (NS_FAILED(rv)) {
+                  return false;
+                }
+
+                if (!isTrusted) {
+                  continue;
+                }
+
+                bool isBuiltInRoot = false;
+                rv = cert->GetIsBuiltInRoot(&isBuiltInRoot);
+                if (NS_FAILED(rv)) {
+                  return false;
+                }
+
+                if (!isBuiltInRoot) {
+                  return true;
+                }
+              }
+
+              return false;
+            }();
+
+            NS_DispatchToMainThread(NS_NewRunnableFunction(
+                "nsNSSCertificateDB::AsyncHasThirdPartyRoots callback",
+                [cb, hasThirdPartyRoots]() {
+                  cb->OnResult(hasThirdPartyRoots);
+                }));
+          }),
+      NS_DISPATCH_EVENT_MAY_BLOCK);
+
+  return NS_OK;
+}
+
 nsresult VerifyCertAtTime(nsIX509Cert* aCert,
                           int64_t /*SECCertificateUsage*/ aUsage,
                           uint32_t aFlags, const nsACString& aHostname,
@@ -1199,43 +1262,50 @@ nsresult VerifyCertAtTime(nsIX509Cert* aCert,
   RefPtr<SharedCertVerifier> certVerifier(GetDefaultCertVerifier());
   NS_ENSURE_TRUE(certVerifier, NS_ERROR_FAILURE);
 
-  UniqueCERTCertList resultChain;
-  SECOidTag evOidPolicy;
+  nsTArray<nsTArray<uint8_t>> resultChain;
+  EVStatus evStatus;
   mozilla::pkix::Result result;
+
+  nsTArray<uint8_t> certBytes;
+  nsresult nsrv = aCert->GetRawDER(certBytes);
+  if (NS_FAILED(nsrv)) {
+    return nsrv;
+  }
 
   if (!aHostname.IsVoid() && aUsage == certificateUsageSSLServer) {
     result =
-        certVerifier->VerifySSLServerCert(nssCert, aTime,
+        certVerifier->VerifySSLServerCert(certBytes, aTime,
                                           nullptr,  // Assume no context
                                           aHostname, resultChain, aFlags,
                                           Nothing(),  // extraCertificates
                                           Nothing(),  // stapledOCSPResponse
                                           Nothing(),  // sctsFromTLSExtension
                                           Nothing(),  // dcInfo
-                                          OriginAttributes(),
-                                          false,  // don't save intermediates
-                                          &evOidPolicy);
+                                          OriginAttributes(), &evStatus);
   } else {
     const nsCString& flatHostname = PromiseFlatCString(aHostname);
     result = certVerifier->VerifyCert(
-        nssCert.get(), aUsage, aTime,
+        certBytes, aUsage, aTime,
         nullptr,  // Assume no context
         aHostname.IsVoid() ? nullptr : flatHostname.get(), resultChain, aFlags,
         Nothing(),  // extraCertificates
         Nothing(),  // stapledOCSPResponse
         Nothing(),  // sctsFromTLSExtension
-        OriginAttributes(), &evOidPolicy);
+        OriginAttributes(), &evStatus);
   }
 
   if (result == mozilla::pkix::Success) {
-    nsresult rv = nsNSSCertificateDB::ConstructCertArrayFromUniqueCertList(
-        resultChain, aVerifiedChain);
-
-    if (NS_FAILED(rv)) {
-      return rv;
+    for (const auto& certDER : resultChain) {
+      RefPtr<nsIX509Cert> cert = nsNSSCertificate::ConstructFromDER(
+          const_cast<char*>(reinterpret_cast<const char*>(certDER.Elements())),
+          static_cast<int>(certDER.Length()));
+      if (!cert) {
+        return NS_ERROR_FAILURE;
+      }
+      aVerifiedChain.AppendElement(cert);
     }
 
-    if (evOidPolicy != SEC_OID_UNKNOWN) {
+    if (evStatus == EVStatus::EV) {
       *aHasEVPolicy = true;
     }
   }

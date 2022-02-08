@@ -15,20 +15,18 @@ const WORKER_URL = "code_WorkerTargetActor.attachThread-worker.js";
 
 add_task(async function() {
   const tab = await addTab(TAB_URL);
-  const target = await TargetFactory.forTab(tab);
-  await target.attach();
+  const target = await createAndAttachTargetForTab(tab);
 
   await listWorkers(target);
   await createWorkerInTab(tab, WORKER_URL);
 
   const { workers } = await listWorkers(target);
-  const workerTarget = findWorker(workers, WORKER_URL);
+  const workerDescriptorFront = findWorker(workers, WORKER_URL);
 
-  const toolbox = await gDevTools.showToolbox(
-    workerTarget,
-    "jsdebugger",
-    Toolbox.HostType.WINDOW
-  );
+  const toolbox = await gDevTools.showToolbox(workerDescriptorFront, {
+    toolId: "jsdebugger",
+    hostType: Toolbox.HostType.WINDOW,
+  });
 
   is(toolbox.hostType, "window", "correct host");
 
@@ -57,7 +55,7 @@ add_task(async function() {
   );
 
   terminateWorkerInTab(tab, WORKER_URL);
-  await waitForWorkerClose(workerTarget);
+  await waitForWorkerClose(workerDescriptorFront);
   await target.destroy();
 
   await toolbox.destroy();

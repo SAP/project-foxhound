@@ -4,17 +4,22 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { AttributionCode } = ChromeUtils.import(
   "resource:///modules/AttributionCode.jsm"
 );
 const { ASRouterTargeting } = ChromeUtils.import(
   "resource://activity-stream/lib/ASRouterTargeting.jsm"
 );
+const { MacAttribution } = ChromeUtils.import(
+  "resource:///modules/MacAttribution.jsm"
+);
+const { EnterprisePolicyTesting } = ChromeUtils.import(
+  "resource://testing-common/EnterprisePolicyTesting.jsm"
+);
 
 add_task(async function check_attribution_data() {
   // Some setup to fake the correct attribution data
-  const appPath = Services.dirsvc.get("GreD", Ci.nsIFile).parent.parent.path;
+  const appPath = MacAttribution.applicationPath;
   const attributionSvc = Cc["@mozilla.org/mac-attribution;1"].getService(
     Ci.nsIMacAttributionService
   );
@@ -23,7 +28,7 @@ add_task(async function check_attribution_data() {
   const referrer = `https://allizom.org/anything/?utm_campaign=${campaign}&utm_source=${source}`;
   attributionSvc.setReferrerUrl(appPath, referrer, true);
   AttributionCode._clearCache();
-  AttributionCode.getAttrDataAsync();
+  await AttributionCode.getAttrDataAsync();
 
   const {
     campaign: attributionCampain,
@@ -59,4 +64,37 @@ add_task(async function check_attribution_data() {
     "should select the message with the correct campaign and source"
   );
   AttributionCode._clearCache();
+});
+
+add_task(async function check_enterprise_targeting() {
+  const messages = [
+    {
+      id: "foo1",
+      targeting: "hasActiveEnterprisePolicies",
+    },
+    {
+      id: "foo2",
+      targeting: "!hasActiveEnterprisePolicies",
+    },
+  ];
+
+  equal(
+    await ASRouterTargeting.findMatchingMessage({ messages }),
+    messages[1],
+    "should select the message for policies turned off"
+  );
+
+  await EnterprisePolicyTesting.setupPolicyEngineWithJson({
+    policies: {
+      DisableFirefoxStudies: {
+        Value: true,
+      },
+    },
+  });
+
+  equal(
+    await ASRouterTargeting.findMatchingMessage({ messages }),
+    messages[0],
+    "should select the message for policies turned on"
+  );
 });

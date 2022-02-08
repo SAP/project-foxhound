@@ -15,20 +15,20 @@ namespace net {
 
 class nsHttpActivityDistributor : public nsIHttpActivityDistributor {
  public:
-  typedef nsTArray<nsMainThreadPtrHandle<nsIHttpActivityObserver> >
-      ObserverArray;
+  using ObserverArray =
+      nsTArray<nsMainThreadPtrHandle<nsIHttpActivityObserver>>;
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIHTTPACTIVITYOBSERVER
   NS_DECL_NSIHTTPACTIVITYDISTRIBUTOR
 
-  nsHttpActivityDistributor();
+  nsHttpActivityDistributor() = default;
 
  protected:
   virtual ~nsHttpActivityDistributor() = default;
 
   ObserverArray mObservers;
-  Mutex mLock;
-  bool mActivated;
+  Mutex mLock{"nsHttpActivityDistributor.mLock"};
+  bool mActivated{false};
 };
 
 }  // namespace net

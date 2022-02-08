@@ -9,12 +9,13 @@
 #include "gfxConfig.h"
 #include "nsDebugImpl.h"
 #include "nsThreadManager.h"
-#include "ProcessUtils.h"
 
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/ProcessChild.h"
+#include "mozilla/ipc/ProcessUtils.h"
+#include "mozilla/Preferences.h"
 
 #if defined(XP_WIN)
 #  include <process.h>
@@ -54,7 +55,6 @@ IPCResult VRParent::RecvInit(nsTArray<GfxVarUpdate>&& vars,
   gfxConfig::Inherit(Feature::D3D11_COMPOSITING,
                      devicePrefs.d3d11Compositing());
   gfxConfig::Inherit(Feature::OPENGL_COMPOSITING, devicePrefs.oglCompositing());
-  gfxConfig::Inherit(Feature::ADVANCED_LAYERS, devicePrefs.advancedLayers());
   gfxConfig::Inherit(Feature::DIRECT2D, devicePrefs.useD2D1());
 
 #if defined(XP_WIN)
@@ -83,13 +83,14 @@ mozilla::ipc::IPCResult VRParent::RecvOpenVRControllerActionPathToVR(
 
 mozilla::ipc::IPCResult VRParent::RecvOpenVRControllerManifestPathToVR(
     const VRControllerType& aType, const nsCString& aPath) {
-  mOpenVRControllerManifest.Put(static_cast<uint32_t>(aType), aPath);
+  mOpenVRControllerManifest.InsertOrUpdate(static_cast<uint32_t>(aType), aPath);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult VRParent::RecvRequestMemoryReport(
     const uint32_t& aGeneration, const bool& aAnonymize,
-    const bool& aMinimizeMemoryUsage, const Maybe<FileDescriptor>& aDMDFile) {
+    const bool& aMinimizeMemoryUsage, const Maybe<FileDescriptor>& aDMDFile,
+    const RequestMemoryReportResolver& aResolver) {
   MOZ_ASSERT(XRE_IsVRProcess());
   nsPrintfCString processName("VR (pid %u)", (unsigned)getpid());
 
@@ -98,9 +99,7 @@ mozilla::ipc::IPCResult VRParent::RecvRequestMemoryReport(
       [&](const MemoryReport& aReport) {
         Unused << SendAddMemoryReport(aReport);
       },
-      [&](const uint32_t& aGeneration) {
-        return SendFinishMemoryReport(aGeneration);
-      });
+      aResolver);
   return IPC_OK();
 }
 
@@ -117,7 +116,7 @@ void VRParent::ActorDestroy(ActorDestroyReason aWhy) {
 #ifndef NS_FREE_PERMANENT_DATA
   // No point in going through XPCOM shutdown because we don't keep persistent
   // state.
-  ProcessChild::QuickExit();
+  ipc::ProcessChild::QuickExit();
 #endif
 
 #if defined(XP_WIN)
@@ -133,7 +132,7 @@ void VRParent::ActorDestroy(ActorDestroyReason aWhy) {
 }
 
 bool VRParent::Init(base::ProcessId aParentPid, const char* aParentBuildID,
-                    MessageLoop* aIOLoop, UniquePtr<IPC::Channel> aChannel) {
+                    mozilla::ipc::ScopedPort aPort) {
   // Initialize the thread manager before starting IPC. Otherwise, messages
   // may be posted to the main thread and we won't be able to process them.
   if (NS_WARN_IF(NS_FAILED(nsThreadManager::get().Init()))) {
@@ -141,7 +140,7 @@ bool VRParent::Init(base::ProcessId aParentPid, const char* aParentBuildID,
   }
 
   // Now it's safe to start IPC.
-  if (NS_WARN_IF(!Open(std::move(aChannel), aParentPid, aIOLoop))) {
+  if (NS_WARN_IF(!Open(std::move(aPort), aParentPid))) {
     return false;
   }
 

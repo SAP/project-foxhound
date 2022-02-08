@@ -9,6 +9,7 @@
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/EnumeratedRange.h"
+#include "mozilla/StaticPrefs_webgl.h"
 #include "nsString.h"
 #include "WebGLContextUtils.h"
 #include "WebGLExtensions.h"
@@ -38,7 +39,9 @@ const char* GetExtensionName(const WebGLExtensionID ext) {
     WEBGL_EXTENSION_IDENTIFIER(EXT_texture_compression_bptc)
     WEBGL_EXTENSION_IDENTIFIER(EXT_texture_compression_rgtc)
     WEBGL_EXTENSION_IDENTIFIER(EXT_texture_filter_anisotropic)
+    WEBGL_EXTENSION_IDENTIFIER(EXT_texture_norm16)
     WEBGL_EXTENSION_IDENTIFIER(MOZ_debug)
+    WEBGL_EXTENSION_IDENTIFIER(OES_draw_buffers_indexed)
     WEBGL_EXTENSION_IDENTIFIER(OES_element_index_uint)
     WEBGL_EXTENSION_IDENTIFIER(OES_fbo_render_mipmap)
     WEBGL_EXTENSION_IDENTIFIER(OES_standard_derivatives)
@@ -121,7 +124,7 @@ RefPtr<ClientWebGLExtensionBase> ClientWebGLContext::GetExtension(
 
   if (!IsSupported(ext, callerType)) return nullptr;
 
-  auto& extSlot = mNotLost->extensions[EnumValue(ext)];
+  auto& extSlot = mNotLost->extensions[UnderlyingValue(ext)];
   if (MOZ_UNLIKELY(!extSlot)) {
     extSlot = [&]() -> RefPtr<ClientWebGLExtensionBase> {
       switch (ext) {
@@ -152,12 +155,16 @@ RefPtr<ClientWebGLExtensionBase> ClientWebGLContext::GetExtension(
           return new ClientWebGLExtensionCompressedTextureRGTC(*this);
         case WebGLExtensionID::EXT_texture_filter_anisotropic:
           return new ClientWebGLExtensionTextureFilterAnisotropic(*this);
+        case WebGLExtensionID::EXT_texture_norm16:
+          return new ClientWebGLExtensionTextureNorm16(*this);
 
         // MOZ_
         case WebGLExtensionID::MOZ_debug:
           return new ClientWebGLExtensionMOZDebug(*this);
 
         // OES_
+        case WebGLExtensionID::OES_draw_buffers_indexed:
+          return new ClientWebGLExtensionDrawBuffersIndexed(*this);
         case WebGLExtensionID::OES_element_index_uint:
           return new ClientWebGLExtensionElementIndexUint(*this);
         case WebGLExtensionID::OES_fbo_render_mipmap:
@@ -194,8 +201,14 @@ RefPtr<ClientWebGLExtensionBase> ClientWebGLContext::GetExtension(
           return new ClientWebGLExtensionCompressedTextureS3TC(*this);
         case WebGLExtensionID::WEBGL_compressed_texture_s3tc_srgb:
           return new ClientWebGLExtensionCompressedTextureS3TC_SRGB(*this);
-        case WebGLExtensionID::WEBGL_debug_renderer_info:
+        case WebGLExtensionID::WEBGL_debug_renderer_info: {
+          if (callerType != dom::CallerType::System) {
+            JsWarning(
+                "WEBGL_debug_renderer_info is deprecated in Firefox and will "
+                "be removed. Please use RENDERER.");
+          }
           return new ClientWebGLExtensionDebugRendererInfo(*this);
+        }
         case WebGLExtensionID::WEBGL_debug_shaders:
           return new ClientWebGLExtensionDebugShaders(*this);
         case WebGLExtensionID::WEBGL_depth_texture:
@@ -270,7 +283,16 @@ bool WebGLContext::IsExtensionSupported(WebGLExtensionID ext) const {
       return gl->IsExtensionSupported(
           gl::GLContext::EXT_texture_filter_anisotropic);
 
+    case WebGLExtensionID::EXT_texture_norm16:
+      return WebGLExtensionTextureNorm16::IsSupported(this);
+
     // OES_
+    case WebGLExtensionID::OES_draw_buffers_indexed:
+      if (!StaticPrefs::webgl_enable_draft_extensions()) return false;
+      if (!IsWebGL2()) return false;
+      return gl->IsSupported(gl::GLFeature::draw_buffers_indexed) &&
+             gl->IsSupported(gl::GLFeature::get_integer_indexed);
+
     case WebGLExtensionID::OES_element_index_uint:
       if (IsWebGL2()) return false;
       return gl->IsSupported(gl::GLFeature::element_index_uint);
@@ -404,6 +426,9 @@ void WebGLContext::RequestExtension(const WebGLExtensionID ext,
     case WebGLExtensionID::EXT_texture_filter_anisotropic:
       slot.reset(new WebGLExtensionTextureFilterAnisotropic(this));
       break;
+    case WebGLExtensionID::EXT_texture_norm16:
+      slot.reset(new WebGLExtensionTextureNorm16(this));
+      break;
 
     // MOZ_
     case WebGLExtensionID::MOZ_debug:
@@ -411,6 +436,9 @@ void WebGLContext::RequestExtension(const WebGLExtensionID ext,
       break;
 
     // OES_
+    case WebGLExtensionID::OES_draw_buffers_indexed:
+      slot.reset(new WebGLExtensionDrawBuffersIndexed(this));
+      break;
     case WebGLExtensionID::OES_element_index_uint:
       slot.reset(new WebGLExtensionElementIndexUint(this));
       break;

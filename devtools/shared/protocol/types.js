@@ -26,7 +26,6 @@ var types = Object.create(null);
 exports.types = types;
 
 var registeredTypes = (types.registeredTypes = new Map());
-var registeredLifetimes = (types.registeredLifetimes = new Map());
 
 exports.registeredTypes = registeredTypes;
 
@@ -73,7 +72,7 @@ types.getType = function(type) {
     }
   }
 
-  // New type, see if it's a collection/lifetime type:
+  // New type, see if it's a collection type:
   const sep = type.indexOf(":");
   if (sep >= 0) {
     const collection = type.substring(0, sep);
@@ -83,10 +82,6 @@ types.getType = function(type) {
       return types.addArrayType(subtype);
     } else if (collection === "nullable") {
       return types.addNullableType(subtype);
-    }
-
-    if (registeredLifetimes.has(collection)) {
-      return types.addLifetimeType(collection, subtype);
     }
 
     throw Error("Unknown collection type: " + collection);
@@ -354,6 +349,11 @@ types.addActorType = function(name) {
       // If returning a response from the server side, make sure
       // the actor is added to a parent object and return its form.
       if (v instanceof Actor) {
+        if (v.isDestroyed()) {
+          throw new Error(
+            `Attempted to write a response containing a destroyed actor`
+          );
+        }
         if (!v.actorID) {
           ctx.marshallPool().manage(v);
         }
@@ -481,58 +481,6 @@ types.addActorDetail = function(name, actorType, detail) {
   });
 };
 
-/**
- * Register an actor lifetime.  This lets the type system find a parent
- * actor that differs from the actor fulfilling the request.
- *
- * @param string name
- *    The lifetime name to use in typestrings.
- * @param string prop
- *    The property of the actor that holds the parent that should be used.
- */
-types.addLifetime = function(name, prop) {
-  if (registeredLifetimes.has(name)) {
-    throw Error("Lifetime '" + name + "' already registered.");
-  }
-  registeredLifetimes.set(name, prop);
-};
-
-/**
- * Remove a previously-registered lifetime.  Useful for lifetimes registered
- * in addons.
- */
-types.removeLifetime = function(name) {
-  registeredLifetimes.delete(name);
-};
-
-/**
- * Register a lifetime type.  This creates an actor type tied to the given
- * lifetime.
- *
- * This is called by getType() when passed a '<lifetimeType>:<actorType>'
- * typestring.
- *
- * @param string lifetime
- *    A lifetime string previously regisered with addLifetime()
- * @param type subtype
- *    An actor type
- */
-types.addLifetimeType = function(lifetime, subtype) {
-  subtype = types.getType(subtype);
-  if (!subtype._actor) {
-    throw Error(
-      `Lifetimes only apply to actor types, tried to apply ` +
-        `lifetime '${lifetime}' to ${subtype.name}`
-    );
-  }
-  const prop = registeredLifetimes.get(lifetime);
-  return types.addType(lifetime + ":" + subtype.name, {
-    category: "lifetime",
-    read: (value, ctx) => subtype.read(value, ctx[prop]),
-    write: (value, ctx) => subtype.write(value, ctx[prop]),
-  });
-};
-
 // Add a few named primitive types.
 types.Primitive = types.addType("primitive");
 types.String = types.addType("string");
@@ -594,7 +542,7 @@ async function getFront(client, typeName, form, target = null) {
   if (!formAttributeName) {
     throw new Error(`Can't find the form attribute name for ${typeName}`);
   }
-  // Retrive the actor ID from root or target actor's form
+  // Retrieve the actor ID from root or target actor's form
   front.actorID = form[formAttributeName];
   if (!front.actorID) {
     throw new Error(

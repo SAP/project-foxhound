@@ -1,3 +1,6 @@
+/* clang-format off */
+/* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,6 +23,9 @@
 
 // override
 - (NSNumber*)moxInsertionPointLineNumber;
+
+// override
+- (NSString*)moxRole;
 
 // override
 - (NSString*)moxSubrole;
@@ -69,6 +75,12 @@
 #pragma mark - mozAccessible
 
 // override
+- (void)handleAccessibleTextChangeEvent:(NSString*)change
+                               inserted:(BOOL)isInserted
+                            inContainer:(mozilla::a11y::Accessible*)container
+                                     at:(int32_t)start;
+
+// override
 - (void)handleAccessibleEvent:(uint32_t)eventType;
 
 @end
@@ -86,5 +98,14 @@
 
 // override
 - (NSString*)moxLabel;
+
+// override
+- (NSString*)moxStringForRange:(NSValue*)range;
+
+// override
+- (NSAttributedString*)moxAttributedStringForRange:(NSValue*)range;
+
+// override
+- (NSValue*)moxBoundsForRange:(NSValue*)range;
 
 @end

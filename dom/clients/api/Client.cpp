@@ -16,10 +16,10 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerScope.h"
+#include "nsIDUtils.h"
 #include "nsIGlobalObject.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using mozilla::dom::ipc::StructuredCloneData;
 
@@ -75,12 +75,7 @@ void Client::GetUrl(nsAString& aUrlOut) const {
 }
 
 void Client::GetId(nsAString& aIdOut) const {
-  char buf[NSID_LENGTH];
-  mData->info().id().ToProvidedString(buf);
-  NS_ConvertASCIItoUTF16 uuid(buf);
-
-  // Remove {} and the null terminator
-  aIdOut.Assign(Substring(uuid, 1, NSID_LENGTH - 3));
+  aIdOut = NSID_TrimBracketsUTF16(mData->info().id());
 }
 
 ClientType Client::Type() const { return mData->info().type(); }
@@ -114,7 +109,8 @@ void Client::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
 }
 
 void Client::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
-                         const PostMessageOptions& aOptions, ErrorResult& aRv) {
+                         const StructuredSerializeOptions& aOptions,
+                         ErrorResult& aRv) {
   PostMessage(aCx, aMessage, aOptions.mTransfer, aRv);
 }
 
@@ -208,5 +204,4 @@ already_AddRefed<Promise> Client::Navigate(const nsAString& aURL,
   return outerPromise.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

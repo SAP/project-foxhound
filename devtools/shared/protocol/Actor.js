@@ -54,7 +54,7 @@ class Actor extends Pool {
   }
 
   _sendEvent(name, request, ...args) {
-    if (!this.actorID) {
+    if (this.isDestroyed()) {
       console.error(
         `Tried to send a '${name}' event on an already destroyed actor` +
           ` '${this.typeName}'`
@@ -75,6 +75,7 @@ class Actor extends Pool {
   destroy() {
     super.destroy();
     this.actorID = null;
+    this._isDestroyed = true;
   }
 
   /**
@@ -90,17 +91,29 @@ class Actor extends Pool {
   writeError(error, typeName, method) {
     console.error(
       `Error while calling actor '${typeName}'s method '${method}'`,
-      error.message
+      error.message || error
     );
+    // Also log the error object as-is in order to log the server side stack
+    // nicely in the console, while the previous log will log the client side stack only.
     if (error.stack) {
-      console.error(error.stack);
+      console.error(error);
+    }
+
+    // Do not try to send the error if the actor is destroyed
+    // as the connection is probably also destroyed and may throw.
+    if (this.isDestroyed()) {
+      return;
     }
 
     this.conn.send({
       from: this.actorID,
       // error.error -> errors created using the throwError() helper
       // error.name -> errors created using `new Error` or Components.exception
-      error: error.error || error.name || "unknownError",
+      // typeof(error)=="string" -> a method thrown like this `throw "a string"`
+      error:
+        error.error ||
+        error.name ||
+        (typeof error == "string" ? error : "unknownError"),
       message: error.message,
       // error.fileName -> regular Error instances
       // error.filename -> errors created using Components.exception
@@ -164,6 +177,13 @@ var generateRequestHandlers = function(actorSpec, actorProto) {
         const sendReturn = retToSend => {
           if (spec.oneway) {
             // No need to send a response.
+            return;
+          }
+          if (this.isDestroyed()) {
+            console.error(
+              `Tried to send a '${spec.name}' method reply on an already destroyed actor` +
+                ` '${this.typeName}'`
+            );
             return;
           }
 

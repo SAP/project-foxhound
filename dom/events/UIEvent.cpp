@@ -11,6 +11,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/EventStateManager.h"
+#include "mozilla/PointerLockManager.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/TextEvents.h"
 #include "nsCOMPtr.h"
@@ -19,10 +20,10 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIDocShell.h"
 #include "nsIFrame.h"
+#include "nsLayoutUtils.h"
 #include "prtime.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 UIEvent::UIEvent(EventTarget* aOwner, nsPresContext* aPresContext,
                  WidgetGUIEvent* aEvent)
@@ -32,7 +33,7 @@ UIEvent::UIEvent(EventTarget* aOwner, nsPresContext* aPresContext,
       mLayerPoint(0, 0),
       mPagePoint(0, 0),
       mMovementPoint(0, 0),
-      mIsPointerLocked(EventStateManager::sIsPointerLocked),
+      mIsPointerLocked(PointerLockManager::IsLocked()),
       mLastClientPoint(EventStateManager::sLastClientPoint) {
   if (aEvent) {
     mEventIsInternal = false;
@@ -320,8 +321,7 @@ void UIEvent::InitModifiers(const EventModifierInit& aParam) {
 #undef SET_MODIFIER
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 using namespace mozilla;
 using namespace mozilla::dom;

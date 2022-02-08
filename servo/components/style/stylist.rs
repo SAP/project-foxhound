@@ -12,7 +12,10 @@ use crate::font_metrics::FontMetricsProvider;
 #[cfg(feature = "gecko")]
 use crate::gecko_bindings::structs::{ServoStyleSetSizes, StyleRuleInclusion};
 use crate::invalidation::element::invalidation_map::InvalidationMap;
-use crate::invalidation::media_queries::{EffectiveMediaQueryResults, ToMediaListKey};
+use crate::invalidation::media_queries::{
+    EffectiveMediaQueryResults, MediaListKey, ToMediaListKey,
+};
+use crate::invalidation::stylesheets::RuleChangeKind;
 use crate::media_queries::Device;
 use crate::properties::{self, CascadeMode, ComputedValues};
 use crate::properties::{AnimationDeclarations, PropertyDeclarationBlock};
@@ -25,15 +28,18 @@ use crate::shared_lock::{Locked, SharedRwLockReadGuard, StylesheetGuards};
 use crate::stylesheet_set::{DataValidity, DocumentStylesheetSet, SheetRebuildKind};
 use crate::stylesheet_set::{DocumentStylesheetFlusher, SheetCollectionFlusher};
 use crate::stylesheets::keyframes_rule::KeyframesAnimation;
+use crate::stylesheets::layer_rule::{LayerId, LayerName, LayerOrder};
 use crate::stylesheets::viewport_rule::{self, MaybeNew, ViewportRule};
-use crate::stylesheets::StyleRule;
-use crate::stylesheets::StylesheetInDocument;
 #[cfg(feature = "gecko")]
 use crate::stylesheets::{CounterStyleRule, FontFaceRule, FontFeatureValuesRule, PageRule};
-use crate::stylesheets::{CssRule, Origin, OriginSet, PerOrigin, PerOriginIter};
+use crate::stylesheets::{
+    CssRule, EffectiveRulesIterator, Origin, OriginSet, PerOrigin, PerOriginIter,
+};
+use crate::stylesheets::{StyleRule, StylesheetContents, StylesheetInDocument};
 use crate::thread_state::{self, ThreadState};
 use crate::{Atom, LocalName, Namespace, WeakAtom};
 use fallible::FallibleVec;
+use fxhash::FxHashMap;
 use hashglobe::FailedAllocationError;
 use malloc_size_of::MallocSizeOf;
 #[cfg(feature = "gecko")]
@@ -48,6 +54,7 @@ use selectors::NthIndexCache;
 use servo_arc::{Arc, ArcBorrow};
 use smallbitvec::SmallBitVec;
 use smallvec::SmallVec;
+use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 use std::{mem, ops};
 use style_traits::viewport::ViewportConstraints;
@@ -60,72 +67,138 @@ pub type StylistSheet = crate::stylesheets::DocumentStyleSheet;
 #[cfg(feature = "gecko")]
 pub type StylistSheet = crate::gecko::data::GeckoStyleSheet;
 
-lazy_static! {
-    /// A cache of computed user-agent data, to be shared across documents.
-    static ref UA_CASCADE_DATA_CACHE: Mutex<UserAgentCascadeDataCache> =
-        Mutex::new(UserAgentCascadeDataCache::new());
+#[derive(Debug, Clone)]
+struct StylesheetContentsPtr(Arc<StylesheetContents>);
+
+impl PartialEq for StylesheetContentsPtr {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
 }
 
-struct UserAgentCascadeDataCache {
-    entries: Vec<Arc<UserAgentCascadeData>>,
+impl Eq for StylesheetContentsPtr {}
+
+impl Hash for StylesheetContentsPtr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let contents: &StylesheetContents = &*self.0;
+        (contents as *const StylesheetContents).hash(state)
+    }
 }
 
-impl UserAgentCascadeDataCache {
+type StyleSheetContentList = Vec<StylesheetContentsPtr>;
+
+/// A key in the cascade data cache.
+#[derive(Debug, Hash, Default, PartialEq, Eq)]
+struct CascadeDataCacheKey {
+    media_query_results: Vec<MediaListKey>,
+    contents: StyleSheetContentList,
+}
+
+unsafe impl Send for CascadeDataCacheKey {}
+unsafe impl Sync for CascadeDataCacheKey {}
+
+trait CascadeDataCacheEntry: Sized {
+    /// Returns a reference to the cascade data.
+    fn cascade_data(&self) -> &CascadeData;
+    /// Rebuilds the cascade data for the new stylesheet collection. The
+    /// collection is guaranteed to be dirty.
+    fn rebuild<S>(
+        device: &Device,
+        quirks_mode: QuirksMode,
+        collection: SheetCollectionFlusher<S>,
+        guard: &SharedRwLockReadGuard,
+        old_entry: &Self,
+    ) -> Result<Arc<Self>, FailedAllocationError>
+    where
+        S: StylesheetInDocument + PartialEq + 'static;
+    /// Measures heap memory usage.
+    #[cfg(feature = "gecko")]
+    fn add_size_of(&self, ops: &mut MallocSizeOfOps, sizes: &mut ServoStyleSetSizes);
+}
+
+struct CascadeDataCache<Entry> {
+    entries: FxHashMap<CascadeDataCacheKey, Arc<Entry>>,
+}
+
+impl<Entry> CascadeDataCache<Entry>
+where
+    Entry: CascadeDataCacheEntry,
+{
     fn new() -> Self {
-        Self { entries: vec![] }
+        Self {
+            entries: Default::default(),
+        }
     }
 
     fn len(&self) -> usize {
         self.entries.len()
     }
 
-    // FIXME(emilio): This may need to be keyed on quirks-mode too, though there
-    // aren't class / id selectors on those sheets, usually, so it's probably
-    // ok...
-    fn lookup<'a, I, S>(
+    // FIXME(emilio): This may need to be keyed on quirks-mode too, though for
+    // UA sheets there aren't class / id selectors on those sheets, usually, so
+    // it's probably ok... For the other cache the quirks mode shouldn't differ
+    // so also should be fine.
+    fn lookup<'a, S>(
         &'a mut self,
-        sheets: I,
         device: &Device,
         quirks_mode: QuirksMode,
+        collection: SheetCollectionFlusher<S>,
         guard: &SharedRwLockReadGuard,
-    ) -> Result<Arc<UserAgentCascadeData>, FailedAllocationError>
+        old_entry: &Entry,
+    ) -> Result<Option<Arc<Entry>>, FailedAllocationError>
     where
-        I: Iterator<Item = &'a S> + Clone,
-        S: StylesheetInDocument + ToMediaListKey + PartialEq + 'static,
+        S: StylesheetInDocument + PartialEq + 'static,
     {
-        let mut key = EffectiveMediaQueryResults::new();
-        debug!("UserAgentCascadeDataCache::lookup({:?})", device);
-        for sheet in sheets.clone() {
-            CascadeData::collect_applicable_media_query_results_into(device, sheet, guard, &mut key)
+        use std::collections::hash_map::Entry as HashMapEntry;
+        debug!("StyleSheetCache::lookup({})", self.len());
+
+        if !collection.dirty() {
+            return Ok(None);
         }
 
-        for entry in &self.entries {
-            if entry.cascade_data.effective_media_query_results == key {
-                return Ok(entry.clone());
-            }
-        }
-
-        let mut new_data = UserAgentCascadeData {
-            cascade_data: CascadeData::new(),
-            precomputed_pseudo_element_decls: PrecomputedPseudoElementDeclarations::default(),
-        };
-
-        debug!("> Picking the slow path");
-
-        for sheet in sheets {
-            new_data.cascade_data.add_stylesheet(
+        let mut key = CascadeDataCacheKey::default();
+        for sheet in collection.sheets() {
+            CascadeData::collect_applicable_media_query_results_into(
                 device,
-                quirks_mode,
                 sheet,
                 guard,
-                SheetRebuildKind::Full,
-                Some(&mut new_data.precomputed_pseudo_element_decls),
-            )?;
+                &mut key.media_query_results,
+                &mut key.contents,
+            )
         }
 
-        let new_data = Arc::new(new_data);
-        self.entries.push(new_data.clone());
-        Ok(new_data)
+        let new_entry;
+        match self.entries.entry(key) {
+            HashMapEntry::Vacant(e) => {
+                debug!("> Picking the slow path (not in the cache)");
+                new_entry = Entry::rebuild(device, quirks_mode, collection, guard, old_entry)?;
+                e.insert(new_entry.clone());
+            },
+            HashMapEntry::Occupied(mut e) => {
+                // Avoid reusing our old entry (this can happen if we get
+                // invalidated due to CSSOM mutations and our old stylesheet
+                // contents were already unique, for example).
+                if !std::ptr::eq(&**e.get(), old_entry) {
+                    if log_enabled!(log::Level::Debug) {
+                        debug!("cache hit for:");
+                        for sheet in collection.sheets() {
+                            debug!(" > {:?}", sheet);
+                        }
+                    }
+                    // The line below ensures the "committed" bit is updated
+                    // properly.
+                    collection.each(|_, _| true);
+                    return Ok(Some(e.get().clone()));
+                }
+
+                debug!("> Picking the slow path due to same entry as old");
+                new_entry = Entry::rebuild(device, quirks_mode, collection, guard, old_entry)?;
+                e.insert(new_entry.clone());
+            },
+        }
+
+        Ok(Some(new_entry))
     }
 
     /// Returns all the cascade datas that are not being used (that is, that are
@@ -135,27 +208,29 @@ impl UserAgentCascadeDataCache {
     /// keep alive some other documents (like the SVG documents kept alive by
     /// URL references), and thus we don't want to drop them while locking the
     /// cache to not deadlock.
-    fn take_unused(&mut self) -> SmallVec<[Arc<UserAgentCascadeData>; 3]> {
+    fn take_unused(&mut self) -> SmallVec<[Arc<Entry>; 3]> {
         let mut unused = SmallVec::new();
-        for i in (0..self.entries.len()).rev() {
+        self.entries.retain(|_key, value| {
             // is_unique() returns false for static references, but we never
             // have static references to UserAgentCascadeDatas.  If we did, it
             // may not make sense to put them in the cache in the first place.
-            if self.entries[i].is_unique() {
-                unused.push(self.entries.remove(i));
+            if !value.is_unique() {
+                return true;
             }
-        }
+            unused.push(value.clone());
+            false
+        });
         unused
     }
 
-    fn take_all(&mut self) -> Vec<Arc<UserAgentCascadeData>> {
-        mem::replace(&mut self.entries, Vec::new())
+    fn take_all(&mut self) -> FxHashMap<CascadeDataCacheKey, Arc<Entry>> {
+        mem::take(&mut self.entries)
     }
 
     #[cfg(feature = "gecko")]
     fn add_size_of(&self, ops: &mut MallocSizeOfOps, sizes: &mut ServoStyleSetSizes) {
         sizes.mOther += self.entries.shallow_size_of(ops);
-        for arc in self.entries.iter() {
+        for (_key, arc) in self.entries.iter() {
             // These are primary Arc references that can be measured
             // unconditionally.
             sizes.mOther += arc.unconditional_shallow_size_of(ops);
@@ -173,6 +248,60 @@ pub fn add_size_of_ua_cache(ops: &mut MallocSizeOfOps, sizes: &mut ServoStyleSet
         .add_size_of(ops, sizes);
 }
 
+lazy_static! {
+    /// A cache of computed user-agent data, to be shared across documents.
+    static ref UA_CASCADE_DATA_CACHE: Mutex<UserAgentCascadeDataCache> =
+        Mutex::new(UserAgentCascadeDataCache::new());
+}
+
+impl CascadeDataCacheEntry for UserAgentCascadeData {
+    fn cascade_data(&self) -> &CascadeData {
+        &self.cascade_data
+    }
+
+    fn rebuild<S>(
+        device: &Device,
+        quirks_mode: QuirksMode,
+        collection: SheetCollectionFlusher<S>,
+        guard: &SharedRwLockReadGuard,
+        _old: &Self,
+    ) -> Result<Arc<Self>, FailedAllocationError>
+    where
+        S: StylesheetInDocument + PartialEq + 'static,
+    {
+        // TODO: Maybe we should support incremental rebuilds, though they seem
+        // uncommon and rebuild() doesn't deal with
+        // precomputed_pseudo_element_decls for now so...
+        let mut new_data = Self {
+            cascade_data: CascadeData::new(),
+            precomputed_pseudo_element_decls: PrecomputedPseudoElementDeclarations::default(),
+        };
+
+        for sheet in collection.sheets() {
+            new_data.cascade_data.add_stylesheet(
+                device,
+                quirks_mode,
+                sheet,
+                guard,
+                SheetRebuildKind::Full,
+                Some(&mut new_data.precomputed_pseudo_element_decls),
+            )?;
+        }
+
+        new_data.cascade_data.compute_layer_order();
+
+        Ok(Arc::new(new_data))
+    }
+
+    #[cfg(feature = "gecko")]
+    fn add_size_of(&self, ops: &mut MallocSizeOfOps, sizes: &mut ServoStyleSetSizes) {
+        self.cascade_data.add_size_of(ops, sizes);
+        sizes.mPrecomputedPseudos += self.precomputed_pseudo_element_decls.size_of(ops);
+    }
+}
+
+type UserAgentCascadeDataCache = CascadeDataCache<UserAgentCascadeData>;
+
 type PrecomputedPseudoElementDeclarations = PerPseudoElementMap<Vec<ApplicableDeclarationBlock>>;
 
 #[derive(Default)]
@@ -186,14 +315,6 @@ struct UserAgentCascadeData {
     ///
     /// These are only filled from UA stylesheets.
     precomputed_pseudo_element_decls: PrecomputedPseudoElementDeclarations,
-}
-
-impl UserAgentCascadeData {
-    #[cfg(feature = "gecko")]
-    fn add_size_of(&self, ops: &mut MallocSizeOfOps, sizes: &mut ServoStyleSetSizes) {
-        self.cascade_data.add_size_of(ops, sizes);
-        sizes.mPrecomputedPseudos += self.precomputed_pseudo_element_decls.size_of(ops);
-    }
 }
 
 /// All the computed information for all the stylesheets that apply to the
@@ -262,19 +383,29 @@ impl DocumentCascadeData {
         guards: &StylesheetGuards,
     ) -> Result<(), FailedAllocationError>
     where
-        S: StylesheetInDocument + ToMediaListKey + PartialEq + 'static,
+        S: StylesheetInDocument + PartialEq + 'static,
     {
         // First do UA sheets.
         {
-            if flusher.flush_origin(Origin::UserAgent).dirty() {
-                let origin_sheets = flusher.origin_sheets(Origin::UserAgent);
-                let _unused_cascade_datas = {
-                    let mut ua_cache = UA_CASCADE_DATA_CACHE.lock().unwrap();
-                    self.user_agent =
-                        ua_cache.lookup(origin_sheets, device, quirks_mode, guards.ua_or_user)?;
-                    debug!("User agent data cache size {:?}", ua_cache.len());
-                    ua_cache.take_unused()
-                };
+            let origin_flusher = flusher.flush_origin(Origin::UserAgent);
+            // Dirty check is just a minor optimization (no need to grab the
+            // lock if nothing has changed).
+            if origin_flusher.dirty() {
+                let mut ua_cache = UA_CASCADE_DATA_CACHE.lock().unwrap();
+                let new_data = ua_cache.lookup(
+                    device,
+                    quirks_mode,
+                    origin_flusher,
+                    guards.ua_or_user,
+                    &self.user_agent,
+                )?;
+                if let Some(new_data) = new_data {
+                    self.user_agent = new_data;
+                }
+                let _unused_entries = ua_cache.take_unused();
+                // See the comments in take_unused() as for why the following
+                // line.
+                std::mem::drop(ua_cache);
             }
         }
 
@@ -371,6 +502,9 @@ pub struct Stylist {
     /// The list of stylesheets.
     stylesheets: StylistStylesheetSet,
 
+    /// A cache of CascadeDatas for AuthorStylesheetSets (i.e., shadow DOM).
+    author_data_cache: CascadeDataCache<CascadeData>,
+
     /// If true, the quirks-mode stylesheet is applied.
     #[cfg_attr(feature = "servo", ignore_malloc_size_of = "defined in selectors")]
     quirks_mode: QuirksMode,
@@ -422,6 +556,7 @@ impl Stylist {
             device,
             quirks_mode,
             stylesheets: StylistStylesheetSet::new(),
+            author_data_cache: CascadeDataCache::new(),
             cascade_data: Default::default(),
             author_styles_enabled: AuthorStylesEnabled::Yes,
             rule_tree: RuleTree::new(),
@@ -445,6 +580,26 @@ impl Stylist {
     #[inline]
     pub fn iter_origins(&self) -> DocumentCascadeDataIter {
         self.cascade_data.iter_origins()
+    }
+
+    /// Does what the name says, to prevent author_data_cache to grow without
+    /// bound.
+    pub fn remove_unique_author_data_cache_entries(&mut self) {
+        self.author_data_cache.take_unused();
+    }
+
+    /// Rebuilds (if needed) the CascadeData given a sheet collection.
+    pub fn rebuild_author_data<S>(
+        &mut self,
+        old_data: &CascadeData,
+        collection: SheetCollectionFlusher<S>,
+        guard: &SharedRwLockReadGuard,
+    ) -> Result<Option<Arc<CascadeData>>, FailedAllocationError>
+    where
+        S: StylesheetInDocument + PartialEq + 'static,
+    {
+        self.author_data_cache
+            .lookup(&self.device, self.quirks_mode, collection, guard, old_data)
     }
 
     /// Iterate over the extra data in origin order.
@@ -605,6 +760,18 @@ impl Stylist {
             .remove_stylesheet(Some(&self.device), sheet, guard)
     }
 
+    /// Notify of a change of a given rule.
+    pub fn rule_changed(
+        &mut self,
+        sheet: &StylistSheet,
+        rule: &CssRule,
+        guard: &SharedRwLockReadGuard,
+        change_kind: RuleChangeKind,
+    ) {
+        self.stylesheets
+            .rule_changed(Some(&self.device), sheet, rule, guard, change_kind)
+    }
+
     /// Appends a new stylesheet to the current set.
     #[inline]
     pub fn sheet_count(&self, origin: Origin) -> usize {
@@ -656,7 +823,7 @@ impl Stylist {
     {
         debug_assert!(pseudo.is_precomputed());
 
-        let rule_node = self.rule_node_for_precomputed_pseudo(guards, pseudo, None);
+        let rule_node = self.rule_node_for_precomputed_pseudo(guards, pseudo, vec![]);
 
         self.precomputed_values_for_pseudo_with_rule_node::<E>(
             guards,
@@ -696,42 +863,40 @@ impl Stylist {
         )
     }
 
-    /// Returns the rule node for given precomputed pseudo-element.
+    /// Returns the rule node for a given precomputed pseudo-element.
     ///
-    /// If we want to include extra declarations to this precomputed pseudo-element,
-    /// we can provide a vector of ApplicableDeclarationBlock to extra_declarations
-    /// argument. This is useful for providing extra @page rules.
+    /// If we want to include extra declarations to this precomputed
+    /// pseudo-element, we can provide a vector of ApplicableDeclarationBlocks
+    /// to extra_declarations. This is useful for @page rules.
     pub fn rule_node_for_precomputed_pseudo(
         &self,
         guards: &StylesheetGuards,
         pseudo: &PseudoElement,
-        extra_declarations: Option<Vec<ApplicableDeclarationBlock>>,
+        mut extra_declarations: Vec<ApplicableDeclarationBlock>,
     ) -> StrongRuleNode {
-        let mut decl;
+        let mut declarations_with_extra;
         let declarations = match self
             .cascade_data
             .user_agent
             .precomputed_pseudo_element_decls
             .get(pseudo)
         {
-            Some(declarations) => match extra_declarations {
-                Some(mut extra_decls) => {
-                    decl = declarations.clone();
-                    decl.append(&mut extra_decls);
-                    Some(&decl)
-                },
-                None => Some(declarations),
+            Some(declarations) => {
+                if !extra_declarations.is_empty() {
+                    declarations_with_extra = declarations.clone();
+                    declarations_with_extra.append(&mut extra_declarations);
+                    &*declarations_with_extra
+                } else {
+                    &**declarations
+                }
             },
-            None => extra_declarations.as_ref(),
+            None => &[],
         };
 
-        match declarations {
-            Some(decls) => self.rule_tree.insert_ordered_rules_with_important(
-                decls.into_iter().map(|a| a.clone().for_rule_tree()),
-                guards,
-            ),
-            None => self.rule_tree.root().clone(),
-        }
+        self.rule_tree.insert_ordered_rules_with_important(
+            declarations.into_iter().map(|a| a.clone().for_rule_tree()),
+            guards,
+        )
     }
 
     /// Returns the style for an anonymous box of the given type.
@@ -1370,6 +1535,7 @@ impl Stylist {
     #[cfg(feature = "gecko")]
     pub fn add_size_of(&self, ops: &mut MallocSizeOfOps, sizes: &mut ServoStyleSetSizes) {
         self.cascade_data.add_size_of(ops, sizes);
+        self.author_data_cache.add_size_of(ops, sizes);
         sizes.mRuleTree += self.rule_tree.size_of(ops);
 
         // We may measure other fields in the future if DMD says it's worth it.
@@ -1383,7 +1549,7 @@ impl Stylist {
 
 /// This struct holds data which users of Stylist may want to extract
 /// from stylesheets which can be done at the same time as updating.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "servo", derive(MallocSizeOf))]
 pub struct ExtraStyleData {
     /// A list of effective font-face rules and their origin.
@@ -1402,11 +1568,6 @@ pub struct ExtraStyleData {
     #[cfg(feature = "gecko")]
     pub pages: Vec<Arc<Locked<PageRule>>>,
 }
-
-#[cfg(feature = "gecko")]
-unsafe impl Sync for ExtraStyleData {}
-#[cfg(feature = "gecko")]
-unsafe impl Send for ExtraStyleData {}
 
 #[cfg(feature = "gecko")]
 impl ExtraStyleData {
@@ -1638,7 +1799,7 @@ impl<'a> SelectorVisitor for StylistSelectorVisitor<'a> {
                 //
                 // NOTE(emilio): See the comment regarding on when this may
                 // break in visit_complex_selector.
-                self.mapped_ids.insert(id.clone());
+                self.mapped_ids.insert(id.0.clone());
             },
             _ => {},
         }
@@ -1648,7 +1809,7 @@ impl<'a> SelectorVisitor for StylistSelectorVisitor<'a> {
 }
 
 /// A set of rules for element and pseudo-elements.
-#[derive(Debug, Default, MallocSizeOf)]
+#[derive(Clone, Debug, Default, MallocSizeOf)]
 struct GenericElementAndPseudoRules<Map> {
     /// Rules from stylesheets at this `CascadeData`'s origin.
     element_map: Map,
@@ -1722,12 +1883,29 @@ impl PartElementAndPseudoRules {
     }
 }
 
+#[derive(Clone, Debug, MallocSizeOf)]
+struct CascadeLayer {
+    id: LayerId,
+    order: LayerOrder,
+    children: Vec<LayerId>,
+}
+
+impl CascadeLayer {
+    const fn root() -> Self {
+        Self {
+            id: LayerId::root(),
+            order: LayerOrder::root(),
+            children: vec![],
+        }
+    }
+}
+
 /// Data resulting from performing the CSS cascade that is specific to a given
 /// origin.
 ///
 /// FIXME(emilio): Consider renaming and splitting in `CascadeData` and
 /// `InvalidationData`? That'd make `clear_cascade_data()` clearer.
-#[derive(Debug, MallocSizeOf)]
+#[derive(Debug, Clone, MallocSizeOf)]
 pub struct CascadeData {
     /// The data coming from normal style rules that apply to elements at this
     /// cascade level.
@@ -1787,6 +1965,12 @@ pub struct CascadeData {
     /// by name.
     animations: PrecomputedHashMap<Atom, KeyframesAnimation>,
 
+    /// A map from cascade layer name to layer order.
+    layer_id: FxHashMap<LayerName, LayerId>,
+
+    /// The list of cascade layers, indexed by their layer id.
+    layers: SmallVec<[CascadeLayer; 1]>,
+
     /// Effective media query results cached from the last rebuild.
     effective_media_query_results: EffectiveMediaQueryResults,
 
@@ -1817,8 +2001,18 @@ impl CascadeData {
             state_dependencies: ElementState::empty(),
             document_state_dependencies: DocumentState::empty(),
             mapped_ids: PrecomputedHashSet::default(),
-            selectors_for_cache_revalidation: SelectorMap::new(),
+            // NOTE: We disable attribute bucketing for revalidation because we
+            // rely on the buckets to match, but we don't want to just not share
+            // style across elements with different attributes.
+            //
+            // An alternative to this would be to perform a style sharing check
+            // like may_match_different_id_rules which would check that the
+            // attribute buckets match on all scopes. But that seems
+            // somewhat gnarly.
+            selectors_for_cache_revalidation: SelectorMap::new_without_attribute_bucketing(),
             animations: Default::default(),
+            layer_id: Default::default(),
+            layers: smallvec::smallvec![CascadeLayer::root()],
             extra_data: ExtraStyleData::default(),
             effective_media_query_results: EffectiveMediaQueryResults::new(),
             rules_source_order: 0,
@@ -1837,7 +2031,7 @@ impl CascadeData {
         guard: &SharedRwLockReadGuard,
     ) -> Result<(), FailedAllocationError>
     where
-        S: StylesheetInDocument + ToMediaListKey + PartialEq + 'static,
+        S: StylesheetInDocument + PartialEq + 'static,
     {
         if !collection.dirty() {
             return Ok(());
@@ -1851,18 +2045,23 @@ impl CascadeData {
             DataValidity::FullyInvalid => self.clear(),
         }
 
-        for (stylesheet, rebuild_kind) in collection {
-            self.add_stylesheet(
+        let mut result = Ok(());
+
+        collection.each(|stylesheet, rebuild_kind| {
+            result = self.add_stylesheet(
                 device,
                 quirks_mode,
                 stylesheet,
                 guard,
                 rebuild_kind,
                 /* precomputed_pseudo_element_decls = */ None,
-            )?;
-        }
+            );
+            result.is_ok()
+        });
 
-        Ok(())
+        self.compute_layer_order();
+
+        result
     }
 
     /// Returns the invalidation map.
@@ -1923,6 +2122,50 @@ impl CascadeData {
         self.part_rules.is_some()
     }
 
+    #[inline]
+    fn layer_order_for(&self, id: LayerId) -> LayerOrder {
+        self.layers[id.0 as usize].order
+    }
+
+    fn compute_layer_order(&mut self) {
+        debug_assert_ne!(
+            self.layers.len(),
+            0,
+            "There should be at least the root layer!"
+        );
+        if self.layers.len() == 1 {
+            return; // Nothing to do
+        }
+        let (first, remaining) = self.layers.split_at_mut(1);
+        let root = &mut first[0];
+        let mut order = LayerOrder::first();
+        compute_layer_order_for_subtree(root, remaining, &mut order);
+
+        // NOTE(emilio): This is a bit trickier than it should to avoid having
+        // to clone() around layer indices.
+        fn compute_layer_order_for_subtree(
+            parent: &mut CascadeLayer,
+            remaining_layers: &mut [CascadeLayer],
+            order: &mut LayerOrder,
+        ) {
+            for child in parent.children.iter() {
+                debug_assert!(
+                    parent.id < *child,
+                    "Children are always registered after parents"
+                );
+                let child_index = (child.0 - parent.id.0 - 1) as usize;
+                let (first, remaining) = remaining_layers.split_at_mut(child_index + 1);
+                let child = &mut first[child_index];
+                compute_layer_order_for_subtree(child, remaining, order);
+            }
+
+            if parent.id != LayerId::root() {
+                parent.order = *order;
+                order.inc();
+            }
+        }
+    }
+
     /// Collects all the applicable media query results into `results`.
     ///
     /// This duplicates part of the logic in `add_stylesheet`, which is
@@ -1935,58 +2178,60 @@ impl CascadeData {
         device: &Device,
         stylesheet: &S,
         guard: &SharedRwLockReadGuard,
-        results: &mut EffectiveMediaQueryResults,
+        results: &mut Vec<MediaListKey>,
+        contents_list: &mut StyleSheetContentList,
     ) where
-        S: StylesheetInDocument + ToMediaListKey + 'static,
+        S: StylesheetInDocument + 'static,
     {
         if !stylesheet.enabled() || !stylesheet.is_effective_for_device(device, guard) {
             return;
         }
 
         debug!(" + {:?}", stylesheet);
-        results.saw_effective(stylesheet);
+        let contents = stylesheet.contents();
+        results.push(contents.to_media_list_key());
+
+        // Safety: StyleSheetContents are reference-counted with Arc.
+        contents_list.push(StylesheetContentsPtr(unsafe {
+            Arc::from_raw_addrefed(contents)
+        }));
 
         for rule in stylesheet.effective_rules(device, guard) {
             match *rule {
                 CssRule::Import(ref lock) => {
                     let import_rule = lock.read_with(guard);
                     debug!(" + {:?}", import_rule.stylesheet.media(guard));
-                    results.saw_effective(import_rule);
+                    results.push(import_rule.to_media_list_key());
                 },
                 CssRule::Media(ref lock) => {
                     let media_rule = lock.read_with(guard);
                     debug!(" + {:?}", media_rule.media_queries.read_with(guard));
-                    results.saw_effective(media_rule);
+                    results.push(media_rule.to_media_list_key());
                 },
                 _ => {},
             }
         }
     }
 
-    // Returns Err(..) to signify OOM
-    fn add_stylesheet<S>(
+    fn add_rule_list<S>(
         &mut self,
+        rules: std::slice::Iter<'_, CssRule>,
         device: &Device,
         quirks_mode: QuirksMode,
         stylesheet: &S,
         guard: &SharedRwLockReadGuard,
         rebuild_kind: SheetRebuildKind,
+        mut current_layer: &mut LayerName,
+        current_layer_id: LayerId,
         mut precomputed_pseudo_element_decls: Option<&mut PrecomputedPseudoElementDeclarations>,
     ) -> Result<(), FailedAllocationError>
     where
-        S: StylesheetInDocument + ToMediaListKey + 'static,
+        S: StylesheetInDocument + 'static,
     {
-        if !stylesheet.enabled() || !stylesheet.is_effective_for_device(device, guard) {
-            return Ok(());
-        }
-
-        let origin = stylesheet.origin(guard);
-
-        if rebuild_kind.should_rebuild_invalidation() {
-            self.effective_media_query_results.saw_effective(stylesheet);
-        }
-
-        for rule in stylesheet.effective_rules(device, guard) {
+        for rule in rules {
+            // Handle leaf rules first, as those are by far the most common
+            // ones, and are always effective, so we can skip some checks.
+            let mut handled = true;
             match *rule {
                 CssRule::Style(ref locked) => {
                     let style_rule = locked.read_with(&guard);
@@ -1999,7 +2244,8 @@ impl CascadeData {
                         if let Some(pseudo) = pseudo_element {
                             if pseudo.is_precomputed() {
                                 debug_assert!(selector.is_universal());
-                                debug_assert!(matches!(origin, Origin::UserAgent));
+                                debug_assert_eq!(stylesheet.contents().origin, Origin::UserAgent);
+                                debug_assert_eq!(current_layer_id, LayerId::root());
 
                                 precomputed_pseudo_element_decls
                                     .as_mut()
@@ -2010,6 +2256,7 @@ impl CascadeData {
                                         self.rules_source_order,
                                         CascadeLevel::UANormal,
                                         selector.specificity(),
+                                        LayerOrder::root(),
                                     ));
                                 continue;
                             }
@@ -2025,6 +2272,7 @@ impl CascadeData {
                             hashes,
                             locked.clone(),
                             self.rules_source_order,
+                            current_layer_id,
                         );
 
                         if rebuild_kind.should_rebuild_invalidation() {
@@ -2065,7 +2313,7 @@ impl CascadeData {
                             self.part_rules
                                 .get_or_insert_with(|| Box::new(Default::default()))
                                 .for_insertion(pseudo_element)
-                                .try_entry(parts.last().unwrap().clone())?
+                                .try_entry(parts.last().unwrap().clone().0)?
                                 .or_insert_with(SmallVec::new)
                                 .try_push(rule)?;
                         } else {
@@ -2088,41 +2336,49 @@ impl CascadeData {
                     }
                     self.rules_source_order += 1;
                 },
-                CssRule::Import(ref lock) => {
-                    if rebuild_kind.should_rebuild_invalidation() {
-                        let import_rule = lock.read_with(guard);
-                        self.effective_media_query_results
-                            .saw_effective(import_rule);
-                    }
-
-                    // NOTE: effective_rules visits the inner stylesheet if
-                    // appropriate.
-                },
-                CssRule::Media(ref lock) => {
-                    if rebuild_kind.should_rebuild_invalidation() {
-                        let media_rule = lock.read_with(guard);
-                        self.effective_media_query_results.saw_effective(media_rule);
-                    }
-                },
                 CssRule::Keyframes(ref keyframes_rule) => {
+                    use hashglobe::hash_map::Entry;
+
                     let keyframes_rule = keyframes_rule.read_with(guard);
                     debug!("Found valid keyframes rule: {:?}", *keyframes_rule);
-
-                    // Don't let a prefixed keyframes animation override a non-prefixed one.
-                    let needs_insertion = keyframes_rule.vendor_prefix.is_none() ||
-                        self.animations
-                            .get(keyframes_rule.name.as_atom())
-                            .map_or(true, |rule| rule.vendor_prefix.is_some());
-                    if needs_insertion {
-                        let animation = KeyframesAnimation::from_keyframes(
-                            &keyframes_rule.keyframes,
-                            keyframes_rule.vendor_prefix.clone(),
-                            guard,
-                        );
-                        debug!("Found valid keyframe animation: {:?}", animation);
-                        self.animations
-                            .try_insert(keyframes_rule.name.as_atom().clone(), animation)?;
+                    match self
+                        .animations
+                        .try_entry(keyframes_rule.name.as_atom().clone())?
+                    {
+                        Entry::Vacant(e) => {
+                            e.insert(KeyframesAnimation::from_keyframes(
+                                &keyframes_rule.keyframes,
+                                keyframes_rule.vendor_prefix.clone(),
+                                current_layer_id,
+                                guard,
+                            ));
+                        },
+                        Entry::Occupied(mut e) => {
+                            // Don't let a prefixed keyframes animation override
+                            // a non-prefixed one.
+                            //
+                            // TODO(emilio): This will need to be harder for
+                            // layers.
+                            let needs_insert = keyframes_rule.vendor_prefix.is_none() ||
+                                e.get().vendor_prefix.is_some();
+                            if needs_insert {
+                                e.insert(KeyframesAnimation::from_keyframes(
+                                    &keyframes_rule.keyframes,
+                                    keyframes_rule.vendor_prefix.clone(),
+                                    current_layer_id,
+                                    guard,
+                                ));
+                            }
+                        },
                     }
+                },
+                #[cfg(feature = "gecko")]
+                CssRule::ScrollTimeline(..) => {
+                    // TODO: Bug 1676791: set the timeline into animation.
+                    // https://phabricator.services.mozilla.com/D126452
+                    //
+                    // Note: Bug 1733260: we may drop @scroll-timeline rule once this spec issue
+                    // https://github.com/w3c/csswg-drafts/issues/6674 gets landed.
                 },
                 #[cfg(feature = "gecko")]
                 CssRule::FontFace(ref rule) => {
@@ -2140,10 +2396,214 @@ impl CascadeData {
                 CssRule::Page(ref rule) => {
                     self.extra_data.add_page(rule);
                 },
+                CssRule::Viewport(..) => {},
+                _ => {
+                    handled = false;
+                },
+            }
+
+            if handled {
+                // Assert that there are no children, and that the rule is
+                // effective.
+                if cfg!(debug_assertions) {
+                    let mut effective = false;
+                    let children = EffectiveRulesIterator::children(
+                        rule,
+                        device,
+                        quirks_mode,
+                        guard,
+                        &mut effective,
+                    );
+                    debug_assert!(children.is_none());
+                    debug_assert!(effective);
+                }
+                continue;
+            }
+
+            let mut effective = false;
+            let children =
+                EffectiveRulesIterator::children(rule, device, quirks_mode, guard, &mut effective);
+
+            if !effective {
+                continue;
+            }
+
+            fn maybe_register_layer(data: &mut CascadeData, layer: &LayerName) -> LayerId {
+                // TODO: Measure what's more common / expensive, if
+                // layer.clone() or the double hash lookup in the insert
+                // case.
+                if let Some(id) = data.layer_id.get(layer) {
+                    return *id;
+                }
+                let id = LayerId(data.layers.len() as u32);
+
+                let parent_layer_id = if layer.layer_names().len() > 1 {
+                    let mut parent = layer.clone();
+                    parent.0.pop();
+
+                    *data
+                        .layer_id
+                        .get_mut(&parent)
+                        .expect("Parent layers should be registered before child layers")
+                } else {
+                    LayerId::root()
+                };
+
+                data.layers[parent_layer_id.0 as usize].children.push(id);
+                data.layers.push(CascadeLayer {
+                    id,
+                    // NOTE(emilio): Order is evaluated after rebuild in
+                    // compute_layer_order.
+                    order: LayerOrder::first(),
+                    children: vec![],
+                });
+
+                data.layer_id.insert(layer.clone(), id);
+
+                id
+            }
+
+            fn maybe_register_layers(
+                data: &mut CascadeData,
+                name: Option<&LayerName>,
+                current_layer: &mut LayerName,
+                pushed_layers: &mut usize,
+            ) -> LayerId {
+                let anon_name;
+                let name = match name {
+                    Some(name) => name,
+                    None => {
+                        anon_name = LayerName::new_anonymous();
+                        &anon_name
+                    },
+                };
+
+                let mut id = LayerId::root();
+                for name in name.layer_names() {
+                    current_layer.0.push(name.clone());
+                    id = maybe_register_layer(data, &current_layer);
+                    *pushed_layers += 1;
+                }
+                debug_assert_ne!(id, LayerId::root());
+                id
+            }
+
+            let mut layer_names_to_pop = 0;
+            let mut children_layer_id = current_layer_id;
+            match *rule {
+                CssRule::Import(ref lock) => {
+                    let import_rule = lock.read_with(guard);
+                    if rebuild_kind.should_rebuild_invalidation() {
+                        self.effective_media_query_results
+                            .saw_effective(import_rule);
+                    }
+                    if let Some(ref layer) = import_rule.layer {
+                        children_layer_id = maybe_register_layers(
+                            self,
+                            layer.name.as_ref(),
+                            &mut current_layer,
+                            &mut layer_names_to_pop,
+                        );
+                    }
+                },
+                CssRule::Media(ref lock) => {
+                    if rebuild_kind.should_rebuild_invalidation() {
+                        let media_rule = lock.read_with(guard);
+                        self.effective_media_query_results.saw_effective(media_rule);
+                    }
+                },
+                CssRule::Layer(ref lock) => {
+                    use crate::stylesheets::layer_rule::LayerRuleKind;
+
+                    let layer_rule = lock.read_with(guard);
+                    match layer_rule.kind {
+                        LayerRuleKind::Block { ref name, .. } => {
+                            children_layer_id = maybe_register_layers(
+                                self,
+                                name.as_ref(),
+                                &mut current_layer,
+                                &mut layer_names_to_pop,
+                            );
+                        },
+                        LayerRuleKind::Statement { ref names } => {
+                            for name in &**names {
+                                let mut pushed = 0;
+                                // There are no children, so we can ignore the
+                                // return value.
+                                maybe_register_layers(
+                                    self,
+                                    Some(name),
+                                    &mut current_layer,
+                                    &mut pushed,
+                                );
+                                for _ in 0..pushed {
+                                    current_layer.0.pop();
+                                }
+                            }
+                        },
+                    }
+                },
                 // We don't care about any other rule.
                 _ => {},
             }
+
+            if let Some(children) = children {
+                self.add_rule_list(
+                    children,
+                    device,
+                    quirks_mode,
+                    stylesheet,
+                    guard,
+                    rebuild_kind,
+                    current_layer,
+                    children_layer_id,
+                    precomputed_pseudo_element_decls.as_deref_mut(),
+                )?;
+            }
+
+            for _ in 0..layer_names_to_pop {
+                current_layer.0.pop();
+            }
         }
+
+        Ok(())
+    }
+
+    // Returns Err(..) to signify OOM
+    fn add_stylesheet<S>(
+        &mut self,
+        device: &Device,
+        quirks_mode: QuirksMode,
+        stylesheet: &S,
+        guard: &SharedRwLockReadGuard,
+        rebuild_kind: SheetRebuildKind,
+        mut precomputed_pseudo_element_decls: Option<&mut PrecomputedPseudoElementDeclarations>,
+    ) -> Result<(), FailedAllocationError>
+    where
+        S: StylesheetInDocument + 'static,
+    {
+        if !stylesheet.enabled() || !stylesheet.is_effective_for_device(device, guard) {
+            return Ok(());
+        }
+
+        let contents = stylesheet.contents();
+
+        if rebuild_kind.should_rebuild_invalidation() {
+            self.effective_media_query_results.saw_effective(contents);
+        }
+
+        let mut current_layer = LayerName::new_empty();
+        self.add_rule_list(
+            contents.rules(guard).iter(),
+            device,
+            quirks_mode,
+            stylesheet,
+            guard,
+            rebuild_kind,
+            &mut current_layer,
+            LayerId::root(),
+            precomputed_pseudo_element_decls.as_deref_mut(),
+        )?;
 
         Ok(())
     }
@@ -2158,13 +2618,15 @@ impl CascadeData {
         quirks_mode: QuirksMode,
     ) -> bool
     where
-        S: StylesheetInDocument + ToMediaListKey + 'static,
+        S: StylesheetInDocument + 'static,
     {
         use crate::invalidation::media_queries::PotentiallyEffectiveMediaRules;
 
         let effective_now = stylesheet.is_effective_for_device(device, guard);
 
-        let effective_then = self.effective_media_query_results.was_effective(stylesheet);
+        let effective_then = self
+            .effective_media_query_results
+            .was_effective(stylesheet.contents());
 
         if effective_now != effective_then {
             debug!(
@@ -2190,18 +2652,21 @@ impl CascadeData {
                 CssRule::CounterStyle(..) |
                 CssRule::Supports(..) |
                 CssRule::Keyframes(..) |
+                CssRule::ScrollTimeline(..) |
                 CssRule::Page(..) |
                 CssRule::Viewport(..) |
                 CssRule::Document(..) |
+                CssRule::Layer(..) |
                 CssRule::FontFeatureValues(..) => {
                     // Not affected by device changes.
                     continue;
                 },
                 CssRule::Import(ref lock) => {
                     let import_rule = lock.read_with(guard);
-                    let effective_now = import_rule
-                        .stylesheet
-                        .is_effective_for_device(&device, guard);
+                    let effective_now = match import_rule.stylesheet.media(guard) {
+                        Some(m) => m.evaluate(device, quirks_mode),
+                        None => true,
+                    };
                     let effective_then = self
                         .effective_media_query_results
                         .was_effective(import_rule);
@@ -2257,6 +2722,9 @@ impl CascadeData {
             host_rules.clear();
         }
         self.animations.clear();
+        self.layer_id.clear();
+        self.layers.clear();
+        self.layers.push(CascadeLayer::root());
         self.extra_data.clear();
         self.rules_source_order = 0;
         self.num_selectors = 0;
@@ -2273,8 +2741,33 @@ impl CascadeData {
         self.selectors_for_cache_revalidation.clear();
         self.effective_media_query_results.clear();
     }
+}
 
-    /// Measures heap usage.
+impl CascadeDataCacheEntry for CascadeData {
+    fn cascade_data(&self) -> &CascadeData {
+        self
+    }
+
+    fn rebuild<S>(
+        device: &Device,
+        quirks_mode: QuirksMode,
+        collection: SheetCollectionFlusher<S>,
+        guard: &SharedRwLockReadGuard,
+        old: &Self,
+    ) -> Result<Arc<Self>, FailedAllocationError>
+    where
+        S: StylesheetInDocument + PartialEq + 'static,
+    {
+        debug_assert!(collection.dirty(), "We surely need to do something?");
+        // If we're doing a full rebuild anyways, don't bother cloning the data.
+        let mut updatable_entry = match collection.data_validity() {
+            DataValidity::Valid | DataValidity::CascadeInvalid => old.clone(),
+            DataValidity::FullyInvalid => Self::new(),
+        };
+        updatable_entry.rebuild(device, quirks_mode, collection, guard)?;
+        Ok(Arc::new(updatable_entry))
+    }
+
     #[cfg(feature = "gecko")]
     fn add_size_of(&self, ops: &mut MallocSizeOfOps, sizes: &mut ServoStyleSetSizes) {
         self.normal_rules.add_size_of(ops, sizes);
@@ -2320,6 +2813,9 @@ pub struct Rule {
     /// we could repurpose that storage here if we needed to.
     pub source_order: u32,
 
+    /// The current layer id of this style rule.
+    pub layer_id: LayerId,
+
     /// The actual style rule.
     #[cfg_attr(
         feature = "gecko",
@@ -2346,9 +2842,16 @@ impl Rule {
     pub fn to_applicable_declaration_block(
         &self,
         level: CascadeLevel,
+        cascade_data: &CascadeData,
     ) -> ApplicableDeclarationBlock {
         let source = StyleSource::from_rule(self.style_rule.clone());
-        ApplicableDeclarationBlock::new(source, self.source_order, level, self.specificity())
+        ApplicableDeclarationBlock::new(
+            source,
+            self.source_order,
+            level,
+            self.specificity(),
+            cascade_data.layer_order_for(self.layer_id),
+        )
     }
 
     /// Creates a new Rule.
@@ -2357,12 +2860,14 @@ impl Rule {
         hashes: AncestorHashes,
         style_rule: Arc<Locked<StyleRule>>,
         source_order: u32,
+        layer_id: LayerId,
     ) -> Self {
         Rule {
-            selector: selector,
-            hashes: hashes,
-            style_rule: style_rule,
-            source_order: source_order,
+            selector,
+            hashes,
+            style_rule,
+            source_order,
+            layer_id,
         }
     }
 }

@@ -1,4 +1,4 @@
-// |jit-test| exitstatus: 6; skip-if: !wasmDebuggingIsSupported()
+// |jit-test| exitstatus: 6; skip-if: !wasmDebuggingEnabled()
 
 // Don't include wasm.js in timeout tests: when wasm isn't supported, it will
 // quit(0) which will cause the test to fail.
@@ -7,7 +7,7 @@ newGlobal({newCompartment: true}).Debugger().addDebuggee(this);
 
 var t = new WebAssembly.Table({
     initial: 1,
-    element: "funcref"
+    element: "anyfunc"
 });
 
 new WebAssembly.Instance(new WebAssembly.Module(wasmTextToBinary(`

@@ -9,6 +9,7 @@
 #include <stdio.h>
 
 #include "mozilla/Bootstrap.h"
+#include "XREShellData.h"
 
 #include "nsXULAppAPI.h"
 #ifdef XP_MACOSX
@@ -32,6 +33,12 @@
 #  include <gtk/gtk.h>
 #endif
 
+#include "BaseProfiler.h"
+
+#ifdef LIBFUZZER
+#  include "FuzzerDefs.h"
+#endif
+
 int main(int argc, char** argv, char** envp) {
 #ifdef MOZ_WIDGET_GTK
   // A default display may or may not be required for xpcshell tests, and so
@@ -52,18 +59,29 @@ int main(int argc, char** argv, char** envp) {
   DllBlocklist_Initialize();
 #endif
 
+  char aLocal;
+  mozilla::baseprofiler::profiler_init(&aLocal);
+
   XREShellData shellData;
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
   shellData.sandboxBrokerServices =
       mozilla::sandboxing::GetInitializedBrokerServices();
 #endif
 
-  mozilla::Bootstrap::UniquePtr bootstrap = mozilla::GetBootstrap();
-  if (!bootstrap) {
+  auto bootstrapResult = mozilla::GetBootstrap();
+  if (bootstrapResult.isErr()) {
     return 2;
   }
 
+  mozilla::Bootstrap::UniquePtr bootstrap = bootstrapResult.unwrap();
+
+#ifdef LIBFUZZER
+  shellData.fuzzerDriver = fuzzer::FuzzerDriver;
+#endif
+
   int result = bootstrap->XRE_XPCShellMain(argc, argv, envp, &shellData);
+
+  mozilla::baseprofiler::profiler_shutdown();
 
 #if defined(DEBUG) && defined(HAS_DLL_BLOCKLIST)
   DllBlocklist_Shutdown();

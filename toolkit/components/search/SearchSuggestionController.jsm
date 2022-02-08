@@ -26,12 +26,7 @@ const SEARCH_DATA_TRANSFERRED_SCALAR = "browser.search.data_transferred";
 const SEARCH_TELEMETRY_KEY_PREFIX = "sggt";
 const SEARCH_TELEMETRY_PRIVATE_BROWSING_KEY_SUFFIX = "pb";
 
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "UUIDGenerator",
-  "@mozilla.org/uuid-generator;1",
-  "nsIUUIDGenerator"
-);
+const SEARCH_TELEMETRY_LATENCY = "SEARCH_SUGGESTIONS_LATENCY_MS";
 
 /**
  * Generates an UUID.
@@ -40,7 +35,7 @@ XPCOMUtils.defineLazyServiceGetter(
  *   An UUID string, without leading or trailing braces.
  */
 function uuid() {
-  let uuid = UUIDGenerator.generateUUID().toString();
+  let uuid = Services.uuid.generateUUID().toString();
   return uuid.slice(1, uuid.length - 1);
 }
 
@@ -201,6 +196,10 @@ SearchSuggestionController.prototype = {
    * @param {boolean} privateMode - whether the request is being made in the context of private browsing
    * @param {nsISearchEngine} engine - search engine for the suggestions.
    * @param {int} userContextId - the userContextId of the selected tab.
+   * @param {boolean} restrictToEngine - whether to restrict local historical
+   *   suggestions to the ones registered under the given engine.
+   * @param {boolean} dedupeRemoteAndLocal - whether to remove remote
+   *   suggestions that dupe local suggestions
    *
    * @returns {Promise} resolving to an object with the following contents:
    * @returns {array<SearchSuggestionEntry>} results.local
@@ -208,7 +207,14 @@ SearchSuggestionController.prototype = {
    * @returns {array<SearchSuggestionEntry>} results.remote
    *   Contains remote search suggestions.
    */
-  fetch(searchTerm, privateMode, engine, userContextId = 0) {
+  fetch(
+    searchTerm,
+    privateMode,
+    engine,
+    userContextId = 0,
+    restrictToEngine = false,
+    dedupeRemoteAndLocal = true
+  ) {
     // There is no smart filtering from previous results here (as there is when looking through
     // history/form data) because the result set returned by the server is different for every typed
     // value - e.g. "ocean breathes" does not return a subset of the results returned for "ocean".
@@ -256,7 +262,12 @@ SearchSuggestionController.prototype = {
 
     // Local results from form history
     if (this.maxLocalResults) {
-      promises.push(this._fetchFormHistory(searchTerm));
+      promises.push(
+        this._fetchFormHistory(
+          searchTerm,
+          restrictToEngine ? engine.name : null
+        )
+      );
     }
 
     function handleRejection(reason) {
@@ -268,7 +279,7 @@ SearchSuggestionController.prototype = {
       return null;
     }
     return Promise.all(promises).then(
-      this._dedupeAndReturnResults.bind(this),
+      results => this._dedupeAndReturnResults(results, dedupeRemoteAndLocal),
       handleRejection
     );
   },
@@ -289,7 +300,7 @@ SearchSuggestionController.prototype = {
 
   // Private methods
 
-  _fetchFormHistory(searchTerm) {
+  _fetchFormHistory(searchTerm, source) {
     return new Promise(resolve => {
       let acSearchObserver = {
         // Implements nsIAutoCompleteSearch
@@ -336,13 +347,53 @@ SearchSuggestionController.prototype = {
       let formHistory = Cc[
         "@mozilla.org/autocomplete/search;1?name=form-history"
       ].createInstance(Ci.nsIAutoCompleteSearch);
+      let params = this.formHistoryParam || DEFAULT_FORM_HISTORY_PARAM;
+      let options = null;
+      if (source) {
+        options = Cc["@mozilla.org/hash-property-bag;1"].createInstance(
+          Ci.nsIWritablePropertyBag2
+        );
+        options.setPropertyAsAUTF8String("source", source);
+      }
       formHistory.startSearch(
         searchTerm,
-        this.formHistoryParam || DEFAULT_FORM_HISTORY_PARAM,
+        params,
         this._formHistoryResult,
-        acSearchObserver
+        acSearchObserver,
+        options
       );
     });
+  },
+
+  /**
+   * Records per-engine telemetry after a search has finished.
+   *
+   * @param {string} engineId
+   * @param {boolean} privateMode
+   *   Whether the search was in a private context.
+   * @param {boolean} [aborted]
+   *   Whether the search was aborted.
+   */
+  _reportTelemetryForEngine(engineId, privateMode, aborted = false) {
+    this._reportBandwidthForEngine(engineId, privateMode);
+
+    // Stop the latency stopwatch.
+    if (this._requestStopwatchToken) {
+      if (aborted) {
+        TelemetryStopwatch.cancelKeyed(
+          SEARCH_TELEMETRY_LATENCY,
+          engineId,
+          this._requestStopwatchToken
+        );
+      } else {
+        TelemetryStopwatch.finishKeyed(
+          SEARCH_TELEMETRY_LATENCY,
+          engineId,
+          this._requestStopwatchToken
+        );
+      }
+      this._requestStopwatchToken = null;
+    }
   },
 
   /**
@@ -432,13 +483,13 @@ SearchSuggestionController.prototype = {
       this._onRemoteLoaded.bind(this, deferredResponse, engineId, privateMode)
     );
     this._request.addEventListener("error", evt => {
-      this._reportBandwidthForEngine(engineId, privateMode);
+      this._reportTelemetryForEngine(engineId, privateMode);
       deferredResponse.resolve("HTTP error");
     });
     // Reject for an abort assuming it's always from .stop() in which case we shouldn't return local
     // or remote results for existing searches.
     this._request.addEventListener("abort", evt => {
-      this._reportBandwidthForEngine(engineId, privateMode);
+      this._reportTelemetryForEngine(engineId, privateMode, true);
       deferredResponse.reject("HTTP request aborted");
     });
 
@@ -447,6 +498,24 @@ SearchSuggestionController.prototype = {
     } else {
       this._request.send();
     }
+
+    // Start the latency stopwatch, but first cancel the current one if any.
+    // `_requestStopwatchToken` is used to associate a stopwatch with each new
+    // remote fetch. It also keeps track of the engine ID that was used for the
+    // fetch, which is useful since the histogram is keyed on it.
+    if (this._requestStopwatchToken) {
+      TelemetryStopwatch.cancelKeyed(
+        SEARCH_TELEMETRY_LATENCY,
+        this._requestStopwatchToken.engineId,
+        this._requestStopwatchToken
+      );
+    }
+    this._requestStopwatchToken = { engineId };
+    TelemetryStopwatch.startKeyed(
+      SEARCH_TELEMETRY_LATENCY,
+      engineId,
+      this._requestStopwatchToken
+    );
 
     return deferredResponse;
   },
@@ -464,14 +533,14 @@ SearchSuggestionController.prototype = {
    * @private
    */
   _onRemoteLoaded(deferredResponse, engineId, privateMode) {
+    this._reportTelemetryForEngine(engineId, privateMode);
+
     if (!this._request) {
       deferredResponse.resolve(
         "Got HTTP response after the request was cancelled"
       );
       return;
     }
-
-    this._reportBandwidthForEngine(engineId, privateMode);
 
     let status, serverResults;
     try {
@@ -496,16 +565,35 @@ SearchSuggestionController.prototype = {
       return;
     }
 
-    if (
-      !Array.isArray(serverResults) ||
-      !serverResults[0] ||
-      this._searchString.localeCompare(serverResults[0], undefined, {
-        sensitivity: "base",
-      })
-    ) {
-      // something is wrong here so drop remote results
+    try {
+      if (
+        !Array.isArray(serverResults) ||
+        !serverResults[0] ||
+        (this._searchString.localeCompare(serverResults[0], undefined, {
+          sensitivity: "base",
+        }) &&
+          // Some engines (e.g. Amazon) return a search string containing
+          // escaped Unicode sequences. Try decoding the remote search string
+          // and compare that with our typed search string.
+          this._searchString.localeCompare(
+            decodeURIComponent(
+              JSON.parse('"' + serverResults[0].replace(/\"/g, '\\"') + '"')
+            ),
+            undefined,
+            {
+              sensitivity: "base",
+            }
+          ))
+      ) {
+        // something is wrong here so drop remote results
+        deferredResponse.resolve(
+          "Unexpected response, this._searchString does not match remote response"
+        );
+        return;
+      }
+    } catch (ex) {
       deferredResponse.resolve(
-        "Unexpected response, this._searchString does not match remote response"
+        `Failed to parse the remote response string: ${ex}`
       );
       return;
     }
@@ -536,9 +624,11 @@ SearchSuggestionController.prototype = {
 
   /**
    * @param {Array} suggestResults - an array of result objects from different sources (local or remote)
+   * @param {boolean} dedupeRemoteAndLocal - whether to remove remote
+   *   suggestions that dupe local suggestions
    * @returns {object}
    */
-  _dedupeAndReturnResults(suggestResults) {
+  _dedupeAndReturnResults(suggestResults, dedupeRemoteAndLocal) {
     if (this._searchString === null) {
       // _searchString can be null if stop() was called and remote suggestions
       // were disabled (stopping if we are fetching remote suggestions will
@@ -590,7 +680,7 @@ SearchSuggestionController.prototype = {
 
     // We don't want things to appear in both history and suggestions so remove
     // entries from remote results that are already in local.
-    if (results.remote.length && results.local.length) {
+    if (results.remote.length && results.local.length && dedupeRemoteAndLocal) {
       for (let i = 0; i < results.local.length; ++i) {
         let dupIndex = results.remote.findIndex(e =>
           e.equals(results.local[i])
@@ -602,10 +692,11 @@ SearchSuggestionController.prototype = {
     }
 
     // Trim the number of results to the maximum requested (now that we've pruned dupes).
-    results.remote = results.remote.slice(
-      0,
-      this.maxRemoteResults - results.local.length
-    );
+    let maxRemoteCount = this.maxRemoteResults;
+    if (dedupeRemoteAndLocal) {
+      maxRemoteCount -= results.local.length;
+    }
+    results.remote = results.remote.slice(0, maxRemoteCount);
 
     if (this._callback) {
       this._callback(results);
@@ -687,6 +778,13 @@ SearchSuggestionController.prototype = {
 SearchSuggestionController.engineOffersSuggestions = function(engine) {
   return engine.supportsResponseType(SearchUtils.URL_TYPE.SUGGEST_JSON);
 };
+
+/**
+ * The maximum length of a value to be stored in search history.
+ */
+SearchSuggestionController.SEARCH_HISTORY_MAX_VALUE_LENGTH = 255;
+
+SearchSuggestionController.REMOTE_TIMEOUT_DEFAULT = REMOTE_TIMEOUT_DEFAULT;
 
 /**
  * The maximum time (ms) to wait before giving up on a remote suggestions.

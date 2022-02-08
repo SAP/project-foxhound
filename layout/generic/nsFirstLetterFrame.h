@@ -47,11 +47,13 @@ class nsFirstLetterFrame final : public nsContainerFrame {
   virtual void AddInlinePrefISize(gfxContext* aRenderingContext,
                                   InlinePrefISizeData* aData) override;
 
-  virtual mozilla::LogicalSize ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWritingMode,
+  SizeComputationResult ComputeSize(
+      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
-      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
-      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
+      const mozilla::LogicalSize& aMargin,
+      const mozilla::LogicalSize& aBorderPadding,
+      const mozilla::StyleSizeOverrides& aSizeOverrides,
+      mozilla::ComputeSizeFlags aFlags) override;
 
   virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
                       const ReflowInput& aReflowInput,
@@ -60,8 +62,7 @@ class nsFirstLetterFrame final : public nsContainerFrame {
   virtual bool CanContinueTextRun() const override;
   virtual nscoord GetLogicalBaseline(
       mozilla::WritingMode aWritingMode) const override;
-  virtual LogicalSides GetLogicalSkipSides(
-      const ReflowInput* aReflowInput = nullptr) const override;
+  virtual LogicalSides GetLogicalSkipSides() const override;
 
   // override of nsFrame method
   virtual nsresult GetChildFrameContainingOffset(

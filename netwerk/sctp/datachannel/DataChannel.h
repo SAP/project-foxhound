@@ -31,8 +31,8 @@
 #include "DataChannelLog.h"
 
 #ifdef SCTP_DTLS_SUPPORTED
-#  include "mtransport/sigslot.h"
-#  include "mtransport/transportlayer.h"  // For TransportLayer::State
+#  include "transport/sigslot.h"
+#  include "transport/transportlayer.h"  // For TransportLayer::State
 #endif
 
 #ifndef EALREADY
@@ -186,8 +186,8 @@ class DataChannelConnection final : public net::NeckoTargetHolder
 
   void Stop();
   void Close(DataChannel* aChannel);
-  // CloseInt() must be called with mLock held
-  void CloseInt(DataChannel* aChannel);
+  // CloseLocked() must be called with mLock held
+  void CloseLocked(DataChannel* aChannel);
   void CloseAll();
 
   // Returns a POSIX error code.
@@ -222,6 +222,14 @@ class DataChannelConnection final : public net::NeckoTargetHolder
   int SctpDtlsOutput(void* addr, void* buffer, size_t length, uint8_t tos,
                      uint8_t set_df);
 #endif
+
+  bool InShutdown() const {
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+    return mShutdown;
+#else
+    return false;
+#endif
+  }
 
  protected:
   // Avoid cycles with PeerConnectionImpl
@@ -357,7 +365,7 @@ class DataChannelConnection final : public net::NeckoTargetHolder
   Channels mChannels;
   // STS only
   uint32_t mCurrentStream = 0;
-  nsDeque<DataChannel> mPending;  // Holds addref'ed DataChannel's -- careful!
+  nsRefPtrDeque<DataChannel> mPending;
   // STS and main
   size_t mNegotiatedIdLimit = 0;  // GUARDED_BY(mConnection->mLock)
   uint8_t mPendingType = PENDING_NONE;

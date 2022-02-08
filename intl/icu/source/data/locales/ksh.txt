@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 ksh{
     AuxExemplarCharacters{"[á à ă â ã ā ç é è ĕ ê ē ğ í ì ĭ î ï ī ĳ ı ł ñ ó ò ŏ ô ø ō ú ù ŭ û ū ÿ]"}
     ExemplarCharacters{"[a å ä æ b c d e ë ė f g h i j k l m n o ö œ p q r s ß t u ů ü v w x y z]"}
@@ -161,7 +162,6 @@ ksh{
         }
         native{"latn"}
     }
-    Version{"37"}
     calendar{
         buddhist{
             DateTimePatterns{
@@ -179,6 +179,16 @@ ksh{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "GyMMMMEEEEd",
+                "GyMMMMd",
+                "GyMMMd",
+                "GGGGGyMd",
+            }
         }
         generic{
             DateTimePatterns{
@@ -195,6 +205,16 @@ ksh{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "GyMMMMEEEEd",
+                "GyMMMMd",
+                "GyMMMd",
+                "GGGGGyMd",
             }
             availableFormats{
                 Ed{"E 'dä' d."}
@@ -285,6 +305,16 @@ ksh{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "yMMMMEEEEd",
+                "yMMMMd",
+                "yMMMd",
+                "yMd",
             }
             availableFormats{
                 Ed{"E 'dä' d."}

@@ -68,6 +68,48 @@ module.exports = function(config) {
           functions: 100,
           branches: 66,
           overrides: {
+            "lib/AboutPreferences.jsm": {
+              statements: 98,
+              lines: 98,
+              functions: 100,
+              branches: 66,
+            },
+            "lib/ASRouter.jsm": {
+              statements: 75,
+              lines: 75,
+              functions: 64,
+              branches: 66,
+            },
+            "lib/ASRouterDefaultConfig.jsm": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            "content-src/asrouter/asrouter-utils.js": {
+              statements: 66,
+              lines: 66,
+              functions: 100,
+              branches: 63,
+            },
+            "lib/TelemetryFeed.jsm": {
+              statements: 99,
+              lines: 99,
+              functions: 100,
+              branches: 96,
+            },
+            "lib/ASRouterParentProcessMessageHandler.jsm": {
+              statements: 98,
+              lines: 98,
+              functions: 100,
+              branches: 88,
+            },
+            "content-src/lib/init-store.js": {
+              statements: 98,
+              lines: 98,
+              functions: 100,
+              branches: 100,
+            },
             "lib/ActivityStreamStorage.jsm": {
               statements: 100,
               lines: 100,
@@ -87,10 +129,10 @@ module.exports = function(config) {
               branches: 75,
             },
             "lib/TopSitesFeed.jsm": {
-              statements: 94,
-              lines: 94,
-              functions: 97,
-              branches: 84,
+              statements: 70,
+              lines: 75,
+              functions: 80,
+              branches: 60,
             },
             "lib/Screenshots.jsm": {
               statements: 94,
@@ -121,6 +163,36 @@ module.exports = function(config) {
               lines: 0,
               functions: 0,
               branches: 0,
+            },
+            "content-src/components/CustomizeMenu/**/*.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            "content-src/components/CustomizeMenu/*.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            "content-src/lib/aboutwelcome-utils.js": {
+              statements: 50,
+              lines: 50,
+              functions: 100,
+              branches: 0,
+            },
+            "content-src/lib/link-menu-options.js": {
+              statements: 96,
+              lines: 96,
+              functions: 96,
+              branches: 70,
+            },
+            "content-src/aboutwelcome/**/*.jsx": {
+              statements: 62,
+              lines: 60,
+              functions: 65,
+              branches: 50,
             },
             "content-src/components/**/*.jsx": {
               statements: 51.1,
@@ -175,6 +247,7 @@ module.exports = function(config) {
                     ], // require("babel-plugin-jsm-to-commonjs")
                     "@babel/plugin-proposal-nullish-coalescing-operator",
                     "@babel/plugin-proposal-optional-chaining",
+                    "@babel/plugin-proposal-class-properties",
                   ],
                 },
               },
@@ -191,6 +264,7 @@ module.exports = function(config) {
             loader: "babel-loader",
             options: {
               presets: ["@babel/preset-react"],
+              plugins: ["@babel/plugin-proposal-optional-chaining"],
             },
           },
           {

@@ -6,6 +6,10 @@
 const URL1 = MAIN_DOMAIN + "navigate-first.html";
 const URL2 = MAIN_DOMAIN + "navigate-second.html";
 
+const { PromptTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PromptTestUtils.jsm"
+);
+
 var isE10s = Services.appinfo.browserTabsRemoteAutostart;
 
 SpecialPowers.pushPrefEnv({
@@ -83,22 +87,6 @@ function assertEvent(event, data) {
   }
 }
 
-function waitForOnBeforeUnloadDialog(browser, callback) {
-  browser.addEventListener(
-    "DOMWillOpenModalDialog",
-    async function(event) {
-      const stack = browser.parentNode;
-      const dialogs = stack.getElementsByTagName("tabmodalprompt");
-      await waitUntil(() => dialogs[0]);
-      const { button0, button1 } = browser.tabModalPromptBox.getPrompt(
-        dialogs[0]
-      ).ui;
-      callback(button0, button1);
-    },
-    { capture: true, once: true }
-  );
-}
-
 var httpObserver = function(subject, topic, state) {
   const channel = subject.QueryInterface(Ci.nsIHttpChannel);
   const url = channel.URI.spec;
@@ -108,14 +96,16 @@ var httpObserver = function(subject, topic, state) {
   }
 };
 Services.obs.addObserver(httpObserver, "http-on-modify-request");
+registerCleanupFunction(() => {
+  Services.obs.removeObserver(httpObserver, "http-on-modify-request");
+});
 
 function onMessage({ data }) {
   assertEvent(data.event, data.data);
 }
 
 async function connectAndAttachTab(tab) {
-  const target = await TargetFactory.forTab(tab);
-  await target.attach();
+  const target = await createAndAttachTargetForTab(tab);
   const actorID = target.actorID;
   target.on("tabNavigated", function(packet) {
     assertEvent("tabNavigated", packet);
@@ -131,14 +121,20 @@ async function connectAndAttachTab(tab) {
 }
 
 add_task(async function() {
+  // Navigation events (navigate/will-navigate) on the target no longer fire with server targets.
+  // We should probably drop this test once we stop supporting client side targets (bug 1721852).
+  await pushPref("devtools.target-switching.server.enabled", false);
+
   // Open a test tab
   const browser = await addTab(URL1);
 
   // Listen for alert() call being made in navigate-first during unload
-  waitForOnBeforeUnloadDialog(browser, function(btnLeave, btnStay) {
+  const beforeUnloadPromise = PromptTestUtils.handleNextPrompt(
+    browser,
+    { modalType: Services.prompt.MODAL_TYPE_CONTENT, promptType: "confirmEx" },
+    { buttonNumClick: 0 }
+  ).then(() => {
     assertEvent("unload-dialog");
-    // accept to quit this page to another
-    btnLeave.click();
   });
 
   // Listen for messages sent by the content task
@@ -177,7 +173,8 @@ add_task(async function() {
   const onBrowserLoaded = BrowserTestUtils.browserLoaded(
     gBrowser.selectedBrowser
   );
-  await BrowserTestUtils.loadURI(gBrowser.selectedBrowser, URL2);
+  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, URL2);
+  await beforeUnloadPromise;
   await onBrowserLoaded;
 
   // Wait for all events to be received

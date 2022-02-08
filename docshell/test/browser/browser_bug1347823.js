@@ -7,11 +7,15 @@
 add_task(async function testValidCache() {
   // Make an unrealistic large timeout.
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.sessionhistory.contentViewerTimeout", 86400]],
+    set: [
+      ["browser.sessionhistory.contentViewerTimeout", 86400],
+      // If Fission is disabled, the pref is no-op.
+      ["fission.bfcacheInParent", true],
+    ],
   });
 
   await BrowserTestUtils.withNewTab(
-    { gBrowser, url: "data:text/html;charset=utf-8,page1" },
+    { gBrowser, url: "data:text/html;charset=utf-8,pageA1" },
     async function(browser) {
       // Make a simple modification for bfcache testing.
       await SpecialPowers.spawn(browser, [], () => {
@@ -19,7 +23,7 @@ add_task(async function testValidCache() {
       });
 
       // Load a random page.
-      BrowserTestUtils.loadURI(browser, "data:text/html;charset=utf-8,page2");
+      BrowserTestUtils.loadURI(browser, "data:text/html;charset=utf-8,pageA2");
       await BrowserTestUtils.browserLoaded(browser);
 
       // Go back and verify text content.
@@ -40,11 +44,15 @@ add_task(async function testValidCache() {
 add_task(async function testExpiredCache() {
   // Make bfcache timeout in 1 sec.
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.sessionhistory.contentViewerTimeout", 1]],
+    set: [
+      ["browser.sessionhistory.contentViewerTimeout", 1],
+      // If Fission is disabled, the pref is no-op.
+      ["fission.bfcacheInParent", true],
+    ],
   });
 
   await BrowserTestUtils.withNewTab(
-    { gBrowser, url: "data:text/html;charset=utf-8,page1" },
+    { gBrowser, url: "data:text/html;charset=utf-8,pageB1" },
     async function(browser) {
       // Make a simple modification for bfcache testing.
       await SpecialPowers.spawn(browser, [], () => {
@@ -52,13 +60,13 @@ add_task(async function testExpiredCache() {
       });
 
       // Load a random page.
-      BrowserTestUtils.loadURI(browser, "data:text/html;charset=utf-8,page2");
+      BrowserTestUtils.loadURI(browser, "data:text/html;charset=utf-8,pageB2");
       await BrowserTestUtils.browserLoaded(browser);
 
       // Wait for 3 times of expiration timeout, hopefully it's evicted...
       await SpecialPowers.spawn(browser, [], () => {
         return new Promise(resolve => {
-          content.setTimeout(resolve, 3000);
+          content.setTimeout(resolve, 5000);
         });
       });
 
@@ -70,7 +78,7 @@ add_task(async function testExpiredCache() {
       browser.goBack();
       await awaitPageShow;
       await SpecialPowers.spawn(browser, [], () => {
-        is(content.document.body.textContent, "page1");
+        is(content.document.body.textContent, "pageB1");
       });
     }
   );

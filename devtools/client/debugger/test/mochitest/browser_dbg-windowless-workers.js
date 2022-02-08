@@ -35,21 +35,22 @@ add_task(async function() {
   await dbg.actions.breakOnNext(getThreadContext(dbg));
   await waitForPaused(dbg, "simple-worker.js");
   threadIsSelected(dbg, 2);
-  assertPausedAtSourceAndLine(dbg, workerSource.id, 3);
+  const workerSource2 = dbg.selectors.getSelectedSourceWithContent();
+  assertPausedAtSourceAndLine(dbg, workerSource2.id, 3);
 
   info("Add a watch expression and view the value");
   await addExpression(dbg, "count");
-  is(getLabel(dbg, 1), "count");
-  const v = getValue(dbg, 1);
+  is(getWatchExpressionLabel(dbg, 1), "count");
+  const v = getWatchExpressionValue(dbg, 1);
   ok(v == `${+v}`, "Value of count should be a number");
 
   info("StepOver in the first worker");
   await stepOver(dbg);
-  assertPausedAtSourceAndLine(dbg, workerSource.id, 4);
+  assertPausedAtSourceAndLine(dbg, workerSource2.id, 4);
 
   info("Ensure that the watch expression has updated");
   await waitUntil(() => {
-    const v2 = getValue(dbg, 1);
+    const v2 = getWatchExpressionValue(dbg, 1);
     return +v2 == +v + 1;
   });
 
@@ -81,19 +82,20 @@ add_task(async function() {
   info("View the first paused thread");
   dbg.actions.selectThread(getContext(dbg), thread1);
   await waitForPaused(dbg);
-  assertPausedAtSourceAndLine(dbg, workerSource.id, 10);
+  assertPausedAtSourceAndLine(dbg, workerSource2.id, 10);
 
   info("View the second paused thread");
   await dbg.actions.selectThread(getContext(dbg), thread2);
   threadIsSelected(dbg, 3);
   await waitForPaused(dbg);
-  assertPausedAtSourceAndLine(dbg, workerSource.id, 10);
+  const workerSource3 = dbg.selectors.getSelectedSourceWithContent();
+  assertPausedAtSourceAndLine(dbg, workerSource3.id, 10);
 
   info("StepOver in second worker and not the first");
   await stepOver(dbg);
-  assertPausedAtSourceAndLine(dbg, workerSource.id, 11);
+  assertPausedAtSourceAndLine(dbg, workerSource3.id, 11);
   await dbg.actions.selectThread(getContext(dbg), thread1);
-  assertPausedAtSourceAndLine(dbg, workerSource.id, 10);
+  assertPausedAtSourceAndLine(dbg, workerSource2.id, 10);
 });
 
 function assertClass(dbg, selector, className, ...args) {
@@ -109,12 +111,4 @@ function threadIsPaused(dbg, index) {
 
 function threadIsSelected(dbg, index) {
   return assertClass(dbg, "threadsPaneItem", "selected", index);
-}
-
-function getLabel(dbg, index) {
-  return findElement(dbg, "expressionNode", index).innerText;
-}
-
-function getValue(dbg, index) {
-  return findElement(dbg, "expressionValue", index).innerText;
 }

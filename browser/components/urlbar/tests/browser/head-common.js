@@ -35,6 +35,7 @@ XPCOMUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
     "resource://testing-common/UrlbarTestUtils.jsm"
   );
   module.init(this);
+  registerCleanupFunction(() => module.uninit());
   return module;
 });
 
@@ -42,7 +43,7 @@ XPCOMUtils.defineLazyGetter(this, "SearchTestUtils", () => {
   const { SearchTestUtils: module } = ChromeUtils.import(
     "resource://testing-common/SearchTestUtils.jsm"
   );
-  module.init(Assert, registerCleanupFunction);
+  module.init(this);
   return module;
 });
 

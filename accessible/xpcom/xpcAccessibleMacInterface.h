@@ -7,9 +7,8 @@
 #ifndef mozilla_a11y_xpcAccessibleMacInterface_h_
 #define mozilla_a11y_xpcAccessibleMacInterface_h_
 
+#include "mozilla/a11y/Accessible.h"
 #include "nsIAccessibleMacInterface.h"
-
-#include "AccessibleOrProxy.h"
 
 class nsIAccessibleMacInterface;
 
@@ -41,8 +40,8 @@ class xpcAccessibleMacInterface : public xpcAccessibleMacNSObjectWrapper,
       : xpcAccessibleMacNSObjectWrapper(aNativeObj) {}
 
   // Construct an xpcAccessibleMacInterface using the native object
-  // associated with this accessible or proxy.
-  explicit xpcAccessibleMacInterface(AccessibleOrProxy aObj);
+  // associated with this accessible.
+  explicit xpcAccessibleMacInterface(Accessible* aObj);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIACCESSIBLEMACINTERFACE
@@ -70,6 +69,12 @@ class xpcAccessibleMacInterface : public xpcAccessibleMacNSObjectWrapper,
   // a "value" and "valueType" property.
   id JsValueToNSValue(JS::HandleObject aObject, JSContext* aCx,
                       nsresult* aResult);
+
+  // Convert a js value to a specified NSObject. This is called
+  // by JsValueToNSObject when encountering a JS object with
+  // a "object" and "objcetType" property.
+  id JsValueToSpecifiedNSObject(JS::HandleObject aObject, JSContext* aCx,
+                                nsresult* aResult);
 
  private:
   xpcAccessibleMacInterface(const xpcAccessibleMacInterface&) = delete;

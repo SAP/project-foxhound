@@ -28,17 +28,19 @@ add_task(async function() {
 
 async function continueToLine(dbg, line) {
   rightClickElement(dbg, "gutter", line);
+  await waitForContextMenu(dbg);
   selectContextMenuItem(dbg, selectors.editorContextMenu.continueToHere);
-  await waitForDispatch(dbg, "RESUME");
+  await waitForDispatch(dbg.store, "RESUME");
   await waitForPaused(dbg);
   await waitForInlinePreviews(dbg);
 }
 
 async function continueToColumn(dbg, pos) {
   await rightClickAtPos(dbg, pos);
+  await waitForContextMenu(dbg);
 
   selectContextMenuItem(dbg, selectors.editorContextMenu.continueToHere);
-  await waitForDispatch(dbg, "RESUME");
+  await waitForDispatch(dbg.store, "RESUME");
   await waitForPaused(dbg);
   await waitForInlinePreviews(dbg);
 }

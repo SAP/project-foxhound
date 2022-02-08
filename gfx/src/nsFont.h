@@ -7,19 +7,15 @@
 #ifndef nsFont_h___
 #define nsFont_h___
 
-#include <stdint.h>     // for uint8_t, uint16_t
-#include <sys/types.h>  // for int16_t
-#include "gfxFontFamilyList.h"
+#include <cstdint>
 #include "gfxFontConstants.h"  // for NS_FONT_KERNING_AUTO, etc
-#include "gfxFontFeatures.h"
 #include "gfxFontVariations.h"
 #include "mozilla/FontPropertyTypes.h"
-#include "mozilla/RefPtr.h"  // for RefPtr
 #include "mozilla/ServoStyleConstsInlines.h"
 #include "mozilla/StyleColorInlines.h"  // for StyleRGBA
-#include "nsCoord.h"                    // for nscoord
 #include "nsTArray.h"                   // for nsTArray
 
+struct gfxFontFeature;
 struct gfxFontStyle;
 
 // Font structure.
@@ -29,8 +25,7 @@ struct nsFont final {
   typedef mozilla::FontWeight FontWeight;
 
   // List of font families, either named or generic.
-  // This contains a RefPtr and a uint32_t field.
-  mozilla::FontFamilyList fontlist;
+  mozilla::StyleFontFamily family;
 
   // Font features from CSS font-feature-settings
   CopyableTArray<gfxFontFeature> fontFeatureSettings;
@@ -43,9 +38,9 @@ struct nsFont final {
 
   // The aspect-value (ie., the ratio actualsize:actualxheight) that any
   // actual physical font created from this font structure must have when
-  // rendering or measuring a string. A value of -1.0 means no adjustment
-  // needs to be done; otherwise the value must be nonnegative.
-  float sizeAdjust = -1.0f;
+  // rendering or measuring a string. The value must be nonnegative.
+  mozilla::StyleFontSizeAdjust sizeAdjust =
+      mozilla::StyleFontSizeAdjust::None();
 
   // The estimated background color behind the text. Enables a special
   // rendering mode when NS_GET_A(.) > 0. Only used for text in the chrome.
@@ -87,15 +82,12 @@ struct nsFont final {
   // that include an 'opsz' axis
   uint8_t opticalSizing = NS_FONT_OPTICAL_SIZING_AUTO;
 
-  // Synthesis setting, controls use of fake bolding/italics
-  uint8_t synthesis = NS_FONT_SYNTHESIS_WEIGHT | NS_FONT_SYNTHESIS_STYLE;
-
-  // Force this font to not be considered a 'generic' font, even if
-  // the name is the same as a CSS generic font family.
-  bool systemFont = false;
+  // Synthesis setting, controls use of fake bolding/italics/small-caps
+  uint8_t synthesis = NS_FONT_SYNTHESIS_WEIGHT | NS_FONT_SYNTHESIS_STYLE |
+                      NS_FONT_SYNTHESIS_SMALL_CAPS;
 
   // initialize the font with a fontlist
-  nsFont(const mozilla::FontFamilyList& aFontlist, mozilla::Length aSize);
+  nsFont(const mozilla::StyleFontFamily&, mozilla::Length aSize);
 
   // initialize the font with a single generic
   nsFont(mozilla::StyleGenericFontFamily, mozilla::Length aSize);

@@ -58,21 +58,30 @@ class CrashChannel final : public nsBaseChannel {
 
   URI_SAFE_FOR_UNTRUSTED_CONTENT is not enough to let web pages load that page,
   for that you need MAKE_LINKABLE.
+
+  NOTE: changes to this redir map need to be accompanied with changes to
+    docshell/build/components.conf
  */
 static const RedirEntry kRedirMap[] = {
     {"about", "chrome://global/content/aboutAbout.html", 0},
-    {"addons", "chrome://mozapps/content/extensions/extensions.xhtml",
-     nsIAboutModule::ALLOW_SCRIPT},
+    {"addons", "chrome://mozapps/content/extensions/aboutaddons.html",
+     nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::IS_SECURE_CHROME_UI},
     {"buildconfig", "chrome://global/content/buildconfig.html",
-     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT},
+     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+         nsIAboutModule::IS_SECURE_CHROME_UI},
     {"checkerboard", "chrome://global/content/aboutCheckerboard.html",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
          nsIAboutModule::ALLOW_SCRIPT},
-#ifndef MOZ_BUILD_APP_IS_BROWSER
-    {"config", "chrome://global/content/config.xhtml", 0},
+#ifndef MOZ_WIDGET_ANDROID
+    {"config", "chrome://global/content/aboutconfig/aboutconfig.html",
+     nsIAboutModule::IS_SECURE_CHROME_UI},
+#else
+    {"config", "chrome://geckoview/content/config.xhtml",
+     nsIAboutModule::IS_SECURE_CHROME_UI},
 #endif
 #ifdef MOZ_CRASHREPORTER
-    {"crashes", "chrome://global/content/crashes.html", 0},
+    {"crashes", "chrome://global/content/crashes.html",
+     nsIAboutModule::IS_SECURE_CHROME_UI},
 #endif
     {"credits", "https://www.mozilla.org/credits/",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
@@ -82,7 +91,8 @@ static const RedirEntry kRedirMap[] = {
          nsIAboutModule::URI_CAN_LOAD_IN_CHILD | nsIAboutModule::ALLOW_SCRIPT |
          nsIAboutModule::HIDE_FROM_ABOUTABOUT},
     {"license", "chrome://global/content/license.html",
-     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT},
+     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+         nsIAboutModule::IS_SECURE_CHROME_UI},
     {"logo", "chrome://branding/content/about.png",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
          // Linkable for testing reasons.
@@ -93,7 +103,8 @@ static const RedirEntry kRedirMap[] = {
      nsIAboutModule::ALLOW_SCRIPT |
          nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
          nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
-         nsIAboutModule::URI_CAN_LOAD_IN_PRIVILEGEDABOUT_PROCESS},
+         nsIAboutModule::URI_CAN_LOAD_IN_PRIVILEGEDABOUT_PROCESS |
+         nsIAboutModule::IS_SECURE_CHROME_UI},
     {"mozilla", "chrome://global/content/mozilla.html",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT},
     {"neterror", "chrome://global/content/netError.xhtml",
@@ -103,15 +114,17 @@ static const RedirEntry kRedirMap[] = {
     {"networking", "chrome://global/content/aboutNetworking.html",
      nsIAboutModule::ALLOW_SCRIPT},
     {"performance", "chrome://global/content/aboutPerformance.html",
-     nsIAboutModule::ALLOW_SCRIPT},
+     nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::IS_SECURE_CHROME_UI},
+#ifndef ANDROID
     {"plugins", "chrome://global/content/plugins.html",
-     nsIAboutModule::URI_MUST_LOAD_IN_CHILD},
+     nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
+         nsIAboutModule::IS_SECURE_CHROME_UI},
+#endif
     {"processes", "chrome://global/content/aboutProcesses.html",
-     nsIAboutModule::ALLOW_SCRIPT},
+     nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::IS_SECURE_CHROME_UI},
     // about:serviceworkers always wants to load in the parent process because
-    // when dom.serviceWorkers.parent_intercept is set to true (the new default)
-    // then the only place nsIServiceWorkerManager has any data is in the
-    // parent process.
+    // the only place nsIServiceWorkerManager has any data is in the parent
+    // process.
     //
     // There is overlap without about:debugging, but about:debugging is not
     // available on mobile at this time, and it's useful to be able to know if
@@ -121,7 +134,7 @@ static const RedirEntry kRedirMap[] = {
      nsIAboutModule::ALLOW_SCRIPT},
 #ifndef ANDROID
     {"profiles", "chrome://global/content/aboutProfiles.xhtml",
-     nsIAboutModule::ALLOW_SCRIPT},
+     nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::IS_SECURE_CHROME_UI},
 #endif
     // about:srcdoc is unresolvable by specification.  It is included here
     // because the security manager would disallow srcdoc iframes otherwise.
@@ -131,9 +144,17 @@ static const RedirEntry kRedirMap[] = {
          // Needs to be linkable so content can touch its own srcdoc frames
          nsIAboutModule::MAKE_LINKABLE | nsIAboutModule::URI_CAN_LOAD_IN_CHILD},
     {"support", "chrome://global/content/aboutSupport.xhtml",
+     nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::IS_SECURE_CHROME_UI},
+#ifdef XP_WIN
+    {"third-party", "chrome://global/content/aboutThirdParty.html",
      nsIAboutModule::ALLOW_SCRIPT},
+#endif
+#ifndef MOZ_GLEAN_ANDROID
+    {"glean", "chrome://global/content/aboutGlean.html",
+     nsIAboutModule::HIDE_FROM_ABOUTABOUT | nsIAboutModule::ALLOW_SCRIPT},
+#endif
     {"telemetry", "chrome://global/content/aboutTelemetry.xhtml",
-     nsIAboutModule::ALLOW_SCRIPT},
+     nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::IS_SECURE_CHROME_UI},
     {"url-classifier", "chrome://global/content/aboutUrlClassifier.xhtml",
      nsIAboutModule::ALLOW_SCRIPT},
     {"webrtc", "chrome://global/content/aboutwebrtc/aboutWebrtc.html",
@@ -230,6 +251,24 @@ nsAboutRedirector::GetURIFlags(nsIURI* aURI, uint32_t* aResult) {
     if (name.EqualsASCII(kRedirMap[i].id)) {
       *aResult = kRedirMap[i].flags;
       return NS_OK;
+    }
+  }
+
+  NS_ERROR("nsAboutRedirector called for unknown case");
+  return NS_ERROR_ILLEGAL_VALUE;
+}
+
+NS_IMETHODIMP
+nsAboutRedirector::GetChromeURI(nsIURI* aURI, nsIURI** chromeURI) {
+  NS_ENSURE_ARG_POINTER(aURI);
+
+  nsAutoCString name;
+  nsresult rv = NS_GetAboutModuleName(aURI, name);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  for (const auto& redir : kRedirMap) {
+    if (name.EqualsASCII(redir.id)) {
+      return NS_NewURI(chromeURI, redir.url);
     }
   }
 

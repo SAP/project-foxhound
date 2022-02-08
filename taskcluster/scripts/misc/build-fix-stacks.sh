@@ -6,38 +6,42 @@ PROJECT=fix-stacks
 
 export TARGET="$1"
 
+COMPRESS_EXT=zst
 case "$TARGET" in
 x86_64-unknown-linux-gnu)
     EXE=
-    COMPRESS_EXT=xz
     # {CC,CXX} and TARGET_{CC,CXX} must be set because a build.rs file builds
     # some C and C++ code.
     export CC=$MOZ_FETCHES_DIR/clang/bin/clang
     export CXX=$MOZ_FETCHES_DIR/clang/bin/clang++
     export PATH="$MOZ_FETCHES_DIR/binutils/bin:$PATH"
-    export RUSTFLAGS="-C linker=$CXX"
+    export CFLAGS_x86_64_unknown_linux_gnu="--sysroot=$MOZ_FETCHES_DIR/sysroot-x86_64-linux-gnu"
+    export RUSTFLAGS="-C linker=$CXX -C link-arg=--sysroot=$MOZ_FETCHES_DIR/sysroot-x86_64-linux-gnu"
     ;;
-x86_64-apple-darwin)
+*-apple-darwin)
     # Cross-compiling for Mac on Linux.
     EXE=
-    COMPRESS_EXT=xz
     # {CC,CXX} and TARGET_{CC,CXX} must be set because a build.rs file builds
     # some C and C++ code.
     export CC=$MOZ_FETCHES_DIR/clang/bin/clang
     export CXX=$MOZ_FETCHES_DIR/clang/bin/clang++
     export PATH="$MOZ_FETCHES_DIR/cctools/bin:$PATH"
     export RUSTFLAGS="-C linker=$GECKO_PATH/taskcluster/scripts/misc/osx-cross-linker"
-    export TARGET_CC="$CC -isysroot $MOZ_FETCHES_DIR/MacOSX10.11.sdk"
-    export TARGET_CXX="$CXX -isysroot $MOZ_FETCHES_DIR/MacOSX10.11.sdk"
+    if test "$TARGET" = "aarch64-apple-darwin"; then
+        export MACOSX_DEPLOYMENT_TARGET=11.0
+    else
+        export MACOSX_DEPLOYMENT_TARGET=10.12
+    fi
+    export TARGET_CC="$CC -isysroot $MOZ_FETCHES_DIR/MacOSX11.0.sdk"
+    export TARGET_CXX="$CXX -isysroot $MOZ_FETCHES_DIR/MacOSX11.0.sdk"
     ;;
 i686-pc-windows-msvc)
     # Cross-compiling for Windows on Linux.
     EXE=.exe
-    COMPRESS_EXT=bz2
     # Some magic that papers over differences in case-sensitivity/insensitivity on Linux
     # and Windows file systems.
     export LD_PRELOAD="/builds/worker/fetches/liblowercase/liblowercase.so"
-    export LOWERCASE_DIRS="/builds/worker/fetches/vs2017_15.8.4"
+    export LOWERCASE_DIRS="/builds/worker/fetches/vs2017_15.9.6"
     # {CC,CXX} and TARGET_{CC,CXX} must be set because a build.rs file builds
     # some C and C++ code.
     export CC=$MOZ_FETCHES_DIR/clang/bin/clang-cl

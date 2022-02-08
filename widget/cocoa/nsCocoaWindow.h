@@ -49,7 +49,6 @@ typedef struct _nsCocoaWindowList {
 
   BOOL mBeingShown;
   BOOL mDrawTitle;
-  BOOL mBrightTitlebarForeground;
   BOOL mUseMenuStyle;
   BOOL mIsAnimationSuppressed;
 
@@ -88,7 +87,7 @@ typedef struct _nsCocoaWindowList {
 // "contents" of this window. All views in the returned array are subviews of
 // this window's content view. However, the array may not include all of the
 // content view's subviews; concretely, the ToolbarWindow implementation will
-// exclude its TitlebarGradientView from the array that is returned here.
+// exclude its MOZTitlebarView from the array that is returned here.
 // In the vast majority of cases, the array will only have a single element:
 // this window's mainChildView.
 - (NSArray<NSView*>*)contentViewContents;
@@ -98,15 +97,13 @@ typedef struct _nsCocoaWindowList {
 - (void)setWantsTitleDrawn:(BOOL)aDrawTitle;
 - (BOOL)wantsTitleDrawn;
 
-- (void)setUseBrightTitlebarForeground:(BOOL)aBrightForeground;
-- (BOOL)useBrightTitlebarForeground;
-
 - (void)disableSetNeedsDisplay;
 - (void)enableSetNeedsDisplay;
 
 - (NSRect)getAndResetNativeDirtyRect;
 
 - (void)setUseMenuStyle:(BOOL)aValue;
+@property(nonatomic) mozilla::StyleWindowShadow shadowStyle;
 
 - (void)releaseJSObjects;
 
@@ -174,21 +171,33 @@ typedef struct _nsCocoaWindowList {
 - (void)sendToplevelDeactivateEvents;
 @end
 
-@interface TitlebarGradientView : NSView
+@interface MOZTitlebarView : NSVisualEffectView
+@end
+
+@interface FullscreenTitlebarTracker : NSTitlebarAccessoryViewController
+- (FullscreenTitlebarTracker*)init;
 @end
 
 // NSWindow subclass for handling windows with toolbars.
 @interface ToolbarWindow : BaseWindow {
-  // This window's titlebar gradient view, if present.
-  // Will be nil if drawsContentsIntoWindowFrame is YES.
+  // This window's titlebar view, if present.
+  // Will be nil if the window has neither a titlebar nor a unified toolbar.
   // This view is a subview of the window's content view and gets created and
-  // destroyed by updateTitlebarGradientViewPresence.
-  TitlebarGradientView* mTitlebarGradientView;  // [STRONG]
+  // destroyed by updateTitlebarView.
+  MOZTitlebarView* mTitlebarView;  // [STRONG]
+  // mFullscreenTitlebarTracker attaches an invisible rectangle to the system
+  // title bar. This allows us to detect when the title bar is showing in
+  // fullscreen.
+  FullscreenTitlebarTracker* mFullscreenTitlebarTracker;
 
   CGFloat mUnifiedToolbarHeight;
   CGFloat mSheetAttachmentPosition;
+  CGFloat mMenuBarHeight;
+  /* Store the height of the titlebar when this window is initialized. The
+     titlebarHeight getter returns 0 when in fullscreen, which is not useful in
+     some cases. */
+  CGFloat mInitialTitlebarHeight;
   NSRect mWindowButtonsRect;
-  NSRect mFullScreenButtonRect;
 }
 - (void)setUnifiedToolbarHeight:(CGFloat)aHeight;
 - (CGFloat)unifiedToolbarHeight;
@@ -199,9 +208,7 @@ typedef struct _nsCocoaWindowList {
 - (void)setSheetAttachmentPosition:(CGFloat)aY;
 - (CGFloat)sheetAttachmentPosition;
 - (void)placeWindowButtons:(NSRect)aRect;
-- (void)placeFullScreenButton:(NSRect)aRect;
-- (NSPoint)windowButtonsPositionWithDefaultPosition:(NSPoint)aDefaultPosition;
-- (NSPoint)fullScreenButtonPositionWithDefaultPosition:(NSPoint)aDefaultPosition;
+- (NSRect)windowButtonsRect;
 - (void)windowMainStateChanged;
 @end
 
@@ -256,6 +263,7 @@ class nsCocoaWindow final : public nsBaseWidget, public nsPIWidgetCocoa {
   virtual bool PrepareForFullscreenTransition(nsISupports** aData) override;
   virtual void PerformFullscreenTransition(FullscreenTransitionStage aStage, uint16_t aDuration,
                                            nsISupports* aData, nsIRunnable* aCallback) override;
+  virtual void CleanupFullscreenTransition() override;
   nsresult MakeFullScreen(bool aFullScreen, nsIScreen* aTargetScreen = nullptr) final;
   nsresult MakeFullScreenWithNativeTransition(bool aFullScreen,
                                               nsIScreen* aTargetScreen = nullptr) final;
@@ -273,8 +281,7 @@ class nsCocoaWindow final : public nsBaseWidget, public nsPIWidgetCocoa {
   virtual LayoutDeviceIntRect GetScreenBounds() override;
   void ReportMoveEvent();
   void ReportSizeEvent();
-  virtual void SetCursor(nsCursor aDefaultCursor, imgIContainer* aCursorImage, uint32_t aHotspotX,
-                         uint32_t aHotspotY) override;
+  virtual void SetCursor(const Cursor&) override;
 
   CGFloat BackingScaleFactor();
   void BackingScaleFactorChanged();
@@ -288,11 +295,7 @@ class nsCocoaWindow final : public nsBaseWidget, public nsPIWidgetCocoa {
   virtual nsresult SetTitle(const nsAString& aTitle) override;
 
   virtual void Invalidate(const LayoutDeviceIntRect& aRect) override;
-  virtual nsresult ConfigureChildren(const nsTArray<Configuration>& aConfigurations) override;
-  virtual LayerManager* GetLayerManager(
-      PLayerTransactionChild* aShadowManager = nullptr,
-      LayersBackend aBackendHint = mozilla::layers::LayersBackend::LAYERS_NONE,
-      LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT) override;
+  virtual WindowRenderer* GetWindowRenderer() override;
   virtual nsresult DispatchEvent(mozilla::WidgetGUIEvent* aEvent, nsEventStatus& aStatus) override;
   virtual void CaptureRollupEvents(nsIRollupListener* aListener, bool aDoCapture) override;
   [[nodiscard]] virtual nsresult GetAttention(int32_t aCycleCount) override;
@@ -303,17 +306,25 @@ class nsCocoaWindow final : public nsBaseWidget, public nsPIWidgetCocoa {
   virtual void SetWindowOpacity(float aOpacity) override;
   virtual void SetWindowTransform(const mozilla::gfx::Matrix& aTransform) override;
   virtual void SetWindowMouseTransparent(bool aIsTransparent) override;
+  virtual void SetColorScheme(const mozilla::Maybe<mozilla::ColorScheme>&) override;
   virtual void SetShowsToolbarButton(bool aShow) override;
   virtual void SetSupportsNativeFullscreen(bool aShow) override;
   virtual void SetWindowAnimationType(WindowAnimationType aType) override;
   virtual void SetDrawsTitle(bool aDrawTitle) override;
-  virtual void SetUseBrightTitlebarForeground(bool aBrightForeground) override;
   virtual nsresult SetNonClientMargins(LayoutDeviceIntMargin& aMargins) override;
   virtual void SetDrawsInTitlebar(bool aState) override;
   virtual void UpdateThemeGeometries(const nsTArray<ThemeGeometry>& aThemeGeometries) override;
-  virtual nsresult SynthesizeNativeMouseEvent(LayoutDeviceIntPoint aPoint, uint32_t aNativeMessage,
-                                              uint32_t aModifierFlags,
+  virtual nsresult SynthesizeNativeMouseEvent(LayoutDeviceIntPoint aPoint,
+                                              NativeMouseMessage aNativeMessage,
+                                              mozilla::MouseButton aButton,
+                                              nsIWidget::Modifiers aModifierFlags,
                                               nsIObserver* aObserver) override;
+  virtual nsresult SynthesizeNativeMouseScrollEvent(LayoutDeviceIntPoint aPoint,
+                                                    uint32_t aNativeMessage, double aDeltaX,
+                                                    double aDeltaY, double aDeltaZ,
+                                                    uint32_t aModifierFlags,
+                                                    uint32_t aAdditionalFlags,
+                                                    nsIObserver* aObserver) override;
   virtual void LockAspectRatio(bool aShouldLock) override;
 
   void DispatchSizeModeEvent();
@@ -326,19 +337,28 @@ class nsCocoaWindow final : public nsBaseWidget, public nsPIWidgetCocoa {
   bool HasModalDescendents() { return mNumModalDescendents > 0; }
   NSWindow* GetCocoaWindow() { return mWindow; }
 
-  void SetMenuBar(nsMenuBarX* aMenuBar);
+  void SetMenuBar(RefPtr<nsMenuBarX>&& aMenuBar);
   nsMenuBarX* GetMenuBar();
 
   virtual void SetInputContext(const InputContext& aContext,
                                const InputContextAction& aAction) override;
   virtual InputContext GetInputContext() override { return mInputContext; }
-  virtual bool GetEditCommands(NativeKeyBindingsType aType,
-                               const mozilla::WidgetKeyboardEvent& aEvent,
-                               nsTArray<mozilla::CommandInt>& aCommands) override;
+  MOZ_CAN_RUN_SCRIPT virtual bool GetEditCommands(
+      NativeKeyBindingsType aType, const mozilla::WidgetKeyboardEvent& aEvent,
+      nsTArray<mozilla::CommandInt>& aCommands) override;
 
   void SetPopupWindowLevel();
 
   bool InFullScreenMode() const { return mInFullScreenMode; }
+
+  void PauseCompositor();
+  void ResumeCompositor();
+
+  bool AsyncPanZoomEnabled() const override;
+
+  bool StartAsyncAutoscroll(const ScreenPoint& aAnchorLocation,
+                            const ScrollableLayerGuid& aGuid) override;
+  void StopAsyncAutoscroll(const ScrollableLayerGuid& aGuid) override;
 
  protected:
   virtual ~nsCocoaWindow();
@@ -347,8 +367,6 @@ class nsCocoaWindow final : public nsBaseWidget, public nsPIWidgetCocoa {
                               bool aRectIsFrameRect);
   nsresult CreatePopupContentView(const LayoutDeviceIntRect& aRect, nsWidgetInitData* aInitData);
   void DestroyNativeWindow();
-  void AdjustWindowShadow();
-  void SetWindowBackgroundBlur();
   void UpdateBounds();
   int32_t GetWorkspaceID();
 
@@ -386,6 +404,12 @@ class nsCocoaWindow final : public nsBaseWidget, public nsPIWidgetCocoa {
   bool mInFullScreenMode;
   bool mInFullScreenTransition;  // true from the request to enter/exit fullscreen
                                  // (MakeFullScreen() call) to EnteredFullScreen()
+
+  // Ignore occlusion events caused by displaying the temporary fullscreen
+  // window during the fullscreen transition animation because only focused
+  // contexts are permitted to enter DOM fullscreen.
+  int mIgnoreOcclusionCount;
+
   bool mModal;
   bool mFakeModal;
 

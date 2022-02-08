@@ -9,6 +9,8 @@
 #include "nsBaseClipboard.h"
 #include "nsIObserver.h"
 #include "nsIURI.h"
+
+#include <ole2.h>
 #include <windows.h>
 
 class nsITransferable;
@@ -61,10 +63,14 @@ class nsClipboard : public nsBaseClipboard, public nsIObserver {
   // of Gecko.
   static UINT GetFormat(const char* aMimeStr, bool aMapHTMLMime = true);
 
-  static UINT CF_HTML;
-  static UINT CF_CUSTOMTYPES;
+  static UINT GetHtmlClipboardFormat();
+  static UINT GetCustomClipboardFormat();
 
  protected:
+  // @param aDataObject must be non-nullptr.
+  static HRESULT FillSTGMedium(IDataObject* aDataObject, UINT aFormat,
+                               LPFORMATETC pFE, LPSTGMEDIUM pSTM, DWORD aTymed);
+
   NS_IMETHOD SetNativeClipboardData(int32_t aWhichClipboard) override;
   NS_IMETHOD GetNativeClipboardData(nsITransferable* aTransferable,
                                     int32_t aWhichClipboard) override;
@@ -79,6 +85,7 @@ class nsClipboard : public nsBaseClipboard, public nsIObserver {
   static bool FindPlatformHTML(IDataObject* inDataObject, UINT inIndex,
                                void** outData, uint32_t* outStartOfData,
                                uint32_t* outDataLen);
+
   static void ResolveShortcut(nsIFile* inFileName, nsACString& outURL);
 
   nsIWidget* mWindow;

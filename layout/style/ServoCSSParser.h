@@ -9,9 +9,8 @@
 #ifndef mozilla_ServoCSSParser_h
 #define mozilla_ServoCSSParser_h
 
-#include "mozilla/gfx/Types.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/ServoStyleConsts.h"
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/gfx/Matrix.h"
 #include "mozilla/ServoTypes.h"
 #include "nsColor.h"
 #include "nsCSSPropertyID.h"
@@ -21,12 +20,15 @@
 struct nsCSSRect;
 struct nsTimingFunction;
 struct RawServoDeclarationBlock;
+template <class T>
+class RefPtr;
 
 namespace mozilla {
 
 class ServoStyleSet;
-class SharedFontList;
 struct URLExtraData;
+struct StyleFontFamilyList;
+union StyleComputedFontStyleDescriptor;
 
 namespace css {
 class Loader;
@@ -81,7 +83,7 @@ class ServoCSSParser {
    *   in Servo.
    */
   static already_AddRefed<RawServoDeclarationBlock> ParseProperty(
-      nsCSSPropertyID aProperty, const nsAString& aValue,
+      nsCSSPropertyID aProperty, const nsACString& aValue,
       const ParsingEnvironment& aParsingEnvironment,
       ParsingMode aParsingMode = ParsingMode::Default);
 
@@ -89,12 +91,10 @@ class ServoCSSParser {
    * Parse a animation timing function.
    *
    * @param aValue The specified value.
-   * @param aUrl The parser url extra data.
    * @param aResult The output timing function. (output)
    * @return Whether the value was successfully parsed.
    */
-  static bool ParseEasing(const nsAString& aValue, URLExtraData* aUrl,
-                          nsTimingFunction& aResult);
+  static bool ParseEasing(const nsACString& aValue, nsTimingFunction& aResult);
 
   /**
    * Parse a specified transform list into a gfx matrix.
@@ -122,9 +122,9 @@ class ServoCSSParser {
    * @return Whether the value was successfully parsed.
    */
   static bool ParseFontShorthandForMatching(
-      const nsAString& aValue, URLExtraData* aUrl,
-      RefPtr<SharedFontList>& aList, StyleComputedFontStyleDescriptor& aStyle,
-      float& aStretch, float& aWeight);
+      const nsACString& aValue, URLExtraData* aUrl, StyleFontFamilyList& aList,
+      StyleComputedFontStyleDescriptor& aStyle, float& aStretch,
+      float& aWeight);
 
   /**
    * Get a URLExtraData from a document.

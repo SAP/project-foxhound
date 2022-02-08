@@ -1,14 +1,13 @@
 "use strict";
 
 var dns = Cc["@mozilla.org/network/dns-service;1"].getService(Ci.nsIDNSService);
-var prefs = Cc["@mozilla.org/preferences-service;1"].getService(
-  Ci.nsIPrefBranch
-);
+var prefs = Services.prefs;
 
 var nextTest;
 
 var listener = {
   onLookupComplete(inRequest, inRecord, inStatus) {
+    inRecord.QueryInterface(Ci.nsIDNSAddrRecord);
     var answer = inRecord.getNextAddrAsString();
     Assert.ok(answer == "127.0.0.1" || answer == "::1");
 
@@ -23,14 +22,13 @@ const defaultOriginAttributes = {};
 function run_test() {
   prefs.setCharPref("network.dns.localDomains", "local.vingtetun.org");
 
-  var threadManager = Cc["@mozilla.org/thread-manager;1"].getService(
-    Ci.nsIThreadManager
-  );
-  var mainThread = threadManager.currentThread;
+  var mainThread = Services.tm.currentThread;
   nextTest = do_test_2;
   dns.asyncResolve(
     "local.vingtetun.org",
+    Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
     0,
+    null, // resolverInfo
     listener,
     mainThread,
     defaultOriginAttributes
@@ -40,15 +38,14 @@ function run_test() {
 }
 
 function do_test_2() {
-  var threadManager = Cc["@mozilla.org/thread-manager;1"].getService(
-    Ci.nsIThreadManager
-  );
-  var mainThread = threadManager.currentThread;
+  var mainThread = Services.tm.currentThread;
   nextTest = testsDone;
   prefs.setCharPref("network.dns.forceResolve", "localhost");
   dns.asyncResolve(
     "www.example.com",
+    Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
     0,
+    null, // resolverInfo
     listener,
     mainThread,
     defaultOriginAttributes

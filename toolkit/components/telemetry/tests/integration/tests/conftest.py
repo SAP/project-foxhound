@@ -63,10 +63,11 @@ def fixture_marionette(binary, ping_server):
         # Clear the region detection url to
         #   * avoid net access in tests
         #   * stabilize browser.search.region to avoid an extra subsession (bug 1579840#c40)
-        "browser.region.network.url": '',
+        "browser.region.network.url": "",
         # Disable smart sizing because it changes prefs at startup. (bug 1547750)
         "browser.cache.disk.smart_size.enabled": False,
         "toolkit.telemetry.server": server_url,
+        "telemetry.fog.test.localhost_port": -1,
         "toolkit.telemetry.initDelay": 1,
         "toolkit.telemetry.minSubsessionLength": 0,
         "datareporting.healthreport.uploadEnabled": True,
@@ -171,7 +172,7 @@ class Browser(object):
             addons = Addons(self.marionette)
             addon_id = addons.install(addon_path, temp=True)
         except MarionetteException as e:
-            pytest.fail("{} - Error installing addon: {} - ".format(e.cause, e.message))
+            pytest.fail("{} - Error installing addon: {} - ".format(e.cause, e))
         else:
             self.addon_ids.append(addon_id)
 

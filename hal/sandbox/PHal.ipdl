@@ -7,6 +7,7 @@
 include protocol PContent;
 include protocol PBrowser;
 
+include "mozilla/dom/ReferrerInfoUtils.h";
 include "mozilla/GfxMessageUtils.h";
 
 using hal::ScreenOrientation from "mozilla/HalScreenConfiguration.h";
@@ -56,7 +57,7 @@ struct ScreenConfiguration {
 
 namespace hal_sandbox {
 
-nested(upto inside_cpow) sync protocol PHal {
+[NestedUpTo=inside_cpow] sync protocol PHal {
     manager PContent;
 
 child:

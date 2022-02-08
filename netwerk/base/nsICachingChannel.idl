@@ -37,15 +37,6 @@ interface nsICachingChannel : nsICacheInfoChannel
     attribute nsISupports cacheToken;
 
     /**
-     * The same as above but accessing the offline app cache token if there
-     * is any.
-     *
-     * @throws
-     *      NS_ERROR_NOT_AVAILABLE when there is not offline cache token
-     */
-    attribute nsISupports offlineCacheToken;
-
-    /**
      * Instructs the channel to only store the metadata of the entry, and not
      * the content. When reading an existing entry, this automatically sets
      * LOAD_ONLY_IF_MODIFIED flag.
@@ -82,14 +73,6 @@ interface nsICachingChannel : nsICacheInfoChannel
      * loads to fail.
      */
     const unsigned long LOAD_NO_NETWORK_IO = 1 << 26;
-
-    /**
-     * This load flag causes the offline cache to be checked when fetching
-     * a request.  It will be set automatically if the browser is offline.
-     *
-     * This flag will not be transferred through a redirect.
-     */
-    const unsigned long LOAD_CHECK_OFFLINE_CACHE = 1 << 27;
 
     /**
      * This load flag causes the local cache to be skipped when fetching a

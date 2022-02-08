@@ -79,8 +79,8 @@ ScreenOrientation::ScreenOrientation(nsPIDOMWindowInner* aWindow,
 
   Document* doc = GetResponsibleDocument();
   BrowsingContext* bc = doc ? doc->GetBrowsingContext() : nullptr;
-  if (bc && !bc->InRDMPane()) {
-    bc->SetCurrentOrientation(mType, mAngle);
+  if (bc && !bc->IsDiscarded() && !bc->InRDMPane()) {
+    MOZ_ALWAYS_SUCCEEDS(bc->SetCurrentOrientation(mType, mAngle));
   }
 }
 
@@ -317,7 +317,11 @@ already_AddRefed<Promise> ScreenOrientation::LockInternal(
     return nullptr;
   }
 
-  bc->SetOrientationLock(aOrientation);
+  bc->SetOrientationLock(aOrientation, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
   AbortInProcessOrientationPromises(bc);
   dom::ContentChild::GetSingleton()->SendAbortOtherOrientationPendingPromises(
       bc);
@@ -523,7 +527,8 @@ void ScreenOrientation::Notify(const hal::ScreenConfiguration& aConfiguration) {
   }
 
   if (mType != bc->GetCurrentOrientationType()) {
-    bc->SetCurrentOrientation(mType, mAngle);
+    rv = bc->SetCurrentOrientation(mType, mAngle);
+    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "SetCurrentOrientation failed");
 
     nsCOMPtr<nsIRunnable> runnable = DispatchChangeEventAndResolvePromise();
     rv = NS_DispatchToMainThread(runnable);
@@ -565,11 +570,14 @@ JSObject* ScreenOrientation::WrapObject(JSContext* aCx,
 }
 
 bool ScreenOrientation::ShouldResistFingerprinting() const {
-  bool resist = false;
-  if (nsCOMPtr<nsPIDOMWindowInner> owner = GetOwner()) {
-    resist = nsContentUtils::ShouldResistFingerprinting(owner->GetDocShell());
+  if (nsContentUtils::ShouldResistFingerprinting()) {
+    bool resist = false;
+    if (nsCOMPtr<nsPIDOMWindowInner> owner = GetOwner()) {
+      resist = nsContentUtils::ShouldResistFingerprinting(owner->GetDocShell());
+    }
+    return resist;
   }
-  return resist;
+  return false;
 }
 
 NS_IMPL_ISUPPORTS(ScreenOrientation::VisibleEventListener, nsIDOMEventListener)
@@ -578,14 +586,15 @@ NS_IMETHODIMP
 ScreenOrientation::VisibleEventListener::HandleEvent(Event* aEvent) {
   // Document may have become visible, if the page is visible, run the steps
   // following the "now visible algorithm" as specified.
-  nsCOMPtr<EventTarget> target = aEvent->GetCurrentTarget();
-  MOZ_ASSERT(target);
-
-  nsCOMPtr<Document> doc = do_QueryInterface(target);
-  if (!doc || doc->Hidden()) {
+  MOZ_ASSERT(aEvent->GetCurrentTarget());
+  nsCOMPtr<nsINode> eventTargetNode =
+      nsINode::FromEventTarget(aEvent->GetCurrentTarget());
+  if (!eventTargetNode || !eventTargetNode->IsDocument() ||
+      eventTargetNode->AsDocument()->Hidden()) {
     return NS_OK;
   }
 
+  RefPtr<Document> doc = eventTargetNode->AsDocument();
   auto* win = nsGlobalWindowInner::Cast(doc->GetInnerWindow());
   if (!win) {
     return NS_OK;
@@ -601,13 +610,15 @@ ScreenOrientation::VisibleEventListener::HandleEvent(Event* aEvent) {
   ScreenOrientation* orientation = screen->Orientation();
   MOZ_ASSERT(orientation);
 
-  target->RemoveSystemEventListener(u"visibilitychange"_ns, this, true);
+  doc->RemoveSystemEventListener(u"visibilitychange"_ns, this, true);
 
   BrowsingContext* bc = doc->GetBrowsingContext();
   if (bc && bc->GetCurrentOrientationType() !=
                 orientation->DeviceType(CallerType::System)) {
-    bc->SetCurrentOrientation(orientation->DeviceType(CallerType::System),
-                              orientation->DeviceAngle(CallerType::System));
+    nsresult result =
+        bc->SetCurrentOrientation(orientation->DeviceType(CallerType::System),
+                                  orientation->DeviceAngle(CallerType::System));
+    NS_ENSURE_SUCCESS(result, result);
 
     nsCOMPtr<nsIRunnable> runnable =
         orientation->DispatchChangeEventAndResolvePromise();
@@ -632,10 +643,10 @@ ScreenOrientation::FullscreenEventListener::HandleEvent(Event* aEvent) {
   MOZ_ASSERT(eventType.EqualsLiteral("fullscreenchange"));
 #endif
 
-  nsCOMPtr<EventTarget> target = aEvent->GetCurrentTarget();
+  EventTarget* target = aEvent->GetCurrentTarget();
   MOZ_ASSERT(target);
-
-  nsCOMPtr<Document> doc = do_QueryInterface(target);
+  MOZ_ASSERT(target->IsNode());
+  RefPtr<Document> doc = nsINode::FromEventTarget(target)->AsDocument();
   MOZ_ASSERT(doc);
 
   // We have to make sure that the event we got is the event sent when

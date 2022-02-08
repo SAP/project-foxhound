@@ -44,12 +44,12 @@ var gGestureSupport = {
       "PressTapGesture",
     ];
 
-    let addRemove = aAddListener
-      ? window.addEventListener
-      : window.removeEventListener;
-
     for (let event of gestureEvents) {
-      addRemove("Moz" + event, this, true);
+      if (aAddListener) {
+        gBrowser.tabbox.addEventListener("Moz" + event, this, true);
+      } else {
+        gBrowser.tabbox.removeEventListener("Moz" + event, this, true);
+      }
     }
   },
 
@@ -250,7 +250,7 @@ var gGestureSupport = {
         : aEvent.DIRECTION_LEFT;
     }
 
-    return true;
+    return canGoBack || canGoForward;
   },
 
   /**
@@ -375,6 +375,7 @@ var gGestureSupport = {
           aEvent.altKey,
           aEvent.shiftKey,
           aEvent.metaKey,
+          0,
           aEvent,
           aEvent.mozInputSource
         );
@@ -577,7 +578,6 @@ var gGestureSupport = {
     if (this._currentRotation < 0) {
       this._currentRotation += 360;
     }
-    return this._currentRotation;
   },
 
   /**

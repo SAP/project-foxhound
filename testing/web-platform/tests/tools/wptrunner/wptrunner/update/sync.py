@@ -8,7 +8,7 @@ import uuid
 from .base import Step, StepRunner
 from .tree import Commit
 
-here = os.path.abspath(os.path.split(__file__)[0])
+here = os.path.abspath(os.path.dirname(__file__))
 
 
 def copy_wpt_tree(tree, dest, excludes=None, includes=None):
@@ -41,7 +41,7 @@ def copy_wpt_tree(tree, dest, excludes=None, includes=None):
         source_path = os.path.join(tree.root, tree_path)
         dest_path = os.path.join(dest, tree_path)
 
-        dest_dir = os.path.split(dest_path)[0]
+        dest_dir = os.path.dirname(dest_path)
         if not os.path.isdir(source_path):
             if not os.path.exists(dest_dir):
                 os.makedirs(dest_dir)
@@ -50,7 +50,7 @@ def copy_wpt_tree(tree, dest, excludes=None, includes=None):
     for source, destination in [("testharness_runner.html", ""),
                                 ("testdriver-vendor.js", "resources/")]:
         source_path = os.path.join(here, os.pardir, source)
-        dest_path = os.path.join(dest, destination, os.path.split(source)[1])
+        dest_path = os.path.join(dest, destination, os.path.basename(source))
         shutil.copy2(source_path, dest_path)
 
 
@@ -67,7 +67,7 @@ class UpdateCheckout(Step):
                          state.local_branch)
         sync_path = os.path.abspath(sync_tree.root)
         if sync_path not in sys.path:
-            from update import setup_paths
+            from .update import setup_paths
             setup_paths(sync_path)
 
     def restore(self, state):
@@ -98,7 +98,7 @@ class UpdateManifest(Step):
     provides = ["manifest_path", "test_manifest"]
 
     def create(self, state):
-        from manifest import manifest
+        from manifest import manifest  # type: ignore
         state.manifest_path = os.path.join(state.metadata_path, "MANIFEST.json")
         state.test_manifest = manifest.load_and_update(state.sync["path"],
                                                        state.manifest_path,

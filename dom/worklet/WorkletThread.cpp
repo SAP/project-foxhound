@@ -8,12 +8,18 @@
 #include "prthread.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollector.h"
+#include "nsJSEnvironment.h"
 #include "mozilla/dom/AtomList.h"
+#include "mozilla/dom/WorkletGlobalScope.h"
+#include "mozilla/dom/WorkletPrincipals.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/CycleCollectedJSRuntime.h"
 #include "mozilla/EventQueue.h"
 #include "mozilla/ThreadEventQueue.h"
 #include "js/Exception.h"
+#include "js/Initialization.h"
+#include "XPCSelfHostedShmem.h"
 
 namespace mozilla {
 namespace dom {
@@ -67,7 +73,8 @@ class WorkletJSRuntime final : public mozilla::CycleCollectedJSRuntime {
 
   virtual void PrepareForForgetSkippable() override {}
 
-  virtual void BeginCycleCollectionCallback() override {}
+  virtual void BeginCycleCollectionCallback(
+      mozilla::CCReason aReason) override {}
 
   virtual void EndCycleCollectionCallback(
       CycleCollectorResults& aResults) override {}
@@ -85,7 +92,7 @@ class WorkletJSRuntime final : public mozilla::CycleCollectedJSRuntime {
     // call can be skipped in this GC as ~CycleCollectedJSContext removes the
     // context from |this|.
     if (aStatus == JSGC_END && GetContext()) {
-      nsCycleCollector_collect(nullptr);
+      nsCycleCollector_collect(CCReason::GC_FINISHED, nullptr);
     }
   }
 };
@@ -153,7 +160,7 @@ class WorkletJSContext final : public CycleCollectedJSContext {
 #endif
 
     JS::JobQueueMayNotBeEmpty(cx);
-    GetMicroTaskQueue().push(std::move(runnable));
+    GetMicroTaskQueue().push_back(std::move(runnable));
   }
 
   bool IsSystemCaller() const override {
@@ -249,9 +256,9 @@ class WorkletThread::TerminateRunnable final : public Runnable {
 };
 
 WorkletThread::WorkletThread(WorkletImpl* aWorkletImpl)
-    : nsThread(MakeNotNull<ThreadEventQueue<mozilla::EventQueue>*>(
-                   MakeUnique<mozilla::EventQueue>()),
-               nsThread::NOT_MAIN_THREAD, kWorkletStackSize),
+    : nsThread(
+          MakeNotNull<ThreadEventQueue*>(MakeUnique<mozilla::EventQueue>()),
+          nsThread::NOT_MAIN_THREAD, kWorkletStackSize),
       mWorkletImpl(aWorkletImpl),
       mExitLoop(false),
       mIsTerminating(false) {
@@ -365,7 +372,12 @@ void WorkletThread::EnsureCycleCollectedJSContext(JSRuntime* aParentRuntime) {
   JS_SetNativeStackQuota(context->Context(),
                          WORKLET_CONTEXT_NATIVE_STACK_LIMIT);
 
-  if (!JS::InitSelfHostedCode(context->Context())) {
+  // When available, set the self-hosted shared memory to be read, so that we
+  // can decode the self-hosted content instead of parsing it.
+  auto& shm = xpc::SelfHostedShmem::GetSingleton();
+  JS::SelfHostedCache selfHostedContent = shm.Content();
+
+  if (!JS::InitSelfHostedCode(context->Context(), selfHostedContent)) {
     // TODO: error propagation
     return;
   }

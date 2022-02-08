@@ -4,7 +4,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsMenuUtilsX.h"
+#include <unordered_set>
 
+#include "mozilla/EventForwards.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Event.h"
@@ -12,7 +14,7 @@
 #include "nsMenuBarX.h"
 #include "nsMenuX.h"
 #include "nsMenuItemX.h"
-#include "nsStandaloneNativeMenu.h"
+#include "NativeMenuMac.h"
 #include "nsObjCExceptions.h"
 #include "nsCocoaUtils.h"
 #include "nsCocoaWindow.h"
@@ -23,7 +25,8 @@
 
 using namespace mozilla;
 
-void nsMenuUtilsX::DispatchCommandTo(nsIContent* aTargetContent) {
+void nsMenuUtilsX::DispatchCommandTo(nsIContent* aTargetContent,
+                                     NSEventModifierFlags aModifierFlags, int16_t aButton) {
   MOZ_ASSERT(aTargetContent, "null ptr");
 
   dom::Document* doc = aTargetContent->OwnerDoc();
@@ -31,12 +34,15 @@ void nsMenuUtilsX::DispatchCommandTo(nsIContent* aTargetContent) {
     RefPtr<dom::XULCommandEvent> event =
         new dom::XULCommandEvent(doc, doc->GetPresContext(), nullptr);
 
+    bool ctrlKey = aModifierFlags & NSEventModifierFlagControl;
+    bool altKey = aModifierFlags & NSEventModifierFlagOption;
+    bool shiftKey = aModifierFlags & NSEventModifierFlagShift;
+    bool cmdKey = aModifierFlags & NSEventModifierFlagCommand;
+
     IgnoredErrorResult rv;
     event->InitCommandEvent(u"command"_ns, true, true,
-                            nsGlobalWindowInner::Cast(doc->GetInnerWindow()), 0, false, false,
-                            false, false, nullptr, 0, rv);
-    // FIXME: Should probably figure out how to init this with the actual
-    // pressed keys, but this is a big old edge case anyway. -dwh
+                            nsGlobalWindowInner::Cast(doc->GetInnerWindow()), 0, ctrlKey, altKey,
+                            shiftKey, cmdKey, aButton, nullptr, 0, rv);
     if (!rv.Failed()) {
       event->SetTrusted(true);
       aTargetContent->DispatchEvent(*event);
@@ -45,7 +51,7 @@ void nsMenuUtilsX::DispatchCommandTo(nsIContent* aTargetContent) {
 }
 
 NSString* nsMenuUtilsX::GetTruncatedCocoaLabel(const nsString& itemLabel) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
   // We want to truncate long strings to some reasonable pixel length but there is no
   // good API for doing that which works for all OS versions and architectures. For now
@@ -54,7 +60,7 @@ NSString* nsMenuUtilsX::GetTruncatedCocoaLabel(const nsString& itemLabel) {
   return [NSString stringWithCharacters:reinterpret_cast<const unichar*>(itemLabel.get())
                                  length:itemLabel.Length()];
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_END_TRY_ABORT_BLOCK;
 }
 
 uint8_t nsMenuUtilsX::GeckoModifiersForNodeAttribute(const nsString& modifiersAttribute) {
@@ -62,14 +68,14 @@ uint8_t nsMenuUtilsX::GeckoModifiersForNodeAttribute(const nsString& modifiersAt
   char* str = ToNewCString(modifiersAttribute);
   char* newStr;
   char* token = strtok_r(str, ", \t", &newStr);
-  while (token != NULL) {
-    if (strcmp(token, "shift") == 0)
+  while (token != nullptr) {
+    if (strcmp(token, "shift") == 0) {
       modifiers |= knsMenuItemShiftModifier;
-    else if (strcmp(token, "alt") == 0)
+    } else if (strcmp(token, "alt") == 0) {
       modifiers |= knsMenuItemAltModifier;
-    else if (strcmp(token, "control") == 0)
+    } else if (strcmp(token, "control") == 0) {
       modifiers |= knsMenuItemControlModifier;
-    else if ((strcmp(token, "accel") == 0) || (strcmp(token, "meta") == 0)) {
+    } else if ((strcmp(token, "accel") == 0) || (strcmp(token, "meta") == 0)) {
       modifiers |= knsMenuItemCommandModifier;
     }
     token = strtok_r(newStr, ", \t", &newStr);
@@ -82,25 +88,33 @@ uint8_t nsMenuUtilsX::GeckoModifiersForNodeAttribute(const nsString& modifiersAt
 unsigned int nsMenuUtilsX::MacModifiersForGeckoModifiers(uint8_t geckoModifiers) {
   unsigned int macModifiers = 0;
 
-  if (geckoModifiers & knsMenuItemShiftModifier) macModifiers |= NSShiftKeyMask;
-  if (geckoModifiers & knsMenuItemAltModifier) macModifiers |= NSAlternateKeyMask;
-  if (geckoModifiers & knsMenuItemControlModifier) macModifiers |= NSControlKeyMask;
-  if (geckoModifiers & knsMenuItemCommandModifier) macModifiers |= NSCommandKeyMask;
+  if (geckoModifiers & knsMenuItemShiftModifier) {
+    macModifiers |= NSEventModifierFlagShift;
+  }
+  if (geckoModifiers & knsMenuItemAltModifier) {
+    macModifiers |= NSEventModifierFlagOption;
+  }
+  if (geckoModifiers & knsMenuItemControlModifier) {
+    macModifiers |= NSEventModifierFlagControl;
+  }
+  if (geckoModifiers & knsMenuItemCommandModifier) {
+    macModifiers |= NSEventModifierFlagCommand;
+  }
 
   return macModifiers;
 }
 
 nsMenuBarX* nsMenuUtilsX::GetHiddenWindowMenuBar() {
   nsIWidget* hiddenWindowWidgetNoCOMPtr = nsCocoaUtils::GetHiddenWindowWidget();
-  if (hiddenWindowWidgetNoCOMPtr)
+  if (hiddenWindowWidgetNoCOMPtr) {
     return static_cast<nsCocoaWindow*>(hiddenWindowWidgetNoCOMPtr)->GetMenuBar();
-  else
-    return nullptr;
+  }
+  return nullptr;
 }
 
 // It would be nice if we could localize these edit menu names.
 NSMenuItem* nsMenuUtilsX::GetStandardEditMenuItem() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
   // In principle we should be able to allocate this once and then always
   // return the same object.  But weird interactions happen between native
@@ -111,7 +125,7 @@ NSMenuItem* nsMenuUtilsX::GetStandardEditMenuItem() {
                                                                  action:nil
                                                           keyEquivalent:@""] autorelease];
   NSMenu* standardEditMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
-  [standardEditMenuItem setSubmenu:standardEditMenu];
+  standardEditMenuItem.submenu = standardEditMenu;
   [standardEditMenu release];
 
   // Add Undo
@@ -168,50 +182,111 @@ NSMenuItem* nsMenuUtilsX::GetStandardEditMenuItem() {
 
   return standardEditMenuItem;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_END_TRY_ABORT_BLOCK;
 }
 
-bool nsMenuUtilsX::NodeIsHiddenOrCollapsed(nsIContent* inContent) {
-  return inContent->IsElement() &&
-         (inContent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::hidden,
-                                              nsGkAtoms::_true, eCaseMatters) ||
-          inContent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::collapsed,
-                                              nsGkAtoms::_true, eCaseMatters));
+bool nsMenuUtilsX::NodeIsHiddenOrCollapsed(nsIContent* aContent) {
+  return aContent->IsElement() &&
+         (aContent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::hidden, nsGkAtoms::_true,
+                                             eCaseMatters) ||
+          aContent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::collapsed,
+                                             nsGkAtoms::_true, eCaseMatters));
 }
 
-// Determines how many items are visible among the siblings in a menu that are
-// before the given child. This will not count the application menu.
-int nsMenuUtilsX::CalculateNativeInsertionPoint(nsMenuObjectX* aParent, nsMenuObjectX* aChild) {
-  int insertionPoint = 0;
-  nsMenuObjectTypeX parentType = aParent->MenuObjectType();
-  if (parentType == eMenuBarObjectType) {
-    nsMenuBarX* menubarParent = static_cast<nsMenuBarX*>(aParent);
-    uint32_t numMenus = menubarParent->GetMenuCount();
-    for (uint32_t i = 0; i < numMenus; i++) {
-      nsMenuX* currMenu = menubarParent->GetMenuAt(i);
-      if (currMenu == aChild) return insertionPoint;  // we found ourselves, break out
-      if (currMenu && [currMenu->NativeMenuItem() menu]) insertionPoint++;
+NSMenuItem* nsMenuUtilsX::NativeMenuItemWithLocation(NSMenu* aRootMenu, NSString* aLocationString,
+                                                     bool aIsMenuBar) {
+  NSArray<NSString*>* indexes = [aLocationString componentsSeparatedByString:@"|"];
+  unsigned int pathLength = indexes.count;
+  if (pathLength == 0) {
+    return nil;
+  }
+
+  NSMenu* currentSubmenu = aRootMenu;
+  for (unsigned int depth = 0; depth < pathLength; depth++) {
+    NSInteger targetIndex = [indexes objectAtIndex:depth].integerValue;
+    if (aIsMenuBar && depth == 0) {
+      // We remove the application menu from consideration for the top-level menu.
+      targetIndex++;
     }
-  } else if (parentType == eSubmenuObjectType || parentType == eStandaloneNativeMenuObjectType) {
-    nsMenuX* menuParent;
-    if (parentType == eSubmenuObjectType)
-      menuParent = static_cast<nsMenuX*>(aParent);
-    else
-      menuParent = static_cast<nsStandaloneNativeMenu*>(aParent)->GetMenuXObject();
-
-    uint32_t numItems = menuParent->GetItemCount();
-    for (uint32_t i = 0; i < numItems; i++) {
-      // Using GetItemAt instead of GetVisibleItemAt to avoid O(N^2)
-      nsMenuObjectX* currItem = menuParent->GetItemAt(i);
-      if (currItem == aChild) return insertionPoint;  // we found ourselves, break out
-      NSMenuItem* nativeItem = nil;
-      nsMenuObjectTypeX currItemType = currItem->MenuObjectType();
-      if (currItemType == eSubmenuObjectType)
-        nativeItem = static_cast<nsMenuX*>(currItem)->NativeMenuItem();
-      else
-        nativeItem = (NSMenuItem*)(currItem->NativeData());
-      if ([nativeItem menu]) insertionPoint++;
+    int itemCount = currentSubmenu.numberOfItems;
+    if (targetIndex >= itemCount) {
+      return nil;
+    }
+    NSMenuItem* menuItem = [currentSubmenu itemAtIndex:targetIndex];
+    // if this is the last index just return the menu item
+    if (depth == pathLength - 1) {
+      return menuItem;
+    }
+    // if this is not the last index find the submenu and keep going
+    if (menuItem.hasSubmenu) {
+      currentSubmenu = menuItem.submenu;
+    } else {
+      return nil;
     }
   }
-  return insertionPoint;
+
+  return nil;
+}
+
+static void CheckNativeMenuConsistencyImpl(NSMenu* aMenu, std::unordered_set<void*>& aSeenObjects);
+
+static void CheckNativeMenuItemConsistencyImpl(NSMenuItem* aMenuItem,
+                                               std::unordered_set<void*>& aSeenObjects) {
+  bool inserted = aSeenObjects.insert(aMenuItem).second;
+  MOZ_RELEASE_ASSERT(inserted, "Duplicate NSMenuItem object in native menu structure");
+  if (aMenuItem.hasSubmenu) {
+    CheckNativeMenuConsistencyImpl(aMenuItem.submenu, aSeenObjects);
+  }
+}
+
+static void CheckNativeMenuConsistencyImpl(NSMenu* aMenu, std::unordered_set<void*>& aSeenObjects) {
+  bool inserted = aSeenObjects.insert(aMenu).second;
+  MOZ_RELEASE_ASSERT(inserted, "Duplicate NSMenu object in native menu structure");
+  for (NSMenuItem* item in aMenu.itemArray) {
+    CheckNativeMenuItemConsistencyImpl(item, aSeenObjects);
+  }
+}
+
+void nsMenuUtilsX::CheckNativeMenuConsistency(NSMenu* aMenu) {
+  std::unordered_set<void*> seenObjects;
+  CheckNativeMenuConsistencyImpl(aMenu, seenObjects);
+}
+
+void nsMenuUtilsX::CheckNativeMenuConsistency(NSMenuItem* aMenuItem) {
+  std::unordered_set<void*> seenObjects;
+  CheckNativeMenuItemConsistencyImpl(aMenuItem, seenObjects);
+}
+
+static void DumpNativeNSMenuItemImpl(NSMenuItem* aItem, uint32_t aIndent,
+                                     const Maybe<int>& aIndexInParentMenu);
+
+static void DumpNativeNSMenuImpl(NSMenu* aMenu, uint32_t aIndent) {
+  printf("%*sNSMenu [%p] %-16s\n", aIndent * 2, "", aMenu,
+         (aMenu.title.length == 0 ? "(no title)" : aMenu.title.UTF8String));
+  int index = 0;
+  for (NSMenuItem* item in aMenu.itemArray) {
+    DumpNativeNSMenuItemImpl(item, aIndent + 1, Some(index));
+    index++;
+  }
+}
+
+static void DumpNativeNSMenuItemImpl(NSMenuItem* aItem, uint32_t aIndent,
+                                     const Maybe<int>& aIndexInParentMenu) {
+  printf("%*s", aIndent * 2, "");
+  if (aIndexInParentMenu) {
+    printf("[%d] ", *aIndexInParentMenu);
+  }
+  printf("NSMenuItem [%p] %-16s%s\n", aItem,
+         aItem.isSeparatorItem ? "----"
+                               : (aItem.title.length == 0 ? "(no title)" : aItem.title.UTF8String),
+         aItem.hasSubmenu ? " [hasSubmenu]" : "");
+  if (aItem.hasSubmenu) {
+    DumpNativeNSMenuImpl(aItem.submenu, aIndent + 1);
+  }
+}
+
+void nsMenuUtilsX::DumpNativeMenu(NSMenu* aMenu) { DumpNativeNSMenuImpl(aMenu, 0); }
+
+void nsMenuUtilsX::DumpNativeMenuItem(NSMenuItem* aMenuItem) {
+  DumpNativeNSMenuItemImpl(aMenuItem, 0, Nothing());
 }

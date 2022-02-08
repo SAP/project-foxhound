@@ -11,9 +11,6 @@ const { XPCOMUtils } = ChromeUtils.import(
 );
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
 
 const LOGGER_NAME = "Toolkit.Telemetry";
 const LOGGER_PREFIX = "ClientID::";
@@ -25,7 +22,6 @@ ChromeUtils.defineModuleGetter(
   "CommonUtils",
   "resource://services-common/utils.js"
 );
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "CryptoHash", () => {
   return Components.Constructor(
@@ -36,11 +32,14 @@ XPCOMUtils.defineLazyGetter(this, "CryptoHash", () => {
 });
 
 XPCOMUtils.defineLazyGetter(this, "gDatareportingPath", () => {
-  return OS.Path.join(OS.Constants.Path.profileDir, "datareporting");
+  return PathUtils.join(
+    Services.dirsvc.get("ProfD", Ci.nsIFile).path,
+    "datareporting"
+  );
 });
 
 XPCOMUtils.defineLazyGetter(this, "gStateFilePath", () => {
-  return OS.Path.join(gDatareportingPath, "state.json");
+  return PathUtils.join(gDatareportingPath, "state.json");
 });
 
 const PREF_CACHED_CLIENTID = "toolkit.telemetry.cachedClientID";
@@ -62,27 +61,10 @@ var ClientID = Object.freeze({
    * This returns a promise resolving to the the stable client ID we use for
    * data reporting (FHR & Telemetry).
    *
-   * WARNING: This functionality is duplicated for Android (see GeckoProfile.getClientId
-   * for more). There are Java tests (TestGeckoProfile) to ensure the functionality is
-   * consistent and Gecko tests to come (bug 1249156). However, THIS IS NOT FOOLPROOF.
-   * Be careful when changing this code and, in particular, the underlying file format.
-   *
    * @return {Promise<string>} The stable client ID.
    */
   getClientID() {
     return ClientIDImpl.getClientID();
-  },
-
-  /**
-   * This returns true if the client ID prior to the last client ID reset was a canary client ID.
-   * Android only. Always returns null on Desktop.
-   */
-  wasCanaryClientID() {
-    if (AppConstants.platform == "android") {
-      return ClientIDImpl.wasCanaryClientID();
-    }
-
-    return null;
   },
 
   /**
@@ -101,33 +83,34 @@ var ClientID = Object.freeze({
   },
 
   /**
-   * Set a specific client id asynchronously, writing it to disk
-   * and updating the cached version.
+   * Sets the client ID to the canary (known) client ID,
+   * writing it to disk and updating the cached version.
    *
-   * Should only ever be used when a known client ID value should be set.
-   * Use `resetClientID` to generate a new random one if required.
+   * Use `removeClientID` followed by `getClientID` to clear the
+   * existing ID and generate a new, random one if required.
    *
-   * @return {Promise<string>} The stable client ID.
+   * @return {Promise<void>}
    */
-  setClientID(id) {
-    return ClientIDImpl.setClientID(id);
+  setCanaryClientID() {
+    return ClientIDImpl.setCanaryClientID();
   },
 
   /**
-   * Reset the client id asynchronously, writing it to disk
-   * and updating the cached version.
+   * Clears the client ID asynchronously, removing it
+   * from disk. Use `getClientID()` to generate
+   * a fresh ID after calling this method.
    *
-   * Should only be used if a reset is explicitely requested by the user.
+   * Should only be used if a reset is explicitly requested by the user.
    *
-   * @return {Promise<string>} A new stable client ID.
+   * @return {Promise<void>}
    */
-  resetClientID() {
-    return ClientIDImpl.resetClientID();
+  removeClientID() {
+    return ClientIDImpl.removeClientID();
   },
 
   /**
-   * Only used for testing. Invalidates the client ID so that it gets read
-   * again from file.
+   * Only used for testing. Invalidates the cached client ID so that it is
+   * read again from file, but doesn't remove the existing ID from disk.
    */
   _reset() {
     return ClientIDImpl._reset();
@@ -141,7 +124,6 @@ var ClientIDImpl = {
   _saveClientIdTask: null,
   _removeClientIdTask: null,
   _logger: null,
-  _wasCanary: null,
 
   _loadClientID() {
     if (this._loadClientIdTask) {
@@ -155,8 +137,8 @@ var ClientIDImpl = {
   },
 
   /**
-   * Load the Client ID from the DataReporting Service state file.
-   * If no Client ID is found, we generate a new one.
+   * Load the client ID from the DataReporting Service state file. If it is
+   * missing, we generate a new one.
    */
   async _doLoadClientID() {
     this._log.trace(`_doLoadClientID`);
@@ -164,21 +146,55 @@ var ClientIDImpl = {
     await this._removeClientIdTask;
 
     // Try to load the client id from the DRS state file.
+    let hasCurrentClientID = false;
     try {
-      let state = await CommonUtils.readJSON(gStateFilePath);
-      if (AppConstants.platform == "android" && state && "wasCanary" in state) {
-        this._wasCanary = state.wasCanary;
-      }
-      if (state && this.updateClientID(state.clientID)) {
-        this._log.trace(`_doLoadClientID: Client id loaded from state.`);
-        return this._clientID;
+      let state = await IOUtils.readJSON(gStateFilePath);
+      if (state) {
+        try {
+          if (Services.prefs.prefHasUserValue(PREF_CACHED_CLIENTID)) {
+            let cachedID = Services.prefs.getStringPref(
+              PREF_CACHED_CLIENTID,
+              null
+            );
+            if (cachedID && cachedID != state.clientID) {
+              Services.telemetry.scalarAdd(
+                "telemetry.loaded_client_id_doesnt_match_pref",
+                1
+              );
+            }
+          }
+        } catch (e) {
+          // This data collection's not that important.
+        }
+        hasCurrentClientID = this.updateClientID(state.clientID);
+        if (hasCurrentClientID) {
+          this._log.trace(`_doLoadClientID: Client IDs loaded from state.`);
+          return {
+            clientID: this._clientID,
+          };
+        }
       }
     } catch (e) {
+      Services.telemetry.scalarAdd("telemetry.state_file_read_errors", 1);
       // fall through to next option
     }
 
-    // We dont have an id from the DRS state file yet, generate a new ID.
-    this.updateClientID(CommonUtils.generateUUID());
+    // Absent or broken state file? Check prefs as last resort.
+    if (!hasCurrentClientID) {
+      const cachedID = this.getCachedClientID();
+      // Calling `updateClientID` with `null` logs an error, which breaks tests.
+      if (cachedID) {
+        Services.telemetry.scalarAdd("telemetry.using_pref_client_id", 1);
+        hasCurrentClientID = this.updateClientID(cachedID);
+      }
+    }
+
+    // We're missing the ID from the DRS state file and prefs.
+    // Generate a new one.
+    if (!hasCurrentClientID) {
+      Services.telemetry.scalarSet("telemetry.generated_new_client_id", true);
+      this.updateClientID(CommonUtils.generateUUID());
+    }
     this._saveClientIdTask = this._saveClientID();
 
     // Wait on persisting the id. Otherwise failure to save the ID would result in
@@ -187,8 +203,10 @@ var ClientIDImpl = {
     // result in orphaning.
     await this._saveClientIdTask;
 
-    this._log.trace("_doLoadClientID: New client id loaded and persisted.");
-    return this._clientID;
+    this._log.trace("_doLoadClientID: New client ID loaded and persisted.");
+    return {
+      clientID: this._clientID,
+    };
   },
 
   /**
@@ -197,15 +215,23 @@ var ClientIDImpl = {
    * @return {Promise} A promise resolved when the client ID is saved to disk.
    */
   async _saveClientID() {
-    this._log.trace(`_saveClientID`);
-    let obj = { clientID: this._clientID };
-    // We detected a canary client ID when resetting, storing this as a flag
-    if (AppConstants.platform == "android" && this._wasCanary) {
-      obj.wasCanary = true;
+    try {
+      this._log.trace(`_saveClientID`);
+      let obj = {
+        clientID: this._clientID,
+      };
+      await IOUtils.makeDirectory(gDatareportingPath);
+      await IOUtils.writeJSON(gStateFilePath, obj, {
+        tmpPath: `${gStateFilePath}.tmp`,
+      });
+      this._saveClientIdTask = null;
+    } catch (ex) {
+      Services.telemetry.scalarAdd("telemetry.state_file_save_errors", 1);
+
+      if (!(ex instanceof DOMException) || ex.name !== "AbortError") {
+        throw ex;
+      }
     }
-    await OS.File.makeDir(gDatareportingPath);
-    await CommonUtils.writeJSON(obj, gStateFilePath);
-    this._saveClientIdTask = null;
   },
 
   /**
@@ -214,20 +240,13 @@ var ClientIDImpl = {
    *
    * @return {Promise<string>} The stable client ID.
    */
-  getClientID() {
+  async getClientID() {
     if (!this._clientID) {
-      return this._loadClientID();
+      let { clientID } = await this._loadClientID();
+      return clientID;
     }
 
     return Promise.resolve(this._clientID);
-  },
-
-  /**
-   * This returns true if the client ID prior to the last client ID reset was a canary client ID.
-   * Android only. Always returns null on Desktop.
-   */
-  wasCanaryClientID() {
-    return this._wasCanary;
   },
 
   /**
@@ -285,7 +304,7 @@ var ClientIDImpl = {
   },
 
   /*
-   * Resets the provider. This is for testing only.
+   * Resets the module. This is for testing only.
    */
   async _reset() {
     await this._loadClientIdTask;
@@ -294,11 +313,9 @@ var ClientIDImpl = {
     this._clientIDHash = null;
   },
 
-  async setClientID(id) {
-    this._log.trace("setClientID");
-    if (!this.updateClientID(id)) {
-      throw new Error("Invalid client ID: " + id);
-    }
+  async setCanaryClientID() {
+    this._log.trace("setCanaryClientID");
+    this.updateClientID(CANARY_CLIENT_ID);
 
     this._saveClientIdTask = this._saveClientID();
     await this._saveClientIdTask;
@@ -308,7 +325,7 @@ var ClientIDImpl = {
   async _doRemoveClientID() {
     this._log.trace("_doRemoveClientID");
 
-    // Reset stored id.
+    // Reset the cached client ID.
     this._clientID = null;
     this._clientIDHash = null;
 
@@ -318,13 +335,13 @@ var ClientIDImpl = {
     // If there is a save in progress, wait for it to complete.
     await this._saveClientIdTask;
 
-    // Remove the client id from disk
-    await OS.File.remove(gStateFilePath, { ignoreAbsent: true });
+    // Remove the client-id-containing state file from disk
+    await IOUtils.remove(gStateFilePath);
   },
 
-  async resetClientID() {
-    this._log.trace("resetClientID");
-    let oldClientId = this._clientID;
+  async removeClientID() {
+    this._log.trace("removeClientID");
+    Services.telemetry.scalarAdd("telemetry.removed_client_ids", 1);
 
     // Wait for the removal.
     // Asynchronous calls to getClientID will also be blocked on this.
@@ -333,14 +350,6 @@ var ClientIDImpl = {
     this._removeClientIdTask.then(clear, clear);
 
     await this._removeClientIdTask;
-
-    // On Android we detect resets after a canary client ID.
-    if (AppConstants.platform == "android") {
-      this._wasCanary = oldClientId == CANARY_CLIENT_ID;
-    }
-
-    // Generate a new id.
-    return this.getClientID();
   },
 
   /**
@@ -358,6 +367,7 @@ var ClientIDImpl = {
     }
 
     this._clientID = id;
+
     this._clientIDHash = null;
     Services.prefs.setStringPref(PREF_CACHED_CLIENTID, this._clientID);
     return true;

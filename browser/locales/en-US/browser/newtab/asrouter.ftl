@@ -6,7 +6,7 @@
 
 cfr-doorhanger-extension-heading = Recommended Extension
 cfr-doorhanger-feature-heading = Recommended Feature
-cfr-doorhanger-pintab-heading = Try This: Pin Tab
+
 ##
 
 cfr-doorhanger-extension-sumo-link =
@@ -17,8 +17,6 @@ cfr-doorhanger-extension-cancel-button = Not Now
 
 cfr-doorhanger-extension-ok-button = Add Now
   .accesskey = A
-cfr-doorhanger-pintab-ok-button = Pin This Tab
-  .accesskey = P
 
 cfr-doorhanger-extension-manage-settings-button = Manage Recommendation Settings
   .accesskey = M
@@ -66,18 +64,6 @@ cfr-doorhanger-extension-total-users =
      *[other] { $total } users
   }
 
-cfr-doorhanger-pintab-description = Get easy access to your most-used sites. Keep sites open in a tab (even when you restart).
-
-## These messages are steps on how to use the feature and are shown together.
-
-cfr-doorhanger-pintab-step1 = <b>Right-click</b> on the tab you want to pin.
-cfr-doorhanger-pintab-step2 = Select <b>Pin Tab</b> from the menu.
-cfr-doorhanger-pintab-step3 = If the site has an update you’ll see a blue dot on your pinned tab.
-
-cfr-doorhanger-pintab-animation-pause = Pause
-cfr-doorhanger-pintab-animation-resume = Resume
-
-
 ## Firefox Accounts Message
 
 cfr-doorhanger-bookmark-fxa-header = Sync your bookmarks everywhere.
@@ -105,175 +91,76 @@ cfr-whatsnew-button =
 
 cfr-whatsnew-release-notes-link-text = Read the release notes
 
-cfr-whatsnew-fx70-title = { -brand-short-name } now fights harder for your privacy
-cfr-whatsnew-fx70-body =
-   The latest update enhances the Tracking Protection feature and makes it
-   easier than ever to create secure passwords for every site.
-
-cfr-whatsnew-tracking-protect-title = Protect yourself from trackers
-cfr-whatsnew-tracking-protect-body =
-   { -brand-short-name } blocks many common social and cross-site trackers that
-   follow what you do online.
-cfr-whatsnew-tracking-protect-link-text = View Your Report
-
-# This string is displayed before a large numeral that indicates the total
-# number of tracking elements blocked. Don’t add $blockedCount to your
-# localization, because it would result in the number showing twice.
-cfr-whatsnew-tracking-blocked-title =
-  { $blockedCount ->
-    [one] Tracker blocked
-   *[other] Trackers blocked
-  }
-cfr-whatsnew-tracking-blocked-subtitle =
-   Since { DATETIME($earliestDate, month: "long", year: "numeric") }
-cfr-whatsnew-tracking-blocked-link-text = View Report
-
-cfr-whatsnew-lockwise-backup-title = Back up your passwords
-cfr-whatsnew-lockwise-backup-body =
-   Now generate secure passwords you can access anywhere you sign in.
-cfr-whatsnew-lockwise-backup-link-text = Turn on backups
-
-cfr-whatsnew-lockwise-take-title = Take your passwords with you
-cfr-whatsnew-lockwise-take-body =
-   The { -lockwise-brand-short-name } mobile app lets you securely access your
-   backed up passwords from anywhere.
-cfr-whatsnew-lockwise-take-link-text = Get the app
-
-## Search Bar
-
-cfr-whatsnew-searchbar-title = Type less, find more with the address bar
-cfr-whatsnew-searchbar-body-topsites = Now, just select the address bar, and a box will expand with links to your top sites.
-cfr-whatsnew-searchbar-icon-alt-text = Magnifying glass icon
-
-## Picture-in-Picture
-
-cfr-whatsnew-pip-header = Watch videos while you browse
-cfr-whatsnew-pip-body = Picture-in-picture pops video into a floating window so you can watch while working in other tabs.
-cfr-whatsnew-pip-cta = Learn more
-
-## Permission Prompt
-
-cfr-whatsnew-permission-prompt-header = Fewer annoying site pop-ups
-cfr-whatsnew-permission-prompt-body = { -brand-shorter-name } now blocks sites from automatically asking to send you pop-up messages.
-cfr-whatsnew-permission-prompt-cta = Learn more
-
-## Fingerprinter Counter
-
-# This string is displayed before a large numeral that indicates the total
-# number of tracking elements blocked. Don’t add $fingerprinterCount to your
-# localization, because it would result in the number showing twice.
-cfr-whatsnew-fingerprinter-counter-header =
-  { $fingerprinterCount ->
-    [one] Fingerprinter blocked
-   *[other] Fingerprinters blocked
-  }
-cfr-whatsnew-fingerprinter-counter-body = { -brand-shorter-name } blocks many fingerprinters that secretly gather information about your device and actions to create an advertising profile of you.
-
-# Message variation when fingerprinters count is less than 10
-cfr-whatsnew-fingerprinter-counter-header-alt = Fingerprinters
-cfr-whatsnew-fingerprinter-counter-body-alt = { -brand-shorter-name } can block fingerprinters that secretly gather information about your device and actions to create an advertising profile of you.
-
-## Bookmark Sync
-
-cfr-doorhanger-sync-bookmarks-header = Get this bookmark on your phone
-cfr-doorhanger-sync-bookmarks-body = Take your bookmarks, passwords, history and more everywhere you’re signed into { -brand-product-name }.
-cfr-doorhanger-sync-bookmarks-ok-button = Turn on { -sync-brand-short-name }
-  .accesskey = T
-
-## Login Sync
-
-cfr-doorhanger-sync-logins-header = Never Lose a Password Again
-cfr-doorhanger-sync-logins-body = Securely store and sync your passwords to all your devices.
-cfr-doorhanger-sync-logins-ok-button = Turn on { -sync-brand-short-name }
-  .accesskey = T
-
-## Send Tab
-
-cfr-doorhanger-send-tab-header = Read this on the go
-cfr-doorhanger-send-tab-recipe-header = Take this recipe to the kitchen
-cfr-doorhanger-send-tab-body = Send Tab lets you easily share this link to your phone or anywhere you’re signed in to { -brand-product-name }.
-cfr-doorhanger-send-tab-ok-button = Try Send Tab
-  .accesskey = T
-
-## Firefox Send
-
-cfr-doorhanger-firefox-send-header = Share this PDF securely
-cfr-doorhanger-firefox-send-body = Keep your sensitive documents safe from prying eyes with end-to-end encryption and a link that disappears when you’re done.
-cfr-doorhanger-firefox-send-ok-button = Try { -send-brand-name }
-  .accesskey = T
-
-## Social Tracking Protection
-
-cfr-doorhanger-socialtracking-ok-button = See Protections
-  .accesskey = P
-cfr-doorhanger-socialtracking-close-button = Close
-  .accesskey = C
-cfr-doorhanger-socialtracking-dont-show-again = Don’t show me messages like this again
-  .accesskey = D
-cfr-doorhanger-socialtracking-heading = { -brand-short-name } stopped a social network from tracking you here
-cfr-doorhanger-socialtracking-description = Your privacy matters. { -brand-short-name } now blocks common social media trackers, limiting how much data they can collect about what you do online.
-cfr-doorhanger-fingerprinters-heading = { -brand-short-name } blocked a fingerprinter on this page
-cfr-doorhanger-fingerprinters-description = Your privacy matters. { -brand-short-name } now blocks fingerprinters, which collect pieces of uniquely identifiable information about your device to track you.
-cfr-doorhanger-cryptominers-heading = { -brand-short-name } blocked a cryptominer on this page
-cfr-doorhanger-cryptominers-description = Your privacy matters. { -brand-short-name } now blocks cryptominers, which use your system’s computing power to mine digital money.
-
 ## Enhanced Tracking Protection Milestones
 
 # Variables:
 #   $blockedCount (Number) - The total count of blocked trackers. This number will always be greater than 1.
-#   $date (String) - The date we began recording the count of blocked trackers
-cfr-doorhanger-milestone-heading =
+#   $date (Datetime) - The date we began recording the count of blocked trackers
+cfr-doorhanger-milestone-heading2 =
   { $blockedCount ->
-   *[other] { -brand-short-name } blocked over <b>{ $blockedCount }</b> trackers since { $date }!
+    *[other] { -brand-short-name } blocked over <b>{ $blockedCount }</b> trackers since { DATETIME($date, month: "long", year: "numeric") }!
   }
 cfr-doorhanger-milestone-ok-button = See All
   .accesskey = S
 cfr-doorhanger-milestone-close-button = Close
   .accesskey = C
 
-## What’s New Panel Content for Firefox 76
-
-## Lockwise message
-
-cfr-whatsnew-lockwise-header = Easily create secure passwords
-cfr-whatsnew-lockwise-body = It’s difficult to think of unique, secure passwords for every account. When creating a password, select the password field to use a secure, generated password from { -brand-shorter-name }.
-cfr-whatsnew-lockwise-icon-alt = { -lockwise-brand-short-name } icon
-
-## Vulnerable Passwords message
-
-cfr-whatsnew-passwords-header = Get alerts about vulnerable passwords
-cfr-whatsnew-passwords-body = Hackers know people reuse the same passwords. If you used the same password on multiple sites, and one of those sites was in a data breach, you’ll see an alert in { -lockwise-brand-short-name } to change your password on those sites.
-cfr-whatsnew-passwords-icon-alt = Vulnerable password key icon
-
-## Picture-in-Picture fullscreen message
-
-cfr-whatsnew-pip-fullscreen-header = Take picture-in-picture fullscreen
-cfr-whatsnew-pip-fullscreen-body = When you pop a video into a floating window, you can now double-click on that window to go fullscreen.
-cfr-whatsnew-pip-fullscreen-icon-alt = Picture-in-picture icon
-
-## Protections Dashboard message
-
-cfr-whatsnew-protections-header = Protections at a glance
-cfr-whatsnew-protections-body = The Protections Dashboard includes summary reports about data breaches and password management. You can now track how many breaches you’ve resolved, and see if any of your saved passwords may have been exposed in a data breach.
-cfr-whatsnew-protections-cta-link = View Protections Dashboard
-cfr-whatsnew-protections-icon-alt = Shield icon
-
-## Better PDF message
-
-cfr-whatsnew-better-pdf-header = Better PDF experience
-cfr-whatsnew-better-pdf-body = PDF documents now open directly in { -brand-short-name }, keeping your workflow within easy reach.
-
 ## DOH Message
 
 cfr-doorhanger-doh-body = Your privacy matters. { -brand-short-name } now securely routes your DNS requests whenever possible to a partner service to protect you while you browse.
 cfr-doorhanger-doh-header = More secure, encrypted DNS lookups
-cfr-doorhanger-doh-primary-button = OK, Got it
+cfr-doorhanger-doh-primary-button-2 = Okay
   .accesskey = O
 cfr-doorhanger-doh-secondary-button = Disable
   .accesskey = D
 
-## What's new: Cookies message
+## Fission Experiment Message
 
-cfr-whatsnew-clear-cookies-header = Automatic protection from sneaky tracking tactics
-cfr-whatsnew-clear-cookies-body = Some trackers redirect you to other websites that secretly set cookies. { -brand-short-name } now automatically clears those cookies so you can’t be followed.
-cfr-whatsnew-clear-cookies-image-alt = Cookie blocked illustration
+cfr-doorhanger-fission-body-approved = Your privacy matters. { -brand-short-name } now isolates, or sandboxes, websites from each other, which makes it harder for hackers to steal passwords, credit card numbers, and other sensitive information.
+cfr-doorhanger-fission-header = Site Isolation
+cfr-doorhanger-fission-primary-button = OK, Got it
+  .accesskey = O
+cfr-doorhanger-fission-secondary-button = Learn more
+  .accesskey = L
+
+## Full Video Support CFR message
+
+cfr-doorhanger-video-support-body = Videos on this site may not play correctly on this version of { -brand-short-name }. For full video support, update { -brand-short-name } now.
+cfr-doorhanger-video-support-header = Update { -brand-short-name } to play video
+cfr-doorhanger-video-support-primary-button = Update Now
+  .accesskey = U
+
+## Spotlight modal shared strings
+
+spotlight-learn-more-collapsed = Learn more
+  .title = Expand to learn more about the feature
+spotlight-learn-more-expanded = Learn more
+  .title = Close
+
+## VPN promotion dialog for public Wi-Fi users
+##
+## If a user is detected to be on a public Wi-Fi network, they are given a
+## bit of info about how to improve their privacy and then offered a button
+## to the Mozilla VPN page and a link to dismiss the dialog.
+
+# This header text can be explicitly wrapped.
+spotlight-public-wifi-vpn-header = Looks like you’re using public Wi-Fi
+spotlight-public-wifi-vpn-body = To hide your location and browsing activity, consider a Virtual Private Network. It will help keep you protected when browsing in public places like airports and coffee shops.
+spotlight-public-wifi-vpn-primary-button = Stay private with { -mozilla-vpn-brand-name }
+  .accesskey = S
+spotlight-public-wifi-vpn-link = Not Now
+  .accesskey = N
+
+## Total Cookie Protection Rollout
+
+# "Test pilot" is used as a verb. Possible alternatives: "Be the first to try",
+# "Join an early experiment". This header text can be explicitly wrapped.
+spotlight-total-cookie-protection-header =
+  Test pilot our most powerful
+  privacy experience ever
+spotlight-total-cookie-protection-body = Total Cookie Protection stops trackers from using cookies to stalk you around the web.
+# "Early access" for this feature rollout means it's a "feature preview" or
+# "soft launch" as not everybody will get it yet.
+spotlight-total-cookie-protection-expanded = { -brand-short-name } builds a fence around cookies, limiting them to the site you’re on so trackers can’t use them to follow you. With early access, you’ll help optimize this feature so we can keep building a better web for everyone.
+spotlight-total-cookie-protection-primary-button = Turn on Total Cookie Protection
+spotlight-total-cookie-protection-secondary-button = Not now

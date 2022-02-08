@@ -14,7 +14,8 @@ const mcRoot = `${__dirname}/../../../../../`;
 const getModule = mcPath =>
   `module.exports = require("${(mcRoot + mcPath).replace(/\\/gi, "/")}");`;
 
-const { pref } = require("devtools-services");
+const { pref } = require(mcRoot +
+  "devtools/client/shared/test-helpers/jest-fixtures/Services");
 pref("devtools.debugger.remote-timeout", 10000);
 pref("devtools.hud.loglimit", 10000);
 pref("devtools.webconsole.filter.error", true);
@@ -37,7 +38,6 @@ pref("devtools.browserconsole.contentMessages", true);
 pref("devtools.webconsole.input.editorWidth", 800);
 pref("devtools.webconsole.input.editorOnboarding", true);
 pref("devtools.webconsole.input.context", false);
-pref("devtools.contenttoolbox.webconsole.input.context", false);
 
 global.loader = {
   lazyServiceGetter: () => {},
@@ -46,12 +46,7 @@ global.loader = {
       global[name] = fn();
     } catch (_) {}
   },
-  lazyRequireGetter: (context, name, path, destruct) => {
-    if (path === "devtools/shared/async-storage") {
-      global[
-        name
-      ] = require("devtools/client/webconsole/test/node/fixtures/async-storage");
-    }
+  lazyRequireGetter: (context, names, path, destruct) => {
     const excluded = [
       "Debugger",
       "devtools/shared/event-emitter",
@@ -60,12 +55,18 @@ global.loader = {
       "devtools/client/shared/keycodes",
       "devtools/client/shared/sourceeditor/editor",
       "devtools/client/shared/telemetry",
-      "devtools/shared/screenshot/save",
+      "devtools/client/shared/screenshot",
       "devtools/client/shared/focus",
     ];
     if (!excluded.includes(path)) {
-      const module = require(path);
-      global[name] = destruct ? module[name] : module;
+      if (!Array.isArray(names)) {
+        names = [names];
+      }
+
+      for (const name of names) {
+        const module = require(path);
+        global[name] = destruct ? module[name] : module;
+      }
     }
   },
 };
@@ -128,13 +129,8 @@ requireHacker.global_hook("default", (path, module) => {
       `module.exports = { addProfilerMarker: () => {}, import: () => ({}) }`,
     // Some modules depend on Chrome APIs which don't work in mocha. When such a module
     // is required, replace it with a mock version.
-    "devtools/shared/l10n": () =>
-      getModule(
-        "devtools/client/webconsole/test/node/fixtures/LocalizationHelper"
-      ),
-    "devtools/shared/plural-form": () =>
-      getModule("devtools/client/webconsole/test/node/fixtures/PluralForm"),
-    Services: () => `module.exports = require("devtools-services")`,
+    Services: () =>
+      getModule("devtools/client/shared/test-helpers/jest-fixtures/Services"),
     "devtools/server/devtools-server": () =>
       `module.exports = {DevToolsServer: {}}`,
     "devtools/client/shared/components/SmartTrace": () =>
@@ -145,20 +141,24 @@ requireHacker.global_hook("default", (path, module) => {
       this.recordEvent = () => {};
       this.getKeyedHistogramById = () => ({add: () => {}});
     }`,
-    "devtools/shared/event-emitter": () =>
-      `module.exports = require("devtools-modules/src/utils/event-emitter")`,
     "devtools/client/shared/unicode-url": () =>
-      `module.exports = require("devtools-modules/src/unicode-url")`,
+      getModule(
+        "devtools/client/shared/test-helpers/jest-fixtures/unicode-url"
+      ),
     "devtools/shared/DevToolsUtils": () =>
       getModule("devtools/client/webconsole/test/node/fixtures/DevToolsUtils"),
     "devtools/server/actors/reflow": () => "{}",
     "devtools/shared/layout/utils": () => "{getCurrentZoom = () => {}}",
     "resource://gre/modules/AppConstants.jsm": () => "module.exports = {};",
     "devtools/client/framework/devtools": () => `module.exports = {
-      gDevTools: {
-        isFissionContentToolboxEnabled: () => false,
-      }
+      gDevTools: {}
     };`,
+    "devtools/shared/async-storage": () =>
+      getModule("devtools/client/webconsole/test/node/fixtures/async-storage"),
+    "devtools/shared/generate-uuid": () =>
+      getModule(
+        "devtools/client/shared/test-helpers/jest-fixtures/generate-uuid"
+      ),
   };
 
   if (paths.hasOwnProperty(path)) {

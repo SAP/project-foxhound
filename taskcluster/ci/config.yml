@@ -11,113 +11,121 @@ treeherder:
         'js-bench-sm': 'JavaScript shell benchmarks with Spidermonkey'
         'js-bench-v8': 'JavaScript shell benchmarks with Google V8'
         'node': 'Node tests'
-        'py2': 'Python 2 unit tests'
         'py3': 'Python 3 unit tests'
         'A': 'Android Gradle tests'
         'Bpgo': 'Profile-guided optimization builds'
         'Btime': 'Browsertime performance tests on Firefox'
         'Btime-1proc': 'Browsertime performance tests on Firefox without e10s'
-        'Btime-wr-1proc': 'Browsertime performance tests on Firefox without e10s, with webrender enabled'
         'Btime-fis': 'Browsertime performance tests on Firefox with fission enabled'
         'Btime-Prof': 'Browsertime performance tests on Firefox with Gecko Profiling'
-        'Btime-Prof-wr': 'Browsertime performance tests on Firefox with Gecko Profiling, webrender enabled'
+        'Btime-Prof-fis': 'Browsertime performance tests on Firefox with Gecko Profiling, fission enabled'
         'Btime-Prof-1proc': 'Browsertime performance tests on Firefox with Gecko Profiling and without e10s'
         'Btime-live': 'Browsertime performance tests on Firefox'
+        'Btime-live-fis': 'Browsertime performance tests on Firefox with fission enabled'
         'Btime-live-fenix': 'Browsertime performance tests on Firefox'
-        'Btime-live-fenix-wr': 'Browsertime performance tests on Firefox with webrender enabled'
         'Btime-live-ChR': 'Browsertime performance tests on Firefox'
+        'Btime-live-Cr': 'Browsertime performance tests on Google Chromium'
         'Btime-ChR': 'Browsertime performance tests on Google Chrome Release'
         'Btime-Cr': 'Browsertime performance tests on Google Chromium'
-        'Btime-P': 'Browsertime power tests on Firefox'
-        'Btime-P-1proc': 'Browsertime power tests on Firefox without e10s'
+        'Btime-P': 'Browsertime power tests on Firefox/Geckoview'
+        'Btime-P-fenix': 'Browsertime power tests on Fenix'
+        'Btime-P-refbrow': 'Browsertime power tests on reference browser'
         'Btime-fenix': 'Browsertime performance tests on Fenix'
-        'Btime-fenix-wr': 'Browsertime performance tests on Fenix with webrender enabled'
-        'Btime-fennec': 'Browsertime performance tests on Fennec'
-        'Btime-fennec-1proc': 'Browsertime performance tests on Fennec without e10s'
         'Btime-refbrow': 'Browsertime performance tests on the reference browser'
-        'Btime-refbrow-wr': 'Browsertime performance tests on the reference browser with webrender enabled'
-        'Btime-Prof-fenix': 'Browsertime performance tests on Fenix with Gecko Profiling'
-        'Btime-Prof-fennec': 'Browsertime performance tests on Fennec with Gecko Profiling'
-        'Btime-Prof-fennec-1proc': 'Browsertime performance tests on Fennec without e10s with Gecko Profiling'
-        'Btime-Prof-refbrow': 'Browsertime performance tests on the reference browser with Gecko Profiling'
-        'Btime-wr': 'Browsertime performance tests on Android with webrender enabled'
         'Fetch': 'Fetch and store content'
         'Fxfn-l': 'Firefox functional tests (local)'
-        'Fxfn-l-1proc': 'Firefox functional tests (local) without e10s'
         'Fxfn-r': 'Firefox functional tests (remote)'
-        'Fxfn-r-1proc': 'Firefox functional tests (remote) without e10s'
         'iris': 'Iris testing suite'
         'l10n-bump': 'L10n Bumper'
         'M': 'Mochitests'
+        'M-aab': 'Mochitests with AAB test_runner.'
         'M-1proc': 'Mochitests without e10s'
+        'M-a11y-checks': 'Mochitests with accessibility checks enabled'
         'M-fis': 'Mochitests with fission enabled'
         'M-fis-xorig': 'Mochitests with cross-origin and fission enabled'
+        'M-fis-gli': 'Mochitests with fission and WebGL IPC enabled'
         'M-gli': 'Mochitests with WebGL over IPC'
         'M-spi': 'Mochitests with socket process'
-        'M-spi-1proc': 'Mochitests with socket process without e10s'
-        'M-V-1proc': 'Mochitests on Valgrind without e10s'
+        'M-spi-nw': 'Mochitests with networking on socket process'
+        'M-spi-nw-1proc': 'Mochitests with networking on socket process without e10s'
+        'M-swr': 'Mochitests with software webrender enabled'
+        'M-swr-a11y-checks': 'Mochitests with software webrender and accessibility checks enabled'
+        'M-swr-1proc': 'Mochitests with software webrender enabled without e10s'
+        'M-swr-fis': 'Mochitests with software webrender and fission enabled'
+        'M-swr-wayland': 'Mochitests with software webrender and Wayland backend enabled'
+        'M-wayland': 'Mochitests with Wayland backend enabled'
+        'M-wayland-1proc': 'Mochitests with Wayland backend enabled without e10s'
+        'M-f': 'Mochitest failures'
+        'M-f-1proc': 'Mochitest failures without e10s'
+        'M-f-fis': 'Mochitest failures with fission enabled'
+        'M-f-fis-xorig': 'Mochitest failures with cross-origin and fission enabled'
+        'M-f-gli': 'Mochitest failures with WebGL over IPC'
+        'M-f-spi': 'Mochitest failures with socket process'
+        'M-f-spi-1proc': 'Mochitest failures with socket process without e10s'
+        'M-f-spi-nw': 'Mochitest failures with networking on socket process'
+        'M-f-spi-nw-1proc': 'Mochitest failures with networking on socket process without e10s'
+        'M-f-swr': 'Mochitests failures with software webrender enabled'
+        'M-f-swr-1proc': 'Mochitests failures with software webrender enabled without e10s'
+        'M-f-wayland': 'Mochitests failures with Wayland backend enabled'
+        'M-dt-no-eft-no-fis': 'DevTools Mochitests with EFT and Fission disabled'
         'MSI': 'Repack installers into MSIs'
         'MSIs': 'Signing of Repacked installers of MSIs'
+        'MSIX': 'Repack into MSIX package'
+        'MSIXs': 'Signing of Repack into MSIX package'
         'R': 'Reftests'
-        'R-1proc': 'Reftests without e10s'
         'R-fis': 'Reftests with fission enabled'
+        'R-swr': 'Reftests with software webrender enabled'
+        'R-wayland': 'Reftests with Wayland backend enabled'
         'Rap': 'Raptor performance tests on Firefox'
-        'Rap-1proc': 'Raptor performance tests on Firefox without e10s'
+        'Rap-live': 'Raptor performance tests on Firefox with live sites'
         'Rap-fis': 'Raptor performance tests on Firefox with fission enabled'
         'Rap-Prof': 'Raptor performance tests on Firefox with Gecko Profiling'
-        'Rap-Prof-1proc': 'Raptor performance tests on Firefox with Gecko Profiling and without e10s'
+        'Rap-Prof-fis': 'Raptor performance tests on Firefox with Gecko Profiling'
         'Rap-ChR': 'Raptor performance tests on Google Chrome Release'
         'Rap-Cr': 'Raptor performance tests on Google Chromium'
-        'Rap-P': 'Raptor power tests on Firefox'
-        'Rap-P-1proc': 'Raptor power tests on Firefox without e10s'
-        'Rap-fenix': 'Raptor performance tests on Fenix'
-        'Rap-fennec': 'Raptor performance tests on Fennec'
-        'Rap-fennec-1proc': 'Raptor performance tests on Fennec without e10s'
         'Rap-refbrow': 'Raptor performance tests on the reference browser'
         'remote': 'Remote debugging protocol tests'
         'T': 'Talos performance tests'
-        'T-1proc': 'Talos performance tests without e10s'
         'T-fis': 'Talos performance tests with fission enabled'
         'T-gli': 'Talos performance tests with WebGL over IPC'
         'T-Prof': 'Talos performance tests on Firefox with Gecko Profiling'
-        'T-Prof-1proc': 'Talos performance tests on Firefox with Gecko Profiling and without e10s'
         'T-Prof-fis': 'Talos performance tests on Firefox with fission and Gecko Profiling'
         'T-Prof-gli': 'Talos performance tests with WebGL over IPC and Gecko Profiling'
-        'Tss': 'Talos performance tests, Stylo sequential'
-        'Tss-fis': 'Talos performance tests, Stylo sequential with fission enabled'
-        'Tss-1proc': 'Talos performance tests with Stylo sequential without e10s'
+        'T-swr': 'Talos performance tests with software webrender enabled'
         'tt': 'Telemetry tests'
-        'tt-1proc': 'Telemetry tests without e10s'
+        'tt-fis': 'Telemetry tests with fission enabled'
         'SY': 'Are we slim yet tests by TaskCluster'
         'SY-fis': 'Are we slim yet tests by TaskCluster, fission enabled'
-        'VP': 'VideoPuppeteer tests'
         'W': 'Web platform tests'
-        'W-1proc': 'Web platform tests without e10s'
         'W-fis': 'Web platform tests with fission enabled'
+        'W-swr': 'Web platform tests with software webrender enabled'
         'W-b': 'Web platform tests (backlog)'
         'W-b-fis': 'Web platform tests (backlog) with fission enabled'
         'X': 'Xpcshell tests'
-        'X-1proc': 'Xpcshell tests, without e10s'
         'X-fis': 'Xpcshell tests with fission enabled'
         'X-spi-nw': 'Xpcshell tests with networking on socket process'
+        'X-f': 'Xpcshell tests that fail on a given config'
+        'X-f-fis': 'Xpcshell tests that fail on a given config w/fission'
+        'X-f-spi-nw': 'Xpcshell tests that fail on a given config w/socket process'
         'L10n': 'Localised Repacks'
         'L10n-Rpk': 'Localized Repackaged Repacks'
         'BM': 'Beetmover'
         'BMR': 'Beetmover repackages'
         'c-Up': 'Balrog submission of complete updates'
-        'cs': 'Checksum signing'
         'css': 'Checksum signing for source'
         'rs': 'Repackage signing'
         'BMcs': 'Beetmover checksums'
         'BMcslang': 'Beetmover checksums for language packs'
         'BMcss': 'Beetmover checksums for source'
-        'Aries': 'Aries Device Image'
         'Deb8': 'Packages for Debian 8'
         'Deb8-32': 'Packages for Debian 8 32-bits'
         'Deb9': 'Packages for Debian 9'
         'Deb10': 'Packages for Debian 10'
-        'Nexus 5-L': 'Nexus 5-L Device Image'
+        'Deb11': 'Packages for Debian 11'
+        'Ub18': 'Packages for Ubuntu 18.04'
+        'Ub20': 'Packages for Ubuntu 20.04'
         'I': 'Docker Image Builds'
+        'TA': 'Toolchain builds for Android'
         'TL': 'Toolchain builds for Linux 64-bits'
         'TL32': 'Toolchain builds for Linux 32-bits'
         'TM': 'Toolchain builds for OSX'
@@ -128,7 +136,6 @@ treeherder:
         'WMC64': 'MinGW-Clang builds for Windows 64-bits'
         'Searchfox': 'Searchfox builds'
         'SM': 'Spidermonkey builds'
-        'pub': 'APK publishing'
         'p': 'Partial generation'
         'ps': 'Partials signing'
         'ms': 'Complete MAR signing'
@@ -142,7 +149,6 @@ treeherder:
         'pydep': 'python dependency update'
         'WR': 'WebRender standalone'
         'Wgpu': 'WebGPU standalone'
-        'Gd': 'Geckodriver'
         'cpp': 'C/C++ checks'
         'pedantic': 'pedantic checks'
         'text': 'Check on texts'
@@ -153,12 +159,15 @@ treeherder:
         'rust': 'Rust checks'
         'Static-Analysis': 'Full tree static-analysis'
         'SS': 'Shadow scheduler'
+        'Sentry': 'Sentry synchronization'
         'test-info': 'Test manifest skip/fail information'
-        'vismet': 'Visual Metrics Analysis'
         'condprof': 'Conditioned Profile Builder'
         'doc': 'Documentation'
         'GhS': 'GitHub Synchronization'
         'perftest': 'Performance tests'
+        'perftest-http3': 'Performance tests with HTTP/3'
+        'l10n': 'Localization checks'
+        'fxrec': 'Desktop startup recorder (fxrecord)'
 
 index:
     products:
@@ -178,6 +187,7 @@ try:
     # all"
     ridealong-builds:
         'linux':
+            - 'sm-plain-linux32'
             - 'sm-arm-sim-linux32'
         'linux64':
             - 'sm-plain-linux64'
@@ -190,10 +200,8 @@ try:
             - 'sm-package-linux64'
             - 'sm-tsan-linux64'
             - 'sm-asan-linux64'
-            - 'sm-mozjs-sys-linux64'
             - 'sm-msan-linux64'
             - 'sm-fuzzing-linux64'
-            - 'sm-rust-bindings-linux64'
         'win32':
             - 'sm-plain-win32'
             - 'sm-compacting-win32'
@@ -212,15 +220,23 @@ release-promotion:
             product: firefox
             target-tasks-method: promote_desktop
             partial-updates: true
-        promote_firefox_partners:
+        promote_firefox_partner_repack:
             product: firefox
             rebuild-kinds:
                 - release-partner-repack
-                - release-partner-beetmover
                 - release-partner-repack-chunking-dummy
-                - release-partner-repackage-signing
-                - release-partner-repackage
-                - release-partner-signing
+                - release-partner-repack-signing
+                - release-partner-repack-notarization-part-1
+                - release-partner-repack-notarization-poller
+                - release-partner-repack-repackage
+                - release-partner-repack-repackage-signing
+                - release-partner-repack-beetmover
+            target-tasks-method: promote_desktop
+        promote_firefox_partner_attribution:
+            product: firefox
+            rebuild-kinds:
+                - release-partner-attribution
+                - release-partner-attribution-beetmover
             target-tasks-method: promote_desktop
         promote_firefox_rc:
             product: firefox
@@ -282,12 +298,6 @@ merge-automation:
                 - - browser/config/mozconfigs/macosx64/l10n-mozconfig
                   - ac_add_options --with-branding=browser/branding/nightly
                   - ac_add_options --enable-official-branding
-                - - build/mozconfig.common
-                  - 'MOZ_REQUIRE_SIGNING=${MOZ_REQUIRE_SIGNING-0}'
-                  - 'MOZ_REQUIRE_SIGNING=${MOZ_REQUIRE_SIGNING-1}'
-                - - build/mozconfig.common
-                  - '# Disable enforcing that add-ons are signed by the trusted root'
-                  - '# Enable enforcing that add-ons are signed by the trusted root'
             merge-old-head: true
             base-tag: 'FIREFOX_BETA_{major_version}_BASE'
             end-tag: 'FIREFOX_BETA_{major_version}_END'
@@ -313,37 +323,13 @@ merge-automation:
             version-files:
                 - filename: "browser/config/version_display.txt"
                   new-suffix: 'esr'
-            replacements:
-                - - "build/mozconfig.common"
-                  - "# Enable enforcing that add-ons are signed by the trusted root"
-                  - "# Disable enforcing that add-ons are signed by the trusted root"
-                - - build/mozconfig.common
-                  - 'MOZ_REQUIRE_SIGNING=${MOZ_REQUIRE_SIGNING-1}'
-                  - 'MOZ_REQUIRE_SIGNING=${MOZ_REQUIRE_SIGNING-0}'
+            replacements: []
             merge-old-head: false
             base-tag: "FIREFOX_ESR_{major_version}_BASE"
             from-repo: 'https://hg.mozilla.org/releases/mozilla-release'
             from-branch: 'release'
-            to-repo: 'https://hg.mozilla.org/releases/mozilla-esr68'
-            to-branch: 'esr68'
-        release-to-esr78:
-            fetch-version-from: "browser/config/version.txt"
-            version-files:
-                - filename: "browser/config/version_display.txt"
-                  new-suffix: 'esr'
-            replacements:
-                - - "build/mozconfig.common"
-                  - "# Enable enforcing that add-ons are signed by the trusted root"
-                  - "# Disable enforcing that add-ons are signed by the trusted root"
-                - - build/mozconfig.common
-                  - 'MOZ_REQUIRE_SIGNING=${MOZ_REQUIRE_SIGNING-1}'
-                  - 'MOZ_REQUIRE_SIGNING=${MOZ_REQUIRE_SIGNING-0}'
-            merge-old-head: false
-            base-tag: "FIREFOX_ESR_{major_version}_BASE"
-            from-repo: 'https://hg.mozilla.org/releases/mozilla-release'
-            from-branch: 'release'
-            to-repo: 'https://hg.mozilla.org/releases/mozilla-esr78'
-            to-branch: 'esr78'
+            to-repo: 'https://hg.mozilla.org/releases/mozilla-esr91'
+            to-branch: 'esr91'
         bump-central:
             fetch-version-from: "browser/config/version.txt"
             version-files:
@@ -367,32 +353,7 @@ merge-automation:
             end-tag: 'FIREFOX_NIGHTLY_{major_version}_END'
             to-repo: 'https://hg.mozilla.org/mozilla-central'
             to-branch: 'central'
-        bump-esr:
-            fetch-version-from: "browser/config/version.txt"
-            version-files:
-                - filename: "config/milestone.txt"
-                  version-bump: "minor"
-                - filename: "browser/config/version.txt"
-                  version-bump: "minor"
-                - filename: "browser/config/version_display.txt"
-                  version-bump: "minor"
-                - filename: "mobile/android/config/version-files/beta/version.txt"
-                  version-bump: "minor"
-                - filename: "mobile/android/config/version-files/beta/version_display.txt"
-                  version-bump: "minor"
-                - filename: "mobile/android/config/version-files/nightly/version.txt"
-                  version-bump: "minor"
-                - filename: "mobile/android/config/version-files/nightly/version_display.txt"
-                  version-bump: "minor"
-                - filename: "mobile/android/config/version-files/release/version.txt"
-                  version-bump: "minor"
-                - filename: "mobile/android/config/version-files/release/version_display.txt"
-                  version-bump: "minor"
-            replacements: []
-            merge-old-head: false
-            to-repo: 'https://hg.mozilla.org/releases/mozilla-esr68'
-            to-branch: 'esr68'
-        bump-esr78:
+        bump-esr91:
             fetch-version-from: "browser/config/version.txt"
             version-files:
                 - filename: "config/milestone.txt"
@@ -403,15 +364,29 @@ merge-automation:
                   version-bump: "minor"
             replacements: []
             merge-old-head: false
-            to-repo: 'https://hg.mozilla.org/releases/mozilla-esr78'
-            to-branch: 'esr78'
+            to-repo: 'https://hg.mozilla.org/releases/mozilla-esr91'
+            to-branch: 'esr91'
 
 scriptworker:
-    # See additional configuration in taskcluster/taskgraph/util/scriptworker.py
+    # See additional configuration in taskcluster/gecko_taskgraph/util/scriptworker.py
     scope-prefix: 'project:releng'
 
 partner-urls:
     release-partner-repack:
+        by-release-product:
+            default: null
+            firefox:
+                by-release-type:
+                    default: null
+                    beta|release.*:
+                        by-release-level:
+                            production: 'git@github.com:mozilla-partners/repack-manifests.git'
+                            staging: 'git@github.com:moz-releng-automation-stage/repack-manifests.git'
+                    esr.*:
+                        by-release-level:
+                            production: 'git@github.com:mozilla-partners/esr-repack-manifests.git'
+                            staging: 'git@github.com:moz-releng-automation-stage/esr-repack-manifests.git'
+    release-partner-attribution:
         by-release-product:
             default: null
             firefox:
@@ -536,11 +511,6 @@ workers:
             implementation: treescript
             os: scriptworker
             worker-type: '{trust-domain}-1-tree-dev'
-        t-ap.*:
-            provisioner: proj-autophone
-            implementation: script-engine-autophone
-            os: linux
-            worker-type: 'gecko-{alias}'
         t-bitbar-gw.*:
             provisioner: proj-autophone
             implementation: generic-worker
@@ -556,12 +526,22 @@ workers:
             implementation: generic-worker
             os: linux
             worker-type: 'gecko-{alias}'
-        t-osx-1010:
+        t-linux-talos-1804:
+            provisioner: releng-hardware
+            implementation: generic-worker
+            os: linux
+            worker-type: 'gecko-{alias}'
+        t-osx-1014:
             provisioner: releng-hardware
             implementation: generic-worker
             os: macosx
             worker-type: 'gecko-{alias}'
-        t-osx-1014:
+        t-osx-1015-r8:
+            provisioner: releng-hardware
+            implementation: generic-worker
+            os: macosx
+            worker-type: 'gecko-{alias}'
+        t-osx-1100-m1:
             provisioner: releng-hardware
             implementation: generic-worker
             os: macosx
@@ -579,32 +559,29 @@ workers:
             implementation: docker-worker
             os: linux
             worker-type: 't-linux-xlarge'
-        t-osx-1010-pgo:
+        b-osx-1015:
             provisioner: releng-hardware
             implementation: generic-worker
             os: macosx
             worker-type:
                 by-level:
-                    '3': 'gecko-{level}-t-osx-1010'
-                    default: 'gecko-t-osx-1010'
-        t-osx-1014-pgo:
-            provisioner: releng-hardware
-            implementation: generic-worker
-            os: macosx
-            worker-type:
-                by-level:
-                    '3': 'gecko-{level}-t-osx-1014'
-                    default: 'gecko-t-osx-1014'
+                    '3': 'gecko-3-b-osx-1015'
+                    default: 'gecko-1-b-osx-1015'
         t-win10-64(|-gpu-s|-source):
             provisioner: '{trust-domain}-t'
             implementation: generic-worker
             os: windows
             worker-type: '{alias}'
-        t-win10-64(-hw|-ref-hw):
+        t-win10-64(-hw|-ref-hw|-1803-hw):
             provisioner: releng-hardware
             implementation: generic-worker
             os: windows
             worker-type: 'gecko-{alias}'
+        win10-64-2004(|-gpu|-ssd|-source|-ssd-gpu):
+            provisioner: 'gecko-t'
+            implementation: generic-worker
+            os: windows
+            worker-type: '{alias}'
         t-win7-32(|-gpu):
             provisioner: '{trust-domain}-t'
             implementation: generic-worker

@@ -20,12 +20,6 @@ XPCOMUtils.defineLazyServiceGetter(
   "@mozilla.org/contentsecuritymanager;1",
   "nsIContentSecurityManager"
 );
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "gScriptSecurityManager",
-  "@mozilla.org/scriptsecuritymanager;1",
-  "nsIScriptSecurityManager"
-);
 ChromeUtils.defineModuleGetter(
   this,
   "LoginHelper",
@@ -51,7 +45,7 @@ this.InsecurePasswordUtils = {
    *         Inner ID for the given window.
    */
   _getInnerWindowId(window) {
-    return window.windowUtils.currentInnerWindowID;
+    return window.windowGlobalChild.innerWindowId;
   },
 
   _sendWebConsoleMessage(messageTag, domDoc) {
@@ -95,7 +89,10 @@ this.InsecurePasswordUtils = {
       let uri = Services.io.newURI(
         aForm.rootElement.action || aForm.rootElement.baseURI
       );
-      let principal = gScriptSecurityManager.createContentPrincipal(uri, {});
+      let principal = Services.scriptSecurityManager.createContentPrincipal(
+        uri,
+        {}
+      );
 
       if (uri.schemeIs("http")) {
         isFormSubmitHTTP = true;
@@ -118,22 +115,17 @@ this.InsecurePasswordUtils = {
   },
 
   _isPrincipalForLocalIPAddress(aPrincipal) {
-    try {
-      let uri = aPrincipal.URI;
-      if (Services.io.hostnameIsLocalIPAddress(uri)) {
-        log.debug("hasInsecureLoginForms: detected local IP address:", uri);
-        return true;
-      }
-    } catch (e) {
+    let res = aPrincipal.isLocalIpAddress;
+    if (res) {
       log.debug(
-        "hasInsecureLoginForms: unable to check for local IP address:",
-        e
+        "hasInsecureLoginForms: detected local IP address:",
+        aPrincipal.asciispec
       );
     }
-    return false;
+    return res;
   },
 
-  /**
+  /**s
    * Checks if there are insecure password fields present on the form's document
    * i.e. passwords inside forms with http action, inside iframes with http src,
    * or on insecure web pages.
@@ -152,17 +144,10 @@ this.InsecurePasswordUtils = {
       let isLocalIP = this._isPrincipalForLocalIPAddress(
         aForm.rootElement.nodePrincipal
       );
-      // XXXndeakin fix this: bug 1582499 - top document not accessible in OOP frame
-      // So for now, just use the current document if access to top fails.
-      let topDocument;
-      try {
-        topDocument = aForm.ownerDocument.defaultView.top.document;
-      } catch (ex) {
-        topDocument = aForm.ownerDocument.defaultView.document;
-      }
-      let topIsLocalIP = this._isPrincipalForLocalIPAddress(
-        topDocument.nodePrincipal
-      );
+
+      let topIsLocalIP =
+        aForm.ownerDocument.defaultView.windowGlobalChild.windowContext
+          .topWindowContext.isLocalIP;
 
       // Only consider the page safe if the top window has a local IP address
       // and, if this is an iframe, the iframe also has a local IP address.

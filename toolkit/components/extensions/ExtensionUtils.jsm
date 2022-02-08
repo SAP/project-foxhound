@@ -18,6 +18,8 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/Timer.jsm"
 );
 
+XPCOMUtils.defineLazyGlobalGetters(this, ["fetch", "btoa"]);
+
 // xpcshell doesn't handle idle callbacks well.
 XPCOMUtils.defineLazyGetter(this, "idleTimeout", () =>
   Services.appinfo.name === "XPCShell" ? 500 : undefined
@@ -69,6 +71,19 @@ function filterStack(error) {
 }
 
 /**
+ * An Error subclass used to recognize the errors that should
+ * to be forwarded to the worker thread and being accessible
+ * to the extension worker script (vs. the errors that should be
+ * only logged internally and raised to the worker script as
+ * the generic unexpected error).
+ */
+class WorkerExtensionError extends DOMException {
+  constructor(message) {
+    super(message, "Error");
+  }
+}
+
+/**
  * Similar to a WeakMap, but creates a new key with the given
  * constructor if one is not present.
  */
@@ -109,7 +124,7 @@ class DefaultMap extends Map {
 }
 
 function getInnerWindowID(window) {
-  return window.windowUtils.currentInnerWindowID;
+  return window.windowGlobalChild?.innerWindowId;
 }
 
 /**
@@ -299,12 +314,34 @@ function parseMatchPatterns(patterns, options) {
   }
 }
 
+/**
+ * Fetch icon content and convert it to a data: URI.
+ * @param {string} iconUrl Icon url to fetch.
+ * @returns {Promise<string>}
+ */
+async function makeDataURI(iconUrl) {
+  let response;
+  try {
+    response = await fetch(iconUrl);
+  } catch (e) {
+    // Failed to fetch, ignore engine's favicon.
+    Cu.reportError(e);
+    return;
+  }
+  let buffer = await response.arrayBuffer();
+  let contentType = response.headers.get("content-type");
+  let bytes = new Uint8Array(buffer);
+  let str = String.fromCharCode.apply(null, bytes);
+  return `data:${contentType};base64,${btoa(str)}`;
+}
+
 var ExtensionUtils = {
   flushJarCache,
   getInnerWindowID,
   getMessageManager,
   getUniqueId,
   filterStack,
+  makeDataURI,
   parseMatchPatterns,
   promiseDocumentIdle,
   promiseDocumentLoaded,
@@ -316,4 +353,5 @@ var ExtensionUtils = {
   DefaultWeakMap,
   ExtensionError,
   LimitedSet,
+  WorkerExtensionError,
 };

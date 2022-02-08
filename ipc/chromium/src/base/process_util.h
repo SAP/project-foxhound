@@ -13,6 +13,7 @@
 #include "base/basictypes.h"
 
 #if defined(OS_WIN)
+#  include "mozilla/ipc/EnvironmentMap.h"
 #  include <windows.h>
 #  include <tlhelp32.h>
 #elif defined(OS_LINUX) || defined(__GLIBC__)
@@ -23,19 +24,18 @@
 #  include <mach/mach.h>
 #endif
 
-#include <functional>
+#include <cstddef>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include "base/command_line.h"
 #include "base/process.h"
 
 #include "mozilla/UniquePtr.h"
-#include "mozilla/ipc/EnvironmentMap.h"
 
 #if defined(MOZ_ENABLE_FORKSERVER)
-#  include "nsString.h"
+#  include "nsStringFwd.h"
 #  include "mozilla/Tuple.h"
 #  include "mozilla/ipc/FileDescriptorShuffle.h"
 
@@ -50,7 +50,19 @@ class FileDescriptor;
 struct kinfo_proc;
 #endif
 
+class CommandLine;
+
 namespace base {
+
+enum ProcessArchitecture {
+  PROCESS_ARCH_INVALID = 0x0,
+  PROCESS_ARCH_I386 = 0x1,
+  PROCESS_ARCH_X86_64 = 0x2,
+  PROCESS_ARCH_PPC = 0x4,
+  PROCESS_ARCH_PPC_64 = 0x8,
+  PROCESS_ARCH_ARM = 0x10,
+  PROCESS_ARCH_ARM_64 = 0x20
+};
 
 // A minimalistic but hopefully cross-platform set of exit codes.
 // Do not change the enumeration values or you will break third-party
@@ -131,6 +143,13 @@ struct LaunchOptions {
   // If non-null, the fork delegate will be called instead of fork().
   // It is not required to call pthread_atfork hooks.
   mozilla::UniquePtr<ForkDelegate> fork_delegate = nullptr;
+#endif
+
+#if defined(OS_MACOSX) && defined(__aarch64__)
+  // The architecture to launch when launching a "universal" binary.
+  // Note: the implementation only supports launching x64 child
+  // processes from arm64 parent processes.
+  uint32_t arch = PROCESS_ARCH_INVALID;
 #endif
 };
 

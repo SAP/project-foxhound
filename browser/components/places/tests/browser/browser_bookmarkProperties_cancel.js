@@ -56,7 +56,7 @@ add_task(async function test_cancel_with_no_changes() {
         let acceptButton = dialogWin.document
           .getElementById("bookmarkpropertiesdialog")
           .getButton("accept");
-        await BrowserTestUtils.waitForCondition(
+        await TestUtils.waitForCondition(
           () => !acceptButton.disabled,
           "The accept button should be enabled"
         );
@@ -95,14 +95,15 @@ add_task(async function test_cancel_with_changes() {
         let acceptButton = dialogWin.document
           .getElementById("bookmarkpropertiesdialog")
           .getButton("accept");
-        await BrowserTestUtils.waitForCondition(
+        await TestUtils.waitForCondition(
           () => !acceptButton.disabled,
           "The accept button should be enabled"
         );
 
         let promiseTitleChangeNotification = PlacesTestUtils.waitForNotification(
-          "onItemChanged",
-          (itemId, prop, isAnno, val) => prop == "title" && val == "n"
+          "bookmark-title-changed",
+          events => events.some(e => e.title === "n"),
+          "places"
         );
 
         fillBookmarkTextField("editBMPanel_namePicker", "n", dialogWin);
@@ -115,7 +116,7 @@ add_task(async function test_cancel_with_changes() {
       }
     );
 
-    await BrowserTestUtils.waitForCondition(
+    await TestUtils.waitForCondition(
       () => PlacesTransactions.undo.calledOnce,
       "undo should have been called once."
     );

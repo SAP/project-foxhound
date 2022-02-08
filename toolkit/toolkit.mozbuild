@@ -42,6 +42,9 @@ DIRS += [
 if CONFIG['MOZ_SANDBOX']:
     DIRS += ['/security/sandbox']
 
+if CONFIG["MOZ_USING_WASM_SANDBOXING"] and CONFIG["COMPILE_ENVIRONMENT"]:
+    DIRS += ["/security/rlbox"]
+
 DIRS += [
     # Depends on NSS and NSPR
     '/security/certverifier',
@@ -92,7 +95,7 @@ DIRS += [
 if CONFIG['MOZ_WEBRTC'] and CONFIG['COMPILE_ENVIRONMENT']:
     DIRS += [
         '/media/webrtc',
-        '/media/mtransport',
+        '/dom/media/webrtc/transport',
     ]
 
 if CONFIG['ENABLE_TESTS']:
@@ -160,17 +163,15 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
         '/toolkit/system/gnome',
     ]
 
-if CONFIG['ENABLE_REMOTE_AGENT']:
-    DIRS += ['/remote']
-
-if CONFIG['ENABLE_MARIONETTE']:
+if CONFIG['ENABLE_WEBDRIVER']:
     DIRS += [
+        '/remote',
         '/testing/firefox-ui',
         '/testing/marionette',
         '/toolkit/components/telemetry/tests/marionette',
     ]
 
-if CONFIG['ENABLE_GECKODRIVER'] and not CONFIG['MOZ_TSAN'] and not CONFIG['FUZZING_INTERFACES']:
+if CONFIG['MOZ_GECKODRIVER'] and not CONFIG['MOZ_TSAN'] and not CONFIG['FUZZING_INTERFACES']:
     DIRS += ['/testing/geckodriver']
 
 DIRS += [
@@ -191,16 +192,12 @@ if CONFIG['ENABLE_TESTS']:
         '/testing/extensions',
     ]
 
-    # The file id utility requires breakpad libraries.
-    if CONFIG['MOZ_CRASHREPORTER']:
-        DIRS += ['/testing/tools/fileid']
-
     if CONFIG['MOZ_MEMORY']:
         DIRS += ['/memory/gtest']
 
-    if CONFIG['MOZ_WEBRTC'] and not CONFIG['MOZ_TASK_TRACER']:
+    if CONFIG['MOZ_WEBRTC']:
         DIRS += [
-            '/media/mtransport/test',
+            '/dom/media/webrtc/transport/test',
         ]
 
 if CONFIG['FUZZING']:

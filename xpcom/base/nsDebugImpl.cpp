@@ -32,7 +32,7 @@
 #  include <stdlib.h>
 #endif
 
-#include "nsTraceRefcnt.h"
+#include "mozilla/StackWalk.h"
 
 #if defined(XP_UNIX)
 #  include <signal.h>
@@ -79,8 +79,6 @@
 #else
 #  define KP_FLAGS p_flag
 #endif
-
-#include "mozilla/mozalloc_abort.h"
 
 static void Abort(const char* aMsg);
 
@@ -280,7 +278,7 @@ static nsAssertBehavior GetAssertBehavior() {
 struct FixedBuffer final : public mozilla::PrintfTarget {
   FixedBuffer() : curlen(0) { buffer[0] = '\0'; }
 
-  char buffer[500];
+  char buffer[764];
   uint32_t curlen;
 
   bool append(const char* sp, size_t len) override;
@@ -335,11 +333,9 @@ NS_DebugBreak(uint32_t aSeverity, const char* aStr, const char* aExpr,
   if (aExpr) {
     nonPIDBuf.print("'%s', ", aExpr);
   }
-  if (aFile) {
-    nonPIDBuf.print("file %s, ", aFile);
-  }
-  if (aLine != -1) {
-    nonPIDBuf.print("line %d", aLine);
+  if (aFile || aLine != -1) {
+    nonPIDBuf.print("file %s:%d", aFile ? aFile : "<unknown>",
+                    aLine != -1 ? aLine : 0);
   }
 
   // Print "[PID]" or "[Desc PID]" at the beginning of the message.
@@ -406,7 +402,7 @@ NS_DebugBreak(uint32_t aSeverity, const char* aStr, const char* aExpr,
       RealBreak();
 #endif
 #if defined(DEBUG)
-      nsTraceRefcnt::WalkTheStack(stderr);
+      MozWalkTheStack(stderr);
 #endif
       Abort(buf.buffer);
       return;
@@ -430,11 +426,11 @@ NS_DebugBreak(uint32_t aSeverity, const char* aStr, const char* aExpr,
       return;
 
     case NS_ASSERT_STACK:
-      nsTraceRefcnt::WalkTheStack(stderr);
+      MozWalkTheStack(stderr);
       return;
 
     case NS_ASSERT_STACK_AND_ABORT:
-      nsTraceRefcnt::WalkTheStack(stderr);
+      MozWalkTheStack(stderr);
       // Fall through to abort
       [[fallthrough]];
 
@@ -451,7 +447,7 @@ NS_DebugBreak(uint32_t aSeverity, const char* aStr, const char* aExpr,
 
 static void Abort(const char* aMsg) {
   NoteIntentionalCrash(XRE_GetProcessTypeString());
-  mozalloc_abort(aMsg);
+  MOZ_CRASH_UNSAFE(aMsg);
 }
 
 static void RealBreak() {

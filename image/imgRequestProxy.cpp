@@ -14,6 +14,7 @@
 #include "ImageTypes.h"
 #include "imgINotificationObserver.h"
 #include "imgLoader.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/Telemetry.h"     // for Telemetry
 #include "mozilla/dom/DocGroup.h"  // for DocGroup
 #include "nsCRTGlue.h"
@@ -264,12 +265,13 @@ nsresult imgRequestProxy::DispatchWithTargetIfAvailable(
   // rather we need to (e.g. we are in the wrong scheduler group context).
   // As such, we do not set mHadDispatch for telemetry purposes.
   if (mEventTarget) {
-    mEventTarget->Dispatch(CreateMediumHighRunnable(std::move(aEvent)),
+    mEventTarget->Dispatch(CreateRenderBlockingRunnable(std::move(aEvent)),
                            NS_DISPATCH_NORMAL);
     return NS_OK;
   }
 
-  return NS_DispatchToMainThread(CreateMediumHighRunnable(std::move(aEvent)));
+  return NS_DispatchToMainThread(
+      CreateRenderBlockingRunnable(std::move(aEvent)));
 }
 
 void imgRequestProxy::AddToOwner(Document* aLoadingDocument) {
@@ -665,15 +667,15 @@ imgRequestProxy::GetImage(imgIContainer** aImage) {
 }
 
 NS_IMETHODIMP
-imgRequestProxy::GetProducerId(uint32_t* aId) {
+imgRequestProxy::GetProviderId(uint32_t* aId) {
   NS_ENSURE_TRUE(aId, NS_ERROR_NULL_POINTER);
 
   nsCOMPtr<imgIContainer> image;
   nsresult rv = GetImage(getter_AddRefs(image));
   if (NS_SUCCEEDED(rv)) {
-    *aId = image->GetProducerId();
+    *aId = image->GetProviderId();
   } else {
-    *aId = layers::kContainerProducerID_Invalid;
+    *aId = 0;
   }
 
   return NS_OK;
@@ -1069,7 +1071,8 @@ imgRequestProxy::GetStaticRequest(imgIRequest** aReturn) {
 
 already_AddRefed<imgRequestProxy> imgRequestProxy::GetStaticRequest(
     Document* aLoadingDocument) {
-  MOZ_DIAGNOSTIC_ASSERT(!aLoadingDocument || aLoadingDocument->IsStaticDocument());
+  MOZ_DIAGNOSTIC_ASSERT(!aLoadingDocument ||
+                        aLoadingDocument->IsStaticDocument());
   RefPtr<Image> image = GetImage();
 
   bool animated;
@@ -1168,6 +1171,13 @@ imgCacheValidator* imgRequestProxy::GetValidator() const {
     return nullptr;
   }
   return owner->GetValidator();
+}
+
+nsITimedChannel* imgRequestProxy::TimedChannel() {
+  if (!GetOwner()) {
+    return nullptr;
+  }
+  return GetOwner()->GetTimedChannel();
 }
 
 ////////////////// imgRequestProxyStatic methods

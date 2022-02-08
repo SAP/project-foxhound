@@ -7,6 +7,7 @@
 #ifndef mozilla_dom_StorageObserver_h
 #define mozilla_dom_StorageObserver_h
 
+#include "nsINamed.h"
 #include "nsIObserver.h"
 #include "nsITimer.h"
 #include "nsWeakReference.h"
@@ -35,10 +36,13 @@ class StorageObserverSink {
 
 // Statically (through layout statics) initialized observer receiving and
 // processing chrome clearing notifications, such as cookie deletion etc.
-class StorageObserver : public nsIObserver, public nsSupportsWeakReference {
+class StorageObserver : public nsIObserver,
+                        public nsINamed,
+                        public nsSupportsWeakReference {
  public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
+  NS_DECL_NSINAMED
 
   static nsresult Init();
   static nsresult Shutdown();
@@ -47,10 +51,11 @@ class StorageObserver : public nsIObserver, public nsSupportsWeakReference {
   void AddSink(StorageObserverSink* aObs);
   void RemoveSink(StorageObserverSink* aObs);
   void Notify(const char* aTopic,
-              const nsAString& aOriginAttributesPattern = EmptyString(),
-              const nsACString& aOriginScope = EmptyCString());
+              const nsAString& aOriginAttributesPattern = u""_ns,
+              const nsACString& aOriginScope = ""_ns);
 
-  void NoteBackgroundThread(nsIEventTarget* aBackgroundThread);
+  void NoteBackgroundThread(uint32_t aPrivateBrowsingId,
+                            nsIEventTarget* aBackgroundThread);
 
  private:
   virtual ~StorageObserver() = default;
@@ -61,7 +66,7 @@ class StorageObserver : public nsIObserver, public nsSupportsWeakReference {
 
   static StorageObserver* sSelf;
 
-  nsCOMPtr<nsIEventTarget> mBackgroundThread;
+  nsCOMPtr<nsIEventTarget> mBackgroundThread[2];
 
   // Weak references
   nsTObserverArray<StorageObserverSink*> mSinks;

@@ -32,11 +32,22 @@ function IsLinux() {
            !navigator.appVersion.includes("Android");
 }
 
+function IsWindows() {
+    var os = "";
+
+    try {
+        os = Cc["@mozilla.org/xre/app-info;1"]
+          .getService(SpecialPowers.Ci.nsIXULRuntime).OS;
+    } catch (e) {}
+
+    return os.indexOf("WINNT") == 0;
+}
+
 function IsAzureSkia() {
   var enabled = false;
 
   try {
-    var backend = Cc["@mozilla.org/gfx/info;1"].getService(SpecialPowers.Ci.nsIGfxInfo).getInfo().AzureCanvasBackend;
+    var backend = Cc["@mozilla.org/gfx/info;1"].getService(SpecialPowers.Ci.nsIGfxInfo).AzureCanvasBackend;
     enabled = (backend == "skia");
   } catch (e) { }
 
@@ -47,7 +58,7 @@ function IsAzureCairo() {
   var enabled = false;
 
   try {
-    var backend = Cc["@mozilla.org/gfx/info;1"].getService(SpecialPowers.Ci.nsIGfxInfo).getInfo().AzureCanvasBackend;
+    var backend = Cc["@mozilla.org/gfx/info;1"].getService(SpecialPowers.Ci.nsIGfxInfo).AzureCanvasBackend;
     enabled = (backend == "cairo");
   } catch (e) { }
 
@@ -3663,7 +3674,7 @@ ok(_thrown && _thrown.name == "TypeError", "should throw TypeError");
 <!-- [[[ test_2d.drawImage.zerosource.html ]]] -->
 
 <p>Canvas test: 2d.drawImage.zerosource</p>
-<!-- Testing: drawImage with zero-sized source rectangle throws INDEX_SIZE_ERR -->
+<!-- Testing: drawImage with zero-sized source rectangle does nothing -->
 <canvas id="c128" width="100" height="50"><p class="fallback">FAIL (fallback content)</p></canvas>
 <script>
 
@@ -3675,15 +3686,9 @@ var ctx = canvas.getContext('2d');
 
 ctx.fillStyle = '#0f0';
 ctx.fillRect(0, 0, 100, 50);
-var _thrown = undefined; try {
-  ctx.drawImage(document.getElementById('red_14.png'), 10, 10, 0, 1, 0, 0, 100, 50);
-} catch (e) { _thrown = e }; ok(_thrown && _thrown.name == "IndexSizeError" && _thrown.code == DOMException.INDEX_SIZE_ERR, "should throw IndexSizeError");
-var _thrown = undefined; try {
-  ctx.drawImage(document.getElementById('red_14.png'), 10, 10, 1, 0, 0, 0, 100, 50);
-} catch (e) { _thrown = e }; ok(_thrown && _thrown.name == "IndexSizeError" && _thrown.code == DOMException.INDEX_SIZE_ERR, "should throw IndexSizeError");
-var _thrown = undefined; try {
-  ctx.drawImage(document.getElementById('red_14.png'), 10, 10, 0, 0, 0, 0, 100, 50);
-} catch (e) { _thrown = e }; ok(_thrown && _thrown.name == "IndexSizeError" && _thrown.code == DOMException.INDEX_SIZE_ERR, "should throw IndexSizeError");
+ctx.drawImage(document.getElementById('red_14.png'), 10, 10, 0, 1, 0, 0, 100, 50);
+ctx.drawImage(document.getElementById('red_14.png'), 10, 10, 1, 0, 0, 0, 100, 50);
+ctx.drawImage(document.getElementById('red_14.png'), 10, 10, 0, 0, 0, 0, 100, 50);
 isPixel(ctx, 50,25, 0,255,0,255, 2);
 
 
@@ -5664,9 +5669,10 @@ g.addColorStop(0, 'rgba(255,255,0, 0)');
 g.addColorStop(1, 'rgba(0,0,255, 1)');
 ctx.fillStyle = g;
 ctx.fillRect(0, 0, 100, 50);
-isPixel(ctx, 25,25, 191,191,63,63, 3);
-isPixel(ctx, 50,25, 127,127,127,127, 3);
-isPixel(ctx, 75,25, 63,63,191,191, 3);
+// Following tests fail on Windows hardware (datacenter and local laptops), see bug 1657707
+if (!IsWindows()) isPixel(ctx, 25,25, 191,191,63,63, 3);
+if (!IsWindows()) isPixel(ctx, 50,25, 127,127,127,127, 3);
+if (!IsWindows()) isPixel(ctx, 75,25, 63,63,191,191, 3);
 
 
 }
@@ -7499,23 +7505,11 @@ var ctx = canvas.getContext('2d');
 
 var _thrown_outer = false;
 try {
-
-var imgdata = ctx.createImageData(0.0001, 0.0001);
-ok(imgdata.data.length == imgdata.width*imgdata.height*4, "imgdata.data.length == imgdata.width*imgdata.height*4");
-ok(imgdata.width == 1, "imgdata.width == 1");
-ok(imgdata.height == 1, "imgdata.height == 1");
-var isTransparentBlack = true;
-for (var i = 0; i < imgdata.data.length; ++i)
-    if (imgdata.data[i] !== 0)
-        isTransparentBlack = false;
-ok(isTransparentBlack, "isTransparentBlack");
-
+    var imgdata = ctx.createImageData(0.0001, 0.0001);
 } catch (e) {
     _thrown_outer = true;
 }
-ok(!_thrown_outer, ctx.canvas.id + ' should not throw exception');
-
-
+ok(_thrown_outer, ctx.canvas.id + ' should throw exception');
 }
 </script>
 
@@ -8109,7 +8103,6 @@ ok(imgdata2.height > imgdata1.height, "imgdata2.height > imgdata1.height");
 <!-- [[[ test_2d.imageData.get.tiny.html ]]] -->
 
 <p>Canvas test: 2d.imageData.get.tiny</p>
-<!-- Testing: getImageData() works for sizes smaller than one pixel -->
 <canvas id="c275" width="100" height="50"><p class="fallback">FAIL (fallback content)</p></canvas>
 <script>
 
@@ -8120,16 +8113,11 @@ var ctx = canvas.getContext('2d');
 
 var _thrown_outer = false;
 try {
-
-var imgdata = ctx.getImageData(0, 0, 0.0001, 0.0001);
-ok(imgdata.data.length == imgdata.width*imgdata.height*4, "imgdata.data.length == imgdata.width*imgdata.height*4");
-ok(imgdata.width == 1, "imgdata.width == 1");
-ok(imgdata.height == 1, "imgdata.height == 1");
-
+    var imgdata = ctx.getImageData(0, 0, 0.0001, 0.0001);
 } catch (e) {
     _thrown_outer = true;
 }
-ok(!_thrown_outer, ctx.canvas.id + ' should not throw exception');
+ok(_thrown_outer, ctx.canvas.id + ' should throw');
 
 
 }
@@ -11339,7 +11327,7 @@ isPixel(ctx, 98,48, 0,255,0,255, 0);
 <!-- [[[ test_2d.path.arc.shape.5.html ]]] -->
 
 <p>Canvas test: 2d.path.arc.shape.5</p>
-<!-- Testing: arc() from 0 to 5pi does not draw crazy things -->
+<!-- Testing: arc() from 0 to 5pi does not draw strange things -->
 <canvas id="c351" width="100" height="50"><p class="fallback">FAIL (fallback content)</p></canvas>
 <script>
 
@@ -22092,7 +22080,7 @@ isPixel(ctx, 98,48, 0,255,0,255, 0);
 <!-- [[[ test_2d.path.ellipse.shape.4.html ]]] -->
 
 <p>Canvas test: 2d.path.ellipse.shape.4</p>
-<!-- Testing: ellipse() from 0 to 5pi does not draw crazy things -->
+<!-- Testing: ellipse() from 0 to 5pi does not draw strange things -->
 <canvas id="c708" width="100" height="50"><p class="fallback">FAIL (fallback content)</p></canvas>
 <script>
 

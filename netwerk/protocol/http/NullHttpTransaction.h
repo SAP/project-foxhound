@@ -55,17 +55,13 @@ class NullHttpTransaction : public nsAHttpTransaction {
   // nsHalfOpenSocket could be either nsHttpTransaction or NullHttpTransaction.
   // NullHttpTransaction will be activated on the connection immediately after
   // creation and be never put in a pending queue, so it's OK to just return 0.
-  uint64_t TopLevelOuterContentWindowId() override { return 0; }
+  uint64_t TopBrowsingContextId() override { return 0; }
 
   TimingStruct Timings() { return mTimings; }
 
   mozilla::TimeStamp GetTcpConnectEnd() { return mTimings.tcpConnectEnd; }
   mozilla::TimeStamp GetSecureConnectionStart() {
     return mTimings.secureConnectionStart;
-  }
-
-  void SetFastOpenStatus(uint8_t aStatus) override {
-    mFastOpenStatus = aStatus;
   }
 
  protected:
@@ -82,7 +78,6 @@ class NullHttpTransaction : public nsAHttpTransaction {
   bool mIsDone;
   bool mClaimed;
   TimingStruct mTimings;
-  uint8_t mFastOpenStatus;
 
  protected:
   RefPtr<nsAHttpConnection> mConnection;

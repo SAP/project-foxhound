@@ -12,7 +12,7 @@ const {
 } = require("devtools/shared/protocol");
 
 types.addDictType("root.listWorkers", {
-  workers: "array:workerTarget",
+  workers: "array:workerDescriptor",
 });
 types.addDictType("root.listServiceWorkerRegistrations", {
   registrations: "array:serviceWorkerRegistration",
@@ -28,11 +28,7 @@ const rootSpecPrototype = {
     },
 
     listTabs: {
-      request: {
-        // Backward compatibility: this is only used for FF75 or older.
-        // The argument can be dropped when FF76 hits the release channel.
-        favicons: Option(0, "boolean"),
-      },
+      request: {},
       response: {
         tabs: RetVal("array:tabDescriptor"),
       },
@@ -45,15 +41,6 @@ const rootSpecPrototype = {
       },
       response: {
         tab: RetVal("tabDescriptor"),
-      },
-    },
-
-    getWindow: {
-      request: {
-        outerWindowID: Option(0, "number"),
-      },
-      response: {
-        window: RetVal("browsingContextTarget"),
       },
     },
 
@@ -90,11 +77,6 @@ const rootSpecPrototype = {
       response: {
         processDescriptor: RetVal("processDescriptor"),
       },
-    },
-
-    protocolDescription: {
-      request: {},
-      response: RetVal("json"),
     },
 
     requestTypes: {

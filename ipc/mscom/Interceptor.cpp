@@ -23,7 +23,6 @@
 #include "mozilla/mscom/Utils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
-#include "nsExceptionHandler.h"
 #include "nsPrintfCString.h"
 #include "nsRefPtrHashtable.h"
 #include "nsThreadUtils.h"
@@ -49,7 +48,7 @@ class LiveSet final {
 
   void Put(IUnknown* aKey, already_AddRefed<IWeakReference> aValue) {
     mMutex.AssertCurrentThreadOwns();
-    mLiveSet.Put(aKey, RefPtr<IWeakReference>{std::move(aValue)});
+    mLiveSet.InsertOrUpdate(aKey, RefPtr<IWeakReference>{std::move(aValue)});
   }
 
   RefPtr<IWeakReference> Get(IUnknown* aKey) {

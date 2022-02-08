@@ -104,6 +104,7 @@ macro_rules! ft_dyn_fn {
 ft_dyn_fn!(FT_Get_MM_Var(face: FT_Face, desc: *mut *mut FT_MM_Var) -> FT_Error);
 ft_dyn_fn!(FT_Done_MM_Var(library: FT_Library, desc: *mut FT_MM_Var) -> FT_Error);
 ft_dyn_fn!(FT_Set_Var_Design_Coordinates(face: FT_Face, num_vals: FT_UInt, vals: *mut FT_Fixed) -> FT_Error);
+ft_dyn_fn!(FT_Get_Var_Design_Coordinates(face: FT_Face, num_vals: FT_UInt, vals: *mut FT_Fixed) -> FT_Error);
 
 extern "C" {
     fn FT_GlyphSlot_Embolden(slot: FT_GlyphSlot);
@@ -184,7 +185,7 @@ impl Drop for VariationFace {
     }
 }
 
-fn new_ft_face(font_key: &FontKey, lib: FT_Library, file: &FontFile, index: u32) -> Option<FT_Face> {
+fn new_ft_face(font_key: &FontKey, lib: FT_Library, file: &FontFile, index: u32) -> Result<FT_Face, FT_Error> {
     unsafe {
         let mut face: FT_Face = ptr::null_mut();
         let result = match file {
@@ -203,11 +204,11 @@ fn new_ft_face(font_key: &FontKey, lib: FT_Library, file: &FontFile, index: u32)
             ),
         };
         if succeeded(result) && !face.is_null() {
-            Some(face)
+            Ok(face)
         } else {
             warn!("WARN: webrender failed to load font");
             debug!("font={:?}, result={:?}", font_key, result);
-            None
+            Err(result)
         }
     }
 }
@@ -347,21 +348,26 @@ impl FontContext {
 
     pub fn add_raw_font(&mut self, font_key: &FontKey, bytes: Arc<Vec<u8>>, index: u32) {
         if !self.faces.contains_key(font_key) {
+            let len = bytes.len();
             let file = FontFile::Data(bytes);
-            if let Some(face) = new_ft_face(font_key, self.lib, &file, index) {
+            if let Ok(face) = new_ft_face(font_key, self.lib, &file, index) {
                 self.faces.insert(*font_key, FontFace { file, index, face, mm_var: ptr::null_mut() });
+            } else {
+                panic!("adding raw font failed: {} bytes", len);
             }
         }
     }
 
     pub fn add_native_font(&mut self, font_key: &FontKey, native_font_handle: NativeFontHandle) {
         if !self.faces.contains_key(font_key) {
-            let cstr = CString::new(native_font_handle.path.as_os_str().to_str().unwrap()).unwrap();
+            let str = native_font_handle.path.as_os_str().to_str().unwrap();
+            let cstr = CString::new(str).unwrap();
             let file = FontFile::Pathname(cstr);
             let index = native_font_handle.index;
-            if let Some(face) = new_ft_face(font_key, self.lib, &file, index) {
-                self.faces.insert(*font_key, FontFace { file, index, face, mm_var: ptr::null_mut() });
-            }
+            match new_ft_face(font_key, self.lib, &file, index) {
+                Ok(face) => self.faces.insert(*font_key, FontFace { file, index, face, mm_var: ptr::null_mut() }),
+                Err(result) => panic!("adding native font failed: file={} err={:?}", str, result),
+            };
         }
     }
 
@@ -391,12 +397,25 @@ impl FontContext {
                 }
                 // Clone a new FT face and attempt to set the variation values on it.
                 // Leave unspecified values at the defaults.
-                let var_face = new_ft_face(&font.font_key, self.lib, &normal_face.file, normal_face.index)?;
+                let var_face = new_ft_face(&font.font_key, self.lib, &normal_face.file, normal_face.index).ok()?;
                 if !normal_face.mm_var.is_null() ||
                    succeeded(FT_Get_MM_Var(normal_face.face, &mut normal_face.mm_var)) {
                     let mm_var = normal_face.mm_var;
                     let num_axis = (*mm_var).num_axis;
                     let mut coords: Vec<FT_Fixed> = Vec::with_capacity(num_axis as usize);
+
+                    // Calling this before FT_Set_Var_Design_Coordinates avoids a bug with font variations
+                    // not initialized properly in the font face, even if we ignore the result.
+                    // See bug 1647035.
+                    let mut tmp = [0; 16];
+                    let res = FT_Get_Var_Design_Coordinates(
+                        normal_face.face,
+                        num_axis.min(16),
+                        tmp.as_mut_ptr()
+                    );
+                    debug_assert!(succeeded(res));
+
+
                     for i in 0 .. num_axis {
                         let axis = (*mm_var).axis.offset(i as isize);
                         let mut value = (*axis).def;
@@ -410,7 +429,8 @@ impl FontContext {
                         }
                         coords.push(value);
                     }
-                    FT_Set_Var_Design_Coordinates(var_face, num_axis, coords.as_mut_ptr());
+                    let res = FT_Set_Var_Design_Coordinates(var_face, num_axis, coords.as_mut_ptr());
+                    debug_assert!(succeeded(res));
                 }
                 entry.insert(VariationFace(var_face));
                 Some(var_face)
@@ -457,12 +477,19 @@ impl FontContext {
             load_flags |= FT_LOAD_NO_BITMAP;
         }
 
-        load_flags |= FT_LOAD_COLOR;
+        let face_flags = unsafe { (*face).face_flags };
+        if (face_flags & (FT_FACE_FLAG_FIXED_SIZES as FT_Long)) != 0 {
+          // We only set FT_LOAD_COLOR if there are bitmap strikes;
+          // COLR (color-layer) fonts are handled internally by Gecko, and
+          // WebRender is just asked to paint individual layers.
+          load_flags |= FT_LOAD_COLOR;
+        }
+
         load_flags |= FT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH;
 
         let (x_scale, y_scale) = font.transform.compute_scale().unwrap_or((1.0, 1.0));
         let req_size = font.size.to_f64_px();
-        let face_flags = unsafe { (*face).face_flags };
+
         let mut result = if (face_flags & (FT_FACE_FLAG_FIXED_SIZES as FT_Long)) != 0 &&
                             (face_flags & (FT_FACE_FLAG_SCALABLE as FT_Long)) == 0 &&
                             (load_flags & FT_LOAD_NO_BITMAP) == 0 {

@@ -11,6 +11,8 @@
 #include "nsStringFwd.h"
 #include "ContentBlockingNotifier.h"
 
+#include "nsILoadInfo.h"
+
 class nsPIDOMWindowInner;
 class nsPIDOMWindowOuter;
 class nsIChannel;
@@ -58,12 +60,14 @@ class AntiTrackingUtils final {
                                      uint32_t* aRejectedReason,
                                      uint32_t aBlockedReason);
 
-  // Returns true if the storage permission is granted for the given channel.
-  // And this is meant to be called in the parent process. This only reflects
-  // the fact that whether the channel has the storage permission. It doesn't
-  // take the window hierarchy into account. i.e. this will return true even
-  // for a nested iframe that has storage permission.
-  static bool HasStoragePermissionInParent(nsIChannel* aChannel);
+  // Returns the storage permission state for the given channel. And this is
+  // meant to be called in the parent process. This only reflects the fact that
+  // whether the channel has the storage permission. It doesn't take the window
+  // hierarchy into account. i.e. this will return
+  // nsILoadInfo::HasStoragePermission even for a nested iframe that has storage
+  // permission.
+  static nsILoadInfo::StoragePermissionState GetStoragePermissionStateInParent(
+      nsIChannel* aChannel);
 
   // Returns the toplevel inner window id, returns 0 if this is a toplevel
   // window.
@@ -88,10 +92,6 @@ class AntiTrackingUtils final {
   static bool GetPrincipalAndTrackingOrigin(
       dom::BrowsingContext* aBrowsingContext, nsIPrincipal** aPrincipal,
       nsACString& aTrackingOrigin);
-
-  // Retruns true if the given browsingContext is a first-level sub context,
-  // i.e. a first-level iframe.
-  static bool IsFirstLevelSubContext(dom::BrowsingContext* aBrowsingContext);
 
   // Retruns the cookie behavior of the given browsingContext,
   // return BEHAVIOR_REJECT when fail.
@@ -121,8 +121,19 @@ class AntiTrackingUtils final {
   // Otherwise, it will continue to check if the window is third-party.
   static bool IsThirdPartyWindow(nsPIDOMWindowInner* aWindow, nsIURI* aURI);
 
+  // Given a browsing context, this function determines if this browsing context
+  // is considered as a third party in respect to the top-level context.
+  static bool IsThirdPartyContext(dom::BrowsingContext* aBrowsingContext);
+
   static nsCString GrantedReasonToString(
       ContentBlockingNotifier::StorageAccessPermissionGrantedReason aReason);
+
+  /**
+   * This function updates all the fields used by anti-tracking when a channel
+   * is opened. We have to do this in the parent to access cross-origin info
+   * that is not exposed to child processes.
+   */
+  static void UpdateAntiTrackingInfoForChannel(nsIChannel* aChannel);
 };
 
 }  // namespace mozilla

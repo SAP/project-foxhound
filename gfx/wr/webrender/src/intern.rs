@@ -35,16 +35,16 @@
 
 use crate::internal_types::FastHashMap;
 use malloc_size_of::MallocSizeOf;
-use crate::profiler::ResourceProfileCounter;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::marker::PhantomData;
-use std::{mem, ops, u64};
+use std::{ops, u64};
 use crate::util::VecHelper;
+use crate::profiler::TransactionProfile;
 
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
-#[derive(Debug, Copy, Clone, MallocSizeOf, PartialEq)]
+#[derive(Debug, Copy, Clone, Hash, MallocSizeOf, PartialEq, Eq)]
 struct Epoch(u32);
 
 /// A list of updates to be applied to the data store,
@@ -110,7 +110,7 @@ impl ItemUid {
 
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
-#[derive(Debug, MallocSizeOf)]
+#[derive(Debug, Hash, MallocSizeOf, PartialEq, Eq)]
 pub struct Handle<I> {
     index: u32,
     epoch: Epoch,
@@ -166,7 +166,7 @@ impl<I: Internable> DataStore<I> {
     pub fn apply_updates(
         &mut self,
         update_list: UpdateList<I::Key>,
-        profile_counter: &mut ResourceProfileCounter,
+        profile: &mut TransactionProfile,
     ) {
         for insertion in update_list.insertions {
             self.items
@@ -178,8 +178,7 @@ impl<I: Internable> DataStore<I> {
             self.items[removal.index] = None;
         }
 
-        let per_item_size = mem::size_of::<I::Key>() + mem::size_of::<I::StoreData>();
-        profile_counter.set(self.items.len(), per_item_size * self.items.len());
+        profile.set(I::PROFILE_COUNTER, self.items.len());
     }
 }
 
@@ -372,6 +371,70 @@ impl<I: Internable> ops::Index<Handle<I>> for Interner<I> {
     }
 }
 
+/// Meta-macro to enumerate the various interner identifiers and types.
+///
+/// IMPORTANT: Keep this synchronized with the list in mozilla-central located at
+/// gfx/webrender_bindings/webrender_ffi.h
+///
+/// Note that this could be a lot less verbose if concat_idents! were stable. :-(
+#[macro_export]
+macro_rules! enumerate_interners {
+    ($macro_name: ident) => {
+        $macro_name! {
+            clip: ClipIntern,
+            prim: PrimitiveKeyKind,
+            normal_border: NormalBorderPrim,
+            image_border: ImageBorder,
+            image: Image,
+            yuv_image: YuvImage,
+            line_decoration: LineDecoration,
+            linear_grad: LinearGradient,
+            radial_grad: RadialGradient,
+            conic_grad: ConicGradient,
+            picture: Picture,
+            text_run: TextRun,
+            filter_data: FilterDataIntern,
+            backdrop: Backdrop,
+            polygon: PolygonIntern,
+        }
+    }
+}
+
+macro_rules! declare_interning_memory_report {
+    ( $( $name:ident: $ty:ident, )+ ) => {
+        ///
+        #[repr(C)]
+        #[derive(AddAssign, Clone, Debug, Default)]
+        pub struct InternerSubReport {
+            $(
+                ///
+                pub $name: usize,
+            )+
+        }
+    }
+}
+
+enumerate_interners!(declare_interning_memory_report);
+
+/// Memory report for interning-related data structures.
+/// cbindgen:derive-eq=false
+/// cbindgen:derive-ostream=false
+#[repr(C)]
+#[derive(Clone, Debug, Default)]
+pub struct InterningMemoryReport {
+    ///
+    pub interners: InternerSubReport,
+    ///
+    pub data_stores: InternerSubReport,
+}
+
+impl ::std::ops::AddAssign for InterningMemoryReport {
+    fn add_assign(&mut self, other: InterningMemoryReport) {
+        self.interners += other.interners;
+        self.data_stores += other.data_stores;
+    }
+}
+
 // The trick to make trait bounds configurable by features.
 mod dummy {
     #[cfg(not(feature = "capture"))]
@@ -397,4 +460,7 @@ pub trait Internable: MallocSizeOf {
     type Key: Eq + Hash + Clone + Debug + MallocSizeOf + InternDebug + InternSerialize + for<'a> InternDeserialize<'a>;
     type StoreData: From<Self::Key> + MallocSizeOf + InternSerialize + for<'a> InternDeserialize<'a>;
     type InternData: MallocSizeOf + InternSerialize + for<'a> InternDeserialize<'a>;
+
+    // Profile counter indices, see the list in profiler.rs
+    const PROFILE_COUNTER: usize;
 }

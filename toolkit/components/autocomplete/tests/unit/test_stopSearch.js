@@ -25,9 +25,7 @@ AutoCompleteInput.prototype = {
   textValue: "hello",
   disableAutoComplete: false,
   completeDefaultIndex: false,
-  set popupOpen(val) {
-    return val;
-  }, // ignore
+  set popupOpen(val) {}, // ignore
   get popupOpen() {
     return false;
   },
@@ -44,9 +42,7 @@ AutoCompleteInput.prototype = {
   popup: {
     selectBy() {},
     invalidate() {},
-    set selectedIndex(val) {
-      return val;
-    }, // ignore
+    set selectedIndex(val) {}, // ignore
     get selectedIndex() {
       return -1;
     },
@@ -87,9 +83,7 @@ AutoCompleteSearch.prototype = {
  */
 function registerAutoCompleteSearch(aSearch) {
   let name = "@mozilla.org/autocomplete/search;1?name=" + aSearch.name;
-  let uuidGenerator = Cc["@mozilla.org/uuid-generator;1"].getService(
-    Ci.nsIUUIDGenerator
-  );
+  let uuidGenerator = Services.uuid;
   let cid = uuidGenerator.generateUUID();
   let desc = "Test AutoCompleteSearch";
   let componentManager = Components.manager.QueryInterface(

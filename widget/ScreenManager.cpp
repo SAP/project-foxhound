@@ -12,9 +12,7 @@
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPtr.h"
 #ifdef MOZ_WAYLAND
-#  include <gdk/gdk.h>
-#  include <gdk/gdkx.h>
-#  include <gdk/gdkwayland.h>
+#  include "mozilla/WidgetUtilsGtk.h"
 #endif /* MOZ_WAYLAND */
 
 static mozilla::LazyLogModule sScreenLog("WidgetScreen");
@@ -108,12 +106,11 @@ void ScreenManager::CopyScreensToAllRemotesIfIsParent() {
 NS_IMETHODIMP
 ScreenManager::ScreenForRect(int32_t aX, int32_t aY, int32_t aWidth,
                              int32_t aHeight, nsIScreen** aOutScreen) {
-#ifdef MOZ_WAYLAND
-  static bool inWayland = gdk_display_get_default() &&
-                          !GDK_IS_X11_DISPLAY(gdk_display_get_default());
-
+#if defined(MOZ_WAYLAND) && defined(MOZ_LOGGING)
+  static bool inWayland = mozilla::widget::GdkIsWaylandDisplay();
   if (inWayland) {
-    NS_WARNING("Getting screen in wayland, primary display will be returned.");
+    MOZ_LOG(sScreenLog, LogLevel::Warning,
+            ("Getting screen in wayland, primary display will be returned."));
   }
 #endif
 

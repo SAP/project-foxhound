@@ -2,24 +2,24 @@ var EXPORTED_SYMBOLS = ["ReftestFissionParent"];
 
 class ReftestFissionParent extends JSWindowActorParent {
 
-  tellChildrenToFlushRendering(browsingContext, ignoreThrottledAnimations) {
+  tellChildrenToFlushRendering(browsingContext, ignoreThrottledAnimations, needsAnimationFrame) {
     let promises = [];
-    this.tellChildrenToFlushRenderingRecursive(browsingContext, ignoreThrottledAnimations, promises);
+    this.tellChildrenToFlushRenderingRecursive(browsingContext, ignoreThrottledAnimations, needsAnimationFrame, promises);
     return Promise.allSettled(promises);
   }
 
-  tellChildrenToFlushRenderingRecursive(browsingContext, ignoreThrottledAnimations, promises) {
+  tellChildrenToFlushRenderingRecursive(browsingContext, ignoreThrottledAnimations, needsAnimationFrame, promises) {
     let cwg = browsingContext.currentWindowGlobal;
     if (cwg && cwg.isProcessRoot) {
       let a = cwg.getActor("ReftestFission");
       if (a) {
-        let responsePromise = a.sendQuery("FlushRendering", {ignoreThrottledAnimations});
+        let responsePromise = a.sendQuery("FlushRendering", {ignoreThrottledAnimations, needsAnimationFrame});
         promises.push(responsePromise);
       }
     }
 
     for (let context of browsingContext.children) {
-      this.tellChildrenToFlushRenderingRecursive(context, ignoreThrottledAnimations, promises);
+      this.tellChildrenToFlushRenderingRecursive(context, ignoreThrottledAnimations, needsAnimationFrame, promises);
     }
   }
 
@@ -110,6 +110,37 @@ class ReftestFissionParent extends JSWindowActorParent {
     return {errorStrings, infoStrings};
   }
 
+  tellChildrenToSetupDisplayport(browsingContext, promises) {
+    let cwg = browsingContext.currentWindowGlobal;
+    if (cwg && cwg.isProcessRoot) {
+      let a = cwg.getActor("ReftestFission");
+      if (a) {
+        let responsePromise = a.sendQuery("SetupDisplayport");
+        promises.push(responsePromise);
+      }
+    }
+
+    for (let context of browsingContext.children) {
+      this.tellChildrenToSetupDisplayport(context, promises);
+    }
+  }
+
+  tellChildrenToSetupAsyncScrollOffsets(browsingContext, allowFailure, promises) {
+    let cwg = browsingContext.currentWindowGlobal;
+    if (cwg && cwg.isProcessRoot) {
+      let a = cwg.getActor("ReftestFission");
+      if (a) {
+        let responsePromise = a.sendQuery("SetupAsyncScrollOffsets", {allowFailure});
+        promises.push(responsePromise);
+      }
+    }
+
+    for (let context of browsingContext.children) {
+      this.tellChildrenToSetupAsyncScrollOffsets(context, allowFailure, promises);
+    }
+  }
+
+
   receiveMessage(msg) {
     switch (msg.name) {
       case "ForwardAfterPaintEvent":
@@ -125,7 +156,7 @@ class ReftestFissionParent extends JSWindowActorParent {
       }
       case "FlushRendering":
       {
-        let promise = this.tellChildrenToFlushRendering(msg.data.browsingContext, msg.data.ignoreThrottledAnimations);
+        let promise = this.tellChildrenToFlushRendering(msg.data.browsingContext, msg.data.ignoreThrottledAnimations, msg.data.needsAnimationFrame);
         return promise.then(function (results) {
           let errorStrings = [];
           let warningStrings = [];
@@ -152,6 +183,53 @@ class ReftestFissionParent extends JSWindowActorParent {
       case "UpdateLayerTree":
       {
         return this.tellChildrenToUpdateLayerTree(msg.data.browsingContext);
+      }
+      case "TellChildrenToSetupDisplayport":
+      {
+        let promises = [];
+        this.tellChildrenToSetupDisplayport(msg.data.browsingContext, promises);
+        return Promise.allSettled(promises).then(function (results) {
+          let errorStrings = [];
+          let infoStrings = [];
+          for (let r of results) {
+            if (r.status != "fulfilled") {
+              // We expect actors to go away causing sendQuery's to fail, so
+              // just note it.
+              infoStrings.push("SetupDisplayport sendQuery to child promise rejected: " + r.reason);
+              continue;
+            }
+
+            errorStrings.push(...r.value.errorStrings);
+            infoStrings.push(...r.value.infoStrings);
+          }
+          return {errorStrings, infoStrings}
+        });
+      }
+
+      case "SetupAsyncScrollOffsets":
+      {
+        let promises = [];
+        this.tellChildrenToSetupAsyncScrollOffsets(this.manager.browsingContext, msg.data.allowFailure, promises);
+        return Promise.allSettled(promises).then(function (results) {
+          let errorStrings = [];
+          let infoStrings = [];
+          let updatedAny = false;
+          for (let r of results) {
+            if (r.status != "fulfilled") {
+              // We expect actors to go away causing sendQuery's to fail, so
+              // just note it.
+              infoStrings.push("SetupAsyncScrollOffsets sendQuery to child promise rejected: " + r.reason);
+              continue;
+            }
+
+            errorStrings.push(...r.value.errorStrings);
+            infoStrings.push(...r.value.infoStrings);
+            if (r.value.updatedAny) {
+              updatedAny = true;
+            }
+          }
+          return {errorStrings, infoStrings, updatedAny};
+        });
       }
 
     }

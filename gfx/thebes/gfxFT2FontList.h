@@ -9,6 +9,7 @@
 #include "mozilla/MemoryReporting.h"
 #include "gfxFT2FontBase.h"
 #include "gfxPlatformFontList.h"
+#include "nsTHashSet.h"
 
 namespace mozilla {
 namespace dom {
@@ -61,8 +62,8 @@ class FT2FontEntry final : public gfxFT2FontEntryBase {
 
   hb_blob_t* GetFontTable(uint32_t aTableTag) override;
 
-  nsresult CopyFontTable(uint32_t aTableTag,
-                         nsTArray<uint8_t>& aBuffer) override;
+  bool HasFontTable(uint32_t aTableTag) override;
+  nsresult CopyFontTable(uint32_t aTableTag, nsTArray<uint8_t>&) override;
 
   bool HasVariations() override;
   void GetVariationAxes(
@@ -79,6 +80,12 @@ class FT2FontEntry final : public gfxFT2FontEntryBase {
   FTUserFontData* GetUserFontData();
 
   FT_MM_Var* GetMMVar() override;
+
+  // Get a harfbuzz face for this font, if possible. The caller is responsible
+  // to destroy the face when no longer needed.
+  // This may be a bit expensive, so avoid calling multiple times if the same
+  // face can be re-used for several purposes instead.
+  hb_face_t* CreateHBFace() const;
 
   /**
    * Append this face's metadata to aFaceList for storage in the FontNameCache
@@ -104,6 +111,8 @@ class FT2FontEntry final : public gfxFT2FontEntryBase {
   uint8_t mFTFontIndex;
 
   mozilla::ThreadSafeWeakPtr<mozilla::gfx::UnscaledFontFreeType> mUnscaledFont;
+
+  nsTHashSet<uint32_t> mAvailableTables;
 
   bool mHasVariations = false;
   bool mHasVariationsInitialized = false;
@@ -132,7 +141,8 @@ class gfxFT2FontList final : public gfxPlatformFontList {
       mozilla::fontlist::Face* aFace,
       const mozilla::fontlist::Family* aFamily) override;
 
-  gfxFontEntry* LookupLocalFont(const nsACString& aFontName,
+  gfxFontEntry* LookupLocalFont(nsPresContext* aPresContext,
+                                const nsACString& aFontName,
                                 WeightRange aWeightForEntry,
                                 StretchRange aStretchForEntry,
                                 SlantStyleRange aStyleForEntry) override;
@@ -146,7 +156,7 @@ class gfxFT2FontList final : public gfxPlatformFontList {
 
   void WriteCache();
 
-  void ReadSystemFontList(nsTArray<FontListEntry>* aList);
+  void ReadSystemFontList(mozilla::dom::SystemFontList*);
 
   static gfxFT2FontList* PlatformFontList() {
     return static_cast<gfxFT2FontList*>(
@@ -214,9 +224,11 @@ class gfxFT2FontList final : public gfxPlatformFontList {
 
   void FindFontsInDir(const nsCString& aDir, FontNameCache* aFNC);
 
-  FontFamily GetDefaultFontForPlatform(const gfxFontStyle* aStyle) override;
+  FontFamily GetDefaultFontForPlatform(nsPresContext* aPresContext,
+                                       const gfxFontStyle* aStyle,
+                                       nsAtom* aLanguage = nullptr) override;
 
-  nsTHashtable<nsCStringHashKey> mSkipSpaceLookupCheckFamilies;
+  nsTHashSet<nsCString> mSkipSpaceLookupCheckFamilies;
 
  private:
   mozilla::UniquePtr<FontNameCache> mFontNameCache;

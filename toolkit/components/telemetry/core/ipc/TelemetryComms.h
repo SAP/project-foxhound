@@ -7,10 +7,12 @@
 #define Telemetry_Comms_h__
 
 #include "ipc/IPCMessageUtils.h"
+#include "ipc/IPCMessageUtilsSpecializations.h"
+#include "mozilla/Telemetry.h"
 #include "mozilla/TelemetryProcessEnums.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/Variant.h"
 #include "nsITelemetry.h"
-#include "nsVariant.h"
 
 namespace mozilla {
 namespace Telemetry {
@@ -77,11 +79,6 @@ struct DynamicScalarDefinition {
            expired == rhs.expired && keyed == rhs.keyed &&
            builtin == rhs.builtin && name.Equals(rhs.name);
   }
-};
-
-struct EventExtraEntry {
-  nsCString key;
-  nsCString value;
 };
 
 struct ChildEventData {

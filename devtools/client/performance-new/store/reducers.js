@@ -4,13 +4,12 @@
 // @ts-check
 "use strict";
 
-const { combineReducers } = require("devtools/client/shared/vendor/redux");
-
 /**
  * @typedef {import("../@types/perf").Action} Action
  * @typedef {import("../@types/perf").State} State
  * @typedef {import("../@types/perf").RecordingState} RecordingState
  * @typedef {import("../@types/perf").InitializedValues} InitializedValues
+ * @typedef {import("../@types/perf").RecordingSettings} RecordingSettings
  */
 
 /**
@@ -22,12 +21,119 @@ const { combineReducers } = require("devtools/client/shared/vendor/redux");
  * The current state of the recording.
  * @type {Reducer<RecordingState>}
  */
+// eslint-disable-next-line complexity
 function recordingState(state = "not-yet-known", action) {
   switch (action.type) {
-    case "CHANGE_RECORDING_STATE":
-      return action.state;
-    case "REPORT_PROFILER_READY":
-      return action.recordingState;
+    case "REPORT_PROFILER_READY": {
+      // It's theoretically possible we got an event that already let us know about
+      // the current state of the profiler.
+      if (state !== "not-yet-known") {
+        return state;
+      }
+
+      const { isActive, isLockedForPrivateBrowsing } = action;
+      if (isLockedForPrivateBrowsing) {
+        return "locked-by-private-browsing";
+      }
+      if (isActive) {
+        return "recording";
+      }
+      return "available-to-record";
+    }
+
+    case "REPORT_PROFILER_STARTED":
+      switch (state) {
+        case "not-yet-known":
+        // We couldn't have started it yet, so it must have been someone
+        // else. (fallthrough)
+        case "available-to-record":
+        // We aren't recording, someone else started it up. (fallthrough)
+        case "request-to-stop-profiler":
+        // We requested to stop the profiler, but someone else already started
+        // it up. (fallthrough)
+        case "request-to-get-profile-and-stop-profiler":
+          return "recording";
+
+        case "request-to-start-recording":
+          // Wait for the profiler to tell us that it has started.
+          return "recording";
+
+        case "locked-by-private-browsing":
+        case "recording":
+          // These state cases don't make sense to happen, and means we have a logical
+          // fallacy somewhere.
+          throw new Error(
+            "The profiler started recording, when it shouldn't have " +
+              `been able to. Current state: "${state}"`
+          );
+        default:
+          throw new Error("Unhandled recording state");
+      }
+
+    case "REPORT_PROFILER_STOPPED":
+      switch (state) {
+        case "not-yet-known":
+        case "request-to-get-profile-and-stop-profiler":
+        case "request-to-stop-profiler":
+          return "available-to-record";
+
+        case "request-to-start-recording":
+        // Highly unlikely, but someone stopped the recorder, this is fine.
+        // Do nothing (fallthrough).
+        case "locked-by-private-browsing":
+          // The profiler is already locked, so we know about this already.
+          return state;
+
+        case "recording":
+          return "available-to-record";
+
+        case "available-to-record":
+          throw new Error(
+            "The profiler stopped recording, when it shouldn't have been able to."
+          );
+        default:
+          throw new Error("Unhandled recording state");
+      }
+
+    case "REPORT_PRIVATE_BROWSING_STARTED":
+      switch (state) {
+        case "request-to-get-profile-and-stop-profiler":
+        // This one is a tricky case. Go ahead and act like nothing went wrong, maybe
+        // it will resolve correctly? (fallthrough)
+        case "request-to-stop-profiler":
+        case "available-to-record":
+        case "not-yet-known":
+          return "locked-by-private-browsing";
+
+        case "request-to-start-recording":
+        case "recording":
+          return "locked-by-private-browsing";
+
+        case "locked-by-private-browsing":
+          // Do nothing
+          return state;
+
+        default:
+          throw new Error("Unhandled recording state");
+      }
+
+    case "REPORT_PRIVATE_BROWSING_STOPPED":
+      // No matter the state, go ahead and set this as ready to record. This should
+      // be the only logical state to go into.
+      return "available-to-record";
+
+    case "REQUESTING_TO_START_RECORDING":
+      return "request-to-start-recording";
+
+    case "REQUESTING_TO_STOP_RECORDING":
+      return "request-to-stop-profiler";
+
+    case "REQUESTING_PROFILE":
+      return "request-to-get-profile-and-stop-profiler";
+
+    case "OBTAINED_PROFILE":
+      return "available-to-record";
+
     default:
       return state;
   }
@@ -36,12 +142,24 @@ function recordingState(state = "not-yet-known", action) {
 /**
  * Whether or not the recording state unexpectedly stopped. This allows
  * the UI to display a helpful message.
- * @type {Reducer<boolean>}
+ * @param {RecordingState | undefined} recState
+ * @param {boolean} state
+ * @param {Action} action
+ * @returns {boolean}
  */
-function recordingUnexpectedlyStopped(state = false, action) {
+function recordingUnexpectedlyStopped(recState, state = false, action) {
   switch (action.type) {
-    case "CHANGE_RECORDING_STATE":
-      return action.didRecordingUnexpectedlyStopped;
+    case "REPORT_PROFILER_STOPPED":
+    case "REPORT_PRIVATE_BROWSING_STARTED":
+      if (
+        recState === "recording" ||
+        recState == "request-to-start-recording"
+      ) {
+        return true;
+      }
+      return state;
+    case "REPORT_PROFILER_STARTED":
+      return false;
     default:
       return state;
   }
@@ -54,115 +172,134 @@ function recordingUnexpectedlyStopped(state = false, action) {
  */
 function isSupportedPlatform(state = null, action) {
   switch (action.type) {
-    case "REPORT_PROFILER_READY":
+    case "INITIALIZE_STORE":
       return action.isSupportedPlatform;
     default:
       return state;
   }
 }
 
-// Right now all recording setting the defaults are reset every time the panel
-// is opened. These should be persisted between sessions. See Bug 1453014.
+/**
+ * This object represents the default recording settings. They should be
+ * overriden by whatever is read from the Firefox preferences at load time.
+ * @type {RecordingSettings}
+ */
+const DEFAULT_RECORDING_SETTINGS = {
+  // The preset name.
+  presetName: "",
+  // The setting for the recording interval. Defaults to 1ms.
+  interval: 1,
+  // The number of entries in the profiler's circular buffer.
+  entries: 0,
+  // The features that are enabled for the profiler.
+  features: [],
+  // The thread list
+  threads: [],
+  // The objdirs list
+  objdirs: [],
+  // The client doesn't implement durations yet. See Bug 1587165.
+  duration: 0,
+};
 
 /**
- * The setting for the recording interval. Defaults to 1ms.
- * @type {Reducer<number>}
+ * This small utility returns true if the parameters contain the same values.
+ * This is essentially a deepEqual operation specific to this structure.
+ * @param {RecordingSettings} a
+ * @param {RecordingSettings} b
+ * @return {boolean}
  */
-function interval(state = 1, action) {
+function areSettingsEquals(a, b) {
+  if (a === b) {
+    return true;
+  }
+
+  /* Simple properties */
+  /* These types look redundant, but they actually help TypeScript assess that
+   * the following code is correct, as well as prevent typos. */
+  /** @type {Array<"presetName" | "interval" | "entries" | "duration">} */
+  const simpleProperties = ["presetName", "interval", "entries", "duration"];
+
+  /* arrays */
+  /** @type {Array<"features" | "threads" | "objdirs">} */
+  const arrayProperties = ["features", "threads", "objdirs"];
+
+  for (const property of simpleProperties) {
+    if (a[property] !== b[property]) {
+      return false;
+    }
+  }
+
+  for (const property of arrayProperties) {
+    if (a[property].length !== b[property].length) {
+      return false;
+    }
+
+    const arrayA = a[property].slice().sort();
+    const arrayB = b[property].slice().sort();
+    if (arrayA.some((valueA, i) => valueA !== arrayB[i])) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * This handles all values used as recording settings.
+ * @type {Reducer<RecordingSettings>}
+ */
+function recordingSettings(state = DEFAULT_RECORDING_SETTINGS, action) {
+  /**
+   * @template {keyof RecordingSettings} K
+   * @param {K} settingName
+   * @param {RecordingSettings[K]} settingValue
+   * @return {RecordingSettings}
+   */
+  function changeOneSetting(settingName, settingValue) {
+    if (state[settingName] === settingValue) {
+      // Do not change the state if the new value equals the old value.
+      return state;
+    }
+
+    return {
+      ...state,
+      [settingName]: settingValue,
+      presetName: "custom",
+    };
+  }
+
   switch (action.type) {
     case "CHANGE_INTERVAL":
-      return action.interval;
-    case "CHANGE_PRESET":
-      return action.preset ? action.preset.interval : state;
-    case "INITIALIZE_STORE":
-      return action.recordingSettingsFromPreferences.interval;
-    default:
-      return state;
-  }
-}
-
-/**
- * The number of entries in the profiler's circular buffer.
- * @type {Reducer<number>}
- */
-function entries(state = 0, action) {
-  switch (action.type) {
+      return changeOneSetting("interval", action.interval);
     case "CHANGE_ENTRIES":
-      return action.entries;
-    case "CHANGE_PRESET":
-      return action.preset ? action.preset.entries : state;
-    case "INITIALIZE_STORE":
-      return action.recordingSettingsFromPreferences.entries;
-    default:
-      return state;
-  }
-}
-
-/**
- * The features that are enabled for the profiler.
- * @type {Reducer<string[]>}
- */
-function features(state = [], action) {
-  switch (action.type) {
+      return changeOneSetting("entries", action.entries);
     case "CHANGE_FEATURES":
-      return action.features;
-    case "CHANGE_PRESET":
-      return action.preset ? action.preset.features : state;
-    case "INITIALIZE_STORE":
-      return action.recordingSettingsFromPreferences.features;
-    default:
-      return state;
-  }
-}
-
-/**
- * The current threads list.
- * @type {Reducer<string[]>}
- */
-function threads(state = [], action) {
-  switch (action.type) {
+      return changeOneSetting("features", action.features);
     case "CHANGE_THREADS":
-      return action.threads;
-    case "CHANGE_PRESET":
-      return action.preset ? action.preset.threads : state;
-    case "INITIALIZE_STORE":
-      return action.recordingSettingsFromPreferences.threads;
-    default:
-      return state;
-  }
-}
-
-/**
- * The current objdirs list.
- * @type {Reducer<string[]>}
- */
-function objdirs(state = [], action) {
-  switch (action.type) {
+      return changeOneSetting("threads", action.threads);
     case "CHANGE_OBJDIRS":
-      return action.objdirs;
-    case "INITIALIZE_STORE":
-      return action.recordingSettingsFromPreferences.objdirs;
-    default:
-      return state;
-  }
-}
-
-/**
- * The current preset name, used to select
- * @type {Reducer<string>}
- */
-function presetName(state = "", action) {
-  switch (action.type) {
-    case "INITIALIZE_STORE":
-      return action.recordingSettingsFromPreferences.presetName;
+      return changeOneSetting("objdirs", action.objdirs);
     case "CHANGE_PRESET":
-      return action.presetName;
-    case "CHANGE_INTERVAL":
-    case "CHANGE_ENTRIES":
-    case "CHANGE_FEATURES":
-    case "CHANGE_THREADS":
-      // When updating any values, switch the preset over to "custom".
-      return "custom";
+      return action.preset
+        ? {
+            ...state,
+            presetName: action.presetName,
+            interval: action.preset.interval,
+            entries: action.preset.entries,
+            features: action.preset.features,
+            threads: action.preset.threads,
+            // The client doesn't implement durations yet. See Bug 1587165.
+            duration: action.preset.duration,
+          }
+        : {
+            ...state,
+            presetName: action.presetName, // it's probably "custom".
+          };
+    case "UPDATE_SETTINGS_FROM_PREFERENCES":
+      if (areSettingsEquals(state, action.recordingSettingsFromPreferences)) {
+        return state;
+      }
+      return { ...action.recordingSettingsFromPreferences };
     default:
       return state;
   }
@@ -178,14 +315,9 @@ function initializedValues(state = null, action) {
   switch (action.type) {
     case "INITIALIZE_STORE":
       return {
-        perfFront: action.perfFront,
-        receiveProfile: action.receiveProfile,
-        setRecordingPreferences: action.setRecordingPreferences,
         presets: action.presets,
         pageContext: action.pageContext,
-        getSymbolTableGetter: action.getSymbolTableGetter,
         supportedFeatures: action.supportedFeatures,
-        openAboutProfiling: action.openAboutProfiling,
         openRemoteDevTools: action.openRemoteDevTools,
       };
     default:
@@ -212,19 +344,23 @@ function promptEnvRestart(state = null, action) {
  * The main reducer for the performance-new client.
  * @type {Reducer<State>}
  */
-module.exports = combineReducers({
-  // TODO - The object going into `combineReducers` is not currently type checked
-  // as being correct for. For instance, recordingState here could be removed, or
-  // not return the right state, and TypeScript will not create an error.
-  recordingState,
-  recordingUnexpectedlyStopped,
-  isSupportedPlatform,
-  interval,
-  entries,
-  features,
-  threads,
-  objdirs,
-  presetName,
-  initializedValues,
-  promptEnvRestart,
-});
+module.exports = (state = undefined, action) => {
+  return {
+    recordingState: recordingState(state?.recordingState, action),
+
+    // Treat this one specially - it also gets the recordingState.
+    recordingUnexpectedlyStopped: recordingUnexpectedlyStopped(
+      state?.recordingState,
+      state?.recordingUnexpectedlyStopped,
+      action
+    ),
+
+    isSupportedPlatform: isSupportedPlatform(
+      state?.isSupportedPlatform,
+      action
+    ),
+    recordingSettings: recordingSettings(state?.recordingSettings, action),
+    initializedValues: initializedValues(state?.initializedValues, action),
+    promptEnvRestart: promptEnvRestart(state?.promptEnvRestart, action),
+  };
+};

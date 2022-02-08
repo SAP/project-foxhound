@@ -6,14 +6,13 @@
 
 // Avoid leaks by using tmp for imports...
 var tmp = {};
-ChromeUtils.import("resource://gre/modules/Promise.jsm", tmp);
 ChromeUtils.import("resource:///modules/CustomizableUI.jsm", tmp);
 ChromeUtils.import("resource://gre/modules/AppConstants.jsm", tmp);
 ChromeUtils.import(
   "resource://testing-common/CustomizableUITestUtils.jsm",
   tmp
 );
-var { Promise, CustomizableUI, AppConstants, CustomizableUITestUtils } = tmp;
+var { CustomizableUI, AppConstants, CustomizableUITestUtils } = tmp;
 
 var EventUtils = {};
 Services.scriptloader.loadSubScript(
@@ -385,26 +384,6 @@ function subviewHidden(aSubview) {
   });
 }
 
-function waitForCondition(aConditionFn, aMaxTries = 50, aCheckInterval = 100) {
-  function tryNow() {
-    tries++;
-    if (aConditionFn()) {
-      deferred.resolve();
-    } else if (tries < aMaxTries) {
-      tryAgain();
-    } else {
-      deferred.reject("Condition timed out: " + aConditionFn.toSource());
-    }
-  }
-  function tryAgain() {
-    setTimeout(tryNow, aCheckInterval);
-  }
-  let deferred = Promise.defer();
-  let tries = 0;
-  tryAgain();
-  return deferred.promise;
-}
-
 function waitFor(aTimeout = 100) {
   return new Promise(resolve => {
     setTimeout(() => resolve(), aTimeout);
@@ -525,4 +504,35 @@ function waitForElementShown(element) {
     let rect = element.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0;
   });
+}
+
+/**
+ * Opens the history panel through the history toolbarbutton in the
+ * navbar and returns a promise that resolves as soon as the panel is open
+ * is showing.
+ */
+async function openHistoryPanel(doc = document) {
+  await waitForOverflowButtonShown();
+  await doc.getElementById("nav-bar").overflowable.show();
+  info("Menu panel was opened");
+
+  let historyButton = doc.getElementById("history-panelmenu");
+  Assert.ok(historyButton, "History button appears in Panel Menu");
+
+  historyButton.click();
+
+  let historyPanel = doc.getElementById("PanelUI-history");
+  return BrowserTestUtils.waitForEvent(historyPanel, "ViewShown");
+}
+
+/**
+ * Closes the history panel and returns a promise that resolves as sooon
+ * as the panel is closed.
+ */
+async function hideHistoryPanel(doc = document) {
+  let historyView = doc.getElementById("PanelUI-history");
+  let historyPanel = historyView.closest("panel");
+  let promise = BrowserTestUtils.waitForEvent(historyPanel, "popuphidden");
+  historyPanel.hidePopup();
+  return promise;
 }

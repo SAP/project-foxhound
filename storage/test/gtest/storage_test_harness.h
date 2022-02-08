@@ -16,6 +16,7 @@
 #include "nsDirectoryServiceUtils.h"
 #include "nsMemory.h"
 #include "nsServiceManagerUtils.h"
+#include "nsIThread.h"
 #include "nsThreadUtils.h"
 #include "mozilla/ReentrantMonitor.h"
 
@@ -54,7 +55,8 @@ already_AddRefed<mozIStorageService> getService() {
 already_AddRefed<mozIStorageConnection> getMemoryDatabase() {
   nsCOMPtr<mozIStorageService> ss = getService();
   nsCOMPtr<mozIStorageConnection> conn;
-  nsresult rv = ss->OpenSpecialDatabase("memory", getter_AddRefs(conn));
+  nsresult rv = ss->OpenSpecialDatabase(kMozStorageMemoryStorageKey,
+                                        VoidCString(), getter_AddRefs(conn));
   do_check_success(rv);
   return conn.forget();
 }

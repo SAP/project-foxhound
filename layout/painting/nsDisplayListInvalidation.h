@@ -8,12 +8,14 @@
 #define NSDISPLAYLISTINVALIDATION_H_
 
 #include "mozilla/Attributes.h"
-#include "FrameLayerBuilder.h"
+#include "mozilla/layers/WebRenderUserData.h"
+#include "ImgDrawResult.h"
 #include "nsRect.h"
 #include "nsColor.h"
 #include "gfxRect.h"
 #include "mozilla/gfx/MatrixFwd.h"
 
+namespace mozilla {
 class nsDisplayBackgroundImage;
 class nsCharClipDisplayItem;
 class nsDisplayItem;
@@ -24,11 +26,9 @@ class nsDisplayEffectsBase;
 class nsDisplayMasksAndClipPaths;
 class nsDisplayFilters;
 
-namespace mozilla {
 namespace gfx {
 struct sRGBColor;
 }
-}  // namespace mozilla
 
 /**
  * This stores the geometry of an nsDisplayItem, and the area
@@ -84,6 +84,8 @@ class nsDisplayItemGenericGeometry : public nsDisplayItemGeometry {
 
 bool ShouldSyncDecodeImages(nsDisplayListBuilder* aBuilder);
 
+nsDisplayItemGeometry* GetPreviousGeometry(nsDisplayItem*);
+
 /**
  * nsImageGeometryMixin is a mixin for geometry items that draw images.
  * Geometry items that include this mixin can track drawing results and use
@@ -100,9 +102,7 @@ class nsImageGeometryMixin {
       : mLastDrawResult(mozilla::image::ImgDrawResult::NOT_READY),
         mWaitingForPaint(false) {
     // Transfer state from the previous version of this geometry item.
-    auto lastGeometry = static_cast<T*>(
-        mozilla::FrameLayerBuilder::GetMostRecentGeometry(aItem));
-    if (lastGeometry) {
+    if (auto lastGeometry = static_cast<T*>(GetPreviousGeometry(aItem))) {
       mLastDrawResult = lastGeometry->mLastDrawResult;
       mWaitingForPaint = lastGeometry->mWaitingForPaint;
     }
@@ -121,9 +121,7 @@ class nsImageGeometryMixin {
     MOZ_ASSERT(aResult != mozilla::image::ImgDrawResult::NOT_SUPPORTED,
                "ImgDrawResult::NOT_SUPPORTED should be handled already!");
 
-    auto lastGeometry = static_cast<T*>(
-        mozilla::FrameLayerBuilder::GetMostRecentGeometry(aItem));
-    if (lastGeometry) {
+    if (auto lastGeometry = static_cast<T*>(GetPreviousGeometry(aItem))) {
       lastGeometry->mLastDrawResult = aResult;
       lastGeometry->mWaitingForPaint = false;
     }
@@ -247,15 +245,6 @@ class nsDisplayBoxShadowInnerGeometry : public nsDisplayItemGeometry {
   nsRect mPaddingRect;
 };
 
-class nsDisplayBoxShadowOuterGeometry : public nsDisplayItemGenericGeometry {
- public:
-  nsDisplayBoxShadowOuterGeometry(nsDisplayItem* aItem,
-                                  nsDisplayListBuilder* aBuilder,
-                                  float aOpacity);
-
-  float mOpacity;
-};
-
 class nsDisplaySolidColorGeometry : public nsDisplayItemBoundsGeometry {
  public:
   nsDisplaySolidColorGeometry(nsDisplayItem* aItem,
@@ -291,7 +280,6 @@ class nsDisplaySVGEffectGeometry : public nsDisplayItemGeometry {
   gfxRect mBBox;
   gfxPoint mUserSpaceOffset;
   nsPoint mFrameOffsetToReferenceFrame;
-  float mOpacity;
   bool mHandleOpacity;
 };
 
@@ -365,5 +353,7 @@ class nsDisplayTransformGeometry : public nsDisplayItemGeometry {
   mozilla::gfx::Matrix4x4Flagged mTransform;
   int32_t mAppUnitsPerDevPixel;
 };
+
+}  // namespace mozilla
 
 #endif /*NSDISPLAYLISTINVALIDATION_H_*/

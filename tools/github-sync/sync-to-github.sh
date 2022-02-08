@@ -4,8 +4,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-# TODO(kats): consider moving this to Python
-
 # Do NOT set -x here, since that will expose a secret API token!
 set -o errexit
 set -o nounset
@@ -73,6 +71,10 @@ if [[ -n "${GITHUB_SECRET:-}" ]]; then
     # or we might leak the auth token to the task log.
     git push "https://${AUTH}@github.com/moz-gfx/${NAME}" \
         "${BRANCH}:${BRANCH}" 2>&1 | sed -e "s/${AUTH}/_SANITIZED_/g"
+    # Re-fetch to update the remote moz-gfx/$BRANCH branch in the local repo;
+    # normally the push does this but we use a fully-qualified URL for
+    # pushing so it doesn't happen.
+    git fetch moz-gfx
 fi
 popd
 

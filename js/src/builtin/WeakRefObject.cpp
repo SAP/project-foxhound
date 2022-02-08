@@ -9,6 +9,8 @@
 #include "mozilla/Maybe.h"
 
 #include "jsapi.h"
+
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
 
@@ -89,7 +91,7 @@ bool WeakRefObject::construct(JSContext* cx, unsigned argc, Value* vp) {
   };
 
   // 5. Set weakRef.[[Target]] to target.
-  weakRef->setPrivateGCThing(target);
+  weakRef->setReservedSlotGCThingAsPrivate(TargetSlot, target);
 
   // 6. Return weakRef.
   args.rval().setObject(*weakRef);
@@ -115,8 +117,8 @@ void WeakRefObject::trace(JSTracer* trc, JSObject* obj) {
     JSObject* target = weakRef->target();
     if (target) {
       TraceManuallyBarrieredEdge(trc, &target, "WeakRefObject::target");
+      weakRef->setTargetUnbarriered(target);
     }
-    weakRef->setPrivate(target);
   }
 }
 
@@ -155,8 +157,8 @@ const ClassSpec WeakRefObject::classSpec_ = {
 
 const JSClass WeakRefObject::class_ = {
     "WeakRef",
-    JSCLASS_HAS_PRIVATE | JSCLASS_HAS_CACHED_PROTO(JSProto_WeakRef) |
-        JSCLASS_FOREGROUND_FINALIZE,
+    JSCLASS_HAS_RESERVED_SLOTS(SlotCount) |
+        JSCLASS_HAS_CACHED_PROTO(JSProto_WeakRef) | JSCLASS_FOREGROUND_FINALIZE,
     &classOps_, &classSpec_};
 
 const JSClass WeakRefObject::protoClass_ = {
@@ -219,7 +221,13 @@ bool WeakRefObject::deref(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-void WeakRefObject::setTarget(JSObject* target) { setPrivate(target); }
+void WeakRefObject::setTargetUnbarriered(JSObject* target) {
+  setReservedSlotGCThingAsPrivateUnbarriered(TargetSlot, target);
+}
+
+void WeakRefObject::clearTarget() {
+  clearReservedSlotGCThingAsPrivate(TargetSlot);
+}
 
 /* static */
 void WeakRefObject::readBarrier(JSContext* cx, Handle<WeakRefObject*> self) {
@@ -235,12 +243,12 @@ void WeakRefObject::readBarrier(JSContext* cx, Handle<WeakRefObject*> self) {
     MOZ_ASSERT(cx->runtime()->hasReleasedWrapperCallback);
     bool wasReleased = cx->runtime()->hasReleasedWrapperCallback(obj);
     if (wasReleased) {
-      self->setTarget(nullptr);
+      self->clearTarget();
       return;
     }
   }
 
-  JSObject::readBarrier(obj);
+  gc::ReadBarrier(obj.get());
 }
 
 namespace gc {
@@ -260,16 +268,26 @@ bool GCRuntime::registerWeakRef(HandleObject target, HandleObject weakRef) {
   return refs.emplaceBack(weakRef);
 }
 
-void GCRuntime::unregisterWeakRef(WeakRefObject* weakRef) {
+bool GCRuntime::unregisterWeakRefWrapper(JSObject* wrapper) {
+  WeakRefObject* weakRef =
+      &UncheckedUnwrapWithoutExpose(wrapper)->as<WeakRefObject>();
+
   JSObject* target = weakRef->target();
   MOZ_ASSERT(target);
 
+  bool removed = false;
   auto& map = target->zone()->weakRefMap();
   if (auto ptr = map.lookup(target)) {
-    ptr->value().eraseIf([weakRef](JSObject* obj) {
-      return UncheckedUnwrapWithoutExpose(obj) == weakRef;
+    ptr->value().eraseIf([wrapper, &removed](JSObject* obj) {
+      bool remove = obj == wrapper;
+      if (remove) {
+        removed = true;
+      }
+      return remove;
     });
   }
+
+  return removed;
 }
 
 void GCRuntime::traceKeptObjects(JSTracer* trc) {
@@ -280,23 +298,27 @@ void GCRuntime::traceKeptObjects(JSTracer* trc) {
 
 }  // namespace gc
 
-void WeakRefMap::sweep(gc::StoreBuffer* sbToLock) {
+static WeakRefObject* UnwrapWeakRef(JSObject* obj) {
+  MOZ_ASSERT(!JS_IsDeadWrapper(obj));
+  obj = UncheckedUnwrapWithoutExpose(obj);
+  return &obj->as<WeakRefObject>();
+}
+
+void WeakRefMap::traceWeak(JSTracer* trc, gc::StoreBuffer* sbToLock) {
   mozilla::Maybe<typename Base::Enum> e;
   for (e.emplace(*this); !e->empty(); e->popFront()) {
     // If target is dying, clear the target field of all weakRefs, and remove
     // the entry from the map.
-    if (JS::GCPolicy<HeapPtrObject>::needsSweep(&e->front().mutableKey())) {
+    auto result =
+        TraceWeakEdge(trc, &e->front().mutableKey(), "WeakRef target");
+    if (result.isDead()) {
       for (JSObject* obj : e->front().value()) {
-        MOZ_ASSERT(!JS_IsDeadWrapper(obj));
-        obj = UncheckedUnwrapWithoutExpose(obj);
-
-        WeakRefObject* weakRef = &obj->as<WeakRefObject>();
-        weakRef->setTarget(nullptr);
+        UnwrapWeakRef(obj)->clearTarget();
       }
       e->removeFront();
     } else {
       // Update the target field after compacting.
-      e->front().value().sweep(e->front().mutableKey());
+      e->front().value().traceWeak(trc, result.finalTarget());
     }
   }
 
@@ -308,20 +330,15 @@ void WeakRefMap::sweep(gc::StoreBuffer* sbToLock) {
 
 // Like GCVector::sweep, but this method will also update the target in every
 // weakRef in this GCVector.
-void WeakRefHeapPtrVector::sweep(HeapPtrObject& target) {
+void WeakRefHeapPtrVector::traceWeak(JSTracer* trc, JSObject* target) {
   HeapPtrObject* src = begin();
   HeapPtrObject* dst = begin();
   while (src != end()) {
-    bool needsSweep = JS::GCPolicy<HeapPtrObject>::needsSweep(src);
-    JSObject* obj = UncheckedUnwrapWithoutExpose(*src);
-    MOZ_ASSERT(!JS_IsDeadWrapper(obj));
-
-    WeakRefObject* weakRef = &obj->as<WeakRefObject>();
-
-    if (needsSweep) {
-      weakRef->setTarget(nullptr);
+    auto result = TraceWeakEdge(trc, src, "WeakRef");
+    if (result.isDead()) {
+      UnwrapWeakRef(result.initialTarget())->clearTarget();
     } else {
-      weakRef->setTarget(target.get());
+      UnwrapWeakRef(result.finalTarget())->setTargetUnbarriered(target);
 
       if (src != dst) {
         *dst = std::move(*src);

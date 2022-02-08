@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 si{
     AuxExemplarCharacters{"[\u200B\u200C\u200D ඎ ඏ ඐ ඦ ෳ]"}
     Ellipsis{
@@ -26,6 +27,11 @@ si{
     }
     MoreInformation{"?"}
     NumberElements{
+        arab{
+            symbols{
+                timeSeparator{":"}
+            }
+        }
         default{"latn"}
         latn{
             miscPatterns{
@@ -196,6 +202,7 @@ si{
                 }
             }
             symbols{
+                approximatelySign{"~"}
                 decimal{"."}
                 exponential{"E"}
                 group{","}
@@ -221,7 +228,6 @@ si{
         minimumGroupingDigits{"1"}
         native{"latn"}
     }
-    Version{"37"}
     calendar{
         generic{
             DateTimePatterns{
@@ -239,6 +245,16 @@ si{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "GyMMMMEEEEd",
+                "GyMMMMd",
+                "GyMMMd",
+                "GGGGGyMMdd",
+            }
             availableFormats{
                 Bh{"B h"}
                 Bhm{"B h:mm"}
@@ -255,6 +271,7 @@ si{
                 GyMMM{"G y MMM"}
                 GyMMMEd{"G y MMM d, E"}
                 GyMMMd{"G y MMM d"}
+                GyMd{"GGGGG y-MM-dd"}
                 H{"HH"}
                 Hm{"HH:mm"}
                 Hms{"HH:mm:ss"}
@@ -453,6 +470,16 @@ si{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "yMMMMEEEEd",
+                "yMMMMd",
+                "yMMMd",
+                "yMMdd",
+            }
             appendItems{
                 Timezone{"{0} {1}"}
             }
@@ -472,6 +499,7 @@ si{
                 GyMMM{"G y MMM"}
                 GyMMMEd{"G y MMM d, E"}
                 GyMMMd{"G y MMM d"}
+                GyMd{"GGGGG y-MM-dd"}
                 H{"HH"}
                 Hm{"HH.mm"}
                 Hms{"HH.mm.ss"}
@@ -1908,7 +1936,7 @@ si{
         date{
             lenient{
                 "[\\--/]",
-                "[\\:∶]",
+                "[\\:∶︓﹕：]",
             }
         }
         general{
@@ -1917,8 +1945,8 @@ si{
                 "['ʼ՚᾽᾿’＇]",
                 "[%٪﹪％]",
                 "[؉‰]",
-                "[\$﹩＄$]",
-                "[£₤]",
+                "[\$﹩＄]",
+                "[£₤￡]",
                 "[¥￥]",
                 "[₩￦]",
                 "[₨₹{Rp}{Rs}]",
@@ -1926,7 +1954,7 @@ si{
         }
         number{
             lenient{
-                "[\\-‒⁻₋−➖﹣－]",
+                "[\\-‐‒–⁻₋−➖﹣－]",
                 "[,،٫、︐︑﹐﹑，､]",
                 "[+⁺₊➕﬩﹢＋]",
             }

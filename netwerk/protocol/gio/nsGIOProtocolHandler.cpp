@@ -8,11 +8,16 @@
  * input stream provided by GVFS/GIO.
  */
 #include "nsGIOProtocolHandler.h"
+#include "GIOChannelChild.h"
 #include "mozilla/Components.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/Logging.h"
+#include "mozilla/net/NeckoChild.h"
 #include "mozilla/NullPrincipal.h"
 #include "nsIPrefBranch.h"
+#include "nsIPrefService.h"
 #include "nsIObserver.h"
+#include "nsCRT.h"
 #include "nsThreadUtils.h"
 #include "nsProxyRelease.h"
 #include "nsIStringBundle.h"
@@ -39,8 +44,9 @@ using namespace mozilla;
 //-----------------------------------------------------------------------------
 
 // NSPR_LOG_MODULES=gio:5
-static mozilla::LazyLogModule sGIOLog("gio");
-#define LOG(args) MOZ_LOG(sGIOLog, mozilla::LogLevel::Debug, args)
+LazyLogModule gGIOLog("gio");
+#undef LOG
+#define LOG(args) MOZ_LOG(gGIOLog, mozilla::LogLevel::Debug, args)
 
 //-----------------------------------------------------------------------------
 static nsresult MapGIOResult(gint code) {
@@ -106,17 +112,21 @@ static nsresult MapGIOResult(gint code) {
 }
 
 static nsresult MapGIOResult(GError* result) {
-  if (!result) return NS_OK;
+  if (!result) {
+    return NS_OK;
+  }
   return MapGIOResult(result->code);
 }
+
 /** Return values for mount operation.
  * These enums are used as mount operation return values.
  */
-typedef enum {
+enum class MountOperationResult {
   MOUNT_OPERATION_IN_PROGRESS, /** \enum operation in progress */
   MOUNT_OPERATION_SUCCESS,     /** \enum operation successful */
   MOUNT_OPERATION_FAILED       /** \enum operation not successful */
-} MountOperationResult;
+};
+
 //-----------------------------------------------------------------------------
 /**
  * Sort function compares according to file type (directory/file)
@@ -130,13 +140,15 @@ static gint FileInfoComparator(gconstpointer a, gconstpointer b) {
   GFileInfo* ia = (GFileInfo*)a;
   GFileInfo* ib = (GFileInfo*)b;
   if (g_file_info_get_file_type(ia) == G_FILE_TYPE_DIRECTORY &&
-      g_file_info_get_file_type(ib) != G_FILE_TYPE_DIRECTORY)
+      g_file_info_get_file_type(ib) != G_FILE_TYPE_DIRECTORY) {
     return -1;
+  }
   if (g_file_info_get_file_type(ib) == G_FILE_TYPE_DIRECTORY &&
-      g_file_info_get_file_type(ia) != G_FILE_TYPE_DIRECTORY)
+      g_file_info_get_file_type(ia) != G_FILE_TYPE_DIRECTORY) {
     return 1;
+  }
 
-  return strcasecmp(g_file_info_get_name(ia), g_file_info_get_name(ib));
+  return nsCRT::strcasecmp(g_file_info_get_name(ia), g_file_info_get_name(ib));
 }
 
 /* Declaration of mount callback functions */
@@ -147,26 +159,12 @@ static void mount_operation_ask_password(
     GMountOperation* mount_op, const char* message, const char* default_user,
     const char* default_domain, GAskPasswordFlags flags, gpointer user_data);
 //-----------------------------------------------------------------------------
-
 class nsGIOInputStream final : public nsIInputStream {
-  ~nsGIOInputStream() { Close(); }
-
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIINPUTSTREAM
 
-  explicit nsGIOInputStream(const nsCString& uriSpec)
-      : mSpec(uriSpec),
-        mChannel(nullptr),
-        mHandle(nullptr),
-        mStream(nullptr),
-        mBytesRemaining(UINT64_MAX),
-        mStatus(NS_OK),
-        mDirList(nullptr),
-        mDirListPtr(nullptr),
-        mDirBufCursor(0),
-        mDirOpen(false),
-        mMonitorMountInProgress("GIOInputStream::MountFinished") {}
+  explicit nsGIOInputStream(const nsCString& uriSpec) : mSpec(uriSpec) {}
 
   void SetChannel(nsIChannel* channel) {
     // We need to hold an owning reference to our channel.  This is done
@@ -182,11 +180,12 @@ class nsGIOInputStream final : public nsIInputStream {
     // cycle since the channel likely owns this stream.  This reference
     // cycle is broken in our Close method.
 
-    NS_ADDREF(mChannel = channel);
+    mChannel = do_AddRef(channel).take();
   }
   void SetMountResult(MountOperationResult result, gint error_code);
 
  private:
+  ~nsGIOInputStream() { Close(); }
   nsresult DoOpen();
   nsresult DoRead(char* aBuf, uint32_t aCount, uint32_t* aCountRead);
   nsresult SetContentTypeOfChannel(const char* contentType);
@@ -194,20 +193,22 @@ class nsGIOInputStream final : public nsIInputStream {
   nsresult DoOpenDirectory();
   nsresult DoOpenFile(GFileInfo* info);
   nsCString mSpec;
-  nsIChannel* mChannel;  // manually refcounted
-  GFile* mHandle;
-  GFileInputStream* mStream;
-  uint64_t mBytesRemaining;
-  nsresult mStatus;
-  GList* mDirList;
-  GList* mDirListPtr;
+  nsIChannel* mChannel{nullptr};  // manually refcounted
+  GFile* mHandle{nullptr};
+  GFileInputStream* mStream{nullptr};
+  uint64_t mBytesRemaining{UINT64_MAX};
+  nsresult mStatus{NS_OK};
+  GList* mDirList{nullptr};
+  GList* mDirListPtr{nullptr};
   nsCString mDirBuf;
-  uint32_t mDirBufCursor;
-  bool mDirOpen;
-  MountOperationResult mMountRes;
-  mozilla::Monitor mMonitorMountInProgress;
-  gint mMountErrorCode;
+  uint32_t mDirBufCursor{0};
+  bool mDirOpen{false};
+  MountOperationResult mMountRes =
+      MountOperationResult::MOUNT_OPERATION_SUCCESS;
+  mozilla::Monitor mMonitorMountInProgress{"GIOInputStream::MountFinished"};
+  gint mMountErrorCode{};
 };
+
 /**
  * Set result of mount operation and notify monitor waiting for results.
  * This method is called in main thread as long as it is used only
@@ -230,7 +231,7 @@ nsresult nsGIOInputStream::MountVolume() {
   GMountOperation* mount_op = g_mount_operation_new();
   g_signal_connect(mount_op, "ask-password",
                    G_CALLBACK(mount_operation_ask_password), mChannel);
-  mMountRes = MOUNT_OPERATION_IN_PROGRESS;
+  mMountRes = MountOperationResult::MOUNT_OPERATION_IN_PROGRESS;
   /* g_file_mount_enclosing_volume uses a dbus request to mount the volume.
      Callback mount_enclosing_volume_finished is called in main thread
      (not this thread on which this method is called). */
@@ -238,11 +239,13 @@ nsresult nsGIOInputStream::MountVolume() {
                                 mount_enclosing_volume_finished, this);
   mozilla::MonitorAutoLock mon(mMonitorMountInProgress);
   /* Waiting for finish of mount operation thread */
-  while (mMountRes == MOUNT_OPERATION_IN_PROGRESS) mon.Wait();
+  while (mMountRes == MountOperationResult::MOUNT_OPERATION_IN_PROGRESS) {
+    mon.Wait();
+  }
 
   g_object_unref(mount_op);
 
-  if (mMountRes == MOUNT_OPERATION_FAILED) {
+  if (mMountRes == MountOperationResult::MOUNT_OPERATION_FAILED) {
     return MapGIOResult(mMountErrorCode);
   }
   return NS_OK;
@@ -286,7 +289,9 @@ nsresult nsGIOInputStream::DoOpenDirectory() {
   // Write base URL (make sure it ends with a '/')
   mDirBuf.AppendLiteral("300: ");
   mDirBuf.Append(mSpec);
-  if (mSpec.get()[mSpec.Length() - 1] != '/') mDirBuf.Append('/');
+  if (mSpec.get()[mSpec.Length() - 1] != '/') {
+    mDirBuf.Append('/');
+  }
   mDirBuf.Append('\n');
 
   // Write column names
@@ -358,7 +363,9 @@ nsresult nsGIOInputStream::DoOpen() {
     if (error->domain == G_IO_ERROR && error->code == G_IO_ERROR_NOT_MOUNTED) {
       // location is not yet mounted, try to mount
       g_error_free(error);
-      if (NS_IsMainThread()) return NS_ERROR_NOT_CONNECTED;
+      if (NS_IsMainThread()) {
+        return NS_ERROR_NOT_CONNECTED;
+      }
       error = nullptr;
       rv = MountVolume();
       if (rv != NS_OK) {
@@ -393,7 +400,9 @@ nsresult nsGIOInputStream::DoOpen() {
     g_warning("Unable to get file type.");
     rv = NS_ERROR_FILE_NOT_FOUND;
   }
-  if (info) g_object_unref(info);
+  if (info) {
+    g_object_unref(info);
+  }
   return rv;
 }
 
@@ -588,7 +597,9 @@ nsGIOInputStream::Close() {
   mSpec.Truncate();  // free memory
 
   // Prevent future reads from re-opening the handle.
-  if (NS_SUCCEEDED(mStatus)) mStatus = NS_BASE_STREAM_CLOSED;
+  if (NS_SUCCEEDED(mStatus)) {
+    mStatus = NS_BASE_STREAM_CLOSED;
+  }
 
   return NS_OK;
 }
@@ -599,7 +610,9 @@ nsGIOInputStream::Close() {
  */
 NS_IMETHODIMP
 nsGIOInputStream::Available(uint64_t* aResult) {
-  if (NS_FAILED(mStatus)) return mStatus;
+  if (NS_FAILED(mStatus)) {
+    return mStatus;
+  }
 
   *aResult = mBytesRemaining;
 
@@ -626,7 +639,9 @@ nsGIOInputStream::Read(char* aBuf, uint32_t aCount, uint32_t* aCountRead) {
 
   mStatus = DoRead(aBuf, aCount, aCountRead);
   // Check if all data has been read
-  if (mStatus == NS_BASE_STREAM_CLOSED) return NS_OK;
+  if (mStatus == NS_BASE_STREAM_CLOSED) {
+    return NS_OK;
+  }
 
   // Check whenever any error appears while reading
   return mStatus;
@@ -669,10 +684,11 @@ static void mount_enclosing_volume_finished(GObject* source_object,
 
   if (error) {
     g_warning("Mount failed: %s %d", error->message, error->code);
-    istream->SetMountResult(MOUNT_OPERATION_FAILED, error->code);
+    istream->SetMountResult(MountOperationResult::MOUNT_OPERATION_FAILED,
+                            error->code);
     g_error_free(error);
   } else {
-    istream->SetMountResult(MOUNT_OPERATION_SUCCESS, 0);
+    istream->SetMountResult(MountOperationResult::MOUNT_OPERATION_SUCCESS, 0);
   }
 }
 
@@ -838,6 +854,9 @@ already_AddRefed<nsGIOProtocolHandler> nsGIOProtocolHandler::GetSingleton() {
 NS_IMPL_ISUPPORTS(nsGIOProtocolHandler, nsIProtocolHandler, nsIObserver)
 
 nsresult nsGIOProtocolHandler::Init() {
+  if (net::IsNeckoChild()) {
+    net::NeckoChild::InitNeckoChild();
+  }
   nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID);
   if (prefs) {
     InitSupportedProtocolsPref(prefs);
@@ -863,29 +882,21 @@ void nsGIOProtocolHandler::InitSupportedProtocolsPref(nsIPrefBranch* prefs) {
 #ifdef MOZ_PROXY_BYPASS_PROTECTION
         ""  // use none
 #else
-        "smb:,sftp:"  // use defaults
+        "sftp:"  // use defaults (comma separated list)
 #endif
     );
   }
   LOG(("gio: supported protocols \"%s\"\n", mSupportedProtocols.get()));
 }
 
-bool nsGIOProtocolHandler::IsSupportedProtocol(const nsCString& aSpec) {
-  const char* specString = aSpec.get();
-  const char* colon = strchr(specString, ':');
-  if (!colon) return false;
-
-  uint32_t length = colon - specString + 1;
-
-  // <scheme> + ':'
-  nsCString scheme(specString, length);
-
-  char* found = PL_strcasestr(mSupportedProtocols.get(), scheme.get());
-  if (!found) return false;
-
-  if (found[length] != ',' && found[length] != '\0') return false;
-
-  return true;
+bool nsGIOProtocolHandler::IsSupportedProtocol(const nsCString& aScheme) {
+  nsAutoCString schemeWithColon = aScheme + ":"_ns;
+  for (const auto& protocol : mSupportedProtocols.Split(',')) {
+    if (schemeWithColon.Equals(protocol, nsCaseInsensitiveCStringComparator)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 NS_IMETHODIMP
@@ -938,10 +949,8 @@ nsGIOProtocolHandler::NewChannel(nsIURI* aURI, nsILoadInfo* aLoadInfo,
 
   nsAutoCString spec;
   rv = aURI->GetSpec(spec);
-  if (NS_FAILED(rv)) return rv;
-
-  if (!IsSupportedProtocol(spec)) {
-    return NS_ERROR_UNKNOWN_PROTOCOL;
+  if (NS_FAILED(rv)) {
+    return rv;
   }
 
   nsAutoCString scheme;
@@ -950,8 +959,27 @@ nsGIOProtocolHandler::NewChannel(nsIURI* aURI, nsILoadInfo* aLoadInfo,
     return rv;
   }
 
-  if (!IsValidGIOScheme(scheme)) {
+  if (!IsSupportedProtocol(scheme)) {
     return NS_ERROR_UNKNOWN_PROTOCOL;
+  }
+
+  // g_vfs_get_supported_uri_schemes() returns a very limited list in the
+  // child due to the sandbox, so we only check if its valid for the parent.
+  if (XRE_IsParentProcess() && !IsValidGIOScheme(scheme)) {
+    return NS_ERROR_UNKNOWN_PROTOCOL;
+  }
+
+  RefPtr<nsBaseChannel> channel;
+  if (net::IsNeckoChild()) {
+    channel = new mozilla::net::GIOChannelChild(aURI);
+    // set the loadInfo on the new channel
+    channel->SetLoadInfo(aLoadInfo);
+
+    rv = channel->SetContentType(nsLiteralCString(UNKNOWN_CONTENT_TYPE));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    channel.forget(aResult);
+    return NS_OK;
   }
 
   RefPtr<nsGIOInputStream> stream = new nsGIOInputStream(spec);
@@ -962,11 +990,12 @@ nsGIOProtocolHandler::NewChannel(nsIURI* aURI, nsILoadInfo* aLoadInfo,
   RefPtr<nsGIOInputStream> tmpStream = stream;
   rv = NS_NewInputStreamChannelInternal(aResult, aURI, tmpStream.forget(),
                                         nsLiteralCString(UNKNOWN_CONTENT_TYPE),
-                                        EmptyCString(),  // aContentCharset
+                                        ""_ns,  // aContentCharset
                                         aLoadInfo);
   if (NS_SUCCEEDED(rv)) {
     stream->SetChannel(*aResult);
   }
+
   return rv;
 }
 

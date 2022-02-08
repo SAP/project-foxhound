@@ -15,8 +15,7 @@
 
 #include <stdlib.h>
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(SpeechSynthesisUtterance,
                                    DOMEventTargetHelper, mVoice);
@@ -49,7 +48,7 @@ nsISupports* SpeechSynthesisUtterance::GetParentObject() const {
 
 already_AddRefed<SpeechSynthesisUtterance>
 SpeechSynthesisUtterance::Constructor(GlobalObject& aGlobal, ErrorResult& aRv) {
-  return Constructor(aGlobal, EmptyString(), aRv);
+  return Constructor(aGlobal, u""_ns, aRv);
 }
 
 already_AddRefed<SpeechSynthesisUtterance>
@@ -132,5 +131,4 @@ void SpeechSynthesisUtterance::DispatchSpeechSynthesisEvent(
   DispatchTrustedEvent(event);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

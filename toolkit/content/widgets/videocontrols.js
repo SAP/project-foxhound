@@ -77,7 +77,14 @@ this.VideoControlsWidget = class {
     }
     if (newImpl) {
       this.impl = new newImpl(this.shadowRoot, this.prefs);
-      this.impl.onsetup();
+
+      this.mDirection = "ltr";
+      let intlUtils = this.window.intlUtils;
+      if (intlUtils) {
+        this.mDirection = intlUtils.isAppLocaleRTL() ? "rtl" : "ltr";
+      }
+
+      this.impl.onsetup(this.mDirection);
     } else {
       this.impl = undefined;
     }
@@ -140,6 +147,10 @@ this.VideoControlsWidget = class {
     someVideo,
     reflowedDimensions
   ) {
+    if (isNaN(someVideo.duration)) {
+      return false;
+    }
+
     if (
       prefs["media.videocontrols.picture-in-picture.video-toggle.always-show"]
     ) {
@@ -164,15 +175,6 @@ this.VideoControlsWidget = class {
     }
 
     if (!someVideo.mozHasAudio) {
-      return false;
-    }
-
-    // Bug 1592539 - It's possible to confuse the underlying visual
-    // cloning mechanism by switching which video stream a <video> is
-    // rendering. We try to head that case off for now by hiding the
-    // Picture-in-Picture capability on <video> elements that have
-    // srcObject != null.
-    if (someVideo.srcObject) {
       return false;
     }
 
@@ -202,16 +204,7 @@ this.VideoControlsWidget = class {
    *     videoHeight (Number):
    *       The height of the video in pixels.
    */
-  static setupToggleExperiment(prefs, shadowRoot, toggle, reflowedDimensions) {
-    let mode = String(
-      prefs["media.videocontrols.picture-in-picture.video-toggle.mode"]
-    );
-    let videocontrols = shadowRoot.firstChild;
-    let sheets = videocontrols.querySelectorAll("link[rel='stylesheet'][mode]");
-    for (let sheet of sheets) {
-      sheet.disabled = sheet.getAttribute("mode") != mode;
-    }
-
+  static setupToggle(prefs, toggle, reflowedDimensions) {
     // These thresholds are all in pixels
     const SMALL_VIDEO_WIDTH_MAX = 320;
     const MEDIUM_VIDEO_WIDTH_MAX = 720;
@@ -232,21 +225,6 @@ this.VideoControlsWidget = class {
       prefs["media.videocontrols.picture-in-picture.video-toggle.has-used"]
     );
   }
-
-  /**
-   * Disables any lingering stylesheets that might still be active after
-   * we've determined that a toggle experiment should be removed.
-   *
-   * @param {ShadowRoot} shadowRoot
-   *   The shadowRoot of the <video> element where the video controls are.
-   */
-  static cleanupToggleExperiment(shadowRoot) {
-    let videocontrols = shadowRoot.firstChild;
-    let sheets = videocontrols.querySelectorAll("link[rel='stylesheet'][mode]");
-    for (let sheet of sheets) {
-      sheet.disabled = true;
-    }
-  }
 };
 
 this.VideoControlsImplWidget = class {
@@ -258,8 +236,10 @@ this.VideoControlsImplWidget = class {
     this.window = this.document.defaultView;
   }
 
-  onsetup() {
+  onsetup(direction) {
     this.generateContent();
+
+    this.shadowRoot.firstElementChild.setAttribute("localedir", direction);
 
     this.Utils = {
       debug: false,
@@ -475,10 +455,6 @@ this.VideoControlsImplWidget = class {
           this.setShowPictureInPictureMessage(true);
         }
 
-        // Default the Picture-in-Picture toggle button to being hidden. We might unhide it
-        // later if we determine that this video is qualified to show it.
-        this.pictureInPictureToggleButton.setAttribute("hidden", true);
-
         if (this.video.readyState >= this.video.HAVE_METADATA) {
           // According to the spec[1], at the HAVE_METADATA (or later) state, we know
           // the video duration and dimensions, which means we can calculate whether or
@@ -582,14 +558,10 @@ this.VideoControlsImplWidget = class {
             },
             _updateHiddenAttribute: {
               value: () => {
-                if (
-                  control._isHiddenExplicitly ||
-                  control._isHiddenByAdjustment
-                ) {
-                  control.setAttribute("hidden", "");
-                } else {
-                  control.removeAttribute("hidden");
-                }
+                control.toggleAttribute(
+                  "hidden",
+                  control._isHiddenExplicitly || control._isHiddenByAdjustment
+                );
               },
             },
           });
@@ -604,7 +576,7 @@ this.VideoControlsImplWidget = class {
 
       updatePictureInPictureToggleDisplay() {
         if (this.isAudioOnly) {
-          this.pictureInPictureToggleButton.setAttribute("hidden", true);
+          this.pictureInPictureToggle.hidden = true;
           return;
         }
 
@@ -617,28 +589,14 @@ this.VideoControlsImplWidget = class {
             this.reflowedDimensions
           )
         ) {
-          if (
-            this.prefs[
-              "media.videocontrols.picture-in-picture.video-toggle.mode"
-            ] == -1
-          ) {
-            VideoControlsWidget.cleanupToggleExperiment(this.shadowRoot);
-            this.pictureInPictureToggleButton.removeAttribute("hidden");
-            this.pictureInPictureToggleExperiment.setAttribute("hidden", true);
-          } else {
-            this.pictureInPictureToggleButton.setAttribute("hidden", true);
-            this.pictureInPictureToggleExperiment.removeAttribute("hidden");
-            VideoControlsWidget.setupToggleExperiment(
-              this.prefs,
-              this.shadowRoot,
-              this.pictureInPictureToggleExperiment,
-              this.reflowedDimensions
-            );
-          }
+          this.pictureInPictureToggle.hidden = false;
+          VideoControlsWidget.setupToggle(
+            this.prefs,
+            this.pictureInPictureToggle,
+            this.reflowedDimensions
+          );
         } else {
-          VideoControlsWidget.cleanupToggleExperiment(this.shadowRoot);
-          this.pictureInPictureToggleButton.setAttribute("hidden", true);
-          this.pictureInPictureToggleExperiment.setAttribute("hidden", true);
+          this.pictureInPictureToggle.hidden = true;
         }
       },
 
@@ -1012,6 +970,57 @@ this.VideoControlsImplWidget = class {
           case "media-videoCasting":
             this.updateCasting(aEvent.detail);
             break;
+          case "focusin":
+            // Show the controls to highlight the focused control, but only
+            // under certain conditions:
+            if (
+              this.prefs["media.videocontrols.keyboard-tab-to-all-controls"] &&
+              // The click-to-play overlay must already be hidden (we don't
+              // hide controls when the overlay is visible).
+              this.clickToPlay.hidden &&
+              // Don't do this if the controls are static.
+              this.dynamicControls &&
+              // If the mouse is hovering over the control bar, the controls
+              // are already showing and they shouldn't hide, so don't mess
+              // with them.
+              // We use "div:hover" instead of just ":hover" so this works in
+              // quirks mode documents. See
+              // https://quirks.spec.whatwg.org/#the-active-and-hover-quirk
+              !this.controlBar.matches("div:hover")
+            ) {
+              this.startFadeIn(this.controlBar);
+              this.window.clearTimeout(this._hideControlsTimeout);
+              this._hideControlsTimeout = this.window.setTimeout(
+                () => this._hideControlsFn(),
+                this.HIDE_CONTROLS_TIMEOUT_MS
+              );
+            }
+            break;
+          case "mousedown":
+            // We only listen for mousedown on sliders.
+            // If this slider isn't focused already, mousedown will focus it.
+            // We don't want that because it will then handle additional keys.
+            // For example, we don't want the up/down arrow keys to seek after
+            // the scrubber is clicked. To prevent that, we need to redirect
+            // focus. However, dragging only works while the slider is focused,
+            // so we must redirect focus after mouseup.
+            if (
+              this.prefs["media.videocontrols.keyboard-tab-to-all-controls"] &&
+              !aEvent.currentTarget.matches(":focus")
+            ) {
+              aEvent.currentTarget.addEventListener(
+                "mouseup",
+                aEvent => {
+                  if (aEvent.currentTarget.matches(":focus")) {
+                    // We can't use target.blur() because that will blur the
+                    // video element as well.
+                    this.video.focus();
+                  }
+                },
+                { once: true }
+              );
+            }
+            break;
           default:
             this.log("!!! control event " + aEvent.type + " not handled!");
         }
@@ -1061,12 +1070,7 @@ this.VideoControlsImplWidget = class {
       },
 
       setShowPictureInPictureMessage(showMessage) {
-        if (showMessage) {
-          this.pictureInPictureOverlay.removeAttribute("hidden");
-        } else {
-          this.pictureInPictureOverlay.setAttribute("hidden", true);
-        }
-
+        this.pictureInPictureOverlay.hidden = !showMessage;
         this.isShowingPictureInPictureMessage = showMessage;
       },
 
@@ -1271,6 +1275,10 @@ this.VideoControlsImplWidget = class {
 
         this.scrubber.value = currentTime;
         this.positionDurationBox.position = positionTime;
+        this.scrubber.setAttribute(
+          "aria-valuetext",
+          this.positionDurationBox.textContent.trim()
+        );
         this.updateScrubberProgress();
       },
 
@@ -1319,6 +1327,14 @@ this.VideoControlsImplWidget = class {
         }
         this.bufferBar.max = duration;
         this.bufferBar.value = endTime;
+        // Progress bars are automatically reported by screen readers even when
+        // they aren't focused, which intrudes on the audio being played.
+        // Ideally, we'd just change the a11y role of bufferBar, but there's
+        // no role which will let us just expose text via an ARIA attribute.
+        // Therefore, we hide bufferBar for a11y and expose the info as
+        // off-screen text.
+        this.bufferA11yVal.textContent =
+          (this.bufferBar.position * 100).toFixed() + "%";
       },
 
       _controlsHiddenByTimeout: false,
@@ -1513,6 +1529,8 @@ this.VideoControlsImplWidget = class {
         if (fadeIn) {
           if (element == this.controlBar) {
             this.controlsSpacer.removeAttribute("hideCursor");
+            // Ensure the Full Screen button is in the tab order.
+            this.fullscreenButton.removeAttribute("tabindex");
           }
 
           // hidden state should be controlled by adjustControlSize
@@ -1529,12 +1547,18 @@ this.VideoControlsImplWidget = class {
           // Unhide
           element.hidden = false;
         } else {
-          if (
-            element == this.controlBar &&
-            !this.hasError() &&
-            this.isVideoInFullScreen
-          ) {
-            this.controlsSpacer.setAttribute("hideCursor", true);
+          if (element == this.controlBar) {
+            if (!this.hasError() && this.isVideoInFullScreen) {
+              this.controlsSpacer.setAttribute("hideCursor", true);
+            }
+            if (
+              !this.prefs["media.videocontrols.keyboard-tab-to-all-controls"]
+            ) {
+              // The Full Screen button is currently the only tabbable button
+              // when the controls are shown. Remove it from the tab order when
+              // visually hidden to prevent visual confusion.
+              this.fullscreenButton.setAttribute("tabindex", "-1");
+            }
           }
 
           // No need to fade out if the hidden property returns true
@@ -1798,13 +1822,50 @@ this.VideoControlsImplWidget = class {
         this.muteButton.setAttribute("aria-label", value);
       },
 
+      keyboardVolumeDecrease() {
+        const oldval = this.video.volume;
+        this.video.volume = oldval < 0.1 ? 0 : oldval - 0.1;
+        this.video.muted = false;
+      },
+
+      keyboardVolumeIncrease() {
+        const oldval = this.video.volume;
+        this.video.volume = oldval > 0.9 ? 1 : oldval + 0.1;
+        this.video.muted = false;
+      },
+
+      keyboardSeekBack(tenPercent) {
+        const oldval = this.video.currentTime;
+        let newval;
+        if (tenPercent) {
+          newval =
+            oldval -
+            (this.video.duration || this.maxCurrentTimeSeen / 1000) / 10;
+        } else {
+          newval = oldval - 15;
+        }
+        this.video.currentTime = Math.max(0, newval);
+      },
+
+      keyboardSeekForward(tenPercent) {
+        const oldval = this.video.currentTime;
+        const maxtime = this.video.duration || this.maxCurrentTimeSeen / 1000;
+        let newval;
+        if (tenPercent) {
+          newval = oldval + maxtime / 10;
+        } else {
+          newval = oldval + 15;
+        }
+        this.video.currentTime = Math.min(newval, maxtime);
+      },
+
       keyHandler(event) {
         // Ignore keys when content might be providing its own.
         if (!this.video.hasAttribute("controls")) {
           return;
         }
 
-        var keystroke = "";
+        let keystroke = "";
         if (event.altKey) {
           keystroke += "alt-";
         }
@@ -1826,88 +1887,75 @@ this.VideoControlsImplWidget = class {
             keystroke += "accel-";
           }
         }
-        switch (event.keyCode) {
-          case this.window.KeyEvent.DOM_VK_UP:
-            keystroke += "upArrow";
-            break;
-          case this.window.KeyEvent.DOM_VK_DOWN:
-            keystroke += "downArrow";
-            break;
-          case this.window.KeyEvent.DOM_VK_LEFT:
-            keystroke += "leftArrow";
-            break;
-          case this.window.KeyEvent.DOM_VK_RIGHT:
-            keystroke += "rightArrow";
-            break;
-          case this.window.KeyEvent.DOM_VK_HOME:
-            keystroke += "home";
-            break;
-          case this.window.KeyEvent.DOM_VK_END:
-            keystroke += "end";
-            break;
-        }
-
-        if (String.fromCharCode(event.charCode) == " ") {
-          keystroke += "space";
+        if (event.key == " ") {
+          keystroke += "Space";
+        } else {
+          keystroke += event.key;
         }
 
         this.log("Got keystroke: " + keystroke);
-        var oldval, newval;
 
+        // If unmodified cursor keys are pressed when a slider is focused, we
+        // should act on that slider. For example, if we're focused on the
+        // volume slider, rightArrow should increase the volume, not seek.
+        // Normally, we'd just pass the keys through to the slider in this case.
+        // However, the native adjustment is too small, so we override it.
         try {
+          const target = event.originalTarget;
+          const allTabbable = this.prefs[
+            "media.videocontrols.keyboard-tab-to-all-controls"
+          ];
           switch (keystroke) {
-            case "space" /* Play */:
-              let target = event.originalTarget;
+            case "Space" /* Play */:
               if (target.localName === "button" && !target.disabled) {
                 break;
               }
-
               this.togglePause();
               break;
-            case "downArrow" /* Volume decrease */:
-              oldval = this.video.volume;
-              this.video.volume = oldval < 0.1 ? 0 : oldval - 0.1;
-              this.video.muted = false;
+            case "ArrowDown" /* Volume decrease */:
+              if (allTabbable && target == this.scrubber) {
+                this.keyboardSeekBack(/* tenPercent */ false);
+              } else {
+                this.keyboardVolumeDecrease();
+              }
               break;
-            case "upArrow" /* Volume increase */:
-              oldval = this.video.volume;
-              this.video.volume = oldval > 0.9 ? 1 : oldval + 0.1;
-              this.video.muted = false;
+            case "ArrowUp" /* Volume increase */:
+              if (allTabbable && target == this.scrubber) {
+                this.keyboardSeekForward(/* tenPercent */ false);
+              } else {
+                this.keyboardVolumeIncrease();
+              }
               break;
-            case "accel-downArrow" /* Mute */:
+            case "accel-ArrowDown" /* Mute */:
               this.video.muted = true;
               break;
-            case "accel-upArrow" /* Unmute */:
+            case "accel-ArrowUp" /* Unmute */:
               this.video.muted = false;
               break;
-            case "leftArrow": /* Seek back 15 seconds */
-            case "accel-leftArrow" /* Seek back 10% */:
-              oldval = this.video.currentTime;
-              if (keystroke == "leftArrow") {
-                newval = oldval - 15;
+            case "ArrowLeft" /* Seek back 15 seconds */:
+              if (allTabbable && target == this.volumeControl) {
+                this.keyboardVolumeDecrease();
               } else {
-                newval =
-                  oldval -
-                  (this.video.duration || this.maxCurrentTimeSeen / 1000) / 10;
+                this.keyboardSeekBack(/* tenPercent */ false);
               }
-              this.video.currentTime = newval >= 0 ? newval : 0;
               break;
-            case "rightArrow": /* Seek forward 15 seconds */
-            case "accel-rightArrow" /* Seek forward 10% */:
-              oldval = this.video.currentTime;
-              var maxtime =
-                this.video.duration || this.maxCurrentTimeSeen / 1000;
-              if (keystroke == "rightArrow") {
-                newval = oldval + 15;
+            case "accel-ArrowLeft" /* Seek back 10% */:
+              this.keyboardSeekBack(/* tenPercent */ true);
+              break;
+            case "ArrowRight" /* Seek forward 15 seconds */:
+              if (allTabbable && target == this.volumeControl) {
+                this.keyboardVolumeIncrease();
               } else {
-                newval = oldval + maxtime / 10;
+                this.keyboardSeekForward(/* tenPercent */ false);
               }
-              this.video.currentTime = newval <= maxtime ? newval : maxtime;
               break;
-            case "home" /* Seek to beginning */:
+            case "accel-ArrowRight" /* Seek forward 10% */:
+              this.keyboardSeekForward(/* tenPercent */ true);
+              break;
+            case "Home" /* Seek to beginning */:
               this.video.currentTime = 0;
               break;
-            case "end" /* Seek to end */:
+            case "End" /* Seek to end */:
               if (this.video.currentTime != this.video.duration) {
                 this.video.currentTime =
                   this.video.duration || this.maxCurrentTimeSeen / 1000;
@@ -2053,7 +2101,9 @@ this.VideoControlsImplWidget = class {
           }
         }
 
-        this.textTrackListContainer.hidden = true;
+        if (!this.textTrackListContainer.hidden) {
+          this.toggleClosedCaption();
+        }
       },
 
       onControlBarAnimationFinished() {
@@ -2073,8 +2123,37 @@ this.VideoControlsImplWidget = class {
       toggleClosedCaption() {
         if (this.textTrackListContainer.hidden) {
           this.textTrackListContainer.hidden = false;
+          if (this.prefs["media.videocontrols.keyboard-tab-to-all-controls"]) {
+            // If we're about to hide the controls after focus, prevent that, as
+            // that will dismiss the CC menu before the user can use it.
+            this.window.clearTimeout(this._hideControlsTimeout);
+            this._hideControlsTimeout = 0;
+          }
         } else {
           this.textTrackListContainer.hidden = true;
+          // If the CC menu was shown via the keyboard, we may have prevented
+          // the controls from hiding. We can now hide them.
+          if (
+            this.prefs["media.videocontrols.keyboard-tab-to-all-controls"] &&
+            !this.controlBar.hidden &&
+            // The click-to-play overlay must already be hidden (we don't
+            // hide controls when the overlay is visible).
+            this.clickToPlay.hidden &&
+            // Don't do this if the controls are static.
+            this.dynamicControls &&
+            // If the mouse is hovering over the control bar, the controls
+            // shouldn't hide.
+            // We use "div:hover" instead of just ":hover" so this works in
+            // quirks mode documents. See
+            // https://quirks.spec.whatwg.org/#the-active-and-hover-quirk
+            !this.controlBar.matches("div:hover")
+          ) {
+            this.window.clearTimeout(this._hideControlsTimeout);
+            this._hideControlsTimeout = this.window.setTimeout(
+              () => this._hideControlsFn(),
+              this.HIDE_CONTROLS_TIMEOUT_MS
+            );
+          }
         }
       },
 
@@ -2371,6 +2450,7 @@ this.VideoControlsImplWidget = class {
         this.volumeControl = this.shadowRoot.getElementById("volumeControl");
         this.progressBar = this.shadowRoot.getElementById("progressBar");
         this.bufferBar = this.shadowRoot.getElementById("bufferBar");
+        this.bufferA11yVal = this.shadowRoot.getElementById("bufferA11yVal");
         this.scrubberStack = this.shadowRoot.getElementById("scrubberStack");
         this.scrubber = this.shadowRoot.getElementById("scrubber");
         this.durationLabel = this.shadowRoot.getElementById("durationLabel");
@@ -2398,11 +2478,8 @@ this.VideoControlsImplWidget = class {
         this.textTrackListContainer = this.shadowRoot.getElementById(
           "textTrackListContainer"
         );
-        this.pictureInPictureToggleButton = this.shadowRoot.getElementById(
-          "pictureInPictureToggleButton"
-        );
-        this.pictureInPictureToggleExperiment = this.shadowRoot.getElementById(
-          "pictureInPictureToggleExperiment"
+        this.pictureInPictureToggle = this.shadowRoot.getElementById(
+          "pictureInPictureToggle"
         );
 
         if (this.positionDurationBox) {
@@ -2495,6 +2572,10 @@ this.VideoControlsImplWidget = class {
           { el: this.video.textTracks, type: "change" },
 
           { el: this.video, type: "media-videoCasting", touchOnly: true },
+
+          { el: this.controlBar, type: "focusin" },
+          { el: this.scrubber, type: "mousedown" },
+          { el: this.volumeControl, type: "mousedown" },
         ];
 
         for (let {
@@ -2685,8 +2766,7 @@ this.VideoControlsImplWidget = class {
       ]>
       <div class="videocontrols" xmlns="http://www.w3.org/1999/xhtml" role="none">
         <link rel="stylesheet" href="chrome://global/skin/media/videocontrols.css" />
-        <link rel="stylesheet" href="chrome://global/skin/media/pictureinpicture-mode-1.css" mode="1" disabled="true" />
-        <link rel="stylesheet" href="chrome://global/skin/media/pictureinpicture-mode-2.css" mode="2" disabled="true" />
+
         <div id="controlsContainer" class="controlsContainer" role="none">
           <div id="statusOverlay" class="statusOverlay stackItem" hidden="true">
             <div id="statusIcon" class="statusIcon"></div>
@@ -2706,15 +2786,10 @@ this.VideoControlsImplWidget = class {
           <div id="controlsOverlay" class="controlsOverlay stackItem" role="none">
             <div class="controlsSpacerStack">
               <div id="controlsSpacer" class="controlsSpacer stackItem" role="none"></div>
-              <div id="clickToPlay" class="clickToPlay" hidden="true"></div>
+              <button id="clickToPlay" class="clickToPlay" hidden="true"></button>
             </div>
 
-            <button id="pictureInPictureToggleButton" class="pictureInPictureToggleButton">
-              <div id="pictureInPictureToggleIcon" class="pictureInPictureToggleIcon"></div>
-              <span class="pictureInPictureToggleLabel">&pictureInPicture.label;</span>
-            </button>
-
-            <button id="pictureInPictureToggleExperiment" class="pip-wrapper" position="left" hidden="true">
+            <button id="pictureInPictureToggle" class="pip-wrapper" position="left" hidden="true">
               <div class="pip-small clickable"></div>
               <div class="pip-expanded clickable">
                 <span class="pip-icon-label clickable">
@@ -2737,11 +2812,15 @@ this.VideoControlsImplWidget = class {
               <div id="scrubberStack" class="scrubberStack progressContainer" role="none">
                 <div class="progressBackgroundBar stackItem" role="none">
                   <div class="progressStack" role="none">
-                    <progress id="bufferBar" class="bufferBar" value="0" max="100" tabindex="-1"></progress>
-                    <progress id="progressBar" class="progressBar" value="0" max="100" tabindex="-1"></progress>
+                    <progress id="bufferBar" class="bufferBar" value="0" max="100" aria-hidden="true"></progress>
+                    <span class="a11y-only" role="status" aria-live="off">
+                      <span data-l10n-id="videocontrols-buffer-bar-label"></span>
+                      <span id="bufferA11yVal"></span>
+                    </span>
+                    <progress id="progressBar" class="progressBar" value="0" max="100" aria-hidden="true"></progress>
                   </div>
                 </div>
-                <input type="range" id="scrubber" class="scrubber" tabindex="-1"/>
+                <input type="range" id="scrubber" class="scrubber" tabindex="-1" data-l10n-id="videocontrols-scrubber"/>
               </div>
               <bdi id="positionLabel" class="positionLabel" role="presentation"></bdi>
               <bdi id="durationLabel" class="durationLabel" role="presentation"></bdi>
@@ -2756,11 +2835,12 @@ this.VideoControlsImplWidget = class {
                       tabindex="-1"/>
               <div id="volumeStack" class="volumeStack progressContainer" role="none">
                 <input type="range" id="volumeControl" class="volumeControl" min="0" max="100" step="1" tabindex="-1"
-                       aria-label="&volumeScrubber.label;"/>
+                       data-l10n-id="videocontrols-volume-control"/>
               </div>
               <button id="castingButton" class="button castingButton"
                       aria-label="&castingButton.castingLabel;"/>
-              <button id="closedCaptionButton" class="button closedCaptionButton"/>
+              <button id="closedCaptionButton" class="button closedCaptionButton"
+                      data-l10n-id="videocontrols-closed-caption-button"/>
               <button id="fullscreenButton"
                       class="button fullscreenButton"
                       enterfullscreenlabel="&fullscreenButton.enterfullscreenlabel;"
@@ -2774,6 +2854,18 @@ this.VideoControlsImplWidget = class {
       </div>`,
       "application/xml"
     );
+    this.l10n = new this.window.DOMLocalization([
+      "toolkit/global/videocontrols.ftl",
+    ]);
+    this.l10n.connectRoot(this.shadowRoot);
+    if (this.prefs["media.videocontrols.keyboard-tab-to-all-controls"]) {
+      // Make all of the individual controls tabbable.
+      for (const el of parserDoc.documentElement.querySelectorAll(
+        '[tabindex="-1"]'
+      )) {
+        el.removeAttribute("tabindex");
+      }
+    }
     this.shadowRoot.importNodeAndAppendChildAt(
       this.shadowRoot,
       parserDoc.documentElement,
@@ -2790,6 +2882,8 @@ this.VideoControlsImplWidget = class {
     this.Utils.terminate();
     this.TouchUtils.terminate();
     this.Utils.updateOrientationState(false);
+    this.l10n.disconnectRoot(this.shadowRoot);
+    this.l10n = null;
   }
 
   onPrefChange(prefName, prefValue) {
@@ -2826,11 +2920,14 @@ this.NoControlsMobileImplWidget = class {
     this.window = this.document.defaultView;
   }
 
-  onsetup() {
+  onsetup(direction) {
     this.generateContent();
 
+    this.shadowRoot.firstElementChild.setAttribute("localedir", direction);
+
     this.Utils = {
-      videoEvents: ["play", "playing", "MozNoControlsBlockedVideo"],
+      videoEvents: ["play", "playing"],
+      videoControlEvents: ["MozNoControlsBlockedVideo"],
       terminate() {
         for (let event of this.videoEvents) {
           try {
@@ -2838,6 +2935,12 @@ this.NoControlsMobileImplWidget = class {
               capture: true,
               mozSystemGroup: true,
             });
+          } catch (ex) {}
+        }
+
+        for (let event of this.videoControlEvents) {
+          try {
+            this.videocontrols.removeEventListener(event, this);
           } catch (ex) {}
         }
 
@@ -2926,6 +3029,10 @@ this.NoControlsMobileImplWidget = class {
             mozSystemGroup: true,
           });
         }
+
+        for (let event of this.videoControlEvents) {
+          this.videocontrols.addEventListener(event, this);
+        }
       },
     };
     this.Utils.init(this.shadowRoot);
@@ -2963,7 +3070,7 @@ this.NoControlsMobileImplWidget = class {
         <div id="controlsContainer" class="controlsContainer" role="none" hidden="true">
           <div class="controlsOverlay stackItem">
             <div class="controlsSpacerStack">
-              <div id="clickToPlay" class="clickToPlay"></div>
+              <button id="clickToPlay" class="clickToPlay"></button>
             </div>
           </div>
         </div>
@@ -2987,8 +3094,10 @@ this.NoControlsPictureInPictureImplWidget = class {
     this.window = this.document.defaultView;
   }
 
-  onsetup() {
+  onsetup(direction) {
     this.generateContent();
+
+    this.shadowRoot.firstElementChild.setAttribute("localedir", direction);
   }
 
   elementStateMatches(element) {
@@ -3042,8 +3151,10 @@ this.NoControlsDesktopImplWidget = class {
     this.prefs = prefs;
   }
 
-  onsetup() {
+  onsetup(direction) {
     this.generateContent();
+
+    this.shadowRoot.firstElementChild.setAttribute("localedir", direction);
 
     this.Utils = {
       handleEvent(event) {
@@ -3063,6 +3174,8 @@ this.NoControlsDesktopImplWidget = class {
           }
           case "durationchange":
           // Intentional fall-through
+          case "emptied":
+          // Intentional fall-through
           case "loadedmetadata": {
             this.updatePictureInPictureToggleDisplay();
             break;
@@ -3079,28 +3192,14 @@ this.NoControlsDesktopImplWidget = class {
             this.reflowedDimensions
           )
         ) {
-          if (
-            this.prefs[
-              "media.videocontrols.picture-in-picture.video-toggle.mode"
-            ] == -1
-          ) {
-            VideoControlsWidget.cleanupToggleExperiment(this.shadowRoot);
-            this.pictureInPictureToggleButton.removeAttribute("hidden");
-            this.pictureInPictureToggleExperiment.setAttribute("hidden", true);
-          } else {
-            this.pictureInPictureToggleButton.setAttribute("hidden", true);
-            this.pictureInPictureToggleExperiment.removeAttribute("hidden");
-            VideoControlsWidget.setupToggleExperiment(
-              this.prefs,
-              this.shadowRoot,
-              this.pictureInPictureToggleExperiment,
-              this.reflowedDimensions
-            );
-          }
+          this.pictureInPictureToggle.hidden = false;
+          VideoControlsWidget.setupToggle(
+            this.prefs,
+            this.pictureInPictureToggle,
+            this.reflowedDimensions
+          );
         } else {
-          VideoControlsWidget.cleanupToggleExperiment(this.shadowRoot);
-          this.pictureInPictureToggleButton.setAttribute("hidden", true);
-          this.pictureInPictureToggleExperiment.setAttribute("hidden", true);
+          this.pictureInPictureToggle.hidden = true;
         }
       },
 
@@ -3113,12 +3212,8 @@ this.NoControlsDesktopImplWidget = class {
         this.window = this.document.defaultView;
         this.shadowRoot = shadowRoot;
 
-        this.pictureInPictureToggleButton = this.shadowRoot.getElementById(
-          "pictureInPictureToggleButton"
-        );
-
-        this.pictureInPictureToggleExperiment = this.shadowRoot.getElementById(
-          "pictureInPictureToggleExperiment"
+        this.pictureInPictureToggle = this.shadowRoot.getElementById(
+          "pictureInPictureToggle"
         );
 
         if (this.document.fullscreenElement) {
@@ -3127,7 +3222,7 @@ this.NoControlsDesktopImplWidget = class {
 
         // Default the Picture-in-Picture toggle button to being hidden. We might unhide it
         // later if we determine that this video is qualified to show it.
-        this.pictureInPictureToggleButton.setAttribute("hidden", true);
+        this.pictureInPictureToggle.hidden = true;
 
         if (this.video.readyState >= this.video.HAVE_METADATA) {
           // According to the spec[1], at the HAVE_METADATA (or later) state, we know
@@ -3142,6 +3237,7 @@ this.NoControlsDesktopImplWidget = class {
           capture: true,
         });
 
+        this.video.addEventListener("emptied", this);
         this.video.addEventListener("loadedmetadata", this);
         this.video.addEventListener("durationchange", this);
         this.videocontrols.addEventListener("resizevideocontrols", this);
@@ -3152,6 +3248,7 @@ this.NoControlsDesktopImplWidget = class {
           capture: true,
         });
 
+        this.video.removeEventListener("emptied", this);
         this.video.removeEventListener("loadedmetadata", this);
         this.video.removeEventListener("durationchange", this);
         this.videocontrols.removeEventListener("resizevideocontrols", this);
@@ -3207,15 +3304,10 @@ this.NoControlsDesktopImplWidget = class {
       ]>
       <div class="videocontrols" xmlns="http://www.w3.org/1999/xhtml" role="none">
         <link rel="stylesheet" href="chrome://global/skin/media/videocontrols.css" />
-        <link rel="stylesheet" href="chrome://global/skin/media/pictureinpicture-mode-1.css" mode="1" disabled="true" />
-        <link rel="stylesheet" href="chrome://global/skin/media/pictureinpicture-mode-2.css" mode="2" disabled="true" />
+
         <div id="controlsContainer" class="controlsContainer" role="none">
           <div class="controlsOverlay stackItem">
-            <button id="pictureInPictureToggleButton" class="pictureInPictureToggleButton">
-              <div id="pictureInPictureToggleIcon" class="pictureInPictureToggleIcon"></div>
-              <span class="pictureInPictureToggleLabel">&pictureInPicture.label;</span>
-            </button>
-            <button id="pictureInPictureToggleExperiment" class="pip-wrapper" position="left" hidden="true">
+            <button id="pictureInPictureToggle" class="pip-wrapper" position="left" hidden="true">
               <div class="pip-small clickable"></div>
               <div class="pip-expanded clickable">
                 <span class="pip-icon-label clickable">

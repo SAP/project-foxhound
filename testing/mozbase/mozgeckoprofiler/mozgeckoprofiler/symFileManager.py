@@ -185,16 +185,16 @@ class SymFileManager:
                     # some have the form "address space symbol".
                     # The letter has a meaning, but we ignore it.
                     if line[addressLength + 2] == " ":
-                        symbol = line[addressLength + 3:].rstrip()
+                        symbol = line[addressLength + 3 :].rstrip()
                     else:
-                        symbol = line[addressLength + 1:].rstrip()
+                        symbol = line[addressLength + 1 :].rstrip()
                     symbolMap[address] = symbol
                     publicCount += 1
         except Exception:
             LOG.error("Error parsing SYM file " + path)
             return None
 
-        logString = "Found " + str(len(symbolMap.keys())) + " unique entries from "
+        logString = "Found " + str(len(symbolMap)) + " unique entries from "
         logString += (
             str(publicCount) + " PUBLIC lines, " + str(funcCount) + " FUNC lines"
         )

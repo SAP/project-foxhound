@@ -2,12 +2,18 @@
    http://creativecommons.org/publicdomain/zero/1.0/
 */
 
-ChromeUtils.import("resource://gre/modules/Preferences.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryArchive.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryEnvironment.jsm", this);
-ChromeUtils.import("resource://gre/modules/osfile.jsm", this);
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
+const { Preferences } = ChromeUtils.import(
+  "resource://gre/modules/Preferences.jsm"
+);
+const { TelemetryArchive } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryArchive.jsm"
+);
+const { TelemetryController } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryController.jsm"
+);
+const { TelemetryEnvironment } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryEnvironment.jsm"
+);
 
 const MS_IN_ONE_HOUR = 60 * 60 * 1000;
 const MS_IN_ONE_DAY = 24 * MS_IN_ONE_HOUR;
@@ -132,7 +138,12 @@ add_task(async function test_setup() {
 
   // Addon manager needs a profile directory
   do_get_profile();
-  loadAddonManager("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
+  await loadAddonManager(
+    "xpcshell@tests.mozilla.org",
+    "XPCShell",
+    "1",
+    "1.9.2"
+  );
   finishAddonManagerStartup();
   fakeIntlReady();
   // Make sure we don't generate unexpected pings due to pref changes.

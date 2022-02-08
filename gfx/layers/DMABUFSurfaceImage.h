@@ -8,32 +8,22 @@
 #define SURFACE_DMABUF_H
 
 #include "ImageContainer.h"
-#include "mozilla/widget/DMABufSurface.h"
-#include "mozilla/gfx/Point.h"
-#include "mozilla/layers/TextureClient.h"
+
+class DMABufSurface;
 
 namespace mozilla {
 namespace layers {
 
+class TextureClient;
+
 class DMABUFSurfaceImage : public Image {
  public:
-  explicit DMABUFSurfaceImage(DMABufSurface* aSurface)
-      : Image(nullptr, ImageFormat::DMABUF), mSurface(aSurface) {
-    mSurface->GlobalRefAdd();
-  }
-
-  ~DMABUFSurfaceImage() { mSurface->GlobalRefRelease(); }
+  explicit DMABUFSurfaceImage(DMABufSurface* aSurface);
+  ~DMABUFSurfaceImage();
 
   DMABufSurface* GetSurface() { return mSurface; }
-
-  gfx::IntSize GetSize() const override {
-    return gfx::IntSize::Truncate(mSurface->GetWidth(), mSurface->GetHeight());
-  }
-
-  already_AddRefed<gfx::SourceSurface> GetAsSourceSurface() override {
-    return nullptr;
-  }
-
+  gfx::IntSize GetSize() const override;
+  already_AddRefed<gfx::SourceSurface> GetAsSourceSurface() override;
   TextureClient* GetTextureClient(KnowsCompositor* aKnowsCompositor) override;
 
  private:

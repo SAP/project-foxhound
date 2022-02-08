@@ -9,10 +9,11 @@
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(DataList)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
-HTMLDataListElement::~HTMLDataListElement() = default;
+HTMLDataListElement::~HTMLDataListElement() {
+  MOZ_ASSERT(HasFlag(ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR));
+}
 
 JSObject* HTMLDataListElement::WrapNode(JSContext* aCx,
                                         JS::Handle<JSObject*> aGivenProto) {
@@ -33,5 +34,4 @@ bool HTMLDataListElement::MatchOptions(Element* aElement, int32_t aNamespaceID,
          !aElement->HasAttr(kNameSpaceID_None, nsGkAtoms::disabled);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

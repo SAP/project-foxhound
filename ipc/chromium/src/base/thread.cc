@@ -16,10 +16,6 @@
 #include "nsThreadUtils.h"
 #include "nsThreadManager.h"
 
-#ifdef MOZ_TASK_TRACER
-#  include "GeckoTaskTracer.h"
-#endif
-
 namespace base {
 
 // This task is used to trigger the message loop to exit.
@@ -154,9 +150,8 @@ void Thread::ThreadMain() {
   auto loopType = startup_data_->options.message_loop_type;
   if (loopType == MessageLoop::TYPE_MOZILLA_NONMAINTHREAD ||
       loopType == MessageLoop::TYPE_MOZILLA_NONMAINUITHREAD) {
-    auto queue =
-        mozilla::MakeRefPtr<mozilla::ThreadEventQueue<mozilla::EventQueue>>(
-            mozilla::MakeUnique<mozilla::EventQueue>());
+    auto queue = mozilla::MakeRefPtr<mozilla::ThreadEventQueue>(
+        mozilla::MakeUnique<mozilla::EventQueue>());
     xpcomThread = nsThreadManager::get().CreateCurrentThread(
         queue, nsThread::NOT_MAIN_THREAD);
   } else {
@@ -198,10 +193,6 @@ void Thread::ThreadMain() {
   DCHECK(GetThreadWasQuitProperly());
 
   mozilla::IOInterposer::UnregisterCurrentThread();
-
-#ifdef MOZ_TASK_TRACER
-  mozilla::tasktracer::FreeTraceInfo();
-#endif
 
   // We can't receive messages anymore.
   message_loop_ = NULL;

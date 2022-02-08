@@ -1,3 +1,8 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+from __future__ import absolute_import
 import os
 
 config = {
@@ -7,9 +12,8 @@ config = {
         "EN_US_BINARY_URL": os.environ["EN_US_BINARY_URL"],
         "DIST": "%(abs_obj_dir)s",
         "L10NBASEDIR": "../../l10n",
-        'TOOLTOOL_CACHE': os.environ.get('TOOLTOOL_CACHE'),
-        'EN_US_PACKAGE_NAME': 'target.zip',
+        "TOOLTOOL_CACHE": os.environ.get("TOOLTOOL_CACHE"),
+        "EN_US_PACKAGE_NAME": "target.zip",
     },
-
-    'tooltool_manifest_src': "browser/config/tooltool-manifests/win32/releng.manifest",
+    "tooltool_manifest_src": "browser/config/tooltool-manifests/vs2017-15.9.manifest",
 }

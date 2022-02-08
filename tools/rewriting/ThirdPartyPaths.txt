@@ -4,7 +4,6 @@ browser/components/translation/cld2/
 browser/extensions/formautofill/content/third-party/
 browser/extensions/formautofill/test/fixtures/third_party/
 browser/extensions/screenshots/build/raven.js
-devtools/client/debugger/flow-typed/npm/
 devtools/client/inspector/markup/test/lib_*
 devtools/client/jsonview/lib/require.js
 devtools/client/shared/demangle.js
@@ -36,6 +35,7 @@ dom/media/platforms/ffmpeg/libav53/
 dom/media/platforms/ffmpeg/libav54/
 dom/media/platforms/ffmpeg/libav55/
 dom/media/webaudio/test/blink/
+dom/media/webrtc/transport/third_party/
 dom/media/webspeech/recognition/endpointer.cc
 dom/media/webspeech/recognition/endpointer.h
 dom/media/webspeech/recognition/energy_endpointer.cc
@@ -99,6 +99,7 @@ js/src/vtune/jitprofiling.c
 js/src/vtune/jitprofiling.h
 js/src/vtune/legacy/
 js/src/zydis/
+layout/docs/css-gap-decorations/
 media/ffvpx/
 media/kiss_fft/
 media/libaom/
@@ -119,11 +120,9 @@ media/libvpx/
 media/libwebp/
 media/libyuv/
 media/mp4parse-rust/
-media/mtransport/third_party/
 media/openmax_dl/
 media/openmax_il/
-media/webrtc/signaling/src/sdp/sipcc/
-media/webrtc/trunk/
+media/webrtc/signaling/gtest/MockCall.h
 mfbt/double-conversion/double-conversion/
 mfbt/lz4/.*
 mobile/android/geckoview/src/thirdparty/
@@ -134,13 +133,14 @@ modules/woff2/
 modules/xz-embedded/
 modules/zlib/
 mozglue/misc/decimal/
+mozglue/tests/glibc_printf_tests/
 netwerk/dns/nsIDNKitInterface.h
 netwerk/sctp/src/
 netwerk/srtp/src/
 nsprpub/
 other-licenses/
 parser/expat/
-remote/test/browser/chrome-remote-interface.js
+remote/cdp/test/browser/chrome-remote-interface.js
 remote/test/puppeteer/
 security/nss/
 security/sandbox/chromium/
@@ -150,7 +150,7 @@ testing/gtest/gtest/
 testing/mochitest/MochiKit/
 testing/mochitest/pywebsocket3/
 testing/mochitest/tests/MochiKit-1.4.2/
-testing/modules/ajv-4.1.1.js
+testing/modules/ajv-6.12.6.js
 testing/modules/sinon-7.2.7.js
 testing/mozbase/mozproxy/mozproxy/backends/mitm/scripts/catapult/
 testing/talos/talos/tests/dromaeo/
@@ -161,10 +161,12 @@ testing/web-platform/tests/tools/third_party/
 testing/xpcshell/dns-packet/
 testing/xpcshell/node-ip/
 testing/xpcshell/node-http2/
+testing/xpcshell/odoh-wasm/
 third_party/
 toolkit/components/certviewer/content/vendor/
 toolkit/components/jsoncpp/
 toolkit/components/normandy/vendor/
+toolkit/components/passwordmgr/PasswordRulesParser.jsm
 toolkit/components/protobuf/
 toolkit/components/url-classifier/chromium/
 toolkit/components/utils/mozjexl.js

@@ -34,6 +34,7 @@ interface nsIClearDataService : nsISupports
   void deleteDataFromLocalFiles(in bool aIsUserRequest,
                                 in uint32_t aFlags,
                                 in nsIClearDataCallback aCallback);
+
   /**
    * Delete data owned by a host. For instance: mozilla.org. Data from any
    * possible originAttributes will be deleted.
@@ -46,11 +47,38 @@ interface nsIClearDataService : nsISupports
    * @param aFlags List of flags. See below the accepted values.
    * @param aCallback this callback will be executed when the operation is
    *                  completed.
+   * @deprecated Use deleteDataFromBaseDomain instead.
    */
   void deleteDataFromHost(in AUTF8String aHost,
                           in bool aIsUserRequest,
                           in uint32_t aFlags,
                           in nsIClearDataCallback aCallback);
+
+  /**
+   * Delete data owned by or partitioned under a baseDomain (eTLD+1). For
+   * instance: mozilla.org. Deletes data across all origin attributes. For
+   * partitioned storage we clear both, data of the baseDomain in 1st-party and
+   * 3rd-party context.
+   * When handling user requests for clearing data using this method is
+   * preferred over deleteDataFromPrincipal, since origins may share information
+   * with their site (e.g. cookies) that are not deleted by principal.
+   * @param aDomainOrHost the domain or host to be used. Will be converted to
+   *        baseDomain if needed.
+   * @param aIsUserRequest true if this request comes from a user interaction.
+   *        This information is important because if true, it's probably better
+   *        to remove more than less, for privacy reason. If false (e.g.
+   *        Clear-Site-Data header), we don't want to delete more than what is
+   *        strictly required.
+   * @param aFlags List of flags. See below the accepted values.
+   * @param aCallback this callback will be executed when the operation is
+   *                  completed.
+   * @throws Throws if base domain can't be computed from aDomainOrHost. Callers
+   * may fall back to clearing by principal or host.
+   */
+  void deleteDataFromBaseDomain(in AUTF8String aDomainOrHost,
+                                in bool aIsUserRequest,
+                                in uint32_t aFlags,
+                                in nsIClearDataCallback aCallback);
 
   /**
    * Delete data owned by a principal.
@@ -105,6 +133,24 @@ interface nsIClearDataService : nsISupports
   void deleteDataFromOriginAttributesPattern(in jsval aOriginAttributesPattern,
                                              [optional] in nsIClearDataCallback aCallback);
 
+  /**
+   * This is a helper function to clear storageAccessAPI permissions
+   * in a way that will not result in users getting logged out by
+   * cookie purging. To that end we only clear permissions for principals
+   * whose base domain does not have any storage associated with it.
+   *
+   * The principals to be considered will need to be passed by the API consumer.
+   * It is recommended to use PrincipalsCollector.jsm for that.
+   *
+   * @param aPrincipalsWithStorage principals to be excluded from clearing
+   * @param aFrom microseconds from the epoch
+   * @param aCallback the optional callback will be executed when the operation
+   *                  is completed.
+   */
+  void deleteUserInteractionForClearingHistory(in Array<nsIPrincipal> aPrincipalsWithStorage,
+                                               [optional] in PRTime aFrom,
+                                               [optional] in nsIClearDataCallback aCallback);
+
   /**************************************************************************
    * Listed below are the various flags which may be or'd together.
    */
@@ -123,11 +169,6 @@ interface nsIClearDataService : nsISupports
    * Image cache.
    */
   const uint32_t CLEAR_IMAGE_CACHE = 1 << 2;
-
-  /**
-   * Data stored by external plugins.
-   */
-  const uint32_t CLEAR_PLUGIN_DATA = 1 << 3;
 
   /**
    * Completed downloads.
@@ -225,9 +266,19 @@ interface nsIClearDataService : nsISupports
   const uint32_t CLEAR_CONTENT_BLOCKING_RECORDS = 1 << 22;
 
   /**
+   * Clear the in-memory CSS cache.
+   */
+  const uint32_t CLEAR_CSS_CACHE = 1 << 23;
+
+  /**
+   * Clear the CORS preflight cache.
+   */
+  const uint32_t CLEAR_PREFLIGHT_CACHE = 1 << 24;
+
+  /**
    * Use this value to delete all the data.
    */
-  const uint32_t CLEAR_ALL = 0xFFFFFF;
+  const uint32_t CLEAR_ALL = 0xFFFFFFFF;
 
   /**************************************************************************
    * The following flags are helpers: they combine some of the previous flags
@@ -237,7 +288,8 @@ interface nsIClearDataService : nsISupports
   /**
    * Delete all the possible caches.
    */
-  const uint32_t CLEAR_ALL_CACHES = CLEAR_NETWORK_CACHE | CLEAR_IMAGE_CACHE;
+  const uint32_t CLEAR_ALL_CACHES = CLEAR_NETWORK_CACHE | CLEAR_IMAGE_CACHE |
+    CLEAR_CSS_CACHE | CLEAR_PREFLIGHT_CACHE;
 
   /**
    * Delete all DOM storages
@@ -249,8 +301,8 @@ interface nsIClearDataService : nsISupports
    * Helper flag for forget about site
    */
   const uint32_t CLEAR_FORGET_ABOUT_SITE =
-    CLEAR_HISTORY | CLEAR_SESSION_HISTORY | CLEAR_NETWORK_CACHE | CLEAR_IMAGE_CACHE |
-    CLEAR_COOKIES | CLEAR_EME | CLEAR_PLUGIN_DATA | CLEAR_DOWNLOADS | CLEAR_PASSWORDS |
+    CLEAR_HISTORY | CLEAR_SESSION_HISTORY | CLEAR_ALL_CACHES |
+    CLEAR_COOKIES | CLEAR_EME | CLEAR_DOWNLOADS | CLEAR_PASSWORDS |
     CLEAR_PERMISSIONS | CLEAR_DOM_STORAGES | CLEAR_CONTENT_PREFERENCES |
     CLEAR_PREDICTOR_NETWORK_DATA | CLEAR_DOM_PUSH_NOTIFICATIONS |
     CLEAR_SECURITY_SETTINGS | CLEAR_REPORTS | CLEAR_CERT_EXCEPTIONS;

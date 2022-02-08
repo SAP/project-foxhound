@@ -11,6 +11,7 @@
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Unused.h"
+#include "mozilla/dom/Document.h"
 
 #include "nsContentUtils.h"
 #include "nsISupportsPrimitives.h"
@@ -82,8 +83,7 @@ class AudioPlaybackRunnable final : public Runnable {
 
 }  // anonymous namespace
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 const char* SuspendTypeToStr(const nsSuspendedTypes& aSuspend) {
   MOZ_ASSERT(aSuspend == nsISuspendedTypes::NONE_SUSPENDED ||
@@ -266,10 +266,9 @@ AudioPlaybackConfig AudioChannelService::GetMediaConfig(
       config.mCapturedAudio = winData->mIsAudioCaptured;
     }
 
-    config.mVolume *= window->GetAudioVolume();
     config.mMuted = config.mMuted || window->GetAudioMuted();
-    if (window->GetMediaSuspend() != nsISuspendedTypes::NONE_SUSPENDED) {
-      config.mSuspend = window->GetMediaSuspend();
+    if (window->ShouldDelayMediaFromStart()) {
+      config.mSuspend = nsISuspendedTypes::SUSPENDED_BLOCK;
     }
 
     nsCOMPtr<nsPIDOMWindowOuter> win =
@@ -447,7 +446,7 @@ bool AudioChannelService::IsWindowActive(nsPIDOMWindowOuter* aWindow) {
   return !winData->mAudibleAgents.IsEmpty();
 }
 
-void AudioChannelService::NotifyMediaResumedFromBlock(
+void AudioChannelService::NotifyResumingDelayedMedia(
     nsPIDOMWindowOuter* aWindow) {
   MOZ_ASSERT(aWindow);
 
@@ -462,6 +461,7 @@ void AudioChannelService::NotifyMediaResumedFromBlock(
   }
 
   winData->NotifyMediaBlockStop(aWindow);
+  RefreshAgentsSuspend(aWindow, nsISuspendedTypes::NONE_SUSPENDED);
 }
 
 void AudioChannelService::AudioChannelWindow::AppendAgent(
@@ -600,8 +600,7 @@ void AudioChannelService::AudioChannelWindow::MaybeNotifyMediaBlockStart(
     return;
   }
 
-  if (window->GetMediaSuspend() != nsISuspendedTypes::SUSPENDED_BLOCK ||
-      !doc->Hidden()) {
+  if (!window->ShouldDelayMediaFromStart() || !doc->Hidden()) {
     return;
   }
 
@@ -623,5 +622,4 @@ void AudioChannelService::AudioChannelWindow::MaybeNotifyMediaBlockStart(
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -25,7 +25,7 @@ namespace dom {
 class SVGAnimationElement;
 }  // namespace dom
 
-typedef uint8_t SVGEnumValue;
+using SVGEnumValue = uint8_t;
 
 struct SVGEnumMapping {
   nsStaticAtom* const mKey;
@@ -34,6 +34,7 @@ struct SVGEnumMapping {
 
 class SVGAnimatedEnumeration {
  public:
+  friend class AutoChangeEnumNotifier;
   using SVGElement = dom::SVGElement;
 
   void Init(uint8_t aAttrEnum, uint16_t aValue) {

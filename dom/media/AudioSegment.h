@@ -40,9 +40,8 @@ namespace mozilla {
 template <typename T>
 class SharedChannelArrayBuffer : public ThreadSharedObject {
  public:
-  explicit SharedChannelArrayBuffer(nsTArray<nsTArray<T> >* aBuffers) {
-    mBuffers.SwapElements(*aBuffers);
-  }
+  explicit SharedChannelArrayBuffer(nsTArray<nsTArray<T> >&& aBuffers)
+      : mBuffers(std::move(aBuffers)) {}
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override {
     size_t amount = 0;
@@ -209,23 +208,6 @@ struct AudioChunk {
 
   bool IsMuted() const { return mVolume == 0.0f; }
 
-  bool IsAudible() const {
-    for (auto&& channel : mChannelData) {
-      // Transform sound into dB RMS and assume that the value smaller than -100
-      // is inaudible.
-      float dbrms = 0.0;
-      for (uint32_t idx = 0; idx < mDuration; idx++) {
-        dbrms += std::pow(static_cast<const AudioDataValue*>(channel)[idx], 2);
-      }
-      dbrms /= mDuration;
-      dbrms = std::sqrt(dbrms) != 0.0 ? 20 * log10(dbrms) : -1000.0;
-      if (dbrms > -100.0) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   size_t SizeOfExcludingThisIfUnshared(MallocSizeOf aMallocSizeOf) const {
     return SizeOfExcludingThis(aMallocSizeOf, true);
   }
@@ -283,6 +265,9 @@ struct AudioChunk {
  * The audio rate is determined by the track, not stored in this class.
  */
 class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
+  // The channel count that MaxChannelCount() returned last time it was called.
+  uint32_t mMemoizedMaxChannelCount = 0;
+
  public:
   typedef mozilla::AudioSampleFormat SampleFormat;
 
@@ -349,7 +334,7 @@ class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
       }
       MOZ_ASSERT(channels > 0);
       c.mDuration = output[0].Length();
-      c.mBuffer = new mozilla::SharedChannelArrayBuffer<T>(&output);
+      c.mBuffer = new mozilla::SharedChannelArrayBuffer<T>(std::move(output));
       for (uint32_t i = 0; i < channels; i++) {
         c.mChannelData[i] = bufferPtrs[i];
       }
@@ -392,19 +377,64 @@ class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
     chunk->mBufferFormat = AUDIO_FORMAT_S16;
     chunk->mPrincipalHandle = aPrincipalHandle;
   }
+  void AppendSegment(const AudioSegment* aSegment,
+                     const PrincipalHandle& aPrincipalHandle) {
+    MOZ_ASSERT(aSegment);
+
+    for (const AudioChunk& c : aSegment->mChunks) {
+      AudioChunk* chunk = AppendChunk(c.GetDuration());
+      chunk->mBuffer = c.mBuffer;
+      chunk->mChannelData = c.mChannelData;
+      chunk->mBufferFormat = c.mBufferFormat;
+      chunk->mPrincipalHandle = aPrincipalHandle;
+    }
+  }
+  template <typename T>
+  void AppendFromInterleavedBuffer(const T* aBuffer, size_t aFrames,
+                                   uint32_t aChannels,
+                                   const PrincipalHandle& aPrincipalHandle) {
+    MOZ_ASSERT(aChannels >= 1 && aChannels <= 8, "Support up to 8 channels");
+
+    CheckedInt<size_t> bufferSize(sizeof(T));
+    bufferSize *= aFrames;
+    bufferSize *= aChannels;
+    RefPtr<SharedBuffer> buffer = SharedBuffer::Create(bufferSize);
+    AutoTArray<const T*, 8> channels;
+    if (aChannels == 1) {
+      PodCopy(static_cast<T*>(buffer->Data()), aBuffer, aFrames);
+      channels.AppendElement(static_cast<T*>(buffer->Data()));
+    } else {
+      channels.SetLength(aChannels);
+      AutoTArray<T*, 8> writeChannels;
+      writeChannels.SetLength(aChannels);
+      T* samples = static_cast<T*>(buffer->Data());
+
+      size_t offset = 0;
+      for (uint32_t i = 0; i < aChannels; ++i) {
+        channels[i] = writeChannels[i] = samples + offset;
+        offset += aFrames;
+      }
+
+      DeinterleaveAndConvertBuffer(aBuffer, aFrames, aChannels,
+                                   writeChannels.Elements());
+    }
+
+    MOZ_ASSERT(aChannels == channels.Length());
+    AppendFrames(buffer.forget(), channels, aFrames, aPrincipalHandle);
+  }
   // Consumes aChunk, and returns a pointer to the persistent copy of aChunk
   // in the segment.
-  AudioChunk* AppendAndConsumeChunk(AudioChunk* aChunk) {
-    AudioChunk* chunk = AppendChunk(aChunk->mDuration);
-    chunk->mBuffer = std::move(aChunk->mBuffer);
-    chunk->mChannelData.SwapElements(aChunk->mChannelData);
+  AudioChunk* AppendAndConsumeChunk(AudioChunk&& aChunk) {
+    AudioChunk* chunk = AppendChunk(aChunk.mDuration);
+    chunk->mBuffer = std::move(aChunk.mBuffer);
+    chunk->mChannelData = std::move(aChunk.mChannelData);
 
-    MOZ_ASSERT(chunk->mBuffer || aChunk->mChannelData.IsEmpty(),
+    MOZ_ASSERT(chunk->mBuffer || aChunk.mChannelData.IsEmpty(),
                "Appending invalid data ?");
 
-    chunk->mVolume = aChunk->mVolume;
-    chunk->mBufferFormat = aChunk->mBufferFormat;
-    chunk->mPrincipalHandle = aChunk->mPrincipalHandle;
+    chunk->mVolume = aChunk.mVolume;
+    chunk->mBufferFormat = aChunk.mBufferFormat;
+    chunk->mPrincipalHandle = aChunk.mPrincipalHandle;
     return chunk;
   }
   void ApplyVolume(float aVolume);
@@ -417,17 +447,20 @@ class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
   // aChannelCount channels.
   void Mix(AudioMixer& aMixer, uint32_t aChannelCount, uint32_t aSampleRate);
 
-  // Returns the maximum
+  // Returns the maximum channel count across all chunks in this segment.
+  // Should there be no chunk with a channel count we return the memoized return
+  // value from last time this method was called.
   uint32_t MaxChannelCount() {
-    // Find the first chunk that has non-zero channels. A chunk that hs zero
-    // channels is just silence and we can simply discard it.
     uint32_t channelCount = 0;
     for (ChunkIterator ci(*this); !ci.IsEnded(); ci.Next()) {
       if (ci->ChannelCount()) {
         channelCount = std::max(channelCount, ci->ChannelCount());
       }
     }
-    return channelCount;
+    if (channelCount == 0) {
+      return mMemoizedMaxChannelCount;
+    }
+    return mMemoizedMaxChannelCount = channelCount;
   }
 
   static Type StaticType() { return AUDIO; }
@@ -435,10 +468,25 @@ class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override {
     return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
   }
+
+  PrincipalHandle GetOldestPrinciple() const {
+    const AudioChunk* chunk = mChunks.IsEmpty() ? nullptr : &mChunks[0];
+    return chunk ? chunk->GetPrincipalHandle() : PRINCIPAL_HANDLE_NONE;
+  }
+
+  // Iterate on each chunks until the input function returns true.
+  template <typename Function>
+  void IterateOnChunks(const Function&& aFunction) {
+    for (uint32_t idx = 0; idx < mChunks.Length(); idx++) {
+      if (aFunction(&mChunks[idx])) {
+        return;
+      }
+    }
+  }
 };
 
 template <typename SrcT>
-void WriteChunk(AudioChunk& aChunk, uint32_t aOutputChannels,
+void WriteChunk(AudioChunk& aChunk, uint32_t aOutputChannels, float aVolume,
                 AudioDataValue* aOutputBuffer) {
   AutoTArray<const SrcT*, GUESS_AUDIO_CHANNELS> channelData;
 
@@ -452,11 +500,11 @@ void WriteChunk(AudioChunk& aChunk, uint32_t aOutputChannels,
   }
   if (channelData.Length() > aOutputChannels) {
     // Down-mix.
-    DownmixAndInterleave(channelData, aChunk.mDuration, aChunk.mVolume,
+    DownmixAndInterleave(channelData, aChunk.mDuration, aVolume,
                          aOutputChannels, aOutputBuffer);
   } else {
     InterleaveAndConvertBuffer(channelData.Elements(), aChunk.mDuration,
-                               aChunk.mVolume, aOutputChannels, aOutputBuffer);
+                               aVolume, aOutputChannels, aOutputBuffer);
   }
 }
 

@@ -7,10 +7,8 @@
 /* Class ReadableStreamDefaultController. */
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT{,_IF}
-#include "mozilla/Attributes.h"  // MOZ_MUST_USE
 
-#include "jsapi.h"        // JS_ReportErrorNumberASCII
-#include "jsfriendapi.h"  // js::GetErrorMessage, JSMSG_*, js::AssertSameCompartment
+#include "jsfriendapi.h"  // js::AssertSameCompartment
 
 #include "builtin/streams/ClassSpecMacro.h"           // JS_STREAMS_CLASS_SPEC
 #include "builtin/streams/MiscellaneousOperations.h"  // js::IsMaybeWrapped
@@ -26,6 +24,8 @@
 #include "builtin/streams/TeeState.h"          // js::TeeState
 #include "js/ArrayBuffer.h"                    // JS::NewArrayBuffer
 #include "js/Class.h"                          // js::ClassSpec
+#include "js/ErrorReport.h"                    // JS_ReportErrorNumberASCII
+#include "js/friend/ErrorMessages.h"           // js::GetErrorMessage, JSMSG_*
 #include "js/PropertySpec.h"
 #include "vm/Interpreter.h"
 #include "vm/JSContext.h"
@@ -33,7 +33,7 @@
 #include "vm/PromiseObject.h"  // js::PromiseObject, js::PromiseResolvedWithUndefined
 #include "vm/SelfHosting.h"
 
-#include "builtin/streams/HandlerFunction-inl.h"  // js::TargetFromHandler
+#include "builtin/HandlerFunction-inl.h"  // js::TargetFromHandler
 #include "builtin/streams/MiscellaneousOperations-inl.h"  // js::PromiseCall
 #include "builtin/streams/ReadableStreamReader-inl.h"  // js::UnwrapReaderFromStream
 #include "vm/Compartment-inl.h"  // JS::Compartment::wrap, js::UnwrapAnd{DowncastObject,TypeCheckThis}
@@ -174,7 +174,7 @@ static bool ReadableStreamDefaultController_desiredSize(JSContext* cx,
  * Unified implementation of step 2 of 3.9.4.2 and 3.9.4.3,
  * and steps 2-3 of 3.11.4.3.
  */
-MOZ_MUST_USE bool js::CheckReadableStreamControllerCanCloseOrEnqueue(
+[[nodiscard]] bool js::CheckReadableStreamControllerCanCloseOrEnqueue(
     JSContext* cx, Handle<ReadableStreamController*> unwrappedController,
     const char* action) {
   // 3.9.4.2. close(), step 2, and
@@ -313,7 +313,7 @@ JS_STREAMS_CLASS_SPEC(ReadableStreamDefaultController, 0, SlotCount,
  * and
  * Streams spec, 3.11.5.1. [[CancelSteps]] ( reason )
  */
-MOZ_MUST_USE JSObject* js::ReadableStreamControllerCancelSteps(
+[[nodiscard]] JSObject* js::ReadableStreamControllerCancelSteps(
     JSContext* cx, Handle<ReadableStreamController*> unwrappedController,
     Handle<Value> reason) {
   AssertSameCompartment(cx, reason);

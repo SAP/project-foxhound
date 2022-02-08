@@ -2,21 +2,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
 import * as t from "@babel/types";
-import type { Node } from "@babel/types";
 
 // Perform ES6's anonymous function name inference for all
 // locations where static analysis is possible.
 // eslint-disable-next-line complexity
-export default function getFunctionName(node: Node, parent: Node): string {
+export default function getFunctionName(node, parent) {
   if (t.isIdentifier(node.id)) {
     return node.id.name;
   }
 
   if (
     t.isObjectMethod(node, { computed: false }) ||
-    t.isClassMethod(node, { computed: false })
+    t.isClassMethod(node, { computed: false }) ||
+    t.isClassPrivateMethod(node)
   ) {
     const { key } = node;
 
@@ -29,6 +28,10 @@ export default function getFunctionName(node: Node, parent: Node): string {
     if (t.isNumericLiteral(key)) {
       return `${key.value}`;
     }
+
+    if (t.isPrivateName(key)) {
+      return `#${key.id.name}`;
+    }
   }
 
   if (
@@ -36,7 +39,8 @@ export default function getFunctionName(node: Node, parent: Node): string {
     // TODO: Babylon 6 doesn't support computed class props. It is included
     // here so that it is most flexible. Once Babylon 7 is used, this
     // can change to use computed: false like ObjectProperty.
-    (t.isClassProperty(parent, { value: node }) && !parent.computed)
+    (t.isClassProperty(parent, { value: node }) && !parent.computed) ||
+    (t.isClassPrivateProperty(parent, { value: node }) && !parent.computed)
   ) {
     const { key } = parent;
 
@@ -48,6 +52,10 @@ export default function getFunctionName(node: Node, parent: Node): string {
     }
     if (t.isNumericLiteral(key)) {
       return `${key.value}`;
+    }
+
+    if (t.isPrivateName(key)) {
+      return `#${key.id.name}`;
     }
   }
 

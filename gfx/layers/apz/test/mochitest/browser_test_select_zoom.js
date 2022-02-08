@@ -4,30 +4,11 @@
      https://searchfox.org/mozilla-central/rev/559b25eb41c1cbffcb90a34e008b8288312fcd25/browser/base/content/test/forms/browser_selectpopup.js
 */
 
-function openSelectPopup(selectPopup, selector = "select", win = window) {
-  let popupShownPromise = BrowserTestUtils.waitForEvent(
-    selectPopup,
-    "popupshown"
-  );
-
-  EventUtils.synthesizeKey("KEY_ArrowDown", { altKey: true }, win);
-  return popupShownPromise;
-}
-
-function hideSelectPopup(selectPopup, win = window) {
-  let browser = win.gBrowser.selectedBrowser;
-  let selectClosedPromise = SpecialPowers.spawn(browser, [], async function() {
-    let { SelectContentHelper } = ChromeUtils.import(
-      "resource://gre/actors/SelectChild.jsm",
-      null
-    );
-    return ContentTaskUtils.waitForCondition(() => !SelectContentHelper.open);
-  });
-
-  EventUtils.synthesizeKey("KEY_Enter", {}, win);
-
-  return selectClosedPromise;
-}
+/* import-globals-from helper_browser_test_utils.js */
+Services.scriptloader.loadSubScript(
+  new URL("helper_browser_test_utils.js", gTestPath).href,
+  this
+);
 
 add_task(async function setup_pref() {
   await SpecialPowers.pushPrefEnv({
@@ -40,9 +21,6 @@ add_task(async function setup_pref() {
       // want those pans to turn into fling animations, so we increase the
       // fling-min threshold velocity to an arbitrarily large value.
       ["apz.fling_min_velocity_threshold", "10000"],
-      // Explicitly enable pinch-zooming, so this test can run on desktop
-      // even though zooming isn't enabled by default on desktop yet.
-      ["apz.allow_zooming", true],
     ],
   });
 });

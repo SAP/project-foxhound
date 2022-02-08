@@ -118,7 +118,7 @@ class AccessibilityTest : BaseSessionTest() {
 
         // Force on accessibility and assign the session's accessibility
         // object a view.
-        sessionRule.setPrefsUntilTestEnd(mapOf("accessibility.force_disabled" to -1))
+        sessionRule.runtime.settings.forceEnableAccessibility = true;
         mainSession.accessibility.view = view
 
         // Set up an external delegate that will intercept accessibility events.
@@ -149,6 +149,7 @@ class AccessibilityTest : BaseSessionTest() {
     }
 
     @After fun teardown() {
+        sessionRule.runtime.settings.forceEnableAccessibility = false
         sessionRule.session.accessibility.view = null
         nodeInfos.forEach { node -> node.recycle() }
     }
@@ -158,7 +159,7 @@ class AccessibilityTest : BaseSessionTest() {
             override fun onLoadRequest(session: GeckoSession,
                                        request: GeckoSession.NavigationDelegate.LoadRequest)
                     : GeckoResult<AllowOrDeny>? {
-                return GeckoResult.ALLOW
+                return GeckoResult.allow()
             }
         })
         // XXX: Sometimes we get the window state change of the initial
@@ -1106,9 +1107,9 @@ class AccessibilityTest : BaseSessionTest() {
                     $doc.querySelector('${entry.key}').addEventListener(
                         'input', event => {
                           let eventInterface =
-                            event instanceof InputEvent ? "InputEvent" :
-                            event instanceof UIEvent ? "UIEvent" :
-                            event instanceof Event ? "Event" : "Unknown";
+                            event instanceof $doc.defaultView.InputEvent ? "InputEvent" :
+                            event instanceof $doc.defaultView.UIEvent ? "UIEvent" :
+                            event instanceof $doc.defaultView.Event ? "Event" : "Unknown";
                           resolve([event.target.value, '${entry.value}', eventInterface]);
                         }, { once: true }))""")
             }
@@ -1167,6 +1168,10 @@ class AccessibilityTest : BaseSessionTest() {
 
     @Setting(key = Setting.Key.FULL_ACCESSIBILITY_TREE, value = "true")
     @Test fun autoFill_navigation() {
+        // Fails with BFCache in the parent.
+        // https://bugzilla.mozilla.org/show_bug.cgi?id=1715480
+        sessionRule.setPrefsUntilTestEnd(mapOf(
+                "fission.bfcacheInParent" to false))
         // disable test on debug for frequently failing #Bug 1505353
         assumeThat(sessionRule.env.isDebugBuild, equalTo(false))
         fun countAutoFillNodes(cond: (AccessibilityNodeInfo) -> Boolean =
@@ -1174,7 +1179,7 @@ class AccessibilityTest : BaseSessionTest() {
                                id: Int = View.NO_ID): Int {
             val info = createNodeInfo(id)
             return (if (cond(info) && info.className != "android.webkit.WebView" ) 1 else 0) + (if (info.childCount > 0)
-                (0 until info.childCount).sumBy {
+                (0 until info.childCount).sumOf {
                     countAutoFillNodes(cond, info.getChildId(it))
                 } else 0)
         }
@@ -1184,7 +1189,7 @@ class AccessibilityTest : BaseSessionTest() {
         waitForInitialFocus()
 
         assertThat("Initial auto-fill count should match",
-                   countAutoFillNodes(), equalTo(14))
+                   countAutoFillNodes(), equalTo(18))
         assertThat("Password auto-fill count should match",
                    countAutoFillNodes({ it.isPassword }), equalTo(4))
 
@@ -1198,7 +1203,7 @@ class AccessibilityTest : BaseSessionTest() {
         mainSession.goBack()
         waitForInitialFocus()
         assertThat("Should have auto-fill fields again",
-                   countAutoFillNodes(), equalTo(14))
+                   countAutoFillNodes(), equalTo(18))
         assertThat("Should not have focused field",
                    countAutoFillNodes({ it.isFocused }), equalTo(0))
 

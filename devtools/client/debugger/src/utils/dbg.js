@@ -2,45 +2,29 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
 import * as timings from "./timings";
 import { prefs, asyncStore, features } from "./prefs";
-import { isDevelopment, isTesting } from "devtools-environment";
 import { getDocument } from "./editor/source-documents";
-import type { Source, URL } from "../types";
-import type { ThreadFront } from "../client/firefox/types";
 
-function getThreadFront(dbg: Object): ThreadFront {
-  return dbg.connection.targetList.targetFront.threadFront;
+function getThreadFront(dbg) {
+  return dbg.targetCommand.targetFront.threadFront;
 }
 
-function findSource(dbg: any, url: URL): Source {
+function findSource(dbg, url) {
   const sources = dbg.selectors.getSourceList();
   return sources.find(s => (s.url || "").includes(url));
 }
 
-function findSources(dbg: any, url: URL): Source[] {
+function findSources(dbg, url) {
   const sources = dbg.selectors.getSourceList();
   return sources.filter(s => (s.url || "").includes(url));
 }
 
-function sendPacket(dbg: any, packet: any) {
-  return dbg.client.sendPacket(packet);
-}
-
-function sendPacketToThread(dbg: Object, packet: any) {
-  return sendPacket(dbg, {
-    to: getThreadFront(dbg).actor,
-    ...packet,
-  });
-}
-
-function evaluate(dbg: Object, expression: any) {
+function evaluate(dbg, expression) {
   return dbg.client.evaluate(expression);
 }
 
-function bindSelectors(obj: Object): Object {
+function bindSelectors(obj) {
   return Object.keys(obj.selectors).reduce((bound, selector) => {
     bound[selector] = (a, b, c) =>
       obj.selectors[selector](obj.store.getState(), a, b, c);
@@ -48,8 +32,8 @@ function bindSelectors(obj: Object): Object {
   }, {});
 }
 
-function getCM(): Object {
-  const cm: any = document.querySelector(".CodeMirror");
+function getCM() {
+  const cm = document.querySelector(".CodeMirror");
   return cm?.CodeMirror;
 }
 
@@ -80,9 +64,9 @@ function getDocumentForUrl(dbg, url) {
 
 const diff = (a, b) => Object.keys(a).filter(key => !Object.is(a[key], b[key]));
 
-export function setupHelper(obj: Object) {
+export function setupHelper(obj) {
   const selectors = bindSelectors(obj);
-  const dbg: Object = {
+  const dbg = {
     ...obj,
     selectors,
     prefs,
@@ -94,8 +78,6 @@ export function setupHelper(obj: Object) {
       findSource: url => findSource(dbg, url),
       findSources: url => findSources(dbg, url),
       evaluate: expression => evaluate(dbg, expression),
-      sendPacketToThread: packet => sendPacketToThread(dbg, packet),
-      sendPacket: packet => sendPacket(dbg, packet),
       dumpThread: () => getThreadFront(dbg).dumpThread(),
       getDocument: url => getDocumentForUrl(dbg, url),
     },
@@ -111,13 +93,4 @@ export function setupHelper(obj: Object) {
   };
 
   window.dbg = dbg;
-
-  if (isDevelopment() && !isTesting()) {
-    console.group("Development Notes");
-    const baseUrl = "https://firefox-devtools.github.io/debugger";
-    const localDevelopmentUrl = `${baseUrl}/docs/dbg.html`;
-    console.log("Debugging Tips", localDevelopmentUrl);
-    console.log("dbg", window.dbg);
-    console.groupEnd();
-  }
 }

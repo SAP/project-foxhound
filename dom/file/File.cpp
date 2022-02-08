@@ -13,10 +13,10 @@
 #include "mozilla/dom/FileCreatorHelper.h"
 #include "mozilla/dom/FileSystemUtils.h"
 #include "mozilla/dom/Promise.h"
+#include "nsIFile.h"
 #include "nsXULAppAPI.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 File::File(nsIGlobalObject* aGlobal, BlobImpl* aImpl) : Blob(aGlobal, aImpl) {
   MOZ_ASSERT(aImpl->IsFile());
@@ -135,11 +135,7 @@ already_AddRefed<File> File::Constructor(const GlobalObject& aGlobal,
                                          const nsAString& aName,
                                          const FilePropertyBag& aBag,
                                          ErrorResult& aRv) {
-  // Normalizing the filename
-  nsString name(aName);
-  name.ReplaceChar('/', ':');
-
-  RefPtr<MultipartBlobImpl> impl = new MultipartBlobImpl(name);
+  RefPtr<MultipartBlobImpl> impl = new MultipartBlobImpl(aName);
 
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
   MOZ_ASSERT(global);
@@ -203,5 +199,4 @@ already_AddRefed<Promise> File::CreateFromFileName(
   return promise.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

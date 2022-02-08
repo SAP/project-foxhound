@@ -13,6 +13,7 @@ Services.scriptloader.loadSubScript(
 );
 
 // Load the shared Redux helpers into this compartment.
+/* import-globals-from ../../../shared/test/shared-redux-head.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/shared/test/shared-redux-head.js",
   this
@@ -53,18 +54,6 @@ registerCleanupFunction(() => {
 function loadHelperScript(filePath) {
   const testDir = gTestPath.substr(0, gTestPath.lastIndexOf("/"));
   Services.scriptloader.loadSubScript(testDir + "/" + filePath, this);
-}
-
-/**
- * Reload the current page
- * @return a promise that resolves when the inspector has emitted the event
- * new-root
- */
-function reloadPage(inspector, testActor) {
-  info("Reloading the page");
-  const newRoot = inspector.once("new-root");
-  testActor.reload();
-  return newRoot;
 }
 
 /**
@@ -110,14 +99,16 @@ var getContainerForSelector = async function(
  * Retrieve the nodeValue for the firstChild of a provided selector on the content page.
  *
  * @param {String} selector
- * @param {TestActorFront} testActor The current TestActorFront instance.
  * @return {String} the nodeValue of the first
  */
-async function getFirstChildNodeValue(selector, testActor) {
-  const nodeValue = await testActor.eval(`
-    document.querySelector("${selector}").firstChild.nodeValue;
-  `);
-  return nodeValue;
+function getFirstChildNodeValue(selector) {
+  return SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [selector],
+    _selector => {
+      return content.document.querySelector(_selector).firstChild.nodeValue;
+    }
+  );
 }
 
 /**
@@ -152,7 +143,7 @@ var clickContainer = async function(selector, inspector) {
   const container = getContainerForNodeFront(nodeFront, inspector);
 
   const updated = container.selected
-    ? promise.resolve()
+    ? Promise.resolve()
     : inspector.once("inspector-updated");
   EventUtils.synthesizeMouseAtCenter(
     container.tagLine,
@@ -212,21 +203,19 @@ var addNewAttributes = async function(selector, text, inspector) {
  * @param {String} selector The selector for the node to check.
  * @param {Object} expected An object containing the attributes to check.
  *        e.g. {id: "id1", class: "someclass"}
- * @param {TestActorFront} testActor The current TestActorFront instance.
  *
  * Note that node.getAttribute() returns attribute values provided by the HTML
  * parser. The parser only provides unescaped entities so &amp; will return &.
  */
-var assertAttributes = async function(selector, expected, testActor) {
-  const { attributes: actual } = await testActor.getNodeInfo(selector);
-
+var assertAttributes = async function(selector, expected) {
+  const actualAttributes = await getContentPageElementAttributes(selector);
   is(
-    actual.length,
+    actualAttributes.length,
     Object.keys(expected).length,
     "The node " + selector + " has the expected number of attributes."
   );
   for (const attr in expected) {
-    const foundAttr = actual.find(({ name }) => name === attr);
+    const foundAttr = actualAttributes.find(({ name }) => name === attr);
     const foundValue = foundAttr ? foundAttr.value : undefined;
     ok(foundAttr, "The node " + selector + " has the attribute " + attr);
     is(
@@ -249,7 +238,7 @@ function undoChange(inspector) {
   const canUndo = inspector.markup.undo.canUndo();
   ok(canUndo, "The last change in the markup-view can be undone");
   if (!canUndo) {
-    return promise.reject();
+    return Promise.reject();
   }
 
   const mutated = inspector.once("markupmutation");
@@ -269,7 +258,7 @@ function redoChange(inspector) {
   const canRedo = inspector.markup.undo.canRedo();
   ok(canRedo, "The last change in the markup-view can be redone");
   if (!canRedo) {
-    return promise.reject();
+    return Promise.reject();
   }
 
   const mutated = inspector.once("markupmutation");

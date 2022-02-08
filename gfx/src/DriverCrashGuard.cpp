@@ -16,7 +16,7 @@
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/Telemetry.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/dom/ContentChild.h"
 
@@ -25,7 +25,9 @@ namespace gfx {
 
 static const size_t NUM_CRASH_GUARD_TYPES = size_t(CrashGuardType::NUM_TYPES);
 static const char* sCrashGuardNames[] = {
-    "d3d11layers", "d3d9video", "glcontext", "d3d11video", "wmfvpxvideo",
+    "d3d11layers",
+    "glcontext",
+    "wmfvpxvideo",
 };
 static_assert(MOZ_ARRAY_LENGTH(sCrashGuardNames) == NUM_CRASH_GUARD_TYPES,
               "CrashGuardType updated without a name string");
@@ -59,9 +61,9 @@ void DriverCrashGuard::InitializeIfNeeded() {
 }
 
 static inline bool AreCrashGuardsEnabled(CrashGuardType aType) {
-  // Crash guard isn't supported in the GPU process since the entire
+  // Crash guard isn't supported in the GPU or RDD process since the entire
   // process is basically a crash guard.
-  if (XRE_IsGPUProcess()) {
+  if (XRE_IsGPUProcess() || XRE_IsRDDProcess()) {
     return false;
   }
 #ifdef NIGHTLY_BUILD
@@ -92,7 +94,7 @@ void DriverCrashGuard::Initialize() {
     return;
   }
 
-  mGfxInfo = services::GetGfxInfo();
+  mGfxInfo = components::GfxInfo::Service();
 
   if (XRE_IsContentProcess()) {
     // Ask the parent whether or not activating the guard is okay. The parent
@@ -448,31 +450,6 @@ void D3D11LayersCrashGuard::RecordTelemetry(TelemetryState aState) {
   Telemetry::Accumulate(Telemetry::GRAPHICS_DRIVER_STARTUP_TEST,
                         int32_t(aState));
   sTelemetryStateRecorded = true;
-}
-
-D3D9VideoCrashGuard::D3D9VideoCrashGuard(dom::ContentParent* aContentParent)
-    : DriverCrashGuard(CrashGuardType::D3D9Video, aContentParent) {}
-
-void D3D9VideoCrashGuard::LogCrashRecovery() {
-  gfxCriticalNote << "DXVA2D3D9 just crashed; hardware video will be disabled.";
-}
-
-void D3D9VideoCrashGuard::LogFeatureDisabled() {
-  gfxCriticalNote
-      << "DXVA2D3D9 video decoding is disabled due to a previous crash.";
-}
-
-D3D11VideoCrashGuard::D3D11VideoCrashGuard(dom::ContentParent* aContentParent)
-    : DriverCrashGuard(CrashGuardType::D3D11Video, aContentParent) {}
-
-void D3D11VideoCrashGuard::LogCrashRecovery() {
-  gfxCriticalNote
-      << "DXVA2D3D11 just crashed; hardware video will be disabled.";
-}
-
-void D3D11VideoCrashGuard::LogFeatureDisabled() {
-  gfxCriticalNote
-      << "DXVA2D3D11 video decoding is disabled due to a previous crash.";
 }
 
 GLContextCrashGuard::GLContextCrashGuard(dom::ContentParent* aContentParent)

@@ -6,7 +6,7 @@
 
 var EXPORTED_SYMBOLS = ["TelemetryUtils"];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { TelemetryControllerBase } = ChromeUtils.import(
   "resource://gre/modules/TelemetryControllerBase.jsm"
 );
@@ -79,13 +79,8 @@ var TelemetryUtils = {
     PreviousBuildID: "toolkit.telemetry.previousBuildID",
 
     // Event Ping Preferences
-    EventPingEnabled: "toolkit.telemetry.eventping.enabled",
-    EventPingEventLimit: "toolkit.telemetry.eventping.eventLimit",
     EventPingMinimumFrequency: "toolkit.telemetry.eventping.minimumFrequency",
     EventPingMaximumFrequency: "toolkit.telemetry.eventping.maximumFrequency",
-
-    // Ecosystem Telemetry Preferences
-    EcosystemTelemetryEnabled: "toolkit.telemetry.ecosystemtelemetry.enabled",
 
     // Prio Ping Preferences
     PrioPingEnabled: "toolkit.telemetry.prioping.enabled",
@@ -212,10 +207,7 @@ var TelemetryUtils = {
   },
 
   generateUUID() {
-    let str = Cc["@mozilla.org/uuid-generator;1"]
-      .getService(Ci.nsIUUIDGenerator)
-      .generateUUID()
-      .toString();
+    let str = Services.uuid.generateUUID().toString();
     // strip {}
     return str.substring(1, str.length - 1);
   },

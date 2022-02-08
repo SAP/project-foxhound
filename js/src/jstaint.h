@@ -11,7 +11,8 @@
 #ifndef jstaint_h
 #define jstaint_h
 
-#include "jsapi.h"
+#include "NamespaceImports.h"
+
 #include "Taint.h"
 
 //

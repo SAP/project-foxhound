@@ -3,12 +3,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "ipc/IPCMessageUtils.h"
-
 #include "nsBufferedStreams.h"
 #include "nsStreamUtils.h"
 #include "nsNetCID.h"
 #include "nsIClassInfoImpl.h"
+#include "nsIEventTarget.h"
+#include "nsThreadUtils.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/ipc/InputStreamUtils.h"
 #include <algorithm>
@@ -47,17 +47,6 @@ using mozilla::Some;
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsBufferedStream
-
-nsBufferedStream::nsBufferedStream()
-    : mBufferSize(0),
-      mBuffer(nullptr),
-      mBufferStartOffset(0),
-      mCursor(0),
-      mFillPoint(0),
-      mStream(nullptr),
-      mBufferDisabled(false),
-      mEOF(false),
-      mGetBufferCount(0) {}
 
 nsBufferedStream::~nsBufferedStream() { Close(); }
 
@@ -224,6 +213,13 @@ nsBufferedStream::Seek(int32_t whence, int64_t offset) {
                 .mNewOffset = mBufferStartOffset);
 
   mFillPoint = mCursor = 0;
+
+  // If we seeked back to the start, then don't fill the buffer
+  // right now in case this is a lazily-opened file stream.
+  // We'll fill on the first read, like we did initially.
+  if (whence == nsISeekableStream::NS_SEEK_SET && offset == 0) {
+    return NS_OK;
+  }
   return Fill();
 }
 
@@ -305,15 +301,6 @@ NS_INTERFACE_MAP_END_INHERITING(nsBufferedStream)
 NS_IMPL_CI_INTERFACE_GETTER(nsBufferedInputStream, nsIInputStream,
                             nsIBufferedInputStream, nsISeekableStream,
                             nsITellableStream, nsIStreamBufferAccess)
-
-nsBufferedInputStream::nsBufferedInputStream()
-    : nsBufferedStream(),
-      mMutex("nsBufferedInputStream::mMutex"),
-      mIsIPCSerializable(true),
-      mIsAsyncInputStream(false),
-      mIsCloneableInputStream(false),
-      mIsInputStreamLength(false),
-      mIsAsyncInputStreamLength(false) {}
 
 nsresult nsBufferedInputStream::Create(nsISupports* aOuter, REFNSIID aIID,
                                        void** aResult) {

@@ -14,8 +14,7 @@ namespace net {
 NS_IMPL_ISUPPORTS(NullHttpChannel, nsINullChannel, nsIHttpChannel,
                   nsIIdentChannel, nsITimedChannel)
 
-NullHttpChannel::NullHttpChannel()
-    : mAllRedirectsSameOrigin(false), mAllRedirectsPassTimingAllowCheck(false) {
+NullHttpChannel::NullHttpChannel() {
   mChannelCreationTime = PR_Now();
   mChannelCreationTimestamp = TimeStamp::Now();
   mAsyncOpenTime = TimeStamp::Now();
@@ -74,12 +73,12 @@ NullHttpChannel::SetTopLevelContentWindowId(uint64_t aWindowId) {
 }
 
 NS_IMETHODIMP
-NullHttpChannel::GetTopLevelOuterContentWindowId(uint64_t* aWindowId) {
+NullHttpChannel::GetTopBrowsingContextId(uint64_t*) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-NullHttpChannel::SetTopLevelOuterContentWindowId(uint64_t aWindowId) {
+NullHttpChannel::SetTopBrowsingContextId(uint64_t) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -139,6 +138,13 @@ NullHttpChannel::GetRequestHeader(const nsACString& aHeader,
 NS_IMETHODIMP
 NullHttpChannel::SetRequestHeader(const nsACString& aHeader,
                                   const nsACString& aValue, bool aMerge) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::SetNewReferrerInfo(const nsACString& aUrl,
+                                    nsIReferrerInfo::ReferrerPolicyIDL aPolicy,
+                                    bool aSendReferrer) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -286,7 +292,7 @@ NullHttpChannel::GetEncodedBodySize(uint64_t* aEncodedBodySize) {
 
 NS_IMETHODIMP
 NullHttpChannel::GetOriginalURI(nsIURI** aOriginalURI) {
-  NS_IF_ADDREF(*aOriginalURI = mOriginalURI);
+  *aOriginalURI = do_AddRef(mOriginalURI).take();
   return NS_OK;
 }
 
@@ -298,7 +304,7 @@ NullHttpChannel::SetOriginalURI(nsIURI* aOriginalURI) {
 
 NS_IMETHODIMP
 NullHttpChannel::GetURI(nsIURI** aURI) {
-  NS_IF_ADDREF(*aURI = mURI);
+  *aURI = do_AddRef(mURI).take();
   return NS_OK;
 }
 

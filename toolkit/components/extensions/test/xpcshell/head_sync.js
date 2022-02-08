@@ -6,18 +6,19 @@
 
 /* exported withSyncContext */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
-ChromeUtils.import("resource://gre/modules/ExtensionCommon.jsm", this);
+const { ExtensionCommon } = ChromeUtils.import(
+  "resource://gre/modules/ExtensionCommon.jsm"
+);
 
 class KintoExtContext extends ExtensionCommon.BaseContext {
   constructor(principal) {
-    super();
+    let fakeExtension = { id: "test@web.extension", manifestVersion: 2 };
+    super("addon_parent", fakeExtension);
     Object.defineProperty(this, "principal", {
       value: principal,
       configurable: true,
     });
     this.sandbox = Cu.Sandbox(principal, { wantXrays: false });
-    this.extension = { id: "test@web.extension" };
   }
 
   get cloneScope() {

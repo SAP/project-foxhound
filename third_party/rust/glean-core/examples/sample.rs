@@ -1,4 +1,5 @@
 use std::env;
+use std::path::PathBuf;
 
 use glean_core::metrics::*;
 use glean_core::ping::PingMaker;
@@ -11,18 +12,21 @@ fn main() {
     let mut args = env::args().skip(1);
 
     let data_path = if let Some(path) = args.next() {
-        path
+        PathBuf::from(path)
     } else {
         let root = Builder::new().prefix("simple-db").tempdir().unwrap();
-        root.path().display().to_string()
+        root.path().into()
     };
 
     let cfg = glean_core::Configuration {
         data_path,
         application_id: "org.mozilla.glean_core.example".into(),
+        language_binding_name: "Rust".into(),
         upload_enabled: true,
         max_events: None,
         delay_ping_lifetime_io: false,
+        app_build: env!("CARGO_PKG_VERSION").into(),
+        use_core_mps: false,
     };
     let mut glean = Glean::new(cfg).unwrap();
     glean.register_ping_type(&PingType::new("baseline", true, false, vec![]));

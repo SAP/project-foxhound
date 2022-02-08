@@ -25,6 +25,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   FilterExpressions:
     "resource://gre/modules/components-utils/FilterExpressions.jsm",
   TargetingContext: "resource://messaging-system/targeting/Targeting.jsm",
+  Normandy: "resource://normandy/Normandy.jsm",
   NormandyApi: "resource://normandy/lib/NormandyApi.jsm",
   ClientEnvironment: "resource://normandy/lib/ClientEnvironment.jsm",
   CleanupManager: "resource://normandy/lib/CleanupManager.jsm",
@@ -34,6 +35,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   RemoteSettingsClient: "resource://services-settings/RemoteSettingsClient.jsm",
   clearTimeout: "resource://gre/modules/Timer.jsm",
   setTimeout: "resource://gre/modules/Timer.jsm",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
 });
 
 var EXPORTED_SYMBOLS = ["RecipeRunner"];
@@ -84,6 +86,8 @@ function cacheProxy(target) {
 }
 
 var RecipeRunner = {
+  initializedPromise: PromiseUtils.defer(),
+
   async init() {
     this.running = false;
     this.enabled = null;
@@ -135,6 +139,8 @@ var RecipeRunner = {
     if (firstRun) {
       Services.prefs.setBoolPref(FIRST_RUN_PREF, false);
     }
+
+    this.initializedPromise.resolve();
   },
 
   enable() {
@@ -296,6 +302,10 @@ var RecipeRunner = {
       // Do nothing if already running.
       return;
     }
+    this.running = true;
+
+    await Normandy.defaultPrefsHaveBeenApplied.promise;
+
     try {
       this.running = true;
       Services.obs.notifyObservers(null, "recipe-runner:start");
@@ -337,7 +347,9 @@ var RecipeRunner = {
         }
       }
 
-      await actionsManager.finalize();
+      await actionsManager.finalize({
+        noRecipes: !recipesAndSignatures.length,
+      });
 
       await Uptake.reportRunner(Uptake.RUNNER_SUCCESS);
       Services.obs.notifyObservers(null, "recipe-runner:end");
@@ -462,7 +474,7 @@ var RecipeRunner = {
         break;
       }
 
-      case BaseAction.suitability.CAPABILITES_MISMATCH: {
+      case BaseAction.suitability.CAPABILITIES_MISMATCH: {
         await Uptake.reportRecipe(
           recipe,
           Uptake.RECIPE_INCOMPATIBLE_CAPABILITIES
@@ -534,7 +546,7 @@ var RecipeRunner = {
                 Array.from(runnerCapabilities)
               )}`
           );
-          yield BaseAction.suitability.CAPABILITES_MISMATCH;
+          yield BaseAction.suitability.CAPABILITIES_MISMATCH;
         }
       }
     }

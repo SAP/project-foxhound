@@ -20,6 +20,7 @@
 #include "gfxUtils.h"
 #include "nsAlgorithm.h"
 #include "nsCOMPtr.h"
+#include "nsComponentManagerUtils.h"
 #include "nsFontMetrics.h"
 #include "nsPresContext.h"
 #include "nsNameSpaceManager.h"
@@ -78,10 +79,9 @@ using namespace mozilla::layout;
 
 // Function that cancels all the image requests in our cache.
 void nsTreeBodyFrame::CancelImageRequests() {
-  for (auto iter = mImageCache.Iter(); !iter.Done(); iter.Next()) {
+  for (nsTreeImageCacheEntry entry : mImageCache.Values()) {
     // If our imgIRequest object was registered with the refresh driver
     // then we need to deregister it.
-    nsTreeImageCacheEntry entry = iter.UserData();
     nsLayoutUtils::DeregisterImageRequest(PresContext(), entry.request,
                                           nullptr);
     entry.request->UnlockImage();
@@ -471,6 +471,10 @@ int32_t nsTreeBodyFrame::GetHorizontalPosition() const {
 }
 
 Maybe<CSSIntRegion> nsTreeBodyFrame::GetSelectionRegion() {
+  if (!mView) {
+    return Nothing();
+  }
+
   nsCOMPtr<nsITreeSelection> selection;
   mView->GetSelection(getter_AddRefs(selection));
   if (!selection) {
@@ -1594,10 +1598,17 @@ nsresult nsTreeBodyFrame::RowCountChanged(int32_t aIndex, int32_t aCount) {
   }
 #endif  // #ifdef ACCESSIBILITY
 
+  AutoWeakFrame weakFrame(this);
+
   // Adjust our selection.
+  nsCOMPtr<nsITreeView> view = mView;
   nsCOMPtr<nsITreeSelection> sel;
-  mView->GetSelection(getter_AddRefs(sel));
-  if (sel) sel->AdjustSelection(aIndex, aCount);
+  view->GetSelection(getter_AddRefs(sel));
+  if (sel) {
+    sel->AdjustSelection(aIndex, aCount);
+  }
+
+  NS_ENSURE_STATE(weakFrame.IsAlive());
 
   if (mUpdateBatchNest) return NS_OK;
 
@@ -1850,7 +1861,8 @@ nsresult nsTreeBodyFrame::GetImage(int32_t aRowIndex, nsTreeColumn* aCol,
   } else {
     // Obtain the URL from the ComputedStyle.
     aAllowImageRegions = true;
-    styleRequest = aComputedStyle->StyleList()->GetListStyleImage();
+    styleRequest =
+        aComputedStyle->StyleList()->mListStyleImage.GetImageRequest();
     if (!styleRequest) return NS_OK;
     nsCOMPtr<nsIURI> uri;
     styleRequest->GetURI(getter_AddRefs(uri));
@@ -1895,9 +1907,7 @@ nsresult nsTreeBodyFrame::GetImage(int32_t aRowIndex, nsTreeColumn* aCol,
     nsTreeImageListener* listener = new nsTreeImageListener(this);
     if (!listener) return NS_ERROR_OUT_OF_MEMORY;
 
-    if (!mCreatedListeners.PutEntry(listener)) {
-      return NS_ERROR_FAILURE;
-    }
+    mCreatedListeners.Insert(listener);
 
     listener->AddCell(aRowIndex, aCol);
     nsCOMPtr<imgINotificationObserver> imgNotificationObserver = listener;
@@ -1923,7 +1933,7 @@ nsresult nsTreeBodyFrame::GetImage(int32_t aRowIndex, nsTreeColumn* aCol,
       // view?  I guess we should assume that it's the node's principal...
       nsresult rv = nsContentUtils::LoadImage(
           srcURI, mContent, doc, mContent->NodePrincipal(), 0, referrerInfo,
-          imgNotificationObserver, nsIRequest::LOAD_NORMAL, EmptyString(),
+          imgNotificationObserver, nsIRequest::LOAD_NORMAL, u""_ns,
           getter_AddRefs(imageRequest));
       NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1943,7 +1953,7 @@ nsresult nsTreeBodyFrame::GetImage(int32_t aRowIndex, nsTreeColumn* aCol,
     // In a case it was already cached.
     imageRequest->GetImage(aResult);
     nsTreeImageCacheEntry cacheEntry(imageRequest, imgNotificationObserver);
-    mImageCache.Put(imageSrc, cacheEntry);
+    mImageCache.InsertOrUpdate(imageSrc, cacheEntry);
   }
   return NS_OK;
 }
@@ -1968,7 +1978,7 @@ nsRect nsTreeBodyFrame::GetImageSize(int32_t aRowIndex, nsTreeColumn* aCol,
   bool needHeight = false;
 
   // We have to load image even though we already have a size.
-  // Don't change this, otherwise things start to go crazy.
+  // Don't change this, otherwise things start to go awry.
   bool useImageRegion = true;
   nsCOMPtr<imgIContainer> image;
   GetImage(aRowIndex, aCol, aUseContext, aComputedStyle, useImageRegion,
@@ -2244,7 +2254,7 @@ Maybe<nsIFrame::Cursor> nsTreeBodyFrame::GetCursor(const nsPoint& aPoint) {
     if (child) {
       // Our scratch array is already prefilled.
       RefPtr<ComputedStyle> childContext = GetPseudoComputedStyle(child);
-      StyleCursorKind kind = childContext->StyleUI()->mCursor.keyword;
+      StyleCursorKind kind = childContext->StyleUI()->Cursor().keyword;
       if (kind == StyleCursorKind::Auto) {
         kind = StyleCursorKind::Default;
       }
@@ -2470,6 +2480,8 @@ nsresult nsTreeBodyFrame::HandleEvent(nsPresContext* aPresContext,
   return NS_OK;
 }
 
+namespace mozilla {
+
 class nsDisplayTreeBody final : public nsPaintedDisplayItem {
  public:
   nsDisplayTreeBody(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame)
@@ -2513,11 +2525,8 @@ class nsDisplayTreeBody final : public nsPaintedDisplayItem {
   virtual void Paint(nsDisplayListBuilder* aBuilder,
                      gfxContext* aCtx) override {
     MOZ_ASSERT(aBuilder);
-    DrawTargetAutoDisableSubpixelAntialiasing disable(aCtx->GetDrawTarget(),
-                                                      IsSubpixelAADisabled());
-
     ImgDrawResult result = static_cast<nsTreeBodyFrame*>(mFrame)->PaintTreeBody(
-        *aCtx, GetPaintRect(), ToReferenceFrame(), aBuilder);
+        *aCtx, GetPaintRect(aBuilder, aCtx), ToReferenceFrame(), aBuilder);
 
     nsDisplayTreeBodyGeometry::UpdateDrawResult(this, result);
   }
@@ -2531,10 +2540,12 @@ class nsDisplayTreeBody final : public nsPaintedDisplayItem {
   }
 };
 
+}  // namespace mozilla
+
 #ifdef XP_MACOSX
 static bool IsInSourceList(nsIFrame* aFrame) {
   for (nsIFrame* frame = aFrame; frame;
-       frame = nsLayoutUtils::GetCrossDocParentFrame(frame)) {
+       frame = nsLayoutUtils::GetCrossDocParentFrameInProcess(frame)) {
     if (frame->StyleDisplay()->EffectiveAppearance() ==
         StyleAppearance::MozMacSourceList) {
       return true;
@@ -3711,8 +3722,8 @@ ImgDrawResult nsTreeBodyFrame::PaintBackgroundLayer(
       aPresContext, aRenderingContext, this, aDirtyRect, aRect, *myBorder,
       mComputedStyle, PaintBorderFlags::SyncDecodeImages);
 
-  nsCSSRendering::PaintOutline(aPresContext, aRenderingContext, this,
-                               aDirtyRect, aRect, aComputedStyle);
+  nsCSSRendering::PaintNonThemedOutline(aPresContext, aRenderingContext, this,
+                                        aDirtyRect, aRect, aComputedStyle);
 
   return result;
 }
@@ -3884,6 +3895,13 @@ void nsTreeBodyFrame::ScrollByLine(nsScrollbarFrame* aScrollbar,
   ScrollByLines(aDirection);
 }
 
+void nsTreeBodyFrame::ScrollByUnit(nsScrollbarFrame* aScrollbar,
+                                   ScrollMode aMode, int32_t aDirection,
+                                   ScrollUnit aUnit,
+                                   ScrollSnapMode aSnap /* = DISABLE_SNAP */) {
+  MOZ_ASSERT_UNREACHABLE("Can't get here, we pass false to MoveToNewPosition");
+}
+
 void nsTreeBodyFrame::RepeatButtonScroll(nsScrollbarFrame* aScrollbar) {
   ScrollParts parts = GetScrollParts();
   int32_t increment = aScrollbar->GetIncrement();
@@ -3897,7 +3915,8 @@ void nsTreeBodyFrame::RepeatButtonScroll(nsScrollbarFrame* aScrollbar) {
 
   AutoWeakFrame weakFrame(this);
   if (isHorizontal) {
-    int32_t curpos = aScrollbar->MoveToNewPosition();
+    int32_t curpos = aScrollbar->MoveToNewPosition(
+        nsScrollbarFrame::ImplementsScrollByUnit::No);
     if (weakFrame.IsAlive()) {
       ScrollHorzInternal(parts, curpos);
     }
@@ -4204,7 +4223,7 @@ void nsTreeBodyFrame::DetachImageListeners() { mCreatedListeners.Clear(); }
 
 void nsTreeBodyFrame::RemoveTreeImageListener(nsTreeImageListener* aListener) {
   if (aListener) {
-    mCreatedListeners.RemoveEntry(aListener);
+    mCreatedListeners.Remove(aListener);
   }
 }
 

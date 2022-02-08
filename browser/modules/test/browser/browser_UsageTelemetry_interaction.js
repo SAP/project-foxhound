@@ -78,15 +78,6 @@ add_task(async function toolbarButtons() {
     let newTab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
     let tabClose = BrowserTestUtils.waitForTabClosing(newTab);
 
-    let transition = BrowserTestUtils.waitForTransition(
-      elem("PersonalToolbar")
-    );
-    CustomizableUI.setToolbarVisibility("PersonalToolbar", true);
-    registerCleanupFunction(() => {
-      CustomizableUI.setToolbarVisibility("PersonalToolbar", false);
-    });
-    await transition;
-
     let tabs = elem("tabbrowser-tabs");
     if (!tabs.hasAttribute("overflow")) {
       tabs.setAttribute("overflow", "true");
@@ -112,16 +103,47 @@ add_task(async function toolbarButtons() {
 
     click(newTab.querySelector(".tab-close-button"));
     await tabClose;
-    click(document.querySelector("#PlacesToolbarItems .bookmark-item"));
 
-    let pagePanel = elem("pageActionPanel");
-    shown = BrowserTestUtils.waitForEvent(pagePanel, "popupshown");
-    click("pageActionButton");
-    await shown;
+    let bookmarksToolbar = gNavToolbox.querySelector("#PersonalToolbar");
 
-    hidden = BrowserTestUtils.waitForEvent(pagePanel, "popuphidden");
-    click("pageAction-panel-copyURL");
-    await hidden;
+    let bookmarksToolbarReady = BrowserTestUtils.waitForMutationCondition(
+      bookmarksToolbar,
+      { attributes: true },
+      () => {
+        return (
+          bookmarksToolbar.getAttribute("collapsed") != "true" &&
+          bookmarksToolbar.getAttribute("initialized") == "true"
+        );
+      }
+    );
+
+    window.setToolbarVisibility(
+      bookmarksToolbar,
+      true /* isVisible */,
+      false /* persist */,
+      false /* animated */
+    );
+    registerCleanupFunction(() => {
+      window.setToolbarVisibility(
+        bookmarksToolbar,
+        false /* isVisible */,
+        false /* persist */,
+        false /* animated */
+      );
+    });
+    await bookmarksToolbarReady;
+
+    // The Bookmarks Toolbar does some optimizations to try not to jank the
+    // browser when populating itself, and does so asynchronously. We wait
+    // until a bookmark item is available in the DOM before continuing.
+    let placesToolbarItems = document.getElementById("PlacesToolbarItems");
+    await BrowserTestUtils.waitForMutationCondition(
+      placesToolbarItems,
+      { childList: true },
+      () => placesToolbarItems.querySelector(".bookmark-item") != null
+    );
+
+    click(placesToolbarItems.querySelector(".bookmark-item"));
 
     click(customButton);
 
@@ -138,14 +160,7 @@ add_task(async function toolbarButtons() {
       bookmarks_bar: {
         "bookmark-item": 1,
       },
-      pageaction_urlbar: {
-        pageActionButton: 1,
-      },
-      pageaction_panel: {
-        copyURL: 1,
-      },
     });
-
     CustomizableUI.destroyWidget("12foo");
   });
 });
@@ -165,7 +180,7 @@ add_task(async function contextMenu() {
     await shown;
 
     let hidden = BrowserTestUtils.waitForEvent(context, "popuphidden");
-    click("context_toggleMuteTab");
+    context.activateItem(document.getElementById("context_toggleMuteTab"));
     await hidden;
 
     assertInteractionScalars({
@@ -173,6 +188,34 @@ add_task(async function contextMenu() {
         "context-toggleMuteTab": 1,
       },
     });
+
+    // Check that tab-related items in the toolbar menu also register telemetry:
+    context = elem("toolbar-context-menu");
+    shown = BrowserTestUtils.waitForEvent(context, "popupshown");
+    let scrollbox = elem("tabbrowser-arrowscrollbox");
+    EventUtils.synthesizeMouse(
+      scrollbox,
+      // offset within the scrollbox - somewhere near the end:
+      scrollbox.getBoundingClientRect().width - 20,
+      5,
+      { type: "contextmenu", button: 2 },
+      window
+    );
+    await shown;
+
+    hidden = BrowserTestUtils.waitForEvent(context, "popuphidden");
+    context.activateItem(
+      document.getElementById("toolbar-context-selectAllTabs")
+    );
+    await hidden;
+
+    assertInteractionScalars({
+      tabs_context: {
+        "toolbar-context-selectAllTabs": 1,
+      },
+    });
+    // tidy up:
+    gBrowser.clearMultiSelectedTabs();
   });
 });
 
@@ -191,17 +234,20 @@ add_task(async function appMenu() {
       elem("appMenu-popup"),
       "popuphidden"
     );
-    click("appMenu-find-button");
+
+    let findButtonID = "appMenu-find-button2";
+    click(findButtonID);
     await hidden;
 
-    assertInteractionScalars({
+    let expectedScalars = {
       nav_bar: {
         "PanelUI-menu-button": 1,
       },
-      app_menu: {
-        "appMenu-find-button": 1,
-      },
-    });
+      app_menu: {},
+    };
+    expectedScalars.app_menu[findButtonID] = 1;
+
+    assertInteractionScalars(expectedScalars);
   });
 });
 
@@ -216,9 +262,9 @@ add_task(async function devtools() {
     click("PanelUI-menu-button");
     await shown;
 
-    click("appMenu-developer-button");
+    click("appMenu-more-button2");
     shown = BrowserTestUtils.waitForEvent(
-      elem("PanelUI-developer"),
+      elem("appmenu-moreTools"),
       "ViewShown"
     );
     await shown;
@@ -230,7 +276,7 @@ add_task(async function devtools() {
     );
     click(
       document.querySelector(
-        "#PanelUI-developer toolbarbutton[key='key_viewSource']"
+        "#appmenu-moreTools toolbarbutton[key='key_viewSource']"
       )
     );
     await hidden;
@@ -244,7 +290,7 @@ add_task(async function devtools() {
         "PanelUI-menu-button": 1,
       },
       app_menu: {
-        "appMenu-developer-button": 1,
+        "appMenu-more-button2": 1,
         "key-viewSource": 1,
       },
     });

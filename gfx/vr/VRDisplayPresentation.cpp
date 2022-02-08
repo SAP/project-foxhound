@@ -6,6 +6,7 @@
 
 #include "VRDisplayPresentation.h"
 #include "mozilla/dom/DocGroup.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/XRWebGLLayer.h"
 #include "mozilla/Unused.h"
 #include "VRDisplayClient.h"
@@ -147,8 +148,9 @@ VRDisplayPresentation::~VRDisplayPresentation() {
 }
 
 void VRDisplayPresentation::SubmitFrame() {
-  for (VRLayerChild* layer : mLayers) {
+  // Currently only one layer supported, submit only the first
+  if (mLayers.Length() >= 1) {
+    VRLayerChild* layer = mLayers.ElementAt(0);
     layer->SubmitFrame(mDisplayClient->GetDisplayInfo());
-    break;  // Currently only one layer supported, submit only the first
   }
 }

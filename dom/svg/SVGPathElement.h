@@ -20,8 +20,6 @@ namespace mozilla {
 
 namespace dom {
 
-class nsISVGPoint;
-
 using SVGPathElementBase = SVGGeometryElement;
 
 class SVGPathElement final : public SVGPathElementBase {
@@ -56,6 +54,9 @@ class SVGPathElement final : public SVGPathElementBase {
    * See the comment for that function for more info on that.
    */
   virtual already_AddRefed<Path> GetOrBuildPathForMeasuring() override;
+
+  bool GetDistancesFromOriginToEndsOfVisibleSegments(
+      FallibleTArray<double>* aOutput) override;
 
   // nsIContent interface
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
@@ -111,6 +112,9 @@ class SVGPathElement final : public SVGPathElementBase {
   CreateSVGPathSegCurvetoQuadraticSmoothRel(float x, float y);
   already_AddRefed<DOMSVGPathSegList> PathSegList();
   already_AddRefed<DOMSVGPathSegList> AnimatedPathSegList();
+
+  static bool IsDPropertyChangedViaCSS(const ComputedStyle& aNewStyle,
+                                       const ComputedStyle& aOldStyle);
 
  protected:
   SVGAnimatedPathSegList mD;

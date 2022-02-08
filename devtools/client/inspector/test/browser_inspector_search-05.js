@@ -7,22 +7,9 @@
 
 requestLongerTimeout(2);
 
-const IFRAME_SRC = "doc_inspector_search.html";
-const NESTED_IFRAME_SRC = `
-  <button id="b1">Nested button</button>
-  <iframe id="iframe-4" src="${URL_ROOT + IFRAME_SRC}"></iframe>
-`;
-const TEST_URL = `
-  <iframe id="iframe-1" src="${URL_ROOT + IFRAME_SRC}"></iframe>
-  <iframe id="iframe-2" src="${URL_ROOT + IFRAME_SRC}"></iframe>
-  <iframe id="iframe-3"
-          src="data:text/html;charset=utf-8,${encodeURI(NESTED_IFRAME_SRC)}">
-  </iframe>
-`;
-
 add_task(async function() {
   const { inspector } = await openInspectorForURL(
-    "data:text/html;charset=utf-8," + encodeURI(TEST_URL)
+    `${URL_ROOT_ORG_SSL}doc_inspector_search-iframes.html`
   );
 
   info("Focus the search box");
@@ -31,10 +18,9 @@ add_task(async function() {
   info("Enter # to search for all ids");
   let processingDone = once(inspector.searchSuggestions, "processing-done");
   EventUtils.synthesizeKey("#", {}, inspector.panelWin);
-  await processingDone;
 
   info("Wait for search query to complete");
-  await inspector.searchSuggestions._lastQuery;
+  await processingDone;
 
   info("Press tab to fill the search input with the first suggestion");
   processingDone = once(inspector.searchSuggestions, "processing-done");
@@ -46,47 +32,76 @@ add_task(async function() {
   EventUtils.synthesizeKey("VK_RETURN", {}, inspector.panelWin);
   await onSelect;
 
-  await checkCorrectButton(inspector, "#iframe-1");
+  await checkCorrectButton(inspector, ["#iframe-1"]);
 
   info("Press enter to cycle through multiple nodes matching this suggestion");
   onSelect = inspector.once("inspector-updated");
   EventUtils.synthesizeKey("VK_RETURN", {}, inspector.panelWin);
   await onSelect;
 
-  await checkCorrectButton(inspector, "#iframe-2");
+  await checkCorrectButton(inspector, ["#iframe-2"]);
 
   info("Press enter to cycle through multiple nodes matching this suggestion");
   onSelect = inspector.once("inspector-updated");
   EventUtils.synthesizeKey("VK_RETURN", {}, inspector.panelWin);
   await onSelect;
 
-  await checkCorrectButton(inspector, "#iframe-3");
+  await checkCorrectButton(inspector, ["#iframe-3"]);
 
   info("Press enter to cycle through multiple nodes matching this suggestion");
   onSelect = inspector.once("inspector-updated");
   EventUtils.synthesizeKey("VK_RETURN", {}, inspector.panelWin);
   await onSelect;
 
-  await checkCorrectButton(inspector, "#iframe-4");
+  await checkCorrectButton(inspector, ["#iframe-3", "#iframe-4"]);
 
   info("Press enter to cycle through multiple nodes matching this suggestion");
   onSelect = inspector.once("inspector-updated");
   EventUtils.synthesizeKey("VK_RETURN", {}, inspector.panelWin);
   await onSelect;
 
-  await checkCorrectButton(inspector, "#iframe-1");
+  await checkCorrectButton(inspector, ["#iframe-1"]);
 });
 
 const checkCorrectButton = async function(inspector, frameSelector) {
-  const { walker } = inspector;
-  const node = inspector.selection.nodeFront;
+  const nodeFrontInfo = await getSelectedNodeFrontInfo(inspector);
+  is(nodeFrontInfo.nodeFront.id, "b1", "The selected node is #b1");
+  is(
+    nodeFrontInfo.nodeFront.tagName.toLowerCase(),
+    "button",
+    "The selected node is <button>"
+  );
 
-  is(node.id, "b1", "The selected node is #b1");
-  is(node.tagName.toLowerCase(), "button", "The selected node is <button>");
+  const iframe = await getNodeFrontInFrames(frameSelector, inspector);
+  const expectedDocument = (await iframe.walkerFront.children(iframe)).nodes[0];
 
-  const selectedNodeDoc = await walker.document(node);
-  let iframe = await walker.multiFrameQuerySelectorAll(frameSelector);
-  iframe = await iframe.item(0);
-  const iframeDoc = (await walker.children(iframe)).nodes[0];
-  is(selectedNodeDoc, iframeDoc, "The selected node is in " + frameSelector);
+  is(
+    nodeFrontInfo.document,
+    expectedDocument,
+    "The selected node is in " + frameSelector
+  );
 };
+/**
+ * Gets the currently selected nodefront. It also finds the
+ * document node which contains the node.
+ * @param   {Object} inspector
+ * @returns {Object}
+ *          nodeFront - The currently selected nodeFront
+ *          document - The document which contains the node.
+ *
+ */
+async function getSelectedNodeFrontInfo(inspector) {
+  const { selection, commands } = inspector;
+
+  const nodeFront = selection.nodeFront;
+  const inspectors = await commands.inspectorCommand.getAllInspectorFronts();
+
+  for (let i = 0; i < inspectors.length; i++) {
+    const inspectorFront = inspectors[i];
+    if (inspectorFront.walker == nodeFront.walkerFront) {
+      const document = await inspectorFront.walker.document(nodeFront);
+      return { nodeFront, document };
+    }
+  }
+  return null;
+}

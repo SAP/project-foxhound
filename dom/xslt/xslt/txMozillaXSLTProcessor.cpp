@@ -26,8 +26,10 @@
 #include "nsErrorService.h"
 #include "nsJSUtils.h"
 #include "nsIXPConnect.h"
+#include "nsNameSpaceManager.h"
 #include "nsVariant.h"
 #include "nsTextNode.h"
+#include "mozilla/Components.h"
 #include "mozilla/dom/DocumentFragment.h"
 #include "mozilla/dom/XSLTProcessorBinding.h"
 
@@ -81,7 +83,7 @@ nsresult txToDocHandlerFactory::createHandlerWith(
           new txMozillaXMLOutput(aFormat, mObserver));
 
       nsresult rv = handler->createResultDocument(
-          EmptyString(), kNameSpaceID_None, mSourceDocument, mDocumentIsData);
+          u""_ns, kNameSpaceID_None, mSourceDocument, mDocumentIsData);
       if (NS_SUCCEEDED(rv)) {
         *aHandler = handler.release();
       }
@@ -181,7 +183,6 @@ nsresult txToFragmentHandlerFactory::createHandlerWith(
       break;
     }
   }
-  NS_ENSURE_TRUE(*aHandler, NS_ERROR_OUT_OF_MEMORY);
   return NS_OK;
 }
 
@@ -420,7 +421,7 @@ txMozillaXSLTProcessor::AddXSLTParam(const nsString& aName,
 
   RefPtr<nsAtom> name = NS_Atomize(aName);
   int32_t nsId = kNameSpaceID_Unknown;
-  rv = nsContentUtils::NameSpaceManager()->RegisterNameSpace(aNamespace, nsId);
+  rv = nsNameSpaceManager::GetInstance()->RegisterNameSpace(aNamespace, nsId);
   NS_ENSURE_SUCCESS(rv, rv);
 
   txExpandedName varName(nsId, name);
@@ -432,7 +433,6 @@ txMozillaXSLTProcessor::AddXSLTParam(const nsString& aName,
   }
 
   var = new txVariable(value);
-  NS_ENSURE_TRUE(var, NS_ERROR_OUT_OF_MEMORY);
 
   return mVariables.add(varName, var);
 }
@@ -810,8 +810,8 @@ nsresult txMozillaXSLTProcessor::SetParameter(const nsAString& aNamespaceURI,
   }
 
   int32_t nsId = kNameSpaceID_Unknown;
-  nsresult rv = nsContentUtils::NameSpaceManager()->RegisterNameSpace(
-      aNamespaceURI, nsId);
+  nsresult rv =
+      nsNameSpaceManager::GetInstance()->RegisterNameSpace(aNamespaceURI, nsId);
   NS_ENSURE_SUCCESS(rv, rv);
   RefPtr<nsAtom> localName = NS_Atomize(aLocalName);
   txExpandedName varName(nsId, localName);
@@ -830,8 +830,8 @@ already_AddRefed<nsIVariant> txMozillaXSLTProcessor::GetParameter(
     const nsAString& aNamespaceURI, const nsAString& aLocalName,
     ErrorResult& aRv) {
   int32_t nsId = kNameSpaceID_Unknown;
-  nsresult rv = nsContentUtils::NameSpaceManager()->RegisterNameSpace(
-      aNamespaceURI, nsId);
+  nsresult rv =
+      nsNameSpaceManager::GetInstance()->RegisterNameSpace(aNamespaceURI, nsId);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aRv.Throw(rv);
     return nullptr;
@@ -857,8 +857,8 @@ void txMozillaXSLTProcessor::RemoveParameter(const nsAString& aNamespaceURI,
                                              const nsAString& aLocalName,
                                              ErrorResult& aRv) {
   int32_t nsId = kNameSpaceID_Unknown;
-  nsresult rv = nsContentUtils::NameSpaceManager()->RegisterNameSpace(
-      aNamespaceURI, nsId);
+  nsresult rv =
+      nsNameSpaceManager::GetInstance()->RegisterNameSpace(aNamespaceURI, nsId);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aRv.Throw(rv);
     return;
@@ -932,10 +932,10 @@ void txMozillaXSLTProcessor::reportError(nsresult aResult,
     mErrorText.Assign(aErrorText);
   } else {
     nsCOMPtr<nsIStringBundleService> sbs =
-        mozilla::services::GetStringBundleService();
+        mozilla::components::StringBundle::Service();
     if (sbs) {
       nsString errorText;
-      sbs->FormatStatusMessage(aResult, EmptyString().get(), errorText);
+      sbs->FormatStatusMessage(aResult, u"", errorText);
 
       nsAutoString errorMessage;
       nsCOMPtr<nsIStringBundle> bundle;
@@ -1215,10 +1215,6 @@ nsresult txVariable::Convert(nsIVariant* aValue, txAExprResult** aResult) {
         }
 
         *aResult = new txNodeSet(*xpathNode, nullptr);
-        if (!*aResult) {
-          return NS_ERROR_OUT_OF_MEMORY;
-        }
-
         NS_ADDREF(*aResult);
 
         return NS_OK;
@@ -1232,9 +1228,6 @@ nsresult txVariable::Convert(nsIVariant* aValue, txAExprResult** aResult) {
       nsCOMPtr<nsINodeList> nodeList = do_QueryInterface(supports);
       if (nodeList) {
         RefPtr<txNodeSet> nodeSet = new txNodeSet(nullptr);
-        if (!nodeSet) {
-          return NS_ERROR_OUT_OF_MEMORY;
-        }
 
         uint32_t length = nodeList->Length();
 

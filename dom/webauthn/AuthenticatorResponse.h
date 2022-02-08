@@ -9,11 +9,12 @@
 
 #include "js/TypeDecls.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/CryptoBuffer.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
+#include "nsCOMPtr.h"
+#include "nsPIDOMWindow.h"
 
 namespace mozilla {
 namespace dom {
@@ -29,7 +30,7 @@ class AuthenticatorResponse : public nsISupports, public nsWrapperCache {
   virtual ~AuthenticatorResponse();
 
  public:
-  nsISupports* GetParentObject() const { return mParent; }
+  nsISupports* GetParentObject() const;
 
   void GetFormat(nsString& aRetVal) const;
 

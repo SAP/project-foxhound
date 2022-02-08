@@ -8,6 +8,7 @@
 #define mozilla_IMEStateManager_h_
 
 #include "mozilla/EventForwards.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "nsIWidget.h"
@@ -56,6 +57,11 @@ class IMEStateManager {
     if (sInstalledMenuKeyboardListener) {
       return nullptr;
     }
+    // If we know focused browser parent, use it for making any events related
+    // to composition go to same content process.
+    if (sFocusedIMEBrowserParent) {
+      return sFocusedIMEBrowserParent;
+    }
     return BrowserParent::GetFocused();
   }
 
@@ -71,6 +77,21 @@ class IMEStateManager {
       const BrowserParent* aBrowserParent) {
     MOZ_ASSERT(aBrowserParent);
     return sFocusedIMEBrowserParent == aBrowserParent;
+  }
+
+  /**
+   * If CanSendNotificationToWidget() returns false (it should occur
+   * only in a content process), we shouldn't notify the widget of
+   * any focused editor changes since the content process was blurred.
+   * Also, even if content process, widget has native text event dispatcher such
+   * as Android, it still notify it.
+   */
+  static bool CanSendNotificationToWidget() {
+#ifdef MOZ_WIDGET_ANDROID
+    return true;
+#else
+    return !sCleaningUpForStoppingIMEStateManagement;
+#endif
   }
 
   /**
@@ -164,15 +185,24 @@ class IMEStateManager {
   // isn't changed by the new state, this method does nothing.
   // Note that this method changes the IME state of the active element in the
   // widget.  So, the caller must have focus.
-  static void UpdateIMEState(const IMEState& aNewIMEState, nsIContent* aContent,
-                             EditorBase* aEditorBase);
+  // XXX Changing this to MOZ_CAN_RUN_SCRIPT requires too many callers to be
+  //     marked too.  Probably, we should initialize IMEContentObserver
+  //     asynchronously.
+  enum class UpdateIMEStateOption {
+    ForceUpdate,
+    DontCommitComposition,
+  };
+  using UpdateIMEStateOptions = EnumSet<UpdateIMEStateOption, uint32_t>;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY static void UpdateIMEState(
+      const IMEState& aNewIMEState, nsIContent* aContent,
+      EditorBase& aEditorBase, const UpdateIMEStateOptions& aOptions = {});
 
   // This method is called when user operates mouse button in focused editor
   // and before the editor handles it.
   // Returns true if IME consumes the event.  Otherwise, false.
-  static bool OnMouseButtonEventInEditor(nsPresContext* aPresContext,
-                                         nsIContent* aContent,
-                                         WidgetMouseEvent* aMouseEvent);
+  MOZ_CAN_RUN_SCRIPT static bool OnMouseButtonEventInEditor(
+      nsPresContext* aPresContext, nsIContent* aContent,
+      WidgetMouseEvent* aMouseEvent);
 
   // This method is called when user clicked in an editor.
   // aContent must be:
@@ -197,13 +227,16 @@ class IMEStateManager {
   // destroyed.
   static void OnEditorDestroying(EditorBase& aEditorBase);
 
+  // This method is called when focus is set to same content again.
+  static void OnReFocus(nsPresContext* aPresContext, nsIContent& aContent);
+
   /**
    * All composition events must be dispatched via DispatchCompositionEvent()
    * for storing the composition target and ensuring a set of composition
    * events must be fired the stored target.  If the stored composition event
    * target is destroying, this removes the stored composition automatically.
    */
-  static void DispatchCompositionEvent(
+  MOZ_CAN_RUN_SCRIPT static void DispatchCompositionEvent(
       nsINode* aEventTargetNode, nsPresContext* aPresContext,
       BrowserParent* aBrowserParent, WidgetCompositionEvent* aCompositionEvent,
       nsEventStatus* aStatus, EventDispatchingCallback* aCallBack,
@@ -258,8 +291,8 @@ class IMEStateManager {
   static nsresult NotifyIME(IMEMessage aMessage, nsPresContext* aPresContext,
                             BrowserParent* aBrowserParent = nullptr);
 
-  static nsINode* GetRootEditableNode(nsPresContext* aPresContext,
-                                      nsIContent* aContent);
+  static nsINode* GetRootEditableNode(const nsPresContext* aPresContext,
+                                      const nsIContent* aContent);
 
   /**
    * Returns active IMEContentObserver but may be nullptr if focused content
@@ -282,7 +315,20 @@ class IMEStateManager {
                                  nsIContent* aContent);
 
   static void EnsureTextCompositionArray();
-  static void CreateIMEContentObserver(EditorBase* aEditorBase);
+
+  // XXX Changing this to MOZ_CAN_RUN_SCRIPT requires too many callers to be
+  //     marked too.  Probably, we should initialize IMEContentObserver
+  //     asynchronously.
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY static void CreateIMEContentObserver(
+      EditorBase& aEditorBase, nsIContent* aFocusedContent);
+
+  /**
+   * Check whether the content matches or does not match with focus information
+   * which is previously notified via OnChangeFocus();
+   */
+  static bool IsFocusedContent(const nsPresContext* aPresContext,
+                               const nsIContent* aFocusedContent);
+
   static void DestroyIMEContentObserver();
 
   static bool IsEditable(nsINode* node);
@@ -353,6 +399,54 @@ class IMEStateManager {
 
   static bool sIsGettingNewIMEState;
   static bool sCheckForIMEUnawareWebApps;
+
+  // Set to true only if this is an instance in a content process and
+  // only while `IMEStateManager::StopIMEStateManagement()`.
+  static bool sCleaningUpForStoppingIMEStateManagement;
+
+  // Set to true when:
+  // - In the main process, a window belonging to this app is active in the
+  //   desktop.
+  // - In a content process, the process has focus.
+  //
+  // This is updated by `OnChangeFocusInternal()` is called in the main
+  // process.  Therefore, this indicates the active state which
+  // `IMEStateManager` notified the focus change, there is timelag from
+  // the `nsFocusManager`'s status update.  This allows that all methods
+  // to handle something specially when they are called while the process
+  // is being activated or inactivated.  E.g., `OnFocusMovedBetweenBrowsers()`
+  // is called twice before `OnChangeFocusInternal()` when the main process
+  // becomes active.  In this case, it wants to wait a following call of
+  // `OnChangeFocusInternal()` to keep active composition.  See also below.
+  static bool sIsActive;
+
+  // While the application is being activated, `OnFocusMovedBetweenBrowsers()`
+  // are called twice before `OnChangeFocusInternal()`.  First time, aBlur is
+  // the last focused `BrowserParent` at deactivating and aFocus is always
+  // `nullptr`.  Then, it'll be called again with actually focused
+  // `BrowserParent` when a content in a remote process has focus.  If we need
+  // to keep active composition while all windows are deactivated, we shouldn't
+  // commit it at the first call since usually, the second call's aFocus
+  // and the first call's aBlur are same `BrowserParent`.  For solving this
+  // issue, we need to merge the given `BrowserParent`s of multiple calls of
+  // `OnFocusMovedBetweenBrowsers()`. The following struct is the data for
+  // calling `OnFocusMovedBetweenBrowsers()` later from
+  // `OnChangeFocusInternal()`.  Note that focus can be moved even while the
+  // main process is not active because JS can change focus.  In such case,
+  // composition is committed at that time.  Therefore, this is required only
+  // when the main process is activated and there is a composition in a remote
+  // process.
+  struct PendingFocusedBrowserSwitchingData final {
+    RefPtr<BrowserParent> mBrowserParentBlurred;
+    RefPtr<BrowserParent> mBrowserParentFocused;
+
+    PendingFocusedBrowserSwitchingData() = delete;
+    explicit PendingFocusedBrowserSwitchingData(BrowserParent* aBlur,
+                                                BrowserParent* aFocus)
+        : mBrowserParentBlurred(aBlur), mBrowserParentFocused(aFocus) {}
+  };
+  static Maybe<PendingFocusedBrowserSwitchingData>
+      sPendingFocusedBrowserSwitchingData;
 
   class MOZ_STACK_CLASS GettingNewIMEStateBlocker final {
    public:

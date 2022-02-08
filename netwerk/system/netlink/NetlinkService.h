@@ -17,6 +17,8 @@
 #include "nsClassHashtable.h"
 #include "mozilla/SHA1.h"
 #include "mozilla/UniquePtr.h"
+#include "nsTArray.h"
+#include "mozilla/net/DNS.h"
 
 namespace mozilla {
 namespace net {
@@ -53,13 +55,14 @@ class NetlinkService : public nsIRunnable {
   void GetNetworkID(nsACString& aNetworkID);
   void GetIsLinkUp(bool* aIsUp);
   nsresult GetDnsSuffixList(nsTArray<nsCString>& aDnsSuffixList);
+  nsresult GetResolvers(nsTArray<NetAddr>& aResolvers);
 
  private:
   void EnqueueGenMsg(uint16_t aMsgType, uint8_t aFamily);
   void EnqueueRtMsg(uint8_t aFamily, void* aAddress);
   void RemovePendingMsg();
 
-  mozilla::Mutex mMutex;
+  mozilla::Mutex mMutex{"NetlinkService::mMutex"};
 
   void OnNetlinkMessage(int aNetlinkSocket);
   void OnLinkMessage(struct nlmsghdr* aNlh);
@@ -76,38 +79,39 @@ class NetlinkService : public nsIRunnable {
                                 nsTArray<NetlinkNeighbor*>& aGwNeighbors);
   bool CalculateIDForFamily(uint8_t aFamily, mozilla::SHA1Sum* aSHA1);
   void CalculateNetworkID();
-  void ComputeDNSSuffixList();
+  void ExtractDNSProperties();
 
   nsCOMPtr<nsIThread> mThread;
 
-  bool mInitialScanFinished;
+  bool mInitialScanFinished{false};
 
   // A pipe to signal shutdown with.
-  int mShutdownPipe[2];
+  int mShutdownPipe[2]{-1, -1};
 
   // IP addresses that are used to check the route for public traffic.
-  struct in_addr mRouteCheckIPv4;
-  struct in6_addr mRouteCheckIPv6;
+  struct in_addr mRouteCheckIPv4 {};
+  struct in6_addr mRouteCheckIPv6 {};
 
   pid_t mPid;
-  uint32_t mMsgId;
+  uint32_t mMsgId{0};
 
-  bool mLinkUp;
+  bool mLinkUp{true};
 
   // Flag indicating that network ID could change and should be recalculated.
   // Calculation is postponed until we receive responses to all enqueued
   // messages.
-  bool mRecalculateNetworkId;
+  bool mRecalculateNetworkId{false};
 
   // Flag indicating that network change event needs to be sent even if
   // network ID hasn't changed.
-  bool mSendNetworkChangeEvent;
+  bool mSendNetworkChangeEvent{false};
 
   // Time stamp of setting mRecalculateNetworkId to true
   mozilla::TimeStamp mTriggerTime;
 
   nsCString mNetworkId;
   nsTArray<nsCString> mDNSSuffixList;
+  nsTArray<NetAddr> mDNSResolvers;
 
   class LinkInfo {
    public:

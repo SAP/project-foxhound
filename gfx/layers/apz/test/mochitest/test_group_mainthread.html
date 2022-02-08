@@ -11,13 +11,21 @@
 var subtests = [
   {"file": "helper_scrollby_bug1531796.html"},
   {"file": "helper_scroll_anchoring_smooth_scroll.html"},
+  {"file": "helper_visualscroll_clamp_restore.html", prefs: [
+    ["apz.test.logging_enabled", true],
+  ]},
+  {"file": "helper_smoothscroll_spam.html"},
+  {"file": "helper_smoothscroll_spam_interleaved.html"},
+  {"file": "helper_mainthread_scroll_bug1662379.html", prefs: [
+    ["apz.test.logging_enabled", true],
+  ]},
 ];
 
 if (isApzEnabled()) {
   SimpleTest.waitForExplicitFinish();
   window.onload = function() {
     runSubtestsSeriallyInFreshWindows(subtests)
-    .then(SimpleTest.finish, SimpleTest.finish);
+    .then(SimpleTest.finish, SimpleTest.finishWithFailure);
   };
 }
 

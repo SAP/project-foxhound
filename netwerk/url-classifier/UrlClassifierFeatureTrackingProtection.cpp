@@ -9,9 +9,13 @@
 #include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/net/UrlClassifierCommon.h"
 #include "ChannelClassifierService.h"
+#include "nsIChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsILoadContext.h"
 #include "nsNetUtil.h"
+#include "mozilla/StaticPtr.h"
+#include "nsXULAppAPI.h"
+#include "nsIWebProgressListener.h"
 
 namespace mozilla {
 namespace net {
@@ -36,7 +40,7 @@ StaticRefPtr<UrlClassifierFeatureTrackingProtection> gFeatureTrackingProtection;
 }  // namespace
 
 UrlClassifierFeatureTrackingProtection::UrlClassifierFeatureTrackingProtection()
-    : UrlClassifierFeatureBase(
+    : UrlClassifierFeatureAntiTrackingBase(
           nsLiteralCString(TRACKING_PROTECTION_FEATURE_NAME),
           nsLiteralCString(URLCLASSIFIER_TRACKING_BLOCKLIST),
           nsLiteralCString(URLCLASSIFIER_TRACKING_ENTITYLIST),
@@ -150,14 +154,21 @@ UrlClassifierFeatureTrackingProtection::ProcessChannel(
   nsAutoCString list;
   UrlClassifierCommon::TablesToString(aList, list);
 
-  if (ChannelClassifierService::OnBeforeBlockChannel(aChannel, mName, list) ==
-      ChannelBlockDecision::Unblocked) {
+  ChannelBlockDecision decision =
+      ChannelClassifierService::OnBeforeBlockChannel(aChannel, mName, list);
+  if (decision != ChannelBlockDecision::Blocked) {
+    uint32_t event =
+        decision == ChannelBlockDecision::Replaced
+            ? nsIWebProgressListener::STATE_REPLACED_TRACKING_CONTENT
+            : nsIWebProgressListener::STATE_ALLOWED_TRACKING_CONTENT;
+    ContentBlockingNotifier::OnEvent(aChannel, event, false);
+
     *aShouldContinue = true;
     return NS_OK;
   }
 
   UrlClassifierCommon::SetBlockedContent(aChannel, NS_ERROR_TRACKING_URI, list,
-                                         EmptyCString(), EmptyCString());
+                                         ""_ns, ""_ns);
 
   UC_LOG(
       ("UrlClassifierFeatureTrackingProtection::ProcessChannel - "

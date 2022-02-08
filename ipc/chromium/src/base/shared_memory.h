@@ -12,7 +12,6 @@
 #if defined(OS_POSIX)
 #  include <sys/types.h>
 #  include <semaphore.h>
-#  include "base/file_descriptor_posix.h"
 #endif
 #include <string>
 
@@ -25,28 +24,24 @@ namespace base {
 
 // SharedMemoryHandle is a platform specific type which represents
 // the underlying OS handle to a shared memory segment.
-#if defined(OS_WIN)
-typedef HANDLE SharedMemoryHandle;
-#elif defined(OS_POSIX)
-typedef FileDescriptor SharedMemoryHandle;
-#endif
+typedef mozilla::UniqueFileHandle SharedMemoryHandle;
 
 // Platform abstraction for shared memory.  Provides a C++ wrapper
 // around the OS primitive for a memory mapped file.
 class SharedMemory {
  public:
   // Create a new SharedMemory object.
-  SharedMemory();
+  SharedMemory() = default;
 
   // Create a new SharedMemory object from an existing, open
   // shared memory file.
   SharedMemory(SharedMemoryHandle init_handle, bool read_only)
       : SharedMemory() {
-    SetHandle(init_handle, read_only);
+    SetHandle(std::move(init_handle), read_only);
   }
 
   // Move constructor; transfers ownership.
-  SharedMemory(SharedMemory&& other);
+  SharedMemory(SharedMemory&& other) = default;
 
   // Destructor.  Will close any open files.
   ~SharedMemory();
@@ -60,7 +55,7 @@ class SharedMemory {
   static bool IsHandleValid(const SharedMemoryHandle& handle);
 
   // IsHandleValid applied to this object's handle.
-  bool IsValid() const;
+  bool IsValid() const { return static_cast<bool>(mapped_file_); }
 
   // Return invalid handle (see comment above for exact definition).
   static SharedMemoryHandle NULLHandle();
@@ -85,9 +80,7 @@ class SharedMemory {
   bool Map(size_t bytes, void* fixed_address = nullptr);
 
   // Unmaps the shared memory from the caller's address space.
-  // Returns true if successful; returns false on error or if the
-  // memory is not mapped.
-  bool Unmap();
+  void Unmap() { memory_ = nullptr; }
 
   // Get the size of the opened shared memory backing file.
   // Note:  This size is only available to the creator of the
@@ -98,21 +91,21 @@ class SharedMemory {
 
   // Gets a pointer to the opened memory space if it has been
   // Mapped via Map().  Returns NULL if it is not mapped.
-  void* memory() const { return memory_; }
+  void* memory() const { return memory_.get(); }
 
-  // Extracts the underlying file handle; similar to
-  // GiveToProcess(GetCurrentProcId(), ...) but returns a RAII type.
-  // Like GiveToProcess, this unmaps the memory as a side-effect.
-  mozilla::UniqueFileHandle TakeHandle();
-
-#ifdef OS_WIN
-  // Used only in gfx/ipc/SharedDIBWin.cpp; should be removable once
-  // NPAPI goes away.
-  HANDLE GetHandle() {
-    freezeable_ = false;
-    return mapped_file_;
+  // Extracts the underlying file handle, returning a RAII type.
+  // This unmaps the memory as a side-effect (and cleans up any OS-specific
+  // resources).
+  mozilla::UniqueFileHandle TakeHandle() {
+    mozilla::UniqueFileHandle handle = std::move(mapped_file_);
+    Close();
+    return handle;
   }
-#endif
+
+  // Creates a copy of the underlying file handle, returning a RAII type.
+  // This operation may fail, in which case the returned file handle will be
+  // invalid.
+  mozilla::UniqueFileHandle CloneHandle();
 
   // Make the shared memory object read-only, such that it cannot be
   // written even if it's sent to an untrusted process.  If it was
@@ -156,27 +149,6 @@ class SharedMemory {
   // something there in the meantime.
   static void* FindFreeAddressSpace(size_t size);
 
-  // Share the shared memory to another process.  Attempts
-  // to create a platform-specific new_handle which can be
-  // used in a remote process to access the shared memory
-  // file.  new_handle is an ouput parameter to receive
-  // the handle for use in the remote process.
-  // Returns true on success, false otherwise.
-  bool ShareToProcess(base::ProcessId target_pid,
-                      SharedMemoryHandle* new_handle) {
-    return ShareToProcessCommon(target_pid, new_handle, false);
-  }
-
-  // Logically equivalent to:
-  //   bool ok = ShareToProcess(process, new_handle);
-  //   Close();
-  //   return ok;
-  // Note that the memory is unmapped by calling this method, regardless of the
-  // return value.
-  bool GiveToProcess(ProcessId target_pid, SharedMemoryHandle* new_handle) {
-    return ShareToProcessCommon(target_pid, new_handle, true);
-  }
-
 #ifdef OS_POSIX
   // If named POSIX shm is being used, append the prefix (including
   // the leading '/') that would be used by a process with the given
@@ -186,25 +158,36 @@ class SharedMemory {
 #endif
 
  private:
-  bool ShareToProcessCommon(ProcessId target_pid,
-                            SharedMemoryHandle* new_handle, bool close_self);
-
   bool CreateInternal(size_t size, bool freezeable);
 
+  // Unmapping shared memory requires the mapped size on Unix but not
+  // Windows; this encapsulates that difference.
+  struct MappingDeleter {
+#ifdef OS_POSIX
+    // A default-constructed deleter must be used only with nullptr
+    // (to allow default-constructing UniqueMapping).  A deleter with
+    // a size must be used at most once.
+    size_t mapped_size_ = 0;
+    explicit MappingDeleter(size_t size) : mapped_size_(size) {}
+#endif
+    MappingDeleter() = default;
+    void operator()(void* ptr);
+  };
+  using UniqueMapping = mozilla::UniquePtr<void, MappingDeleter>;
+
+  UniqueMapping memory_;
+  size_t max_size_ = 0;
+  mozilla::UniqueFileHandle mapped_file_;
 #if defined(OS_WIN)
   // If true indicates this came from an external source so needs extra checks
   // before being mapped.
-  bool external_section_;
-  HANDLE mapped_file_;
-#elif defined(OS_POSIX)
-  int mapped_file_;
-  int frozen_file_;
-  size_t mapped_size_;
+  bool external_section_ = false;
+#elif defined(OS_POSIX) && !defined(ANDROID)
+  mozilla::UniqueFileHandle frozen_file_;
+  bool is_memfd_ = false;
 #endif
-  void* memory_;
-  bool read_only_;
-  bool freezeable_;
-  size_t max_size_;
+  bool read_only_ = false;
+  bool freezeable_ = false;
 
   DISALLOW_EVIL_CONSTRUCTORS(SharedMemory);
 };

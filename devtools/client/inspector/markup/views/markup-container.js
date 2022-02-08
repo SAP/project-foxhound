@@ -545,6 +545,11 @@ MarkupContainer.prototype = {
       return;
     }
 
+    // Bail out when clicking on arrow expanders to avoid selecting the row.
+    if (target.classList.contains("expander")) {
+      return;
+    }
+
     // target is the MarkupContainer itself.
     this.hovered = false;
     this.markup.navigate(this);
@@ -788,9 +793,13 @@ MarkupContainer.prototype = {
   _onToggle: function(event) {
     event.stopPropagation();
 
-    // Prevent the html tree from expanding when an event bubble or display node is
-    // clicked.
-    if (event.target.dataset.event || event.target.dataset.display) {
+    // Prevent the html tree from expanding when an event bubble, display or scrollable
+    // node is clicked.
+    if (
+      event.target.dataset.event ||
+      event.target.dataset.display ||
+      event.target.dataset.scrollable
+    ) {
       return;
     }
 
@@ -804,8 +813,6 @@ MarkupContainer.prototype = {
    *         Whether all descendants should also be expanded/collapsed
    */
   expandContainer: function(applyToDescendants) {
-    this.markup.navigate(this);
-
     if (this.hasChildren) {
       this.markup.setNodeExpanded(
         this.node,

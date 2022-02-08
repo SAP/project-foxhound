@@ -14,6 +14,7 @@ var { XPCOMUtils } = ChromeUtils.import(
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   AboutNewTab: "resource:///modules/AboutNewTab.jsm",
+  BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   ContextualIdentityService:
     "resource://gre/modules/ContextualIdentityService.jsm",
@@ -161,93 +162,14 @@ function openUILink(
   openUILinkIn(url, where, params);
 }
 
-// Utility function to check command events for potential middle-click events
-// from checkForMiddleClick and unwrap them.
+// This is here for historical reasons. bug 1742889 covers cleaning this up.
 function getRootEvent(aEvent) {
-  // Part of the fix for Bug 1523813.
-  // Middle-click events arrive here wrapped in different numbers (1-2) of
-  // command events, depending on the button originally clicked.
-  if (!aEvent) {
-    return aEvent;
-  }
-  let tempEvent = aEvent;
-  while (tempEvent.sourceEvent) {
-    if (tempEvent.sourceEvent.button == 1) {
-      aEvent = tempEvent.sourceEvent;
-      break;
-    }
-    tempEvent = tempEvent.sourceEvent;
-  }
-  return aEvent;
+  return BrowserUtils.getRootEvent(aEvent);
 }
 
-/**
- * whereToOpenLink() looks at an event to decide where to open a link.
- *
- * The event may be a mouse event (click, double-click, middle-click) or keypress event (enter).
- *
- * On Windows, the modifiers are:
- * Ctrl        new tab, selected
- * Shift       new window
- * Ctrl+Shift  new tab, in background
- * Alt         save
- *
- * Middle-clicking is the same as Ctrl+clicking (it opens a new tab).
- *
- * Exceptions:
- * - Alt is ignored for menu items selected using the keyboard so you don't accidentally save stuff.
- *    (Currently, the Alt isn't sent here at all for menu items, but that will change in bug 126189.)
- * - Alt is hard to use in context menus, because pressing Alt closes the menu.
- * - Alt can't be used on the bookmarks toolbar because Alt is used for "treat this as something draggable".
- * - The button is ignored for the middle-click-paste-URL feature, since it's always a middle-click.
- *
- * @param e {Event|Object} Event or JSON Object
- * @param ignoreButton {Boolean}
- * @param ignoreAlt {Boolean}
- * @returns {"current" | "tabshifted" | "tab" | "save" | "window"}
- */
+// This is here for historical reasons. bug 1742889 covers cleaning this up.
 function whereToOpenLink(e, ignoreButton, ignoreAlt) {
-  // This method must treat a null event like a left click without modifier keys (i.e.
-  // e = { shiftKey:false, ctrlKey:false, metaKey:false, altKey:false, button:0 })
-  // for compatibility purposes.
-  if (!e) {
-    return "current";
-  }
-
-  e = getRootEvent(e);
-
-  var shift = e.shiftKey;
-  var ctrl = e.ctrlKey;
-  var meta = e.metaKey;
-  var alt = e.altKey && !ignoreAlt;
-
-  // ignoreButton allows "middle-click paste" to use function without always opening in a new window.
-  let middle = !ignoreButton && e.button == 1;
-  let middleUsesTabs = Services.prefs.getBoolPref(
-    "browser.tabs.opentabfor.middleclick",
-    true
-  );
-  let middleUsesNewWindow = Services.prefs.getBoolPref(
-    "middlemouse.openNewWindow",
-    false
-  );
-
-  // Don't do anything special with right-mouse clicks.  They're probably clicks on context menu items.
-
-  var metaKey = AppConstants.platform == "macosx" ? meta : ctrl;
-  if (metaKey || (middle && middleUsesTabs)) {
-    return shift ? "tabshifted" : "tab";
-  }
-
-  if (alt && Services.prefs.getBoolPref("browser.altClickSave", false)) {
-    return "save";
-  }
-
-  if (shift || (middle && !middleUsesTabs && middleUsesNewWindow)) {
-    return "window";
-  }
-
-  return "current";
+  return BrowserUtils.whereToOpenLink(e, ignoreButton, ignoreAlt);
 }
 
 /* openTrustedLinkIn will attempt to open the given URI using the SystemPrincipal
@@ -319,6 +241,7 @@ function openWebLinkIn(url, where, params) {
  * Instead of aAllowThirdPartyFixup, you may also pass an object with any of
  * these properties:
  *   allowThirdPartyFixup (boolean)
+ *   fromChrome           (boolean)
  *   postData             (nsIInputStream)
  *   referrerInfo         (nsIReferrerInfo)
  *   relatedToCurrent     (boolean)
@@ -346,7 +269,7 @@ function openUILinkIn(
     );
   }
 
-  params.fromChrome = true;
+  params.fromChrome = params.fromChrome ?? true;
 
   openLinkIn(url, where, params);
 }
@@ -366,7 +289,6 @@ function openLinkIn(url, where, params) {
     : new ReferrerInfo(Ci.nsIReferrerInfo.EMPTY, true, null);
   var aRelatedToCurrent = params.relatedToCurrent;
   var aAllowInheritPrincipal = !!params.allowInheritPrincipal;
-  var aAllowMixedContent = params.allowMixedContent;
   var aForceAllowDataURI = params.forceAllowDataURI;
   var aInBackground = params.inBackground;
   var aInitiatingDoc = params.initiatingDoc;
@@ -397,6 +319,7 @@ function openLinkIn(url, where, params) {
         true,
         aReferrerInfo,
         null,
+        null,
         params.isContentWindowPrivate,
         aPrincipal
       );
@@ -408,7 +331,7 @@ function openLinkIn(url, where, params) {
         );
         return;
       }
-      saveURL(url, null, null, true, true, aReferrerInfo, aInitiatingDoc);
+      saveURL(url, null, null, true, true, aReferrerInfo, null, aInitiatingDoc);
     }
     return;
   }
@@ -560,8 +483,9 @@ function openLinkIn(url, where, params) {
     } catch (e) {}
 
     if (
+      !aAllowPinnedTabHostChange &&
       w.gBrowser.getTabForBrowser(targetBrowser).pinned &&
-      !aAllowPinnedTabHostChange
+      url != "about:crashcontent"
     ) {
       try {
         // nsIURI.host can throw for non-nsStandardURL nsIURIs.
@@ -660,7 +584,6 @@ function openLinkIn(url, where, params) {
         allowThirdPartyFixup: aAllowThirdPartyFixup,
         relatedToCurrent: aRelatedToCurrent,
         skipAnimation: aSkipTabAnimation,
-        allowMixedContent: aAllowMixedContent,
         userContextId: aUserContextId,
         originPrincipal: aPrincipal,
         originStoragePrincipal: aStoragePrincipal,
@@ -696,7 +619,11 @@ function openLinkIn(url, where, params) {
       break;
   }
 
-  if (!focusUrlBar && targetBrowser == w.gBrowser.selectedBrowser) {
+  if (
+    !params.avoidBrowserFocus &&
+    !focusUrlBar &&
+    targetBrowser == w.gBrowser.selectedBrowser
+  ) {
     // Focus the content, but only if the browser used for the load is selected.
     targetBrowser.focus();
   }
@@ -704,6 +631,7 @@ function openLinkIn(url, where, params) {
 
 // Used as an onclick handler for UI elements with link-like behavior.
 // e.g. onclick="checkForMiddleClick(this, event);"
+// Not needed for menuitems because those fire command events even on middle clicks.
 function checkForMiddleClick(node, event) {
   // We should be using the disabled property here instead of the attribute,
   // but some elements that this function is used with don't support it (e.g.
@@ -711,6 +639,11 @@ function checkForMiddleClick(node, event) {
   if (node.getAttribute("disabled") == "true") {
     return;
   } // Do nothing
+
+  if (event.target.tagName == "menuitem") {
+    // Menu items fire command on middle-click by themselves.
+    return;
+  }
 
   if (event.button == 1) {
     /* Execute the node's oncommand or command.
@@ -727,6 +660,7 @@ function checkForMiddleClick(node, event) {
       event.altKey,
       event.shiftKey,
       event.metaKey,
+      0,
       event,
       event.mozInputSource
     );
@@ -736,6 +670,7 @@ function checkForMiddleClick(node, event) {
     // handled more than once.
     // E.g. see https://bugzilla.mozilla.org/show_bug.cgi?id=1657992#c4
     event.stopPropagation();
+    event.preventDefault();
 
     // If the middle-click was on part of a menu, close the menu.
     // (Menus close automatically with left-click but not with middle-click.)
@@ -776,9 +711,9 @@ function createUserContextMenu(
       bundle.GetStringFromName("userContextNone.accesskey")
     );
 
-    // We don't set an oncommand/command attribute because if we have
-    // to exclude a userContextId we are generating the contextMenu and
-    // isContextMenu will be true.
+    if (!isContextMenu) {
+      menuitem.setAttribute("command", "Browser:NewUserContextTab");
+    }
 
     docfrag.appendChild(menuitem);
 
@@ -982,7 +917,7 @@ function openAboutDialog() {
   window.openDialog("chrome://browser/content/aboutDialog.xhtml", "", features);
 }
 
-function openPreferences(paneID, extraArgs) {
+async function openPreferences(paneID, extraArgs) {
   // This function is duplicated from preferences.js.
   function internalPrefCategoryNameToFriendlyName(aName) {
     return (aName || "").replace(/^pane./, function(toReplace) {
@@ -1037,17 +972,15 @@ function openPreferences(paneID, extraArgs) {
     browser = win.gBrowser.selectedBrowser;
   }
 
-  if (newLoad) {
-    Services.obs.addObserver(function panesLoadedObs(prefWin, topic, data) {
-      if (!browser) {
-        browser = win.gBrowser.selectedBrowser;
-      }
-      if (prefWin != browser.contentWindow) {
-        return;
-      }
-      Services.obs.removeObserver(panesLoadedObs, "sync-pane-loaded");
-    }, "sync-pane-loaded");
-  } else if (paneID) {
+  if (!newLoad && paneID) {
+    if (browser.contentDocument?.readyState != "complete") {
+      await new Promise(resolve => {
+        browser.addEventListener("load", resolve, {
+          capture: true,
+          once: true,
+        });
+      });
+    }
     browser.contentWindow.gotoPref(paneID);
   }
 }
@@ -1066,12 +999,6 @@ function openTroubleshootingPage() {
 function openFeedbackPage() {
   var url = Services.urlFormatter.formatURLPref("app.feedback.baseURL");
   openTrustedLinkIn(url, "tab");
-}
-
-function openTourPage() {
-  let scope = {};
-  ChromeUtils.import("resource:///modules/UITour.jsm", scope);
-  openTrustedLinkIn(scope.UITour.url, "tab");
 }
 
 function buildHelpMenu() {
@@ -1099,7 +1026,29 @@ function buildHelpMenu() {
     gSafeBrowsing.setReportPhishingMenu();
   }
 
-  updateImportCommandEnabledState();
+  // We're testing to see if the WebCompat team's "Report Site Issue"
+  // access point makes sense in the Help menu. Normally checking this
+  // pref wouldn't be enough, since there's also the case that the
+  // add-on has somehow been disabled by the user or third-party software
+  // without flipping the pref. Since this add-on is only used on pre-release
+  // channels, and since the jury is still out on whether or not the Help menu
+  // is the right place for this item, we're going to do a least-effort
+  // approach here and assume that the pref is enough to determine whether the
+  // menuitem should appear.
+  //
+  // See bug 1690573 for further details.
+  let reportSiteIssueEnabled = Services.prefs.getBoolPref(
+    "extensions.webcompat-reporter.enabled",
+    false
+  );
+  let reportSiteIssue = document.getElementById("help_reportSiteIssue");
+  reportSiteIssue.hidden = !reportSiteIssueEnabled;
+  if (reportSiteIssueEnabled) {
+    let uri = gBrowser.currentURI;
+    let isReportablePage =
+      uri && (uri.schemeIs("http") || uri.schemeIs("https"));
+    reportSiteIssue.disabled = !isReportablePage;
+  }
 }
 
 function isElementVisible(aElement) {
@@ -1137,19 +1086,4 @@ function openHelpLink(aHelpTopic, aCalledFromModal, aWhere) {
 function openPrefsHelp(aEvent) {
   let helpTopic = aEvent.target.getAttribute("helpTopic");
   openHelpLink(helpTopic);
-}
-
-/**
- * Updates the enabled state of the "Import From Another Browser" command
- * depending on the DisableProfileImport policy.
- */
-function updateImportCommandEnabledState() {
-  if (!Services.policies.isAllowed("profileImport")) {
-    document
-      .getElementById("cmd_file_importFromAnotherBrowser")
-      .setAttribute("disabled", "true");
-    document
-      .getElementById("cmd_help_importFromAnotherBrowser")
-      .setAttribute("disabled", "true");
-  }
 }

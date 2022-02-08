@@ -8,6 +8,7 @@
 
 #include "jit/IonAnalysis.h"
 #include "jit/MIR.h"
+#include "jit/MIRGenerator.h"
 #include "jit/MIRGraph.h"
 #include "util/CheckedArithmetic.h"
 
@@ -148,7 +149,7 @@ static void AnalyzeLoadUnboxedScalar(MLoadUnboxedScalar* load) {
   MAdd* add = load->getOperand(1)->toAdd();
 
   if (add->type() != MIRType::Int32 || !add->hasUses() ||
-      add->truncateKind() != MDefinition::TruncateKind::Truncate) {
+      add->truncateKind() != TruncateKind::Truncate) {
     return;
   }
 
@@ -198,8 +199,9 @@ void EffectiveAddressAnalysis::analyzeAsmJSHeapAccess(AsmJSMemoryAccess* ins) {
   MDefinition* base = ins->base();
 
   if (base->isConstant()) {
-    // If the index is within the minimum heap length, we can optimize
-    // away the bounds check.
+    // If the index is within the minimum heap length, we can optimize away the
+    // bounds check.  Asm.js accesses always have an int32 base, the memory is
+    // always a memory32.
     int32_t imm = base->toConstant()->toInt32();
     if (imm >= 0) {
       int32_t end = (uint32_t)imm + ins->byteSize();
@@ -227,6 +229,7 @@ void EffectiveAddressAnalysis::analyzeAsmJSHeapAccess(AsmJSMemoryAccess* ins) {
 //   truncate(x + y + imm32)
 //   truncate((y << {0,1,2,3}) + imm32)
 bool EffectiveAddressAnalysis::analyze() {
+  JitSpew(JitSpew_EAA, "Begin");
   for (ReversePostorderIterator block(graph_.rpoBegin());
        block != graph_.rpoEnd(); block++) {
     for (MInstructionIterator i = block->begin(); i != block->end(); i++) {

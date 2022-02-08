@@ -2,15 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use euclid::SideOffsets2D;
+use euclid::{SideOffsets2D, Angle};
 use peek_poke::PeekPoke;
 use std::ops::Not;
 // local imports
 use crate::font;
-use crate::api::{PipelineId, PropertyBinding};
+use crate::{PipelineId, PropertyBinding};
 use crate::color::ColorF;
 use crate::image::{ColorDepth, ImageKey};
 use crate::units::*;
+use std::hash::{Hash, Hasher};
 
 // ******************************************************************
 // * NOTE: some of these structs have an "IMPLICIT" comment.        *
@@ -47,6 +48,10 @@ bitflags! {
         /// compositor surface under certain (implementation specific) conditions. This
         /// is typically used for large videos, and canvas elements.
         const PREFER_COMPOSITOR_SURFACE = 1 << 3;
+        /// If set, this primitive can be passed directly to the compositor via its
+        /// ExternalImageId, and the compositor will use the native image directly.
+        /// Used as a further extension on top of PREFER_COMPOSITOR_SURFACE.
+        const SUPPORTS_EXTERNAL_COMPOSITOR_SURFACE = 1 << 4;
     }
 }
 
@@ -68,10 +73,6 @@ pub struct CommonItemProperties {
     pub clip_id: ClipId,
     /// The coordinate-space the item is in (yes, it can be really granular)
     pub spatial_id: SpatialId,
-    /// Opaque bits for our clients to use for hit-testing. This is the most
-    /// dubious "common" field, but because it's an Option, it usually only
-    /// wastes a single byte (for None).
-    pub hit_info: Option<ItemTag>,
     /// Various flags describing properties of this primitive.
     pub flags: PrimitiveFlags,
 }
@@ -86,7 +87,6 @@ impl CommonItemProperties {
             clip_rect,
             spatial_id: space_and_clip.spatial_id,
             clip_id: space_and_clip.clip_id,
-            hit_info: None,
             flags: PrimitiveFlags::default(),
         }
     }
@@ -115,6 +115,35 @@ impl SpaceAndClipInfo {
     }
 }
 
+/// Defines a caller provided key that is unique for a given spatial node, and is stable across
+/// display lists. WR uses this to determine which spatial nodes are added / removed for a new
+/// display list. The content itself is arbitrary and opaque to WR, the only thing that matters
+/// is that it's unique and stable between display lists.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, PeekPoke, Default, Eq, Hash)]
+pub struct SpatialTreeItemKey {
+    key0: u64,
+    key1: u64,
+}
+
+impl SpatialTreeItemKey {
+    pub fn new(key0: u64, key1: u64) -> Self {
+        SpatialTreeItemKey {
+            key0,
+            key1,
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, PeekPoke)]
+pub enum SpatialTreeItem {
+    ScrollFrame(ScrollFrameDescriptor),
+    ReferenceFrame(ReferenceFrameDescriptor),
+    StickyFrame(StickyFrameDescriptor),
+    Invalid,
+}
+
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub enum DisplayItem {
@@ -139,12 +168,9 @@ pub enum DisplayItem {
     RectClip(RectClipDisplayItem),
     RoundedRectClip(RoundedRectClipDisplayItem),
     ImageMaskClip(ImageMaskClipDisplayItem),
-    Clip(ClipDisplayItem),
     ClipChain(ClipChainItem),
 
     // Spaces and Frames that content can be scoped under.
-    ScrollFrame(ScrollFrameDisplayItem),
-    StickyFrame(StickyFrameDisplayItem),
     Iframe(IframeDisplayItem),
     PushReferenceFrame(ReferenceFrameDisplayListItem),
     PushStackingContext(PushStackingContextDisplayItem),
@@ -155,6 +181,7 @@ pub enum DisplayItem {
     SetFilterOps,
     SetFilterData,
     SetFilterPrimitives,
+    SetPoints,
 
     // These marker items terminate a scope introduced by a previous item.
     PopReferenceFrame,
@@ -190,11 +217,8 @@ pub enum DebugDisplayItem {
     ImageMaskClip(ImageMaskClipDisplayItem),
     RoundedRectClip(RoundedRectClipDisplayItem),
     RectClip(RectClipDisplayItem),
-    Clip(ClipDisplayItem, Vec<ComplexClipRegion>),
     ClipChain(ClipChainItem, Vec<ClipId>),
 
-    ScrollFrame(ScrollFrameDisplayItem),
-    StickyFrame(StickyFrameDisplayItem),
     Iframe(IframeDisplayItem),
     PushReferenceFrame(ReferenceFrameDisplayListItem),
     PushStackingContext(PushStackingContextDisplayItem),
@@ -203,6 +227,7 @@ pub enum DebugDisplayItem {
     SetFilterOps(Vec<FilterOp>),
     SetFilterData(FilterData),
     SetFilterPrimitives(Vec<FilterPrimitive>),
+    SetPoints(Vec<LayoutPoint>),
 
     PopReferenceFrame,
     PopStackingContext,
@@ -214,7 +239,8 @@ pub struct ImageMaskClipDisplayItem {
     pub id: ClipId,
     pub parent_space_and_clip: SpaceAndClipInfo,
     pub image_mask: ImageMask,
-}
+    pub fill_rule: FillRule,
+} // IMPLICIT points: Vec<LayoutPoint>
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct RectClipDisplayItem {
@@ -259,7 +285,7 @@ impl StickyOffsetBounds {
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
-pub struct StickyFrameDisplayItem {
+pub struct StickyFrameDescriptor {
     pub id: SpatialId,
     pub parent_spatial_id: SpatialId,
     pub bounds: LayoutRect,
@@ -287,33 +313,29 @@ pub struct StickyFrameDisplayItem {
     /// `previously_applied_offset.y`. A negative y component corresponds to the upward offset
     /// applied due to bottom-stickiness. The x-axis works analogously.
     pub previously_applied_offset: LayoutVector2D,
-}
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, PeekPoke)]
-pub enum ScrollSensitivity {
-    ScriptAndInputEvents,
-    Script,
+    /// A unique (per-pipeline) key for this spatial that is stable across display lists.
+    pub key: SpatialTreeItemKey,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
-pub struct ScrollFrameDisplayItem {
-    /// The id of the clip this scroll frame creates
-    pub clip_id: ClipId,
+pub struct ScrollFrameDescriptor {
     /// The id of the space this scroll frame creates
     pub scroll_frame_id: SpatialId,
     /// The size of the contents this contains (so the backend knows how far it can scroll).
     // FIXME: this can *probably* just be a size? Origin seems to just get thrown out.
     pub content_rect: LayoutRect,
-    pub clip_rect: LayoutRect,
-    pub parent_space_and_clip: SpaceAndClipInfo,
-    pub external_id: Option<ExternalScrollId>,
-    pub scroll_sensitivity: ScrollSensitivity,
+    pub frame_rect: LayoutRect,
+    pub parent_space: SpatialId,
+    pub external_id: ExternalScrollId,
     /// The amount this scrollframe has already been scrolled by, in the caller.
     /// This means that all the display items that are inside the scrollframe
     /// will have their coordinates shifted by this amount, and this offset
     /// should be added to those display item coordinates in order to get a
     /// normalized value that is consistent across display lists.
     pub external_scroll_offset: LayoutVector2D,
+    /// A unique (per-pipeline) key for this spatial that is stable across display lists.
+    pub key: SpatialTreeItemKey,
 }
 
 /// A solid or an animating color to draw (may not actually be a rectangle due to complex clips)
@@ -338,6 +360,7 @@ pub struct ClearRectangleDisplayItem {
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct HitTestDisplayItem {
     pub common: CommonItemProperties,
+    pub tag: ItemTag,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
@@ -623,6 +646,15 @@ pub struct Gradient {
     pub extend_mode: ExtendMode,
 } // IMPLICIT: stops: Vec<GradientStop>
 
+impl Gradient {
+    pub fn is_valid(&self) -> bool {
+        self.start_point.x.is_finite() &&
+            self.start_point.y.is_finite() &&
+            self.end_point.x.is_finite() &&
+            self.end_point.y.is_finite()
+    }
+}
+
 /// The area
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct GradientDisplayItem {
@@ -655,6 +687,15 @@ pub struct RadialGradient {
     pub extend_mode: ExtendMode,
 } // IMPLICIT stops: Vec<GradientStop>
 
+impl RadialGradient {
+    pub fn is_valid(&self) -> bool {
+        self.center.x.is_finite() &&
+            self.center.y.is_finite() &&
+            self.start_offset.is_finite() &&
+            self.end_offset.is_finite()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct ConicGradient {
     pub center: LayoutPoint,
@@ -663,6 +704,16 @@ pub struct ConicGradient {
     pub end_offset: f32,
     pub extend_mode: ExtendMode,
 } // IMPLICIT stops: Vec<GradientStop>
+
+impl ConicGradient {
+    pub fn is_valid(&self) -> bool {
+        self.center.x.is_finite() &&
+            self.center.y.is_finite() &&
+            self.angle.is_finite() &&
+            self.start_offset.is_finite() &&
+            self.end_offset.is_finite()
+    }
+}
 
 /// Just an abstraction for bundling up a bunch of clips into a "super clip".
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
@@ -704,6 +755,10 @@ pub struct BackdropFilterDisplayItem {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct ReferenceFrameDisplayListItem {
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
+pub struct ReferenceFrameDescriptor {
     pub origin: LayoutPoint,
     pub parent_spatial_id: SpatialId,
     pub reference_frame: ReferenceFrame,
@@ -711,13 +766,53 @@ pub struct ReferenceFrameDisplayListItem {
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub enum ReferenceFrameKind {
-    /// Zoom reference frames must be a scale + translation only
-    Zoom,
     /// A normal transform matrix, may contain perspective (the CSS transform property)
-    Transform,
+    Transform {
+        /// Optionally marks the transform as only ever having a simple 2D scale or translation,
+        /// allowing for optimizations.
+        is_2d_scale_translation: bool,
+        /// Marks that the transform should be snapped. Used for transforms which animate in
+        /// response to scrolling, eg for zooming or dynamic toolbar fixed-positioning.
+        should_snap: bool,
+    },
     /// A perspective transform, that optionally scrolls relative to a specific scroll node
     Perspective {
         scrolling_relative_to: Option<ExternalScrollId>,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, PeekPoke)]
+pub enum Rotation {
+    Degree0,
+    Degree90,
+    Degree180,
+    Degree270,
+}
+
+impl Rotation {
+    pub fn to_matrix(
+        &self,
+        size: LayoutSize,
+    ) -> LayoutTransform {
+        let (shift_center_to_origin, angle) = match self {
+            Rotation::Degree0 => {
+              (LayoutTransform::translation(-size.width / 2., -size.height / 2., 0.), Angle::degrees(0.))
+            },
+            Rotation::Degree90 => {
+              (LayoutTransform::translation(-size.height / 2., -size.width / 2., 0.), Angle::degrees(90.))
+            },
+            Rotation::Degree180 => {
+              (LayoutTransform::translation(-size.width / 2., -size.height / 2., 0.), Angle::degrees(180.))
+            },
+            Rotation::Degree270 => {
+              (LayoutTransform::translation(-size.height / 2., -size.width / 2., 0.), Angle::degrees(270.))
+            },
+        };
+        let shift_origin_to_center = LayoutTransform::translation(size.width / 2., size.height / 2., 0.);
+
+        shift_center_to_origin
+            .then(&LayoutTransform::rotation(0., 0., 1.0, angle))
+            .then(&shift_origin_to_center)
     }
 }
 
@@ -733,6 +828,7 @@ pub enum ReferenceTransformBinding {
     Computed {
         scale_from: Option<LayoutSize>,
         vertical_flip: bool,
+        rotation: Rotation,
     },
 }
 
@@ -752,6 +848,8 @@ pub struct ReferenceFrame {
     /// matrix.
     pub transform: ReferenceTransformBinding,
     pub id: SpatialId,
+    /// A unique (per-pipeline) key for this spatial that is stable across display lists.
+    pub key: SpatialTreeItemKey,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
@@ -785,7 +883,7 @@ pub enum TransformStyle {
 /// when we want to cache the output, and performance is
 /// important. Note that this is a performance hint only,
 /// which WR may choose to ignore.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, PeekPoke)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, MallocSizeOf, Serialize, PeekPoke)]
 #[repr(u8)]
 pub enum RasterSpace {
     // Rasterize in local-space, applying supplied scale to primitives.
@@ -804,6 +902,23 @@ impl RasterSpace {
         match self {
             RasterSpace::Local(scale) => Some(scale),
             RasterSpace::Screen => None,
+        }
+    }
+}
+
+impl Eq for RasterSpace {}
+
+impl Hash for RasterSpace {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            RasterSpace::Screen => {
+                0.hash(state);
+            }
+            RasterSpace::Local(scale) => {
+                // Note: this is inconsistent with the Eq impl for -0.0 (don't care).
+                1.hash(state);
+                scale.to_bits().hash(state);
+            }
         }
     }
 }
@@ -934,7 +1049,8 @@ impl FloodPrimitive {
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct BlurPrimitive {
     pub input: FilterPrimitiveInput,
-    pub radius: f32,
+    pub width: f32,
+    pub height: f32,
 }
 
 #[repr(C)]
@@ -1061,7 +1177,7 @@ pub enum FilterOp {
     /// Filter that does no transformation of the colors, needed for
     /// debug purposes only.
     Identity,
-    Blur(f32),
+    Blur(f32, f32),
     Brightness(f32),
     Contrast(f32),
     Grayscale(f32),
@@ -1253,6 +1369,7 @@ pub enum YuvColorSpace {
     Rec601 = 0,
     Rec709 = 1,
     Rec2020 = 2,
+    Identity = 3, // aka GBR as per ISO/IEC 23091-2:2019
 }
 
 #[repr(u8)]
@@ -1260,6 +1377,44 @@ pub enum YuvColorSpace {
 pub enum ColorRange {
     Limited = 0,
     Full = 1,
+}
+
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize, PeekPoke)]
+pub enum YuvRangedColorSpace {
+    Rec601Narrow = 0,
+    Rec601Full = 1,
+    Rec709Narrow = 2,
+    Rec709Full = 3,
+    Rec2020Narrow = 4,
+    Rec2020Full = 5,
+    GbrIdentity = 6,
+}
+
+impl YuvColorSpace {
+    pub fn with_range(self, range: ColorRange) -> YuvRangedColorSpace {
+        match self {
+            YuvColorSpace::Identity => YuvRangedColorSpace::GbrIdentity,
+            YuvColorSpace::Rec601 => {
+                match range {
+                    ColorRange::Limited => YuvRangedColorSpace::Rec601Narrow,
+                    ColorRange::Full => YuvRangedColorSpace::Rec601Full,
+                }
+            }
+            YuvColorSpace::Rec709 => {
+                match range {
+                    ColorRange::Limited => YuvRangedColorSpace::Rec709Narrow,
+                    ColorRange::Full => YuvRangedColorSpace::Rec709Full,
+                }
+            }
+            YuvColorSpace::Rec2020 => {
+                match range {
+                    ColorRange::Limited => YuvRangedColorSpace::Rec2020Narrow,
+                    ColorRange::Full => YuvRangedColorSpace::Rec2020Full,
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, PeekPoke)]
@@ -1427,6 +1582,34 @@ impl ComplexClipRegion {
     }
 }
 
+pub const POLYGON_CLIP_VERTEX_MAX: usize = 16;
+
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize, Eq, Hash, PeekPoke)]
+pub enum FillRule {
+    Nonzero = 0x1, // Behaves as the SVG fill-rule definition for nonzero.
+    Evenodd = 0x2, // Behaves as the SVG fill-rule definition for evenodd.
+}
+
+impl From<u8> for FillRule {
+    fn from(fill_rule: u8) -> Self {
+        match fill_rule {
+            0x1 => FillRule::Nonzero,
+            0x2 => FillRule::Evenodd,
+            _ => panic!("Unexpected FillRule value."),
+        }
+    }
+}
+
+impl From<FillRule> for u8 {
+    fn from(fill_rule: FillRule) -> Self {
+        match fill_rule {
+            FillRule::Nonzero => 0x1,
+            FillRule::Evenodd => 0x2,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize, PeekPoke)]
 pub struct ClipChainId(pub u64, pub PipelineId);
 
@@ -1496,14 +1679,6 @@ impl SpatialId {
     pub fn pipeline_id(&self) -> PipelineId {
         self.1
     }
-
-    pub fn is_root_reference_frame(&self) -> bool {
-        self.0 == ROOT_REFERENCE_FRAME_SPATIAL_ID
-    }
-
-    pub fn is_root_scroll_node(&self) -> bool {
-        self.0 == ROOT_SCROLL_NODE_SPATIAL_ID
-    }
 }
 
 /// An external identifier that uniquely identifies a scroll frame independent of its ClipId, which
@@ -1537,7 +1712,6 @@ impl DisplayItem {
             DisplayItem::RectClip(..) => "rect_clip",
             DisplayItem::RoundedRectClip(..) => "rounded_rect_clip",
             DisplayItem::ImageMaskClip(..) => "image_mask_clip",
-            DisplayItem::Clip(..) => "clip",
             DisplayItem::ClipChain(..) => "clip_chain",
             DisplayItem::ConicGradient(..) => "conic_gradient",
             DisplayItem::Gradient(..) => "gradient",
@@ -1554,13 +1728,12 @@ impl DisplayItem {
             DisplayItem::SetFilterOps => "set_filter_ops",
             DisplayItem::SetFilterData => "set_filter_data",
             DisplayItem::SetFilterPrimitives => "set_filter_primitives",
+            DisplayItem::SetPoints => "set_points",
             DisplayItem::RadialGradient(..) => "radial_gradient",
             DisplayItem::Rectangle(..) => "rectangle",
-            DisplayItem::ScrollFrame(..) => "scroll_frame",
             DisplayItem::SetGradientStops => "set_gradient_stops",
             DisplayItem::ReuseItems(..) => "reuse_item",
             DisplayItem::RetainedItems(..) => "retained_items",
-            DisplayItem::StickyFrame(..) => "sticky_frame",
             DisplayItem::Text(..) => "text",
             DisplayItem::YuvImage(..) => "yuv_image",
             DisplayItem::BackdropFilter(..) => "backdrop_filter",
@@ -1582,7 +1755,6 @@ macro_rules! impl_default_for_enums {
 
 impl_default_for_enums! {
     DisplayItem => PopStackingContext,
-    ScrollSensitivity => ScriptAndInputEvents,
     LineOrientation => Vertical,
     LineStyle => Solid,
     RepeatMode => Stretch,
@@ -1595,14 +1767,20 @@ impl_default_for_enums! {
     FilterOp => Identity,
     ComponentTransferFuncType => Identity,
     ClipMode => Clip,
+    FillRule => Nonzero,
     ClipId => ClipId::invalid(),
-    ReferenceFrameKind => Transform,
+    ReferenceFrameKind => Transform {
+        is_2d_scale_translation: false,
+        should_snap: false,
+    },
+    Rotation => Degree0,
     TransformStyle => Flat,
     RasterSpace => Local(f32::default()),
     MixBlendMode => Normal,
     ImageRendering => Auto,
     AlphaType => Alpha,
     YuvColorSpace => Rec601,
+    YuvRangedColorSpace => Rec601Narrow,
     ColorRange => Limited,
     YuvData => NV12(ImageKey::default(), ImageKey::default()),
     YuvFormat => NV12,

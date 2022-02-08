@@ -14,11 +14,15 @@
 #include "nsTArray.h"
 
 class nsIVariant;
+class nsRange;
 
 namespace mozilla {
+namespace dom {
+class Selection;
+}  // namespace dom
 namespace a11y {
 
-class Accessible;
+class LocalAccessible;
 class HyperTextAccessible;
 
 /**
@@ -84,13 +88,13 @@ class TextRange final {
   /**
    * Return a container containing both start and end points.
    */
-  Accessible* Container() const;
+  LocalAccessible* Container() const;
 
   /**
    * Return a list of embedded objects enclosed by the text range (includes
    * partially overlapped objects).
    */
-  void EmbeddedChildren(nsTArray<Accessible*>* aChildren) const;
+  void EmbeddedChildren(nsTArray<LocalAccessible*>* aChildren) const;
 
   /**
    * Return text enclosed by the range.
@@ -128,7 +132,7 @@ class TextRange final {
    * Crops the range if it overlaps the given accessible element boundaries,
    * returns true if the range was cropped successfully.
    */
-  bool Crop(Accessible* aContainer);
+  bool Crop(LocalAccessible* aContainer);
 
   enum EDirection { eBackward, eForward };
 
@@ -192,13 +196,27 @@ class TextRange final {
    */
   void AddToSelection() const;
   void RemoveFromSelection() const;
-  void Select() const;
+  MOZ_CAN_RUN_SCRIPT bool SetSelectionAt(int32_t aSelectionNum) const;
 
   /**
    * Scroll the text range into view.
    */
-  enum EHowToAlign { eAlignToTop, eAlignToBottom };
-  void ScrollIntoView(EHowToAlign aHow) const;
+  void ScrollIntoView(uint32_t aScrollType) const;
+
+  /**
+   * Convert stored hypertext offsets into DOM offsets and assign it to DOM
+   * range.
+   *
+   * Note that if start and/or end accessible offsets are in generated content
+   * such as ::before or
+   * ::after, the result range excludes the generated content.  See also
+   * ClosestNotGeneratedDOMPoint() for more information.
+   *
+   * @param  aRange        [in, out] the range whose bounds to set
+   * @param  aReversed     [out] whether the start/end offsets were reversed.
+   * @return true   if conversion was successful
+   */
+  bool AssignDOMRange(nsRange* aRange, bool* aReversed = nullptr) const;
 
   /**
    * Return true if this TextRange object represents an actual range of text.
@@ -235,7 +253,7 @@ class TextRange final {
    * @param  aStartIntlOffset [in] start offset if current node is a text node
    * @return                   true if calculation is not finished yet
    */
-  bool TextInternal(nsAString& aText, Accessible* aCurrent,
+  bool TextInternal(nsAString& aText, LocalAccessible* aCurrent,
                     uint32_t aStartIntlOffset) const;
 
   void MoveInternal(ETextUnit aUnit, int32_t aCount,
@@ -247,10 +265,11 @@ class TextRange final {
    * A helper method returning a common parent for two given accessible
    * elements.
    */
-  Accessible* CommonParent(Accessible* aAcc1, Accessible* aAcc2,
-                           nsTArray<Accessible*>* aParents1, uint32_t* aPos1,
-                           nsTArray<Accessible*>* aParents2,
-                           uint32_t* aPos2) const;
+  LocalAccessible* CommonParent(LocalAccessible* aAcc1, LocalAccessible* aAcc2,
+                                nsTArray<LocalAccessible*>* aParents1,
+                                uint32_t* aPos1,
+                                nsTArray<LocalAccessible*>* aParents2,
+                                uint32_t* aPos2) const;
 
   RefPtr<HyperTextAccessible> mRoot;
   RefPtr<HyperTextAccessible> mStartContainer;

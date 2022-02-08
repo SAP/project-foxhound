@@ -7,16 +7,18 @@
 #ifndef jit_JitSpewer_h
 #define jit_JitSpewer_h
 
+#include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/IntegerPrintfMacros.h"
 
 #include <stdarg.h>
 
 #include "jit/JSONSpewer.h"
-
-#include "js/RootingAPI.h"
-
+#include "js/TypeDecls.h"
 #include "vm/Printer.h"
+
+enum JSValueType : uint8_t;
 
 namespace js {
 namespace jit {
@@ -43,6 +45,8 @@ namespace jit {
   _(FLAC)                                  \
   /* Effective address analysis info */    \
   _(EAA)                                   \
+  /* Wasm Bounds Check Elimination */      \
+  _(WasmBCE)                               \
   /* Information during regalloc */        \
   _(RegAlloc)                              \
   /* Information during inlining */        \
@@ -191,6 +195,8 @@ void EnableChannel(JitSpewChannel channel);
 void DisableChannel(JitSpewChannel channel);
 void EnableIonDebugSyncLogging();
 void EnableIonDebugAsyncLogging();
+
+const char* ValTypeToString(JSValueType type);
 
 #  define JitSpewIfEnabled(channel, fmt, ...) \
     do {                                      \

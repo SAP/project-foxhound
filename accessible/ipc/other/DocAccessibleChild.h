@@ -12,7 +12,7 @@
 namespace mozilla {
 namespace a11y {
 
-class Accessible;
+class LocalAccessible;
 class DocAccessiblePlatformExtChild;
 class HyperTextAccessible;
 class TextLeafAccessible;
@@ -90,7 +90,7 @@ class DocAccessibleChild : public DocAccessibleChildBase {
       int32_t* aPositionInGroup) override;
 
   virtual mozilla::ipc::IPCResult RecvAttributes(
-      const uint64_t& aID, nsTArray<Attribute>* aAttributes) override;
+      const uint64_t& aID, RefPtr<AccAttributes>* aAttributes) override;
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   virtual mozilla::ipc::IPCResult RecvScrollTo(
       const uint64_t& aID, const uint32_t& aScrollType) override;
@@ -137,11 +137,11 @@ class DocAccessibleChild : public DocAccessibleChildBase {
 
   virtual mozilla::ipc::IPCResult RecvTextAttributes(
       const uint64_t& aID, const bool& aIncludeDefAttrs, const int32_t& aOffset,
-      nsTArray<Attribute>* aAttributes, int32_t* aStartOffset,
+      RefPtr<AccAttributes>* aAttributes, int32_t* aStartOffset,
       int32_t* aEndOffset) override;
 
   virtual mozilla::ipc::IPCResult RecvDefaultTextAttributes(
-      const uint64_t& aID, nsTArray<Attribute>* aAttributes) override;
+      const uint64_t& aID, RefPtr<AccAttributes>* aAttributes) override;
 
   virtual mozilla::ipc::IPCResult RecvTextBounds(const uint64_t& aID,
                                                  const int32_t& aStartOffset,
@@ -251,10 +251,6 @@ class DocAccessibleChild : public DocAccessibleChildBase {
                                              const uint32_t& aIndex,
                                              uint64_t* aIDOfLink,
                                              bool* aOk) override;
-
-  virtual mozilla::ipc::IPCResult RecvLinkIndexOf(const uint64_t& aID,
-                                                  const uint64_t& aLinkID,
-                                                  int32_t* aIndex) override;
 
   virtual mozilla::ipc::IPCResult RecvLinkIndexAtOffset(
       const uint64_t& aID, const uint32_t& aOffset, int32_t* aIndex) override;
@@ -440,11 +436,9 @@ class DocAccessibleChild : public DocAccessibleChildBase {
   virtual mozilla::ipc::IPCResult RecvStep(const uint64_t& aID,
                                            double* aStep) override;
 
-  virtual mozilla::ipc::IPCResult RecvTakeFocus(const uint64_t& aID) override;
-
-  virtual mozilla::ipc::IPCResult RecvFocusedChild(const uint64_t& aID,
-                                                   uint64_t* aChild,
-                                                   bool* aOk) override;
+  virtual mozilla::ipc::IPCResult RecvFocusedChild(
+      const uint64_t& aID, PDocAccessibleChild** aResultDoc,
+      uint64_t* aResultID) override;
 
   virtual mozilla::ipc::IPCResult RecvLanguage(const uint64_t& aID,
                                                nsString* aLocale) override;
@@ -485,9 +479,8 @@ class DocAccessibleChild : public DocAccessibleChildBase {
   DocAccessiblePlatformExtChild* GetPlatformExtension();
 
  private:
-  Accessible* IdToAccessible(const uint64_t& aID) const;
-  Accessible* IdToAccessibleLink(const uint64_t& aID) const;
-  Accessible* IdToAccessibleSelect(const uint64_t& aID) const;
+  LocalAccessible* IdToAccessibleLink(const uint64_t& aID) const;
+  LocalAccessible* IdToAccessibleSelect(const uint64_t& aID) const;
   HyperTextAccessible* IdToHyperTextAccessible(const uint64_t& aID) const;
   TextLeafAccessible* IdToTextLeafAccessible(const uint64_t& aID) const;
   ImageAccessible* IdToImageAccessible(const uint64_t& aID) const;

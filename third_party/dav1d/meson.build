@@ -1,4 +1,4 @@
-# Copyright © 2018-2020, VideoLAN and dav1d authors
+# Copyright © 2018-2021, VideoLAN and dav1d authors
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -23,14 +23,14 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 project('dav1d', ['c'],
-    version: '0.7.1',
+    version: '0.9.2',
     default_options: ['c_std=c99',
                       'warning_level=2',
                       'buildtype=release',
                       'b_ndebug=if-release'],
-    meson_version: '>= 0.47.0')
+    meson_version: '>= 0.49.0')
 
-dav1d_soname_version       = '4.0.2'
+dav1d_soname_version       = '6.0.0'
 dav1d_api_version_array    = dav1d_soname_version.split('.')
 dav1d_api_version_major    = dav1d_api_version_array[0]
 dav1d_api_version_minor    = dav1d_api_version_array[1]
@@ -62,7 +62,8 @@ endforeach
 
 # ASM option
 is_asm_enabled = (get_option('enable_asm') == true and
-    (host_machine.cpu_family().startswith('x86') or
+    (host_machine.cpu_family() == 'x86' or
+     (host_machine.cpu_family() == 'x86_64' and cc.get_define('__ILP32__') == '') or
      host_machine.cpu_family() == 'aarch64'      or
      host_machine.cpu_family().startswith('arm') or
      host_machine.cpu() == 'ppc64le'))
@@ -117,6 +118,17 @@ if host_machine.system() == 'windows'
     thread_compat_dep = declare_dependency(sources : files('src/win32/thread.c'))
 
     rt_dependency = []
+
+    rc_version_array = meson.project_version().split('.')
+    winmod = import('windows')
+    rc_data = configuration_data()
+    rc_data.set('PROJECT_VERSION_MAJOR', rc_version_array[0])
+    rc_data.set('PROJECT_VERSION_MINOR', rc_version_array[1])
+    rc_data.set('PROJECT_VERSION_REVISION', rc_version_array[2])
+    rc_data.set('API_VERSION_MAJOR', dav1d_api_version_major)
+    rc_data.set('API_VERSION_MINOR', dav1d_api_version_minor)
+    rc_data.set('API_VERSION_REVISION', dav1d_api_version_revision)
+    rc_data.set('COPYRIGHT_YEARS', '2021')
 else
     thread_dependency = dependency('threads')
     thread_compat_dep = []
@@ -156,24 +168,31 @@ if host_machine.system() == 'linux'
     endif
 endif
 
+libm_dependency = cc.find_library('m', required: false)
+
 
 # Header checks
 
-stdatomic_dependency = []
+stdatomic_dependencies = []
 if not cc.check_header('stdatomic.h')
     if cc.get_id() == 'msvc'
         # we have a custom replacement for MSVC
-        stdatomic_dependency = declare_dependency(
+        stdatomic_dependencies += declare_dependency(
             include_directories : include_directories('include/compat/msvc'),
         )
     elif cc.compiles('''int main() { int v = 0; return __atomic_fetch_add(&v, 1, __ATOMIC_SEQ_CST); }''',
                      name : 'GCC-style atomics', args : test_args)
-        stdatomic_dependency = declare_dependency(
+        stdatomic_dependencies += declare_dependency(
             include_directories : include_directories('include/compat/gcc'),
         )
     else
         error('Atomics not supported')
     endif
+endif
+
+if host_machine.cpu_family().startswith('wasm')
+    # enable atomics + bulk-memory features
+    stdatomic_dependencies += thread_dependency.partial_dependency(compile_args: true)
 endif
 
 if cc.check_header('unistd.h')
@@ -226,13 +245,14 @@ endif
 # Compiler flags that should be set
 # But when the compiler does not supports them
 # it is not an error and silently tolerated
-if cc.get_id() != 'msvc'
+if cc.get_argument_syntax() != 'msvc'
     optional_arguments += [
       '-Wundef',
       '-Werror=vla',
       '-Wno-maybe-uninitialized',
       '-Wno-missing-field-initializers',
       '-Wno-unused-parameter',
+      '-Wstrict-prototypes',
       '-Werror=missing-prototypes',
       '-Wshorten-64-to-32',
     ]
@@ -245,6 +265,7 @@ if cc.get_id() != 'msvc'
 else
     optional_arguments += [
       '-wd4028', # parameter different from declaration
+      '-wd4090', # broken with arrays of pointers
       '-wd4996'  # use of POSIX functions
     ]
 endif
@@ -313,8 +334,8 @@ if host_machine.cpu_family().startswith('x86')
     cdata.set('STACK_ALIGNMENT', stack_alignment)
 endif
 
-cdata.set10('ARCH_AARCH64', host_machine.cpu_family() == 'aarch64')
-cdata.set10('ARCH_ARM',     host_machine.cpu_family().startswith('arm'))
+cdata.set10('ARCH_AARCH64', host_machine.cpu_family() == 'aarch64' or host_machine.cpu() == 'arm64')
+cdata.set10('ARCH_ARM',     host_machine.cpu_family().startswith('arm') and host_machine.cpu() != 'arm64')
 if (is_asm_enabled and
     (host_machine.cpu_family() == 'aarch64' or
      host_machine.cpu_family().startswith('arm')))
@@ -350,14 +371,22 @@ cdata.set10('ARCH_X86_64', host_machine.cpu_family() == 'x86_64')
 cdata.set10('ARCH_X86_32', host_machine.cpu_family() == 'x86')
 
 if host_machine.cpu_family().startswith('x86')
+    cdata_asm.set('private_prefix', 'dav1d')
     cdata_asm.set10('ARCH_X86_64', host_machine.cpu_family() == 'x86_64')
     cdata_asm.set10('ARCH_X86_32', host_machine.cpu_family() == 'x86')
     cdata_asm.set10('PIC', true)
+
+    # Convert SSE asm into (128-bit) AVX when compiler flags are set to use AVX instructions
+    cdata_asm.set10('FORCE_VEX_ENCODING', cc.get_define('__AVX__') != '')
 endif
 
 cdata.set10('ARCH_PPC64LE', host_machine.cpu() == 'ppc64le')
 
-if cc.symbols_have_underscore_prefix()
+# meson's cc.symbols_have_underscore_prefix() is unfortunately unrelieably
+# when additional flags like '-fprofile-instr-generate' are passed via CFLAGS
+# see following meson issue https://github.com/mesonbuild/meson/issues/5482
+if (host_machine.system() == 'darwin' or
+   (host_machine.system() == 'windows' and host_machine.cpu_family() == 'x86'))
     cdata.set10('PREFIX', true)
     cdata_asm.set10('PREFIX', true)
 endif
@@ -424,6 +453,28 @@ if is_asm_enabled and host_machine.cpu_family().startswith('x86')
         ])
 endif
 
+use_gaspp = false
+if (is_asm_enabled and
+    (host_machine.cpu_family() == 'aarch64' or
+     host_machine.cpu_family().startswith('arm')) and
+    cc.get_argument_syntax() == 'msvc')
+    gaspp = find_program('gas-preprocessor.pl')
+    use_gaspp = true
+    gaspp_gen = generator(gaspp,
+        output: '@BASENAME@.obj',
+        arguments: [
+            '-as-type', 'armasm',
+            '-arch', host_machine.cpu_family(),
+            '--',
+            host_machine.cpu_family() == 'aarch64' ? 'armasm64' : 'armasm',
+            '-nologo',
+            '-I@0@'.format(dav1d_src_root),
+            '-I@0@/'.format(meson.current_build_dir()),
+            '@INPUT@',
+            '-c',
+            '-o', '@OUTPUT@'
+        ])
+endif
 
 # Generate config.h
 config_h_target = configure_file(output: 'config.h', configuration: cdata)

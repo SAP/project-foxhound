@@ -43,67 +43,69 @@ export class Topic extends React.PureComponent {
   }
 }
 
-class ExploreTopics extends React.PureComponent {
-  render() {
-    const { explore_topics } = this.props;
-    if (!explore_topics) {
-      return null;
-    }
-    return (
-      <>
-        <Topic
-          dispatch={this.props.dispatch}
-          className="ds-navigation-inline-explore-more"
-          url={explore_topics.url}
-          name={explore_topics.name}
-        />
-        <Topic
-          dispatch={this.props.dispatch}
-          className="ds-navigation-header-explore-more"
-          url={explore_topics.url}
-          name={explore_topics.header}
-        />
-      </>
-    );
-  }
-}
-
 export class Navigation extends React.PureComponent {
   render() {
-    const { links } = this.props || [];
-    const { alignment } = this.props || "centered";
-    // Basic isn't currently used, but keeping it here to be very explicit.
-    // The other variant that's supported is "responsive".
-    // The responsive variant is intended for longer lists of topics, more than 6.
-    // It hides the last item on larger displays. The last item is meant for "see more topics"
-    const variant = this.props.display_variant || "basic";
+    let links = this.props.links || [];
+    const alignment = this.props.alignment || "centered";
     const header = this.props.header || {};
-    const { explore_topics } = this.props;
+    const english = this.props.locale.startsWith("en-");
+    const privacyNotice = this.props.privacyNoticeURL || {};
+    const { newFooterSection } = this.props;
+    const className = `ds-navigation ds-navigation-${alignment} ${
+      newFooterSection ? `ds-navigation-new-topics` : ``
+    }`;
+    let { title } = header;
+    if (newFooterSection) {
+      title = { id: "newtab-pocket-new-topics-title" };
+      if (this.props.extraLinks) {
+        links = [
+          ...links.slice(0, links.length - 1),
+          ...this.props.extraLinks,
+          links[links.length - 1],
+        ];
+      }
+    }
+
     return (
-      <div
-        className={`ds-navigation ds-navigation-${alignment} ds-navigation-variant-${variant}`}
-      >
-        {header.title ? (
-          <FluentOrText message={header.title}>
-            <span className="ds-header" />
+      <div className={className}>
+        {title && english ? (
+          <FluentOrText message={title}>
+            <span className="ds-navigation-header" />
           </FluentOrText>
         ) : null}
-        <ul>
-          {links &&
-            links.map(t => (
-              <li key={t.name}>
-                <Topic
-                  url={t.url}
-                  name={t.name}
-                  dispatch={this.props.dispatch}
-                />
-              </li>
-            ))}
-        </ul>
-        <ExploreTopics
-          dispatch={this.props.dispatch}
-          explore_topics={explore_topics}
-        />
+
+        {english ? (
+          <ul>
+            {links &&
+              links.map(t => (
+                <li key={t.name}>
+                  <Topic
+                    url={t.url}
+                    name={t.name}
+                    dispatch={this.props.dispatch}
+                  />
+                </li>
+              ))}
+          </ul>
+        ) : null}
+
+        {!newFooterSection ? (
+          <SafeAnchor className="ds-navigation-privacy" url={privacyNotice.url}>
+            <FluentOrText message={privacyNotice.title} />
+          </SafeAnchor>
+        ) : null}
+
+        {newFooterSection ? (
+          <div className="ds-navigation-family">
+            <span className="icon firefox-logo" />
+            <span>|</span>
+            <span className="icon pocket-logo" />
+            <span
+              className="ds-navigation-family-message"
+              data-l10n-id="newtab-pocket-pocket-firefox-family"
+            />
+          </div>
+        ) : null}
       </div>
     );
   }

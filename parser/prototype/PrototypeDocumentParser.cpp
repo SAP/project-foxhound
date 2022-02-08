@@ -11,6 +11,7 @@
 #include "nsParserCIID.h"
 #include "mozilla/Encoding.h"
 #include "nsCharsetSource.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/URL.h"
 #include "mozilla/dom/PrototypeDocumentContentSink.h"
 
@@ -60,8 +61,7 @@ NS_IMETHODIMP_(bool)
 PrototypeDocumentParser::IsComplete() { return mIsComplete; }
 
 NS_IMETHODIMP
-PrototypeDocumentParser::Parse(nsIURI* aURL, nsIRequestObserver* aListener,
-                               void* aKey, nsDTDMode aMode) {
+PrototypeDocumentParser::Parse(nsIURI* aURL, void* aKey) {
   // Look in the chrome cache: we've got this puppy loaded
   // already.
   nsXULPrototypeDocument* proto =

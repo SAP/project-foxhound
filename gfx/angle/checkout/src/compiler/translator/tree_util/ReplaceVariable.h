@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2018 The ANGLE Project Authors. All rights reserved.
+// Copyright 2018 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -9,19 +9,47 @@
 #ifndef COMPILER_TRANSLATOR_TREEUTIL_REPLACEVARIABLE_H_
 #define COMPILER_TRANSLATOR_TREEUTIL_REPLACEVARIABLE_H_
 
+#include "common/debug.h"
+
+#include <stack>
+#include <unordered_map>
+
 namespace sh
 {
 
+class TCompiler;
+class TFunction;
+class TIntermAggregate;
 class TIntermBlock;
-class TVariable;
+class TIntermFunctionPrototype;
+class TIntermNode;
 class TIntermTyped;
+class TSymbolTable;
+class TVariable;
 
-void ReplaceVariable(TIntermBlock *root,
-                     const TVariable *toBeReplaced,
-                     const TVariable *replacement);
-void ReplaceVariableWithTyped(TIntermBlock *root,
-                              const TVariable *toBeReplaced,
-                              const TIntermTyped *replacement);
+ANGLE_NO_DISCARD bool ReplaceVariable(TCompiler *compiler,
+                                      TIntermBlock *root,
+                                      const TVariable *toBeReplaced,
+                                      const TVariable *replacement);
+ANGLE_NO_DISCARD bool ReplaceVariableWithTyped(TCompiler *compiler,
+                                               TIntermBlock *root,
+                                               const TVariable *toBeReplaced,
+                                               const TIntermTyped *replacement);
+
+using VariableReplacementMap = angle::HashMap<const TVariable *, const TIntermTyped *>;
+
+// Replace a set of variables with their corresponding expression.
+ANGLE_NO_DISCARD bool ReplaceVariables(TCompiler *compiler,
+                                       TIntermBlock *root,
+                                       const VariableReplacementMap &variableMap);
+
+// Find all declarators, and replace the TVariable they are declaring with a duplicate.  This is
+// used to support deepCopy of TIntermBlock and TIntermLoop nodes that include declarations.
+// Replacements already present in variableMap are preserved.
+void GetDeclaratorReplacements(TSymbolTable *symbolTable,
+                               TIntermBlock *root,
+                               VariableReplacementMap *variableMap);
+
 }  // namespace sh
 
 #endif  // COMPILER_TRANSLATOR_TREEUTIL_REPLACEVARIABLE_H_

@@ -140,7 +140,7 @@ typedef enum {
 #define MOZ_GTK_WIDGET_INCONSISTENT (1 << 1)
 
 /*** widget type constants ***/
-typedef enum {
+enum WidgetNodeType : int {
   /* Paints a GtkButton. flags is a GtkReliefStyle. */
   MOZ_GTK_BUTTON,
   /* Paints a button with image and no text */
@@ -211,6 +211,8 @@ typedef enum {
   MOZ_GTK_TEXT_VIEW,
   /* The "text" window or node of a GtkTextView */
   MOZ_GTK_TEXT_VIEW_TEXT,
+  /* The "selection" node of a GtkTextView.text */
+  MOZ_GTK_TEXT_VIEW_TEXT_SELECTION,
   /* Paints a GtkOptionMenu. */
   MOZ_GTK_DROPDOWN,
   /* Paints a dropdown arrow (a GtkButton containing a down GtkArrow). */
@@ -303,8 +305,6 @@ typedef enum {
   MOZ_GTK_HEADERBAR_WINDOW_MAXIMIZED,
   /* Window container for all widgets */
   MOZ_GTK_WINDOW_CONTAINER,
-  /* Paints a GtkInfoBar, for notifications. */
-  MOZ_GTK_INFO_BAR,
   /* Used for widget tree construction. */
   MOZ_GTK_COMBOBOX,
   /* Paints a GtkComboBox button widget. */
@@ -347,14 +347,15 @@ typedef enum {
   MOZ_GTK_WINDOW_DECORATION,
   MOZ_GTK_WINDOW_DECORATION_SOLID,
 
+  MOZ_GTK_MENUPOPUP_DECORATION,
+
   MOZ_GTK_WIDGET_NODE_COUNT
-} WidgetNodeType;
+};
 
 /* ButtonLayout represents a GTK CSD button and whether its on the left or
  * right side of the tab bar */
 struct ButtonLayout {
   WidgetNodeType mType;
-  bool mAtRight;
 };
 
 /*** General library functions ***/

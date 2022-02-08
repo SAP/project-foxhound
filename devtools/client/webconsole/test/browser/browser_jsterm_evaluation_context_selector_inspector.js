@@ -8,29 +8,43 @@
 // inspector actions (selecting a node, "use in console" context menu entry, …).
 
 const FILE_FOLDER = `browser/devtools/client/webconsole/test/browser`;
-const TEST_URI = `http://example.com/${FILE_FOLDER}/test-console-evaluation-context-selector.html`;
+const TEST_URI = `https://example.com/${FILE_FOLDER}/test-console-evaluation-context-selector.html`;
 const IFRAME_PATH = `${FILE_FOLDER}/test-console-evaluation-context-selector-child.html`;
+
+// Import helpers for the inspector
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/devtools/client/inspector/test/shared-head.js",
+  this
+);
 
 requestLongerTimeout(2);
 
 add_task(async function() {
-  await pushPref("devtools.contenttoolbox.fission", true);
-  await pushPref("devtools.contenttoolbox.webconsole.input.context", true);
+  await pushPref("devtools.webconsole.input.context", true);
 
   const hud = await openNewTabWithIframesAndConsole(TEST_URI, [
-    `http://example.org/${IFRAME_PATH}?id=iframe-1`,
-    `http://mochi.test:8888/${IFRAME_PATH}?id=iframe-2`,
+    `https://example.org/${IFRAME_PATH}?id=iframe-1`,
+    `https://example.net/${IFRAME_PATH}?id=iframe-2`,
   ]);
 
   const evaluationContextSelectorButton = hud.ui.outputNode.querySelector(
     ".webconsole-evaluation-selector-button"
   );
 
+  if (!isFissionEnabled() && !isEveryFrameTargetEnabled()) {
+    is(
+      evaluationContextSelectorButton,
+      null,
+      "context selector is only displayed when Fission or EFT is enabled"
+    );
+    return;
+  }
+
   setInputValue(hud, "document.location.host");
   await waitForEagerEvaluationResult(hud, `"example.com"`);
 
   info("Go to the inspector panel");
-  const inspector = await openInspector();
+  const inspector = await hud.toolbox.selectTool("inspector");
 
   info("Expand all the nodes");
   await inspector.markup.expandAll();
@@ -39,7 +53,7 @@ add_task(async function() {
   await hud.toolbox.openSplitConsole();
 
   info("Select the first iframe h2 element");
-  await selectIframeContentElement(inspector, ".iframe-1", "h2");
+  await selectNodeInFrames([".iframe-1", "h2"], inspector);
 
   await waitFor(() =>
     evaluationContextSelectorButton.innerText.includes("example.org")
@@ -50,20 +64,18 @@ add_task(async function() {
   ok(true, "The instant evaluation result is updated in the iframe context");
 
   info("Select the second iframe h2 element");
-  await selectIframeContentElement(inspector, ".iframe-2", "h2");
+  await selectNodeInFrames([".iframe-2", "h2"], inspector);
 
   await waitFor(() =>
-    evaluationContextSelectorButton.innerText.includes("mochi.test")
+    evaluationContextSelectorButton.innerText.includes("example.net")
   );
   ok(true, "The context was set to the selected iframe document");
 
-  await waitForEagerEvaluationResult(hud, `"mochi.test:8888"`);
+  await waitForEagerEvaluationResult(hud, `"example.net"`);
   ok(true, "The instant evaluation result is updated in the iframe context");
 
   info("Select an element in the top document");
-  const h1NodeFront = await inspector.walker.findNodeFront(["h1"]);
-  inspector.selection.setNodeFront(null);
-  inspector.selection.setNodeFront(h1NodeFront);
+  await selectNodeInFrames(["h1"], inspector);
 
   await waitForEagerEvaluationResult(hud, `"example.com"`);
   await waitFor(() =>
@@ -76,8 +88,7 @@ add_task(async function() {
   await testUseInConsole(
     hud,
     inspector,
-    ".iframe-1",
-    "h2",
+    [".iframe-1", "h2"],
     "temp0",
     `<h2 id="iframe-1">`
   );
@@ -92,13 +103,12 @@ add_task(async function() {
   await testUseInConsole(
     hud,
     inspector,
-    ".iframe-2",
-    "h2",
+    [".iframe-2", "h2"],
     "temp0",
     `<h2 id="iframe-2">`
   );
   await waitFor(() =>
-    evaluationContextSelectorButton.innerText.includes("mochi.test:8888")
+    evaluationContextSelectorButton.innerText.includes("example.net")
   );
   ok(true, "The context selector was updated");
 
@@ -108,8 +118,7 @@ add_task(async function() {
   await testUseInConsole(
     hud,
     inspector,
-    ":root",
-    "h1",
+    ["h1"],
     "temp0",
     `<h1 id="top-level">`
   );
@@ -119,36 +128,23 @@ add_task(async function() {
   ok(true, "The context selector was updated");
 });
 
-async function selectIframeContentElement(
-  inspector,
-  iframeSelector,
-  iframeContentSelector
-) {
-  inspector.selection.setNodeFront(null);
-  const iframeNodeFront = await inspector.walker.findNodeFront([
-    iframeSelector,
-  ]);
-  const childrenNodeFront = await iframeNodeFront
-    .treeChildren()[0]
-    .walkerFront.findNodeFront([iframeContentSelector]);
-  inspector.selection.setNodeFront(childrenNodeFront);
-  return childrenNodeFront;
-}
-
 async function testUseInConsole(
   hud,
   inspector,
-  iframeSelector,
-  iframeContentSelector,
+  selectors,
   variableName,
   expectedTextResult
 ) {
-  const nodeFront = await selectIframeContentElement(
-    inspector,
-    iframeSelector,
-    iframeContentSelector
-  );
+  const nodeFront = await selectNodeInFrames(selectors, inspector);
   const container = inspector.markup.getContainer(nodeFront);
+
+  // Clear the input before clicking on "Use in Console" to workaround an bug
+  // with eager-evaluation, which will be skipped if the console input didn't
+  // change. See https://bugzilla.mozilla.org/show_bug.cgi?id=1668916#c1.
+  // TODO: Should be removed when Bug 1669151 is fixed.
+  setInputValue(hud, "");
+  // Also need to wait in order to avoid batching.
+  await wait(100);
 
   const onConsoleReady = inspector.once("console-var-ready");
   const menu = inspector.markup.contextMenu._openMenu({

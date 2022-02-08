@@ -6,6 +6,7 @@
 // Test the popup menu position when zooming in the devtools panel.
 
 const { Toolbox } = require("devtools/client/framework/toolbox");
+const { getCurrentZoom } = require("devtools/shared/layout/utils");
 
 // Use a simple URL in order to prevent displacing the left position of the
 // frames menu.
@@ -20,12 +21,11 @@ add_task(async function() {
 
   info("Load iframe page for checking the frame menu with x1.4 zoom.");
   await addTab(TEST_URL);
-  const target = await TargetFactory.forTab(gBrowser.selectedTab);
-  const toolbox = await gDevTools.showToolbox(
-    target,
-    "inspector",
-    Toolbox.HostType.WINDOW
-  );
+  const tab = gBrowser.selectedTab;
+  const toolbox = await gDevTools.showToolboxForTab(tab, {
+    toolId: "inspector",
+    hostType: Toolbox.HostType.WINDOW,
+  });
   const inspector = toolbox.getCurrentPanel();
   const hostWindow = toolbox.win.parent;
   const originWidth = hostWindow.outerWidth;
@@ -111,6 +111,18 @@ add_task(async function() {
   gBrowser.removeCurrentTab();
 });
 
+function convertScreenToDoc(rect, doc) {
+  const zoom = getCurrentZoom(doc);
+  const screenX = doc.defaultView.mozInnerScreenX;
+  const screenY = doc.defaultView.mozInnerScreenY;
+  return new DOMRect(
+    rect.x / zoom - screenX,
+    rect.y / zoom - screenY,
+    rect.width / zoom,
+    rect.height / zoom
+  );
+}
+
 /**
  * Get the bounds of a menu button and its popup panel. The popup panel is
  * measured by clicking the menu button and looking for its panel (and then
@@ -131,6 +143,11 @@ add_task(async function() {
 async function getButtonAndMenuInfo(toolbox, menuButton) {
   const { doc, topDoc } = toolbox;
   info("Show popup menu with click event.");
+  AccessibilityUtils.setEnv({
+    // Keyboard accessibility is handled on the toolbox toolbar container level.
+    // Users can use arrow keys to navigate between and select tabs.
+    nonNegativeTabIndexRule: false,
+  });
   EventUtils.sendMouseEvent(
     {
       type: "click",
@@ -139,14 +156,19 @@ async function getButtonAndMenuInfo(toolbox, menuButton) {
     menuButton,
     doc.defaultView
   );
+  AccessibilityUtils.resetEnv();
 
   let menuPopup;
   let menuType;
+  let menuBounds = null;
   let arrowBounds = null;
   if (menuButton.hasAttribute("aria-controls")) {
     menuType = "doorhanger";
     menuPopup = doc.getElementById(menuButton.getAttribute("aria-controls"));
     await waitUntil(() => menuPopup.classList.contains("tooltip-visible"));
+    // menuPopup can be a non-menupopup element, e.g. div. Call getBoxQuads to
+    // get its bounds.
+    menuBounds = menuPopup.getBoxQuads({ relativeTo: doc })[0].getBounds();
   } else {
     menuType = "native";
     await waitUntil(() => {
@@ -154,13 +176,15 @@ async function getButtonAndMenuInfo(toolbox, menuButton) {
       menuPopup = popupset?.querySelector('menupopup[menu-api="true"]');
       return menuPopup?.state === "open";
     });
+    // menuPopup is a XUL menupopup element. Call getOuterScreenRect(), which is
+    // suported on both native and non-native menupopup implementations.
+    menuBounds = convertScreenToDoc(menuPopup.getOuterScreenRect(), doc);
   }
   ok(menuPopup, "Menu popup is displayed.");
 
   const buttonBounds = menuButton
     .getBoxQuads({ relativeTo: doc })[0]
     .getBounds();
-  const menuBounds = menuPopup.getBoxQuads({ relativeTo: doc })[0].getBounds();
 
   if (menuType === "doorhanger") {
     const arrow = menuPopup.querySelector(".tooltip-arrow");

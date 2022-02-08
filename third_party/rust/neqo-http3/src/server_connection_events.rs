@@ -5,31 +5,56 @@
 // except according to those terms.
 
 use crate::connection::Http3State;
-use crate::send_message::SendMessageEvents;
-use crate::Header;
-use crate::RecvMessageEvents;
-
+use crate::{
+    features::extended_connect::{ExtendedConnectEvents, ExtendedConnectType},
+    CloseType, Http3StreamInfo, HttpRecvStreamEvents, Priority, RecvStreamEvents, SendStreamEvents,
+};
+use neqo_common::Header;
 use neqo_transport::AppError;
-
+use neqo_transport::StreamId;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-#[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) enum Http3ServerConnEvent {
     /// Headers are ready.
     Headers {
-        stream_id: u64,
-        headers: Option<Vec<Header>>,
+        stream_info: Http3StreamInfo,
+        headers: Vec<Header>,
         fin: bool,
     },
+    PriorityUpdate {
+        stream_id: StreamId,
+        priority: Priority,
+    },
     /// Request data is ready.
-    DataReadable { stream_id: u64 },
-    //TODO: This is never used. Do we need it?
-    // Peer reset the stream.
-    //Reset { stream_id: u64, error: AppError },
+    DataReadable {
+        stream_info: Http3StreamInfo,
+    },
+    DataWritable {
+        stream_info: Http3StreamInfo,
+    },
+    StreamReset {
+        stream_info: Http3StreamInfo,
+        error: AppError,
+    },
+    StreamStopSending {
+        stream_info: Http3StreamInfo,
+        error: AppError,
+    },
     /// Connection state change.
     StateChange(Http3State),
+    ExtendedConnect {
+        stream_id: StreamId,
+        headers: Vec<Header>,
+    },
+    ExtendedConnectClosed {
+        connect_type: ExtendedConnectType,
+        stream_id: StreamId,
+        error: Option<AppError>,
+    },
+    ExtendedConnectNewStream(Http3StreamInfo),
 }
 
 #[derive(Debug, Default, Clone)]
@@ -37,32 +62,78 @@ pub(crate) struct Http3ServerConnEvents {
     events: Rc<RefCell<VecDeque<Http3ServerConnEvent>>>,
 }
 
-impl RecvMessageEvents for Http3ServerConnEvents {
+impl SendStreamEvents for Http3ServerConnEvents {
+    fn send_closed(&self, stream_info: Http3StreamInfo, close_type: CloseType) {
+        if close_type != CloseType::Done {
+            self.insert(Http3ServerConnEvent::StreamStopSending {
+                stream_info,
+                error: close_type.error().unwrap(),
+            });
+        }
+    }
+
+    fn data_writable(&self, stream_info: Http3StreamInfo) {
+        self.insert(Http3ServerConnEvent::DataWritable { stream_info });
+    }
+}
+
+impl RecvStreamEvents for Http3ServerConnEvents {
+    /// Add a new `DataReadable` event
+    fn data_readable(&self, stream_info: Http3StreamInfo) {
+        self.insert(Http3ServerConnEvent::DataReadable { stream_info });
+    }
+
+    fn recv_closed(&self, stream_info: Http3StreamInfo, close_type: CloseType) {
+        if close_type != CloseType::Done {
+            self.remove_events_for_stream_id(stream_info);
+            self.insert(Http3ServerConnEvent::StreamReset {
+                stream_info,
+                error: close_type.error().unwrap(),
+            });
+        }
+    }
+}
+
+impl HttpRecvStreamEvents for Http3ServerConnEvents {
     /// Add a new `HeaderReady` event.
-    fn header_ready(&self, stream_id: u64, headers: Option<Vec<Header>>, fin: bool) {
+    fn header_ready(
+        &self,
+        stream_info: Http3StreamInfo,
+        headers: Vec<Header>,
+        _interim: bool,
+        fin: bool,
+    ) {
         self.insert(Http3ServerConnEvent::Headers {
-            stream_id,
+            stream_info,
             headers,
             fin,
         });
     }
 
-    /// Add a new `DataReadable` event
-    fn data_readable(&self, stream_id: u64) {
-        self.insert(Http3ServerConnEvent::DataReadable { stream_id });
+    fn extended_connect_new_session(&self, stream_id: StreamId, headers: Vec<Header>) {
+        self.insert(Http3ServerConnEvent::ExtendedConnect { stream_id, headers });
     }
-
-    fn reset(&self, _stream_id: u64, _error: AppError) {}
 }
 
-impl SendMessageEvents for Http3ServerConnEvents {
-    fn data_writable(&self, _stream_id: u64) {
-        // Curently not used on the server side.
+impl ExtendedConnectEvents for Http3ServerConnEvents {
+    fn session_start(&self, _connect_type: ExtendedConnectType, _stream_id: StreamId) {}
+
+    fn session_end(
+        &self,
+        connect_type: ExtendedConnectType,
+        stream_id: StreamId,
+        error: Option<AppError>,
+    ) {
+        self.insert(Http3ServerConnEvent::ExtendedConnectClosed {
+            connect_type,
+            stream_id,
+            error,
+        });
     }
 
-    fn remove_send_side_event(&self, _stream_id: u64) {}
-
-    fn stop_sending(&self, _stream_id: u64, _app_err: AppError) {}
+    fn extended_connect_new_stream(&self, stream_info: Http3StreamInfo) {
+        self.insert(Http3ServerConnEvent::ExtendedConnectNewStream(stream_info));
+    }
 }
 
 impl Http3ServerConnEvents {
@@ -74,7 +145,7 @@ impl Http3ServerConnEvents {
     where
         F: Fn(&Http3ServerConnEvent) -> bool,
     {
-        self.events.borrow_mut().retain(|evt| !f(evt))
+        self.events.borrow_mut().retain(|evt| !f(evt));
     }
 
     pub fn has_events(&self) -> bool {
@@ -89,10 +160,17 @@ impl Http3ServerConnEvents {
         self.insert(Http3ServerConnEvent::StateChange(state));
     }
 
-    pub fn remove_events_for_stream_id(&self, stream_id: u64) {
+    pub fn priority_update(&self, stream_id: StreamId, priority: Priority) {
+        self.insert(Http3ServerConnEvent::PriorityUpdate {
+            stream_id,
+            priority,
+        });
+    }
+
+    fn remove_events_for_stream_id(&self, stream_info: Http3StreamInfo) {
         self.remove(|evt| {
             matches!(evt,
-                Http3ServerConnEvent::Headers { stream_id: x, .. } | Http3ServerConnEvent::DataReadable { stream_id: x, .. } if *x == stream_id)
+                Http3ServerConnEvent::Headers { stream_info: x, .. } | Http3ServerConnEvent::DataReadable { stream_info: x, .. } if *x == stream_info)
         });
     }
 }

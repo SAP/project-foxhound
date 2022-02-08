@@ -8,6 +8,8 @@ pub struct Global<'a> {
     pub span: ast::Span,
     /// An optional name to reference this global by
     pub id: Option<ast::Id<'a>>,
+    /// An optional name for this function stored in the custom `name` section.
+    pub name: Option<ast::NameAnnotation<'a>>,
     /// If present, inline export annotations which indicate names this
     /// definition should be exported under.
     pub exports: ast::InlineExport<'a>,
@@ -25,12 +27,7 @@ pub enum GlobalKind<'a> {
     /// ```text
     /// (global i32 (import "foo" "bar"))
     /// ```
-    Import {
-        /// The module that this function is imported from
-        module: &'a str,
-        /// The module field name this function is imported from
-        field: &'a str,
-    },
+    Import(ast::InlineImport<'a>),
 
     /// A global defined inline in the module itself
     Inline(ast::Expression<'a>),
@@ -40,20 +37,18 @@ impl<'a> Parse<'a> for Global<'a> {
     fn parse(parser: Parser<'a>) -> Result<Self> {
         let span = parser.parse::<kw::global>()?.0;
         let id = parser.parse()?;
+        let name = parser.parse()?;
         let exports = parser.parse()?;
 
-        let (ty, kind) = if parser.peek2::<kw::import>() {
-            let (module, field) = parser.parens(|p| {
-                p.parse::<kw::import>()?;
-                Ok((p.parse()?, p.parse()?))
-            })?;
-            (parser.parse()?, GlobalKind::Import { module, field })
+        let (ty, kind) = if let Some(import) = parser.parse()? {
+            (parser.parse()?, GlobalKind::Import(import))
         } else {
             (parser.parse()?, GlobalKind::Inline(parser.parse()?))
         };
         Ok(Global {
             span,
             id,
+            name,
             exports,
             ty,
             kind,

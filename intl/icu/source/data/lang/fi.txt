@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 fi{
     Keys{
         calendar{"kalenteri"}
@@ -123,7 +124,7 @@ fi{
         chp{"chipewyan"}
         chr{"cherokee"}
         chy{"cheyenne"}
-        ckb{"sorani"}
+        ckb{"soranî"}
         co{"korsika"}
         cop{"kopti"}
         cps{"capiznon"}
@@ -471,6 +472,7 @@ fi{
         rap{"rapanui"}
         rar{"rarotonga"}
         rgn{"romagnoli"}
+        rhg{"rohinga"}
         rif{"tarifit"}
         rm{"retoromaani"}
         rn{"rundi"}
@@ -478,7 +480,6 @@ fi{
         ro_MD{"moldova"}
         rof{"rombo"}
         rom{"romani"}
-        root{"juuri"}
         rtm{"rotuma"}
         ru{"venäjä"}
         rue{"ruteeni"}
@@ -634,12 +635,14 @@ fi{
         zen{"zenaga"}
         zgh{"vakioitu tamazight"}
         zh{"kiina"}
-        zh_Hans{"yksinkertaistettu kiina"}
-        zh_Hant{"perinteinen kiina"}
         zu{"zulu"}
         zun{"zuni"}
         zxx{"ei kielellistä sisältöä"}
         zza{"zaza"}
+    }
+    Languages%long{
+        zh_Hans{"mandariinikiina (yksinkertaistettu)"}
+        zh_Hant{"mandariinikiina (perinteinen)"}
     }
     Languages%menu{
         ckb{"kurdi – soranî"}
@@ -681,6 +684,7 @@ fi{
         Chrs{"horemzi"}
         Cirt{"cirth"}
         Copt{"koptilainen"}
+        Cpmn{"kypro-minolainen"}
         Cprt{"muinaiskyproslainen"}
         Cyrl{"kyrillinen"}
         Cyrs{"kyrillinen muinaiskirkkoslaavimuunnelma"}
@@ -779,6 +783,7 @@ fi{
         Orya{"orijalainen"}
         Osge{"osagen aakkosto"}
         Osma{"osmanjalainen"}
+        Ougr{"vanha uiguurilainen"}
         Palm{"palmyralainen"}
         Pauc{"zotuallai"}
         Perm{"muinaispermiläinen"}
@@ -791,7 +796,7 @@ fi{
         Prti{"piirtokirjoitusparthialainen"}
         Qaag{"burmalainen zawgyi-toteutus"}
         Rjng{"rejang"}
-        Rohg{"rohinjalainen hanifi"}
+        Rohg{"rohingalainen hanifi"}
         Roro{"rongorongo"}
         Runr{"riimukirjoitus"}
         Samr{"samarianaramealainen"}
@@ -829,9 +834,12 @@ fi{
         Thai{"thailainen"}
         Tibt{"tiibetiläinen"}
         Tirh{"tirhuta"}
+        Tnsa{"tangsa"}
+        Toto{"toto"}
         Ugar{"ugaritilainen"}
         Vaii{"vailainen"}
         Visp{"näkyvä puhe"}
+        Vith{"vithkuqi"}
         Wara{"varang kshiti"}
         Wcho{"wancholainen"}
         Wole{"woleai"}
@@ -905,7 +913,7 @@ fi{
             yes{"isojen ja pienten kirjainten lajittelu erikseen"}
         }
         colNormalization{
-            no{"lajittelu ilman normalisoinrtia"}
+            no{"lajittelu ilman normalisointia"}
             yes{"lajittelu Unicode-normalisoituna"}
         }
         colNumeric{
@@ -1160,7 +1168,6 @@ fi{
     Variants%secondary{
         FONUPA{"suomalais-ugrilainen tarkekirjoitus"}
     }
-    Version{"37"}
     characterLabelPattern{
         all{"{0} – kaikki"}
         category-list{"{0}: {1}"}
@@ -1175,6 +1182,8 @@ fi{
             one{"{0} piirtoviiva"}
             other{"{0} piirtoviivaa"}
         }
+        subscript{"alaindeksi {0}"}
+        superscript{"yläindeksi {0}"}
     }
     codePatterns{
         language{"kieli: {0}"}

@@ -9,6 +9,8 @@
 
 #include "nsTouchBarInputIcon.h"
 
+#include "MOZIconHelper.h"
+#include "mozilla/dom/Document.h"
 #include "nsCocoaUtils.h"
 #include "nsComputedDOMStyle.h"
 #include "nsContentUtils.h"
@@ -18,14 +20,15 @@
 #include "nsObjCExceptions.h"
 
 using namespace mozilla;
+using mozilla::widget::IconLoader;
 
-static const uint32_t kIconSize = 16;
+static const uint32_t kIconHeight = 16;
 static const CGFloat kHiDPIScalingFactor = 2.0f;
 
 nsTouchBarInputIcon::nsTouchBarInputIcon(RefPtr<Document> aDocument, TouchBarInput* aInput,
                                          NSTouchBarItem* aItem)
     : mDocument(aDocument), mSetIcon(false), mButton(nil), mShareScrubber(nil), mPopoverItem(nil) {
-  if ([[aInput nativeIdentifier] isEqualToString:ShareScrubberIdentifier]) {
+  if ([[aInput nativeIdentifier] isEqualToString:[TouchBarInput shareScrubberIdentifier]]) {
     mShareScrubber = (NSSharingServicePickerTouchBarItem*)aItem;
   } else if ([aInput baseType] == TouchBarInputBaseType::kPopover) {
     mPopoverItem = (NSPopoverTouchBarItem*)aItem;
@@ -60,7 +63,7 @@ void nsTouchBarInputIcon::Destroy() {
 }
 
 nsresult nsTouchBarInputIcon::SetupIcon(nsCOMPtr<nsIURI> aIconURI) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   // We might not have a document if the Touch Bar tries to update when the main
   // window is closed.
@@ -74,23 +77,19 @@ nsresult nsTouchBarInputIcon::SetupIcon(nsCOMPtr<nsIURI> aIconURI) {
   }
 
   if (!mIconLoader) {
-    // We ask only for the HiDPI images since all Touch Bars are Retina
-    // displays and we have no need for icons @1x.
-    mIconLoader = new nsIconLoaderService(mDocument, &mImageRegionRect, this, kIconSize, kIconSize,
-                                          kHiDPIScalingFactor);
-    if (!mIconLoader) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
+    mIconLoader = new IconLoader(this);
   }
 
   if (!mSetIcon) {
     // Load placeholder icon.
-    [mButton setImage:mIconLoader->GetNativeIconImage()];
-    [mShareScrubber setButtonImage:mIconLoader->GetNativeIconImage()];
-    [mPopoverItem setCollapsedRepresentationImage:mIconLoader->GetNativeIconImage()];
+    NSSize iconSize = NSMakeSize(kIconHeight, kIconHeight);
+    NSImage* placeholder = [MOZIconHelper placeholderIconWithSize:iconSize];
+    [mButton setImage:placeholder];
+    [mShareScrubber setButtonImage:placeholder];
+    [mPopoverItem setCollapsedRepresentationImage:placeholder];
   }
 
-  nsresult rv = mIconLoader->LoadIcon(aIconURI, true /* aIsInternalIcon */);
+  nsresult rv = mIconLoader->LoadIcon(aIconURI, mDocument, true /* aIsInternalIcon */);
   if (NS_FAILED(rv)) {
     // There is no icon for this menu item, as an error occurred while loading it.
     // An icon might have been set earlier or the place holder icon may have
@@ -104,25 +103,31 @@ nsresult nsTouchBarInputIcon::SetupIcon(nsCOMPtr<nsIURI> aIconURI) {
 
   return rv;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
-void nsTouchBarInputIcon::ReleaseJSObjects() {
-  if (mIconLoader) {
-    mIconLoader->ReleaseJSObjects();
-  }
-  mDocument = nil;
-}
+void nsTouchBarInputIcon::ReleaseJSObjects() { mDocument = nil; }
 
 //
-// nsIconLoaderObserver
+// mozilla::widget::IconLoader::Listener
 //
 
-nsresult nsTouchBarInputIcon::OnComplete(NSImage* aImage) {
-  [mButton setImage:aImage];
-  [mShareScrubber setButtonImage:aImage];
-  [mPopoverItem setCollapsedRepresentationImage:aImage];
+nsresult nsTouchBarInputIcon::OnComplete(imgIContainer* aImage) {
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN
 
-  [aImage release];
+  // We ask only for the HiDPI images since all Touch Bars are Retina
+  // displays and we have no need for icons @1x.
+  NSImage* image = [MOZIconHelper iconImageFromImageContainer:aImage
+                                                     withSize:NSMakeSize(kIconHeight, kIconHeight)
+                                                computedStyle:nullptr
+                                                      subrect:mImageRegionRect
+                                                  scaleFactor:kHiDPIScalingFactor];
+  [mButton setImage:image];
+  [mShareScrubber setButtonImage:image];
+  [mPopoverItem setCollapsedRepresentationImage:image];
+
+  mIconLoader->Destroy();
   return NS_OK;
+
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE)
 }

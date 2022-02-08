@@ -50,7 +50,7 @@ const TEST_ARRAY = [
 
 add_task(async function() {
   await addTab("data:text/html;charset=utf-8,");
-  const { testActor, inspector, view } = await openRuleView();
+  const { inspector, view } = await openRuleView();
 
   info("Open the class panel");
   view.showClassPanel();
@@ -70,7 +70,9 @@ add_task(async function() {
 
     info(`Enter the test string in the field: ${textEntered}`);
     for (const key of textEntered.split("")) {
+      const onPreviewMutation = inspector.once("markupmutation");
       EventUtils.synthesizeKey(key, {}, view.styleWindow);
+      await onPreviewMutation;
     }
 
     info("Submit the change and wait for the textfield to become empty");
@@ -85,7 +87,7 @@ add_task(async function() {
     await onEmpty;
 
     info("Check the state of the DOM node");
-    const className = await testActor.getAttribute("body", "class");
+    const className = await getContentPageElementAttribute("body", "class");
     const expectedClassName = expectedClasses.length
       ? expectedClasses.join(" ")
       : null;

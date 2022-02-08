@@ -51,15 +51,10 @@ dictionary RTCInboundRtpStreamStats : RTCReceivedRtpStreamStats {
   unsigned long nackCount;
   unsigned long firCount;
   unsigned long pliCount;
-  double bitrateMean; // deprecated, to be removed in Bug 1367562
-  double bitrateStdDev; // deprecated, to be removed in Bug 1367562
-  double framerateMean; // deprecated, to be removed in Bug 1367562
-  double framerateStdDev; // deprecated, to be removed in Bug 1367562
 };
 
 dictionary RTCRemoteInboundRtpStreamStats : RTCReceivedRtpStreamStats {
   DOMString localId;
-  long long bytesReceived; // Deprecated, to be removed in Bug 1529405
   double roundTripTime;
 };
 
@@ -75,12 +70,6 @@ dictionary RTCOutboundRtpStreamStats : RTCSentRtpStreamStats {
   unsigned long nackCount;
   unsigned long firCount;
   unsigned long pliCount;
-  double bitrateMean; // deprecated, to be removed in Bug 1367562
-  double bitrateStdDev; // deprecated, to be removed in Bug 1367562
-  double framerateMean; // deprecated, to be removed in Bug 1367562
-  double framerateStdDev; // deprecated, to be removed in Bug 1367562
-  unsigned long droppedFrames; // non-spec alias for framesDropped
-                               // to be deprecated in Bug 1225720
 };
 
 dictionary RTCRemoteOutboundRtpStreamStats : RTCSentRtpStreamStats {
@@ -173,6 +162,16 @@ dictionary RTCVideoFrameHistoryInternal {
   sequence<RTCVideoFrameHistoryEntryInternal> entries = [];
 };
 
+// Collection over the libwebrtc bandwidth estimation stats
+dictionary RTCBandwidthEstimationInternal {
+  required DOMString  trackIdentifier;
+  long                sendBandwidthBps;    // Estimated available send bandwidth
+  long                maxPaddingBps;       // Cumulative configured max padding
+  long                receiveBandwidthBps; // Estimated available receive bandwidth
+  long                pacerDelayMs;
+  long                rttMs;
+};
+
 // This is used by about:webrtc to report SDP parsing errors
 dictionary RTCSdpParsingErrorInternal {
   required unsigned long lineNumber;
@@ -204,6 +203,7 @@ dictionary RTCStatsCollection {
   sequence<DOMString>                       rawRemoteCandidates = [];
   sequence<RTCDataChannelStats>             dataChannelStats = [];
   sequence<RTCVideoFrameHistoryInternal>    videoFrameHistories = [];
+  sequence<RTCBandwidthEstimationInternal>  bandwidthEstimations = [];
 };
 
 // Details that about:webrtc can display about configured ICE servers
@@ -228,6 +228,7 @@ dictionary RTCConfigurationInternal {
 // WebrtcGlobalInformation for about:webrtc, and telemetry.
 dictionary RTCStatsReportInternal : RTCStatsCollection {
   required DOMString                        pcid;
+  required unsigned long                    browserId;
   RTCConfigurationInternal                  configuration;
   DOMString                                 jsepSessionErrors;
   DOMString                                 localSdp;

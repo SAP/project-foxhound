@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const ENGINE_NAME = "engine-suggestions.xml";
+const AUTOFILL_PROVIDERNAME = "Autofill";
 const HEURISTIC_FALLBACK_PROVIDERNAME = "HeuristicFallback";
-const UNIFIEDCOMPLETE_PROVIDERNAME = "UnifiedComplete";
+const PLACES_PROVIDERNAME = "Places";
 
 testEngine_setup();
 
@@ -27,7 +27,7 @@ add_task(async function test_casing_1() {
       makeVisitResult(context, {
         uri: "http://mozilla.org/test/",
         title: "test visit for http://mozilla.org/test/",
-        providerName: UNIFIEDCOMPLETE_PROVIDERNAME,
+        providerName: PLACES_PROVIDERNAME,
       }),
     ],
   });
@@ -42,18 +42,16 @@ add_task(async function test_casing_2() {
   let context = createContext("mozilla.org/T", { isPrivate: false });
   await check_results({
     context,
+    autofilled: "mozilla.org/Test/",
+    completed: "http://mozilla.org/test/",
     matches: [
       makeVisitResult(context, {
-        uri: "http://mozilla.org/T",
-        title: "http://mozilla.org/T",
-        iconUri: "page-icon:http://mozilla.org/",
-        heuristic: true,
-        providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
-      }),
-      makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
         uri: "http://mozilla.org/test/",
-        title: "test visit for http://mozilla.org/test/",
-        providerName: UNIFIEDCOMPLETE_PROVIDERNAME,
+        title: "mozilla.org/test/",
+        iconUri: "page-icon:http://mozilla.org/test/",
+        heuristic: true,
+        providerName: AUTOFILL_PROVIDERNAME,
       }),
     ],
   });
@@ -89,18 +87,16 @@ add_task(async function test_casing_4() {
   let context = createContext("mOzilla.org/t", { isPrivate: false });
   await check_results({
     context,
+    autofilled: "mOzilla.org/test/",
+    completed: "http://mozilla.org/Test/",
     matches: [
       makeVisitResult(context, {
-        uri: "http://mozilla.org/t",
-        title: "http://mozilla.org/t",
-        iconUri: "page-icon:http://mozilla.org/",
-        heuristic: true,
-        providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
-      }),
-      makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
         uri: "http://mozilla.org/Test/",
-        title: "test visit for http://mozilla.org/Test/",
-        providerName: UNIFIEDCOMPLETE_PROVIDERNAME,
+        title: "mozilla.org/Test/",
+        iconUri: "page-icon:http://mozilla.org/Test/",
+        heuristic: true,
+        providerName: AUTOFILL_PROVIDERNAME,
       }),
     ],
   });
@@ -147,7 +143,7 @@ add_task(async function test_untrimmed_casing() {
       makeVisitResult(context, {
         uri: "http://mozilla.org/Test/",
         title: "test visit for http://mozilla.org/Test/",
-        providerName: UNIFIEDCOMPLETE_PROVIDERNAME,
+        providerName: PLACES_PROVIDERNAME,
       }),
     ],
   });
@@ -173,7 +169,7 @@ add_task(async function test_untrimmed_www_casing() {
       makeVisitResult(context, {
         uri: "http://www.mozilla.org/Test/",
         title: "test visit for http://www.mozilla.org/Test/",
-        providerName: UNIFIEDCOMPLETE_PROVIDERNAME,
+        providerName: PLACES_PROVIDERNAME,
       }),
     ],
   });
@@ -188,18 +184,16 @@ add_task(async function test_untrimmed_path_casing() {
   let context = createContext("http://mOzilla.org/t", { isPrivate: false });
   await check_results({
     context,
+    autofilled: "http://mOzilla.org/test/",
+    completed: "http://mozilla.org/Test/",
     matches: [
       makeVisitResult(context, {
-        uri: "http://mozilla.org/t",
-        title: "http://mozilla.org/t",
-        iconUri: "page-icon:http://mozilla.org/",
-        heuristic: true,
-        providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
-      }),
-      makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
         uri: "http://mozilla.org/Test/",
-        title: "test visit for http://mozilla.org/Test/",
-        providerName: UNIFIEDCOMPLETE_PROVIDERNAME,
+        title: "mozilla.org/Test/",
+        iconUri: "page-icon:http://mozilla.org/Test/",
+        heuristic: true,
+        providerName: AUTOFILL_PROVIDERNAME,
       }),
     ],
   });
@@ -235,18 +229,16 @@ add_task(async function test_untrimmed_path_www_casing() {
   let context = createContext("http://www.mOzilla.org/t", { isPrivate: false });
   await check_results({
     context,
+    autofilled: "http://www.mOzilla.org/test/",
+    completed: "http://www.mozilla.org/Test/",
     matches: [
       makeVisitResult(context, {
-        uri: "http://www.mozilla.org/t",
-        title: "http://www.mozilla.org/t",
-        iconUri: "page-icon:http://www.mozilla.org/",
-        heuristic: true,
-        providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
-      }),
-      makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
         uri: "http://www.mozilla.org/Test/",
-        title: "test visit for http://www.mozilla.org/Test/",
-        providerName: UNIFIEDCOMPLETE_PROVIDERNAME,
+        title: "www.mozilla.org/Test/",
+        iconUri: "page-icon:http://www.mozilla.org/Test/",
+        heuristic: true,
+        providerName: AUTOFILL_PROVIDERNAME,
       }),
     ],
   });
@@ -294,7 +286,10 @@ add_task(async function test_searching() {
   await check_results({
     context,
     matches: [
-      makeSearchResult(context, { engineName: ENGINE_NAME, heuristic: true }),
+      makeSearchResult(context, {
+        engineName: SUGGESTIONS_ENGINE_NAME,
+        heuristic: true,
+      }),
       makeVisitResult(context, {
         uri: uri2.spec,
         title: "lowercase lambda \u03BB",
@@ -311,7 +306,10 @@ add_task(async function test_searching() {
   await check_results({
     context,
     matches: [
-      makeSearchResult(context, { engineName: ENGINE_NAME, heuristic: true }),
+      makeSearchResult(context, {
+        engineName: SUGGESTIONS_ENGINE_NAME,
+        heuristic: true,
+      }),
       makeVisitResult(context, {
         uri: uri2.spec,
         title: "lowercase lambda \u03BB",
@@ -328,7 +326,10 @@ add_task(async function test_searching() {
   await check_results({
     context,
     matches: [
-      makeSearchResult(context, { engineName: ENGINE_NAME, heuristic: true }),
+      makeSearchResult(context, {
+        engineName: SUGGESTIONS_ENGINE_NAME,
+        heuristic: true,
+      }),
       makeVisitResult(context, { uri: uri5.spec, title: "lowercase k" }),
       makeVisitResult(context, { uri: uri4.spec, title: "uppercase K" }),
       makeVisitResult(context, { uri: uri3.spec, title: "symbol \u212A" }),
@@ -340,7 +341,10 @@ add_task(async function test_searching() {
   await check_results({
     context,
     matches: [
-      makeSearchResult(context, { engineName: ENGINE_NAME, heuristic: true }),
+      makeSearchResult(context, {
+        engineName: SUGGESTIONS_ENGINE_NAME,
+        heuristic: true,
+      }),
       makeVisitResult(context, { uri: uri5.spec, title: "lowercase k" }),
       makeVisitResult(context, { uri: uri4.spec, title: "uppercase K" }),
       makeVisitResult(context, { uri: uri3.spec, title: "symbol \u212A" }),
@@ -352,7 +356,10 @@ add_task(async function test_searching() {
   await check_results({
     context,
     matches: [
-      makeSearchResult(context, { engineName: ENGINE_NAME, heuristic: true }),
+      makeSearchResult(context, {
+        engineName: SUGGESTIONS_ENGINE_NAME,
+        heuristic: true,
+      }),
       makeVisitResult(context, { uri: uri5.spec, title: "lowercase k" }),
       makeVisitResult(context, { uri: uri4.spec, title: "uppercase K" }),
       makeVisitResult(context, { uri: uri3.spec, title: "symbol \u212A" }),

@@ -67,6 +67,51 @@ TEST_F(ImageLoader, DetectWebP) {
   CheckMimeType(buffer, sizeof(buffer), IMAGE_WEBP);
 }
 
+TEST_F(ImageLoader, DetectAVIFMajorBrand) {
+  const char buffer[] =
+      "\x00\x00\x00\x20"   // box length
+      "ftyp"               // box type
+      "avif"               // major brand
+      "\x00\x00\x00\x00"   // minor version
+      "avifmif1miafMA1B";  // compatible brands
+  CheckMimeType(buffer, sizeof(buffer), IMAGE_AVIF);
+}
+
+TEST_F(ImageLoader, DetectAVIFCompatibleBrand) {
+  const char buffer[] =
+      "\x00\x00\x00\x20"   // box length
+      "ftyp"               // box type
+      "XXXX"               // major brand
+      "\x00\x00\x00\x00"   // minor version
+      "avifmif1miafMA1B";  // compatible brands
+  CheckMimeType(buffer, sizeof(buffer), IMAGE_AVIF);
+}
+
+#ifdef MOZ_JXL
+TEST_F(ImageLoader, DetectJXLCodestream) {
+  const char buffer[] = "\xff\x0a";
+  CheckMimeType(buffer, sizeof(buffer), IMAGE_JXL);
+}
+
+TEST_F(ImageLoader, DetectJXLContainer) {
+  const char buffer[] =
+      "\x00\x00\x00\x0c"
+      "JXL "
+      "\x0d\x0a\x87\x0a";
+  CheckMimeType(buffer, sizeof(buffer), IMAGE_JXL);
+}
+#endif
+
+TEST_F(ImageLoader, DetectNonImageMP4) {
+  const char buffer[] =
+      "\x00\x00\x00\x1c"  // box length
+      "ftyp"              // box type
+      "isom"              // major brand
+      "\x00\x00\x02\x00"  // minor version
+      "isomiso2mp41";     // compatible brands
+  CheckMimeType(buffer, sizeof(buffer), nullptr);
+}
+
 TEST_F(ImageLoader, DetectNone) {
   const char buffer[] = "abcdefghijklmnop";
   CheckMimeType(buffer, sizeof(buffer), nullptr);

@@ -7,8 +7,6 @@
 
 use super::*;
 
-use cocoa_foundation::foundation::{NSInteger, NSRange, NSUInteger};
-
 use std::ops::Range;
 
 #[repr(u64)]
@@ -67,10 +65,16 @@ pub enum MTLTriangleFillMode {
 }
 
 bitflags! {
+    /// https://developer.apple.com/documentation/metal/mtlblitoption
     #[allow(non_upper_case_globals)]
     pub struct MTLBlitOption: NSUInteger {
+        /// https://developer.apple.com/documentation/metal/mtlblitoption/mtlblitoptionnone
+        const None = 0;
+        /// https://developer.apple.com/documentation/metal/mtlblitoption/mtlblitoptiondepthfromdepthstencil
         const DepthFromDepthStencil   = 1 << 0;
+        /// https://developer.apple.com/documentation/metal/mtlblitoption/mtlblitoptionstencilfromdepthstencil
         const StencilFromDepthStencil = 1 << 1;
+        /// https://developer.apple.com/documentation/metal/mtlblitoption/mtlblitoptionrowlinearpvrtc
         const RowLinearPVRTC          = 1 << 2;
     }
 }
@@ -680,6 +684,24 @@ impl RenderCommandEncoderRef {
     pub fn use_heap(&self, heap: &HeapRef) {
         unsafe { msg_send![self, useHeap: heap] }
     }
+
+    pub fn update_fence(&self, fence: &FenceRef, after_stages: MTLRenderStages) {
+        unsafe {
+            msg_send![self,
+                updateFence: fence
+                afterStages: after_stages
+            ]
+        }
+    }
+
+    pub fn wait_for_fence(&self, fence: &FenceRef, before_stages: MTLRenderStages) {
+        unsafe {
+            msg_send![self,
+                waitForFence: fence
+                beforeStages: before_stages
+            ]
+        }
+    }
 }
 
 pub enum MTLBlitCommandEncoder {}
@@ -696,7 +718,7 @@ impl BlitCommandEncoderRef {
         unsafe { msg_send![self, synchronizeResource: resource] }
     }
 
-    pub fn fill_buffer(&self, destination_buffer: &BufferRef, range: NSRange, value: u8) {
+    pub fn fill_buffer(&self, destination_buffer: &BufferRef, range: crate::NSRange, value: u8) {
         unsafe {
             msg_send![self,
                 fillBuffer: destination_buffer
@@ -704,6 +726,10 @@ impl BlitCommandEncoderRef {
                 value: value
             ]
         }
+    }
+
+    pub fn generate_mipmaps(&self, texture: &TextureRef) {
+        unsafe { msg_send![self, generateMipmapsForTexture: texture] }
     }
 
     pub fn copy_from_buffer(
@@ -781,6 +807,7 @@ impl BlitCommandEncoderRef {
         }
     }
 
+    /// https://developer.apple.com/documentation/metal/mtlblitcommandencoder/1400756-copy
     pub fn copy_from_texture_to_buffer(
         &self,
         source_texture: &TextureRef,
@@ -846,6 +873,14 @@ impl BlitCommandEncoderRef {
                 level: level
             ]
         }
+    }
+
+    pub fn update_fence(&self, fence: &FenceRef) {
+        unsafe { msg_send![self, updateFence: fence] }
+    }
+
+    pub fn wait_for_fence(&self, fence: &FenceRef) {
+        unsafe { msg_send![self, waitForFence: fence] }
     }
 }
 
@@ -957,11 +992,20 @@ impl ComputeCommandEncoderRef {
     pub fn dispatch_thread_groups(
         &self,
         thread_groups_count: MTLSize,
-        threads_per_thread_group: MTLSize,
+        threads_per_threadgroup: MTLSize,
     ) {
         unsafe {
             msg_send![self,
                 dispatchThreadgroups:thread_groups_count
+                threadsPerThreadgroup:threads_per_threadgroup
+            ]
+        }
+    }
+
+    pub fn dispatch_threads(&self, threads_per_grid: MTLSize, threads_per_thread_group: MTLSize) {
+        unsafe {
+            msg_send![self,
+                dispatchThreads:threads_per_grid
                 threadsPerThreadgroup:threads_per_thread_group
             ]
         }
@@ -971,13 +1015,22 @@ impl ComputeCommandEncoderRef {
         &self,
         buffer: &BufferRef,
         offset: NSUInteger,
-        threads_per_thread_group: MTLSize,
+        threads_per_threadgroup: MTLSize,
     ) {
         unsafe {
             msg_send![self,
                 dispatchThreadgroupsWithIndirectBuffer:buffer
                 indirectBufferOffset:offset
-                threadsPerThreadgroup:threads_per_thread_group
+                threadsPerThreadgroup:threads_per_threadgroup
+            ]
+        }
+    }
+
+    pub fn set_threadgroup_memory_length(&self, at_index: NSUInteger, size: NSUInteger) {
+        unsafe {
+            msg_send![self,
+                setThreadgroupMemoryLength:size
+                atIndex: at_index
             ]
         }
     }
@@ -993,6 +1046,14 @@ impl ComputeCommandEncoderRef {
 
     pub fn use_heap(&self, heap: &HeapRef) {
         unsafe { msg_send![self, useHeap: heap] }
+    }
+
+    pub fn update_fence(&self, fence: &FenceRef) {
+        unsafe { msg_send![self, updateFence: fence] }
+    }
+
+    pub fn wait_for_fence(&self, fence: &FenceRef) {
+        unsafe { msg_send![self, waitForFence: fence] }
     }
 }
 
@@ -1103,6 +1164,35 @@ impl ArgumentEncoderRef {
                 withRange: NSRange {
                     location: start_index,
                     length: data.len() as _,
+                }
+            ]
+        }
+    }
+
+    pub fn set_render_pipeline_state(
+        &self,
+        at_index: NSUInteger,
+        pipeline: &RenderPipelineStateRef,
+    ) {
+        unsafe {
+            msg_send![self,
+                setRenderPipelineState: pipeline
+                atIndex: at_index
+            ]
+        }
+    }
+
+    pub fn set_render_pipeline_states(
+        &self,
+        start_index: NSUInteger,
+        pipelines: &[&RenderPipelineStateRef],
+    ) {
+        unsafe {
+            msg_send![self,
+                setRenderPipelineStates: pipelines.as_ptr()
+                withRange: NSRange {
+                    location: start_index,
+                    length: pipelines.len() as _,
                 }
             ]
         }

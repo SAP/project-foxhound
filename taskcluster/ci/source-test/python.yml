@@ -4,27 +4,29 @@
 ---
 job-defaults:
     platform: linux1804-64/opt
-    always-target: true
+    always-target:
+        by-platform:
+            macosx.*: false
+            default: true
     worker-type:
         by-platform:
             linux1804-64.*: t-linux-xlarge-source
-            macosx1014-64.*: t-osx-1014
-            windows10-64.*: t-win10-64-source
+            macosx1015-64.*: t-osx-1015-r8
+            windows10-64.*: win10-64-2004-source
     worker:
         by-platform:
             linux1804-64.*:
                 docker-image: {in-tree: "lint"}
                 max-run-time: 3600
+            macosx.*:
+                max-run-time: 3600
                 env:
-                    RUSTFMT: /build/rust/bin/rustfmt
-                    RUSTUP_HOME: /build/rust
-                    CARGO_HOME: /build/rust
-                    CLANG_FORMAT: /builds/worker/fetches/clang-tidy/bin/clang-format
+                    PATH: "/usr/local/bin:/bin:/sbin:/usr/bin:/usr/sbin"
             default:
                 max-run-time: 3600
     treeherder:
         kind: test
-        tier: 2
+        tier: 1
     run:
         using: mach
     when:
@@ -33,8 +35,8 @@ job-defaults:
             - 'python/mach_commands.py'
 
 firefox-ci:
-    description: taskcluster/taskgraph unit tests
-    python-version: [2]
+    description: taskcluster/gecko_taskgraph unit tests
+    python-version: [3]
     treeherder:
         symbol: ci
     run:
@@ -46,13 +48,29 @@ firefox-ci:
             - 'taskcluster/**/*.py'
             - 'tools/tryselect/selectors/auto.py'
 
+fog:
+    description: Python unit tests for Firefox on Glean
+    platform:
+        - linux1804-64/opt
+        - macosx1015-64/opt
+        - windows10-64/opt
+    python-version: [3]
+    treeherder:
+        symbol: fp
+    run:
+        using: python-test
+        subsuite: fog
+    when:
+        files-changed:
+            - 'toolkit/components/glean/**'
+
 mach:
     description: python/mach unit tests
     platform:
         - linux1804-64/opt
-        - macosx1014-64/opt
+        - macosx1015-64/opt
         - windows10-64/opt
-    python-version: [2, 3]
+    python-version: [3]
     treeherder:
         symbol: mach
     run:
@@ -67,7 +85,7 @@ marionette-harness:
     platform:
         - linux1804-64/opt
         - windows10-64/opt
-    python-version: [2]
+    python-version: [3]
     treeherder:
         symbol: mnh
     run:
@@ -78,7 +96,6 @@ marionette-harness:
             - 'testing/marionette/harness/**'
             - 'testing/mozbase/mozlog/mozlog/**'
             - 'testing/mozbase/mozlog/setup.py'
-            - 'testing/mozbase/packages.txt'
 
 mochitest-harness:
     description: testing/mochitest unittests
@@ -98,7 +115,7 @@ mochitest-harness:
                 linux1804-64/debug: build-linux64/debug
                 linux1804-64/opt: build-linux64-shippable/opt
     treeherder:
-        symbol: py2(mch)
+        symbol: py3(mch)
     worker:
         by-platform:
             linux1804-64.*:
@@ -112,7 +129,7 @@ mochitest-harness:
             start_xvfb '1600x1200x24' 0 &&
             export GECKO_BINARY_PATH=$MOZ_FETCHES_DIR/firefox/firefox &&
             export TEST_HARNESS_ROOT=$MOZ_FETCHES_DIR/tests &&
-            ./mach python-test --python 2 --subsuite mochitest
+            ./mach python-test --subsuite mochitest
     fetches:
         build:
             - target.tar.bz2
@@ -137,9 +154,9 @@ mozbase:
     description: testing/mozbase unit tests
     platform:
         - linux1804-64/opt
-        - macosx1014-64/opt
+        - macosx1015-64/opt
         - windows10-64/opt
-    python-version: [2, 3]
+    python-version: [3]
     treeherder:
         symbol: mb
     run:
@@ -150,20 +167,6 @@ mozbase:
             - 'testing/mozbase/**'
 
 mozharness:
-    description: mozharness integration tests
-    treeherder:
-        symbol: py2(mh)
-    run:
-        using: run-task
-        cache-dotcache: true
-        cwd: '{checkout}/testing/mozharness'
-        command: >
-            /usr/local/bin/tox -e py27-hg5.2
-    when:
-        files-changed:
-            - 'testing/mozharness/**'
-
-mozharness-py3:
     description: mozharness integration tests
     treeherder:
         symbol: py3(mh)
@@ -181,26 +184,36 @@ mozlint:
     description: python/mozlint unit tests
     platform:
         - linux1804-64/opt
-        - macosx1014-64/opt
+        - macosx1015-64/opt
         - windows10-64/opt
     python-version: [3]
     treeherder:
         symbol: mozlint
+        tier: 2
     run:
         using: python-test
         subsuite: mozlint
+    dependencies:
+        clang-tidy:
+            by-platform:
+                linux1804-64/opt: toolchain-linux64-clang-tidy
+                macosx1015-64/opt: toolchain-macosx64-clang-tidy
+                windows10-64/opt: toolchain-win64-clang-tidy
     fetches:
         toolchain:
             by-platform:
                 linux1804-64/opt:
-                    - linux64-clang-tidy
                     - linux64-node
-                macosx1014-64/opt:
-                    - macosx64-clang-tidy
+                    - linux64-rust
+                macosx1015-64/opt:
                     - macosx64-node
+                    - macosx64-rust
                 windows10-64/opt:
-                    - win64-clang-tidy
                     - win64-node
+                    - win64-rust
+        clang-tidy:
+            - artifact: clang-tidy.tar.zst
+              dest: clang-tools
     when:
         files-changed:
             - 'python/mozlint/**'
@@ -208,7 +221,7 @@ mozlint:
 
 mozrelease:
     description: python/mozrelease unit tests
-    python-version: [2, 3]
+    python-version: [3]
     treeherder:
         symbol: release
     run:
@@ -223,7 +236,7 @@ mozterm:
     platform:
         - linux1804-64/opt
         - windows10-64/opt
-    python-version: [2, 3]
+    python-version: [3]
     treeherder:
         symbol: term
     run:
@@ -235,7 +248,7 @@ mozterm:
 
 mozversioncontrol:
     description: python/mozversioncontrol unit tests
-    python-version: [2, 3]
+    python-version: [3]
     treeherder:
         symbol: vcs
     run:
@@ -249,9 +262,9 @@ raptor:
     description: testing/raptor unit tests
     platform:
         - linux1804-64/opt
-        - macosx1014-64/opt
+        - macosx1015-64/opt
         - windows10-64/opt
-    python-version: [2, 3]
+    python-version: [3]
     treeherder:
         symbol: rap
     run:
@@ -279,7 +292,7 @@ reftest-harness:
                 linux1804-64/opt: build-linux64-shippable/opt
     always-target: false
     treeherder:
-        symbol: py2(ref)
+        symbol: py3(ref)
     worker:
         by-platform:
             linux1804-64.*:
@@ -293,7 +306,7 @@ reftest-harness:
             start_xvfb '1600x1200x24' 0 &&
             export GECKO_BINARY_PATH=$MOZ_FETCHES_DIR/firefox/firefox &&
             export TEST_HARNESS_ROOT=$MOZ_FETCHES_DIR/tests &&
-            ./mach python-test --python 2 --subsuite reftest
+            ./mach python-test --subsuite reftest
     fetches:
         build:
             - target.tar.bz2
@@ -313,8 +326,8 @@ reftest-harness:
             - 'testing/mozharness/mozharness/mozilla/testing/errors.py'
 
 taskgraph-tests:
-    description: taskcluster/taskgraph unit tests
-    python-version: [2, 3]
+    description: taskcluster/gecko_taskgraph unit tests
+    python-version: [3]
     treeherder:
         symbol: tg
     run:
@@ -339,16 +352,16 @@ tryselect:
     when:
         files-changed:
             - 'taskcluster/ci/test/**'
-            - 'taskcluster/taskgraph/transforms/**'
+            - 'taskcluster/gecko_taskgraph/transforms/**'
             - 'tools/tryselect/**'
 
 mozbuild:
     description: mozbuild unit tests
     platform:
         - linux1804-64/opt
-        - macosx1014-64/opt
+        - macosx1015-64/opt
         - windows10-64/opt
-    python-version: [2, 3]
+    python-version: [3]
     treeherder:
         symbol: mbu
     run:
@@ -358,11 +371,11 @@ mozbuild:
         toolchain:
             by-platform:
                 linux1804-64/opt:
-                    - linux64-node-10
-                macosx1014-64/opt:
-                    - macosx64-node-10
+                    - linux64-node-12
+                macosx1015-64/opt:
+                    - macosx64-node-12
                 windows10-64/opt:
-                    - win64-node-10
+                    - win64-node-12
     when:
         files-changed:
             - '**/moz.configure'
@@ -383,7 +396,7 @@ mozperftest:
     description: mozperftest unit tests
     platform:
         - linux1804-64/opt
-        - macosx1014-64/opt
+        - macosx1015-64/opt
         - windows10-64/opt
     treeherder:
         symbol: mpu
@@ -393,11 +406,11 @@ mozperftest:
         toolchain:
             by-platform:
                 linux1804-64/opt:
-                    - linux64-node-10
-                macosx1014-64/opt:
-                    - macosx64-node-10
+                    - linux64-node-12
+                macosx1015-64/opt:
+                    - macosx64-node-12
                 windows10-64/opt:
-                    - win64-node-10
+                    - win64-node-12
     when:
         files-changed:
             - 'testing/performance/**'
@@ -407,9 +420,9 @@ condprof:
     description: testing/condprofile unit tests
     platform:
         - linux1804-64/opt
-        - macosx1014-64/opt
+        - macosx1015-64/opt
         - windows10-64/opt
-    python-version: [2]
+    python-version: [3]
     treeherder:
         symbol: condprof
     run:
@@ -425,7 +438,7 @@ featuregates:
     platform:
         - linux1804-64/opt
         - windows10-64/opt
-    python-version: [2, 3]
+    python-version: [3]
     treeherder:
         symbol: fg
     run:
@@ -435,9 +448,9 @@ featuregates:
         toolchain:
             by-platform:
                 linux1804-64/opt:
-                    - linux64-node-10
+                    - linux64-node-12
                 windows10-64/opt:
-                    - win64-node-10
+                    - win64-node-12
     when:
         files-changed:
             - 'toolkit/components/featuregates/**'
@@ -445,7 +458,7 @@ featuregates:
 talos:
     description: testing/talos unit tests
     platform: windows10-64/opt
-    python-version: [2]
+    python-version: [3]
     treeherder:
         symbol: tal
     run:
@@ -474,6 +487,7 @@ telemetry-integration-tests:
     treeherder:
         symbol: tt(i)
         tier: 3
+    run-on-projects: []
     run:
         using: run-task
         cwd: '{checkout}'
@@ -481,7 +495,7 @@ telemetry-integration-tests:
             source /builds/worker/scripts/xvfb.sh &&
             start_xvfb '1600x1200x24' 0 &&
             export GECKO_BINARY_PATH=$MOZ_FETCHES_DIR/firefox/firefox &&
-            ./mach python-test --python 2 --subsuite telemetry-integration-tests
+            ./mach python-test --subsuite telemetry-integration-tests
     fetches:
         build:
             - target.tar.bz2
@@ -497,9 +511,9 @@ telemetry-python:
     description: Python unit tests for Telemetry
     platform:
         - linux1804-64/opt
-        - macosx1014-64/opt
+        - macosx1015-64/opt
         - windows10-64/opt
-    python-version: [2]
+    python-version: [3]
     treeherder:
         symbol: tp
     run:
@@ -509,11 +523,11 @@ telemetry-python:
         toolchain:
             by-platform:
                 linux1804-64/opt:
-                    - linux64-node-10
-                macosx1014-64/opt:
-                    - macosx64-node-10
+                    - linux64-node-12
+                macosx1015-64/opt:
+                    - macosx64-node-12
                 windows10-64/opt:
-                    - win64-node-10
+                    - win64-node-12
     when:
         files-changed:
             - 'toolkit/components/telemetry/**'
@@ -531,6 +545,8 @@ xpcom:
     when:
         files-changed:
             - 'third_party/python/ply/**'
+            - 'xpcom/components/*.py'
+            - 'xpcom/components/test/**'
             - 'xpcom/ds/tools/**'
             - 'xpcom/ds/test/**'
             - 'xpcom/idl-parser/**'

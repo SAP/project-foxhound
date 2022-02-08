@@ -8,11 +8,19 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { actionCreators: ac, actionTypes: at } = ChromeUtils.import(
   "resource://activity-stream/common/Actions.jsm"
 );
+const { shortURL } = ChromeUtils.import(
+  "resource://activity-stream/lib/ShortURL.jsm"
+);
 
 ChromeUtils.defineModuleGetter(
   this,
   "NewTabUtils",
   "resource://gre/modules/NewTabUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "PartnerLinkAttribution",
+  "resource:///modules/PartnerLinkAttribution.jsm"
 );
 ChromeUtils.defineModuleGetter(
   this,
@@ -24,14 +32,14 @@ ChromeUtils.defineModuleGetter(
   "PrivateBrowsingUtils",
   "resource://gre/modules/PrivateBrowsingUtils.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "TopSiteAttribution",
-  "resource:///modules/TopSiteAttribution.jsm"
-);
 
 const LINK_BLOCKED_EVENT = "newtab-linkBlocked";
 const PLACES_LINKS_CHANGED_DELAY_TIME = 1000; // time in ms to delay timer for places links changed events
+
+// The pref to store the blocked sponsors of the sponsored Top Sites.
+// The value of this pref is an array (JSON serialized) of hostnames of the
+// blocked sponsors.
+const TOP_SITES_BLOCKED_SPONSORS_PREF = "browser.topsites.blockedSponsors";
 
 /**
  * Observer - a wrapper around history/bookmark observers to add the QueryInterface.
@@ -47,51 +55,6 @@ class Observer {
 }
 
 /**
- * HistoryObserver - observes events from PlacesUtils.history
- */
-class HistoryObserver extends Observer {
-  constructor(dispatch) {
-    super(dispatch, Ci.nsINavHistoryObserver);
-  }
-
-  /**
-   * onDeleteURI - Called when an link is deleted from history.
-   *
-   * @param  {obj} uri        A URI object representing the link's url
-   *         {str} uri.spec   The URI as a string
-   */
-  onDeleteURI(uri) {
-    this.dispatch({ type: at.PLACES_LINKS_CHANGED });
-    this.dispatch({
-      type: at.PLACES_LINK_DELETED,
-      data: { url: uri.spec },
-    });
-  }
-
-  /**
-   * onClearHistory - Called when the user clears their entire history.
-   */
-  onClearHistory() {
-    this.dispatch({ type: at.PLACES_HISTORY_CLEARED });
-  }
-
-  // Empty functions to make xpconnect happy
-  onBeginUpdateBatch() {}
-
-  onEndUpdateBatch() {}
-
-  onTitleChanged() {}
-
-  onFrecencyChanged() {}
-
-  onManyFrecenciesChanged() {}
-
-  onPageChanged() {}
-
-  onDeleteVisits() {}
-}
-
-/**
  * BookmarksObserver - observes events from PlacesUtils.bookmarks
  */
 class BookmarksObserver extends Observer {
@@ -100,15 +63,7 @@ class BookmarksObserver extends Observer {
     this.skipTags = true;
   }
 
-  // Empty functions to make xpconnect happy
-  onBeginUpdateBatch() {}
-
-  onEndUpdateBatch() {}
-
-  onItemVisited() {}
-
-  onItemMoved() {}
-
+  // Empty functions to make xpconnect happy.
   // Disabled due to performance cost, see Issue 3203 /
   // https://bugzilla.mozilla.org/show_bug.cgi?id=1392267.
   onItemChanged() {}
@@ -124,17 +79,29 @@ class PlacesObserver extends Observer {
   }
 
   handlePlacesEvent(events) {
-    for (let {
+    const removedPages = [];
+    const removedBookmarks = [];
+
+    for (const {
       itemType,
       source,
       dateAdded,
       guid,
       title,
       url,
+      isRemovedFromStore,
       isTagging,
       type,
     } of events) {
       switch (type) {
+        case "history-cleared":
+          this.dispatch({ type: at.PLACES_HISTORY_CLEARED });
+          break;
+        case "page-removed":
+          if (isRemovedFromStore) {
+            removedPages.push(url);
+          }
+          break;
         case "bookmark-added":
           // Skips items that are not bookmarks (like folders), about:* pages or
           // default bookmarks, added when the profile is created.
@@ -170,14 +137,28 @@ class PlacesObserver extends Observer {
               source !== PlacesUtils.bookmarks.SOURCES.RESTORE_ON_STARTUP &&
               source !== PlacesUtils.bookmarks.SOURCES.SYNC)
           ) {
-            this.dispatch({ type: at.PLACES_LINKS_CHANGED });
-            this.dispatch({
-              type: at.PLACES_BOOKMARK_REMOVED,
-              data: { url, bookmarkGuid: guid },
-            });
+            removedBookmarks.push(url);
           }
           break;
       }
+    }
+
+    if (removedPages.length || removedBookmarks.length) {
+      this.dispatch({ type: at.PLACES_LINKS_CHANGED });
+    }
+
+    if (removedPages.length) {
+      this.dispatch({
+        type: at.PLACES_LINKS_DELETED,
+        data: { urls: removedPages },
+      });
+    }
+
+    if (removedBookmarks.length) {
+      this.dispatch({
+        type: at.PLACES_BOOKMARKS_REMOVED,
+        data: { urls: removedBookmarks },
+      });
     }
   }
 }
@@ -186,21 +167,17 @@ class PlacesFeed {
   constructor() {
     this.placesChangedTimer = null;
     this.customDispatch = this.customDispatch.bind(this);
-    this.historyObserver = new HistoryObserver(this.customDispatch);
     this.bookmarksObserver = new BookmarksObserver(this.customDispatch);
     this.placesObserver = new PlacesObserver(this.customDispatch);
   }
 
   addObservers() {
     // NB: Directly get services without importing the *BIG* PlacesUtils module
-    Cc["@mozilla.org/browser/nav-history-service;1"]
-      .getService(Ci.nsINavHistoryService)
-      .addObserver(this.historyObserver, true);
     Cc["@mozilla.org/browser/nav-bookmarks-service;1"]
       .getService(Ci.nsINavBookmarksService)
       .addObserver(this.bookmarksObserver, true);
     PlacesUtils.observers.addListener(
-      ["bookmark-added", "bookmark-removed"],
+      ["bookmark-added", "bookmark-removed", "history-cleared", "page-removed"],
       this.placesObserver.handlePlacesEvent
     );
 
@@ -241,10 +218,9 @@ class PlacesFeed {
       this.placesChangedTimer.cancel();
       this.placesChangedTimer = null;
     }
-    PlacesUtils.history.removeObserver(this.historyObserver);
     PlacesUtils.bookmarks.removeObserver(this.bookmarksObserver);
     PlacesUtils.observers.removeListener(
-      ["bookmark-added", "bookmark-removed"],
+      ["bookmark-added", "bookmark-removed", "history-cleared", "page-removed"],
       this.placesObserver.handlePlacesEvent
     );
     Services.obs.removeObserver(this, LINK_BLOCKED_EVENT);
@@ -279,9 +255,7 @@ class PlacesFeed {
     const params = {
       private: isPrivate,
       targetBrowser: action._target.browser,
-      triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal(
-        {}
-      ),
+      fromChrome: false, // This ensure we maintain user preference for how to open new tabs.
     };
 
     // Always include the referrer (even for http links) if we have one
@@ -303,13 +277,38 @@ class PlacesFeed {
     const urlToOpen =
       action.data.type === "pocket" ? action.data.open_url : action.data.url;
 
+    try {
+      let uri = Services.io.newURI(urlToOpen);
+      if (!["http", "https"].includes(uri.scheme)) {
+        throw new Error(
+          `Can't open link using ${uri.scheme} protocol from the new tab page.`
+        );
+      }
+    } catch (e) {
+      Cu.reportError(e);
+      return;
+    }
+
     // Mark the page as typed for frecency bonus before opening the link
     if (typedBonus) {
       PlacesUtils.history.markPageAsTyped(Services.io.newURI(urlToOpen));
     }
 
     const win = action._target.browser.ownerGlobal;
-    win.openLinkIn(urlToOpen, where || win.whereToOpenLink(event), params);
+    win.openTrustedLinkIn(
+      urlToOpen,
+      where || win.whereToOpenLink(event),
+      params
+    );
+
+    // If there's an original URL e.g. using the unprocessed %YYYYMMDDHH% tag,
+    // add a visit for that so it may become a frecent top site.
+    if (action.data.original_url) {
+      PlacesUtils.history.insert({
+        url: action.data.original_url,
+        visits: [{ transition: PlacesUtils.history.TRANSITION_TYPED }],
+      });
+    }
   }
 
   async saveToPocket(site, browser) {
@@ -366,23 +365,39 @@ class PlacesFeed {
     }
   }
 
-  fillSearchTopSiteTerm({ _target, data }) {
-    _target.browser.ownerGlobal.gURLBar.search(`${data.label} `);
+  /**
+   * Sends an attribution request for Top Sites interactions.
+   * @param {object} data
+   *   Attribution paramters from a Top Site.
+   */
+  makeAttributionRequest(data) {
+    let args = Object.assign(
+      {
+        campaignID: Services.prefs.getStringPref(
+          "browser.partnerlink.campaign.topsites"
+        ),
+      },
+      data
+    );
+    PartnerLinkAttribution.makeRequest(args);
   }
 
-  _getSearchPrefix(isPrivateWindow) {
-    const searchAliases =
-      Services.search[
-        isPrivateWindow ? "defaultPrivateEngine" : "defaultEngine"
-      ].wrappedJSObject.__internalAliases;
-    if (searchAliases && searchAliases.length) {
-      return `${searchAliases[0]} `;
-    }
-    return "";
+  async fillSearchTopSiteTerm({ _target, data }) {
+    const searchEngine = await Services.search.getEngineByAlias(data.label);
+    _target.browser.ownerGlobal.gURLBar.search(data.label, {
+      searchEngine,
+      searchModeEntry: "topsites_newtab",
+    });
+  }
+
+  _getDefaultSearchEngine(isPrivateWindow) {
+    return Services.search[
+      isPrivateWindow ? "defaultPrivateEngine" : "defaultEngine"
+    ];
   }
 
   handoffSearchToAwesomebar({ _target, data, meta }) {
-    const searchAlias = this._getSearchPrefix(
+    const searchEngine = this._getDefaultSearchEngine(
       PrivateBrowsingUtils.isBrowserPrivate(_target.browser)
     );
     const urlBar = _target.browser.ownerGlobal.gURLBar;
@@ -391,8 +406,7 @@ class PlacesFeed {
     if (!data || !data.text) {
       urlBar.setHiddenFocus();
     } else {
-      // Pass the provided text to the awesomebar. Prepend the @engine shortcut.
-      urlBar.search(`${searchAlias}${data.text}`);
+      urlBar.handoff(data.text, searchEngine);
       isFirstChange = false;
     }
 
@@ -402,10 +416,10 @@ class PlacesFeed {
       // in-content search.
       if (isFirstChange) {
         isFirstChange = false;
-        urlBar.removeHiddenFocus();
-        urlBar.search(searchAlias);
+        urlBar.removeHiddenFocus(true);
+        urlBar.handoff("", searchEngine);
         this.store.dispatch(
-          ac.OnlyToOneContent({ type: at.HIDE_SEARCH }, meta.fromTarget)
+          ac.OnlyToOneContent({ type: at.DISABLE_SEARCH }, meta.fromTarget)
         );
         urlBar.removeEventListener("compositionstart", checkFirstChange);
         urlBar.removeEventListener("paste", checkFirstChange);
@@ -423,12 +437,14 @@ class PlacesFeed {
       }
     };
 
-    const onDone = () => {
+    const onDone = ev => {
       // We are done. Show in-content search again and cleanup.
       this.store.dispatch(
         ac.OnlyToOneContent({ type: at.SHOW_SEARCH }, meta.fromTarget)
       );
-      urlBar.removeHiddenFocus();
+
+      const forceSuppressFocusBorder = ev?.type === "mousedown";
+      urlBar.removeHiddenFocus(forceSuppressFocusBorder);
 
       urlBar.removeEventListener("keydown", onKeydown);
       urlBar.removeEventListener("mousedown", onDone);
@@ -444,6 +460,24 @@ class PlacesFeed {
     urlBar.addEventListener("paste", checkFirstChange);
   }
 
+  /**
+   * Add the hostnames of the given urls to the Top Sites sponsor blocklist.
+   *
+   * @param {array} urls
+   *   An array of the objects structured as `{ url }`
+   */
+  addToBlockedTopSitesSponsors(urls) {
+    const blockedPref = JSON.parse(
+      Services.prefs.getStringPref(TOP_SITES_BLOCKED_SPONSORS_PREF, "[]")
+    );
+    const merged = new Set([...blockedPref, ...urls.map(url => shortURL(url))]);
+
+    Services.prefs.setStringPref(
+      TOP_SITES_BLOCKED_SPONSORS_PREF,
+      JSON.stringify([...merged])
+    );
+  }
+
   onAction(action) {
     switch (action.type) {
       case at.INIT:
@@ -453,12 +487,27 @@ class PlacesFeed {
       case at.UNINIT:
         this.removeObservers();
         break;
+      case at.ABOUT_SPONSORED_TOP_SITES: {
+        const url = `${Services.urlFormatter.formatURLPref(
+          "app.support.baseURL"
+        )}sponsor-privacy`;
+        const win = action._target.browser.ownerGlobal;
+        win.openTrustedLinkIn(url, "tab");
+        break;
+      }
       case at.BLOCK_URL: {
         if (action.data) {
+          let sponsoredTopSites = [];
           action.data.forEach(site => {
-            const { url, pocket_id } = site;
+            const { url, pocket_id, isSponsoredTopSite } = site;
             NewTabUtils.activityStreamLinks.blockURL({ url, pocket_id });
+            if (isSponsoredTopSite) {
+              sponsoredTopSites.push({ url });
+            }
           });
+          if (sponsoredTopSites.length) {
+            this.addToBlockedTopSitesSponsors(sponsoredTopSites);
+          }
         }
         break;
       }
@@ -504,8 +553,8 @@ class PlacesFeed {
         this.openLink(action);
         break;
       }
-      case at.TOP_SITES_ATTRIBUTION:
-        TopSiteAttribution.makeRequest(action.data);
+      case at.PARTNER_LINK_ATTRIBUTION:
+        this.makeAttributionRequest(action.data);
         break;
     }
   }
@@ -514,7 +563,6 @@ class PlacesFeed {
 this.PlacesFeed = PlacesFeed;
 
 // Exported for testing only
-PlacesFeed.HistoryObserver = HistoryObserver;
 PlacesFeed.BookmarksObserver = BookmarksObserver;
 PlacesFeed.PlacesObserver = PlacesObserver;
 

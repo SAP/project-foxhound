@@ -29,9 +29,9 @@ void EffectSet::PropertyDtor(void* aObject, nsAtom* aPropertyName,
 }
 
 void EffectSet::Traverse(nsCycleCollectionTraversalCallback& aCallback) {
-  for (auto iter = mEffects.Iter(); !iter.Done(); iter.Next()) {
-    CycleCollectionNoteChild(aCallback, iter.Get()->GetKey(),
-                             "EffectSet::mEffects[]", aCallback.Flags());
+  for (const auto& key : mEffects) {
+    CycleCollectionNoteChild(aCallback, key, "EffectSet::mEffects[]",
+                             aCallback.Flags());
   }
 }
 
@@ -122,6 +122,17 @@ EffectSet* EffectSet::GetEffectSetForStyleFrame(const nsIFrame* aStyleFrame) {
   }
 
   return GetEffectSet(target->mElement, target->mPseudoType);
+}
+
+/* static */
+EffectSet* EffectSet::GetEffectSetForEffect(
+    const dom::KeyframeEffect* aEffect) {
+  NonOwningAnimationTarget target = aEffect->GetAnimationTarget();
+  if (!target) {
+    return nullptr;
+  }
+
+  return EffectSet::GetEffectSet(target.mElement, target.mPseudoType);
 }
 
 /* static */

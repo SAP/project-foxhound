@@ -13,6 +13,8 @@
 namespace mozilla {
 namespace dom {
 
+class ArrayBufferBuilder;
+class BlobImpl;
 class DOMString;
 class XMLHttpRequestStringBuffer;
 class XMLHttpRequestStringSnapshot;
@@ -39,7 +41,7 @@ class XMLHttpRequestString final {
   // This method should be called only when the string is really needed because
   // it can cause the duplication of the strings in case the loading of the XHR
   // is not completed yet.
-  MOZ_MUST_USE bool GetAsString(nsAString& aString) const;
+  [[nodiscard]] bool GetAsString(nsAString& aString) const;
 
   size_t SizeOfThis(MallocSizeOf aMallocSizeOf) const;
 
@@ -61,14 +63,15 @@ class XMLHttpRequestString final {
 class MOZ_STACK_CLASS XMLHttpRequestStringWriterHelper final {
  public:
   explicit XMLHttpRequestStringWriterHelper(XMLHttpRequestString& aString);
+  ~XMLHttpRequestStringWriterHelper();
 
   /**
    * The existing length of the string. Do not call during BulkWrite().
    */
   uint32_t Length() const;
 
-  mozilla::BulkWriteHandle<char16_t> BulkWrite(uint32_t aCapacity,
-                                               nsresult& aRv);
+  mozilla::Result<mozilla::BulkWriteHandle<char16_t>, nsresult> BulkWrite(
+      uint32_t aCapacity);
 
   void
   AppendTaintAt(size_t aIndex, const StringTaint& aTaint);
@@ -108,7 +111,7 @@ class XMLHttpRequestStringSnapshot final {
 
   bool IsEmpty() const { return !mLength; }
 
-  MOZ_MUST_USE bool GetAsString(DOMString& aString) const;
+  [[nodiscard]] bool GetAsString(DOMString& aString) const;
 
  private:
   XMLHttpRequestStringSnapshot(const XMLHttpRequestStringSnapshot&) = delete;
@@ -129,6 +132,7 @@ class MOZ_STACK_CLASS XMLHttpRequestStringSnapshotReaderHelper final {
  public:
   explicit XMLHttpRequestStringSnapshotReaderHelper(
       XMLHttpRequestStringSnapshot& aSnapshot);
+  ~XMLHttpRequestStringSnapshotReaderHelper();
 
   const char16_t* Buffer() const;
 

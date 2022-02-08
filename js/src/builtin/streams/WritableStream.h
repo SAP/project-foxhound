@@ -10,7 +10,6 @@
 #define builtin_streams_WritableStream_h
 
 #include "mozilla/Assertions.h"      // MOZ_ASSERT
-#include "mozilla/Attributes.h"      // MOZ_MUST_USE
 #include "mozilla/Casting.h"         // mozilla::AssertedCast
 #include "mozilla/MathAlgorithms.h"  // mozilla::IsPowerOfTwo
 
@@ -34,6 +33,12 @@ class WritableStreamDefaultWriter;
 class WritableStream : public NativeObject {
  public:
   enum Slots {
+    /**
+     * Optional pointer to make the stream participate in Gecko's cycle
+     * collection. See also JSCLASS_SLOT0_IS_NSISUPPORTS.
+     */
+    Slot_ISupports,
+
     /**
      * A WritableStream's associated controller is always created from under the
      * stream's constructor and thus cannot be in a different compartment.
@@ -408,7 +413,7 @@ class WritableStream : public NativeObject {
     setFixedSlot(Slot_PendingAbortRequestReason, JS::UndefinedValue());
   }
 
-  static MOZ_MUST_USE WritableStream* create(
+  [[nodiscard]] static WritableStream* create(
       JSContext* cx, void* nsISupportsObject_alreadyAddreffed = nullptr,
       JS::Handle<JSObject*> proto = nullptr);
 

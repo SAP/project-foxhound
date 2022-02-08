@@ -6,12 +6,13 @@
 
 /*
  * Descriptor Actor that represents a Tab in the parent process. It
- * launches a FrameTargetActor in the content process to do the real work and tunnels the
+ * launches a WindowGlobalTargetActor in the content process to do the real work and tunnels the
  * data.
  *
  * See devtools/docs/backend/actor-hierarchy.md for more details.
  */
 
+const { Ci } = require("chrome");
 const Services = require("Services");
 const {
   connectToFrame,
@@ -28,14 +29,14 @@ const { AppConstants } = require("resource://gre/modules/AppConstants.jsm");
 loader.lazyRequireGetter(
   this,
   "WatcherActor",
-  "devtools/server/actors/descriptors/watcher/watcher",
+  "devtools/server/actors/watcher",
   true
 );
 
 /**
  * Creates a target actor proxy for handling requests to a single browser frame.
  * Both <xul:browser> and <iframe mozbrowser> are supported.
- * This actor is a shim that connects to a FrameTargetActor in a remote browser process.
+ * This actor is a shim that connects to a WindowGlobalTargetActor in a remote browser process.
  * All RDP packets get forwarded using the message manager.
  *
  * @param connection The main RDP connection.
@@ -60,16 +61,9 @@ const TabDescriptorActor = ActorClassWithSpec(tabDescriptorSpec, {
       selected: this.selected,
       title: this._getTitle(),
       traits: {
-        // Backward compatibility for FF75 or older.
-        // Remove when FF76 is on the release channel.
-        getFavicon: true,
-        // Backward compatibility for FF76 or older.
-        // Remove when FF77 is on the release channel.
-        // This trait indicates that meta data such as title, url and
-        // outerWindowID are directly available on the TabDescriptor.
-        hasTabInfo: true,
-        // FF77+ supports the Watcher actor
+        // Supports the Watcher actor. Can be removed as part of Bug 1680280.
         watcher: true,
+        supportsReloadDescriptor: true,
       },
       url: this._getUrl(),
     };
@@ -147,6 +141,14 @@ const TabDescriptorActor = ActorClassWithSpec(tabDescriptorSpec, {
           error: "tabDestroyed",
           message: "Tab destroyed while performing a TabDescriptorActor update",
         });
+
+        // Targets created from the TabDescriptor are not created via JSWindowActors and
+        // we need to notify the watcher manually about their destruction.
+        // TabDescriptor's targets are created via TabDescriptor.getTarget and are still using
+        // message manager instead of JSWindowActors.
+        if (this.watcher && this.targetActorForm) {
+          this.watcher.notifyTargetDestroyed(this.targetActorForm);
+        }
       };
 
       try {
@@ -161,7 +163,7 @@ const TabDescriptorActor = ActorClassWithSpec(tabDescriptorSpec, {
           this._browser,
           onDestroy
         );
-
+        this.targetActorForm = connectForm;
         resolve(connectForm);
       } catch (e) {
         reject({
@@ -177,9 +179,16 @@ const TabDescriptorActor = ActorClassWithSpec(tabDescriptorSpec, {
    * already exists or will be created. It also helps knowing when they
    * are destroyed.
    */
-  getWatcher() {
+  getWatcher(config) {
     if (!this.watcher) {
-      this.watcher = new WatcherActor(this.conn, { browser: this._browser });
+      this.watcher = new WatcherActor(
+        this.conn,
+        {
+          type: "browser-element",
+          browserId: this._browser.browserId,
+        },
+        config
+      );
       this.manage(this.watcher);
     }
     return this.watcher;
@@ -214,7 +223,20 @@ const TabDescriptorActor = ActorClassWithSpec(tabDescriptorSpec, {
     return tab?.hasAttribute && tab.hasAttribute("pending");
   },
 
+  reloadDescriptor({ bypassCache }) {
+    if (!this._browser || !this._browser.browsingContext) {
+      return;
+    }
+
+    this._browser.browsingContext.reload(
+      bypassCache
+        ? Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CACHE
+        : Ci.nsIWebNavigation.LOAD_FLAGS_NONE
+    );
+  },
+
   destroy() {
+    this.emit("descriptor-destroyed");
     this._browser = null;
 
     Actor.prototype.destroy.call(this);

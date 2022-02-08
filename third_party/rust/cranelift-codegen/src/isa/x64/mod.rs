@@ -1,23 +1,24 @@
 //! X86_64-bit Instruction Set Architecture.
 
-use alloc::boxed::Box;
+use self::inst::EmitInfo;
 
-use regalloc::RealRegUniverse;
-use target_lexicon::Triple;
-
-use crate::ir::condcodes::IntCC;
-use crate::ir::Function;
+use super::TargetIsa;
+use crate::ir::{condcodes::IntCC, Function};
+use crate::isa::x64::{inst::regs::create_reg_universe_systemv, settings as x64_settings};
 use crate::isa::Builder as IsaBuilder;
-use crate::machinst::pretty_print::ShowWithRRU;
 use crate::machinst::{compile, MachBackend, MachCompileResult, TargetIsaAdapter, VCode};
 use crate::result::CodegenResult;
 use crate::settings::{self as shared_settings, Flags};
+use alloc::{boxed::Box, vec::Vec};
+use core::hash::{Hash, Hasher};
+use regalloc::{PrettyPrint, RealRegUniverse, Reg};
+use target_lexicon::Triple;
 
-use crate::isa::x64::{inst::regs::create_reg_universe_systemv, settings as x64_settings};
-
-use super::TargetIsa;
+#[cfg(feature = "unwind")]
+use crate::isa::unwind::systemv;
 
 mod abi;
+pub mod encoding;
 mod inst;
 mod lower;
 mod settings;
@@ -26,7 +27,7 @@ mod settings;
 pub(crate) struct X64Backend {
     triple: Triple,
     flags: Flags,
-    _x64_flags: x64_settings::Flags,
+    x64_flags: x64_settings::Flags,
     reg_universe: RealRegUniverse,
 }
 
@@ -37,7 +38,7 @@ impl X64Backend {
         Self {
             triple,
             flags,
-            _x64_flags: x64_flags,
+            x64_flags,
             reg_universe,
         }
     }
@@ -45,8 +46,9 @@ impl X64Backend {
     fn compile_vcode(&self, func: &Function, flags: Flags) -> CodegenResult<VCode<inst::Inst>> {
         // This performs lowering to VCode, register-allocates the code, computes
         // block layout and finalizes branches. The result is ready for binary emission.
-        let abi = Box::new(abi::X64ABIBody::new(&func, flags)?);
-        compile::compile::<Self>(&func, self, abi)
+        let emit_info = EmitInfo::new(flags.clone(), self.x64_flags.clone());
+        let abi = Box::new(abi::X64ABICallee::new(&func, flags)?);
+        compile::compile::<Self>(&func, self, abi, emit_info)
     }
 }
 
@@ -58,9 +60,12 @@ impl MachBackend for X64Backend {
     ) -> CodegenResult<MachCompileResult> {
         let flags = self.flags();
         let vcode = self.compile_vcode(func, flags.clone())?;
+
         let buffer = vcode.emit();
         let buffer = buffer.finish();
         let frame_size = vcode.frame_size();
+        let value_labels_ranges = vcode.value_labels_ranges();
+        let stackslot_offsets = vcode.stackslot_offsets().clone();
 
         let disasm = if want_disasm {
             Some(vcode.show_rru(Some(&create_reg_universe_systemv(flags))))
@@ -72,11 +77,22 @@ impl MachBackend for X64Backend {
             buffer,
             frame_size,
             disasm,
+            value_labels_ranges,
+            stackslot_offsets,
         })
     }
 
     fn flags(&self) -> &Flags {
         &self.flags
+    }
+
+    fn isa_flags(&self) -> Vec<shared_settings::Value> {
+        self.x64_flags.iter().collect()
+    }
+
+    fn hash_all_flags(&self, mut hasher: &mut dyn Hasher) {
+        self.flags.hash(&mut hasher);
+        self.x64_flags.hash(&mut hasher);
     }
 
     fn name(&self) -> &'static str {
@@ -92,15 +108,53 @@ impl MachBackend for X64Backend {
     }
 
     fn unsigned_add_overflow_condition(&self) -> IntCC {
-        // Unsigned `>=`; this corresponds to the carry flag set on x86, which happens on
-        // overflow of an add.
-        IntCC::UnsignedGreaterThanOrEqual
+        // Unsigned `<`; this corresponds to the carry flag set on x86, which
+        // indicates an add has overflowed.
+        IntCC::UnsignedLessThan
     }
 
     fn unsigned_sub_overflow_condition(&self) -> IntCC {
-        // unsigned `>=`; this corresponds to the carry flag set on x86, which happens on
-        // underflow of a subtract (carry is borrow for subtract).
-        IntCC::UnsignedGreaterThanOrEqual
+        // unsigned `<`; this corresponds to the carry flag set on x86, which
+        // indicates a sub has underflowed (carry is borrow for subtract).
+        IntCC::UnsignedLessThan
+    }
+
+    #[cfg(feature = "unwind")]
+    fn emit_unwind_info(
+        &self,
+        result: &MachCompileResult,
+        kind: crate::machinst::UnwindInfoKind,
+    ) -> CodegenResult<Option<crate::isa::unwind::UnwindInfo>> {
+        use crate::isa::unwind::UnwindInfo;
+        use crate::machinst::UnwindInfoKind;
+        Ok(match kind {
+            UnwindInfoKind::SystemV => {
+                let mapper = self::inst::unwind::systemv::RegisterMapper;
+                Some(UnwindInfo::SystemV(
+                    crate::isa::unwind::systemv::create_unwind_info_from_insts(
+                        &result.buffer.unwind_info[..],
+                        result.buffer.data.len(),
+                        &mapper,
+                    )?,
+                ))
+            }
+            UnwindInfoKind::Windows => Some(UnwindInfo::WindowsX64(
+                crate::isa::unwind::winx64::create_unwind_info_from_insts::<
+                    self::inst::unwind::winx64::RegisterMapper,
+                >(&result.buffer.unwind_info[..])?,
+            )),
+            _ => None,
+        })
+    }
+
+    #[cfg(feature = "unwind")]
+    fn create_systemv_cie(&self) -> Option<gimli::write::CommonInformationEntry> {
+        Some(inst::unwind::systemv::create_cie())
+    }
+
+    #[cfg(feature = "unwind")]
+    fn map_reg_to_dwarf(&self, reg: Reg) -> Result<u16, systemv::RegisterMappingError> {
+        inst::unwind::systemv::map_reg(reg).map(|reg| reg.0)
     }
 }
 

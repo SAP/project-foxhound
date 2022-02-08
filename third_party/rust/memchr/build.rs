@@ -1,31 +1,25 @@
 use std::env;
-use std::ffi::OsString;
-use std::process::Command;
 
 fn main() {
-    let version = match Version::read() {
-        Ok(version) => version,
-        Err(err) => {
-            eprintln!("failed to parse `rustc --version`: {}", err);
-            return;
-        }
-    };
-    enable_simd_optimizations(version);
+    enable_simd_optimizations();
     enable_libc();
 }
 
-// This adds various simd cfgs if this compiler supports it.
+// This adds various simd cfgs if this compiler and target support it.
 //
 // This can be disabled with RUSTFLAGS="--cfg memchr_disable_auto_simd", but
 // this is generally only intended for testing.
-fn enable_simd_optimizations(version: Version) {
-    if is_env_set("CARGO_CFG_MEMCHR_DISABLE_AUTO_SIMD") {
+//
+// On targets which don't feature SSE2, this is disabled, as LLVM wouln't know
+// how to work with SSE2 operands. Enabling SSE4.2 and AVX on SSE2-only targets
+// is not a problem. In that case, the fastest option will be chosen at
+// runtime.
+fn enable_simd_optimizations() {
+    if is_env_set("CARGO_CFG_MEMCHR_DISABLE_AUTO_SIMD")
+        || !target_has_feature("sse2")
+    {
         return;
     }
-    if version < (Version { major: 1, minor: 27, patch: 0 }) {
-        return;
-    }
-
     println!("cargo:rustc-cfg=memchr_runtime_simd");
     println!("cargo:rustc-cfg=memchr_runtime_sse2");
     println!("cargo:rustc-cfg=memchr_runtime_sse42");
@@ -66,69 +60,15 @@ fn enable_libc() {
 }
 
 fn is_feature_set(name: &str) -> bool {
-    is_env_set(&format!("CARGO_FEATURE_{}",  name))
+    is_env_set(&format!("CARGO_FEATURE_{}", name))
 }
 
 fn is_env_set(name: &str) -> bool {
     env::var_os(name).is_some()
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
-struct Version {
-    major: u32,
-    minor: u32,
-    patch: u32,
-}
-
-impl Version {
-    fn read() -> Result<Version, String> {
-        let rustc = env::var_os("RUSTC").unwrap_or(OsString::from("rustc"));
-        let output = Command::new(&rustc)
-            .arg("--version")
-            .output()
-            .unwrap()
-            .stdout;
-        Version::parse(&String::from_utf8(output).unwrap())
-    }
-
-    fn parse(mut s: &str) -> Result<Version, String> {
-        if !s.starts_with("rustc ") {
-            return Err(format!("unrecognized version string: {}", s));
-        }
-        s = &s["rustc ".len()..];
-
-        let parts: Vec<&str> = s.split(".").collect();
-        if parts.len() < 3 {
-            return Err(format!("not enough version parts: {:?}", parts));
-        }
-
-        let mut num = String::new();
-        for c in parts[0].chars() {
-            if !c.is_digit(10) {
-                break;
-            }
-            num.push(c);
-        }
-        let major = num.parse::<u32>().map_err(|e| e.to_string())?;
-
-        num.clear();
-        for c in parts[1].chars() {
-            if !c.is_digit(10) {
-                break;
-            }
-            num.push(c);
-        }
-        let minor = num.parse::<u32>().map_err(|e| e.to_string())?;
-
-        num.clear();
-        for c in parts[2].chars() {
-            if !c.is_digit(10) {
-                break;
-            }
-            num.push(c);
-        }
-        let patch = num.parse::<u32>().map_err(|e| e.to_string())?;
-
-        Ok(Version { major, minor, patch })
-    }
+fn target_has_feature(feature: &str) -> bool {
+    env::var("CARGO_CFG_TARGET_FEATURE")
+        .map(|features| features.contains(feature))
+        .unwrap_or(false)
 }

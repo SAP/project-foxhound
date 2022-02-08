@@ -1,18 +1,19 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
+let engine;
+
 add_task(async function test_searchEngine_autoFill() {
   Services.prefs.setBoolPref("browser.urlbar.autoFill.searchEngines", true);
   Services.prefs.setBoolPref("browser.urlbar.suggest.searches", false);
-  await Services.search.addEngineWithDetails("MySearchEngine", {
-    method: "GET",
-    template: "http://my.search.com/",
+  await SearchTestUtils.installSearchExtension({
+    name: "MySearchEngine",
+    search_url: "https://my.search.com/",
   });
-  let engine = Services.search.getEngineByName("MySearchEngine");
+  engine = Services.search.getEngineByName("MySearchEngine");
   registerCleanupFunction(async () => {
     Services.prefs.clearUserPref("browser.urlbar.autoFill.searchEngines");
     Services.prefs.clearUserPref("browser.urlbar.suggest.searches");
-    Services.search.removeEngine(engine);
   });
 
   // Add an uri that matches the search string with high frecency.
@@ -51,6 +52,10 @@ add_task(async function test_searchEngine_autoFill() {
 });
 
 add_task(async function test_searchEngine_noautoFill() {
+  Services.prefs.setIntPref(
+    "browser.urlbar.tabToSearch.onboard.interactionsLeft",
+    0
+  );
   await PlacesTestUtils.addVisits(
     Services.io.newURI("http://my.search.com/samplepage/")
   );
@@ -68,13 +73,24 @@ add_task(async function test_searchEngine_noautoFill() {
         title: "my.search.com",
         heuristic: true,
       }),
+      makeSearchResult(context, {
+        engineName: engine.name,
+        engineIconUri: UrlbarUtils.ICON.SEARCH_GLASS,
+        uri: UrlbarUtils.stripPublicSuffixFromHost(engine.getResultDomain()),
+        providesSearchMode: true,
+        query: "",
+        providerName: "TabToSearch",
+      }),
       makeVisitResult(context, {
         uri: "http://my.search.com/samplepage/",
         title: "test visit for http://my.search.com/samplepage/",
-        providerName: "UnifiedComplete",
+        providerName: "Places",
       }),
     ],
   });
 
   await cleanupPlaces();
+  Services.prefs.clearUserPref(
+    "browser.urlbar.tabToSearch.onboard.interactionsLeft"
+  );
 });

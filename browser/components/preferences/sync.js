@@ -4,18 +4,8 @@
 
 /* import-globals-from preferences.js */
 
-var { Weave } = ChromeUtils.import("resource://services-sync/main.js");
-var { FxAccounts, fxAccounts } = ChromeUtils.import(
-  "resource://gre/modules/FxAccounts.jsm"
-);
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 XPCOMUtils.defineLazyGetter(this, "FxAccountsCommon", function() {
   return ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js", {});
-});
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UIState: "resource://services-sync/UIState.jsm",
 });
 
 const FXA_PAGE_LOGGED_OUT = 0;
@@ -92,7 +82,7 @@ var gSyncPane = {
 
     let cachedComputerName = Services.prefs.getStringPref(
       "identity.fxaccounts.account.device.name",
-      undefined
+      ""
     );
     if (cachedComputerName) {
       maybeAcct = true;
@@ -295,23 +285,23 @@ var gSyncPane = {
     }
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/syncChooseWhatToSync.xhtml",
-      "" /* aFeatures */,
-      params /* aParams */,
-      event => {
-        /* aClosingCallback */
-        if (!isAlreadySyncing && event.detail.button == "accept") {
-          // We weren't syncing but the user has accepted the dialog - so we
-          // want to start!
-          fxAccounts.telemetry
-            .recordConnection(["sync"], "ui")
-            .then(() => {
-              return Weave.Service.configure();
-            })
-            .catch(err => {
-              console.error("Failed to enable sync", err);
-            });
-        }
-      }
+      {
+        closingCallback: event => {
+          if (!isAlreadySyncing && event.detail.button == "accept") {
+            // We weren't syncing but the user has accepted the dialog - so we
+            // want to start!
+            fxAccounts.telemetry
+              .recordConnection(["sync"], "ui")
+              .then(() => {
+                return Weave.Service.configure();
+              })
+              .catch(err => {
+                console.error("Failed to enable sync", err);
+              });
+          }
+        },
+      },
+      params /* aParams */
     );
   },
 
@@ -568,9 +558,7 @@ var gSyncPane = {
   pairAnotherDevice() {
     gSubDialog.open(
       "chrome://browser/content/preferences/fxaPairDevice.xhtml",
-      "resizable=no" /* aFeatures */,
-      null /* aParams */,
-      null /* aClosingCallback */
+      { features: "resizable=no" }
     );
   },
 
@@ -589,12 +577,7 @@ var gSyncPane = {
   // preferences used for this engines.
   setupEnginesUI() {
     let observe = (elt, prefName) => {
-      let enabled = Services.prefs.getBoolPref(prefName, false);
-      if (enabled) {
-        elt.removeAttribute("hidden");
-      } else {
-        elt.setAttribute("hidden", "true");
-      }
+      elt.hidden = !Services.prefs.getBoolPref(prefName, false);
     };
 
     for (let elt of document.querySelectorAll("[engine_preference]")) {

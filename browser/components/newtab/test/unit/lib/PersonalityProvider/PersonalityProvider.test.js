@@ -1,34 +1,6 @@
 import { GlobalOverrider } from "test/unit/utils";
 import { PersonalityProvider } from "lib/PersonalityProvider/PersonalityProvider.jsm";
 
-const TIME_SEGMENTS = [
-  { id: "hour", startTime: 3600, endTime: 0, weightPosition: 1 },
-  { id: "day", startTime: 86400, endTime: 3600, weightPosition: 0.75 },
-  { id: "week", startTime: 604800, endTime: 86400, weightPosition: 0.5 },
-  { id: "weekPlus", startTime: null, endTime: 604800, weightPosition: 0.25 },
-];
-
-const PARAMETER_SETS = {
-  paramSet1: {
-    recencyFactor: 0.5,
-    frequencyFactor: 0.5,
-    combinedDomainFactor: 0.5,
-    perfectFrequencyVisits: 10,
-    perfectCombinedDomainScore: 2,
-    multiDomainBoost: 0.1,
-    itemScoreFactor: 0,
-  },
-  paramSet2: {
-    recencyFactor: 1,
-    frequencyFactor: 0.7,
-    combinedDomainFactor: 0.8,
-    perfectFrequencyVisits: 10,
-    perfectCombinedDomainScore: 2,
-    multiDomainBoost: 0.1,
-    itemScoreFactor: 0,
-  },
-};
-
 describe("Personality Provider", () => {
   let instance;
   let RemoteSettingsStub;
@@ -55,6 +27,7 @@ describe("Personality Provider", () => {
 
     sinon.spy(global, "BasePromiseWorker");
     sinon.spy(global.BasePromiseWorker.prototype, "post");
+
     baseURLStub = "https://baseattachmentsurl";
     global.fetch = async server => ({
       ok: true,
@@ -71,7 +44,6 @@ describe("Personality Provider", () => {
     globals.set("RemoteSettings", RemoteSettingsStub);
 
     instance = new PersonalityProvider();
-    instance.setAffinities(TIME_SEGMENTS, PARAMETER_SETS);
     instance.interestConfig = {
       history_item_builder: "history_item_builder",
       history_required_fields: ["a", "b", "c"],
@@ -272,19 +244,13 @@ describe("Personality Provider", () => {
     });
   });
   describe("#init", () => {
-    beforeEach(() => {
-      sandbox.stub(instance, "dispatch").returns();
-    });
     it("should return early if setInterestConfig fails", async () => {
       sandbox.stub(instance, "setBaseAttachmentsURL").returns();
       sandbox.stub(instance, "setInterestConfig").returns();
       instance.interestConfig = null;
-      await instance.init();
-      assert.calledWithMatch(instance.dispatch, {
-        data: {
-          event: "PERSONALIZATION_V2_GET_RECIPE_ERROR",
-        },
-      });
+      const callback = globals.sandbox.stub();
+      await instance.init(callback);
+      assert.notCalled(callback);
     });
     it("should return early if fetchModels fails", async () => {
       sandbox.stub(instance, "setBaseAttachmentsURL").returns();
@@ -292,12 +258,9 @@ describe("Personality Provider", () => {
       sandbox.stub(instance, "fetchModels").resolves({
         ok: false,
       });
-      await instance.init();
-      assert.calledWithMatch(instance.dispatch, {
-        data: {
-          event: "PERSONALIZATION_V2_FETCH_MODELS_ERROR",
-        },
-      });
+      const callback = globals.sandbox.stub();
+      await instance.init(callback);
+      assert.notCalled(callback);
     });
     it("should return early if createInterestVector fails", async () => {
       sandbox.stub(instance, "setBaseAttachmentsURL").returns();
@@ -311,12 +274,9 @@ describe("Personality Provider", () => {
       sandbox.stub(instance, "createInterestVector").resolves({
         ok: false,
       });
-      await instance.init();
-      assert.calledWithMatch(instance.dispatch, {
-        data: {
-          event: "PERSONALIZATION_V2_CREATE_INTEREST_VECTOR_ERROR",
-        },
-      });
+      const callback = globals.sandbox.stub();
+      await instance.init(callback);
+      assert.notCalled(callback);
     });
     it("should call callback on successful init", async () => {
       sandbox.stub(instance, "setBaseAttachmentsURL").returns();
@@ -359,34 +319,27 @@ describe("Personality Provider", () => {
       assert.calledOnce(instance.setInterestVector);
     });
   });
-  describe("#dispatchRelevanceScoreDuration", () => {
-    beforeEach(() => {
-      sandbox.stub(instance, "dispatch").returns();
-    });
-    it("should dispatch PERSONALIZATION_V2_ITEM_RELEVANCE_SCORE_DURATION only if initialized", () => {
-      let dispatch = globals.sandbox.stub();
-      instance.dispatch = dispatch;
-
+  describe("#calculateItemRelevanceScore", () => {
+    it("should return score for uninitialized provider", async () => {
       instance.initialized = false;
-      instance.dispatchRelevanceScoreDuration(1000);
-
-      assert.notCalled(dispatch);
-
-      instance.initialized = true;
-      instance.dispatchRelevanceScoreDuration(1000);
-
-      assert.calledOnce(dispatch);
-
       assert.equal(
-        dispatch.firstCall.args[0].data.event,
-        "PERSONALIZATION_V2_ITEM_RELEVANCE_SCORE_DURATION"
+        await instance.calculateItemRelevanceScore({ item_score: 2 }),
+        2
       );
     });
-  });
-  describe("#calculateItemRelevanceScore", () => {
-    it("should return score for uninitialized provider", () => {
-      instance.initialized = false;
-      assert.equal(instance.calculateItemRelevanceScore({ item_score: 2 }), 2);
+    it("should return score for initialized provider", async () => {
+      instance.initialized = true;
+
+      instance._personalityProviderWorker = {
+        post: (postName, [item]) => ({
+          rankingVector: { score: item.item_score },
+        }),
+      };
+
+      assert.equal(
+        await instance.calculateItemRelevanceScore({ item_score: 2 }),
+        2
+      );
     });
     it("should post calculateItemRelevanceScore to PersonalityProviderWorker", async () => {
       instance.initialized = true;
@@ -397,11 +350,10 @@ describe("Personality Provider", () => {
       );
     });
   });
-  describe("#getAffinities", () => {
-    it("should return correct data for getAffinities", () => {
-      const affinities = instance.getAffinities();
-      assert.isDefined(affinities.timeSegments);
-      assert.isDefined(affinities.parameterSets);
+  describe("#getScores", () => {
+    it("should return correct data for getScores", () => {
+      const scores = instance.getScores();
+      assert.isDefined(scores.interestConfig);
     });
   });
 });

@@ -1,4 +1,4 @@
-// |reftest| skip error:SyntaxError -- class-static-methods-private,class-methods-private is not supported
+// |reftest| error:SyntaxError
 // Copyright (C) 2019 Caio Lima (Igalia SL). All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 /*---
@@ -14,7 +14,7 @@ negative:
 $DONOTEVALUATE();
 
 class C {
-  get #f();
+  get #f() {}
   static set #f(v) {}
 }
 

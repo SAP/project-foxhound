@@ -12,7 +12,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Result.h"
 #include "mozilla/dom/ipc/StringTable.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 
 namespace mozilla {
 
@@ -246,7 +246,7 @@ class SharedPrefMap {
     // The StringTableEntry arrays of user and default string preference values.
     //
     // Strings are stored as StringTableEntry structs with character offsets
-    // into the mValueStrings string table and their corresponding lenghts.
+    // into the mValueStrings string table and their corresponding lengths.
     //
     // Entries in the map, likewise, store their string values as indices into
     // these arrays.
@@ -638,11 +638,11 @@ class MOZ_RAII SharedPrefMapBuilder {
     ValueIdx Add(const ValueType& aDefaultValue) {
       auto index = uint16_t(mDefaultEntries.Count());
 
-      auto entry = mDefaultEntries.LookupForAdd(aDefaultValue).OrInsert([&]() {
-        return Entry{index, false, aDefaultValue};
-      });
+      return mDefaultEntries.WithEntryHandle(aDefaultValue, [&](auto&& entry) {
+        entry.OrInsertWith([&] { return Entry{index, false, aDefaultValue}; });
 
-      return {entry.mIndex, false};
+        return ValueIdx{entry->mIndex, false};
+      });
     }
 
     // Adds an entry for a preference with a user value to the array. Regardless
@@ -676,9 +676,8 @@ class MOZ_RAII SharedPrefMapBuilder {
       }
 
       size_t defaultsOffset = UserCount();
-      for (auto iter = mDefaultEntries.ConstIter(); !iter.Done(); iter.Next()) {
-        const auto& entry = iter.Data();
-        buffer[defaultsOffset + entry.mIndex] = entry.mDefaultValue;
+      for (const auto& data : mDefaultEntries.Values()) {
+        buffer[defaultsOffset + data.mIndex] = data.mDefaultValue;
       }
     }
 
@@ -722,7 +721,7 @@ class MOZ_RAII SharedPrefMapBuilder {
 
     AutoTArray<Entry, 256> mUserEntries;
 
-    nsDataHashtable<HashKey, Entry> mDefaultEntries;
+    nsTHashMap<HashKey, Entry> mDefaultEntries;
   };
 
   // A special-purpose string table builder for keys which are already

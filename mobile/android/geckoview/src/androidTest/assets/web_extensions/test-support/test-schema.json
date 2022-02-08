@@ -90,20 +90,11 @@
         ]
       },
       {
-        "name": "removeCertOverride",
+        "name": "removeAllCertOverrides",
         "type": "function",
         "async": true,
-        "description": "Revokes SSL certificate overrides for the given host+port.",
-        "parameters": [
-          {
-            "type": "string",
-            "name": "host"
-          },
-          {
-            "type": "number",
-            "name": "port"
-          }
-        ]
+        "description": "Revokes SSL certificate overrides.",
+        "parameters": []
       },
       {
         "name": "setScalar",
@@ -134,10 +125,72 @@
         ]
       },
       {
+        "name": "getActive",
+        "type": "function",
+        "async": true,
+        "description": "Returns true if the docShell is active for given tab.",
+        "parameters": [
+          {
+            "type": "number",
+            "name": "tabId"
+          }
+        ]
+      },
+      {
         "name": "getPidForTab",
         "type": "function",
         "async": true,
         "description": "Gets the top-level pid belonging to tabId.",
+        "parameters": [
+          {
+            "type": "number",
+            "name": "tabId"
+          }
+        ]
+      },
+      {
+        "name":  "getAllBrowserPids",
+        "type": "function",
+        "async": true,
+        "description": "Gets the list of pids of the running browser processes",
+        "parameters": []
+      },
+      {
+        "name":  "getProfilePath",
+        "type": "function",
+        "async": true,
+        "description": "Gets the path of the current profile",
+        "parameters": []
+      },
+      {
+        "name": "killContentProcess",
+        "type": "function",
+        "async": true,
+        "description": "Crash all content processes",
+        "parameters": [
+          {
+            "type": "number",
+            "name": "pid"
+          }
+        ]
+      },
+      {
+        "name": "flushApzRepaints",
+        "type": "function",
+        "async": true,
+        "description": "Invokes nsIDOMWindowUtils.flushApzRepaints for the document of the tabId.",
+        "parameters": [
+          {
+            "type": "number",
+            "name": "tabId"
+          }
+        ]
+      },
+      {
+        "name": "promiseAllPaintsDone",
+        "type": "function",
+        "async": true,
+        "description": "A simplified version of promiseAllPaintsDone in paint_listeners.js.",
         "parameters": [
           {
             "type": "number",

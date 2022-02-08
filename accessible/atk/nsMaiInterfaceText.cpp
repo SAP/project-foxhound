@@ -6,13 +6,13 @@
 
 #include "InterfaceInitFuncs.h"
 #include "mozilla/a11y/PDocAccessible.h"
-#include "Accessible-inl.h"
+#include "LocalAccessible-inl.h"
 #include "HyperTextAccessible-inl.h"
 #include "nsMai.h"
-#include "ProxyAccessible.h"
+#include "RemoteAccessible.h"
+#include "AccAttributes.h"
 
 #include "nsIAccessibleTypes.h"
-#include "nsIPersistentProperties2.h"
 #include "nsISimpleEnumerator.h"
 #include "nsUTF8Utils.h"
 
@@ -68,52 +68,20 @@ void ConvertTextAttributeToAtkAttribute(const nsACString& aName,
 }
 
 static AtkAttributeSet* ConvertToAtkTextAttributeSet(
-    nsTArray<Attribute>& aAttributes) {
+    AccAttributes* aAttributes) {
   AtkAttributeSet* objAttributeSet = nullptr;
-  for (size_t i = 0; i < aAttributes.Length(); ++i) {
-    AtkAttribute* objAttr = (AtkAttribute*)g_malloc(sizeof(AtkAttribute));
-    objAttr->name = g_strdup(aAttributes[i].Name().get());
-    objAttr->value =
-        g_strdup(NS_ConvertUTF16toUTF8(aAttributes[i].Value()).get());
-    objAttributeSet = g_slist_prepend(objAttributeSet, objAttr);
-    ConvertTextAttributeToAtkAttribute(
-        aAttributes[i].Name(), aAttributes[i].Value(), &objAttributeSet);
-  }
-  return objAttributeSet;
-}
 
-static AtkAttributeSet* ConvertToAtkTextAttributeSet(
-    nsIPersistentProperties* aAttributes) {
-  if (!aAttributes) return nullptr;
-
-  AtkAttributeSet* objAttributeSet = nullptr;
-  nsCOMPtr<nsISimpleEnumerator> propEnum;
-  nsresult rv = aAttributes->Enumerate(getter_AddRefs(propEnum));
-  NS_ENSURE_SUCCESS(rv, nullptr);
-
-  bool hasMore = false;
-  while (NS_SUCCEEDED(propEnum->HasMoreElements(&hasMore)) && hasMore) {
-    nsCOMPtr<nsISupports> sup;
-    rv = propEnum->GetNext(getter_AddRefs(sup));
-    NS_ENSURE_SUCCESS(rv, objAttributeSet);
-
-    nsCOMPtr<nsIPropertyElement> propElem(do_QueryInterface(sup));
-    NS_ENSURE_TRUE(propElem, objAttributeSet);
-
-    nsAutoCString name;
-    rv = propElem->GetKey(name);
-    NS_ENSURE_SUCCESS(rv, objAttributeSet);
+  for (auto iter : *aAttributes) {
+    nsAutoString name;
+    iter.NameAsString(name);
 
     nsAutoString value;
-    rv = propElem->GetValue(value);
-    NS_ENSURE_SUCCESS(rv, objAttributeSet);
+    iter.ValueAsString(value);
 
     AtkAttribute* objAttr = (AtkAttribute*)g_malloc(sizeof(AtkAttribute));
-    objAttr->name = g_strdup(name.get());
+    objAttr->name = g_strdup(NS_ConvertUTF16toUTF8(name).get());
     objAttr->value = g_strdup(NS_ConvertUTF16toUTF8(value).get());
     objAttributeSet = g_slist_prepend(objAttributeSet, objAttr);
-
-    ConvertTextAttributeToAtkAttribute(name, value, &objAttributeSet);
   }
 
   // libatk-adaptor will free it
@@ -143,7 +111,7 @@ static gchar* getTextCB(AtkText* aText, gint aStartOffset, gint aEndOffset) {
             ? DOMtoATK::AtkStringConvertFlags::ConvertTextToAsterisks
             : DOMtoATK::AtkStringConvertFlags::None);
 
-  } else if (ProxyAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
+  } else if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
     return DOMtoATK::NewATKString(proxy, aStartOffset, aEndOffset,
                                   DOMtoATK::AtkStringConvertFlags::None);
   }
@@ -195,7 +163,7 @@ static gchar* getTextAfterOffsetCB(AtkText* aText, gint aOffset,
     text->TextAfterOffset(aOffset, aBoundaryType, &startOffset, &endOffset,
                           autoStr);
     ConvertTexttoAsterisks(accWrap, autoStr);
-  } else if (ProxyAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
+  } else if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
     proxy->GetTextAfterOffset(aOffset, aBoundaryType, autoStr, &startOffset,
                               &endOffset);
   }
@@ -224,9 +192,9 @@ static gchar* getTextAtOffsetCB(AtkText* aText, gint aOffset,
     text->TextAtOffset(aOffset, aBoundaryType, &startOffset, &endOffset,
                        autoStr);
     ConvertTexttoAsterisks(accWrap, autoStr);
-  } else if (ProxyAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    proxy->GetTextAtOffset(aOffset, aBoundaryType, autoStr, &startOffset,
-                           &endOffset);
+  } else if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
+    proxy->TextAtOffset(aOffset, aBoundaryType, &startOffset, &endOffset,
+                        autoStr);
   }
 
   *aStartOffset = startOffset;
@@ -246,7 +214,7 @@ static gunichar getCharacterAtOffsetCB(AtkText* aText, gint aOffset) {
     return DOMtoATK::ATKCharacter(text, aOffset);
   }
 
-  if (ProxyAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
+  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
     return DOMtoATK::ATKCharacter(proxy, aOffset);
   }
 
@@ -270,7 +238,7 @@ static gchar* getTextBeforeOffsetCB(AtkText* aText, gint aOffset,
     text->TextBeforeOffset(aOffset, aBoundaryType, &startOffset, &endOffset,
                            autoStr);
     ConvertTexttoAsterisks(accWrap, autoStr);
-  } else if (ProxyAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
+  } else if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
     proxy->GetTextBeforeOffset(aOffset, aBoundaryType, autoStr, &startOffset,
                                &endOffset);
   }
@@ -293,7 +261,7 @@ static gint getCaretOffsetCB(AtkText* aText) {
     return static_cast<gint>(text->CaretOffset());
   }
 
-  if (ProxyAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
+  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
     return static_cast<gint>(proxy->CaretOffset());
   }
 
@@ -307,55 +275,38 @@ static AtkAttributeSet* getRunAttributesCB(AtkText* aText, gint aOffset,
   *aEndOffset = -1;
   int32_t startOffset = 0, endOffset = 0;
 
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole()) {
-      return nullptr;
-    }
-
-    nsCOMPtr<nsIPersistentProperties> attributes =
-        text->TextAttributes(false, aOffset, &startOffset, &endOffset);
-
-    *aStartOffset = startOffset;
-    *aEndOffset = endOffset;
-
-    return ConvertToAtkTextAttributeSet(attributes);
-  }
-
-  ProxyAccessible* proxy = GetProxy(ATK_OBJECT(aText));
-  if (!proxy) {
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
     return nullptr;
   }
 
-  AutoTArray<Attribute, 10> attrs;
-  proxy->TextAttributes(false, aOffset, &attrs, &startOffset, &endOffset);
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text || !acc->IsTextRole()) {
+    return nullptr;
+  }
+
+  RefPtr<AccAttributes> attributes =
+      text->TextAttributes(false, aOffset, &startOffset, &endOffset);
+
   *aStartOffset = startOffset;
   *aEndOffset = endOffset;
-  return ConvertToAtkTextAttributeSet(attrs);
+
+  return ConvertToAtkTextAttributeSet(attributes);
 }
 
 static AtkAttributeSet* getDefaultAttributesCB(AtkText* aText) {
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole()) {
-      return nullptr;
-    }
-
-    nsCOMPtr<nsIPersistentProperties> attributes =
-        text->DefaultTextAttributes();
-    return ConvertToAtkTextAttributeSet(attributes);
-  }
-
-  ProxyAccessible* proxy = GetProxy(ATK_OBJECT(aText));
-  if (!proxy) {
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
     return nullptr;
   }
 
-  AutoTArray<Attribute, 10> attrs;
-  proxy->DefaultTextAttributes(&attrs);
-  return ConvertToAtkTextAttributeSet(attrs);
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text || !acc->IsTextRole()) {
+    return nullptr;
+  }
+
+  RefPtr<AccAttributes> attributes = text->DefaultTextAttributes();
+  return ConvertToAtkTextAttributeSet(attributes);
 }
 
 static void getCharacterExtentsCB(AtkText* aText, gint aOffset, gint* aX,
@@ -382,7 +333,7 @@ static void getCharacterExtentsCB(AtkText* aText, gint aOffset, gint* aX,
     }
 
     rect = text->CharBounds(aOffset, geckoCoordType);
-  } else if (ProxyAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
+  } else if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
     rect = proxy->CharBounds(aOffset, geckoCoordType);
   } else {
     return;
@@ -418,7 +369,7 @@ static void getRangeExtentsCB(AtkText* aText, gint aStartOffset,
     }
 
     rect = text->TextBounds(aStartOffset, aEndOffset, geckoCoordType);
-  } else if (ProxyAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
+  } else if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
     rect = proxy->TextBounds(aStartOffset, aEndOffset, geckoCoordType);
   } else {
     return;
@@ -439,7 +390,7 @@ static gint getCharacterCountCB(AtkText* aText) {
                : static_cast<gint>(textAcc->CharacterCount());
   }
 
-  if (ProxyAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
+  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
     return proxy->CharacterCount();
   }
 
@@ -462,7 +413,7 @@ static gint getOffsetAtPointCB(AtkText* aText, gint aX, gint aY,
              : nsIAccessibleCoordinateType::COORDTYPE_WINDOW_RELATIVE)));
   }
 
-  if (ProxyAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
+  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
     return static_cast<gint>(proxy->OffsetAtPoint(
         aX, aY,
         (aCoords == ATK_XY_SCREEN
@@ -484,7 +435,7 @@ static gint getTextSelectionCountCB(AtkText* aText) {
     return text->SelectionCount();
   }
 
-  if (ProxyAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
+  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
     return proxy->SelectionCount();
   }
 
@@ -507,7 +458,7 @@ static gchar* getTextSelectionCB(AtkText* aText, gint aSelectionNum,
 
     return getTextCB(aText, *aStartOffset, *aEndOffset);
   }
-  if (ProxyAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
+  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
     nsString data;
     proxy->SelectionBoundsAt(aSelectionNum, data, &startOffset, &endOffset);
     *aStartOffset = startOffset;
@@ -531,7 +482,7 @@ static gboolean addTextSelectionCB(AtkText* aText, gint aStartOffset,
 
     return text->AddToSelection(aStartOffset, aEndOffset);
   }
-  if (ProxyAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
+  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
     return proxy->AddToSelection(aStartOffset, aEndOffset);
   }
 
@@ -548,7 +499,7 @@ static gboolean removeTextSelectionCB(AtkText* aText, gint aSelectionNum) {
 
     return text->RemoveFromSelection(aSelectionNum);
   }
-  if (ProxyAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
+  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
     return proxy->RemoveFromSelection(aSelectionNum);
   }
 
@@ -566,7 +517,7 @@ static gboolean setTextSelectionCB(AtkText* aText, gint aSelectionNum,
 
     return text->SetSelectionBoundsAt(aSelectionNum, aStartOffset, aEndOffset);
   }
-  if (ProxyAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
+  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
     return proxy->SetSelectionBoundsAt(aSelectionNum, aStartOffset, aEndOffset);
   }
 
@@ -585,7 +536,7 @@ static gboolean setCaretOffsetCB(AtkText* aText, gint aOffset) {
     return TRUE;
   }
 
-  if (ProxyAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
+  if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
     proxy->SetCaretOffset(aOffset);
     return TRUE;
   }
@@ -607,7 +558,7 @@ static gboolean scrollSubstringToCB(AtkText* aText, gint aStartOffset,
     return TRUE;
   }
 
-  ProxyAccessible* proxy = GetProxy(atkObject);
+  RemoteAccessible* proxy = GetProxy(atkObject);
   if (proxy) {
     proxy->ScrollSubstringTo(aStartOffset, aEndOffset, aType);
     return TRUE;
@@ -631,7 +582,7 @@ static gboolean scrollSubstringToPointCB(AtkText* aText, gint aStartOffset,
     return TRUE;
   }
 
-  ProxyAccessible* proxy = GetProxy(atkObject);
+  RemoteAccessible* proxy = GetProxy(atkObject);
   if (proxy) {
     proxy->ScrollSubstringToPoint(aStartOffset, aEndOffset, aCoords, aX, aY);
     return TRUE;
@@ -672,7 +623,8 @@ void textInterfaceInitCB(AtkTextIface* aIface) {
   }
 
   // Cache the string values of the atk text attribute names.
-  for (uint32_t i = 0; i < ArrayLength(sAtkTextAttrNames); i++)
+  for (uint32_t i = 0; i < ArrayLength(sAtkTextAttrNames); i++) {
     sAtkTextAttrNames[i] =
         atk_text_attribute_get_name(static_cast<AtkTextAttribute>(i));
+  }
 }

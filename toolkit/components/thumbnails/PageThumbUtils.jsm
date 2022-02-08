@@ -4,7 +4,7 @@
 
 /*
  * Common thumbnailing routines used by various consumers, including
- * PageThumbs and backgroundPageThumbsContent.
+ * PageThumbs and BackgroundPageThumbs.
  */
 
 var EXPORTED_SYMBOLS = ["PageThumbUtils"];
@@ -18,6 +18,8 @@ ChromeUtils.defineModuleGetter(
 );
 
 var PageThumbUtils = {
+  // The default thumbnail size for images
+  THUMBNAIL_DEFAULT_SIZE: 448,
   // The default background color for page thumbnails.
   THUMBNAIL_BG_COLOR: "#fff",
   // The namespace for thumbnail canvas elements.
@@ -175,11 +177,16 @@ var PageThumbUtils = {
     context.fillStyle = backgroundColor;
     context.fillRect(0, 0, width, canvasHeight);
     context.drawImage(image, 0, 0, width, height);
-    return canvas;
+
+    return {
+      width,
+      height: canvasHeight,
+      imageData: canvas.toDataURL(),
+    };
   },
 
-  /** *
-   * Given a browser window, this creates a snapshot of the content
+  /**
+   * Given a browser, this creates a snapshot of the content
    * and returns a canvas with the resulting snapshot of the content
    * at the thumbnail size. It has to do this through a two step process:
    *
@@ -192,14 +199,18 @@ var PageThumbUtils = {
    * It's actually better to the eye to have small blurry text than sharp
    * jagged pixels to represent text.
    *
-   * @params aWindow - the window to create a snapshot of.
+   * @params aBrowser - the browser to create a snapshot of.
    * @params aDestCanvas destination canvas to draw the final
    *   snapshot to. Can be null.
    * @param aArgs (optional) Additional named parameters:
    *   fullScale - request that a non-downscaled image be returned.
    * @return Canvas with a scaled thumbnail of the window.
    */
-  createSnapshotThumbnail(aWindow, aDestCanvas, aArgs) {
+  async createSnapshotThumbnail(aBrowser, aDestCanvas, aArgs) {
+    const aWindow = aBrowser.contentWindow;
+    let backgroundColor = aArgs
+      ? aArgs.backgroundColor
+      : PageThumbUtils.THUMBNAIL_BG_COLOR;
     let fullScale = aArgs ? aArgs.fullScale : false;
     let [contentWidth, contentHeight] = this.getContentSize(aWindow);
     let [thumbnailWidth, thumbnailHeight] = aDestCanvas
@@ -258,15 +269,15 @@ var PageThumbUtils = {
     let snapshotCtx = snapshotCanvas.getContext("2d");
     snapshotCtx.save();
     snapshotCtx.scale(scale, scale);
-    snapshotCtx.drawWindow(
-      aWindow,
+    const image = await aBrowser.drawSnapshot(
       0,
       0,
       contentWidth,
       contentHeight,
-      PageThumbUtils.THUMBNAIL_BG_COLOR,
-      snapshotCtx.DRAWWINDOW_DO_NOT_FLUSH
+      scale,
+      backgroundColor
     );
+    snapshotCtx.drawImage(image, 0, 0, contentWidth, contentHeight);
     snapshotCtx.restore();
 
     // Part 2: Downscale from our intermediate dims to the final thumbnail
@@ -333,7 +344,7 @@ var PageThumbUtils = {
   },
 
   shouldStoreContentThumbnail(aDocument, aDocShell) {
-    if (BrowserUtils.isToolbarVisible(aDocShell, "findbar")) {
+    if (BrowserUtils.isFindbarVisible(aDocShell)) {
       return false;
     }
 

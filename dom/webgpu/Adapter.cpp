@@ -6,19 +6,27 @@
 #include "mozilla/dom/WebGPUBinding.h"
 #include "Adapter.h"
 
+#include "AdapterFeatures.h"
 #include "Device.h"
 #include "Instance.h"
+#include "SupportedLimits.h"
 #include "ipc/WebGPUChild.h"
 #include "mozilla/dom/Promise.h"
 
 namespace mozilla {
 namespace webgpu {
 
-GPU_IMPL_CYCLE_COLLECTION(Adapter, mParent, mBridge)
+GPU_IMPL_CYCLE_COLLECTION(Adapter, mParent, mBridge, mFeatures, mLimits)
 GPU_IMPL_JS_WRAP(Adapter)
 
-Adapter::Adapter(Instance* const aParent, RawId aId)
-    : ChildOf(aParent), mBridge(aParent->mBridge), mId(aId) {}
+Adapter::Adapter(Instance* const aParent,
+                 const ffi::WGPUAdapterInformation& aInfo)
+    : ChildOf(aParent),
+      mBridge(aParent->mBridge),
+      mId(aInfo.id),
+      mFeatures(new AdapterFeatures(this)),
+      mLimits(new SupportedLimits(this, aInfo.limits)),
+      mIsSoftware(aInfo.ty == ffi::WGPUDeviceType_Cpu) {}
 
 Adapter::~Adapter() { Cleanup(); }
 
@@ -28,6 +36,10 @@ void Adapter::Cleanup() {
     mBridge->SendAdapterDestroy(mId);
   }
 }
+
+const RefPtr<AdapterFeatures>& Adapter::Features() const { return mFeatures; }
+const RefPtr<SupportedLimits>& Adapter::Limits() const { return mLimits; }
+bool Adapter::IsSoftware() const { return mIsSoftware; }
 
 already_AddRefed<dom::Promise> Adapter::RequestDevice(
     const dom::GPUDeviceDescriptor& aDesc, ErrorResult& aRv) {

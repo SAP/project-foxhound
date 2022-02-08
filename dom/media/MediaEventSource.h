@@ -12,6 +12,7 @@
 
 #include "mozilla/AbstractThread.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/DataMutex.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Tuple.h"
 #include "mozilla/Unused.h"
@@ -37,17 +38,13 @@ class RevocableToken {
  public:
   RevocableToken() = default;
 
-  void Revoke() { mRevoked = true; }
-
-  bool IsRevoked() const { return mRevoked; }
+  virtual void Revoke() = 0;
+  virtual bool IsRevoked() const = 0;
 
  protected:
   // Virtual destructor is required since we might delete a Listener object
   // through its base type pointer.
   virtual ~RevocableToken() = default;
-
- private:
-  Atomic<bool> mRevoked{false};
 };
 
 enum class ListenerPolicy : int8_t {
@@ -108,13 +105,23 @@ struct EventTarget<nsIEventTarget> {
                        already_AddRefed<nsIRunnable> aTask) {
     aTarget->Dispatch(std::move(aTask), NS_DISPATCH_NORMAL);
   }
+  static bool IsOnTargetThread(nsIEventTarget* aTarget) {
+    bool rv;
+    aTarget->IsOnCurrentThread(&rv);
+    return rv;
+  }
 };
 
 template <>
 struct EventTarget<AbstractThread> {
   static void Dispatch(AbstractThread* aTarget,
                        already_AddRefed<nsIRunnable> aTask) {
-    Unused << aTarget->Dispatch(std::move(aTask));
+    aTarget->Dispatch(std::move(aTask));
+  }
+  static bool IsOnTargetThread(AbstractThread* aTarget) {
+    bool rv;
+    aTarget->IsOnCurrentThread(&rv);
+    return rv;
   }
 };
 
@@ -147,11 +154,6 @@ class Listener : public RevocableToken {
     }
   }
 
- protected:
-  virtual ~Listener() {
-    MOZ_ASSERT(IsRevoked(), "Must disconnect the listener.");
-  }
-
  private:
   virtual void DispatchTask(already_AddRefed<nsIRunnable> aTask) = 0;
 
@@ -173,15 +175,33 @@ template <typename Target, typename Function, typename... As>
 class ListenerImpl : public Listener<As...> {
   // Strip CV and reference from Function.
   using FunctionStorage = std::decay_t<Function>;
+  using SelfType = ListenerImpl<Target, Function, As...>;
 
  public:
-  template <typename F>
-  ListenerImpl(Target* aTarget, F&& aFunction)
-      : mTarget(aTarget), mFunction(std::forward<F>(aFunction)) {}
+  ListenerImpl(Target* aTarget, Function&& aFunction)
+      : mData(MakeRefPtr<Data>(aTarget, std::forward<Function>(aFunction)),
+              "MediaEvent ListenerImpl::mData") {
+    MOZ_DIAGNOSTIC_ASSERT(aTarget);
+  }
+
+ protected:
+  virtual ~ListenerImpl() {
+    MOZ_ASSERT(IsRevoked(), "Must disconnect the listener.");
+  }
 
  private:
   void DispatchTask(already_AddRefed<nsIRunnable> aTask) override {
-    EventTarget<Target>::Dispatch(mTarget.get(), std::move(aTask));
+    RefPtr<Data> data;
+    {
+      auto d = mData.Lock();
+      data = *d;
+    }
+    if (NS_WARN_IF(!data)) {
+      // already_AddRefed doesn't allow releasing the ref, so transfer it first.
+      RefPtr<nsIRunnable> temp(aTask);
+      return;
+    }
+    EventTarget<Target>::Dispatch(data->mTarget, std::move(aTask));
   }
 
   bool CanTakeArgs() const override { return TakeArgs<FunctionStorage>::value; }
@@ -189,49 +209,92 @@ class ListenerImpl : public Listener<As...> {
   // |F| takes one or more arguments.
   template <typename F>
   std::enable_if_t<TakeArgs<F>::value, void> ApplyWithArgsImpl(
-      const F& aFunc, As&&... aEvents) {
+      Target* aTarget, const F& aFunc, As&&... aEvents) {
+    MOZ_DIAGNOSTIC_ASSERT(EventTarget<Target>::IsOnTargetThread(aTarget));
     aFunc(std::move(aEvents)...);
   }
 
   // |F| takes no arguments.
   template <typename F>
   std::enable_if_t<!TakeArgs<F>::value, void> ApplyWithArgsImpl(
-      const F& aFunc, As&&... aEvents) {
+      Target* aTarget, const F& aFunc, As&&... aEvents) {
     MOZ_CRASH("Call ApplyWithNoArgs instead.");
   }
 
   void ApplyWithArgs(As&&... aEvents) override {
     MOZ_RELEASE_ASSERT(TakeArgs<Function>::value);
     // Don't call the listener if it is disconnected.
-    if (!RevocableToken::IsRevoked()) {
-      ApplyWithArgsImpl(mFunction, std::move(aEvents)...);
+    RefPtr<Data> data;
+    {
+      auto d = mData.Lock();
+      data = *d;
     }
+    if (!data) {
+      return;
+    }
+    MOZ_DIAGNOSTIC_ASSERT(EventTarget<Target>::IsOnTargetThread(data->mTarget));
+    ApplyWithArgsImpl(data->mTarget, data->mFunction, std::move(aEvents)...);
   }
 
   // |F| takes one or more arguments.
   template <typename F>
   std::enable_if_t<TakeArgs<F>::value, void> ApplyWithNoArgsImpl(
-      const F& aFunc) {
+      Target* aTarget, const F& aFunc) {
     MOZ_CRASH("Call ApplyWithArgs instead.");
   }
 
   // |F| takes no arguments.
   template <typename F>
   std::enable_if_t<!TakeArgs<F>::value, void> ApplyWithNoArgsImpl(
-      const F& aFunc) {
+      Target* aTarget, const F& aFunc) {
+    MOZ_DIAGNOSTIC_ASSERT(EventTarget<Target>::IsOnTargetThread(aTarget));
     aFunc();
   }
 
-  virtual void ApplyWithNoArgs() override {
+  void ApplyWithNoArgs() override {
     MOZ_RELEASE_ASSERT(!TakeArgs<Function>::value);
     // Don't call the listener if it is disconnected.
-    if (!RevocableToken::IsRevoked()) {
-      ApplyWithNoArgsImpl(mFunction);
+    RefPtr<Data> data;
+    {
+      auto d = mData.Lock();
+      data = *d;
+    }
+    if (!data) {
+      return;
+    }
+    MOZ_DIAGNOSTIC_ASSERT(EventTarget<Target>::IsOnTargetThread(data->mTarget));
+    ApplyWithNoArgsImpl(data->mTarget, data->mFunction);
+  }
+
+  void Revoke() override {
+    {
+      auto data = mData.Lock();
+      *data = nullptr;
     }
   }
 
-  const RefPtr<Target> mTarget;
-  FunctionStorage mFunction;
+  bool IsRevoked() const override {
+    auto data = mData.Lock();
+    return !*data;
+  }
+
+  struct RefCountedMediaEventListenerData {
+    // Keep ref-counting here since Data holds a template member, leading to
+    // instances of varying size, which the memory leak logging system dislikes.
+    NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RefCountedMediaEventListenerData)
+   protected:
+    virtual ~RefCountedMediaEventListenerData() = default;
+  };
+  struct Data : public RefCountedMediaEventListenerData {
+    Data(RefPtr<Target> aTarget, Function&& aFunction)
+        : mTarget(std::move(aTarget)),
+          mFunction(std::forward<Function>(aFunction)) {}
+    const RefPtr<Target> mTarget;
+    FunctionStorage mFunction;
+  };
+
+  // Storage for target and function. Also used to track revocation.
+  mutable DataMutex<RefPtr<Data>> mData;
 };
 
 /**
@@ -459,6 +522,58 @@ class MediaEventProducerExc : public MediaEventSourceExc<Es...> {
   void Notify(Ts&&... aEvents) {
     this->NotifyInternal(std::forward<Ts>(aEvents)...);
   }
+};
+
+/**
+ * A class that facilitates forwarding MediaEvents from multiple sources of the
+ * same type into a single source.
+ *
+ * Lifetimes are convenient. A forwarded source is disconnected either by
+ * the source itself going away, or the forwarder being destroyed.
+ *
+ * Not threadsafe. The caller is responsible for calling Forward() in a
+ * threadsafe manner.
+ */
+template <typename... Es>
+class MediaEventForwarder : public MediaEventSource<Es...> {
+ public:
+  template <typename T>
+  using ArgType = typename detail::EventTypeTraits<T>::ArgType;
+
+  explicit MediaEventForwarder(nsCOMPtr<nsISerialEventTarget> aEventTarget)
+      : mEventTarget(std::move(aEventTarget)) {}
+
+  MediaEventForwarder(MediaEventForwarder&& aOther)
+      : mEventTarget(aOther.mEventTarget),
+        mListeners(std::move(aOther.mListeners)) {}
+
+  ~MediaEventForwarder() { MOZ_ASSERT(mListeners.IsEmpty()); }
+
+  MediaEventForwarder& operator=(MediaEventForwarder&& aOther) {
+    MOZ_RELEASE_ASSERT(mEventTarget == aOther.mEventTarget);
+    MOZ_ASSERT(mListeners.IsEmpty());
+    mListeners = std::move(aOther.mListeners);
+  }
+
+  void Forward(MediaEventSource<Es...>& aSource) {
+    // Forwarding a rawptr `this` here is fine, since DisconnectAll disconnect
+    // all mListeners synchronously and prevents this handler from running.
+    mListeners.AppendElement(
+        aSource.Connect(mEventTarget, [this](ArgType<Es>&&... aEvents) {
+          this->NotifyInternal(std::forward<ArgType<Es>...>(aEvents)...);
+        }));
+  }
+
+  void DisconnectAll() {
+    for (auto& l : mListeners) {
+      l.Disconnect();
+    }
+    mListeners.Clear();
+  }
+
+ private:
+  const nsCOMPtr<nsISerialEventTarget> mEventTarget;
+  nsTArray<MediaEventListener> mListeners;
 };
 
 }  // namespace mozilla

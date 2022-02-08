@@ -25,10 +25,10 @@
     var gFindBar = null;
     var gBrowser;
 
-    var imports = ["SimpleTest", "ok", "is", "info"];
-    for (var name of imports) {
-      window[name] = window.arguments[0][name];
-    }
+    var SimpleTest = window.arguments[0].SimpleTest;
+    var ok = window.arguments[0].ok;
+    var is = window.arguments[0].is;
+    var info = window.arguments[0].info;
 
     function startTest() {
       (async function() {
@@ -91,7 +91,7 @@
     function promiseFindResult(str = null) {
       return new Promise(resolve => {
         let listener = {
-          onFindResult: function({ searchString }) {
+          onFindResult({ searchString }) {
             if (str !== null && str != searchString) {
               return;
             }
@@ -106,9 +106,13 @@
     function promiseEnterStringIntoFindField(str) {
       let promise = promiseFindResult(str);
       for (let i = 0; i < str.length; i++) {
-        let event = document.createEvent("KeyboardEvent");
-        event.initKeyEvent("keypress", true, true, null, false, false,
-                           false, false, 0, str.charCodeAt(i));
+        let event = new KeyboardEvent("keypress", {
+          bubbles: true,
+          cancelable: true,
+          view: null,
+          keyCode: 0,
+          charCode: str.charCodeAt(i),
+        });
         gFindBar._findField.dispatchEvent(event);
       }
       return promise;

@@ -58,7 +58,7 @@ load 795221-5.xml
 load 811226.html
 load 819745.html
 load 828180.html
-pref(dom.experimental_forms,true) load 828472.html
+load 828472.html
 load 837033.html
 load 838256-1.html
 load 862084.html
@@ -88,3 +88,7 @@ load 1547057.html
 load 1550524.html
 load 1550881-1.html
 load 1550881-2.html
+skip-if(Android) pref(dom.disable_open_during_load,false) load 1667493.html
+load 1680418.html
+load 1704660.html
+load 1724816.html

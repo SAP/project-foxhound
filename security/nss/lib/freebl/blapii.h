@@ -60,10 +60,10 @@ SEC_END_PROTOS
 #endif
 
 /* Alignment helpers. */
-#if defined(_WINDOWS) && defined(NSS_X86_OR_X64)
+#if defined(_MSC_VER)
 #define pre_align __declspec(align(16))
 #define post_align
-#elif defined(NSS_X86_OR_X64)
+#elif defined(__GNUC__)
 #define pre_align
 #define post_align __attribute__((aligned(16)))
 #else
@@ -85,6 +85,7 @@ SECStatus generate_prime(mp_int *prime, int primeLen);
 /* Freebl state. */
 PRBool aesni_support();
 PRBool clmul_support();
+PRBool sha_support();
 PRBool avx_support();
 PRBool avx2_support();
 PRBool ssse3_support();
@@ -96,5 +97,15 @@ PRBool arm_pmull_support();
 PRBool arm_sha1_support();
 PRBool arm_sha2_support();
 PRBool ppc_crypto_support();
+
+#ifdef NSS_FIPS_DISABLED
+#define BLAPI_CLEAR_STACK(stack_size)
+#else
+#define BLAPI_CLEAR_STACK(stack_size)                    \
+    {                                                    \
+        volatile char _stkclr[stack_size];               \
+        PORT_Memset((void *)&_stkclr[0], 0, stack_size); \
+    }
+#endif
 
 #endif /* _BLAPII_H_ */

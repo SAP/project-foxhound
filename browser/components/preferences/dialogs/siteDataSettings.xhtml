@@ -6,10 +6,9 @@
 
 <?xml-stylesheet href="chrome://global/skin/global.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/skin/preferences/preferences.css" type="text/css"?>
-<?xml-stylesheet href="chrome://browser/content/preferences/dialogs/siteDataSettings.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/skin/preferences/siteDataSettings.css" type="text/css"?>
 
-<window id="SiteDataSettingsDialog" windowtype="Browser:SiteDataSettings"
+<window id="SiteDataSettingsDialog"
         data-l10n-id="site-data-settings-window"
         data-l10n-attrs="title"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
@@ -17,7 +16,12 @@
         style="width: 45em;"
         onload="gSiteDataSettings.init();"
         onkeypress="gSiteDataSettings.onKeyPress(event);"
-        persist="screenX screenY width height">
+        persist="width height">
+
+<dialog
+  buttons="accept,cancel"
+  data-l10n-id="site-data-settings-dialog"
+  data-l10n-attrs="buttonlabelaccept, buttonaccesskeyaccept">
 
   <linkset>
     <html:link rel="localization" href="branding/brand.ftl"/>
@@ -51,12 +55,5 @@
     <button id="removeSelected" data-l10n-id="site-data-remove-selected"/>
     <button id="removeAll"/>
   </hbox>
-
-  <vbox align="end">
-    <hbox>
-        <button id="cancel" data-l10n-id="site-data-button-cancel"/>
-        <button id="save" data-l10n-id="site-data-button-save"/>
-    </hbox>
-  </vbox>
-
+  </dialog>
 </window>

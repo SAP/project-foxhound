@@ -26,6 +26,7 @@ this.globalImportContext = globalImportContext;
 // }
 const actionTypes = {};
 for (const type of [
+  "ABOUT_SPONSORED_TOP_SITES",
   "ADDONS_INFO_REQUEST",
   "ADDONS_INFO_RESPONSE",
   "ARCHIVE_FROM_POCKET",
@@ -42,6 +43,7 @@ for (const type of [
   "DELETE_HISTORY_URL",
   "DIALOG_CANCEL",
   "DIALOG_OPEN",
+  "DISABLE_SEARCH",
   "DISCOVERY_STREAM_COLLECTION_DISMISSIBLE_TOGGLE",
   "DISCOVERY_STREAM_CONFIG_CHANGE",
   "DISCOVERY_STREAM_CONFIG_RESET",
@@ -61,12 +63,10 @@ for (const type of [
   "DISCOVERY_STREAM_LOADED_CONTENT",
   "DISCOVERY_STREAM_PERSONALIZATION_INIT",
   "DISCOVERY_STREAM_PERSONALIZATION_LAST_UPDATED",
-  "DISCOVERY_STREAM_PERSONALIZATION_VERSION",
-  "DISCOVERY_STREAM_PERSONALIZATION_VERSION_TOGGLE",
+  "DISCOVERY_STREAM_PERSONALIZATION_TOGGLE",
   "DISCOVERY_STREAM_RETRY_FEED",
   "DISCOVERY_STREAM_SPOCS_CAPS",
   "DISCOVERY_STREAM_SPOCS_ENDPOINT",
-  "DISCOVERY_STREAM_SPOCS_FILL",
   "DISCOVERY_STREAM_SPOCS_PLACEMENTS",
   "DISCOVERY_STREAM_SPOCS_UPDATE",
   "DISCOVERY_STREAM_SPOC_BLOCKED",
@@ -76,7 +76,6 @@ for (const type of [
   "FILL_SEARCH_TERM",
   "HANDOFF_SEARCH_TO_AWESOMEBAR",
   "HIDE_PRIVACY_INFO",
-  "HIDE_SEARCH",
   "INIT",
   "NEW_TAB_INIT",
   "NEW_TAB_INITIAL_STATE",
@@ -89,12 +88,13 @@ for (const type of [
   "OPEN_NEW_WINDOW",
   "OPEN_PRIVATE_WINDOW",
   "OPEN_WEBEXT_SETTINGS",
+  "PARTNER_LINK_ATTRIBUTION",
+  "PLACES_BOOKMARKS_REMOVED",
   "PLACES_BOOKMARK_ADDED",
-  "PLACES_BOOKMARK_REMOVED",
   "PLACES_HISTORY_CLEARED",
   "PLACES_LINKS_CHANGED",
+  "PLACES_LINKS_DELETED",
   "PLACES_LINK_BLOCKED",
-  "PLACES_LINK_DELETED",
   "PLACES_SAVED_TO_POCKET",
   "POCKET_CTA",
   "POCKET_LINK_DELETED_OR_ARCHIVED",
@@ -136,13 +136,11 @@ for (const type of [
   "SUBMIT_SIGNIN",
   "SYSTEM_TICK",
   "TELEMETRY_IMPRESSION_STATS",
-  "TELEMETRY_PERFORMANCE_EVENT",
-  "TELEMETRY_UNDESIRED_EVENT",
   "TELEMETRY_USER_EVENT",
-  "TOP_SITES_ATTRIBUTION",
   "TOP_SITES_CANCEL_EDIT",
   "TOP_SITES_CLOSE_SEARCH_SHORTCUTS_MODAL",
   "TOP_SITES_EDIT",
+  "TOP_SITES_IMPRESSION_STATS",
   "TOP_SITES_INSERT",
   "TOP_SITES_OPEN_SEARCH_SHORTCUTS_MODAL",
   "TOP_SITES_PIN",
@@ -151,7 +149,6 @@ for (const type of [
   "TOP_SITES_UPDATED",
   "TOTAL_BOOKMARKS_REQUEST",
   "TOTAL_BOOKMARKS_RESPONSE",
-  "TRAILHEAD_ENROLL_EVENT",
   "UNINIT",
   "UPDATE_PINNED_SEARCH_SHORTCUTS",
   "UPDATE_SEARCH_SHORTCUTS",
@@ -305,51 +302,6 @@ function ASRouterUserEvent(data) {
 }
 
 /**
- * DiscoveryStreamSpocsFill - A telemetry ping indicating a SPOCS Fill event.
- *
- * @param  {object} data Fields to include in the ping (spoc_fills, etc.)
- * @param  {int} importContext (For testing) Override the import context for testing.
- * @return {object} An AlsoToMain action
- */
-function DiscoveryStreamSpocsFill(data, importContext = globalImportContext) {
-  const action = {
-    type: actionTypes.DISCOVERY_STREAM_SPOCS_FILL,
-    data,
-  };
-  return importContext === UI_CODE ? AlsoToMain(action) : action;
-}
-
-/**
- * UndesiredEvent - A telemetry ping indicating an undesired state.
- *
- * @param  {object} data Fields to include in the ping (value, etc.)
- * @param  {int} importContext (For testing) Override the import context for testing.
- * @return {object} An action. For UI code, a AlsoToMain action.
- */
-function UndesiredEvent(data, importContext = globalImportContext) {
-  const action = {
-    type: actionTypes.TELEMETRY_UNDESIRED_EVENT,
-    data,
-  };
-  return importContext === UI_CODE ? AlsoToMain(action) : action;
-}
-
-/**
- * PerfEvent - A telemetry ping indicating a performance-related event.
- *
- * @param  {object} data Fields to include in the ping (value, etc.)
- * @param  {int} importContext (For testing) Override the import context for testing.
- * @return {object} An action. For UI code, a AlsoToMain action.
- */
-function PerfEvent(data, importContext = globalImportContext) {
-  const action = {
-    type: actionTypes.TELEMETRY_PERFORMANCE_EVENT,
-    data,
-  };
-  return importContext === UI_CODE ? AlsoToMain(action) : action;
-}
-
-/**
  * ImpressionStats - A telemetry ping indicating an impression stats.
  *
  * @param  {object} data Fields to include in the ping
@@ -421,8 +373,6 @@ this.actionCreators = {
   BroadcastToContent,
   UserEvent,
   ASRouterUserEvent,
-  UndesiredEvent,
-  PerfEvent,
   ImpressionStats,
   AlsoToOneContent,
   OnlyToOneContent,
@@ -433,7 +383,6 @@ this.actionCreators = {
   WebExtEvent,
   DiscoveryStreamImpressionStats,
   DiscoveryStreamLoadedContent,
-  DiscoveryStreamSpocsFill,
 };
 
 // These are helpers to test for certain kinds of actions

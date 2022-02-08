@@ -1,7 +1,9 @@
 "use strict";
 
-ChromeUtils.import("resource://normandy/actions/BaseAction.jsm", this);
-ChromeUtils.import("resource://normandy/lib/Uptake.jsm", this);
+const { BaseAction } = ChromeUtils.import(
+  "resource://normandy/actions/BaseAction.jsm"
+);
+const { Uptake } = ChromeUtils.import("resource://normandy/lib/Uptake.jsm");
 
 class NoopAction extends BaseAction {
   constructor() {
@@ -112,9 +114,9 @@ decorate_task(
 );
 
 // Test that per-recipe uptake telemetry is recorded
-decorate_task(withStub(Uptake, "reportRecipe"), async function(
-  reportRecipeStub
-) {
+decorate_task(withStub(Uptake, "reportRecipe"), async function({
+  reportRecipeStub,
+}) {
   const action = new NoopAction();
   const recipe = recipeFactory();
   await action.processRecipe(recipe, BaseAction.suitability.FILTER_MATCH);
@@ -126,9 +128,9 @@ decorate_task(withStub(Uptake, "reportRecipe"), async function(
 });
 
 // Finalize causes action telemetry to be recorded
-decorate_task(withStub(Uptake, "reportAction"), async function(
-  reportActionStub
-) {
+decorate_task(withStub(Uptake, "reportAction"), async function({
+  reportActionStub,
+}) {
   const action = new NoopAction();
   await action.finalize();
   ok(
@@ -143,9 +145,9 @@ decorate_task(withStub(Uptake, "reportAction"), async function(
 });
 
 // Recipes can't be run after finalize is called
-decorate_task(withStub(Uptake, "reportRecipe"), async function(
-  reportRecipeStub
-) {
+decorate_task(withStub(Uptake, "reportRecipe"), async function({
+  reportRecipeStub,
+}) {
   const action = new NoopAction();
   const recipe1 = recipeFactory();
   const recipe2 = recipeFactory();
@@ -170,7 +172,7 @@ decorate_task(withStub(Uptake, "reportRecipe"), async function(
 decorate_task(
   withStub(Uptake, "reportRecipe"),
   withStub(Uptake, "reportAction"),
-  async function(reportRecipeStub, reportActionStub) {
+  async function({ reportRecipeStub, reportActionStub }) {
     const recipe = recipeFactory();
     const action = new FailPreExecutionAction();
     is(
@@ -231,7 +233,7 @@ decorate_task(
 decorate_task(
   withStub(Uptake, "reportRecipe"),
   withStub(Uptake, "reportAction"),
-  async function(reportRecipeStub, reportActionStub) {
+  async function({ reportRecipeStub, reportActionStub }) {
     const recipe = recipeFactory();
     const action = new FailRunAction();
     await action.processRecipe(recipe, BaseAction.suitability.FILTER_MATCH);
@@ -267,7 +269,7 @@ decorate_task(
 decorate_task(
   withStub(Uptake, "reportRecipe"),
   withStub(Uptake, "reportAction"),
-  async function(reportRecipeStub, reportActionStub) {
+  async function({ reportRecipeStub, reportActionStub }) {
     const recipe = recipeFactory();
     const action = new FailFinalizeAction();
     await action.processRecipe(recipe, BaseAction.suitability.FILTER_MATCH);
@@ -291,7 +293,7 @@ decorate_task(
 decorate_task(
   withStub(Uptake, "reportRecipe"),
   withStub(Uptake, "reportAction"),
-  async function(reportRecipeStub, reportActionStub) {
+  async function({ reportRecipeStub, reportActionStub }) {
     const recipe = recipeFactory();
     const action = new NoopAction();
 
@@ -336,7 +338,7 @@ decorate_task(async function() {
   const verifySpy = sinon.spy(action, "validateArguments");
   await action.processRecipe(
     recipe,
-    BaseAction.suitability.CAPABILITES_MISMATCH
+    BaseAction.suitability.CAPABILITIES_MISMATCH
   );
   ok(!verifySpy.called, "validateArguments should not be called");
 });

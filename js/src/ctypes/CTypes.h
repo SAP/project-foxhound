@@ -22,6 +22,10 @@
 #include "vm/JSObject.h"
 #include "vm/StringType.h"
 
+namespace JS {
+struct CTypesCallbacks;
+}  // namespace JS
+
 namespace js {
 namespace ctypes {
 
@@ -73,17 +77,17 @@ class StringBuilder {
   size_t length() const { return v.length(); }
 
   template <typename U>
-  MOZ_MUST_USE bool append(U&& u) {
+  [[nodiscard]] bool append(U&& u) {
     return handle(v.append(u));
   }
 
   template <typename U>
-  MOZ_MUST_USE bool append(const U* begin, const U* end) {
+  [[nodiscard]] bool append(const U* begin, const U* end) {
     return handle(v.append(begin, end));
   }
 
   template <typename U>
-  MOZ_MUST_USE bool append(const U* begin, size_t len) {
+  [[nodiscard]] bool append(const U* begin, size_t len) {
     return handle(v.append(begin, len));
   }
 
@@ -253,11 +257,11 @@ void PrependString(JSContext* cx, StringBuilder<char16_t, N>& v,
   CopyChars(v.begin(), *linear);
 }
 
-MOZ_MUST_USE bool ReportErrorIfUnpairedSurrogatePresent(JSContext* cx,
-                                                        JSLinearString* str);
+[[nodiscard]] bool ReportErrorIfUnpairedSurrogatePresent(JSContext* cx,
+                                                         JSLinearString* str);
 
-MOZ_MUST_USE JSObject* GetThisObject(JSContext* cx, const CallArgs& args,
-                                     const char* msg);
+[[nodiscard]] JSObject* GetThisObject(JSContext* cx, const CallArgs& args,
+                                      const char* msg);
 
 /*******************************************************************************
 ** Function and struct API definitions
@@ -388,14 +392,14 @@ struct ClosureInfo {
 bool IsCTypesGlobal(HandleValue v);
 bool IsCTypesGlobal(JSObject* obj);
 
-const JSCTypesCallbacks* GetCallbacks(JSObject* obj);
+const JS::CTypesCallbacks* GetCallbacks(JSObject* obj);
 
 /*******************************************************************************
 ** JSClass reserved slot definitions
 *******************************************************************************/
 
 enum CTypesGlobalSlot {
-  SLOT_CALLBACKS = 0,  // pointer to JSCTypesCallbacks struct
+  SLOT_CALLBACKS = 0,  // pointer to JS::CTypesCallbacks struct
   SLOT_ERRNO = 1,      // Value for latest |errno|
   SLOT_LASTERROR =
       2,  // Value for latest |GetLastError|, used only with Windows
@@ -462,12 +466,14 @@ enum CClosureSlot {
 };
 
 enum CDataFinalizerSlot {
+  // PrivateValue storing CDataFinalizer::Private* pointer or UndefinedValue.
+  SLOT_DATAFINALIZER_PRIVATE = 0,
   // The type of the value (a CType JSObject).
   // We hold it to permit ImplicitConvert and ToSource.
-  SLOT_DATAFINALIZER_VALTYPE = 0,
+  SLOT_DATAFINALIZER_VALTYPE = 1,
   // The type of the function used at finalization (a CType JSObject).
   // We hold it to permit |ToSource|.
-  SLOT_DATAFINALIZER_CODETYPE = 1,
+  SLOT_DATAFINALIZER_CODETYPE = 2,
   CDATAFINALIZER_SLOTS
 };
 
@@ -505,14 +511,14 @@ bool IsCTypeProto(JSObject* obj);
 TypeCode GetTypeCode(JSObject* typeObj);
 bool TypesEqual(JSObject* t1, JSObject* t2);
 size_t GetSize(JSObject* obj);
-MOZ_MUST_USE bool GetSafeSize(JSObject* obj, size_t* result);
+[[nodiscard]] bool GetSafeSize(JSObject* obj, size_t* result);
 bool IsSizeDefined(JSObject* obj);
 size_t GetAlignment(JSObject* obj);
 ffi_type* GetFFIType(JSContext* cx, JSObject* obj);
 JSString* GetName(JSContext* cx, HandleObject obj);
 JSObject* GetProtoFromCtor(JSObject* obj, CTypeProtoSlot slot);
 JSObject* GetProtoFromType(JSContext* cx, JSObject* obj, CTypeProtoSlot slot);
-const JSCTypesCallbacks* GetCallbacksFromType(JSObject* obj);
+const JS::CTypesCallbacks* GetCallbacksFromType(JSObject* obj);
 }  // namespace CType
 
 namespace PointerType {
@@ -529,13 +535,13 @@ JSObject* CreateInternal(JSContext* cx, HandleObject baseType, size_t length,
 
 JSObject* GetBaseType(JSObject* obj);
 size_t GetLength(JSObject* obj);
-MOZ_MUST_USE bool GetSafeLength(JSObject* obj, size_t* result);
+[[nodiscard]] bool GetSafeLength(JSObject* obj, size_t* result);
 UniquePtrFFIType BuildFFIType(JSContext* cx, JSObject* obj);
 }  // namespace ArrayType
 
 namespace StructType {
-MOZ_MUST_USE bool DefineInternal(JSContext* cx, JSObject* typeObj,
-                                 JSObject* fieldsObj);
+[[nodiscard]] bool DefineInternal(JSContext* cx, JSObject* typeObj,
+                                  JSObject* fieldsObj);
 
 const FieldInfoHash* GetFieldInfo(JSObject* obj);
 const FieldInfo* LookupField(JSContext* cx, JSObject* obj,
@@ -574,9 +580,9 @@ bool IsCData(HandleValue v);
 bool IsCDataProto(JSObject* obj);
 
 // Attached by JSAPI as the function 'ctypes.cast'
-MOZ_MUST_USE bool Cast(JSContext* cx, unsigned argc, Value* vp);
+[[nodiscard]] bool Cast(JSContext* cx, unsigned argc, Value* vp);
 // Attached by JSAPI as the function 'ctypes.getRuntime'
-MOZ_MUST_USE bool GetRuntime(JSContext* cx, unsigned argc, Value* vp);
+[[nodiscard]] bool GetRuntime(JSContext* cx, unsigned argc, Value* vp);
 }  // namespace CData
 
 namespace Int64 {

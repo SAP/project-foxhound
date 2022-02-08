@@ -12,7 +12,7 @@
 namespace mozilla {
 namespace a11y {
 
-class Accessible;
+class LocalAccessible;
 
 /**
  * XPCOM nsIAccessibleValue interface implementation, used by
@@ -31,7 +31,7 @@ class xpcAccessibleValue : public nsIAccessibleValue {
   virtual ~xpcAccessibleValue() {}
 
  private:
-  AccessibleOrProxy Intl();
+  Accessible* Intl();
 
   xpcAccessibleValue(const xpcAccessibleValue&) = delete;
   xpcAccessibleValue& operator=(const xpcAccessibleValue&) = delete;

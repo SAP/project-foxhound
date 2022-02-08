@@ -2,64 +2,55 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
 // This module converts Firefox specific types to the generic types
 
-import type { Frame, ThreadId, GeneratedSourceData, Thread } from "../../types";
-import type {
-  PausedPacket,
-  FrameFront,
-  SourcePayload,
-  ThreadFront,
-  Target,
-} from "./types";
-
 import { clientCommands } from "./commands";
+import { hasSourceActor, getSourceActor } from "../../selectors";
+import { stringToSourceActorId } from "../../reducers/source-actors";
 
-const mainThreadType = "mainThread";
+let store;
 
-export function prepareSourcePayload(
-  threadFront: ThreadFront,
-  source: SourcePayload
-): GeneratedSourceData {
-  const { isServiceWorker } = threadFront.parentFront;
+/**
+ * This function is to be called first before any other
+ * and allow having access to any instances of classes that are
+ * useful for this module
+ *
+ * @param {Object} dependencies
+ * @param {Object} dependencies.store
+ *                 The redux store object of the debugger frontend.
+ */
+export function setupCreate(dependencies) {
+  store = dependencies.store;
+}
 
-  // We populate the set of sources as soon as we hear about them. Note that
-  // this means that we have seen an actor, but it might still be in the
-  // debounced queue for creation, so the Redux store itself might not have
-  // a source actor with this ID yet.
-  clientCommands.registerSourceActor(
-    source.actor,
-    makeSourceId(source, isServiceWorker)
-  );
-
+export function prepareSourcePayload(threadFront, source) {
   source = { ...source };
 
   // Maintain backward-compat with servers that only return introductionUrl and
   // not sourceMapBaseURL.
   if (
     typeof source.sourceMapBaseURL === "undefined" &&
-    typeof (source: any).introductionUrl !== "undefined"
+    typeof source.introductionUrl !== "undefined"
   ) {
-    source.sourceMapBaseURL =
-      source.url || (source: any).introductionUrl || null;
-    delete (source: any).introductionUrl;
+    source.sourceMapBaseURL = source.url || source.introductionUrl || null;
+    delete source.introductionUrl;
   }
 
-  return { thread: threadFront.actor, isServiceWorker, source };
+  return { thread: threadFront.actor, source };
 }
 
-export function createFrame(
-  thread: ThreadId,
-  frame: FrameFront,
-  index: number = 0
-): ?Frame {
+export async function createFrame(thread, frame, index = 0) {
   if (!frame) {
     return null;
   }
 
+  // Because of throttling, the source may be available a bit late.
+  const source = await waitForSourceActorToBeRegisteredInStore(
+    frame.where.actor
+  );
+
   const location = {
-    sourceId: clientCommands.getSourceForActor(frame.where.actor),
+    sourceId: makeSourceId(source, thread),
     line: frame.where.line,
     column: frame.where.column,
   };
@@ -79,46 +70,64 @@ export function createFrame(
   };
 }
 
-export function makeSourceId(source: SourcePayload, isServiceWorker: boolean) {
-  // Source actors with the same URL will be given the same source ID and
-  // grouped together under the same source in the client. There is an exception
-  // for sources from service workers, where there may be multiple service
-  // worker threads running at the same time which use different versions of the
-  // same URL.
-  return source.url && !isServiceWorker
-    ? `sourceURL-${source.url}`
-    : `source-${source.actor}`;
+/**
+ * This method wait for the given source to be registered in Redux store.
+ *
+ * @param {String} sourceActor
+ *                 Actor ID of the source to be waiting for.
+ */
+async function waitForSourceActorToBeRegisteredInStore(sourceActorIdString) {
+  const sourceActorId = stringToSourceActorId(sourceActorIdString);
+  if (!hasSourceActor(store.getState(), sourceActorId)) {
+    await new Promise(resolve => {
+      const unsubscribe = store.subscribe(check);
+      let currentState = null;
+      function check() {
+        const previousState = currentState;
+        currentState = store.getState().sourceActors.values;
+        // For perf reason, avoid any extra computation if sources did not change
+        if (previousState == currentState) {
+          return;
+        }
+        if (hasSourceActor(store.getState(), sourceActorId)) {
+          unsubscribe();
+          resolve();
+        }
+      }
+    });
+  }
+  return getSourceActor(store.getState(), sourceActorId);
 }
 
-export function createPause(thread: string, packet: PausedPacket): any {
+export function makeSourceId(source, threadActorId) {
+  // Source actors with the same URL will be given the same source ID and
+  // grouped together under the same source in the client. There is an exception
+  // for sources from distinct target types, where there may be multiple processes/threads
+  // running at the same time which use different versions of the same URL.
+  const target = clientCommands.lookupTarget(threadActorId);
+  if (target.isTopLevel && source.url) {
+    return `source-${source.url}`;
+  }
+  return `source-${source.actor}`;
+}
+
+export async function createPause(thread, packet) {
+  const frame = await createFrame(thread, packet.frame);
   return {
     ...packet,
     thread,
-    frame: createFrame(thread, packet.frame),
+    frame,
   };
 }
 
-function getTargetType(target: Target) {
-  if (target.isWorkerTarget) {
-    return "worker";
-  }
-
-  if (target.isContentProcess) {
-    return "contentProcess";
-  }
-
-  return mainThreadType;
-}
-
-export function createThread(actor: string, target: Target): Thread {
-  const type = getTargetType(target);
-  const name =
-    type === mainThreadType ? L10N.getStr("mainThread") : target.name;
+export function createThread(actor, target) {
+  const name = target.isTopLevel ? L10N.getStr("mainThread") : target.name;
 
   return {
     actor,
     url: target.url,
-    type,
+    isTopLevel: target.isTopLevel,
+    targetType: target.targetType,
     name,
     serviceWorkerStatus: target.debuggerServiceWorkerStatus,
   };

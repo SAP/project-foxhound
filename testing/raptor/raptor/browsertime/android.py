@@ -7,13 +7,16 @@
 from __future__ import absolute_import
 
 import os
+import shutil
+import tempfile
 
-from mozdevice import ADBDeviceFactory
-
+import mozcrash
 from logger.logger import RaptorLogger
+from mozdevice import ADBDeviceFactory
 from performance_tuning import tune_performance
 from perftest import PerftestAndroid
 
+from power import enable_charging, disable_charging
 from .base import Browsertime
 
 LOG = RaptorLogger(component="raptor-browsertime-android")
@@ -52,36 +55,76 @@ class BrowsertimeAndroid(PerftestAndroid, Browsertime):
 
     @property
     def browsertime_args(self):
-        if self.config['app'] == 'chrome-m':
-            args_list = [
-                '--browser', 'chrome',
-                '--android',
-            ]
-        else:
-            args_list = [
-                "--browser", "firefox",
-                "--android",
-                # Work around a `selenium-webdriver` issue where Browsertime
-                # fails to find a Firefox binary even though we're going to
-                # actually do things on an Android device.
-                "--firefox.binaryPath", self.browsertime_node,
-                "--firefox.android.package", self.config["binary"],
-                "--firefox.android.activity", self.config["activity"],
-            ]
+        args_list = ["--viewPort", "1366x695"]
 
-        # if running on Fenix we must add the intent as we use a special non-default one there
+        if self.config["app"] == "chrome-m":
+            args_list.extend(
+                [
+                    "--browser",
+                    "chrome",
+                    "--android",
+                ]
+            )
+        else:
+            activity = self.config["activity"]
+            if self.config["app"] == "fenix":
+                LOG.info(
+                    "Changing initial activity to "
+                    "`mozilla.telemetry.glean.debug.GleanDebugActivity`"
+                )
+                activity = "mozilla.telemetry.glean.debug.GleanDebugActivity"
+
+            args_list.extend(
+                [
+                    "--browser",
+                    "firefox",
+                    "--android",
+                    # Work around a `selenium-webdriver` issue where Browsertime
+                    # fails to find a Firefox binary even though we're going to
+                    # actually do things on an Android device.
+                    "--firefox.binaryPath",
+                    self.browsertime_node,
+                    "--firefox.android.package",
+                    self.config["binary"],
+                    "--firefox.android.activity",
+                    activity,
+                ]
+            )
+
+        # Setup power testing
+        if self.config["power_test"]:
+            args_list.extend(["--androidPower", "true"])
+
+        # If running on Fenix we must add the intent as we use a special non-default one there
         if self.config["app"] == "fenix" and self.config.get("intent") is not None:
             args_list.extend(["--firefox.android.intentArgument=-a"])
             args_list.extend(
                 ["--firefox.android.intentArgument", self.config["intent"]]
             )
+
+            # Change glean ping names in all cases on Fenix
+            args_list.extend(
+                [
+                    "--firefox.android.intentArgument=--es",
+                    "--firefox.android.intentArgument=startNext",
+                    "--firefox.android.intentArgument=" + self.config["activity"],
+                    "--firefox.android.intentArgument=--esa",
+                    "--firefox.android.intentArgument=sourceTags",
+                    "--firefox.android.intentArgument=automation",
+                ]
+            )
+
             args_list.extend(["--firefox.android.intentArgument=-d"])
             args_list.extend(["--firefox.android.intentArgument", str("about:blank")])
 
         return args_list
 
     def setup_chrome_args(self, test):
-        chrome_args = ["--use-mock-keychain", "--no-default-browser-check", "--no-first-run"]
+        chrome_args = [
+            "--use-mock-keychain",
+            "--no-default-browser-check",
+            "--no-first-run",
+        ]
 
         if test.get("playback", False):
             pb_args = [
@@ -128,9 +171,47 @@ class BrowsertimeAndroid(PerftestAndroid, Browsertime):
 
         self.clear_app_data()
         self.set_debug_app_flag()
-        self.device.run_as_package = self.config['binary']
-        self.remote_test_root = os.path.join(self.device.test_root, "raptor")
-        self.remote_profile = os.path.join(self.remote_test_root, "profile")
+        self.device.run_as_package = self.config["binary"]
+        external_storage = self.device.shell_output("echo $EXTERNAL_STORAGE")
+        self.remote_test_root = os.path.join(
+            external_storage,
+            "Android",
+            "data",
+            self.config["binary"],
+            "files",
+            "test_root",
+        )
+        self.geckodriver_profile = os.path.join(
+            self.remote_test_root, "%s-geckodriver-profile" % self.config["binary"]
+        )
+
+        # make sure no remote profile exists
+        if self.device.exists(self.geckodriver_profile):
+            self.device.rm(self.geckodriver_profile, force=True, recursive=True)
+
+    def check_for_crashes(self):
+        super(BrowsertimeAndroid, self).check_for_crashes()
+
+        try:
+            dump_dir = tempfile.mkdtemp()
+            remote_dir = os.path.join(self.geckodriver_profile, "minidumps")
+            if not self.device.is_dir(remote_dir):
+                return
+            self.device.pull(remote_dir, dump_dir)
+            self.crashes += mozcrash.log_crashes(
+                LOG, dump_dir, self.config["symbols_path"]
+            )
+        except Exception as e:
+            LOG.error(
+                "Could not pull the crash data!",
+                exc_info=True,
+            )
+            raise e
+        finally:
+            try:
+                shutil.rmtree(dump_dir)
+            except Exception:
+                LOG.warning("unable to remove directory: %s" % dump_dir)
 
     def run_test_setup(self, test):
         super(BrowsertimeAndroid, self).run_test_setup(test)
@@ -144,11 +225,17 @@ class BrowsertimeAndroid(PerftestAndroid, Browsertime):
     def run_tests(self, tests, test_names):
         self.setup_adb_device()
 
-        if self.config['app'] == "chrome-m":
+        if self.config["app"] == "chrome-m":
             # Make sure that chrome is enabled on the device
             self.device.shell_output("pm enable com.android.chrome")
 
-        return super(BrowsertimeAndroid, self).run_tests(tests, test_names)
+        try:
+            if self.config["power_test"]:
+                disable_charging(self.device)
+            return super(BrowsertimeAndroid, self).run_tests(tests, test_names)
+        finally:
+            if self.config["power_test"]:
+                enable_charging(self.device)
 
     def run_test_teardown(self, test):
         LOG.info("removing reverse socket connections")

@@ -12,7 +12,8 @@ fn nonfatal_fail(msg: String) {
         fn GTest_ExpectFailure(message: *const c_char);
     }
     unsafe {
-        GTest_ExpectFailure(CString::new(msg).unwrap().as_ptr());
+        let msg = CString::new(msg).unwrap();
+        GTest_ExpectFailure(msg.as_ptr());
     }
 }
 
@@ -121,4 +122,10 @@ pub extern "C" fn Rust_WriteToBufferFromRust(
         fallible_s_buf[1] = b'B' as u16;
         fallible_s_buf[2] = b'C' as u16;
     }
+}
+
+#[no_mangle]
+pub extern "C" fn Rust_VoidStringFromRust(cs: &mut nsACString, s: &mut nsAString) {
+    cs.set_is_void(true);
+    s.set_is_void(true);
 }

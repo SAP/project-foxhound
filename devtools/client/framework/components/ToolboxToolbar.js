@@ -128,7 +128,6 @@ class ToolboxToolbar extends Component {
     this.hideMenu = this.hideMenu.bind(this);
     this.createFrameList = this.createFrameList.bind(this);
     this.highlightFrame = this.highlightFrame.bind(this);
-    this.clickFrameButton = this.clickFrameButton.bind(this);
   }
 
   componentDidMount() {
@@ -213,6 +212,10 @@ class ToolboxToolbar extends Component {
         return this.renderFrameButton(command);
       }
 
+      if (id === "command-button-errorcount") {
+        return this.renderErrorIcon(command);
+      }
+
       return button({
         id,
         title: description,
@@ -238,7 +241,7 @@ class ToolboxToolbar extends Component {
         children.push(this.renderSeparator());
         // For the end group we add a separator *before* the RDM button if it
         // exists, but only if it is not the only button.
-      } else if (rdmIndex !== -1 && visibleButtons.length > 1) {
+      } else if (rdmIndex !== -1 && renderedButtons.length > 1) {
         children.splice(children.length - 1, 0, this.renderSeparator());
       }
     }
@@ -265,11 +268,12 @@ class ToolboxToolbar extends Component {
         }`,
         ref: "frameMenuButton",
         title: description,
-        onCloseButton: () => {
-          // Only try to unhighlight if the highlighter has been started
+        onCloseButton: async () => {
+          // Only try to unhighlight if the inspectorFront has been created already
           const inspectorFront = toolbox.target.getCachedFront("inspector");
           if (inspectorFront) {
-            inspectorFront.highlighter.unhighlight();
+            const highlighter = toolbox.getHighlighter();
+            await highlighter.unhighlight();
           }
         },
       },
@@ -277,17 +281,41 @@ class ToolboxToolbar extends Component {
     );
   }
 
-  clickFrameButton(event) {
-    const { toolbox } = this.props;
-    toolbox.onSelectFrame(event.target.id);
+  renderErrorIcon(command) {
+    let { errorCount, id } = command;
+
+    if (!errorCount) {
+      return null;
+    }
+
+    if (errorCount > 99) {
+      errorCount = "99+";
+    }
+
+    return button(
+      {
+        id,
+        className: "devtools-tabbar-button command-button toolbox-error",
+        onClick: () => {
+          if (this.props.currentToolId !== "webconsole") {
+            this.props.toolbox.openSplitConsole();
+          }
+        },
+        title:
+          this.props.currentToolId !== "webconsole"
+            ? this.props.L10N.getStr("toolbox.errorCountButton.tooltip")
+            : null,
+      },
+      errorCount
+    );
   }
 
   highlightFrame(id) {
+    const { toolbox } = this.props;
     if (!id) {
       return;
     }
 
-    const { toolbox } = this.props;
     toolbox.onHighlightFrame(id);
   }
 
@@ -302,15 +330,21 @@ class ToolboxToolbar extends Component {
       const label = toolbox.target.isWebExtension
         ? toolbox.target.getExtensionPathName(frame.url)
         : getUnicodeUrl(frame.url);
-      items.push(
-        MenuItem({
-          id: frame.id.toString(),
-          key: "toolbox-frame-key-" + frame.id,
-          label,
-          checked: frame.id === toolbox.selectedFrameId,
-          onClick: this.clickFrameButton,
-        })
-      );
+
+      const item = MenuItem({
+        id: frame.id.toString(),
+        key: "toolbox-frame-key-" + frame.id,
+        label,
+        checked: frame.id === toolbox.selectedFrameId,
+        onClick: () => toolbox.onIframePickerFrameSelected(frame.id),
+      });
+
+      // Always put the top level frame at the top
+      if (frame.isTopLevel) {
+        items.unshift(item);
+      } else {
+        items.push(item);
+      }
     });
 
     return MenuList(

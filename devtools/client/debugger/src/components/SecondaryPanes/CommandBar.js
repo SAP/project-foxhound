@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
 import PropTypes from "prop-types";
 import React, { Component } from "react";
 
@@ -16,6 +14,7 @@ import {
   getCurrentThread,
   isTopFrameSelected,
   getThreadContext,
+  getIsCurrentThreadPaused,
 } from "../../selectors";
 import { formatKeyShortcut } from "../../utils/text";
 import actions from "../../actions";
@@ -24,13 +23,9 @@ import AccessibleImage from "../shared/AccessibleImage";
 import "./CommandBar.css";
 
 import { appinfo } from "devtools-services";
-import type { ThreadContext } from "../../types";
 
-// $FlowIgnore
 const MenuButton = require("devtools/client/shared/components/menu/MenuButton");
-// $FlowIgnore
 const MenuItem = require("devtools/client/shared/components/menu/MenuItem");
-// $FlowIgnore
 const MenuList = require("devtools/client/shared/components/menu/MenuList");
 
 const isMacOS = appinfo.OS === "Darwin";
@@ -38,7 +33,6 @@ const isMacOS = appinfo.OS === "Darwin";
 // NOTE: the "resume" command will call either the resume or breakOnNext action
 // depending on whether or not the debugger is paused or running
 const COMMANDS = ["resume", "stepOver", "stepIn", "stepOut"];
-type CommandActionType = "resume" | "stepOver" | "stepIn" | "stepOut";
 
 const KEYS = {
   WINNT: {
@@ -82,29 +76,7 @@ function formatKey(action) {
   return formatKeyShortcut(key);
 }
 
-type OwnProps = {|
-  horizontal: boolean,
-|};
-type Props = {
-  cx: ThreadContext,
-  isWaitingOnBreak: boolean,
-  horizontal: boolean,
-  skipPausing: boolean,
-  javascriptEnabled: boolean,
-  topFrameSelected: boolean,
-  resume: typeof actions.resume,
-  stepIn: typeof actions.stepIn,
-  stepOut: typeof actions.stepOut,
-  stepOver: typeof actions.stepOver,
-  breakOnNext: typeof actions.breakOnNext,
-  pauseOnExceptions: typeof actions.pauseOnExceptions,
-  toggleSkipPausing: typeof actions.toggleSkipPausing,
-  toggleInlinePreview: typeof actions.toggleInlinePreview,
-  toggleSourceMapsEnabled: typeof actions.toggleSourceMapsEnabled,
-  toggleJavaScriptEnabled: typeof actions.toggleJavaScriptEnabled,
-};
-
-class CommandBar extends Component<Props> {
+class CommandBar extends Component {
   componentWillUnmount() {
     const { shortcuts } = this.context;
 
@@ -119,56 +91,54 @@ class CommandBar extends Component<Props> {
     const { shortcuts } = this.context;
 
     COMMANDS.forEach(action =>
-      shortcuts.on(getKey(action), (_, e) => this.handleEvent(e, action))
+      shortcuts.on(getKey(action), e => this.handleEvent(e, action))
     );
 
     if (isMacOS) {
       // The Mac supports both the Windows Function keys
       // as well as the Mac non-Function keys
       COMMANDS.forEach(action =>
-        shortcuts.on(getKeyForOS("WINNT", action), (_, e) =>
+        shortcuts.on(getKeyForOS("WINNT", action), e =>
           this.handleEvent(e, action)
         )
       );
     }
   }
 
-  handleEvent(e: Event, action: CommandActionType) {
+  handleEvent(e, action) {
     const { cx } = this.props;
     e.preventDefault();
     e.stopPropagation();
     if (action === "resume") {
-      this.props.cx.isPaused
-        ? this.props.resume(cx)
-        : this.props.breakOnNext(cx);
+      this.props.isPaused ? this.props.resume() : this.props.breakOnNext(cx);
     } else {
       this.props[action](cx);
     }
   }
 
   renderStepButtons() {
-    const { cx, topFrameSelected } = this.props;
-    const className = cx.isPaused ? "active" : "disabled";
-    const isDisabled = !cx.isPaused;
+    const { isPaused, topFrameSelected } = this.props;
+    const className = isPaused ? "active" : "disabled";
+    const isDisabled = !isPaused;
 
     return [
       this.renderPauseButton(),
       debugBtn(
-        () => this.props.stepOver(cx),
+        () => this.props.stepOver(),
         "stepOver",
         className,
         L10N.getFormatStr("stepOverTooltip", formatKey("stepOver")),
         isDisabled
       ),
       debugBtn(
-        () => this.props.stepIn(cx),
+        () => this.props.stepIn(),
         "stepIn",
         className,
         L10N.getFormatStr("stepInTooltip", formatKey("stepIn")),
         isDisabled || (features.frameStep && !topFrameSelected)
       ),
       debugBtn(
-        () => this.props.stepOut(cx),
+        () => this.props.stepOut(),
         "stepOut",
         className,
         L10N.getFormatStr("stepOutTooltip", formatKey("stepOut")),
@@ -178,13 +148,13 @@ class CommandBar extends Component<Props> {
   }
 
   resume() {
-    this.props.resume(this.props.cx);
+    this.props.resume();
   }
 
   renderPauseButton() {
     const { cx, breakOnNext, isWaitingOnBreak } = this.props;
 
-    if (cx.isPaused) {
+    if (this.props.isPaused) {
       return debugBtn(
         () => this.resume(),
         "resume",
@@ -279,6 +249,13 @@ class CommandBar extends Component<Props> {
           }
         />
         <MenuItem
+          key="debugger-settings-menu-item-disable-wrap-lines"
+          checked={prefs.editorWrapping}
+          label={L10N.getStr("editorWrapping.toggle.label")}
+          tooltip={L10N.getStr("editorWrapping.toggle.tooltip")}
+          onClick={() => this.props.toggleEditorWrapping(!prefs.editorWrapping)}
+        />
+        <MenuItem
           key="debugger-settings-menu-item-disable-sourcemaps"
           checked={prefs.clientSourceMapsEnabled}
           label={L10N.getStr("settings.toggleSourceMaps.label")}
@@ -319,9 +296,10 @@ const mapStateToProps = state => ({
   skipPausing: getSkipPausing(state),
   topFrameSelected: isTopFrameSelected(state, getCurrentThread(state)),
   javascriptEnabled: state.ui.javascriptEnabled,
+  isPaused: getIsCurrentThreadPaused(state),
 });
 
-export default connect<Props, OwnProps, _, _, _, _>(mapStateToProps, {
+export default connect(mapStateToProps, {
   resume: actions.resume,
   stepIn: actions.stepIn,
   stepOut: actions.stepOut,
@@ -330,6 +308,7 @@ export default connect<Props, OwnProps, _, _, _, _>(mapStateToProps, {
   pauseOnExceptions: actions.pauseOnExceptions,
   toggleSkipPausing: actions.toggleSkipPausing,
   toggleInlinePreview: actions.toggleInlinePreview,
+  toggleEditorWrapping: actions.toggleEditorWrapping,
   toggleSourceMapsEnabled: actions.toggleSourceMapsEnabled,
   toggleJavaScriptEnabled: actions.toggleJavaScriptEnabled,
 })(CommandBar);

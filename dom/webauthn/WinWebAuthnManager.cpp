@@ -24,19 +24,17 @@ static HMODULE gWinWebAuthnModule = 0;
 
 static decltype(WebAuthNIsUserVerifyingPlatformAuthenticatorAvailable)*
     gWinWebauthnIsUVPAA = nullptr;
-static decltype(
-    WebAuthNAuthenticatorMakeCredential)* gWinWebauthnMakeCredential = nullptr;
-static decltype(
-    WebAuthNFreeCredentialAttestation)* gWinWebauthnFreeCredentialAttestation =
-    nullptr;
+static decltype(WebAuthNAuthenticatorMakeCredential)*
+    gWinWebauthnMakeCredential = nullptr;
+static decltype(WebAuthNFreeCredentialAttestation)*
+    gWinWebauthnFreeCredentialAttestation = nullptr;
 static decltype(WebAuthNAuthenticatorGetAssertion)* gWinWebauthnGetAssertion =
     nullptr;
 static decltype(WebAuthNFreeAssertion)* gWinWebauthnFreeAssertion = nullptr;
 static decltype(WebAuthNGetCancellationId)* gWinWebauthnGetCancellationId =
     nullptr;
-static decltype(
-    WebAuthNCancelCurrentOperation)* gWinWebauthnCancelCurrentOperation =
-    nullptr;
+static decltype(WebAuthNCancelCurrentOperation)*
+    gWinWebauthnCancelCurrentOperation = nullptr;
 static decltype(WebAuthNGetErrorName)* gWinWebauthnGetErrorName = nullptr;
 static decltype(WebAuthNGetApiVersionNumber)* gWinWebauthnGetApiVersionNumber =
     nullptr;
@@ -57,8 +55,8 @@ WinWebAuthnManager::WinWebAuthnManager() {
   gWinWebAuthnModule = LoadLibrarySystem32(L"webauthn.dll");
 
   if (gWinWebAuthnModule) {
-    gWinWebauthnIsUVPAA = reinterpret_cast<decltype(
-        WebAuthNIsUserVerifyingPlatformAuthenticatorAvailable)*>(
+    gWinWebauthnIsUVPAA = reinterpret_cast<
+        decltype(WebAuthNIsUserVerifyingPlatformAuthenticatorAvailable)*>(
         GetProcAddress(
             gWinWebAuthnModule,
             "WebAuthNIsUserVerifyingPlatformAuthenticatorAvailable"));
@@ -273,7 +271,6 @@ void WinWebAuthnManager::Register(
     // AttestationConveyance
     AttestationConveyancePreference attestation =
         extra.attestationConveyancePreference();
-    DWORD winAttestation = WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_ANY;
     switch (attestation) {
       case AttestationConveyancePreference::Direct:
         winAttestation = WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_DIRECT;
@@ -629,7 +626,7 @@ void WinWebAuthnManager::Sign(PWebAuthnTransactionParent* aTransactionParent,
       aInfo.TimeoutMS(),
       {0, NULL},
       {0, NULL},
-      WEBAUTHN_AUTHENTICATOR_ATTACHMENT_ANY,
+      winAttachment,
       winUserVerificationReq,
       0,  // dwFlags
       winAppIdentifier,
@@ -731,14 +728,18 @@ void WinWebAuthnManager::MaybeAbortSign(const uint64_t& aTransactionId,
 }
 
 void WinWebAuthnManager::Cancel(PWebAuthnTransactionParent* aParent,
-                                const uint64_t& aTransactionId) {
+                                const Tainted<uint64_t>& aTransactionId) {
   if (mTransactionParent != aParent) {
     return;
   }
 
   ClearTransaction();
 
-  auto iter = mCancellationIds.find(aTransactionId);
+  auto iter = mCancellationIds.find(
+      MOZ_NO_VALIDATE(aTransactionId,
+                      "Transaction ID is checked against a global container, "
+                      "so an invalid entry can affect another origin's "
+                      "request. This issue is filed as Bug 1696159."));
   if (iter != mCancellationIds.end()) {
     gWinWebauthnCancelCurrentOperation(iter->second);
   }

@@ -33,6 +33,7 @@
 #include "mozilla/dom/DirectionalityUtils.h"
 #include "nsCCUncollectableMarker.h"
 #include "mozAutoDocUpdate.h"
+#include "nsIContentInlines.h"
 #include "nsTextNode.h"
 #include "nsBidiUtils.h"
 #include "PLDHashTable.h"
@@ -44,8 +45,7 @@
 #  include "nsAccessibilityService.h"
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 CharacterData::CharacterData(already_AddRefed<dom::NodeInfo>&& aNodeInfo)
     : nsIContent(std::move(aNodeInfo)) {
@@ -63,6 +63,10 @@ CharacterData::~CharacterData() {
   if (GetParent()) {
     NS_RELEASE(mParent);
   }
+}
+
+Element* CharacterData::GetNameSpaceElement() {
+  return Element::FromNodeOrNull(GetParentNode());
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(CharacterData)
@@ -123,6 +127,14 @@ void CharacterData::SetNodeValueInternal(const nsAString& aNodeValue,
 //----------------------------------------------------------------------
 
 // Implementation of CharacterData
+
+void CharacterData::SetTextContentInternal(const nsAString& aTextContent,
+                                           nsIPrincipal* aSubjectPrincipal,
+                                           ErrorResult& aError) {
+  // Batch possible DOMSubtreeModified events.
+  mozAutoSubtreeModified subtree(OwnerDoc(), nullptr);
+  return SetNodeValue(aTextContent, aError);
+}
 
 void CharacterData::GetData(nsAString& aData) const {
   if (mText.Is2b()) {
@@ -265,19 +277,16 @@ nsresult CharacterData::SetTextInternal(
                                    aOffset));
 
   if (aOffset == 0 && endOffset == textLength) {
-    // Replacing whole text or old text was empty.  Don't bother to check for
-    // bidi in this string if the document already has bidi enabled.
+    // Replacing whole text or old text was empty.
     // If this is marked as "maybe modified frequently", the text should be
     // stored as char16_t since converting char* to char16_t* is expensive.
-    bool ok =
-        mText.SetTo(aBuffer, aLength, !document || !document->GetBidiEnabled(), aTaint,
-                    HasFlag(NS_MAYBE_MODIFIED_FREQUENTLY));
+    bool ok = mText.SetTo(aBuffer, aLength, true, aTaint,
+                          HasFlag(NS_MAYBE_MODIFIED_FREQUENTLY));
     NS_ENSURE_TRUE(ok, NS_ERROR_OUT_OF_MEMORY);
   } else if (aOffset == textLength) {
-    // Appending to existing
-    bool ok =
-        mText.Append(aBuffer, aLength, !document || !document->GetBidiEnabled(), aTaint,
-                     HasFlag(NS_MAYBE_MODIFIED_FREQUENTLY));
+    // Appending to existing.
+    bool ok = mText.Append(aBuffer, aLength, !mText.IsBidi(), aTaint,
+                           HasFlag(NS_MAYBE_MODIFIED_FREQUENTLY));
     NS_ENSURE_TRUE(ok, NS_ERROR_OUT_OF_MEMORY);
   } else {
     // Merging old and new
@@ -287,7 +296,7 @@ nsresult CharacterData::SetTextInternal(
     mText.Taint().replace(aOffset, endOffset, aLength, aTaint);
 
     // Allocate new buffer
-    int32_t newLength = textLength - aCount + aLength;
+    const uint32_t newLength = textLength - aCount + aLength;
     // Use nsString and not nsAutoString so that we get a nsStringBuffer which
     // can be just AddRefed in nsTextFragment.
     nsString to;
@@ -299,8 +308,8 @@ nsresult CharacterData::SetTextInternal(
     }
     if (aLength) {
       to.Append(aBuffer, aLength);
-      if (!bidi && (!document || !document->GetBidiEnabled())) {
-        bidi = HasRTLChars(MakeSpan(aBuffer, aLength));
+      if (!bidi) {
+        bidi = HasRTLChars(Span(aBuffer, aLength));
       }
     }
     if (endOffset != textLength) {
@@ -360,7 +369,7 @@ nsresult CharacterData::SetTextInternal(
 
 // Implementation of nsIContent
 
-#ifdef DEBUG
+#ifdef MOZ_DOM_LIST
 void CharacterData::ToCString(nsAString& aBuf, int32_t aOffset,
                               int32_t aLen) const {
   if (mText.Is2b()) {
@@ -600,5 +609,4 @@ void CharacterData::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
   *aNodeSize += mText.SizeOfExcludingThis(aSizes.mState.mMallocSizeOf);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

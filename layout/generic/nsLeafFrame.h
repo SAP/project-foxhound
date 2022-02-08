@@ -24,11 +24,8 @@ class nsLeafFrame : public nsIFrame {
   NS_DECL_ABSTRACT_FRAME(nsLeafFrame)
 
   // nsIFrame replacements
-  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
-                                const nsDisplayListSet& aLists) override {
-    DO_GLOBAL_REFLOW_COUNT_DSP("nsLeafFrame");
-    DisplayBorderBackgroundOutline(aBuilder, aLists);
-  }
+  void BuildDisplayList(nsDisplayListBuilder* aBuilder,
+                        const nsDisplayListSet& aLists) override;
 
   /**
    * Both GetMinISize and GetPrefISize will return whatever GetIntrinsicISize
@@ -40,11 +37,13 @@ class nsLeafFrame : public nsIFrame {
   /**
    * Our auto size is just intrinsic width and intrinsic height.
    */
-  virtual mozilla::LogicalSize ComputeAutoSize(
+  mozilla::LogicalSize ComputeAutoSize(
       gfxContext* aRenderingContext, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
-      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
-      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
+      const mozilla::LogicalSize& aMargin,
+      const mozilla::LogicalSize& aBorderPadding,
+      const mozilla::StyleSizeOverrides& aSizeOverrides,
+      mozilla::ComputeSizeFlags aFlags) override;
 
   /**
    * Each of our subclasses should provide its own Reflow impl:

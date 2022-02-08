@@ -9,6 +9,7 @@
 #include "nsIOService.h"
 #include "nsNSSIOLayer.h"
 #include "TransportSecurityInfo.h"
+#include "CertVerifier.h"
 #include "ssl.h"
 #include "sslexp.h"
 
@@ -109,9 +110,7 @@ nsresult SSLTokensCache::Shutdown() {
   return NS_OK;
 }
 
-SSLTokensCache::SSLTokensCache() : mCacheSize(0) {
-  LOG(("SSLTokensCache::SSLTokensCache"));
-}
+SSLTokensCache::SSLTokensCache() { LOG(("SSLTokensCache::SSLTokensCache")); }
 
 SSLTokensCache::~SSLTokensCache() { LOG(("SSLTokensCache::~SSLTokensCache")); }
 
@@ -119,6 +118,26 @@ SSLTokensCache::~SSLTokensCache() { LOG(("SSLTokensCache::~SSLTokensCache")); }
 nsresult SSLTokensCache::Put(const nsACString& aKey, const uint8_t* aToken,
                              uint32_t aTokenLen,
                              nsITransportSecurityInfo* aSecInfo) {
+  PRUint32 expirationTime;
+  SSLResumptionTokenInfo tokenInfo;
+  if (SSL_GetResumptionTokenInfo(aToken, aTokenLen, &tokenInfo,
+                                 sizeof(tokenInfo)) != SECSuccess) {
+    LOG(("  cannot get expiration time from the token, NSS error %d",
+         PORT_GetError()));
+    return NS_ERROR_FAILURE;
+  }
+
+  expirationTime = tokenInfo.expirationTime;
+  SSL_DestroyResumptionTokenInfo(&tokenInfo);
+
+  return Put(aKey, aToken, aTokenLen, aSecInfo, expirationTime);
+}
+
+// static
+nsresult SSLTokensCache::Put(const nsACString& aKey, const uint8_t* aToken,
+                             uint32_t aTokenLen,
+                             nsITransportSecurityInfo* aSecInfo,
+                             PRUint32 aExpirationTime) {
   StaticMutexAutoLock lock(sLock);
 
   LOG(("SSLTokensCache::Put [key=%s, tokenLen=%u]",
@@ -132,17 +151,6 @@ nsresult SSLTokensCache::Put(const nsACString& aKey, const uint8_t* aToken,
   if (!aSecInfo) {
     return NS_ERROR_FAILURE;
   }
-
-  PRUint32 expirationTime;
-  SSLResumptionTokenInfo tokenInfo;
-  if (SSL_GetResumptionTokenInfo(aToken, aTokenLen, &tokenInfo,
-                                 sizeof(tokenInfo)) != SECSuccess) {
-    LOG(("  cannot get expiration time from the token, NSS error %d",
-         PORT_GetError()));
-    return NS_ERROR_FAILURE;
-  }
-  expirationTime = tokenInfo.expirationTime;
-  SSL_DestroyResumptionTokenInfo(&tokenInfo);
 
   nsCOMPtr<nsIX509Cert> cert;
   aSecInfo->GetServerCert(getter_AddRefs(cert));
@@ -196,19 +204,22 @@ nsresult SSLTokensCache::Put(const nsACString& aKey, const uint8_t* aToken,
     return rv;
   }
 
-  TokenCacheRecord* rec = nullptr;
+  TokenCacheRecord* const rec =
+      gInstance->mTokenCacheRecords.WithEntryHandle(aKey, [&](auto&& entry) {
+        if (!entry) {
+          auto rec = MakeUnique<TokenCacheRecord>();
+          rec->mKey = aKey;
+          gInstance->mExpirationArray.AppendElement(rec.get());
+          entry.Insert(std::move(rec));
+        } else {
+          gInstance->mCacheSize -= entry.Data()->Size();
+          entry.Data()->Reset();
+        }
 
-  if (!gInstance->mTokenCacheRecords.Get(aKey, &rec)) {
-    rec = new TokenCacheRecord();
-    rec->mKey = aKey;
-    gInstance->mTokenCacheRecords.Put(aKey, rec);
-    gInstance->mExpirationArray.AppendElement(rec);
-  } else {
-    gInstance->mCacheSize -= rec->Size();
-    rec->Reset();
-  }
+        return entry->get();
+      });
 
-  rec->mExpirationTime = expirationTime;
+  rec->mExpirationTime = aExpirationTime;
   MOZ_ASSERT(rec->mToken.IsEmpty());
   rec->mToken.AppendElements(aToken, aTokenLen);
 
@@ -386,7 +397,8 @@ SSLTokensCache::CollectReports(nsIHandleReportCallback* aHandleReport,
 // static
 void SSLTokensCache::Clear() {
   LOG(("SSLTokensCache::Clear"));
-  if (!StaticPrefs::network_ssl_tokens_cache_enabled()) {
+  if (!StaticPrefs::network_ssl_tokens_cache_enabled() &&
+      !StaticPrefs::network_http_http3_enable_0rtt()) {
     return;
   }
 

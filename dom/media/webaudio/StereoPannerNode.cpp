@@ -15,8 +15,7 @@
 #include "AudioParamTimeline.h"
 #include "AudioParam.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(StereoPannerNode, AudioNode, mPan)
 
@@ -154,7 +153,8 @@ class StereoPannerNodeEngine final : public AudioNodeEngine {
 StereoPannerNode::StereoPannerNode(AudioContext* aContext)
     : AudioNode(aContext, 2, ChannelCountMode::Clamped_max,
                 ChannelInterpretation::Speakers) {
-  CreateAudioParam(mPan, StereoPannerNodeEngine::PAN, u"pan", 0.f, -1.f, 1.f);
+  mPan =
+      CreateAudioParam(StereoPannerNodeEngine::PAN, u"pan"_ns, 0.f, -1.f, 1.f);
   StereoPannerNodeEngine* engine =
       new StereoPannerNodeEngine(this, aContext->Destination());
   mTrack = AudioNodeTrack::Create(
@@ -172,7 +172,7 @@ already_AddRefed<StereoPannerNode> StereoPannerNode::Create(
     return nullptr;
   }
 
-  audioNode->Pan()->SetValue(aOptions.mPan);
+  audioNode->Pan()->SetInitialValue(aOptions.mPan);
   return audioNode.forget();
 }
 
@@ -191,5 +191,4 @@ JSObject* StereoPannerNode::WrapObject(JSContext* aCx,
   return StereoPannerNode_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

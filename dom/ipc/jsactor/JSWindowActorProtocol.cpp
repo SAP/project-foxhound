@@ -5,10 +5,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/Event.h"
+#include "mozilla/dom/JSActorBinding.h"
 #include "mozilla/dom/JSActorService.h"
+#include "mozilla/dom/JSWindowActorBinding.h"
+#include "mozilla/dom/JSWindowActorChild.h"
+#include "mozilla/dom/JSWindowActorProtocol.h"
+#include "mozilla/dom/PContent.h"
+#include "mozilla/dom/WindowGlobalChild.h"
 
-namespace mozilla {
-namespace dom {
+#include "nsContentUtils.h"
+
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(JSWindowActorProtocol)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(JSWindowActorProtocol)
@@ -44,6 +53,7 @@ JSWindowActorProtocol::FromIPC(const JSWindowActorInfo& aInfo) {
     if (ipc.passive()) {
       event->mPassive.Construct(ipc.passive().value());
     }
+    event->mCreateActor = ipc.createActor();
   }
 
   proto->mChild.mObservers = aInfo.observers().Clone();
@@ -71,6 +81,7 @@ JSWindowActorInfo JSWindowActorProtocol::ToIPC() {
     if (event.mPassive.WasPassed()) {
       ipc->passive() = Some(event.mPassive.Value());
     }
+    ipc->createActor() = event.mCreateActor;
   }
 
   info.observers() = mChild.mObservers.Clone();
@@ -142,6 +153,7 @@ JSWindowActorProtocol::FromWebIDLOptions(const nsACString& aName,
       if (entry.mValue.mPassive.WasPassed()) {
         evt->mPassive.Construct(entry.mValue.mPassive.Value());
       }
+      evt->mCreateActor = entry.mValue.mCreateActor;
     }
   }
 
@@ -179,8 +191,28 @@ NS_IMETHODIMP JSWindowActorProtocol::HandleEvent(Event* aEvent) {
   }
 
   // Ensure our actor is present.
-  RefPtr<JSActor> actor = wgc->GetActor(mName, IgnoreErrors());
+  RefPtr<JSActor> actor = wgc->GetExistingActor(mName);
   if (!actor) {
+    // Check if we're supposed to create the actor when this event is fired.
+    bool createActor = true;
+    nsAutoString typeStr;
+    aEvent->GetType(typeStr);
+    for (auto& event : mChild.mEvents) {
+      if (event.mName == typeStr) {
+        createActor = event.mCreateActor;
+        break;
+      }
+    }
+
+    // If we're supposed to create the actor, call GetActor to cause it to be
+    // created.
+    if (createActor) {
+      AutoJSAPI jsapi;
+      jsapi.Init();
+      actor = wgc->GetActor(jsapi.cx(), mName, IgnoreErrors());
+    }
+  }
+  if (!actor || NS_WARN_IF(!actor->GetWrapperPreserveColor())) {
     return NS_OK;
   }
 
@@ -203,7 +235,17 @@ NS_IMETHODIMP JSWindowActorProtocol::Observe(nsISupports* aSubject,
 
   if (!inner) {
     nsCOMPtr<nsPIDOMWindowOuter> outer = do_QueryInterface(aSubject);
-    if (NS_WARN_IF(!outer) || NS_WARN_IF(!outer->GetCurrentInnerWindow())) {
+    if (NS_WARN_IF(!outer)) {
+      nsContentUtils::LogSimpleConsoleError(
+          NS_ConvertUTF8toUTF16(nsPrintfCString(
+              "JSWindowActor %s: expected window subject for topic '%s'.",
+              mName.get(), aTopic)),
+          "JSActor",
+          /* aFromPrivateWindow */ false,
+          /* aFromChromeContext */ true);
+      return NS_ERROR_FAILURE;
+    }
+    if (NS_WARN_IF(!outer->GetCurrentInnerWindow())) {
       return NS_ERROR_FAILURE;
     }
     wgc = outer->GetCurrentInnerWindow()->GetWindowGlobalChild();
@@ -216,13 +258,15 @@ NS_IMETHODIMP JSWindowActorProtocol::Observe(nsISupports* aSubject,
   }
 
   // Ensure our actor is present.
-  RefPtr<JSActor> actor = wgc->GetActor(mName, IgnoreErrors());
-  if (!actor) {
+  AutoJSAPI jsapi;
+  jsapi.Init();
+  RefPtr<JSActor> actor = wgc->GetActor(jsapi.cx(), mName, IgnoreErrors());
+  if (!actor || NS_WARN_IF(!actor->GetWrapperPreserveColor())) {
     return NS_OK;
   }
 
   // Build a observer callback.
-  JS::Rooted<JSObject*> global(RootingCx(),
+  JS::Rooted<JSObject*> global(jsapi.cx(),
                                JS::GetNonCCWObjectGlobal(actor->GetWrapper()));
   RefPtr<MozObserverCallback> observerCallback =
       new MozObserverCallback(actor->GetWrapper(), global, nullptr, nullptr);
@@ -316,31 +360,45 @@ bool JSWindowActorProtocol::MessageManagerGroupMatches(
 }
 
 bool JSWindowActorProtocol::Matches(BrowsingContext* aBrowsingContext,
-                                    nsIURI* aURI,
-                                    const nsACString& aRemoteType) {
+                                    nsIURI* aURI, const nsACString& aRemoteType,
+                                    ErrorResult& aRv) {
   MOZ_ASSERT(aBrowsingContext, "DocShell without a BrowsingContext!");
   MOZ_ASSERT(aURI, "Must have URI!");
 
   if (!mAllFrames && aBrowsingContext->GetParent()) {
+    aRv.ThrowNotSupportedError(nsPrintfCString(
+        "Window protocol '%s' doesn't match subframes", mName.get()));
     return false;
   }
 
   if (!mIncludeChrome && !aBrowsingContext->IsContent()) {
+    aRv.ThrowNotSupportedError(nsPrintfCString(
+        "Window protocol '%s' doesn't match chrome browsing contexts",
+        mName.get()));
     return false;
   }
 
   if (!mRemoteTypes.IsEmpty() &&
       !RemoteTypePrefixMatches(RemoteTypePrefix(aRemoteType))) {
+    aRv.ThrowNotSupportedError(
+        nsPrintfCString("Window protocol '%s' doesn't match remote type '%s'",
+                        mName.get(), PromiseFlatCString(aRemoteType).get()));
     return false;
   }
 
   if (!mMessageManagerGroups.IsEmpty() &&
       !MessageManagerGroupMatches(aBrowsingContext)) {
+    aRv.ThrowNotSupportedError(nsPrintfCString(
+        "Window protocol '%s' doesn't match message manager group",
+        mName.get()));
     return false;
   }
 
   if (extensions::MatchPatternSet* uriMatcher = GetURIMatcher()) {
     if (!uriMatcher->Matches(aURI)) {
+      aRv.ThrowNotSupportedError(nsPrintfCString(
+          "Window protocol '%s' doesn't match uri %s", mName.get(),
+          nsContentUtils::TruncatedURLForDisplay(aURI).get()));
       return false;
     }
   }
@@ -348,5 +406,4 @@ bool JSWindowActorProtocol::Matches(BrowsingContext* aBrowsingContext,
   return true;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

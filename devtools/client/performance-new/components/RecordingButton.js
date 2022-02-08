@@ -11,9 +11,15 @@
 /**
  * @typedef {Object} StateProps
  * @property {RecordingState} recordingState
- * @property {boolean} isSupportedPlatform
+ * @property {boolean | null} isSupportedPlatform
  * @property {boolean} recordingUnexpectedlyStopped
  * @property {PageContext} pageContext
+ */
+
+/**
+ * @typedef {Object} OwnProps
+ * @property {import("../@types/perf").OnProfileReceived} onProfileReceived
+ * @property {import("../@types/perf").PerfFront} perfFront
  */
 
 /**
@@ -26,7 +32,7 @@
 
 /**
  * @typedef {ResolveThunks<ThunkDispatchProps>} DispatchProps
- * @typedef {StateProps & DispatchProps} Props
+ * @typedef {StateProps & DispatchProps & OwnProps} Props
  * @typedef {import("../@types/perf").RecordingState} RecordingState
  * @typedef {import("../@types/perf").State} StoreState
  * @typedef {import("../@types/perf").PageContext} PageContext
@@ -44,6 +50,10 @@ const {
 const { connect } = require("devtools/client/shared/vendor/react-redux");
 const actions = require("devtools/client/performance-new/store/actions");
 const selectors = require("devtools/client/performance-new/store/selectors");
+const React = require("devtools/client/shared/vendor/react");
+const Localized = React.createFactory(
+  require("devtools/client/shared/vendor/fluent-react").Localized
+);
 
 /**
  * This component is not responsible for the full life cycle of recording a profile. It
@@ -53,14 +63,31 @@ const selectors = require("devtools/client/performance-new/store/selectors");
  * @extends {React.PureComponent<Props>}
  */
 class RecordingButton extends PureComponent {
+  _onStartButtonClick = () => {
+    const { startRecording, perfFront } = this.props;
+    startRecording(perfFront);
+  };
+
+  _onCaptureButtonClick = async () => {
+    const {
+      getProfileAndStopProfiler,
+      onProfileReceived,
+      perfFront,
+    } = this.props;
+    const profile = await getProfileAndStopProfiler(perfFront);
+    onProfileReceived(profile);
+  };
+
+  _onStopButtonClick = () => {
+    const { stopProfilerAndDiscardProfile, perfFront } = this.props;
+    stopProfilerAndDiscardProfile(perfFront);
+  };
+
   render() {
     const {
-      startRecording,
-      stopProfilerAndDiscardProfile,
       recordingState,
       isSupportedPlatform,
       recordingUnexpectedlyStopped,
-      getProfileAndStopProfiler,
     } = this.props;
 
     if (!isSupportedPlatform) {
@@ -69,35 +96,44 @@ class RecordingButton extends PureComponent {
         isPrimary: true,
         disabled: true,
         additionalMessage:
+          // No need to localize as this string is not displayed to Tier-1 platforms.
           "Your platform is not supported. The Gecko Profiler only " +
           "supports Tier-1 platforms.",
       });
     }
 
-    // TODO - L10N all of the messages. Bug 1418056
     switch (recordingState) {
       case "not-yet-known":
         return null;
 
       case "available-to-record":
         return renderButton({
-          onClick: startRecording,
+          onClick: this._onStartButtonClick,
           isPrimary: true,
           label: startRecordingLabel(),
           additionalMessage: recordingUnexpectedlyStopped
-            ? div(null, "The recording was stopped by another tool.")
+            ? Localized(
+                { id: "perftools-status-recording-stopped-by-another-tool" },
+                div(null, "The recording was stopped by another tool.")
+              )
             : null,
         });
 
       case "request-to-stop-profiler":
         return renderButton({
-          label: "Stopping recording",
+          label: Localized(
+            { id: "perftools-request-to-stop-profiler" },
+            "Stopping recording"
+          ),
           disabled: true,
         });
 
       case "request-to-get-profile-and-stop-profiler":
         return renderButton({
-          label: "Capturing profile",
+          label: Localized(
+            { id: "perftools-request-to-get-profile-and-stop-profiler" },
+            "Capturing profile"
+          ),
           disabled: true,
         });
 
@@ -106,7 +142,10 @@ class RecordingButton extends PureComponent {
         return renderButton({
           label: span(
             null,
-            "Capture recording",
+            Localized(
+              { id: "perftools-button-capture-recording" },
+              "Capture recording"
+            ),
             img({
               className: "perf-button-image",
               alt: "",
@@ -115,11 +154,14 @@ class RecordingButton extends PureComponent {
             })
           ),
           isPrimary: true,
-          onClick: getProfileAndStopProfiler,
+          onClick: this._onCaptureButtonClick,
           disabled: recordingState === "request-to-start-recording",
           additionalButton: {
-            label: "Cancel recording",
-            onClick: stopProfilerAndDiscardProfile,
+            label: Localized(
+              { id: "perftools-button-cancel-recording" },
+              "Cancel recording"
+            ),
+            onClick: this._onStopButtonClick,
           },
         });
 
@@ -128,8 +170,11 @@ class RecordingButton extends PureComponent {
           label: startRecordingLabel(),
           isPrimary: true,
           disabled: true,
-          additionalMessage: `The profiler is disabled when Private Browsing is enabled.
-                              Close all Private Windows to re-enable the profiler`,
+          additionalMessage: Localized(
+            { id: "perftools-status-private-browsing-notice" },
+            `The profiler is disabled when Private Browsing is enabled.
+             Close all Private Windows to re-enable the profiler`
+          ),
         });
 
       default:
@@ -147,7 +192,7 @@ class RecordingButton extends PureComponent {
  *   isPrimary?: boolean,
  *   pageContext?: PageContext,
  *   additionalButton?: {
- *     label: string,
+ *     label: React.ReactNode,
  *     onClick: any,
  *   },
  * }} buttonSettings
@@ -197,7 +242,7 @@ function renderButton(buttonSettings) {
 function startRecordingLabel() {
   return span(
     null,
-    "Start recording",
+    Localized({ id: "perftools-button-start-recording" }, "Start recording"),
     img({
       className: "perf-button-image",
       alt: "",

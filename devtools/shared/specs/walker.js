@@ -85,6 +85,10 @@ const walkerSpec = generateActorSpec({
       type: "scrollable-change",
       nodes: Arg(0, "array:domnode"),
     },
+    "overflow-change": {
+      type: "overflow-change",
+      nodes: Arg(0, "array:domnode"),
+    },
     // The walker actor emits a useful "resize" event to its front to let
     // clients know when the browser window gets resized. This may be useful
     // for refreshing a DOM node's styles for example, since those may depend on
@@ -138,14 +142,6 @@ const walkerSpec = generateActorSpec({
       request: {
         node: Arg(0, "domnode"),
         selector: Arg(1),
-      },
-      response: {
-        list: RetVal("domnodelist"),
-      },
-    },
-    multiFrameQuerySelectorAll: {
-      request: {
-        selector: Arg(0),
       },
       response: {
         list: RetVal("domnodelist"),
@@ -283,14 +279,6 @@ const walkerSpec = generateActorSpec({
       request: { node: Arg(0, "domnode") },
       response: { attached: RetVal("boolean") },
     },
-    getNodeActorFromObjectActor: {
-      request: {
-        objectActorID: Arg(0, "string"),
-      },
-      response: {
-        nodeFront: RetVal("nullable:disconnectedNode"),
-      },
-    },
     getNodeActorFromWindowID: {
       request: {
         windowID: Arg(0, "string"),
@@ -372,13 +360,29 @@ const walkerSpec = generateActorSpec({
       request: {},
       response: {},
     },
+    clearPicker: {
+      request: {},
+      oneway: true,
+    },
     watchRootNode: {
       request: {},
       response: {},
     },
-    unwatchRootNode: {
-      request: {},
-      oneway: true,
+    getOverflowCausingElements: {
+      request: {
+        node: Arg(0, "domnode"),
+      },
+      response: {
+        list: RetVal("disconnectedNodeArray"),
+      },
+    },
+    getScrollableAncestorNode: {
+      request: {
+        node: Arg(0, "domnode"),
+      },
+      response: {
+        node: RetVal("nullable:domnode"),
+      },
     },
   },
 });

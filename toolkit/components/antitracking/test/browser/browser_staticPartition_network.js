@@ -4,7 +4,7 @@ function altSvcCacheKeyIsolated(parsed) {
 
 function altSvcPartitionKey(key) {
   let parts = key.split(":");
-  return parts[parts.length - 1];
+  return parts[parts.length - 2];
 }
 
 const gHttpHandler = Cc["@mozilla.org/network/protocol;1?name=http"].getService(
@@ -20,6 +20,10 @@ add_task(async function() {
       ["browser.cache.disk.enable", false],
       ["browser.cache.memory.enable", false],
       ["network.cookie.cookieBehavior", Ci.nsICookieService.BEHAVIOR_ACCEPT],
+      [
+        "network.cookie.cookieBehavior.pbmode",
+        Ci.nsICookieService.BEHAVIOR_ACCEPT,
+      ],
       ["network.http.altsvc.proxy_checks", false],
       ["privacy.trackingprotection.enabled", false],
       ["privacy.trackingprotection.pbmode.enabled", false],
@@ -91,7 +95,7 @@ add_task(async function() {
     await p;
   });
 
-  checkAltSvcCache([partitionKey2, partitionKey1]);
+  checkAltSvcCache([partitionKey1, partitionKey2]);
 
   info("Removing the tabs");
   BrowserTestUtils.removeTab(tab);

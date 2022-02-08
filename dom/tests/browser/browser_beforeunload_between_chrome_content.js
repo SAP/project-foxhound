@@ -1,5 +1,9 @@
 const TEST_URL = "http://www.example.com/browser/dom/tests/browser/dummy.html";
 
+const { PromptTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PromptTestUtils.jsm"
+);
+
 function pageScript() {
   window.addEventListener(
     "beforeunload",
@@ -28,19 +32,12 @@ function injectBeforeUnload(browser) {
 }
 
 // Wait for onbeforeunload dialog, and dismiss it immediately.
-function awaitAndCloseBeforeUnloadDialog(doStayOnPage) {
-  return new Promise(resolve => {
-    function onDialogShown(node) {
-      Services.obs.removeObserver(onDialogShown, "tabmodal-dialog-loaded");
-      let button = node.querySelector(
-        doStayOnPage ? ".tabmodalprompt-button1" : ".tabmodalprompt-button0"
-      );
-      button.click();
-      resolve();
-    }
-
-    Services.obs.addObserver(onDialogShown, "tabmodal-dialog-loaded");
-  });
+function awaitAndCloseBeforeUnloadDialog(browser, doStayOnPage) {
+  return PromptTestUtils.handleNextPrompt(
+    browser,
+    { modalType: Services.prompt.MODAL_TYPE_CONTENT, promptType: "confirmEx" },
+    { buttonNumClick: doStayOnPage ? 1 : 0 }
+  );
 }
 
 SpecialPowers.pushPrefEnv({
@@ -66,8 +63,8 @@ add_task(async function() {
 
   await injectBeforeUnload(browser);
   // Navigate to a chrome page.
-  let dialogShown1 = awaitAndCloseBeforeUnloadDialog(false);
-  await BrowserTestUtils.loadURI(browser, "about:support");
+  let dialogShown1 = awaitAndCloseBeforeUnloadDialog(browser, false);
+  BrowserTestUtils.loadURI(browser, "about:support");
   await Promise.all([dialogShown1, BrowserTestUtils.browserLoaded(browser)]);
 
   is(beforeUnloadCount, 1, "Should have received one beforeunload event.");
@@ -122,7 +119,7 @@ add_task(async function() {
 
   // Navigate to a content page.
   let dialogShown1 = awaitAndCloseBeforeUnloadDialog(false);
-  await BrowserTestUtils.loadURI(browser, TEST_URL);
+  BrowserTestUtils.loadURI(browser, TEST_URL);
   await Promise.all([dialogShown1, BrowserTestUtils.browserLoaded(browser)]);
   is(beforeUnloadCount, 1, "Should have received one beforeunload event.");
   ok(browser.isRemoteBrowser, "Browser should be remote.");

@@ -12,9 +12,7 @@
 #include "mozilla/dom/cache/CacheOpChild.h"
 #include "CacheWorkerRef.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 // Declared in ActorUtils.h
 PCacheChild* AllocPCacheChild() { return new CacheChild(); }
@@ -99,7 +97,7 @@ void CacheChild::StartDestroy() {
   MOZ_DIAGNOSTIC_ASSERT(!mListener);
 
   // Start actor destruction from parent process
-  Unused << SendTeardown();
+  QM_WARNONLY_TRY(OkIf(SendTeardown()));
 }
 
 void CacheChild::ActorDestroy(ActorDestroyReason aReason) {
@@ -149,6 +147,4 @@ void CacheChild::Unlock() {
   MaybeFlushDelayedDestroy();
 }
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache

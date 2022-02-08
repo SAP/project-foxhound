@@ -8,6 +8,7 @@
 
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 
+#include "gc/GCEnum.h"                    // js::gc::ZealMode
 #include "js/CompilationAndEvaluation.h"  // JS::Evaluate
 #include "js/SourceText.h"                // JS::Source{Ownership,Text}
 #include "jsapi-tests/tests.h"
@@ -64,15 +65,15 @@ virtual JSContext* createContext() override {
   // OOM. (Actually, this only happens with nursery zeal, because normally
   // the nursery will start out with only a single chunk before triggering a
   // major GC.)
-  JSContext* cx = JS_NewContext(1024 * 1024);
+  JSContext* cx = JS_NewContext(4 * 1024 * 1024);
   if (!cx) {
     return nullptr;
   }
   JS_SetGCParameter(cx, JSGC_MAX_NURSERY_BYTES, js::gc::ChunkSize);
-  setNativeStackQuota(cx);
+#ifdef JS_GC_ZEAL
+  JS_UnsetGCZeal(cx, uint8_t(js::gc::ZealMode::GenerationalGC));
+#endif
   return cx;
 }
-
-virtual void destroyContext() override { JS_DestroyContext(cx); }
 
 END_TEST(testGCOutOfMemory)

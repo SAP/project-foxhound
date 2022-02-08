@@ -9,9 +9,7 @@
 #include "mozilla/dom/cache/CacheOpParent.h"
 #include "nsCOMPtr.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 // Declared in ActorUtils.h
 void DeallocPCacheParent(PCacheParent* aActor) { delete aActor; }
@@ -59,13 +57,9 @@ mozilla::ipc::IPCResult CacheParent::RecvPCacheOpConstructor(
 }
 
 mozilla::ipc::IPCResult CacheParent::RecvTeardown() {
-  if (!Send__delete__(this)) {
-    // child process is gone, warn and allow actor to clean up normally
-    NS_WARNING("Cache failed to send delete.");
-  }
+  // If child process is gone, warn and allow actor to clean up normally
+  QM_WARNONLY_TRY(OkIf(Send__delete__(this)));
   return IPC_OK();
 }
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache

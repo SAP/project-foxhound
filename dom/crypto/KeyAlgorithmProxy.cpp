@@ -5,11 +5,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/KeyAlgorithmProxy.h"
+
+#include "js/StructuredClone.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/dom/StructuredCloneHolder.h"
 #include "mozilla/dom/WebCryptoCommon.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 bool KeyAlgorithmProxy::WriteStructuredClone(
     JSStructuredCloneWriter* aWriter) const {
@@ -200,6 +202,19 @@ nsString KeyAlgorithmProxy::JwkAlg() const {
     }
   }
 
+  if (mName.EqualsLiteral(WEBCRYPTO_ALG_ECDSA)) {
+    nsString curveName = mEc.mNamedCurve;
+    if (curveName.EqualsLiteral(WEBCRYPTO_NAMED_CURVE_P256)) {
+      return NS_LITERAL_STRING_FROM_CSTRING(JWK_ALG_ECDSA_P_256);
+    }
+    if (curveName.EqualsLiteral(WEBCRYPTO_NAMED_CURVE_P384)) {
+      return NS_LITERAL_STRING_FROM_CSTRING(JWK_ALG_ECDSA_P_384);
+    }
+    if (curveName.EqualsLiteral(WEBCRYPTO_NAMED_CURVE_P521)) {
+      return NS_LITERAL_STRING_FROM_CSTRING(JWK_ALG_ECDSA_P_521);
+    }
+  }
+
   return nsString();
 }
 
@@ -233,5 +248,4 @@ KeyAlgorithmProxy::GetMechanism(const HmacKeyAlgorithm& aAlgorithm) {
   return UNKNOWN_CK_MECHANISM;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

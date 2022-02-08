@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include "TCPSocketChild.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/Unused.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/net/NeckoChild.h"
@@ -44,8 +45,7 @@ bool DeserializeArrayBuffer(JSContext* cx, const nsTArray<uint8_t>& aBuffer,
 
 }  // namespace IPC
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(TCPSocketChildBase)
 
@@ -130,7 +130,7 @@ mozilla::ipc::IPCResult TCPSocketChild::RecvCallback(
 
   } else if (aData.type() == CallbackData::TTCPError) {
     const TCPError& err(aData.get_TCPError());
-    mSocket->FireErrorEvent(err.name(), err.message());
+    mSocket->FireErrorEvent(err.name(), err.message(), err.errorCode());
 
   } else if (aData.type() == CallbackData::TSendableData) {
     const SendableData& data = aData.get_SendableData();
@@ -178,5 +178,4 @@ mozilla::ipc::IPCResult TCPSocketChild::RecvRequestDelete() {
   return IPC_OK();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -8,6 +8,9 @@
 
 #include "mozilla/Maybe.h"
 
+#include "jsapi.h"
+
+#include "builtin/ModuleObject.h"
 #include "builtin/Promise.h"
 #include "vm/FunctionFlags.h"  // js::FunctionFlags
 #include "vm/GeneratorObject.h"
@@ -34,11 +37,11 @@ static JSObject* CreateAsyncFunction(JSContext* cx, JSProtoKey key) {
   HandlePropertyName name = cx->names().AsyncFunction;
   return NewFunctionWithProto(cx, AsyncFunctionConstructor, 1,
                               FunctionFlags::NATIVE_CTOR, nullptr, name, proto,
-                              gc::AllocKind::FUNCTION, SingletonObject);
+                              gc::AllocKind::FUNCTION, TenuredObject);
 }
 
 static JSObject* CreateAsyncFunctionPrototype(JSContext* cx, JSProtoKey key) {
-  return NewSingletonObjectWithFunctionPrototype(cx, cx->global());
+  return NewTenuredObjectWithFunctionPrototype(cx, cx->global());
 }
 
 static bool AsyncFunctionClassFinish(JSContext* cx, HandleObject asyncFunction,
@@ -46,10 +49,8 @@ static bool AsyncFunctionClassFinish(JSContext* cx, HandleObject asyncFunction,
   // Change the "constructor" property to non-writable before adding any other
   // properties, so it's still the last property and can be modified without a
   // dictionary-mode transition.
-  MOZ_ASSERT(StringEqualsAscii(
-      JSID_TO_LINEAR_STRING(
-          asyncFunctionProto->as<NativeObject>().lastProperty()->propid()),
-      "constructor"));
+  MOZ_ASSERT(asyncFunctionProto->as<NativeObject>().getLastProperty().key() ==
+             NameToId(cx->names().constructor));
   MOZ_ASSERT(!asyncFunctionProto->as<NativeObject>().inDictionaryMode());
 
   RootedValue asyncFunctionVal(cx, ObjectValue(*asyncFunction));
@@ -77,9 +78,17 @@ const JSClass js::AsyncFunctionClass = {"AsyncFunction", 0, JS_NULL_CLASS_OPS,
 
 enum class ResumeKind { Normal, Throw };
 
-// ES2020 draft rev a09fc232c137800dbf51b6204f37fdede4ba1646
-// 6.2.3.1.1 Await Fulfilled Functions
-// 6.2.3.1.2 Await Rejected Functions
+/**
+ * ES2022 draft rev d03c1ec6e235a5180fa772b6178727c17974cb14
+ *
+ * Await in async function
+ * https://tc39.es/ecma262/#await
+ *
+ * Unified implementation of
+ *
+ * Step 3. fulfilledClosure Abstract Closure.
+ * Step 5. rejectedClosure Abstract Closure.
+ */
 static bool AsyncFunctionResume(JSContext* cx,
                                 Handle<AsyncFunctionGeneratorObject*> generator,
                                 ResumeKind kind, HandleValue valueOrReason) {
@@ -118,6 +127,21 @@ static bool AsyncFunctionResume(JSContext* cx,
   MOZ_ASSERT(generator->isSuspended(),
              "non-suspended generator when resuming async function");
 
+  // Step {3,5}.a. Let prevContext be the running execution context.
+  // Step {3,5}.b. Suspend prevContext.
+  // Step {3,5}.c. Push asyncContext onto the execution context stack;
+  //               asyncContext is now the running execution context.
+  //
+  // fulfilledClosure
+  // Step 3.d. Resume the suspended evaluation of asyncContext using
+  //           NormalCompletion(value) as the result of the operation that
+  //           suspended it.
+  //
+  // rejectedClosure
+  // Step 5.d. Resume the suspended evaluation of asyncContext using
+  //           ThrowCompletion(reason) as the result of the operation that
+  //           suspended it.
+  //
   // Execution context switching is handled in generator.
   HandlePropertyName funName = kind == ResumeKind::Normal
                                    ? cx->names().AsyncFunctionNext
@@ -143,6 +167,10 @@ static bool AsyncFunctionResume(JSContext* cx,
     return false;
   }
 
+  // Step {3,f}.e. Assert: When we reach this step, asyncContext has already
+  //               been removed from the execution context stack and
+  //               prevContext is the currently running execution context.
+  // Step {3,f}.f. Return undefined.
   MOZ_ASSERT_IF(generator->isClosed(), generatorOrValue.isObject());
   MOZ_ASSERT_IF(generator->isClosed(),
                 &generatorOrValue.toObject() == resultPromise);
@@ -151,17 +179,29 @@ static bool AsyncFunctionResume(JSContext* cx,
   return true;
 }
 
-// ES2020 draft rev a09fc232c137800dbf51b6204f37fdede4ba1646
-// 6.2.3.1.1 Await Fulfilled Functions
-MOZ_MUST_USE bool js::AsyncFunctionAwaitedFulfilled(
+/**
+ * ES2022 draft rev d03c1ec6e235a5180fa772b6178727c17974cb14
+ *
+ * Await in async function
+ * https://tc39.es/ecma262/#await
+ *
+ * Step 3. fulfilledClosure Abstract Closure.
+ */
+[[nodiscard]] bool js::AsyncFunctionAwaitedFulfilled(
     JSContext* cx, Handle<AsyncFunctionGeneratorObject*> generator,
     HandleValue value) {
   return AsyncFunctionResume(cx, generator, ResumeKind::Normal, value);
 }
 
-// ES2020 draft rev a09fc232c137800dbf51b6204f37fdede4ba1646
-// 6.2.3.1.2 Await Rejected Functions
-MOZ_MUST_USE bool js::AsyncFunctionAwaitedRejected(
+/**
+ * ES2022 draft rev d03c1ec6e235a5180fa772b6178727c17974cb14
+ *
+ * Await in async function
+ * https://tc39.es/ecma262/#await
+ *
+ * Step 5. rejectedClosure Abstract Closure.
+ */
+[[nodiscard]] bool js::AsyncFunctionAwaitedRejected(
     JSContext* cx, Handle<AsyncFunctionGeneratorObject*> generator,
     HandleValue reason) {
   return AsyncFunctionResume(cx, generator, ResumeKind::Throw, reason);
@@ -217,6 +257,67 @@ AsyncFunctionGeneratorObject* AsyncFunctionGeneratorObject::create(
     return nullptr;
   }
   obj->initFixedSlot(PROMISE_SLOT, ObjectValue(*resultPromise));
+
+  // Starts in the running state.
+  obj->setResumeIndex(AbstractGeneratorObject::RESUME_INDEX_RUNNING);
+
+  return obj;
+}
+
+JSFunction* NewHandler(JSContext* cx, Native handler,
+                       JS::Handle<JSObject*> target) {
+  cx->check(target);
+
+  JS::Handle<PropertyName*> funName = cx->names().empty;
+  JS::Rooted<JSFunction*> handlerFun(
+      cx, NewNativeFunction(cx, handler, 0, funName,
+                            gc::AllocKind::FUNCTION_EXTENDED, GenericObject));
+  if (!handlerFun) {
+    return nullptr;
+  }
+  handlerFun->setExtendedSlot(FunctionExtended::MODULE_SLOT,
+                              JS::ObjectValue(*target));
+  return handlerFun;
+}
+
+AsyncFunctionGeneratorObject* AsyncFunctionGeneratorObject::create(
+    JSContext* cx, HandleModuleObject module) {
+  // TODO: Module is currently hitching a ride with
+  // AsyncFunctionGeneratorObject. The reason for this is we have some work in
+  // the JITs that make use of this object when we hit AsyncAwait bytecode. At
+  // the same time, top level await shares a lot of it's implementation with
+  // AsyncFunction. I am not sure if the best thing to do here is inherit,
+  // override, or do something else. Comments appreciated.
+  MOZ_ASSERT(module->script()->isAsync());
+
+  Rooted<PromiseObject*> resultPromise(cx, CreatePromiseObjectForAsync(cx));
+  if (!resultPromise) {
+    return nullptr;
+  }
+
+  Rooted<AsyncFunctionGeneratorObject*> obj(
+      cx, NewBuiltinClassInstance<AsyncFunctionGeneratorObject>(cx));
+  if (!obj) {
+    return nullptr;
+  }
+  obj->initFixedSlot(PROMISE_SLOT, ObjectValue(*resultPromise));
+
+  RootedObject onFulfilled(
+      cx, NewHandler(cx, AsyncModuleExecutionFulfilledHandler, module));
+  if (!onFulfilled) {
+    return nullptr;
+  }
+
+  RootedObject onRejected(
+      cx, NewHandler(cx, AsyncModuleExecutionRejectedHandler, module));
+  if (!onRejected) {
+    return nullptr;
+  }
+
+  if (!JS::AddPromiseReactionsIgnoringUnhandledRejection(
+          cx, resultPromise, onFulfilled, onRejected)) {
+    return nullptr;
+  }
 
   // Starts in the running state.
   obj->setResumeIndex(AbstractGeneratorObject::RESUME_INDEX_RUNNING);

@@ -30,9 +30,10 @@ struct NetworkAddressArg {
   NetAddr selfAddr;
   NetAddr peerAddr;
   bool resolvedByTRR;
+  bool echConfigUsed;
 };
 
-refcounted protocol PHttpTransaction
+[RefCounted] protocol PHttpTransaction
 {
   manager PSocketProcess;
 
@@ -44,26 +45,32 @@ parent:
                        TimingStructArgs           timings,
                        int32_t                    proxyConnectResponseCode,
                        uint8_t[]                  dataForSniffer,
-                       nsCString?                 altSvcUsed);
+                       nsCString?                 altSvcUsed,
+                       bool                       dataToChildProcess,
+                       bool                       restarted,
+                       uint32_t                   HTTPSSVCReceivedStage,
+                       bool                       supportsHttp3);
   async OnTransportStatus(nsresult status,
                           int64_t progress,
                           int64_t progressMax,
                           NetworkAddressArg? networkAddressArg);
   async OnDataAvailable(nsCString data,
                         uint64_t  offset,
-                        uint32_t  count,
-                        bool      dataSentToChildProcess);
+                        uint32_t  count);
   async OnStopRequest(nsresult status,
                       bool responseIsComplete,
                       int64_t transferSize,
                       TimingStructArgs timings,
                       nsHttpHeaderArray? responseTrailers,
-                      bool hasStickyConn,
-                      TransactionObserverResult? transactionObserverResult);
+                      TransactionObserverResult? transactionObserverResult,
+                      TimeStamp lastActiveTabOptimization,
+                      uint32_t caps,
+                      HttpConnectionInfoCloneArgs connInfoArgs);
   async OnInitFailed(nsresult status);
   async OnH2PushStream(uint32_t pushedStreamId,
                        nsCString resourceUrl,
                        nsCString requestString);
+  async EarlyHint(nsCString value);
 
 child:
   async __delete__();
@@ -83,9 +90,10 @@ child:
              bool hasTransactionObserver,
              H2PushedStreamArg? pushedStreamArg,
              PInputChannelThrottleQueue? throttleQueue,
-             bool aIsDocumentLoad);
+             bool aIsDocumentLoad,
+             TimeStamp aRedirectStart,
+             TimeStamp aRedirectEnd);
 
-  async UpdateClassOfService(uint32_t classOfService);
   async CancelPump(nsresult status);
   async SuspendPump();
   async ResumePump();

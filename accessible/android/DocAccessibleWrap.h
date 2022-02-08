@@ -26,7 +26,7 @@ class DocAccessibleWrap : public DocAccessible {
    * Manage the mapping from id to Accessible.
    */
   void AddID(uint32_t aID, AccessibleWrap* aAcc) {
-    mIDToAccessibleMap.Put(aID, aAcc);
+    mIDToAccessibleMap.InsertOrUpdate(aID, aAcc);
   }
   void RemoveID(uint32_t aID) { mIDToAccessibleMap.Remove(aID); }
   AccessibleWrap* GetAccessibleByID(int32_t aID) const;
@@ -47,7 +47,7 @@ class DocAccessibleWrap : public DocAccessible {
   /*
    * This provides a mapping from 32 bit id to accessible objects.
    */
-  nsDataHashtable<nsUint32HashKey, AccessibleWrap*> mIDToAccessibleMap;
+  nsTHashMap<nsUint32HashKey, AccessibleWrap*> mIDToAccessibleMap;
 
   virtual void DoInitialUpdate() override;
 

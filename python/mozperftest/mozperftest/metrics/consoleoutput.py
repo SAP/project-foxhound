@@ -1,8 +1,9 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from mozperftest.metrics.common import filtered_metrics
+from mozperftest.metrics.common import filtered_metrics, COMMON_ARGS
 from mozperftest.layers import Layer
+import os
 
 
 RESULTS_TEMPLATE = """\
@@ -17,25 +18,12 @@ RESULTS_TEMPLATE = """\
 
 
 class ConsoleOutput(Layer):
-    """Output metrics in the console.
-    """
+    """Output metrics in the console."""
 
     name = "console"
-    activated = False
-
-    arguments = {
-        "metrics": {
-            "nargs": "*",
-            "default": [],
-            "help": "The metrics that should be retrieved from the data.",
-        },
-        # XXX can we guess this by asking the metrics storage ??
-        "prefix": {
-            "type": str,
-            "default": "",
-            "help": "Prefix used by the output files.",
-        },
-    }
+    # By default activate the console layer when running locally.
+    activated = "MOZ_AUTOMATION" not in os.environ
+    arguments = COMMON_ARGS
 
     def run(self, metadata):
         # Get filtered metrics
@@ -44,6 +32,10 @@ class ConsoleOutput(Layer):
             self.get_arg("output"),
             self.get_arg("prefix"),
             metrics=self.get_arg("metrics"),
+            transformer=self.get_arg("transformer"),
+            split_by=self.get_arg("split-by"),
+            simplify_names=self.get_arg("simplify-names"),
+            simplify_exclude=self.get_arg("simplify-exclude"),
         )
 
         if not results:

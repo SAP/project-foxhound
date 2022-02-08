@@ -8,6 +8,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/SMILAnimationController.h"
 #include "mozilla/SVGObserverUtils.h"
+#include "mozilla/dom/Animation.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentTimeline.h"
 #include "mozilla/dom/Element.h"
@@ -28,6 +29,7 @@
 #include "nsComponentManagerUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsMimeTypes.h"
+#include "nsRefreshDriver.h"
 
 namespace mozilla {
 
@@ -40,7 +42,9 @@ NS_IMPL_ISUPPORTS(SVGDocumentWrapper, nsIStreamListener, nsIRequestObserver,
                   nsIObserver, nsISupportsWeakReference)
 
 SVGDocumentWrapper::SVGDocumentWrapper()
-    : mIgnoreInvalidation(false), mRegisteredForXPCOMShutdown(false) {}
+    : mIgnoreInvalidation(false),
+      mRegisteredForXPCOMShutdown(false),
+      mIsDrawing(false) {}
 
 SVGDocumentWrapper::~SVGDocumentWrapper() {
   DestroyViewer();

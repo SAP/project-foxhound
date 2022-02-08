@@ -13,11 +13,11 @@
 #include <bitset>
 #include "nsISupportsUtils.h"
 #include "nsIURI.h"
-#include "nsIHttpChannel.h"
 #include "mozilla/dom/Document.h"
 #include "nsIStreamListener.h"
 #include "nsIChannelEventSink.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
+#include "nsIDOMEventListener.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIHttpHeaderVisitor.h"
 #include "nsIProgressEventSink.h"
@@ -60,10 +60,13 @@ typedef Status __StatusTmp;
 typedef __StatusTmp Status;
 #endif
 
+class nsIHttpChannel;
 class nsIJARChannel;
 class nsILoadGroup;
 
 namespace mozilla {
+class ProfileChunkedBuffer;
+
 namespace dom {
 
 class DOMString;
@@ -276,8 +279,9 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
                     bool aAsync, const nsAString& aUsername,
                     const nsAString& aPassword, ErrorResult& aRv) override;
 
-  nsresult Open(const nsACString& aMethod, const nsACString& aUrl, bool aAsync,
-                const nsAString& aUsername, const nsAString& aPassword);
+  void Open(const nsACString& aMethod, const nsACString& aUrl, bool aAsync,
+            const nsAString& aUsername, const nsAString& aPassword,
+            ErrorResult& aRv);
 
   virtual void SetRequestHeader(const nsACString& aName,
                                 const nsACString& aValue,
@@ -298,13 +302,13 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
   virtual ~XMLHttpRequestMainThread();
 
   nsresult MaybeSilentSendFailure(nsresult aRv);
-  nsresult SendInternal(const BodyExtractorBase* aBody,
-                        bool aBodyIsDocumentOrString = false);
+  void SendInternal(const BodyExtractorBase* aBody,
+                    bool aBodyIsDocumentOrString, ErrorResult& aRv);
 
   bool IsCrossSiteCORSRequest() const;
   bool IsDeniedCrossSiteCORSRequest();
 
-  void UnsuppressEventHandlingAndResume();
+  void ResumeTimeout();
 
   void MaybeLowerChannelPriority();
 
@@ -318,7 +322,7 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
   virtual void SendInputStream(nsIInputStream* aInputStream,
                                ErrorResult& aRv) override {
     BodyExtractor<nsIInputStream> body(aInputStream);
-    aRv = SendInternal(&body);
+    SendInternal(&body, false, aRv);
   }
 
   void RequestErrorSteps(const ProgressEventType aEventType,
@@ -393,14 +397,15 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
 
   virtual bool MozBackgroundRequest() const override;
 
-  nsresult SetMozBackgroundRequest(bool aMozBackgroundRequest);
+  void SetMozBackgroundRequestExternal(bool aMozBackgroundRequest,
+                                       ErrorResult& aRv);
 
   virtual void SetMozBackgroundRequest(bool aMozBackgroundRequest,
                                        ErrorResult& aRv) override;
 
   void SetOriginStack(UniquePtr<SerializedStackHolder> aOriginStack);
 
-  void SetSource(UniqueProfilerBacktrace aSource);
+  void SetSource(UniquePtr<ProfileChunkedBuffer> aSource);
 
   virtual uint16_t ErrorCode() const override {
     return static_cast<uint16_t>(mErrorLoad);
@@ -582,8 +587,7 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
     NS_DECL_ISUPPORTS
     NS_DECL_NSIHTTPHEADERVISITOR
     nsHeaderVisitor(const XMLHttpRequestMainThread& aXMLHttpRequest,
-                    NotNull<nsIHttpChannel*> aHttpChannel)
-        : mXHR(aXMLHttpRequest), mHttpChannel(aHttpChannel) {}
+                    NotNull<nsIHttpChannel*> aHttpChannel);
     const nsACString& Headers() {
       for (uint32_t i = 0; i < mHeaderList.Length(); i++) {
         HeaderEntry& header = mHeaderList.ElementAt(i);
@@ -597,7 +601,7 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
     }
 
    private:
-    virtual ~nsHeaderVisitor() = default;
+    virtual ~nsHeaderVisitor();
 
     nsTArray<HeaderEntry> mHeaderList;
     nsCString mHeaders;
@@ -698,7 +702,6 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
   void StartTimeoutTimer();
   void HandleTimeoutCallback();
 
-  RefPtr<Document> mSuspendedDoc;
   nsCOMPtr<nsIRunnable> mResumeTimeoutRunnable;
 
   nsCOMPtr<nsITimer> mSyncTimeoutTimer;

@@ -16,21 +16,17 @@
 #  include <windows.h>
 #elif !defined(__OS2__)
 #  include <unistd.h>
-#  include <sys/mman.h>
-#  ifndef MAP_ANON
-#    ifdef MAP_ANONYMOUS
-#      define MAP_ANON MAP_ANONYMOUS
-#    else
-#      error "Don't know how to get anonymous memory"
+#  ifndef __wasi__
+#    include <sys/mman.h>
+#    ifndef MAP_ANON
+#      ifdef MAP_ANONYMOUS
+#        define MAP_ANON MAP_ANONYMOUS
+#      else
+#        error "Don't know how to get anonymous memory"
+#      endif
 #    endif
 #  endif
 #endif
-
-extern "C" {
-uintptr_t gMozillaPoisonValue;
-uintptr_t gMozillaPoisonBase;
-uintptr_t gMozillaPoisonSize;
-}
 
 // Freed memory is filled with a poison value, which we arrange to
 // form a pointer either to an always-unmapped region of the address
@@ -90,7 +86,26 @@ static uintptr_t GetDesiredRegionSize() {
 
 #  define RESERVE_FAILED 0
 
-#else  // Unix
+#elif defined(__wasi__)
+
+#  define RESERVE_FAILED 0
+
+static void* ReserveRegion(uintptr_t aRegion, uintptr_t aSize) {
+  return RESERVE_FAILED;
+}
+
+static void ReleaseRegion(void* aRegion, uintptr_t aSize) { return; }
+
+static bool ProbeRegion(uintptr_t aRegion, uintptr_t aSize) {
+  const auto pageSize = 1 << 16;
+  MOZ_ASSERT(pageSize == sysconf(_SC_PAGESIZE));
+  auto heapSize = __builtin_wasm_memory_size(0) * pageSize;
+  return aRegion + aSize < heapSize;
+}
+
+static uintptr_t GetDesiredRegionSize() { return 0; }
+
+#else  // __wasi__
 
 #  include "mozilla/TaggedAnonymousMemory.h"
 
@@ -169,12 +184,23 @@ static uintptr_t ReservePoisonArea(uintptr_t rgnsize) {
   MOZ_CRASH("no usable poison region identified");
 }
 
-void mozPoisonValueInit() {
-  gMozillaPoisonSize = GetDesiredRegionSize();
-  gMozillaPoisonBase = ReservePoisonArea(gMozillaPoisonSize);
-
-  if (gMozillaPoisonSize == 0) {  // can't happen
-    return;
+static uintptr_t GetPoisonValue(uintptr_t aBase, uintptr_t aSize) {
+  if (aSize == 0) {  // can't happen
+    return 0;
   }
-  gMozillaPoisonValue = gMozillaPoisonBase + gMozillaPoisonSize / 2 - 1;
+  return aBase + aSize / 2 - 1;
+}
+
+// Poison is used so pervasively throughout the codebase that we decided it was
+// best to actually use ordered dynamic initialization of globals (AKA static
+// constructors) for this. This way everything will have properly initialized
+// poison -- except other dynamic initialization code in libmozglue, which there
+// shouldn't be much of. (libmozglue is one of the first things loaded, and
+// specifically comes before libxul, so nearly all gecko code runs strictly
+// after this.)
+extern "C" {
+uintptr_t gMozillaPoisonSize = GetDesiredRegionSize();
+uintptr_t gMozillaPoisonBase = ReservePoisonArea(gMozillaPoisonSize);
+uintptr_t gMozillaPoisonValue =
+    GetPoisonValue(gMozillaPoisonBase, gMozillaPoisonSize);
 }

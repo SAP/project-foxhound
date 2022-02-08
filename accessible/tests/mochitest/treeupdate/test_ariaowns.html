@@ -675,8 +675,19 @@
 
     var gQueue = null;
 
-    function doTest() {
+    async function doTest() {
+      let PromEvents = {};
+      Services.scriptloader.loadSubScript(
+      "chrome://mochitests/content/a11y/accessible/tests/mochitest/promisified-events.js",
+      PromEvents);
+
       gQueue = new eventQueue();
+      let queueFinished = new Promise(resolve => {
+        gQueue.onFinish = function() {
+          resolve();
+          return DO_NOT_FINISH_TEST;
+        };
+      });
 
       // test1
       gQueue.push(new changeARIAOwns());
@@ -720,7 +731,38 @@
       gQueue.push(new test10_removeARIAOwner());
       gQueue.push(new test10_finishTest());
 
-      gQueue.invoke(); // SimpleTest.finish() will be called in the end
+      gQueue.invoke();
+      await queueFinished;
+
+      let owned = document.createElement('div');
+      owned.id = 't11_child';
+      owned.textContent = 'owned';
+      let evtPromise = PromEvents.waitForEvent(EVENT_SHOW, "t11_child");
+      getNode("t11_container").append(owned);
+      let evt = await evtPromise;
+      is(evt.accessible.parent.name, "t11_owner");
+
+      // Test owning an ancestor which isn't created yet.
+      testAccessibleTree("t12_container", { SECTION: [ // t12_container
+        { SECTION: [ // t12b
+          { SECTION: [] }, // t12c
+        ] },
+        { SECTION: [] }, // t12d
+      ] });
+      // Owning t12a would create a cycle, so we expect it to do nothing.
+      // We own t12d so we get an event when aria-owns relocation is complete.
+      evtPromise = PromEvents.waitForEvent(EVENT_SHOW, "t12d");
+      getNode("t12c").setAttribute("aria-owns", "t12a t12d");
+      await evtPromise;
+      testAccessibleTree("t12_container", { SECTION: [ // t12_container
+        { SECTION: [ // t12b
+          { SECTION: [ // t12c
+            { SECTION: [] }, // t12d
+          ] },
+        ] },
+      ] });
+
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();
@@ -791,6 +833,18 @@
   <div id="t10_container">
     <div id="t10_owner" aria-owns="t10_child"></div>
     <input id="t10_child">
+  </div>
+
+  <div id="t11_container" aria-label="t11_container">
+    <div aria-owns="t11_child" aria-label="t11_owner"></div>
+  </div>
+
+  <div  id="t12_container">
+    <span id="t12a">
+      <div id="t12b" aria-owns="t12c"></div>
+    </span>
+    <div id="t12c"></div>
+    <div id="t12d"></div>
   </div>
 </body>
 

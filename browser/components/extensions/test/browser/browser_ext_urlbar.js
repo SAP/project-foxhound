@@ -3,7 +3,6 @@
 XPCOMUtils.defineLazyModuleGetters(this, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.jsm",
-  UrlbarProviderExtension: "resource:///modules/UrlbarProviderExtension.jsm",
   UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.jsm",
   UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
 });
@@ -93,10 +92,8 @@ async function updateTopSites(condition, searchShortcuts = false) {
 add_task(async function setUp() {
   // Set the notification timeout to a really high value to avoid intermittent
   // failures due to the mock extensions not responding in time.
-  let originalTimeout = UrlbarProviderExtension.notificationTimeout;
-  UrlbarProviderExtension.notificationTimeout = 5000;
-  registerCleanupFunction(() => {
-    UrlbarProviderExtension.notificationTimeout = originalTimeout;
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.extension.timeout", 5000]],
   });
 });
 
@@ -209,7 +206,7 @@ add_task(async function tip_onResultPicked_helpButton_url_mouse() {
       waitForFocus,
       value: "test",
     });
-    let helpButton = gURLBar.querySelector(".urlbarView-tip-help");
+    let helpButton = gURLBar.querySelector(".urlbarView-help");
     Assert.ok(helpButton);
     let loadedPromise = BrowserTestUtils.browserLoaded(
       gBrowser.selectedBrowser

@@ -31,8 +31,24 @@ var ContentAreaUtils = {
   },
 };
 
-function urlSecurityCheck(aURL, aPrincipal, aFlags) {
-  return BrowserUtils.urlSecurityCheck(aURL, aPrincipal, aFlags);
+function urlSecurityCheck(
+  aURL,
+  aPrincipal,
+  aFlags = Services.scriptSecurityManager
+) {
+  if (aURL instanceof Ci.nsIURI) {
+    Services.scriptSecurityManager.checkLoadURIWithPrincipal(
+      aPrincipal,
+      aURL,
+      aFlags
+    );
+  } else {
+    Services.scriptSecurityManager.checkLoadURIStrWithPrincipal(
+      aPrincipal,
+      aURL,
+      aFlags
+    );
+  }
 }
 
 // Clientele: (Make sure you don't break any of these)
@@ -60,6 +76,7 @@ function saveURL(
   aShouldBypassCache,
   aSkipPrompt,
   aReferrerInfo,
+  aCookieJarSettings,
   aSourceDocument,
   aIsContentWindowPrivate,
   aPrincipal
@@ -74,6 +91,7 @@ function saveURL(
     aFilePickerTitleKey,
     null,
     aReferrerInfo,
+    aCookieJarSettings,
     aSourceDocument,
     aSkipPrompt,
     null,
@@ -89,33 +107,10 @@ function saveBrowser(aBrowser, aSkipPrompt, aBrowsingContext = null) {
     throw new Error("Must have a browser when calling saveBrowser");
   }
   let persistable = aBrowser.frameLoader;
-  // Because of how pdf.js deals with principals, saving the document the "normal"
-  // way won't work. Work around this by saving the pdf's URL directly:
-  if (
-    aBrowser.contentPrincipal.URI &&
-    aBrowser.contentPrincipal.URI.spec == "resource://pdf.js/web/viewer.html" &&
-    aBrowser.currentURI.schemeIs("file")
-  ) {
-    let correctPrincipal = Services.scriptSecurityManager.createContentPrincipal(
-      aBrowser.currentURI,
-      aBrowser.contentPrincipal.originAttributes
-    );
-    internalSave(
-      aBrowser.currentURI.spec,
-      null /* no document */,
-      null /* automatically determine filename */,
-      null /* no content disposition */,
-      "application/pdf",
-      false /* don't bypass cache */,
-      null /* no alternative title */,
-      null /* no auto-chosen file info */,
-      null /* null referrer will be OK for file: */,
-      null /* no document */,
-      aSkipPrompt /* caller decides about prompting */,
-      null /* no cache key because the one for the document will be for pdfjs */,
-      PrivateBrowsingUtils.isWindowPrivate(aBrowser.ownerGlobal),
-      correctPrincipal
-    );
+  // PDF.js has its own way to handle saving PDFs since it may need to
+  // generate a new PDF to save modified form data.
+  if (aBrowser.contentPrincipal.spec == "resource://pdf.js/web/viewer.html") {
+    aBrowser.sendMessageToActor("PDFJS:Save", {}, "Pdfjs");
     return;
   }
   let stack = Components.stack.caller;
@@ -135,6 +130,7 @@ function saveBrowser(aBrowser, aSkipPrompt, aBrowsingContext = null) {
         null, // file picker title key
         null, // chosen file data
         document.referrerInfo,
+        document.cookieJarSettings,
         document,
         aSkipPrompt,
         document.cacheKey
@@ -237,6 +233,9 @@ XPCOMUtils.defineConstant(this, "kSaveAsType_Text", kSaveAsType_Text);
  *        prompted for a target filename.
  * @param aReferrerInfo
  *        the referrerInfo object to use, or null if no referrer should be sent.
+ * @param aCookieJarSettings
+ *        the cookieJarSettings object to use. This will be used for the channel
+ *        used to save.
  * @param aInitiatingDocument [optional]
  *        The document from which the save was initiated.
  *        If this is omitted then aIsContentWindowPrivate has to be provided.
@@ -265,6 +264,7 @@ function internalSave(
   aFilePickerTitleKey,
   aChosenData,
   aReferrerInfo,
+  aCookieJarSettings,
   aInitiatingDocument,
   aSkipPrompt,
   aCacheKey,
@@ -379,6 +379,7 @@ function internalSave(
       sourcePostData: aDocument ? getPostData(aDocument) : null,
       bypassCache: aShouldBypassCache,
       contentPolicyType,
+      cookieJarSettings: aCookieJarSettings,
       isPrivate,
     };
 
@@ -410,6 +411,10 @@ function internalSave(
  * @param persistArgs.contentPolicyType
  *        The type of content we're saving. Will be used to determine what
  *        content is accepted, enforce sniffing restrictions, etc.
+ * @param persistArgs.cookieJarSettings [optional]
+ *        The nsICookieJarSettings that will be used for the saving channel, or
+ *        null that savePrivacyAwareURI will create one based on the current
+ *        state of the prefs/permissions
  * @param persistArgs.targetContentType
  *        Required and used only when persistArgs.sourceDocument is present,
  *        determines the final content type of the saved file, or null to use
@@ -448,7 +453,9 @@ function internalPersist(persistArgs) {
     null,
     null,
     persist,
-    persistArgs.isPrivate
+    persistArgs.isPrivate,
+    Ci.nsITransfer.DOWNLOAD_ACCEPTABLE,
+    persistArgs.sourceReferrerInfo
   );
   persist.progressListener = new DownloadListener(window, tr);
 
@@ -492,6 +499,7 @@ function internalPersist(persistArgs) {
       persistArgs.sourcePrincipal,
       persistArgs.sourceCacheKey,
       persistArgs.sourceReferrerInfo,
+      persistArgs.cookieJarSettings,
       persistArgs.sourcePostData,
       null,
       targetFileURL,
@@ -1046,7 +1054,8 @@ function getDefaultFileName(
     // This is something like a data: and so forth URI... no filename here.
   }
 
-  if (docTitle) {
+  // Don't use the title if it's from a data URI
+  if (docTitle && aURI?.scheme != "data") {
     // 4) Use the document title
     return docTitle;
   }
@@ -1128,6 +1137,7 @@ const kImageExtensions = new Set([
   "svg",
   "webp",
   "avif",
+  "jxl",
 ]);
 
 function getNormalizedLeafName(aFile, aDefaultExtension) {
@@ -1145,8 +1155,8 @@ function getNormalizedLeafName(aFile, aDefaultExtension) {
 
   // Include the default extension in the file name to which we're saving.
   var i = aFile.lastIndexOf(".");
-  let previousExtension = aFile.substr(i + 1);
-  if (previousExtension != aDefaultExtension) {
+  let previousExtension = aFile.substr(i + 1).toLowerCase();
+  if (previousExtension != aDefaultExtension.toLowerCase()) {
     // Suffixing the extension is the safe bet - it preserves the previous
     // extension in case that's meaningful (e.g. various text files served
     // with text/plain will end up as `foo.cpp.txt`, in the worst case).
@@ -1184,7 +1194,13 @@ function getDefaultExtension(aFilename, aURI, aContentType) {
   // This mirrors some code in nsExternalHelperAppService::DoContent
   // Use the filename first and then the URI if that fails
 
-  var mimeInfo = getMIMEInfoForType(aContentType, ext);
+  // For images, rely solely on the mime type if known.
+  // All the extension is going to do is lie to us.
+  var lookupExt = ext;
+  if (aContentType?.startsWith("image/")) {
+    lookupExt = "";
+  }
+  var mimeInfo = getMIMEInfoForType(aContentType, lookupExt);
 
   if (ext && mimeInfo && mimeInfo.extensionExists(ext)) {
     return ext;
@@ -1200,11 +1216,15 @@ function getDefaultExtension(aFilename, aURI, aContentType) {
   if (urlext && mimeInfo && mimeInfo.extensionExists(urlext)) {
     return urlext;
   }
+
+  // That failed as well. If we could lookup the MIME use the primary
+  // extension for that type.
   try {
     if (mimeInfo) {
       return mimeInfo.primaryExtension;
     }
   } catch (e) {}
+
   // Fall back on the extensions in the filename and URI for lack
   // of anything better.
   return ext || urlext;
@@ -1259,11 +1279,12 @@ function openURL(aURL) {
     "@mozilla.org/uriloader/external-protocol-service;1"
   ].getService(Ci.nsIExternalProtocolService);
 
+  let recentWindow = Services.wm.getMostRecentWindow("navigator:browser");
+
   if (!protocolSvc.isExposedProtocol(uri.scheme)) {
     // If we're not a browser, use the external protocol service to load the URI.
-    protocolSvc.loadURI(uri);
+    protocolSvc.loadURI(uri, recentWindow?.document.contentPrincipal);
   } else {
-    var recentWindow = Services.wm.getMostRecentWindow("navigator:browser");
     if (recentWindow) {
       recentWindow.openWebLinkIn(uri.spec, "tab", {
         triggeringPrincipal: recentWindow.document.contentPrincipal,

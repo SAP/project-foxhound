@@ -7,7 +7,7 @@
 #ifndef TABMESSAGE_UTILS_H
 #define TABMESSAGE_UTILS_H
 
-#include "ipc/IPCMessageUtils.h"
+#include "ipc/EnumSerializer.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/Event.h"
 #include "nsIRemoteTab.h"
@@ -15,7 +15,6 @@
 #include "nsCOMPtr.h"
 #include "mozilla/dom/EffectsInfo.h"
 #include "mozilla/layers/LayersMessageUtils.h"
-#include "ipc/IPCMessageUtils.h"
 #include "TabMessageTypes.h"
 #include "X11UndefineNone.h"
 
@@ -70,13 +69,15 @@ struct ParamTraits<mozilla::dom::EffectsInfo> {
     WriteParam(aMsg, aParam.mVisibleRect);
     WriteParam(aMsg, aParam.mScaleX);
     WriteParam(aMsg, aParam.mScaleY);
+    WriteParam(aMsg, aParam.mTransformToAncestorScale);
   }
 
   static bool Read(const Message* aMsg, PickleIterator* aIter,
                    paramType* aResult) {
     return ReadParam(aMsg, aIter, &aResult->mVisibleRect) &&
            ReadParam(aMsg, aIter, &aResult->mScaleX) &&
-           ReadParam(aMsg, aIter, &aResult->mScaleY);
+           ReadParam(aMsg, aIter, &aResult->mScaleY) &&
+           ReadParam(aMsg, aIter, &aResult->mTransformToAncestorScale);
   }
 };
 

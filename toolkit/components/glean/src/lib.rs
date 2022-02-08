@@ -19,151 +19,33 @@
 
 // No one is currently using the Glean SDK, so let's export it, so we know it gets
 // compiled.
-pub extern crate glean;
+pub extern crate fog;
+
+use nserror::{nsresult, NS_ERROR_FAILURE, NS_OK};
+use nsstring::{nsACString, nsCString};
+use thin_vec::ThinVec;
+
+// Needed for re-export.
+#[cfg(target_os = "android")]
+pub use glean_ffi;
 
 #[macro_use]
 extern crate cstr;
-#[macro_use]
+#[cfg_attr(not(target_os = "android"), macro_use)]
 extern crate xpcom;
 
-use std::ffi::CStr;
-use std::os::raw::c_char;
+mod init;
 
-use nserror::{nsresult, NS_ERROR_FAILURE, NS_OK};
-use nsstring::{nsACString, nsCStr};
-use xpcom::interfaces::{mozIViaduct, nsIObserver, nsIPrefBranch, nsISupports};
-use xpcom::{RefPtr, XpCom};
+pub use init::fog_init;
 
-use client_info::ClientInfo;
-use glean_core::Configuration;
-
-mod api;
-mod client_info;
-mod core_metrics;
-
-/// Project FOG's entry point.
-///
-/// This assembles client information and the Glean configuration and then initializes the global
-/// Glean instance.
 #[no_mangle]
-pub unsafe extern "C" fn fog_init(
-    data_path: &nsACString,
-    app_build: &nsACString,
-    app_display_version: &nsACString,
-    channel: *const c_char,
-    os_version: &nsACString,
-    architecture: &nsACString,
-) -> nsresult {
-    log::debug!("Initializing FOG.");
-
-    let app_build = app_build.to_string();
-    let app_display_version = app_display_version.to_string();
-
-    let channel = CStr::from_ptr(channel);
-    let channel = Some(channel.to_string_lossy().to_string());
-
-    let os_version = os_version.to_string();
-    let architecture = architecture.to_string();
-
-    let client_info = ClientInfo {
-        app_build,
-        app_display_version,
-        channel,
-        os_version,
-        architecture,
-    };
-    log::debug!("Client Info: {:#?}", client_info);
-
-    let pref_observer = UploadPrefObserver::allocate(InitUploadPrefObserver {});
-    if let Err(e) = pref_observer.begin_observing() {
-        log::error!(
-            "Could not observe data upload pref. Abandoning FOG init due to {:?}",
-            e
-        );
-        return e;
-    }
-
-    let upload_enabled = static_prefs::pref!("datareporting.healthreport.uploadEnabled");
-    let data_path = data_path.to_string();
-    let configuration = Configuration {
-        upload_enabled,
-        data_path,
-        application_id: "org-mozilla-firefox".to_string(),
-        max_events: None,
-        delay_ping_lifetime_io: false,
-    };
-
-    log::debug!("Configuration: {:#?}", configuration);
-
-    // Ensure Viaduct is initialized for networking unconditionally so we don't
-    // need to check again if upload is later enabled.
-    if let Some(viaduct) =
-        xpcom::create_instance::<mozIViaduct>(cstr!("@mozilla.org/toolkit/viaduct;1"))
-    {
-        let result = viaduct.EnsureInitialized();
-        if result.failed() {
-            log::error!("Failed to ensure viaduct was initialized due to {}. Ping upload may not be available.", result.error_name());
-        }
-    } else {
-        log::error!("Failed to create Viaduct via XPCOM. Ping upload may not be available.");
-    }
-
-    if configuration.data_path.len() > 0 {
-        if let Err(e) = api::initialize(configuration, client_info) {
-            log::error!("Failed to init FOG due to {:?}", e);
-        }
-    }
-
-    NS_OK
+pub extern "C" fn fog_shutdown() {
+    glean::shutdown();
 }
 
-// Partially cargo-culted from https://searchfox.org/mozilla-central/rev/598e50d2c3cd81cd616654f16af811adceb08f9f/security/manager/ssl/cert_storage/src/lib.rs#1192
-#[derive(xpcom)]
-#[xpimplements(nsIObserver)]
-#[refcnt = "atomic"]
-struct InitUploadPrefObserver {}
-
-#[allow(non_snake_case)]
-impl UploadPrefObserver {
-    unsafe fn begin_observing(&self) -> Result<(), nsresult> {
-        let pref_service = xpcom::services::get_PrefService().ok_or(NS_ERROR_FAILURE)?;
-        let pref_branch: RefPtr<nsIPrefBranch> =
-            (*pref_service).query_interface().ok_or(NS_ERROR_FAILURE)?;
-        let pref_nscstr = &nsCStr::from("datareporting.healthreport.uploadEnabled") as &nsACString;
-        (*pref_branch)
-            .AddObserverImpl(pref_nscstr, self.coerce::<nsIObserver>(), false)
-            .to_result()?;
-        Ok(())
-    }
-
-    unsafe fn Observe(
-        &self,
-        _subject: *const nsISupports,
-        topic: *const c_char,
-        pref_name: *const i16,
-    ) -> nserror::nsresult {
-        let topic = CStr::from_ptr(topic).to_str().unwrap();
-        // Conversion utf16 to utf8 is messy.
-        // We should only ever observe changes to the one pref we want,
-        // but just to be on the safe side let's assert.
-
-        // cargo-culted from https://searchfox.org/mozilla-central/rev/598e50d2c3cd81cd616654f16af811adceb08f9f/security/manager/ssl/cert_storage/src/lib.rs#1606-1612
-        // (with a little transformation)
-        let len = (0..).take_while(|&i| *pref_name.offset(i) != 0).count(); // find NUL.
-        let slice = std::slice::from_raw_parts(pref_name as *const u16, len);
-        let pref_name = match String::from_utf16(slice) {
-            Ok(name) => name,
-            Err(_) => return NS_ERROR_FAILURE,
-        };
-        log::info!("Observed {:?}, {:?}", topic, pref_name);
-        debug_assert!(
-            topic == "nsPref:changed" && pref_name == "datareporting.healthreport.uploadEnabled"
-        );
-
-        let upload_enabled = static_prefs::pref!("datareporting.healthreport.uploadEnabled");
-        api::set_upload_enabled(upload_enabled);
-        NS_OK
-    }
+#[no_mangle]
+pub extern "C" fn fog_register_pings() {
+    fog::pings::register_pings();
 }
 
 static mut PENDING_BUF: Vec<u8> = Vec::new();
@@ -175,7 +57,7 @@ static mut PENDING_BUF: Vec<u8> = Vec::new();
 /// fog_give_ipc_buf on).
 #[no_mangle]
 pub unsafe extern "C" fn fog_serialize_ipc_buf() -> usize {
-    if let Some(buf) = glean::ipc::take_buf() {
+    if let Some(buf) = fog::ipc::take_buf() {
         PENDING_BUF = buf;
         PENDING_BUF.len()
     } else {
@@ -184,10 +66,10 @@ pub unsafe extern "C" fn fog_serialize_ipc_buf() -> usize {
     }
 }
 
-#[no_mangle]
 /// Only safe if called on a single thread (the same single thread you call
 /// fog_serialize_ipc_buf on), and if buf points to an allocated buffer of at
 /// least buf_len bytes.
+#[no_mangle]
 pub unsafe extern "C" fn fog_give_ipc_buf(buf: *mut u8, buf_len: usize) -> usize {
     let pending_len = PENDING_BUF.len();
     if buf.is_null() || buf_len < pending_len {
@@ -198,14 +80,116 @@ pub unsafe extern "C" fn fog_give_ipc_buf(buf: *mut u8, buf_len: usize) -> usize
     pending_len
 }
 
-#[no_mangle]
 /// Only safe if buf points to an allocated buffer of at least buf_len bytes.
 /// No ownership is transfered to Rust by this method: caller owns the memory at
 /// buf before and after this call.
+#[no_mangle]
 pub unsafe extern "C" fn fog_use_ipc_buf(buf: *const u8, buf_len: usize) {
     let slice = std::slice::from_raw_parts(buf, buf_len);
-    let _res = glean::ipc::replay_from_buf(slice);
-    /*if res.is_err() {
-        // TODO: Record the error.
-    }*/
+    let res = fog::ipc::replay_from_buf(slice);
+    if res.is_err() {
+        log::warn!("Unable to replay ipc buffer. This will result in data loss.");
+        fog::metrics::fog_ipc::replay_failures.add(1);
+    }
+}
+
+/// Sets the debug tag for pings assembled in the future.
+/// Returns an error result if the provided value is not a valid tag.
+#[no_mangle]
+pub extern "C" fn fog_set_debug_view_tag(value: &nsACString) -> nsresult {
+    let result = glean::set_debug_view_tag(&value.to_string());
+    if result {
+        return NS_OK;
+    } else {
+        return NS_ERROR_FAILURE;
+    }
+}
+
+/// Submits a ping by name.
+#[no_mangle]
+pub extern "C" fn fog_submit_ping(ping_name: &nsACString) -> nsresult {
+    glean::submit_ping_by_name(&ping_name.to_string(), None);
+    NS_OK
+}
+
+/// Turns ping logging on or off.
+/// Returns an error if the logging failed to be configured.
+#[no_mangle]
+pub extern "C" fn fog_set_log_pings(value: bool) -> nsresult {
+    glean::set_log_pings(value);
+    NS_OK
+}
+
+/// Flushes ping-lifetime data to the db when delay_ping_lifetime_io is true.
+#[no_mangle]
+pub extern "C" fn fog_persist_ping_lifetime_data() -> nsresult {
+    glean::persist_ping_lifetime_data();
+    NS_OK
+}
+
+/// Indicate that an experiment is running.
+/// Glean will add an experiment annotation which is sent with pings.
+/// This information is not persisted between runs.
+///
+/// See [`glean_core::Glean::set_experiment_active`].
+#[no_mangle]
+pub extern "C" fn fog_set_experiment_active(
+    experiment_id: &nsACString,
+    branch: &nsACString,
+    extra_keys: &ThinVec<nsCString>,
+    extra_values: &ThinVec<nsCString>,
+) {
+    assert_eq!(
+        extra_keys.len(),
+        extra_values.len(),
+        "Experiment extra keys and values differ in length."
+    );
+    let extra = if extra_keys.len() == 0 {
+        None
+    } else {
+        Some(
+            extra_keys
+                .iter()
+                .zip(extra_values.iter())
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        )
+    };
+    glean::set_experiment_active(experiment_id.to_string(), branch.to_string(), extra);
+}
+
+/// Indicate that an experiment is no longer running.
+///
+/// See [`glean_core::Glean::set_experiment_inactive`].
+#[no_mangle]
+pub extern "C" fn fog_set_experiment_inactive(experiment_id: &nsACString) {
+    glean::set_experiment_inactive(experiment_id.to_string());
+}
+
+/// TEST ONLY FUNCTION
+///
+/// Returns true if the identified experiment is active.
+#[no_mangle]
+pub extern "C" fn fog_test_is_experiment_active(experiment_id: &nsACString) -> bool {
+    glean::test_is_experiment_active(experiment_id.to_string())
+}
+
+/// TEST ONLY FUNCTION
+///
+/// Fills `branch`, `extra_keys`, and `extra_values` with the identified experiment's data.
+/// Panics if the identified experiment isn't active.
+#[no_mangle]
+pub extern "C" fn fog_test_get_experiment_data(
+    experiment_id: &nsACString,
+    branch: &mut nsACString,
+    extra_keys: &mut ThinVec<nsCString>,
+    extra_values: &mut ThinVec<nsCString>,
+) {
+    let data = glean::test_get_experiment_data(experiment_id.to_string());
+    branch.assign(&data.branch);
+    if let Some(extra) = data.extra {
+        let (data_keys, data_values): (Vec<_>, Vec<_>) = extra.iter().unzip();
+        extra_keys.extend(data_keys.into_iter().map(|key| key.into()));
+        extra_values.extend(data_values.into_iter().map(|value| value.into()));
+    }
 }

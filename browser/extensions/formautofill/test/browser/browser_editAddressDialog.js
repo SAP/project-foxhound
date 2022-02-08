@@ -1,7 +1,7 @@
 "use strict";
 
 const { FormAutofillUtils } = ChromeUtils.import(
-  "resource://formautofill/FormAutofillUtils.jsm"
+  "resource://autofill/FormAutofillUtils.jsm"
 );
 
 XPCOMUtils.defineLazyModuleGetters(this, {
@@ -540,6 +540,11 @@ add_task(async function test_countryAndStateFieldLabels() {
       // Check that the labels were filled
       for (let labelEl of mutatableLabels) {
         if (!labelEl.textContent) {
+          // This test used to rely on the implied initial timer of
+          // TestUtils.waitForCondition. See bug 1700685.
+          // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+          await new Promise(resolve => setTimeout(resolve, 10));
+
           await TestUtils.waitForCondition(
             () => labelEl.textContent,
             "Wait for label to be populated by the mutation observer",
@@ -713,7 +718,10 @@ add_task(async function test_combined_name_fields() {
     let borderColor = "rgb(0, 255, 0)";
     let borderColorFocused = "rgb(0, 0, 255)";
     doc.body.style.setProperty("--in-content-box-border-color", borderColor);
-    doc.body.style.setProperty("--in-content-border-focus", borderColorFocused);
+    doc.body.style.setProperty(
+      "--in-content-focus-outline-color",
+      borderColorFocused
+    );
 
     givenNameField.focus();
     checkNameFieldBorders(borderColor, borderColorFocused);

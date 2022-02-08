@@ -13,9 +13,9 @@ RUN apt-get update && \
       git \
       gzip \
       openssh-client \
+      python2 \
       unzip \
-      zip && \
-    apt-get clean
+      zip
 
 # Add wrapper scripts for xvfb for repackage.sh, and interactive sessions
 # %include taskcluster/docker/recipes/xvfb.sh

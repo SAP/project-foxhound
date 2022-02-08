@@ -10,7 +10,6 @@
 
 const Services = require("Services");
 const { gDevTools } = require("devtools/client/framework/devtools");
-const { TargetFactory } = require("devtools/client/framework/target");
 
 // With Bug 1588203, the talos server supports a dynamic proxy that will
 // redirect any http:// call to the talos server. This means we can use
@@ -31,13 +30,7 @@ exports.SIMPLE_URL = PAGES_BASE_URL + "simple.html";
 exports.COMPLICATED_URL =
   "http://www.bild.de-talos/fis/tp5n/bild.de/www.bild.de/index.html";
 
-let damp = null;
-/*
- * This method should be called by js before starting the tests.
- */
-exports.initialize = function(_damp) {
-  damp = _damp;
-};
+const { damp } = require("damp-test/damp");
 
 function garbageCollect() {
   return damp.garbageCollect();
@@ -85,8 +78,7 @@ exports.getActiveTab = getActiveTab;
 
 exports.getToolbox = async function() {
   let tab = getActiveTab();
-  let target = await TargetFactory.forTab(tab);
-  return gDevTools.getToolbox(target);
+  return gDevTools.getToolboxForTab(tab);
 };
 
 /**
@@ -106,12 +98,9 @@ const openToolbox = async function(tool = "webconsole", onLoad) {
   dump(`Open toolbox on '${tool}'\n`);
   let tab = getActiveTab();
 
-  dump(`Open toolbox - Wait for tab target\n`);
-  let target = await TargetFactory.forTab(tab);
-
-  dump(`Open toolbox - Call showToolbox\n`);
+  dump(`Open toolbox - Call showToolboxForTab\n`);
   let onToolboxCreated = gDevTools.once("toolbox-created");
-  let showPromise = gDevTools.showToolbox(target, tool);
+  let showPromise = gDevTools.showToolboxForTab(tab, { toolId: tool });
 
   dump(`Open toolbox - Wait for "toolbox-created"\n`);
   let toolbox = await onToolboxCreated;
@@ -131,9 +120,9 @@ exports.openToolbox = openToolbox;
 
 exports.closeToolbox = async function() {
   let tab = getActiveTab();
-  let target = await TargetFactory.forTab(tab);
-  await target.client.waitForRequestsToSettle();
-  await gDevTools.closeToolbox(target);
+  let toolbox = await gDevTools.getToolboxForTab(tab);
+  await toolbox.target.client.waitForRequestsToSettle();
+  await gDevTools.closeToolboxForTab(tab);
 };
 
 // Settle test isn't recorded, it only prints the pending duration
@@ -166,7 +155,7 @@ exports.closeToolboxAndLog = async function(name, toolbox) {
   await target.client.waitForRequestsToSettle();
 
   let test = runTest(`${name}.close.DAMP`);
-  await gDevTools.closeToolbox(target);
+  await toolbox.destroy();
   test.done();
 };
 
@@ -180,7 +169,7 @@ exports.reloadPageAndLog = async function(name, toolbox, onReload) {
 };
 
 exports.isFissionEnabled = function() {
-  return Services.prefs.getBoolPref("fission.autostart", false);
+  return Services.appinfo.fissionAutostart;
 };
 
 exports.waitForTick = () => new Promise(res => setTimeout(res, 0));

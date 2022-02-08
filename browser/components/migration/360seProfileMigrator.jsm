@@ -23,6 +23,11 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
+  "PlacesUIUtils",
+  "resource:///modules/PlacesUIUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
   "Sqlite",
   "resource://gre/modules/Sqlite.jsm"
 );
@@ -196,13 +201,8 @@ Bookmarks.prototype = {
 
       if (toolbarBMs.length) {
         let parentGuid = PlacesUtils.bookmarks.toolbarGuid;
-        if (!MigrationUtils.isStartupMigration) {
-          parentGuid = await MigrationUtils.createImportedBookmarksFolder(
-            "360se",
-            parentGuid
-          );
-        }
         await MigrationUtils.insertManyBookmarksWrapper(toolbarBMs, parentGuid);
+        PlacesUIUtils.maybeToggleBookmarkToolbarVisibilityAfterMigration();
       }
     })().then(
       () => aCallback(true),

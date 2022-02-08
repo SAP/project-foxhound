@@ -18,6 +18,7 @@ describe("#CachedTargetingGetter", () => {
   let frecentStub;
   let topsitesCache;
   let globals;
+  let doesAppNeedPinStub;
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     clock = sinon.useFakeTimers();
@@ -40,12 +41,38 @@ describe("#CachedTargetingGetter", () => {
         }
       }
     );
+    doesAppNeedPinStub = sandbox.stub().resolves();
   });
 
   afterEach(() => {
     sandbox.restore();
     clock.restore();
     globals.restore();
+  });
+
+  it("should cache allow for optional getter argument", async () => {
+    let cachedGetter = new CachedTargetingGetter(
+      "doesAppNeedPin",
+      undefined,
+      undefined,
+      { doesAppNeedPin: doesAppNeedPinStub }
+    );
+    // Need to tick forward because Date.now() is stubbed
+    clock.tick(sixHours);
+
+    await cachedGetter.get();
+    await cachedGetter.get();
+    await cachedGetter.get();
+
+    // Called once; cached request
+    assert.calledOnce(doesAppNeedPinStub);
+
+    // Expire and call again
+    clock.tick(sixHours);
+    await cachedGetter.get();
+
+    // Call goes through
+    assert.calledTwice(doesAppNeedPinStub);
   });
 
   it("should only make a request every 6 hours", async () => {
@@ -82,38 +109,12 @@ describe("#CachedTargetingGetter", () => {
 
     assert(rejected);
   });
-  it("should check targeted message before message without targeting", async () => {
-    const messages = await OnboardingMessageProvider.getUntranslatedMessages();
-    const stub = sandbox
-      .stub(ASRouterTargeting, "checkMessageTargeting")
-      .resolves();
-    const context = {
-      attributionData: {
-        campaign: "non-fx-button",
-        source: "addons.mozilla.org",
-      },
-    };
-    await ASRouterTargeting.findMatchingMessage({
-      messages,
-      trigger: { id: "firstRun" },
-      context,
-    });
-
-    const messageCount = messages.filter(
-      message => message.trigger && message.trigger.id === "firstRun"
-    ).length;
-
-    assert.equal(stub.callCount, messageCount);
-    const calls = stub.getCalls().map(call => call.args[0]);
-    const lastCall = calls[calls.length - 1];
-    assert.equal(lastCall.id, "TRAILHEAD_1");
-  });
   describe("sortMessagesByPriority", () => {
     it("should sort messages in descending priority order", async () => {
       const [
         m1,
         m2,
-        m3,
+        m3 = { id: "m3" },
       ] = await OnboardingMessageProvider.getUntranslatedMessages();
       const checkMessageTargetingStub = sandbox
         .stub(ASRouterTargeting, "checkMessageTargeting")
@@ -144,7 +145,7 @@ describe("#CachedTargetingGetter", () => {
       const [
         m1,
         m2,
-        m3,
+        m3 = { id: "m3" },
       ] = await OnboardingMessageProvider.getUntranslatedMessages();
       const checkMessageTargetingStub = sandbox
         .stub(ASRouterTargeting, "checkMessageTargeting")
@@ -175,7 +176,7 @@ describe("#CachedTargetingGetter", () => {
       const [
         m1,
         m2,
-        m3,
+        m3 = { id: "m3" },
       ] = await OnboardingMessageProvider.getUntranslatedMessages();
       const checkMessageTargetingStub = sandbox
         .stub(ASRouterTargeting, "checkMessageTargeting")
@@ -204,8 +205,54 @@ describe("#CachedTargetingGetter", () => {
     });
   });
 });
+describe("#isTriggerMatch", () => {
+  let trigger;
+  let message;
+  beforeEach(() => {
+    trigger = { id: "openURL" };
+    message = { id: "openURL" };
+  });
+  it("should return false if trigger and candidate ids are different", () => {
+    trigger.id = "trigger";
+    message.id = "message";
+
+    assert.isFalse(ASRouterTargeting.isTriggerMatch(trigger, message));
+    assert.isTrue(
+      ASRouterTargeting.isTriggerMatch({ id: "foo" }, { id: "foo" })
+    );
+  });
+  it("should return true if the message we check doesn't have trigger params or patterns", () => {
+    // No params or patterns defined
+    assert.isTrue(ASRouterTargeting.isTriggerMatch(trigger, message));
+  });
+  it("should return false if the trigger does not have params defined", () => {
+    message.params = {};
+
+    // trigger.param is undefined
+    assert.isFalse(ASRouterTargeting.isTriggerMatch(trigger, message));
+  });
+  it("should return true if message params includes trigger host", () => {
+    message.params = ["mozilla.org"];
+    trigger.param = { host: "mozilla.org" };
+
+    assert.isTrue(ASRouterTargeting.isTriggerMatch(trigger, message));
+  });
+  it("should return true if message params includes trigger param.type", () => {
+    message.params = ["ContentBlockingMilestone"];
+    trigger.param = { type: "ContentBlockingMilestone" };
+
+    assert.isTrue(Boolean(ASRouterTargeting.isTriggerMatch(trigger, message)));
+  });
+  it("should return true if message params match trigger mask", () => {
+    // STATE_BLOCKED_FINGERPRINTING_CONTENT
+    message.params = [0x00000040];
+    trigger.param = { type: 538091584 };
+
+    assert.isTrue(Boolean(ASRouterTargeting.isTriggerMatch(trigger, message)));
+  });
+});
 describe("#CacheListAttachedOAuthClients", () => {
-  const twoHours = 2 * 60 * 60 * 1000;
+  const fourHours = 4 * 60 * 60 * 1000;
   let sandbox;
   let clock;
   let fakeFxAccount;
@@ -232,19 +279,19 @@ describe("#CacheListAttachedOAuthClients", () => {
     clock.restore();
   });
 
-  it("should only make additional request every 2 hours", async () => {
-    clock.tick(twoHours);
+  it("should only make additional request every 4 hours", async () => {
+    clock.tick(fourHours);
 
     await authClientsCache.get();
     assert.calledOnce(fxAccounts.listAttachedOAuthClients);
 
-    clock.tick(twoHours);
+    clock.tick(fourHours);
     await authClientsCache.get();
     assert.calledTwice(fxAccounts.listAttachedOAuthClients);
   });
 
-  it("should not make additional request before 2 hours", async () => {
-    clock.tick(twoHours);
+  it("should not make additional request before 4 hours", async () => {
+    clock.tick(fourHours);
 
     await authClientsCache.get();
     assert.calledOnce(fxAccounts.listAttachedOAuthClients);
@@ -266,6 +313,7 @@ describe("ASRouterTargeting", () => {
     fakeTargetingContext = {
       combineContexts: sandbox.stub(),
       evalWithDefault: sandbox.stub().resolves(),
+      setTelemetrySource: sandbox.stub(),
     };
     globals = new GlobalOverrider();
     globals.set(
@@ -273,6 +321,10 @@ describe("ASRouterTargeting", () => {
       class {
         static combineContexts(...args) {
           return fakeTargetingContext.combineContexts.apply(sandbox, args);
+        }
+
+        setTelemetrySource(id) {
+          fakeTargetingContext.setTelemetrySource(id);
         }
 
         evalWithDefault(expr) {
@@ -286,6 +338,23 @@ describe("ASRouterTargeting", () => {
     clock.restore();
     sandbox.restore();
     globals.restore();
+  });
+  it("should provide message.id as source", async () => {
+    await ASRouterTargeting.checkMessageTargeting(
+      {
+        id: "message",
+        targeting: "true",
+      },
+      fakeTargetingContext,
+      sandbox.stub(),
+      false
+    );
+    assert.calledOnce(fakeTargetingContext.evalWithDefault);
+    assert.calledWithExactly(fakeTargetingContext.evalWithDefault, "true");
+    assert.calledWithExactly(
+      fakeTargetingContext.setTelemetrySource,
+      "message"
+    );
   });
   it("should cache evaluation result", async () => {
     evalStub.resolves(true);
@@ -428,16 +497,9 @@ describe("ASRouterTargeting", () => {
 describe("getSortedMessages", () => {
   let globals = new GlobalOverrider();
   let sandbox;
-  let thresholdStub;
   beforeEach(() => {
     globals.set({ ASRouterPreferences });
     sandbox = sinon.createSandbox();
-    thresholdStub = sandbox.stub();
-    sandbox.replaceGetter(
-      ASRouterPreferences,
-      "personalizedCfrThreshold",
-      thresholdStub
-    );
   });
   afterEach(() => {
     sandbox.restore();
@@ -473,17 +535,6 @@ describe("getSortedMessages", () => {
       {},
     ]);
   });
-  it("should sort messages by score first if defined", () => {
-    assertSortsCorrectly([
-      { score: 7001 },
-      { score: 7000, priority: 1 },
-      { score: 7000, targeting: "isFoo" },
-      { score: 7000 },
-      { score: 6000, priority: 1000 },
-      { priority: 99999 },
-      {},
-    ]);
-  });
   it("should sort messages by priority, then targeting, then order if ordered param is true", () => {
     assertSortsCorrectly(
       [
@@ -497,30 +548,5 @@ describe("getSortedMessages", () => {
       ],
       { ordered: true }
     );
-  });
-  it("should filter messages below the personalizedCfrThreshold", () => {
-    thresholdStub.returns(5000);
-    const result = getSortedMessages([{ score: 5000 }, { score: 4999 }, {}]);
-    assert.deepEqual(result, [{ score: 5000 }, {}]);
-  });
-  it("should not filter out messages without a score", () => {
-    thresholdStub.returns(5000);
-    const result = getSortedMessages([{ score: 4999 }, { id: "FOO" }]);
-    assert.deepEqual(result, [{ id: "FOO" }]);
-  });
-  it("should not apply filter if the threshold is an invalid value", () => {
-    let result;
-
-    thresholdStub.returns(undefined);
-    result = getSortedMessages([{ score: 5000 }, { score: 4999 }]);
-    assert.deepEqual(result, [{ score: 5000 }, { score: 4999 }]);
-
-    thresholdStub.returns("foo");
-    result = getSortedMessages([{ score: 5000 }, { score: 4999 }]);
-    assert.deepEqual(result, [{ score: 5000 }, { score: 4999 }]);
-
-    thresholdStub.returns(5000);
-    result = getSortedMessages([{ score: 5000 }, { score: 4999 }]);
-    assert.deepEqual(result, [{ score: 5000 }]);
   });
 });

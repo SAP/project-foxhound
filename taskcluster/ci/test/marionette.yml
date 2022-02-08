@@ -18,11 +18,31 @@ job-defaults:
                     - remove_executables.py
         extra-options:
             - --setpref=toolkit.asyncshutdown.log=true
-
-    run-on-projects: built-projects
-    tier: default
-    fission-tier: 2
-    variants: ["fission"]
+    test-manifest-loader: null  # don't load tests in the taskgraph
+    tier:
+        by-variant:
+            fission: 2
+            default: default
+    variants:
+        - fission
+        - webrender-sw
+    run-on-projects:
+        by-variant:
+            fission:
+                by-test-platform:
+                    (linux.*64|windows10-64)(-shippable)?(-qr)?/.*: ['trunk']
+                    linux.*64-asan-qr/opt: ['trunk']
+                    default: []
+            webrender-sw:
+                by-test-platform:
+                    .*/debug: built-projects
+                    default: []
+            default: built-projects
+    virtualization:
+        by-test-platform:
+            windows10-64.*: hardware
+            default: virtual
+    python-3: true
 
 marionette:
     description: "Marionette unittest run"
@@ -40,16 +60,3 @@ marionette-headless:
     mozharness:
         extra-options:
             - --headless
-
-marionette-gpu:
-    description: "Marionette with GPU unittest run"
-    treeherder-symbol: MnG
-    max-run-time: 1800
-    instance-size: default
-    mozharness:
-        extra-options:
-            - --test-manifest gpu-unit-tests.ini
-    virtualization:
-        by-test-platform:
-            windows10-64.*: virtual-with-gpu
-            default: virtual

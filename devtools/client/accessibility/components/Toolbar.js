@@ -17,8 +17,13 @@ loader.lazyGetter(this, "SimulationMenuButton", function() {
     require("devtools/client/accessibility/components/SimulationMenuButton")
   );
 });
+const DisplayTabbingOrder = createFactory(
+  require("devtools/client/accessibility/components/DisplayTabbingOrder")
+);
 
-function Toolbar({ toolboxDoc, audit, simulate }) {
+const { connect } = require("devtools/client/shared/vendor/react-redux");
+
+function Toolbar({ audit, simulate, supportsTabbingOrder, toolboxDoc }) {
   const optionalSimulationSection = simulate
     ? [
         div({
@@ -26,6 +31,15 @@ function Toolbar({ toolboxDoc, audit, simulate }) {
           className: "devtools-separator",
         }),
         SimulationMenuButton({ simulate, toolboxDoc }),
+      ]
+    : [];
+  const optionalDisplayTabbingOrderSection = supportsTabbingOrder
+    ? [
+        div({
+          role: "separator",
+          className: "devtools-separator",
+        }),
+        DisplayTabbingOrder(),
       ]
     : [];
 
@@ -37,9 +51,18 @@ function Toolbar({ toolboxDoc, audit, simulate }) {
     AccessibilityTreeFilter({ audit, toolboxDoc }),
     // Simulation section is shown if webrender is enabled
     ...optionalSimulationSection,
+    ...optionalDisplayTabbingOrderSection,
     AccessibilityPrefs({ toolboxDoc })
   );
 }
 
+const mapStateToProps = ({
+  ui: {
+    supports: { tabbingOrder },
+  },
+}) => ({
+  supportsTabbingOrder: tabbingOrder,
+});
+
 // Exports from this module
-exports.Toolbar = Toolbar;
+exports.Toolbar = connect(mapStateToProps)(Toolbar);

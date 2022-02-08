@@ -29,7 +29,7 @@
 </body>
 
 <script type="application/javascript">
-function* test(testDriver) {
+async function test() {
   var scroller = document.querySelector(".scrollbox");
   var utils = SpecialPowers.getDOMWindowUtils(window);
   var scrollerId = utils.getViewId(scroller);
@@ -52,26 +52,14 @@ function* test(testDriver) {
   for (var x = maxX; x > 0; x -= 71) {
     dump(`Scrolling scroller to ${x}\n`);
     scroller.scrollTo(x, 0);
-    yield waitForApzFlushedRepaints(testDriver);
-
-    utils.advanceTimeAndRefresh(0);
-    var data = utils.getCompositorAPZTestData();
-    var found = false;
-    for (apzcData of data.additionalData) {
-      if (apzcData.key == scrollerId) {
-        var checkerboarding = apzcData.value.split(',').includes("checkerboarding");
-        ok(!checkerboarding, `scroller is not checkerboarding at x=${x}`);
-        found = true;
-      }
-    }
-    ok(found, `Found the scroller in the APZ data at x=${x}`);
-    utils.restoreNormalRefresh();
+    await promiseApzFlushedRepaints();
+    assertNotCheckerboarded(utils, scrollerId, `At x=${x}`);
   }
-
-  subtestDone();
 }
 
-waitUntilApzStable().then(runContinuation(test));
+waitUntilApzStable()
+.then(test)
+.then(subtestDone, subtestFailed);
 
 </script>
 </html>

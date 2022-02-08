@@ -7,6 +7,7 @@
 #include "APZThreadUtils.h"
 
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/ProfilerRunnable.h"
 #include "mozilla/StaticMutex.h"
 
 #include "nsISerialEventTarget.h"
@@ -57,7 +58,8 @@ void APZThreadUtils::AssertOnControllerThread() {
 }
 
 /*static*/
-void APZThreadUtils::RunOnControllerThread(RefPtr<Runnable>&& aTask) {
+void APZThreadUtils::RunOnControllerThread(RefPtr<Runnable>&& aTask,
+                                           uint32_t flags) {
   RefPtr<nsISerialEventTarget> thread;
   {
     StaticMutexAutoLock lock(sControllerThreadMutex);
@@ -72,9 +74,10 @@ void APZThreadUtils::RunOnControllerThread(RefPtr<Runnable>&& aTask) {
   }
 
   if (thread->IsOnCurrentThread()) {
+    AUTO_PROFILE_FOLLOWING_RUNNABLE(task);
     task->Run();
   } else {
-    thread->Dispatch(task.forget());
+    thread->Dispatch(task.forget(), flags);
   }
 }
 
@@ -82,6 +85,12 @@ void APZThreadUtils::RunOnControllerThread(RefPtr<Runnable>&& aTask) {
 bool APZThreadUtils::IsControllerThread() {
   StaticMutexAutoLock lock(sControllerThreadMutex);
   return sControllerThread && sControllerThread->IsOnCurrentThread();
+}
+
+/*static*/
+bool APZThreadUtils::IsControllerThreadAlive() {
+  StaticMutexAutoLock lock(sControllerThreadMutex);
+  return !!sControllerThread;
 }
 
 /*static*/

@@ -16,10 +16,27 @@ def test_argparser():
     assert res.tests == ["test_one.js"]
 
 
+def test_argparser_defaults():
+    parser = PerftestArgumentParser()
+    args = ["test_one.js"]
+    res = parser.parse_args(args)
+    assert res.console_simplify_exclude == ["statistics"]
+
+
 def test_options():
     assert Options.args["--proxy"]["help"] == "Activates the proxy layer"
     assert Options.args["--no-browsertime"]["help"] == (
         "Deactivates the " "browsertime layer"
+    )
+
+
+def test_layer_option():
+    parser = PerftestArgumentParser()
+    assert parser.parse_args(["--notebook-metrics"]) == parser.parse_args(
+        ["--notebook-metrics", "--notebook"]
+    )
+    assert parser.parse_known_args(["--notebook-metrics"]) == parser.parse_known_args(
+        ["--notebook-metrics", "--notebook"]
     )
 
 
@@ -49,7 +66,7 @@ def test_perfherder_metrics():
 
     res = parser.parse_args(args)
     assert res.perfherder_metrics[0]["name"] == "foo"
-    assert res.perfherder_metrics[1]["alertThreshold"] == "2"
+    assert res.perfherder_metrics[1]["alertThreshold"] == 2
 
     args = [
         "test_one.js",

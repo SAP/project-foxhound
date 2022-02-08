@@ -3,14 +3,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
-[NamedConstructor=Example,
- NamedConstructor=Example(DOMString str),
- NamedConstructor=Example2(DictForConstructor dict, any any1, object obj1,
+[LegacyFactoryFunction=Example,
+ LegacyFactoryFunction=Example(DOMString str),
+ LegacyFactoryFunction=Example2(DictForConstructor dict, any any1, object obj1,
                            object? obj2, sequence<Dict> seq, optional any any2,
                            optional object obj3, optional object? obj4),
- NamedConstructor=Example2((long or record<DOMString, any>) arg1),
- Exposed=Window,
- ]
+ LegacyFactoryFunction=Example2((long or record<DOMString, any>) arg1),
+ Exposed=Window]
 interface TestExampleInterface {
   constructor();
   constructor(DOMString str);
@@ -779,15 +778,15 @@ interface TestExampleInterface {
   void conditionalOnSecureContext8();
 
   // Miscellania
-  [LenientThis] attribute long attrWithLenientThis;
-  [Unforgeable] readonly attribute long unforgeableAttr;
-  [Unforgeable, ChromeOnly] readonly attribute long unforgeableAttr2;
-  [Unforgeable] long unforgeableMethod();
-  [Unforgeable, ChromeOnly] long unforgeableMethod2();
+  [LegacyLenientThis] attribute long attrWithLenientThis;
+  [LegacyUnforgeable] readonly attribute long unforgeableAttr;
+  [LegacyUnforgeable, ChromeOnly] readonly attribute long unforgeableAttr2;
+  [LegacyUnforgeable] long unforgeableMethod();
+  [LegacyUnforgeable, ChromeOnly] long unforgeableMethod2();
   stringifier;
   void passRenamedInterface(TestRenamedInterface arg);
   [PutForwards=writableByte] readonly attribute TestExampleInterface putForwardsAttr;
-  [PutForwards=writableByte, LenientThis] readonly attribute TestExampleInterface putForwardsAttr2;
+  [PutForwards=writableByte, LegacyLenientThis] readonly attribute TestExampleInterface putForwardsAttr2;
   [PutForwards=writableByte, ChromeOnly] readonly attribute TestExampleInterface putForwardsAttr3;
   [Throws] void throwingMethod();
   [Throws] attribute boolean throwingAttr;

@@ -2,6 +2,9 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
+const ERROR_LINE_NUMBER = 41;
+const EXCEPTION_LINE_NUMBER = ERROR_LINE_NUMBER + 3;
+
 function maybeAsyncStack(offset, column) {
   if (
     Services.prefs.getBoolPref(
@@ -35,7 +38,7 @@ declTest("sendQuery Error", {
     is(error.name, "SyntaxError", "Error should have the correct name");
     is(
       error.stack,
-      "receiveMessage@resource://testing-common/TestWindowChild.jsm:33:31\n" +
+      `receiveMessage@resource://testing-common/TestWindowChild.jsm:${ERROR_LINE_NUMBER}:31\n` +
         asyncStack,
       "Error should have the correct stack"
     );
@@ -63,7 +66,7 @@ declTest("sendQuery Exception", {
     );
     is(
       error.stack,
-      "receiveMessage@resource://testing-common/TestWindowChild.jsm:36:22\n" +
+      `receiveMessage@resource://testing-common/TestWindowChild.jsm:${EXCEPTION_LINE_NUMBER}:22\n` +
         asyncStack,
       "Error should have the correct stack"
     );
@@ -92,5 +95,23 @@ declTest("sendQuery in-process early lifetime", {
     let actorChild = wgc.getActor("TestWindow");
     let { result } = await actorChild.sendQuery("asyncMul", { a: 10, b: 20 });
     is(result, 200);
+  },
+});
+
+declTest("sendQuery unserializable reply", {
+  async test(browser) {
+    let parent = browser.browsingContext.currentWindowGlobal;
+    let actorParent = parent.getActor("TestWindow");
+    ok(actorParent, "JSWindowActorParent should have value");
+
+    try {
+      await actorParent.sendQuery("noncloneReply", {});
+      ok(false, "expected noncloneReply to be rejected");
+    } catch (error) {
+      ok(
+        error.message.includes("message reply cannot be cloned"),
+        "Error should have the correct message"
+      );
+    }
   },
 });

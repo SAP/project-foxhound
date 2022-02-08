@@ -57,8 +57,7 @@ var reloadPageAndWaitForStyleSheets = async function(ui, editorCount) {
   info("Reloading the page.");
 
   const onClear = ui.once("stylesheets-clear");
-  const browser = gBrowser.selectedBrowser;
-  await SpecialPowers.spawn(browser, [], () => content.location.reload());
+  await reloadBrowser();
   await onClear;
 
   await waitUntil(() => ui.editors.length === editorCount);
@@ -71,8 +70,9 @@ var openStyleEditor = async function(tab) {
   if (!tab) {
     tab = gBrowser.selectedTab;
   }
-  const target = await TargetFactory.forTab(tab);
-  const toolbox = await gDevTools.showToolbox(target, "styleeditor");
+  const toolbox = await gDevTools.showToolboxForTab(tab, {
+    toolId: "styleeditor",
+  });
   const panel = toolbox.getPanel("styleeditor");
   const ui = panel.UI;
 

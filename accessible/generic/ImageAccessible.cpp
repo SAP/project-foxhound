@@ -5,8 +5,11 @@
 
 #include "ImageAccessible.h"
 
+#include "DocAccessible-inl.h"
+#include "LocalAccessible-inl.h"
 #include "nsAccUtils.h"
 #include "Role.h"
+#include "AccAttributes.h"
 #include "AccIterator.h"
 #include "States.h"
 
@@ -15,26 +18,49 @@
 #include "nsGenericHTMLElement.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Document.h"
+#include "nsContentUtils.h"
 #include "nsIImageLoadingContent.h"
-#include "nsIPersistentProperties2.h"
 #include "nsPIDOMWindow.h"
 #include "nsIURI.h"
 
 using namespace mozilla::a11y;
+
+NS_IMPL_ISUPPORTS_INHERITED(ImageAccessible, LinkableAccessible,
+                            imgINotificationObserver)
 
 ////////////////////////////////////////////////////////////////////////////////
 // ImageAccessible
 ////////////////////////////////////////////////////////////////////////////////
 
 ImageAccessible::ImageAccessible(nsIContent* aContent, DocAccessible* aDoc)
-    : LinkableAccessible(aContent, aDoc) {
+    : LinkableAccessible(aContent, aDoc),
+      mImageRequestStatus(imgIRequest::STATUS_NONE) {
   mType = eImageType;
+  nsCOMPtr<nsIImageLoadingContent> content(do_QueryInterface(mContent));
+  if (content) {
+    content->AddNativeObserver(this);
+    nsCOMPtr<imgIRequest> imageRequest;
+    content->GetRequest(nsIImageLoadingContent::CURRENT_REQUEST,
+                        getter_AddRefs(imageRequest));
+    if (imageRequest) {
+      imageRequest->GetImageStatus(&mImageRequestStatus);
+    }
+  }
 }
 
 ImageAccessible::~ImageAccessible() {}
 
 ////////////////////////////////////////////////////////////////////////////////
-// Accessible public
+// LocalAccessible public
+
+void ImageAccessible::Shutdown() {
+  nsCOMPtr<nsIImageLoadingContent> content(do_QueryInterface(mContent));
+  if (content) {
+    content->RemoveNativeObserver(this);
+  }
+
+  LinkableAccessible::Shutdown();
+}
 
 uint64_t ImageAccessible::NativeState() const {
   // The state is a bitfield, get our inherited state, then logically OR it with
@@ -42,36 +68,20 @@ uint64_t ImageAccessible::NativeState() const {
 
   uint64_t state = LinkableAccessible::NativeState();
 
-  nsCOMPtr<nsIImageLoadingContent> content(do_QueryInterface(mContent));
-  nsCOMPtr<imgIRequest> imageRequest;
+  if (mImageRequestStatus & imgIRequest::STATUS_IS_ANIMATED) {
+    state |= states::ANIMATED;
+  }
 
-  if (content)
-    content->GetRequest(nsIImageLoadingContent::CURRENT_REQUEST,
-                        getter_AddRefs(imageRequest));
-
-  if (imageRequest) {
-    nsCOMPtr<imgIContainer> imgContainer;
-    imageRequest->GetImage(getter_AddRefs(imgContainer));
-    if (imgContainer) {
-      bool animated = false;
-      imgContainer->GetAnimated(&animated);
-      if (animated) {
-        state |= states::ANIMATED;
-      }
-    }
-
+  if (!(mImageRequestStatus & imgIRequest::STATUS_SIZE_AVAILABLE)) {
     nsIFrame* frame = GetFrame();
     MOZ_ASSERT(!frame || frame->AccessibleType() == eImageType ||
-               frame->AccessibleType() == a11y::eHTMLImageMapType);
+               frame->AccessibleType() == a11y::eHTMLImageMapType ||
+               frame->IsImageBoxFrame());
     if (frame && !(frame->GetStateBits() & IMAGE_SIZECONSTRAINED)) {
-      uint32_t status = imgIRequest::STATUS_NONE;
-      imageRequest->GetImageStatus(&status);
-      if (!(status & imgIRequest::STATUS_SIZE_AVAILABLE)) {
-        // The size of this image hasn't been constrained and we haven't loaded
-        // enough of the image to know its size yet. This means it currently
-        // has 0 width and height.
-        state |= states::INVISIBLE;
-      }
+      // The size of this image hasn't been constrained and we haven't loaded
+      // enough of the image to know its size yet. This means it currently
+      // has 0 width and height.
+      state |= states::INVISIBLE;
     }
   }
 
@@ -83,20 +93,20 @@ ENameValueFlag ImageAccessible::NativeName(nsString& aName) const {
       mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::alt, aName);
   if (!aName.IsEmpty()) return eNameOK;
 
-  ENameValueFlag nameFlag = Accessible::NativeName(aName);
+  ENameValueFlag nameFlag = LocalAccessible::NativeName(aName);
   if (!aName.IsEmpty()) return nameFlag;
 
   // No accessible name but empty 'alt' attribute is present. If further name
   // computation algorithm doesn't provide non empty name then it means
   // an empty 'alt' attribute was used to indicate a decorative image (see
-  // Accessible::Name() method for details).
+  // LocalAccessible::Name() method for details).
   return hasAltAttrib ? eNoNameOnPurpose : eNameOK;
 }
 
 role ImageAccessible::NativeRole() const { return roles::GRAPHIC; }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Accessible
+// LocalAccessible
 
 uint8_t ImageAccessible::ActionCount() const {
   uint8_t actionCount = LinkableAccessible::ActionCount();
@@ -105,10 +115,11 @@ uint8_t ImageAccessible::ActionCount() const {
 
 void ImageAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
   aName.Truncate();
-  if (IsLongDescIndex(aIndex) && HasLongDesc())
+  if (IsLongDescIndex(aIndex) && HasLongDesc()) {
     aName.AssignLiteral("showlongdesc");
-  else
+  } else {
     LinkableAccessible::ActionNameAt(aIndex, aName);
+  }
 }
 
 bool ImageAccessible::DoAction(uint8_t aIndex) const {
@@ -127,7 +138,7 @@ bool ImageAccessible::DoAction(uint8_t aIndex) const {
   if (!piWindow) return false;
 
   RefPtr<mozilla::dom::BrowsingContext> tmp;
-  return NS_SUCCEEDED(piWindow->Open(spec, EmptyString(), EmptyString(),
+  return NS_SUCCEEDED(piWindow->Open(spec, u""_ns, u""_ns,
                                      /* aLoadInfo = */ nullptr,
                                      /* aForceNoOpener = */ false,
                                      getter_AddRefs(tmp)));
@@ -144,14 +155,13 @@ nsIntPoint ImageAccessible::Position(uint32_t aCoordType) {
 
 nsIntSize ImageAccessible::Size() { return Bounds().Size(); }
 
-// Accessible
-already_AddRefed<nsIPersistentProperties> ImageAccessible::NativeAttributes() {
-  nsCOMPtr<nsIPersistentProperties> attributes =
-      LinkableAccessible::NativeAttributes();
+// LocalAccessible
+already_AddRefed<AccAttributes> ImageAccessible::NativeAttributes() {
+  RefPtr<AccAttributes> attributes = LinkableAccessible::NativeAttributes();
 
-  nsAutoString src;
+  nsString src;
   mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::src, src);
-  if (!src.IsEmpty()) nsAccUtils::SetAccAttr(attributes, nsGkAtoms::src, src);
+  if (!src.IsEmpty()) attributes->SetAttribute(nsGkAtoms::src, std::move(src));
 
   return attributes.forget();
 }
@@ -197,4 +207,43 @@ already_AddRefed<nsIURI> ImageAccessible::GetLongDescURI() const {
 
 bool ImageAccessible::IsLongDescIndex(uint8_t aIndex) const {
   return aIndex == LinkableAccessible::ActionCount();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// imgINotificationObserver
+
+void ImageAccessible::Notify(imgIRequest* aRequest, int32_t aType,
+                             const nsIntRect* aData) {
+  if (aType != imgINotificationObserver::FRAME_COMPLETE &&
+      aType != imgINotificationObserver::LOAD_COMPLETE &&
+      aType != imgINotificationObserver::DECODE_COMPLETE) {
+    // We should update our state if the whole image was decoded,
+    // or the first frame in the case of a gif.
+    return;
+  }
+
+  if (IsDefunct() || !mParent) {
+    return;
+  }
+
+  uint32_t status = imgIRequest::STATUS_NONE;
+  aRequest->GetImageStatus(&status);
+
+  if ((status ^ mImageRequestStatus) & imgIRequest::STATUS_SIZE_AVAILABLE) {
+    nsIFrame* frame = GetFrame();
+    if (frame && !(frame->GetStateBits() & IMAGE_SIZECONSTRAINED)) {
+      RefPtr<AccEvent> event = new AccStateChangeEvent(
+          this, states::INVISIBLE,
+          !(status & imgIRequest::STATUS_SIZE_AVAILABLE));
+      mDoc->FireDelayedEvent(event);
+    }
+  }
+
+  if ((status ^ mImageRequestStatus) & imgIRequest::STATUS_IS_ANIMATED) {
+    RefPtr<AccEvent> event = new AccStateChangeEvent(
+        this, states::ANIMATED, (status & imgIRequest::STATUS_IS_ANIMATED));
+    mDoc->FireDelayedEvent(event);
+  }
+
+  mImageRequestStatus = status;
 }

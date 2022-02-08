@@ -13,6 +13,7 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/InternalMutationEvent.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsError.h"
 #include "nsUnicharUtils.h"
@@ -27,8 +28,7 @@
 #include "nsWrapperCacheInlines.h"
 #include "NodeUbiReporting.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 //----------------------------------------------------------------------
 bool Attr::sInitialized;
@@ -222,5 +222,4 @@ void Attr::ConstructUbiNode(void* storage) {
   JS::ubi::Concrete<Attr>::construct(storage, this);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

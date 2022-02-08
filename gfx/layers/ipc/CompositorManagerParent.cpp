@@ -6,13 +6,16 @@
 
 #include "mozilla/layers/CompositorManagerParent.h"
 #include "mozilla/gfx/GPUParent.h"
+#include "mozilla/gfx/CanvasManagerParent.h"
 #include "mozilla/webrender/RenderThread.h"
+#include "mozilla/ipc/Endpoint.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/ContentCompositorBridgeParent.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/SharedSurfacesParent.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
+#include "gfxPlatform.h"
 #include "VsyncSource.h"
 
 namespace mozilla {
@@ -259,8 +262,8 @@ CompositorManagerParent::AllocPCompositorBridgeParent(
 }
 
 mozilla::ipc::IPCResult CompositorManagerParent::RecvAddSharedSurface(
-    const wr::ExternalImageId& aId, const SurfaceDescriptorShared& aDesc) {
-  SharedSurfacesParent::Add(aId, aDesc, OtherPid());
+    const wr::ExternalImageId& aId, SurfaceDescriptorShared&& aDesc) {
+  SharedSurfacesParent::Add(aId, std::move(aDesc), OtherPid());
   return IPC_OK();
 }
 
@@ -315,6 +318,12 @@ mozilla::ipc::IPCResult CompositorManagerParent::RecvReportMemory(
         MOZ_ASSERT_UNREACHABLE("MemoryReport promises are never rejected");
       });
 
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult CompositorManagerParent::RecvInitCanvasManager(
+    Endpoint<PCanvasManagerParent>&& aEndpoint) {
+  gfx::CanvasManagerParent::Init(std::move(aEndpoint));
   return IPC_OK();
 }
 

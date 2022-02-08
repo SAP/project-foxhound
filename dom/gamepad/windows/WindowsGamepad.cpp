@@ -53,6 +53,13 @@ const uint32_t kWindowsGamepadPollInterval = 50;
 
 const UINT kRawInputError = (UINT)-1;
 
+// In XInputGetState, we can't get the state of Xbox Guide button.
+// We need to go through the undocumented XInputGetStateEx method
+// to get that button's state.
+const LPCSTR kXInputGetStateExOrdinal = (LPCSTR)100;
+// Bitmask for the Guide button in XInputGamepadEx.wButtons.
+const int XINPUT_GAMEPAD_Guide = 0x0400;
+
 #ifndef XUSER_MAX_COUNT
 #  define XUSER_MAX_COUNT 4
 #endif
@@ -79,6 +86,7 @@ const struct {
                     {XINPUT_GAMEPAD_RIGHT_THUMB, 11},
                     {XINPUT_GAMEPAD_LEFT_SHOULDER, 4},
                     {XINPUT_GAMEPAD_RIGHT_SHOULDER, 5},
+                    {XINPUT_GAMEPAD_Guide, 16},
                     {XINPUT_GAMEPAD_A, 0},
                     {XINPUT_GAMEPAD_B, 1},
                     {XINPUT_GAMEPAD_X, 2},
@@ -108,9 +116,8 @@ class Gamepad {
   // Last-known state of the controller.
   XINPUT_STATE state;
 
-  // ID from the GamepadService, also used as the index into
-  // WindowsGamepadService::mGamepads.
-  int id;
+  // Handle from the GamepadService
+  GamepadHandle gamepadHandle;
 
   // Information about the physical device.
   unsigned numAxes;
@@ -144,7 +151,7 @@ class Gamepad {
 };
 
 // Drop this in favor of decltype when we require a new enough SDK.
-typedef void(WINAPI* XInputEnable_func)(BOOL);
+using XInputEnable_func = void(WINAPI*)(BOOL);
 
 // RAII class to wrap loading the XInput DLL
 class XInputLoader {
@@ -162,8 +169,17 @@ class XInputLoader {
       if (module) {
         mXInputEnable = reinterpret_cast<XInputEnable_func>(
             GetProcAddress(module, "XInputEnable"));
+        // Checking if `XInputGetStateEx` is available. If not,
+        // we will fallback to use `XInputGetState`.
         mXInputGetState = reinterpret_cast<decltype(XInputGetState)*>(
-            GetProcAddress(module, "XInputGetState"));
+            GetProcAddress(module, kXInputGetStateExOrdinal));
+        if (!mXInputGetState) {
+          mXInputGetState = reinterpret_cast<decltype(XInputGetState)*>(
+              GetProcAddress(module, "XInputGetState"));
+        }
+        MOZ_ASSERT(mXInputGetState &&
+                   "XInputGetState must be linked successfully.");
+
         if (mXInputEnable) {
           mXInputEnable(TRUE);
         }
@@ -173,7 +189,7 @@ class XInputLoader {
   }
 
   ~XInputLoader() {
-    // mXInputEnable = nullptr;
+    mXInputEnable = nullptr;
     mXInputGetState = nullptr;
 
     if (module) {
@@ -317,8 +333,10 @@ class WindowsGamepadService {
   void Shutdown();
   // Parse gamepad input from a WM_INPUT message.
   bool HandleRawInput(HRAWINPUT handle);
-  void SetLightIndicatorColor(uint32_t aControllerIdx, uint32_t aLightIndex,
-                              uint8_t aRed, uint8_t aGreen, uint8_t aBlue);
+  void SetLightIndicatorColor(const Tainted<GamepadHandle>& aGamepadHandle,
+                              const Tainted<uint32_t>& aLightColorIndex,
+                              const uint8_t& aRed, const uint8_t& aGreen,
+                              const uint8_t& aBlue);
   size_t WriteOutputReport(const std::vector<uint8_t>& aReport);
   static void XInputMessageLoopOnceCallback(nsITimer* aTimer, void* aClosure);
   static void DevicesChangeCallback(nsITimer* aTimer, void* aService);
@@ -420,9 +438,12 @@ bool WindowsGamepadService::ScanForXInputDevices() {
 
   for (unsigned int i = 0; i < XUSER_MAX_COUNT; i++) {
     XINPUT_STATE state = {};
-    if (mXInput.mXInputGetState(i, &state) != ERROR_SUCCESS) {
+
+    if (!mXInput.mXInputGetState ||
+        mXInput.mXInputGetState(i, &state) != ERROR_SUCCESS) {
       continue;
     }
+
     found = true;
     // See if this device is already present in our list.
     if (HaveXInputGamepad(i)) {
@@ -434,7 +455,7 @@ bool WindowsGamepadService::ScanForXInputDevices() {
                     kXInputGamepad);
     gamepad.userIndex = i;
     gamepad.state = state;
-    gamepad.id = service->AddGamepad(
+    gamepad.gamepadHandle = service->AddGamepad(
         "xinput", GamepadMappingType::Standard, GamepadHand::_empty,
         kStandardGamepadButtons, kStandardGamepadAxes, 0, 0,
         0);  // TODO: Bug 680289, implement gamepad haptics for Windows.
@@ -473,7 +494,7 @@ void WindowsGamepadService::ScanForDevices() {
   // Look for devices that are no longer present and remove them.
   for (int i = mGamepads.Length() - 1; i >= 0; i--) {
     if (!mGamepads[i].present) {
-      service->RemoveGamepad(mGamepads[i].id);
+      service->RemoveGamepad(mGamepads[i].gamepadHandle);
       mGamepads.RemoveElementAt(i);
     }
   }
@@ -486,9 +507,13 @@ void WindowsGamepadService::PollXInput() {
     }
 
     XINPUT_STATE state = {};
-    DWORD res = mXInput.mXInputGetState(mGamepads[i].userIndex, &state);
-    if (res == ERROR_SUCCESS &&
-        state.dwPacketNumber != mGamepads[i].state.dwPacketNumber) {
+
+    if (!mXInput.mXInputGetState ||
+        mXInput.mXInputGetState(i, &state) != ERROR_SUCCESS) {
+      continue;
+    }
+
+    if (state.dwPacketNumber != mGamepads[i].state.dwPacketNumber) {
       CheckXInputChanges(mGamepads[i], state);
     }
   }
@@ -506,11 +531,13 @@ void WindowsGamepadService::CheckXInputChanges(Gamepad& gamepad,
     if (state.Gamepad.wButtons & kXIButtonMap[b].button &&
         !(gamepad.state.Gamepad.wButtons & kXIButtonMap[b].button)) {
       // Button pressed
-      service->NewButtonEvent(gamepad.id, kXIButtonMap[b].mapped, true);
+      service->NewButtonEvent(gamepad.gamepadHandle, kXIButtonMap[b].mapped,
+                              true);
     } else if (!(state.Gamepad.wButtons & kXIButtonMap[b].button) &&
                gamepad.state.Gamepad.wButtons & kXIButtonMap[b].button) {
       // Button released
-      service->NewButtonEvent(gamepad.id, kXIButtonMap[b].mapped, false);
+      service->NewButtonEvent(gamepad.gamepadHandle, kXIButtonMap[b].mapped,
+                              false);
     }
   }
 
@@ -518,13 +545,13 @@ void WindowsGamepadService::CheckXInputChanges(Gamepad& gamepad,
   if (state.Gamepad.bLeftTrigger != gamepad.state.Gamepad.bLeftTrigger) {
     const bool pressed =
         state.Gamepad.bLeftTrigger >= XINPUT_GAMEPAD_TRIGGER_THRESHOLD;
-    service->NewButtonEvent(gamepad.id, kButtonLeftTrigger, pressed,
+    service->NewButtonEvent(gamepad.gamepadHandle, kButtonLeftTrigger, pressed,
                             state.Gamepad.bLeftTrigger / 255.0);
   }
   if (state.Gamepad.bRightTrigger != gamepad.state.Gamepad.bRightTrigger) {
     const bool pressed =
         state.Gamepad.bRightTrigger >= XINPUT_GAMEPAD_TRIGGER_THRESHOLD;
-    service->NewButtonEvent(gamepad.id, kButtonRightTrigger, pressed,
+    service->NewButtonEvent(gamepad.gamepadHandle, kButtonRightTrigger, pressed,
                             state.Gamepad.bRightTrigger / 255.0);
   }
 
@@ -532,22 +559,22 @@ void WindowsGamepadService::CheckXInputChanges(Gamepad& gamepad,
   // TODO: bug 1001955 - Support deadzones.
   if (state.Gamepad.sThumbLX != gamepad.state.Gamepad.sThumbLX) {
     const float div = state.Gamepad.sThumbLX > 0 ? 32767.0 : 32768.0;
-    service->NewAxisMoveEvent(gamepad.id, kLeftStickXAxis,
+    service->NewAxisMoveEvent(gamepad.gamepadHandle, kLeftStickXAxis,
                               state.Gamepad.sThumbLX / div);
   }
   if (state.Gamepad.sThumbLY != gamepad.state.Gamepad.sThumbLY) {
     const float div = state.Gamepad.sThumbLY > 0 ? 32767.0 : 32768.0;
-    service->NewAxisMoveEvent(gamepad.id, kLeftStickYAxis,
+    service->NewAxisMoveEvent(gamepad.gamepadHandle, kLeftStickYAxis,
                               -1.0 * state.Gamepad.sThumbLY / div);
   }
   if (state.Gamepad.sThumbRX != gamepad.state.Gamepad.sThumbRX) {
     const float div = state.Gamepad.sThumbRX > 0 ? 32767.0 : 32768.0;
-    service->NewAxisMoveEvent(gamepad.id, kRightStickXAxis,
+    service->NewAxisMoveEvent(gamepad.gamepadHandle, kRightStickXAxis,
                               state.Gamepad.sThumbRX / div);
   }
   if (state.Gamepad.sThumbRY != gamepad.state.Gamepad.sThumbRY) {
     const float div = state.Gamepad.sThumbRY > 0 ? 32767.0 : 32768.0;
-    service->NewAxisMoveEvent(gamepad.id, kRightStickYAxis,
+    service->NewAxisMoveEvent(gamepad.gamepadHandle, kRightStickYAxis,
                               -1.0 * state.Gamepad.sThumbRY / div);
   }
   gamepad.state = state;
@@ -726,7 +753,7 @@ bool WindowsGamepadService::GetRawGamepad(HANDLE handle) {
 
   gamepad.remapper = remapper.forget();
   // TODO: Bug 680289, implement gamepad haptics for Windows.
-  gamepad.id = service->AddGamepad(
+  gamepad.gamepadHandle = service->AddGamepad(
       gamepad_id, gamepad.remapper->GetMappingType(), GamepadHand::_empty,
       gamepad.remapper->GetButtonCount(), gamepad.remapper->GetAxisCount(), 0,
       gamepad.remapper->GetLightIndicatorCount(),
@@ -736,7 +763,8 @@ bool WindowsGamepadService::GetRawGamepad(HANDLE handle) {
   gamepad.remapper->GetLightIndicators(lightTypes);
   for (uint32_t i = 0; i < lightTypes.Length(); ++i) {
     if (lightTypes[i] != GamepadLightIndicator::DefaultType()) {
-      service->NewLightIndicatorTypeEvent(gamepad.id, i, lightTypes[i]);
+      service->NewLightIndicatorTypeEvent(gamepad.gamepadHandle, i,
+                                          lightTypes[i]);
     }
   }
 
@@ -815,7 +843,8 @@ bool WindowsGamepadService::HandleRawInput(HRAWINPUT handle) {
 
   for (unsigned i = 0; i < gamepad->numButtons; i++) {
     if (gamepad->buttons[i] != buttons[i]) {
-      gamepad->remapper->RemapButtonEvent(gamepad->id, i, buttons[i]);
+      gamepad->remapper->RemapButtonEvent(gamepad->gamepadHandle, i,
+                                          buttons[i]);
       gamepad->buttons[i] = buttons[i];
     }
   }
@@ -848,37 +877,35 @@ bool WindowsGamepadService::HandleRawInput(HRAWINPUT handle) {
                             gamepad->axes[i].caps.LogicalMax);
     }
     if (gamepad->axes[i].value != new_value) {
-      gamepad->remapper->RemapAxisMoveEvent(gamepad->id, i, new_value);
+      gamepad->remapper->RemapAxisMoveEvent(gamepad->gamepadHandle, i,
+                                            new_value);
       gamepad->axes[i].value = new_value;
     }
   }
 
   BYTE* rawData = raw->data.hid.bRawData;
-  gamepad->remapper->ProcessTouchData(gamepad->id, rawData);
+  gamepad->remapper->ProcessTouchData(gamepad->gamepadHandle, rawData);
 
   return true;
 }
 
-void WindowsGamepadService::SetLightIndicatorColor(uint32_t aControllerIdx,
-                                                   uint32_t aLightColorIndex,
-                                                   uint8_t aRed, uint8_t aGreen,
-                                                   uint8_t aBlue) {
+void WindowsGamepadService::SetLightIndicatorColor(
+    const Tainted<GamepadHandle>& aGamepadHandle,
+    const Tainted<uint32_t>& aLightColorIndex, const uint8_t& aRed,
+    const uint8_t& aGreen, const uint8_t& aBlue) {
   // We get aControllerIdx from GamepadPlatformService::AddGamepad(),
   // It begins from 1 and is stored at Gamepad.id.
-  const Gamepad* gamepad = nullptr;
-  for (const auto& pad : mGamepads) {
-    if (pad.id == aControllerIdx) {
-      gamepad = &pad;
-      break;
-    }
-  }
+  const Gamepad* gamepad = (MOZ_FIND_AND_VALIDATE(
+      aGamepadHandle, list_item.gamepadHandle == aGamepadHandle, mGamepads));
   if (!gamepad) {
     MOZ_ASSERT(false);
     return;
   }
 
   RefPtr<GamepadRemapper> remapper = gamepad->remapper;
-  if (!remapper || remapper->GetLightIndicatorCount() <= aLightColorIndex) {
+  if (!remapper ||
+      MOZ_IS_VALID(aLightColorIndex,
+                   remapper->GetLightIndicatorCount() <= aLightColorIndex)) {
     MOZ_ASSERT(false);
     return;
   }
@@ -1094,14 +1121,15 @@ void StopGamepadMonitoring() {
   gMonitorThread = nullptr;
 }
 
-void SetGamepadLightIndicatorColor(uint32_t aControllerIdx,
-                                   uint32_t aLightColorIndex, uint8_t aRed,
-                                   uint8_t aGreen, uint8_t aBlue) {
+void SetGamepadLightIndicatorColor(const Tainted<GamepadHandle>& aGamepadHandle,
+                                   const Tainted<uint32_t>& aLightColorIndex,
+                                   const uint8_t& aRed, const uint8_t& aGreen,
+                                   const uint8_t& aBlue) {
   MOZ_ASSERT(gService);
   if (!gService) {
     return;
   }
-  gService->SetLightIndicatorColor(aControllerIdx, aLightColorIndex, aRed,
+  gService->SetLightIndicatorColor(aGamepadHandle, aLightColorIndex, aRed,
                                    aGreen, aBlue);
 }
 

@@ -73,7 +73,7 @@ class IDBTransaction final
   nsTArray<RefPtr<IDBObjectStore>> mObjectStores;
   nsTArray<RefPtr<IDBObjectStore>> mDeletedObjectStores;
   RefPtr<StrongWorkerRef> mWorkerRef;
-  nsTArray<IDBCursor*> mCursors;
+  nsTArray<NotNull<IDBCursor*>> mCursors;
 
   // Tagged with mMode. If mMode is Mode::VersionChange then mBackgroundActor
   // will be a BackgroundVersionChangeTransactionChild. Otherwise it will be a
@@ -163,7 +163,7 @@ class IDBTransaction final
       MovingNotNull<RefPtr<mozilla::dom::IDBRequest>> aRequest,
       const indexedDB::RequestParams& aParams);
 
-  void OpenCursor(indexedDB::PBackgroundIDBCursorChild* aBackgroundActor,
+  void OpenCursor(indexedDB::PBackgroundIDBCursorChild& aBackgroundActor,
                   const indexedDB::OpenCursorParams& aParams);
 
   void RefreshSpec(bool aMayDelete);
@@ -312,8 +312,8 @@ class IDBTransaction final
   int64_t NextIndexId();
 
   void InvalidateCursorCaches();
-  void RegisterCursor(IDBCursor* aCursor);
-  void UnregisterCursor(IDBCursor* aCursor);
+  void RegisterCursor(IDBCursor& aCursor);
+  void UnregisterCursor(IDBCursor& aCursor);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIRUNNABLE

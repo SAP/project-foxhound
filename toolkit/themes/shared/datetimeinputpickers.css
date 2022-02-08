@@ -15,19 +15,16 @@
   --date-picker-item-height: 2.5rem;
   --date-picker-item-width: 3.3rem;
 
-  --border: 0.1rem solid ThreeDShadow;
   --border-radius: 0.3rem;
-  --border-active-color: ButtonShadow;
 
-  --font-color: ButtonText;
-  --fill-color: ThreeDFace;
+  --border: 0.1rem solid FieldText;
+  --border-active-color: FieldText;
+  --fill-color: color-mix(in srgb, FieldText 20%, transparent);
+  --today-fill-color: color-mix(in srgb, FieldText 10%, transparent);
+  --button-fill-color-active: color-mix(in srgb, FieldText 20%, transparent);
 
-  --today-fill-color: ThreeDShadow;
-
-  --selected-font-color: HighlightText;
-  --selected-fill-color: Highlight;
-
-  --button-fill-color-active: ButtonFace;
+  --selected-font-color: SelectedItemText;
+  --selected-fill-color: SelectedItem;
 
   /* Use -moz-activehyperlinktext to get a system color that
      by default will be closest to Red */
@@ -36,6 +33,20 @@
   --disabled-fill-color: ButtonShadow;
 
   --disabled-opacity: 0.2;
+
+  /* We need to hide the scroll bar but maintain its scrolling
+     capability, so using |overflow: hidden| is not an option. */
+  scrollbar-width: none;
+}
+
+@media not (prefers-contrast) {
+  :root {
+    --border: 0.1rem solid color-mix(in srgb, FieldText 65%, transparent);
+    --border-active-color: color-mix(in srgb, FieldText 80%, transparent);
+    --fill-color: color-mix(in srgb, FieldText 20%, transparent);
+    --today-fill-color: color-mix(in srgb, FieldText 30%, transparent);
+    --button-fill-color-active: color-mix(in srgb, FieldText 30%, transparent);
+  }
 }
 
 html {
@@ -44,9 +55,10 @@ html {
 
 body {
   margin: 0;
-  color: var(--font-color);
   font: message-box;
   font-size: var(--font-size-default);
+  background: Field;
+  color: FieldText;
 }
 
 button {
@@ -67,7 +79,7 @@ button {
   width: 3rem;
   height: var(--date-picker-item-height);
   -moz-context-properties: fill, fill-opacity;
-  fill: var(--font-color);
+  fill: FieldText;
   fill-opacity: .5;
 }
 
@@ -104,6 +116,7 @@ button {
 button.month-year {
   font-size: 1.3rem;
   border: var(--border);
+  color: inherit;
   border-radius: 0.3rem;
   padding-block: 0.2rem;
   padding-inline: 1.2rem 2.6rem;
@@ -123,14 +136,14 @@ button.month-year::after {
   content: "";
   width: 2.6rem;
   height: 1.6rem;
-  background: url("chrome://global/skin/icons/spinner-arrow-down.svg") no-repeat 50% 50%;
+  background: url("chrome://global/skin/icons/arrow-down.svg") no-repeat 50% 50%;
   -moz-context-properties: fill, fill-opacity;
-  fill: var(--font-color);
+  fill: FieldText;
   fill-opacity: .5;
 }
 
 button.month-year.active::after {
-  background: url("chrome://global/skin/icons/spinner-arrow-up.svg") no-repeat 50% 50%;
+  background: url("chrome://global/skin/icons/arrow-up.svg") no-repeat 50% 50%;
 }
 
 .month-year-view {
@@ -141,7 +154,8 @@ button.month-year.active::after {
   left: 0;
   bottom: 0;
   width: var(--calendar-width);
-  background: window;
+  background-color: window;
+  color: windowtext;
   opacity: 1;
   transition: opacity 0.15s;
 }
@@ -273,7 +287,7 @@ button.month-year.active::after {
 .spinner-container > button {
   height: var(--spinner-button-height);
   -moz-context-properties: fill, fill-opacity;
-  fill: var(--font-color);
+  fill: FieldText;
   fill-opacity: .5;
 }
 
@@ -286,11 +300,11 @@ button.month-year.active::after {
 }
 
 .spinner-container > button.up {
-  background: url("chrome://global/skin/icons/spinner-arrow-up.svg") no-repeat 50% 50%;
+  background: url("chrome://global/skin/icons/arrow-up.svg") no-repeat 50% 50%;
 }
 
 .spinner-container > button.down {
-  background: url("chrome://global/skin/icons/spinner-arrow-down.svg") no-repeat 50% 50%;
+  background: url("chrome://global/skin/icons/arrow-down.svg") no-repeat 50% 50%;
 }
 
 .spinner-container.hide-buttons > button {
@@ -313,7 +327,7 @@ button.month-year.active::after {
   padding: calc((var(--spinner-item-height) - var(--font-size-default)) / 2) 0;
   margin-bottom: var(--spinner-item-margin-bottom);
   height: var(--spinner-item-height);
-  -moz-user-select: none;
+  user-select: none;
   scroll-snap-align: start;
 }
 
@@ -334,7 +348,14 @@ button.month-year.active::after {
 
 .calendar-container .days-view > div.today::before {
   background: var(--today-fill-color);
+  border: var(--border);
   content: "";
+}
+
+@media not (prefers-contrast) {
+  .calendar-container .days-view > div.today::before {
+    border-width: 0;
+  }
 }
 
 .spinner-container > .spinner:not(.scrolling) > div.selection,

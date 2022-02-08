@@ -98,6 +98,55 @@ void XULPopupElement::HidePopup(bool aCancel) {
   }
 }
 
+static Modifiers ConvertModifiers(const ActivateMenuItemOptions& aModifiers) {
+  Modifiers modifiers = 0;
+  if (aModifiers.mCtrlKey) {
+    modifiers |= MODIFIER_CONTROL;
+  }
+  if (aModifiers.mAltKey) {
+    modifiers |= MODIFIER_ALT;
+  }
+  if (aModifiers.mShiftKey) {
+    modifiers |= MODIFIER_SHIFT;
+  }
+  if (aModifiers.mMetaKey) {
+    modifiers |= MODIFIER_META;
+  }
+  return modifiers;
+}
+
+void XULPopupElement::ActivateItem(Element& aItemElement,
+                                   const ActivateMenuItemOptions& aOptions,
+                                   ErrorResult& aRv) {
+  if (!Contains(&aItemElement)) {
+    return aRv.ThrowInvalidStateError("Menu item is not inside this menu.");
+  }
+
+  Modifiers modifiers = ConvertModifiers(aOptions);
+
+  // First, check if a native menu is open, and activate the item in it.
+  if (nsXULPopupManager* pm = nsXULPopupManager::GetInstance()) {
+    if (pm->ActivateNativeMenuItem(&aItemElement, modifiers, aOptions.mButton,
+                                   aRv)) {
+      return;
+    }
+  }
+
+  // Used only to flush frames.
+  GetPrimaryFrame(FlushType::Frames);
+
+  nsMenuFrame* itemFrame = do_QueryFrame(aItemElement.GetPrimaryFrame());
+  if (!itemFrame) {
+    return aRv.ThrowInvalidStateError("Menu item is not visible");
+  }
+
+  if (!itemFrame->GetMenuParent() || !itemFrame->GetMenuParent()->IsOpen()) {
+    return aRv.ThrowInvalidStateError("Menu is closed");
+  }
+
+  itemFrame->ActivateItem(modifiers, aOptions.mButton);
+}
+
 void XULPopupElement::MoveTo(int32_t aLeft, int32_t aTop) {
   nsMenuPopupFrame* menuPopupFrame = do_QueryFrame(GetPrimaryFrame());
   if (menuPopupFrame) {
@@ -109,7 +158,7 @@ void XULPopupElement::MoveToAnchor(Element* aAnchorElement,
                                    const nsAString& aPosition, int32_t aXPos,
                                    int32_t aYPos, bool aAttributesOverride) {
   nsMenuPopupFrame* menuPopupFrame = do_QueryFrame(GetPrimaryFrame());
-  if (menuPopupFrame && menuPopupFrame->IsVisible()) {
+  if (menuPopupFrame && menuPopupFrame->IsVisibleOrShowing()) {
     menuPopupFrame->MoveToAnchor(aAnchorElement, aPosition, aXPos, aYPos,
                                  aAttributesOverride);
   }
@@ -135,7 +184,7 @@ void XULPopupElement::SizeTo(int32_t aWidth, int32_t aHeight) {
   // with notifications set to true so that the popuppositioned event is fired.
   nsMenuPopupFrame* menuPopupFrame = do_QueryFrame(GetPrimaryFrame());
   if (menuPopupFrame && menuPopupFrame->PopupState() == ePopupShown) {
-    menuPopupFrame->SetPopupPosition(nullptr, false, false, true);
+    menuPopupFrame->SetPopupPosition(nullptr, false, false);
   }
 }
 
@@ -158,9 +207,8 @@ void XULPopupElement::GetState(nsString& aState) {
   // set this here in case there's no frame for the popup
   aState.AssignLiteral("closed");
 
-  nsMenuPopupFrame* menuPopupFrame = do_QueryFrame(GetPrimaryFrame());
-  if (menuPopupFrame) {
-    switch (menuPopupFrame->PopupState()) {
+  if (nsXULPopupManager* pm = nsXULPopupManager::GetInstance()) {
+    switch (pm->GetPopupState(this)) {
       case ePopupShown:
         aState.AssignLiteral("open");
         break;
@@ -188,6 +236,15 @@ nsINode* XULPopupElement::GetTriggerNode() const {
   return nsMenuPopupFrame::GetTriggerContent(menuPopupFrame);
 }
 
+bool XULPopupElement::IsAnchored() const {
+  nsMenuPopupFrame* menuPopupFrame = do_QueryFrame(GetPrimaryFrame());
+  if (!menuPopupFrame) {
+    return false;
+  }
+
+  return menuPopupFrame->IsAnchored();
+}
+
 // FIXME(emilio): should probably be renamed to GetAnchorElement?
 Element* XULPopupElement::GetAnchorNode() const {
   nsMenuPopupFrame* menuPopupFrame = do_QueryFrame(GetPrimaryFrame());
@@ -208,80 +265,28 @@ already_AddRefed<DOMRect> XULPopupElement::GetOuterScreenRect() {
     return rect.forget();
   }
 
-  nsView* view = menuPopupFrame->GetView();
-  if (view) {
-    nsIWidget* widget = view->GetWidget();
-    if (widget) {
-      LayoutDeviceIntRect screenRect = widget->GetScreenBounds();
+  Maybe<CSSRect> screenRect;
 
-      int32_t pp = menuPopupFrame->PresContext()->AppUnitsPerDevPixel();
-      rect->SetLayoutRect(LayoutDeviceIntRect::ToAppUnits(screenRect, pp));
+  if (menuPopupFrame->IsNativeMenu()) {
+    // For native menus we can't query the true size. Use the anchor rect
+    // instead, which at least has the position at which we were intending to
+    // open the menu.
+    screenRect = Some(CSSRect(menuPopupFrame->GetScreenAnchorRect()));
+  } else {
+    // For non-native menus, query the bounds from the widget.
+    if (nsView* view = menuPopupFrame->GetView()) {
+      if (nsIWidget* widget = view->GetWidget()) {
+        screenRect = Some(widget->GetScreenBounds() /
+                          menuPopupFrame->PresContext()->CSSToDevPixelScale());
+      }
     }
   }
-  return rect.forget();
-}
 
-void XULPopupElement::GetAlignmentPosition(nsString& positionStr) {
-  positionStr.Truncate();
-
-  // This needs to flush layout.
-  nsMenuPopupFrame* menuPopupFrame =
-      do_QueryFrame(GetPrimaryFrame(FlushType::Layout));
-  if (!menuPopupFrame) return;
-
-  int8_t position = menuPopupFrame->GetAlignmentPosition();
-  switch (position) {
-    case POPUPPOSITION_AFTERSTART:
-      positionStr.AssignLiteral("after_start");
-      break;
-    case POPUPPOSITION_AFTEREND:
-      positionStr.AssignLiteral("after_end");
-      break;
-    case POPUPPOSITION_BEFORESTART:
-      positionStr.AssignLiteral("before_start");
-      break;
-    case POPUPPOSITION_BEFOREEND:
-      positionStr.AssignLiteral("before_end");
-      break;
-    case POPUPPOSITION_STARTBEFORE:
-      positionStr.AssignLiteral("start_before");
-      break;
-    case POPUPPOSITION_ENDBEFORE:
-      positionStr.AssignLiteral("end_before");
-      break;
-    case POPUPPOSITION_STARTAFTER:
-      positionStr.AssignLiteral("start_after");
-      break;
-    case POPUPPOSITION_ENDAFTER:
-      positionStr.AssignLiteral("end_after");
-      break;
-    case POPUPPOSITION_OVERLAP:
-      positionStr.AssignLiteral("overlap");
-      break;
-    case POPUPPOSITION_AFTERPOINTER:
-      positionStr.AssignLiteral("after_pointer");
-      break;
-    case POPUPPOSITION_SELECTION:
-      positionStr.AssignLiteral("selection");
-      break;
-    default:
-      // Leave as an empty string.
-      break;
+  if (screenRect) {
+    rect->SetRect(screenRect->X(), screenRect->Y(), screenRect->Width(),
+                  screenRect->Height());
   }
-}
-
-int32_t XULPopupElement::AlignmentOffset() {
-  nsMenuPopupFrame* menuPopupFrame =
-      do_QueryFrame(GetPrimaryFrame(FlushType::Frames));
-  if (!menuPopupFrame) return 0;
-
-  int32_t pp = mozilla::AppUnitsPerCSSPixel();
-  // Note that the offset might be along either the X or Y axis, but for the
-  // sake of simplicity we use a point with only the X axis set so we can
-  // use ToNearestPixels().
-  nsPoint appOffset(menuPopupFrame->GetAlignmentOffset(), 0);
-  nsIntPoint popupOffset = appOffset.ToNearestPixels(pp);
-  return popupOffset.x;
+  return rect.forget();
 }
 
 void XULPopupElement::SetConstraintRect(dom::DOMRectReadOnly& aRect) {

@@ -7,12 +7,23 @@
 #ifndef mozilla_dom_quota_EncryptingOutputStream_h
 #define mozilla_dom_quota_EncryptingOutputStream_h
 
+// Local includes
+#include "EncryptedBlock.h"  // for EncryptedBlock
+
+// Global includes
+#include <cstddef>
+#include <cstdint>
+#include "ErrorList.h"
 #include "mozilla/InitializedOnce.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/NotNull.h"
 #include "nsCOMPtr.h"
 #include "nsIOutputStream.h"
+#include "nsISupports.h"
 #include "nsTArray.h"
+#include "nscore.h"
 
-#include "EncryptedBlock.h"
+class nsIInputStream;
 
 namespace mozilla::dom::quota {
 class EncryptingOutputStreamBase : public nsIOutputStream {
@@ -55,7 +66,6 @@ class EncryptingOutputStream final : public EncryptingOutputStreamBase {
   // up to kMaxBlockSize.
   explicit EncryptingOutputStream(nsCOMPtr<nsIOutputStream> aBaseStream,
                                   size_t aBlockSize,
-                                  CipherStrategy aCipherStrategy,
                                   typename CipherStrategy::KeyType aKey);
 
  private:
@@ -65,8 +75,7 @@ class EncryptingOutputStream final : public EncryptingOutputStreamBase {
 
   bool EnsureBuffers();
 
-  const CipherStrategy mCipherStrategy;
-  const typename CipherStrategy::KeyType mKey;
+  CipherStrategy mCipherStrategy;
 
   // Buffer holding copied plain data.  This must be copied here
   // so that the encryption can be performed on a single flat buffer.

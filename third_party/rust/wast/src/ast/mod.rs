@@ -35,6 +35,8 @@
 ///     }
 /// }
 /// ```
+///
+/// Note that the keyword name can only start with a lower-case letter, i.e. 'a'..'z'.
 #[macro_export]
 macro_rules! custom_keyword {
     ($name:ident) => {
@@ -43,7 +45,7 @@ macro_rules! custom_keyword {
     ($name:ident = $kw:expr) => {
         #[allow(non_camel_case_types)]
         #[allow(missing_docs)]
-        #[derive(Debug)]
+        #[derive(Debug, Copy, Clone)]
         pub struct $name(pub $crate::Span);
 
         impl<'a> $crate::parser::Parse<'a> for $name {
@@ -301,16 +303,19 @@ reexport! {
 
 #[cfg(feature = "wasm-module")]
 reexport! {
+    mod alias;
     mod assert_expr;
     mod custom;
-    mod event;
+    mod tag;
     mod export;
     mod expr;
     mod func;
     mod global;
     mod import;
+    mod instance;
     mod memory;
     mod module;
+    mod nested_module;
     mod table;
     mod types;
     mod wast;
@@ -319,9 +324,11 @@ reexport! {
 /// Common keyword used to parse WebAssembly text files.
 pub mod kw {
     custom_keyword!(after);
+    custom_keyword!(alias);
     custom_keyword!(any);
     custom_keyword!(anyfunc);
     custom_keyword!(anyref);
+    custom_keyword!(arg);
     custom_keyword!(array);
     custom_keyword!(assert_exhaustion);
     custom_keyword!(assert_invalid);
@@ -336,17 +343,21 @@ pub mod kw {
     custom_keyword!(assert_return_func);
     custom_keyword!(assert_trap);
     custom_keyword!(assert_unlinkable);
+    custom_keyword!(assert_uncaught_exception);
     custom_keyword!(before);
     custom_keyword!(binary);
     custom_keyword!(block);
+    custom_keyword!(catch);
+    custom_keyword!(catch_all);
     custom_keyword!(code);
     custom_keyword!(data);
+    custom_keyword!(dataref);
     custom_keyword!(declare);
+    custom_keyword!(delegate);
+    custom_keyword!(r#do = "do");
     custom_keyword!(elem);
     custom_keyword!(end);
-    custom_keyword!(event);
-    custom_keyword!(exn);
-    custom_keyword!(exnref);
+    custom_keyword!(tag);
     custom_keyword!(export);
     custom_keyword!(r#extern = "extern");
     custom_keyword!(externref);
@@ -373,20 +384,23 @@ pub mod kw {
     custom_keyword!(i8);
     custom_keyword!(i8x16);
     custom_keyword!(import);
+    custom_keyword!(instance);
+    custom_keyword!(instantiate);
     custom_keyword!(invoke);
     custom_keyword!(item);
     custom_keyword!(last);
     custom_keyword!(local);
     custom_keyword!(memory);
     custom_keyword!(module);
+    custom_keyword!(modulecode);
     custom_keyword!(nan_arithmetic = "nan:arithmetic");
     custom_keyword!(nan_canonical = "nan:canonical");
     custom_keyword!(null);
     custom_keyword!(nullref);
     custom_keyword!(offset);
-    custom_keyword!(opt);
-    custom_keyword!(optref);
+    custom_keyword!(outer);
     custom_keyword!(param);
+    custom_keyword!(parent);
     custom_keyword!(passive);
     custom_keyword!(quote);
     custom_keyword!(r#else = "else");
@@ -405,6 +419,7 @@ pub mod kw {
     custom_keyword!(r#struct = "struct");
     custom_keyword!(table);
     custom_keyword!(then);
+    custom_keyword!(r#try = "try");
     custom_keyword!(v128);
 }
 

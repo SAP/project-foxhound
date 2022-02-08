@@ -6,7 +6,7 @@
 // Test that pressing Enter quickly after a letter that makes the input exactly match the
 // item in the autocomplete popup does not insert unwanted character. See Bug 1595068.
 
-const TEST_URI = `data:text/html;charset=utf-8,<script>
+const TEST_URI = `data:text/html;charset=utf-8,<!DOCTYPE html><script>
   var uvwxyz = "zyxwvu";
 </script>Autocomplete race on Enter`;
 
@@ -125,11 +125,12 @@ add_task(async function() {
 
   info(`Quickly type "x" and "Enter"`);
   onPopupClosed = autocompletePopup.once("popup-closed");
-  const onMessage = waitForMessage(hud, "1", ".result");
+  const onMessage = waitForMessage(hud, "docx is not defined");
   EventUtils.synthesizeKey("x");
   await waitForTime(5);
   EventUtils.synthesizeKey("KEY_Enter");
-  await Promise.all[(onPopupClosed, onMessage)];
+
+  await Promise.all([onPopupClosed, onMessage]);
   is(
     getInputValue(hud),
     "",

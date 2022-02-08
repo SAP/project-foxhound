@@ -46,6 +46,7 @@ function NarrateControls(win, languagePromise) {
   let toggle = win.document.createElement("li");
   let toggleButton = win.document.createElement("button");
   toggleButton.className = "dropdown-toggle button narrate-toggle";
+  toggleButton.dataset.telemetryId = "reader-listen";
   let tip = win.document.createElement("span");
   let labelText = gStrings.GetStringFromName("listen");
   tip.textContent = labelText;
@@ -308,12 +309,11 @@ NarrateControls.prototype = {
 
   _getLanguageName(lang) {
     try {
-      // This may throw if the lang doesn't match.
-      // XXX: Replace with Intl.Locale once bug 1433303 lands.
-      let langCode = lang.match(/^[a-z]{2,3}/)[0];
+      // This may throw if the lang can't be parsed.
+      let langCode = new Services.intl.Locale(lang).language;
 
       return Services.intl.getLanguageDisplayNames(undefined, [langCode]);
-    } catch (e) {
+    } catch {
       return "";
     }
   },

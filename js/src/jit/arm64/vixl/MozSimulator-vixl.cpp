@@ -33,6 +33,7 @@
 #include "js/UniquePtr.h"
 #include "js/Utility.h"
 #include "threading/LockGuard.h"
+#include "vm/JSContext.h"
 #include "vm/Runtime.h"
 
 js::jit::SimulatorProcess* js::jit::SimulatorProcess::singleton_ = nullptr;
@@ -54,6 +55,12 @@ Simulator::Simulator(Decoder* decoder, FILE* stream)
   , oom_(false)
 {
     this->init(decoder, stream);
+
+    // If this environment variable is present, trace the executed instructions.
+    // (Very helpful for debugging code generation crashes.)
+    if (getenv("VIXL_TRACE")) {
+        set_trace_parameters(LOG_DISASM);
+    }
 }
 
 
@@ -162,7 +169,9 @@ Simulator* Simulator::Current() {
   if (!rt) {
     return nullptr;
   }
-  MOZ_ASSERT(js::CurrentThreadCanAccessRuntime(rt));
+  if (!js::CurrentThreadCanAccessRuntime(rt)) {
+      return nullptr;
+  }
   return cx->simulator();
 }
 
@@ -201,6 +210,13 @@ Simulator* Simulator::Create() {
 
 
 void Simulator::Destroy(Simulator* sim) {
+#ifdef JS_CACHE_SIMULATOR_ARM64
+  if (sim) {
+    js::jit::AutoLockSimulatorCache alsc;
+    SimulatorProcess::unregisterSimulator(sim);
+  }
+#endif
+
   js_delete(sim);
 }
 
@@ -208,6 +224,18 @@ void Simulator::Destroy(Simulator* sim) {
 void Simulator::ExecuteInstruction() {
   // The program counter should always be aligned.
   VIXL_ASSERT(IsWordAligned(pc_));
+#ifdef JS_CACHE_SIMULATOR_ARM64
+  if (pendingCacheRequests) {
+      // We're here emulating the behavior of the membarrier carried over on
+      // real hardware does; see syscalls to membarrier in MozCpu-vixl.cpp.
+      // There's a slight difference that the simulator is not being
+      // interrupted: instead, we effectively run the icache flush request
+      // before executing the next instruction, which is close enough and
+      // sufficient for our use case.
+      js::jit::AutoLockSimulatorCache alsc;
+      FlushICache();
+  }
+#endif
   decoder_->Decode(pc_);
   increment_pc();
 }
@@ -224,8 +252,9 @@ uintptr_t* Simulator::addressOfStackLimit() {
 
 
 bool Simulator::overRecursed(uintptr_t newsp) const {
-  if (newsp)
+  if (newsp == 0) {
     newsp = get_sp();
+  }
   return newsp <= stackLimit();
 }
 
@@ -258,32 +287,34 @@ int64_t Simulator::call(uint8_t* entry, int argument_count, ...) {
   // number of called functions is miniscule, their types have been
   // divined from the number of arguments.
   if (argument_count == 8) {
-      // EnterJitData::jitcode.
-      set_xreg(0, va_arg(parameters, int64_t));
-      // EnterJitData::maxArgc.
-      set_xreg(1, va_arg(parameters, unsigned));
-      // EnterJitData::maxArgv.
-      set_xreg(2, va_arg(parameters, int64_t));
-      // EnterJitData::osrFrame.
-      set_xreg(3, va_arg(parameters, int64_t));
-      // EnterJitData::calleeToken.
-      set_xreg(4, va_arg(parameters, int64_t));
-      // EnterJitData::scopeChain.
-      set_xreg(5, va_arg(parameters, int64_t));
-      // EnterJitData::osrNumStackValues.
-      set_xreg(6, va_arg(parameters, unsigned));
-      // Address of EnterJitData::result.
-      set_xreg(7, va_arg(parameters, int64_t));
+    // EnterJitData::jitcode.
+    set_xreg(0, va_arg(parameters, int64_t));
+    // EnterJitData::maxArgc.
+    set_xreg(1, va_arg(parameters, unsigned));
+    // EnterJitData::maxArgv.
+    set_xreg(2, va_arg(parameters, int64_t));
+    // EnterJitData::osrFrame.
+    set_xreg(3, va_arg(parameters, int64_t));
+    // EnterJitData::calleeToken.
+    set_xreg(4, va_arg(parameters, int64_t));
+    // EnterJitData::scopeChain.
+    set_xreg(5, va_arg(parameters, int64_t));
+    // EnterJitData::osrNumStackValues.
+    set_xreg(6, va_arg(parameters, unsigned));
+    // Address of EnterJitData::result.
+    set_xreg(7, va_arg(parameters, int64_t));
   } else if (argument_count == 2) {
-      // EntryArg* args
-      set_xreg(0, va_arg(parameters, int64_t));
-      // uint8_t* GlobalData
-      set_xreg(1, va_arg(parameters, int64_t));
+    // EntryArg* args
+    set_xreg(0, va_arg(parameters, int64_t));
+    // uint8_t* GlobalData
+    set_xreg(1, va_arg(parameters, int64_t));
   } else if (argument_count == 1) { // irregexp
-      // InputOutputData& data
-      set_xreg(0, va_arg(parameters, int64_t));
+    // InputOutputData& data
+    set_xreg(0, va_arg(parameters, int64_t));
+  } else if (argument_count == 0) { // testsJit.cpp
+    // accept.
   } else {
-      MOZ_CRASH("Unknown number of arguments");
+    MOZ_CRASH("Unknown number of arguments");
   }
 
   va_end(parameters);
@@ -298,8 +329,9 @@ int64_t Simulator::call(uint8_t* entry, int argument_count, ...) {
   VIXL_ASSERT(entryStack == exitStack);
 
   int64_t result = xreg(0);
-  if (getenv("USE_DEBUGGER"))
-      printf("LEAVE\n");
+  if (getenv("USE_DEBUGGER")) {
+    printf("LEAVE\n");
+  }
   return result;
 }
 
@@ -421,8 +453,8 @@ void Simulator::VisitException(const Instruction* instr) {
           return;
         }
         case kCheckStackPointer: {
-          int64_t current = get_sp();
-          int64_t expected = spStack_.popCopy();
+          DebugOnly<int64_t> current = get_sp();
+          DebugOnly<int64_t> expected = spStack_.popCopy();
           VIXL_ASSERT(current == expected);
           return;
         }
@@ -482,6 +514,7 @@ typedef int64_t (*Prototype_Int_IntDoubleIntInt)(uint64_t arg0, double arg1,
                                                  uint64_t arg2, uint64_t arg3);
 
 typedef float (*Prototype_Float32_Float32)(float arg0);
+typedef int64_t (*Prototype_Int_Float32)(float arg0);
 typedef float (*Prototype_Float32_Float32Float32)(float arg0, float arg1);
 
 typedef double (*Prototype_Double_None)();
@@ -508,6 +541,12 @@ typedef int32_t (*Prototype_Int32_GeneralInt32Int32Int32Int32Int32)(int64_t,
                                                                     int32_t,
                                                                     int32_t,
                                                                     int32_t);
+typedef int32_t (*Prototype_Int32_GeneralInt32Int32Int32Int32General)(int64_t,
+                                                                      int32_t,
+                                                                      int32_t,
+                                                                      int32_t,
+                                                                      int32_t,
+                                                                      int64_t);
 typedef int32_t (*Prototype_Int32_GeneralInt32Int32Int32General)(int64_t,
                                                                  int32_t,
                                                                  int32_t,
@@ -535,18 +574,37 @@ typedef int32_t (*Prototype_Int32_GeneralInt32GeneralInt32Int32)(int64_t,
                                                                  int32_t,
                                                                  int32_t);
 typedef int32_t (*Prototype_Int32_GeneralGeneral)(int64_t, int64_t);
+typedef int32_t (*Prototype_Int32_GeneralGeneralGeneral)(int64_t,
+                                                         int64_t,
+                                                         int64_t);
 typedef int32_t (*Prototype_Int32_GeneralGeneralInt32Int32)(int64_t,
                                                             int64_t,
                                                             int32_t,
                                                             int32_t);
+typedef int32_t (*Prototype_Int32_GeneralInt64Int32Int32Int32)(int64_t, int64_t,
+                                                               int32_t, int32_t,
+                                                               int32_t);
+typedef int32_t (*Prototype_Int32_GeneralInt64Int32)(int64_t, int64_t,
+                                                     int32_t);
+typedef int32_t (*Prototype_Int32_GeneralInt64Int32Int64)(int64_t, int64_t,
+                                                          int32_t, int64_t);
+typedef int32_t (*Prototype_Int32_GeneralInt64Int32Int64General)(int64_t, int64_t,
+                                                                 int32_t, int64_t,
+                                                                 int64_t);
+typedef int32_t (*Prototype_Int32_GeneralInt64Int64Int64)(int64_t, int64_t,
+                                                                 int64_t, int64_t);
+typedef int32_t (*Prototype_Int32_GeneralInt64Int64Int64General)(int64_t, int64_t,
+                                                                 int64_t, int64_t,
+                                                                 int64_t);
 typedef int64_t (*Prototype_General_GeneralInt32)(int64_t, int32_t);
 typedef int64_t (*Prototype_General_GeneralInt32Int32)(int64_t,
                                                        int32_t,
                                                        int32_t);
-typedef int64_t (*Prototype_General_GeneralInt32Int32General)(int64_t,
-                                                              int32_t,
-                                                              int32_t,
-                                                              int64_t);
+typedef int64_t (*Prototype_General_GeneralInt32General)(int64_t,
+                                                         int32_t,
+                                                         int64_t);
+typedef int64_t (*Prototype_Int64_General)(int64_t);
+typedef int64_t (*Prototype_Int64_GeneralInt64)(int64_t, int64_t);
 
 // Simulator support for callWithABI().
 void
@@ -694,6 +752,11 @@ Simulator::VisitCallRedirection(const Instruction* instr)
       setFP32Result(ret);
       break;
     }
+    case js::jit::Args_Int_Float32: {
+      int64_t ret = reinterpret_cast<Prototype_Int_Float32>(nativeFn)(s0);
+      setGPR64Result(ret);
+      break;
+    }
     case js::jit::Args_Float32_Float32Float32: {
       float ret = reinterpret_cast<Prototype_Float32_Float32Float32>(nativeFn)(s0, s1);
       setFP32Result(ret);
@@ -774,6 +837,13 @@ Simulator::VisitCallRedirection(const Instruction* instr)
       setGPR32Result(ret);
       break;
     }
+    case js::jit::Args_Int32_GeneralInt32Int32Int32Int32General: {
+      int32_t ret =
+          reinterpret_cast<Prototype_Int32_GeneralInt32Int32Int32Int32General>(
+              nativeFn)(x0, x1, x2, x3, x4, x5);
+      setGPR32Result(ret);
+      break;
+    }
     case js::jit::Args_Int32_GeneralInt32Int32Int32General: {
       int32_t ret =
           reinterpret_cast<Prototype_Int32_GeneralInt32Int32Int32General>(
@@ -818,9 +888,51 @@ Simulator::VisitCallRedirection(const Instruction* instr)
       setGPR32Result(ret);
       break;
     }
+    case js::jit::Args_Int32_GeneralGeneralGeneral: {
+      int32_t ret = reinterpret_cast<Prototype_Int32_GeneralGeneralGeneral>(
+          nativeFn)(x0, x1, x2);
+      setGPR32Result(ret);
+      break;
+    }
     case js::jit::Args_Int32_GeneralGeneralInt32Int32: {
       int32_t ret = reinterpret_cast<Prototype_Int32_GeneralGeneralInt32Int32>(
           nativeFn)(x0, x1, x2, x3);
+      setGPR32Result(ret);
+      break;
+    }
+    case js::jit::Args_Int32_GeneralInt64Int32Int32Int32: {
+      int32_t ret = reinterpret_cast<Prototype_Int32_GeneralInt64Int32Int32Int32>(
+          nativeFn)(x0, x1, x2, x3, x4);
+      setGPR32Result(ret);
+      break;
+    }
+    case js::jit::Args_Int32_GeneralInt64Int32: {
+      int32_t ret = reinterpret_cast<Prototype_Int32_GeneralInt64Int32>(
+          nativeFn)(x0, x1, x2);
+      setGPR32Result(ret);
+      break;
+    }
+    case js::jit::Args_Int32_GeneralInt64Int32Int64: {
+      int32_t ret = reinterpret_cast<Prototype_Int32_GeneralInt64Int32Int64>(
+          nativeFn)(x0, x1, x2, x3);
+      setGPR32Result(ret);
+      break;
+    }
+    case js::jit::Args_Int32_GeneralInt64Int32Int64General: {
+      int32_t ret = reinterpret_cast<Prototype_Int32_GeneralInt64Int32Int64General>(
+          nativeFn)(x0, x1, x2, x3, x4);
+      setGPR32Result(ret);
+      break;
+    }
+    case js::jit::Args_Int32_GeneralInt64Int64Int64: {
+      int32_t ret = reinterpret_cast<Prototype_Int32_GeneralInt64Int64Int64>(
+          nativeFn)(x0, x1, x2, x3);
+      setGPR32Result(ret);
+      break;
+    }
+    case js::jit::Args_Int32_GeneralInt64Int64Int64General: {
+      int32_t ret = reinterpret_cast<Prototype_Int32_GeneralInt64Int64Int64General>(
+          nativeFn)(x0, x1, x2, x3, x4);
       setGPR32Result(ret);
       break;
     }
@@ -836,10 +948,24 @@ Simulator::VisitCallRedirection(const Instruction* instr)
       setGPR64Result(ret);
       break;
     }
-    case js::jit::Args_General_GeneralInt32Int32General: {
+    case js::jit::Args_General_GeneralInt32General: {
       int64_t ret =
-          reinterpret_cast<Prototype_General_GeneralInt32Int32General>(
-              nativeFn)(x0, x1, x2, x3);
+          reinterpret_cast<Prototype_General_GeneralInt32General>(
+              nativeFn)(x0, x1, x2);
+      setGPR64Result(ret);
+      break;
+    }
+    case js::jit::Args_Int64_General: {
+      int64_t ret =
+          reinterpret_cast<Prototype_Int64_General>(
+              nativeFn)(x0);
+      setGPR64Result(ret);
+      break;
+    }
+    case js::jit::Args_Int64_GeneralInt64: {
+      int64_t ret =
+          reinterpret_cast<Prototype_Int64_GeneralInt64>(
+              nativeFn)(x0, x1);
       setGPR64Result(ret);
       break;
     }
@@ -889,6 +1015,7 @@ Simulator::FlushICache()
     decoder_->FlushICache(flush.start, flush.length);
   }
   vec.clear();
+  pendingCacheRequests = false;
 }
 
 void CachingDecoder::Decode(const Instruction* instr) {
@@ -958,7 +1085,7 @@ namespace jit {
 
 #ifdef JS_CACHE_SIMULATOR_ARM64
 void SimulatorProcess::recordICacheFlush(void* start, size_t length) {
-  MOZ_ASSERT(singleton_->lock_.ownedByCurrentThread());
+  singleton_->lock_.assertOwnedByCurrentThread();
   AutoEnterOOMUnsafeRegion oomUnsafe;
   ICacheFlush range{start, length};
   for (auto& s : singleton_->pendingFlushes_) {
@@ -968,8 +1095,15 @@ void SimulatorProcess::recordICacheFlush(void* start, size_t length) {
   }
 }
 
+void SimulatorProcess::membarrier() {
+  singleton_->lock_.assertOwnedByCurrentThread();
+  for (auto& s : singleton_->pendingFlushes_) {
+    s.thread->pendingCacheRequests = true;
+  }
+}
+
 SimulatorProcess::ICacheFlushes& SimulatorProcess::getICacheFlushes(Simulator* sim) {
-  MOZ_ASSERT(singleton_->lock_.ownedByCurrentThread());
+  singleton_->lock_.assertOwnedByCurrentThread();
   for (auto& s : singleton_->pendingFlushes_) {
     if (s.thread == sim) {
       return s.records;
@@ -979,14 +1113,14 @@ SimulatorProcess::ICacheFlushes& SimulatorProcess::getICacheFlushes(Simulator* s
 }
 
 bool SimulatorProcess::registerSimulator(Simulator* sim) {
-  MOZ_ASSERT(singleton_->lock_.ownedByCurrentThread());
+  singleton_->lock_.assertOwnedByCurrentThread();
   ICacheFlushes empty;
   SimFlushes simFlushes{sim, std::move(empty)};
   return singleton_->pendingFlushes_.append(std::move(simFlushes));
 }
 
 void SimulatorProcess::unregisterSimulator(Simulator* sim) {
-  MOZ_ASSERT(singleton_->lock_.ownedByCurrentThread());
+  singleton_->lock_.assertOwnedByCurrentThread();
   for (auto& s : singleton_->pendingFlushes_) {
     if (s.thread == sim) {
       singleton_->pendingFlushes_.erase(&s);

@@ -9,11 +9,11 @@
 
 #include <stdarg.h>  // va_{list,start,end}
 
-#include "jsapi.h"        // js::AssertHeapIsIdle
-#include "jsfriendapi.h"  // GetErrorMessage
-#include "jstypes.h"      // JS_PUBLIC_API
+#include "jstypes.h"  // JS_PUBLIC_API
 
-#include "vm/ErrorReporting.h"  // IsWarning
+#include "js/Context.h"               // js::AssertHeapIsIdle
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage
+#include "vm/ErrorReporting.h"        // IsWarning
 #include "vm/JSContext.h"  // js::ArgumentsAre{ASCII,Latin1,UTF8}, js::ReportError{Number}VA
 
 using js::ArgumentsAreASCII;

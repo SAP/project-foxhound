@@ -15,6 +15,10 @@ namespace dom {
 
 class SharedWorker;
 
+/**
+ * Held by SharedWorker bindings to remotely control sharedworker lifecycle and
+ * receive error and termination reports.
+ */
 class SharedWorkerChild final : public mozilla::dom::PSharedWorkerChild {
   friend class PSharedWorkerChild;
 
@@ -39,6 +43,8 @@ class SharedWorkerChild final : public mozilla::dom::PSharedWorkerChild {
   ~SharedWorkerChild();
 
   mozilla::ipc::IPCResult RecvError(const ErrorValue& aValue);
+
+  mozilla::ipc::IPCResult RecvNotifyLock(bool aCreated);
 
   mozilla::ipc::IPCResult RecvTerminate();
 

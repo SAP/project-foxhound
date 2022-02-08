@@ -18,16 +18,12 @@
 #include <time.h>
 #include <math.h>
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 StaticRefPtr<CacheObserver> CacheObserver::sSelf;
 
 static float const kDefaultHalfLifeHours = 24.0F;  // 24 hours
 float CacheObserver::sHalfLifeHours = kDefaultHalfLifeHours;
-
-// Cache of the calculated memory capacity based on the system memory size in KB
-int32_t CacheObserver::sAutoMemoryCacheCapacity = -1;
 
 // The default value will be overwritten as soon as the correct smart size is
 // calculated by CacheFileIOManager::UpdateSmartCacheSize(). It's limited to 1GB
@@ -35,18 +31,8 @@ int32_t CacheObserver::sAutoMemoryCacheCapacity = -1;
 // GetDiskSpaceAvailable() always fails.
 Atomic<uint32_t, Relaxed> CacheObserver::sSmartDiskCacheCapacity(1024 * 1024);
 
-static bool kDefaultCacheFSReported = false;
-bool CacheObserver::sCacheFSReported = kDefaultCacheFSReported;
-
-static bool kDefaultHashStatsReported = false;
-bool CacheObserver::sHashStatsReported = kDefaultHashStatsReported;
-
 Atomic<PRIntervalTime> CacheObserver::sShutdownDemandedTime(
     PR_INTERVAL_NO_TIMEOUT);
-
-static uint32_t const kDefaultCacheAmountWritten = 0;
-Atomic<uint32_t, Relaxed> CacheObserver::sCacheAmountWritten(
-    kDefaultCacheAmountWritten);
 
 NS_IMPL_ISUPPORTS(CacheObserver, nsIObserver, nsISupportsWeakReference)
 
@@ -69,7 +55,6 @@ nsresult CacheObserver::Init() {
 
   obs->AddObserver(sSelf, "prefservice:after-app-defaults", true);
   obs->AddObserver(sSelf, "profile-do-change", true);
-  obs->AddObserver(sSelf, "browser-delayed-startup-finished", true);
   obs->AddObserver(sSelf, "profile-before-change", true);
   obs->AddObserver(sSelf, "xpcom-shutdown", true);
   obs->AddObserver(sSelf, "last-pb-context-exited", true);
@@ -97,10 +82,6 @@ void CacheObserver::AttachToPreferences() {
       0.01F, std::min(1440.0F, mozilla::Preferences::GetFloat(
                                    "browser.cache.frecency_half_life_hours",
                                    kDefaultHalfLifeHours)));
-
-  mozilla::Preferences::AddAtomicUintVarCache(
-      &sCacheAmountWritten, "browser.cache.disk.amount_written",
-      kDefaultCacheAmountWritten);
 }
 
 // static
@@ -109,32 +90,40 @@ uint32_t CacheObserver::MemoryCacheCapacity() {
     return StaticPrefs::browser_cache_memory_capacity();
   }
 
-  if (sAutoMemoryCacheCapacity != -1) return sAutoMemoryCacheCapacity;
+  // Cache of the calculated memory capacity based on the system memory size in
+  // KB (C++11 guarantees local statics will be initialized once and in a
+  // thread-safe way.)
+  static int32_t sAutoMemoryCacheCapacity = ([] {
+    uint64_t bytes = PR_GetPhysicalMemorySize();
+    // If getting the physical memory failed, arbitrarily assume
+    // 32 MB of RAM. We use a low default to have a reasonable
+    // size on all the devices we support.
+    if (bytes == 0) {
+      bytes = 32 * 1024 * 1024;
+    }
+    // Conversion from unsigned int64_t to double doesn't work on all platforms.
+    // We need to truncate the value at INT64_MAX to make sure we don't
+    // overflow.
+    if (bytes > INT64_MAX) {
+      bytes = INT64_MAX;
+    }
+    uint64_t kbytes = bytes >> 10;
+    double kBytesD = double(kbytes);
+    double x = log(kBytesD) / log(2.0) - 14;
 
-  static uint64_t bytes = PR_GetPhysicalMemorySize();
-  // If getting the physical memory failed, arbitrarily assume
-  // 32 MB of RAM. We use a low default to have a reasonable
-  // size on all the devices we support.
-  if (bytes == 0) bytes = 32 * 1024 * 1024;
+    int32_t capacity = 0;
+    if (x > 0) {
+      // 0.1 is added here for rounding
+      capacity = (int32_t)(x * x / 3.0 + x + 2.0 / 3 + 0.1);
+      if (capacity > 32) {
+        capacity = 32;
+      }
+      capacity <<= 10;
+    }
+    return capacity;
+  })();
 
-  // Conversion from unsigned int64_t to double doesn't work on all platforms.
-  // We need to truncate the value at INT64_MAX to make sure we don't
-  // overflow.
-  if (bytes > INT64_MAX) bytes = INT64_MAX;
-
-  uint64_t kbytes = bytes >> 10;
-  double kBytesD = double(kbytes);
-  double x = log(kBytesD) / log(2.0) - 14;
-
-  int32_t capacity = 0;
-  if (x > 0) {
-    capacity = (int32_t)(x * x / 3.0 + x + 2.0 / 3 + 0.1);  // 0.1 for rounding
-    if (capacity > 32) capacity = 32;
-    capacity <<= 10;
-  }
-
-  // Result is in kilobytes.
-  return sAutoMemoryCacheCapacity = capacity;
+  return sAutoMemoryCacheCapacity;
 }
 
 // static
@@ -146,75 +135,6 @@ void CacheObserver::SetSmartDiskCacheCapacity(uint32_t aCapacity) {
 uint32_t CacheObserver::DiskCacheCapacity() {
   return SmartCacheSizeEnabled() ? sSmartDiskCacheCapacity
                                  : StaticPrefs::browser_cache_disk_capacity();
-}
-
-// static
-void CacheObserver::SetCacheFSReported() {
-  sCacheFSReported = true;
-
-  if (!sSelf) {
-    return;
-  }
-
-  if (NS_IsMainThread()) {
-    sSelf->StoreCacheFSReported();
-  } else {
-    nsCOMPtr<nsIRunnable> event =
-        NewRunnableMethod("net::CacheObserver::StoreCacheFSReported",
-                          sSelf.get(), &CacheObserver::StoreCacheFSReported);
-    NS_DispatchToMainThread(event);
-  }
-}
-
-void CacheObserver::StoreCacheFSReported() {
-  mozilla::Preferences::SetInt("browser.cache.disk.filesystem_reported",
-                               sCacheFSReported);
-}
-
-// static
-void CacheObserver::SetHashStatsReported() {
-  sHashStatsReported = true;
-
-  if (!sSelf) {
-    return;
-  }
-
-  if (NS_IsMainThread()) {
-    sSelf->StoreHashStatsReported();
-  } else {
-    nsCOMPtr<nsIRunnable> event =
-        NewRunnableMethod("net::CacheObserver::StoreHashStatsReported",
-                          sSelf.get(), &CacheObserver::StoreHashStatsReported);
-    NS_DispatchToMainThread(event);
-  }
-}
-
-void CacheObserver::StoreHashStatsReported() {
-  mozilla::Preferences::SetInt("browser.cache.disk.hashstats_reported",
-                               sHashStatsReported);
-}
-
-// static
-void CacheObserver::SetCacheAmountWritten(uint32_t aCacheAmountWritten) {
-  sCacheAmountWritten = aCacheAmountWritten;
-
-  if (!sSelf) {
-    return;
-  }
-
-  if (NS_IsMainThread()) {
-    sSelf->StoreCacheAmountWritten();
-  } else {
-    nsCOMPtr<nsIRunnable> event =
-        NewRunnableMethod("net::CacheObserver::StoreCacheAmountWritten",
-                          sSelf.get(), &CacheObserver::StoreCacheAmountWritten);
-    NS_DispatchToMainThread(event);
-  }
-}
-
-void CacheObserver::StoreCacheAmountWritten() {
-  mozilla::Preferences::SetInt("browser.cache.disk.amount_written",
-                               sCacheAmountWritten);
 }
 
 // static
@@ -248,17 +168,14 @@ bool CacheObserver::EntryIsTooBig(int64_t aSize, bool aUsingDisk) {
       aUsingDisk ? DiskCacheCapacity() : MemoryCacheCapacity();
   derivedLimit <<= (10 - 3);
 
-  if (aSize > derivedLimit) return true;
-
-  return false;
+  return aSize > derivedLimit;
 }
 
 // static
 bool CacheObserver::IsPastShutdownIOLag() {
 #ifdef DEBUG
   return false;
-#endif
-
+#else
   if (sShutdownDemandedTime == PR_INTERVAL_NO_TIMEOUT ||
       MaxShutdownIOLag() == UINT32_MAX) {
     return false;
@@ -272,6 +189,7 @@ bool CacheObserver::IsPastShutdownIOLag() {
   }
 
   return false;
+#endif
 }
 
 NS_IMETHODIMP
@@ -286,11 +204,6 @@ CacheObserver::Observe(nsISupports* aSubject, const char* aTopic,
     AttachToPreferences();
     CacheFileIOManager::Init();
     CacheFileIOManager::OnProfile();
-    return NS_OK;
-  }
-
-  if (!strcmp(aTopic, "browser-delayed-startup-finished")) {
-    CacheStorageService::CleaupCacheDirectories();
     return NS_OK;
   }
 
@@ -321,8 +234,9 @@ CacheObserver::Observe(nsISupports* aSubject, const char* aTopic,
 
   if (!strcmp(aTopic, "memory-pressure")) {
     RefPtr<CacheStorageService> service = CacheStorageService::Self();
-    if (service)
+    if (service) {
       service->PurgeFromMemory(nsICacheStorageService::PURGE_EVERYTHING);
+    }
 
     return NS_OK;
   }
@@ -331,5 +245,4 @@ CacheObserver::Observe(nsISupports* aSubject, const char* aTopic,
   return NS_OK;
 }
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net

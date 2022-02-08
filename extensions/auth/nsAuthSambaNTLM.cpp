@@ -37,8 +37,7 @@ void nsAuthSambaNTLM::Shutdown() {
     mToChildFD = nullptr;
   }
   if (mChildPID) {
-    int32_t exitCode;
-    PR_WaitProcess(mChildPID, &exitCode);
+    PR_KillProcess(mChildPID);
     mChildPID = nullptr;
   }
 }
@@ -49,8 +48,9 @@ static bool SpawnIOChild(char* const* aArgs, PRProcess** aPID,
                          PRFileDesc** aFromChildFD, PRFileDesc** aToChildFD) {
   PRFileDesc* toChildPipeRead;
   PRFileDesc* toChildPipeWrite;
-  if (PR_CreatePipe(&toChildPipeRead, &toChildPipeWrite) != PR_SUCCESS)
+  if (PR_CreatePipe(&toChildPipeRead, &toChildPipeWrite) != PR_SUCCESS) {
     return false;
+  }
   PR_SetFDInheritable(toChildPipeRead, true);
   PR_SetFDInheritable(toChildPipeWrite, false);
 
@@ -189,10 +189,11 @@ nsresult nsAuthSambaNTLM::SpawnNTLMAuthHelper() {
 }
 
 NS_IMETHODIMP
-nsAuthSambaNTLM::Init(const char* serviceName, uint32_t serviceFlags,
-                      const char16_t* domain, const char16_t* username,
-                      const char16_t* password) {
-  NS_ASSERTION(!username && !domain && !password, "unexpected credentials");
+nsAuthSambaNTLM::Init(const nsACString& serviceName, uint32_t serviceFlags,
+                      const nsAString& domain, const nsAString& username,
+                      const nsAString& password) {
+  NS_ASSERTION(username.IsEmpty() && domain.IsEmpty() && password.IsEmpty(),
+               "unexpected credentials");
 
   static bool sTelemetrySent = false;
   if (!sTelemetrySent) {

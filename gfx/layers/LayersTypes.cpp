@@ -6,6 +6,15 @@
 
 #include "LayersTypes.h"
 
+#include <cinttypes>
+#include "nsPrintfCString.h"
+#include "mozilla/gfx/gfxVars.h"
+
+#ifdef XP_WIN
+#  include "gfxConfig.h"
+#  include "mozilla/StaticPrefs_gfx.h"
+#endif
+
 namespace mozilla {
 namespace layers {
 
@@ -14,47 +23,33 @@ const char* kCompositionPayloadTypeNames[kCompositionPayloadTypeCount] = {
     "APZScroll",
     "APZPinchZoom",
     "ContentPaint",
+    "MouseUpFollowedByClick",
 };
 
 const char* GetLayersBackendName(LayersBackend aBackend) {
   switch (aBackend) {
     case LayersBackend::LAYERS_NONE:
       return "none";
-    case LayersBackend::LAYERS_OPENGL:
-      return "opengl";
-    case LayersBackend::LAYERS_D3D11:
-      return "d3d11";
-    case LayersBackend::LAYERS_CLIENT:
-      return "client";
     case LayersBackend::LAYERS_WR:
+      MOZ_ASSERT(gfx::gfxVars::UseWebRender());
+      if (gfx::gfxVars::UseSoftwareWebRender()) {
+#ifdef XP_WIN
+        if (gfx::gfxVars::AllowSoftwareWebRenderD3D11() &&
+            gfx::gfxConfig::IsEnabled(gfx::Feature::D3D11_COMPOSITING)) {
+          return "webrender_software_d3d11";
+        }
+#endif
+        return "webrender_software";
+      }
       return "webrender";
-    case LayersBackend::LAYERS_BASIC:
-      return "basic";
     default:
       MOZ_ASSERT_UNREACHABLE("unknown layers backend");
       return "unknown";
   }
 }
 
-EventRegions::EventRegions(const nsIntRegion& aHitRegion,
-                           const nsIntRegion& aMaybeHitRegion,
-                           const nsIntRegion& aDispatchToContentRegion,
-                           const nsIntRegion& aNoActionRegion,
-                           const nsIntRegion& aHorizontalPanRegion,
-                           const nsIntRegion& aVerticalPanRegion,
-                           bool aDTCRequiresTargetConfirmation) {
-  mHitRegion = aHitRegion;
-  mNoActionRegion = aNoActionRegion;
-  mHorizontalPanRegion = aHorizontalPanRegion;
-  mVerticalPanRegion = aVerticalPanRegion;
-  // Points whose hit-region status we're not sure about need to be dispatched
-  // to the content thread. If a point is in both maybeHitRegion and hitRegion
-  // then it's not a "maybe" any more, and doesn't go into the dispatch-to-
-  // content region.
-  mDispatchToContentHitRegion.Sub(aMaybeHitRegion, mHitRegion);
-  mDispatchToContentHitRegion.OrWith(aDispatchToContentRegion);
-  mHitRegion.OrWith(aMaybeHitRegion);
-  mDTCRequiresTargetConfirmation = aDTCRequiresTargetConfirmation;
+std::ostream& operator<<(std::ostream& aStream, const LayersId& aId) {
+  return aStream << nsPrintfCString("0x%" PRIx64, aId.mId).get();
 }
 
 }  // namespace layers

@@ -57,8 +57,6 @@ pub struct Ops {
     pub stream_destroy: Option<unsafe extern "C" fn(stream: *mut ffi::cubeb_stream)>,
     pub stream_start: Option<unsafe extern "C" fn(stream: *mut ffi::cubeb_stream) -> c_int>,
     pub stream_stop: Option<unsafe extern "C" fn(stream: *mut ffi::cubeb_stream) -> c_int>,
-    pub stream_reset_default_device:
-        Option<unsafe extern "C" fn(stream: *mut ffi::cubeb_stream) -> c_int>,
     pub stream_get_position:
         Option<unsafe extern "C" fn(stream: *mut ffi::cubeb_stream, position: *mut u64) -> c_int>,
     pub stream_get_latency:
@@ -67,6 +65,8 @@ pub struct Ops {
         Option<unsafe extern "C" fn(stream: *mut ffi::cubeb_stream, latency: *mut u32) -> c_int>,
     pub stream_set_volume:
         Option<unsafe extern "C" fn(stream: *mut ffi::cubeb_stream, volumes: c_float) -> c_int>,
+    pub stream_set_name:
+        Option<unsafe extern "C" fn(stream: *mut ffi::cubeb_stream, name: *const c_char) -> c_int>,
     pub stream_get_current_device: Option<
         unsafe extern "C" fn(stream: *mut ffi::cubeb_stream, device: *mut *mut ffi::cubeb_device)
             -> c_int,

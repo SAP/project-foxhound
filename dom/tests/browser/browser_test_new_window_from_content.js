@@ -36,7 +36,7 @@
 */
 
 const kContentDoc =
-  "http://www.example.com/browser/dom/tests/browser/test_new_window_from_content_child.html";
+  "https://www.example.com/browser/dom/tests/browser/test_new_window_from_content_child.html";
 const kNewWindowPrefKey = "browser.link.open_newwindow";
 const kNewWindowRestrictionPrefKey = "browser.link.open_newwindow.restriction";
 const kSameTab = "same tab";
@@ -116,7 +116,7 @@ function prepareForResult(aBrowser, aExpectation) {
         await BrowserTestUtils.browserLoaded(aBrowser);
         is(aBrowser.currentURI.spec, expectedSpec, "Should be at dummy.html");
         // Now put the browser back where it came from
-        await BrowserTestUtils.loadURI(aBrowser, kContentDoc);
+        BrowserTestUtils.loadURI(aBrowser, kContentDoc);
         await BrowserTestUtils.browserLoaded(aBrowser);
       })();
     case kNewWin:

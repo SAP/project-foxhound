@@ -7,102 +7,107 @@
 #ifndef mozilla_dom_cache_FileUtilsImpl_h
 #define mozilla_dom_cache_FileUtilsImpl_h
 
+#include "mozilla/dom/FlippedOnce.h"
 #include "mozilla/dom/cache/FileUtils.h"
+#include "mozilla/dom/quota/ResultExtensions.h"
 
 namespace mozilla {
 namespace dom {
 namespace cache {
 
 template <typename Func>
-nsresult BodyTraverseFiles(const QuotaInfo& aQuotaInfo, nsIFile* aBodyDir,
-                           const Func& aHandleFileFunc,
-                           const bool aCanRemoveFiles, const bool aTrackQuota) {
-  MOZ_DIAGNOSTIC_ASSERT(aBodyDir);
+nsresult BodyTraverseFiles(
+    const Maybe<CacheDirectoryMetadata>& aDirectoryMetadata, nsIFile& aBodyDir,
+    const Func& aHandleFileFunc, const bool aCanRemoveFiles,
+    const bool aTrackQuota) {
+  // XXX This assertion proves that we can remove aTrackQuota and just check
+  // aClientMetadata.isSome()
+  MOZ_DIAGNOSTIC_ASSERT_IF(aTrackQuota, aDirectoryMetadata);
 
-  nsresult rv;
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
-  nsCOMPtr<nsIFile> parentFile;
-  rv = aBodyDir->GetParent(getter_AddRefs(parentFile));
-  MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  MOZ_DIAGNOSTIC_ASSERT(parentFile);
+  {
+    nsCOMPtr<nsIFile> parentFile;
+    nsresult rv = aBodyDir.GetParent(getter_AddRefs(parentFile));
+    MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
+    MOZ_DIAGNOSTIC_ASSERT(parentFile);
 
-  nsAutoCString nativeLeafName;
-  rv = parentFile->GetNativeLeafName(nativeLeafName);
-  MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
+    nsAutoCString nativeLeafName;
+    rv = parentFile->GetNativeLeafName(nativeLeafName);
+    MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
 
-  MOZ_DIAGNOSTIC_ASSERT(StringEndsWith(nativeLeafName, "morgue"_ns));
+    MOZ_DIAGNOSTIC_ASSERT(StringEndsWith(nativeLeafName, "morgue"_ns));
+  }
 #endif
 
-  nsCOMPtr<nsIDirectoryEnumerator> entries;
-  rv = aBodyDir->GetDirectoryEntries(getter_AddRefs(entries));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
+  FlippedOnce<true> isEmpty;
+  QM_TRY(quota::CollectEachFile(
+      aBodyDir,
+      [&isEmpty, &aDirectoryMetadata, aTrackQuota, &aHandleFileFunc,
+       aCanRemoveFiles](const nsCOMPtr<nsIFile>& file) -> Result<Ok, nsresult> {
+        QM_TRY_INSPECT(const auto& dirEntryKind, quota::GetDirEntryKind(*file));
 
-  bool isEmpty = true;
-  nsCOMPtr<nsIFile> file;
-  while (NS_SUCCEEDED(rv = entries->GetNextFile(getter_AddRefs(file))) &&
-         file) {
-    bool isDir = false;
-    rv = file->IsDirectory(&isDir);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
+        switch (dirEntryKind) {
+          case quota::nsIFileKind::ExistsAsDirectory: {
+            // If it's a directory somehow, try to remove it and move on
+            DebugOnly<nsresult> result = RemoveNsIFileRecursively(
+                aDirectoryMetadata, *file, /* aTrackQuota */ false);
+            MOZ_ASSERT(NS_SUCCEEDED(result));
+            break;
+          }
 
-    // If it's a directory somehow, try to remove it and move on
-    if (NS_WARN_IF(isDir)) {
-      DebugOnly<nsresult> result =
-          RemoveNsIFileRecursively(aQuotaInfo, file, /* aTrackQuota */ false);
-      MOZ_ASSERT(NS_SUCCEEDED(result));
-      continue;
-    }
+          case quota::nsIFileKind::ExistsAsFile: {
+            nsAutoCString leafName;
+            QM_TRY(MOZ_TO_RESULT(file->GetNativeLeafName(leafName)));
 
-    nsAutoCString leafName;
-    rv = file->GetNativeLeafName(leafName);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
+            // Delete all tmp files regardless of known bodies. These are all
+            // considered orphans.
+            if (StringEndsWith(leafName, ".tmp"_ns)) {
+              if (aCanRemoveFiles) {
+                DebugOnly<nsresult> result =
+                    RemoveNsIFile(aDirectoryMetadata, *file, aTrackQuota);
+                MOZ_ASSERT(NS_SUCCEEDED(result));
+                return Ok{};
+              }
+            } else {
+              // Otherwise, it must be a .final file.
+              QM_WARNONLY_TRY_UNWRAP(
+                  const auto maybeEndingOk,
+                  OkIf(StringEndsWith(leafName, ".final"_ns)));
 
-    // Delete all tmp files regardless of known bodies. These are all
-    // considered orphans.
-    if (StringEndsWith(leafName, ".tmp"_ns)) {
-      if (aCanRemoveFiles) {
-        DebugOnly<nsresult> result =
-            RemoveNsIFile(aQuotaInfo, file, aTrackQuota);
-        MOZ_ASSERT(NS_SUCCEEDED(result));
-        continue;
-      }
-    } else if (NS_WARN_IF(!StringEndsWith(leafName, ".final"_ns))) {
-      // Otherwise, it must be a .final file.  If its not, then try to remove it
-      // and move on
-      DebugOnly<nsresult> result =
-          RemoveNsIFile(aQuotaInfo, file, /* aTrackQuota */ false);
-      MOZ_ASSERT(NS_SUCCEEDED(result));
-      continue;
-    }
+              // If its not, try to remove it and move on.
+              if (!maybeEndingOk) {
+                DebugOnly<nsresult> result = RemoveNsIFile(
+                    aDirectoryMetadata, *file, /* aTrackQuota */ false);
+                MOZ_ASSERT(NS_SUCCEEDED(result));
+                return Ok{};
+              }
+            }
 
-    bool fileDeleted;
-    rv = aHandleFileFunc(file, leafName, fileDeleted);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-    if (fileDeleted) {
-      continue;
-    }
+            QM_TRY_INSPECT(const bool& fileDeleted,
+                           aHandleFileFunc(*file, leafName));
+            if (fileDeleted) {
+              return Ok{};
+            }
 
-    isEmpty = false;
-  }
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
+            isEmpty.EnsureFlipped();
+            break;
+          }
+
+          case quota::nsIFileKind::DoesNotExist:
+            // Ignore files that got removed externally while iterating.
+            break;
+        }
+
+        return Ok{};
+      }));
 
   if (isEmpty && aCanRemoveFiles) {
-    DebugOnly<nsresult> result =
-        RemoveNsIFileRecursively(aQuotaInfo, aBodyDir, /* aTrackQuota */ false);
+    DebugOnly<nsresult> result = RemoveNsIFileRecursively(
+        aDirectoryMetadata, aBodyDir, /* aTrackQuota */ false);
     MOZ_ASSERT(NS_SUCCEEDED(result));
   }
 
-  return rv;
+  return NS_OK;
 }
 
 }  // namespace cache

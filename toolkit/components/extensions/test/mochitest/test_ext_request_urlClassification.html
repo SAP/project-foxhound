@@ -27,10 +27,11 @@ add_task(async function setup() {
 });
 
 add_task(async function test_urlClassification() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["dom.security.https_first", false]],
+  });
   let extension = ExtensionTestUtils.loadExtension({
-    useAddonManager: "permanent",
     manifest: {
-      applications: {gecko: {id: "classification@mochi.test"}},
       permissions: ["webRequest", "webRequestBlocking", "proxy", "<all_urls>"],
     },
     background() {

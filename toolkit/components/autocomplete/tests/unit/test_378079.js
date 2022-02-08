@@ -111,6 +111,10 @@ AutoCompleteResult.prototype = {
     return this.getValueAt(aIndex);
   },
 
+  isRemovableAt(aRowIndex) {
+    return true;
+  },
+
   removeValueAt(aRowIndex) {},
 
   // nsISupports implementation
@@ -162,9 +166,7 @@ AutoCompleteSearch.prototype = {
 function registerAutoCompleteSearch(aSearch) {
   var name = "@mozilla.org/autocomplete/search;1?name=" + aSearch.name;
 
-  var uuidGenerator = Cc["@mozilla.org/uuid-generator;1"].getService(
-    Ci.nsIUUIDGenerator
-  );
+  var uuidGenerator = Services.uuid;
   var cid = uuidGenerator.generateUUID();
 
   var desc = "Test AutoCompleteSearch";

@@ -179,6 +179,7 @@ HASH_Destroy
 HASH_End
 HASH_GetHashObject
 HASH_GetHashOidTagByHashType
+HASH_GetHashTypeByOidTag
 HASH_GetType
 HASH_HashBuf
 HASH_ResultLenByOidTag
@@ -281,6 +282,7 @@ NSSUTIL_Quote
 #ifdef XP_WIN
 _NSSUTIL_UTF8ToWide
 #endif
+PK11_AEADOp
 PK11_AlgtagToMechanism
 PK11_Authenticate
 PK11_ChangePW
@@ -300,6 +302,7 @@ PK11_DeleteTokenPublicKey
 PK11_DeleteTokenSymKey
 PK11_DEREncodePublicKey
 PK11_Derive
+PK11_DeriveWithFlags
 PK11_DeriveWithTemplate
 PK11_DestroyContext
 PK11_DestroyGenericObject
@@ -371,9 +374,21 @@ PK11_GetTokenURI
 PK11_HasAttributeSet
 PK11_HashBuf
 PK11_HasRootCerts
+PK11_HPKE_DestroyContext
+PK11_HPKE_Deserialize
+PK11_HPKE_ExportSecret
+PK11_HPKE_GetEncapPubKey
+PK11_HPKE_NewContext
+PK11_HPKE_Open
+PK11_HPKE_Seal
+PK11_HPKE_Serialize
+PK11_HPKE_SetupS
+PK11_HPKE_SetupR
+PK11_HPKE_ValidateParameters
 PK11_ImportCert
 PK11_ImportCertForKey
 PK11_ImportCRL
+PK11_ImportDataKey
 PK11_ImportDERPrivateKeyInfoAndReturnKey
 PK11_ImportEncryptedPrivateKeyInfoAndReturnKey
 PK11_ImportPublicKey
@@ -531,6 +546,7 @@ SECKEY_DestroySubjectPublicKeyInfo
 SECKEY_ECParamsToBasePointOrderLen
 SECKEY_ECParamsToKeySize
 SECKEY_EncodeDERSubjectPublicKeyInfo
+SECKEY_EncryptedPrivateKeyInfoTemplate @DATA@
 SECKEY_ExtractPublicKey
 SECKEY_GetPublicKeyType
 SECKEY_ImportDERPublicKey

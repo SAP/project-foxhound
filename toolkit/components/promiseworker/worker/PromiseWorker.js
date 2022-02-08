@@ -89,6 +89,11 @@ exports.Meta = Meta;
  *
  * To connect it, use `onmessage`, as follows:
  *   self.addEventListener("message", msg => myWorkerInstance.handleMessage(msg));
+ * To handle rejected promises we receive from handleMessage, we must connect it to
+ * the onError handler as follows:
+ *   self.addEventListener("unhandledrejection", function(error) {
+ *    throw error.reason;
+ *   });
  */
 function AbstractWorker(agent) {
   this._agent = agent;
@@ -100,7 +105,7 @@ AbstractWorker.prototype = {
   /**
    * Handle a message.
    */
-  handleMessage(msg) {
+  async handleMessage(msg) {
     let data = msg.data;
     this.log("Received message", data);
     let id = data.id;
@@ -126,7 +131,7 @@ AbstractWorker.prototype = {
     let method = data.fun;
     try {
       this.log("Calling method", method);
-      result = this.dispatch(method, data.args);
+      result = await this.dispatch(method, data.args);
       this.log("Method", method, "succeeded");
     } catch (ex) {
       exn = ex;
@@ -167,6 +172,16 @@ AbstractWorker.prototype = {
       } else {
         this.postMessage({ ok: result, id, durationMs });
       }
+    } else if (exn.constructor.name == "DOMException") {
+      // We can receive instances of DOMExceptions with file I/O.
+      // DOMExceptions are not yet serializable (Bug 1561357) and must be
+      // handled differently, as they only have a name and message
+      this.log("Sending back DOM exception", exn.constructor.name);
+      let error = {
+        exn: exn.constructor.name,
+        message: exn.message,
+      };
+      this.postMessage({ fail: error, id, durationMs });
     } else if (exn.constructor.name in EXCEPTION_NAMES) {
       // Rather than letting the DOM mechanism [de]serialize built-in
       // JS errors, which loses lots of information (in particular,

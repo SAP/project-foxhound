@@ -8,18 +8,15 @@
 // a block to prevent accidentally leaking globals onto `window`.
 {
   const cachedFragments = {
-    get entities() {
-      return ["chrome://global/locale/textcontext.dtd"];
-    },
     get editMenuItems() {
       return `
       <menuitem data-l10n-id="text-action-undo" cmd="cmd_undo"></menuitem>
+      <menuitem data-l10n-id="text-action-redo" cmd="cmd_redo"></menuitem>
       <menuseparator></menuseparator>
       <menuitem data-l10n-id="text-action-cut" cmd="cmd_cut"></menuitem>
       <menuitem data-l10n-id="text-action-copy" cmd="cmd_copy"></menuitem>
       <menuitem data-l10n-id="text-action-paste" cmd="cmd_paste"></menuitem>
       <menuitem data-l10n-id="text-action-delete" cmd="cmd_delete"></menuitem>
-      <menuseparator></menuseparator>
       <menuitem data-l10n-id="text-action-select-all" cmd="cmd_selectAll"></menuitem>
     `;
     },
@@ -40,19 +37,18 @@
       this.spellcheck = MozXULElement.parseXULToFragment(
         `
       <menupopup class="textbox-contextmenu">
-        <menuitem label="&spellNoSuggestions.label;" anonid="spell-no-suggestions" disabled="true"></menuitem>
-        <menuitem label="&spellAddToDictionary.label;" accesskey="&spellAddToDictionary.accesskey;" anonid="spell-add-to-dictionary" oncommand="this.parentNode.parentNode.spellCheckerUI.addToDictionary();"></menuitem>
-        <menuitem label="&spellUndoAddToDictionary.label;" accesskey="&spellUndoAddToDictionary.accesskey;" anonid="spell-undo-add-to-dictionary" oncommand="this.parentNode.parentNode.spellCheckerUI.undoAddToDictionary();"></menuitem>
+        <menuitem data-l10n-id="text-action-spell-no-suggestions" anonid="spell-no-suggestions" disabled="true"></menuitem>
+        <menuitem data-l10n-id="text-action-spell-add-to-dictionary" anonid="spell-add-to-dictionary" oncommand="this.parentNode.parentNode.spellCheckerUI.addToDictionary();"></menuitem>
+        <menuitem data-l10n-id="text-action-spell-undo-add-to-dictionary" anonid="spell-undo-add-to-dictionary" oncommand="this.parentNode.parentNode.spellCheckerUI.undoAddToDictionary();"></menuitem>
         <menuseparator anonid="spell-suggestions-separator"></menuseparator>
         ${this.editMenuItems}
         <menuseparator anonid="spell-check-separator"></menuseparator>
-        <menuitem label="&spellCheckToggle.label;" type="checkbox" accesskey="&spellCheckToggle.accesskey;" anonid="spell-check-enabled" oncommand="this.parentNode.parentNode.spellCheckerUI.toggleEnabled();"></menuitem>
-        <menu label="&spellDictionaries.label;" accesskey="&spellDictionaries.accesskey;" anonid="spell-dictionaries">
+        <menuitem data-l10n-id="text-action-spell-check-toggle" type="checkbox" anonid="spell-check-enabled" oncommand="this.parentNode.parentNode.spellCheckerUI.toggleEnabled();"></menuitem>
+        <menu data-l10n-id="text-action-spell-dictionaries" anonid="spell-dictionaries">
           <menupopup anonid="spell-dictionaries-menu" onpopupshowing="event.stopPropagation();" onpopuphiding="event.stopPropagation();"></menupopup>
         </menu>
       </menupopup>
-    `,
-        this.entities
+    `
       );
       return this.spellcheck;
     },
@@ -92,7 +88,7 @@
         if (document.commandDispatcher.focusedElement != input) {
           input.focus();
         }
-        this._doPopupItemEnabling(event.target);
+        this._doPopupItemEnabling(event);
       });
 
       if (this.spellcheck) {
@@ -113,7 +109,7 @@
       });
     }
 
-    _doPopupItemEnablingSpell(popupNode) {
+    _doPopupItemEnablingSpell(event) {
       var spellui = this.spellCheckerUI;
       if (!spellui || !spellui.canSpellCheck) {
         this._setMenuItemVisibility("spell-no-suggestions", false);
@@ -126,10 +122,7 @@
         return;
       }
 
-      spellui.initFromEvent(
-        document.popupRangeParent,
-        document.popupRangeOffset
-      );
+      spellui.initFromEvent(event.rangeParent, event.rangeOffset);
 
       var enabled = spellui.enabled;
       var showUndo = spellui.canSpellCheck && spellui.canUndo();
@@ -147,8 +140,8 @@
 
       // suggestion list
       var suggestionsSeparator = this.getMenuItem("spell-no-suggestions");
-      var numsug = spellui.addSuggestionsToMenu(
-        popupNode,
+      var numsug = spellui.addSuggestionsToMenuOnParent(
+        event.target,
         suggestionsSeparator,
         5
       );
@@ -166,11 +159,12 @@
       );
     }
 
-    _doPopupItemEnabling(popupNode) {
+    _doPopupItemEnabling(event) {
       if (this.spellcheck) {
-        this._doPopupItemEnablingSpell(popupNode);
+        this._doPopupItemEnablingSpell(event);
       }
 
+      let popupNode = event.target;
       var children = popupNode.childNodes;
       for (var i = 0; i < children.length; i++) {
         var command = children[i].getAttribute("cmd");
@@ -193,11 +187,10 @@
         this._spellCheckInitialized = true;
 
         try {
-          ChromeUtils.import(
-            "resource://gre/modules/InlineSpellChecker.jsm",
-            this
+          const { InlineSpellChecker } = ChromeUtils.import(
+            "resource://gre/modules/InlineSpellChecker.jsm"
           );
-          this.InlineSpellCheckerUI = new this.InlineSpellChecker(
+          this.InlineSpellCheckerUI = new InlineSpellChecker(
             this._input.editor
           );
         } catch (ex) {}

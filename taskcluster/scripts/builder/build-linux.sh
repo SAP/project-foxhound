@@ -27,6 +27,7 @@ echo "running as" $(id)
 : MH_BUILD_POOL                 ${MH_BUILD_POOL:=staging}
 
 : WORKSPACE                     ${WORKSPACE:=/builds/worker/workspace}
+: MOZ_OBJDIR                    ${MOZ_OBJDIR:=$WORKSPACE/obj-build}
 
 set -v
 
@@ -42,9 +43,6 @@ export TINDERBOX_OUTPUT=1
 # use "simple" package names so that they can be hard-coded in the task's
 # extras.locations
 export MOZ_SIMPLE_PACKAGE_NAME=target
-
-# Ensure that in tree libraries can be found
-export LIBRARY_PATH=$LIBRARY_PATH:$WORKSPACE/obj-build:$WORKSPACE/src/gcc/lib64
 
 # test required parameters are supplied
 if [[ -z ${MOZHARNESS_SCRIPT} ]]; then fail "MOZHARNESS_SCRIPT is not set"; fi
@@ -81,6 +79,8 @@ fi
 # entirely effective.
 export TOOLTOOL_CACHE
 
+export MOZ_OBJDIR
+
 config_path_cmds=""
 for path in ${MOZHARNESS_CONFIG_PATHS}; do
     config_path_cmds="${config_path_cmds} --extra-config-path ${GECKO_PATH}/${path}"
@@ -111,7 +111,10 @@ fi
 
 cd /builds/worker
 
-$GECKO_PATH/mach python $GECKO_PATH/testing/${MOZHARNESS_SCRIPT} \
+$GECKO_PATH/mach python \
+  --virtualenv psutil \
+  -- \
+  $GECKO_PATH/testing/${MOZHARNESS_SCRIPT} \
   ${config_path_cmds} \
   ${config_cmds} \
   $debug_flag \

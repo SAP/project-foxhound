@@ -16,6 +16,7 @@
 #include "nsSocketTransportService2.h"
 #include "nsThreadUtils.h"
 #include "mozilla/Services.h"
+#include "nsIWebSocketImpl.h"
 
 namespace mozilla {
 namespace net {
@@ -74,7 +75,7 @@ class WebSocketFrameRunnable final : public WebSocketBaseRunnable {
 
  private:
   virtual void DoWork(nsIWebSocketEventListener* aListener) override {
-    DebugOnly<nsresult> rv;
+    DebugOnly<nsresult> rv{};
     if (mFrameSent) {
       rv = aListener->FrameSent(mWebSocketSerialID, mFrame);
     } else {
@@ -334,6 +335,29 @@ void WebSocketEventService::FrameSent(uint32_t aWebSocketSerialID,
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "NS_DispatchToMainThread failed");
 }
 
+void WebSocketEventService::AssociateWebSocketImplWithSerialID(
+    nsIWebSocketImpl* aWebSocketImpl, uint32_t aWebSocketSerialID) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  mWebSocketImplMap.InsertOrUpdate(aWebSocketSerialID,
+                                   do_GetWeakReference(aWebSocketImpl));
+}
+
+NS_IMETHODIMP
+WebSocketEventService::SendMessage(uint32_t aWebSocketSerialID,
+                                   const nsAString& aMessage) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsWeakPtr weakPtr = mWebSocketImplMap.Get(aWebSocketSerialID);
+  nsCOMPtr<nsIWebSocketImpl> webSocketImpl = do_QueryReferent(weakPtr);
+
+  if (!webSocketImpl) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  return webSocketImpl->SendMessage(aMessage);
+}
+
 NS_IMETHODIMP
 WebSocketEventService::AddListener(uint64_t aInnerWindowID,
                                    nsIWebSocketEventListener* aListener) {
@@ -345,22 +369,25 @@ WebSocketEventService::AddListener(uint64_t aInnerWindowID,
 
   ++mCountListeners;
 
-  WindowListener* listener = mWindows.Get(aInnerWindowID);
-  if (!listener) {
-    listener = new WindowListener();
+  mWindows
+      .LookupOrInsertWith(
+          aInnerWindowID,
+          [&] {
+            auto listener = MakeUnique<WindowListener>();
 
-    if (IsChildProcess()) {
-      PWebSocketEventListenerChild* actor =
-          gNeckoChild->SendPWebSocketEventListenerConstructor(aInnerWindowID);
+            if (IsChildProcess()) {
+              PWebSocketEventListenerChild* actor =
+                  gNeckoChild->SendPWebSocketEventListenerConstructor(
+                      aInnerWindowID);
 
-      listener->mActor = static_cast<WebSocketEventListenerChild*>(actor);
-      MOZ_ASSERT(listener->mActor);
-    }
+              listener->mActor =
+                  static_cast<WebSocketEventListenerChild*>(actor);
+              MOZ_ASSERT(listener->mActor);
+            }
 
-    mWindows.Put(aInnerWindowID, listener);
-  }
-
-  listener->mListeners.AppendElement(aListener);
+            return listener;
+          })
+      ->mListeners.AppendElement(aListener);
 
   return NS_OK;
 }

@@ -25,9 +25,11 @@ add_task(async function test_WebExtensionPolicy() {
       ignorePath: true,
     }),
     permissions: ["<all_urls>"],
-    webAccessibleResources: ["/foo/*", "/bar.baz"].map(
-      glob => new MatchGlob(glob)
-    ),
+    webAccessibleResources: [
+      {
+        resources: ["/foo/*", "/bar.baz"].map(glob => new MatchGlob(glob)),
+      },
+    ],
   });
 
   equal(policy.active, false, "Active attribute should initially be false");
@@ -118,15 +120,15 @@ add_task(async function test_WebExtensionPolicy() {
   // Web-accessible resources
 
   ok(
-    policy.isPathWebAccessible("/foo/bar"),
+    policy.isWebAccessiblePath("/foo/bar"),
     "Web-accessible glob should be web-accessible"
   );
   ok(
-    policy.isPathWebAccessible("/bar.baz"),
+    policy.isWebAccessiblePath("/bar.baz"),
     "Web-accessible path should be web-accessible"
   );
   ok(
-    !policy.isPathWebAccessible("/bar.baz/quux"),
+    !policy.isWebAccessiblePath("/bar.baz/quux"),
     "Non-web-accessible path should not be web-accessible"
   );
 

@@ -49,7 +49,7 @@ NS_IMPL_ISUPPORTS(nsFilePicker, nsIFilePicker)
 // the pref. If the secret API was used once and things worked out it should
 // continue working for subsequent calls so the user is at no more risk.
 static void SetShowHiddenFileState(NSSavePanel* panel) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   bool show = false;
   if (NS_SUCCEEDED(Preferences::GetBool(kShowHiddenFilesPref, &show))) {
@@ -83,7 +83,7 @@ static void SetShowHiddenFileState(NSSavePanel* panel) {
     [showHiddenFilesInvocation invoke];
   }
 
-  NS_OBJC_END_TRY_ABORT_BLOCK;
+  NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
 nsFilePicker::nsFilePicker() : mSelectedTypeIndex(0) {}
@@ -93,7 +93,7 @@ nsFilePicker::~nsFilePicker() {}
 void nsFilePicker::InitNative(nsIWidget* aParent, const nsAString& aTitle) { mTitle = aTitle; }
 
 NSView* nsFilePicker::GetAccessoryView() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NSView* accessoryView = [[[NSView alloc] initWithFrame:NSMakeRect(0, 0, 0, 0)] autorelease];
 
@@ -177,7 +177,7 @@ NSView* nsFilePicker::GetAccessoryView() {
   [accessoryView addSubview:popupButton];
   return accessoryView;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
 // Display the file dialog
@@ -242,7 +242,7 @@ static void UpdatePanelFileTypes(NSOpenPanel* aPanel, NSArray* aFilters) {
 }
 
 - (void)menuChangedItem:(NSNotification*)aSender {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
   int32_t selectedItem = [mPopUpButton indexOfSelectedItem];
   if (selectedItem < 0) {
     return;
@@ -251,13 +251,13 @@ static void UpdatePanelFileTypes(NSOpenPanel* aPanel, NSArray* aFilters) {
   mFilePicker->SetFilterIndex(selectedItem);
   UpdatePanelFileTypes(mOpenPanel, mFilePicker->GetFilterList());
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN();
+  NS_OBJC_END_TRY_BLOCK_RETURN();
 }
 @end
 
 // Use OpenPanel to do a GetFile. Returns |returnOK| if the user presses OK in the dialog.
 int16_t nsFilePicker::GetLocalFiles(bool inAllowMultiple, nsCOMArray<nsIFile>& outFiles) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   int16_t retVal = (int16_t)returnCancel;
   NSOpenPanel* thePanel = [NSOpenPanel openPanel];
@@ -340,7 +340,7 @@ int16_t nsFilePicker::GetLocalFiles(bool inAllowMultiple, nsCOMArray<nsIFile>& o
     }
 
     nsCOMPtr<nsIFile> localFile;
-    NS_NewLocalFile(EmptyString(), true, getter_AddRefs(localFile));
+    NS_NewLocalFile(u""_ns, true, getter_AddRefs(localFile));
     nsCOMPtr<nsILocalFileMac> macLocalFile = do_QueryInterface(localFile);
     if (macLocalFile && NS_SUCCEEDED(macLocalFile->InitWithCFURL((CFURLRef)url))) {
       outFiles.AppendObject(localFile);
@@ -351,12 +351,12 @@ int16_t nsFilePicker::GetLocalFiles(bool inAllowMultiple, nsCOMArray<nsIFile>& o
 
   return retVal;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(0);
+  NS_OBJC_END_TRY_BLOCK_RETURN(0);
 }
 
 // Use OpenPanel to do a GetFolder. Returns |returnOK| if the user presses OK in the dialog.
 int16_t nsFilePicker::GetLocalFolder(nsIFile** outFile) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
   NS_ASSERTION(outFile, "this protected member function expects a null initialized out pointer");
 
   int16_t retVal = (int16_t)returnCancel;
@@ -391,7 +391,7 @@ int16_t nsFilePicker::GetLocalFolder(nsIFile** outFile) {
   NSURL* theURL = [[thePanel URLs] objectAtIndex:0];
   if (theURL) {
     nsCOMPtr<nsIFile> localFile;
-    NS_NewLocalFile(EmptyString(), true, getter_AddRefs(localFile));
+    NS_NewLocalFile(u""_ns, true, getter_AddRefs(localFile));
     nsCOMPtr<nsILocalFileMac> macLocalFile = do_QueryInterface(localFile);
     if (macLocalFile && NS_SUCCEEDED(macLocalFile->InitWithCFURL((CFURLRef)theURL))) {
       *outFile = localFile;
@@ -402,12 +402,12 @@ int16_t nsFilePicker::GetLocalFolder(nsIFile** outFile) {
 
   return retVal;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(0);
+  NS_OBJC_END_TRY_BLOCK_RETURN(0);
 }
 
 // Returns |returnOK| if the user presses OK in the dialog.
 int16_t nsFilePicker::PutLocalFile(nsIFile** outFile) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
   NS_ASSERTION(outFile, "this protected member function expects a null initialized out pointer");
 
   int16_t retVal = returnCancel;
@@ -477,7 +477,7 @@ int16_t nsFilePicker::PutLocalFile(nsIFile** outFile) {
   NSURL* fileURL = [thePanel URL];
   if (fileURL) {
     nsCOMPtr<nsIFile> localFile;
-    NS_NewLocalFile(EmptyString(), true, getter_AddRefs(localFile));
+    NS_NewLocalFile(u""_ns, true, getter_AddRefs(localFile));
     nsCOMPtr<nsILocalFileMac> macLocalFile = do_QueryInterface(localFile);
     if (macLocalFile && NS_SUCCEEDED(macLocalFile->InitWithCFURL((CFURLRef)fileURL))) {
       *outFile = localFile;
@@ -493,11 +493,11 @@ int16_t nsFilePicker::PutLocalFile(nsIFile** outFile) {
 
   return retVal;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(0);
+  NS_OBJC_END_TRY_BLOCK_RETURN(0);
 }
 
 NSArray* nsFilePicker::GetFilterList() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if (!mFilters.Length()) {
     return nil;
@@ -533,13 +533,13 @@ NSArray* nsFilePicker::GetFilterList() {
   return
       [[[NSArray alloc] initWithArray:[filterString componentsSeparatedByString:@";"]] autorelease];
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
 // Sets the dialog title to whatever it should be.  If it fails, eh,
 // the OS will provide a sensible default.
 void nsFilePicker::SetDialogTitle(const nsString& inTitle, id aPanel) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   [aPanel setTitle:[NSString stringWithCharacters:(const unichar*)inTitle.get()
                                            length:inTitle.Length()]];
@@ -549,13 +549,13 @@ void nsFilePicker::SetDialogTitle(const nsString& inTitle, id aPanel) {
                                               length:mOkButtonLabel.Length()]];
   }
 
-  NS_OBJC_END_TRY_ABORT_BLOCK;
+  NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
 // Converts path from an nsIFile into a NSString path
 // If it fails, returns an empty string.
 NSString* nsFilePicker::PanelDefaultDirectory() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NSString* directory = nil;
   if (mDisplayDirectory) {
@@ -567,7 +567,7 @@ NSString* nsFilePicker::PanelDefaultDirectory() {
   }
   return directory;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
 NS_IMETHODIMP nsFilePicker::GetFile(nsIFile** aFile) {
@@ -593,7 +593,7 @@ NS_IMETHODIMP nsFilePicker::GetFileURL(nsIURI** aFileURL) {
 }
 
 NS_IMETHODIMP nsFilePicker::GetFiles(nsISimpleEnumerator** aFiles) {
-  return NS_NewArrayEnumerator(aFiles, mFiles);
+  return NS_NewArrayEnumerator(aFiles, mFiles, NS_GET_IID(nsIFile));
 }
 
 NS_IMETHODIMP nsFilePicker::SetDefaultString(const nsAString& aString) {

@@ -8,7 +8,6 @@
 #include "CompositableClient.h"
 #include "mozilla/layers/CompositableForwarder.h"
 #include "mozilla/layers/TextureForwarder.h"
-#include "mozilla/layers/TiledContentClient.h"
 #include "mozilla/StaticPrefs_layers.h"
 
 #include "nsComponentManagerUtils.h"
@@ -34,13 +33,11 @@ static void ClearCallback(nsITimer* aTimer, void* aClosure) {
 }
 
 TextureClientPool::TextureClientPool(
-    LayersBackend aLayersBackend, bool aSupportsTextureDirectMapping,
-    int32_t aMaxTextureSize, gfx::SurfaceFormat aFormat, gfx::IntSize aSize,
-    TextureFlags aFlags, uint32_t aShrinkTimeoutMsec,
+    KnowsCompositor* aKnowsCompositor, gfx::SurfaceFormat aFormat,
+    gfx::IntSize aSize, TextureFlags aFlags, uint32_t aShrinkTimeoutMsec,
     uint32_t aClearTimeoutMsec, uint32_t aInitialPoolSize,
     uint32_t aPoolUnusedSize, TextureForwarder* aAllocator)
-    : mBackend(aLayersBackend),
-      mMaxTextureSize(aMaxTextureSize),
+    : mKnowsCompositor(aKnowsCompositor),
       mFormat(aFormat),
       mSize(aSize),
       mFlags(aFlags),
@@ -50,8 +47,7 @@ TextureClientPool::TextureClientPool(
       mPoolUnusedSize(aPoolUnusedSize),
       mOutstandingClients(0),
       mSurfaceAllocator(aAllocator),
-      mDestroyed(false),
-      mSupportsTextureDirectMapping(aSupportsTextureDirectMapping) {
+      mDestroyed(false) {
   TCP_LOG("TexturePool %p created with maximum unused texture clients %u\n",
           this, mInitialPoolSize);
   mShrinkTimer = NS_NewTimer();
@@ -134,21 +130,15 @@ void TextureClientPool::AllocateTextureClient() {
 
   TextureAllocationFlags allocFlags = ALLOC_DEFAULT;
 
-  if (mSupportsTextureDirectMapping &&
-      std::max(mSize.width, mSize.height) <= mMaxTextureSize) {
-    allocFlags =
-        TextureAllocationFlags(allocFlags | ALLOC_ALLOW_DIRECT_MAPPING);
-  }
-
   RefPtr<TextureClient> newClient;
   if (StaticPrefs::layers_force_shmem_tiles_AtStartup()) {
     // gfx::BackendType::NONE means use the content backend
     newClient = TextureClient::CreateForRawBufferAccess(
-        mSurfaceAllocator, mFormat, mSize, gfx::BackendType::NONE, mBackend,
+        mSurfaceAllocator, mFormat, mSize, gfx::BackendType::NONE, GetBackend(),
         mFlags, allocFlags);
   } else {
     newClient = TextureClient::CreateForDrawing(
-        mSurfaceAllocator, mFormat, mSize, mBackend, mMaxTextureSize,
+        mSurfaceAllocator, mFormat, mSize, mKnowsCompositor,
         BackendSelector::Content, mFlags, allocFlags);
   }
 
@@ -310,6 +300,7 @@ void TextureClientPool::Destroy() {
   mDestroyed = true;
   mInitialPoolSize = 0;
   mPoolUnusedSize = 0;
+  mKnowsCompositor = nullptr;
 }
 
 }  // namespace layers

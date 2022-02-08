@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 az{
     AuxExemplarCharacters{"[w]"}
     Ellipsis{
@@ -189,6 +190,7 @@ az{
                 }
             }
             symbols{
+                approximatelySign{"~"}
                 decimal{","}
                 exponential{"E"}
                 group{"."}
@@ -218,7 +220,6 @@ az{
         minimumGroupingDigits{"1"}
         native{"latn"}
     }
-    Version{"37"}
     calendar{
         generic{
             DateTimePatterns{
@@ -236,6 +237,16 @@ az{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "GyMMMMEEEEd",
+                "GyMMMMd",
+                "GyMMMd",
+                "GGGGGyMMdd",
+            }
             availableFormats{
                 Bh{"h B"}
                 Bhm{"h:mm B"}
@@ -252,6 +263,7 @@ az{
                 GyMMM{"G MMM y"}
                 GyMMMEd{"G d MMM y, E"}
                 GyMMMd{"G d MMM y"}
+                GyMd{"GGGGG d M y"}
                 H{"HH"}
                 Hm{"HH:mm"}
                 Hms{"HH:mm:ss"}
@@ -437,6 +449,16 @@ az{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "yMMMMEEEEd",
+                "yMMMMd",
+                "yMMMd",
+                "yyMMdd",
+            }
             appendItems{
                 Timezone{"{0} {1}"}
             }
@@ -456,6 +478,7 @@ az{
                 GyMMM{"G MMM y"}
                 GyMMMEd{"G d MMM y, E"}
                 GyMMMd{"G d MMM y"}
+                GyMd{"GGGGG d MMM y"}
                 H{"HH"}
                 Hm{"HH:mm"}
                 Hms{"HH:mm:ss"}
@@ -867,16 +890,16 @@ az{
                     }
                     wide{
                         "yanvar",
-                        "Fevral",
+                        "fevral",
                         "mart",
-                        "Aprel",
-                        "May",
-                        "İyun",
-                        "İyul",
-                        "Avqust",
-                        "Sentyabr",
-                        "Oktyabr",
-                        "Noyabr",
+                        "aprel",
+                        "may",
+                        "iyun",
+                        "iyul",
+                        "avqust",
+                        "sentyabr",
+                        "oktyabr",
+                        "noyabr",
                         "dekabr",
                     }
                 }

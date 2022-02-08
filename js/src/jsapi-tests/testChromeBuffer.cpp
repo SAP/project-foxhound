@@ -6,10 +6,14 @@
 
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 
+#include "js/CallAndConstruct.h"          // JS_CallFunctionValue
 #include "js/CompilationAndEvaluation.h"  // JS::CompileFunction
 #include "js/ContextOptions.h"
-#include "js/SourceText.h"  // JS::Source{Ownership,Text}
+#include "js/GlobalObject.h"        // JS_NewGlobalObject
+#include "js/PropertyAndElement.h"  // JS_DefineProperty
+#include "js/SourceText.h"          // JS::Source{Ownership,Text}
 #include "jsapi-tests/tests.h"
+#include "util/Text.h"
 
 static TestJSPrincipals system_principals(1);
 
@@ -67,7 +71,7 @@ BEGIN_TEST(testChromeBuffer) {
       static const char bytes[] = "return x ? 1 + trusted(x-1) : 0";
 
       JS::SourceText<mozilla::Utf8Unit> srcBuf;
-      CHECK(srcBuf.init(cx, bytes, mozilla::ArrayLength(bytes) - 1,
+      CHECK(srcBuf.init(cx, bytes, js_strlen(bytes),
                         JS::SourceOwnership::Borrowed));
 
       JS::CompileOptions options(cx);
@@ -98,7 +102,7 @@ BEGIN_TEST(testChromeBuffer) {
         "}                                          ";
 
     JS::SourceText<mozilla::Utf8Unit> srcBuf;
-    CHECK(srcBuf.init(cx, bytes, mozilla::ArrayLength(bytes) - 1,
+    CHECK(srcBuf.init(cx, bytes, js_strlen(bytes),
                       JS::SourceOwnership::Borrowed));
 
     JS::CompileOptions options(cx);
@@ -141,7 +145,7 @@ BEGIN_TEST(testChromeBuffer) {
           "}                                      ";
 
       JS::SourceText<mozilla::Utf8Unit> srcBuf;
-      CHECK(srcBuf.init(cx, bytes, mozilla::ArrayLength(bytes) - 1,
+      CHECK(srcBuf.init(cx, bytes, js_strlen(bytes),
                         JS::SourceOwnership::Borrowed));
 
       JS::CompileOptions options(cx);
@@ -168,7 +172,7 @@ BEGIN_TEST(testChromeBuffer) {
         "}                                          ";
 
     JS::SourceText<mozilla::Utf8Unit> srcBuf;
-    CHECK(srcBuf.init(cx, bytes, mozilla::ArrayLength(bytes) - 1,
+    CHECK(srcBuf.init(cx, bytes, js_strlen(bytes),
                       JS::SourceOwnership::Borrowed));
 
     JS::CompileOptions options(cx);
@@ -202,7 +206,7 @@ BEGIN_TEST(testChromeBuffer) {
       static const char bytes[] = "return 42";
 
       JS::SourceText<mozilla::Utf8Unit> srcBuf;
-      CHECK(srcBuf.init(cx, bytes, mozilla::ArrayLength(bytes) - 1,
+      CHECK(srcBuf.init(cx, bytes, js_strlen(bytes),
                         JS::SourceOwnership::Borrowed));
 
       JS::CompileOptions options(cx);
@@ -230,7 +234,7 @@ BEGIN_TEST(testChromeBuffer) {
         "}                                          ";
 
     JS::SourceText<mozilla::Utf8Unit> srcBuf;
-    CHECK(srcBuf.init(cx, bytes, mozilla::ArrayLength(bytes) - 1,
+    CHECK(srcBuf.init(cx, bytes, js_strlen(bytes),
                       JS::SourceOwnership::Borrowed));
 
     JS::CompileOptions options(cx);

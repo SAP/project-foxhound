@@ -123,8 +123,16 @@ the engine is to be included when we do not know the user's region.
 "override"
 ----------
 
-The `"override"` field can be set to true if you want a section to
-only override otherwise included engines. For example:
+The ``"override"`` field can be set to true if you want a section to
+only override otherwise included engines. ``"override"`` will only work for
+sections which apply to distributions or experiments. The experiment case was
+added in Firefox 81.
+
+Starting with Firefox 96, ``"override"`` sections may include ``included`` and
+``excluded`` information which will be applied accordingly. If they are not
+supplied, then the override section will be applied to everywhere.
+
+Example:
 
 .. code-block:: js
 
@@ -484,7 +492,6 @@ Example:
 
 This would result in the order: ``engine2@ext, engine1@ext, engine3@ext``.
 
-=============
 Region Params
 =============
 

@@ -38,10 +38,12 @@ class NeckoChild : public PNeckoChild {
 
   PCookieServiceChild* AllocPCookieServiceChild();
   bool DeallocPCookieServiceChild(PCookieServiceChild*);
-  PFTPChannelChild* AllocPFTPChannelChild(
+#ifdef MOZ_WIDGET_GTK
+  PGIOChannelChild* AllocPGIOChannelChild(
       PBrowserChild* aBrowser, const SerializedLoadContext& aSerialized,
-      const FTPChannelCreationArgs& aOpenArgs);
-  bool DeallocPFTPChannelChild(PFTPChannelChild*);
+      const GIOChannelCreationArgs& aOpenArgs);
+  bool DeallocPGIOChannelChild(PGIOChannelChild*);
+#endif
   PWebSocketChild* AllocPWebSocketChild(PBrowserChild*,
                                         const SerializedLoadContext&,
                                         const uint32_t&);
@@ -58,14 +60,8 @@ class NeckoChild : public PNeckoChild {
   bool DeallocPUDPSocketChild(PUDPSocketChild*);
   PSimpleChannelChild* AllocPSimpleChannelChild(const uint32_t& channelId);
   bool DeallocPSimpleChannelChild(PSimpleChannelChild* child);
-  PChannelDiverterChild* AllocPChannelDiverterChild(
-      const ChannelDiverterArgs& channel);
-  bool DeallocPChannelDiverterChild(PChannelDiverterChild* actor);
   PTransportProviderChild* AllocPTransportProviderChild();
   bool DeallocPTransportProviderChild(PTransportProviderChild* aActor);
-  mozilla::ipc::IPCResult RecvAsyncAuthPromptForNestedFrame(
-      const TabId& aNestedFrameId, const nsCString& aUri,
-      const nsString& aRealm, const uint64_t& aCallbackId);
   PWebSocketEventListenerChild* AllocPWebSocketEventListenerChild(
       const uint64_t& aInnerWindowID);
   bool DeallocPWebSocketEventListenerChild(PWebSocketEventListenerChild*);
@@ -84,7 +80,7 @@ class NeckoChild : public PNeckoChild {
       const Maybe<LoadInfoArgs>& aLoadInfo);
 
   bool DeallocPClassifierDummyChannelChild(
-      PClassifierDummyChannelChild* aChannel);
+      PClassifierDummyChannelChild* aActor);
 };
 
 /**

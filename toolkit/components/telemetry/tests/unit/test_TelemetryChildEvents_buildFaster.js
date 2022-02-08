@@ -2,14 +2,11 @@
    http://creativecommons.org/publicdomain/zero/1.0/
 */
 
-ChromeUtils.import("resource://testing-common/ContentTaskUtils.jsm", this);
+const { ContentTaskUtils } = ChromeUtils.import(
+  "resource://testing-common/ContentTaskUtils.jsm"
+);
 
 const MESSAGE_CHILD_TEST_DONE = "ChildTest:Done";
-
-const PLATFORM_VERSION = "1.9.2";
-const APP_VERSION = "1";
-const APP_ID = "xpcshell@tests.mozilla.org";
-const APP_NAME = "XPCShell";
 
 const TEST_STATIC_EVENT_NAME = "telemetry.test";
 const TEST_EVENT_NAME = "telemetry.test.child";
@@ -44,7 +41,7 @@ add_task(async function test_setup() {
 
   // Setup.
   do_get_profile(true);
-  loadAddonManager(APP_ID, APP_NAME, APP_VERSION, PLATFORM_VERSION);
+  await loadAddonManager(APP_ID, APP_NAME, APP_VERSION, PLATFORM_VERSION);
   finishAddonManagerStartup();
   fakeIntlReady();
   await TelemetryController.testSetup();

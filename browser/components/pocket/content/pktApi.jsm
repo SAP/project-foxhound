@@ -175,7 +175,9 @@ var pktApi = (function() {
       pocketSiteHost,
       oa
     )) {
-      cookies[cookie.name] = cookie.value;
+      if (cookie.host === pocketSiteHost) {
+        cookies[cookie.name] = cookie.value;
+      }
     }
     return cookies;
   }
@@ -395,6 +397,30 @@ var pktApi = (function() {
   }
 
   /**
+   * Gets a list of related recommendations for the item
+   * @param  {string} itemId Item id of item
+   * @param {Object | undefined} options Can provide a string-based title, a
+   *                                     `success` callback and an `error` callback.
+   * @return {Boolean} Returns Boolean whether the api call started sucessfully
+   */
+  function getRecsForItem(itemId, options) {
+    return apiRequest({
+      path: "/discover/recIt",
+      data: {
+        item_id: itemId,
+        module: "ff_plugin",
+        count: 3,
+      },
+      success(data) {
+        if (options.success) {
+          options.success.apply(options, Array.apply(null, arguments));
+        }
+      },
+      error: options.error,
+    });
+  }
+
+  /**
    * Get a preview for saved URL
    * @param {string} url     URL of the link
    * @param {Object | undefined} options Can provide a `success` callback and an `error` callback.
@@ -587,11 +613,9 @@ var pktApi = (function() {
   }
 
   /**
-   * Get all cached tags and used tags within the callback
-   * @param {function(Array, Array, Boolean)} callback
-   *                           Function with tags and used tags as parameter.
+   * Return all cached tags and used tags.
    */
-  function getTags(callback) {
+  function getTags() {
     var tagsFromSettings = function() {
       var tagsJSON = getSetting("tags");
       if (typeof tagsJSON !== "undefined") {
@@ -631,11 +655,10 @@ var pktApi = (function() {
       return usedTags;
     };
 
-    if (callback) {
-      var tags = tagsFromSettings();
-      var usedTags = sortedUsedTagsFromSettings();
-      callback(tags, usedTags);
-    }
+    return {
+      tags: tagsFromSettings(),
+      usedTags: sortedUsedTagsFromSettings(),
+    };
   }
 
   /**
@@ -697,42 +720,13 @@ var pktApi = (function() {
   }
 
   /**
-   * Helper function to get current signup AB group the user is in
-   */
-  function getSignupPanelTabTestVariant() {
-    return getMultipleTestOption("panelSignUp", { control: 1, v1: 0, v2: 0 });
-  }
-
-  function getMultipleTestOption(testName, testOptions) {
-    // Get the test from preferences if we've already assigned the user to a test
-    var settingName = "test." + testName;
-    var assignedValue = getSetting(settingName);
-    var valArray = [];
-
-    // If not assigned yet, pick and store a value
-    if (!assignedValue) {
-      // Get a weighted array of test variants from the testOptions object
-      Object.keys(testOptions).forEach(function(key) {
-        for (var i = 0; i < testOptions[key]; i++) {
-          valArray.push(key);
-        }
-      });
-
-      // Get a random test variant and set the user to it
-      assignedValue = valArray[Math.floor(Math.random() * valArray.length)];
-      setSetting(settingName, assignedValue);
-    }
-
-    return assignedValue;
-  }
-
-  /**
    * Public functions
    */
   return {
     isUserLoggedIn,
     clearUserData,
     addLink,
+    getRecsForItem,
     deleteItem,
     archiveItem,
     addTagsToItem,
@@ -741,7 +735,6 @@ var pktApi = (function() {
     isPremiumUser,
     getSuggestedTagsForItem,
     getSuggestedTagsForURL,
-    getSignupPanelTabTestVariant,
     retrieve,
     getArticleInfo,
     getMobileDownload,

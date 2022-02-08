@@ -5,7 +5,7 @@
 "use strict";
 
 // This file expects tabTracker to be defined in the global scope (e.g.
-// by ext-utils.js).
+// by ext-browser.js or ext-android.js).
 /* global tabTracker */
 
 ChromeUtils.defineModuleGetter(
@@ -18,6 +18,12 @@ ChromeUtils.defineModuleGetter(
   "WebNavigation",
   "resource://gre/modules/WebNavigation.jsm"
 );
+ChromeUtils.defineModuleGetter(
+  this,
+  "WebNavigationFrames",
+  "resource://gre/modules/WebNavigationFrames.jsm"
+);
+var { ExtensionError } = ExtensionUtils;
 
 const defaultTransitionTypes = {
   topFrame: "link",
@@ -106,6 +112,7 @@ const fillTransitionProperties = (eventName, src, dst) => {
 // Similar to WebRequestEventManager but for WebNavigation.
 class WebNavigationEventManager extends EventManager {
   constructor(context, eventName) {
+    let { tabManager } = context.extension;
     let name = `webNavigation.${eventName}`;
     let register = (fire, urlFilters) => {
       // Don't create a MatchURLFilters instance if the listener does not include any filter.
@@ -153,6 +160,10 @@ class WebNavigationEventManager extends EventManager {
         if (data2.tabId < 0) {
           return;
         }
+        let tab = tabTracker.getTab(data2.tabId);
+        if (!tabManager.canAccessTab(tab)) {
+          return;
+        }
 
         if (data.sourceTabBrowser) {
           data2.sourceTabId = tabTracker.getBrowserData(
@@ -174,16 +185,6 @@ class WebNavigationEventManager extends EventManager {
     super({ context, name, register });
   }
 }
-
-const convertGetFrameResult = (tabId, data) => {
-  return {
-    errorOccurred: data.errorOccurred,
-    url: data.url,
-    tabId,
-    frameId: data.frameId,
-    parentFrameId: data.parentFrameId,
-  };
-};
 
 this.webNavigation = class extends ExtensionAPI {
   getAPI(context) {
@@ -230,63 +231,24 @@ this.webNavigation = class extends ExtensionAPI {
           context,
           "onCreatedNavigationTarget"
         ).api(),
-        getAllFrames(details) {
-          let tab = tabManager.get(details.tabId);
-
-          try {
-            if (tab.discarded) {
-              return null;
-            }
-          } catch (e) {
-            // accessing the tab.discarded getter may reject if not implemented
-            // on the current platform.
+        getAllFrames({ tabId }) {
+          let tab = tabManager.get(tabId);
+          if (tab.discarded) {
+            return null;
           }
-
-          let { innerWindowID, messageManager } = tab.browser;
-          let recipient = { innerWindowID };
-
-          return context
-            .sendMessage(
-              messageManager,
-              "WebNavigation:GetAllFrames",
-              {},
-              { recipient }
-            )
-            .then(results =>
-              results.map(convertGetFrameResult.bind(null, details.tabId))
-            );
+          let frames = WebNavigationFrames.getAllFrames(tab.browsingContext);
+          return frames.map(fd => ({ tabId, ...fd }));
         },
-        getFrame(details) {
-          let tab = tabManager.get(details.tabId);
-
-          try {
-            if (tab.discarded) {
-              return null;
-            }
-          } catch (e) {
-            // accessing the tab.discarded getter may reject if not implemented
-            // on the current platform.
+        getFrame({ tabId, frameId }) {
+          let tab = tabManager.get(tabId);
+          if (tab.discarded) {
+            return null;
           }
-
-          let recipient = {
-            innerWindowID: tab.browser.innerWindowID,
-          };
-
-          let mm = tab.browser.messageManager;
-          return context
-            .sendMessage(
-              mm,
-              "WebNavigation:GetFrame",
-              { options: details },
-              { recipient }
-            )
-            .then(result => {
-              return result
-                ? convertGetFrameResult(details.tabId, result)
-                : Promise.reject({
-                    message: `No frame found with frameId: ${details.frameId}`,
-                  });
-            });
+          let fd = WebNavigationFrames.getFrame(tab.browsingContext, frameId);
+          if (!fd) {
+            throw new ExtensionError(`No frame found with frameId: ${frameId}`);
+          }
+          return { tabId, ...fd };
         },
       },
     };

@@ -8,6 +8,7 @@
 
 #include "AudioSegment.h"
 #include "EncodedFrame.h"
+#include "MediaQueue.h"
 #include "MediaTrackGraph.h"
 #include "TrackMetadataBase.h"
 #include "VideoSegment.h"
@@ -23,16 +24,15 @@ class TrackEncoderListener {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(TrackEncoderListener)
 
   /**
+   * Called when the TrackEncoder has received its first real data.
+   */
+  virtual void Started(TrackEncoder* aEncoder) = 0;
+
+  /**
    * Called when the TrackEncoder's underlying encoder has been successfully
    * initialized and there's non-null data ready to be encoded.
    */
   virtual void Initialized(TrackEncoder* aEncoder) = 0;
-
-  /**
-   * Called when there's new data ready to be encoded.
-   * Always called after Initialized().
-   */
-  virtual void DataAvailable(TrackEncoder* aEncoder) = 0;
 
   /**
    * Called after the TrackEncoder hit an unexpected error, causing it to
@@ -48,17 +48,14 @@ class TrackEncoderListener {
  * Base class of AudioTrackEncoder and VideoTrackEncoder. Lifetime managed by
  * MediaEncoder. All methods are to be called only on the worker thread.
  *
- * MediaTrackListeners will get store raw data in mIncomingBuffer, so
- * mIncomingBuffer is protected by a lock. The control APIs are all called by
- * MediaEncoder on its dedicated thread, where GetEncodedTrack is called
- * periodically to swap out mIncomingBuffer, feed it to the encoder, and return
- * the encoded data.
+ * The control APIs are all called by MediaEncoder on its dedicated thread. Data
+ * is encoded as soon as it has been appended (and time has advanced past its
+ * end in case of video) and pushed to mEncodedDataQueue.
  */
 class TrackEncoder {
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(TrackEncoder);
-
  public:
-  explicit TrackEncoder(TrackRate aTrackRate);
+  TrackEncoder(TrackRate aTrackRate,
+               MediaQueue<EncodedFrame>& aEncodedDataQueue);
 
   /**
    * Called by MediaEncoder to cancel the encoding.
@@ -78,10 +75,9 @@ class TrackEncoder {
   virtual already_AddRefed<TrackMetadataBase> GetMetadata() = 0;
 
   /**
-   * Encodes raw segments. Result data is returned in aData, and called on the
-   * worker thread.
+   * MediaQueue containing encoded data, that is pushed as soon as it's ready.
    */
-  virtual nsresult GetEncodedTrack(nsTArray<RefPtr<EncodedFrame>>& aData) = 0;
+  MediaQueue<EncodedFrame>& EncodedDataQueue() { return mEncodedDataQueue; }
 
   /**
    * Returns true once this TrackEncoder is initialized.
@@ -89,26 +85,15 @@ class TrackEncoder {
   bool IsInitialized();
 
   /**
+   * Returns true once this TrackEncoder has received some data.
+   */
+  bool IsStarted();
+
+  /**
    * True if the track encoder has encoded all source segments coming from
    * MediaTrackGraph. Call on the worker thread.
    */
-  bool IsEncodingComplete();
-
-  /**
-   * If this TrackEncoder was not already initialized, it is set to initialized
-   * and listeners are notified.
-   */
-  void SetInitialized();
-
-  /**
-   * Notifies listeners that there is data available for encoding.
-   */
-  void OnDataAvailable();
-
-  /**
-   * Called after an error. Cancels the encoding and notifies listeners.
-   */
-  void OnError();
+  bool IsEncodingComplete() const;
 
   /**
    * Registers a listener to events from this TrackEncoder.
@@ -139,20 +124,31 @@ class TrackEncoder {
   virtual ~TrackEncoder() { MOZ_ASSERT(mListeners.IsEmpty()); }
 
   /**
-   * True if the track encoder has encoded all source data.
+   * If this TrackEncoder was not already initialized, it is set to initialized
+   * and listeners are notified.
    */
-  bool mEncodingComplete;
+  void SetInitialized();
 
   /**
-   * True if flag of EOS or any form of indicating EOS has set in the codec-
-   * encoder.
+   * If this TrackEncoder was not already marked started, its started state is
+   * set and listeners are notified.
    */
-  bool mEosSetInEncoder;
+  void SetStarted();
+
+  /**
+   * Called after an error. Cancels the encoding and notifies listeners.
+   */
+  void OnError();
 
   /**
    * True if the track encoder has been initialized successfully.
    */
   bool mInitialized;
+
+  /**
+   * True if the track encoder has received data.
+   */
+  bool mStarted;
 
   /**
    * True once all data until the end of the input track has been received.
@@ -175,22 +171,27 @@ class TrackEncoder {
   /**
    * The track rate of source media.
    */
-  TrackRate mTrackRate;
+  const TrackRate mTrackRate;
 
   /**
    * If set we assert that all methods are called on this thread.
    */
   RefPtr<AbstractThread> mWorkerThread;
 
+  /**
+   * MediaQueue where encoded data ends up. Note that metadata goes out of band.
+   */
+  MediaQueue<EncodedFrame>& mEncodedDataQueue;
+
   nsTArray<RefPtr<TrackEncoderListener>> mListeners;
 };
 
 class AudioTrackEncoder : public TrackEncoder {
  public:
-  explicit AudioTrackEncoder(TrackRate aTrackRate)
-      : TrackEncoder(aTrackRate),
+  AudioTrackEncoder(TrackRate aTrackRate,
+                    MediaQueue<EncodedFrame>& aEncodedDataQueue)
+      : TrackEncoder(aTrackRate, aEncodedDataQueue),
         mChannels(0),
-        mSamplingRate(0),
         mNotInitDuration(0),
         mAudioBitrate(0) {}
 
@@ -210,12 +211,6 @@ class AudioTrackEncoder : public TrackEncoder {
    * Appends and consumes track data from aSegment.
    */
   void AppendAudioSegment(AudioSegment&& aSegment);
-
-  /**
-   * Takes all track data that has been played out from the last time
-   * TakeTrackData ran and moves it to aSegment.
-   */
-  void TakeTrackData(AudioSegment& aSegment);
 
   template <typename T>
   static void InterleaveTrackData(nsTArray<const T*>& aInput, int32_t aDuration,
@@ -281,7 +276,7 @@ class AudioTrackEncoder : public TrackEncoder {
 
   /**
    * Dispatched from MediaTrackGraph when we have finished feeding data to
-   * mIncomingBuffer.
+   * mOutgoingBuffer.
    */
   void NotifyEndOfStream() override;
 
@@ -291,13 +286,18 @@ class AudioTrackEncoder : public TrackEncoder {
    * frame size required by audio encoder, and listeners will be notified when
    * at least this much data has been added to mOutgoingBuffer.
    */
-  virtual int GetPacketDuration() { return 0; }
+  virtual int NumInputFramesPerPacket() const { return 0; }
 
   /**
    * Initializes the audio encoder. The call of this method is delayed until we
    * have received the first valid track from MediaTrackGraph.
    */
-  virtual nsresult Init(int aChannels, int aSamplingRate) = 0;
+  virtual nsresult Init(int aChannels) = 0;
+
+  /**
+   * Encodes buffered data and pushes it to mEncodedDataQueue.
+   */
+  virtual nsresult Encode(AudioSegment* aSegment) = 0;
 
   /**
    * The number of channels are used for processing PCM data in the audio
@@ -306,11 +306,6 @@ class AudioTrackEncoder : public TrackEncoder {
    * performed. This value also be used to initialize the audio encoder.
    */
   int mChannels;
-
-  /**
-   * The sampling rate of source audio data.
-   */
-  int mSamplingRate;
 
   /**
    * A segment queue of outgoing audio track data to the encoder.
@@ -331,9 +326,10 @@ enum class FrameDroppingMode {
 
 class VideoTrackEncoder : public TrackEncoder {
  public:
-  explicit VideoTrackEncoder(RefPtr<DriftCompensator> aDriftCompensator,
-                             TrackRate aTrackRate,
-                             FrameDroppingMode aFrameDroppingMode);
+  VideoTrackEncoder(RefPtr<DriftCompensator> aDriftCompensator,
+                    TrackRate aTrackRate,
+                    MediaQueue<EncodedFrame>& aEncodedDataQueue,
+                    FrameDroppingMode aFrameDroppingMode);
 
   /**
    * Suspends encoding from aTime, i.e., all video frame with a timestamp
@@ -366,12 +362,6 @@ class VideoTrackEncoder : public TrackEncoder {
   void AppendVideoSegment(VideoSegment&& aSegment);
 
   /**
-   * Takes track data from the last time TakeTrackData ran until mCurrentTime
-   * and moves it to aSegment.
-   */
-  void TakeTrackData(VideoSegment& aSegment);
-
-  /**
    * Measure size of internal buffers.
    */
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) override;
@@ -385,11 +375,15 @@ class VideoTrackEncoder : public TrackEncoder {
    * This can be re-called often, as it will exit early should we already be
    * initiated. mInitiated will only be set if there was enough data in
    * aSegment to infer metadata. If mInitiated gets set, listeners are notified.
+   * The amount of chunks needed can be controlled by
+   * aFrameRateDetectionMinChunks which denotes the minimum number of chunks
+   * needed to infer the framerate.
    *
    * Failing to initiate the encoder for an accumulated aDuration of 30 seconds
    * is seen as an error and will cancel the current encoding.
    */
-  void Init(const VideoSegment& aSegment, const TimeStamp& aTime);
+  void Init(const VideoSegment& aSegment, const TimeStamp& aTime,
+            size_t aFrameRateDetectionMinChunks);
 
   TrackTime SecondsToMediaTime(double aS) const {
     NS_ASSERTION(0 <= aS && aS <= TRACK_TICKS_MAX / TRACK_RATE_MAX,
@@ -417,11 +411,6 @@ class VideoTrackEncoder : public TrackEncoder {
    */
   void AdvanceCurrentTime(const TimeStamp& aTime);
 
-  /**
-   * Set desired keyframe interval defined in milliseconds.
-   */
-  void SetKeyFrameInterval(uint32_t aKeyFrameInterval);
-
  protected:
   /**
    * Initialize the video encoder. In order to collect the value of width and
@@ -429,34 +418,19 @@ class VideoTrackEncoder : public TrackEncoder {
    * received the first valid video frame from MediaTrackGraph.
    * Listeners will be notified after it has been successfully initialized.
    */
-  virtual nsresult Init(int aWidth, int aHeight, int aDisplayWidth,
-                        int aDisplayHeight) = 0;
+  virtual nsresult Init(int32_t aWidth, int32_t aHeight, int32_t aDisplayWidth,
+                        int32_t aDisplayHeight, float aEstimatedFrameRate) = 0;
+
+  /**
+   * Encodes data in the outgoing buffer and pushes it to mEncodedDataQueue.
+   */
+  virtual nsresult Encode(VideoSegment* aSegment) = 0;
 
   /**
    * Drift compensator for re-clocking incoming video frame wall-clock
    * timestamps to audio time.
    */
   const RefPtr<DriftCompensator> mDriftCompensator;
-
-  /**
-   * The width of source video frame, ceiled if the source width is odd.
-   */
-  int mFrameWidth;
-
-  /**
-   * The height of source video frame, ceiled if the source height is odd.
-   */
-  int mFrameHeight;
-
-  /**
-   * The display width of source video frame.
-   */
-  int mDisplayWidth;
-
-  /**
-   * The display height of source video frame.
-   */
-  int mDisplayHeight;
 
   /**
    * The last unique frame and duration so far handled by
@@ -514,11 +488,6 @@ class VideoTrackEncoder : public TrackEncoder {
    * DISALLOW to encode all frames, mainly for testing.
    */
   FrameDroppingMode mFrameDroppingMode;
-
-  /**
-   * The desired keyframe interval defined in milliseconds.
-   */
-  uint32_t mKeyFrameInterval;
 
   /**
    * True if the video MediaTrackTrack this VideoTrackEncoder is attached to is

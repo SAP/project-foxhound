@@ -6,16 +6,21 @@
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
-const LMCBackstagePass = ChromeUtils.import(
-  "resource://gre/modules/LoginManagerChild.jsm",
-  null
+const { LoginManagerChild } = ChromeUtils.import(
+  "resource://gre/modules/LoginManagerChild.jsm"
 );
-const { LoginManagerChild } = LMCBackstagePass;
 const TESTCASES = [
   {
     description: "1 password field outside of a <form>",
     document: `<input id="pw1" type=password>`,
     returnedFieldIDs: [null, "pw1", null],
+  },
+  {
+    description: "1 text field in a <form> without a password field",
+    document: `<form>
+      <input id="un1">
+      </form>`,
+    returnedFieldIDs: [null, null, null],
   },
   {
     description: "1 text field outside of a <form> without a password field",
@@ -89,7 +94,28 @@ const TESTCASES = [
       <form id="form1"></form>`,
     returnedFieldIDs: [null, "pw1", null],
   },
+  {
+    description: "1 username field in a <form>",
+    document: `<form>
+      <input id="un1" autocomplete=username>
+      </form>`,
+    returnedFieldIDs: ["un1", null, null],
+  },
+  {
+    description: "1 username field outside of a <form>",
+    document: `<input id="un1" autocomplete=username>`,
+    returnedFieldIDs: [null, null, null],
+  },
 ];
+
+function _setPrefs() {
+  Services.prefs.setBoolPref("signon.usernameOnlyForm.enabled", true);
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref("signon.usernameOnlyForm.enabled");
+  });
+}
+
+this._setPrefs();
 
 for (let tc of TESTCASES) {
   info("Sanity checking the testcase: " + tc.description);

@@ -1,26 +1,36 @@
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryEnvironment.jsm", this);
-ChromeUtils.import("resource://normandy/actions/AddonRollbackAction.jsm", this);
-ChromeUtils.import("resource://normandy/actions/AddonRolloutAction.jsm", this);
-ChromeUtils.import("resource://normandy/actions/BaseAction.jsm", this);
-ChromeUtils.import("resource://normandy/lib/AddonRollouts.jsm", this);
-ChromeUtils.import("resource://normandy/lib/TelemetryEvents.jsm", this);
-ChromeUtils.import("resource://testing-common/NormandyTestUtils.jsm", this);
+const { TelemetryEnvironment } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryEnvironment.jsm"
+);
+const { AddonRollbackAction } = ChromeUtils.import(
+  "resource://normandy/actions/AddonRollbackAction.jsm"
+);
+const { AddonRolloutAction } = ChromeUtils.import(
+  "resource://normandy/actions/AddonRolloutAction.jsm"
+);
+const { BaseAction } = ChromeUtils.import(
+  "resource://normandy/actions/BaseAction.jsm"
+);
+const { AddonRollouts } = ChromeUtils.import(
+  "resource://normandy/lib/AddonRollouts.jsm"
+);
+const { NormandyTestUtils } = ChromeUtils.import(
+  "resource://testing-common/NormandyTestUtils.jsm"
+);
 
 // Test that a simple recipe unenrolls as expected
 decorate_task(
-  AddonRollouts.withTestMock,
-  ensureAddonCleanup,
-  withMockNormandyApi,
+  AddonRollouts.withTestMock(),
+  ensureAddonCleanup(),
+  withMockNormandyApi(),
   withStub(TelemetryEnvironment, "setExperimentInactive"),
-  withSendEventStub,
-  async function simple_recipe_unenrollment(
-    mockApi,
+  withSendEventSpy(),
+  async function simple_recipe_unenrollment({
+    mockNormandyApi,
     setExperimentInactiveStub,
-    sendEventStub
-  ) {
+    sendEventSpy,
+  }) {
     const rolloutRecipe = {
       id: 1,
       arguments: {
@@ -28,7 +38,7 @@ decorate_task(
         extensionApiId: 1,
       },
     };
-    mockApi.extensionDetails = {
+    mockNormandyApi.extensionDetails = {
       [rolloutRecipe.arguments.extensionApiId]: extensionDetailsFactory({
         id: rolloutRecipe.arguments.extensionApiId,
       }),
@@ -65,7 +75,7 @@ decorate_task(
     );
 
     const addon = await AddonManager.getAddonByID(FIXTURE_ADDON_ID);
-    is(addon, undefined, "add-on is uninstalled");
+    ok(!addon, "add-on is uninstalled");
 
     const rollouts = await AddonRollouts.getAll();
     Assert.deepEqual(
@@ -91,7 +101,7 @@ decorate_task(
       "enrollmentId should be a UUID"
     );
 
-    sendEventStub.assertEvents([
+    sendEventSpy.assertEvents([
       ["enroll", "addon_rollout", rollbackRecipe.arguments.rolloutSlug],
       ["unenroll", "addon_rollback", rollbackRecipe.arguments.rolloutSlug],
     ]);
@@ -106,11 +116,11 @@ decorate_task(
 
 // Add-on already uninstalled
 decorate_task(
-  AddonRollouts.withTestMock,
-  ensureAddonCleanup,
-  withMockNormandyApi,
-  withSendEventStub,
-  async function addon_already_uninstalled(mockApi, sendEventStub) {
+  AddonRollouts.withTestMock(),
+  ensureAddonCleanup(),
+  withMockNormandyApi(),
+  withSendEventSpy(),
+  async function addon_already_uninstalled({ mockNormandyApi, sendEventSpy }) {
     const rolloutRecipe = {
       id: 1,
       arguments: {
@@ -118,7 +128,7 @@ decorate_task(
         extensionApiId: 1,
       },
     };
-    mockApi.extensionDetails = {
+    mockNormandyApi.extensionDetails = {
       [rolloutRecipe.arguments.extensionApiId]: extensionDetailsFactory({
         id: rolloutRecipe.arguments.extensionApiId,
       }),
@@ -154,7 +164,7 @@ decorate_task(
     );
 
     addon = await AddonManager.getAddonByID(FIXTURE_ADDON_ID);
-    is(addon, undefined, "add-on is uninstalled");
+    ok(!addon, "add-on is uninstalled");
 
     const rollouts = await AddonRollouts.getAll();
     Assert.deepEqual(
@@ -180,7 +190,7 @@ decorate_task(
       "enrollment ID should be a UUID"
     );
 
-    sendEventStub.assertEvents([
+    sendEventSpy.assertEvents([
       ["enroll", "addon_rollout", rollbackRecipe.arguments.rolloutSlug],
       ["unenroll", "addon_rollback", rollbackRecipe.arguments.rolloutSlug],
     ]);
@@ -189,11 +199,11 @@ decorate_task(
 
 // Already rolled back, do nothing
 decorate_task(
-  AddonRollouts.withTestMock,
-  ensureAddonCleanup,
-  withMockNormandyApi,
-  withSendEventStub,
-  async function already_rolled_back(mockApi, sendEventStub) {
+  AddonRollouts.withTestMock(),
+  ensureAddonCleanup(),
+  withMockNormandyApi(),
+  withSendEventSpy(),
+  async function already_rolled_back({ sendEventSpy }) {
     const rollout = {
       recipeId: 1,
       slug: "test-rollout",
@@ -236,6 +246,6 @@ decorate_task(
       "Rollback should be stored in db"
     );
 
-    sendEventStub.assertEvents([]);
+    sendEventSpy.assertEvents([]);
   }
 );

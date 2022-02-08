@@ -13,12 +13,14 @@
 #include "jit/Bailouts.h"
 #include "jit/BaselineFrame.h"
 #include "jit/JitFrames.h"
+#include "jit/JitRuntime.h"
 #include "jit/MacroAssembler.h"
 #include "jit/mips32/Simulator-mips32.h"
 #include "jit/MoveEmitter.h"
 #include "jit/SharedICRegisters.h"
 #include "util/Memory.h"
 #include "vm/JitActivation.h"  // js::jit::JitActivation
+#include "vm/JSContext.h"
 
 #include "jit/MacroAssembler-inl.h"
 
@@ -114,6 +116,12 @@ void MacroAssemblerMIPSCompat::convertDoubleToFloat32(FloatRegister src,
   as_cvtsd(dest, src);
 }
 
+void MacroAssemblerMIPSCompat::convertDoubleToPtr(FloatRegister src,
+                                                  Register dest, Label* fail,
+                                                  bool negativeZeroCheck) {
+  convertDoubleToInt32(src, dest, fail, negativeZeroCheck);
+}
+
 const int CauseBitPos = int(Assembler::CauseI);
 const int CauseBitCount = 1 + int(Assembler::CauseV) - int(Assembler::CauseI);
 const int CauseIOrVMask = ((1 << int(Assembler::CauseI)) |
@@ -205,8 +213,8 @@ void MacroAssemblerMIPS::ma_liPatchable(Register dest, ImmWord imm) {
 // Arithmetic-based ops.
 
 // Add.
-void MacroAssemblerMIPS::ma_addTestOverflow(Register rd, Register rs,
-                                            Register rt, Label* overflow) {
+void MacroAssemblerMIPS::ma_add32TestOverflow(Register rd, Register rs,
+                                              Register rt, Label* overflow) {
   MOZ_ASSERT_IF(rs == rd, rs != rt);
   MOZ_ASSERT(rs != ScratchRegister);
   MOZ_ASSERT(rt != ScratchRegister);
@@ -232,8 +240,8 @@ void MacroAssemblerMIPS::ma_addTestOverflow(Register rd, Register rs,
   ma_b(SecondScratchReg, Imm32(0), overflow, Assembler::LessThan);
 }
 
-void MacroAssemblerMIPS::ma_addTestOverflow(Register rd, Register rs, Imm32 imm,
-                                            Label* overflow) {
+void MacroAssemblerMIPS::ma_add32TestOverflow(Register rd, Register rs,
+                                              Imm32 imm, Label* overflow) {
   MOZ_ASSERT(rs != ScratchRegister);
   MOZ_ASSERT(rs != SecondScratchReg);
   MOZ_ASSERT(rd != ScratchRegister);
@@ -266,8 +274,8 @@ void MacroAssemblerMIPS::ma_addTestOverflow(Register rd, Register rs, Imm32 imm,
 }
 
 // Subtract.
-void MacroAssemblerMIPS::ma_subTestOverflow(Register rd, Register rs,
-                                            Register rt, Label* overflow) {
+void MacroAssemblerMIPS::ma_sub32TestOverflow(Register rd, Register rs,
+                                              Register rt, Label* overflow) {
   // The rs == rt case should probably be folded at MIR stage.
   // Happens for Number_isInteger*. Not worth specializing here.
   MOZ_ASSERT_IF(rs == rd, rs != rt);
@@ -1747,7 +1755,7 @@ void MacroAssemblerMIPSCompat::restoreStackPointer() {
 }
 
 void MacroAssemblerMIPSCompat::handleFailureWithHandlerTail(
-    void* handler, Label* profilerExitTail) {
+    Label* profilerExitTail) {
   // Reserve space for exception information.
   int size = (sizeof(ResumeFromException) + ABIStackAlignment) &
              ~(ABIStackAlignment - 1);
@@ -1755,10 +1763,11 @@ void MacroAssemblerMIPSCompat::handleFailureWithHandlerTail(
   ma_move(a0, StackPointer);  // Use a0 since it is a first function argument
 
   // Call the handler.
+  using Fn = void (*)(ResumeFromException * rfe);
   asMasm().setupUnalignedABICall(a1);
   asMasm().passABIArg(a0);
-  asMasm().callWithABI(handler, MoveOp::GENERAL,
-                       CheckUnsafeCallWithABI::DontCheckHasExitFrame);
+  asMasm().callWithABI<Fn, HandleException>(
+      MoveOp::GENERAL, CheckUnsafeCallWithABI::DontCheckHasExitFrame);
 
   Label entryFrame;
   Label catch_;
@@ -1766,6 +1775,7 @@ void MacroAssemblerMIPSCompat::handleFailureWithHandlerTail(
   Label return_;
   Label bailout;
   Label wasm;
+  Label wasmCatch;
 
   // Already clobbered a0, so use it...
   load32(Address(StackPointer, offsetof(ResumeFromException, kind)), a0);
@@ -1782,6 +1792,8 @@ void MacroAssemblerMIPSCompat::handleFailureWithHandlerTail(
                     Imm32(ResumeFromException::RESUME_BAILOUT), &bailout);
   asMasm().branch32(Assembler::Equal, a0,
                     Imm32(ResumeFromException::RESUME_WASM), &wasm);
+  asMasm().branch32(Assembler::Equal, a0,
+                    Imm32(ResumeFromException::RESUME_WASM_CATCH), &wasmCatch);
 
   breakpoint();  // Invalid kind.
 
@@ -1868,6 +1880,15 @@ void MacroAssemblerMIPSCompat::handleFailureWithHandlerTail(
   loadPtr(Address(StackPointer, offsetof(ResumeFromException, stackPointer)),
           StackPointer);
   ret();
+
+  // Found a wasm catch handler, restore state and jump to it.
+  bind(&wasmCatch);
+  loadPtr(Address(sp, offsetof(ResumeFromException, target)), a1);
+  loadPtr(Address(StackPointer, offsetof(ResumeFromException, framePointer)),
+          FramePointer);
+  loadPtr(Address(StackPointer, offsetof(ResumeFromException, stackPointer)),
+          StackPointer);
+  jump(a1);
 }
 
 CodeOffset MacroAssemblerMIPSCompat::toggledJump(Label* label) {
@@ -1917,6 +1938,10 @@ void MacroAssembler::subFromStackPtr(Imm32 imm32) {
 //{{{ check_macroassembler_style
 // ===============================================================
 // Stack manipulation functions.
+
+size_t MacroAssembler::PushRegsInMaskSizeInBytes(LiveRegisterSet set) {
+  return set.gprs().size() * sizeof(intptr_t) + set.fpus().getPushSizeInBytes();
+}
 
 void MacroAssembler::PushRegsInMask(LiveRegisterSet set) {
   int32_t diffF = set.fpus().getPushSizeInBytes();
@@ -2030,7 +2055,7 @@ void MacroAssembler::storeRegsInMask(LiveRegisterSet set, Address dest,
 
 void MacroAssembler::setupUnalignedABICall(Register scratch) {
   MOZ_ASSERT(!IsCompilingWasm(), "wasm should only use aligned ABI calls");
-  setupABICall();
+  setupNativeABICall();
   dynamicAlignment_ = true;
 
   ma_move(scratch, StackPointer);
@@ -2133,10 +2158,10 @@ void MacroAssembler::moveValue(const TypedOrValueRegister& src,
   AnyRegister reg = src.typedReg();
 
   if (!IsFloatingPointType(type)) {
-    mov(ImmWord(MIRTypeToTag(type)), dest.typeReg());
     if (reg.gpr() != dest.payloadReg()) {
       move32(reg.gpr(), dest.payloadReg());
     }
+    mov(ImmWord(MIRTypeToTag(type)), dest.typeReg());
     return;
   }
 
@@ -2276,16 +2301,16 @@ template void MacroAssembler::storeUnboxedValue(
 
 void MacroAssembler::PushBoxed(FloatRegister reg) { Push(reg); }
 
-void MacroAssembler::wasmBoundsCheck(Condition cond, Register index,
-                                     Register boundsCheckLimit, Label* label) {
-  ma_b(index, boundsCheckLimit, label, cond);
+void MacroAssembler::wasmBoundsCheck32(Condition cond, Register index,
+                                       Register boundsCheckLimit, Label* ok) {
+  ma_b(index, boundsCheckLimit, ok, cond);
 }
 
-void MacroAssembler::wasmBoundsCheck(Condition cond, Register index,
-                                     Address boundsCheckLimit, Label* label) {
+void MacroAssembler::wasmBoundsCheck32(Condition cond, Register index,
+                                       Address boundsCheckLimit, Label* ok) {
   SecondScratchRegisterScope scratch2(*this);
   load32(boundsCheckLimit, SecondScratchReg);
-  ma_b(index, SecondScratchReg, label, cond);
+  ma_b(index, SecondScratchReg, ok, cond);
 }
 
 void MacroAssembler::wasmTruncateDoubleToUInt32(FloatRegister input,
@@ -2377,6 +2402,10 @@ void MacroAssemblerMIPSCompat::wasmLoadI64Impl(
   uint32_t offset = access.offset();
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
+  MOZ_ASSERT(!access.isZeroExtendSimd128Load());
+  MOZ_ASSERT(!access.isSplatSimd128Load());
+  MOZ_ASSERT(!access.isWidenSimd128Load());
+
   // Maybe add the offset.
   if (offset) {
     asMasm().movePtr(ptr, ptrScratch);
@@ -2465,7 +2494,7 @@ void MacroAssemblerMIPSCompat::wasmStoreI64Impl(
     const wasm::MemoryAccessDesc& access, Register64 value, Register memoryBase,
     Register ptr, Register ptrScratch, Register tmp) {
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
+  MOZ_ASSERT(offset < asMasm().wasmMaxOffsetGuardLimit());
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -2774,6 +2803,10 @@ void MacroAssembler::convertInt64ToDouble(Register64 src, FloatRegister dest) {
   mulDouble(ScratchDoubleReg, dest);
   convertUInt32ToDouble(src.low, ScratchDoubleReg);
   addDouble(ScratchDoubleReg, dest);
+}
+
+void MacroAssembler::convertIntPtrToDouble(Register src, FloatRegister dest) {
+  convertInt32ToDouble(src, dest);
 }
 
 //}}} check_macroassembler_style

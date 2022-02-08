@@ -3,11 +3,6 @@
 "use strict";
 
 add_task(async function test_openPopup_requires_user_interaction() {
-  const { GlobalManager } = ChromeUtils.import(
-    "resource://gre/modules/Extension.jsm",
-    null
-  );
-
   async function backgroundScript() {
     browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tabInfo) => {
       if (changeInfo.status != "complete") {
@@ -139,7 +134,7 @@ add_task(async function test_openPopup_requires_user_interaction() {
   }
 
   function testActiveTab(extension, expected) {
-    let ext = GlobalManager.extensionMap.get(extension.id);
+    let ext = WebExtensionPolicy.getByID(extension.id).extension;
     is(
       ext.tabManager.hasActiveTabPermission(gBrowser.selectedTab),
       expected,
@@ -166,16 +161,16 @@ add_task(async function test_openPopup_requires_user_interaction() {
     {},
     gBrowser.selectedBrowser
   );
-  await BrowserTestUtils.waitForCondition(() => !SidebarUI.isOpen);
+  await TestUtils.waitForCondition(() => !SidebarUI.isOpen);
 
   await click("#toggleSidebarAction");
-  await BrowserTestUtils.waitForCondition(() => SidebarUI.isOpen);
+  await TestUtils.waitForCondition(() => SidebarUI.isOpen);
   await BrowserTestUtils.synthesizeMouseAtCenter(
     "#toggleSidebarAction",
     {},
     gBrowser.selectedBrowser
   );
-  await BrowserTestUtils.waitForCondition(() => !SidebarUI.isOpen);
+  await TestUtils.waitForCondition(() => !SidebarUI.isOpen);
 
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
   await extension.unload();

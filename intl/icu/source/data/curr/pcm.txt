@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 pcm{
     Currencies{
         AED{
@@ -330,6 +331,10 @@ pcm{
             "LRD",
             "Laibẹ́riá Dọ́la",
         }
+        LSL{
+            "LSL",
+            "Lẹsóto Lọ́ti",
+        }
         LYD{
             "LYD",
             "Líbia Dínar",
@@ -603,7 +608,7 @@ pcm{
             "Íst Karíbián Dọla",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "Wẹ́st Afríká Sẹ́fa Frank",
         }
         XPF{
@@ -1054,6 +1059,10 @@ pcm{
             one{"Laibẹ́riá dọ́la"}
             other{"Laibẹ́riá dọ́las"}
         }
+        LSL{
+            one{"Lẹsóto Lọ́ti"}
+            other{"Lẹsóto Lọ́tis"}
+        }
         LYD{
             one{"Líbia Dínar"}
             other{"Líbia Dínar"}
@@ -1335,7 +1344,7 @@ pcm{
             other{"Frẹ́nch Poliníshiá franks"}
         }
         XXX{
-            one{"Amaúnt dẹm raít fọ mọní wé pípol nọ no"}
+            one{"mọní wé pípul nọ́ no"}
             other{"(mọní wé pípol nọ no)"}
         }
         YER{
@@ -1355,5 +1364,4 @@ pcm{
         one{"{0} {1}"}
         other{"{0} {1}"}
     }
-    Version{"37"}
 }

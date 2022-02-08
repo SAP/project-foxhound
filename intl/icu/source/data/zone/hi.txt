@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 hi{
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"अबिदजान"}
@@ -769,7 +769,7 @@ hi{
             ec{"कुवैत"}
         }
         "Asia:Macau"{
-            ec{"मकाउ"}
+            ec{"मकाऊ"}
         }
         "Asia:Magadan"{
             ec{"मागादान"}
@@ -1219,6 +1219,9 @@ hi{
         }
         "Pacific:Honolulu"{
             ec{"होनोलुलु"}
+            sd{"HST"}
+            sg{"एचएसटी"}
+            ss{"एचएसटी"}
         }
         "Pacific:Johnston"{
             ec{"जॉनस्टन"}
@@ -1898,6 +1901,9 @@ hi{
             ld{"येकातेरिनबर्ग ग्रीष्मकालीन समय"}
             lg{"येकातेरिनबर्ग समय"}
             ls{"येकातेरिनबर्ग मानक समय"}
+        }
+        "meta:Yukon"{
+            ls{"युकॉन समय"}
         }
         fallbackFormat{"{1} ({0})"}
         gmtFormat{"GMT{0}"}

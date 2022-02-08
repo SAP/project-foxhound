@@ -7,7 +7,7 @@
 #ifndef MOZILLA_GFX_RENDERTEXTUREHOSTWRAPPER_H
 #define MOZILLA_GFX_RENDERTEXTUREHOSTWRAPPER_H
 
-#include "RenderTextureHost.h"
+#include "RenderTextureHostSWGL.h"
 
 namespace mozilla {
 
@@ -21,23 +21,43 @@ namespace wr {
  * longer than GPUVideoTextureHost and the wrapped TextureHost is used by
  * multiple GPUVideoTextureHosts. This class is used to reduce recreations of
  * the wrappded RenderTextureHost. Initializations of some
- * RenderTextureHosts(RenderDXGITextureHostOGL and
- * RenderDXGIYCbCrTextureHostOGL) have overhead.
+ * RenderTextureHosts(RenderDXGITextureHost and
+ * RenderDXGIYCbCrTextureHost) have overhead.
  */
-class RenderTextureHostWrapper final : public RenderTextureHost {
+class RenderTextureHostWrapper final : public RenderTextureHostSWGL {
  public:
   explicit RenderTextureHostWrapper(ExternalImageId aExternalImageId);
 
+  // RenderTextureHost
   wr::WrExternalImage Lock(uint8_t aChannelIndex, gl::GLContext* aGL,
                            wr::ImageRendering aRendering) override;
   void Unlock() override;
   void ClearCachedResources() override;
+  RenderMacIOSurfaceTextureHost* AsRenderMacIOSurfaceTextureHost() override;
+  RenderDXGITextureHost* AsRenderDXGITextureHost() override;
+  RenderDXGIYCbCrTextureHost* AsRenderDXGIYCbCrTextureHost() override;
+
+  // RenderTextureHostSWGL
+  size_t GetPlaneCount() const override;
+  gfx::SurfaceFormat GetFormat() const override;
+  gfx::ColorDepth GetColorDepth() const override;
+  gfx::YUVRangedColorSpace GetYUVColorSpace() const override;
+  bool MapPlane(RenderCompositor* aCompositor, uint8_t aChannelIndex,
+                PlaneInfo& aPlaneInfo) override;
+  void UnmapPlanes() override;
+
+  // This is just a wrapper, so doesn't need to report the
+  // size of the wrapped object (which reports itself).
+  size_t Bytes() override { return 0; }
 
  private:
   ~RenderTextureHostWrapper() override;
 
+  void EnsureTextureHost() const;
+  RenderTextureHostSWGL* EnsureRenderTextureHostSWGL() const;
+
   const ExternalImageId mExternalImageId;
-  RefPtr<RenderTextureHost> mTextureHost;
+  mutable RefPtr<RenderTextureHost> mTextureHost;
 };
 
 }  // namespace wr

@@ -29,7 +29,7 @@ async function openBookmarksPanelInLibraryToolbarButton() {
   await viewShownPromise;
 
   let bookmarksButton;
-  await BrowserTestUtils.waitForCondition(() => {
+  await TestUtils.waitForCondition(() => {
     bookmarksButton = document.getElementById(
       "appMenu-library-bookmarks-button"
     );
@@ -61,9 +61,7 @@ async function openBookmarkedItemInNewTab(itemFromMenu) {
   let tabCreatedPromise = BrowserTestUtils.waitForNewTab(gBrowser, null, true);
 
   let openInNewTabOption = document.getElementById("placesContext_open:newtab");
-  EventUtils.synthesizeMouseAtCenter(openInNewTabOption, {
-    button: 0,
-  });
+  placesContext.activateItem(openInNewTabOption);
   info("Click open in new tab");
 
   let lastOpenedTab = await tabCreatedPromise;
@@ -94,7 +92,7 @@ async function getRecentlyBookmarkedItems() {
   let items = historyMenu.querySelectorAll("toolbarbutton");
   Assert.ok(items, "Recently bookmarked items should exists");
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => items[0].attributes !== "undefined",
     "Custom bookmark exists"
   );

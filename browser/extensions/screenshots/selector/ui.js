@@ -2,11 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* globals log, util, catcher, inlineSelectionCss, callBackground, assertIsTrusted, assertIsBlankDocument, buildSettings blobConverters */
+/* globals browser, log, util, catcher, inlineSelectionCss, callBackground, assertIsTrusted, assertIsBlankDocument, blobConverters */
 
 "use strict";
 
-this.ui = (function() { // eslint-disable-line no-unused-vars
+this.ui = (function() {
+  // eslint-disable-line no-unused-vars
   const exports = {};
   const SAVE_BUTTON_HEIGHT = 50;
 
@@ -14,11 +15,12 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
 
   exports.isHeader = function(el) {
     while (el) {
-      if (el.classList &&
-          (el.classList.contains("myshots-button") ||
-           el.classList.contains("visible") ||
-           el.classList.contains("full-page") ||
-           el.classList.contains("cancel-shot"))) {
+      if (
+        el.classList &&
+        (el.classList.contains("visible") ||
+          el.classList.contains("full-page") ||
+          el.classList.contains("cancel-shot"))
+      ) {
         return true;
       }
       el = el.parentNode;
@@ -26,9 +28,12 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
     return false;
   };
 
-  const substitutedCss = inlineSelectionCss.replace(/MOZ_EXTENSION([^"]+)/g, (match, filename) => {
-    return browser.extension.getURL(filename);
-  });
+  const substitutedCss = inlineSelectionCss.replace(
+    /MOZ_EXTENSION([^"]+)/g,
+    (match, filename) => {
+      return browser.runtime.getURL(filename);
+    }
+  );
 
   function makeEl(tagName, className) {
     if (!iframe.document()) {
@@ -45,31 +50,17 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
     if (this.sizeTracking.windowDelayer) {
       clearTimeout(this.sizeTracking.windowDelayer);
     }
-    this.sizeTracking.windowDelayer = setTimeout(watchFunction(() => {
-      this.updateElementSize(true);
-    }), 50);
+    this.sizeTracking.windowDelayer = setTimeout(
+      watchFunction(() => {
+        this.updateElementSize(true);
+      }),
+      50
+    );
   }
-
-  function highContrastCheck(win) {
-    const doc = win.document;
-    const el = doc.createElement("div");
-    el.style.backgroundImage = "url('#')";
-    el.style.display = "none";
-    doc.body.appendChild(el);
-    const computed = win.getComputedStyle(el);
-    doc.body.removeChild(el);
-    // When Windows is in High Contrast mode, Firefox replaces background
-    // image URLs with the string "none".
-    return (computed && computed.backgroundImage === "none");
-  }
-
-  const showMyShots = exports.showMyShots = function() {
-    return window.hasAnyShots;
-  };
 
   function initializeIframe() {
     const el = document.createElement("iframe");
-    el.src = browser.extension.getURL("blank.html");
+    el.src = browser.runtime.getURL("blank.html");
     el.style.zIndex = "99999999999";
     el.style.border = "none";
     el.style.top = "0";
@@ -80,7 +71,7 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
     return el;
   }
 
-  const iframeSelection = exports.iframeSelection = {
+  const iframeSelection = (exports.iframeSelection = {
     element: null,
     addClassName: "",
     sizeTracking: {
@@ -90,6 +81,7 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
       lastWidth: null,
     },
     document: null,
+    window: null,
     display(installHandlerOnDocument) {
       return new Promise((resolve, reject) => {
         if (!this.element) {
@@ -100,24 +92,33 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
           this.element.style.setProperty("background-color", "transparent");
           this.element.setAttribute("role", "dialog");
           this.updateElementSize();
-          this.element.addEventListener("load", watchFunction(() => {
-            this.document = this.element.contentDocument;
-            assertIsBlankDocument(this.document);
-            // eslint-disable-next-line no-unsanitized/property
-            this.document.documentElement.innerHTML = `
+          this.element.addEventListener(
+            "load",
+            watchFunction(() => {
+              this.document = this.element.contentDocument;
+              this.window = this.element.contentWindow;
+              assertIsBlankDocument(this.document);
+              // eslint-disable-next-line no-unsanitized/property
+              this.document.documentElement.innerHTML = `
                <head>
                 <style>${substitutedCss}</style>
                 <title></title>
                </head>
                <body></body>`;
-            installHandlerOnDocument(this.document);
-            if (this.addClassName) {
-              this.document.body.className = this.addClassName;
-            }
-            this.document.documentElement.dir = browser.i18n.getMessage("@@bidi_dir");
-            this.document.documentElement.lang = browser.i18n.getMessage("@@ui_locale");
-            resolve();
-          }), {once: true});
+              installHandlerOnDocument(this.document);
+              if (this.addClassName) {
+                this.document.body.className = this.addClassName;
+              }
+              this.document.documentElement.dir = browser.i18n.getMessage(
+                "@@bidi_dir"
+              );
+              this.document.documentElement.lang = browser.i18n.getMessage(
+                "@@ui_locale"
+              );
+              resolve();
+            }),
+            { once: true }
+          );
           document.body.appendChild(this.element);
         } else {
           resolve();
@@ -133,10 +134,9 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
     unhide() {
       this.updateElementSize();
       this.element.style.display = "block";
-      catcher.watchPromise(callBackground("sendEvent", "internal", "unhide-selection-frame"));
-      if (highContrastCheck(this.element.contentWindow)) {
-        this.element.contentDocument.body.classList.add("hcm");
-      }
+      catcher.watchPromise(
+        callBackground("sendEvent", "internal", "unhide-selection-frame")
+      );
       this.initSizeWatch();
       this.element.focus();
     },
@@ -153,7 +153,8 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
         document.documentElement.clientHeight,
         document.body.clientHeight,
         document.documentElement.scrollHeight,
-        document.body.scrollHeight);
+        document.body.scrollHeight
+      );
       if (height !== this.sizeTracking.lastHeight) {
         this.sizeTracking.lastHeight = height;
         this.element.style.height = height + "px";
@@ -164,7 +165,8 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
         document.documentElement.clientWidth,
         document.body.clientWidth,
         document.documentElement.scrollWidth,
-        document.body.scrollWidth);
+        document.body.scrollWidth
+      );
       if (width !== this.sizeTracking.lastWidth) {
         this.sizeTracking.lastWidth = width;
         this.element.style.width = width + "px";
@@ -176,8 +178,10 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
         if (window.getComputedStyle(document.body).position === "relative") {
           const docBoundingRect = document.documentElement.getBoundingClientRect();
           const bodyBoundingRect = document.body.getBoundingClientRect();
-          this.element.style.marginLeft = `-${bodyBoundingRect.left - docBoundingRect.left}px`;
-          this.element.style.marginTop = `-${bodyBoundingRect.top - docBoundingRect.top}px`;
+          this.element.style.marginLeft = `-${bodyBoundingRect.left -
+            docBoundingRect.left}px`;
+          this.element.style.marginTop = `-${bodyBoundingRect.top -
+            docBoundingRect.top}px`;
         }
       }
       if (force && visible) {
@@ -187,7 +191,10 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
 
     initSizeWatch() {
       this.stopSizeWatch();
-      this.sizeTracking.timer = setInterval(watchFunction(this.updateElementSize.bind(this)), 2000);
+      this.sizeTracking.timer = setInterval(
+        watchFunction(this.updateElementSize.bind(this)),
+        2000
+      );
       window.addEventListener("resize", this.onResize, true);
     },
 
@@ -218,15 +225,19 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
     remove() {
       this.stopSizeWatch();
       util.removeNode(this.element);
-      this.element = this.document = null;
+      this.element = this.document = this.window = null;
     },
-  };
+  });
 
-  iframeSelection.onResize = watchFunction(assertIsTrusted(onResize.bind(iframeSelection)), true);
+  iframeSelection.onResize = watchFunction(
+    assertIsTrusted(onResize.bind(iframeSelection)),
+    true
+  );
 
-  const iframePreSelection = exports.iframePreSelection = {
+  const iframePreSelection = (exports.iframePreSelection = {
     element: null,
     document: null,
+    window: null,
     display(installHandlerOnDocument, standardOverlayCallbacks) {
       return new Promise((resolve, reject) => {
         if (!this.element) {
@@ -237,11 +248,14 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
           this.element.style.width = "100%";
           this.element.style.height = "100%";
           this.element.setAttribute("role", "dialog");
-          this.element.addEventListener("load", watchFunction(() => {
-            this.document = this.element.contentDocument;
-            assertIsBlankDocument(this.document);
-            // eslint-disable-next-line no-unsanitized/property
-            this.document.documentElement.innerHTML = `
+          this.element.addEventListener(
+            "load",
+            watchFunction(() => {
+              this.document = this.element.contentDocument;
+              this.window = this.element.contentWindow;
+              assertIsBlankDocument(this.document);
+              // eslint-disable-next-line no-unsanitized/property
+              this.document.documentElement.innerHTML = `
                <head>
                 <link rel="localization" href="browser/screenshots.ftl">
                 <style>${substitutedCss}</style>
@@ -257,37 +271,53 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
                      </div>
                      <div class="preview-instructions" data-l10n-id="screenshots-instructions"></div>
                      <button class="cancel-shot" data-l10n-id="screenshots-cancel-button"></button>
-                     <div class="myshots-all-buttons-container">
-                       ${showMyShots() ? `
-                         <button class="myshots-button" tabindex="3" data-l10n-id="screenshots-my-shots-button"></button>
-                         <div class="spacer"></div>
-                       ` : ""}
+                     <div class="all-buttons-container">
                        <button class="visible" tabindex="2" data-l10n-id="screenshots-save-visible-button"></button>
                        <button class="full-page" tabindex="1" data-l10n-id="screenshots-save-page-button"></button>
                      </div>
                    </div>
                  </div>
                </body>`;
-            installHandlerOnDocument(this.document);
-            if (this.addClassName) {
-              this.document.body.className = this.addClassName;
-            }
-            this.document.documentElement.dir = browser.i18n.getMessage("@@bidi_dir");
-            this.document.documentElement.lang = browser.i18n.getMessage("@@ui_locale");
-            const overlay = this.document.querySelector(".preview-overlay");
-            if (showMyShots()) {
-              overlay.querySelector(".myshots-button").addEventListener(
-                "click", watchFunction(assertIsTrusted(standardOverlayCallbacks.onOpenMyShots)));
-            }
-            overlay.querySelector(".visible").addEventListener(
-              "click", watchFunction(assertIsTrusted(standardOverlayCallbacks.onClickVisible)));
-            overlay.querySelector(".full-page").addEventListener(
-              "click", watchFunction(assertIsTrusted(standardOverlayCallbacks.onClickFullPage)));
-            overlay.querySelector(".cancel-shot").addEventListener(
-              "click", watchFunction(assertIsTrusted(standardOverlayCallbacks.onClickCancel)));
+              installHandlerOnDocument(this.document);
+              if (this.addClassName) {
+                this.document.body.className = this.addClassName;
+              }
+              this.document.documentElement.dir = browser.i18n.getMessage(
+                "@@bidi_dir"
+              );
+              this.document.documentElement.lang = browser.i18n.getMessage(
+                "@@ui_locale"
+              );
+              const overlay = this.document.querySelector(".preview-overlay");
+              overlay
+                .querySelector(".visible")
+                .addEventListener(
+                  "click",
+                  watchFunction(
+                    assertIsTrusted(standardOverlayCallbacks.onClickVisible)
+                  )
+                );
+              overlay
+                .querySelector(".full-page")
+                .addEventListener(
+                  "click",
+                  watchFunction(
+                    assertIsTrusted(standardOverlayCallbacks.onClickFullPage)
+                  )
+                );
+              overlay
+                .querySelector(".cancel-shot")
+                .addEventListener(
+                  "click",
+                  watchFunction(
+                    assertIsTrusted(standardOverlayCallbacks.onClickCancel)
+                  )
+                );
 
-            resolve();
-          }), {once: true});
+              resolve();
+            }),
+            { once: true }
+          );
           document.body.appendChild(this.element);
         } else {
           resolve();
@@ -296,7 +326,10 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
     },
 
     hide() {
-      window.removeEventListener("scroll", watchFunction(assertIsTrusted(this.onScroll)));
+      window.removeEventListener(
+        "scroll",
+        watchFunction(assertIsTrusted(this.onScroll))
+      );
       window.removeEventListener("resize", this.onResize, true);
       if (this.element) {
         this.element.style.display = "none";
@@ -304,13 +337,15 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
     },
 
     unhide() {
-      window.addEventListener("scroll", watchFunction(assertIsTrusted(this.onScroll)));
+      window.addEventListener(
+        "scroll",
+        watchFunction(assertIsTrusted(this.onScroll))
+      );
       window.addEventListener("resize", this.onResize, true);
       this.element.style.display = "block";
-      catcher.watchPromise(callBackground("sendEvent", "internal", "unhide-preselection-frame"));
-      if (highContrastCheck(this.element.contentWindow)) {
-        this.element.contentDocument.body.classList.add("hcm");
-      }
+      catcher.watchPromise(
+        callBackground("sendEvent", "internal", "unhide-preselection-frame")
+      );
       this.element.focus();
     },
 
@@ -332,10 +367,9 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
     remove() {
       this.hide();
       util.removeNode(this.element);
-      this.element = null;
-      this.document = null;
+      this.element = this.document = this.window = null;
     },
-  };
+  });
 
   let msgsPromise = callBackground("getStrings", [
     "screenshots-cancel-button",
@@ -345,9 +379,10 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
     "screenshots-download-button",
   ]);
 
-  const iframePreview = exports.iframePreview = {
+  const iframePreview = (exports.iframePreview = {
     element: null,
     document: null,
+    window: null,
     display(installHandlerOnDocument, standardOverlayCallbacks) {
       return new Promise((resolve, reject) => {
         if (!this.element) {
@@ -361,7 +396,9 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
           this.element.setAttribute("role", "dialog");
           this.element.onload = watchFunction(() => {
             msgsPromise.then(([cancelTitle, copyTitle, downloadTitle]) => {
+              assertIsBlankDocument(this.element.contentDocument);
               this.document = this.element.contentDocument;
+              this.window = this.element.contentWindow;
               // eslint-disable-next-line no-unsanitized/property
               this.document.documentElement.innerHTML = `
                 <head>
@@ -374,14 +411,14 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
                     <div class="preview-image">
                       <div class="preview-buttons">
                         <button class="highlight-button-cancel" title="${cancelTitle}">
-                          <img src="${browser.extension.getURL("icons/cancel.svg")}" />
+                          <img src="chrome://browser/content/screenshots/cancel.svg"/>
                         </button>
                         <button class="highlight-button-copy" title="${copyTitle}">
-                          <img src="${browser.extension.getURL("icons/copy.svg")}" />
+                          <img src="chrome://browser/content/screenshots/copy.svg"/>
                           <span data-l10n-id="screenshots-copy-button"/>
                         </button>
                         <button class="highlight-button-download" title="${downloadTitle}">
-                          <img src="${browser.extension.getURL("icons/download-white.svg")}" />
+                          <img src="chrome://browser/content/screenshots/download-white.svg"/>
                           <span data-l10n-id="screenshots-download-button"/>
                       </button>
                     </div>
@@ -394,16 +431,38 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
               </body>`;
 
               installHandlerOnDocument(this.document);
-              this.document.documentElement.dir = browser.i18n.getMessage("@@bidi_dir");
-              this.document.documentElement.lang = browser.i18n.getMessage("@@ui_locale");
+              this.document.documentElement.dir = browser.i18n.getMessage(
+                "@@bidi_dir"
+              );
+              this.document.documentElement.lang = browser.i18n.getMessage(
+                "@@ui_locale"
+              );
 
               const overlay = this.document.querySelector(".preview-overlay");
-              overlay.querySelector(".highlight-button-copy").addEventListener(
-                "click", watchFunction(assertIsTrusted(standardOverlayCallbacks.onCopyPreview)));
-              overlay.querySelector(".highlight-button-download").addEventListener(
-                "click", watchFunction(assertIsTrusted(standardOverlayCallbacks.onDownloadPreview)));
-              overlay.querySelector(".highlight-button-cancel").addEventListener(
-                "click", watchFunction(assertIsTrusted(standardOverlayCallbacks.cancel)));
+              overlay
+                .querySelector(".highlight-button-copy")
+                .addEventListener(
+                  "click",
+                  watchFunction(
+                    assertIsTrusted(standardOverlayCallbacks.onCopyPreview)
+                  )
+                );
+              overlay
+                .querySelector(".highlight-button-download")
+                .addEventListener(
+                  "click",
+                  watchFunction(
+                    assertIsTrusted(standardOverlayCallbacks.onDownloadPreview)
+                  )
+                );
+              overlay
+                .querySelector(".highlight-button-cancel")
+                .addEventListener(
+                  "click",
+                  watchFunction(
+                    assertIsTrusted(standardOverlayCallbacks.cancel)
+                  )
+                );
               resolve();
             });
           });
@@ -422,7 +481,9 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
 
     unhide() {
       this.element.style.display = "block";
-      catcher.watchPromise(callBackground("sendEvent", "internal", "unhide-preview-frame"));
+      catcher.watchPromise(
+        callBackground("sendEvent", "internal", "unhide-preview-frame")
+      );
       this.element.focus();
     },
 
@@ -437,16 +498,30 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
       this.element = null;
       this.document = null;
     },
-  };
+  });
 
-  iframePreSelection.onResize = watchFunction(onResize.bind(iframePreSelection), true);
+  iframePreSelection.onResize = watchFunction(
+    onResize.bind(iframePreSelection),
+    true
+  );
 
-  const iframe = exports.iframe = {
+  const iframe = (exports.iframe = {
     currentIframe: iframePreSelection,
     display(installHandlerOnDocument, standardOverlayCallbacks) {
-      return iframeSelection.display(installHandlerOnDocument)
-        .then(() => iframePreSelection.display(installHandlerOnDocument, standardOverlayCallbacks))
-        .then(() => iframePreview.display(installHandlerOnDocument, standardOverlayCallbacks));
+      return iframeSelection
+        .display(installHandlerOnDocument)
+        .then(() =>
+          iframePreSelection.display(
+            installHandlerOnDocument,
+            standardOverlayCallbacks
+          )
+        )
+        .then(() =>
+          iframePreview.display(
+            installHandlerOnDocument,
+            standardOverlayCallbacks
+          )
+        );
     },
 
     hide() {
@@ -474,12 +549,19 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
       iframePreview.remove();
     },
 
+    getContentWindow() {
+      return this.currentIframe.element.contentWindow;
+    },
+
     document() {
       return this.currentIframe.document;
     },
 
     useSelection() {
-      if (this.currentIframe === iframePreSelection || this.currentIframe === iframePreview) {
+      if (
+        this.currentIframe === iframePreSelection ||
+        this.currentIframe === iframePreview
+      ) {
         this.hide();
       }
       this.currentIframe = iframeSelection;
@@ -487,7 +569,10 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
     },
 
     usePreSelection() {
-      if (this.currentIframe === iframeSelection || this.currentIframe === iframePreview) {
+      if (
+        this.currentIframe === iframeSelection ||
+        this.currentIframe === iframePreview
+      ) {
         this.hide();
       }
       this.currentIframe = iframePreSelection;
@@ -495,19 +580,30 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
     },
 
     usePreview() {
-      if (this.currentIframe === iframeSelection || this.currentIframe === iframePreSelection) {
+      if (
+        this.currentIframe === iframeSelection ||
+        this.currentIframe === iframePreSelection
+      ) {
         this.hide();
       }
       this.currentIframe = iframePreview;
       this.unhide();
     },
-  };
+  });
 
-  const movements = ["topLeft", "top", "topRight", "left", "right", "bottomLeft", "bottom", "bottomRight"];
+  const movements = [
+    "topLeft",
+    "top",
+    "topRight",
+    "left",
+    "right",
+    "bottomLeft",
+    "bottom",
+    "bottomRight",
+  ];
 
   /** Creates the selection box */
   exports.Box = {
-
     async display(pos, callbacks) {
       await this._createEl();
       if (callbacks !== undefined && callbacks.cancel) {
@@ -518,39 +614,31 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
       } else {
         this.cancel.style.display = "none";
       }
-      if (callbacks !== undefined && callbacks.save && this.save) {
-        // We use onclick here because we don't want addEventListener
-        // to add multiple event handlers to the same button
-        this.save.removeAttribute("disabled");
-        this.save.onclick = watchFunction(assertIsTrusted((e) => {
-          this.save.setAttribute("disabled", "true");
-          callbacks.save(e);
-        }));
-        this.save.style.display = "";
-      } else if (this.save) {
-        this.save.style.display = "none";
-      }
       if (callbacks !== undefined && callbacks.download) {
         this.download.removeAttribute("disabled");
-        this.download.onclick = watchFunction(assertIsTrusted((e) => {
-          this.download.setAttribute("disabled", true);
-          callbacks.download(e);
-          e.preventDefault();
-          e.stopPropagation();
-          return false;
-        }));
+        this.download.onclick = watchFunction(
+          assertIsTrusted(e => {
+            this.download.setAttribute("disabled", true);
+            callbacks.download(e);
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          })
+        );
         this.download.style.display = "";
       } else {
         this.download.style.display = "none";
       }
       if (callbacks !== undefined && callbacks.copy) {
         this.copy.removeAttribute("disabled");
-        this.copy.onclick = watchFunction(assertIsTrusted((e) => {
-          this.copy.setAttribute("disabled", true);
-          callbacks.copy(e);
-          e.preventDefault();
-          e.stopPropagation();
-        }));
+        this.copy.onclick = watchFunction(
+          assertIsTrusted(e => {
+            this.copy.setAttribute("disabled", true);
+            callbacks.copy(e);
+            e.preventDefault();
+            e.stopPropagation();
+          })
+        );
         this.copy.style.display = "";
       } else {
         this.copy.style.display = "none";
@@ -559,7 +647,7 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
       const winBottom = window.innerHeight;
       const pageYOffset = window.pageYOffset;
 
-      if ((pos.right - pos.left) < 78 || (pos.bottom - pos.top) < 78) {
+      if (pos.right - pos.left < 78 || pos.bottom - pos.top < 78) {
         this.el.classList.add("small-selection");
       } else {
         this.el.classList.remove("small-selection");
@@ -567,7 +655,7 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
 
       // if the selection bounding box is w/in SAVE_BUTTON_HEIGHT px of the bottom of
       // the window, flip controls into the box
-      if (pos.bottom > ((winBottom + pageYOffset) - SAVE_BUTTON_HEIGHT)) {
+      if (pos.bottom > winBottom + pageYOffset - SAVE_BUTTON_HEIGHT) {
         this.el.classList.add("bottom-selection");
       } else {
         this.el.classList.remove("bottom-selection");
@@ -626,12 +714,18 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
       if (boxEl) {
         return;
       }
-      let [cancelTitle, copyTitle, downloadTitle, copyText, downloadText ] = await msgsPromise;
+      let [
+        cancelTitle,
+        copyTitle,
+        downloadTitle,
+        copyText,
+        downloadText,
+      ] = await msgsPromise;
       boxEl = makeEl("div", "highlight");
       const buttons = makeEl("div", "highlight-buttons");
       const cancel = makeEl("button", "highlight-button-cancel");
       const cancelImg = makeEl("img");
-      cancelImg.src = browser.extension.getURL("icons/cancel.svg");
+      cancelImg.src = "chrome://browser/content/screenshots/cancel.svg";
       cancel.title = cancelTitle;
       cancel.appendChild(cancelImg);
       buttons.appendChild(cancel);
@@ -641,14 +735,15 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
       const copyImg = makeEl("img");
       const copyString = makeEl("span");
       copyString.textContent = copyText;
-      copyImg.src = browser.extension.getURL("icons/copy.svg");
+      copyImg.src = "chrome://browser/content/screenshots/copy.svg";
       copy.appendChild(copyImg);
       copy.appendChild(copyString);
       buttons.appendChild(copy);
 
       const download = makeEl("button", "highlight-button-download");
       const downloadImg = makeEl("img");
-      downloadImg.src = browser.extension.getURL("icons/download-white.svg");
+      downloadImg.src =
+        "chrome://browser/content/screenshots/download-white.svg";
       download.appendChild(downloadImg);
       download.append(downloadText);
       download.title = downloadTitle;
@@ -685,7 +780,9 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
                 return name;
               }
             }
-            catcher.unhandled(new Error("Surprising mover element"), {element: target.outerHTML});
+            catcher.unhandled(new Error("Surprising mover element"), {
+              element: target.outerHTML,
+            });
             log.warn("Got mover-target that wasn't a specific direction");
           }
         }
@@ -699,7 +796,10 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
         if (target.tagName === "BUTTON") {
           return false;
         }
-        if (target.nodeType === document.ELEMENT_NODE && target.classList.contains("highlight")) {
+        if (
+          target.nodeType === document.ELEMENT_NODE &&
+          target.classList.contains("highlight")
+        ) {
           return true;
         }
         target = target.parentNode;
@@ -709,21 +809,15 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
 
     isControl(target) {
       while (target) {
-        if (target.nodeType === document.ELEMENT_NODE && target.classList.contains("highlight-buttons")) {
+        if (
+          target.nodeType === document.ELEMENT_NODE &&
+          target.classList.contains("highlight-buttons")
+        ) {
           return true;
         }
         target = target.parentNode;
       }
       return false;
-    },
-
-    clearSaveDisabled() {
-      if (!this.save) {
-        // Happens if we try to remove the disabled status after the worker
-        // has been shut down
-        return;
-      }
-      this.save.removeAttribute("disabled");
     },
 
     el: null,
@@ -734,7 +828,6 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
   };
 
   exports.HoverBox = {
-
     el: null,
 
     display(rect) {
@@ -743,10 +836,10 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
         iframe.document().body.appendChild(this.el);
       }
       this.el.style.display = "";
-      this.el.style.top = (rect.top - 1) + "px";
-      this.el.style.left = (rect.left - 1) + "px";
-      this.el.style.width = (rect.right - rect.left + 2) + "px";
-      this.el.style.height = (rect.bottom - rect.top + 2) + "px";
+      this.el.style.top = rect.top - 1 + "px";
+      this.el.style.left = rect.left - 1 + "px";
+      this.el.style.width = rect.right - rect.left + 2 + "px";
+      this.el.style.height = rect.bottom - rect.top + 2 + "px";
     },
 
     hide() {
@@ -776,8 +869,8 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
       }
       this.xEl.textContent = Math.round(x);
       this.yEl.textContent = Math.round(y);
-      this.el.style.top = (yPos + 12) + "px";
-      this.el.style.left = (xPos + 12) + "px";
+      this.el.style.top = yPos + 12 + "px";
+      this.el.style.left = xPos + 12 + "px";
     },
     remove() {
       util.removeNode(this.el);
@@ -789,8 +882,11 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
     display(dataUrl) {
       const img = makeEl("IMG");
       const imgBlob = blobConverters.dataUrlToBlob(dataUrl);
-      img.src = URL.createObjectURL(imgBlob);
-      iframe.document().querySelector(".preview-image-wrapper").appendChild(img);
+      img.src = iframe.getContentWindow().URL.createObjectURL(imgBlob);
+      iframe
+        .document()
+        .querySelector(".preview-image-wrapper")
+        .appendChild(img);
     },
   };
 
@@ -808,7 +904,9 @@ this.ui = (function() { // eslint-disable-line no-unused-vars
   };
 
   exports.triggerDownload = function(url, filename) {
-    return catcher.watchPromise(callBackground("downloadShot", {url, filename}));
+    return catcher.watchPromise(
+      callBackground("downloadShot", { url, filename })
+    );
   };
 
   exports.unload = exports.remove;

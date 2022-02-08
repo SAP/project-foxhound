@@ -4,7 +4,7 @@
 
 from __future__ import absolute_import
 
-__version__ = '5.0.2'
+__version__ = "5.0.2"
 
 from .marionette_test import (
     CommonTestCase,
@@ -16,7 +16,9 @@ from .marionette_test import (
     skip_if_chrome,
     skip_if_desktop,
     SkipTest,
+    skip_unless_browser_pref,
     skip_unless_protocol,
+    unexpectedSuccess,
 )
 from .runner import (
     BaseMarionetteArguments,

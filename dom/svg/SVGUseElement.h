@@ -26,6 +26,7 @@ nsresult NS_NewSVGUseElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
 namespace mozilla {
+class Encoding;
 class SVGUseFrame;
 struct URLExtraData;
 
@@ -49,6 +50,7 @@ class SVGUseElement final : public SVGUseElementBase,
  public:
   NS_IMPL_FROMNODE_WITH_TAG(SVGUseElement, kNameSpaceID_SVG, use)
 
+  bool IsNodeOfType(uint32_t aFlags) const override;
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
   void UnbindFromTree(bool aNullParent = true) override;
 
@@ -72,6 +74,8 @@ class SVGUseElement final : public SVGUseElementBase,
   // nsIContent interface
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
+
+  static nsCSSPropertyID GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum);
 
   // WebIDL
   already_AddRefed<DOMSVGAnimatedString> Href();

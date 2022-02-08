@@ -8,6 +8,9 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+const { MESSAGE_TYPE_HASH: msg } = ChromeUtils.import(
+  "resource://activity-stream/common/ActorConstants.jsm"
+);
 
 const { actionTypes: at, actionUtils: au } = ChromeUtils.import(
   "resource://activity-stream/common/Actions.jsm"
@@ -61,13 +64,9 @@ ChromeUtils.defineModuleGetter(
 );
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  ExperimentAPI: "resource://messaging-system/experiments/ExperimentAPI.jsm",
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.jsm",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.jsm",
   TelemetrySession: "resource://gre/modules/TelemetrySession.jsm",
-});
-
-XPCOMUtils.defineLazyServiceGetters(this, {
-  gUUIDGenerator: ["@mozilla.org/uuid-generator;1", "nsIUUIDGenerator"],
 });
 
 const ACTIVITY_STREAM_ID = "activity-stream";
@@ -85,6 +84,7 @@ const USER_PREFS_ENCODING = {
   showSponsored: 1 << 5,
   "asrouter.userprefs.cfr.addons": 1 << 6,
   "asrouter.userprefs.cfr.features": 1 << 7,
+  showSponsoredTopSites: 1 << 8,
 };
 
 const PREF_IMPRESSION_ID = "impressionId";
@@ -96,6 +96,7 @@ const STRUCTURED_INGESTION_ENDPOINT_PREF =
 // They are defined in https://github.com/mozilla-services/mozilla-pipeline-schemas
 const STRUCTURED_INGESTION_NAMESPACE_AS = "activity-stream";
 const STRUCTURED_INGESTION_NAMESPACE_MS = "messaging-system";
+const STRUCTURED_INGESTION_NAMESPACE_CS = "contextual-services";
 
 // Used as the missing value for timestamps in the session ping
 const TIMESTAMP_MISSING_VALUE = -1;
@@ -114,8 +115,21 @@ XPCOMUtils.defineLazyGetter(
   () => TelemetrySession.getMetadata("").sessionId
 );
 
+// The scalar category for TopSites of Contextual Services
+const SCALAR_CATEGORY_TOPSITES = "contextual.services.topsites";
+// `contextId` is a unique identifier used by Contextual Services
+const CONTEXT_ID_PREF = "browser.contextual-services.contextId";
+XPCOMUtils.defineLazyGetter(this, "contextId", () => {
+  let _contextId = Services.prefs.getStringPref(CONTEXT_ID_PREF, null);
+  if (!_contextId) {
+    _contextId = String(Services.uuid.generateUUID());
+    Services.prefs.setStringPref(CONTEXT_ID_PREF, _contextId);
+  }
+  return _contextId;
+});
+
 this.TelemetryFeed = class TelemetryFeed {
-  constructor(options) {
+  constructor() {
     this.sessions = new Map();
     this._prefs = new Prefs();
     this._impressionId = this.getOrCreateImpressionId();
@@ -166,11 +180,12 @@ this.TelemetryFeed = class TelemetryFeed {
     for (let win of Services.wm.getEnumerator("navigator:browser")) {
       this._addWindowListeners(win);
     }
-    // Set a scalar for the "deletion-request" ping (See bug 1602064)
+    // Set two scalars for the "deletion-request" ping (See bug 1602064 and 1729474)
     Services.telemetry.scalarSet(
       "deletion.request.impression_id",
       this._impressionId
     );
+    Services.telemetry.scalarSet("deletion.request.context_id", contextId);
   }
 
   handleEvent(event) {
@@ -228,7 +243,7 @@ this.TelemetryFeed = class TelemetryFeed {
   getOrCreateImpressionId() {
     let impressionId = this._prefs.get(PREF_IMPRESSION_ID);
     if (!impressionId) {
-      impressionId = String(gUUIDGenerator.generateUUID());
+      impressionId = String(Services.uuid.generateUUID());
       this._prefs.set(PREF_IMPRESSION_ID, impressionId);
     }
     return impressionId;
@@ -318,18 +333,17 @@ this.TelemetryFeed = class TelemetryFeed {
   /**
    *  Check if it is in the CFR experiment cohort by querying against the
    *  experiment manager of Messaging System
+   *
+   *  @return {bool}
    */
   get isInCFRCohort() {
-    try {
-      const experimentData = ExperimentAPI.getExperiment({
-        group: "cfr",
-      });
-      if (experimentData && experimentData.slug) {
-        return true;
-      }
-    } catch (e) {
-      return false;
+    const experimentData = ExperimentAPI.getExperimentMetaData({
+      featureId: "cfr",
+    });
+    if (experimentData && experimentData.slug) {
+      return true;
     }
+
     return false;
   }
 
@@ -372,7 +386,7 @@ this.TelemetryFeed = class TelemetryFeed {
     }
 
     const session = {
-      session_id: String(gUUIDGenerator.generateUUID()),
+      session_id: String(Services.uuid.generateUUID()),
       // "unknown" will be overwritten when appropriate
       page: url ? url : "unknown",
       perf: {
@@ -544,19 +558,13 @@ this.TelemetryFeed = class TelemetryFeed {
    * @return {obj}    A telemetry ping
    */
   createImpressionStats(portID, data) {
-    return Object.assign(this.createPing(portID), data, {
-      action: "activity_stream_impression_stats",
+    let ping = Object.assign(this.createPing(portID), data, {
       impression_id: this._impressionId,
-      client_id: "n/a",
-      session_id: "n/a",
     });
-  }
-
-  createSpocsFillPing(data) {
-    return Object.assign(this.createPing(null), data, {
-      impression_id: this._impressionId,
-      session_id: "n/a",
-    });
+    // Make sure `session_id` and `client_id` are not in the ping.
+    delete ping.session_id;
+    delete ping.client_id;
+    return ping;
   }
 
   createUserEvent(action) {
@@ -565,21 +573,6 @@ this.TelemetryFeed = class TelemetryFeed {
       action.data,
       { action: "activity_stream_user_event" }
     );
-  }
-
-  createUndesiredEvent(action) {
-    return Object.assign(
-      this.createPing(au.getPortIdOfSender(action)),
-      { value: 0 }, // Default value
-      action.data,
-      { action: "activity_stream_undesired_event" }
-    );
-  }
-
-  createPerformanceEvent(action) {
-    return Object.assign(this.createPing(), action.data, {
-      action: "activity_stream_performance_event",
-    });
   }
 
   createSessionEndEvent(session) {
@@ -620,6 +613,12 @@ this.TelemetryFeed = class TelemetryFeed {
       case "badge_user_event":
       case "whats-new-panel_user_event":
         event = await this.applyWhatsNewPolicy(event);
+        break;
+      case "infobar_user_event":
+        event = await this.applyInfoBarPolicy(event);
+        break;
+      case "spotlight_user_event":
+        event = await this.applySpotlightPolicy(event);
         break;
       case "moments_user_event":
         event = await this.applyMomentsPolicy(event);
@@ -667,6 +666,20 @@ this.TelemetryFeed = class TelemetryFeed {
     // Attach page info to `event_context` if there is a session associated with this ping
     delete ping.action;
     return { ping, pingType: "whats-new-panel" };
+  }
+
+  async applyInfoBarPolicy(ping) {
+    ping.client_id = await this.telemetryClientId;
+    ping.browser_session_id = browserSessionId;
+    delete ping.action;
+    return { ping, pingType: "infobar" };
+  }
+
+  async applySpotlightPolicy(ping) {
+    ping.client_id = await this.telemetryClientId;
+    ping.browser_session_id = browserSessionId;
+    delete ping.action;
+    return { ping, pingType: "spotlight" };
   }
 
   /**
@@ -791,8 +804,8 @@ this.TelemetryFeed = class TelemetryFeed {
    * @param {String} version   Endpoint version for this ping type.
    */
   _generateStructuredIngestionEndpoint(namespace, pingType, version) {
-    const uuid = gUUIDGenerator.generateUUID().toString();
-    // Structured Ingestion does not support the UUID generated by gUUIDGenerator,
+    const uuid = Services.uuid.generateUUID().toString();
+    // Structured Ingestion does not support the UUID generated by Services.uuid,
     // because it contains leading and trailing braces. Need to trim them first.
     const docID = uuid.slice(1, -1);
     const extension = `${namespace}/${pingType}/${version}/${docID}`;
@@ -821,6 +834,40 @@ this.TelemetryFeed = class TelemetryFeed {
     );
   }
 
+  handleTopSitesImpressionStats(action) {
+    const { data } = action;
+    const { type, position, source } = data;
+    let pingType;
+
+    if (type === "impression") {
+      pingType = "topsites-impression";
+      Services.telemetry.keyedScalarAdd(
+        `${SCALAR_CATEGORY_TOPSITES}.impression`,
+        `${source}_${position}`,
+        1
+      );
+    } else if (type === "click") {
+      pingType = "topsites-click";
+      Services.telemetry.keyedScalarAdd(
+        `${SCALAR_CATEGORY_TOPSITES}.click`,
+        `${source}_${position}`,
+        1
+      );
+    } else {
+      Cu.reportError("Unknown ping type for TopSites impression");
+      return;
+    }
+
+    let payload = { ...data, context_id: contextId };
+    delete payload.type;
+    this.sendStructuredIngestionEvent(
+      payload,
+      STRUCTURED_INGESTION_NAMESPACE_CS,
+      pingType,
+      "1"
+    );
+  }
+
   handleUserEvent(action) {
     let userEvent = this.createUserEvent(action);
     this.sendEvent(userEvent);
@@ -841,16 +888,14 @@ this.TelemetryFeed = class TelemetryFeed {
     );
   }
 
-  handleUndesiredEvent(action) {
-    this.sendEvent(this.createUndesiredEvent(action));
-  }
-
-  handleTrailheadEnrollEvent(action) {
-    // Unlike `sendUTEvent`, we always send the event if AS's telemetry is enabled
-    // regardless of `this.eventTelemetryEnabled`.
-    if (this.telemetryEnabled) {
-      this.utEvents.sendTrailheadEnrollEvent(action.data);
-    }
+  /**
+   * This function is used by ActivityStreamStorage to report errors
+   * trying to access IndexedDB.
+   */
+  SendASRouterUndesiredEvent(data) {
+    this.handleASRouterUserEvent({
+      data: { ...data, action: "asrouter_undesired_event" },
+    });
   }
 
   async sendPageTakeoverData() {
@@ -951,23 +996,28 @@ this.TelemetryFeed = class TelemetryFeed {
           action.data
         );
         break;
-      case at.DISCOVERY_STREAM_SPOCS_FILL:
-        this.handleDiscoveryStreamSpocsFill(action.data);
-        break;
-      case at.TELEMETRY_UNDESIRED_EVENT:
-        this.handleUndesiredEvent(action);
-        break;
       case at.TELEMETRY_USER_EVENT:
         this.handleUserEvent(action);
         break;
+      // The next few action types come from ASRouter, which doesn't use
+      // Actions from Actions.jsm, but uses these other custom strings.
+      case msg.TOOLBAR_BADGE_TELEMETRY:
+      // Intentional fall-through
+      case msg.TOOLBAR_PANEL_TELEMETRY:
+      // Intentional fall-through
+      case msg.MOMENTS_PAGE_TELEMETRY:
+      // Intentional fall-through
+      case msg.DOORHANGER_TELEMETRY:
+      // Intentional fall-through
+      case msg.INFOBAR_TELEMETRY:
+      // Intentional fall-through
+      case msg.SPOTLIGHT_TELEMETRY:
+      // Intentional fall-through
       case at.AS_ROUTER_TELEMETRY_USER_EVENT:
         this.handleASRouterUserEvent(action);
         break;
-      case at.TELEMETRY_PERFORMANCE_EVENT:
-        this.sendEvent(this.createPerformanceEvent(action));
-        break;
-      case at.TRAILHEAD_ENROLL_EVENT:
-        this.handleTrailheadEnrollEvent(action);
+      case at.TOP_SITES_IMPRESSION_STATS:
+        this.handleTopSitesImpressionStats(action);
         break;
       case at.UNINIT:
         this.uninit();
@@ -1035,38 +1085,6 @@ this.TelemetryFeed = class TelemetryFeed {
     );
     loadedContentSets[data.source] = loadedContents;
     session.loadedContentSets = loadedContentSets;
-  }
-
-  /**
-   * Handl SPOCS Fill actions from Discovery Stream.
-   *
-   * @param {Object} data
-   *   The SPOCS Fill event structured as:
-   *   {
-   *     spoc_fills: [
-   *       {
-   *         id: 123,
-   *         displayed: 0,
-   *         reason: "frequency_cap",
-   *         full_recalc: 1
-   *        },
-   *        {
-   *          id: 124,
-   *          displayed: 1,
-   *          reason: "n/a",
-   *          full_recalc: 1
-   *        }
-   *      ]
-   *    }
-   */
-  handleDiscoveryStreamSpocsFill(data) {
-    const payload = this.createSpocsFillPing(data);
-    this.sendStructuredIngestionEvent(
-      payload,
-      STRUCTURED_INGESTION_NAMESPACE_AS,
-      "spoc-fills",
-      "1"
-    );
   }
 
   /**

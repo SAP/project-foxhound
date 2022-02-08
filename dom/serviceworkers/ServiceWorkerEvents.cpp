@@ -15,6 +15,7 @@
 #include "js/TypeDecls.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/BodyUtil.h"
@@ -104,11 +105,6 @@ NS_IMETHODIMP
 CancelChannelRunnable::Run() {
   MOZ_ASSERT(NS_IsMainThread());
 
-  // TODO: When bug 1204254 is implemented, this time marker should be moved to
-  // the point where the body of the network request is complete.
-  mChannel->SetHandleFetchEventEnd(TimeStamp::Now());
-  mChannel->SaveTimeStamps();
-
   mChannel->CancelInterception(mStatus);
   mRegistration->MaybeScheduleUpdate();
   return NS_OK;
@@ -153,6 +149,19 @@ already_AddRefed<FetchEvent> FetchEvent::Constructor(
   e->mRequest = aOptions.mRequest;
   e->mClientId = aOptions.mClientId;
   e->mResultingClientId = aOptions.mResultingClientId;
+  RefPtr<nsIGlobalObject> global = do_QueryObject(aGlobal.GetAsSupports());
+  MOZ_ASSERT(global);
+  ErrorResult rv;
+  e->mHandled = Promise::Create(global, rv);
+  if (rv.Failed()) {
+    rv.SuppressException();
+    return nullptr;
+  }
+  e->mPreloadResponse = Promise::Create(global, rv);
+  if (rv.Failed()) {
+    rv.SuppressException();
+    return nullptr;
+  }
   return e.forget();
 }
 
@@ -196,11 +205,6 @@ class FinishResponse final : public Runnable {
       mChannel->CancelInterception(NS_ERROR_INTERCEPTION_FAILED);
       return NS_OK;
     }
-
-    TimeStamp timeStamp = TimeStamp::Now();
-    mChannel->SetHandleFetchEventEnd(timeStamp);
-    mChannel->SetFinishSynthesizedResponseEnd(timeStamp);
-    mChannel->SaveTimeStamps();
 
     return rv;
   }
@@ -246,7 +250,7 @@ NS_IMPL_ISUPPORTS(BodyCopyHandle, nsIInterceptedBodyCallback)
 
 class StartResponse final : public Runnable {
   nsMainThreadPtrHandle<nsIInterceptedChannel> mChannel;
-  RefPtr<InternalResponse> mInternalResponse;
+  SafeRefPtr<InternalResponse> mInternalResponse;
   ChannelInfo mWorkerChannelInfo;
   const nsCString mScriptSpec;
   const nsCString mResponseURLSpec;
@@ -254,14 +258,14 @@ class StartResponse final : public Runnable {
 
  public:
   StartResponse(nsMainThreadPtrHandle<nsIInterceptedChannel>& aChannel,
-                InternalResponse* aInternalResponse,
+                SafeRefPtr<InternalResponse> aInternalResponse,
                 const ChannelInfo& aWorkerChannelInfo,
                 const nsACString& aScriptSpec,
                 const nsACString& aResponseURLSpec,
                 UniquePtr<RespondWithClosure>&& aClosure)
       : Runnable("dom::StartResponse"),
         mChannel(aChannel),
-        mInternalResponse(aInternalResponse),
+        mInternalResponse(std::move(aInternalResponse)),
         mWorkerChannelInfo(aWorkerChannelInfo),
         mScriptSpec(aScriptSpec),
         mResponseURLSpec(aResponseURLSpec),
@@ -315,7 +319,7 @@ class StartResponse final : public Runnable {
         mInternalResponse->GetTainting());
 
     // Get the preferred alternative data type of outter channel
-    nsAutoCString preferredAltDataType(EmptyCString());
+    nsAutoCString preferredAltDataType(""_ns);
     nsCOMPtr<nsICacheInfoChannel> outerChannel =
         do_QueryInterface(underlyingChannel);
     if (outerChannel &&
@@ -377,7 +381,7 @@ class StartResponse final : public Runnable {
     rv = NS_NewURI(getter_AddRefs(uri), url);
     NS_ENSURE_SUCCESS(rv, false);
     int16_t decision = nsIContentPolicy::ACCEPT;
-    rv = NS_CheckContentLoadPolicy(uri, aLoadInfo, EmptyCString(), &decision);
+    rv = NS_CheckContentLoadPolicy(uri, aLoadInfo, ""_ns, &decision);
     NS_ENSURE_SUCCESS(rv, false);
     return decision == nsIContentPolicy::ACCEPT;
   }
@@ -559,7 +563,6 @@ NS_IMPL_ISUPPORTS0(RespondWithHandler)
 void RespondWithHandler::ResolvedCallback(JSContext* aCx,
                                           JS::Handle<JS::Value> aValue) {
   AutoCancel autoCancel(this, mRequestURL);
-  mInterceptedChannel->SetFinishResponseStart(TimeStamp::Now());
 
   if (!aValue.isObject()) {
     NS_WARNING(
@@ -656,7 +659,7 @@ void RespondWithHandler::ResolvedCallback(JSContext* aCx,
     }
   }
 
-  RefPtr<InternalResponse> ir = response->GetInternalResponse();
+  SafeRefPtr<InternalResponse> ir = response->GetInternalResponse();
   if (NS_WARN_IF(!ir)) {
     return;
   }
@@ -709,9 +712,9 @@ void RespondWithHandler::ResolvedCallback(JSContext* aCx,
       mInterceptedChannel, mRegistration, mRequestURL, mRespondWithScriptSpec,
       mRespondWithLineNumber, mRespondWithColumnNumber));
 
-  nsCOMPtr<nsIRunnable> startRunnable =
-      new StartResponse(mInterceptedChannel, ir, worker->GetChannelInfo(),
-                        mScriptSpec, responseURL, std::move(closure));
+  nsCOMPtr<nsIRunnable> startRunnable = new StartResponse(
+      mInterceptedChannel, ir.clonePtr(), worker->GetChannelInfo(), mScriptSpec,
+      responseURL, std::move(closure));
 
   nsCOMPtr<nsIInputStream> body;
   ir->GetUnfilteredBody(getter_AddRefs(body));
@@ -739,8 +742,6 @@ void RespondWithHandler::RejectedCallback(JSContext* aCx,
   uint32_t line = mRespondWithLineNumber;
   uint32_t column = mRespondWithColumnNumber;
   nsString valueString;
-
-  mInterceptedChannel->SetFinishResponseStart(TimeStamp::Now());
 
   nsContentUtils::ExtractErrorValues(aCx, aValue, sourceSpec, &line, &column,
                                      valueString);
@@ -928,7 +929,7 @@ class WaitUntilHandler final : public PromiseNativeHandler {
     // because there is no documeny yet, and the navigation is no longer
     // being intercepted.
 
-    swm->ReportToAllClients(mScope, message, mSourceSpec, EmptyString(), mLine,
+    swm->ReportToAllClients(mScope, message, mSourceSpec, u""_ns, mLine,
                             mColumn, nsIScriptError::errorFlag);
   }
 };
@@ -1022,7 +1023,8 @@ nsresult ExtractBytesFromUSVString(const nsAString& aStr,
   uint32_t result;
   size_t read;
   size_t written;
-  Tie(result, read, written) =
+  // Do not use structured binding lest deal with [-Werror=unused-variable]
+  std::tie(result, read, written) =
       encoder->EncodeFromUTF16WithoutReplacement(aStr, aBytes, true);
   MOZ_ASSERT(result == kInputEmpty);
   MOZ_ASSERT(read == aStr.Length());
@@ -1103,8 +1105,8 @@ void PushMessageData::ArrayBuffer(JSContext* cx,
 already_AddRefed<mozilla::dom::Blob> PushMessageData::Blob(ErrorResult& aRv) {
   uint8_t* data = GetContentsCopy();
   if (data) {
-    RefPtr<mozilla::dom::Blob> blob = BodyUtil::ConsumeBlob(
-        mOwner, EmptyString(), mBytes.Length(), data, aRv);
+    RefPtr<mozilla::dom::Blob> blob =
+        BodyUtil::ConsumeBlob(mOwner, u""_ns, mBytes.Length(), data, aRv);
     if (blob) {
       return blob.forget();
     }
@@ -1176,10 +1178,7 @@ ExtendableMessageEvent::ExtendableMessageEvent(EventTarget* aOwner)
   mozilla::HoldJSObjects(this);
 }
 
-ExtendableMessageEvent::~ExtendableMessageEvent() {
-  mData.setUndefined();
-  DropJSObjects(this);
-}
+ExtendableMessageEvent::~ExtendableMessageEvent() { DropJSObjects(this); }
 
 void ExtendableMessageEvent::GetData(JSContext* aCx,
                                      JS::MutableHandle<JS::Value> aData,

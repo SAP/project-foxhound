@@ -15,8 +15,6 @@ struct CStringKeyValue {
 
 struct PrintData {
   nullable PRemotePrintJob remotePrintJob;
-  int32_t startPageRange;
-  int32_t endPageRange;
   double edgeTop;
   double edgeLeft;
   double edgeBottom;
@@ -32,7 +30,11 @@ struct PrintData {
   double scaling;
   bool printBGColors;
   bool printBGImages;
-  short printRange;
+  bool honorPageRuleMargins;
+  bool showMarginGuides;
+  bool isPrintSelectionRBEnabled;
+  bool printSelectionOnly;
+  int32_t[] pageRanges;
   nsString title;
   nsString docURL;
   nsString headerStrLeft;
@@ -47,8 +49,7 @@ struct PrintData {
   bool shrinkToFit;
   bool showPrintProgress;
 
-  nsString paperName;
-  short paperData;
+  nsString paperId;
   double paperWidth;
   double paperHeight;
   short paperSizeUnit;
@@ -56,6 +57,7 @@ struct PrintData {
   bool printInColor;
   int32_t orientation;
   int32_t numCopies;
+  int32_t numPagesPerSheet;
   nsString printerName;
   bool printToFile;
   nsString toFileName;
@@ -65,15 +67,10 @@ struct PrintData {
   int32_t duplex;
   bool isInitializedFromPrinter;
   bool isInitializedFromPrefs;
-  int32_t optionFlags;
 
   /* Windows-specific things */
   nsString driverName;
   nsString deviceName;
-  double printableWidthInInches;
-  double printableHeightInInches;
-  bool isIFrameSelected;
-  bool isRangeSelection;
   uint8_t[] devModeData;
 
   /**
@@ -85,36 +82,12 @@ struct PrintData {
    */
   CStringKeyValue[] GTKPrintSettings;
 
-  /**
-   * OS X specific things.
+  /*
+   * macOS-specific things:
+   * What the Cocoa print system is supposed to do with the job.
    */
-  nsString printJobName;
-  bool printAllPages;
-  bool mustCollate;
   nsString disposition;
-  /** TODO: Is there an "unsigned short" primitive? **/
-  short pagesAcross;
-  short pagesDown;
-  double printTime;
-  bool detailedErrorReporting;
-  nsString faxNumber;
-  bool addHeaderAndFooter;
-  bool fileNameExtensionHidden;
-  /*
-   * Holds the scaling factor from the Print dialog when shrink
-   * to fit is not used. This is needed by the child when it
-   * isn't using remote printing. When shrink to fit is enabled
-   * (default), print dialog code ensures this value is 1.0.
-   */
-  float scalingFactor;
-  /*
-   * Scaling factor for converting from OS X native paper size
-   * units to inches.
-   */
-  float widthScale;
-  float heightScale;
-  double adjustedPaperWidth;
-  double adjustedPaperHeight;
+  uint16_t destination;
 };
 
 } // namespace embedding

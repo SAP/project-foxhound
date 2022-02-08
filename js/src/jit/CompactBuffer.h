@@ -7,7 +7,11 @@
 #ifndef jit_Compactbuffer_h
 #define jit_Compactbuffer_h
 
-#include "jit/IonTypes.h"
+#include "mozilla/Assertions.h"
+
+#include <stddef.h>
+#include <stdint.h>
+
 #include "js/AllocPolicy.h"
 #include "js/Vector.h"
 
@@ -44,6 +48,21 @@ class CompactBufferReader {
     }
   }
 
+  uint64_t readVariableLength64() {
+    uint64_t val = 0;
+    uint32_t shift = 0;
+    uint8_t byte;
+    while (true) {
+      MOZ_ASSERT(shift < 64);
+      byte = readByte();
+      val |= (uint64_t(byte) >> 1) << shift;
+      shift += 7;
+      if (!(byte & 1)) {
+        return val;
+      }
+    }
+  }
+
  public:
   CompactBufferReader(const uint8_t* start, const uint8_t* end)
       : buffer_(start), end_(end) {}
@@ -70,6 +89,7 @@ class CompactBufferReader {
     return *reinterpret_cast<const uint32_t*>(buffer_);
   }
   uint32_t readUnsigned() { return readVariableLength(); }
+  uint64_t readUnsigned64() { return readVariableLength64(); }
   int32_t readSigned() {
     uint8_t b = readByte();
     bool isNegative = !!(b & (1 << 0));
@@ -83,7 +103,15 @@ class CompactBufferReader {
     }
     return result;
   }
-
+  // Reads a value written by writeUnsigned15Bit.
+  uint32_t readUnsigned15Bit() {
+    uint8_t byte = readByte();
+    uint32_t val = byte >> 1;
+    if (byte & 1) {
+      val |= uint32_t(readByte()) << 7;
+    }
+    return val;
+  }
   void* readRawPointer() {
     uintptr_t ptrWord = 0;
     for (unsigned i = 0; i < sizeof(uintptr_t); i++) {
@@ -119,12 +147,26 @@ class CompactBufferWriter {
   // assert.
   void writeByte(uint32_t byte) {
     MOZ_ASSERT(byte <= 0xFF);
-    enoughMemory_ &= buffer_.append(byte);
+    if (!buffer_.append(byte)) {
+      enoughMemory_ = false;
+    }
   }
   void writeByteAt(uint32_t pos, uint32_t byte) {
     MOZ_ASSERT(byte <= 0xFF);
     if (!oom()) {
       buffer_[pos] = byte;
+    }
+  }
+  // Writes a variable-length value similar to writeUnsigned, but optimized for
+  // small 15-bit values that fit in one or two variable-length-encoded bytes.
+  // Must be read using readUnsigned15Bit.
+  void writeUnsigned15Bit(uint32_t value) {
+    uint8_t byte1 = ((value & 0x7F) << 1) | (value > 0x7F);
+    writeByte(byte1);
+    value >>= 7;
+    if (value) {
+      MOZ_ASSERT(value <= 0xFF);
+      writeByte(value);
     }
   }
   void writeUnsigned(uint32_t value) {
@@ -142,6 +184,13 @@ class CompactBufferWriter {
       value >>= 7;
       original >>= 7;
     } while (original);
+  }
+  void writeUnsigned64(uint64_t value) {
+    do {
+      uint8_t byte = ((value & 0x7F) << 1) | (value > 0x7F);
+      writeByte(byte);
+      value >>= 7;
+    } while (value);
   }
   void writeSigned(int32_t v) {
     bool isNegative = v < 0;

@@ -4,7 +4,6 @@
 "use strict";
 
 const Services = require("Services");
-const { L10nRegistry } = require("resource://gre/modules/L10nRegistry.jsm");
 
 const EventEmitter = require("devtools/shared/event-emitter");
 
@@ -50,12 +49,11 @@ const EVENTS = {
  * render Accessibility Tree of the current debugger target and the sidebar that
  * displays current relevant accessible details.
  */
-function AccessibilityPanel(iframeWindow, toolbox) {
+function AccessibilityPanel(iframeWindow, toolbox, commands) {
   this.panelWin = iframeWindow;
   this._toolbox = toolbox;
+  this._commands = commands;
 
-  this.onTabNavigated = this.onTabNavigated.bind(this);
-  this.onTargetUpdated = this.onTargetUpdated.bind(this);
   this.onPanelVisibilityChange = this.onPanelVisibilityChange.bind(this);
   this.onNewAccessibleFrontSelected = this.onNewAccessibleFrontSelected.bind(
     this
@@ -103,12 +101,7 @@ AccessibilityPanel.prototype = {
       this.onAccessibilityInspectorUpdated
     );
 
-    this.shouldRefresh = true;
-
-    this.accessibilityProxy = new AccessibilityProxy(this._toolbox);
-    this.accessibilityProxy.startListeningForTargetUpdated(
-      this.onTargetUpdated
-    );
+    this.accessibilityProxy = new AccessibilityProxy(this._commands, this);
     await this.accessibilityProxy.initialize();
 
     // Enable accessibility service if necessary.
@@ -128,8 +121,12 @@ AccessibilityPanel.prototype = {
       shutdown: this.onLifecycleEvent,
     });
 
-    this.isReady = true;
-    this.emit("ready");
+    // Force refresh to render the UI and wait for the INITIALIZED event.
+    const onInitialized = this.panelWin.once(EVENTS.INITIALIZED);
+    this.shouldRefresh = true;
+    this.refresh();
+    await onInitialized;
+
     resolver(this);
     return this._opening;
   },
@@ -140,7 +137,7 @@ AccessibilityPanel.prototype = {
    */
   async createFluentBundles() {
     const locales = Services.locale.appLocalesAsBCP47;
-    const generator = L10nRegistry.generateBundles(locales, [
+    const generator = L10nRegistry.getInstance().generateBundles(locales, [
       "devtools/client/accessibility.ftl",
     ]);
 
@@ -172,16 +169,16 @@ AccessibilityPanel.prototype = {
    * refreshed immediatelly if it's currently selected or lazily when the user
    * actually selects it.
    */
-  onTabNavigated() {
+  async forceRefresh() {
     this.shouldRefresh = true;
-    this._opening.then(() => this.refresh());
-  },
+    await this._opening;
 
-  onTargetUpdated({ isTargetSwitching }) {
-    this.accessibilityProxy.currentTarget.on("navigate", this.onTabNavigated);
-    if (isTargetSwitching) {
-      this.onTabNavigated();
-    }
+    await this.accessibilityProxy.accessibilityFrontGetPromise;
+    const onUpdated = this.panelWin.once(EVENTS.INITIALIZED);
+    this.refresh();
+    await onUpdated;
+
+    this.emit("reloaded");
   },
 
   /**
@@ -212,6 +209,7 @@ AccessibilityPanel.prototype = {
       stopListeningForAccessibilityEvents,
       audit,
       simulate,
+      toggleDisplayTabbingOrder,
       enableAccessibility,
       resetAccessiblity,
       startListeningForLifecycleEvents,
@@ -230,6 +228,7 @@ AccessibilityPanel.prototype = {
       stopListeningForAccessibilityEvents,
       audit,
       simulate,
+      toggleDisplayTabbingOrder,
       enableAccessibility,
       resetAccessiblity,
       startListeningForLifecycleEvents,
@@ -322,13 +321,6 @@ AccessibilityPanel.prototype = {
     this.postContentMessage("destroy");
 
     if (this.accessibilityProxy) {
-      this.accessibilityProxy.stopListeningForTargetUpdated(
-        this.onTargetUpdated
-      );
-      this.accessibilityProxy.currentTarget.off(
-        "navigate",
-        this.onTabNavigated
-      );
       this.accessibilityProxy.stopListeningForLifecycleEvents({
         init: this.onLifecycleEvent,
         shutdown: this.onLifecycleEvent,

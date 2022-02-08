@@ -9,18 +9,17 @@
 #include "Types.h"
 #include "gfxImageSurface.h"
 #include "gfxPlatform.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/layers/BufferTexture.h"
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/TextureClient.h"
 #include "mozilla/layers/TextureHost.h"
-#include "mozilla/RefPtr.h"
 #ifdef XP_WIN
 #  include "IMFYCbCrImage.h"
 #  include "mozilla/gfx/DeviceManagerDx.h"
 #  include "mozilla/layers/D3D11YCbCrImage.h"
 #  include "mozilla/layers/TextureD3D11.h"
-#  include "mozilla/layers/TextureDIB.h"
 #endif
 
 namespace mozilla {
@@ -66,22 +65,11 @@ static already_AddRefed<TextureClient> CreateYCbCrTextureClientWithBackend(
   // Create YCbCrTexture for basic backend.
   if (aLayersBackend == LayersBackend::LAYERS_BASIC) {
     return TextureClient::CreateForYCbCr(
-        nullptr, clientData.mYSize, clientData.mYStride, clientData.mCbCrSize,
-        clientData.mCbCrStride, StereoMode::MONO, gfx::ColorDepth::COLOR_8,
-        gfx::YUVColorSpace::BT601, gfx::ColorRange::LIMITED,
-        TextureFlags::DEALLOCATE_CLIENT);
+        nullptr, clientData.GetPictureRect(), clientData.mYSize,
+        clientData.mYStride, clientData.mCbCrSize, clientData.mCbCrStride,
+        StereoMode::MONO, gfx::ColorDepth::COLOR_8, gfx::YUVColorSpace::BT601,
+        gfx::ColorRange::LIMITED, TextureFlags::DEALLOCATE_CLIENT);
   }
-
-#ifdef XP_WIN
-  RefPtr<ID3D11Device> device = DeviceManagerDx::Get()->GetImageDevice();
-
-  if (device && aLayersBackend == LayersBackend::LAYERS_D3D11) {
-    DXGIYCbCrTextureAllocationHelper helper(clientData, TextureFlags::DEFAULT,
-                                            device);
-    RefPtr<TextureClient> texture = helper.Allocate(nullptr);
-    return texture.forget();
-  }
-#endif
 
   if (data) {
     return MakeAndAddRef<TextureClient>(data, TextureFlags::DEALLOCATE_CLIENT,
@@ -108,19 +96,6 @@ static already_AddRefed<TextureClient> CreateTextureClientWithBackend(
   if (!gfx::Factory::AllowedSurfaceSize(size)) {
     return nullptr;
   }
-
-#ifdef XP_WIN
-  if (aLayersBackend == LayersBackend::LAYERS_D3D11 &&
-      (moz2DBackend == BackendType::DIRECT2D ||
-       moz2DBackend == BackendType::DIRECT2D1_1)) {
-    // Create D3D11TextureData.
-    data = D3D11TextureData::Create(size, format, allocFlags);
-  } else if (!data && format == SurfaceFormat::B8G8R8X8 &&
-             moz2DBackend == BackendType::CAIRO) {
-    // Create DIBTextureData.
-    data = DIBTextureData::Create(size, format, nullptr);
-  }
-#endif
 
   if (!data && aLayersBackend == LayersBackend::LAYERS_BASIC) {
     // Create BufferTextureData.

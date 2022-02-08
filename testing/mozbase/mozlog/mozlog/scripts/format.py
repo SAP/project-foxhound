@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 from __future__ import absolute_import
 
 import argparse
@@ -7,15 +11,24 @@ from .. import handlers, commandline, reader
 
 
 def get_parser(add_help=True):
-    parser = argparse.ArgumentParser("format",
-                                     description="Format a structured log stream",
-                                     add_help=add_help)
-    parser.add_argument("--input", action="store", default=None,
-                        help="Filename to read from, defaults to stdin")
-    parser.add_argument("--output", action="store", default=None,
-                        help="Filename to write to, defaults to stdout")
-    parser.add_argument("format", choices=list(commandline.log_formatters.keys()),
-                        help="Format to use")
+    parser = argparse.ArgumentParser(
+        "format", description="Format a structured log stream", add_help=add_help
+    )
+    parser.add_argument(
+        "--input",
+        action="store",
+        default=None,
+        help="Filename to read from, defaults to stdin",
+    )
+    parser.add_argument(
+        "--output",
+        action="store",
+        default=None,
+        help="Filename to write to, defaults to stdout",
+    )
+    parser.add_argument(
+        "format", choices=list(commandline.log_formatters.keys()), help="Format to use"
+    )
     return parser
 
 
@@ -31,8 +44,7 @@ def main(**kwargs):
 
     formatter = commandline.log_formatters[kwargs["format"]][0]()
 
-    handler = handlers.StreamHandler(stream=output_file,
-                                     formatter=formatter)
+    handler = handlers.StreamHandler(stream=output_file, formatter=formatter)
 
     for data in reader.read(input_file):
         handler(data)

@@ -2,22 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* globals selectorLoader, analytics, communication, catcher, log, makeUuid, auth, senderror, startBackground, blobConverters buildSettings */
+/* globals browser, getStrings, selectorLoader, analytics, communication, catcher, log, auth, senderror, startBackground, blobConverters, startSelectionWithOnboarding */
 
 "use strict";
 
 this.main = (function() {
   const exports = {};
 
-  const pasteSymbol = (window.navigator.platform.match(/Mac/i)) ? "\u2318" : "Ctrl";
   const { sendEvent, incrementCount } = analytics;
 
   const manifest = browser.runtime.getManifest();
   let backend;
-
-  exports.hasAnyShots = function() {
-    return false;
-  };
 
   exports.setBackend = function(newBackend) {
     backend = newBackend;
@@ -39,20 +34,15 @@ this.main = (function() {
     }
   }
 
-  function setIconActive(active, tabId) {
-    const path = active ? "icons/icon-highlight-32-v2.svg" : "icons/icon-v2.svg";
-    browser.pageAction.setIcon({tabId, path});
-  }
-
   function toggleSelector(tab) {
-    return analytics.refreshTelemetryPref()
+    return analytics
+      .refreshTelemetryPref()
       .then(() => selectorLoader.toggle(tab.id))
-      .then(active => {
-        setIconActive(active, tab.id);
-        return active;
-      })
-      .catch((error) => {
-        if (error.message && /Missing host permission for the tab/.test(error.message)) {
+      .catch(error => {
+        if (
+          error.message &&
+          /Missing host permission for the tab/.test(error.message)
+        ) {
           error.noReport = true;
         }
         error.popupMessage = "UNSHOOTABLE_PAGE";
@@ -60,32 +50,19 @@ this.main = (function() {
       });
   }
 
-  function shouldOpenMyShots(url) {
-    return /^about:(?:newtab|blank|home)/i.test(url) || /^resource:\/\/activity-streams\//i.test(url);
-  }
-
   // This is called by startBackground.js, where is registered as a click
   // handler for the webextension page action.
-  exports.onClicked = catcher.watchFunction((tab) => {
+  exports.onClicked = catcher.watchFunction(tab => {
     _startShotFlow(tab, "toolbar-button");
   });
 
-  exports.onClickedContextMenu = catcher.watchFunction((info, tab) => {
+  exports.onClickedContextMenu = catcher.watchFunction(tab => {
     _startShotFlow(tab, "context-menu");
   });
 
-  exports.onCommand = catcher.watchFunction((tab) => {
+  exports.onShortcut = catcher.watchFunction(tab => {
     _startShotFlow(tab, "keyboard-shortcut");
   });
-
-  const _openMyShots = (tab, inputType) => {
-    catcher.watchPromise(analytics.refreshTelemetryPref().then(() => {
-      sendEvent("goto-myshots", inputType, {incognito: tab.incognito});
-    }));
-    catcher.watchPromise(
-      auth.maybeLogin()
-      .then(() => browser.tabs.update({url: backend + "/shots"})));
-  };
 
   const _startShotFlow = (tab, inputType) => {
     if (!tab) {
@@ -97,32 +74,33 @@ this.main = (function() {
         popupMessage: "UNSHOOTABLE_PAGE",
       });
       return;
-    } else if (shouldOpenMyShots(tab.url)) {
-      _openMyShots(tab, inputType);
-      return;
     }
 
-    catcher.watchPromise(toggleSelector(tab)
-      .then(active => {
-        let event = "start-shot";
-        if (inputType !== "context-menu") {
-          event = active ? "start-shot" : "cancel-shot";
-        }
-        sendEvent(event, inputType, {incognito: tab.incognito});
-      }).catch((error) => {
-        throw error;
-      }));
+    catcher.watchPromise(
+      toggleSelector(tab)
+        .then(active => {
+          let event = "start-shot";
+          if (inputType !== "context-menu") {
+            event = active ? "start-shot" : "cancel-shot";
+          }
+          sendEvent(event, inputType, { incognito: tab.incognito });
+        })
+        .catch(error => {
+          throw error;
+        })
+    );
   };
 
   function urlEnabled(url) {
-    if (shouldOpenMyShots(url)) {
-      return true;
-    }
     // Allow screenshots on urls related to web pages in reader mode.
     if (url && url.startsWith("about:reader?url=")) {
       return true;
     }
-    if (isShotOrMyShotPage(url) || /^(?:about|data|moz-extension):/i.test(url) || isBlacklistedUrl(url)) {
+    if (
+      isShotOrMyShotPage(url) ||
+      /^(?:about|data|moz-extension):/i.test(url) ||
+      isBlacklistedUrl(url)
+    ) {
       return false;
     }
     return true;
@@ -133,7 +111,10 @@ this.main = (function() {
     if (!url.startsWith(backend)) {
       return false;
     }
-    const path = url.substr(backend.length).replace(/^\/*/, "").replace(/[?#].*/, "");
+    const path = url
+      .substr(backend.length)
+      .replace(/^\/*/, "")
+      .replace(/[?#].*/, "");
     if (path === "shots") {
       return true;
     }
@@ -147,7 +128,7 @@ this.main = (function() {
   function isBlacklistedUrl(url) {
     // These specific domains are not allowed for general WebExtension permission reasons
     // Discussion: https://bugzilla.mozilla.org/show_bug.cgi?id=1310082
-    // List of domains copied from: https://dxr.mozilla.org/mozilla-central/source/browser/app/permissions#18-19
+    // List of domains copied from: https://searchfox.org/mozilla-central/source/browser/app/permissions#18-19
     // Note we disable it here to be informative, the security check is done in WebExtension code
     const badDomains = ["testpilot.firefox.com"];
     let domain = url.replace(/^https?:\/\//i, "");
@@ -157,7 +138,7 @@ this.main = (function() {
   }
 
   communication.register("getStrings", (sender, ids) => {
-    return getStrings(ids.map(id => ({id})));
+    return getStrings(ids.map(id => ({ id })));
   });
 
   communication.register("sendEvent", (sender, ...args) => {
@@ -166,46 +147,25 @@ this.main = (function() {
     return null;
   });
 
-  communication.register("openMyShots", (sender) => {
-    return catcher.watchPromise(
-      auth.maybeLogin()
-      .then(() => browser.tabs.create({url: backend + "/shots"})));
+  communication.register("captureTelemetry", (sender, ...args) => {
+    catcher.watchPromise(incrementCount(...args));
   });
 
-  communication.register("openShot", async (sender, {url, copied}) => {
+  communication.register("openShot", async (sender, { url, copied }) => {
     if (copied) {
-      const id = makeUuid();
-      const [ title, message ] = await getStrings([
+      const id = crypto.randomUUID();
+      const [title, message] = await getStrings([
         { id: "screenshots-notification-link-copied-title" },
         { id: "screenshots-notification-link-copied-details" },
       ]);
       return browser.notifications.create(id, {
         type: "basic",
-        iconUrl: "../icons/copied-notification.svg",
+        iconUrl: "chrome://browser/content/screenshots/copied-notification.svg",
         title,
         message,
       });
     }
     return null;
-  });
-
-  // This is used for truncated full page downloads and copy to clipboards.
-  // Those longer operations need to display an animated spinner/loader, so
-  // it's preferable to perform toDataURL() in the background.
-  communication.register("canvasToDataURL", (sender, imageData) => {
-    const canvas = document.createElement("canvas");
-    canvas.width = imageData.width;
-    canvas.height = imageData.height;
-    canvas.getContext("2d").putImageData(imageData, 0, 0);
-    let dataUrl = canvas.toDataURL();
-    if (buildSettings.pngToJpegCutoff && dataUrl.length > buildSettings.pngToJpegCutoff) {
-      const jpegDataUrl = canvas.toDataURL("image/jpeg");
-      if (jpegDataUrl.length < dataUrl.length) {
-        // Only use the JPEG if it is actually smaller
-        dataUrl = jpegDataUrl;
-      }
-    }
-    return dataUrl;
   });
 
   communication.register("copyShotToClipboard", async (sender, blob) => {
@@ -220,7 +180,7 @@ this.main = (function() {
     catcher.watchPromise(incrementCount("copy"));
     return browser.notifications.create({
       type: "basic",
-      iconUrl: "../icons/copied-notification.svg",
+      iconUrl: "chrome://browser/content/screenshots/copied-notification.svg",
       title,
       message,
     });
@@ -244,23 +204,22 @@ this.main = (function() {
     browser.downloads.onChanged.addListener(onChangedCallback);
     catcher.watchPromise(incrementCount("download"));
     return browser.windows.getLastFocused().then(windowInfo => {
-      return browser.downloads.download({
-        url,
-        incognito: windowInfo.incognito,
-        filename: info.filename,
-      }).catch((error) => {
-        // We are not logging error message when user cancels download
-        if (error && error.message && !error.message.includes("canceled")) {
-          log.error(error.message);
-        }
-      }).then((id) => {
-        downloadId = id;
-      });
+      return browser.downloads
+        .download({
+          url,
+          incognito: windowInfo.incognito,
+          filename: info.filename,
+        })
+        .catch(error => {
+          // We are not logging error message when user cancels download
+          if (error && error.message && !error.message.includes("canceled")) {
+            log.error(error.message);
+          }
+        })
+        .then(id => {
+          downloadId = id;
+        });
     });
-  });
-
-  communication.register("closeSelector", (sender) => {
-    setIconActive(false, sender.tab.id);
   });
 
   communication.register("abortStartShot", () => {
@@ -272,14 +231,16 @@ this.main = (function() {
   });
 
   // A Screenshots page wants us to start/force onboarding
-  communication.register("requestOnboarding", (sender) => {
+  communication.register("requestOnboarding", sender => {
     return startSelectionWithOnboarding(sender.tab);
   });
 
   communication.register("getPlatformOs", () => {
-    return catcher.watchPromise(browser.runtime.getPlatformInfo().then(platformInfo => {
-      return platformInfo.os;
-    }));
+    return catcher.watchPromise(
+      browser.runtime.getPlatformInfo().then(platformInfo => {
+        return platformInfo.os;
+      })
+    );
   });
 
   // This allows the web site show notifications through sitehelper.js

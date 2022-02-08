@@ -2,6 +2,7 @@
 
 #include "FuzzingInterface.h"
 #include "FuzzyLayer.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "nsComponentManagerUtils.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
@@ -31,15 +32,18 @@ class FuzzingWebSocketListener final : public nsIWebSocketListener {
   FuzzingWebSocketListener() = default;
 
   void waitUntilDoneOrStarted() {
-    SpinEventLoopUntil([&]() { return mChannelDone || mChannelStarted; });
+    SpinEventLoopUntil("FuzzingWebSocketListener::waitUntilDoneOrStarted"_ns,
+                       [&]() { return mChannelDone || mChannelStarted; });
   }
 
   void waitUntilDone() {
-    SpinEventLoopUntil([&]() { return mChannelDone; });
+    SpinEventLoopUntil("FuzzingWebSocketListener::waitUntilDone"_ns,
+                       [&]() { return mChannelDone; });
   }
 
   void waitUntilDoneOrAck() {
-    SpinEventLoopUntil([&]() { return mChannelDone || mChannelAck; });
+    SpinEventLoopUntil("FuzzingWebSocketListener::waitUntilDoneOrAck"_ns,
+                       [&]() { return mChannelDone || mChannelAck; });
   }
 
   bool isStarted() { return mChannelStarted; }
@@ -92,6 +96,12 @@ NS_IMETHODIMP
 FuzzingWebSocketListener::OnBinaryMessageAvailable(nsISupports* aContext,
                                                    const nsACString& aMsg) {
   FUZZING_LOG(("FuzzingWebSocketListener::OnBinaryMessageAvailable"));
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+FuzzingWebSocketListener::OnError() {
+  FUZZING_LOG(("FuzzingWebSocketListener::OnError"));
   return NS_OK;
 }
 
@@ -157,8 +167,9 @@ static int FuzzingRunNetworkWebsocket(const uint8_t* data, size_t size) {
 
     gWebSocketListener = new FuzzingWebSocketListener();
 
-    rv =
-        gWebSocketChannel->AsyncOpen(url, spec, 0, gWebSocketListener, nullptr);
+    OriginAttributes attrs;
+    rv = gWebSocketChannel->AsyncOpenNative(url, spec, attrs, 0,
+                                            gWebSocketListener, nullptr);
 
     if (rv == NS_OK) {
       FUZZING_LOG(("Successful call to AsyncOpen"));
@@ -192,15 +203,17 @@ static int FuzzingRunNetworkWebsocket(const uint8_t* data, size_t size) {
   }
 
   // Wait for the channel to be destroyed
-  SpinEventLoopUntil([&]() -> bool {
-    nsCycleCollector_collect(nullptr);
-    nsCOMPtr<nsIWebSocketChannel> channel = do_QueryReferent(channelRef);
-    return channel == nullptr;
-  });
+  SpinEventLoopUntil(
+      "FuzzingRunNetworkWebsocket(channel == nullptr)"_ns, [&]() -> bool {
+        nsCycleCollector_collect(CCReason::API, nullptr);
+        nsCOMPtr<nsIWebSocketChannel> channel = do_QueryReferent(channelRef);
+        return channel == nullptr;
+      });
 
   if (!signalNetworkFuzzingDone()) {
     // Wait for the connection to indicate closed
-    SpinEventLoopUntil([&]() -> bool { return gFuzzingConnClosed; });
+    SpinEventLoopUntil("FuzzingRunNetworkWebsocket(gFuzzingConnClosed)"_ns,
+                       [&]() -> bool { return gFuzzingConnClosed; });
   }
 
   return 0;

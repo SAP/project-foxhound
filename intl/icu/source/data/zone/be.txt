@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 be{
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"Абіджан"}
@@ -1882,6 +1882,9 @@ be{
             ld{"Екацярынбургскі летні час"}
             lg{"Екацярынбургскі час"}
             ls{"Екацярынбургскі стандартны час"}
+        }
+        "meta:Yukon"{
+            ls{"Час Юкана"}
         }
         fallbackFormat{"{1} ({0})"}
         gmtFormat{"GMT{0}"}

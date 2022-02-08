@@ -13,13 +13,11 @@ const {
   DATA_FORMAT_VERSION,
   DEFAULT_STORAGE_FILENAME,
   FXA_PWDMGR_HOST,
-  FXA_PWDMGR_MEMORY_FIELDS,
   FXA_PWDMGR_PLAINTEXT_FIELDS,
   FXA_PWDMGR_REALM,
   FXA_PWDMGR_SECURE_FIELDS,
   log,
 } = ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 const { CommonUtils } = ChromeUtils.import(
   "resource://services-common/utils.js"
 );
@@ -28,7 +26,6 @@ const { CommonUtils } = ChromeUtils.import(
 // the storage manager without having a reference to a manager instance.
 function FxAccountsStorageManagerCanStoreField(fieldName) {
   return (
-    FXA_PWDMGR_MEMORY_FIELDS.has(fieldName) ||
     FXA_PWDMGR_PLAINTEXT_FIELDS.has(fieldName) ||
     FXA_PWDMGR_SECURE_FIELDS.has(fieldName)
   );
@@ -38,7 +35,7 @@ function FxAccountsStorageManagerCanStoreField(fieldName) {
 var FxAccountsStorageManager = function(options = {}) {
   this.options = {
     filename: options.filename || DEFAULT_STORAGE_FILENAME,
-    baseDir: options.baseDir || OS.Constants.Path.profileDir,
+    baseDir: options.baseDir || Services.dirsvc.get("ProfD", Ci.nsIFile).path,
   };
   this.plainStorage = new JSONStorage(this.options);
   // Tests may want to pretend secure storage isn't available.
@@ -86,16 +83,12 @@ FxAccountsStorageManager.prototype = {
           } else if (FXA_PWDMGR_SECURE_FIELDS.has(name)) {
             this.cachedSecure[name] = val;
           } else {
-            // Hopefully it's an "in memory" field. If it's not we log a warning
-            // but still treat it as such (so it will still be available in this
-            // session but isn't persisted anywhere.)
-            if (!FXA_PWDMGR_MEMORY_FIELDS.has(name)) {
-              log.warn(
-                "Unknown FxA field name in user data, treating as in-memory",
-                name
-              );
-            }
-            this.cachedMemory[name] = val;
+            // Unknown fields are silently discarded, because there is no way
+            // for them to be read back later.
+            log.error(
+              "Unknown FxA field name in user data, it will be ignored",
+              name
+            );
           }
         }
         // write it out and we are done.
@@ -180,8 +173,6 @@ FxAccountsStorageManager.prototype = {
       for (let [name, value] of Object.entries(this.cachedSecure)) {
         result[name] = value;
       }
-      // Note we don't return cachedMemory fields here - they must be explicitly
-      // requested.
       return result;
     }
     // The new explicit way of getting attributes.
@@ -190,11 +181,7 @@ FxAccountsStorageManager.prototype = {
     }
     let checkedSecure = false;
     for (let fieldName of fieldNames) {
-      if (FXA_PWDMGR_MEMORY_FIELDS.has(fieldName)) {
-        if (this.cachedMemory[fieldName] !== undefined) {
-          result[fieldName] = this.cachedMemory[fieldName];
-        }
-      } else if (FXA_PWDMGR_PLAINTEXT_FIELDS.has(fieldName)) {
+      if (FXA_PWDMGR_PLAINTEXT_FIELDS.has(fieldName)) {
         if (this.cachedPlain[fieldName] !== undefined) {
           result[fieldName] = this.cachedPlain[fieldName];
         }
@@ -230,14 +217,11 @@ FxAccountsStorageManager.prototype = {
     // work out what bucket.
     for (let [name, value] of Object.entries(newFields)) {
       if (value == null) {
-        delete this.cachedMemory[name];
         delete this.cachedPlain[name];
         // no need to do the "delete on null" thing for this.cachedSecure -
         // we need to keep it until we have managed to read so we can nuke
         // it on write.
         this.cachedSecure[name] = null;
-      } else if (FXA_PWDMGR_MEMORY_FIELDS.has(name)) {
-        this.cachedMemory[name] = value;
       } else if (FXA_PWDMGR_PLAINTEXT_FIELDS.has(name)) {
         this.cachedPlain[name] = value;
       } else if (FXA_PWDMGR_SECURE_FIELDS.has(name)) {
@@ -259,7 +243,6 @@ FxAccountsStorageManager.prototype = {
   },
 
   _clearCachedData() {
-    this.cachedMemory = {};
     this.cachedPlain = {};
     // If we don't have secure storage available we have cachedPlain and
     // cachedSecure be the same object.
@@ -284,7 +267,7 @@ FxAccountsStorageManager.prototype = {
     } catch (err) {
       // File hasn't been created yet.  That will be done
       // when write is called.
-      if (!(err instanceof OS.File.Error) || !err.becauseNoSuchFile) {
+      if (!err.name == "NotFoundError") {
         log.error("Failed to read plain storage", err);
       }
       // either way, we return null.
@@ -462,7 +445,7 @@ FxAccountsStorageManager.prototype = {
  */
 function JSONStorage(options) {
   this.baseDir = options.baseDir;
-  this.path = OS.Path.join(options.baseDir, options.filename);
+  this.path = PathUtils.join(options.baseDir, options.filename);
 }
 
 JSONStorage.prototype = {
@@ -472,7 +455,7 @@ JSONStorage.prototype = {
       contents ? Object.keys(contents.accountData) : "null"
     );
     let start = Date.now();
-    return OS.File.makeDir(this.baseDir, { ignoreExisting: true })
+    return IOUtils.makeDirectory(this.baseDir, { ignoreExisting: true })
       .then(CommonUtils.writeJSON.bind(null, contents, this.path))
       .then(result => {
         log.trace(

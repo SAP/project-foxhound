@@ -2,6 +2,7 @@
 
 const types = require('./types')
 const rcodes = require('./rcodes')
+exports.rcodes = rcodes;
 const opcodes = require('./opcodes')
 const classes = require('./classes')
 const optioncodes = require('./optioncodes')
@@ -729,6 +730,15 @@ roption.encode = function (option, buf, offset) {
           offset += 2
         }
         break
+      case 15: // EDNS_ERROR
+        const text = option.text || "";
+        buf.writeUInt16BE(text.length + 2, offset)
+        offset += 2;
+        buf.writeUInt16BE(option.extended_error, offset)
+        offset += 2;
+        buf.write(text, offset);
+        offset += option.text.length;
+        break;
       default:
         throw new Error(`Unknown roption code: ${option.code}`)
     }
@@ -797,6 +807,8 @@ roption.encodingLength = function (option) {
       return option.length + 4
     case 14: // KEY-TAG
       return 4 + (option.tags.length * 2)
+    case 15: // EDNS_ERROR
+      return 4 + 2 + option.text.length
   }
   throw new Error(`Unknown roption code: ${option.code}`)
 }
@@ -1276,12 +1288,14 @@ const svcparam = exports.svcparam = {}
 
 svcparam.keyToNumber = function(keyName) {
   switch (keyName.toLowerCase()) {
+    case 'mandatory': return 0
     case 'alpn' : return 1
     case 'no-default-alpn' : return 2
     case 'port' : return 3
     case 'ipv4hint' : return 4
-    case 'esniconfig' : return 5
+    case 'echconfig' : return 5
     case 'ipv6hint' : return 6
+    case 'odoh' : return 32769
     case 'key65535' : return 65535
   }
   if (!keyName.startsWith('key')) {
@@ -1293,13 +1307,14 @@ svcparam.keyToNumber = function(keyName) {
 
 svcparam.numberToKeyName = function(number) {
   switch (number) {
-    case 0 : return ''
+    case 0 : return 'mandatory'
     case 1 : return 'alpn'
     case 2 : return 'no-default-alpn'
     case 3 : return 'port'
     case 4 : return 'ipv4hint'
-    case 5 : return 'esniconfig'
+    case 5 : return 'echconfig'
     case 6 : return 'ipv6hint'
+    case 32769 : return 'odoh'
   }
 
   return `key${number}`;
@@ -1318,14 +1333,43 @@ svcparam.encode = function(param, buf, offset) {
   offset += 2;
   svcparam.encode.bytes = 2;
 
-  if (key == 1) { // alpn
-    let len = param.value.length
-    buf.writeUInt16BE(len || 0, offset);
+  if (key == 0) { // mandatory
+    let values = param.value;
+    if (!Array.isArray(values)) values = [values];
+    buf.writeUInt16BE(values.length*2, offset);
     offset += 2;
     svcparam.encode.bytes += 2;
-    buf.write(param.value, offset)
-    offset += len;
-    svcparam.encode.bytes += len;
+
+    for (let val of values) {
+      if (typeof val !== 'number') {
+        val = svcparam.keyToNumber(val);
+      }
+      buf.writeUInt16BE(val, offset);
+      offset += 2;
+      svcparam.encode.bytes += 2;
+    }
+  } else if (key == 1) { // alpn
+    let val = param.value;
+    if (!Array.isArray(val)) val = [val];
+    // The alpn param is prefixed by its length as a single byte, so the
+    // initialValue to reduce function is the length of the array.
+    let total = val.reduce(function(result, id) {
+      return result += id.length;
+    }, val.length);
+
+    buf.writeUInt16BE(total, offset);
+    offset += 2;
+    svcparam.encode.bytes += 2;
+
+    for (let id of val) {
+      buf.writeUInt8(id.length, offset);
+      offset += 1;
+      svcparam.encode.bytes += 1;
+
+      buf.write(id, offset);
+      offset += id.length;
+      svcparam.encode.bytes += id.length;
+    }
   } else if (key == 2) { // no-default-alpn
     buf.writeUInt16BE(0, offset);
     offset += 2;
@@ -1349,14 +1393,24 @@ svcparam.encode = function(param, buf, offset) {
       offset += 4;
       svcparam.encode.bytes += 4;
     }
-  } else if (key == 5) { //esniconfig
-    // TODO: base64 presentation format
-    buf.writeUInt16BE(param.value.length, offset);
-    offset += 2;
-    svcparam.encode.bytes += 2;
-    buf.write(param.value, offset);
-    offset += param.value.length;
-    svcparam.encode.bytes += param.value.length;
+  } else if (key == 5) { //echconfig
+    if (svcparam.ech) {
+      buf.writeUInt16BE(svcparam.ech.length, offset);
+      offset += 2;
+      svcparam.encode.bytes += 2;
+      for (let i = 0; i < svcparam.ech.length; i++) {
+        buf.writeUInt8(svcparam.ech[i], offset);
+        offset++;
+      }
+      svcparam.encode.bytes += svcparam.ech.length;
+    } else {
+      buf.writeUInt16BE(param.value.length, offset);
+      offset += 2;
+      svcparam.encode.bytes += 2;
+      buf.write(param.value, offset);
+      offset += param.value.length;
+      svcparam.encode.bytes += param.value.length;
+    }
   } else if (key == 6) { //ipv6hint
     let val = param.value;
     if (!Array.isArray(val)) val = [val];
@@ -1369,9 +1423,28 @@ svcparam.encode = function(param, buf, offset) {
       offset += 16;
       svcparam.encode.bytes += 16;
     }
+   } else if (key == 32769) { //odoh
+      if (svcparam.odoh) {
+        buf.writeUInt16BE(svcparam.odoh.length, offset);
+        offset += 2;
+        svcparam.encode.bytes += 2;
+        for (let i = 0; i < svcparam.odoh.length; i++) {
+          buf.writeUInt8(svcparam.odoh[i], offset);
+          offset++;
+        }
+        svcparam.encode.bytes += svcparam.odoh.length;
+        svcparam.odoh = null;
+      } else {
+        buf.writeUInt16BE(param.value.length, offset);
+        offset += 2;
+        svcparam.encode.bytes += 2;
+        buf.write(param.value, offset);
+        offset += param.value.length;
+        svcparam.encode.bytes += param.value.length;
+      }
   } else {
     // Unknown option
-    buf.writeUInt16BE(param.value || 0, offset);
+    buf.writeUInt16BE(0, offset); // 0 length since we don't know how to encode
     offset += 2;
     svcparam.encode.bytes += 2;
   }
@@ -1404,12 +1477,33 @@ svcparam.encodingLength = function (param) {
   // 2 bytes for type, 2 bytes for length, what's left for the value
 
   switch (param.key) {
-    case 'alpn' : return 4 + param.value.length
+    case 'mandatory' : return 4 + 2*(Array.isArray(param.value) ? param.value.length : 1)
+    case 'alpn' : {
+      let val = param.value;
+      if (!Array.isArray(val)) val = [val];
+      let total = val.reduce(function(result, id) {
+        return result += id.length;
+      }, val.length);
+      return 4 + total;
+    }
     case 'no-default-alpn' : return 4
     case 'port' : return 4 + 2
-    case 'ipv4hint' : return 4+4 * (Array.isArray(param.value) ? param.value.length : 1)
-    case 'esniconfig' : return 4 + param.value.length
+    case 'ipv4hint' : return 4 + 4 * (Array.isArray(param.value) ? param.value.length : 1)
+    case 'echconfig' : {
+      if (param.needBase64Decode) {
+        svcparam.ech = Buffer.from(param.value, "base64");
+        return 4 + svcparam.ech.length;
+      }
+      return 4 + param.value.length
+    }
     case 'ipv6hint' : return 4 + 16 * (Array.isArray(param.value) ? param.value.length : 1)
+    case 'odoh' : {
+      if (param.needBase64Decode) {
+        svcparam.odoh = Buffer.from(param.value, "base64");
+        return 4 + svcparam.odoh.length;
+      }
+      return 4 + param.value.length
+    }
     case 'key65535' : return 4
     default: return 4 // unknown option
   }
@@ -1501,7 +1595,7 @@ const renc = exports.record = function (type) {
     case 'NSEC': return rnsec
     case 'NSEC3': return rnsec3
     case 'DS': return rds
-    case 'HTTPSSVC': return rhttpssvc
+    case 'HTTPS': return rhttpssvc
   }
   return runknown
 }

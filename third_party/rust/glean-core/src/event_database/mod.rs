@@ -8,13 +8,13 @@ use std::fs::{create_dir_all, File, OpenOptions};
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Write;
-use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 
+use crate::coverage::record_coverage;
 use crate::CommonMetricData;
 use crate::Glean;
 use crate::Result;
@@ -79,14 +79,14 @@ pub struct EventDatabase {
 }
 
 impl EventDatabase {
-    /// Create a new event database.
+    /// Creates a new event database.
     ///
     /// # Arguments
     ///
     /// * `data_path` - The directory to store events in. A new directory
-    ///   `events` will be created inside of this directory.
-    pub fn new(data_path: &str) -> Result<Self> {
-        let path = Path::new(data_path).join("events");
+    /// * `events` - will be created inside of this directory.
+    pub fn new(data_path: &Path) -> Result<Self> {
+        let path = data_path.join("events");
         create_dir_all(&path)?;
 
         Ok(Self {
@@ -96,8 +96,9 @@ impl EventDatabase {
         })
     }
 
-    /// Initialize events storage after Glean is fully initialized and ready to
-    /// send pings. This must be called once on application startup, e.g. from
+    /// Initializes events storage after Glean is fully initialized and ready to send pings.
+    ///
+    /// This must be called once on application startup, e.g. from
     /// [Glean.initialize], but after we are ready to send pings, since this
     /// could potentially collect and send pings.
     ///
@@ -113,22 +114,27 @@ impl EventDatabase {
     ///
     /// * `glean` - The Glean instance.
     ///
-    /// # Return value
+    /// # Returns
     ///
-    /// `true` if at least one ping was generated, `false` otherwise.
+    /// Whether at least one ping was generated.
     pub fn flush_pending_events_on_startup(&self, glean: &Glean) -> bool {
         match self.load_events_from_disk() {
             Ok(_) => self.send_all_events(glean),
             Err(err) => {
-                log::error!("Error loading events from disk: {}", err);
+                log::warn!("Error loading events from disk: {}", err);
                 false
             }
         }
     }
 
     fn load_events_from_disk(&self) -> Result<()> {
-        let _lock = self.file_lock.read().unwrap(); // safe unwrap, only error case is poisoning
+        // NOTE: The order of locks here is important.
+        // In other code parts we might acquire the `file_lock` when we already have acquired
+        // a lock on `event_stores`.
+        // This is a potential lock-order-inversion.
         let mut db = self.event_stores.write().unwrap(); // safe unwrap, only error case is poisoning
+        let _lock = self.file_lock.read().unwrap(); // safe unwrap, only error case is poisoning
+
         for entry in fs::read_dir(&self.path)? {
             let entry = entry?;
             if entry.file_type()?.is_file() {
@@ -154,21 +160,13 @@ impl EventDatabase {
 
         let mut ping_sent = false;
         for store_name in store_names {
-            if let Err(err) = glean.submit_ping_by_name(&store_name, Some("startup")) {
-                log::error!(
-                    "Error flushing existing events to the '{}' ping: {}",
-                    store_name,
-                    err
-                );
-            } else {
-                ping_sent = true;
-            }
+            ping_sent |= glean.submit_ping_by_name(&store_name, Some("startup"));
         }
 
         ping_sent
     }
 
-    /// Record an event in the desired stores.
+    /// Records an event in the desired stores.
     ///
     /// # Arguments
     ///
@@ -186,6 +184,11 @@ impl EventDatabase {
         timestamp: u64,
         extra: Option<HashMap<String, String>>,
     ) {
+        // If upload is disabled we don't want to record.
+        if !glean.is_upload_enabled() {
+            return;
+        }
+
         // Create RecordedEvent object, and its JSON form for serialization
         // on disk.
         let event = RecordedEvent {
@@ -205,7 +208,7 @@ impl EventDatabase {
                 store.push(event.clone());
                 self.write_event_to_disk(store_name, &event_json);
                 if store.len() == glean.get_max_events() {
-                    stores_to_submit.push(&store_name);
+                    stores_to_submit.push(store_name);
                 }
             }
         }
@@ -213,14 +216,7 @@ impl EventDatabase {
         // If any of the event stores reached maximum size, submit the pings
         // containing those events immediately.
         for store_name in stores_to_submit {
-            if let Err(err) = glean.submit_ping_by_name(store_name, Some("max_capacity")) {
-                log::error!(
-                    "Got more than {} events, but could not send {} ping: {}",
-                    glean.get_max_events(),
-                    store_name,
-                    err
-                );
-            }
+            glean.submit_ping_by_name(store_name, Some("max_capacity"));
         }
     }
 
@@ -238,11 +234,11 @@ impl EventDatabase {
             .open(self.path.join(store_name))
             .and_then(|mut file| writeln!(file, "{}", event_json))
         {
-            log::error!("IO error writing event to store '{}': {}", store_name, err);
+            log::warn!("IO error writing event to store '{}': {}", store_name, err);
         }
     }
 
-    /// Get a snapshot of the stored event data as a JsonValue.
+    /// Gets a snapshot of the stored event data as a JsonValue.
     ///
     /// # Arguments
     ///
@@ -251,7 +247,7 @@ impl EventDatabase {
     ///
     /// # Returns
     ///
-    /// The an array of events, JSON encoded, if any.
+    /// A array of events, JSON encoded, if any. Otherwise `None`.
     pub fn snapshot_as_json(&self, store_name: &str, clear_store: bool) -> Option<JsonValue> {
         let result = {
             let mut db = self.event_stores.write().unwrap(); // safe unwrap, only error case is poisoning
@@ -265,11 +261,13 @@ impl EventDatabase {
                     // in a single location.
                     store.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
                     let first_timestamp = store[0].timestamp;
-                    Some(JsonValue::from_iter(
-                        store.iter().map(|e| e.serialize_relative(first_timestamp)),
-                    ))
+                    let snapshot = store
+                        .iter()
+                        .map(|e| e.serialize_relative(first_timestamp))
+                        .collect();
+                    Some(snapshot)
                 } else {
-                    log::error!("Unexpectly got empty event store for '{}'", store_name);
+                    log::warn!("Unexpectly got empty event store for '{}'", store_name);
                     None
                 }
             })
@@ -287,7 +285,7 @@ impl EventDatabase {
                     std::io::ErrorKind::NotFound => {
                         // silently drop this error, the file was already non-existing
                     }
-                    _ => log::error!("Error removing events queue file '{}': {}", store_name, err),
+                    _ => log::warn!("Error removing events queue file '{}': {}", store_name, err),
                 }
             }
         }
@@ -295,7 +293,7 @@ impl EventDatabase {
         result
     }
 
-    /// Clear all stored events, both in memory and on-disk.
+    /// Clears all stored events, both in memory and on-disk.
     pub fn clear_all(&self) -> Result<()> {
         // safe unwrap, only error case is poisoning
         self.event_stores.write().unwrap().clear();
@@ -310,11 +308,13 @@ impl EventDatabase {
 
     /// **Test-only API (exported for FFI purposes).**
     ///
-    /// Return whether there are any events currently stored for the given even
+    /// Returns whether there are any events currently stored for the given even
     /// metric.
     ///
     /// This doesn't clear the stored value.
     pub fn test_has_value<'a>(&'a self, meta: &'a CommonMetricData, store_name: &str) -> bool {
+        record_coverage(&meta.base_identifier());
+
         self.event_stores
             .read()
             .unwrap() // safe unwrap, only error case is poisoning
@@ -326,7 +326,7 @@ impl EventDatabase {
 
     /// **Test-only API (exported for FFI purposes).**
     ///
-    /// Get the vector of currently stored events for the given event metric in
+    /// Gets the vector of currently stored events for the given event metric in
     /// the given store.
     ///
     /// This doesn't clear the stored value.
@@ -335,6 +335,8 @@ impl EventDatabase {
         meta: &'a CommonMetricData,
         store_name: &str,
     ) -> Option<Vec<RecordedEvent>> {
+        record_coverage(&meta.base_identifier());
+
         let value: Vec<RecordedEvent> = self
             .event_stores
             .read()
@@ -356,13 +358,15 @@ impl EventDatabase {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::tests::new_glean;
+    use crate::CommonMetricData;
 
     #[test]
     fn handle_truncated_events_on_disk() {
         let t = tempfile::tempdir().unwrap();
 
         {
-            let db = EventDatabase::new(&t.path().display().to_string()).unwrap();
+            let db = EventDatabase::new(t.path()).unwrap();
             db.write_event_to_disk("events", "{\"timestamp\": 500");
             db.write_event_to_disk("events", "{\"timestamp\"");
             db.write_event_to_disk(
@@ -372,7 +376,7 @@ mod test {
         }
 
         {
-            let db = EventDatabase::new(&t.path().display().to_string()).unwrap();
+            let db = EventDatabase::new(t.path()).unwrap();
             db.load_events_from_disk().unwrap();
             let events = &db.event_stores.read().unwrap()["events"];
             assert_eq!(1, events.len());
@@ -444,10 +448,43 @@ mod test {
             extra: Some(data),
         };
 
-        assert_eq!(
-            event_empty,
-            serde_json::from_str(&event_empty_json).unwrap()
-        );
-        assert_eq!(event_data, serde_json::from_str(&event_data_json).unwrap());
+        assert_eq!(event_empty, serde_json::from_str(event_empty_json).unwrap());
+        assert_eq!(event_data, serde_json::from_str(event_data_json).unwrap());
+    }
+
+    #[test]
+    fn doesnt_record_when_upload_is_disabled() {
+        let (mut glean, dir) = new_glean(None);
+        let db = EventDatabase::new(dir.path()).unwrap();
+
+        let test_storage = "test-storage";
+        let test_category = "category";
+        let test_name = "name";
+        let test_timestamp = 2;
+        let test_meta = CommonMetricData::new(test_category, test_name, test_storage);
+        let event_data = RecordedEvent {
+            timestamp: test_timestamp,
+            category: test_category.to_string(),
+            name: test_name.to_string(),
+            extra: None,
+        };
+
+        // Upload is not yet disabled,
+        // so let's check that everything is getting recorded as expected.
+        db.record(&glean, &test_meta, 2, None);
+        {
+            let event_stores = db.event_stores.read().unwrap();
+            assert_eq!(&event_data, &event_stores.get(test_storage).unwrap()[0]);
+            assert_eq!(event_stores.get(test_storage).unwrap().len(), 1);
+        }
+
+        glean.set_upload_enabled(false);
+
+        // Now that upload is disabled, let's check nothing is recorded.
+        db.record(&glean, &test_meta, 2, None);
+        {
+            let event_stores = db.event_stores.read().unwrap();
+            assert_eq!(event_stores.get(test_storage).unwrap().len(), 1);
+        }
     }
 }

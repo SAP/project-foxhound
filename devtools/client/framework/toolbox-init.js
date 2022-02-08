@@ -3,11 +3,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* eslint-env browser */
-/* global XPCNativeWrapper */
 
 "use strict";
 
-const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
+const { require } = ChromeUtils.import(
+  "resource://devtools/shared/loader/Loader.jsm"
+);
 
 // URL constructor doesn't support about: scheme
 const href = window.location.href.replace("about:", "http://");
@@ -40,7 +41,7 @@ const onLoad = new Promise(r => {
 async function showErrorPage(doc, errorMessage) {
   const win = doc.defaultView;
   const { BrowserLoader } = ChromeUtils.import(
-    "resource://devtools/client/shared/browser-loader.js"
+    "resource://devtools/shared/loader/browser-loader.js"
   );
   const browserRequire = BrowserLoader({
     window: win,
@@ -82,74 +83,39 @@ async function showErrorPage(doc, errorMessage) {
 
 async function initToolbox(url, host) {
   const { gDevTools } = require("devtools/client/framework/devtools");
+
   const {
-    targetFromURL,
-  } = require("devtools/client/framework/target-from-url");
+    descriptorFromURL,
+  } = require("devtools/client/framework/descriptor-from-url");
   const { Toolbox } = require("devtools/client/framework/toolbox");
-  const { DevToolsServer } = require("devtools/server/devtools-server");
-  const { DevToolsClient } = require("devtools/client/devtools-client");
 
   // Specify the default tool to open
   const tool = url.searchParams.get("tool");
 
   try {
-    let target;
-    if (url.searchParams.has("target")) {
-      // Attach toolbox to a given browser iframe (<xul:browser> or <html:iframe
-      // mozbrowser>) whose reference is set on the host iframe.
-      // Note that so far, this is no real usage of it. It is only used by a test.
-
-      // `iframe` is the targeted document to debug
-      let iframe = host.wrappedJSObject
-        ? host.wrappedJSObject.target
-        : host.target;
-      if (!iframe) {
-        throw new Error("Unable to find the targeted iframe to debug");
-      }
-
-      // Need to use a xray to have attributes and behavior expected by
-      // devtools codebase
-      iframe = XPCNativeWrapper(iframe);
-
-      // Fake a xul:tab object as we don't have one.
-      // linkedBrowser is the only one attribute being queried by client.getTab
-      const tab = { linkedBrowser: iframe };
-
-      DevToolsServer.init();
-      DevToolsServer.registerAllActors();
-      const client = new DevToolsClient(DevToolsServer.connectPipe());
-
-      await client.connect();
-      // Creates a target for a given browser iframe.
-      const tabDescriptor = await client.mainRoot.getTab({ tab });
-      target = await tabDescriptor.getTarget();
-      // Instruct the Target to automatically close the client on destruction.
-      target.shouldCloseClient = true;
-    } else {
-      target = await targetFromURL(url);
-      const toolbox = gDevTools.getToolbox(target);
-      if (toolbox && toolbox.isDestroying()) {
-        // If a toolbox already exists for the target, wait for current toolbox destroy to
-        // be finished and retrieve a new valid target. The ongoing toolbox destroy will
-        // destroy the target, so it can not be reused.
-        await toolbox.destroy();
-        target = await targetFromURL(url);
-      }
+    const descriptor = await descriptorFromURL(url);
+    const toolbox = gDevTools.getToolboxForDescriptor(descriptor);
+    if (toolbox && toolbox.isDestroying()) {
+      // If a toolbox already exists for the descriptor, wait for current
+      // toolbox destroy to be finished.
+      await toolbox.destroy();
     }
 
     // Display an error page if we are connected to a remote target and we lose it
-    const onTargetDestroyed = function() {
-      target.off("close", onTargetDestroyed);
+    descriptor.once("descriptor-destroyed", function() {
       // Prevent trying to display the error page if the toolbox tab is being destroyed
       if (host.contentDocument) {
         const error = new Error("Debug target was disconnected");
         showErrorPage(host.contentDocument, `${error}`);
       }
-    };
-    target.on("close", onTargetDestroyed);
+    });
 
     const options = { customIframe: host };
-    await gDevTools.showToolbox(target, tool, Toolbox.HostType.PAGE, options);
+    await gDevTools.showToolbox(descriptor, {
+      toolId: tool,
+      hostType: Toolbox.HostType.PAGE,
+      hostOptions: options,
+    });
   } catch (error) {
     // When an error occurs, show error page with message.
     console.error("Exception while loading the toolbox", error);

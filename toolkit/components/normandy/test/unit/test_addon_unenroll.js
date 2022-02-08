@@ -16,9 +16,6 @@ const { TelemetryEvents } = ChromeUtils.import(
 const { AddonManager } = ChromeUtils.import(
   "resource://gre/modules/AddonManager.jsm"
 );
-const { NormandyTestUtils } = ChromeUtils.import(
-  "resource://testing-common/NormandyTestUtils.jsm"
-);
 const { AddonStudies } = ChromeUtils.import(
   "resource://normandy/lib/AddonStudies.jsm"
 );
@@ -26,12 +23,13 @@ const { PromiseUtils } = ChromeUtils.import(
   "resource://gre/modules/PromiseUtils.jsm"
 );
 
+/* import-globals-from utils.js */
+load("utils.js");
+
 NormandyTestUtils.init({ add_task });
 const { decorate_task } = NormandyTestUtils;
 
 const global = this;
-
-load("utils.js"); /* globals withMockApiServer, CryptoUtils */
 
 add_task(async () => {
   ExtensionTestUtils.init(global);
@@ -49,14 +47,9 @@ add_task(async () => {
 });
 
 decorate_task(
-  withMockApiServer,
+  withMockApiServer(),
   AddonStudies.withStudies([]),
-  async function test_addon_unenroll(
-    _serverUrl,
-    _preferences,
-    apiServer,
-    _studies
-  ) {
+  async function test_addon_unenroll({ server: apiServer }) {
     const ID = "study@tests.mozilla.org";
 
     // Create a test extension that uses webextension experiments to install
@@ -223,14 +216,9 @@ decorate_task(
 
 /* Test that a broken unenroll listener doesn't stop the add-on from being removed */
 decorate_task(
-  withMockApiServer,
+  withMockApiServer(),
   AddonStudies.withStudies([]),
-  async function test_addon_unenroll(
-    _serverUrl,
-    _preferences,
-    apiServer,
-    _studies
-  ) {
+  async function test_addon_unenroll({ server: apiServer }) {
     const ID = "study@tests.mozilla.org";
 
     // Create a dummy webextension

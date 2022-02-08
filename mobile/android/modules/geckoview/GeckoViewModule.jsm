@@ -10,7 +10,7 @@ const { GeckoViewUtils } = ChromeUtils.import(
   "resource://gre/modules/GeckoViewUtils.jsm"
 );
 
-const { debug, warn } = GeckoViewUtils.initLogging("Module"); // eslint-disable-line no-unused-vars
+const { debug, warn } = GeckoViewUtils.initLogging("Module");
 
 class GeckoViewModule {
   static initLogging(aModuleName) {
@@ -39,6 +39,10 @@ class GeckoViewModule {
     return this.moduleManager.window;
   }
 
+  getActor(aActorName) {
+    return this.moduleManager.getActor(aActorName);
+  }
+
   get browser() {
     return this.moduleManager.browser;
   }
@@ -61,9 +65,6 @@ class GeckoViewModule {
 
   // Override to initialize the browser before it is bound to the window.
   onInitBrowser() {}
-
-  // Override to cleanup when the browser is destroyed.
-  onDestroyBrowser() {}
 
   // Override to initialize module.
   onInit() {}

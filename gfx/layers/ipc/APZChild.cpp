@@ -21,6 +21,10 @@ APZChild::APZChild(RefPtr<GeckoContentController> aController)
 }
 
 APZChild::~APZChild() {
+  if (mAPZTaskRunnable) {
+    mAPZTaskRunnable->Revoke();
+    mAPZTaskRunnable = nullptr;
+  }
   if (mController) {
     mController->Destroy();
     mController = nullptr;
@@ -28,8 +32,8 @@ APZChild::~APZChild() {
 }
 
 mozilla::ipc::IPCResult APZChild::RecvLayerTransforms(
-    const nsTArray<MatrixMessage>& aTransforms) {
-  mController->NotifyLayerTransforms(aTransforms);
+    nsTArray<MatrixMessage>&& aTransforms) {
+  mController->NotifyLayerTransforms(std::move(aTransforms));
   return IPC_OK();
 }
 
@@ -37,7 +41,9 @@ mozilla::ipc::IPCResult APZChild::RecvRequestContentRepaint(
     const RepaintRequest& aRequest) {
   MOZ_ASSERT(mController->IsRepaintThread());
 
-  mController->RequestContentRepaint(aRequest);
+  EnsureAPZTaskRunnable();
+
+  mAPZTaskRunnable->QueueRequest(aRequest);
   return IPC_OK();
 }
 
@@ -70,8 +76,10 @@ mozilla::ipc::IPCResult APZChild::RecvNotifyAPZStateChange(
 
 mozilla::ipc::IPCResult APZChild::RecvNotifyFlushComplete() {
   MOZ_ASSERT(mController->IsRepaintThread());
+  EnsureAPZTaskRunnable();
 
-  mController->NotifyFlushComplete();
+  mAPZTaskRunnable->QueueFlushCompleteNotification();
+
   return IPC_OK();
 }
 

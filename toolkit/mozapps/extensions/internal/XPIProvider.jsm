@@ -35,7 +35,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Extension: "resource://gre/modules/Extension.jsm",
   Langpack: "resource://gre/modules/Extension.jsm",
   FileUtils: "resource://gre/modules/FileUtils.jsm",
-  OS: "resource://gre/modules/osfile.jsm",
   JSONFile: "resource://gre/modules/JSONFile.jsm",
   TelemetrySession: "resource://gre/modules/TelemetrySession.jsm",
 
@@ -128,7 +127,7 @@ const XPI_PERMISSION = "install";
 
 const XPI_SIGNATURE_CHECK_PERIOD = 24 * 60 * 60;
 
-const DB_SCHEMA = 32;
+const DB_SCHEMA = 34;
 
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
@@ -189,18 +188,6 @@ const LOGGER_ID = "addons.xpi";
 // (Requires AddonManager.jsm)
 var logger = Log.repository.getLogger(LOGGER_ID);
 
-XPCOMUtils.defineLazyGetter(this, "gStartupScanScopes", () => {
-  let appBuildID = Services.appinfo.appBuildID;
-  let oldAppBuildID = Services.prefs.getCharPref(PREF_EM_LAST_APP_BUILD_ID, "");
-  Services.prefs.setCharPref(PREF_EM_LAST_APP_BUILD_ID, appBuildID);
-  if (appBuildID !== oldAppBuildID) {
-    // If the build id changed, scan all scopes
-    return AddonManager.SCOPE_ALL;
-  }
-
-  return Services.prefs.getIntPref(PREF_EM_STARTUP_SCAN_SCOPES, 0);
-});
-
 /**
  * Spins the event loop until the given promise resolves, and then eiter returns
  * its success value or throws its rejection value.
@@ -225,7 +212,10 @@ function awaitPromise(promise) {
     }
   );
 
-  Services.tm.spinEventLoopUntil(() => success !== undefined);
+  Services.tm.spinEventLoopUntil(
+    "XPIProvider.jsm:awaitPromise",
+    () => success !== undefined
+  );
 
   if (!success) {
     throw result;
@@ -688,20 +678,11 @@ class XPIStateLocation extends Map {
     this.staged = {};
     this.changed = false;
 
-    // The profile extensions directory is whitelisted for access by the
-    // content process sandbox if, and only if it already exists. Since
-    // we want it to be available for newly-installed extensions even if
-    // no profile extensions were present at startup, make sure it
-    // exists now.
-    if (name === KEY_APP_PROFILE) {
-      OS.File.makeDir(this.path, { ignoreExisting: true });
-    }
-
     if (saved) {
       this.restore(saved);
     }
 
-    this._installler = undefined;
+    this._installer = undefined;
   }
 
   hasPrecedence(otherLocation) {
@@ -790,6 +771,8 @@ class XPIStateLocation extends Map {
       "XPIStates adding add-on ${id} in ${location}: ${path}",
       addon
     );
+
+    XPIProvider.persistStartupData(addon);
 
     let xpiState = this._addState(addon.id, { file: addon._sourceBundle });
     xpiState.syncWithDB(addon, true);
@@ -965,6 +948,12 @@ var BuiltInLocation = new (class _BuiltInLocation extends XPIStateLocation {
   }
 
   get enumerable() {
+    return false;
+  }
+
+  // Builtin addons are never linked, return false
+  // here for correct behavior elsewhere.
+  isLinkedAddon(/* aId */) {
     return false;
   }
 })();
@@ -1429,21 +1418,42 @@ var XPIStates = {
    */
   scanForChanges(ignoreSideloads = true) {
     let oldState = this.initialStateData || this.loadExtensionState();
+    // We're called twice, do not restore the second time as new data
+    // may have been inserted since the first call.
+    let shouldRestoreLocationData = !this.initialStateData;
     this.initialStateData = oldState;
 
     let changed = false;
     let oldLocations = new Set(Object.keys(oldState));
 
+    let startupScanScopes;
+    if (
+      Services.appinfo.appBuildID ==
+      Services.prefs.getCharPref(PREF_EM_LAST_APP_BUILD_ID, "")
+    ) {
+      startupScanScopes = Services.prefs.getIntPref(
+        PREF_EM_STARTUP_SCAN_SCOPES,
+        0
+      );
+    } else {
+      // If the build id has changed, we need to do a full scan on first startup.
+      Services.prefs.setCharPref(
+        PREF_EM_LAST_APP_BUILD_ID,
+        Services.appinfo.appBuildID
+      );
+      startupScanScopes = AddonManager.SCOPE_ALL;
+    }
+
     for (let loc of XPIStates.locations()) {
       oldLocations.delete(loc.name);
 
-      if (oldState[loc.name]) {
+      if (shouldRestoreLocationData && oldState[loc.name]) {
         loc.restore(oldState[loc.name]);
       }
       changed = changed || loc.changed;
 
       // Don't bother checking scopes where we don't accept side-loads.
-      if (ignoreSideloads && !(loc.scope & gStartupScanScopes)) {
+      if (ignoreSideloads && !(loc.scope & startupScanScopes)) {
         continue;
       }
 
@@ -1617,7 +1627,10 @@ var XPIStates = {
   save() {
     if (!this._jsonFile) {
       this._jsonFile = new JSONFile({
-        path: OS.Path.join(OS.Constants.Path.profileDir, FILE_XPI_STATES),
+        path: PathUtils.join(
+          Services.dirsvc.get("ProfD", Ci.nsIFile).path,
+          FILE_XPI_STATES
+        ),
         finalizeAt: AddonManagerPrivate.finalShutdown,
         compression: "lz4",
       });
@@ -1796,6 +1809,7 @@ class BootstrapScope {
         temporarilyInstalled: addon.location.isTemporary,
         builtIn: addon.location.isBuiltin,
         isSystem: addon.location.isSystem,
+        recommendationState: addon.recommendationState,
       };
 
       if (aMethod == "startup" && addon.startupData) {
@@ -2458,10 +2472,28 @@ var XPIProvider = {
 
       AddonManagerPrivate.markProviderSafe(this);
 
+      const lastTheme = Services.prefs.getCharPref(
+        "extensions.activeThemeID",
+        null
+      );
+
+      if (
+        lastTheme === "recommended-1" ||
+        lastTheme === "recommended-2" ||
+        lastTheme === "recommended-3" ||
+        lastTheme === "recommended-4" ||
+        lastTheme === "recommended-5"
+      ) {
+        // The user is using a theme that was once bundled with Firefox, but no longer
+        // is. Clear their theme so that they will be forced to reset to the default.
+        this.startupPromises.push(
+          AddonManagerPrivate.notifyAddonChanged(null, "theme")
+        );
+      }
       this.maybeInstallBuiltinAddon(
         "default-theme@mozilla.org",
-        "1.0",
-        "resource://gre/modules/themes/default/"
+        "1.3",
+        "resource://default-theme/"
       );
 
       resolveProviderReady(Promise.all(this.startupPromises));
@@ -2475,32 +2507,6 @@ var XPIProvider = {
           );
         } catch (e) {}
         this.addAddonsToCrashReporter();
-      }
-
-      // This is a one-time migration when incognito is turned on.  Any previously
-      // enabled extension will be migrated.
-      try {
-        if (
-          !Services.prefs.getBoolPref(
-            "extensions.allowPrivateBrowsingByDefault",
-            true
-          ) &&
-          !Services.prefs.getBoolPref("extensions.incognito.migrated", false)
-        ) {
-          XPIDatabase.syncLoadDB(false);
-          let promises = [];
-          for (let addon of XPIDatabase.getAddons()) {
-            if (addon.type == "extension" && addon.active) {
-              promises.push(Extension.migratePrivateBrowsing(addon));
-            }
-          }
-          if (promises.length) {
-            awaitPromise(Promise.all(promises));
-          }
-          Services.prefs.setBoolPref("extensions.incognito.migrated", true);
-        }
-      } catch (e) {
-        logger.error("private browsing migration failed", e);
       }
 
       try {
@@ -2557,8 +2563,6 @@ var XPIProvider = {
         "XPIProvider shutdown",
         async () => {
           XPIProvider._closing = true;
-
-          XPIDatabase.asyncLoadDB();
 
           await XPIProvider.cleanupTemporaryAddons();
           for (let addon of XPIProvider.sortBootstrappedAddons().reverse()) {
@@ -2618,6 +2622,13 @@ var XPIProvider = {
       // sessionstore-windows-restored.  In a browser toolbox process
       // we wait for the toolbox to show up, based on xul-window-visible
       // and a visible toolbox window.
+      //
+      // TelemetryEnvironment's EnvironmentAddonBuilder awaits databaseReady
+      // before releasing a blocker on AddonManager.beforeShutdown, which in its
+      // turn is a blocker of a shutdown blocker at "profile-before-change".
+      // To avoid a deadlock, trigger the DB load at "profile-before-change" if
+      // the database hasn't started loading yet.
+      //
       // Finally, we have a test-only event called test-load-xpi-database
       // as a temporary workaround for bug 1372845.  The latter can be
       // cleaned up when that bug is resolved.
@@ -2625,6 +2636,7 @@ var XPIProvider = {
         const EVENTS = [
           "sessionstore-windows-restored",
           "xul-window-visible",
+          "profile-before-change",
           "test-load-xpi-database",
         ];
         let observer = (subject, topic, data) => {
@@ -2689,13 +2701,6 @@ var XPIProvider = {
       Services.prefs.setBoolPref(PREF_PENDING_OPERATIONS, false);
     }
 
-    // Ugh, if we reach this point without loading the xpi database,
-    // we need to load it know, otherwise the telemetry shutdown blocker
-    // will never resolve.
-    if (!XPIDatabase.initialized) {
-      await XPIDatabase.asyncLoadDB();
-    }
-
     await XPIDatabase.shutdown();
   },
 
@@ -2735,10 +2740,8 @@ var XPIProvider = {
    * Adds a list of currently active add-ons to the next crash report.
    */
   addAddonsToCrashReporter() {
-    if (
-      !(Services.appinfo instanceof Ci.nsICrashReporter) ||
-      Services.appinfo.inSafeMode
-    ) {
+    void (Services.appinfo instanceof Ci.nsICrashReporter);
+    if (!Services.appinfo.annotateCrashReport || Services.appinfo.inSafeMode) {
       return;
     }
 
@@ -2833,70 +2836,112 @@ var XPIProvider = {
    *        True if any new add-ons were installed
    */
   installDistributionAddons(aManifests, aAppChanged, aOldAppVersion) {
-    let distroDir;
+    let distroDirs = [];
     try {
-      distroDir = FileUtils.getDir(KEY_APP_DISTRIBUTION, [DIR_EXTENSIONS]);
+      distroDirs.push(FileUtils.getDir(KEY_APP_DISTRIBUTION, [DIR_EXTENSIONS]));
     } catch (e) {
       return false;
     }
 
+    let availableLocales = [];
+    for (let file of iterDirectory(distroDirs[0])) {
+      if (file.isDirectory() && file.leafName.startsWith("locale-")) {
+        availableLocales.push(file.leafName.replace("locale-", ""));
+      }
+    }
+
+    let locales = Services.locale.negotiateLanguages(
+      Services.locale.requestedLocales,
+      availableLocales,
+      undefined,
+      Services.locale.langNegStrategyMatching
+    );
+
+    // Also install addons from subdirectories that correspond to the requested
+    // locales. This allows for installing language packs and dictionaries.
+    for (let locale of locales) {
+      let langPackDir = distroDirs[0].clone();
+      langPackDir.append(`locale-${locale}`);
+      distroDirs.push(langPackDir);
+    }
+
     let changed = false;
-    for (let file of iterDirectory(distroDir)) {
-      if (!isXPI(file.leafName, true)) {
-        logger.warn(`Ignoring distribution: not an XPI: ${file.path}`);
-        continue;
-      }
-
-      let id = getExpectedID(file);
-      if (!id) {
-        logger.warn(
-          `Ignoring distribution: name is not a valid add-on ID: ${file.path}`
-        );
-        continue;
-      }
-
-      /* If this is not an upgrade and we've already handled this extension
-       * just continue */
-      if (
-        !aAppChanged &&
-        Services.prefs.prefHasUserValue(PREF_BRANCH_INSTALLED_ADDON + id)
-      ) {
-        continue;
-      }
-
-      try {
-        let loc = XPIStates.getLocation(KEY_APP_PROFILE);
-        let addon = awaitPromise(
-          XPIInstall.installDistributionAddon(id, file, loc, aOldAppVersion)
-        );
-
-        if (addon) {
-          // aManifests may contain a copy of a newly installed add-on's manifest
-          // and we'll have overwritten that so instead cache our install manifest
-          // which will later be put into the database in processFileChanges
-          if (!(loc.name in aManifests)) {
-            aManifests[loc.name] = {};
+    for (let distroDir of distroDirs) {
+      logger.warn(`Checking ${distroDir.path} for addons`);
+      for (let file of iterDirectory(distroDir)) {
+        if (!isXPI(file.leafName, true)) {
+          // Only warn for files, not directories
+          if (!file.isDirectory()) {
+            logger.warn(`Ignoring distribution: not an XPI: ${file.path}`);
           }
-          aManifests[loc.name][id] = addon;
-          changed = true;
+          continue;
         }
-      } catch (e) {
-        logger.error(`Failed to install distribution add-on ${file.path}`, e);
+
+        let id = getExpectedID(file);
+        if (!id) {
+          logger.warn(
+            `Ignoring distribution: name is not a valid add-on ID: ${file.path}`
+          );
+          continue;
+        }
+
+        /* If this is not an upgrade and we've already handled this extension
+         * just continue */
+        if (
+          !aAppChanged &&
+          Services.prefs.prefHasUserValue(PREF_BRANCH_INSTALLED_ADDON + id)
+        ) {
+          continue;
+        }
+
+        try {
+          let loc = XPIStates.getLocation(KEY_APP_PROFILE);
+          let addon = awaitPromise(
+            XPIInstall.installDistributionAddon(id, file, loc, aOldAppVersion)
+          );
+
+          if (addon) {
+            // aManifests may contain a copy of a newly installed add-on's manifest
+            // and we'll have overwritten that so instead cache our install manifest
+            // which will later be put into the database in processFileChanges
+            if (!(loc.name in aManifests)) {
+              aManifests[loc.name] = {};
+            }
+            aManifests[loc.name][id] = addon;
+            changed = true;
+          }
+        } catch (e) {
+          logger.error(`Failed to install distribution add-on ${file.path}`, e);
+        }
       }
     }
 
     return changed;
   },
 
-  maybeInstallBuiltinAddon(aID, aVersion, aBase) {
-    if (!(enabledScopes & BuiltInLocation.scope)) {
-      return;
+  /**
+   * Like `installBuiltinAddon`, but only installs the addon at `aBase`
+   * if an existing built-in addon with the ID `aID` and version doesn't
+   * already exist.
+   *
+   * @param {string} aID
+   *        The ID of the add-on being registered.
+   * @param {string} aVersion
+   *        The version of the add-on being registered.
+   * @param {string} aBase
+   *        A string containing the base URL.  Must be a resource: URL.
+   * @returns {Promise<Addon>} a Promise that resolves when the addon is installed.
+   */
+  async maybeInstallBuiltinAddon(aID, aVersion, aBase) {
+    let installed;
+    if (enabledScopes & BuiltInLocation.scope) {
+      let existing = BuiltInLocation.get(aID);
+      if (!existing || existing.version != aVersion) {
+        installed = this.installBuiltinAddon(aBase);
+        this.startupPromises.push(installed);
+      }
     }
-
-    let existing = BuiltInLocation.get(aID);
-    if (!existing || existing.version != aVersion) {
-      this.startupPromises.push(this.installBuiltinAddon(aBase));
-    }
+    return installed;
   },
 
   getDependentAddons(aAddon) {
@@ -3083,6 +3128,25 @@ var XPIProvider = {
     XPIStates.save();
   },
 
+  /**
+   * Persists some startupData into an addon if it is available in the current
+   * XPIState for the addon id.
+   *
+   * @param {AddonInternal} addon An addon to receive the startup data, typically an update that is occuring.
+   * @param {XPIState} state optional
+   */
+  persistStartupData(addon, state) {
+    if (!addon.startupData) {
+      state = state || XPIStates.findAddon(addon.id);
+      if (state?.enabled) {
+        // Save persistent listener data if available.  It will be
+        // removed later if necessary.
+        let persistentListeners = state.startupData?.persistentListeners;
+        addon.startupData = { persistentListeners };
+      }
+    }
+  },
+
   getAddonIDByInstanceID(aInstanceID) {
     if (!aInstanceID || typeof aInstanceID != "symbol") {
       throw Components.Exception(
@@ -3236,8 +3300,7 @@ var addonTypes = [
     URI_EXTENSION_STRINGS,
     "type.extension.name",
     AddonManager.VIEW_TYPE_LIST,
-    4000,
-    AddonManager.TYPE_SUPPORTS_UNDO_RESTARTLESS_UNINSTALL
+    4000
   ),
   new AddonManagerPrivate.AddonType(
     "theme",
@@ -3251,18 +3314,14 @@ var addonTypes = [
     URI_EXTENSION_STRINGS,
     "type.dictionary.name",
     AddonManager.VIEW_TYPE_LIST,
-    7000,
-    AddonManager.TYPE_UI_HIDE_EMPTY |
-      AddonManager.TYPE_SUPPORTS_UNDO_RESTARTLESS_UNINSTALL
+    7000
   ),
   new AddonManagerPrivate.AddonType(
     "locale",
     URI_EXTENSION_STRINGS,
     "type.locale.name",
     AddonManager.VIEW_TYPE_LIST,
-    8000,
-    AddonManager.TYPE_UI_HIDE_EMPTY |
-      AddonManager.TYPE_SUPPORTS_UNDO_RESTARTLESS_UNINSTALL
+    8000
   ),
 ];
 

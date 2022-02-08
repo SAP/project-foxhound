@@ -177,6 +177,13 @@ function prepareForVisibilityEvents(browser, expectedOrder) {
  * into a different window).
  */
 add_task(async function test_swap_frameloader_pagevisibility_events() {
+  // Disable window occlusion. Bug 1733955
+  if (navigator.platform.indexOf("Win") == 0) {
+    await SpecialPowers.pushPrefEnv({
+      set: [["widget.windows.window_occlusion_tracking.enabled", false]],
+    });
+  }
+
   // Load a new tab that we'll tear out...
   let tab = BrowserTestUtils.addTab(gBrowser, PAGE);
   gBrowser.selectedTab = tab;
@@ -201,14 +208,20 @@ add_task(async function test_swap_frameloader_pagevisibility_events() {
   gBrowser.selectedTab = newTab;
   let emptyBrowser = newTab.linkedBrowser;
 
-  // Wait for that initial browser to show its pageshow event if it hasn't
-  // happened so that we don't confuse it with the other expected events.
+  // Wait for that initial doc to be visible because if its pageshow hasn't
+  // happened we don't confuse it with the other expected events.
   await ContentTask.spawn(emptyBrowser, null, async () => {
     if (content.document.visibilityState === "hidden") {
-      info("waiting for hidden emptyBrowser to pageshow");
-      await ContentTaskUtils.waitForEvent(content, "pageshow", {});
+      info("waiting for hidden emptyBrowser to be visible");
+      await ContentTaskUtils.waitForEvent(
+        content.document,
+        "visibilitychange",
+        {}
+      );
     }
   });
+
+  info("emptyBrowser is shown now.");
 
   // The empty tab we just added show now fire a pagehide as its replaced,
   // and a pageshow once the swap is finished.

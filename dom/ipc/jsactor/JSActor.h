@@ -8,20 +8,24 @@
 #define mozilla_dom_JSActor_h
 
 #include "js/TypeDecls.h"
-#include "ipc/IPCMessageUtils.h"
+#include "ipc/EnumSerializer.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsWrapperCache.h"
 
 class nsIGlobalObject;
-class nsQueryActorChild;
-class nsQueryActorParent;
+class nsQueryJSActor;
 
 namespace mozilla {
+class ErrorResult;
+
 namespace dom {
+
+namespace ipc {
+class StructuredCloneData;
+}
 
 class JSActorManager;
 class JSActorMessageMeta;
@@ -44,6 +48,7 @@ class JSActor : public nsISupports, public nsWrapperCache {
   explicit JSActor(nsISupports* aGlobal = nullptr);
 
   const nsCString& Name() const { return mName; }
+  void GetName(nsCString& aName) { aName = Name(); }
 
   void SendAsyncMessage(JSContext* aCx, const nsAString& aMessageName,
                         JS::Handle<JS::Value> aObj, ErrorResult& aRv);
@@ -60,8 +65,8 @@ class JSActor : public nsISupports, public nsWrapperCache {
   // message metadata |aMetadata|. The underlying transport should call the
   // |ReceiveMessage| method on the other side asynchronously.
   virtual void SendRawMessage(const JSActorMessageMeta& aMetadata,
-                              ipc::StructuredCloneData&& aData,
-                              ipc::StructuredCloneData&& aStack,
+                              Maybe<ipc::StructuredCloneData>&& aData,
+                              Maybe<ipc::StructuredCloneData>&& aStack,
                               ErrorResult& aRv) = 0;
 
   // Check if a message is so large that IPC will probably crash if we try to
@@ -72,8 +77,8 @@ class JSActor : public nsISupports, public nsWrapperCache {
   // Helper method to send an in-process raw message.
   using OtherSideCallback = std::function<already_AddRefed<JSActorManager>()>;
   static void SendRawMessageInProcess(const JSActorMessageMeta& aMeta,
-                                      ipc::StructuredCloneData&& aData,
-                                      ipc::StructuredCloneData&& aStack,
+                                      Maybe<ipc::StructuredCloneData>&& aData,
+                                      Maybe<ipc::StructuredCloneData>&& aStack,
                                       OtherSideCallback&& aGetOtherSide);
 
   virtual ~JSActor() = default;
@@ -82,28 +87,36 @@ class JSActor : public nsISupports, public nsWrapperCache {
 
   bool CanSend() const { return mCanSend; }
 
+  void ThrowStateErrorForGetter(const char* aName, ErrorResult& aRv) const;
+
   void StartDestroy();
   void AfterDestroy();
 
-  enum class CallbackFunction { WillDestroy, DidDestroy, ActorCreated };
-  void InvokeCallback(CallbackFunction willDestroy);
+  enum class CallbackFunction { DidDestroy, ActorCreated };
+  void InvokeCallback(CallbackFunction callback);
 
   virtual void ClearManager() = 0;
 
  private:
   friend class JSActorManager;
-  friend class ::nsQueryActorChild;   // for QueryInterfaceActor
-  friend class ::nsQueryActorParent;  // for QueryInterfaceActor
+  friend class ::nsQueryJSActor;  // for QueryInterfaceActor
 
   nsresult QueryInterfaceActor(const nsIID& aIID, void** aPtr);
 
   // Called by JSActorManager when they receive raw message data destined for
   // this actor.
-  void ReceiveMessageOrQuery(JSContext* aCx,
-                             const JSActorMessageMeta& aMetadata,
-                             JS::Handle<JS::Value> aData, ErrorResult& aRv);
+  void ReceiveMessage(JSContext* aCx, const JSActorMessageMeta& aMetadata,
+                      JS::Handle<JS::Value> aData, ErrorResult& aRv);
+  void ReceiveQuery(JSContext* aCx, const JSActorMessageMeta& aMetadata,
+                    JS::Handle<JS::Value> aData, ErrorResult& aRv);
   void ReceiveQueryReply(JSContext* aCx, const JSActorMessageMeta& aMetadata,
                          JS::Handle<JS::Value> aData, ErrorResult& aRv);
+
+  // Call the actual `ReceiveMessage` method, and get the return value.
+  void CallReceiveMessage(JSContext* aCx, const JSActorMessageMeta& aMetadata,
+                          JS::Handle<JS::Value> aData,
+                          JS::MutableHandle<JS::Value> aRetVal,
+                          ErrorResult& aRv);
 
   // Helper object used while processing query messages to send the final reply
   // message.
@@ -125,7 +138,7 @@ class JSActor : public nsISupports, public nsWrapperCache {
     ~QueryHandler() = default;
 
     void SendReply(JSContext* aCx, JSActorMessageKind aKind,
-                   ipc::StructuredCloneData&& aData);
+                   Maybe<ipc::StructuredCloneData>&& aData);
 
     RefPtr<JSActor> mActor;
     RefPtr<Promise> mPromise;
@@ -143,7 +156,7 @@ class JSActor : public nsISupports, public nsWrapperCache {
   nsCOMPtr<nsIGlobalObject> mGlobal;
   nsCOMPtr<nsISupports> mWrappedJS;
   nsCString mName;
-  nsDataHashtable<nsUint64HashKey, PendingQuery> mPendingQueries;
+  nsTHashMap<nsUint64HashKey, PendingQuery> mPendingQueries;
   uint64_t mNextQueryId = 0;
   bool mCanSend = true;
 };

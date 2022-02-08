@@ -24,18 +24,17 @@ const { FeatureGate } = ChromeUtils.import(
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["DOMParser"]);
 
-// We use a preferences whitelist to make sure we only show preferences that
+// We use a list of prefs for display to make sure we only show prefs that
 // are useful for support and won't compromise the user's privacy.  Note that
 // entries are *prefixes*: for example, "accessibility." applies to all prefs
 // under the "accessibility.*" branch.
-const PREFS_WHITELIST = [
+const PREFS_FOR_DISPLAY = [
   "accessibility.",
   "apz.",
   "browser.cache.",
   "browser.contentblocking.category",
   "browser.display.",
   "browser.download.folderList",
-  "browser.download.hide_plugins_without_extensions",
   "browser.download.lastDir.savePerSite",
   "browser.download.manager.addToRecentDocs",
   "browser.download.manager.resumeOnWakeDelay",
@@ -55,13 +54,13 @@ const PREFS_WHITELIST = [
   "browser.search.searchEnginesURL",
   "browser.search.suggest.enabled",
   "browser.search.update",
-  "browser.search.useDBForOrder",
   "browser.sessionstore.",
   "browser.startup.homepage",
   "browser.startup.page",
   "browser.tabs.",
   "browser.urlbar.",
   "browser.zoom.",
+  "doh-rollout.",
   "dom.",
   "extensions.checkCompatibility",
   "extensions.formautofill.",
@@ -80,6 +79,7 @@ const PREFS_WHITELIST = [
   "layers.",
   "layout.css.dpi",
   "layout.display-list.",
+  "layout.frame_rate",
   "media.",
   "mousewheel.",
   "network.",
@@ -87,9 +87,7 @@ const PREFS_WHITELIST = [
   "places.",
   "plugin.",
   "plugins.",
-  "print.",
   "privacy.",
-  "remote.enabled",
   "security.",
   "services.sync.declinedEngines",
   "services.sync.lastPing",
@@ -105,17 +103,20 @@ const PREFS_WHITELIST = [
   "ui.osk.require_tablet_mode",
   "ui.osk.debug.keyboardDisplayReason",
   "webgl.",
+  "widget.dmabuf",
+  "widget.use-xdg-desktop-portal",
+  "widget.wayland",
 ];
 
-// The blacklist, unlike the whitelist, is a list of regular expressions.
-const PREFS_BLACKLIST = [
+// The list of prefs we don't display, unlike the list of prefs for display,
+// is a list of regular expressions.
+const PREF_REGEXES_NOT_TO_DISPLAY = [
   /^browser[.]fixup[.]domainwhitelist[.]/,
+  /^dom[.]push[.]userAgentID/,
   /^media[.]webrtc[.]debug[.]aec_log_dir/,
   /^media[.]webrtc[.]debug[.]log_file/,
+  /^print[.].*print_to_filename$/,
   /^network[.]proxy[.]/,
-  /[.]print_to_filename$/,
-  /^print[.]macosx[.]pagesetup/,
-  /^print[.]printer/,
 ];
 
 // Table of getters for various preference types.
@@ -135,21 +136,23 @@ const PREFS_UNIMPORTANT_LOCKED = [
   "privacy.restrict3rdpartystorage.url_decorations",
 ];
 
-// Return the preferences filtered by PREFS_BLACKLIST and PREFS_WHITELIST lists
-// and also by the custom 'filter'-ing function.
-function getPrefList(filter) {
-  filter = filter || (name => true);
-  function getPref(name) {
-    let type = Services.prefs.getPrefType(name);
-    if (!(type in PREFS_GETTERS)) {
-      throw new Error("Unknown preference type " + type + " for " + name);
-    }
-    return PREFS_GETTERS[type](Services.prefs, name);
+function getPref(name) {
+  let type = Services.prefs.getPrefType(name);
+  if (!(type in PREFS_GETTERS)) {
+    throw new Error("Unknown preference type " + type + " for " + name);
   }
+  return PREFS_GETTERS[type](Services.prefs, name);
+}
 
-  return PREFS_WHITELIST.reduce(function(prefs, branch) {
+// Return the preferences filtered by PREF_REGEXES_NOT_TO_DISPLAY and PREFS_FOR_DISPLAY
+// and also by the custom 'filter'-ing function.
+function getPrefList(filter, allowlist = PREFS_FOR_DISPLAY) {
+  return allowlist.reduce(function(prefs, branch) {
     Services.prefs.getChildList(branch).forEach(function(name) {
-      if (filter(name) && !PREFS_BLACKLIST.some(re => re.test(name))) {
+      if (
+        filter(name) &&
+        !PREF_REGEXES_NOT_TO_DISPLAY.some(re => re.test(name))
+      ) {
         prefs[name] = getPref(name);
       }
     });
@@ -215,6 +218,12 @@ var dataProviders = {
       safeMode: Services.appinfo.inSafeMode,
     };
 
+    if (Services.sysinfo.getProperty("name") == "Windows_NT") {
+      if (Services.sysinfo.processInfo.isWindowsSMode) {
+        data.osVersion += " S";
+      }
+    }
+
     if (AppConstants.MOZ_UPDATER) {
       data.updateChannel = ChromeUtils.import(
         "resource://gre/modules/UpdateUtils.jsm",
@@ -232,12 +241,23 @@ var dataProviders = {
       );
     } catch (e) {}
 
+    data.osTheme = Services.sysinfo.getProperty("osThemeInfo");
+
+    try {
+      // MacOSX: Check for rosetta status, if it exists
+      data.rosetta = Services.sysinfo.getProperty("rosettaStatus");
+    } catch (e) {}
+
     data.numTotalWindows = 0;
+    data.numFissionWindows = 0;
     data.numRemoteWindows = 0;
     for (let { docShell } of Services.wm.getEnumerator("navigator:browser")) {
+      docShell.QueryInterface(Ci.nsILoadContext);
       data.numTotalWindows++;
-      let remote = docShell.QueryInterface(Ci.nsILoadContext).useRemoteTabs;
-      if (remote) {
+      if (docShell.useRemoteSubframes) {
+        data.numFissionWindows++;
+      }
+      if (docShell.useRemoteTabs) {
         data.numRemoteWindows++;
       }
     }
@@ -246,18 +266,10 @@ var dataProviders = {
       data.launcherProcessState = Services.appinfo.launcherProcessState;
     } catch (e) {}
 
-    data.remoteAutoStart = Services.appinfo.browserTabsRemoteAutostart;
+    data.fissionAutoStart = Services.appinfo.fissionAutostart;
+    data.fissionDecisionStatus = Services.appinfo.fissionDecisionStatusString;
 
-    try {
-      let e10sStatus = Cc["@mozilla.org/supports-PRUint64;1"].createInstance(
-        Ci.nsISupportsPRUint64
-      );
-      let appinfo = Services.appinfo.QueryInterface(Ci.nsIObserver);
-      appinfo.observe(e10sStatus, "getE10SBlocked", "");
-      data.autoStartStatus = e10sStatus.data;
-    } catch (e) {
-      data.autoStartStatus = -1;
-    }
+    data.remoteAutoStart = Services.appinfo.browserTabsRemoteAutostart;
 
     if (Services.policies) {
       data.policiesStatus = Services.policies.status;
@@ -328,10 +340,6 @@ var dataProviders = {
   securitySoftware: function securitySoftware(done) {
     let data = {};
 
-    let sysInfo = Cc["@mozilla.org/system-info;1"].getService(
-      Ci.nsIPropertyBag2
-    );
-
     const keys = [
       "registeredAntiVirus",
       "registeredAntiSpyware",
@@ -340,7 +348,7 @@ var dataProviders = {
     for (let key of keys) {
       let prop = "";
       try {
-        prop = sysInfo.getProperty(key);
+        prop = Services.sysinfo.getProperty(key);
       } catch (e) {}
 
       data[key] = prop;
@@ -436,6 +444,30 @@ var dataProviders = {
     );
   },
 
+  async environmentVariables(done) {
+    let Subprocess;
+    try {
+      // Subprocess is not available in all builds
+      Subprocess = ChromeUtils.import("resource://gre/modules/Subprocess.jsm")
+        .Subprocess;
+    } catch (ex) {
+      done({});
+      return;
+    }
+
+    let environment = Subprocess.getEnvironment();
+    let filteredEnvironment = {};
+    // Limit the environment variables to those that we
+    // know may affect Firefox to reduce leaking PII.
+    let filteredEnvironmentKeys = ["xre_", "moz_", "gdk", "display"];
+    for (let key of Object.keys(environment)) {
+      if (filteredEnvironmentKeys.some(k => key.toLowerCase().startsWith(k))) {
+        filteredEnvironment[key] = environment[key];
+      }
+    }
+    done(filteredEnvironment);
+  },
+
   modifiedPreferences: function modifiedPreferences(done) {
     done(getPrefList(name => Services.prefs.prefHasUserValue(name)));
   },
@@ -448,6 +480,20 @@ var dataProviders = {
           Services.prefs.prefIsLocked(name)
       )
     );
+  },
+
+  printingPreferences: function printingPreferences(done) {
+    let filter = name => Services.prefs.prefHasUserValue(name);
+    let prefs = getPrefList(filter, ["print."]);
+
+    // print_printer is special and is the only pref that is outside of the
+    // "print." branch... Maybe we should change it to print.printer or
+    // something...
+    if (filter("print_printer")) {
+      prefs.print_printer = getPref("print_printer");
+    }
+
+    done(prefs);
   },
 
   graphics: function graphics(done) {
@@ -514,7 +560,6 @@ var dataProviders = {
         data.numTotalWindows++;
         data.windowLayerManagerType = winUtils.layerManagerType;
         data.windowLayerManagerRemote = winUtils.layerManagerRemote;
-        data.windowUsingAdvancedLayers = winUtils.usingAdvancedLayers;
       } catch (e) {
         continue;
       }
@@ -572,10 +617,6 @@ var dataProviders = {
       DWriteEnabled: "directWriteEnabled",
       DWriteVersion: "directWriteVersion",
       cleartypeParameters: "clearTypeParameters",
-      UsesTiling: "usesTiling",
-      ContentUsesTiling: "contentUsesTiling",
-      OffMainThreadPaintEnabled: "offMainThreadPaintEnabled",
-      OffMainThreadPaintWorkerCount: "offMainThreadPaintWorkerCount",
       TargetFrameRate: "targetFrameRate",
       windowProtocol: null,
       desktopEnvironment: null,
@@ -797,6 +838,62 @@ var dataProviders = {
       },
     });
   },
+
+  async normandy(done) {
+    if (!AppConstants.MOZ_NORMANDY) {
+      done();
+      return;
+    }
+
+    const {
+      PreferenceExperiments: NormandyPreferenceStudies,
+    } = ChromeUtils.import("resource://normandy/lib/PreferenceExperiments.jsm");
+    const { AddonStudies: NormandyAddonStudies } = ChromeUtils.import(
+      "resource://normandy/lib/AddonStudies.jsm"
+    );
+    const {
+      PreferenceRollouts: NormandyPreferenceRollouts,
+    } = ChromeUtils.import("resource://normandy/lib/PreferenceRollouts.jsm");
+    const { ExperimentManager } = ChromeUtils.import(
+      "resource://nimbus/lib/ExperimentManager.jsm"
+    );
+
+    // Get Normandy data in parallel, and sort each group by slug.
+    const [
+      addonStudies,
+      prefRollouts,
+      prefStudies,
+      nimbusExperiments,
+      remoteConfigs,
+    ] = await Promise.all(
+      [
+        NormandyAddonStudies.getAllActive(),
+        NormandyPreferenceRollouts.getAllActive(),
+        NormandyPreferenceStudies.getAllActive(),
+        ExperimentManager.store
+          .ready()
+          .then(() => ExperimentManager.store.getAllActive()),
+        ExperimentManager.store
+          .ready()
+          .then(() => ExperimentManager.store.getAllRemoteConfigs()),
+      ].map(promise =>
+        promise
+          .catch(error => {
+            Cu.reportError(error);
+            return [];
+          })
+          .then(items => items.sort((a, b) => a.slug.localeCompare(b.slug)))
+      )
+    );
+
+    done({
+      addonStudies,
+      prefRollouts,
+      prefStudies,
+      nimbusExperiments,
+      remoteConfigs,
+    });
+  },
 };
 
 if (AppConstants.MOZ_CRASHREPORTER) {
@@ -861,16 +958,18 @@ if (AppConstants.MOZ_SANDBOX) {
       );
       data.effectiveContentSandboxLevel =
         sandboxSettings.effectiveContentSandboxLevel;
+      data.contentWin32kLockdownState =
+        sandboxSettings.contentWin32kLockdownStateString;
     }
 
     done(data);
   };
 }
 
-if (AppConstants.ENABLE_REMOTE_AGENT) {
+if (AppConstants.ENABLE_WEBDRIVER) {
   dataProviders.remoteAgent = function remoteAgent(done) {
     const { RemoteAgent } = ChromeUtils.import(
-      "chrome://remote/content/RemoteAgent.jsm"
+      "chrome://remote/content/components/RemoteAgent.jsm"
     );
     const { listening, scheme, host, port } = RemoteAgent;
     let url = "";

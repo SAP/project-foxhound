@@ -73,20 +73,25 @@ add_task(async function setup() {
  * resolve once layout and style have been flushed.
  */
 add_task(async function test_basic() {
+  info("Dirtying style / layout");
   dirtyStyleAndLayout();
   assertFlushesRequired();
 
+  info("Waiting");
   await window.promiseDocumentFlushed(() => {});
   assertNoFlushesRequired();
 
+  info("Dirtying style");
   dirtyStyle();
   assertFlushesRequired();
 
+  info("Waiting");
   await window.promiseDocumentFlushed(() => {});
   assertNoFlushesRequired();
 
   // The DOM should be clean already, but we'll do this anyway to isolate
   // failures from other tests.
+  info("Cleaning up");
   await cleanTheDOM();
 });
 
@@ -167,8 +172,9 @@ add_task(async function test_resolved_in_window_close() {
 
   await win.promiseDocumentFlushed(() => {});
 
-  let docShell = win.docShell;
-  docShell.contentViewer.pausePainting();
+  // Use advanceTimeAndRefresh to pause paints in the window:
+  let utils = win.windowUtils;
+  utils.advanceTimeAndRefresh(0);
 
   win.gNavToolbox.style.padding = "5px";
 

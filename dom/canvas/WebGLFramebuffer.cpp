@@ -14,6 +14,7 @@
 #include "GLScreenBuffer.h"
 #include "MozFramebuffer.h"
 #include "mozilla/dom/WebGLRenderingContextBinding.h"
+#include "mozilla/IntegerRange.h"
 #include "nsPrintfCString.h"
 #include "WebGLContext.h"
 #include "WebGLContextUtils.h"
@@ -100,21 +101,31 @@ bool WebGLFBAttachPoint::IsComplete(WebGLContext* webgl,
   const auto& tex = Texture();
   if (tex) {
     // ES 3.0 spec, pg 213 has giant blocks of text that bake down to requiring
-    // that attached tex images are within the valid mip-levels of the texture.
-    // While it draws distinction to only test non-immutable textures, that's
-    // because immutable textures are *always* texture-complete. We need to
-    // check immutable textures though, because checking completeness is also
-    // when we zero invalidated/no-data tex images.
+    // that attached *non-immutable* tex images are within the valid mip-levels
+    // of the texture. We still need to check immutable textures though, because
+    // checking completeness is also when we zero invalidated/no-data tex
+    // images.
     const auto attachedMipLevel = MipLevel();
 
     const bool withinValidMipLevels = [&]() {
       const bool ensureInit = false;
       const auto texCompleteness = tex->CalcCompletenessInfo(ensureInit);
-      if (!texCompleteness)  // OOM
-        return false;
+      if (!texCompleteness) return false;  // OOM
+
+      if (tex->Immutable()) {
+        // Immutable textures can attach a level that's not valid for sampling.
+        // It still has to exist though!
+        return attachedMipLevel < tex->ImmutableLevelCount();
+      }
+
+      // Base level must be complete.
       if (!texCompleteness->levels) return false;
 
-      const auto baseLevel = tex->BaseMipmapLevel();
+      const auto baseLevel = tex->Es3_level_base();
+      if (attachedMipLevel == baseLevel) return true;
+
+      // If not base level, must be mip-complete and within mips.
+      if (!texCompleteness->mipmapComplete) return false;
       const auto maxLevel = baseLevel + texCompleteness->levels - 1;
       return baseLevel <= attachedMipLevel && attachedMipLevel <= maxLevel;
     }();
@@ -494,7 +505,6 @@ WebGLFramebuffer::WebGLFramebuffer(WebGLContext* webgl,
   CompletenessInfo info;
   info.width = mOpaque->mSize.width;
   info.height = mOpaque->mSize.height;
-  info.hasFloat32 = false;
   info.zLayerCount = 1;
   info.isMultiview = false;
 
@@ -530,7 +540,7 @@ Maybe<WebGLFBAttachPoint*> WebGLFramebuffer::GetColorAttachPoint(
 
   const size_t colorId = attachPoint - LOCAL_GL_COLOR_ATTACHMENT0;
 
-  MOZ_ASSERT(mContext->Limits().maxColorDrawBuffers <= kMaxColorAttachments);
+  MOZ_ASSERT(mContext->Limits().maxColorDrawBuffers <= webgl::kMaxDrawBuffers);
   if (colorId >= mContext->MaxValidDrawBuffers()) return Nothing();
 
   return Some(&mColorAttachments[colorId]);
@@ -1002,7 +1012,7 @@ FBStatus WebGLFramebuffer::CheckFramebufferStatus() const {
     ResolveAttachmentData();
 
     // Sweet, let's cache that.
-    auto info = CompletenessInfo{this, UINT32_MAX, UINT32_MAX};
+    auto info = CompletenessInfo{this};
     mCompletenessInfo.ResetInvalidators({});
     mCompletenessInfo.AddInvalidator(*this);
 
@@ -1024,12 +1034,20 @@ FBStatus WebGLFramebuffer::CheckFramebufferStatus() const {
       }
       const auto& imageInfo = cur->GetImageInfo();
       MOZ_ASSERT(imageInfo);
-      info.width = std::min(info.width, imageInfo->mWidth);
-      info.height = std::min(info.height, imageInfo->mHeight);
-      info.hasFloat32 |= fnIsFloat32(*imageInfo->mFormat->format);
+
+      const auto maybeColorId = cur->ColorAttachmentId();
+      if (maybeColorId) {
+        const auto id = *maybeColorId;
+        info.hasAttachment[id] = true;
+        info.isAttachmentF32[id] = fnIsFloat32(*imageInfo->mFormat->format);
+      }
+
+      info.width = imageInfo->mWidth;
+      info.height = imageInfo->mHeight;
       info.zLayerCount = cur->ZLayerCount();
       info.isMultiview = cur->IsMultiview();
     }
+    MOZ_ASSERT(info.width && info.height);
     mCompletenessInfo = Some(std::move(info));
     info.fb = nullptr;  // Don't trigger the invalidation warning.
     return LOCAL_GL_FRAMEBUFFER_COMPLETE;
@@ -1061,6 +1079,7 @@ void WebGLFramebuffer::RefreshDrawBuffers() const {
     }
   }
 
+  gl->fBindFramebuffer(LOCAL_GL_DRAW_FRAMEBUFFER, mGLName);
   gl->fDrawBuffers(driverBuffers.size(), driverBuffers.data());
 }
 
@@ -1077,6 +1096,7 @@ void WebGLFramebuffer::RefreshReadBuffer() const {
     driverBuffer = mColorReadBuffer->mAttachmentPoint;
   }
 
+  gl->fBindFramebuffer(LOCAL_GL_READ_FRAMEBUFFER, mGLName);
   gl->fReadBuffer(driverBuffer);
 }
 
@@ -1095,6 +1115,7 @@ void WebGLFramebuffer::DrawBuffers(const std::vector<GLenum>& buffers) {
   std::vector<const WebGLFBAttachPoint*> newColorDrawBuffers;
   newColorDrawBuffers.reserve(buffers.size());
 
+  mDrawBufferEnabled.reset();
   for (const auto i : IntegerRange(buffers.size())) {
     // "If the GL is bound to a draw framebuffer object, the `i`th buffer listed
     // in bufs must be COLOR_ATTACHMENTi or NONE. Specifying a buffer out of
@@ -1111,6 +1132,7 @@ void WebGLFramebuffer::DrawBuffers(const std::vector<GLenum>& buffers) {
     if (cur == LOCAL_GL_COLOR_ATTACHMENT0 + i) {
       const auto& attach = mColorAttachments[i];
       newColorDrawBuffers.push_back(&attach);
+      mDrawBufferEnabled[i] = true;
     } else if (cur != LOCAL_GL_NONE) {
       const bool isColorEnum = (cur >= LOCAL_GL_COLOR_ATTACHMENT0 &&
                                 cur < mContext->LastColorAttachmentEnum());
@@ -1130,16 +1152,6 @@ void WebGLFramebuffer::DrawBuffers(const std::vector<GLenum>& buffers) {
 
   mColorDrawBuffers = std::move(newColorDrawBuffers);
   RefreshDrawBuffers();  // Calls glDrawBuffers.
-}
-
-bool WebGLFramebuffer::IsDrawBufferEnabled(const uint32_t slotId) const {
-  const auto attachEnum = LOCAL_GL_COLOR_ATTACHMENT0 + slotId;
-  for (const auto& cur : mColorDrawBuffers) {
-    if (cur->mAttachmentPoint == attachEnum) {
-      return true;
-    }
-  }
-  return false;
 }
 
 void WebGLFramebuffer::ReadBuffer(GLenum attachPoint) {
@@ -1263,11 +1275,16 @@ static void GetBackbufferFormats(const WebGLContext* webgl,
 }
 
 /*static*/
-void WebGLFramebuffer::BlitFramebuffer(WebGLContext* webgl, GLint srcX0,
-                                       GLint srcY0, GLint srcX1, GLint srcY1,
-                                       GLint dstX0, GLint dstY0, GLint dstX1,
-                                       GLint dstY1, GLbitfield mask,
+void WebGLFramebuffer::BlitFramebuffer(WebGLContext* webgl, GLint _srcX0,
+                                       GLint _srcY0, GLint _srcX1, GLint _srcY1,
+                                       GLint _dstX0, GLint _dstY0, GLint _dstX1,
+                                       GLint _dstY1, GLbitfield mask,
                                        GLenum filter) {
+  auto srcP0 = ivec2{_srcX0, _srcY0};
+  auto srcP1 = ivec2{_srcX1, _srcY1};
+  auto dstP0 = ivec2{_dstX0, _dstY0};
+  auto dstP1 = ivec2{_dstX1, _dstY1};
+
   const GLbitfield depthAndStencilBits =
       LOCAL_GL_DEPTH_BUFFER_BIT | LOCAL_GL_STENCIL_BUFFER_BIT;
   if (bool(mask & depthAndStencilBits) && filter == LOCAL_GL_LINEAR) {
@@ -1420,7 +1437,7 @@ void WebGLFramebuffer::BlitFramebuffer(WebGLContext* webgl, GLint srcX0,
       return;
     }
 
-    if (dstX0 != srcX0 || dstX1 != srcX1 || dstY0 != srcY0 || dstY1 != srcY1) {
+    if (srcP0 != dstP0 || srcP1 != dstP1) {
       webgl->ErrorInvalidOperation(
           "If the source is multisampled, then the"
           " source and dest regions must match exactly.");
@@ -1510,11 +1527,84 @@ void WebGLFramebuffer::BlitFramebuffer(WebGLContext* webgl, GLint srcX0,
   }
 
   // -
+  // Mutually constrain src and dst rects for eldritch blits.
+
+  [&] {
+    using fvec2 = avec2<float>;  // Switch to float, because there's no perfect
+                                 // solution anyway.
+
+    const auto zero2f = fvec2{0, 0};
+    const auto srcSizef = AsVec(srcSize).StaticCast<fvec2>();
+    const auto dstSizef = AsVec(dstSize).StaticCast<fvec2>();
+
+    const auto srcP0f = srcP0.StaticCast<fvec2>();
+    const auto srcP1f = srcP1.StaticCast<fvec2>();
+    const auto dstP0f = dstP0.StaticCast<fvec2>();
+    const auto dstP1f = dstP1.StaticCast<fvec2>();
+
+    const auto srcRectDiff = srcP1f - srcP0f;
+    const auto dstRectDiff = dstP1f - dstP0f;
+
+    // Skip if zero-sized.
+    if (!srcRectDiff.x || !srcRectDiff.y || !dstRectDiff.x || !dstRectDiff.y) {
+      srcP0 = srcP1 = dstP0 = dstP1 = {0, 0};
+      return;
+    }
+
+    // Clamp the rect points
+    const auto srcQ0 = srcP0f.ClampMinMax(zero2f, srcSizef);
+    const auto srcQ1 = srcP1f.ClampMinMax(zero2f, srcSizef);
+
+    // Normalized to the [0,1] abstact copy rect
+    const auto srcQ0Norm = (srcQ0 - srcP0f) / srcRectDiff;
+    const auto srcQ1Norm = (srcQ1 - srcP0f) / srcRectDiff;
+
+    // Map into dst
+    const auto srcQ0InDst = dstP0f + srcQ0Norm * dstRectDiff;
+    const auto srcQ1InDst = dstP0f + srcQ1Norm * dstRectDiff;
+
+    // Clamp the rect points
+    const auto dstQ0 = srcQ0InDst.ClampMinMax(zero2f, dstSizef);
+    const auto dstQ1 = srcQ1InDst.ClampMinMax(zero2f, dstSizef);
+
+    // Alright, time to go back to src!
+    // Normalized to the [0,1] abstact copy rect
+    const auto dstQ0Norm = (dstQ0 - dstP0f) / dstRectDiff;
+    const auto dstQ1Norm = (dstQ1 - dstP0f) / dstRectDiff;
+
+    // Map into src
+    const auto dstQ0InSrc = srcP0f + dstQ0Norm * srcRectDiff;
+    const auto dstQ1InSrc = srcP0f + dstQ1Norm * srcRectDiff;
+
+    const auto srcQ0Constrained = dstQ0InSrc.ClampMinMax(zero2f, srcSizef);
+    const auto srcQ1Constrained = dstQ1InSrc.ClampMinMax(zero2f, srcSizef);
+
+    // Round, don't floor:
+    srcP0 = (srcQ0Constrained + 0.5).StaticCast<ivec2>();
+    srcP1 = (srcQ1Constrained + 0.5).StaticCast<ivec2>();
+    dstP0 = (dstQ0 + 0.5).StaticCast<ivec2>();
+    dstP1 = (dstQ1 + 0.5).StaticCast<ivec2>();
+  }();
+
+  bool inBounds = true;
+  inBounds &= (srcP0 == srcP0.Clamp({0, 0}, AsVec(srcSize)));
+  inBounds &= (srcP1 == srcP1.Clamp({0, 0}, AsVec(srcSize)));
+  inBounds &= (dstP0 == dstP0.Clamp({0, 0}, AsVec(dstSize)));
+  inBounds &= (dstP1 == dstP1.Clamp({0, 0}, AsVec(dstSize)));
+  if (!inBounds) {
+    webgl->ErrorImplementationBug(
+        "Subrects still not within src and dst after constraining.");
+    return;
+  }
+
+  // -
+  // Execute as constrained
 
   const auto& gl = webgl->gl;
   const ScopedDrawCallWrapper wrapper(*webgl);
-  gl->fBlitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1,
-                       mask, filter);
+
+  gl->fBlitFramebuffer(srcP0.x, srcP0.y, srcP1.x, srcP1.y, dstP0.x, dstP0.y,
+                       dstP1.x, dstP1.y, mask, filter);
 
   // -
 
@@ -1557,13 +1647,14 @@ void WebGLFramebuffer::BlitFramebuffer(WebGLContext* webgl, GLint srcX0,
 
       if (srcColorFormat->isSRGB) {
         // srgb -> linear
-        gl->fBlitFramebuffer(srcX0, srcY0, srcX1, srcY1, srcX0, srcY0, srcX1,
-                             srcY1, LOCAL_GL_COLOR_BUFFER_BIT,
-                             LOCAL_GL_NEAREST);
+        gl->fBlitFramebuffer(srcP0.x, srcP0.y, srcP1.x, srcP1.y, srcP0.x,
+                             srcP0.y, srcP1.x, srcP1.y,
+                             LOCAL_GL_COLOR_BUFFER_BIT, LOCAL_GL_NEAREST);
       } else {
         // linear -> srgb
-        gl->fBlitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1,
-                             dstY1, LOCAL_GL_COLOR_BUFFER_BIT, filter);
+        gl->fBlitFramebuffer(srcP0.x, srcP0.y, srcP1.x, srcP1.y, dstP0.x,
+                             dstP0.y, dstP1.x, dstP1.y,
+                             LOCAL_GL_COLOR_BUFFER_BIT, filter);
       }
 
       const auto& blitHelper = *gl->BlitHelper();
@@ -1577,13 +1668,14 @@ void WebGLFramebuffer::BlitFramebuffer(WebGLContext* webgl, GLint srcX0,
 
       if (srcColorFormat->isSRGB) {
         // srgb -> linear
-        gl->fBlitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1,
-                             dstY1, LOCAL_GL_COLOR_BUFFER_BIT, filter);
+        gl->fBlitFramebuffer(srcP0.x, srcP0.y, srcP1.x, srcP1.y, dstP0.x,
+                             dstP0.y, dstP1.x, dstP1.y,
+                             LOCAL_GL_COLOR_BUFFER_BIT, filter);
       } else {
         // linear -> srgb
-        gl->fBlitFramebuffer(dstX0, dstY0, dstX1, dstY1, dstX0, dstY0, dstX1,
-                             dstY1, LOCAL_GL_COLOR_BUFFER_BIT,
-                             LOCAL_GL_NEAREST);
+        gl->fBlitFramebuffer(dstP0.x, dstP0.y, dstP1.x, dstP1.y, dstP0.x,
+                             dstP0.y, dstP1.x, dstP1.y,
+                             LOCAL_GL_COLOR_BUFFER_BIT, LOCAL_GL_NEAREST);
       }
     }
   }
@@ -1598,13 +1690,16 @@ void WebGLFramebuffer::BlitFramebuffer(WebGLContext* webgl, GLint srcX0,
     if (webgl->mRasterizerDiscardEnabled) {
       gl->fDisable(LOCAL_GL_RASTERIZER_DISCARD);
     }
-    const WebGLContext::ScissorRect dstRect = {
-        std::min(dstX0, dstX1), std::min(dstY0, dstY1), abs(dstX1 - dstX0),
-        abs(dstY1 - dstY0)};
-    dstRect.Apply(*gl);
-    gl->fClearColor(0, 0, 0, 1);
 
-    webgl->DoColorMask(0x8);
+    const auto dstRectMin = MinExtents(dstP0, dstP1);
+    const auto dstRectMax = MaxExtents(dstP0, dstP1);
+    const auto dstRectSize = dstRectMax - dstRectMin;
+    const WebGLContext::ScissorRect dstRect = {dstRectMin.x, dstRectMin.y,
+                                               dstRectSize.x, dstRectSize.y};
+    dstRect.Apply(*gl);
+
+    gl->fClearColor(0, 0, 0, 1);
+    webgl->DoColorMask(1 << 3);
     gl->fClear(LOCAL_GL_COLOR_BUFFER_BIT);
 
     if (!webgl->mScissorTestEnabled) {

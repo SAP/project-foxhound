@@ -9,6 +9,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.jsm",
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   LinkHandlerParent: "resource:///actors/LinkHandlerParent.jsm",
+  XPCShellContentUtils: "resource://testing-common/XPCShellContentUtils.jsm",
 });
 
 // Clear the network cache between every test to make sure we get a stable state

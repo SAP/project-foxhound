@@ -27,7 +27,7 @@
       this.addEventListener("dragover", this);
       this.addEventListener("drop", this);
       this.addEventListener("dragend", this);
-      this.addEventListener("dragexit", this);
+      this.addEventListener("dragleave", this);
     }
 
     init() {
@@ -59,20 +59,42 @@
       );
       this._hiddenSoundPlayingTabs = new Set();
 
-      let strId = PrivateBrowsingUtils.isWindowPrivate(window)
-        ? "emptyPrivateTabTitle"
-        : "emptyTabTitle";
+      // Normal tab title is used also in the permanent private browsing mode.
+      let strId =
+        PrivateBrowsingUtils.isWindowPrivate(window) &&
+        !Services.prefs.getBoolPref("browser.privatebrowsing.autostart")
+          ? "emptyPrivateTabTitle"
+          : "emptyTabTitle";
       this.emptyTabTitle = gTabBrowserBundle.GetStringFromName("tabs." + strId);
 
       var tab = this.allTabs[0];
       tab.label = this.emptyTabTitle;
+
+      // Hide the secondary text for locales where it is unsupported due to size constraints.
+      const language = Services.locale.appLocaleAsBCP47;
+      const unsupportedLocales = Services.prefs.getCharPref(
+        "browser.tabs.secondaryTextUnsupportedLocales"
+      );
+      this.toggleAttribute(
+        "secondarytext-unsupported",
+        unsupportedLocales.split(",").includes(language.split("-")[0])
+      );
 
       this.newTabButton.setAttribute(
         "aria-label",
         GetDynamicShortcutTooltipText("tabs-newtab-button")
       );
 
-      window.addEventListener("resize", this);
+      let handleResize = () => {
+        this._updateCloseButtons();
+        this._handleTabSelect(true);
+      };
+      this._resizeObserver = new ResizeObserver(handleResize);
+      this._resizeObserver.observe(document.documentElement);
+      this._fullscreenMutationObserver = new MutationObserver(handleResize);
+      this._fullscreenMutationObserver.observe(document.documentElement, {
+        attributeFilter: ["inFullscreen", "inDOMFullscreen"],
+      });
 
       this.boundObserve = (...args) => this.observe(...args);
       Services.prefs.addObserver("privacy.userContext", this.boundObserve);
@@ -242,7 +264,7 @@
             animate: true,
             byMouse: event.mozInputSource == MouseEvent.MOZ_SOURCE_MOUSE,
           });
-        } else if (event.originalTarget.localName == "scrollbox") {
+        } else if (event.originalTarget.closest("scrollbox")) {
           // The user middleclicked on the tabstrip. Check whether the click
           // was dispatched on the open space of it.
           let visibleTabs = this._getVisibleTabs();
@@ -261,6 +283,7 @@
           return;
         }
 
+        event.preventDefault();
         event.stopPropagation();
       }
     }
@@ -333,13 +356,10 @@
         case KeyEvent.DOM_VK_SPACE:
           if (visibleTabs[lastFocusedTabIndex].multiselected) {
             gBrowser.removeFromMultiSelectedTabs(
-              visibleTabs[lastFocusedTabIndex],
-              { isLastMultiSelectChange: false }
+              visibleTabs[lastFocusedTabIndex]
             );
           } else {
-            gBrowser.addToMultiSelectedTabs(visibleTabs[lastFocusedTabIndex], {
-              isLastMultiSelectChange: true,
-            });
+            gBrowser.addToMultiSelectedTabs(visibleTabs[lastFocusedTabIndex]);
           }
           break;
         default:
@@ -671,15 +691,7 @@
           for (let tab of movingTabs) {
             tab.setAttribute("tabdrop-samewindow", "true");
             tab.style.transform = "translateX(" + newTranslateX + "px)";
-            let onTransitionEnd = transitionendEvent => {
-              if (
-                transitionendEvent.propertyName != "transform" ||
-                transitionendEvent.originalTarget != tab
-              ) {
-                return;
-              }
-              tab.removeEventListener("transitionend", onTransitionEnd);
-
+            let postTransitionCleanup = () => {
               tab.removeAttribute("tabdrop-samewindow");
 
               this._finishAnimateTabMove();
@@ -692,7 +704,22 @@
 
               gBrowser.syncThrobberAnimations(tab);
             };
-            tab.addEventListener("transitionend", onTransitionEnd);
+            if (gReduceMotion) {
+              postTransitionCleanup();
+            } else {
+              let onTransitionEnd = transitionendEvent => {
+                if (
+                  transitionendEvent.propertyName != "transform" ||
+                  transitionendEvent.originalTarget != tab
+                ) {
+                  return;
+                }
+                tab.removeEventListener("transitionend", onTransitionEnd);
+
+                postTransitionCleanup();
+              };
+              tab.addEventListener("transitionend", onTransitionEnd);
+            }
           }
         } else {
           this._finishAnimateTabMove();
@@ -885,7 +912,7 @@
       event.stopPropagation();
     }
 
-    on_dragexit(event) {
+    on_dragleave(event) {
       this._dragTime = 0;
 
       // This does not work at all (see bug 458613)
@@ -937,7 +964,6 @@
 
     set _tabMinWidth(val) {
       this.style.setProperty("--tab-min-width", val + "px");
-      return val;
     }
 
     get _isCustomizing() {
@@ -1111,16 +1137,18 @@
         }
       }
 
-      if (this._firstTab) {
-        this._firstTab.removeAttribute("first-visible-tab");
-      }
+      this._firstTab?.removeAttribute("first-visible-tab");
       this._firstTab = visibleTabs[0];
       this._firstTab.setAttribute("first-visible-tab", "true");
-      if (this._lastTab) {
-        this._lastTab.removeAttribute("last-visible-tab");
-      }
+      this._lastTab?.removeAttribute("last-visible-tab");
       this._lastTab = visibleTabs[visibleTabs.length - 1];
       this._lastTab.setAttribute("last-visible-tab", "true");
+      this._firstUnpinnedTab?.removeAttribute("first-visible-unpinned-tab");
+      this._firstUnpinnedTab = visibleTabs.find(t => !t.pinned);
+      this._firstUnpinnedTab?.setAttribute(
+        "first-visible-unpinned-tab",
+        "true"
+      );
 
       let hoveredTab = this._hoveredTab;
       if (hoveredTab) {
@@ -1315,12 +1343,14 @@
     }
 
     _positionPinnedTabs() {
+      let tabs = this._getVisibleTabs();
       let numPinned = gBrowser._numPinnedTabs;
       let doPosition =
         this.getAttribute("overflow") == "true" &&
-        this._getVisibleTabs().length > numPinned &&
+        tabs.length > numPinned &&
         numPinned > 0;
-      let tabs = this.allTabs;
+
+      this.toggleAttribute("haspinnedtabs", !!numPinned);
 
       if (doPosition) {
         this.setAttribute("positionpinnedtabs", "true");
@@ -1331,9 +1361,13 @@
           let arrowScrollbox = this.arrowScrollbox;
           layoutData = this._pinnedTabsLayoutCache = {
             uiDensity,
-            pinnedTabWidth: this.allTabs[0].getBoundingClientRect().width,
-            scrollButtonWidth: arrowScrollbox._scrollButtonDown.getBoundingClientRect()
-              .width,
+            pinnedTabWidth: tabs[0].getBoundingClientRect().width,
+            scrollStartOffset:
+              arrowScrollbox.scrollbox.getBoundingClientRect().left -
+              arrowScrollbox.getBoundingClientRect().left +
+              parseFloat(
+                getComputedStyle(arrowScrollbox.scrollbox).paddingInlineStart
+              ),
           };
         }
 
@@ -1343,7 +1377,7 @@
           width += layoutData.pinnedTabWidth;
           tab.style.setProperty(
             "margin-inline-start",
-            -(width + layoutData.scrollButtonWidth) + "px",
+            -(width + layoutData.scrollStartOffset) + "px",
             "important"
           );
           tab._pinnedUnscrollable = true;
@@ -1601,19 +1635,26 @@
 
         movingTab.groupingTabsData.translateX = shift;
 
-        let onTransitionEnd = transitionendEvent => {
-          if (
-            transitionendEvent.propertyName != "transform" ||
-            transitionendEvent.originalTarget != movingTab
-          ) {
-            return;
-          }
-          movingTab.removeEventListener("transitionend", onTransitionEnd);
+        let postTransitionCleanup = () => {
           movingTab.groupingTabsData.newIndex = movingTabNewIndex;
           movingTab.groupingTabsData.animate = false;
         };
+        if (gReduceMotion) {
+          postTransitionCleanup();
+        } else {
+          let onTransitionEnd = transitionendEvent => {
+            if (
+              transitionendEvent.propertyName != "transform" ||
+              transitionendEvent.originalTarget != movingTab
+            ) {
+              return;
+            }
+            movingTab.removeEventListener("transitionend", onTransitionEnd);
+            postTransitionCleanup();
+          };
 
-        movingTab.addEventListener("transitionend", onTransitionEnd);
+          movingTab.addEventListener("transitionend", onTransitionEnd);
+        }
 
         // Add animation data for tabs between movingTab (selected
         // tab moving towards the dragged tab) and draggedTab.
@@ -1698,14 +1739,6 @@
 
     handleEvent(aEvent) {
       switch (aEvent.type) {
-        case "resize":
-          if (aEvent.target != window) {
-            break;
-          }
-
-          this._updateCloseButtons();
-          this._handleTabSelect(true);
-          break;
         case "mouseout":
           // If the "related target" (the node to which the pointer went) is not
           // a child of the current document, the mouse just left the window.
@@ -1938,12 +1971,21 @@
       if (tab.linkedPanel) {
         NewTabPagePreloading.maybeCreatePreloadedBrowser(window);
       }
+
+      if (UserInteraction.running("browser.tabs.opening", window)) {
+        UserInteraction.finish("browser.tabs.opening", window);
+      }
     }
 
     _canAdvanceToTab(aTab) {
       return !aTab.closing;
     }
 
+    /**
+     * Returns the panel associated with a tab if it has a connected browser
+     * and/or it is the selected tab.
+     * For background lazy browsers, this will return null.
+     */
     getRelatedElement(aTab) {
       if (!aTab) {
         return null;
@@ -1956,8 +1998,12 @@
 
       // If the tab's browser is lazy, we need to `_insertBrowser` in order
       // to have a linkedPanel.  This will also serve to bind the browser
-      // and make it ready to use when the tab is selected.
-      gBrowser._insertBrowser(aTab);
+      // and make it ready to use. We only do this if the tab is selected
+      // because otherwise, callers might end up unintentionally binding the
+      // browser for lazy background tabs.
+      if (aTab.selected) {
+        gBrowser._insertBrowser(aTab);
+      }
       return document.getElementById(aTab.linkedPanel);
     }
 

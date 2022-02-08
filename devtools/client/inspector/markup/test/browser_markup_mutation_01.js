@@ -16,8 +16,8 @@ const TEST_URL = URL_ROOT + "doc_markup_mutation.html";
 const TEST_DATA = [
   {
     desc: "Adding an attribute",
-    test: async function(testActor) {
-      await testActor.setAttribute("#node1", "newattr", "newattrval");
+    test: async function() {
+      await setContentPageElementAttribute("#node1", "newattr", "newattrval");
     },
     check: async function(inspector) {
       const { editor } = await getContainerForSelector("#node1", inspector);
@@ -35,8 +35,8 @@ const TEST_DATA = [
   },
   {
     desc: "Removing an attribute",
-    test: async function(testActor) {
-      await testActor.removeAttribute("#node1", "newattr");
+    test: async function() {
+      await removeContentPageElementAttribute("#node1", "newattr");
     },
     check: async function(inspector) {
       const { editor } = await getContainerForSelector("#node1", inspector);
@@ -50,8 +50,8 @@ const TEST_DATA = [
   },
   {
     desc: "Re-adding an attribute",
-    test: async function(testActor) {
-      await testActor.setAttribute("#node1", "newattr", "newattrval");
+    test: async function() {
+      await setContentPageElementAttribute("#node1", "newattr", "newattrval");
     },
     check: async function(inspector) {
       const { editor } = await getContainerForSelector("#node1", inspector);
@@ -69,8 +69,12 @@ const TEST_DATA = [
   },
   {
     desc: "Changing an attribute",
-    test: async function(testActor) {
-      await testActor.setAttribute("#node1", "newattr", "newattrchanged");
+    test: async function() {
+      await setContentPageElementAttribute(
+        "#node1",
+        "newattr",
+        "newattrchanged"
+      );
     },
     check: async function(inspector) {
       const { editor } = await getContainerForSelector("#node1", inspector);
@@ -88,7 +92,7 @@ const TEST_DATA = [
   },
   {
     desc: "Adding another attribute does not rerender unchanged attributes",
-    test: async function(testActor, inspector) {
+    test: async function(inspector) {
       const { editor } = await getContainerForSelector("#node1", inspector);
 
       // This test checks the impact on the markup-view nodes after setting attributes on
@@ -105,7 +109,7 @@ const TEST_DATA = [
       info(
         "Add the attribute 'otherattr' on the content node to trigger the mutation"
       );
-      await testActor.setAttribute("#node1", "otherattr", "othervalue");
+      await setContentPageElementAttribute("#node1", "otherattr", "othervalue");
     },
     check: async function(inspector) {
       const { editor } = await getContainerForSelector("#node1", inspector);
@@ -134,11 +138,11 @@ const TEST_DATA = [
   {
     desc: "Adding ::after element",
     numMutations: 2,
-    test: async function(testActor) {
-      await testActor.eval(`
-        let node1 = document.querySelector("#node1");
+    test: async function() {
+      await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+        const node1 = content.document.querySelector("#node1");
         node1.classList.add("pseudo");
-      `);
+      });
     },
     check: async function(inspector) {
       const { children } = await getContainerForSelector("#node1", inspector);
@@ -152,11 +156,11 @@ const TEST_DATA = [
   {
     desc: "Removing ::after element",
     numMutations: 2,
-    test: async function(testActor) {
-      await testActor.eval(`
-        let node1 = document.querySelector("#node1");
+    test: async function() {
+      await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+        const node1 = content.document.querySelector("#node1");
         node1.classList.remove("pseudo");
-      `);
+      });
     },
     check: async function(inspector) {
       const container = await getContainerForSelector("#node1", inspector);
@@ -165,8 +169,8 @@ const TEST_DATA = [
   },
   {
     desc: "Updating the text-content",
-    test: async function(testActor) {
-      await testActor.setProperty("#node1", "textContent", "newtext");
+    test: async function() {
+      await setContentPageElementProperty("#node1", "textContent", "newtext");
     },
     check: async function(inspector) {
       const container = await getContainerForSelector("#node1", inspector);
@@ -182,12 +186,12 @@ const TEST_DATA = [
   },
   {
     desc: "Adding a second text child",
-    test: async function(testActor) {
-      await testActor.eval(`
-        let node1 = document.querySelector("#node1");
-        let newText = node1.ownerDocument.createTextNode("more");
+    test: async function() {
+      await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+        const node1 = content.document.querySelector("#node1");
+        const newText = node1.ownerDocument.createTextNode("more");
         node1.appendChild(newText);
-      `);
+      });
     },
     check: async function(inspector) {
       const container = await getContainerForSelector("#node1", inspector);
@@ -201,8 +205,8 @@ const TEST_DATA = [
   },
   {
     desc: "Go from 2 to 1 text child",
-    test: async function(testActor) {
-      await testActor.setProperty("#node1", "textContent", "newtext");
+    test: async function() {
+      await setContentPageElementProperty("#node1", "textContent", "newtext");
     },
     check: async function(inspector) {
       const container = await getContainerForSelector("#node1", inspector);
@@ -218,8 +222,8 @@ const TEST_DATA = [
   },
   {
     desc: "Removing an only text child",
-    test: async function(testActor) {
-      await testActor.setProperty("#node1", "innerHTML", "");
+    test: async function() {
+      await setContentPageElementProperty("#node1", "innerHTML", "");
     },
     check: async function(inspector) {
       const container = await getContainerForSelector("#node1", inspector);
@@ -233,8 +237,8 @@ const TEST_DATA = [
   },
   {
     desc: "Go from 0 to 1 text child",
-    test: async function(testActor) {
-      await testActor.setProperty("#node1", "textContent", "newtext");
+    test: async function() {
+      await setContentPageElementProperty("#node1", "textContent", "newtext");
     },
     check: async function(inspector) {
       const container = await getContainerForSelector("#node1", inspector);
@@ -251,8 +255,8 @@ const TEST_DATA = [
 
   {
     desc: "Updating the innerHTML",
-    test: async function(testActor) {
-      await testActor.setProperty(
+    test: async function() {
+      await setContentPageElementProperty(
         "#node2",
         "innerHTML",
         "<div><span>foo</span></div>"
@@ -275,13 +279,13 @@ const TEST_DATA = [
   },
   {
     desc: "Removing child nodes",
-    test: async function(testActor) {
-      await testActor.eval(`
-        let node4 = document.querySelector("#node4");
+    test: async function() {
+      await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+        const node4 = content.document.querySelector("#node4");
         while (node4.firstChild) {
-          node4.removeChild(node4.firstChild);
+          node4.firstChild.remove();
         }
-      `);
+      });
     },
     check: async function(inspector) {
       const { children } = await getContainerForSelector("#node4", inspector);
@@ -290,12 +294,12 @@ const TEST_DATA = [
   },
   {
     desc: "Appending a child to a different parent",
-    test: async function(testActor) {
-      await testActor.eval(`
-        let node17 = document.querySelector("#node17");
-        let node2 = document.querySelector("#node2");
+    test: async function() {
+      await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+        const node17 = content.document.querySelector("#node17");
+        const node2 = content.document.querySelector("#node2");
         node2.appendChild(node17);
-      `);
+      });
     },
     check: async function(inspector) {
       const { children } = await getContainerForSelector("#node16", inspector);
@@ -326,14 +330,14 @@ const TEST_DATA = [
     //      node21
     //      node18
     //        node19
-    test: async function(testActor) {
-      await testActor.eval(`
-        let node18 = document.querySelector("#node18");
-        let node20 = document.querySelector("#node20");
-        let node1 = document.querySelector("#node1");
+    test: async function() {
+      await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+        const node18 = content.document.querySelector("#node18");
+        const node20 = content.document.querySelector("#node20");
+        const node1 = content.document.querySelector("#node1");
         node1.appendChild(node20);
         node20.appendChild(node18);
-      `);
+      });
     },
     check: async function(inspector) {
       await inspector.markup.expandAll();
@@ -373,7 +377,7 @@ const TEST_DATA = [
 ];
 
 add_task(async function() {
-  const { inspector, testActor } = await openInspectorForURL(TEST_URL);
+  const { inspector } = await openInspectorForURL(TEST_URL);
 
   info("Expanding all markup-view nodes");
   await inspector.markup.expandAll();
@@ -403,7 +407,7 @@ add_task(async function() {
         }
       });
     });
-    await test(testActor, inspector);
+    await test(inspector);
     await promise;
 
     info("Expanding all markup-view nodes to make sure new nodes are imported");

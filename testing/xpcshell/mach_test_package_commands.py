@@ -14,7 +14,6 @@ import mozlog
 from xpcshellcommandline import parser_desktop
 
 from mach.decorators import (
-    CommandProvider,
     Command,
 )
 
@@ -26,39 +25,37 @@ def run_xpcshell(context, **kwargs):
     args.testingModulesDir = context.modules_dir
 
     if not args.xpcshell:
-        args.xpcshell = os.path.join(args.appPath, 'xpcshell')
+        args.xpcshell = os.path.join(args.appPath, "xpcshell")
 
     if not args.pluginsPath:
         for path in context.ancestors(args.appPath, depth=2):
-            test = os.path.join(path, 'plugins')
+            test = os.path.join(path, "plugins")
             if os.path.isdir(test):
                 args.pluginsPath = test
                 break
 
-    log = mozlog.commandline.setup_logging("XPCShellTests",
-                                           args,
-                                           {"mach": sys.stdout},
-                                           {"verbose": True})
+    log = mozlog.commandline.setup_logging(
+        "XPCShellTests", args, {"mach": sys.stdout}, {"verbose": True}
+    )
 
     if args.testPaths:
-        test_root = os.path.join(context.package_root, 'xpcshell', 'tests')
+        test_root = os.path.join(context.package_root, "xpcshell", "tests")
         normalize = partial(context.normalize_test_path, test_root)
-        args.testPaths = map(normalize, args.testPaths)
+        # pylint --py3k: W1636
+        args.testPaths = list(map(normalize, args.testPaths))
 
     import runxpcshelltests
+
     xpcshell = runxpcshelltests.XPCShellTests(log=log)
     return xpcshell.runTests(**vars(args))
 
 
-@CommandProvider
-class MochitestCommands(object):
-
-    def __init__(self, context):
-        self.context = context
-
-    @Command('xpcshell-test', category='testing',
-             description='Run the xpcshell harness.',
-             parser=parser_desktop)
-    def xpcshell(self, **kwargs):
-        self.context.activate_mozharness_venv()
-        return run_xpcshell(self.context, **kwargs)
+@Command(
+    "xpcshell-test",
+    category="testing",
+    description="Run the xpcshell harness.",
+    parser=parser_desktop,
+)
+def xpcshell(command_context, **kwargs):
+    command_context._mach_context.activate_mozharness_venv()
+    return run_xpcshell(command_context._mach_context, **kwargs)

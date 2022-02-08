@@ -1,7 +1,7 @@
 use futures::executor::block_on;
 use futures::future::{Future, FutureExt};
-use futures::stream::{self, StreamExt, TryStreamExt};
 use futures::io::{AsyncReadExt, Cursor};
+use futures::stream::{self, StreamExt, TryStreamExt};
 use futures::task::Poll;
 use futures_test::io::AsyncReadTestExt;
 use futures_test::task::noop_context;
@@ -23,17 +23,16 @@ fn read_to_string() {
     assert!(block_on(c.read_to_string(&mut v)).is_err());
 }
 
-fn run<F: Future + Unpin>(mut f: F) -> F::Output {
-    let mut cx = noop_context();
-    loop {
-        if let Poll::Ready(x) = f.poll_unpin(&mut cx) {
-            return x;
-        }
-    }
-}
-
 #[test]
 fn interleave_pending() {
+    fn run<F: Future + Unpin>(mut f: F) -> F::Output {
+        let mut cx = noop_context();
+        loop {
+            if let Poll::Ready(x) = f.poll_unpin(&mut cx) {
+                return x;
+            }
+        }
+    }
     let mut buf = stream::iter(vec![&b"12"[..], &b"33"[..], &b"3"[..]])
         .map(Ok)
         .into_async_read()

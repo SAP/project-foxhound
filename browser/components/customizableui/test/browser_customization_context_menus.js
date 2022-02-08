@@ -11,13 +11,13 @@ const isOSX = Services.appinfo.OS === "Darwin";
 const overflowButton = document.getElementById("nav-bar-overflow-button");
 const overflowPanel = document.getElementById("widget-overflow");
 
-// Right-click on the home button should
+// Right-click on the stop/reload button should
 // show a context menu with options to move it.
 add_task(async function home_button_context() {
   let contextMenu = document.getElementById("toolbar-context-menu");
   let shownPromise = popupShown(contextMenu);
-  let homeButton = document.getElementById("home-button");
-  EventUtils.synthesizeMouse(homeButton, 2, 2, {
+  let stopReloadButton = document.getElementById("stop-reload-button");
+  EventUtils.synthesizeMouse(stopReloadButton, 2, 2, {
     type: "contextmenu",
     button: 2,
   });
@@ -65,6 +65,8 @@ add_task(async function tabstrip_context() {
   let closedTabsAvailable = SessionStore.getClosedTabCount(window) == 0;
   info("Closed tabs: " + closedTabsAvailable);
   let expectedEntries = [
+    ["#toolbar-context-openANewTab", true],
+    ["---"],
     ["#toolbar-context-reloadSelectedTab", true],
     ["#toolbar-context-bookmarkSelectedTab", true],
     ["#toolbar-context-selectAllTabs", true],
@@ -282,14 +284,14 @@ add_task(async function context_within_panel() {
   CustomizableUI.removeWidgetFromArea("new-window-button");
 });
 
-// Right-click on the home button while in customization mode
+// Right-click on the stop/reload button while in customization mode
 // should show a context menu with options to move it.
 add_task(async function context_home_button_in_customize_mode() {
   await startCustomizing();
   let contextMenu = document.getElementById("toolbar-context-menu");
   let shownPromise = popupShown(contextMenu);
-  let homeButton = document.getElementById("wrapper-home-button");
-  EventUtils.synthesizeMouse(homeButton, 2, 2, {
+  let stopReloadButton = document.getElementById("wrapper-stop-reload-button");
+  EventUtils.synthesizeMouse(stopReloadButton, 2, 2, {
     type: "contextmenu",
     button: 2,
   });
@@ -598,7 +600,8 @@ add_task(async function custom_context_menus() {
   );
 });
 
-// Bug 1383458 - shouldn't enable 'pin to overflow menu' for flexible spaces
+// Bug 1690575 - 'pin to overflow menu' and 'remove from toolbar' should be hidden
+// for flexible spaces
 add_task(async function flexible_space_context_menu() {
   CustomizableUI.addWidgetToArea("spring", "nav-bar");
   let springs = document.querySelectorAll("#nav-bar toolbarspring");
@@ -611,19 +614,17 @@ add_task(async function flexible_space_context_menu() {
     button: 2,
   });
   await shownPromise;
+
   let expectedEntries = [
-    [".customize-context-moveToPanel", false],
-    [".customize-context-removeFromToolbar", true],
-    ["---"],
-  ];
-  if (!isOSX) {
-    expectedEntries.push(["#toggle_toolbar-menubar", true]);
-  }
-  expectedEntries.push(
     ["#toggle_PersonalToolbar", true],
     ["---"],
-    [".viewCustomizeToolbar", true]
-  );
+    [".viewCustomizeToolbar", true],
+  ];
+
+  if (!isOSX) {
+    expectedEntries.unshift(["#toggle_toolbar-menubar", true]);
+  }
+
   checkContextMenu(contextMenu, expectedEntries);
   contextMenu.hidePopup();
   gCustomizeMode.removeFromArea(lastSpring);

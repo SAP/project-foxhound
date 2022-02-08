@@ -8,21 +8,42 @@
 #include "sechash.h"
 #include "cryptohi.h"
 
+#include "cpputil.h"
 #include "gtest/gtest.h"
 #include "nss_scoped_ptrs.h"
 
 #include "pk11_ecdsa_vectors.h"
 #include "pk11_signature_test.h"
+#include "pk11_keygen.h"
 #include "testvectors/p256ecdsa-sha256-vectors.h"
 #include "testvectors/p384ecdsa-sha384-vectors.h"
 #include "testvectors/p521ecdsa-sha512-vectors.h"
 
 namespace nss_test {
 
+CK_MECHANISM_TYPE
+EcHashToComboMech(SECOidTag hash) {
+  switch (hash) {
+    case SEC_OID_SHA1:
+      return CKM_ECDSA_SHA1;
+    case SEC_OID_SHA224:
+      return CKM_ECDSA_SHA224;
+    case SEC_OID_SHA256:
+      return CKM_ECDSA_SHA256;
+    case SEC_OID_SHA384:
+      return CKM_ECDSA_SHA384;
+    case SEC_OID_SHA512:
+      return CKM_ECDSA_SHA512;
+    default:
+      break;
+  }
+  return CKM_INVALID_MECHANISM;
+}
+
 class Pkcs11EcdsaTestBase : public Pk11SignatureTest {
  protected:
   Pkcs11EcdsaTestBase(SECOidTag hash_oid)
-      : Pk11SignatureTest(CKM_ECDSA, hash_oid) {}
+      : Pk11SignatureTest(CKM_ECDSA, hash_oid, EcHashToComboMech(hash_oid)) {}
 };
 
 struct Pkcs11EcdsaTestParams {
@@ -41,6 +62,10 @@ TEST_P(Pkcs11EcdsaTest, Verify) { Verify(GetParam().sig_params_); }
 
 TEST_P(Pkcs11EcdsaTest, SignAndVerify) {
   SignAndVerify(GetParam().sig_params_);
+}
+
+TEST_P(Pkcs11EcdsaTest, ImportExport) {
+  ImportExport(GetParam().sig_params_.pkcs8_);
 }
 
 static const Pkcs11EcdsaTestParams kEcdsaVectors[] = {
@@ -65,8 +90,8 @@ static const Pkcs11EcdsaTestParams kEcdsaVectors[] = {
       DataBuffer(kP521Data, sizeof(kP521Data)),
       DataBuffer(kP521Signature, sizeof(kP521Signature))}}};
 
-INSTANTIATE_TEST_CASE_P(EcdsaSignVerify, Pkcs11EcdsaTest,
-                        ::testing::ValuesIn(kEcdsaVectors));
+INSTANTIATE_TEST_SUITE_P(EcdsaSignVerify, Pkcs11EcdsaTest,
+                         ::testing::ValuesIn(kEcdsaVectors));
 
 class Pkcs11EcdsaSha256Test : public Pkcs11EcdsaTestBase {
  public:
@@ -88,7 +113,8 @@ TEST_F(Pkcs11EcdsaSha256Test, ImportOnlyAlgorithmParams) {
                sizeof(kP256Pkcs8OnlyAlgorithmParams));
   DataBuffer data(kP256Data, sizeof(kP256Data));
   DataBuffer sig;
-  EXPECT_TRUE(ImportPrivateKeyAndSignHashedData(k, data, &sig));
+  DataBuffer sig2;
+  EXPECT_TRUE(ImportPrivateKeyAndSignHashedData(k, data, &sig, &sig2));
 };
 
 // Importing a private key in PKCS#8 format must succeed when the outer AlgID
@@ -99,7 +125,8 @@ TEST_F(Pkcs11EcdsaSha256Test, ImportMatchingCurveOIDAndAlgorithmParams) {
                sizeof(kP256Pkcs8MatchingCurveOIDAndAlgorithmParams));
   DataBuffer data(kP256Data, sizeof(kP256Data));
   DataBuffer sig;
-  EXPECT_TRUE(ImportPrivateKeyAndSignHashedData(k, data, &sig));
+  DataBuffer sig2;
+  EXPECT_TRUE(ImportPrivateKeyAndSignHashedData(k, data, &sig, &sig2));
 };
 
 // Importing a private key in PKCS#8 format must succeed when the outer AlgID
@@ -110,7 +137,8 @@ TEST_F(Pkcs11EcdsaSha256Test, ImportDissimilarCurveOIDAndAlgorithmParams) {
                sizeof(kP256Pkcs8DissimilarCurveOIDAndAlgorithmParams));
   DataBuffer data(kP256Data, sizeof(kP256Data));
   DataBuffer sig;
-  EXPECT_TRUE(ImportPrivateKeyAndSignHashedData(k, data, &sig));
+  DataBuffer sig2;
+  EXPECT_TRUE(ImportPrivateKeyAndSignHashedData(k, data, &sig, &sig2));
 };
 
 // Importing a private key in PKCS#8 format must fail when the outer ASN.1
@@ -208,16 +236,53 @@ class Pkcs11EcdsaWycheproofTest
 
 TEST_P(Pkcs11EcdsaWycheproofTest, Verify) { Derive(GetParam()); }
 
-INSTANTIATE_TEST_CASE_P(WycheproofP256SignatureSha256Test,
-                        Pkcs11EcdsaWycheproofTest,
-                        ::testing::ValuesIn(kP256EcdsaSha256Vectors));
+INSTANTIATE_TEST_SUITE_P(WycheproofP256SignatureSha256Test,
+                         Pkcs11EcdsaWycheproofTest,
+                         ::testing::ValuesIn(kP256EcdsaSha256Vectors));
 
-INSTANTIATE_TEST_CASE_P(WycheproofP384SignatureSha384Test,
-                        Pkcs11EcdsaWycheproofTest,
-                        ::testing::ValuesIn(kP384EcdsaSha384Vectors));
+INSTANTIATE_TEST_SUITE_P(WycheproofP384SignatureSha384Test,
+                         Pkcs11EcdsaWycheproofTest,
+                         ::testing::ValuesIn(kP384EcdsaSha384Vectors));
 
-INSTANTIATE_TEST_CASE_P(WycheproofP521SignatureSha512Test,
-                        Pkcs11EcdsaWycheproofTest,
-                        ::testing::ValuesIn(kP521EcdsaSha512Vectors));
+INSTANTIATE_TEST_SUITE_P(WycheproofP521SignatureSha512Test,
+                         Pkcs11EcdsaWycheproofTest,
+                         ::testing::ValuesIn(kP521EcdsaSha512Vectors));
+
+class Pkcs11EcdsaRoundtripTest
+    : public Pkcs11EcdsaTestBase,
+      public ::testing::WithParamInterface<SECOidTag> {
+ public:
+  Pkcs11EcdsaRoundtripTest() : Pkcs11EcdsaTestBase(SEC_OID_SHA256) {}
+
+ protected:
+  void GenerateExportImportSignVerify(SECOidTag tag) {
+    Pkcs11KeyPairGenerator generator(CKM_EC_KEY_PAIR_GEN, tag);
+    ScopedSECKEYPrivateKey priv;
+    ScopedSECKEYPublicKey pub;
+    generator.GenerateKey(&priv, &pub, false);
+
+    DataBuffer exported;
+    ExportPrivateKey(&priv, exported);
+
+    if (tag != SEC_OID_CURVE25519) {
+      DataBuffer sig;
+      DataBuffer sig2;
+      DataBuffer data(kP256Data, sizeof(kP256Data));
+      ASSERT_TRUE(
+          ImportPrivateKeyAndSignHashedData(exported, data, &sig, &sig2));
+
+      Verify(pub, data, sig);
+    }
+  }
+};
+
+TEST_P(Pkcs11EcdsaRoundtripTest, GenerateExportImportSignVerify) {
+  GenerateExportImportSignVerify(GetParam());
+}
+INSTANTIATE_TEST_SUITE_P(Pkcs11EcdsaRoundtripTest, Pkcs11EcdsaRoundtripTest,
+                         ::testing::Values(SEC_OID_SECG_EC_SECP256R1,
+                                           SEC_OID_SECG_EC_SECP384R1,
+                                           SEC_OID_SECG_EC_SECP521R1,
+                                           SEC_OID_CURVE25519));
 
 }  // namespace nss_test

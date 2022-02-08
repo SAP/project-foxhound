@@ -7,11 +7,11 @@
 #include "IntlUtils.h"
 
 #include "mozilla/dom/ToJSValue.h"
+#include "mozilla/intl/LocaleService.h"
 #include "mozIMozIntl.h"
 #include "nsContentUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(IntlUtils, mWindow)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(IntlUtils)
@@ -69,7 +69,7 @@ void IntlUtils::GetDisplayNames(const Sequence<nsString>& aLocales,
 
   // Now call the method.
   JS::Rooted<JS::Value> retVal(cx);
-  nsresult rv = mozIntl->GetDisplayNames(locales, options, &retVal);
+  nsresult rv = mozIntl->GetDisplayNamesDeprecated(locales, options, &retVal);
   if (NS_FAILED(rv)) {
     aError.Throw(rv);
     return;
@@ -86,49 +86,10 @@ void IntlUtils::GetDisplayNames(const Sequence<nsString>& aLocales,
   }
 }
 
-void IntlUtils::GetLocaleInfo(const Sequence<nsString>& aLocales,
-                              LocaleInfo& aResult, ErrorResult& aError) {
+bool IntlUtils::IsAppLocaleRTL() {
   MOZ_ASSERT(nsContentUtils::IsCallerChrome() ||
              nsContentUtils::IsCallerUAWidget());
-
-  nsCOMPtr<mozIMozIntl> mozIntl = do_GetService("@mozilla.org/mozintl;1");
-  if (!mozIntl) {
-    aError.Throw(NS_ERROR_UNEXPECTED);
-    return;
-  }
-
-  AutoJSAPI jsapi;
-  if (!jsapi.Init(xpc::PrivilegedJunkScope())) {
-    aError.Throw(NS_ERROR_FAILURE);
-    return;
-  }
-  JSContext* cx = jsapi.cx();
-
-  // Prepare parameter for getLocaleInfo().
-  JS::Rooted<JS::Value> locales(cx);
-  if (!ToJSValue(cx, aLocales, &locales)) {
-    aError.StealExceptionFromJSContext(cx);
-    return;
-  }
-
-  // Now call the method.
-  JS::Rooted<JS::Value> retVal(cx);
-  nsresult rv = mozIntl->GetLocaleInfo(locales, &retVal);
-  if (NS_FAILED(rv)) {
-    aError.Throw(rv);
-    return;
-  }
-
-  if (!retVal.isObject() || !JS_WrapValue(cx, &retVal)) {
-    aError.Throw(NS_ERROR_FAILURE);
-    return;
-  }
-
-  // Return the result as LocaleInfo.
-  if (!aResult.Init(cx, retVal)) {
-    aError.Throw(NS_ERROR_FAILURE);
-  }
+  return intl::LocaleService::GetInstance()->IsAppLocaleRTL();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

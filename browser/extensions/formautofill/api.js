@@ -4,29 +4,24 @@
 
 "use strict";
 
-/* globals ExtensionAPI */
+/* globals ExtensionAPI, Services, XPCOMUtils */
 
 const CACHED_STYLESHEETS = new WeakMap();
-
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
 
 ChromeUtils.defineModuleGetter(
   this,
   "FormAutofill",
-  "resource://formautofill/FormAutofill.jsm"
+  "resource://autofill/FormAutofill.jsm"
 );
 ChromeUtils.defineModuleGetter(
   this,
   "FormAutofillStatus",
-  "resource://formautofill/FormAutofillParent.jsm"
+  "resource://autofill/FormAutofillParent.jsm"
 );
 ChromeUtils.defineModuleGetter(
   this,
   "FormAutofillParent",
-  "resource://formautofill/FormAutofillParent.jsm"
+  "resource://autofill/FormAutofillParent.jsm"
 );
 ChromeUtils.defineModuleGetter(
   this,
@@ -69,9 +64,12 @@ function ensureCssLoaded(domWindow) {
   insertStyleSheet(domWindow, "chrome://formautofill/content/formautofill.css");
   insertStyleSheet(
     domWindow,
-    "resource://formautofill/autocomplete-item-shared.css"
+    "chrome://formautofill/content/skin/autocomplete-item-shared.css"
   );
-  insertStyleSheet(domWindow, "resource://formautofill/autocomplete-item.css");
+  insertStyleSheet(
+    domWindow,
+    "chrome://formautofill/content/skin/autocomplete-item.css"
+  );
 }
 
 function isAvailable() {
@@ -81,7 +79,6 @@ function isAvailable() {
   if (availablePref == "on") {
     return true;
   } else if (availablePref == "detect") {
-    let locale = Services.locale.requestedLocale;
     let region = Services.prefs.getCharPref("browser.search.region", "");
     let supportedCountries = Services.prefs
       .getCharPref("extensions.formautofill.supportedCountries")
@@ -92,7 +89,7 @@ function isAvailable() {
     ) {
       return false;
     }
-    return locale == "en-US" && supportedCountries.includes(region);
+    return supportedCountries.includes(region);
   }
   return false;
 }
@@ -184,10 +181,10 @@ this.formautofill = class extends ExtensionAPI {
 
     ChromeUtils.registerWindowActor("FormAutofill", {
       parent: {
-        moduleURI: "resource://formautofill/FormAutofillParent.jsm",
+        moduleURI: "resource://autofill/FormAutofillParent.jsm",
       },
       child: {
-        moduleURI: "resource://formautofill/FormAutofillChild.jsm",
+        moduleURI: "resource://autofill/FormAutofillChild.jsm",
         events: {
           focusin: {},
           DOMFormBeforeSubmit: {},

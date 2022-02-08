@@ -4,7 +4,7 @@
             "tests": ["basic_compositor_video"]
         },
         "chromez": {
-            "tests": ["about_preferences_basic", "tresize", "about_newtab_with_snippets"]
+            "tests": ["about_preferences_basic", "tresize"]
         },
         "dromaeojs": {
             "tests": ["dromaeo_css", "kraken"]
@@ -13,7 +13,8 @@
             "tests": ["tart_flex", "ts_paint_flex"]
         },
         "other": {
-            "tests": ["a11yr", "ts_paint", "twinopen", "sessionrestore", "sessionrestore_no_auto_restore", "tabpaint", "cpstartup", "startup_about_home_paint", "startup_about_home_paint_cached", "pdfpaint"]
+            "_comment": "Bug 1220362 - Disabled startup_about_home_paint_cached for high frequency intermittents",
+            "tests": ["a11yr", "ts_paint", "twinopen", "sessionrestore", "sessionrestore_no_auto_restore", "tabpaint", "cpstartup", "startup_about_home_paint", "pdfpaint", "cross_origin_pageload"]
         },
         "sessionrestore-many-windows": {
             "tests": ["sessionrestore_many_windows"]
@@ -45,7 +46,7 @@
             "benchmark_zip": "jetstream.zip"
         },
         "svgr": {
-            "tests": ["tsvgx", "tsvgr_opacity", "tart", "tscrollx", "tsvg_static"]
+            "tests": ["tsvgx", "tsvgr_opacity", "tscrollx", "tsvg_static", "tart"]
         },
         "perf-reftest": {
             "tests": ["perf_reftest"]

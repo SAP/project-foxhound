@@ -424,24 +424,20 @@ var PlacesTestUtils = Object.freeze({
         function listener(events) {
           if (!conditionFn || conditionFn(events)) {
             PlacesObservers.removeListener([notification], listener);
-            resolve();
+            resolve(events);
           }
         }
         PlacesObservers.addListener([notification], listener);
       });
     }
 
-    let iface =
-      type == "bookmarks"
-        ? Ci.nsINavBookmarkObserver
-        : Ci.nsINavHistoryObserver;
     return new Promise(resolve => {
       let proxifiedObserver = new Proxy(
         {},
         {
           get: (target, name) => {
             if (name == "QueryInterface") {
-              return ChromeUtils.generateQI([iface]);
+              return ChromeUtils.generateQI([Ci.nsINavBookmarkObserver]);
             }
             if (name == notification) {
               return (...args) => {

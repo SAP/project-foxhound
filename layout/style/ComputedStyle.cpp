@@ -23,12 +23,12 @@
 
 #include "nsCOMPtr.h"
 
-#include "GeckoProfiler.h"
 #include "mozilla/dom/Document.h"
 #include "nsPrintfCString.h"
 #include "RubyUtils.h"
 #include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ProfilerLabels.h"
 
 #include "mozilla/ReflowInput.h"
 #include "nsLayoutUtils.h"
@@ -173,6 +173,7 @@ nsChangeHint ComputedStyle::CalcStyleDifference(const ComputedStyle& aNewStyle,
   DO_STRUCT_DIFFERENCE(TextReset);
   DO_STRUCT_DIFFERENCE(Effects);
   DO_STRUCT_DIFFERENCE(Background);
+  DO_STRUCT_DIFFERENCE(Page);
 
 #undef DO_STRUCT_DIFFERENCE
 #undef DO_STRUCT_DIFFERENCE_WITH_ARGS
@@ -245,11 +246,16 @@ nsChangeHint ComputedStyle::CalcStyleDifference(const ComputedStyle& aNewStyle,
   }
 
   if (HasAuthorSpecifiedBorderOrBackground() !=
-          aNewStyle.HasAuthorSpecifiedBorderOrBackground() &&
-      StyleDisplay()->HasAppearance()) {
-    // A background-specified change may cause padding to change, so we may need
-    // to reflow.  We use the same hint here as we do for "appearance" changes.
-    hint |= nsChangeHint_AllReflowHints | nsChangeHint_RepaintFrame;
+      aNewStyle.HasAuthorSpecifiedBorderOrBackground()) {
+    const StyleAppearance appearance = StyleDisplay()->EffectiveAppearance();
+    if (appearance != StyleAppearance::None &&
+        nsLayoutUtils::AuthorSpecifiedBorderBackgroundDisablesTheming(
+            appearance)) {
+      // A background-specified change may cause padding to change, so we may
+      // need to reflow.  We use the same hint here as we do for "appearance"
+      // changes.
+      hint |= nsChangeHint_AllReflowHints | nsChangeHint_RepaintFrame;
+    }
   }
 
   MOZ_ASSERT(NS_IsHintSubset(hint, nsChangeHint_AllHints),
@@ -317,8 +323,9 @@ static nscolor ExtractColor(const ComputedStyle& aStyle,
 #define STYLE_FIELD(struct_, field_) aField == &struct_::field_ ||
 #define STYLE_STRUCT(name_, fields_)                                           \
   template <>                                                                  \
-  nscolor ComputedStyle::GetVisitedDependentColor(decltype(                    \
-      nsStyle##name_::MOZ_ARG_1 fields_) nsStyle##name_::*aField) const {      \
+  nscolor ComputedStyle::GetVisitedDependentColor(                             \
+      decltype(nsStyle##name_::MOZ_ARG_1 fields_) nsStyle##name_::*aField)     \
+      const {                                                                  \
     MOZ_ASSERT(MOZ_FOR_EACH(STYLE_FIELD, (nsStyle##name_, ), fields_) false,   \
                "Getting visited-dependent color for a field in nsStyle" #name_ \
                " which is not listed in nsCSSVisitedDependentPropList.h");     \

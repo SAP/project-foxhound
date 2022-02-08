@@ -5,15 +5,6 @@
 const ID = "addon@tests.mozilla.org";
 
 createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "42");
-// Force sync plugin loading to avoid spurious install events from plugins.
-Services.prefs.setBoolPref("plugin.load_flash_only", false);
-// plugin.load_flash_only is only respected if xpc::IsInAutomation is true.
-// This is not the case by default in xpcshell tests, unless the following
-// pref is also set. Fixing this generically is bug 1598804
-Services.prefs.setBoolPref(
-  "security.turn_off_all_security_so_that_viruses_can_take_over_this_computer",
-  true
-);
 
 function waitForBootstrapEvent(expectedEvent, addonId) {
   return new Promise(resolve => {
@@ -167,14 +158,6 @@ add_task(async function test_replace_temporary() {
     for (let packed of [false, true]) {
       // ugh, file locking issues with xpis on windows
       if (packed && AppConstants.platform == "win") {
-        continue;
-      }
-
-      // Unpacked extensions don't support signing, which means that
-      // our mock signing service is not able to give them a
-      // privileged signed state, and we can't install them on release
-      // builds.
-      if (!packed && !AppConstants.MOZ_ALLOW_LEGACY_EXTENSIONS) {
         continue;
       }
 

@@ -7,7 +7,7 @@
 "use strict";
 
 const TEST_URI =
-  "http://example.com/browser/devtools/client/webconsole/" +
+  "https://example.com/browser/devtools/client/webconsole/" +
   "test/browser/test-inspect-cross-domain-objects-top.html";
 
 add_task(async function() {
@@ -20,14 +20,15 @@ add_task(async function() {
 
   let hud, node;
   if (isFissionEnabled()) {
-    await pushPref("devtools.contenttoolbox.fission", true);
     // When fission is enabled, we might miss the early message emitted while the target
     // is being switched, so here we directly open the "real" test URI. See Bug 1614291.
     hud = await openNewTabAndConsole(TEST_URI);
     info("Wait for the 'foobar' message to be logged by the frame");
     node = await waitFor(() => findMessage(hud, "foobar"));
   } else {
-    hud = await openNewTabAndConsole("data:text/html;charset=utf8,<p>hello");
+    hud = await openNewTabAndConsole(
+      "data:text/html;charset=utf8,<!DOCTYPE html><p>hello"
+    );
     info(
       "Navigate and wait for the 'foobar' message to be logged by the frame"
     );
@@ -89,24 +90,19 @@ add_task(async function() {
   // Loading the inspector panel at first, to make it possible to listen for
   // new node selections
   await toolbox.loadTool("inspector");
+  const highlighter = toolbox.getHighlighter();
 
   const elementNode = oi3.querySelector(".objectBox-node");
   ok(elementNode !== null, "Node was logged as expected");
   const view = node.ownerDocument.defaultView;
 
   info("Highlight the node by moving the cursor on it");
-  // the inspector should be initialized first and then the node should
-  // highlight after the hover effect.
-  const objectFront = hud.currentTarget.client.getFrontByID(
-    elementNode.getAttribute("data-link-actor-id")
-  );
-  const inspectorFront = await objectFront.targetFront.getFront("inspector");
-  const onNodeHighlight = inspectorFront.highlighter.once("node-highlight");
+  const onNodeHighlight = highlighter.waitForHighlighterShown();
 
   EventUtils.synthesizeMouseAtCenter(elementNode, { type: "mousemove" }, view);
 
-  await onNodeHighlight;
-  ok(true, "Highlighter is displayed");
+  const { highlighter: activeHighlighter } = await onNodeHighlight;
+  ok(activeHighlighter, "Highlighter is displayed");
   // Move the mouse out of the node to prevent failure when test is run multiple times.
   EventUtils.synthesizeMouseAtCenter(oi1, { type: "mousemove" }, view);
 

@@ -1,16 +1,11 @@
 "use strict";
 
 var dns = Cc["@mozilla.org/network/dns-service;1"].getService(Ci.nsIDNSService);
-var threadManager = Cc["@mozilla.org/thread-manager;1"].getService(
-  Ci.nsIThreadManager
-);
-var mainThread = threadManager.currentThread;
+var mainThread = Services.tm.currentThread;
 
 var onionPref;
 var localdomainPref;
-var prefs = Cc["@mozilla.org/preferences-service;1"].getService(
-  Ci.nsIPrefBranch
-);
+var prefs = Services.prefs;
 
 // check that we don't lookup .onion
 var listenerBlock = {
@@ -24,6 +19,7 @@ var listenerBlock = {
 // check that we do lookup .onion (via pref)
 var listenerDontBlock = {
   onLookupComplete(inRequest, inRecord, inStatus) {
+    inRecord.QueryInterface(Ci.nsIDNSAddrRecord);
     var answer = inRecord.getNextAddrAsString();
     Assert.ok(answer == "127.0.0.1" || answer == "::1");
     all_done();
@@ -37,7 +33,9 @@ function do_test_dontBlock() {
   prefs.setBoolPref("network.dns.blockDotOnion", false);
   dns.asyncResolve(
     "private.onion",
+    Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
     0,
+    null, // resolverInfo
     listenerDontBlock,
     mainThread,
     defaultOriginAttributes
@@ -49,7 +47,9 @@ function do_test_block() {
   try {
     dns.asyncResolve(
       "private.onion",
+      Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
       0,
+      null, // resolverInfo
       listenerBlock,
       mainThread,
       defaultOriginAttributes

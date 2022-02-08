@@ -31,11 +31,11 @@ class nsSHEntry : public nsISHEntry {
   static nsresult Startup();
   static void Shutdown();
 
+  nsSHEntryShared* GetState() { return mShared; }
+
  protected:
   explicit nsSHEntry(const nsSHEntry& aOther);
   virtual ~nsSHEntry();
-
-  nsSHEntryShared* GetState() { return mShared; }
 
   // We share the state in here with other SHEntries which correspond to the
   // same document.
@@ -47,6 +47,7 @@ class nsSHEntry : public nsISHEntry {
   nsCOMPtr<nsIURI> mResultPrincipalURI;
   nsCOMPtr<nsIReferrerInfo> mReferrerInfo;
   nsString mTitle;
+  nsString mName;
   nsCOMPtr<nsIInputStream> mPostData;
   uint32_t mLoadType;
   uint32_t mID;
@@ -64,6 +65,7 @@ class nsSHEntry : public nsISHEntry {
   bool mLoadedInThisProcess;
   bool mPersist;
   bool mHasUserInteraction;
+  bool mHasUserActivation;
 };
 
 #endif /* nsSHEntry_h */

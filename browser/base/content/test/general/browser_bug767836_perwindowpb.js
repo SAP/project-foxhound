@@ -12,7 +12,7 @@ async function doTest(isPrivate) {
   let defaultURL = AboutNewTab.newTabURL;
   let newTabURL;
   let mode;
-  let testURL = "http://example.com/";
+  let testURL = "https://example.com/";
   if (isPrivate) {
     mode = "per window private browsing";
     newTabURL = "about:privatebrowsing";
@@ -64,18 +64,13 @@ add_task(async function test_newTabService() {
 async function openNewTab(aWindow, aExpectedURL) {
   // Open a new tab
   aWindow.BrowserOpenTab();
-
   let browser = aWindow.gBrowser.selectedBrowser;
-  let loadPromise = BrowserTestUtils.browserLoaded(
-    browser,
-    false,
-    aExpectedURL
-  );
-  let alreadyLoaded = await ContentTask.spawn(browser, aExpectedURL, url => {
-    let doc = content.document;
-    return doc && doc.readyState === "complete" && doc.location.href == url;
-  });
-  if (!alreadyLoaded) {
-    await loadPromise;
+
+  // We're already loaded.
+  if (browser.currentURI.spec === aExpectedURL) {
+    return;
   }
+
+  // Wait for any location change.
+  await BrowserTestUtils.waitForLocationChange(aWindow.gBrowser);
 }

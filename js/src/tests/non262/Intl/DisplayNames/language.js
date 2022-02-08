@@ -1,4 +1,4 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl')||(!this.Intl.DisplayNames&&!this.hasOwnProperty('addIntlExtras')))
+// |reftest| skip-if(!this.hasOwnProperty('Intl'))
 
 const tests = {
   "en": {
@@ -32,7 +32,7 @@ const tests = {
       "nl-BE": "Niederländisch (Belgien)",
     },
     short: {
-      "en-Hant-GB": "Englisch (Traditionell, GB)",
+      "en-Hant-GB": "Englisch (Traditionell, UK)",
       "en-Hans-US": "Englisch (Vereinfacht, USA)",
     },
     narrow: {},
@@ -80,16 +80,14 @@ const tests = {
 };
 
 for (let [locale, localeTests] of Object.entries(tests)) {
-  let defaultCalendar = new Intl.DateTimeFormat(locale).resolvedOptions().calendar;
-
   for (let [style, styleTests] of Object.entries(localeTests)) {
-    let dn = new Intl.DisplayNames(locale, {type: "language", style});
+    let dn = new Intl.DisplayNames(locale, {type: "language", languageDisplay: "standard", style});
 
     let resolved = dn.resolvedOptions();
     assertEq(resolved.locale, locale);
-    assertEq(resolved.calendar, defaultCalendar);
     assertEq(resolved.style, style);
     assertEq(resolved.type, "language");
+    assertEq(resolved.languageDisplay, "standard");
     assertEq(resolved.fallback, "code");
 
     let inheritedTests = {...localeTests.long, ...localeTests.short, ...localeTests.narrow};
@@ -147,6 +145,16 @@ for (let [locale, localeTests] of Object.entries(tests)) {
   assertEq(dn2.of("en-AA"), "en-AA");
   assertEq(dn3.of("en-AA"), undefined);
 
+  // "XZ" doesn't have any localised names.
+  assertEq(dn1.of("en-XZ"), "en-XZ");
+  assertEq(dn2.of("en-XZ"), "en-XZ");
+  assertEq(dn3.of("en-XZ"), undefined);
+
+  // "998" is canonicalised to "XZ".
+  assertEq(dn1.of("en-998"), "en-XZ");
+  assertEq(dn2.of("en-998"), "en-XZ");
+  assertEq(dn3.of("en-998"), undefined);
+
   // The returned fallback is in canonical case.
   assertEq(dn1.of("AAA"), "aaa");
   assertEq(dn2.of("AAA"), "aaa");
@@ -182,6 +190,15 @@ for (let [locale, localeTests] of Object.entries(tests)) {
 
   assertEq(dn.of("IT-LATN-IT"), "Italian (Latin, Italy)");
   assertEq(dn.of("it-latn-it"), "Italian (Latin, Italy)");
+}
+
+// resolvedOptions() only outputs "languageDisplay" when the type is "language".
+{
+  let dn1 = new Intl.DisplayNames("en", {type: "language"});
+  let dn2 = new Intl.DisplayNames("en", {type: "script"});
+
+  assertEq(dn1.resolvedOptions().languageDisplay, "dialect");
+  assertEq(dn2.resolvedOptions().hasOwnProperty("languageDisplay"), false);
 }
 
 if (typeof reportCompare === "function")

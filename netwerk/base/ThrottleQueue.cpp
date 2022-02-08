@@ -234,15 +234,14 @@ NS_IMPL_ISUPPORTS(ThrottleQueue, nsIInputChannelThrottleQueue, nsITimerCallback,
                   nsINamed)
 
 ThrottleQueue::ThrottleQueue()
-    : mMeanBytesPerSecond(0),
-      mMaxBytesPerSecond(0),
-      mBytesProcessed(0),
-      mTimerArmed(false) {
+
+{
   nsresult rv;
   nsCOMPtr<nsIEventTarget> sts;
   nsCOMPtr<nsIIOService> ioService = do_GetIOService(&rv);
-  if (NS_SUCCEEDED(rv))
+  if (NS_SUCCEEDED(rv)) {
     sts = do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID, &rv);
+  }
   if (NS_SUCCEEDED(rv)) mTimer = NS_NewTimer(sts);
 }
 
@@ -330,8 +329,7 @@ ThrottleQueue::Notify(nsITimer* aTimer) {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
   // A notified reader may need to push itself back on the queue.
   // Swap out the list of readers so that this works properly.
-  nsTArray<RefPtr<ThrottleInputStream>> events;
-  events.SwapElements(mAsyncEvents);
+  nsTArray<RefPtr<ThrottleInputStream>> events = std::move(mAsyncEvents);
 
   // Optimistically notify all the waiting readers, and then let them
   // requeue if there isn't enough bandwidth.
@@ -351,7 +349,8 @@ ThrottleQueue::GetName(nsACString& aName) {
 
 void ThrottleQueue::QueueStream(ThrottleInputStream* aStream) {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
-  if (mAsyncEvents.IndexOf(aStream) == mAsyncEvents.NoIndex) {
+  if (mAsyncEvents.IndexOf(aStream) ==
+      nsTArray<RefPtr<mozilla::net::ThrottleInputStream>>::NoIndex) {
     mAsyncEvents.AppendElement(aStream);
 
     if (!mTimerArmed) {

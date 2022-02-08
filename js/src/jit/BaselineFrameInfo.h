@@ -8,6 +8,7 @@
 #define jit_BaselineFrameInfo_h
 
 #include "mozilla/Attributes.h"
+#include "mozilla/Maybe.h"
 
 #include <new>
 
@@ -21,6 +22,7 @@ namespace js {
 namespace jit {
 
 struct BytecodeInfo;
+class MacroAssembler;
 
 // [SMDOC] Baseline FrameInfo overview.
 //
@@ -237,7 +239,7 @@ class CompilerFrameInfo : public FrameInfo {
  public:
   CompilerFrameInfo(JSScript* script, MacroAssembler& masm)
       : FrameInfo(masm), script(script), stack(), spIndex(0) {}
-  MOZ_MUST_USE bool init(TempAllocator& alloc);
+  [[nodiscard]] bool init(TempAllocator& alloc);
 
   size_t nlocals() const { return script->nfixed(); }
   size_t nargs() const { return script->function()->nargs(); }
@@ -343,6 +345,14 @@ class CompilerFrameInfo : public FrameInfo {
     return peek(depth)->hasKnownType(type);
   }
 
+  mozilla::Maybe<Value> knownStackValue(int32_t depth) const {
+    StackValue* val = peek(depth);
+    if (val->kind() == StackValue::Constant) {
+      return mozilla::Some(val->constant());
+    }
+    return mozilla::Nothing();
+  }
+
   void storeStackValue(int32_t depth, const Address& dest,
                        const ValueOperand& scratch);
 
@@ -375,6 +385,10 @@ class InterpreterFrameInfo : public FrameInfo {
     return false;
   }
 
+  mozilla::Maybe<Value> knownStackValue(int32_t depth) const {
+    return mozilla::Nothing();
+  }
+
   Address addressOfStackValue(int depth) const {
     MOZ_ASSERT(depth < 0);
     return Address(masm.getStackPointer(),
@@ -387,14 +401,16 @@ class InterpreterFrameInfo : public FrameInfo {
 
   void popRegsAndSync(uint32_t uses);
 
-  void pop() { popn(1); }
+  inline void pop();
 
-  void popn(uint32_t n) { masm.addToStackPtr(Imm32(n * sizeof(Value))); }
+  inline void popn(uint32_t n);
 
   void popn(Register reg) {
     // sp := sp + reg * sizeof(Value)
     Register spReg = AsRegister(masm.getStackPointer());
     masm.computeEffectiveAddress(BaseValueIndex(spReg, reg), spReg);
+    // On arm64, SP may be < PSP now (that's OK).
+    // eg testcase: tests/arguments/strict-args-generator-flushstack.js
   }
 
   void popValue(ValueOperand dest) { masm.popValue(dest); }

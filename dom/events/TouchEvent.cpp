@@ -9,16 +9,14 @@
 #include "mozilla/dom/Touch.h"
 #include "mozilla/dom/TouchListBinding.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/LookAndFeel.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TouchEvents.h"
 #include "nsContentUtils.h"
 #include "nsIDocShell.h"
-#include "mozilla/WidgetUtils.h"
 
-namespace mozilla {
-
-namespace dom {
+namespace mozilla::dom {
 
 /******************************************************************************
  * TouchList
@@ -153,9 +151,10 @@ TouchList* TouchEvent::TargetTouches() {
         if (!equalTarget) {
           // Need to still check if we're inside native anonymous content
           // and the non-NAC target would be the same.
-          nsCOMPtr<nsIContent> touchTarget =
-              do_QueryInterface(touches[i]->mTarget);
-          nsCOMPtr<nsIContent> eventTarget = do_QueryInterface(mEvent->mTarget);
+          nsIContent* touchTarget =
+              nsIContent::FromEventTargetOrNull(touches[i]->mTarget);
+          nsIContent* eventTarget =
+              nsIContent::FromEventTargetOrNull(mEvent->mTarget);
           equalTarget = touchTarget && eventTarget &&
                         touchTarget->FindFirstNonChromeOnlyAccessContent() ==
                             eventTarget->FindFirstNonChromeOnlyAccessContent();
@@ -196,45 +195,34 @@ bool TouchEvent::PrefEnabled(JSContext* aCx, JSObject* aGlobal) {
   return PrefEnabled(docShell);
 }
 
-// static
-bool TouchEvent::PlatformSupportsTouch() {
-#if defined(MOZ_WIDGET_ANDROID)
-  // Touch support is always enabled on android.
-  return true;
-#elif defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
-  static bool sDidCheckTouchDeviceSupport = false;
-  static bool sIsTouchDeviceSupportPresent = false;
-  // On Windows and GTK3 we auto-detect based on device support.
-  if (!sDidCheckTouchDeviceSupport) {
-    sDidCheckTouchDeviceSupport = true;
-    sIsTouchDeviceSupportPresent =
-        widget::WidgetUtils::IsTouchDeviceSupportPresent();
-    // But touch events are only actually supported if APZ is enabled. If
-    // APZ is disabled globally, we can check that once and incorporate that
-    // into the cached state. If APZ is enabled, we need to further check
-    // based on the widget, which we do below (and don't cache that result).
-    sIsTouchDeviceSupportPresent &= gfxPlatform::AsyncPanZoomEnabled();
-  }
+static bool PlatformSupportsTouch() {
+  // Touch events are only actually supported if APZ is enabled. If APZ is
+  // disabled globally, we can check that once and incorporate that into the
+  // cached state. If APZ is enabled, we need to further check based on the
+  // widget, which we do in PrefEnabled (and don't cache that result).
+  static bool sIsTouchDeviceSupportPresent =
+      !!LookAndFeel::GetInt(LookAndFeel::IntID::TouchDeviceSupportPresent) &&
+      gfxPlatform::AsyncPanZoomEnabled();
+
   return sIsTouchDeviceSupportPresent;
-#else
-  return false;
-#endif
 }
 
 // static
 bool TouchEvent::PrefEnabled(nsIDocShell* aDocShell) {
   MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
 
-  auto touchEventsOverride = nsIDocShell::TOUCHEVENTS_OVERRIDE_NONE;
+  auto touchEventsOverride = mozilla::dom::TouchEventsOverride::None;
   if (aDocShell) {
-    touchEventsOverride = aDocShell->GetTouchEventsOverride();
+    if (BrowsingContext* bc = aDocShell->GetBrowsingContext()) {
+      touchEventsOverride = bc->TouchEventsOverride();
+    }
   }
 
   bool enabled = false;
-  if (touchEventsOverride == nsIDocShell::TOUCHEVENTS_OVERRIDE_ENABLED) {
+  if (touchEventsOverride == mozilla::dom::TouchEventsOverride::Enabled) {
     enabled = true;
   } else if (touchEventsOverride ==
-             nsIDocShell::TOUCHEVENTS_OVERRIDE_DISABLED) {
+             mozilla::dom::TouchEventsOverride::Disabled) {
     enabled = false;
   } else {
     const int32_t prefValue = StaticPrefs::dom_w3c_touch_events_enabled();
@@ -255,8 +243,11 @@ bool TouchEvent::PrefEnabled(nsIDocShell* aDocShell) {
         // APZ might be disabled on this particular widget, in which case
         // TouchEvent support will also be disabled. Try to detect that.
         RefPtr<nsPresContext> pc = aDocShell->GetPresContext();
-        if (pc && pc->GetRootWidget()) {
-          enabled &= pc->GetRootWidget()->AsyncPanZoomEnabled();
+        if (pc) {
+          nsCOMPtr<nsIWidget> widget = pc->GetRootWidget();
+          if (widget) {
+            enabled &= widget->AsyncPanZoomEnabled();
+          }
         }
       }
 #endif
@@ -291,8 +282,9 @@ bool TouchEvent::LegacyAPIEnabled(nsIDocShell* aDocShell,
                                   bool aCallerIsSystem) {
   return (aCallerIsSystem ||
           StaticPrefs::dom_w3c_touch_events_legacy_apis_enabled() ||
-          (aDocShell && aDocShell->GetTouchEventsOverride() ==
-                            nsIDocShell::TOUCHEVENTS_OVERRIDE_ENABLED)) &&
+          (aDocShell && aDocShell->GetBrowsingContext() &&
+           aDocShell->GetBrowsingContext()->TouchEventsOverride() ==
+               mozilla::dom::TouchEventsOverride::Enabled)) &&
          PrefEnabled(aDocShell);
 }
 
@@ -333,8 +325,7 @@ bool TouchEvent::CtrlKey() { return mEvent->AsTouchEvent()->IsControl(); }
 
 bool TouchEvent::ShiftKey() { return mEvent->AsTouchEvent()->IsShift(); }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 using namespace mozilla;
 using namespace mozilla::dom;

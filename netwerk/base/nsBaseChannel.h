@@ -30,6 +30,7 @@
 #include "nsThreadUtils.h"
 
 class nsIInputStream;
+class nsICancelable;
 
 //-----------------------------------------------------------------------------
 // nsBaseChannel is designed to be subclassed.  The subclass is responsible for
@@ -100,10 +101,23 @@ class nsBaseChannel
   //
   // On success, the callee must begin pumping data to the stream listener,
   // and at some point call OnStartRequest followed by OnStopRequest.
-  // Additionally, it may provide a request object which may be used to
-  // suspend, resume, and cancel the underlying request.
+  //
+  // Additionally, when a successful nsresult is returned, then the subclass
+  // should be setting  through its two out params either:
+  // - a request object, which may be used to suspend, resume, and cancel
+  //   the underlying request.
+  // - or a cancelable object (e.g. when a request can't be returned right away
+  //   due to some async work needed to retrieve it). which may be used to
+  //   cancel the underlying request (e.g. because the channel has been
+  //   canceled)
+  //
+  // Not returning a request or cancelable leads to potentially leaking the
+  // an underling stream pump (which would keep to be pumping data even after
+  // the channel has been canceled and nothing is going to handle the data
+  // available, e.g. see Bug 1706594).
   virtual nsresult BeginAsyncRead(nsIStreamListener* listener,
-                                  nsIRequest** request) {
+                                  nsIRequest** request,
+                                  nsICancelable** cancelableRequest) {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
 
@@ -212,7 +226,7 @@ class nsBaseChannel
   // This function optionally returns a reference to the new converter.
   nsresult PushStreamConverter(const char* fromType, const char* toType,
                                bool invalidatesContentLength = true,
-                               nsIStreamListener** converter = nullptr);
+                               nsIStreamListener** result = nullptr);
 
  protected:
   void DisallowThreadRetargeting() { mAllowThreadRetargeting = false; }
@@ -271,7 +285,8 @@ class nsBaseChannel
 
   RefPtr<nsInputStreamPump> mPump;
   RefPtr<nsIRequest> mRequest;
-  bool mPumpingData;
+  nsCOMPtr<nsICancelable> mCancelableAsyncRequest;
+  bool mPumpingData{false};
   nsCOMPtr<nsIProgressEventSink> mProgressSink;
   nsCOMPtr<nsIURI> mOriginalURI;
   nsCOMPtr<nsISupports> mOwner;
@@ -279,13 +294,13 @@ class nsBaseChannel
   nsCOMPtr<nsIChannel> mRedirectChannel;
   nsCString mContentType;
   nsCString mContentCharset;
-  uint32_t mLoadFlags;
-  bool mQueriedProgressSink;
-  bool mSynthProgressEvents;
-  bool mAllowThreadRetargeting;
-  bool mWaitingOnAsyncRedirect;
-  bool mOpenRedirectChannel;
-  uint32_t mRedirectFlags;
+  uint32_t mLoadFlags{LOAD_NORMAL};
+  bool mQueriedProgressSink{true};
+  bool mSynthProgressEvents{false};
+  bool mAllowThreadRetargeting{true};
+  bool mWaitingOnAsyncRedirect{false};
+  bool mOpenRedirectChannel{false};
+  uint32_t mRedirectFlags{0};
 
  protected:
   nsCOMPtr<nsIURI> mURI;
@@ -293,12 +308,12 @@ class nsBaseChannel
   nsCOMPtr<nsILoadInfo> mLoadInfo;
   nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
   nsCOMPtr<nsIStreamListener> mListener;
-  nsresult mStatus;
-  uint32_t mContentDispositionHint;
+  nsresult mStatus{NS_OK};
+  uint32_t mContentDispositionHint{UINT32_MAX};
   mozilla::UniquePtr<nsString> mContentDispositionFilename;
-  int64_t mContentLength;
-  bool mWasOpened;
-  bool mCanceled;
+  int64_t mContentLength{-1};
+  bool mWasOpened{false};
+  bool mCanceled{false};
 
   friend class mozilla::net::PrivateBrowsingChannel<nsBaseChannel>;
 };

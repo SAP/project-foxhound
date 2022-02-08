@@ -26,29 +26,15 @@ using namespace mozilla;
 
 NS_IMPL_ISUPPORTS(nsMenuGroupOwnerX, nsIMutationObserver)
 
-nsMenuGroupOwnerX::nsMenuGroupOwnerX() : mCurrentCommandID(eCommand_ID_Last) {
-  mInfoSet = [[NSMutableSet setWithCapacity:10] retain];
+nsMenuGroupOwnerX::nsMenuGroupOwnerX(mozilla::dom::Element* aElement, nsMenuBarX* aMenuBarIfMenuBar)
+    : mContent(aElement), mMenuBar(aMenuBarIfMenuBar) {
+  mRepresentedObject = [[MOZMenuItemRepresentedObject alloc] initWithMenuGroupOwner:this];
 }
 
 nsMenuGroupOwnerX::~nsMenuGroupOwnerX() {
   MOZ_ASSERT(mContentToObserverTable.Count() == 0, "have outstanding mutation observers!\n");
-
-  // The MenuItemInfo objects in mInfoSet may live longer than we do.  So when
-  // we get destroyed we need to invalidate all their mMenuGroupOwner pointers.
-  NSEnumerator* counter = [mInfoSet objectEnumerator];
-  MenuItemInfo* info;
-  while ((info = (MenuItemInfo*)[counter nextObject])) {
-    [info setMenuGroupOwner:nil];
-  }
-  [mInfoSet release];
-}
-
-nsresult nsMenuGroupOwnerX::Create(mozilla::dom::Element* aContent) {
-  if (!aContent) return NS_ERROR_INVALID_ARG;
-
-  mContent = aContent;
-
-  return NS_OK;
+  [mRepresentedObject setMenuGroupOwner:nullptr];
+  [mRepresentedObject release];
 }
 
 //
@@ -69,7 +55,7 @@ void nsMenuGroupOwnerX::ContentAppended(nsIContent* aFirstNewContent) {
 
 void nsMenuGroupOwnerX::NodeWillBeDestroyed(const nsINode* aNode) {}
 
-void nsMenuGroupOwnerX::AttributeWillChange(dom::Element* aContent, int32_t aNameSpaceID,
+void nsMenuGroupOwnerX::AttributeWillChange(dom::Element* aElement, int32_t aNameSpaceID,
                                             nsAtom* aAttribute, int32_t aModType) {}
 
 void nsMenuGroupOwnerX::NativeAnonymousChildListChange(nsIContent* aContent, bool aIsRemove) {}
@@ -79,7 +65,9 @@ void nsMenuGroupOwnerX::AttributeChanged(dom::Element* aElement, int32_t aNameSp
                                          const nsAttrValue* aOldValue) {
   nsCOMPtr<nsIMutationObserver> kungFuDeathGrip(this);
   nsChangeObserver* obs = LookupContentChangeObserver(aElement);
-  if (obs) obs->ObserveAttributeChanged(aElement->OwnerDoc(), aElement, aAttribute);
+  if (obs) {
+    obs->ObserveAttributeChanged(aElement->OwnerDoc(), aElement, aAttribute);
+  }
 }
 
 void nsMenuGroupOwnerX::ContentRemoved(nsIContent* aChild, nsIContent* aPreviousSibling) {
@@ -90,18 +78,18 @@ void nsMenuGroupOwnerX::ContentRemoved(nsIContent* aChild, nsIContent* aPrevious
 
   nsCOMPtr<nsIMutationObserver> kungFuDeathGrip(this);
   nsChangeObserver* obs = LookupContentChangeObserver(container);
-  if (obs)
+  if (obs) {
     obs->ObserveContentRemoved(aChild->OwnerDoc(), container, aChild, aPreviousSibling);
-  else if (container != mContent) {
+  } else if (container != mContent) {
     // We do a lookup on the parent container in case things were removed
     // under a "menupopup" item. That is basically a wrapper for the contents
     // of a "menu" node.
     nsCOMPtr<nsIContent> parent = container->GetParent();
     if (parent) {
       obs = LookupContentChangeObserver(parent);
-      if (obs)
-        obs->ObserveContentRemoved(aChild->OwnerDoc(), aChild->GetParent(), aChild,
-                                   aPreviousSibling);
+      if (obs) {
+        obs->ObserveContentRemoved(aChild->OwnerDoc(), container, aChild, aPreviousSibling);
+      }
     }
   }
 }
@@ -114,16 +102,18 @@ void nsMenuGroupOwnerX::ContentInserted(nsIContent* aChild) {
 
   nsCOMPtr<nsIMutationObserver> kungFuDeathGrip(this);
   nsChangeObserver* obs = LookupContentChangeObserver(container);
-  if (obs)
+  if (obs) {
     obs->ObserveContentInserted(aChild->OwnerDoc(), container, aChild);
-  else if (container != mContent) {
+  } else if (container != mContent) {
     // We do a lookup on the parent container in case things were removed
     // under a "menupopup" item. That is basically a wrapper for the contents
     // of a "menu" node.
     nsCOMPtr<nsIContent> parent = container->GetParent();
     if (parent) {
       obs = LookupContentChangeObserver(parent);
-      if (obs) obs->ObserveContentInserted(aChild->OwnerDoc(), container, aChild);
+      if (obs) {
+        obs->ObserveContentInserted(aChild->OwnerDoc(), container, aChild);
+      }
     }
   }
 }
@@ -139,7 +129,7 @@ void nsMenuGroupOwnerX::RegisterForContentChanges(nsIContent* aContent,
   if (!mContentToObserverTable.Contains(aContent)) {
     aContent->AddMutationObserver(this);
   }
-  mContentToObserverTable.Put(aContent, aMenuObject);
+  mContentToObserverTable.InsertOrUpdate(aContent, aMenuObject);
 }
 
 void nsMenuGroupOwnerX::UnregisterForContentChanges(nsIContent* aContent) {
@@ -151,15 +141,15 @@ void nsMenuGroupOwnerX::UnregisterForContentChanges(nsIContent* aContent) {
 
 nsChangeObserver* nsMenuGroupOwnerX::LookupContentChangeObserver(nsIContent* aContent) {
   nsChangeObserver* result;
-  if (mContentToObserverTable.Get(aContent, &result))
+  if (mContentToObserverTable.Get(aContent, &result)) {
     return result;
-  else
-    return nullptr;
+  }
+  return nullptr;
 }
 
 // Given a menu item, creates a unique 4-character command ID and
 // maps it to the item. Returns the id for use by the client.
-uint32_t nsMenuGroupOwnerX::RegisterForCommand(nsMenuItemX* inMenuItem) {
+uint32_t nsMenuGroupOwnerX::RegisterForCommand(nsMenuItemX* aMenuItem) {
   // no real need to check for uniqueness. We always start afresh with each
   // window at 1. Even if we did get close to the reserved Apple command id's,
   // those don't start until at least '    ', which is integer 538976288. If
@@ -169,23 +159,41 @@ uint32_t nsMenuGroupOwnerX::RegisterForCommand(nsMenuItemX* inMenuItem) {
   // make id unique
   ++mCurrentCommandID;
 
-  mCommandToMenuObjectTable.Put(mCurrentCommandID, inMenuItem);
+  mCommandToMenuObjectTable.InsertOrUpdate(mCurrentCommandID, aMenuItem);
 
   return mCurrentCommandID;
 }
 
 // Removes the mapping between the given 4-character command ID
 // and its associated menu item.
-void nsMenuGroupOwnerX::UnregisterCommand(uint32_t inCommandID) {
-  mCommandToMenuObjectTable.Remove(inCommandID);
+void nsMenuGroupOwnerX::UnregisterCommand(uint32_t aCommandID) {
+  mCommandToMenuObjectTable.Remove(aCommandID);
 }
 
-nsMenuItemX* nsMenuGroupOwnerX::GetMenuItemForCommandID(uint32_t inCommandID) {
+nsMenuItemX* nsMenuGroupOwnerX::GetMenuItemForCommandID(uint32_t aCommandID) {
   nsMenuItemX* result;
-  if (mCommandToMenuObjectTable.Get(inCommandID, &result))
+  if (mCommandToMenuObjectTable.Get(aCommandID, &result)) {
     return result;
-  else
-    return nullptr;
+  }
+  return nullptr;
 }
 
-void nsMenuGroupOwnerX::AddMenuItemInfoToSet(MenuItemInfo* info) { [mInfoSet addObject:info]; }
+@implementation MOZMenuItemRepresentedObject {
+  nsMenuGroupOwnerX* mMenuGroupOwner;  // weak, cleared by nsMenuGroupOwnerX's destructor
+}
+
+- (id)initWithMenuGroupOwner:(nsMenuGroupOwnerX*)aMenuGroupOwner {
+  self = [super init];
+  mMenuGroupOwner = aMenuGroupOwner;
+  return self;
+}
+
+- (void)setMenuGroupOwner:(nsMenuGroupOwnerX*)aMenuGroupOwner {
+  mMenuGroupOwner = aMenuGroupOwner;
+}
+
+- (nsMenuGroupOwnerX*)menuGroupOwner {
+  return mMenuGroupOwner;
+}
+
+@end

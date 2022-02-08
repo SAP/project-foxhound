@@ -5,7 +5,6 @@
 "use strict";
 
 const Services = require("Services");
-const promise = require("promise");
 const { PSEUDO_CLASSES } = require("devtools/shared/css/constants");
 const { LocalizationHelper } = require("devtools/shared/l10n");
 
@@ -287,7 +286,7 @@ class MarkupContextMenu {
   _pasteAdjacentHTML(position) {
     const content = this._getClipboardContentForPaste();
     if (!content) {
-      return promise.reject("No clipboard content for paste");
+      return Promise.reject("No clipboard content for paste");
     }
 
     const node = this.selection.nodeFront;
@@ -300,7 +299,7 @@ class MarkupContextMenu {
   _pasteInnerHTML() {
     const content = this._getClipboardContentForPaste();
     if (!content) {
-      return promise.reject("No clipboard content for paste");
+      return Promise.reject("No clipboard content for paste");
     }
 
     const node = this.selection.nodeFront;
@@ -315,7 +314,7 @@ class MarkupContextMenu {
   _pasteOuterHTML() {
     const content = this._getClipboardContentForPaste();
     if (!content) {
-      return promise.reject("No clipboard content for paste");
+      return Promise.reject("No clipboard content for paste");
     }
 
     const node = this.selection.nodeFront;
@@ -368,7 +367,7 @@ class MarkupContextMenu {
       "temp" + i;
     }`;
 
-    const res = await hud.evaluateJSAsync(evalString, {
+    const res = await this.toolbox.commands.scriptCommand.execute(evalString, {
       selectedNodeActor: this.selection.nodeFront.actorID,
     });
     hud.setInputValue(res.result);
@@ -706,6 +705,17 @@ class MarkupContextMenu {
     return menu;
   }
 
+  _getEditMarkupString() {
+    if (this.selection.isHTMLNode()) {
+      return "inspectorHTMLEdit";
+    } else if (this.selection.isSVGNode()) {
+      return "inspectorSVGEdit";
+    } else if (this.selection.isMathMLNode()) {
+      return "inspectorMathMLEdit";
+    }
+    return "inspectorXMLEdit";
+  }
+
   _openMenu({ target, screenX = 0, screenY = 0 } = {}) {
     if (this.selection.isSlotted()) {
       // Slotted elements should not show any context menu.
@@ -731,7 +741,7 @@ class MarkupContextMenu {
     menu.append(
       new MenuItem({
         id: "node-menu-edithtml",
-        label: INSPECTOR_L10N.getStr("inspectorHTMLEdit.label"),
+        label: INSPECTOR_L10N.getStr(`${this._getEditMarkupString()}.label`),
         accesskey: INSPECTOR_L10N.getStr("inspectorHTMLEdit.accesskey"),
         disabled: isAnonymous || (!isElement && !isFragment),
         click: () => this._editHTML(),

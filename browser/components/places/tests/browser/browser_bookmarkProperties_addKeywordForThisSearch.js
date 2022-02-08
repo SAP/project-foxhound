@@ -12,6 +12,8 @@ function closeHandler(dialogWin) {
   );
 }
 
+let contentAreaContextMenu = document.getElementById("contentAreaContextMenu");
+
 add_task(async function() {
   await BrowserTestUtils.withNewTab(
     {
@@ -27,7 +29,10 @@ add_task(async function() {
 
       await withBookmarksDialog(
         true,
-        AddKeywordForSearchField,
+        function() {
+          AddKeywordForSearchField();
+          contentAreaContextMenu.hidePopup();
+        },
         async function(dialogWin) {
           let acceptBtn = dialogWin.document
             .getElementById("bookmarkpropertiesdialog")
@@ -49,7 +54,7 @@ add_task(async function() {
           // After the notification, the keywords cache will update asynchronously.
           info("Check the keyword entry has been created");
           let entry;
-          await waitForCondition(async function() {
+          await TestUtils.waitForCondition(async function() {
             entry = await PlacesUtils.keywords.fetch("kw");
             return !!entry;
           }, "Unable to find the expected keyword");
@@ -59,6 +64,14 @@ add_task(async function() {
             entry.postData,
             "accenti%3D%E0%E8%EC%F2%F9&search%3D%25s",
             "POST data is correct"
+          );
+          let savedItemId = dialogWin.gEditItemOverlay.itemId;
+          let savedItemGuid = await PlacesUtils.promiseItemGuid(savedItemId);
+          let bm = await PlacesUtils.bookmarks.fetch(savedItemGuid);
+          Assert.equal(
+            bm.parentGuid,
+            await PlacesUIUtils.defaultParentGuid,
+            "Should have created the keyword in the right folder."
           );
 
           info("Check the charset has been saved");
@@ -110,7 +123,10 @@ add_task(async function reopen_same_field() {
 
       await withBookmarksDialog(
         true,
-        AddKeywordForSearchField,
+        function() {
+          AddKeywordForSearchField();
+          contentAreaContextMenu.hidePopup();
+        },
         async function(dialogWin) {
           let acceptBtn = dialogWin.document
             .getElementById("bookmarkpropertiesdialog")
@@ -120,7 +136,7 @@ add_task(async function reopen_same_field() {
           let elt = dialogWin.document.getElementById(
             "editBMPanel_keywordField"
           );
-          await BrowserTestUtils.waitForCondition(
+          await TestUtils.waitForCondition(
             () => elt.value == "kw",
             "Keyword should be the previous value"
           );
@@ -156,7 +172,10 @@ add_task(async function open_other_field() {
 
       await withBookmarksDialog(
         true,
-        AddKeywordForSearchField,
+        function() {
+          AddKeywordForSearchField();
+          contentAreaContextMenu.hidePopup();
+        },
         function(dialogWin) {
           let acceptBtn = dialogWin.document
             .getElementById("bookmarkpropertiesdialog")

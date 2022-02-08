@@ -30,6 +30,11 @@ const BinaryInputStream = CC(
   "setInputStream"
 );
 
+const TELEMETRY_EVENTS_FILTERS = {
+  category: "uptake.remotecontent.result",
+  method: "uptake",
+};
+
 let server;
 let client;
 let clientWithDump;
@@ -69,7 +74,7 @@ function run_test() {
 
   server.registerPathHandler("/v1/", handleResponse);
   server.registerPathHandler(
-    "/v1/buckets/monitor/collections/changes/records",
+    "/v1/buckets/monitor/collections/changes/changeset",
     handleResponse
   );
   server.registerPathHandler(
@@ -297,6 +302,52 @@ add_task(async function test_get_falls_back_to_dump_if_db_fails() {
     error = e;
   }
   equal(error.message, "Unknown error");
+
+  clientWithDump.db.getLastModified = backup;
+});
+add_task(clear_state);
+
+add_task(async function test_get_sorts_results_if_specified() {
+  await client.db.importChanges(
+    {},
+    42,
+    [
+      {
+        field: 12,
+        id: "9d500963-d80e-3a91-6e74-66f3811b99cc",
+      },
+      {
+        field: 7,
+        id: "d83444a4-f348-4cd8-8228-842cb927db9f",
+      },
+    ],
+    { clear: true }
+  );
+
+  const records = await client.get({ order: "field" });
+  ok(
+    records[0].field < records[records.length - 1].field,
+    "records are sorted"
+  );
+});
+add_task(clear_state);
+
+add_task(async function test_get_falls_back_sorts_results() {
+  if (IS_ANDROID) {
+    // Skip test: we don't ship remote settings dumps on Android (see package-manifest).
+    return;
+  }
+  const backup = clientWithDump.db.getLastModified;
+  clientWithDump.db.getLastModified = () => {
+    throw new Error("Unknown error");
+  };
+
+  const records = await clientWithDump.get({
+    dumpFallback: true,
+    order: "-id",
+  });
+
+  ok(records[0].id > records[records.length - 1].id, "records are sorted");
 
   clientWithDump.db.getLastModified = backup;
 });
@@ -734,19 +785,22 @@ add_task(
     await withFakeChannel("nightly", async () => {
       await client.maybeSync(2000);
 
-      TelemetryTestUtils.assertEvents([
+      TelemetryTestUtils.assertEvents(
         [
-          "uptake.remotecontent.result",
-          "uptake",
-          "remotesettings",
-          UptakeTelemetry.STATUS.SUCCESS,
-          {
-            source: client.identifier,
-            duration: v => v > 0,
-            trigger: "manual",
-          },
+          [
+            "uptake.remotecontent.result",
+            "uptake",
+            "remotesettings",
+            UptakeTelemetry.STATUS.SUCCESS,
+            {
+              source: client.identifier,
+              duration: v => v > 0,
+              trigger: "manual",
+            },
+          ],
         ],
-      ]);
+        TELEMETRY_EVENTS_FILTERS
+      );
     });
   }
 );
@@ -864,20 +918,23 @@ add_task(async function test_telemetry_reports_error_name_as_event_nightly() {
       await client.maybeSync(2000);
     } catch (e) {}
 
-    TelemetryTestUtils.assertEvents([
+    TelemetryTestUtils.assertEvents(
       [
-        "uptake.remotecontent.result",
-        "uptake",
-        "remotesettings",
-        UptakeTelemetry.STATUS.UNKNOWN_ERROR,
-        {
-          source: client.identifier,
-          trigger: "manual",
-          duration: v => v >= 0,
-          errorName: "ThrownError",
-        },
+        [
+          "uptake.remotecontent.result",
+          "uptake",
+          "remotesettings",
+          UptakeTelemetry.STATUS.UNKNOWN_ERROR,
+          {
+            source: client.identifier,
+            trigger: "manual",
+            duration: v => v >= 0,
+            errorName: "ThrownError",
+          },
+        ],
       ],
-    ]);
+      TELEMETRY_EVENTS_FILTERS
+    );
   });
 
   client.db.list = backup;
@@ -893,6 +950,20 @@ add_task(async function test_bucketname_changes_when_bucket_pref_changes() {
   );
 
   equal(client.bucketName, "main-preview");
+});
+add_task(clear_state);
+
+add_task(async function test_bucket_pref_ignored_when_bucketName_set() {
+  let clientWithBucket = RemoteSettings("coll", { bucketName: "buck" });
+  equal(clientWithBucket.collectionName, "coll");
+  equal(clientWithBucket.bucketName, "buck");
+
+  Services.prefs.setCharPref(
+    "services.settings.default_bucket",
+    "coll-preview"
+  );
+
+  equal(clientWithBucket.bucketName, "buck");
 });
 add_task(clear_state);
 
@@ -1012,7 +1083,7 @@ function getSampleResponse(req, port) {
         hello: "kinto",
       },
     },
-    "GET:/v1/buckets/monitor/collections/changes/records": {
+    "GET:/v1/buckets/monitor/collections/changes/changeset": {
       sampleHeaders: [
         "Access-Control-Allow-Origin: *",
         "Access-Control-Expose-Headers: Retry-After, Content-Length, Alert, Backoff",
@@ -1023,7 +1094,8 @@ function getSampleResponse(req, port) {
       ],
       status: { status: 200, statusText: "OK" },
       responseBody: {
-        data: [
+        timestamp: 5000,
+        changes: [
           {
             id: "4676f0c7-9757-4796-a0e8-b40a5a37a9c9",
             bucket: "main",
@@ -1206,7 +1278,7 @@ wNuvFqc=
         error: "Service Unavailable",
       },
     },
-    "GET:/v1/buckets/monitor/collections/changes/records?collection=password-fields&bucket=main": {
+    "GET:/v1/buckets/monitor/collections/changes/changeset?collection=password-fields&bucket=main&_expected=0": {
       sampleHeaders: [
         "Access-Control-Allow-Origin: *",
         "Access-Control-Expose-Headers: Retry-After, Content-Length, Alert, Backoff",
@@ -1217,7 +1289,8 @@ wNuvFqc=
       ],
       status: { status: 200, statusText: "OK" },
       responseBody: {
-        data: [
+        timestamp: 1338,
+        changes: [
           {
             id: "fe5758d0-c67a-42d0-bb4f-8f2d75106b65",
             bucket: "main",
@@ -1341,7 +1414,7 @@ wNuvFqc=
         ],
       },
     },
-    "GET:/v1/buckets/monitor/collections/changes/records?collection=no-mocked-responses&bucket=main": {
+    "GET:/v1/buckets/monitor/collections/changes/changeset?collection=no-mocked-responses&bucket=main&_expected=0": {
       sampleHeaders: [
         "Access-Control-Allow-Origin: *",
         "Access-Control-Expose-Headers: Retry-After, Content-Length, Alert, Backoff",

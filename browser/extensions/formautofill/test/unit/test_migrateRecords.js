@@ -7,8 +7,7 @@
 let FormAutofillStorage;
 add_task(async function setup() {
   ({ FormAutofillStorage } = ChromeUtils.import(
-    "resource://formautofill/FormAutofillStorage.jsm",
-    null
+    "resource://autofill/FormAutofillStorage.jsm"
   ));
 });
 

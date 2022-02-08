@@ -3,7 +3,26 @@
 
 "use strict";
 
-const URL = ROOT + "browser_456342_sample.xhtml";
+addCoopTask(
+  "browser_456342_sample.xhtml",
+  test_restore_nonstandard_input_values,
+  HTTPSROOT
+);
+addNonCoopTask(
+  "browser_456342_sample.xhtml",
+  test_restore_nonstandard_input_values,
+  ROOT
+);
+addNonCoopTask(
+  "browser_456342_sample.xhtml",
+  test_restore_nonstandard_input_values,
+  HTTPROOT
+);
+addNonCoopTask(
+  "browser_456342_sample.xhtml",
+  test_restore_nonstandard_input_values,
+  HTTPSROOT
+);
 
 const EXPECTED_IDS = new Set(["searchTerm"]);
 
@@ -17,9 +36,9 @@ const EXPECTED_XPATHS = new Set([
 /**
  * Bug 456342 - Restore values from non-standard input field types.
  */
-add_task(async function test_restore_nonstandard_input_values() {
+async function test_restore_nonstandard_input_values(aURL) {
   // Add tab with various non-standard input field types.
-  let tab = BrowserTestUtils.addTab(gBrowser, URL);
+  let tab = BrowserTestUtils.addTab(gBrowser, aURL);
   let browser = tab.linkedBrowser;
   await promiseBrowserLoaded(browser);
 
@@ -37,20 +56,28 @@ add_task(async function test_restore_nonstandard_input_values() {
 
   // Remove tab and check collected form data.
   await promiseRemoveTabAndSessionState(tab);
-  let undoItems = JSON.parse(ss.getClosedTabData(window));
+  let undoItems = ss.getClosedTabData(window);
   let savedFormData = undoItems[0].state.formdata;
 
   let foundIds = 0;
   for (let id of Object.keys(savedFormData.id)) {
     ok(EXPECTED_IDS.has(id), `Check saved ID "${id}" was expected`);
-    is(savedFormData.id[id], expectedValue, `Check saved value for #${id}`);
+    is(
+      savedFormData.id[id],
+      "" + expectedValue,
+      `Check saved value for #${id}`
+    );
     foundIds++;
   }
 
   let foundXpaths = 0;
   for (let exp of Object.keys(savedFormData.xpath)) {
     ok(EXPECTED_XPATHS.has(exp), `Check saved xpath "${exp}" was expected`);
-    is(savedFormData.xpath[exp], expectedValue, `Check saved value for ${exp}`);
+    is(
+      savedFormData.xpath[exp],
+      "" + expectedValue,
+      `Check saved value for ${exp}`
+    );
     foundXpaths++;
   }
 
@@ -60,4 +87,4 @@ add_task(async function test_restore_nonstandard_input_values() {
     EXPECTED_XPATHS.size,
     "Check number of fields saved by xpath"
   );
-});
+}

@@ -188,61 +188,31 @@ class nsSOCKSSocketInfo : public nsISOCKSSocketInfo, public nsIDNSListener {
   }
 
  private:
-  State mState;
-  uint8_t* mData;
-  uint8_t* mDataIoPtr;
-  uint32_t mDataLength;
-  uint32_t mReadOffset;
-  uint32_t mAmountToRead;
+  State mState{SOCKS_INITIAL};
+  uint8_t* mData{nullptr};
+  uint8_t* mDataIoPtr{nullptr};
+  uint32_t mDataLength{0};
+  uint32_t mReadOffset{0};
+  uint32_t mAmountToRead{0};
   nsCOMPtr<nsIDNSRecord> mDnsRec;
   nsCOMPtr<nsICancelable> mLookup;
-  nsresult mLookupStatus;
-  PRFileDesc* mFD;
+  nsresult mLookupStatus{NS_ERROR_NOT_INITIALIZED};
+  PRFileDesc* mFD{nullptr};
 
   nsCString mDestinationHost;
   nsCOMPtr<nsIProxyInfo> mProxy;
-  int32_t mVersion;  // SOCKS version 4 or 5
-  int32_t mDestinationFamily;
-  uint32_t mFlags;
-  uint32_t mTlsFlags;
+  int32_t mVersion{-1};  // SOCKS version 4 or 5
+  int32_t mDestinationFamily{AF_INET};
+  uint32_t mFlags{0};
+  uint32_t mTlsFlags{0};
   NetAddr mInternalProxyAddr;
   NetAddr mExternalProxyAddr;
   NetAddr mDestinationAddr;
-  PRIntervalTime mTimeout;
+  PRIntervalTime mTimeout{PR_INTERVAL_NO_TIMEOUT};
   nsCString mProxyUsername;  // Cache, from mProxy
 };
 
-nsSOCKSSocketInfo::nsSOCKSSocketInfo()
-    : mState(SOCKS_INITIAL),
-      mDataIoPtr(nullptr),
-      mDataLength(0),
-      mReadOffset(0),
-      mAmountToRead(0),
-      mLookupStatus(NS_ERROR_NOT_INITIALIZED),
-      mFD(nullptr),
-      mVersion(-1),
-      mDestinationFamily(AF_INET),
-      mFlags(0),
-      mTlsFlags(0),
-      mTimeout(PR_INTERVAL_NO_TIMEOUT) {
-  this->mInternalProxyAddr.inet.family = 0;
-  this->mInternalProxyAddr.inet6.family = 0;
-  this->mInternalProxyAddr.inet6.port = 0;
-  this->mInternalProxyAddr.inet6.flowinfo = 0;
-  this->mInternalProxyAddr.inet6.scope_id = 0;
-  this->mInternalProxyAddr.local.family = 0;
-  this->mExternalProxyAddr.inet.family = 0;
-  this->mExternalProxyAddr.inet6.family = 0;
-  this->mExternalProxyAddr.inet6.port = 0;
-  this->mExternalProxyAddr.inet6.flowinfo = 0;
-  this->mExternalProxyAddr.inet6.scope_id = 0;
-  this->mExternalProxyAddr.local.family = 0;
-  this->mDestinationAddr.inet.family = 0;
-  this->mDestinationAddr.inet6.family = 0;
-  this->mDestinationAddr.inet6.port = 0;
-  this->mDestinationAddr.inet6.flowinfo = 0;
-  this->mDestinationAddr.inet6.scope_id = 0;
-  this->mDestinationAddr.local.family = 0;
+nsSOCKSSocketInfo::nsSOCKSSocketInfo() {
   mData = new uint8_t[BUFFER_SIZE];
 
   mInternalProxyAddr.raw.family = AF_INET;
@@ -290,7 +260,7 @@ nsSOCKSSocketInfo::nsSOCKSSocketInfo()
 template <size_t Size>
 class Buffer {
  public:
-  Buffer() : mBuf(nullptr), mLength(0) {}
+  Buffer() = default;
 
   explicit Buffer(uint8_t* aBuf, size_t aLength = 0)
       : mBuf(aBuf), mLength(aLength) {}
@@ -320,7 +290,8 @@ class Buffer {
   Buffer<Size - sizeof(IPv6Addr)> WriteNetAddr(const NetAddr* aAddr) {
     if (aAddr->raw.family == AF_INET) {
       return Write(aAddr->inet.ip);
-    } else if (aAddr->raw.family == AF_INET6) {
+    }
+    if (aAddr->raw.family == AF_INET6) {
       return Write(aAddr->inet6.ip.u8);
     }
     MOZ_ASSERT_UNREACHABLE("Unknown address family");
@@ -363,8 +334,8 @@ class Buffer {
     return result;
   }
 
-  uint8_t* mBuf;
-  size_t mLength;
+  uint8_t* mBuf{nullptr};
+  size_t mLength{0};
 };
 
 void nsSOCKSSocketInfo::Init(int32_t version, int32_t family,
@@ -469,7 +440,8 @@ PRStatus nsSOCKSSocketInfo::StartDNS(PRFileDesc* fd) {
 
   mFD = fd;
   nsresult rv = dns->AsyncResolveNative(
-      proxyHost, nsIDNSService::RESOLVE_IGNORE_SOCKS_DNS, this,
+      proxyHost, nsIDNSService::RESOLVE_TYPE_DEFAULT,
+      nsIDNSService::RESOLVE_IGNORE_SOCKS_DNS, nullptr, this,
       mozilla::GetCurrentEventTarget(), attrs, getter_AddRefs(mLookup));
 
   if (NS_FAILED(rv)) {
@@ -528,11 +500,13 @@ PRStatus nsSOCKSSocketInfo::ConnectToProxy(PRFileDesc* fd) {
         return PR_FAILURE;
       }
     } else {
+      nsCOMPtr<nsIDNSAddrRecord> record = do_QueryInterface(mDnsRec);
+      MOZ_ASSERT(record);
       if (addresses++) {
-        mDnsRec->ReportUnusable(proxyPort);
+        record->ReportUnusable(proxyPort);
       }
 
-      rv = mDnsRec->GetNextAddr(proxyPort, &mInternalProxyAddr);
+      rv = record->GetNextAddr(proxyPort, &mInternalProxyAddr);
       // No more addresses to try? If so, we'll need to bail
       if (NS_FAILED(rv)) {
         LOGERROR(
@@ -542,7 +516,7 @@ PRStatus nsSOCKSSocketInfo::ConnectToProxy(PRFileDesc* fd) {
 
       if (MOZ_LOG_TEST(gSOCKSLog, LogLevel::Debug)) {
         char buf[kIPv6CStrBufSize];
-        NetAddrToString(&mInternalProxyAddr, buf, sizeof(buf));
+        mInternalProxyAddr.ToStringBuffer(buf, sizeof(buf));
         LOGDEBUG(("socks: trying proxy server, %s:%hu", buf,
                   ntohs(mInternalProxyAddr.inet.port)));
       }
@@ -560,7 +534,8 @@ PRStatus nsSOCKSSocketInfo::ConnectToProxy(PRFileDesc* fd) {
       if (c == PR_WOULD_BLOCK_ERROR || c == PR_IN_PROGRESS_ERROR) {
         mState = SOCKS_CONNECTING_TO_PROXY;
         return status;
-      } else if (IsLocalProxy()) {
+      }
+      if (IsLocalProxy()) {
         LOGERROR(("socks: connect to domain socket failed (%d)", c));
         PR_SetError(PR_CONNECT_REFUSED_ERROR, 0);
         mState = SOCKS_FAILED;
@@ -794,14 +769,14 @@ PRStatus nsSOCKSSocketInfo::ReadV5AuthResponse() {
   if (mProxyUsername.IsEmpty() && authMethod == 0x00) {  // no auth
     LOGDEBUG(("socks5: server allows connection without authentication"));
     return WriteV5ConnectRequest();
-  } else if (!mProxyUsername.IsEmpty() && authMethod == 0x02) {  // username/pw
+  }
+  if (!mProxyUsername.IsEmpty() && authMethod == 0x02) {  // username/pw
     LOGDEBUG(("socks5: auth method accepted by server"));
     return WriteV5UsernameRequest();
-  } else {  // 0xFF signals error
-    LOGERROR(("socks5: server did not accept our authentication method"));
-    HandshakeFinished(PR_CONNECT_REFUSED_ERROR);
-    return PR_FAILURE;
-  }
+  }  // 0xFF signals error
+  LOGERROR(("socks5: server did not accept our authentication method"));
+  HandshakeFinished(PR_CONNECT_REFUSED_ERROR);
+  return PR_FAILURE;
 }
 
 PRStatus nsSOCKSSocketInfo::WriteV5UsernameRequest() {
@@ -1243,7 +1218,8 @@ PRStatus nsSOCKSSocketInfo::ReadFromSocket(PRFileDesc* fd) {
         LOGERROR(("socks: proxy server closed connection"));
         HandshakeFinished(PR_CONNECT_REFUSED_ERROR);
         return PR_FAILURE;
-      } else if (PR_GetError() == PR_WOULD_BLOCK_ERROR) {
+      }
+      if (PR_GetError() == PR_WOULD_BLOCK_ERROR) {
         LOGDEBUG(("socks: ReadFromSocket(), want read"));
       }
       break;

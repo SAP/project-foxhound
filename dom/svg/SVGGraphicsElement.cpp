@@ -7,6 +7,9 @@
 #include "mozilla/dom/SVGGraphicsElement.h"
 
 #include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/Document.h"
+
+#include "nsIContentInlines.h"
 
 namespace mozilla {
 namespace dom {
@@ -32,8 +35,7 @@ bool SVGGraphicsElement::IsSVGFocusable(bool* aIsFocusable,
                                         int32_t* aTabIndex) {
   // XXXedgar, maybe we could factor out the common code for SVG, HTML and
   // MathML elements, see bug 1586011.
-  Document* doc = GetComposedDoc();
-  if (!doc || doc->HasFlag(NODE_IS_EDITABLE)) {
+  if (!IsInComposedDoc() || IsInDesignMode()) {
     // In designMode documents we only allow focusing the document.
     if (aTabIndex) {
       *aTabIndex = -1;

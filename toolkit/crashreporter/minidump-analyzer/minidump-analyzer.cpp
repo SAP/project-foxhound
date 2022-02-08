@@ -211,13 +211,41 @@ static void ConvertStackToJSON(const ProcessState& aProcessState,
   }
 }
 
+// Extract the list of certifications subjects from the list of modules and
+// store it in the |aCertSubjects| parameter
+
+static void RetrieveCertSubjects(const CodeModules* modules,
+                                 Json::Value& aCertSubjects) {
+#if defined(XP_WIN)
+  if (modules) {
+    for (size_t i = 0; i < modules->module_count(); i++) {
+      const CodeModule* module = modules->GetModuleAtIndex(i);
+      auto certSubject = gDllServices.GetBinaryOrgName(
+          UTF8ToWide(module->code_file()).c_str());
+      if (certSubject) {
+        string strSubject(WideToUTF8(certSubject.get()));
+        // Json::Value::operator[] creates and returns a null member if the key
+        // does not exist.
+        Json::Value& subjectNode = aCertSubjects[strSubject];
+        if (!subjectNode) {
+          // If the member is null, we want to convert that to an array.
+          subjectNode = Json::Value(Json::arrayValue);
+        }
+
+        // Now we're guaranteed that subjectNode is an array. Add the new entry.
+        subjectNode.append(PathnameStripper::File(module->code_file()));
+      }
+    }
+  }
+#endif  // defined(XP_WIN)
+}
+
 // Convert the list of modules to JSON and append them to the array specified
 // in the |aNode| parameter.
 
 static int ConvertModulesToJSON(const ProcessState& aProcessState,
                                 const OrderedModulesMap& aOrderedModules,
-                                Json::Value& aNode,
-                                Json::Value& aCertSubjects) {
+                                Json::Value& aNode) {
   const CodeModules* modules = aProcessState.modules();
 
   if (!modules) {
@@ -240,24 +268,6 @@ static int ConvertModulesToJSON(const ProcessState& aProcessState,
       mainModuleIndex = itr.second;
     }
 
-#if defined(XP_WIN)
-    auto certSubject =
-        gDllServices.GetBinaryOrgName(UTF8ToWide(module->code_file()).c_str());
-    if (certSubject) {
-      string strSubject(WideToUTF8(certSubject.get()));
-      // Json::Value::operator[] creates and returns a null member if the key
-      // does not exist.
-      Json::Value& subjectNode = aCertSubjects[strSubject];
-      if (!subjectNode) {
-        // If the member is null, we want to convert that to an array.
-        subjectNode = Json::Value(Json::arrayValue);
-      }
-
-      // Now we're guaranteed that subjectNode is an array. Add the new entry.
-      subjectNode.append(PathnameStripper::File(module->code_file()));
-    }
-#endif
-
     Json::Value moduleNode;
     moduleNode["filename"] = PathnameStripper::File(module->code_file());
     moduleNode["code_id"] = PathnameStripper::File(module->code_identifier());
@@ -271,6 +281,36 @@ static int ConvertModulesToJSON(const ProcessState& aProcessState,
   }
 
   return mainModuleIndex;
+}
+
+// Convert the list of unloaded modules to JSON and append them to the array
+// specified in the |aNode| parameter. Return the number of unloaded modules
+// that were found.
+
+static size_t ConvertUnloadedModulesToJSON(const ProcessState& aProcessState,
+                                           Json::Value& aNode) {
+  const CodeModules* unloadedModules = aProcessState.unloaded_modules();
+  if (!unloadedModules) {
+    return 0;
+  }
+
+  const size_t unloadedModulesLen = unloadedModules->module_count();
+  for (size_t i = 0; i < unloadedModulesLen; i++) {
+    const CodeModule* unloadedModule = unloadedModules->GetModuleAtIndex(i);
+
+    Json::Value unloadedModuleNode;
+    unloadedModuleNode["filename"] =
+        PathnameStripper::File(unloadedModule->code_file());
+    unloadedModuleNode["code_id"] =
+        PathnameStripper::File(unloadedModule->code_identifier());
+    unloadedModuleNode["base_addr"] = ToHex(unloadedModule->base_address());
+    unloadedModuleNode["end_addr"] =
+        ToHex(unloadedModule->base_address() + unloadedModule->size());
+
+    aNode.append(unloadedModuleNode);
+  }
+
+  return unloadedModulesLen;
 }
 
 // Convert the process state to JSON, this includes information about the
@@ -311,14 +351,24 @@ static void ConvertProcessStateToJSON(const ProcessState& aProcessState,
   PopulateModuleList(aProcessState, orderedModules, aFullStacks);
 
   Json::Value modules(Json::arrayValue);
-  int mainModule = ConvertModulesToJSON(aProcessState, orderedModules, modules,
-                                        aCertSubjects);
+  int mainModule = ConvertModulesToJSON(aProcessState, orderedModules, modules);
 
   if (mainModule != -1) {
     aStackTraces["main_module"] = mainModule;
   }
 
   aStackTraces["modules"] = modules;
+
+  Json::Value unloadedModules(Json::arrayValue);
+  size_t unloadedModulesLen =
+      ConvertUnloadedModulesToJSON(aProcessState, unloadedModules);
+
+  if (unloadedModulesLen > 0) {
+    aStackTraces["unloaded_modules"] = unloadedModules;
+  }
+
+  RetrieveCertSubjects(aProcessState.modules(), aCertSubjects);
+  RetrieveCertSubjects(aProcessState.unloaded_modules(), aCertSubjects);
 
   // Threads
   Json::Value threads(Json::arrayValue);

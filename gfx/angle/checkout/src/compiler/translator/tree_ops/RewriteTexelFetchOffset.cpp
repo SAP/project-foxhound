@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2016 The ANGLE Project Authors. All rights reserved.
+// Copyright 2016 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -22,7 +22,10 @@ namespace
 class Traverser : public TIntermTraverser
 {
   public:
-    static void Apply(TIntermNode *root, const TSymbolTable &symbolTable, int shaderVersion);
+    ANGLE_NO_DISCARD static bool Apply(TCompiler *compiler,
+                                       TIntermNode *root,
+                                       const TSymbolTable &symbolTable,
+                                       int shaderVersion);
 
   private:
     Traverser(const TSymbolTable &symbolTable, int shaderVersion);
@@ -39,7 +42,10 @@ Traverser::Traverser(const TSymbolTable &symbolTable, int shaderVersion)
 {}
 
 // static
-void Traverser::Apply(TIntermNode *root, const TSymbolTable &symbolTable, int shaderVersion)
+bool Traverser::Apply(TCompiler *compiler,
+                      TIntermNode *root,
+                      const TSymbolTable &symbolTable,
+                      int shaderVersion)
 {
     Traverser traverser(symbolTable, shaderVersion);
     do
@@ -48,9 +54,14 @@ void Traverser::Apply(TIntermNode *root, const TSymbolTable &symbolTable, int sh
         root->traverse(&traverser);
         if (traverser.mFound)
         {
-            traverser.updateTree();
+            if (!traverser.updateTree(compiler, root))
+            {
+                return false;
+            }
         }
     } while (traverser.mFound);
+
+    return true;
 }
 
 void Traverser::nextIteration()
@@ -89,10 +100,10 @@ bool Traverser::visitAggregate(Visit visit, TIntermAggregate *node)
     // Create new node that represents the call of function texelFetch.
     // Its argument list will be: texelFetch(sampler, Position+offset, lod).
 
-    TIntermSequence *texelFetchArguments = new TIntermSequence();
+    TIntermSequence texelFetchArguments;
 
     // sampler
-    texelFetchArguments->push_back(sequence->at(0));
+    texelFetchArguments.push_back(sequence->at(0));
 
     // Position
     TIntermTyped *texCoordNode = sequence->at(1)->getAsTyped();
@@ -105,14 +116,14 @@ bool Traverser::visitAggregate(Visit visit, TIntermAggregate *node)
     {
         // For 2DArray samplers, Position is ivec3 and offset is ivec2;
         // So offset must be converted into an ivec3 before being added to Position.
-        TIntermSequence *constructOffsetIvecArguments = new TIntermSequence();
-        constructOffsetIvecArguments->push_back(sequence->at(3)->getAsTyped());
+        TIntermSequence constructOffsetIvecArguments;
+        constructOffsetIvecArguments.push_back(sequence->at(3)->getAsTyped());
 
         TIntermTyped *zeroNode = CreateZeroNode(TType(EbtInt));
-        constructOffsetIvecArguments->push_back(zeroNode);
+        constructOffsetIvecArguments.push_back(zeroNode);
 
         offsetNode = TIntermAggregate::CreateConstructor(texCoordNode->getType(),
-                                                         constructOffsetIvecArguments);
+                                                         &constructOffsetIvecArguments);
         offsetNode->setLine(texCoordNode->getLine());
     }
     else
@@ -123,14 +134,14 @@ bool Traverser::visitAggregate(Visit visit, TIntermAggregate *node)
     // Position+offset
     TIntermBinary *add = new TIntermBinary(EOpAdd, texCoordNode, offsetNode);
     add->setLine(texCoordNode->getLine());
-    texelFetchArguments->push_back(add);
+    texelFetchArguments.push_back(add);
 
     // lod
-    texelFetchArguments->push_back(sequence->at(2));
+    texelFetchArguments.push_back(sequence->at(2));
 
-    ASSERT(texelFetchArguments->size() == 3u);
+    ASSERT(texelFetchArguments.size() == 3u);
 
-    TIntermTyped *texelFetchNode = CreateBuiltInFunctionCallNode("texelFetch", texelFetchArguments,
+    TIntermTyped *texelFetchNode = CreateBuiltInFunctionCallNode("texelFetch", &texelFetchArguments,
                                                                  *symbolTable, shaderVersion);
     texelFetchNode->setLine(node->getLine());
 
@@ -142,13 +153,16 @@ bool Traverser::visitAggregate(Visit visit, TIntermAggregate *node)
 
 }  // anonymous namespace
 
-void RewriteTexelFetchOffset(TIntermNode *root, const TSymbolTable &symbolTable, int shaderVersion)
+bool RewriteTexelFetchOffset(TCompiler *compiler,
+                             TIntermNode *root,
+                             const TSymbolTable &symbolTable,
+                             int shaderVersion)
 {
     // texelFetchOffset is only valid in GLSL 3.0 and later.
     if (shaderVersion < 300)
-        return;
+        return true;
 
-    Traverser::Apply(root, symbolTable, shaderVersion);
+    return Traverser::Apply(compiler, root, symbolTable, shaderVersion);
 }
 
 }  // namespace sh

@@ -69,16 +69,22 @@ class nsJSContext : public nsIScriptContext {
                                 IsShrinking aShrinking = NonShrinkingGC,
                                 int64_t aSliceMillis = 0);
 
-  static void CycleCollectNow(nsICycleCollectorListener* aListener = nullptr);
+  static void CycleCollectNow(mozilla::CCReason aReason,
+                              nsICycleCollectorListener* aListener = nullptr);
+
+  // Finish up any in-progress incremental GC.
+  static void PrepareForCycleCollectionSlice(mozilla::CCReason aReason,
+                                             mozilla::TimeStamp aDeadline);
 
   // Run a cycle collector slice, using a heuristic to decide how long to run
   // it.
-  static void RunCycleCollectorSlice(mozilla::TimeStamp aDeadline);
+  static void RunCycleCollectorSlice(mozilla::CCReason aReason,
+                                     mozilla::TimeStamp aDeadline);
 
   // Run a cycle collector slice, using the given work budget.
   static void RunCycleCollectorWorkSlice(int64_t aWorkBudget);
 
-  static void BeginCycleCollectionCallback();
+  static void BeginCycleCollectionCallback(mozilla::CCReason aReason);
   static void EndCycleCollectionCallback(
       mozilla::CycleCollectorResults& aResults);
 
@@ -98,22 +104,22 @@ class nsJSContext : public nsIScriptContext {
                                          JS::GCReason aReason);
 
   // The GC should probably run soon, in the zone of object aObj (if given).
-  static void PokeGC(JS::GCReason aReason, JSObject* aObj, uint32_t aDelay = 0);
-  static void KillGCTimer();
+  static void PokeGC(JS::GCReason aReason, JSObject* aObj,
+                     mozilla::TimeDuration aDelay = 0);
 
-  static void PokeShrinkingGC();
-  static void KillShrinkingGCTimer();
+  // Immediately perform a non-incremental shrinking GC and CC.
+  static void DoLowMemoryGC();
+
+  // Perform a non-incremental shrinking GC and CC according to
+  // IdleScheduler.
+  static void LowMemoryGC();
 
   static void MaybePokeCC();
-  static void KillCCRunner();
-  static void KillICCRunner();
-  static void KillFullGCTimer();
-  static void KillInterSliceGCRunner();
 
   // Calling LikelyShortLivingObjectCreated() makes a GC more likely.
   static void LikelyShortLivingObjectCreated();
 
-  static uint32_t CleanupsSinceLastGC();
+  static bool HasHadCleanupSinceLastGC();
 
   nsIScriptGlobalObject* GetCachedGlobalObject() {
     // Verify that we have a global so that this

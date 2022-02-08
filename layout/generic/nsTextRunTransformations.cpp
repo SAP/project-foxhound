@@ -123,13 +123,14 @@ nsTransformingTextRunFactory::MakeTextRun(
 void MergeCharactersInTextRun(gfxTextRun* aDest, gfxTextRun* aSrc,
                               const bool* aCharsToMerge,
                               const bool* aDeletedChars) {
-  aDest->ResetGlyphRuns();
-
+  MOZ_ASSERT(!aDest->TrailingGlyphRun(), "unexpected glyphRuns in aDest!");
   gfxTextRun::GlyphRunIterator iter(aSrc, gfxTextRun::Range(aSrc));
   uint32_t offset = 0;
   AutoTArray<gfxTextRun::DetailedGlyph, 2> glyphs;
   const gfxTextRun::CompressedGlyph continuationGlyph =
-      gfxTextRun::CompressedGlyph::MakeComplex(false, false, 0);
+      gfxTextRun::CompressedGlyph::MakeComplex(false, false);
+  const gfxTextRun::CompressedGlyph* srcGlyphs = aSrc->GetCharacterGlyphs();
+  gfxTextRun::CompressedGlyph* destGlyphs = aDest->GetCharacterGlyphs();
   while (iter.NextRun()) {
     const gfxTextRun::GlyphRun* run = iter.GetGlyphRun();
     aDest->AddGlyphRun(run->mFont, run->mMatchType, offset, false,
@@ -137,7 +138,7 @@ void MergeCharactersInTextRun(gfxTextRun* aDest, gfxTextRun* aSrc,
 
     bool anyMissing = false;
     uint32_t mergeRunStart = iter.GetStringStart();
-    const gfxTextRun::CompressedGlyph* srcGlyphs = aSrc->GetCharacterGlyphs();
+    // Initialize to a copy of the first source glyph in the merge run.
     gfxTextRun::CompressedGlyph mergedGlyph = srcGlyphs[mergeRunStart];
     uint32_t stringEnd = iter.GetStringEnd();
     for (uint32_t k = iter.GetStringStart(); k < stringEnd; ++k) {
@@ -175,18 +176,23 @@ void MergeCharactersInTextRun(gfxTextRun* aDest, gfxTextRun* aSrc,
           !aCharsToMerge[mergeRunStart],
           "unable to merge across a glyph run boundary, glyph(s) discarded");
       if (!aCharsToMerge[mergeRunStart]) {
-        if (anyMissing) {
-          mergedGlyph.SetMissing(glyphs.Length());
+        // Determine if we can just copy the existing simple glyph record.
+        if (mergedGlyph.IsSimpleGlyph() && glyphs.Length() == 1) {
+          destGlyphs[offset] = mergedGlyph;
         } else {
+          // Otherwise set up complex glyph record and store detailed glyphs.
           mergedGlyph.SetComplex(mergedGlyph.IsClusterStart(),
-                                 mergedGlyph.IsLigatureGroupStart(),
-                                 glyphs.Length());
+                                 mergedGlyph.IsLigatureGroupStart());
+          destGlyphs[offset] = mergedGlyph;
+          aDest->SetDetailedGlyphs(offset, glyphs.Length(), glyphs.Elements());
+          if (anyMissing) {
+            destGlyphs[offset].SetMissing();
+          }
         }
-        aDest->SetGlyphs(offset, mergedGlyph, glyphs.Elements());
-        ++offset;
+        offset++;
 
         while (offset < aDest->GetLength() && aDeletedChars[offset]) {
-          aDest->SetGlyphs(offset++, continuationGlyph, nullptr);
+          destGlyphs[offset++] = continuationGlyph;
         }
       }
 
@@ -263,11 +269,11 @@ static LanguageSpecificCasingBehavior GetCasingFor(const nsAtom* aLang) {
 }
 
 bool nsCaseTransformTextRunFactory::TransformString(
-    const nsAString& aString, nsString& aConvertedString, bool aAllUppercase,
-    bool aCaseTransformsOnly, const nsAtom* aLanguage,
-    nsTArray<bool>& aCharsToMergeArray, nsTArray<bool>& aDeletedCharsArray,
-    const nsTransformedTextRun* aTextRun, uint32_t aOffsetInTextRun,
-    nsTArray<uint8_t>* aCanBreakBeforeArray,
+    const nsAString& aString, nsString& aConvertedString,
+    const Maybe<StyleTextTransform>& aGlobalTransform, bool aCaseTransformsOnly,
+    const nsAtom* aLanguage, nsTArray<bool>& aCharsToMergeArray,
+    nsTArray<bool>& aDeletedCharsArray, const nsTransformedTextRun* aTextRun,
+    uint32_t aOffsetInTextRun, nsTArray<uint8_t>* aCanBreakBeforeArray,
     nsTArray<RefPtr<nsTransformedCharStyle>>* aStyleArray) {
   bool auxiliaryOutputArrays = aCanBreakBeforeArray && aStyleArray;
   MOZ_ASSERT(!auxiliaryOutputArrays || aTextRun,
@@ -289,9 +295,7 @@ bool nsCaseTransformTextRunFactory::TransformString(
   nsUGenCategory cat;
 
   StyleTextTransform style =
-      aAllUppercase ? StyleTextTransform{StyleTextTransformCase::Uppercase,
-                                         StyleTextTransformOther()}
-                    : StyleTextTransform::None();
+      aGlobalTransform.valueOr(StyleTextTransform::None());
   bool forceNonFullWidth = false;
   const nsAtom* lang = aLanguage;
 
@@ -313,10 +317,7 @@ bool nsCaseTransformTextRunFactory::TransformString(
     RefPtr<nsTransformedCharStyle> charStyle;
     if (aTextRun) {
       charStyle = aTextRun->mStyles[aOffsetInTextRun];
-      style = aAllUppercase
-                  ? StyleTextTransform{StyleTextTransformCase::Uppercase,
-                                       StyleTextTransformOther()}
-                  : charStyle->mTextTransform;
+      style = aGlobalTransform.valueOr(charStyle->mTextTransform);
       forceNonFullWidth = charStyle->mForceNonFullWidth;
 
       nsAtom* newLang =
@@ -814,8 +815,12 @@ void nsCaseTransformTextRunFactory::RebuildTextRun(
   AutoTArray<uint8_t, 50> canBreakBeforeArray;
   AutoTArray<RefPtr<nsTransformedCharStyle>, 50> styleArray;
 
+  auto globalTransform =
+      mAllUppercase
+          ? Some(StyleTextTransform{StyleTextTransformCase::Uppercase, {}})
+          : Nothing();
   bool mergeNeeded = TransformString(
-      aTextRun->mString, convertedString, mAllUppercase,
+      aTextRun->mString, convertedString, globalTransform,
       /* aCaseTransformsOnly = */ false, nullptr, charsToMergeArray,
       deletedCharsArray, aTextRun, 0, &canBreakBeforeArray, &styleArray);
 
@@ -853,6 +858,7 @@ void nsCaseTransformTextRunFactory::RebuildTextRun(
     transformedChild->FinishSettingProperties(aRefDrawTarget, aMFR);
   }
 
+  aTextRun->ResetGlyphRuns();
   if (mergeNeeded) {
     // Now merge multiple characters into one multi-glyph character as required
     // and deal with skipping deleted accent chars
@@ -866,7 +872,6 @@ void nsCaseTransformTextRunFactory::RebuildTextRun(
     // No merging to do, so just copy; this produces a more optimized textrun.
     // We can't steal the data because the child may be cached and stealing
     // the data would break the cache.
-    aTextRun->ResetGlyphRuns();
     aTextRun->CopyGlyphDataFrom(child, gfxTextRun::Range(child), 0);
   }
 }

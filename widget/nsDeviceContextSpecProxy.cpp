@@ -27,6 +27,9 @@ using namespace mozilla::gfx;
 
 NS_IMPL_ISUPPORTS(nsDeviceContextSpecProxy, nsIDeviceContextSpec)
 
+nsDeviceContextSpecProxy::nsDeviceContextSpecProxy() = default;
+nsDeviceContextSpecProxy::~nsDeviceContextSpecProxy() = default;
+
 NS_IMETHODIMP
 nsDeviceContextSpecProxy::Init(nsIWidget* aWidget,
                                nsIPrintSettings* aPrintSettings,
@@ -71,8 +74,8 @@ already_AddRefed<PrintTarget> nsDeviceContextSpecProxy::MakePrintTarget() {
   MOZ_ASSERT(mRealDeviceContextSpec);
 
   double width, height;
-  nsresult rv = mPrintSettings->GetEffectivePageSize(&width, &height);
-  if (NS_WARN_IF(NS_FAILED(rv)) || width <= 0 || height <= 0) {
+  mPrintSettings->GetEffectiveSheetSize(&width, &height);
+  if (width <= 0 || height <= 0) {
     return nullptr;
   }
 
@@ -82,7 +85,7 @@ already_AddRefed<PrintTarget> nsDeviceContextSpecProxy::MakePrintTarget() {
 
   RefPtr<gfxASurface> surface =
       gfxPlatform::GetPlatform()->CreateOffscreenSurface(
-          mozilla::gfx::IntSize::Truncate(width, height),
+          mozilla::gfx::IntSize::Ceil(width, height),
           mozilla::gfx::SurfaceFormat::A8R8G8B8_UINT32);
   if (!surface) {
     return nullptr;
@@ -136,6 +139,11 @@ NS_IMETHODIMP
 nsDeviceContextSpecProxy::BeginDocument(const nsAString& aTitle,
                                         const nsAString& aPrintToFileName,
                                         int32_t aStartPage, int32_t aEndPage) {
+  if (!mRemotePrintJob || mRemotePrintJob->IsDestroyed()) {
+    mRemotePrintJob = nullptr;
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
   mRecorder = new mozilla::layout::DrawEventRecorderPRFileDesc();
   nsresult rv = mRemotePrintJob->InitializePrint(
       nsString(aTitle), nsString(aPrintToFileName), aStartPage, aEndPage);
@@ -151,22 +159,35 @@ nsDeviceContextSpecProxy::BeginDocument(const nsAString& aTitle,
 
 NS_IMETHODIMP
 nsDeviceContextSpecProxy::EndDocument() {
-  if (mRemotePrintJob) {
-    Unused << mRemotePrintJob->SendFinalizePrint();
+  if (!mRemotePrintJob || mRemotePrintJob->IsDestroyed()) {
+    mRemotePrintJob = nullptr;
+    return NS_ERROR_NOT_AVAILABLE;
   }
+
+  Unused << mRemotePrintJob->SendFinalizePrint();
+
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsDeviceContextSpecProxy::AbortDocument() {
-  if (mRemotePrintJob) {
-    Unused << mRemotePrintJob->SendAbortPrint(NS_OK);
+  if (!mRemotePrintJob || mRemotePrintJob->IsDestroyed()) {
+    mRemotePrintJob = nullptr;
+    return NS_ERROR_NOT_AVAILABLE;
   }
+
+  Unused << mRemotePrintJob->SendAbortPrint(NS_OK);
+
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsDeviceContextSpecProxy::BeginPage() {
+  if (!mRemotePrintJob || mRemotePrintJob->IsDestroyed()) {
+    mRemotePrintJob = nullptr;
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
   mRecorder->OpenFD(mRemotePrintJob->GetNextPageFD());
 
   return NS_OK;
@@ -174,9 +195,14 @@ nsDeviceContextSpecProxy::BeginPage() {
 
 NS_IMETHODIMP
 nsDeviceContextSpecProxy::EndPage() {
+  if (!mRemotePrintJob || mRemotePrintJob->IsDestroyed()) {
+    mRemotePrintJob = nullptr;
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
   // Send the page recording to the parent.
   mRecorder->Close();
-  mRemotePrintJob->ProcessPage();
+  mRemotePrintJob->ProcessPage(std::move(mRecorder->TakeDependentSurfaces()));
 
   return NS_OK;
 }

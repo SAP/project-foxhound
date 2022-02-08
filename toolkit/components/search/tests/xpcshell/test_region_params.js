@@ -27,7 +27,7 @@ const CONFIG = [
 ];
 
 add_task(async function setup() {
-  await useTestEngines("data", null, CONFIG);
+  await SearchTestUtils.useTestEngines("data", null, CONFIG);
   await AddonTestUtils.promiseStartupManager();
 
   let confUrl = `data:application/json,${JSON.stringify(CONFIG)}`;
@@ -51,8 +51,11 @@ add_task(async function test_region_params() {
   params = engine.getSubmission("test").uri.query.split("&");
   Assert.ok(params.includes("client=default"), "Revert back to default");
 
+  const reloadObserved = SearchTestUtils.promiseSearchNotification(
+    "engines-reloaded"
+  );
   Services.prefs.setCharPref("browser.search.experiment", "acohortid");
-  await asyncReInit();
+  await reloadObserved;
 
   Region._setCurrentRegion("US");
   engine = await Services.search.getDefault();

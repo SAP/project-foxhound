@@ -58,14 +58,13 @@ function listenFor(name, key) {
 
 add_task(async function setup() {
   Services.prefs.setBoolPref("browser.search.separatePrivateDefault", true);
-  Services.prefs.setBoolPref("browser.search.geoSpecificDefaults", true);
   Services.prefs.setBoolPref(
     SearchUtils.BROWSER_SEARCH_PREF + "separatePrivateDefault.ui.enabled",
     true
   );
 
-  SearchTestUtils.useMockIdleService(registerCleanupFunction);
-  await useTestEngines("data", null, CONFIG);
+  SearchTestUtils.useMockIdleService();
+  await SearchTestUtils.useTestEngines("data", null, CONFIG);
   await AddonTestUtils.promiseStartupManager();
 });
 
@@ -99,7 +98,8 @@ add_task(async function test_initialization_with_region() {
   await initPromise;
 
   let otherPromises = [
-    promiseAfterCache(),
+    // This test expects settings to be saved twice.
+    promiseAfterSettings().then(promiseAfterSettings),
     SearchTestUtils.promiseSearchNotification(
       "engine-default",
       SEARCH_ENGINE_TOPIC

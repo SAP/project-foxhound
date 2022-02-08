@@ -15,6 +15,7 @@
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/css/DocumentMatchingFunction.h"
 #include "mozilla/css/SheetLoadData.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/EffectCompositor.h"
 #include "mozilla/ComputedTimingFunction.h"
 #include "mozilla/PreferenceSheet.h"
@@ -31,12 +32,10 @@ class ComputedStyle;
 class SeenPtrs;
 class ServoElementSnapshot;
 class ServoElementSnapshotTable;
-class SharedFontList;
 class StyleSheet;
 enum class PseudoStyleType : uint8_t;
 enum class PointerCapabilities : uint8_t;
 enum class UpdateAnimationsTasks : uint8_t;
-struct FontFamilyName;
 struct Keyframe;
 
 namespace css {
@@ -74,8 +73,6 @@ void Gecko_Snapshot_DebugListAttributes(const mozilla::ServoElementSnapshot*,
 bool Gecko_IsSignificantChild(const nsINode*, bool whitespace_is_significant);
 
 const nsINode* Gecko_GetLastChild(const nsINode*);
-const nsINode* Gecko_GetPreviousSibling(const nsINode*);
-
 const nsINode* Gecko_GetFlattenedTreeParentNode(const nsINode*);
 const mozilla::dom::Element* Gecko_GetBeforeOrAfterPseudo(
     const mozilla::dom::Element*, bool is_before);
@@ -138,9 +135,6 @@ bool Gecko_MatchLang(const mozilla::dom::Element*, nsAtom* override_lang,
                      bool has_override_lang, const char16_t* value);
 
 nsAtom* Gecko_GetXMLLangValue(const mozilla::dom::Element*);
-
-mozilla::dom::Document::DocumentTheme Gecko_GetDocumentLWTheme(
-    const mozilla::dom::Document*);
 
 const mozilla::PreferenceSheet::Prefs* Gecko_GetPrefSheetPrefs(
     const mozilla::dom::Document*);
@@ -269,30 +263,9 @@ nsAtom* Gecko_Atomize16(const nsAString* aString);
 void Gecko_AddRefAtom(nsAtom* aAtom);
 void Gecko_ReleaseAtom(nsAtom* aAtom);
 
-// Font style
-void Gecko_CopyFontFamilyFrom(nsFont* dst, const nsFont* src);
-
-void Gecko_nsTArray_FontFamilyName_AppendNamed(
-    nsTArray<mozilla::FontFamilyName>* aNames, nsAtom* aName,
-    mozilla::StyleFontFamilyNameSyntax);
-
-void Gecko_nsTArray_FontFamilyName_AppendGeneric(
-    nsTArray<mozilla::FontFamilyName>* aNames, mozilla::StyleGenericFontFamily);
-
-// Returns an already-AddRefed SharedFontList with an empty mNames array.
-mozilla::SharedFontList* Gecko_SharedFontList_Create();
-
-size_t Gecko_SharedFontList_SizeOfIncludingThis(
-    mozilla::SharedFontList* fontlist);
-
-size_t Gecko_SharedFontList_SizeOfIncludingThisIfUnshared(
-    mozilla::SharedFontList* fontlist);
-
-NS_DECL_THREADSAFE_FFI_REFCOUNTING(mozilla::SharedFontList, SharedFontList);
-
 // will not run destructors on dst, give it uninitialized memory
 // font_id is LookAndFeel::FontID
-void Gecko_nsFont_InitSystem(nsFont* dst, int32_t font_id,
+void Gecko_nsFont_InitSystem(nsFont* dst, mozilla::StyleSystemFont font_id,
                              const nsStyleFont* font,
                              const mozilla::dom::Document*);
 
@@ -458,6 +431,10 @@ void Gecko_GetComputedURLSpec(const mozilla::StyleComputedUrl* url,
 void Gecko_GetComputedImageURLSpec(const mozilla::StyleComputedUrl* url,
                                    nsCString* spec);
 
+// Return true if the given image MIME type is supported
+bool Gecko_IsSupportedImageMimeType(const uint8_t* mime_type,
+                                    const uint32_t len);
+
 void Gecko_nsIURI_Debug(nsIURI*, nsCString* spec);
 
 void Gecko_nsIReferrerInfo_Debug(nsIReferrerInfo* aReferrerInfo,
@@ -494,21 +471,13 @@ void Gecko_nsStyleFont_SetLang(nsStyleFont* font, nsAtom* atom);
 void Gecko_nsStyleFont_CopyLangFrom(nsStyleFont* aFont,
                                     const nsStyleFont* aSource);
 
-// Moves the generic family in the font-family to the front, or prepends
-// aDefaultGeneric, so that user-configured fonts take precedent over document
-// fonts.
-//
-// Document fonts may still be used as fallback for unsupported glyphs though.
-void Gecko_nsStyleFont_PrioritizeUserFonts(
-    nsStyleFont* font, mozilla::StyleGenericFontFamily aDefaultGeneric);
-
 mozilla::Length Gecko_nsStyleFont_ComputeMinSize(const nsStyleFont*,
                                                  const mozilla::dom::Document*);
 
-// Computes the default generic font for a generic family and language.
-mozilla::StyleGenericFontFamily Gecko_nsStyleFont_ComputeDefaultFontType(
-    const mozilla::dom::Document*,
-    mozilla::StyleGenericFontFamily generic_family, nsAtom* language);
+// Computes the default generic font for a language.
+mozilla::StyleGenericFontFamily
+Gecko_nsStyleFont_ComputeFallbackFontTypeForLanguage(
+    const mozilla::dom::Document*, nsAtom* language);
 
 mozilla::StyleDefaultFontSizes Gecko_GetBaseSize(nsAtom* lang);
 
@@ -530,10 +499,14 @@ void Gecko_StyleSheet_AddRef(const mozilla::StyleSheet* aSheet);
 void Gecko_StyleSheet_Release(const mozilla::StyleSheet* aSheet);
 bool Gecko_IsDocumentBody(const mozilla::dom::Element* element);
 
-// We use an int32_t here instead of a LookAndFeel::ColorID
-// because forward-declaring a nested enum/struct is impossible
-nscolor Gecko_GetLookAndFeelSystemColor(int32_t color_id,
-                                        const mozilla::dom::Document*);
+nscolor Gecko_ComputeSystemColor(mozilla::StyleSystemColor,
+                                 const mozilla::dom::Document*,
+                                 const mozilla::StyleColorScheme*);
+
+// We use an int32_t here instead of a LookAndFeel::IntID/FloatID because
+// forward-declaring a nested enum/struct is impossible.
+int32_t Gecko_GetLookAndFeelInt(int32_t int_id);
+float Gecko_GetLookAndFeelFloat(int32_t float_id);
 
 void Gecko_AddPropertyToSet(nsCSSPropertyIDSet*, nsCSSPropertyID);
 
@@ -546,15 +519,6 @@ void Gecko_AddPropertyToSet(nsCSSPropertyIDSet*, nsCSSPropertyID);
   void Gecko_Destroy_nsStyle##name(nsStyle##name* ptr);
 #include "nsStyleStructList.h"
 #undef STYLE_STRUCT
-
-void Gecko_RegisterProfilerThread(const char* name);
-void Gecko_UnregisterProfilerThread();
-
-#ifdef MOZ_GECKO_PROFILER
-void Gecko_Construct_AutoProfilerLabel(mozilla::AutoProfilerLabel*,
-                                       JS::ProfilingCategoryPair);
-void Gecko_Destroy_AutoProfilerLabel(mozilla::AutoProfilerLabel*);
-#endif
 
 bool Gecko_DocumentRule_UseForPresentation(
     const mozilla::dom::Document*, const nsACString* aPattern,
@@ -610,6 +574,8 @@ bool Gecko_IsMainThread();
 mozilla::StyleDisplayMode Gecko_MediaFeatures_GetDisplayMode(
     const mozilla::dom::Document*);
 
+bool Gecko_MediaFeatures_ShouldAvoidNativeTheme(const mozilla::dom::Document*);
+bool Gecko_MediaFeatures_UseOverlayScrollbars(const mozilla::dom::Document*);
 uint32_t Gecko_MediaFeatures_GetColorDepth(const mozilla::dom::Document*);
 uint32_t Gecko_MediaFeatures_GetMonochromeBitsPerPixel(
     const mozilla::dom::Document*);
@@ -619,8 +585,8 @@ void Gecko_MediaFeatures_GetDeviceSize(const mozilla::dom::Document*,
 
 float Gecko_MediaFeatures_GetResolution(const mozilla::dom::Document*);
 bool Gecko_MediaFeatures_PrefersReducedMotion(const mozilla::dom::Document*);
-mozilla::StyleContrastPref Gecko_MediaFeatures_PrefersContrast(
-    const mozilla::dom::Document*, const bool aForcedColors);
+mozilla::StylePrefersContrast Gecko_MediaFeatures_PrefersContrast(
+    const mozilla::dom::Document*);
 mozilla::StylePrefersColorScheme Gecko_MediaFeatures_PrefersColorScheme(
     const mozilla::dom::Document*);
 
@@ -631,10 +597,6 @@ mozilla::PointerCapabilities Gecko_MediaFeatures_AllPointerCapabilities(
     const mozilla::dom::Document*);
 
 float Gecko_MediaFeatures_GetDevicePixelRatio(const mozilla::dom::Document*);
-
-bool Gecko_MediaFeatures_HasSystemMetric(const mozilla::dom::Document*,
-                                         nsAtom* metric,
-                                         bool is_accessible_from_content);
 
 bool Gecko_MediaFeatures_IsResourceDocument(const mozilla::dom::Document*);
 nsAtom* Gecko_MediaFeatures_GetOperatingSystemVersion(

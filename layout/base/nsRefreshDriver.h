@@ -19,19 +19,22 @@
 #include "mozilla/WeakPtr.h"
 #include "nsTObserverArray.h"
 #include "nsTArray.h"
-#include "nsTHashtable.h"
+#include "nsTHashSet.h"
 #include "nsClassHashtable.h"
 #include "nsHashKeys.h"
+#include "nsRefreshObservers.h"
+#include "nsThreadUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/dom/VisualViewport.h"
 #include "mozilla/layers/TransactionIdAllocator.h"
-#include "mozilla/VsyncDispatcher.h"
+#include "LayersTypes.h"
+
+#include "GeckoProfiler.h"  // for ProfileChunkedBuffer
 
 class nsPresContext;
 
 class imgIRequest;
-class nsINode;
 class nsIRunnable;
 
 namespace mozilla {
@@ -40,55 +43,8 @@ class PendingFullscreenEvent;
 class PresShell;
 class RefreshDriverTimer;
 class Runnable;
-
-namespace layout {
-class VsyncChild;
-}  // namespace layout
-
-namespace dom {
-class Event;
-}  // namespace dom
-
+class Task;
 }  // namespace mozilla
-
-/**
- * An abstract base class to be implemented by callers wanting to be
- * notified at refresh times.  When nothing needs to be painted, callers
- * may not be notified.
- */
-class nsARefreshObserver {
- public:
-  // AddRef and Release signatures that match nsISupports.  Implementors
-  // must implement reference counting, and those that do implement
-  // nsISupports will already have methods with the correct signature.
-  //
-  // The refresh driver does NOT hold references to refresh observers
-  // except while it is notifying them.
-  NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
-
-  MOZ_CAN_RUN_SCRIPT virtual void WillRefresh(mozilla::TimeStamp aTime) = 0;
-};
-
-/**
- * An abstract base class to be implemented by callers wanting to be notified
- * when the observing refresh driver updated mMostRecentRefresh due to active
- * timer changes. Callers must ensure an observer is removed before it is
- * destroyed.
- */
-class nsATimerAdjustmentObserver {
- public:
-  virtual void NotifyTimerAdjusted(mozilla::TimeStamp aTime) = 0;
-};
-
-/**
- * An abstract base class to be implemented by callers wanting to be notified
- * that a refresh has occurred. Callers must ensure an observer is removed
- * before it is destroyed.
- */
-class nsAPostRefreshObserver {
- public:
-  virtual void DidRefresh() = 0;
-};
 
 class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
                               public nsARefreshObserver {
@@ -98,6 +54,7 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
       mozilla::dom::VisualViewport::VisualViewportResizeEvent;
   using VVPScrollEvent =
       mozilla::dom::VisualViewport::VisualViewportScrollEvent;
+  using LogPresShellObserver = mozilla::LogPresShellObserver;
 
  public:
   explicit nsRefreshDriver(nsPresContext* aPresContext);
@@ -121,7 +78,7 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
    * ensure that multiple animations started during the same event off
    * the main event loop have the same start time.)
    */
-  mozilla::TimeStamp MostRecentRefresh() const;
+  mozilla::TimeStamp MostRecentRefresh(bool aEnsureTimerStarted = true) const;
 
   /**
    * Add / remove refresh observers.
@@ -142,7 +99,8 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
    * The observer will be called even if there is no other activity.
    */
   void AddRefreshObserver(nsARefreshObserver* aObserver,
-                          mozilla::FlushType aFlushType);
+                          mozilla::FlushType aFlushType,
+                          const char* aObserverDescription);
   bool RemoveRefreshObserver(nsARefreshObserver* aObserver,
                              mozilla::FlushType aFlushType);
   /**
@@ -167,7 +125,9 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
    * refresh driver ticks.
    */
   void AddPostRefreshObserver(nsAPostRefreshObserver* aObserver);
+  void AddPostRefreshObserver(mozilla::ManagedPostRefreshObserver*) = delete;
   void RemovePostRefreshObserver(nsAPostRefreshObserver* aObserver);
+  void RemovePostRefreshObserver(mozilla::ManagedPostRefreshObserver*) = delete;
 
   /**
    * Add/Remove imgIRequest versions of observers.
@@ -180,11 +140,19 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
    * @note Technically, imgIRequest objects are not nsARefreshObservers, but
    * for controlling animated image repaint events, we subscribe the
    * imgIRequests to the nsRefreshDriver for notification of paint events.
-   *
-   * @returns whether the operation succeeded, or void in the case of removal.
    */
-  bool AddImageRequest(imgIRequest* aRequest);
+  void AddImageRequest(imgIRequest* aRequest);
   void RemoveImageRequest(imgIRequest* aRequest);
+
+  /**
+   * Marks that we're currently in the middle of processing user input.
+   * Called by EventDispatcher when it's handling an input event.
+   */
+  void EnterUserInputProcessing() { mUserInputProcessingCount++; }
+  void ExitUserInputProcessing() {
+    MOZ_ASSERT(mUserInputProcessingCount > 0);
+    mUserInputProcessingCount--;
+  }
 
   /**
    * Add / remove presshells which have pending resize event.
@@ -214,6 +182,7 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   void AddStyleFlushObserver(mozilla::PresShell* aPresShell) {
     MOZ_DIAGNOSTIC_ASSERT(!mStyleFlushObservers.Contains(aPresShell),
                           "Double-adding style flush observer");
+    LogPresShellObserver::LogDispatch(aPresShell, this);
     mStyleFlushObservers.AppendElement(aPresShell);
     EnsureTimerStarted();
   }
@@ -224,6 +193,7 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   void AddLayoutFlushObserver(mozilla::PresShell* aPresShell) {
     MOZ_DIAGNOSTIC_ASSERT(!IsLayoutFlushObserver(aPresShell),
                           "Double-adding layout flush observer");
+    LogPresShellObserver::LogDispatch(aPresShell, this);
     mLayoutFlushObservers.AppendElement(aPresShell);
     EnsureTimerStarted();
   }
@@ -335,14 +305,6 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
    */
   nsPresContext* GetPresContext() const;
 
-  /**
-   * PBackgroundChild actor is created asynchronously in content process.
-   * We can't create vsync-based timers during PBackground startup. This
-   * function will be called when PBackgroundChild actor is created. Then we can
-   * do the pending vsync-based timer creation.
-   */
-  static void PVsyncActorCreated(mozilla::layout::VsyncChild* aVsyncChild);
-
   void CreateVsyncRefreshTimer();
 
 #ifdef DEBUG
@@ -362,20 +324,6 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
 
   void SetIsResizeSuppressed() { mResizeSuppressed = true; }
   bool IsResizeSuppressed() const { return mResizeSuppressed; }
-
-  /**
-   * The latest value of process-wide jank levels.
-   *
-   * For each i, sJankLevels[i] counts the number of times delivery of
-   * vsync to the main thread has been delayed by at least 2^i
-   * ms. This data structure has been designed to make it easy to
-   * determine how much jank has taken place between two instants in
-   * time.
-   *
-   * Return `false` if `aJank` needs to be grown to accomodate the
-   * data but we didn't have enough memory.
-   */
-  static bool GetJankLevels(mozilla::Vector<uint64_t>& aJank);
 
   // mozilla::layers::TransactionIdAllocator
   TransactionId GetTransactionId(bool aThrottle) override;
@@ -418,9 +366,10 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
    */
   static mozilla::Maybe<mozilla::TimeStamp> GetNextTickHint();
 
-  static void DispatchIdleRunnableAfterTickUnlessExists(nsIRunnable* aRunnable,
-                                                        uint32_t aDelay);
-  static void CancelIdleRunnable(nsIRunnable* aRunnable);
+  static bool IsRegularRateTimerTicking();
+
+  static void DispatchIdleTaskAfterTickUnlessExists(mozilla::Task* aTask);
+  static void CancelIdleTask(mozilla::Task* aTask);
 
   void NotifyDOMContentLoaded();
 
@@ -431,6 +380,8 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
     MOZ_ASSERT(!mActiveTimer);
     EnsureTimerStarted();
   }
+
+  bool HasPendingTick() const { return mActiveTimer; }
 
   void EnsureIntersectionObservationsUpdateHappens() {
     // This is enough to make sure that UpdateIntersectionObservations runs at
@@ -447,12 +398,35 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
     mNeedToUpdateIntersectionObservations = true;
   }
 
+  // Register a composition payload that will be forwarded to the layer manager
+  // if the current or upcoming refresh tick does a paint.
+  // If no paint happens, the payload is discarded.
+  // Should only be called on root refresh drivers.
+  void RegisterCompositionPayload(
+      const mozilla::layers::CompositionPayload& aPayload);
+
+  enum class TickReasons : uint32_t {
+    eNone = 0,
+    eHasObservers = 1 << 0,
+    eHasImageRequests = 1 << 1,
+    eNeedsToUpdateIntersectionObservations = 1 << 2,
+    eHasVisualViewportResizeEvents = 1 << 3,
+    eHasScrollEvents = 1 << 4,
+    eHasVisualViewportScrollEvents = 1 << 5,
+  };
+
+  void AddForceNotifyContentfulPaintPresContext(nsPresContext* aPresContext);
+  void FlushForceNotifyContentfulPaintPresContext();
+
+  // Mark that we've just run a tick from vsync, used to throttle 'extra'
+  // paints to one per vsync (see CanDoExtraTick).
+  void FinishedVsyncTick() { mAttemptedExtraTickSinceLastVsync = false; }
+
  private:
-  typedef nsTObserverArray<nsARefreshObserver*> ObserverArray;
   typedef nsTArray<RefPtr<VVPResizeEvent>> VisualViewportResizeEventArray;
   typedef nsTArray<RefPtr<mozilla::Runnable>> ScrollEventArray;
   typedef nsTArray<RefPtr<VVPScrollEvent>> VisualViewportScrollEventArray;
-  typedef nsTHashtable<nsISupportsHashKey> RequestTable;
+  using RequestTable = nsTHashSet<RefPtr<imgIRequest>>;
   struct ImageStartData {
     ImageStartData() = default;
 
@@ -461,13 +435,33 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   };
   typedef nsClassHashtable<nsUint32HashKey, ImageStartData> ImageStartTable;
 
+  struct ObserverData {
+    nsARefreshObserver* mObserver;
+    const char* mDescription;
+    mozilla::TimeStamp mRegisterTime;
+    mozilla::MarkerInnerWindowId mInnerWindowId;
+    mozilla::UniquePtr<mozilla::ProfileChunkedBuffer> mCause;
+    mozilla::FlushType mFlushType;
+
+    bool operator==(nsARefreshObserver* aObserver) const {
+      return mObserver == aObserver;
+    }
+    operator RefPtr<nsARefreshObserver>() { return mObserver; }
+  };
+  typedef nsTObserverArray<ObserverData> ObserverArray;
   void RunFullscreenSteps();
   void DispatchAnimationEvents();
   MOZ_CAN_RUN_SCRIPT
   void RunFrameRequestCallbacks(mozilla::TimeStamp aNowTime);
-  void UpdateIntersectionObservations();
+  void UpdateIntersectionObservations(mozilla::TimeStamp aNowTime);
+
+  enum class IsExtraTick {
+    No,
+    Yes,
+  };
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  void Tick(mozilla::VsyncId aId, mozilla::TimeStamp aNowTime);
+  void Tick(mozilla::VsyncId aId, mozilla::TimeStamp aNowTime,
+            IsExtraTick aIsExtraTick = IsExtraTick::No);
 
   enum EnsureTimerStartedFlags {
     eNone = 0,
@@ -479,12 +473,18 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   void StopTimer();
 
   bool HasObservers() const;
+  void AppendObserverDescriptionsToString(nsACString& aStr) const;
   // Note: This should only be called in the dtor of nsRefreshDriver.
   uint32_t ObserverCount() const;
   bool HasImageRequests() const;
+  bool ShouldKeepTimerRunningWhileWaitingForFirstContentfulPaint();
+  bool ShouldKeepTimerRunningAfterPageLoad();
   ObserverArray& ArrayFor(mozilla::FlushType aFlushType);
   // Trigger a refresh immediately, if haven't been disconnected or frozen.
   void DoRefresh();
+
+  TickReasons GetReasonsToTick() const;
+  void AppendTickReasonsToString(TickReasons aReasons, nsACString& aStr) const;
 
   double GetRegularTimerInterval() const;
   static double GetThrottledTimerInterval();
@@ -497,9 +497,30 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
 
   void FinishedWaitingForTransaction();
 
+  /**
+   * Returns true if we didn't tick on the most recent vsync, but we think
+   * we could run one now instead in order to reduce latency.
+   */
+  bool CanDoCatchUpTick();
+  /**
+   * Returns true if we think it's possible to run an repeat tick (between
+   * vsyncs) to hopefully replace the original tick's paint on the compositor.
+   * We allow this sometimes for tick requests coming for user input handling
+   * to reduce latency.
+   */
+  bool CanDoExtraTick();
+
+  bool AtPendingTransactionLimit() {
+    return mPendingTransactions.Length() == 2;
+  }
+  bool TooManyPendingTransactions() {
+    return mPendingTransactions.Length() >= 2;
+  }
+
   mozilla::RefreshDriverTimer* ChooseTimer();
   mozilla::RefreshDriverTimer* mActiveTimer;
   RefPtr<mozilla::RefreshDriverTimer> mOwnTimer;
+  mozilla::UniquePtr<mozilla::ProfileChunkedBuffer> mRefreshTimerStartedCause;
 
   // nsPresContext passed in constructor and unset in Disconnect.
   mozilla::WeakPtr<nsPresContext> mPresContext;
@@ -508,15 +529,10 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
 
   // The most recently allocated transaction id.
   TransactionId mNextTransactionId;
-  // This number is mCompletedTransaction + (pending transaction count).
-  // When we revoke a transaction id, we revert this number (since it's
-  // no longer outstanding), but not mNextTransactionId (since we don't
-  // want to reuse the number).
-  TransactionId mOutstandingTransactionId;
-  // The most recently completed transaction id.
-  TransactionId mCompletedTransaction;
+  AutoTArray<TransactionId, 3> mPendingTransactions;
 
   uint32_t mFreezeCount;
+  uint32_t mUserInputProcessingCount = 0;
 
   // How long we wait between ticks for throttled (which generally means
   // non-visible) documents registered with a non-throttled refresh driver.
@@ -527,6 +543,8 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   // interval, we only recompute visibility when we've seen a layout or style
   // flush since the last time we did it.
   const mozilla::TimeDuration mMinRecomputeVisibilityInterval;
+
+  mozilla::UniquePtr<mozilla::ProfileChunkedBuffer> mViewManagerFlushCause;
 
   bool mThrottled : 1;
   bool mNeedToRecomputeVisibility : 1;
@@ -563,6 +581,18 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   // all our documents.
   bool mNeedToUpdateIntersectionObservations : 1;
 
+  // True if we're currently within the scope of Tick() handling a normal
+  // (timer-driven) tick.
+  bool mInNormalTick : 1;
+
+  // True if we attempted an extra tick (see CanDoExtraTick) since the last
+  // vsync and thus shouldn't allow another.
+  bool mAttemptedExtraTickSinceLastVsync : 1;
+
+  bool mHasExceededAfterLoadTickPeriod : 1;
+
+  bool mHasStartedTimerAtLeastOnce : 1;
+
   // Number of seconds that the refresh driver is blocked waiting for a
   // compositor transaction to be completed before we append a note to the gfx
   // critical log. The number is doubled every time the threshold is hit.
@@ -573,7 +603,7 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   mozilla::TimeStamp mTickVsyncTime;
   mozilla::TimeStamp mNextThrottledFrameRequestTick;
   mozilla::TimeStamp mNextRecomputeVisibilityTick;
-  mozilla::TimeStamp mInitialTimerRunningLimit;
+  mozilla::TimeStamp mBeforeFirstContentfulPaintTimerRunningLimit;
 
   // separate arrays for each flush type we support
   ObserverArray mObservers[4];
@@ -583,6 +613,7 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   // to be called when the timer is re-started and should not influence its
   // starting or stopping.
   nsTObserverArray<nsATimerAdjustmentObserver*> mTimerAdjustmentObservers;
+  nsTArray<mozilla::layers::CompositionPayload> mCompositionPayloads;
   RequestTable mRequests;
   ImageStartTable mStartTable;
   AutoTArray<nsCOMPtr<nsIRunnable>, 16> mEarlyRunners;
@@ -606,23 +637,23 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   AutoTArray<mozilla::AnimationEventDispatcher*, 16>
       mAnimationEventFlushObservers;
 
+  // nsPresContexts which `NotifyContentfulPaint` have been called,
+  // however the corresponding paint doesn't come from a regular
+  // rendering steps(aka tick).
+  //
+  // For these nsPresContexts, we invoke
+  // `FlushForceNotifyContentfulPaintPresContext` in the next tick
+  // to force notify contentful paint, regardless whether the tick paints
+  // or not.
+  nsTArray<mozilla::WeakPtr<nsPresContext>>
+      mForceNotifyContentfulPaintPresContexts;
+
   void BeginRefreshingImages(RequestTable& aEntries,
                              mozilla::TimeStamp aDesired);
 
   friend class mozilla::RefreshDriverTimer;
 
   static void Shutdown();
-
-  // `true` if we are currently in jank-critical mode.
-  //
-  // In jank-critical mode, any iteration of the event loop that takes
-  // more than 16ms to compute will cause an ongoing animation to miss
-  // frames.
-  //
-  // For simplicity, the current implementation assumes that we are
-  // in jank-critical mode if and only if the vsync driver has at least
-  // one observer.
-  static bool IsJankCritical();
 };
 
 #endif /* !defined(nsRefreshDriver_h_) */

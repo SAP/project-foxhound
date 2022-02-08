@@ -130,7 +130,12 @@ inline T_Wrap<T_Rhs*, T_Sbx> memset(rlbox_sandbox<T_Sbx>& sandbox,
 }
 
 /**
- * @brief Copy to sandbox memory area.
+ * @brief Copy to sandbox memory area. Note that memcpy is meant to be called on
+ * byte arrays does not adjust data according to ABI differences. If the
+ * programmer does accidentally call memcpy on buffers that needs ABI
+ * adjustment, this may cause compatibility issues, but will not cause a
+ * security issue as the destination is always a tainted or tainted_volatile
+ * pointer
  */
 template<typename T_Sbx,
          typename T_Rhs,
@@ -198,6 +203,112 @@ inline tainted_int_hint memcmp(rlbox_sandbox<T_Sbx>& sandbox,
   int ret = std::memcmp(dest_start, src_start, num_val);
   tainted_int_hint converted_ret(ret);
   return converted_ret;
+}
+
+/**
+ * @brief This function either
+ * - copies the given buffer into the sandbox calling delete on the src
+ * OR
+ * - if the sandbox allows, adds the buffer to the existing sandbox memory
+ * @param sandbox Target sandbox
+ * @param src Raw pointer to the buffer
+ * @param num Number of T-sized elements in the buffer
+ * @param free_source_on_copy If the source buffer was copied, this variable
+ * controls whether copy_memory_or_grant_access should call delete on the src.
+ * This calls delete[] if num > 1.
+ * @param copied out parameter indicating if the source was copied or transfered
+ */
+template<typename T_Sbx, typename T>
+tainted<T*, T_Sbx> copy_memory_or_grant_access(rlbox_sandbox<T_Sbx>& sandbox,
+                                               T* src,
+                                               size_t num,
+                                               bool free_source_on_copy,
+                                               bool& copied)
+{
+  copied = false;
+
+  // Malloc in sandbox takes a uint32_t as the parameter, need a bounds check
+  detail::dynamic_check(num <= std::numeric_limits<uint32_t>::max(),
+                        "Granting access too large a region");
+  uint32_t num_trunc = num;
+
+  // sandbox can grant access if it includes the following line
+  // using can_grant_deny_access = void;
+  if constexpr (detail::has_member_using_can_grant_deny_access_v<T_Sbx>) {
+    detail::check_range_doesnt_cross_app_sbx_boundary<T_Sbx>(src, num_trunc);
+
+    bool success;
+    auto ret = sandbox.INTERNAL_grant_access(src, num_trunc, success);
+    if (success) {
+      return ret;
+    }
+  }
+
+  using T_nocv = std::remove_cv_t<T>;
+  tainted<T_nocv*, T_Sbx> copy =
+    sandbox.template malloc_in_sandbox<T_nocv>(num_trunc);
+  if (!copy) {
+    return nullptr;
+  }
+  rlbox::memcpy(sandbox, copy, src, num * sizeof(T));
+  if (free_source_on_copy) {
+    free(const_cast<void*>(reinterpret_cast<const void*>(src)));
+  }
+
+  copied = true;
+  return sandbox_const_cast<T*>(copy);
+}
+
+/**
+ * @brief This function either
+ * - copies the given buffer out of the sandbox calling free_in_sandbox on the
+ * src
+ * OR
+ * - if the sandbox allows, moves the buffer out of existing sandbox memory
+ * @param sandbox Target sandbox
+ * @param src Raw pointer to the buffer
+ * @param num Number of bytes in the buffer
+ * @param free_source_on_copy If the source buffer was copied, this variable
+ * controls whether copy_memory_or_grant_access should call delete on the src.
+ * This calls delete[] if num > 1.
+ * @param copied out parameter indicating if the source was copied or transfered
+ */
+template<typename T_Sbx,
+         typename T,
+         template<typename, typename>
+         typename T_Wrap>
+T* copy_memory_or_deny_access(rlbox_sandbox<T_Sbx>& sandbox,
+                              T_Wrap<T*, T_Sbx> src,
+                              size_t num,
+                              bool free_source_on_copy,
+                              bool& copied)
+{
+  // sandbox can grant access if it includes the following line
+  // using can_grant_deny_access = void;
+  if constexpr (detail::has_member_using_can_grant_deny_access_v<T_Sbx>) {
+    detail::check_range_doesnt_cross_app_sbx_boundary<T_Sbx>(
+      src.INTERNAL_unverified_safe(), num);
+
+    bool success;
+    auto ret = sandbox.INTERNAL_deny_access(src, num, success);
+    if (success) {
+      copied = false;
+      return ret;
+    }
+  }
+
+  auto copy = static_cast<T*>(malloc(num));
+
+  tainted<T*, T_Sbx> src_tainted = src;
+  char* src_raw = src_tainted.copy_and_verify_buffer_address(
+    [](uintptr_t val) { return reinterpret_cast<char*>(val); }, num);
+  std::memcpy(copy, src_raw, num);
+  if (free_source_on_copy) {
+    sandbox.free_in_sandbox(src);
+  }
+
+  copied = true;
+  return copy;
 }
 
 }

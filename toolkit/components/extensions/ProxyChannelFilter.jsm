@@ -197,6 +197,7 @@ const ProxyInfoData = {
   },
 
   createProxyInfoFromData(
+    policy,
     proxyDataList,
     defaultProxyInfo,
     proxyDataListIndex = 0
@@ -223,13 +224,15 @@ const ProxyInfoData = {
       return defaultProxyInfo;
     }
     let failoverProxy = this.createProxyInfoFromData(
+      policy,
       proxyDataList,
       defaultProxyInfo,
       proxyDataListIndex + 1
     );
 
+    let proxyInfo;
     if (type === PROXY_TYPES.SOCKS || type === PROXY_TYPES.SOCKS4) {
-      return ProxyService.newProxyInfoWithAuth(
+      proxyInfo = ProxyService.newProxyInfoWithAuth(
         type,
         host,
         port,
@@ -241,17 +244,20 @@ const ProxyInfoData = {
         failoverTimeout ? failoverTimeout : PROXY_TIMEOUT_SEC,
         failoverProxy
       );
+    } else {
+      proxyInfo = ProxyService.newProxyInfo(
+        type,
+        host,
+        port,
+        proxyAuthorizationHeader,
+        connectionIsolationKey,
+        proxyDNS ? TRANSPARENT_PROXY_RESOLVES_HOST : 0,
+        failoverTimeout ? failoverTimeout : PROXY_TIMEOUT_SEC,
+        failoverProxy
+      );
     }
-    return ProxyService.newProxyInfo(
-      type,
-      host,
-      port,
-      proxyAuthorizationHeader,
-      connectionIsolationKey,
-      proxyDNS ? TRANSPARENT_PROXY_RESOLVES_HOST : 0,
-      failoverTimeout ? failoverTimeout : PROXY_TIMEOUT_SEC,
-      failoverProxy
-    );
+    proxyInfo.sourceId = policy.id;
+    return proxyInfo;
   },
 };
 
@@ -309,7 +315,7 @@ class ProxyChannelFilter {
 
       ...extraData,
     };
-    if (originAttributes && this.extension.hasPermission("cookies")) {
+    if (originAttributes) {
       data.cookieStoreId = getCookieStoreIdForOriginAttributes(
         originAttributes
       );
@@ -349,15 +355,25 @@ class ProxyChannelFilter {
       if (wrapper.browserElement) {
         browserData = tabTracker.getBrowserData(wrapper.browserElement);
       }
-      let { filter } = this;
+
+      let { filter, extension } = this;
       if (filter.tabId != null && browserData.tabId !== filter.tabId) {
         return;
       }
       if (filter.windowId != null && browserData.windowId !== filter.windowId) {
         return;
       }
+      if (
+        extension.userContextIsolation &&
+        !extension.canAccessContainer(
+          channel.loadInfo?.originAttributes.userContextId
+        )
+      ) {
+        return;
+      }
 
-      if (wrapper.matches(filter, this.extension.policy, { isProxy: true })) {
+      let { policy } = this.extension;
+      if (wrapper.matches(filter, policy, { isProxy: true })) {
         let data = this.getRequestData(wrapper, { tabId: browserData.tabId });
 
         let ret = await this.listener(data);
@@ -378,6 +394,7 @@ class ProxyChannelFilter {
           ret = [ret];
         }
         proxyInfo = ProxyInfoData.createProxyInfoFromData(
+          policy,
           ret,
           defaultProxyInfo
         );

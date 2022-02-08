@@ -33,6 +33,27 @@ add_task(async function test_file_opening() {
   await Promise.race([pdfjsLoadedPromise, windowOpenedPromise]);
   ok(!openedWindow, "Shouldn't open an unknownContentType window!");
 
+  BrowserTestUtils.removeTab(tab);
+
+  // Now try opening it from the file directory:
+  tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    dirFileObj.parent.path
+  );
+  pdfjsLoadedPromise = BrowserTestUtils.browserLoaded(
+    tab.linkedBrowser,
+    false,
+    url => url.endsWith("test.pdf")
+  );
+  await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
+    content.document.querySelector("a[href$='test.pdf']").click();
+  });
+  await Promise.race([pdfjsLoadedPromise, windowOpenedPromise]);
+  ok(
+    !openedWindow,
+    "Shouldn't open an unknownContentType window for PDFs from file: links!"
+  );
+
   registerCleanupFunction(function() {
     if (listenerCleanup) {
       listenerCleanup();
@@ -41,43 +62,6 @@ add_task(async function test_file_opening() {
     gBrowser.removeTab(tab);
   });
 });
-
-function changeMimeHandler(preferredAction, alwaysAskBeforeHandling) {
-  let handlerService = Cc[
-    "@mozilla.org/uriloader/handler-service;1"
-  ].getService(Ci.nsIHandlerService);
-  let mimeService = Cc["@mozilla.org/mime;1"].getService(Ci.nsIMIMEService);
-  let handlerInfo = mimeService.getFromTypeAndExtension(
-    "application/pdf",
-    "pdf"
-  );
-  var oldAction = [
-    handlerInfo.preferredAction,
-    handlerInfo.alwaysAskBeforeHandling,
-  ];
-
-  // Change and save mime handler settings
-  handlerInfo.alwaysAskBeforeHandling = alwaysAskBeforeHandling;
-  handlerInfo.preferredAction = preferredAction;
-  handlerService.store(handlerInfo);
-
-  // Refresh data
-  handlerInfo = mimeService.getFromTypeAndExtension("application/pdf", "pdf");
-
-  // Test: Mime handler was updated
-  is(
-    handlerInfo.alwaysAskBeforeHandling,
-    alwaysAskBeforeHandling,
-    "always-ask prompt change successful"
-  );
-  is(
-    handlerInfo.preferredAction,
-    preferredAction,
-    "mime handler change successful"
-  );
-
-  return oldAction;
-}
 
 let listenerCleanup;
 function addWindowListener(aURL, aCallback) {

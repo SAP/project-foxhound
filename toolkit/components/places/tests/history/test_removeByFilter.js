@@ -58,9 +58,14 @@ add_task(async function test_removeByFilter() {
     await checkBeforeRemove();
 
     // Take care of any observers (due to bookmarks)
-    let { observer, promiseObserved } = getObserverPromise(bookmarkedUri);
-    if (observer) {
-      PlacesUtils.history.addObserver(observer, false);
+    let { placesEventListener, promiseObserved } = getObserverPromise(
+      bookmarkedUri
+    );
+    if (placesEventListener) {
+      PlacesObservers.addListener(
+        ["page-title-changed", "history-cleared", "page-removed"],
+        placesEventListener
+      );
     }
     // Perfom delete operation on database
     let removed = false;
@@ -83,10 +88,12 @@ add_task(async function test_removeByFilter() {
     }
     await checkAfterRemove();
     await promiseObserved;
-    if (observer) {
-      PlacesUtils.history.removeObserver(observer);
-      // Remove the added bookmarks as they interfere with following tests
+    if (placesEventListener) {
       await PlacesUtils.bookmarks.eraseEverything();
+      PlacesObservers.removeListener(
+        ["page-title-changed", "history-cleared", "page-removed"],
+        placesEventListener
+      );
     }
     Assert.ok(
       await PlacesTestUtils.isPageInDB(witnessURI),
@@ -442,52 +449,46 @@ add_task(async function test_chunking() {
 
 function getObserverPromise(bookmarkedUri) {
   if (!bookmarkedUri) {
-    return { observer: null, promiseObserved: Promise.resolve() };
+    return { promiseObserved: Promise.resolve() };
   }
-  let observer;
+  let placesEventListener;
   let promiseObserved = new Promise((resolve, reject) => {
-    observer = {
-      onBeginUpdateBatch() {},
-      onEndUpdateBatch() {},
-      onTitleChanged(aUri) {
-        reject(new Error("Unexpected call to onTitleChanged"));
-      },
-      onClearHistory() {
-        reject(new Error("Unexpected call to onClearHistory"));
-      },
-      onPageChanged(aUri) {
-        reject(new Error("Unexpected call to onPageChanged"));
-      },
-      onFrecencyChanged(aURI) {},
-      onManyFrecenciesChanged() {},
-      onDeleteURI(aURI) {
-        try {
-          Assert.notEqual(
-            aURI.spec,
-            bookmarkedUri,
-            "Bookmarked URI should not be deleted"
-          );
-        } finally {
-          resolve();
+    placesEventListener = events => {
+      for (const event of events) {
+        switch (event.type) {
+          case "page-title-changed": {
+            reject(new Error("Unexpected page-title-changed event happens"));
+            break;
+          }
+          case "history-cleared": {
+            reject(new Error("Unexpected history-cleared event happens"));
+            break;
+          }
+          case "page-removed": {
+            if (event.isRemovedFromStore) {
+              Assert.notEqual(
+                event.url,
+                bookmarkedUri,
+                "Bookmarked URI should not be deleted"
+              );
+            } else {
+              Assert.equal(
+                event.isPartialVisistsRemoval,
+                false,
+                "Observing page-removed deletes all visits"
+              );
+              Assert.equal(
+                event.url,
+                bookmarkedUri,
+                "Bookmarked URI should have all visits removed but not the page itself"
+              );
+            }
+            resolve();
+            break;
+          }
         }
-      },
-      onDeleteVisits(aURI, aPartialRemoval) {
-        try {
-          Assert.equal(
-            aPartialRemoval,
-            false,
-            "Observing onDeleteVisits deletes all visits"
-          );
-          Assert.equal(
-            aURI.spec,
-            bookmarkedUri,
-            "Bookmarked URI should have all visits removed but not the page itself"
-          );
-        } finally {
-          resolve();
-        }
-      },
+      }
     };
   });
-  return { observer, promiseObserved };
+  return { placesEventListener, promiseObserved };
 }

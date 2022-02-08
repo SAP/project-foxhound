@@ -8,10 +8,7 @@
 #include "mozilla/FontPropertyTypes.h"
 #include "nsIContent.h"
 
-using mozilla::LookAndFeel;
-
-namespace mozilla {
-namespace widget {
+namespace mozilla::widget {
 
 static const char16_t UNICODE_BULLET = 0x2022;
 
@@ -19,118 +16,14 @@ HeadlessLookAndFeel::HeadlessLookAndFeel() = default;
 
 HeadlessLookAndFeel::~HeadlessLookAndFeel() = default;
 
-nsresult HeadlessLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
-  // For headless mode, we use GetStandinForNativeColor for everything we can,
-  // and hardcoded values for everything else.
-
-  nsresult res = NS_OK;
-
-  switch (aID) {
-    // Override the solid black that GetStandinForNativeColor provides for
-    // FieldText, to match our behavior under the real GTK.
-    case ColorID::Fieldtext:
-      aColor = NS_RGB(0x21, 0x21, 0x21);
-      break;
-
-    // The rest are not provided by GetStandinForNativeColor.
-    case ColorID::IMESelectedRawTextBackground:
-    case ColorID::IMESelectedConvertedTextBackground:
-    case ColorID::IMERawInputBackground:
-    case ColorID::IMEConvertedTextBackground:
-      aColor = NS_TRANSPARENT;
-      break;
-    case ColorID::IMESelectedRawTextForeground:
-    case ColorID::IMESelectedConvertedTextForeground:
-    case ColorID::IMERawInputForeground:
-    case ColorID::IMEConvertedTextForeground:
-      aColor = NS_SAME_AS_FOREGROUND_COLOR;
-      break;
-    case ColorID::IMERawInputUnderline:
-    case ColorID::IMEConvertedTextUnderline:
-      aColor = NS_40PERCENT_FOREGROUND_COLOR;
-      break;
-    case ColorID::IMESelectedRawTextUnderline:
-    case ColorID::IMESelectedConvertedTextUnderline:
-      aColor = NS_SAME_AS_FOREGROUND_COLOR;
-      break;
-    case ColorID::MozEventreerow:
-      aColor = NS_RGB(0xff, 0xff, 0xff);
-      break;
-    case ColorID::MozGtkInfoBarText:
-      aColor = NS_RGB(0x00, 0x00, 0x00);
-      break;
-    case ColorID::MozMacButtonactivetext:
-    case ColorID::MozMacDefaultbuttontext:
-      aColor = NS_RGB(0xff, 0xff, 0xff);
-      break;
-    case ColorID::SpellCheckerUnderline:
-      aColor = NS_RGB(0xff, 0x00, 0x00);
-      break;
-    case ColorID::TextBackground:
-      aColor = NS_RGB(0xff, 0xff, 0xff);
-      break;
-    case ColorID::TextForeground:
-      aColor = NS_RGB(0x00, 0x00, 0x00);
-      break;
-    case ColorID::TextHighlightBackground:
-      aColor = NS_RGB(0xef, 0x0f, 0xff);
-      break;
-    case ColorID::TextHighlightForeground:
-      aColor = NS_RGB(0xff, 0xff, 0xff);
-      break;
-    case ColorID::TextSelectBackground:
-      aColor = NS_RGB(0xaa, 0xaa, 0xaa);
-      break;
-    case ColorID::TextSelectBackgroundAttention:
-      aColor = NS_TRANSPARENT;
-      break;
-    case ColorID::TextSelectBackgroundDisabled:
-      aColor = NS_RGB(0xaa, 0xaa, 0xaa);
-      break;
-    case ColorID::TextSelectForeground:
-      GetColor(ColorID::TextSelectBackground, aColor);
-      if (aColor == 0x000000)
-        aColor = NS_RGB(0xff, 0xff, 0xff);
-      else
-        aColor = NS_DONT_CHANGE_COLOR;
-      break;
-    case ColorID::Widget3DHighlight:
-      aColor = NS_RGB(0xa0, 0xa0, 0xa0);
-      break;
-    case ColorID::Widget3DShadow:
-      aColor = NS_RGB(0x40, 0x40, 0x40);
-      break;
-    case ColorID::WidgetBackground:
-      aColor = NS_RGB(0xdd, 0xdd, 0xdd);
-      break;
-    case ColorID::WidgetForeground:
-      aColor = NS_RGB(0x00, 0x00, 0x00);
-      break;
-    case ColorID::WidgetSelectBackground:
-      aColor = NS_RGB(0x80, 0x80, 0x80);
-      break;
-    case ColorID::WidgetSelectForeground:
-      aColor = NS_RGB(0x00, 0x00, 0x80);
-      break;
-    case ColorID::WindowBackground:
-      aColor = NS_RGB(0xff, 0xff, 0xff);
-      break;
-    case ColorID::WindowForeground:
-      aColor = NS_RGB(0x00, 0x00, 0x00);
-      break;
-    default:
-      aColor = GetStandinForNativeColor(aID);
-      break;
-  }
-
-  return res;
+nsresult HeadlessLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
+                                             nscolor& aResult) {
+  aResult = GetStandinForNativeColor(aID, aScheme);
+  return NS_OK;
 }
 
-nsresult HeadlessLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
-  nsresult res = nsXPLookAndFeel::GetIntImpl(aID, aResult);
-  if (NS_SUCCEEDED(res)) return res;
-  res = NS_OK;
-
+nsresult HeadlessLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
+  nsresult res = NS_OK;
   // These values should be sane defaults for headless mode under GTK.
   switch (aID) {
     case IntID::CaretBlinkTime:
@@ -155,9 +48,6 @@ nsresult HeadlessLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
       aResult = 0;
       break;
     case IntID::AllowOverlayScrollbarsOverlap:
-      aResult = 0;
-      break;
-    case IntID::ShowHideScrollbars:
       aResult = 0;
       break;
     case IntID::SkipNavigatingDisabledMenuItem:
@@ -217,12 +107,6 @@ nsresult HeadlessLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
       aResult = 0;
       res = NS_ERROR_FAILURE;
       break;
-    case IntID::TouchEnabled:
-    case IntID::MacGraphiteTheme:
-    case IntID::MacYosemiteTheme:
-      aResult = 0;
-      res = NS_ERROR_NOT_IMPLEMENTED;
-      break;
     case IntID::AlertNotificationOrigin:
       aResult = NS_ALERT_TOP;
       break;
@@ -241,7 +125,6 @@ nsresult HeadlessLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
     case IntID::MenuBarDrag:
       aResult = 0;
       break;
-    case IntID::WindowsThemeIdentifier:
     case IntID::OperatingSystemVersionIdentifier:
       aResult = 0;
       res = NS_ERROR_NOT_IMPLEMENTED;
@@ -271,8 +154,6 @@ nsresult HeadlessLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
       aResult = 1;
       break;
     case IntID::GTKCSDAvailable:
-    case IntID::GTKCSDHideTitlebarByDefault:
-    case IntID::GTKCSDTransparentBackground:
       aResult = 0;
       break;
     case IntID::GTKCSDMinimizeButton:
@@ -300,8 +181,6 @@ nsresult HeadlessLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
       aResult = 0;
       break;
     default:
-      NS_WARNING(
-          "HeadlessLookAndFeel::GetIntImpl called with an unrecognized aID");
       aResult = 0;
       res = NS_ERROR_FAILURE;
       break;
@@ -309,10 +188,8 @@ nsresult HeadlessLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
   return res;
 }
 
-nsresult HeadlessLookAndFeel::GetFloatImpl(FloatID aID, float& aResult) {
-  nsresult res = nsXPLookAndFeel::GetFloatImpl(aID, aResult);
-  if (NS_SUCCEEDED(res)) return res;
-  res = NS_OK;
+nsresult HeadlessLookAndFeel::NativeGetFloat(FloatID aID, float& aResult) {
+  nsresult res = NS_OK;
 
   // Hardcoded values for GTK.
   switch (aID) {
@@ -328,8 +205,6 @@ nsresult HeadlessLookAndFeel::GetFloatImpl(FloatID aID, float& aResult) {
       res = NS_ERROR_FAILURE;
       break;
     default:
-      NS_WARNING(
-          "HeadlessLookAndFeel::GetFloatImpl called with an unrecognized aID");
       aResult = -1.0;
       res = NS_ERROR_FAILURE;
       break;
@@ -338,8 +213,8 @@ nsresult HeadlessLookAndFeel::GetFloatImpl(FloatID aID, float& aResult) {
   return res;
 }
 
-bool HeadlessLookAndFeel::GetFontImpl(FontID aID, nsString& aFontName,
-                                      gfxFontStyle& aFontStyle) {
+bool HeadlessLookAndFeel::NativeGetFont(FontID aID, nsString& aFontName,
+                                        gfxFontStyle& aFontStyle) {
   // Default to san-serif for everything.
   aFontStyle.style = FontSlantStyle::Normal();
   aFontStyle.weight = FontWeight::Normal();
@@ -355,9 +230,4 @@ char16_t HeadlessLookAndFeel::GetPasswordCharacterImpl() {
   return UNICODE_BULLET;
 }
 
-void HeadlessLookAndFeel::RefreshImpl() { nsXPLookAndFeel::RefreshImpl(); }
-
-bool HeadlessLookAndFeel::GetEchoPasswordImpl() { return false; }
-
-}  // namespace widget
-}  // namespace mozilla
+}  // namespace mozilla::widget

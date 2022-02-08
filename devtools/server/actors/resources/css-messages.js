@@ -11,6 +11,7 @@ const { createStringGrip } = require("devtools/server/actors/object/utils");
 const {
   getActorIdForInternalSourceId,
 } = require("devtools/server/actors/utils/dbg-source");
+const { WebConsoleUtils } = require("devtools/server/actors/webconsole/utils");
 
 const {
   TYPES: { CSS_MESSAGE },
@@ -30,8 +31,8 @@ class CSSMessageWatcher extends nsIConsoleListenerWatcher {
    *        - onAvailable: mandatory function
    *          This will be called for each resource.
    */
-  constructor(targetActor, { onAvailable }) {
-    super(targetActor, { onAvailable });
+  async watch(targetActor, { onAvailable }) {
+    super.watch(targetActor, { onAvailable });
 
     // Calling ensureCSSErrorReportingEnabled will make the server parse the stylesheets to
     // retrieve the warnings if the docShell wasn't already watching for CSS messages.
@@ -66,11 +67,15 @@ class CSSMessageWatcher extends nsIConsoleListenerWatcher {
       return false;
     }
 
-    const { window } = targetActor;
-    const win = window?.WindowGlobalChild?.getByInnerWindowId(
-      message.innerWindowID
-    );
-    return targetActor.browserId === win?.browsingContext?.browserId;
+    if (targetActor.ignoreSubFrames) {
+      return (
+        WebConsoleUtils.getInnerWindowId(targetActor.window) ===
+        message.innerWindowID
+      );
+    }
+
+    const ids = WebConsoleUtils.getInnerWindowIDsForFrames(targetActor.window);
+    return ids.includes(message.innerWindowID);
   }
 
   /**

@@ -33,7 +33,6 @@ const startupPhases = {
         "resource://gre/modules/ActorManagerParent.jsm",
         "resource://gre/modules/ComponentUtils.jsm",
         "resource://gre/modules/CustomElementsListener.jsm",
-        "resource://gre/modules/ExtensionUtils.jsm",
         "resource://gre/modules/MainProcessSingleton.jsm",
         "resource://gre/modules/XPCOMUtils.jsm",
         "resource://gre/modules/Services.jsm",
@@ -68,7 +67,6 @@ const startupPhases = {
         "resource://gre/modules/NewTabUtils.jsm",
         "resource://gre/modules/PageThumbs.jsm",
         "resource://gre/modules/PlacesUtils.jsm",
-        "resource://gre/modules/Promise.jsm", // imported by devtools during _delayedStartup
         "resource://gre/modules/Preferences.jsm",
         "resource://gre/modules/Sqlite.jsm",
       ]),
@@ -83,7 +81,6 @@ const startupPhases = {
     denylist: {
       components: new Set([
         "PageIconProtocolHandler.js",
-        "PlacesCategoriesStarter.js",
         "nsPlacesExpiration.js",
       ]),
       modules: new Set([

@@ -7,8 +7,7 @@
 #include "EmptyBlobImpl.h"
 #include "nsStringStream.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 already_AddRefed<BlobImpl> EmptyBlobImpl::CreateSlice(
     uint64_t aStart, uint64_t aLength, const nsAString& aContentType,
@@ -25,12 +24,11 @@ void EmptyBlobImpl::CreateInputStream(nsIInputStream** aStream,
     return;
   }
 
-  nsresult rv = NS_NewCStringInputStream(aStream, EmptyCString());
+  nsresult rv = NS_NewCStringInputStream(aStream, ""_ns);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aRv.Throw(rv);
     return;
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

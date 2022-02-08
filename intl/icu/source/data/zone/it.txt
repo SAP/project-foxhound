@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 it{
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"Abidjan"}
@@ -1903,6 +1903,9 @@ it{
             ld{"Ora legale di Ekaterinburg"}
             lg{"Ora di Ekaterinburg"}
             ls{"Ora standard di Ekaterinburg"}
+        }
+        "meta:Yukon"{
+            ls{"Ora dello Yukon"}
         }
         fallbackFormat{"{1} ({0})"}
         gmtFormat{"GMT{0}"}

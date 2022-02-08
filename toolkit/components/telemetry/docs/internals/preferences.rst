@@ -1,5 +1,5 @@
-Preferences
-===========
+Preferences and Defines
+=======================
 
 Telemetry behaviour is controlled through the mozconfig defines and preferences listed here.
 
@@ -138,21 +138,6 @@ Preferences
 
   Enable the :doc:`../data/update-ping` on browser updates.
 
-``toolkit.telemetry.maxEventSummaryKeys``
-
-  Set the maximum number of keys per process of the :ref:`Event Summary <events.event-summary>`
-  :ref:`keyed scalars <scalars.keyed-scalars>`. Default is 500. Change requires restart.
-
-``toolkit.telemetry.eventping.enabled``
-
-  Whether the :doc:`../data/event-ping` is enabled.
-  Default is true except for GeckoView where it defaults to false. Change requires restart.
-
-``toolkit.telemetry.eventping.eventLimit``
-
-  The maximum number of event records permitted in the :doc:`../data/event-ping`.
-  Default is 1000.
-
 ``toolkit.telemetry.eventping.minimumFrequency``
 
   The minimum frequency at which an :doc:`../data/event-ping` will be sent.
@@ -162,11 +147,6 @@ Preferences
 
   The maximum frequency at which an :doc:`../data/event-ping` will be sent.
   Default is 10 (minutes).
-
-``toolkit.telemetry.ecosystemtelemetry.enabled``
-
-  Whether :doc:`../data/ecosystem-telemetry` is enabled.
-  Default is false. Change requires restart.
 
 ``toolkit.telemetry.overrideUpdateChannel``
 

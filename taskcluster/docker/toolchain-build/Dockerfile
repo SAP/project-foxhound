@@ -23,23 +23,23 @@ RUN apt-get update && \
       flex \
       gawk \
       gcc-multilib \
+      git \
       gnupg \
       jq \
       libbz2-dev \
-      libcurl4-openssl-dev \
       libssl-dev \
-      libxml2-dev \
       libtool \
       libucl-dev \
       ninja-build \
+      openssh-client \
       p7zip-full \
+      pkg-config \
       procps \
-      python-pip \
-      python-setuptools \
-      python-virtualenv \
+      python2 \
       python3-distutils-extra \
       python3-requests \
       python3-pytoml \
+      scons \
       subversion \
       tar \
       unzip \
@@ -48,3 +48,7 @@ RUN apt-get update && \
       wget \
       zip \
       zlib1g-dev
+
+# mmdebstrap is not available in jessie, but we only need it in the buster-based image.
+# We also want zstd when available.
+RUN apt-get install fakechroot fakeroot mmdebstrap zstd || true

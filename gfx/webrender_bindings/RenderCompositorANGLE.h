@@ -33,11 +33,13 @@ class DCLayerTree;
 class RenderCompositorANGLE : public RenderCompositor {
  public:
   static UniquePtr<RenderCompositor> Create(
-      RefPtr<widget::CompositorWidget>&& aWidget);
+      const RefPtr<widget::CompositorWidget>& aWidget, nsACString& aError);
 
-  explicit RenderCompositorANGLE(RefPtr<widget::CompositorWidget>&& aWidget);
+  explicit RenderCompositorANGLE(
+      const RefPtr<widget::CompositorWidget>& aWidget,
+      RefPtr<gl::GLContext>&& aGL);
   virtual ~RenderCompositorANGLE();
-  bool Initialize();
+  bool Initialize(nsACString& aError);
 
   bool BeginFrame() override;
   RenderedFrameId EndFrame(const nsTArray<DeviceIntRect>& aDirtyRects) final;
@@ -48,7 +50,7 @@ class RenderCompositorANGLE : public RenderCompositor {
   bool Resume() override;
   void Update() override;
 
-  gl::GLContext* gl() const override { return RenderThread::Get()->SharedGL(); }
+  gl::GLContext* gl() const override { return mGL; }
 
   bool MakeCurrent() override;
 
@@ -58,16 +60,22 @@ class RenderCompositorANGLE : public RenderCompositor {
 
   bool UseTripleBuffering() const override { return mUseTripleBuffering; }
 
+  layers::WebRenderCompositor CompositorType() const override {
+    if (UseDComp()) {
+      return layers::WebRenderCompositor::DIRECT_COMPOSITION;
+    }
+    return layers::WebRenderCompositor::DRAW;
+  }
+
   LayoutDeviceIntSize GetBufferSize() override;
 
-  bool IsContextLost() override;
+  GLenum IsContextLost(bool aForce) override;
 
   bool SurfaceOriginIsTopLeft() override { return true; }
 
   bool SupportAsyncScreenshot() override;
 
   bool ShouldUseNativeCompositor() override;
-  uint32_t GetMaxUpdateRects() override;
 
   // Interface for wr::Compositor
   void CompositorBeginFrame() override;
@@ -78,13 +86,18 @@ class RenderCompositorANGLE : public RenderCompositor {
   void Unbind() override;
   void CreateSurface(wr::NativeSurfaceId aId, wr::DeviceIntPoint aVirtualOffset,
                      wr::DeviceIntSize aTileSize, bool aIsOpaque) override;
+  void CreateExternalSurface(wr::NativeSurfaceId aId, bool aIsOpaque) override;
   void DestroySurface(NativeSurfaceId aId) override;
   void CreateTile(wr::NativeSurfaceId aId, int32_t aX, int32_t aY) override;
   void DestroyTile(wr::NativeSurfaceId aId, int32_t aX, int32_t aY) override;
-  void AddSurface(wr::NativeSurfaceId aId, wr::DeviceIntPoint aPosition,
-                  wr::DeviceIntRect aClipRect) override;
+  void AttachExternalImage(wr::NativeSurfaceId aId,
+                           wr::ExternalImageId aExternalImage) override;
+  void AddSurface(wr::NativeSurfaceId aId,
+                  const wr::CompositorSurfaceTransform& aTransform,
+                  wr::DeviceIntRect aClipRect,
+                  wr::ImageRendering aImageRendering) override;
   void EnableNativeCompositor(bool aEnable) override;
-  CompositorCapabilities GetCompositorCapabilities() override;
+  void GetCompositorCapabilities(CompositorCapabilities* aCaps) override;
 
   // Interface for partial present
   bool UsePartialPresent() override;
@@ -93,7 +106,8 @@ class RenderCompositorANGLE : public RenderCompositor {
 
   bool MaybeReadback(const gfx::IntSize& aReadbackSize,
                      const wr::ImageFormat& aReadbackFormat,
-                     const Range<uint8_t>& aReadbackBuffer) override;
+                     const Range<uint8_t>& aReadbackBuffer,
+                     bool* aNeedsYFlip) override;
 
  protected:
   bool UseCompositor();
@@ -104,15 +118,16 @@ class RenderCompositorANGLE : public RenderCompositor {
   bool ResizeBufferIfNeeded();
   bool CreateEGLSurface();
   void DestroyEGLSurface();
-  ID3D11Device* GetDeviceOfEGLDisplay();
-  bool CreateSwapChain();
+  ID3D11Device* GetDeviceOfEGLDisplay(nsACString& aError);
+  bool CreateSwapChain(nsACString& aError);
   void CreateSwapChainForDCompIfPossible(IDXGIFactory2* aDXGIFactory2);
   RefPtr<IDXGISwapChain1> CreateSwapChainForDComp(bool aUseTripleBuffering,
                                                   bool aUseAlpha);
-  bool SutdownEGLLibraryIfNecessary();
   RefPtr<ID3D11Query> GetD3D11Query();
   void ReleaseNativeCompositorResources();
   HWND GetCompositorHwnd();
+
+  RefPtr<gl::GLContext> mGL;
 
   EGLConfig mEGLConfig;
   EGLSurface mEGLSurface;

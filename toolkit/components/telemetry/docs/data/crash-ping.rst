@@ -1,6 +1,5 @@
-
-"crash" ping
-============
+Crash ping
+==========
 
 This ping is captured after the main Firefox process crashes or after a child process
 process crashes, whether or not the crash report is submitted to
@@ -14,7 +13,11 @@ successfully. The crash reporter client sends crash pings only for main process
 crashes whether or not the user also reports the crash. The crash reporter
 client will not send the crash ping if telemetry has been disabled in Firefox.
 
-The environment block that is sent with this ping varies: if Firefox was running long enough to record the environment block before the crash, then the environment at the time of the crash will be recorded and ``hasCrashEnvironment`` will be true. If Firefox crashed before the environment was recorded, ``hasCrashEnvironment`` will be false and the recorded environment will be the environment at time of submission.
+The environment block that is sent with this ping varies: if Firefox was running
+long enough to record the environment block before the crash, then the environment
+at the time of the crash will be recorded and ``hasCrashEnvironment`` will be true.
+If Firefox crashed before the environment was recorded, ``hasCrashEnvironment`` will
+be false and the recorded environment will be the environment at time of submission.
 
 The client ID is submitted with this ping.
 
@@ -51,7 +54,9 @@ Structure:
           AsyncShutdownTimeout: <json>, // Optional, present when a shutdown blocker failed to respond within a reasonable amount of time
           AvailablePageFile: <size>, // Windows-only, available paging file in bytes
           AvailablePhysicalMemory: <size>, // Windows-only, available physical memory in bytes
+          AvailableSwapMemory: <size>, // macOS- and Linux-only, available swap space
           AvailableVirtualMemory: <size>, // Windows-only, available virtual memory in bytes
+          BackgroundTaskName: "task_name", // Optional, if the app was invoked in background task mode via `--backgroundtask task_name`
           BlockedDllList: <list>, // Windows-only, see WindowsDllBlocklist.cpp for details
           BlocklistInitFailed: "1", // Windows-only, present only if the DLL blocklist initialization failed
           CrashTime: <time>, // Seconds since the Epoch
@@ -59,12 +64,17 @@ Structure:
           DOMFissionEnabled: "1", // Optional, if set indicates that a Fission window had been opened
           EventLoopNestingLevel: <levels>, // Optional, present only if >0, indicates the nesting level of the event-loop
           ExperimentalFeatures: <features>, // Optional, a comma-separated string that specifies the enabled experimental features from about:preferences#experimental
+          GPUProcessLaunchCount: <num>, // Number of times the GPU process was launched
+          HeadlessMode: "1", // Optional, "1" if the app was invoked in headless mode via `--headless ...` or `--backgroundtask ...`
           ipc_channel_error: <error string>, // Optional, contains the string processing error reason for an ipc-based content crash
           IsGarbageCollecting: "1", // Optional, if set indicates that the crash occurred while the garbage collector was running
           LowCommitSpaceEvents: <num>, // Windows-only, present only if >0, number of low commit space events detected by the available memory tracker
-          MemoryErrorCorrection: <type>, // Windows-only, indicates the type of ECC memory in use, see below
+          MainThreadRunnableName: <name>, // Optional, Nightly-only, name of the currently executing nsIRunnable on the main thread
           MozCrashReason: <reason>, // Optional, contains the string passed to MOZ_CRASH()
           OOMAllocationSize: <size>, // Size of the allocation that caused an OOM
+          ProfilerChildShutdownPhase: <string>, // Profiler shutdown phase
+          PurgeablePhysicalMemory: <size>, // macOS-only, amount of memory that can be deallocated by the OS in case of memory pressure
+          QuotaManagerShutdownTimeout: <log-string>, // Optional, contains a list of shutdown steps and status of the quota manager clients
           RemoteType: <type>, // Optional, type of content process, see below for a list of types
           SecondsSinceLastCrash: <duration>, // Seconds elapsed since the last crash occurred
           ShutdownProgress: <phase>, // Optional, contains a string describing the shutdown phase in which the crash occurred
@@ -76,7 +86,8 @@ Structure:
           TotalVirtualMemory: <size>, // Windows-only, virtual memory in use expressed in bytes
           UptimeTS: <duration>, // Seconds since Firefox was started, this can have a fractional component
           User32BeforeBlocklist: "1", // Windows-only, present only if user32.dll was loaded before the DLL blocklist has been initialized
-          MainThreadRunnableName: <name>, // Optional, Nightly-only, name of the currently executing nsIRunnable on the main thread
+          WindowsErrorReporting: "1", // Windows-only, present only if the crash was intercepted by the WER runtime exception module
+          WindowsPackageFamilyName: <string>, // Windows-only, a string containing the "Package Family Name" of Firefox, if installed through an MSIX package
         },
         hasCrashEnvironment: bool
       }
@@ -213,30 +224,6 @@ The ``code_id`` field holds a unique ID used to distinguish between different
 versions and builds of the same module. See `breakpad <https://chromium.googlesource.com/breakpad/breakpad/+/24f5931c5e0120982c0cbf1896641e3ef2bdd52f/src/google_breakpad/processor/code_module.h#60>`__'s
 description for further information. This field is populated only on Windows.
 
-The value of the ``MemoryErrorCorrection`` metadata field contains the type
-of memory error correction available on the machine, it can be one of the
-following types:
-
-+----------------+-----------------------------------------------------------+
-| Type           | Description                                               |
-+================+===========================================================+
-| Reserved       | Should never be set, assume no error correction available |
-+----------------+-----------------------------------------------------------+
-| Other          | Assume no error correction available                      |
-+----------------+-----------------------------------------------------------+
-| Unknown        | Assume no error correction available                      |
-+----------------+-----------------------------------------------------------+
-| None           | No error correction available                             |
-+----------------+-----------------------------------------------------------+
-| Parity         | Single-bit error detection, no correction.                |
-+----------------+-----------------------------------------------------------+
-| Single-bit ECC | SECDED ECC (single-bit correction, double-bit detection)  |
-+----------------+-----------------------------------------------------------+
-| Multi-bit ECC  | Usually single-device data correction (SDDC, Chipkill)    |
-+----------------+-----------------------------------------------------------+
-| CRC            | Multi-device data correction (DDDC or similar)            |
-+----------------+-----------------------------------------------------------+
-
 Version History
 ---------------
 
@@ -244,3 +231,18 @@ Version History
 - Firefox 62: Added LowCommitSpaceEvents (`bug 1464773 <https://bugzilla.mozilla.org/show_bug.cgi?id=1464773>`_).
 - Firefox 63: Added RecordReplayError (`bug 1481009 <https://bugzilla.mozilla.org/show_bug.cgi?id=1481009>`_).
 - Firefox 64: Added MemoryErrorCorrection (`bug 1498609 <https://bugzilla.mozilla.org/show_bug.cgi?id=1498609>`_).
+- Firefox 68: Added IndexedDBShutdownTimeout and LocalStorageShutdownTimeout
+  (`bug 1539750 <https://bugzilla.mozilla.org/show_bug.cgi?id=1539750>`_).
+- Firefox 74: Added AvailableSwapMemory and PurgeablePhysicalMemory
+  (`bug 1587721 <https://bugzilla.mozilla.org/show_bug.cgi?id=1587721>`_).
+- Firefox 74: Added MainThreadRunnableName (`bug 1608158 <https://bugzilla.mozilla.org/show_bug.cgi?id=1608158>`_).
+- Firefox 76: Added DOMFissionEnabled (`bug 1602918 <https://bugzilla.mozilla.org/show_bug.cgi?id=1602918>`_).
+- Firefox 79: Added ExperimentalFeatures (`bug 1644544 <https://bugzilla.mozilla.org/show_bug.cgi?id=1644544>`_).
+- Firefox 85: Added QuotaManagerShutdownTimeout, removed IndexedDBShutdownTimeout and LocalStorageShutdownTimeout
+  (`bug 1672369 <https://bugzilla.mozilla.org/show_bug.cgi?id=1672369>`_)
+- Firefox 89: Added GPUProcessLaunchCount (`bug 1710448 <https://bugzilla.mozilla.org/show_bug.cgi?id=1710448>`_)
+  and ProfilerChildShutdownPhase (`bug 1704680 <https://bugzilla.mozilla.org/show_bug.cgi?id=1704680>`_).
+- Firefox 90: Removed MemoryErrorCorrection (`bug 1710152 <https://bugzilla.mozilla.org/show_bug.cgi?id=1710152>`_)
+  and added WindowsErrorReporting (`bug 1703761 <https://bugzilla.mozilla.org/show_bug.cgi?id=1703761>`_).
+- Firefox 95: Added HeadlessMode and BackgroundTaskName (`bug 1697875 <https://bugzilla.mozilla.org/show_bug.cgi?id=1697875>`_)
+- Firefox 96: Added WindowsPackageFamilyName (`bug 1738375 <https://bugzilla.mozilla.org/show_bug.cgi?id=1738375>`_).

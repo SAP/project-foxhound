@@ -14,7 +14,7 @@
 #include "nsThreadUtils.h"
 #include "nsIInterfaceRequestor.h"
 
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "mozIStorageProgressHandler.h"
 #include "SQLiteMutex.h"
 #include "mozIStorageConnection.h"
@@ -85,7 +85,7 @@ class Connection final : public mozIStorageConnection,
   /**
    * Creates the connection to an in-memory database.
    */
-  nsresult initialize();
+  nsresult initialize(const nsACString& aStorageKey, const nsACString& aName);
 
   /**
    * Creates the connection to the database.
@@ -103,7 +103,8 @@ class Connection final : public mozIStorageConnection,
    *        The nsIFileURL of the location of the database to open, or create if
    * it does not exist.
    */
-  nsresult initialize(nsIFileURL* aFileURL);
+  nsresult initialize(nsIFileURL* aFileURL,
+                      const nsACString& aTelemetryFilename);
 
   /**
    * Same as initialize, but to be used on the async thread.
@@ -305,10 +306,24 @@ class Connection final : public mozIStorageConnection,
 
   nsresult initializeClone(Connection* aClone, bool aReadOnly);
 
+  /**
+   * Records a status from a sqlite statement.
+   *
+   * @param srv The sqlite result for the failure or SQLITE_OK.
+   */
+  void RecordQueryStatus(int srv);
+
  private:
   ~Connection();
   nsresult initializeInternal();
   void initializeFailed();
+
+  /**
+   * Records the status of an attempt to load a sqlite database to telemetry.
+   *
+   * @param rv The state of the load, success or failure.
+   */
+  void RecordOpenStatus(nsresult rv);
 
   /**
    * Sets the database into a closed state so no further actions can be
@@ -365,6 +380,8 @@ class Connection final : public mozIStorageConnection,
   nsresult ensureOperationSupported(ConnectionOperation aOperationType);
 
   sqlite3* mDBConn;
+  nsCString mStorageKey;
+  nsCString mName;
   nsCOMPtr<nsIFileURL> mFileURL;
   nsCOMPtr<nsIFile> mDatabaseFile;
 
@@ -426,7 +443,7 @@ class Connection final : public mozIStorageConnection,
    * Stores the mapping of a given function by name to its instance.  Access is
    * protected by sharedDBMutex.
    */
-  nsDataHashtable<nsCStringHashKey, FunctionInfo> mFunctions;
+  nsTHashMap<nsCStringHashKey, FunctionInfo> mFunctions;
 
   /**
    * Stores the registered progress handler for the database connection.  Access
@@ -455,6 +472,8 @@ class Connection final : public mozIStorageConnection,
   const ConnectionOperation mSupportedOperations;
 
   nsresult synchronousClose();
+
+  uint32_t mTransactionNestingLevel;
 };
 
 /**

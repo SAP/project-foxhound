@@ -28,7 +28,7 @@ static nsresult HandleFlagWithOptionalArgument(nsICommandLine* aCmdLine,
                                                const nsAString& aDefaultValue,
                                                nsAString& aValue,
                                                bool& aFlagPresent) {
-  aValue = EmptyString();
+  aValue.Truncate();
   aFlagPresent = false;
 
   nsresult rv;
@@ -50,7 +50,7 @@ static nsresult HandleFlagWithOptionalArgument(nsICommandLine* aCmdLine,
     NS_ENSURE_SUCCESS(rv, rv);
 
     if (!aValue.IsEmpty() && aValue.CharAt(0) == '-') {
-      aValue = EmptyString();
+      aValue.Truncate();
     } else {
       argPresent = true;
     }
@@ -165,9 +165,9 @@ nsLayoutDebugCLH::Handle(nsICommandLine* aCmdLine) {
   NS_ENSURE_TRUE(wwatch, NS_ERROR_FAILURE);
 
   nsCOMPtr<mozIDOMWindowProxy> opened;
-  wwatch->OpenWindow(nullptr, "chrome://layoutdebug/content/layoutdebug.xhtml",
-                     "_blank", "chrome,dialog=no,all", argsArray,
-                     getter_AddRefs(opened));
+  wwatch->OpenWindow(
+      nullptr, "chrome://layoutdebug/content/layoutdebug.xhtml"_ns, "_blank"_ns,
+      "chrome,dialog=no,all"_ns, argsArray, getter_AddRefs(opened));
   aCmdLine->SetPreventDefault(true);
   return NS_OK;
 }

@@ -19,7 +19,7 @@ pub fn new_glean(tempdir: Option<tempfile::TempDir>) -> (Glean, tempfile::TempDi
         None => tempfile::tempdir().unwrap(),
     };
     let tmpname = dir.path().display().to_string();
-    let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true).unwrap();
+    let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true);
     (glean, dir)
 }
 
@@ -39,7 +39,7 @@ fn path_is_constructed_from_data() {
 fn experiment_id_and_branch_get_truncated_if_too_long() {
     let t = tempfile::tempdir().unwrap();
     let name = t.path().display().to_string();
-    let glean = Glean::with_options(&name, "org.mozilla.glean.tests", true).unwrap();
+    let glean = Glean::with_options(&name, "org.mozilla.glean.tests", true);
 
     // Generate long strings for the used ids.
     let very_long_id = "test-experiment-id".repeat(10);
@@ -75,7 +75,7 @@ fn experiment_id_and_branch_get_truncated_if_too_long() {
 fn limits_on_experiments_extras_are_applied_correctly() {
     let t = tempfile::tempdir().unwrap();
     let name = t.path().display().to_string();
-    let glean = Glean::with_options(&name, "org.mozilla.glean.tests", true).unwrap();
+    let glean = Glean::with_options(&name, "org.mozilla.glean.tests", true);
 
     let experiment_id = "test-experiment_id".to_string();
     let branch_id = "test-branch-id".to_string();
@@ -130,7 +130,7 @@ fn limits_on_experiments_extras_are_applied_correctly() {
 fn experiments_status_is_correctly_toggled() {
     let t = tempfile::tempdir().unwrap();
     let name = t.path().display().to_string();
-    let glean = Glean::with_options(&name, "org.mozilla.glean.tests", true).unwrap();
+    let glean = Glean::with_options(&name, "org.mozilla.glean.tests", true);
 
     // Define the experiment's data.
     let experiment_id: String = "test-toggle-experiment".into();
@@ -169,11 +169,11 @@ fn experiments_status_is_correctly_toggled() {
 }
 
 #[test]
-fn client_id_and_first_run_date_must_be_regenerated() {
+fn client_id_and_first_run_date_and_first_run_hour_must_be_regenerated() {
     let dir = tempfile::tempdir().unwrap();
     let tmpname = dir.path().display().to_string();
     {
-        let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true).unwrap();
+        let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true);
 
         glean.data_store.as_ref().unwrap().clear_all();
 
@@ -187,10 +187,15 @@ fn client_id_and_first_run_date_must_be_regenerated() {
             .first_run_date
             .test_get_value_as_string(&glean, "glean_client_info")
             .is_none());
+        assert!(glean
+            .core_metrics
+            .first_run_hour
+            .test_get_value_as_string(&glean, "metrics")
+            .is_none());
     }
 
     {
-        let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true).unwrap();
+        let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true);
         assert!(glean
             .core_metrics
             .client_id
@@ -200,6 +205,11 @@ fn client_id_and_first_run_date_must_be_regenerated() {
             .core_metrics
             .first_run_date
             .test_get_value_as_string(&glean, "glean_client_info")
+            .is_some());
+        assert!(glean
+            .core_metrics
+            .first_run_hour
+            .test_get_value_as_string(&glean, "metrics")
             .is_some());
     }
 }
@@ -258,6 +268,34 @@ fn first_run_date_is_managed_correctly_when_toggling_uploading() {
 }
 
 #[test]
+fn first_run_hour_is_managed_correctly_when_toggling_uploading() {
+    let (mut glean, _) = new_glean(None);
+
+    let original_first_run_hour = glean
+        .core_metrics
+        .first_run_hour
+        .get_value(&glean, "metrics");
+
+    glean.set_upload_enabled(false);
+    assert_eq!(
+        original_first_run_hour,
+        glean
+            .core_metrics
+            .first_run_hour
+            .get_value(&glean, "metrics")
+    );
+
+    glean.set_upload_enabled(true);
+    assert_eq!(
+        original_first_run_hour,
+        glean
+            .core_metrics
+            .first_run_hour
+            .get_value(&glean, "metrics")
+    );
+}
+
+#[test]
 fn client_id_is_managed_correctly_when_toggling_uploading() {
     let (mut glean, _) = new_glean(None);
 
@@ -292,7 +330,7 @@ fn client_id_is_managed_correctly_when_toggling_uploading() {
 fn client_id_is_set_to_known_value_when_uploading_disabled_at_start() {
     let dir = tempfile::tempdir().unwrap();
     let tmpname = dir.path().display().to_string();
-    let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, false).unwrap();
+    let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, false);
 
     assert_eq!(
         *KNOWN_CLIENT_ID,
@@ -308,7 +346,7 @@ fn client_id_is_set_to_known_value_when_uploading_disabled_at_start() {
 fn client_id_is_set_to_random_value_when_uploading_enabled_at_start() {
     let dir = tempfile::tempdir().unwrap();
     let tmpname = dir.path().display().to_string();
-    let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true).unwrap();
+    let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true);
 
     let current_client_id = glean
         .core_metrics
@@ -322,7 +360,7 @@ fn client_id_is_set_to_random_value_when_uploading_enabled_at_start() {
 fn enabling_when_already_enabled_is_a_noop() {
     let dir = tempfile::tempdir().unwrap();
     let tmpname = dir.path().display().to_string();
-    let mut glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true).unwrap();
+    let mut glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true);
 
     assert!(!glean.set_upload_enabled(true));
 }
@@ -331,7 +369,7 @@ fn enabling_when_already_enabled_is_a_noop() {
 fn disabling_when_already_disabled_is_a_noop() {
     let dir = tempfile::tempdir().unwrap();
     let tmpname = dir.path().display().to_string();
-    let mut glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, false).unwrap();
+    let mut glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, false);
 
     assert!(!glean.set_upload_enabled(false));
 }
@@ -363,7 +401,7 @@ fn correct_order() {
         Counter(0),
         CustomDistributionExponential(Histogram::exponential(1, 500, 10)),
         CustomDistributionLinear(Histogram::linear(1, 500, 10)),
-        Datetime(local_now_with_offset(), TimeUnit::Second),
+        Datetime(local_now_with_offset().0, TimeUnit::Second),
         Experiment(RecordedExperimentData { branch: "branch".into(), extra: None, }),
         Quantity(0),
         String("glean".into()),
@@ -372,6 +410,8 @@ fn correct_order() {
         Timespan(Duration::new(5, 0), TimeUnit::Second),
         TimingDistribution(Histogram::functional(2.0, 8.0)),
         MemoryDistribution(Histogram::functional(2.0, 8.0)),
+        Jwe("eyJhbGciOiJSU0EtT0FFUCIsImVuYyI6IkEyNTZHQ00ifQ.OKOawDo13gRp2ojaHV7LFpZcgV7T6DVZKTyKOMTYUmKoTCVJRgckCL9kiMT03JGeipsEdY3mx_etLbbWSrFr05kLzcSr4qKAq7YN7e9jwQRb23nfa6c9d-StnImGyFDbSv04uVuxIp5Zms1gNxKKK2Da14B8S4rzVRltdYwam_lDp5XnZAYpQdb76FdIKLaVmqgfwX7XWRxv2322i-vDxRfqNzo_tETKzpVLzfiwQyeyPGLBIO56YJ7eObdv0je81860ppamavo35UgoRdbYaBcoh9QcfylQr66oc6vFWXRcZ_ZT2LawVCWTIy3brGPi6UklfCpIMfIjf7iGdXKHzg.48V1_ALb6US04U3b.5eym8TW_c8SuK0ltJ3rpYIzOeDQz7TALvtu6UG9oMo4vpzs9tX_EFShS8iB7j6jiSdiwkIr3ajwQzaBtQD_A.XFBoMYUZodetZdvTiFvSkQ".into()),
+        Rate(0, 0),
     ];
 
     for metric in all_metrics {
@@ -396,6 +436,9 @@ fn correct_order() {
             Timespan(..)                      => assert_eq!(10, disc),
             TimingDistribution(..)            => assert_eq!(11, disc),
             MemoryDistribution(..)            => assert_eq!(12, disc),
+            Jwe(..)                           => assert_eq!(13, disc),
+            Rate(..)                          => assert_eq!(14, disc),
+            Url(..)                           => assert_eq!(15, disc),
         }
     }
 }
@@ -544,14 +587,14 @@ fn test_first_run() {
     let dir = tempfile::tempdir().unwrap();
     let tmpname = dir.path().display().to_string();
     {
-        let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true).unwrap();
+        let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true);
         // Check that this is indeed the first run.
         assert!(glean.is_first_run());
     }
 
     {
         // Other runs must be not marked as "first run".
-        let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true).unwrap();
+        let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true);
         assert!(!glean.is_first_run());
     }
 }
@@ -561,7 +604,7 @@ fn test_dirty_bit() {
     let dir = tempfile::tempdir().unwrap();
     let tmpname = dir.path().display().to_string();
     {
-        let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true).unwrap();
+        let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true);
         // The dirty flag must not be set the first time Glean runs.
         assert!(!glean.is_dirty_flag_set());
 
@@ -573,7 +616,7 @@ fn test_dirty_bit() {
     {
         // Check that next time Glean runs, it correctly picks up the "dirty flag".
         // It is expected to be 'true'.
-        let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true).unwrap();
+        let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true);
         assert!(glean.is_dirty_flag_set());
 
         // Set the dirty flag to false.
@@ -584,7 +627,7 @@ fn test_dirty_bit() {
     {
         // Check that next time Glean runs, it correctly picks up the "dirty flag".
         // It is expected to be 'false'.
-        let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true).unwrap();
+        let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true);
         assert!(!glean.is_dirty_flag_set());
     }
 }
@@ -762,4 +805,146 @@ fn timing_distribution_truncation_accumulate() {
         // This is to ensure that holds even when the time unit is changed.
         assert!(snapshot.values.len() < 316);
     }
+}
+
+#[test]
+fn test_setting_debug_view_tag() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let (mut glean, _) = new_glean(Some(dir));
+
+    let valid_tag = "valid-tag";
+    assert!(glean.set_debug_view_tag(valid_tag));
+    assert_eq!(valid_tag, glean.debug_view_tag().unwrap());
+
+    let invalid_tag = "invalid tag";
+    assert!(!glean.set_debug_view_tag(invalid_tag));
+    assert_eq!(valid_tag, glean.debug_view_tag().unwrap());
+}
+
+#[test]
+fn test_setting_log_pings() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let (mut glean, _) = new_glean(Some(dir));
+    assert!(!glean.log_pings());
+
+    glean.set_log_pings(true);
+    assert!(glean.log_pings());
+
+    glean.set_log_pings(false);
+    assert!(!glean.log_pings());
+}
+
+#[test]
+#[should_panic]
+fn test_empty_application_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let tmpname = dir.path().display().to_string();
+
+    let glean = Glean::with_options(&tmpname, "", true);
+    // Check that this is indeed the first run.
+    assert!(glean.is_first_run());
+}
+
+#[test]
+fn records_database_file_size() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    // Note: We don't use `new_glean` because we need to re-use the database directory.
+
+    let dir = tempfile::tempdir().unwrap();
+    let tmpname = dir.path().display().to_string();
+
+    // Initialize Glean once to ensure we create the database.
+    let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true);
+    let database_size = &glean.database_metrics.size;
+    let data = database_size.test_get_value(&glean, "metrics");
+    assert!(data.is_none());
+    drop(glean);
+
+    // Initialize Glean again to record file size.
+    let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true);
+
+    let database_size = &glean.database_metrics.size;
+    let data = database_size.test_get_value(&glean, "metrics");
+    assert!(data.is_some());
+    let data = data.unwrap();
+
+    // We should see the database containing some data.
+    assert!(data.sum > 0);
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn records_io_errors() {
+    use std::fs;
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let (glean, _data_dir) = new_glean(None);
+    let pending_pings_dir = glean.get_data_path().join(crate::PENDING_PINGS_DIRECTORY);
+    fs::create_dir_all(&pending_pings_dir).unwrap();
+    let attr = fs::metadata(&pending_pings_dir).unwrap();
+    let original_permissions = attr.permissions();
+
+    // Remove write permissions on the pending_pings directory.
+    let mut permissions = original_permissions.clone();
+    permissions.set_readonly(true);
+    fs::set_permissions(&pending_pings_dir, permissions).unwrap();
+
+    // Writing the ping file should fail.
+    let submitted = glean.internal_pings.metrics.submit(&glean, None);
+    // But the return value is still `true` because we enqueue the ping anyway.
+    assert!(submitted);
+
+    let metric = &glean.additional_metrics.io_errors;
+    assert_eq!(
+        1,
+        metric.test_get_value(&glean, "metrics").unwrap(),
+        "Should have recorded an IO error"
+    );
+
+    // Restore write permissions.
+    fs::set_permissions(&pending_pings_dir, original_permissions).unwrap();
+
+    // Now we can submit a ping
+    let submitted = glean.internal_pings.metrics.submit(&glean, None);
+    assert!(submitted);
+}
+
+#[test]
+fn test_activity_api() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let dir = tempfile::tempdir().unwrap();
+    let (mut glean, _) = new_glean(Some(dir));
+
+    // Signal that the client was active.
+    glean.handle_client_active();
+
+    // Check that we set everything we needed for the 'active' status.
+    assert!(glean.is_dirty_flag_set());
+
+    // Signal back that client is ianctive.
+    glean.handle_client_inactive();
+
+    // Check that we set everything we needed for the 'inactuve' status.
+    assert!(!glean.is_dirty_flag_set());
+}
+
+/// We explicitly test that NO invalid timezone offset was recorded.
+/// If it _does_ happen and fails on a developer machine or CI, we better know about it.
+#[test]
+fn handles_local_now_gracefully() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let dir = tempfile::tempdir().unwrap();
+    let (glean, _) = new_glean(Some(dir));
+
+    let metric = &glean.additional_metrics.invalid_timezone_offset;
+    assert_eq!(
+        None,
+        metric.test_get_value(&glean, "metrics"),
+        "Timezones should be valid"
+    );
 }

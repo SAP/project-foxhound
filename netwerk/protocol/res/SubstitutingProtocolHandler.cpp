@@ -33,7 +33,6 @@ namespace net {
 // name of "nsResProtocol" to avoid disruption.
 static LazyLogModule gResLog("nsResProtocol");
 
-static NS_DEFINE_CID(kSubstitutingURLCID, NS_SUBSTITUTINGURL_CID);
 static NS_DEFINE_CID(kSubstitutingJARURIImplCID,
                      NS_SUBSTITUTINGJARURI_IMPL_CID);
 
@@ -48,6 +47,15 @@ NS_IMPL_NSIURIMUTATOR_ISUPPORTS(SubstitutingURL::Mutator, nsIURISetters,
                                 nsIURIMutator, nsIStandardURLMutator,
                                 nsIURLMutator, nsIFileURLMutator,
                                 nsISerializable)
+
+NS_IMPL_CLASSINFO(SubstitutingURL, nullptr, nsIClassInfo::THREADSAFE,
+                  NS_SUBSTITUTINGURL_CID)
+// Empty CI getter. We only need nsIClassInfo for Serialization
+NS_IMPL_CI_INTERFACE_GETTER0(SubstitutingURL)
+
+NS_IMPL_ADDREF_INHERITED(SubstitutingURL, nsStandardURL)
+NS_IMPL_RELEASE_INHERITED(SubstitutingURL, nsStandardURL)
+NS_IMPL_QUERY_INTERFACE_CI_INHERITED0(SubstitutingURL, nsStandardURL)
 
 nsresult SubstitutingURL::EnsureFile() {
   nsAutoCString ourScheme;
@@ -86,12 +94,6 @@ nsresult SubstitutingURL::EnsureFile() {
 nsStandardURL* SubstitutingURL::StartClone() {
   SubstitutingURL* clone = new SubstitutingURL();
   return clone;
-}
-
-NS_IMETHODIMP
-SubstitutingURL::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) {
-  *aClassIDNoAlloc = kSubstitutingURLCID;
-  return NS_OK;
 }
 
 void SubstitutingURL::Serialize(ipc::URIParams& aParams) {
@@ -233,15 +235,16 @@ void SubstitutingProtocolHandler::ConstructInternal() {
 nsresult SubstitutingProtocolHandler::CollectSubstitutions(
     nsTArray<SubstitutionMapping>& aMappings) {
   AutoReadLock lock(mSubstitutionsLock);
-  for (auto iter = mSubstitutions.ConstIter(); !iter.Done(); iter.Next()) {
-    SubstitutionEntry& entry = iter.Data();
+  for (const auto& substitutionEntry : mSubstitutions) {
+    const SubstitutionEntry& entry = substitutionEntry.GetData();
     nsCOMPtr<nsIURI> uri = entry.baseURI;
     SerializedURI serialized;
     if (uri) {
       nsresult rv = uri->GetSpec(serialized.spec);
       NS_ENSURE_SUCCESS(rv, rv);
     }
-    SubstitutionMapping substitution = {mScheme, nsCString(iter.Key()),
+    SubstitutionMapping substitution = {mScheme,
+                                        nsCString(substitutionEntry.GetKey()),
                                         serialized, entry.flags};
     aMappings.AppendElement(substitution);
   }
@@ -347,11 +350,11 @@ nsresult SubstitutingProtocolHandler::NewURI(const nsACString& aSpec,
 
   nsCOMPtr<nsIURI> base(aBaseURI);
   nsCOMPtr<nsIURL> uri;
-  rv = NS_MutateURI(new SubstitutingURL::Mutator())
-           .Apply(NS_MutatorMethod(&nsIStandardURLMutator::Init,
-                                   nsIStandardURL::URLTYPE_STANDARD, -1, spec,
-                                   aCharset, base, nullptr))
-           .Finalize(uri);
+  rv =
+      NS_MutateURI(new SubstitutingURL::Mutator())
+          .Apply(&nsIStandardURLMutator::Init, nsIStandardURL::URLTYPE_STANDARD,
+                 -1, spec, aCharset, base, nullptr)
+          .Finalize(uri);
   if (NS_FAILED(rv)) return rv;
 
   nsAutoCString host;
@@ -481,9 +484,7 @@ nsresult SubstitutingProtocolHandler::SetSubstitutionWithFlags(
 
     {
       AutoWriteLock lock(mSubstitutionsLock);
-      SubstitutionEntry& entry = mSubstitutions.GetOrInsert(root);
-      entry.baseURI = baseURI;
-      entry.flags = flags;
+      mSubstitutions.InsertOrUpdate(root, SubstitutionEntry{baseURI, flags});
     }
 
     return SendSubstitution(root, baseURI, flags);
@@ -501,9 +502,7 @@ nsresult SubstitutingProtocolHandler::SetSubstitutionWithFlags(
 
   {
     AutoWriteLock lock(mSubstitutionsLock);
-    SubstitutionEntry& entry = mSubstitutions.GetOrInsert(root);
-    entry.baseURI = newBaseURI;
-    entry.flags = flags;
+    mSubstitutions.InsertOrUpdate(root, SubstitutionEntry{newBaseURI, flags});
   }
 
   return SendSubstitution(root, newBaseURI, flags);

@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 ru{
     Currencies{
         ADP{
@@ -540,7 +541,7 @@ ru{
         }
         LSL{
             "LSL",
-            "Лоти",
+            "лоти",
         }
         LTL{
             "LTL",
@@ -1039,7 +1040,7 @@ ru{
             "Французский UIC-франк",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "франк КФА ВСЕАО",
         }
         XPD{
@@ -1737,6 +1738,12 @@ ru{
             one{"либерийский доллар"}
             other{"либерийского доллара"}
         }
+        LSL{
+            few{"лоти"}
+            many{"лоти"}
+            one{"лоти"}
+            other{"лоти"}
+        }
         LTL{
             few{"литовских лита"}
             many{"литовских литов"}
@@ -2236,5 +2243,4 @@ ru{
         one{"{0} {1}"}
         other{"{0} {1}"}
     }
-    Version{"37"}
 }

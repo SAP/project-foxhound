@@ -22,6 +22,16 @@ NS_IMETHODIMP nsOpenWindowInfo::GetIsRemote(bool* aIsRemote) {
   return NS_OK;
 }
 
+NS_IMETHODIMP nsOpenWindowInfo::GetIsForWindowDotPrint(bool* aResult) {
+  *aResult = mIsForWindowDotPrint;
+  return NS_OK;
+}
+
+NS_IMETHODIMP nsOpenWindowInfo::GetIsForPrinting(bool* aIsForPrinting) {
+  *aIsForPrinting = mIsForPrinting;
+  return NS_OK;
+}
+
 NS_IMETHODIMP nsOpenWindowInfo::GetForceNoOpener(bool* aForceNoOpener) {
   *aForceNoOpener = mForceNoOpener;
   return NS_OK;
@@ -63,6 +73,11 @@ nsBrowsingContextReadyCallback::~nsBrowsingContextReadyCallback() {
 
 NS_IMETHODIMP nsBrowsingContextReadyCallback::BrowsingContextReady(
     BrowsingContext* aBC) {
+  MOZ_DIAGNOSTIC_ASSERT(mPromise,
+                        "The 'browsing context ready' callback is null");
+  if (!mPromise) {
+    return NS_OK;
+  }
   if (aBC) {
     mPromise->Resolve(aBC, __func__);
   } else {

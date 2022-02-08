@@ -11,7 +11,7 @@
 #include <utility>
 
 #include "MainThreadUtils.h"
-#include "mozilla/AbstractEventQueue.h"
+#include "mozilla/EventQueue.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Likely.h"
@@ -21,19 +21,19 @@
 #include "mozilla/Tuple.h"
 #include "nsCOMPtr.h"
 #include "nsICancelableRunnable.h"
+#include "nsIDiscardableRunnable.h"
 #include "nsIIdlePeriod.h"
 #include "nsIIdleRunnable.h"
 #include "nsINamed.h"
 #include "nsIRunnable.h"
-#include "nsIThread.h"
 #include "nsIThreadManager.h"
 #include "nsITimer.h"
 #include "nsString.h"
 #include "prinrval.h"
 #include "prthread.h"
-#include "xpcpublic.h"
 
 class MessageLoop;
+class nsIThread;
 
 //-----------------------------------------------------------------------------
 // These methods are alternatives to the methods on nsIThreadManager, provided
@@ -283,97 +283,6 @@ extern bool NS_HasPendingEvents(nsIThread* aThread = nullptr);
 extern bool NS_ProcessNextEvent(nsIThread* aThread = nullptr,
                                 bool aMayWait = true);
 
-// A wrapper for nested event loops.
-//
-// This function is intended to make code more obvious (do you remember
-// what NS_ProcessNextEvent(nullptr, true) means?) and slightly more
-// efficient, as people often pass nullptr or NS_GetCurrentThread to
-// NS_ProcessNextEvent, which results in needless querying of the current
-// thread every time through the loop.
-//
-// You should use this function in preference to NS_ProcessNextEvent inside
-// a loop unless one of the following is true:
-//
-// * You need to pass `false` to NS_ProcessNextEvent; or
-// * You need to do unusual things around the call to NS_ProcessNextEvent,
-//   such as unlocking mutexes that you are holding.
-//
-// If you *do* need to call NS_ProcessNextEvent manually, please do call
-// NS_GetCurrentThread() outside of your loop and pass the returned pointer
-// into NS_ProcessNextEvent for a tiny efficiency win.
-namespace mozilla {
-
-// You should normally not need to deal with this template parameter.  If
-// you enjoy esoteric event loop details, read on.
-//
-// If you specify that NS_ProcessNextEvent wait for an event, it is possible
-// for NS_ProcessNextEvent to return false, i.e. to indicate that an event
-// was not processed.  This can only happen when the thread has been shut
-// down by another thread, but is still attempting to process events outside
-// of a nested event loop.
-//
-// This behavior is admittedly strange.  The scenario it deals with is the
-// following:
-//
-// * The current thread has been shut down by some owner thread.
-// * The current thread is spinning an event loop waiting for some condition
-//   to become true.
-// * Said condition is actually being fulfilled by another thread, so there
-//   are timing issues in play.
-//
-// Thus, there is a small window where the current thread's event loop
-// spinning can check the condition, find it false, and call
-// NS_ProcessNextEvent to wait for another event.  But we don't actually
-// want it to wait indefinitely, because there might not be any other events
-// in the event loop, and the current thread can't accept dispatched events
-// because it's being shut down.  Thus, actually blocking would hang the
-// thread, which is bad.  The solution, then, is to detect such a scenario
-// and not actually block inside NS_ProcessNextEvent.
-//
-// But this is a problem, because we want to return the status of
-// NS_ProcessNextEvent to the caller of SpinEventLoopUntil if possible.  In
-// the above scenario, however, we'd stop spinning prematurely and cause
-// all sorts of havoc.  We therefore have this template parameter to
-// control whether errors are ignored or passed out to the caller of
-// SpinEventLoopUntil.  The latter is the default; if you find yourself
-// wanting to use the former, you should think long and hard before doing
-// so, and write a comment like this defending your choice.
-
-enum class ProcessFailureBehavior {
-  IgnoreAndContinue,
-  ReportToCaller,
-};
-
-template <
-    ProcessFailureBehavior Behavior = ProcessFailureBehavior::ReportToCaller,
-    typename Pred>
-bool SpinEventLoopUntil(Pred&& aPredicate, nsIThread* aThread = nullptr) {
-  nsIThread* thread = aThread ? aThread : NS_GetCurrentThread();
-
-  // From a latency perspective, spinning the event loop is like leaving script
-  // and returning to the event loop. Tell the watchdog we stopped running
-  // script (until we return).
-  mozilla::Maybe<xpc::AutoScriptActivity> asa;
-  if (NS_IsMainThread()) {
-    asa.emplace(false);
-  }
-
-  while (!aPredicate()) {
-    bool didSomething = NS_ProcessNextEvent(thread, true);
-
-    if (Behavior == ProcessFailureBehavior::IgnoreAndContinue) {
-      // Don't care what happened, continue on.
-      continue;
-    } else if (!didSomething) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-}  // namespace mozilla
-
 /**
  * Returns true if we're in the compositor thread.
  *
@@ -404,7 +313,6 @@ inline already_AddRefed<nsIThread> do_GetMainThread() {
 
 //-----------------------------------------------------------------------------
 
-#ifdef MOZILLA_INTERNAL_API
 // Fast access to the current thread.  Will create an nsIThread if one does not
 // exist already!  Do not release the returned pointer!  If you want to use this
 // pointer from some other thread, then you will need to AddRef it.  Otherwise,
@@ -427,7 +335,6 @@ extern nsIThread* NS_GetCurrentThreadNoCreate();
  *   Name of the thread. A C language null-terminated string.
  */
 extern void NS_SetCurrentThreadName(const char* aName);
-#endif
 
 //-----------------------------------------------------------------------------
 
@@ -498,15 +405,44 @@ class Runnable : public nsIRunnable
   Runnable& operator=(const Runnable&&) = delete;
 };
 
-// This class is designed to be subclassed.
-class CancelableRunnable : public Runnable, public nsICancelableRunnable {
+// This is a base class for tasks that might not be run, such as those that may
+// be dispatched to workers.
+// The owner of an event target will call either Run() or OnDiscard()
+// exactly once.
+// Derived classes should override Run().  An OnDiscard() override may
+// provide cleanup when Run() will not be called.
+class DiscardableRunnable : public Runnable, public nsIDiscardableRunnable {
  public:
   NS_DECL_ISUPPORTS_INHERITED
+  // nsIDiscardableRunnable
+  void OnDiscard() override {}
+
+  DiscardableRunnable() = delete;
+  explicit DiscardableRunnable(const char* aName) : Runnable(aName) {}
+
+ protected:
+  virtual ~DiscardableRunnable() = default;
+
+ private:
+  DiscardableRunnable(const DiscardableRunnable&) = delete;
+  DiscardableRunnable& operator=(const DiscardableRunnable&) = delete;
+  DiscardableRunnable& operator=(const DiscardableRunnable&&) = delete;
+};
+
+// This class is designed to be subclassed.
+// Derived classes should override Run() and Cancel() to provide that
+// calling Run() after Cancel() is a no-op.
+class CancelableRunnable : public DiscardableRunnable,
+                           public nsICancelableRunnable {
+ public:
+  NS_DECL_ISUPPORTS_INHERITED
+  // nsIDiscardableRunnable
+  void OnDiscard() override;
   // nsICancelableRunnable
-  virtual nsresult Cancel() override;
+  virtual nsresult Cancel() override = 0;
 
   CancelableRunnable() = delete;
-  explicit CancelableRunnable(const char* aName) : Runnable(aName) {}
+  explicit CancelableRunnable(const char* aName) : DiscardableRunnable(aName) {}
 
  protected:
   virtual ~CancelableRunnable() = default;
@@ -518,12 +454,11 @@ class CancelableRunnable : public Runnable, public nsICancelableRunnable {
 };
 
 // This class is designed to be subclassed.
-class IdleRunnable : public CancelableRunnable, public nsIIdleRunnable {
+class IdleRunnable : public DiscardableRunnable, public nsIIdleRunnable {
  public:
   NS_DECL_ISUPPORTS_INHERITED
 
-  IdleRunnable() : CancelableRunnable("IdleRunnable") {}
-  explicit IdleRunnable(const char* aName) : CancelableRunnable(aName) {}
+  explicit IdleRunnable(const char* aName) : DiscardableRunnable(aName) {}
 
  protected:
   virtual ~IdleRunnable() = default;
@@ -532,6 +467,25 @@ class IdleRunnable : public CancelableRunnable, public nsIIdleRunnable {
   IdleRunnable(const IdleRunnable&) = delete;
   IdleRunnable& operator=(const IdleRunnable&) = delete;
   IdleRunnable& operator=(const IdleRunnable&&) = delete;
+};
+
+// This class is designed to be subclassed.
+class CancelableIdleRunnable : public CancelableRunnable,
+                               public nsIIdleRunnable {
+ public:
+  NS_DECL_ISUPPORTS_INHERITED
+
+  CancelableIdleRunnable() : CancelableRunnable("CancelableIdleRunnable") {}
+  explicit CancelableIdleRunnable(const char* aName)
+      : CancelableRunnable(aName) {}
+
+ protected:
+  virtual ~CancelableIdleRunnable() = default;
+
+ private:
+  CancelableIdleRunnable(const CancelableIdleRunnable&) = delete;
+  CancelableIdleRunnable& operator=(const CancelableIdleRunnable&) = delete;
+  CancelableIdleRunnable& operator=(const CancelableIdleRunnable&&) = delete;
 };
 
 // This class is designed to be a wrapper of a real runnable to support event
@@ -556,7 +510,7 @@ class PrioritizableRunnable : public Runnable, public nsIRunnablePriority {
   uint32_t mPriority;
 };
 
-extern already_AddRefed<nsIRunnable> CreateMediumHighRunnable(
+extern already_AddRefed<nsIRunnable> CreateRenderBlockingRunnable(
     already_AddRefed<nsIRunnable>&& aRunnable);
 
 namespace detail {
@@ -680,8 +634,9 @@ already_AddRefed<mozilla::CancelableRunnable> NS_NewCancelableRunnableFunction(
     const char* aName, Function&& aFunc) {
   class FuncCancelableRunnable final : public mozilla::CancelableRunnable {
    public:
-    static_assert(std::is_void_v<decltype(
-                      std::declval<std::remove_reference_t<Function>>()())>);
+    static_assert(
+        std::is_void_v<
+            decltype(std::declval<std::remove_reference_t<Function>>()())>);
 
     NS_INLINE_DECL_REFCOUNTING_INHERITED(FuncCancelableRunnable,
                                          CancelableRunnable)
@@ -691,9 +646,9 @@ already_AddRefed<mozilla::CancelableRunnable> NS_NewCancelableRunnableFunction(
           mFunc{mozilla::Some(std::forward<Function>(aFunc))} {}
 
     NS_IMETHOD Run() override {
-      MOZ_ASSERT(mFunc);
-
-      (*mFunc)();
+      if (mFunc) {
+        (*mFunc)();
+      }
 
       return NS_OK;
     }
@@ -763,12 +718,13 @@ class nsRunnableMethod
           Kind == mozilla::RunnableKind::Standard, mozilla::Runnable,
           std::conditional_t<Kind == mozilla::RunnableKind::Cancelable,
                              mozilla::CancelableRunnable,
-                             mozilla::IdleRunnable>>,
+                             mozilla::CancelableIdleRunnable>>,
       protected mozilla::detail::TimerBehaviour<Kind> {
   using BaseType = std::conditional_t<
       Kind == mozilla::RunnableKind::Standard, mozilla::Runnable,
       std::conditional_t<Kind == mozilla::RunnableKind::Cancelable,
-                         mozilla::CancelableRunnable, mozilla::IdleRunnable>>;
+                         mozilla::CancelableRunnable,
+                         mozilla::CancelableIdleRunnable>>;
 
  public:
   nsRunnableMethod(const char* aName) : BaseType(aName) {}
@@ -797,6 +753,8 @@ template <class ClassType, bool Owning>
 struct nsRunnableMethodReceiver {
   RefPtr<ClassType> mObj;
   explicit nsRunnableMethodReceiver(ClassType* aObj) : mObj(aObj) {}
+  explicit nsRunnableMethodReceiver(RefPtr<ClassType>&& aObj)
+      : mObj(std::move(aObj)) {}
   ~nsRunnableMethodReceiver() { Revoke(); }
   ClassType* Get() const { return mObj.get(); }
   void Revoke() { mObj = nullptr; }
@@ -1151,8 +1109,9 @@ struct ParameterStorage
 };
 
 template <class T>
-static auto HasSetDeadlineTest(int) -> SFINAE1True<decltype(
-    std::declval<T>().SetDeadline(std::declval<mozilla::TimeStamp>()))>;
+static auto HasSetDeadlineTest(int)
+    -> SFINAE1True<decltype(std::declval<T>().SetDeadline(
+        std::declval<mozilla::TimeStamp>()))>;
 
 template <class T>
 static auto HasSetDeadlineTest(long) -> std::false_type;
@@ -1215,7 +1174,8 @@ class RunnableMethodImpl final
   virtual ~RunnableMethodImpl() { Revoke(); };
   static void TimedOut(nsITimer* aTimer, void* aClosure) {
     static_assert(IsIdle(Kind), "Don't use me!");
-    RefPtr<IdleRunnable> r = static_cast<IdleRunnable*>(aClosure);
+    RefPtr<CancelableIdleRunnable> r =
+        static_cast<CancelableIdleRunnable*>(aClosure);
     r->SetDeadline(TimeStamp());
     r->Run();
     r->Cancel();
@@ -1923,6 +1883,8 @@ class LogTaskBase {
 
   // Adds a simple log about dispatch of this runnable.
   static void LogDispatch(T* aEvent);
+  // The `aContext` pointer adds another uniqe identifier, nothing more
+  static void LogDispatch(T* aEvent, void* aContext);
 
   // Logs dispatch of the message and along that also the PID of the target
   // proccess, purposed for uniquely identifying IPC messages.
@@ -1936,6 +1898,7 @@ class LogTaskBase {
    public:
     Run() = delete;
     explicit Run(T* aEvent, bool aWillRunAgain = false);
+    explicit Run(T* aEvent, void* aContext, bool aWillRunAgain = false);
     ~Run();
 
     // When this is called, the log in this RAII dtor will only say
@@ -1949,10 +1912,16 @@ class LogTaskBase {
 
 class MicroTaskRunnable;
 class Task;  // TaskController
+class PresShell;
+namespace dom {
+class FrameRequestCallback;
+}  // namespace dom
 
 // Specialized methods must be explicitly predeclared.
 template <>
 LogTaskBase<nsIRunnable>::Run::Run(nsIRunnable* aEvent, bool aWillRunAgain);
+template <>
+LogTaskBase<Task>::Run::Run(Task* aTask, bool aWillRunAgain);
 template <>
 void LogTaskBase<IPC::Message>::LogDispatchWithPid(IPC::Message* aEvent,
                                                    int32_t aPid);
@@ -1966,30 +1935,10 @@ typedef LogTaskBase<MicroTaskRunnable> LogMicroTaskRunnable;
 typedef LogTaskBase<IPC::Message> LogIPCMessage;
 typedef LogTaskBase<nsTimerImpl> LogTimerEvent;
 typedef LogTaskBase<Task> LogTask;
+typedef LogTaskBase<PresShell> LogPresShellObserver;
+typedef LogTaskBase<dom::FrameRequestCallback> LogFrameRequestCallback;
 // If you add new types don't forget to add:
 // `template class LogTaskBase<YourType>;` to nsThreadUtils.cpp
-
-class DelayedRunnable : public mozilla::Runnable, public nsITimerCallback {
- public:
-  DelayedRunnable(already_AddRefed<nsIEventTarget> aTarget,
-                  already_AddRefed<nsIRunnable> aRunnable, uint32_t aDelay);
-
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_NSIRUNNABLE
-  NS_DECL_NSITIMERCALLBACK
-
-  nsresult Init();
-
- private:
-  ~DelayedRunnable() = default;
-  nsresult DoRun();
-
-  const nsCOMPtr<nsIEventTarget> mTarget;
-  nsCOMPtr<nsIRunnable> mWrappedRunnable;
-  nsCOMPtr<nsITimer> mTimer;
-  const mozilla::TimeStamp mDelayedFrom;
-  uint32_t mDelay;
-};
 
 }  // namespace mozilla
 

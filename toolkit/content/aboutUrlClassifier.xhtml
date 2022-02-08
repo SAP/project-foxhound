@@ -5,12 +5,13 @@
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
 <!DOCTYPE html [
-<!ENTITY % htmlDTD PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd"> %htmlDTD;
+<!ENTITY % htmlDTD PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"> %htmlDTD;
 ]>
 
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta http-equiv="Content-Security-Policy" content="default-src chrome:; object-src 'none'" />
+  <meta name="color-scheme" content="light dark" />
   <title data-l10n-id="url-classifier-title"></title>
   <link rel="stylesheet" href="chrome://global/content/aboutUrlClassifier.css" type="text/css"/>
   <link rel="localization" href="toolkit/about/url-classifier.ftl"/>
@@ -128,10 +129,10 @@
       <input id="log-file" type="text" value=""/>
       <button id="set-log-file" data-l10n-id="url-classifier-debug-file-btn"></button>
       <br></br>
-      <div class="toggle-container-with-text">
+      <label class="toggle-container-with-text">
         <input id="js-log" type="checkbox"/>
-        <label for="js-log" data-l10n-id="url-classifier-debug-js-log-chk"></label>
-      </div>
+        <span data-l10n-id="url-classifier-debug-js-log-chk"></span>
+      </label>
     </div>
     <table id="debug-table">
     <tbody>

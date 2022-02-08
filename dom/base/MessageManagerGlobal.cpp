@@ -6,6 +6,7 @@
 
 #include "mozilla/dom/MessageManagerGlobal.h"
 #include "mozilla/IntentionalCrash.h"
+#include "mozilla/Logging.h"
 #include "nsContentUtils.h"
 #include "nsJSUtils.h"
 
@@ -16,24 +17,25 @@
 #  include <windows.h>
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 void MessageManagerGlobal::Dump(const nsAString& aStr) {
   if (!nsJSUtils::DumpEnabled()) {
     return;
   }
 
+  NS_ConvertUTF16toUTF8 cStr(aStr);
+  MOZ_LOG(nsContentUtils::DOMDumpLog(), mozilla::LogLevel::Debug,
+          ("[MessageManager.Dump] %s", cStr.get()));
 #ifdef ANDROID
-  __android_log_print(ANDROID_LOG_INFO, "Gecko", "%s",
-                      NS_ConvertUTF16toUTF8(aStr).get());
+  __android_log_print(ANDROID_LOG_INFO, "Gecko", "%s", cStr.get());
 #endif
 #ifdef XP_WIN
   if (IsDebuggerPresent()) {
     OutputDebugStringW(PromiseFlatString(aStr).get());
   }
 #endif
-  fputs(NS_ConvertUTF16toUTF8(aStr).get(), stdout);
+  fputs(cStr.get(), stdout);
   fflush(stdout);
 }
 
@@ -47,5 +49,4 @@ void MessageManagerGlobal::Btoa(const nsAString& aBase64Data,
   aError = nsContentUtils::Btoa(aBase64Data, aAsciiString);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

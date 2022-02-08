@@ -28,6 +28,7 @@ echo "running as" $(id)
 : MOZ_SCM_LEVEL                 ${MOZ_SCM_LEVEL:=1}
 
 : WORKSPACE                     ${WORKSPACE:=/builds/worker/workspace}
+: MOZ_OBJDIR                    ${MOZ_OBJDIR:=$WORKSPACE/obj-build}
 
 set -v
 
@@ -39,9 +40,6 @@ fail() {
 
 export MOZ_CRASHREPORTER_NO_REPORT=1
 export TINDERBOX_OUTPUT=1
-
-# Ensure that in tree libraries can be found
-export LIBRARY_PATH=$LIBRARY_PATH:$WORKSPACE/obj-build:$WORKSPACE/src/gcc/lib64
 
 # test required parameters are supplied
 if [[ -z ${MOZHARNESS_SCRIPT} ]]; then fail "MOZHARNESS_SCRIPT is not set"; fi
@@ -65,6 +63,8 @@ fi
 # cache.  However, only some mozharness scripts use tooltool_wrapper.sh, so this may not be
 # entirely effective.
 export TOOLTOOL_CACHE
+
+export MOZ_OBJDIR
 
 config_path_cmds=""
 for path in ${MOZHARNESS_CONFIG_PATHS}; do
@@ -96,7 +96,10 @@ fi
 
 cd /builds/worker
 
-$GECKO_PATH/mach python $GECKO_PATH/testing/${MOZHARNESS_SCRIPT} \
+$GECKO_PATH/mach python \
+  --virtualenv psutil \
+  -- \
+  $GECKO_PATH/testing/${MOZHARNESS_SCRIPT} \
   ${config_path_cmds} \
   ${config_cmds} \
   $actions \

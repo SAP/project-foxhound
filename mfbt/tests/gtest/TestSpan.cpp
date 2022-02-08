@@ -61,6 +61,13 @@ static_assert(std::is_convertible_v<nsTArray<const int>, Span<const int>>,
 static_assert(!std::is_convertible_v<nsTArray<const int>, Span<int>>,
               "nsTArray should not drop const in conversion");
 
+static_assert(std::is_convertible_v<const std::vector<int>, Span<const int>>,
+              "const std::vector should convert into const");
+static_assert(std::is_convertible_v<std::vector<int>, Span<const int>>,
+              "std::vector should convert into const");
+static_assert(!std::is_convertible_v<const std::vector<int>, Span<int>>,
+              "std::vector should not drop const in conversion");
+
 /**
  * Rust slice-compatible nullptr replacement value.
  */
@@ -307,7 +314,7 @@ SPAN_TEST(from_pointer_length_constructor) {
 #endif
 
   {
-    auto s = MakeSpan(&arr[0], 2);
+    auto s = Span(&arr[0], 2);
     ASSERT_EQ(s.Length(), 2U);
     ASSERT_EQ(s.data(), &arr[0]);
     ASSERT_EQ(s[0], 1);
@@ -316,7 +323,7 @@ SPAN_TEST(from_pointer_length_constructor) {
 
   {
     int* p = nullptr;
-    auto s = MakeSpan(p, static_cast<Span<int>::index_type>(0));
+    auto s = Span(p, static_cast<Span<int>::index_type>(0));
     ASSERT_EQ(s.Length(), 0U);
     ASSERT_EQ(s.data(), SLICE_INT_PTR);
   }
@@ -324,7 +331,7 @@ SPAN_TEST(from_pointer_length_constructor) {
 #if 0
         {
             int* p = nullptr;
-            auto workaround_macro = [=]() { MakeSpan(p, 2); };
+            auto workaround_macro = [=]() { Span(p, 2); };
             CHECK_THROW(workaround_macro(), fail_fast);
         }
 #endif
@@ -399,7 +406,7 @@ SPAN_TEST(from_pointer_pointer_constructor) {
   //}
 
   {
-    auto s = MakeSpan(&arr[0], &arr[2]);
+    auto s = Span(&arr[0], &arr[2]);
     ASSERT_EQ(s.Length(), 2U);
     ASSERT_EQ(s.data(), &arr[0]);
     ASSERT_EQ(s[0], 1);
@@ -407,14 +414,14 @@ SPAN_TEST(from_pointer_pointer_constructor) {
   }
 
   {
-    auto s = MakeSpan(&arr[0], &arr[0]);
+    auto s = Span(&arr[0], &arr[0]);
     ASSERT_EQ(s.Length(), 0U);
     ASSERT_EQ(s.data(), &arr[0]);
   }
 
   {
     int* p = nullptr;
-    auto s = MakeSpan(p, p);
+    auto s = Span(p, p);
     ASSERT_EQ(s.Length(), 0U);
     ASSERT_EQ(s.data(), SLICE_INT_PTR);
   }
@@ -502,19 +509,19 @@ SPAN_TEST(from_array_constructor) {
   }
 
   {
-    auto s = MakeSpan(arr);
+    auto s = Span(arr);
     ASSERT_EQ(s.Length(), 5U);
     ASSERT_EQ(s.data(), &arr[0]);
   }
 
   {
-    auto s = MakeSpan(&(arr2d[0]), 1);
+    auto s = Span(&(arr2d[0]), 1);
     ASSERT_EQ(s.Length(), 1U);
     ASSERT_EQ(s.data(), &arr2d[0]);
   }
 
   {
-    auto s = MakeSpan(&arr3d[0], 1);
+    auto s = Span(&arr3d[0], 1);
     ASSERT_EQ(s.Length(), 1U);
     ASSERT_EQ(s.data(), &arr3d[0]);
   }
@@ -530,7 +537,7 @@ SPAN_TEST(from_dynamic_array_constructor) {
   }
 
   {
-    auto s = MakeSpan(&arr[0][0][0], 10);
+    auto s = Span(&arr[0][0][0], 10);
     ASSERT_EQ(s.Length(), 10U);
     ASSERT_EQ(s.data(), &arr[0][0][0]);
   }
@@ -600,7 +607,7 @@ SPAN_TEST(from_std_array_constructor) {
   }
 
   {
-    auto s = MakeSpan(arr);
+    auto s = Span(arr);
     ASSERT_EQ(s.size(), narrow_cast<size_t>(arr.size()));
     ASSERT_EQ(s.data(), arr.data());
   }
@@ -647,7 +654,7 @@ SPAN_TEST(from_const_std_array_constructor) {
   }
 
   {
-    auto s = MakeSpan(arr);
+    auto s = Span(arr);
     ASSERT_EQ(s.size(), narrow_cast<size_t>(arr.size()));
     ASSERT_EQ(s.data(), arr.data());
   }
@@ -687,7 +694,7 @@ SPAN_TEST(from_std_array_const_constructor) {
 #endif
 
   {
-    auto s = MakeSpan(arr);
+    auto s = Span(arr);
     ASSERT_EQ(s.size(), narrow_cast<size_t>(arr.size()));
     ASSERT_EQ(s.data(), arr.data());
   }
@@ -755,7 +762,7 @@ SPAN_TEST(from_mozilla_array_constructor) {
   }
 
   {
-    auto s = MakeSpan(arr);
+    auto s = Span(arr);
     ASSERT_EQ(s.size(), narrow_cast<size_t>(arr.cend() - arr.cbegin()));
     ASSERT_EQ(s.data(), &arr[0]);
   }
@@ -804,7 +811,7 @@ SPAN_TEST(from_const_mozilla_array_constructor) {
 #endif
 
   {
-    auto s = MakeSpan(arr);
+    auto s = Span(arr);
     ASSERT_EQ(s.size(), narrow_cast<size_t>(arr.cend() - arr.cbegin()));
     ASSERT_EQ(s.data(), &arr[0]);
   }
@@ -844,7 +851,7 @@ SPAN_TEST(from_mozilla_array_const_constructor) {
 #endif
 
   {
-    auto s = MakeSpan(arr);
+    auto s = Span(arr);
     ASSERT_EQ(s.size(), narrow_cast<size_t>(arr.cend() - arr.cbegin()));
     ASSERT_EQ(s.data(), &arr[0]);
   }
@@ -939,11 +946,11 @@ SPAN_TEST(from_container_constructor) {
   }
 
   {
-    auto s = MakeSpan(v);
+    auto s = Span(v);
     ASSERT_EQ(s.size(), narrow_cast<size_t>(v.size()));
     ASSERT_EQ(s.data(), v.data());
 
-    auto cs = MakeSpan(cv);
+    auto cs = Span(cv);
     ASSERT_EQ(cs.size(), narrow_cast<size_t>(cv.size()));
     ASSERT_EQ(cs.data(), cv.data());
   }
@@ -976,7 +983,7 @@ SPAN_TEST(from_xpcom_collections) {
 
     AssertSpanOfThreeInts(v);
 
-    auto s = MakeSpan(v);
+    auto s = Span(v);
     ASSERT_EQ(s.size(), narrow_cast<size_t>(v.Length()));
     ASSERT_EQ(s.data(), v.Elements());
     ASSERT_EQ(s[2], 3);
@@ -1007,7 +1014,7 @@ SPAN_TEST(from_xpcom_collections) {
 
     AssertSpanOfThreeInts(v);
 
-    auto s = MakeSpan(v);
+    auto s = Span(v);
     ASSERT_EQ(s.size(), narrow_cast<size_t>(v.Length()));
     ASSERT_EQ(s.data(), v.Elements());
     ASSERT_EQ(s[2], 3);
@@ -1038,19 +1045,19 @@ SPAN_TEST(from_xpcom_collections) {
 
     AssertSpanOfThreeInts(v);
 
-    auto s = MakeSpan(v);
+    auto s = Span(v);
     ASSERT_EQ(s.size(), narrow_cast<size_t>(v.Length()));
     ASSERT_EQ(s.data(), v.Elements());
     ASSERT_EQ(s[2], 3);
   }
   {
     nsAutoString str;
-    str.AssignLiteral("abc");
+    str.AssignLiteral(u"abc");
 
     AssertSpanOfThreeChar16s(str);
     AssertSpanOfThreeChar16sViaString(str);
 
-    Span<char16_t> s{str};
+    Span<char16_t> s{str.GetMutableData()};
     ASSERT_EQ(s.size(), narrow_cast<size_t>(str.Length()));
     ASSERT_EQ(s.data(), str.BeginWriting());
     ASSERT_EQ(s[2], 'c');
@@ -1062,14 +1069,14 @@ SPAN_TEST(from_xpcom_collections) {
   }
   {
     nsAutoString str;
-    str.AssignLiteral("abc");
+    str.AssignLiteral(u"abc");
 
     AssertSpanOfThreeChar16s(str);
     AssertSpanOfThreeChar16sViaString(str);
 
-    auto s = MakeSpan(str);
+    auto s = Span(str);
     ASSERT_EQ(s.size(), narrow_cast<size_t>(str.Length()));
-    ASSERT_EQ(s.data(), str.BeginWriting());
+    ASSERT_EQ(s.data(), str.BeginReading());
     ASSERT_EQ(s[2], 'c');
   }
   {
@@ -1078,11 +1085,6 @@ SPAN_TEST(from_xpcom_collections) {
 
     AssertSpanOfThreeChars(str);
     AssertSpanOfThreeCharsViaString(str);
-
-    Span<uint8_t> s{str};
-    ASSERT_EQ(s.size(), narrow_cast<size_t>(str.Length()));
-    ASSERT_EQ(s.data(), reinterpret_cast<uint8_t*>(str.BeginWriting()));
-    ASSERT_EQ(s[2], 'c');
 
     Span<const uint8_t> cs{str};
     ASSERT_EQ(cs.size(), narrow_cast<size_t>(str.Length()));
@@ -1096,9 +1098,9 @@ SPAN_TEST(from_xpcom_collections) {
     AssertSpanOfThreeChars(str);
     AssertSpanOfThreeCharsViaString(str);
 
-    auto s = MakeSpan(str);
+    auto s = Span(str);
     ASSERT_EQ(s.size(), narrow_cast<size_t>(str.Length()));
-    ASSERT_EQ(s.data(), str.BeginWriting());
+    ASSERT_EQ(s.data(), str.BeginReading());
     ASSERT_EQ(s[2], 'c');
   }
   {
@@ -1131,7 +1133,7 @@ SPAN_TEST(from_xpcom_collections) {
 
     AssertSpanOfThreeInts(r);
 
-    auto s = MakeSpan(r);
+    auto s = Span(r);
     ASSERT_EQ(s.size(), narrow_cast<size_t>(v.Length()));
     ASSERT_EQ(s.data(), v.Elements());
     ASSERT_EQ(s[2], 3);
@@ -1152,13 +1154,16 @@ SPAN_TEST(from_cstring) {
     ASSERT_EQ(cs.data(), str);
     ASSERT_EQ(cs[2], 'c');
 
+    static_assert(MakeStringSpan("abc").size() == 3U);
+    static_assert(MakeStringSpan("abc")[2] == 'c');
+
 #ifdef CONFIRM_COMPILATION_ERRORS
     Span<const char> scccl("literal");  // error
 
     Span<const char> sccel;
     sccel = "literal";  // error
 
-    cs = MakeSpan("literal");  // error
+    cs = Span("literal");  // error
 #endif
   }
   {
@@ -1169,7 +1174,7 @@ SPAN_TEST(from_cstring) {
     ASSERT_EQ(cs.data(), arr);
     ASSERT_EQ(cs[2], 'c');
 
-    cs = MakeSpan(arr);
+    cs = Span(arr);
     ASSERT_EQ(cs.size(), 4U);  // zero terminator is part of the array span.
     ASSERT_EQ(cs.data(), arr);
     ASSERT_EQ(cs[2], 'c');
@@ -1197,12 +1202,15 @@ SPAN_TEST(from_cstring) {
     ASSERT_EQ(cs.data(), str);
     ASSERT_EQ(cs[2], 'c');
 
+    static_assert(MakeStringSpan(u"abc").size() == 3U);
+    static_assert(MakeStringSpan(u"abc")[2] == u'c');
+
     cs = MakeStringSpan(arr);
     ASSERT_EQ(cs.size(), 3U);
     ASSERT_EQ(cs.data(), str);
     ASSERT_EQ(cs[2], 'c');
 
-    cs = MakeSpan(arr);
+    cs = Span(arr);
     ASSERT_EQ(cs.size(), 4U);  // zero terminator is part of the array span.
     ASSERT_EQ(cs.data(), str);
     ASSERT_EQ(cs[2], 'c');
@@ -1219,7 +1227,7 @@ SPAN_TEST(from_cstring) {
     Span<const char16_t>* sccel;
     *sccel = u"literal";  // error
 
-    cs = MakeSpan(u"literal");  // error
+    cs = Span(u"literal");  // error
 #endif
   }
 }
@@ -1967,7 +1975,7 @@ SPAN_TEST(as_writable_bytes) {
 
 SPAN_TEST(as_chars) {
   const uint8_t a[] = {1, 2, 3, 4};
-  Span<const uint8_t> u = MakeSpan(a);
+  Span<const uint8_t> u = Span(a);
   Span<const char> c = AsChars(u);
   ASSERT_EQ(static_cast<const void*>(u.data()),
             static_cast<const void*>(c.data()));
@@ -1976,7 +1984,7 @@ SPAN_TEST(as_chars) {
 
 SPAN_TEST(as_writable_chars) {
   uint8_t a[] = {1, 2, 3, 4};
-  Span<uint8_t> u = MakeSpan(a);
+  Span<uint8_t> u = Span(a);
   Span<char> c = AsWritableChars(u);
   ASSERT_EQ(static_cast<void*>(u.data()), static_cast<void*>(c.data()));
   ASSERT_EQ(u.size(), c.size());

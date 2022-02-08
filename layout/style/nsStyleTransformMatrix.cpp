@@ -13,7 +13,6 @@
 #include "nsPresContext.h"
 #include "mozilla/MotionPathUtils.h"
 #include "mozilla/ServoBindings.h"
-#include "mozilla/StaticPrefs_svg.h"
 #include "mozilla/StyleAnimationValue.h"
 #include "mozilla/SVGUtils.h"
 #include "gfxMatrix.h"
@@ -49,14 +48,7 @@ void TransformReferenceBox::EnsureDimensionsAreCached() {
   mIsCached = true;
 
   if (mFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
-    if (!StaticPrefs::svg_transform_box_enabled()) {
-      mX = -mFrame->GetPosition().x;
-      mY = -mFrame->GetPosition().y;
-      Size contextSize = SVGUtils::GetContextSize(mFrame);
-      mWidth = nsPresContext::CSSPixelsToAppUnits(contextSize.width);
-      mHeight = nsPresContext::CSSPixelsToAppUnits(contextSize.height);
-    } else if (mFrame->StyleDisplay()->mTransformBox ==
-               StyleGeometryBox::FillBox) {
+    if (mFrame->StyleDisplay()->mTransformBox == StyleGeometryBox::FillBox) {
       // Percentages in transforms resolve against the SVG bbox, and the
       // transform is relative to the top-left of the SVG bbox.
       nsRect bboxInAppUnits = nsLayoutUtils::ComputeGeometryBox(
@@ -382,9 +374,16 @@ static void ProcessRotate3D(Matrix4x4& aMatrix, float aX, float aY, float aZ,
   aMatrix = temp * aMatrix;
 }
 
-static void ProcessPerspective(Matrix4x4& aMatrix, const Length& aLength) {
-  float depth = aLength.ToCSSPixels();
-  ApplyPerspectiveToMatrix(aMatrix, depth);
+static void ProcessPerspective(
+    Matrix4x4& aMatrix,
+    const StyleGenericPerspectiveFunction<Length>& aPerspective) {
+  if (aPerspective.IsNone()) {
+    return;
+  }
+  float p = aPerspective.AsLength().ToCSSPixels();
+  if (!std::isinf(p)) {
+    aMatrix.Perspective(std::max(p, 1.0f));
+  }
 }
 
 static void MatrixForTransformFunction(Matrix4x4& aMatrix,

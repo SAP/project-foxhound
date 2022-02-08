@@ -3,9 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-function CallModuleResolveHook(module, specifier, expectedMinimumStatus)
+function CallModuleResolveHook(module, moduleRequest, expectedMinimumStatus)
 {
-    let requestedModule = HostResolveImportedModule(module, specifier);
+    let requestedModule = HostResolveImportedModule(module, moduleRequest);
     if (requestedModule.status < expectedMinimumStatus)
         ThrowInternalError(JSMSG_BAD_MODULE_STATUS);
 
@@ -29,7 +29,7 @@ function ModuleGetExportedNames(exportStarSet = [])
         return [];
 
     // Step 5
-    _DefineDataProperty(exportStarSet, exportStarSet.length, module);
+    DefineDataProperty(exportStarSet, exportStarSet.length, module);
 
     // Step 6
     let exportedNames = [];
@@ -39,14 +39,14 @@ function ModuleGetExportedNames(exportStarSet = [])
     let localExportEntries = module.localExportEntries;
     for (let i = 0; i < localExportEntries.length; i++) {
         let e = localExportEntries[i];
-        _DefineDataProperty(exportedNames, namesCount++, e.exportName);
+        DefineDataProperty(exportedNames, namesCount++, e.exportName);
     }
 
     // Step 8
     let indirectExportEntries = module.indirectExportEntries;
     for (let i = 0; i < indirectExportEntries.length; i++) {
         let e = indirectExportEntries[i];
-        _DefineDataProperty(exportedNames, namesCount++, e.exportName);
+        DefineDataProperty(exportedNames, namesCount++, e.exportName);
     }
 
     // Step 9
@@ -60,7 +60,7 @@ function ModuleGetExportedNames(exportStarSet = [])
         for (let j = 0; j < starNames.length; j++) {
             let n = starNames[j];
             if (n !== "default" && !callFunction(ArrayIncludes, exportedNames, n))
-                _DefineDataProperty(exportedNames, namesCount++, n);
+                DefineDataProperty(exportedNames, namesCount++, n);
         }
     }
 
@@ -101,6 +101,8 @@ function ModuleSetStatus(module, newStatus)
 //
 function ModuleResolveExport(exportName, resolveSet = [])
 {
+    assert(typeof exportName === "string", "ModuleResolveExport");
+
     if (!IsObject(this) || !IsModule(this)) {
         return callFunction(CallModuleMethodIfWrapped, this, exportName, resolveSet,
                             "ModuleResolveExport");
@@ -119,7 +121,7 @@ function ModuleResolveExport(exportName, resolveSet = [])
     }
 
     // Step 5
-    _DefineDataProperty(resolveSet, resolveSet.length, {module, exportName});
+    DefineDataProperty(resolveSet, resolveSet.length, {module, exportName});
 
     // Step 6
     let localExportEntries = module.localExportEntries;
@@ -136,7 +138,7 @@ function ModuleResolveExport(exportName, resolveSet = [])
         if (exportName === e.exportName) {
             let importedModule = CallModuleResolveHook(module, e.moduleRequest,
                                                        MODULE_STATUS_UNLINKED);
-            if (e.importName === "*") {
+            if (e.importName === null) {
                 return {module: importedModule, bindingName: "*namespace*"};
             }
             return callFunction(importedModule.resolveExport, importedModule, e.importName,
@@ -209,7 +211,7 @@ function GetModuleNamespace(module)
             let name = exportedNames[i];
             let resolution = callFunction(module.resolveExport, module, name);
             if (IsResolvedBinding(resolution))
-                _DefineDataProperty(unambiguousNames, unambiguousNames.length, name);
+                DefineDataProperty(unambiguousNames, unambiguousNames.length, name);
         }
         namespace = ModuleNamespaceCreate(module, unambiguousNames);
     }
@@ -382,13 +384,13 @@ function InnerModuleLinking(module, stack, index)
     index++;
 
     // Step 8. Append module to stack.
-    _DefineDataProperty(stack, stack.length, module);
+    DefineDataProperty(stack, stack.length, module);
 
     // Step 9. For each String required that is an element of module.[[RequestedModules]], do
     let requestedModules = module.requestedModules;
     for (let i = 0; i < requestedModules.length; i++) {
         // Step 9.a
-        let required = requestedModules[i].moduleSpecifier;
+        let required = requestedModules[i].moduleRequest;
         let requiredModule = CallModuleResolveHook(module, required, MODULE_STATUS_UNLINKED);
 
         // Step 9.b
@@ -476,7 +478,7 @@ function InitializeEnvironment()
         let importedModule = CallModuleResolveHook(module, imp.moduleRequest,
                                                    MODULE_STATUS_LINKING);
         // Step 9.c-9.d
-        if (imp.importName === "*") {
+        if (imp.importName === null) {
             let namespace = GetModuleNamespace(importedModule);
             CreateNamespaceBinding(env, imp.localName, namespace);
         } else {
@@ -586,12 +588,32 @@ function ModuleEvaluate()
         ThrowInternalError(JSMSG_BAD_MODULE_STATUS);
     }
 
+    // Top-level Await Step 4
+    if (module.status === MODULE_STATUS_EVALUATED) {
+      module = GetCycleRoot(module);
+    }
+
+    // Top-level Await Step 5
+    if (module.topLevelCapability) {
+      return module.topLevelCapability;
+    }
+
+    const capability = CreateTopLevelCapability(module);
+
     // Step 4
     let stack = [];
 
     // Steps 5-6
     try {
         InnerModuleEvaluation(module, stack, 0);
+        if (!IsAsyncEvaluating(module)) {
+          ModuleTopLevelCapabilityResolve(module);
+        }
+        // Steps 7-8
+        assert(module.status === MODULE_STATUS_EVALUATED,
+               "Bad module status after successful evaluation");
+        assert(stack.length === 0,
+               "Stack should be empty after successful evaluation");
     } catch (error) {
         for (let i = 0; i < stack.length; i++) {
             let m = stack[i];
@@ -607,23 +629,18 @@ function ModuleEvaluate()
         assert(module.status === MODULE_STATUS_EVALUATED_ERROR,
                "Bad module status after failed evaluation");
 
-        throw error;
+        ModuleTopLevelCapabilityReject(module, error);
     }
 
-    // Steps 7-8
-    assert(module.status === MODULE_STATUS_EVALUATED,
-           "Bad module status after successful evaluation");
-    assert(stack.length === 0,
-           "Stack should be empty after successful evaluation");
-
     // Step 9
-    return undefined;
+    return capability;
 }
 
 // https://tc39.es/ecma262/#sec-innermoduleevaluation
 // ES2020 15.2.1.16.2.1 InnerModuleEvaluation
 function InnerModuleEvaluation(module, stack, index)
 {
+
     // Step 1
     // TODO: Support module records other than Cyclic Module Records.
 
@@ -648,15 +665,18 @@ function InnerModuleEvaluation(module, stack, index)
     // Steps 6-8
     UnsafeSetReservedSlot(module, MODULE_OBJECT_DFS_INDEX_SLOT, index);
     UnsafeSetReservedSlot(module, MODULE_OBJECT_DFS_ANCESTOR_INDEX_SLOT, index);
+
+    UnsafeSetReservedSlot(module, MODULE_OBJECT_PENDING_ASYNC_DEPENDENCIES_SLOT, 0);
+
     index++;
 
     // Step 9
-    _DefineDataProperty(stack, stack.length, module);
+    DefineDataProperty(stack, stack.length, module);
 
     // Step 10
     let requestedModules = module.requestedModules;
     for (let i = 0; i < requestedModules.length; i++) {
-        let required = requestedModules[i].moduleSpecifier;
+        let required = requestedModules[i].moduleRequest;
         let requiredModule =
             CallModuleResolveHook(module, required, MODULE_STATUS_LINKED);
 
@@ -677,11 +697,30 @@ function InnerModuleEvaluation(module, stack, index)
             UnsafeSetReservedSlot(module, MODULE_OBJECT_DFS_ANCESTOR_INDEX_SLOT,
                                   std_Math_min(module.dfsAncestorIndex,
                                                requiredModule.dfsAncestorIndex));
+        } else {
+          requiredModule = GetCycleRoot(requiredModule);
+          assert(requiredModule.status >= MODULE_STATUS_EVALUATED,
+                `Bad module status in InnerModuleEvaluation: ${requiredModule.status}`);
+          if (requiredModule.status == MODULE_STATUS_EVALUATED_ERROR) {
+            throw GetModuleEvaluationError(requiredModule);
+          }
+        }
+        if (IsAsyncEvaluating(requiredModule)) {
+            UnsafeSetReservedSlot(module,
+                                  MODULE_OBJECT_PENDING_ASYNC_DEPENDENCIES_SLOT,
+                                  module.pendingAsyncDependencies + 1);
+            AppendAsyncParentModule(requiredModule, module);
         }
     }
 
-    // Step 11
-    ExecuteModule(module);
+    if (module.pendingAsyncDependencies > 0 || module.async) {
+      InitAsyncEvaluating(module);
+      if (module.pendingAsyncDependencies === 0) {
+        ExecuteAsyncModule(module);
+      }
+    } else {
+      ExecuteModule(module);
+    }
 
     // Step 12
     assert(CountArrayValues(stack, module) === 1,
@@ -693,13 +732,58 @@ function InnerModuleEvaluation(module, stack, index)
 
     // Step 14
     if (module.dfsAncestorIndex === module.dfsIndex) {
+        let cycleRoot = module;
         let requiredModule;
         do {
             requiredModule = callFunction(std_Array_pop, stack);
             ModuleSetStatus(requiredModule, MODULE_STATUS_EVALUATED);
+            SetCycleRoot(requiredModule, cycleRoot);
         } while (requiredModule !== module);
     }
 
     // Step 15
     return index;
 }
+
+// https://tc39.es/proposal-top-level-await/#sec-gather-async-parent-completions
+function GatherAsyncParentCompletions(module, execList = []) {
+  assert(module.status == MODULE_STATUS_EVALUATED, "bad status for async module");
+
+  // Step 5.
+  // asyncParentModules is a list, and doesn't have a .length. Might be worth changing
+  // later on.
+  let i = 0;
+  while (module.asyncParentModules[i]) {
+    const m = module.asyncParentModules[i];
+    if (GetCycleRoot(m).status != MODULE_STATUS_EVALUATED_ERROR &&
+        !callFunction(ArrayIncludes, execList, m)) {
+      assert(!m.evaluationError, "should not have evaluation error");
+      assert(m.pendingAsyncDependencies > 0, "should have at least one dependency");
+      UnsafeSetReservedSlot(m,
+                            MODULE_OBJECT_PENDING_ASYNC_DEPENDENCIES_SLOT,
+                            m.pendingAsyncDependencies - 1);
+      if (m.pendingAsyncDependencies === 0) {
+        callFunction(std_Array_push, execList, m);
+        if (!m.async) {
+          execList = GatherAsyncParentCompletions(m, execList);
+        }
+      }
+    }
+    i++;
+  }
+  callFunction(ArraySort,
+               execList,
+               (a, b) => a.asyncEvaluatingPostOrder - b.asyncEvaluatingPostOrder);
+  return execList
+}
+
+// https://tc39.es/proposal-top-level-await/#sec-execute-async-module
+function ExecuteAsyncModule(module) {
+  // Steps 1-3.
+  assert(module.status == MODULE_STATUS_EVALUATING ||
+         module.status == MODULE_STATUS_EVALUATED, "bad status for async module");
+  // Step 4-11 done in AsyncAwait opcode
+
+  ExecuteModule(module);
+}
+

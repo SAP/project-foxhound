@@ -43,6 +43,15 @@ const AccessibilityActor = ActorClassWithSpec(accessibilitySpec, {
     this.targetActor = targetActor;
   },
 
+  getTraits: function() {
+    // The traits are used to know if accessibility actors support particular
+    // API on the server side.
+    return {
+      // @backward-compat { version 84 } Fixed on the server by Bug 1654956.
+      tabbingOrder: true,
+    };
+  },
+
   bootstrap() {
     return {
       enabled: this.enabled,

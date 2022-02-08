@@ -88,12 +88,6 @@ nsProxyInfo::GetResolveFlags(uint32_t* result) {
 }
 
 NS_IMETHODIMP
-nsProxyInfo::SetResolveFlags(uint32_t flags) {
-  mResolveFlags = flags;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 nsProxyInfo::GetUsername(nsACString& result) {
   result = mUsername;
   return NS_OK;
@@ -135,6 +129,18 @@ nsProxyInfo::SetFailoverProxy(nsIProxyInfo* proxy) {
   NS_ENSURE_ARG(pi);
 
   pi.swap(mNext);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsProxyInfo::GetSourceId(nsACString& result) {
+  result = mSourceId;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsProxyInfo::SetSourceId(const nsACString& sourceId) {
+  mSourceId = sourceId;
   return NS_OK;
 }
 
@@ -190,6 +196,19 @@ nsProxyInfo* nsProxyInfo::DeserializeProxyInfo(
   }
 
   return first;
+}
+
+already_AddRefed<nsProxyInfo> nsProxyInfo::CloneProxyInfoWithNewResolveFlags(
+    uint32_t aResolveFlags) {
+  nsTArray<ProxyInfoCloneArgs> args;
+  SerializeProxyInfo(this, args);
+
+  for (auto& arg : args) {
+    arg.resolveFlags() = aResolveFlags;
+  }
+
+  RefPtr<nsProxyInfo> result = DeserializeProxyInfo(args);
+  return result.forget();
 }
 
 }  // namespace net

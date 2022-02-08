@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2016 The ANGLE Project Authors. All rights reserved.
+// Copyright 2016 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -237,7 +237,7 @@ bool Stream::isConsumerBoundToContext(const gl::Context *context) const
     return (context == mContext);
 }
 
-Error Stream::validateD3D11Texture(void *texture, const AttributeMap &attributes) const
+Error Stream::validateD3D11Texture(const void *texture, const AttributeMap &attributes) const
 {
     ASSERT(mConsumerType == ConsumerType::GLTextureRGB ||
            mConsumerType == ConsumerType::GLTextureYUV);

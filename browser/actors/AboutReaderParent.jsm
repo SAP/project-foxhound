@@ -19,6 +19,11 @@ ChromeUtils.defineModuleGetter(
   "ReaderMode",
   "resource://gre/modules/ReaderMode.jsm"
 );
+ChromeUtils.defineModuleGetter(
+  this,
+  "pktApi",
+  "chrome://pocket/content/pktApi.jsm"
+);
 
 const gStringBundle = Services.strings.createBundle(
   "chrome://global/locale/aboutReader.properties"
@@ -95,14 +100,58 @@ class AboutReaderParent extends JSWindowActorParent {
 
   async receiveMessage(message) {
     switch (message.name) {
-      case "Reader:CacheArticle": {
+      case "Reader:EnterReaderMode": {
         gCachedArticles.set(message.data.url, message.data);
+        this.enterReaderMode(message.data.url);
+        break;
+      }
+      case "Reader:LeaveReaderMode": {
+        this.leaveReaderMode();
         break;
       }
       case "Reader:GetCachedArticle": {
         let cachedArticle = gCachedArticles.get(message.data.url);
         gCachedArticles.delete(message.data.url);
         return cachedArticle;
+      }
+      case "Reader:PocketLoginStatusRequest": {
+        return pktApi.isUserLoggedIn();
+      }
+      case "Reader:PocketGetArticleInfo": {
+        return new Promise(resolve => {
+          pktApi.getArticleInfo(message.data.url, {
+            success: data => {
+              resolve(data);
+            },
+            error: error => {
+              resolve(null);
+            },
+          });
+        });
+      }
+      case "Reader:PocketGetArticleRecs": {
+        return new Promise(resolve => {
+          pktApi.getRecsForItem(message.data.itemID, {
+            success: data => {
+              resolve(data);
+            },
+            error: error => {
+              resolve(null);
+            },
+          });
+        });
+      }
+      case "Reader:PocketSaveArticle": {
+        return new Promise(resolve => {
+          pktApi.addLink(message.data.url, {
+            success: data => {
+              resolve(data);
+            },
+            error: error => {
+              resolve(null);
+            },
+          });
+        });
       }
       case "Reader:FaviconRequest": {
         try {
@@ -187,7 +236,7 @@ class AboutReaderParent extends JSWindowActorParent {
       button.setAttribute("aria-label", closeText);
 
       menuitem.setAttribute("label", closeText);
-      menuitem.setAttribute("hidden", false);
+      menuitem.hidden = false;
       menuitem.setAttribute(
         "accesskey",
         gStringBundle.GetStringFromName("readerView.close.accesskey")
@@ -204,7 +253,7 @@ class AboutReaderParent extends JSWindowActorParent {
       button.setAttribute("aria-label", enterText);
 
       menuitem.setAttribute("label", enterText);
-      menuitem.setAttribute("hidden", !browser.isArticle);
+      menuitem.hidden = !browser.isArticle;
       menuitem.setAttribute(
         "accesskey",
         gStringBundle.GetStringFromName("readerView.enter.accesskey")
@@ -244,6 +293,43 @@ class AboutReaderParent extends JSWindowActorParent {
         actor.sendAsyncMessage("Reader:ToggleReaderMode", {});
       }
     }
+  }
+
+  hasReaderModeEntryAtOffset(url, offset) {
+    if (Services.appinfo.sessionHistoryInParent) {
+      let browsingContext = this.browsingContext;
+      if (browsingContext.childSessionHistory.canGo(offset)) {
+        let shistory = browsingContext.sessionHistory;
+        let nextEntry = shistory.getEntryAtIndex(shistory.index + offset);
+        let nextURL = nextEntry.URI.spec;
+        return nextURL && (nextURL == url || !url);
+      }
+    }
+
+    return false;
+  }
+
+  enterReaderMode(url) {
+    let readerURL = "about:reader?url=" + encodeURIComponent(url);
+    if (this.hasReaderModeEntryAtOffset(readerURL, +1)) {
+      let browsingContext = this.browsingContext;
+      browsingContext.childSessionHistory.go(+1);
+      return;
+    }
+
+    this.sendAsyncMessage("Reader:EnterReaderMode", {});
+  }
+
+  leaveReaderMode() {
+    let browsingContext = this.browsingContext;
+    let url = browsingContext.currentWindowGlobal.documentURI.spec;
+    let originalURL = ReaderMode.getOriginalUrl(url);
+    if (this.hasReaderModeEntryAtOffset(originalURL, -1)) {
+      browsingContext.childSessionHistory.go(-1);
+      return;
+    }
+
+    this.sendAsyncMessage("Reader:LeaveReaderMode", {});
   }
 
   /**

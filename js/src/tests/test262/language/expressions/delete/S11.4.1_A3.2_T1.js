@@ -3,7 +3,7 @@
 
 /*---
 info: If the property doesn't have the DontDelete attribute, return true
-es5id: 11.4.1_A3.2_T1
+esid: sec-delete-operator-runtime-semantics-evaluation
 description: Checking declared variable
 flags: [noStrict]
 ---*/
@@ -11,7 +11,7 @@ flags: [noStrict]
 //CHECK#1
 x = 1;
 if (delete x !== true) {
-  $ERROR('#1: x = 1; delete x === true');
+  throw new Test262Error('#1: x = 1; delete x === true');
 }
 
 reportCompare(0, 0);

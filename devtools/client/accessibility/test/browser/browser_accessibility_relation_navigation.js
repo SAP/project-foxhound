@@ -42,13 +42,22 @@ const tests = [
         keyboardShortcut: "",
         childCount: 2,
         indexInParent: 0,
-        states: ["readonly", "focusable", "opaque", "enabled", "sensitive"],
+        states: [
+          // The focused state is an outdated state, since the toolbox should now
+          // have the focus and not the content page. See Bug 1702709.
+          "focused",
+          "readonly",
+          "focusable",
+          "opaque",
+          "enabled",
+          "sensitive",
+        ],
       },
     },
   },
   {
     desc: "Expand first tree node.",
-    setup: async ({ doc }) => toggleRow(doc, 0),
+    setup: ({ doc }) => toggleRow(doc, 0),
     expected: {
       tree: [
         {
@@ -68,7 +77,7 @@ const tests = [
   },
   {
     desc: "Select second tree node.",
-    setup: async ({ doc }) => selectRow(doc, 1),
+    setup: ({ doc }) => selectRow(doc, 1),
     expected: {
       sidebar: {
         name: "Top level header",
@@ -93,20 +102,32 @@ const tests = [
     desc: "Select containing document.",
     setup: async ({ doc, win }) => {
       const relations = await selectProperty(doc, "/relations");
+      AccessibilityUtils.setEnv({
+        // Keyboard navigation is handled on the container level using arrow
+        // keys.
+        mustHaveAccessibleRule: false,
+      });
       EventUtils.sendMouseEvent(
         { type: "click" },
         relations.querySelector(".arrow"),
         win
       );
+      AccessibilityUtils.resetEnv();
       const containingDocRelation = await selectProperty(
         doc,
         "/relations/containing document"
       );
+      AccessibilityUtils.setEnv({
+        // Keyboard interaction is only enabled when the row is selected and
+        // activated.
+        nonNegativeTabIndexRule: false,
+      });
       EventUtils.sendMouseEvent(
         { type: "click" },
         containingDocRelation.querySelector(".open-accessibility-inspector"),
         win
       );
+      AccessibilityUtils.resetEnv();
     },
     expected: {
       sidebar: {

@@ -35,10 +35,15 @@ using namespace mozilla;
 
 namespace WebCore {
 
-ReverbAccumulationBuffer::ReverbAccumulationBuffer(size_t length)
-    : m_readIndex(0), m_readTimeFrame(0) {
-  m_buffer.SetLength(length);
+ReverbAccumulationBuffer::ReverbAccumulationBuffer()
+    : m_readIndex(0), m_readTimeFrame(0) {}
+
+bool ReverbAccumulationBuffer::allocate(size_t length) {
+  if (!m_buffer.SetLength(length, fallible)) {
+    return false;
+  }
   PodZero(m_buffer.Elements(), length);
+  return true;
 }
 
 void ReverbAccumulationBuffer::readAndClear(float* destination,
@@ -69,15 +74,10 @@ void ReverbAccumulationBuffer::readAndClear(float* destination,
   m_readTimeFrame += numberOfFrames;
 }
 
-void ReverbAccumulationBuffer::updateReadIndex(int* readIndex,
-                                               size_t numberOfFrames) const {
-  // Update caller's readIndex
-  *readIndex = (*readIndex + numberOfFrames) % m_buffer.Length();
-}
-
-int ReverbAccumulationBuffer::accumulate(const float* source,
-                                         size_t numberOfFrames, int* readIndex,
-                                         size_t delayFrames) {
+void ReverbAccumulationBuffer::accumulate(const float* source,
+                                          size_t numberOfFrames,
+                                          size_t* readIndex,
+                                          size_t delayFrames) {
   size_t bufferLength = m_buffer.Length();
 
   size_t writeIndex = (*readIndex + delayFrames) % bufferLength;
@@ -95,7 +95,7 @@ int ReverbAccumulationBuffer::accumulate(const float* source,
                 numberOfFrames1 + writeIndex <= bufferLength &&
                 numberOfFrames2 <= bufferLength;
   MOZ_ASSERT(isSafe);
-  if (!isSafe) return 0;
+  if (!isSafe) return;
 
   AudioBufferAddWithScale(source, 1.0f, destination + writeIndex,
                           numberOfFrames1);
@@ -103,8 +103,6 @@ int ReverbAccumulationBuffer::accumulate(const float* source,
     AudioBufferAddWithScale(source + numberOfFrames1, 1.0f, destination,
                             numberOfFrames2);
   }
-
-  return writeIndex;
 }
 
 void ReverbAccumulationBuffer::reset() {

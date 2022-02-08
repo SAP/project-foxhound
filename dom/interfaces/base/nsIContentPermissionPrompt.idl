@@ -28,34 +28,6 @@ interface nsIContentPermissionType : nsISupports {
 };
 
 /**
- *  Interface provides the callback type.
- */
-[scriptable, uuid(5fb5bb60-7069-11e4-9803-0800200c9a66)]
-interface nsIContentPermissionRequestCallback : nsISupports {
-  /**
-   * The callback of the visibility result.
-   */
-  void notifyVisibility(in boolean isVisible);
-};
-
-/**
- *  Interface provides the way to get the visibility and
- *  the notification.
- */
-[scriptable, uuid(f8577124-6a5f-486f-ae04-c5bcae911eb5)]
-interface nsIContentPermissionRequester : nsISupports {
-  /**
-   * The function to get the visibility.
-   */
-  void getVisibility(in nsIContentPermissionRequestCallback callback);
-
-  /**
-   * The callback to get the notification of visibility change.
-   */
-  attribute nsIContentPermissionRequestCallback onVisibilityChange;
-};
-
-/**
  * Interface allows access to a content to request
  * permission to perform a privileged operation such as
  * geolocation.
@@ -87,14 +59,12 @@ interface nsIContentPermissionRequest : nsISupports {
   readonly attribute mozIDOMWindow window;
   readonly attribute Element element;
 
-  readonly attribute boolean isHandlingUserInput;
+  readonly attribute boolean hasValidTransientUserGestureActivation;
 
-  readonly attribute boolean maybeUnsafePermissionDelegate;
   /**
-   *  The requester to get the required information of
-   *  the window.
+   * See nsIPermissionDelegateHandler.maybeUnsafePermissionDelegate.
    */
-  readonly attribute nsIContentPermissionRequester requester;
+  readonly attribute boolean isRequestDelegatedToUnsafeThirdParty;
 
   /*
    * Get delegate principal of the permission request. This will return nullptr,
@@ -115,8 +85,8 @@ interface nsIContentPermissionRequest : nsISupports {
 };
 
 /**
- * Interface provides a way for the application to handle
- * the UI prompts associated with geo position.
+ * Allows to show permission prompts via the UI for different types of requests,
+ * e.g. geolocation.
  */
 [scriptable, function, uuid(F72DE90D-E954-4E69-9A61-917303029301)]
 interface nsIContentPermissionPrompt : nsISupports {

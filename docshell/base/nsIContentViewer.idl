@@ -32,7 +32,6 @@ class WindowGlobalChild;
 [ptr] native nsPresContextPtr(nsPresContext);
 [ptr] native nsViewPtr(nsView);
 [ptr] native nsDOMNavigationTimingPtr(nsDOMNavigationTiming);
-[ref] native nsIContentViewerTArray(nsTArray<nsCOMPtr<nsIContentViewer> >);
 [ptr] native Encoding(const mozilla::Encoding);
 [ptr] native PresShellPtr(mozilla::PresShell);
 [ptr] native WindowGlobalChildPtr(mozilla::dom::WindowGlobalChild);
@@ -52,19 +51,33 @@ interface nsIContentViewer : nsISupports
 
   [notxpcom,nostdcall] readonly attribute boolean isStopped;
 
-  /**
-   * aPermitUnloadFlags are passed to PermitUnload to indicate what action to take
-   * if a beforeunload handler wants to prompt the user.  It is also used by
-   * permitUnloadInternal to ensure we only prompt once.
+   /**
+   * aAction is passed to PermitUnload to indicate what action to take
+   * if a beforeunload handler wants to prompt the user.
    *
    * ePrompt: Prompt and return the user's choice (default).
    * eDontPromptAndDontUnload: Don't prompt and return false (unload not permitted)
    *                           if the document (or its children) asks us to prompt.
    * eDontPromptAndUnload: Don't prompt and return true (unload permitted) no matter what.
+   *
+   * NOTE: Keep this in sync with PermitUnloadAction in WindowGlobalActors.webidl.
    */
-  const unsigned long ePrompt = 0;
-  const unsigned long eDontPromptAndDontUnload = 1;
-  const unsigned long eDontPromptAndUnload = 2;
+  cenum PermitUnloadAction : 8 {
+    ePrompt = 0,
+    eDontPromptAndDontUnload = 1,
+    eDontPromptAndUnload = 2
+  };
+
+  /**
+   * The result of dispatching a "beforeunload" event. If `eAllowNavigation`,
+   * no "beforeunload" listener requested to prevent the navigation, or its
+   * request was ignored. If `eRequestBlockNavigation`, a listener did request
+   * to block the navigation, and the user should be prompted.
+   */
+  cenum PermitUnloadResult : 8 {
+    eAllowNavigation = 0,
+    eRequestBlockNavigation = 1,
+  };
 
   /**
    * Overload PermitUnload method for C++ consumers with no aPermitUnloadFlags
@@ -78,10 +91,10 @@ interface nsIContentViewer : nsISupports
 
   /**
    * Checks if the document wants to prevent unloading by firing beforeunload on
-   * the document, and if it does, takes action directed by aPermitUnloadFlags.
+   * the document.
    * The result is returned.
    */
-  boolean permitUnload([optional] in unsigned long aPermitUnloadFlags);
+  boolean permitUnload([optional] in nsIContentViewer_PermitUnloadAction aAction);
 
   /**
    * Exposes whether we're blocked in a call to permitUnload.
@@ -89,11 +102,10 @@ interface nsIContentViewer : nsISupports
   readonly attribute boolean inPermitUnload;
 
   /**
-   * As above, but this passes around the aPermitUnloadFlags argument to keep
-   * track of whether the user has responded to a prompt.
-   * Used internally by the scriptable version to ensure we only prompt once.
+   * Dispatches the "beforeunload" event and returns the result, as documented
+   * in the `PermitUnloadResult` enum.
    */
-  [noscript,nostdcall] boolean permitUnloadInternal(inout unsigned long aPermitUnloadFlags);
+  [noscript,nostdcall,notxpcom] nsIContentViewer_PermitUnloadResult dispatchBeforeUnload();
 
   /**
    * Exposes whether we're in the process of firing the beforeunload event.
@@ -167,14 +179,6 @@ interface nsIContentViewer : nsISupports
 
   attribute boolean sticky;
 
-  /*
-   * This is called when the DOM window wants to be closed.  Returns true
-   * if the window can close immediately.  Otherwise, returns false and will
-   * close the DOM window as soon as practical.
-   */
-
-  boolean requestWindowClose();
-
   /**
    * Attach the content viewer to its DOM window and docshell.
    * @param aState A state object that might be useful in attaching the DOM
@@ -197,6 +201,11 @@ interface nsIContentViewer : nsISupports
    */
   void setPageModeForTesting(in boolean aPageMode,
                              in nsIPrintSettings aPrintSettings);
+
+  /**
+   * Sets the print settings for print / print-previewing a subdocument.
+   */
+  [can_run_script] void setPrintSettingsForSubdocument(in nsIPrintSettings aPrintSettings);
 
   /**
    * Get the history entry that this viewer will save itself into when
@@ -254,24 +263,10 @@ interface nsIContentViewer : nsISupports
   readonly attribute float deviceFullZoomForTest;
 
   /**
-   * The value used to override devicePixelRatio and media queries dppx.
-   * Default is 0.0, that means no overriding is done (only a positive value
-   * is applied).
+   * Disable entire author style level (including HTML presentation hints),
+   * for this viewer but not any child viewers.
    */
-  attribute float overrideDPPX;
-
-  /** Disable entire author style level (including HTML presentation hints) */
   attribute boolean authorStyleDisabled;
-
-  /**
-   * XXX comm-central only: bug 829543.
-   */
-  attribute ACString hintCharacterSet;
-
-  /**
-   * XXX comm-central only: bug 829543.
-   */
-  attribute int32_t hintCharacterSetSource;
 
   /**
    * Requests the size of the content to the container.
@@ -288,49 +283,18 @@ interface nsIContentViewer : nsISupports
   void getContentSizeConstrained(in long maxWidth, in long maxHeight,
                                  out long width, out long height);
 
-  /**
-   * Append |this| and all of its descendants to the given array,
-   * in depth-first pre-order traversal.
-   */
-  [noscript] void appendSubtree(in nsIContentViewerTArray array);
-
-  /**
-   * Instruct the refresh driver to discontinue painting until further
-   * notice.
-   */
-  void pausePainting();
-
-  /**
-   * Instruct the refresh driver to resume painting after a previous call to
-   * pausePainting().
-   */
-  void resumePainting();
-
-  /*
-   * Render the document as if being viewed on a device with the specified
-   * media type. This will cause a reflow.
-   *
-   * @param mediaType The media type to be emulated
-   */
-  void emulateMedium(in AString aMediaType);
-
-  /*
-   * Restore the viewer's natural media type
-   */
-  void stopEmulatingMedium();
-
-  cenum PrefersColorScheme : 8 {
-    PREFERS_COLOR_SCHEME_LIGHT,
-    PREFERS_COLOR_SCHEME_DARK,
-    PREFERS_COLOR_SCHEME_NONE, /* This clears the override. */
-  };
-
-  /*
-   * Emulate or stop emulating the prefers color scheme on this page and
-   * subdocuments.
-   */
-  void emulatePrefersColorScheme(in nsIContentViewer_PrefersColorScheme aPrefersColorScheme);
-
-  [noscript, notxpcom] Encoding getHintCharset();
-  [noscript, notxpcom] void setHintCharset(in Encoding aEncoding);
+  [noscript, notxpcom] Encoding getReloadEncodingAndSource(out int32_t aSource);
+  [noscript, notxpcom] void setReloadEncodingAndSource(in Encoding aEncoding, in int32_t aSource);
+  [noscript, notxpcom] void forgetReloadEncoding();
 };
+
+%{C++
+namespace mozilla {
+namespace dom {
+
+using XPCOMPermitUnloadAction = nsIContentViewer::PermitUnloadAction;
+using PermitUnloadResult = nsIContentViewer::PermitUnloadResult;
+
+} // namespace dom
+} // namespace mozilla
+%}

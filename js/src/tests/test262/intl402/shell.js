@@ -2,6 +2,7 @@
 // file: testIntl.js
 // Copyright (C) 2011 2012 Norbert Lindenberg. All rights reserved.
 // Copyright (C) 2012 2013 Mozilla Corporation. All rights reserved.
+// Copyright (C) 2020 Apple Inc. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 /*---
 description: |
@@ -70,7 +71,7 @@ function testWithIntlConstructors(f) {
 function taintDataProperty(obj, property) {
   Object.defineProperty(obj, property, {
     set: function(value) {
-      $ERROR("Client code can adversely affect behavior: setter for " + property + ".");
+      throw new Test262Error("Client code can adversely affect behavior: setter for " + property + ".");
     },
     enumerable: false,
     configurable: true
@@ -87,7 +88,7 @@ function taintDataProperty(obj, property) {
 function taintMethod(obj, property) {
   Object.defineProperty(obj, property, {
     value: function() {
-      $ERROR("Client code can adversely affect behavior: method " + property + ".");
+      throw new Test262Error("Client code can adversely affect behavior: method " + property + ".");
     },
     writable: true,
     enumerable: false,
@@ -129,12 +130,13 @@ function taintArray() {
  * Gets locale support info for the given constructor object, which must be one
  * of Intl constructors.
  * @param {object} Constructor the constructor for which to get locale support info
+ * @param {object} options the options while calling the constructor
  * @return {object} locale support info with the following properties:
  *   supported: array of fully supported language tags
  *   byFallback: array of language tags that are supported through fallbacks
  *   unsupported: array of unsupported language tags
  */
-function getLocaleSupportInfo(Constructor) {
+function getLocaleSupportInfo(Constructor, options) {
   var languages = ["zh", "es", "en", "hi", "ur", "ar", "ja", "pa"];
   var scripts = ["Latn", "Hans", "Deva", "Arab", "Jpan", "Hant", "Guru"];
   var countries = ["CN", "IN", "US", "PK", "JP", "TW", "HK", "SG", "419"];
@@ -164,7 +166,7 @@ function getLocaleSupportInfo(Constructor) {
   var unsupported = [];
   for (i = 0; i < allTags.length; i++) {
     var request = allTags[i];
-    var result = new Constructor([request], {localeMatcher: "lookup"}).resolvedOptions().locale;
+    var result = new Constructor([request], options).resolvedOptions().locale;
     if (request === result) {
       supported.push(request);
     } else if (request.indexOf(result) === 0) {
@@ -329,7 +331,7 @@ function isCanonicalizedStructurallyValidLanguageTag(locale) {
     // property names must be in lower case; values in canonical form
 
     "art-lojban": "jbo",
-    "cel-gaulish": "xtg-x-cel-gaulish",
+    "cel-gaulish": "xtg",
     "zh-guoyu": "zh",
     "zh-hakka": "hak",
     "zh-xiang": "hsn",
@@ -1920,13 +1922,13 @@ function testOption(Constructor, property, type, values, fallback, testOptions) 
     obj = new Constructor(undefined, options);
     if (noReturn) {
       if (obj.resolvedOptions().hasOwnProperty(property)) {
-        $ERROR("Option property " + property + " is returned, but shouldn't be.");
+        throw new Test262Error("Option property " + property + " is returned, but shouldn't be.");
       }
     } else {
       actual = obj.resolvedOptions()[property];
       if (isILD) {
         if (actual !== undefined && values.indexOf(actual) === -1) {
-          $ERROR("Invalid value " + actual + " returned for property " + property + ".");
+          throw new Test262Error("Invalid value " + actual + " returned for property " + property + ".");
         }
       } else {
         if (type === "boolean") {
@@ -1935,7 +1937,7 @@ function testOption(Constructor, property, type, values, fallback, testOptions) 
           expected = String(value);
         }
         if (actual !== expected && !(isOptional && actual === undefined)) {
-          $ERROR("Option value " + value + " for property " + property +
+          throw new Test262Error("Option value " + value + " for property " + property +
             " was not accepted; got " + actual + " instead.");
         }
       }
@@ -1962,9 +1964,9 @@ function testOption(Constructor, property, type, values, fallback, testOptions) 
         error = e;
       }
       if (error === undefined) {
-        $ERROR("Invalid option value " + value + " for property " + property + " was not rejected.");
+        throw new Test262Error("Invalid option value " + value + " for property " + property + " was not rejected.");
       } else if (error.name !== "RangeError") {
-        $ERROR("Invalid option value " + value + " for property " + property + " was rejected with wrong error " + error.name + ".");
+        throw new Test262Error("Invalid option value " + value + " for property " + property + " was rejected with wrong error " + error.name + ".");
       }
     });
   }
@@ -1978,12 +1980,12 @@ function testOption(Constructor, property, type, values, fallback, testOptions) 
     if (!(isOptional && actual === undefined)) {
       if (fallback !== undefined) {
         if (actual !== fallback) {
-          $ERROR("Option fallback value " + fallback + " for property " + property +
+          throw new Test262Error("Option fallback value " + fallback + " for property " + property +
             " was not used; got " + actual + " instead.");
         }
       } else {
         if (values.indexOf(actual) === -1 && !(isILD && actual === undefined)) {
-          $ERROR("Invalid value " + actual + " returned for property " + property + ".");
+          throw new Test262Error("Invalid value " + actual + " returned for property " + property + ".");
         }
       }
     }
@@ -2003,6 +2005,7 @@ var regExpProperties = ["$1", "$2", "$3", "$4", "$5", "$6", "$7", "$8", "$9",
 
 var regExpPropertiesDefaultValues = (function () {
   var values = Object.create(null);
+  (/(?:)/).test("");
   regExpProperties.forEach(function (property) {
     values[property] = RegExp[property];
   });
@@ -2016,13 +2019,11 @@ var regExpPropertiesDefaultValues = (function () {
  * RegExp constructor.
  */
 function testForUnwantedRegExpChanges(testFunc) {
-  regExpProperties.forEach(function (property) {
-    RegExp[property] = regExpPropertiesDefaultValues[property];
-  });
+  (/(?:)/).test("");
   testFunc();
   regExpProperties.forEach(function (property) {
     if (RegExp[property] !== regExpPropertiesDefaultValues[property]) {
-      $ERROR("RegExp has unexpected property " + property + " with value " +
+      throw new Test262Error("RegExp has unexpected property " + property + " with value " +
         RegExp[property] + ".");
     }
   });
@@ -2241,7 +2242,7 @@ function testNumberFormat(locales, numberingSystems, options, testData) {
         var oneoneRE = "([^" + digits + "]*)[" + digits + "]+([^" + digits + "]+)[" + digits + "]+([^" + digits + "]*)";
         var match = formatted.match(new RegExp(oneoneRE));
         if (match === null) {
-          $ERROR("Unexpected formatted " + n + " for " +
+          throw new Test262Error("Unexpected formatted " + n + " for " +
             format.resolvedOptions().locale + " and options " +
             JSON.stringify(options) + ": " + formatted);
         }
@@ -2284,7 +2285,7 @@ function testNumberFormat(locales, numberingSystems, options, testData) {
           var expected = buildExpected(rawExpected, patternParts);
           var actual = format.format(input);
           if (actual !== expected) {
-            $ERROR("Formatted value for " + input + ", " +
+            throw new Test262Error("Formatted value for " + input + ", " +
             format.resolvedOptions().locale + " and options " +
             JSON.stringify(options) + " is " + actual + "; expected " + expected + ".");
           }
@@ -2328,7 +2329,7 @@ function getDateTimeComponentValues(component) {
 
   var result = components[component];
   if (result === undefined) {
-    $ERROR("Internal error: No values defined for date-time component " + component + ".");
+    throw new Test262Error("Internal error: No values defined for date-time component " + component + ".");
   }
   return result;
 }
@@ -2368,20 +2369,4 @@ function isCanonicalizedStructurallyValidTimeZoneName(timeZone) {
     return false;
   }
   return zoneNamePattern.test(timeZone);
-}
-
-// file: test262-intl-displaynames.js
-// This Source Code Form is subject to the terms of the Mozilla Public
-// License, v. 2.0. If a copy of the MPL was not distributed with this
-// file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
-// Call the shell helper to add Intl.DisplayNames to the Intl object.
-if (typeof addIntlExtras === "function") {
-    let intlExtras = {};
-    addIntlExtras(intlExtras);
-
-    Object.defineProperty(Intl, "DisplayNames", {
-        value: intlExtras.DisplayNames,
-        writable: true, enumerable: false, configurable: true
-    });
 }

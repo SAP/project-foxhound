@@ -31,15 +31,10 @@ class ProcessingInstruction;
 }  // namespace dom
 }  // namespace mozilla
 
-typedef enum {
+enum XMLContentSinkState {
   eXMLContentSinkState_InProlog,
   eXMLContentSinkState_InDocumentElement,
   eXMLContentSinkState_InEpilog
-} XMLContentSinkState;
-
-struct StackNode {
-  nsCOMPtr<nsIContent> mContent;
-  uint32_t mNumFlushed;
 };
 
 class nsXMLContentSink : public nsContentSink,
@@ -47,6 +42,11 @@ class nsXMLContentSink : public nsContentSink,
                          public nsITransformObserver,
                          public nsIExpatSink {
  public:
+  struct StackNode {
+    nsCOMPtr<nsIContent> mContent;
+    uint32_t mNumFlushed;
+  };
+
   nsXMLContentSink();
 
   nsresult Init(mozilla::dom::Document* aDoc, nsIURI* aURL,
@@ -55,8 +55,7 @@ class nsXMLContentSink : public nsContentSink,
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_NO_UNLINK(nsXMLContentSink,
-                                                     nsContentSink)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsXMLContentSink, nsContentSink)
 
   NS_DECL_NSIEXPATSINK
 
@@ -73,6 +72,10 @@ class nsXMLContentSink : public nsContentSink,
   virtual nsISupports* GetTarget() override;
   virtual bool IsScriptExecuting() override;
   virtual void ContinueInterruptedParsingAsync() override;
+  bool IsPrettyPrintXML() const override { return mPrettyPrintXML; }
+  bool IsPrettyPrintHasSpecialRoot() const override {
+    return mPrettyPrintHasSpecialRoot;
+  }
 
   // nsITransformObserver
   NS_IMETHOD OnDocumentCreated(
@@ -99,7 +102,8 @@ class nsXMLContentSink : public nsContentSink,
   // stylesheets are all done loading.
   virtual void MaybeStartLayout(bool aIgnorePendingSheets);
 
-  virtual nsresult AddAttributes(const char16_t** aNode, Element* aElement);
+  virtual nsresult AddAttributes(const char16_t** aNode,
+                                 mozilla::dom::Element* aElement);
   nsresult AddText(const char16_t* aString, int32_t aLength);
 
   virtual bool OnOpenContainer(const char16_t** aAtts, uint32_t aAttsCount,

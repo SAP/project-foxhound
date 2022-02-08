@@ -74,7 +74,7 @@ exports[`DebugTargetInfo component Connection info renders the expected snapshot
     >
       <img
         alt="toolbox.debugTargetInfo.reload"
-        src="chrome://browser/skin/reload.svg"
+        src="chrome://global/skin/icons/reload.svg"
       />
     </button>
   </div>
@@ -226,7 +226,7 @@ exports[`DebugTargetInfo component Target icon renders the expected snapshot for
     >
       <img
         alt="toolbox.debugTargetInfo.reload"
-        src="chrome://browser/skin/reload.svg"
+        src="chrome://global/skin/icons/reload.svg"
       />
     </button>
   </div>
@@ -374,7 +374,7 @@ exports[`DebugTargetInfo component Target title renders the expected snapshot fo
     <b
       className="devtools-ellipsis-text"
     >
-      toolbox.debugTargetInfo.runtimeLabel.thisFirefox-1.0.0
+      toolbox.debugTargetInfo.runtimeLabel.thisRuntime-brandShorterName-1.0.0
     </b>
     <span
       className="devtools-ellipsis-text"
@@ -423,7 +423,7 @@ exports[`DebugTargetInfo component Target title renders the expected snapshot fo
     >
       <img
         alt="toolbox.debugTargetInfo.reload"
-        src="chrome://browser/skin/reload.svg"
+        src="chrome://global/skin/icons/reload.svg"
       />
     </button>
   </div>
@@ -459,7 +459,7 @@ exports[`DebugTargetInfo component Target title renders the expected snapshot fo
     <b
       className="devtools-ellipsis-text"
     >
-      toolbox.debugTargetInfo.runtimeLabel.thisFirefox-1.0.0
+      toolbox.debugTargetInfo.runtimeLabel.thisRuntime-brandShorterName-1.0.0
     </b>
     <span
       className="devtools-ellipsis-text"
@@ -503,7 +503,7 @@ exports[`DebugTargetInfo component Target title renders the expected snapshot fo
     >
       <img
         alt="toolbox.debugTargetInfo.reload"
-        src="chrome://browser/skin/reload.svg"
+        src="chrome://global/skin/icons/reload.svg"
       />
     </button>
   </div>

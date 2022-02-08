@@ -14,20 +14,16 @@ describe("TippyTopProvider", () => {
       json: () =>
         Promise.resolve([
           {
-            title: "facebook",
-            url: "https://www.facebook.com/",
+            domains: ["facebook.com"],
             image_url: "images/facebook-com.png",
             favicon_url: "images/facebook-com.png",
             background_color: "#3b5998",
-            domain: "facebook.com",
           },
           {
-            title: "gmail",
-            urls: ["https://www.gmail.com/", "https://mail.google.com"],
+            domains: ["gmail.com", "mail.google.com"],
             image_url: "images/gmail-com.png",
             favicon_url: "images/gmail-com.png",
             background_color: "#000000",
-            domain: "gmail.com",
           },
         ]),
     });
@@ -38,11 +34,11 @@ describe("TippyTopProvider", () => {
     const site = instance.processSite({ url: "https://facebook.com" });
     assert.equal(
       site.tippyTopIcon,
-      "resource://activity-stream/data/content/tippytop/images/facebook-com.png"
+      "chrome://activity-stream/content/data/content/tippytop/images/facebook-com.png"
     );
     assert.equal(
       site.smallFavicon,
-      "resource://activity-stream/data/content/tippytop/images/facebook-com.png"
+      "chrome://activity-stream/content/data/content/tippytop/images/facebook-com.png"
     );
     assert.equal(site.backgroundColor, "#3b5998");
   });
@@ -50,11 +46,11 @@ describe("TippyTopProvider", () => {
     const site = instance.processSite({ url: "https://www.facebook.com" });
     assert.equal(
       site.tippyTopIcon,
-      "resource://activity-stream/data/content/tippytop/images/facebook-com.png"
+      "chrome://activity-stream/content/data/content/tippytop/images/facebook-com.png"
     );
     assert.equal(
       site.smallFavicon,
-      "resource://activity-stream/data/content/tippytop/images/facebook-com.png"
+      "chrome://activity-stream/content/data/content/tippytop/images/facebook-com.png"
     );
     assert.equal(site.backgroundColor, "#3b5998");
   });
@@ -69,18 +65,18 @@ describe("TippyTopProvider", () => {
     );
     assert.equal(
       site.tippyTopIcon,
-      "resource://activity-stream/data/content/tippytop/images/facebook-com.png"
+      "chrome://activity-stream/content/data/content/tippytop/images/facebook-com.png"
     );
   });
   it("should provide an icon for facebook.com/foobar", () => {
     const site = instance.processSite({ url: "https://facebook.com/foobar" });
     assert.equal(
       site.tippyTopIcon,
-      "resource://activity-stream/data/content/tippytop/images/facebook-com.png"
+      "chrome://activity-stream/content/data/content/tippytop/images/facebook-com.png"
     );
     assert.equal(
       site.smallFavicon,
-      "resource://activity-stream/data/content/tippytop/images/facebook-com.png"
+      "chrome://activity-stream/content/data/content/tippytop/images/facebook-com.png"
     );
     assert.equal(site.backgroundColor, "#3b5998");
   });
@@ -88,11 +84,11 @@ describe("TippyTopProvider", () => {
     const site = instance.processSite({ url: "https://gmail.com" });
     assert.equal(
       site.tippyTopIcon,
-      "resource://activity-stream/data/content/tippytop/images/gmail-com.png"
+      "chrome://activity-stream/content/data/content/tippytop/images/gmail-com.png"
     );
     assert.equal(
       site.smallFavicon,
-      "resource://activity-stream/data/content/tippytop/images/gmail-com.png"
+      "chrome://activity-stream/content/data/content/tippytop/images/gmail-com.png"
     );
     assert.equal(site.backgroundColor, "#000000");
   });
@@ -100,11 +96,11 @@ describe("TippyTopProvider", () => {
     const site = instance.processSite({ url: "https://mail.google.com" });
     assert.equal(
       site.tippyTopIcon,
-      "resource://activity-stream/data/content/tippytop/images/gmail-com.png"
+      "chrome://activity-stream/content/data/content/tippytop/images/gmail-com.png"
     );
     assert.equal(
       site.smallFavicon,
-      "resource://activity-stream/data/content/tippytop/images/gmail-com.png"
+      "chrome://activity-stream/content/data/content/tippytop/images/gmail-com.png"
     );
     assert.equal(site.backgroundColor, "#000000");
   });

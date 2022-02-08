@@ -41,6 +41,8 @@
 .fxaccounts-enable-button {
   min-width: 120px;
   padding-inline: 16px;
+  /* See bug 1626764: The width of button could go lesser than 120px in small window size which could wrap the texts into two lines in systems with different default fonts */
+  flex-shrink: 0;
 }
 
 .fxaccounts-avatar-button {
@@ -67,10 +69,12 @@
   height: 32px;
 }
 
-.fxaccounts-avatar-button:hover {
-  background-color: transparent !important;
-}
+@media not (prefers-contrast) {
+  .fxaccounts-avatar-button:hover {
+    background-color: transparent !important;
+  }
 
-.fxaccounts-avatar-button:hover > .fxaccount-email {
-  text-decoration: underline;
+  .fxaccounts-avatar-button:hover > .fxaccount-email {
+    text-decoration: underline;
+  }
 }

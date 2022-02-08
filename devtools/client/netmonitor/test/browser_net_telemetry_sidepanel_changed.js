@@ -9,7 +9,9 @@ const ALL_CHANNELS = Ci.nsITelemetry.DATASET_ALL_CHANNELS;
  * Test the sidepanel_changed telemetry event.
  */
 add_task(async function() {
-  const { monitor } = await initNetMonitor(SIMPLE_URL, { requestCount: 1 });
+  const { monitor } = await initNetMonitor(HTTPS_SIMPLE_URL, {
+    requestCount: 1,
+  });
   info("Starting test... ");
 
   const { document, store, windowRequire } = monitor.panelWin;
@@ -25,7 +27,7 @@ add_task(async function() {
 
   // Reload to have one request in the list.
   const waitForEvents = waitForNetworkEvents(monitor, 1);
-  await navigateTo(SIMPLE_URL);
+  await navigateTo(HTTPS_SIMPLE_URL);
   await waitForEvents;
 
   // Click on a request and wait till the default "Headers" side panel is opened.
@@ -42,10 +44,7 @@ add_task(async function() {
 
   // Click on the Cookies panel and wait till it's opened.
   info("Click on the Cookies panel");
-  EventUtils.sendMouseEvent(
-    { type: "click" },
-    document.querySelector("#cookies-tab")
-  );
+  clickOnSidebarTab(document, "cookies");
   await waitForRequestData(store, ["requestCookies", "responseCookies"]);
 
   checkTelemetryEvent(

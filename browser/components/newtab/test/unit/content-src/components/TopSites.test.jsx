@@ -1,9 +1,6 @@
 import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
 import { GlobalOverrider } from "test/unit/utils";
-import {
-  MIN_CORNER_FAVICON_SIZE,
-  MIN_RICH_FAVICON_SIZE,
-} from "content-src/components/TopSites/TopSitesConstants";
+import { MIN_RICH_FAVICON_SIZE } from "content-src/components/TopSites/TopSitesConstants";
 import {
   TOP_SITES_DEFAULT_ROWS,
   TOP_SITES_MAX_SITES_PER_ROW,
@@ -17,7 +14,6 @@ import {
 import { A11yLinkButton } from "content-src/components/A11yLinkButton/A11yLinkButton";
 import { LinkMenu } from "content-src/components/LinkMenu/LinkMenu";
 import React from "react";
-import { SectionMenu } from "content-src/components/SectionMenu/SectionMenu";
 import { mount, shallow } from "enzyme";
 import { TopSiteForm } from "content-src/components/TopSites/TopSiteForm";
 import { TopSiteFormInput } from "content-src/components/TopSites/TopSiteFormInput";
@@ -30,7 +26,7 @@ const perfSvc = {
 };
 
 const DEFAULT_PROPS = {
-  Prefs: { values: {} },
+  Prefs: { values: { featureConfig: {} } },
   TopSites: { initialized: true, rows: [] },
   TopSitesRows: TOP_SITES_DEFAULT_ROWS,
   topSiteIconType: () => "no_image",
@@ -54,34 +50,6 @@ describe("<TopSites>", () => {
   it("should render a TopSites element", () => {
     const wrapper = shallow(<TopSites {...DEFAULT_PROPS} />);
     assert.ok(wrapper.exists());
-  });
-  describe("context menu", () => {
-    it("should render a context menu button", () => {
-      const wrapper = mount(<TopSites {...DEFAULT_PROPS} />);
-      assert.equal(
-        wrapper.find(".section-top-bar .context-menu-button").length,
-        1
-      );
-    });
-    it("should render a section menu when button is clicked", () => {
-      const wrapper = mount(<TopSites {...DEFAULT_PROPS} />);
-      const button = wrapper.find(".section-top-bar .context-menu-button");
-      assert.equal(wrapper.find(SectionMenu).length, 0);
-      button.simulate("click", { preventDefault: () => {} });
-      assert.equal(wrapper.find(SectionMenu).length, 1);
-    });
-    it("should not render a section menu by default", () => {
-      const wrapper = mount(<TopSites {...DEFAULT_PROPS} />);
-      assert.equal(wrapper.find(SectionMenu).length, 0);
-    });
-    it("should pass through the correct menu extraOptions to SectionMenu", () => {
-      const wrapper = mount(<TopSites {...DEFAULT_PROPS} />);
-      wrapper
-        .find(".section-top-bar .context-menu-button")
-        .simulate("click", { preventDefault: () => {} });
-      const sectionMenuProps = wrapper.find(SectionMenu).props();
-      assert.deepEqual(sectionMenuProps.extraOptions, ["AddTopSite"]);
-    });
   });
   describe("#_dispatchTopSitesStats", () => {
     let globals;
@@ -124,7 +92,6 @@ describe("<TopSites>", () => {
           data: {
             topsites_icon_stats: {
               custom_screenshot: 0,
-              screenshot_with_icon: 0,
               screenshot: 0,
               tippytop: 0,
               rich_icon: 0,
@@ -149,7 +116,6 @@ describe("<TopSites>", () => {
           data: {
             topsites_icon_stats: {
               custom_screenshot: 0,
-              screenshot_with_icon: 0,
               screenshot: 1,
               tippytop: 0,
               rich_icon: 0,
@@ -174,32 +140,6 @@ describe("<TopSites>", () => {
           data: {
             topsites_icon_stats: {
               custom_screenshot: 1,
-              screenshot_with_icon: 0,
-              screenshot: 0,
-              tippytop: 0,
-              rich_icon: 0,
-              no_image: 0,
-            },
-            topsites_pinned: 0,
-            topsites_search_shortcuts: 0,
-          },
-        })
-      );
-    });
-    it("should correctly count TopSite images - screenshot + favicon", () => {
-      const rows = [{ screenshot: true, faviconSize: MIN_CORNER_FAVICON_SIZE }];
-      sandbox.stub(DEFAULT_PROPS.TopSites, "rows").value(rows);
-      wrapper.instance()._dispatchTopSitesStats();
-
-      assert.calledOnce(DEFAULT_PROPS.dispatch);
-      assert.calledWithExactly(
-        DEFAULT_PROPS.dispatch,
-        ac.AlsoToMain({
-          type: at.SAVE_SESSION_PERF_DATA,
-          data: {
-            topsites_icon_stats: {
-              custom_screenshot: 0,
-              screenshot_with_icon: 1,
               screenshot: 0,
               tippytop: 0,
               rich_icon: 0,
@@ -224,7 +164,6 @@ describe("<TopSites>", () => {
           data: {
             topsites_icon_stats: {
               custom_screenshot: 0,
-              screenshot_with_icon: 0,
               screenshot: 0,
               tippytop: 0,
               rich_icon: 1,
@@ -253,7 +192,6 @@ describe("<TopSites>", () => {
           data: {
             topsites_icon_stats: {
               custom_screenshot: 0,
-              screenshot_with_icon: 0,
               screenshot: 0,
               tippytop: 2,
               rich_icon: 0,
@@ -278,7 +216,6 @@ describe("<TopSites>", () => {
           data: {
             topsites_icon_stats: {
               custom_screenshot: 0,
-              screenshot_with_icon: 0,
               screenshot: 0,
               tippytop: 0,
               rich_icon: 0,
@@ -307,7 +244,6 @@ describe("<TopSites>", () => {
           data: {
             topsites_icon_stats: {
               custom_screenshot: 0,
-              screenshot_with_icon: 0,
               screenshot: 0,
               tippytop: 0,
               rich_icon: 0,
@@ -332,7 +268,6 @@ describe("<TopSites>", () => {
           data: {
             topsites_icon_stats: {
               custom_screenshot: 0,
-              screenshot_with_icon: 0,
               screenshot: 0,
               tippytop: 0,
               rich_icon: 0,
@@ -375,7 +310,6 @@ describe("<TopSites>", () => {
           data: {
             topsites_icon_stats: {
               custom_screenshot: 0,
-              screenshot_with_icon: 0,
               screenshot: 0,
               tippytop: 0,
               rich_icon: 0,
@@ -417,7 +351,6 @@ describe("<TopSites>", () => {
           data: {
             topsites_icon_stats: {
               custom_screenshot: 0,
-              screenshot_with_icon: 0,
               screenshot: 0,
               tippytop: 0,
               rich_icon: 0,
@@ -487,89 +420,9 @@ describe("<TopSiteLink>", () => {
     const wrapper = shallow(<TopSiteLink link={link} />);
     assert.equal(wrapper.find(".icon-pin-small").length, 0);
   });
-  it("should render the first letter of the title as a fallback for missing screenshots", () => {
+  it("should render the first letter of the title as a fallback for missing icons", () => {
     const wrapper = shallow(<TopSiteLink link={link} title={"foo"} />);
-    assert.equal(wrapper.find(".tile").prop("data-fallback"), "f");
-  });
-  it("should render a normal image screenshot with the .active class, if it is provided", () => {
-    const wrapper = shallow(<TopSiteLink link={link} />);
-    const screenshotEl = wrapper.find(".screenshot");
-
-    assert.propertyVal(
-      screenshotEl.props().style,
-      "backgroundImage",
-      "url(foo.jpg)"
-    );
-    assert.isTrue(screenshotEl.hasClass("active"));
-  });
-  it("should render a blob image screenshot with the .active class, if it is provided", () => {
-    link.screenshot = { path: "/test_path", data: new Blob([0]) };
-
-    const wrapper = shallow(<TopSiteLink link={link} />);
-    const screenshotEl = wrapper.find(".screenshot");
-
-    assert.propertyVal(
-      screenshotEl.props().style,
-      "backgroundImage",
-      `url(${DEFAULT_BLOB_URL})`
-    );
-    assert.isTrue(screenshotEl.hasClass("active"));
-  });
-  it("should render a small icon with fallback letter with the screenshot if the icon is smaller than 16x16", () => {
-    link.favicon = "too-small-icon.png";
-    link.faviconSize = 10;
-    const wrapper = shallow(<TopSiteLink link={link} title="foo" />);
-    const screenshotEl = wrapper.find(".screenshot");
-    const defaultIconEl = wrapper.find(".default-icon");
-
-    assert.propertyVal(
-      screenshotEl.props().style,
-      "backgroundImage",
-      "url(foo.jpg)"
-    );
-    assert.isTrue(screenshotEl.hasClass("active"));
-    assert.lengthOf(defaultIconEl, 1);
-    assert.equal(defaultIconEl.prop("data-fallback"), "f");
-  });
-  it("should render a small icon with fallback letter with the screenshot if the icon is missing", () => {
-    const wrapper = shallow(<TopSiteLink link={link} title="foo" />);
-    const screenshotEl = wrapper.find(".screenshot");
-    const defaultIconEl = wrapper.find(".default-icon");
-
-    assert.propertyVal(
-      screenshotEl.props().style,
-      "backgroundImage",
-      "url(foo.jpg)"
-    );
-    assert.isTrue(screenshotEl.hasClass("active"));
-    assert.lengthOf(defaultIconEl, 1);
-    assert.equal(defaultIconEl.prop("data-fallback"), "f");
-  });
-  it("should render a small icon with the screenshot if the icon is bigger than 32x32", () => {
-    link.favicon = "small-icon.png";
-    link.faviconSize = 32;
-
-    const wrapper = shallow(<TopSiteLink link={link} />);
-    const screenshotEl = wrapper.find(".screenshot");
-    const defaultIconEl = wrapper.find(".default-icon");
-
-    assert.propertyVal(
-      screenshotEl.props().style,
-      "backgroundImage",
-      "url(foo.jpg)"
-    );
-    assert.isTrue(screenshotEl.hasClass("active"));
-    assert.propertyVal(
-      defaultIconEl.props().style,
-      "backgroundImage",
-      `url(${link.favicon})`
-    );
-    assert.lengthOf(wrapper.find(".rich-icon"), 0);
-  });
-  it("should not add the .active class to the screenshot element if no screenshot prop is provided", () => {
-    link.screenshot = null;
-    const wrapper = shallow(<TopSiteLink link={link} />);
-    assert.isFalse(wrapper.find(".screenshot").hasClass("active"));
+    assert.equal(wrapper.find(".icon-wrapper").prop("data-fallback"), "f");
   });
   it("should render the tippy top icon if provided and not a small icon", () => {
     link.tippyTopIcon = "foo.png";
@@ -605,7 +458,7 @@ describe("<TopSiteLink>", () => {
     link.faviconSize = 48;
     link.backgroundColor = "#FFFFFF";
     const wrapper = shallow(<TopSiteLink link={link} />);
-    assert.equal(wrapper.find(".screenshot").length, 1);
+    assert.lengthOf(wrapper.find(".default-icon"), 1);
     assert.equal(wrapper.find(".rich-icon").length, 0);
   });
   it("should apply just the default class name to the outer link if props.className is falsey", () => {
@@ -671,6 +524,49 @@ describe("<TopSiteLink>", () => {
       const event = simulate("click");
 
       assert.notOk(event.prevented);
+    });
+  });
+
+  describe("#generateColor", () => {
+    let colors;
+    beforeEach(() => {
+      colors = "#0090ED,#FF4F5F,#2AC3A2";
+    });
+
+    it("should generate a random color but always pick the same color for the same string", async () => {
+      let wrapper = shallow(
+        <TopSiteLink colors={colors} title={"food"} link={link} />
+      );
+
+      assert.equal(wrapper.find(".icon-wrapper").prop("data-fallback"), "f");
+      assert.equal(
+        wrapper.find(".icon-wrapper").prop("style").backgroundColor,
+        colors.split(",")[1]
+      );
+      assert.ok(true);
+    });
+
+    it("should generate a different random color", async () => {
+      let wrapper = shallow(
+        <TopSiteLink colors={colors} title={"fam"} link={link} />
+      );
+
+      assert.equal(
+        wrapper.find(".icon-wrapper").prop("style").backgroundColor,
+        colors.split(",")[2]
+      );
+      assert.ok(true);
+    });
+
+    it("should generate a third random color", async () => {
+      let wrapper = shallow(<TopSiteLink colors={colors} title={"foo"} />);
+
+      assert.equal(wrapper.find(".icon-wrapper").prop("data-fallback"), "f");
+      assert.equal(
+        wrapper.find(".icon-wrapper").prop("style").backgroundColor,
+        colors.split(",")[0]
+      );
+      assert.ok(true);
     });
   });
 });
@@ -991,20 +887,19 @@ describe("<TopSiteForm>", () => {
       assert.equal(wrapper.find(TopSiteLink).length, 1);
     });
 
-    it("should display the preview screenshot", () => {
+    it("should display an icon for tippyTop sites", () => {
       wrapper.setProps({ site: { tippyTopIcon: "bar" } });
 
       assert.equal(
         wrapper.find(".top-site-icon").getDOMNode().style["background-image"],
         'url("bar")'
       );
+    });
 
+    it("should not display a preview screenshot", () => {
       wrapper.setProps({ previewResponse: "foo", previewUrl: "foo" });
 
-      assert.equal(
-        wrapper.find(".top-site-icon").getDOMNode().style["background-image"],
-        'url("foo")'
-      );
+      assert.lengthOf(wrapper.find(".screenshot"), 0);
     });
 
     it("should not render any icon on error", () => {
@@ -1035,7 +930,7 @@ describe("<TopSiteForm>", () => {
         wrapper.findWhere(
           n =>
             n.length &&
-            n.prop("data-l10n-id") === "newtab-topsites-add-topsites-header"
+            n.prop("data-l10n-id") === "newtab-topsites-add-shortcut-header"
         ).length,
         1
       );
@@ -1132,7 +1027,7 @@ describe("<TopSiteForm>", () => {
     it("should have the correct header", () => {
       assert.equal(
         wrapper.findWhere(
-          n => n.prop("data-l10n-id") === "newtab-topsites-edit-topsites-header"
+          n => n.prop("data-l10n-id") === "newtab-topsites-edit-shortcut-header"
         ).length,
         1
       );

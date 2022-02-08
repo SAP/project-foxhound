@@ -24,10 +24,7 @@ function make_channel(url, callback, ctx) {
 }
 
 function inChildProcess() {
-  return (
-    Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime)
-      .processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT
-  );
+  return Services.appinfo.processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
 }
 
 const responseContent = "response body";
@@ -87,7 +84,11 @@ function asyncOpen() {
   var chan = make_channel(URL);
 
   var cc = chan.QueryInterface(Ci.nsICacheInfoChannel);
-  cc.preferAlternativeDataType(altContentType, "", true);
+  cc.preferAlternativeDataType(
+    altContentType,
+    "",
+    Ci.nsICacheInfoChannel.ASYNC
+  );
 
   chan.asyncOpen(new ChannelListener(readServerContent, null));
 }
@@ -123,7 +124,11 @@ function flushAndOpenAltChannel() {
 function openAltChannel() {
   var chan = make_channel(URL);
   var cc = chan.QueryInterface(Ci.nsICacheInfoChannel);
-  cc.preferAlternativeDataType(altContentType, "", true);
+  cc.preferAlternativeDataType(
+    altContentType,
+    "",
+    Ci.nsICacheInfoChannel.ASYNC
+  );
 
   chan.asyncOpen(new ChannelListener(readAltContent, null));
 }

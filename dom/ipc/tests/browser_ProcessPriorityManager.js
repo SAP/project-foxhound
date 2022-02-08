@@ -15,6 +15,11 @@ const PROCESS_PRIORITY_BACKGROUND = "BACKGROUND";
 // change before we assume that it's just not happening.
 const WAIT_FOR_CHANGE_TIME_MS = 2000;
 
+// A convenience function for getting the child ID from a browsing context.
+function browsingContextChildID(bc) {
+  return bc.currentWindowGlobal?.domProcess.childID;
+}
+
 /**
  * This class is responsible for watching process priority changes, and
  * mapping them to tabs in a single window.
@@ -39,12 +44,14 @@ class TabPriorityWatcher {
         "with a single tab to start."
     );
 
-    this.priorityMap = new WeakMap();
-    this.priorityMap.set(
-      this.tabbrowser.selectedBrowser,
-      PROCESS_PRIORITY_FOREGROUND
-    );
-    this.noChangeBrowsers = new WeakMap();
+    // This maps from childIDs to process priorities.
+    this.priorityMap = new Map();
+
+    // The keys in this map are childIDs we're not expecting to change.
+    // Each value is either null (if no change has been seen) or the
+    // priority that the process changed to.
+    this.noChangeChildIDs = new Map();
+
     Services.obs.addObserver(this, PRIORITY_SET_TOPIC);
   }
 
@@ -55,16 +62,15 @@ class TabPriorityWatcher {
    */
   destroy() {
     Services.obs.removeObserver(this, PRIORITY_SET_TOPIC);
-    this.window = null;
   }
 
   /**
-   * Returns a Promise that resolves when a particular <browser>
-   * has its content process reach a particular priority. Will
-   * eventually time out if that priority is never reached.
+   * This returns a Promise that resolves when the process with
+   * the given childID reaches the given priority.
+   * This will eventually time out if that priority is never reached.
    *
-   * @param browser (<browser>)
-   *   The <browser> that we expect to change priority.
+   * @param childID
+   *   The childID of the process to wait on.
    * @param expectedPriority (String)
    *   One of the PROCESS_PRIORITY_ constants defined at the
    *   top of this file.
@@ -72,74 +78,91 @@ class TabPriorityWatcher {
    * @resolves undefined
    *   Once the browser reaches the expected priority.
    */
-  async waitForPriorityChange(browser, expectedPriority) {
-    return TestUtils.waitForCondition(() => {
-      let currentPriority = this.priorityMap.get(browser);
+  async waitForPriorityChange(childID, expectedPriority) {
+    await TestUtils.waitForCondition(() => {
+      let currentPriority = this.priorityMap.get(childID);
       if (currentPriority == expectedPriority) {
         Assert.ok(
           true,
-          `Browser at ${browser.currentURI.spec} reached expected ` +
+          `Process with child ID ${childID} reached expected ` +
             `priority: ${currentPriority}`
         );
         return true;
       }
       return false;
-    }, `Waiting for browser at ${browser.currentURI.spec} to reach priority ` + expectedPriority);
+    }, `Waiting for process with child ID ${childID} to reach priority ${expectedPriority}`);
   }
 
   /**
    * Returns a Promise that resolves after a duration of
-   * WAIT_FOR_CHANGE_TIME_MS. During that time, if the passed browser
-   * changes priority, a test failure will be registered.
+   * WAIT_FOR_CHANGE_TIME_MS. During that time, if the process
+   * with the passed in child ID changes priority, a test
+   * failure will be registered.
    *
-   * @param browser (<browser>)
-   *   The <browser> that we expect to change priority.
+   * @param childID
+   *   The childID of the process that we expect to not change priority.
    * @return Promise
    * @resolves undefined
    *   Once the WAIT_FOR_CHANGE_TIME_MS duration has passed.
    */
-  async ensureNoPriorityChange(browser) {
-    this.noChangeBrowsers.set(browser, null);
+  async ensureNoPriorityChange(childID) {
+    this.noChangeChildIDs.set(childID, null);
     // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
     await new Promise(resolve => setTimeout(resolve, WAIT_FOR_CHANGE_TIME_MS));
-    let priority = this.noChangeBrowsers.get(browser);
+    let priority = this.noChangeChildIDs.get(childID);
     Assert.equal(
       priority,
       null,
-      `Should have seen no process priority change for a browser at ${browser.currentURI.spec}`
+      `Should have seen no process priority change for child ID ${childID}`
     );
-    this.noChangeBrowsers.delete(browser);
+    this.noChangeChildIDs.delete(childID);
   }
 
   /**
-   * Makes sure that a particular foreground browser has been
-   * registered in the priority map. This is needed because browsers are
-   * only registered when their priorities change - and if a browser's
-   * priority never changes during a test, then they wouldn't be registered.
+   * This returns a Promise that resolves when all of the processes
+   * of the browsing contexts in the browsing context tree
+   * of a particular <browser> have reached a particular priority.
+   * This will eventually time out if that priority is never reached.
    *
-   * The passed browser must be a foreground browser, since it's assumed that
-   * the associated content process is running with foreground priority.
-   *
-   * @param browser (browser)
-   *   A _foreground_ browser.
+   * @param browser (<browser>)
+   *   The <browser> to get the BC tree from.
+   * @param expectedPriority (String)
+   *   One of the PROCESS_PRIORITY_ constants defined at the
+   *   top of this file.
+   * @return Promise
+   * @resolves undefined
+   *   Once the browser reaches the expected priority.
    */
-  ensureForegroundRegistered(browser) {
-    if (!this.priorityMap.has(browser)) {
-      this.priorityMap.set(browser, PROCESS_PRIORITY_FOREGROUND);
+  async waitForBrowserTreePriority(browser, expectedPriority) {
+    let childIDs = new Set(
+      browser.browsingContext
+        .getAllBrowsingContextsInSubtree()
+        .map(browsingContextChildID)
+    );
+    let promises = [];
+    for (let childID of childIDs) {
+      let currentPriority = this.priorityMap.get(childID);
+
+      promises.push(
+        currentPriority == expectedPriority
+          ? this.ensureNoPriorityChange(childID)
+          : this.waitForPriorityChange(childID, expectedPriority)
+      );
     }
+
+    await Promise.all(promises);
   }
 
   /**
-   * Synchronously returns the priority of a particular browser's
-   * content process.
+   * Synchronously returns the priority of a particular child ID.
    *
-   * @param browser (browser)
-   *   The browser to get the content process priority for.
+   * @param childID
+   *   The childID to get the content process priority for.
    * @return String
-   *   The priority that the browser's content process is at.
+   *   The priority of the child ID's process.
    */
-  currentPriority(browser) {
-    return this.priorityMap.get(browser);
+  currentPriority(childID) {
+    return this.priorityMap.get(childID);
   }
 
   /**
@@ -175,17 +198,10 @@ class TabPriorityWatcher {
     }
 
     let { childID, priority } = this.parsePPMData(data);
-    for (let browser of this.tabbrowser.browsers) {
-      if (browser.frameLoader.childID == childID) {
-        info(
-          `Browser at: ${browser.currentURI.spec} transitioning to ${priority}`
-        );
-        if (this.noChangeBrowsers.has(browser)) {
-          this.noChangeBrowsers.set(browser, priority);
-        }
-        this.priorityMap.set(browser, priority);
-      }
+    if (this.noChangeChildIDs.has(childID)) {
+      this.noChangeChildIDs.set(childID, priority);
     }
+    this.priorityMap.set(childID, priority);
   }
 }
 
@@ -255,32 +271,14 @@ async function assertPriorityChangeOnBackground({
     "Tabs should be running in separate processes."
   );
 
-  gTabPriorityWatcher.ensureForegroundRegistered(fromBrowser);
-
-  let fromPromise;
-  if (
-    gTabPriorityWatcher.currentPriority(fromBrowser) == fromTabExpectedPriority
-  ) {
-    fromPromise = gTabPriorityWatcher.ensureNoPriorityChange(fromBrowser);
-  } else {
-    fromPromise = gTabPriorityWatcher.waitForPriorityChange(
-      fromBrowser,
-      fromTabExpectedPriority
-    );
-  }
-
-  let toPromise;
-  if (
-    gTabPriorityWatcher.currentPriority(toBrowser) ==
+  let fromPromise = gTabPriorityWatcher.waitForBrowserTreePriority(
+    fromBrowser,
+    fromTabExpectedPriority
+  );
+  let toPromise = gTabPriorityWatcher.waitForBrowserTreePriority(
+    toBrowser,
     PROCESS_PRIORITY_FOREGROUND
-  ) {
-    toPromise = gTabPriorityWatcher.ensureNoPriorityChange(toBrowser);
-  } else {
-    toPromise = gTabPriorityWatcher.waitForPriorityChange(
-      toBrowser,
-      PROCESS_PRIORITY_FOREGROUND
-    );
-  }
+  );
 
   await BrowserTestUtils.switchTab(gBrowser, toTab);
   await Promise.all([fromPromise, toPromise]);
@@ -294,20 +292,283 @@ async function assertPriorityChangeOnBackground({
 add_task(async function test_normal_background_tab() {
   let originalTab = gBrowser.selectedTab;
 
-  await BrowserTestUtils.withNewTab("http://example.com", async browser => {
-    let tab = gBrowser.getTabForBrowser(browser);
-    await assertPriorityChangeOnBackground({
-      fromTab: tab,
-      toTab: originalTab,
-      fromTabExpectedPriority: PROCESS_PRIORITY_BACKGROUND,
-    });
+  await BrowserTestUtils.withNewTab(
+    "https://example.com/browser/dom/ipc/tests/file_cross_frame.html",
+    async browser => {
+      let tab = gBrowser.getTabForBrowser(browser);
+      await assertPriorityChangeOnBackground({
+        fromTab: tab,
+        toTab: originalTab,
+        fromTabExpectedPriority: PROCESS_PRIORITY_BACKGROUND,
+      });
 
-    await assertPriorityChangeOnBackground({
-      fromTab: originalTab,
-      toTab: tab,
-      fromTabExpectedPriority: PROCESS_PRIORITY_BACKGROUND,
-    });
-  });
+      await assertPriorityChangeOnBackground({
+        fromTab: originalTab,
+        toTab: tab,
+        fromTabExpectedPriority: PROCESS_PRIORITY_BACKGROUND,
+      });
+    }
+  );
+});
+
+// Load a simple page on the given host into a new tab.
+async function loadKeepAliveTab(host) {
+  let tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    host + "/browser/dom/ipc/tests/file_dummy.html"
+  );
+  let childID = browsingContextChildID(
+    gBrowser.selectedBrowser.browsingContext
+  );
+
+  Assert.equal(
+    gTabPriorityWatcher.currentPriority(childID),
+    PROCESS_PRIORITY_FOREGROUND,
+    "Loading a new tab should make it prioritized"
+  );
+
+  if (SpecialPowers.useRemoteSubframes) {
+    // There must be only one process with a remote type for the tab we loaded
+    // to ensure that when we load a new page into the iframe with that host
+    // that it will end up in the same process as the initial tab.
+    let remoteType = gBrowser.selectedBrowser.remoteType;
+    await TestUtils.waitForCondition(() => {
+      return (
+        ChromeUtils.getAllDOMProcesses().filter(
+          process => process.remoteType == remoteType
+        ).length == 1
+      );
+    }, `Waiting for there to be only one process with remote type ${remoteType}`);
+  }
+
+  return { tab, childID };
+}
+
+/**
+ * If an iframe in a foreground tab is navigated to a new page for
+ * a different site, then the process of the new iframe page should
+ * have priority PROCESS_PRIORITY_FOREGROUND. Additionally, if Fission
+ * is enabled, then the old iframe page's process's priority should be
+ * lowered to PROCESS_PRIORITY_BACKGROUND.
+ */
+add_task(async function test_iframe_navigate() {
+  // This test (eventually) loads a page from the host topHost that has an
+  // iframe from iframe1Host. It then navigates the iframe to iframe2Host.
+  let topHost = "https://example.com";
+  let iframe1Host = "https://example.org";
+  let iframe2Host = "https://example.net";
+
+  // Before we load the final test page into a tab, we need to load pages
+  // from both iframe hosts into tabs. This is needed so that we are testing
+  // the "load a new page" part of prioritization and not the "initial
+  // process load" part. Additionally, it ensures that the process for the
+  // initial iframe page doesn't shut down once we navigate away from it,
+  // which will also affect its prioritization.
+  let { tab: iframe1Tab, childID: iframe1TabChildID } = await loadKeepAliveTab(
+    iframe1Host
+  );
+  let { tab: iframe2Tab, childID: iframe2TabChildID } = await loadKeepAliveTab(
+    iframe2Host
+  );
+
+  await BrowserTestUtils.withNewTab(
+    topHost + "/browser/dom/ipc/tests/file_cross_frame.html",
+    async browser => {
+      Assert.equal(
+        gTabPriorityWatcher.currentPriority(iframe2TabChildID),
+        PROCESS_PRIORITY_BACKGROUND,
+        "Switching to another new tab should deprioritize the old one"
+      );
+
+      let topChildID = browsingContextChildID(browser.browsingContext);
+      let iframe = browser.browsingContext.children[0];
+      let iframe1ChildID = browsingContextChildID(iframe);
+
+      Assert.equal(
+        gTabPriorityWatcher.currentPriority(topChildID),
+        PROCESS_PRIORITY_FOREGROUND,
+        "The top level page in the new tab should be prioritized"
+      );
+
+      Assert.equal(
+        gTabPriorityWatcher.currentPriority(iframe1ChildID),
+        PROCESS_PRIORITY_FOREGROUND,
+        "The iframe in the new tab should be prioritized"
+      );
+
+      if (SpecialPowers.useRemoteSubframes) {
+        // Basic process uniqueness checks for the state after all three tabs
+        // are initially loaded.
+        Assert.notEqual(
+          topChildID,
+          iframe1ChildID,
+          "file_cross_frame.html should be loaded into a different process " +
+            "than its initial iframe"
+        );
+
+        Assert.notEqual(
+          topChildID,
+          iframe2TabChildID,
+          "file_cross_frame.html should be loaded into a different process " +
+            "than the tab containing iframe2Host"
+        );
+
+        Assert.notEqual(
+          iframe1ChildID,
+          iframe2TabChildID,
+          "The initial iframe loaded by file_cross_frame.html should be " +
+            "loaded into a different process than the tab containing " +
+            "iframe2Host"
+        );
+
+        // Note: this assertion depends on our process selection logic.
+        // Specifically, that we reuse an existing process for an iframe if
+        // possible.
+        Assert.equal(
+          iframe1TabChildID,
+          iframe1ChildID,
+          "Both pages loaded in iframe1Host should be in the same process"
+        );
+      }
+
+      // Do a cross-origin navigation in the iframe in the foreground tab.
+      let iframe2URI = iframe2Host + "/browser/dom/ipc/tests/file_dummy.html";
+      let loaded = BrowserTestUtils.browserLoaded(browser, true, iframe2URI);
+      await SpecialPowers.spawn(iframe, [iframe2URI], async function(
+        _iframe2URI
+      ) {
+        content.location = _iframe2URI;
+      });
+      await loaded;
+
+      let iframe2ChildID = browsingContextChildID(iframe);
+      let iframe1Priority = gTabPriorityWatcher.currentPriority(iframe1ChildID);
+      let iframe2Priority = gTabPriorityWatcher.currentPriority(iframe2ChildID);
+
+      if (SpecialPowers.useRemoteSubframes) {
+        // Basic process uniqueness check for the state after navigating the
+        // iframe. There's no need to check the top level pages because they
+        // have not navigated.
+        //
+        // iframe1ChildID != iframe2ChildID is implied by:
+        //   iframe1ChildID != iframe2TabChildID
+        //   iframe2TabChildID == iframe2ChildID
+        //
+        // iframe2ChildID != topChildID is implied by:
+        //   topChildID != iframe2TabChildID
+        //   iframe2TabChildID == iframe2ChildID
+
+        // Note: this assertion depends on our process selection logic.
+        // Specifically, that we reuse an existing process for an iframe if
+        // possible. If that changes, this test may need to be carefully
+        // rewritten, as the whole point of the test is to check what happens
+        // with the priority manager when an iframe shares a process with
+        // a page in another tab.
+        Assert.equal(
+          iframe2TabChildID,
+          iframe2ChildID,
+          "Both pages loaded in iframe2Host should be in the same process"
+        );
+
+        // Now that we've established the relationship between the various
+        // processes, we can finally check that the priority manager is doing
+        // the right thing.
+        Assert.equal(
+          iframe1Priority,
+          PROCESS_PRIORITY_BACKGROUND,
+          "The old iframe process should have been deprioritized"
+        );
+      } else {
+        Assert.equal(
+          iframe1ChildID,
+          iframe2ChildID,
+          "Navigation should not have switched processes"
+        );
+      }
+
+      Assert.equal(
+        iframe2Priority,
+        PROCESS_PRIORITY_FOREGROUND,
+        "The new iframe process should be prioritized"
+      );
+    }
+  );
+
+  await BrowserTestUtils.removeTab(iframe2Tab);
+  await BrowserTestUtils.removeTab(iframe1Tab);
+});
+
+/**
+ * Test that a cross-group navigation properly preserves the process priority.
+ * The goal of this test is to check that the code related to mPriorityActive in
+ * CanonicalBrowsingContext::ReplacedBy works correctly, but in practice the
+ * prioritization code in SetRenderLayers will also make this test pass, though
+ * that prioritization happens slightly later.
+ */
+add_task(async function test_cross_group_navigate() {
+  // This page is same-site with the page we're going to cross-group navigate to.
+  let coopPage =
+    "https://example.com/browser/dom/tests/browser/file_coop_coep.html";
+
+  // Load it as a top level tab so that we don't accidentally get the initial
+  // load prioritization.
+  let backgroundTab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    coopPage
+  );
+  let backgroundTabChildID = browsingContextChildID(
+    gBrowser.selectedBrowser.browsingContext
+  );
+
+  Assert.equal(
+    gTabPriorityWatcher.currentPriority(backgroundTabChildID),
+    PROCESS_PRIORITY_FOREGROUND,
+    "Loading a new tab should make it prioritized"
+  );
+
+  await BrowserTestUtils.withNewTab(
+    "https://example.org/browser/dom/ipc/tests/file_cross_frame.html",
+    async browser => {
+      Assert.equal(
+        gTabPriorityWatcher.currentPriority(backgroundTabChildID),
+        PROCESS_PRIORITY_BACKGROUND,
+        "Switching to a new tab should deprioritize the old one"
+      );
+
+      let dotOrgChildID = browsingContextChildID(browser.browsingContext);
+
+      // Do a cross-group navigation.
+      BrowserTestUtils.loadURI(browser, coopPage);
+      await BrowserTestUtils.browserLoaded(browser);
+
+      let coopChildID = browsingContextChildID(browser.browsingContext);
+      let coopPriority = gTabPriorityWatcher.currentPriority(coopChildID);
+      let dotOrgPriority = gTabPriorityWatcher.currentPriority(dotOrgChildID);
+
+      Assert.equal(
+        backgroundTabChildID,
+        coopChildID,
+        "The same site should get loaded into the same process"
+      );
+      Assert.notEqual(
+        dotOrgChildID,
+        coopChildID,
+        "Navigation should have switched processes"
+      );
+      Assert.equal(
+        dotOrgPriority,
+        PROCESS_PRIORITY_BACKGROUND,
+        "The old page process should have been deprioritized"
+      );
+      Assert.equal(
+        coopPriority,
+        PROCESS_PRIORITY_FOREGROUND,
+        "The new page process should be prioritized"
+      );
+    }
+  );
+
+  await BrowserTestUtils.removeTab(backgroundTab);
 });
 
 /**
@@ -320,12 +581,12 @@ add_task(async function test_normal_background_tab() {
 add_task(async function test_video_background_tab() {
   let originalTab = gBrowser.selectedTab;
 
-  await BrowserTestUtils.withNewTab("http://example.com", async browser => {
+  await BrowserTestUtils.withNewTab("https://example.com", async browser => {
     // Let's load up a video in the tab, but mute it, so that this tab should
     // reach PROCESS_PRIORITY_BACKGROUND_PERCEIVABLE.
     await SpecialPowers.spawn(browser, [], async () => {
       let video = content.document.createElement("video");
-      video.src = "http://mochi.test:8888/browser/dom/ipc/tests/short.mp4";
+      video.src = "https://example.net/browser/dom/ipc/tests/short.mp4";
       video.muted = true;
       content.document.body.appendChild(video);
       // We'll loop the video to avoid it ending before the test is done.
@@ -384,12 +645,12 @@ add_task(async function test_video_background_tab() {
 add_task(async function test_audio_background_tab() {
   let originalTab = gBrowser.selectedTab;
 
-  await BrowserTestUtils.withNewTab("http://example.com", async browser => {
+  await BrowserTestUtils.withNewTab("https://example.com", async browser => {
     // Let's load up some audio in the tab, but mute it, so that this tab should
     // reach PROCESS_PRIORITY_BACKGROUND.
     await SpecialPowers.spawn(browser, [], async () => {
       let audio = content.document.createElement("audio");
-      audio.src = "http://mochi.test:8888/browser/dom/ipc/tests/owl.mp3";
+      audio.src = "https://example.net/browser/dom/ipc/tests/owl.mp3";
       audio.muted = true;
       content.document.body.appendChild(audio);
       // We'll loop the audio to avoid it ending before the test is done.
@@ -456,10 +717,10 @@ add_task(async function test_audio_background_tab() {
  * the process priority does not change, unless that WebAudio context is
  * suspended.
  */
-add_task(async function test_audio_background_tab() {
+add_task(async function test_web_audio_background_tab() {
   let originalTab = gBrowser.selectedTab;
 
-  await BrowserTestUtils.withNewTab("http://example.com", async browser => {
+  await BrowserTestUtils.withNewTab("https://example.com", async browser => {
     // Let's synthesize a basic square wave as WebAudio.
     await SpecialPowers.spawn(browser, [], async () => {
       let audioCtx = new content.AudioContext();
@@ -468,6 +729,10 @@ add_task(async function test_audio_background_tab() {
       oscillator.frequency.setValueAtTime(440, audioCtx.currentTime);
       oscillator.connect(audioCtx.destination);
       oscillator.start();
+      while (audioCtx.state != "running") {
+        info(`wait until AudioContext starts running`);
+        await new Promise(r => (audioCtx.onstatechange = r));
+      }
       // we'll stash the AudioContext away so that it's easier to access
       // in the next SpecialPowers.spawn.
       content.audioCtx = audioCtx;
@@ -512,5 +777,47 @@ add_task(async function test_audio_background_tab() {
       toTab: tab,
       fromTabExpectedPriority: PROCESS_PRIORITY_BACKGROUND,
     });
+  });
+});
+
+/**
+ * Test that foreground tab's process priority isn't changed when going back to
+ * a bfcached session history entry.
+ */
+add_task(async function test_audio_background_tab() {
+  let page1 = "https://example.com";
+  let page2 = page1 + "/?2";
+
+  await BrowserTestUtils.withNewTab(page1, async browser => {
+    let childID = browsingContextChildID(browser.browsingContext);
+    Assert.equal(
+      gTabPriorityWatcher.currentPriority(childID),
+      PROCESS_PRIORITY_FOREGROUND,
+      "Loading a new tab should make it prioritized."
+    );
+    let loaded = BrowserTestUtils.browserLoaded(browser, false, page2);
+    BrowserTestUtils.loadURI(browser, page2);
+    await loaded;
+
+    childID = browsingContextChildID(browser.browsingContext);
+    Assert.equal(
+      gTabPriorityWatcher.currentPriority(childID),
+      PROCESS_PRIORITY_FOREGROUND,
+      "Loading a new page should keep the tab prioritized."
+    );
+
+    let pageShowPromise = BrowserTestUtils.waitForContentEvent(
+      browser,
+      "pageshow"
+    );
+    browser.goBack();
+    await pageShowPromise;
+
+    childID = browsingContextChildID(browser.browsingContext);
+    Assert.equal(
+      gTabPriorityWatcher.currentPriority(childID),
+      PROCESS_PRIORITY_FOREGROUND,
+      "Loading a page from the bfcache should keep the tab prioritized."
+    );
   });
 });

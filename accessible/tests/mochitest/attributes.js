@@ -138,9 +138,9 @@ function testGroupParentAttrs(aAccOrElmOrID, aChildItemCount, aIsHierarchical) {
   );
 
   if (aIsHierarchical) {
-    testAttrs(aAccOrElmOrID, { hierarchical: "true" }, true);
+    testAttrs(aAccOrElmOrID, { tree: "true" }, true);
   } else {
-    testAbsentAttrs(aAccOrElmOrID, { hierarchical: "true" });
+    testAbsentAttrs(aAccOrElmOrID, { tree: "true" });
   }
 }
 
@@ -295,14 +295,16 @@ const kBoldFontWeight = function equalsToBold(aWeight) {
   return aWeight > 400;
 };
 
+let isNNT = SpecialPowers.getBoolPref("widget.non-native-theme.enabled");
 // The pt font size of the input element can vary by Linux distro.
-const kInputFontSize = WIN
-  ? "10pt"
-  : MAC
-  ? "8pt"
-  : function() {
-      return true;
-    };
+const kInputFontSize =
+  WIN || (MAC && isNNT)
+    ? "10pt"
+    : MAC
+    ? "8pt"
+    : function() {
+        return true;
+      };
 
 const kAbsentFontFamily = function(aFontFamily) {
   return aFontFamily != "sans-serif";
@@ -341,6 +343,14 @@ function fontFamily(aComputedStyle) {
 }
 
 /**
+ * Returns a computed system color for this document.
+ */
+function getSystemColor(aColor) {
+  let { r, g, b, a } = InspectorUtils.colorToRGBA(aColor, document);
+  return a == 1 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
+/**
  * Build an object of default text attributes expected for the given accessible.
  *
  * @param aID          [in] identifier of accessible
@@ -353,7 +363,7 @@ function buildDefaultTextAttrs(aID, aFontSize, aFontWeight, aFontFamily) {
   var computedStyle = document.defaultView.getComputedStyle(elm);
   var bgColor =
     computedStyle.backgroundColor == "rgba(0, 0, 0, 0)"
-      ? "rgb(255, 255, 255)"
+      ? getSystemColor("Canvas")
       : computedStyle.backgroundColor;
 
   var defAttrs = {

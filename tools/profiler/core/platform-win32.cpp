@@ -36,18 +36,7 @@
 #include "mozilla/StackWalk_windows.h"
 #include "mozilla/WindowsVersion.h"
 
-int profiler_current_process_id() { return _getpid(); }
-
-int profiler_current_thread_id() {
-  DWORD threadId = GetCurrentThreadId();
-  MOZ_ASSERT(threadId <= INT32_MAX, "native thread ID is > INT32_MAX");
-  return int(threadId);
-}
-
-void* GetStackTop(void* aGuess) {
-  PNT_TIB pTib = reinterpret_cast<PNT_TIB>(NtCurrentTeb());
-  return reinterpret_cast<void*>(pTib->StackBase);
-}
+#include <type_traits>
 
 static void PopulateRegsFromContext(Registers& aRegs, CONTEXT* aContext) {
 #if defined(GP_ARCH_amd64)
@@ -84,35 +73,20 @@ static HANDLE GetRealCurrentThreadHandleForProfiling() {
   return realCurrentThreadHandle;
 }
 
-class PlatformData {
- public:
-  // Get a handle to the calling thread. This is the thread that we are
-  // going to profile. We need a real handle because we are going to use it in
-  // the sampler thread.
-  explicit PlatformData(int aThreadId)
-      : mProfiledThread(GetRealCurrentThreadHandleForProfiling()) {
-    MOZ_ASSERT(aThreadId == ::GetCurrentThreadId());
-    MOZ_COUNT_CTOR(PlatformData);
+static_assert(
+    std::is_same_v<mozilla::profiler::PlatformData::WindowsHandle, HANDLE>);
+
+mozilla::profiler::PlatformData::PlatformData(ProfilerThreadId aThreadId)
+    : mProfiledThread(GetRealCurrentThreadHandleForProfiling()) {
+  MOZ_ASSERT(aThreadId == ProfilerThreadId::FromNumber(::GetCurrentThreadId()));
+}
+
+mozilla::profiler::PlatformData::~PlatformData() {
+  if (mProfiledThread) {
+    CloseHandle(mProfiledThread);
+    mProfiledThread = nullptr;
   }
-
-  ~PlatformData() {
-    if (mProfiledThread != nullptr) {
-      CloseHandle(mProfiledThread);
-      mProfiledThread = nullptr;
-    }
-    MOZ_COUNT_DTOR(PlatformData);
-  }
-
-  HANDLE ProfiledThread() { return mProfiledThread; }
-
- private:
-  HANDLE mProfiledThread;
-};
-
-#if defined(USE_MOZ_STACK_WALK)
-HANDLE
-GetThreadHandle(PlatformData* aData) { return aData->ProfiledThread(); }
-#endif
+}
 
 static const HANDLE kNoThread = INVALID_HANDLE_VALUE;
 
@@ -123,12 +97,74 @@ Sampler::Sampler(PSLockRef aLock) {}
 
 void Sampler::Disable(PSLockRef aLock) {}
 
+static void StreamMetaPlatformSampleUnits(PSLockRef aLock,
+                                          SpliceableJSONWriter& aWriter) {
+  aWriter.StringProperty("threadCPUDelta", "variable CPU cycles");
+}
+
+static RunningTimes GetThreadRunningTimesDiff(
+    PSLockRef aLock,
+    ThreadRegistration::UnlockedRWForLockedProfiler& aThreadData) {
+  AUTO_PROFILER_STATS(GetRunningTimes);
+
+  const mozilla::profiler::PlatformData& platformData =
+      aThreadData.PlatformDataCRef();
+  const HANDLE profiledThread = platformData.ProfiledThread();
+
+  const RunningTimes newRunningTimes = GetRunningTimesWithTightTimestamp(
+      [profiledThread](RunningTimes& aRunningTimes) {
+        AUTO_PROFILER_STATS(GetRunningTimes_QueryThreadCycleTime);
+        if (ULONG64 cycles;
+            QueryThreadCycleTime(profiledThread, &cycles) != 0) {
+          aRunningTimes.ResetThreadCPUDelta(cycles);
+        } else {
+          aRunningTimes.ClearThreadCPUDelta();
+        }
+      });
+
+  ProfiledThreadData* profiledThreadData =
+      aThreadData.GetProfiledThreadData(aLock);
+  MOZ_ASSERT(profiledThreadData);
+  RunningTimes& previousRunningTimes =
+      profiledThreadData->PreviousThreadRunningTimesRef();
+  const RunningTimes diff = newRunningTimes - previousRunningTimes;
+  previousRunningTimes = newRunningTimes;
+  return diff;
+}
+
+static void DiscardSuspendedThreadRunningTimes(
+    PSLockRef aLock,
+    ThreadRegistration::UnlockedRWForLockedProfiler& aThreadData) {
+  AUTO_PROFILER_STATS(DiscardSuspendedThreadRunningTimes);
+
+  // On Windows, suspending a thread makes that thread work a little bit. So we
+  // want to discard any added running time since the call to
+  // GetThreadRunningTimesDiff, which is done by overwriting the thread's
+  // PreviousThreadRunningTimesRef() with the current running time now.
+
+  const mozilla::profiler::PlatformData& platformData =
+      aThreadData.PlatformDataCRef();
+  const HANDLE profiledThread = platformData.ProfiledThread();
+
+  ProfiledThreadData* profiledThreadData =
+      aThreadData.GetProfiledThreadData(aLock);
+  MOZ_ASSERT(profiledThreadData);
+  RunningTimes& previousRunningTimes =
+      profiledThreadData->PreviousThreadRunningTimesRef();
+
+  if (ULONG64 cycles; QueryThreadCycleTime(profiledThread, &cycles) != 0) {
+    previousRunningTimes.ResetThreadCPUDelta(cycles);
+  } else {
+    previousRunningTimes.ClearThreadCPUDelta();
+  }
+}
+
 template <typename Func>
 void Sampler::SuspendAndSampleAndResumeThread(
-    PSLockRef aLock, const RegisteredThread& aRegisteredThread,
+    PSLockRef aLock,
+    const ThreadRegistration::UnlockedReaderAndAtomicRWOnThread& aThreadData,
     const TimeStamp& aNow, const Func& aProcessRegs) {
-  HANDLE profiled_thread =
-      aRegisteredThread.GetPlatformData()->ProfiledThread();
+  HANDLE profiled_thread = aThreadData.PlatformDataCRef().ProfiledThread();
   if (profiled_thread == nullptr) {
     return;
   }
@@ -196,17 +232,40 @@ static unsigned int __stdcall ThreadEntry(void* aArg) {
   return 0;
 }
 
+static unsigned int __stdcall UnregisteredThreadSpyEntry(void* aArg) {
+  auto thread = static_cast<SamplerThread*>(aArg);
+  thread->RunUnregisteredThreadSpy();
+  return 0;
+}
+
 SamplerThread::SamplerThread(PSLockRef aLock, uint32_t aActivityGeneration,
-                             double aIntervalMilliseconds)
+                             double aIntervalMilliseconds, uint32_t aFeatures)
     : mSampler(aLock),
       mActivityGeneration(aActivityGeneration),
       mIntervalMicroseconds(
-          std::max(1, int(floor(aIntervalMilliseconds * 1000 + 0.5)))) {
-  // By default we'll not adjust the timer resolution which tends to be
-  // around 16ms. However, if the requested interval is sufficiently low
-  // we'll try to adjust the resolution to match.
-  if (mIntervalMicroseconds < 10 * 1000) {
+          std::max(1, int(floor(aIntervalMilliseconds * 1000 + 0.5)))),
+      mNoTimerResolutionChange(
+          ProfilerFeature::HasNoTimerResolutionChange(aFeatures)) {
+  if ((!mNoTimerResolutionChange) && (mIntervalMicroseconds < 10 * 1000)) {
+    // By default the timer resolution (which tends to be 1/64Hz, around 16ms)
+    // is not changed. However, if the requested interval is sufficiently low,
+    // the resolution will be adjusted to match. Note that this affects all
+    // timers in Firefox, and could therefore hide issues while profiling. This
+    // change may be prevented with the "notimerresolutionchange" feature.
     ::timeBeginPeriod(mIntervalMicroseconds / 1000);
+  }
+
+  if (ProfilerFeature::HasUnregisteredThreads(aFeatures)) {
+    // Sampler&spy threads are not running yet, so it's safe to modify
+    // mSpyingState without locking the monitor.
+    mSpyingState = SpyingState::Spy_Initializing;
+    mUnregisteredThreadSpyThread = reinterpret_cast<HANDLE>(
+        _beginthreadex(nullptr,
+                       /* stack_size */ 0, UnregisteredThreadSpyEntry, this,
+                       /* initflag */ 0, nullptr));
+    if (mUnregisteredThreadSpyThread == 0) {
+      MOZ_CRASH("_beginthreadex failed");
+    }
   }
 
   // Create a new thread. It is important to use _beginthreadex() instead of
@@ -222,6 +281,32 @@ SamplerThread::SamplerThread(PSLockRef aLock, uint32_t aActivityGeneration,
 }
 
 SamplerThread::~SamplerThread() {
+  if (mUnregisteredThreadSpyThread) {
+    {
+      // Make sure the spying thread is not actively working, because the win32
+      // function it's using could deadlock with WaitForSingleObject below.
+      MonitorAutoLock spyingStateLock{mSpyingStateMonitor};
+      while (mSpyingState != SpyingState::Spy_Waiting &&
+             mSpyingState != SpyingState::SamplerToSpy_Start) {
+        spyingStateLock.Wait();
+      }
+
+      mSpyingState = SpyingState::MainToSpy_Shutdown;
+      spyingStateLock.NotifyAll();
+
+      do {
+        spyingStateLock.Wait();
+      } while (mSpyingState != SpyingState::SpyToMain_ShuttingDown);
+    }
+
+    WaitForSingleObject(mUnregisteredThreadSpyThread, INFINITE);
+
+    // Close our own handle for the thread.
+    if (mUnregisteredThreadSpyThread != kNoThread) {
+      CloseHandle(mUnregisteredThreadSpyThread);
+    }
+  }
+
   WaitForSingleObject(mThread, INFINITE);
 
   // Close our own handle for the thread.
@@ -235,6 +320,43 @@ SamplerThread::~SamplerThread() {
                               SamplingState::JustStopped);
 }
 
+void SamplerThread::RunUnregisteredThreadSpy() {
+  // TODO: Consider registering this thread.
+  // Pros: Remove from list of unregistered threads; Not useful to profiling
+  //       Firefox itself.
+  // Cons: Doesn't appear in the profile, so users may miss the expensive CPU
+  //       cost of this work on Windows.
+  PR_SetCurrentThreadName("UnregisteredThreadSpy");
+
+  while (true) {
+    {
+      MonitorAutoLock spyingStateLock{mSpyingStateMonitor};
+      // Either this is the first loop, or we're looping after working.
+      MOZ_ASSERT(mSpyingState == SpyingState::Spy_Initializing ||
+                 mSpyingState == SpyingState::Spy_Working);
+
+      // Let everyone know we're waiting, and then wait.
+      mSpyingState = SpyingState::Spy_Waiting;
+      mSpyingStateMonitor.NotifyAll();
+      do {
+        spyingStateLock.Wait();
+      } while (mSpyingState == SpyingState::Spy_Waiting);
+
+      if (mSpyingState == SpyingState::MainToSpy_Shutdown) {
+        mSpyingState = SpyingState::SpyToMain_ShuttingDown;
+        mSpyingStateMonitor.NotifyAll();
+        break;
+      }
+
+      MOZ_ASSERT(mSpyingState == SpyingState::SamplerToSpy_Start);
+      mSpyingState = SpyingState::Spy_Working;
+    }
+
+    // Do the work without lock, so other threads can read the current state.
+    SpyOnUnregisteredThreads();
+  }
+}
+
 void SamplerThread::SleepMicro(uint32_t aMicroseconds) {
   // For now, keep the old behaviour of minimum Sleep(1), even for
   // smaller-than-usual sleeps after an overshoot, unless the user has
@@ -242,7 +364,7 @@ void SamplerThread::SleepMicro(uint32_t aMicroseconds) {
   if (mIntervalMicroseconds >= 1000) {
     ::Sleep(std::max(1u, aMicroseconds / 1000));
   } else {
-    TimeStamp start = TimeStamp::NowUnfuzzed();
+    TimeStamp start = TimeStamp::Now();
     TimeStamp end = start + TimeDuration::FromMicroseconds(aMicroseconds);
 
     // First, sleep for as many whole milliseconds as possible.
@@ -251,22 +373,22 @@ void SamplerThread::SleepMicro(uint32_t aMicroseconds) {
     }
 
     // Then, spin until enough time has passed.
-    while (TimeStamp::NowUnfuzzed() < end) {
+    while (TimeStamp::Now() < end) {
       YieldProcessor();
     }
   }
 }
 
 void SamplerThread::Stop(PSLockRef aLock) {
-  // Disable any timer resolution changes we've made. Do it now while
-  // gPSMutex is locked, i.e. before any other SamplerThread can be created
-  // and call ::timeBeginPeriod().
-  //
-  // It's safe to do this now even though this SamplerThread is still alive,
-  // because the next time the main loop of Run() iterates it won't get past
-  // the mActivityGeneration check, and so it won't make any more ::Sleep()
-  // calls.
-  if (mIntervalMicroseconds < 10 * 1000) {
+  if ((!mNoTimerResolutionChange) && (mIntervalMicroseconds < 10 * 1000)) {
+    // Disable any timer resolution changes we've made. Do it now while
+    // gPSMutex is locked, i.e. before any other SamplerThread can be created
+    // and call ::timeBeginPeriod().
+    //
+    // It's safe to do this now even though this SamplerThread is still alive,
+    // because the next time the main loop of Run() iterates it won't get past
+    // the mActivityGeneration check, and so it won't make any more ::Sleep()
+    // calls.
     ::timeEndPeriod(mIntervalMicroseconds / 1000);
   }
 

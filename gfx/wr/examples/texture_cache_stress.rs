@@ -14,6 +14,7 @@ use crate::boilerplate::{Example, HandyDandyRectBuilder};
 use gleam::gl;
 use std::mem;
 use webrender::api::*;
+use webrender::render_api::*;
 use webrender::api::units::*;
 
 
@@ -100,7 +101,7 @@ impl Example for App {
         let space_and_clip = SpaceAndClipInfo::root_scroll(pipeline_id);
 
         builder.push_simple_stacking_context(
-            bounds.origin,
+            bounds.min,
             space_and_clip.spatial_id,
             PrimitiveFlags::IS_BACKFACE_VISIBLE,
         );
@@ -137,7 +138,7 @@ impl Example for App {
             let x = (i % 128) as f32;
             let y = (i / 128) as f32;
             let info = CommonItemProperties::new(
-                LayoutRect::new(
+                LayoutRect::from_origin_and_size(
                     LayoutPoint::new(x0 + image_size.width * x, y0 + image_size.height * y),
                     image_size,
                 ),
@@ -157,7 +158,7 @@ impl Example for App {
         if let Some(image_key) = self.image_key {
             let image_size = LayoutSize::new(100.0, 100.0);
             let info = CommonItemProperties::new(
-                LayoutRect::new(LayoutPoint::new(100.0, 100.0), image_size),
+                LayoutRect::from_origin_and_size(LayoutPoint::new(100.0, 100.0), image_size),
                 space_and_clip,
             );
             builder.push_image(
@@ -173,7 +174,7 @@ impl Example for App {
         let swap_key = self.swap_keys[self.swap_index];
         let image_size = LayoutSize::new(64.0, 64.0);
         let info = CommonItemProperties::new(
-            LayoutRect::new(LayoutPoint::new(100.0, 400.0), image_size),
+            LayoutRect::from_origin_and_size(LayoutPoint::new(100.0, 400.0), image_size),
             space_and_clip,
         );
         builder.push_image(
@@ -301,12 +302,11 @@ impl Example for App {
         false
     }
 
-    fn get_image_handlers(
+    fn get_image_handler(
         &mut self,
         _gl: &dyn gl::Gl,
-    ) -> (Option<Box<dyn ExternalImageHandler>>,
-          Option<Box<dyn OutputImageHandler>>) {
-        (Some(Box::new(ImageGenerator::new())), None)
+    ) -> Option<Box<dyn ExternalImageHandler>> {
+        Some(Box::new(ImageGenerator::new()))
     }
 }
 

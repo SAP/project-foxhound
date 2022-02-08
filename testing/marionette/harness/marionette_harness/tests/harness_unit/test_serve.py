@@ -16,7 +16,7 @@ from marionette_harness.runner.serve import iter_proc, iter_url
 
 
 def teardown_function(func):
-    for server in [server for server in iter_proc(serve.servers) if server.is_alive]:
+    for server in [s for s in iter_proc(serve.servers) if s.is_alive]:
         server.stop()
         server.kill()
 
@@ -68,4 +68,4 @@ def test_where_is():
 
 
 if __name__ == "__main__":
-    mozunit.main('-p', 'no:terminalreporter', '--log-tbpl=-', '--capture', 'no')
+    mozunit.main("-p", "no:terminalreporter", "--log-tbpl=-", "--capture", "no")

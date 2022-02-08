@@ -12,11 +12,11 @@
 #include "nsWindowDefs.h"
 #include "WinTextEventDispatcherListener.h"
 
-#ifdef NS_ENABLE_TSF
-#  include "TSFTextStore.h"
-#endif  // #ifdef NS_ENABLE_TSF
+#include "TSFTextStore.h"
 
 #include "OSKInputPaneManager.h"
+#include "OSKTabTipManager.h"
+#include "OSKVRManager.h"
 #include "nsLookAndFeel.h"
 #include "nsWindow.h"
 #include "WinUtils.h"
@@ -34,10 +34,8 @@
 #include "cfgmgr32.h"
 
 #include "FxRWindowManager.h"
-#include "VRShMem.h"
 #include "moz_external_vr.h"
 
-const char* kOskPathPrefName = "ui.osk.on_screen_keyboard_path";
 const char* kOskEnabled = "ui.osk.enabled";
 const char* kOskDetectPhysicalKeyboard = "ui.osk.detect_physical_keyboard";
 const char* kOskRequireWin10 = "ui.osk.require_win10";
@@ -55,23 +53,19 @@ InputContextAction::Cause IMEHandler::sLastContextActionCause =
     InputContextAction::CAUSE_UNKNOWN;
 bool IMEHandler::sMaybeEditable = false;
 bool IMEHandler::sForceDisableCurrentIMM_IME = false;
-bool IMEHandler::sPluginHasFocus = false;
 bool IMEHandler::sNativeCaretIsCreated = false;
 bool IMEHandler::sHasNativeCaretBeenRequested = false;
 
-#ifdef NS_ENABLE_TSF
 bool IMEHandler::sIsInTSFMode = false;
 bool IMEHandler::sIsIMMEnabled = true;
 bool IMEHandler::sAssociateIMCOnlyWhenIMM_IMEActive = false;
 decltype(SetInputScopes)* IMEHandler::sSetInputScopes = nullptr;
-#endif  // #ifdef NS_ENABLE_TSF
 
 static POWER_PLATFORM_ROLE sPowerPlatformRole = PlatformRoleUnspecified;
 static bool sDeterminedPowerPlatformRole = false;
 
 // static
 void IMEHandler::Initialize() {
-#ifdef NS_ENABLE_TSF
   TSFTextStore::Initialize();
   sIsInTSFMode = TSFTextStore::IsInTSFMode();
   sIsIMMEnabled =
@@ -91,7 +85,6 @@ void IMEHandler::Initialize() {
           GetProcAddress(module, "SetInputScopes"));
     }
   }
-#endif  // #ifdef NS_ENABLE_TSF
 
   IMMHandler::Initialize();
 
@@ -100,12 +93,10 @@ void IMEHandler::Initialize() {
 
 // static
 void IMEHandler::Terminate() {
-#ifdef NS_ENABLE_TSF
   if (sIsInTSFMode) {
     TSFTextStore::Terminate();
     sIsInTSFMode = false;
   }
-#endif  // #ifdef NS_ENABLE_TSF
 
   IMMHandler::Terminate();
   WinTextEventDispatcherListener::Shutdown();
@@ -114,11 +105,9 @@ void IMEHandler::Terminate() {
 // static
 void* IMEHandler::GetNativeData(nsWindow* aWindow, uint32_t aDataType) {
   if (aDataType == NS_RAW_NATIVE_IME_CONTEXT) {
-#ifdef NS_ENABLE_TSF
     if (IsTSFAvailable()) {
       return TSFTextStore::GetThreadManager();
     }
-#endif  // #ifdef NS_ENABLE_TSF
     IMEContext context(aWindow);
     if (context.IsValid()) {
       return context.get();
@@ -136,7 +125,6 @@ void* IMEHandler::GetNativeData(nsWindow* aWindow, uint32_t aDataType) {
     return aWindow;
   }
 
-#ifdef NS_ENABLE_TSF
   void* result = TSFTextStore::GetNativeData(aDataType);
   if (!result || !(*(static_cast<void**>(result)))) {
     return nullptr;
@@ -147,18 +135,13 @@ void* IMEHandler::GetNativeData(nsWindow* aWindow, uint32_t aDataType) {
   //     sending a message can fix this.
   sIsInTSFMode = true;
   return result;
-#else   // #ifdef NS_ENABLE_TSF
-  return nullptr;
-#endif  // #ifdef NS_ENABLE_TSF #else
 }
 
 // static
 bool IMEHandler::ProcessRawKeyMessage(const MSG& aMsg) {
-#ifdef NS_ENABLE_TSF
   if (IsTSFAvailable()) {
     return TSFTextStore::ProcessRawKeyMessage(aMsg);
   }
-#endif           // #ifdef NS_ENABLE_TSF
   return false;  // noting to do in IMM mode.
 }
 
@@ -189,7 +172,6 @@ bool IMEHandler::ProcessMessage(nsWindow* aWindow, UINT aMessage,
     MaybeCreateNativeCaret(aWindow);
   }
 
-#ifdef NS_ENABLE_TSF
   if (IsTSFAvailable()) {
     TSFTextStore::ProcessMessage(aWindow, aMessage, aWParam, aLParam, aResult);
     if (aResult.mConsumed) {
@@ -205,7 +187,6 @@ bool IMEHandler::ProcessMessage(nsWindow* aWindow, UINT aMessage,
       return false;
     }
   }
-#endif  // #ifdef NS_ENABLE_TSF
 
   bool keepGoing =
       IMMHandler::ProcessMessage(aWindow, aMessage, aWParam, aLParam, aResult);
@@ -236,31 +217,24 @@ bool IMEHandler::IsA11yHandlingNativeCaret() {
 #endif  // #ifndef ACCESSIBILITY #else
 }
 
-#ifdef NS_ENABLE_TSF
 // static
 bool IMEHandler::IsIMMActive() { return TSFTextStore::IsIMM_IMEActive(); }
 
-#endif  // #ifdef NS_ENABLE_TSF
-
 // static
 bool IMEHandler::IsComposing() {
-#ifdef NS_ENABLE_TSF
   if (IsTSFAvailable()) {
     return TSFTextStore::IsComposing() || IMMHandler::IsComposing();
   }
-#endif  // #ifdef NS_ENABLE_TSF
 
   return IMMHandler::IsComposing();
 }
 
 // static
 bool IMEHandler::IsComposingOn(nsWindow* aWindow) {
-#ifdef NS_ENABLE_TSF
   if (IsTSFAvailable()) {
     return TSFTextStore::IsComposingOn(aWindow) ||
            IMMHandler::IsComposingOn(aWindow);
   }
-#endif  // #ifdef NS_ENABLE_TSF
 
   return IMMHandler::IsComposingOn(aWindow);
 }
@@ -268,7 +242,6 @@ bool IMEHandler::IsComposingOn(nsWindow* aWindow) {
 // static
 nsresult IMEHandler::NotifyIME(nsWindow* aWindow,
                                const IMENotification& aIMENotification) {
-#ifdef NS_ENABLE_TSF
   if (IsTSFAvailable()) {
     switch (aIMENotification.mMessage) {
       case NOTIFY_IME_OF_SELECTION_CHANGE: {
@@ -337,7 +310,6 @@ nsresult IMEHandler::NotifyIME(nsWindow* aWindow,
         return NS_ERROR_NOT_IMPLEMENTED;
     }
   }
-#endif  // NS_ENABLE_TSF
 
   switch (aIMENotification.mMessage) {
     case REQUEST_TO_COMMIT_COMPOSITION:
@@ -370,14 +342,12 @@ nsresult IMEHandler::NotifyIME(nsWindow* aWindow,
       sFocusedWindow = nullptr;
       IMEHandler::MaybeDismissOnScreenKeyboard(aWindow);
       IMMHandler::OnFocusChange(false, aWindow);
-#ifdef NS_ENABLE_TSF
       // If a plugin gets focus while TSF has focus, we need to notify TSF of
       // the blur.
       if (TSFTextStore::ThinksHavingFocus()) {
         return TSFTextStore::OnFocusChange(false, aWindow,
                                            aWindow->GetInputContext());
       }
-#endif  // NS_ENABLE_TSF
       return NS_OK;
     default:
       return NS_ERROR_NOT_IMPLEMENTED;
@@ -386,13 +356,6 @@ nsresult IMEHandler::NotifyIME(nsWindow* aWindow,
 
 // static
 IMENotificationRequests IMEHandler::GetIMENotificationRequests() {
-  // While a plugin has focus, neither TSFTextStore nor IMMHandler needs
-  // notifications.
-  if (sPluginHasFocus) {
-    return IMENotificationRequests();
-  }
-
-#ifdef NS_ENABLE_TSF
   if (IsTSFAvailable()) {
     if (!sIsIMMEnabled) {
       return TSFTextStore::GetIMENotificationRequests();
@@ -405,7 +368,6 @@ IMENotificationRequests IMEHandler::GetIMENotificationRequests() {
     return IMMHandler::GetIMENotificationRequests() |
            TSFTextStore::GetIMENotificationRequests();
   }
-#endif  // NS_ENABLE_TSF
 
   return IMMHandler::GetIMENotificationRequests();
 }
@@ -418,11 +380,9 @@ IMEHandler::GetNativeTextEventDispatcherListener() {
 
 // static
 bool IMEHandler::GetOpenState(nsWindow* aWindow) {
-#ifdef NS_ENABLE_TSF
   if (IsTSFAvailable() && !IsIMMActive()) {
     return TSFTextStore::GetIMEOpenState();
   }
-#endif  // NS_ENABLE_TSF
 
   IMEContext context(aWindow);
   return context.GetOpenState();
@@ -442,25 +402,21 @@ void IMEHandler::OnDestroyWindow(nsWindow* aWindow) {
     NotifyIME(aWindow, IMENotification(NOTIFY_IME_OF_BLUR));
   }
 
-#ifdef NS_ENABLE_TSF
   // We need to do nothing here for TSF. Just restore the default context
   // if it's been disassociated.
   if (!sIsInTSFMode) {
     // MSDN says we need to set IS_DEFAULT to avoid memory leak when we use
     // SetInputScopes API. Use an empty string to do this.
-    SetInputScopeForIMM32(aWindow, EmptyString(), EmptyString(), false);
+    SetInputScopeForIMM32(aWindow, u""_ns, u""_ns, false);
   }
-#endif  // #ifdef NS_ENABLE_TSF
   AssociateIMEContext(aWindow, true);
 }
 
-#ifdef NS_ENABLE_TSF
 // static
 bool IMEHandler::NeedsToAssociateIMC() {
   return !sForceDisableCurrentIMM_IME &&
          (!sAssociateIMCOnlyWhenIMM_IMEActive || !IsIMMActive());
 }
-#endif  // #ifdef NS_ENABLE_TSF
 
 // static
 void IMEHandler::SetInputContext(nsWindow* aWindow, InputContext& aInputContext,
@@ -468,15 +424,6 @@ void IMEHandler::SetInputContext(nsWindow* aWindow, InputContext& aInputContext,
   sLastContextActionCause = aAction.mCause;
   // FYI: If there is no composition, this call will do nothing.
   NotifyIME(aWindow, IMENotification(REQUEST_TO_COMMIT_COMPOSITION));
-
-  const InputContext& oldInputContext = aWindow->GetInputContext();
-
-  // Assume that SetInputContext() is called only when aWindow has focus.
-  sPluginHasFocus = (aInputContext.mIMEState.mEnabled == IMEState::PLUGIN);
-  if (sPluginHasFocus) {
-    // Update some cached system settings in the plugin.
-    aWindow->DispatchPluginSettingEvents();
-  }
 
   if (aInputContext.mHTMLInputInputmode.EqualsLiteral("none")) {
     IMEHandler::MaybeDismissOnScreenKeyboard(aWindow, Sync::Yes);
@@ -490,7 +437,6 @@ void IMEHandler::SetInputContext(nsWindow* aWindow, InputContext& aInputContext,
   bool open =
       (adjustOpenState && aInputContext.mIMEState.mOpen == IMEState::OPEN);
 
-#ifdef NS_ENABLE_TSF
   // Note that even while a plugin has focus, we need to notify TSF of that.
   if (sIsInTSFMode) {
     TSFTextStore::SetInputContext(aWindow, aInputContext, aAction);
@@ -498,10 +444,6 @@ void IMEHandler::SetInputContext(nsWindow* aWindow, InputContext& aInputContext,
       if (sIsIMMEnabled) {
         // Associate IMC with aWindow only when it's necessary.
         AssociateIMEContext(aWindow, enable && NeedsToAssociateIMC());
-      } else if (oldInputContext.mIMEState.mEnabled == IMEState::PLUGIN) {
-        // Disassociate the IME context from the window when plugin loses focus
-        // in pure TSF mode.
-        AssociateIMEContext(aWindow, false);
       }
       if (adjustOpenState) {
         TSFTextStore::SetIMEOpenState(open);
@@ -514,7 +456,6 @@ void IMEHandler::SetInputContext(nsWindow* aWindow, InputContext& aInputContext,
                           aInputContext.mHTMLInputInputmode,
                           aInputContext.mInPrivateBrowsing);
   }
-#endif  // #ifdef NS_ENABLE_TSF
 
   AssociateIMEContext(aWindow, enable);
 
@@ -558,9 +499,8 @@ void IMEHandler::InitInputContext(nsWindow* aWindow,
   }
 
   // For a11y, the default enabled state should be 'enabled'.
-  aInputContext.mIMEState.mEnabled = IMEState::ENABLED;
+  aInputContext.mIMEState.mEnabled = IMEEnabled::Enabled;
 
-#ifdef NS_ENABLE_TSF
   if (sIsInTSFMode) {
     TSFTextStore::SetInputContext(
         aWindow, aInputContext,
@@ -572,7 +512,6 @@ void IMEHandler::InitInputContext(nsWindow* aWindow,
     }
     return;
   }
-#endif  // #ifdef NS_ENABLE_TSF
 
 #ifdef DEBUG
   // NOTE: IMC may be null if IMM module isn't installed.
@@ -584,11 +523,9 @@ void IMEHandler::InitInputContext(nsWindow* aWindow,
 #ifdef DEBUG
 // static
 bool IMEHandler::CurrentKeyboardLayoutHasIME() {
-#  ifdef NS_ENABLE_TSF
   if (sIsInTSFMode) {
     return TSFTextStore::CurrentKeyboardLayoutHasIME();
   }
-#  endif  // #ifdef NS_ENABLE_TSF
 
   return IMMHandler::IsIMEAvailable();
 }
@@ -779,33 +716,39 @@ void IMEHandler::AppendInputScopeFromType(const nsAString& aHTMLInputType,
 }
 
 // static
-void IMEHandler::MaybeShowOnScreenKeyboard(nsWindow* aWindow,
-                                           const InputContext& aInputContext) {
-  if (aInputContext.mHTMLInputInputmode.EqualsLiteral("none")) {
-    return;
-  }
+bool IMEHandler::IsOnScreenKeyboardSupported() {
 #ifdef NIGHTLY_BUILD
   if (FxRWindowManager::GetInstance()->IsFxRWindow(sFocusedWindow)) {
-    mozilla::gfx::VRShMem shmem(nullptr, true /*aRequiresMutex*/);
-    shmem.SendIMEState(FxRWindowManager::GetInstance()->GetWindowID(),
-                       mozilla::gfx::VRFxEventState::FOCUS);
-    return;
+    return true;
   }
 #endif  // NIGHTLY_BUILD
-  if (sPluginHasFocus || !IsWin8OrLater() ||
-      !Preferences::GetBool(kOskEnabled, true) || GetOnScreenKeyboardWindow() ||
+  if (!IsWin8OrLater() || !Preferences::GetBool(kOskEnabled, true) ||
       !IMEHandler::NeedOnScreenKeyboard()) {
-    return;
+    return false;
   }
 
   // On Windows 10 we require tablet mode, unless the user has set the relevant
   // Windows setting to enable the on-screen keyboard in desktop mode.
   // We might be disabled specifically on Win8(.1), so we check that afterwards.
-  if (IsWin10OrLater()) {
+  if (IsWin10OrLater() && !IsWin11OrLater()) {
     if (!IsInTabletMode() && !AutoInvokeOnScreenKeyboardInDesktopMode()) {
-      return;
+      return false;
     }
   } else if (Preferences::GetBool(kOskRequireWin10, true)) {
+    return false;
+  }
+
+  return true;
+}
+
+// static
+void IMEHandler::MaybeShowOnScreenKeyboard(nsWindow* aWindow,
+                                           const InputContext& aInputContext) {
+  if (aInputContext.mHTMLInputInputmode.EqualsLiteral("none")) {
+    return;
+  }
+
+  if (!IsOnScreenKeyboardSupported()) {
     return;
   }
 
@@ -816,12 +759,10 @@ void IMEHandler::MaybeShowOnScreenKeyboard(nsWindow* aWindow,
 void IMEHandler::MaybeDismissOnScreenKeyboard(nsWindow* aWindow, Sync aSync) {
 #ifdef NIGHTLY_BUILD
   if (FxRWindowManager::GetInstance()->IsFxRWindow(aWindow)) {
-    mozilla::gfx::VRShMem shmem(nullptr, true /*aRequiresMutex*/);
-    shmem.SendIMEState(FxRWindowManager::GetInstance()->GetWindowID(),
-                       mozilla::gfx::VRFxEventState::BLUR);
+    OSKVRManager::DismissOnScreenKeyboard();
   }
 #endif  // NIGHTLY_BUILD
-  if (sPluginHasFocus || !IsWin8OrLater()) {
+  if (!IsWin8OrLater()) {
     return;
   }
 
@@ -1065,74 +1006,19 @@ bool IMEHandler::AutoInvokeOnScreenKeyboardInDesktopMode() {
 // Based on DisplayVirtualKeyboard() in Chromium's base/win/win_util.cc.
 // static
 void IMEHandler::ShowOnScreenKeyboard(nsWindow* aWindow) {
+#ifdef NIGHTLY_BUILD
+  if (FxRWindowManager::GetInstance()->IsFxRWindow(sFocusedWindow)) {
+    OSKVRManager::ShowOnScreenKeyboard();
+    return;
+  }
+#endif  // NIGHTLY_BUILD
+
   if (IsWin10AnniversaryUpdateOrLater()) {
     OSKInputPaneManager::ShowOnScreenKeyboard(aWindow->GetWindowHandle());
     return;
   }
 
-  nsAutoString cachedPath;
-  nsresult result = Preferences::GetString(kOskPathPrefName, cachedPath);
-  if (NS_FAILED(result) || cachedPath.IsEmpty()) {
-    wchar_t path[MAX_PATH];
-    // The path to TabTip.exe is defined at the following registry key.
-    // This is pulled out of the 64-bit registry hive directly.
-    const wchar_t kRegKeyName[] =
-        L"Software\\Classes\\CLSID\\"
-        L"{054AAE20-4BEA-4347-8A35-64A533254A9D}\\LocalServer32";
-    if (!WinUtils::GetRegistryKey(HKEY_LOCAL_MACHINE, kRegKeyName, nullptr,
-                                  path, sizeof path)) {
-      return;
-    }
-
-    std::wstring wstrpath(path);
-    // The path provided by the registry will often contain
-    // %CommonProgramFiles%, which will need to be replaced if it is present.
-    size_t commonProgramFilesOffset = wstrpath.find(L"%CommonProgramFiles%");
-    if (commonProgramFilesOffset != std::wstring::npos) {
-      // The path read from the registry contains the %CommonProgramFiles%
-      // environment variable prefix. On 64 bit Windows the
-      // SHGetKnownFolderPath function returns the common program files path
-      // with the X86 suffix for the FOLDERID_ProgramFilesCommon value.
-      // To get the correct path to TabTip.exe we first read the environment
-      // variable CommonProgramW6432 which points to the desired common
-      // files path. Failing that we fallback to the SHGetKnownFolderPath API.
-
-      // We then replace the %CommonProgramFiles% value with the actual common
-      // files path found in the process.
-      std::wstring commonProgramFilesPath;
-      std::vector<wchar_t> commonProgramFilesPathW6432;
-      DWORD bufferSize =
-          ::GetEnvironmentVariableW(L"CommonProgramW6432", nullptr, 0);
-      if (bufferSize) {
-        commonProgramFilesPathW6432.resize(bufferSize);
-        ::GetEnvironmentVariableW(L"CommonProgramW6432",
-                                  commonProgramFilesPathW6432.data(),
-                                  bufferSize);
-        commonProgramFilesPath =
-            std::wstring(commonProgramFilesPathW6432.data());
-      } else {
-        PWSTR path = nullptr;
-        HRESULT hres = SHGetKnownFolderPath(FOLDERID_ProgramFilesCommon, 0,
-                                            nullptr, &path);
-        if (FAILED(hres) || !path) {
-          return;
-        }
-        commonProgramFilesPath =
-            static_cast<const wchar_t*>(nsDependentString(path).get());
-        ::CoTaskMemFree(path);
-      }
-      wstrpath.replace(commonProgramFilesOffset,
-                       wcslen(L"%CommonProgramFiles%"), commonProgramFilesPath);
-    }
-
-    cachedPath.Assign(wstrpath.data());
-    Preferences::SetString(kOskPathPrefName, cachedPath);
-  }
-
-  const char16_t* cachedPathPtr;
-  cachedPath.GetData(&cachedPathPtr);
-  ShellExecuteW(nullptr, L"", char16ptr_t(cachedPathPtr), nullptr, nullptr,
-                SW_SHOW);
+  OSKTabTipManager::ShowOnScreenKeyboard();
 }
 
 // Based on DismissVirtualKeyboard() in Chromium's base/win/win_util.cc.
@@ -1144,38 +1030,7 @@ void IMEHandler::DismissOnScreenKeyboard(nsWindow* aWindow) {
     return;
   }
 
-  HWND osk = GetOnScreenKeyboardWindow();
-  if (osk) {
-    ::PostMessage(osk, WM_SYSCOMMAND, SC_CLOSE, 0);
-  }
-}
-
-// static
-HWND IMEHandler::GetOnScreenKeyboardWindow() {
-  const wchar_t kOSKClassName[] = L"IPTip_Main_Window";
-  HWND osk = ::FindWindowW(kOSKClassName, nullptr);
-  if (::IsWindow(osk) && ::IsWindowEnabled(osk) && ::IsWindowVisible(osk)) {
-    return osk;
-  }
-  return nullptr;
-}
-
-// static
-void IMEHandler::SetCandidateWindow(nsWindow* aWindow, CANDIDATEFORM* aForm) {
-  if (!sPluginHasFocus) {
-    return;
-  }
-
-  IMMHandler::SetCandidateWindow(aWindow, aForm);
-}
-
-// static
-void IMEHandler::DefaultProcOfPluginEvent(nsWindow* aWindow,
-                                          const NPEvent* aPluginEvent) {
-  if (!sPluginHasFocus) {
-    return;
-  }
-  IMMHandler::DefaultProcOfPluginEvent(aWindow, aPluginEvent);
+  OSKTabTipManager::DismissOnScreenKeyboard();
 }
 
 bool IMEHandler::MaybeCreateNativeCaret(nsWindow* aWindow) {
@@ -1207,19 +1062,19 @@ bool IMEHandler::MaybeCreateNativeCaret(nsWindow* aWindow) {
     return false;
   }
 
-  WidgetQueryContentEvent queryCaretRect(true, eQueryCaretRect, aWindow);
-  aWindow->InitEvent(queryCaretRect);
+  WidgetQueryContentEvent queryCaretRectEvent(true, eQueryCaretRect, aWindow);
+  aWindow->InitEvent(queryCaretRectEvent);
 
   WidgetQueryContentEvent::Options options;
   options.mRelativeToInsertionPoint = true;
-  queryCaretRect.InitForQueryCaretRect(0, options);
+  queryCaretRectEvent.InitForQueryCaretRect(0, options);
 
-  aWindow->DispatchWindowEvent(&queryCaretRect);
-  if (NS_WARN_IF(!queryCaretRect.mSucceeded)) {
+  aWindow->DispatchWindowEvent(&queryCaretRectEvent);
+  if (NS_WARN_IF(queryCaretRectEvent.Failed())) {
     return false;
   }
 
-  return CreateNativeCaret(aWindow, queryCaretRect.mReply.mRect);
+  return CreateNativeCaret(aWindow, queryCaretRectEvent.mReply->mRect);
 }
 
 bool IMEHandler::CreateNativeCaret(nsWindow* aWindow,

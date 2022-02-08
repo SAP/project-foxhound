@@ -76,7 +76,7 @@ async function installAndStartExtension() {
       content_scripts: [
         {
           js: ["content_script.js"],
-          matches: ["http://example.com/*"],
+          matches: ["https://example.com/*"],
           run_at: "document_start"
         }
       ]

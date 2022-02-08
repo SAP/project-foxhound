@@ -1,6 +1,5 @@
 //! Helper functions and structures for the translation.
 use crate::environ::{TargetEnvironment, WasmResult, WasmType};
-use crate::state::ModuleTranslationState;
 use crate::wasm_unsupported;
 use core::convert::TryInto;
 use core::u32;
@@ -10,7 +9,7 @@ use cranelift_codegen::ir::immediates::V128Imm;
 use cranelift_frontend::FunctionBuilder;
 #[cfg(feature = "enable-serde")]
 use serde::{Deserialize, Serialize};
-use wasmparser;
+use wasmparser::{FuncValidator, WasmFuncType, WasmModuleResources};
 
 /// Index type of a function (imported or defined) inside the WebAssembly module.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
@@ -20,6 +19,7 @@ entity_impl!(FuncIndex);
 
 /// Index type of a defined function inside the WebAssembly module.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub struct DefinedFuncIndex(u32);
 entity_impl!(DefinedFuncIndex);
 
@@ -73,6 +73,85 @@ entity_impl!(DataIndex);
 #[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub struct ElemIndex(u32);
 entity_impl!(ElemIndex);
+
+/// Index type of a type inside the WebAssembly module.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
+pub struct TypeIndex(u32);
+entity_impl!(TypeIndex);
+
+/// Index type of a module inside the WebAssembly module.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
+pub struct ModuleIndex(u32);
+entity_impl!(ModuleIndex);
+
+/// Index type of an instance inside the WebAssembly module.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
+pub struct InstanceIndex(u32);
+entity_impl!(InstanceIndex);
+
+/// Index type of an event inside the WebAssembly module.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
+pub struct EventIndex(u32);
+entity_impl!(EventIndex);
+
+/// Specialized index for just module types.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
+pub struct ModuleTypeIndex(u32);
+entity_impl!(ModuleTypeIndex);
+
+/// Specialized index for just instance types.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
+pub struct InstanceTypeIndex(u32);
+entity_impl!(InstanceTypeIndex);
+
+/// An index of an entity.
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
+pub enum EntityIndex {
+    /// Function index.
+    Function(FuncIndex),
+    /// Table index.
+    Table(TableIndex),
+    /// Memory index.
+    Memory(MemoryIndex),
+    /// Global index.
+    Global(GlobalIndex),
+    /// Module index.
+    Module(ModuleIndex),
+    /// Instance index.
+    Instance(InstanceIndex),
+}
+
+/// A type of an item in a wasm module where an item is typically something that
+/// can be exported.
+#[allow(missing_docs)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
+pub enum EntityType {
+    /// A global variable with the specified content type
+    Global(Global),
+    /// A linear memory with the specified limits
+    Memory(Memory),
+    /// An event definition.
+    Event(Event),
+    /// A table with the specified element type and limits
+    Table(Table),
+    /// A function type where the index points to the type section and records a
+    /// function signature.
+    Function(SignatureIndex),
+    /// An instance where the index points to the type section and records a
+    /// instance's exports.
+    Instance(InstanceTypeIndex),
+    /// A module where the index points to the type section and records a
+    /// module's imports and exports.
+    Module(ModuleTypeIndex),
+}
 
 /// A WebAssembly global.
 ///
@@ -154,6 +233,14 @@ pub struct Memory {
     pub shared: bool,
 }
 
+/// WebAssembly event.
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
+pub struct Event {
+    /// The event signature type.
+    pub ty: TypeIndex,
+}
+
 /// Helper function translating wasmparser types to Cranelift types when possible.
 pub fn type_to_type<PE: TargetEnvironment + ?Sized>(
     ty: wasmparser::Type,
@@ -194,38 +281,56 @@ pub fn tabletype_to_type<PE: TargetEnvironment + ?Sized>(
 }
 
 /// Get the parameter and result types for the given Wasm blocktype.
-pub fn blocktype_params_results(
-    module_translation_state: &ModuleTranslationState,
+pub fn blocktype_params_results<'a, T>(
+    validator: &'a FuncValidator<T>,
     ty_or_ft: wasmparser::TypeOrFuncType,
-) -> WasmResult<(&[wasmparser::Type], &[wasmparser::Type])> {
-    Ok(match ty_or_ft {
-        wasmparser::TypeOrFuncType::Type(ty) => match ty {
-            wasmparser::Type::I32 => (&[], &[wasmparser::Type::I32]),
-            wasmparser::Type::I64 => (&[], &[wasmparser::Type::I64]),
-            wasmparser::Type::F32 => (&[], &[wasmparser::Type::F32]),
-            wasmparser::Type::F64 => (&[], &[wasmparser::Type::F64]),
-            wasmparser::Type::V128 => (&[], &[wasmparser::Type::V128]),
-            wasmparser::Type::ExternRef => (&[], &[wasmparser::Type::ExternRef]),
-            wasmparser::Type::FuncRef => (&[], &[wasmparser::Type::FuncRef]),
-            wasmparser::Type::EmptyBlockType => (&[], &[]),
-            ty => return Err(wasm_unsupported!("blocktype_params_results: type {:?}", ty)),
-        },
-        wasmparser::TypeOrFuncType::FuncType(ty_index) => {
-            let sig_idx = SignatureIndex::from_u32(ty_index);
-            let (ref params, ref returns) = module_translation_state.wasm_types[sig_idx];
-            (&*params, &*returns)
+) -> WasmResult<(
+    impl ExactSizeIterator<Item = wasmparser::Type> + Clone + 'a,
+    impl ExactSizeIterator<Item = wasmparser::Type> + Clone + 'a,
+)>
+where
+    T: WasmModuleResources,
+{
+    return Ok(match ty_or_ft {
+        wasmparser::TypeOrFuncType::Type(ty) => {
+            let (params, results): (&'static [wasmparser::Type], &'static [wasmparser::Type]) =
+                match ty {
+                    wasmparser::Type::I32 => (&[], &[wasmparser::Type::I32]),
+                    wasmparser::Type::I64 => (&[], &[wasmparser::Type::I64]),
+                    wasmparser::Type::F32 => (&[], &[wasmparser::Type::F32]),
+                    wasmparser::Type::F64 => (&[], &[wasmparser::Type::F64]),
+                    wasmparser::Type::V128 => (&[], &[wasmparser::Type::V128]),
+                    wasmparser::Type::ExternRef => (&[], &[wasmparser::Type::ExternRef]),
+                    wasmparser::Type::FuncRef => (&[], &[wasmparser::Type::FuncRef]),
+                    wasmparser::Type::EmptyBlockType => (&[], &[]),
+                    ty => return Err(wasm_unsupported!("blocktype_params_results: type {:?}", ty)),
+                };
+            (
+                itertools::Either::Left(params.iter().copied()),
+                itertools::Either::Left(results.iter().copied()),
+            )
         }
-    })
+        wasmparser::TypeOrFuncType::FuncType(ty_index) => {
+            let ty = validator
+                .resources()
+                .func_type_at(ty_index)
+                .expect("should be valid");
+            (
+                itertools::Either::Right(ty.inputs()),
+                itertools::Either::Right(ty.outputs()),
+            )
+        }
+    });
 }
 
 /// Create a `Block` with the given Wasm parameters.
 pub fn block_with_params<PE: TargetEnvironment + ?Sized>(
     builder: &mut FunctionBuilder,
-    params: &[wasmparser::Type],
+    params: impl IntoIterator<Item = wasmparser::Type>,
     environ: &PE,
 ) -> WasmResult<ir::Block> {
     let block = builder.create_block();
-    for ty in params.iter() {
+    for ty in params {
         match ty {
             wasmparser::Type::I32 => {
                 builder.append_block_param(block, ir::types::I32);
@@ -240,7 +345,7 @@ pub fn block_with_params<PE: TargetEnvironment + ?Sized>(
                 builder.append_block_param(block, ir::types::F64);
             }
             wasmparser::Type::ExternRef | wasmparser::Type::FuncRef => {
-                builder.append_block_param(block, environ.reference_type((*ty).try_into()?));
+                builder.append_block_param(block, environ.reference_type(ty.try_into()?));
             }
             wasmparser::Type::V128 => {
                 builder.append_block_param(block, ir::types::I8X16);

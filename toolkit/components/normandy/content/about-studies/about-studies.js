@@ -23,6 +23,15 @@ function sendPageEvent(action, data) {
   document.dispatchEvent(event);
 }
 
+function readOptinParams() {
+  let searchParams = new URLSearchParams(new URL(location).search);
+  return {
+    slug: searchParams.get("optin_slug"),
+    branch: searchParams.get("optin_branch"),
+    collection: searchParams.get("optin_collection"),
+  };
+}
+
 /**
  * Handle basic layout and routing within about:studies.
  */
@@ -43,12 +52,31 @@ class AboutStudies extends React.Component {
     for (const stateName of Object.values(this.remoteValueNameMap)) {
       this.state[stateName] = null;
     }
+    this.state.optInMessage = false;
   }
 
-  componentWillMount() {
+  initializeData() {
     for (const remoteName of Object.keys(this.remoteValueNameMap)) {
       document.addEventListener(`ReceiveRemoteValue:${remoteName}`, this);
       sendPageEvent(`GetRemoteValue:${remoteName}`);
+    }
+  }
+
+  componentWillMount() {
+    let optinParams = readOptinParams();
+    if (optinParams.branch && optinParams.slug) {
+      const onOptIn = ({ detail: value }) => {
+        this.setState({ optInMessage: value });
+        this.initializeData();
+        document.removeEventListener(
+          `ReceiveRemoteValue:OptInMessage`,
+          onOptIn
+        );
+      };
+      document.addEventListener(`ReceiveRemoteValue:OptInMessage`, onOptIn);
+      sendPageEvent(`ExperimentOptIn`, optinParams);
+    } else {
+      this.initializeData();
     }
   }
 
@@ -75,8 +103,8 @@ class AboutStudies extends React.Component {
       addonStudies,
       prefStudies,
       experiments,
+      optInMessage,
     } = this.state;
-
     // Wait for all values to be loaded before rendering. Some of the values may
     // be falsey, so an explicit null check is needed.
     if (Object.values(this.state).some(v => v === null)) {
@@ -87,6 +115,7 @@ class AboutStudies extends React.Component {
       "div",
       { className: "about-studies-container main-content" },
       r(WhatsThisBox, { translations, learnMoreHref, studiesEnabled }),
+      optInMessage && r(OptInBox, optInMessage),
       r(StudyList, { translations, addonStudies, prefStudies, experiments })
     );
   }
@@ -137,6 +166,16 @@ class WhatsThisBox extends React.Component {
       )
     );
   }
+}
+/**OptInMessage
+ * Explains the contents of the page, and offers a way to learn more and update preferences.
+ */
+function OptInBox({ error, message }) {
+  return r(
+    "div",
+    { className: "opt-in-box" + (error ? " opt-in-error" : "") },
+    message
+  );
 }
 
 /**
@@ -192,7 +231,6 @@ class StudyList extends React.Component {
 
     activeStudies.sort((a, b) => b.sortDate - a.sortDate);
     inactiveStudies.sort((a, b) => b.sortDate - a.sortDate);
-
     return r(
       "div",
       {},
@@ -208,18 +246,25 @@ class StudyList extends React.Component {
               translations,
             });
           }
-          if (study.type === "messaging_experiment") {
+          if (
+            study.type === "nimbus" ||
+            // Backwards compatibility with old recipes
+            study.type === "messaging_experiment"
+          ) {
             return r(MessagingSystemListItem, {
               key: study.slug,
               study,
               translations,
             });
           }
-          return r(PreferenceStudyListItem, {
-            key: study.slug,
-            study,
-            translations,
-          });
+          if (study.type === "pref") {
+            return r(PreferenceStudyListItem, {
+              key: study.slug,
+              study,
+              translations,
+            });
+          }
+          return null;
         })
       ),
       r("h2", {}, translations.completedStudiesList),
@@ -234,18 +279,24 @@ class StudyList extends React.Component {
               translations,
             });
           }
-          if (study.experimentType === "messaging_experiment") {
+          if (
+            study.type === "nimbus" ||
+            study.type === "messaging_experiment"
+          ) {
             return r(MessagingSystemListItem, {
               key: study.slug,
               study,
               translations,
             });
           }
-          return r(PreferenceStudyListItem, {
-            key: study.slug,
-            study,
-            translations,
-          });
+          if (study.type === "pref") {
+            return r(PreferenceStudyListItem, {
+              key: study.slug,
+              study,
+              translations,
+            });
+          }
+          return null;
         })
       )
     );
@@ -273,11 +324,11 @@ class MessagingSystemListItem extends React.Component {
     const { study, translations } = this.props;
     const userFacingName = study.userFacingName || study.slug;
     const userFacingDescription =
-      study.userFacingDescription || "Messaging System experiment.";
+      study.userFacingDescription || "Nimbus experiment.";
     return r(
       "li",
       {
-        className: classnames("study messaging-system", {
+        className: classnames("study nimbus", {
           disabled: !study.active,
         }),
         "data-study-slug": study.slug, // used to identify this row in tests

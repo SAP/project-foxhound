@@ -10,12 +10,14 @@
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/gfx/GPUChild.h"
+#include "mozilla/ipc/Endpoint.h"
+#include "mozilla/ipc/ProcessChild.h"
+#include "mozilla/ipc/ProcessUtils.h"
 #include "mozilla/ipc/ProtocolTypes.h"
 #include "mozilla/ipc/ProtocolUtils.h"  // for IToplevelProtocol
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TimeStamp.h"  // for TimeStamp
 #include "mozilla/Unused.h"
-#include "ProcessUtils.h"
 #include "VRChild.h"
 #include "VRThread.h"
 
@@ -58,9 +60,7 @@ bool VRProcessParent::Launch() {
   mLaunchPhase = LaunchPhase::Waiting;
 
   std::vector<std::string> extraArgs;
-  nsCString parentBuildID(mozilla::PlatformBuildID());
-  extraArgs.push_back("-parentBuildID");
-  extraArgs.push_back(parentBuildID.get());
+  ProcessChild::AddPlatformBuildID(extraArgs);
 
   mPrefSerializer = MakeUnique<ipc::SharedPreferenceSerializer>();
   if (!mPrefSerializer->SerializeToSharedMemory()) {
@@ -156,8 +156,8 @@ bool VRProcessParent::InitAfterConnect(bool aSucceeded) {
 
     mVRChild = MakeUnique<VRChild>(this);
 
-    DebugOnly<bool> rv =
-        mVRChild->Open(TakeChannel(), base::GetProcId(GetChildProcessHandle()));
+    DebugOnly<bool> rv = mVRChild->Open(
+        TakeInitialPort(), base::GetProcId(GetChildProcessHandle()));
     MOZ_ASSERT(rv);
 
     mVRChild->Init();

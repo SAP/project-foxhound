@@ -92,12 +92,13 @@ macro_rules! num_int {
         }
     };
 }
+
 macro_rules! num_float {
     ($ty:ty) => {
         impl Round for $ty {
             #[inline]
             fn round(self) -> $ty {
-                num_traits::Float::round(self)
+                (self + 0.5).floor()
             }
         }
         impl Floor for $ty {

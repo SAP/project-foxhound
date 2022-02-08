@@ -22,17 +22,35 @@ const DEFAULT_SEARCH_STORE_TYPE = "default_search";
 const DEFAULT_SEARCH_SETTING_NAME = "defaultSearch";
 
 AddonTestUtils.initMochitest(this);
+SearchTestUtils.init(this);
 
-var defaultEngineName;
+const DEFAULT_ENGINE_NAME = "basic";
+const ALTERNATE_ENGINE_NAME = "Simple Engine";
+const ALTERNATE2_ENGINE_NAME = "another";
 
 async function restoreDefaultEngine() {
-  let engine = Services.search.getEngineByName(defaultEngineName);
+  let engine = Services.search.getEngineByName(DEFAULT_ENGINE_NAME);
   await Services.search.setDefault(engine);
 }
 
 add_task(async function setup() {
-  defaultEngineName = (await Services.search.getDefault()).name;
-  registerCleanupFunction(restoreDefaultEngine);
+  let searchExtensions = getChromeDir(getResolvedURI(gTestPath));
+  searchExtensions.append("search-engines");
+
+  await SearchTestUtils.useMochitestEngines(searchExtensions);
+
+  SearchTestUtils.useMockIdleService();
+  let response = await fetch(`resource://search-extensions/engines.json`);
+  let json = await response.json();
+  await SearchTestUtils.updateRemoteSettingsConfig(json.data);
+
+  registerCleanupFunction(async () => {
+    let settingsWritten = SearchTestUtils.promiseSearchNotification(
+      "write-settings-to-disk-complete"
+    );
+    await SearchTestUtils.updateRemoteSettingsConfig();
+    await settingsWritten;
+  });
 });
 
 /* This tests setting a default engine. */
@@ -41,7 +59,7 @@ add_task(async function test_extension_setting_default_engine() {
     manifest: {
       chrome_settings_overrides: {
         search_provider: {
-          name: "DuckDuckGo",
+          name: ALTERNATE_ENGINE_NAME,
           search_url: "https://example.com/?q={searchTerms}",
           is_default: true,
         },
@@ -55,29 +73,29 @@ add_task(async function test_extension_setting_default_engine() {
 
   is(
     (await Services.search.getDefault()).name,
-    "DuckDuckGo",
-    "Default engine is DuckDuckGo"
+    ALTERNATE_ENGINE_NAME,
+    `Default engine is ${ALTERNATE_ENGINE_NAME}`
   );
 
   await ext1.unload();
 
   is(
     (await Services.search.getDefault()).name,
-    defaultEngineName,
-    `Default engine is ${defaultEngineName}`
+    DEFAULT_ENGINE_NAME,
+    `Default engine is ${DEFAULT_ENGINE_NAME}`
   );
 });
 
 /* This tests what happens when the engine you're setting it to is hidden. */
 add_task(async function test_extension_setting_default_engine_hidden() {
-  let engine = Services.search.getEngineByName("DuckDuckGo");
+  let engine = Services.search.getEngineByName(ALTERNATE_ENGINE_NAME);
   engine.hidden = true;
 
   let ext1 = ExtensionTestUtils.loadExtension({
     manifest: {
       chrome_settings_overrides: {
         search_provider: {
-          name: "DuckDuckGo",
+          name: ALTERNATE_ENGINE_NAME,
           search_url: "https://example.com/?q={searchTerms}",
           is_default: true,
         },
@@ -91,7 +109,7 @@ add_task(async function test_extension_setting_default_engine_hidden() {
 
   is(
     (await Services.search.getDefault()).name,
-    defaultEngineName,
+    DEFAULT_ENGINE_NAME,
     "Default engine should have remained as the default"
   );
   is(
@@ -104,8 +122,8 @@ add_task(async function test_extension_setting_default_engine_hidden() {
 
   is(
     (await Services.search.getDefault()).name,
-    defaultEngineName,
-    `Default engine is ${defaultEngineName}`
+    DEFAULT_ENGINE_NAME,
+    `Default engine is ${DEFAULT_ENGINE_NAME}`
   );
   engine.hidden = false;
 });
@@ -154,15 +172,11 @@ add_task(async function test_extension_setting_default_engine_external() {
   let { panel, extension } = await startExtension();
   panel.secondaryButton.click();
 
-  // There is no explicit event we can wait for to know when the click
-  // callback has been fully processed.  One spin through the Promise
-  // microtask queue should be enough.  If this wait isn't long enough,
-  // the test below where we accept the prompt will fail.
-  await Promise.resolve();
+  await TestUtils.topicObserved("webextension-defaultsearch-prompt-response");
 
   is(
     (await Services.search.getDefault()).name,
-    defaultEngineName,
+    DEFAULT_ENGINE_NAME,
     "Default engine was not changed after rejecting prompt"
   );
 
@@ -172,7 +186,7 @@ add_task(async function test_extension_setting_default_engine_external() {
   ({ panel, extension } = await startExtension());
 
   panel.button.click();
-  await Promise.resolve();
+  await TestUtils.topicObserved("webextension-defaultsearch-prompt-response");
 
   is(
     (await Services.search.getDefault()).name,
@@ -181,7 +195,9 @@ add_task(async function test_extension_setting_default_engine_external() {
   );
 
   // Do this twice to make sure we're definitely handling disable/enable
-  // correctly.
+  // correctly.  Disabling and enabling the addon here like this also
+  // replicates the behavior when an addon is added then removed in the
+  // blocklist.
   let disabledPromise = awaitEvent("shutdown", EXTENSION1_ID);
   let addon = await AddonManager.getAddonByID(EXTENSION1_ID);
   await addon.disable();
@@ -189,13 +205,18 @@ add_task(async function test_extension_setting_default_engine_external() {
 
   is(
     (await Services.search.getDefault()).name,
-    "Google",
-    "Default engine is Google after disabling"
+    DEFAULT_ENGINE_NAME,
+    `Default engine is ${DEFAULT_ENGINE_NAME} after disabling`
   );
 
-  let processedPromise = awaitEvent("searchEngineProcessed", EXTENSION1_ID);
+  let opened = promisePopupNotificationShown(
+    "addon-webext-defaultsearch",
+    window
+  );
   await addon.enable();
-  await processedPromise;
+  panel = await opened;
+  panel.button.click();
+  await TestUtils.topicObserved("webextension-defaultsearch-prompt-response");
 
   is(
     (await Services.search.getDefault()).name,
@@ -207,7 +228,7 @@ add_task(async function test_extension_setting_default_engine_external() {
 
   is(
     (await Services.search.getDefault()).name,
-    defaultEngineName,
+    DEFAULT_ENGINE_NAME,
     "Default engine is reverted after uninstalling extension."
   );
 
@@ -222,7 +243,7 @@ add_task(async function test_extension_setting_default_engine_external() {
 
   is(
     (await Services.search.getDefault()).name,
-    defaultEngineName,
+    DEFAULT_ENGINE_NAME,
     "Default engine is unchanged when prompt is dismissed"
   );
 
@@ -236,7 +257,7 @@ add_task(async function test_extension_setting_multiple_default_engine() {
     manifest: {
       chrome_settings_overrides: {
         search_provider: {
-          name: "DuckDuckGo",
+          name: ALTERNATE_ENGINE_NAME,
           search_url: "https://example.com/?q={searchTerms}",
           is_default: true,
         },
@@ -249,7 +270,7 @@ add_task(async function test_extension_setting_multiple_default_engine() {
     manifest: {
       chrome_settings_overrides: {
         search_provider: {
-          name: "Bing",
+          name: ALTERNATE2_ENGINE_NAME,
           search_url: "https://example.com/?q={searchTerms}",
           is_default: true,
         },
@@ -263,8 +284,8 @@ add_task(async function test_extension_setting_multiple_default_engine() {
 
   is(
     (await Services.search.getDefault()).name,
-    "DuckDuckGo",
-    "Default engine is DuckDuckGo"
+    ALTERNATE_ENGINE_NAME,
+    `Default engine is ${ALTERNATE_ENGINE_NAME}`
   );
 
   await ext2.startup();
@@ -272,24 +293,24 @@ add_task(async function test_extension_setting_multiple_default_engine() {
 
   is(
     (await Services.search.getDefault()).name,
-    "Bing",
-    "Default engine is Bing"
+    ALTERNATE2_ENGINE_NAME,
+    `Default engine is ${ALTERNATE2_ENGINE_NAME}`
   );
 
   await ext2.unload();
 
   is(
     (await Services.search.getDefault()).name,
-    "DuckDuckGo",
-    "Default engine is DuckDuckGo"
+    ALTERNATE_ENGINE_NAME,
+    `Default engine is ${ALTERNATE_ENGINE_NAME}`
   );
 
   await ext1.unload();
 
   is(
     (await Services.search.getDefault()).name,
-    defaultEngineName,
-    `Default engine is ${defaultEngineName}`
+    DEFAULT_ENGINE_NAME,
+    `Default engine is ${DEFAULT_ENGINE_NAME}`
   );
 });
 
@@ -301,7 +322,7 @@ add_task(
       manifest: {
         chrome_settings_overrides: {
           search_provider: {
-            name: "DuckDuckGo",
+            name: ALTERNATE_ENGINE_NAME,
             search_url: "https://example.com/?q={searchTerms}",
             is_default: true,
           },
@@ -314,7 +335,7 @@ add_task(
       manifest: {
         chrome_settings_overrides: {
           search_provider: {
-            name: "Bing",
+            name: ALTERNATE2_ENGINE_NAME,
             search_url: "https://example.com/?q={searchTerms}",
             is_default: true,
           },
@@ -328,8 +349,8 @@ add_task(
 
     is(
       (await Services.search.getDefault()).name,
-      "DuckDuckGo",
-      "Default engine is DuckDuckGo"
+      ALTERNATE_ENGINE_NAME,
+      `Default engine is ${ALTERNATE_ENGINE_NAME}`
     );
 
     await ext2.startup();
@@ -337,24 +358,24 @@ add_task(
 
     is(
       (await Services.search.getDefault()).name,
-      "Bing",
-      "Default engine is Bing"
+      ALTERNATE2_ENGINE_NAME,
+      `Default engine is ${ALTERNATE2_ENGINE_NAME}`
     );
 
     await ext1.unload();
 
     is(
       (await Services.search.getDefault()).name,
-      "Bing",
-      "Default engine is Bing"
+      ALTERNATE2_ENGINE_NAME,
+      `Default engine is ${ALTERNATE2_ENGINE_NAME}`
     );
 
     await ext2.unload();
 
     is(
       (await Services.search.getDefault()).name,
-      defaultEngineName,
-      `Default engine is ${defaultEngineName}`
+      DEFAULT_ENGINE_NAME,
+      `Default engine is ${DEFAULT_ENGINE_NAME}`
     );
   }
 );
@@ -366,7 +387,7 @@ add_task(async function test_user_changing_default_engine() {
     manifest: {
       chrome_settings_overrides: {
         search_provider: {
-          name: "DuckDuckGo",
+          name: ALTERNATE_ENGINE_NAME,
           search_url: "https://example.com/?q={searchTerms}",
           is_default: true,
         },
@@ -380,11 +401,11 @@ add_task(async function test_user_changing_default_engine() {
 
   is(
     (await Services.search.getDefault()).name,
-    "DuckDuckGo",
-    "Default engine is DuckDuckGo"
+    ALTERNATE_ENGINE_NAME,
+    `Default engine is ${ALTERNATE_ENGINE_NAME}`
   );
 
-  let engine = Services.search.getEngineByName("Bing");
+  let engine = Services.search.getEngineByName(ALTERNATE2_ENGINE_NAME);
   await Services.search.setDefault(engine);
   // This simulates the preferences UI when the setting is changed.
   ExtensionSettingsStore.select(
@@ -397,8 +418,8 @@ add_task(async function test_user_changing_default_engine() {
 
   is(
     (await Services.search.getDefault()).name,
-    "Bing",
-    "Default engine is Bing"
+    ALTERNATE2_ENGINE_NAME,
+    `Default engine is ${ALTERNATE2_ENGINE_NAME}`
   );
   restoreDefaultEngine();
 });
@@ -415,7 +436,7 @@ add_task(async function test_user_change_with_disabling() {
       },
       chrome_settings_overrides: {
         search_provider: {
-          name: "DuckDuckGo",
+          name: ALTERNATE_ENGINE_NAME,
           search_url: "https://example.com/?q={searchTerms}",
           is_default: true,
         },
@@ -429,11 +450,11 @@ add_task(async function test_user_change_with_disabling() {
 
   is(
     (await Services.search.getDefault()).name,
-    "DuckDuckGo",
-    "Default engine is DuckDuckGo"
+    ALTERNATE_ENGINE_NAME,
+    `Default engine is ${ALTERNATE_ENGINE_NAME}`
   );
 
-  let engine = Services.search.getEngineByName("Bing");
+  let engine = Services.search.getEngineByName(ALTERNATE2_ENGINE_NAME);
   await Services.search.setDefault(engine);
   // This simulates the preferences UI when the setting is changed.
   ExtensionSettingsStore.select(
@@ -444,8 +465,8 @@ add_task(async function test_user_change_with_disabling() {
 
   is(
     (await Services.search.getDefault()).name,
-    "Bing",
-    "Default engine is Bing"
+    ALTERNATE2_ENGINE_NAME,
+    `Default engine is ${ALTERNATE2_ENGINE_NAME}`
   );
 
   let disabledPromise = awaitEvent("shutdown", EXTENSION1_ID);
@@ -455,8 +476,8 @@ add_task(async function test_user_change_with_disabling() {
 
   is(
     (await Services.search.getDefault()).name,
-    "Bing",
-    "Default engine is Bing"
+    ALTERNATE2_ENGINE_NAME,
+    `Default engine is ${ALTERNATE2_ENGINE_NAME}`
   );
 
   let processedPromise = awaitEvent("searchEngineProcessed", EXTENSION1_ID);
@@ -465,8 +486,8 @@ add_task(async function test_user_change_with_disabling() {
 
   is(
     (await Services.search.getDefault()).name,
-    "Bing",
-    "Default engine is Bing"
+    ALTERNATE2_ENGINE_NAME,
+    `Default engine is ${ALTERNATE2_ENGINE_NAME}`
   );
   await ext1.unload();
   await restoreDefaultEngine();
@@ -485,7 +506,7 @@ add_task(async function test_two_addons_with_first_disabled_before_second() {
       },
       chrome_settings_overrides: {
         search_provider: {
-          name: "DuckDuckGo",
+          name: ALTERNATE_ENGINE_NAME,
           search_url: "https://example.com/?q={searchTerms}",
           is_default: true,
         },
@@ -503,7 +524,7 @@ add_task(async function test_two_addons_with_first_disabled_before_second() {
       },
       chrome_settings_overrides: {
         search_provider: {
-          name: "Bing",
+          name: ALTERNATE2_ENGINE_NAME,
           search_url: "https://example.com/?q={searchTerms}",
           is_default: true,
         },
@@ -517,8 +538,8 @@ add_task(async function test_two_addons_with_first_disabled_before_second() {
 
   is(
     (await Services.search.getDefault()).name,
-    "DuckDuckGo",
-    "Default engine is DuckDuckGo"
+    ALTERNATE_ENGINE_NAME,
+    `Default engine is ${ALTERNATE_ENGINE_NAME}`
   );
 
   let disabledPromise = awaitEvent("shutdown", EXTENSION1_ID);
@@ -528,8 +549,8 @@ add_task(async function test_two_addons_with_first_disabled_before_second() {
 
   is(
     (await Services.search.getDefault()).name,
-    defaultEngineName,
-    `Default engine is ${defaultEngineName}`
+    DEFAULT_ENGINE_NAME,
+    `Default engine is ${DEFAULT_ENGINE_NAME}`
   );
 
   await ext2.startup();
@@ -537,8 +558,8 @@ add_task(async function test_two_addons_with_first_disabled_before_second() {
 
   is(
     (await Services.search.getDefault()).name,
-    "Bing",
-    "Default engine is Bing"
+    ALTERNATE2_ENGINE_NAME,
+    `Default engine is ${ALTERNATE2_ENGINE_NAME}`
   );
 
   let enabledPromise = awaitEvent("ready", EXTENSION1_ID);
@@ -547,22 +568,16 @@ add_task(async function test_two_addons_with_first_disabled_before_second() {
 
   is(
     (await Services.search.getDefault()).name,
-    "Bing",
-    "Default engine is Bing"
+    ALTERNATE2_ENGINE_NAME,
+    `Default engine is ${ALTERNATE2_ENGINE_NAME}`
   );
   await ext2.unload();
-
-  is(
-    (await Services.search.getDefault()).name,
-    "DuckDuckGo",
-    "Default engine is DuckDuckGo"
-  );
   await ext1.unload();
 
   is(
     (await Services.search.getDefault()).name,
-    defaultEngineName,
-    `Default engine is ${defaultEngineName}`
+    DEFAULT_ENGINE_NAME,
+    `Default engine is ${DEFAULT_ENGINE_NAME}`
   );
 });
 
@@ -579,7 +594,7 @@ add_task(async function test_two_addons_with_first_disabled() {
       },
       chrome_settings_overrides: {
         search_provider: {
-          name: "DuckDuckGo",
+          name: ALTERNATE_ENGINE_NAME,
           search_url: "https://example.com/?q={searchTerms}",
           is_default: true,
         },
@@ -597,7 +612,7 @@ add_task(async function test_two_addons_with_first_disabled() {
       },
       chrome_settings_overrides: {
         search_provider: {
-          name: "Bing",
+          name: ALTERNATE2_ENGINE_NAME,
           search_url: "https://example.com/?q={searchTerms}",
           is_default: true,
         },
@@ -611,8 +626,8 @@ add_task(async function test_two_addons_with_first_disabled() {
 
   is(
     (await Services.search.getDefault()).name,
-    "DuckDuckGo",
-    "Default engine is DuckDuckGo"
+    ALTERNATE_ENGINE_NAME,
+    `Default engine is ${ALTERNATE_ENGINE_NAME}`
   );
 
   await ext2.startup();
@@ -620,8 +635,8 @@ add_task(async function test_two_addons_with_first_disabled() {
 
   is(
     (await Services.search.getDefault()).name,
-    "Bing",
-    "Default engine is Bing"
+    ALTERNATE2_ENGINE_NAME,
+    `Default engine is ${ALTERNATE2_ENGINE_NAME}`
   );
 
   let disabledPromise = awaitEvent("shutdown", EXTENSION1_ID);
@@ -631,8 +646,8 @@ add_task(async function test_two_addons_with_first_disabled() {
 
   is(
     (await Services.search.getDefault()).name,
-    "Bing",
-    "Default engine is Bing"
+    ALTERNATE2_ENGINE_NAME,
+    `Default engine is ${ALTERNATE2_ENGINE_NAME}`
   );
 
   let enabledPromise = awaitEvent("ready", EXTENSION1_ID);
@@ -641,22 +656,16 @@ add_task(async function test_two_addons_with_first_disabled() {
 
   is(
     (await Services.search.getDefault()).name,
-    "Bing",
-    "Default engine is Bing"
+    ALTERNATE2_ENGINE_NAME,
+    `Default engine is ${ALTERNATE2_ENGINE_NAME}`
   );
   await ext2.unload();
-
-  is(
-    (await Services.search.getDefault()).name,
-    "DuckDuckGo",
-    "Default engine is DuckDuckGo"
-  );
   await ext1.unload();
 
   is(
     (await Services.search.getDefault()).name,
-    defaultEngineName,
-    `Default engine is ${defaultEngineName}`
+    DEFAULT_ENGINE_NAME,
+    `Default engine is ${DEFAULT_ENGINE_NAME}`
   );
 });
 
@@ -673,7 +682,7 @@ add_task(async function test_two_addons_with_second_disabled() {
       },
       chrome_settings_overrides: {
         search_provider: {
-          name: "DuckDuckGo",
+          name: ALTERNATE_ENGINE_NAME,
           search_url: "https://example.com/?q={searchTerms}",
           is_default: true,
         },
@@ -691,7 +700,7 @@ add_task(async function test_two_addons_with_second_disabled() {
       },
       chrome_settings_overrides: {
         search_provider: {
-          name: "Bing",
+          name: ALTERNATE2_ENGINE_NAME,
           search_url: "https://example.com/?q={searchTerms}",
           is_default: true,
         },
@@ -705,8 +714,8 @@ add_task(async function test_two_addons_with_second_disabled() {
 
   is(
     (await Services.search.getDefault()).name,
-    "DuckDuckGo",
-    "Default engine is DuckDuckGo"
+    ALTERNATE_ENGINE_NAME,
+    `Default engine is ${ALTERNATE_ENGINE_NAME}`
   );
 
   await ext2.startup();
@@ -714,8 +723,8 @@ add_task(async function test_two_addons_with_second_disabled() {
 
   is(
     (await Services.search.getDefault()).name,
-    "Bing",
-    "Default engine is Bing"
+    ALTERNATE2_ENGINE_NAME,
+    `Default engine is ${ALTERNATE2_ENGINE_NAME}`
   );
 
   let disabledPromise = awaitEvent("shutdown", EXTENSION2_ID);
@@ -725,36 +734,35 @@ add_task(async function test_two_addons_with_second_disabled() {
 
   is(
     (await Services.search.getDefault()).name,
-    "DuckDuckGo",
-    "Default engine is DuckDuckGo"
+    ALTERNATE_ENGINE_NAME,
+    `Default engine is ${ALTERNATE_ENGINE_NAME}`
   );
 
   let defaultPromise = SearchTestUtils.promiseSearchNotification(
     "engine-default",
     "browser-search-engine-modified"
   );
-  let enabledPromise = awaitEvent("ready", EXTENSION2_ID);
+  // No prompt, because this is switching to an app-provided engine.
   await addon2.enable();
-  await enabledPromise;
   await defaultPromise;
 
   is(
     (await Services.search.getDefault()).name,
-    "Bing",
-    "Default engine is Bing"
+    ALTERNATE2_ENGINE_NAME,
+    `Default engine is ${ALTERNATE2_ENGINE_NAME}`
   );
   await ext2.unload();
 
   is(
     (await Services.search.getDefault()).name,
-    "DuckDuckGo",
-    "Default engine is DuckDuckGo"
+    ALTERNATE_ENGINE_NAME,
+    `Default engine is ${ALTERNATE_ENGINE_NAME}`
   );
   await ext1.unload();
 
   is(
     (await Services.search.getDefault()).name,
-    defaultEngineName,
-    `Default engine is ${defaultEngineName}`
+    DEFAULT_ENGINE_NAME,
+    `Default engine is ${DEFAULT_ENGINE_NAME}`
   );
 });

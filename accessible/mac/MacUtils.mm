@@ -1,45 +1,48 @@
+/* clang-format off */
 /* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #import "MacUtils.h"
 
-#include "Accessible.h"
+#include "LocalAccessible.h"
 #include "nsCocoaUtils.h"
 #include "mozilla/a11y/PDocAccessible.h"
-#include "nsIPersistentProperties2.h"
 
 namespace mozilla {
 namespace a11y {
 namespace utils {
 
 // convert an array of Gecko accessibles to an NSArray of native accessibles
-static inline NSMutableArray* ConvertToNSArray(nsTArray<Accessible*>& aArray) {
-  NSMutableArray* nativeArray = [[NSMutableArray alloc] init];
+NSArray<mozAccessible*>* ConvertToNSArray(nsTArray<LocalAccessible*>& aArray) {
+  NSMutableArray* nativeArray = [[[NSMutableArray alloc] init] autorelease];
 
   // iterate through the list, and get each native accessible.
   size_t totalCount = aArray.Length();
   for (size_t i = 0; i < totalCount; i++) {
-    Accessible* curAccessible = aArray.ElementAt(i);
+    LocalAccessible* curAccessible = aArray.ElementAt(i);
     mozAccessible* curNative = GetNativeFromGeckoAccessible(curAccessible);
-    if (curNative) [nativeArray addObject:GetObjectOrRepresentedView(curNative)];
+    if (curNative)
+      [nativeArray addObject:GetObjectOrRepresentedView(curNative)];
   }
 
   return nativeArray;
 }
 
-// convert an array of Gecko proxy accessibles to an NSArray of native accessibles
-static inline NSMutableArray* ConvertToNSArray(nsTArray<ProxyAccessible*>& aArray) {
-  NSMutableArray* nativeArray = [[NSMutableArray alloc] init];
+// convert an array of Gecko proxy accessibles to an NSArray of native
+// accessibles
+NSArray<mozAccessible*>* ConvertToNSArray(nsTArray<RemoteAccessible*>& aArray) {
+  NSMutableArray* nativeArray = [[[NSMutableArray alloc] init] autorelease];
 
   // iterate through the list, and get each native accessible.
   size_t totalCount = aArray.Length();
   for (size_t i = 0; i < totalCount; i++) {
-    ProxyAccessible* curAccessible = aArray.ElementAt(i);
+    RemoteAccessible* curAccessible = aArray.ElementAt(i);
     mozAccessible* curNative = GetNativeFromGeckoAccessible(curAccessible);
-    if (curNative) [nativeArray addObject:GetObjectOrRepresentedView(curNative)];
+    if (curNative)
+      [nativeArray addObject:GetObjectOrRepresentedView(curNative)];
   }
 
   return nativeArray;
@@ -52,26 +55,22 @@ static inline NSMutableArray* ConvertToNSArray(nsTArray<ProxyAccessible*>& aArra
 NSString* LocalizedString(const nsString& aString) {
   nsString text;
 
-  Accessible::TranslateString(aString, text);
+  LocalAccessible::TranslateString(aString, text);
 
   return text.IsEmpty() ? nil : nsCocoaUtils::ToNSString(text);
 }
 
-NSString* GetAccAttr(mozAccessible* aNativeAccessible, const char* aAttrName) {
+NSString* GetAccAttr(mozAccessible* aNativeAccessible, nsAtom* aAttrName) {
   nsAutoString result;
-  if (Accessible* acc = [aNativeAccessible geckoAccessible].AsAccessible()) {
-    nsCOMPtr<nsIPersistentProperties> attributes = acc->Attributes();
-    attributes->GetStringProperty(nsCString(aAttrName), result);
-  } else if (ProxyAccessible* proxy = [aNativeAccessible geckoAccessible].AsProxy()) {
-    AutoTArray<Attribute, 10> attrs;
-    proxy->Attributes(&attrs);
-    for (size_t i = 0; i < attrs.Length(); i++) {
-      if (attrs.ElementAt(i).Name() == aAttrName) {
-        result = attrs.ElementAt(i).Value();
-        break;
-      }
-    }
+  RefPtr<AccAttributes> attributes;
+  if (LocalAccessible* acc = [aNativeAccessible geckoAccessible]->AsLocal()) {
+    attributes = acc->Attributes();
+  } else if (RemoteAccessible* proxy =
+                 [aNativeAccessible geckoAccessible]->AsRemote()) {
+    proxy->Attributes(&attributes);
   }
+
+  attributes->GetAttribute(aAttrName, result);
 
   if (!result.IsEmpty()) {
     return nsCocoaUtils::ToNSString(result);

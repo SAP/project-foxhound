@@ -27,6 +27,20 @@ XPCOMUtils.defineLazyGetter(this, "ReferrerInfo", () =>
   )
 );
 
+// Filter out request headers as per discussion in Bug #1567549
+// CONNECTION: Used by Gecko to manage connections
+// HOST: Relates to how gecko will ultimately interpret the resulting resource as that
+//       determines the effective request URI
+const BAD_HEADERS = ["connection", "host"];
+
+// Headers use |\r\n| as separator so these characters cannot appear
+// in the header name or value
+const FORBIDDEN_HEADER_CHARACTERS = ["\n", "\r"];
+
+// Keep in sync with GeckoSession.java
+const HEADER_FILTER_CORS_SAFELISTED = 1;
+const HEADER_FILTER_UNRESTRICTED_UNSAFE = 2;
+
 // Create default ReferrerInfo instance for the given referrer URI string.
 const createReferrerInfo = aReferrer => {
   let referrerUri;
@@ -114,6 +128,32 @@ class GeckoViewNavigation extends GeckoViewModule {
     this._initialAboutBlank = true;
   }
 
+  validateHeader(key, value, filter) {
+    if (!key) {
+      // Key cannot be empty
+      return false;
+    }
+
+    for (const c of FORBIDDEN_HEADER_CHARACTERS) {
+      if (key.includes(c) || value?.includes(c)) {
+        return false;
+      }
+    }
+
+    if (BAD_HEADERS.includes(key.toLowerCase().trim())) {
+      return false;
+    }
+
+    if (
+      filter == HEADER_FILTER_CORS_SAFELISTED &&
+      !this.window.windowUtils.isCORSSafelistedRequestHeader(key, value)
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
   // Bundle event handler.
   async onEvent(aEvent, aData, aCallback) {
     debug`onEvent: event=${aEvent}, data=${aData}`;
@@ -129,7 +169,14 @@ class GeckoViewNavigation extends GeckoViewModule {
         this.browser.gotoIndex(aData.index);
         break;
       case "GeckoView:LoadUri":
-        const { uri, referrerUri, referrerSessionId, flags, headers } = aData;
+        const {
+          uri,
+          referrerUri,
+          referrerSessionId,
+          flags,
+          headers,
+          headerFilter,
+        } = aData;
 
         let navFlags = convertFlags(flags);
         // For performance reasons we don't call the LoadUriDelegate.loadUri
@@ -137,7 +184,6 @@ class GeckoViewNavigation extends GeckoViewModule {
         navFlags |= Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_LOAD_URI_DELEGATE;
 
         let triggeringPrincipal, referrerInfo, csp;
-        let parsedUri;
         if (referrerSessionId) {
           const referrerWindow = Services.ww.getWindowByName(
             referrerSessionId,
@@ -155,25 +201,19 @@ class GeckoViewNavigation extends GeckoViewModule {
             true,
             referrerWindow.browser.documentURI
           );
-        } else {
-          try {
-            parsedUri = Services.io.newURI(uri);
-            if (
-              parsedUri.schemeIs("about") ||
-              parsedUri.schemeIs("data") ||
-              parsedUri.schemeIs("file") ||
-              parsedUri.schemeIs("resource") ||
-              parsedUri.schemeIs("moz-extension")
-            ) {
-              // Only allow privileged loading for certain URIs.
-              triggeringPrincipal = Services.scriptSecurityManager.createContentPrincipal(
-                parsedUri,
-                {}
-              );
-            }
-          } catch (ignored) {}
-
+        } else if (referrerUri) {
           referrerInfo = createReferrerInfo(referrerUri);
+        } else {
+          // External apps are treated like web pages, so they should not get
+          // a privileged principal.
+          const isExternal =
+            navFlags & Ci.nsIWebNavigation.LOAD_FLAGS_FROM_EXTERNAL;
+          if (!isExternal) {
+            // Always use the system principal as the triggering principal
+            // for user-initiated (ie. no referrer session and not external)
+            // loads. See discussion in bug 1573860.
+            triggeringPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
+          }
         }
 
         if (!triggeringPrincipal) {
@@ -184,22 +224,16 @@ class GeckoViewNavigation extends GeckoViewModule {
 
         let additionalHeaders = null;
         if (headers) {
-          // Filter out request headers as per discussion in Bug #1567549
-          // CONNECTION: Used by Gecko to manage connections
-          // HOST: Relates to how gecko will ultimately interpret the resulting resource as that
-          //       determines the effective request URI
-          const badHeaders = ["connection", "host"];
           additionalHeaders = "";
-          headers.forEach(entry => {
-            const key = entry
-              .split(/:/)[0]
-              .toLowerCase()
-              .trim();
-
-            if (!badHeaders.includes(key)) {
-              additionalHeaders += entry + "\r\n";
+          for (const [key, value] of Object.entries(headers)) {
+            if (!this.validateHeader(key, value, headerFilter)) {
+              Cu.reportError(`Ignoring invalid header '${key}'='${value}'.`);
+              continue;
             }
-          });
+
+            additionalHeaders += `${key}:${value ?? ""}\r\n`;
+          }
+
           if (additionalHeaders != "") {
             additionalHeaders = E10SUtils.makeInputStream(additionalHeaders);
           } else {
@@ -223,8 +257,7 @@ class GeckoViewNavigation extends GeckoViewModule {
         // referring session, the referrerInfo is null.
         //
         // csp is only present if we have a referring document, null otherwise.
-        this.loadURI({
-          uri: parsedUri ? parsedUri.spec : uri,
+        this.browser.loadURI(uri, {
           flags: navFlags,
           referrerInfo,
           triggeringPrincipal,
@@ -249,40 +282,7 @@ class GeckoViewNavigation extends GeckoViewModule {
     }
   }
 
-  async loadURI({
-    uri,
-    flags,
-    referrerInfo,
-    triggeringPrincipal,
-    headers,
-    csp,
-  }) {
-    if (!this.moduleManager.shouldLoadInThisProcess(uri)) {
-      referrerInfo = E10SUtils.serializeReferrerInfo(referrerInfo);
-      triggeringPrincipal = E10SUtils.serializePrincipal(triggeringPrincipal);
-      csp = E10SUtils.serializeCSP(csp);
-
-      this.moduleManager.updateRemoteAndNavigate(uri, {
-        referrerInfo,
-        triggeringPrincipal,
-        headers,
-        csp,
-        flags,
-        uri,
-      });
-      return;
-    }
-
-    this.browser.loadURI(uri, {
-      flags,
-      referrerInfo,
-      triggeringPrincipal,
-      csp,
-      headers,
-    });
-  }
-
-  waitAndSetupWindow(aSessionId, aOpenWindowInfo) {
+  waitAndSetupWindow(aSessionId, aOpenWindowInfo, aName) {
     if (!aSessionId) {
       return Promise.resolve(null);
     }
@@ -296,6 +296,11 @@ class GeckoViewNavigation extends GeckoViewModule {
           ) {
             // This value will be read by nsFrameLoader while it is being initialized.
             aSubject.browser.openWindowInfo = aOpenWindowInfo;
+
+            // Gecko will use this attribute to set the name of the opened window.
+            if (aName) {
+              aSubject.browser.setAttribute("name", aName);
+            }
 
             if (
               !aOpenWindowInfo.isRemote &&
@@ -316,7 +321,7 @@ class GeckoViewNavigation extends GeckoViewModule {
     });
   }
 
-  handleNewSession(aUri, aOpenWindowInfo, aWhere, aFlags) {
+  handleNewSession(aUri, aOpenWindowInfo, aWhere, aFlags, aName) {
     debug`handleNewSession: uri=${aUri && aUri.spec}
                              where=${aWhere} flags=${aFlags}`;
 
@@ -324,20 +329,38 @@ class GeckoViewNavigation extends GeckoViewModule {
       return null;
     }
 
+    const newSessionId = Services.uuid
+      .generateUUID()
+      .toString()
+      .slice(1, -1)
+      .replace(/-/g, "");
+
     const message = {
       type: "GeckoView:OnNewSession",
       uri: aUri ? aUri.displaySpec : "",
+      newSessionId,
     };
+
+    // The window might be already open by the time we get the response from
+    // the Java layer, so we need to start waiting before sending the message.
+    const setupPromise = this.waitAndSetupWindow(
+      newSessionId,
+      aOpenWindowInfo,
+      aName
+    );
 
     let browser = undefined;
     this.eventDispatcher
       .sendRequestForResult(message)
-      .then(sessionId => {
-        return this.waitAndSetupWindow(sessionId, aOpenWindowInfo);
+      .then(didOpenSession => {
+        if (!didOpenSession) {
+          return Promise.reject();
+        }
+        return setupPromise;
       })
       .then(
         window => {
-          browser = (window && window.browser) || null;
+          browser = window.browser;
         },
         () => {
           browser = null;
@@ -346,6 +369,7 @@ class GeckoViewNavigation extends GeckoViewModule {
 
     // Wait indefinitely for app to respond with a browser or null
     Services.tm.spinEventLoopUntil(
+      "GeckoViewNavigation.jsm:handleNewSession",
       () => this.window.closed || browser !== undefined
     );
     return browser || null;
@@ -418,7 +442,8 @@ class GeckoViewNavigation extends GeckoViewModule {
       aUri,
       aParams.openWindowInfo,
       aWhere,
-      aFlags
+      aFlags,
+      aName
     );
     if (!browser) {
       Components.returnCode = Cr.NS_ERROR_ABORT;
@@ -428,26 +453,27 @@ class GeckoViewNavigation extends GeckoViewModule {
     return browser;
   }
 
-  handleOpenUri(
-    aUri,
-    aOpenWindowInfo,
-    aWhere,
-    aFlags,
-    aTriggeringPrincipal,
-    aCsp,
-    aReferrerInfo
-  ) {
-    debug`handleOpenUri: uri=${aUri && aUri.spec}
-                          where=${aWhere} flags=${aFlags}`;
+  handleOpenUri({
+    uri,
+    openWindowInfo,
+    where,
+    flags,
+    triggeringPrincipal,
+    csp,
+    referrerInfo = null,
+    name = null,
+  }) {
+    debug`handleOpenUri: uri=${uri && uri.spec}
+                          where=${where} flags=${flags}`;
 
     if (
       LoadURIDelegate.load(
         this.window,
         this.eventDispatcher,
-        aUri,
-        aWhere,
-        aFlags,
-        aTriggeringPrincipal
+        uri,
+        where,
+        flags,
+        triggeringPrincipal
       )
     ) {
       return null;
@@ -456,17 +482,10 @@ class GeckoViewNavigation extends GeckoViewModule {
     let browser = this.browser;
 
     if (
-      aWhere === Ci.nsIBrowserDOMWindow.OPEN_NEWWINDOW ||
-      aWhere === Ci.nsIBrowserDOMWindow.OPEN_NEWTAB ||
-      aWhere === Ci.nsIBrowserDOMWindow.OPEN_SWITCHTAB
+      where === Ci.nsIBrowserDOMWindow.OPEN_NEWWINDOW ||
+      where === Ci.nsIBrowserDOMWindow.OPEN_NEWTAB
     ) {
-      browser = this.handleNewSession(
-        aUri,
-        aOpenWindowInfo,
-        aWhere,
-        aFlags,
-        aTriggeringPrincipal
-      );
+      browser = this.handleNewSession(uri, openWindowInfo, where, flags, name);
     }
 
     if (!browser) {
@@ -475,45 +494,40 @@ class GeckoViewNavigation extends GeckoViewModule {
     }
 
     // 3) We have a new session and a browser element, load the requested URI.
-    browser.loadURI(aUri.spec, {
-      triggeringPrincipal: aTriggeringPrincipal,
-      csp: aCsp,
-      referrerInfo: aReferrerInfo,
+    browser.loadURI(uri.spec, {
+      triggeringPrincipal,
+      csp,
+      referrerInfo,
     });
     return browser;
   }
 
   // nsIBrowserDOMWindow.
   openURI(aUri, aOpenWindowInfo, aWhere, aFlags, aTriggeringPrincipal, aCsp) {
-    const browser = this.handleOpenUri(
-      aUri,
-      aOpenWindowInfo,
-      aWhere,
-      aFlags,
-      aTriggeringPrincipal,
-      aCsp,
-      null
-    );
+    const browser = this.handleOpenUri({
+      uri: aUri,
+      openWindowInfo: aOpenWindowInfo,
+      where: aWhere,
+      flags: aFlags,
+      triggeringPrincipal: aTriggeringPrincipal,
+      csp: aCsp,
+    });
     return browser && browser.browsingContext;
   }
 
   // nsIBrowserDOMWindow.
-  openURIInFrame(aUri, aParams, aWhere, aFlags, aNextRemoteTabId, aName) {
-    const browser = this.handleOpenUri(
-      aUri,
-      aParams.openWindowInfo,
-      aWhere,
-      aFlags,
-      aParams.triggeringPrincipal,
-      aParams.csp,
-      aParams.referrerInfo
-    );
+  openURIInFrame(aUri, aParams, aWhere, aFlags, aName) {
+    const browser = this.handleOpenUri({
+      uri: aUri,
+      openWindowInfo: aParams.openWindowInfo,
+      where: aWhere,
+      flags: aFlags,
+      triggeringPrincipal: aParams.triggeringPrincipal,
+      csp: aParams.csp,
+      referrerInfo: aParams.referrerInfo,
+      name: aName,
+    });
     return browser;
-  }
-
-  // nsIBrowserDOMWindow.
-  isTabContentWindow(aWindow) {
-    return this.browser.contentWindow === aWindow;
   }
 
   // nsIBrowserDOMWindow.
@@ -543,6 +557,18 @@ class GeckoViewNavigation extends GeckoViewModule {
     this.browser.removeProgressListener(this.progressFilter);
   }
 
+  serializePermission({ type, capability, principal }) {
+    const { URI, originAttributes, privateBrowsingId } = principal;
+    return {
+      uri: Services.io.createExposableURI(URI).displaySpec,
+      principal: E10SUtils.serializePrincipal(principal),
+      perm: type,
+      value: capability,
+      contextId: originAttributes.geckoViewSessionContextId,
+      privateMode: privateBrowsingId != 0,
+    };
+  }
+
   // WebProgress event handler.
   onLocationChange(aWebProgress, aRequest, aLocationURI, aFlags) {
     debug`onLocationChange`;
@@ -562,16 +588,47 @@ class GeckoViewNavigation extends GeckoViewModule {
       return;
     }
 
+    const { contentPrincipal } = this.browser;
+    let permissions;
+    if (contentPrincipal) {
+      const rawPerms = Services.perms.getAllForPrincipal(contentPrincipal);
+      permissions = rawPerms.map(this.serializePermission);
+
+      // The only way for apps to set permissions is to get hold of an existing
+      // permission and change its value.
+      // Tracking protection exception permissions are only present when
+      // explicitly added by the app, so if one is not present, we need to send
+      // a DENY_ACTION tracking protection permission so that apps can use it
+      // to add tracking protection exceptions.
+      const trackingProtectionPermission =
+        contentPrincipal.privateBrowsingId == 0
+          ? "trackingprotection"
+          : "trackingprotection-pb";
+      if (
+        contentPrincipal.isContentPrincipal &&
+        rawPerms.findIndex(p => p.type == trackingProtectionPermission) == -1
+      ) {
+        permissions.push(
+          this.serializePermission({
+            type: trackingProtectionPermission,
+            capability: Ci.nsIPermissionManager.DENY_ACTION,
+            principal: contentPrincipal,
+          })
+        );
+      }
+    }
+
     const message = {
       type: "GeckoView:LocationChange",
       uri: fixedURI.displaySpec,
       canGoBack: this.browser.canGoBack,
       canGoForward: this.browser.canGoForward,
       isTopLevel: aWebProgress.isTopLevel,
+      permissions,
     };
 
     this.eventDispatcher.sendRequest(message);
   }
 }
 
-const { debug, warn } = GeckoViewNavigation.initLogging("GeckoViewNavigation"); // eslint-disable-line no-unused-vars
+const { debug, warn } = GeckoViewNavigation.initLogging("GeckoViewNavigation");

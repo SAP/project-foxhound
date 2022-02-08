@@ -15,8 +15,6 @@ void nsNetShutdown();
 
 nsresult CreateNewStreamConvServiceFactory(nsISupports* aOuter,
                                            const nsIID& aIID, void** aResult);
-nsresult CreateNewFTPDirListingConv(nsISupports* aOuter, const nsIID& aIID,
-                                    void** aResult);
 nsresult CreateNewMultiMixedConvFactory(nsISupports* aOuter, const nsIID& aIID,
                                         void** aResult);
 nsresult CreateNewTXTToHTMLConvFactory(nsISupports* aOuter, const nsIID& aIID,
@@ -29,9 +27,6 @@ nsresult CreateNewBinaryDetectorFactory(nsISupports* aOuter, const nsIID& aIID,
                                         void** aResult);
 nsresult nsLoadGroupConstructor(nsISupports* aOuter, const nsIID& aIID,
                                 void** aResult);
-
-nsresult nsCacheServiceConstructor(nsISupports* aOuter, const nsIID& aIID,
-                                   void** aResult);
 
 extern nsresult net_NewIncrementalDownload(nsISupports*, const nsIID&, void**);
 

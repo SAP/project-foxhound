@@ -1,5 +1,5 @@
 {
-  "$schema": "http://json-schema.org/draft-04/schema#",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "description": "schema for Sync pings, documentation avaliable in toolkit/components/telemetry/docs/sync-ping.rst",
   "type": "object",
   "additionalProperties": false,
@@ -110,15 +110,11 @@
           "additionalProperties": false,
           "anyOf": [
             {"required": ["applied"]},
-            {"required": ["failed"]},
-            {"required": ["newFailed"]},
-            {"required": ["reconciled"]}
+            {"required": ["failed"]}
           ],
           "properties": {
             "applied": { "type": "integer", "minimum": 1 },
-            "failed": { "type": "integer", "minimum": 1 },
-            "newFailed": { "type": "integer", "minimum": 1 },
-            "reconciled": { "type": "integer", "minimum": 1 }
+            "failed": { "type": "integer", "minimum": 1 }
           }
         },
         "outgoing": {

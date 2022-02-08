@@ -52,12 +52,12 @@ It is augmented as it progresses through the system, with various information:
                 // with the search service.
     currentPage: // {string} url of the page that was loaded when the search
                  // began.
-    allowSearchSuggestions: // {boolean} Whether to allow search suggestions.
-                            // This is a veto, meaning that when false,
-                            // suggestions will not be fetched, but when true,
-                            // some other condition may still prohibit
-                            // suggestions, like private browsing mode. Defaults
-                            // to true.
+    prohibitRemoteResults:
+      // {boolean} This provides a short-circuit override for
+      // context.allowRemoteResults(). If it's false, then allowRemoteResults()
+      // will do its usual checks to determine whether remote results are
+      // allowed. If it's true, then allowRemoteResults() will immediately
+      // return false. Defaults to false.
 
     // Properties added by the Model.
     results; // {array} list of UrlbarResult objects.
@@ -71,7 +71,7 @@ The Model
 
 The *Model* is the component responsible for retrieving search results based on
 the user's input, and sorting them accordingly to their importance.
-At the core is the `UrlbarProvidersManager <https://dxr.mozilla.org/mozilla-central/source/browser/components/urlbar/UrlbarProvidersManager.jsm>`_,
+At the core is the `UrlbarProvidersManager <https://searchfox.org/mozilla-central/source/browser/components/urlbar/UrlbarProvidersManager.jsm>`_,
 a component tracking all the available search providers, and managing searches
 across them.
 
@@ -91,7 +91,7 @@ Queries can be canceled.
   terminating any running and future SQL query, unless a query is running inside
   a *runInCriticalSection* task.
 
-The *searchString* gets tokenized by the `UrlbarTokenizer <https://dxr.mozilla.org/mozilla-central/source/browser/components/urlbar/UrlbarTokenizer.jsm>`_
+The *searchString* gets tokenized by the `UrlbarTokenizer <https://searchfox.org/mozilla-central/source/browser/components/urlbar/UrlbarTokenizer.jsm>`_
 component into tokens, some of these tokens have a special meaning and can be
 used by the user to restrict the search to specific result type (See the
 *UrlbarTokenizer::TYPE* enum).
@@ -239,7 +239,7 @@ indicated by the UrlbarQueryContext.muxer property.
 The Controller
 --------------
 
-`UrlbarController <https://dxr.mozilla.org/mozilla-central/source/browser/components/urlbar/UrlbarController.jsm>`_
+`UrlbarController <https://searchfox.org/mozilla-central/source/browser/components/urlbar/UrlbarController.jsm>`_
 is the component responsible for reacting to user's input, by communicating
 proper course of action to the Model (e.g. starting/stopping a query) and the
 View (e.g. showing/hiding a panel). It is also responsible for reporting Telemetry.
@@ -273,7 +273,7 @@ user and handling their input.
   The View is a replaceable component, as such what is described here is a
   reference for the default View, but may not be valid for other implementations.
 
-`UrlbarInput.jsm <https://dxr.mozilla.org/mozilla-central/source/browser/components/urlbar/UrlbarInput.jsm>`_
+`UrlbarInput.jsm <https://searchfox.org/mozilla-central/source/browser/components/urlbar/UrlbarInput.jsm>`_
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Implements an input box *View*, owns an *UrlbarView*.
@@ -318,7 +318,7 @@ Implements an input box *View*, owns an *UrlbarView*.
     value;
   }
 
-`UrlbarView.jsm <https://dxr.mozilla.org/mozilla-central/source/browser/components/urlbar/UrlbarView.jsm>`_
+`UrlbarView.jsm <https://searchfox.org/mozilla-central/source/browser/components/urlbar/UrlbarView.jsm>`_
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Represents the base *View* implementation, communicates with the *Controller*.
@@ -349,7 +349,7 @@ Represents the base *View* implementation, communicates with the *Controller*.
 UrlbarResult
 ------------
 
-An `UrlbarResult <https://dxr.mozilla.org/mozilla-central/source/browser/components/urlbar/UrlbarResult.jsm>`_
+An `UrlbarResult <https://searchfox.org/mozilla-central/source/browser/components/urlbar/UrlbarResult.jsm>`_
 instance represents a single search result with a result type, that
 identifies specific kind of results.
 Each kind has its own properties, that the *View* may support, and a few common
@@ -359,8 +359,7 @@ properties, supported by all of the results.
 
   Result types are also enumerated by *UrlbarUtils.RESULT_TYPE*.
 
-.. highlight:: JavaScript
-.. code::
+.. code-block::
 
   UrlbarResult {
     constructor(resultType, payload);
@@ -377,7 +376,10 @@ properties, supported by all of the results.
                              selection.
     autofill.selectionEnd: {integer} The last index in the autofill selection.
     suggestedIndex: {integer} Suggest a preferred position for this result
-                    within the result set.
+                    within the result set. Undefined if none.
+    isSuggestedIndexRelativeToGroup: {boolean} Whether the suggestedIndex
+                                     property is relative to the result's group
+                                     instead of the entire result set.
   }
 
 The following RESULT_TYPEs are supported:
@@ -389,7 +391,7 @@ The following RESULT_TYPEs are supported:
     // Payload: { icon, url, userContextId }
     TAB_SWITCH: 1,
     // A search suggestion or engine.
-    // Payload: { icon, suggestion, keyword, query, keywordOffer, inPrivateWindow, isPrivateEngine }
+    // Payload: { icon, suggestion, keyword, query, providesSearchMode, inPrivateWindow, isPrivateEngine }
     SEARCH: 2,
     // A common url/title tuple, may be a bookmark with tags.
     // Payload: { icon, url, title, tags }

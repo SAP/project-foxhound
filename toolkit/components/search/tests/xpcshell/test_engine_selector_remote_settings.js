@@ -4,7 +4,7 @@
 "use strict";
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  Promise: "resource://gre/modules/Promise.jsm",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
   SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.jsm",
 });
 
@@ -75,6 +75,12 @@ let getStub;
 add_task(async function setup() {
   const searchConfigSettings = await RemoteSettings(SearchUtils.SETTINGS_KEY);
   getStub = sinon.stub(searchConfigSettings, "get");
+
+  // We expect this error from remove settings as we're invalidating the
+  // signature.
+  consoleAllowList.push("Invalid content signature (abc)");
+  // We also test returning an empty configuration.
+  consoleAllowList.push("Received empty search configuration");
 });
 
 add_task(async function test_selector_basic_get() {
@@ -82,11 +88,10 @@ add_task(async function test_selector_basic_get() {
   const engineSelector = new SearchEngineSelector(listenerSpy);
   getStub.onFirstCall().returns(TEST_CONFIG);
 
-  const { engines } = await engineSelector.fetchEngineConfiguration(
-    "en-US",
-    "default",
-    "default"
-  );
+  const { engines } = await engineSelector.fetchEngineConfiguration({
+    locale: "en-US",
+    region: "default",
+  });
 
   Assert.deepEqual(
     engines.map(e => e.engineName),
@@ -99,7 +104,7 @@ add_task(async function test_selector_basic_get() {
 add_task(async function test_selector_get_reentry() {
   const listenerSpy = sinon.spy();
   const engineSelector = new SearchEngineSelector(listenerSpy);
-  let promise = Promise.defer();
+  let promise = PromiseUtils.defer();
   getStub.resetHistory();
   getStub.onFirstCall().returns(promise.promise);
   delete engineSelector._configuration;
@@ -108,11 +113,17 @@ add_task(async function test_selector_get_reentry() {
   let secondResult;
 
   const firstCallPromise = engineSelector
-    .fetchEngineConfiguration("en-US", "default", "default")
+    .fetchEngineConfiguration({
+      locale: "en-US",
+      region: "default",
+    })
     .then(result => (firstResult = result.engines));
 
   const secondCallPromise = engineSelector
-    .fetchEngineConfiguration("en-US", "default", "default")
+    .fetchEngineConfiguration({
+      locale: "en-US",
+      region: "default",
+    })
     .then(result => (secondResult = result.engines));
 
   Assert.strictEqual(
@@ -150,11 +161,10 @@ add_task(async function test_selector_config_update() {
   getStub.resetHistory();
   getStub.onFirstCall().returns(TEST_CONFIG);
 
-  const { engines } = await engineSelector.fetchEngineConfiguration(
-    "en-US",
-    "default",
-    "default"
-  );
+  const { engines } = await engineSelector.fetchEngineConfiguration({
+    locale: "en-US",
+    region: "default",
+  });
 
   Assert.deepEqual(
     engines.map(e => e.engineName),
@@ -184,11 +194,10 @@ add_task(async function test_selector_config_update() {
 
   Assert.ok(listenerSpy.called, "Should have called the listener");
 
-  const result = await engineSelector.fetchEngineConfiguration(
-    "en-US",
-    "default",
-    "default"
-  );
+  const result = await engineSelector.fetchEngineConfiguration({
+    locale: "en-US",
+    region: "default",
+  });
 
   Assert.deepEqual(
     result.engines.map(e => e.engineName),
@@ -223,11 +232,10 @@ add_task(async function test_selector_db_modification() {
     .rejects(new RemoteSettingsClient.InvalidSignatureError("abc"));
   getStub.onSecondCall().returns(TEST_CONFIG);
 
-  let result = await engineSelector.fetchEngineConfiguration(
-    "en-US",
-    "default",
-    "default"
-  );
+  let result = await engineSelector.fetchEngineConfiguration({
+    locale: "en-US",
+    region: "default",
+  });
 
   Assert.ok(
     getStub.calledTwice,
@@ -270,7 +278,10 @@ add_task(async function test_selector_db_modification_never_succeeds() {
   getStub.rejects(new RemoteSettingsClient.InvalidSignatureError("abc"));
 
   await Assert.rejects(
-    engineSelector.fetchEngineConfiguration("en-US", "default", "default"),
+    engineSelector.fetchEngineConfiguration({
+      locale: "en-US",
+      region: "default",
+    }),
     ex => ex.result == Cr.NS_ERROR_UNEXPECTED,
     "Should have rejected loading the engine configuration"
   );
@@ -311,11 +322,10 @@ add_task(async function test_empty_results() {
   getStub.onFirstCall().returns([]);
   getStub.onSecondCall().returns(TEST_CONFIG);
 
-  let result = await engineSelector.fetchEngineConfiguration(
-    "en-US",
-    "default",
-    "default"
-  );
+  let result = await engineSelector.fetchEngineConfiguration({
+    locale: "en-US",
+    region: "default",
+  });
 
   Assert.ok(
     getStub.calledTwice,

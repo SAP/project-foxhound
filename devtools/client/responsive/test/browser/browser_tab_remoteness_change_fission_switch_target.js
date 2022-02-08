@@ -19,11 +19,11 @@ add_task(async function() {
   await assertDocshell(tab, false, 0);
 
   info("Open RDM");
-  const { ui } = await openRDM(tab);
+  await openRDM(tab);
   await assertDocshell(tab, true, TEST_DPPX);
 
   info("Load a page which runs on the main process");
-  await navigateToNewDomain(PAGE_ON_MAIN, ui);
+  await navigateTo(PAGE_ON_MAIN);
   await assertDocshell(tab, true, TEST_DPPX);
 
   info("Close RDM");
@@ -35,16 +35,7 @@ add_task(async function() {
 
 async function assertDocshell(tab, expectedRDMMode, expectedDPPX) {
   await asyncWaitUntil(async () => {
-    const { overrideDPPX, inRDMPane } = await SpecialPowers.spawn(
-      tab.linkedBrowser,
-      [],
-      () => {
-        return {
-          overrideDPPX: content.docShell.contentViewer.overrideDPPX,
-          inRDMPane: content.docShell.browsingContext.inRDMPane,
-        };
-      }
-    );
+    const { overrideDPPX, inRDMPane } = tab.linkedBrowser.browsingContext;
     return inRDMPane === expectedRDMMode && overrideDPPX === expectedDPPX;
   });
   ok(true, "The state of the docshell is correct");

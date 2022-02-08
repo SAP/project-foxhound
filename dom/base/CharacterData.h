@@ -17,16 +17,15 @@
 
 #include "mozilla/Attributes.h"
 #include "nsIContent.h"
+#include "nsIMutationObserver.h"
 
 #include "nsTextFragment.h"
 #include "nsError.h"
-#include "mozilla/dom/Element.h"
 #include "nsCycleCollectionParticipant.h"
-
-#include "mozilla/dom/ShadowRoot.h"
 
 namespace mozilla {
 namespace dom {
+class Element;
 class HTMLSlotElement;
 }  // namespace dom
 }  // namespace mozilla
@@ -76,8 +75,7 @@ ASSERT_NODE_FLAGS_SPACE(NODE_TYPE_SPECIFIC_BITS_OFFSET + 8);
 
 #undef CHARACTER_DATA_FLAG_BIT
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class CharacterData : public nsIContent {
  public:
@@ -108,11 +106,7 @@ class CharacterData : public nsIContent {
 
   void SetTextContentInternal(const nsAString& aTextContent,
                               nsIPrincipal* aSubjectPrincipal,
-                              ErrorResult& aError) final {
-    // Batch possible DOMSubtreeModified events.
-    mozAutoSubtreeModified subtree(OwnerDoc(), nullptr);
-    return SetNodeValue(aTextContent, aError);
-  }
+                              ErrorResult& aError) final;
 
   // Implementation for nsIContent
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
@@ -157,14 +151,16 @@ class CharacterData : public nsIContent {
   /**
    * Append the text content to aResult.
    */
-  MOZ_MUST_USE
-  bool AppendTextTo(nsAString& aResult, const fallible_t& aFallible) const {
+  [[nodiscard]] bool AppendTextTo(nsAString& aResult,
+                                  const fallible_t& aFallible) const {
     return mText.AppendTo(aResult, aFallible);
   }
 
   void SaveSubtreeState() final {}
 
-#ifdef DEBUG
+#ifdef MOZ_DOM_LIST
+  void ToCString(nsAString& aBuf, int32_t aOffset, int32_t aLen) const;
+
   void List(FILE* out, int32_t aIndent) const override {}
 
   void DumpContent(FILE* out, int32_t aIndent, bool aDumpAll) const override {}
@@ -202,27 +198,20 @@ class CharacterData : public nsIContent {
 
   //----------------------------------------
 
-#ifdef DEBUG
-  void ToCString(nsAString& aBuf, int32_t aOffset, int32_t aLen) const;
-#endif
-
   NS_DECL_CYCLE_COLLECTION_SKIPPABLE_SCRIPT_HOLDER_CLASS_INHERITED(
       CharacterData, nsIContent)
 
   /**
    * Compare two CharacterData nodes for text equality.
    */
-  MOZ_MUST_USE
-  bool TextEquals(const CharacterData* aOther) const {
+  [[nodiscard]] bool TextEquals(const CharacterData* aOther) const {
     return mText.TextEquals(aOther->mText);
   }
 
  protected:
   virtual ~CharacterData();
 
-  Element* GetNameSpaceElement() final {
-    return Element::FromNodeOrNull(GetParentNode());
-  }
+  Element* GetNameSpaceElement() final;
 
   nsresult SetTextInternal(
       uint32_t aOffset, uint32_t aCount, const char16_t* aBuffer,
@@ -247,7 +236,6 @@ class CharacterData : public nsIContent {
   already_AddRefed<nsAtom> GetCurrentValueAtom();
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_CharacterData_h */

@@ -5,13 +5,6 @@
 
 #![allow(non_upper_case_globals)]
 
-use libloading::{Library, Symbol};
-use pkcs11::types::*;
-use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
-use std::convert::TryInto;
-use std::os::raw::c_void;
-
 use core_foundation::array::*;
 use core_foundation::base::*;
 use core_foundation::boolean::*;
@@ -20,13 +13,20 @@ use core_foundation::dictionary::*;
 use core_foundation::error::*;
 use core_foundation::number::*;
 use core_foundation::string::*;
+use libloading::{Library, Symbol};
+use pkcs11::types::*;
+use rsclientcerts::error::{Error, ErrorType};
+use rsclientcerts::manager::{ClientCertsBackend, CryptokiObject, Sign, SlotType};
+use rsclientcerts::util::*;
+use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
+use std::convert::TryInto;
+use std::os::raw::c_void;
 
 // Normally we would generate this with a build script, but macos is
 // cross-compiled on linux, and we'd have to figure out e.g. include paths,
 // etc.. This is easier.
 include!("bindings_macos.rs");
-
-use crate::util::*;
 
 #[repr(C)]
 pub struct __SecIdentity(c_void);
@@ -63,10 +63,6 @@ type SecKeyCreateSignatureType =
 type SecKeyCopyAttributesType = unsafe extern "C" fn(SecKeyRef) -> CFDictionaryRef;
 type SecKeyCopyExternalRepresentationType =
     unsafe extern "C" fn(SecKeyRef, *mut CFErrorRef) -> CFDataRef;
-type SecCertificateCopyNormalizedIssuerSequenceType =
-    unsafe extern "C" fn(SecCertificateRef) -> CFDataRef;
-type SecCertificateCopyNormalizedSubjectSequenceType =
-    unsafe extern "C" fn(SecCertificateRef) -> CFDataRef;
 type SecCertificateCopyKeyType = unsafe extern "C" fn(SecCertificateRef) -> SecKeyRef;
 type SecTrustEvaluateWithErrorType =
     unsafe extern "C" fn(trust: SecTrustRef, error: *mut CFErrorRef) -> bool;
@@ -79,6 +75,10 @@ enum SecStringConstant {
     SecKeyAlgorithmECDSASignatureDigestX962SHA384,
     SecKeyAlgorithmECDSASignatureDigestX962SHA512,
     SecKeyAlgorithmRSASignatureDigestPKCS1v15Raw,
+    SecKeyAlgorithmRSASignatureDigestPKCS1v15SHA256,
+    SecKeyAlgorithmRSASignatureDigestPKCS1v15SHA384,
+    SecKeyAlgorithmRSASignatureDigestPKCS1v15SHA512,
+    SecKeyAlgorithmRSASignatureDigestPKCS1v15SHA1,
     SecAttrKeyTypeECSECPrimeRandom,
     // These are available in macOS 10.13
     SecKeyAlgorithmRSASignatureDigestPSSSHA1,
@@ -93,10 +93,6 @@ pub struct SecurityFrameworkFunctions<'a> {
     sec_key_create_signature: Symbol<'a, SecKeyCreateSignatureType>,
     sec_key_copy_attributes: Symbol<'a, SecKeyCopyAttributesType>,
     sec_key_copy_external_representation: Symbol<'a, SecKeyCopyExternalRepresentationType>,
-    sec_certificate_copy_normalized_issuer_sequence:
-        Symbol<'a, SecCertificateCopyNormalizedIssuerSequenceType>,
-    sec_certificate_copy_normalized_subject_sequence:
-        Symbol<'a, SecCertificateCopyNormalizedSubjectSequenceType>,
     sec_certificate_copy_key: Symbol<'a, SecCertificateCopyKeyType>,
     sec_trust_evaluate_with_error: Symbol<'a, SecTrustEvaluateWithErrorType>,
     sec_string_constants: BTreeMap<SecStringConstant, String>,
@@ -144,16 +140,6 @@ impl SecurityFramework {
                         b"SecKeyCopyExternalRepresentation\0",
                     )
                     .map_err(|_| ())?;
-                let sec_certificate_copy_normalized_issuer_sequence = library
-                    .get::<SecCertificateCopyNormalizedIssuerSequenceType>(
-                        b"SecCertificateCopyNormalizedIssuerSequence\0",
-                    )
-                    .map_err(|_| ())?;
-                let sec_certificate_copy_normalized_subject_sequence = library
-                    .get::<SecCertificateCopyNormalizedSubjectSequenceType>(
-                        b"SecCertificateCopyNormalizedSubjectSequence\0",
-                    )
-                    .map_err(|_| ())?;
                 let sec_certificate_copy_key = library
                     .get::<SecCertificateCopyKeyType>(b"SecCertificateCopyKey\0")
                     .map_err(|_| ())?;
@@ -181,6 +167,22 @@ impl SecurityFramework {
                     (
                         b"kSecKeyAlgorithmRSASignatureDigestPKCS1v15Raw\0".as_ref(),
                         SecStringConstant::SecKeyAlgorithmRSASignatureDigestPKCS1v15Raw,
+                    ),
+                    (
+                        b"kSecKeyAlgorithmRSASignatureDigestPKCS1v15SHA256\0".as_ref(),
+                        SecStringConstant::SecKeyAlgorithmRSASignatureDigestPKCS1v15SHA256,
+                    ),
+                    (
+                        b"kSecKeyAlgorithmRSASignatureDigestPKCS1v15SHA384\0".as_ref(),
+                        SecStringConstant::SecKeyAlgorithmRSASignatureDigestPKCS1v15SHA384,
+                    ),
+                    (
+                        b"kSecKeyAlgorithmRSASignatureDigestPKCS1v15SHA512\0".as_ref(),
+                        SecStringConstant::SecKeyAlgorithmRSASignatureDigestPKCS1v15SHA512,
+                    ),
+                    (
+                        b"kSecKeyAlgorithmRSASignatureDigestPKCS1v15SHA1\0".as_ref(),
+                        SecStringConstant::SecKeyAlgorithmRSASignatureDigestPKCS1v15SHA1,
                     ),
                     (
                         b"kSecKeyAlgorithmRSASignatureDigestPSSSHA1\0".as_ref(),
@@ -214,8 +216,6 @@ impl SecurityFramework {
                     sec_key_create_signature,
                     sec_key_copy_attributes,
                     sec_key_copy_external_representation,
-                    sec_certificate_copy_normalized_issuer_sequence,
-                    sec_certificate_copy_normalized_subject_sequence,
                     sec_certificate_copy_key,
                     sec_trust_evaluate_with_error,
                     sec_string_constants,
@@ -235,7 +235,7 @@ impl SecurityFramework {
         key: &SecKey,
         algorithm: SecKeyAlgorithm,
         data_to_sign: &CFData,
-    ) -> Result<CFData, ()> {
+    ) -> Result<CFData, Error> {
         match &self.rental {
             Some(rental) => rental.rent(|framework| unsafe {
                 let mut error = std::ptr::null_mut();
@@ -247,32 +247,33 @@ impl SecurityFramework {
                 );
                 if result.is_null() {
                     let error = CFError::wrap_under_create_rule(error);
-                    error!("SecKeyCreateSignature failed: {}", error);
-                    return Err(());
+                    return Err(error_here!(
+                        ErrorType::ExternalError,
+                        error.description().to_string()
+                    ));
                 }
                 Ok(CFData::wrap_under_create_rule(result))
             }),
-            None => Err(()),
+            None => Err(error_here!(ErrorType::LibraryFailure)),
         }
     }
 
     /// SecKeyCopyAttributes is available in macOS 10.12
-    fn sec_key_copy_attributes<T>(&self, key: &SecKey) -> Result<CFDictionary<CFString, T>, ()> {
+    fn sec_key_copy_attributes<T>(&self, key: &SecKey) -> Result<CFDictionary<CFString, T>, Error> {
         match &self.rental {
             Some(rental) => rental.rent(|framework| unsafe {
                 let result = (framework.sec_key_copy_attributes)(key.as_concrete_TypeRef());
                 if result.is_null() {
-                    error!("SecKeyCopyAttributes failed");
-                    return Err(());
+                    return Err(error_here!(ErrorType::ExternalError));
                 }
                 Ok(CFDictionary::wrap_under_create_rule(result))
             }),
-            None => Err(()),
+            None => Err(error_here!(ErrorType::LibraryFailure)),
         }
     }
 
     /// SecKeyCopyExternalRepresentation is available in macOS 10.12
-    fn sec_key_copy_external_representation(&self, key: &SecKey) -> Result<CFData, ()> {
+    fn sec_key_copy_external_representation(&self, key: &SecKey) -> Result<CFData, Error> {
         match &self.rental {
             Some(rental) => rental.rent(|framework| unsafe {
                 let mut error = std::ptr::null_mut();
@@ -282,73 +283,34 @@ impl SecurityFramework {
                 );
                 if result.is_null() {
                     let error = CFError::wrap_under_create_rule(error);
-                    error!("SecKeyCopyExternalRepresentation failed: {}", error);
-                    return Err(());
+                    return Err(error_here!(
+                        ErrorType::ExternalError,
+                        error.description().to_string()
+                    ));
                 }
                 Ok(CFData::wrap_under_create_rule(result))
             }),
-            None => Err(()),
-        }
-    }
-
-    /// SecCertificateCopyNormalizedIssuerSequence is available in macOS 10.12.4
-    fn sec_certificate_copy_normalized_issuer_sequence(
-        &self,
-        certificate: &SecCertificate,
-    ) -> Result<CFData, ()> {
-        match &self.rental {
-            Some(rental) => rental.rent(|framework| unsafe {
-                let result = (framework.sec_certificate_copy_normalized_issuer_sequence)(
-                    certificate.as_concrete_TypeRef(),
-                );
-                if result.is_null() {
-                    error!("SecCertificateCopyNormalizedIssuerSequence failed");
-                    return Err(());
-                }
-                Ok(CFData::wrap_under_create_rule(result))
-            }),
-            None => Err(()),
-        }
-    }
-
-    /// SecCertificateCopyNormalizedSubjectSequence is available in macOS 10.12.4
-    fn sec_certificate_copy_normalized_subject_sequence(
-        &self,
-        certificate: &SecCertificate,
-    ) -> Result<CFData, ()> {
-        match &self.rental {
-            Some(rental) => rental.rent(|framework| unsafe {
-                let result = (framework.sec_certificate_copy_normalized_subject_sequence)(
-                    certificate.as_concrete_TypeRef(),
-                );
-                if result.is_null() {
-                    error!("SecCertificateCopyNormalizedSubjectSequence failed");
-                    return Err(());
-                }
-                Ok(CFData::wrap_under_create_rule(result))
-            }),
-            None => Err(()),
+            None => Err(error_here!(ErrorType::LibraryFailure)),
         }
     }
 
     /// SecCertificateCopyKey is available in macOS 10.14
-    fn sec_certificate_copy_key(&self, certificate: &SecCertificate) -> Result<SecKey, ()> {
+    fn sec_certificate_copy_key(&self, certificate: &SecCertificate) -> Result<SecKey, Error> {
         match &self.rental {
             Some(rental) => rental.rent(|framework| unsafe {
                 let result =
                     (framework.sec_certificate_copy_key)(certificate.as_concrete_TypeRef());
                 if result.is_null() {
-                    error!("SecCertificateCopyKey failed");
-                    return Err(());
+                    return Err(error_here!(ErrorType::ExternalError));
                 }
                 Ok(SecKey::wrap_under_create_rule(result))
             }),
-            None => Err(()),
+            None => Err(error_here!(ErrorType::LibraryFailure)),
         }
     }
 
     /// SecTrustEvaluateWithError is available in macOS 10.14
-    fn sec_trust_evaluate_with_error(&self, trust: &SecTrust) -> Result<bool, ()> {
+    fn sec_trust_evaluate_with_error(&self, trust: &SecTrust) -> Result<bool, Error> {
         match &self.rental {
             Some(rental) => rental.rent(|framework| unsafe {
                 Ok((framework.sec_trust_evaluate_with_error)(
@@ -356,22 +318,22 @@ impl SecurityFramework {
                     std::ptr::null_mut(),
                 ))
             }),
-            None => Err(()),
+            None => Err(error_here!(ErrorType::LibraryFailure)),
         }
     }
 
     fn get_sec_string_constant(
         &self,
         sec_string_constant: SecStringConstant,
-    ) -> Result<CFString, ()> {
+    ) -> Result<CFString, Error> {
         match &self.rental {
             Some(rental) => rental.rent(|framework| {
                 match framework.sec_string_constants.get(&sec_string_constant) {
                     Some(string) => Ok(CFString::new(string)),
-                    None => Err(()),
+                    None => Err(error_here!(ErrorType::ExternalError)),
                 }
             }),
-            None => Err(()),
+            None => Err(error_here!(ErrorType::LibraryFailure)),
         }
     }
 }
@@ -380,49 +342,43 @@ lazy_static! {
     static ref SECURITY_FRAMEWORK: SecurityFramework = SecurityFramework::new();
 }
 
-fn sec_identity_copy_certificate(identity: &SecIdentity) -> Result<SecCertificate, ()> {
+fn sec_identity_copy_certificate(identity: &SecIdentity) -> Result<SecCertificate, Error> {
     let mut certificate = std::ptr::null();
     let status =
         unsafe { SecIdentityCopyCertificate(identity.as_concrete_TypeRef(), &mut certificate) };
     if status != errSecSuccess {
-        error!("SecIdentityCopyCertificate failed: {}", status);
-        return Err(());
+        return Err(error_here!(ErrorType::ExternalError, status.to_string()));
     }
     if certificate.is_null() {
-        error!("couldn't get certificate from identity?");
-        return Err(());
+        return Err(error_here!(ErrorType::ExternalError));
     }
     Ok(unsafe { SecCertificate::wrap_under_create_rule(certificate) })
 }
 
-fn sec_certificate_copy_subject_summary(certificate: &SecCertificate) -> Result<CFString, ()> {
+fn sec_certificate_copy_subject_summary(certificate: &SecCertificate) -> Result<CFString, Error> {
     let result = unsafe { SecCertificateCopySubjectSummary(certificate.as_concrete_TypeRef()) };
     if result.is_null() {
-        error!("SecCertificateCopySubjectSummary failed");
-        return Err(());
+        return Err(error_here!(ErrorType::ExternalError));
     }
     Ok(unsafe { CFString::wrap_under_create_rule(result) })
 }
 
-fn sec_certificate_copy_data(certificate: &SecCertificate) -> Result<CFData, ()> {
+fn sec_certificate_copy_data(certificate: &SecCertificate) -> Result<CFData, Error> {
     let result = unsafe { SecCertificateCopyData(certificate.as_concrete_TypeRef()) };
     if result.is_null() {
-        error!("SecCertificateCopyData failed");
-        return Err(());
+        return Err(error_here!(ErrorType::ExternalError));
     }
     Ok(unsafe { CFData::wrap_under_create_rule(result) })
 }
 
-fn sec_identity_copy_private_key(identity: &SecIdentity) -> Result<SecKey, ()> {
+fn sec_identity_copy_private_key(identity: &SecIdentity) -> Result<SecKey, Error> {
     let mut key = std::ptr::null();
     let status = unsafe { SecIdentityCopyPrivateKey(identity.as_concrete_TypeRef(), &mut key) };
     if status != errSecSuccess {
-        error!("SecIdentityCopyPrivateKey failed: {}", status);
-        return Err(());
+        return Err(error_here!(ErrorType::ExternalError));
     }
     if key.is_null() {
-        error!("SecIdentityCopyPrivateKey didn't set key?");
-        return Err(());
+        return Err(error_here!(ErrorType::ExternalError));
     }
     Ok(unsafe { SecKey::wrap_under_create_rule(key) })
 }
@@ -439,30 +395,26 @@ pub struct Cert {
 }
 
 impl Cert {
-    fn new_from_identity(identity: &SecIdentity) -> Result<Cert, ()> {
+    fn new_from_identity(identity: &SecIdentity) -> Result<Cert, Error> {
         let certificate = sec_identity_copy_certificate(identity)?;
         Cert::new_from_certificate(&certificate)
     }
 
-    fn new_from_certificate(certificate: &SecCertificate) -> Result<Cert, ()> {
+    fn new_from_certificate(certificate: &SecCertificate) -> Result<Cert, Error> {
         let label = sec_certificate_copy_subject_summary(certificate)?;
         let der = sec_certificate_copy_data(certificate)?;
         let der = der.bytes().to_vec();
         let id = Sha256::digest(&der).to_vec();
-        let issuer =
-            SECURITY_FRAMEWORK.sec_certificate_copy_normalized_issuer_sequence(certificate)?;
-        let serial_number = read_encoded_serial_number(&der)?;
-        let subject =
-            SECURITY_FRAMEWORK.sec_certificate_copy_normalized_subject_sequence(certificate)?;
+        let (serial_number, issuer, subject) = read_encoded_certificate_identifiers(&der)?;
         Ok(Cert {
             class: serialize_uint(CKO_CERTIFICATE)?,
             token: serialize_uint(CK_TRUE)?,
             id,
             label: label.to_string().into_bytes(),
             value: der,
-            issuer: issuer.bytes().to_vec(),
+            issuer,
             serial_number,
-            subject: subject.bytes().to_vec(),
+            subject,
         })
     }
 
@@ -474,7 +426,7 @@ impl Cert {
         &self.token
     }
 
-    pub fn id(&self) -> &[u8] {
+    fn id(&self) -> &[u8] {
         &self.id
     }
 
@@ -497,8 +449,20 @@ impl Cert {
     fn subject(&self) -> &[u8] {
         &self.subject
     }
+}
 
-    fn matches(&self, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bool {
+impl CryptokiObject for Cert {
+    fn matches(&self, slot_type: SlotType, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bool {
+        // The modern/legacy slot distinction in theory enables differentiation
+        // between keys that are from modules that can use modern cryptography
+        // (namely EC keys and RSA-PSS signatures) and those that cannot.
+        // However, the function that would enable this
+        // (SecKeyIsAlgorithmSupported) causes a password dialog to appear on
+        // our test machines, so this backend pretends that everything supports
+        // modern crypto for now.
+        if slot_type != SlotType::Modern {
+            return false;
+        }
         for (attr_type, attr_value) in attrs {
             let comparison = match *attr_type {
                 CKA_CLASS => self.class(),
@@ -540,75 +504,94 @@ pub enum KeyType {
     RSA,
 }
 
-enum SignParams {
-    EC(CFString),
-    RSA(CFString),
+enum SignParams<'a> {
+    EC(CFString, &'a [u8]),
+    RSA(CFString, &'a [u8]),
 }
 
-impl SignParams {
+impl<'a> SignParams<'a> {
     fn new(
         key_type: KeyType,
-        data_len: usize,
+        data: &'a [u8],
         params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
-    ) -> Result<SignParams, ()> {
+    ) -> Result<SignParams<'a>, Error> {
         match key_type {
-            KeyType::EC(_) => SignParams::new_ec_params(data_len),
-            KeyType::RSA => SignParams::new_rsa_params(params),
+            KeyType::EC(_) => SignParams::new_ec_params(data),
+            KeyType::RSA => SignParams::new_rsa_params(params, data),
         }
     }
 
-    fn new_ec_params(data_len: usize) -> Result<SignParams, ()> {
-        let algorithm_id = match data_len {
+    fn new_ec_params(data: &'a [u8]) -> Result<SignParams<'a>, Error> {
+        let algorithm_id = match data.len() {
             20 => SecStringConstant::SecKeyAlgorithmECDSASignatureDigestX962SHA1,
             32 => SecStringConstant::SecKeyAlgorithmECDSASignatureDigestX962SHA256,
             48 => SecStringConstant::SecKeyAlgorithmECDSASignatureDigestX962SHA384,
             64 => SecStringConstant::SecKeyAlgorithmECDSASignatureDigestX962SHA512,
             _ => {
-                error!(
-                    "Unexpected digested signature input length for ECDSA: {}",
-                    data_len
-                );
-                return Err(());
+                return Err(error_here!(ErrorType::UnsupportedInput));
             }
         };
         let algorithm = SECURITY_FRAMEWORK.get_sec_string_constant(algorithm_id)?;
-        Ok(SignParams::EC(algorithm))
+        Ok(SignParams::EC(algorithm, data))
     }
 
-    fn new_rsa_params(params: &Option<CK_RSA_PKCS_PSS_PARAMS>) -> Result<SignParams, ()> {
-        let pss_params = match params {
-            Some(pss_params) => pss_params,
-            None => {
-                return Ok(SignParams::RSA(
-                    SECURITY_FRAMEWORK.get_sec_string_constant(
-                        SecStringConstant::SecKeyAlgorithmRSASignatureDigestPKCS1v15Raw,
-                    )?,
-                ));
-            }
-        };
-        let algorithm = {
-            let algorithm_id = match pss_params.hashAlg {
-                CKM_SHA_1 => SecStringConstant::SecKeyAlgorithmRSASignatureDigestPSSSHA1,
-                CKM_SHA256 => SecStringConstant::SecKeyAlgorithmRSASignatureDigestPSSSHA256,
-                CKM_SHA384 => SecStringConstant::SecKeyAlgorithmRSASignatureDigestPSSSHA384,
-                CKM_SHA512 => SecStringConstant::SecKeyAlgorithmRSASignatureDigestPSSSHA512,
-                _ => {
-                    error!(
-                        "unsupported algorithm to use with RSA-PSS: {}",
-                        unsafe_packed_field_access!(pss_params.hashAlg)
-                    );
-                    return Err(());
-                }
+    fn new_rsa_params(
+        params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
+        data: &'a [u8],
+    ) -> Result<SignParams<'a>, Error> {
+        if let Some(pss_params) = params {
+            let algorithm = {
+                let algorithm_id = match pss_params.hashAlg {
+                    CKM_SHA_1 => SecStringConstant::SecKeyAlgorithmRSASignatureDigestPSSSHA1,
+                    CKM_SHA256 => SecStringConstant::SecKeyAlgorithmRSASignatureDigestPSSSHA256,
+                    CKM_SHA384 => SecStringConstant::SecKeyAlgorithmRSASignatureDigestPSSSHA384,
+                    CKM_SHA512 => SecStringConstant::SecKeyAlgorithmRSASignatureDigestPSSSHA512,
+                    _ => {
+                        return Err(error_here!(ErrorType::UnsupportedInput));
+                    }
+                };
+                SECURITY_FRAMEWORK.get_sec_string_constant(algorithm_id)?
             };
-            SECURITY_FRAMEWORK.get_sec_string_constant(algorithm_id)?
+            return Ok(SignParams::RSA(algorithm, data));
+        }
+
+        // Handle the case where this is a TLS 1.0 MD5/SHA1 hash.
+        if data.len() == 36 {
+            let algorithm_id = SecStringConstant::SecKeyAlgorithmRSASignatureDigestPKCS1v15Raw;
+            let algorithm = SECURITY_FRAMEWORK.get_sec_string_constant(algorithm_id)?;
+            return Ok(SignParams::RSA(algorithm, data));
+        }
+        // Otherwise, `data` should be a DigestInfo.
+        let (digest_oid, hash) = read_digest_info(data)?;
+        let algorithm_id = if digest_oid == OID_BYTES_SHA_256 {
+            SecStringConstant::SecKeyAlgorithmRSASignatureDigestPKCS1v15SHA256
+        } else if digest_oid == OID_BYTES_SHA_384 {
+            SecStringConstant::SecKeyAlgorithmRSASignatureDigestPKCS1v15SHA384
+        } else if digest_oid == OID_BYTES_SHA_512 {
+            SecStringConstant::SecKeyAlgorithmRSASignatureDigestPKCS1v15SHA512
+        } else if digest_oid == OID_BYTES_SHA_1 {
+            SecStringConstant::SecKeyAlgorithmRSASignatureDigestPKCS1v15SHA1
+        } else {
+            return Err(error_here!(ErrorType::UnsupportedInput));
         };
-        Ok(SignParams::RSA(algorithm))
+
+        Ok(SignParams::RSA(
+            SECURITY_FRAMEWORK.get_sec_string_constant(algorithm_id)?,
+            hash,
+        ))
     }
 
     fn get_algorithm(&self) -> SecKeyAlgorithm {
         match self {
-            SignParams::EC(algorithm) => algorithm.as_concrete_TypeRef(),
-            SignParams::RSA(algorithm) => algorithm.as_concrete_TypeRef(),
+            SignParams::EC(algorithm, _) => algorithm.as_concrete_TypeRef(),
+            SignParams::RSA(algorithm, _) => algorithm.as_concrete_TypeRef(),
+        }
+    }
+
+    fn get_data_to_sign(&self) -> &'a [u8] {
+        match self {
+            SignParams::EC(_, data_to_sign) => data_to_sign,
+            SignParams::RSA(_, data_to_sign) => data_to_sign,
         }
     }
 }
@@ -623,10 +606,11 @@ pub struct Key {
     modulus: Option<Vec<u8>>,
     ec_params: Option<Vec<u8>>,
     key_type_enum: KeyType,
+    key_handle: Option<SecKey>,
 }
 
 impl Key {
-    fn new(identity: &SecIdentity) -> Result<Key, ()> {
+    fn new(identity: &SecIdentity) -> Result<Key, Error> {
         let certificate = sec_identity_copy_certificate(identity)?;
         let der = sec_certificate_copy_data(&certificate)?;
         let id = Sha256::digest(der.bytes()).to_vec();
@@ -651,22 +635,18 @@ impl Key {
                 // this for is to get the signature size.
                 let key_size_in_bits = match key_size_in_bits.to_i64() {
                     Some(value) => value,
-                    None => return Err(()),
+                    None => return Err(error_here!(ErrorType::ValueTooLarge)),
                 };
                 match key_size_in_bits {
-                    256 => ec_params = Some(OID_BYTES_SECP256R1.to_vec()),
-                    384 => ec_params = Some(OID_BYTES_SECP384R1.to_vec()),
-                    521 => ec_params = Some(OID_BYTES_SECP521R1.to_vec()),
-                    _ => {
-                        error!("unsupported EC key");
-                        return Err(());
-                    }
+                    256 => ec_params = Some(ENCODED_OID_BYTES_SECP256R1.to_vec()),
+                    384 => ec_params = Some(ENCODED_OID_BYTES_SECP384R1.to_vec()),
+                    521 => ec_params = Some(ENCODED_OID_BYTES_SECP521R1.to_vec()),
+                    _ => return Err(error_here!(ErrorType::UnsupportedInput)),
                 }
                 let coordinate_width = (key_size_in_bits as usize + 7) / 8;
                 (KeyType::EC(coordinate_width), CKK_EC)
             } else {
-                error!("unsupported key type");
-                return Err(());
+                return Err(error_here!(ErrorType::LibraryFailure));
             };
 
         Ok(Key {
@@ -679,6 +659,7 @@ impl Key {
             modulus,
             ec_params,
             key_type_enum,
+            key_handle: None,
         })
     }
 
@@ -690,7 +671,7 @@ impl Key {
         &self.token
     }
 
-    pub fn id(&self) -> &[u8] {
+    fn id(&self) -> &[u8] {
         &self.id
     }
 
@@ -716,7 +697,66 @@ impl Key {
         }
     }
 
-    fn matches(&self, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bool {
+    fn sign_internal(
+        &mut self,
+        data: &[u8],
+        params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
+    ) -> Result<Vec<u8>, Error> {
+        // If this key hasn't been used for signing yet, there won't be a cached key handle. Obtain
+        // and cache it if this is the case. Doing so can cause the underlying implementation to
+        // show an authentication or pin prompt to the user. Caching the handle can avoid causing
+        // multiple prompts to be displayed in some cases.
+        if self.key_handle.is_none() {
+            let _ = self
+                .key_handle
+                .replace(sec_identity_copy_private_key(&self.identity)?);
+        }
+        let key = match &self.key_handle {
+            Some(key) => key,
+            None => return Err(error_here!(ErrorType::LibraryFailure)),
+        };
+        let sign_params = SignParams::new(self.key_type_enum, data, params)?;
+        let signing_algorithm = sign_params.get_algorithm();
+        let data_to_sign = CFData::from_buffer(sign_params.get_data_to_sign());
+        let signature =
+            SECURITY_FRAMEWORK.sec_key_create_signature(&key, signing_algorithm, &data_to_sign)?;
+        let signature_value = match self.key_type_enum {
+            KeyType::EC(coordinate_width) => {
+                // We need to convert the DER Ecdsa-Sig-Value to the
+                // concatenation of r and s, the coordinates of the point on
+                // the curve. r and s must be 0-padded to be coordinate_width
+                // total bytes.
+                let (r, s) = read_ec_sig_point(signature.bytes())?;
+                if r.len() > coordinate_width || s.len() > coordinate_width {
+                    return Err(error_here!(ErrorType::InvalidInput));
+                }
+                let mut signature_value = Vec::with_capacity(2 * coordinate_width);
+                let r_padding = vec![0; coordinate_width - r.len()];
+                signature_value.extend(r_padding);
+                signature_value.extend_from_slice(r);
+                let s_padding = vec![0; coordinate_width - s.len()];
+                signature_value.extend(s_padding);
+                signature_value.extend_from_slice(s);
+                signature_value
+            }
+            KeyType::RSA => signature.bytes().to_vec(),
+        };
+        Ok(signature_value)
+    }
+}
+
+impl CryptokiObject for Key {
+    fn matches(&self, slot_type: SlotType, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bool {
+        // The modern/legacy slot distinction in theory enables differentiation
+        // between keys that are from modules that can use modern cryptography
+        // (namely EC keys and RSA-PSS signatures) and those that cannot.
+        // However, the function that would enable this
+        // (SecKeyIsAlgorithmSupported) causes a password dialog to appear on
+        // our test machines, so this backend pretends that everything supports
+        // modern crypto for now.
+        if slot_type != SlotType::Modern {
+            return false;
+        }
         for (attr_type, attr_value) in attrs {
             let comparison = match *attr_type {
                 CKA_CLASS => self.class(),
@@ -759,12 +799,14 @@ impl Key {
             _ => None,
         }
     }
+}
 
-    pub fn get_signature_length(
-        &self,
+impl Sign for Key {
+    fn get_signature_length(
+        &mut self,
         data: &[u8],
         params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
-    ) -> Result<usize, ()> {
+    ) -> Result<usize, Error> {
         // Unfortunately we don't have a way of getting the length of a signature without creating
         // one.
         let dummy_signature_bytes = self.sign(data, params)?;
@@ -772,83 +814,27 @@ impl Key {
     }
 
     // The input data is a hash. What algorithm we use depends on the size of the hash.
-    pub fn sign(
-        &self,
+    fn sign(
+        &mut self,
         data: &[u8],
         params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
-    ) -> Result<Vec<u8>, ()> {
-        let key = sec_identity_copy_private_key(&self.identity)?;
-        let sign_params = SignParams::new(self.key_type_enum, data.len(), params)?;
-        let signing_algorithm = sign_params.get_algorithm();
-        let data = CFData::from_buffer(data);
-        let signature =
-            SECURITY_FRAMEWORK.sec_key_create_signature(&key, signing_algorithm, &data)?;
-        let signature_value = match self.key_type_enum {
-            KeyType::EC(coordinate_width) => {
-                // We need to convert the DER Ecdsa-Sig-Value to the
-                // concatenation of r and s, the coordinates of the point on
-                // the curve. r and s must be 0-padded to be coordinate_width
-                // total bytes.
-                let (r, s) = read_ec_sig_point(signature.bytes())?;
-                if r.len() > coordinate_width || s.len() > coordinate_width {
-                    return Err(());
-                }
-                let mut signature_value = Vec::with_capacity(2 * coordinate_width);
-                let r_padding = vec![0; coordinate_width - r.len()];
-                signature_value.extend(r_padding);
-                signature_value.extend_from_slice(r);
-                let s_padding = vec![0; coordinate_width - s.len()];
-                signature_value.extend(s_padding);
-                signature_value.extend_from_slice(s);
-                signature_value
-            }
-            KeyType::RSA => signature.bytes().to_vec(),
-        };
-        Ok(signature_value)
-    }
-}
-
-pub enum Object {
-    Cert(Cert),
-    Key(Key),
-}
-
-impl Object {
-    pub fn matches(&self, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bool {
-        match self {
-            Object::Cert(cert) => cert.matches(attrs),
-            Object::Key(key) => key.matches(attrs),
+    ) -> Result<Vec<u8>, Error> {
+        let result = self.sign_internal(data, params);
+        if result.is_ok() {
+            return result;
         }
-    }
-
-    pub fn get_attribute(&self, attribute: CK_ATTRIBUTE_TYPE) -> Option<&[u8]> {
-        match self {
-            Object::Cert(cert) => cert.get_attribute(attribute),
-            Object::Key(key) => key.get_attribute(attribute),
-        }
+        // Some devices appear to not work well when the key handle is held for too long or if a
+        // card is inserted/removed while Firefox is running. Try refreshing the key handle.
+        let _ = self.key_handle.take();
+        self.sign_internal(data, params)
     }
 }
 
-pub const SUPPORTED_ATTRIBUTES: &[CK_ATTRIBUTE_TYPE] = &[
-    CKA_CLASS,
-    CKA_TOKEN,
-    CKA_LABEL,
-    CKA_ID,
-    CKA_VALUE,
-    CKA_ISSUER,
-    CKA_SERIAL_NUMBER,
-    CKA_SUBJECT,
-    CKA_PRIVATE,
-    CKA_KEY_TYPE,
-    CKA_MODULUS,
-    CKA_EC_PARAMS,
-];
-
-fn get_key_attribute<T: TCFType + Clone>(key: &SecKey, attr: CFStringRef) -> Result<T, ()> {
+fn get_key_attribute<T: TCFType + Clone>(key: &SecKey, attr: CFStringRef) -> Result<T, Error> {
     let attributes: CFDictionary<CFString, T> = SECURITY_FRAMEWORK.sec_key_copy_attributes(&key)?;
     match attributes.find(attr as *const _) {
         Some(value) => Ok((*value).clone()),
-        None => Err(()),
+        None => Err(error_here!(ErrorType::ExternalError)),
     }
 }
 
@@ -857,12 +843,11 @@ fn get_key_attribute<T: TCFType + Clone>(key: &SecKey, attr: CFStringRef) -> Res
 // validate the given certificate but to find CA certificates that gecko may need to do path
 // building when filtering client certificates according to the acceptable CA list sent by the
 // server during client authentication.
-fn get_issuers(identity: &SecIdentity) -> Result<Vec<SecCertificate>, ()> {
+fn get_issuers(identity: &SecIdentity) -> Result<Vec<SecCertificate>, Error> {
     let certificate = sec_identity_copy_certificate(identity)?;
     let policy = unsafe { SecPolicyCreateSSL(false, std::ptr::null()) };
     if policy.is_null() {
-        error!("SecPolicyCreateSSL failed");
-        return Err(());
+        return Err(error_here!(ErrorType::ExternalError));
     }
     let policy = unsafe { SecPolicy::wrap_under_create_rule(policy) };
     let mut trust = std::ptr::null();
@@ -876,19 +861,26 @@ fn get_issuers(identity: &SecIdentity) -> Result<Vec<SecCertificate>, ()> {
         )
     };
     if status != errSecSuccess {
-        error!("SecTrustCreateWithCertificates failed: {}", status);
-        return Err(());
+        return Err(error_here!(ErrorType::ExternalError));
     }
     if trust.is_null() {
-        error!("trust is null?");
-        return Err(());
+        return Err(error_here!(ErrorType::ExternalError));
     }
     let trust = unsafe { SecTrust::wrap_under_create_rule(trust) };
+    // Disable AIA fetching so that SecTrustEvaluateWithError doesn't result in network I/O.
+    let status = unsafe { SecTrustSetNetworkFetchAllowed(trust.as_concrete_TypeRef(), 0) };
+    if status != errSecSuccess {
+        return Err(error_here!(ErrorType::ExternalError));
+    }
     // We ignore the return value here because we don't care if the certificate is trusted or not -
     // we're only doing this to build its issuer chain as much as possible.
     let _ = SECURITY_FRAMEWORK.sec_trust_evaluate_with_error(&trust)?;
     let certificate_count = unsafe { SecTrustGetCertificateCount(trust.as_concrete_TypeRef()) };
-    let mut certificates = Vec::with_capacity(certificate_count.try_into().map_err(|_| ())?);
+    let mut certificates = Vec::with_capacity(
+        certificate_count
+            .try_into()
+            .map_err(|_| error_here!(ErrorType::ValueTooLarge))?,
+    );
     for i in 1..certificate_count {
         let certificate = unsafe { SecTrustGetCertificateAtIndex(trust.as_concrete_TypeRef(), i) };
         if certificate.is_null() {
@@ -901,50 +893,56 @@ fn get_issuers(identity: &SecIdentity) -> Result<Vec<SecCertificate>, ()> {
     Ok(certificates)
 }
 
-pub fn list_objects() -> Vec<Object> {
-    let mut objects = Vec::new();
-    let identities = unsafe {
-        let class_key = CFString::wrap_under_get_rule(kSecClass);
-        let class_value = CFString::wrap_under_get_rule(kSecClassIdentity);
-        let return_ref_key = CFString::wrap_under_get_rule(kSecReturnRef);
-        let return_ref_value = CFBoolean::wrap_under_get_rule(kCFBooleanTrue);
-        let match_key = CFString::wrap_under_get_rule(kSecMatchLimit);
-        let match_value = CFString::wrap_under_get_rule(kSecMatchLimitAll);
-        let vals = vec![
-            (class_key.as_CFType(), class_value.as_CFType()),
-            (return_ref_key.as_CFType(), return_ref_value.as_CFType()),
-            (match_key.as_CFType(), match_value.as_CFType()),
-        ];
-        let dict = CFDictionary::from_CFType_pairs(&vals);
-        let mut result = std::ptr::null();
-        let status = SecItemCopyMatching(dict.as_CFTypeRef() as CFDictionaryRef, &mut result);
-        if status != errSecSuccess {
-            error!("SecItemCopyMatching failed: {}", status);
-            return objects;
-        }
-        if result.is_null() {
-            debug!("no client certs?");
-            return objects;
-        }
-        CFArray::<SecIdentityRef>::wrap_under_create_rule(result as CFArrayRef)
-    };
-    for identity in identities.get_all_values().iter() {
-        let identity = unsafe { SecIdentity::wrap_under_get_rule(*identity as SecIdentityRef) };
-        let cert = Cert::new_from_identity(&identity);
-        let key = Key::new(&identity);
-        if let (Ok(cert), Ok(key)) = (cert, key) {
-            objects.push(Object::Cert(cert));
-            objects.push(Object::Key(key));
-        } else {
-            continue;
-        }
-        if let Ok(issuers) = get_issuers(&identity) {
-            for issuer in issuers {
-                if let Ok(cert) = Cert::new_from_certificate(&issuer) {
-                    objects.push(Object::Cert(cert));
+pub struct Backend {}
+
+impl ClientCertsBackend for Backend {
+    type Cert = Cert;
+    type Key = Key;
+
+    fn find_objects(&self) -> Result<(Vec<Cert>, Vec<Key>), Error> {
+        let mut certs = Vec::new();
+        let mut keys = Vec::new();
+        let identities = unsafe {
+            let class_key = CFString::wrap_under_get_rule(kSecClass);
+            let class_value = CFString::wrap_under_get_rule(kSecClassIdentity);
+            let return_ref_key = CFString::wrap_under_get_rule(kSecReturnRef);
+            let return_ref_value = CFBoolean::wrap_under_get_rule(kCFBooleanTrue);
+            let match_key = CFString::wrap_under_get_rule(kSecMatchLimit);
+            let match_value = CFString::wrap_under_get_rule(kSecMatchLimitAll);
+            let vals = vec![
+                (class_key.as_CFType(), class_value.as_CFType()),
+                (return_ref_key.as_CFType(), return_ref_value.as_CFType()),
+                (match_key.as_CFType(), match_value.as_CFType()),
+            ];
+            let dict = CFDictionary::from_CFType_pairs(&vals);
+            let mut result = std::ptr::null();
+            let status = SecItemCopyMatching(dict.as_CFTypeRef() as CFDictionaryRef, &mut result);
+            if status != errSecSuccess {
+                return Err(error_here!(ErrorType::ExternalError, status.to_string()));
+            }
+            if result.is_null() {
+                return Err(error_here!(ErrorType::ExternalError));
+            }
+            CFArray::<SecIdentityRef>::wrap_under_create_rule(result as CFArrayRef)
+        };
+        for identity in identities.get_all_values().iter() {
+            let identity = unsafe { SecIdentity::wrap_under_get_rule(*identity as SecIdentityRef) };
+            let cert = Cert::new_from_identity(&identity);
+            let key = Key::new(&identity);
+            if let (Ok(cert), Ok(key)) = (cert, key) {
+                certs.push(cert);
+                keys.push(key);
+            } else {
+                continue;
+            }
+            if let Ok(issuers) = get_issuers(&identity) {
+                for issuer in issuers {
+                    if let Ok(cert) = Cert::new_from_certificate(&issuer) {
+                        certs.push(cert);
+                    }
                 }
             }
         }
+        Ok((certs, keys))
     }
-    objects
 }

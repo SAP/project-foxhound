@@ -36,7 +36,7 @@ def MakeCustomHandlerClass(
     shutdown_browser,
     handle_gecko_profile,
     background_app,
-    foreground_app
+    foreground_app,
 ):
     class MyHandler(server.BaseHTTPRequestHandler, object):
         """
@@ -124,7 +124,10 @@ def MakeCustomHandlerClass(
             self.handle_gecko_profile = handle_gecko_profile
             self.background_app = background_app
             self.foreground_app = foreground_app
-            super(MyHandler, self).__init__(*args, **kwargs)
+            try:
+                super(MyHandler, self).__init__(*args, **kwargs)
+            except ValueError:
+                pass
 
         def log_request(self, code="-", size="-"):
             if code != 200:
@@ -142,7 +145,9 @@ def MakeCustomHandlerClass(
                         self.send_header("Access-Control-Allow-Origin", "*")
                         self.send_header("Content-type", "application/json")
                         self.end_headers()
-                        self.wfile.write(json.dumps(json.load(json_settings)).encode("utf-8"))
+                        self.wfile.write(
+                            json.dumps(json.load(json_settings)).encode("utf-8")
+                        )
                         self.wfile.close()
                         LOG.info("sent test settings to webext runner")
                 except Exception as ex:
@@ -166,7 +171,7 @@ def MakeCustomHandlerClass(
             post_body = self.rfile.read(content_len)
             # could have received a status update or test results
             if isinstance(post_body, six.binary_type):
-                post_body = post_body.decode('utf-8')
+                post_body = post_body.decode("utf-8")
             data = json.loads(post_body)
 
             if data["type"] == "webext_status":
@@ -218,8 +223,10 @@ def MakeCustomHandlerClass(
                     data["data"].append("")
                 # pageload test has timed out; record it as a failure
                 self.results_handler.add_page_timeout(
-                    str(data["data"][0]), str(data["data"][1]), str(data["data"][2]),
-                    dict(data["data"][3])
+                    str(data["data"][0]),
+                    str(data["data"][1]),
+                    str(data["data"][2]),
+                    dict(data["data"][3]),
                 )
             elif data["type"] == "webext_shutdownBrowser":
                 LOG.info("received request to shutdown the browser")
@@ -249,9 +256,9 @@ def MakeCustomHandlerClass(
             elif data["type"] == "wait-get":
                 state = MyHandler.waiting_in_state
                 if state is None:
-                    state = 'None'
+                    state = "None"
                 if isinstance(state, six.text_type):
-                    state = state.encode('utf-8')
+                    state = state.encode("utf-8")
                 self.wfile.write(state)
             elif data["type"] == "wait-continue":
                 LOG.info("received " + data["type"] + ": " + str(data["data"]))
@@ -344,7 +351,7 @@ class RaptorControlServer:
             self.shutdown_browser,
             self.handle_gecko_profile,
             self.background_app,
-            self.foreground_app
+            self.foreground_app,
         )
 
         httpd = server_class(server_address, handler_class)
@@ -373,7 +380,9 @@ class RaptorControlServer:
             LOG.info("shutting down android app %s" % self.app_name)
         else:
             LOG.info("shutting down browser (pid: %d)" % self.browser_proc.pid)
-        self.kill_thread = threading.Thread(target=self.wait_for_quit, kwargs={"timeout": 0})
+        self.kill_thread = threading.Thread(
+            target=self.wait_for_quit, kwargs={"timeout": 0}
+        )
         self.kill_thread.daemon = True
         self.kill_thread.start()
 
@@ -396,7 +405,9 @@ class RaptorControlServer:
         self.device.shell_output("dumpsys deviceidle whitelist +%s" % self.app_name)
         self.device.shell_output("input keyevent 3")
         if not self.is_app_in_background():
-            LOG.critical("%s is still in foreground after background request" % self.app_name)
+            LOG.critical(
+                "%s is still in foreground after background request" % self.app_name
+            )
         else:
             LOG.info("%s was successfully backgrounded" % self.app_name)
 
@@ -404,7 +415,9 @@ class RaptorControlServer:
         self.device.shell_output("am start --activity-single-top %s" % self.app_name)
         self.device.shell_output("dumpsys deviceidle enable")
         if self.is_app_in_background():
-            LOG.critical("%s is still in background after foreground request" % self.app_name)
+            LOG.critical(
+                "%s is still in background after foreground request" % self.app_name
+            )
         else:
             LOG.info("%s was successfully foregrounded" % self.app_name)
 
@@ -417,17 +430,21 @@ class RaptorControlServer:
         for synchronization (bug 1633975)
         """
         self._is_shutting_down = True
-        time.sleep(.25)
+        time.sleep(0.25)
 
         if self.device is not None:
             self.device.stop_application(self.app_name)
         else:
-            self.browser_proc.wait(timeout)
-            if self.browser_proc.poll() is None:
-                self.browser_proc.kill()
+            try:
+                self.browser_proc.wait(timeout)
+            except OSError:
+                LOG.warning("OSError while shutting down browser", exc_info=True)
+            finally:
+                if self.browser_proc.poll() is None:
+                    self.browser_proc.kill()
 
         self._finished = True
-        time.sleep(.25)
+        time.sleep(0.25)
         self._is_shutting_down = False
 
     def submit_supporting_data(self, supporting_data):

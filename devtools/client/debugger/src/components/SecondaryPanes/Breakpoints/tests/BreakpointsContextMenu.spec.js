@@ -2,13 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
 import React from "react";
 import { shallow } from "enzyme";
 
 import BreakpointsContextMenu from "../BreakpointsContextMenu";
-import { buildMenu } from "devtools-contextmenu";
+import { buildMenu } from "../../../../context-menu/menu";
 
 import {
   makeMockBreakpoint,
@@ -16,7 +14,7 @@ import {
   mockcx,
 } from "../../../../utils/test-mockup";
 
-jest.mock("devtools-contextmenu");
+jest.mock("../../../../context-menu/menu");
 
 function render(disabled = false) {
   const props = generateDefaults(disabled);
@@ -68,7 +66,7 @@ function generateDefaults(disabled) {
     selectSpecificLocation: jest.fn(),
     setBreakpointCondition: jest.fn(),
     openConditionalPanel: jest.fn(),
-    contextMenuEvent: ({ preventDefault: jest.fn() }: any),
+    contextMenuEvent: { preventDefault: jest.fn() },
     selectedSource: makeMockSource(),
     setBreakpointOptions: jest.fn(),
   };

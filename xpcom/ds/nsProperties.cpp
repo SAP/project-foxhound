@@ -28,7 +28,7 @@ nsProperties::Set(const char* prop, nsISupports* value) {
   if (NS_WARN_IF(!prop)) {
     return NS_ERROR_INVALID_ARG;
   }
-  Put(prop, value);
+  InsertOrUpdate(prop, value);
   return NS_OK;
 }
 
@@ -53,12 +53,7 @@ nsProperties::Has(const char* prop, bool* result) {
 
 NS_IMETHODIMP
 nsProperties::GetKeys(nsTArray<nsCString>& aKeys) {
-  uint32_t count = Count();
-  aKeys.SetCapacity(count);
-
-  for (auto iter = this->Iter(); !iter.Done(); iter.Next()) {
-    aKeys.AppendElement(iter.Key());
-  }
+  mozilla::AppendToArray(aKeys, this->Keys());
 
   return NS_OK;
 }

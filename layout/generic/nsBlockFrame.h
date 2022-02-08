@@ -328,7 +328,7 @@ class nsBlockFrame : public nsContainerFrame {
    */
   bool DrainSelfOverflowList() override;
 
-  nsresult StealFrame(nsIFrame* aChild) override;
+  void StealFrame(nsIFrame* aChild) override;
 
   void DeleteNextInFlowChild(nsIFrame* aNextInFlow,
                              bool aDeletingEmptyFrames) override;
@@ -472,10 +472,21 @@ class nsBlockFrame : public nsContainerFrame {
                         BlockReflowInput& aState, ReflowOutput& aMetrics,
                         nscoord* aBEndEdgeOfChildren);
 
-  void ComputeOverflowAreas(const nsRect& aBounds,
-                            const nsStyleDisplay* aDisplay,
+  /**
+   * Helper method for Reflow(). Computes the overflow areas created by our
+   * children, and includes them into aOverflowAreas.
+   */
+  void ComputeOverflowAreas(mozilla::OverflowAreas& aOverflowAreas,
                             nscoord aBEndEdgeOfChildren,
-                            nsOverflowAreas& aOverflowAreas);
+                            const nsStyleDisplay* aDisplay) const;
+
+  /**
+   * Helper method for ComputeOverflowAreas(). Incorporates aBEndEdgeOfChildren
+   * into the aOverflowAreas.
+   */
+  void ConsiderBlockEndEdgeOfChildren(mozilla::OverflowAreas& aOverflowAreas,
+                                      nscoord aBEndEdgeOfChildren,
+                                      const nsStyleDisplay* aDisplay) const;
 
   /**
    * Add the frames in aFrameList to this block after aPrevSibling.
@@ -535,9 +546,11 @@ class nsBlockFrame : public nsContainerFrame {
   void ReparentFloats(nsIFrame* aFirstFrame, nsBlockFrame* aOldParent,
                       bool aReparentSiblings);
 
-  virtual bool ComputeCustomOverflow(nsOverflowAreas& aOverflowAreas) override;
+  virtual bool ComputeCustomOverflow(
+      mozilla::OverflowAreas& aOverflowAreas) override;
 
-  virtual void UnionChildOverflow(nsOverflowAreas& aOverflowAreas) override;
+  virtual void UnionChildOverflow(
+      mozilla::OverflowAreas& aOverflowAreas) override;
 
   /**
    * Load all of aFrame's floats into the float manager iff aFrame is not a
@@ -644,8 +657,7 @@ class nsBlockFrame : public nsContainerFrame {
   /** Reflow pushed floats
    */
   void ReflowPushedFloats(BlockReflowInput& aState,
-                          nsOverflowAreas& aOverflowAreas,
-                          nsReflowStatus& aStatus);
+                          mozilla::OverflowAreas& aOverflowAreas);
 
   /** Find any trailing BR clear from the last line of the block (or its PIFs)
    */
@@ -752,10 +764,10 @@ class nsBlockFrame : public nsContainerFrame {
                          LineIterator aLine, nsIFrame* aFrame,
                          LineReflowStatus* aLineReflowStatus);
 
-  // Compute the available inline size for a float.
+  // Compute the available size for a float.
   mozilla::LogicalRect AdjustFloatAvailableSpace(
       BlockReflowInput& aState,
-      const mozilla::LogicalRect& aFloatAvailableSpace, nsIFrame* aFloatFrame);
+      const mozilla::LogicalRect& aFloatAvailableSpace);
   // Computes the border-box inline size of the float
   nscoord ComputeFloatISize(BlockReflowInput& aState,
                             const mozilla::LogicalRect& aFloatAvailableSpace,
@@ -841,7 +853,8 @@ class nsBlockFrame : public nsContainerFrame {
 
   //----------------------------------------
 
-  virtual nsILineIterator* GetLineIterator() override;
+  bool CanProvideLineIterator() const final { return true; }
+  nsILineIterator* GetLineIterator() final;
 
  public:
   bool HasOverflowLines() const {

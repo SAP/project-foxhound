@@ -14,8 +14,11 @@
 #include "mozilla/RefCounted.h"
 #include "mozilla/gfx/Types.h"
 #include "mozilla/Vector.h"
+#include "mozilla/WeakPtr.h"
 
 namespace mozilla {
+
+class ClientWebGLContext;
 
 namespace gfx {
 class SourceSurface;
@@ -24,7 +27,6 @@ class DrawTarget;
 
 namespace layers {
 
-class CopyableCanvasLayer;
 class TextureClient;
 
 /**
@@ -34,13 +36,15 @@ class TextureClient;
  * from the provider again, the provider will guarantee the contents of the
  * previously returned DrawTarget is persisted into the one newly returned.
  */
-class PersistentBufferProvider : public RefCounted<PersistentBufferProvider> {
+class PersistentBufferProvider : public RefCounted<PersistentBufferProvider>,
+                                 public SupportsWeakPtr {
  public:
   MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(PersistentBufferProvider)
 
   virtual ~PersistentBufferProvider() = default;
 
-  virtual LayersBackend GetType() { return LayersBackend::LAYERS_NONE; }
+  virtual bool IsShared() const { return false; }
+  virtual bool IsAccelerated() const { return false; }
 
   /**
    * Get a DrawTarget from the PersistentBufferProvider.
@@ -65,6 +69,8 @@ class PersistentBufferProvider : public RefCounted<PersistentBufferProvider> {
       already_AddRefed<gfx::SourceSurface> aSnapshot) = 0;
 
   virtual TextureClient* GetTextureClient() { return nullptr; }
+
+  virtual ClientWebGLContext* AsWebgl() { return nullptr; }
 
   virtual void OnShutdown() {}
 
@@ -95,8 +101,6 @@ class PersistentBufferProviderBasic : public PersistentBufferProvider {
 
   explicit PersistentBufferProviderBasic(gfx::DrawTarget* aTarget);
 
-  LayersBackend GetType() override { return LayersBackend::LAYERS_BASIC; }
-
   already_AddRefed<gfx::DrawTarget> BorrowDrawTarget(
       const gfx::IntRect& aPersistedRect) override;
 
@@ -113,11 +117,26 @@ class PersistentBufferProviderBasic : public PersistentBufferProvider {
  protected:
   void Destroy();
 
- private:
-  virtual ~PersistentBufferProviderBasic();
+  ~PersistentBufferProviderBasic() override;
 
   RefPtr<gfx::DrawTarget> mDrawTarget;
   RefPtr<gfx::SourceSurface> mSnapshot;
+};
+
+class PersistentBufferProviderAccelerated
+    : public PersistentBufferProviderBasic {
+ public:
+  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(PersistentBufferProviderAccelerated,
+                                          override)
+
+  explicit PersistentBufferProviderAccelerated(gfx::DrawTarget* aTarget);
+
+  bool IsAccelerated() const override { return true; }
+
+  ClientWebGLContext* AsWebgl() override;
+
+ protected:
+  ~PersistentBufferProviderAccelerated() override;
 };
 
 /**
@@ -134,7 +153,7 @@ class PersistentBufferProviderShared : public PersistentBufferProvider,
       gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
       KnowsCompositor* aKnowsCompositor);
 
-  LayersBackend GetType() override;
+  bool IsShared() const override { return true; }
 
   already_AddRefed<gfx::DrawTarget> BorrowDrawTarget(
       const gfx::IntRect& aPersistedRect) override;
@@ -172,8 +191,12 @@ class PersistentBufferProviderShared : public PersistentBufferProvider,
   gfx::IntSize mSize;
   gfx::SurfaceFormat mFormat;
   RefPtr<KnowsCompositor> mKnowsCompositor;
-  // We may need two extra textures if webrender is enabled.
-  static const size_t kMaxTexturesAllowed = 4;
+  // If the texture has its own synchronization then copying back from the
+  // previous texture can cause contention issues and even deadlocks. So we use
+  // a separate permanent back buffer and copy into the shared back buffer when
+  // the DrawTarget is returned, before making it the new front buffer.
+  RefPtr<TextureClient> mPermanentBackBuffer;
+  static const size_t kMaxTexturesAllowed = 5;
   Vector<RefPtr<TextureClient>, kMaxTexturesAllowed + 2> mTextures;
   // Offset of the texture in mTextures that the canvas uses.
   Maybe<uint32_t> mBack;
@@ -185,7 +208,6 @@ class PersistentBufferProviderShared : public PersistentBufferProvider,
 
   RefPtr<gfx::DrawTarget> mDrawTarget;
   RefPtr<gfx::SourceSurface> mSnapshot;
-  RefPtr<gfx::SourceSurface> mPreviousSnapshot;
   size_t mMaxAllowedTextures = kMaxTexturesAllowed;
 };
 

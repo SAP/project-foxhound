@@ -5,14 +5,13 @@
 
 "use strict";
 
-const TEST_URI = `data:text/html;charset=utf8,<p>test page</p>`;
+const TEST_URI = `data:text/html;charset=utf8,<!DOCTYPE html><p>test page</p>`;
 
 add_task(async function() {
   const hud = await openNewTabAndConsole(TEST_URI);
   const { jsterm } = hud;
 
-  const target = await TargetFactory.forTab(gBrowser.selectedTab);
-  const toolbox = gDevTools.getToolbox(target);
+  const toolbox = await gDevTools.getToolboxForTab(gBrowser.selectedTab);
 
   // Open context menu and wait until it's visible
   const element = jsterm.node.querySelector(".CodeMirror-wrap");

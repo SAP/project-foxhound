@@ -14,7 +14,8 @@
 
 namespace mozilla {
 
-/* static */ StaticDataMutex<ProfilerChild::ProfilerChildAndUpdate>
+/* static */ DataMutexBase<ProfilerChild::ProfilerChildAndUpdate,
+                           baseprofiler::detail::BaseProfilerMutex>
     ProfilerChild::sPendingChunkManagerUpdate{
         "ProfilerChild::sPendingChunkManagerUpdate"};
 
@@ -101,6 +102,10 @@ void ProfilerChild::ProcessChunkManagerUpdate(
       }));
 }
 
+/* static */ bool ProfilerChild::IsLockedOnCurrentThread() {
+  return sPendingChunkManagerUpdate.Mutex().IsLockedOnCurrentThread();
+}
+
 void ProfilerChild::SetupChunkManager() {
   mChunkManager = profiler_get_controlled_chunk_manager();
   if (NS_WARN_IF(!mChunkManager)) {
@@ -158,8 +163,7 @@ mozilla::ipc::IPCResult ProfilerChild::RecvStart(
 
   profiler_start(PowerOfTwo32(params.entries()), params.interval(),
                  params.features(), filterArray.Elements(),
-                 filterArray.Length(), params.activeBrowsingContextID(),
-                 params.duration());
+                 filterArray.Length(), params.activeTabID(), params.duration());
 
   SetupChunkManager();
 
@@ -175,8 +179,8 @@ mozilla::ipc::IPCResult ProfilerChild::RecvEnsureStarted(
 
   profiler_ensure_started(PowerOfTwo32(params.entries()), params.interval(),
                           params.features(), filterArray.Elements(),
-                          filterArray.Length(),
-                          params.activeBrowsingContextID(), params.duration());
+                          filterArray.Length(), params.activeTabID(),
+                          params.duration());
 
   SetupChunkManager();
 
@@ -221,8 +225,6 @@ static nsCString CollectProfileOrEmptyString(bool aIsShuttingDown) {
   if (profile) {
     size_t len = strlen(profile.get());
     profileCString.Adopt(profile.release(), len);
-  } else {
-    profileCString = EmptyCString();
   }
   return profileCString;
 }

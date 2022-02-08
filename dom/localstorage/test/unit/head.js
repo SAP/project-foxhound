@@ -56,6 +56,7 @@ function returnToEventLoop() {
 }
 
 function enableTesting() {
+  Services.prefs.setBoolPref("dom.simpleDB.enabled", true);
   Services.prefs.setBoolPref("dom.storage.testing", true);
 
   // xpcshell globals don't have associated clients in the Clients API sense, so
@@ -70,6 +71,7 @@ function resetTesting() {
   Services.prefs.clearUserPref("dom.quotaManager.testing");
   Services.prefs.clearUserPref("dom.storage.client_validation");
   Services.prefs.clearUserPref("dom.storage.testing");
+  Services.prefs.clearUserPref("dom.simpleDB.enabled");
 }
 
 function setGlobalLimit(globalLimit) {
@@ -107,16 +109,20 @@ function setTimeout(callback, timeout) {
   return timer;
 }
 
-function init() {
-  let request = Services.qms.init();
-
-  return request;
+function initStorage() {
+  return Services.qms.init();
 }
 
-function initStorageAndOrigin(principal, persistence) {
-  let request = Services.qms.initStorageAndOrigin(principal, persistence, "ls");
+function initTemporaryStorage() {
+  return Services.qms.initTemporaryStorage();
+}
 
-  return request;
+function initPersistentOrigin(principal) {
+  return Services.qms.initializePersistentOrigin(principal);
+}
+
+function initTemporaryOrigin(persistence, principal) {
+  return Services.qms.initializeTemporaryOrigin(persistence, principal);
 }
 
 function getOriginUsage(principal, fromMemory = false) {
@@ -274,6 +280,20 @@ function getCurrentPrincipal() {
 
 function getDefaultPrincipal() {
   return getPrincipal("http://example.com");
+}
+
+function getSimpleDatabase(principal, persistence) {
+  let connection = Cc["@mozilla.org/dom/sdb-connection;1"].createInstance(
+    Ci.nsISDBConnection
+  );
+
+  if (!principal) {
+    principal = getDefaultPrincipal();
+  }
+
+  connection.init(principal, persistence);
+
+  return connection;
 }
 
 function getLocalStorage(principal) {

@@ -9,13 +9,13 @@ const { MessagingExperimentAction } = ChromeUtils.import(
 );
 
 const { _ExperimentManager, ExperimentManager } = ChromeUtils.import(
-  "resource://messaging-system/experiments/ExperimentManager.jsm"
+  "resource://nimbus/lib/ExperimentManager.jsm"
 );
 
 decorate_task(
-  withStudiesEnabled,
+  withStudiesEnabled(),
   withStub(Uptake, "reportRecipe"),
-  async function arguments_are_validated(reportRecipe) {
+  async function arguments_are_validated({ reportRecipeStub }) {
     const action = new MessagingExperimentAction();
 
     is(
@@ -55,7 +55,7 @@ decorate_task(
     await action.processRecipe(recipe, BaseAction.suitability.FILTER_MATCH);
     await action.finalize();
 
-    Assert.deepEqual(reportRecipe.args, [[recipe, Uptake.RECIPE_SUCCESS]]);
+    Assert.deepEqual(reportRecipeStub.args, [[recipe, Uptake.RECIPE_SUCCESS]]);
     Assert.deepEqual(
       onRecipeStub.args,
       [[recipe.arguments, "normandy"]],

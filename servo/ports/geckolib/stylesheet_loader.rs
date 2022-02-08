@@ -19,8 +19,8 @@ use style::global_style_data::GLOBAL_STYLE_DATA;
 use style::media_queries::MediaList;
 use style::parser::ParserContext;
 use style::shared_lock::{Locked, SharedRwLock};
+use style::stylesheets::import_rule::{ImportLayer, ImportSheet};
 use style::stylesheets::AllowImportRules;
-use style::stylesheets::import_rule::ImportSheet;
 use style::stylesheets::{ImportRule, Origin, StylesheetLoader as StyleStylesheetLoader};
 use style::stylesheets::{StylesheetContents, UrlExtraData};
 use style::use_counters::UseCounters;
@@ -52,6 +52,7 @@ impl StyleStylesheetLoader for StylesheetLoader {
         _context: &ParserContext,
         lock: &SharedRwLock,
         media: Arc<Locked<MediaList>>,
+        layer: Option<ImportLayer>,
     ) -> Arc<Locked<ImportRule>> {
         // After we get this raw pointer ImportRule will be moved into a lock and Arc
         // and so the Arc<Url> pointer inside will also move,
@@ -59,14 +60,7 @@ impl StyleStylesheetLoader for StylesheetLoader {
         // so this raw pointer will still be valid.
 
         let child_sheet = unsafe {
-            Gecko_LoadStyleSheet(
-                self.0,
-                self.1,
-                self.2,
-                self.3,
-                &url,
-                media.into_strong(),
-            )
+            Gecko_LoadStyleSheet(self.0, self.1, self.2, self.3, &url, media.into_strong())
         };
 
         debug_assert!(
@@ -77,8 +71,9 @@ impl StyleStylesheetLoader for StylesheetLoader {
         let stylesheet = ImportSheet::new(sheet);
         Arc::new(lock.wrap(ImportRule {
             url,
-            source_location,
             stylesheet,
+            layer,
+            source_location,
         }))
     }
 }
@@ -129,7 +124,7 @@ impl AsyncStylesheetParser {
 
         // Note: Parallel CSS parsing doesn't report CSS errors. When errors are
         // being logged, Gecko prevents the parallel parsing path from running.
-        let sheet = Arc::new(StylesheetContents::from_str(
+        let sheet = StylesheetContents::from_str(
             input,
             self.extra_data.clone(),
             self.origin,
@@ -138,10 +133,10 @@ impl AsyncStylesheetParser {
             None,
             self.quirks_mode.into(),
             self.line_number_offset,
-            use_counters.as_ref().map(|c| &**c),
+            use_counters.as_deref(),
             self.allow_import_rules,
             /* sanitized_output = */ None,
-        ));
+        );
 
         let use_counters = match use_counters {
             Some(c) => c.into_ffi().maybe(),
@@ -166,12 +161,14 @@ impl StyleStylesheetLoader for AsyncStylesheetParser {
         _context: &ParserContext,
         lock: &SharedRwLock,
         media: Arc<Locked<MediaList>>,
+        layer: Option<ImportLayer>,
     ) -> Arc<Locked<ImportRule>> {
-        let stylesheet = ImportSheet::new_pending(self.origin, self.quirks_mode);
+        let stylesheet = ImportSheet::new_pending();
         let rule = Arc::new(lock.wrap(ImportRule {
             url: url.clone(),
-            source_location,
             stylesheet,
+            layer,
+            source_location,
         }));
 
         unsafe {

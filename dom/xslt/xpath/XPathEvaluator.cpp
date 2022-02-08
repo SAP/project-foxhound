@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "XPathResult.h"
+#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/XPathEvaluatorBinding.h"
@@ -94,7 +95,7 @@ XPathExpression* XPathEvaluator::CreateExpression(const nsAString& aExpression,
   if (aRv.Failed()) {
     if (!aRv.ErrorCodeIs(NS_ERROR_DOM_NAMESPACE_ERR)) {
       aRv.SuppressException();
-      aRv.Throw(NS_ERROR_DOM_INVALID_EXPRESSION_ERR);
+      aRv.ThrowSyntaxError("The expression is not a legal expression");
     }
 
     return nullptr;
@@ -170,7 +171,7 @@ nsresult XPathEvaluatorParseContext::resolveNamespacePrefix(nsAtom* aPrefix,
   }
 
   // get the namespaceID for the URI
-  return nsContentUtils::NameSpaceManager()->RegisterNameSpace(ns, aID);
+  return nsNameSpaceManager::GetInstance()->RegisterNameSpace(ns, aID);
 }
 
 nsresult XPathEvaluatorParseContext::resolveFunctionCall(nsAtom* aName,

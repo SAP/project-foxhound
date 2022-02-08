@@ -5,7 +5,7 @@
 
 #include "TextUpdater.h"
 
-#include "Accessible-inl.h"
+#include "LocalAccessible-inl.h"
 #include "DocAccessible-inl.h"
 #include "TextLeafAccessible.h"
 #include <algorithm>
@@ -35,7 +35,7 @@ void TextUpdater::Run(DocAccessible* aDocument, TextLeafAccessible* aTextLeaf,
 
 void TextUpdater::DoUpdate(const nsAString& aNewText, const nsAString& aOldText,
                            uint32_t aSkipStart) {
-  Accessible* parent = mTextLeaf->Parent();
+  LocalAccessible* parent = mTextLeaf->LocalParent();
   if (!parent) return;
 
   mHyperText = parent->AsHyperText();
@@ -127,8 +127,9 @@ void TextUpdater::DoUpdate(const nsAString& aNewText, const nsAString& aOldText,
   delete[] entries;
 
   // Fire events.
-  for (int32_t idx = events.Length() - 1; idx >= 0; idx--)
+  for (int32_t idx = events.Length() - 1; idx >= 0; idx--) {
     mDocument->FireDelayedEvent(events[idx]);
+  }
 
   mDocument->MaybeNotifyOfValueChange(mHyperText);
 

@@ -1,4 +1,9 @@
-env_logger [![Build Status](https://travis-ci.org/sebasmagri/env_logger.svg?branch=master)](https://travis-ci.org/sebasmagri/env_logger) [![Maintenance](https://img.shields.io/badge/maintenance-actively%20maintained-brightgreen.svg)](https://github.com/sebasmagri/env_logger) [![crates.io](https://img.shields.io/crates/v/env_logger.svg)](https://crates.io/crates/env_logger) [![Documentation](https://img.shields.io/badge/docs-current-blue.svg)](https://docs.rs/env_logger)
+# env_logger
+
+[![Maintenance](https://img.shields.io/badge/maintenance-actively%20maintained-brightgreen.svg)](https://github.com/env-logger-rs/env_logger)
+[![crates.io](https://img.shields.io/crates/v/env_logger.svg)](https://crates.io/crates/env_logger)
+[![Documentation](https://docs.rs/env_logger/badge.svg)](https://docs.rs/env_logger)
+[![Documentation](https://img.shields.io/badge/docs-master-blue.svg)](https://env-logger-rs.github.io/env_logger/env_logger/index.html)
 ==========
 
 Implements a logger that can be configured via environment variables.
@@ -16,7 +21,7 @@ It must be added along with `log` to the project dependencies:
 ```toml
 [dependencies]
 log = "0.4.0"
-env_logger = "0.6.2"
+env_logger = "0.8.4"
 ```
 
 `env_logger` must be initialized as early as possible in the project. After it's initialized, you can use the `log` macros to do actual logging.
@@ -24,7 +29,6 @@ env_logger = "0.6.2"
 ```rust
 #[macro_use]
 extern crate log;
-extern crate env_logger;
 
 fn main() {
     env_logger::init();
@@ -35,7 +39,7 @@ fn main() {
 }
 ```
 
-Then when running the executable, specify a value for the `RUST_LOG`
+Then when running the executable, specify a value for the **`RUST_LOG`**
 environment variable that corresponds with the log messages you want to show.
 
 ```bash
@@ -43,7 +47,37 @@ $ RUST_LOG=info ./main
 [2018-11-03T06:09:06Z INFO  default] starting up
 ```
 
-`env_logger` can be configured in other ways besides an environment variable. See [the examples](https://github.com/sebasmagri/env_logger/tree/master/examples) for more approaches.
+The letter case is not significant for the logging level names; e.g., `debug`,
+`DEBUG`, and `dEbuG` all represent the same logging level. Therefore, the
+previous example could also have been written this way, specifying the log
+level as `INFO` rather than as `info`:
+
+```bash
+$ RUST_LOG=INFO ./main
+[2018-11-03T06:09:06Z INFO  default] starting up
+```
+
+So which form should you use? For consistency, our convention is to use lower
+case names. Where our docs do use other forms, they do so in the context of
+specific examples, so you won't be surprised if you see similar usage in the
+wild.
+
+The log levels that may be specified correspond to the [`log::Level`][level-enum]
+enum from the `log` crate. They are:
+
+   * `error`
+   * `warn`
+   * `info`
+   * `debug`
+   * `trace`
+
+[level-enum]:  https://docs.rs/log/latest/log/enum.Level.html  "log::Level (docs.rs)"
+
+There is also a pseudo logging level, `off`, which may be specified to disable
+all logging for a given module or for the entire application. As with the
+logging levels, the letter case is not significant.
+
+`env_logger` can be configured in other ways besides an environment variable. See [the examples](https://github.com/env-logger-rs/env_logger/tree/master/examples) for more approaches.
 
 ### In tests
 
@@ -54,7 +88,7 @@ Tests can use the `env_logger` crate to see log messages generated during that t
 log = "0.4.0"
 
 [dev-dependencies]
-env_logger = "0.6.2"
+env_logger = "0.8.4"
 ```
 
 ```rust
@@ -69,7 +103,6 @@ fn add_one(num: i32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    extern crate env_logger;
 
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();

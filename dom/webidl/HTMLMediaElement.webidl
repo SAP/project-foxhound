@@ -136,9 +136,6 @@ partial interface HTMLMediaElement {
   // the media element has a fragment URI for the currentSrc, otherwise
   // it is equal to the media duration.
   readonly attribute double mozFragmentEnd;
-
-  [ChromeOnly]
-  void reportCanPlayTelemetry();
 };
 
 // Encrypted Media Extensions
@@ -207,18 +204,18 @@ partial interface HTMLMediaElement {
   Promise<void> seekToNextFrame();
 };
 
-/*
- * These APIs are testing only, they are used to simulate visibility changes to help debug and write
- * tests about suspend-video-decoding.
- *
- * - SetVisible() is for simulating visibility changes.
- * - HasSuspendTaint() is for querying that the element's decoder cannot suspend
- *   video decoding because it has been tainted by an operation, such as
- *   drawImage().
- * - isVisible is a boolean value which indicate whether media element is visible.
- * - isVideoDecodingSuspended() is used to know whether video decoding has suspended.
- */
+/* Internal testing only API */
 partial interface HTMLMediaElement {
+  // These APIs are used to simulate visibility changes to help debug and write
+  // tests about suspend-video-decoding.
+  // - SetVisible() is for simulating visibility changes.
+  // - HasSuspendTaint() is for querying that the element's decoder cannot suspend
+  //   video decoding because it has been tainted by an operation, such as
+  //   drawImage().
+  // - isInViewPort is a boolean value which indicate whether media element is
+  //   in view port.
+  // - isVideoDecodingSuspended() is used to know whether video decoding has
+  //   suspended.
   [Pref="media.test.video-suspend"]
   void setVisible(boolean aVisible);
 
@@ -226,17 +223,53 @@ partial interface HTMLMediaElement {
   boolean hasSuspendTaint();
 
   [ChromeOnly]
-  readonly attribute boolean isVisible;
+  readonly attribute boolean isInViewPort;
 
   [ChromeOnly]
   readonly attribute boolean isVideoDecodingSuspended;
+
+  [ChromeOnly]
+  readonly attribute double totalVideoPlayTime;
+
+  [ChromeOnly]
+  readonly attribute double visiblePlayTime;
+
+  [ChromeOnly]
+  readonly attribute double invisiblePlayTime;
+
+  [ChromeOnly]
+  readonly attribute double videoDecodeSuspendedTime;
+
+  [ChromeOnly]
+  readonly attribute double totalAudioPlayTime;
+
+  [ChromeOnly]
+  readonly attribute double audiblePlayTime;
+
+  [ChromeOnly]
+  readonly attribute double inaudiblePlayTime;
+
+  [ChromeOnly]
+  readonly attribute double mutedPlayTime;
+
+  // These APIs are used for decoder doctor tests.
+  [ChromeOnly]
+  void setFormatDiagnosticsReportForMimeType(DOMString mimeType, DecoderDoctorReportType error);
+
+  [Throws, ChromeOnly]
+  void setDecodeError(DOMString error);
+
+  [ChromeOnly]
+  void setAudioSinkFailedStartup();
 };
 
-/* Audio Output Devices API */
+/* Audio Output Devices API
+ * https://w3c.github.io/mediacapture-output/
+ */
 partial interface HTMLMediaElement {
-  [Pref="media.setsinkid.enabled"]
+  [SecureContext, Pref="media.setsinkid.enabled"]
   readonly attribute DOMString sinkId;
-  [Throws, Pref="media.setsinkid.enabled"]
+  [Throws, SecureContext, Pref="media.setsinkid.enabled"]
   Promise<void> setSinkId(DOMString sinkId);
 };
 

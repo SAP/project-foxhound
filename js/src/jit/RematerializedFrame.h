@@ -7,17 +7,36 @@
 #ifndef jit_RematerializedFrame_h
 #define jit_RematerializedFrame_h
 
-#include <algorithm>
+#include "mozilla/Assertions.h"
 
+#include <algorithm>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "jstypes.h"
+
+#include "gc/Rooting.h"
 #include "jit/JitFrames.h"
-#include "jit/JSJitFrameIter.h"
+#include "jit/ScriptFromCalleeToken.h"
+#include "js/GCVector.h"
+#include "js/TypeDecls.h"
 #include "js/UniquePtr.h"
-#include "vm/EnvironmentObject.h"
+#include "js/Value.h"
 #include "vm/JSFunction.h"
+#include "vm/JSScript.h"
 #include "vm/Stack.h"
 
+class JS_PUBLIC_API JSTracer;
+
 namespace js {
+
+class ArgumentsObject;
+class CallObject;
+
 namespace jit {
+
+class InlineFrameIterator;
+struct MaybeReadFallback;
 
 // RematerializedFrame: An optimized frame that has been rematerialized with
 // values read out of Snapshots.
@@ -85,7 +104,7 @@ class RematerializedFrame {
 
   // Rematerialize all remaining frames pointed to by |iter| into |frames|
   // in older-to-younger order, e.g., frames[0] is the oldest frame.
-  static MOZ_MUST_USE bool RematerializeInlineFrames(
+  [[nodiscard]] static bool RematerializeInlineFrames(
       JSContext* cx, uint8_t* top, InlineFrameIterator& iter,
       MaybeReadFallback& fallback, RematerializedFrameVector& frames);
 
@@ -123,8 +142,8 @@ class RematerializedFrame {
     envChain_ = &envChain_->as<SpecificEnvironment>().enclosingEnvironment();
   }
 
-  MOZ_MUST_USE bool initFunctionEnvironmentObjects(JSContext* cx);
-  MOZ_MUST_USE bool pushVarEnvironment(JSContext* cx, HandleScope scope);
+  [[nodiscard]] bool initFunctionEnvironmentObjects(JSContext* cx);
+  [[nodiscard]] bool pushVarEnvironment(JSContext* cx, HandleScope scope);
 
   bool hasInitialEnvironment() const { return hasInitialEnv_; }
   CallObject& callObj() const;

@@ -10,6 +10,7 @@
 
 %{ C++
 #include "jspubtd.h"
+#include "js/CompileOptions.h"
 #include "js/TypeDecls.h"
 #include "mozilla/Attributes.h"
 #include "xptinfo.h"
@@ -24,9 +25,9 @@ class nsWrapperCache;
 
 [ptr] native JSContextPtr(JSContext);
 [ptr] native JSObjectPtr(JSObject);
-[ptr] native JSScriptPtr(JSScript);
 [ptr] native nsWrapperCachePtr(nsWrapperCache);
       native JSHandleId(JS::Handle<jsid>);
+[ref] native const_JSReadOnlyCompileOptionsRef(const JS::ReadOnlyCompileOptions);
 
 /***************************************************************************/
 
@@ -124,7 +125,6 @@ interface nsIXPConnect : nsISupports
     *       NS_OK
     *    failure:
     *       NS_ERROR_XPC_BAD_CONVERT_NATIVE
-    *       NS_ERROR_XPC_CANT_GET_JSOBJECT_OF_DOM_OBJECT
     *       NS_ERROR_FAILURE
     */
     JSObjectPtr
@@ -258,13 +258,4 @@ interface nsIXPConnect : nsISupports
     [noscript] jsval evalInSandboxObject(in AString source, in string filename,
                                          in JSContextPtr cx,
                                          in JSObjectPtr sandbox);
-
-    [noscript] void writeScript(in nsIObjectOutputStream aStream,
-                                in JSContextPtr aJSContext,
-                                in JSScriptPtr aJSScript);
-
-    [noscript] JSScriptPtr readScript(in nsIObjectInputStream aStream,
-                                      in JSContextPtr aJSContext);
-
-    [infallible] readonly attribute boolean isShuttingDown;
 };

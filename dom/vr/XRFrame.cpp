@@ -6,8 +6,11 @@
 
 #include "mozilla/dom/XRFrame.h"
 #include "mozilla/dom/XRRenderState.h"
+#include "mozilla/dom/XRRigidTransform.h"
 #include "mozilla/dom/XRViewerPose.h"
 #include "mozilla/dom/XRView.h"
+#include "mozilla/dom/XRReferenceSpace.h"
+#include "VRDisplayClient.h"
 
 namespace mozilla {
 namespace dom {
@@ -45,8 +48,12 @@ already_AddRefed<XRViewerPose> XRFrame::GetViewerPose(
     return nullptr;
   }
 
-  // TODO (Bug 1616390) - Validate that poses may be reported:
-  // https://immersive-web.github.io/webxr/#poses-may-be-reported
+  if (!mSession->CanReportPoses()) {
+    aRv.ThrowSecurityError(
+        "The visibilityState of the XRSpace's XRSession "
+        "that is passed to GetViewerPose must be 'visible'.");
+    return nullptr;
+  }
 
   // TODO (Bug 1616393) - Check if poses must be limited:
   // https://immersive-web.github.io/webxr/#poses-must-be-limited
@@ -62,7 +69,7 @@ already_AddRefed<XRViewerPose> XRFrame::GetViewerPose(
   gfx::VRDisplayClient* display = mSession->GetDisplayClient();
   if (display) {
     // Have a VRDisplayClient
-    const VRDisplayInfo& displayInfo =
+    const gfx::VRDisplayInfo& displayInfo =
         mSession->GetDisplayClient()->GetDisplayInfo();
     const gfx::VRHMDSensorState& sensorState = display->GetSensorState();
 
@@ -86,7 +93,7 @@ already_AddRefed<XRViewerPose> XRFrame::GetViewerPose(
 
     viewerPose = mSession->PooledViewerPose(headTransform, emulatedPosition);
 
-    auto updateEye = [&](int32_t viewIndex, VRDisplayState::Eye eye) {
+    auto updateEye = [&](int32_t viewIndex, gfx::VRDisplayState::Eye eye) {
       auto offset = displayInfo.GetEyeTranslation(eye);
       auto eyeFromHead = gfx::Matrix4x4Double::Translation(
           gfx::PointDouble3D(offset.x, offset.y, offset.z));
@@ -97,7 +104,7 @@ already_AddRefed<XRViewerPose> XRFrame::GetViewerPose(
       eyeTransform.Decompose(eyePosition, eyeRotation, eyeScale);
 
       const gfx::VRFieldOfView fov = displayInfo.mDisplayState.eyeFOV[eye];
-      Matrix4x4 projection =
+      gfx::Matrix4x4 projection =
           fov.ConstructProjectionMatrix(depthNear, depthFar, true);
       viewerPose->GetEye(viewIndex)->Update(eyePosition, eyeRotation,
                                             projection);
@@ -114,7 +121,7 @@ already_AddRefed<XRViewerPose> XRFrame::GetViewerPose(
     if (canvas) {
       aspect = (float)canvas->Width() / (float)canvas->Height();
     }
-    Matrix4x4 projection =
+    gfx::Matrix4x4 projection =
         ConstructInlineProjection((float)fov, aspect, depthNear, depthFar);
 
     viewerPose =
@@ -142,11 +149,10 @@ already_AddRefed<XRPose> XRFrame::GetPose(const XRSpace& aSpace,
     return nullptr;
   }
 
-  // TODO (Bug 1616390) - Validate that poses may be reported:
-  // https://immersive-web.github.io/webxr/#poses-may-be-reported
-  if (aSpace.GetSession()->VisibilityState() != XRVisibilityState::Visible) {
-    aRv.ThrowInvalidStateError(
-        "An XRSpace ’s visibilityState in not 'visible'.");
+  if (!mSession->CanReportPoses()) {
+    aRv.ThrowSecurityError(
+        "The visibilityState of the XRSpace's XRSession "
+        "that is passed to GetPose must be 'visible'.");
     return nullptr;
   }
 
@@ -180,7 +186,7 @@ void XRFrame::EndInputSourceEvent() { mActive = false; }
 
 gfx::Matrix4x4 XRFrame::ConstructInlineProjection(float aFov, float aAspect,
                                                   float aNear, float aFar) {
-  Matrix4x4 m;
+  gfx::Matrix4x4 m;
   const float depth = aFar - aNear;
   const float invDepth = 1 / depth;
   if (aFov == 0) {

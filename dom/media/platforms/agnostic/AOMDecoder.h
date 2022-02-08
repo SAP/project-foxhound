@@ -6,11 +6,11 @@
 #if !defined(AOMDecoder_h_)
 #  define AOMDecoder_h_
 
-#  include "PlatformDecoderModule.h"
-#  include "mozilla/Span.h"
-
 #  include <stdint.h>
+
+#  include "PlatformDecoderModule.h"
 #  include "aom/aom_decoder.h"
+#  include "mozilla/Span.h"
 
 namespace mozilla {
 
@@ -50,7 +50,7 @@ class AOMDecoder : public MediaDataDecoder,
   // AOM decoder state
   aom_codec_ctx_t mCodec;
 
-  const VideoInfo& mInfo;
+  const VideoInfo mInfo;
 };
 
 }  // namespace mozilla

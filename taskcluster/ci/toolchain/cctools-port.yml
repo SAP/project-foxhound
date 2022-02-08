@@ -11,28 +11,17 @@ job-defaults:
         fetch:
             - cctools-port
             - libtapi
+            - ldid
 
-linux64-cctools-port-clang-9:
+linux64-cctools-port-clang-13:
     treeherder:
-        symbol: TL(cctools)
+        symbol: TL(cctools-clang-13)
     run:
         script: build-cctools-port.sh
         toolchain-alias: linux64-cctools-port
-        toolchain-artifact: public/build/cctools.tar.xz
-        tooltool-downloads: internal
+        toolchain-artifact: public/build/cctools.tar.zst
     fetches:
         toolchain:
-            - linux64-clang-9
+            - linux64-clang-13
             - linux64-binutils
-
-linux64-cctools-port-clang-10:
-    treeherder:
-        symbol: TL(cctools-clang-10)
-    run:
-        script: build-cctools-port.sh
-        toolchain-artifact: public/build/cctools.tar.xz
-        tooltool-downloads: internal
-    fetches:
-        toolchain:
-            - linux64-clang-10
-            - linux64-binutils
+            - linux64-toolchain-sysroot

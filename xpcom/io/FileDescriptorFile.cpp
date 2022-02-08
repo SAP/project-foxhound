@@ -146,7 +146,8 @@ NS_IMETHODIMP
 FileDescriptorFile::Normalize() { return NS_ERROR_NOT_IMPLEMENTED; }
 
 NS_IMETHODIMP
-FileDescriptorFile::Create(uint32_t aType, uint32_t aPermissions) {
+FileDescriptorFile::Create(uint32_t aType, uint32_t aPermissions,
+                           bool aSkipAncestors) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -245,6 +246,18 @@ FileDescriptorFile::MoveToNative(nsIFile* aNewParent,
 }
 
 NS_IMETHODIMP
+FileDescriptorFile::MoveToFollowingLinks(nsIFile* aNewParent,
+                                         const nsAString& aNewName) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+FileDescriptorFile::MoveToFollowingLinksNative(nsIFile* aNewParent,
+                                               const nsACString& aNewName) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
 FileDescriptorFile::RenameTo(nsIFile* aNewParentDir,
                              const nsAString& aNewName) {
   return NS_ERROR_NOT_IMPLEMENTED;
@@ -296,6 +309,16 @@ FileDescriptorFile::GetLastModifiedTimeOfLink(PRTime* aLastModTimeOfLink) {
 
 NS_IMETHODIMP
 FileDescriptorFile::SetLastModifiedTimeOfLink(PRTime aLastModTimeOfLink) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+FileDescriptorFile::GetCreationTime(PRTime* aCreationTime) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+FileDescriptorFile::GetCreationTimeOfLink(PRTime* aCreationTime) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

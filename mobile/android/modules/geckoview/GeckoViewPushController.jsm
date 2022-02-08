@@ -21,20 +21,15 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsIPushNotifier"
 );
 
-// eslint-disable-next-line no-unused-vars
 const { debug, warn } = GeckoViewUtils.initLogging("GeckoViewPushController");
 
 function createScopeAndPrincipal(scopeAndAttrs) {
-  const [scope, attrs] = scopeAndAttrs.split("^");
-  const uri = Services.io.newURI(scope);
+  const principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+    scopeAndAttrs
+  );
+  const scope = principal.URI.spec;
 
-  return [
-    scope,
-    Services.scriptSecurityManager.createContentPrincipal(
-      uri,
-      ChromeUtils.createOriginAttributesFromOrigin(attrs)
-    ),
-  ];
+  return [scope, principal];
 }
 
 const GeckoViewPushController = {
@@ -47,17 +42,17 @@ const GeckoViewPushController = {
 
         const [url, principal] = createScopeAndPrincipal(scope);
 
-        // Grant this since there is no way for the worker
-        // to prompt for permission.
-        Services.perms.addFromPrincipal(
-          principal,
-          "desktop-notification",
-          Services.perms.ALLOW_ACTION,
-          Services.perms.EXPIRE_SESSION
-        );
+        if (
+          Services.perms.testPermissionFromPrincipal(
+            principal,
+            "desktop-notification"
+          ) != Services.perms.ALLOW_ACTION
+        ) {
+          return;
+        }
 
         if (!data) {
-          PushNotifier.notifyPush(url, principal);
+          PushNotifier.notifyPush(url, principal, "");
           return;
         }
 

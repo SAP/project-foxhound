@@ -45,7 +45,8 @@ class nsInlineFrame : public nsContainerFrame {
 #endif
 
   virtual bool IsFrameOfType(uint32_t aFlags) const override {
-    if (aFlags & (eSupportsCSSTransforms | eSupportsContainLayoutAndPaint)) {
+    if (aFlags & (eSupportsCSSTransforms | eSupportsContainLayoutAndPaint |
+                  eSupportsAspectRatio)) {
       return false;
     }
     return nsContainerFrame::IsFrameOfType(
@@ -69,18 +70,20 @@ class nsInlineFrame : public nsContainerFrame {
 
   virtual void DestroyFrom(nsIFrame* aDestructRoot,
                            PostDestroyData& aPostDestroyData) override;
-  virtual nsresult StealFrame(nsIFrame* aChild) override;
+  void StealFrame(nsIFrame* aChild) override;
 
   // nsIHTMLReflow overrides
   virtual void AddInlineMinISize(gfxContext* aRenderingContext,
                                  InlineMinISizeData* aData) override;
   virtual void AddInlinePrefISize(gfxContext* aRenderingContext,
                                   InlinePrefISizeData* aData) override;
-  virtual mozilla::LogicalSize ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWritingMode,
+  SizeComputationResult ComputeSize(
+      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
-      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
-      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
+      const mozilla::LogicalSize& aMargin,
+      const mozilla::LogicalSize& aBorderPadding,
+      const mozilla::StyleSizeOverrides& aSizeOverrides,
+      mozilla::ComputeSizeFlags aFlags) override;
   virtual nsRect ComputeTightBounds(DrawTarget* aDrawTarget) const override;
   virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
                       const ReflowInput& aReflowInput,
@@ -146,8 +149,7 @@ class nsInlineFrame : public nsContainerFrame {
       : nsContainerFrame(aStyle, aPresContext, aID),
         mBaseline(NS_INTRINSIC_ISIZE_UNKNOWN) {}
 
-  virtual LogicalSides GetLogicalSkipSides(
-      const ReflowInput* aReflowInput = nullptr) const override;
+  LogicalSides GetLogicalSkipSides() const override;
 
   void ReflowFrames(nsPresContext* aPresContext,
                     const ReflowInput& aReflowInput, InlineReflowInput& rs,

@@ -1,19 +1,31 @@
+// |jit-test|
 "use strict";
 
 load(libdir + "asserts.js");
-load(libdir + "dummyModuleResolveHook.js");
 
 class UniqueError extends Error {}
 
-let a = moduleRepo['a'] = parseModule(`
+let a = registerModule('a', parseModule(`
     throw new UniqueError();
-`);
+`));
 
-let b = moduleRepo['b'] = parseModule(`
+let b = registerModule('b', parseModule(`
     import * as ns0 from "a";
-`);
+`));
 
 a.declarationInstantiation();
-assertThrowsInstanceOf(() => a.evaluation(), UniqueError);
+a.evaluation()
+  .then(r => {
+    // We should not reach here, as we expect an error to be thrown.
+    assertEq(false, true);
+  })
+  .catch(e => assertEq(e instanceof UniqueError, true));
 b.declarationInstantiation();
-assertThrowsInstanceOf(() => b.evaluation(), UniqueError);
+b.evaluation()
+  .then(r => {
+    // We should not reach here, as we expect an error to be thrown.
+    assertEq(false, true);
+  })
+  .catch(e => assertEq(e instanceof UniqueError, true));
+
+drainJobQueue();

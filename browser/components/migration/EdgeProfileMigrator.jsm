@@ -24,6 +24,11 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
+  "PlacesUIUtils",
+  "resource:///modules/PlacesUIUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
   "ESEDBReader",
   "resource:///modules/ESEDBReader.jsm"
 );
@@ -391,23 +396,12 @@ EdgeBookmarksMigrator.prototype = {
     let { toplevelBMs, toolbarBMs } = this._fetchBookmarksFromDB();
     if (toplevelBMs.length) {
       let parentGuid = PlacesUtils.bookmarks.menuGuid;
-      if (!MigrationUtils.isStartupMigration) {
-        parentGuid = await MigrationUtils.createImportedBookmarksFolder(
-          "Edge",
-          parentGuid
-        );
-      }
       await MigrationUtils.insertManyBookmarksWrapper(toplevelBMs, parentGuid);
     }
     if (toolbarBMs.length) {
       let parentGuid = PlacesUtils.bookmarks.toolbarGuid;
-      if (!MigrationUtils.isStartupMigration) {
-        parentGuid = await MigrationUtils.createImportedBookmarksFolder(
-          "Edge",
-          parentGuid
-        );
-      }
       await MigrationUtils.insertManyBookmarksWrapper(toolbarBMs, parentGuid);
+      PlacesUIUtils.maybeToggleBookmarkToolbarVisibilityAfterMigration();
     }
   },
 

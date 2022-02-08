@@ -8,13 +8,18 @@
  */
 
 add_task(async function() {
+  // Using https-first for this test is blocked on Bug 1733420.
+  // We always get a waiting time of 0ms for requests coming from httpd.js in
+  // https.
+  await pushPref("dom.security.https_first", false);
+
   // The script sjs_slow-script-server.sjs takes about 2s which is
   // definately above the slow threshold set here.
   const SLOW_THRESHOLD = 450;
 
   Services.prefs.setIntPref("devtools.netmonitor.audits.slow", SLOW_THRESHOLD);
 
-  const { monitor, tab } = await initNetMonitor(SLOW_REQUESTS_URL, {
+  const { monitor } = await initNetMonitor(SLOW_REQUESTS_URL, {
     requestCount: 2,
   });
   info("Starting test... ");
@@ -24,7 +29,7 @@ add_task(async function() {
   store.dispatch(Actions.batchEnable(false));
 
   const wait = waitForNetworkEvents(monitor, 2);
-  tab.linkedBrowser.reload();
+  await reloadBrowser();
   await wait;
 
   const requestList = document.querySelectorAll(

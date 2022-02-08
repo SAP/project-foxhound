@@ -142,6 +142,13 @@ class Axis {
   ParentLayerCoord GetOverscroll() const;
 
   /**
+   * Restore the amount by which this axis is overscrolled to the specified
+   * amount. This is for test-related use; overscrolling as a result of user
+   * input should happen via OverscrollBy().
+   */
+  void RestoreOverscroll(ParentLayerCoord aOverscroll);
+
+  /**
    * Start an overscroll animation with the given initial velocity.
    */
   void StartOverscrollAnimation(float aVelocity);
@@ -163,9 +170,31 @@ class Axis {
   bool IsOverscrolled() const;
 
   /**
+   * Return true if this axis is overscrolled but its scroll offset
+   * has changed in a way that makes the oversrolled state no longer
+   * valid (for example, it is overscrolled at the top but the
+   * scroll offset is no longer zero).
+   */
+  bool IsInInvalidOverscroll() const;
+
+  /**
    * Clear any overscroll amount on this axis.
    */
   void ClearOverscroll();
+
+  /**
+   * Returns whether the overscroll animation is alive.
+   */
+  bool IsOverscrollAnimationAlive() const;
+
+  /**
+   * Returns whether the overscroll animation is running.
+   * Note that unlike the above IsOverscrollAnimationAlive, this function
+   * returns false even if the animation is still there but is very close to
+   * the destination position and its velocity is quite low, i.e. it's time to
+   * finish.
+   */
+  bool IsOverscrollAnimationRunning() const;
 
   /**
    * Gets the starting position of the touch supplied in StartTouch().
@@ -268,19 +297,31 @@ class Axis {
   ParentLayerCoord GetPageEnd() const;
   ParentLayerCoord GetScrollRangeEnd() const;
 
+  bool IsScrolledToStart() const;
+  bool IsScrolledToEnd() const;
+
   ParentLayerCoord GetPos() const { return mPos; }
 
   bool OverscrollBehaviorAllowsHandoff() const;
   bool OverscrollBehaviorAllowsOverscrollEffect() const;
 
+  virtual CSSToParentLayerScale GetAxisScale(
+      const CSSToParentLayerScale2D& aScale) const = 0;
+  virtual CSSCoord GetPointOffset(const CSSPoint& aPoint) const = 0;
   virtual ParentLayerCoord GetPointOffset(
       const ParentLayerPoint& aPoint) const = 0;
   virtual ParentLayerCoord GetRectLength(
       const ParentLayerRect& aRect) const = 0;
   virtual ParentLayerCoord GetRectOffset(
       const ParentLayerRect& aRect) const = 0;
-  virtual CSSToParentLayerScale GetScaleForAxis(
-      const CSSToParentLayerScale2D& aScale) const = 0;
+  virtual float GetTransformScale(
+      const AsyncTransformComponentMatrix& aMatrix) const = 0;
+  virtual ParentLayerCoord GetTransformTranslation(
+      const AsyncTransformComponentMatrix& aMatrix) const = 0;
+  virtual void PostScale(AsyncTransformComponentMatrix& aMatrix,
+                         float aScale) const = 0;
+  virtual void PostTranslate(AsyncTransformComponentMatrix& aMatrix,
+                             ParentLayerCoord aTranslation) const = 0;
 
   virtual ScreenPoint MakePoint(ScreenCoord aCoord) const = 0;
 
@@ -327,6 +368,8 @@ class Axis {
   const FrameMetrics& GetFrameMetrics() const;
   const ScrollMetadata& GetScrollMetadata() const;
 
+  // Do not use this function directly, use
+  // AsyncPanZoomController::GetAllowedHandoffDirections instead.
   virtual OverscrollBehavior GetOverscrollBehavior() const = 0;
 
   // Adjust a requested overscroll amount for resistance, yielding a smaller
@@ -340,15 +383,25 @@ class Axis {
 class AxisX : public Axis {
  public:
   explicit AxisX(AsyncPanZoomController* mAsyncPanZoomController);
+  CSSToParentLayerScale GetAxisScale(
+      const CSSToParentLayerScale2D& aScale) const override;
+  CSSCoord GetPointOffset(const CSSPoint& aPoint) const override;
   ParentLayerCoord GetPointOffset(
       const ParentLayerPoint& aPoint) const override;
   ParentLayerCoord GetRectLength(const ParentLayerRect& aRect) const override;
   ParentLayerCoord GetRectOffset(const ParentLayerRect& aRect) const override;
-  CSSToParentLayerScale GetScaleForAxis(
-      const CSSToParentLayerScale2D& aScale) const override;
+  float GetTransformScale(
+      const AsyncTransformComponentMatrix& aMatrix) const override;
+  ParentLayerCoord GetTransformTranslation(
+      const AsyncTransformComponentMatrix& aMatrix) const override;
+  void PostScale(AsyncTransformComponentMatrix& aMatrix,
+                 float aScale) const override;
+  void PostTranslate(AsyncTransformComponentMatrix& aMatrix,
+                     ParentLayerCoord aTranslation) const override;
   ScreenPoint MakePoint(ScreenCoord aCoord) const override;
   const char* Name() const override;
   bool CanScrollTo(Side aSide) const;
+  SideBits ScrollableDirections() const;
 
  private:
   OverscrollBehavior GetOverscrollBehavior() const override;
@@ -357,18 +410,33 @@ class AxisX : public Axis {
 class AxisY : public Axis {
  public:
   explicit AxisY(AsyncPanZoomController* mAsyncPanZoomController);
+  CSSCoord GetPointOffset(const CSSPoint& aPoint) const override;
   ParentLayerCoord GetPointOffset(
       const ParentLayerPoint& aPoint) const override;
+  CSSToParentLayerScale GetAxisScale(
+      const CSSToParentLayerScale2D& aScale) const override;
   ParentLayerCoord GetRectLength(const ParentLayerRect& aRect) const override;
   ParentLayerCoord GetRectOffset(const ParentLayerRect& aRect) const override;
-  CSSToParentLayerScale GetScaleForAxis(
-      const CSSToParentLayerScale2D& aScale) const override;
+  float GetTransformScale(
+      const AsyncTransformComponentMatrix& aMatrix) const override;
+  ParentLayerCoord GetTransformTranslation(
+      const AsyncTransformComponentMatrix& aMatrix) const override;
+  void PostScale(AsyncTransformComponentMatrix& aMatrix,
+                 float aScale) const override;
+  void PostTranslate(AsyncTransformComponentMatrix& aMatrix,
+                     ParentLayerCoord aTranslation) const override;
   ScreenPoint MakePoint(ScreenCoord aCoord) const override;
   const char* Name() const override;
   bool CanScrollTo(Side aSide) const;
+  bool CanVerticalScrollWithDynamicToolbar() const;
+  SideBits ScrollableDirections() const;
+  SideBits ScrollableDirectionsWithDynamicToolbar(
+      const ScreenMargin& aFixedLayerMargins) const;
 
  private:
   OverscrollBehavior GetOverscrollBehavior() const override;
+  ParentLayerCoord GetCompositionLengthWithoutDynamicToolbar() const;
+  bool HasDynamicToolbar() const;
 };
 
 }  // namespace layers

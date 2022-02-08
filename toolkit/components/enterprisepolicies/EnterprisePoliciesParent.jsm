@@ -32,6 +32,9 @@ const PREF_PER_USER_DIR = "toolkit.policies.perUserDir";
 // and set PREF_ALTERNATE_PATH in firefox.js as:
 // /your/repo/browser/components/enterprisepolicies/helpers/sample.json
 const PREF_ALTERNATE_PATH = "browser.policies.alternatePath";
+// For testing GPO, you can set an alternate location in testing
+const PREF_ALTERNATE_GPO = "browser.policies.alternateGPO";
+
 // For testing, we may want to set PREF_ALTERNATE_PATH to point to a file
 // relative to the test root directory. In order to enable this, the string
 // below may be placed at the beginning of that preference value and it will
@@ -43,6 +46,9 @@ const PREF_LOGLEVEL = "browser.policies.loglevel";
 
 // To force disallowing enterprise-only policies during tests
 const PREF_DISALLOW_ENTERPRISE = "browser.policies.testing.disallowEnterprise";
+
+// To allow for cleaning up old policies
+const PREF_POLICIES_APPLIED = "browser.policies.applied";
 
 XPCOMUtils.defineLazyGetter(this, "log", () => {
   let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
@@ -89,15 +95,35 @@ EnterprisePoliciesManager.prototype = {
   ]),
 
   _initialize() {
-    let provider = this._chooseProvider();
+    if (Services.prefs.getBoolPref(PREF_POLICIES_APPLIED, false)) {
+      if ("_cleanup" in Policies) {
+        let policyImpl = Policies._cleanup;
 
-    if (!provider) {
-      this.status = Ci.nsIEnterprisePolicies.INACTIVE;
-      return;
+        for (let timing of Object.keys(this._callbacks)) {
+          let policyCallback = policyImpl[timing];
+          if (policyCallback) {
+            this._schedulePolicyCallback(
+              timing,
+              policyCallback.bind(
+                policyImpl,
+                this /* the EnterprisePoliciesManager */
+              )
+            );
+          }
+        }
+      }
+      Services.prefs.clearUserPref(PREF_POLICIES_APPLIED);
     }
+
+    let provider = this._chooseProvider();
 
     if (provider.failed) {
       this.status = Ci.nsIEnterprisePolicies.FAILED;
+      return;
+    }
+
+    if (!provider.hasPolicies) {
+      this.status = Ci.nsIEnterprisePolicies.INACTIVE;
       return;
     }
 
@@ -108,25 +134,25 @@ EnterprisePoliciesManager.prototype = {
       Object.keys(provider.policies).length
     );
     this._activatePolicies(provider.policies);
+
+    Services.prefs.setBoolPref(PREF_POLICIES_APPLIED, true);
   },
 
   _chooseProvider() {
-    let provider = null;
+    let platformProvider = null;
     if (AppConstants.platform == "win") {
-      provider = new WindowsGPOPoliciesProvider();
+      platformProvider = new WindowsGPOPoliciesProvider();
     } else if (AppConstants.platform == "macosx") {
-      provider = new macOSPoliciesProvider();
+      platformProvider = new macOSPoliciesProvider();
     }
-    if (provider && provider.hasPolicies) {
-      return provider;
+    let jsonProvider = new JSONPoliciesProvider();
+    if (platformProvider && platformProvider.hasPolicies) {
+      if (jsonProvider.hasPolicies) {
+        return new CombinedProvider(platformProvider, jsonProvider);
+      }
+      return platformProvider;
     }
-
-    provider = new JSONPoliciesProvider();
-    if (provider.hasPolicies) {
-      return provider;
-    }
-
-    return null;
+    return jsonProvider;
   },
 
   _activatePolicies(unparsedPolicies) {
@@ -223,6 +249,7 @@ EnterprisePoliciesManager.prototype = {
     Services.ppmm.sharedData.delete("EnterprisePolicies:DisallowedFeatures");
 
     this._status = Ci.nsIEnterprisePolicies.UNINITIALIZED;
+    this._parsedPolicies = undefined;
     for (let timing of Object.keys(this._callbacks)) {
       this._callbacks[timing] = [];
     }
@@ -311,7 +338,6 @@ EnterprisePoliciesManager.prototype = {
     if (val != Ci.nsIEnterprisePolicies.INACTIVE) {
       Services.ppmm.sharedData.set("EnterprisePolicies:Status", val);
     }
-    return val;
   },
 
   get status() {
@@ -431,11 +457,11 @@ function areEnterpriseOnlyPoliciesAllowed() {
     return true;
   }
 
-  if (AppConstants.MOZ_UPDATE_CHANNEL != "release") {
-    return true;
-  }
-
-  return false;
+  return (
+    AppConstants.IS_ESR ||
+    AppConstants.MOZ_DEV_EDITION ||
+    AppConstants.NIGHTLY_BUILD
+  );
 }
 
 /*
@@ -449,15 +475,11 @@ function areEnterpriseOnlyPoliciesAllowed() {
 class JSONPoliciesProvider {
   constructor() {
     this._policies = null;
-    this._failed = false;
     this._readData();
   }
 
   get hasPolicies() {
-    return (
-      this._failed ||
-      (this._policies !== null && !isEmptyObject(this._policies))
-    );
+    return this._policies !== null && !isEmptyObject(this._policies);
   }
 
   get policies() {
@@ -554,10 +576,10 @@ class JSONPoliciesProvider {
       ) {
         // Do nothing, _policies will remain null
       } else if (ex instanceof SyntaxError) {
-        log.error("Error parsing JSON file");
+        log.error(`Error parsing JSON file: ${ex}`);
         this._failed = true;
       } else {
-        log.error("Error reading file");
+        log.error(`Error reading JSON file: ${ex}`);
         this._failed = true;
       }
     }
@@ -576,8 +598,11 @@ class WindowsGPOPoliciesProvider {
     // user policies first and then replace them if necessary.
     log.debug("root = HKEY_CURRENT_USER");
     this._readData(wrk, wrk.ROOT_KEY_CURRENT_USER);
-    log.debug("root = HKEY_LOCAL_MACHINE");
-    this._readData(wrk, wrk.ROOT_KEY_LOCAL_MACHINE);
+    // We don't access machine policies in testing
+    if (!Cu.isInAutomation && !isXpcshell) {
+      log.debug("root = HKEY_LOCAL_MACHINE");
+      this._readData(wrk, wrk.ROOT_KEY_LOCAL_MACHINE);
+    }
   }
 
   get hasPolicies() {
@@ -594,7 +619,13 @@ class WindowsGPOPoliciesProvider {
 
   _readData(wrk, root) {
     try {
-      wrk.open(root, "SOFTWARE\\Policies", wrk.ACCESS_READ);
+      let regLocation = "SOFTWARE\\Policies";
+      if (Cu.isInAutomation || isXpcshell) {
+        try {
+          regLocation = Services.prefs.getStringPref(PREF_ALTERNATE_GPO);
+        } catch (e) {}
+      }
+      wrk.open(root, regLocation, wrk.ACCESS_READ);
       if (wrk.hasChild("Mozilla\\" + Services.appinfo.name)) {
         this._policies = WindowsGPOParser.readPolicies(wrk, this._policies);
       }
@@ -627,5 +658,32 @@ class macOSPoliciesProvider {
 
   get failed() {
     return this._failed;
+  }
+}
+
+class CombinedProvider {
+  constructor(primaryProvider, secondaryProvider) {
+    // Combine policies with primaryProvider taking precedence.
+    // We only do this for top level policies.
+    this._policies = primaryProvider._policies;
+    for (let policyName of Object.keys(secondaryProvider.policies)) {
+      if (!(policyName in this._policies)) {
+        this._policies[policyName] = secondaryProvider.policies[policyName];
+      }
+    }
+  }
+
+  get hasPolicies() {
+    // Combined provider always has policies.
+    return true;
+  }
+
+  get policies() {
+    return this._policies;
+  }
+
+  get failed() {
+    // Combined provider never fails.
+    return false;
   }
 }

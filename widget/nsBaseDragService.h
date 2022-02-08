@@ -149,6 +149,7 @@ class nsBaseDragService : public nsIDragService, public nsIDragSession {
   bool mOnlyChromeDrop;
   bool mDoingDrag;
   bool mSessionIsSynthesizedForTests;
+  bool mIsDraggingTextInTextControl;
 
   // true if in EndDragSession
   bool mEndingSession;
@@ -173,6 +174,8 @@ class nsBaseDragService : public nsIDragService, public nsIDragSession {
   // the document at the drag source. will be null if it came from outside the
   // app.
   RefPtr<mozilla::dom::Document> mSourceDocument;
+
+  RefPtr<mozilla::dom::WindowContext> mSourceWindowContext;
 
   // the contentpolicy type passed to the channel when initiating the drag
   // session

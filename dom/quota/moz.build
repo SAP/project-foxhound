@@ -7,80 +7,99 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "Storage: Quota Manager")
 
-DIRS += ['test']
+DIRS += ["test"]
 
 XPIDL_SOURCES += [
-    'nsIQuotaCallbacks.idl',
-    'nsIQuotaManagerService.idl',
-    'nsIQuotaRequests.idl',
-    'nsIQuotaResults.idl',
+    "nsIQuotaCallbacks.idl",
+    "nsIQuotaManagerService.idl",
+    "nsIQuotaRequests.idl",
+    "nsIQuotaResults.idl",
 ]
 
-XPIDL_MODULE = 'dom_quota'
+XPIDL_MODULE = "dom_quota"
 
 EXPORTS.mozilla.dom += [
-  'StorageManager.h',
+    "QMResult.h",
+    "StorageManager.h",
 ]
 
 EXPORTS.mozilla.dom.quota += [
-    'ActorsParent.h',
-    'CheckedUnsafePtr.h',
-    'CipherStrategy.h',
-    'Client.h',
-    'DecryptingInputStream.h',
-    'DecryptingInputStream_impl.h',
-    'DummyCipherStrategy.h',
-    'EncryptedBlock.h',
-    'EncryptingOutputStream.h',
-    'EncryptingOutputStream_impl.h',
-    'FileStreams.h',
-    'InitializationTypes.h',
-    'IPCStreamCipherStrategy.h',
-    'MemoryOutputStream.h',
-    'OriginScope.h',
-    'PersistenceType.h',
-    'QuotaCommon.h',
-    'QuotaManager.h',
-    'QuotaManagerService.h',
-    'QuotaObject.h',
-    'SerializationHelpers.h',
-    'UsageInfo.h',
+    "ActorsParent.h",
+    "CachingDatabaseConnection.h",
+    "CheckedUnsafePtr.h",
+    "CipherStrategy.h",
+    "Client.h",
+    "ClientImpl.h",
+    "CommonMetadata.h",
+    "Config.h",
+    "DecryptingInputStream.h",
+    "DecryptingInputStream_impl.h",
+    "DirectoryLock.h",
+    "DummyCipherStrategy.h",
+    "EncryptedBlock.h",
+    "EncryptingOutputStream.h",
+    "EncryptingOutputStream_impl.h",
+    "FileStreams.h",
+    "FirstInitializationAttempts.h",
+    "FirstInitializationAttemptsImpl.h",
+    "ForwardDecls.h",
+    "InitializationTypes.h",
+    "IPCStreamCipherStrategy.h",
+    "MemoryOutputStream.h",
+    "NSSCipherStrategy.h",
+    "OriginScope.h",
+    "PersistenceType.h",
+    "QuotaCommon.h",
+    "QuotaManager.h",
+    "QuotaManagerImpl.h",
+    "QuotaManagerService.h",
+    "QuotaObject.h",
+    "RemoveParen.h",
+    "ResultExtensions.h",
+    "ScopedLogExtraInfo.h",
+    "SerializationHelpers.h",
+    "StorageHelpers.h",
+    "UsageInfo.h",
 ]
 
 XPCOM_MANIFESTS += [
-    'components.conf',
+    "components.conf",
 ]
 
 UNIFIED_SOURCES += [
-    'ActorsChild.cpp',
-    'ActorsParent.cpp',
-    'Client.cpp',
-    'DecryptingInputStream.cpp',
-    'EncryptingOutputStream.cpp',
-    'FileStreams.cpp',
-    'MemoryOutputStream.cpp',
-    'nsIndexedDBProtocolHandler.cpp',
-    'PersistenceType.cpp',
-    'QuotaCommon.cpp',
-    'QuotaManagerService.cpp',
-    'QuotaRequests.cpp',
-    'QuotaResults.cpp',
-    'StorageManager.cpp',
+    "ActorsChild.cpp",
+    "ActorsParent.cpp",
+    "CachingDatabaseConnection.cpp",
+    "Client.cpp",
+    "DecryptingInputStream.cpp",
+    "DirectoryLockImpl.cpp",
+    "EncryptingOutputStream.cpp",
+    "FileStreams.cpp",
+    "InitializationTypes.cpp",
+    "MemoryOutputStream.cpp",
+    "nsIndexedDBProtocolHandler.cpp",
+    "NSSCipherStrategy.cpp",
+    "PersistenceType.cpp",
+    "QMResult.cpp",
+    "QuotaCommon.cpp",
+    "QuotaManagerService.cpp",
+    "QuotaRequests.cpp",
+    "QuotaResults.cpp",
+    "ScopedLogExtraInfo.cpp",
+    "StorageHelpers.cpp",
+    "StorageManager.cpp",
 ]
 
 IPDL_SOURCES += [
-    'PQuota.ipdl',
-    'PQuotaRequest.ipdl',
-    'PQuotaUsageRequest.ipdl',
+    "PQuota.ipdl",
+    "PQuotaRequest.ipdl",
+    "PQuotaUsageRequest.ipdl",
 ]
 
-include('/ipc/chromium/chromium-config.mozbuild')
+include("/ipc/chromium/chromium-config.mozbuild")
 
-FINAL_LIBRARY = 'xul'
+FINAL_LIBRARY = "xul"
 
 LOCAL_INCLUDES += [
-    '/caps',
+    "/caps",
 ]
-
-if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
-    CXXFLAGS += ['-Wno-error=shadow']

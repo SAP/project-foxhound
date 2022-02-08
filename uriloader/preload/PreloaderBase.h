@@ -8,14 +8,12 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/PreloadHashKey.h"
 #include "mozilla/WeakPtr.h"
-#include "nsIChannelEventSink.h"
-#include "nsIInterfaceRequestor.h"
-#include "nsIRedirectResultListener.h"
+#include "nsCOMPtr.h"
+#include "nsISupports.h"
 #include "nsITimer.h"
 #include "nsIURI.h"
+#include "nsIWeakReferenceUtils.h"
 #include "nsTArray.h"
-#include "nsProxyRelease.h"
-#include "nsWeakReference.h"
 
 class nsIChannel;
 class nsINode;
@@ -142,36 +140,21 @@ class PreloaderBase : public SupportsWeakPtr, public nsISupports {
   void NotifyNodeEvent(nsINode* aNode);
   void CancelUsageTimer();
 
+  void ReportUsageTelemetry();
+
   // A helper class that will update the PreloaderBase.mChannel member when a
   // redirect happens, so that we can reprioritize or cancel when needed.
   // Having a separate class instead of implementing this on PreloaderBase
   // directly is to keep PreloaderBase as simple as possible so that derived
   // classes don't have to deal with calling super when implementing these
   // interfaces from some reason as well.
-  class RedirectSink final : public nsIInterfaceRequestor,
-                             public nsIChannelEventSink,
-                             public nsIRedirectResultListener {
-    RedirectSink() = delete;
-    virtual ~RedirectSink() = default;
-
-   public:
-    NS_DECL_THREADSAFE_ISUPPORTS
-    NS_DECL_NSIINTERFACEREQUESTOR
-    NS_DECL_NSICHANNELEVENTSINK
-    NS_DECL_NSIREDIRECTRESULTLISTENER
-
-    RedirectSink(PreloaderBase* aPreloader, nsIInterfaceRequestor* aCallbacks);
-
-   private:
-    nsMainThreadPtrHandle<PreloaderBase> mPreloader;
-    nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
-    nsCOMPtr<nsIChannel> mRedirectChannel;
-  };
+  class RedirectSink;
 
   // A timer callback to trigger the unuse warning for this preload
-  class UsageTimer final : public nsITimerCallback {
+  class UsageTimer final : public nsITimerCallback, public nsINamed {
     NS_DECL_ISUPPORTS
     NS_DECL_NSITIMERCALLBACK
+    NS_DECL_NSINAMED
 
     UsageTimer(PreloaderBase* aPreload, dom::Document* aDocument);
 
@@ -204,6 +187,9 @@ class PreloaderBase : public SupportsWeakPtr, public nsISupports {
 
   // True after call to NotifyUsage.
   bool mIsUsed = false;
+
+  // True after we have reported the usage telemetry.  Prevent duplicates.
+  bool mUsageTelementryReported = false;
 
   // Emplaced when the data delivery has finished, in NotifyStop, holds the
   // result of the load.

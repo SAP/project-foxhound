@@ -7,24 +7,30 @@
 #ifndef _nsXULAppAPI_h__
 #define _nsXULAppAPI_h__
 
-#include "nsID.h"
-#include "xrecore.h"
-#include "nsXPCOM.h"
-#include "nsISupports.h"
-#include "mozilla/Logging.h"
-#include "mozilla/XREAppData.h"
 #include "js/TypeDecls.h"
-
 #include "mozilla/ArrayUtils.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/Vector.h"
 #include "mozilla/TimeStamp.h"
-#include "XREChildData.h"
-#include "XREShellData.h"
+#include "nscore.h"
+#include "xrecore.h"
 
 #if defined(MOZ_WIDGET_ANDROID)
 #  include <jni.h>
 #endif
+
+class JSString;
+class MessageLoop;
+class nsIDirectoryServiceProvider;
+class nsIFile;
+class nsISupports;
+struct JSContext;
+struct XREChildData;
+struct XREShellData;
+
+namespace mozilla {
+class XREAppData;
+struct BootstrapConfig;
+struct Module;
+}  // namespace mozilla
 
 /**
  * A directory service key which provides the platform-correct "application
@@ -119,12 +125,6 @@
 #define XRE_USER_SYS_EXTENSION_DIR "XREUSysExt"
 
 /**
- * A directory service key which specifies a directory where temporary
- * system extensions can be loaded from during development.
- */
-#define XRE_USER_SYS_EXTENSION_DEV_DIR "XRESysExtDev"
-
-/**
  * A directory service key which specifies the distribution specific files for
  * the application.
  */
@@ -205,9 +205,6 @@
  * @note           If the binary is linked against the standalone XPCOM glue,
  *                 XPCOMGlueStartup() should be called before this method.
  */
-namespace mozilla {
-struct BootstrapConfig;
-}
 XRE_API(int, XRE_main,
         (int argc, char* argv[], const mozilla::BootstrapConfig& aConfig))
 
@@ -361,24 +358,16 @@ XRE_API(void, XRE_TermEmbedding, ())
 XRE_API(nsresult, XRE_ParseAppData,
         (nsIFile * aINIFile, mozilla::XREAppData& aAppData))
 
+// This enum is not dense.  See GeckoProcessTypes.h for details.
 enum GeckoProcessType {
-#define GECKO_PROCESS_TYPE(enum_name, string_name, xre_name, bin_type) \
-  GeckoProcessType_##enum_name,
+#define GECKO_PROCESS_TYPE(enum_value, enum_name, string_name, xre_name, \
+                           bin_type)                                     \
+  GeckoProcessType_##enum_name = enum_value,
 #include "mozilla/GeckoProcessTypes.h"
 #undef GECKO_PROCESS_TYPE
   GeckoProcessType_End,
   GeckoProcessType_Invalid = GeckoProcessType_End
 };
-
-static const char* const kGeckoProcessTypeString[] = {
-#define GECKO_PROCESS_TYPE(enum_name, string_name, xre_name, bin_type) \
-  string_name,
-#include "mozilla/GeckoProcessTypes.h"
-#undef GECKO_PROCESS_TYPE
-};
-
-static_assert(MOZ_ARRAY_LENGTH(kGeckoProcessTypeString) == GeckoProcessType_End,
-              "Array length mismatch");
 
 XRE_API(const char*, XRE_GeckoProcessTypeToString,
         (GeckoProcessType aProcessType))
@@ -427,7 +416,8 @@ XRE_API(bool, XRE_IsE10sParentProcess, ())
  * the e10s parent process or called in the main process when e10s is
  * disabled.
  */
-#define GECKO_PROCESS_TYPE(enum_name, string_name, xre_name, bin_type) \
+#define GECKO_PROCESS_TYPE(enum_value, enum_name, string_name, xre_name, \
+                           bin_type)                                     \
   XRE_API(bool, XRE_Is##xre_name##Process, ())
 #include "mozilla/GeckoProcessTypes.h"
 #undef GECKO_PROCESS_TYPE
@@ -453,8 +443,6 @@ XRE_API(nsresult, XRE_RunAppShell, ())
 XRE_API(nsresult, XRE_InitCommandLine, (int aArgc, char* aArgv[]))
 
 XRE_API(nsresult, XRE_DeinitCommandLine, ())
-
-class MessageLoop;
 
 XRE_API(void, XRE_ShutdownChildProcess, ())
 

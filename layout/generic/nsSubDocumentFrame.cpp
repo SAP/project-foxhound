@@ -39,18 +39,18 @@
 #include "nsIScrollableFrame.h"
 #include "nsIObjectLoadingContent.h"
 #include "nsLayoutUtils.h"
-#include "FrameLayerBuilder.h"
-#include "nsPluginFrame.h"
 #include "nsContentUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsQueryObject.h"
 #include "RetainedDisplayListBuilder.h"
+#include "nsObjectLoadingContent.h"
 
 #include "Layers.h"
-#include "BasicLayers.h"
 #include "mozilla/layers/WebRenderUserData.h"
 #include "mozilla/layers/WebRenderScrollData.h"
 #include "mozilla/layers/RenderRootStateManager.h"
+#include "mozilla/layers/StackingContextHelper.h"  // for StackingContextHelper
+#include "mozilla/ProfilerLabels.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -180,31 +180,33 @@ void nsSubDocumentFrame::ShowViewer() {
     return;
   }
 
-  if (!PresContext()->IsDynamic()) {
-    // We let the printing code take care of loading the document; just
-    // create the inner view for it to use.
+  RefPtr<nsFrameLoader> frameloader = FrameLoader();
+  if (!frameloader) {
+    return;
+  }
+
+  if (!frameloader->IsRemoteFrame() && !PresContext()->IsDynamic()) {
+    // We let the printing code take care of loading the document and
+    // initializing the shell; just create the inner view for it to use.
     (void)EnsureInnerView();
   } else {
-    RefPtr<nsFrameLoader> frameloader = FrameLoader();
-    if (frameloader) {
-      AutoWeakFrame weakThis(this);
-      mCallingShow = true;
-      bool didCreateDoc = frameloader->Show(this);
-      if (!weakThis.IsAlive()) {
-        return;
-      }
-      mCallingShow = false;
-      mDidCreateDoc = didCreateDoc;
-
-      if (!HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
-        frameloader->UpdatePositionAndSize(this);
-      }
-
-      if (!weakThis.IsAlive()) {
-        return;
-      }
-      InvalidateFrame();
+    AutoWeakFrame weakThis(this);
+    mCallingShow = true;
+    bool didCreateDoc = frameloader->Show(this);
+    if (!weakThis.IsAlive()) {
+      return;
     }
+    mCallingShow = false;
+    mDidCreateDoc = didCreateDoc;
+
+    if (!HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
+      frameloader->UpdatePositionAndSize(this);
+    }
+
+    if (!weakThis.IsAlive()) {
+      return;
+    }
+    InvalidateFrame();
   }
 }
 
@@ -265,13 +267,11 @@ mozilla::PresShell* nsSubDocumentFrame::GetSubdocumentPresShellForPainting(
 
 ScreenIntSize nsSubDocumentFrame::GetSubdocumentSize() {
   if (HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
-    RefPtr<nsFrameLoader> frameloader = FrameLoader();
-    if (frameloader) {
+    if (RefPtr<nsFrameLoader> frameloader = FrameLoader()) {
       nsCOMPtr<Document> oldContainerDoc;
       nsIFrame* detachedFrame =
           frameloader->GetDetachedSubdocFrame(getter_AddRefs(oldContainerDoc));
-      nsView* view = detachedFrame ? detachedFrame->GetView() : nullptr;
-      if (view) {
+      if (nsView* view = detachedFrame ? detachedFrame->GetView() : nullptr) {
         nsSize size = view->GetBounds().Size();
         nsPresContext* presContext = detachedFrame->PresContext();
         return ScreenIntSize(presContext->AppUnitsToDevPixels(size.width),
@@ -281,28 +281,26 @@ ScreenIntSize nsSubDocumentFrame::GetSubdocumentSize() {
     // Pick some default size for now.  Using 10x10 because that's what the
     // code used to do.
     return ScreenIntSize(10, 10);
-  } else {
-    nsSize docSizeAppUnits;
-    nsPresContext* presContext = PresContext();
-    if (GetContent()->IsHTMLElement(nsGkAtoms::frame)) {
-      docSizeAppUnits = GetSize();
-    } else {
-      docSizeAppUnits = GetContentRect().Size();
-    }
-    // Adjust subdocument size, according to 'object-fit' and the
-    // subdocument's intrinsic size and ratio.
-    nsIFrame* subDocRoot = ObtainIntrinsicSizeFrame();
-    if (subDocRoot) {
-      nsRect destRect = nsLayoutUtils::ComputeObjectDestRect(
-          nsRect(nsPoint(), docSizeAppUnits), subDocRoot->GetIntrinsicSize(),
-          subDocRoot->GetIntrinsicRatio(), StylePosition());
-      docSizeAppUnits = destRect.Size();
-    }
-
-    return ScreenIntSize(
-        presContext->AppUnitsToDevPixels(docSizeAppUnits.width),
-        presContext->AppUnitsToDevPixels(docSizeAppUnits.height));
   }
+
+  nsSize docSizeAppUnits;
+  nsPresContext* presContext = PresContext();
+  if (GetContent()->IsHTMLElement(nsGkAtoms::frame)) {
+    docSizeAppUnits = GetSize();
+  } else {
+    docSizeAppUnits = GetContentRect().Size();
+  }
+
+  // Adjust subdocument size, according to 'object-fit' and the subdocument's
+  // intrinsic size and ratio.
+  docSizeAppUnits = nsLayoutUtils::ComputeObjectDestRect(
+                        nsRect(nsPoint(), docSizeAppUnits), GetIntrinsicSize(),
+                        GetIntrinsicRatio(), StylePosition())
+                        .Size();
+
+  return ScreenIntSize(
+      presContext->AppUnitsToDevPixels(docSizeAppUnits.width),
+      presContext->AppUnitsToDevPixels(docSizeAppUnits.height));
 }
 
 static void WrapBackgroundColorInOwnLayer(nsDisplayListBuilder* aBuilder,
@@ -328,14 +326,16 @@ static void WrapBackgroundColorInOwnLayer(nsDisplayListBuilder* aBuilder,
 
 void nsSubDocumentFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                           const nsDisplayListSet& aLists) {
-  if (!IsVisibleForPainting()) return;
+  if (!IsVisibleForPainting()) {
+    return;
+  }
 
   nsFrameLoader* frameLoader = FrameLoader();
   bool isRemoteFrame = frameLoader && frameLoader->IsRemoteFrame();
 
   // If we are pointer-events:none then we don't need to HitTest background
-  bool pointerEventsNone =
-      StyleUI()->mPointerEvents == StylePointerEvents::None;
+  const bool pointerEventsNone =
+      Style()->PointerEvents() == StylePointerEvents::None;
   if (!aBuilder->IsForEventDelivery() || !pointerEventsNone) {
     nsDisplayListCollection decorations(aBuilder);
     DisplayBorderBackgroundOutline(aBuilder, decorations);
@@ -433,8 +433,8 @@ void nsSubDocumentFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   nsIScrollableFrame* sf = presShell->GetRootScrollFrameAsScrollable();
   bool constructZoomItem = subdocRootFrame && parentAPD != subdocAPD;
   bool needsOwnLayer = false;
-  if (constructZoomItem || presContext->IsRootContentDocument() ||
-      (sf && sf->IsScrollingActive(aBuilder))) {
+  if (constructZoomItem || presContext->IsRootContentDocumentCrossProcess() ||
+      (sf && sf->IsScrollingActive())) {
     needsOwnLayer = true;
   }
 
@@ -557,48 +557,6 @@ void nsSubDocumentFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   }
 }
 
-nscoord nsSubDocumentFrame::GetIntrinsicISize() {
-  if (StyleDisplay()->IsContainSize()) {
-    return 0;  // Intrinsic size of 'contain:size' replaced elements is 0,0.
-  }
-
-  if (!IsInline()) {
-    return 0;  // HTML <frame> has no useful intrinsic isize
-  }
-
-  if (mContent->IsXULElement()) {
-    return 0;  // XUL <iframe> and <browser> have no useful intrinsic isize
-  }
-
-  NS_ASSERTION(ObtainIntrinsicSizeFrame() == nullptr,
-               "Intrinsic isize should come from the embedded document.");
-
-  // We must be an HTML <iframe>.  Default to size of 300px x 150px, for IE
-  // compat (and per CSS2.1 draft).
-  WritingMode wm = GetWritingMode();
-  return nsPresContext::CSSPixelsToAppUnits(wm.IsVertical() ? 150 : 300);
-}
-
-nscoord nsSubDocumentFrame::GetIntrinsicBSize() {
-  // <frame> processing does not use this routine, only <iframe>
-  NS_ASSERTION(IsInline(), "Shouldn't have been called");
-
-  if (StyleDisplay()->IsContainSize()) {
-    return 0;  // Intrinsic size of 'contain:size' replaced elements is 0,0.
-  }
-
-  if (mContent->IsXULElement()) {
-    return 0;
-  }
-
-  NS_ASSERTION(ObtainIntrinsicSizeFrame() == nullptr,
-               "Intrinsic bsize should come from the embedded document.");
-
-  // Use size of 300px x 150px, for compatibility with IE, and per CSS2.1 draft.
-  WritingMode wm = GetWritingMode();
-  return nsPresContext::CSSPixelsToAppUnits(wm.IsVertical() ? 300 : 150);
-}
-
 #ifdef DEBUG_FRAME_DUMP
 void nsSubDocumentFrame::List(FILE* out, const char* aPrefix,
                               ListFlags aFlags) const {
@@ -627,9 +585,15 @@ nscoord nsSubDocumentFrame::GetMinISize(gfxContext* aRenderingContext) {
   nscoord result;
   DISPLAY_MIN_INLINE_SIZE(this, result);
 
-  nsIFrame* subDocRoot = ObtainIntrinsicSizeFrame();
-  if (subDocRoot) {
-    result = subDocRoot->GetMinISize(aRenderingContext);
+  nsCOMPtr<nsIObjectLoadingContent> iolc = do_QueryInterface(mContent);
+  auto olc = static_cast<nsObjectLoadingContent*>(iolc.get());
+
+  if (olc && olc->GetSubdocumentIntrinsicSize()) {
+    // The subdocument is an SVG document, so technically we should call
+    // SVGOuterSVGFrame::GetMinISize() on its root frame.  That method always
+    // returns 0, though, so we can just do that & don't need to bother with
+    // the cross-doc communication.
+    result = 0;
   } else {
     result = GetIntrinsicISize();
   }
@@ -642,12 +606,13 @@ nscoord nsSubDocumentFrame::GetPrefISize(gfxContext* aRenderingContext) {
   nscoord result;
   DISPLAY_PREF_INLINE_SIZE(this, result);
 
-  nsIFrame* subDocRoot = ObtainIntrinsicSizeFrame();
-  if (subDocRoot) {
-    result = subDocRoot->GetPrefISize(aRenderingContext);
-  } else {
-    result = GetIntrinsicISize();
-  }
+  // If the subdocument is an SVG document, then in theory we want to return
+  // the same thing that SVGOuterSVGFrame::GetPrefISize does.  That method
+  // has some special handling of percentage values to avoid unhelpful zero
+  // sizing in the presence of orthogonal writing modes.  We don't bother
+  // with that for SVG documents in <embed> and <object>, since that special
+  // handling doesn't look up across document boundaries anyway.
+  result = GetIntrinsicISize();
 
   return result;
 }
@@ -659,19 +624,46 @@ IntrinsicSize nsSubDocumentFrame::GetIntrinsicSize() {
     return IntrinsicSize(0, 0);
   }
 
-  nsIFrame* subDocRoot = ObtainIntrinsicSizeFrame();
-  if (subDocRoot) {
-    return subDocRoot->GetIntrinsicSize();
+  if (nsCOMPtr<nsIObjectLoadingContent> iolc = do_QueryInterface(mContent)) {
+    auto olc = static_cast<nsObjectLoadingContent*>(iolc.get());
+
+    if (auto size = olc->GetSubdocumentIntrinsicSize()) {
+      // Use the intrinsic size from the child SVG document, if available.
+      return *size;
+    }
   }
-  return nsAtomicContainerFrame::GetIntrinsicSize();
+
+  if (!IsInline()) {
+    return {};  // <frame> elements have no useful intrinsic size.
+  }
+
+  if (mContent->IsXULElement()) {
+    return {};  // XUL <iframe> and <browser> have no useful intrinsic size
+  }
+
+  // We must be an HTML <iframe>. Return fallback size.
+  return IntrinsicSize(kFallbackIntrinsicSize);
 }
 
 /* virtual */
-AspectRatio nsSubDocumentFrame::GetIntrinsicRatio() {
-  nsIFrame* subDocRoot = ObtainIntrinsicSizeFrame();
-  if (subDocRoot) {
-    return subDocRoot->GetIntrinsicRatio();
+AspectRatio nsSubDocumentFrame::GetIntrinsicRatio() const {
+  // FIXME(emilio): This should probably respect contain: size and return no
+  // ratio in the case subDocRoot is non-null. Otherwise we do it by virtue of
+  // using a zero-size below and reusing GetIntrinsicSize().
+  if (nsCOMPtr<nsIObjectLoadingContent> iolc = do_QueryInterface(mContent)) {
+    auto olc = static_cast<nsObjectLoadingContent*>(iolc.get());
+
+    auto ratio = olc->GetSubdocumentIntrinsicRatio();
+    if (ratio && *ratio) {
+      // Use the intrinsic aspect ratio from the child SVG document, if
+      // available.
+      return *ratio;
+    }
   }
+
+  // NOTE(emilio): Even though we have an intrinsic size, we may not have an
+  // intrinsic ratio. For example `<iframe style="width: 100px">` should not
+  // shrink in the vertical axis to preserve the 300x150 ratio.
   return nsAtomicContainerFrame::GetIntrinsicRatio();
 }
 
@@ -679,12 +671,12 @@ AspectRatio nsSubDocumentFrame::GetIntrinsicRatio() {
 LogicalSize nsSubDocumentFrame::ComputeAutoSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
+    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
     ComputeSizeFlags aFlags) {
   if (!IsInline()) {
     return nsIFrame::ComputeAutoSize(aRenderingContext, aWM, aCBSize,
-                                     aAvailableISize, aMargin, aBorder,
-                                     aPadding, aFlags);
+                                     aAvailableISize, aMargin, aBorderPadding,
+                                     aSizeOverrides, aFlags);
   }
 
   const WritingMode wm = GetWritingMode();
@@ -693,21 +685,15 @@ LogicalSize nsSubDocumentFrame::ComputeAutoSize(
 }
 
 /* virtual */
-LogicalSize nsSubDocumentFrame::ComputeSize(
+nsIFrame::SizeComputationResult nsSubDocumentFrame::ComputeSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
+    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
     ComputeSizeFlags aFlags) {
-  nsIFrame* subDocRoot = ObtainIntrinsicSizeFrame();
-  if (subDocRoot) {
-    return ComputeSizeWithIntrinsicDimensions(
-        aRenderingContext, aWM, subDocRoot->GetIntrinsicSize(),
-        subDocRoot->GetIntrinsicRatio(), aCBSize, aMargin, aBorder, aPadding,
-        aFlags);
-  }
-  return nsAtomicContainerFrame::ComputeSize(aRenderingContext, aWM, aCBSize,
-                                             aAvailableISize, aMargin, aBorder,
-                                             aPadding, aFlags);
+  return {ComputeSizeWithIntrinsicDimensions(
+              aRenderingContext, aWM, GetIntrinsicSize(), GetAspectRatio(),
+              aCBSize, aMargin, aBorderPadding, aSizeOverrides, aFlags),
+          AspectRatioUsage::None};
 }
 
 void nsSubDocumentFrame::Reflow(nsPresContext* aPresContext,
@@ -733,8 +719,8 @@ void nsSubDocumentFrame::Reflow(nsPresContext* aPresContext,
   NS_ASSERTION(mContent->GetPrimaryFrame() == this, "Shouldn't happen");
 
   // XUL <iframe> or <browser>, or HTML <iframe>, <object> or <embed>
-  aDesiredSize.SetSize(aReflowInput.GetWritingMode(),
-                       aReflowInput.ComputedSizeWithBorderPadding());
+  const auto wm = aReflowInput.GetWritingMode();
+  aDesiredSize.SetSize(wm, aReflowInput.ComputedSizeWithBorderPadding(wm));
 
   // "offset" is the offset of our content area from our frame's
   // top-left corner.
@@ -747,15 +733,9 @@ void nsSubDocumentFrame::Reflow(nsPresContext* aPresContext,
                      aDesiredSize.Height() - bp.TopBottom());
 
     // Size & position the view according to 'object-fit' & 'object-position'.
-    nsIFrame* subDocRoot = ObtainIntrinsicSizeFrame();
-    IntrinsicSize intrinsSize;
-    AspectRatio intrinsRatio;
-    if (subDocRoot) {
-      intrinsSize = subDocRoot->GetIntrinsicSize();
-      intrinsRatio = subDocRoot->GetIntrinsicRatio();
-    }
     nsRect destRect = nsLayoutUtils::ComputeObjectDestRect(
-        nsRect(offset, innerSize), intrinsSize, intrinsRatio, StylePosition());
+        nsRect(offset, innerSize), GetIntrinsicSize(), GetIntrinsicRatio(),
+        StylePosition());
 
     nsViewManager* vm = mInnerView->GetViewManager();
     vm->MoveViewTo(mInnerView, destRect.x, destRect.y);
@@ -766,7 +746,7 @@ void nsSubDocumentFrame::Reflow(nsPresContext* aPresContext,
 
   FinishAndStoreOverflow(&aDesiredSize);
 
-  if (!aPresContext->IsPaginated() && !mPostedReflowCallback) {
+  if (!aPresContext->IsRootPaginatedDocument() && !mPostedReflowCallback) {
     PresShell()->PostReflowCallback(this);
     mPostedReflowCallback = true;
   }
@@ -914,6 +894,7 @@ static nsView* BeginSwapDocShellsForViews(nsView* aSibling);
 
 void nsSubDocumentFrame::DestroyFrom(nsIFrame* aDestructRoot,
                                      PostDestroyData& aPostDestroyData) {
+  PropagateIsUnderHiddenEmbedderElementToSubView(true);
   if (mPostedReflowCallback) {
     PresShell()->CancelReflowCallback(this);
     mPostedReflowCallback = false;
@@ -947,27 +928,57 @@ void nsSubDocumentFrame::DestroyFrom(nsIFrame* aDestructRoot,
 }
 
 nsFrameLoader* nsSubDocumentFrame::FrameLoader() const {
-  nsIContent* content = GetContent();
-  if (!content) return nullptr;
-
-  if (!mFrameLoader) {
-    RefPtr<nsFrameLoaderOwner> loaderOwner = do_QueryObject(content);
-    if (loaderOwner) {
-      mFrameLoader = loaderOwner->GetFrameLoader();
-    }
+  if (mFrameLoader) {
+    return mFrameLoader;
   }
+
+  if (RefPtr<nsFrameLoaderOwner> loaderOwner = do_QueryObject(GetContent())) {
+    mFrameLoader = loaderOwner->GetFrameLoader();
+  }
+
   return mFrameLoader;
 }
 
-void nsSubDocumentFrame::ResetFrameLoader() {
+auto nsSubDocumentFrame::GetRemotePaintData() const -> RemoteFramePaintData {
+  if (mRetainedRemoteFrame) {
+    return *mRetainedRemoteFrame;
+  }
+
+  RemoteFramePaintData data;
+  nsFrameLoader* fl = FrameLoader();
+  if (!fl) {
+    return data;
+  }
+
+  auto* rb = fl->GetRemoteBrowser();
+  if (!rb) {
+    return data;
+  }
+  data.mLayersId = rb->GetLayersId();
+  data.mTabId = rb->GetTabId();
+  return data;
+}
+
+void nsSubDocumentFrame::ResetFrameLoader(RetainPaintData aRetain) {
+  if (aRetain == RetainPaintData::Yes && mFrameLoader) {
+    mRetainedRemoteFrame = Some(GetRemotePaintData());
+  } else {
+    mRetainedRemoteFrame.reset();
+  }
   mFrameLoader = nullptr;
   ClearDisplayItems();
   nsContentUtils::AddScriptRunner(new AsyncFrameInit(this));
 }
 
+void nsSubDocumentFrame::ClearRetainedPaintData() {
+  mRetainedRemoteFrame.reset();
+  ClearDisplayItems();
+  InvalidateFrameSubtree();
+}
+
 // XXX this should be called ObtainDocShell or something like that,
 // to indicate that it could have side effects
-nsIDocShell* nsSubDocumentFrame::GetDocShell() {
+nsIDocShell* nsSubDocumentFrame::GetDocShell() const {
   // How can FrameLoader() return null???
   if (NS_WARN_IF(!FrameLoader())) {
     return nullptr;
@@ -976,7 +987,33 @@ nsIDocShell* nsSubDocumentFrame::GetDocShell() {
 }
 
 static void DestroyDisplayItemDataForFrames(nsIFrame* aFrame) {
-  FrameLayerBuilder::DestroyDisplayItemDataFor(aFrame);
+  if (aFrame->IsSubDocumentFrame()) {
+    const nsSubDocumentFrame* subdoc =
+        static_cast<const nsSubDocumentFrame*>(aFrame);
+    nsFrameLoader* frameLoader = subdoc->FrameLoader();
+    if (frameLoader && frameLoader->GetRemoteBrowser()) {
+      // This is a remote browser that is going away, notify it that it is now
+      // hidden
+      frameLoader->GetRemoteBrowser()->UpdateEffects(
+          mozilla::dom::EffectsInfo::FullyHidden());
+    }
+  }
+
+  // Destroying a WebRenderUserDataTable can cause destruction of other objects
+  // which can remove frame properties in their destructor. If we delete a frame
+  // property it runs the destructor of the stored object in the middle of
+  // updating the frame property table, so if the destruction of that object
+  // causes another update to the frame property table it would leave the frame
+  // property table in an inconsistent state. So we remove it from the table and
+  // then destroy it. (bug 1530657)
+  WebRenderUserDataTable* userDataTable =
+      aFrame->TakeProperty(WebRenderUserDataProperty::Key());
+  if (userDataTable) {
+    for (const auto& data : userDataTable->Values()) {
+      data->RemoveFromTable();
+    }
+    delete userDataTable;
+  }
 
   for (const auto& childList : aFrame->ChildLists()) {
     for (nsIFrame* child : childList.mList) {
@@ -994,7 +1031,6 @@ static CallState BeginSwapDocShellsForDocument(Document& aDocument) {
       ::DestroyDisplayItemDataForFrames(rootFrame);
     }
   }
-  aDocument.EnumerateActivityObservers(nsPluginFrame::BeginSwapDocShells);
   aDocument.EnumerateSubDocuments(BeginSwapDocShellsForDocument);
   return CallState::Continue;
 }
@@ -1078,7 +1114,6 @@ static CallState EndSwapDocShellsForDocument(Document& aDocument) {
     }
   }
 
-  aDocument.EnumerateActivityObservers(nsPluginFrame::EndSwapDocShells);
   aDocument.EnumerateSubDocuments(EndSwapDocShellsForDocument);
   return CallState::Continue;
 }
@@ -1090,7 +1125,7 @@ static void EndSwapDocShellsForViews(nsView* aSibling) {
     }
     nsIFrame* frame = aSibling->GetFrame();
     if (frame) {
-      nsIFrame* parent = nsLayoutUtils::GetCrossDocParentFrame(frame);
+      nsIFrame* parent = nsLayoutUtils::GetCrossDocParentFrameInProcess(frame);
       if (parent->HasAnyStateBits(NS_FRAME_IN_POPUP)) {
         nsIFrame::AddInPopupStateBitToDescendants(frame);
       } else {
@@ -1101,7 +1136,7 @@ static void EndSwapDocShellsForViews(nsView* aSibling) {
                !parent->HasAnyStateBits(NS_FRAME_DESCENDANT_NEEDS_PAINT |
                                         NS_FRAME_IS_NONDISPLAY)) {
           parent->AddStateBits(NS_FRAME_DESCENDANT_NEEDS_PAINT);
-          parent = nsLayoutUtils::GetCrossDocParentFrame(parent);
+          parent = nsLayoutUtils::GetCrossDocParentFrameInProcess(parent);
         }
       }
     }
@@ -1143,20 +1178,15 @@ void nsSubDocumentFrame::EndSwapDocShells(nsIFrame* aOther) {
 }
 
 void nsSubDocumentFrame::ClearDisplayItems() {
-  DisplayItemArray* items = GetProperty(DisplayItems());
-  if (!items) {
-    return;
-  }
-
-  nsIFrame* displayRoot = nsLayoutUtils::GetDisplayRootFrame(this);
-  MOZ_ASSERT(displayRoot);
-
-  RetainedDisplayListBuilder* retainedBuilder =
-      displayRoot->GetProperty(RetainedDisplayListBuilder::Cached());
-  MOZ_ASSERT(retainedBuilder);
-
-  for (nsDisplayItemBase* i : *items) {
+  for (nsDisplayItem* i : DisplayItems()) {
     if (i->GetType() == DisplayItemType::TYPE_SUBDOCUMENT) {
+      nsIFrame* displayRoot = nsLayoutUtils::GetDisplayRootFrame(this);
+      MOZ_ASSERT(displayRoot);
+
+      RetainedDisplayListBuilder* retainedBuilder =
+          displayRoot->GetProperty(RetainedDisplayListBuilder::Cached());
+      MOZ_ASSERT(retainedBuilder);
+
       auto* item = static_cast<nsDisplaySubDocument*>(i);
       item->GetChildren()->DeleteAll(retainedBuilder->Builder());
       item->Disown();
@@ -1192,40 +1222,21 @@ nsPoint nsSubDocumentFrame::GetExtraOffset() const {
   return mInnerView->GetPosition();
 }
 
-nsIFrame* nsSubDocumentFrame::ObtainIntrinsicSizeFrame() {
-  if (StyleDisplay()->IsContainSize()) {
-    // Intrinsic size of 'contain:size' replaced elements is 0,0. So, don't use
-    // internal frames to provide intrinsic size at all.
-    return nullptr;
+void nsSubDocumentFrame::SubdocumentIntrinsicSizeOrRatioChanged() {
+  if (MOZ_UNLIKELY(HasAllStateBits(NS_FRAME_IS_DIRTY))) {
+    // We will be reflowed soon anyway.
+    return;
   }
 
-  nsCOMPtr<nsIObjectLoadingContent> olc = do_QueryInterface(GetContent());
-  if (olc) {
-    // We are an HTML <object> or <embed> (a replaced element).
+  const nsStylePosition* pos = StylePosition();
+  bool dependsOnIntrinsics =
+      !pos->mWidth.ConvertsToLength() || !pos->mHeight.ConvertsToLength();
 
-    // Try to get an nsIFrame for our sub-document's document element
-    nsIFrame* subDocRoot = nullptr;
-
-    if (nsIDocShell* docShell = GetDocShell()) {
-      if (mozilla::PresShell* presShell = docShell->GetPresShell()) {
-        nsIScrollableFrame* scrollable =
-            presShell->GetRootScrollFrameAsScrollable();
-        if (scrollable) {
-          nsIFrame* scrolled = scrollable->GetScrolledFrame();
-          if (scrolled) {
-            subDocRoot = scrolled->PrincipalChildList().FirstChild();
-          }
-        }
-      }
-    }
-
-    if (subDocRoot && subDocRoot->GetContent() &&
-        subDocRoot->GetContent()->NodeInfo()->Equals(nsGkAtoms::svg,
-                                                     kNameSpaceID_SVG)) {
-      return subDocRoot;  // SVG documents have an intrinsic size
-    }
+  if (dependsOnIntrinsics || pos->mObjectFit != StyleObjectFit::Fill) {
+    auto dirtyHint = dependsOnIntrinsics ? IntrinsicDirty::StyleChange
+                                         : IntrinsicDirty::Resize;
+    PresShell()->FrameNeedsReflow(this, dirtyHint, NS_FRAME_IS_DIRTY);
   }
-  return nullptr;
 }
 
 /**
@@ -1233,10 +1244,8 @@ nsIFrame* nsSubDocumentFrame::ObtainIntrinsicSizeFrame() {
  * from the nearest display item reference frame (which we assume will be
  * inducing a ContainerLayer).
  */
-static mozilla::LayoutDeviceIntPoint GetContentRectLayerOffset(
-    nsIFrame* aContainerFrame, nsDisplayListBuilder* aBuilder) {
-  nscoord auPerDevPixel = aContainerFrame->PresContext()->AppUnitsPerDevPixel();
-
+static nsPoint GetContentRectLayerOffset(nsIFrame* aContainerFrame,
+                                         nsDisplayListBuilder* aBuilder) {
   // Offset to the content rect in case we have borders or padding
   // Note that aContainerFrame could be a reference frame itself, so
   // we need to be careful here to ensure that we call ToReferenceFrame
@@ -1245,26 +1254,19 @@ static mozilla::LayoutDeviceIntPoint GetContentRectLayerOffset(
       aBuilder->ToReferenceFrame(aContainerFrame) +
       aContainerFrame->GetContentRectRelativeToSelf().TopLeft();
 
-  return mozilla::LayoutDeviceIntPoint::FromAppUnitsToNearest(frameOffset,
-                                                              auPerDevPixel);
+  return frameOffset;
 }
 
 // Return true iff |aManager| is a "temporary layer manager".  They're
 // used for small software rendering tasks, like drawWindow.  That's
 // currently implemented by a BasicLayerManager without a backing
 // widget, and hence in non-retained mode.
-inline static bool IsTempLayerManager(LayerManager* aManager) {
-  return (LayersBackend::LAYERS_BASIC == aManager->GetBackendType() &&
-          !static_cast<BasicLayerManager*>(aManager)->IsRetained());
-}
-
 nsDisplayRemote::nsDisplayRemote(nsDisplayListBuilder* aBuilder,
                                  nsSubDocumentFrame* aFrame)
     : nsPaintedDisplayItem(aBuilder, aFrame),
-      mTabId{0},
       mEventRegionsOverride(EventRegionsOverride::NoOverride) {
-  bool frameIsPointerEventsNone = aFrame->StyleUI()->GetEffectivePointerEvents(
-                                      aFrame) == StylePointerEvents::None;
+  const bool frameIsPointerEventsNone =
+      aFrame->Style()->PointerEvents() == StylePointerEvents::None;
   if (aBuilder->IsInsidePointerEventsNoneDoc() || frameIsPointerEventsNone) {
     mEventRegionsOverride |= EventRegionsOverride::ForceEmptyHitRegion;
   }
@@ -1273,21 +1275,7 @@ nsDisplayRemote::nsDisplayRemote(nsDisplayListBuilder* aBuilder,
     mEventRegionsOverride |= EventRegionsOverride::ForceDispatchToContent;
   }
 
-  nsFrameLoader* frameLoader = GetFrameLoader();
-  MOZ_ASSERT(frameLoader && frameLoader->IsRemoteFrame());
-  if (frameLoader->GetRemoteBrowser()) {
-    mLayersId = frameLoader->GetLayersId();
-    mTabId = frameLoader->GetRemoteBrowser()->GetTabId();
-  }
-}
-
-mozilla::LayerState nsDisplayRemote::GetLayerState(
-    nsDisplayListBuilder* aBuilder, LayerManager* aManager,
-    const ContainerLayerParameters& aParameters) {
-  if (IsTempLayerManager(aManager)) {
-    return mozilla::LayerState::LAYER_NONE;
-  }
-  return mozilla::LayerState::LAYER_ACTIVE_FORCE;
+  mPaintData = aFrame->GetRemotePaintData();
 }
 
 LayerIntSize GetFrameSize(const nsIFrame* aFrame) {
@@ -1295,96 +1283,39 @@ LayerIntSize GetFrameSize(const nsIFrame* aFrame) {
       aFrame->GetContentRectRelativeToSelf().Size(),
       aFrame->PresContext()->AppUnitsPerDevPixel());
 
-  float cumulativeResolution = aFrame->PresShell()->GetCumulativeResolution();
-  return LayerIntSize::Round(size.width * cumulativeResolution,
-                             size.height * cumulativeResolution);
+  return LayerIntSize::Round(size.width, size.height);
 }
 
-already_AddRefed<mozilla::layers::Layer> nsDisplayRemote::BuildLayer(
-    nsDisplayListBuilder* aBuilder, LayerManager* aManager,
-    const ContainerLayerParameters& aContainerParameters) {
-  MOZ_ASSERT(mFrame, "Makes no sense to have a shadow tree without a frame");
-
-  if (IsTempLayerManager(aManager)) {
-    // This can happen if aManager is a "temporary" manager, or if the
-    // widget's layer manager changed out from under us.  We need to
-    // FIXME handle the former case somehow, probably with an API to
-    // draw a manager's subtree.  The latter is bad bad bad, but the the
-    // MOZ_ASSERT() above will flag it.  Returning nullptr here will just
-    // cause the shadow subtree not to be rendered.
-    NS_WARNING("Remote iframe not rendered");
-    return nullptr;
-  }
-
-  if (!mLayersId.IsValid()) {
-    return nullptr;
-  }
-
-  if (RefPtr<RemoteBrowser> remoteBrowser =
-          GetFrameLoader()->GetRemoteBrowser()) {
-    // Adjust mItemVisibleRect, which is relative to the reference frame, to be
-    // relative to this frame
-    nsRect visibleRect;
-    if (aContainerParameters.mItemVisibleRect) {
-      visibleRect = *aContainerParameters.mItemVisibleRect;
-    } else {
-      visibleRect = GetBuildingRect();
-    }
-    visibleRect -= ToReferenceFrame();
-    nsRect contentRect = Frame()->GetContentRectRelativeToSelf();
-    visibleRect.IntersectRect(visibleRect, contentRect);
-    visibleRect -= contentRect.TopLeft();
-
-    // Generate an effects update notifying the browser it is visible
-    aBuilder->AddEffectUpdate(remoteBrowser,
-                              EffectsInfo::VisibleWithinRect(
-                                  visibleRect, aContainerParameters.mXScale,
-                                  aContainerParameters.mYScale));
-    // FrameLayerBuilder will take care of notifying the browser when it is no
-    // longer visible
-  }
-
-  RefPtr<Layer> layer =
-      aManager->GetLayerBuilder()->GetLeafLayerFor(aBuilder, this);
-
-  if (!layer) {
-    layer = aManager->CreateRefLayer();
-  }
-  if (!layer || !layer->AsRefLayer()) {
-    // Probably a temporary layer manager that doesn't know how to
-    // use ref layers.
-    return nullptr;
-  }
-  RefLayer* refLayer = layer->AsRefLayer();
-
-  LayoutDeviceIntPoint offset = GetContentRectLayerOffset(Frame(), aBuilder);
-  // We can only have an offset if we're a child of an inactive
-  // container, but our display item is LAYER_ACTIVE_FORCE which
-  // forces all layers above to be active.
-  MOZ_ASSERT(aContainerParameters.mOffset == nsIntPoint());
-  Matrix4x4 m = Matrix4x4::Translation(offset.x, offset.y, 0.0);
-  // Remote content can't be repainted by us, so we multiply down
-  // the resolution that our container expects onto our container.
-  m.PreScale(aContainerParameters.mXScale, aContainerParameters.mYScale, 1.0);
-  refLayer->SetBaseTransform(m);
-  refLayer->SetEventRegionsOverride(mEventRegionsOverride);
-  refLayer->SetReferentId(mLayersId);
-  refLayer->SetRemoteDocumentSize(GetFrameSize(mFrame));
-
-  return layer.forget();
-}
+namespace mozilla {
 
 void nsDisplayRemote::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
+  nsPresContext* pc = mFrame->PresContext();
+  nsFrameLoader* fl = GetFrameLoader();
+  if (pc->GetPrintSettings() && fl->IsRemoteFrame()) {
+    // See the comment below in CreateWebRenderCommands() as for why doing this.
+    fl->UpdatePositionAndSize(static_cast<nsSubDocumentFrame*>(mFrame));
+  }
+
   DrawTarget* target = aCtx->GetDrawTarget();
-  if (!target->IsRecording() || mTabId == 0) {
+  if (!target->IsRecording() || mPaintData.mTabId == 0) {
     NS_WARNING("Remote iframe not rendered");
     return;
   }
 
-  int32_t appUnitsPerDevPixel = mFrame->PresContext()->AppUnitsPerDevPixel();
-  Rect destRect = mozilla::NSRectToSnappedRect(GetContentRect(),
-                                               appUnitsPerDevPixel, *target);
-  target->DrawDependentSurface(mTabId, destRect);
+  // Rendering the inner document will apply a scale to account for its
+  // app units per dev pixel ratio. We want to apply the inverse scaling
+  // using our app units per dev pixel ratio, so that no actual scaling
+  // will be applied if they match. For in-process rendering,
+  // nsSubDocumentFrame creates an nsDisplayZoom item if the app units
+  // per dev pixel ratio changes.
+  int32_t appUnitsPerDevPixel = pc->AppUnitsPerDevPixel();
+  gfxFloat scale = gfxFloat(AppUnitsPerCSSPixel()) / appUnitsPerDevPixel;
+  gfxContextMatrixAutoSaveRestore saveMatrix(aCtx);
+  aCtx->Multiply(gfxMatrix::Scaling(scale, scale));
+
+  Rect destRect =
+      NSRectToSnappedRect(GetContentRect(), AppUnitsPerCSSPixel(), *target);
+  target->DrawDependentSurface(mPaintData.mTabId, destRect);
 }
 
 bool nsDisplayRemote::CreateWebRenderCommands(
@@ -1393,12 +1324,25 @@ bool nsDisplayRemote::CreateWebRenderCommands(
     const StackingContextHelper& aSc,
     mozilla::layers::RenderRootStateManager* aManager,
     nsDisplayListBuilder* aDisplayListBuilder) {
-  if (!mLayersId.IsValid()) {
+  if (!mPaintData.mLayersId.IsValid()) {
     return true;
   }
 
-  if (RefPtr<RemoteBrowser> remoteBrowser =
-          GetFrameLoader()->GetRemoteBrowser()) {
+  nsPresContext* pc = mFrame->PresContext();
+  nsFrameLoader* fl = GetFrameLoader();
+  if (RefPtr<RemoteBrowser> remoteBrowser = fl->GetRemoteBrowser()) {
+    if (pc->GetPrintSettings()) {
+      // HACK(emilio): Usually we update sizing/positioning from
+      // ReflowFinished(). Print documents have no incremental reflow at all
+      // though, so we can't rely on it firing after a frame becomes remote.
+      // Thus, if we're painting a remote frame, update its sizing and position
+      // now.
+      //
+      // UpdatePositionAndSize() can cause havoc for non-remote frames but
+      // luckily we don't care about those, so this is fine.
+      fl->UpdatePositionAndSize(static_cast<nsSubDocumentFrame*>(mFrame));
+    }
+
     // Adjust mItemVisibleRect, which is relative to the reference frame, to be
     // relative to this frame
     nsRect visibleRect = GetBuildingRect() - ToReferenceFrame();
@@ -1407,9 +1351,19 @@ bool nsDisplayRemote::CreateWebRenderCommands(
     visibleRect -= contentRect.TopLeft();
 
     // Generate an effects update notifying the browser it is visible
-    // TODO - Gather scaling factors
+    gfx::Size scale = aSc.GetInheritedScale();
+
+    ParentLayerToScreenScale2D transformToAncestorScale =
+        ParentLayerToParentLayerScale(
+            pc->GetPresShell() ? pc->GetPresShell()->GetCumulativeResolution()
+                               : 1.f) *
+        nsLayoutUtils::GetTransformToAncestorScaleCrossProcessForFrameMetrics(
+            mFrame);
+
     aDisplayListBuilder->AddEffectUpdate(
-        remoteBrowser, EffectsInfo::VisibleWithinRect(visibleRect, 1.0f, 1.0f));
+        remoteBrowser,
+        EffectsInfo::VisibleWithinRect(visibleRect, scale.width, scale.height,
+                                       transformToAncestorScale));
 
     // Create a WebRenderRemoteData to notify the RemoteBrowser when it is no
     // longer visible
@@ -1420,16 +1374,18 @@ bool nsDisplayRemote::CreateWebRenderCommands(
     userData->SetRemoteBrowser(remoteBrowser);
   }
 
-  mOffset = GetContentRectLayerOffset(mFrame, aDisplayListBuilder);
+  nscoord auPerDevPixel = pc->AppUnitsPerDevPixel();
+  nsPoint layerOffset = GetContentRectLayerOffset(mFrame, aDisplayListBuilder);
+  mOffset = LayoutDevicePoint::FromAppUnits(layerOffset, auPerDevPixel);
 
   nsRect contentRect = mFrame->GetContentRectRelativeToSelf();
   contentRect.MoveTo(0, 0);
-  LayoutDeviceRect rect = LayoutDeviceRect::FromAppUnits(
-      contentRect, mFrame->PresContext()->AppUnitsPerDevPixel());
+  LayoutDeviceRect rect =
+      LayoutDeviceRect::FromAppUnits(contentRect, auPerDevPixel);
   rect += mOffset;
 
   aBuilder.PushIFrame(mozilla::wr::ToLayoutRect(rect), !BackfaceIsHidden(),
-                      mozilla::wr::AsPipelineId(mLayersId),
+                      mozilla::wr::AsPipelineId(mPaintData.mLayersId),
                       /*ignoreMissingPipelines*/ true);
 
   return true;
@@ -1438,14 +1394,27 @@ bool nsDisplayRemote::CreateWebRenderCommands(
 bool nsDisplayRemote::UpdateScrollData(
     mozilla::layers::WebRenderScrollData* aData,
     mozilla::layers::WebRenderLayerScrollData* aLayerData) {
-  if (!mLayersId.IsValid()) {
+  if (!mPaintData.mLayersId.IsValid()) {
     return true;
   }
 
   if (aLayerData) {
-    aLayerData->SetReferentId(mLayersId);
-    aLayerData->SetTransform(
-        mozilla::gfx::Matrix4x4::Translation(mOffset.x, mOffset.y, 0.0));
+    aLayerData->SetReferentId(mPaintData.mLayersId);
+
+    // Apply the top level resolution if we are in the same process of the top
+    // level document. We don't need to apply it in cases where we are in OOP
+    // iframes since it will be applied later in
+    // HitTestingTreeNode::GetTransformToGecko by walking up the tree node.
+    nsPresContext* inProcessRootContext =
+        mFrame->PresContext()->GetInProcessRootContentDocumentPresContext();
+    if (inProcessRootContext &&
+        inProcessRootContext->IsRootContentDocumentCrossProcess()) {
+      float resolution = inProcessRootContext->PresShell()->GetResolution();
+      aLayerData->SetResolution(resolution);
+    }
+
+    Matrix4x4 m = Matrix4x4::Translation(mOffset.x, mOffset.y, 0.0);
+    aLayerData->SetTransform(m);
     aLayerData->SetEventRegionsOverride(mEventRegionsOverride);
     aLayerData->SetRemoteDocumentSize(GetFrameSize(mFrame));
   }
@@ -1453,6 +1422,7 @@ bool nsDisplayRemote::UpdateScrollData(
 }
 
 nsFrameLoader* nsDisplayRemote::GetFrameLoader() const {
-  return mFrame ? static_cast<nsSubDocumentFrame*>(mFrame)->FrameLoader()
-                : nullptr;
+  return static_cast<nsSubDocumentFrame*>(mFrame)->FrameLoader();
 }
+
+}  // namespace mozilla

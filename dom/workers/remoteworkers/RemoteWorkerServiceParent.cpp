@@ -6,6 +6,7 @@
 
 #include "RemoteWorkerServiceParent.h"
 #include "RemoteWorkerManager.h"
+#include "mozilla/ipc/BackgroundParent.h"
 
 namespace mozilla {
 
@@ -18,8 +19,9 @@ RemoteWorkerServiceParent::RemoteWorkerServiceParent()
 
 RemoteWorkerServiceParent::~RemoteWorkerServiceParent() = default;
 
-void RemoteWorkerServiceParent::Initialize() {
+void RemoteWorkerServiceParent::Initialize(const nsACString& aRemoteType) {
   AssertIsOnBackgroundThread();
+  mRemoteType = aRemoteType;
   mManager->RegisterActor(this);
 }
 

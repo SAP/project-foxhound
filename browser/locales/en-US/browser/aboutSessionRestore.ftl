@@ -35,6 +35,7 @@ restore-page-close-button =
     .accesskey = N
 
 ## The following strings are used in about:welcomeback
+
 welcome-back-tab-title = Success!
 welcome-back-page-title = Success!
 welcome-back-page-info = { -brand-short-name } is ready to go.
@@ -47,4 +48,3 @@ welcome-back-restore-all-label = Restore all windows & tabs
 welcome-back-restore-some-label = Restore only the ones you want
 
 welcome-back-page-info-link = Your add-ons and customizations have been removed and your browser settings have been restored to their defaults. If this didn’t fix your issue, <a data-l10n-name="link-more">learn more about what you can do.</a>
-

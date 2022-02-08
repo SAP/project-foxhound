@@ -11,17 +11,11 @@ function evalWithCache(code, ctx) {
 
   // We create a new global ...
   if (!("global" in ctx))
-      ctx.global = newGlobal({cloneSingletons: !incremental,
-                              newCompartment: ctx.newCompartment});
+      ctx.global = newGlobal({newCompartment: ctx.newCompartment});
 
-  if (!("isRunOnce" in ctx))
-    ctx.isRunOnce = true;
-
-  var ctx_save;
-  if (incremental)
-    ctx_save = Object.create(ctx, {saveIncrementalBytecode: { value: true } });
-  else
-    ctx_save = Object.create(ctx, {saveBytecode: { value: true } });
+  var ctx_save = Object.create(ctx, {
+    saveIncrementalBytecode: { value: true }
+  });
 
   // Fetch the verification function from the evaluation context.  This function
   // is used to assert the state of the script/function after each run of the

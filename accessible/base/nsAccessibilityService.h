@@ -13,15 +13,15 @@
 #include "mozilla/a11y/SelectionManager.h"
 #include "mozilla/Preferences.h"
 
+#include "nsIContent.h"
 #include "nsIObserver.h"
 #include "nsIAccessibleEvent.h"
 #include "nsIEventListenerService.h"
+#include "nsXULAppAPI.h"
 #include "xpcAccessibilityService.h"
 
 class nsImageFrame;
 class nsIArray;
-class nsIPersistentProperties;
-class nsPluginFrame;
 class nsITreeView;
 
 namespace mozilla {
@@ -35,6 +35,7 @@ class Element;
 
 namespace a11y {
 
+class AccAttributes;
 class ApplicationAccessible;
 class xpcAccessibleApplication;
 
@@ -54,8 +55,8 @@ SelectionManager* SelectionMgr();
 ApplicationAccessible* ApplicationAcc();
 xpcAccessibleApplication* XPCApplicationAcc();
 
-typedef Accessible*(New_Accessible)(mozilla::dom::Element* aElement,
-                                    Accessible* aContext);
+typedef LocalAccessible*(New_Accessible)(mozilla::dom::Element* aElement,
+                                         LocalAccessible* aContext);
 
 // These fields are not `nsStaticAtom* const` because MSVC doesn't like it.
 struct MarkupAttrInfo {
@@ -66,7 +67,7 @@ struct MarkupAttrInfo {
   nsStaticAtom* DOMAttrValue;
 };
 
-struct HTMLMarkupMapInfo {
+struct MarkupMapInfo {
   const nsStaticAtom* const tag;
   New_Accessible* new_func;
   a11y::role role;
@@ -99,7 +100,7 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
                                      public nsIListenerChangeListener,
                                      public nsIObserver {
  public:
-  typedef mozilla::a11y::Accessible Accessible;
+  typedef mozilla::a11y::LocalAccessible LocalAccessible;
   typedef mozilla::a11y::DocAccessible DocAccessible;
 
   // nsIListenerChangeListener
@@ -112,18 +113,15 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIOBSERVER
 
-  Accessible* GetRootDocumentAccessible(mozilla::PresShell* aPresShell,
-                                        bool aCanCreate);
-  already_AddRefed<Accessible> CreatePluginAccessible(nsPluginFrame* aFrame,
-                                                      nsIContent* aContent,
-                                                      Accessible* aContext);
+  LocalAccessible* GetRootDocumentAccessible(mozilla::PresShell* aPresShell,
+                                             bool aCanCreate);
 
   /**
    * Adds/remove ATK root accessible for gtk+ native window to/from children
    * of the application accessible.
    */
-  Accessible* AddNativeRootAccessible(void* aAtkAccessible);
-  void RemoveNativeRootAccessible(Accessible* aRootAccessible);
+  LocalAccessible* AddNativeRootAccessible(void* aAtkAccessible);
+  void RemoveNativeRootAccessible(LocalAccessible* aRootAccessible);
 
   bool HasAccessible(nsINode* aDOMNode);
 
@@ -175,6 +173,12 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
    */
   void ContentRemoved(mozilla::PresShell* aPresShell, nsIContent* aChild);
 
+  /**
+   * Notification used to invalidate the isLayoutTable cache.
+   */
+  void TableLayoutGuessMaybeChanged(mozilla::PresShell* aPresShell,
+                                    nsIContent* aContent);
+
   void UpdateText(mozilla::PresShell* aPresShell, nsIContent* aContent);
 
   /**
@@ -187,12 +191,6 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
    * Notify of input@type="element" value change.
    */
   void RangeValueChanged(mozilla::PresShell* aPresShell, nsIContent* aContent);
-
-  /**
-   * Update list bullet accessible.
-   */
-  void UpdateListBullet(mozilla::PresShell* aPresShell,
-                        nsIContent* aHTMLListItemContent, bool aHasBullet);
 
   /**
    * Update the image map.
@@ -221,16 +219,13 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
    */
   void RecreateAccessible(mozilla::PresShell* aPresShell, nsIContent* aContent);
 
-  void FireAccessibleEvent(uint32_t aEvent, Accessible* aTarget);
+  void FireAccessibleEvent(uint32_t aEvent, LocalAccessible* aTarget);
 
-  /**
-   * Notify accessibility that the size has become available for an image.
-   * This occurs when the size of an image is initially not known, but we've
-   * now loaded enough data to know the size.
-   * Called by layout.
-   */
-  void NotifyOfImageSizeAvailable(mozilla::PresShell* aPresShell,
-                                  nsIContent* aContent);
+  void NotifyOfPossibleBoundsChange(mozilla::PresShell* aPresShell,
+                                    nsIContent* aContent);
+
+  void NotifyOfResolutionChange(mozilla::PresShell* aPresShell,
+                                float aResolution);
 
   // nsAccessibiltiyService
 
@@ -247,12 +242,12 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
    * @param  aIsSubtreeHidden  [out, optional] indicates whether the node's
    *                             frame and its subtree is hidden
    */
-  Accessible* CreateAccessible(nsINode* aNode, Accessible* aContext,
-                               bool* aIsSubtreeHidden = nullptr);
+  LocalAccessible* CreateAccessible(nsINode* aNode, LocalAccessible* aContext,
+                                    bool* aIsSubtreeHidden = nullptr);
 
   mozilla::a11y::role MarkupRole(const nsIContent* aContent) const {
-    const mozilla::a11y::HTMLMarkupMapInfo* markupMap =
-        mHTMLMarkupMap.Get(aContent->NodeInfo()->NameAtom());
+    const mozilla::a11y::MarkupMapInfo* markupMap =
+        GetMarkupMapInfoForNode(aContent);
     return markupMap ? markupMap->role : mozilla::a11y::roles::NOTHING;
   }
 
@@ -262,8 +257,8 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
    */
   nsStaticAtom* MarkupAttribute(const nsIContent* aContent,
                                 nsStaticAtom* aAtom) const {
-    const mozilla::a11y::HTMLMarkupMapInfo* markupMap =
-        mHTMLMarkupMap.Get(aContent->NodeInfo()->NameAtom());
+    const mozilla::a11y::MarkupMapInfo* markupMap =
+        GetMarkupMapInfoForNode(aContent);
     if (markupMap) {
       for (size_t i = 0; i < mozilla::ArrayLength(markupMap->attrs); i++) {
         const mozilla::a11y::MarkupAttrInfo* info = markupMap->attrs + i;
@@ -279,7 +274,7 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
    * Set the object attribute defined by markup for the given element.
    */
   void MarkupAttributes(const nsIContent* aContent,
-                        nsIPersistentProperties* aAttributes) const;
+                        mozilla::a11y::AccAttributes* aAttributes) const;
 
   /**
    * A list of possible accessibility service consumers. Accessibility service
@@ -320,8 +315,8 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
   /**
    * Create an accessible whose type depends on the given frame.
    */
-  already_AddRefed<Accessible> CreateAccessibleByFrameType(
-      nsIFrame* aFrame, nsIContent* aContent, Accessible* aContext);
+  already_AddRefed<LocalAccessible> CreateAccessibleByFrameType(
+      nsIFrame* aFrame, nsIContent* aContent, LocalAccessible* aContext);
 
   /**
    * Notify observers about change of the accessibility service's consumers.
@@ -359,12 +354,27 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
    */
   static uint32_t gConsumers;
 
-  nsDataHashtable<nsPtrHashKey<const nsAtom>,
-                  const mozilla::a11y::HTMLMarkupMapInfo*>
-      mHTMLMarkupMap;
+  using MarkupMap = nsTHashMap<nsPtrHashKey<const nsAtom>,
+                               const mozilla::a11y::MarkupMapInfo*>;
+  MarkupMap mHTMLMarkupMap;
+  MarkupMap mMathMLMarkupMap;
+
+  const mozilla::a11y::MarkupMapInfo* GetMarkupMapInfoForNode(
+      const nsIContent* aContent) const {
+    if (aContent->IsHTMLElement()) {
+      return mHTMLMarkupMap.Get(aContent->NodeInfo()->NameAtom());
+    }
+    if (aContent->IsMathMLElement()) {
+      return mMathMLMarkupMap.Get(aContent->NodeInfo()->NameAtom());
+    }
+    // This function can be called by MarkupAttribute, etc. which might in turn
+    // be called on a XUL, SVG, etc. element. For example, this can happen
+    // with nsAccUtils::SetLiveContainerAttributes.
+    return nullptr;
+  }
+
 #ifdef MOZ_XUL
-  nsDataHashtable<nsPtrHashKey<const nsAtom>,
-                  const mozilla::a11y::XULMarkupMapInfo*>
+  nsTHashMap<nsPtrHashKey<const nsAtom>, const mozilla::a11y::XULMarkupMapInfo*>
       mXULMarkupMap;
 #endif
 
@@ -498,6 +508,9 @@ static const char kEventTypeNames[][40] = {
     "text value change",                // EVENT_TEXT_VALUE_CHANGE
     "scrolling",                        // EVENT_SCROLLING
     "announcement",                     // EVENT_ANNOUNCEMENT
+    "live region added",                // EVENT_LIVE_REGION_ADDED
+    "live region removed",              // EVENT_LIVE_REGION_REMOVED
+    "table styling changed",            // EVENT_TABLE_STYLING_CHANGED
 };
 
 #endif

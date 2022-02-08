@@ -2,6 +2,21 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
+add_task(async function setup() {
+  // The page action button is hidden by default.
+  // This tests the use of pageAction when the button is visible.
+  //
+  // TODO(Bug 1704171): this should technically be removed in a follow up
+  // and the tests in this file adapted to keep into account that:
+  // - The pageAction is pinned on the urlbar by default
+  //   when shown, and hidden when is not available (same for the
+  //   overflow menu when enabled)
+  BrowserPageActions.mainButtonNode.style.visibility = "visible";
+  registerCleanupFunction(() => {
+    BrowserPageActions.mainButtonNode.style.removeProperty("visibility");
+  });
+});
+
 add_task(async function test_clickData() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
@@ -59,16 +74,6 @@ add_task(async function test_clickData() {
   async function testClickPageAction(doClick, doEnterKey) {
     for (let modifier of Object.keys(map)) {
       for (let i = 0; i < 2; i++) {
-        // On Mac, ctrl-click will send a context menu event from the widget,
-        // we won't send xul command event and won't have onClick message, either.
-        if (
-          AppConstants.platform == "macosx" &&
-          i == 0 &&
-          modifier == "ctrlKey"
-        ) {
-          continue;
-        }
-
         let clickEventData = { button: i };
         clickEventData[modifier] = true;
         await doClick(extension, window, clickEventData);
@@ -153,69 +158,6 @@ add_task(async function test_clickData_reset() {
 
   await triggerPageActionWithKeyboard(extension);
   assertInfoReset(await extension.awaitMessage("onClick"));
-
-  await extension.unload();
-});
-
-add_task(async function test_click_disabled() {
-  let extension = ExtensionTestUtils.loadExtension({
-    manifest: {
-      page_action: {},
-    },
-
-    background() {
-      let expectClick = false;
-      function onClicked(tab, info) {
-        if (expectClick) {
-          browser.test.sendMessage("onClick");
-        } else {
-          browser.test.fail(
-            `Unexpected click on disabled page action, button=${info.button}`
-          );
-        }
-      }
-
-      async function onMessage(msg, toggle) {
-        if (msg == "hide" || msg == "show") {
-          expectClick = msg == "show";
-
-          let [tab] = await browser.tabs.query({
-            active: true,
-            currentWindow: true,
-          });
-          if (expectClick) {
-            await browser.pageAction.show(tab.id);
-          } else {
-            await browser.pageAction.hide(tab.id);
-          }
-          browser.test.sendMessage("visibilitySet");
-        } else {
-          browser.test.fail("Unexpected message");
-        }
-      }
-
-      browser.pageAction.onClicked.addListener(onClicked);
-      browser.test.onMessage.addListener(onMessage);
-      browser.test.sendMessage("ready");
-    },
-  });
-
-  await extension.startup();
-  await extension.awaitMessage("ready");
-
-  extension.sendMessage("hide");
-  await extension.awaitMessage("visibilitySet");
-
-  await clickPageActionInPanel(extension, window, { button: 0 });
-  await clickPageActionInPanel(extension, window, { button: 1 });
-
-  extension.sendMessage("show");
-  await extension.awaitMessage("visibilitySet");
-
-  await clickPageActionInPanel(extension, window, { button: 0 });
-  await extension.awaitMessage("onClick");
-  await clickPageActionInPanel(extension, window, { button: 1 });
-  await extension.awaitMessage("onClick");
 
   await extension.unload();
 });

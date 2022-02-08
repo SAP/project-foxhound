@@ -9,6 +9,7 @@ use core::str::FromStr;
 
 /// The "architecture" field, which in some cases also specifies a specific
 /// subarchitecture.
+#[cfg_attr(feature = "rust_1_40", non_exhaustive)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[allow(missing_docs)]
 pub enum Architecture {
@@ -17,38 +18,28 @@ pub enum Architecture {
     AmdGcn,
     Aarch64(Aarch64Architecture),
     Asmjs,
+    Avr,
     Hexagon,
-    I386,
-    I586,
-    I686,
-    Mips,
-    Mips64,
-    Mips64el,
-    Mipsel,
-    Mipsisa32r6,
-    Mipsisa32r6el,
-    Mipsisa64r6,
-    Mipsisa64r6el,
+    X86_32(X86_32Architecture),
+    Mips32(Mips32Architecture),
+    Mips64(Mips64Architecture),
     Msp430,
     Nvptx64,
     Powerpc,
     Powerpc64,
     Powerpc64le,
-    Riscv32,
-    Riscv32i,
-    Riscv32imac,
-    Riscv32imc,
-    Riscv64,
-    Riscv64gc,
-    Riscv64imac,
+    Riscv32(Riscv32Architecture),
+    Riscv64(Riscv64Architecture),
     S390x,
     Sparc,
     Sparc64,
     Sparcv9,
     Wasm32,
+    Wasm64,
     X86_64,
 }
 
+#[cfg_attr(feature = "rust_1_40", non_exhaustive)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[allow(missing_docs)]
 pub enum ArmArchitecture {
@@ -86,6 +77,7 @@ pub enum ArmArchitecture {
     Armebv7r,
 
     Thumbeb,
+    Thumbv4t,
     Thumbv6m,
     Thumbv7a,
     Thumbv7em,
@@ -95,6 +87,7 @@ pub enum ArmArchitecture {
     Thumbv8mMain,
 }
 
+#[cfg_attr(feature = "rust_1_40", non_exhaustive)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[allow(missing_docs)]
 pub enum Aarch64Architecture {
@@ -102,6 +95,7 @@ pub enum Aarch64Architecture {
     Aarch64be,
 }
 
+// #[cfg_attr(feature = "rust_1_40", non_exhaustive)]
 // #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 // #[allow(missing_docs)]
 // pub enum ArmFpu {
@@ -126,47 +120,51 @@ pub enum Aarch64Architecture {
 
 impl ArmArchitecture {
     /// Test if this architecture uses the Thumb instruction set.
+    #[rustfmt::skip]
     pub fn is_thumb(self) -> bool {
+        use ArmArchitecture::*;
+
         match self {
-            ArmArchitecture::Arm
-            | ArmArchitecture::Armeb
-            | ArmArchitecture::Armv4
-            | ArmArchitecture::Armv4t
-            | ArmArchitecture::Armv5t
-            | ArmArchitecture::Armv5te
-            | ArmArchitecture::Armv5tej
-            | ArmArchitecture::Armv6
-            | ArmArchitecture::Armv6j
-            | ArmArchitecture::Armv6k
-            | ArmArchitecture::Armv6z
-            | ArmArchitecture::Armv6kz
-            | ArmArchitecture::Armv6t2
-            | ArmArchitecture::Armv6m
-            | ArmArchitecture::Armv7
-            | ArmArchitecture::Armv7a
-            | ArmArchitecture::Armv7ve
-            | ArmArchitecture::Armv7m
-            | ArmArchitecture::Armv7r
-            | ArmArchitecture::Armv7s
-            | ArmArchitecture::Armv8
-            | ArmArchitecture::Armv8a
-            | ArmArchitecture::Armv8_1a
-            | ArmArchitecture::Armv8_2a
-            | ArmArchitecture::Armv8_3a
-            | ArmArchitecture::Armv8_4a
-            | ArmArchitecture::Armv8_5a
-            | ArmArchitecture::Armv8mBase
-            | ArmArchitecture::Armv8mMain
-            | ArmArchitecture::Armv8r
-            | ArmArchitecture::Armebv7r => false,
-            ArmArchitecture::Thumbeb
-            | ArmArchitecture::Thumbv6m
-            | ArmArchitecture::Thumbv7a
-            | ArmArchitecture::Thumbv7em
-            | ArmArchitecture::Thumbv7m
-            | ArmArchitecture::Thumbv7neon
-            | ArmArchitecture::Thumbv8mBase
-            | ArmArchitecture::Thumbv8mMain => true,
+            Arm
+            | Armeb
+            | Armv4
+            | Armv4t
+            | Armv5t
+            | Armv5te
+            | Armv5tej
+            | Armv6
+            | Armv6j
+            | Armv6k
+            | Armv6z
+            | Armv6kz
+            | Armv6t2
+            | Armv6m
+            | Armv7
+            | Armv7a
+            | Armv7ve
+            | Armv7m
+            | Armv7r
+            | Armv7s
+            | Armv8
+            | Armv8a
+            | Armv8_1a
+            | Armv8_2a
+            | Armv8_3a
+            | Armv8_4a
+            | Armv8_5a
+            | Armv8mBase
+            | Armv8mMain
+            | Armv8r
+            | Armebv7r => false,
+            Thumbeb
+            | Thumbv4t
+            | Thumbv6m
+            | Thumbv7a
+            | Thumbv7em
+            | Thumbv7m
+            | Thumbv7neon
+            | Thumbv8mBase
+            | Thumbv8mMain => true,
         }
     }
 
@@ -175,92 +173,98 @@ impl ArmArchitecture {
     // }
 
     /// Return the pointer bit width of this target's architecture.
+    #[rustfmt::skip]
     pub fn pointer_width(self) -> PointerWidth {
+        use ArmArchitecture::*;
+
         match self {
-            ArmArchitecture::Arm
-            | ArmArchitecture::Armeb
-            | ArmArchitecture::Armv4
-            | ArmArchitecture::Armv4t
-            | ArmArchitecture::Armv5t
-            | ArmArchitecture::Armv5te
-            | ArmArchitecture::Armv5tej
-            | ArmArchitecture::Armv6
-            | ArmArchitecture::Armv6j
-            | ArmArchitecture::Armv6k
-            | ArmArchitecture::Armv6z
-            | ArmArchitecture::Armv6kz
-            | ArmArchitecture::Armv6t2
-            | ArmArchitecture::Armv6m
-            | ArmArchitecture::Armv7
-            | ArmArchitecture::Armv7a
-            | ArmArchitecture::Armv7ve
-            | ArmArchitecture::Armv7m
-            | ArmArchitecture::Armv7r
-            | ArmArchitecture::Armv7s
-            | ArmArchitecture::Armv8
-            | ArmArchitecture::Armv8a
-            | ArmArchitecture::Armv8_1a
-            | ArmArchitecture::Armv8_2a
-            | ArmArchitecture::Armv8_3a
-            | ArmArchitecture::Armv8_4a
-            | ArmArchitecture::Armv8_5a
-            | ArmArchitecture::Armv8mBase
-            | ArmArchitecture::Armv8mMain
-            | ArmArchitecture::Armv8r
-            | ArmArchitecture::Armebv7r
-            | ArmArchitecture::Thumbeb
-            | ArmArchitecture::Thumbv6m
-            | ArmArchitecture::Thumbv7a
-            | ArmArchitecture::Thumbv7em
-            | ArmArchitecture::Thumbv7m
-            | ArmArchitecture::Thumbv7neon
-            | ArmArchitecture::Thumbv8mBase
-            | ArmArchitecture::Thumbv8mMain => PointerWidth::U32,
+            Arm
+            | Armeb
+            | Armv4
+            | Armv4t
+            | Armv5t
+            | Armv5te
+            | Armv5tej
+            | Armv6
+            | Armv6j
+            | Armv6k
+            | Armv6z
+            | Armv6kz
+            | Armv6t2
+            | Armv6m
+            | Armv7
+            | Armv7a
+            | Armv7ve
+            | Armv7m
+            | Armv7r
+            | Armv7s
+            | Armv8
+            | Armv8a
+            | Armv8_1a
+            | Armv8_2a
+            | Armv8_3a
+            | Armv8_4a
+            | Armv8_5a
+            | Armv8mBase
+            | Armv8mMain
+            | Armv8r
+            | Armebv7r
+            | Thumbeb
+            | Thumbv4t
+            | Thumbv6m
+            | Thumbv7a
+            | Thumbv7em
+            | Thumbv7m
+            | Thumbv7neon
+            | Thumbv8mBase
+            | Thumbv8mMain => PointerWidth::U32,
         }
     }
 
     /// Return the endianness of this architecture.
+    #[rustfmt::skip]
     pub fn endianness(self) -> Endianness {
+        use ArmArchitecture::*;
+
         match self {
-            ArmArchitecture::Arm
-            | ArmArchitecture::Armv4
-            | ArmArchitecture::Armv4t
-            | ArmArchitecture::Armv5t
-            | ArmArchitecture::Armv5te
-            | ArmArchitecture::Armv5tej
-            | ArmArchitecture::Armv6
-            | ArmArchitecture::Armv6j
-            | ArmArchitecture::Armv6k
-            | ArmArchitecture::Armv6z
-            | ArmArchitecture::Armv6kz
-            | ArmArchitecture::Armv6t2
-            | ArmArchitecture::Armv6m
-            | ArmArchitecture::Armv7
-            | ArmArchitecture::Armv7a
-            | ArmArchitecture::Armv7ve
-            | ArmArchitecture::Armv7m
-            | ArmArchitecture::Armv7r
-            | ArmArchitecture::Armv7s
-            | ArmArchitecture::Armv8
-            | ArmArchitecture::Armv8a
-            | ArmArchitecture::Armv8_1a
-            | ArmArchitecture::Armv8_2a
-            | ArmArchitecture::Armv8_3a
-            | ArmArchitecture::Armv8_4a
-            | ArmArchitecture::Armv8_5a
-            | ArmArchitecture::Armv8mBase
-            | ArmArchitecture::Armv8mMain
-            | ArmArchitecture::Armv8r
-            | ArmArchitecture::Thumbv6m
-            | ArmArchitecture::Thumbv7a
-            | ArmArchitecture::Thumbv7em
-            | ArmArchitecture::Thumbv7m
-            | ArmArchitecture::Thumbv7neon
-            | ArmArchitecture::Thumbv8mBase
-            | ArmArchitecture::Thumbv8mMain => Endianness::Little,
-            ArmArchitecture::Armeb | ArmArchitecture::Armebv7r | ArmArchitecture::Thumbeb => {
-                Endianness::Big
-            }
+            Arm
+            | Armv4
+            | Armv4t
+            | Armv5t
+            | Armv5te
+            | Armv5tej
+            | Armv6
+            | Armv6j
+            | Armv6k
+            | Armv6z
+            | Armv6kz
+            | Armv6t2
+            | Armv6m
+            | Armv7
+            | Armv7a
+            | Armv7ve
+            | Armv7m
+            | Armv7r
+            | Armv7s
+            | Armv8
+            | Armv8a
+            | Armv8_1a
+            | Armv8_2a
+            | Armv8_3a
+            | Armv8_4a
+            | Armv8_5a
+            | Armv8mBase
+            | Armv8mMain
+            | Armv8r
+            | Thumbv4t
+            | Thumbv6m
+            | Thumbv7a
+            | Thumbv7em
+            | Thumbv7m
+            | Thumbv7neon
+            | Thumbv8mBase
+            | Thumbv8mMain => Endianness::Little,
+            Armeb | Armebv7r | Thumbeb => Endianness::Big,
         }
     }
 }
@@ -291,6 +295,60 @@ impl Aarch64Architecture {
             Aarch64Architecture::Aarch64be => Endianness::Big,
         }
     }
+}
+
+/// An enum for all 32-bit RISC-V architectures.
+#[cfg_attr(feature = "rust_1_40", non_exhaustive)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[allow(missing_docs)]
+pub enum Riscv32Architecture {
+    Riscv32,
+    Riscv32gc,
+    Riscv32i,
+    Riscv32imac,
+    Riscv32imc,
+}
+
+/// An enum for all 64-bit RISC-V architectures.
+#[cfg_attr(feature = "rust_1_40", non_exhaustive)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[allow(missing_docs)]
+pub enum Riscv64Architecture {
+    Riscv64,
+    Riscv64gc,
+    Riscv64imac,
+}
+
+/// An enum for all 32-bit x86 architectures.
+#[cfg_attr(feature = "rust_1_40", non_exhaustive)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[allow(missing_docs)]
+pub enum X86_32Architecture {
+    I386,
+    I586,
+    I686,
+}
+
+/// An enum for all 32-bit MIPS architectures (not just "MIPS32").
+#[cfg_attr(feature = "rust_1_40", non_exhaustive)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[allow(missing_docs)]
+pub enum Mips32Architecture {
+    Mips,
+    Mipsel,
+    Mipsisa32r6,
+    Mipsisa32r6el,
+}
+
+/// An enum for all 64-bit MIPS architectures (not just "MIPS64").
+#[cfg_attr(feature = "rust_1_40", non_exhaustive)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[allow(missing_docs)]
+pub enum Mips64Architecture {
+    Mips64,
+    Mips64el,
+    Mipsisa64r6,
+    Mipsisa64r6el,
 }
 
 /// A string for a `Vendor::Custom` that can either be used in `const`
@@ -328,6 +386,7 @@ impl Hash for CustomVendor {
 
 /// The "vendor" field, which in practice is little more than an arbitrary
 /// modifier.
+#[cfg_attr(feature = "rust_1_40", non_exhaustive)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[allow(missing_docs)]
 pub enum Vendor {
@@ -355,6 +414,7 @@ pub enum Vendor {
 
 /// The "operating system" field, which sometimes implies an environment, and
 /// sometimes isn't an actual operating system.
+#[cfg_attr(feature = "rust_1_40", non_exhaustive)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[allow(missing_docs)]
 pub enum OperatingSystem {
@@ -370,6 +430,7 @@ pub enum OperatingSystem {
     Fuchsia,
     Haiku,
     Hermit,
+    Illumos,
     Ios,
     L4re,
     Linux,
@@ -378,8 +439,10 @@ pub enum OperatingSystem {
     Netbsd,
     None_,
     Openbsd,
+    Psp,
     Redox,
     Solaris,
+    Tvos,
     Uefi,
     VxWorks,
     Wasi,
@@ -389,6 +452,7 @@ pub enum OperatingSystem {
 /// The "environment" field, which specifies an ABI environment on top of the
 /// operating system. In many configurations, this field is omitted, and the
 /// environment is implied by the operating system.
+#[cfg_attr(feature = "rust_1_40", non_exhaustive)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[allow(missing_docs)]
 pub enum Environment {
@@ -404,6 +468,8 @@ pub enum Environment {
     Gnueabihf,
     Gnuspe,
     Gnux32,
+    GnuIlp32,
+    Macabi,
     Musl,
     Musleabi,
     Musleabihf,
@@ -411,6 +477,7 @@ pub enum Environment {
     Msvc,
     Kernel,
     Uclibc,
+    Uclibceabi,
     Sgx,
     Softfloat,
     Spe,
@@ -418,6 +485,7 @@ pub enum Environment {
 
 /// The "binary format" field, which is usually omitted, and the binary format
 /// is implied by the other fields.
+#[cfg_attr(feature = "rust_1_40", non_exhaustive)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[allow(missing_docs)]
 pub enum BinaryFormat {
@@ -430,84 +498,73 @@ pub enum BinaryFormat {
 
 impl Architecture {
     /// Return the endianness of this architecture.
+    #[rustfmt::skip]
     pub fn endianness(self) -> Result<Endianness, ()> {
+        use Architecture::*;
+
         match self {
-            Architecture::Unknown => Err(()),
-            Architecture::Arm(arm) => Ok(arm.endianness()),
-            Architecture::Aarch64(aarch) => Ok(aarch.endianness()),
-            Architecture::AmdGcn
-            | Architecture::Asmjs
-            | Architecture::Hexagon
-            | Architecture::I386
-            | Architecture::I586
-            | Architecture::I686
-            | Architecture::Mips64el
-            | Architecture::Mipsel
-            | Architecture::Mipsisa32r6el
-            | Architecture::Mipsisa64r6el
-            | Architecture::Msp430
-            | Architecture::Nvptx64
-            | Architecture::Powerpc64le
-            | Architecture::Riscv32
-            | Architecture::Riscv32i
-            | Architecture::Riscv32imac
-            | Architecture::Riscv32imc
-            | Architecture::Riscv64
-            | Architecture::Riscv64gc
-            | Architecture::Riscv64imac
-            | Architecture::Wasm32
-            | Architecture::X86_64 => Ok(Endianness::Little),
-            Architecture::Mips
-            | Architecture::Mips64
-            | Architecture::Mipsisa32r6
-            | Architecture::Mipsisa64r6
-            | Architecture::Powerpc
-            | Architecture::Powerpc64
-            | Architecture::S390x
-            | Architecture::Sparc
-            | Architecture::Sparc64
-            | Architecture::Sparcv9 => Ok(Endianness::Big),
+            Unknown => Err(()),
+            Arm(arm) => Ok(arm.endianness()),
+            Aarch64(aarch) => Ok(aarch.endianness()),
+            AmdGcn
+            | Asmjs
+            | Avr
+            | Hexagon
+            | X86_32(_)
+            | Mips64(Mips64Architecture::Mips64el)
+            | Mips32(Mips32Architecture::Mipsel)
+            | Mips32(Mips32Architecture::Mipsisa32r6el)
+            | Mips64(Mips64Architecture::Mipsisa64r6el)
+            | Msp430
+            | Nvptx64
+            | Powerpc64le
+            | Riscv32(_)
+            | Riscv64(_)
+            | Wasm32
+            | Wasm64
+            | X86_64 => Ok(Endianness::Little),
+            Mips32(Mips32Architecture::Mips)
+            | Mips64(Mips64Architecture::Mips64)
+            | Mips32(Mips32Architecture::Mipsisa32r6)
+            | Mips64(Mips64Architecture::Mipsisa64r6)
+            | Powerpc
+            | Powerpc64
+            | S390x
+            | Sparc
+            | Sparc64
+            | Sparcv9 => Ok(Endianness::Big),
         }
     }
 
     /// Return the pointer bit width of this target's architecture.
+    #[rustfmt::skip]
     pub fn pointer_width(self) -> Result<PointerWidth, ()> {
+        use Architecture::*;
+
         match self {
-            Architecture::Unknown => Err(()),
-            Architecture::Msp430 => Ok(PointerWidth::U16),
-            Architecture::Arm(arm) => Ok(arm.pointer_width()),
-            Architecture::Aarch64(aarch) => Ok(aarch.pointer_width()),
-            Architecture::Asmjs
-            | Architecture::Hexagon
-            | Architecture::I386
-            | Architecture::I586
-            | Architecture::I686
-            | Architecture::Mipsel
-            | Architecture::Mipsisa32r6
-            | Architecture::Mipsisa32r6el
-            | Architecture::Riscv32
-            | Architecture::Riscv32i
-            | Architecture::Riscv32imac
-            | Architecture::Riscv32imc
-            | Architecture::Sparc
-            | Architecture::Wasm32
-            | Architecture::Mips
-            | Architecture::Powerpc => Ok(PointerWidth::U32),
-            Architecture::AmdGcn
-            | Architecture::Mips64el
-            | Architecture::Mipsisa64r6
-            | Architecture::Mipsisa64r6el
-            | Architecture::Powerpc64le
-            | Architecture::Riscv64
-            | Architecture::Riscv64gc
-            | Architecture::Riscv64imac
-            | Architecture::X86_64
-            | Architecture::Mips64
-            | Architecture::Nvptx64
-            | Architecture::Powerpc64
-            | Architecture::S390x
-            | Architecture::Sparc64
-            | Architecture::Sparcv9 => Ok(PointerWidth::U64),
+            Unknown => Err(()),
+            Avr | Msp430 => Ok(PointerWidth::U16),
+            Arm(arm) => Ok(arm.pointer_width()),
+            Aarch64(aarch) => Ok(aarch.pointer_width()),
+            Asmjs
+            | Hexagon
+            | X86_32(_)
+            | Riscv32(_)
+            | Sparc
+            | Wasm32
+            | Mips32(_)
+            | Powerpc => Ok(PointerWidth::U32),
+            AmdGcn
+            | Powerpc64le
+            | Riscv64(_)
+            | X86_64
+            | Mips64(_)
+            | Nvptx64
+            | Powerpc64
+            | S390x
+            | Sparc64
+            | Sparcv9
+            | Wasm64 => Ok(PointerWidth::U64),
         }
     }
 }
@@ -520,16 +577,17 @@ pub(crate) fn default_binary_format(triple: &Triple) -> BinaryFormat {
             Environment::Eabi | Environment::Eabihf => BinaryFormat::Elf,
             _ => BinaryFormat::Unknown,
         },
-        OperatingSystem::Darwin | OperatingSystem::Ios | OperatingSystem::MacOSX { .. } => {
-            BinaryFormat::Macho
-        }
+        OperatingSystem::Darwin
+        | OperatingSystem::Ios
+        | OperatingSystem::MacOSX { .. }
+        | OperatingSystem::Tvos => BinaryFormat::Macho,
         OperatingSystem::Windows => BinaryFormat::Coff,
         OperatingSystem::Nebulet
         | OperatingSystem::Emscripten
         | OperatingSystem::VxWorks
         | OperatingSystem::Wasi
         | OperatingSystem::Unknown => match triple.architecture {
-            Architecture::Wasm32 => BinaryFormat::Wasm,
+            Architecture::Wasm32 | Architecture::Wasm64 => BinaryFormat::Wasm,
             _ => BinaryFormat::Unknown,
         },
         _ => BinaryFormat::Elf,
@@ -538,46 +596,49 @@ pub(crate) fn default_binary_format(triple: &Triple) -> BinaryFormat {
 
 impl fmt::Display for ArmArchitecture {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use ArmArchitecture::*;
+
         let s = match *self {
-            ArmArchitecture::Arm => "arm",
-            ArmArchitecture::Armeb => "armeb",
-            ArmArchitecture::Armv4 => "armv4",
-            ArmArchitecture::Armv4t => "armv4t",
-            ArmArchitecture::Armv5t => "armv5t",
-            ArmArchitecture::Armv5te => "armv5te",
-            ArmArchitecture::Armv5tej => "armv5tej",
-            ArmArchitecture::Armv6 => "armv6",
-            ArmArchitecture::Armv6j => "armv6j",
-            ArmArchitecture::Armv6k => "armv6k",
-            ArmArchitecture::Armv6z => "armv6z",
-            ArmArchitecture::Armv6kz => "armv6kz",
-            ArmArchitecture::Armv6t2 => "armv6t2",
-            ArmArchitecture::Armv6m => "armv6m",
-            ArmArchitecture::Armv7 => "armv7",
-            ArmArchitecture::Armv7a => "armv7a",
-            ArmArchitecture::Armv7ve => "armv7ve",
-            ArmArchitecture::Armv7m => "armv7m",
-            ArmArchitecture::Armv7r => "armv7r",
-            ArmArchitecture::Armv7s => "armv7s",
-            ArmArchitecture::Armv8 => "armv8",
-            ArmArchitecture::Armv8a => "armv8a",
-            ArmArchitecture::Armv8_1a => "armv8.1a",
-            ArmArchitecture::Armv8_2a => "armv8.2a",
-            ArmArchitecture::Armv8_3a => "armv8.3a",
-            ArmArchitecture::Armv8_4a => "armv8.4a",
-            ArmArchitecture::Armv8_5a => "armv8.5a",
-            ArmArchitecture::Armv8mBase => "armv8m.base",
-            ArmArchitecture::Armv8mMain => "armv8m.main",
-            ArmArchitecture::Armv8r => "armv8r",
-            ArmArchitecture::Thumbeb => "thumbeb",
-            ArmArchitecture::Thumbv6m => "thumbv6m",
-            ArmArchitecture::Thumbv7a => "thumbv7a",
-            ArmArchitecture::Thumbv7em => "thumbv7em",
-            ArmArchitecture::Thumbv7m => "thumbv7m",
-            ArmArchitecture::Thumbv7neon => "thumbv7neon",
-            ArmArchitecture::Thumbv8mBase => "thumbv8m.base",
-            ArmArchitecture::Thumbv8mMain => "thumbv8m.main",
-            ArmArchitecture::Armebv7r => "armebv7r",
+            Arm => "arm",
+            Armeb => "armeb",
+            Armv4 => "armv4",
+            Armv4t => "armv4t",
+            Armv5t => "armv5t",
+            Armv5te => "armv5te",
+            Armv5tej => "armv5tej",
+            Armv6 => "armv6",
+            Armv6j => "armv6j",
+            Armv6k => "armv6k",
+            Armv6z => "armv6z",
+            Armv6kz => "armv6kz",
+            Armv6t2 => "armv6t2",
+            Armv6m => "armv6m",
+            Armv7 => "armv7",
+            Armv7a => "armv7a",
+            Armv7ve => "armv7ve",
+            Armv7m => "armv7m",
+            Armv7r => "armv7r",
+            Armv7s => "armv7s",
+            Armv8 => "armv8",
+            Armv8a => "armv8a",
+            Armv8_1a => "armv8.1a",
+            Armv8_2a => "armv8.2a",
+            Armv8_3a => "armv8.3a",
+            Armv8_4a => "armv8.4a",
+            Armv8_5a => "armv8.5a",
+            Armv8mBase => "armv8m.base",
+            Armv8mMain => "armv8m.main",
+            Armv8r => "armv8r",
+            Thumbeb => "thumbeb",
+            Thumbv4t => "thumbv4t",
+            Thumbv6m => "thumbv6m",
+            Thumbv7a => "thumbv7a",
+            Thumbv7em => "thumbv7em",
+            Thumbv7m => "thumbv7m",
+            Thumbv7neon => "thumbv7neon",
+            Thumbv8mBase => "thumbv8m.base",
+            Thumbv8mMain => "thumbv8m.main",
+            Armebv7r => "armebv7r",
         };
         f.write_str(s)
     }
@@ -587,7 +648,72 @@ impl fmt::Display for Aarch64Architecture {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let s = match *self {
             Aarch64Architecture::Aarch64 => "aarch64",
-            Aarch64Architecture::Aarch64be => "aarch64be",
+            Aarch64Architecture::Aarch64be => "aarch64_be",
+        };
+        f.write_str(s)
+    }
+}
+
+impl fmt::Display for Riscv32Architecture {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use Riscv32Architecture::*;
+
+        let s = match *self {
+            Riscv32 => "riscv32",
+            Riscv32gc => "riscv32gc",
+            Riscv32i => "riscv32i",
+            Riscv32imac => "riscv32imac",
+            Riscv32imc => "riscv32imc",
+        };
+        f.write_str(s)
+    }
+}
+
+impl fmt::Display for Riscv64Architecture {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match *self {
+            Riscv64Architecture::Riscv64 => "riscv64",
+            Riscv64Architecture::Riscv64gc => "riscv64gc",
+            Riscv64Architecture::Riscv64imac => "riscv64imac",
+        };
+        f.write_str(s)
+    }
+}
+
+impl fmt::Display for X86_32Architecture {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match *self {
+            X86_32Architecture::I386 => "i386",
+            X86_32Architecture::I586 => "i586",
+            X86_32Architecture::I686 => "i686",
+        };
+        f.write_str(s)
+    }
+}
+
+impl fmt::Display for Mips32Architecture {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use Mips32Architecture::*;
+
+        let s = match *self {
+            Mips => "mips",
+            Mipsel => "mipsel",
+            Mipsisa32r6 => "mipsisa32r6",
+            Mipsisa32r6el => "mipsisa32r6el",
+        };
+        f.write_str(s)
+    }
+}
+
+impl fmt::Display for Mips64Architecture {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use Mips64Architecture::*;
+
+        let s = match *self {
+            Mips64 => "mips64",
+            Mips64el => "mips64el",
+            Mipsisa64r6 => "mipsisa64r6",
+            Mipsisa64r6el => "mipsisa64r6el",
         };
         f.write_str(s)
     }
@@ -595,42 +721,33 @@ impl fmt::Display for Aarch64Architecture {
 
 impl fmt::Display for Architecture {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use Architecture::*;
+
         match *self {
-            Architecture::Arm(arm) => arm.fmt(f),
-            Architecture::Aarch64(aarch) => aarch.fmt(f),
-            Architecture::Unknown => f.write_str("unknown"),
-            Architecture::AmdGcn => f.write_str("amdgcn"),
-            Architecture::Asmjs => f.write_str("asmjs"),
-            Architecture::Hexagon => f.write_str("hexagon"),
-            Architecture::I386 => f.write_str("i386"),
-            Architecture::I586 => f.write_str("i586"),
-            Architecture::I686 => f.write_str("i686"),
-            Architecture::Mips => f.write_str("mips"),
-            Architecture::Mips64 => f.write_str("mips64"),
-            Architecture::Mips64el => f.write_str("mips64el"),
-            Architecture::Mipsel => f.write_str("mipsel"),
-            Architecture::Mipsisa32r6 => f.write_str("mipsisa32r6"),
-            Architecture::Mipsisa32r6el => f.write_str("mipsisa32r6el"),
-            Architecture::Mipsisa64r6 => f.write_str("mipsisa64r6"),
-            Architecture::Mipsisa64r6el => f.write_str("mipsisa64r6el"),
-            Architecture::Msp430 => f.write_str("msp430"),
-            Architecture::Nvptx64 => f.write_str("nvptx64"),
-            Architecture::Powerpc => f.write_str("powerpc"),
-            Architecture::Powerpc64 => f.write_str("powerpc64"),
-            Architecture::Powerpc64le => f.write_str("powerpc64le"),
-            Architecture::Riscv32 => f.write_str("riscv32"),
-            Architecture::Riscv32i => f.write_str("riscv32i"),
-            Architecture::Riscv32imac => f.write_str("riscv32imac"),
-            Architecture::Riscv32imc => f.write_str("riscv32imc"),
-            Architecture::Riscv64 => f.write_str("riscv64"),
-            Architecture::Riscv64gc => f.write_str("riscv64gc"),
-            Architecture::Riscv64imac => f.write_str("riscv64imac"),
-            Architecture::S390x => f.write_str("s390x"),
-            Architecture::Sparc => f.write_str("sparc"),
-            Architecture::Sparc64 => f.write_str("sparc64"),
-            Architecture::Sparcv9 => f.write_str("sparcv9"),
-            Architecture::Wasm32 => f.write_str("wasm32"),
-            Architecture::X86_64 => f.write_str("x86_64"),
+            Arm(arm) => arm.fmt(f),
+            Aarch64(aarch) => aarch.fmt(f),
+            Unknown => f.write_str("unknown"),
+            AmdGcn => f.write_str("amdgcn"),
+            Asmjs => f.write_str("asmjs"),
+            Avr => f.write_str("avr"),
+            Hexagon => f.write_str("hexagon"),
+            X86_32(x86_32) => x86_32.fmt(f),
+            Mips32(mips32) => mips32.fmt(f),
+            Mips64(mips64) => mips64.fmt(f),
+            Msp430 => f.write_str("msp430"),
+            Nvptx64 => f.write_str("nvptx64"),
+            Powerpc => f.write_str("powerpc"),
+            Powerpc64 => f.write_str("powerpc64"),
+            Powerpc64le => f.write_str("powerpc64le"),
+            Riscv32(riscv32) => riscv32.fmt(f),
+            Riscv64(riscv64) => riscv64.fmt(f),
+            S390x => f.write_str("s390x"),
+            Sparc => f.write_str("sparc"),
+            Sparc64 => f.write_str("sparc64"),
+            Sparcv9 => f.write_str("sparcv9"),
+            Wasm32 => f.write_str("wasm32"),
+            Wasm64 => f.write_str("wasm64"),
+            X86_64 => f.write_str("x86_64"),
         }
     }
 }
@@ -639,46 +756,49 @@ impl FromStr for ArmArchitecture {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, ()> {
+        use ArmArchitecture::*;
+
         Ok(match s {
-            "arm" => ArmArchitecture::Arm,
-            "armeb" => ArmArchitecture::Armeb,
-            "armv4" => ArmArchitecture::Armv4,
-            "armv4t" => ArmArchitecture::Armv4t,
-            "armv5t" => ArmArchitecture::Armv5t,
-            "armv5te" => ArmArchitecture::Armv5te,
-            "armv5tej" => ArmArchitecture::Armv5tej,
-            "armv6" => ArmArchitecture::Armv6,
-            "armv6j" => ArmArchitecture::Armv6j,
-            "armv6k" => ArmArchitecture::Armv6k,
-            "armv6z" => ArmArchitecture::Armv6z,
-            "armv6kz" => ArmArchitecture::Armv6kz,
-            "armv6t2" => ArmArchitecture::Armv6t2,
-            "armv6m" => ArmArchitecture::Armv6m,
-            "armv7" => ArmArchitecture::Armv7,
-            "armv7a" => ArmArchitecture::Armv7a,
-            "armv7ve" => ArmArchitecture::Armv7ve,
-            "armv7m" => ArmArchitecture::Armv7m,
-            "armv7r" => ArmArchitecture::Armv7r,
-            "armv7s" => ArmArchitecture::Armv7s,
-            "armv8" => ArmArchitecture::Armv8,
-            "armv8a" => ArmArchitecture::Armv8a,
-            "armv8.1a" => ArmArchitecture::Armv8_1a,
-            "armv8.2a" => ArmArchitecture::Armv8_2a,
-            "armv8.3a" => ArmArchitecture::Armv8_3a,
-            "armv8.4a" => ArmArchitecture::Armv8_4a,
-            "armv8.5a" => ArmArchitecture::Armv8_5a,
-            "armv8m.base" => ArmArchitecture::Armv8mBase,
-            "armv8m.main" => ArmArchitecture::Armv8mMain,
-            "armv8r" => ArmArchitecture::Armv8r,
-            "thumbeb" => ArmArchitecture::Thumbeb,
-            "thumbv6m" => ArmArchitecture::Thumbv6m,
-            "thumbv7a" => ArmArchitecture::Thumbv7a,
-            "thumbv7em" => ArmArchitecture::Thumbv7em,
-            "thumbv7m" => ArmArchitecture::Thumbv7m,
-            "thumbv7neon" => ArmArchitecture::Thumbv7neon,
-            "thumbv8m.base" => ArmArchitecture::Thumbv8mBase,
-            "thumbv8m.main" => ArmArchitecture::Thumbv8mMain,
-            "armebv7r" => ArmArchitecture::Armebv7r,
+            "arm" => Arm,
+            "armeb" => Armeb,
+            "armv4" => Armv4,
+            "armv4t" => Armv4t,
+            "armv5t" => Armv5t,
+            "armv5te" => Armv5te,
+            "armv5tej" => Armv5tej,
+            "armv6" => Armv6,
+            "armv6j" => Armv6j,
+            "armv6k" => Armv6k,
+            "armv6z" => Armv6z,
+            "armv6kz" => Armv6kz,
+            "armv6t2" => Armv6t2,
+            "armv6m" => Armv6m,
+            "armv7" => Armv7,
+            "armv7a" => Armv7a,
+            "armv7ve" => Armv7ve,
+            "armv7m" => Armv7m,
+            "armv7r" => Armv7r,
+            "armv7s" => Armv7s,
+            "armv8" => Armv8,
+            "armv8a" => Armv8a,
+            "armv8.1a" => Armv8_1a,
+            "armv8.2a" => Armv8_2a,
+            "armv8.3a" => Armv8_3a,
+            "armv8.4a" => Armv8_4a,
+            "armv8.5a" => Armv8_5a,
+            "armv8m.base" => Armv8mBase,
+            "armv8m.main" => Armv8mMain,
+            "armv8r" => Armv8r,
+            "thumbeb" => Thumbeb,
+            "thumbv4t" => Thumbv4t,
+            "thumbv6m" => Thumbv6m,
+            "thumbv7a" => Thumbv7a,
+            "thumbv7em" => Thumbv7em,
+            "thumbv7m" => Thumbv7m,
+            "thumbv7neon" => Thumbv7neon,
+            "thumbv8m.base" => Thumbv8mBase,
+            "thumbv8m.main" => Thumbv8mMain,
+            "armebv7r" => Armebv7r,
             _ => return Err(()),
         })
     }
@@ -688,10 +808,91 @@ impl FromStr for Aarch64Architecture {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, ()> {
+        use Aarch64Architecture::*;
+
         Ok(match s {
-            "aarch64" => Aarch64Architecture::Aarch64,
-            "arm64" => Aarch64Architecture::Aarch64,
-            "aarch64be" => Aarch64Architecture::Aarch64be,
+            "aarch64" => Aarch64,
+            "arm64" => Aarch64,
+            "aarch64_be" => Aarch64be,
+            _ => return Err(()),
+        })
+    }
+}
+
+impl FromStr for Riscv32Architecture {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, ()> {
+        use Riscv32Architecture::*;
+
+        Ok(match s {
+            "riscv32" => Riscv32,
+            "riscv32gc" => Riscv32gc,
+            "riscv32i" => Riscv32i,
+            "riscv32imac" => Riscv32imac,
+            "riscv32imc" => Riscv32imc,
+            _ => return Err(()),
+        })
+    }
+}
+
+impl FromStr for Riscv64Architecture {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, ()> {
+        use Riscv64Architecture::*;
+
+        Ok(match s {
+            "riscv64" => Riscv64,
+            "riscv64gc" => Riscv64gc,
+            "riscv64imac" => Riscv64imac,
+            _ => return Err(()),
+        })
+    }
+}
+
+impl FromStr for X86_32Architecture {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, ()> {
+        use X86_32Architecture::*;
+
+        Ok(match s {
+            "i386" => I386,
+            "i586" => I586,
+            "i686" => I686,
+            _ => return Err(()),
+        })
+    }
+}
+
+impl FromStr for Mips32Architecture {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, ()> {
+        use Mips32Architecture::*;
+
+        Ok(match s {
+            "mips" => Mips,
+            "mipsel" => Mipsel,
+            "mipsisa32r6" => Mipsisa32r6,
+            "mipsisa32r6el" => Mipsisa32r6el,
+            _ => return Err(()),
+        })
+    }
+}
+
+impl FromStr for Mips64Architecture {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, ()> {
+        use Mips64Architecture::*;
+
+        Ok(match s {
+            "mips64" => Mips64,
+            "mips64el" => Mips64el,
+            "mipsisa64r6" => Mipsisa64r6,
+            "mipsisa64r6el" => Mipsisa64r6el,
             _ => return Err(()),
         })
     }
@@ -701,45 +902,41 @@ impl FromStr for Architecture {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, ()> {
+        use Architecture::*;
+
         Ok(match s {
-            "unknown" => Architecture::Unknown,
-            "amdgcn" => Architecture::AmdGcn,
-            "asmjs" => Architecture::Asmjs,
-            "hexagon" => Architecture::Hexagon,
-            "i386" => Architecture::I386,
-            "i586" => Architecture::I586,
-            "i686" => Architecture::I686,
-            "mips" => Architecture::Mips,
-            "mips64" => Architecture::Mips64,
-            "mips64el" => Architecture::Mips64el,
-            "mipsel" => Architecture::Mipsel,
-            "mipsisa32r6" => Architecture::Mipsisa32r6,
-            "mipsisa32r6el" => Architecture::Mipsisa32r6el,
-            "mipsisa64r6" => Architecture::Mipsisa64r6,
-            "mipsisa64r6el" => Architecture::Mipsisa64r6el,
-            "msp430" => Architecture::Msp430,
-            "nvptx64" => Architecture::Nvptx64,
-            "powerpc" => Architecture::Powerpc,
-            "powerpc64" => Architecture::Powerpc64,
-            "powerpc64le" => Architecture::Powerpc64le,
-            "riscv32" => Architecture::Riscv32,
-            "riscv32i" => Architecture::Riscv32i,
-            "riscv32imac" => Architecture::Riscv32imac,
-            "riscv32imc" => Architecture::Riscv32imc,
-            "riscv64" => Architecture::Riscv64,
-            "riscv64gc" => Architecture::Riscv64gc,
-            "riscv64imac" => Architecture::Riscv64imac,
-            "s390x" => Architecture::S390x,
-            "sparc" => Architecture::Sparc,
-            "sparc64" => Architecture::Sparc64,
-            "sparcv9" => Architecture::Sparcv9,
-            "wasm32" => Architecture::Wasm32,
-            "x86_64" => Architecture::X86_64,
+            "unknown" => Unknown,
+            "amdgcn" => AmdGcn,
+            "asmjs" => Asmjs,
+            "avr" => Avr,
+            "hexagon" => Hexagon,
+            "msp430" => Msp430,
+            "nvptx64" => Nvptx64,
+            "powerpc" => Powerpc,
+            "powerpc64" => Powerpc64,
+            "powerpc64le" => Powerpc64le,
+            "s390x" => S390x,
+            "sparc" => Sparc,
+            "sparc64" => Sparc64,
+            "sparcv9" => Sparcv9,
+            "wasm32" => Wasm32,
+            "wasm64" => Wasm64,
+            "x86_64" => X86_64,
             _ => {
                 if let Ok(arm) = ArmArchitecture::from_str(s) {
-                    Architecture::Arm(arm)
+                    Arm(arm)
                 } else if let Ok(aarch64) = Aarch64Architecture::from_str(s) {
-                    Architecture::Aarch64(aarch64)
+                    Aarch64(aarch64)
+                } else if let Ok(riscv32) = Riscv32Architecture::from_str(s) {
+                    Riscv32(riscv32)
+                } else if let Ok(riscv64) = Riscv64Architecture::from_str(s) {
+                    Riscv64(riscv64)
+                } else if let Ok(x86_32) = X86_32Architecture::from_str(s) {
+                    X86_32(x86_32)
+                } else if let Ok(mips32) = Mips32Architecture::from_str(s) {
+                    Mips32(mips32)
+                } else if let Ok(mips64) = Mips64Architecture::from_str(s) {
+                    Mips64(mips64)
                 } else {
                     return Err(());
                 }
@@ -750,19 +947,21 @@ impl FromStr for Architecture {
 
 impl fmt::Display for Vendor {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use Vendor::*;
+
         let s = match *self {
-            Vendor::Unknown => "unknown",
-            Vendor::Amd => "amd",
-            Vendor::Apple => "apple",
-            Vendor::Experimental => "experimental",
-            Vendor::Fortanix => "fortanix",
-            Vendor::Nvidia => "nvidia",
-            Vendor::Pc => "pc",
-            Vendor::Rumprun => "rumprun",
-            Vendor::Sun => "sun",
-            Vendor::Uwp => "uwp",
-            Vendor::Wrs => "wrs",
-            Vendor::Custom(ref name) => name.as_str(),
+            Unknown => "unknown",
+            Amd => "amd",
+            Apple => "apple",
+            Experimental => "experimental",
+            Fortanix => "fortanix",
+            Nvidia => "nvidia",
+            Pc => "pc",
+            Rumprun => "rumprun",
+            Sun => "sun",
+            Uwp => "uwp",
+            Wrs => "wrs",
+            Custom(ref name) => name.as_str(),
         };
         f.write_str(s)
     }
@@ -772,19 +971,22 @@ impl FromStr for Vendor {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, ()> {
+        use Vendor::*;
+
         Ok(match s {
-            "unknown" => Vendor::Unknown,
-            "amd" => Vendor::Amd,
-            "apple" => Vendor::Apple,
-            "experimental" => Vendor::Experimental,
-            "fortanix" => Vendor::Fortanix,
-            "nvidia" => Vendor::Nvidia,
-            "pc" => Vendor::Pc,
-            "rumprun" => Vendor::Rumprun,
-            "sun" => Vendor::Sun,
-            "uwp" => Vendor::Uwp,
-            "wrs" => Vendor::Wrs,
+            "unknown" => Unknown,
+            "amd" => Amd,
+            "apple" => Apple,
+            "experimental" => Experimental,
+            "fortanix" => Fortanix,
+            "nvidia" => Nvidia,
+            "pc" => Pc,
+            "rumprun" => Rumprun,
+            "sun" => Sun,
+            "uwp" => Uwp,
+            "wrs" => Wrs,
             custom => {
+                #[cfg(not(feature = "std"))]
                 use alloc::borrow::ToOwned;
 
                 // A custom vendor. Since triple syntax is so loosely defined,
@@ -808,18 +1010,20 @@ impl FromStr for Vendor {
                 }
 
                 // Require the first character to be an ascii lowercase.
-                if !custom.chars().nth(0).unwrap().is_ascii_lowercase() {
+                if !custom.chars().next().unwrap().is_ascii_lowercase() {
                     return Err(());
                 }
 
                 // Restrict the set of characters permitted in a custom vendor.
-                if custom.chars().any(|c: char| {
+                let has_restricted = custom.chars().any(|c: char| {
                     !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '.')
-                }) {
+                });
+
+                if has_restricted {
                     return Err(());
                 }
 
-                Vendor::Custom(CustomVendor::Owned(Box::new(custom.to_owned())))
+                Custom(CustomVendor::Owned(Box::new(custom.to_owned())))
             }
         })
     }
@@ -827,39 +1031,44 @@ impl FromStr for Vendor {
 
 impl fmt::Display for OperatingSystem {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use OperatingSystem::*;
+
         let s = match *self {
-            OperatingSystem::Unknown => "unknown",
-            OperatingSystem::AmdHsa => "amdhsa",
-            OperatingSystem::Bitrig => "bitrig",
-            OperatingSystem::Cloudabi => "cloudabi",
-            OperatingSystem::Cuda => "cuda",
-            OperatingSystem::Darwin => "darwin",
-            OperatingSystem::Dragonfly => "dragonfly",
-            OperatingSystem::Emscripten => "emscripten",
-            OperatingSystem::Freebsd => "freebsd",
-            OperatingSystem::Fuchsia => "fuchsia",
-            OperatingSystem::Haiku => "haiku",
-            OperatingSystem::Hermit => "hermit",
-            OperatingSystem::Ios => "ios",
-            OperatingSystem::L4re => "l4re",
-            OperatingSystem::Linux => "linux",
-            OperatingSystem::MacOSX {
+            Unknown => "unknown",
+            AmdHsa => "amdhsa",
+            Bitrig => "bitrig",
+            Cloudabi => "cloudabi",
+            Cuda => "cuda",
+            Darwin => "darwin",
+            Dragonfly => "dragonfly",
+            Emscripten => "emscripten",
+            Freebsd => "freebsd",
+            Fuchsia => "fuchsia",
+            Haiku => "haiku",
+            Hermit => "hermit",
+            Illumos => "illumos",
+            Ios => "ios",
+            L4re => "l4re",
+            Linux => "linux",
+            MacOSX {
                 major,
                 minor,
                 patch,
             } => {
                 return write!(f, "macosx{}.{}.{}", major, minor, patch);
             }
-            OperatingSystem::Nebulet => "nebulet",
-            OperatingSystem::Netbsd => "netbsd",
-            OperatingSystem::None_ => "none",
-            OperatingSystem::Openbsd => "openbsd",
-            OperatingSystem::Redox => "redox",
-            OperatingSystem::Solaris => "solaris",
-            OperatingSystem::Uefi => "uefi",
-            OperatingSystem::VxWorks => "vxworks",
-            OperatingSystem::Wasi => "wasi",
-            OperatingSystem::Windows => "windows",
+            Nebulet => "nebulet",
+            Netbsd => "netbsd",
+            None_ => "none",
+            Openbsd => "openbsd",
+            Psp => "psp",
+            Redox => "redox",
+            Solaris => "solaris",
+            Tvos => "tvos",
+            Uefi => "uefi",
+            VxWorks => "vxworks",
+            Wasi => "wasi",
+            Windows => "windows",
         };
         f.write_str(s)
     }
@@ -869,6 +1078,8 @@ impl FromStr for OperatingSystem {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, ()> {
+        use OperatingSystem::*;
+
         // TODO also parse version number for darwin and ios OSes
         if s.starts_with("macosx") {
             // Parse operating system names like `macosx10.7.0`.
@@ -893,7 +1104,7 @@ impl FromStr for OperatingSystem {
                 return Err(());
             }
 
-            return Ok(OperatingSystem::MacOSX {
+            return Ok(MacOSX {
                 major,
                 minor,
                 patch,
@@ -901,31 +1112,34 @@ impl FromStr for OperatingSystem {
         }
 
         Ok(match s {
-            "unknown" => OperatingSystem::Unknown,
-            "amdhsa" => OperatingSystem::AmdHsa,
-            "bitrig" => OperatingSystem::Bitrig,
-            "cloudabi" => OperatingSystem::Cloudabi,
-            "cuda" => OperatingSystem::Cuda,
-            "darwin" => OperatingSystem::Darwin,
-            "dragonfly" => OperatingSystem::Dragonfly,
-            "emscripten" => OperatingSystem::Emscripten,
-            "freebsd" => OperatingSystem::Freebsd,
-            "fuchsia" => OperatingSystem::Fuchsia,
-            "haiku" => OperatingSystem::Haiku,
-            "hermit" => OperatingSystem::Hermit,
-            "ios" => OperatingSystem::Ios,
-            "l4re" => OperatingSystem::L4re,
-            "linux" => OperatingSystem::Linux,
-            "nebulet" => OperatingSystem::Nebulet,
-            "netbsd" => OperatingSystem::Netbsd,
-            "none" => OperatingSystem::None_,
-            "openbsd" => OperatingSystem::Openbsd,
-            "redox" => OperatingSystem::Redox,
-            "solaris" => OperatingSystem::Solaris,
-            "uefi" => OperatingSystem::Uefi,
-            "vxworks" => OperatingSystem::VxWorks,
-            "wasi" => OperatingSystem::Wasi,
-            "windows" => OperatingSystem::Windows,
+            "unknown" => Unknown,
+            "amdhsa" => AmdHsa,
+            "bitrig" => Bitrig,
+            "cloudabi" => Cloudabi,
+            "cuda" => Cuda,
+            "darwin" => Darwin,
+            "dragonfly" => Dragonfly,
+            "emscripten" => Emscripten,
+            "freebsd" => Freebsd,
+            "fuchsia" => Fuchsia,
+            "haiku" => Haiku,
+            "hermit" => Hermit,
+            "illumos" => Illumos,
+            "ios" => Ios,
+            "l4re" => L4re,
+            "linux" => Linux,
+            "nebulet" => Nebulet,
+            "netbsd" => Netbsd,
+            "none" => None_,
+            "openbsd" => Openbsd,
+            "psp" => Psp,
+            "redox" => Redox,
+            "solaris" => Solaris,
+            "tvos" => Tvos,
+            "uefi" => Uefi,
+            "vxworks" => VxWorks,
+            "wasi" => Wasi,
+            "windows" => Windows,
             _ => return Err(()),
         })
     }
@@ -933,29 +1147,34 @@ impl FromStr for OperatingSystem {
 
 impl fmt::Display for Environment {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use Environment::*;
+
         let s = match *self {
-            Environment::Unknown => "unknown",
-            Environment::AmdGiz => "amdgiz",
-            Environment::Android => "android",
-            Environment::Androideabi => "androideabi",
-            Environment::Eabi => "eabi",
-            Environment::Eabihf => "eabihf",
-            Environment::Gnu => "gnu",
-            Environment::Gnuabi64 => "gnuabi64",
-            Environment::Gnueabi => "gnueabi",
-            Environment::Gnueabihf => "gnueabihf",
-            Environment::Gnuspe => "gnuspe",
-            Environment::Gnux32 => "gnux32",
-            Environment::Musl => "musl",
-            Environment::Musleabi => "musleabi",
-            Environment::Musleabihf => "musleabihf",
-            Environment::Muslabi64 => "muslabi64",
-            Environment::Msvc => "msvc",
-            Environment::Kernel => "kernel",
-            Environment::Uclibc => "uclibc",
-            Environment::Sgx => "sgx",
-            Environment::Softfloat => "softfloat",
-            Environment::Spe => "spe",
+            Unknown => "unknown",
+            AmdGiz => "amdgiz",
+            Android => "android",
+            Androideabi => "androideabi",
+            Eabi => "eabi",
+            Eabihf => "eabihf",
+            Gnu => "gnu",
+            Gnuabi64 => "gnuabi64",
+            Gnueabi => "gnueabi",
+            Gnueabihf => "gnueabihf",
+            Gnuspe => "gnuspe",
+            Gnux32 => "gnux32",
+            GnuIlp32 => "gnu_ilp32",
+            Macabi => "macabi",
+            Musl => "musl",
+            Musleabi => "musleabi",
+            Musleabihf => "musleabihf",
+            Muslabi64 => "muslabi64",
+            Msvc => "msvc",
+            Kernel => "kernel",
+            Uclibc => "uclibc",
+            Uclibceabi => "uclibceabi",
+            Sgx => "sgx",
+            Softfloat => "softfloat",
+            Spe => "spe",
         };
         f.write_str(s)
     }
@@ -965,29 +1184,34 @@ impl FromStr for Environment {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, ()> {
+        use Environment::*;
+
         Ok(match s {
-            "unknown" => Environment::Unknown,
-            "amdgiz" => Environment::AmdGiz,
-            "android" => Environment::Android,
-            "androideabi" => Environment::Androideabi,
-            "eabi" => Environment::Eabi,
-            "eabihf" => Environment::Eabihf,
-            "gnu" => Environment::Gnu,
-            "gnuabi64" => Environment::Gnuabi64,
-            "gnueabi" => Environment::Gnueabi,
-            "gnueabihf" => Environment::Gnueabihf,
-            "gnuspe" => Environment::Gnuspe,
-            "gnux32" => Environment::Gnux32,
-            "musl" => Environment::Musl,
-            "musleabi" => Environment::Musleabi,
-            "musleabihf" => Environment::Musleabihf,
-            "muslabi64" => Environment::Muslabi64,
-            "msvc" => Environment::Msvc,
-            "kernel" => Environment::Kernel,
-            "uclibc" => Environment::Uclibc,
-            "sgx" => Environment::Sgx,
-            "softfloat" => Environment::Softfloat,
-            "spe" => Environment::Spe,
+            "unknown" => Unknown,
+            "amdgiz" => AmdGiz,
+            "android" => Android,
+            "androideabi" => Androideabi,
+            "eabi" => Eabi,
+            "eabihf" => Eabihf,
+            "gnu" => Gnu,
+            "gnuabi64" => Gnuabi64,
+            "gnueabi" => Gnueabi,
+            "gnueabihf" => Gnueabihf,
+            "gnuspe" => Gnuspe,
+            "gnux32" => Gnux32,
+            "gnu_ilp32" => GnuIlp32,
+            "macabi" => Macabi,
+            "musl" => Musl,
+            "musleabi" => Musleabi,
+            "musleabihf" => Musleabihf,
+            "muslabi64" => Muslabi64,
+            "msvc" => Msvc,
+            "kernel" => Kernel,
+            "uclibc" => Uclibc,
+            "uclibceabi" => Uclibceabi,
+            "sgx" => Sgx,
+            "softfloat" => Softfloat,
+            "spe" => Spe,
             _ => return Err(()),
         })
     }
@@ -995,12 +1219,14 @@ impl FromStr for Environment {
 
 impl fmt::Display for BinaryFormat {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use BinaryFormat::*;
+
         let s = match *self {
-            BinaryFormat::Unknown => "unknown",
-            BinaryFormat::Elf => "elf",
-            BinaryFormat::Coff => "coff",
-            BinaryFormat::Macho => "macho",
-            BinaryFormat::Wasm => "wasm",
+            Unknown => "unknown",
+            Elf => "elf",
+            Coff => "coff",
+            Macho => "macho",
+            Wasm => "wasm",
         };
         f.write_str(s)
     }
@@ -1010,12 +1236,14 @@ impl FromStr for BinaryFormat {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, ()> {
+        use BinaryFormat::*;
+
         Ok(match s {
-            "unknown" => BinaryFormat::Unknown,
-            "elf" => BinaryFormat::Elf,
-            "coff" => BinaryFormat::Coff,
-            "macho" => BinaryFormat::Macho,
-            "wasm" => BinaryFormat::Wasm,
+            "unknown" => Unknown,
+            "elf" => Elf,
+            "coff" => Coff,
+            "macho" => Macho,
+            "wasm" => Wasm,
             _ => return Err(()),
         })
     }
@@ -1033,7 +1261,12 @@ mod tests {
         //  - targets emitted by "rustc +nightly --print target-list"
         //  - targets contributors have added
         let targets = [
+            "aarch64-apple-darwin",
             "aarch64-apple-ios",
+            "aarch64-apple-ios-macabi",
+            "aarch64-apple-tvos",
+            "aarch64_be-unknown-linux-gnu",
+            "aarch64_be-unknown-linux-gnu_ilp32",
             "aarch64-fuchsia",
             "aarch64-linux-android",
             "aarch64-pc-windows-msvc",
@@ -1041,6 +1274,7 @@ mod tests {
             "aarch64-unknown-freebsd",
             "aarch64-unknown-hermit",
             "aarch64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu_ilp32",
             "aarch64-unknown-linux-musl",
             "aarch64-unknown-netbsd",
             "aarch64-unknown-none",
@@ -1058,11 +1292,16 @@ mod tests {
             "arm-unknown-linux-gnueabihf",
             "arm-unknown-linux-musleabi",
             "arm-unknown-linux-musleabihf",
+            "armebv7r-none-eabi",
+            "armebv7r-none-eabihf",
             "armv4t-unknown-linux-gnueabi",
             "armv5te-unknown-linux-gnueabi",
             "armv5te-unknown-linux-musleabi",
+            "armv5te-unknown-linux-uclibceabi",
             "armv6-unknown-freebsd",
             "armv6-unknown-netbsd-eabihf",
+            "armv7a-none-eabi",
+            "armv7a-none-eabihf",
             "armv7-apple-ios",
             "armv7-linux-androideabi",
             "armv7r-none-eabi",
@@ -1076,7 +1315,13 @@ mod tests {
             "armv7-unknown-linux-musleabihf",
             "armv7-unknown-netbsd-eabihf",
             "armv7-wrs-vxworks-eabihf",
+            "armv7a-none-eabi",
+            "armv7a-none-eabihf",
+            "armv7r-none-eabi",
+            "armv7r-none-eabihf",
+            "armv7s-apple-ios",
             "asmjs-unknown-emscripten",
+            "avr-unknown-unknown",
             "hexagon-unknown-linux-musl",
             "i386-apple-ios",
             "i586-pc-windows-msvc",
@@ -1099,15 +1344,23 @@ mod tests {
             "i686-uwp-windows-gnu",
             "i686-uwp-windows-msvc",
             "i686-wrs-vxworks",
+            "mips-unknown-linux-gnu",
+            "mips-unknown-linux-musl",
+            "mips-unknown-linux-uclibc",
+            "mips64-unknown-linux-gnuabi64",
+            "mips64-unknown-linux-muslabi64",
             "mips64el-unknown-linux-gnuabi64",
             "mips64el-unknown-linux-muslabi64",
             "mips64-unknown-linux-gnuabi64",
             "mips64-unknown-linux-muslabi64",
+            "mipsel-sony-psp",
             "mipsel-unknown-linux-gnu",
             "mipsel-unknown-linux-musl",
             "mipsel-unknown-linux-uclibc",
+            "mipsel-unknown-none",
             "mipsisa32r6el-unknown-linux-gnu",
             "mipsisa32r6-unknown-linux-gnu",
+            "mipsisa64r6-unknown-linux-gnuabi64",
             "mipsisa64r6el-unknown-linux-gnuabi64",
             "mipsisa64r6-unknown-linux-gnuabi64",
             "mips-unknown-linux-gnu",
@@ -1127,33 +1380,51 @@ mod tests {
             "powerpc-unknown-netbsd",
             "powerpc-wrs-vxworks",
             "powerpc-wrs-vxworks-spe",
+            "powerpc64-unknown-freebsd",
+            "powerpc64-unknown-linux-gnu",
+            "powerpc64-unknown-linux-musl",
+            "powerpc64-wrs-vxworks",
+            "powerpc64le-unknown-linux-gnu",
+            "powerpc64le-unknown-linux-musl",
+            "riscv32gc-unknown-linux-gnu",
+            "riscv32i-unknown-none-elf",
             "riscv32imac-unknown-none-elf",
             "riscv32imc-unknown-none-elf",
             "riscv32i-unknown-none-elf",
+            "riscv64gc-unknown-linux-gnu",
             "riscv64gc-unknown-none-elf",
             "riscv64imac-unknown-none-elf",
             "s390x-unknown-linux-gnu",
+            "sparc-unknown-linux-gnu",
             "sparc64-unknown-linux-gnu",
             "sparc64-unknown-netbsd",
             "sparc64-unknown-openbsd",
             "sparc-unknown-linux-gnu",
             "sparcv9-sun-solaris",
+            "thumbv4t-none-eabi",
             "thumbv6m-none-eabi",
+            "thumbv4t-none-eabi",
             "thumbv7a-pc-windows-msvc",
+            "thumbv7a-uwp-windows-msvc",
             "thumbv7em-none-eabi",
             "thumbv7em-none-eabihf",
             "thumbv7m-none-eabi",
             "thumbv7neon-linux-androideabi",
             "thumbv7neon-unknown-linux-gnueabihf",
+            "thumbv7neon-unknown-linux-musleabihf",
             "thumbv8m.base-none-eabi",
             "thumbv8m.main-none-eabi",
             "thumbv8m.main-none-eabihf",
             "wasm32-experimental-emscripten",
             "wasm32-unknown-emscripten",
             "wasm32-unknown-unknown",
+            "wasm64-unknown-unknown",
             "wasm32-wasi",
+            "wasm64-wasi",
             "x86_64-apple-darwin",
             "x86_64-apple-ios",
+            "x86_64-apple-ios-macabi",
+            "x86_64-apple-tvos",
             "x86_64-fortanix-unknown-sgx",
             "x86_64-fuchsia",
             "x86_64-linux-android",
@@ -1170,6 +1441,8 @@ mod tests {
             "x86_64-unknown-freebsd",
             "x86_64-unknown-haiku",
             "x86_64-unknown-hermit",
+            "x86_64-unknown-hermit-kernel",
+            "x86_64-unknown-illumos",
             "x86_64-unknown-l4re-uclibc",
             "x86_64-unknown-linux-gnu",
             "x86_64-unknown-linux-gnux32",

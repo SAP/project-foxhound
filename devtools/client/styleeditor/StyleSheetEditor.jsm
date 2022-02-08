@@ -6,9 +6,10 @@
 
 const EXPORTED_SYMBOLS = ["StyleSheetEditor"];
 
-const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
+const { require } = ChromeUtils.import(
+  "resource://devtools/shared/loader/Loader.jsm"
+);
 const Editor = require("devtools/client/shared/sourceeditor/editor");
-const promise = require("promise");
 const {
   shortSource,
   prettifyCSS,
@@ -26,6 +27,7 @@ const {
 
 const LOAD_ERROR = "error-load";
 const SAVE_ERROR = "error-save";
+const SELECTOR_HIGHLIGHTER_TYPE = "SelectorHighlighter";
 
 // max update frequency in ms (avoid potential typing lag and/or flicker)
 // @see StyleEditor.updateStylesheet
@@ -51,6 +53,8 @@ const SELECTOR_HIGHLIGHT_TIMEOUT = 500;
 // Minimum delay between firing two media-rules-changed events.
 const EMIT_MEDIA_RULES_THROTTLING = 500;
 
+const STYLE_SHEET_UPDATE_CAUSED_BY_STYLE_EDITOR = "styleeditor";
+
 /**
  * StyleSheetEditor controls the editor linked to a particular StyleSheet
  * object.
@@ -60,44 +64,29 @@ const EMIT_MEDIA_RULES_THROTTLING = 500;
  *   'source-editor-load': The source editor for this editor has been loaded
  *   'error': An error has occured
  *
- * @param {StyleSheet|OriginalSource}  styleSheet
- *        Stylesheet or original source to show
+ * @param  {Resource} resource
+ *         The STYLESHEET resource which is received from resource command.
  * @param {DOMWindow}  win
  *        panel window for style editor
- * @param {nsIFile}  file
- *        Optional file that the sheet was imported from
- * @param {boolean} isNew
- *        Optional whether the sheet was created by the user
- * @param {Walker} walker
- *        Optional walker used for selectors autocompletion
- * @param {CustomHighlighterFront} highlighter
- *        Optional highlighter front for the SelectorHighligher used to
- *        highlight selectors
  * @param {Number} styleSheetFriendlyIndex
  *        Optional Integer representing the index of the current stylesheet
  *        among all stylesheets of its type (inline or user-created)
  */
-function StyleSheetEditor(
-  styleSheet,
-  win,
-  file,
-  isNew,
-  walker,
-  highlighter,
-  styleSheetFriendlyIndex
-) {
+function StyleSheetEditor(resource, win, styleSheetFriendlyIndex) {
   EventEmitter.decorate(this);
 
-  this.styleSheet = styleSheet;
+  this._resource = resource;
   this._inputElement = null;
   this.sourceEditor = null;
   this._window = win;
-  this._isNew = isNew;
-  this.walker = walker;
-  this.highlighter = highlighter;
+  this._isNew = this.styleSheet.isNew;
   this.styleSheetFriendlyIndex = styleSheetFriendlyIndex;
 
   // True when we've called update() on the style sheet.
+  // @backward-compat { version 86 } Starting 86, onStyleApplied will be able to know
+  // if the style was applied because of a change in the StyleEditor (via the `event.cause`
+  // property inside the resource update). `this._isUpdating` can be dropped when 86
+  // reaches release.
   this._isUpdating = false;
   // True when we've just set the editor text based on a style-applied
   // event from the StyleSheetActor.
@@ -114,16 +103,14 @@ function StyleSheetEditor(
 
   this._styleSheetFilePath = null;
   if (
-    styleSheet.href &&
+    this.styleSheet.href &&
     Services.io.extractScheme(this.styleSheet.href) == "file"
   ) {
     this._styleSheetFilePath = this.styleSheet.href;
   }
 
-  this._onPropertyChange = this._onPropertyChange.bind(this);
-  this._onError = this._onError.bind(this);
-  this._onMediaRulesChanged = this._onMediaRulesChanged.bind(this);
-  this._onStyleApplied = this._onStyleApplied.bind(this);
+  this.onPropertyChange = this.onPropertyChange.bind(this);
+  this.onMediaRulesChanged = this.onMediaRulesChanged.bind(this);
   this.checkLinkedFileForChanges = this.checkLinkedFileForChanges.bind(this);
   this.markLinkedFileBroken = this.markLinkedFileBroken.bind(this);
   this.saveToFile = this.saveToFile.bind(this);
@@ -131,28 +118,28 @@ function StyleSheetEditor(
   this._updateStyleSheet = this._updateStyleSheet.bind(this);
   this._onMouseMove = this._onMouseMove.bind(this);
 
+  this._focusOnSourceEditorReady = false;
+  this.savedFile = this.styleSheet.file;
+  this.linkCSSFile();
+
   this.emitMediaRulesChanged = throttle(
     this.emitMediaRulesChanged,
     EMIT_MEDIA_RULES_THROTTLING,
     this
   );
 
-  this._focusOnSourceEditorReady = false;
-  this.cssSheet.on("property-change", this._onPropertyChange);
-  this.styleSheet.on("error", this._onError);
   this.mediaRules = [];
-  if (this.cssSheet.getMediaRules) {
-    this.cssSheet
-      .getMediaRules()
-      .then(this._onMediaRulesChanged, console.error);
-  }
-  this.cssSheet.on("media-rules-changed", this._onMediaRulesChanged);
-  this.cssSheet.on("style-applied", this._onStyleApplied);
-  this.savedFile = file;
-  this.linkCSSFile();
 }
 
 StyleSheetEditor.prototype = {
+  get resourceId() {
+    return this._resource.resourceId;
+  },
+
+  get styleSheet() {
+    return this._resource;
+  },
+
   /**
    * Whether there are unsaved changes in the editor
    */
@@ -282,26 +269,31 @@ StyleSheetEditor.prototype = {
    *
    * @return {Promise} a promise that resolves to the new text
    */
-  _getSourceTextAndPrettify: function() {
-    return this.styleSheet
-      .getText()
-      .then(longStr => {
-        return longStr.string();
-      })
-      .then(source => {
-        const ruleCount = this.styleSheet.ruleCount;
-        if (!this.styleSheet.isOriginalSource) {
-          const { result, mappings } = prettifyCSS(source, ruleCount);
-          source = result;
-          // Store the list of objects with mappings between CSS token positions from the
-          // original source to the prettified source. These will be used when requested to
-          // jump to a specific position within the editor.
-          this._mappings = mappings;
-        }
+  async _getSourceTextAndPrettify() {
+    const styleSheetsFront = await this._getStyleSheetsFront();
 
-        this._state.text = source;
-        return source;
-      });
+    let longStr = null;
+    if (this.styleSheet.isOriginalSource) {
+      // If the stylesheet is OriginalSource, we should get the texts from SourceMapService.
+      // So, for now, we use OriginalSource.getText() as it is.
+      longStr = await this.styleSheet.getText();
+    } else {
+      longStr = await styleSheetsFront.getText(this.resourceId);
+    }
+
+    let source = await longStr.string();
+    const ruleCount = this.styleSheet.ruleCount;
+    if (!this.styleSheet.isOriginalSource) {
+      const { result, mappings } = prettifyCSS(source, ruleCount);
+      source = result;
+      // Store the list of objects with mappings between CSS token positions from the
+      // original source to the prettified source. These will be used when requested to
+      // jump to a specific position within the editor.
+      this._mappings = mappings;
+    }
+
+    this._state.text = source;
+    return source;
   },
 
   /**
@@ -344,6 +336,9 @@ StyleSheetEditor.prototype = {
    * @param {Number} column
    */
   setCursor(line, column) {
+    line = line || 0;
+    column = column || 0;
+
     const position = this.translateCursorPosition(line, column);
     this.sourceEditor.setCursor({ line: position.line, ch: position.column });
   },
@@ -384,20 +379,30 @@ StyleSheetEditor.prototype = {
    * @param  {string} property
    *         Property that has changed on sheet
    */
-  _onPropertyChange: function(property, value) {
+  onPropertyChange: function(property, value) {
     this.emit("property-change", property, value);
   },
 
   /**
    * Called when the stylesheet text changes.
+   * @param {Object} update: The stylesheet resource update packet.
    */
-  _onStyleApplied: function() {
-    if (this._isUpdating) {
+  onStyleApplied: function(update) {
+    const updateIsFromSyleSheetEditor =
+      update?.event?.cause === STYLE_SHEET_UPDATE_CAUSED_BY_STYLE_EDITOR;
+
+    // @backward-compat { version 86 } this._isUpdating can be removed.
+    // See property declaration for more information.
+    if (this._isUpdating || updateIsFromSyleSheetEditor) {
       // We just applied an edit in the editor, so we can drop this
       // notification.
+      // @backward-compat { version 86 } this._isUpdating can be removed.
       this._isUpdating = false;
       this.emit("style-applied");
-    } else if (this.sourceEditor) {
+      return;
+    }
+
+    if (this.sourceEditor) {
       this._getSourceTextAndPrettify().then(newText => {
         this._justSetText = true;
         const firstLine = this.sourceEditor.getFirstVisibleLine();
@@ -417,19 +422,12 @@ StyleSheetEditor.prototype = {
    * @param  {array} rules
    *         Array of MediaRuleFronts for new media rules of sheet.
    */
-  _onMediaRulesChanged: function(rules) {
+  onMediaRulesChanged: function(rules) {
     if (!rules.length && !this.mediaRules.length) {
       return;
     }
-    for (const rule of this.mediaRules) {
-      rule.off("matches-change", this.emitMediaRulesChanged);
-      rule.destroy();
-    }
-    this.mediaRules = rules;
 
-    for (const rule of rules) {
-      rule.on("matches-change", this.emitMediaRulesChanged);
-    }
+    this.mediaRules = rules;
     this.emitMediaRulesChanged();
   },
 
@@ -438,15 +436,6 @@ StyleSheetEditor.prototype = {
    */
   emitMediaRulesChanged: function() {
     this.emit("media-rules-changed", this.mediaRules);
-  },
-
-  /**
-   * Forward error event from stylesheet.
-   *
-   * @param  {Object} data: The parameters to customize the error message
-   */
-  _onError: function(data) {
-    this.emit("error", data);
   },
 
   /**
@@ -459,9 +448,9 @@ StyleSheetEditor.prototype = {
    * @return {Promise}
    *         Promise that will resolve when the style editor is loaded.
    */
-  load: function(inputElement, cssProperties) {
+  load: async function(inputElement, cssProperties) {
     if (this._isDestroyed) {
-      return promise.reject(
+      throw new Error(
         "Won't load source editor as the style sheet has " +
           "already been removed from Style Editor."
       );
@@ -469,6 +458,7 @@ StyleSheetEditor.prototype = {
 
     this._inputElement = inputElement;
 
+    const walker = await this.getWalker();
     const config = {
       value: this._state.text,
       lineNumbers: true,
@@ -478,49 +468,45 @@ StyleSheetEditor.prototype = {
       extraKeys: this._getKeyBindings(),
       contextMenu: "sourceEditorContextMenu",
       autocomplete: Services.prefs.getBoolPref(AUTOCOMPLETION_PREF),
-      autocompleteOpts: { walker: this.walker, cssProperties },
+      autocompleteOpts: { walker, cssProperties },
       cssProperties,
     };
     const sourceEditor = (this._sourceEditor = new Editor(config));
 
-    sourceEditor.on("dirty-change", this._onPropertyChange);
+    sourceEditor.on("dirty-change", this.onPropertyChange);
 
-    return sourceEditor.appendTo(inputElement).then(() => {
-      sourceEditor.on("saveRequested", this.saveToFile);
+    await sourceEditor.appendTo(inputElement);
 
-      if (this.styleSheet.update) {
-        sourceEditor.on("change", this.updateStyleSheet);
-      }
+    sourceEditor.on("saveRequested", this.saveToFile);
 
-      this.sourceEditor = sourceEditor;
+    if (!this.styleSheet.isOriginalSource) {
+      sourceEditor.on("change", this.updateStyleSheet);
+    }
 
-      if (this._focusOnSourceEditorReady) {
-        this._focusOnSourceEditorReady = false;
-        sourceEditor.focus();
-      }
+    this.sourceEditor = sourceEditor;
 
-      sourceEditor.setSelection(
-        this._state.selection.start,
-        this._state.selection.end
+    if (this._focusOnSourceEditorReady) {
+      this._focusOnSourceEditorReady = false;
+      sourceEditor.focus();
+    }
+
+    sourceEditor.setSelection(
+      this._state.selection.start,
+      this._state.selection.end
+    );
+
+    const highlighter = await this.getHighlighter();
+    if (highlighter && walker && sourceEditor.container?.contentWindow) {
+      sourceEditor.container.contentWindow.addEventListener(
+        "mousemove",
+        this._onMouseMove
       );
+    }
 
-      if (
-        this.highlighter &&
-        this.walker &&
-        sourceEditor.container &&
-        sourceEditor.container.contentWindow
-      ) {
-        sourceEditor.container.contentWindow.addEventListener(
-          "mousemove",
-          this._onMouseMove
-        );
-      }
+    // Add the commands controller for the source-editor.
+    sourceEditor.insertCommandsController();
 
-      // Add the commands controller for the source-editor.
-      sourceEditor.insertCommandsController();
-
-      this.emit("source-editor-load");
-    });
+    this.emit("source-editor-load");
   },
 
   /**
@@ -569,8 +555,9 @@ StyleSheetEditor.prototype = {
   /**
    * Toggled the disabled state of the underlying stylesheet.
    */
-  toggleDisabled: function() {
-    this.styleSheet.toggleDisabled().catch(console.error);
+  async toggleDisabled() {
+    const styleSheetsFront = await this._getStyleSheetsFront();
+    styleSheetsFront.toggleDisabled(this.resourceId).catch(console.error);
   },
 
   /**
@@ -591,7 +578,7 @@ StyleSheetEditor.prototype = {
   /**
    * Update live style sheet according to modifications.
    */
-  _updateStyleSheet: function() {
+  async _updateStyleSheet() {
     if (this.styleSheet.disabled) {
       // TODO: do we want to do this?
       return;
@@ -612,15 +599,24 @@ StyleSheetEditor.prototype = {
       this._state.text = this.sourceEditor.getText();
     }
 
+    // @backward-compat { version 86 } See property declaration for more information.
     this._isUpdating = true;
-    this.styleSheet
-      .update(this._state.text, this.transitionsEnabled)
-      .then(() => {
-        // Clear any existing mappings from automatic CSS prettification
-        // because they were likely invalided by manually editing the stylesheet.
-        this._mappings = null;
-      })
-      .catch(console.error);
+
+    try {
+      const styleSheetsFront = await this._getStyleSheetsFront();
+      await styleSheetsFront.update(
+        this.resourceId,
+        this._state.text,
+        this.transitionsEnabled,
+        STYLE_SHEET_UPDATE_CAUSED_BY_STYLE_EDITOR
+      );
+
+      // Clear any existing mappings from automatic CSS prettification
+      // because they were likely invalided by manually editing the stylesheet.
+      this._mappings = null;
+    } catch (e) {
+      console.error(e);
+    }
   },
 
   /**
@@ -628,7 +624,11 @@ StyleSheetEditor.prototype = {
    * and reseting the delay everytime.
    */
   _onMouseMove: function(e) {
-    this.highlighter.hide();
+    // As we only want to hide an existing highlighter, we can use this.highlighter directly
+    // (and not this.getHighlighter).
+    if (this.highlighter) {
+      this.highlighter.hide();
+    }
 
     if (this.mouseMoveTimeout) {
       this._window.clearTimeout(this.mouseMoveTimeout);
@@ -654,10 +654,12 @@ StyleSheetEditor.prototype = {
       return;
     }
 
-    const node = await this.walker.getStyleSheetOwnerNode(
-      this.styleSheet.actorID
-    );
-    await this.highlighter.show(node, {
+    const onGetHighlighter = this.getHighlighter();
+    const walker = await this.getWalker();
+    const node = await walker.getStyleSheetOwnerNode(this.resourceId);
+
+    const highlighter = await onGetHighlighter;
+    await highlighter.show(node, {
       selector: info.selector,
       hideInfoBar: true,
       showOnly: "border",
@@ -665,6 +667,50 @@ StyleSheetEditor.prototype = {
     });
 
     this.emit("node-highlighted");
+  },
+
+  /**
+   * Returns the walker front associated with this._resource target.
+   *
+   * @returns {Promise<WalkerFront>}
+   */
+  async getWalker() {
+    if (this.walker) {
+      return this.walker;
+    }
+
+    const { targetFront } = this._resource;
+    const inspectorFront = await targetFront.getFront("inspector");
+    this.walker = inspectorFront.walker;
+    return this.walker;
+  },
+
+  /**
+   * Returns or creates the selector highlighter associated with this._resource target.
+   *
+   * @returns {CustomHighlighterFront|null}
+   */
+  async getHighlighter() {
+    if (this.highlighter) {
+      return this.highlighter;
+    }
+
+    const walker = await this.getWalker();
+    try {
+      this.highlighter = await walker.parentFront.getHighlighterByType(
+        SELECTOR_HIGHLIGHTER_TYPE
+      );
+      return this.highlighter;
+    } catch (e) {
+      // The selectorHighlighter can't always be instantiated, for example
+      // it doesn't work with XUL windows (until bug 1094959 gets fixed);
+      // or the selectorHighlighter doesn't exist on the backend.
+      console.warn(
+        "The selectorHighlighter couldn't be instantiated, " +
+          "elements matching hovered selectors will not be highlighted"
+      );
+    }
+    return null;
   },
 
   /**
@@ -812,15 +858,23 @@ StyleSheetEditor.prototype = {
    * file from disk and live update the stylesheet object with the contents.
    */
   updateLinkedStyleSheet: function() {
-    OS.File.read(this.linkedCSSFile).then(array => {
+    OS.File.read(this.linkedCSSFile).then(async array => {
       const decoder = new TextDecoder();
       const text = decoder.decode(array);
 
       // Ensure we don't re-fetch the text from the original source
       // actor when we're notified that the style sheet changed.
+      // @backward-compat { version 86 } See property declaration for more information.
       this._isUpdating = true;
-      const relatedSheet = this.styleSheet.relatedStyleSheet;
-      relatedSheet.update(text, this.transitionsEnabled);
+
+      const styleSheetsFront = await this._getStyleSheetsFront();
+
+      await styleSheetsFront.update(
+        this.resourceId,
+        text,
+        this.transitionsEnabled,
+        STYLE_SHEET_UPDATE_CAUSED_BY_STYLE_EDITOR
+      );
     }, this.markLinkedFileBroken);
   },
 
@@ -847,20 +901,19 @@ StyleSheetEditor.prototype = {
     return bindings;
   },
 
+  _getStyleSheetsFront() {
+    return this._resource.targetFront.getFront("stylesheets");
+  },
+
   /**
    * Clean up for this editor.
    */
   destroy: function() {
     if (this._sourceEditor) {
-      this._sourceEditor.off("dirty-change", this._onPropertyChange);
+      this._sourceEditor.off("dirty-change", this.onPropertyChange);
       this._sourceEditor.off("saveRequested", this.saveToFile);
       this._sourceEditor.off("change", this.updateStyleSheet);
-      if (
-        this.highlighter &&
-        this.walker &&
-        this._sourceEditor.container &&
-        this._sourceEditor.container.contentWindow
-      ) {
+      if (this._sourceEditor.container?.contentWindow) {
         this._sourceEditor.container.contentWindow.removeEventListener(
           "mousemove",
           this._onMouseMove
@@ -868,10 +921,6 @@ StyleSheetEditor.prototype = {
       }
       this._sourceEditor.destroy();
     }
-    this.cssSheet.off("property-change", this._onPropertyChange);
-    this.cssSheet.off("media-rules-changed", this._onMediaRulesChanged);
-    this.cssSheet.off("style-applied", this._onStyleApplied);
-    this.styleSheet.off("error", this._onError);
     this._isDestroyed = true;
   },
 };

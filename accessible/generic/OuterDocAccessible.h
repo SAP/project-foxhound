@@ -33,9 +33,6 @@ class OuterDocAccessible final : public AccessibleWrap {
   NS_INLINE_DECL_REFCOUNTING_INHERITED(OuterDocAccessible, AccessibleWrap)
 
   DocAccessibleParent* RemoteChildDoc() const;
-#if defined(XP_WIN)
-  Accessible* RemoteChildDocAccessible() const;
-#endif
 
   /**
    * For iframes in a content process which will be rendered in another content
@@ -47,26 +44,28 @@ class OuterDocAccessible final : public AccessibleWrap {
    */
   void SendEmbedderAccessible(dom::BrowserBridgeChild* aBridge);
 
-  // Accessible
+  // LocalAccessible
   virtual void Shutdown() override;
   virtual mozilla::a11y::role NativeRole() const override;
-  virtual Accessible* ChildAtPoint(int32_t aX, int32_t aY,
-                                   EWhichChildAtPoint aWhichChild) override;
+  virtual LocalAccessible* LocalChildAtPoint(
+      int32_t aX, int32_t aY, EWhichChildAtPoint aWhichChild) override;
 
-  virtual bool InsertChildAt(uint32_t aIdx, Accessible* aChild) override;
-  virtual bool RemoveChild(Accessible* aAccessible) override;
+  virtual bool InsertChildAt(uint32_t aIdx, LocalAccessible* aChild) override;
+  virtual bool RemoveChild(LocalAccessible* aAccessible) override;
   virtual bool IsAcceptableChild(nsIContent* aEl) const override;
 
-#if defined(XP_WIN)
   virtual uint32_t ChildCount() const override;
-  virtual Accessible* GetChildAt(uint32_t aIndex) const override;
-#endif  // defined(XP_WIN)
+
+  // Accessible
+  virtual Accessible* ChildAt(uint32_t aIndex) const override;
+  virtual Accessible* ChildAtPoint(int32_t aX, int32_t aY,
+                                   EWhichChildAtPoint aWhichChild) override;
 
  protected:
   virtual ~OuterDocAccessible() override;
 };
 
-inline OuterDocAccessible* Accessible::AsOuterDoc() {
+inline OuterDocAccessible* LocalAccessible::AsOuterDoc() {
   return IsOuterDoc() ? static_cast<OuterDocAccessible*>(this) : nullptr;
 }
 

@@ -7,9 +7,9 @@ import os
 import re
 import signal
 import six
-import subprocess
 
 from distutils.version import StrictVersion
+from mozboot.util import get_tools_dir
 from mozfile import which
 from mozlint import result
 from mozlint.pathutils import get_ancestors_by_name
@@ -17,16 +17,18 @@ from mozprocess import ProcessHandler
 
 
 CLIPPY_WRONG_VERSION = """
-You are probably using an old version of clippy.
-Expected version is {version}.
+Clippy is not installed or an older version was detected. Please make sure
+clippy is installed and up to date. The minimum required version is {version}.
 
-To install it:
+To install:
+
     $ rustup component add clippy
 
-Or to update it:
+To update:
+
     $ rustup update
 
-And make sure that 'cargo' is in the PATH
+Also ensure 'cargo' is on your $PATH.
 """.strip()
 
 
@@ -37,8 +39,10 @@ And make sure that it is in the PATH
 """.strip()
 
 
-def parse_issues(log, config, issues, path, onlyIn):
+def parse_issues(log, config, issues, base_path, onlyIn):
     results = []
+    if onlyIn:
+        onlyIn = os.path.normcase(os.path.normpath(onlyIn))
     for issue in issues:
 
         try:
@@ -70,7 +74,8 @@ def parse_issues(log, config, issues, path, onlyIn):
                         continue
 
                     l = detail["spans"][0]
-                    if onlyIn and onlyIn not in p:
+                    p = os.path.join(base_path, l["file_name"])
+                    if onlyIn and onlyIn not in os.path.normcase(os.path.normpath(p)):
                         # Case when we have a .rs in the include list in the yaml file
                         log.debug(
                             "{} is not part of the list of files '{}'".format(p, onlyIn)
@@ -109,33 +114,29 @@ def get_cargo_binary(log):
             return cargo_bin
         log.debug("Did not find {} in CARGO_HOME".format(cargo_bin))
         return None
-    return which("cargo")
+
+    rust_path = os.path.join(get_tools_dir(), "rustc", "bin")
+    return which("cargo", path=os.pathsep.join([rust_path, os.environ["PATH"]]))
 
 
-def get_clippy_version(log, binary):
+def get_clippy_version(log, cargo):
     """
-    Check if we are running the deprecated rustfmt
+    Check if we are running the deprecated clippy
     """
-    try:
-        output = subprocess.check_output(
-            [binary, "clippy", "--version"],
-            stderr=subprocess.STDOUT,
-            universal_newlines=True,
-        )
-    except subprocess.CalledProcessError:
-        # --version failed, clippy isn't installed.
+    output = run_cargo_command(
+        log, [cargo, "clippy", "--version"], universal_newlines=True
+    )
+
+    version = re.findall(r"(\d+-\d+-\d+)", output[0])
+    if not version:
         return False
-
-    log.debug("Found version: {}".format(output))
-
-    version = re.findall(r"(\d+-\d+-\d+)", output)[0].replace("-", ".")
-    version = StrictVersion(version)
+    version = StrictVersion(version[0].replace("-", "."))
+    log.debug("Found version: {}".format(version))
     return version
 
 
 class clippyProcess(ProcessHandler):
-    def __init__(self, config, *args, **kwargs):
-        self.config = config
+    def __init__(self, *args, **kwargs):
         kwargs["stream"] = False
         ProcessHandler.__init__(self, *args, **kwargs)
 
@@ -145,9 +146,13 @@ class clippyProcess(ProcessHandler):
         signal.signal(signal.SIGINT, orig)
 
 
-def run_process(log, config, cmd):
+def run_cargo_command(log, cmd, **kwargs):
     log.debug("Command: {}".format(cmd))
-    proc = clippyProcess(config, cmd)
+    env = os.environ.copy()
+    # Cargo doesn't find cargo-clippy on its own if it's not in `$PATH` when
+    # `$CARGO_HOME` is not set and cargo is not in `~/.cargo`.
+    env["PATH"] = os.pathsep.join([os.path.dirname(cmd[0]), os.environ["PATH"]])
+    proc = clippyProcess(cmd, env=env, **kwargs)
     proc.run()
     try:
         proc.wait()
@@ -171,12 +176,12 @@ def lint(paths, config, fix=None, **lintargs):
     min_version = StrictVersion(min_version_str)
     actual_version = get_clippy_version(log, cargo)
     log.debug(
-        "Found version: {}. Minimal expected version: {}".format(
+        "Found version: {}. Minimum expected version: {}".format(
             actual_version, min_version
         )
     )
 
-    if actual_version < min_version:
+    if not actual_version or actual_version < min_version:
         print(CLIPPY_WRONG_VERSION.format(version=min_version_str))
         return 1
 
@@ -184,11 +189,18 @@ def lint(paths, config, fix=None, **lintargs):
     cmd_args_clean.append("clean")
 
     cmd_args_common = ["--manifest-path"]
-    cmd_args_clippy = [
-        cargo,
+    cmd_args_clippy = [cargo]
+
+    if fix:
+        cmd_args_clippy += ["+nightly"]
+
+    cmd_args_clippy += [
         "clippy",
         "--message-format=json",
     ]
+
+    if fix:
+        cmd_args_clippy += ["--fix", "-Z", "unstable-options"]
 
     lock_files_to_delete = []
     for p in paths:
@@ -216,7 +228,7 @@ def lint(paths, config, fix=None, **lintargs):
             p = os.path.dirname(p)
             onlyIn = path_conf
 
-        if os.path.isdir(p):
+        elif os.path.isdir(p):
             # Sometimes, clippy reports issues from other crates
             # Make sure that we don't display that either
             onlyIn = p
@@ -227,15 +239,23 @@ def lint(paths, config, fix=None, **lintargs):
         log.debug("Path translated to = {}".format(p))
         # Needs clean because of https://github.com/rust-lang/rust-clippy/issues/2604
         clean_command = cmd_args_clean + cmd_args_common + [p]
-        run_process(log, config, clean_command)
+        run_cargo_command(log, clean_command)
 
         # Create the actual clippy command
         base_command = cmd_args_clippy + cmd_args_common + [p]
-        output = run_process(log, config, base_command)
+        output = run_cargo_command(log, base_command)
 
         # Remove build artifacts created by clippy
-        run_process(log, config, clean_command)
-        results += parse_issues(log, config, output, p, onlyIn)
+        run_cargo_command(log, clean_command)
+
+        # Source paths in clippy spans, when they are relative, are relative to the
+        # workspace if there is one.
+        for cargo_toml in cargo_files:
+            with open(cargo_toml) as fh:
+                if "[workspace]" in fh.read():
+                    p = cargo_toml
+                    break
+        results += parse_issues(log, config, output, os.path.dirname(p), onlyIn)
 
     # Remove Cargo.lock files created by clippy
     for lock_file in lock_files_to_delete:

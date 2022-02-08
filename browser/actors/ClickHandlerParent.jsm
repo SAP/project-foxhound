@@ -55,6 +55,11 @@ class ClickHandlerParent extends JSWindowActorParent {
     // This is heavily based on contentAreaClick from browser.js (Bug 903016)
     // The data is set up in a way to look like an Event.
     let browser = this.manager.browsingContext.top.embedderElement;
+    if (!browser) {
+      // Can be null if the tab disappeared by the time we got the message.
+      // Just bail.
+      return;
+    }
     let window = browser.ownerGlobal;
 
     if (!data.href) {
@@ -98,7 +103,6 @@ class ClickHandlerParent extends JSWindowActorParent {
     let params = {
       charset: browser.characterSet,
       referrerInfo: E10SUtils.deserializeReferrerInfo(data.referrerInfo),
-      allowMixedContent: data.allowMixedContent,
       isContentWindowPrivate: data.isContentWindowPrivate,
       originPrincipal: data.originPrincipal,
       originStoragePrincipal: data.originStoragePrincipal,

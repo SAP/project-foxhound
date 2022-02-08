@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 kok{
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"अबिदजान"}
@@ -1877,6 +1877,9 @@ kok{
             ld{"येकातेरिनबर्ग ग्रीष्म वेळ"}
             lg{"येकातेरिनबर्ग वेळ"}
             ls{"येकातेरिनबर्ग प्रमाणित वेळ"}
+        }
+        "meta:Yukon"{
+            ls{"युकॉन वेळ"}
         }
         fallbackFormat{"{1} ({0})"}
         gmtFormat{"GMT{0}"}

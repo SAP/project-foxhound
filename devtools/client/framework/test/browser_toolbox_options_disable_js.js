@@ -7,11 +7,10 @@ const TEST_URI = URL_ROOT + "browser_toolbox_options_disable_js.html";
 
 add_task(async function() {
   const tab = await addTab(TEST_URI);
-  const target = await TargetFactory.forTab(tab);
-  const toolbox = await gDevTools.showToolbox(target);
 
-  await toolbox.selectTool("options");
-  ok(true, "Toolbox selected via selectTool method");
+  // Start on the options panel from where we will toggle the disabling javascript
+  // option.
+  const toolbox = await gDevTools.showToolboxForTab(tab, { toolId: "options" });
 
   await testJSEnabled();
   await testJSEnabledIframe();
@@ -35,8 +34,8 @@ add_task(async function() {
 async function testJSEnabled() {
   info("Testing that JS is enabled");
 
-  // We use waitForTick here because switching docShell.allowJavascript to true
-  // takes a while to become live.
+  // We use waitForTick here because switching browsingContext.allowJavascript
+  // to true takes a while to become live.
   await waitForTick();
 
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
@@ -78,11 +77,11 @@ async function toggleJS(toolbox) {
     info("Checking checkbox to disable JS");
   }
 
-  let { javascriptEnabled } = toolbox.target.configureOptions;
+  let javascriptEnabled = await toolbox.commands.targetConfigurationCommand.isJavascriptEnabled();
   is(
     javascriptEnabled,
     !cbx.checked,
-    "BrowsingContextTargetFront's configureOptions is correct before the toggle"
+    "targetConfigurationCommand.isJavascriptEnabled is correct before the toggle"
   );
 
   const browserLoaded = BrowserTestUtils.browserLoaded(
@@ -91,11 +90,11 @@ async function toggleJS(toolbox) {
   cbx.click();
   await browserLoaded;
 
-  ({ javascriptEnabled } = toolbox.target.configureOptions);
+  javascriptEnabled = await toolbox.commands.targetConfigurationCommand.isJavascriptEnabled();
   is(
     javascriptEnabled,
     !cbx.checked,
-    "BrowsingContextTargetFront's configureOptions is correctly updated"
+    "targetConfigurationCommand.isJavascriptEnabled is correctly updated"
   );
 }
 

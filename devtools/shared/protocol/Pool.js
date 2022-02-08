@@ -30,14 +30,20 @@ class Pool extends EventEmitter {
       this.conn = conn;
     }
     this.label = label;
-    this.__poolMap = null;
+
+    // Will be individually flipped to true by Actor/Front classes.
+    // Will also only be exposed via Actor/Front::isDestroyed().
+    this._isDestroyed = false;
   }
+
+  __poolMap = null;
+  parentPool = null;
 
   /**
    * Return the parent pool for this client.
    */
   getParent() {
-    return this.conn.poolFor(this.actorID);
+    return this.parentPool;
   }
 
   /**
@@ -93,6 +99,7 @@ class Pool extends EventEmitter {
       }
     }
     this._poolMap.set(actor.actorID, actor);
+    actor.parentPool = this;
   }
 
   unmanageChildren(FrontType) {
@@ -107,7 +114,10 @@ class Pool extends EventEmitter {
    * Remove an actor as a child of this pool.
    */
   unmanage(actor) {
-    this.__poolMap && this.__poolMap.delete(actor.actorID);
+    if (this.__poolMap) {
+      this.__poolMap.delete(actor.actorID);
+    }
+    actor.parentPool = null;
   }
 
   // true if the given actor ID exists in the pool.
@@ -141,6 +151,13 @@ class Pool extends EventEmitter {
     }
   }
 
+  isDestroyed() {
+    // Note: _isDestroyed is only flipped from Actor and Front subclasses for
+    // now, so this method should not be called on pure Pool instances.
+    // See Bug 1717811.
+    return this._isDestroyed;
+  }
+
   /**
    * Pools can override this method in order to opt-out of a destroy sequence.
    *
@@ -169,7 +186,11 @@ class Pool extends EventEmitter {
     if (!this.__poolMap) {
       return;
     }
-    for (const actor of this.__poolMap.values()) {
+    // Immediately clear the poolmap so that we bail out early if the code is reentrant.
+    const poolMap = this.__poolMap;
+    this.__poolMap = null;
+
+    for (const actor of poolMap.values()) {
       // Self-owned actors are ok, but don't need destroying twice.
       if (actor === this) {
         continue;
@@ -191,8 +212,6 @@ class Pool extends EventEmitter {
       }
     }
     this.conn.removeActorPool(this);
-    this.__poolMap.clear();
-    this.__poolMap = null;
   }
 }
 

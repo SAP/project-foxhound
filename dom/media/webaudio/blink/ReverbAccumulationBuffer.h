@@ -41,7 +41,9 @@ namespace WebCore {
 // around.
 class ReverbAccumulationBuffer {
  public:
-  explicit ReverbAccumulationBuffer(size_t length);
+  ReverbAccumulationBuffer();
+  // Returns false on failure.
+  bool allocate(size_t length);
 
   // This will read from, then clear-out numberOfFrames
   void readAndClear(float* destination, size_t numberOfFrames);
@@ -50,12 +52,10 @@ class ReverbAccumulationBuffer {
   // delay from the read position. We need to pass in and update readIndex here,
   // since each ReverbConvolverStage may be running in a different thread than
   // the realtime thread calling ReadAndClear() and maintaining m_readIndex
-  // Returns the writeIndex where the accumulation took place
-  int accumulate(const float* source, size_t numberOfFrames, int* readIndex,
-                 size_t delayFrames);
+  void accumulate(const float* source, size_t numberOfFrames, size_t* readIndex,
+                  size_t delayFrames);
 
   size_t readIndex() const { return m_readIndex; }
-  void updateReadIndex(int* readIndex, size_t numberOfFrames) const;
 
   size_t readTimeFrame() const { return m_readTimeFrame; }
 

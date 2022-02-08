@@ -12,8 +12,9 @@
 #include "jsexn.h"
 #include "jsfriendapi.h"
 
-#include "js/Printf.h"    // JS_vsmprintf
-#include "js/Warnings.h"  // JS::WarningReporter
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/Printf.h"                // JS_vsmprintf
+#include "js/Warnings.h"              // JS::WarningReporter
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
 
@@ -46,7 +47,7 @@ void js::CompileError::throwError(JSContext* cx) {
 }
 
 bool js::ReportExceptionClosure::operator()(JSContext* cx) {
-  cx->setPendingExceptionAndCaptureStack(exn_);
+  cx->setPendingException(exn_, ShouldCaptureStack::Always);
   return false;
 }
 
@@ -554,8 +555,8 @@ bool js::ReportErrorVA(JSContext* cx, IsWarning isWarning, const char* format,
     report.initOwnedMessage(message.release());
   } else {
     MOZ_ASSERT(argumentsType == ArgumentsAreLatin1);
-    Latin1Chars latin1(message.get(), strlen(message.get()));
-    UTF8CharsZ utf8(JS::CharsToNewUTF8CharsZ(cx, latin1));
+    JS::Latin1Chars latin1(message.get(), strlen(message.get()));
+    JS::UTF8CharsZ utf8(JS::CharsToNewUTF8CharsZ(cx, latin1));
     if (!utf8) {
       return false;
     }
@@ -566,4 +567,27 @@ bool js::ReportErrorVA(JSContext* cx, IsWarning isWarning, const char* format,
   ReportError(cx, &report, nullptr, nullptr);
 
   return report.isWarning();
+}
+
+void js::MaybePrintAndClearPendingException(JSContext* cx) {
+  if (!cx->isExceptionPending()) {
+    return;
+  }
+
+  AutoClearPendingException acpe(cx);
+
+  JS::ExceptionStack exnStack(cx);
+  if (!JS::StealPendingExceptionStack(cx, &exnStack)) {
+    fprintf(stderr, "error getting pending exception\n");
+    return;
+  }
+
+  JS::ErrorReportBuilder report(cx);
+  if (!report.init(cx, exnStack, JS::ErrorReportBuilder::WithSideEffects)) {
+    fprintf(stderr, "out of memory initializing JS::ErrorReportBuilder\n");
+    return;
+  }
+
+  MOZ_ASSERT(!report.report()->isWarning());
+  JS::PrintError(stderr, report, true);
 }

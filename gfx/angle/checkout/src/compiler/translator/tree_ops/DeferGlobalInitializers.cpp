@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2016 The ANGLE Project Authors. All rights reserved.
+// Copyright 2016 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -17,6 +17,7 @@
 
 #include <vector>
 
+#include "compiler/translator/Compiler.h"
 #include "compiler/translator/IntermNode.h"
 #include "compiler/translator/StaticType.h"
 #include "compiler/translator/SymbolTable.h"
@@ -90,10 +91,11 @@ void GetDeferredInitializers(TIntermDeclaration *declaration,
 
         if (symbolNode->getQualifier() == EvqGlobal)
         {
-            TIntermSequence *initCode = CreateInitCode(symbolNode, canUseLoopsToInitialize,
-                                                       highPrecisionSupported, symbolTable);
-            deferredInitializersOut->insert(deferredInitializersOut->end(), initCode->begin(),
-                                            initCode->end());
+            TIntermSequence initCode;
+            CreateInitCode(symbolNode, canUseLoopsToInitialize, highPrecisionSupported, &initCode,
+                           symbolTable);
+            deferredInitializersOut->insert(deferredInitializersOut->end(), initCode.begin(),
+                                            initCode.end());
         }
     }
 }
@@ -116,8 +118,9 @@ void InsertInitCallToMain(TIntermBlock *root,
         CreateInternalFunctionDefinitionNode(*initGlobalsFunction, initGlobalsBlock);
     root->appendStatement(initGlobalsFunctionDefinition);
 
+    TIntermSequence emptySequence;
     TIntermAggregate *initGlobalsCall =
-        TIntermAggregate::CreateFunctionCall(*initGlobalsFunction, new TIntermSequence());
+        TIntermAggregate::CreateFunctionCall(*initGlobalsFunction, &emptySequence);
 
     TIntermBlock *mainBody = FindMainBody(root);
     mainBody->getSequence()->insert(mainBody->getSequence()->begin(), initGlobalsCall);
@@ -125,13 +128,14 @@ void InsertInitCallToMain(TIntermBlock *root,
 
 }  // namespace
 
-void DeferGlobalInitializers(TIntermBlock *root,
+bool DeferGlobalInitializers(TCompiler *compiler,
+                             TIntermBlock *root,
                              bool initializeUninitializedGlobals,
                              bool canUseLoopsToInitialize,
                              bool highPrecisionSupported,
                              TSymbolTable *symbolTable)
 {
-    TIntermSequence *deferredInitializers = new TIntermSequence();
+    TIntermSequence deferredInitializers;
     std::vector<const TVariable *> variablesToReplace;
 
     // Loop over all global statements and process the declarations. This is simpler than using a
@@ -143,14 +147,14 @@ void DeferGlobalInitializers(TIntermBlock *root,
         {
             GetDeferredInitializers(declaration, initializeUninitializedGlobals,
                                     canUseLoopsToInitialize, highPrecisionSupported,
-                                    deferredInitializers, &variablesToReplace, symbolTable);
+                                    &deferredInitializers, &variablesToReplace, symbolTable);
         }
     }
 
     // Add the function with initialization and the call to that.
-    if (!deferredInitializers->empty())
+    if (!deferredInitializers.empty())
     {
-        InsertInitCallToMain(root, deferredInitializers, symbolTable);
+        InsertInitCallToMain(root, &deferredInitializers, symbolTable);
     }
 
     // Replace constant variables with non-constant global variables.
@@ -160,8 +164,13 @@ void DeferGlobalInitializers(TIntermBlock *root,
         replacementType->setQualifier(EvqGlobal);
         TVariable *replacement =
             new TVariable(symbolTable, var->name(), replacementType, var->symbolType());
-        ReplaceVariable(root, var, replacement);
+        if (!ReplaceVariable(compiler, root, var, replacement))
+        {
+            return false;
+        }
     }
+
+    return true;
 }
 
 }  // namespace sh

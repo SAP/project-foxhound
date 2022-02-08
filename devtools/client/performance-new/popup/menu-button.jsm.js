@@ -84,6 +84,7 @@ function openPopup(document) {
   // instead of opening the popup. Sending a command event on a view widget
   // will make CustomizableUI show the view.
   const cmdEvent = document.createEvent("xulcommandevent");
+  // @ts-ignore - Bug 1674368
   cmdEvent.initCommandEvent("command", true, true, button.ownerGlobal);
   button.dispatchEvent(cmdEvent);
 }
@@ -135,7 +136,15 @@ function initialize(toggleProfilerKeyShortcuts) {
         "devtools.performance.popup.intro-displayed";
       Services.prefs.setBoolPref(popupIntroDisplayedPref, false);
 
-      if (Services.profiler.IsActive()) {
+      // We stop the profiler when the button is removed for normal users,
+      // but we try to avoid interfering with profiling of automated tests.
+      if (
+        Services.profiler.IsActive() &&
+        (!Cu.isInAutomation ||
+          !Cc["@mozilla.org/process/environment;1"]
+            .getService(Ci.nsIEnvironment)
+            .exists("MOZ_PROFILER_STARTUP"))
+      ) {
         Services.profiler.StopProfiler();
       }
     }
@@ -143,9 +152,9 @@ function initialize(toggleProfilerKeyShortcuts) {
 
   const item = {
     id: WIDGET_ID,
-    type: "view",
+    type: "button-and-view",
     viewId,
-    tooltiptext: "profiler-button.tooltiptext",
+    l10nId: "profiler-popup-button-idle",
 
     onViewShowing:
       /**
@@ -161,17 +170,9 @@ function initialize(toggleProfilerKeyShortcuts) {
           // The popup logic is stored in a separate script so it doesn't have
           // to be parsed at browser startup, and will only be lazily loaded
           // when the popup is viewed.
-          const {
-            selectElementsInPanelview,
-            createViewControllers,
-            addPopupEventHandlers,
-            initializePopup,
-          } = lazy.PopupPanel();
+          const { initializePopup } = lazy.PopupPanel();
 
-          const panelElements = selectElementsInPanelview(event.target);
-          const panelView = createViewControllers(panelState, panelElements);
-          addPopupEventHandlers(panelState, panelElements, panelView);
-          initializePopup(panelState, panelElements, panelView);
+          initializePopup(panelState, event.target);
         } catch (error) {
           // Surface any errors better in the console.
           console.error(error);
@@ -228,52 +229,55 @@ function initialize(toggleProfilerKeyShortcuts) {
      * This method is used when we need to operate upon the button element itself.
      * This is called once per browser window.
      *
-     * @type {(buttonElement: HTMLElement) => void}
+     * @type {(node: ChromeHTMLElement) => void}
      */
-    onCreated: buttonElement => {
-      const window = buttonElement?.ownerDocument?.defaultView;
-      if (!window) {
+    onCreated: node => {
+      const document = node.ownerDocument;
+      const window = document?.defaultView;
+      if (!document || !window) {
         console.error(
-          "Unable to find the window of the profiler button element."
+          "Unable to find the document or the window of the profiler toolbar item."
         );
         return;
       }
+
+      const firstButton = node.firstElementChild;
+      if (!firstButton) {
+        console.error(
+          "Unable to find the button element inside the profiler toolbar item."
+        );
+        return;
+      }
+
+      // Assign the null-checked button element to a new variable so that
+      // TypeScript doesn't require additional null checks in the functions
+      // below.
+      const buttonElement = firstButton;
 
       // This class is needed to show the subview arrow when our button
       // is in the overflow menu.
       buttonElement.classList.add("subviewbutton-nav");
 
-      // Our buttons has 2 targets: the icon which starts the profiler or
-      // captures the profile, and the dropmarker which opens the popup.
-      // To have this behavior, we need to enable showing the dropmarker...
-      buttonElement.setAttribute("wantdropmarker", "true");
-      // ... and to implement our custom click and keyboard event handling
-      // to decide which of the 2 behaviors should be triggered.
-      buttonElement.addEventListener("click", item);
-      // This would be better as a keypress handler, but CustomizableUI's
-      // keypress handler runs before keypress handlers we could add here.
-      buttonElement.addEventListener("keydown", item);
-
       function setButtonActive() {
-        buttonElement.setAttribute(
-          "tooltiptext",
-          "The profiler is recording a profile"
+        document.l10n.setAttributes(
+          buttonElement,
+          "profiler-popup-button-recording"
         );
         buttonElement.classList.toggle("profiler-active", true);
         buttonElement.classList.toggle("profiler-paused", false);
       }
       function setButtonPaused() {
-        buttonElement.setAttribute(
-          "tooltiptext",
-          "The profiler is capturing a profile"
+        document.l10n.setAttributes(
+          buttonElement,
+          "profiler-popup-button-capturing"
         );
         buttonElement.classList.toggle("profiler-active", false);
         buttonElement.classList.toggle("profiler-paused", true);
       }
       function setButtonInactive() {
-        buttonElement.setAttribute(
-          "tooltiptext",
-          "Record a performance profile"
+        document.l10n.setAttributes(
+          buttonElement,
+          "profiler-popup-button-idle"
         );
         buttonElement.classList.toggle("profiler-active", false);
         buttonElement.classList.toggle("profiler-paused", false);
@@ -294,78 +298,20 @@ function initialize(toggleProfilerKeyShortcuts) {
         Services.obs.removeObserver(setButtonActive, "profiler-started");
         Services.obs.removeObserver(setButtonInactive, "profiler-stopped");
         Services.obs.removeObserver(setButtonPaused, "profiler-paused");
-        buttonElement.removeEventListener("click", item);
-        buttonElement.removeEventListener("keydown", item);
       });
     },
 
-    handleEvent: event => {
-      function startOrCapture() {
-        if (Services.profiler.IsPaused()) {
-          // A profile is already being captured, ignore this event.
-          return;
-        }
-        const { startProfiler, captureProfile } = lazy.Background();
-        if (Services.profiler.IsActive()) {
-          captureProfile("aboutprofiling");
-        } else {
-          startProfiler("aboutprofiling");
-        }
+    // @ts-ignore - Bug 1674368
+    onCommand: event => {
+      if (Services.profiler.IsPaused()) {
+        // A profile is already being captured, ignore this event.
+        return;
       }
-
-      if (event.type == "click") {
-        // Only handle clicks on the left button.
-        if (event.button != 0) {
-          return;
-        }
-
-        const button = event.target;
-
-        // Ignore the click event while in the overflow menu
-        if (button.getAttribute("cui-anchorid") == "nav-bar-overflow-button") {
-          return;
-        }
-
-        // If we are within the area of the icon, handle the event.
-        // Otherwise we are on the dropmarker and CustomizableUI will take
-        // care of opening the panel.
-        const win = button.ownerGlobal;
-        const iconBounds = win.windowUtils.getBoundsWithoutFlushing(
-          button.icon
-        );
-        if (
-          win.RTL_UI ? event.x >= iconBounds.left : event.x <= iconBounds.right
-        ) {
-          startOrCapture();
-          event.stopPropagation();
-          event.preventDefault();
-        }
-      } else if (event.type == "keydown") {
-        if (event.key == " " || event.key == "Enter") {
-          startOrCapture();
-          event.stopPropagation();
-          event.preventDefault();
-          return;
-        }
-        if (event.key == "ArrowDown") {
-          // Trigger a "command" event that CustomizableUI will handle.
-          const button = event.target;
-          const cmdEvent = button.ownerDocument.createEvent("xulcommandevent");
-          cmdEvent.initCommandEvent(
-            "command",
-            true,
-            true,
-            button.ownerGlobal,
-            0,
-            event.ctrlKey,
-            event.altKey,
-            event.shiftKey,
-            event.metaKey,
-            null,
-            event.mozInputSource
-          );
-          event.currentTarget.dispatchEvent(cmdEvent);
-        }
+      const { startProfiler, captureProfile } = lazy.Background();
+      if (Services.profiler.IsActive()) {
+        captureProfile("aboutprofiling");
+      } else {
+        startProfiler("aboutprofiling");
       }
     },
   };

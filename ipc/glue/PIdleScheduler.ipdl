@@ -5,7 +5,7 @@
 
 include protocol PBackground;
 using mozilla::TimeDuration from "mozilla/TimeStamp.h";
-using base::SharedMemoryHandle from "base/shared_memory.h";
+[MoveOnly] using base::SharedMemoryHandle from "base/shared_memory.h";
 namespace mozilla {
 namespace ipc {
 
@@ -32,7 +32,7 @@ namespace ipc {
  *   process, child process informs the scheduler and the process is moved back
  *   to the default queue.
  */
-async refcounted protocol PIdleScheduler
+[RefCounted] async protocol PIdleScheduler
 {
   manager PBackground;
 
@@ -51,6 +51,15 @@ parent:
   // Note, these two messages can be sent even before InitForIdleUse.
   async RunningPrioritizedOperation();
   async PrioritizedOperationDone();
+
+  // Ask if now would be a good time to GC
+  async RequestGC() returns (bool may_gc);
+
+  // Let the parent know when we start a GC without asking first.
+  async StartedGC();
+
+  // Called for ending any kind of GC.
+  async DoneGC();
 
   // This message is never sent. Each PIdleScheduler actor will stay alive as long as
   // its PBackground manager.

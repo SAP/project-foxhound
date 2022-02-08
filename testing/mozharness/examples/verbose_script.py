@@ -1,15 +1,20 @@
 #!/usr/bin/env python
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 """verbose_script.py
 
 Contrast to silent_script.py.
 """
 
+from __future__ import absolute_import
 import os
 import sys
 
 sys.path.insert(1, os.path.dirname(sys.path[0]))
 
-#from mozharness.base.errors import TarErrorList, SSHErrorList
+# from mozharness.base.errors import TarErrorList, SSHErrorList
 from mozharness.base.script import BaseScript
 
 
@@ -17,16 +22,17 @@ from mozharness.base.script import BaseScript
 class VerboseExample(BaseScript):
     def __init__(self, require_config_file=False):
         super(VerboseExample, self).__init__(
-            all_actions=['verbosity', ],
+            all_actions=[
+                "verbosity",
+            ],
             require_config_file=require_config_file,
-            config={"tarball_name": "bar.tar.bz2"}
+            config={"tarball_name": "bar.tar.bz2"},
         )
 
     def verbosity(self):
         tarball_name = self.config["tarball_name"]
         self.download_file(
-            "http://people.mozilla.org/~asasaki/foo.tar.bz2",
-            file_name=tarball_name
+            "http://people.mozilla.org/~asasaki/foo.tar.bz2", file_name=tarball_name
         )
         # the error_list adds more error checking.
         # the halt_on_failure will kill the script at this point if
@@ -36,28 +42,30 @@ class VerboseExample(BaseScript):
         # for a generic end-of-fatal-run method.
         self.run_command(
             ["tar", "xjvf", tarball_name],
-#            error_list=TarErrorList,
-#            halt_on_failure=True,
-#            fatal_exit_code=3,
+            #            error_list=TarErrorList,
+            #            halt_on_failure=True,
+            #            fatal_exit_code=3,
         )
         self.rmtree("x/ship2")
         self.rmtree(tarball_name)
         self.run_command(
             ["tar", "cjvf", tarball_name, "x"],
-#            error_list=TarErrorList,
-#            halt_on_failure=True,
-#            fatal_exit_code=3,
+            #            error_list=TarErrorList,
+            #            halt_on_failure=True,
+            #            fatal_exit_code=3,
         )
         self.rmtree("x")
         if self.run_command(
             ["scp", tarball_name, "people.mozilla.org:public_html/foo2.tar.bz2"],
-#            error_list=SSHErrorList,
+            #            error_list=SSHErrorList,
         ):
-            self.error("There's been a problem with the scp.  We're going to proceed anyway.")
+            self.error(
+                "There's been a problem with the scp.  We're going to proceed anyway."
+            )
         self.rmtree(tarball_name)
 
 
 # __main__ {{{1
-if __name__ == '__main__':
+if __name__ == "__main__":
     verbose_example = VerboseExample()
     verbose_example.run_and_exit()

@@ -52,28 +52,19 @@ class ViewSourceChild extends JSWindowActorChild {
    *        loading.
    */
   viewSource(URL, outerWindowID, lineNumber) {
-    let pageDescriptor, forcedCharSet;
+    let otherDocShell;
+    let forceEncodingDetection = false;
 
     if (outerWindowID) {
       let contentWindow = Services.wm.getOuterWindowWithId(outerWindowID);
       if (contentWindow) {
-        let otherDocShell = contentWindow.docShell;
+        otherDocShell = contentWindow.docShell;
 
-        try {
-          pageDescriptor = otherDocShell.QueryInterface(Ci.nsIWebPageDescriptor)
-            .currentDescriptor;
-        } catch (e) {
-          // We couldn't get the page descriptor, so we'll probably end up re-retrieving
-          // this document off of the network.
-        }
-
-        let utils = contentWindow.windowUtils;
-        let doc = contentWindow.document;
-        forcedCharSet = utils.docCharsetIsForced ? doc.characterSet : null;
+        forceEncodingDetection = contentWindow.windowUtils.docCharsetIsForced;
       }
     }
 
-    this.loadSource(URL, pageDescriptor, lineNumber, forcedCharSet);
+    this.loadSource(URL, otherDocShell, lineNumber, forceEncodingDetection);
   }
 
   /**
@@ -108,54 +99,35 @@ class ViewSourceChild extends JSWindowActorChild {
    *
    * @param URL (required)
    *        The URL string of the source to be shown.
-   * @param pageDescriptor (optional)
-   *        The currentDescriptor off of an nsIWebPageDescriptor, in the
-   *        event that the caller wants to try to load the source out of
-   *        the network cache.
+   * @param otherDocShell (optional)
+   *        The docshell of the content window that is hosting the document.
    * @param lineNumber (optional)
    *        The line number to focus as soon as the source has finished
    *        loading.
-   * @param forcedCharSet (optional)
-   *        The document character set to use instead of the default one.
+   * @param forceEncodingDetection (optional)
+   *        Force autodetection of the character encoding.
    */
-  loadSource(URL, pageDescriptor, lineNumber, forcedCharSet) {
+  loadSource(URL, otherDocShell, lineNumber, forceEncodingDetection) {
     const viewSrcURL = "view-source:" + URL;
 
-    if (forcedCharSet) {
-      try {
-        this.docShell.charset = forcedCharSet;
-      } catch (e) {
-        /* invalid charset */
-      }
+    if (forceEncodingDetection) {
+      this.docShell.forceEncodingDetection();
     }
 
     ViewSourcePageChild.setInitialLineNumber(lineNumber);
 
-    if (!pageDescriptor) {
+    if (!otherDocShell) {
       this.loadSourceFromURL(viewSrcURL);
       return;
     }
 
     try {
       let pageLoader = this.docShell.QueryInterface(Ci.nsIWebPageDescriptor);
-      pageLoader.loadPageAsViewSource(pageDescriptor);
+      pageLoader.loadPageAsViewSource(otherDocShell, viewSrcURL);
     } catch (e) {
       // We were not able to load the source from the network cache.
       this.loadSourceFromURL(viewSrcURL);
-      return;
     }
-
-    let shEntrySource = pageDescriptor.QueryInterface(Ci.nsISHEntry);
-    let shistory = this.docShell.QueryInterface(Ci.nsIWebNavigation)
-      .sessionHistory.legacySHistory;
-    let shEntry = shistory.createEntry();
-    shEntry.URI = Services.io.newURI(viewSrcURL);
-    shEntry.title = viewSrcURL;
-    let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
-    shEntry.triggeringPrincipal = systemPrincipal;
-    shEntry.setLoadTypeAsHistory();
-    shEntry.cacheKey = shEntrySource.cacheKey;
-    shistory.addEntry(shEntry, true);
   }
 
   /**

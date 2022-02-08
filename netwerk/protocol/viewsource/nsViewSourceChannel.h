@@ -9,11 +9,12 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "nsCOMPtr.h"
-#include "nsIApplicationCacheChannel.h"
 #include "nsICachingChannel.h"
+#include "nsIChannelEventSink.h"
 #include "nsIFormPOSTActionChannel.h"
 #include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
+#include "nsIInterfaceRequestor.h"
 #include "nsIStreamListener.h"
 #include "nsIURI.h"
 #include "nsIViewSourceChannel.h"
@@ -25,7 +26,6 @@ class nsViewSourceChannel final : public nsIViewSourceChannel,
                                   public nsIHttpChannel,
                                   public nsIHttpChannelInternal,
                                   public nsICachingChannel,
-                                  public nsIApplicationCacheChannel,
                                   public nsIFormPOSTActionChannel,
                                   public nsIChildChannel,
                                   public nsIInterfaceRequestor,
@@ -44,18 +44,12 @@ class nsViewSourceChannel final : public nsIViewSourceChannel,
   NS_DECL_NSICHANNELEVENTSINK
   NS_FORWARD_SAFE_NSICACHEINFOCHANNEL(mCacheInfoChannel)
   NS_FORWARD_SAFE_NSICACHINGCHANNEL(mCachingChannel)
-  NS_FORWARD_SAFE_NSIAPPLICATIONCACHECHANNEL(mApplicationCacheChannel)
-  NS_FORWARD_SAFE_NSIAPPLICATIONCACHECONTAINER(mApplicationCacheChannel)
   NS_FORWARD_SAFE_NSIUPLOADCHANNEL(mUploadChannel)
   NS_FORWARD_SAFE_NSIFORMPOSTACTIONCHANNEL(mPostChannel)
   NS_FORWARD_SAFE_NSIHTTPCHANNELINTERNAL(mHttpChannelInternal)
 
   // nsViewSourceChannel methods:
-  nsViewSourceChannel()
-      : mIsDocument(false),
-        mOpened(false),
-        mIsSrcdocChannel(false),
-        mReplaceRequest(true) {}
+  nsViewSourceChannel() = default;
 
   [[nodiscard]] nsresult Init(nsIURI* uri, nsILoadInfo* aLoadInfo);
 
@@ -72,10 +66,16 @@ class nsViewSourceChannel final : public nsIViewSourceChannel,
 
  protected:
   ~nsViewSourceChannel() = default;
+  void ReleaseListeners();
+
   nsTArray<mozilla::net::PreferredAlternativeDataTypeParams> mEmptyArray;
 
   // Clones aURI and prefixes it with "view-source:" schema,
   nsresult BuildViewSourceURI(nsIURI* aURI, nsIURI** aResult);
+
+  // Called to update the forwarding channel members after the `mChannel` field
+  // has been changed to reflect the new inner channel.
+  void UpdateChannelInterfaces();
 
   nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
   nsCOMPtr<nsIChannel> mChannel;
@@ -83,7 +83,6 @@ class nsViewSourceChannel final : public nsIViewSourceChannel,
   nsCOMPtr<nsIHttpChannelInternal> mHttpChannelInternal;
   nsCOMPtr<nsICachingChannel> mCachingChannel;
   nsCOMPtr<nsICacheInfoChannel> mCacheInfoChannel;
-  nsCOMPtr<nsIApplicationCacheChannel> mApplicationCacheChannel;
   nsCOMPtr<nsIUploadChannel> mUploadChannel;
   nsCOMPtr<nsIFormPOSTActionChannel> mPostChannel;
   nsCOMPtr<nsIChildChannel> mChildChannel;
@@ -91,10 +90,9 @@ class nsViewSourceChannel final : public nsIViewSourceChannel,
   nsCOMPtr<nsIURI> mOriginalURI;
   nsCOMPtr<nsIURI> mBaseURI;
   nsCString mContentType;
-  bool mIsDocument;  // keeps track of the LOAD_DOCUMENT_URI flag
-  bool mOpened;
-  bool mIsSrcdocChannel;
-  bool mReplaceRequest;
+  bool mIsDocument{false};  // keeps track of the LOAD_DOCUMENT_URI flag
+  bool mOpened{false};
+  bool mIsSrcdocChannel{false};
 };
 
 #endif /* nsViewSourceChannel_h___ */

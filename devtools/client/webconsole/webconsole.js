@@ -54,14 +54,23 @@ class WebConsole {
    * @constructor
    * @param object toolbox
    *        The toolbox where the web console is displayed.
+   * @param object commands
+   *        The commands object with all interfaces defined from devtools/shared/commands/
    * @param nsIDOMWindow iframeWindow
    *        The window where the web console UI is already loaded.
    * @param nsIDOMWindow chromeWindow
    *        The window of the web console owner.
    * @param bool isBrowserConsole
    */
-  constructor(toolbox, iframeWindow, chromeWindow, isBrowserConsole = false) {
+  constructor(
+    toolbox,
+    commands,
+    iframeWindow,
+    chromeWindow,
+    isBrowserConsole = false
+  ) {
     this.toolbox = toolbox;
+    this.commands = commands;
     this.iframeWindow = iframeWindow;
     this.chromeWindow = chromeWindow;
     this.hudId = "hud_" + ++gHudId;
@@ -89,15 +98,11 @@ class WebConsole {
   }
 
   get currentTarget() {
-    return this.toolbox.target;
+    return this.commands.targetCommand.targetFront;
   }
 
-  get targetList() {
-    return this.toolbox.targetList;
-  }
-
-  get resourceWatcher() {
-    return this.toolbox.resourceWatcher;
+  get resourceCommand() {
+    return this.commands.resourceCommand;
   }
 
   /**
@@ -120,7 +125,7 @@ class WebConsole {
   }
 
   getFrontByID(id) {
-    return this.currentTarget.client.getFrontByID(id);
+    return this.commands.client.getFrontByID(id);
   }
 
   /**
@@ -301,7 +306,7 @@ class WebConsole {
       return panel.getMappedExpression(expression);
     }
 
-    if (this.parserService && expression.includes("await ")) {
+    if (expression.includes("await ")) {
       const shouldMapBindings = false;
       const shouldMapAwait = true;
       const res = this.parserService.mapExpression(
@@ -315,6 +320,11 @@ class WebConsole {
     }
 
     return null;
+  }
+
+  getMappedVariables() {
+    const { toolbox } = this;
+    return toolbox?.getPanel("jsdebugger")?.getMappedVariables();
   }
 
   get parserService() {
@@ -429,17 +439,6 @@ class WebConsole {
     });
 
     await Promise.all([onNodeFrontSet, onInspectorUpdated]);
-  }
-
-  /**
-   * Evaluate a JavaScript expression asynchronously.
-   *
-   * @param {String} string: The code you want to evaluate.
-   * @param {Object} options: Options for evaluation. See evaluateJSAsync method on
-   *                          devtools/client/fronts/webconsole.js
-   */
-  evaluateJSAsync(expression, options = {}) {
-    return this.ui._commands.evaluateJSAsync(expression, options);
   }
 
   /**

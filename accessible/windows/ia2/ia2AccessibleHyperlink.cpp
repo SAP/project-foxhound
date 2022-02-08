@@ -14,6 +14,14 @@
 
 using namespace mozilla::a11y;
 
+Accessible* ia2AccessibleHyperlink::Acc() {
+  return static_cast<MsaaAccessible*>(this)->Acc();
+}
+
+AccessibleWrap* ia2AccessibleHyperlink::LocalAcc() {
+  return static_cast<MsaaAccessible*>(this)->LocalAcc();
+}
+
 // IUnknown
 
 STDMETHODIMP
@@ -23,11 +31,10 @@ ia2AccessibleHyperlink::QueryInterface(REFIID iid, void** ppv) {
   *ppv = nullptr;
 
   if (IID_IAccessibleHyperlink == iid) {
-    auto accWrap = static_cast<AccessibleWrap*>(this);
-    if (accWrap->IsProxy()
-            ? !(accWrap->ProxyInterfaces() & Interfaces::HYPERLINK)
-            : !accWrap->IsLink())
+    Accessible* acc = Acc();
+    if (!acc || !acc->IsLink()) {
       return E_NOINTERFACE;
+    }
 
     *ppv = static_cast<IAccessibleHyperlink*>(this);
     (reinterpret_cast<IUnknown*>(*ppv))->AddRef();
@@ -45,10 +52,10 @@ ia2AccessibleHyperlink::get_anchor(long aIndex, VARIANT* aAnchor) {
 
   VariantInit(aAnchor);
 
-  Accessible* thisObj = static_cast<AccessibleWrap*>(this);
-  MOZ_ASSERT(!thisObj->IsProxy());
-
-  if (thisObj->IsDefunct()) return CO_E_OBJNOTCONNECTED;
+  LocalAccessible* thisObj = LocalAcc();
+  if (!thisObj) {
+    return CO_E_OBJNOTCONNECTED;
+  }
 
   if (aIndex < 0 || aIndex >= static_cast<long>(thisObj->AnchorCount()))
     return E_INVALIDARG;
@@ -59,11 +66,9 @@ ia2AccessibleHyperlink::get_anchor(long aIndex, VARIANT* aAnchor) {
       static_cast<AccessibleWrap*>(thisObj->AnchorAt(aIndex));
   if (!anchor) return S_FALSE;
 
-  void* instancePtr = nullptr;
-  HRESULT result = anchor->QueryInterface(IID_IUnknown, &instancePtr);
-  if (FAILED(result)) return result;
-
-  aAnchor->punkVal = static_cast<IUnknown*>(instancePtr);
+  RefPtr<IAccessible> result;
+  anchor->GetNativeInterface(getter_AddRefs(result));
+  result.forget(&aAnchor->punkVal);
   aAnchor->vt = VT_UNKNOWN;
   return S_OK;
 }
@@ -76,12 +81,11 @@ ia2AccessibleHyperlink::get_anchorTarget(long aIndex, VARIANT* aAnchorTarget) {
 
   VariantInit(aAnchorTarget);
 
-  Accessible* thisObj = static_cast<AccessibleWrap*>(this);
-  nsAutoCString uriStr;
-  MOZ_ASSERT(!thisObj->IsProxy());
-  if (thisObj->IsDefunct()) {
+  LocalAccessible* thisObj = LocalAcc();
+  if (!thisObj) {
     return CO_E_OBJNOTCONNECTED;
   }
+  nsAutoCString uriStr;
 
   if (aIndex < 0 || aIndex >= static_cast<long>(thisObj->AnchorCount())) {
     return E_INVALIDARG;
@@ -116,10 +120,10 @@ ia2AccessibleHyperlink::get_startIndex(long* aIndex) {
 
   *aIndex = 0;
 
-  MOZ_ASSERT(!HyperTextProxyFor(this));
-
-  Accessible* thisObj = static_cast<AccessibleWrap*>(this);
-  if (thisObj->IsDefunct()) return CO_E_OBJNOTCONNECTED;
+  Accessible* thisObj = Acc();
+  if (!thisObj) {
+    return CO_E_OBJNOTCONNECTED;
+  }
 
   if (!thisObj->IsLink()) return S_FALSE;
 
@@ -133,10 +137,10 @@ ia2AccessibleHyperlink::get_endIndex(long* aIndex) {
 
   *aIndex = 0;
 
-  MOZ_ASSERT(!HyperTextProxyFor(this));
-
-  Accessible* thisObj = static_cast<AccessibleWrap*>(this);
-  if (thisObj->IsDefunct()) return CO_E_OBJNOTCONNECTED;
+  LocalAccessible* thisObj = LocalAcc();
+  if (!thisObj) {
+    return CO_E_OBJNOTCONNECTED;
+  }
 
   if (!thisObj->IsLink()) return S_FALSE;
 
@@ -150,10 +154,10 @@ ia2AccessibleHyperlink::get_valid(boolean* aValid) {
 
   *aValid = false;
 
-  MOZ_ASSERT(!HyperTextProxyFor(this));
-
-  Accessible* thisObj = static_cast<AccessibleWrap*>(this);
-  if (thisObj->IsDefunct()) return CO_E_OBJNOTCONNECTED;
+  LocalAccessible* thisObj = LocalAcc();
+  if (!thisObj) {
+    return CO_E_OBJNOTCONNECTED;
+  }
 
   if (!thisObj->IsLink()) return S_FALSE;
 

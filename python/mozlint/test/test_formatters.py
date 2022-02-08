@@ -45,7 +45,7 @@ EXPECTED = {
 /fake/root/d/e/f.txt
   4:2  warning  oh no bar  bar-not-allowed (bar)
 
-\u2716 4 problems (3 errors, 1 warning)
+\u2716 4 problems (3 errors, 1 warning, 0 fixed)
 """.strip(),
     },
     "treeherder": {
@@ -82,7 +82,7 @@ TEST-UNEXPECTED-WARNING | /fake/root/d/e/f.txt:4:2 | oh no bar (bar-not-allowed)
 
 @pytest.fixture
 def result(scope="module"):
-    result = ResultSummary('/fake/root')
+    result = ResultSummary("/fake/root")
     containers = (
         Issue(linter="foo", path="a/b/c.txt", message="oh no foo", lineno=1),
         Issue(
@@ -112,7 +112,7 @@ def result(scope="module"):
             diff="diff 1\n- hello\n+ hello2",
         ),
     )
-    result = ResultSummary('/fake/root')
+    result = ResultSummary("/fake/root")
     for c in containers:
         result.issues[c.path].append(c)
     return result

@@ -75,9 +75,6 @@ var SelectParentHelper = {
    *
    * FIXME(emilio): injecting a stylesheet is a somewhat inefficient way to do
    * this, can we use more style attributes?
-   *
-   * FIXME(emilio, bug 1530709): At the very least we should use CSSOM to avoid
-   * trusting the IPC message too much.
    */
   populate(
     menulist,
@@ -107,8 +104,6 @@ var SelectParentHelper = {
       selectStyle = uaStyle;
     }
 
-    let selectBackgroundSet = false;
-
     if (selectStyle["background-color"] == "rgba(0, 0, 0, 0)") {
       selectStyle["background-color"] = uaStyle["background-color"];
     }
@@ -116,6 +111,12 @@ var SelectParentHelper = {
     if (selectStyle.color == selectStyle["background-color"]) {
       selectStyle.color = uaStyle.color;
     }
+
+    // We ensure that we set the content background if the color changes as
+    // well, to prevent contrast issues.
+    let selectBackgroundSet =
+      selectStyle["background-color"] != uaStyle["background-color"] ||
+      selectStyle.color != uaStyle.color;
 
     if (customStylingEnabled) {
       if (selectStyle["text-shadow"] != "none") {
@@ -129,37 +130,57 @@ var SelectParentHelper = {
 
       let addedRule = false;
       for (let property of SUPPORTED_SELECT_PROPERTIES) {
-        if (property == "direction") {
-          continue;
-        } // Handled above, or before.
-        if (
-          !selectStyle[property] ||
-          selectStyle[property] == uaStyle[property]
-        ) {
+        let shouldSkip = (function() {
+          if (property == "direction") {
+            // Handled elsewhere.
+            return true;
+          }
+          if (!selectStyle[property]) {
+            return true;
+          }
+          if (property == "background-color") {
+            // This also depends on whether "color" is set.
+            return !selectBackgroundSet;
+          }
+          return selectStyle[property] == uaStyle[property];
+        })();
+
+        if (shouldSkip) {
           continue;
         }
         if (!addedRule) {
           sheet.insertRule("#ContentSelectDropdown > menupopup {}", 0);
           addedRule = true;
         }
-        sheet.cssRules[0].style[property] = selectStyle[property];
+        let value = selectStyle[property];
+        if (property == "scrollbar-width") {
+          // This needs to actually apply to the relevant scrollbox, because
+          // scrollbar-width doesn't inherit.
+          property = "--content-select-scrollbar-width";
+        }
+        if (property == "color") {
+          property = "--panel-color";
+        }
+        sheet.cssRules[0].style.setProperty(property, value);
       }
       // Some webpages set the <select> backgroundColor to transparent,
       // but they don't intend to change the popup to transparent.
       // So we remove the backgroundColor and turn it into an image instead.
-      if (
-        customStylingEnabled &&
-        selectStyle["background-color"] != uaStyle["background-color"]
-      ) {
+      if (selectBackgroundSet) {
         // We intentionally use the parsed color to prevent color
         // values like `url(..)` being injected into the
         // `background-image` property.
         let parsedColor = sheet.cssRules[0].style["background-color"];
+        sheet.cssRules[0].style.setProperty(
+          "--content-select-background-image",
+          `linear-gradient(${parsedColor}, ${parsedColor})`
+        );
+        // Always drop the background color to avoid messing with the custom
+        // shadow on Windows 10 styling.
         sheet.cssRules[0].style["background-color"] = "";
-        sheet.cssRules[0].style[
-          "background-image"
-        ] = `linear-gradient(${parsedColor}, ${parsedColor})`;
-        selectBackgroundSet = true;
+        // If the background is set, we also make sure we set the color, to
+        // prevent contrast issues.
+        sheet.cssRules[0].style.setProperty("--panel-color", selectStyle.color);
       }
       if (addedRule) {
         sheet.insertRule(
@@ -174,7 +195,7 @@ var SelectParentHelper = {
     // We only set the `customoptionstyling` if the background has been
     // manually set. This prevents the overlap between moz-appearance and
     // background-color. `color` and `text-shadow` do not interfere with it.
-    if (selectBackgroundSet) {
+    if (customStylingEnabled && selectBackgroundSet) {
       menulist.menupopup.setAttribute("customoptionstyling", "true");
     } else {
       menulist.menupopup.removeAttribute("customoptionstyling");
@@ -277,12 +298,21 @@ var SelectParentHelper = {
         break;
 
       case "mouseover":
-        this._actor.sendAsyncMessage("Forms:MouseOver", {});
-
+        if (
+          !event.relatedTarget ||
+          !this._currentMenulist.contains(event.relatedTarget)
+        ) {
+          this._actor.sendAsyncMessage("Forms:MouseOver", {});
+        }
         break;
 
       case "mouseout":
-        this._actor.sendAsyncMessage("Forms:MouseOut", {});
+        if (
+          !event.relatedTarget ||
+          !this._currentMenulist.contains(event.relatedTarget)
+        ) {
+          this._actor.sendAsyncMessage("Forms:MouseOut", {});
+        }
         break;
 
       case "keydown":
@@ -435,12 +465,14 @@ var SelectParentHelper = {
       item.hiddenByContent = item.hidden;
       item.setAttribute("tooltiptext", option.tooltip);
 
-      if (style["background-color"] == "rgba(0, 0, 0, 0)") {
+      let optionBackgroundIsTransparent =
+        style["background-color"] == "rgba(0, 0, 0, 0)";
+      let optionBackgroundSet =
+        !optionBackgroundIsTransparent || style.color != selectStyle.color;
+
+      if (optionBackgroundIsTransparent && style.color != selectStyle.color) {
         style["background-color"] = selectStyle["background-color"];
       }
-
-      let optionBackgroundSet =
-        style["background-color"] != selectStyle["background-color"];
 
       if (style.color == style["background-color"]) {
         style.color = selectStyle.color;
@@ -449,10 +481,21 @@ var SelectParentHelper = {
       if (customStylingEnabled) {
         let addedRule = false;
         for (const property of SUPPORTED_OPTION_OPTGROUP_PROPERTIES) {
-          if (property == "direction" || property == "font-size") {
-            continue;
-          } // handled above
-          if (!style[property] || style[property] == selectStyle[property]) {
+          let shouldSkip = (function() {
+            if (property == "direction" || property == "font-size") {
+              // Handled elsewhere.
+              return true;
+            }
+            if (!style[property]) {
+              return true;
+            }
+            if (property == "background-color" || property == "color") {
+              // This also depends on whether "color" is set.
+              return !optionBackgroundSet;
+            }
+            return style[property] == selectStyle[property];
+          })();
+          if (shouldSkip) {
             continue;
           }
           if (PROPERTIES_RESET_WHEN_ACTIVE.includes(property)) {
@@ -470,21 +513,20 @@ var SelectParentHelper = {
           }
         }
 
-        if (addedRule) {
-          if (
-            style["text-shadow"] != "none" &&
-            style["text-shadow"] != selectStyle["text-shadow"]
-          ) {
-            // Need to explicitly disable the possibly inherited
-            // text-shadow rule when _moz-menuactive=true since
-            // _moz-menuactive=true disables custom option styling.
-            sheet.insertRule(
-              `#ContentSelectDropdown > menupopup > :nth-child(${nthChildIndex})[_moz-menuactive="true"] {
-              text-shadow: none;
-            }`,
-              0
-            );
-          }
+        if (
+          addedRule &&
+          style["text-shadow"] != "none" &&
+          style["text-shadow"] != selectStyle["text-shadow"]
+        ) {
+          // Need to explicitly disable the possibly inherited
+          // text-shadow rule when _moz-menuactive=true since
+          // _moz-menuactive=true disables custom option styling.
+          sheet.insertRule(
+            `#ContentSelectDropdown > menupopup > :nth-child(${nthChildIndex})[_moz-menuactive="true"] {
+            text-shadow: none;
+          }`,
+            0
+          );
         }
       }
 
@@ -699,7 +741,10 @@ var SelectParentHelper = {
 
   onSearchBlur(event) {
     let menupopup = event.target.closest("menupopup");
-    menupopup.setAttribute("ignorekeys", "false");
+    menupopup.setAttribute(
+      "ignorekeys",
+      AppConstants.platform == "win" ? "shortcuts" : "false"
+    );
   },
 };
 

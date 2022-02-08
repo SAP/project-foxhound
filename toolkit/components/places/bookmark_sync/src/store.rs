@@ -26,6 +26,19 @@ fn total_sync_changes() -> i64 {
     unsafe { NS_NavBookmarksTotalSyncChanges() }
 }
 
+// Return all the non-root-roots as a 'sql set' (ie, suitable for use in an
+// IN statement)
+fn user_roots_as_sql_set() -> String {
+    format!(
+        "('{0}', '{1}', '{2}', '{3}', '{4}')",
+        dogear::MENU_GUID,
+        dogear::MOBILE_GUID,
+        dogear::TAGS_GUID,
+        dogear::TOOLBAR_GUID,
+        dogear::UNFILED_GUID
+    )
+}
+
 pub struct Store<'s> {
     db: &'s mut Conn,
     driver: &'s Driver,
@@ -39,7 +52,6 @@ pub struct Store<'s> {
 
     local_time_millis: i64,
     remote_time_millis: i64,
-    weak_uploads: &'s [nsString],
 }
 
 impl<'s> Store<'s> {
@@ -49,7 +61,6 @@ impl<'s> Store<'s> {
         controller: &'s AbortController,
         local_time_millis: i64,
         remote_time_millis: i64,
-        weak_uploads: &'s [nsString],
     ) -> Store<'s> {
         Store {
             db,
@@ -58,7 +69,6 @@ impl<'s> Store<'s> {
             total_sync_changes: total_sync_changes(),
             local_time_millis,
             remote_time_millis,
-            weak_uploads,
         }
     }
 
@@ -79,15 +89,11 @@ impl<'s> Store<'s> {
              ) AND NOT EXISTS(
                SELECT 1 FROM moz_bookmarks b
                JOIN moz_bookmarks p ON p.id = b.parent
-               WHERE b.guid IN ('{1}', '{2}', '{3}', '{4}', '{5}') AND
-                     p.guid <> '{0}'
+               WHERE b.guid IN {user_roots} AND
+                     p.guid <> '{root}'
              )",
-            dogear::ROOT_GUID,
-            dogear::MENU_GUID,
-            dogear::MOBILE_GUID,
-            dogear::TAGS_GUID,
-            dogear::TOOLBAR_GUID,
-            dogear::UNFILED_GUID,
+            root = dogear::ROOT_GUID,
+            user_roots = user_roots_as_sql_set(),
         ))?;
         let has_valid_roots = match statement.step()? {
             Some(row) => row.get_by_index::<i64>(0)? == 1,
@@ -444,7 +450,7 @@ impl<'s> dogear::Store for Store<'s> {
     fn apply<'t>(&mut self, root: MergedRoot<'t>) -> Result<ApplyStatus> {
         let ops = root.completion_ops_with_signal(self.controller)?;
 
-        if ops.is_empty() && self.weak_uploads.is_empty() {
+        if ops.is_empty() {
             // If we don't have any items to apply, upload, or delete,
             // no need to open a transaction at all.
             return Ok(ApplyStatus::Skipped);
@@ -477,7 +483,6 @@ impl<'s> dogear::Store for Store<'s> {
             &self.controller,
             &ops.upload_items,
             &ops.upload_tombstones,
-            &self.weak_uploads,
         )?;
 
         cleanup(&tx)?;
@@ -891,18 +896,32 @@ fn apply_remote_items(db: &Conn, driver: &Driver, controller: &AbortController) 
                 /* The last modified date should always be newer than the date
                    added, so we pick the newer of the two here. */
                 MAX(lastModifiedMicroseconds, remoteDateAddedMicroseconds),
-                {}, 0
+                {syncStatusNormal}, 0
          FROM itemsToApply
          WHERE 1
          ON CONFLICT(id) DO UPDATE SET
            title = excluded.title,
            dateAdded = excluded.dateAdded,
            lastModified = excluded.lastModified,
+           syncStatus = {syncStatusNormal},
            /* It's important that we update the URL *after* removing old keywords
               and *before* inserting new ones, so that the above DELETEs select
               the correct affected items. */
            fk = excluded.fk",
-        nsINavBookmarksService::SYNC_STATUS_NORMAL
+        syncStatusNormal = nsINavBookmarksService::SYNC_STATUS_NORMAL
+    ))?;
+    // The roots are never in `itemsToApply` but still need to (well, at least
+    // *should*) have a syncStatus of NORMAL after a reconcilliation. The
+    // ROOT_GUID doesn't matter in practice, but we include it to be consistent.
+    db.exec(format!(
+        "UPDATE moz_bookmarks SET
+            syncStatus={syncStatusNormal}
+         WHERE guid IN {user_roots} OR
+               guid = '{root}'
+               ",
+        syncStatusNormal = nsINavBookmarksService::SYNC_STATUS_NORMAL,
+        root = dogear::ROOT_GUID,
+        user_roots = user_roots_as_sql_set(),
     ))?;
 
     // Flag frecencies for recalculation. This is a multi-index OR that uses the
@@ -1057,30 +1076,10 @@ fn stage_items_to_upload(
     controller: &AbortController,
     upload_items: &[UploadItem],
     upload_tombstones: &[UploadTombstone],
-    weak_upload: &[nsString],
 ) -> Result<()> {
     debug!(driver, "Cleaning up staged items left from last sync");
     controller.err_if_aborted()?;
     db.exec("DELETE FROM itemsToUpload")?;
-
-    debug!(driver, "Staging weak uploads");
-    for chunk in weak_upload.chunks(db.variable_limit()?) {
-        let mut statement = db.prepare(format!(
-            "INSERT INTO itemsToUpload(id, guid, syncChangeCounter, parentGuid,
-                                       parentTitle, dateAdded, type, title,
-                                       placeId, isQuery, url, keyword, position,
-                                       tagFolderName)
-             {}
-             WHERE b.guid IN ({})",
-            UploadItemsFragment("b"),
-            repeat_sql_vars(chunk.len()),
-        ))?;
-        for (index, guid) in chunk.iter().enumerate() {
-            controller.err_if_aborted()?;
-            statement.bind_by_index(index as u32, nsString::from(guid.as_ref()))?;
-        }
-        statement.execute()?;
-    }
 
     // Stage remotely changed items with older local creation dates. These are
     // tracked "weakly": if the upload is interrupted or fails, we won't

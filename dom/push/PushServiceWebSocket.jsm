@@ -1,4 +1,3 @@
-/* jshint moz: true, esnext: true */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -538,7 +537,7 @@ var PushServiceWebSocket = {
     try {
       // Grab a wakelock before we open the socket to ensure we don't go to
       // sleep before connection the is opened.
-      this._ws.asyncOpen(uri, uri.spec, 0, this._wsListener, null);
+      this._ws.asyncOpen(uri, uri.spec, {}, 0, this._wsListener, null);
       this._currentState = STATE_WAITING_FOR_WS_START;
     } catch (e) {
       console.error(
@@ -868,11 +867,8 @@ var PushServiceWebSocket = {
   },
 
   _generateID() {
-    let uuidGenerator = Cc["@mozilla.org/uuid-generator;1"].getService(
-      Ci.nsIUUIDGenerator
-    );
     // generateUUID() gives a UUID surrounded by {...}, slice them off.
-    return uuidGenerator
+    return Services.uuid
       .generateUUID()
       .toString()
       .slice(1, -1);

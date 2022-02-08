@@ -6,6 +6,10 @@
 
 #include "mozilla/dom/XRView.h"
 
+#include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/dom/XRRigidTransform.h"
+#include "mozilla/dom/Pose.h"
+
 namespace mozilla {
 namespace dom {
 

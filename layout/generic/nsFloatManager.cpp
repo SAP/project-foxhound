@@ -354,10 +354,10 @@ nsresult nsFloatManager::RemoveTrailingRegions(nsIFrame* aFrameList) {
   // floats given were at the end of our list, so we could just search
   // for the head of aFrameList.  (But we can't;
   // layout/reftests/bugs/421710-1.html crashes.)
-  nsTHashtable<nsPtrHashKey<nsIFrame> > frameSet(1);
+  nsTHashSet<nsIFrame*> frameSet(1);
 
   for (nsIFrame* f = aFrameList; f; f = f->GetNextSibling()) {
-    frameSet.PutEntry(f);
+    frameSet.Insert(f);
   }
 
   uint32_t newLength = mFloats.Length();
@@ -2521,7 +2521,7 @@ nsFloatManager::ShapeInfo::CreateInset(const StyleBasicShape& aBasicShape,
       LogicalRect(aWM, insetRect, aContainerSize), aWM, aContainerSize);
   nscoord physicalRadii[8];
   bool hasRadii = ShapeUtils::ComputeInsetRadii(
-      aBasicShape, insetRect, physicalShapeBoxRect, physicalRadii);
+      aBasicShape, physicalShapeBoxRect, physicalRadii);
 
   // With a zero shape-margin, we will be able to use the fast constructor.
   if (aShapeMargin == 0) {

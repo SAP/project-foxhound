@@ -15,11 +15,10 @@ const CONTENT_PROCESS_URI_MANIFEST =
 
 // test workers when target switching
 add_task(async function() {
-  await pushPref("devtools.target-switching.enabled", true);
   await enableApplicationPanel();
 
   info("Open a page that runs in the parent process");
-  const { panel, toolbox, tab } = await openNewTabAndApplicationPanel(
+  const { panel, commands, tab } = await openNewTabAndApplicationPanel(
     PARENT_PROCESS_URI
   );
   const doc = panel.panelWin.document;
@@ -37,13 +36,12 @@ add_task(async function() {
 
   // close the tab
   info("Closing the tab.");
-  await unregisterAllWorkers(toolbox.target.client, doc);
+  await unregisterAllWorkers(commands.client, doc);
   await BrowserTestUtils.removeTab(tab);
 });
 
 // test manifest when target switching
 add_task(async function() {
-  await pushPref("devtools.target-switching.enabled", true);
   await enableApplicationPanel();
 
   info("Open a page that runs in the parent process");

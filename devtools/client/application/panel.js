@@ -16,20 +16,22 @@ class ApplicationPanel {
    *        The frame/window dedicated to this panel.
    * @param {Toolbox} toolbox
    *        The toolbox instance responsible for this panel.
+   * @param {Object} commands
+   *        The commands object with all interfaces defined from devtools/shared/commands/
    */
-  constructor(panelWin, toolbox) {
+  constructor(panelWin, toolbox, commands) {
     this.panelWin = panelWin;
     this.toolbox = toolbox;
+    this.commands = commands;
   }
 
   async open() {
     await this.panelWin.Application.bootstrap({
       toolbox: this.toolbox,
+      commands: this.commands,
       panel: this,
     });
 
-    this.emit("ready");
-    this.isReady = true;
     return this;
   }
 

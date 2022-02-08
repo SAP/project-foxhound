@@ -164,11 +164,11 @@ nsspkcs5_PBKDF1(const SECHashObject *hashObj, SECItem *salt, SECItem *pwd,
     }
 
     if (pre_hash != NULL) {
-        SECITEM_FreeItem(pre_hash, PR_TRUE);
+        SECITEM_ZfreeItem(pre_hash, PR_TRUE);
     }
 
     if ((rv != SECSuccess) && (hash != NULL)) {
-        SECITEM_FreeItem(hash, PR_TRUE);
+        SECITEM_ZfreeItem(hash, PR_TRUE);
         hash = NULL;
     }
 
@@ -297,7 +297,7 @@ nsspkcs5_PBKDF1Extended(const SECHashObject *hashObj,
 
     newHash = nsspkcs5_PFXPBE(hashObj, pbe_param, hash, bytes_needed);
     if (hash != newHash)
-        SECITEM_FreeItem(hash, PR_TRUE);
+        SECITEM_ZfreeItem(hash, PR_TRUE);
     return newHash;
 }
 
@@ -403,7 +403,7 @@ loser:
         PORT_ZFree(T, hLen);
     }
     if (rv != SECSuccess) {
-        SECITEM_FreeItem(result, PR_TRUE);
+        SECITEM_ZfreeItem(result, PR_TRUE);
         result = NULL;
     } else {
         result->len = dkLen;
@@ -570,6 +570,7 @@ typedef struct KDFCacheItemStr KDFCacheItem;
 /* Bug 1606992 - Cache the hash result for the common case that we're
  * asked to repeatedly compute the key for the same password item,
  * hash, iterations and salt. */
+#define KDF2_CACHE_COUNT 3
 static struct {
     PZLock *lock;
     struct {
@@ -578,7 +579,8 @@ static struct {
         PRBool faulty3DES;
     } cacheKDF1;
     struct {
-        KDFCacheItem common;
+        KDFCacheItem common[KDF2_CACHE_COUNT];
+        int next;
     } cacheKDF2;
 } PBECache;
 
@@ -598,7 +600,7 @@ sftk_clearPBECommonCacheItemsLocked(KDFCacheItem *item)
         item->hash = NULL;
     }
     if (item->salt) {
-        SECITEM_FreeItem(item->salt, PR_TRUE);
+        SECITEM_ZfreeItem(item->salt, PR_TRUE);
         item->salt = NULL;
     }
     if (item->pwItem) {
@@ -627,11 +629,15 @@ sftk_setPBECacheKDF2(const SECItem *hash,
                      const SECItem *pwItem)
 {
     PZ_Lock(PBECache.lock);
+    KDFCacheItem *next = &PBECache.cacheKDF2.common[PBECache.cacheKDF2.next];
 
-    sftk_clearPBECommonCacheItemsLocked(&PBECache.cacheKDF2.common);
+    sftk_clearPBECommonCacheItemsLocked(next);
 
-    sftk_setPBECommonCacheItemsKDFLocked(&PBECache.cacheKDF2.common,
-                                         hash, pbe_param, pwItem);
+    sftk_setPBECommonCacheItemsKDFLocked(next, hash, pbe_param, pwItem);
+    PBECache.cacheKDF2.next++;
+    if (PBECache.cacheKDF2.next >= KDF2_CACHE_COUNT) {
+        PBECache.cacheKDF2.next = 0;
+    }
 
     PZ_Unlock(PBECache.lock);
 }
@@ -674,11 +680,16 @@ sftk_getPBECacheKDF2(const NSSPKCS5PBEParameter *pbe_param,
                      const SECItem *pwItem)
 {
     SECItem *result = NULL;
-    const KDFCacheItem *cacheItem = &PBECache.cacheKDF2.common;
+    int i;
 
     PZ_Lock(PBECache.lock);
-    if (sftk_comparePBECommonCacheItemLocked(cacheItem, pbe_param, pwItem)) {
-        result = SECITEM_DupItem(cacheItem->hash);
+    for (i = 0; i < KDF2_CACHE_COUNT; i++) {
+        const KDFCacheItem *cacheItem = &PBECache.cacheKDF2.common[i];
+        if (sftk_comparePBECommonCacheItemLocked(cacheItem,
+                                                 pbe_param, pwItem)) {
+            result = SECITEM_DupItem(cacheItem->hash);
+            break;
+        }
     }
     PZ_Unlock(PBECache.lock);
 
@@ -707,12 +718,16 @@ sftk_getPBECacheKDF1(const NSSPKCS5PBEParameter *pbe_param,
 void
 sftk_PBELockShutdown(void)
 {
+    int i;
     if (PBECache.lock) {
         PZ_DestroyLock(PBECache.lock);
         PBECache.lock = 0;
     }
     sftk_clearPBECommonCacheItemsLocked(&PBECache.cacheKDF1.common);
-    sftk_clearPBECommonCacheItemsLocked(&PBECache.cacheKDF2.common);
+    for (i = 0; i < KDF2_CACHE_COUNT; i++) {
+        sftk_clearPBECommonCacheItemsLocked(&PBECache.cacheKDF2.common[i]);
+    }
+    PBECache.cacheKDF2.next = 0;
 }
 
 /*
@@ -889,6 +904,7 @@ nsspkcs5_FillInParam(SECOidTag algorithm, HASH_HashType hashType,
             pbe_param->encAlg = SEC_OID_DES_CBC;
             break;
 
+#ifndef NSS_DISABLE_DEPRECATED_RC2
         /* RC2 Algorithms */
         case SEC_OID_PKCS12_V2_PBE_WITH_SHA1_AND_128_BIT_RC2_CBC:
             pbe_param->keyLen = 16;
@@ -901,6 +917,7 @@ nsspkcs5_FillInParam(SECOidTag algorithm, HASH_HashType hashType,
         /* fall through */
         case SEC_OID_PKCS12_PBE_WITH_SHA1_AND_40_BIT_RC2_CBC:
             break;
+#endif
 
         /* RC4 algorithms */
         case SEC_OID_PKCS12_PBE_WITH_SHA1_AND_128_BIT_RC4:
@@ -1157,6 +1174,7 @@ nsspkcs5_AlgidToParam(SECAlgorithmID *algid)
     }
 
 loser:
+    PORT_Memset(&pbev2_param, 0, sizeof(pbev2_param));
     if (rv == SECSuccess) {
         pbe_param->iter = DER_GetInteger(&pbe_param->iteration);
     } else {
@@ -1175,7 +1193,7 @@ void
 nsspkcs5_DestroyPBEParameter(NSSPKCS5PBEParameter *pbe_param)
 {
     if (pbe_param != NULL) {
-        PORT_FreeArena(pbe_param->poolp, PR_FALSE);
+        PORT_FreeArena(pbe_param->poolp, PR_TRUE);
     }
 }
 
@@ -1211,7 +1229,7 @@ sec_pkcs5_des(SECItem *key, SECItem *iv, SECItem *src, PRBool triple_des,
         dummy = CBC_PadBuffer(NULL, dup_src->data,
                               dup_src->len, &dup_src->len, DES_BLOCK_SIZE);
         if (dummy == NULL) {
-            SECITEM_FreeItem(dup_src, PR_TRUE);
+            SECITEM_ZfreeItem(dup_src, PR_TRUE);
             return NULL;
         }
         dup_src->data = (unsigned char *)dummy;
@@ -1245,13 +1263,13 @@ sec_pkcs5_des(SECItem *key, SECItem *iv, SECItem *src, PRBool triple_des,
 loser:
     if (crv != CKR_OK) {
         if (dest != NULL) {
-            SECITEM_FreeItem(dest, PR_TRUE);
+            SECITEM_ZfreeItem(dest, PR_TRUE);
         }
         dest = NULL;
     }
 
     if (dup_src != NULL) {
-        SECITEM_FreeItem(dup_src, PR_TRUE);
+        SECITEM_ZfreeItem(dup_src, PR_TRUE);
     }
 
     return dest;
@@ -1287,7 +1305,7 @@ sec_pkcs5_aes(SECItem *key, SECItem *iv, SECItem *src, PRBool triple_des,
         dummy = CBC_PadBuffer(NULL, dup_src->data,
                               dup_src->len, &dup_src->len, AES_BLOCK_SIZE);
         if (dummy == NULL) {
-            SECITEM_FreeItem(dup_src, PR_TRUE);
+            SECITEM_ZfreeItem(dup_src, PR_TRUE);
             return NULL;
         }
         dup_src->data = (unsigned char *)dummy;
@@ -1320,13 +1338,13 @@ sec_pkcs5_aes(SECItem *key, SECItem *iv, SECItem *src, PRBool triple_des,
 loser:
     if (crv != CKR_OK) {
         if (dest != NULL) {
-            SECITEM_FreeItem(dest, PR_TRUE);
+            SECITEM_ZfreeItem(dest, PR_TRUE);
         }
         dest = NULL;
     }
 
     if (dup_src != NULL) {
-        SECITEM_FreeItem(dup_src, PR_TRUE);
+        SECITEM_ZfreeItem(dup_src, PR_TRUE);
     }
 
     return dest;
@@ -1362,7 +1380,7 @@ sec_pkcs5_aes_key_wrap(SECItem *key, SECItem *iv, SECItem *src, PRBool triple_de
         dummy = CBC_PadBuffer(NULL, dup_src->data,
                               dup_src->len, &dup_src->len, AES_BLOCK_SIZE);
         if (dummy == NULL) {
-            SECITEM_FreeItem(dup_src, PR_TRUE);
+            SECITEM_ZfreeItem(dup_src, PR_TRUE);
             return NULL;
         }
         dup_src->data = (unsigned char *)dummy;
@@ -1396,18 +1414,19 @@ sec_pkcs5_aes_key_wrap(SECItem *key, SECItem *iv, SECItem *src, PRBool triple_de
 loser:
     if (crv != CKR_OK) {
         if (dest != NULL) {
-            SECITEM_FreeItem(dest, PR_TRUE);
+            SECITEM_ZfreeItem(dest, PR_TRUE);
         }
         dest = NULL;
     }
 
     if (dup_src != NULL) {
-        SECITEM_FreeItem(dup_src, PR_TRUE);
+        SECITEM_ZfreeItem(dup_src, PR_TRUE);
     }
 
     return dest;
 }
 
+#ifndef NSS_DISABLE_DEPRECATED_RC2
 /* perform rc2 encryption/decryption if an error occurs, NULL is returned
  */
 static SECItem *
@@ -1435,7 +1454,7 @@ sec_pkcs5_rc2(SECItem *key, SECItem *iv, SECItem *src, PRBool dummy,
         v = CBC_PadBuffer(NULL, dup_src->data,
                           dup_src->len, &dup_src->len, 8 /* RC2_BLOCK_SIZE */);
         if (v == NULL) {
-            SECITEM_FreeItem(dup_src, PR_TRUE);
+            SECITEM_ZfreeItem(dup_src, PR_TRUE);
             return NULL;
         }
         dup_src->data = (unsigned char *)v;
@@ -1475,16 +1494,17 @@ sec_pkcs5_rc2(SECItem *key, SECItem *iv, SECItem *src, PRBool dummy,
     }
 
     if ((rv != SECSuccess) && (dest != NULL)) {
-        SECITEM_FreeItem(dest, PR_TRUE);
+        SECITEM_ZfreeItem(dest, PR_TRUE);
         dest = NULL;
     }
 
     if (dup_src != NULL) {
-        SECITEM_FreeItem(dup_src, PR_TRUE);
+        SECITEM_ZfreeItem(dup_src, PR_TRUE);
     }
 
     return dest;
 }
+#endif /* NSS_DISABLE_DEPRECATED_RC2 */
 
 /* perform rc4 encryption and decryption */
 static SECItem *
@@ -1517,7 +1537,7 @@ sec_pkcs5_rc4(SECItem *key, SECItem *iv, SECItem *src, PRBool dummy_op,
     }
 
     if ((rv != SECSuccess) && (dest)) {
-        SECITEM_FreeItem(dest, PR_TRUE);
+        SECITEM_ZfreeItem(dest, PR_TRUE);
         dest = NULL;
     }
 
@@ -1580,9 +1600,11 @@ nsspkcs5_CipherData(NSSPKCS5PBEParameter *pbe_param, SECItem *pwitem,
             cryptof = sec_pkcs5_des;
             tripleDES = PR_FALSE;
             break;
+#ifndef NSS_DISABLE_DEPRECATED_RC2
         case SEC_OID_RC2_CBC:
             cryptof = sec_pkcs5_rc2;
             break;
+#endif
         case SEC_OID_RC4:
             cryptof = sec_pkcs5_rc4;
             break;
@@ -1736,4 +1758,68 @@ nsspkcs5_CreateAlgorithmID(PLArenaPool *arena, SECOidTag algorithm,
 loser:
 
     return ret_algid;
+}
+
+#define TEST_KEY "pbkdf test key"
+SECStatus
+sftk_fips_pbkdf_PowerUpSelfTests(void)
+{
+    SECItem *result;
+    SECItem inKey;
+    NSSPKCS5PBEParameter pbe_params;
+    unsigned char iteration_count = 5;
+    unsigned char keyLen = 64;
+    char *inKeyData = TEST_KEY;
+    static const unsigned char saltData[] =
+        { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07 };
+    static const unsigned char pbkdf_known_answer[] = {
+        0x31, 0xf0, 0xe5, 0x39, 0x9f, 0x39, 0xb9, 0x29,
+        0x68, 0xac, 0xf2, 0xe9, 0x53, 0x9b, 0xb4, 0x9c,
+        0x28, 0x59, 0x8b, 0x5c, 0xd8, 0xd4, 0x02, 0x37,
+        0x18, 0x22, 0xc1, 0x92, 0xd0, 0xfa, 0x72, 0x90,
+        0x2c, 0x8d, 0x19, 0xd4, 0x56, 0xfb, 0x16, 0xfa,
+        0x8d, 0x5c, 0x06, 0x33, 0xd1, 0x5f, 0x17, 0xb1,
+        0x22, 0xd9, 0x9c, 0xaf, 0x5e, 0x3f, 0xf3, 0x66,
+        0xc6, 0x14, 0xfe, 0x83, 0xfa, 0x1a, 0x2a, 0xc5
+    };
+
+    sftk_PBELockInit();
+
+    inKey.data = (unsigned char *)inKeyData;
+    inKey.len = sizeof(TEST_KEY) - 1;
+
+    pbe_params.salt.data = (unsigned char *)saltData;
+    pbe_params.salt.len = sizeof(saltData);
+    /* the interation and keyLength are used as intermediate
+     * values when decoding the Algorithm ID, set them for completeness,
+     * but they are not used */
+    pbe_params.iteration.data = &iteration_count;
+    pbe_params.iteration.len = 1;
+    pbe_params.keyLength.data = &keyLen;
+    pbe_params.keyLength.len = 1;
+    /* pkcs5v2 stores the key in the AlgorithmID, so we don't need to
+     * generate it here */
+    pbe_params.ivLen = 0;
+    pbe_params.ivData = NULL;
+    /* keyID is only used by pkcs12 extensions to pkcs5v1 */
+    pbe_params.keyID = pbeBitGenCipherKey;
+    /* Algorithm is used by the decryption code after get get our key */
+    pbe_params.encAlg = SEC_OID_AES_256_CBC;
+    /* these are the fields actually used in nsspkcs5_ComputeKeyAndIV
+     * for NSSPKCS5_PBKDF2 */
+    pbe_params.iter = iteration_count;
+    pbe_params.keyLen = keyLen;
+    pbe_params.hashType = HASH_AlgSHA256;
+    pbe_params.pbeType = NSSPKCS5_PBKDF2;
+    pbe_params.is2KeyDES = PR_FALSE;
+
+    result = nsspkcs5_ComputeKeyAndIV(&pbe_params, &inKey, NULL, PR_FALSE);
+    if ((result == NULL) || (result->len != sizeof(pbkdf_known_answer)) ||
+        (PORT_Memcmp(result->data, pbkdf_known_answer, sizeof(pbkdf_known_answer)) != 0)) {
+        SECITEM_FreeItem(result, PR_TRUE);
+        PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+        return SECFailure;
+    }
+    SECITEM_FreeItem(result, PR_TRUE);
+    return SECSuccess;
 }

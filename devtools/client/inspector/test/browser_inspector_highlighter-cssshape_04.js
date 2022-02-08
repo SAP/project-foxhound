@@ -12,11 +12,17 @@ const HIGHLIGHTER_TYPE = "ShapesHighlighter";
 add_task(async function() {
   const env = await openInspectorForURL(TEST_URL);
   const helper = await getHighlighterHelperFor(HIGHLIGHTER_TYPE)(env);
-  const { testActor, inspector } = env;
+  const { highlighterTestFront, inspector } = env;
   const view = selectRuleView(inspector);
   const highlighters = view.highlighters;
 
-  const config = { inspector, view, highlighters, testActor, helper };
+  const config = {
+    inspector,
+    view,
+    highlighters,
+    highlighterTestFront,
+    helper,
+  };
 
   await testPolygonMovePoint(config);
   await testPolygonAddPoint(config);
@@ -50,19 +56,19 @@ async function teardown(config) {
 }
 
 async function testPolygonMovePoint(config) {
-  const { inspector, view, highlighters, testActor, helper } = config;
+  const { inspector, view, highlighterTestFront, helper } = config;
   const selector = "#polygon";
   const property = "clip-path";
 
   await setup({ selector, property, ...config });
 
-  const points = await testActor.getHighlighterNodeAttribute(
+  const points = await highlighterTestFront.getHighlighterNodeAttribute(
     "shapes-polygon",
     "points",
-    highlighters.highlighters[HIGHLIGHTER_TYPE]
+    inspector.inspectorFront.getKnownHighlighter(HIGHLIGHTER_TYPE)
   );
   let [x, y] = points.split(" ")[0].split(",");
-  const quads = await testActor.getAllAdjustedQuads(selector);
+  const quads = await getAllAdjustedQuadsForContentPageElement(selector);
   const { top, left, width, height } = quads.border[0].bounds;
   x = left + (width * x) / 100;
   y = top + (height * y) / 100;
@@ -76,7 +82,7 @@ async function testPolygonMovePoint(config) {
   await mouse.down(x, y);
   await mouse.move(x + dx, y + dy);
   await mouse.up();
-  await testActor.reflow();
+  await reflowContentPage();
   info("Waiting for rule view changed from shape change");
   await onRuleViewChanged;
 
@@ -94,7 +100,7 @@ async function testPolygonMovePoint(config) {
 }
 
 async function testPolygonAddPoint(config) {
-  const { inspector, view, highlighters, testActor, helper } = config;
+  const { inspector, view, highlighterTestFront, helper } = config;
   const selector = "#polygon";
   const property = "clip-path";
 
@@ -102,13 +108,13 @@ async function testPolygonAddPoint(config) {
 
   // Move first point to have same x as second point, then double click between
   // the two points to add a new one.
-  const points = await testActor.getHighlighterNodeAttribute(
+  const points = await highlighterTestFront.getHighlighterNodeAttribute(
     "shapes-polygon",
     "points",
-    highlighters.highlighters[HIGHLIGHTER_TYPE]
+    inspector.inspectorFront.getKnownHighlighter(HIGHLIGHTER_TYPE)
   );
   const pointsArray = points.split(" ");
-  const quads = await testActor.getAllAdjustedQuads(selector);
+  const quads = await getAllAdjustedQuadsForContentPageElement(selector);
   const { top, left, width, height } = quads.border[0].bounds;
   let [x1, y1] = pointsArray[0].split(",");
   let [x2, y2] = pointsArray[1].split(",");
@@ -121,22 +127,22 @@ async function testPolygonAddPoint(config) {
   await mouse.down(x1, y1);
   await mouse.move(x2, y1);
   await mouse.up();
-  await testActor.reflow();
+  await reflowContentPage();
 
   let newPointX = x2;
   let newPointY = (y1 + y2) / 2;
-  const options = {
-    selector: ":root",
-    x: newPointX,
-    y: newPointY,
-    center: false,
-    options: { clickCount: 2 },
-  };
 
   const onRuleViewChanged = view.once("ruleview-changed");
   info("Adding new polygon point");
-  await testActor.synthesizeMouse(options);
-  await testActor.reflow();
+  BrowserTestUtils.synthesizeMouse(
+    ":root",
+    newPointX,
+    newPointY,
+    { clickCount: 2 },
+    gBrowser.selectedTab.linkedBrowser
+  );
+
+  await reflowContentPage();
   info("Waiting for rule view changed from shape change");
   await onRuleViewChanged;
 
@@ -159,38 +165,33 @@ async function testPolygonAddPoint(config) {
 }
 
 async function testPolygonRemovePoint(config) {
-  const { inspector, highlighters, testActor, helper } = config;
+  const { inspector, highlighters, highlighterTestFront, helper } = config;
   const selector = "#polygon";
   const property = "clip-path";
 
   await setup({ selector, property, ...config });
 
-  const points = await testActor.getHighlighterNodeAttribute(
+  const points = await highlighterTestFront.getHighlighterNodeAttribute(
     "shapes-polygon",
     "points",
-    highlighters.highlighters[HIGHLIGHTER_TYPE]
+    inspector.inspectorFront.getKnownHighlighter(HIGHLIGHTER_TYPE)
   );
   const [x, y] = points.split(" ")[0].split(",");
-  const quads = await testActor.getAllAdjustedQuads(selector);
+  const quads = await getAllAdjustedQuadsForContentPageElement(selector);
   const { top, left, width, height } = quads.border[0].bounds;
 
-  const options = {
-    selector: ":root",
-    x: left + (width * x) / 100,
-    y: top + (height * y) / 100,
-    center: false,
-    options: { clickCount: 2 },
-  };
+  const adjustedX = left + (width * x) / 100;
+  const adjustedY = top + (height * y) / 100;
 
   info("Move mouse over first point in highlighter");
   const onEventHandled = highlighters.once("highlighter-event-handled");
   const { mouse } = helper;
-  await mouse.move(options.x, options.y);
+  await mouse.move(adjustedX, adjustedY);
   await onEventHandled;
-  const markerHidden = await testActor.getHighlighterNodeAttribute(
+  const markerHidden = await highlighterTestFront.getHighlighterNodeAttribute(
     "shapes-marker-hover",
     "hidden",
-    highlighters.highlighters[HIGHLIGHTER_TYPE]
+    inspector.inspectorFront.getKnownHighlighter(HIGHLIGHTER_TYPE)
   );
   ok(!markerHidden, "Marker on highlighter is visible");
 
@@ -198,7 +199,14 @@ async function testPolygonRemovePoint(config) {
   const onShapeChangeApplied = highlighters.once(
     "shapes-highlighter-changes-applied"
   );
-  await testActor.synthesizeMouse(options);
+  BrowserTestUtils.synthesizeMouse(
+    ":root",
+    adjustedX,
+    adjustedY,
+    { clickCount: 2 },
+    gBrowser.selectedTab.linkedBrowser
+  );
+
   info("Waiting for shape changes to apply");
   await onShapeChangeApplied;
   const definition = await getComputedPropertyValue(
@@ -212,7 +220,7 @@ async function testPolygonRemovePoint(config) {
 }
 
 async function testCircleMoveCenter(config) {
-  const { inspector, highlighters, testActor, helper } = config;
+  const { inspector, highlighters, highlighterTestFront, helper } = config;
   const selector = "#circle";
   const property = "clip-path";
 
@@ -222,20 +230,20 @@ async function testCircleMoveCenter(config) {
   await setup({ selector, property, ...config });
 
   const cx = parseFloat(
-    await testActor.getHighlighterNodeAttribute(
+    await highlighterTestFront.getHighlighterNodeAttribute(
       "shapes-ellipse",
       "cx",
-      highlighters.highlighters[HIGHLIGHTER_TYPE]
+      inspector.inspectorFront.getKnownHighlighter(HIGHLIGHTER_TYPE)
     )
   );
   const cy = parseFloat(
-    await testActor.getHighlighterNodeAttribute(
+    await highlighterTestFront.getHighlighterNodeAttribute(
       "shapes-ellipse",
       "cy",
-      highlighters.highlighters[HIGHLIGHTER_TYPE]
+      inspector.inspectorFront.getKnownHighlighter(HIGHLIGHTER_TYPE)
     )
   );
-  const quads = await testActor.getAllAdjustedQuads(selector);
+  const quads = await getAllAdjustedQuadsForContentPageElement(selector);
   const { width, height } = quads.border[0].bounds;
   const cxPixel = (width * cx) / 100;
   const cyPixel = (height * cy) / 100;
@@ -247,7 +255,7 @@ async function testCircleMoveCenter(config) {
   await mouse.down(cxPixel, cyPixel, selector);
   await mouse.move(cxPixel + dx, cyPixel + dy, selector);
   await mouse.up(cxPixel + dx, cyPixel + dy, selector);
-  await testActor.reflow();
+  await reflowContentPage();
   info("Waiting for shape changes to apply");
   await onShapeChangeApplied;
 
@@ -265,41 +273,41 @@ async function testCircleMoveCenter(config) {
 }
 
 async function testEllipseMoveRadius(config) {
-  const { inspector, highlighters, testActor, helper } = config;
+  const { inspector, highlighters, highlighterTestFront, helper } = config;
   const selector = "#ellipse";
   const property = "clip-path";
 
   await setup({ selector, property, ...config });
 
   const rx = parseFloat(
-    await testActor.getHighlighterNodeAttribute(
+    await highlighterTestFront.getHighlighterNodeAttribute(
       "shapes-ellipse",
       "rx",
-      highlighters.highlighters[HIGHLIGHTER_TYPE]
+      inspector.inspectorFront.getKnownHighlighter(HIGHLIGHTER_TYPE)
     )
   );
   const ry = parseFloat(
-    await testActor.getHighlighterNodeAttribute(
+    await highlighterTestFront.getHighlighterNodeAttribute(
       "shapes-ellipse",
       "ry",
-      highlighters.highlighters[HIGHLIGHTER_TYPE]
+      inspector.inspectorFront.getKnownHighlighter(HIGHLIGHTER_TYPE)
     )
   );
   const cx = parseFloat(
-    await testActor.getHighlighterNodeAttribute(
+    await highlighterTestFront.getHighlighterNodeAttribute(
       "shapes-ellipse",
       "cx",
-      highlighters.highlighters[HIGHLIGHTER_TYPE]
+      inspector.inspectorFront.getKnownHighlighter(HIGHLIGHTER_TYPE)
     )
   );
   const cy = parseFloat(
-    await testActor.getHighlighterNodeAttribute(
+    await highlighterTestFront.getHighlighterNodeAttribute(
       "shapes-ellipse",
       "cy",
-      highlighters.highlighters[HIGHLIGHTER_TYPE]
+      inspector.inspectorFront.getKnownHighlighter(HIGHLIGHTER_TYPE)
     )
   );
-  const quads = await testActor.getAllAdjustedQuads("#ellipse");
+  const quads = await getAllAdjustedQuadsForContentPageElement("#ellipse");
   const { width, height } = quads.content[0].bounds;
   const highlightedNode = await getNodeFront(selector, inspector);
   const computedStyle = await highlightedNode.inspectorFront.pageStyle.getComputed(
@@ -319,7 +327,7 @@ async function testEllipseMoveRadius(config) {
   await mouse.down(rxPixel, cyPixel, selector);
   await mouse.move(rxPixel + dx, cyPixel, selector);
   await mouse.up(rxPixel + dx, cyPixel, selector);
-  await testActor.reflow();
+  await reflowContentPage();
 
   info("Moving ellipse ry");
   const onShapeChangeApplied = highlighters.once(
@@ -328,7 +336,7 @@ async function testEllipseMoveRadius(config) {
   await mouse.down(cxPixel, ryPixel, selector);
   await mouse.move(cxPixel, ryPixel - dy, selector);
   await mouse.up(cxPixel, ryPixel - dy, selector);
-  await testActor.reflow();
+  await reflowContentPage();
   await onShapeChangeApplied;
 
   const definition = await getComputedPropertyValue(
@@ -345,41 +353,41 @@ async function testEllipseMoveRadius(config) {
 }
 
 async function testInsetMoveEdges(config) {
-  const { inspector, highlighters, testActor, helper } = config;
+  const { inspector, highlighters, highlighterTestFront, helper } = config;
   const selector = "#inset";
   const property = "clip-path";
 
   await setup({ selector, property, ...config });
 
   const x = parseFloat(
-    await testActor.getHighlighterNodeAttribute(
+    await highlighterTestFront.getHighlighterNodeAttribute(
       "shapes-rect",
       "x",
-      highlighters.highlighters[HIGHLIGHTER_TYPE]
+      inspector.inspectorFront.getKnownHighlighter(HIGHLIGHTER_TYPE)
     )
   );
   const y = parseFloat(
-    await testActor.getHighlighterNodeAttribute(
+    await highlighterTestFront.getHighlighterNodeAttribute(
       "shapes-rect",
       "y",
-      highlighters.highlighters[HIGHLIGHTER_TYPE]
+      inspector.inspectorFront.getKnownHighlighter(HIGHLIGHTER_TYPE)
     )
   );
   const width = parseFloat(
-    await testActor.getHighlighterNodeAttribute(
+    await highlighterTestFront.getHighlighterNodeAttribute(
       "shapes-rect",
       "width",
-      highlighters.highlighters[HIGHLIGHTER_TYPE]
+      inspector.inspectorFront.getKnownHighlighter(HIGHLIGHTER_TYPE)
     )
   );
   const height = parseFloat(
-    await testActor.getHighlighterNodeAttribute(
+    await highlighterTestFront.getHighlighterNodeAttribute(
       "shapes-rect",
       "height",
-      highlighters.highlighters[HIGHLIGHTER_TYPE]
+      inspector.inspectorFront.getKnownHighlighter(HIGHLIGHTER_TYPE)
     )
   );
-  const quads = await testActor.getAllAdjustedQuads(selector);
+  const quads = await getAllAdjustedQuadsForContentPageElement(selector);
   const { width: elemWidth, height: elemHeight } = quads.content[0].bounds;
 
   const left = (elemWidth * x) / 100;
@@ -399,7 +407,7 @@ async function testInsetMoveEdges(config) {
   await mouse.down(xCenter, top, selector);
   await mouse.move(xCenter, top + dy, selector);
   await mouse.up(xCenter, top + dy, selector);
-  await testActor.reflow();
+  await reflowContentPage();
   await onShapeChangeApplied;
 
   // TODO: Test bottom inset marker after Bug 1456777 is fixed.
@@ -414,7 +422,7 @@ async function testInsetMoveEdges(config) {
   await mouse.down(left, yCenter, selector);
   await mouse.move(left + dx, yCenter, selector);
   await mouse.up(left + dx, yCenter, selector);
-  await testActor.reflow();
+  await reflowContentPage();
   await onShapeChangeApplied;
 
   info("Moving inset right");
@@ -424,7 +432,7 @@ async function testInsetMoveEdges(config) {
   await mouse.down(right, yCenter, selector);
   await mouse.move(right + dx, yCenter, selector);
   await mouse.up(right + dx, yCenter, selector);
-  await testActor.reflow();
+  await reflowContentPage();
   await onShapeChangeApplied;
 
   const definition = await getComputedPropertyValue(

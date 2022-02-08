@@ -46,15 +46,6 @@ class InterceptedChannelBase : public nsIInterceptedChannel {
   [[nodiscard]] nsresult DoSynthesizeHeader(const nsACString& aName,
                                             const nsACString& aValue);
 
-  TimeStamp mLaunchServiceWorkerStart;
-  TimeStamp mLaunchServiceWorkerEnd;
-  TimeStamp mDispatchFetchEventStart;
-  TimeStamp mDispatchFetchEventEnd;
-  TimeStamp mHandleFetchEventStart;
-  TimeStamp mHandleFetchEventEnd;
-
-  TimeStamp mFinishResponseStart;
-  TimeStamp mFinishResponseEnd;
   enum { Invalid = 0, Synthesized, Reset } mSynthesizedOrReset;
 
   virtual ~InterceptedChannelBase() = default;
@@ -73,118 +64,10 @@ class InterceptedChannelBase : public nsIInterceptedChannel {
   NS_IMETHOD SetReleaseHandle(nsISupports* aHandle) override;
 
   NS_IMETHODIMP
-  SetLaunchServiceWorkerStart(TimeStamp aTimeStamp) override {
-    mLaunchServiceWorkerStart = aTimeStamp;
-    return NS_OK;
-  }
+  SetFetchHandlerStart(TimeStamp aTimeStamp) override { return NS_OK; }
 
   NS_IMETHODIMP
-  GetLaunchServiceWorkerStart(TimeStamp* aTimeStamp) override {
-    MOZ_DIAGNOSTIC_ASSERT(aTimeStamp);
-    *aTimeStamp = mLaunchServiceWorkerStart;
-    return NS_OK;
-  }
-
-  NS_IMETHODIMP
-  SetLaunchServiceWorkerEnd(TimeStamp aTimeStamp) override {
-    mLaunchServiceWorkerEnd = aTimeStamp;
-    return NS_OK;
-  }
-
-  NS_IMETHODIMP
-  GetLaunchServiceWorkerEnd(TimeStamp* aTimeStamp) override {
-    MOZ_DIAGNOSTIC_ASSERT(aTimeStamp);
-    *aTimeStamp = mLaunchServiceWorkerEnd;
-    return NS_OK;
-  }
-
-  NS_IMETHODIMP
-  SetDispatchFetchEventStart(TimeStamp aTimeStamp) override {
-    mDispatchFetchEventStart = aTimeStamp;
-    return NS_OK;
-  }
-
-  NS_IMETHODIMP
-  SetDispatchFetchEventEnd(TimeStamp aTimeStamp) override {
-    mDispatchFetchEventEnd = aTimeStamp;
-    return NS_OK;
-  }
-
-  NS_IMETHODIMP
-  SetHandleFetchEventStart(TimeStamp aTimeStamp) override {
-    mHandleFetchEventStart = aTimeStamp;
-    return NS_OK;
-  }
-
-  NS_IMETHODIMP
-  SetHandleFetchEventEnd(TimeStamp aTimeStamp) override {
-    mHandleFetchEventEnd = aTimeStamp;
-    return NS_OK;
-  }
-
-  NS_IMETHODIMP
-  SetFinishResponseStart(TimeStamp aTimeStamp) override {
-    mFinishResponseStart = aTimeStamp;
-    return NS_OK;
-  }
-
-  NS_IMETHODIMP
-  SetFinishSynthesizedResponseEnd(TimeStamp aTimeStamp) override {
-    MOZ_ASSERT(mSynthesizedOrReset == Invalid);
-    mSynthesizedOrReset = Synthesized;
-    mFinishResponseEnd = aTimeStamp;
-    return NS_OK;
-  }
-
-  NS_IMETHODIMP
-  SetChannelResetEnd(TimeStamp aTimeStamp) override {
-    MOZ_ASSERT(mSynthesizedOrReset == Invalid);
-    mSynthesizedOrReset = Reset;
-    mFinishResponseEnd = aTimeStamp;
-    return NS_OK;
-  }
-
-  NS_IMETHODIMP SaveTimeStamps() override;
-
-  static already_AddRefed<nsIURI> SecureUpgradeChannelURI(nsIChannel* aChannel);
-};
-
-class InterceptedChannelContent : public InterceptedChannelBase {
-  // The actual channel being intercepted.
-  RefPtr<HttpChannelChild> mChannel;
-
-  // Listener for the synthesized response to fix up the notifications before
-  // they reach the actual channel.
-  RefPtr<InterceptStreamListener> mStreamListener;
-
-  // Set for intercepted channels that have gone through a secure upgrade.
-  bool mSecureUpgrade;
-
- public:
-  InterceptedChannelContent(HttpChannelChild* aChannel,
-                            nsINetworkInterceptController* aController,
-                            InterceptStreamListener* aListener,
-                            bool aSecureUpgrade);
-
-  NS_IMETHOD ResetInterception() override;
-  NS_IMETHOD StartSynthesizedResponse(nsIInputStream* aBody,
-                                      nsIInterceptedBodyCallback* aBodyCallback,
-                                      nsICacheInfoChannel* aChannel,
-                                      const nsACString& aFinalURLSpec,
-                                      bool aResponseRedirected) override;
-  NS_IMETHOD FinishSynthesizedResponse() override;
-  NS_IMETHOD GetChannel(nsIChannel** aChannel) override;
-  NS_IMETHOD GetSecureUpgradedChannelURI(nsIURI** aURI) override;
-  NS_IMETHOD SynthesizeStatus(uint16_t aStatus,
-                              const nsACString& aReason) override;
-  NS_IMETHOD SynthesizeHeader(const nsACString& aName,
-                              const nsACString& aValue) override;
-  NS_IMETHOD CancelInterception(nsresult aStatus) override;
-  NS_IMETHOD SetChannelInfo(mozilla::dom::ChannelInfo* aChannelInfo) override;
-  NS_IMETHOD GetInternalContentPolicyType(
-      nsContentPolicyType* aInternalContentPolicyType) override;
-
-  virtual void NotifyController() override;
+  SetFetchHandlerFinish(TimeStamp aTimeStamp) override { return NS_OK; }
 };
 
 }  // namespace net

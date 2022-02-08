@@ -13,12 +13,15 @@ namespace js {
 
 class WeakRefObject : public NativeObject {
  public:
+  enum { TargetSlot, SlotCount };
+
   static const JSClass class_;
   static const JSClass protoClass_;
 
-  JSObject* target() { return static_cast<JSObject*>(getPrivate()); }
+  JSObject* target() { return maybePtrFromReservedSlot<JSObject>(TargetSlot); }
 
-  void setTarget(JSObject* target);
+  void setTargetUnbarriered(JSObject* target);
+  void clearTarget();
 
  private:
   static const JSClassOps classOps_;
@@ -26,7 +29,7 @@ class WeakRefObject : public NativeObject {
   static const JSPropertySpec properties[];
   static const JSFunctionSpec methods[];
 
-  static MOZ_MUST_USE bool construct(JSContext* cx, unsigned argc, Value* vp);
+  [[nodiscard]] static bool construct(JSContext* cx, unsigned argc, Value* vp);
   static void trace(JSTracer* trc, JSObject* obj);
   static void finalize(JSFreeOp* op, JSObject* obj);
 

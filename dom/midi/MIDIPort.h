@@ -11,14 +11,12 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Observer.h"
 #include "mozilla/DOMEventTargetHelper.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/MIDIAccess.h"
 #include "mozilla/dom/MIDIPortInterface.h"
 
 struct JSContext;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Promise;
 class MIDIPortInfo;
@@ -92,7 +90,6 @@ class MIDIPort : public DOMEventTargetHelper,
   RefPtr<Promise> mClosingPromise;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_MIDIPort_h

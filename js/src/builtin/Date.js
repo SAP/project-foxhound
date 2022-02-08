@@ -7,7 +7,7 @@
 //
 //   runtimeDefaultLocale:
 //     Locale information provided by the embedding, guiding SpiderMonkey's
-//     selection of a default locale.  See RuntimeDefaultLocale(), whose
+//     selection of a default locale.  See intl_RuntimeDefaultLocale(), whose
 //     value controls the value returned by DefaultLocale() that's what's
 //     *actually* used.
 //   icuDefaultTimeZone:
@@ -32,7 +32,7 @@
 //    consistent with cached values, then
 // 2) seeing if the desired formatter is cached and returning it if so, or else
 // 3) create the desired formatter and store and return it.
-var dateTimeFormatCache = new Record();
+var dateTimeFormatCache = new_Record();
 
 
 /**
@@ -51,11 +51,11 @@ function GetCachedFormat(format, required, defaults) {
            "dateTimeFormatCache");
 
     var formatters;
-    if (!IsRuntimeDefaultLocale(dateTimeFormatCache.runtimeDefaultLocale) ||
+    if (!intl_IsRuntimeDefaultLocale(dateTimeFormatCache.runtimeDefaultLocale) ||
         !intl_isDefaultTimeZone(dateTimeFormatCache.icuDefaultTimeZone))
     {
-        formatters = dateTimeFormatCache.formatters = new Record();
-        dateTimeFormatCache.runtimeDefaultLocale = RuntimeDefaultLocale();
+        formatters = dateTimeFormatCache.formatters = new_Record();
+        dateTimeFormatCache.runtimeDefaultLocale = intl_RuntimeDefaultLocale();
         dateTimeFormatCache.icuDefaultTimeZone = intl_defaultTimeZone();
     } else {
         formatters = dateTimeFormatCache.formatters;
@@ -78,8 +78,8 @@ function GetCachedFormat(format, required, defaults) {
  * Spec: ECMAScript Internationalization API Specification, 13.3.1.
  */
 function Date_toLocaleString() {
-    // Steps 1-2.  Note that valueOf enforces "this time value" restrictions.
-    var x = callFunction(std_Date_valueOf, this);
+    // Steps 1-2.
+    var x = callFunction(ThisTimeValue, this, DATE_METHOD_LOCALE_STRING);
     if (Number_isNaN(x))
         return "Invalid Date";
 
@@ -111,8 +111,8 @@ function Date_toLocaleString() {
  * Spec: ECMAScript Internationalization API Specification, 13.3.2.
  */
 function Date_toLocaleDateString() {
-    // Steps 1-2.  Note that valueOf enforces "this time value" restrictions.
-    var x = callFunction(std_Date_valueOf, this);
+    // Steps 1-2.
+    var x = callFunction(ThisTimeValue, this, DATE_METHOD_LOCALE_DATE_STRING);
     if (Number_isNaN(x))
         return "Invalid Date";
 
@@ -144,8 +144,8 @@ function Date_toLocaleDateString() {
  * Spec: ECMAScript Internationalization API Specification, 13.3.3.
  */
 function Date_toLocaleTimeString() {
-    // Steps 1-2.  Note that valueOf enforces "this time value" restrictions.
-    var x = callFunction(std_Date_valueOf, this);
+    // Steps 1-2.
+    var x = callFunction(ThisTimeValue, this, DATE_METHOD_LOCALE_TIME_STRING);
     if (Number_isNaN(x))
         return "Invalid Date";
 

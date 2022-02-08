@@ -1,13 +1,18 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 # Shared/common mozharness configuration for Android unit tests.
 #
 # This configuration should be combined with platform-specific mozharness
-# configuration such as androidx86_7_0.py, android_hw, or similar.
+# configuration such as android-x86_64.py, android_hw, or similar.
 
+from __future__ import absolute_import
 import os
 
 
 NODEJS_PATH = None
-if 'MOZ_FETCHES_DIR' in os.environ:
+if "MOZ_FETCHES_DIR" in os.environ:
     NODEJS_PATH = os.path.join(os.environ["MOZ_FETCHES_DIR"], "node/bin/node")
 
 
@@ -38,18 +43,16 @@ def WebglSuite(name):
 
 config = {
     "default_actions": [
-        'clobber',
-        'setup-avds',
-        'download-and-extract',
-        'create-virtualenv',
-        'start-emulator',
-        'verify-device',
-        'install',
-        'run-tests',
+        "clobber",
+        "download-and-extract",
+        "create-virtualenv",
+        "start-emulator",
+        "verify-device",
+        "install",
+        "run-tests",
     ],
     "tooltool_cache": os.environ.get("TOOLTOOL_CACHE"),
     "hostutils_manifest_path": "testing/config/tooltool-manifests/linux64/hostutils.manifest",
-    "avds_dir": "/builds/worker/workspace/build/.android",
     # "log_format": "%(levelname)8s - %(message)s",
     "log_tbpl_level": "info",
     "log_raw_level": "info",
@@ -58,7 +61,6 @@ config = {
     # take 4 screenshots at one minute intervals you could specify:
     # "screenshot_times": [60, 120, 180, 240],
     "nodejs_path": NODEJS_PATH,
-
     "suite_definitions": {
         "mochitest-plain": {
             "run_filename": "runtestsremote.py",
@@ -145,7 +147,8 @@ config = {
                 "--utility-path=%(utility_path)s",
                 "--http-port=%(http_port)s",
                 "--ssl-port=%(ssl_port)s",
-                "--httpd-path", "%(modules_dir)s",
+                "--httpd-path",
+                "%(modules_dir)s",
                 "--symbols-path=%(symbols_path)s",
                 "--extra-profile-file=fonts",
                 "--extra-profile-file=hyphenation",
@@ -157,7 +160,9 @@ config = {
                 "--deviceSerial=%(device_serial)s",
                 "--topsrcdir=tests",
             ],
-            "tests": ["tests/layout/reftests/reftest.list",],
+            "tests": [
+                "tests/layout/reftests/reftest.list",
+            ],
         },
         "reftest-qr": {
             "run_filename": "remotereftest.py",
@@ -170,7 +175,8 @@ config = {
                 "--utility-path=%(utility_path)s",
                 "--http-port=%(http_port)s",
                 "--ssl-port=%(ssl_port)s",
-                "--httpd-path", "%(modules_dir)s",
+                "--httpd-path",
+                "%(modules_dir)s",
                 "--symbols-path=%(symbols_path)s",
                 "--extra-profile-file=fonts",
                 "--extra-profile-file=hyphenation",
@@ -182,7 +188,9 @@ config = {
                 "--deviceSerial=%(device_serial)s",
                 "--topsrcdir=tests",
             ],
-            "tests": ["tests/layout/reftests/reftest-qr.list",],
+            "tests": [
+                "tests/layout/reftests/reftest-qr.list",
+            ],
         },
         "crashtest": {
             "run_filename": "remotereftest.py",
@@ -206,7 +214,9 @@ config = {
                 "--deviceSerial=%(device_serial)s",
                 "--topsrcdir=tests",
             ],
-            "tests": ["tests/testing/crashtest/crashtests.list",],
+            "tests": [
+                "tests/testing/crashtest/crashtests.list",
+            ],
         },
         "crashtest-qr": {
             "run_filename": "remotereftest.py",
@@ -230,7 +240,9 @@ config = {
                 "--deviceSerial=%(device_serial)s",
                 "--topsrcdir=tests",
             ],
-            "tests": ["tests/testing/crashtest/crashtests-qr.list",],
+            "tests": [
+                "tests/testing/crashtest/crashtests-qr.list",
+            ],
         },
         "jittest": {
             "run_filename": "jit_test.py",
@@ -244,7 +256,7 @@ config = {
                 "--no-slow",
                 "--no-progress",
                 "--format=automation",
-                "--jitflags=all",
+                "--jitflags=%(jittest_flags)s",
                 "--deviceSerial=%(device_serial)s",
             ],
         },
@@ -254,9 +266,13 @@ config = {
             "options": [
                 "--app=%(app)s",
                 "--ignore-window-size",
-                "--remote-webserver=%(remote_webserver)s", "--xre-path=%(xre_path)s",
-                "--utility-path=%(utility_path)s", "--http-port=%(http_port)s",
-                "--ssl-port=%(ssl_port)s", "--httpd-path", "%(modules_dir)s",
+                "--remote-webserver=%(remote_webserver)s",
+                "--xre-path=%(xre_path)s",
+                "--utility-path=%(utility_path)s",
+                "--http-port=%(http_port)s",
+                "--ssl-port=%(ssl_port)s",
+                "--httpd-path",
+                "%(modules_dir)s",
                 "--symbols-path=%(symbols_path)s",
                 "--extra-profile-file=jsreftest/tests/js/src/tests/user.js",
                 "--suite=jstestbrowser",
@@ -267,12 +283,13 @@ config = {
                 "--deviceSerial=%(device_serial)s",
                 "--topsrcdir=../jsreftest/tests",
             ],
-            "tests": ["../jsreftest/tests/js/src/tests/jstests.list",],
+            "tests": [
+                "../jsreftest/tests/js/src/tests/jstests.list",
+            ],
         },
         "xpcshell": {
             "run_filename": "remotexpcshelltests.py",
             "testsdir": "xpcshell",
-            "install": False,
             "options": [
                 "--xre-path=%(xre_path)s",
                 "--testing-modules-dir=%(modules_dir)s",
@@ -285,6 +302,7 @@ config = {
                 "--log-errorsummary=%(error_summary_file)s",
                 "--log-tbpl-level=%(log_tbpl_level)s",
                 "--test-plugin-path=none",
+                "--threads=4",
                 "--deviceSerial=%(device_serial)s",
                 "%(xpcshell_extra)s",
             ],
@@ -330,6 +348,5 @@ config = {
                 "--deviceSerial=%(device_serial)s",
             ],
         },
-
     },  # end suite_definitions
 }

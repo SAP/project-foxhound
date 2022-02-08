@@ -13,8 +13,8 @@
 #include "prnetdb.h"
 #include "plstr.h"
 #include "nsISupportsImpl.h"
-#include "mozilla/LinkedList.h"
 #include "mozilla/MemoryReporting.h"
+#include "nsTArray.h"
 
 #if !defined(XP_WIN)
 #  include <arpa/inet.h>
@@ -45,6 +45,27 @@
 
 namespace mozilla {
 namespace net {
+
+// IMPORTANT: when adding new values, always add them to the end, otherwise
+// it will mess up telemetry.
+// Stage_0: Receive the record before the http transaction is created.
+// Stage_1: Receive the record after the http transaction is created and the
+//          transaction is not dispatched.
+// Stage_2: Receive the record after the http transaction is dispatched.
+enum HTTPSSVC_RECEIVED_STAGE : uint32_t {
+  HTTPSSVC_NOT_PRESENT = 0,
+  HTTPSSVC_WITH_IPHINT_RECEIVED_STAGE_0 = 1,
+  HTTPSSVC_WITHOUT_IPHINT_RECEIVED_STAGE_0 = 2,
+  HTTPSSVC_WITH_IPHINT_RECEIVED_STAGE_1 = 3,
+  HTTPSSVC_WITHOUT_IPHINT_RECEIVED_STAGE_1 = 4,
+  HTTPSSVC_WITH_IPHINT_RECEIVED_STAGE_2 = 5,
+  HTTPSSVC_WITHOUT_IPHINT_RECEIVED_STAGE_2 = 6,
+  HTTPSSVC_NOT_USED = 7,
+  HTTPSSVC_NO_USABLE_RECORD = 8,
+};
+
+#define HTTPS_RR_IS_USED(s) \
+  (s > HTTPSSVC_NOT_PRESENT && s < HTTPSSVC_WITH_IPHINT_RECEIVED_STAGE_2)
 
 // Required buffer size for text form of an IP address.
 // Includes space for null termination. We make our own contants
@@ -86,7 +107,7 @@ union NetAddr {
   struct {
     uint16_t family; /* address family (0x00ff maskable) */
     char data[14];   /* raw address data */
-  } raw;
+  } raw{};
   struct {
     uint16_t family; /* address family (AF_INET) */
     uint16_t port;   /* port number */
@@ -109,24 +130,73 @@ union NetAddr {
   // introduced to support nsTArray<NetAddr> comparisons and sorting
   bool operator==(const NetAddr& other) const;
   bool operator<(const NetAddr& other) const;
+
+  inline NetAddr& operator=(const NetAddr& other) {
+    memcpy(this, &other, sizeof(NetAddr));
+    return *this;
+  }
+
+  NetAddr() { memset(this, 0, sizeof(NetAddr)); }
+  explicit NetAddr(const PRNetAddr* prAddr);
+
+  // Will parse aString into a NetAddr using PR_StringToNetAddr.
+  // Returns an error code if parsing fails.
+  // If aPort is non-0 will set the NetAddr's port to (the network endian
+  // value of) that.
+  nsresult InitFromString(const nsACString& aString, uint16_t aPort = 0);
+
+  bool IsIPAddrAny() const;
+  bool IsLoopbackAddr() const;
+  bool IsLoopBackAddressWithoutIPv6Mapping() const;
+  bool IsIPAddrV4() const;
+  bool IsIPAddrV4Mapped() const;
+  bool IsIPAddrLocal() const;
+  bool IsIPAddrShared() const;
+  nsresult GetPort(uint16_t* aResult) const;
+  bool ToStringBuffer(char* buf, uint32_t bufSize) const;
+  nsCString ToString() const;
 };
 
-// This class wraps a NetAddr union to provide C++ linked list
-// capabilities and other methods. It is created from a PRNetAddr,
-// which is converted to a mozilla::dns::NetAddr.
-class NetAddrElement : public LinkedListElement<NetAddrElement> {
- public:
-  explicit NetAddrElement(const PRNetAddr* prNetAddr);
-  NetAddrElement(const NetAddrElement& netAddr);
-  ~NetAddrElement();
+#define ODOH_VERSION 0x0001
+static const char kODoHQuery[] = "odoh query";
+static const char hODoHConfigID[] = "odoh key id";
+static const char kODoHResponse[] = "odoh response";
+static const char kODoHKey[] = "odoh key";
+static const char kODoHNonce[] = "odoh nonce";
 
-  NetAddr mAddress;
+struct ObliviousDoHConfigContents {
+  uint16_t mKemId{};
+  uint16_t mKdfId{};
+  uint16_t mAeadId{};
+  nsTArray<uint8_t> mPublicKey;
 };
+
+struct ObliviousDoHConfig {
+  uint16_t mVersion{};
+  uint16_t mLength{};
+  ObliviousDoHConfigContents mContents;
+  nsTArray<uint8_t> mConfigId;
+};
+
+enum ObliviousDoHMessageType : uint8_t {
+  ODOH_QUERY = 1,
+  ODOH_RESPONSE = 2,
+};
+
+struct ObliviousDoHMessage {
+  ObliviousDoHMessageType mType{ODOH_QUERY};
+  nsTArray<uint8_t> mKeyId;
+  nsTArray<uint8_t> mEncryptedMessage;
+};
+
+enum class DNSResolverType : uint32_t { Native = 0, TRR, ODoH };
 
 class AddrInfo {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(AddrInfo)
 
  public:
+  static const uint32_t NO_TTL_DATA = (uint32_t)-1;
+
   // Creates an AddrInfo object.
   explicit AddrInfo(const nsACString& host, const PRAddrInfo* prAddrInfo,
                     bool disableIPv4, bool filterNameCollision,
@@ -135,39 +205,77 @@ class AddrInfo {
   // Creates a basic AddrInfo object (initialize only the host, cname and TRR
   // type).
   explicit AddrInfo(const nsACString& host, const nsACString& cname,
-                    unsigned int TRRType);
+                    DNSResolverType aResolverType, unsigned int aTRRType,
+                    nsTArray<NetAddr>&& addresses);
 
   // Creates a basic AddrInfo object (initialize only the host and TRR status).
-  explicit AddrInfo(const nsACString& host, unsigned int TRRType);
+  explicit AddrInfo(const nsACString& host, DNSResolverType aResolverType,
+                    unsigned int aTRRType, nsTArray<NetAddr>&& addresses,
+                    uint32_t aTTL = NO_TTL_DATA);
 
   explicit AddrInfo(const AddrInfo* src);  // copy
 
-  void AddAddress(NetAddrElement* address);
-
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
-  nsCString mHostName;
-  nsCString mCanonicalName;
-  uint32_t ttl;
-  static const uint32_t NO_TTL_DATA = (uint32_t)-1;
-
-  AutoCleanLinkedList<NetAddrElement> mAddresses;
-  unsigned int IsTRR() { return mFromTRR; }
+  bool IsTRROrODoH() const {
+    return mResolverType == DNSResolverType::TRR ||
+           mResolverType == DNSResolverType::ODoH;
+  }
+  DNSResolverType ResolverType() const { return mResolverType; }
+  unsigned int TRRType() { return mTRRType; }
 
   double GetTrrFetchDuration() { return mTrrFetchDuration; }
   double GetTrrFetchDurationNetworkOnly() {
     return mTrrFetchDurationNetworkOnly;
   }
-  void SetTrrFetchDuration(double aTime) { mTrrFetchDuration = aTime; }
-  void SetTrrFetchDurationNetworkOnly(double aTime) {
-    mTrrFetchDurationNetworkOnly = aTime;
-  }
+
+  const nsTArray<NetAddr>& Addresses() { return mAddresses; }
+  const nsCString& Hostname() { return mHostName; }
+  const nsCString& CanonicalHostname() { return mCanonicalName; }
+  uint32_t TTL() { return ttl; }
+
+  class MOZ_STACK_CLASS AddrInfoBuilder {
+   public:
+    explicit AddrInfoBuilder(AddrInfo* aInfo) {
+      mInfo = new AddrInfo(aInfo);  // Clone it
+    }
+
+    void SetTrrFetchDurationNetworkOnly(double aTime) {
+      mInfo->mTrrFetchDurationNetworkOnly = aTime;
+    }
+
+    void SetTrrFetchDuration(double aTime) { mInfo->mTrrFetchDuration = aTime; }
+
+    void SetTTL(uint32_t aTTL) { mInfo->ttl = aTTL; }
+
+    void SetAddresses(nsTArray<NetAddr>&& addresses) {
+      mInfo->mAddresses = std::move(addresses);
+    }
+
+    void SetCanonicalHostname(const nsACString& aCname) {
+      mInfo->mCanonicalName = aCname;
+    }
+
+    already_AddRefed<AddrInfo> Finish() { return mInfo.forget(); }
+
+   private:
+    RefPtr<AddrInfo> mInfo;
+  };
+
+  AddrInfoBuilder Build() { return AddrInfoBuilder(this); }
 
  private:
   ~AddrInfo();
-  unsigned int mFromTRR;
-  double mTrrFetchDuration;
-  double mTrrFetchDurationNetworkOnly;
+  uint32_t ttl = NO_TTL_DATA;
+
+  nsCString mHostName;
+  nsCString mCanonicalName;
+  DNSResolverType mResolverType = DNSResolverType::Native;
+  unsigned int mTRRType = 0;
+  double mTrrFetchDuration = 0;
+  double mTrrFetchDurationNetworkOnly = 0;
+
+  nsTArray<NetAddr> mAddresses;
 };
 
 // Copies the contents of a PRNetAddr to a NetAddr.
@@ -178,21 +286,9 @@ void PRNetAddrToNetAddr(const PRNetAddr* prAddr, NetAddr* addr);
 // Does not do a ptr safety check!
 void NetAddrToPRNetAddr(const NetAddr* addr, PRNetAddr* prAddr);
 
-bool NetAddrToString(const NetAddr* addr, char* buf, uint32_t bufSize);
+bool IsLoopbackHostname(const nsACString& aAsciiHost);
 
-bool IsLoopBackAddress(const NetAddr* addr);
-
-bool IsIPAddrAny(const NetAddr* addr);
-
-bool IsIPAddrV4(const NetAddr* addr);
-
-bool IsIPAddrV4Mapped(const NetAddr* addr);
-
-bool IsIPAddrLocal(const NetAddr* addr);
-
-bool IsIPAddrShared(const NetAddr* addr);
-
-nsresult GetPort(const NetAddr* aAddr, uint16_t* aResult);
+bool HostIsIPLiteral(const nsACString& aAsciiHost);
 
 }  // namespace net
 }  // namespace mozilla

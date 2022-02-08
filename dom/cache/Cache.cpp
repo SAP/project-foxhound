@@ -6,7 +6,8 @@
 
 #include "mozilla/dom/cache/Cache.h"
 
-#include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
+#include "js/Array.h"               // JS::GetArrayLength, JS::IsArrayObject
+#include "js/PropertyAndElement.h"  // JS_GetElement
 #include "mozilla/dom/Headers.h"
 #include "mozilla/dom/InternalResponse.h"
 #include "mozilla/dom/Promise.h"
@@ -16,16 +17,16 @@
 #include "mozilla/dom/CacheBinding.h"
 #include "mozilla/dom/cache/AutoUtils.h"
 #include "mozilla/dom/cache/CacheChild.h"
+#include "mozilla/dom/cache/CacheCommon.h"
 #include "mozilla/dom/cache/CacheWorkerRef.h"
 #include "mozilla/dom/cache/ReadStream.h"
+#include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Unused.h"
 #include "nsIGlobalObject.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 using mozilla::ipc::PBackgroundChild;
 
@@ -81,12 +82,12 @@ static bool IsValidPutResponseStatus(Response& aResponse,
   if ((aPolicy == PutStatusPolicy::RequireOK && !aResponse.Ok()) ||
       aResponse.Status() == 206) {
     nsCString type(ResponseTypeValues::GetString(aResponse.Type()));
-    nsAutoCString status;
-    status.AppendInt(aResponse.Status());
+
     nsAutoString url;
     aResponse.GetUrl(url);
+
     aRv.ThrowTypeError<MSG_CACHE_ADD_FAILED_RESPONSE>(
-        type, status, NS_ConvertUTF16toUTF8(url));
+        type, IntToCString(aResponse.Status()), NS_ConvertUTF16toUTF8(url));
     return false;
   }
 
@@ -127,46 +128,31 @@ class Cache::FetchHandler final : public PromiseNativeHandler {
     AutoTArray<RefPtr<Response>, 256> responseList;
     responseList.SetCapacity(mRequestList.Length());
 
+    const auto failOnErr = [this](const auto) { Fail(); };
+
     bool isArray;
-    if (NS_WARN_IF(!JS::IsArrayObject(aCx, aValue, &isArray) || !isArray)) {
-      Fail();
-      return;
-    }
+    QM_TRY(OkIf(JS::IsArrayObject(aCx, aValue, &isArray)), QM_VOID, failOnErr);
+    QM_TRY(OkIf(isArray), QM_VOID, failOnErr);
 
     JS::Rooted<JSObject*> obj(aCx, &aValue.toObject());
 
     uint32_t length;
-    if (NS_WARN_IF(!JS::GetArrayLength(aCx, obj, &length))) {
-      Fail();
-      return;
-    }
+    QM_TRY(OkIf(JS::GetArrayLength(aCx, obj, &length)), QM_VOID, failOnErr);
 
     for (uint32_t i = 0; i < length; ++i) {
       JS::Rooted<JS::Value> value(aCx);
 
-      if (NS_WARN_IF(!JS_GetElement(aCx, obj, i, &value))) {
-        Fail();
-        return;
-      }
+      QM_TRY(OkIf(JS_GetElement(aCx, obj, i, &value)), QM_VOID, failOnErr);
 
-      if (NS_WARN_IF(!value.isObject())) {
-        Fail();
-        return;
-      }
+      QM_TRY(OkIf(value.isObject()), QM_VOID, failOnErr);
 
       JS::Rooted<JSObject*> responseObj(aCx, &value.toObject());
 
       RefPtr<Response> response;
-      nsresult rv = UNWRAP_OBJECT(Response, responseObj, response);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        Fail();
-        return;
-      }
+      QM_TRY(MOZ_TO_RESULT(UNWRAP_OBJECT(Response, responseObj, response)),
+             QM_VOID, failOnErr);
 
-      if (NS_WARN_IF(response->Type() == ResponseType::Error)) {
-        Fail();
-        return;
-      }
+      QM_TRY(OkIf(response->Type() != ResponseType::Error), QM_VOID, failOnErr);
 
       // Do not allow the convenience methods .add()/.addAll() to store failed
       // or invalid responses.  A consequence of this is that these methods
@@ -323,8 +309,9 @@ already_AddRefed<Promise> Cache::Add(JSContext* aContext,
   MOZ_DIAGNOSTIC_ASSERT(!global.Failed());
 
   nsTArray<SafeRefPtr<Request>> requestList(1);
+  RootedDictionary<RequestInit> requestInit(aContext);
   SafeRefPtr<Request> request =
-      Request::Constructor(global, aRequest, RequestInit(), aRv);
+      Request::Constructor(global, aRequest, requestInit, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -367,8 +354,9 @@ already_AddRefed<Promise> Cache::AddAll(
           aRequestList[i].GetAsUSVString());
     }
 
+    RootedDictionary<RequestInit> requestInit(aContext);
     SafeRefPtr<Request> request =
-        Request::Constructor(global, requestOrString, RequestInit(), aRv);
+        Request::Constructor(global, requestOrString, requestInit, aRv);
     if (NS_WARN_IF(aRv.Failed())) {
       return nullptr;
     }
@@ -556,8 +544,9 @@ already_AddRefed<Promise> Cache::AddAll(
   for (uint32_t i = 0; i < aRequestList.Length(); ++i) {
     RequestOrUSVString requestOrString;
     requestOrString.SetAsRequest() = aRequestList[i].unsafeGetRawPtr();
+    RootedDictionary<RequestInit> requestInit(aGlobal.Context());
     RefPtr<Promise> fetch =
-        FetchRequest(mGlobal, requestOrString, RequestInit(), aCallerType, aRv);
+        FetchRequest(mGlobal, requestOrString, requestInit, aCallerType, aRv);
     if (NS_WARN_IF(aRv.Failed())) {
       return nullptr;
     }
@@ -614,6 +603,4 @@ OpenMode Cache::GetOpenMode() const {
   return mNamespace == CHROME_ONLY_NAMESPACE ? OpenMode::Eager : OpenMode::Lazy;
 }
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache

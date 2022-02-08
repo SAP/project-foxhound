@@ -7,7 +7,11 @@
 #ifndef MOZILLA_GFX_RENDERCOMPOSITOR_NATIVE_H
 #define MOZILLA_GFX_RENDERCOMPOSITOR_NATIVE_H
 
+#include <unordered_map>
+
 #include "GLTypes.h"
+#include "mozilla/HashFunctions.h"
+#include "mozilla/layers/ScreenshotGrabber.h"
 #include "mozilla/webrender/RenderCompositor.h"
 #include "mozilla/TimeStamp.h"
 
@@ -35,27 +39,38 @@ class RenderCompositorNative : public RenderCompositor {
   void Pause() override;
   bool Resume() override;
 
+  layers::WebRenderCompositor CompositorType() const override;
+
   LayoutDeviceIntSize GetBufferSize() override;
 
   bool ShouldUseNativeCompositor() override;
-  uint32_t GetMaxUpdateRects() override;
+
+  bool SurfaceOriginIsTopLeft() override { return true; }
 
   // Does the readback for the ShouldUseNativeCompositor() case.
   bool MaybeReadback(const gfx::IntSize& aReadbackSize,
                      const wr::ImageFormat& aReadbackFormat,
-                     const Range<uint8_t>& aReadbackBuffer) override;
+                     const Range<uint8_t>& aReadbackBuffer,
+                     bool* aNeedsYFlip) override;
+  bool MaybeRecordFrame(layers::CompositionRecorder& aRecorder) override;
+  bool MaybeGrabScreenshot(const gfx::IntSize& aWindowSize) override;
+  bool MaybeProcessScreenshotQueue() override;
 
   // Interface for wr::Compositor
   void CompositorBeginFrame() override;
   void CompositorEndFrame() override;
   void CreateSurface(wr::NativeSurfaceId aId, wr::DeviceIntPoint aVirtualOffset,
                      wr::DeviceIntSize aTileSize, bool aIsOpaque) override;
+  void CreateExternalSurface(wr::NativeSurfaceId aId, bool aIsOpaque) override;
   void DestroySurface(NativeSurfaceId aId) override;
   void CreateTile(wr::NativeSurfaceId aId, int32_t aX, int32_t aY) override;
   void DestroyTile(wr::NativeSurfaceId aId, int32_t aX, int32_t aY) override;
-  void AddSurface(wr::NativeSurfaceId aId, wr::DeviceIntPoint aPosition,
-                  wr::DeviceIntRect aClipRect) override;
-  CompositorCapabilities GetCompositorCapabilities() override;
+  void AttachExternalImage(wr::NativeSurfaceId aId,
+                           wr::ExternalImageId aExternalImage) override;
+  void AddSurface(wr::NativeSurfaceId aId,
+                  const wr::CompositorSurfaceTransform& aTransform,
+                  wr::DeviceIntRect aClipRect,
+                  wr::ImageRendering aImageRendering) override;
 
   struct TileKey {
     TileKey(int32_t aX, int32_t aY) : mX(aX), mY(aY) {}
@@ -65,8 +80,9 @@ class RenderCompositorNative : public RenderCompositor {
   };
 
  protected:
-  explicit RenderCompositorNative(RefPtr<widget::CompositorWidget>&& aWidget,
-                                  gl::GLContext* aGL = nullptr);
+  explicit RenderCompositorNative(
+      const RefPtr<widget::CompositorWidget>& aWidget,
+      gl::GLContext* aGL = nullptr);
 
   virtual bool InitDefaultFramebuffer(const gfx::IntRect& aBounds) = 0;
   virtual void DoSwap() = 0;
@@ -78,6 +94,7 @@ class RenderCompositorNative : public RenderCompositor {
   // Can be null.
   RefPtr<layers::NativeLayerRoot> mNativeLayerRoot;
   UniquePtr<layers::NativeLayerRootSnapshotter> mNativeLayerRootSnapshotter;
+  layers::ScreenshotGrabber mProfilerScreenshotGrabber;
   RefPtr<layers::NativeLayer> mNativeLayerForEntireWindow;
   RefPtr<layers::SurfacePoolHandle> mSurfacePoolHandle;
 
@@ -94,8 +111,12 @@ class RenderCompositorNative : public RenderCompositor {
       return gfx::IntSize(mTileSize.width, mTileSize.height);
     }
 
+    // External images can change size depending on which image
+    // is attached, so mTileSize will be 0,0 when mIsExternal
+    // is true.
     wr::DeviceIntSize mTileSize;
     bool mIsOpaque;
+    bool mIsExternal = false;
     std::unordered_map<TileKey, RefPtr<layers::NativeLayer>, TileKeyHashFn>
         mNativeLayers;
   };
@@ -109,8 +130,8 @@ class RenderCompositorNative : public RenderCompositor {
   // Used in native compositor mode:
   RefPtr<layers::NativeLayer> mCurrentlyBoundNativeLayer;
   nsTArray<RefPtr<layers::NativeLayer>> mAddedLayers;
-  uint64_t mTotalPixelCount = 0;
-  uint64_t mAddedPixelCount = 0;
+  uint64_t mTotalTilePixelCount = 0;
+  uint64_t mAddedTilePixelCount = 0;
   uint64_t mAddedClippedPixelCount = 0;
   uint64_t mDrawnPixelCount = 0;
   gfx::IntRect mVisibleBounds;
@@ -128,9 +149,9 @@ static inline bool operator==(const RenderCompositorNative::TileKey& a0,
 class RenderCompositorNativeOGL : public RenderCompositorNative {
  public:
   static UniquePtr<RenderCompositor> Create(
-      RefPtr<widget::CompositorWidget>&& aWidget);
+      const RefPtr<widget::CompositorWidget>& aWidget, nsACString& aError);
 
-  RenderCompositorNativeOGL(RefPtr<widget::CompositorWidget>&& aWidget,
+  RenderCompositorNativeOGL(const RefPtr<widget::CompositorWidget>& aWidget,
                             RefPtr<gl::GLContext>&& aGL);
   virtual ~RenderCompositorNativeOGL();
 
@@ -162,9 +183,9 @@ class RenderCompositorNativeOGL : public RenderCompositorNative {
 class RenderCompositorNativeSWGL : public RenderCompositorNative {
  public:
   static UniquePtr<RenderCompositor> Create(
-      RefPtr<widget::CompositorWidget>&& aWidget);
+      const RefPtr<widget::CompositorWidget>& aWidget, nsACString& aError);
 
-  RenderCompositorNativeSWGL(RefPtr<widget::CompositorWidget>&& aWidget,
+  RenderCompositorNativeSWGL(const RefPtr<widget::CompositorWidget>& aWidget,
                              void* aContext);
   virtual ~RenderCompositorNativeSWGL();
 
@@ -173,6 +194,10 @@ class RenderCompositorNativeSWGL : public RenderCompositorNative {
   bool MakeCurrent() override;
 
   void CancelFrame() override;
+
+  layers::WebRenderBackend BackendType() const override {
+    return layers::WebRenderBackend::SOFTWARE;
+  }
 
   // Maps an underlying layer and sets aData to the top left pixel of
   // aValidRect.  The row stride is set to aStride, note this doesn't

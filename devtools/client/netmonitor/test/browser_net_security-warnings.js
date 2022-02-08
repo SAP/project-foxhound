@@ -47,10 +47,7 @@ add_task(async function() {
     if (!document.querySelector("#security-tab[aria-selected=true]")) {
       info("Selecting security tab.");
       wait = waitForDOM(document, "#security-panel .properties-view");
-      EventUtils.sendMouseEvent(
-        { type: "click" },
-        document.querySelector("#security-tab")
-      );
+      clickOnSidebarTab(document, "security");
       await wait;
     }
 

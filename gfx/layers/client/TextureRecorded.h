@@ -9,6 +9,7 @@
 
 #include "TextureClient.h"
 #include "mozilla/layers/CanvasChild.h"
+#include "mozilla/layers/LayersTypes.h"
 
 namespace mozilla {
 namespace layers {
@@ -27,6 +28,8 @@ class RecordedTextureData final : public TextureData {
 
   already_AddRefed<gfx::DrawTarget> BorrowDrawTarget() final;
 
+  void EndDraw() final;
+
   already_AddRefed<gfx::SourceSurface> BorrowSnapshot() final;
 
   void Deallocate(LayersIPCChannel* aAllocator) final;
@@ -35,16 +38,20 @@ class RecordedTextureData final : public TextureData {
 
   void OnForwardedToHost() final;
 
+  TextureFlags GetTextureFlags() const final;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(RecordedTextureData);
 
   ~RecordedTextureData() override;
 
+  int64_t mTextureId;
   RefPtr<CanvasChild> mCanvasChild;
   gfx::IntSize mSize;
   gfx::SurfaceFormat mFormat;
   RefPtr<gfx::DrawTarget> mDT;
   RefPtr<gfx::SourceSurface> mSnapshot;
+  OpenMode mLockedMode;
 };
 
 }  // namespace layers

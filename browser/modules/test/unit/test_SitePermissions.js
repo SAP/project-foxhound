@@ -11,10 +11,15 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const RESIST_FINGERPRINTING_ENABLED = Services.prefs.getBoolPref(
   "privacy.resistFingerprinting"
 );
-const HTTPS_ONLY_MODE_ENABLED = Services.prefs.getBoolPref(
-  "dom.security.https_only_mode"
-);
 const MIDI_ENABLED = Services.prefs.getBoolPref("dom.webmidi.enabled");
+
+const EXT_PROTOCOL_ENABLED = Services.prefs.getBoolPref(
+  "security.external_protocol_requires_permission"
+);
+
+const STATE_PARTITIONING_ENABLED = Services.prefs.getBoolPref(
+  "browser.contentblocking.state-partitioning.mvp.ui.enabled"
+);
 
 add_task(async function testPermissionsListing() {
   let expectedPermissions = [
@@ -38,14 +43,16 @@ add_task(async function testPermissionsListing() {
     // is true.
     expectedPermissions.push("canvas");
   }
-  if (HTTPS_ONLY_MODE_ENABLED) {
-    // Exception permission should be hidden unless HTTPS-Only Mode is enabled
-    expectedPermissions.push("https-only-load-insecure");
-  }
   if (MIDI_ENABLED) {
     // Should remove this checking and add it as default after it is fully pref'd-on.
     expectedPermissions.push("midi");
     expectedPermissions.push("midi-sysex");
+  }
+  if (EXT_PROTOCOL_ENABLED) {
+    expectedPermissions.push("open-protocol-handler");
+  }
+  if (STATE_PARTITIONING_ENABLED) {
+    expectedPermissions.push("3rdPartyStorage");
   }
   Assert.deepEqual(
     SitePermissions.listPermissions().sort(),
@@ -200,15 +207,14 @@ add_task(async function testExactHostMatch() {
     // is true.
     exactHostMatched.push("canvas");
   }
-  if (HTTPS_ONLY_MODE_ENABLED) {
-    // Exception permission should be hidden unless HTTPS-Only Mode is enabled
-    exactHostMatched.push("https-only-load-insecure");
-  }
   if (MIDI_ENABLED) {
     // WebMIDI is only pref'd on in nightly.
     // Should remove this checking and add it as default after it is fully pref-on.
     exactHostMatched.push("midi");
     exactHostMatched.push("midi-sysex");
+  }
+  if (EXT_PROTOCOL_ENABLED) {
+    exactHostMatched.push("open-protocol-handler");
   }
   let nonExactHostMatched = [
     "cookie",
@@ -217,6 +223,9 @@ add_task(async function testExactHostMatch() {
     "shortcuts",
     "storage-access",
   ];
+  if (STATE_PARTITIONING_ENABLED) {
+    nonExactHostMatched.push("3rdPartyStorage");
+  }
 
   let permissions = SitePermissions.listPermissions();
   for (let permission of permissions) {
@@ -363,52 +372,6 @@ add_task(async function testCanvasPermission() {
     "privacy.resistFingerprinting",
     resistFingerprinting
   );
-});
-
-add_task(async function testHttpsOnlyPermission() {
-  let originalValue = Services.prefs.getBoolPref(
-    "dom.security.https_only_mode",
-    false
-  );
-  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
-    "https://example.com"
-  );
-
-  SitePermissions.setForPrincipal(
-    principal,
-    "https-only-load-insecure",
-    SitePermissions.ALLOW
-  );
-
-  // Exception permission is hidden when HTTPS-Only Mode is disabled
-  Services.prefs.setBoolPref("dom.security.https_only_mode", false);
-  Assert.equal(
-    SitePermissions.listPermissions().indexOf("https-only-load-insecure"),
-    -1
-  );
-  Assert.equal(
-    SitePermissions.getAllByPrincipal(principal).filter(
-      permission => permission.id === "https-only-load-insecure"
-    ).length,
-    0
-  );
-
-  // Exception permission should show up when HTTPS-Only Mode is enabled
-  Services.prefs.setBoolPref("dom.security.https_only_mode", true);
-  Assert.notEqual(
-    SitePermissions.listPermissions().indexOf("https-only-load-insecure"),
-    -1
-  );
-  Assert.notEqual(
-    SitePermissions.getAllByPrincipal(principal).filter(
-      permission => permission.id === "https-only-load-insecure"
-    ).length,
-    0
-  );
-
-  // Reset everything
-  SitePermissions.removeFromPrincipal(principal, "https-only-load-insecure");
-  Services.prefs.setBoolPref("dom.security.https_only_mode", originalValue);
 });
 
 add_task(async function testFilePermissions() {

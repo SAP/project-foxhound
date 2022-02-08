@@ -2,16 +2,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
-loader: taskgraph.loader.transform:loader
+loader: gecko_taskgraph.loader.transform:loader
 
 kind-dependencies:
     - build
     - toolchain
 
 transforms:
-    - taskgraph.transforms.diffoscope:transforms
-    - taskgraph.transforms.job:transforms
-    - taskgraph.transforms.task:transforms
+    - gecko_taskgraph.transforms.diffoscope:transforms
+    - gecko_taskgraph.transforms.job:transforms
+    - gecko_taskgraph.transforms.task:transforms
 
 # Note: --exclude-command .--line-numbers is because of
 # https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=879003
@@ -21,12 +21,13 @@ transforms:
 # builds because they are signed with an ephemeral private key that is
 # generated for each build.
 job-defaults:
+    tier: 2
     args: >-
         --output-empty
         --no-default-limits
         --max-page-size 100000000
         --max-page-diff-block-lines 10000
-        --exclude-directory-metadata
+        --exclude-directory-metadata=yes
         --exclude-command .--line-numbers
 
 jobs:
@@ -61,7 +62,7 @@ jobs:
         # This is necessary to avoid building `build-win64-aarch64` on every push on autoland
         # A more robust fix for this is https://bugzilla.mozilla.org/show_bug.cgi?id=1643346
         optimization:
-            push-interval-10: null
+            skip-unless-expanded: null
 
     reproducible-linux32:
         symbol: Linux32
@@ -78,6 +79,20 @@ jobs:
         fail-on-diff: true
         run-on-projects: ['mozilla-central']  # Do not run linux32 on autoland, Bug 1599197
 
+    reproducible-linux64:
+        symbol: Linux64
+        new: build-linux64-reproduced/opt
+        original: build-linux64-shippable/opt
+        fail-on-diff: true
+        run-on-projects: ['mozilla-central']
+
+    reproducible-linux64-generated-files:
+        symbol: Linux64g
+        artifact: target.generated-files.tar.gz
+        new: build-linux64-reproduced/opt
+        original: build-linux64-shippable/opt
+        fail-on-diff: true
+        run-on-projects: ['mozilla-central']
 
 # Make a task for each diff we might want. The following are just examples,
 # Both original and new can point to builds from the full set of tasks or
@@ -86,8 +101,8 @@ jobs:
 # kind-dependencies above.
 #     android-build-vs-previous-try:
 #         symbol: A
-#         new: build-android-api-16/opt
-#         original: {index-search: gecko.v2.try.revision.aabd5deb0156f9b55ab60ad6a01ebfc4580bf2e1.mobile.android-api-16-opt}
+#         new: build-android-arm/opt
+#         original: {index-search: gecko.v2.try.revision.aabd5deb0156f9b55ab60ad6a01ebfc4580bf2e1.mobile.android-arm-opt}
 #     linux64-build-vs-previous-try:
 #         symbol: L
 #         new: build-linux64/opt

@@ -9,15 +9,16 @@ import { ConfirmDialog } from "content-src/components/ConfirmDialog/ConfirmDialo
 import { connect } from "react-redux";
 import { DiscoveryStreamBase } from "content-src/components/DiscoveryStreamBase/DiscoveryStreamBase";
 import { ErrorBoundary } from "content-src/components/ErrorBoundary/ErrorBoundary";
+import { CustomizeMenu } from "content-src/components/CustomizeMenu/CustomizeMenu";
 import React from "react";
 import { Search } from "content-src/components/Search/Search";
 import { Sections } from "content-src/components/Sections/Sections";
 
-const PrefsButton = props => (
+export const PrefsButton = ({ onClick, icon }) => (
   <div className="prefs-button">
     <button
-      className="icon icon-settings"
-      onClick={props.onClick}
+      className={`icon ${icon || "icon-settings"}`}
+      onClick={onClick}
       data-l10n-id="newtab-settings-button"
     />
   </div>
@@ -42,10 +43,16 @@ function debounce(func, wait) {
 }
 
 export class _Base extends React.PureComponent {
-  componentWillMount() {
-    if (this.props.isFirstrun) {
-      global.document.body.classList.add("welcome", "hide-main");
-    }
+  constructor(props) {
+    super(props);
+    this.state = {
+      message: {},
+    };
+    this.notifyContent = this.notifyContent.bind(this);
+  }
+
+  notifyContent(state) {
+    this.setState(state);
   }
 
   componentWillUnmount() {
@@ -61,8 +68,6 @@ export class _Base extends React.PureComponent {
       "activity-stream",
       // If we skipped the about:welcome overlay and removed the CSS classes
       // we don't want to add them back to the Activity Stream view
-      document.body.classList.contains("welcome") ? "welcome" : "",
-      document.body.classList.contains("hide-main") ? "hide-main" : "",
       document.body.classList.contains("inline-onboarding")
         ? "inline-onboarding"
         : "",
@@ -84,8 +89,10 @@ export class _Base extends React.PureComponent {
     return (
       <ErrorBoundary className="base-content-fallback">
         <React.Fragment>
-          <BaseContent {...this.props} />
-          {isDevtoolsEnabled ? <ASRouterAdmin /> : null}
+          <BaseContent {...this.props} adminContent={this.state} />
+          {isDevtoolsEnabled ? (
+            <ASRouterAdmin notifyContent={this.notifyContent} />
+          ) : null}
         </React.Fragment>
       </ErrorBoundary>
     );
@@ -96,20 +103,27 @@ export class BaseContent extends React.PureComponent {
   constructor(props) {
     super(props);
     this.openPreferences = this.openPreferences.bind(this);
+    this.openCustomizationMenu = this.openCustomizationMenu.bind(this);
+    this.closeCustomizationMenu = this.closeCustomizationMenu.bind(this);
+    this.handleOnKeyDown = this.handleOnKeyDown.bind(this);
     this.onWindowScroll = debounce(this.onWindowScroll.bind(this), 5);
-    this.state = { fixedSearch: false };
+    this.setPref = this.setPref.bind(this);
+    this.state = { fixedSearch: false, customizeMenuVisible: false };
   }
 
   componentDidMount() {
     global.addEventListener("scroll", this.onWindowScroll);
+    global.addEventListener("keydown", this.handleOnKeyDown);
   }
 
   componentWillUnmount() {
     global.removeEventListener("scroll", this.onWindowScroll);
+    global.removeEventListener("keydown", this.handleOnKeyDown);
   }
 
   onWindowScroll() {
-    const SCROLL_THRESHOLD = 34;
+    const prefs = this.props.Prefs.values;
+    const SCROLL_THRESHOLD = prefs["logowordmark.alwaysVisible"] ? 179 : 34;
     if (global.scrollY > SCROLL_THRESHOLD && !this.state.fixedSearch) {
       this.setState({ fixedSearch: true });
     } else if (global.scrollY <= SCROLL_THRESHOLD && this.state.fixedSearch) {
@@ -120,6 +134,28 @@ export class BaseContent extends React.PureComponent {
   openPreferences() {
     this.props.dispatch(ac.OnlyToMain({ type: at.SETTINGS_OPEN }));
     this.props.dispatch(ac.UserEvent({ event: "OPEN_NEWTAB_PREFS" }));
+  }
+
+  openCustomizationMenu() {
+    this.setState({ customizeMenuVisible: true });
+    this.props.dispatch(ac.UserEvent({ event: "SHOW_PERSONALIZE" }));
+  }
+
+  closeCustomizationMenu() {
+    if (this.state.customizeMenuVisible) {
+      this.setState({ customizeMenuVisible: false });
+      this.props.dispatch(ac.UserEvent({ event: "HIDE_PERSONALIZE" }));
+    }
+  }
+
+  handleOnKeyDown(e) {
+    if (e.key === "Escape") {
+      this.closeCustomizationMenu();
+    }
+  }
+
+  setPref(pref, value) {
+    this.props.dispatch(ac.SetPref(pref, value));
   }
 
   render() {
@@ -141,6 +177,17 @@ export class BaseContent extends React.PureComponent {
       !pocketEnabled &&
       filteredSections.filter(section => section.enabled).length === 0;
     const searchHandoffEnabled = prefs["improvesearch.handoffToAwesomebar"];
+    const showCustomizationMenu = this.state.customizeMenuVisible;
+    const enabledSections = {
+      topSitesEnabled: prefs["feeds.topsites"],
+      pocketEnabled: prefs["feeds.section.topstories"],
+      highlightsEnabled: prefs["feeds.section.highlights"],
+      showSponsoredTopSitesEnabled: prefs.showSponsoredTopSites,
+      showSponsoredPocketEnabled: prefs.showSponsored,
+      topSitesRowsCount: prefs.topSitesRows,
+    };
+    const pocketRegion = prefs["feeds.system.topstories"];
+    const { mayHaveSponsoredTopSites } = prefs;
 
     const outerClassName = [
       "outer-wrapper",
@@ -151,19 +198,39 @@ export class BaseContent extends React.PureComponent {
         !noSectionsEnabled &&
         "fixed-search",
       prefs.showSearch && noSectionsEnabled && "only-search",
+      prefs["logowordmark.alwaysVisible"] && "visible-logo",
     ]
       .filter(v => v)
       .join(" ");
 
+    const hasSnippet =
+      prefs["feeds.snippets"] &&
+      this.props.adminContent &&
+      this.props.adminContent.message &&
+      this.props.adminContent.message.id;
+
     return (
       <div>
-        <div className={outerClassName}>
-          <main>
+        <CustomizeMenu
+          onClose={this.closeCustomizationMenu}
+          onOpen={this.openCustomizationMenu}
+          openPreferences={this.openPreferences}
+          setPref={this.setPref}
+          enabledSections={enabledSections}
+          pocketRegion={pocketRegion}
+          mayHaveSponsoredTopSites={mayHaveSponsoredTopSites}
+          showing={showCustomizationMenu}
+        />
+        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions*/}
+        <div className={outerClassName} onClick={this.closeCustomizationMenu}>
+          <main className={hasSnippet ? "has-snippet" : ""}>
             {prefs.showSearch && (
               <div className="non-collapsible-section">
                 <ErrorBoundary>
                   <Search
-                    showLogo={noSectionsEnabled}
+                    showLogo={
+                      noSectionsEnabled || prefs["logowordmark.alwaysVisible"]
+                    }
                     handoffEnabled={searchHandoffEnabled}
                     {...props.Search}
                   />
@@ -171,6 +238,7 @@ export class BaseContent extends React.PureComponent {
               </div>
             )}
             <ASRouterUISurface
+              adminContent={this.props.adminContent}
               appUpdateChannel={this.props.Prefs.values.appUpdateChannel}
               fxaEndpoint={this.props.Prefs.values.fxa_endpoint}
               dispatch={this.props.dispatch}
@@ -183,7 +251,6 @@ export class BaseContent extends React.PureComponent {
               ) : (
                 <Sections />
               )}
-              <PrefsButton onClick={this.openPreferences} />
             </div>
             <ConfirmDialog />
           </main>

@@ -7,30 +7,61 @@
 #ifndef GLBLITHELPER_H_
 #define GLBLITHELPER_H_
 
-#include "GLContextTypes.h"
+#include <cstdint>
+#include <map>
 #include "GLConsts.h"
+#include "GLContextTypes.h"
+#include "GLTypes.h"
 #include "nsSize.h"
-#include "ipc/IPCMessageUtils.h"
+#include "nsString.h"
+#include "nsTString.h"
+#include "mozilla/ipc/IPCTypes.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/gfx/Point.h"
-#include "../layers/ImageTypes.h"
+#include "mozilla/gfx/Rect.h"
+#include "mozilla/gfx/Types.h"
+
+#include <map>
 
 #ifdef XP_WIN
 #  include <windows.h>
+#  include "mozilla/RefPtr.h"
+#  include "mozilla/ipc/IPCTypes.h"
+struct ID3D11Device;
+struct ID3D11Texture2D;
+#endif
+
+#ifdef XP_MACOSX
+class MacIOSurface;
 #endif
 
 namespace mozilla {
 
 namespace layers {
-class D3D11ShareHandleImage;
-class D3D11YCbCrImage;
 class Image;
 class GPUVideoImage;
 class PlanarYCbCrImage;
-class SurfaceTextureImage;
-class MacIOSurfaceImage;
+class SurfaceDescriptor;
+
+#ifdef XP_WIN
+class D3D11ShareHandleImage;
+class D3D11YCbCrImage;
 class SurfaceDescriptorD3D10;
 class SurfaceDescriptorDXGIYCbCr;
+#endif
+
+#ifdef MOZ_WIDGET_ANDROID
+class SurfaceTextureImage;
+#endif
+
+#ifdef XP_MACOSX
+class MacIOSurfaceImage;
+#endif
+
+#ifdef MOZ_WAYLAND
+class DMABUFSurfaceImage;
+#endif
 }  // namespace layers
 
 namespace gl {
@@ -152,6 +183,10 @@ class GLBlitHelper final {
   bool BlitImage(layers::MacIOSurfaceImage* srcImage,
                  const gfx::IntSize& destSize, OriginPos destOrigin) const;
 #endif
+#ifdef MOZ_WAYLAND
+  bool BlitImage(layers::DMABUFSurfaceImage* srcImage,
+                 const gfx::IntSize& destSize, OriginPos destOrigin) const;
+#endif
 
   explicit GLBlitHelper(GLContext* gl);
 
@@ -184,12 +219,18 @@ class GLBlitHelper final {
   bool BlitImageToFramebuffer(layers::Image* srcImage,
                               const gfx::IntSize& destSize,
                               OriginPos destOrigin);
+  bool BlitSdToFramebuffer(const layers::SurfaceDescriptor&,
+                           const gfx::IntSize& destSize, OriginPos destOrigin);
 
  private:
-#ifdef XP_WIN
-  // GLBlitHelperD3D.cpp:
   bool BlitImage(layers::GPUVideoImage* srcImage, const gfx::IntSize& destSize,
                  OriginPos destOrigin) const;
+#ifdef XP_MACOSX
+  bool BlitImage(MacIOSurface* const iosurf, const gfx::IntSize& destSize,
+                 OriginPos destOrigin) const;
+#endif
+#ifdef XP_WIN
+  // GLBlitHelperD3D.cpp:
   bool BlitImage(layers::D3D11ShareHandleImage* srcImage,
                  const gfx::IntSize& destSize, OriginPos destOrigin) const;
   bool BlitImage(layers::D3D11YCbCrImage* srcImage,
@@ -197,7 +238,9 @@ class GLBlitHelper final {
 
   bool BlitDescriptor(const layers::SurfaceDescriptorD3D10& desc,
                       const gfx::IntSize& destSize, OriginPos destOrigin) const;
-
+  bool BlitDescriptor(const layers::SurfaceDescriptorDXGIYCbCr& desc,
+                      const gfx::IntSize& destSize,
+                      const OriginPos destOrigin) const;
   bool BlitAngleYCbCr(const WindowsHandle (&handleList)[3],
                       const gfx::IntRect& clipRect, const gfx::IntSize& ySize,
                       const gfx::IntSize& uvSize,

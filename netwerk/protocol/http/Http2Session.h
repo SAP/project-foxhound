@@ -14,8 +14,9 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
 #include "nsAHttpConnection.h"
-#include "nsClassHashtable.h"
-#include "nsDataHashtable.h"
+#include "nsCOMArray.h"
+#include "nsRefPtrHashtable.h"
+#include "nsTHashMap.h"
 #include "nsDeque.h"
 #include "nsHashKeys.h"
 #include "nsHttpRequestHead.h"
@@ -32,6 +33,14 @@ class Http2PushedStream;
 class Http2Stream;
 class nsHttpTransaction;
 
+// b23b147c-c4f8-4d6e-841a-09f29a010de7
+#define NS_HTTP2SESSION_IID                          \
+  {                                                  \
+    0xb23b147c, 0xc4f8, 0x4d6e, {                    \
+      0x84, 0x1a, 0x09, 0xf2, 0x9a, 0x01, 0x0d, 0xe7 \
+    }                                                \
+  }
+
 class Http2Session final : public ASpdySession,
                            public nsAHttpConnection,
                            public nsAHttpSegmentReader,
@@ -39,14 +48,17 @@ class Http2Session final : public ASpdySession,
   ~Http2Session();
 
  public:
+  NS_DECLARE_STATIC_IID_ACCESSOR(NS_HTTP2SESSION_IID)
+
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSAHTTPTRANSACTION
   NS_DECL_NSAHTTPCONNECTION(mConnection)
   NS_DECL_NSAHTTPSEGMENTREADER
   NS_DECL_NSAHTTPSEGMENTWRITER
 
-  Http2Session(nsISocketTransport*, enum SpdyVersion version,
-               bool attemptingEarlyData);
+  static Http2Session* CreateSession(nsISocketTransport*,
+                                     enum SpdyVersion version,
+                                     bool attemptingEarlyData);
 
   [[nodiscard]] bool AddStream(nsAHttpTransaction*, int32_t, bool, bool,
                                nsIInterfaceRequestor*) override;
@@ -218,13 +230,14 @@ class Http2Session final : public ASpdySession,
   // overload of nsAHttpConnection
   void TransactionHasDataToWrite(nsAHttpTransaction*) override;
   void TransactionHasDataToRecv(nsAHttpTransaction*) override;
+  void SanityCheck() override;
 
   // a similar version for Http2Stream
   void TransactionHasDataToWrite(Http2Stream*);
 
   // an overload of nsAHttpSegementReader
   [[nodiscard]] virtual nsresult CommitToSegmentSize(
-      uint32_t size, bool forceCommitment) override;
+      uint32_t count, bool forceCommitment) override;
   [[nodiscard]] nsresult BufferOutput(const char*, uint32_t, uint32_t*);
   void FlushOutputQueue();
   uint32_t AmountOfOutputBuffered() {
@@ -267,7 +280,6 @@ class Http2Session final : public ASpdySession,
                                             uint32_t*, bool*) final;
   [[nodiscard]] bool Do0RTT() final { return true; }
   [[nodiscard]] nsresult Finish0RTT(bool aRestart, bool aAlpnChanged) final;
-  void SetFastOpenStatus(uint8_t aStatus) final;
 
   // For use by an HTTP2Stream
   void Received421(nsHttpConnectionInfo* ci);
@@ -278,6 +290,9 @@ class Http2Session final : public ASpdySession,
   bool CanAcceptWebsocket() override;
 
  private:
+  Http2Session(nsISocketTransport*, enum SpdyVersion version,
+               bool attemptingEarlyData);
+
   // These internal states do not correspond to the states of the HTTP/2
   // specification
   enum internalStateType {
@@ -344,7 +359,7 @@ class Http2Session final : public ASpdySession,
   [[nodiscard]] nsresult NetworkRead(nsAHttpSegmentWriter*, char*, uint32_t,
                                      uint32_t*);
 
-  void Shutdown();
+  void Shutdown(nsresult aReason);
 
   nsresult SessionError(enum errorType);
 
@@ -359,7 +374,7 @@ class Http2Session final : public ASpdySession,
   // These are temporary state variables to hold the argument to
   // Read/WriteSegments so it can be accessed by On(read/write)segment
   // further up the stack.
-  nsAHttpSegmentReader* mSegmentReader;
+  RefPtr<nsAHttpSegmentReader> mSegmentReader;
   nsAHttpSegmentWriter* mSegmentWriter;
 
   uint32_t mSendingChunkSize; /* the transmission chunk size */
@@ -374,17 +389,14 @@ class Http2Session final : public ASpdySession,
   // There are also several lists of streams: ready to write, queued due to
   // max parallelism, streams that need to force a read for push, and the full
   // set of pushed streams.
-  // The objects are not ref counted - they get destroyed
-  // by the nsClassHashtable implementation when they are removed from
-  // the transaction hash.
-  nsDataHashtable<nsUint32HashKey, Http2Stream*> mStreamIDHash;
-  nsClassHashtable<nsPtrHashKey<nsAHttpTransaction>, Http2Stream>
+  nsTHashMap<nsUint32HashKey, Http2Stream*> mStreamIDHash;
+  nsRefPtrHashtable<nsPtrHashKey<nsAHttpTransaction>, Http2Stream>
       mStreamTransactionHash;
 
-  nsDeque<Http2Stream> mReadyForWrite;
-  nsDeque<Http2Stream> mQueuedStreams;
-  nsDeque<Http2Stream> mPushesReadyForRead;
-  nsDeque<Http2Stream> mSlowConsumersReadyForRead;
+  nsTArray<WeakPtr<Http2Stream>> mReadyForWrite;
+  nsTArray<WeakPtr<Http2Stream>> mQueuedStreams;
+  nsTArray<WeakPtr<Http2Stream>> mPushesReadyForRead;
+  nsTArray<WeakPtr<Http2Stream>> mSlowConsumersReadyForRead;
   nsTArray<Http2PushedStream*> mPushedStreams;
 
   // Compression contexts for header transport.
@@ -553,25 +565,23 @@ class Http2Session final : public ASpdySession,
   // remember them put them into mReadyForWrite queue when 0RTT finishes.
   nsTArray<WeakPtr<Http2Stream>> mCannotDo0RTTStreams;
 
-  bool RealJoinConnection(const nsACString& hostname, int32_t port, bool jk);
+  bool RealJoinConnection(const nsACString& hostname, int32_t port,
+                          bool justKidding);
   bool TestOriginFrame(const nsACString& name, int32_t port);
   bool mOriginFrameActivated;
-  nsDataHashtable<nsCStringHashKey, bool> mOriginFrame;
+  nsTHashMap<nsCStringHashKey, bool> mOriginFrame;
 
-  nsDataHashtable<nsCStringHashKey, bool> mJoinConnectionCache;
+  nsTHashMap<nsCStringHashKey, bool> mJoinConnectionCache;
 
-  uint64_t mCurrentForegroundTabOuterContentWindowId;
+  uint64_t mCurrentTopBrowsingContextId;
 
   uint32_t mCntActivated;
 
   // A h2 session will be created before all socket events are trigered,
-  // e.g. NS_NET_STATUS_TLS_HANDSHAKE_ENDED and for TFO many others.
+  // e.g. NS_NET_STATUS_TLS_HANDSHAKE_ENDED.
   // We should propagate this events to the first nsHttpTransaction.
   RefPtr<nsHttpTransaction> mFirstHttpTransaction;
   bool mTlsHandshakeFinished;
-
-  bool mCheckNetworkStallsWithTFO;
-  PRIntervalTime mLastRequestBytesSentTime;
 
   bool mPeerFailedHandshake;
 
@@ -584,7 +594,7 @@ class Http2Session final : public ASpdySession,
   void UnRegisterTunnel(Http2Stream*);
   uint32_t FindTunnelCount(nsHttpConnectionInfo*);
   uint32_t FindTunnelCount(nsCString const&);
-  nsDataHashtable<nsCStringHashKey, uint32_t> mTunnelHash;
+  nsTHashMap<nsCStringHashKey, uint32_t> mTunnelHash;
   uint32_t mTrrStreams;
 
   // websockets
@@ -600,6 +610,8 @@ class Http2Session final : public ASpdySession,
                            // opening SETTINGS
   nsCOMArray<nsIInterfaceRequestor> mWaitingWebsocketCallbacks;
 };
+
+NS_DEFINE_STATIC_IID_ACCESSOR(Http2Session, NS_HTTP2SESSION_IID);
 
 }  // namespace net
 }  // namespace mozilla

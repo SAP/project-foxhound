@@ -6,9 +6,7 @@
 
 #include "jit/Sink.h"
 
-#include "mozilla/Vector.h"
-
-#include "jit/IonAnalysis.h"
+#include "jit/IonOptimizationLevels.h"
 #include "jit/JitSpewer.h"
 #include "jit/MIR.h"
 #include "jit/MIRGenerator.h"
@@ -43,6 +41,7 @@ static MBasicBlock* CommonDominator(MBasicBlock* commonDominator,
 }
 
 bool Sink(MIRGenerator* mir, MIRGraph& graph) {
+  JitSpew(JitSpew_Sink, "Begin");
   TempAllocator& alloc = graph.alloc();
   bool sinkEnabled = mir->optimizationInfo().sinkEnabled();
 
@@ -194,6 +193,9 @@ bool Sink(MIRGenerator* mir, MIRGraph& graph) {
       }
 
       MInstruction* clone = ins->clone(alloc, operands);
+      if (!clone) {
+        return false;
+      }
       ins->block()->insertBefore(ins, clone);
       clone->setRecoveredOnBailout();
 

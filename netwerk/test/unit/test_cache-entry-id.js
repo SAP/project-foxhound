@@ -21,8 +21,7 @@ function isParentProcess() {
   let appInfo = Cc["@mozilla.org/xre/app-info;1"];
   return (
     !appInfo ||
-    appInfo.getService(Ci.nsIXULRuntime).processType ==
-      Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT
+    Services.appinfo.processType == Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT
   );
 }
 
@@ -69,7 +68,11 @@ function fetch(preferredDataType = null) {
 
     if (preferredDataType) {
       var cc = chan.QueryInterface(Ci.nsICacheInfoChannel);
-      cc.preferAlternativeDataType(altContentType, "", true);
+      cc.preferAlternativeDataType(
+        altContentType,
+        "",
+        Ci.nsICacheInfoChannel.ASYNC
+      );
     }
 
     chan.asyncOpen(

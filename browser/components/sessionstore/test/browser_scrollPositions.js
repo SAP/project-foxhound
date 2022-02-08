@@ -4,7 +4,6 @@
 "use strict";
 
 const BASE = "http://example.com/browser/browser/components/sessionstore/test/";
-const URL = BASE + "browser_scrollPositions_sample.html";
 const URL2 = BASE + "browser_scrollPositions_sample2.html";
 const URL_FRAMESET = BASE + "browser_scrollPositions_sample_frameset.html";
 
@@ -17,7 +16,32 @@ const SCROLL2_X = Math.round(300 * (1 + Math.random()));
 const SCROLL2_Y = Math.round(400 * (1 + Math.random()));
 const SCROLL2_STR = SCROLL2_X + "," + SCROLL2_Y;
 
-requestLongerTimeout(2);
+requestLongerTimeout(10);
+
+add_task(test_scroll_nested);
+
+if (gFissionBrowser) {
+  addCoopTask("browser_scrollPositions_sample.html", test_scroll, HTTPSROOT);
+}
+addNonCoopTask("browser_scrollPositions_sample.html", test_scroll, HTTPROOT);
+addNonCoopTask("browser_scrollPositions_sample.html", test_scroll, HTTPSROOT);
+
+addCoopTask(
+  "browser_scrollPositions_sample.html",
+  test_scroll_background_tabs,
+  HTTPSROOT
+);
+addNonCoopTask(
+  "browser_scrollPositions_sample.html",
+  test_scroll_background_tabs,
+  HTTPROOT
+);
+
+addNonCoopTask(
+  "browser_scrollPositions_sample.html",
+  test_scroll_background_tabs,
+  HTTPSROOT
+);
 
 function getScrollPosition(bc) {
   return SpecialPowers.spawn(bc, [], () => {
@@ -32,8 +56,11 @@ function getScrollPosition(bc) {
  * This test ensures that we properly serialize and restore scroll positions
  * for an average page without any frames.
  */
-add_task(async function test_scroll() {
-  let tab = BrowserTestUtils.addTab(gBrowser, URL);
+async function test_scroll(aURL) {
+  // Needed for setScrollPosition()
+  await pushPrefs(["dom.visualviewport.enabled", true]);
+
+  let tab = BrowserTestUtils.addTab(gBrowser, aURL);
   let browser = tab.linkedBrowser;
   await promiseBrowserLoaded(browser);
 
@@ -76,13 +103,16 @@ add_task(async function test_scroll() {
   // Cleanup.
   BrowserTestUtils.removeTab(tab);
   BrowserTestUtils.removeTab(tab2);
-});
+}
 
 /**
  * This tests ensures that we properly serialize and restore scroll positions
  * for multiple frames of pages with framesets.
  */
-add_task(async function test_scroll_nested() {
+async function test_scroll_nested() {
+  // Needed for setScrollPosition()
+  await pushPrefs(["dom.visualviewport.enabled", true]);
+
   let tab = BrowserTestUtils.addTab(gBrowser, URL_FRAMESET);
   let browser = tab.linkedBrowser;
   await promiseBrowserLoaded(browser);
@@ -146,7 +176,7 @@ add_task(async function test_scroll_nested() {
   // Cleanup.
   BrowserTestUtils.removeTab(tab);
   BrowserTestUtils.removeTab(tab2);
-});
+}
 
 /**
  * Test that scroll positions persist after restoring background tabs in
@@ -154,11 +184,15 @@ add_task(async function test_scroll_nested() {
  * Also test that scroll positions for previous session history entries
  * are preserved as well (bug 1265818).
  */
-add_task(async function test_scroll_background_tabs() {
-  pushPrefs(["browser.sessionstore.restore_on_demand", true]);
+async function test_scroll_background_tabs(aURL) {
+  await pushPrefs(
+    ["browser.sessionstore.restore_on_demand", true],
+    // Needed for setScrollPosition()
+    ["dom.visualviewport.enabled", true]
+  );
 
   let newWin = await BrowserTestUtils.openNewBrowserWindow();
-  let tab = BrowserTestUtils.addTab(newWin.gBrowser, URL);
+  let tab = BrowserTestUtils.addTab(newWin.gBrowser, aURL);
   let browser = tab.linkedBrowser;
   await BrowserTestUtils.browserLoaded(browser);
 
@@ -171,8 +205,9 @@ add_task(async function test_scroll_background_tabs() {
   );
 
   // Navigate to a different page and scroll there as well.
+  let browser2loaded = BrowserTestUtils.browserLoaded(browser, false, URL2);
   BrowserTestUtils.loadURI(browser, URL2);
-  await BrowserTestUtils.browserLoaded(browser);
+  await browser2loaded;
 
   // Scroll down a little.
   await setScrollPosition(browser, SCROLL2_X, SCROLL2_Y);
@@ -195,7 +230,7 @@ add_task(async function test_scroll_background_tabs() {
 
   is(newWin.gBrowser.tabs.length, 2, "There should be two tabs");
 
-  // The second tab should be the one we loaded URL at still
+  // The second tab should be the one we loaded aURL at still
   tab = newWin.gBrowser.tabs[1];
 
   ok(tab.hasAttribute("pending"), "Tab should be pending");
@@ -209,7 +244,11 @@ add_task(async function test_scroll_background_tabs() {
   newWin.gBrowser.selectedTab = tab;
   await promiseTabRestored(tab);
 
-  await checkScroll(tab, { scroll: SCROLL2_STR }, "scroll is still fine");
+  await checkScroll(
+    tab,
+    { scroll: SCROLL2_STR },
+    "scroll is correct for restored tab"
+  );
 
   // Now go back in history and check that the scroll position
   // is restored there as well.
@@ -222,8 +261,8 @@ add_task(async function test_scroll_background_tabs() {
   await checkScroll(
     tab,
     { scroll: SCROLL_STR },
-    "scroll is still fine after navigating back"
+    "scroll is correct after navigating back within the restored tab"
   );
 
   await BrowserTestUtils.closeWindow(newWin);
-});
+}

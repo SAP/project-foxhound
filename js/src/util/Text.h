@@ -32,8 +32,9 @@
 
 class JSLinearString;
 
-static MOZ_ALWAYS_INLINE size_t js_strlen(const char16_t* s) {
-  return std::char_traits<char16_t>::length(s);
+template <typename CharT>
+static constexpr MOZ_ALWAYS_INLINE size_t js_strlen(const CharT* s) {
+  return std::char_traits<CharT>::length(s);
 }
 
 template <typename CharT>
@@ -198,6 +199,15 @@ class InflatedChar16Sequence {
     MOZ_ASSERT(hasMore());
     return static_cast<char16_t>(*units_++);
   }
+
+  HashNumber computeHash() const {
+    auto copy = *this;
+    HashNumber hash = 0;
+    while (copy.hasMore()) {
+      hash = mozilla::AddToHash(hash, copy.next());
+    }
+    return hash;
+  }
 };
 
 template <>
@@ -249,6 +259,15 @@ class InflatedChar16Sequence<mozilla::Utf8Unit> {
 
     return lead;
   }
+
+  HashNumber computeHash() const {
+    auto copy = *this;
+    HashNumber hash = 0;
+    while (copy.hasMore()) {
+      hash = mozilla::AddToHash(hash, copy.next());
+    }
+    return hash;
+  }
 };
 
 /*
@@ -256,15 +275,14 @@ class InflatedChar16Sequence<mozilla::Utf8Unit> {
  * enough for 'srclen' char16_t code units. The buffer is NOT null-terminated.
  */
 inline void CopyAndInflateChars(char16_t* dst, const char* src, size_t srclen) {
-  mozilla::ConvertLatin1toUtf16(mozilla::MakeSpan(src, srclen),
-                                mozilla::MakeSpan(dst, srclen));
+  mozilla::ConvertLatin1toUtf16(mozilla::Span(src, srclen),
+                                mozilla::Span(dst, srclen));
 }
 
 inline void CopyAndInflateChars(char16_t* dst, const JS::Latin1Char* src,
                                 size_t srclen) {
-  mozilla::ConvertLatin1toUtf16(
-      mozilla::AsChars(mozilla::MakeSpan(src, srclen)),
-      mozilla::MakeSpan(dst, srclen));
+  mozilla::ConvertLatin1toUtf16(mozilla::AsChars(mozilla::Span(src, srclen)),
+                                mozilla::Span(dst, srclen));
 }
 
 /*

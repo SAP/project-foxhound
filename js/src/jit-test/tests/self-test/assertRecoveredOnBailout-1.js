@@ -1,6 +1,4 @@
-// |jit-test| crash; skip-if: getBuildConfiguration()['arm64']
-//
-// Test skipped on ARM64 due to bug 1531175.
+// |jit-test| crash; skip-if: getBuildConfiguration()['tsan'] || getBuildConfiguration()['wasi']
 setJitCompilerOption("ion.warmup.trigger", 50);
 setJitCompilerOption("offthread-compilation.enable", 0);
 

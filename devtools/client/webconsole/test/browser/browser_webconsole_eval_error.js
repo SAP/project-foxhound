@@ -72,13 +72,13 @@ add_task(async function() {
   const oiNodes = oi.querySelectorAll(".node");
   is(oiNodes.length, 3, "There is the expected number of nodes in the tree");
 
-  ok(oiNodes[0].textContent.includes(`{\u2026}`));
+  ok(oiNodes[0].textContent.includes(`Object { fav: "eggplant" }`));
   ok(oiNodes[1].textContent.includes(`fav: "eggplant"`));
   ok(oiNodes[2].textContent.includes(`<prototype>: Object { \u2026 }`));
 
   execute(hud, `1 + @`);
   const messageNode = await waitFor(() =>
-    findMessage(hud, "illegal character")
+    findMessage(hud, "illegal character U+0040")
   );
   is(
     messageNode.querySelector(".frames"),

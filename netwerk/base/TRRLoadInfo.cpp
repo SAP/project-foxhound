@@ -58,11 +58,13 @@ nsIPrincipal* TRRLoadInfo::FindPrincipalToInherit(nsIChannel* aChannel) {
   return nullptr;
 }
 
-nsIPrincipal* TRRLoadInfo::GetSandboxedLoadingPrincipal() { return nullptr; }
+const nsID& TRRLoadInfo::GetSandboxedNullPrincipalID() {
+  return mSandboxedNullPrincipalID;
+}
+
+void TRRLoadInfo::ResetSandboxedNullPrincipalID() {}
 
 nsIPrincipal* TRRLoadInfo::GetTopLevelPrincipal() { return nullptr; }
-
-nsIPrincipal* TRRLoadInfo::GetTopLevelStorageAreaPrincipal() { return nullptr; }
 
 NS_IMETHODIMP
 TRRLoadInfo::GetLoadingDocument(Document** aResult) {
@@ -91,6 +93,14 @@ TRRLoadInfo::GetSecurityFlags(nsSecurityFlags* aResult) {
 
 NS_IMETHODIMP
 TRRLoadInfo::GetSandboxFlags(uint32_t* aResult) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+NS_IMETHODIMP
+TRRLoadInfo::GetTriggeringSandboxFlags(uint32_t* aResult) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+NS_IMETHODIMP
+TRRLoadInfo::SetTriggeringSandboxFlags(uint32_t aResult) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -137,14 +147,24 @@ TRRLoadInfo::SetCookieJarSettings(nsICookieJarSettings* aCookieJarSettings) {
 }
 
 NS_IMETHODIMP
-TRRLoadInfo::GetHasStoragePermission(bool* aHasStoragePermission) {
+TRRLoadInfo::GetStoragePermission(
+    nsILoadInfo::StoragePermissionState* aHasStoragePermission) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-TRRLoadInfo::SetHasStoragePermission(bool aHasStoragePermission) {
+TRRLoadInfo::SetStoragePermission(
+    nsILoadInfo::StoragePermissionState aHasStoragePermission) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
+
+NS_IMETHODIMP
+TRRLoadInfo::GetIsMetaRefresh(bool* aResult) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetIsMetaRefresh(bool aResult) { return NS_ERROR_NOT_IMPLEMENTED; }
 
 NS_IMETHODIMP
 TRRLoadInfo::GetForceInheritPrincipal(bool* aInheritPrincipal) {
@@ -206,8 +226,11 @@ TRRLoadInfo::SetSendCSPViolationEvents(bool aValue) {
 
 NS_IMETHODIMP
 TRRLoadInfo::GetExternalContentPolicyType(nsContentPolicyType* aResult) {
-  *aResult = nsContentUtils::InternalContentPolicyTypeToExternal(
-      mInternalContentPolicyType);
+  // We have to use nsContentPolicyType because ExtContentPolicyType is not
+  // visible from xpidl.
+  *aResult = static_cast<nsContentPolicyType>(
+      nsContentUtils::InternalContentPolicyTypeToExternal(
+          mInternalContentPolicyType));
   return NS_OK;
 }
 
@@ -227,6 +250,17 @@ TRRLoadInfo::GetUpgradeInsecureRequests(bool* aResult) {
 
 NS_IMETHODIMP
 TRRLoadInfo::GetBrowserUpgradeInsecureRequests(bool* aResult) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::GetBrowserDidUpgradeInsecureRequests(bool* aResult) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetBrowserDidUpgradeInsecureRequests(
+    bool aBrowserDidUpgradeInsecureRequests) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -254,16 +288,6 @@ TRRLoadInfo::SetAllowInsecureRedirectToDataURI(
 NS_IMETHODIMP
 TRRLoadInfo::GetAllowInsecureRedirectToDataURI(
     bool* aAllowInsecureRedirectToDataURI) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-TRRLoadInfo::SetBypassCORSChecks(bool aBypassCORSChecks) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-TRRLoadInfo::GetBypassCORSChecks(bool* aBypassCORSChecks) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -296,7 +320,6 @@ NS_IMETHODIMP
 TRRLoadInfo::GetInnerWindowID(uint64_t* aResult) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
-
 
 NS_IMETHODIMP
 TRRLoadInfo::GetBrowsingContextID(uint64_t* aResult) {
@@ -368,7 +391,7 @@ TRRLoadInfo::GetInitialSecurityCheckDone(bool* aResult) {
 }
 
 NS_IMETHODIMP
-TRRLoadInfo::AppendRedirectHistoryEntry(nsIRedirectHistoryEntry* aEntry,
+TRRLoadInfo::AppendRedirectHistoryEntry(nsIChannel* aChannelToDeriveFrom,
                                         bool aIsInternalRedirect) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -459,16 +482,6 @@ TRRLoadInfo::SetDocumentHasUserInteracted(bool aDocumentHasUserInteracted) {
 }
 
 NS_IMETHODIMP
-TRRLoadInfo::GetDocumentHasLoaded(bool* aDocumentHasLoaded) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-TRRLoadInfo::SetDocumentHasLoaded(bool aDocumentHasLoaded) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
 TRRLoadInfo::GetAllowListFutureDocumentsCreatedFromThisRedirectChain(
     bool* aValue) {
   return NS_ERROR_NOT_IMPLEMENTED;
@@ -477,6 +490,16 @@ TRRLoadInfo::GetAllowListFutureDocumentsCreatedFromThisRedirectChain(
 NS_IMETHODIMP
 TRRLoadInfo::SetAllowListFutureDocumentsCreatedFromThisRedirectChain(
     bool aValue) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::GetNeedForCheckingAntiTrackingHeuristic(bool* aValue) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetNeedForCheckingAntiTrackingHeuristic(bool aValue) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -508,6 +531,36 @@ TRRLoadInfo::GetIsTopLevelLoad(bool* aResult) {
 NS_IMETHODIMP
 TRRLoadInfo::GetIsFromProcessingFrameAttributes(
     bool* aIsFromProcessingFrameAttributes) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetIsMediaRequest(bool aIsMediaRequest) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::GetIsMediaRequest(bool* aIsMediaRequest) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetIsMediaInitialRequest(bool aIsMediaInitialRequest) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::GetIsMediaInitialRequest(bool* aIsMediaInitialRequest) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetIsFromObjectOrEmbed(bool aIsFromObjectOrEmbed) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::GetIsFromObjectOrEmbed(bool* aIsFromObjectOrEmbed) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -666,6 +719,14 @@ TRRLoadInfo::SetLoadingEmbedderPolicy(
     nsILoadInfo::CrossOriginEmbedderPolicy aPolicy) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
+
+NS_IMETHODIMP
+TRRLoadInfo::GetUnstrippedURI(nsIURI** aURI) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetUnstrippedURI(nsIURI* aURI) { return NS_ERROR_NOT_IMPLEMENTED; }
 
 }  // namespace net
 }  // namespace mozilla

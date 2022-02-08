@@ -6,18 +6,16 @@
 
 #include "URLDecorationStripper.h"
 
-#include "mozilla/dom/URLSearchParams.h"
 #include "mozilla/Preferences.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsEffectiveTLDService.h"
 #include "nsIURI.h"
 #include "nsIURIMutator.h"
+#include "nsURLHelper.h"
 
 namespace {
 static const char* kPrefName =
     "privacy.restrict3rdpartystorage.url_decorations";
-
-inline bool IgnoreWhitespace(char16_t c) { return false; }
 }  // namespace
 
 namespace mozilla {
@@ -36,19 +34,13 @@ nsresult URLDecorationStripper::StripTrackingIdentifiers(nsIURI* aURI,
   int32_t queryBegins = path.FindChar('?');
   // Only positive values are valid since the path must begin with a '/'.
   if (queryBegins > 0) {
-    typedef nsCharSeparatedTokenizerTemplate<IgnoreWhitespace> Tokenizer;
-
-    Tokenizer tokenizer(tokenList, ' ');
-    nsAutoString token;
-    while (tokenizer.hasMoreTokens()) {
-      token = tokenizer.nextToken();
+    for (const nsAString& token : tokenList.Split(' ')) {
       if (token.IsEmpty()) {
         continue;
       }
 
       nsAutoString value;
-      if (dom::URLParams::Extract(Substring(path, queryBegins + 1), token,
-                                  value) &&
+      if (URLParams::Extract(Substring(path, queryBegins + 1), token, value) &&
           !value.IsVoid()) {
         // Tracking identifier found in the URL!
         return StripToRegistrableDomain(aURI, aOutSpec);
@@ -62,7 +54,7 @@ nsresult URLDecorationStripper::StripTrackingIdentifiers(nsIURI* aURI,
 nsresult URLDecorationStripper::StripToRegistrableDomain(nsIURI* aURI,
                                                          nsACString& aOutSpec) {
   NS_MutateURI mutator(aURI);
-  mutator.SetPathQueryRef(EmptyCString()).SetUserPass(EmptyCString());
+  mutator.SetPathQueryRef(""_ns).SetUserPass(""_ns);
 
   RefPtr<nsEffectiveTLDService> etldService =
       nsEffectiveTLDService::GetInstance();

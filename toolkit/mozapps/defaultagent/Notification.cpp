@@ -22,6 +22,7 @@
 #include "DefaultBrowser.h"
 #include "EventLog.h"
 #include "Registry.h"
+#include "SetDefaultBrowser.h"
 
 #include "wintoastlib.h"
 
@@ -33,6 +34,8 @@
 // If the mutex hasn't been released within a few minutes, something is wrong
 // and we should give up on it
 #define MUTEX_TIMEOUT_MS (10 * 60 * 1000)
+
+bool FirefoxInstallIsEnglish();
 
 static bool SetInitialNotificationShown(bool wasShown) {
   return !RegistrySetValueBool(IsPrefixed::Unprefixed,
@@ -88,6 +91,14 @@ static ULONGLONG GetFollowupNotificationRequestTime() {
       .valueOr(0);
 }
 
+// Returns false if no value is set.
+static bool GetPrefSetDefaultBrowserUserChoice() {
+  return RegistryGetValueBool(IsPrefixed::Prefixed,
+                              L"SetDefaultBrowserUserChoice")
+      .unwrapOr(mozilla::Some(false))
+      .valueOr(false);
+}
+
 struct ToastStrings {
   mozilla::UniquePtr<wchar_t[]> text1;
   mozilla::UniquePtr<wchar_t[]> text2;
@@ -97,11 +108,28 @@ struct ToastStrings {
 };
 
 struct Strings {
+  // Toast notification button text is hard to localize because it tends to
+  // overflow. Thus, we have 3 different toast notifications:
+  //  - The initial notification, which includes a button with text like
+  //    "Ask me later". Since we cannot easily localize this, we will display
+  //    it only in English.
+  //  - The followup notification, to be shown if the user clicked "Ask me
+  //    later". Since we only have that button in English, we only need this
+  //    notification in English.
+  //  - The localized notification, which has much shorter button text to
+  //    (hopefully) prevent overflow: just "Yes" and "No". Since we no longer
+  //    have an "Ask me later" button, a followup localized notification is not
+  //    needed.
   ToastStrings initialToast;
   ToastStrings followupToast;
+  ToastStrings localizedToast;
 
   // Returned pointer points within this struct and should not be freed.
-  const ToastStrings* GetToastStrings(NotificationType whichToast) const {
+  const ToastStrings* GetToastStrings(NotificationType whichToast,
+                                      bool englishStrings) const {
+    if (!englishStrings) {
+      return &localizedToast;
+    }
     if (whichToast == NotificationType::Initial) {
       return &initialToast;
     }
@@ -109,49 +137,24 @@ struct Strings {
   }
 };
 
-// Returns true on success, false on failure.
-static bool ConvertToWide(const mozilla::UniquePtr<char[]>& toConvert,
-                          mozilla::UniquePtr<wchar_t[]>& result) {
-  int bufferSize =
-      MultiByteToWideChar(CP_UTF8, 0, toConvert.get(), -1, nullptr, 0);
-  result = mozilla::MakeUnique<wchar_t[]>(bufferSize);
-  int charsWritten = MultiByteToWideChar(CP_UTF8, 0, toConvert.get(), -1,
-                                         result.get(), bufferSize);
-  if (charsWritten == 0) {
-    LOG_ERROR_MESSAGE(L"Unable to widen string: %#X", GetLastError());
-    return false;
-  }
-  return true;
-}
-
 // Gets a string out of the specified INI file.
 // Returns true on success, false on failure
 static bool GetString(const wchar_t* iniPath, const char* section,
                       const char* key,
                       mozilla::UniquePtr<wchar_t[]>& toastString) {
-  const unsigned int stringCount = 1;
-
-  size_t keyLen = strlen(key);
-  mozilla::UniquePtr<char[]> keyList = mozilla::MakeUnique<char[]>(keyLen + 2);
-  strcpy(keyList.get(), key);
-  keyList.get()[keyLen + 1] = '\0';
-
-  mozilla::UniquePtr<char[]> narrowString;
-  int result =
-      ReadStrings(iniPath, keyList.get(), stringCount, &narrowString, section);
+  IniReader reader(iniPath, section);
+  reader.AddKey(key, &toastString);
+  int result = reader.Read();
   if (result != OK) {
     LOG_ERROR_MESSAGE(
         L"Unable to retrieve INI string: section=%S, key=%S, result=%d",
         section, key, result);
     return false;
   }
-  return ConvertToWide(narrowString, toastString);
+  return true;
 }
 
-// Gets all strings out of the localized INI file.
-// Note that, at this time, the INI is not actually being localized - it only
-// exists in English. This is why MaybeShowNotification() checks IsEnglish().
-// See Bug 1621696 for more information.
+// Gets all strings out of the relevant INI files.
 // Returns true on success, false on failure
 static bool GetStrings(Strings& strings) {
   mozilla::UniquePtr<wchar_t[]> installPath;
@@ -168,35 +171,97 @@ static bool GetStrings(Strings& strings) {
   _snwprintf_s(iniPath.get(), bufferSize, _TRUNCATE, iniFormat,
                installPath.get());
 
-  // The ReadStrings function is designed to read localized strings.
-  const unsigned int stringCount = 5;
-  const char* keys =
-      "DefaultBrowserNotificationTitle\0"
-      "DefaultBrowserNotificationText\0"
-      "DefaultBrowserNotificationRemindMeLater\0"
-      "DefaultBrowserNotificationMakeFirefoxDefault\0"
-      "DefaultBrowserNotificationDontShowAgain\0";
-  mozilla::UniquePtr<char[]> localizedStrings[stringCount];
-  int result = ReadStrings(iniPath.get(), keys, stringCount, localizedStrings);
+  IniReader stringsReader(iniPath.get());
+  stringsReader.AddKey("DefaultBrowserNotificationTitle",
+                       &strings.initialToast.text1);
+  stringsReader.AddKey("DefaultBrowserNotificationTitle",
+                       &strings.followupToast.text1);
+  stringsReader.AddKey("DefaultBrowserNotificationText",
+                       &strings.initialToast.text2);
+  stringsReader.AddKey("DefaultBrowserNotificationText",
+                       &strings.followupToast.text2);
+  stringsReader.AddKey("DefaultBrowserNotificationRemindMeLater",
+                       &strings.initialToast.action1);
+  stringsReader.AddKey("DefaultBrowserNotificationDontShowAgain",
+                       &strings.followupToast.action1);
+  stringsReader.AddKey("DefaultBrowserNotificationMakeFirefoxDefault",
+                       &strings.initialToast.action2);
+  stringsReader.AddKey("DefaultBrowserNotificationMakeFirefoxDefault",
+                       &strings.followupToast.action2);
+  int result = stringsReader.Read();
+  if (result != OK) {
+    LOG_ERROR_MESSAGE(L"Unable to read English strings: %d", result);
+    return false;
+  }
+
+  const wchar_t* localizedIniFormat = L"%s\\defaultagent_localized.ini";
+  bufferSize = _scwprintf(localizedIniFormat, installPath.get());
+  ++bufferSize;  // Extra character for terminating null
+  mozilla::UniquePtr<wchar_t[]> localizedIniPath =
+      mozilla::MakeUnique<wchar_t[]>(bufferSize);
+  _snwprintf_s(localizedIniPath.get(), bufferSize, _TRUNCATE,
+               localizedIniFormat, installPath.get());
+
+  IniReader localizedReader(localizedIniPath.get());
+  localizedReader.AddKey("DefaultBrowserNotificationTitle",
+                         &strings.localizedToast.text1);
+  localizedReader.AddKey("DefaultBrowserNotificationText",
+                         &strings.localizedToast.text2);
+  localizedReader.AddKey("DefaultBrowserNotificationYesButtonText",
+                         &strings.localizedToast.action1);
+  localizedReader.AddKey("DefaultBrowserNotificationNoButtonText",
+                         &strings.localizedToast.action2);
+  result = localizedReader.Read();
   if (result != OK) {
     LOG_ERROR_MESSAGE(L"Unable to read localized strings: %d", result);
     return false;
   }
 
-  return ConvertToWide(localizedStrings[0], strings.initialToast.text1) &&
-         ConvertToWide(localizedStrings[1], strings.initialToast.text2) &&
-         ConvertToWide(localizedStrings[2], strings.initialToast.action1) &&
-         ConvertToWide(localizedStrings[3], strings.initialToast.action2) &&
-         GetString(iniPath.get(), "Nonlocalized",
-                   "InitialToastRelativeImagePath",
-                   strings.initialToast.relImagePath) &&
-         ConvertToWide(localizedStrings[0], strings.followupToast.text1) &&
-         ConvertToWide(localizedStrings[1], strings.followupToast.text2) &&
-         ConvertToWide(localizedStrings[4], strings.followupToast.action1) &&
-         ConvertToWide(localizedStrings[3], strings.followupToast.action2) &&
-         GetString(iniPath.get(), "Nonlocalized",
-                   "FollowupToastRelativeImagePath",
-                   strings.followupToast.relImagePath);
+  // IniReader is only capable of reading from one section at a time, so we need
+  // to make another one to read the other section.
+  IniReader nonlocalizedReader(iniPath.get(), "Nonlocalized");
+  nonlocalizedReader.AddKey("InitialToastRelativeImagePath",
+                            &strings.initialToast.relImagePath);
+  nonlocalizedReader.AddKey("FollowupToastRelativeImagePath",
+                            &strings.followupToast.relImagePath);
+  nonlocalizedReader.AddKey("LocalizedToastRelativeImagePath",
+                            &strings.localizedToast.relImagePath);
+  result = nonlocalizedReader.Read();
+  if (result != OK) {
+    LOG_ERROR_MESSAGE(L"Unable to read non-localized strings: %d", result);
+    return false;
+  }
+
+  return true;
+}
+
+/*
+ * Set the default browser.
+ *
+ * First check if we can directly write UserChoice, if so attempt that.
+ * If we can't write UserChoice, or if the attempt fails, fall back to
+ * showing the Default Apps page of Settings.
+ *
+ * @param aAumi The AUMI of the installation to set as default.
+ *
+ * @return Success (SUCCEEDED(hr)) if all associations were set with
+ *         UserChoice and checked successfully.
+ *         Other return codes indicate a failure which causes us to
+ *         fall back to Settings, see return codes of
+ *         SetDefaultBrowserUserChoice().
+ */
+static HRESULT SetDefaultBrowserFromNotification(const wchar_t* aumi) {
+  // TODO maybe fall back to protocol dialog on Windows 11 (bug 1719832)?
+
+  HRESULT hr = E_FAIL;
+  if (GetPrefSetDefaultBrowserUserChoice()) {
+    hr = SetDefaultBrowserUserChoice(aumi);
+  }
+
+  if (FAILED(hr)) {
+    LaunchModernSettingsDialogDefaultApps();
+  }
+  return hr;
 }
 
 // This encapsulates the data that needs to be protected by a mutex because it
@@ -225,13 +290,17 @@ static HANDLE gHandlerMutex = INVALID_HANDLE_VALUE;
 class ToastHandler : public WinToastLib::IWinToastHandler {
  private:
   NotificationType mWhichNotification;
+  bool mIsLocalizedNotification;
   HANDLE mEvent;
+  const std::wstring mAumiStr;
 
  public:
-  ToastHandler(NotificationType whichNotification, HANDLE event) {
-    mWhichNotification = whichNotification;
-    mEvent = event;
-  }
+  ToastHandler(NotificationType whichNotification, bool isEnglishInstall,
+               HANDLE event, const wchar_t* aumi)
+      : mWhichNotification(whichNotification),
+        mIsLocalizedNotification(!isEnglishInstall),
+        mEvent(event),
+        mAumiStr(aumi) {}
 
   void FinishHandler(NotificationActivities& returnData) const {
     SetReturnData(returnData);
@@ -275,6 +344,9 @@ class ToastHandler : public WinToastLib::IWinToastHandler {
     activitiesPerformed.shown = NotificationShown::Shown;
     activitiesPerformed.action = NotificationAction::ToastClicked;
 
+    // An activation without clicking a specific button does not clearly
+    // signal that the default should be changed, so just show the settings
+    // dialog instead of SetDefaultBrowserFromNotification().
     LaunchModernSettingsDialogDefaultApps();
 
     FinishHandler(activitiesPerformed);
@@ -287,24 +359,34 @@ class ToastHandler : public WinToastLib::IWinToastHandler {
     // Override this below
     activitiesPerformed.action = NotificationAction::NoAction;
 
-    if (actionIndex == 0) {
-      if (mWhichNotification == NotificationType::Initial) {
+    // The if conditionals here are a little confusing to read because on the
+    // initial and followup notifications, the "Make Firefox the default" button
+    // is on the right, but on the localized notification, the equivalent button
+    // ("Yes") is on the left side.
+    if ((actionIndex == 0 && !mIsLocalizedNotification) ||
+        (actionIndex == 1 && mIsLocalizedNotification)) {
+      if (mWhichNotification == NotificationType::Initial &&
+          !mIsLocalizedNotification) {
         // "Remind me later" button
         activitiesPerformed.action = NotificationAction::RemindMeLater;
         if (!SetFollowupNotificationRequestTime(GetCurrentTimestamp())) {
           LOG_ERROR_MESSAGE(L"Unable to schedule followup notification");
         }
       } else {
-        // "Don't ask again" button
+        // "Don't ask again" button on the followup notification, or "No" on the
+        // localized notification.
         // Do nothing. As long as we don't call
         // SetFollowupNotificationRequestTime, there will be no followup
         // notification.
         activitiesPerformed.action = NotificationAction::DismissedByButton;
       }
-    } else if (actionIndex == 1) {
-      // "Make Firefox the default" button, on both notifications.
+    } else if ((actionIndex == 1 && !mIsLocalizedNotification) ||
+               (actionIndex == 0 && mIsLocalizedNotification)) {
+      // "Make Firefox the default" button, on both the initial and followup
+      // notifications. "Yes" button on the localized notification.
       activitiesPerformed.action = NotificationAction::MakeFirefoxDefaultButton;
-      LaunchModernSettingsDialogDefaultApps();
+
+      SetDefaultBrowserFromNotification(mAumiStr.c_str());
     }
 
     FinishHandler(activitiesPerformed);
@@ -355,20 +437,25 @@ static NotificationActivities ShowNotification(
     return activitiesPerformed;
   }
 
-  WinToast::instance()->setAppName(L"" MOZ_APP_BASENAME);
+  WinToast::instance()->setAppName(L"" MOZ_APP_DISPLAYNAME);
   std::wstring aumiStr = aumi;
   WinToast::instance()->setAppUserModelId(aumiStr);
+  WinToast::instance()->setShortcutPolicy(
+      WinToastLib::WinToast::SHORTCUT_POLICY_REQUIRE_NO_CREATE);
   WinToast::WinToastError error;
   if (!WinToast::instance()->initialize(&error)) {
     LOG_ERROR_MESSAGE(WinToast::strerror(error).c_str());
     return activitiesPerformed;
   }
 
+  bool isEnglishInstall = FirefoxInstallIsEnglish();
+
   Strings strings;
   if (!GetStrings(strings)) {
     return activitiesPerformed;
   }
-  const ToastStrings* toastStrings = strings.GetToastStrings(whichNotification);
+  const ToastStrings* toastStrings =
+      strings.GetToastStrings(whichNotification, isEnglishInstall);
 
   // This event object will let the handler notify us when it has handled the
   // notification.
@@ -436,7 +523,8 @@ static NotificationActivities ShowNotification(
   toastTemplate.addAction(toastStrings->action1.get());
   toastTemplate.addAction(toastStrings->action2.get());
   toastTemplate.setImagePath(absImagePath.get());
-  ToastHandler* handler = new ToastHandler(whichNotification, event.get());
+  ToastHandler* handler =
+      new ToastHandler(whichNotification, isEnglishInstall, event.get(), aumi);
   INT64 id = WinToast::instance()->showToast(toastTemplate, handler, &error);
   if (id < 0) {
     LOG_ERROR_MESSAGE(WinToast::strerror(error).c_str());
@@ -483,19 +571,10 @@ static NotificationActivities ShowNotification(
   return activitiesPerformed;
 }
 
-// This function checks that both the Firefox build and the operating system
-// are using English. This is checked because this feature is not yet being
-// localized.
-bool IsEnglish() {
-  mozilla::UniquePtr<wchar_t[]> windowsLocale =
-      mozilla::MakeUnique<wchar_t[]>(LOCALE_NAME_MAX_LENGTH);
-  int result =
-      GetUserDefaultLocaleName(windowsLocale.get(), LOCALE_NAME_MAX_LENGTH);
-  if (result == 0) {
-    LOG_ERROR_MESSAGE(L"Unable to get locale: %#X", GetLastError());
-    return false;
-  }
-
+// This function checks that the Firefox build is using English. This is checked
+// because of the peculiar way we are localizing toast notifications where we
+// use a completely different set of strings in English.
+bool FirefoxInstallIsEnglish() {
   mozilla::UniquePtr<wchar_t[]> installPath;
   bool success = GetInstallDirectory(installPath);
   if (!success) {
@@ -515,8 +594,7 @@ bool IsEnglish() {
     return false;
   }
 
-  return _wcsnicmp(windowsLocale.get(), L"en-", 3) == 0 &&
-         _wcsnicmp(firefoxLocale.get(), L"en-", 3) == 0;
+  return _wcsnicmp(firefoxLocale.get(), L"en-", 3) == 0;
 }
 
 // If a notification is shown, this function will block until the notification
@@ -530,11 +608,9 @@ NotificationActivities MaybeShowNotification(
                                                 NotificationShown::NotShown,
                                                 NotificationAction::NoAction};
 
-  if (!mozilla::IsWin10OrLater() || !IsEnglish()) {
+  if (!mozilla::IsWin10OrLater()) {
     // Notifications aren't shown in versions prior to Windows 10 because the
     // notification API we want isn't available.
-    // They are also not shown in non-English contexts because localization is
-    // not yet being done for this component.
     return activitiesPerformed;
   }
 
@@ -609,5 +685,17 @@ std::string GetStringForNotificationAction(NotificationAction action) {
       return std::string("toast-clicked");
     case NotificationAction::NoAction:
       return std::string("no-action");
+  }
+}
+
+void EnsureValidNotificationAction(std::string& actionString) {
+  if (actionString != "dismissed-by-timeout" &&
+      actionString != "dismissed-to-action-center" &&
+      actionString != "dismissed-by-button" &&
+      actionString != "dismissed-by-application-hidden" &&
+      actionString != "remind-me-later" &&
+      actionString != "make-firefox-default-button" &&
+      actionString != "toast-clicked" && actionString != "no-action") {
+    actionString = "no-action";
   }
 }

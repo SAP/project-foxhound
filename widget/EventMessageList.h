@@ -156,6 +156,7 @@ NS_EVENT_MESSAGE(eXULPopupHiding)
 NS_EVENT_MESSAGE(eXULPopupHidden)
 NS_EVENT_MESSAGE(eXULBroadcast)
 NS_EVENT_MESSAGE(eXULCommandUpdate)
+NS_EVENT_MESSAGE(eXULSystemStatusBarClick)
 
 // Legacy mouse scroll (wheel) events
 NS_EVENT_MESSAGE(eLegacyMouseLineOrPageScroll)
@@ -229,12 +230,7 @@ NS_EVENT_MESSAGE(ePageHide)
 
 // SVG events
 NS_EVENT_MESSAGE(eSVGLoad)
-NS_EVENT_MESSAGE(eSVGUnload)
-NS_EVENT_MESSAGE(eSVGResize)
 NS_EVENT_MESSAGE(eSVGScroll)
-
-// SVG Zoom events
-NS_EVENT_MESSAGE(eSVGZoom)
 
 // XUL command events
 NS_EVENT_MESSAGE(eXULCommand)
@@ -321,9 +317,6 @@ NS_EVENT_MESSAGE(eEdgeUIStarted)
 NS_EVENT_MESSAGE(eEdgeUICanceled)
 NS_EVENT_MESSAGE(eEdgeUICompleted)
 
-// These are used to send native events to plugins.
-NS_EVENT_MESSAGE(ePluginInputEvent)
-
 // Events to manipulate selection (WidgetSelectionEvent)
 // Clear any previous selection and set the given range as the selection
 NS_EVENT_MESSAGE(eSetSelection)
@@ -335,6 +328,9 @@ NS_EVENT_MESSAGE(eContentCommandPaste)
 NS_EVENT_MESSAGE(eContentCommandDelete)
 NS_EVENT_MESSAGE(eContentCommandUndo)
 NS_EVENT_MESSAGE(eContentCommandRedo)
+// eContentCommandInsertText tries to insert text with replacing selection
+// in focused editor.
+NS_EVENT_MESSAGE(eContentCommandInsertText)
 NS_EVENT_MESSAGE(eContentCommandPasteTransferable)
 NS_EVENT_MESSAGE(eContentCommandLookUpDictionary)
 // eContentCommandScroll scrolls the nearest scrollable element to the
@@ -390,7 +386,6 @@ NS_EVENT_MESSAGE(eOpen)
 NS_EVENT_MESSAGE(eDeviceOrientation)
 NS_EVENT_MESSAGE(eAbsoluteDeviceOrientation)
 NS_EVENT_MESSAGE(eDeviceMotion)
-NS_EVENT_MESSAGE(eDeviceProximity)
 NS_EVENT_MESSAGE(eUserProximity)
 NS_EVENT_MESSAGE(eDeviceLight)
 #if defined(MOZ_WIDGET_ANDROID)
@@ -463,9 +458,13 @@ NS_EVENT_MESSAGE(eEditorBeforeInput)
 // selection events
 NS_EVENT_MESSAGE(eSelectStart)
 NS_EVENT_MESSAGE(eSelectionChange)
+NS_EVENT_MESSAGE(eSlotChange)
 
 // visibility change
 NS_EVENT_MESSAGE(eVisibilityChange)
+
+// security policy events
+NS_EVENT_MESSAGE(eSecurityPolicyViolation)
 
 // Details element events.
 NS_EVENT_MESSAGE(eToggle)

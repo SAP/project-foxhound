@@ -15,15 +15,15 @@ add_task(async function checkCtrlWorks() {
 
   let defaultEngine = await Services.search.getDefault();
   let testcases = [
-    ["example", "http://www.example.com/", { ctrlKey: true }],
+    ["example", "https://www.example.com/", { ctrlKey: true }],
     // Check that a direct load is not overwritten by a previous canonization.
     ["http://example.com/test/", "http://example.com/test/", {}],
-    ["ex-ample", "http://www.ex-ample.com/", { ctrlKey: true }],
-    ["  example ", "http://www.example.com/", { ctrlKey: true }],
-    [" example/foo ", "http://www.example.com/foo", { ctrlKey: true }],
+    ["ex-ample", "https://www.ex-ample.com/", { ctrlKey: true }],
+    ["  example ", "https://www.example.com/", { ctrlKey: true }],
+    [" example/foo ", "https://www.example.com/foo", { ctrlKey: true }],
     [
       " example/foo bar ",
-      "http://www.example.com/foo%20bar",
+      "https://www.example.com/foo%20bar",
       { ctrlKey: true },
     ],
     ["example.net", "http://example.net/", { ctrlKey: true }],
@@ -39,12 +39,6 @@ add_task(async function checkCtrlWorks() {
       { ctrlKey: true },
     ],
   ];
-
-  if (Services.prefs.getBoolPref("network.ftp.enabled")) {
-    // Include FTP testcase only if FTP protocol handler is enabled, otherwise
-    // the test would hang on external application chooser popup.
-    testcases.push(["ftp://example", "ftp://example/", { ctrlKey: true }]);
-  }
 
   // Disable autoFill for this test, since it could mess up the results.
   await SpecialPowers.pushPrefEnv({
@@ -158,11 +152,11 @@ add_task(async function autofill() {
   ]);
 
   let testcases = [
-    ["ex", "http://www.ex.com/", { ctrlKey: true }],
+    ["ex", "https://www.ex.com/", { ctrlKey: true }],
     // Check that a direct load is not overwritten by a previous canonization.
     ["ex", "http://example.com/", {}],
     // search alias
-    ["@goo", "http://www%2E@goo.com/", { ctrlKey: true }],
+    ["@goo", "https://www.goo.com/", { ctrlKey: true }],
   ];
 
   function promiseAutofill() {
@@ -189,3 +183,67 @@ add_task(async function autofill() {
 
   await PlacesUtils.history.clear();
 });
+
+add_task(async function() {
+  info(
+    "Test whether canonization is disabled until the ctrl key is releasing if the key was used to paste text into urlbar"
+  );
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.ctrlCanonizesURLs", true]],
+  });
+
+  info("Paste the word to the urlbar");
+  const testWord = "example";
+  simulatePastingToUrlbar(testWord);
+  is(gURLBar.value, testWord, "Paste the test word correctly");
+
+  info("Send enter key while pressing the ctrl key");
+  EventUtils.synthesizeKey("VK_RETURN", { type: "keydown", ctrlKey: true });
+  await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+  is(
+    gBrowser.selectedBrowser.documentURI.spec,
+    `http://mochi.test:8888/?terms=${testWord}`,
+    "The loaded url is not canonized"
+  );
+
+  EventUtils.synthesizeKey("VK_CONTROL", { type: "keyup" });
+});
+
+add_task(async function() {
+  info("Test whether canonization is enabled again after releasing the ctrl");
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.ctrlCanonizesURLs", true]],
+  });
+
+  info("Paste the word to the urlbar");
+  const testWord = "example";
+  simulatePastingToUrlbar(testWord);
+  is(gURLBar.value, testWord, "Paste the test word correctly");
+
+  info("Release the ctrl key befoer typing Enter key");
+  EventUtils.synthesizeKey("VK_CONTROL", { type: "keyup" });
+
+  info("Send enter key with the ctrl");
+  const onLoad = BrowserTestUtils.waitForDocLoadAndStopIt(
+    `https://www.${testWord}.com/`,
+    gBrowser.selectedBrowser
+  );
+  EventUtils.synthesizeKey("VK_RETURN", { type: "keydown", ctrlKey: true });
+  await onLoad;
+  info("The loaded url is canonized");
+});
+
+function simulatePastingToUrlbar(text) {
+  gURLBar.focus();
+
+  const keyForPaste = document
+    .getElementById("key_paste")
+    .getAttribute("key")
+    .toLowerCase();
+  EventUtils.synthesizeKey(keyForPaste, { type: "keydown", ctrlKey: true });
+
+  gURLBar.select();
+  EventUtils.sendString(text);
+}

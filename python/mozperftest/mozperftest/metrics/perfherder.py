@@ -6,12 +6,13 @@ import jsonschema
 import os
 import pathlib
 import statistics
+import sys
 
 from mozperftest.utils import strtobool
 from mozperftest.layers import Layer
 from mozperftest.metrics.exceptions import PerfherderValidDataError
-from mozperftest.metrics.common import filtered_metrics
-from mozperftest.metrics.utils import write_json, is_number, metric_fields
+from mozperftest.metrics.common import filtered_metrics, COMMON_ARGS
+from mozperftest.metrics.utils import write_json, is_number
 
 
 PERFHERDER_SCHEMA = pathlib.Path(
@@ -20,48 +21,47 @@ PERFHERDER_SCHEMA = pathlib.Path(
 
 
 class Perfherder(Layer):
-    """Output data in the perfherder format.
-    """
+    """Output data in the perfherder format."""
 
     name = "perfherder"
     activated = False
 
-    arguments = {
-        "prefix": {
-            "type": str,
-            "default": "",
-            "help": "Prefix the output files with this string.",
-        },
-        "app": {
-            "type": str,
-            "default": "firefox",
-            "choices": [
-                "firefox",
-                "chrome-m",
-                "chrome",
-                "chromium",
-                "fennec",
-                "geckoview",
-                "fenix",
-                "refbrow",
-            ],
-            "help": (
-                "Shorthand name of application that is "
-                "being tested (used in perfherder data)."
-            ),
-        },
-        "metrics": {
-            "type": metric_fields,
-            "nargs": "*",
-            "default": [],
-            "help": "The metrics that should be retrieved from the data.",
-        },
-        "stats": {
-            "action": "store_true",
-            "default": False,
-            "help": "If set, browsertime statistics will be reported.",
-        },
-    }
+    arguments = COMMON_ARGS
+    arguments.update(
+        {
+            "app": {
+                "type": str,
+                "default": "firefox",
+                "choices": [
+                    "firefox",
+                    "chrome-m",
+                    "chrome",
+                    "chromium",
+                    "fennec",
+                    "geckoview",
+                    "fenix",
+                    "refbrow",
+                ],
+                "help": (
+                    "Shorthand name of application that is "
+                    "being tested (used in perfherder data)."
+                ),
+            },
+            "stats": {
+                "action": "store_true",
+                "default": False,
+                "help": "If set, browsertime statistics will be reported.",
+            },
+            "timestamp": {
+                "type": float,
+                "default": None,
+                "help": (
+                    "Timestamp to use for the perfherder data. Can be the "
+                    "current date or a past date if needed."
+                ),
+            },
+        }
+    )
 
     def run(self, metadata):
         """Processes the given results into a perfherder-formatted data blob.
@@ -94,8 +94,12 @@ class Perfherder(Layer):
             output,
             prefix,
             metrics=metrics,
+            transformer=self.get_arg("transformer"),
             settings=True,
             exclude=exclusions,
+            split_by=self.get_arg("split-by"),
+            simplify_names=self.get_arg("simplify-names"),
+            simplify_exclude=self.get_arg("simplify-exclude"),
         )
 
         if not any([results[name] for name in results]):
@@ -139,6 +143,7 @@ class Perfherder(Layer):
                 unit=settings.get("unit", "ms"),
                 summary=settings.get("value"),
                 framework=settings.get("framework"),
+                metrics_info=metrics,
             )
 
             if all_perfherder_data is None:
@@ -149,6 +154,10 @@ class Perfherder(Layer):
         if prefix:
             # If a prefix was given, store it in the perfherder data as well
             all_perfherder_data["prefix"] = prefix
+
+        timestamp = self.get_arg("timestamp")
+        if timestamp is not None:
+            all_perfherder_data["pushTimestamp"] = timestamp
 
         # Validate the final perfherder data blob
         with pathlib.Path(metadata._mach_cmd.topsrcdir, PERFHERDER_SCHEMA).open() as f:
@@ -162,7 +171,14 @@ class Perfherder(Layer):
 
         # XXX "suites" key error occurs when using self.info so a print
         # is being done for now.
-        print("PERFHERDER_DATA: " + json.dumps(all_perfherder_data))
+
+        # print() will produce a BlockingIOError on large outputs, so we use
+        # sys.stdout
+        sys.stdout.write("PERFHERDER_DATA: ")
+        json.dump(all_perfherder_data, sys.stdout)
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+
         metadata.set_output(write_json(all_perfherder_data, output, file))
         return metadata
 
@@ -181,6 +197,7 @@ class Perfherder(Layer):
         lower_is_better=True,
         unit="ms",
         summary=None,
+        metrics_info=None,
     ):
         """Build a PerfHerder data blob from the given subtests.
 
@@ -235,9 +252,11 @@ class Perfherder(Layer):
         if subtest_should_alert is None:
             subtest_should_alert = []
         if framework is None:
-            framework = {"name": "browsertime"}
+            framework = {"name": "mozperftest"}
         if application is None:
             application = {"name": "firefox", "version": "9000"}
+        if metrics_info is None:
+            metrics_info = {}
 
         perf_subtests = []
         suite = {
@@ -260,6 +279,7 @@ class Perfherder(Layer):
         }
 
         allvals = []
+        alert_thresholds = []
         for measurement in subtests:
             reps = subtests[measurement]
             allvals.extend(reps)
@@ -268,13 +288,35 @@ class Perfherder(Layer):
                 self.warning("No replicates found for {}, skipping".format(measurement))
                 continue
 
+            # Gather extra settings specified from within a metric specification
+            subtest_lower_is_better = lower_is_better
+            subtest_unit = unit
+            for met in metrics_info:
+                if met not in measurement:
+                    continue
+
+                extra_options.extend(metrics_info[met].get("extraOptions", []))
+                alert_thresholds.append(
+                    metrics_info[met].get("alertThreshold", alert_threshold)
+                )
+
+                subtest_unit = metrics_info[met].get("unit", unit)
+                subtest_lower_is_better = metrics_info[met].get(
+                    "lowerIsBetter", lower_is_better
+                )
+
+                if metrics_info[met].get("shouldAlert", should_alert):
+                    subtest_should_alert.append(measurement)
+
+                break
+
             perf_subtests.append(
                 {
                     "name": measurement,
                     "replicates": reps,
-                    "lowerIsBetter": lower_is_better,
+                    "lowerIsBetter": subtest_lower_is_better,
                     "value": statistics.mean(reps),
-                    "unit": unit,
+                    "unit": subtest_unit,
                     "shouldAlert": should_alert or measurement in subtest_should_alert,
                 }
             )
@@ -285,5 +327,15 @@ class Perfherder(Layer):
                 + "only int/float data is accepted."
             )
 
+        alert_thresholds = list(set(alert_thresholds))
+        if len(alert_thresholds) > 1:
+            raise PerfherderValidDataError(
+                "Too many alertThreshold's were specified, expecting 1 but found "
+                + f"{len(alert_thresholds)}"
+            )
+        elif len(alert_thresholds) == 1:
+            suite["alertThreshold"] = alert_thresholds[0]
+
+        suite["extraOptions"] = list(set(suite["extraOptions"]))
         suite["value"] = statistics.mean(allvals)
         return perfherder

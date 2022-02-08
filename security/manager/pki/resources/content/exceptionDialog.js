@@ -142,7 +142,9 @@ function getURI() {
   // likely that the host will be supplied without a protocol prefix, resulting
   // in malformed uri exceptions being thrown.
   let locationTextBox = document.getElementById("locationTextBox");
-  let uri = Services.uriFixup.createFixupURI(locationTextBox.value, 0);
+  let { preferredURI: uri } = Services.uriFixup.getFixupURIInfo(
+    locationTextBox.value
+  );
 
   if (!uri) {
     return null;
@@ -387,6 +389,7 @@ function addException() {
   overrideService.rememberValidityOverride(
     uri.asciiHost,
     uri.port,
+    {},
     gCert,
     flags,
     !shouldStorePermanently

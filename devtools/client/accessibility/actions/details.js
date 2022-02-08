@@ -10,13 +10,13 @@ const { UPDATE_DETAILS } = require("devtools/client/accessibility/constants");
  *
  * @param {Object} accessible front
  */
-exports.updateDetails = accessible => async dispatch => {
+exports.updateDetails = accessible => async ({ dispatch }) => {
   const { walker: domWalker } = await accessible.targetFront.getFront(
     "inspector"
   );
   // By the time getFront resolves, the accessibleFront may have been destroyed.
   // This typically happens during navigations.
-  if (!accessible.actorID) {
+  if (accessible.isDestroyed()) {
     return;
   }
   try {

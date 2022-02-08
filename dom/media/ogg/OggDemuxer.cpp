@@ -66,43 +66,45 @@ static const int64_t OGG_SEEK_OPUS_PREROLL = 80 * USECS_PER_MS;
 
 static Atomic<uint32_t> sStreamSourceID(0u);
 
-OggDemuxer::nsAutoOggSyncState::nsAutoOggSyncState(rlbox_sandbox_ogg& aSandbox)
+OggDemuxer::nsAutoOggSyncState::nsAutoOggSyncState(rlbox_sandbox_ogg* aSandbox)
     : mSandbox(aSandbox) {
-  tainted_ogg<ogg_sync_state*> state =
-      mSandbox.malloc_in_sandbox<ogg_sync_state>();
-  MOZ_RELEASE_ASSERT(state != nullptr);
-  mState = state.to_opaque();
-  sandbox_invoke(mSandbox, ogg_sync_init, mState);
+  if (mSandbox) {
+    tainted_ogg<ogg_sync_state*> state =
+        mSandbox->malloc_in_sandbox<ogg_sync_state>();
+    MOZ_RELEASE_ASSERT(state != nullptr);
+    mState = state.to_opaque();
+    sandbox_invoke(*mSandbox, ogg_sync_init, mState);
+  }
 }
 OggDemuxer::nsAutoOggSyncState::~nsAutoOggSyncState() {
-  sandbox_invoke(mSandbox, ogg_sync_clear, mState);
-  mSandbox.free_in_sandbox(rlbox::from_opaque(mState));
-  tainted_ogg<ogg_sync_state*> null = nullptr;
-  mState = null.to_opaque();
+  if (mSandbox) {
+    sandbox_invoke(*mSandbox, ogg_sync_clear, mState);
+    mSandbox->free_in_sandbox(rlbox::from_opaque(mState));
+    tainted_ogg<ogg_sync_state*> null = nullptr;
+    mState = null.to_opaque();
+  }
 }
 
 /* static */
 rlbox_sandbox_ogg* OggDemuxer::CreateSandbox() {
   rlbox_sandbox_ogg* sandbox = new rlbox_sandbox_ogg();
 #ifdef MOZ_WASM_SANDBOXING_OGG
-  // Firefox preloads the library externally to ensure we won't be stopped
-  // by the content sandbox
-  const bool external_loads_exist = true;
-  // See Bug 1606981: In some environments allowing stdio in the wasm sandbox
-  // fails as the I/O redirection involves querying meta-data of file
-  // descriptors. This querying fails in some environments.
-  const bool allow_stdio = false;
-  sandbox->create_sandbox(mozilla::ipc::GetSandboxedOggPath().get(),
-                          external_loads_exist, allow_stdio);
+  bool success = sandbox->create_sandbox(false /* infallible */);
 #else
-  sandbox->create_sandbox();
+  bool success = sandbox->create_sandbox();
 #endif
+  if (!success) {
+    delete sandbox;
+    sandbox = nullptr;
+  }
   return sandbox;
 }
 
 void OggDemuxer::SandboxDestroy::operator()(rlbox_sandbox_ogg* sandbox) {
-  sandbox->destroy_sandbox();
-  delete sandbox;
+  if (sandbox) {
+    sandbox->destroy_sandbox();
+    delete sandbox;
+  }
 }
 
 // Return the corresponding category in aKind based on the following specs.
@@ -130,7 +132,7 @@ const nsString OggDemuxer::GetKind(const nsCString& aRole) {
   } else if (aRole.Find("video/subtitled") != -1) {
     return u"subtitles"_ns;
   }
-  return EmptyString();
+  return u""_ns;
 }
 
 void OggDemuxer::InitTrack(MessageField* aMsgInfo, TrackInfo* aInfo,
@@ -143,7 +145,7 @@ void OggDemuxer::InitTrack(MessageField* aMsgInfo, TrackInfo* aInfo,
   nsCString* sTitle = aMsgInfo->mValuesStore.Get(eTitle);
   nsCString* sLanguage = aMsgInfo->mValuesStore.Get(eLanguage);
   aInfo->Init(sName ? NS_ConvertUTF8toUTF16(*sName) : EmptyString(),
-              sRole ? GetKind(*sRole) : EmptyString(),
+              sRole ? GetKind(*sRole) : u""_ns,
               sTitle ? NS_ConvertUTF8toUTF16(*sTitle) : EmptyString(),
               sLanguage ? NS_ConvertUTF8toUTF16(*sLanguage) : EmptyString(),
               aEnable);
@@ -157,8 +159,8 @@ OggDemuxer::OggDemuxer(MediaResource* aResource)
       mFlacState(nullptr),
       mOpusEnabled(MediaDecoder::IsOpusEnabled()),
       mSkeletonState(nullptr),
-      mAudioOggState(aResource, *mSandbox),
-      mVideoOggState(aResource, *mSandbox),
+      mAudioOggState(aResource, mSandbox.get()),
+      mVideoOggState(aResource, mSandbox.get()),
       mIsChained(false),
       mTimedMetadataEvent(nullptr),
       mOnSeekableEvent(nullptr) {
@@ -171,24 +173,6 @@ OggDemuxer::~OggDemuxer() {
   MOZ_COUNT_DTOR(OggDemuxer);
   Reset(TrackInfo::kAudioTrack);
   Reset(TrackInfo::kVideoTrack);
-  if (HasAudio() || HasVideo()) {
-    // If we were able to initialize our decoders, report whether we encountered
-    // a chained stream or not.
-    bool isChained = mIsChained;
-    void* ptr = this;
-    nsCOMPtr<nsIRunnable> task = NS_NewRunnableFunction(
-        "OggDemuxer::~OggDemuxer", [ptr, isChained]() -> void {
-          // We can't use OGG_DEBUG here because it implicitly refers to `this`,
-          // which we can't capture in this runnable.
-          MOZ_LOG(gMediaDemuxerLog, mozilla::LogLevel::Debug,
-                  ("OggDemuxer(%p)::%s: Reporting telemetry "
-                   "MEDIA_OGG_LOADED_IS_CHAINED=%d",
-                   ptr, __func__, isChained));
-          Telemetry::Accumulate(
-              Telemetry::HistogramID::MEDIA_OGG_LOADED_IS_CHAINED, isChained);
-        });
-    SchedulerGroup::Dispatch(TaskCategory::Other, task.forget());
-  }
 }
 
 void OggDemuxer::SetChainingEvents(TimedMetadataEventProducer* aMetadataEvent,
@@ -216,6 +200,9 @@ int64_t OggDemuxer::StartTime(TrackInfo::TrackType aType) {
 }
 
 RefPtr<OggDemuxer::InitPromise> OggDemuxer::Init() {
+  if (!mSandbox) {
+    return InitPromise::CreateAndReject(NS_ERROR_OUT_OF_MEMORY, __func__);
+  }
   const char RLBOX_OGG_RETURN_CODE_SAFE[] =
       "Return codes only control whether to early exit. Incorrect return codes "
       "will not lead to memory safety issues in the renderer.";
@@ -315,7 +302,9 @@ already_AddRefed<MediaTrackDemuxer> OggDemuxer::GetTrackDemuxer(
 
 nsresult OggDemuxer::Reset(TrackInfo::TrackType aType) {
   // Discard any previously buffered packets/pages.
-  sandbox_invoke(*mSandbox, ogg_sync_reset, OggSyncState(aType));
+  if (mSandbox) {
+    sandbox_invoke(*mSandbox, ogg_sync_reset, OggSyncState(aType));
+  }
   OggCodecState* trackState = GetTrackCodecState(aType);
   if (trackState) {
     return trackState->Reset();
@@ -457,8 +446,8 @@ void OggDemuxer::FillTags(TrackInfo* aInfo, UniquePtr<MetadataTags>&& aTags) {
     return;
   }
   UniquePtr<MetadataTags> tags(std::move(aTags));
-  for (auto iter = tags->Iter(); !iter.Done(); iter.Next()) {
-    aInfo->mTags.AppendElement(MetadataTag(iter.Key(), iter.Data()));
+  for (const auto& entry : *tags) {
+    aInfo->mTags.AppendElement(MetadataTag(entry.GetKey(), entry.GetData()));
   }
 }
 
@@ -510,9 +499,9 @@ nsresult OggDemuxer::ReadMetadata() {
         // We've not encountered a stream with this serial number before. Create
         // an OggCodecState to demux it, and map that to the OggCodecState
         // in mCodecStates.
-        OggCodecState* codecState =
-            OggCodecState::Create(mSandbox.get(), page.to_opaque(), serial);
-        mCodecStore.Add(serial, codecState);
+        OggCodecState* const codecState = mCodecStore.Add(
+            serial,
+            OggCodecState::Create(mSandbox.get(), page.to_opaque(), serial));
         bitstreams.AppendElement(codecState);
         serials.AppendElement(serial);
       }
@@ -685,7 +674,7 @@ bool OggDemuxer::ReadOggChain(const media::TimeUnit& aLastEndTime) {
 
   OggCodecState* state;
 
-  mCodecStore.Add(serial, codecState.release());
+  mCodecStore.Add(serial, std::move(codecState));
   state = mCodecStore.Get(serial);
 
   NS_ENSURE_TRUE(state != nullptr, false);
@@ -933,7 +922,7 @@ TimeIntervals OggDemuxer::GetBuffered(TrackInfo::TrackType aType) {
   // offset is after the end of the media resource, or there's no more cached
   // data after the offset. This loop will run until we've checked every
   // buffered range in the media, in increasing order of offset.
-  nsAutoOggSyncState sync(*mSandbox);
+  nsAutoOggSyncState sync(mSandbox.get());
   for (uint32_t index = 0; index < ranges.Length(); index++) {
     // Ensure the offsets are after the header pages.
     int64_t startOffset = ranges[index].mStart;

@@ -17,16 +17,14 @@
 #include <stddef.h>  // size_t
 #include <stdint.h>  // uint8_t, uint32_t
 
-#include "js/RootingAPI.h"  // JS::Handle, JS::MutableHandle
-
-struct JS_PUBLIC_API JSContext;
-class JS_PUBLIC_API JSObject;
-class JS_PUBLIC_API JSScript;
+#include "js/TypeDecls.h"
 
 namespace JS {
 
+class ReadOnlyCompileOptions;
+
 using TranscodeBuffer = mozilla::Vector<uint8_t>;
-using TranscodeRange = mozilla::Range<uint8_t>;
+using TranscodeRange = mozilla::Range<const uint8_t>;
 
 struct TranscodeSource final {
   TranscodeSource(const TranscodeRange& range_, const char* file, uint32_t line)
@@ -39,53 +37,85 @@ struct TranscodeSource final {
 
 using TranscodeSources = mozilla::Vector<TranscodeSource>;
 
-enum TranscodeResult : uint8_t {
+enum class TranscodeResult : uint8_t {
   // Successful encoding / decoding.
-  TranscodeResult_Ok = 0,
+  Ok = 0,
 
   // A warning message, is set to the message out-param.
-  TranscodeResult_Failure = 0x10,
-  TranscodeResult_Failure_BadBuildId = TranscodeResult_Failure | 0x1,
-  TranscodeResult_Failure_RunOnceNotSupported = TranscodeResult_Failure | 0x2,
-  TranscodeResult_Failure_AsmJSNotSupported = TranscodeResult_Failure | 0x3,
-  TranscodeResult_Failure_BadDecode = TranscodeResult_Failure | 0x4,
-  TranscodeResult_Failure_WrongCompileOption = TranscodeResult_Failure | 0x5,
-  TranscodeResult_Failure_NotInterpretedFun = TranscodeResult_Failure | 0x6,
+  Failure = 0x10,
+  Failure_BadBuildId = Failure | 0x1,
+  Failure_AsmJSNotSupported = Failure | 0x2,
+  Failure_BadDecode = Failure | 0x3,
 
   // There is a pending exception on the context.
-  TranscodeResult_Throw = 0x20
+  Throw = 0x20
 };
 
-extern JS_PUBLIC_API TranscodeResult EncodeScript(JSContext* cx,
-                                                  TranscodeBuffer& buffer,
-                                                  Handle<JSScript*> script);
+inline bool IsTranscodeFailureResult(const TranscodeResult result) {
+  uint8_t raw_result = static_cast<uint8_t>(result);
+  uint8_t raw_failure = static_cast<uint8_t>(TranscodeResult::Failure);
+  TranscodeResult masked =
+      static_cast<TranscodeResult>(raw_result & raw_failure);
+  return masked == TranscodeResult::Failure;
+}
 
-extern JS_PUBLIC_API TranscodeResult
-DecodeScript(JSContext* cx, TranscodeBuffer& buffer,
-             MutableHandle<JSScript*> scriptp, size_t cursorIndex = 0);
+static constexpr size_t BytecodeOffsetAlignment = 4;
+static_assert(BytecodeOffsetAlignment <= alignof(std::max_align_t),
+              "Alignment condition requires a custom allocator.");
 
-extern JS_PUBLIC_API TranscodeResult
-DecodeScript(JSContext* cx, const TranscodeRange& range,
-             MutableHandle<JSScript*> scriptp);
+// Align the bytecode offset for transcoding for the requirement.
+inline size_t AlignTranscodingBytecodeOffset(size_t offset) {
+  size_t extra = offset % BytecodeOffsetAlignment;
+  if (extra == 0) {
+    return offset;
+  }
+  size_t padding = BytecodeOffsetAlignment - extra;
+  return offset + padding;
+}
 
-// Register an encoder on the given script source, such that all functions can
-// be encoded as they are parsed. This strategy is used to avoid blocking the
-// main thread in a non-interruptible way.
+inline bool IsTranscodingBytecodeOffsetAligned(size_t offset) {
+  return offset % BytecodeOffsetAlignment == 0;
+}
+
+inline bool IsTranscodingBytecodeAligned(const void* offset) {
+  return IsTranscodingBytecodeOffsetAligned(size_t(offset));
+}
+
+// Finish incremental encoding started by one of:
+//   * JS::CompileAndStartIncrementalEncoding
+//   * JS::FinishOffThreadScriptAndStartIncrementalEncoding
 //
-// The |script| argument of |StartIncrementalEncoding| and
-// |FinishIncrementalEncoding| should be the top-level script returned either as
-// an out-param of any of the |Compile| functions, or the result of
-// |FinishOffThreadScript|.
+// The |script| argument of |FinishIncrementalEncoding| should be the top-level
+// script returned from one of the above.
 //
 // The |buffer| argument of |FinishIncrementalEncoding| is used for appending
 // the encoded bytecode into the buffer. If any of these functions failed, the
 // content of |buffer| would be undefined.
-extern JS_PUBLIC_API bool StartIncrementalEncoding(JSContext* cx,
-                                                   Handle<JSScript*> script);
-
+//
+// |buffer| contains encoded CompilationStencil.
+//
+// If the `buffer` isn't empty, the start of the `buffer` should meet
+// IsTranscodingBytecodeAligned, and the length should meet
+// IsTranscodingBytecodeOffsetAligned.
+//
+// NOTE: As long as IsTranscodingBytecodeOffsetAligned is met, that means
+//       there's JS::BytecodeOffsetAlignment+extra bytes in the buffer,
+//       IsTranscodingBytecodeAligned should be guaranteed to meet by
+//       malloc, used by MallocAllocPolicy in mozilla::Vector.
 extern JS_PUBLIC_API bool FinishIncrementalEncoding(JSContext* cx,
                                                     Handle<JSScript*> script,
                                                     TranscodeBuffer& buffer);
+
+// Check if the compile options and script's flag matches.
+//
+// JS::DecodeScript* and JS::DecodeOffThreadScript internally check this.
+//
+// JS::DecodeMultiOffThreadStencils checks some options shared across multiple
+// scripts. Caller is responsible for checking each script with this API when
+// using the decoded script instead of compiling a new script wiht the given
+// options.
+extern JS_PUBLIC_API bool CheckCompileOptionsMatch(
+    const ReadOnlyCompileOptions& options, JSScript* script);
 
 }  // namespace JS
 

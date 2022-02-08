@@ -16,6 +16,8 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/Components.h"
+#include "mozilla/dom/AutoSuppressEventHandlingAndSuspend.h"
 #include "mozilla/dom/BlobBinding.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/DocGroup.h"
@@ -35,9 +37,13 @@
 #include "mozilla/Encoding.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventListenerManager.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/LoadContext.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/PreloaderBase.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_privacy.h"
@@ -56,6 +62,7 @@
 #include "nsIAuthPrompt.h"
 #include "nsIAuthPrompt2.h"
 #include "nsIClassOfService.h"
+#include "nsIHttpChannel.h"
 #include "nsISupportsPriority.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsStreamUtils.h"
@@ -67,6 +74,7 @@
 #include "nsVariant.h"
 #include "nsIScriptError.h"
 #include "nsICachingChannel.h"
+#include "nsICookieJarSettings.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsError.h"
@@ -166,11 +174,6 @@ static void AddLoadFlags(nsIRequest* request, nsLoadFlags newFlags) {
 }
 
 // We are in a sync event loop.
-#define NOT_CALLABLE_IN_SYNC_SEND                              \
-  if (mFlagSyncLooping || mEventDispatchingSuspended) {        \
-    return NS_ERROR_DOM_INVALID_STATE_XHR_HAS_INVALID_CONTEXT; \
-  }
-
 #define NOT_CALLABLE_IN_SYNC_SEND_RV                               \
   if (mFlagSyncLooping || mEventDispatchingSuspended) {            \
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_XHR_HAS_INVALID_CONTEXT); \
@@ -250,8 +253,6 @@ XMLHttpRequestMainThread::~XMLHttpRequestMainThread() {
   MOZ_ASSERT(!mFlagSyncLooping, "we rather crash than hang");
   mFlagSyncLooping = false;
 
-  mResultJSON.setUndefined();
-  mResultArrayBuffer = nullptr;
   mozilla::DropJSObjects(this);
 }
 
@@ -292,7 +293,8 @@ void XMLHttpRequestMainThread::InitParameters(bool aAnon, bool aSystem) {
       return;
     }
 
-    nsCOMPtr<nsIPermissionManager> permMgr = services::GetPermissionManager();
+    nsCOMPtr<nsIPermissionManager> permMgr =
+        components::PermissionManager::Service();
     if (NS_WARN_IF(!permMgr)) {
       SetParameters(aAnon, false);
       return;
@@ -448,8 +450,8 @@ static void LogMessage(
 Document* XMLHttpRequestMainThread::GetResponseXML(ErrorResult& aRv) {
   if (mResponseType != XMLHttpRequestResponseType::_empty &&
       mResponseType != XMLHttpRequestResponseType::Document) {
-    aRv.Throw(
-        NS_ERROR_DOM_INVALID_STATE_XHR_HAS_WRONG_RESPONSETYPE_FOR_RESPONSEXML);
+    aRv.ThrowInvalidStateError(
+        "responseXML is only available if responseType is '' or 'document'.");
     return nullptr;
   }
   if (mWarnAboutSyncHtml) {
@@ -521,24 +523,22 @@ nsresult XMLHttpRequestMainThread::AppendToResponseText(
       return NS_ERROR_OUT_OF_MEMORY;
     }
 
-    nsresult rv;
-    BulkWriteHandle<char16_t> handle =
-        helper.BulkWrite(destBufferLen.value(), rv);
-    if (NS_FAILED(rv)) {
-      return rv;
+    auto handleOrErr = helper.BulkWrite(destBufferLen.value());
+    if (handleOrErr.isErr()) {
+      return handleOrErr.unwrapErr();
     }
+
+    auto handle = handleOrErr.unwrap();
 
     uint32_t result;
     size_t read;
     size_t written;
-    bool hadErrors;
-    Tie(result, read, written, hadErrors) =
+    std::tie(result, read, written, std::ignore) =
         mDecoder->DecodeToUTF16(aBuffer, handle.AsSpan().From(len), aLast);
     MOZ_ASSERT(result == kInputEmpty);
     MOZ_ASSERT(read == aBuffer.Length());
     len += written;
     MOZ_ASSERT(len <= destBufferLen.value());
-    Unused << hadErrors;
     handle.Finish(len, false);
     // TaintFox: propagate taint. TODO(samuel) deal with encoding
     helper.AppendTaintAt(len, aTaint);
@@ -578,8 +578,8 @@ void XMLHttpRequestMainThread::GetResponseText(
 
   if (mResponseType != XMLHttpRequestResponseType::_empty &&
       mResponseType != XMLHttpRequestResponseType::Text) {
-    aRv.Throw(
-        NS_ERROR_DOM_INVALID_STATE_XHR_HAS_WRONG_RESPONSETYPE_FOR_RESPONSETEXT);
+    aRv.ThrowInvalidStateError(
+        "responseText is only available if responseType is '' or 'text'.");
     return;
   }
 
@@ -655,8 +655,9 @@ void XMLHttpRequestMainThread::SetResponseType(
 
   if (mState == XMLHttpRequest_Binding::LOADING ||
       mState == XMLHttpRequest_Binding::DONE) {
-    aRv.Throw(
-        NS_ERROR_DOM_INVALID_STATE_XHR_MUST_NOT_BE_LOADING_OR_DONE_RESPONSE_TYPE);
+    aRv.ThrowInvalidStateError(
+        "Cannot set 'responseType' property on XMLHttpRequest after 'send()' "
+        "(when its state is LOADING or DONE).");
     return;
   }
 
@@ -664,8 +665,8 @@ void XMLHttpRequestMainThread::SetResponseType(
   if (HasOrHasHadOwner() && mState != XMLHttpRequest_Binding::UNSENT &&
       mFlagSynchronous) {
     LogMessage("ResponseTypeSyncXHRWarning", GetOwner());
-    aRv.Throw(
-        NS_ERROR_DOM_INVALID_ACCESS_XHR_TIMEOUT_AND_RESPONSETYPE_UNSUPPORTED_FOR_SYNC);
+    aRv.ThrowInvalidAccessError(
+        "synchronous XMLHttpRequests do not support timeout and responseType");
     return;
   }
 
@@ -1077,9 +1078,9 @@ bool XMLHttpRequestMainThread::IsSafeHeader(
       return false;
     }
   }
-  const char* kCrossOriginSafeHeaders[] = {"cache-control", "content-language",
-                                           "content-type",  "expires",
-                                           "last-modified", "pragma"};
+  const char* kCrossOriginSafeHeaders[] = {
+      "cache-control", "content-language", "content-type", "content-length",
+      "expires",       "last-modified",    "pragma"};
   for (uint32_t i = 0; i < ArrayLength(kCrossOriginSafeHeaders); ++i) {
     if (aHeader.LowerCaseEqualsASCII(kCrossOriginSafeHeaders[i])) {
       return true;
@@ -1090,10 +1091,9 @@ bool XMLHttpRequestMainThread::IsSafeHeader(
   // list of method names.
   Unused << aHttpChannel->GetResponseHeader("Access-Control-Expose-Headers"_ns,
                                             headerVal);
-  nsCCharSeparatedTokenizer exposeTokens(headerVal, ',');
   bool isSafe = false;
-  while (exposeTokens.hasMoreTokens()) {
-    const nsDependentCSubstring& token = exposeTokens.nextToken();
+  for (const nsACString& token :
+       nsCCharSeparatedTokenizer(headerVal, ',').ToRange()) {
     if (token.IsEmpty()) {
       continue;
     }
@@ -1342,8 +1342,7 @@ void XMLHttpRequestMainThread::ResumeEventDispatching() {
   MOZ_ASSERT(mEventDispatchingSuspended);
   mEventDispatchingSuspended = false;
 
-  nsTArray<PendingEvent> pendingEvents;
-  pendingEvents.SwapElements(mPendingEvents);
+  nsTArray<PendingEvent> pendingEvents = std::move(mPendingEvents);
 
   if (NS_FAILED(CheckCurrentGlobalCorrectness())) {
     return;
@@ -1390,23 +1389,21 @@ void XMLHttpRequestMainThread::Open(const nsACString& aMethod,
                                     const nsAString& aUsername,
                                     const nsAString& aPassword,
                                     ErrorResult& aRv) {
-  nsresult rv =
-      Open(aMethod, NS_ConvertUTF16toUTF8(aUrl), aAsync, aUsername, aPassword);
-  if (NS_FAILED(rv)) {
-    aRv.Throw(rv);
-  }
+  Open(aMethod, NS_ConvertUTF16toUTF8(aUrl), aAsync, aUsername, aPassword, aRv);
 }
 
-nsresult XMLHttpRequestMainThread::Open(const nsACString& aMethod,
-                                        const nsACString& aUrl, bool aAsync,
-                                        const nsAString& aUsername,
-                                        const nsAString& aPassword) {
-  NOT_CALLABLE_IN_SYNC_SEND
+void XMLHttpRequestMainThread::Open(const nsACString& aMethod,
+                                    const nsACString& aUrl, bool aAsync,
+                                    const nsAString& aUsername,
+                                    const nsAString& aPassword,
+                                    ErrorResult& aRv) {
+  NOT_CALLABLE_IN_SYNC_SEND_RV
 
   // Gecko-specific
   if (!aAsync && !DontWarnAboutSyncXHR() && GetOwner() &&
       GetOwner()->GetExtantDoc()) {
-    GetOwner()->GetExtantDoc()->WarnOnceAbout(Document::eSyncXMLHttpRequest);
+    GetOwner()->GetExtantDoc()->WarnOnceAbout(
+        DeprecatedOperations::eSyncXMLHttpRequest);
   }
 
   Telemetry::Accumulate(Telemetry::XMLHTTPREQUEST_ASYNC_OR_SYNC,
@@ -1422,12 +1419,15 @@ nsresult XMLHttpRequestMainThread::Open(const nsACString& aMethod,
   if (!responsibleDocument) {
     // This could be because we're no longer current or because we're in some
     // non-window context...
-    nsresult rv = CheckCurrentGlobalCorrectness();
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return NS_ERROR_DOM_INVALID_STATE_XHR_HAS_INVALID_CONTEXT;
+    if (NS_WARN_IF(NS_FAILED(CheckCurrentGlobalCorrectness()))) {
+      aRv.Throw(NS_ERROR_DOM_INVALID_STATE_XHR_HAS_INVALID_CONTEXT);
+      return;
     }
   }
-  NS_ENSURE_TRUE(mPrincipal, NS_ERROR_NOT_INITIALIZED);
+  if (!mPrincipal) {
+    aRv.Throw(NS_ERROR_NOT_INITIALIZED);
+    return;
+  }
 
   // Gecko-specific
   if (!aAsync && responsibleDocument && GetOwner()) {
@@ -1446,9 +1446,9 @@ nsresult XMLHttpRequestMainThread::Open(const nsACString& aMethod,
 
   // Steps 2-4
   nsAutoCString method;
-  nsresult rv = FetchUtil::GetValidRequestMethod(aMethod, method);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+  aRv = FetchUtil::GetValidRequestMethod(aMethod, method);
+  if (NS_WARN_IF(aRv.Failed())) {
+    return;
   }
 
   // Steps 5-6
@@ -1468,15 +1468,19 @@ nsresult XMLHttpRequestMainThread::Open(const nsACString& aMethod,
   }
 
   nsCOMPtr<nsIURI> parsedURL;
-  rv = NS_NewURI(getter_AddRefs(parsedURL), aUrl, originCharset, baseURI);
+  nsresult rv =
+      NS_NewURI(getter_AddRefs(parsedURL), aUrl, originCharset, baseURI);
   if (NS_FAILED(rv)) {
     if (rv == NS_ERROR_MALFORMED_URI) {
-      return NS_ERROR_DOM_MALFORMED_URI;
+      aRv.Throw(NS_ERROR_DOM_MALFORMED_URI);
+      return;
     }
-    return rv;
+    aRv.Throw(rv);
+    return;
   }
   if (NS_WARN_IF(NS_FAILED(CheckCurrentGlobalCorrectness()))) {
-    return NS_ERROR_DOM_INVALID_STATE_XHR_HAS_INVALID_CONTEXT;
+    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_XHR_HAS_INVALID_CONTEXT);
+    return;
   }
 
   // Step 7
@@ -1507,7 +1511,9 @@ nsresult XMLHttpRequestMainThread::Open(const nsACString& aMethod,
     if (mResponseType != XMLHttpRequestResponseType::_empty) {
       LogMessage("ResponseTypeSyncXHRWarning", GetOwner());
     }
-    return NS_ERROR_DOM_INVALID_ACCESS_XHR_TIMEOUT_AND_RESPONSETYPE_UNSUPPORTED_FOR_SYNC;
+    aRv.ThrowInvalidAccessError(
+        "synchronous XMLHttpRequests do not support timeout and responseType");
+    return;
   }
 
   // Step 10
@@ -1540,8 +1546,6 @@ nsresult XMLHttpRequestMainThread::Open(const nsACString& aMethod,
     mState = XMLHttpRequest_Binding::OPENED;
     FireReadystatechangeEvent();
   }
-
-  return NS_OK;
 }
 
 void XMLHttpRequestMainThread::SetOriginAttributes(
@@ -1605,7 +1609,7 @@ nsresult XMLHttpRequestMainThread::HandleStreamInput(
     MOZ_ASSERT(!xmlHttpRequest->mResponseXML,
                "We shouldn't be parsing a doc here");
     rv = xmlHttpRequest->AppendToResponseText(
-        AsBytes(MakeSpan(fromRawSegment, count)), taint);
+        AsBytes(Span(fromRawSegment, count)), taint);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -1619,7 +1623,7 @@ nsresult XMLHttpRequestMainThread::HandleStreamInput(
     // stream is not supported.
     nsCOMPtr<nsIInputStream> copyStream;
     rv = NS_NewByteInputStream(getter_AddRefs(copyStream),
-                               MakeSpan(fromRawSegment, count),
+                               Span(fromRawSegment, count),
                                NS_ASSIGNMENT_DEPEND);
 
     if (NS_SUCCEEDED(rv) && xmlHttpRequest->mXMLParserStreamListener) {
@@ -2060,7 +2064,7 @@ XMLHttpRequestMainThread::OnStartRequest(nsIRequest* request) {
     }
 
     // Create an empty document from it.
-    const nsAString& emptyStr = EmptyString();
+    const auto& emptyStr = u""_ns;
     nsIGlobalObject* global = DOMEventTargetHelper::GetParentObject();
 
     nsCOMPtr<nsIPrincipal> requestingPrincipal;
@@ -2210,7 +2214,7 @@ XMLHttpRequestMainThread::OnStopRequest(nsIRequest* request, nsresult status) {
       }
 
       ChromeFilePropertyBag bag;
-      bag.mType = NS_ConvertUTF8toUTF16(contentType);
+      CopyUTF8toUTF16(contentType, bag.mType);
 
       nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal();
 
@@ -2403,6 +2407,17 @@ void XMLHttpRequestMainThread::ChangeStateToDoneInternal() {
     mProgressSinceLastProgressEvent = false;
   }
 
+  // Notify the document when an XHR request completes successfully.
+  // This is used by the password manager as a hint to observe DOM mutations.
+  // Call this prior to changing state to DONE to ensure we set up the
+  // observer before mutations occur.
+  if (mErrorLoad == ErrorType::eOK) {
+    Document* doc = GetDocumentIfCurrent();
+    if (doc) {
+      doc->NotifyFetchOrXHRSuccess();
+    }
+  }
+
   // Per spec, fire readystatechange=4/done before final error events.
   ChangeState(XMLHttpRequest_Binding::DONE, true);
 
@@ -2507,7 +2522,7 @@ nsresult XMLHttpRequestMainThread::CreateChannel() {
     rv = httpChannel->SetRequestMethod(mRequestMethod);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    httpChannel->SetSource(profiler_get_backtrace());
+    httpChannel->SetSource(profiler_capture_backtrace());
 
     // Set the initiator type
     nsCOMPtr<nsITimedChannel> timedChannel(do_QueryInterface(httpChannel));
@@ -2830,14 +2845,9 @@ void XMLHttpRequestMainThread::EnsureChannelContentType() {
   }
 }
 
-void XMLHttpRequestMainThread::UnsuppressEventHandlingAndResume() {
+void XMLHttpRequestMainThread::ResumeTimeout() {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(mFlagSynchronous);
-
-  if (mSuspendedDoc) {
-    mSuspendedDoc->UnsuppressEventHandlingAndFireEvents(true);
-    mSuspendedDoc = nullptr;
-  }
 
   if (mResumeTimeoutRunnable) {
     DispatchToMainThread(mResumeTimeoutRunnable.forget());
@@ -2853,45 +2863,45 @@ void XMLHttpRequestMainThread::Send(
   NOT_CALLABLE_IN_SYNC_SEND_RV
 
   if (aData.IsNull()) {
-    aRv = SendInternal(nullptr);
+    SendInternal(nullptr, false, aRv);
     return;
   }
 
   if (aData.Value().IsDocument()) {
     BodyExtractor<Document> body(&aData.Value().GetAsDocument());
-    aRv = SendInternal(&body, true);
+    SendInternal(&body, true, aRv);
     return;
   }
 
   if (aData.Value().IsBlob()) {
     BodyExtractor<const Blob> body(&aData.Value().GetAsBlob());
-    aRv = SendInternal(&body);
+    SendInternal(&body, false, aRv);
     return;
   }
 
   if (aData.Value().IsArrayBuffer()) {
     BodyExtractor<const ArrayBuffer> body(&aData.Value().GetAsArrayBuffer());
-    aRv = SendInternal(&body);
+    SendInternal(&body, false, aRv);
     return;
   }
 
   if (aData.Value().IsArrayBufferView()) {
     BodyExtractor<const ArrayBufferView> body(
         &aData.Value().GetAsArrayBufferView());
-    aRv = SendInternal(&body);
+    SendInternal(&body, false, aRv);
     return;
   }
 
   if (aData.Value().IsFormData()) {
     BodyExtractor<const FormData> body(&aData.Value().GetAsFormData());
-    aRv = SendInternal(&body);
+    SendInternal(&body, false, aRv);
     return;
   }
 
   if (aData.Value().IsURLSearchParams()) {
     BodyExtractor<const URLSearchParams> body(
         &aData.Value().GetAsURLSearchParams());
-    aRv = SendInternal(&body);
+    SendInternal(&body, false, aRv);
     return;
   }
 
@@ -2899,7 +2909,7 @@ void XMLHttpRequestMainThread::Send(
     BodyExtractor<const nsAString> body(&aData.Value().GetAsUSVString());
     // Taintfox: XMLHttpRequest.send() sink
     ReportTaintSink(aData.Value().GetAsUSVString(), "XMLHttpRequest.send");
-    aRv = SendInternal(&body, true);
+    SendInternal(&body, true, aRv);
     return;
   }
 }
@@ -2921,39 +2931,49 @@ nsresult XMLHttpRequestMainThread::MaybeSilentSendFailure(nsresult aRv) {
   return NS_OK;
 }
 
-nsresult XMLHttpRequestMainThread::SendInternal(const BodyExtractorBase* aBody,
-                                                bool aBodyIsDocumentOrString) {
+void XMLHttpRequestMainThread::SendInternal(const BodyExtractorBase* aBody,
+                                            bool aBodyIsDocumentOrString,
+                                            ErrorResult& aRv) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  NS_ENSURE_TRUE(mPrincipal, NS_ERROR_NOT_INITIALIZED);
+  if (!mPrincipal) {
+    aRv.Throw(NS_ERROR_NOT_INITIALIZED);
+    return;
+  }
 
   // Step 1
   if (mState != XMLHttpRequest_Binding::OPENED) {
-    return NS_ERROR_DOM_INVALID_STATE_XHR_MUST_BE_OPENED;
+    aRv.ThrowInvalidStateError("XMLHttpRequest state must be OPENED.");
+    return;
   }
 
   // Step 2
   if (mFlagSend) {
-    return NS_ERROR_DOM_INVALID_STATE_XHR_MUST_NOT_BE_SENDING;
+    aRv.ThrowInvalidStateError("XMLHttpRequest must not be sending.");
+    return;
   }
 
-  nsresult rv = CheckCurrentGlobalCorrectness();
-  if (NS_FAILED(rv)) {
-    return NS_ERROR_DOM_INVALID_STATE_XHR_HAS_INVALID_CONTEXT;
+  if (NS_FAILED(CheckCurrentGlobalCorrectness())) {
+    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_XHR_HAS_INVALID_CONTEXT);
+    return;
   }
 
   // If open() failed to create the channel, then throw a network error
   // as per spec. We really should create the channel here in send(), but
   // we have internal code relying on the channel being created in open().
   if (!mChannel) {
+    mErrorLoad = ErrorType::eChannelOpen;
     mFlagSend = true;  // so CloseRequestWithError sets us to DONE.
-    return MaybeSilentSendFailure(NS_ERROR_DOM_NETWORK_ERR);
+    aRv = MaybeSilentSendFailure(NS_ERROR_DOM_NETWORK_ERR);
+    return;
   }
 
   // non-GET requests aren't allowed for blob.
   if (IsBlobURI(mRequestURL) && !mRequestMethod.EqualsLiteral("GET")) {
+    mErrorLoad = ErrorType::eChannelOpen;
     mFlagSend = true;  // so CloseRequestWithError sets us to DONE.
-    return MaybeSilentSendFailure(NS_ERROR_DOM_NETWORK_ERR);
+    aRv = MaybeSilentSendFailure(NS_ERROR_DOM_NETWORK_ERR);
+    return;
   }
 
   // XXX We should probably send a warning to the JS console
@@ -2974,9 +2994,11 @@ nsresult XMLHttpRequestMainThread::SendInternal(const BodyExtractorBase* aBody,
     nsAutoCString charset;
     nsAutoCString defaultContentType;
     uint64_t size_u64;
-    rv = aBody->GetAsStream(getter_AddRefs(uploadStream), &size_u64,
-                            defaultContentType, charset);
-    NS_ENSURE_SUCCESS(rv, rv);
+    aRv = aBody->GetAsStream(getter_AddRefs(uploadStream), &size_u64,
+                             defaultContentType, charset);
+    if (aRv.Failed()) {
+      return;
+    }
 
     // make sure it fits within js MAX_SAFE_INTEGER
     mUploadTotal =
@@ -3029,8 +3051,8 @@ nsresult XMLHttpRequestMainThread::SendInternal(const BodyExtractorBase* aBody,
     nsCOMPtr<nsIURI> uri;
     nsAutoCString scheme;
 
-    rv = mChannel->GetURI(getter_AddRefs(uri));
-    if (NS_SUCCEEDED(rv)) {
+    aRv = mChannel->GetURI(getter_AddRefs(uri));
+    if (!aRv.Failed()) {
       uri->GetScheme(scheme);
       if (scheme.LowerCaseEqualsLiteral("jar")) {
         mIsMappedArrayBuffer = true;
@@ -3038,8 +3060,10 @@ nsresult XMLHttpRequestMainThread::SendInternal(const BodyExtractorBase* aBody,
     }
   }
 
-  rv = InitiateFetch(uploadStream.forget(), mUploadTotal, uploadContentType);
-  NS_ENSURE_SUCCESS(rv, rv);
+  aRv = InitiateFetch(uploadStream.forget(), mUploadTotal, uploadContentType);
+  if (aRv.Failed()) {
+    return;
+  }
 
   // Start our timeout
   mRequestSentTime = PR_Now();
@@ -3051,7 +3075,15 @@ nsresult XMLHttpRequestMainThread::SendInternal(const BodyExtractorBase* aBody,
   mFlagSend = true;
 
   // If we're synchronous, spin an event loop here and wait
+  RefPtr<Document> suspendedDoc;
   if (mFlagSynchronous) {
+    auto scopeExit = MakeScopeExit([&] {
+      CancelSyncTimeoutTimer();
+      ResumeTimeout();
+      ResumeEventDispatching();
+    });
+    Maybe<AutoSuppressEventHandling> autoSuppress;
+
     mFlagSyncLooping = true;
 
     if (GetOwner()) {
@@ -3059,10 +3091,8 @@ nsresult XMLHttpRequestMainThread::SendInternal(const BodyExtractorBase* aBody,
               GetOwner()->GetOuterWindow()->GetInProcessTop()) {
         if (nsCOMPtr<nsPIDOMWindowInner> topInner =
                 topWindow->GetCurrentInnerWindow()) {
-          mSuspendedDoc = topWindow->GetExtantDoc();
-          if (mSuspendedDoc) {
-            mSuspendedDoc->SuppressEventHandling();
-          }
+          suspendedDoc = topWindow->GetExtantDoc();
+          autoSuppress.emplace(topWindow->GetBrowsingContext());
           topInner->Suspend();
           mResumeTimeoutRunnable = new nsResumeTimeoutsEvent(topInner);
         }
@@ -3075,25 +3105,23 @@ nsresult XMLHttpRequestMainThread::SendInternal(const BodyExtractorBase* aBody,
     SyncTimeoutType syncTimeoutType = MaybeStartSyncTimeoutTimer();
     if (syncTimeoutType == eErrorOrExpired) {
       Abort();
-      rv = NS_ERROR_DOM_NETWORK_ERR;
+      aRv.Throw(NS_ERROR_DOM_NETWORK_ERR);
+      return;
     }
 
-    if (NS_SUCCEEDED(rv)) {
-      nsAutoSyncOperation sync(mSuspendedDoc);
-      if (!SpinEventLoopUntil([&]() { return !mFlagSyncLooping; })) {
-        rv = NS_ERROR_UNEXPECTED;
-      }
-
-      // Time expired... We should throw.
-      if (syncTimeoutType == eTimerStarted && !mSyncTimeoutTimer) {
-        rv = NS_ERROR_DOM_NETWORK_ERR;
-      }
-
-      CancelSyncTimeoutTimer();
+    nsAutoSyncOperation sync(suspendedDoc,
+                             SyncOperationBehavior::eSuspendInput);
+    if (!SpinEventLoopUntil("XMLHttpRequestMainThread::SendInternal"_ns,
+                            [&]() { return !mFlagSyncLooping; })) {
+      aRv.Throw(NS_ERROR_UNEXPECTED);
+      return;
     }
 
-    UnsuppressEventHandlingAndResume();
-    ResumeEventDispatching();
+    // Time expired... We should throw.
+    if (syncTimeoutType == eTimerStarted && !mSyncTimeoutTimer) {
+      aRv.Throw(NS_ERROR_DOM_NETWORK_ERR);
+      return;
+    }
   } else {
     // Now that we've successfully opened the channel, we can change state. Note
     // that this needs to come after the AsyncOpen() and rv check, because this
@@ -3115,10 +3143,8 @@ nsresult XMLHttpRequestMainThread::SendInternal(const BodyExtractorBase* aBody,
   }
 
   if (!mChannel) {
-    return MaybeSilentSendFailure(NS_ERROR_DOM_NETWORK_ERR);
+    aRv = MaybeSilentSendFailure(NS_ERROR_DOM_NETWORK_ERR);
   }
-
-  return rv;
 }
 
 // http://dvcs.w3.org/hg/xhr/raw-file/tip/Overview.html#dom-xmlhttprequest-setrequestheader
@@ -3129,13 +3155,13 @@ void XMLHttpRequestMainThread::SetRequestHeader(const nsACString& aName,
 
   // Step 1
   if (mState != XMLHttpRequest_Binding::OPENED) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_XHR_MUST_BE_OPENED);
+    aRv.ThrowInvalidStateError("XMLHttpRequest state must be OPENED.");
     return;
   }
 
   // Step 2
   if (mFlagSend) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_XHR_MUST_NOT_BE_SENDING);
+    aRv.ThrowInvalidStateError("XMLHttpRequest must not be sending.");
     return;
   }
 
@@ -3185,8 +3211,8 @@ void XMLHttpRequestMainThread::SetTimeout(uint32_t aTimeout, ErrorResult& aRv) {
     /* Timeout is not supported for synchronous requests with an owning window,
        per XHR2 spec. */
     LogMessage("TimeoutSyncXHRWarning", GetOwner());
-    aRv.Throw(
-        NS_ERROR_DOM_INVALID_ACCESS_XHR_TIMEOUT_AND_RESPONSETYPE_UNSUPPORTED_FOR_SYNC);
+    aRv.ThrowInvalidAccessError(
+        "synchronous XMLHttpRequests do not support timeout and responseType");
     return;
   }
 
@@ -3251,8 +3277,9 @@ void XMLHttpRequestMainThread::OverrideMimeType(const nsAString& aMimeType,
 
   if (mState == XMLHttpRequest_Binding::LOADING ||
       mState == XMLHttpRequest_Binding::DONE) {
-    aRv.Throw(
-        NS_ERROR_DOM_INVALID_STATE_XHR_MUST_NOT_BE_LOADING_OR_DONE_OVERRIDE_MIME_TYPE);
+    aRv.ThrowInvalidStateError(
+        "Cannot call 'overrideMimeType()' on XMLHttpRequest after 'send()' "
+        "(when its state is LOADING or DONE).");
     return;
   }
 
@@ -3268,26 +3295,26 @@ bool XMLHttpRequestMainThread::MozBackgroundRequest() const {
   return mFlagBackgroundRequest;
 }
 
-nsresult XMLHttpRequestMainThread::SetMozBackgroundRequest(
-    bool aMozBackgroundRequest) {
+void XMLHttpRequestMainThread::SetMozBackgroundRequestExternal(
+    bool aMozBackgroundRequest, ErrorResult& aRv) {
   if (!IsSystemXHR()) {
-    return NS_ERROR_DOM_SECURITY_ERR;
+    aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
+    return;
   }
 
   if (mState != XMLHttpRequest_Binding::UNSENT) {
     // Can't change this while we're in the middle of something.
-    return NS_ERROR_DOM_INVALID_STATE_XHR_MUST_NOT_BE_SENDING;
+    aRv.ThrowInvalidStateError("XMLHttpRequest must not be sending.");
+    return;
   }
 
   mFlagBackgroundRequest = aMozBackgroundRequest;
-
-  return NS_OK;
 }
 
 void XMLHttpRequestMainThread::SetMozBackgroundRequest(
     bool aMozBackgroundRequest, ErrorResult& aRv) {
   // No errors for this webIDL method on main-thread.
-  SetMozBackgroundRequest(aMozBackgroundRequest);
+  SetMozBackgroundRequestExternal(aMozBackgroundRequest, IgnoreErrors());
 }
 
 void XMLHttpRequestMainThread::SetOriginStack(
@@ -3295,7 +3322,8 @@ void XMLHttpRequestMainThread::SetOriginStack(
   mOriginStack = std::move(aOriginStack);
 }
 
-void XMLHttpRequestMainThread::SetSource(UniqueProfilerBacktrace aSource) {
+void XMLHttpRequestMainThread::SetSource(
+    UniquePtr<ProfileChunkedBuffer> aSource) {
   if (!mChannel) {
     return;
   }
@@ -3321,7 +3349,7 @@ void XMLHttpRequestMainThread::SetWithCredentials(bool aWithCredentials,
   if ((mState != XMLHttpRequest_Binding::UNSENT &&
        mState != XMLHttpRequest_Binding::OPENED) ||
       mFlagSend || mIsAnon) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_XHR_MUST_NOT_BE_SENDING);
+    aRv.ThrowInvalidStateError("XMLHttpRequest must not be sending.");
     return;
   }
 
@@ -3730,6 +3758,13 @@ NS_IMETHODIMP XMLHttpRequestMainThread::nsHeaderVisitor::VisitHeader(
   return NS_OK;
 }
 
+XMLHttpRequestMainThread::nsHeaderVisitor::nsHeaderVisitor(
+    const XMLHttpRequestMainThread& aXMLHttpRequest,
+    NotNull<nsIHttpChannel*> aHttpChannel)
+    : mXHR(aXMLHttpRequest), mHttpChannel(aHttpChannel) {}
+
+XMLHttpRequestMainThread::nsHeaderVisitor::~nsHeaderVisitor() = default;
+
 void XMLHttpRequestMainThread::MaybeCreateBlobStorage() {
   MOZ_ASSERT(mResponseType == XMLHttpRequestResponseType::Blob);
 
@@ -4087,6 +4122,12 @@ void RequestHeaders::ApplyToChannel(nsIHttpChannel* aChannel,
          header.mName.LowerCaseEqualsASCII("content-language") ||
          header.mName.LowerCaseEqualsASCII("content-location"))) {
       continue;
+    }
+    // Update referrerInfo to override referrer header in system privileged.
+    if (header.mName.LowerCaseEqualsASCII("referer")) {
+      DebugOnly<nsresult> rv = aChannel->SetNewReferrerInfo(
+          header.mValue, nsIReferrerInfo::ReferrerPolicyIDL::UNSAFE_URL, true);
+      MOZ_ASSERT(NS_SUCCEEDED(rv));
     }
     if (header.mValue.IsEmpty()) {
       DebugOnly<nsresult> rv = aChannel->SetEmptyRequestHeader(header.mName);

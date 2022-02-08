@@ -15,6 +15,7 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 XPCOMUtils.defineLazyModuleGetters(this, {
+  ObjectUtils: "resource://gre/modules/ObjectUtils.jsm",
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   SkippableTimer: "resource:///modules/UrlbarUtils.jsm",
   UrlbarMuxer: "resource:///modules/UrlbarUtils.jsm",
@@ -32,22 +33,38 @@ XPCOMUtils.defineLazyGetter(this, "logger", () =>
 // List of available local providers, each is implemented in its own jsm module
 // and will track different queries internally by queryContext.
 var localProviderModules = {
-  UrlbarProviderUnifiedComplete:
-    "resource:///modules/UrlbarProviderUnifiedComplete.jsm",
+  UrlbarProviderAboutPages: "resource:///modules/UrlbarProviderAboutPages.jsm",
+  UrlbarProviderAliasEngines:
+    "resource:///modules/UrlbarProviderAliasEngines.jsm",
   UrlbarProviderAutofill: "resource:///modules/UrlbarProviderAutofill.jsm",
+  UrlbarProviderBookmarkKeywords:
+    "resource:///modules/UrlbarProviderBookmarkKeywords.jsm",
+  UrlbarProviderCalculator: "resource:///modules/UrlbarProviderCalculator.jsm",
   UrlbarProviderHeuristicFallback:
     "resource:///modules/UrlbarProviderHeuristicFallback.jsm",
+  UrlbarProviderInputHistory:
+    "resource:///modules/UrlbarProviderInputHistory.jsm",
   UrlbarProviderInterventions:
     "resource:///modules/UrlbarProviderInterventions.jsm",
   UrlbarProviderOmnibox: "resource:///modules/UrlbarProviderOmnibox.jsm",
+  UrlbarProviderPlaces: "resource:///modules/UrlbarProviderPlaces.jsm",
+  UrlbarProviderPreloadedSites:
+    "resource:///modules/UrlbarProviderPreloadedSites.jsm",
   UrlbarProviderPrivateSearch:
     "resource:///modules/UrlbarProviderPrivateSearch.jsm",
+  UrlbarProviderQuickSuggest:
+    "resource:///modules/UrlbarProviderQuickSuggest.jsm",
+  UrlbarProviderRemoteTabs: "resource:///modules/UrlbarProviderRemoteTabs.jsm",
   UrlbarProviderSearchTips: "resource:///modules/UrlbarProviderSearchTips.jsm",
   UrlbarProviderSearchSuggestions:
     "resource:///modules/UrlbarProviderSearchSuggestions.jsm",
+  UrlbarProviderTabToSearch:
+    "resource:///modules/UrlbarProviderTabToSearch.jsm",
   UrlbarProviderTokenAliasEngines:
     "resource:///modules/UrlbarProviderTokenAliasEngines.jsm",
   UrlbarProviderTopSites: "resource:///modules/UrlbarProviderTopSites.jsm",
+  UrlbarProviderUnitConversion:
+    "resource:///modules/UrlbarProviderUnitConversion.jsm",
 };
 
 // List of available local muxers, each is implemented in its own jsm module.
@@ -193,7 +210,19 @@ class ProvidersManager {
     }
     // Providers can use queryContext.sources to decide whether they want to be
     // invoked or not.
-    updateSourcesIfEmpty(queryContext);
+    // The sources may be defined in the context, then the whole search string
+    // can be used for searching. Otherwise sources are extracted from prefs and
+    // restriction tokens, then restriction tokens must be filtered out of the
+    // search string.
+    let restrictToken = updateSourcesIfEmpty(queryContext);
+    if (restrictToken) {
+      queryContext.restrictToken = restrictToken;
+      // If the restriction token has an equivalent source, then set it as
+      // restrictSource.
+      if (UrlbarTokenizer.SEARCH_MODE_RESTRICT.has(restrictToken.value)) {
+        queryContext.restrictSource = queryContext.sources[0];
+      }
+    }
     logger.debug(`Context sources ${queryContext.sources}`);
 
     let query = new Query(queryContext, controller, muxer, providers);
@@ -266,15 +295,27 @@ class ProvidersManager {
 
   /**
    * Notifies all providers when the user starts and ends an engagement with the
-   * urlbar.
+   * urlbar.  For details on parameters, see UrlbarProvider.onEngagement().
    *
-   * @param {boolean} isPrivate True if the engagement is in a private context.
-   * @param {string} state The state of the engagement, one of: start,
-   *        engagement, abandonment, discard.
+   * @param {boolean} isPrivate
+   *   True if the engagement is in a private context.
+   * @param {string} state
+   *   The state of the engagement, one of: start, engagement, abandonment,
+   *   discard
+   * @param {UrlbarQueryContext} queryContext
+   *   The engagement's query context, if available.
+   * @param {object} details
+   *   An object that describes the search string and the picked result, if any.
    */
-  notifyEngagementChange(isPrivate, state) {
+  notifyEngagementChange(isPrivate, state, queryContext, details) {
     for (let provider of this.providers) {
-      provider.tryMethod("onEngagement", isPrivate, state);
+      provider.tryMethod(
+        "onEngagement",
+        isPrivate,
+        state,
+        queryContext,
+        details
+      );
     }
   }
 }
@@ -302,6 +343,10 @@ class Query {
   constructor(queryContext, controller, muxer, providers) {
     this.context = queryContext;
     this.context.results = [];
+    // Clear any state in the context object, since it could be reused by the
+    // caller and we don't want to port previous query state over.
+    this.context.pendingHeuristicProviders.clear();
+    this.context.deferUserSelectionProviders.clear();
     this.muxer = muxer;
     this.controller = controller;
     this.providers = providers;
@@ -354,10 +399,13 @@ class Query {
                   maxPriority = priority;
                 }
                 activeProviders.push(provider);
+                if (provider.deferUserSelection) {
+                  this.context.deferUserSelectionProviders.add(provider.name);
+                }
               }
             }
           })
-          .catch(Cu.reportError)
+          .catch(ex => logger.error(ex))
       );
     }
 
@@ -372,17 +420,19 @@ class Query {
     }
 
     // Start querying active providers.
-
-    let queryPromises = [];
-    let startQuery = provider => {
+    let startQuery = async provider => {
       provider.logger.info(`Starting query for "${this.context.searchString}"`);
-      return provider.tryMethod(
-        "startQuery",
-        this.context,
-        this.add.bind(this)
-      );
+      let addedResult = false;
+      await provider.tryMethod("startQuery", this.context, (...args) => {
+        addedResult = true;
+        this.add(...args);
+      });
+      if (!addedResult) {
+        this.context.deferUserSelectionProviders.delete(provider.name);
+      }
     };
 
+    let queryPromises = [];
     for (let provider of activeProviders) {
       if (provider.type == UrlbarUtils.PROVIDER_TYPE.HEURISTIC) {
         this.context.pendingHeuristicProviders.add(provider.name);
@@ -432,6 +482,7 @@ class Query {
       return;
     }
     this.canceled = true;
+    this.context.deferUserSelectionProviders.clear();
     for (let provider of this.providers) {
       provider.logger.info(
         `Canceling query for "${this.context.searchString}"`
@@ -441,13 +492,13 @@ class Query {
       provider.tryMethod("cancelQuery", this.context);
     }
     if (this._heuristicProviderTimer) {
-      this._heuristicProviderTimer.cancel().catch(Cu.reportError);
+      this._heuristicProviderTimer.cancel().catch(ex => logger.error(ex));
     }
     if (this._chunkTimer) {
-      this._chunkTimer.cancel().catch(Cu.reportError);
+      this._chunkTimer.cancel().catch(ex => logger.error(ex));
     }
     if (this._sleepTimer) {
-      this._sleepTimer.fire().catch(Cu.reportError);
+      this._sleepTimer.fire().catch(ex => logger.error(ex));
     }
   }
 
@@ -470,6 +521,19 @@ class Query {
 
     // Stop returning results as soon as we've been canceled.
     if (this.canceled) {
+      return;
+    }
+
+    // In search mode, don't allow heuristic results in the following cases
+    // since they don't make sense:
+    //   * When the search string is empty, or
+    //   * In local search mode, except for autofill results
+    if (
+      result.heuristic &&
+      this.context.searchMode &&
+      (!this.context.trimmedSearchString ||
+        (!this.context.searchMode.engineName && !result.autofill))
+    ) {
       return;
     }
 
@@ -501,9 +565,6 @@ class Query {
     result.providerName = provider.name;
     result.providerType = provider.type;
     this.context.results.push(result);
-    if (result.heuristic) {
-      this.context.allHeuristicResults.push(result);
-    }
 
     this._notifyResultsFromProvider(provider);
   }
@@ -539,7 +600,7 @@ class Query {
       this._heuristicProviderTimer &&
       !this.context.pendingHeuristicProviders.size
     ) {
-      this._heuristicProviderTimer.fire().catch(Cu.reportError);
+      this._heuristicProviderTimer.fire().catch(ex => logger.error(ex));
     }
   }
 
@@ -547,12 +608,12 @@ class Query {
     this.muxer.sort(this.context);
 
     if (this._heuristicProviderTimer) {
-      this._heuristicProviderTimer.cancel().catch(Cu.reportError);
+      this._heuristicProviderTimer.cancel().catch(ex => logger.error(ex));
       this._heuristicProviderTimer = null;
     }
 
     if (this._chunkTimer) {
-      this._chunkTimer.cancel().catch(Cu.reportError);
+      this._chunkTimer.cancel().catch(ex => logger.error(ex));
       this._chunkTimer = null;
     }
 
@@ -568,19 +629,11 @@ class Query {
       return;
     }
 
-    // Crop results to the requested number, taking their result spans into
-    // account.
-    let resultCount = this.context.maxResults;
-    for (let i = 0; i < this.context.results.length; i++) {
-      resultCount -= UrlbarUtils.getSpanForResult(this.context.results[i]);
-      if (resultCount < 0) {
-        logger.debug(
-          `Splicing results from ${i} to crop results to ${this.context.maxResults}`
-        );
-        this.context.results.splice(i, this.context.results.length - i);
-        break;
-      }
-    }
+    this.context.firstResultChanged = !ObjectUtils.deepEqual(
+      this.context.firstResult,
+      this.context.results[0]
+    );
+    this.context.firstResult = this.context.results[0];
 
     if (this.controller) {
       this.controller.receiveResults(this.context);
@@ -591,13 +644,15 @@ class Query {
 /**
  * Updates in place the sources for a given UrlbarQueryContext.
  * @param {UrlbarQueryContext} context The query context to examine
+ * @returns {object} The restriction token that was used to set sources, or
+ *          undefined if there's no restriction token.
  */
 function updateSourcesIfEmpty(context) {
   if (context.sources && context.sources.length) {
-    return;
+    return false;
   }
   let acceptedSources = [];
-  // There can be only one restrict token about sources.
+  // There can be only one restrict token per query.
   let restrictToken = context.tokens.find(t =>
     [
       UrlbarTokenizer.TYPE.RESTRICT_HISTORY,
@@ -605,9 +660,19 @@ function updateSourcesIfEmpty(context) {
       UrlbarTokenizer.TYPE.RESTRICT_TAG,
       UrlbarTokenizer.TYPE.RESTRICT_OPENPAGE,
       UrlbarTokenizer.TYPE.RESTRICT_SEARCH,
+      UrlbarTokenizer.TYPE.RESTRICT_TITLE,
+      UrlbarTokenizer.TYPE.RESTRICT_URL,
     ].includes(t.type)
   );
-  let restrictTokenType = restrictToken ? restrictToken.type : undefined;
+
+  // RESTRICT_TITLE and RESTRICT_URL do not affect query sources.
+  let restrictTokenType =
+    restrictToken &&
+    restrictToken.type != UrlbarTokenizer.TYPE.RESTRICT_TITLE &&
+    restrictToken.type != UrlbarTokenizer.TYPE.RESTRICT_URL
+      ? restrictToken.type
+      : undefined;
+
   for (let source of Object.values(UrlbarUtils.RESULT_SOURCE)) {
     // Skip sources that the context doesn't care about.
     if (context.sources && !context.sources.includes(source)) {
@@ -667,4 +732,5 @@ function updateSourcesIfEmpty(context) {
     }
   }
   context.sources = acceptedSources;
+  return restrictToken;
 }

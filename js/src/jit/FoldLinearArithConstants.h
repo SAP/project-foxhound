@@ -7,13 +7,13 @@
 #ifndef jit_FoldLinearArithConstants_h
 #define jit_FoldLinearArithConstants_h
 
-#include "jit/MIR.h"
-#include "jit/MIRGraph.h"
-
 namespace js {
 namespace jit {
 
-MOZ_MUST_USE bool FoldLinearArithConstants(MIRGenerator* mir, MIRGraph& graph);
+class MIRGenerator;
+class MIRGraph;
+
+[[nodiscard]] bool FoldLinearArithConstants(MIRGenerator* mir, MIRGraph& graph);
 
 } /* namespace jit */
 } /* namespace js */

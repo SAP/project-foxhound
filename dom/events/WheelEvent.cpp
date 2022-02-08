@@ -9,8 +9,7 @@
 #include "mozilla/MouseEvents.h"
 #include "prtime.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 WheelEvent::WheelEvent(EventTarget* aOwner, nsPresContext* aPresContext,
                        WidgetWheelEvent* aWheelEvent)
@@ -50,37 +49,105 @@ void WheelEvent::InitWheelEvent(
                              aRelatedTarget, aModifiersList);
 
   WidgetWheelEvent* wheelEvent = mEvent->AsWheelEvent();
+  // When specified by the caller (for JS-created events), don't mess with the
+  // delta mode.
+  wheelEvent->mDeltaModeCheckingState =
+      WidgetWheelEvent::DeltaModeCheckingState::Checked;
   wheelEvent->mDeltaX = aDeltaX;
   wheelEvent->mDeltaY = aDeltaY;
   wheelEvent->mDeltaZ = aDeltaZ;
   wheelEvent->mDeltaMode = aDeltaMode;
+  wheelEvent->mAllowToOverrideSystemScrollSpeed = false;
 }
 
-double WheelEvent::DeltaX() {
-  if (!mAppUnitsPerDevPixel) {
-    return mEvent->AsWheelEvent()->mDeltaX;
+int32_t WheelEvent::WheelDeltaX(CallerType aCallerType) {
+  WidgetWheelEvent* ev = mEvent->AsWheelEvent();
+  if (ev->mWheelTicksX != 0.0) {
+    return int32_t(-ev->mWheelTicksX * kNativeTicksToWheelDelta);
   }
-  return mEvent->AsWheelEvent()->mDeltaX * mAppUnitsPerDevPixel /
-         AppUnitsPerCSSPixel();
-}
-
-double WheelEvent::DeltaY() {
-  if (!mAppUnitsPerDevPixel) {
-    return mEvent->AsWheelEvent()->mDeltaY;
+  if (IsTrusted()) {
+    // We always return pixels regardless of the checking-state.
+    double pixelDelta =
+        ev->mDeltaMode == WheelEvent_Binding::DOM_DELTA_PIXEL
+            ? DevToCssPixels(ev->OverriddenDeltaX())
+            : ev->OverriddenDeltaX() *
+                  CSSPixel::FromAppUnits(ev->mScrollAmount.width).Rounded();
+    return int32_t(-std::round(pixelDelta * kTrustedDeltaToWheelDelta));
   }
-  return mEvent->AsWheelEvent()->mDeltaY * mAppUnitsPerDevPixel /
-         AppUnitsPerCSSPixel();
+  return int32_t(-std::round(DeltaX(aCallerType)));  // This matches Safari.
 }
 
-double WheelEvent::DeltaZ() {
-  if (!mAppUnitsPerDevPixel) {
-    return mEvent->AsWheelEvent()->mDeltaZ;
+int32_t WheelEvent::WheelDeltaY(CallerType aCallerType) {
+  WidgetWheelEvent* ev = mEvent->AsWheelEvent();
+  if (ev->mWheelTicksY != 0.0) {
+    return int32_t(-ev->mWheelTicksY * kNativeTicksToWheelDelta);
   }
-  return mEvent->AsWheelEvent()->mDeltaZ * mAppUnitsPerDevPixel /
-         AppUnitsPerCSSPixel();
+
+  if (IsTrusted()) {
+    double pixelDelta =
+        ev->mDeltaMode == WheelEvent_Binding::DOM_DELTA_PIXEL
+            ? DevToCssPixels(ev->OverriddenDeltaY())
+            : ev->OverriddenDeltaY() *
+                  CSSPixel::FromAppUnits(ev->mScrollAmount.height).Rounded();
+    return int32_t(-std::round(pixelDelta * kTrustedDeltaToWheelDelta));
+  }
+  return int32_t(-std::round(DeltaY(aCallerType)));  // This matches Safari.
 }
 
-uint32_t WheelEvent::DeltaMode() { return mEvent->AsWheelEvent()->mDeltaMode; }
+double WheelEvent::ToWebExposedDelta(WidgetWheelEvent& aWidgetEvent,
+                                     double aDelta, nscoord aLineOrPageAmount,
+                                     CallerType aCallerType) {
+  using DeltaModeCheckingState = WidgetWheelEvent::DeltaModeCheckingState;
+  if (aCallerType != CallerType::System) {
+    if (aWidgetEvent.mDeltaModeCheckingState ==
+        DeltaModeCheckingState::Unknown) {
+      aWidgetEvent.mDeltaModeCheckingState = DeltaModeCheckingState::Unchecked;
+    }
+    if (aWidgetEvent.mDeltaModeCheckingState ==
+            DeltaModeCheckingState::Unchecked &&
+        aWidgetEvent.mDeltaMode == WheelEvent_Binding::DOM_DELTA_LINE) {
+      return aDelta * CSSPixel::FromAppUnits(aLineOrPageAmount).Rounded();
+    }
+  }
+  return DevToCssPixels(aDelta);
+}
+
+double WheelEvent::DeltaX(CallerType aCallerType) {
+  WidgetWheelEvent* ev = mEvent->AsWheelEvent();
+  return ToWebExposedDelta(*ev, ev->OverriddenDeltaX(), ev->mScrollAmount.width,
+                           aCallerType);
+}
+
+double WheelEvent::DeltaY(CallerType aCallerType) {
+  WidgetWheelEvent* ev = mEvent->AsWheelEvent();
+  return ToWebExposedDelta(*ev, ev->OverriddenDeltaY(),
+                           ev->mScrollAmount.height, aCallerType);
+}
+
+double WheelEvent::DeltaZ(CallerType aCallerType) {
+  WidgetWheelEvent* ev = mEvent->AsWheelEvent();
+  // XXX Unclear what scroll amount we should use for deltaZ...
+  auto amount = std::max(ev->mScrollAmount.width, ev->mScrollAmount.height);
+  return ToWebExposedDelta(*ev, ev->mDeltaZ, amount, aCallerType);
+}
+
+uint32_t WheelEvent::DeltaMode(CallerType aCallerType) {
+  using DeltaModeCheckingState = WidgetWheelEvent::DeltaModeCheckingState;
+
+  WidgetWheelEvent* ev = mEvent->AsWheelEvent();
+  uint32_t mode = ev->mDeltaMode;
+  if (aCallerType != CallerType::System) {
+    if (ev->mDeltaModeCheckingState == DeltaModeCheckingState::Unknown) {
+      ev->mDeltaModeCheckingState = DeltaModeCheckingState::Checked;
+    } else if (ev->mDeltaModeCheckingState ==
+                   DeltaModeCheckingState::Unchecked &&
+               mode == WheelEvent_Binding::DOM_DELTA_LINE) {
+      return WheelEvent_Binding::DOM_DELTA_PIXEL;
+    }
+  }
+
+  return mode;
+}
 
 already_AddRefed<WheelEvent> WheelEvent::Constructor(
     const GlobalObject& aGlobal, const nsAString& aType,
@@ -91,7 +158,7 @@ already_AddRefed<WheelEvent> WheelEvent::Constructor(
   e->InitWheelEvent(aType, aParam.mBubbles, aParam.mCancelable, aParam.mView,
                     aParam.mDetail, aParam.mScreenX, aParam.mScreenY,
                     aParam.mClientX, aParam.mClientY, aParam.mButton,
-                    aParam.mRelatedTarget, EmptyString(), aParam.mDeltaX,
+                    aParam.mRelatedTarget, u""_ns, aParam.mDeltaX,
                     aParam.mDeltaY, aParam.mDeltaZ, aParam.mDeltaMode);
   e->InitializeExtraMouseEventDictionaryMembers(aParam);
   e->SetTrusted(trusted);
@@ -99,8 +166,7 @@ already_AddRefed<WheelEvent> WheelEvent::Constructor(
   return e.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 using namespace mozilla;
 using namespace mozilla::dom;

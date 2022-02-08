@@ -1,4 +1,3 @@
-// |reftest| skip -- class-methods-private is not supported
 // This file was procedurally generated from the following sources:
 // - src/class-elements/private-method-usage.case
 // - src/class-elements/productions/cls-decl-same-line-generator.template

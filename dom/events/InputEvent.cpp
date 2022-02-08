@@ -6,10 +6,10 @@
 
 #include "mozilla/dom/InputEvent.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "prtime.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 InputEvent::InputEvent(EventTarget* aOwner, nsPresContext* aPresContext,
                        InternalEditorInputEvent* aEvent)
@@ -35,7 +35,7 @@ void InputEvent::GetData(nsAString& aData, CallerType aCallerType) {
   if (mEvent->IsTrusted() && aCallerType != CallerType::System &&
       !StaticPrefs::dom_event_clipboardevents_enabled() &&
       ExposesClipboardDataOrDataTransfer(editorInputEvent->mInputType)) {
-    aData = editorInputEvent->mData.IsVoid() ? VoidString() : EmptyString();
+    aData = editorInputEvent->mData.IsVoid() ? VoidString() : u""_ns;
     return;
   }
   aData = editorInputEvent->mData;
@@ -58,7 +58,7 @@ already_AddRefed<DataTransfer> InputEvent::GetDataTransfer(
     }
     return do_AddRef(
         new DataTransfer(editorInputEvent->mDataTransfer->GetParentObject(),
-                         editorInputEvent->mMessage, EmptyString()));
+                         editorInputEvent->mMessage, u""_ns));
   }
   return do_AddRef(editorInputEvent->mDataTransfer);
 }
@@ -106,8 +106,7 @@ already_AddRefed<InputEvent> InputEvent::Constructor(
   return e.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 using namespace mozilla;
 using namespace mozilla::dom;

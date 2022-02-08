@@ -8,12 +8,17 @@
 #define mozilla_dom_RemoteWorkerServiceParent_h
 
 #include "mozilla/dom/PRemoteWorkerServiceParent.h"
+#include "mozilla/dom/RemoteType.h"
 
 namespace mozilla {
 namespace dom {
 
 class RemoteWorkerManager;
 
+/**
+ * PBackground parent actor that registers with the PBackground
+ * RemoteWorkerManager and used to relay spawn requests.
+ */
 class RemoteWorkerServiceParent final : public PRemoteWorkerServiceParent {
  public:
   RemoteWorkerServiceParent();
@@ -21,10 +26,13 @@ class RemoteWorkerServiceParent final : public PRemoteWorkerServiceParent {
 
   void ActorDestroy(mozilla::ipc::IProtocol::ActorDestroyReason) override;
 
-  void Initialize();
+  void Initialize(const nsACString& aRemoteType);
+
+  nsCString GetRemoteType() const { return mRemoteType; }
 
  private:
   RefPtr<RemoteWorkerManager> mManager;
+  nsCString mRemoteType = NOT_REMOTE_TYPE;
 };
 
 }  // namespace dom

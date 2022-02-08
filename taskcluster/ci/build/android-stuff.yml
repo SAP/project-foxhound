@@ -14,7 +14,7 @@ android-geckoview-docs/opt:
         product: mobile
         job-name: android-geckoview-docs
     treeherder:
-        platform: android-4-0-armv7-api16/opt
+        platform: android-4-1-armv7/opt
         kind: build
         tier: 2
         symbol: A(gv-docs)
@@ -44,6 +44,7 @@ android-geckoview-docs/opt:
         toolchain:
             - android-gradle-dependencies
             - android-sdk-linux
+            - linux64-jdk
             - linux64-node
     optimization:
         skip-unless-changed:

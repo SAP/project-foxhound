@@ -13,19 +13,21 @@
 #include "mozilla/EventStates.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/HTMLLinkElementBinding.h"
+#include "mozilla/dom/HTMLDNSPrefetch.h"
 #include "nsContentUtils.h"
 #include "nsDOMTokenList.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
-#include "nsHTMLDNSPrefetch.h"
 #include "nsIContentInlines.h"
 #include "mozilla/dom/Document.h"
 #include "nsINode.h"
 #include "nsIPrefetchService.h"
+#include "nsISizeOf.h"
 #include "nsPIDOMWindow.h"
 #include "nsReadableUtils.h"
 #include "nsStyleConsts.h"
@@ -40,32 +42,15 @@
 #include "MediaList.h"
 #include "nsAttrValueInlines.h"
 
-#define LINK_ELEMENT_FLAG_BIT(n_) \
-  NODE_FLAG_BIT(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + (n_))
-
-// Link element specific bits
-enum {
-  // Indicates that a DNS Prefetch has been requested from this Link element.
-  HTML_LINK_DNS_PREFETCH_REQUESTED = LINK_ELEMENT_FLAG_BIT(0),
-
-  // Indicates that a DNS Prefetch was added to the deferral queue
-  HTML_LINK_DNS_PREFETCH_DEFERRED = LINK_ELEMENT_FLAG_BIT(1)
-};
-
-#undef LINK_ELEMENT_FLAG_BIT
-
-ASSERT_NODE_FLAGS_SPACE(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + 2);
-
 NS_IMPL_NS_NEW_HTML_ELEMENT(Link)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 HTMLLinkElement::HTMLLinkElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
-    : nsGenericHTMLElement(std::move(aNodeInfo)), Link(this) {}
+    : nsGenericHTMLElement(std::move(aNodeInfo)) {}
 
-HTMLLinkElement::~HTMLLinkElement() = default;
+HTMLLinkElement::~HTMLLinkElement() { SupportsDNSPrefetch::Destroyed(*this); }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLLinkElement)
 
@@ -83,8 +68,8 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(HTMLLinkElement,
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSizes)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
-NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(HTMLLinkElement,
-                                             nsGenericHTMLElement, Link)
+NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(HTMLLinkElement,
+                                               nsGenericHTMLElement)
 
 NS_IMPL_ELEMENT_CLONE(HTMLLinkElement)
 
@@ -96,23 +81,7 @@ void HTMLLinkElement::SetDisabled(bool aDisabled, ErrorResult& aRv) {
   return SetHTMLBoolAttr(nsGkAtoms::disabled, aDisabled, aRv);
 }
 
-void HTMLLinkElement::OnDNSPrefetchRequested() {
-  UnsetFlags(HTML_LINK_DNS_PREFETCH_DEFERRED);
-  SetFlags(HTML_LINK_DNS_PREFETCH_REQUESTED);
-}
-
-void HTMLLinkElement::OnDNSPrefetchDeferred() {
-  UnsetFlags(HTML_LINK_DNS_PREFETCH_REQUESTED);
-  SetFlags(HTML_LINK_DNS_PREFETCH_DEFERRED);
-}
-
-bool HTMLLinkElement::HasDeferredDNSPrefetchRequest() {
-  return HasFlag(HTML_LINK_DNS_PREFETCH_DEFERRED);
-}
-
 nsresult HTMLLinkElement::BindToTree(BindContext& aContext, nsINode& aParent) {
-  Link::ResetLinkState(false, Link::ElementHasHref());
-
   nsresult rv = nsGenericHTMLElement::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -145,16 +114,8 @@ void HTMLLinkElement::LinkRemoved() {
 }
 
 void HTMLLinkElement::UnbindFromTree(bool aNullParent) {
-  // Cancel any DNS prefetches
-  // Note: Must come before ResetLinkState.  If called after, it will recreate
-  // mCachedURI based on data that is invalid - due to a call to GetHostname.
-  CancelDNSPrefetch(HTML_LINK_DNS_PREFETCH_DEFERRED,
-                    HTML_LINK_DNS_PREFETCH_REQUESTED);
+  CancelDNSPrefetch(*this);
   CancelPrefetchOrPreload();
-
-  // Without removing the link state we risk a dangling pointer
-  // in the mStyledLinks hashtable
-  Link::ResetLinkState(false, Link::ElementHasHref());
 
   // If this is reinserted back into the document it will not be
   // from the parser.
@@ -237,8 +198,7 @@ nsresult HTMLLinkElement::BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                         bool aNotify) {
   if (aNameSpaceID == kNameSpaceID_None &&
       (aName == nsGkAtoms::href || aName == nsGkAtoms::rel)) {
-    CancelDNSPrefetch(HTML_LINK_DNS_PREFETCH_DEFERRED,
-                      HTML_LINK_DNS_PREFETCH_REQUESTED);
+    CancelDNSPrefetch(*this);
     CancelPrefetchOrPreload();
   }
 
@@ -251,23 +211,28 @@ nsresult HTMLLinkElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                        const nsAttrValue* aOldValue,
                                        nsIPrincipal* aSubjectPrincipal,
                                        bool aNotify) {
-  // It's safe to call ResetLinkState here because our new attr value has
-  // already been set or unset.  ResetLinkState needs the updated attribute
-  // value because notifying the document that content states have changed will
-  // call IntrinsicState, which will try to get updated information about the
-  // visitedness from Link.
-  if (aName == nsGkAtoms::href && kNameSpaceID_None == aNameSpaceID) {
-    bool hasHref = aValue;
-    Link::ResetLinkState(!!aNotify, hasHref);
+  if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::href) {
+    mCachedURI = nullptr;
     if (IsInUncomposedDoc()) {
       CreateAndDispatchEvent(OwnerDoc(), u"DOMLinkChanged"_ns);
     }
-  }
-
-  if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::href) {
     mTriggeringPrincipal = nsContentUtils::GetAttrTriggeringPrincipal(
         this, aValue ? aValue->GetStringValue() : EmptyString(),
         aSubjectPrincipal);
+
+    // If the link has `rel=localization` and its `href` attribute is changed,
+    // update the list of localization links.
+    if (AttrValueIs(kNameSpaceID_None, nsGkAtoms::rel, nsGkAtoms::localization,
+                    eIgnoreCase)) {
+      if (Document* doc = GetUncomposedDoc()) {
+        if (aOldValue) {
+          doc->LocalizationLinkRemoved(this);
+        }
+        if (aValue) {
+          doc->LocalizationLinkAdded(this);
+        }
+      }
+    }
   }
 
   // If a link's `rel` attribute was changed from or to `localization`,
@@ -283,21 +248,6 @@ nsresult HTMLLinkElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                  (!aValue ||
                   !aValue->Equals(nsGkAtoms::localization, eIgnoreCase))) {
         doc->LocalizationLinkRemoved(this);
-      }
-    }
-  }
-
-  // If the link has `rel=localization` and its `href` attribute is changed,
-  // update the list of localization links.
-  if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::href &&
-      AttrValueIs(kNameSpaceID_None, nsGkAtoms::rel, nsGkAtoms::localization,
-                  eIgnoreCase)) {
-    if (Document* doc = GetUncomposedDoc()) {
-      if (aOldValue) {
-        doc->LocalizationLinkRemoved(this);
-      }
-      if (aValue) {
-        doc->LocalizationLinkAdded(this);
       }
     }
   }
@@ -360,23 +310,6 @@ nsresult HTMLLinkElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
       aNameSpaceID, aName, aValue, aOldValue, aSubjectPrincipal, aNotify);
 }
 
-void HTMLLinkElement::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
-  GetEventTargetParentForAnchors(aVisitor);
-}
-
-nsresult HTMLLinkElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
-  return PostHandleEventForAnchors(aVisitor);
-}
-
-bool HTMLLinkElement::IsLink(nsIURI** aURI) const { return IsHTMLLink(aURI); }
-
-void HTMLLinkElement::GetLinkTarget(nsAString& aTarget) {
-  GetAttr(kNameSpaceID_None, nsGkAtoms::target, aTarget);
-  if (aTarget.IsEmpty()) {
-    GetBaseTarget(aTarget);
-  }
-}
-
 static const DOMTokenListSupportedToken sSupportedRelValues[] = {
     // Keep this and the one below in sync with ToLinkMask in
     // LinkStyle.cpp.
@@ -410,10 +343,6 @@ nsDOMTokenList* HTMLLinkElement::RelList() {
   return mRelList;
 }
 
-already_AddRefed<nsIURI> HTMLLinkElement::GetHrefURI() const {
-  return GetHrefURIForAnchors();
-}
-
 Maybe<LinkStyle::SheetInfo> HTMLLinkElement::GetStyleSheetInfo() {
   nsAutoString rel;
   GetAttr(kNameSpaceID_None, nsGkAtoms::rel, rel);
@@ -440,16 +369,14 @@ Maybe<LinkStyle::SheetInfo> HTMLLinkElement::GetStyleSheetInfo() {
     return Nothing();
   }
 
-  nsAutoString href;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::href, href);
-  if (href.IsEmpty()) {
+  if (!HasNonEmptyAttr(nsGkAtoms::href)) {
     return Nothing();
   }
 
   nsAutoString integrity;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::integrity, integrity);
+  GetAttr(nsGkAtoms::integrity, integrity);
 
-  nsCOMPtr<nsIURI> uri = Link::GetURI();
+  nsCOMPtr<nsIURI> uri = GetURI();
   nsCOMPtr<nsIPrincipal> prin = mTriggeringPrincipal;
 
   nsAutoString nonce;
@@ -475,14 +402,12 @@ Maybe<LinkStyle::SheetInfo> HTMLLinkElement::GetStyleSheetInfo() {
   });
 }
 
-EventStates HTMLLinkElement::IntrinsicState() const {
-  return Link::LinkState() | nsGenericHTMLElement::IntrinsicState();
-}
-
 void HTMLLinkElement::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
                                              size_t* aNodeSize) const {
   nsGenericHTMLElement::AddSizeOfExcludingThis(aSizes, aNodeSize);
-  *aNodeSize += Link::SizeOfExcludingThis(aSizes.mState);
+  if (nsCOMPtr<nsISizeOf> iface = do_QueryInterface(mCachedURI)) {
+    *aNodeSize += iface->SizeOfExcludingThis(aSizes.mState.mMallocSizeOf);
+  }
 }
 
 JSObject* HTMLLinkElement::WrapNode(JSContext* aCx,
@@ -491,8 +416,29 @@ JSObject* HTMLLinkElement::WrapNode(JSContext* aCx,
 }
 
 void HTMLLinkElement::GetAs(nsAString& aResult) {
-  GetEnumAttr(nsGkAtoms::as, EmptyCString().get(), aResult);
+  GetEnumAttr(nsGkAtoms::as, "", aResult);
 }
+
+enum ASDestination : uint8_t {
+  DESTINATION_INVALID,
+  DESTINATION_AUDIO,
+  DESTINATION_DOCUMENT,
+  DESTINATION_EMBED,
+  DESTINATION_FONT,
+  DESTINATION_IMAGE,
+  DESTINATION_MANIFEST,
+  DESTINATION_OBJECT,
+  DESTINATION_REPORT,
+  DESTINATION_SCRIPT,
+  DESTINATION_SERVICEWORKER,
+  DESTINATION_SHAREDWORKER,
+  DESTINATION_STYLE,
+  DESTINATION_TRACK,
+  DESTINATION_VIDEO,
+  DESTINATION_WORKER,
+  DESTINATION_XSLT,
+  DESTINATION_FETCH
+};
 
 static const nsAttrValue::EnumTable kAsAttributeTable[] = {
     {"", DESTINATION_INVALID},      {"audio", DESTINATION_AUDIO},
@@ -534,7 +480,7 @@ nsContentPolicyType HTMLLinkElement::AsValueToContentPolicy(
     case DESTINATION_STYLE:
       return nsIContentPolicy::TYPE_STYLESHEET;
     case DESTINATION_FETCH:
-      return nsIContentPolicy::TYPE_OTHER;
+      return nsIContentPolicy::TYPE_INTERNAL_FETCH_PRELOAD;
   }
   return nsIContentPolicy::TYPE_INVALID;
 }
@@ -558,12 +504,12 @@ void HTMLLinkElement::GetContentPolicyMimeTypeMedia(
 void HTMLLinkElement::
     TryDNSPrefetchOrPreconnectOrPrefetchOrPreloadOrPrerender() {
   MOZ_ASSERT(IsInComposedDoc());
-  if (!ElementHasHref()) {
+  if (!HasAttr(nsGkAtoms::href)) {
     return;
   }
 
   nsAutoString rel;
-  if (!GetAttr(kNameSpaceID_None, nsGkAtoms::rel, rel)) {
+  if (!GetAttr(nsGkAtoms::rel, rel)) {
     return;
   }
 
@@ -577,8 +523,7 @@ void HTMLLinkElement::
     nsCOMPtr<nsIPrefetchService> prefetchService(
         components::Prefetch::Service());
     if (prefetchService) {
-      nsCOMPtr<nsIURI> uri(GetURI());
-      if (uri) {
+      if (nsCOMPtr<nsIURI> uri = GetURI()) {
         auto referrerInfo = MakeRefPtr<ReferrerInfo>(*this);
         prefetchService->PrefetchURI(uri, referrerInfo, this,
                                      linkTypes & ePREFETCH);
@@ -588,8 +533,7 @@ void HTMLLinkElement::
   }
 
   if (linkTypes & ePRELOAD) {
-    nsCOMPtr<nsIURI> uri(GetURI());
-    if (uri) {
+    if (nsCOMPtr<nsIURI> uri = GetURI()) {
       nsContentPolicyType policyType;
 
       nsAttrValue asAttr;
@@ -597,13 +541,11 @@ void HTMLLinkElement::
       nsAutoString media;
       GetContentPolicyMimeTypeMedia(asAttr, policyType, mimeType, media);
 
-      if (policyType == nsIContentPolicy::TYPE_INVALID) {
+      if (policyType == nsIContentPolicy::TYPE_INVALID ||
+          !CheckPreloadAttrs(asAttr, mimeType, media, OwnerDoc())) {
         // Ignore preload with a wrong or empty as attribute.
+        WarnIgnoredPreload(*OwnerDoc(), *uri);
         return;
-      }
-
-      if (!CheckPreloadAttrs(asAttr, mimeType, media, OwnerDoc())) {
-        policyType = nsIContentPolicy::TYPE_INVALID;
       }
 
       StartPreload(policyType);
@@ -620,9 +562,7 @@ void HTMLLinkElement::
   }
 
   if (linkTypes & eDNS_PREFETCH) {
-    if (nsHTMLDNSPrefetch::IsAllowed(OwnerDoc())) {
-      nsHTMLDNSPrefetch::PrefetchLow(this);
-    }
+    TryDNSPrefetch(*this);
   }
 }
 
@@ -630,12 +570,12 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
                                     const nsAttrValue* aOldValue) {
   MOZ_ASSERT(IsInComposedDoc());
 
-  if (!ElementHasHref()) {
+  if (!HasAttr(nsGkAtoms::href)) {
     return;
   }
 
   nsAutoString rel;
-  if (!GetAttr(kNameSpaceID_None, nsGkAtoms::rel, rel)) {
+  if (!GetAttr(nsGkAtoms::rel, rel)) {
     return;
   }
 
@@ -649,7 +589,7 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
     return;
   }
 
-  nsCOMPtr<nsIURI> uri(GetURI());
+  nsCOMPtr<nsIURI> uri = GetURI();
   if (!uri) {
     return;
   }
@@ -660,16 +600,13 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
   nsAutoString media;
   GetContentPolicyMimeTypeMedia(asAttr, asPolicyType, mimeType, media);
 
-  if (asPolicyType == nsIContentPolicy::TYPE_INVALID) {
+  if (asPolicyType == nsIContentPolicy::TYPE_INVALID ||
+      !CheckPreloadAttrs(asAttr, mimeType, media, OwnerDoc())) {
     // Ignore preload with a wrong or empty as attribute, but be sure to cancel
     // the old one.
     CancelPrefetchOrPreload();
+    WarnIgnoredPreload(*OwnerDoc(), *uri);
     return;
-  }
-
-  nsContentPolicyType policyType = asPolicyType;
-  if (!CheckPreloadAttrs(asAttr, mimeType, media, OwnerDoc())) {
-    policyType = nsIContentPolicy::TYPE_INVALID;
   }
 
   if (aName == nsGkAtoms::crossorigin) {
@@ -677,7 +614,7 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
     CORSMode oldCorsMode = AttrValueToCORSMode(aOldValue);
     if (corsMode != oldCorsMode) {
       CancelPrefetchOrPreload();
-      StartPreload(policyType);
+      StartPreload(asPolicyType);
     }
     return;
   }
@@ -698,8 +635,6 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
     nsAutoString notUsed;
     if (aOldValue) {
       aOldValue->ToString(oldType);
-    } else {
-      oldType = EmptyString();
     }
     nsAutoString oldMimeType;
     nsContentUtils::SplitMimeType(oldType, oldMimeType, notUsed);
@@ -713,8 +648,6 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
     nsAutoString oldMedia;
     if (aOldValue) {
       aOldValue->ToString(oldMedia);
-    } else {
-      oldMedia = EmptyString();
     }
     if (CheckPreloadAttrs(asAttr, mimeType, oldMedia, OwnerDoc())) {
       oldPolicyType = asPolicyType;
@@ -723,17 +656,14 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
     }
   }
 
-  if ((policyType != oldPolicyType) &&
-      (oldPolicyType != nsIContentPolicy::TYPE_INVALID)) {
+  if (asPolicyType != oldPolicyType &&
+      oldPolicyType != nsIContentPolicy::TYPE_INVALID) {
     CancelPrefetchOrPreload();
   }
 
   // Trigger a new preload if the policy type has changed.
-  // Also trigger load if the new policy type is invalid, this will only
-  // trigger an error event.
-  if ((policyType != oldPolicyType) ||
-      (policyType == nsIContentPolicy::TYPE_INVALID)) {
-    StartPreload(policyType);
+  if (asPolicyType != oldPolicyType) {
+    StartPreload(asPolicyType);
   }
 }
 
@@ -748,12 +678,10 @@ void HTMLLinkElement::CancelPrefetchOrPreload() {
   }
 }
 
-void HTMLLinkElement::StartPreload(nsContentPolicyType policyType) {
+void HTMLLinkElement::StartPreload(nsContentPolicyType aPolicyType) {
   MOZ_ASSERT(!mPreload, "Forgot to cancel the running preload");
-
-  auto referrerInfo = MakeRefPtr<ReferrerInfo>(*this);
   RefPtr<PreloaderBase> preload =
-      OwnerDoc()->Preloads().PreloadLinkElement(this, policyType, referrerInfo);
+      OwnerDoc()->Preloads().PreloadLinkElement(this, aPolicyType);
   mPreload = preload.get();
 }
 
@@ -798,7 +726,8 @@ bool HTMLLinkElement::CheckPreloadAttrs(const nsAttrValue& aAs,
 
   // Check if media attribute is valid.
   if (!aMedia.IsEmpty()) {
-    RefPtr<MediaList> mediaList = MediaList::Create(aMedia);
+    RefPtr<MediaList> mediaList =
+        MediaList::Create(NS_ConvertUTF16toUTF8(aMedia));
     if (!mediaList->Matches(*aDocument)) {
       return false;
     }
@@ -808,12 +737,12 @@ bool HTMLLinkElement::CheckPreloadAttrs(const nsAttrValue& aAs,
     return true;
   }
 
-  nsString type = nsString(aType);
-  ToLowerCase(type);
-
-  if (policyType == nsIContentPolicy::TYPE_OTHER) {
+  if (policyType == nsIContentPolicy::TYPE_INTERNAL_FETCH_PRELOAD) {
     return true;
   }
+
+  nsAutoString type(aType);
+  ToLowerCase(type);
   if (policyType == nsIContentPolicy::TYPE_MEDIA) {
     if (aAs.GetEnumValue() == DESTINATION_TRACK) {
       return type.EqualsASCII("text/vtt");
@@ -833,8 +762,7 @@ bool HTMLLinkElement::CheckPreloadAttrs(const nsAttrValue& aAs,
   }
   if (policyType == nsIContentPolicy::TYPE_IMAGE) {
     return imgLoader::SupportImageWithMimeType(
-        NS_ConvertUTF16toUTF8(type).get(),
-        AcceptedMimeTypes::IMAGES_AND_DOCUMENTS);
+        NS_ConvertUTF16toUTF8(type), AcceptedMimeTypes::IMAGES_AND_DOCUMENTS);
   }
   if (policyType == nsIContentPolicy::TYPE_SCRIPT) {
     return nsContentUtils::IsJavascriptMIMEType(type);
@@ -843,6 +771,17 @@ bool HTMLLinkElement::CheckPreloadAttrs(const nsAttrValue& aAs,
     return type.EqualsASCII("text/css");
   }
   return false;
+}
+
+void HTMLLinkElement::WarnIgnoredPreload(const Document& aDoc, nsIURI& aURI) {
+  AutoTArray<nsString, 1> params;
+  {
+    nsCString uri = nsContentUtils::TruncatedURLForDisplay(&aURI);
+    AppendUTF8toUTF16(uri, *params.AppendElement());
+  }
+  nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "DOM"_ns, &aDoc,
+                                  nsContentUtils::eDOM_PROPERTIES,
+                                  "PreloadIgnoredInvalidAttr", params);
 }
 
 bool HTMLLinkElement::IsCSSMimeTypeAttributeForLinkElement(
@@ -858,5 +797,4 @@ bool HTMLLinkElement::IsCSSMimeTypeAttributeForLinkElement(
   return mimeType.IsEmpty() || mimeType.LowerCaseEqualsLiteral("text/css");
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

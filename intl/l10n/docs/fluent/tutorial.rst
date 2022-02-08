@@ -216,7 +216,7 @@ Fluent will overlay the translation onto the source fragment preserving attribut
 :code:`class` and :code:`href` from the source and adding translations for the elements
 inside. The resulting localized content will look like this:
 
-.. code-block:: html
+.. code-block::
 
   <p data-l10n-id="update-application-info" data-l10n-args='{"version": "60.0"}'">
     You are using Firefox Version: 60.0.
@@ -495,10 +495,6 @@ Localization object manually using the `Localization` class:
 
 .. code-block:: javascript
 
-  const { Localization } =
-    ChromeUtils.import("resource://gre/modules/Localization.jsm", {});
-
-
   const myL10n = new Localization([
     "branding/brand.ftl",
     "browser/preferences/preferences.ftl"
@@ -527,10 +523,6 @@ on the class.
 
 
 .. code-block:: javascript
-
-  const { Localization } =
-    ChromeUtils.import("resource://gre/modules/Localization.jsm", {});
-
 
   const myL10n = new Localization([
     "branding/brand.ftl",
@@ -616,23 +608,23 @@ The three classes of potential problems that this can help with are:
 
    Many languages use longer strings than English. For example, German strings
    may be 30% longer (or more). Turning on pseudolocalization is a quick way to
-   test how the layout handles such locales.
+   test how the layout handles such locales. Strings that don't fit the space
+   available are truncated and pseudolocalization can also help with detecting them.
 
 
  - Bidi adaptation.
 
-   For many developers, testing the UI in right-to-left mode is hard. Mozilla
-   offers a pref :js:`intl.uidirection` which switches the direction of the layout,
-   but that doesn't expose problems related to right-to-left text.
+   For many developers, testing the UI in right-to-left mode is hard.
    Pseudolocalization shows how a right-to-left locale will look like.
 
 To turn on pseudolocalization, add a new string pref :js:`intl.l10n.pseudo` and
 select the strategy to be used:
 
- - :js:`accented` - Ȧȧƈƈḗḗƞŧḗḗḓ Ḗḗƞɠŀīīşħ
+ - :js:`accented` - [Ȧȧƈƈḗḗƞŧḗḗḓ Ḗḗƞɠŀīīşħ]
 
    This strategy replaces all Latin characters with their accented equivalents,
-   and duplicates some vowels to create roughly 30% longer strings.
+   and duplicates some vowels to create roughly 30% longer strings. Strings are
+   wrapped in markers (square brackets), which help with detecting truncation.
 
 
  - :js:`bidi` - ɥsıʅƃuƎ ıpıԐ

@@ -1,14 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-let unfiledFolderId;
-
-add_task(async function setup() {
-  unfiledFolderId = await PlacesUtils.promiseItemId(
-    PlacesUtils.bookmarks.unfiledGuid
-  );
-});
-
 add_task(async function test_value_combo() {
   let buf = await openMirror("value_combo");
   let now = Date.now();
@@ -218,12 +210,10 @@ add_task(async function test_value_combo() {
       },
     },
     {
-      name: "onItemMoved",
+      name: "bookmark-moved",
       params: {
         itemId: localItemIds.get("bzBmk_______"),
-        oldParentId: PlacesUtils.toolbarFolderId,
         oldIndex: 0,
-        newParentId: PlacesUtils.toolbarFolderId,
         newIndex: 2,
         type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
         guid: "bzBmk_______",
@@ -231,22 +221,16 @@ add_task(async function test_value_combo() {
         newParentGuid: PlacesUtils.bookmarks.toolbarGuid,
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
         urlHref: "https://bugzilla.mozilla.org/",
+        isTagging: false,
       },
     },
     {
-      name: "onItemChanged",
+      name: "bookmark-title-changed",
       params: {
         itemId: localItemIds.get("mozBmk______"),
-        property: "title",
-        isAnnoProperty: false,
-        newValue: "Mozilla home page",
-        type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
-        parentId: PlacesUtils.bookmarksMenuFolderId,
+        title: "Mozilla home page",
         guid: "mozBmk______",
         parentGuid: PlacesUtils.bookmarks.menuGuid,
-        oldValue: "Mozilla",
-        source: PlacesUtils.bookmarks.SOURCES.SYNC,
-        lastModified: localTimeSeconds * 1000 * 1000,
       },
     },
   ]);
@@ -1366,17 +1350,15 @@ add_task(async function test_keywords_complex() {
       },
     },
     {
-      // These `onItemMoved` notifications aren't necessary: we only moved
+      // These `bookmark-moved` notifications aren't necessary: we only moved
       // (B C D E) to accomodate (A A1 B1), and Places doesn't usually fire move
       // notifications for repositioned siblings. However, detecting and filtering
       // these out complicates `noteObserverChanges`, so, for simplicity, we
       // record and fire the extra notifications.
-      name: "onItemMoved",
+      name: "bookmark-moved",
       params: {
         itemId: localItemIds.get("bookmarkBBBB"),
-        oldParentId: PlacesUtils.bookmarksMenuFolderId,
         oldIndex: 0,
-        newParentId: PlacesUtils.bookmarksMenuFolderId,
         newIndex: 3,
         type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
         guid: "bookmarkBBBB",
@@ -1384,15 +1366,14 @@ add_task(async function test_keywords_complex() {
         newParentGuid: PlacesUtils.bookmarks.menuGuid,
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
         urlHref: "http://example.com/b",
+        isTagging: false,
       },
     },
     {
-      name: "onItemMoved",
+      name: "bookmark-moved",
       params: {
         itemId: localItemIds.get("bookmarkCCCC"),
-        oldParentId: PlacesUtils.bookmarksMenuFolderId,
         oldIndex: 1,
-        newParentId: PlacesUtils.bookmarksMenuFolderId,
         newIndex: 4,
         type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
         guid: "bookmarkCCCC",
@@ -1400,15 +1381,14 @@ add_task(async function test_keywords_complex() {
         newParentGuid: PlacesUtils.bookmarks.menuGuid,
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
         urlHref: "http://example.com/c-remote",
+        isTagging: false,
       },
     },
     {
-      name: "onItemMoved",
+      name: "bookmark-moved",
       params: {
         itemId: localItemIds.get("bookmarkDDDD"),
-        oldParentId: PlacesUtils.bookmarksMenuFolderId,
         oldIndex: 2,
-        newParentId: PlacesUtils.bookmarksMenuFolderId,
         newIndex: 5,
         type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
         guid: "bookmarkDDDD",
@@ -1416,15 +1396,14 @@ add_task(async function test_keywords_complex() {
         newParentGuid: PlacesUtils.bookmarks.menuGuid,
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
         urlHref: "http://example.com/d",
+        isTagging: false,
       },
     },
     {
-      name: "onItemMoved",
+      name: "bookmark-moved",
       params: {
         itemId: localItemIds.get("bookmarkEEEE"),
-        oldParentId: PlacesUtils.bookmarksMenuFolderId,
         oldIndex: 3,
-        newParentId: PlacesUtils.bookmarksMenuFolderId,
         newIndex: 6,
         type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
         guid: "bookmarkEEEE",
@@ -1432,36 +1411,28 @@ add_task(async function test_keywords_complex() {
         newParentGuid: PlacesUtils.bookmarks.menuGuid,
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
         urlHref: "http://example.com/e",
+        isTagging: false,
       },
     },
     {
-      name: "onItemChanged",
+      name: "bookmark-title-changed",
       params: {
         itemId: localItemIds.get("bookmarkCCCC"),
-        property: "title",
-        isAnnoProperty: false,
-        newValue: "C (remote)",
-        type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
-        parentId: PlacesUtils.bookmarksMenuFolderId,
+        title: "C (remote)",
         guid: "bookmarkCCCC",
         parentGuid: PlacesUtils.bookmarks.menuGuid,
-        oldValue: "C",
-        source: PlacesUtils.bookmarks.SOURCES.SYNC,
       },
     },
     {
-      name: "onItemChanged",
+      name: "bookmark-url-changed",
       params: {
         itemId: localItemIds.get("bookmarkCCCC"),
-        property: "uri",
-        isAnnoProperty: false,
-        newValue: "http://example.com/c-remote",
         type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
-        parentId: PlacesUtils.bookmarksMenuFolderId,
+        urlHref: "http://example.com/c-remote",
         guid: "bookmarkCCCC",
         parentGuid: PlacesUtils.bookmarks.menuGuid,
-        oldValue: "http://example.com/c",
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
+        isTagging: false,
       },
     },
   ];
@@ -2245,33 +2216,21 @@ add_task(async function test_date_added() {
   ]);
   observer.check([
     {
-      name: "onItemChanged",
+      name: "bookmark-title-changed",
       params: {
         itemId: localItemIds.get("bookmarkAAAA"),
-        property: "title",
-        isAnnoProperty: false,
-        newValue: "A (remote)",
-        type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
-        parentId: PlacesUtils.bookmarksMenuFolderId,
+        title: "A (remote)",
         guid: "bookmarkAAAA",
         parentGuid: PlacesUtils.bookmarks.menuGuid,
-        oldValue: "A",
-        source: PlacesUtils.bookmarks.SOURCES.SYNC,
       },
     },
     {
-      name: "onItemChanged",
+      name: "bookmark-title-changed",
       params: {
         itemId: localItemIds.get("bookmarkBBBB"),
-        property: "title",
-        isAnnoProperty: false,
-        newValue: "B (remote)",
-        type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
-        parentId: PlacesUtils.bookmarksMenuFolderId,
+        title: "B (remote)",
         guid: "bookmarkBBBB",
         parentGuid: PlacesUtils.bookmarks.menuGuid,
-        oldValue: "B",
-        source: PlacesUtils.bookmarks.SOURCES.SYNC,
       },
     },
   ]);
@@ -2506,48 +2465,30 @@ add_task(async function test_duplicate_url_rows() {
   ]);
   observer.check([
     {
-      name: "onItemChanged",
+      name: "bookmark-title-changed",
       params: {
         itemId: localItemIds.get("bookmarkAAAA"),
-        property: "title",
-        isAnnoProperty: false,
-        newValue: "A (remote)",
-        type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
-        parentId: PlacesUtils.bookmarksMenuFolderId,
+        title: "A (remote)",
         guid: "bookmarkAAAA",
         parentGuid: PlacesUtils.bookmarks.menuGuid,
-        oldValue: "A",
-        source: PlacesUtils.bookmarks.SOURCES.SYNC,
       },
     },
     {
-      name: "onItemChanged",
+      name: "bookmark-title-changed",
       params: {
         itemId: localItemIds.get("bookmarkBBBB"),
-        property: "title",
-        isAnnoProperty: false,
-        newValue: "B (remote)",
-        type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
-        parentId: PlacesUtils.toolbarFolderId,
+        title: "B (remote)",
         guid: "bookmarkBBBB",
         parentGuid: PlacesUtils.bookmarks.toolbarGuid,
-        oldValue: "B",
-        source: PlacesUtils.bookmarks.SOURCES.SYNC,
       },
     },
     {
-      name: "onItemChanged",
+      name: "bookmark-title-changed",
       params: {
         itemId: localItemIds.get("bookmarkCCCC"),
-        property: "title",
-        isAnnoProperty: false,
-        newValue: "C (remote)",
-        type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
-        parentId: unfiledFolderId,
+        title: "C (remote)",
         guid: "bookmarkCCCC",
         parentGuid: PlacesUtils.bookmarks.unfiledGuid,
-        oldValue: "C",
-        source: PlacesUtils.bookmarks.SOURCES.SYNC,
       },
     },
   ]);

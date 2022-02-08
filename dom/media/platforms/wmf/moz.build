@@ -5,33 +5,43 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 EXPORTS += [
-    'DXVA2Manager.h',
-    'MFTDecoder.h',
-    'WMF.h',
-    'WMFAudioMFTManager.h',
-    'WMFDecoderModule.h',
-    'WMFMediaDataDecoder.h',
-    'WMFUtils.h',
-    'WMFVideoMFTManager.h',
+    "DXVA2Manager.h",
+    "MFTDecoder.h",
+    "WMF.h",
+    "WMFAudioMFTManager.h",
+    "WMFDecoderModule.h",
+    "WMFEncoderModule.h",
+    "WMFMediaDataDecoder.h",
+    "WMFMediaDataEncoder.h",
+    "WMFUtils.h",
+    "WMFVideoMFTManager.h",
 ]
 UNIFIED_SOURCES += [
-    'DXVA2Manager.cpp',
-    'MFTDecoder.cpp',
-    'WMFAudioMFTManager.cpp',
-    'WMFDecoderModule.cpp',
-    'WMFMediaDataDecoder.cpp',
-    'WMFVideoMFTManager.cpp',
+    "DXVA2Manager.cpp",
+    "MFTDecoder.cpp",
+    "MFTEncoder.cpp",
+    "WMFAudioMFTManager.cpp",
+    "WMFDecoderModule.cpp",
+    "WMFEncoderModule.cpp",
+    "WMFMediaDataDecoder.cpp",
+    "WMFMediaDataEncoder.cpp",
+    "WMFVideoMFTManager.cpp",
 ]
 
 SOURCES += [
-    'WMFUtils.cpp',
+    "WMFUtils.cpp",
 ]
 
-include('/ipc/chromium/chromium-config.mozbuild')
+LOCAL_INCLUDES += [
+    "/gfx/cairo/cairo/src",
+    "/media/libyuv/libyuv/include",
+]
 
-FINAL_LIBRARY = 'xul'
+include("/ipc/chromium/chromium-config.mozbuild")
 
-CXXFLAGS += CONFIG['MOZ_CAIRO_CFLAGS']
+FINAL_LIBRARY = "xul"
 
 # Add libFuzzer configuration directives
-include('/tools/fuzzing/libfuzzer-config.mozbuild')
+include("/tools/fuzzing/libfuzzer-config.mozbuild")
+
+REQUIRES_UNIFIED_BUILD = True

@@ -143,7 +143,7 @@ add_task(async function open_10_tabs() {
 
   let knownProblematicPrefs = {
     "layout.css.dpi": {
-      max: 35,
+      max: 60,
     },
     "browser.zoom.full": {
       min: 10,
@@ -183,6 +183,18 @@ add_task(async function open_10_tabs() {
 
 // This navigates to 50 sites and checks pref getters.
 add_task(async function navigate_around() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      // Disable bfcache so that we can measure more accurately the number of
+      // pref accesses in the child processes.
+      // If bfcache is enabled on Fission
+      // dom.ipc.keepProcessesAlive.webIsolated.perOrigin and
+      // security.sandbox.content.force-namespace are accessed only a couple of
+      // times.
+      ["browser.sessionhistory.max_total_viewers", 0],
+    ],
+  });
+
   let max = 40;
 
   let knownProblematicPrefs = {
@@ -194,6 +206,13 @@ add_task(async function navigate_around() {
       // This is accessed in debug only.
     },
   };
+
+  if (AppConstants.NIGHTLY_BUILD) {
+    knownProblematicPrefs["toolkit.telemetry.cachedClientID"] = {
+      // Bug 1712391: Only an issue in tests where pref is not populated early on
+      // in startup. Code path is only accessed in Nightly builds.
+    };
+  }
 
   if (SpecialPowers.useRemoteSubframes) {
     // We access this when considering starting a new content process.
@@ -221,16 +240,25 @@ add_task(async function navigate_around() {
         min: 49,
         max: 55,
       };
+      // This was previously being read in the content process, but
+      // bug 1725573 moved it into the parent process.  We also block
+      // the main thread on requests to the X server, which is likely
+      // more problematic than the pref read.  These issues are covered
+      // by https://bugzilla.mozilla.org/show_bug.cgi?id=1729080
+      knownProblematicPrefs["gfx.color_management.display_profile"] = {
+        min: 49,
+        max: 50,
+      };
     } else if (AppConstants.platform == "win") {
       // The following 2 graphics prefs are covered by
       // https://bugzilla.mozilla.org/show_bug.cgi?id=1639497
       knownProblematicPrefs["gfx.canvas.azure.backends"] = {
         min: 100,
-        max: 101,
+        max: 110,
       };
       knownProblematicPrefs["gfx.content.azure.backends"] = {
         min: 100,
-        max: 101,
+        max: 110,
       };
       // The following 2 sandbox prefs are covered by
       // https://bugzilla.mozilla.org/show_bug.cgi?id=1639494
@@ -264,7 +292,7 @@ add_task(async function navigate_around() {
   for (let i = 0; i < 50; i++) {
     let url = urls[i % urls.length];
     info(`Navigating to ${url}...`);
-    await BrowserTestUtils.loadURI(tab.linkedBrowser, url);
+    BrowserTestUtils.loadURI(tab.linkedBrowser, url);
     await BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, url);
     info(`Loaded ${url}.`);
   }

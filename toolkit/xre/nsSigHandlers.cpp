@@ -16,7 +16,6 @@
 #  include <stdio.h>
 #  include <string.h>
 #  include "prthread.h"
-#  include "plstr.h"
 #  include "prenv.h"
 #  include "nsDebug.h"
 #  include "nsXULAppAPI.h"
@@ -56,6 +55,7 @@ unsigned int _gdb_sleep_duration = 300;
 
 #    include <unistd.h>
 #    include "nsISupportsUtils.h"
+#    include "mozilla/Attributes.h"
 #    include "mozilla/StackWalk.h"
 
 static const char* gProgname = "huh?";
@@ -78,12 +78,12 @@ static void PrintStackFrame(uint32_t aFrameNumber, void* aPC, void* aSP,
 }
 }
 
-void ah_crap_handler(int signum) {
+void common_crap_handler(int signum, const void* aFirstFramePC) {
   printf("\nProgram %s (pid = %d) received signal %d.\n", gProgname, getpid(),
          signum);
 
   printf("Stack:\n");
-  MozStackWalk(PrintStackFrame, /* skipFrames */ 2, /* maxFrames */ 0, nullptr);
+  MozStackWalk(PrintStackFrame, aFirstFramePC, /* maxFrames */ 0, nullptr);
 
   printf("Sleeping for %d seconds.\n", _gdb_sleep_duration);
   printf("Type 'gdb %s %d' to attach your debugger to this thread.\n",
@@ -99,10 +99,14 @@ void ah_crap_handler(int signum) {
   _exit(signum);
 }
 
-void child_ah_crap_handler(int signum) {
+MOZ_NEVER_INLINE void ah_crap_handler(int signum) {
+  common_crap_handler(signum, CallerPC());
+}
+
+MOZ_NEVER_INLINE void child_ah_crap_handler(int signum) {
   if (!getenv("MOZ_DONT_UNBLOCK_PARENT_ON_CHILD_CRASH"))
     close(kClientChannelFd);
-  ah_crap_handler(signum);
+  common_crap_handler(signum, CallerPC());
 }
 
 #  endif  // CRAWL_STACK_ON_SIGSEGV
@@ -150,9 +154,9 @@ static void fpehandler(int signum, siginfo_t* si, void* context) {
   }
 
 #    ifdef XP_MACOSX
+#      if defined(__i386__) || defined(__amd64__)
   ucontext_t* uc = (ucontext_t*)context;
 
-#      if defined(__i386__) || defined(__amd64__)
   _STRUCT_FP_CONTROL* ctrl = &uc->uc_mcontext->__fs.__fpu_fcw;
   ctrl->__invalid = ctrl->__denorm = ctrl->__zdiv = ctrl->__ovrfl =
       ctrl->__undfl = ctrl->__precis = 1;
@@ -226,9 +230,11 @@ static void fpehandler(int signum, siginfo_t* si, void* context) {
 
 void InstallSignalHandlers(const char* aProgname) {
 #  if defined(CRAWL_STACK_ON_SIGSEGV)
-  const char* tmp = PL_strdup(aProgname);
-  if (tmp) {
-    gProgname = tmp;
+  if (aProgname) {
+    const char* tmp = strdup(aProgname);
+    if (tmp) {
+      gProgname = tmp;
+    }
   }
 #  endif  // CRAWL_STACK_ON_SIGSEGV
 

@@ -5,6 +5,11 @@
 @namespace url(http://www.w3.org/1999/xhtml); /* set default namespace to HTML */
 @namespace xul url(http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul);
 
+@font-face {
+  font-family: -moz-bullet-font;
+  src: url("data:font/woff2;base64,d09GMgABAAAAAARYAAwAAAAACqAAAAQFAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP0ZGVE0cBmAAgwIRCAqKDIcYATYCJAMsCxgABCAFg2AHIBtDCFGUrM0MyM/DGJyndUclpZwnU8QPQ6wsFOHO+/yHNvV9IEqSQgsVJW2p+uZkohKbVExPEz/JUW7zk6rzYH9723UJ/4DzBII8CSzwgFMOOE4KW2rjAmh4qQWSiid60f7Y9FsXScfUpeluagFqTTQYyoQaQSubXil0lHRsBehAI9KofG/6ogF9/Hl6lBd920LmeTxj8JXBfFWKwYAY3QsAAXD17ZAB4M6Ocv/nsZlkaTl0gLipewIQEMB2d9lKDAT1ZjP/F7jmWsQ3wn8AZvZFgIIC7ESh4AP1iFb4nPnfWyJgcQArpUWqW9W96j71kHr/L9a/dNRbj+8/ujXLWCMMFYVYiXoEaZQ4YOC/E7Dkz3JEjaokxAP6i3hIUjv9fwYyE6I3yIozKkaGN63fP36aeLJmxlRZwZiFziPrMVvOlnCF98SQJfGO/Xllv/FnWAcEjrMqaMCPwVmktCDO5zzxcXqeKS+QFxYnvJLFVzKZAFcKnlZRwHEPVM3mXxNt2gdZEpkKaIAG9gbgDTU5SOYDcmX7Rr61evEA1U+1/3SMb6FFtUqh55nYleE95j2zPNxzdlnGoR5xu/PxQKzb7bFaFLvl79Z54Lx9OH+g0/PPYlcsNo/nwP2V2vsHUHsV4KqEsd+e2r6Fu2v7abkfvsb65b41uwvRvqewH25kTntqolbYsEr5DAqrX97a0jrBLjFRExVHR2dH1Za6unyZfCVZHqQP0BtYjuUYlg9J6SurcrTEiOr26m5xcuTW4Sp3ljkUYWJ9+/iVmzbzPpcuXnGeqU3U7IKjz/qeKSSCltyhuSoxkqqTZX+DXt/OMmAikC8SzVD0jg3dbhIE0eUqc04UFFrxCSXzFxgHclzRMPe0ocOjiKRoSZISE0OtpkBjECdxkkRM1KiaJV0ed0V5umBP1wyUPL2ZBGLSDh5itIHahHRF0CY5nZMGib6T3cOmDvcTSZKuPiFJFpPRGNTIOq7jl5OjDiGIoo6qEE0QtfQJ3VYUD2RZvbm5uWWCWOgR4HXAk5GxLEO0izhLdvPTfpTV3xeOnOfT96uR53CdPrPq+P9HZvzO4QCMmDr7lTcNZorT6iMOYgI+IxClMzeCspeoLt5ABGSpta6gRZmQSnzk9e9jmOAYKC7RsyGMYaB6MpbNKMiRq2U6vI0yPZuTMiODFytMrGEBi7pjGgkAMoaNLGOFSoYceaZMx1+XTC/UNpmRzY1nmwT7AIcK+fK5lYNjz893lwMTuXlD2AKl8Md+24AxitRaLH/MUMqd9z862owy/bZTuZUqs1iRQop0KdLgZwPc9JS0lprnkef1gitBCRhjgV+vjGK8BfIV8CrlVghj1vIyZfyC/AJvqbsQYAEA/v+IAQA=");
+}
+
 /* bidi */
 
 :-moz-has-dir-attr {
@@ -335,7 +340,7 @@ table:-moz-table-border-nonzero > th
 }
 
 /* collapse only if rules are really specified */
-table[rules]:not([rules="none"]):not([rules=""]) {
+table[rules]:not([rules="none"], [rules=""]) {
   border-collapse: collapse;
 }
 
@@ -575,17 +580,14 @@ ul, menu, dir {
   padding-inline-start: 40px;
 }
 
-menu[type="context"] {
-  display: none !important;
+@supports -moz-bool-pref("dom.menuitem.enabled") {
+  menu[type="context"] {
+    display: none !important;
+  }
 }
 
 ul, ol, menu {
   counter-reset: list-item;
-  -moz-list-reversed: false;
-}
-
-ol[reversed] {
-  -moz-list-reversed: true;
 }
 
 ol {
@@ -647,13 +649,13 @@ hr[size="1"] {
   border-style: solid none none none;
 }
 
-input:is(:-moz-broken, :-moz-user-disabled)::before,
-img:is(:-moz-broken, :-moz-user-disabled)::before {
+input:-moz-broken::before,
+img:-moz-broken::before {
   content: -moz-alt-content !important;
   unicode-bidi: isolate;
 }
 
-object:is(:-moz-broken,:-moz-user-disabled) > *|* {
+object:-moz-broken > *|* {
   /*
     Inherit in the object's alignment so that if we aren't aligned explicitly
     we'll end up in the right place vertically.  See bug 36997.  Note that this
@@ -662,35 +664,16 @@ object:is(:-moz-broken,:-moz-user-disabled) > *|* {
   vertical-align: inherit;
 }
 
-img:-moz-suppressed,
-input:-moz-suppressed,
-object:-moz-suppressed,
-embed:-moz-suppressed {
-  /*
-    Set visibility too in case the page changes display.  Note that we _may_
-    want to just set visibility and not display, in general, if we find that
-    display:none breaks too many layouts.  And if we decide we really do want
-    people to be able to right-click blocked images, etc, we need to set
-    neither one, and hack the painting code.... :(
-   */
-  display: none !important;
-  visibility: hidden !important;
-}
-
 img[usemap], object[usemap] {
   color: blue;
 }
 
 frameset {
   display: block ! important;
-  overflow: -moz-hidden-unscrollable;
+  overflow: clip;
   position: static ! important;
   float: none ! important;
   border: none ! important;
-}
-
-link {
-  display: none;
 }
 
 frame {
@@ -699,10 +682,6 @@ frame {
 
 iframe {
   border: 2px inset;
-}
-
-noframes {
-  display: none;
 }
 
 spacer {
@@ -714,23 +693,26 @@ canvas {
   user-select: none;
 }
 
-/* focusable content: anything w/ tabindex >=0 is focusable */
-:-moz-focusring {
-  /* Don't specify the outline-color, we should always use initial value. */
-   outline: 1px dotted;
-}
-
-iframe:-moz-focusring,
-body:-moz-focusring,
-html:-moz-focusring {
+iframe:focus-visible,
+body:focus-visible,
+html:focus-visible {
   /* These elements historically don't show outlines when focused by default.
    * We could consider changing that if needed. */
   outline-style: none;
 }
 
-/* hidden elements */
-base, basefont, datalist, head, meta, script, style, title,
-noembed, param, template {
+/* hidden elements: https://html.spec.whatwg.org/#hidden-elements
+ *
+ * Exceptions:
+ *
+ *  * area declaration needs to be !important, see below / bug 135040.  That's
+ *    hacky and broken.
+ *
+ *  * [hidden] is implemented as a presentation attribute to avoid a global
+ *    selector in a UA sheet.
+ */
+base, basefont, datalist, head, link, meta, noembed,
+noframes, param, rp, script, style, template, title {
    display: none;
 }
 
@@ -758,7 +740,7 @@ video > img:-moz-native-anonymous {
 }
 
 audio:not([controls]) {
-  display: none;
+  display: none !important;
 }
 
 audio[controls] {
@@ -798,6 +780,11 @@ video > .caption-box {
 }
 
 /* details & summary */
+details > summary:-moz-native-anonymous {
+  /* TODO(krosylight): Remove this when fixing bug 1308080 */
+  user-select: none;
+}
+
 details > summary:is(:first-of-type, :-moz-native-anonymous) {
   display: list-item;
   counter-increment: list-item 0;
@@ -817,6 +804,7 @@ details > summary:first-of-type > *|* {
 
 dialog {
   position: absolute;
+  display: block;
   inset-inline-start: 0;
   inset-inline-end: 0;
   color: black;
@@ -835,17 +823,22 @@ dialog:not([open]) {
   display: none;
 }
 
+/* This pseudo-class is used to remove the inertness for the topmost modal
+ * dialog in top layer.
+ *
+ * Avoid doing this if the dialog is explicitly inert though. */
+dialog:not([inert]):-moz-topmost-modal-dialog {
+  -moz-inert: none;
+}
+
 dialog:-moz-modal-dialog {
   -moz-top-layer: top !important;
-  /* This is a temporary solution until the relevant CSSWG issues
-   * (https://github.com/w3c/csswg-drafts/issues/4645)
-   * are resolved. */
   position: fixed;
-  max-height: 100vh;
-  max-width: 100vw;
-  top: 50%;
-  transform: translateY(-50%);
   overflow: auto;
+  inset-block-start: 0;
+  inset-block-end: 0;
+  max-width: calc(100% - 6px - 2em);
+  max-height: calc(100% - 6px - 2em);
 }
 
 /* https://html.spec.whatwg.org/#flow-content-3 */
@@ -872,9 +865,6 @@ ruby {
 rb {
   display: ruby-base;
   white-space: nowrap;
-}
-rp {
-  display: none;
 }
 rt {
   display: ruby-text;

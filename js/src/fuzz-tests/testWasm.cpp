@@ -8,6 +8,8 @@
 #include "jspubtd.h"
 
 #include "fuzz-tests/tests.h"
+#include "js/CallAndConstruct.h"
+#include "js/PropertyAndElement.h"  // JS_Enumerate, JS_GetProperty, JS_GetPropertyById, JS_HasProperty, JS_SetProperty
 #include "vm/GlobalObject.h"
 #include "vm/Interpreter.h"
 #include "vm/TypedArrayObject.h"
@@ -28,6 +30,11 @@ using namespace js::wasm;
 extern JS::PersistentRootedObject gGlobal;
 extern JSContext* gCx;
 
+static bool gIsWasmSmith = false;
+extern "C" {
+size_t gluesmith(uint8_t* data, size_t size, uint8_t* out, size_t maxsize);
+}
+
 static int testWasmInit(int* argc, char*** argv) {
   if (!wasm::HasSupport(gCx) ||
       !GlobalObject::getOrCreateConstructor(gCx, JSProto_WebAssembly)) {
@@ -35,6 +42,11 @@ static int testWasmInit(int* argc, char*** argv) {
   }
 
   return 0;
+}
+
+static int testWasmSmithInit(int* argc, char*** argv) {
+  gIsWasmSmith = true;
+  return testWasmInit(argc, argv);
 }
 
 static bool emptyNativeFunction(JSContext* cx, unsigned argc, Value* vp) {
@@ -100,7 +112,7 @@ static bool assignImportKind(const Import& import, HandleObject obj,
 static int testWasmFuzz(const uint8_t* buf, size_t size) {
   auto gcGuard = mozilla::MakeScopeExit([&] {
     JS::PrepareForFullGC(gCx);
-    JS::NonIncrementalGC(gCx, GC_NORMAL, JS::GCReason::API);
+    JS::NonIncrementalGC(gCx, JS::GCOptions::Normal, JS::GCReason::API);
   });
 
   const size_t MINIMUM_MODULE_SIZE = 8;
@@ -122,8 +134,22 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
     // Ensure we have no lingering exceptions from previous modules
     gCx->clearPendingException();
 
-    unsigned char moduleLen = buf[currentIndex];
-    currentIndex++;
+    uint16_t moduleLen;
+    if (gIsWasmSmith) {
+      // Jump over the optByte. Unlike with the regular format, for
+      // wasm-smith we are fixing this and use byte 0 as opt-byte.
+      // Eventually this will also be changed for the regular format.
+      if (!currentIndex) {
+        currentIndex++;
+      }
+
+      // Caller ensures the structural soundness of the input here
+      moduleLen = *((uint16_t*)&buf[currentIndex]);
+      currentIndex += 2;
+    } else {
+      moduleLen = buf[currentIndex];
+      currentIndex++;
+    }
 
     if (size - currentIndex < moduleLen) {
       moduleLen = size - currentIndex;
@@ -133,22 +159,29 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
       continue;
     }
 
-    if (currentIndex == 1) {
+    if (currentIndex == 1 || (gIsWasmSmith && currentIndex == 3)) {
       // If this is the first module we are reading, we use the first
       // few bytes to tweak some settings. These are fixed anyway and
       // overwritten later on.
-      uint8_t optByte = (uint8_t)buf[currentIndex];
+      uint8_t optByte;
+      if (gIsWasmSmith) {
+        optByte = (uint8_t)buf[0];
+      } else {
+        optByte = (uint8_t)buf[currentIndex];
+      }
 
       // Note that IonPlatformSupport() and CraneliftPlatformSupport() do not
       // take into account whether those compilers support particular features
       // that may have been enabled.
       bool enableWasmBaseline = ((optByte & 0xF0) == (1 << 7));
-      bool enableWasmIon =
-          IonPlatformSupport() && ((optByte & 0xF0) == (1 << 6));
-      bool enableWasmCranelift = false;
+      bool enableWasmOptimizing = false;
 #ifdef ENABLE_WASM_CRANELIFT
-      enableWasmCranelift =
+      // Cranelift->Ion transition
+      enableWasmOptimizing =
           CraneliftPlatformSupport() && ((optByte & 0xF0) == (1 << 5));
+#else
+      enableWasmOptimizing =
+          IonPlatformSupport() && ((optByte & 0xF0) == (1 << 6));
 #endif
       bool enableWasmAwaitTier2 = (IonPlatformSupport()
 #ifdef ENABLE_WASM_CRANELIFT
@@ -157,40 +190,51 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
                                        ) &&
                                   ((optByte & 0xF) == (1 << 3));
 
-      if (!enableWasmBaseline && !enableWasmIon && !enableWasmCranelift) {
-        // If nothing is selected explicitly, select Ion to test
-        // more platform specific JIT code. However, on some platforms,
-        // e.g. ARM64, we do not have Ion available, so we need to switch
-        // to baseline instead.
-        if (IonPlatformSupport()) {
-          enableWasmIon = true;
+      if (!enableWasmBaseline && !enableWasmOptimizing) {
+        // If nothing is selected explicitly, enable an optimizing compiler to
+        // test more platform specific JIT code. However, on some platforms,
+        // e.g. ARM64 on Windows, we do not have Ion available, so we need to
+        // switch to baseline instead.
+        if (IonPlatformSupport() || CraneliftPlatformSupport()) {
+          enableWasmOptimizing = true;
         } else {
           enableWasmBaseline = true;
         }
       }
 
       if (enableWasmAwaitTier2) {
-        // Tier 2 needs Baseline + {Ion,Cranelift}
+        // Tier 2 needs Baseline + Optimizing
         enableWasmBaseline = true;
 
-        if (!enableWasmIon && !enableWasmCranelift) {
-          enableWasmIon = true;
+        if (!enableWasmOptimizing) {
+          enableWasmOptimizing = true;
         }
       }
 
       JS::ContextOptionsRef(gCx)
           .setWasmBaseline(enableWasmBaseline)
-          .setWasmIon(enableWasmIon)
-          .setTestWasmAwaitTier2(enableWasmAwaitTier2)
 #ifdef ENABLE_WASM_CRANELIFT
-          .setWasmCranelift(enableWasmCranelift)
+          .setWasmCranelift(enableWasmOptimizing)
+          .setWasmIon(false)
+#else
+          .setWasmCranelift(false)
+          .setWasmIon(enableWasmOptimizing)
 #endif
-          ;
+          .setTestWasmAwaitTier2(enableWasmAwaitTier2);
     }
 
     // Expected header for a valid WebAssembly module
     uint32_t magic_header = 0x6d736100;
     uint32_t magic_version = 0x1;
+
+    if (gIsWasmSmith) {
+      // When using wasm-smith, magic values should already be there.
+      // Checking this to make sure the data passed is sane.
+      MOZ_RELEASE_ASSERT(*(uint32_t*)(&buf[currentIndex]) == magic_header,
+                         "Magic header mismatch!");
+      MOZ_RELEASE_ASSERT(*(uint32_t*)(&buf[currentIndex + 4]) == magic_version,
+                         "Magic version mismatch!");
+    }
 
     // We just skip over the first 8 bytes now because we fill them
     // with `magic_header` and `magic_version` anyway.
@@ -209,8 +253,9 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
     currentIndex += moduleLen;
 
     ScriptedCaller scriptedCaller;
+    FeatureOptions options;
     SharedCompileArgs compileArgs =
-        CompileArgs::build(gCx, std::move(scriptedCaller));
+        CompileArgs::build(gCx, std::move(scriptedCaller), options);
     if (!compileArgs) {
       return 0;
     }
@@ -251,6 +296,9 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
     size_t currentTableExportId = 0;
     size_t currentMemoryExportId = 0;
     size_t currentGlobalExportId = 0;
+#ifdef ENABLE_WASM_EXCEPTIONS
+    size_t currentTagExportId = 0;
+#endif
 
     for (const Import& import : importVec) {
       // First try to get the namespace object, create one if this is the
@@ -320,6 +368,17 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
               return 0;
             }
             break;
+
+#ifdef ENABLE_WASM_EXCEPTIONS
+          case DefinitionKind::Tag:
+            // TODO: Pass a dummy defaultValue
+            if (!assignImportKind<WasmTagObject>(
+                    import, obj, lastExportsObj, lastExportIds,
+                    &currentTagExportId, exportsLength, nullValue)) {
+              return 0;
+            }
+            break;
+#endif
         }
       }
     }
@@ -413,6 +472,7 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
             volatile uint8_t rawMemByte = 0;
             rawMemByte += rawMemory[0];
             rawMemByte += rawMemory[byteLen - 1];
+            (void)rawMemByte;
           }
         }
 
@@ -420,7 +480,7 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
           Rooted<WasmGlobalObject*> global(gCx,
                                            &propObj->as<WasmGlobalObject>());
           if (global->type() != ValType::I64) {
-            global->value(gCx, &lastReturnVal);
+            global->val().get().toJSValue(gCx, &lastReturnVal);
           }
         }
       }
@@ -430,4 +490,68 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
   return 0;
 }
 
+static int testWasmSmithFuzz(const uint8_t* buf, size_t size) {
+  // Define maximum sizes for the input to wasm-smith as well
+  // as the resulting modules. The input to output size factor
+  // of wasm-smith is somewhat variable but a factor of 4 seems
+  // to roughly work out. The logic below also assumes that these
+  // are powers of 2.
+  const size_t maxInputSize = 1024;
+  const size_t maxModuleSize = 4096;
+
+  size_t maxModules = size / maxInputSize + 1;
+
+  // We need 1 leading byte for options and 2 bytes for size per module
+  uint8_t* out =
+      new uint8_t[1 + maxModules * (maxModuleSize + sizeof(uint16_t))];
+
+  auto deleteGuard = mozilla::MakeScopeExit([&] { delete[] out; });
+
+  // Copy the opt-byte.
+  out[0] = buf[0];
+
+  size_t outIndex = 1;
+  size_t currentIndex = 1;
+
+  while (currentIndex < size) {
+    size_t remaining = size - currentIndex;
+
+    // We need to have at least a size and some byte to read.
+    if (remaining <= sizeof(uint16_t)) {
+      break;
+    }
+
+    // Determine size of the next input, limited to `maxInputSize`.
+    uint16_t inSize =
+        (*((uint16_t*)&buf[currentIndex]) & (maxInputSize - 1)) + 1;
+    remaining -= sizeof(uint16_t);
+    currentIndex += sizeof(uint16_t);
+
+    // Cap to remaining bytes.
+    inSize = remaining >= inSize ? inSize : remaining;
+
+    size_t outSize =
+        gluesmith((uint8_t*)&buf[currentIndex], inSize,
+                  out + outIndex + sizeof(uint16_t), maxModuleSize);
+
+    if (!outSize) {
+      break;
+    }
+
+    currentIndex += inSize;
+
+    // Write the size of the resulting module to our output buffer.
+    *(uint16_t*)(&out[outIndex]) = (uint16_t)outSize;
+    outIndex += sizeof(uint16_t) + outSize;
+  }
+
+  // If we lack at least one module, don't do anything.
+  if (outIndex == 1) {
+    return 0;
+  }
+
+  return testWasmFuzz(out, outIndex);
+}
+
 MOZ_FUZZING_INTERFACE_RAW(testWasmInit, testWasmFuzz, Wasm);
+MOZ_FUZZING_INTERFACE_RAW(testWasmSmithInit, testWasmSmithFuzz, WasmSmith);

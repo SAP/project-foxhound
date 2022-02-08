@@ -14,6 +14,13 @@ add_task(async _ => {
     "cookie",
     Services.perms.DENY_ACTION
   );
+  // Grant interaction permission so we can directly call
+  // requestStorageAccess from the tracker.
+  PermissionTestUtils.add(
+    "https://tracking.example.org",
+    "storageAccessAPI",
+    Services.perms.ALLOW_ACTION
+  );
 
   registerCleanupFunction(_ => {
     Services.perms.removeAll();
@@ -28,6 +35,18 @@ AntiTracking._createTask({
   callback: async _ => {
     document.cookie = "name=value";
     ok(document.cookie == "", "All is blocked");
+
+    // requestStorageAccess should reject
+    SpecialPowers.wrap(document).notifyUserGestureActivation();
+    await document
+      .requestStorageAccess()
+      .then(() => {
+        ok(false, "Should not grant storage access");
+      })
+      .catch(() => {
+        ok(true, "Should not grant storage access");
+      });
+    SpecialPowers.wrap(document).clearUserGestureActivation();
   },
   extraPrefs: null,
   expectedBlockingNotifications:

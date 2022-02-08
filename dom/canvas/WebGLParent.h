@@ -9,16 +9,16 @@
 #include "mozilla/GfxMessageUtils.h"
 #include "mozilla/dom/PWebGLParent.h"
 #include "mozilla/WeakPtr.h"
-#include "mozilla/dom/IpdlQueue.h"
 
 namespace mozilla {
 
 class HostWebGLContext;
+class WebGLChild;
 
 namespace layers {
 class SharedSurfaceTextureClient;
 class SurfaceDescriptor;
-}
+}  // namespace layers
 
 namespace dom {
 
@@ -27,11 +27,9 @@ class WebGLParent : public PWebGLParent, public SupportsWeakPtr {
 
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WebGLParent, override);
-  using OtherSideActor = WebGLChild;
 
-  mozilla::ipc::IPCResult RecvInitialize(
-      const webgl::InitContextDesc&, UniquePtr<HostWebGLCommandSinkP>&& aSinkP,
-      UniquePtr<HostWebGLCommandSinkI>&& aSinkI, webgl::InitContextResult* out);
+  mozilla::ipc::IPCResult RecvInitialize(const webgl::InitContextDesc&,
+                                         webgl::InitContextResult* out);
 
   WebGLParent();  // For IPDL
 

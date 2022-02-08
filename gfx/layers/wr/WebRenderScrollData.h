@@ -8,6 +8,7 @@
 #define GFX_WEBRENDERSCROLLDATA_H
 
 #include <map>
+#include <iosfwd>
 
 #include "chrome/common/ipc_message_utils.h"
 #include "FrameMetrics.h"
@@ -23,14 +24,15 @@
 #include "mozilla/Maybe.h"
 #include "nsTArrayForwardDeclare.h"
 
-class nsDisplayItem;
-
 namespace mozilla {
 
+class nsDisplayItem;
+class nsDisplayListBuilder;
 struct ActiveScrolledRoot;
 
 namespace layers {
 
+class APZTestAccess;
 class Layer;
 class WebRenderLayerManager;
 class WebRenderScrollData;
@@ -42,13 +44,17 @@ class WebRenderScrollData;
 class WebRenderLayerScrollData final {
  public:
   WebRenderLayerScrollData();  // needed for IPC purposes
+  WebRenderLayerScrollData(WebRenderLayerScrollData&& aOther) = default;
   ~WebRenderLayerScrollData();
+
+  using ViewID = ScrollableLayerGuid::ViewID;
 
   void InitializeRoot(int32_t aDescendantCount);
   void Initialize(WebRenderScrollData& aOwner, nsDisplayItem* aItem,
                   int32_t aDescendantCount,
                   const ActiveScrolledRoot* aStopAtAsr,
-                  const Maybe<gfx::Matrix4x4>& aAncestorTransform);
+                  const Maybe<gfx::Matrix4x4>& aAncestorTransform,
+                  const ViewID& aAncestorTransformId);
 
   int32_t GetDescendantCount() const;
   size_t GetScrollMetadataCount() const;
@@ -63,6 +69,7 @@ class WebRenderLayerScrollData final {
                                           size_t aIndex) const;
 
   gfx::Matrix4x4 GetAncestorTransform() const { return mAncestorTransform; }
+  ViewID GetAncestorTransformId() const { return mAncestorTransformId; }
   void SetTransform(const gfx::Matrix4x4& aTransform) {
     mTransform = aTransform;
   }
@@ -72,8 +79,9 @@ class WebRenderLayerScrollData final {
     mTransformIsPerspective = aTransformIsPerspective;
   }
   bool GetTransformIsPerspective() const { return mTransformIsPerspective; }
+  void SetResolution(float aResolution) { mResolution = aResolution; }
+  float GetResolution() const { return mResolution; }
 
-  EventRegions GetEventRegions() const { return EventRegions(); }
   void SetEventRegionsOverride(const EventRegionsOverride& aOverride) {
     mEventRegionsOverride = aOverride;
   }
@@ -115,17 +123,17 @@ class WebRenderLayerScrollData final {
   }
   SideBits GetFixedPositionSides() const { return mFixedPositionSides; }
 
-  void SetFixedPositionScrollContainerId(ScrollableLayerGuid::ViewID aId) {
+  void SetFixedPositionScrollContainerId(ViewID aId) {
     mFixedPosScrollContainerId = aId;
   }
-  ScrollableLayerGuid::ViewID GetFixedPositionScrollContainerId() const {
+  ViewID GetFixedPositionScrollContainerId() const {
     return mFixedPosScrollContainerId;
   }
 
-  void SetStickyPositionScrollContainerId(ScrollableLayerGuid::ViewID aId) {
+  void SetStickyPositionScrollContainerId(ViewID aId) {
     mStickyPosScrollContainerId = aId;
   }
-  ScrollableLayerGuid::ViewID GetStickyPositionScrollContainerId() const {
+  ViewID GetStickyPositionScrollContainerId() const {
     return mStickyPosScrollContainerId;
   }
 
@@ -153,17 +161,27 @@ class WebRenderLayerScrollData final {
   void SetZoomAnimationId(const uint64_t& aId) { mZoomAnimationId = Some(aId); }
   Maybe<uint64_t> GetZoomAnimationId() const { return mZoomAnimationId; }
 
-  void SetAsyncZoomContainerId(const ScrollableLayerGuid::ViewID aId) {
+  void SetAsyncZoomContainerId(const ViewID& aId) {
     mAsyncZoomContainerId = Some(aId);
   }
-  Maybe<ScrollableLayerGuid::ViewID> GetAsyncZoomContainerId() const {
+  Maybe<ViewID> GetAsyncZoomContainerId() const {
     return mAsyncZoomContainerId;
   }
-  bool IsAsyncZoomContainer() const { return mAsyncZoomContainerId.isSome(); }
 
-  void Dump(const WebRenderScrollData& aOwner) const;
+  void Dump(std::ostream& aOut, const WebRenderScrollData& aOwner) const;
 
   friend struct IPC::ParamTraits<WebRenderLayerScrollData>;
+
+ private:
+  // For test use only
+  friend class APZTestAccess;
+
+  // For use by GTests in building WebRenderLayerScrollData trees.
+  // GTests don't have a display list so they can't use Initialize().
+  void InitializeForTest(int32_t aDescendantCount);
+
+  ScrollMetadata& GetScrollMetadataMut(WebRenderScrollData& aOwner,
+                                       size_t aIndex);
 
  private:
   // The number of descendants this layer has (not including the layer itself).
@@ -182,8 +200,10 @@ class WebRenderLayerScrollData final {
   // over IPC, and use on the parent side in APZ.
 
   gfx::Matrix4x4 mAncestorTransform;
+  ViewID mAncestorTransformId;
   gfx::Matrix4x4 mTransform;
   bool mTransformIsPerspective;
+  float mResolution;
   LayerIntRegion mVisibleRegion;
   // The remote documents only need their size because their origin is always
   // (0, 0).
@@ -194,38 +214,45 @@ class WebRenderLayerScrollData final {
   Maybe<uint64_t> mScrollbarAnimationId;
   Maybe<uint64_t> mFixedPositionAnimationId;
   SideBits mFixedPositionSides;
-  ScrollableLayerGuid::ViewID mFixedPosScrollContainerId;
-  ScrollableLayerGuid::ViewID mStickyPosScrollContainerId;
+  ViewID mFixedPosScrollContainerId;
+  ViewID mStickyPosScrollContainerId;
   LayerRectAbsolute mStickyScrollRangeOuter;
   LayerRectAbsolute mStickyScrollRangeInner;
   Maybe<uint64_t> mStickyPositionAnimationId;
   Maybe<uint64_t> mZoomAnimationId;
-  Maybe<ScrollableLayerGuid::ViewID> mAsyncZoomContainerId;
+  Maybe<ViewID> mAsyncZoomContainerId;
 };
 
 // Data needed by APZ, for the whole layer tree. One instance of this class
 // is created for each transaction sent over PWebRenderBridge. It is populated
 // with information from the WebRender layer tree on the client side and the
 // information is used by APZ on the parent side.
-class WebRenderScrollData final {
+class WebRenderScrollData {
  public:
   WebRenderScrollData();
-  explicit WebRenderScrollData(WebRenderLayerManager* aManager);
+  explicit WebRenderScrollData(WebRenderLayerManager* aManager,
+                               nsDisplayListBuilder* aBuilder);
+  WebRenderScrollData(WebRenderScrollData&& aOther) = default;
+  WebRenderScrollData& operator=(WebRenderScrollData&& aOther) = default;
+  virtual ~WebRenderScrollData() = default;
 
   WebRenderLayerManager* GetManager() const;
+
+  nsDisplayListBuilder* GetBuilder() const;
 
   // Add the given ScrollMetadata if it doesn't already exist. Return an index
   // that can be used to look up the metadata later.
   size_t AddMetadata(const ScrollMetadata& aMetadata);
   // Add the provided WebRenderLayerScrollData and return the index that can
   // be used to look it up via GetLayerData.
-  size_t AddLayerData(const WebRenderLayerScrollData& aData);
+  size_t AddLayerData(WebRenderLayerScrollData&& aData);
 
   size_t GetLayerCount() const;
 
   // Return a pointer to the scroll data at the given index. Use with caution,
   // as the pointer may be invalidated if this WebRenderScrollData is mutated.
   const WebRenderLayerScrollData* GetLayerData(size_t aIndex) const;
+  WebRenderLayerScrollData* GetLayerData(size_t aIndex);
 
   const ScrollMetadata& GetScrollMetadata(size_t aIndex) const;
   Maybe<size_t> HasMetadataFor(
@@ -236,22 +263,37 @@ class WebRenderScrollData final {
   void SetPaintSequenceNumber(uint32_t aPaintSequenceNumber);
   uint32_t GetPaintSequenceNumber() const;
 
-  void ApplyUpdates(ScrollUpdatesMap& aUpdates, uint32_t aPaintSequenceNumber);
+  void ApplyUpdates(ScrollUpdatesMap&& aUpdates, uint32_t aPaintSequenceNumber);
 
   friend struct IPC::ParamTraits<WebRenderScrollData>;
 
-  void Dump() const;
+  friend std::ostream& operator<<(std::ostream& aOut,
+                                  const WebRenderScrollData& aData);
+
+ private:
+  // For test use only.
+  friend class WebRenderLayerScrollData;
+  ScrollMetadata& GetScrollMetadataMut(size_t aIndex);
 
  private:
   // This is called by the ParamTraits implementation to rebuild mScrollIdMap
   // based on mScrollMetadatas
   bool RepopulateMap();
 
+  // This is a helper for the dumping code
+  void DumpSubtree(std::ostream& aOut, size_t aIndex,
+                   const std::string& aIndent) const;
+
  private:
   // Pointer back to the layer manager; if this is non-null, it will always be
   // valid, because the WebRenderLayerManager that created |this| will
   // outlive |this|.
   WebRenderLayerManager* MOZ_NON_OWNING_REF mManager;
+
+  // Pointer to the display list builder; if this is non-null, it will always be
+  // valid, because the nsDisplayListBuilder that created the layer manager will
+  // outlive |this|.
+  nsDisplayListBuilder* MOZ_NON_OWNING_REF mBuilder;
 
   // Internal data structure used to maintain uniqueness of mScrollMetadatas.
   // This is not serialized/deserialized over IPC, but it is rebuilt on the

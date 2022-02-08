@@ -17,6 +17,7 @@
 #include "nsCOMPtr.h"
 #include "nsNameSpaceManager.h"
 #include "nsGkAtoms.h"
+#include "nsLayoutUtils.h"
 #include "nsSliderFrame.h"
 #include "nsScrollbarFrame.h"
 #include "nsIScrollbarMediator.h"
@@ -166,7 +167,7 @@ bool nsScrollbarButtonFrame::HandleButtonPress(nsPresContext* aPresContext,
     }
 
     if (!m) {
-      sb->MoveToNewPosition();
+      sb->MoveToNewPosition(nsScrollbarFrame::ImplementsScrollByUnit::No);
       if (!weakFrame.IsAlive()) {
         return false;
       }
@@ -211,7 +212,7 @@ void nsScrollbarButtonFrame::Notify() {
       if (m) {
         m->RepeatButtonScroll(sb);
       } else {
-        sb->MoveToNewPosition();
+        sb->MoveToNewPosition(nsScrollbarFrame::ImplementsScrollByUnit::No);
       }
     }
   }

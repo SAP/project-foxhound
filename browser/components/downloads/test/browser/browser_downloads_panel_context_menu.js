@@ -11,6 +11,7 @@ const MENU_ITEMS = {
   unblock: '[command="downloadsCmd_unblock"]',
   openInSystemViewer: '[command="downloadsCmd_openInSystemViewer"]',
   alwaysOpenInSystemViewer: '[command="downloadsCmd_alwaysOpenInSystemViewer"]',
+  alwaysOpenSimilarFiles: '[command="downloadsCmd_alwaysOpenSimilarFiles"]',
   show: '[command="downloadsCmd_show"]',
   commandsSeparator: "menuseparator,.downloadCommandsSeparator",
   openReferrer: '[command="downloadsCmd_openReferrer"]',
@@ -21,9 +22,10 @@ const MENU_ITEMS = {
   clearDownloads: '[command="downloadsCmd_clearDownloads"]',
 };
 
-const TestCases = [
+const TestCasesDefaultMimetypes = [
   {
-    name: "Completed PDF download",
+    name: "Completed PDF download with improvements pref disabled",
+    prefEnabled: false,
     downloads: [
       {
         state: DownloadsCommon.DOWNLOAD_FINISHED,
@@ -46,7 +48,8 @@ const TestCases = [
     },
   },
   {
-    name: "Canceled PDF download",
+    name: "Canceled PDF download with improvements pref disabled",
+    prefEnabled: false,
     downloads: [
       {
         state: DownloadsCommon.DOWNLOAD_CANCELED,
@@ -56,6 +59,149 @@ const TestCases = [
     ],
     expected: {
       menu: [
+        MENU_ITEMS.openReferrer,
+        MENU_ITEMS.copyLocation,
+        MENU_ITEMS.separator,
+        MENU_ITEMS.delete,
+        MENU_ITEMS.clearList,
+      ],
+    },
+  },
+];
+
+const TestCasesNewMimetypesPrefDisabled = [
+  {
+    name: "Completed txt download with improvements pref disabled",
+    prefEnabled: false,
+    downloads: [
+      {
+        state: DownloadsCommon.DOWNLOAD_FINISHED,
+        contentType: "text/plain",
+        target: {},
+      },
+    ],
+    expected: {
+      menu: [
+        MENU_ITEMS.show,
+        MENU_ITEMS.commandsSeparator,
+        MENU_ITEMS.openReferrer,
+        MENU_ITEMS.copyLocation,
+        MENU_ITEMS.separator,
+        MENU_ITEMS.delete,
+        MENU_ITEMS.clearList,
+      ],
+    },
+  },
+  {
+    name: "Canceled txt download with improvements pref disabled",
+    prefEnabled: false,
+    downloads: [
+      {
+        state: DownloadsCommon.DOWNLOAD_CANCELED,
+        contentType: "text/plain",
+        target: {},
+      },
+    ],
+    expected: {
+      menu: [
+        MENU_ITEMS.openReferrer,
+        MENU_ITEMS.copyLocation,
+        MENU_ITEMS.separator,
+        MENU_ITEMS.delete,
+        MENU_ITEMS.clearList,
+      ],
+    },
+  },
+];
+
+const TestCasesNewMimetypesPrefEnabled = [
+  {
+    name: "Completed txt download with improvements pref enabled",
+    prefEnabled: true,
+    downloads: [
+      {
+        state: DownloadsCommon.DOWNLOAD_FINISHED,
+        contentType: "text/plain",
+        target: {},
+      },
+    ],
+    expected: {
+      menu: [
+        MENU_ITEMS.alwaysOpenSimilarFiles,
+        MENU_ITEMS.show,
+        MENU_ITEMS.commandsSeparator,
+        MENU_ITEMS.openReferrer,
+        MENU_ITEMS.copyLocation,
+        MENU_ITEMS.separator,
+        MENU_ITEMS.delete,
+        MENU_ITEMS.clearList,
+      ],
+    },
+  },
+  {
+    name: "Canceled txt download with improvements pref enabled",
+    prefEnabled: true,
+    downloads: [
+      {
+        state: DownloadsCommon.DOWNLOAD_CANCELED,
+        contentType: "text/plain",
+        target: {},
+      },
+    ],
+    expected: {
+      menu: [
+        MENU_ITEMS.openReferrer,
+        MENU_ITEMS.copyLocation,
+        MENU_ITEMS.separator,
+        MENU_ITEMS.delete,
+        MENU_ITEMS.clearList,
+      ],
+    },
+  },
+  {
+    name:
+      "Completed unknown ext download with application/octet-stream and improvements pref enabled",
+    prefEnabled: true,
+    overrideExtension: "unknownExtension",
+    downloads: [
+      {
+        state: DownloadsCommon.DOWNLOAD_FINISHED,
+        contentType: "application/octet-stream",
+        target: {},
+      },
+    ],
+    expected: {
+      menu: [
+        MENU_ITEMS.show,
+        MENU_ITEMS.commandsSeparator,
+        MENU_ITEMS.openReferrer,
+        MENU_ITEMS.copyLocation,
+        MENU_ITEMS.separator,
+        MENU_ITEMS.delete,
+        MENU_ITEMS.clearList,
+      ],
+    },
+  },
+  {
+    name:
+      "Completed txt download with application/octet-stream and improvements pref enabled",
+    prefEnabled: true,
+    overrideExtension: "txt",
+    downloads: [
+      {
+        state: DownloadsCommon.DOWNLOAD_FINISHED,
+        contentType: "application/octet-stream",
+        target: {},
+      },
+    ],
+    expected: {
+      menu: [
+        // Despite application/octet-stream content type, ensure
+        // alwaysOpenSimilarFiles still appears since txt files
+        // are supported file types.
+        MENU_ITEMS.alwaysOpenSimilarFiles,
+        MENU_ITEMS.show,
+        MENU_ITEMS.commandsSeparator,
         MENU_ITEMS.openReferrer,
         MENU_ITEMS.copyLocation,
         MENU_ITEMS.separator,
@@ -80,19 +226,27 @@ add_task(async function test_setUp() {
 
   // create the downloaded files we'll need
   TestFiles.pdf = await createDownloadedFile(
-    OS.Path.join(gDownloadDir, "downloaded.pdf"),
+    PathUtils.join(gDownloadDir, "downloaded.pdf"),
     DATA_PDF
   );
   info("Created downloaded PDF file at:" + TestFiles.pdf.path);
   TestFiles.txt = await createDownloadedFile(
-    OS.Path.join(gDownloadDir, "downloaded.txt"),
+    PathUtils.join(gDownloadDir, "downloaded.txt"),
     "Test file"
   );
   info("Created downloaded text file at:" + TestFiles.txt.path);
+  TestFiles.unknownExtension = await createDownloadedFile(
+    PathUtils.join(gDownloadDir, "downloaded.unknownExtension"),
+    "Test file"
+  );
+  info(
+    "Created downloaded unknownExtension file at:" +
+      TestFiles.unknownExtension.path
+  );
 });
 
 // register the tests
-for (let testData of TestCases) {
+for (let testData of TestCasesDefaultMimetypes) {
   if (testData.skip) {
     info("Skipping test:" + testData.name);
     continue;
@@ -107,9 +261,53 @@ for (let testData of TestCases) {
   add_task(tmp[testData.name]);
 }
 
-async function testDownloadContextMenu({ downloads = [], expected }) {
+// non default mimetypes with browser.download.improvements_to_download_panel disabled
+for (let testData of TestCasesNewMimetypesPrefDisabled) {
+  if (testData.skip) {
+    info("Skipping test:" + testData.name);
+    continue;
+  }
+  // use the 'name' property of each test case as the test function name
+  // so we get useful logs
+  let tmp = {
+    async [testData.name]() {
+      await testDownloadContextMenu(testData);
+    },
+  };
+  add_task(tmp[testData.name]);
+}
+
+// non default mimetypes with browser.download.improvements_to_download_panel enabled
+for (let testData of TestCasesNewMimetypesPrefEnabled) {
+  if (testData.skip) {
+    info("Skipping test:" + testData.name);
+    continue;
+  }
+  // use the 'name' property of each test case as the test function name
+  // so we get useful logs
+  let tmp = {
+    async [testData.name]() {
+      await testDownloadContextMenu(testData);
+    },
+  };
+  add_task(tmp[testData.name]);
+}
+
+async function testDownloadContextMenu({
+  overrideExtension = null,
+  downloads = [],
+  expected,
+  prefEnabled,
+}) {
+  info(
+    `Setting browser.download.improvements_to_download_panel to ${prefEnabled}`
+  );
+  SpecialPowers.setBoolPref(
+    "browser.download.improvements_to_download_panel",
+    prefEnabled
+  );
   // prepare downloads
-  await prepareDownloads(downloads);
+  await prepareDownloads(downloads, overrideExtension);
   let downloadList = await Downloads.getList(Downloads.PUBLIC);
   let [firstDownload] = await downloadList.getAll();
   info("Download succeeded? " + firstDownload.succeeded);
@@ -184,7 +382,7 @@ function verifyContextMenu(contextMenu, itemSelectors) {
   return null;
 }
 
-async function prepareDownloads(downloads) {
+async function prepareDownloads(downloads, overrideExtension = null) {
   for (let props of downloads) {
     info(JSON.stringify(props));
     if (props.state !== DownloadsCommon.DOWNLOAD_FINISHED) {
@@ -194,8 +392,11 @@ async function prepareDownloads(downloads) {
       case "application/pdf":
         props.target = TestFiles.pdf;
         break;
-      default:
+      case "text/plain":
         props.target = TestFiles.txt;
+        break;
+      case "application/octet-stream":
+        props.target = TestFiles[overrideExtension];
         break;
     }
     ok(props.target instanceof Ci.nsIFile, "download target is a nsIFile");

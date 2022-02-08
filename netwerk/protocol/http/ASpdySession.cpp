@@ -36,7 +36,7 @@ ASpdySession* ASpdySession::NewSpdySession(net::SpdyVersion version,
   // from a list provided in the SERVER HELLO filtered by our acceptable
   // versions, so there is no risk of the server ignoring our prefs.
 
-  return new Http2Session(aTransport, version, attemptingEarlyData);
+  return Http2Session::CreateSession(aTransport, version, attemptingEarlyData);
 }
 
 SpdyInformation::SpdyInformation() {
@@ -82,7 +82,7 @@ bool SpdyPushCache::RegisterPushedStreamHttp2(const nsCString& key,
           key.get(), stream->StreamID()));
     return false;
   }
-  mHashHttp2.Put(key, stream);
+  mHashHttp2.InsertOrUpdate(key, stream);
   return true;
 }
 

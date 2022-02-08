@@ -118,17 +118,79 @@ interface nsIAppStartup : nsISupports
     const uint32_t eRestart = 0x10;
 
     /**
+     * Only valid when combined with eRestart. Only relevant on macOS.
+     *
+     * On macOS, it is possible for Firefox to run with no windows open (the
+     * icon in the dock will retain the little dot under it to indicate that
+     * the application is still running). Normally, we never want to launch
+     * Firefox into this state. But we do occasionally want it to restart this
+     * way. Passing this flag prevents Firefox from opening any windows when it
+     * restarts.
+     *
+     * Note that, if there is an application update pending, this also silences
+     * the update. This means that no UI will be shown including elevation
+     * dialogs (potentially preventing the update from being installed).
+     */
+    const uint32_t eSilently = 0x100;
+
+    /**
      * Exit the event loop, and shut down the app.
      *
      * @param aMode
      *        This parameter modifies how the app is shutdown, and it is
      *        constructed from the constants defined above.
+     * @param aExitCode
+     *        The exit code to return from the process. The precise code
+     *        returned by the process may vary depending on the platform. Only
+     *        values 0-255 should generallt be used. If not specified an exit
+     *        code of 0 will be used.
      *
      * @return false if the shutdown was cancelled due to the presence
      *         of a hidden window or if the user disallowed a window
      *         to be closed.
      */
-    bool quit(in uint32_t aMode);
+    bool quit(in uint32_t aMode, [optional] in int32_t aExitCode);
+
+    /**
+    * These values must match the xpcom/base/ShutdownPhase.h values.
+    * We do not expose late XPCOM shutdown phases here, everything
+    * after SHUTDOWN_PHASE_XPCOMSHUTDOWN is expected to be irrelevant 
+    * for JS.
+    */
+    cenum IDLShutdownPhase : 8 {
+        SHUTDOWN_PHASE_NOTINSHUTDOWN = 0,
+        SHUTDOWN_PHASE_APPSHUTDOWNCONFIRMED,
+        SHUTDOWN_PHASE_APPSHUTDOWNNETTEARDOWN,
+        SHUTDOWN_PHASE_APPSHUTDOWNTEARDOWN,
+        SHUTDOWN_PHASE_APPSHUTDOWN,
+        SHUTDOWN_PHASE_APPSHUTDOWNQM,
+        SHUTDOWN_PHASE_APPSHUTDOWNRELEMETRY,
+        SHUTDOWN_PHASE_XPCOMWILLSHUTDOWN,
+        SHUTDOWN_PHASE_XPCOMSHUTDOWN
+    };
+
+    /**
+     * Wrapper for shutdown notifications that informs the terminator before
+     * we notify other observers. Calls MaybeFastShutdown.
+     * This function is supposed to be used only from some (xpcshell) tests
+     * explicitely dealing with shutdown.
+     * 
+     * @param aPhase
+     *        The shutdown phase we want to advance to. Please note, that
+     *        we cannot go back to earlier phases or abort shutdown once
+     *        it started.
+     */
+    void advanceShutdownPhase(in nsIAppStartup_IDLShutdownPhase aPhase);
+
+    /**
+     * Check if we entered or passed a specific shutdown phase.
+     * 
+     * @param aPhase
+     *        The shutdown phase we want to check. 
+     *
+     * @return true if we are in or beyond the given phase.
+     */
+    bool isInOrBeyondShutdownPhase(in nsIAppStartup_IDLShutdownPhase aPhase);
 
     /**
      * True if the application is in the process of shutting down.
@@ -161,9 +223,21 @@ interface nsIAppStartup : nsISupports
     readonly attribute boolean wasRestarted;
 
     /**
+     * True if this is the startup following a silent restart, i.e. if the
+     * application was restarted using quit(eSilently*), or if the application
+     * was started with the "silentmode" command line flag.
+     */
+    readonly attribute boolean wasSilentlyStarted;
+
+    /**
      * The number of seconds since the OS was last rebooted
      */
     readonly attribute int64_t secondsSinceLastOSRestart;
+
+    /**
+     * Whether or not we showed the startup skeleton UI.
+     */
+    readonly attribute bool showedPreXULSkeletonUI;
 
     /**
      * Returns an object with main, process, firstPaint, sessionRestored properties.

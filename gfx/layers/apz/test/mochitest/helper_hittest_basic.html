@@ -17,18 +17,21 @@
 </body>
 <script type="application/javascript">
 
-function* test(testDriver) {
+async function test() {
   var config = getHitTestConfig();
   var utils = config.utils;
 
   var scroller = document.getElementById("scroller");
   var apzaware = document.getElementById("apzaware");
 
+  let expectedHitInfo = APZHitResultFlags.VISIBLE;
+  if (!config.activateAllScrollFrames) {
+    expectedHitInfo |= APZHitResultFlags.INACTIVE_SCROLLFRAME;
+  }
   checkHitResult(hitTest(centerOf(scroller)),
-                 APZHitResultFlags.VISIBLE |
-                 (config.isWebRender ? APZHitResultFlags.INACTIVE_SCROLLFRAME
-                                     : APZHitResultFlags.IRREGULAR_AREA),
-                 utils.getViewId(document.scrollingElement),
+                 expectedHitInfo,
+                 (config.activateAllScrollFrames ? utils.getViewId(scroller)
+                                                 : utils.getViewId(document.scrollingElement)),
                  utils.getLayersId(),
                  "inactive scrollframe");
 
@@ -56,16 +59,14 @@ function* test(testDriver) {
   // also apply a async scroll offset in the y-direction such that the
   // scrollframe scrolls to the bottom of its range.
   utils.setDisplayPortForElement(0, 0, 500, 500, scroller, 1);
-  yield waitForApzFlushedRepaints(testDriver);
+  await promiseApzFlushedRepaints();
   var scrollY = scroller.scrollTopMax;
   utils.setAsyncScrollOffset(scroller, 0, scrollY);
-  if (config.isWebRender) {
-    // Tick the refresh driver once to make sure the compositor has applied the
-    // async scroll offset (for APZ hit-testing this doesn't matter, but for
-    // WebRender hit-testing we need to make sure WR has the latest info).
-    utils.advanceTimeAndRefresh(16);
-    utils.restoreNormalRefresh();
-  }
+  // Tick the refresh driver once to make sure the compositor has applied the
+  // async scroll offset (for WebRender hit-testing we need to make sure WR has
+  // the latest info).
+  utils.advanceTimeAndRefresh(16);
+  utils.restoreNormalRefresh();
 
   var scrollerViewId = utils.getViewId(scroller);
 
@@ -81,8 +82,7 @@ function* test(testDriver) {
   apzawarePosition.y -= scrollY; // APZ position
   checkHitResult(hitTest(apzawarePosition),
                  APZHitResultFlags.VISIBLE |
-                 (config.isWebRender ? APZHitResultFlags.APZ_AWARE_LISTENERS
-                                     : APZHitResultFlags.IRREGULAR_AREA),
+                 APZHitResultFlags.APZ_AWARE_LISTENERS,
                  scrollerViewId,
                  utils.getLayersId(),
                  "active scrollframe - apzaware block");
@@ -131,11 +131,11 @@ function* test(testDriver) {
     expectThumb: false,
     layerState: LayerState.ACTIVE,
   });
-
-  subtestDone();
 }
 
-waitUntilApzStable().then(runContinuation(test));
+waitUntilApzStable()
+.then(test)
+.then(subtestDone, subtestFailed);
 
 </script>
 </html>

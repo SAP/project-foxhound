@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 es{
     Keys{
         calendar{"calendario"}
@@ -276,7 +277,7 @@ es{
         krc{"karachay-balkar"}
         krl{"carelio"}
         kru{"kurukh"}
-        ks{"cachemiro"}
+        ks{"cachemir"}
         ksb{"shambala"}
         ksf{"bafia"}
         ksh{"kölsch"}
@@ -333,7 +334,7 @@ es{
         mic{"micmac"}
         min{"minangkabau"}
         mk{"macedonio"}
-        ml{"malayalam"}
+        ml{"malayálam"}
         mn{"mongol"}
         mnc{"manchú"}
         mni{"manipuri"}
@@ -413,13 +414,13 @@ es{
         raj{"rajasthani"}
         rap{"rapanui"}
         rar{"rarotongano"}
+        rhg{"rohinyá"}
         rm{"romanche"}
         rn{"kirundi"}
         ro{"rumano"}
         ro_MD{"moldavo"}
         rof{"rombo"}
         rom{"romaní"}
-        root{"raíz"}
         ru{"ruso"}
         rup{"arrumano"}
         rw{"kinyarwanda"}
@@ -569,6 +570,7 @@ es{
         az{"azerí"}
     }
     Languages%variant{
+        ckb{"kurdo central"}
         ps{"pastú"}
         ug{"uygur"}
     }
@@ -606,9 +608,9 @@ es{
         Glag{"glagolítico"}
         Goth{"gótico"}
         Grek{"griego"}
-        Gujr{"gujarati"}
+        Gujr{"guyaratí"}
         Guru{"gurmuji"}
-        Hanb{"hanb"}
+        Hanb{"han con bopomofo"}
         Hang{"hangul"}
         Hani{"han"}
         Hano{"hanunoo"}
@@ -831,7 +833,7 @@ es{
             knda{"dígitos en canarés"}
             laoo{"dígitos en lao"}
             latn{"dígitos occidentales"}
-            mlym{"dígitos en malayalam"}
+            mlym{"dígitos en malayálam"}
             mong{"dígitos en mongol"}
             mymr{"dígitos en birmano"}
             native{"Dígitos nativos"}
@@ -861,7 +863,6 @@ es{
         VALENCIA{"Valenciano"}
         WADEGILE{"Romanización Wade-Giles"}
     }
-    Version{"37"}
     characterLabelPattern{
         all{"{0} — Todo"}
         category-list{"{0}: {1}"}
@@ -876,6 +877,8 @@ es{
             one{"{0} trazo"}
             other{"{0} trazos"}
         }
+        subscript{"Subíndice {0}"}
+        superscript{"Superíndice {0}"}
     }
     codePatterns{
         language{"Idioma: {0}"}

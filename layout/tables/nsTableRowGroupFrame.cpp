@@ -257,18 +257,17 @@ void nsTableRowGroupFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   DisplayRows(aBuilder, this, aLists);
 }
 
-nsIFrame::LogicalSides nsTableRowGroupFrame::GetLogicalSkipSides(
-    const ReflowInput* aReflowInput) const {
+LogicalSides nsTableRowGroupFrame::GetLogicalSkipSides() const {
   LogicalSides skip(mWritingMode);
   if (MOZ_UNLIKELY(StyleBorder()->mBoxDecorationBreak ==
                    StyleBoxDecorationBreak::Clone)) {
     return skip;
   }
 
-  if (nullptr != GetPrevInFlow()) {
+  if (GetPrevInFlow()) {
     skip |= eLogicalSideBitsBStart;
   }
-  if (nullptr != GetNextInFlow()) {
+  if (GetNextInFlow()) {
     skip |= eLogicalSideBitsBEnd;
   }
   return skip;
@@ -306,15 +305,15 @@ void nsTableRowGroupFrame::PlaceChild(
 void nsTableRowGroupFrame::InitChildReflowInput(nsPresContext& aPresContext,
                                                 bool aBorderCollapse,
                                                 ReflowInput& aReflowInput) {
-  nsMargin border;
+  const auto childWM = aReflowInput.GetWritingMode();
+  LogicalMargin border(childWM);
   if (nsTableRowFrame* rowFrame = do_QueryFrame(aReflowInput.mFrame)) {
     if (aBorderCollapse) {
-      WritingMode wm = GetWritingMode();
-      border = rowFrame->GetBCBorderWidth(wm).GetPhysicalMargin(wm);
+      border = rowFrame->GetBCBorderWidth(childWM);
     }
   }
-  const nsMargin padding;
-  aReflowInput.Init(&aPresContext, Nothing(), &border, &padding);
+  const LogicalMargin zeroPadding(childWM);
+  aReflowInput.Init(&aPresContext, Nothing(), Some(border), Some(zeroPadding));
 }
 
 static void CacheRowBSizesForPrinting(nsPresContext* aPresContext,
@@ -388,7 +387,7 @@ void nsTableRowGroupFrame::ReflowChildren(
       kidAvailSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
       ReflowInput kidReflowInput(aPresContext, aReflowInput.reflowInput,
                                  kidFrame, kidAvailSize, Nothing(),
-                                 ReflowInput::CALLER_WILL_INIT);
+                                 ReflowInput::InitFlag::CallerWillInit);
       InitChildReflowInput(*aPresContext, borderCollapse, kidReflowInput);
 
       // This can indicate that columns were resized.
@@ -877,7 +876,7 @@ nscoord nsTableRowGroupFrame::CollapseRowGroupIfNecessary(nscoord aBTotalOffset,
     tableFrame->SetNeedToCollapse(true);
   }
 
-  nsOverflowAreas overflow;
+  OverflowAreas overflow;
 
   nsTableRowFrame* rowFrame = GetFirstRow();
   bool didCollapse = false;
@@ -1008,7 +1007,7 @@ void nsTableRowGroupFrame::SplitSpanningCells(
         ReflowInput rowReflowInput(
             &aPresContext, aReflowInput, row,
             LogicalSize(row->GetWritingMode(), rowAvailSize), Nothing(),
-            ReflowInput::CALLER_WILL_INIT);
+            ReflowInput::InitFlag::CallerWillInit);
         InitChildReflowInput(aPresContext, borderCollapse, rowReflowInput);
         rowReflowInput.mFlags.mIsTopOfPage = isTopOfPage;  // set top of page
 
@@ -1101,6 +1100,7 @@ nsresult nsTableRowGroupFrame::SplitRowGroup(nsPresContext* aPresContext,
 
   nsTableRowFrame* prevRowFrame = nullptr;
   aDesiredSize.Height() = 0;
+  aDesiredSize.SetOverflowAreasToDesiredBounds();
 
   const nscoord availWidth = aReflowInput.AvailableWidth();
   const nscoord availHeight = aReflowInput.AvailableHeight();
@@ -1142,7 +1142,7 @@ nsresult nsTableRowGroupFrame::SplitRowGroup(nsPresContext* aPresContext,
         ReflowInput rowReflowInput(
             aPresContext, aReflowInput, rowFrame,
             LogicalSize(rowFrame->GetWritingMode(), availSize), Nothing(),
-            ReflowInput::CALLER_WILL_INIT);
+            ReflowInput::InitFlag::CallerWillInit);
 
         InitChildReflowInput(*aPresContext, borderCollapse, rowReflowInput);
         rowReflowInput.mFlags.mIsTopOfPage = isTopOfPage;  // set top of page
@@ -1334,17 +1334,15 @@ nsresult nsTableRowGroupFrame::SplitRowGroup(nsPresContext* aPresContext,
       }
       break;
     }  // if (rowRect.YMost() > availHeight)
-    else {
-      aDesiredSize.Height() = rowRect.YMost();
-      prevRowFrame = rowFrame;
-      // see if there is a page break after the row
-      nsTableRowFrame* nextRow = rowFrame->GetNextRow();
-      if (nextRow && nsTableFrame::PageBreakAfter(rowFrame, nextRow)) {
-        PushChildren(nextRow, rowFrame);
-        aStatus.Reset();
-        aStatus.SetIncomplete();
-        break;
-      }
+    aDesiredSize.Height() = rowRect.YMost();
+    prevRowFrame = rowFrame;
+    // see if there is a page break after the row
+    nsTableRowFrame* nextRow = rowFrame->GetNextRow();
+    if (nextRow && nsTableFrame::PageBreakAfter(rowFrame, nextRow)) {
+      PushChildren(nextRow, rowFrame);
+      aStatus.Reset();
+      aStatus.SetIncomplete();
+      break;
     }
     // after the 1st row that has a height, we can't be on top
     // of the page anymore.
@@ -1396,15 +1394,14 @@ void nsTableRowGroupFrame::Reflow(nsPresContext* aPresContext,
       (aStatus.IsIncomplete() || splitDueToPageBreak ||
        aDesiredSize.Height() > aReflowInput.AvailableHeight())) {
     // Nope, find a place to split the row group
-    bool specialReflow = (bool)aReflowInput.mFlags.mSpecialBSizeReflow;
-    ((ReflowInput::ReflowInputFlags&)aReflowInput.mFlags).mSpecialBSizeReflow =
-        false;
+    auto& mutableRIFlags = const_cast<ReflowInput::Flags&>(aReflowInput.mFlags);
+    const bool savedSpecialBSizeReflow = mutableRIFlags.mSpecialBSizeReflow;
+    mutableRIFlags.mSpecialBSizeReflow = false;
 
     SplitRowGroup(aPresContext, aDesiredSize, aReflowInput, tableFrame, aStatus,
                   splitDueToPageBreak);
 
-    ((ReflowInput::ReflowInputFlags&)aReflowInput.mFlags).mSpecialBSizeReflow =
-        specialReflow;
+    mutableRIFlags.mSpecialBSizeReflow = savedSpecialBSizeReflow;
   }
 
   // XXXmats The following is just bogus.  We leave it here for now because
@@ -1442,7 +1439,7 @@ void nsTableRowGroupFrame::Reflow(nsPresContext* aPresContext,
 }
 
 bool nsTableRowGroupFrame::ComputeCustomOverflow(
-    nsOverflowAreas& aOverflowAreas) {
+    OverflowAreas& aOverflowAreas) {
   // Row cursor invariants depend on the ink overflow area of the rows,
   // which may have changed, so we need to clear the cursor now.
   ClearRowCursor();
@@ -1657,21 +1654,19 @@ nsresult nsTableRowGroupFrame::GetFrameName(nsAString& aResult) const {
 
 LogicalMargin nsTableRowGroupFrame::GetBCBorderWidth(WritingMode aWM) {
   LogicalMargin border(aWM);
-  nsTableRowFrame* firstRowFrame = nullptr;
-  nsTableRowFrame* lastRowFrame = nullptr;
-  for (nsTableRowFrame* rowFrame = GetFirstRow(); rowFrame;
+  nsTableRowFrame* firstRowFrame = GetFirstRow();
+  if (!firstRowFrame) {
+    return border;
+  }
+  nsTableRowFrame* lastRowFrame = firstRowFrame;
+  for (nsTableRowFrame* rowFrame = firstRowFrame->GetNextRow(); rowFrame;
        rowFrame = rowFrame->GetNextRow()) {
-    if (!firstRowFrame) {
-      firstRowFrame = rowFrame;
-    }
     lastRowFrame = rowFrame;
   }
-  if (firstRowFrame) {
-    border.BStart(aWM) = PresContext()->DevPixelsToAppUnits(
-        firstRowFrame->GetBStartBCBorderWidth());
-    border.BEnd(aWM) = PresContext()->DevPixelsToAppUnits(
-        lastRowFrame->GetBEndBCBorderWidth());
-  }
+  border.BStart(aWM) = PresContext()->DevPixelsToAppUnits(
+      firstRowFrame->GetBStartBCBorderWidth());
+  border.BEnd(aWM) =
+      PresContext()->DevPixelsToAppUnits(lastRowFrame->GetBEndBCBorderWidth());
   return border;
 }
 
@@ -1701,7 +1696,7 @@ bool nsTableRowGroupFrame::GetDirection() {
 }
 
 Result<nsILineIterator::LineInfo, nsresult> nsTableRowGroupFrame::GetLine(
-    int32_t aLineNumber) const {
+    int32_t aLineNumber) {
   if ((aLineNumber < 0) || (aLineNumber >= GetRowCount())) {
     return Err(NS_ERROR_FAILURE);
   }
@@ -1755,7 +1750,7 @@ NS_IMETHODIMP
 nsTableRowGroupFrame::FindFrameAt(int32_t aLineNumber, nsPoint aPos,
                                   nsIFrame** aFrameFound,
                                   bool* aPosIsBeforeFirstFrame,
-                                  bool* aPosIsAfterLastFrame) const {
+                                  bool* aPosIsAfterLastFrame) {
   nsTableFrame* table = GetTableFrame();
   nsTableCellMap* cellMap = table->GetCellMap();
 
@@ -1838,14 +1833,6 @@ nsTableRowGroupFrame::FindFrameAt(int32_t aLineNumber, nsPoint aPos,
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsTableRowGroupFrame::GetNextSiblingOnLine(nsIFrame*& aFrame,
-                                           int32_t aLineNumber) const {
-  NS_ENSURE_ARG_POINTER(aFrame);
-  aFrame = aFrame->GetNextSibling();
-  return NS_OK;
-}
-
 // end nsLineIterator methods
 
 NS_DECLARE_FRAME_PROPERTY_DELETABLE(RowCursorProperty,
@@ -1877,7 +1864,6 @@ nsTableRowGroupFrame::FrameCursorData* nsTableRowGroupFrame::SetupRowCursor() {
   }
 
   FrameCursorData* data = new FrameCursorData();
-  if (!data) return nullptr;
   SetProperty(RowCursorProperty(), data);
   AddStateBits(NS_ROWGROUP_HAS_ROW_CURSOR);
   return data;

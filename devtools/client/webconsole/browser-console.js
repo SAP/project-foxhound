@@ -6,10 +6,6 @@
 
 const Services = require("Services");
 const WebConsole = require("devtools/client/webconsole/webconsole");
-const { TargetList } = require("devtools/shared/resources/target-list");
-const {
-  ResourceWatcher,
-} = require("devtools/shared/resources/resource-watcher");
 const { Utils } = require("devtools/client/webconsole/utils");
 
 loader.lazyRequireGetter(this, "Telemetry", "devtools/client/shared/telemetry");
@@ -21,9 +17,10 @@ loader.lazyRequireGetter(
 );
 
 /**
- * A BrowserConsole instance is an interactive console initialized *per target*
+ * A BrowserConsole instance is an interactive console initialized *per commands*
  * that displays console log data as well as provides an interactive terminal to
- * manipulate the target's document content.
+ * manipulate all browser debuggable context and targeted by default at the current
+ * top-level window's document.
  *
  * This object only wraps the iframe that holds the Browser Console UI. This is
  * meant to be an integration point between the Firefox UI and the Browser Console
@@ -34,34 +31,19 @@ loader.lazyRequireGetter(
 class BrowserConsole extends WebConsole {
   /*
    * @constructor
-   * @param object target
-   *        The target that the browser console will connect to.
+   * @param object commands
+   *        The commands object with all interfaces defined from devtools/shared/commands/
    * @param nsIDOMWindow iframeWindow
    *        The window where the browser console UI is already loaded.
    * @param nsIDOMWindow chromeWindow
    *        The window of the browser console owner.
    */
-  constructor(target, iframeWindow, chromeWindow) {
-    super(null, iframeWindow, chromeWindow, true);
+  constructor(commands, iframeWindow, chromeWindow) {
+    super(null, commands, iframeWindow, chromeWindow, true);
 
-    this._browserConsoleTarget = target;
-    this._targetList = new TargetList(target.client.mainRoot, target);
-    this._resourceWatcher = new ResourceWatcher(this._targetList);
     this._telemetry = new Telemetry();
     this._bcInitializer = null;
     this._bcDestroyer = null;
-  }
-
-  get currentTarget() {
-    return this._browserConsoleTarget;
-  }
-
-  get targetList() {
-    return this._targetList;
-  }
-
-  get resourceWatcher() {
-    return this._resourceWatcher;
   }
 
   /**
@@ -83,14 +65,10 @@ class BrowserConsole extends WebConsole {
       // toolbox session id.
       this._telemetry.toolOpened("browserconsole", -1, this);
 
-      // Bug 1605763: Call super.init before fetching targets in order to build the
-      // console UI first; have it listen for targets and be able to display first
-      // targets as soon as they get available.
       await super.init(false);
-      await this.targetList.startListening();
 
       // Reports the console as created only after everything is done,
-      // including TargetList.startListening.
+      // including TargetCommand.startListening.
       const id = Utils.supportsString(this.hudId);
       Services.obs.notifyObservers(id, "web-console-created");
     })();
@@ -113,12 +91,12 @@ class BrowserConsole extends WebConsole {
       // toolbox session id.
       this._telemetry.toolClosed("browserconsole", -1, this);
 
+      this.commands.targetCommand.destroy();
       // Wait for any pending connection initialization.
       await Promise.all(
         this.ui.getAllProxies().map(proxy => proxy.getConnectionPromise())
       );
 
-      await this.targetList.stopListening();
       await super.destroy();
       await this.currentTarget.destroy();
       this.chromeWindow.close();

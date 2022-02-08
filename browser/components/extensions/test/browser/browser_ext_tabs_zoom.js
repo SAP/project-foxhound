@@ -8,9 +8,6 @@ const SITE_SPECIFIC_PREF = "browser.zoom.siteSpecific";
 // incognito data in event listeners it will fail.
 let monitor;
 add_task(async function startup() {
-  SpecialPowers.pushPrefEnv({
-    set: [["extensions.allowPrivateBrowsingByDefault", false]],
-  });
   monitor = await startIncognitoMonitorExtension();
 });
 registerCleanupFunction(async function finish() {
@@ -257,11 +254,11 @@ add_task(async function test_zoom_api() {
   });
 
   extension.onMessage("msg", (id, msg, ...args) => {
-    let {
+    const {
       Management: {
         global: { tabTracker },
       },
-    } = ChromeUtils.import("resource://gre/modules/Extension.jsm", null);
+    } = ChromeUtils.import("resource://gre/modules/Extension.jsm");
 
     let resp;
     if (msg == "get-zoom") {
@@ -283,11 +280,11 @@ add_task(async function test_zoom_api() {
     extension.sendMessage("msg-done", id, resp);
   });
 
-  let url = "http://example.com/";
+  let url = "https://example.com/";
   let tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
   let tab2 = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
-    "http://example.net/"
+    "http://example.org/"
   );
 
   let privateWindow = await BrowserTestUtils.openNewBrowserWindow({

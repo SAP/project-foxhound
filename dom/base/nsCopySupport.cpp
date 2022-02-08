@@ -16,8 +16,11 @@
 #include "nsRange.h"
 #include "imgIContainer.h"
 #include "imgIRequest.h"
+#include "nsComponentManagerUtils.h"
 #include "nsFocusManager.h"
 #include "nsFrameSelection.h"
+#include "nsServiceManagerUtils.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/dom/DataTransfer.h"
 
 #include "nsIDocShell.h"
@@ -43,6 +46,7 @@
 #  include "nsEscape.h"
 #  include "nsIMIMEInfo.h"
 #  include "nsIMIMEService.h"
+#  include "nsIURIMutator.h"
 #  include "nsIURL.h"
 #  include "nsReadableUtils.h"
 #  include "nsXULAppAPI.h"
@@ -621,7 +625,7 @@ static nsresult AppendImagePromise(nsITransferable* aTransferable,
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIMIMEInfo> mimeInfo;
-  mimeService->GetFromTypeAndExtension(mimeType, EmptyCString(),
+  mimeService->GetFromTypeAndExtension(mimeType, ""_ns,
                                        getter_AddRefs(mimeInfo));
   NS_ENSURE_TRUE(mimeInfo, NS_OK);
 
@@ -642,8 +646,8 @@ static nsresult AppendImagePromise(nsITransferable* aTransferable,
     mimeInfo->GetPrimaryExtension(primaryExtension);
     if (!primaryExtension.IsEmpty()) {
       rv = NS_MutateURI(imgUri)
-               .Apply(NS_MutatorMethod(&nsIURLMutator::SetFileExtension,
-                                       primaryExtension, nullptr))
+               .Apply(&nsIURLMutator::SetFileExtension, primaryExtension,
+                      nullptr)
                .Finalize(imgUrl);
       NS_ENSURE_SUCCESS(rv, rv);
     }

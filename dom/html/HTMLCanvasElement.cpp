@@ -7,7 +7,6 @@
 #include "mozilla/dom/HTMLCanvasElement.h"
 
 #include "ImageEncoder.h"
-#include "ImageLayers.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
 #include "Layers.h"
@@ -16,8 +15,10 @@
 #include "mozilla/Base64.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/CanvasCaptureMediaStream.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/GeneratePlaceholderCanvasData.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/File.h"
@@ -32,6 +33,7 @@
 #include "mozilla/layers/WebRenderUserData.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ProfilerLabels.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/webgpu/CanvasContext.h"
 #include "nsAttrValueInlines.h"
@@ -49,14 +51,14 @@
 #include "CanvasUtils.h"
 #include "VRManagerChild.h"
 #include "ClientWebGLContext.h"
+#include "WindowRenderer.h"
 
 using namespace mozilla::layers;
 using namespace mozilla::gfx;
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Canvas)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class RequestedFrameRefreshObserver : public nsARefreshObserver {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RequestedFrameRefreshObserver, override)
@@ -181,7 +183,8 @@ class RequestedFrameRefreshObserver : public nsARefreshObserver {
 
     MOZ_ASSERT(mRefreshDriver);
     if (mRefreshDriver) {
-      mRefreshDriver->AddRefreshObserver(this, FlushType::Display);
+      mRefreshDriver->AddRefreshObserver(this, FlushType::Display,
+                                         "Canvas frame capture listeners");
       mRegistered = true;
     }
   }
@@ -497,6 +500,12 @@ nsresult HTMLCanvasElement::DispatchPrintCallback(nsITimerCallback* aCallback) {
 
 MOZ_CAN_RUN_SCRIPT
 void HTMLCanvasElement::CallPrintCallback() {
+  if (!mPrintState) {
+    // `mPrintState` might have been destroyed by cancelling the previous
+    // printing (especially the canvas frame destruction) during processing
+    // event loops in the printing.
+    return;
+  }
   RefPtr<PrintCallback> callback = GetMozPrintCallback();
   RefPtr<HTMLCanvasPrintState> state = mPrintState;
   callback->Call(*state);
@@ -523,10 +532,15 @@ HTMLCanvasElement* HTMLCanvasElement::GetOriginalCanvas() {
 nsresult HTMLCanvasElement::CopyInnerTo(HTMLCanvasElement* aDest) {
   nsresult rv = nsGenericHTMLElement::CopyInnerTo(aDest);
   NS_ENSURE_SUCCESS(rv, rv);
-  if (aDest->OwnerDoc()->IsStaticDocument()) {
+  Document* destDoc = aDest->OwnerDoc();
+  if (destDoc->IsStaticDocument()) {
     // The Firefox print preview code can create a static clone from an
     // existing static clone, so we may not be the original 'canvas' element.
     aDest->mOriginalCanvas = GetOriginalCanvas();
+
+    if (GetMozPrintCallback()) {
+      destDoc->SetHasPrintCallbacks();
+    }
 
     // We make sure that the canvas is not zero sized since that would cause
     // the DrawImage call below to return an error, which would cause printing
@@ -583,6 +597,26 @@ nsChangeHint HTMLCanvasElement::GetAttributeChangeHint(const nsAtom* aAttribute,
   return retval;
 }
 
+void HTMLCanvasElement::MapAttributesIntoRule(
+    const nsMappedAttributes* aAttributes, MappedDeclarations& aDecls) {
+  MapAspectRatioInto(aAttributes, aDecls);
+  MapCommonAttributesInto(aAttributes, aDecls);
+}
+
+nsMapRuleToAttributesFunc HTMLCanvasElement::GetAttributeMappingFunction()
+    const {
+  return &MapAttributesIntoRule;
+}
+
+NS_IMETHODIMP_(bool)
+HTMLCanvasElement::IsAttributeMapped(const nsAtom* aAttribute) const {
+  static const MappedAttributeEntry attributes[] = {
+      {nsGkAtoms::width}, {nsGkAtoms::height}, {nullptr}};
+  static const MappedAttributeEntry* const map[] = {attributes,
+                                                    sCommonAttributeMap};
+  return FindAttributeDependence(aAttribute, map);
+}
+
 bool HTMLCanvasElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                                        const nsAString& aValue,
                                        nsIPrincipal* aMaybeScriptedPrincipal,
@@ -637,6 +671,14 @@ class CanvasCaptureTrackSource : public MediaStreamTrackSource {
 
   MediaSourceEnum GetMediaSource() const override {
     return MediaSourceEnum::Other;
+  }
+
+  bool HasAlpha() const override {
+    if (!mCaptureStream || !mCaptureStream->Canvas()) {
+      // In cycle-collection
+      return false;
+    }
+    return !mCaptureStream->Canvas()->GetIsOpaque();
   }
 
   void Stop() override {
@@ -756,7 +798,7 @@ nsresult HTMLCanvasElement::ToDataURLImpl(JSContext* aCx,
   // If there are unrecognized custom parse options, we should fall back to
   // the default values for the encoder without any options at all.
   if (rv == NS_ERROR_INVALID_ARG && usingCustomParseOptions) {
-    rv = ExtractData(aCx, aSubjectPrincipal, type, EmptyString(),
+    rv = ExtractData(aCx, aSubjectPrincipal, type, u""_ns,
                      getter_AddRefs(stream));
   }
 
@@ -874,7 +916,7 @@ nsresult HTMLCanvasElement::MozGetAsFileImpl(const nsAString& aName,
   nsAutoString type(aType);
   nsresult rv =
       ExtractData(nsContentUtils::GetCurrentJSContext(), aSubjectPrincipal,
-                  type, EmptyString(), getter_AddRefs(stream));
+                  type, u""_ns, getter_AddRefs(stream));
   NS_ENSURE_SUCCESS(rv, rv);
 
   uint64_t imgSize;
@@ -1021,27 +1063,21 @@ void HTMLCanvasElement::InvalidateCanvasContent(const gfx::Rect* damageRect) {
     renderer->SetDirty();
     frame->SchedulePaint(nsIFrame::PAINT_COMPOSITE_ONLY);
   } else {
-    Layer* layer = nullptr;
     if (damageRect) {
       nsIntSize size = GetWidthHeight();
       if (size.width != 0 && size.height != 0) {
         gfx::IntRect invalRect = gfx::IntRect::Truncate(*damageRect);
-        layer =
-            frame->InvalidateLayer(DisplayItemType::TYPE_CANVAS, &invalRect);
+        frame->InvalidateLayer(DisplayItemType::TYPE_CANVAS, &invalRect);
       }
     } else {
-      layer = frame->InvalidateLayer(DisplayItemType::TYPE_CANVAS);
+      frame->InvalidateLayer(DisplayItemType::TYPE_CANVAS);
     }
 
-    if (layer) {
-      static_cast<CanvasLayer*>(layer)->Updated();
-    } else {
-      // This path is taken in two situations:
-      // 1) WebRender is enabled and has not yet processed a display list.
-      // 2) WebRender is disabled and layer invalidation failed.
-      // In both cases, schedule a full paint to properly update canvas.
-      frame->SchedulePaint(nsIFrame::PAINT_DEFAULT, false);
-    }
+    // This path is taken in two situations:
+    // 1) WebRender is enabled and has not yet processed a display list.
+    // 2) WebRender is disabled and layer invalidation failed.
+    // In both cases, schedule a full paint to properly update canvas.
+    frame->SchedulePaint(nsIFrame::PAINT_DEFAULT, false);
   }
 
   /*
@@ -1067,19 +1103,6 @@ void HTMLCanvasElement::InvalidateCanvas() {
   frame->InvalidateFrame();
 }
 
-int32_t HTMLCanvasElement::CountContexts() {
-  if (mCurrentContext) return 1;
-
-  return 0;
-}
-
-nsICanvasRenderingContextInternal* HTMLCanvasElement::GetContextAtIndex(
-    int32_t index) {
-  if (mCurrentContext && index == 0) return mCurrentContext;
-
-  return nullptr;
-}
-
 bool HTMLCanvasElement::GetIsOpaque() {
   if (mCurrentContext) {
     return mCurrentContext->GetIsOpaque();
@@ -1096,10 +1119,9 @@ CanvasContextType HTMLCanvasElement::GetCurrentContextType() {
   return mCurrentContextType;
 }
 
-already_AddRefed<Layer> HTMLCanvasElement::GetCanvasLayer(
-    nsDisplayListBuilder* aBuilder, Layer* aOldLayer, LayerManager* aManager) {
+already_AddRefed<Image> HTMLCanvasElement::GetAsImage() {
   if (mCurrentContext) {
-    return mCurrentContext->GetCanvasLayer(aBuilder, aOldLayer, aManager);
+    return mCurrentContext->GetAsImage();
   }
 
   if (mOffscreenCanvas) {
@@ -1134,19 +1156,6 @@ bool HTMLCanvasElement::InitializeCanvasRenderer(nsDisplayListBuilder* aBuilder,
   }
 
   return false;
-}
-
-bool HTMLCanvasElement::ShouldForceInactiveLayer(LayerManager* aManager) {
-  if (mCurrentContext) {
-    return mCurrentContext->ShouldForceInactiveLayer(aManager);
-  }
-
-  if (mOffscreenCanvas) {
-    // TODO: We should handle offscreen canvas case.
-    return false;
-  }
-
-  return true;
 }
 
 void HTMLCanvasElement::MarkContextClean() {
@@ -1260,9 +1269,9 @@ already_AddRefed<SourceSurface> HTMLCanvasElement::GetSurfaceSnapshot(
 layers::LayersBackend HTMLCanvasElement::GetCompositorBackendType() const {
   nsIWidget* docWidget = nsContentUtils::WidgetForDocument(OwnerDoc());
   if (docWidget) {
-    layers::LayerManager* layerManager = docWidget->GetLayerManager();
-    if (layerManager) {
-      return layerManager->GetCompositorBackendType();
+    WindowRenderer* renderer = docWidget->GetWindowRenderer();
+    if (renderer) {
+      return renderer->GetCompositorBackendType();
     }
   }
 
@@ -1309,7 +1318,7 @@ ClientWebGLContext* HTMLCanvasElement::GetWebGLContext() {
     return nullptr;
   }
 
-  return static_cast<ClientWebGLContext*>(GetContextAtIndex(0));
+  return static_cast<ClientWebGLContext*>(GetCurrentContext());
 }
 
 webgpu::CanvasContext* HTMLCanvasElement::GetWebGPUContext() {
@@ -1317,8 +1326,7 @@ webgpu::CanvasContext* HTMLCanvasElement::GetWebGPUContext() {
     return nullptr;
   }
 
-  return static_cast<webgpu::CanvasContext*>(GetContextAtIndex(0));
+  return static_cast<webgpu::CanvasContext*>(GetCurrentContext());
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

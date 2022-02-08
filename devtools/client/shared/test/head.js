@@ -17,6 +17,8 @@ const { DOMHelpers } = require("devtools/shared/dom-helpers");
 const { Hosts } = require("devtools/client/framework/toolbox-hosts");
 
 const TEST_URI_ROOT = "http://example.com/browser/devtools/client/shared/test/";
+const TEST_URI_ROOT_SSL =
+  "https://example.com/browser/devtools/client/shared/test/";
 const OPTIONS_VIEW_URL = CHROME_URL_ROOT + "doc_options-view.xhtml";
 
 const EXAMPLE_URL =
@@ -121,6 +123,10 @@ const createHost = async function(
     DOMHelpers.onceDOMReady(iframe.contentWindow, resolve);
   });
 
+  // Popup tests fail very frequently on Linux + webrender because they run
+  // too early.
+  await waitForPresShell(iframe);
+
   return { host: host, win: iframe.contentWindow, doc: iframe.contentDocument };
 };
 
@@ -134,8 +140,9 @@ const createHost = async function(
 async function openAndCloseToolbox(nbOfTimes, usageTime, toolId) {
   for (let i = 0; i < nbOfTimes; i++) {
     info("Opening toolbox " + (i + 1));
-    const target = await TargetFactory.forTab(gBrowser.selectedTab);
-    const toolbox = await gDevTools.showToolbox(target, toolId);
+
+    const tab = gBrowser.selectedTab;
+    const toolbox = await gDevTools.showToolboxForTab(tab, { toolId });
 
     // We use a timeout to check the toolbox's active time
     await new Promise(resolve => setTimeout(resolve, usageTime));

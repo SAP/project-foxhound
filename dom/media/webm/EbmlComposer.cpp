@@ -15,11 +15,11 @@
 namespace mozilla {
 
 // Timecode scale in nanoseconds
-static const unsigned long TIME_CODE_SCALE = 1000000;
+constexpr unsigned long TIME_CODE_SCALE = 1000000;
 // The WebM header size without audio CodecPrivateData
-static const int32_t DEFAULT_HEADER_SIZE = 1024;
+constexpr int32_t DEFAULT_HEADER_SIZE = 1024;
 // Number of milliseconds after which we flush audio-only clusters
-static const int32_t FLUSH_AUDIO_ONLY_AFTER_MS = 1000;
+constexpr int32_t FLUSH_AUDIO_ONLY_AFTER_MS = 1000;
 
 void EbmlComposer::GenerateHeader() {
   MOZ_RELEASE_ASSERT(!mMetadataFinished);
@@ -76,91 +76,72 @@ void EbmlComposer::GenerateHeader() {
   }
   MOZ_ASSERT(ebml.offset <= DEFAULT_HEADER_SIZE + mCodecPrivateData.Length(),
              "write more data > EBML_BUFFER_SIZE");
-  auto block = mFinishedClusters.AppendElement();
+  auto block = mBuffer.AppendElement();
   block->SetLength(ebml.offset);
   memcpy(block->Elements(), ebml.buf, ebml.offset);
   mMetadataFinished = true;
 }
 
-void EbmlComposer::FinishCluster() {
-  if (!WritingCluster()) {
-    return;
-  }
-
-  MOZ_ASSERT(mCurrentClusterLengthLoc > 0);
-  EbmlGlobal ebml;
-  EbmlLoc ebmlLoc;
-  ebmlLoc.offset = mCurrentClusterLengthLoc;
-  ebml.offset = 0;
-  for (const auto& block : mCurrentCluster) {
-    ebml.offset += block.Length();
-  }
-  ebml.buf = mCurrentCluster[0].Elements();
-  Ebml_EndSubElement(&ebml, &ebmlLoc);
-  mFinishedClusters.AppendElements(std::move(mCurrentCluster));
-  mCurrentClusterLengthLoc = 0;
-  MOZ_ASSERT(mCurrentCluster.IsEmpty());
-}
-
-void EbmlComposer::WriteSimpleBlock(EncodedFrame* aFrame) {
+nsresult EbmlComposer::WriteSimpleBlock(EncodedFrame* aFrame) {
   MOZ_RELEASE_ASSERT(mMetadataFinished);
   auto frameType = aFrame->mFrameType;
   const bool isVP8IFrame = (frameType == EncodedFrame::FrameType::VP8_I_FRAME);
   const bool isVP8PFrame = (frameType == EncodedFrame::FrameType::VP8_P_FRAME);
   const bool isOpus = (frameType == EncodedFrame::FrameType::OPUS_AUDIO_FRAME);
-  if (isVP8IFrame) {
-    MOZ_ASSERT(mHasVideo);
-    FinishCluster();
+
+  MOZ_ASSERT_IF(isVP8IFrame, mHasVideo);
+  MOZ_ASSERT_IF(isVP8PFrame, mHasVideo);
+  MOZ_ASSERT_IF(isOpus, mHasAudio);
+
+  if (isVP8PFrame && !mHasWrittenCluster) {
+    // We ensure there is a cluster header and an I-frame prior to any P-frame.
+    return NS_ERROR_INVALID_ARG;
   }
 
-  if (isVP8PFrame && !WritingCluster()) {
-    // We ensure that clusters start with I-frames.
-    return;
-  }
+  int64_t timeCode = aFrame->mTime.ToMicroseconds() / PR_USEC_PER_MSEC -
+                     mCurrentClusterTimecode;
+  MOZ_RELEASE_ASSERT(timeCode >= SHRT_MIN);
+  MOZ_RELEASE_ASSERT(timeCode <= SHRT_MAX);
 
-  int64_t timeCode =
-      aFrame->mTime / ((int)PR_USEC_PER_MSEC) - mCurrentClusterTimecode;
+  const bool needClusterHeader =
+      !mHasWrittenCluster ||
+      (!mHasVideo && timeCode >= FLUSH_AUDIO_ONLY_AFTER_MS) || isVP8IFrame;
 
-  if (!mHasVideo && timeCode >= FLUSH_AUDIO_ONLY_AFTER_MS) {
-    MOZ_ASSERT(mHasAudio);
-    MOZ_ASSERT(isOpus);
-    // Audio-only, we'll still have to flush every now and then.
-    // We do it every second for now.
-    FinishCluster();
-  } else if (timeCode < SHRT_MIN || timeCode > SHRT_MAX) {
-    // This would overflow when writing the block below.
-    FinishCluster();
-  }
-
-  bool needClusterHeader = !WritingCluster();
-  auto block = mCurrentCluster.AppendElement();
-  block->SetLength(aFrame->GetFrameData().Length() + DEFAULT_HEADER_SIZE);
+  auto block = mBuffer.AppendElement();
+  block->SetLength(aFrame->mFrameData->Length() + DEFAULT_HEADER_SIZE);
 
   EbmlGlobal ebml;
   ebml.offset = 0;
   ebml.buf = block->Elements();
 
   if (needClusterHeader) {
+    mHasWrittenCluster = true;
     EbmlLoc ebmlLoc;
+    // This starts the Cluster element. Note that we never end this element
+    // through Ebml_EndSubElement. What the ending would allow us to do is write
+    // the full length of the cluster in the element header. That would also
+    // force us to keep the entire cluster in memory until we know where it
+    // ends. Now it instead ends through the start of the next cluster. This
+    // allows us to stream the muxed data with much lower latency than if we
+    // would have to wait for clusters to end.
     Ebml_StartSubElement(&ebml, &ebmlLoc, Cluster);
-    mCurrentClusterLengthLoc = ebmlLoc.offset;
     // if timeCode didn't under/overflow before, it shouldn't after this
-    mCurrentClusterTimecode = aFrame->mTime / PR_USEC_PER_MSEC;
+    mCurrentClusterTimecode = aFrame->mTime.ToMicroseconds() / PR_USEC_PER_MSEC;
     Ebml_SerializeUnsigned(&ebml, Timecode, mCurrentClusterTimecode);
 
     // Can't under-/overflow now
-    timeCode =
-        aFrame->mTime / ((int)PR_USEC_PER_MSEC) - mCurrentClusterTimecode;
+    timeCode = 0;
   }
 
   writeSimpleBlock(&ebml, isOpus ? 0x2 : 0x1, static_cast<short>(timeCode),
                    isVP8IFrame, 0, 0,
-                   (unsigned char*)aFrame->GetFrameData().Elements(),
-                   aFrame->GetFrameData().Length());
-  MOZ_ASSERT(
-      ebml.offset <= DEFAULT_HEADER_SIZE + aFrame->GetFrameData().Length(),
-      "write more data > EBML_BUFFER_SIZE");
+                   (unsigned char*)aFrame->mFrameData->Elements(),
+                   aFrame->mFrameData->Length());
+  MOZ_ASSERT(ebml.offset <= DEFAULT_HEADER_SIZE + aFrame->mFrameData->Length(),
+             "write more data > EBML_BUFFER_SIZE");
   block->SetLength(ebml.offset);
+
+  return NS_OK;
 }
 
 void EbmlComposer::SetVideoConfig(uint32_t aWidth, uint32_t aHeight,
@@ -192,11 +173,8 @@ void EbmlComposer::ExtractBuffer(nsTArray<nsTArray<uint8_t> >* aDestBufs,
   if (!mMetadataFinished) {
     return;
   }
-  if (aFlag & ContainerWriter::FLUSH_NEEDED) {
-    FinishCluster();
-  }
-  aDestBufs->AppendElements(std::move(mFinishedClusters));
-  MOZ_ASSERT(mFinishedClusters.IsEmpty());
+  aDestBufs->AppendElements(std::move(mBuffer));
+  MOZ_ASSERT(mBuffer.IsEmpty());
 }
 
 }  // namespace mozilla

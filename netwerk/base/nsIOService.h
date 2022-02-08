@@ -16,15 +16,18 @@
 #include "nsIChannelEventSink.h"
 #include "nsCategoryCache.h"
 #include "nsISpeculativeConnect.h"
-#include "nsDataHashtable.h"
+#include "nsWeakReference.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Mutex.h"
 #include "prtime.h"
 #include "nsICaptivePortalService.h"
 #include "nsIObserverService.h"
+#include "nsTHashSet.h"
+#include "nsWeakReference.h"
+#include "nsNetCID.h"
 
-#define NS_N(x) (sizeof(x) / sizeof(*x))
+#define NS_N(x) (sizeof(x) / sizeof(*(x)))
 
 // We don't want to expose this observer topic.
 // Intended internal use only for remoting offline/inline events.
@@ -103,8 +106,6 @@ class nsIOService final : public nsIIOService,
 
   bool IsLinkUp();
 
-  static bool IsDataURIUniqueOpaqueOrigin();
-
   // Converts an internal URI (e.g. one that has a username and password in
   // it) into one which we can expose to the user, for example on the URL bar.
   static already_AddRefed<nsIURI> CreateExposableURI(nsIURI*);
@@ -158,7 +159,8 @@ class nsIOService final : public nsIIOService,
   nsresult GetCachedProtocolHandler(const char* scheme,
                                     nsIProtocolHandler** hdlrResult,
                                     uint32_t start = 0, uint32_t end = 0);
-  nsresult CacheProtocolHandler(const char* scheme, nsIProtocolHandler* hdlr);
+  nsresult CacheProtocolHandler(const char* scheme,
+                                nsIProtocolHandler* handler);
 
   nsresult InitializeCaptivePortalService();
   nsresult RecheckCaptivePortalIfLocalRedirect(nsIChannel* newChan);
@@ -182,7 +184,7 @@ class nsIOService final : public nsIIOService,
       nsIPrincipal* aTriggeringPrincipal,
       const mozilla::Maybe<mozilla::dom::ClientInfo>& aLoadingClientInfo,
       const mozilla::Maybe<mozilla::dom::ServiceWorkerDescriptor>& aController,
-      uint32_t aSecurityFlags, uint32_t aContentPolicyType,
+      uint32_t aSecurityFlags, nsContentPolicyType aContentPolicyType,
       uint32_t aSandboxFlags, nsIChannel** result);
 
   nsresult NewChannelFromURIWithProxyFlagsInternal(nsIURI* aURI,
@@ -198,38 +200,39 @@ class nsIOService final : public nsIIOService,
   void DestroySocketProcess();
 
  private:
-  mozilla::Atomic<bool, mozilla::Relaxed> mOffline;
-  mozilla::Atomic<bool, mozilla::Relaxed> mOfflineForProfileChange;
-  bool mManageLinkStatus;
-  mozilla::Atomic<bool, mozilla::Relaxed> mConnectivity;
+  mozilla::Atomic<bool, mozilla::Relaxed> mOffline{true};
+  mozilla::Atomic<bool, mozilla::Relaxed> mOfflineForProfileChange{false};
+  bool mManageLinkStatus{false};
+  mozilla::Atomic<bool, mozilla::Relaxed> mConnectivity{true};
 
   // Used to handle SetOffline() reentrancy.  See the comment in
   // SetOffline() for more details.
-  bool mSettingOffline;
-  bool mSetOfflineValue;
+  bool mSettingOffline{false};
+  bool mSetOfflineValue{false};
 
-  bool mSocketProcessLaunchComplete;
+  bool mSocketProcessLaunchComplete{false};
 
-  mozilla::Atomic<bool, mozilla::Relaxed> mShutdown;
-  mozilla::Atomic<bool, mozilla::Relaxed> mHttpHandlerAlreadyShutingDown;
+  mozilla::Atomic<bool, mozilla::Relaxed> mShutdown{false};
+  mozilla::Atomic<bool, mozilla::Relaxed> mHttpHandlerAlreadyShutingDown{false};
 
   nsCOMPtr<nsPISocketTransportService> mSocketTransportService;
   nsCOMPtr<nsICaptivePortalService> mCaptivePortalService;
   nsCOMPtr<nsINetworkLinkService> mNetworkLinkService;
-  bool mNetworkLinkServiceInitialized;
+  bool mNetworkLinkServiceInitialized{false};
 
   // Cached protocol handlers, only accessed on the main thread
   nsWeakPtr mWeakHandler[NS_N(gScheme)];
 
   // cached categories
-  nsCategoryCache<nsIChannelEventSink> mChannelEventSinks;
+  nsCategoryCache<nsIChannelEventSink> mChannelEventSinks{
+      NS_CHANNEL_EVENT_SINK_CATEGORY};
 
-  Mutex mMutex;
+  Mutex mMutex{"nsIOService::mMutex"};
   nsTArray<int32_t> mRestrictedPortList;
 
-  uint32_t mTotalRequests;
-  uint32_t mCacheWon;
-  uint32_t mNetWon;
+  uint32_t mTotalRequests{0};
+  uint32_t mCacheWon{0};
+  uint32_t mNetWon{0};
 
   // These timestamps are needed for collecting telemetry on PR_Connect,
   // PR_ConnectContinue and PR_Close blocking time.  If we spend very long
@@ -240,9 +243,9 @@ class nsIOService final : public nsIIOService,
   mozilla::Atomic<PRIntervalTime> mLastNetworkLinkChange;
 
   // Time a network tearing down started.
-  mozilla::Atomic<PRIntervalTime> mNetTearingDownStarted;
+  mozilla::Atomic<PRIntervalTime> mNetTearingDownStarted{0};
 
-  SocketProcessHost* mSocketProcess;
+  SocketProcessHost* mSocketProcess{nullptr};
 
   // Events should be executed after the socket process is launched. Will
   // dispatch these events while socket process fires OnProcessLaunchComplete.
@@ -250,10 +253,10 @@ class nsIOService final : public nsIIOService,
   nsTArray<std::function<void()>> mPendingEvents;
 
   // The observer notifications need to be forwarded to socket process.
-  nsTHashtable<nsCStringHashKey> mObserverTopicForSocketProcess;
+  nsTHashSet<nsCString> mObserverTopicForSocketProcess;
   // Some noticications (e.g., NS_XPCOM_SHUTDOWN_OBSERVER_ID) are triggered in
   // socket process, so we should not send the notifications again.
-  nsTHashtable<nsCStringHashKey> mSocketProcessTopicBlackList;
+  nsTHashSet<nsCString> mSocketProcessTopicBlackList;
 
   nsCOMPtr<nsIObserverService> mObserverService;
 

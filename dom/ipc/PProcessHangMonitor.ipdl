@@ -23,26 +23,14 @@ struct SlowScriptData
   double duration;
 };
 
-struct PluginHangData
-{
-  uint32_t pluginId;
-  ProcessId contentProcessId;
-};
-
-union HangData
-{
-  SlowScriptData;
-  PluginHangData;
-};
-
 protocol PProcessHangMonitor
 {
 parent:
-  async HangEvidence(HangData data);
+  async HangEvidence(SlowScriptData data);
   async ClearHang();
 
 child:
-  async TerminateScript(bool aTerminateGlobal);
+  async TerminateScript();
 
   async BeginStartingDebugger();
   async EndStartingDebugger();

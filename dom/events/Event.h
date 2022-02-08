@@ -7,24 +7,29 @@
 #ifndef mozilla_dom_Event_h_
 #define mozilla_dom_Event_h_
 
-#include "mozilla/Attributes.h"
-#include "mozilla/BasicEvents.h"
-#include "nsISupports.h"
-#include "nsCOMPtr.h"
-#include "nsPIDOMWindow.h"
-#include "nsPoint.h"
-#include "nsCycleCollectionParticipant.h"
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/EventBinding.h"
-#include "mozilla/dom/PopupBlocker.h"
-#include "nsIScriptGlobalObject.h"
+#include <cstdint>
 #include "Units.h"
 #include "js/TypeDecls.h"
-#include "nsIGlobalObject.h"
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/BasicEvents.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsID.h"
+#include "nsISupports.h"
+#include "nsStringFwd.h"
+#include "nsWrapperCache.h"
 
-class nsIContent;
-class nsPresContext;
 class PickleIterator;
+class nsCycleCollectionTraversalCallback;
+class nsIContent;
+class nsIGlobalObject;
+class nsIPrincipal;
+class nsPIDOMWindowInner;
+class nsPresContext;
 
 namespace IPC {
 class Message;
@@ -35,6 +40,7 @@ namespace dom {
 
 class BeforeUnloadEvent;
 class CustomEvent;
+class Document;
 class DragEvent;
 class EventTarget;
 class EventMessageAutoOverride;
@@ -47,6 +53,8 @@ class TimeEvent;
 class UIEvent;
 class WantsPopupControlCheck;
 class XULCommandEvent;
+struct EventInit;
+
 #define GENERATED_EVENT(EventClass_) class EventClass_;
 #include "mozilla/dom/GeneratedEventList.h"
 #undef GENERATED_EVENT
@@ -131,6 +139,9 @@ class Event : public nsISupports, public nsWrapperCache {
   virtual void DuplicatePrivateData();
   bool IsDispatchStopped();
   WidgetEvent* WidgetEventPtr();
+  const WidgetEvent* WidgetEventPtr() const {
+    return const_cast<Event*>(this)->WidgetEventPtr();
+  }
   virtual void Serialize(IPC::Message* aMsg, bool aSerializeInterfaceType);
   virtual bool Deserialize(const IPC::Message* aMsg, PickleIterator* aIter);
   void SetOwner(EventTarget* aOwner);
@@ -142,7 +153,7 @@ class Event : public nsISupports, public nsWrapperCache {
   // Returns true if the event should be trusted.
   bool Init(EventTarget* aGlobal);
 
-  static const char* GetEventName(EventMessage aEventType);
+  static const char16_t* GetEventName(EventMessage aEventType);
   static CSSIntPoint GetClientCoords(nsPresContext* aPresContext,
                                      WidgetEvent* aEvent,
                                      LayoutDeviceIntPoint aPoint,
@@ -274,6 +285,20 @@ class Event : public nsISupports, public nsWrapperCache {
    * @param aType is a string where to return the type.
    */
   static void GetWidgetEventType(WidgetEvent* aEvent, nsAString& aType);
+
+  void RequestReplyFromRemoteContent() {
+    mEvent->MarkAsWaitingReplyFromRemoteProcess();
+  }
+
+  bool IsWaitingReplyFromRemoteContent() const {
+    return mEvent->IsWaitingReplyFromRemoteProcess();
+  }
+
+  bool IsReplyEventFromRemoteContent() const {
+    return mEvent->IsHandledInRemoteProcess();
+  }
+
+  static bool IsDragExitEnabled(JSContext* aCx, JSObject* aGlobal);
 
  protected:
   // Internal helper functions

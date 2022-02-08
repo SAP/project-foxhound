@@ -80,7 +80,6 @@ use alloc::vec::Vec;
 use core::cmp::Ordering;
 use core::fmt::{self, Display, Formatter, Write};
 use log::debug;
-use thiserror::Error;
 
 pub use self::cssa::verify_cssa;
 pub use self::liveness::verify_liveness;
@@ -92,8 +91,7 @@ mod liveness;
 mod locations;
 
 /// A verifier error.
-#[derive(Error, Debug, PartialEq, Eq, Clone)]
-#[error("{}{}: {}", .location, format_context(.context), .message)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct VerifierError {
     /// The entity causing the verifier error.
     pub location: AnyEntity,
@@ -104,11 +102,16 @@ pub struct VerifierError {
     pub message: String,
 }
 
-/// Helper for formatting Verifier::Error context.
-fn format_context(context: &Option<String>) -> String {
-    match context {
-        None => "".to_string(),
-        Some(c) => format!(" ({})", c),
+// This is manually implementing Error and Display instead of using thiserror to reduce the amount
+// of dependencies used by Cranelift.
+impl std::error::Error for VerifierError {}
+
+impl Display for VerifierError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match &self.context {
+            None => write!(f, "{}: {}", self.location, self.message),
+            Some(context) => write!(f, "{} ({}): {}", self.location, context, self.message),
+        }
     }
 }
 
@@ -175,8 +178,12 @@ pub type VerifierStepResult<T> = Result<T, ()>;
 pub type VerifierResult<T> = Result<T, VerifierErrors>;
 
 /// List of verifier errors.
-#[derive(Error, Debug, Default, PartialEq, Eq, Clone)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct VerifierErrors(pub Vec<VerifierError>);
+
+// This is manually implementing Error and Display instead of using thiserror to reduce the amount
+// of dependencies used by Cranelift.
+impl std::error::Error for VerifierErrors {}
 
 impl VerifierErrors {
     /// Return a new `VerifierErrors` struct.
@@ -749,7 +756,11 @@ impl<'a> Verifier<'a> {
             }
 
             // Exhaustive list so we can't forget to add new formats
-            Unary { .. }
+            AtomicCas { .. }
+            | AtomicRmw { .. }
+            | LoadNoOffset { .. }
+            | StoreNoOffset { .. }
+            | Unary { .. }
             | UnaryConst { .. }
             | UnaryImm { .. }
             | UnaryIeee32 { .. }
@@ -2060,10 +2071,7 @@ mod tests {
                 Some(&VerifierError { ref message, .. }) => {
                     if !message.contains($msg) {
                         #[cfg(feature = "std")]
-                        panic!(format!(
-                            "'{}' did not contain the substring '{}'",
-                            message, $msg
-                        ));
+                        panic!("'{}' did not contain the substring '{}'", message, $msg);
                         #[cfg(not(feature = "std"))]
                         panic!("error message did not contain the expected substring");
                     }

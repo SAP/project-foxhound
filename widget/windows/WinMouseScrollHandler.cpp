@@ -114,15 +114,13 @@ void MouseScrollHandler::MaybeLogKeyState() {
   if (::GetKeyboardState(keyboardState)) {
     for (size_t i = 0; i < ArrayLength(keyboardState); i++) {
       if (keyboardState[i]) {
-        MOZ_LOG(
-            gMouseScrollLog, LogLevel::Debug,
-            ("    Current key state: keyboardState[0x%02X]=0x%02X (%s)", i,
-             keyboardState[i],
-             ((keyboardState[i] & 0x81) == 0x81)
-                 ? "Pressed and Toggled"
-                 : (keyboardState[i] & 0x80)
-                       ? "Pressed"
-                       : (keyboardState[i] & 0x01) ? "Toggled" : "Unknown"));
+        MOZ_LOG(gMouseScrollLog, LogLevel::Debug,
+                ("    Current key state: keyboardState[0x%02X]=0x%02X (%s)", i,
+                 keyboardState[i],
+                 ((keyboardState[i] & 0x81) == 0x81) ? "Pressed and Toggled"
+                 : (keyboardState[i] & 0x80)         ? "Pressed"
+                 : (keyboardState[i] & 0x01)         ? "Toggled"
+                                                     : "Unknown"));
       }
     }
   } else {
@@ -214,7 +212,8 @@ bool MouseScrollHandler::ProcessMessage(nsWindowBase* aWidget, UINT msg,
                "msg=%s(0x%04X), wParam=0x%02X, ::GetMessageTime()=%d",
                aWidget,
                msg == WM_KEYDOWN ? "WM_KEYDOWN"
-                                 : msg == WM_KEYUP ? "WM_KEYUP" : "Unknown",
+               : msg == WM_KEYUP ? "WM_KEYUP"
+                                 : "Unknown",
                msg, wParam, ::GetMessageTime()));
       MaybeLogKeyState();
       if (Device::Elantech::HandleKeyMessage(aWidget, msg, wParam, lParam)) {
@@ -377,11 +376,10 @@ void MouseScrollHandler::ProcessNativeMouseWheelMessage(nsWindowBase* aWidget,
           ("MouseScroll::ProcessNativeMouseWheelMessage: aWidget=%p, "
            "aMessage=%s, wParam=0x%08X, lParam=0x%08X, point: { x=%d, y=%d }",
            aWidget,
-           aMessage == WM_MOUSEWHEEL
-               ? "WM_MOUSEWHEEL"
-               : aMessage == WM_MOUSEHWHEEL
-                     ? "WM_MOUSEHWHEEL"
-                     : aMessage == WM_VSCROLL ? "WM_VSCROLL" : "WM_HSCROLL",
+           aMessage == WM_MOUSEWHEEL    ? "WM_MOUSEWHEEL"
+           : aMessage == WM_MOUSEHWHEEL ? "WM_MOUSEHWHEEL"
+           : aMessage == WM_VSCROLL     ? "WM_VSCROLL"
+                                        : "WM_HSCROLL",
            aWParam, aLParam, point.x, point.y));
   MaybeLogKeyState();
 
@@ -443,21 +441,6 @@ void MouseScrollHandler::ProcessNativeMouseWheelMessage(nsWindowBase* aWidget,
       ::SetForegroundWindow(destWindow->GetWindowHandle());
     }
 
-    // If the found window is our plugin window, it means that the message
-    // has been handled by the plugin but not consumed.  We should handle the
-    // message on its parent window.  However, note that the DOM event may
-    // cause accessing the plugin.  Therefore, we should unlock the plugin
-    // process by using PostMessage().
-    if (destWindow->IsPlugin()) {
-      destWindow = destWindow->GetParentWindowBase(false);
-      if (!destWindow) {
-        MOZ_LOG(
-            gMouseScrollLog, LogLevel::Info,
-            ("MouseScroll::ProcessNativeMouseWheelMessage: "
-             "Our window which is a parent of a plugin window is not found"));
-        return;
-      }
-    }
     MOZ_LOG(gMouseScrollLog, LogLevel::Info,
             ("MouseScroll::ProcessNativeMouseWheelMessage: Succeeded, "
              "Posting internal message to an nsWindow (%p)...",
@@ -480,33 +463,6 @@ void MouseScrollHandler::ProcessNativeMouseWheelMessage(nsWindowBase* aWidget,
     MOZ_LOG(gMouseScrollLog, LogLevel::Info,
             ("MouseScroll::ProcessNativeMouseWheelMessage: "
              "Our window is not found under the cursor"));
-    return;
-  }
-
-  // If we're a plugin window (MozillaWindowClass) and cursor in this window,
-  // the message shouldn't go to plugin's wndproc again.  So, we should handle
-  // it on parent window.  However, note that the DOM event may cause accessing
-  // the plugin.  Therefore, we should unlock the plugin process by using
-  // PostMessage().
-  if (aWidget->IsPlugin() && aWidget->GetWindowHandle() == pluginWnd) {
-    nsWindowBase* destWindow = aWidget->GetParentWindowBase(false);
-    if (!destWindow) {
-      MOZ_LOG(gMouseScrollLog, LogLevel::Info,
-              ("MouseScroll::ProcessNativeMouseWheelMessage: Our normal window "
-               "which "
-               "is a parent of this plugin window is not found"));
-      return;
-    }
-    MOZ_LOG(
-        gMouseScrollLog, LogLevel::Info,
-        ("MouseScroll::ProcessNativeMouseWheelMessage: Succeeded, "
-         "Posting internal message to an nsWindow (%p) which is parent of this "
-         "plugin window...",
-         destWindow));
-    mIsWaitingInternalMessage = true;
-    UINT internalMessage = WinUtils::GetInternalMessage(aMessage);
-    ::PostMessage(destWindow->GetWindowHandle(), internalMessage, aWParam,
-                  aLParam);
     return;
   }
 
@@ -819,15 +775,21 @@ bool MouseScrollHandler::LastEventInfo::InitWheelEvent(
   aWheelEvent.mDeltaMode = mIsPage ? dom::WheelEvent_Binding::DOM_DELTA_PAGE
                                    : dom::WheelEvent_Binding::DOM_DELTA_LINE;
 
+  double ticks = double(mDelta) * orienter / double(WHEEL_DELTA);
+  if (mIsVertical) {
+    aWheelEvent.mWheelTicksY = ticks;
+  } else {
+    aWheelEvent.mWheelTicksX = ticks;
+  }
+
   double& delta = mIsVertical ? aWheelEvent.mDeltaY : aWheelEvent.mDeltaX;
   int32_t& lineOrPageDelta = mIsVertical ? aWheelEvent.mLineOrPageDeltaY
                                          : aWheelEvent.mLineOrPageDeltaX;
 
   double nativeDeltaPerUnit =
-      mIsPage ? static_cast<double>(WHEEL_DELTA)
-              : static_cast<double>(WHEEL_DELTA) / GetScrollAmount();
+      mIsPage ? double(WHEEL_DELTA) : double(WHEEL_DELTA) / GetScrollAmount();
 
-  delta = static_cast<double>(mDelta) * orienter / nativeDeltaPerUnit;
+  delta = double(mDelta) * orienter / nativeDeltaPerUnit;
   mAccumulatedDelta += mDelta;
   lineOrPageDelta =
       mAccumulatedDelta * orienter / RoundDelta(nativeDeltaPerUnit);
@@ -1628,11 +1590,6 @@ void MouseScrollHandler::SynthesizingEvent::NativeMessageReceived(
       mWParam == aWParam && mLParam == aLParam) {
     mStatus = NATIVE_MESSAGE_RECEIVED;
     if (aWidget && aWidget->GetWindowHandle() == mWnd) {
-      return;
-    }
-    // If the target window is not ours and received window is our plugin
-    // window, it comes from child window of the plugin.
-    if (aWidget && aWidget->IsPlugin() && !WinUtils::GetNSWindowBasePtr(mWnd)) {
       return;
     }
     // Otherwise, the message may not be sent by us.

@@ -15,9 +15,20 @@ const { FxAccountsProfile } = ChromeUtils.import(
   "resource://gre/modules/FxAccountsProfile.jsm"
 );
 
+const { FxAccountsProfileClient } = ChromeUtils.import(
+  "resource://gre/modules/FxAccountsProfileClient.jsm"
+);
+
 const { FxAccountsTelemetry } = ChromeUtils.import(
   "resource://gre/modules/FxAccountsTelemetry.jsm"
 );
+
+XPCOMUtils.defineLazyModuleGetters(this, {
+  FxAccountsConfig: "resource://gre/modules/FxAccountsConfig.jsm",
+  jwcrypto: "resource://services-crypto/jwcrypto.jsm",
+  CryptoUtils: "resource://services-crypto/utils.js",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
+});
 
 _("Misc tests for FxAccounts.telemetry");
 
@@ -60,102 +71,4 @@ add_task(function test_sanitize_device_id() {
   // Reverts to unset for falsey values.
   fxAccounts.telemetry._setHashedUID("");
   Assert.equal(fxAccounts.telemetry.sanitizeDeviceId(MOCK_DEVICE_ID), null);
-});
-
-add_task(async function test_getEcosystemAnonId() {
-  let ecosystemAnonId = "aaaaaaaaaaaaaaa";
-  let testCases = [
-    {
-      // testing retrieving the ecosystemAnonId when the profile contains it
-      throw: false,
-      profileObj: { ecosystemAnonId },
-      expectedEcosystemAnonId: ecosystemAnonId,
-    },
-    {
-      // testing retrieving the ecosystemAnonId when the profile doesn't contain it
-      throw: false,
-      profileObj: {},
-      expectedEcosystemAnonId: null,
-    },
-    {
-      // testing retrieving the ecosystemAnonId when the profile is null
-      throw: true,
-      profileObj: null,
-      expectedEcosystemAnonId: null,
-    },
-  ];
-
-  for (const tc of testCases) {
-    let profile = new FxAccountsProfile({ profileServerUrl: "http://testURL" });
-    let telemetry = new FxAccountsTelemetry({});
-    telemetry._internal = { profile };
-    const mockProfile = sinon.mock(profile);
-    const mockTelemetry = sinon.mock(telemetry);
-
-    if (tc.throw) {
-      mockProfile
-        .expects("getProfile")
-        .once()
-        .throws(Error);
-    } else {
-      mockProfile
-        .expects("getProfile")
-        .once()
-        .returns(tc.profileObj);
-    }
-
-    if (tc.expectedEcosystemAnonId) {
-      mockTelemetry.expects("ensureEcosystemAnonId").never();
-    } else {
-      mockTelemetry
-        .expects("ensureEcosystemAnonId")
-        .once()
-        .resolves("dddddddddd");
-    }
-
-    let actualEcoSystemAnonId = await telemetry.getEcosystemAnonId();
-    mockProfile.verify();
-    mockTelemetry.verify();
-    Assert.equal(actualEcoSystemAnonId, tc.expectedEcosystemAnonId);
-  }
-});
-
-add_task(async function test_ensureEcosystemAnonId() {
-  let ecosystemAnonId = "bbbbbbbbbbbbbb";
-  let testCases = [
-    {
-      profile: {
-        ecosystemAnonId,
-      },
-      willErr: false,
-    },
-    {
-      profile: {},
-      willErr: true,
-    },
-  ];
-
-  for (const tc of testCases) {
-    let profile = new FxAccountsProfile({ profileServerUrl: "http://testURL" });
-    let telemetry = new FxAccountsTelemetry({});
-    telemetry._internal = { profile };
-    let mockProfile = sinon.mock(profile);
-    mockProfile
-      .expects("ensureProfile")
-      .once()
-      .returns(tc.profile);
-
-    if (tc.willErr) {
-      const expectedError = `Profile data does not contain an 'ecosystemAnonId'`;
-      try {
-        await telemetry.ensureEcosystemAnonId();
-      } catch (e) {
-        Assert.equal(e.message, expectedError);
-      }
-    } else {
-      let actualEcoSystemAnonId = await telemetry.ensureEcosystemAnonId();
-      Assert.equal(actualEcoSystemAnonId, ecosystemAnonId);
-    }
-    mockProfile.verify();
-  }
 });

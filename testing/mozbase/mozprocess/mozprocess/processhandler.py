@@ -2,6 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+# mozprocess is typically used as an alternative to the python subprocess module.
+# It has been used in many Mozilla test harnesses with some success -- but also
+# with on-going concerns, especially regarding reliability and exception handling.
+#
+# New code should try to use the standard subprocess module, and only use
+# mozprocess if absolutely necessary.
+
 from __future__ import absolute_import, print_function, unicode_literals
 
 import codecs
@@ -23,8 +30,13 @@ if six.PY2:
 else:
     from queue import Queue, Empty  # Python 3
 
-__all__ = ['ProcessHandlerMixin', 'ProcessHandler', 'LogOutput',
-           'StoreOutput', 'StreamOutput']
+__all__ = [
+    "ProcessHandlerMixin",
+    "ProcessHandler",
+    "LogOutput",
+    "StoreOutput",
+    "StreamOutput",
+]
 
 # Set the MOZPROCESS_DEBUG environment variable to 1 to see some debugging output
 MOZPROCESS_DEBUG = os.getenv("MOZPROCESS_DEBUG")
@@ -38,9 +50,14 @@ isPosix = os.name == "posix"  # includes MacOS X
 if isWin:
     from ctypes import sizeof, addressof, c_ulong, byref, WinError, c_longlong
     from . import winprocess
-    from .qijo import JobObjectAssociateCompletionPortInformation, \
-        JOBOBJECT_ASSOCIATE_COMPLETION_PORT, JobObjectExtendedLimitInformation, \
-        JOBOBJECT_BASIC_LIMIT_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, IO_COUNTERS
+    from .qijo import (
+        JobObjectAssociateCompletionPortInformation,
+        JOBOBJECT_ASSOCIATE_COMPLETION_PORT,
+        JobObjectExtendedLimitInformation,
+        JOBOBJECT_BASIC_LIMIT_INFORMATION,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        IO_COUNTERS,
+    )
 
 
 class ProcessHandlerMixin(object):
@@ -87,26 +104,30 @@ class ProcessHandlerMixin(object):
         MAX_PROCESS_KILL_DELAY = 30
         TIMEOUT_BEFORE_SIGKILL = 1.0
 
-        def __init__(self,
-                     args,
-                     bufsize=0,
-                     executable=None,
-                     stdin=None,
-                     stdout=None,
-                     stderr=None,
-                     preexec_fn=None,
-                     close_fds=False,
-                     shell=False,
-                     cwd=None,
-                     env=None,
-                     universal_newlines=False,
-                     startupinfo=None,
-                     creationflags=0,
-                     ignore_children=False,
-                     encoding='utf-8'):
+        def __init__(
+            self,
+            args,
+            bufsize=0,
+            executable=None,
+            stdin=None,
+            stdout=None,
+            stderr=None,
+            preexec_fn=None,
+            close_fds=False,
+            shell=False,
+            cwd=None,
+            env=None,
+            universal_newlines=False,
+            startupinfo=None,
+            creationflags=0,
+            ignore_children=False,
+            encoding="utf-8",
+        ):
 
             # Parameter for whether or not we should attempt to track child processes
             self._ignore_children = ignore_children
+            self._job = None
+            self._io_port = None
 
             if not self._ignore_children and not isWin:
                 # Set the process group id for linux systems
@@ -119,24 +140,24 @@ class ProcessHandlerMixin(object):
                 preexec_fn = setpgidfn
 
             kwargs = {
-                'bufsize': bufsize,
-                'executable': executable,
-                'stdin': stdin,
-                'stdout': stdout,
-                'stderr': stderr,
-                'preexec_fn': preexec_fn,
-                'close_fds': close_fds,
-                'shell': shell,
-                'cwd': cwd,
-                'env': env,
-                'startupinfo': startupinfo,
-                'creationflags': creationflags,
+                "bufsize": bufsize,
+                "executable": executable,
+                "stdin": stdin,
+                "stdout": stdout,
+                "stderr": stderr,
+                "preexec_fn": preexec_fn,
+                "close_fds": close_fds,
+                "shell": shell,
+                "cwd": cwd,
+                "env": env,
+                "startupinfo": startupinfo,
+                "creationflags": creationflags,
             }
             if six.PY2:
-                kwargs['universal_newlines'] = universal_newlines
+                kwargs["universal_newlines"] = universal_newlines
             if six.PY3 and sys.version_info.minor >= 6 and universal_newlines:
-                kwargs['universal_newlines'] = universal_newlines
-                kwargs['encoding'] = encoding
+                kwargs["universal_newlines"] = universal_newlines
+                kwargs["encoding"] = encoding
             try:
                 subprocess.Popen.__init__(self, args, **kwargs)
             except OSError:
@@ -150,11 +171,9 @@ class ProcessHandlerMixin(object):
                 if self.stdin is not None:
                     self.stdin = io.TextIOWrapper(self.stdin, encoding=encoding)
                 if self.stdout is not None:
-                    self.stdout = io.TextIOWrapper(self.stdout,
-                                                   encoding=encoding)
+                    self.stdout = io.TextIOWrapper(self.stdout, encoding=encoding)
                 if self.stderr is not None:
-                    self.stderr = io.TextIOWrapper(self.stderr,
-                                                   encoding=encoding)
+                    self.stderr = io.TextIOWrapper(self.stderr, encoding=encoding)
 
         def debug(self, msg):
             if not MOZPROCESS_DEBUG:
@@ -168,7 +187,7 @@ class ProcessHandlerMixin(object):
                     _maxint = sys.maxint
                 else:
                     _maxint = sys.maxsize
-                handle = getattr(self, '_handle', None)
+                handle = getattr(self, "_handle", None)
                 if handle:
                     self._internal_poll(_deadstate=_maxint)
                 if handle or self._job or self._io_port:
@@ -176,15 +195,19 @@ class ProcessHandlerMixin(object):
             else:
                 subprocess.Popen.__del__(self)
 
-        def kill(self, sig=None):
+        def kill(self, sig=None, timeout=None):
             if isWin:
                 try:
                     if not self._ignore_children and self._handle and self._job:
                         self.debug("calling TerminateJobObject")
-                        winprocess.TerminateJobObject(self._job, winprocess.ERROR_CONTROL_C_EXIT)
+                        winprocess.TerminateJobObject(
+                            self._job, winprocess.ERROR_CONTROL_C_EXIT
+                        )
                     elif self._handle:
                         self.debug("calling TerminateProcess")
-                        winprocess.TerminateProcess(self._handle, winprocess.ERROR_CONTROL_C_EXIT)
+                        winprocess.TerminateProcess(
+                            self._handle, winprocess.ERROR_CONTROL_C_EXIT
+                        )
                 except WindowsError:
                     self._cleanup()
 
@@ -192,6 +215,7 @@ class ProcessHandlerMixin(object):
                     raise OSError("Could not terminate process")
 
             else:
+
                 def send_sig(sig, retries=0):
                     pid = self.detached_pid or self.pid
                     if not self._ignore_children:
@@ -214,8 +238,10 @@ class ProcessHandlerMixin(object):
                             # application might already have been terminated itself. Any other
                             # error would indicate a problem in killing the process.
                             if getattr(e, "errno", None) != errno.ESRCH:
-                                print("Could not terminate process: %s" %
-                                      self.pid, file=sys.stderr)
+                                print(
+                                    "Could not terminate process: %s" % self.pid,
+                                    file=sys.stderr,
+                                )
                                 raise
                     else:
                         os.kill(pid, sig)
@@ -236,25 +262,25 @@ class ProcessHandlerMixin(object):
                     # a signal was explicitly set or not posix
                     send_sig(sig or signal.SIGKILL)
 
-            self.returncode = self.wait()
+            self.returncode = self.wait(timeout)
             self._cleanup()
             return self.returncode
 
         def poll(self):
-            """ Popen.poll
-                Check if child process has terminated. Set and return returncode attribute.
+            """Popen.poll
+            Check if child process has terminated. Set and return returncode attribute.
             """
             # If we have a handle, the process is alive
-            if isWin and getattr(self, '_handle', None):
+            if isWin and getattr(self, "_handle", None):
                 return None
 
             return subprocess.Popen.poll(self)
 
         def wait(self, timeout=None):
-            """ Popen.wait
-                Called to wait for a running process to shut down and return
-                its exit code
-                Returns the main process's exit code
+            """Popen.wait
+            Called to wait for a running process to shut down and return
+            its exit code
+            Returns the main process's exit code
             """
             # This call will be different for each OS
             self.returncode = self._custom_wait(timeout=timeout)
@@ -266,30 +292,94 @@ class ProcessHandlerMixin(object):
         if isWin:
             # Redefine the execute child so that we can track process groups
             def _execute_child(self, *args_tuple):
-                if six.PY3:
-                    (args, executable, preexec_fn, close_fds,
-                     pass_fds, cwd, env,
-                     startupinfo, creationflags, shell,
-                     p2cread, p2cwrite,
-                     c2pread, c2pwrite,
-                     errread, errwrite,
-                     restore_signals, start_new_session) = args_tuple
+                # workaround for bug 1670130
+                if sys.hexversion >= 0x03090000:  # after 3.9.0
+                    (
+                        args,
+                        executable,
+                        preexec_fn,
+                        close_fds,
+                        pass_fds,
+                        cwd,
+                        env,
+                        startupinfo,
+                        creationflags,
+                        shell,
+                        p2cread,
+                        p2cwrite,
+                        c2pread,
+                        c2pwrite,
+                        errread,
+                        errwrite,
+                        restore_signals,
+                        gid,
+                        gids,
+                        uid,
+                        umask,
+                        start_new_session,
+                    ) = args_tuple
+                elif six.PY3:
+                    (
+                        args,
+                        executable,
+                        preexec_fn,
+                        close_fds,
+                        pass_fds,
+                        cwd,
+                        env,
+                        startupinfo,
+                        creationflags,
+                        shell,
+                        p2cread,
+                        p2cwrite,
+                        c2pread,
+                        c2pwrite,
+                        errread,
+                        errwrite,
+                        restore_signals,
+                        start_new_session,
+                    ) = args_tuple
                 # workaround for bug 950894
                 elif sys.hexversion < 0x02070600:  # prior to 2.7.6
-                    (args, executable, preexec_fn, close_fds,
-                     cwd, env, universal_newlines, startupinfo,
-                     creationflags, shell,
-                     p2cread, p2cwrite,
-                     c2pread, c2pwrite,
-                     errread, errwrite) = args_tuple
+                    (
+                        args,
+                        executable,
+                        preexec_fn,
+                        close_fds,
+                        cwd,
+                        env,
+                        universal_newlines,
+                        startupinfo,
+                        creationflags,
+                        shell,
+                        p2cread,
+                        p2cwrite,
+                        c2pread,
+                        c2pwrite,
+                        errread,
+                        errwrite,
+                    ) = args_tuple
                     to_close = set()
                 else:  # 2.7.6 and later
-                    (args, executable, preexec_fn, close_fds,
-                     cwd, env, universal_newlines, startupinfo,
-                     creationflags, shell, to_close,
-                     p2cread, p2cwrite,
-                     c2pread, c2pwrite,
-                     errread, errwrite) = args_tuple
+                    (
+                        args,
+                        executable,
+                        preexec_fn,
+                        close_fds,
+                        cwd,
+                        env,
+                        universal_newlines,
+                        startupinfo,
+                        creationflags,
+                        shell,
+                        to_close,
+                        p2cread,
+                        p2cwrite,
+                        c2pread,
+                        c2pwrite,
+                        errread,
+                        errwrite,
+                    ) = args_tuple
                 if not isinstance(args, six.string_types):
                     args = subprocess.list2cmdline(args)
 
@@ -318,8 +408,11 @@ class ProcessHandlerMixin(object):
                 if not (can_create_job or can_nest_jobs) and not self._ignore_children:
                     # We can't create job objects AND the user wanted us to
                     # Warn the user about this.
-                    print("ProcessManager UNABLE to use job objects to manage "
-                          "child processes", file=sys.stderr)
+                    print(
+                        "ProcessManager UNABLE to use job objects to manage "
+                        "child processes",
+                        file=sys.stderr,
+                    )
 
                 # set process creation flags
                 creationflags |= winprocess.CREATE_SUSPENDED
@@ -333,12 +426,16 @@ class ProcessHandlerMixin(object):
 
                 # create the process
                 hp, ht, pid, tid = winprocess.CreateProcess(
-                    executable, args,
-                    None, None,  # No special security
+                    executable,
+                    args,
+                    None,
+                    None,  # No special security
                     1,  # Must inherit handles!
                     creationflags,
                     winprocess.EnvironmentBlock(env),
-                    cwd, startupinfo)
+                    cwd,
+                    startupinfo,
+                )
                 self._child_created = True
                 self._handle = hp
                 self._thread = ht
@@ -354,13 +451,14 @@ class ProcessHandlerMixin(object):
                         self._job = winprocess.CreateJobObject()
 
                         # Now associate the io comp port and the job object
-                        joacp = JOBOBJECT_ASSOCIATE_COMPLETION_PORT(winprocess.COMPKEY_JOBOBJECT,
-                                                                    self._io_port)
+                        joacp = JOBOBJECT_ASSOCIATE_COMPLETION_PORT(
+                            winprocess.COMPKEY_JOBOBJECT, self._io_port
+                        )
                         winprocess.SetInformationJobObject(
                             self._job,
                             JobObjectAssociateCompletionPortInformation,
                             addressof(joacp),
-                            sizeof(joacp)
+                            sizeof(joacp),
                         )
 
                         # Allow subprocesses to break away from us - necessary when
@@ -391,13 +489,15 @@ class ProcessHandlerMixin(object):
                             0,  # process mem limit (ignored)
                             0,  # job mem limit (ignored)
                             0,  # peak process limit (ignored)
-                            0)  # peak job limit (ignored)
+                            0,
+                        )  # peak job limit (ignored)
 
-                        winprocess.SetInformationJobObject(self._job,
-                                                           JobObjectExtendedLimitInformation,
-                                                           addressof(jeli),
-                                                           sizeof(jeli)
-                                                           )
+                        winprocess.SetInformationJobObject(
+                            self._job,
+                            JobObjectExtendedLimitInformation,
+                            addressof(jeli),
+                            sizeof(jeli),
+                        )
 
                         # Assign the job object to the process
                         winprocess.AssignProcessToJobObject(self._job, int(hp))
@@ -409,8 +509,11 @@ class ProcessHandlerMixin(object):
                         # Spin up our thread for managing the IO Completion Port
                         self._procmgrthread = threading.Thread(target=self._procmgr)
                     except Exception:
-                        print("""Exception trying to use job objects;
-falling back to not using job objects for managing child processes""", file=sys.stderr)
+                        print(
+                            """Exception trying to use job objects;
+falling back to not using job objects for managing child processes""",
+                            file=sys.stderr,
+                        )
                         tb = traceback.format_exc()
                         print(tb, file=sys.stderr)
                         # Ensure no dangling handles left behind
@@ -419,7 +522,7 @@ falling back to not using job objects for managing child processes""", file=sys.
                     self._job = None
 
                 winprocess.ResumeThread(int(ht))
-                if getattr(self, '_procmgrthread', None):
+                if getattr(self, "_procmgrthread", None):
                     self._procmgrthread.start()
                 ht.Close()
 
@@ -434,8 +537,7 @@ falling back to not using job objects for managing child processes""", file=sys.
             # https://msdn.microsoft.com/en-us/library/ms724834%28v=vs.85%29.aspx
             def _can_nest_jobs(self):
                 winver = sys.getwindowsversion()
-                return (winver.major > 6 or
-                        winver.major == 6 and winver.minor >= 2)
+                return winver.major > 6 or winver.major == 6 and winver.minor >= 2
 
             # Windows Process Manager - watches the IO Completion Port and
             # keeps track of child processes
@@ -459,11 +561,9 @@ falling back to not using job objects for managing child processes""", file=sys.
                     msgid = c_ulong(0)
                     compkey = c_ulong(0)
                     pid = c_ulong(0)
-                    portstatus = winprocess.GetQueuedCompletionStatus(self._io_port,
-                                                                      byref(msgid),
-                                                                      byref(compkey),
-                                                                      byref(pid),
-                                                                      5000)
+                    portstatus = winprocess.GetQueuedCompletionStatus(
+                        self._io_port, byref(msgid), byref(compkey), byref(pid), 5000
+                    )
 
                     # If the countdowntokill has been activated, we need to check
                     # if we should start killing the children or not.
@@ -475,17 +575,28 @@ falling back to not using job objects for managing child processes""", file=sys.
                         # don't want to mistake that situation for the situation of an unexpected
                         # parent abort (which is what we're looking for here).
                         if diff.seconds > self.MAX_IOCOMPLETION_PORT_NOTIFICATION_DELAY:
-                            print("WARNING | IO Completion Port failed to signal "
-                                  "process shutdown", file=sys.stderr)
-                            print("Parent process %s exited with children alive:"
-                                  % self.pid, file=sys.stderr)
-                            print("PIDS: %s" % ', '.join([str(i) for i in self._spawned_procs]),
-                                  file=sys.stderr)
-                            print("Attempting to kill them, but no guarantee of success",
-                                  file=sys.stderr)
+                            print(
+                                "WARNING | IO Completion Port failed to signal "
+                                "process shutdown",
+                                file=sys.stderr,
+                            )
+                            print(
+                                "Parent process %s exited with children alive:"
+                                % self.pid,
+                                file=sys.stderr,
+                            )
+                            print(
+                                "PIDS: %s"
+                                % ", ".join([str(i) for i in self._spawned_procs]),
+                                file=sys.stderr,
+                            )
+                            print(
+                                "Attempting to kill them, but no guarantee of success",
+                                file=sys.stderr,
+                            )
 
                             self.kill()
-                            self._process_events.put({self.pid: 'FINISHED'})
+                            self._process_events.put({self.pid: "FINISHED"})
                             break
 
                     if not portstatus:
@@ -493,15 +604,21 @@ falling back to not using job objects for managing child processes""", file=sys.
                         errcode = winprocess.GetLastError()
                         if errcode == winprocess.ERROR_ABANDONED_WAIT_0:
                             # Then something has killed the port, break the loop
-                            print("IO Completion Port unexpectedly closed", file=sys.stderr)
-                            self._process_events.put({self.pid: 'FINISHED'})
+                            print(
+                                "IO Completion Port unexpectedly closed",
+                                file=sys.stderr,
+                            )
+                            self._process_events.put({self.pid: "FINISHED"})
                             break
                         elif errcode == winprocess.WAIT_TIMEOUT:
                             # Timeouts are expected, just keep on polling
                             continue
                         else:
-                            print("Error Code %s trying to query IO Completion Port, "
-                                  "exiting" % errcode, file=sys.stderr)
+                            print(
+                                "Error Code %s trying to query IO Completion Port, "
+                                "exiting" % errcode,
+                                file=sys.stderr,
+                            )
                             raise WinError(errcode)
                             break
 
@@ -516,7 +633,7 @@ falling back to not using job objects for managing child processes""", file=sys.
                             # No processes left, time to shut down
                             # Signal anyone waiting on us that it is safe to shut down
                             self.debug("job object msg active processes zero")
-                            self._process_events.put({self.pid: 'FINISHED'})
+                            self._process_events.put({self.pid: "FINISHED"})
                             break
                         elif msgid.value == winprocess.JOB_OBJECT_MSG_NEW_PROCESS:
                             # New Process started
@@ -524,7 +641,10 @@ falling back to not using job objects for managing child processes""", file=sys.
                             # without killing everything.
                             if pid.value != self.pid:
                                 self._spawned_procs[pid.value] = 1
-                                self.debug("new process detected with pid value: %s" % pid.value)
+                                self.debug(
+                                    "new process detected with pid value: %s"
+                                    % pid.value
+                                )
                         elif msgid.value == winprocess.JOB_OBJECT_MSG_EXIT_PROCESS:
                             self.debug("process id %s exited normally" % pid.value)
                             # One process exited normally
@@ -533,8 +653,11 @@ falling back to not using job objects for managing child processes""", file=sys.
                                 countdowntokill = datetime.now()
                             elif pid.value in self._spawned_procs:
                                 # Child Process died remove from list
-                                del (self._spawned_procs[pid.value])
-                        elif msgid.value == winprocess.JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS:
+                                del self._spawned_procs[pid.value]
+                        elif (
+                            msgid.value
+                            == winprocess.JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS
+                        ):
                             # One process existed abnormally
                             self.debug("process id %s exited abnormally" % pid.value)
                             if pid.value == self.pid and len(self._spawned_procs) > 0:
@@ -549,7 +672,7 @@ falling back to not using job objects for managing child processes""", file=sys.
                             pass
 
             def _custom_wait(self, timeout=None):
-                """ Custom implementation of wait.
+                """Custom implementation of wait.
 
                 - timeout: number of seconds before timing out. If None,
                   will wait indefinitely.
@@ -564,11 +687,17 @@ falling back to not using job objects for managing child processes""", file=sys.
                 threadalive = False
                 if hasattr(self, "_procmgrthread"):
                     threadalive = self._procmgrthread.is_alive()
-                if self._job and threadalive and threading.current_thread() != self._procmgrthread:
+                if (
+                    self._job
+                    and threadalive
+                    and threading.current_thread() != self._procmgrthread
+                ):
                     self.debug("waiting with IO completion port")
                     if timeout is None:
-                        timeout = (self.MAX_IOCOMPLETION_PORT_NOTIFICATION_DELAY +
-                                   self.MAX_PROCESS_KILL_DELAY)
+                        timeout = (
+                            self.MAX_IOCOMPLETION_PORT_NOTIFICATION_DELAY
+                            + self.MAX_PROCESS_KILL_DELAY
+                        )
                     # Then we are managing with IO Completion Ports
                     # wait on a signal so we know when we have seen the last
                     # process come through.
@@ -579,15 +708,19 @@ falling back to not using job objects for managing child processes""", file=sys.
                         # timeout is the max amount of time the procmgr thread will wait for
                         # child processes to shutdown before killing them with extreme prejudice.
                         item = self._process_events.get(timeout=timeout)
-                        if item[self.pid] == 'FINISHED':
+                        if item[self.pid] == "FINISHED":
                             self.debug("received 'FINISHED' from _procmgrthread")
                             self._process_events.task_done()
                     except Exception:
                         traceback.print_exc()
-                        raise OSError("IO Completion Port failed to signal process shutdown")
+                        raise OSError(
+                            "IO Completion Port failed to signal process shutdown"
+                        )
                     finally:
                         if self._handle:
-                            self.returncode = winprocess.GetExitCodeProcess(self._handle)
+                            self.returncode = winprocess.GetExitCodeProcess(
+                                self._handle
+                            )
                         self._cleanup()
 
                 else:
@@ -614,8 +747,10 @@ falling back to not using job objects for managing child processes""", file=sys.
 
                     if rc == winprocess.WAIT_TIMEOUT:
                         # The process isn't dead, so kill it
-                        print("Timed out waiting for process to close, "
-                              "attempting TerminateProcess")
+                        print(
+                            "Timed out waiting for process to close, "
+                            "attempting TerminateProcess"
+                        )
                         self.kill()
                     elif rc == winprocess.WAIT_OBJECT_0:
                         # We caught WAIT_OBJECT_0, which indicates all is well
@@ -632,11 +767,14 @@ falling back to not using job objects for managing child processes""", file=sys.
                 return self.returncode
 
             def _cleanup_job_io_port(self):
-                """ Do the job and IO port cleanup separately because there are
-                    cases where we want to clean these without killing _handle
-                    (i.e. if we fail to create the job object in the first place)
+                """Do the job and IO port cleanup separately because there are
+                cases where we want to clean these without killing _handle
+                (i.e. if we fail to create the job object in the first place)
                 """
-                if getattr(self, '_job') and self._job != winprocess.INVALID_HANDLE_VALUE:
+                if (
+                    getattr(self, "_job")
+                    and self._job != winprocess.INVALID_HANDLE_VALUE
+                ):
                     self._job.Close()
                     self._job = None
                 else:
@@ -644,14 +782,16 @@ falling back to not using job objects for managing child processes""", file=sys.
                     # (saw this intermittently while testing)
                     self._job = None
 
-                if getattr(self, '_io_port', None) and \
-                        self._io_port != winprocess.INVALID_HANDLE_VALUE:
+                if (
+                    getattr(self, "_io_port", None)
+                    and self._io_port != winprocess.INVALID_HANDLE_VALUE
+                ):
                     self._io_port.Close()
                     self._io_port = None
                 else:
                     self._io_port = None
 
-                if getattr(self, '_procmgrthread', None):
+                if getattr(self, "_procmgrthread", None):
                     self._procmgrthread = None
 
             def _cleanup(self):
@@ -668,81 +808,43 @@ falling back to not using job objects for managing child processes""", file=sys.
                 else:
                     self._handle = None
 
-        elif isPosix:
+        else:
 
             def _custom_wait(self, timeout=None):
-                """ Haven't found any reason to differentiate between these platforms
-                    so they all use the same wait callback.  If it is necessary to
-                    craft different styles of wait, then a new _custom_wait method
-                    could be easily implemented.
+                """Haven't found any reason to differentiate between these platforms
+                so they all use the same wait callback.  If it is necessary to
+                craft different styles of wait, then a new _custom_wait method
+                could be easily implemented.
                 """
-
-                if not self._ignore_children:
-                    try:
-                        # os.waitpid return value:
-                        # > [...] a tuple containing its pid and exit status
-                        # > indication: a 16-bit number, whose low byte is the
-                        # > signal number that killed the process, and whose
-                        # > high byte is the exit status (if the signal number
-                        # > is zero)
-                        # - http://docs.python.org/2/library/os.html#os.wait
-                        status = os.waitpid(self.pid, 0)[1]
-
-                        # For consistency, format status the same as subprocess'
-                        # returncode attribute
-                        if status > 255:
-                            return status >> 8
-                        return -status
-                    except OSError as e:
-                        if getattr(e, "errno", None) != 10:
-                            # Error 10 is "no child process", which could indicate normal
-                            # close
-                            print("Encountered error waiting for pid to close: %s" % e,
-                                  file=sys.stderr)
-                            raise
-
-                        return self.returncode
-
-                else:
-                    # For non-group wait, call base class
+                # For non-group wait, call base class
+                try:
                     if six.PY2:
                         subprocess.Popen.wait(self)
                     else:
                         # timeout was introduced in Python 3.3
                         subprocess.Popen.wait(self, timeout=timeout)
-                    return self.returncode
-
-            def _cleanup(self):
-                pass
-
-        else:
-            # An unrecognized platform, we will call the base class for everything
-            print("Unrecognized platform, process groups may not "
-                  "be managed properly", file=sys.stderr)
-
-            def _custom_wait(self, timeout=None):
-                if six.PY2:
-                    self.returncode = subprocess.Popen.wait(self)
-                else:
-                    # timeout was introduced in Python 3.3
-                    self.returncode = subprocess.Popen.wait(self, timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    # We want to return None in this case
+                    pass
                 return self.returncode
 
             def _cleanup(self):
                 pass
 
-    def __init__(self,
-                 cmd,
-                 args=None,
-                 cwd=None,
-                 env=None,
-                 ignore_children=False,
-                 kill_on_timeout=True,
-                 processOutputLine=(),
-                 processStderrLine=(),
-                 onTimeout=(),
-                 onFinish=(),
-                 **kwargs):
+    def __init__(
+        self,
+        cmd,
+        args=None,
+        cwd=None,
+        env=None,
+        ignore_children=False,
+        kill_on_timeout=True,
+        processOutputLine=(),
+        processStderrLine=(),
+        onTimeout=(),
+        onFinish=(),
+        **kwargs
+    ):
         self.cmd = cmd
         self.args = args
         self.cwd = cwd
@@ -750,7 +852,7 @@ falling back to not using job objects for managing child processes""", file=sys.
         self.didOutputTimeout = False
         self._ignore_children = ignore_children
         self.keywordargs = kwargs
-        self.read_buffer = ''
+        self.read_buffer = ""
 
         if env is None:
             env = os.environ.copy()
@@ -778,10 +880,12 @@ falling back to not using job objects for managing child processes""", file=sys.
         self._stderr = subprocess.STDOUT
         if processStderrLine:
             self._stderr = subprocess.PIPE
-        self.reader = ProcessReader(stdout_callback=processOutputLine,
-                                    stderr_callback=processStderrLine,
-                                    finished_callback=onFinish,
-                                    timeout_callback=onTimeout)
+        self.reader = ProcessReader(
+            stdout_callback=processOutputLine,
+            stderr_callback=processStderrLine,
+            finished_callback=onFinish,
+            timeout_callback=onTimeout,
+        )
 
         # It is common for people to pass in the entire array with the cmd and
         # the args together since this is how Popen uses it.  Allow for that.
@@ -829,11 +933,13 @@ falling back to not using job objects for managing child processes""", file=sys.
         self.didOutputTimeout = False
 
         # default arguments
-        args = dict(stdout=subprocess.PIPE,
-                    stderr=self._stderr,
-                    cwd=self.cwd,
-                    env=self.env,
-                    ignore_children=self._ignore_children)
+        args = dict(
+            stdout=subprocess.PIPE,
+            stderr=self._stderr,
+            cwd=self.cwd,
+            env=self.env,
+            ignore_children=self._ignore_children,
+        )
 
         # build process arguments
         args.update(self.keywordargs)
@@ -848,7 +954,7 @@ falling back to not using job objects for managing child processes""", file=sys.
 
         self.processOutput(timeout=timeout, outputTimeout=outputTimeout)
 
-    def kill(self, sig=None):
+    def kill(self, sig=None, timeout=None):
         """
         Kills the managed process.
 
@@ -866,12 +972,12 @@ falling back to not using job objects for managing child processes""", file=sys.
         if not hasattr(self, "proc"):
             raise RuntimeError("Process hasn't been started yet")
 
-        self.proc.kill(sig=sig)
+        self.proc.kill(sig=sig, timeout=timeout)
 
         # When we kill the the managed process we also have to wait for the
         # reader thread to be finished. Otherwise consumers would have to assume
         # that it still has not completely shutdown.
-        rc = self.wait()
+        rc = self.wait(timeout)
         if rc is None:
             self.debug("kill: wait failed -- process is still alive")
         return rc
@@ -910,7 +1016,7 @@ falling back to not using job objects for managing child processes""", file=sys.
         being killed.
         """
         # this method is kept for backward compatibility
-        if not hasattr(self, 'proc'):
+        if not hasattr(self, "proc"):
             self.run(timeout=timeout, outputTimeout=outputTimeout)
             # self.run will call this again
             return
@@ -945,7 +1051,7 @@ falling back to not using job objects for managing child processes""", file=sys.
                     self.debug("wait timeout for reader thread")
                     return None
 
-        self.returncode = self.proc.wait()
+        self.returncode = self.proc.wait(timeout)
         return self.returncode
 
     @property
@@ -963,7 +1069,10 @@ falling back to not using job objects for managing child processes""", file=sys.
         if isWin:
             try:
                 process = winprocess.OpenProcess(
-                    winprocess.PROCESS_QUERY_INFORMATION | winprocess.PROCESS_VM_READ, False, pid)
+                    winprocess.PROCESS_QUERY_INFORMATION | winprocess.PROCESS_VM_READ,
+                    False,
+                    pid,
+                )
                 return winprocess.GetExitCodeProcess(process) == winprocess.STILL_ACTIVE
 
             except WindowsError as e:
@@ -1013,14 +1122,15 @@ falling back to not using job objects for managing child processes""", file=sys.
 
             if new_pgid and new_pgid != self.proc.pgid:
                 self.proc.detached_pid = new_pid
-                print('Child process with id "%s" has been marked as detached because it is no '
-                      'longer in the managed process group. Keeping reference to the process id '
-                      '"%s" which is the new child process.' %
-                      (self.pid, new_pid), file=sys.stdout)
+                print(
+                    'Child process with id "%s" has been marked as detached because it is no '
+                    "longer in the managed process group. Keeping reference to the process id "
+                    '"%s" which is the new child process.' % (self.pid, new_pid),
+                    file=sys.stdout,
+                )
 
 
 class CallableList(list):
-
     def __call__(self, *args, **kwargs):
         for e in self:
             e(*args, **kwargs)
@@ -1030,10 +1140,15 @@ class CallableList(list):
 
 
 class ProcessReader(object):
-
-    def __init__(self, stdout_callback=None, stderr_callback=None,
-                 finished_callback=None, timeout_callback=None,
-                 timeout=None, output_timeout=None):
+    def __init__(
+        self,
+        stdout_callback=None,
+        stderr_callback=None,
+        finished_callback=None,
+        timeout_callback=None,
+        timeout=None,
+        output_timeout=None,
+    ):
         self.stdout_callback = stdout_callback or (lambda line: True)
         self.stderr_callback = stderr_callback or (lambda line: True)
         self.finished_callback = finished_callback or (lambda: True)
@@ -1049,9 +1164,9 @@ class ProcessReader(object):
         print("DBG::MOZPROC ProcessReader | {}".format(msg))
 
     def _create_stream_reader(self, name, stream, queue, callback):
-        thread = threading.Thread(name=name,
-                                  target=self._read_stream,
-                                  args=(stream, queue, callback))
+        thread = threading.Thread(
+            name=name, target=self._read_stream, args=(stream, queue, callback)
+        )
         thread.daemon = True
         thread.start()
         return thread
@@ -1068,21 +1183,19 @@ class ProcessReader(object):
         queue = Queue()
         stdout_reader = None
         if proc.stdout:
-            stdout_reader = self._create_stream_reader('ProcessReaderStdout',
-                                                       proc.stdout,
-                                                       queue,
-                                                       self.stdout_callback)
+            stdout_reader = self._create_stream_reader(
+                "ProcessReaderStdout", proc.stdout, queue, self.stdout_callback
+            )
         stderr_reader = None
         if proc.stderr and proc.stderr != proc.stdout:
-            stderr_reader = self._create_stream_reader('ProcessReaderStderr',
-                                                       proc.stderr,
-                                                       queue,
-                                                       self.stderr_callback)
-        self.thread = threading.Thread(name='ProcessReader',
-                                       target=self._read,
-                                       args=(stdout_reader,
-                                             stderr_reader,
-                                             queue))
+            stderr_reader = self._create_stream_reader(
+                "ProcessReaderStderr", proc.stderr, queue, self.stderr_callback
+            )
+        self.thread = threading.Thread(
+            name="ProcessReader",
+            target=self._read,
+            args=(stdout_reader, stderr_reader, queue),
+        )
         self.thread.daemon = True
         self.thread.start()
         self.debug("ProcessReader started")
@@ -1097,8 +1210,9 @@ class ProcessReader(object):
         if output_timeout is not None:
             output_timeout += start_time
 
-        while (stdout_reader and stdout_reader.is_alive()) \
-                or (stderr_reader and stderr_reader.is_alive()):
+        while (stdout_reader and stdout_reader.is_alive()) or (
+            stderr_reader and stderr_reader.is_alive()
+        ):
             has_line = True
             try:
                 line, callback = queue.get(True, INTERVAL_PROCESS_ALIVE_CHECK)
@@ -1121,15 +1235,24 @@ class ProcessReader(object):
         # process remaining lines to read
         while not queue.empty():
             line, callback = queue.get(False)
-            callback(line.rstrip())
+            try:
+                callback(line.rstrip())
+            except Exception:
+                traceback.print_exc()
         if timed_out:
-            self.timeout_callback()
+            try:
+                self.timeout_callback()
+            except Exception:
+                traceback.print_exc()
         if stdout_reader:
             stdout_reader.join()
         if stderr_reader:
             stderr_reader.join()
         if not timed_out:
-            self.finished_callback()
+            try:
+                self.finished_callback()
+            except Exception:
+                traceback.print_exc()
         self.debug("_read exited")
 
     def is_alive(self):
@@ -1166,16 +1289,19 @@ class StreamOutput(object):
     def __call__(self, line):
         ensure = six.ensure_text if self.text else six.ensure_binary
         try:
-            self.stream.write(ensure(line) + ensure('\n'))
+            self.stream.write(ensure(line, errors="ignore") + ensure("\n"))
         except TypeError:
-            print("HEY! If you're reading this, you're about to encounter a "
-                  "type error, probably as a result of a conversion from "
-                  "Python 2 to Python 3. This is almost definitely because "
-                  "you're trying to write binary data to a text-encoded "
-                  "stream, or text data to a binary-encoded stream. Check how "
-                  "you're instantiating your ProcessHandler and if the output "
-                  "should be text-encoded, make sure you pass "
-                  "universal_newlines=True.", file=sys.stderr)
+            print(
+                "HEY! If you're reading this, you're about to encounter a "
+                "type error, probably as a result of a conversion from "
+                "Python 2 to Python 3. This is almost definitely because "
+                "you're trying to write binary data to a text-encoded "
+                "stream, or text data to a binary-encoded stream. Check how "
+                "you're instantiating your ProcessHandler and if the output "
+                "should be text-encoded, make sure you pass "
+                "universal_newlines=True.",
+                file=sys.stderr,
+            )
             raise
         self.stream.flush()
 
@@ -1184,7 +1310,7 @@ class LogOutput(StreamOutput):
     """pass output to a file"""
 
     def __init__(self, filename):
-        self.file_obj = open(filename, 'a')
+        self.file_obj = open(filename, "a")
         StreamOutput.__init__(self, self.file_obj, True)
 
     def __del__(self):
@@ -1214,15 +1340,14 @@ class ProcessHandler(ProcessHandlerMixin):
     appended to the given file.
     """
 
-    def __init__(self, cmd, logfile=None, stream=True, storeOutput=True,
-                 **kwargs):
-        kwargs.setdefault('processOutputLine', [])
-        if callable(kwargs['processOutputLine']):
-            kwargs['processOutputLine'] = [kwargs['processOutputLine']]
+    def __init__(self, cmd, logfile=None, stream=True, storeOutput=True, **kwargs):
+        kwargs.setdefault("processOutputLine", [])
+        if callable(kwargs["processOutputLine"]):
+            kwargs["processOutputLine"] = [kwargs["processOutputLine"]]
 
         if logfile:
             logoutput = LogOutput(logfile)
-            kwargs['processOutputLine'].append(logoutput)
+            kwargs["processOutputLine"].append(logoutput)
 
         text = kwargs.get("universal_newlines", False) or kwargs.get("text", False)
 
@@ -1230,24 +1355,23 @@ class ProcessHandler(ProcessHandlerMixin):
             # Print to standard output only if no outputline provided
             stdout = sys.stdout
             if six.PY2 and text:
-                stdout = codecs.getwriter('utf-8')(sys.stdout)
+                stdout = codecs.getwriter("utf-8")(sys.stdout)
             elif six.PY3 and text:
                 # The encoding of stdout isn't guaranteed to be utf-8. Fix that.
                 stdout = codecs.getwriter("utf-8")(sys.stdout.buffer)
             elif six.PY3 and not text:
                 stdout = sys.stdout.buffer
 
-            if not kwargs['processOutputLine']:
-                kwargs['processOutputLine'].append(
-                    StreamOutput(stdout, text))
+            if not kwargs["processOutputLine"]:
+                kwargs["processOutputLine"].append(StreamOutput(stdout, text))
         elif stream:
             streamoutput = StreamOutput(stream, text)
-            kwargs['processOutputLine'].append(streamoutput)
+            kwargs["processOutputLine"].append(streamoutput)
 
         self.output = None
         if storeOutput:
             storeoutput = StoreOutput()
             self.output = storeoutput.output
-            kwargs['processOutputLine'].append(storeoutput)
+            kwargs["processOutputLine"].append(storeoutput)
 
         ProcessHandlerMixin.__init__(self, cmd, **kwargs)

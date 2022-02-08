@@ -16,10 +16,11 @@ requestLongerTimeout(4);
 const { fetch } = require("devtools/shared/DevToolsUtils");
 
 const debuggerHeadURL =
-  CHROME_URL_ROOT + "../../debugger/test/mochitest/head.js";
-const helpersURL = CHROME_URL_ROOT + "../../debugger/test/mochitest/helpers.js";
+  CHROME_URL_ROOT + "../../../debugger/test/mochitest/head.js";
+const helpersURL =
+  CHROME_URL_ROOT + "../../../debugger/test/mochitest/helpers.js";
 const helpersContextURL =
-  CHROME_URL_ROOT + "../../debugger/test/mochitest/helpers/context.js";
+  CHROME_URL_ROOT + "../../../debugger/test/mochitest/helpers/context.js";
 
 add_task(async function runTest() {
   const s = Cu.Sandbox("http://mozilla.org");
@@ -65,16 +66,22 @@ add_task(async function runTest() {
     /Services.scriptloader.loadSubScript[^\)]*\);/g,
     ""
   );
-  const ToolboxTask = await initBrowserToolboxTask();
-  await ToolboxTask.importScript(debuggerHead);
+
+  const ToolboxTask = await initBrowserToolboxTask({
+    enableBrowserToolboxFission: true,
+  });
   await ToolboxTask.importFunctions({
+    // head.js uses this method
+    registerCleanupFunction: () => {},
+    waitForDispatch,
     waitUntil,
   });
+  await ToolboxTask.importScript(debuggerHead);
 
   await ToolboxTask.spawn(`"${testUrl}"`, async _testUrl => {
-    /* global createDebuggerContext, waitForSources,
-          waitForPaused, addBreakpoint, assertPausedLocation, stepIn,
-          findSource, removeBreakpoint, resume, selectSource */
+    /* global createDebuggerContext, waitForSources, waitForPaused,
+          addBreakpoint, assertPausedAtSourceAndLine, stepIn, findSource,
+          removeBreakpoint, resume, selectSource */
     const { Services } = ChromeUtils.import(
       "resource://gre/modules/Services.jsm"
     );
@@ -92,7 +99,15 @@ add_task(async function runTest() {
     await waitForSources(dbg, _testUrl);
 
     info("Loaded, selecting the test script to debug");
-    // First expand the domain
+    // First expand the main thread
+    const mainThread = [...document.querySelectorAll(".tree-node")].find(
+      node => {
+        return node.querySelector(".label").textContent.trim() == "Main Thread";
+      }
+    );
+    mainThread.querySelector(".arrow").click();
+
+    // Then expand the domain
     const domain = [...document.querySelectorAll(".tree-node")].find(node => {
       return node.querySelector(".label").textContent.trim() == "mozilla.org";
     });
@@ -101,6 +116,7 @@ add_task(async function runTest() {
 
     const fileName = _testUrl.match(/browser-toolbox-test.*\.js/)[0];
 
+    // And finally the expected source
     let script = [...document.querySelectorAll(".tree-node")].find(node => {
       return node.textContent.includes(fileName);
     });
@@ -113,15 +129,15 @@ add_task(async function runTest() {
 
     await onPaused;
 
-    assertPausedLocation(dbg, fileName, 2);
+    const source = findSource(dbg, fileName);
+    assertPausedAtSourceAndLine(dbg, source.id, 2);
 
     await stepIn(dbg);
 
-    assertPausedLocation(dbg, fileName, 3);
+    assertPausedAtSourceAndLine(dbg, source.id, 3);
 
     // Remove the breakpoint before resuming in order to prevent hitting the breakpoint
     // again during test closing.
-    const source = findSource(dbg, fileName);
     await removeBreakpoint(dbg, source.id, 2);
 
     await resume(dbg);

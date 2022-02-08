@@ -7,8 +7,10 @@
 
 #include "nsAccUtils.h"
 #include "Logging.h"
+#include "AccAttributes.h"
 
 #include "mozilla/StaticPtr.h"
+#include "mozilla/dom/DOMStringList.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -20,7 +22,7 @@ using namespace mozilla::a11y;
 void nsEventShell::FireEvent(AccEvent* aEvent) {
   if (!aEvent || aEvent->mEventRule == AccEvent::eDoNotEmit) return;
 
-  Accessible* accessible = aEvent->GetAccessible();
+  LocalAccessible* accessible = aEvent->GetAccessible();
   NS_ENSURE_TRUE_VOID(accessible);
 
   nsINode* node = accessible->GetNode();
@@ -35,6 +37,15 @@ void nsEventShell::FireEvent(AccEvent* aEvent) {
     nsAutoString type;
     GetAccService()->GetStringEventType(aEvent->GetEventType(), type);
     logging::MsgEntry("type: %s", NS_ConvertUTF16toUTF8(type).get());
+    if (aEvent->GetEventType() == nsIAccessibleEvent::EVENT_STATE_CHANGE) {
+      AccStateChangeEvent* event = downcast_accEvent(aEvent);
+      RefPtr<dom::DOMStringList> stringStates =
+          GetAccService()->GetStringStates(event->GetState());
+      nsAutoString state;
+      stringStates->Item(0, state);
+      logging::MsgEntry("state: %s = %s", NS_ConvertUTF16toUTF8(state).get(),
+                        event->IsStateEnabled() ? "true" : "false");
+    }
     logging::AccessibleInfo("target", aEvent->GetAccessible());
     logging::MsgEnd();
   }
@@ -46,7 +57,7 @@ void nsEventShell::FireEvent(AccEvent* aEvent) {
   sEventTargetNode = nullptr;
 }
 
-void nsEventShell::FireEvent(uint32_t aEventType, Accessible* aAccessible,
+void nsEventShell::FireEvent(uint32_t aEventType, LocalAccessible* aAccessible,
                              EIsFromUserInput aIsFromUserInput) {
   NS_ENSURE_TRUE_VOID(aAccessible);
 
@@ -57,11 +68,10 @@ void nsEventShell::FireEvent(uint32_t aEventType, Accessible* aAccessible,
 }
 
 void nsEventShell::GetEventAttributes(nsINode* aNode,
-                                      nsIPersistentProperties* aAttributes) {
+                                      AccAttributes* aAttributes) {
   if (aNode != sEventTargetNode) return;
 
-  nsAccUtils::SetAccAttr(aAttributes, nsGkAtoms::eventFromInput,
-                         sEventFromUserInput ? u"true"_ns : u"false"_ns);
+  aAttributes->SetAttribute(nsGkAtoms::eventFromInput, sEventFromUserInput);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

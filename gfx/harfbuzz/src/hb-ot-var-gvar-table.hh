@@ -138,10 +138,10 @@ struct TupleVariationHeader
     return scalar;
   }
 
-  bool           has_peak () const { return (tupleIndex & TuppleIndex::EmbeddedPeakTuple); }
-  bool   has_intermediate () const { return (tupleIndex & TuppleIndex::IntermediateRegion); }
-  bool has_private_points () const { return (tupleIndex & TuppleIndex::PrivatePointNumbers); }
-  unsigned int  get_index () const { return (tupleIndex & TuppleIndex::TupleIndexMask); }
+  bool           has_peak () const { return tupleIndex & TuppleIndex::EmbeddedPeakTuple; }
+  bool   has_intermediate () const { return tupleIndex & TuppleIndex::IntermediateRegion; }
+  bool has_private_points () const { return tupleIndex & TuppleIndex::PrivatePointNumbers; }
+  unsigned      get_index () const { return tupleIndex & TuppleIndex::TupleIndexMask; }
 
   protected:
   struct TuppleIndex : HBUINT16
@@ -374,7 +374,7 @@ struct GlyphVariationData
 				 * low 12 bits are the number of tuple variation tables
 				 * for this glyph. The number of tuple variation tables
 				 * can be any number between 1 and 4095. */
-  OffsetTo<HBUINT8>
+  Offset16To<HBUINT8>
 		data;		/* Offset from the start of the GlyphVariationData table
 				 * to the serialized data. */
   /* TupleVariationHeader tupleVariationHeaders[] *//* Array of tuple variation headers. */
@@ -419,7 +419,9 @@ struct gvar
     out->glyphCount = num_glyphs;
 
     unsigned int subset_data_size = 0;
-    for (hb_codepoint_t gid = 0; gid < num_glyphs; gid++)
+    for (hb_codepoint_t gid = (c->plan->flags & HB_SUBSET_FLAGS_NOTDEF_OUTLINE) ? 0 : 1;
+         gid < num_glyphs;
+         gid++)
     {
       hb_codepoint_t old_gid;
       if (!c->plan->old_gid_for_new_gid (gid, &old_gid)) continue;
@@ -449,7 +451,9 @@ struct gvar
     out->dataZ = subset_data - (char *) out;
 
     unsigned int glyph_offset = 0;
-    for (hb_codepoint_t gid = 0; gid < num_glyphs; gid++)
+    for (hb_codepoint_t gid = (c->plan->flags & HB_SUBSET_FLAGS_NOTDEF_OUTLINE) ? 0 : 1;
+         gid < num_glyphs;
+         gid++)
     {
       hb_codepoint_t old_gid;
       hb_bytes_t var_data_bytes = c->plan->old_gid_for_new_gid (gid, &old_gid)
@@ -483,15 +487,10 @@ struct gvar
     return likely (var_data.length >= GlyphVariationData::min_size) ? var_data : hb_bytes_t ();
   }
 
-  bool is_long_offset () const { return (flags & 1) != 0; }
+  bool is_long_offset () const { return flags & 1; }
 
-  unsigned int get_offset (unsigned int i) const
-  {
-    if (is_long_offset ())
-      return get_long_offset_array ()[i];
-    else
-      return get_short_offset_array ()[i] * 2;
-  }
+  unsigned get_offset (unsigned i) const
+  { return is_long_offset () ? get_long_offset_array ()[i] : get_short_offset_array ()[i] * 2; }
 
   const HBUINT32 * get_long_offset_array () const { return (const HBUINT32 *) &offsetZ; }
   const HBUINT16 *get_short_offset_array () const { return (const HBUINT16 *) &offsetZ; }
@@ -540,12 +539,14 @@ struct gvar
       /* num_coords should exactly match gvar's axisCount due to how GlyphVariationData tuples are aligned */
       if (!font->num_coords || font->num_coords != table->axisCount) return true;
 
+      if (unlikely (glyph >= table->glyphCount)) return true;
+
       hb_bytes_t var_data_bytes = table->get_glyph_var_data_bytes (table.get_blob (), glyph);
       if (!var_data_bytes.as<GlyphVariationData> ()->has_data ()) return true;
       hb_vector_t<unsigned int> shared_indices;
       GlyphVariationData::tuple_iterator_t iterator;
       if (!GlyphVariationData::get_tuple_iterator (var_data_bytes, table->axisCount,
-					     shared_indices, &iterator))
+						   shared_indices, &iterator))
 	return true; /* so isn't applied at all */
 
       /* Save original points for inferred delta calculation */
@@ -655,8 +656,8 @@ no_more_gaps:
 	/* apply specified / inferred deltas to points */
 	for (unsigned int i = 0; i < points.length; i++)
 	{
-	  points[i].x += (float) roundf (deltas[i].x);
-	  points[i].y += (float) roundf (deltas[i].y);
+	  points[i].x += deltas[i].x;
+	  points[i].y += deltas[i].y;
 	}
       } while (iterator.move_to_next ());
 
@@ -679,7 +680,7 @@ no_more_gaps:
 				 * can be referenced within glyph variation data tables for
 				 * multiple glyphs, as opposed to other tuple records stored
 				 * directly within a glyph variation data table. */
-  LNNOffsetTo<UnsizedArrayOf<F2DOT14>>
+  NNOffset32To<UnsizedArrayOf<F2DOT14>>
 		sharedTuples;	/* Offset from the start of this table to the shared tuple records.
 				 * Array of tuple records shared across all glyph variation data tables. */
   HBUINT16	glyphCount;	/* The number of glyphs in this font. This must match the number of
@@ -687,7 +688,7 @@ no_more_gaps:
   HBUINT16	flags;		/* Bit-field that gives the format of the offset array that follows.
 				 * If bit 0 is clear, the offsets are uint16; if bit 0 is set, the
 				 * offsets are uint32. */
-  LOffsetTo<GlyphVariationData>
+  Offset32To<GlyphVariationData>
 		dataZ;		/* Offset from the start of this table to the array of
 				 * GlyphVariationData tables. */
   UnsizedArrayOf<HBUINT8>

@@ -368,6 +368,7 @@ PK11_GetWrapKey(PK11SlotInfo *slot, int wrap, CK_MECHANISM_TYPE type,
                 int series, void *wincx)
 {
     PK11SymKey *symKey = NULL;
+    CK_OBJECT_HANDLE keyHandle;
 
     PK11_EnterSlotMonitor(slot);
     if (slot->series != series ||
@@ -380,9 +381,10 @@ PK11_GetWrapKey(PK11SlotInfo *slot, int wrap, CK_MECHANISM_TYPE type,
         type = slot->wrapMechanism;
     }
 
-    symKey = PK11_SymKeyFromHandle(slot, NULL, PK11_OriginDerive,
-                                   slot->wrapMechanism, slot->refKeys[wrap], PR_FALSE, wincx);
+    keyHandle = slot->refKeys[wrap];
     PK11_ExitSlotMonitor(slot);
+    symKey = PK11_SymKeyFromHandle(slot, NULL, PK11_OriginDerive,
+                                   slot->wrapMechanism, keyHandle, PR_FALSE, wincx);
     return symKey;
 }
 
@@ -506,10 +508,37 @@ PK11_ImportSymKey(PK11SlotInfo *slot, CK_MECHANISM_TYPE type,
                                         keyTemplate, templateCount, key, wincx);
     return symKey;
 }
+/* Import a PKCS #11 data object and return it as a key. This key is
+ * only useful in a limited number of mechanisms, such as HKDF. */
+PK11SymKey *
+PK11_ImportDataKey(PK11SlotInfo *slot, CK_MECHANISM_TYPE type, PK11Origin origin,
+                   CK_ATTRIBUTE_TYPE operation, SECItem *key, void *wincx)
+{
+    CK_OBJECT_CLASS ckoData = CKO_DATA;
+    CK_ATTRIBUTE template[2] = { { CKA_CLASS, (CK_BYTE_PTR)&ckoData, sizeof(ckoData) },
+                                 { CKA_VALUE, (CK_BYTE_PTR)key->data, key->len } };
+    CK_OBJECT_HANDLE handle;
+    PK11GenericObject *genObject;
 
-/*
- * turn key bits into an appropriate key object
- */
+    genObject = PK11_CreateGenericObject(slot, template, PR_ARRAY_SIZE(template), PR_FALSE);
+    if (genObject == NULL) {
+        return NULL;
+    }
+    handle = PK11_GetObjectHandle(PK11_TypeGeneric, genObject, NULL);
+    if (handle == CK_INVALID_HANDLE) {
+        return NULL;
+    }
+    /* A note about ownership of the PKCS #11 handle:
+     * PK11_CreateGenericObject() will not destroy the object it creates
+     * on Free, For that you want PK11_CreateManagedGenericObject().
+     * Below we import the handle into the symKey structure. We pass
+     * PR_TRUE as the owner so that the symKey will destroy the object
+     * once it's freed. This is way it's safe to free now. */
+    PK11_DestroyGenericObject(genObject);
+    return PK11_SymKeyFromHandle(slot, NULL, origin, type, handle, PR_TRUE, wincx);
+}
+
+/* turn key bits into an appropriate key object */
 PK11SymKey *
 PK11_ImportSymKeyWithFlags(PK11SlotInfo *slot, CK_MECHANISM_TYPE type,
                            PK11Origin origin, CK_ATTRIBUTE_TYPE operation, SECItem *key,
@@ -1248,13 +1277,23 @@ PK11_ConvertSessionSymKeyToTokenSymKey(PK11SymKey *symk, void *wincx)
                                  symk->type, newKeyID, PR_FALSE /*owner*/, NULL /*wincx*/);
 }
 
-/*
- * This function does a straight public key wrap (which only RSA can do).
- * Use PK11_PubGenKey and PK11_WrapSymKey to implement the FORTEZZA and
- * Diffie-Hellman Ciphers. */
+/* This function does a straight public key wrap with the CKM_RSA_PKCS
+ * mechanism. */
 SECStatus
 PK11_PubWrapSymKey(CK_MECHANISM_TYPE type, SECKEYPublicKey *pubKey,
                    PK11SymKey *symKey, SECItem *wrappedKey)
+{
+    CK_MECHANISM_TYPE inferred = pk11_mapWrapKeyType(pubKey->keyType);
+    return PK11_PubWrapSymKeyWithMechanism(pubKey, inferred, NULL, symKey,
+                                           wrappedKey);
+}
+
+/* This function wraps a symmetric key with a public key, such as with the
+ * CKM_RSA_PKCS and CKM_RSA_PKCS_OAEP mechanisms. */
+SECStatus
+PK11_PubWrapSymKeyWithMechanism(SECKEYPublicKey *pubKey,
+                                CK_MECHANISM_TYPE mechType, SECItem *param,
+                                PK11SymKey *symKey, SECItem *wrappedKey)
 {
     PK11SlotInfo *slot;
     CK_ULONG len = wrappedKey->len;
@@ -1271,7 +1310,7 @@ PK11_PubWrapSymKey(CK_MECHANISM_TYPE type, SECKEYPublicKey *pubKey,
     }
 
     /* if this slot doesn't support the mechanism, go to a slot that does */
-    newKey = pk11_ForceSlot(symKey, type, CKA_ENCRYPT);
+    newKey = pk11_ForceSlot(symKey, mechType, CKA_ENCRYPT);
     if (newKey != NULL) {
         symKey = newKey;
     }
@@ -1282,9 +1321,15 @@ PK11_PubWrapSymKey(CK_MECHANISM_TYPE type, SECKEYPublicKey *pubKey,
     }
 
     slot = symKey->slot;
-    mechanism.mechanism = pk11_mapWrapKeyType(pubKey->keyType);
-    mechanism.pParameter = NULL;
-    mechanism.ulParameterLen = 0;
+
+    mechanism.mechanism = mechType;
+    if (param == NULL) {
+        mechanism.pParameter = NULL;
+        mechanism.ulParameterLen = 0;
+    } else {
+        mechanism.pParameter = param->data;
+        mechanism.ulParameterLen = param->len;
+    }
 
     id = PK11_ImportPublicKey(slot, pubKey, PR_FALSE);
     if (id == CK_INVALID_HANDLE) {
@@ -2856,20 +2901,33 @@ PK11_UnwrapSymKeyWithFlagsPerm(PK11SymKey *wrappingKey,
                              wrappingKey->cx, keyTemplate, templateCount, isPerm);
 }
 
-/* unwrap a symetric key with a private key. */
+/* unwrap a symmetric key with a private key. Only supports CKM_RSA_PKCS. */
 PK11SymKey *
 PK11_PubUnwrapSymKey(SECKEYPrivateKey *wrappingKey, SECItem *wrappedKey,
                      CK_MECHANISM_TYPE target, CK_ATTRIBUTE_TYPE operation, int keySize)
 {
     CK_MECHANISM_TYPE wrapType = pk11_mapWrapKeyType(wrappingKey->keyType);
+
+    return PK11_PubUnwrapSymKeyWithMechanism(wrappingKey, wrapType, NULL,
+                                             wrappedKey, target, operation,
+                                             keySize);
+}
+
+/* unwrap a symmetric key with a private key with the given parameters. */
+PK11SymKey *
+PK11_PubUnwrapSymKeyWithMechanism(SECKEYPrivateKey *wrappingKey,
+                                  CK_MECHANISM_TYPE mechType, SECItem *param,
+                                  SECItem *wrappedKey, CK_MECHANISM_TYPE target,
+                                  CK_ATTRIBUTE_TYPE operation, int keySize)
+{
     PK11SlotInfo *slot = wrappingKey->pkcs11Slot;
 
     if (SECKEY_HAS_ATTRIBUTE_SET(wrappingKey, CKA_PRIVATE)) {
         PK11_HandlePasswordCheck(slot, wrappingKey->wincx);
     }
 
-    return pk11_AnyUnwrapKey(slot, wrappingKey->pkcs11ID,
-                             wrapType, NULL, wrappedKey, target, operation, keySize,
+    return pk11_AnyUnwrapKey(slot, wrappingKey->pkcs11ID, mechType, param,
+                             wrappedKey, target, operation, keySize,
                              wrappingKey->wincx, NULL, 0, PR_FALSE);
 }
 

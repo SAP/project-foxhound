@@ -1,6 +1,8 @@
 #ifndef QCMS_H
 #define QCMS_H
 
+/* clang-format off */
+
 #ifdef  __cplusplus
 extern "C" {
 #endif
@@ -111,7 +113,8 @@ typedef enum {
 	QCMS_DATA_RGBA_8,
 	QCMS_DATA_BGRA_8,
 	QCMS_DATA_GRAY_8,
-	QCMS_DATA_GRAYA_8
+	QCMS_DATA_GRAYA_8,
+	QCMS_DATA_CMYK
 } qcms_data_type;
 
 /* the names for the following two types are sort of ugly */
@@ -148,6 +151,13 @@ void qcms_data_create_rgb_with_gamma(
                 void **mem,
                 size_t *size);
 
+/* The arguments are standardized Coding-independent Code Points
+ * See [Rec. ITU-T H.273 (12/2016)](https://www.itu.int/rec/T-REC-H.273-201612-I/en)
+ *
+ * Don't use enums here because they can't go safely across FFI. */
+qcms_profile* qcms_profile_create_cicp(uint8_t colour_primaries,
+                                       uint8_t transfer_characteristics);
+
 qcms_profile* qcms_profile_from_memory(const void *mem, size_t size);
 
 qcms_profile* qcms_profile_from_file(FILE *file);
@@ -168,6 +178,7 @@ void qcms_profile_release(qcms_profile *profile);
 bool qcms_profile_is_bogus(qcms_profile *profile);
 qcms_intent qcms_profile_get_rendering_intent(qcms_profile *profile);
 icColorSpaceSignature qcms_profile_get_color_space(qcms_profile *profile);
+bool qcms_profile_is_sRGB(qcms_profile *profile);
 
 void qcms_profile_precache_output_transform(qcms_profile *profile);
 

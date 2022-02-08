@@ -7,18 +7,15 @@
 #ifndef nsRegion_h__
 #define nsRegion_h__
 
-#include <stddef.h>     // for size_t
-#include <stdint.h>     // for uint32_t, uint64_t
-#include <sys/types.h>  // for int32_t
+#include <stddef.h>  // for size_t
+#include <stdint.h>  // for uint32_t, uint64_t
 
 #include <ostream>  // for std::ostream
 #include <utility>  // for mozilla::Move
 
-#include "mozilla/ArrayView.h"  // for ArrayView
-#include "mozilla/gfx/Logging.h"
+#include "mozilla/ArrayView.h"      // for ArrayView
 #include "mozilla/gfx/MatrixFwd.h"  // for mozilla::gfx::Matrix4x4
 #include "nsCoord.h"                // for nscoord
-#include "nsError.h"                // for nsresult
 #include "nsMargin.h"               // for nsIntMargin
 #include "nsPoint.h"                // for nsIntPoint, nsPoint
 #include "nsRect.h"                 // for mozilla::gfx::IntRect, nsRect
@@ -504,13 +501,12 @@ class nsRegion {
   }
 
   nsRegion(const nsRegion& aRegion) { Copy(aRegion); }
-  nsRegion(nsRegion&& aRegion) {
-    mBands.SwapElements(aRegion.mBands);
-    mBounds = aRegion.mBounds;
+  nsRegion(nsRegion&& aRegion)
+      : mBands(std::move(aRegion.mBands)), mBounds(aRegion.mBounds) {
     aRegion.SetEmpty();
   }
   nsRegion& operator=(nsRegion&& aRegion) {
-    mBands.SwapElements(aRegion.mBands);
+    mBands = std::move(aRegion.mBands);
     mBounds = aRegion.mBounds;
     aRegion.SetEmpty();
     return *this;

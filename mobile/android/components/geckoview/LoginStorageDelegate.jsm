@@ -20,7 +20,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Services: "resource://gre/modules/Services.jsm",
 });
 
-const { debug, warn } = GeckoViewUtils.initLogging("LoginStorageDelegate"); // eslint-disable-line no-unused-vars
+const { debug, warn } = GeckoViewUtils.initLogging("LoginStorageDelegate");
 
 // Sync with  LoginSaveOption.Hint in Autocomplete.java.
 const LoginStorageHint = {
@@ -39,7 +39,7 @@ class LoginStorageDelegate {
       hint |= LoginStorageHint.GENERATED;
     }
     return {
-      // Sync with GeckoSession.handlePromptEvent.
+      // Sync with PromptController
       type: "Autocomplete:Save:Login",
       hint,
       logins: aLogins,
@@ -68,6 +68,12 @@ class LoginStorageDelegate {
         GeckoViewAutocomplete.onLoginSave(selectedLogin);
       }
     );
+
+    return {
+      dismiss() {
+        prompt.dismiss();
+      },
+    };
   }
 
   promptToChangePassword(
@@ -105,6 +111,12 @@ class LoginStorageDelegate {
         );
       }
     );
+
+    return {
+      dismiss() {
+        prompt.dismiss();
+      },
+    };
   }
 
   promptToChangePasswordWithUsernames(aBrowser, aLogins, aNewLogin) {

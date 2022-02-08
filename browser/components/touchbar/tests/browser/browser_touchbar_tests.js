@@ -94,10 +94,10 @@ add_task(async function updateReaderView() {
 add_task(async function updateMainButtonInFullscreen() {
   Assert.equal(
     TouchBarHelper.getTouchBarInput("OpenLocation").image.spec,
-    "chrome://browser/skin/search-glass.svg",
+    "chrome://global/skin/icons/search-glass.svg",
     "OpenLocation should be displaying the search glass icon."
   );
-  await BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURI(
     gBrowser.selectedBrowser,
     TEST_PATH + "video_test.html"
   );
@@ -118,7 +118,7 @@ add_task(async function updateMainButtonInFullscreen() {
   await exited;
   Assert.equal(
     TouchBarHelper.getTouchBarInput("OpenLocation").image.spec,
-    "chrome://browser/skin/search-glass.svg",
+    "chrome://global/skin/icons/search-glass.svg",
     "OpenLocation should be displaying the search glass icon."
   );
 });

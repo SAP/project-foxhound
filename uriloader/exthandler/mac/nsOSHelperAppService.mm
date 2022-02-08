@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include "mozilla/net/NeckoCommon.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "nsComponentManagerUtils.h"
 #include "nsOSHelperAppService.h"
 #include "nsObjCExceptions.h"
@@ -29,7 +30,7 @@
 #define BRAND_BUNDLE_URL "chrome://branding/locale/brand.properties"
 
 nsresult GetDefaultBundleURL(const nsACString& aScheme, CFURLRef* aBundleURL) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   nsresult rv = NS_ERROR_NOT_AVAILABLE;
 
@@ -68,7 +69,7 @@ nsresult GetDefaultBundleURL(const nsACString& aScheme, CFURLRef* aBundleURL) {
 
   return rv;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 using mozilla::LogLevel;
@@ -127,7 +128,7 @@ nsresult nsOSHelperAppService::OSProtocolHandlerExists(const char* aProtocolSche
 
 NS_IMETHODIMP nsOSHelperAppService::GetApplicationDescription(const nsACString& aScheme,
                                                               nsAString& _retval) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   nsresult rv = NS_ERROR_NOT_AVAILABLE;
 
@@ -159,12 +160,12 @@ NS_IMETHODIMP nsOSHelperAppService::GetApplicationDescription(const nsACString& 
 
   return rv;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 NS_IMETHODIMP nsOSHelperAppService::IsCurrentAppOSDefaultForProtocol(const nsACString& aScheme,
                                                                      bool* _retval) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   nsresult rv = NS_ERROR_NOT_AVAILABLE;
 
@@ -185,12 +186,12 @@ NS_IMETHODIMP nsOSHelperAppService::IsCurrentAppOSDefaultForProtocol(const nsACS
 
   return rv;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 nsresult nsOSHelperAppService::GetFileTokenForPath(const char16_t* aPlatformAppPath,
                                                    nsIFile** aFile) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   nsresult rv;
   nsCOMPtr<nsILocalFileMac> localFile(do_CreateInstance(NS_LOCAL_FILE_CONTRACTID, &rv));
@@ -238,7 +239,7 @@ nsresult nsOSHelperAppService::GetFileTokenForPath(const char16_t* aPlatformAppP
 
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 // Returns the MIME types an application bundle explicitly claims to handle.
@@ -316,7 +317,7 @@ static CFArrayRef GetMIMETypesHandledByApp(FSRef* aAppRef) {
 nsresult nsOSHelperAppService::GetMIMEInfoFromOS(const nsACString& aMIMEType,
                                                  const nsACString& aFileExt, bool* aFound,
                                                  nsIMIMEInfo** aMIMEInfo) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSNULL;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
   MOZ_ASSERT(XRE_IsParentProcess());
 
   *aFound = false;
@@ -511,7 +512,11 @@ nsresult nsOSHelperAppService::GetMIMEInfoFromOS(const nsACString& aMIMEType,
     }
 
     mimeInfoMac->SetDefaultApplication(app);
-    mimeInfoMac->SetPreferredAction(nsIMIMEInfo::useSystemDefault);
+
+    mozilla::StaticPrefs::browser_download_improvements_to_download_panel()
+        ? mimeInfoMac->SetPreferredAction(nsIMIMEInfo::saveToDisk)
+        : mimeInfoMac->SetPreferredAction(nsIMIMEInfo::useSystemDefault);
+
   } else {
     mimeInfoMac->SetPreferredAction(nsIMIMEInfo::saveToDisk);
   }
@@ -532,10 +537,9 @@ nsresult nsOSHelperAppService::GetMIMEInfoFromOS(const nsACString& aMIMEType,
       }
     }
 
-    CFStringRef cfType = ::CFStringCreateWithCString(NULL, mimeType.get(), kCFStringEncodingUTF8);
-    if (cfType) {
-      CFStringRef cfTypeDesc = NULL;
-      if (::LSCopyKindStringForMIMEType(cfType, &cfTypeDesc) == noErr) {
+    if (CFStringRef cfType =
+            ::CFStringCreateWithCString(NULL, mimeType.get(), kCFStringEncodingUTF8)) {
+      if (CFStringRef cfTypeDesc = ::UTTypeCopyDescription(cfType)) {
         AutoTArray<UniChar, 255> buffer;
         CFIndex typeDescLength = ::CFStringGetLength(cfTypeDesc);
         buffer.SetLength(typeDescLength);
@@ -543,8 +547,6 @@ nsresult nsOSHelperAppService::GetMIMEInfoFromOS(const nsACString& aMIMEType,
         nsAutoString typeDesc;
         typeDesc.Assign(reinterpret_cast<char16_t*>(buffer.Elements()), typeDescLength);
         mimeInfoMac->SetDescription(typeDesc);
-      }
-      if (cfTypeDesc) {
         ::CFRelease(cfTypeDesc);
       }
       ::CFRelease(cfType);
@@ -557,7 +559,7 @@ nsresult nsOSHelperAppService::GetMIMEInfoFromOS(const nsACString& aMIMEType,
   mimeInfoMac.forget(aMIMEInfo);
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 NS_IMETHODIMP

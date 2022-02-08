@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 ja{
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"アビジャン"}
@@ -1942,6 +1942,9 @@ ja{
             ld{"エカテリンブルグ夏時間"}
             lg{"エカテリンブルグ時間"}
             ls{"エカテリンブルグ標準時"}
+        }
+        "meta:Yukon"{
+            ls{"ユーコン時間"}
         }
         fallbackFormat{"{1}（{0}）"}
         gmtFormat{"GMT{0}"}

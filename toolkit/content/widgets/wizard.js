@@ -69,16 +69,13 @@
         <html:link rel="stylesheet" href="chrome://global/skin/button.css"/>
         <html:link rel="stylesheet" href="chrome://global/skin/wizard.css"/>
         <hbox class="wizard-header"></hbox>
-        <deck class="wizard-page-box" flex="1">
-          <html:slot name="wizardpage"/>
-        </deck>
+        <html:slot name="wizardpage" class="wizard-page-box" style="display: grid; -moz-box-flex: 1;"/>
         <html:slot/>
         <wizard-buttons class="wizard-buttons"></wizard-buttons>
     `)
       );
       this.initializeAttributeInheritance();
 
-      this._deck = this.shadowRoot.querySelector(".wizard-page-box");
       this._wizardButtons = this.shadowRoot.querySelector(".wizard-buttons");
 
       this._wizardHeader = this.shadowRoot.querySelector(".wizard-header");
@@ -145,7 +142,7 @@
     }
 
     set title(val) {
-      return (document.title = val);
+      document.title = val;
     }
 
     get title() {
@@ -154,7 +151,7 @@
 
     set canAdvance(val) {
       this.getButton("next").disabled = !val;
-      return (this._canAdvance = val);
+      this._canAdvance = val;
     }
 
     get canAdvance() {
@@ -163,7 +160,7 @@
 
     set canRewind(val) {
       this.getButton("back").disabled = !val;
-      return (this._canRewind = val);
+      this._canRewind = val;
     }
 
     get canRewind() {
@@ -180,8 +177,11 @@
 
     set currentPage(val) {
       if (!val) {
-        return val;
+        return;
       }
+
+      this._currentPage?.classList.remove("selected");
+      val.classList.add("selected");
 
       this._currentPage = val;
 
@@ -191,12 +191,9 @@
 
       this._initCurrentPage();
 
-      this._deck.setAttribute("selectedIndex", val.pageIndex);
       this._advanceFocusToPage(val);
 
       this._fireEvent(val, "pageshow");
-
-      return val;
     }
 
     get currentPage() {
@@ -205,14 +202,12 @@
 
     set pageIndex(val) {
       if (val < 0 || val >= this.pageCount) {
-        return val;
+        return;
       }
 
       var page = this.wizardPages[val];
       this._pageStack[this._pageStack.length - 1] = page;
       this.currentPage = page;
-
-      return val;
     }
 
     get pageIndex() {
@@ -349,18 +344,10 @@
     }
 
     _initCurrentPage() {
-      if (this.onFirstPage) {
-        this.canRewind = false;
-        this.setAttribute("firstpage", "true");
-        if (AppConstants.platform == "linux") {
-          this.getButton("back").setAttribute("hidden", "true");
-        }
-      } else {
-        this.canRewind = true;
-        this.setAttribute("firstpage", "false");
-        if (AppConstants.platform == "linux") {
-          this.getButton("back").setAttribute("hidden", "false");
-        }
+      this.canRewind = !this.onFirstPage;
+      this.setAttribute("firstpage", String(this.onFirstPage));
+      if (AppConstants.platform == "linux") {
+        this.getButton("back").hidden = this.onFirstPage;
       }
 
       if (this.onLastPage) {
@@ -512,7 +499,6 @@
     set next(val) {
       this.setAttribute("next", val);
       this.parentNode._accessMethod = "random";
-      return val;
     }
   }
 

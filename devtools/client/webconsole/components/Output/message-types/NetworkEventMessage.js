@@ -28,6 +28,7 @@ loader.lazyRequireGetter(
 const {
   getHTTPStatusCodeURL,
 } = require("devtools/client/netmonitor/src/utils/mdn-utils");
+const { getUnicodeUrl } = require("devtools/client/shared/unicode-url");
 loader.lazyRequireGetter(
   this,
   "BLOCKED_REASON_MESSAGES",
@@ -80,15 +81,16 @@ function NetworkEventMessage({
     source,
     type,
     level,
-    request,
+    url,
+    method,
     isXHR,
     timeStamp,
     blockedReason,
+    httpVersion,
+    status,
+    statusText,
+    totalTime,
   } = message;
-
-  const { response = {}, totalTime } = networkMessageUpdate;
-
-  const { httpVersion, status, statusText } = response;
 
   const topLevelClasses = ["cm-s-mozilla"];
   if (isMessageNetworkError(message)) {
@@ -139,7 +141,7 @@ function NetworkEventMessage({
   const onToggle = (messageId, e) => {
     const shouldOpenLink = (isMacOS && e.metaKey) || (!isMacOS && e.ctrlKey);
     if (shouldOpenLink) {
-      serviceContainer.openLink(request.url, e);
+      serviceContainer.openLink(url, e);
       e.stopPropagation();
     } else if (open) {
       dispatch(actions.messageClose(messageId));
@@ -149,34 +151,34 @@ function NetworkEventMessage({
   };
 
   // Message body components.
-  const method = dom.span({ className: "method" }, request.method);
+  const requestMethod = dom.span({ className: "method" }, method);
   const xhr = isXHR
     ? dom.span({ className: "xhr" }, l10n.getStr("webConsoleXhrIndicator"))
     : null;
+  const unicodeURL = getUnicodeUrl(url);
   const requestUrl = dom.span(
-    { className: "url", title: request.url },
-    request.url
+    { className: "url", title: unicodeURL },
+    unicodeURL
   );
   const statusBody = statusInfo
     ? dom.a({ className: "status" }, statusInfo)
     : null;
 
-  const messageBody = [xhr, method, requestUrl, statusBody];
+  const messageBody = [xhr, requestMethod, requestUrl, statusBody];
 
   // API consumed by Net monitor UI components. Most of the method
   // are not needed in context of the Console panel (atm) and thus
   // let's just provide empty implementation.
   // Individual methods might be implemented step by step as needed.
   const connector = {
-    viewSourceInDebugger: (url, line, column) => {
-      serviceContainer.onViewSourceInDebugger({ url, line, column });
+    viewSourceInDebugger: (srcUrl, line, column) => {
+      serviceContainer.onViewSourceInDebugger({ url: srcUrl, line, column });
     },
     getLongString: grip => {
       return serviceContainer.getLongString(grip);
     },
     getTabTarget: () => {},
     sendHTTPRequest: () => {},
-    setPreferences: () => {},
     triggerActivity: () => {},
     requestData: (requestId, dataType) => {
       return serviceContainer.requestData(requestId, dataType);
@@ -210,6 +212,7 @@ function NetworkEventMessage({
       })
     );
 
+  const request = { url, method };
   return Message({
     dispatch,
     messageId: id,

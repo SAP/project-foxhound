@@ -9,7 +9,6 @@
 
 #include "nsCOMPtr.h"
 #include "nsIReferrerInfo.h"
-#include "nsIHttpChannel.h"
 #include "nsReadableUtils.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/HashFunctions.h"
@@ -24,6 +23,7 @@
     }                                                \
   }
 
+class nsIHttpChannel;
 class nsIURI;
 class nsIChannel;
 class nsILoadInfo;
@@ -88,6 +88,9 @@ class ReferrerInfo : public nsIReferrerInfo {
   // create an copy of the ReferrerInfo with new original referrer
   already_AddRefed<ReferrerInfo> CloneWithNewOriginalReferrer(
       nsIURI* aOriginalReferrer) const;
+
+  // Record the telemetry for the referrer policy.
+  void RecordTelemetry(nsIHttpChannel* aChannel);
 
   /*
    * Helper function to create a new ReferrerInfo object from other. We will not
@@ -154,7 +157,7 @@ class ReferrerInfo : public nsIReferrerInfo {
 
   /**
    * Check whether the given referrer's scheme is allowed to be computed and
-   * sent. The allowlist schemes are: http, https, ftp.
+   * sent. The allowlist schemes are: http, https.
    */
   static bool IsReferrerSchemeAllowed(nsIURI* aReferrer);
 
@@ -179,6 +182,11 @@ class ReferrerInfo : public nsIReferrerInfo {
    * do that in cases where we're going to use this information later on.
    */
   static bool IsCrossOriginRequest(nsIHttpChannel* aChannel);
+
+  /**
+   * Returns true if the given channel is cross-site request.
+   */
+  static bool IsCrossSiteRequest(nsIHttpChannel* aChannel);
 
   /**
    * Returns true if the given channel is suppressed by Referrer-Policy header
@@ -368,7 +376,7 @@ class ReferrerInfo : public nsIReferrerInfo {
   bool IsPolicyOverrided() { return mOverridePolicyByDefault; }
 
   /*
-   *  Get origin string from a given valid referrer URI (http, https, ftp)
+   *  Get origin string from a given valid referrer URI (http, https)
    *
    *  @aReferrer - the full referrer URI
    *  @aResult - the resulting aReferrer in string format.
@@ -382,6 +390,20 @@ class ReferrerInfo : public nsIReferrerInfo {
   nsresult TrimReferrerWithPolicy(nsIURI* aReferrer,
                                   TrimmingPolicy aTrimmingPolicy,
                                   nsACString& aResult) const;
+
+  /**
+   * Returns true if we should ignore less restricted referrer policies,
+   * including 'unsafe_url', 'no_referrer_when_downgrade' and
+   * 'origin_when_cross_origin', for the given channel. We only apply this
+   * restriction for cross-site requests. For the same-site request, we will
+   * still allow overriding the default referrer policy with less restricted
+   * one.
+   *
+   * Note that the channel triggered by the system and the extension will be
+   * exempt from this restriction.
+   */
+  bool ShouldIgnoreLessRestrictedPolicies(
+      nsIHttpChannel* aChannel, const ReferrerPolicyEnum aPolicy) const;
 
   /*
    *  Limit referrer length using the following ruleset:
@@ -435,6 +457,12 @@ class ReferrerInfo : public nsIReferrerInfo {
 
   // Store a computed referrer for a given channel
   Maybe<nsCString> mComputedReferrer;
+
+#ifdef DEBUG
+  // Indicates if the telemetry has been recorded. This is used to make sure the
+  // telemetry will be only recored once.
+  bool mTelemetryRecorded = false;
+#endif  // DEBUG
 };
 
 }  // namespace dom

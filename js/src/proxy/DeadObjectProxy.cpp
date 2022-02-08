@@ -6,9 +6,9 @@
 
 #include "proxy/DeadObjectProxy.h"
 
-#include "jsapi.h"
-
-#include "vm/JSFunction.h"  // XXXefaust Bug 1064662
+#include "js/ErrorReport.h"           // JS_ReportErrorNumberASCII
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "vm/JSFunction.h"            // XXXefaust Bug 1064662
 #include "vm/ProxyObject.h"
 
 using namespace js;
@@ -22,7 +22,7 @@ static void ReportDead(JSContext* cx) {
 
 bool DeadObjectProxy::getOwnPropertyDescriptor(
     JSContext* cx, HandleObject wrapper, HandleId id,
-    MutableHandle<PropertyDescriptor> desc) const {
+    MutableHandle<mozilla::Maybe<PropertyDescriptor>> desc) const {
   ReportDead(cx);
   return false;
 }
@@ -127,33 +127,7 @@ RegExpShared* DeadObjectProxy::regexp_toShared(JSContext* cx,
   return nullptr;
 }
 
-bool DeadObjectProxy::hasPrivate(JSContext* cx, HandleObject proxy, HandleId id,
-                                 bool* bp) const {
-  ReportDead(cx);
-  return false;
-}
-bool DeadObjectProxy::getPrivate(JSContext* cx, HandleObject proxy,
-                                 HandleValue receiver, HandleId id,
-                                 MutableHandleValue vp) const {
-  ReportDead(cx);
-  return false;
-}
-bool DeadObjectProxy::setPrivate(JSContext* cx, HandleObject proxy, HandleId id,
-                                 HandleValue v, HandleValue receiver,
-                                 ObjectOpResult& result) const {
-  ReportDead(cx);
-  return false;
-}
-
-bool DeadObjectProxy::definePrivateField(JSContext* cx, HandleObject proxy,
-                                         HandleId id,
-                                         Handle<PropertyDescriptor> desc,
-                                         ObjectOpResult& result) const {
-  ReportDead(cx);
-  return false;
-}
-
-bool js::IsDeadProxyObject(JSObject* obj) {
+bool js::IsDeadProxyObject(const JSObject* obj) {
   return IsDerivedProxyObject(obj, &DeadObjectProxy::singleton);
 }
 

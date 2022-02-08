@@ -6,22 +6,54 @@
 
 #include "mozilla/dom/RTCCertificate.h"
 
-#include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <memory>
+#include <new>
 #include <utility>
-
+#include "ErrorList.h"
+#include "MainThreadUtils.h"
 #include "cert.h"
-#include "jsapi.h"
-#include "mozilla/Sprintf.h"
+#include "cryptohi.h"
+#include "js/StructuredClone.h"
+#include "js/TypeDecls.h"
+#include "js/Value.h"
+#include "keyhi.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/MacroForEach.h"
+#include "mozilla/OwningNonNull.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/CryptoBuffer.h"
 #include "mozilla/dom/CryptoKey.h"
+#include "mozilla/dom/KeyAlgorithmBinding.h"
+#include "mozilla/dom/KeyAlgorithmProxy.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/RTCCertificateBinding.h"
 #include "mozilla/dom/StructuredCloneHolder.h"
+#include "mozilla/dom/SubtleCryptoBinding.h"
+#include "mozilla/dom/UnionTypes.h"
 #include "mozilla/dom/WebCryptoCommon.h"
 #include "mozilla/dom/WebCryptoTask.h"
-#include "mtransport/dtlsidentity.h"
+#include "mozilla/fallible.h"
+#include "nsDebug.h"
+#include "nsError.h"
+#include "nsLiteralString.h"
+#include "nsStringFlags.h"
+#include "nsStringFwd.h"
+#include "nsTLiteralString.h"
+#include "pk11pub.h"
+#include "plarena.h"
+#include "secasn1.h"
+#include "secasn1t.h"
+#include "seccomon.h"
+#include "secmodt.h"
+#include "secoid.h"
+#include "secoidt.h"
+#include "transport/dtlsidentity.h"
+#include "xpcpublic.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 #define RTCCERTIFICATE_SC_VERSION 0x00000001
 
@@ -55,7 +87,14 @@ class GenerateRTCCertificateTask : public GenerateAsymmetricKeyTask {
         mExpires(aExpires),
         mAuthType(ssl_kea_null),
         mCertificate(nullptr),
-        mSignatureAlg(SEC_OID_UNKNOWN) {}
+        mSignatureAlg(SEC_OID_UNKNOWN) {
+    if (NS_FAILED(mEarlyRv)) {
+      // webrtc-pc says to throw NotSupportedError if we have passed "an
+      // algorithm that the user agent cannot or will not use to generate a
+      // certificate". This catches these cases.
+      mEarlyRv = NS_ERROR_DOM_NOT_SUPPORTED_ERR;
+    }
+  }
 
  private:
   PRTime mExpires;
@@ -72,7 +111,7 @@ class GenerateRTCCertificateTask : public GenerateAsymmetricKeyTask {
     }
 
     char buf[sizeof(randomName) * 2 + 4];
-    PL_strncpy(buf, "CN=", 3);
+    strncpy(buf, "CN=", 4);
     for (size_t i = 0; i < sizeof(randomName); ++i) {
       snprintf(&buf[i * 2 + 3], 3, "%.2x", randomName[i]);
     }
@@ -393,5 +432,4 @@ already_AddRefed<RTCCertificate> RTCCertificate::ReadStructuredClone(
   return cert.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

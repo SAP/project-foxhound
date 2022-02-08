@@ -13,7 +13,6 @@
 #include "nsDOMNavigationTiming.h"
 #include "nsIChannel.h"
 #include "nsIChildChannel.h"
-#include "nsITraceableChannel.h"
 
 class nsDocShell;
 
@@ -39,13 +38,12 @@ uint64_t InnerWindowIDForExtantDoc(nsDocShell* docShell);
  * channel with the real one, otherwise the originating docshell will be removed
  * during the process switch.
  */
-class DocumentChannel : public nsIIdentChannel, public nsITraceableChannel {
+class DocumentChannel : public nsIIdentChannel {
  public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIREQUEST
   NS_DECL_NSICHANNEL
   NS_DECL_NSIIDENTCHANNEL
-  NS_DECL_NSITRACEABLECHANNEL
 
   NS_DECLARE_STATIC_IID_ACCESSOR(DOCUMENT_CHANNEL_IID)
 
@@ -56,6 +54,9 @@ class DocumentChannel : public nsIIdentChannel, public nsITraceableChannel {
   void SetInitialClientInfo(const Maybe<dom::ClientInfo>& aInfo) {
     mInitialClientInfo = aInfo;
   }
+
+  void DisconnectChildListeners(const nsresult& aStatus,
+                                const nsresult& aLoadGroupStatus);
 
   /**
    * Will create the appropriate document channel:
@@ -71,7 +72,7 @@ class DocumentChannel : public nsIIdentChannel, public nsITraceableChannel {
       nsDocShellLoadState* aLoadState, class LoadInfo* aLoadInfo,
       nsLoadFlags aLoadFlags, nsIInterfaceRequestor* aNotificationCallbacks);
 
-  static bool CanUseDocumentChannel(nsIURI* aURI, uint32_t aLoadFlags);
+  static bool CanUseDocumentChannel(nsIURI* aURI);
 
  protected:
   DocumentChannel(nsDocShellLoadState* aLoadState, class LoadInfo* aLoadInfo,
@@ -79,15 +80,12 @@ class DocumentChannel : public nsIIdentChannel, public nsITraceableChannel {
                   bool aIsXFOError);
 
   void ShutdownListeners(nsresult aStatusCode);
-  void DisconnectChildListeners(const nsresult& aStatus,
-                                const nsresult& aLoadGroupStatus);
   virtual void DeleteIPDL() {}
 
   nsDocShell* GetDocShell();
 
   virtual ~DocumentChannel() = default;
 
-  const TimeStamp mAsyncOpenTime;
   const RefPtr<nsDocShellLoadState> mLoadState;
   const uint32_t mCacheKey;
 

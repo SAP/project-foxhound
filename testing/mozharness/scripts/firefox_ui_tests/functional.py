@@ -6,6 +6,7 @@
 # ***** END LICENSE BLOCK *****
 
 
+from __future__ import absolute_import
 import os
 import sys
 
@@ -15,6 +16,6 @@ sys.path.insert(1, os.path.dirname(os.path.dirname(sys.path[0])))
 from mozharness.mozilla.testing.firefox_ui_tests import FirefoxUIFunctionalTests
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     myScript = FirefoxUIFunctionalTests()
     myScript.run_and_exit()

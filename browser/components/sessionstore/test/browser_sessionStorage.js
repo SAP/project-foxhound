@@ -91,8 +91,7 @@ add_task(async function session_storage() {
   await TabStateFlusher.flush(browser2);
 
   ({ storage } = JSON.parse(ss.getTabState(tab2)));
-  // TODO: bug 1634734
-  todo_is(
+  is(
     storage[INNER_ORIGIN].test,
     "modified2",
     "sessionStorage data for example.com has been duplicated correctly"
@@ -109,8 +108,7 @@ add_task(async function session_storage() {
   await TabStateFlusher.flush(browser2);
 
   ({ storage } = JSON.parse(ss.getTabState(tab2)));
-  // TODO: bug 1634734
-  todo_is(
+  is(
     storage[INNER_ORIGIN].test,
     "modified2",
     "sessionStorage data for example.com has been duplicated correctly"
@@ -132,15 +130,12 @@ add_task(async function session_storage() {
     "modified3",
     "navigating retains correct storage data"
   );
-  ok(!storage[INNER_ORIGIN], "storage data was discarded");
 
-  // Check that loading a new URL discards data.
-  BrowserTestUtils.loadURI(browser2, "about:mozilla");
-  await promiseBrowserLoaded(browser2);
-  await TabStateFlusher.flush(browser2);
-
-  let state = JSON.parse(ss.getTabState(tab2));
-  ok(!state.hasOwnProperty("storage"), "storage data was discarded");
+  is(
+    storage[INNER_ORIGIN].test,
+    "modified2",
+    "sessionStorage data for example.com wasn't discarded after top-level same-site navigation"
+  );
 
   // Test that clearing the data in the first tab works properly within
   // the subframe
@@ -158,9 +153,8 @@ add_task(async function session_storage() {
   await modifySessionStorage(browser, {});
   await TabStateFlusher.flush(browser);
   ({ storage } = JSON.parse(ss.getTabState(tab)));
-  is(
-    storage,
-    null,
+  ok(
+    storage === null || storage === undefined,
     "sessionStorage data for the entire tab has been cleared correctly"
   );
 
@@ -205,13 +199,14 @@ add_task(async function purge_domain() {
 add_task(async function respect_privacy_level() {
   let tab = BrowserTestUtils.addTab(gBrowser, URL + "&secure");
   await promiseBrowserLoaded(tab.linkedBrowser);
+  await TabStateFlusher.flush(tab.linkedBrowser);
   await promiseRemoveTabAndSessionState(tab);
 
   let [
     {
       state: { storage },
     },
-  ] = JSON.parse(ss.getClosedTabData(window));
+  ] = ss.getClosedTabData(window);
   is(
     storage[OUTER_ORIGIN].test,
     OUTER_VALUE,
@@ -228,13 +223,14 @@ add_task(async function respect_privacy_level() {
 
   tab = BrowserTestUtils.addTab(gBrowser, URL + "&secure");
   await promiseBrowserLoaded(tab.linkedBrowser);
+  await TabStateFlusher.flush(tab.linkedBrowser);
   await promiseRemoveTabAndSessionState(tab);
 
   [
     {
       state: { storage },
     },
-  ] = JSON.parse(ss.getClosedTabData(window));
+  ] = ss.getClosedTabData(window);
   is(
     storage[OUTER_ORIGIN].test,
     OUTER_VALUE,
@@ -260,7 +256,7 @@ add_task(async function respect_privacy_level() {
     {
       state: { storage },
     },
-  ] = JSON.parse(ss.getClosedTabData(window));
+  ] = ss.getClosedTabData(window);
   ok(!storage, "sessionStorage data has *not* been saved");
 
   // Remove all closed tabs before continuing with the next test.
@@ -279,7 +275,7 @@ add_task(async function respect_privacy_level() {
     {
       state: { storage },
     },
-  ] = JSON.parse(ss.getClosedTabData(window));
+  ] = ss.getClosedTabData(window);
   is(
     storage[OUTER_ORIGIN].test,
     OUTER_VALUE,

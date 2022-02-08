@@ -12,6 +12,7 @@
 #include "nsTArray.h"
 #include "nsCOMPtr.h"
 #include "nsCRT.h"
+#include "nsCycleCollectionNoteChild.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIDTD.h"
 #include "mozilla/dom/FromParser.h"
@@ -20,6 +21,8 @@
 #include "nsIScriptContext.h"
 #include "nsICSSLoaderObserver.h"
 #include "mozilla/Logging.h"
+#include "js/experimental/JSStencil.h"
+#include "mozilla/RefPtr.h"
 
 class nsIURI;
 class nsIChannel;
@@ -85,7 +88,7 @@ class PrototypeDocumentContentSink final : public nsIStreamLoaderObserver,
                               nsresult aStatus) override;
 
   // nsIOffThreadScriptReceiver
-  NS_IMETHOD OnScriptCompileComplete(JSScript* aScript,
+  NS_IMETHOD OnScriptCompileComplete(JS::Stencil* aStencil,
                                      nsresult aStatus) override;
 
   nsresult OnPrototypeLoadDone(nsXULPrototypeDocument* aPrototype);
@@ -170,6 +173,23 @@ class PrototypeDocumentContentSink final : public nsIStreamLoaderObserver,
                   int32_t* aIndex);
 
     nsresult SetTopIndex(int32_t aIndex);
+
+    void Traverse(nsCycleCollectionTraversalCallback& aCallback,
+                  const char* aName, uint32_t aFlags = 0);
+    void Clear();
+
+    // Cycle collector helpers for ContextStack.
+    friend void ImplCycleCollectionUnlink(
+        PrototypeDocumentContentSink::ContextStack& aField) {
+      aField.Clear();
+    }
+
+    friend void ImplCycleCollectionTraverse(
+        nsCycleCollectionTraversalCallback& aCallback,
+        PrototypeDocumentContentSink::ContextStack& aField, const char* aName,
+        uint32_t aFlags = 0) {
+      aField.Traverse(aCallback, aName, aFlags);
+    }
   };
 
   friend class ContextStack;
@@ -239,7 +259,7 @@ class PrototypeDocumentContentSink final : public nsIStreamLoaderObserver,
   nsresult InsertXMLStylesheetPI(const nsXULPrototypePI* aProtoPI,
                                  nsINode* aParent, nsINode* aBeforeThis,
                                  XMLStylesheetProcessingInstruction* aPINode);
-  void CloseElement(Element* aElement);
+  void CloseElement(Element* aElement, bool aHadChildren);
 };
 
 }  // namespace dom

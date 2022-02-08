@@ -34,6 +34,10 @@
 #include "nsIProtocolHandler.h"
 #include "GeckoProfiler.h"
 #include "nsAppRunner.h"
+#include "xpcpublic.h"
+#ifdef MOZ_BACKGROUNDTASKS
+#  include "mozilla/BackgroundTasks.h"
+#endif
 
 #if defined(XP_WIN)
 #  include <windows.h>
@@ -114,6 +118,12 @@ StartupCache* StartupCache::GetSingletonNoInit() {
 }
 
 StartupCache* StartupCache::GetSingleton() {
+#ifdef MOZ_BACKGROUNDTASKS
+  if (BackgroundTasks::IsBackgroundTaskMode()) {
+    return nullptr;
+  }
+#endif
+
   if (!gStartupCache) {
     if (!XRE_IsParentProcess()) {
       return nullptr;
@@ -395,12 +405,11 @@ nsresult StartupCache::GetBuffer(const char* id, const char** outbuf,
 
     size_t totalRead = 0;
     size_t totalWritten = 0;
-    Span<const char> compressed = MakeSpan(
+    Span<const char> compressed = Span(
         mCacheData.get<char>().get() + mCacheEntriesBaseOffset + value.mOffset,
         value.mCompressedSize);
     value.mData = MakeUnique<char[]>(value.mUncompressedSize);
-    Span<char> uncompressed =
-        MakeSpan(value.mData.get(), value.mUncompressedSize);
+    Span<char> uncompressed = Span(value.mData.get(), value.mUncompressedSize);
     MMAP_FAULT_HANDLER_BEGIN_BUFFER(uncompressed.Elements(),
                                     uncompressed.Length())
     bool finished = false;
@@ -558,7 +567,7 @@ Result<Ok, nsresult> StartupCache::WriteToDisk() {
                                  true);     /* aStableSrc */
   size_t writeBufLen = ctx.GetRequiredWriteBufferLength();
   auto writeBuffer = MakeUnique<char[]>(writeBufLen);
-  auto writeSpan = MakeSpan(writeBuffer.get(), writeBufLen);
+  auto writeSpan = Span(writeBuffer.get(), writeBufLen);
 
   for (auto& e : entries) {
     auto value = e.second;
@@ -572,7 +581,7 @@ Result<Ok, nsresult> StartupCache::WriteToDisk() {
     for (size_t i = 0; i < value->mUncompressedSize; i += chunkSize) {
       size_t size = std::min(chunkSize, value->mUncompressedSize - i);
       char* uncompressed = value->mData.get() + i;
-      MOZ_TRY_VAR(result, ctx.ContinueCompressing(MakeSpan(uncompressed, size))
+      MOZ_TRY_VAR(result, ctx.ContinueCompressing(Span(uncompressed, size))
                               .mapErr(MapLZ4ErrorToNsresult));
       MOZ_TRY(Write(fd, result.Elements(), result.Length()));
       offset += result.Length();
@@ -849,16 +858,14 @@ bool StartupCacheDebugOutputStream::CheckReferences(nsISupports* aObject) {
   NS_ENSURE_SUCCESS(rv, false);
   if (flags & nsIClassInfo::SINGLETON) return true;
 
-  nsISupportsHashKey* key = mObjectMap->GetEntry(aObject);
-  if (key) {
+  bool inserted = mObjectMap->EnsureInserted(aObject);
+  if (!inserted) {
     NS_ERROR(
         "non-singleton aObject is referenced multiple times in this"
         "serialization, we don't support that.");
-    return false;
   }
 
-  mObjectMap->PutEntry(aObject);
-  return true;
+  return inserted;
 }
 
 // nsIObjectOutputStream implementation

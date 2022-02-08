@@ -9,8 +9,8 @@ struct MockWriter {
 }
 
 impl MockWriter {
-    pub fn new(fun: impl FnMut(&[u8]) -> Poll<io::Result<usize>> + 'static) -> Self {
-        MockWriter { fun: Box::new(fun) }
+    fn new(fun: impl FnMut(&[u8]) -> Poll<io::Result<usize>> + 'static) -> Self {
+        Self { fun: Box::new(fun) }
     }
 }
 
@@ -57,14 +57,9 @@ fn write_vectored_first_non_empty() {
         Poll::Ready(Ok(4))
     });
     let cx = &mut panic_context();
-    let bufs = &mut [
-        io::IoSlice::new(&[]), 
-        io::IoSlice::new(&[]),
-        io::IoSlice::new(b"four")
-    ];
+    let bufs = &mut [io::IoSlice::new(&[]), io::IoSlice::new(&[]), io::IoSlice::new(b"four")];
 
     let res = Pin::new(&mut writer).poll_write_vectored(cx, bufs);
     let res = res.map_err(|e| e.kind());
     assert_eq!(res, Poll::Ready(Ok(4)));
 }
-

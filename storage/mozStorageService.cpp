@@ -6,10 +6,10 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/SpinEventLoopUntil.h"
 
 #include "mozStorageService.h"
 #include "mozStorageConnection.h"
-#include "nsCollationCID.h"
 #include "nsComponentManagerUtils.h"
 #include "nsEmbedCID.h"
 #include "nsExceptionHandler.h"
@@ -21,6 +21,9 @@
 #include "mozilla/LateWriteChecks.h"
 #include "mozIStorageCompletionCallback.h"
 #include "mozIStoragePendingStatement.h"
+#include "mozilla/StaticPrefs_storage.h"
+#include "mozilla/intl/Collator.h"
+#include "mozilla/intl/LocaleService.h"
 
 #include "sqlite3.h"
 #include "mozilla/AutoSQLiteLifetime.h"
@@ -29,6 +32,8 @@
 // "windows.h" was included and it can #define lots of things we care about...
 #  undef CompareString
 #endif
+
+using mozilla::intl::Collator;
 
 namespace mozilla {
 namespace storage {
@@ -75,7 +80,7 @@ static void ReportConn(nsIHandleReportCallback* aHandleReport,
   path.AppendLiteral("-used");
 
   int32_t val = aConn->getSqliteRuntimeStatus(aOption);
-  aHandleReport->Callback(EmptyCString(), path, nsIMemoryReporter::KIND_HEAP,
+  aHandleReport->Callback(""_ns, path, nsIMemoryReporter::KIND_HEAP,
                           nsIMemoryReporter::UNITS_BYTES, int64_t(val), aDesc,
                           aData);
   *aTotal += val;
@@ -175,10 +180,27 @@ already_AddRefed<Service> Service::getSingleton() {
   return nullptr;
 }
 
+int Service::AutoVFSRegistration::Init(UniquePtr<sqlite3_vfs> aVFS) {
+  MOZ_ASSERT(!mVFS);
+  if (aVFS) {
+    mVFS = std::move(aVFS);
+    return sqlite3_vfs_register(mVFS.get(), 0);
+  }
+  NS_WARNING("Failed to register VFS");
+  return SQLITE_OK;
+}
+
+Service::AutoVFSRegistration::~AutoVFSRegistration() {
+  if (mVFS) {
+    int rc = sqlite3_vfs_unregister(mVFS.get());
+    if (rc != SQLITE_OK) {
+      NS_WARNING("Failed to unregister sqlite vfs wrapper.");
+    }
+  }
+}
+
 Service::Service()
     : mMutex("Service::mMutex"),
-      mSqliteExclVFS(nullptr),
-      mSqliteVFS(nullptr),
       mRegistrationMutex("Service::mRegistrationMutex"),
       mConnections() {}
 
@@ -186,16 +208,7 @@ Service::~Service() {
   mozilla::UnregisterWeakMemoryReporter(this);
   mozilla::UnregisterStorageSQLiteDistinguishedAmount();
 
-  int srv = sqlite3_vfs_unregister(mSqliteVFS);
-  if (srv != SQLITE_OK) NS_WARNING("Failed to unregister sqlite vfs wrapper.");
-  srv = sqlite3_vfs_unregister(mSqliteExclVFS);
-  if (srv != SQLITE_OK) NS_WARNING("Failed to unregister sqlite vfs wrapper.");
-
   gService = nullptr;
-  delete mSqliteVFS;
-  mSqliteVFS = nullptr;
-  delete mSqliteExclVFS;
-  mSqliteExclVFS = nullptr;
 }
 
 void Service::registerConnection(Connection* aConnection) {
@@ -294,8 +307,10 @@ void Service::minimizeMemory() {
   }
 }
 
-sqlite3_vfs* ConstructTelemetryVFS(bool);
-const char* GetVFSName(bool);
+UniquePtr<sqlite3_vfs> ConstructTelemetryVFS(bool);
+const char* GetTelemetryVFSName(bool);
+
+UniquePtr<sqlite3_vfs> ConstructObfuscatingVFS(const char* aBaseVFSName);
 
 static const char* sObserverTopics[] = {"memory-pressure",
                                         "xpcom-shutdown-threads"};
@@ -304,19 +319,24 @@ nsresult Service::initialize() {
   MOZ_ASSERT(NS_IsMainThread(), "Must be initialized on the main thread");
 
   int rc = AutoSQLiteLifetime::getInitResult();
-  if (rc != SQLITE_OK) return convertResultCode(rc);
-
-  mSqliteVFS = ConstructTelemetryVFS(false);
-  MOZ_ASSERT(mSqliteVFS, "Non-exclusive VFS should be created");
-  if (mSqliteVFS) {
-    rc = sqlite3_vfs_register(mSqliteVFS, 0);
-    if (rc != SQLITE_OK) return convertResultCode(rc);
+  if (rc != SQLITE_OK) {
+    return convertResultCode(rc);
   }
-  mSqliteExclVFS = ConstructTelemetryVFS(true);
-  MOZ_ASSERT(mSqliteExclVFS, "Exclusive VFS should be created");
-  if (mSqliteExclVFS) {
-    rc = sqlite3_vfs_register(mSqliteExclVFS, 0);
-    if (rc != SQLITE_OK) return convertResultCode(rc);
+
+  rc = mTelemetrySqliteVFS.Init(ConstructTelemetryVFS(false));
+  if (rc != SQLITE_OK) {
+    return convertResultCode(rc);
+  }
+
+  rc = mTelemetryExclSqliteVFS.Init(ConstructTelemetryVFS(true));
+  if (rc != SQLITE_OK) {
+    return convertResultCode(rc);
+  }
+
+  rc = mObfuscatingSqliteVFS.Init(ConstructObfuscatingVFS(GetTelemetryVFSName(
+      StaticPrefs::storage_sqlite_exclusiveLock_enabled())));
+  if (rc != SQLITE_OK) {
+    return convertResultCode(rc);
   }
 
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
@@ -338,69 +358,82 @@ nsresult Service::initialize() {
 
 int Service::localeCompareStrings(const nsAString& aStr1,
                                   const nsAString& aStr2,
-                                  int32_t aComparisonStrength) {
-  // The implementation of nsICollation.CompareString() is platform-dependent.
-  // On Linux it's not thread-safe.  It may not be on Windows and OS X either,
-  // but it's more difficult to tell.  We therefore synchronize this method.
+                                  Collator::Sensitivity aSensitivity) {
+  // The mozilla::intl::Collator is not thread safe, since the Collator::Options
+  // can be changed.
   MutexAutoLock mutex(mMutex);
 
-  nsICollation* coll = getLocaleCollation();
-  if (!coll) {
+  Collator* collator = getCollator();
+  if (!collator) {
     NS_ERROR("Storage service has no collation");
     return 0;
   }
 
-  int32_t res;
-  nsresult rv = coll->CompareString(aComparisonStrength, aStr1, aStr2, &res);
-  if (NS_FAILED(rv)) {
-    NS_ERROR("Collation compare string failed");
-    return 0;
+  if (aSensitivity != mLastSensitivity) {
+    Collator::Options options{};
+    options.sensitivity = aSensitivity;
+    auto result = mCollator->SetOptions(options);
+
+    if (result.isErr()) {
+      NS_WARNING("Could not configure the mozilla::intl::Collation.");
+      return 0;
+    }
+    mLastSensitivity = aSensitivity;
   }
 
-  return res;
+  return collator->CompareStrings(aStr1, aStr2);
 }
 
-nsICollation* Service::getLocaleCollation() {
+Collator* Service::getCollator() {
   mMutex.AssertCurrentThreadOwns();
 
-  if (mLocaleCollation) return mLocaleCollation;
+  if (mCollator) {
+    return mCollator.get();
+  }
 
-  nsCOMPtr<nsICollationFactory> collFact =
-      do_CreateInstance(NS_COLLATIONFACTORY_CONTRACTID);
-  if (!collFact) {
-    NS_WARNING("Could not create collation factory");
+  auto result = mozilla::intl::LocaleService::TryCreateComponent<Collator>();
+  if (result.isErr()) {
+    NS_WARNING("Could not create mozilla::intl::Collation.");
     return nullptr;
   }
 
-  nsresult rv = collFact->CreateCollation(getter_AddRefs(mLocaleCollation));
-  if (NS_FAILED(rv)) {
-    NS_WARNING("Could not create collation");
+  mCollator = result.unwrap();
+
+  // Sort in a case-insensitive way, where "base" letters are considered
+  // equal, e.g: a = á, a = A, a ≠ b.
+  Collator::Options options{};
+  options.sensitivity = Collator::Sensitivity::Base;
+  auto optResult = mCollator->SetOptions(options);
+
+  if (optResult.isErr()) {
+    NS_WARNING("Could not configure the mozilla::intl::Collation.");
+    mCollator = nullptr;
     return nullptr;
   }
 
-  return mLocaleCollation;
+  return mCollator.get();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 //// mozIStorageService
 
 NS_IMETHODIMP
-Service::OpenSpecialDatabase(const char* aStorageKey,
+Service::OpenSpecialDatabase(const nsACString& aStorageKey,
+                             const nsACString& aName,
                              mozIStorageConnection** _connection) {
-  nsresult rv;
-
-  nsCOMPtr<nsIFile> storageFile;
-  if (::strcmp(aStorageKey, "memory") == 0) {
-    // just fall through with nullptr storageFile, this will cause the storage
-    // connection to use a memory DB.
-  } else {
+  if (!aStorageKey.Equals(kMozStorageMemoryStorageKey)) {
     return NS_ERROR_INVALID_ARG;
   }
 
-  RefPtr<Connection> msc =
-      new Connection(this, SQLITE_OPEN_READWRITE, Connection::SYNCHRONOUS);
+  int flags = SQLITE_OPEN_READWRITE;
 
-  rv = storageFile ? msc->initialize(storageFile) : msc->initialize();
+  if (!aName.IsEmpty()) {
+    flags |= SQLITE_OPEN_URI;
+  }
+
+  RefPtr<Connection> msc = new Connection(this, flags, Connection::SYNCHRONOUS);
+
+  nsresult rv = msc->initialize(aStorageKey, aName);
   NS_ENSURE_SUCCESS(rv, rv);
 
   msc.forget(_connection);
@@ -431,7 +464,7 @@ class AsyncInitDatabase final : public Runnable {
 
     if (mGrowthIncrement >= 0) {
       // Ignore errors. In the future, we might wish to log them.
-      (void)mConnection->SetGrowthIncrement(mGrowthIncrement, EmptyCString());
+      (void)mConnection->SetGrowthIncrement(mGrowthIncrement, ""_ns);
     }
 
     return DispatchResult(
@@ -534,7 +567,7 @@ Service::OpenAsyncDatabase(nsIVariant* aDatabaseStore,
     // Sometimes, however, it's a special database name.
     nsAutoCString keyString;
     rv = aDatabaseStore->GetAsACString(keyString);
-    if (NS_FAILED(rv) || !keyString.EqualsLiteral("memory")) {
+    if (NS_FAILED(rv) || !keyString.Equals(kMozStorageMemoryStorageKey)) {
       return NS_ERROR_INVALID_ARG;
     }
 
@@ -596,6 +629,7 @@ Service::OpenUnsharedDatabase(nsIFile* aDatabaseFile,
 
 NS_IMETHODIMP
 Service::OpenDatabaseWithFileURL(nsIFileURL* aFileURL,
+                                 const nsACString& aTelemetryFilename,
                                  mozIStorageConnection** _connection) {
   NS_ENSURE_ARG(aFileURL);
 
@@ -605,7 +639,7 @@ Service::OpenDatabaseWithFileURL(nsIFileURL* aFileURL,
               SQLITE_OPEN_CREATE | SQLITE_OPEN_URI;
   RefPtr<Connection> msc = new Connection(this, flags, Connection::SYNCHRONOUS);
 
-  nsresult rv = msc->initialize(aFileURL);
+  nsresult rv = msc->initialize(aFileURL, aTelemetryFilename);
   NS_ENSURE_SUCCESS(rv, rv);
 
   msc.forget(_connection);
@@ -667,17 +701,19 @@ Service::Observe(nsISupports*, const char* aTopic, const char16_t*) {
       (void)os->RemoveObserver(this, sObserverTopics[i]);
     }
 
-    SpinEventLoopUntil([&]() -> bool {
-      // We must wait until all the closing connections are closed.
-      nsTArray<RefPtr<Connection>> connections;
-      getConnections(connections);
-      for (auto& conn : connections) {
-        if (conn->isClosing()) {
-          return false;
-        }
-      }
-      return true;
-    });
+    SpinEventLoopUntil("storage::Service::Observe(xpcom-shutdown-threads)"_ns,
+                       [&]() -> bool {
+                         // We must wait until all the closing connections are
+                         // closed.
+                         nsTArray<RefPtr<Connection>> connections;
+                         getConnections(connections);
+                         for (auto& conn : connections) {
+                           if (conn->isClosing()) {
+                             return false;
+                           }
+                         }
+                         return true;
+                       });
 
 #ifdef DEBUG
     nsTArray<RefPtr<Connection>> connections;

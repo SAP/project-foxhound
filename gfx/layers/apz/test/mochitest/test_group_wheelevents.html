@@ -5,6 +5,7 @@
   <title>Various wheel-scrolling tests that spawn in new windows</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="application/javascript" src="apz_test_utils.js"></script>
+  <script type="application/javascript" src="apz_test_native_event_utils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
@@ -31,24 +32,46 @@ scrollbar_prefs.push(["layout.scrollbars.always-layerize-track", true]);
 var timeout_prefs = prefs.slice(); // make a copy
 timeout_prefs.push(["apz.content_response_timeout", 0]);
 
+var smoothness_prefs = [
+  ["apz.test.logging_enabled", true],
+  // We'd want to test real wheel events rather than pan events.
+  ["apz.test.mac.synth_wheel_input", true],
+  // Use a longer animation duration to avoid the situation that the
+  // animation stops accidentally in between each wheel event.
+  // If the situation happens, scroll offsets will not change at the moment.
+  ["general.smoothScroll.mouseWheel.durationMaxMS", 1500],
+  ["general.smoothScroll.mouseWheel.durationMinMS", 1500]
+];
+
 var subtests = [
   {"file": "helper_scroll_on_position_fixed.html", "prefs": prefs},
   {"file": "helper_bug1271432.html", "prefs": prefs},
-  // Disabled for now due to a memory leak (bug 1567448).
-  // {"file": "helper_overscroll_behavior_bug1425573.html", "prefs": timeout_prefs},
+  {"file": "helper_overscroll_behavior_bug1425573.html", "prefs": timeout_prefs},
   {"file": "helper_overscroll_behavior_bug1425603.html", "prefs": prefs},
   {"file": "helper_overscroll_behavior_bug1494440.html", "prefs": prefs},
   {"file": "helper_scroll_inactive_perspective.html", "prefs": prefs},
   {"file": "helper_scroll_inactive_zindex.html", "prefs": prefs},
   {"file": "helper_scroll_over_scrollbar.html", "prefs": scrollbar_prefs},
   {"file": "helper_scroll_tables_perspective.html", "prefs": prefs},
+  {"file": "helper_wheelevents_handoff_on_iframe.html", "prefs": prefs},
+  {"file": "helper_wheelevents_handoff_on_non_scrollable_iframe.html", "prefs": prefs},
+  {"file": "helper_relative_scroll_smoothness.html?input-type=wheel&scroll-method=scrollBy", prefs: smoothness_prefs },
+  {"file": "helper_relative_scroll_smoothness.html?input-type=wheel&scroll-method=scrollTo", prefs: smoothness_prefs },
+  {"file": "helper_relative_scroll_smoothness.html?input-type=wheel&scroll-method=scrollTop", prefs: smoothness_prefs },
 ];
+
+// Only Windows has the test api implemented for this test.
+if (getPlatform() == "windows") {
+  subtests.push(
+    {"file": "helper_dommousescroll.html", "prefs": prefs}
+  );
+}
 
 if (isApzEnabled()) {
   SimpleTest.waitForExplicitFinish();
   window.onload = function() {
     runSubtestsSeriallyInFreshWindows(subtests)
-    .then(SimpleTest.finish, SimpleTest.finish);
+    .then(SimpleTest.finish, SimpleTest.finishWithFailure);
   };
 }
 

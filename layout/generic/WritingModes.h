@@ -9,6 +9,7 @@
 
 #include <ostream>
 
+#include "mozilla/intl/BidiEmbeddingLevel.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/EnumeratedRange.h"
 
@@ -524,8 +525,8 @@ class WritingMode {
    *
    * XXX change uint8_t to UBiDiLevel after bug 924851
    */
-  void SetDirectionFromBidiLevel(uint8_t level) {
-    if (IS_LEVEL_RTL(level) == IsBidiLTR()) {
+  void SetDirectionFromBidiLevel(mozilla::intl::BidiEmbeddingLevel level) {
+    if (level.IsRTL() == IsBidiLTR()) {
       mWritingMode ^= StyleWritingMode::RTL | StyleWritingMode::INLINE_REVERSED;
     }
   }
@@ -613,16 +614,19 @@ class WritingMode {
 };
 
 inline std::ostream& operator<<(std::ostream& aStream, const WritingMode& aWM) {
-  return aStream
-         << (aWM.IsVertical()
-                 ? aWM.IsVerticalLR()
-                       ? aWM.IsBidiLTR()
-                             ? aWM.IsSideways() ? "sw-lr-ltr" : "v-lr-ltr"
-                             : aWM.IsSideways() ? "sw-lr-rtl" : "v-lr-rtl"
-                       : aWM.IsBidiLTR()
-                             ? aWM.IsSideways() ? "sw-rl-ltr" : "v-rl-ltr"
-                             : aWM.IsSideways() ? "sw-rl-rtl" : "v-rl-rtl"
-                 : aWM.IsBidiLTR() ? "h-ltr" : "h-rtl");
+  return aStream << (aWM.IsVertical()
+                         ? aWM.IsVerticalLR() ? aWM.IsBidiLTR()
+                                                    ? aWM.IsSideways()
+                                                          ? "sw-lr-ltr"
+                                                          : "v-lr-ltr"
+                                                : aWM.IsSideways() ? "sw-lr-rtl"
+                                                                   : "v-lr-rtl"
+                           : aWM.IsBidiLTR()
+                               ? aWM.IsSideways() ? "sw-rl-ltr" : "v-rl-ltr"
+                           : aWM.IsSideways() ? "sw-rl-rtl"
+                                              : "v-rl-rtl"
+                     : aWM.IsBidiLTR() ? "h-ltr"
+                                       : "h-rtl");
 }
 
 /**
@@ -1426,6 +1430,16 @@ class LogicalMargin {
             mMargin.bottom == 0);
   }
 
+  bool operator==(const LogicalMargin& aMargin) const {
+    CHECK_WRITING_MODE(aMargin.GetWritingMode());
+    return mMargin == aMargin.mMargin;
+  }
+
+  bool operator!=(const LogicalMargin& aMargin) const {
+    CHECK_WRITING_MODE(aMargin.GetWritingMode());
+    return mMargin != aMargin.mMargin;
+  }
+
   LogicalMargin operator+(const LogicalMargin& aMargin) const {
     CHECK_WRITING_MODE(aMargin.GetWritingMode());
     return LogicalMargin(GetWritingMode(), BStart() + aMargin.BStart(),
@@ -2080,6 +2094,11 @@ const T& StyleRect<T>::End(mozilla::LogicalAxis aAxis,
   return Get(aWM, aAxis == mozilla::eLogicalAxisInline
                       ? mozilla::eLogicalSideIEnd
                       : mozilla::eLogicalSideBEnd);
+}
+
+inline AspectRatio AspectRatio::ConvertToWritingMode(
+    const WritingMode& aWM) const {
+  return aWM.IsVertical() ? Inverted() : *this;
 }
 
 }  // namespace mozilla

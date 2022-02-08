@@ -613,11 +613,11 @@ class JQueryLiveEventCollector extends MainEventCollector {
       // function gets name at compile time by SetFunctionName, its guessed
       // atom doesn't contain "proxy/".  In that case, check if the caller is
       // "proxy" function, as a fallback.
-      const calleeDO = funcDO.environment.callee;
-      if (!calleeDO) {
+      const calleeDS = funcDO.environment.calleeScript;
+      if (!calleeDS) {
         return false;
       }
-      const calleeName = calleeDO.displayName;
+      const calleeName = calleeDS.displayName;
       return calleeName == "proxy";
     }
 
@@ -730,8 +730,10 @@ class ReactEventCollector extends MainEventCollector {
       handlerDO = handlerDO.boundTargetFunction;
     }
 
-    const introScript = handlerDO.script.source.introductionScript;
     const script = handlerDO.script;
+    // Script might be undefined (eg for methods bound several times, see
+    // https://bugzilla.mozilla.org/show_bug.cgi?id=1589658)
+    const introScript = script?.source.introductionScript;
 
     // If this is a Babel transpiled function we have no access to the
     // source location so we need to hide the filename and debugger
@@ -970,7 +972,7 @@ class EventCollector {
         line = script.startLine;
         column = script.startColumn;
         url = script.url;
-        const actor = this.targetActor.sources.getOrCreateSourceActor(
+        const actor = this.targetActor.sourcesManager.getOrCreateSourceActor(
           script.source
         );
         sourceActor = actor ? actor.actorID : null;

@@ -8,10 +8,7 @@
 // It cannot be included in the published code because this lints have false positives in the minimum required version.
 #![cfg_attr(test, warn(single_use_lifetimes))]
 #![warn(clippy::all)]
-
 #![doc(test(attr(deny(warnings), allow(dead_code, unused_assignments, unused_variables))))]
-
-#![doc(html_root_url = "https://docs.rs/futures-sink/0.3.0")]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -210,7 +207,10 @@ mod if_alloc {
     impl<S: ?Sized + Sink<Item> + Unpin, Item> Sink<Item> for alloc::boxed::Box<S> {
         type Error = S::Error;
 
-        fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        fn poll_ready(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
             Pin::new(&mut **self).poll_ready(cx)
         }
 
@@ -218,11 +218,17 @@ mod if_alloc {
             Pin::new(&mut **self).start_send(item)
         }
 
-        fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        fn poll_flush(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
             Pin::new(&mut **self).poll_flush(cx)
         }
 
-        fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        fn poll_close(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
             Pin::new(&mut **self).poll_close(cx)
         }
     }

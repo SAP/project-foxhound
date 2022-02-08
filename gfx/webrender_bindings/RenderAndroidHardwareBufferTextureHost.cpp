@@ -20,25 +20,15 @@ RenderAndroidHardwareBufferTextureHost::RenderAndroidHardwareBufferTextureHost(
       mTextureHandle(0) {
   MOZ_ASSERT(mAndroidHardwareBuffer);
   MOZ_COUNT_CTOR_INHERITED(RenderAndroidHardwareBufferTextureHost,
-                           RenderTextureHostOGL);
+                           RenderTextureHost);
 }
 
 RenderAndroidHardwareBufferTextureHost::
     ~RenderAndroidHardwareBufferTextureHost() {
   MOZ_COUNT_DTOR_INHERITED(RenderAndroidHardwareBufferTextureHost,
-                           RenderTextureHostOGL);
+                           RenderTextureHost);
   DeleteTextureHandle();
   DestroyEGLImage();
-}
-
-GLuint RenderAndroidHardwareBufferTextureHost::GetGLHandle(
-    uint8_t aChannelIndex) const {
-  return mTextureHandle;
-}
-
-gfx::IntSize RenderAndroidHardwareBufferTextureHost::GetSize(
-    uint8_t aChannelIndex) const {
-  return GetSize();
 }
 
 gfx::IntSize RenderAndroidHardwareBufferTextureHost::GetSize() const {
@@ -52,6 +42,32 @@ bool RenderAndroidHardwareBufferTextureHost::EnsureLockable(
     wr::ImageRendering aRendering) {
   if (!mAndroidHardwareBuffer) {
     return false;
+  }
+
+  auto fenceFd = mAndroidHardwareBuffer->GetAndResetAcquireFence();
+  if (fenceFd.IsValid()) {
+    const auto& gle = gl::GLContextEGL::Cast(mGL);
+    const auto& egl = gle->mEgl;
+
+    auto rawFD = fenceFd.TakePlatformHandle();
+    const EGLint attribs[] = {LOCAL_EGL_SYNC_NATIVE_FENCE_FD_ANDROID,
+                              rawFD.get(), LOCAL_EGL_NONE};
+
+    EGLSync sync =
+        egl->fCreateSync(LOCAL_EGL_SYNC_NATIVE_FENCE_ANDROID, attribs);
+    if (sync) {
+      // Release fd here, since it is owned by EGLSync
+      Unused << rawFD.release();
+
+      if (egl->IsExtensionSupported(gl::EGLExtension::KHR_wait_sync)) {
+        egl->fWaitSync(sync, 0);
+      } else {
+        egl->fClientWaitSync(sync, 0, LOCAL_EGL_FOREVER);
+      }
+      egl->fDestroySync(sync);
+    } else {
+      gfxCriticalNote << "Failed to create EGLSync from acquire fence fd";
+    }
   }
 
   if (mTextureHandle) {
@@ -79,11 +95,10 @@ bool RenderAndroidHardwareBufferTextureHost::EnsureLockable(
         LOCAL_EGL_NONE,
     };
 
-    EGLClientBuffer clientBuffer = egl->fGetNativeClientBufferANDROID(
+    EGLClientBuffer clientBuffer = egl->mLib->fGetNativeClientBufferANDROID(
         mAndroidHardwareBuffer->GetNativeBuffer());
-    mEGLImage =
-        egl->fCreateImage(egl->Display(), EGL_NO_CONTEXT,
-                          LOCAL_EGL_NATIVE_BUFFER_ANDROID, clientBuffer, attrs);
+    mEGLImage = egl->fCreateImage(
+        EGL_NO_CONTEXT, LOCAL_EGL_NATIVE_BUFFER_ANDROID, clientBuffer, attrs);
   }
   MOZ_ASSERT(mEGLImage);
 
@@ -124,13 +139,16 @@ wr::WrExternalImage RenderAndroidHardwareBufferTextureHost::Lock(
     return InvalidToWrExternalImage();
   }
 
-  // XXX Add android Fence handling
-
   return NativeTextureToWrExternalImage(mTextureHandle, 0, 0, GetSize().width,
                                         GetSize().height);
 }
 
 void RenderAndroidHardwareBufferTextureHost::Unlock() {}
+
+size_t RenderAndroidHardwareBufferTextureHost::Bytes() {
+  return GetSize().width * GetSize().height *
+         BytesPerPixel(mAndroidHardwareBuffer->mFormat);
+}
 
 void RenderAndroidHardwareBufferTextureHost::DeleteTextureHandle() {
   if (!mTextureHandle) {
@@ -148,7 +166,7 @@ void RenderAndroidHardwareBufferTextureHost::DestroyEGLImage() {
   MOZ_ASSERT(mGL);
   const auto& gle = gl::GLContextEGL::Cast(mGL);
   const auto& egl = gle->mEgl;
-  egl->fDestroyImage(egl->Display(), mEGLImage);
+  egl->fDestroyImage(mEGLImage);
   mEGLImage = EGL_NO_IMAGE;
 }
 

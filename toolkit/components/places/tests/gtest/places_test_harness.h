@@ -13,8 +13,10 @@
 #include "nsServiceManagerUtils.h"
 #include "nsINavHistoryService.h"
 #include "nsIObserverService.h"
+#include "nsIThread.h"
 #include "nsIURI.h"
 #include "mozilla/IHistory.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozIStorageConnection.h"
 #include "mozIStorageStatement.h"
 #include "mozIStorageAsyncStatement.h"
@@ -70,19 +72,20 @@ class WaitForTopicSpinner final : public nsIObserver {
 
   void Spin() {
     bool timedOut = false;
-    mozilla::SpinEventLoopUntil([&]() -> bool {
-      if (mTopicReceived) {
-        return true;
-      }
+    mozilla::SpinEventLoopUntil(
+        "places:WaitForTopicSpinner::Spin"_ns, [&]() -> bool {
+          if (mTopicReceived) {
+            return true;
+          }
 
-      if ((PR_IntervalNow() - mStartTime) >
-          (WAITFORTOPIC_TIMEOUT_SECONDS * PR_USEC_PER_SEC)) {
-        timedOut = true;
-        return true;
-      }
+          if ((PR_IntervalNow() - mStartTime) >
+              (WAITFORTOPIC_TIMEOUT_SECONDS * PR_USEC_PER_SEC)) {
+            timedOut = true;
+            return true;
+          }
 
-      return false;
-    });
+          return false;
+        });
 
     if (timedOut) {
       // Timed out waiting for the topic.

@@ -6,29 +6,53 @@
 #ifndef GFX_USER_FONT_SET_H
 #define GFX_USER_FONT_SET_H
 
+#include <new>
+#include "PLDHashTable.h"
 #include "gfxFontEntry.h"
-#include "gfxFontFamilyList.h"
-#include "gfxFontSrcPrincipal.h"
-#include "gfxFontSrcURI.h"
-#include "nsProxyRelease.h"
-#include "nsRefPtrHashtable.h"
-#include "nsCOMPtr.h"
-#include "nsIFontLoadCompleteCallback.h"
-#include "nsIMemoryReporter.h"
-#include "nsIRunnable.h"
-#include "nsIScriptError.h"
-#include "nsIReferrerInfo.h"
-#include "nsURIHashKey.h"
+#include "gfxFontUtils.h"
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/FontPropertyTypes.h"
-#include "mozilla/ServoStyleConsts.h"
-#include "gfxFontConstants.h"
-#include "mozilla/LazyIdleThread.h"
-#include "mozilla/StaticPtr.h"
+#include "mozilla/MemoryReporting.h"
+#include "mozilla/RefPtr.h"
+#include "nsCOMPtr.h"
+#include "nsHashKeys.h"
+#include "nsIMemoryReporter.h"
+#include "nsIObserver.h"
+#include "nsIScriptError.h"
+#include "nsISupports.h"
+#include "nsRefPtrHashtable.h"
+#include "nsString.h"
+#include "nsTArray.h"
+#include "nscore.h"
+
+// Only needed for function bodies.
+#include <utility>                // for move, forward
+#include "MainThreadUtils.h"      // for NS_IsMainThread
+#include "gfxFontFeatures.h"      // for gfxFontFeature
+#include "gfxFontSrcPrincipal.h"  // for gfxFontSrcPrincipal
+#include "gfxFontSrcURI.h"        // for gfxFontSrcURI
+#include "mozilla/Assertions.h"  // for AssertionConditionType, MOZ_ASSERT_HELPER2, MOZ_ASSERT, MOZ_ASSERT_UNREACHABLE, MOZ_ASSER...
+#include "mozilla/HashFunctions.h"      // for HashBytes, HashGeneric
+#include "mozilla/TimeStamp.h"          // for TimeStamp
+#include "mozilla/gfx/FontVariation.h"  // for FontVariation
+#include "nsDebug.h"                    // for NS_WARNING
+#include "nsIReferrerInfo.h"            // for nsIReferrerInfo
 
 class gfxFont;
+class gfxUserFontSet;
+class nsIFontLoadCompleteCallback;
+class nsIRunnable;
+struct gfxFontStyle;
+struct gfxFontVariationAxis;
+struct gfxFontVariationInstance;
+template <class T>
+class nsMainThreadPtrHandle;
 
 namespace mozilla {
+class LogModule;
 class PostTraversalTask;
+enum class StyleFontDisplay : uint8_t;
 }  // namespace mozilla
 class nsFontFaceLoader;
 
@@ -239,9 +263,11 @@ class gfxUserFontSet {
       const nsTArray<gfxFontFaceSrc>& aFontFaceSrcList, WeightRange aWeight,
       StretchRange aStretch, SlantStyleRange aStyle,
       const nsTArray<gfxFontFeature>& aFeatureSettings,
-      const nsTArray<gfxFontVariation>& aVariationSettings,
+      const nsTArray<mozilla::gfx::FontVariation>& aVariationSettings,
       uint32_t aLanguageOverride, gfxCharacterMap* aUnicodeRanges,
-      mozilla::StyleFontDisplay aFontDisplay, RangeFlags aRangeFlags) = 0;
+      mozilla::StyleFontDisplay aFontDisplay, RangeFlags aRangeFlags,
+      float aAscentOverride, float aDescentOverride, float aLineGapOverride,
+      float aSizeAdjust) = 0;
 
   // creates a font face for the specified family, or returns an existing
   // matching entry on the family if there is one
@@ -250,9 +276,11 @@ class gfxUserFontSet {
       const nsTArray<gfxFontFaceSrc>& aFontFaceSrcList, WeightRange aWeight,
       StretchRange aStretch, SlantStyleRange aStyle,
       const nsTArray<gfxFontFeature>& aFeatureSettings,
-      const nsTArray<gfxFontVariation>& aVariationSettings,
+      const nsTArray<mozilla::gfx::FontVariation>& aVariationSettings,
       uint32_t aLanguageOverride, gfxCharacterMap* aUnicodeRanges,
-      mozilla::StyleFontDisplay aFontDisplay, RangeFlags aRangeFlags);
+      mozilla::StyleFontDisplay aFontDisplay, RangeFlags aRangeFlags,
+      float aAscentOverride, float aDescentOverride, float aLineGapOverride,
+      float aSizeAdjust);
 
   // add in a font face for which we have the gfxUserFontEntry already
   void AddUserFontEntry(const nsCString& aFamilyName,
@@ -268,6 +296,7 @@ class gfxUserFontSet {
   gfxUserFontFamily* LookupFamily(const nsACString& aName) const;
 
   virtual gfxFontSrcPrincipal* GetStandardFontLoadPrincipal() const = 0;
+  virtual nsPresContext* GetPresContext() const = 0;
 
   // check whether content policies allow the given URI to load.
   virtual bool IsFontLoadAllowed(const gfxFontFaceSrc&) = 0;
@@ -280,7 +309,7 @@ class gfxUserFontSet {
   // initialize the process that loads external font data, which upon
   // completion will call FontDataDownloadComplete method
   virtual nsresult StartLoad(gfxUserFontEntry* aUserFontEntry,
-                             const gfxFontFaceSrc* aFontFaceSrc) = 0;
+                             uint32_t aSrcIndex) = 0;
 
   // generation - each time a face is loaded, generation is
   // incremented so that the change can be recognized
@@ -433,10 +462,10 @@ class gfxUserFontSet {
       }
 
       static uint32_t HashVariations(
-          const nsTArray<gfxFontVariation>& aVariations) {
+          const nsTArray<mozilla::gfx::FontVariation>& aVariations) {
         return mozilla::HashBytes(
             aVariations.Elements(),
-            aVariations.Length() * sizeof(gfxFontVariation));
+            aVariations.Length() * sizeof(mozilla::gfx::FontVariation));
       }
 
       RefPtr<gfxFontSrcURI> mURI;
@@ -486,7 +515,7 @@ class gfxUserFontSet {
 
   // report a problem of some kind (implemented in nsUserFontSet)
   virtual nsresult LogMessage(gfxUserFontEntry* aUserFontEntry,
-                              const char* aMessage,
+                              uint32_t aSrcIndex, const char* aMessage,
                               uint32_t aFlags = nsIScriptError::errorFlag,
                               nsresult aStatus = NS_OK) = 0;
 
@@ -499,9 +528,11 @@ class gfxUserFontSet {
       const nsTArray<gfxFontFaceSrc>& aFontFaceSrcList, WeightRange aWeight,
       StretchRange aStretch, SlantStyleRange aStyle,
       const nsTArray<gfxFontFeature>& aFeatureSettings,
-      const nsTArray<gfxFontVariation>& aVariationSettings,
+      const nsTArray<mozilla::gfx::FontVariation>& aVariationSettings,
       uint32_t aLanguageOverride, gfxCharacterMap* aUnicodeRanges,
-      mozilla::StyleFontDisplay aFontDisplay, RangeFlags aRangeFlags);
+      mozilla::StyleFontDisplay aFontDisplay, RangeFlags aRangeFlags,
+      float aAscentOverride, float aDescentOverride, float aLineGapOverride,
+      float aSizeAdjust);
 
   // creates a new gfxUserFontFamily in mFontFamilies, or returns an existing
   // family if there is one
@@ -542,37 +573,40 @@ class gfxUserFontEntry : public gfxFontEntry {
     STATUS_FAILED
   };
 
-  gfxUserFontEntry(gfxUserFontSet* aFontSet,
-                   const nsTArray<gfxFontFaceSrc>& aFontFaceSrcList,
-                   WeightRange aWeight, StretchRange aStretch,
-                   SlantStyleRange aStyle,
-                   const nsTArray<gfxFontFeature>& aFeatureSettings,
-                   const nsTArray<gfxFontVariation>& aVariationSettings,
-                   uint32_t aLanguageOverride, gfxCharacterMap* aUnicodeRanges,
-                   mozilla::StyleFontDisplay aFontDisplay,
-                   RangeFlags aRangeFlags);
+  gfxUserFontEntry(
+      gfxUserFontSet* aFontSet,
+      const nsTArray<gfxFontFaceSrc>& aFontFaceSrcList, WeightRange aWeight,
+      StretchRange aStretch, SlantStyleRange aStyle,
+      const nsTArray<gfxFontFeature>& aFeatureSettings,
+      const nsTArray<mozilla::gfx::FontVariation>& aVariationSettings,
+      uint32_t aLanguageOverride, gfxCharacterMap* aUnicodeRanges,
+      mozilla::StyleFontDisplay aFontDisplay, RangeFlags aRangeFlags,
+      float aAscentOverride, float aDescentOverride, float aLineGapOverride,
+      float aSizeAdjust);
 
   virtual ~gfxUserFontEntry();
 
   // Update the attributes of the entry to the given values, without disturbing
   // the associated platform font entry or in-progress downloads.
-  void UpdateAttributes(WeightRange aWeight, StretchRange aStretch,
-                        SlantStyleRange aStyle,
-                        const nsTArray<gfxFontFeature>& aFeatureSettings,
-                        const nsTArray<gfxFontVariation>& aVariationSettings,
-                        uint32_t aLanguageOverride,
-                        gfxCharacterMap* aUnicodeRanges,
-                        mozilla::StyleFontDisplay aFontDisplay,
-                        RangeFlags aRangeFlags);
+  void UpdateAttributes(
+      WeightRange aWeight, StretchRange aStretch, SlantStyleRange aStyle,
+      const nsTArray<gfxFontFeature>& aFeatureSettings,
+      const nsTArray<mozilla::gfx::FontVariation>& aVariationSettings,
+      uint32_t aLanguageOverride, gfxCharacterMap* aUnicodeRanges,
+      mozilla::StyleFontDisplay aFontDisplay, RangeFlags aRangeFlags,
+      float aAscentOverride, float aDescentOverride, float aLineGapOverride,
+      float aSizeAdjust);
 
   // Return whether the entry matches the given list of attributes
   bool Matches(const nsTArray<gfxFontFaceSrc>& aFontFaceSrcList,
                WeightRange aWeight, StretchRange aStretch,
                SlantStyleRange aStyle,
                const nsTArray<gfxFontFeature>& aFeatureSettings,
-               const nsTArray<gfxFontVariation>& aVariationSettings,
+               const nsTArray<mozilla::gfx::FontVariation>& aVariationSettings,
                uint32_t aLanguageOverride, gfxCharacterMap* aUnicodeRanges,
-               mozilla::StyleFontDisplay aFontDisplay, RangeFlags aRangeFlags);
+               mozilla::StyleFontDisplay aFontDisplay, RangeFlags aRangeFlags,
+               float aAscentOverride, float aDescentOverride,
+               float aLineGapOverride, float aSizeAdjust);
 
   gfxFont* CreateFontInstance(const gfxFontStyle* aFontStyle) override;
 
@@ -585,6 +619,9 @@ class gfxUserFontEntry : public gfxFontEntry {
     mUserFontLoadState = STATUS_NOT_LOADED;
     mFontDataLoadingState = NOT_LOADING;
     mLoader = nullptr;
+    // Reset mCurrentSrcIndex so that all potential sources are re-considered.
+    mCurrentSrcIndex = 0;
+    mSeenLocalSource = false;
   }
 
   // whether to wait before using fallback font or not
@@ -616,8 +653,8 @@ class gfxUserFontEntry : public gfxFontEntry {
   void SetLoader(nsFontFaceLoader* aLoader) { mLoader = aLoader; }
   nsFontFaceLoader* GetLoader() const { return mLoader; }
   gfxFontSrcPrincipal* GetPrincipal() const { return mPrincipal; }
-  uint32_t GetSrcIndex() const { return mSrcIndex; }
-  void GetFamilyNameAndURIForLogging(nsACString& aFamilyName, nsACString& aURI);
+  void GetFamilyNameAndURIForLogging(uint32_t aSrcIndex,
+                                     nsACString& aFamilyName, nsACString& aURI);
 
   gfxFontEntry* Clone() const override {
     MOZ_ASSERT_UNREACHABLE("cannot Clone user fonts");
@@ -629,6 +666,12 @@ class gfxUserFontEntry : public gfxFontEntry {
 #endif
 
   const nsTArray<gfxFontFaceSrc>& SourceList() const { return mSrcList; }
+
+  // Returns a weak reference to the requested source record, which is owned
+  // by the gfxUserFontEntry.
+  const gfxFontFaceSrc& SourceAt(uint32_t aSrcIndex) const {
+    return mSrcList[aSrcIndex];
+  }
 
   // The variation-query APIs should not be called on placeholders.
   bool HasVariations() override {
@@ -665,34 +708,37 @@ class gfxUserFontEntry : public gfxFontEntry {
   // aDownloadStatus == NS_OK ==> download succeeded, error otherwise
   // Ownership of aFontData is passed in here; the font set must
   // ensure that it is eventually deleted with free().
-  void FontDataDownloadComplete(const uint8_t* aFontData, uint32_t aLength,
-                                nsresult aDownloadStatus,
+  void FontDataDownloadComplete(uint32_t aSrcIndex, const uint8_t* aFontData,
+                                uint32_t aLength, nsresult aDownloadStatus,
                                 nsIFontLoadCompleteCallback* aCallback);
 
   // helper method for creating a platform font
   // returns true if platform font creation successful
   // Ownership of aFontData is passed in here; the font must
   // ensure that it is eventually deleted with free().
-  bool LoadPlatformFontSync(const uint8_t* aFontData, uint32_t aLength);
+  bool LoadPlatformFontSync(uint32_t aSrcIndex, const uint8_t* aFontData,
+                            uint32_t aLength);
 
-  void LoadPlatformFontAsync(const uint8_t* aFontData, uint32_t aLength,
+  void LoadPlatformFontAsync(uint32_t aSrcIndex, const uint8_t* aFontData,
+                             uint32_t aLength,
                              nsIFontLoadCompleteCallback* aCallback);
 
   // helper method for LoadPlatformFontAsync; runs on a background thread
   void StartPlatformFontLoadOnBackgroundThread(
-      const uint8_t* aFontData, uint32_t aLength,
+      uint32_t aSrcIndex, const uint8_t* aFontData, uint32_t aLength,
       nsMainThreadPtrHandle<nsIFontLoadCompleteCallback> aCallback);
 
   // helper method for LoadPlatformFontAsync; runs on the main thread
   void ContinuePlatformFontLoadOnMainThread(
-      const uint8_t* aOriginalFontData, uint32_t aOriginalLength,
-      gfxUserFontType aFontType, const uint8_t* aSanitizedFontData,
-      uint32_t aSanitizedLength, nsTArray<OTSMessage>&& aMessages,
+      uint32_t aSrcIndex, const uint8_t* aOriginalFontData,
+      uint32_t aOriginalLength, gfxUserFontType aFontType,
+      const uint8_t* aSanitizedFontData, uint32_t aSanitizedLength,
+      nsTArray<OTSMessage>&& aMessages,
       nsMainThreadPtrHandle<nsIFontLoadCompleteCallback> aCallback);
 
   // helper method for LoadPlatformFontSync and
   // ContinuePlatformFontLoadOnMainThread; runs on the main thread
-  bool LoadPlatformFont(const uint8_t* aOriginalFontData,
+  bool LoadPlatformFont(uint32_t aSrcIndex, const uint8_t* aOriginalFontData,
                         uint32_t aOriginalLength, gfxUserFontType aFontType,
                         const uint8_t* aSanitizedFontData,
                         uint32_t aSanitizedLength,
@@ -703,8 +749,8 @@ class gfxUserFontEntry : public gfxFontEntry {
   void FontLoadFailed(nsIFontLoadCompleteCallback* aCallback);
 
   // store metadata and src details for current src into aFontEntry
-  void StoreUserFontData(gfxFontEntry* aFontEntry, bool aPrivate,
-                         const nsACString& aOriginalName,
+  void StoreUserFontData(gfxFontEntry* aFontEntry, uint32_t aSrcIndex,
+                         bool aPrivate, const nsACString& aOriginalName,
                          FallibleTArray<uint8_t>* aMetadata,
                          uint32_t aMetaOrigLen, uint8_t aCompression);
 
@@ -735,12 +781,13 @@ class gfxUserFontEntry : public gfxFontEntry {
   };
   FontDataLoadingState mFontDataLoadingState;
 
+  bool mSeenLocalSource;
   bool mUnsupportedFormat;
   mozilla::StyleFontDisplay mFontDisplay;  // timing of userfont fallback
 
   RefPtr<gfxFontEntry> mPlatformFontEntry;
   nsTArray<gfxFontFaceSrc> mSrcList;
-  uint32_t mSrcIndex;  // index of loading src item
+  uint32_t mCurrentSrcIndex;  // index of src item to be loaded next
   // This field is managed by the nsFontFaceLoader. In the destructor and
   // Cancel() methods of nsFontFaceLoader this reference is nulled out.
   nsFontFaceLoader* MOZ_NON_OWNING_REF

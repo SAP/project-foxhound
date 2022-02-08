@@ -28,6 +28,7 @@
 #include "ImageMetadata.h"
 #include "ISurfaceProvider.h"
 #include "Orientation.h"
+#include "mozilla/AtomicBitfields.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
@@ -36,6 +37,7 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/WeakPtr.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/image/Resolution.h"
 #include "ImageContainer.h"
 #include "PlaybackType.h"
 #ifdef DEBUG
@@ -123,26 +125,6 @@ class nsIRequest;
  */
 
 namespace mozilla {
-
-// Pixel values in an image considering orientation metadata, such as the size
-// of an image as seen by consumers of the image.
-//
-// Any public methods on RasterImage that use untyped units are interpreted as
-// oriented pixels.
-struct OrientedPixel {};
-template <>
-struct IsPixel<OrientedPixel> : std::true_type {};
-typedef gfx::IntSizeTyped<OrientedPixel> OrientedIntSize;
-typedef gfx::IntRectTyped<OrientedPixel> OrientedIntRect;
-
-// Pixel values in an image ignoring orientation metadata, such as are stored
-// in surfaces and the raw pixel data in the image.
-struct UnorientedPixel {};
-template <>
-struct IsPixel<UnorientedPixel> : std::true_type {};
-typedef gfx::IntSizeTyped<UnorientedPixel> UnorientedIntSize;
-typedef gfx::IntRectTyped<UnorientedPixel> UnorientedIntRect;
-
 namespace layers {
 class ImageContainer;
 class Image;
@@ -184,8 +166,6 @@ class RasterImage final : public ImageResource,
 
   virtual size_t SizeOfSourceWithComputedFallback(
       SizeOfState& aState) const override;
-  virtual void CollectSizeOfSurfaces(nsTArray<SurfaceMemoryCounter>& aCounters,
-                                     MallocSizeOf aMallocSizeOf) const override;
 
   /* Triggers discarding. */
   void Discard();
@@ -212,12 +192,11 @@ class RasterImage final : public ImageResource,
    *                      these notifications, or DefaultSurfaceFlags() if the
    *                      notifications don't come from a decoder.
    */
-  void NotifyProgress(
-      Progress aProgress,
-      const UnorientedIntRect& aInvalidRect = UnorientedIntRect(),
-      const Maybe<uint32_t>& aFrameCount = Nothing(),
-      DecoderFlags aDecoderFlags = DefaultDecoderFlags(),
-      SurfaceFlags aSurfaceFlags = DefaultSurfaceFlags());
+  void NotifyProgress(Progress aProgress,
+                      const OrientedIntRect& aInvalidRect = OrientedIntRect(),
+                      const Maybe<uint32_t>& aFrameCount = Nothing(),
+                      DecoderFlags aDecoderFlags = DefaultDecoderFlags(),
+                      SurfaceFlags aSurfaceFlags = DefaultSurfaceFlags());
 
   /**
    * Records decoding results, sends out any final notifications, updates the
@@ -240,7 +219,7 @@ class RasterImage final : public ImageResource,
   void NotifyDecodeComplete(
       const DecoderFinalStatus& aStatus, const ImageMetadata& aMetadata,
       const DecoderTelemetry& aTelemetry, Progress aProgress,
-      const UnorientedIntRect& aInvalidRect, const Maybe<uint32_t>& aFrameCount,
+      const OrientedIntRect& aInvalidRect, const Maybe<uint32_t>& aFrameCount,
       DecoderFlags aDecoderFlags, SurfaceFlags aSurfaceFlags);
 
   // Helper method for NotifyDecodeComplete.
@@ -251,12 +230,10 @@ class RasterImage final : public ImageResource,
   //////////////////////////////////////////////////////////////////////////////
 
   virtual nsresult OnImageDataAvailable(nsIRequest* aRequest,
-                                        nsISupports* aContext,
                                         nsIInputStream* aInStr,
                                         uint64_t aSourceOffset,
                                         uint32_t aCount) override;
-  virtual nsresult OnImageDataComplete(nsIRequest* aRequest,
-                                       nsISupports* aContext, nsresult aStatus,
+  virtual nsresult OnImageDataComplete(nsIRequest* aRequest, nsresult aStatus,
                                        bool aLastPart) override;
 
   void NotifyForLoadEvent(Progress aProgress);
@@ -299,28 +276,19 @@ class RasterImage final : public ImageResource,
    * @return a drawable surface, which may be empty if the requested surface
    *         could not be found.
    */
-  LookupResult LookupFrame(const UnorientedIntSize& aSize, uint32_t aFlags,
+  LookupResult LookupFrame(const OrientedIntSize& aSize, uint32_t aFlags,
                            PlaybackType aPlaybackType, bool aMarkUsed);
 
   /// Helper method for LookupFrame().
-  LookupResult LookupFrameInternal(const UnorientedIntSize& aSize,
+  LookupResult LookupFrameInternal(const OrientedIntSize& aSize,
                                    uint32_t aFlags, PlaybackType aPlaybackType,
                                    bool aMarkUsed);
 
   ImgDrawResult DrawInternal(DrawableSurface&& aFrameRef, gfxContext* aContext,
-                             const UnorientedIntSize& aSize,
+                             const OrientedIntSize& aSize,
                              const ImageRegion& aRegion,
                              gfx::SamplingFilter aSamplingFilter,
                              uint32_t aFlags, float aOpacity);
-
-  Tuple<ImgDrawResult, gfx::IntSize, RefPtr<gfx::SourceSurface>>
-  GetFrameInternal(const gfx::IntSize& aSize,
-                   const Maybe<SVGImageContext>& aSVGContext,
-                   uint32_t aWhichFrame, uint32_t aFlags) override;
-
-  Tuple<ImgDrawResult, gfx::IntSize> GetImageContainerSize(
-      layers::LayerManager* aManager, const gfx::IntSize& aSize,
-      uint32_t aFlags) override;
 
   //////////////////////////////////////////////////////////////////////////////
   // Decoding.
@@ -339,7 +307,7 @@ class RasterImage final : public ImageResource,
    * aOutRanSync is set to true if the decode was run synchronously.
    * aOutFailed is set to true if failed to start a decode.
    */
-  void Decode(const UnorientedIntSize& aSize, uint32_t aFlags,
+  void Decode(const OrientedIntSize& aSize, uint32_t aFlags,
               PlaybackType aPlaybackType, bool& aOutRanSync, bool& aOutFailed);
 
   /**
@@ -375,58 +343,20 @@ class RasterImage final : public ImageResource,
    * RecoverFromInvalidFrames discards all existing frames and redecodes using
    * the provided @aSize and @aFlags.
    */
-  void RecoverFromInvalidFrames(const UnorientedIntSize& aSize,
-                                uint32_t aFlags);
+  void RecoverFromInvalidFrames(const OrientedIntSize& aSize, uint32_t aFlags);
 
   void OnSurfaceDiscardedInternal(bool aAnimatedFramesDiscarded);
-
-  /**
-   * Computes a matrix that applies the rotation and reflection specified by
-   * UsedOrientation(), or that matrix's inverse if aInvert is true.
-   *
-   * See OrientedImage::OrientationMatrix.
-   */
-  gfxMatrix OrientationMatrix(const UnorientedIntSize& aSize,
-                              bool aInvert = false) const;
-
-  /**
-   * The orientation value to honor for this image.
-   *
-   * If the image.honor-orientation-metadata pref is true, then this returns
-   * the orientation from the image's metadata.  Otherwise, it returns an
-   * Orientation that indicates no transformation is needed.
-   */
-  Orientation UsedOrientation() const {
-    return mHandledOrientation ? mOrientation : Orientation();
-  }
-
-  // Functions to convert between oriented and unoriented pixels.
-  UnorientedIntSize ToUnoriented(OrientedIntSize aSize) const {
-    return UsedOrientation().SwapsWidthAndHeight()
-               ? UnorientedIntSize(aSize.height, aSize.width)
-               : UnorientedIntSize(aSize.width, aSize.height);
-  }
-  OrientedIntSize ToOriented(UnorientedIntSize aSize) const {
-    return UsedOrientation().SwapsWidthAndHeight()
-               ? OrientedIntSize(aSize.height, aSize.width)
-               : OrientedIntSize(aSize.width, aSize.height);
-  }
-  OrientedIntRect ToOriented(UnorientedIntRect aRect) const;
-  UnorientedIntRect ToUnoriented(OrientedIntRect aRect) const;
 
  private:  // data
   OrientedIntSize mSize;
   nsTArray<OrientedIntSize> mNativeSizes;
 
   // The orientation required to correctly orient the image, from the image's
-  // metadata.
-  //
-  // When the image.honor-orientation-metadata pref is enabled, the RasterImage
-  // will handle and apply this orientation itself.
-  //
-  // When the pref is disabled, it is the responsibility of users of the
-  // RasterImage to wrap it in an OrientedImage if desired.
+  // metadata. RasterImage will handle and apply this orientation itself.
   Orientation mOrientation;
+
+  // The resolution as specified in the image metadata, in dppx.
+  Resolution mResolution;
 
   /// If this has a value, we're waiting for SetSize() to send the load event.
   Maybe<Progress> mLoadProgress;
@@ -462,35 +392,29 @@ class RasterImage final : public ImageResource,
   NotNull<RefPtr<SourceBuffer>> mSourceBuffer;
 
   // Boolean flags (clustered together to conserve space):
-  bool mHasSize : 1;         // Has SetSize() been called?
-  bool mTransient : 1;       // Is the image short-lived?
-  bool mSyncLoad : 1;        // Are we loading synchronously?
-  bool mDiscardable : 1;     // Is container discardable?
-  bool mSomeSourceData : 1;  // Do we have some source data?
-  bool mAllSourceData : 1;   // Do we have all the source data?
-  bool mHasBeenDecoded : 1;  // Decoded at least once?
+  MOZ_ATOMIC_BITFIELDS(
+      mAtomicBitfields, 16,
+      ((bool, HasSize, 1),         // Has SetSize() been called?
+       (bool, Transient, 1),       // Is the image short-lived?
+       (bool, SyncLoad, 1),        // Are we loading synchronously?
+       (bool, Discardable, 1),     // Is container discardable?
+       (bool, SomeSourceData, 1),  // Do we have some source data?
+       (bool, AllSourceData, 1),   // Do we have all the source data?
+       (bool, HasBeenDecoded, 1),  // Decoded at least once?
 
-  // Whether we're waiting to start animation. If we get a StartAnimation() call
-  // but we don't yet have more than one frame, mPendingAnimation is set so that
-  // we know to start animation later if/when we have more frames.
-  bool mPendingAnimation : 1;
+       // Whether we're waiting to start animation. If we get a StartAnimation()
+       // call but we don't yet have more than one frame, mPendingAnimation is
+       // set so that we know to start animation later if/when we have more
+       // frames.
+       (bool, PendingAnimation, 1),
 
-  // Whether the animation can stop, due to running out
-  // of frames, or no more owning request
-  bool mAnimationFinished : 1;
+       // Whether the animation can stop, due to running out
+       // of frames, or no more owning request
+       (bool, AnimationFinished, 1),
 
-  // Whether, once we are done doing a metadata decode, we should immediately
-  // kick off a full decode.
-  bool mWantFullDecode : 1;
-
-  // Whether this RasterImage handled orientation of the image.
-  //
-  // This will be set based on the value of the image.honor-orientation-metadata
-  // pref at the time the RasterImage is created.
-  //
-  // NOTE(heycam): Once the image.honor-orientation-metadata pref is removed,
-  // this member (and the UsedOrientation() function) can also be removed.
-  bool mHandledOrientation : 1;
+       // Whether, once we are done doing a metadata decode, we should
+       // immediately kick off a full decode.
+       (bool, WantFullDecode, 1)))
 
   TimeStamp mDrawStartTime;
 
@@ -500,8 +424,7 @@ class RasterImage final : public ImageResource,
 
   // Determines whether we can downscale during decode with the given
   // parameters.
-  bool CanDownscaleDuringDecode(const UnorientedIntSize& aSize,
-                                uint32_t aFlags);
+  bool CanDownscaleDuringDecode(const OrientedIntSize& aSize, uint32_t aFlags);
 
   // Error handling.
   void DoError();
@@ -528,7 +451,7 @@ class RasterImage final : public ImageResource,
 
   bool IsOpaque();
 
-  LookupResult RequestDecodeForSizeInternal(const UnorientedIntSize& aSize,
+  LookupResult RequestDecodeForSizeInternal(const OrientedIntSize& aSize,
                                             uint32_t aFlags,
                                             uint32_t aWhichFrame);
 

@@ -39,24 +39,100 @@ var gTestTargetFile = FileUtils.getFile("TmpD", ["dm-ui-test.file"]);
 gTestTargetFile.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, FileUtils.PERMS_FILE);
 
 // The file may have been already deleted when removing a paused download.
-registerCleanupFunction(() =>
-  OS.File.remove(gTestTargetFile.path, { ignoreAbsent: true })
-);
+registerCleanupFunction(async () => {
+  if (await IOUtils.exists(gTestTargetFile.path)) {
+    info("removing " + gTestTargetFile.path);
+    if (Services.appinfo.OS === "WINNT") {
+      // We need to make the file writable to delete it on Windows.
+      await IOUtils.setPermissions(gTestTargetFile.path, 0o600);
+    }
+    await IOUtils.remove(gTestTargetFile.path);
+  }
+});
 
 const DATA_PDF = atob(
   "JVBERi0xLjANCjEgMCBvYmo8PC9UeXBlL0NhdGFsb2cvUGFnZXMgMiAwIFI+PmVuZG9iaiAyIDAgb2JqPDwvVHlwZS9QYWdlcy9LaWRzWzMgMCBSXS9Db3VudCAxPj5lbmRvYmogMyAwIG9iajw8L1R5cGUvUGFnZS9NZWRpYUJveFswIDAgMyAzXT4+ZW5kb2JqDQp4cmVmDQowIDQNCjAwMDAwMDAwMDAgNjU1MzUgZg0KMDAwMDAwMDAxMCAwMDAwMCBuDQowMDAwMDAwMDUzIDAwMDAwIG4NCjAwMDAwMDAxMDIgMDAwMDAgbg0KdHJhaWxlcjw8L1NpemUgNC9Sb290IDEgMCBSPj4NCnN0YXJ0eHJlZg0KMTQ5DQolRU9G"
 );
 
+const TEST_DATA_SHORT = "This test string is downloaded.";
+
+/**
+ * This is an internal reference that should not be used directly by tests.
+ */
+var _gDeferResponses = PromiseUtils.defer();
+
+/**
+ * Ensures that all the interruptible requests started after this function is
+ * called won't complete until the continueResponses function is called.
+ *
+ * Normally, the internal HTTP server returns all the available data as soon as
+ * a request is received.  In order for some requests to be served one part at a
+ * time, special interruptible handlers are registered on the HTTP server.  This
+ * allows testing events or actions that need to happen in the middle of a
+ * download.
+ *
+ * For example, the handler accessible at the httpUri("interruptible.txt")
+ * address returns the TEST_DATA_SHORT text, then it may block until the
+ * continueResponses method is called.  At this point, the handler sends the
+ * TEST_DATA_SHORT text again to complete the response.
+ *
+ * If an interruptible request is started before the function is called, it may
+ * or may not be blocked depending on the actual sequence of events.
+ */
+function mustInterruptResponses() {
+  // If there are pending blocked requests, allow them to complete.  This is
+  // done to prevent requests from being blocked forever, but should not affect
+  // the test logic, since previously started requests should not be monitored
+  // on the client side anymore.
+  _gDeferResponses.resolve();
+
+  info("Interruptible responses will be blocked midway.");
+  _gDeferResponses = PromiseUtils.defer();
+}
+
+/**
+ * Allows all the current and future interruptible requests to complete.
+ */
+function continueResponses() {
+  info("Interruptible responses are now allowed to continue.");
+  _gDeferResponses.resolve();
+}
+
+/**
+ * Creates a download, which could be interrupted in the middle of it's progress.
+ */
+function promiseInterruptibleDownload() {
+  let interruptibleFile = FileUtils.getFile("TmpD", ["interruptible.txt"]);
+  interruptibleFile.createUnique(
+    Ci.nsIFile.NORMAL_FILE_TYPE,
+    FileUtils.PERMS_FILE
+  );
+
+  registerCleanupFunction(async () => {
+    if (IOUtils.exists(interruptibleFile.path)) {
+      if (Services.appinfo.OS === "WINNT") {
+        // We need to make the file writable to delete it on Windows.
+        await IOUtils.setPermissions(interruptibleFile.path, 0o600);
+      }
+      await IOUtils.remove(interruptibleFile.path);
+    }
+  });
+
+  return Downloads.createDownload({
+    source: httpUrl("interruptible.txt"),
+    target: { path: interruptibleFile.path },
+  });
+}
+
 // Asynchronous support subroutines
 
 async function createDownloadedFile(pathname, contents) {
-  let encoder = new TextEncoder();
   let file = new FileUtils.File(pathname);
   if (file.exists()) {
     info(`File at ${pathname} already exists`);
   }
   // No post-test cleanup necessary; tmp downloads directory is already removed after each test
-  await OS.File.writeAtomic(pathname, encoder.encode(contents));
+  await IOUtils.writeUTF8(pathname, contents);
   ok(file.exists(), `Created ${pathname}`);
   return file;
 }
@@ -108,8 +184,10 @@ async function task_resetState() {
   let publicList = await Downloads.getList(Downloads.PUBLIC);
   let downloads = await publicList.getAll();
   for (let download of downloads) {
-    publicList.remove(download);
-    await download.finalize(true);
+    await publicList.remove(download);
+    if (await IOUtils.exists(download.target.path)) {
+      await download.finalize(true);
+    }
   }
 
   DownloadsPanel.hidePanel();
@@ -169,37 +247,43 @@ async function task_openPanel() {
 }
 
 async function setDownloadDir() {
-  let tmpDir = Services.dirsvc.get("TmpD", Ci.nsIFile);
-  tmpDir.append("testsavedir");
-  if (!tmpDir.exists()) {
-    tmpDir.create(Ci.nsIFile.DIRECTORY_TYPE, 0o755);
-    registerCleanupFunction(function() {
-      try {
-        tmpDir.remove(true);
-      } catch (e) {
-        // On Windows debug build this may fail.
-      }
-    });
-  }
-
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.download.folderList", 2],
-      ["browser.download.dir", tmpDir.path],
-    ],
+  let tmpDir = await PathUtils.getTempDir();
+  tmpDir = PathUtils.join(
+    tmpDir,
+    "testsavedir" + Math.floor(Math.random() * 2 ** 32)
+  );
+  // Create this dir if it doesn't exist (ignores existing dirs)
+  await IOUtils.makeDirectory(tmpDir);
+  registerCleanupFunction(async function() {
+    try {
+      await IOUtils.remove(tmpDir, { recursive: true });
+    } catch (e) {
+      Cu.reportError(e);
+    }
   });
-  return tmpDir.path;
+  Services.prefs.setIntPref("browser.download.folderList", 2);
+  Services.prefs.setCharPref("browser.download.dir", tmpDir);
+  return tmpDir;
 }
 
 let gHttpServer = null;
 function startServer() {
   gHttpServer = new HttpServer();
   gHttpServer.start(-1);
-  registerCleanupFunction(async function() {
-    await new Promise(function(resolve) {
+  registerCleanupFunction(() => {
+    return new Promise(resolve => {
+      // Ensure all the pending HTTP requests have a chance to finish.
+      continueResponses();
+      // Stop the HTTP server, calling resolve when it's done.
       gHttpServer.stop(resolve);
     });
   });
+
+  gHttpServer.identity.setPrimary(
+    "http",
+    "www.example.com",
+    gHttpServer.identity.primaryPort
+  );
 
   gHttpServer.registerPathHandler("/file1.txt", (request, response) => {
     response.setStatusLine(null, 200, "OK");
@@ -219,6 +303,32 @@ function startServer() {
     response.processAsync();
     response.finish();
   });
+
+  gHttpServer.registerPathHandler("/interruptible.txt", function(
+    aRequest,
+    aResponse
+  ) {
+    info("Interruptible request started.");
+
+    // Process the first part of the response.
+    aResponse.processAsync();
+    aResponse.setHeader("Content-Type", "text/plain", false);
+    aResponse.setHeader(
+      "Content-Length",
+      "" + TEST_DATA_SHORT.length * 2,
+      false
+    );
+    aResponse.write(TEST_DATA_SHORT);
+
+    // Wait on the current deferred object, then finish the request.
+    _gDeferResponses.promise
+      .then(function RIH_onSuccess() {
+        aResponse.write(TEST_DATA_SHORT);
+        aResponse.finish();
+        info("Interruptible request finished.");
+      })
+      .catch(Cu.reportError);
+  });
 }
 
 function httpUrl(aFileName) {
@@ -237,6 +347,41 @@ function openLibrary(aLeftPaneRoot) {
 
   return new Promise(resolve => {
     waitForFocus(resolve, library);
+  });
+}
+
+/**
+ * Waits for a download to reach its progress, in case it has not
+ * reached the expected progress already.
+ *
+ * @param aDownload
+ *        The Download object to wait upon.
+ *
+ * @return {Promise}
+ * @resolves When the download has reached its progress.
+ * @rejects Never.
+ */
+function promiseDownloadHasProgress(aDownload, progress) {
+  return new Promise(resolve => {
+    // Wait for the download to reach its progress.
+    let onchange = function() {
+      let downloadInProgress =
+        !aDownload.stopped && aDownload.progress == progress;
+      let downloadFinished =
+        progress == 100 &&
+        aDownload.progress == progress &&
+        aDownload.succeeded;
+      if (downloadInProgress || downloadFinished) {
+        info(`Download reached ${progress}%`);
+        aDownload.onchange = null;
+        resolve();
+      }
+    };
+
+    // Register for the notification, but also call the function directly in
+    // case the download already reached the expected progress.
+    aDownload.onchange = onchange;
+    onchange();
   });
 }
 

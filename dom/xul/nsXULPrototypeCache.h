@@ -6,9 +6,9 @@
 #ifndef nsXULPrototypeCache_h__
 #define nsXULPrototypeCache_h__
 
+#include "nsBaseHashtable.h"
 #include "nsCOMPtr.h"
 #include "nsIObserver.h"
-#include "nsJSThingHashtable.h"
 #include "nsInterfaceHashtable.h"
 #include "nsRefPtrHashtable.h"
 #include "nsURIHashKey.h"
@@ -16,6 +16,8 @@
 #include "nsIStorageStream.h"
 
 #include "mozilla/scache/StartupCache.h"
+#include "js/experimental/JSStencil.h"
+#include "mozilla/RefPtr.h"
 
 class nsIHandleReportCallback;
 namespace mozilla {
@@ -56,20 +58,8 @@ class nsXULPrototypeCache : public nsIObserver {
   nsXULPrototypeDocument* GetPrototype(nsIURI* aURI);
   nsresult PutPrototype(nsXULPrototypeDocument* aDocument);
 
-  JSScript* GetScript(nsIURI* aURI);
-  nsresult PutScript(nsIURI* aURI, JS::Handle<JSScript*> aScriptObject);
-
-  /**
-   * Get a style sheet by URI. If the style sheet is not in the cache,
-   * returns nullptr.
-   */
-  mozilla::StyleSheet* GetStyleSheet(nsIURI* aURI);
-
-  /**
-   * Store a style sheet in the cache. The key, style sheet's URI is obtained
-   * from the style sheet itself.
-   */
-  nsresult PutStyleSheet(RefPtr<mozilla::StyleSheet>&& aStyleSheet);
+  JS::Stencil* GetStencil(nsIURI* aURI);
+  nsresult PutStencil(nsIURI* aURI, JS::Stencil* aStencil);
 
   /**
    * Write the XUL prototype document to a cache file. The proto must be
@@ -93,8 +83,6 @@ class nsXULPrototypeCache : public nsIObserver {
   static void ReleaseGlobals() { NS_IF_RELEASE(sInstance); }
 
   void MarkInCCGeneration(uint32_t aGeneration);
-  void MarkInGC(JSTracer* aTrc);
-  void FlushScripts();
 
   static void CollectMemoryReports(nsIHandleReportCallback* aHandleReport,
                                    nsISupports* aData);
@@ -104,16 +92,22 @@ class nsXULPrototypeCache : public nsIObserver {
                                           void** aResult);
 
   nsXULPrototypeCache();
-  virtual ~nsXULPrototypeCache();
+  virtual ~nsXULPrototypeCache() = default;
 
   static nsXULPrototypeCache* sInstance;
 
-  using StyleSheetTable = nsRefPtrHashtable<nsURIHashKey, mozilla::StyleSheet>;
-
   nsRefPtrHashtable<nsURIHashKey, nsXULPrototypeDocument>
       mPrototypeTable;  // owns the prototypes
-  StyleSheetTable mStyleSheetTable;
-  nsJSThingHashtable<nsURIHashKey, JSScript*> mScriptTable;
+
+  class StencilHashKey : public nsURIHashKey {
+   public:
+    explicit StencilHashKey(const nsIURI* aKey) : nsURIHashKey(aKey) {}
+    StencilHashKey(StencilHashKey&&) = default;
+
+    RefPtr<JS::Stencil> mStencil;
+  };
+
+  nsTHashtable<StencilHashKey> mStencilTable;
 
   // URIs already written to the startup cache, to prevent double-caching.
   nsTHashtable<nsURIHashKey> mStartupCacheURITable;

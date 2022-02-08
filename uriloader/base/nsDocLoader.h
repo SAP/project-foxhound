@@ -30,7 +30,6 @@
 
 namespace mozilla {
 namespace dom {
-class BrowserBridgeChild;
 class BrowsingContext;
 }  // namespace dom
 }  // namespace mozilla
@@ -55,11 +54,9 @@ class nsDocLoader : public nsIDocumentLoader,
                     public nsIChannelEventSink,
                     public nsISupportsPriority {
  public:
-  using BrowserBridgeChild = mozilla::dom::BrowserBridgeChild;
-
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_THIS_DOCLOADER_IMPL_CID)
 
-  nsDocLoader();
+  nsDocLoader() : nsDocLoader(false) {}
 
   [[nodiscard]] virtual nsresult Init();
   [[nodiscard]] nsresult InitWithBrowsingContext(
@@ -136,29 +133,12 @@ class nsDocLoader : public nsIDocumentLoader,
     mTreatAsBackgroundLoad = false;
   };
 
-  // Inform a parent docloader that a BrowserBridgeChild has been created for
-  // an OOP sub-document.
-  // (This is the OOP counterpart to ChildEnteringOnload below.)
-  void OOPChildLoadStarted(BrowserBridgeChild* aChild) {
-    MOZ_DIAGNOSTIC_ASSERT(!mOOPChildrenLoading.Contains(aChild));
-    mOOPChildrenLoading.AppendElement(aChild);
-  }
-
-  // Inform a parent docloader that the BrowserBridgeChild for one of its
-  // OOP sub-documents is done calling its onload handler.
-  // (This is the OOP counterpart to ChildDoneWithOnload below.)
-  void OOPChildLoadDone(BrowserBridgeChild* aChild) {
-    // aChild will not be in the list if nsDocLoader::Stop() was called, since
-    // that clears mOOPChildrenLoading.  It also dispatches the 'load' event,
-    // so we don't need to call DocLoaderIsEmpty in that case.
-    if (mOOPChildrenLoading.RemoveElement(aChild)) {
-      DocLoaderIsEmpty(true);
-    }
-  }
-
   uint32_t ChildCount() const { return mChildList.Length(); }
 
+  void OOPChildrenLoadingIsEmpty() { DocLoaderIsEmpty(true); }
+
  protected:
+  explicit nsDocLoader(bool aNotifyAboutBackgroundRequests);
   virtual ~nsDocLoader();
 
   [[nodiscard]] virtual nsresult SetDocLoaderParent(nsDocLoader* aLoader);
@@ -252,7 +232,7 @@ class nsDocLoader : public nsIDocumentLoader,
   // of the completed load, instead of using the load group's status.
   void DocLoaderIsEmpty(
       bool aFlushLayout,
-      const Maybe<nsresult>& aOverrideStatus = mozilla::Nothing());
+      const mozilla::Maybe<nsresult>& aOverrideStatus = mozilla::Nothing());
 
  protected:
   struct nsStatusInfo : public mozilla::LinkedListElement<nsStatusInfo> {
@@ -363,6 +343,8 @@ class nsDocLoader : public nsIDocumentLoader,
    */
   bool mDocumentOpenedButNotLoaded;
 
+  bool mNotifyAboutBackgroundRequests;
+
   static const PLDHashTableOps sRequestInfoHashOps;
 
   // A list of kids that are in the middle of their onload calls and will let
@@ -370,10 +352,6 @@ class nsDocLoader : public nsIDocumentLoader,
   // DocLoaderIsEmpty calls (those coming from requests finishing in our
   // loadgroup) unless this is empty.
   nsCOMArray<nsIDocumentLoader> mChildrenInOnload;
-
-  // The OOP counterpart to mChildrenInOnload.
-  // Not holding strong refs here since we don't actually use the BBCs.
-  nsTArray<const BrowserBridgeChild*> mOOPChildrenLoading;
 
   int64_t GetMaxTotalProgress();
 

@@ -8,12 +8,8 @@
 #include "CacheEntry.h"
 #include "CacheObserver.h"
 
-#include "OldWrappers.h"
-
 #include "nsICacheEntryDoomCallback.h"
 
-#include "nsIApplicationCache.h"
-#include "nsIApplicationCacheService.h"
 #include "nsIURI.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
@@ -24,11 +20,9 @@ namespace mozilla::net {
 NS_IMPL_ISUPPORTS(CacheStorage, nsICacheStorage)
 
 CacheStorage::CacheStorage(nsILoadContextInfo* aInfo, bool aAllowDisk,
-                           bool aLookupAppCache, bool aSkipSizeCheck,
-                           bool aPinning)
+                           bool aSkipSizeCheck, bool aPinning)
     : mLoadContextInfo(aInfo ? GetLoadContextInfo(aInfo) : nullptr),
       mWriteToDisk(aAllowDisk),
-      mLookupAppCache(aLookupAppCache),
       mSkipSizeCheck(aSkipSizeCheck),
       mPinning(aPinning) {}
 
@@ -40,15 +34,13 @@ NS_IMETHODIMP CacheStorage::AsyncOpenURI(nsIURI* aURI,
 
   if (MOZ_UNLIKELY(!CacheObserver::UseDiskCache()) && mWriteToDisk &&
       !(aFlags & OPEN_INTERCEPTED)) {
-    aCallback->OnCacheEntryAvailable(nullptr, false, nullptr,
-                                     NS_ERROR_NOT_AVAILABLE);
+    aCallback->OnCacheEntryAvailable(nullptr, false, NS_ERROR_NOT_AVAILABLE);
     return NS_OK;
   }
 
   if (MOZ_UNLIKELY(!CacheObserver::UseMemoryCache()) && !mWriteToDisk &&
       !(aFlags & OPEN_INTERCEPTED)) {
-    aCallback->OnCacheEntryAvailable(nullptr, false, nullptr,
-                                     NS_ERROR_NOT_AVAILABLE);
+    aCallback->OnCacheEntryAvailable(nullptr, false, NS_ERROR_NOT_AVAILABLE);
     return NS_OK;
   }
 
@@ -56,8 +48,6 @@ NS_IMETHODIMP CacheStorage::AsyncOpenURI(nsIURI* aURI,
   NS_ENSURE_ARG(aCallback);
 
   nsresult rv;
-
-  bool truncate = aFlags & nsICacheStorage::OPEN_TRUNCATE;
 
   nsCOMPtr<nsIURI> noRefURI;
   rv = NS_GetURIWithoutRef(aURI, getter_AddRefs(noRefURI));
@@ -67,38 +57,13 @@ NS_IMETHODIMP CacheStorage::AsyncOpenURI(nsIURI* aURI,
   rv = noRefURI->GetAsciiSpec(asciiSpec);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsIApplicationCache> appCache;
-  if (LookupAppCache()) {
-    rv = ChooseApplicationCache(noRefURI, getter_AddRefs(appCache));
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    if (appCache) {
-      // From a chosen appcache open only as readonly
-      aFlags &= ~nsICacheStorage::OPEN_TRUNCATE;
-    }
-  }
-
-  if (appCache) {
-    nsAutoCString scheme;
-    rv = noRefURI->GetScheme(scheme);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    RefPtr<_OldCacheLoad> appCacheLoad =
-        new _OldCacheLoad(scheme, asciiSpec, aCallback, appCache, LoadInfo(),
-                          WriteToDisk(), aFlags);
-    rv = appCacheLoad->Start();
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    LOG(("CacheStorage::AsyncOpenURI loading from appcache"));
-    return NS_OK;
-  }
-
   RefPtr<CacheEntryHandle> entry;
   rv = CacheStorageService::Self()->AddStorageEntry(
-      this, asciiSpec, aIdExtension,
-      truncate,  // replace any existing one?
-      getter_AddRefs(entry));
-  NS_ENSURE_SUCCESS(rv, rv);
+      this, asciiSpec, aIdExtension, aFlags, getter_AddRefs(entry));
+  if (NS_FAILED(rv)) {
+    aCallback->OnCacheEntryAvailable(nullptr, false, rv);
+    return NS_OK;
+  }
 
   // May invoke the callback synchronously
   entry->Entry()->AsyncOpen(aCallback, aFlags);
@@ -124,7 +89,7 @@ NS_IMETHODIMP CacheStorage::OpenTruncate(nsIURI* aURI,
   RefPtr<CacheEntryHandle> handle;
   rv = CacheStorageService::Self()->AddStorageEntry(
       this, asciiSpec, aIdExtension,
-      true,  // replace any existing one
+      nsICacheStorage::OPEN_TRUNCATE,  // replace any existing one
       getter_AddRefs(handle));
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -225,26 +190,6 @@ NS_IMETHODIMP CacheStorage::AsyncVisitStorage(nsICacheStorageVisitor* aVisitor,
 
   nsresult rv = CacheStorageService::Self()->WalkStorageEntries(
       this, aVisitEntries, aVisitor);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return NS_OK;
-}
-
-// Internal
-
-nsresult CacheStorage::ChooseApplicationCache(nsIURI* aURI,
-                                              nsIApplicationCache** aCache) {
-  nsresult rv;
-
-  nsCOMPtr<nsIApplicationCacheService> appCacheService =
-      do_GetService(NS_APPLICATIONCACHESERVICE_CONTRACTID, &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsAutoCString cacheKey;
-  rv = aURI->GetAsciiSpec(cacheKey);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  rv = appCacheService->ChooseApplicationCache(cacheKey, LoadInfo(), aCache);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;

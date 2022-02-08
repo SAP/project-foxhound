@@ -49,13 +49,9 @@ skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/
 # Skip intl402 tests when Intl isn't available.
 skip-if(!this.hasOwnProperty("Intl")) include test262/intl402/jstests.list
 
-# Skip Intl.DisplayNames tests when the addIntlExtras helper isn't available.
-skip-if(!this.hasOwnProperty('addIntlExtras')) include test262/intl402/DisplayNames/jstests.list
-
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1415303
 skip-if(!this.hasOwnProperty("Atomics")) include test262/built-ins/Atomics/jstests.list
 skip-if(!this.hasOwnProperty("SharedArrayBuffer")) include test262/built-ins/SharedArrayBuffer/jstests.list
-
 
 #####################################
 # Test262 tests disabled on browser #
@@ -100,6 +96,7 @@ skip-if(!xulRuntime.shell) script test262/language/global-code/script-decl-lex-r
 skip-if(!xulRuntime.shell) script test262/language/global-code/script-decl-var.js
 skip-if(!xulRuntime.shell) script test262/language/global-code/script-decl-func-err-non-configurable.js
 skip-if(!xulRuntime.shell) script test262/language/global-code/script-decl-func.js
+skip-if(!xulRuntime.shell) script test262/built-ins/Array/prototype/methods-called-as-functions.js
 
 # Calls preventExtensions() on the WindowProxy object.
 skip-if(!xulRuntime.shell) script test262/language/global-code/script-decl-func-err-non-extensible.js
@@ -138,70 +135,21 @@ skip-if(!xulRuntime.shell) include test262/built-ins/Atomics/wait/jstests.list
 # Test262 tests skipped due to SpiderMonkey bugs #
 ##################################################
 
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1079853
-skip script test262/built-ins/TypedArray/prototype/every/BigInt/callbackfn-detachbuffer.js
-skip script test262/built-ins/TypedArray/prototype/every/callbackfn-detachbuffer.js
-skip script test262/built-ins/TypedArray/prototype/filter/BigInt/callbackfn-detachbuffer.js
-skip script test262/built-ins/TypedArray/prototype/filter/callbackfn-detachbuffer.js
-skip script test262/built-ins/TypedArray/prototype/find/BigInt/predicate-may-detach-buffer.js
-skip script test262/built-ins/TypedArray/prototype/find/predicate-may-detach-buffer.js
-skip script test262/built-ins/TypedArray/prototype/findIndex/BigInt/predicate-may-detach-buffer.js
-skip script test262/built-ins/TypedArray/prototype/findIndex/predicate-may-detach-buffer.js
-skip script test262/built-ins/TypedArray/prototype/forEach/BigInt/callbackfn-detachbuffer.js
-skip script test262/built-ins/TypedArray/prototype/forEach/callbackfn-detachbuffer.js
-skip script test262/built-ins/TypedArray/prototype/includes/detached-buffer-tointeger.js
-skip script test262/built-ins/TypedArray/prototype/map/BigInt/callbackfn-detachbuffer.js
-skip script test262/built-ins/TypedArray/prototype/map/callbackfn-detachbuffer.js
-skip script test262/built-ins/TypedArray/prototype/reduce/BigInt/callbackfn-detachbuffer.js
-skip script test262/built-ins/TypedArray/prototype/reduce/callbackfn-detachbuffer.js
-skip script test262/built-ins/TypedArray/prototype/reduceRight/BigInt/callbackfn-detachbuffer.js
-skip script test262/built-ins/TypedArray/prototype/reduceRight/callbackfn-detachbuffer.js
-skip script test262/built-ins/TypedArray/prototype/some/BigInt/callbackfn-detachbuffer.js
-skip script test262/built-ins/TypedArray/prototype/some/callbackfn-detachbuffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/BigInt/detached-buffer-realm.js
-skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/BigInt/detached-buffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/BigInt/tonumber-value-detached-buffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/detached-buffer-realm.js
-skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/detached-buffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/tonumber-value-detached-buffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Get/BigInt/detached-buffer-realm.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Get/BigInt/detached-buffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Get/BigInt/infinity-detached-buffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Get/detached-buffer-realm.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Get/detached-buffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Get/infinity-detached-buffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/GetOwnProperty/BigInt/detached-buffer-realm.js
-skip script test262/built-ins/TypedArrayConstructors/internals/GetOwnProperty/BigInt/detached-buffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/GetOwnProperty/BigInt/enumerate-detached-buffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/GetOwnProperty/detached-buffer-realm.js
-skip script test262/built-ins/TypedArrayConstructors/internals/GetOwnProperty/detached-buffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/GetOwnProperty/enumerate-detached-buffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/BigInt/detached-buffer-realm.js
-skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/BigInt/detached-buffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/BigInt/infinity-with-detached-buffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/detached-buffer-realm.js
-skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/detached-buffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/infinity-with-detached-buffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Set/BigInt/detached-buffer-realm.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Set/BigInt/detached-buffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Set/BigInt/tonumber-value-detached-buffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Set/detached-buffer-realm.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Set/detached-buffer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Set/tonumber-value-detached-buffer.js
-
 # Lazily resolved "name" and "length" properties on functions violate property key order.
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1629803
 skip script test262/built-ins/Object/keys/order-after-define-property.js
 skip script test262/built-ins/Object/entries/order-after-define-property.js
-skip script test262/language/computed-property-names/class/static/method-number.js
-skip script test262/language/computed-property-names/class/static/method-string.js
-skip script test262/language/computed-property-names/class/static/method-symbol.js
+skip script test262/language/computed-property-names/class/static/method-number-order.js
+skip script test262/language/computed-property-names/class/static/method-string-order.js
+skip script test262/language/computed-property-names/class/static/method-symbol-order.js
+skip script test262/language/statements/class/definition/fn-length-static-precedence-order.js
+skip script test262/language/statements/class/definition/fn-name-static-precedence-order.js
+skip script test262/built-ins/Object/keys/order-after-define-property-with-function.js
+skip script test262/built-ins/Object/entries/order-after-define-property-with-function.js
 
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1286997
 # Bug 1286997 probably doesn't cover all spec violations.
 skip script test262/language/expressions/assignment/S11.13.1_A5_T5.js
-skip script test262/language/expressions/assignment/S11.13.1_A7_T1.js
-skip script test262/language/expressions/assignment/S11.13.1_A7_T2.js
 skip script test262/language/expressions/assignment/S11.13.1_A7_T3.js
 skip script test262/language/expressions/compound-assignment/S11.13.2_A5.10_T5.js
 skip script test262/language/expressions/compound-assignment/S11.13.2_A5.11_T5.js
@@ -252,11 +200,36 @@ skip script test262/language/expressions/logical-assignment/lgcl-nullish-assignm
 skip script test262/language/expressions/logical-assignment/lgcl-and-assignment-operator-lhs-before-rhs.js
 skip script test262/language/expressions/logical-assignment/lgcl-or-assignment-operator-lhs-before-rhs.js
 
-# https://bugzilla.mozilla.org/show_bug.cgi?id=944846
-skip script test262/built-ins/Number/prototype/toExponential/return-values.js
+# https://bugzilla.mozilla.org/show_bug.cgi?id=605515
+skip script test262/language/identifier-resolution/assign-to-global-undefined-strict.js
+skip script test262/language/expressions/postfix-decrement/operator-x-postfix-decrement-calls-putvalue-lhs-newvalue-.js
+skip script test262/language/expressions/assignment/assignment-operator-calls-putvalue-lref--rval-.js
+skip script test262/language/expressions/prefix-increment/operator-prefix-increment-x-calls-putvalue-lhs-newvalue-.js
+skip script test262/language/expressions/prefix-decrement/operator-prefix-decrement-x-calls-putvalue-lhs-newvalue-.js
+skip script test262/language/expressions/postfix-increment/operator-x-postfix-increment-calls-putvalue-lhs-newvalue-.js
+skip script test262/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--16.js
+skip script test262/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--8.js
+skip script test262/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--12.js
+skip script test262/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--18.js
+skip script test262/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--14.js
+skip script test262/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--2.js
+skip script test262/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--10.js
+skip script test262/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--6.js
+skip script test262/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--4.js
+skip script test262/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v-.js
+skip script test262/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--20.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1670502
+skip script test262/built-ins/Function/prototype/toString/built-in-function-object.js
 
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1225839
 ignore-flag(--more-compartments) script test262/built-ins/Function/internals/Call/class-ctor-realm.js
+
+# These two tests assume that assignment to function calls is a SyntaxError.  We
+# historically implemented otherwise, as web reality.  Perhaps that can be
+# reevaluated at some point.
+skip script test262/language/expressions/assignmenttargettype/parenthesized-callexpression-arguments.js
+skip script test262/language/expressions/assignmenttargettype/direct-callexpression-arguments.js
 
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1297179
 # All of these tests pass except with --more-compartments.
@@ -289,9 +262,6 @@ ignore-flag(--more-compartments) script test262/built-ins/Proxy/setPrototypeOf/t
 ignore-flag(--more-compartments) script test262/built-ins/Array/length/define-own-prop-length-overflow-realm.js
 skip script test262/built-ins/Function/internals/Construct/derived-return-val-realm.js
 skip script test262/built-ins/Function/internals/Construct/derived-this-uninitialized-realm.js
-
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1317395
-skip script test262/built-ins/ArrayBuffer/prototype/byteLength/detached-buffer.js
 
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1317378
 skip script test262/language/statements/do-while/cptn-abrupt-empty.js
@@ -357,16 +327,6 @@ skip script test262/annexB/built-ins/Function/createdynfn-no-line-terminator-htm
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1462745
 skip script test262/annexB/language/function-code/block-decl-nested-blocks-with-fun-decl.js
 
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1508683
-# All of these tests pass except with --more-compartments.
-ignore-flag(--more-compartments) script test262/built-ins/RegExp/prototype/multiline/cross-realm.js
-ignore-flag(--more-compartments) script test262/built-ins/RegExp/prototype/global/cross-realm.js
-ignore-flag(--more-compartments) script test262/built-ins/RegExp/prototype/sticky/cross-realm.js
-ignore-flag(--more-compartments) script test262/built-ins/RegExp/prototype/ignoreCase/cross-realm.js
-ignore-flag(--more-compartments) script test262/built-ins/RegExp/prototype/unicode/cross-realm.js
-ignore-flag(--more-compartments) script test262/built-ins/RegExp/prototype/dotAll/cross-realm.js
-ignore-flag(--more-compartments) script test262/built-ins/RegExp/prototype/source/cross-realm.js
-
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1545038
 # All of these tests pass except with --more-compartments.
 ignore-flag(--more-compartments) script test262/built-ins/String/prototype/valueOf/non-generic-realm.js
@@ -389,9 +349,6 @@ ignore-flag(--more-compartments) script test262/built-ins/Proxy/construct/return
 ignore-flag(--more-compartments) script test262/built-ins/Proxy/construct/return-not-object-throws-null-realm.js
 ignore-flag(--more-compartments) script test262/built-ins/Proxy/construct/return-not-object-throws-boolean-realm.js
 ignore-flag(--more-compartments) script test262/built-ins/Proxy/construct/return-not-object-throws-boolean-realm.js
-
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1362154
-skip script test262/built-ins/String/prototype/replaceAll/searchValue-replacer-RegExp-call.js
 
 # Depends upon the SharedArrayBuffer constructor being defined as a global
 # property -- and right now, it's only defined for cross-site-isolated pages
@@ -626,26 +583,28 @@ fails-if(!xulRuntime.shell) script test262/built-ins/TypedArray/prototype/set/ty
 fails-if(!xulRuntime.shell) script test262/built-ins/TypedArray/prototype/set/typedarray-arg-set-values-diff-buffer-other-type-sab.js
 fails-if(!xulRuntime.shell) script test262/built-ins/TypedArray/prototype/set/typedarray-arg-set-values-diff-buffer-same-type-sab.js
 fails-if(!xulRuntime.shell) script test262/built-ins/TypedArray/prototype/set/typedarray-arg-set-values-same-buffer-same-type-sab.js
-
-# Can be enabled when Intl.DisplayNames is no longer installed through addIntlExtras.
-skip script test262/intl402/DisplayNames/proto-from-ctor-realm.js
-skip script test262/intl402/DisplayNames/prototype/resolvedOptions/return-object.js
-
-# Can also be enabled when Intl.DisplayNames is no longer installed through addIntlExtras.
-# addIntlExtras exposes the mozIntl.DisplayNames constructor, which supports date-time types. This
-# tests expects that date-time types throw a TypeError.
-# https://github.com/tc39/proposal-intl-displaynames/issues/75
-skip script test262/intl402/DisplayNames/options-type-invalid-throws.js
+fails-if(!xulRuntime.shell) script test262/built-ins/Atomics/add/not-a-constructor.js
+fails-if(!xulRuntime.shell) script test262/built-ins/Atomics/and/not-a-constructor.js
+fails-if(!xulRuntime.shell) script test262/built-ins/Atomics/compareExchange/not-a-constructor.js
+fails-if(!xulRuntime.shell) script test262/built-ins/Atomics/exchange/not-a-constructor.js
+fails-if(!xulRuntime.shell) script test262/built-ins/Atomics/isLockFree/not-a-constructor.js
+fails-if(!xulRuntime.shell) script test262/built-ins/Atomics/load/not-a-constructor.js
+fails-if(!xulRuntime.shell) script test262/built-ins/Atomics/or/not-a-constructor.js
+fails-if(!xulRuntime.shell) script test262/built-ins/Atomics/store/not-a-constructor.js
+fails-if(!xulRuntime.shell) script test262/built-ins/Atomics/sub/not-a-constructor.js
+fails-if(!xulRuntime.shell) script test262/built-ins/Atomics/xor/not-a-constructor.js
+fails-if(!xulRuntime.shell) script test262/built-ins/Object/seal/seal-sharedarraybuffer.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/slice/not-a-constructor.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/is-a-constructor.js
+fails-if(!xulRuntime.shell) script test262/built-ins/TypedArrayConstructors/internals/Delete/BigInt/indexed-value-sab-non-strict.js
+fails-if(!xulRuntime.shell) script test262/built-ins/TypedArrayConstructors/internals/Delete/BigInt/indexed-value-sab-strict-strict.js
+fails-if(!xulRuntime.shell) script test262/built-ins/TypedArrayConstructors/internals/Delete/indexed-value-sab-non-strict.js
+fails-if(!xulRuntime.shell) script test262/built-ins/TypedArrayConstructors/internals/Delete/indexed-value-sab-strict-strict.js
+fails-if(!xulRuntime.shell) script test262/language/expressions/class/subclass-builtins/subclass-SharedArrayBuffer.js
+fails-if(!xulRuntime.shell) script test262/language/statements/class/subclass-builtins/subclass-SharedArrayBuffer.js
 
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1648202
 skip script test262/built-ins/RegExp/named-groups/non-unicode-property-names-valid.js
-
-# Proxy Support isn't complete
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1644160
-skip script test262/language/expressions/class/elements/static-private-fields-proxy-default-handler-throws.js
-skip script test262/language/expressions/class/elements/private-fields-proxy-default-handler-throws.js
-skip script test262/language/statements/class/elements/static-private-fields-proxy-default-handler-throws.js
-skip script test262/language/statements/class/elements/privatefield-on-proxy.js
 
 
 ###########################################################
@@ -655,6 +614,14 @@ skip script test262/language/statements/class/elements/privatefield-on-proxy.js
 # test262 importer merges all includes in a per directory shell.js file, breaking this harness test case.
 skip script test262/harness/detachArrayBuffer.js
 
+# Likewise here -- shell.js defines an |AsyncFunction| global property for
+# various tests in this directory that have an include that defines it, but this
+# particular test *doesn't* have that include and *shouldn't* define
+# |AsyncFunction| yet *checks* that no such global property exists, so it fails.
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1672850
+skip script test262/built-ins/AsyncFunction/is-not-a-global.js
+
+skip-if(xulRuntime.OS=="WINNT"&&!xulRuntime.is64Bit) script test262/language/module-code/top-level-await/await-dynamic-import-rejection.js  # Bug 1727925
 
 ####################################################
 # Tests disabled due to invalid test expectations  #
@@ -670,15 +637,118 @@ skip script test262/harness/detachArrayBuffer.js
 # https://github.com/tc39/ecma402/issues/402
 skip script test262/intl402/DateTimeFormat/prototype/resolvedOptions/hourCycle-default.js
 
-# Tests not yet updated for https://github.com/tc39/proposal-intl-displaynames/pull/83
-skip script test262/intl402/DisplayNames/locales-length-tolength-throws.js
-skip script test262/intl402/DisplayNames/locales-length-poison-throws.js
-skip script test262/intl402/DisplayNames/length.js
+# https://github.com/tc39/test262/issues/3139
+skip script test262/intl402/DisplayNames/prototype/of/type-calendar-valid.js
+
+# Tests not yet updated for https://github.com/tc39/proposal-intl-numberformat-v3
+skip script test262/intl402/NumberFormat/prototype/resolvedOptions/order.js
+skip script test262/intl402/NumberFormat/test-option-useGrouping.js
+skip script test262/intl402/NumberFormat/prototype/resolvedOptions/basic.js
+skip script test262/intl402/PluralRules/prototype/resolvedOptions/order.js
+
+# https://github.com/tc39/test262/pull/3199
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Mark.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Arabic.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Currency_Symbol.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Letter.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Balinese.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Dash.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Kannada.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Cased.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Changes_When_Casefolded.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Changes_When_Titlecased.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Emoji_Modifier_Base.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Diacritic.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Han.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Kannada.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Modifier_Symbol.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Telugu.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Ethiopic.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Katakana.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Canadian_Aboriginal.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Takri.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Unassigned.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Kaithi.js
+skip script test262/built-ins/RegExp/property-escapes/generated/ID_Continue.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Terminal_Punctuation.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Ideographic.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Katakana.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Balinese.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Changes_When_Lowercased.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Bidi_Mirrored.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Lowercase.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Cased_Letter.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Alphabetic.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Other_Symbol.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Spacing_Mark.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Format.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Symbol.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Inherited.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Grapheme_Base.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Uppercase_Letter.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Kaithi.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Adlam.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Canadian_Aboriginal.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Brahmi.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Assigned.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Variation_Selector.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Ahom.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Soft_Dotted.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Ethiopic.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Uppercase.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Default_Ignorable_Code_Point.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Decimal_Number.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Modifier_Letter.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Sentence_Terminal.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Dash_Punctuation.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Ahom.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Nko.js
+skip script test262/built-ins/RegExp/property-escapes/generated/XID_Continue.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Hiragana.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Arabic.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Extender.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Grapheme_Extend.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Unified_Ideograph.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Common.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Number.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Emoji_Presentation.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Mongolian.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Changes_When_Casemapped.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Close_Punctuation.js
+skip script test262/built-ins/RegExp/property-escapes/generated/ID_Start.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Latin.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Takri.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Other_Punctuation.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Common.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Glagolitic.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Brahmi.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Changes_When_Uppercased.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Emoji.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Telugu.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Glagolitic.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Open_Punctuation.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Han.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Lowercase_Letter.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Mongolian.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Nonspacing_Mark.js
+skip script test262/built-ins/RegExp/property-escapes/generated/XID_Start.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Other_Letter.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Inherited.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Tagalog.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Punctuation.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Hiragana.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Syriac.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Latin.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Tagalog.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Case_Ignorable.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Other.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Changes_When_NFKC_Casefolded.js
 
 
 ##############################################
 # Enable Iterator Helpers tests in the shell #
 ##############################################
+
 shell-option(--enable-iterator-helpers) script non262/AsyncIterator/asynciterator.js
 shell-option(--enable-iterator-helpers) script non262/AsyncIterator/length.js
 shell-option(--enable-iterator-helpers) script non262/AsyncIterator/name.js
@@ -1036,3 +1106,4 @@ shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/take/le
 shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/take/name.js
 shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/take/take.js
 shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/take/take-more-than-available.js
+

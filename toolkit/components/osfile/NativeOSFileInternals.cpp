@@ -37,6 +37,7 @@
 #include "jsfriendapi.h"
 #include "js/ArrayBuffer.h"  // JS::GetArrayBufferByteLength,IsArrayBufferObject,NewArrayBufferWithContents,StealArrayBufferContents
 #include "js/Conversions.h"
+#include "js/experimental/TypedData.h"  // JS_NewUint8ArrayWithBuffer
 #include "js/MemoryFunctions.h"
 #include "js/UniquePtr.h"
 #include "js/Utility.h"
@@ -100,9 +101,8 @@ struct ScopedArrayBufferContentsTraits {
 
 struct MOZ_NON_TEMPORARY_CLASS ScopedArrayBufferContents
     : public Scoped<ScopedArrayBufferContentsTraits> {
-  explicit ScopedArrayBufferContents(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM)
-      : Scoped<ScopedArrayBufferContentsTraits>(
-            MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM_TO_PARENT) {}
+  explicit ScopedArrayBufferContents()
+      : Scoped<ScopedArrayBufferContentsTraits>() {}
 
   ScopedArrayBufferContents& operator=(ArrayBufferContents ptr) {
     Scoped<ScopedArrayBufferContentsTraits>::operator=(ptr);
@@ -209,7 +209,6 @@ class AbstractResult : public nsINativeOSFileResult {
  protected:
   virtual ~AbstractResult() {
     MOZ_ASSERT(NS_IsMainThread());
-    DropJSData();
     mozilla::DropJSObjects(this);
   }
 
@@ -826,7 +825,7 @@ class DoReadToStringEvent final : public AbstractReadEvent {
                  ScopedArrayBufferContents& aBuffer) override {
     MOZ_ASSERT(!NS_IsMainThread());
 
-    auto src = MakeSpan(aBuffer.get().data, aBuffer.get().nbytes);
+    auto src = Span(aBuffer.get().data, aBuffer.get().nbytes);
 
     CheckedInt<size_t> needed = mDecoder->MaxUTF16BufferLength(src.Length());
     if (!needed.isValid() ||
@@ -836,8 +835,8 @@ class DoReadToStringEvent final : public AbstractReadEvent {
     }
 
     nsString resultString;
-    bool ok = resultString.SetLength(needed.value(), fallible);
-    if (!ok) {
+    auto resultSpan = resultString.GetMutableData(needed.value(), fallible);
+    if (!resultSpan) {
       Fail("allocation"_ns, mResult.forget(), OS_ERROR_TOO_LARGE);
       return;
     }
@@ -848,14 +847,12 @@ class DoReadToStringEvent final : public AbstractReadEvent {
     uint32_t result;
     size_t read;
     size_t written;
-    bool hadErrors;
-    Tie(result, read, written, hadErrors) =
-        mDecoder->DecodeToUTF16(src, resultString, false);
+    std::tie(result, read, written, std::ignore) =
+        mDecoder->DecodeToUTF16(src, *resultSpan, false);
     MOZ_ASSERT(result == kInputEmpty);
     MOZ_ASSERT(read == src.Length());
     MOZ_ASSERT(written <= needed.value());
-    Unused << hadErrors;
-    ok = resultString.SetLength(written, fallible);
+    bool ok = resultString.SetLength(written, fallible);
     if (!ok) {
       Fail("allocation"_ns, mResult.forget(), OS_ERROR_TOO_LARGE);
       return;
@@ -1208,7 +1205,14 @@ NativeOSFileInternalsService::WriteAtomic(
     return NS_ERROR_INVALID_ARG;
   }
 
-  bytes = JS::GetArrayBufferByteLength(bufferObject.get());
+  {
+    // Throw for large ArrayBuffers to prevent truncation.
+    size_t len = JS::GetArrayBufferByteLength(bufferObject.get());
+    if (len > INT32_MAX) {
+      return NS_ERROR_INVALID_ARG;
+    }
+    bytes = len;
+  }
   buffer.reset(
       static_cast<char*>(JS::StealArrayBufferContents(cx, bufferObject)));
 

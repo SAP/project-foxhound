@@ -3,7 +3,10 @@ import { mount, shallow } from "enzyme";
 import React from "react";
 import { _Search as Search } from "content-src/components/Search/Search";
 
-const DEFAULT_PROPS = { dispatch() {} };
+const DEFAULT_PROPS = {
+  dispatch() {},
+  Prefs: { values: { featureConfig: {} } },
+};
 
 describe("<Search>", () => {
   let globals;
@@ -76,6 +79,18 @@ describe("<Search>", () => {
     assert.isUserEventAction(action);
     assert.propertyVal(action.data, "event", "SEARCH");
   });
+  it("should show our logo when the prop exists.", () => {
+    const showLogoProps = Object.assign({}, DEFAULT_PROPS, { showLogo: true });
+
+    const wrapper = shallow(<Search {...showLogoProps} />);
+    assert.lengthOf(wrapper.find(".logo-and-wordmark"), 1);
+  });
+  it("should not show our logo when the prop does not exist.", () => {
+    const hideLogoProps = Object.assign({}, DEFAULT_PROPS, { showLogo: false });
+
+    const wrapper = shallow(<Search {...hideLogoProps} />);
+    assert.lengthOf(wrapper.find(".logo-and-wordmark"), 0);
+  });
 
   describe("Search Hand-off", () => {
     it("should render a Search element when hand-off is enabled", () => {
@@ -130,7 +145,7 @@ describe("<Search>", () => {
         },
         type: "HANDOFF_SEARCH_TO_AWESOMEBAR",
       });
-      assert.calledWith(dispatch, { type: "HIDE_SEARCH" });
+      assert.calledWith(dispatch, { type: "DISABLE_SEARCH" });
       const [action] = dispatch.thirdCall.args;
       assert.isUserEventAction(action);
       assert.propertyVal(action.data, "event", "SEARCH_HANDOFF");
@@ -155,7 +170,7 @@ describe("<Search>", () => {
         },
         type: "HANDOFF_SEARCH_TO_AWESOMEBAR",
       });
-      assert.calledWith(dispatch, { type: "HIDE_SEARCH" });
+      assert.calledWith(dispatch, { type: "DISABLE_SEARCH" });
       const [action] = dispatch.thirdCall.args;
       assert.isUserEventAction(action);
       assert.propertyVal(action.data, "event", "SEARCH_HANDOFF");

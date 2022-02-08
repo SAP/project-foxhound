@@ -8,7 +8,7 @@
  * Instead of adding reflows to the list, you should be modifying your code to
  * avoid the reflow.
  *
- * See https://developer.mozilla.org/en-US/Firefox/Performance_best_practices_for_Firefox_fe_engineers
+ * See https://firefox-source-docs.mozilla.org/performance/bestpractices.html
  * for tips on how to do that.
  */
 const EXPECTED_REFLOWS = [
@@ -44,6 +44,8 @@ add_task(async function() {
   // opened in previous tests.
   Services.obs.notifyObservers(null, "startupcache-invalidate");
   Services.obs.notifyObservers(null, "chrome-flush-caches");
+
+  let bookmarksToolbarRect = await getBookmarksToolbarRect();
 
   let win = window.openDialog(
     AppConstants.BROWSER_CHROME_URL,
@@ -97,6 +99,33 @@ add_task(async function() {
               r.y2 <= inputFieldRect.bottom
             );
           },
+        },
+        {
+          name: "Initial bookmark icon appearing after startup",
+          condition: r =>
+            r.w == 16 &&
+            r.h == 16 && // icon size
+            inRange(
+              r.y1,
+              bookmarksToolbarRect.top,
+              bookmarksToolbarRect.top + bookmarksToolbarRect.height / 2
+            ) && // in the toolbar
+            inRange(r.x1, 11, 13), // very close to the left of the screen
+        },
+        {
+          // Note that the length and x values here are a bit weird because on
+          // some fonts, we appear to detect the two words separately.
+          name:
+            "Initial bookmark text ('Getting Started' or 'Get Involved') appearing after startup",
+          condition: r =>
+            inRange(r.w, 25, 120) && // length of text
+            inRange(r.h, 9, 15) && // height of text
+            inRange(
+              r.y1,
+              bookmarksToolbarRect.top,
+              bookmarksToolbarRect.top + bookmarksToolbarRect.height / 2
+            ) && // in the toolbar
+            inRange(r.x1, 30, 90), // close to the left of the screen
         },
       ],
     },

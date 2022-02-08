@@ -1,11 +1,13 @@
 import { CFRMessageProvider } from "lib/CFRMessageProvider.jsm";
 import CFRDoorhangerSchema from "content-src/asrouter/templates/CFR/templates/ExtensionDoorhanger.schema.json";
 import CFRChicletSchema from "content-src/asrouter/templates/CFR/templates/CFRUrlbarChiclet.schema.json";
+import InfoBarSchema from "content-src/asrouter/templates/CFR/templates/InfoBar.schema.json";
 
 const SCHEMAS = {
   cfr_urlbar_chiclet: CFRChicletSchema,
   cfr_doorhanger: CFRDoorhangerSchema,
   milestone_message: CFRDoorhangerSchema,
+  infobar: InfoBarSchema,
 };
 
 const DEFAULT_CONTENT = {
@@ -81,16 +83,26 @@ const L10N_CONTENT = {
 };
 
 describe("ExtensionDoorhanger", () => {
-  it("should validate DEFAULT_CONTENT", () => {
-    assert.jsonSchema(DEFAULT_CONTENT, CFRDoorhangerSchema);
-  });
-  it("should validate L10N_CONTENT", () => {
-    assert.jsonSchema(L10N_CONTENT, CFRDoorhangerSchema);
-  });
-  it("should validate all messages from CFRMessageProvider", () => {
-    const messages = CFRMessageProvider.getMessages();
-    messages.forEach(msg =>
-      assert.jsonSchema(msg.content, SCHEMAS[msg.template])
+  it("should validate DEFAULT_CONTENT", async () => {
+    const messages = await CFRMessageProvider.getMessages();
+    let doorhangerMessage = messages.find(m => m.id === "FACEBOOK_CONTAINER_3");
+    assert.ok(doorhangerMessage, "Message found");
+    assert.jsonSchema(
+      { ...doorhangerMessage, content: DEFAULT_CONTENT },
+      CFRDoorhangerSchema
     );
+  });
+  it("should validate L10N_CONTENT", async () => {
+    const messages = await CFRMessageProvider.getMessages();
+    let doorhangerMessage = messages.find(m => m.id === "FACEBOOK_CONTAINER_3");
+    assert.ok(doorhangerMessage, "Message found");
+    assert.jsonSchema(
+      { ...doorhangerMessage, content: L10N_CONTENT },
+      CFRDoorhangerSchema
+    );
+  });
+  it("should validate all messages from CFRMessageProvider", async () => {
+    const messages = await CFRMessageProvider.getMessages();
+    messages.forEach(msg => assert.jsonSchema(msg, SCHEMAS[msg.template]));
   });
 });

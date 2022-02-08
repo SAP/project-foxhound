@@ -49,6 +49,8 @@
 #define NSC_SEARCH_BLOCK_SIZE 5
 #define NSC_SLOT_LIST_BLOCK_SIZE 10
 
+#define NSC_MIN_SESSION_OBJECT_HANDLE 1U
+
 #define NSC_FIPS_MODULE 1
 #define NSC_NON_FIPS_MODULE 0
 
@@ -105,8 +107,9 @@ typedef struct SFTKSessionContextStr SFTKSessionContext;
 typedef struct SFTKSearchResultsStr SFTKSearchResults;
 typedef struct SFTKHashVerifyInfoStr SFTKHashVerifyInfo;
 typedef struct SFTKHashSignInfoStr SFTKHashSignInfo;
-typedef struct SFTKOAEPEncryptInfoStr SFTKOAEPEncryptInfo;
-typedef struct SFTKOAEPDecryptInfoStr SFTKOAEPDecryptInfo;
+typedef struct SFTKOAEPInfoStr SFTKOAEPInfo;
+typedef struct SFTKPSSSignInfoStr SFTKPSSSignInfo;
+typedef struct SFTKPSSVerifyInfoStr SFTKPSSVerifyInfo;
 typedef struct SFTKSSLMACInfoStr SFTKSSLMACInfo;
 typedef struct SFTKChaCha20Poly1305InfoStr SFTKChaCha20Poly1305Info;
 typedef struct SFTKChaCha20CtrInfoStr SFTKChaCha20CtrInfo;
@@ -190,6 +193,7 @@ struct SFTKObjectStr {
     SFTKSlot *slot;
     void *objectInfo;
     SFTKFree infoFree;
+    PRBool isFIPS;
 };
 
 struct SFTKTokenObjectStr {
@@ -265,6 +269,7 @@ struct SFTKSessionContextStr {
     PRBool rsa;                 /* is rsa */
     PRBool doPad;               /* use PKCS padding for block ciphers */
     PRBool isXCBC;              /* xcbc, use special handling in final */
+    PRBool isFIPS;              /* current operation is in FIPS mode */
     unsigned int blockSize;     /* blocksize for padding */
     unsigned int padDataLength; /* length of the valid data in padbuf */
     /** latest incomplete block of data for block cipher */
@@ -306,6 +311,7 @@ struct SFTKSessionStr {
     SFTKSessionContext *enc_context;
     SFTKSessionContext *hash_context;
     SFTKSessionContext *sign_context;
+    PRBool lastOpWasFIPS;
     SFTKObjectList *objects[1];
 };
 
@@ -371,6 +377,9 @@ struct SFTKSlotStr {
     char tokDescription[33];       /* per load */
     char updateTokDescription[33]; /* per load */
     char slotDescription[65];      /* invariant */
+    SFTKSession moduleObjects;     /* global session to hang module specific
+                                    * objects like profile objects or
+                                    * validation objects */
 };
 
 /*
@@ -388,21 +397,33 @@ struct SFTKHashSignInfoStr {
     NSSLOWKEYPrivateKey *key;
 };
 
-/**
- * Contexts for RSA-OAEP
- */
-struct SFTKOAEPEncryptInfoStr {
-    CK_RSA_PKCS_OAEP_PARAMS *params;
+struct SFTKPSSVerifyInfoStr {
+    size_t size; /* must be first */
+    CK_RSA_PKCS_PSS_PARAMS params;
     NSSLOWKEYPublicKey *key;
 };
 
-struct SFTKOAEPDecryptInfoStr {
-    CK_RSA_PKCS_OAEP_PARAMS *params;
+struct SFTKPSSSignInfoStr {
+    size_t size; /* must be first */
+    CK_RSA_PKCS_PSS_PARAMS params;
     NSSLOWKEYPrivateKey *key;
+};
+
+/**
+ * Contexts for RSA-OAEP
+ */
+struct SFTKOAEPInfoStr {
+    CK_RSA_PKCS_OAEP_PARAMS params;
+    PRBool isEncrypt;
+    union {
+        NSSLOWKEYPublicKey *pub;
+        NSSLOWKEYPrivateKey *priv;
+    } key;
 };
 
 /* context for the Final SSLMAC message */
 struct SFTKSSLMACInfoStr {
+    size_t size; /* must be first */
     void *hashContext;
     SFTKBegin begin;
     SFTKHash update;
@@ -481,6 +502,8 @@ struct SFTKItemTemplateStr {
 /* slot helper macros */
 #define sftk_SlotFromSession(sp) ((sp)->slot)
 #define sftk_isToken(id) (((id)&SFTK_TOKEN_MASK) == SFTK_TOKEN_MAGIC)
+#define sftk_isFIPS(id) \
+    (((id) == FIPS_SLOT_ID) || ((id) >= SFTK_MIN_FIPS_USER_SLOT_ID))
 
 /* the session hash multiplier (see bug 201081) */
 #define SHMULTIPLIER 1791398085
@@ -674,6 +697,7 @@ struct sftk_MACCtxStr {
 typedef struct sftk_MACCtxStr sftk_MACCtx;
 
 extern CK_NSS_MODULE_FUNCTIONS sftk_module_funcList;
+extern CK_NSS_FIPS_FUNCTIONS sftk_fips_funcList;
 
 SEC_BEGIN_PROTOS
 
@@ -747,6 +771,7 @@ extern CK_RV sftk_DeleteObject(SFTKSession *session, SFTKObject *object);
 extern void sftk_ReferenceObject(SFTKObject *object);
 extern SFTKObject *sftk_ObjectFromHandle(CK_OBJECT_HANDLE handle,
                                          SFTKSession *session);
+extern CK_OBJECT_HANDLE sftk_getNextHandle(SFTKSlot *slot);
 extern void sftk_AddSlotObject(SFTKSlot *slot, SFTKObject *object);
 extern void sftk_AddObject(SFTKSession *session, SFTKObject *object);
 /* clear out all the existing object ID to database key mappings.
@@ -768,7 +793,11 @@ extern SFTKSlot *sftk_SlotFromSessionHandle(CK_SESSION_HANDLE handle);
 extern CK_SLOT_ID sftk_SlotIDFromSessionHandle(CK_SESSION_HANDLE handle);
 extern SFTKSession *sftk_SessionFromHandle(CK_SESSION_HANDLE handle);
 extern void sftk_FreeSession(SFTKSession *session);
+extern void sftk_ClearSession(SFTKSession *session);
 extern void sftk_DestroySession(SFTKSession *session);
+extern CK_RV sftk_InitSession(SFTKSession *session, SFTKSlot *slot,
+                              CK_SLOT_ID slotID, CK_NOTIFY notify,
+                              CK_VOID_PTR pApplication, CK_FLAGS flags);
 extern SFTKSession *sftk_NewSession(CK_SLOT_ID slotID, CK_NOTIFY notify,
                                     CK_VOID_PTR pApplication, CK_FLAGS flags);
 extern void sftk_update_state(SFTKSlot *slot, SFTKSession *session);
@@ -780,6 +809,7 @@ extern void sftk_CleanupFreeLists(void);
  * Helper functions to handle the session crypto contexts
  */
 extern CK_RV sftk_InitGeneric(SFTKSession *session,
+                              CK_MECHANISM *pMechanism,
                               SFTKSessionContext **contextPtr,
                               SFTKContextType ctype, SFTKObject **keyPtr,
                               CK_OBJECT_HANDLE hKey, CK_KEY_TYPE *keyTypePtr,
@@ -900,7 +930,7 @@ HASH_HashType sftk_HMACMechanismToHash(CK_MECHANISM_TYPE mech);
 CK_RV sftk_MAC_Create(CK_MECHANISM_TYPE mech, SFTKObject *key, sftk_MACCtx **ret_ctx);
 CK_RV sftk_MAC_Init(sftk_MACCtx *ctx, CK_MECHANISM_TYPE mech, SFTKObject *key);
 CK_RV sftk_MAC_InitRaw(sftk_MACCtx *ctx, CK_MECHANISM_TYPE mech, const unsigned char *key, unsigned int key_len, PRBool isFIPS);
-CK_RV sftk_MAC_Update(sftk_MACCtx *ctx, CK_BYTE_PTR data, unsigned int data_len);
+CK_RV sftk_MAC_Update(sftk_MACCtx *ctx, const CK_BYTE *data, unsigned int data_len);
 CK_RV sftk_MAC_Finish(sftk_MACCtx *ctx, CK_BYTE_PTR result, unsigned int *result_len, unsigned int max_result_len);
 CK_RV sftk_MAC_Reset(sftk_MACCtx *ctx);
 void sftk_MAC_Destroy(sftk_MACCtx *ctx, PRBool free_it);
@@ -912,7 +942,31 @@ CK_RV sftk_CheckCBCPadding(CK_BYTE_PTR pBuf, unsigned int bufLen,
 
 /* NIST 800-108 (kbkdf.c) implementations */
 extern CK_RV kbkdf_Dispatch(CK_MECHANISM_TYPE mech, CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism, SFTKObject *base_key, SFTKObject *ret_key, CK_ULONG keySize);
+extern SECStatus sftk_fips_SP800_108_PowerUpSelfTests(void);
+
+/* export the HKDF function for use in PowerupSelfTests */
+CK_RV sftk_HKDF(CK_HKDF_PARAMS_PTR params, CK_SESSION_HANDLE hSession,
+                SFTKObject *sourceKey, const unsigned char *sourceKeyBytes,
+                int sourceKeyLen, SFTKObject *key,
+                unsigned char *outKeyBytes, int keySize,
+                PRBool canBeData, PRBool isFIPS);
+
 char **NSC_ModuleDBFunc(unsigned long function, char *parameters, void *args);
+
+/* dh verify functions */
+/* verify that dhPrime matches one of our known primes, and if so return
+ * it's subprime value */
+const SECItem *sftk_VerifyDH_Prime(SECItem *dhPrime, PRBool isFIPS);
+/* check if dhSubPrime claims dhPrime is a safe prime. */
+SECStatus sftk_IsSafePrime(SECItem *dhPrime, SECItem *dhSubPrime, PRBool *isSafe);
+/* map an operation Attribute to a Mechanism flag */
+CK_FLAGS sftk_AttributeToFlags(CK_ATTRIBUTE_TYPE op);
+/* check the FIPS table to determine if this current operation is allowed by
+ * FIPS security policy */
+PRBool sftk_operationIsFIPS(SFTKSlot *slot, CK_MECHANISM *mech,
+                            CK_ATTRIBUTE_TYPE op, SFTKObject *source);
+/* add validation objects to the slot */
+CK_RV sftk_CreateValidationObjects(SFTKSlot *slot);
 
 SEC_END_PROTOS
 

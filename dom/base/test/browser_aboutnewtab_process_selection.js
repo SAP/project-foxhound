@@ -1,7 +1,6 @@
 const TEST_URL = "http://www.example.com/browser/dom/base/test/dummy.html";
 const TEST_URL_2 = "http://example.org/browser/dom/base/test/dummy.html";
 const PRELOADED_STATE = "preloaded";
-const CONSUMED_STATE = "consumed";
 
 var ppmm = Services.ppmm;
 
@@ -11,6 +10,7 @@ add_task(async function() {
     set: [
       ["dom.ipc.processPrelaunch.enabled", false],
       ["dom.ipc.processCount", 10],
+      ["dom.ipc.processCount.webIsolated", 10],
       ["dom.ipc.keepProcessesAlive.web", 10],
     ],
   });
@@ -59,9 +59,8 @@ add_task(async function() {
 
   // Navigate to the same content page from the child side.
   //
-  // We already have a content process for TEST_URL, so we don't create a new
-  // one when Fission is enabled.
-  expectedChildCount += gFissionBrowser ? 0 : 1;
+  // We should create a new content process.
+  expectedChildCount += 1;
   await BrowserTestUtils.switchTab(gBrowser, tabs[1]);
   await SpecialPowers.spawn(tabs[1].linkedBrowser, [TEST_URL], url => {
     content.location.href = url;
@@ -70,14 +69,12 @@ add_task(async function() {
   is(
     ppmm.childCount,
     expectedChildCount,
-    `Navigating away from the preloaded browser (child side, same-origin) should${
-      gFissionBrowser ? " not " : " "
-    }create a new content process.`
+    "Navigating away from the preloaded browser (child side, same-origin) should create a new content process."
   );
 
   // Navigate to a new content page from the child side.
   //
-  // We should create a new content process, with or without Fission.
+  // We should create a new content process.
   expectedChildCount += 1;
   await BrowserTestUtils.switchTab(gBrowser, tabs[2]);
   await ContentTask.spawn(tabs[2].linkedBrowser, TEST_URL_2, url => {
@@ -122,13 +119,10 @@ add_task(async function preloaded_state_attribute() {
   await BrowserTestUtils.maybeCreatePreloadedBrowser(gBrowser);
 
   // Now check that the tabs have the correct browser attributes set
-  let consumedTabState = gBrowser.selectedBrowser.getAttribute(
-    "preloadedState"
-  );
   is(
-    consumedTabState,
-    CONSUMED_STATE,
-    "The opened tab consumed the preloaded browser and updated the attribute"
+    gBrowser.selectedBrowser.hasAttribute("preloadedState"),
+    false,
+    "The opened tab consumed the preloaded browser and removed the attribute"
   );
 
   preloadedTabState = gBrowser.preloadedBrowser.getAttribute("preloadedState");
@@ -136,21 +130,6 @@ add_task(async function preloaded_state_attribute() {
     preloadedTabState,
     PRELOADED_STATE,
     "The preloaded browser has the correct attribute"
-  );
-
-  // Navigate away and check that the attribute has been removed altogether
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, TEST_URL);
-  await BrowserTestUtils.browserLoaded(
-    gBrowser.selectedBrowser,
-    false,
-    TEST_URL
-  );
-  let navigatedTabHasState = gBrowser.selectedBrowser.hasAttribute(
-    "preloadedState"
-  );
-  ok(
-    !navigatedTabHasState,
-    "Correctly removed the preloadState attribute when navigating away"
   );
 
   // Remove tabs and preloaded browsers

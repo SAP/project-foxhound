@@ -89,6 +89,11 @@ interface nsINetUtil : nsISupports
       %XX-escape all others */
   const unsigned long ESCAPE_URL_PATH = 4;
 
+  /** Additional encoding for Apple's NSURL compatibility.
+      Like XALPHAS, but leave '%' to avoid double encoding, '+', and '/'.
+      %XX-escape all others */
+  const unsigned long ESCAPE_URL_APPLE_EXTRA = 8;
+
   /**
    * escape a string with %00-style escaping
    */
@@ -151,6 +156,9 @@ interface nsINetUtil : nsISupports
 
   /** Skip C0 and DEL from unescaping */
   const unsigned long ESCAPE_URL_SKIP_CONTROL = 1 << 15;
+
+  /** %XX-escape external protocol handler URL */
+  const unsigned long ESCAPE_URL_EXT_HANDLER = 1 << 17;
 
   /**
    * %XX-Escape invalid chars in a URL segment.

@@ -92,6 +92,12 @@ const processes = {
       ignoreIfUnused: true,
       stat: 1,
     },
+    {
+      path: "*ShaderCache*", // Bug 1660480 - seen on hardware
+      condition: WIN,
+      ignoreIfUnused: true,
+      stat: 3,
+    },
   ],
   "Privileged Content": [
     {
@@ -310,16 +316,16 @@ add_task(async function() {
         continue;
       }
 
-      // Convert to lower case before comparing because the OS X test machines
-      // have the 'Firefox' folder in 'Library/Application Support' created
-      // as 'firefox' for some reason.
-      let filename = marker.filename.toLowerCase();
-
-      if (!filename) {
+      if (!marker.filename) {
         // We are still missing the filename on some mainthreadio markers,
         // these markers are currently useless for the purpose of this test.
         continue;
       }
+
+      // Convert to lower case before comparing because the OS X test machines
+      // have the 'Firefox' folder in 'Library/Application Support' created
+      // as 'firefox' for some reason.
+      let filename = marker.filename.toLowerCase();
 
       if (!WIN && filename == "/dev/urandom") {
         continue;
@@ -328,6 +334,14 @@ add_task(async function() {
       // /dev/shm is always tmpfs (a memory filesystem); this isn't
       // really I/O any more than mmap/munmap are.
       if (LINUX && filename.startsWith("/dev/shm/")) {
+        continue;
+      }
+
+      // "Files" from memfd_create() are similar to tmpfs but never
+      // exist in the filesystem; however, they have names which are
+      // exposed in procfs, and the I/O interposer observes when
+      // they're close()d.
+      if (LINUX && filename.startsWith("/memfd:")) {
         continue;
       }
 
@@ -426,12 +440,8 @@ add_task(async function() {
     let path = Cc["@mozilla.org/process/environment;1"]
       .getService(Ci.nsIEnvironment)
       .get("MOZ_UPLOAD_DIR");
-    let encoder = new TextEncoder();
-    let profilePath = OS.Path.join(path, filename);
-    await OS.File.writeAtomic(
-      profilePath,
-      encoder.encode(JSON.stringify(startupRecorder.data.profile))
-    );
+    let profilePath = PathUtils.join(path, filename);
+    await IOUtils.writeJSON(profilePath, startupRecorder.data.profile);
     ok(
       false,
       "Unexpected main thread I/O behavior during child process startup; " +

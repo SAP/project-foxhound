@@ -1,39 +1,51 @@
-//! Futures
+//! Asynchronous values.
 //!
-//! This module contains a number of functions for working with `Future`s,
-//! including the [`FutureExt`] trait and the [`TryFutureExt`] trait which add
-//! methods to `Future` types.
+//! This module contains:
+//!
+//! - The [`Future`] trait.
+//! - The [`FutureExt`] and [`TryFutureExt`] trait, which provides adapters for
+//!   chaining and composing futures.
+//! - Top-level future combinators like [`lazy`](lazy()) which creates a future
+//!   from a closure that defines its return value, and [`ready`](ready()),
+//!   which constructs a future with an immediate defined value.
+
+#[doc(no_inline)]
+pub use core::future::Future;
 
 #[cfg(feature = "alloc")]
 pub use futures_core::future::{BoxFuture, LocalBoxFuture};
-pub use futures_core::future::{FusedFuture, Future, TryFuture};
+pub use futures_core::future::{FusedFuture, TryFuture};
 pub use futures_task::{FutureObj, LocalFutureObj, UnsafeFutureObj};
 
 // Extension traits and combinators
-
 #[allow(clippy::module_inception)]
 mod future;
 pub use self::future::{
-    Flatten, FlattenStream, Fuse, FutureExt, Inspect, IntoStream, Map, NeverError, Then, UnitError,
+    Flatten, Fuse, FutureExt, Inspect, IntoStream, Map, MapInto, NeverError, Then, UnitError,
 };
+
+#[deprecated(note = "This is now an alias for [Flatten](Flatten)")]
+pub use self::future::FlattenStream;
 
 #[cfg(feature = "std")]
 pub use self::future::CatchUnwind;
 
 #[cfg(feature = "channel")]
+#[cfg_attr(docsrs, doc(cfg(feature = "channel")))]
 #[cfg(feature = "std")]
 pub use self::future::{Remote, RemoteHandle};
 
 #[cfg(feature = "std")]
-pub use self::future::Shared;
+pub use self::future::{Shared, WeakShared};
 
 mod try_future;
 pub use self::try_future::{
-    AndThen, ErrInto, InspectErr, InspectOk, IntoFuture, MapErr, MapOk, OrElse, TryFlattenStream,
-    TryFutureExt, UnwrapOrElse,
+    AndThen, ErrInto, InspectErr, InspectOk, IntoFuture, MapErr, MapOk, MapOkOrElse, OkInto,
+    OrElse, TryFlatten, TryFlattenStream, TryFutureExt, UnwrapOrElse,
 };
 
 #[cfg(feature = "sink")]
+#[cfg_attr(docsrs, doc(cfg(feature = "sink")))]
 pub use self::try_future::FlattenSink;
 
 // Primitive futures
@@ -46,6 +58,9 @@ pub use self::pending::{pending, Pending};
 
 mod maybe_done;
 pub use self::maybe_done::{maybe_done, MaybeDone};
+
+mod try_maybe_done;
+pub use self::try_maybe_done::{try_maybe_done, TryMaybeDone};
 
 mod option;
 pub use self::option::OptionFuture;
@@ -97,12 +112,14 @@ cfg_target_has_atomic! {
     #[cfg(feature = "alloc")]
     mod abortable;
     #[cfg(feature = "alloc")]
-    pub use self::abortable::{abortable, Abortable, AbortHandle, AbortRegistration, Aborted};
+    pub use crate::abortable::{Abortable, AbortHandle, AbortRegistration, Aborted};
+    #[cfg(feature = "alloc")]
+    pub use abortable::abortable;
 }
 
 // Just a helper function to ensure the futures we're returning all have the
 // right implementations.
-fn assert_future<T, F>(future: F) -> F
+pub(crate) fn assert_future<T, F>(future: F) -> F
 where
     F: Future<Output = T>,
 {

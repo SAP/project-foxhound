@@ -17,34 +17,16 @@
 #define TLS_EARLY_DATA_AVAILABLE_BUT_NOT_USED 1
 #define TLS_EARLY_DATA_AVAILABLE_AND_USED 2
 
-#define ESNI_SUCCESSFUL 0
-#define ESNI_FAILED 1
-#define NO_ESNI_SUCCESSFUL 2
-#define NO_ESNI_FAILED 3
-
 #include "ASpdySession.h"
-#include "mozilla/ChaosMode.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Telemetry.h"
 #include "HttpConnectionUDP.h"
 #include "nsHttpHandler.h"
-#include "nsHttpRequestHead.h"
-#include "nsHttpResponseHead.h"
-#include "nsIClassOfService.h"
-#include "nsIOService.h"
-#include "nsISocketTransport.h"
-#include "nsSocketTransportService2.h"
-#include "nsISSLSocketControl.h"
-#include "nsISupportsPriority.h"
-#include "nsPreloadedStream.h"
-#include "nsProxyRelease.h"
-#include "nsSocketTransport2.h"
-#include "nsStringStream.h"
-#include "mozpkix/pkixnss.h"
-#include "sslt.h"
-#include "NSSErrorsService.h"
-#include "TunnelUtils.h"
-#include "TCPFastOpenLayer.h"
 #include "Http3Session.h"
+#include "nsComponentManagerUtils.h"
+#include "nsISocketProvider.h"
+#include "nsNetAddr.h"
+#include "nsINetAddr.h"
 
 namespace mozilla {
 namespace net {
@@ -53,40 +35,12 @@ namespace net {
 // HttpConnectionUDP <public>
 //-----------------------------------------------------------------------------
 
-HttpConnectionUDP::HttpConnectionUDP()
-    : mHttpHandler(gHttpHandler),
-      mLastReadTime(0),
-      mLastWriteTime(0),
-      mTotalBytesRead(0),
-      mContentBytesWritten(0),
-      mConnectedTransport(false),
-      mDontReuse(false),
-      mIsReused(false),
-      mLastTransactionExpectedNoContent(false),
-      mPriority(nsISupportsPriority::PRIORITY_NORMAL),
-      mForceSendPending(false),
-      mLastRequestBytesSentTime(0) {
+HttpConnectionUDP::HttpConnectionUDP() : mHttpHandler(gHttpHandler) {
   LOG(("Creating HttpConnectionUDP @%p\n", this));
-
-  mThroughCaptivePortal = gHttpHandler->GetThroughCaptivePortal();
 }
 
 HttpConnectionUDP::~HttpConnectionUDP() {
   LOG(("Destroying HttpConnectionUDP @%p\n", this));
-
-  if (mThroughCaptivePortal) {
-    if (mTotalBytesRead || mTotalBytesWritten) {
-      auto total =
-          Clamp<uint32_t>((mTotalBytesRead >> 10) + (mTotalBytesWritten >> 10),
-                          0, std::numeric_limits<uint32_t>::max());
-      Telemetry::ScalarAdd(
-          Telemetry::ScalarID::NETWORKING_DATA_TRANSFERRED_CAPTIVE_PORTAL,
-          total);
-    }
-
-    Telemetry::ScalarAdd(
-        Telemetry::ScalarID::NETWORKING_HTTP_CONNECTIONS_CAPTIVE_PORTAL, 1);
-  }
 
   if (mForceSendTimer) {
     mForceSendTimer->Cancel();
@@ -94,35 +48,111 @@ HttpConnectionUDP::~HttpConnectionUDP() {
   }
 }
 
-nsresult HttpConnectionUDP::Init(
-    nsHttpConnectionInfo* info, uint16_t maxHangTime,
-    nsISocketTransport* transport, nsIAsyncInputStream* instream,
-    nsIAsyncOutputStream* outstream, bool connectedTransport,
-    nsIInterfaceRequestor* callbacks, PRIntervalTime rtt) {
-  LOG1(("HttpConnectionUDP::Init this=%p sockettransport=%p", this, transport));
+nsresult HttpConnectionUDP::Init(nsHttpConnectionInfo* info,
+                                 nsIDNSRecord* dnsRecord, nsresult status,
+                                 nsIInterfaceRequestor* callbacks,
+                                 uint32_t caps) {
+  LOG1(("HttpConnectionUDP::Init this=%p", this));
   NS_ENSURE_ARG_POINTER(info);
   NS_ENSURE_TRUE(!mConnInfo, NS_ERROR_ALREADY_INITIALIZED);
+  MOZ_ASSERT(dnsRecord || NS_FAILED(status));
 
-  mConnectedTransport = connectedTransport;
   mConnInfo = info;
   MOZ_ASSERT(mConnInfo);
-
-  mLastWriteTime = mLastReadTime = PR_IntervalNow();
-  mRtt = rtt;
-
-  mSocketTransport = transport;
-  mSocketIn = instream;
-  mSocketOut = outstream;
-
   MOZ_ASSERT(mConnInfo->IsHttp3());
+
+  mErrorBeforeConnect = status;
+  mAlpnToken = mConnInfo->GetNPNToken();
+  if (NS_FAILED(mErrorBeforeConnect)) {
+    // See explanation for non-strictness of this operation in
+    // SetSecurityCallbacks.
+    mCallbacks = new nsMainThreadPtrHolder<nsIInterfaceRequestor>(
+        "HttpConnectionUDP::mCallbacks", callbacks, false);
+    return mErrorBeforeConnect;
+  }
+
+  nsCOMPtr<nsIDNSAddrRecord> dnsAddrRecord = do_QueryInterface(dnsRecord);
+  MOZ_ASSERT(dnsAddrRecord);
+  if (!dnsAddrRecord) {
+    return NS_ERROR_FAILURE;
+  }
+  dnsAddrRecord->IsTRR(&mResolvedByTRR);
+  NetAddr peerAddr;
+  nsresult rv = dnsAddrRecord->GetNextAddr(mConnInfo->GetRoutedHost().IsEmpty()
+                                               ? mConnInfo->OriginPort()
+                                               : mConnInfo->RoutedPort(),
+                                           &peerAddr);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  mSocket = do_CreateInstance("@mozilla.org/network/udp-socket;1", &rv);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  // We need an address here so that we can convey the IP version of the
+  // socket.
+  NetAddr local;
+  memset(&local, 0, sizeof(local));
+  local.raw.family = peerAddr.raw.family;
+  rv = mSocket->InitWithAddress(&local, nullptr, false, 1);
+  if (NS_FAILED(rv)) {
+    mSocket = nullptr;
+    return rv;
+  }
+
+  rv = mSocket->SetRecvBufferSize(
+      StaticPrefs::network_http_http3_recvBufferSize());
+  if (NS_FAILED(rv)) {
+    LOG(("HttpConnectionUDP::Init SetRecvBufferSize failed %d [this=%p]",
+         static_cast<uint32_t>(rv), this));
+    mSocket->Close();
+    mSocket = nullptr;
+    return rv;
+  }
+
+  if (peerAddr.raw.family == AF_INET) {
+    rv = mSocket->SetDontFragment(true);
+    if (NS_FAILED(rv)) {
+      LOG(("HttpConnectionUDP::Init SetDontFragment failed %d [this=%p]",
+           static_cast<uint32_t>(rv), this));
+    }
+  }
+
+  // get the resulting socket address.
+  rv = mSocket->GetLocalAddr(getter_AddRefs(mSelfAddr));
+  if (NS_FAILED(rv)) {
+    mSocket->Close();
+    mSocket = nullptr;
+    return rv;
+  }
+
+  uint32_t controlFlags = 0;
+  if (caps & NS_HTTP_LOAD_ANONYMOUS) {
+    controlFlags |= nsISocketProvider::ANONYMOUS_CONNECT;
+  }
+  if (mConnInfo->GetPrivate()) {
+    controlFlags |= nsISocketProvider::NO_PERMANENT_STORAGE;
+  }
+  if (((caps & NS_HTTP_BE_CONSERVATIVE) || mConnInfo->GetBeConservative()) &&
+      gHttpHandler->ConnMgr()->BeConservativeIfProxied(
+          mConnInfo->ProxyInfo())) {
+    controlFlags |= nsISocketProvider::BE_CONSERVATIVE;
+  }
+
+  mPeerAddr = new nsNetAddr(&peerAddr);
   mHttp3Session = new Http3Session();
-  nsresult rv = mHttp3Session->Init(
-      mConnInfo->GetOrigin(), mConnInfo->GetNPNToken(), mSocketTransport, this);
+  rv = mHttp3Session->Init(mConnInfo, mSelfAddr, mPeerAddr, this, controlFlags,
+                           callbacks);
   if (NS_FAILED(rv)) {
     LOG(
         ("HttpConnectionUDP::Init mHttp3Session->Init failed "
          "[this=%p rv=%x]\n",
          this, static_cast<uint32_t>(rv)));
+    mSocket->Close();
+    mSocket = nullptr;
+    mHttp3Session = nullptr;
     return rv;
   }
 
@@ -131,8 +161,14 @@ nsresult HttpConnectionUDP::Init(
   mCallbacks = new nsMainThreadPtrHolder<nsIInterfaceRequestor>(
       "HttpConnectionUDP::mCallbacks", callbacks, false);
 
-  mSocketTransport->SetEventSink(this, nullptr);
-  mSocketTransport->SetSecurityCallbacks(this);
+  // Call SyncListen at the end of this function. This call will actually
+  // attach the sockte to SocketTransportService.
+  rv = mSocket->SyncListen(this);
+  if (NS_FAILED(rv)) {
+    mSocket->Close();
+    mSocket = nullptr;
+    return rv;
+  }
 
   return NS_OK;
 }
@@ -145,10 +181,10 @@ nsresult HttpConnectionUDP::Activate(nsAHttpTransaction* trans, uint32_t caps,
         caps));
 
   if (!mExperienced && !trans->IsNullTransaction()) {
-    // For QUIC and TFO we have HttpConnecitonUDP before the actual connection
-    // has been establish so wait fo TFO and TLS handshake to be finished before
+    // For QUIC we have HttpConnecitonUDP before the actual connection
+    // has been establish so wait for TLS handshake to be finished before
     // we mark the connection 'experienced'.
-    if (!mExperienced && mHttp3Session->IsConnected()) {
+    if (!mExperienced && mHttp3Session && mHttp3Session->IsConnected()) {
       mExperienced = true;
     }
     if (mBootstrappedTimingsSet) {
@@ -166,26 +202,14 @@ nsresult HttpConnectionUDP::Activate(nsAHttpTransaction* trans, uint32_t caps,
 
   NS_ENSURE_ARG_POINTER(trans);
 
-  // reset the read timers to wash away any idle time
-  mLastWriteTime = mLastReadTime = PR_IntervalNow();
-
   // Connection failures are Activated() just like regular transacions.
   // If we don't have a confirmation of a connected socket then test it
   // with a write() to get relevant error code.
-  if (!mConnectedTransport) {
-    uint32_t count;
-    nsresult rv = NS_OK;
-    if (mSocketOut) {
-      rv = mSocketOut->Write("", 0, &count);
-    }
-    if (NS_FAILED(rv) && rv != NS_BASE_STREAM_WOULD_BLOCK) {
-      LOG(("HttpConnectionUDP::Activate [this=%p] Bad Socket %" PRIx32 "\n",
-           this, static_cast<uint32_t>(rv)));
-      mSocketOut->AsyncWait(nullptr, 0, 0, nullptr);
-      CloseTransaction(mHttp3Session, rv);
-      trans->Close(rv);
-      return rv;
-    }
+  if (NS_FAILED(mErrorBeforeConnect)) {
+    CloseTransaction(nullptr, mErrorBeforeConnect);
+    trans->Close(mErrorBeforeConnect);
+    gHttpHandler->ExcludeHttp3(mConnInfo);
+    return mErrorBeforeConnect;
   }
 
   if (!mHttp3Session->AddStream(trans, pri, mCallbacks)) {
@@ -216,18 +240,9 @@ void HttpConnectionUDP::Close(nsresult reason, bool aIsShutdown) {
       MOZ_ASSERT(mTrafficCategory.IsEmpty());
     }
   }
-
-  if (mSocketTransport) {
-    mSocketTransport->SetEventSink(nullptr, nullptr);
-    mSocketTransport->SetSecurityCallbacks(nullptr);
-    mSocketTransport->Close(reason);
-    if (mSocketOut) {
-      mSocketOut->AsyncWait(nullptr, 0, 0, nullptr);
-    }
-
-    if (mSocketIn) {
-      mSocketIn->AsyncWait(nullptr, 0, 0, nullptr);
-    }
+  if (mSocket) {
+    mSocket->Close();
+    mSocket = nullptr;
   }
 }
 
@@ -259,7 +274,9 @@ bool HttpConnectionUDP::JoinConnection(const nsACString& hostname,
 }
 
 bool HttpConnectionUDP::CanReuse() {
-  if (!mSocketTransport || !mConnectedTransport) return false;
+  if (NS_FAILED(mErrorBeforeConnect)) {
+    return false;
+  }
   if (mDontReuse) {
     return false;
   }
@@ -298,11 +315,9 @@ nsresult HttpConnectionUDP::OnHeadersAvailable(nsAHttpTransaction* trans,
   NS_ENSURE_ARG_POINTER(trans);
   MOZ_ASSERT(responseHead, "No response head?");
 
-  if (mHttp3Session) {
-    DebugOnly<nsresult> rv = responseHead->SetHeader(
-        nsHttp::X_Firefox_Http3, mHttp3Session->GetAlpnToken());
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
-  }
+  DebugOnly<nsresult> rv =
+      responseHead->SetHeader(nsHttp::X_Firefox_Http3, mAlpnToken);
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
 
   // deal with 408 Server Timeouts
   uint16_t responseStatus = responseHead->Status();
@@ -312,7 +327,8 @@ nsresult HttpConnectionUDP::OnHeadersAvailable(nsAHttpTransaction* trans,
     // we pass an error code of NS_ERROR_NET_RESET to
     // trigger the transaction 'restart' mechanism.  We tell it to reset its
     // response headers so that it will be ready to receive the new response.
-    if (mIsReused && ((PR_IntervalNow() - mLastWriteTime) < k1000ms)) {
+    if (mIsReused &&
+        ((PR_IntervalNow() - mHttp3Session->LastWriteTime()) < k1000ms)) {
       Close(NS_ERROR_NET_RESET);
       *reset = true;
       return NS_OK;
@@ -332,16 +348,11 @@ nsresult HttpConnectionUDP::TakeTransport(
 
 void HttpConnectionUDP::GetSecurityInfo(nsISupports** secinfo) {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
-  LOG(("HttpConnectionUDP::GetSecurityInfo http3Session=%p socket=%p\n",
-       mHttp3Session.get(), mSocketTransport.get()));
+  LOG(("HttpConnectionUDP::GetSecurityInfo http3Session=%p\n",
+       mHttp3Session.get()));
 
   if (mHttp3Session &&
       NS_SUCCEEDED(mHttp3Session->GetTransactionSecurityInfo(secinfo))) {
-    return;
-  }
-
-  if (mSocketTransport &&
-      NS_SUCCEEDED(mSocketTransport->GetSecurityInfo(secinfo))) {
     return;
   }
 
@@ -365,17 +376,13 @@ class HttpConnectionUDPForceIO : public Runnable {
     MOZ_ASSERT(OnSocketThread(), "not on socket thread");
 
     if (mDoRecv) {
-      if (!mConn->mSocketIn) return NS_OK;
-      return mConn->OnInputStreamReady(mConn->mSocketIn);
+      return mConn->RecvData();
     }
 
     MOZ_ASSERT(mConn->mForceSendPending);
     mConn->mForceSendPending = false;
 
-    if (!mConn->mSocketOut) {
-      return NS_OK;
-    }
-    return mConn->OnOutputStreamReady(mConn->mSocketOut);
+    return mConn->SendData();
   }
 
  private:
@@ -385,39 +392,15 @@ class HttpConnectionUDPForceIO : public Runnable {
 
 nsresult HttpConnectionUDP::ResumeSend() {
   LOG(("HttpConnectionUDP::ResumeSend [this=%p]\n", this));
-
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
-
-  if (mSocketOut) {
-    nsresult rv = mSocketOut->AsyncWait(this, 0, 0, nullptr);
-    LOG(("HttpConnectionUDP::ResumeSend [this=%p]\n", this));
-    return rv;
-  }
-
-  MOZ_ASSERT_UNREACHABLE("no socket output stream");
-  return NS_ERROR_UNEXPECTED;
+  RefPtr<HttpConnectionUDP> self(this);
+  NS_DispatchToCurrentThread(
+      NS_NewRunnableFunction("HttpConnectionUDP::CallSendData",
+                             [self{std::move(self)}]() { self->SendData(); }));
+  return NS_OK;
 }
 
-nsresult HttpConnectionUDP::ResumeRecv() {
-  LOG(("HttpConnectionUDP::ResumeRecv [this=%p]\n", this));
-
-  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
-
-  // the mLastReadTime timestamp is used for finding slowish readers
-  // and can be pretty sensitive. For that reason we actually reset it
-  // when we ask to read (resume recv()) so that when we get called back
-  // with actual read data in OnSocketReadable() we are only measuring
-  // the latency between those two acts and not all the processing that
-  // may get done before the ResumeRecv() call
-  mLastReadTime = PR_IntervalNow();
-
-  if (mSocketIn) {
-    return mSocketIn->AsyncWait(this, 0, 0, nullptr);
-  }
-
-  MOZ_ASSERT_UNREACHABLE("no socket input stream");
-  return NS_ERROR_UNEXPECTED;
-}
+nsresult HttpConnectionUDP::ResumeRecv() { return NS_OK; }
 
 void HttpConnectionUDP::ForceSendIO(nsITimer* aTimer, void* aClosure) {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
@@ -516,78 +499,6 @@ void HttpConnectionUDP::CloseTransaction(nsAHttpTransaction* trans,
   mIsReused = true;
 }
 
-nsresult HttpConnectionUDP::OnReadSegment(const char* buf, uint32_t count,
-                                          uint32_t* countRead) {
-  LOG(("HttpConnectionUDP::OnReadSegment [this=%p]\n", this));
-  if (count == 0) {
-    // some ReadSegments implementations will erroneously call the writer
-    // to consume 0 bytes worth of data.  we must protect against this case
-    // or else we'd end up closing the socket prematurely.
-    NS_ERROR("bad ReadSegments implementation");
-    return NS_ERROR_FAILURE;  // stop iterating
-  }
-
-  nsresult rv = mSocketOut->Write(buf, count, countRead);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  if (*countRead == 0) {
-    return NS_BASE_STREAM_CLOSED;
-  }
-
-  mLastWriteTime = PR_IntervalNow();
-  mTotalBytesWritten += *countRead;
-
-  return NS_OK;
-}
-
-nsresult HttpConnectionUDP::OnSocketWritable() {
-  LOG(("HttpConnectionUDP::OnSocketWritable [this=%p] host=%s\n", this,
-       mConnInfo->Origin()));
-
-  if (!mHttp3Session) {
-    LOG(("  No session In OnSocketWritable\n"));
-    return NS_ERROR_FAILURE;
-  }
-
-  uint32_t transactionBytes = 0;
-  bool again = true;
-  LOG(("  writing transaction request stream\n"));
-  nsresult rv = mHttp3Session->ReadSegmentsAgain(
-      this, nsIOService::gDefaultSegmentSize, &transactionBytes, &again);
-  mContentBytesWritten += transactionBytes;
-  return rv;
-}
-
-nsresult HttpConnectionUDP::OnWriteSegment(char* buf, uint32_t count,
-                                           uint32_t* countWritten) {
-  if (count == 0) {
-    // some WriteSegments implementations will erroneously call the reader
-    // to provide 0 bytes worth of data.  we must protect against this case
-    // or else we'd end up closing the socket prematurely.
-    NS_ERROR("bad WriteSegments implementation");
-    return NS_ERROR_FAILURE;  // stop iterating
-  }
-
-  if (ChaosMode::isActive(ChaosFeature::IOAmounts) &&
-      ChaosMode::randomUint32LessThan(2)) {
-    // read 1...count bytes
-    count = ChaosMode::randomUint32LessThan(count) + 1;
-  }
-
-  nsresult rv = mSocketIn->Read(buf, count, countWritten);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  if (*countWritten == 0) {
-    return NS_BASE_STREAM_CLOSED;
-  }
-
-  return NS_OK;
-}
-
 void HttpConnectionUDP::OnQuicTimeout(nsITimer* aTimer, void* aClosure) {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
   LOG(("HttpConnectionUDP::OnQuicTimeout [this=%p]\n", aClosure));
@@ -603,41 +514,10 @@ void HttpConnectionUDP::OnQuicTimeoutExpired() {
     return;
   }
 
-  nsresult rv = mHttp3Session->ProcessOutputAndEvents();
+  nsresult rv = mHttp3Session->ProcessOutputAndEvents(mSocket);
   if (NS_FAILED(rv)) {
     CloseTransaction(mHttp3Session, rv);
   }
-}
-
-nsresult HttpConnectionUDP::OnSocketReadable() {
-  LOG(("HttpConnectionUDP::OnSocketReadable [this=%p]\n", this));
-
-  if (!mHttp3Session) {
-    LOG(("  No session In OnSocketReadable\n"));
-    return NS_ERROR_FAILURE;
-  }
-
-  PRIntervalTime now = PR_IntervalNow();
-
-  // Reduce the estimate of the time since last read by up to 1 RTT to
-  // accommodate exhausted sender TCP congestion windows or minor I/O delays.
-  mLastReadTime = now;
-
-  uint32_t n = 0;
-  bool again = true;
-
-  nsresult rv = mHttp3Session->WriteSegmentsAgain(
-      this, nsIOService::gDefaultSegmentSize, &n, &again);
-  LOG(("HttpConnectionUDP::OnSocketReadable %p trans->ws rv=%" PRIx32
-       " n=%d \n",
-       this, static_cast<uint32_t>(rv), n));
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  mTotalBytesRead += n;
-
-  return rv;
 }
 
 //-----------------------------------------------------------------------------
@@ -649,64 +529,47 @@ NS_IMPL_RELEASE(HttpConnectionUDP)
 
 NS_INTERFACE_MAP_BEGIN(HttpConnectionUDP)
   NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
-  NS_INTERFACE_MAP_ENTRY(nsIInputStreamCallback)
-  NS_INTERFACE_MAP_ENTRY(nsIOutputStreamCallback)
-  NS_INTERFACE_MAP_ENTRY(nsITransportEventSink)
+  NS_INTERFACE_MAP_ENTRY(nsIUDPSocketSyncListener)
   NS_INTERFACE_MAP_ENTRY(nsIInterfaceRequestor)
   NS_INTERFACE_MAP_ENTRY(HttpConnectionBase)
   NS_INTERFACE_MAP_ENTRY_CONCRETE(HttpConnectionUDP)
 NS_INTERFACE_MAP_END
 
-//-----------------------------------------------------------------------------
-// HttpConnectionUDP::nsIInputStreamCallback
-//-----------------------------------------------------------------------------
+// called on the socket transport thread
+nsresult HttpConnectionUDP::RecvData() {
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+
+  // if the transaction was dropped...
+  if (!mHttp3Session) {
+    LOG(("  no Http3Session; ignoring event\n"));
+    return NS_OK;
+  }
+
+  nsresult rv = mHttp3Session->RecvData(mSocket);
+  LOG(("HttpConnectionUDP::OnInputReady %p rv=%" PRIx32, this,
+       static_cast<uint32_t>(rv)));
+
+  if (NS_FAILED(rv)) CloseTransaction(mHttp3Session, rv);
+
+  return NS_OK;
+}
 
 // called on the socket transport thread
-NS_IMETHODIMP
-HttpConnectionUDP::OnInputStreamReady(nsIAsyncInputStream* in) {
-  MOZ_ASSERT(in == mSocketIn, "unexpected stream");
+nsresult HttpConnectionUDP::SendData() {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
 
   // if the transaction was dropped...
   if (!mHttp3Session) {
-    LOG(("  no transaction; ignoring event\n"));
+    LOG(("  no Http3Session; ignoring event\n"));
     return NS_OK;
   }
 
-  nsresult rv = OnSocketReadable();
+  nsresult rv = mHttp3Session->SendData(mSocket);
+  LOG(("HttpConnectionUDP::OnInputReady %p rv=%" PRIx32, this,
+       static_cast<uint32_t>(rv)));
+
   if (NS_FAILED(rv)) CloseTransaction(mHttp3Session, rv);
 
-  return NS_OK;
-}
-
-//-----------------------------------------------------------------------------
-// HttpConnectionUDP::nsIOutputStreamCallback
-//-----------------------------------------------------------------------------
-
-NS_IMETHODIMP
-HttpConnectionUDP::OnOutputStreamReady(nsIAsyncOutputStream* out) {
-  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
-  MOZ_ASSERT(out == mSocketOut, "unexpected socket");
-  // if the transaction was dropped...
-  if (!mHttp3Session) {
-    LOG(("  no transaction; ignoring event\n"));
-    return NS_OK;
-  }
-
-  nsresult rv = OnSocketWritable();
-  if (NS_FAILED(rv)) CloseTransaction(mHttp3Session, rv);
-
-  return NS_OK;
-}
-
-//-----------------------------------------------------------------------------
-// HttpConnectionUDP::nsITransportEventSink
-//-----------------------------------------------------------------------------
-
-NS_IMETHODIMP
-HttpConnectionUDP::OnTransportStatus(nsITransport* trans, nsresult status,
-                                     int64_t progress, int64_t progressMax) {
-  if (mHttp3Session) mHttp3Session->OnTransportStatus(trans, status, progress);
   return NS_OK;
 }
 
@@ -748,15 +611,9 @@ void HttpConnectionUDP::SetEvent(nsresult aStatus) {
     case NS_NET_STATUS_CONNECTING_TO:
       mBootstrappedTimings.connectStart = TimeStamp::Now();
       break;
-    case NS_NET_STATUS_CONNECTED_TO: {
-      TimeStamp tnow = TimeStamp::Now();
-      mBootstrappedTimings.tcpConnectEnd = tnow;
-      mBootstrappedTimings.connectEnd = tnow;
-      if (!mBootstrappedTimings.secureConnectionStart.IsNull()) {
-        mBootstrappedTimings.secureConnectionStart = tnow;
-      }
+    case NS_NET_STATUS_CONNECTED_TO:
+      mBootstrappedTimings.connectEnd = TimeStamp::Now();
       break;
-    }
     case NS_NET_STATUS_TLS_HANDSHAKE_STARTING:
       mBootstrappedTimings.secureConnectionStart = TimeStamp::Now();
       break;
@@ -781,6 +638,40 @@ void HttpConnectionUDP::SetLastTransactionExpectedNoContent(bool val) {
 bool HttpConnectionUDP::IsPersistent() { return !mDontReuse; }
 
 nsAHttpTransaction* HttpConnectionUDP::Transaction() { return mHttp3Session; }
+
+int64_t HttpConnectionUDP::BytesWritten() {
+  if (!mHttp3Session) {
+    return 0;
+  }
+  return mHttp3Session->GetBytesWritten();
+}
+
+NS_IMETHODIMP HttpConnectionUDP::OnPacketReceived(nsIUDPSocket* aSocket) {
+  RecvData();
+  return NS_OK;
+}
+
+NS_IMETHODIMP HttpConnectionUDP::OnStopListening(nsIUDPSocket* aSocket,
+                                                 nsresult aStatus) {
+  CloseTransaction(mHttp3Session, aStatus);
+  return NS_OK;
+}
+
+nsresult HttpConnectionUDP::GetSelfAddr(NetAddr* addr) {
+  if (mSelfAddr) {
+    return mSelfAddr->GetNetAddr(addr);
+  }
+  return NS_ERROR_FAILURE;
+}
+
+nsresult HttpConnectionUDP::GetPeerAddr(NetAddr* addr) {
+  if (mPeerAddr) {
+    return mPeerAddr->GetNetAddr(addr);
+  }
+  return NS_ERROR_FAILURE;
+}
+
+bool HttpConnectionUDP::ResolvedByTRR() { return mResolvedByTRR; }
 
 }  // namespace net
 }  // namespace mozilla

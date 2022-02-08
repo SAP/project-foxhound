@@ -9,7 +9,9 @@
 #include "mozilla/dom/BlobSet.h"
 #include "mozilla/dom/FileBinding.h"
 #include "mozilla/dom/UnionTypes.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIMultiplexInputStream.h"
+#include "nsReadableUtils.h"
 #include "nsRFPService.h"
 #include "nsStringStream.h"
 #include "nsTArray.h"
@@ -55,7 +57,7 @@ void MultipartBlobImpl::CreateInputStream(nsIInputStream** aStream,
 
   uint32_t length = mBlobImpls.Length();
   if (length == 0 || mLength == 0) {
-    aRv = NS_NewCStringInputStream(aStream, EmptyCString());
+    aRv = NS_NewCStringInputStream(aStream, ""_ns);
     return;
   }
 
@@ -319,16 +321,13 @@ size_t MultipartBlobImpl::GetAllocationSize(
 void MultipartBlobImpl::GetBlobImplType(nsAString& aBlobImplType) const {
   aBlobImplType.AssignLiteral("MultipartBlobImpl[");
 
-  for (uint32_t i = 0; i < mBlobImpls.Length(); ++i) {
-    if (i != 0) {
-      aBlobImplType.AppendLiteral(", ");
-    }
+  StringJoinAppend(aBlobImplType, u", "_ns, mBlobImpls,
+                   [](nsAString& dest, BlobImpl* subBlobImpl) {
+                     nsAutoString blobImplType;
+                     subBlobImpl->GetBlobImplType(blobImplType);
 
-    nsAutoString blobImplType;
-    mBlobImpls[i]->GetBlobImplType(blobImplType);
-
-    aBlobImplType.Append(blobImplType);
-  }
+                     dest.Append(blobImplType);
+                   });
 
   aBlobImplType.AppendLiteral("]");
 }

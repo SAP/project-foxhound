@@ -2,47 +2,30 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
 import { PureComponent } from "react";
 
 import { toEditorPosition, getTokenEnd } from "../../utils/editor";
 
 import { getIndentation } from "../../utils/indentation";
 
-import type { SourceDocuments, Exception as Exc } from "../../types";
-
-type Props = {
-  exception: Exc,
-  doc: SourceDocuments,
-};
-
-type MarkText = {
-  clear: Function,
-};
-
-export default class Exception extends PureComponent<Props> {
-  exceptionLine: ?number;
-  markText: ?MarkText;
+export default class Exception extends PureComponent {
+  exceptionLine;
+  markText;
 
   componentDidMount() {
-    this.addEditionExceptionLine();
+    this.addEditorExceptionLine();
   }
 
   componentDidUpdate() {
     this.clearEditorExceptionLine();
-    this.addEditionExceptionLine();
+    this.addEditorExceptionLine();
   }
 
   componentWillUnmount() {
     this.clearEditorExceptionLine();
   }
 
-  setEditorExceptionLine(
-    doc: SourceDocuments,
-    line: number,
-    column: number,
-    lineText: string
-  ) {
+  setEditorExceptionLine(doc, line, column, lineText) {
     doc.addLineClass(line, "wrapClass", "line-exception");
 
     column = Math.max(column, getIndentation(lineText));
@@ -58,14 +41,14 @@ export default class Exception extends PureComponent<Props> {
     this.markText = markText;
   }
 
-  addEditionExceptionLine() {
-    const { exception, doc } = this.props;
-    const { columnNumber, lineNumber, fileName } = exception;
+  addEditorExceptionLine() {
+    const { exception, doc, selectedSourceId } = this.props;
+    const { columnNumber, lineNumber } = exception;
 
     const location = {
       column: columnNumber - 1,
       line: lineNumber,
-      sourceId: fileName,
+      sourceId: selectedSourceId,
     };
 
     const { line, column } = toEditorPosition(location);

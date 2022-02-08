@@ -17,8 +17,6 @@
 
 class gfxContext;
 class gfxDrawable;
-class nsDisplayList;
-class nsDisplayListBuilder;
 class nsIFrame;
 struct nsPoint;
 struct nsRect;
@@ -33,14 +31,12 @@ struct WrFiltersHolder {
 };
 
 namespace mozilla {
+class nsDisplayList;
+class nsDisplayListBuilder;
 
 namespace gfx {
 class DrawTarget;
 }  // namespace gfx
-
-namespace layers {
-class LayerManager;
-}  // namespace layers
 
 /**
  * Integration of SVG effects (clipPath clipping, masking and filters) into
@@ -151,10 +147,9 @@ class SVGIntegrationUtils final {
   struct MOZ_STACK_CLASS PaintFramesParams {
     gfxContext& ctx;
     nsIFrame* frame;
-    const nsRect& dirtyRect;
-    const nsRect& borderArea;
+    nsRect dirtyRect;
+    nsRect borderArea;
     nsDisplayListBuilder* builder;
-    layers::LayerManager* layerManager;
     bool handleOpacity;  // If true, PaintMaskAndClipPath/ PaintFilter should
                          // apply css opacity.
     Maybe<gfx::Rect> maskRect;
@@ -164,7 +159,6 @@ class SVGIntegrationUtils final {
                                const nsRect& aDirtyRect,
                                const nsRect& aBorderArea,
                                nsDisplayListBuilder* aBuilder,
-                               layers::LayerManager* aLayerManager,
                                bool aHandleOpacity,
                                imgDrawingParams& aImgParams)
         : ctx(aCtx),
@@ -172,15 +166,9 @@ class SVGIntegrationUtils final {
           dirtyRect(aDirtyRect),
           borderArea(aBorderArea),
           builder(aBuilder),
-          layerManager(aLayerManager),
           handleOpacity(aHandleOpacity),
           imgParams(aImgParams) {}
   };
-
-  /**
-   * Paint non-SVG frame with mask, clipPath and opacity effect.
-   */
-  static void PaintMaskAndClipPath(const PaintFramesParams& aParams);
 
   // This should use FunctionRef instead of std::function because we don't need
   // to take ownership of the function. See bug 1490781.
@@ -199,14 +187,26 @@ class SVGIntegrationUtils final {
                         bool& aOutIsMaskComplete);
 
   /**
-   * Return true if all the mask resource of aFrame are ready.
+   * Paint the frame contents.
+   * SVG frames will have had matrix propagation set to false already.
+   * Non-SVG frames have to do their own thing.
+   * The caller will do a Save()/Restore() as necessary so feel free
+   * to mess with context state.
+   * The context will be configured to use the "user space" coordinate
+   * system.
+   * @param aDirtyRect the dirty rect *in user space pixels*
+   * @param aTransformRoot the outermost frame whose transform should be taken
+   *                       into account when painting an SVG glyph
    */
-  static bool IsMaskResourceReady(nsIFrame* aFrame);
+  using SVGFilterPaintCallback = std::function<void(
+      gfxContext& aContext, nsIFrame* aTarget, const gfxMatrix& aTransform,
+      const nsIntRect* aDirtyRect, image::imgDrawingParams& aImgParams)>;
 
   /**
    * Paint non-SVG frame with filter and opacity effect.
    */
-  static void PaintFilter(const PaintFramesParams& aParams);
+  static void PaintFilter(const PaintFramesParams& aParams,
+                          const SVGFilterPaintCallback& aCallback);
 
   /**
    * Build WebRender filters for a frame with CSS filters applied to it.
@@ -222,7 +222,8 @@ class SVGIntegrationUtils final {
   static bool BuildWebRenderFilters(nsIFrame* aFilteredFrame,
                                     Span<const StyleFilter> aFilters,
                                     WrFiltersHolder& aWrFilters,
-                                    Maybe<nsRect>& aPostFilterClip);
+                                    Maybe<nsRect>& aPostFilterClip,
+                                    bool& aInitialized);
 
   /**
    * Check if the filters present on |aFrame| are supported by WebRender.
@@ -268,6 +269,13 @@ class SVGIntegrationUtils final {
    * For SVG frames, this returns a zero offset.
    */
   static nsPoint GetOffsetToBoundingBox(nsIFrame* aFrame);
+
+  /**
+   * The offset between the reference frame and the bounding box of the
+   * target frame in device units.
+   */
+  static gfxPoint GetOffsetToUserSpaceInDevPx(nsIFrame* aFrame,
+                                              const PaintFramesParams& aParams);
 };
 
 }  // namespace mozilla

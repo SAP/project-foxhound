@@ -14,13 +14,14 @@ add_task(async function flush_on_tabclose() {
   let browser = tab.linkedBrowser;
 
   await modifySessionStorage(browser, { test: "on-tab-close" });
+  await TabStateFlusher.flush(browser);
   await promiseRemoveTabAndSessionState(tab);
 
   let [
     {
       state: { storage },
     },
-  ] = JSON.parse(ss.getClosedTabData(window));
+  ] = ss.getClosedTabData(window);
   is(
     storage["http://example.com"].test,
     "on-tab-close",
@@ -45,7 +46,7 @@ add_task(async function flush_on_duplicate() {
     {
       state: { storage },
     },
-  ] = JSON.parse(ss.getClosedTabData(window));
+  ] = ss.getClosedTabData(window);
   is(
     storage["http://example.com"].test,
     "on-duplicate",
@@ -71,7 +72,7 @@ add_task(async function flush_on_windowclose() {
     {
       tabs: [, { storage }],
     },
-  ] = JSON.parse(ss.getClosedWindowData());
+  ] = ss.getClosedWindowData();
   is(
     storage["http://example.com"].test,
     "on-window-close",
@@ -132,7 +133,7 @@ add_task(async function flush_on_tabclose_racy() {
     {
       state: { storage },
     },
-  ] = JSON.parse(ss.getClosedTabData(window));
+  ] = ss.getClosedTabData(window);
   is(
     storage["http://example.com"].test,
     "on-tab-close-racy",

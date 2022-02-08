@@ -28,8 +28,7 @@ class MediaDrmCDMProxy : public CDMProxy {
 
   MediaDrmCDMProxy(dom::MediaKeys* aKeys, const nsAString& aKeySystem,
                    bool aDistinctiveIdentifierRequired,
-                   bool aPersistentStateRequired,
-                   nsISerialEventTarget* aMainThread);
+                   bool aPersistentStateRequired);
 
   void Init(PromiseId aPromiseId, const nsAString& aOrigin,
             const nsAString& aTopLevelOrigin,
@@ -53,6 +52,12 @@ class MediaDrmCDMProxy : public CDMProxy {
 
   void RemoveSession(const nsAString& aSessionId,
                      PromiseId aPromiseId) override;
+
+  void QueryOutputProtectionStatus() override;
+
+  void NotifyOutputProtectionStatus(
+      OutputProtectionCheckStatus aCheckStatus,
+      OutputProtectionCaptureStatus aCaptureStatus) override;
 
   void Shutdown() override;
 

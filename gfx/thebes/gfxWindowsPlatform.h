@@ -6,12 +6,6 @@
 #ifndef GFX_WINDOWS_PLATFORM_H
 #define GFX_WINDOWS_PLATFORM_H
 
-/**
- * XXX to get CAIRO_HAS_DWRITE_FONT
- * and cairo_win32_scaled_font_select_font
- */
-#include "cairo-win32.h"
-
 #include "gfxCrashReporterUtils.h"
 #include "gfxFontUtils.h"
 #include "gfxWindowsSurface.h"
@@ -23,7 +17,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Atomics.h"
 #include "nsTArray.h"
-#include "nsDataHashtable.h"
 
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
@@ -48,9 +41,6 @@ class DrawTarget;
 class FeatureState;
 class DeviceManagerDx;
 }  // namespace gfx
-namespace layers {
-class ReadbackManagerD3D11;
-}
 }  // namespace mozilla
 struct IDirect3DDevice9;
 struct ID3D11Device;
@@ -108,7 +98,7 @@ class gfxWindowsPlatform final : public gfxPlatform {
   void EnsureDevicesInitialized() override;
   bool DevicesInitialized() override;
 
-  gfxPlatformFontList* CreatePlatformFontList() override;
+  bool CreatePlatformFontList() override;
 
   virtual already_AddRefed<gfxASurface> CreateOffscreenSurface(
       const IntSize& aSize, gfxImageFormat aFormat) override;
@@ -148,7 +138,8 @@ class gfxWindowsPlatform final : public gfxPlatform {
    */
   void VerifyD2DDevice(bool aAttemptForce);
 
-  void GetCommonFallbackFonts(uint32_t aCh, uint32_t aNextCh, Script aRunScript,
+  void GetCommonFallbackFonts(uint32_t aCh, Script aRunScript,
+                              eFontPresentation aPresentation,
                               nsTArray<const char*>& aFontList) override;
 
   bool CanUseHardwareVideoDecoding() override;
@@ -172,21 +163,14 @@ class gfxWindowsPlatform final : public gfxPlatform {
 
   void FontsPrefsChanged(const char* aPref) override;
 
-  void SetupClearTypeParams();
-
   static inline bool DWriteEnabled() {
     return !!mozilla::gfx::Factory::GetDWriteFactory();
   }
-  inline DWRITE_MEASURING_MODE DWriteMeasuringMode() { return mMeasuringMode; }
-
-  IDWriteRenderingParams* GetRenderingParams(TextRenderingMode aRenderMode) {
-    return mRenderingParams[aRenderMode];
-  }
 
  public:
-  bool DwmCompositionEnabled();
+  static nsresult GetGpuTimeSinceProcessStartInMs(uint64_t* aResult);
 
-  mozilla::layers::ReadbackManagerD3D11* GetReadbackManager();
+  bool DwmCompositionEnabled();
 
   static bool IsOptimus();
 
@@ -207,11 +191,12 @@ class gfxWindowsPlatform final : public gfxPlatform {
   static void RecordContentDeviceFailure(
       mozilla::gfx::TelemetryDeviceCode aDevice);
 
+  static void InitMemoryReportersForGPUProcess();
+
  protected:
   bool AccelerateLayersByDefault() override { return true; }
-  void GetAcceleratedCompositorBackends(
-      nsTArray<mozilla::layers::LayersBackend>& aBackends) override;
   nsTArray<uint8_t> GetPlatformCMSOutputProfileData() override;
+  void GetPlatformDisplayInfo(mozilla::widget::InfoObject& aObj) override;
 
   void ImportGPUDeviceData(const mozilla::gfx::GPUDeviceData& aData) override;
   void ImportContentDeviceData(
@@ -240,7 +225,7 @@ class gfxWindowsPlatform final : public gfxPlatform {
   void InitializeD3D11();
   void InitializeD2D();
   bool InitDWriteSupport();
-  bool InitGPUProcessSupport();
+  void InitGPUProcessSupport();
 
   void DisableD2D(mozilla::gfx::FeatureStatus aStatus, const char* aMessage,
                   const nsACString& aFailureId);
@@ -250,14 +235,9 @@ class gfxWindowsPlatform final : public gfxPlatform {
   void InitializeD3D11Config();
   void InitializeD2DConfig();
   void InitializeDirectDrawConfig();
-  void InitializeAdvancedLayersConfig();
 
   void RecordStartupTelemetry();
 
-  RefPtr<IDWriteRenderingParams> mRenderingParams[TEXT_RENDERING_COUNT];
-  DWRITE_MEASURING_MODE mMeasuringMode;
-
-  RefPtr<mozilla::layers::ReadbackManagerD3D11> mD3D11ReadbackManager;
   bool mInitializedDevices = false;
 
   mozilla::Atomic<DwmCompositionStatus, mozilla::ReleaseAcquire>

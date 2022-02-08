@@ -29,8 +29,8 @@ registerCleanupFunction(function() {
   }
 });
 
-// NB: not using BrowserTestUtils.domWindowOpened here because there's no way to
-// undo waiting for a window open. If we don't want the window to be opened, and
+// NB: not using BrowserTestUtils.promiseAlertDialog here because there's no way to
+// undo waiting for a dialog. If we don't want the window to be opened, and
 // wait for it to verify that it indeed does not open, we need to be able to
 // then "stop" waiting so that when we next *do* want it to open, our "old"
 // listener doesn't fire and do things we don't want (like close the window...).
@@ -38,41 +38,64 @@ let gCaretPromptOpeningObserver;
 function promiseCaretPromptOpened() {
   return new Promise(resolve => {
     function observer(subject, topic, data) {
-      if (topic == "domwindowopened") {
-        Services.ww.unregisterNotification(observer);
-        let win = subject;
-        BrowserTestUtils.waitForEvent(
-          win,
-          "load",
-          false,
-          e => e.target.location.href != "about:blank"
-        ).then(() => resolve(win));
-        gCaretPromptOpeningObserver = null;
-      }
+      info("Dialog opened.");
+      resolve(subject);
+      gCaretPromptOpeningObserver();
     }
-    Services.ww.registerNotification(observer);
-    gCaretPromptOpeningObserver = observer;
+    Services.obs.addObserver(observer, "common-dialog-loaded");
+    gCaretPromptOpeningObserver = () => {
+      Services.obs.removeObserver(observer, "common-dialog-loaded");
+      gCaretPromptOpeningObserver = () => {};
+    };
   });
 }
 
-function hitF7(async = true) {
-  let f7 = () => EventUtils.sendKey("F7");
-  // Need to not stop execution inside this task:
-  if (async) {
-    executeSoon(f7);
-  } else {
-    f7();
-  }
+function hitF7() {
+  SimpleTest.executeSoon(() => EventUtils.synthesizeKey("KEY_F7"));
 }
 
-function syncToggleCaretNoDialog(expected) {
+async function toggleCaretNoDialog(expected) {
   let openedDialog = false;
   promiseCaretPromptOpened().then(function(win) {
     openedDialog = true;
     win.close(); // This will eventually return focus here and allow the test to continue...
   });
-  // Cause the dialog to appear sync, if it still does.
-  hitF7(false);
+  // Cause the dialog to appear synchronously when focused element is in chrome,
+  // otherwise, i.e., when focused element is in remote content, it appears
+  // asynchronously.
+  const focusedElementInChrome = Services.focus.focusedElement;
+  const isAsync = focusedElementInChrome?.isRemoteBrowser;
+  const waitForF7KeyHandled = new Promise(resolve => {
+    let eventCount = 0;
+    const expectedEventCount = isAsync ? 2 : 1;
+    let listener = async event => {
+      if (event.key == "F7") {
+        info("F7 keypress is fired");
+        if (++eventCount == expectedEventCount) {
+          window.removeEventListener("keypress", listener, {
+            capture: true,
+            mozSystemGroup: true,
+          });
+          // Wait for the event handled in chrome.
+          await TestUtils.waitForTick();
+          resolve();
+          return;
+        }
+        info(
+          "Waiting for next F7 keypress which is a reply event from the remote content"
+        );
+      }
+    };
+    info(
+      `Synthesizing "F7" key press and wait ${expectedEventCount} keypress events...`
+    );
+    window.addEventListener("keypress", listener, {
+      capture: true,
+      mozSystemGroup: true,
+    });
+  });
+  hitF7();
+  await waitForF7KeyHandled;
 
   let expectedStr = expected ? "on." : "off.";
   ok(
@@ -82,8 +105,7 @@ function syncToggleCaretNoDialog(expected) {
   // Need to clean up if the dialog wasn't opened, so the observer doesn't get
   // re-triggered later on causing "issues".
   if (!openedDialog) {
-    Services.ww.unregisterNotification(gCaretPromptOpeningObserver);
-    gCaretPromptOpeningObserver = null;
+    gCaretPromptOpeningObserver();
   }
   let prefVal = Services.prefs.getBoolPref(kPrefCaretBrowsingOn);
   is(prefVal, expected, "Caret browsing should now be " + expectedStr);
@@ -152,7 +174,7 @@ add_task(async function checkTogglingCaretBrowsing() {
     "Caret browsing should be on after accepting the dialog."
   );
 
-  syncToggleCaretNoDialog(false);
+  await toggleCaretNoDialog(false);
 
   promiseGotKey = promiseCaretPromptOpened();
   hitF7();
@@ -217,7 +239,7 @@ add_task(async function toggleCheckboxNoCaretBrowsing() {
     "Shortcut should now be disabled."
   );
 
-  syncToggleCaretNoDialog(false);
+  await toggleCaretNoDialog(false);
   ok(
     !Services.prefs.getBoolPref(kPrefShortcutEnabled),
     "Shortcut should still be disabled."
@@ -266,9 +288,9 @@ add_task(async function toggleCheckboxWantCaretBrowsing() {
     "Should no longer warn when enabling."
   );
 
-  syncToggleCaretNoDialog(false);
-  syncToggleCaretNoDialog(true);
-  syncToggleCaretNoDialog(false);
+  await toggleCaretNoDialog(false);
+  await toggleCaretNoDialog(true);
+  await toggleCaretNoDialog(false);
 
   Services.prefs.setBoolPref(kPrefShortcutEnabled, true);
   Services.prefs.setBoolPref(kPrefWarnOnEnable, true);

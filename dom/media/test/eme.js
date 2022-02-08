@@ -10,17 +10,6 @@ const gCencMediaKeySystemConfig = [
   },
 ];
 
-function IsMacOSSnowLeopardOrEarlier() {
-  var re = /Mac OS X (\d+)\.(\d+)/;
-  var ver = navigator.userAgent.match(re);
-  if (!ver || ver.length != 3) {
-    return false;
-  }
-  var major = ver[1] | 0;
-  var minor = ver[2] | 0;
-  return major == 10 && minor <= 6;
-}
-
 function bail(message) {
   return function(err) {
     if (err) {
@@ -448,23 +437,6 @@ function SetupEME(v, test, token) {
     .then(p.resolve, p.reject);
 
   return p.promise;
-}
-
-function SetupEMEPref(callback) {
-  var prefs = [
-    ["media.mediasource.enabled", true],
-    ["media.mediasource.webm.enabled", true],
-  ];
-
-  if (
-    SpecialPowers.Services.appinfo.name == "B2G" ||
-    !manifestVideo().canPlayType("video/mp4")
-  ) {
-    // XXX remove once we have mp4 PlatformDecoderModules on all platforms.
-    prefs.push(["media.use-blank-decoder", true]);
-  }
-
-  SpecialPowers.pushPrefEnv({ set: prefs }, callback);
 }
 
 function fetchWithXHR(uri, onLoadFunction) {

@@ -11,7 +11,7 @@
 #include "gfxFontEntry.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/UnscaledFontFreeType.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsHashKeys.h"
 
 class gfxFT2FontEntryBase : public gfxFontEntry {
@@ -26,6 +26,10 @@ class gfxFT2FontEntryBase : public gfxFontEntry {
   };
 
   CmapCacheSlot* GetCmapCacheSlot(uint32_t aCharCode);
+
+  static bool FaceHasTable(mozilla::gfx::SharedFTFace*, uint32_t aTableTag);
+  static nsresult CopyFaceTable(mozilla::gfx::SharedFTFace*, uint32_t aTableTag,
+                                nsTArray<uint8_t>&);
 
  private:
   enum { kNumCmapCacheSlots = 256 };
@@ -131,8 +135,7 @@ class gfxFT2FontBase : public gfxFont {
   const GlyphMetrics& GetCachedGlyphMetrics(
       uint16_t aGID, mozilla::gfx::IntRect* aBounds = nullptr);
 
-  mozilla::UniquePtr<nsDataHashtable<nsUint32HashKey, GlyphMetrics>>
-      mGlyphMetrics;
+  mozilla::UniquePtr<nsTHashMap<nsUint32HashKey, GlyphMetrics>> mGlyphMetrics;
 };
 
 // Helper classes used for clearing out user font data when FT font

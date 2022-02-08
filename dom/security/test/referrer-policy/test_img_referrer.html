@@ -57,7 +57,7 @@ function checkIndividualResults(aTestname, aExpectedImg, aName) {
           var results = xhr.response;
           info(JSON.stringify(xhr.response));
 
-          for (i in aName) {
+          for (let i in aName) {
             ok(aName[i] in results.tests, aName[i] + " tests have to be performed.");
             is(results.tests[aName[i]].policy, aExpectedImg[i], aTestname + ' --- ' + results.tests[aName[i]].policy + ' (' + results.tests[aName[i]].referrer + ')');
           }
@@ -83,6 +83,11 @@ function resetState() {
  * testing if img referrer attribute is honoured (1165501)
  */
 var tests = (function*() {
+
+  yield SpecialPowers.pushPrefEnv(
+    { set: [["network.http.referer.disallowCrossSiteRelaxingDefault", false]] },
+    advance
+  );
 
   var iframe = document.getElementById("testframe");
   var sjs = "/tests/dom/security/test/referrer-policy/img_referrer_testserver.sjs?action=generate-img-policy-test";
@@ -183,4 +188,3 @@ var tests = (function*() {
 
 </body>
 </html>
-

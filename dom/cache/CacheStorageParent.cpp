@@ -13,9 +13,7 @@
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/ipc/PBackgroundParent.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 using mozilla::dom::quota::QuotaManager;
 using mozilla::ipc::PBackgroundParent;
@@ -44,7 +42,7 @@ CacheStorageParent::CacheStorageParent(PBackgroundParent* aManagingActor,
   MOZ_DIAGNOSTIC_ASSERT(aManagingActor);
 
   // Start the async principal verification process immediately.
-  mVerifier = PrincipalVerifier::CreateAndDispatch(this, aManagingActor,
+  mVerifier = PrincipalVerifier::CreateAndDispatch(*this, aManagingActor,
                                                    aPrincipalInfo);
   MOZ_DIAGNOSTIC_ASSERT(mVerifier);
 }
@@ -56,7 +54,7 @@ CacheStorageParent::~CacheStorageParent() {
 
 void CacheStorageParent::ActorDestroy(ActorDestroyReason aReason) {
   if (mVerifier) {
-    mVerifier->RemoveListener(this);
+    mVerifier->RemoveListener(*this);
     mVerifier = nullptr;
   }
 }
@@ -91,7 +89,9 @@ mozilla::ipc::IPCResult CacheStorageParent::RecvPCacheOpConstructor(
 
   if (NS_WARN_IF(NS_FAILED(mVerifiedStatus))) {
     ErrorResult result(mVerifiedStatus);
-    Unused << CacheOpParent::Send__delete__(actor, std::move(result), void_t());
+
+    QM_WARNONLY_TRY(OkIf(
+        CacheOpParent::Send__delete__(actor, std::move(result), void_t())));
     return IPC_OK();
   }
 
@@ -101,10 +101,8 @@ mozilla::ipc::IPCResult CacheStorageParent::RecvPCacheOpConstructor(
 }
 
 mozilla::ipc::IPCResult CacheStorageParent::RecvTeardown() {
-  if (!Send__delete__(this)) {
-    // child process is gone, warn and allow actor to clean up normally
-    NS_WARNING("CacheStorage failed to delete actor.");
-  }
+  // If child process is gone, warn and allow actor to clean up normally
+  QM_WARNONLY_TRY(OkIf(Send__delete__(this)));
   return IPC_OK();
 }
 
@@ -119,10 +117,8 @@ void CacheStorageParent::OnPrincipalVerified(
   }
 
   mManagerId = aManagerId.clonePtr();
-  mVerifier->RemoveListener(this);
+  mVerifier->RemoveListener(*this);
   mVerifier = nullptr;
 }
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache

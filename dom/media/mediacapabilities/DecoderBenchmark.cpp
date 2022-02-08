@@ -189,8 +189,8 @@ RefPtr<BenchmarkScorePromise> DecoderBenchmark::Get(
                          KeyUtil::CreateKey(aBenchInfo));
 }
 
-static nsDataHashtable<nsCStringHashKey, int32_t> DecoderVersionTable() {
-  nsDataHashtable<nsCStringHashKey, int32_t> decoderVersionTable;
+static nsTHashMap<nsCStringHashKey, int32_t> DecoderVersionTable() {
+  nsTHashMap<nsCStringHashKey, int32_t> decoderVersionTable;
 
   /*
    * For the decoders listed here, the benchmark version number will be checked.
@@ -199,7 +199,7 @@ static nsDataHashtable<nsCStringHashKey, int32_t> DecoderVersionTable() {
    * will be erased. An example of assigning the version number `1` for AV1
    * decoder is:
    *
-   * decoderVersionTable.Put("video/av1"_ns, 1);
+   * decoderVersionTable.InsertOrUpdate("video/av1"_ns, 1);
    *
    * For the decoders not listed here the `CheckVersion` method exits early, to
    * avoid sending unecessary IPC messages.

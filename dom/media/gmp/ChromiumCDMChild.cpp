@@ -16,11 +16,11 @@
 #include "GMPUtils.h"
 #include "mozilla/ScopeExit.h"
 #include "CDMStorageIdProvider.h"
+#include "nsReadableUtils.h"
 
 #include <type_traits>
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 ChromiumCDMChild::ChromiumCDMChild(GMPContentChild* aPlugin)
     : mPlugin(aPlugin) {
@@ -106,15 +106,10 @@ class CDMShmemBuffer : public CDMBuffer {
   void operator=(const CDMShmemBuffer&);
 };
 
-static nsCString ToString(const nsTArray<ipc::Shmem>& aBuffers) {
-  nsCString s;
-  for (const ipc::Shmem& shmem : aBuffers) {
-    if (!s.IsEmpty()) {
-      s.AppendLiteral(",");
-    }
+static auto ToString(const nsTArray<ipc::Shmem>& aBuffers) {
+  return StringJoin(","_ns, aBuffers, [](auto& s, const ipc::Shmem& shmem) {
     s.AppendInt(static_cast<uint32_t>(shmem.Size<uint8_t>()));
-  }
-  return s;
+  });
 }
 
 cdm::Buffer* ChromiumCDMChild::Allocate(uint32_t aCapacity) {
@@ -273,19 +268,14 @@ void ChromiumCDMChild::OnSessionMessage(const char* aSessionId,
                           static_cast<uint32_t>(aMessageType), message);
 }
 
-static nsCString ToString(const cdm::KeyInformation* aKeysInfo,
-                          uint32_t aKeysInfoCount) {
-  nsCString str;
-  for (uint32_t i = 0; i < aKeysInfoCount; i++) {
-    if (!str.IsEmpty()) {
-      str.AppendLiteral(",");
-    }
-    const cdm::KeyInformation& key = aKeysInfo[i];
-    str.Append(ToHexString(key.key_id, key.key_id_size));
-    str.AppendLiteral("=");
-    str.AppendInt(key.status);
-  }
-  return str;
+static auto ToString(const cdm::KeyInformation* aKeysInfo,
+                     uint32_t aKeysInfoCount) {
+  return StringJoin(","_ns, Span{aKeysInfo, aKeysInfoCount},
+                    [](auto& str, const cdm::KeyInformation& key) {
+                      str.Append(ToHexString(key.key_id, key.key_id_size));
+                      str.AppendLiteral("=");
+                      str.AppendInt(key.status);
+                    });
 }
 
 void ChromiumCDMChild::OnSessionKeysChange(const char* aSessionId,
@@ -326,6 +316,13 @@ void ChromiumCDMChild::OnSessionClosed(const char* aSessionId,
   CallOnMessageLoopThread("gmp::ChromiumCDMChild::OnSessionClosed",
                           &ChromiumCDMChild::SendOnSessionClosed,
                           nsCString(aSessionId, aSessionIdSize));
+}
+
+void ChromiumCDMChild::QueryOutputProtectionStatus() {
+  GMP_LOG_DEBUG("ChromiumCDMChild::QueryOutputProtectionStatus()");
+  // We'll handle the response in `CompleteQueryOutputProtectionStatus`.
+  CallOnMessageLoopThread("gmp::ChromiumCDMChild::QueryOutputProtectionStatus",
+                          &ChromiumCDMChild::SendOnQueryOutputProtectionStatus);
 }
 
 void ChromiumCDMChild::OnInitialized(bool aSuccess) {
@@ -507,6 +504,26 @@ mozilla::ipc::IPCResult ChromiumCDMChild::RecvRemoveSession(
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult
+ChromiumCDMChild::RecvCompleteQueryOutputProtectionStatus(
+    const bool& aSuccess, const uint32_t& aLinkMask,
+    const uint32_t& aProtectionMask) {
+  MOZ_ASSERT(IsOnMessageLoopThread());
+  GMP_LOG_DEBUG(
+      "ChromiumCDMChild::RecvCompleteQueryOutputProtectionStatus(aSuccess=%s, "
+      "aLinkMask=%" PRIu32 ", aProtectionMask=%" PRIu32 ")",
+      aSuccess ? "true" : "false", aLinkMask, aProtectionMask);
+
+  if (mCDM) {
+    cdm::QueryResult queryResult = aSuccess ? cdm::QueryResult::kQuerySucceeded
+                                            : cdm::QueryResult::kQueryFailed;
+    mCDM->OnQueryOutputProtectionStatus(queryResult, aLinkMask,
+                                        aProtectionMask);
+  }
+
+  return IPC_OK();
+}
+
 mozilla::ipc::IPCResult ChromiumCDMChild::RecvGetStatusForPolicy(
     const uint32_t& aPromiseId, const cdm::HdcpVersion& aMinHdcpVersion) {
   MOZ_ASSERT(IsOnMessageLoopThread());
@@ -521,32 +538,15 @@ mozilla::ipc::IPCResult ChromiumCDMChild::RecvGetStatusForPolicy(
   return IPC_OK();
 }
 
-static cdm::EncryptionScheme ConvertToCdmEncryptionScheme(
-    const GMPEncryptionScheme& aEncryptionScheme) {
-  switch (aEncryptionScheme) {
-    case GMPEncryptionScheme::kGMPEncryptionNone:
-      return cdm::EncryptionScheme::kUnencrypted;
-    case GMPEncryptionScheme::kGMPEncryptionCenc:
-      return cdm::EncryptionScheme::kCenc;
-    case GMPEncryptionScheme::kGMPEncryptionCbcs:
-      return cdm::EncryptionScheme::kCbcs;
-    default:
-      MOZ_ASSERT_UNREACHABLE("Cannot convert invalid encryption scheme!");
-      return cdm::EncryptionScheme::kUnencrypted;
-  }
-}
-
 static void InitInputBuffer(const CDMInputBuffer& aBuffer,
                             nsTArray<cdm::SubsampleEntry>& aSubSamples,
                             cdm::InputBuffer_2& aInputBuffer) {
   aInputBuffer.data = aBuffer.mData().get<uint8_t>();
   aInputBuffer.data_size = aBuffer.mData().Size<uint8_t>();
 
-  if (aBuffer.mEncryptionScheme() > GMPEncryptionScheme::kGMPEncryptionNone) {
-    MOZ_ASSERT(aBuffer.mEncryptionScheme() ==
-                   GMPEncryptionScheme::kGMPEncryptionCenc ||
-               aBuffer.mEncryptionScheme() ==
-                   GMPEncryptionScheme::kGMPEncryptionCbcs);
+  if (aBuffer.mEncryptionScheme() != cdm::EncryptionScheme::kUnencrypted) {
+    MOZ_ASSERT(aBuffer.mEncryptionScheme() == cdm::EncryptionScheme::kCenc ||
+               aBuffer.mEncryptionScheme() == cdm::EncryptionScheme::kCbcs);
     aInputBuffer.key_id = aBuffer.mKeyId().Elements();
     aInputBuffer.key_id_size = aBuffer.mKeyId().Length();
 
@@ -560,8 +560,7 @@ static void InitInputBuffer(const CDMInputBuffer& aBuffer,
     }
     aInputBuffer.subsamples = aSubSamples.Elements();
     aInputBuffer.num_subsamples = aSubSamples.Length();
-    aInputBuffer.encryption_scheme =
-        ConvertToCdmEncryptionScheme(aBuffer.mEncryptionScheme());
+    aInputBuffer.encryption_scheme = aBuffer.mEncryptionScheme();
   }
   aInputBuffer.pattern.crypt_byte_block = aBuffer.mCryptByteBlock();
   aInputBuffer.pattern.skip_byte_block = aBuffer.mSkipByteBlock();
@@ -666,8 +665,7 @@ mozilla::ipc::IPCResult ChromiumCDMChild::RecvInitializeVideoDecoder(
   nsTArray<uint8_t> extraData(aConfig.mExtraData().Clone());
   config.extra_data = extraData.Elements();
   config.extra_data_size = extraData.Length();
-  config.encryption_scheme =
-      ConvertToCdmEncryptionScheme(aConfig.mEncryptionScheme());
+  config.encryption_scheme = aConfig.mEncryptionScheme();
   cdm::Status status = mCDM->InitializeVideoDecoder(config);
   GMP_LOG_DEBUG("ChromiumCDMChild::RecvInitializeVideoDecoder() status=%u",
                 status);
@@ -853,5 +851,4 @@ void ChromiumCDMChild::GiveBuffer(ipc::Shmem&& aBuffer) {
       sz, ToString(mBuffers).get(), mDecoderInitialized);
 }
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp

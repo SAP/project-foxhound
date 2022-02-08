@@ -5,8 +5,10 @@
 // except according to those terms.
 
 #![allow(dead_code)]
+#![allow(clippy::upper_case_acronyms)]
 
 use std::os::raw::c_char;
+use std::str::Utf8Error;
 
 use crate::ssl::{SECStatus, SECSuccess};
 
@@ -27,12 +29,13 @@ pub mod nspr {
 pub type Res<T> = Result<T, Error>;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd, Ord, Eq)]
-#[allow(clippy::pub_enum_variant_names)]
+#[allow(renamed_and_removed_lints, clippy::pub_enum_variant_names)] // rust 1.54 will require a different approach
 pub enum Error {
     AeadInitFailure,
     AeadError,
     CertificateLoading,
     CreateSslSocket,
+    EchRetry(Vec<u8>),
     HkdfError,
     InternalError,
     IntegerOverflow,
@@ -46,9 +49,16 @@ pub enum Error {
     },
     OverrunError,
     SelfEncryptFailure,
+    StringError,
     TimeTravelError,
     UnsupportedCipher,
     UnsupportedVersion,
+}
+
+impl Error {
+    pub(crate) fn last_nss_error() -> Self {
+        Self::from(unsafe { PR_GetError() })
+    }
 }
 
 impl std::error::Error for Error {
@@ -80,6 +90,21 @@ impl From<std::ffi::NulError> for Error {
         Self::InternalError
     }
 }
+impl From<Utf8Error> for Error {
+    fn from(_: Utf8Error) -> Self {
+        Self::StringError
+    }
+}
+impl From<PRErrorCode> for Error {
+    fn from(code: PRErrorCode) -> Self {
+        let name = wrap_str_fn(|| unsafe { PR_ErrorToName(code) }, "UNKNOWN_ERROR");
+        let desc = wrap_str_fn(
+            || unsafe { PR_ErrorToString(code, PR_LANGUAGE_I_DEFAULT) },
+            "...",
+        );
+        Self::NssError { name, code, desc }
+    }
+}
 
 use std::ffi::CStr;
 
@@ -98,16 +123,10 @@ where
 
 pub fn secstatus_to_res(rv: SECStatus) -> Res<()> {
     if rv == SECSuccess {
-        return Ok(());
+        Ok(())
+    } else {
+        Err(Error::last_nss_error())
     }
-
-    let code = unsafe { PR_GetError() };
-    let name = wrap_str_fn(|| unsafe { PR_ErrorToName(code) }, "UNKNOWN_ERROR");
-    let desc = wrap_str_fn(
-        || unsafe { PR_ErrorToString(code, PR_LANGUAGE_I_DEFAULT) },
-        "...",
-    );
-    Err(Error::NssError { name, code, desc })
 }
 
 pub fn is_blocked(result: &Res<()>) -> bool {
@@ -126,7 +145,9 @@ mod tests {
     fn set_error_code(code: PRErrorCode) {
         // This code doesn't work without initializing NSS first.
         fixture_init();
-        unsafe { PR_SetError(code, 0) };
+        unsafe {
+            PR_SetError(code, 0);
+        }
     }
 
     #[test]

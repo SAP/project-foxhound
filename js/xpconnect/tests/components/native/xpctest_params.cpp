@@ -28,7 +28,7 @@ NS_IMPL_ISUPPORTS(nsXPCTestParams, nsIXPCTestParams)
 
 #define SEQUENCE_METHOD_IMPL(TAKE_OWNERSHIP)                        \
   {                                                                 \
-    _retval.SwapElements(b);                                        \
+    _retval = std::move(b);                                         \
     b = a.Clone();                                                  \
     for (uint32_t i = 0; i < b.Length(); ++i) TAKE_OWNERSHIP(b[i]); \
     return NS_OK;                                                   \
@@ -196,6 +196,13 @@ NS_IMETHODIMP nsXPCTestParams::TestDoubleArray(uint32_t aLength, double* a,
                                                uint32_t* rvLength,
                                                double** rv) {
   BUFFER_METHOD_IMPL(double, 0, TAKE_OWNERSHIP_NOOP);
+}
+
+NS_IMETHODIMP nsXPCTestParams::TestByteArrayOptionalLength(uint8_t* a,
+                                                           uint32_t aLength,
+                                                           uint32_t* rv) {
+  *rv = aLength;
+  return NS_OK;
 }
 
 NS_IMETHODIMP nsXPCTestParams::TestStringArray(uint32_t aLength, const char** a,

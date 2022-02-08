@@ -18,6 +18,7 @@
 #include "imgICache.h"
 #include "imgIContainer.h"
 #include "imgIEncoder.h"
+#include "nsComponentManagerUtils.h"
 #include "nsNetUtil.h"  // for NS_NewBufferedInputStream
 #include "nsStreamUtils.h"
 #include "nsStringStream.h"
@@ -33,6 +34,7 @@
 #include "js/ArrayBuffer.h"
 #include "js/RootingAPI.h"  // JS::{Handle,Rooted}
 #include "js/Value.h"       // JS::Value
+#include "Orientation.h"
 
 using namespace mozilla::gfx;
 
@@ -101,8 +103,8 @@ class ImageDecoderListener final : public nsIStreamListener,
       }
     }
 
-    return mImage->OnImageDataAvailable(aRequest, nullptr, aInputStream,
-                                        aOffset, aCount);
+    return mImage->OnImageDataAvailable(aRequest, aInputStream, aOffset,
+                                        aCount);
   }
 
   NS_IMETHOD
@@ -116,7 +118,7 @@ class ImageDecoderListener final : public nsIStreamListener,
       return NS_OK;
     }
 
-    mImage->OnImageDataComplete(aRequest, nullptr, aStatus, true);
+    mImage->OnImageDataComplete(aRequest, aStatus, true);
     nsCOMPtr<imgIContainer> container = this;
     mCallback->OnImageReady(container, aStatus);
     return NS_OK;
@@ -186,7 +188,7 @@ class ImageDecoderHelper final : public Runnable,
     // operation.
     if (NS_IsMainThread()) {
       // Let the Image know we've sent all the data.
-      mImage->OnImageDataComplete(nullptr, nullptr, mStatus, true);
+      mImage->OnImageDataComplete(nullptr, mStatus, true);
 
       RefPtr<ProgressTracker> tracker = mImage->GetProgressTracker();
       tracker->SyncNotifyProgress(FLAG_LOAD_COMPLETE);
@@ -229,7 +231,7 @@ class ImageDecoderHelper final : public Runnable,
     }
 
     // Send the source data to the Image.
-    rv = mImage->OnImageDataAvailable(nullptr, nullptr, mInputStream, 0,
+    rv = mImage->OnImageDataAvailable(nullptr, mInputStream, 0,
                                       uint32_t(length));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return OperationCompleted(rv);
@@ -304,11 +306,17 @@ imgTools::DecodeImageFromArrayBuffer(JS::Handle<JS::Value> aArrayBuffer,
   }
 
   uint8_t* bufferData = nullptr;
-  uint32_t bufferLength = 0;
+  size_t bufferLength = 0;
   bool isSharedMemory = false;
 
   JS::GetArrayBufferLengthAndData(obj, &bufferLength, &isSharedMemory,
                                   &bufferData);
+
+  // Throw for large ArrayBuffers to prevent truncation.
+  if (bufferLength > INT32_MAX) {
+    return NS_ERROR_ILLEGAL_VALUE;
+  }
+
   return DecodeImageFromBuffer((char*)bufferData, bufferLength, aMimeType,
                                aContainer);
 }
@@ -334,16 +342,16 @@ imgTools::DecodeImageFromBuffer(const char* aBuffer, uint32_t aSize,
   // Let's create a temporary inputStream.
   nsCOMPtr<nsIInputStream> stream;
   nsresult rv = NS_NewByteInputStream(
-      getter_AddRefs(stream), MakeSpan(aBuffer, aSize), NS_ASSIGNMENT_DEPEND);
+      getter_AddRefs(stream), Span(aBuffer, aSize), NS_ASSIGNMENT_DEPEND);
   NS_ENSURE_SUCCESS(rv, rv);
   MOZ_ASSERT(stream);
   MOZ_ASSERT(NS_InputStreamIsBuffered(stream));
 
-  rv = image->OnImageDataAvailable(nullptr, nullptr, stream, 0, aSize);
+  rv = image->OnImageDataAvailable(nullptr, stream, 0, aSize);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Let the Image know we've sent all the data.
-  rv = image->OnImageDataComplete(nullptr, nullptr, NS_OK, true);
+  rv = image->OnImageDataComplete(nullptr, NS_OK, true);
   tracker->SyncNotifyProgress(FLAG_LOAD_COMPLETE);
   NS_ENSURE_SUCCESS(rv, rv);
 

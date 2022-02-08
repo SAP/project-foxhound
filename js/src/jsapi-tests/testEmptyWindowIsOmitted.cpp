@@ -2,22 +2,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Utf8.h"
 
 #include <cstring>
 
-#include "jsfriendapi.h"
-
 #include "js/CharacterEncoding.h"
 #include "js/CompilationAndEvaluation.h"  // JS::Compile
 #include "js/Exception.h"
+#include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "js/SourceText.h"
 #include "jsapi-tests/tests.h"
+#include "util/Text.h"
 #include "vm/ErrorReporting.h"
 
-using mozilla::ArrayLength;
 using mozilla::IsAsciiHexDigit;
 using mozilla::Utf8Unit;
 
@@ -130,9 +128,9 @@ bool testOmittedWindow(const CharT (&chars)[N], unsigned expectedErrorNumber,
     const char* noteMessage = (*iter)->message().c_str();
 
     // The prefix ought always be the same.
-    static const char expectedPrefix[] =
+    static constexpr char expectedPrefix[] =
         "the code units comprising this invalid code point were: ";
-    constexpr size_t expectedPrefixLen = ArrayLength(expectedPrefix) - 1;
+    constexpr size_t expectedPrefixLen = js_strlen(expectedPrefix);
 
     CHECK(startsWith(noteMessage, expectedPrefix));
 

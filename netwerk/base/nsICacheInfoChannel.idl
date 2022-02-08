@@ -8,6 +8,7 @@ interface nsIAsyncOutputStream;
 interface nsIInputStream;
 
 %{C++
+#include "nsTArray.h"
 namespace mozilla {
 namespace net {
 class PreferredAlternativeDataTypeParams;
@@ -40,13 +41,6 @@ interface nsICacheInfoChannel : nsISupports
    * nsICachingChannel.cacheToken.expirationTime.
    */
   readonly attribute uint32_t cacheTokenExpirationTime;
-
-  /**
-   * Set/get charset of cache entry. Accessing this attribute is equivalent to
-   * calling nsICachingChannel.cacheToken.getMetaDataElement("charset") and
-   * nsICachingChannel.cacheToken.setMetaDataElement("charset").
-   */
-  attribute ACString cacheTokenCachedCharset;
 
   /**
    * TRUE if this channel's data is being loaded from the cache.  This value
@@ -107,6 +101,28 @@ interface nsICacheInfoChannel : nsISupports
    */
   attribute boolean preferCacheLoadOverBypass;
 
+  cenum PreferredAlternativeDataDeliveryType : 8 {
+    /**
+     * Do not deliver alternative data stream.
+     */
+    NONE = 0,
+
+    /**
+     * Deliver alternative data stream upon additional request.
+     */
+    ASYNC = 1,
+
+    /**
+     * Deliver alternative data stream during IPC parent/child serialization.
+     */
+    SERIALIZE = 2,
+  };
+
+  /**
+   * Tells the channel to be force validated during soft reload.
+   */
+  attribute boolean forceValidateCacheContent;
+
   /**
    * Calling this method instructs the channel to serve the alternative data
    * if that was previously saved in the cache, otherwise it will serve the
@@ -125,7 +141,7 @@ interface nsICacheInfoChannel : nsISupports
    * Must be called before AsyncOpen.
    */
   void preferAlternativeDataType(in ACString type, in ACString contentType,
-                                 in boolean deliverAltData);
+                                 in nsICacheInfoChannel_PreferredAlternativeDataDeliveryType deliverAltData);
 
   /**
    * Get the preferred alternative data type set by preferAlternativeDataType().
@@ -146,11 +162,10 @@ interface nsICacheInfoChannel : nsISupports
 
   /**
    * If preferAlternativeDataType() has been called passing deliverAltData
-   * equal to false, this method will expose the alt-data inputStream if
-   * aviable.
+   * equal to false, this attribute will expose the alt-data inputStream if
+   * avaiable.
    */
-  void getAltDataInputStream(in ACString type,
-                             in nsIInputStreamReceiver aReceiver);
+  readonly attribute nsIInputStream alternativeDataInputStream;
 
   /**
    * Sometimes when the channel is delivering alt-data, we may want to somehow
@@ -180,3 +195,13 @@ interface nsICacheInfoChannel : nsISupports
    */
   nsIAsyncOutputStream openAlternativeOutputStream(in ACString type, in long long predictedSize);
 };
+
+%{ C++
+namespace mozilla {
+namespace net {
+
+using PreferredAlternativeDataDeliveryTypeIPC = nsICacheInfoChannel::PreferredAlternativeDataDeliveryType;
+
+}
+} // namespace mozilla
+%}

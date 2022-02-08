@@ -6,32 +6,57 @@
 #ifndef mozilla_widget_AndroidCompositorWidget_h
 #define mozilla_widget_AndroidCompositorWidget_h
 
+#include "CompositorWidget.h"
+#include "AndroidNativeWindow.h"
 #include "GLDefs.h"
-#include "mozilla/widget/InProcessCompositorWidget.h"
-
-struct ANativeWindow;
 
 namespace mozilla {
 namespace widget {
 
-/**
- * AndroidCompositorWidget inherits from InProcessCompositorWidget because
- * Android does not support OOP compositing yet. Once it does,
- * AndroidCompositorWidget will be made to inherit from CompositorWidget
- * instead.
- */
-class AndroidCompositorWidget final : public InProcessCompositorWidget {
+class PlatformCompositorWidgetDelegate : public CompositorWidgetDelegate {
  public:
-  using InProcessCompositorWidget::InProcessCompositorWidget;
+  // CompositorWidgetDelegate Overrides
+  PlatformCompositorWidgetDelegate* AsPlatformSpecificDelegate() override {
+    return this;
+  }
+};
 
-  AndroidCompositorWidget* AsAndroid() override { return this; }
+class AndroidCompositorWidgetInitData;
+
+class AndroidCompositorWidget : public CompositorWidget {
+ public:
+  AndroidCompositorWidget(const AndroidCompositorWidgetInitData& aInitData,
+                          const layers::CompositorOptions& aOptions);
+  ~AndroidCompositorWidget() override;
+
+  // Called whenever the compositor surface may have changed. The derived class
+  // should update mSurface to the new compositor surface.
+  virtual void OnCompositorSurfaceChanged() = 0;
 
   EGLNativeWindowType GetEGLNativeWindow();
 
-  EGLSurface GetPresentationEGLSurface();
-  void SetPresentationEGLSurface(EGLSurface aVal);
+  // CompositorWidget overrides
 
-  ANativeWindow* GetPresentationANativeWindow();
+  already_AddRefed<gfx::DrawTarget> StartRemoteDrawingInRegion(
+      const LayoutDeviceIntRegion& aInvalidRegion,
+      layers::BufferMode* aBufferMode) override;
+  void EndRemoteDrawingInRegion(
+      gfx::DrawTarget* aDrawTarget,
+      const LayoutDeviceIntRegion& aInvalidRegion) override;
+
+  bool OnResumeComposition() override;
+
+  AndroidCompositorWidget* AsAndroid() override { return this; }
+
+  LayoutDeviceIntSize GetClientSize() override;
+
+ protected:
+  int32_t mWidgetId;
+  java::sdk::Surface::GlobalRef mSurface;
+  ANativeWindow* mNativeWindow;
+  ANativeWindow_Buffer mBuffer;
+  int32_t mFormat;
+  LayoutDeviceIntSize mClientSize;
 };
 
 }  // namespace widget

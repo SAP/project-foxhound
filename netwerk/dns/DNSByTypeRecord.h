@@ -83,6 +83,10 @@ struct IPDLParamTraits<mozilla::net::SVCB> {
                     const paramType& aParam) {
     WriteIPDLParam(aMsg, aActor, aParam.mSvcFieldPriority);
     WriteIPDLParam(aMsg, aActor, aParam.mSvcDomainName);
+    WriteIPDLParam(aMsg, aActor, aParam.mEchConfig);
+    WriteIPDLParam(aMsg, aActor, aParam.mODoHConfig);
+    WriteIPDLParam(aMsg, aActor, aParam.mHasIPHints);
+    WriteIPDLParam(aMsg, aActor, aParam.mHasEchConfig);
     WriteIPDLParam(aMsg, aActor, aParam.mSvcFieldValue);
   }
 
@@ -92,6 +96,18 @@ struct IPDLParamTraits<mozilla::net::SVCB> {
       return false;
     }
     if (!ReadIPDLParam(aMsg, aIter, aActor, &aResult->mSvcDomainName)) {
+      return false;
+    }
+    if (!ReadIPDLParam(aMsg, aIter, aActor, &aResult->mEchConfig)) {
+      return false;
+    }
+    if (!ReadIPDLParam(aMsg, aIter, aActor, &aResult->mODoHConfig)) {
+      return false;
+    }
+    if (!ReadIPDLParam(aMsg, aIter, aActor, &aResult->mHasIPHints)) {
+      return false;
+    }
+    if (!ReadIPDLParam(aMsg, aIter, aActor, &aResult->mHasEchConfig)) {
       return false;
     }
     if (!ReadIPDLParam(aMsg, aIter, aActor, &aResult->mSvcFieldValue)) {
@@ -165,8 +181,8 @@ struct IPDLParamTraits<mozilla::net::SvcParamIpv4Hint> {
 };
 
 template <>
-struct IPDLParamTraits<mozilla::net::SvcParamEsniConfig> {
-  typedef mozilla::net::SvcParamEsniConfig paramType;
+struct IPDLParamTraits<mozilla::net::SvcParamEchConfig> {
+  typedef mozilla::net::SvcParamEchConfig paramType;
   static void Write(IPC::Message* aMsg, IProtocol* aActor,
                     const paramType& aParam) {
     WriteIPDLParam(aMsg, aActor, aParam.mValue);
@@ -184,6 +200,23 @@ struct IPDLParamTraits<mozilla::net::SvcParamEsniConfig> {
 template <>
 struct IPDLParamTraits<mozilla::net::SvcParamIpv6Hint> {
   typedef mozilla::net::SvcParamIpv6Hint paramType;
+  static void Write(IPC::Message* aMsg, IProtocol* aActor,
+                    const paramType& aParam) {
+    WriteIPDLParam(aMsg, aActor, aParam.mValue);
+  }
+
+  static bool Read(const IPC::Message* aMsg, PickleIterator* aIter,
+                   IProtocol* aActor, paramType* aResult) {
+    if (!ReadIPDLParam(aMsg, aIter, aActor, &aResult->mValue)) {
+      return false;
+    }
+    return true;
+  }
+};
+
+template <>
+struct IPDLParamTraits<mozilla::net::SvcParamODoHConfig> {
+  typedef mozilla::net::SvcParamODoHConfig paramType;
   static void Write(IPC::Message* aMsg, IProtocol* aActor,
                     const paramType& aParam) {
     WriteIPDLParam(aMsg, aActor, aParam.mValue);

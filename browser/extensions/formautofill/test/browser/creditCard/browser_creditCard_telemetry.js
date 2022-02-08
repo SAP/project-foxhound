@@ -122,6 +122,13 @@ async function useCreditCard(idx) {
 }
 
 add_task(async function test_popup_opened() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [AUTOFILL_CREDITCARDS_AVAILABLE_PREF, true],
+      [ENABLED_AUTOFILL_CREDITCARDS_PREF, true],
+    ],
+  });
+
   Services.telemetry.clearEvents();
   Services.telemetry.clearScalars();
   Services.telemetry.setEventRecordingEnabled("creditcard", true);
@@ -153,12 +160,13 @@ add_task(async function test_popup_opened() {
     1,
     "There should be 1 section detected."
   );
-  TelemetryTestUtils.assertScalar(
+  TelemetryTestUtils.assertScalarUnset(
     TelemetryTestUtils.getProcessScalars("content"),
-    "formautofill.creditCards.submitted_sections_count",
-    0,
-    "There should be no sections submitted."
+    "formautofill.creditCards.submitted_sections_count"
   );
+
+  SpecialPowers.clearUserPref(AUTOFILL_CREDITCARDS_AVAILABLE_PREF);
+  SpecialPowers.clearUserPref(ENABLED_AUTOFILL_CREDITCARDS_PREF);
 });
 
 add_task(async function test_submit_creditCard_new() {
@@ -169,7 +177,11 @@ add_task(async function test_submit_creditCard_new() {
     expectChanged = undefined
   ) {
     await SpecialPowers.pushPrefEnv({
-      set: [[CREDITCARDS_USED_STATUS_PREF, 0]],
+      set: [
+        [CREDITCARDS_USED_STATUS_PREF, 0],
+        [AUTOFILL_CREDITCARDS_AVAILABLE_PREF, true],
+        [ENABLED_AUTOFILL_CREDITCARDS_PREF, true],
+      ],
     });
     await BrowserTestUtils.withNewTab(
       { gBrowser, url: CREDITCARD_FORM_URL },
@@ -213,6 +225,7 @@ add_task(async function test_submit_creditCard_new() {
 
     SpecialPowers.clearUserPref(CREDITCARDS_USED_STATUS_PREF);
     SpecialPowers.clearUserPref(ENABLED_AUTOFILL_CREDITCARDS_PREF);
+    SpecialPowers.clearUserPref(AUTOFILL_CREDITCARDS_AVAILABLE_PREF);
 
     assertHistogram(CC_NUM_USES_HISTOGRAM, useCount);
 
@@ -285,8 +298,13 @@ add_task(async function test_submit_creditCard_autofill() {
   Services.telemetry.setEventRecordingEnabled("creditcard", true);
 
   await SpecialPowers.pushPrefEnv({
-    set: [[CREDITCARDS_USED_STATUS_PREF, 0]],
+    set: [
+      [CREDITCARDS_USED_STATUS_PREF, 0],
+      [AUTOFILL_CREDITCARDS_AVAILABLE_PREF, true],
+      [ENABLED_AUTOFILL_CREDITCARDS_PREF, true],
+    ],
   });
+
   await saveCreditCard(TEST_CREDIT_CARD_1);
   let creditCards = await getCreditCards();
   is(creditCards.length, 1, "1 credit card in storage");
@@ -298,6 +316,9 @@ add_task(async function test_submit_creditCard_autofill() {
   });
 
   SpecialPowers.clearUserPref(CREDITCARDS_USED_STATUS_PREF);
+  SpecialPowers.clearUserPref(ENABLED_AUTOFILL_CREDITCARDS_PREF);
+  SpecialPowers.clearUserPref(AUTOFILL_CREDITCARDS_AVAILABLE_PREF);
+
   await removeAllRecords();
 
   await assertTelemetry(
@@ -337,8 +358,13 @@ add_task(async function test_submit_creditCard_update() {
     expectChanged = undefined
   ) {
     await SpecialPowers.pushPrefEnv({
-      set: [[CREDITCARDS_USED_STATUS_PREF, 0]],
+      set: [
+        [CREDITCARDS_USED_STATUS_PREF, 0],
+        [AUTOFILL_CREDITCARDS_AVAILABLE_PREF, true],
+        [ENABLED_AUTOFILL_CREDITCARDS_PREF, true],
+      ],
     });
+
     await saveCreditCard(TEST_CREDIT_CARD_1);
     let creditCards = await getCreditCards();
     is(creditCards.length, 1, "1 credit card in storage");
@@ -388,6 +414,9 @@ add_task(async function test_submit_creditCard_update() {
     assertHistogram("CREDITCARD_NUM_USES", useCount);
 
     SpecialPowers.clearUserPref(CREDITCARDS_USED_STATUS_PREF);
+    SpecialPowers.clearUserPref(ENABLED_AUTOFILL_CREDITCARDS_PREF);
+    SpecialPowers.clearUserPref(AUTOFILL_CREDITCARDS_AVAILABLE_PREF);
+
     await removeAllRecords();
   }
   Services.telemetry.clearEvents();
@@ -444,6 +473,13 @@ add_task(async function test_removingCreditCardsViaKeyboardDelete() {
   Services.telemetry.clearEvents();
   Services.telemetry.setEventRecordingEnabled("creditcard", true);
 
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [AUTOFILL_CREDITCARDS_AVAILABLE_PREF, true],
+      [ENABLED_AUTOFILL_CREDITCARDS_PREF, true],
+    ],
+  });
+
   await saveCreditCard(TEST_CREDIT_CARD_1);
   let win = window.openDialog(
     MANAGE_CREDIT_CARDS_DIALOG_URL,
@@ -467,12 +503,23 @@ add_task(async function test_removingCreditCardsViaKeyboardDelete() {
     ["creditcard", "show", "manage"],
     ["creditcard", "delete", "manage"],
   ]);
+
+  SpecialPowers.clearUserPref(ENABLED_AUTOFILL_CREDITCARDS_PREF);
+  SpecialPowers.clearUserPref(AUTOFILL_CREDITCARDS_AVAILABLE_PREF);
+
   await removeAllRecords();
 });
 
 add_task(async function test_saveCreditCard() {
   Services.telemetry.clearEvents();
   Services.telemetry.setEventRecordingEnabled("creditcard", true);
+
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [AUTOFILL_CREDITCARDS_AVAILABLE_PREF, true],
+      [ENABLED_AUTOFILL_CREDITCARDS_PREF, true],
+    ],
+  });
 
   await testDialog(EDIT_CREDIT_CARD_DIALOG_URL, win => {
     EventUtils.synthesizeKey("VK_TAB", {}, win);
@@ -499,6 +546,9 @@ add_task(async function test_saveCreditCard() {
     EventUtils.synthesizeKey("VK_RETURN", {}, win);
   });
 
+  SpecialPowers.clearUserPref(ENABLED_AUTOFILL_CREDITCARDS_PREF);
+  SpecialPowers.clearUserPref(AUTOFILL_CREDITCARDS_AVAILABLE_PREF);
+
   await removeAllRecords();
 
   await assertTelemetry(undefined, [["creditcard", "add", "manage"]]);
@@ -507,6 +557,13 @@ add_task(async function test_saveCreditCard() {
 add_task(async function test_editCreditCard() {
   Services.telemetry.clearEvents();
   Services.telemetry.setEventRecordingEnabled("creditcard", true);
+
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [AUTOFILL_CREDITCARDS_AVAILABLE_PREF, true],
+      [ENABLED_AUTOFILL_CREDITCARDS_PREF, true],
+    ],
+  });
 
   await saveCreditCard(TEST_CREDIT_CARD_1);
 
@@ -527,6 +584,10 @@ add_task(async function test_editCreditCard() {
       record: creditCards[0],
     }
   );
+
+  SpecialPowers.clearUserPref(ENABLED_AUTOFILL_CREDITCARDS_PREF);
+  SpecialPowers.clearUserPref(AUTOFILL_CREDITCARDS_AVAILABLE_PREF);
+
   await removeAllRecords();
   await assertTelemetry(undefined, [
     ["creditcard", "show_entry", "manage"],
@@ -542,6 +603,13 @@ add_task(async function test_histogram() {
     );
     return;
   }
+
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [AUTOFILL_CREDITCARDS_AVAILABLE_PREF, true],
+      [ENABLED_AUTOFILL_CREDITCARDS_PREF, true],
+    ],
+  });
 
   Services.telemetry.getHistogramById(CC_NUM_USES_HISTOGRAM).clear();
   Services.telemetry.setEventRecordingEnabled("creditcard", true);
@@ -587,6 +655,9 @@ add_task(async function test_histogram() {
     2: 2,
   });
 
+  SpecialPowers.clearUserPref(ENABLED_AUTOFILL_CREDITCARDS_PREF);
+  SpecialPowers.clearUserPref(AUTOFILL_CREDITCARDS_AVAILABLE_PREF);
+
   await removeAllRecords();
 
   assertHistogram(CC_NUM_USES_HISTOGRAM, {});
@@ -604,6 +675,8 @@ add_task(async function test_submit_creditCard_new_with_hidden_ui() {
   await SpecialPowers.pushPrefEnv({
     set: [
       [CREDITCARDS_USED_STATUS_PREF, 0],
+      [AUTOFILL_CREDITCARDS_AVAILABLE_PREF, true],
+      [ENABLED_AUTOFILL_CREDITCARDS_PREF, true],
       [AUTOFILL_CREDITCARDS_HIDE_UI_PREF, true],
     ],
   });
@@ -613,14 +686,16 @@ add_task(async function test_submit_creditCard_new_with_hidden_ui() {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
-      await openPopupOn(browser, "form #cc-number").then(
-        () => {
-          return Promise.reject("Popup should not be displayed");
-        },
-        () => {
-          ok(true, "Popup has not been displayed");
-        }
-      );
+      let rejectPopup = () => {
+        ok(false, "Popup should not be displayed");
+      };
+      browser.addEventListener("popupshowing", rejectPopup, true);
+
+      await SimpleTest.promiseFocus(browser);
+      await focusAndWaitForFieldsIdentified(browser, "form #cc-number");
+      await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, browser);
+
+      is(PopupNotifications.panel.state, "closed", "Doorhanger is hidden");
 
       await SpecialPowers.spawn(browser, [], async function() {
         let form = content.document.getElementById("form");
@@ -640,12 +715,18 @@ add_task(async function test_submit_creditCard_new_with_hidden_ui() {
       });
 
       await sleep(1000);
-      is(PopupNotifications.panel.state, "closed", "Doorhanger is hidden");
+      is(
+        PopupNotifications.panel.state,
+        "closed",
+        "Doorhanger is still hidden"
+      );
+      browser.removeEventListener("popupshowing", rejectPopup, true);
     }
   );
 
   SpecialPowers.clearUserPref(CREDITCARDS_USED_STATUS_PREF);
   SpecialPowers.clearUserPref(ENABLED_AUTOFILL_CREDITCARDS_PREF);
+  SpecialPowers.clearUserPref(AUTOFILL_CREDITCARDS_AVAILABLE_PREF);
   SpecialPowers.clearUserPref(AUTOFILL_CREDITCARDS_HIDE_UI_PREF);
 
   assertHistogram(CC_NUM_USES_HISTOGRAM, { 0: 1 });

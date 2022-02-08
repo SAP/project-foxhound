@@ -16,6 +16,7 @@
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/Unused.h"
 #include "gfxUtils.h"
+#include "nsComponentManagerUtils.h"
 #include "nsThreadUtils.h"
 #include "nsNetUtil.h"
 #include "nsXPCOMCIDInternal.h"
@@ -23,8 +24,7 @@
 
 using namespace mozilla::gfx;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // This class should be placed inside GetBRGADataSourceSurfaceSync(). However,
 // due to B2G ICS uses old complier (C++98/03) which forbids local class as
@@ -37,9 +37,7 @@ class SurfaceHelper : public Runnable {
   // It retrieves a SourceSurface reference and convert color format on main
   // thread and passes DataSourceSurface to caller thread.
   NS_IMETHOD Run() override {
-    // It guarantees the reference will be released on main thread.
-    nsCountedRef<nsMainThreadSourceSurfaceRef> surface;
-    surface.own(mImage->GetAsSourceSurface().take());
+    RefPtr<gfx::SourceSurface> surface = mImage->GetAsSourceSurface();
 
     if (surface->GetFormat() == gfx::SurfaceFormat::B8G8R8A8) {
       mDataSourceSurface = surface->GetDataSurface();
@@ -47,6 +45,9 @@ class SurfaceHelper : public Runnable {
       mDataSourceSurface = gfxUtils::CopySurfaceToDataSourceSurfaceWithFormat(
           surface, gfx::SurfaceFormat::B8G8R8A8);
     }
+
+    // It guarantees the reference will be released on main thread.
+    NS_ReleaseOnMainThread("SurfaceHelper::surface", surface.forget());
     return NS_OK;
   }
 
@@ -74,13 +75,13 @@ already_AddRefed<DataSourceSurface> GetBRGADataSourceSurfaceSync(
   return helper->GetDataSurfaceSafe();
 }
 
-class EncodingCompleteEvent : public CancelableRunnable {
+class EncodingCompleteEvent : public Runnable {
   virtual ~EncodingCompleteEvent() = default;
 
  public:
   explicit EncodingCompleteEvent(
       EncodeCompleteCallback* aEncodeCompleteCallback)
-      : CancelableRunnable("EncodingCompleteEvent"),
+      : Runnable("EncodingCompleteEvent"),
         mImgSize(0),
         mType(),
         mImgData(nullptr),
@@ -167,9 +168,8 @@ class EncodingRunnable : public Runnable {
     // the default values for the encoder without any options at all.
     if (rv == NS_ERROR_INVALID_ARG && mUsingCustomOptions) {
       rv = ImageEncoder::ExtractDataInternal(
-          mType, EmptyString(), mImageBuffer.get(), mFormat, mSize,
-          mUsePlaceholder, mImage, nullptr, nullptr, getter_AddRefs(stream),
-          mEncoder);
+          mType, u""_ns, mImageBuffer.get(), mFormat, mSize, mUsePlaceholder,
+          mImage, nullptr, nullptr, getter_AddRefs(stream), mEncoder);
     }
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -444,5 +444,4 @@ already_AddRefed<imgIEncoder> ImageEncoder::GetImageEncoder(nsAString& aType) {
   return encoder.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

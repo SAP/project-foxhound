@@ -1,4 +1,6 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* clang-format off */
+/* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* clang-format on */
 /* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -8,8 +10,13 @@
 
 #include "nsCocoaUtils.h"
 #include "nsContentUtils.h"
+#include "nsIObserverService.h"
+#include "nsISimpleEnumerator.h"
 #include "nsIXPConnect.h"
 #include "mozilla/dom/ToJSValue.h"
+#include "mozilla/Services.h"
+#include "nsString.h"
+#include "js/PropertyAndElement.h"  // JS_Enumerate, JS_GetElement, JS_GetProperty, JS_GetPropertyById, JS_HasOwnProperty, JS_SetUCProperty
 
 #import "mozAccessible.h"
 
@@ -33,12 +40,12 @@ id xpcAccessibleMacNSObjectWrapper::GetNativeObject() const { return mNativeObje
 NS_IMPL_ISUPPORTS_INHERITED(xpcAccessibleMacInterface, xpcAccessibleMacNSObjectWrapper,
                             nsIAccessibleMacInterface)
 
-xpcAccessibleMacInterface::xpcAccessibleMacInterface(AccessibleOrProxy aObj)
+xpcAccessibleMacInterface::xpcAccessibleMacInterface(Accessible* aObj)
     : xpcAccessibleMacNSObjectWrapper(GetNativeFromGeckoAccessible(aObj)) {}
 
 NS_IMETHODIMP
 xpcAccessibleMacInterface::GetAttributeNames(nsTArray<nsString>& aAttributeNames) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN
 
   if (!mNativeObject || [mNativeObject isExpired]) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -52,12 +59,12 @@ xpcAccessibleMacInterface::GetAttributeNames(nsTArray<nsString>& aAttributeNames
 
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE)
 }
 
 NS_IMETHODIMP
 xpcAccessibleMacInterface::GetParameterizedAttributeNames(nsTArray<nsString>& aAttributeNames) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN
 
   if (!mNativeObject || [mNativeObject isExpired]) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -71,12 +78,12 @@ xpcAccessibleMacInterface::GetParameterizedAttributeNames(nsTArray<nsString>& aA
 
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE)
 }
 
 NS_IMETHODIMP
 xpcAccessibleMacInterface::GetActionNames(nsTArray<nsString>& aActionNames) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN
 
   if (!mNativeObject || [mNativeObject isExpired]) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -90,12 +97,12 @@ xpcAccessibleMacInterface::GetActionNames(nsTArray<nsString>& aActionNames) {
 
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE)
 }
 
 NS_IMETHODIMP
 xpcAccessibleMacInterface::PerformAction(const nsAString& aActionName) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN
 
   if (!mNativeObject || [mNativeObject isExpired]) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -106,13 +113,13 @@ xpcAccessibleMacInterface::PerformAction(const nsAString& aActionName) {
 
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE)
 }
 
 NS_IMETHODIMP
 xpcAccessibleMacInterface::GetAttributeValue(const nsAString& aAttributeName, JSContext* aCx,
                                              JS::MutableHandleValue aResult) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN
 
   if (!mNativeObject || [mNativeObject isExpired]) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -121,7 +128,7 @@ xpcAccessibleMacInterface::GetAttributeValue(const nsAString& aAttributeName, JS
   NSString* attribName = nsCocoaUtils::ToNSString(aAttributeName);
   return NSObjectToJsValue([mNativeObject accessibilityAttributeValue:attribName], aCx, aResult);
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE)
 }
 
 NS_IMETHODIMP
@@ -166,8 +173,6 @@ xpcAccessibleMacInterface::GetParameterizedAttributeValue(const nsAString& aAttr
   NSString* attribName = nsCocoaUtils::ToNSString(aAttributeName);
   return NSObjectToJsValue(
       [mNativeObject accessibilityAttributeValue:attribName forParameter:paramObj], aCx, aResult);
-
-  return NS_OK;
 }
 
 bool xpcAccessibleMacInterface::SupportsSelector(SEL aSelector) {
@@ -216,6 +221,14 @@ nsresult xpcAccessibleMacInterface::NSObjectToJsValue(id aObj, JSContext* aCx,
              strcmp([(NSValue*)aObj objCType], @encode(NSRange)) == 0) {
     NSRange range = [(NSValue*)aObj rangeValue];
     return NSObjectToJsValue(@[ @(range.location), @(range.length) ], aCx, aResult);
+  } else if ([aObj isKindOfClass:[NSValue class]] &&
+             strcmp([(NSValue*)aObj objCType], @encode(NSRect)) == 0) {
+    NSRect rect = [(NSValue*)aObj rectValue];
+    return NSObjectToJsValue(@{
+      @"origin" : [NSValue valueWithPoint:rect.origin],
+      @"size" : [NSValue valueWithSize:rect.size]
+    },
+                             aCx, aResult);
   } else if ([aObj isKindOfClass:[NSArray class]]) {
     NSArray* objArr = (NSArray*)aObj;
 
@@ -244,6 +257,35 @@ nsresult xpcAccessibleMacInterface::NSObjectToJsValue(id aObj, JSContext* aCx,
       JS_SetUCProperty(aCx, obj, strKey.get(), strKey.Length(), value);
     }
     aResult.setObject(*obj);
+  } else if ([aObj isKindOfClass:[NSAttributedString class]]) {
+    NSAttributedString* attrStr = (NSAttributedString*)aObj;
+    __block NSMutableArray* attrRunArray = [[NSMutableArray alloc] init];
+
+    [attrStr
+        enumerateAttributesInRange:NSMakeRange(0, [attrStr length])
+                           options:NSAttributedStringEnumerationLongestEffectiveRangeNotRequired
+                        usingBlock:^(NSDictionary* attributes, NSRange range, BOOL* stop) {
+                          NSString* str = [[attrStr string] substringWithRange:range];
+                          if (!str || !attributes) {
+                            return;
+                          }
+
+                          NSMutableDictionary* attrRun = [attributes mutableCopy];
+                          attrRun[@"string"] = str;
+
+                          [attrRunArray addObject:attrRun];
+                        }];
+
+    // The attributed string is represented in js as an array of objects.
+    // Each object represents a run of text where the "string" property is the
+    // string value and all the AX* properties are the attributes.
+    return NSObjectToJsValue(attrRunArray, aCx, aResult);
+  } else if (CFGetTypeID(aObj) == CGColorGetTypeID()) {
+    const CGFloat* components = CGColorGetComponents((CGColorRef)aObj);
+    NSString* hexString =
+        [NSString stringWithFormat:@"#%02x%02x%02x", (int)(components[0] * 0xff),
+                                   (int)(components[1] * 0xff), (int)(components[2] * 0xff)];
+    return NSObjectToJsValue(hexString, aCx, aResult);
   } else if ([aObj respondsToSelector:@selector(isAccessibilityElement)]) {
     // We expect all of our accessibility objects to implement isAccessibilityElement
     // at the very least. If it is implemented we will assume its an accessibility object.
@@ -268,6 +310,14 @@ id xpcAccessibleMacInterface::JsValueToNSObject(JS::HandleValue aValue, JSContex
     return [NSNumber numberWithInteger:aValue.toInt32()];
   } else if (aValue.isBoolean()) {
     return [NSNumber numberWithBool:aValue.toBoolean()];
+  } else if (aValue.isString()) {
+    nsAutoJSString temp;
+    if (!temp.init(aCx, aValue)) {
+      NS_WARNING("cannot init string with given value");
+      *aResult = NS_ERROR_FAILURE;
+      return nil;
+    }
+    return nsCocoaUtils::ToNSString(temp);
   } else if (aValue.isObject()) {
     JS::Rooted<JSObject*> obj(aCx, aValue.toObjectOrNull());
 
@@ -296,6 +346,16 @@ id xpcAccessibleMacInterface::JsValueToNSObject(JS::HandleValue aValue, JSContex
       // A js object representin an NSValue looks like this:
       // { valueType: "NSRange", value: [1, 3] }
       return JsValueToNSValue(obj, aCx, aResult);
+    }
+
+    bool hasObjectType;
+    bool hasObject;
+    JS_HasOwnProperty(aCx, obj, "objectType", &hasObjectType);
+    JS_HasOwnProperty(aCx, obj, "object", &hasObject);
+    if (hasObjectType && hasObject) {
+      // A js object representing an NSDictionary looks like this:
+      // { objectType: "NSDictionary", value: {k: v, k: v, ...} }
+      return JsValueToSpecifiedNSObject(obj, aCx, aResult);
     }
 
     // This may be another nsIAccessibleMacInterface instance.
@@ -362,6 +422,73 @@ id xpcAccessibleMacInterface::JsValueToNSValue(JS::HandleObject aObject, JSConte
 
     *aResult = NS_OK;
     return [NSValue valueWithRange:NSMakeRange(locationValue.toInt32(), lengthValue.toInt32())];
+  }
+
+  return nil;
+}
+
+id xpcAccessibleMacInterface::JsValueToSpecifiedNSObject(JS::HandleObject aObject, JSContext* aCx,
+                                                         nsresult* aResult) {
+  *aResult = NS_ERROR_FAILURE;
+  JS::RootedValue objectTypeValue(aCx);
+  if (!JS_GetProperty(aCx, aObject, "objectType", &objectTypeValue)) {
+    NS_WARNING("Could not get objectType");
+    return nil;
+  }
+
+  JS::RootedValue objectValue(aCx);
+  if (!JS_GetProperty(aCx, aObject, "object", &objectValue)) {
+    NS_WARNING("Could not get object");
+    return nil;
+  }
+
+  nsAutoJSString objectType;
+  if (!objectTypeValue.isString()) {
+    NS_WARNING("objectType is not a string");
+    return nil;
+  }
+
+  if (!objectType.init(aCx, objectTypeValue)) {
+    NS_WARNING("cannot init string with object type");
+    return nil;
+  }
+
+  bool isObject = objectValue.isObjectOrNull();
+  if (!isObject) {
+    NS_WARNING("object is not a JSON object");
+    return nil;
+  }
+
+  JS::Rooted<JSObject*> object(aCx, objectValue.toObjectOrNull());
+
+  if (objectType.EqualsLiteral("NSDictionary")) {
+    JS::Rooted<JS::IdVector> ids(aCx, JS::IdVector(aCx));
+    if (!JS_Enumerate(aCx, object, &ids)) {
+      NS_WARNING("Unable to get keys from dictionary object");
+      return nil;
+    }
+
+    NSMutableDictionary* dict = [[NSMutableDictionary alloc] init];
+
+    for (size_t i = 0, n = ids.length(); i < n; i++) {
+      nsresult rv = NS_OK;
+      // get current key
+      JS::RootedValue currentKey(aCx);
+      JS_IdToValue(aCx, ids[i], &currentKey);
+      id unwrappedKey = JsValueToNSObject(currentKey, aCx, &rv);
+      NS_ENSURE_SUCCESS(rv, nil);
+      MOZ_ASSERT([unwrappedKey isKindOfClass:[NSString class]]);
+
+      // get associated value for current key
+      JS::RootedValue currentValue(aCx);
+      JS_GetPropertyById(aCx, object, ids[i], &currentValue);
+      id unwrappedValue = JsValueToNSObject(currentValue, aCx, &rv);
+      NS_ENSURE_SUCCESS(rv, nil);
+      dict[unwrappedKey] = unwrappedValue;
+    }
+
+    *aResult = NS_OK;
+    return dict;
   }
 
   return nil;

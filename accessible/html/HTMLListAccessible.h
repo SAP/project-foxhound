@@ -29,7 +29,7 @@ class HTMLListAccessible : public HyperTextAccessibleWrap {
   NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLListAccessible,
                                        HyperTextAccessibleWrap)
 
-  // Accessible
+  // LocalAccessible
   virtual a11y::role NativeRole() const override;
   virtual uint64_t NativeState() const override;
 
@@ -48,24 +48,16 @@ class HTMLLIAccessible : public HyperTextAccessibleWrap {
   NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLLIAccessible,
                                        HyperTextAccessibleWrap)
 
-  // Accessible
-  virtual void Shutdown() override;
+  // LocalAccessible
   virtual nsRect BoundsInAppUnits() const override;
   virtual a11y::role NativeRole() const override;
   virtual uint64_t NativeState() const override;
 
-  virtual bool InsertChildAt(uint32_t aIndex, Accessible* aChild) override;
-  virtual void RelocateChild(uint32_t aNewIndex, Accessible* aChild) override;
-
   // HTMLLIAccessible
-  HTMLListBulletAccessible* Bullet() const { return mBullet; }
-  void UpdateBullet(bool aHasBullet);
+  LocalAccessible* Bullet() const;
 
  protected:
   virtual ~HTMLLIAccessible() {}
-
- private:
-  HTMLListBulletAccessible* mBullet;
 };
 
 /**
@@ -76,23 +68,16 @@ class HTMLListBulletAccessible : public LeafAccessible {
   HTMLListBulletAccessible(nsIContent* aContent, DocAccessible* aDoc);
   virtual ~HTMLListBulletAccessible() {}
 
-  // Accessible
-  virtual nsIFrame* GetFrame() const override;
+  // LocalAccessible
   virtual ENameValueFlag Name(nsString& aName) const override;
   virtual a11y::role NativeRole() const override;
   virtual uint64_t NativeState() const override;
+  virtual already_AddRefed<AccAttributes> NativeAttributes() override;
   virtual void AppendTextTo(nsAString& aText, uint32_t aStartOffset = 0,
                             uint32_t aLength = UINT32_MAX) override;
-
-  // HTMLListBulletAccessible
-
-  /**
-   * Return true if the bullet is inside of list item element boundaries.
-   */
-  bool IsInside() const;
 };
 
-inline HTMLLIAccessible* Accessible::AsHTMLListItem() {
+inline HTMLLIAccessible* LocalAccessible::AsHTMLListItem() {
   return IsHTMLListItem() ? static_cast<HTMLLIAccessible*>(this) : nullptr;
 }
 

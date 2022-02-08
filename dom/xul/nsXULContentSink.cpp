@@ -49,6 +49,8 @@
 
 static mozilla::LazyLogModule gContentSinkLog("nsXULContentSink");
 
+using namespace mozilla;
+using namespace mozilla::dom;
 //----------------------------------------------------------------------
 
 XULContentSinkImpl::ContextStack::ContextStack() : mTop(nullptr), mDepth(0) {}
@@ -425,7 +427,7 @@ XULContentSinkImpl::HandleEndElement(const char16_t* aName) {
           static_cast<nsXULPrototypeScript*>(node.get());
 
       // If given a src= attribute, we must ignore script tag content.
-      if (!script->mSrcURI && !script->HasScriptObject()) {
+      if (!script->mSrcURI && !script->HasStencil()) {
         nsCOMPtr<Document> doc = do_QueryReferent(mDocument);
 
         script->mOutOfLine = false;
@@ -699,6 +701,9 @@ nsresult XULContentSinkImpl::OpenScript(const char16_t** aAttributes,
         NS_ENSURE_SUCCESS(rv, rv);
       }
 
+      // NOTE(emilio): Module scripts don't pass this test, aren't cached yet.
+      // If they become cached, then we need to tweak
+      // PrototypeDocumentContentSink and remove the special cases there.
       if (nsContentUtils::IsJavascriptMIMEType(mimeType)) {
         isJavaScript = true;
 
@@ -711,7 +716,7 @@ nsresult XULContentSinkImpl::OpenScript(const char16_t** aAttributes,
               u"Versioned JavaScripts are no longer supported. "
               "Please remove the version parameter."_ns,
               nsIScriptError::errorFlag, "XUL Document"_ns, nullptr,
-              mDocumentURL, EmptyString(), aLineNumber);
+              mDocumentURL, u""_ns, aLineNumber);
           isJavaScript = false;
         } else if (rv != NS_ERROR_INVALID_ARG) {
           return rv;

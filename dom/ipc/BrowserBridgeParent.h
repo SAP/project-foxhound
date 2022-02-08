@@ -8,7 +8,6 @@
 #define mozilla_dom_BrowserBridgeParent_h
 
 #include "mozilla/dom/PBrowserBridgeParent.h"
-#include "mozilla/Tuple.h"
 #include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/dom/WindowGlobalTypes.h"
 
@@ -16,6 +15,10 @@ namespace mozilla {
 
 namespace a11y {
 class DocAccessibleParent;
+}
+
+namespace embedding {
+class PrintData;
 }
 
 namespace dom {
@@ -46,14 +49,21 @@ class BrowserBridgeParent : public PBrowserBridgeParent {
 
 #if defined(ACCESSIBILITY)
   /**
-   * Get the accessible for this iframe's embedder OuterDocAccessible.
-   * This returns the actor for the containing document and the unique id of
-   * the embedder accessible within that document.
+   * Get the DocAccessibleParent which contains this iframe.
    */
-  Tuple<a11y::DocAccessibleParent*, uint64_t> GetEmbedderAccessible() {
-    return Tuple<a11y::DocAccessibleParent*, uint64_t>(mEmbedderAccessibleDoc,
-                                                       mEmbedderAccessibleID);
-  }
+  a11y::DocAccessibleParent* GetEmbedderAccessibleDoc();
+
+  /**
+   * Get the unique id of the OuterDocAccessible associated with this iframe.
+   * This is the id of the RemoteAccessible inside the document returned by
+   * GetEmbedderAccessibleDoc.
+   */
+  uint64_t GetEmbedderAccessibleId() { return mEmbedderAccessibleID; }
+
+  /**
+   * Get the DocAccessibleParent for the embedded document.
+   */
+  a11y::DocAccessibleParent* GetDocAccessibleParent();
 #endif  // defined(ACCESSIBILITY)
 
   // Tear down this BrowserBridgeParent.
@@ -64,26 +74,29 @@ class BrowserBridgeParent : public PBrowserBridgeParent {
 
   mozilla::ipc::IPCResult RecvShow(const OwnerShowInfo&);
   mozilla::ipc::IPCResult RecvScrollbarPreferenceChanged(ScrollbarPreference);
-  mozilla::ipc::IPCResult RecvLoadURL(const nsCString& aUrl,
-                                      nsIPrincipal* aTriggeringPrincipal);
+  mozilla::ipc::IPCResult RecvLoadURL(nsDocShellLoadState* aLoadState);
   mozilla::ipc::IPCResult RecvResumeLoad(uint64_t aPendingSwitchID);
   mozilla::ipc::IPCResult RecvUpdateDimensions(const nsIntRect& aRect,
                                                const ScreenIntSize& aSize);
   mozilla::ipc::IPCResult RecvUpdateEffects(const EffectsInfo& aEffects);
+  mozilla::ipc::IPCResult RecvUpdateRemotePrintSettings(
+      const embedding::PrintData&);
   mozilla::ipc::IPCResult RecvRenderLayers(const bool& aEnabled,
                                            const LayersObserverEpoch& aEpoch);
 
   mozilla::ipc::IPCResult RecvNavigateByKey(const bool& aForward,
                                             const bool& aForDocumentNavigation);
+  mozilla::ipc::IPCResult RecvBeginDestroy();
 
   mozilla::ipc::IPCResult RecvDispatchSynthesizedMouseEvent(
       const WidgetMouseEvent& aEvent);
 
   mozilla::ipc::IPCResult RecvWillChangeProcess();
 
-  mozilla::ipc::IPCResult RecvActivate();
+  mozilla::ipc::IPCResult RecvActivate(uint64_t aActionId);
 
-  mozilla::ipc::IPCResult RecvDeactivate(const bool& aWindowLowering);
+  mozilla::ipc::IPCResult RecvDeactivate(const bool& aWindowLowering,
+                                         uint64_t aActionId);
 
   mozilla::ipc::IPCResult RecvSetIsUnderHiddenEmbedderElement(
       const bool& aIsUnderHiddenEmbedderElement);

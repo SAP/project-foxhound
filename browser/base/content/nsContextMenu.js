@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 const PASSWORD_FIELDNAME_HINTS = ["current-password", "new-password"];
+const USERNAME_FIELDNAME_HINT = "username";
 
 function openContextMenu(aMessage, aBrowser, aActor) {
   if (BrowserHandler.kiosk) {
@@ -57,9 +58,11 @@ function openContextMenu(aMessage, aBrowser, aActor) {
     selectionInfo: data.selectionInfo,
     disableSetDesktopBackground: data.disableSetDesktopBackground,
     loginFillInfo: data.loginFillInfo,
-    parentAllowsMixedContent: data.parentAllowsMixedContent,
     userContextId: data.userContextId,
     webExtContextData: data.webExtContextData,
+    cookieJarSettings: E10SUtils.deserializeCookieJarSettings(
+      data.cookieJarSettings
+    ),
   };
 
   let popup = browser.ownerDocument.getElementById("contentAreaContextMenu");
@@ -83,7 +86,7 @@ function openContextMenu(aMessage, aBrowser, aActor) {
     false,
     false,
     false,
-    0,
+    2,
     null,
     0,
     context.mozInputSource
@@ -130,7 +133,8 @@ class nsContextMenu {
         onEditable: this.onEditable,
         onSpellcheckable: this.onSpellcheckable,
         onPassword: this.onPassword,
-        srcUrl: this.mediaURL,
+        passwordRevealed: this.passwordRevealed,
+        srcUrl: this.originalMediaURL,
         frameUrl: this.contentData ? this.contentData.docLocation : undefined,
         pageUrl: this.browser ? this.browser.currentURI.spec : undefined,
         linkText: this.linkTextStr,
@@ -165,7 +169,7 @@ class nsContextMenu {
     this.onPlainTextLink = false;
 
     // Initialize (disable/remove) menu items.
-    this.initItems();
+    this.initItems(aXulMenu);
   }
 
   setContext() {
@@ -182,10 +186,10 @@ class nsContextMenu {
 
     // Assign what's _possibly_ needed from `context` sent by ContextMenuChild.jsm
     // Keep this consistent with the similar code in ContextMenu's _setContext
-    this.bgImageURL = context.bgImageURL;
     this.imageDescURL = context.imageDescURL;
     this.imageInfo = context.imageInfo;
-    this.mediaURL = context.mediaURL;
+    this.mediaURL = context.mediaURL || context.bgImageURL;
+    this.originalMediaURL = context.originalMediaURL || this.mediaURL;
     this.webExtBrowserType = context.webExtBrowserType;
 
     this.canSpellCheck = context.canSpellCheck;
@@ -209,10 +213,8 @@ class nsContextMenu {
     this.onAudio = context.onAudio;
     this.onCanvas = context.onCanvas;
     this.onCompletedImage = context.onCompletedImage;
-    this.onCTPPlugin = context.onCTPPlugin;
     this.onDRMMedia = context.onDRMMedia;
     this.onPiPVideo = context.onPiPVideo;
-    this.onMediaStreamVideo = context.onMediaStreamVideo;
     this.onEditable = context.onEditable;
     this.onImage = context.onImage;
     this.onKeywordField = context.onKeywordField;
@@ -222,6 +224,7 @@ class nsContextMenu {
     this.onMozExtLink = context.onMozExtLink;
     this.onNumeric = context.onNumeric;
     this.onPassword = context.onPassword;
+    this.passwordRevealed = context.passwordRevealed;
     this.onSaveableLink = context.onSaveableLink;
     this.onSpellcheckable = context.onSpellcheckable;
     this.onTextInput = context.onTextInput;
@@ -253,8 +256,12 @@ class nsContextMenu {
       this.selectionInfo = this.contentData.selectionInfo;
       this.actor = this.contentData.actor;
     } else {
+      const { SelectionUtils } = ChromeUtils.import(
+        "resource://gre/modules/SelectionUtils.jsm"
+      );
+
       this.browser = this.ownerDoc.defaultView.docShell.chromeEventHandler;
-      this.selectionInfo = BrowserUtils.getSelectionDetails(window);
+      this.selectionInfo = SelectionUtils.getSelectionDetails(window);
       this.actor = this.browser.browsingContext.currentWindowGlobal.getActor(
         "ContextMenu"
       );
@@ -280,6 +287,10 @@ class nsContextMenu {
       );
     }
 
+    if (this.contentData.spellInfo) {
+      this.spellSuggestions = this.contentData.spellInfo.spellSuggestions;
+    }
+
     if (context.shouldInitInlineSpellCheckerUIWithChildren) {
       InlineSpellCheckerUI.initFromRemote(
         this.contentData.spellInfo,
@@ -287,14 +298,15 @@ class nsContextMenu {
       );
       let canSpell = InlineSpellCheckerUI.canSpellCheck && this.canSpellCheck;
       this.showItem("spell-check-enabled", canSpell);
-      this.showItem("spell-separator", canSpell);
     }
   } // setContext
 
-  hiding() {
+  hiding(aXulMenu) {
     if (this.actor) {
       this.actor.hiding();
     }
+
+    aXulMenu.showHideSeparators = null;
 
     this.contentData = null;
     InlineSpellCheckerUI.clearSuggestionsFromMenu();
@@ -312,20 +324,34 @@ class nsContextMenu {
     }
   }
 
-  initItems() {
+  initItems(aXulMenu) {
     this.initPageMenuSeparator();
     this.initOpenItems();
     this.initNavigationItems();
     this.initViewItems();
+    this.initImageItems();
     this.initMiscItems();
     this.initSpellingItems();
     this.initSaveItems();
+    this.initSyncItems();
     this.initClipboardItems();
     this.initMediaPlayerItems();
     this.initLeaveDOMFullScreenItems();
     this.initClickToPlayItems();
     this.initPasswordManagerItems();
-    this.initSyncItems();
+    this.initViewSourceItems();
+    this.initScreenshotItem();
+    this.initPasswordControlItems();
+
+    this.showHideSeparators(aXulMenu);
+    if (!aXulMenu.showHideSeparators) {
+      // Set the showHideSeparators function on the menu itself so that
+      // the extension code (ext-menus.js) can call it after modifying
+      // the menus.
+      aXulMenu.showHideSeparators = () => {
+        this.showHideSeparators(aXulMenu);
+      };
+    }
   }
 
   initPageMenuSeparator() {
@@ -372,11 +398,13 @@ class nsContextMenu {
       var label = ContextualIdentityService.getUserContextLabel(
         this.contentData.userContextId
       );
-      item.setAttribute(
-        "label",
-        gBrowserBundle.formatStringFromName("userContextOpenLink.label", [
-          label,
-        ])
+
+      document.l10n.setAttributes(
+        item,
+        "main-context-menu-open-link-in-container-tab",
+        {
+          containerName: label,
+        }
       );
     }
 
@@ -398,7 +426,6 @@ class nsContextMenu {
       shouldShow && !isWindowPrivate && showContainers
     );
     this.showItem("context-openlinkincurrent", this.onPlainTextLink);
-    this.showItem("context-sep-open", shouldShow);
   }
 
   initNavigationItems() {
@@ -412,30 +439,66 @@ class nsContextMenu {
         this.onAudio ||
         this.onTextInput
       ) && this.inTabBrowser;
-    this.showItem("context-navigation", shouldShow);
-    this.showItem("context-sep-navigation", shouldShow);
+    if (AppConstants.platform == "macosx") {
+      for (let id of [
+        "context-back",
+        "context-forward",
+        "context-reload",
+        "context-stop",
+        "context-sep-navigation",
+      ]) {
+        this.showItem(id, shouldShow);
+      }
+    } else {
+      this.showItem("context-navigation", shouldShow);
+    }
 
     let stopped =
       XULBrowserWindow.stopCommand.getAttribute("disabled") == "true";
 
     let stopReloadItem = "";
-    if (shouldShow || !this.inTabBrowser) {
-      stopReloadItem = stopped || !this.inTabBrowser ? "reload" : "stop";
+    if (shouldShow) {
+      stopReloadItem = stopped ? "reload" : "stop";
     }
 
     this.showItem("context-reload", stopReloadItem == "reload");
     this.showItem("context-stop", stopReloadItem == "stop");
+
+    function initBackForwardMenuItemTooltip(menuItemId, l10nId, shortcutId) {
+      // On macOS regular menuitems are used and the shortcut isn't added
+      if (AppConstants.platform == "macosx") {
+        return;
+      }
+
+      let shortcut = document.getElementById(shortcutId);
+      if (shortcut) {
+        shortcut = ShortcutUtils.prettifyShortcut(shortcut);
+      } else {
+        // Sidebar doesn't have navigation buttons or shortcuts, but we still
+        // want to format the menu item tooltip to remove "$shortcut" string.
+        shortcut = "";
+      }
+      let menuItem = document.getElementById(menuItemId);
+      document.l10n.setAttributes(menuItem, l10nId, { shortcut });
+    }
+
+    initBackForwardMenuItemTooltip(
+      "context-back",
+      "main-context-menu-back-2",
+      "goBackKb"
+    );
+
+    initBackForwardMenuItemTooltip(
+      "context-forward",
+      "main-context-menu-forward-2",
+      "goForwardKb"
+    );
   }
 
   initLeaveDOMFullScreenItems() {
     // only show the option if the user is in DOM fullscreen
     var shouldShow = this.target.ownerDocument.fullscreen;
     this.showItem("context-leave-dom-fullscreen", shouldShow);
-
-    // Explicitly show if in DOM fullscreen, but do not hide it has already been shown
-    if (shouldShow) {
-      this.showItem("context-media-sep-commands", true);
-    }
   }
 
   initSaveItems() {
@@ -455,16 +518,23 @@ class nsContextMenu {
       "context-savelink",
       this.onSaveableLink || this.onPlainTextLink
     );
+    if (
+      (this.onSaveableLink || this.onPlainTextLink) &&
+      Services.policies.status === Services.policies.ACTIVE
+    ) {
+      this.setItemAttr(
+        "context-savelink",
+        "disabled",
+        !WebsiteFilter.isAllowed(this.linkURL)
+      );
+    }
 
-    // Save image depends on having loaded its content, video and audio don't.
-    this.showItem("context-saveimage", this.onLoadedImage || this.onCanvas);
+    // Save video and audio don't rely on whether it has loaded or not.
     this.showItem("context-savevideo", this.onVideo);
     this.showItem("context-saveaudio", this.onAudio);
     this.showItem("context-video-saveimage", this.onVideo);
     this.setItemAttr("context-savevideo", "disabled", !this.mediaURL);
     this.setItemAttr("context-saveaudio", "disabled", !this.mediaURL);
-    // Send media URL (but not for canvas, since it's a big data: URL)
-    this.showItem("context-sendimage", this.onImage);
     this.showItem("context-sendvideo", this.onVideo);
     this.showItem("context-sendaudio", this.onAudio);
     let mediaIsBlob = this.mediaURL.startsWith("blob:");
@@ -480,52 +550,65 @@ class nsContextMenu {
     );
   }
 
-  initViewItems() {
-    // View source is always OK, unless in directory listing.
+  initImageItems() {
+    // Reload image depends on an image that's not fully loaded
     this.showItem(
-      "context-viewpartialsource-selection",
-      !this.inAboutDevtoolsToolbox && this.isContentSelected
+      "context-reloadimage",
+      this.onImage && !this.onCompletedImage
     );
 
-    var shouldShow = !(
-      this.isContentSelected ||
-      this.onImage ||
-      this.onCanvas ||
-      this.onVideo ||
-      this.onAudio ||
-      this.onLink ||
-      this.onTextInput
-    );
+    // View image depends on having an image that's not standalone
+    // (or is in a frame), or a canvas. If this isn't an image, check
+    // if there is a background image.
+    let showViewImage =
+      (this.onImage && (!this.inSyntheticDoc || this.inFrame)) || this.onCanvas;
+    let showBGImage =
+      this.hasBGImage &&
+      !this.hasMultipleBGImages &&
+      !this.inSyntheticDoc &&
+      !this.inPDFViewer &&
+      !this.isContentSelected &&
+      !this.onImage &&
+      !this.onCanvas &&
+      !this.onVideo &&
+      !this.onAudio &&
+      !this.onLink &&
+      !this.onTextInput;
+    this.showItem("context-viewimage", showViewImage || showBGImage);
 
-    var showInspect =
-      this.inTabBrowser &&
-      !this.inAboutDevtoolsToolbox &&
-      Services.prefs.getBoolPref("devtools.inspector.enabled", true) &&
-      !Services.prefs.getBoolPref("devtools.policy.disabled", false);
+    // Save image depends on having loaded its content.
+    this.showItem("context-saveimage", this.onLoadedImage || this.onCanvas);
 
-    var showInspectA11Y =
-      showInspect &&
-      Services.prefs.getBoolPref("devtools.accessibility.enabled", false) &&
-      this.inTabBrowser &&
-      Services.prefs.getBoolPref("devtools.enabled", true) &&
-      Services.prefs.getBoolPref("devtools.accessibility.enabled", true) &&
-      !Services.prefs.getBoolPref("devtools.policy.disabled", false);
+    // Copy image contents depends on whether we're on an image.
+    // Note: the element doesn't exist on all platforms, but showItem() takes
+    // care of that by itself.
+    this.showItem("context-copyimage-contents", this.onImage);
 
-    this.showItem("context-viewsource", shouldShow);
-    this.showItem("context-viewinfo", shouldShow);
-    // The page info is broken for WebExtension popups, as the browser is
-    // destroyed when the popup is closed.
+    // Copy image location depends on whether we're on an image.
+    this.showItem("context-copyimage", this.onImage || showBGImage);
+
+    // Send media URL (but not for canvas, since it's a big data: URL)
+    this.showItem("context-sendimage", this.onImage || showBGImage);
+
+    // View Image Info defaults to false, user can enable
+    var showViewImageInfo =
+      this.onImage &&
+      Services.prefs.getBoolPref("browser.menu.showViewImageInfo", false);
+
+    this.showItem("context-viewimageinfo", showViewImageInfo);
+    // The image info popup is broken for WebExtension popups, since the browser
+    // is destroyed when the popup is closed.
     this.setItemAttr(
-      "context-viewinfo",
+      "context-viewimageinfo",
       "disabled",
       this.webExtBrowserType === "popup"
     );
-    this.showItem("inspect-separator", showInspect);
-    this.showItem("context-inspect", showInspect);
-
-    this.showItem("context-inspect-a11y", showInspectA11Y);
-
-    this.showItem("context-sep-viewsource", shouldShow);
+    // Open the link to more details about the image. Does not apply to
+    // background images.
+    this.showItem(
+      "context-viewimagedesc",
+      this.onImage && this.imageDescURL !== ""
+    );
 
     // Set as Desktop background depends on whether an image was clicked on,
     // and only works if we have a shell service.
@@ -552,19 +635,54 @@ class nsContextMenu {
         "context-setDesktopBackground"
       ).disabled = this.contentData.disableSetDesktopBackground;
     }
+  }
 
-    // Reload image depends on an image that's not fully loaded
+  initViewItems() {
+    // View source is always OK, unless in directory listing.
     this.showItem(
-      "context-reloadimage",
-      this.onImage && !this.onCompletedImage
+      "context-viewpartialsource-selection",
+      !this.inAboutDevtoolsToolbox &&
+        this.isContentSelected &&
+        this.selectionInfo.isDocumentLevelSelection
     );
 
-    // View image depends on having an image that's not standalone
-    // (or is in a frame), or a canvas.
     this.showItem(
-      "context-viewimage",
-      (this.onImage && (!this.inSyntheticDoc || this.inFrame)) || this.onCanvas
+      "context-print-selection",
+      !this.inAboutDevtoolsToolbox &&
+        this.isContentSelected &&
+        this.selectionInfo.isDocumentLevelSelection
     );
+
+    var shouldShow = !(
+      this.isContentSelected ||
+      this.onImage ||
+      this.onCanvas ||
+      this.onVideo ||
+      this.onAudio ||
+      this.onLink ||
+      this.onTextInput
+    );
+
+    var showInspect =
+      this.inTabBrowser &&
+      !this.inAboutDevtoolsToolbox &&
+      Services.prefs.getBoolPref("devtools.inspector.enabled", true) &&
+      !Services.prefs.getBoolPref("devtools.policy.disabled", false);
+
+    var showInspectA11Y =
+      showInspect &&
+      Services.prefs.getBoolPref("devtools.accessibility.enabled", false) &&
+      Services.prefs.getBoolPref("devtools.enabled", true) &&
+      (Services.prefs.getBoolPref("devtools.everOpened", false) ||
+        // Note: this is a legacy usecase, we will remove it in bug 1695257,
+        // once existing users have had time to set devtools.everOpened
+        // through normal use, and we've passed an ESR cycle (91).
+        nsContextMenu.DevToolsShim.isDevToolsUser());
+
+    this.showItem("context-viewsource", shouldShow);
+    this.showItem("context-inspect", showInspect);
+
+    this.showItem("context-inspect-a11y", showInspectA11Y);
 
     // View video depends on not having a standalone video.
     this.showItem(
@@ -572,37 +690,6 @@ class nsContextMenu {
       this.onVideo && (!this.inSyntheticDoc || this.inFrame)
     );
     this.setItemAttr("context-viewvideo", "disabled", !this.mediaURL);
-
-    // View background image depends on whether there is one, but don't make
-    // background images of a stand-alone media document available.
-    this.showItem(
-      "context-viewbgimage",
-      shouldShow &&
-        !this.hasMultipleBGImages &&
-        !this.inSyntheticDoc &&
-        !this.inPDFViewer
-    );
-    this.showItem(
-      "context-sep-viewbgimage",
-      shouldShow &&
-        !this.hasMultipleBGImages &&
-        !this.inSyntheticDoc &&
-        !this.inPDFViewer
-    );
-    document.getElementById("context-viewbgimage").disabled = !this.hasBGImage;
-
-    this.showItem("context-viewimageinfo", this.onImage);
-    // The image info popup is broken for WebExtension popups, since the browser
-    // is destroyed when the popup is closed.
-    this.setItemAttr(
-      "context-viewimageinfo",
-      "disabled",
-      this.webExtBrowserType === "popup"
-    );
-    this.showItem(
-      "context-viewimagedesc",
-      this.onImage && this.imageDescURL !== ""
-    );
   }
 
   initMiscItems() {
@@ -627,10 +714,7 @@ class nsContextMenu {
       (this.onLink && !this.onMailtoLink && !this.onMozExtLink) ||
         this.onPlainTextLink
     );
-    this.showItem(
-      "context-keywordfield",
-      this.onTextInput && this.onKeywordField
-    );
+    this.showItem("context-keywordfield", this.shouldShowAddKeyword());
     this.showItem("frame", this.inFrame);
 
     if (this.inFrame) {
@@ -652,23 +736,15 @@ class nsContextMenu {
     this.showItem("context-openframeintab", !this.inSrcdocFrame);
     this.showItem("context-openframe", !this.inSrcdocFrame);
     this.showItem("context-bookmarkframe", !this.inSrcdocFrame);
-    this.showItem("open-frame-sep", !this.inSrcdocFrame);
-
-    this.showItem("frame-sep", this.inFrame && this.isTextSelected);
 
     // Hide menu entries for images, show otherwise
     if (this.inFrame) {
-      if (
-        BrowserUtils.mimeTypeIsTextBased(this.target.ownerDocument.contentType)
-      ) {
-        this.viewFrameSourceElement.removeAttribute("hidden");
-      } else {
-        this.viewFrameSourceElement.setAttribute("hidden", "true");
-      }
+      this.viewFrameSourceElement.hidden = !BrowserUtils.mimeTypeIsTextBased(
+        this.target.ownerDocument.contentType
+      );
     }
 
     // BiDi UI
-    this.showItem("context-sep-bidi", !this.onNumeric && top.gBidiUI);
     this.showItem(
       "context-bidi-text-direction-toggle",
       this.onTextInput && !this.onNumeric && top.gBidiUI
@@ -688,7 +764,6 @@ class nsContextMenu {
     var onMisspelling = InlineSpellCheckerUI.overMisspelling;
     var showUndo = canSpell && InlineSpellCheckerUI.canUndo();
     this.showItem("spell-check-enabled", canSpell);
-    this.showItem("spell-separator", canSpell);
     document
       .getElementById("spell-check-enabled")
       .setAttribute("checked", canSpell && InlineSpellCheckerUI.enabled);
@@ -697,7 +772,6 @@ class nsContextMenu {
     this.showItem("spell-undo-add-to-dictionary", showUndo);
 
     // suggestion list
-    this.showItem("spell-suggestions-separator", onMisspelling || showUndo);
     if (onMisspelling) {
       var suggestionsSeparator = document.getElementById(
         "spell-add-to-dictionary"
@@ -705,7 +779,7 @@ class nsContextMenu {
       var numsug = InlineSpellCheckerUI.addSuggestionsToMenu(
         suggestionsSeparator.parentNode,
         suggestionsSeparator,
-        5
+        this.spellSuggestions
       );
       this.showItem("spell-no-suggestions", numsug == 0);
     } else {
@@ -717,17 +791,12 @@ class nsContextMenu {
     if (canSpell) {
       var dictMenu = document.getElementById("spell-dictionaries-menu");
       var dictSep = document.getElementById("spell-language-separator");
-      let count = InlineSpellCheckerUI.addDictionaryListToMenu(
-        dictMenu,
-        dictSep
-      );
-      this.showItem(dictSep, count > 0);
+      InlineSpellCheckerUI.addDictionaryListToMenu(dictMenu, dictSep);
       this.showItem("spell-add-dictionaries-main", false);
     } else if (this.onSpellcheckable) {
       // when there is no spellchecker but we might be able to spellcheck
       // add the add to dictionaries item. This will ensure that people
       // with no dictionaries will be able to download them
-      this.showItem("spell-language-separator", showDictionaries);
       this.showItem("spell-add-dictionaries-main", showDictionaries);
     } else {
       this.showItem("spell-add-dictionaries-main", false);
@@ -742,12 +811,11 @@ class nsContextMenu {
     goUpdateGlobalEditMenuItems();
 
     this.showItem("context-undo", this.onTextInput);
-    this.showItem("context-sep-undo", this.onTextInput);
+    this.showItem("context-redo", this.onTextInput);
     this.showItem("context-cut", this.onTextInput);
     this.showItem("context-copy", this.isContentSelected || this.onTextInput);
     this.showItem("context-paste", this.onTextInput);
     this.showItem("context-delete", this.onTextInput);
-    this.showItem("context-sep-paste", this.onTextInput);
     this.showItem(
       "context-selectall",
       !(
@@ -757,10 +825,6 @@ class nsContextMenu {
         this.onAudio ||
         this.inSyntheticDoc
       ) || this.isDesignMode
-    );
-    this.showItem(
-      "context-sep-selectall",
-      !this.inAboutDevtoolsToolbox && this.isContentSelected
     );
 
     // XXX dr
@@ -773,26 +837,18 @@ class nsContextMenu {
 
     // Copy link location depends on whether we're on a non-mailto link.
     this.showItem("context-copylink", this.onLink && !this.onMailtoLink);
-    this.showItem(
-      "context-sep-copylink",
-      this.onLink && (this.onImage || this.onVideo || this.onAudio)
+    let copyLinkSeparator = document.getElementById("context-sep-copylink");
+    // Show "Copy Link" and "Copy" with no divider, and "copy link" and "Send link to Device" with no divider between.
+    // Other cases will show a divider.
+    copyLinkSeparator.toggleAttribute(
+      "ensureHidden",
+      this.onLink && !this.onMailtoLink && !this.onImage && this.syncItemsShown
     );
 
-    // Copy image contents depends on whether we're on an image.
-    // Note: the element doesn't exist on all platforms, but showItem() takes
-    // care of that by itself.
-    this.showItem("context-copyimage-contents", this.onImage);
-
-    // Copy image location depends on whether we're on an image.
-    this.showItem("context-copyimage", this.onImage);
     this.showItem("context-copyvideourl", this.onVideo);
     this.showItem("context-copyaudiourl", this.onAudio);
     this.setItemAttr("context-copyvideourl", "disabled", !this.mediaURL);
     this.setItemAttr("context-copyaudiourl", "disabled", !this.mediaURL);
-    this.showItem(
-      "context-sep-copyimage",
-      this.onImage || this.onVideo || this.onAudio
-    );
   }
 
   initMediaPlayerItems() {
@@ -832,12 +888,11 @@ class nsContextMenu {
           "media.videocontrols.picture-in-picture.enabled"
         ) &&
         this.onVideo &&
-        !this.onMediaStreamVideo &&
-        !this.target.ownerDocument.fullscreen;
+        !this.target.ownerDocument.fullscreen &&
+        this.target.readyState > 0;
       this.showItem("context-video-pictureinpicture", shouldDisplay);
     }
     this.showItem("context-media-eme-learnmore", this.onDRMMedia);
-    this.showItem("context-media-eme-separator", this.onDRMMedia);
 
     // Disable them when there isn't a valid media source loaded.
     if (onMedia) {
@@ -904,65 +959,57 @@ class nsContextMenu {
         );
       }
     }
-    this.showItem("context-media-sep-commands", onMedia);
   }
 
   initClickToPlayItems() {
-    this.showItem("context-ctp-play", this.onCTPPlugin);
-    this.showItem("context-ctp-hide", this.onCTPPlugin);
-    this.showItem("context-sep-ctp", this.onCTPPlugin);
+    this.showItem("context-ctp-play", false);
+    this.showItem("context-ctp-hide", false);
   }
 
   initPasswordManagerItems() {
-    let showFill = false;
+    let showUseSavedLogin = false;
     let showGenerate = false;
+    let showManage = false;
     let enableGeneration = Services.logins.isLoggedIn;
     try {
-      let loginFillInfo = this.contentData && this.contentData.loginFillInfo;
-      let documentURI = this.contentData.documentURIObject;
-
-      // If we could not find a password field we
-      // don't want to show the form fill option.
-      if (
-        !loginFillInfo ||
-        !loginFillInfo.passwordField.found ||
-        documentURI.schemeIs("about")
-      ) {
-        // Both generation and fill will default to disabled.
+      // If we could not find a password field we don't want to
+      // show the form fill, manage logins and the password generation items.
+      if (!this.isLoginForm()) {
         return;
       }
-      showFill = true;
+      showManage = true;
 
       // Disable the fill option if the user hasn't unlocked with their master password
       // or if the password field or target field are disabled.
       // XXX: Bug 1529025 to maybe respect signon.rememberSignons.
+      let loginFillInfo = this.contentData?.loginFillInfo;
       let disableFill =
         !Services.logins.isLoggedIn ||
-        loginFillInfo.passwordField.disabled ||
-        loginFillInfo.activeField.disabled;
+        loginFillInfo?.passwordField.disabled ||
+        loginFillInfo?.activeField.disabled;
       this.setItemAttr("fill-login", "disabled", disableFill);
 
       let onPasswordLikeField = PASSWORD_FIELDNAME_HINTS.includes(
         loginFillInfo.activeField.fieldNameHint
       );
+
       // Set the correct label for the fill menu
       let fillMenu = document.getElementById("fill-login");
       if (onPasswordLikeField) {
-        fillMenu.setAttribute("label", fillMenu.getAttribute("label-password"));
         fillMenu.setAttribute(
-          "accesskey",
-          fillMenu.getAttribute("accesskey-password")
+          "data-l10n-id",
+          "main-context-menu-use-saved-password"
         );
       } else {
         // On a username field
-        fillMenu.setAttribute("label", fillMenu.getAttribute("label-login"));
         fillMenu.setAttribute(
-          "accesskey",
-          fillMenu.getAttribute("accesskey-login")
+          "data-l10n-id",
+          "main-context-menu-use-saved-login"
         );
       }
 
-      let formOrigin = LoginHelper.getLoginOrigin(documentURI.spec);
+      let documentURI = this.contentData?.documentURIObject;
+      let formOrigin = LoginHelper.getLoginOrigin(documentURI?.spec);
       let isGeneratedPasswordEnabled =
         LoginHelper.generationAvailable && LoginHelper.generationEnabled;
       showGenerate =
@@ -971,6 +1018,8 @@ class nsContextMenu {
         Services.logins.getLoginSavingEnabled(formOrigin);
 
       if (disableFill) {
+        showUseSavedLogin = true;
+
         // No need to update the submenu if the fill item is disabled.
         return;
       }
@@ -982,31 +1031,150 @@ class nsContextMenu {
         formOrigin
       );
 
-      this.showItem("fill-login-no-logins", !fragment);
-
       if (!fragment) {
         return;
       }
+
+      showUseSavedLogin = true;
       let popup = document.getElementById("fill-login-popup");
-      let insertBeforeElement = document.getElementById("fill-login-no-logins");
-      popup.insertBefore(fragment, insertBeforeElement);
+      popup.appendChild(fragment);
     } finally {
-      this.showItem("fill-login", showFill);
+      this.showItem("fill-login", showUseSavedLogin);
       this.showItem("fill-login-generated-password", showGenerate);
+      this.showItem("manage-saved-logins", showManage);
       this.setItemAttr(
         "fill-login-generated-password",
         "disabled",
         !enableGeneration
       );
-      this.showItem(
-        "fill-login-and-generated-password-separator",
-        showFill || showGenerate
+      this.setItemAttr(
+        "passwordmgr-items-separator",
+        "ensureHidden",
+        showUseSavedLogin || showGenerate || showManage ? null : true
       );
     }
   }
 
   initSyncItems() {
-    gSync.updateContentContextMenu(this);
+    this.syncItemsShown = gSync.updateContentContextMenu(this);
+  }
+
+  initViewSourceItems() {
+    const getString = name => {
+      const { bundle } = gViewSourceUtils.getPageActor(this.browser);
+      return bundle.GetStringFromName(name);
+    };
+    const showViewSourceItem = (id, check, accesskey) => {
+      const fullId = `context-viewsource-${id}`;
+      this.showItem(fullId, onViewSource);
+      if (!onViewSource) {
+        return;
+      }
+      check().then(checked => this.setItemAttr(fullId, "checked", checked));
+      this.setItemAttr(fullId, "label", getString(`context_${id}_label`));
+      if (accesskey) {
+        this.setItemAttr(
+          fullId,
+          "accesskey",
+          getString(`context_${id}_accesskey`)
+        );
+      }
+    };
+
+    const onViewSource = this.browser.currentURI.schemeIs("view-source");
+
+    showViewSourceItem("goToLine", async () => false, true);
+    showViewSourceItem("wrapLongLines", () =>
+      gViewSourceUtils.getPageActor(this.browser).queryIsWrapping()
+    );
+    showViewSourceItem("highlightSyntax", () =>
+      gViewSourceUtils.getPageActor(this.browser).queryIsSyntaxHighlighting()
+    );
+  }
+
+  // Iterate over the visible items on the menu and its submenus and
+  // hide any duplicated separators next to each other.
+  // The attribute "ensureHidden" will override this process and keep a particular separator hidden in special cases.
+  showHideSeparators(aPopup) {
+    let lastVisibleSeparator = null;
+    let count = 0;
+    for (let menuItem of aPopup.children) {
+      // Skip any items that were added by the page menu.
+      if (menuItem.hasAttribute("generateditemid")) {
+        count++;
+        continue;
+      }
+
+      if (menuItem.localName == "menuseparator") {
+        // Individual separators can have the `ensureHidden` attribute added to avoid them
+        // becoming visible. We also set `count` to 0 below because otherwise the
+        // next separator would be made visible, with the same visual effect.
+        if (!count || menuItem.hasAttribute("ensureHidden")) {
+          menuItem.hidden = true;
+        } else {
+          menuItem.hidden = false;
+          lastVisibleSeparator = menuItem;
+        }
+
+        count = 0;
+      } else if (!menuItem.hidden) {
+        if (menuItem.localName == "menu") {
+          this.showHideSeparators(menuItem.menupopup);
+        } else if (menuItem.localName == "menugroup") {
+          this.showHideSeparators(menuItem);
+        }
+        count++;
+      }
+    }
+
+    // If count is 0 yet lastVisibleSeparator is set, then there must be a separator
+    // visible at the end of the menu, so hide it. Note that there could be more than
+    // one but this isn't handled here.
+    if (!count && lastVisibleSeparator) {
+      lastVisibleSeparator.hidden = true;
+    }
+  }
+
+  initScreenshotItem() {
+    // About pages other than about:reader are not currently supported by
+    // screenshots (see Bug 1620992)
+    let uri = this.contentData?.documentURIObject;
+    let shouldShow =
+      !screenshotsDisabled &&
+      (uri.scheme != "about" || uri.spec.startsWith("about:reader")) &&
+      this.inTabBrowser &&
+      !this.onTextInput &&
+      !this.onLink &&
+      !this.onPlainTextLink &&
+      !this.onImage &&
+      !this.onVideo &&
+      !this.onAudio &&
+      !this.onEditable &&
+      !this.onPassword &&
+      !this.inFrame;
+
+    this.showItem("context-sep-screenshots", shouldShow);
+    this.showItem("context-take-screenshot", shouldShow);
+  }
+
+  initPasswordControlItems() {
+    let shouldShow = this.onPassword && SHOW_PASSWORD_ENABLED;
+    if (shouldShow) {
+      let checked = this.passwordRevealed;
+      let showPasswordMenuItem = document.getElementById(
+        "context-toggle-show-password"
+      );
+      if (checked) {
+        showPasswordMenuItem.setAttribute("checked", "true");
+      } else {
+        showPasswordMenuItem.removeAttribute("checked");
+      }
+    }
+    this.showItem("context-toggle-show-password", shouldShow);
+  }
+
+  toggleShowPassword() {
+    this.actor.toggleShowPassword(this.targetIdentifier);
   }
 
   openPasswordManager() {
@@ -1020,6 +1188,20 @@ class nsContextMenu {
       this.targetIdentifier,
       this.contentData.documentURIObject,
       this.browser
+    );
+  }
+
+  isLoginForm() {
+    let loginFillInfo = this.contentData?.loginFillInfo;
+    let documentURI = this.contentData?.documentURIObject;
+
+    // If we could not find a password field or this is not a username-only
+    // form, then don't treat this as a login form.
+    return (
+      (loginFillInfo?.passwordField?.found ||
+        loginFillInfo?.activeField.fieldNameHint == USERNAME_FIELDNAME_HINT) &&
+      !documentURI?.schemeIs("about") &&
+      this.browser.contentPrincipal.spec != "resource://pdf.js/web/viewer.html"
     );
   }
 
@@ -1087,26 +1269,7 @@ class nsContextMenu {
 
   // Open linked-to URL in a new tab.
   openLinkInTab(event) {
-    let referrerURI = this.contentData.documentURIObject;
-
-    // if its parent allows mixed content and the referring URI passes
-    // a same origin check with the target URI, we can preserve the users
-    // decision of disabling MCB on a page for it's child tabs.
-    let persistAllowMixedContentInChildTab = false;
-
-    if (this.contentData.parentAllowsMixedContent) {
-      const sm = Services.scriptSecurityManager;
-      try {
-        let targetURI = this.linkURI;
-        let isPrivateWin =
-          this.browser.contentPrincipal.originAttributes.privateBrowsingId > 0;
-        sm.checkSameOriginURI(referrerURI, targetURI, false, isPrivateWin);
-        persistAllowMixedContentInChildTab = true;
-      } catch (e) {}
-    }
-
     let params = {
-      allowMixedContent: persistAllowMixedContentInChildTab,
       userContextId: parseInt(event.target.getAttribute("data-usercontextid")),
     };
 
@@ -1155,6 +1318,18 @@ class nsContextMenu {
       referrerInfo: this.contentData.frameReferrerInfo,
       triggeringPrincipal: this.browser.contentPrincipal,
     });
+  }
+
+  takeScreenshot() {
+    if (SCREENSHOT_BROWSER_COMPONENT) {
+      Services.obs.notifyObservers(window, "menuitem-screenshot", true);
+    } else {
+      Services.obs.notifyObservers(
+        null,
+        "menuitem-screenshot-extension",
+        "contextMenu"
+      );
+    }
   }
 
   // View Partial Source
@@ -1260,11 +1435,15 @@ class nsContextMenu {
 
   // Change current window to the URL of the image, video, or audio.
   viewMedia(e) {
+    let where = whereToOpenLink(e, false, false);
+    if (where == "current") {
+      where = "tab";
+    }
     let referrerInfo = this.contentData.referrerInfo;
     let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
     if (this.onCanvas) {
       this._canvasToBlobURL(this.targetIdentifier).then(function(blobURL) {
-        openUILink(blobURL, e, {
+        openLinkIn(blobURL, where, {
           referrerInfo,
           triggeringPrincipal: systemPrincipal,
         });
@@ -1275,7 +1454,9 @@ class nsContextMenu {
         this.principal,
         Ci.nsIScriptSecurityManager.DISALLOW_SCRIPT
       );
-      openUILink(this.mediaURL, e, {
+
+      // Default to opening in a new tab.
+      openLinkIn(this.mediaURL, where, {
         referrerInfo,
         forceAllowDataURI: true,
         triggeringPrincipal: this.principal,
@@ -1303,6 +1484,7 @@ class nsContextMenu {
 
     // Cache this because we fetch the data async
     let referrerInfo = this.contentData.referrerInfo;
+    let cookieJarSettings = this.contentData.cookieJarSettings;
 
     this.actor.saveVideoFrameAsImage(this.targetIdentifier).then(dataURL => {
       // FIXME can we switch this to a blob URL?
@@ -1316,6 +1498,7 @@ class nsContextMenu {
         "SaveImageTitle",
         null, // chosen data
         referrerInfo,
+        cookieJarSettings,
         null, // initiating doc
         false, // don't skip prompt for where to save
         null, // cache key
@@ -1339,6 +1522,7 @@ class nsContextMenu {
 
     openUILink(this.bgImageURL, e, {
       referrerInfo: this.contentData.referrerInfo,
+      forceAllowDataURI: true,
       triggeringPrincipal: this.principal,
       csp: this.csp,
     });
@@ -1411,6 +1595,7 @@ class nsContextMenu {
     bypassCache,
     doc,
     referrerInfo,
+    cookieJarSettings,
     windowID,
     linkDownload,
     isContentWindowPrivate
@@ -1446,7 +1631,26 @@ class nsContextMenu {
             );
 
             const title = bundle.GetStringFromName("downloadErrorAlertTitle");
-            const msg = bundle.GetStringFromName("downloadErrorGeneric");
+            let msg = bundle.GetStringFromName("downloadErrorGeneric");
+
+            try {
+              const channel = aRequest.QueryInterface(Ci.nsIChannel);
+              const reason = channel.loadInfo.requestBlockingReason;
+              if (
+                reason == Ci.nsILoadInfo.BLOCKING_REASON_EXTENSION_WEBREQUEST
+              ) {
+                try {
+                  const properties = channel.QueryInterface(Ci.nsIPropertyBag);
+                  const id = properties.getProperty("cancelledByExtension");
+                  msg = bundle.formatStringFromName("downloadErrorBlockedBy", [
+                    WebExtensionPolicy.getByID(id).name,
+                  ]);
+                } catch (err) {
+                  // "cancelledByExtension" doesn't have to be available.
+                  msg = bundle.GetStringFromName("downloadErrorExtension");
+                }
+              }
+            } catch (ex) {}
 
             let window = Services.wm.getOuterWindowWithId(windowID);
             Services.prompt.alert(window, title, msg);
@@ -1479,6 +1683,7 @@ class nsContextMenu {
             bypassCache,
             false,
             referrerInfo,
+            cookieJarSettings,
             doc,
             isContentWindowPrivate,
             this._triggeringPrincipal
@@ -1564,6 +1769,8 @@ class nsContextMenu {
       if (channel instanceof Ci.nsIHttpChannelInternal) {
         channel.forceAllowThirdPartyCookie = true;
       }
+
+      channel.loadInfo.cookieJarSettings = cookieJarSettings;
     }
 
     // fallback to the old way if we don't see the headers quickly
@@ -1595,6 +1802,7 @@ class nsContextMenu {
       true,
       this.ownerDoc,
       referrerInfo,
+      this.contentData.cookieJarSettings,
       this.frameOuterWindowID,
       this.linkDownload,
       isContentWindowPrivate
@@ -1613,6 +1821,7 @@ class nsContextMenu {
     let doc = this.ownerDoc;
     let isContentWindowPrivate = this.ownerDoc.isPrivate;
     let referrerInfo = this.contentData.referrerInfo;
+    let cookieJarSettings = this.contentData.cookieJarSettings;
     let isPrivate = PrivateBrowsingUtils.isBrowserPrivate(this.browser);
     if (this.onCanvas) {
       // Bypass cache, since it's a data: URL.
@@ -1627,6 +1836,7 @@ class nsContextMenu {
           "SaveImageTitle",
           null, // chosen data
           referrerInfo,
+          cookieJarSettings,
           null, // initiating doc
           false, // don't skip prompt for where to save
           null, // cache key
@@ -1646,6 +1856,7 @@ class nsContextMenu {
         "SaveImageTitle",
         null, // chosen data
         referrerInfo,
+        cookieJarSettings,
         null, // initiating doc
         false, // don't skip prompt for where to save
         null, // cache key
@@ -1661,8 +1872,9 @@ class nsContextMenu {
         false,
         doc,
         referrerInfo,
+        cookieJarSettings,
         this.frameOuterWindowID,
-        "",
+        this.mediaURL.startsWith("data") ? "index" : "", // use default file name "index" for data URIs
         isContentWindowPrivate
       );
     }
@@ -1680,11 +1892,11 @@ class nsContextMenu {
   }
 
   playPlugin() {
-    this.actor.pluginCommand("play", this.targetIdentifier);
+    /* no-op.  TODO: Remove me. */
   }
 
   hidePlugin() {
-    this.actor.pluginCommand("hide", this.targetIdentifier);
+    /* no-op.  TODO: Remove me. */
   }
 
   // Generate email address and put it on clipboard.
@@ -1830,6 +2042,10 @@ class nsContextMenu {
     return false;
   }
 
+  shouldShowAddKeyword() {
+    return this.onTextInput && this.onKeywordField && !this.isLoginForm();
+  }
+
   addDictionaries() {
     var uri = formatURL("browser.dictionaries.download.url", true);
 
@@ -1882,7 +2098,15 @@ class nsContextMenu {
   }
 
   printFrame() {
-    PrintUtils.printWindow(this.actor.browsingContext);
+    PrintUtils.startPrintWindow(this.actor.browsingContext, {
+      printFrameOnly: true,
+    });
+  }
+
+  printSelection() {
+    PrintUtils.startPrintWindow(this.actor.browsingContext, {
+      printSelectionOnly: true,
+    });
   }
 
   switchPageDirection() {
@@ -1902,7 +2126,7 @@ class nsContextMenu {
     var clipboard = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(
       Ci.nsIClipboardHelper
     );
-    clipboard.copyString(this.mediaURL);
+    clipboard.copyString(this.originalMediaURL);
   }
 
   drmLearnMore(aEvent) {
@@ -1918,15 +2142,17 @@ class nsContextMenu {
     openTrustedLinkIn(drmInfoURL, dest);
   }
 
-  get imageURL() {
-    if (this.onImage) {
-      return this.mediaURL;
-    }
-    return "";
-  }
-
   // Formats the 'Search <engine> for "<selection or link text>"' context menu.
   showAndFormatSearchContextItem() {
+    let menuItem = document.getElementById("context-searchselect");
+    let menuItemPrivate = document.getElementById(
+      "context-searchselect-private"
+    );
+    if (!Services.search.isInitialized) {
+      menuItem.hidden = true;
+      menuItemPrivate.hidden = true;
+      return;
+    }
     const docIsPrivate = PrivateBrowsingUtils.isBrowserPrivate(this.browser);
     const privatePref = "browser.search.separatePrivateDefault.ui.enabled";
     let showSearchSelect =
@@ -1940,12 +2166,16 @@ class nsContextMenu {
       !docIsPrivate &&
       Services.prefs.getBoolPref(privatePref);
 
-    let menuItem = document.getElementById("context-searchselect");
-    let menuItemPrivate = document.getElementById(
-      "context-searchselect-private"
-    );
     menuItem.hidden = !showSearchSelect;
     menuItemPrivate.hidden = !showPrivateSearchSelect;
+    let frameSeparator = document.getElementById("frame-sep");
+
+    // Add a divider between "Search X for Y" and "This Frame", and between "Search X for Y" and "Check Spelling",
+    // but no divider in other cases.
+    frameSeparator.toggleAttribute(
+      "ensureHidden",
+      !showSearchSelect && this.inFrame
+    );
     // If we're not showing the menu items, we can skip formatting the labels.
     if (!showSearchSelect) {
       return;
@@ -2020,3 +2250,24 @@ XPCOMUtils.defineLazyModuleGetters(nsContextMenu, {
   LoginManagerContextMenu: "resource://gre/modules/LoginManagerContextMenu.jsm",
   DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.jsm",
 });
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "screenshotsDisabled",
+  "extensions.screenshots.disabled",
+  false
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "SCREENSHOT_BROWSER_COMPONENT",
+  "screenshots.browser.component.enabled",
+  false
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "SHOW_PASSWORD_ENABLED",
+  "layout.forms.input-type-show-password-button.enabled",
+  false
+);

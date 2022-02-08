@@ -2,11 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
+const { PrefsHelper } = require("devtools/client/shared/prefs");
 
-import { PrefsHelper, asyncStoreHelper } from "devtools-modules";
-
-import { isDevelopment } from "devtools-environment";
+import { isNode } from "./environment";
 import Services from "devtools-services";
 
 // Schema version to bump when the async store format has changed incompatibly
@@ -14,7 +12,7 @@ import Services from "devtools-services";
 const prefsSchemaVersion = 11;
 const { pref } = Services;
 
-if (isDevelopment()) {
+if (isNode()) {
   pref("devtools.browsertoolbox.fission", false);
   pref("devtools.debugger.logging", false);
   pref("devtools.debugger.alphabetize-outline", false);
@@ -68,14 +66,13 @@ if (isDevelopment()) {
   pref("devtools.debugger.features.map-expression-bindings", true);
   pref("devtools.debugger.features.map-await-expression", true);
   pref("devtools.debugger.features.xhr-breakpoints", true);
-  pref("devtools.debugger.features.original-blackbox", true);
   pref("devtools.debugger.features.event-listeners-breakpoints", true);
   pref("devtools.debugger.features.dom-mutation-breakpoints", true);
   pref("devtools.debugger.features.log-points", true);
   pref("devtools.debugger.features.inline-preview", true);
   pref("devtools.debugger.features.overlay-step-buttons", true);
-  pref("devtools.debugger.features.watchpoints", true);
   pref("devtools.debugger.features.frame-step", true);
+  pref("devtools.debugger.features.blackbox-lines", false);
   pref("devtools.editor.tabsize", 2);
 }
 
@@ -114,6 +111,11 @@ export const prefs = new PrefsHelper("devtools", {
   fileSearchRegexMatch: ["Bool", "debugger.file-search-regex-match"],
   debuggerPrefsSchemaVersion: ["Int", "debugger.prefs-schema-version"],
   projectDirectoryRoot: ["Char", "debugger.project-directory-root", ""],
+  projectDirectoryRootName: [
+    "Char",
+    "debugger.project-directory-root-name",
+    "",
+  ],
   skipPausing: ["Bool", "debugger.skip-pausing"],
   mapScopes: ["Bool", "debugger.map-scopes-enabled"],
   logActions: ["Bool", "debugger.log-actions"],
@@ -144,31 +146,26 @@ export const features = new PrefsHelper("devtools.debugger.features", {
   mapAwaitExpression: ["Bool", "map-await-expression"],
   componentPane: ["Bool", "component-pane"],
   xhrBreakpoints: ["Bool", "xhr-breakpoints"],
-  originalBlackbox: ["Bool", "original-blackbox"],
   eventListenersBreakpoints: ["Bool", "event-listeners-breakpoints"],
   domMutationBreakpoints: ["Bool", "dom-mutation-breakpoints"],
   logPoints: ["Bool", "log-points"],
   commandClick: ["Bool", "command-click"],
   showOverlay: ["Bool", "overlay"],
   inlinePreview: ["Bool", "inline-preview"],
-  watchpoints: ["Bool", "watchpoints"],
   windowlessServiceWorkers: ["Bool", "windowless-service-workers"],
   frameStep: ["Bool", "frame-step"],
+  blackboxLines: ["Bool", "blackbox-lines"],
 });
 
-export const asyncStore = asyncStoreHelper("debugger", {
-  pendingBreakpoints: ["pending-breakpoints", {}],
-  tabs: ["tabs", []],
-  xhrBreakpoints: ["xhr-breakpoints", []],
-  eventListenerBreakpoints: ["event-listener-breakpoints", undefined],
-  tabsBlackBoxed: ["tabsBlackBoxed", []],
-});
+// Import the asyncStore already spawned by the TargetMixin class
+const ThreadUtils = require("devtools/client/shared/thread-utils");
+export const asyncStore = ThreadUtils.asyncStore;
 
-export function resetSchemaVersion(): void {
+export function resetSchemaVersion() {
   prefs.debuggerPrefsSchemaVersion = prefsSchemaVersion;
 }
 
-export function verifyPrefSchema(): void {
+export function verifyPrefSchema() {
   if (prefs.debuggerPrefsSchemaVersion < prefsSchemaVersion) {
     asyncStore.pendingBreakpoints = {};
     asyncStore.tabs = [];

@@ -8,12 +8,14 @@
 #define memory_hooks_h
 
 #if defined(MOZ_REPLACE_MALLOC) && defined(MOZ_PROFILER_MEMORY)
+class BaseProfilerCount;
+
 namespace mozilla {
 namespace profiler {
 
-void install_memory_hooks();
+BaseProfilerCount* install_memory_hooks();
 void remove_memory_hooks();
-void enable_native_allocations(int aMainThreadId);
+void enable_native_allocations();
 void disable_native_allocations();
 
 }  // namespace profiler

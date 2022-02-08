@@ -43,8 +43,6 @@
             android:required="true"/>
 
     <application>
-
-        <!-- New child services must also be added to the Fennec AndroidManifest.xml.in -->
         <service
                 android:name="org.mozilla.gecko.media.MediaManager"
                 android:enabled="true"
@@ -60,32 +58,18 @@
                 android:process=":gmplugin">
         </service>
         <service
-                android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab0"
-                android:enabled="true"
-                android:exported="false"
-                android:isolatedProcess="false"
-                android:process=":tab0">
-        </service>
-        <service
-                android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab1"
-                android:enabled="true"
-                android:exported="false"
-                android:isolatedProcess="false"
-                android:process=":tab1">
-        </service>
-        <service
-                android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab2"
-                android:enabled="true"
-                android:exported="false"
-                android:isolatedProcess="false"
-                android:process=":tab2">
-        </service>
-        <service
                 android:name="org.mozilla.gecko.process.GeckoChildProcessServices$socket"
                 android:enabled="true"
                 android:exported="false"
                 android:isolatedProcess="false"
                 android:process=":socket">
+        </service>
+        <service
+                android:name="org.mozilla.gecko.process.GeckoChildProcessServices$gpu"
+                android:enabled="true"
+                android:exported="false"
+                android:isolatedProcess="false"
+                android:process=":gpu">
         </service>
         <service
                 android:name="org.mozilla.gecko.gfx.SurfaceAllocatorService"

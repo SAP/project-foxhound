@@ -163,6 +163,12 @@ const ActorRegistry = {
         type: { global: true },
       }
     );
+
+    this.registerModule("devtools/server/actors/screenshot", {
+      prefix: "screenshot",
+      constructor: "ScreenshotActor",
+      type: { global: true },
+    });
   },
 
   /**
@@ -179,7 +185,7 @@ const ActorRegistry = {
       constructor: "InspectorActor",
       type: { target: true },
     });
-    this.registerModule("devtools/server/actors/stylesheets", {
+    this.registerModule("devtools/server/actors/style-sheets", {
       prefix: "styleSheets",
       constructor: "StyleSheetsActor",
       type: { target: true },
@@ -226,11 +232,6 @@ const ActorRegistry = {
       constructor: "ResponsiveActor",
       type: { target: true },
     });
-    this.registerModule("devtools/server/actors/emulation/content-viewer", {
-      prefix: "contentViewer",
-      constructor: "ContentViewerActor",
-      type: { target: true },
-    });
     this.registerModule(
       "devtools/server/actors/addon/webextension-inspected-window",
       {
@@ -242,11 +243,6 @@ const ActorRegistry = {
     this.registerModule("devtools/server/actors/accessibility/accessibility", {
       prefix: "accessibility",
       constructor: "AccessibilityActor",
-      type: { target: true },
-    });
-    this.registerModule("devtools/server/actors/screenshot", {
-      prefix: "screenshot",
-      constructor: "ScreenshotActor",
       type: { target: true },
     });
     this.registerModule("devtools/server/actors/changes", {
@@ -273,6 +269,19 @@ const ActorRegistry = {
     this.registerModule("devtools/server/actors/manifest", {
       prefix: "manifest",
       constructor: "ManifestActor",
+      type: { target: true },
+    });
+    this.registerModule(
+      "devtools/server/actors/network-monitor/network-content",
+      {
+        prefix: "networkContent",
+        constructor: "NetworkContentActor",
+        type: { target: true },
+      }
+    );
+    this.registerModule("devtools/server/actors/screenshot-content", {
+      prefix: "screenshotContent",
+      constructor: "ScreenshotContentActor",
       type: { target: true },
     });
   },

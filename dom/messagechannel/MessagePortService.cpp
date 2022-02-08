@@ -6,17 +6,18 @@
 
 #include "MessagePortService.h"
 #include "MessagePortParent.h"
+#include "mozilla/dom/RefMessageBodyService.h"
 #include "mozilla/dom/SharedMessageBody.h"
 #include "mozilla/dom/quota/CheckedUnsafePtr.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Unused.h"
+#include "mozilla/WeakPtr.h"
 #include "nsTArray.h"
 
 using mozilla::ipc::AssertIsOnBackgroundThread;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -31,20 +32,12 @@ void AssertIsInMainProcess() {
 struct MessagePortService::NextParent {
   uint32_t mSequenceID;
   // MessagePortParent keeps the service alive, and we don't want a cycle.
-  CheckedUnsafePtr<MessagePortParent> mParent;
+  WeakPtr<MessagePortParent> mParent;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
-// Need to call CheckedUnsafePtr's copy constructor and destructor when
-// resizing dynamic arrays containing NextParent (by calling NextParent's
-// implicit copy constructor/destructor rather than memmove-ing NextParents).
-MOZ_DECLARE_RELOCATE_USING_MOVE_CONSTRUCTOR(
-    mozilla::dom::MessagePortService::NextParent);
-
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class MessagePortService::MessagePortServiceData final {
  public:
@@ -111,11 +104,14 @@ bool MessagePortService::RequestEntangling(MessagePortParent* aParent,
       return false;
     }
 
-    data = new MessagePortServiceData(aParent->ID());
-    mPorts.Put(aDestinationUUID, data);
+    mPorts.InsertOrUpdate(aDestinationUUID,
+                          MakeUnique<MessagePortServiceData>(aParent->ID()));
 
-    data = new MessagePortServiceData(aDestinationUUID);
-    mPorts.Put(aParent->ID(), data);
+    data = mPorts
+               .InsertOrUpdate(
+                   aParent->ID(),
+                   MakeUnique<MessagePortServiceData>(aDestinationUUID))
+               .get();
   }
 
   // This is a security check.
@@ -187,7 +183,7 @@ bool MessagePortService::RequestEntangling(MessagePortParent* aParent,
 
 bool MessagePortService::DisentanglePort(
     MessagePortParent* aParent,
-    FallibleTArray<RefPtr<SharedMessageBody>>& aMessages) {
+    FallibleTArray<RefPtr<SharedMessageBody>> aMessages) {
   MessagePortServiceData* data;
   if (!mPorts.Get(aParent->ID(), &data)) {
     MOZ_ASSERT(false, "Unknown MessagePortParent should not happen.");
@@ -203,11 +199,10 @@ bool MessagePortService::DisentanglePort(
 
   // Let's put the messages in the correct order. |aMessages| contains the
   // unsent messages so they have to go first.
-  if (!aMessages.AppendElements(data->mMessages, mozilla::fallible)) {
+  if (!aMessages.AppendElements(std::move(data->mMessages),
+                                mozilla::fallible)) {
     return false;
   }
-
-  data->mMessages.Clear();
 
   ++data->mSequenceID;
 
@@ -223,7 +218,7 @@ bool MessagePortService::DisentanglePort(
 
   // We didn't find the parent.
   if (!nextParent) {
-    data->mMessages.SwapElements(aMessages);
+    data->mMessages = std::move(aMessages);
     data->mWaitingForNewParent = true;
     data->mParent = nullptr;
     return true;
@@ -280,14 +275,13 @@ void MessagePortService::CloseAll(const nsID& aUUID, bool aForced) {
     data->mParent = nullptr;
   }
 
-  for (auto& nextParent : data->mNextParents) {
-    // CloseAndDelete may delete the pointee, so ensure no CheckedUnsafePtrs
-    // exist when that happens.
-    MessagePortParent* parent = nextParent.mParent;
-    nextParent.mParent = nullptr;
-
-    parent->CloseAndDelete();
+  for (const auto& nextParent : data->mNextParents) {
+    MessagePortParent* const parent = nextParent.mParent;
+    if (parent) {
+      parent->CloseAndDelete();
+    }
   }
+  data->mNextParents.Clear();
 
   nsID destinationUUID = data->mDestinationUUID;
 
@@ -314,11 +308,7 @@ void MessagePortService::CloseAll(const nsID& aUUID, bool aForced) {
     return;
   }
 
-#ifdef DEBUG
-  for (auto iter = mPorts.Iter(); !iter.Done(); iter.Next()) {
-    MOZ_ASSERT(!aUUID.Equals(iter.Key()));
-  }
-#endif
+  MOZ_ASSERT(!mPorts.Contains(aUUID));
 
   MaybeShutdown();
 }
@@ -332,7 +322,7 @@ void MessagePortService::MaybeShutdown() {
 
 bool MessagePortService::PostMessages(
     MessagePortParent* aParent,
-    FallibleTArray<RefPtr<SharedMessageBody>>& aMessages) {
+    FallibleTArray<RefPtr<SharedMessageBody>> aMessages) {
   MessagePortServiceData* data;
   if (!mPorts.Get(aParent->ID(), &data)) {
     MOZ_ASSERT(false, "Unknown MessagePortParent should not happend.");
@@ -347,7 +337,8 @@ bool MessagePortService::PostMessages(
 
   MOZ_ALWAYS_TRUE(mPorts.Get(data->mDestinationUUID, &data));
 
-  if (!data->mMessages.AppendElements(aMessages, mozilla::fallible)) {
+  if (!data->mMessages.AppendElements(std::move(aMessages),
+                                      mozilla::fallible)) {
     return false;
   }
 
@@ -409,5 +400,4 @@ bool MessagePortService::ForceClose(const nsID& aUUID,
   return true;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -21,16 +21,21 @@ popd
 pushd wrench
 cargo test --verbose
 if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
+:: Test that all shaders compile successfully and pass tests.
+:: --precache compiles all shaders during initialization, therefore if init
+:: is successful then the shaders compile.
+cargo run --release -- --angle --precache test_init
+if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
+cargo run --release -- --angle --precache --use-unoptimized-shaders test_init
+if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
+cargo run --release -- --angle test_shaders
+if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
+
 cargo run --release -- --angle reftest
 if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
 popd
 
 pushd examples
-cargo check --verbose
-if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
-popd
-
-pushd direct-composition
 cargo check --verbose
 if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
 popd

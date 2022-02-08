@@ -36,8 +36,7 @@
 #include "nsString.h"
 #include "ThreadLocal.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace mozilla::dom::indexedDB;
 using namespace mozilla::ipc;
@@ -288,7 +287,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(IDBRequest,
                                                 DOMEventTargetHelper)
-  tmp->mResultVal.setUndefined();
   mozilla::DropJSObjects(tmp);
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSourceAsObjectStore)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSourceAsIndex)
@@ -464,5 +462,4 @@ JSObject* IDBOpenDBRequest::WrapObject(JSContext* aCx,
   return IDBOpenDBRequest_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

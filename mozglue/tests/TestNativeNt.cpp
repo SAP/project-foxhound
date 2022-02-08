@@ -8,9 +8,11 @@
 #include "mozilla/NativeNt.h"
 #include "mozilla/ThreadLocal.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/WindowsEnumProcessModules.h"
 
 #include <stdio.h>
 #include <windows.h>
+#include <strsafe.h>
 
 const wchar_t kNormal[] = L"Foo.dll";
 const wchar_t kHex12[] = L"Foo.ABCDEF012345.dll";
@@ -60,6 +62,283 @@ bool TestVirtualQuery(HANDLE aProcess, LPCVOID aAddress) {
   if (memcmp(&info1, &info2, result1) != 0) {
     printf("TEST-FAILED | NativeNt | The returned structures mismatch\n");
     return false;
+  }
+
+  return true;
+}
+
+// This class copies the self executable file to the %temp%\<outer>\<inner>
+// folder.  The length of its path is longer than MAX_PATH.
+class LongNameModule {
+  wchar_t mOuterDirBuffer[MAX_PATH];
+  wchar_t mInnerDirBuffer[MAX_PATH * 2];
+  wchar_t mTargetFileBuffer[MAX_PATH * 2];
+
+  const wchar_t* mOuterDir;
+  const wchar_t* mInnerDir;
+  const wchar_t* mTargetFile;
+
+ public:
+  explicit LongNameModule(const wchar_t* aNewLeafNameAfterCopy)
+      : mOuterDir(nullptr), mInnerDir(nullptr), mTargetFile(nullptr) {
+    const wchar_t kFolderName160Chars[] =
+        L"0123456789ABCDEF0123456789ABCDEF"
+        L"0123456789ABCDEF0123456789ABCDEF"
+        L"0123456789ABCDEF0123456789ABCDEF"
+        L"0123456789ABCDEF0123456789ABCDEF"
+        L"0123456789ABCDEF0123456789ABCDEF";
+    UniquePtr<wchar_t[]> thisExe = GetFullBinaryPath();
+    if (!thisExe) {
+      return;
+    }
+
+    // If the buffer is too small, GetTempPathW returns the required
+    // length including a null character, while on a successful case
+    // it returns the number of copied characters which does not include
+    // a null character.  This means len == MAX_PATH should never happen
+    // and len > MAX_PATH means GetTempPathW failed.
+    wchar_t tempDir[MAX_PATH];
+    DWORD len = ::GetTempPathW(MAX_PATH, tempDir);
+    if (!len || len >= MAX_PATH) {
+      return;
+    }
+
+    if (FAILED(::StringCbPrintfW(mOuterDirBuffer, sizeof(mOuterDirBuffer),
+                                 L"\\\\?\\%s%s", tempDir,
+                                 kFolderName160Chars)) ||
+        !::CreateDirectoryW(mOuterDirBuffer, nullptr)) {
+      return;
+    }
+    mOuterDir = mOuterDirBuffer;
+
+    if (FAILED(::StringCbPrintfW(mInnerDirBuffer, sizeof(mInnerDirBuffer),
+                                 L"\\\\?\\%s%s\\%s", tempDir,
+                                 kFolderName160Chars, kFolderName160Chars)) ||
+        !::CreateDirectoryW(mInnerDirBuffer, nullptr)) {
+      return;
+    }
+    mInnerDir = mInnerDirBuffer;
+
+    if (FAILED(::StringCbPrintfW(mTargetFileBuffer, sizeof(mTargetFileBuffer),
+                                 L"\\\\?\\%s%s\\%s\\%s", tempDir,
+                                 kFolderName160Chars, kFolderName160Chars,
+                                 aNewLeafNameAfterCopy)) ||
+        !::CopyFileW(thisExe.get(), mTargetFileBuffer,
+                     /*bFailIfExists*/ TRUE)) {
+      return;
+    }
+    mTargetFile = mTargetFileBuffer;
+  }
+
+  ~LongNameModule() {
+    if (mTargetFile) {
+      ::DeleteFileW(mTargetFile);
+    }
+    if (mInnerDir) {
+      ::RemoveDirectoryW(mInnerDir);
+    }
+    if (mOuterDir) {
+      ::RemoveDirectoryW(mOuterDir);
+    }
+  }
+
+  operator const wchar_t*() const { return mTargetFile; }
+};
+
+// Make sure module info retrieved from nt::PEHeaders is the same as one
+// retrieved from GetModuleInformation API.
+bool CompareModuleInfo(HMODULE aModuleForApi, HMODULE aModuleForPEHeader) {
+  MODULEINFO moduleInfo;
+  if (!::GetModuleInformation(::GetCurrentProcess(), aModuleForApi, &moduleInfo,
+                              sizeof(moduleInfo))) {
+    printf("TEST-FAILED | NativeNt | GetModuleInformation failed - %08lx\n",
+           ::GetLastError());
+    return false;
+  }
+
+  PEHeaders headers(aModuleForPEHeader);
+  if (!headers) {
+    printf("TEST-FAILED | NativeNt | Failed to instantiate PEHeaders\n");
+    return false;
+  }
+
+  Maybe<Range<const uint8_t>> bounds = headers.GetBounds();
+  if (!bounds) {
+    printf("TEST-FAILED | NativeNt | PEHeaders::GetBounds failed\n");
+    return false;
+  }
+
+  if (bounds->length() != moduleInfo.SizeOfImage) {
+    printf("TEST-FAILED | NativeNt | SizeOfImage does not match\n");
+    return false;
+  }
+
+  // GetModuleInformation sets EntryPoint to 0 for executables
+  // except the running self.
+  static const HMODULE sSelf = ::GetModuleHandleW(nullptr);
+  if (aModuleForApi != sSelf &&
+      !(headers.GetFileCharacteristics() & IMAGE_FILE_DLL)) {
+    if (moduleInfo.EntryPoint) {
+      printf(
+          "TEST-FAIL | NativeNt | "
+          "GetModuleInformation returned a non-zero entrypoint "
+          "for an executable\n");
+      return false;
+    }
+
+    // Cannot verify PEHeaders::GetEntryPoint.
+    return true;
+  }
+
+  // For a module whose entrypoint is 0 (e.g. ntdll.dll or win32u.dll),
+  // MODULEINFO::EntryPoint is set to 0, while PEHeaders::GetEntryPoint
+  // returns the imagebase (RVA=0).
+  intptr_t rvaEntryPoint =
+      moduleInfo.EntryPoint
+          ? reinterpret_cast<uintptr_t>(moduleInfo.EntryPoint) -
+                reinterpret_cast<uintptr_t>(moduleInfo.lpBaseOfDll)
+          : 0;
+  if (rvaEntryPoint < 0) {
+    printf("TEST-FAILED | NativeNt | MODULEINFO is invalid\n");
+    return false;
+  }
+
+  if (headers.RVAToPtr<FARPROC>(rvaEntryPoint) != headers.GetEntryPoint()) {
+    printf("TEST-FAILED | NativeNt | Entrypoint does not match\n");
+    return false;
+  }
+
+  return true;
+}
+
+bool TestModuleInfo() {
+  UNICODE_STRING newLeafName;
+  ::RtlInitUnicodeString(&newLeafName,
+                         L"\u672D\u5E4C\u5473\u564C.\u30E9\u30FC\u30E1\u30F3");
+
+  LongNameModule longNameModule(newLeafName.Buffer);
+  if (!longNameModule) {
+    printf(
+        "TEST-FAILED | NativeNt | "
+        "Failed to copy the executable to a long directory path\n");
+    return 1;
+  }
+
+  {
+    nsModuleHandle module(::LoadLibraryW(longNameModule));
+
+    bool detectedTarget = false;
+    bool passedAllModules = true;
+    auto moduleCallback = [&](const wchar_t* aModulePath, HMODULE aModule) {
+      UNICODE_STRING modulePath, moduleName;
+      ::RtlInitUnicodeString(&modulePath, aModulePath);
+      GetLeafName(&moduleName, &modulePath);
+      if (::RtlEqualUnicodeString(&moduleName, &newLeafName,
+                                  /*aCaseInsensitive*/ TRUE)) {
+        detectedTarget = true;
+      }
+
+      if (!CompareModuleInfo(aModule, aModule)) {
+        passedAllModules = false;
+      }
+    };
+
+    if (!mozilla::EnumerateProcessModules(moduleCallback)) {
+      printf("TEST-FAILED | NativeNt | EnumerateProcessModules failed\n");
+      return false;
+    }
+
+    if (!detectedTarget) {
+      printf(
+          "TEST-FAILED | NativeNt | "
+          "EnumerateProcessModules missed the target file\n");
+      return false;
+    }
+
+    if (!passedAllModules) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// Make sure PEHeaders works for a module loaded with LOAD_LIBRARY_AS_DATAFILE
+// as well as a module loaded normally.
+bool TestModuleLoadedAsData() {
+  const wchar_t kNewLeafName[] = L"\u03BC\u0061\u9EBA.txt";
+
+  LongNameModule longNameModule(kNewLeafName);
+  if (!longNameModule) {
+    printf(
+        "TEST-FAILED | NativeNt | "
+        "Failed to copy the executable to a long directory path\n");
+    return 1;
+  }
+
+  const wchar_t* kManualLoadModules[] = {
+      L"mshtml.dll",
+      L"shell32.dll",
+      longNameModule,
+  };
+
+  for (const auto moduleName : kManualLoadModules) {
+    // Must load a module as data first,
+    nsModuleHandle moduleAsData(::LoadLibraryExW(
+        moduleName, nullptr,
+        LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE));
+
+    // then load a module normally to map it on a different address.
+    nsModuleHandle module(::LoadLibraryW(moduleName));
+
+    if (!CompareModuleInfo(module.get(), moduleAsData.get())) {
+      return false;
+    }
+
+    PEHeaders peAsData(moduleAsData.get());
+    PEHeaders pe(module.get());
+    if (!peAsData || !pe) {
+      printf("TEST-FAIL | NativeNt | Failed to load the module\n");
+      return false;
+    }
+
+    if (peAsData.RVAToPtr<HMODULE>(0) == pe.RVAToPtr<HMODULE>(0)) {
+      printf(
+          "TEST-FAIL | NativeNt | "
+          "The module should have been mapped onto two different places\n");
+      return false;
+    }
+
+    const auto* pdb1 = peAsData.GetPdbInfo();
+    const auto* pdb2 = pe.GetPdbInfo();
+    if (pdb1 && pdb2) {
+      if (pdb1->pdbSignature != pdb2->pdbSignature ||
+          pdb1->pdbAge != pdb2->pdbAge ||
+          strcmp(pdb1->pdbFileName, pdb2->pdbFileName)) {
+        printf(
+            "TEST-FAIL | NativeNt | "
+            "PDB info from the same module did not match.\n");
+        return false;
+      }
+    } else if (pdb1 || pdb2) {
+      printf(
+          "TEST-FAIL | NativeNt | Failed to get PDB info from the module.\n");
+      return false;
+    }
+
+    uint64_t version1, version2;
+    bool result1 = peAsData.GetVersionInfo(version1);
+    bool result2 = pe.GetVersionInfo(version2);
+    if (result1 && result2) {
+      if (version1 != version2) {
+        printf("TEST-FAIL | NativeNt | Version mismatch\n");
+        return false;
+      }
+    } else if (result1 || result2) {
+      printf(
+          "TEST-FAIL | NativeNt | Failed to get PDB info from the module.\n");
+      return false;
+    }
   }
 
   return true;
@@ -237,6 +516,24 @@ int wmain(int argc, wchar_t* argv[]) {
     return 1;
   }
 
+  const mozilla::nt::CodeViewRecord70* debugInfo = k32headers.GetPdbInfo();
+  if (!debugInfo) {
+    printf(
+        "TEST-FAILED | NativeNt | Unable to obtain debug information from "
+        "kernel32.dll\n");
+    return 1;
+  }
+
+#ifndef WIN32  // failure on windows10x32
+  if (stricmp(debugInfo->pdbFileName, "kernel32.pdb")) {
+    printf(
+        "TEST-FAILED | NativeNt | Unexpected PDB filename "
+        "in kernel32.dll: %s\n",
+        debugInfo->pdbFileName);
+    return 1;
+  }
+#endif
+
   PEHeaders ntdllheaders(::GetModuleHandleW(L"ntdll.dll"));
 
   auto ntdllBoundaries = ntdllheaders.GetBounds();
@@ -287,6 +584,14 @@ int wmain(int argc, wchar_t* argv[]) {
     printf(
         "TEST-FAILED | NativeNt | "
         "GetModuleHandleFromLeafName unexpectedly returns a value.\n");
+    return 1;
+  }
+
+  if (!TestModuleInfo()) {
+    return 1;
+  }
+
+  if (!TestModuleLoadedAsData()) {
     return 1;
   }
 

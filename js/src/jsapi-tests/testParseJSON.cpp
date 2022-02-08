@@ -10,9 +10,11 @@
 
 #include "js/Array.h"  // JS::IsArrayObject
 #include "js/Exception.h"
+#include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "js/JSON.h"
 #include "js/MemoryFunctions.h"
 #include "js/Printf.h"
+#include "js/PropertyAndElement.h"  // JS_GetProperty
 #include "jsapi-tests/tests.h"
 
 using namespace js;

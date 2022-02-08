@@ -13,7 +13,9 @@ function generateContent(size) {
 
 let post = generateContent(10);
 
-let number_of_parallel_requests = 10;
+// Max concurent stream number in neqo is 100.
+// Openning 120 streams will test queuing of streams.
+let number_of_parallel_requests = 120;
 let h1Server = null;
 let h3Route;
 let httpsOrigin;
@@ -34,6 +36,7 @@ let tests = [
   test_post,
   test_patch,
   test_http_alt_svc,
+  test_slow_receiver,
   // This test should be at the end, because it will close http3
   // connection and the transaction will switch to already existing http2
   // connection.
@@ -66,10 +69,14 @@ function run_test() {
 
   h3Route = "foo.example.com:" + h3Port;
   do_get_profile();
-  prefs = Cc["@mozilla.org/preferences-service;1"].getService(Ci.nsIPrefBranch);
+  prefs = Services.prefs;
 
   prefs.setBoolPref("network.http.http3.enabled", true);
   prefs.setCharPref("network.dns.localDomains", "foo.example.com");
+  // We always resolve elements of localDomains as it's hardcoded without the
+  // following pref:
+  prefs.setBoolPref("network.proxy.allow_hijacking_localhost", true);
+  prefs.setBoolPref("network.http.altsvc.oe", true);
 
   // The certificate for the http3server server is for foo.example.com and
   // is signed by http2-ca.pem so add that cert to the trust list as a
@@ -105,7 +112,7 @@ function h1Response(metadata, response) {
   response.setHeader("Access-Control-Allow-Headers", "x-altsvc", false);
 
   try {
-    let hval = "h3-27=" + metadata.getHeader("x-altsvc");
+    let hval = "h3-29=" + metadata.getHeader("x-altsvc");
     response.setHeader("Alt-Svc", hval, false);
   } catch (e) {}
 
@@ -171,8 +178,9 @@ Http3CheckListener.prototype = {
       try {
         httpVersion = request.protocolVersion;
       } catch (e) {}
-      Assert.equal(httpVersion, "h3");
+      Assert.equal(httpVersion, "h3-29");
       Assert.equal(this.onDataAvailableFired, true);
+      Assert.equal(request.getResponseHeader("X-Firefox-Http3"), "h3-29");
     }
     run_next_test();
     do_test_finished();
@@ -198,17 +206,21 @@ WaitForHttp3Listener.prototype.onStopRequest = function testOnStopRequest(
   } catch (e) {}
   dump("routed is " + routed + "\n");
 
+  let httpVersion = "";
+  try {
+    httpVersion = request.protocolVersion;
+  } catch (e) {}
+
   if (routed == this.expectedRoute) {
     Assert.equal(routed, this.expectedRoute); // always true, but a useful log
-
-    let httpVersion = "";
-    try {
-      httpVersion = request.protocolVersion;
-    } catch (e) {}
-    Assert.equal(httpVersion, "h3");
+    Assert.equal(httpVersion, "h3-29");
     run_next_test();
   } else {
     dump("poll later for alt svc mapping\n");
+    if (httpVersion == "h2") {
+      request.QueryInterface(Ci.nsIHttpChannelInternal);
+      Assert.ok(request.supportsHTTP3);
+    }
     do_test_pending();
     do_timeout(500, () => {
       doTest(this.uri, this.expectedRoute, this.h3AltSvc);
@@ -229,7 +241,7 @@ function doTest(uri, expectedRoute, altSvc) {
 }
 
 // Test Alt-Svc for http3.
-// H2 server returns alt-svc=h3-27=:h3port
+// H2 server returns alt-svc=h3-29=:h3port
 function test_https_alt_svc() {
   dump("test_https_alt_svc()\n");
   do_test_pending();
@@ -284,7 +296,7 @@ MultipleListener.prototype = {
       try {
         httpVersion = request.protocolVersion;
       } catch (e) {}
-      Assert.equal(httpVersion, "h3");
+      Assert.equal(httpVersion, "h3-29");
     }
 
     if (!Components.isSuccessCode(request.status)) {
@@ -455,6 +467,56 @@ function test_http_alt_svc() {
   doTest(httpOrigin + "http3-test", h3Route, h3AltSvc);
 }
 
+let SlowReceiverListener = function() {};
+
+SlowReceiverListener.prototype = new Http3CheckListener();
+SlowReceiverListener.prototype.count = 0;
+
+SlowReceiverListener.prototype.onDataAvailable = function(
+  request,
+  stream,
+  off,
+  cnt
+) {
+  this.onDataAvailableFired = true;
+  this.count += cnt;
+  read_stream(stream, cnt);
+};
+
+SlowReceiverListener.prototype.onStopRequest = function(request, status) {
+  Assert.equal(status, this.expectedStatus);
+  Assert.equal(this.count, 10000000);
+  let routed = "NA";
+  try {
+    routed = request.getRequestHeader("Alt-Used");
+  } catch (e) {}
+  dump("routed is " + routed + "\n");
+
+  Assert.equal(routed, this.expectedRoute);
+
+  if (Components.isSuccessCode(this.expectedStatus)) {
+    let httpVersion = "";
+    try {
+      httpVersion = request.protocolVersion;
+    } catch (e) {}
+    Assert.equal(httpVersion, "h3-29");
+    Assert.equal(this.onDataAvailableFired, true);
+  }
+  run_next_test();
+  do_test_finished();
+};
+
+function test_slow_receiver() {
+  dump("test_slow_receiver()\n");
+  let chan = makeChan(httpsOrigin + "10000000");
+  let listener = new SlowReceiverListener();
+  listener.expectedRoute = h3Route;
+  chan.asyncOpen(listener);
+  do_test_pending();
+  chan.suspend();
+  do_timeout(1000, chan.resume);
+}
+
 let CheckFallbackListener = function() {};
 
 CheckFallbackListener.prototype = {
@@ -502,6 +564,8 @@ function test_version_fallback() {
 function testsDone() {
   prefs.clearUserPref("network.http.http3.enabled");
   prefs.clearUserPref("network.dns.localDomains");
+  prefs.clearUserPref("network.proxy.allow_hijacking_localhost");
+  prefs.clearUserPref("network.http.altsvc.oe");
   dump("testDone\n");
   do_test_pending();
   h1Server.stop(do_test_finished);

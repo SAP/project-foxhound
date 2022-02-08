@@ -14,6 +14,9 @@
  * W3C liability, trademark and document use rules apply.
  */
 
+// DOMTimeStamp is deprecated, use EpochTimeStamp instead.
+typedef unsigned long long DOMTimeStamp;
+typedef unsigned long long EpochTimeStamp;
 typedef double DOMHighResTimeStamp;
 typedef sequence <PerformanceEntry> PerformanceEntryList;
 
@@ -72,3 +75,10 @@ partial interface Performance {
   void measure(DOMString measureName, optional DOMString startMark, optional DOMString endMark);
   void clearMeasures(optional DOMString measureName);
 };
+
+[Exposed=Window]
+partial interface Performance {
+  [Pref="dom.enable_event_timing", SameObject]
+  readonly attribute EventCounts eventCounts;
+};
+

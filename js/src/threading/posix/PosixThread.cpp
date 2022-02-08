@@ -6,6 +6,9 @@
 
 #include "mozilla/Assertions.h"
 
+#include <chrono>
+#include <thread>
+
 #include "js/Utility.h"
 #include "threading/posix/ThreadPlatformData.h"
 #include "threading/Thread.h"
@@ -25,6 +28,8 @@ inline const ThreadId::PlatformData* ThreadId::platformData() const {
 }
 
 ThreadId::ThreadId() { platformData()->hasThread = false; }
+
+ThreadId::operator bool() const { return platformData()->hasThread; }
 
 bool ThreadId::operator==(const ThreadId& aOther) const {
   const PlatformData& self = *platformData();
@@ -86,9 +91,16 @@ void ThisThread::SetName(const char* name) {
   MOZ_RELEASE_ASSERT(name);
 
 #if (defined(__APPLE__) && defined(__MACH__)) || defined(__linux__)
-  // On linux and OS X the name may not be longer than 16 bytes, including
+#  if defined(XP_DARWIN)
+  // Mac OS X has a length limit of 63 characters, but there is no API
+  // exposing it.
+#    define SETNAME_LENGTH_CONSTRAINT 63
+#  else
+  // On linux the name may not be longer than 16 bytes, including
   // the null terminator. Truncate the name to 15 characters.
-  char nameBuf[16];
+#    define SETNAME_LENGTH_CONSTRAINT 15
+#  endif
+  char nameBuf[SETNAME_LENGTH_CONSTRAINT + 1];
 
   strncpy(nameBuf, name, sizeof nameBuf - 1);
   nameBuf[sizeof nameBuf - 1] = '\0';
@@ -125,6 +137,10 @@ void ThisThread::GetName(char* nameBuffer, size_t len) {
   if (rv) {
     nameBuffer[0] = '\0';
   }
+}
+
+void ThisThread::SleepMilliseconds(size_t ms) {
+  std::this_thread::sleep_for(std::chrono::milliseconds(ms));
 }
 
 }  // namespace js

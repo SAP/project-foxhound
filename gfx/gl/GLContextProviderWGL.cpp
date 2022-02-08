@@ -17,9 +17,9 @@
 
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/layers/CompositorOptions.h"
-#include "mozilla/webrender/RenderThread.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "mozilla/widget/WinCompositorWidget.h"
 
@@ -318,11 +318,6 @@ void GLContextWGL::GetWSIInfo(nsCString* const out) const {
   out->Append(sWGLLib.mSymbols.fGetExtensionsStringARB(mDC));
 }
 
-already_AddRefed<GLContext> GLContextProviderWGL::CreateWrappingExisting(
-    void*, void*) {
-  return nullptr;
-}
-
 HGLRC
 WGLLibrary::CreateContextWithFallback(const HDC dc,
                                       const bool tryRobustBuffers) const {
@@ -386,7 +381,7 @@ static RefPtr<GLContext> CreateForWidget(const HWND window,
                                         LOCAL_WGL_FULL_ACCELERATION_ARB,
                                         0};
     const int* attribs;
-    if (wr::RenderThread::IsInRenderThread()) {
+    if (isWebRender) {
       attribs = kAttribsForWebRender;
     } else {
       attribs = kAttribs;
@@ -418,7 +413,7 @@ static RefPtr<GLContext> CreateForWidget(const HWND window,
                                         0};
 
     const int* attribs;
-    if (wr::RenderThread::IsInRenderThread()) {
+    if (isWebRender) {
       attribs = kAttribsForWebRender;
     } else {
       attribs = kAttribs;
@@ -448,14 +443,14 @@ static RefPtr<GLContext> CreateForWidget(const HWND window,
 }
 
 already_AddRefed<GLContext> GLContextProviderWGL::CreateForCompositorWidget(
-    CompositorWidget* aCompositorWidget, bool aWebRender,
+    CompositorWidget* aCompositorWidget, bool aHardwareWebRender,
     bool aForceAccelerated) {
   if (!aCompositorWidget) {
     MOZ_ASSERT(false);
     return nullptr;
   }
-  return CreateForWidget(aCompositorWidget->AsWindows()->GetHwnd(), aWebRender,
-                         aForceAccelerated)
+  return CreateForWidget(aCompositorWidget->AsWindows()->GetHwnd(),
+                         aHardwareWebRender, aForceAccelerated)
       .forget();
 }
 

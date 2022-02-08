@@ -79,8 +79,9 @@ bool HTMLLabelAccessible::DoAction(uint8_t aIndex) const {
 
 Relation HTMLOutputAccessible::RelationByType(RelationType aType) const {
   Relation rel = AccessibleWrap::RelationByType(aType);
-  if (aType == RelationType::CONTROLLED_BY)
+  if (aType == RelationType::CONTROLLED_BY) {
     rel.AppendIter(new IDRefsIterator(mDoc, mContent, nsGkAtoms::_for));
+  }
 
   return rel;
 }
@@ -150,7 +151,8 @@ uint64_t HTMLSummaryAccessible::NativeState() const {
   return state;
 }
 
-HTMLSummaryAccessible* HTMLSummaryAccessible::FromDetails(Accessible* details) {
+HTMLSummaryAccessible* HTMLSummaryAccessible::FromDetails(
+    LocalAccessible* details) {
   if (!dom::HTMLDetailsElement::FromNodeOrNull(details->GetContent())) {
     return nullptr;
   }
@@ -160,7 +162,7 @@ HTMLSummaryAccessible* HTMLSummaryAccessible::FromDetails(Accessible* details) {
     // Iterate through the children of our details accessible to locate main
     // summary. This iteration includes the anonymous summary if the details
     // element was not explicitly created with one.
-    Accessible* child = details->GetChildAt(i);
+    LocalAccessible* child = details->LocalChildAt(i);
     auto* summary =
         mozilla::dom::HTMLSummaryElement::FromNodeOrNull(child->GetContent());
     if (summary && summary->IsMainSummary()) {

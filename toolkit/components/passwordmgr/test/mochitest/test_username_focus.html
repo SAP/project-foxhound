@@ -12,7 +12,7 @@
 </head>
 <body>
 <script>
-let readyPromise = registerRunTests();
+let readyPromise = registerRunTests(5);
 let chromeScript = runInParent(function chromeSetup() {
   const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
   let login1A  = Cc["@mozilla.org/login-manager/loginInfo;1"].
@@ -239,10 +239,6 @@ add_task(async function test_multiple_prefilled_focused_dynamic() {
   let shownPromise = promiseACShown();
   usernameField.focus();
   await shownPromise;
-});
-
-add_task(async function cleanup() {
-  removeFocus();
 });
 </script>
 </pre>

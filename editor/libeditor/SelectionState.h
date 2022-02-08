@@ -7,10 +7,12 @@
 #define mozilla_SelectionState_h
 
 #include "mozilla/EditorDOMPoint.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/OwningNonNull.h"
 #include "nsCOMPtr.h"
 #include "nsDirection.h"
 #include "nsINode.h"
+#include "nsRange.h"
 #include "nsTArray.h"
 #include "nscore.h"
 
@@ -23,6 +25,9 @@ class Element;
 class Selection;
 class Text;
 }  // namespace dom
+
+enum class JoinNodesDirection;  // Declared in HTMLEditHelpers.h
+enum class SplitNodeDirection;  // Declared in HTMLEditHelpers.h
 
 /**
  * A helper struct for saving/setting ranges.
@@ -72,8 +77,8 @@ struct RangeItem final {
 
   nsCOMPtr<nsINode> mStartContainer;
   nsCOMPtr<nsINode> mEndContainer;
-  int32_t mStartOffset;  // TODO: Change this to uint32_t
-  int32_t mEndOffset;    // TODO: Change this to uint32_t
+  uint32_t mStartOffset;
+  uint32_t mEndOffset;
 };
 
 /**
@@ -138,16 +143,45 @@ class MOZ_STACK_CLASS RangeUpdater final {
   template <typename PT, typename CT>
   nsresult SelAdjInsertNode(const EditorDOMPointBase<PT, CT>& aPoint);
   void SelAdjDeleteNode(nsINode& aNode);
-  nsresult SelAdjSplitNode(nsIContent& aRightNode, nsIContent& aNewLeftNode);
-  nsresult SelAdjJoinNodes(nsINode& aLeftNode, nsINode& aRightNode,
-                           nsINode& aParent, int32_t aOffset,
-                           int32_t aOldLeftNodeLength);
-  void SelAdjInsertText(const dom::Text& aTextNode, int32_t aOffset,
-                        int32_t aInsertedLength);
-  void SelAdjDeleteText(const dom::Text& aTextNode, int32_t aOffset,
-                        int32_t aDeletedLength);
-  void SelAdjReplaceText(const dom::Text& aTextNode, int32_t aOffset,
-                         int32_t aReplacedLength, int32_t aInsertedLength);
+
+  /**
+   * SelAdjSplitNode() is called immediately after spliting aOriginalNode
+   * and inserted aNewContent into the DOM tree.
+   *
+   * @param aOriginalContent    The node which was split.
+   * @param aSplitOffset        The old offset in aOriginalContent at splitting
+   *                            it.
+   * @param aNewContent         The new content node which was inserted into
+   *                            the DOM tree.
+   * @param aSplitNodeDirection Whether aNewNode was inserted before or after
+   *                            aOriginalContent.
+   */
+  nsresult SelAdjSplitNode(nsIContent& aOriginalContent, uint32_t aSplitOffset,
+                           nsIContent& aNewContent,
+                           SplitNodeDirection aSplitNodeDirection);
+
+  /**
+   * SelAdjJoinNodes() is called immediately after joining aRemovedContent and
+   * the container of aStartOfRightContent.
+   *
+   * @param aStartOfRightContent    The container is joined content node which
+   *                                now has all children or text data which were
+   *                                in aRemovedContent.  And this points where
+   *                                the joined position.
+   * @param aRemovedContent         The removed content.
+   * @param aOffsetOfRemovedContent The offset which aRemovedContent was in
+   *                                its ex-parent.
+   */
+  nsresult SelAdjJoinNodes(const EditorRawDOMPoint& aStartOfRightContent,
+                           const nsIContent& aRemovedContent,
+                           uint32_t aOffsetOfRemovedContent,
+                           JoinNodesDirection aJoinNodesDirection);
+  void SelAdjInsertText(const dom::Text& aTextNode, uint32_t aOffset,
+                        uint32_t aInsertedLength);
+  void SelAdjDeleteText(const dom::Text& aTextNode, uint32_t aOffset,
+                        uint32_t aDeletedLength);
+  void SelAdjReplaceText(const dom::Text& aTextNode, uint32_t aOffset,
+                         uint32_t aReplacedLength, uint32_t aInsertedLength);
   // the following gravity routines need will/did sandwiches, because the other
   // gravity routines will be called inside of these sandwiches, but should be
   // ignored.
@@ -177,8 +211,8 @@ class MOZ_STACK_CLASS RangeUpdater final {
     mLocked = false;
   }
   void WillMoveNode() { mLocked = true; }
-  void DidMoveNode(const nsINode& aOldParent, int32_t aOldOffset,
-                   const nsINode& aNewParent, int32_t aNewOffset);
+  void DidMoveNode(const nsINode& aOldParent, uint32_t aOldOffset,
+                   const nsINode& aNewParent, uint32_t aNewOffset);
 
  private:
   // TODO: A lot of loop in these methods check whether each item `nullptr` or
@@ -196,11 +230,10 @@ class MOZ_STACK_CLASS AutoTrackDOMPoint final {
  public:
   AutoTrackDOMPoint() = delete;
   AutoTrackDOMPoint(RangeUpdater& aRangeUpdater, nsCOMPtr<nsINode>* aNode,
-                    int32_t* aOffset)
+                    uint32_t* aOffset)
       : mRangeUpdater(aRangeUpdater),
         mNode(aNode),
         mOffset(aOffset),
-        mPoint(nullptr),
         mRangeItem(do_AddRef(new RangeItem())) {
     mRangeItem->mStartContainer = *mNode;
     mRangeItem->mEndContainer = *mNode;
@@ -213,34 +246,40 @@ class MOZ_STACK_CLASS AutoTrackDOMPoint final {
       : mRangeUpdater(aRangeUpdater),
         mNode(nullptr),
         mOffset(nullptr),
-        mPoint(aPoint),
+        mPoint(Some(aPoint->IsSet() ? aPoint : nullptr)),
         mRangeItem(do_AddRef(new RangeItem())) {
-    mRangeItem->mStartContainer = mPoint->GetContainer();
-    mRangeItem->mEndContainer = mPoint->GetContainer();
-    mRangeItem->mStartOffset = mPoint->Offset();
-    mRangeItem->mEndOffset = mPoint->Offset();
+    if (!aPoint->IsSet()) {
+      return;  // Nothing should be tracked.
+    }
+    mRangeItem->mStartContainer = aPoint->GetContainer();
+    mRangeItem->mEndContainer = aPoint->GetContainer();
+    mRangeItem->mStartOffset = aPoint->Offset();
+    mRangeItem->mEndOffset = aPoint->Offset();
     mRangeUpdater.RegisterRangeItem(mRangeItem);
   }
 
   ~AutoTrackDOMPoint() {
-    mRangeUpdater.DropRangeItem(mRangeItem);
-    if (mPoint) {
+    if (mPoint.isSome()) {
+      if (!mPoint.ref()) {
+        return;  // We don't track anything.
+      }
+      mRangeUpdater.DropRangeItem(mRangeItem);
       // Setting `mPoint` with invalid DOM point causes hitting `NS_ASSERTION()`
       // and the number of times may be too many.  (E.g., 1533913.html hits
       // over 700 times!)  We should just put warning instead.
-      if (NS_WARN_IF(!mRangeItem->mStartContainer) ||
-          NS_WARN_IF(mRangeItem->mStartOffset < 0)) {
-        mPoint->Clear();
+      if (NS_WARN_IF(!mRangeItem->mStartContainer)) {
+        mPoint.ref()->Clear();
         return;
       }
       if (NS_WARN_IF(mRangeItem->mStartContainer->Length() <
-                     static_cast<uint32_t>(mRangeItem->mStartOffset))) {
-        mPoint->SetToEndOf(mRangeItem->mStartContainer);
+                     mRangeItem->mStartOffset)) {
+        mPoint.ref()->SetToEndOf(mRangeItem->mStartContainer);
         return;
       }
-      mPoint->Set(mRangeItem->mStartContainer, mRangeItem->mStartOffset);
+      mPoint.ref()->Set(mRangeItem->mStartContainer, mRangeItem->mStartOffset);
       return;
     }
+    mRangeUpdater.DropRangeItem(mRangeItem);
     *mNode = mRangeItem->mStartContainer;
     *mOffset = mRangeItem->mStartOffset;
   }
@@ -249,9 +288,72 @@ class MOZ_STACK_CLASS AutoTrackDOMPoint final {
   RangeUpdater& mRangeUpdater;
   // Allow tracking nsINode until nsNode is gone
   nsCOMPtr<nsINode>* mNode;
-  int32_t* mOffset;
-  EditorDOMPoint* mPoint;
+  uint32_t* mOffset;
+  Maybe<EditorDOMPoint*> mPoint;
   OwningNonNull<RangeItem> mRangeItem;
+};
+
+class MOZ_STACK_CLASS AutoTrackDOMRange final {
+ public:
+  AutoTrackDOMRange() = delete;
+  AutoTrackDOMRange(RangeUpdater& aRangeUpdater, EditorDOMPoint* aStartPoint,
+                    EditorDOMPoint* aEndPoint)
+      : mRangeRefPtr(nullptr), mRangeOwningNonNull(nullptr) {
+    mStartPointTracker.emplace(aRangeUpdater, aStartPoint);
+    mEndPointTracker.emplace(aRangeUpdater, aEndPoint);
+  }
+  AutoTrackDOMRange(RangeUpdater& aRangeUpdater, EditorDOMRange* aRange)
+      : mRangeRefPtr(nullptr), mRangeOwningNonNull(nullptr) {
+    mStartPointTracker.emplace(
+        aRangeUpdater, const_cast<EditorDOMPoint*>(&aRange->StartRef()));
+    mEndPointTracker.emplace(aRangeUpdater,
+                             const_cast<EditorDOMPoint*>(&aRange->EndRef()));
+  }
+  AutoTrackDOMRange(RangeUpdater& aRangeUpdater, RefPtr<nsRange>* aRange)
+      : mStartPoint((*aRange)->StartRef()),
+        mEndPoint((*aRange)->EndRef()),
+        mRangeRefPtr(aRange),
+        mRangeOwningNonNull(nullptr) {
+    mStartPointTracker.emplace(aRangeUpdater, &mStartPoint);
+    mEndPointTracker.emplace(aRangeUpdater, &mEndPoint);
+  }
+  AutoTrackDOMRange(RangeUpdater& aRangeUpdater, OwningNonNull<nsRange>* aRange)
+      : mStartPoint((*aRange)->StartRef()),
+        mEndPoint((*aRange)->EndRef()),
+        mRangeRefPtr(nullptr),
+        mRangeOwningNonNull(aRange) {
+    mStartPointTracker.emplace(aRangeUpdater, &mStartPoint);
+    mEndPointTracker.emplace(aRangeUpdater, &mEndPoint);
+  }
+  ~AutoTrackDOMRange() {
+    if (!mRangeRefPtr && !mRangeOwningNonNull) {
+      // The destructor of the trackers will update automatically.
+      return;
+    }
+    // Otherwise, destroy them now.
+    mStartPointTracker.reset();
+    mEndPointTracker.reset();
+    if (mRangeRefPtr) {
+      (*mRangeRefPtr)
+          ->SetStartAndEnd(mStartPoint.ToRawRangeBoundary(),
+                           mEndPoint.ToRawRangeBoundary());
+      return;
+    }
+    if (mRangeOwningNonNull) {
+      (*mRangeOwningNonNull)
+          ->SetStartAndEnd(mStartPoint.ToRawRangeBoundary(),
+                           mEndPoint.ToRawRangeBoundary());
+      return;
+    }
+  }
+
+ private:
+  Maybe<AutoTrackDOMPoint> mStartPointTracker;
+  Maybe<AutoTrackDOMPoint> mEndPointTracker;
+  EditorDOMPoint mStartPoint;
+  EditorDOMPoint mEndPoint;
+  RefPtr<nsRange>* mRangeRefPtr;
+  OwningNonNull<nsRange>* mRangeOwningNonNull;
 };
 
 /**
@@ -264,9 +366,10 @@ class MOZ_STACK_CLASS AutoReplaceContainerSelNotify final {
   AutoReplaceContainerSelNotify() = delete;
   // FYI: Marked as `MOZ_CAN_RUN_SCRIPT` for avoiding to use strong pointers
   //      for the members.
-  MOZ_CAN_RUN_SCRIPT AutoReplaceContainerSelNotify(
-      RangeUpdater& aRangeUpdater, dom::Element& aOriginalElement,
-      dom::Element& aNewElement)
+  MOZ_CAN_RUN_SCRIPT
+  AutoReplaceContainerSelNotify(RangeUpdater& aRangeUpdater,
+                                dom::Element& aOriginalElement,
+                                dom::Element& aNewElement)
       : mRangeUpdater(aRangeUpdater),
         mOriginalElement(aOriginalElement),
         mNewElement(aNewElement) {

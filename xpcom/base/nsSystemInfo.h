@@ -10,11 +10,24 @@
 #include "nsHashPropertyBag.h"
 #include "nsISystemInfo.h"
 #include "mozilla/MozPromise.h"
-#include "mozilla/LazyIdleThread.h"
 
 #ifdef MOZ_WIDGET_ANDROID
 #  include "mozilla/dom/PContent.h"
 #endif  // MOZ_WIDGET_ANDROID
+
+#if defined(XP_WIN)
+#  include <inspectable.h>
+
+// The UUID comes from winrt/windows.system.profile.idl
+// in the Windows SDK
+MIDL_INTERFACE("7D1D81DB-8D63-4789-9EA5-DDCF65A94F3C")
+IWindowsIntegrityPolicyStatics : public IInspectable {
+ public:
+  virtual HRESULT STDMETHODCALLTYPE get_IsEnabled(bool* value) = 0;
+};
+#endif
+
+class nsISerialEventTarget;
 
 struct FolderDiskInfo {
   nsCString model;
@@ -35,17 +48,21 @@ struct OSInfo {
 };
 
 struct ProcessInfo {
-  bool isWow64;
-  bool isWowARM64;
-  int32_t cpuCount;
-  int32_t cpuCores;
+  bool isWow64 = false;
+  bool isWowARM64 = false;
+  // Whether or not the system is Windows 10 or 11 in S Mode.
+  // S Mode existed prior to us being able to query it, so this
+  // is unreliable on Windows versions prior to 1810.
+  bool isWindowsSMode = false;
+  int32_t cpuCount = 0;
+  int32_t cpuCores = 0;
   nsCString cpuVendor;
-  int32_t cpuFamily;
-  int32_t cpuModel;
-  int32_t cpuStepping;
-  int32_t l2cacheKB;
-  int32_t l3cacheKB;
-  int32_t cpuSpeed;
+  int32_t cpuFamily = 0;
+  int32_t cpuModel = 0;
+  int32_t cpuStepping = 0;
+  int32_t l2cacheKB = 0;
+  int32_t l3cacheKB = 0;
+  int32_t cpuSpeed = 0;
 };
 
 typedef mozilla::MozPromise<DiskInfo, nsresult, /* IsExclusive */ false>

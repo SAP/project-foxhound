@@ -4,7 +4,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
+from __future__ import absolute_import, division
 
 import json
 import os
@@ -35,18 +35,9 @@ class WebExtension(Perftest):
         self.cpu_profiler = None
 
         super(WebExtension, self).__init__(*args, **kwargs)
-        self.using_condprof = self.config.get("using_condprof", True)
 
         # set up the results handler
-        self.results_handler = RaptorResultsHandler(
-            gecko_profile=self.config.get("gecko_profile"),
-            power_test=self.config.get("power_test"),
-            cpu_test=self.config.get("cpu_test"),
-            memory_test=self.config.get("memory_test"),
-            no_conditioned_profile=self.config["no_conditioned_profile"],
-            extra_prefs=self.config.get("extra_prefs"),
-            enable_webrender=self.config["enable_webrender"],
-        )
+        self.results_handler = RaptorResultsHandler(**self.config)
         browser_name, browser_version = self.get_browser_meta()
         self.results_handler.add_browser_meta(self.config["app"], browser_version)
 
@@ -81,9 +72,11 @@ class WebExtension(Perftest):
         # we don't want this timeout occurring unless abosultely necessary
 
         # convert timeout to seconds and account for page cycles
+        # pylint --py3k W1619
         timeout = int(timeout / 1000) * int(test.get("page_cycles", 1))
         # account for the pause the raptor webext runner takes after browser startup
         # and the time an exception is propagated through the framework
+        # pylint --py3k W1619
         timeout += int(self.post_startup_delay / 1000) + 10
 
         # for page-load tests we don't start the page-timeout timer until the pageload.js content
@@ -136,32 +129,19 @@ class WebExtension(Perftest):
                 )
 
         if self.control_server._runtime_error:
-            raise RuntimeError("Failed to run {}: {}\nStack:\n{}".format(
-                test["name"],
-                self.control_server._runtime_error["error"],
-                self.control_server._runtime_error["stack"],
-            ))
+            raise RuntimeError(
+                "Failed to run {}: {}\nStack:\n{}".format(
+                    test["name"],
+                    self.control_server._runtime_error["error"],
+                    self.control_server._runtime_error["stack"],
+                )
+            )
 
     def run_test_teardown(self, test):
         super(WebExtension, self).run_test_teardown(test)
 
         if self.playback is not None:
             self.playback.stop()
-
-            confidence_values = self.playback.confidence()
-            if confidence_values:
-                mozproxy_replay = {
-                    u'summarize-values': False,
-                    u'suite-suffix-type': False,
-                    u'type': u'mozproxy',
-                    u'test': test["name"],
-                    u'unit': u'a.u.',
-                    u'values': confidence_values
-                }
-                self.control_server.submit_supporting_data(mozproxy_replay)
-            else:
-                LOG.info("Mozproxy replay confidence data not available!")
-
             self.playback = None
 
         self.remove_raptor_webext()
@@ -180,10 +160,7 @@ class WebExtension(Perftest):
             self.control_server.user_profile = self.profile
 
     def start_control_server(self):
-        self.control_server = RaptorControlServer(
-            self.results_handler,
-            self.debug_mode
-        )
+        self.control_server = RaptorControlServer(self.results_handler, self.debug_mode)
         self.control_server.user_profile = self.profile
         self.control_server.start()
 
@@ -218,7 +195,7 @@ class WebExtension(Perftest):
             return
 
         LOG.info("removing webext %s" % self.raptor_webext)
-        if self.config["app"] in ["firefox", "geckoview", "fennec", "refbrow", "fenix"]:
+        if self.config["app"] in ["firefox", "geckoview", "refbrow", "fenix"]:
             self.profile.addons.remove_addon(self.webext_id)
 
         # for chrome the addon is just a list (appended to cmd line)

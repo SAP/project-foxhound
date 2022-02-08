@@ -22,14 +22,19 @@ const kSearchBox = "search-container";
 var originalWindowWidth;
 
 // Adding a widget should add it next to the widget it's being inserted next to.
-add_task(async function() {
+add_task(async function subsequent_widget() {
   originalWindowWidth = window.outerWidth;
   createDummyXULButton(kTestBtn1, "Test");
   ok(
     !navbar.hasAttribute("overflowing"),
-    "Should start with a non-overflowing toolbar."
+    "Should start subsequent_widget with a non-overflowing toolbar."
   );
-  ok(CustomizableUI.inDefaultState, "Should start in default state.");
+  ok(
+    CustomizableUI.inDefaultState,
+    "Should start subsequent_widget in default state."
+  );
+  CustomizableUI.addWidgetToArea(kSidebarBtn, "nav-bar");
+  await waitForElementShown(document.getElementById(kSidebarBtn));
 
   window.resizeTo(kForceOverflowWidthPx, window.outerHeight);
   await TestUtils.waitForCondition(() => {
@@ -111,18 +116,22 @@ add_task(async function() {
     CustomizableUI.removeWidgetFromArea(kTestBtn1);
     el.remove();
   }
+  CustomizableUI.removeWidgetFromArea(kSidebarBtn);
   window.resizeTo(originalWindowWidth, window.outerHeight);
   await TestUtils.waitForCondition(() => !navbar.hasAttribute("overflowing"));
 });
 
 // Removing a widget should remove it from the overflow list if that is where it is, and update it accordingly.
-add_task(async function() {
+add_task(async function remove_widget() {
   createDummyXULButton(kTestBtn2, "Test");
   ok(
     !navbar.hasAttribute("overflowing"),
-    "Should start with a non-overflowing toolbar."
+    "Should start remove_widget with a non-overflowing toolbar."
   );
-  ok(CustomizableUI.inDefaultState, "Should start in default state.");
+  ok(
+    CustomizableUI.inDefaultState,
+    "Should start remove_widget in default state."
+  );
   CustomizableUI.addWidgetToArea(kTestBtn2, navbar.id);
   ok(
     !navbar.hasAttribute("overflowing"),
@@ -172,13 +181,19 @@ add_task(async function() {
 });
 
 // Constructing a widget while overflown should set the right class on it.
-add_task(async function() {
+add_task(async function construct_widget() {
   originalWindowWidth = window.outerWidth;
   ok(
     !navbar.hasAttribute("overflowing"),
-    "Should start with a non-overflowing toolbar."
+    "Should start construct_widget with a non-overflowing toolbar."
   );
-  ok(CustomizableUI.inDefaultState, "Should start in default state.");
+  ok(
+    CustomizableUI.inDefaultState,
+    "Should start construct_widget in default state."
+  );
+
+  CustomizableUI.addWidgetToArea(kSidebarBtn, "nav-bar");
+  await waitForElementShown(document.getElementById(kSidebarBtn));
 
   window.resizeTo(kForceOverflowWidthPx, window.outerHeight);
   await TestUtils.waitForCondition(() => {
@@ -229,6 +244,7 @@ add_task(async function() {
   testNode = document.getElementById(kTestBtn3);
   ok(!testNode, "Test button should be gone");
   CustomizableUI.destroyWidget(kTestBtn3);
+  CustomizableUI.removeWidgetFromArea(kSidebarBtn);
   window.resizeTo(originalWindowWidth, window.outerHeight);
   await TestUtils.waitForCondition(() => !navbar.hasAttribute("overflowing"));
 });
@@ -238,16 +254,28 @@ add_task(async function insertBeforeFirstItemInOverflow() {
 
   ok(
     !navbar.hasAttribute("overflowing"),
-    "Should start with a non-overflowing toolbar."
+    "Should start insertBeforeFirstItemInOverflow with a non-overflowing toolbar."
   );
-  ok(CustomizableUI.inDefaultState, "Should start in default state.");
+  ok(
+    CustomizableUI.inDefaultState,
+    "Should start insertBeforeFirstItemInOverflow in default state."
+  );
+
+  CustomizableUI.addWidgetToArea(
+    kLibraryButton,
+    "nav-bar",
+    CustomizableUI.getWidgetIdsInArea("nav-bar").indexOf(
+      "save-to-pocket-button"
+    )
+  );
+  let libraryButton = document.getElementById(kLibraryButton);
+  await waitForElementShown(libraryButton);
   // Ensure nothing flexes to make the resize predictable:
   navbar
     .querySelectorAll("toolbarspring")
     .forEach(s => CustomizableUI.removeWidgetFromArea(s.id));
   let urlbar = document.getElementById("urlbar-container");
   urlbar.style.minWidth = urlbar.getBoundingClientRect().width + "px";
-  let libraryButton = document.getElementById(kLibraryButton);
   // Negative number to make the window smaller by the difference between the left side of
   // the item next to the library button and left side of the hamburger one.
   // The width of the overflow button that needs to appear will then be enough to
@@ -256,6 +284,11 @@ add_task(async function insertBeforeFirstItemInOverflow() {
     libraryButton.nextElementSibling.getBoundingClientRect().left -
     PanelUI.menuButton.parentNode.getBoundingClientRect().left +
     10; // Leave some margin for the margins between buttons etc.;
+  info(
+    "Resizing to " +
+      resizeWidthToMakeLibraryLast +
+      " , waiting for library to overflow."
+  );
   window.resizeBy(resizeWidthToMakeLibraryLast, 0);
   await TestUtils.waitForCondition(() => {
     return (
@@ -300,6 +333,7 @@ add_task(async function insertBeforeFirstItemInOverflow() {
   testNode && testNode.remove();
 
   urlbar.style.removeProperty("min-width");
+  CustomizableUI.removeWidgetFromArea(kLibraryButton);
   window.resizeTo(originalWindowWidth, window.outerHeight);
   await TestUtils.waitForCondition(() => !navbar.hasAttribute("overflowing"));
   await resetCustomization();

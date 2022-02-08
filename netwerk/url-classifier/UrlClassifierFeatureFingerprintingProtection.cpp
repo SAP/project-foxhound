@@ -11,6 +11,10 @@
 #include "ChannelClassifierService.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "nsNetUtil.h"
+#include "mozilla/StaticPtr.h"
+#include "nsIWebProgressListener.h"
+#include "nsIHttpChannelInternal.h"
+#include "nsIChannel.h"
 
 namespace mozilla {
 namespace net {
@@ -39,7 +43,7 @@ StaticRefPtr<UrlClassifierFeatureFingerprintingProtection>
 
 UrlClassifierFeatureFingerprintingProtection::
     UrlClassifierFeatureFingerprintingProtection()
-    : UrlClassifierFeatureBase(
+    : UrlClassifierFeatureAntiTrackingBase(
           nsLiteralCString(FINGERPRINTING_FEATURE_NAME),
           nsLiteralCString(URLCLASSIFIER_FINGERPRINTING_BLOCKLIST),
           nsLiteralCString(URLCLASSIFIER_FINGERPRINTING_ENTITYLIST),
@@ -150,13 +154,21 @@ UrlClassifierFeatureFingerprintingProtection::ProcessChannel(
   nsAutoCString list;
   UrlClassifierCommon::TablesToString(aList, list);
 
-  if (ChannelClassifierService::OnBeforeBlockChannel(aChannel, mName, list) ==
-      ChannelBlockDecision::Unblocked) {
+  ChannelBlockDecision decision =
+      ChannelClassifierService::OnBeforeBlockChannel(aChannel, mName, list);
+  if (decision != ChannelBlockDecision::Blocked) {
+    uint32_t event =
+        decision == ChannelBlockDecision::Replaced
+            ? nsIWebProgressListener::STATE_REPLACED_TRACKING_CONTENT
+            : nsIWebProgressListener::STATE_ALLOWED_TRACKING_CONTENT;
+    ContentBlockingNotifier::OnEvent(aChannel, event, false);
+
+    *aShouldContinue = true;
     return NS_OK;
   }
 
   UrlClassifierCommon::SetBlockedContent(aChannel, NS_ERROR_FINGERPRINTING_URI,
-                                         list, EmptyCString(), EmptyCString());
+                                         list, ""_ns, ""_ns);
 
   UC_LOG(
       ("UrlClassifierFeatureFingerprintingProtection::ProcessChannel - "

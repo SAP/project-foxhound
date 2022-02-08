@@ -10,7 +10,7 @@
       class="subcategory"
       hidden="true"
       data-category="paneSync">
-  <html:h1 data-l10n-id="pane-sync-title2"/>
+  <html:h1 data-l10n-id="pane-sync-title3"/>
 </hbox>
 
 <deck id="weavePrefsDeck" data-category="paneSync" hidden="true"
@@ -19,7 +19,7 @@
     <hbox>
       <vbox flex="1">
         <label id="noFxaCaption"><html:h2 data-l10n-id="sync-signedout-caption"/></label>
-        <description id="noFxaDescription" flex="1" data-l10n-id="sync-signedout-description"/>
+        <description id="noFxaDescription" flex="1" data-l10n-id="sync-signedout-description2"/>
       </vbox>
       <vbox>
         <image class="fxaSyncIllustration"/>
@@ -31,7 +31,7 @@
           <button id="noFxaSignIn"
                   is="highlightable-button"
                   class="accessory-button"
-                  data-l10n-id="sync-signedout-account-signin2"/>
+                  data-l10n-id="sync-signedout-account-signin3"/>
         </hbox>
       </vbox>
     </hbox>
@@ -57,7 +57,7 @@
     <hbox>
       <vbox id="fxaContentWrapper" flex="1">
         <groupbox id="fxaGroup">
-          <label class="search-header" hidden="true"><html:h2 data-l10n-id="pane-sync-title2"/></label>
+          <label class="search-header" hidden="true"><html:h2 data-l10n-id="pane-sync-title3"/></label>
 
           <deck id="fxaLoginStatus" flex="1">
 
@@ -163,15 +163,15 @@
               <label>
                 <html:h2 data-l10n-id="prefs-syncing-off"/>
               </label>
-              <hbox class="sync-group sync-not-configured">
+              <hbox class="sync-group info-box-container">
                 <vbox flex="1">
-                  <label data-l10n-id="prefs-sync-offer-setup-label"/>
+                  <label data-l10n-id="prefs-sync-offer-setup-label2"/>
                 </vbox>
                 <vbox>
                   <button id="syncSetup"
                           is="highlightable-button"
                           class="accessory-button needs-account-ready"
-                          data-l10n-id="prefs-sync-setup"/>
+                          data-l10n-id="prefs-sync-turn-on-syncing"/>
                 </vbox>
               </hbox>
             </vbox>
@@ -185,7 +185,7 @@
                         data-l10n-id="prefs-sync-now"
                         data-l10n-attrs="labelnotsyncing, accesskeynotsyncing, labelsyncing"/>
               </hbox>
-              <vbox class="sync-group sync-configured">
+              <vbox class="sync-group info-box-container sync-configured">
                 <label data-l10n-id="sync-currently-syncing-heading"/>
                 <html:div class="sync-engines-list">
                   <html:div engine_preference="services.sync.engine.bookmarks">
@@ -218,7 +218,7 @@
                   </html:div>
                   <html:div engine_preference="services.sync.engine.prefs">
                     <image class="sync-engine-image sync-engine-prefs"/>
-                    <label data-l10n-id="sync-currently-syncing-prefs"/>
+                    <label data-l10n-id="sync-currently-syncing-settings"/>
                   </html:div>
                 </html:div>
                 <hbox>

@@ -6,22 +6,26 @@
 #include "WebGLChild.h"
 
 #include "ClientWebGLContext.h"
+#include "mozilla/StaticPrefs_webgl.h"
 #include "WebGLMethodDispatcher.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
-WebGLChild::WebGLChild(ClientWebGLContext& context) : mContext(&context) {}
+WebGLChild::WebGLChild(ClientWebGLContext& context)
+    : mContext(&context),
+      mDefaultCmdsShmemSize(StaticPrefs::webgl_out_of_process_shmem_size()) {}
 
 WebGLChild::~WebGLChild() { (void)Send__delete__(this); }
 
-// -
+void WebGLChild::ActorDestroy(ActorDestroyReason why) {
+  mPendingCmdsShmem = {};
+}
 
-static constexpr size_t kDefaultCmdsShmemSize = 100 * 1000;
+// -
 
 Maybe<Range<uint8_t>> WebGLChild::AllocPendingCmdBytes(const size_t size) {
   if (!mPendingCmdsShmem) {
-    size_t capacity = kDefaultCmdsShmemSize;
+    size_t capacity = mDefaultCmdsShmemSize;
     if (capacity < size) {
       capacity = size;
     }
@@ -29,20 +33,32 @@ Maybe<Range<uint8_t>> WebGLChild::AllocPendingCmdBytes(const size_t size) {
     auto shmem = webgl::RaiiShmem::Alloc(
         this, capacity,
         mozilla::ipc::SharedMemory::SharedMemoryType::TYPE_BASIC);
-    MOZ_ASSERT(shmem);
-    if (!shmem) return {};
+    if (!shmem) {
+      NS_WARNING("Failed to alloc shmem for AllocPendingCmdBytes.");
+      return {};
+    }
     mPendingCmdsShmem = std::move(shmem);
     mPendingCmdsPos = 0;
-  }
 
+    if (kIsDebug) {
+      const auto range = mPendingCmdsShmem.ByteRange();
+      const auto initialOffset =
+          AlignmentOffset(kUniversalAlignment, range.begin().get());
+      MOZ_ALWAYS_TRUE(!initialOffset);
+    }
+  }
   const auto range = mPendingCmdsShmem.ByteRange();
 
-  const auto remaining =
-      Range<uint8_t>{range.begin() + mPendingCmdsPos, range.end()};
-  if (size > remaining.length()) {
+  auto itr = range.begin() + mPendingCmdsPos;
+  const auto offset = AlignmentOffset(kUniversalAlignment, itr.get());
+  mPendingCmdsPos += offset;
+  const auto required = mPendingCmdsPos + size;
+  if (required > range.length()) {
     FlushPendingCmds();
     return AllocPendingCmdBytes(size);
   }
+  itr = range.begin() + mPendingCmdsPos;
+  const auto remaining = Range<uint8_t>{itr, range.end()};
   mPendingCmdsPos += size;
   return Some(Range<uint8_t>{remaining.begin(), remaining.begin() + size});
 }
@@ -56,9 +72,11 @@ void WebGLChild::FlushPendingCmds() {
   mFlushedCmdInfo.flushes += 1;
   mFlushedCmdInfo.flushedCmdBytes += byteSize;
 
-  printf_stderr("[WebGLChild] Flushed %zu bytes. (%zu over %zu flushes)\n",
-                byteSize, mFlushedCmdInfo.flushedCmdBytes,
-                mFlushedCmdInfo.flushes);
+  if (gl::GLContext::ShouldSpew()) {
+    printf_stderr("[WebGLChild] Flushed %zu bytes. (%zu over %zu flushes)\n",
+                  byteSize, mFlushedCmdInfo.flushedCmdBytes,
+                  mFlushedCmdInfo.flushes);
+  }
 }
 
 // -
@@ -77,5 +95,4 @@ mozilla::ipc::IPCResult WebGLChild::RecvOnContextLoss(
   return IPC_OK();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

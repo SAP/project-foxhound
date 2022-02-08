@@ -164,6 +164,37 @@ verifyPKCS1DigestInfo(const VFYContext *cx, const SECItem *digest)
         PR_FALSE /*XXX: unsafeAllowMissingParameters*/);
 }
 
+static unsigned int
+checkedSignatureLen(const SECKEYPublicKey *pubk)
+{
+    unsigned int sigLen = SECKEY_SignatureLen(pubk);
+    if (sigLen == 0) {
+        /* Error set by SECKEY_SignatureLen */
+        return sigLen;
+    }
+    unsigned int maxSigLen;
+    switch (pubk->keyType) {
+        case rsaKey:
+        case rsaPssKey:
+            maxSigLen = (RSA_MAX_MODULUS_BITS + 7) / 8;
+            break;
+        case dsaKey:
+            maxSigLen = DSA_MAX_SIGNATURE_LEN;
+            break;
+        case ecKey:
+            maxSigLen = 2 * MAX_ECKEY_LEN;
+            break;
+        default:
+            PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
+            return 0;
+    }
+    if (sigLen > maxSigLen) {
+        PORT_SetError(SEC_ERROR_INVALID_KEY);
+        return 0;
+    }
+    return sigLen;
+}
+
 /*
  * decode the ECDSA or DSA signature from it's DER wrapping.
  * The unwrapped/raw signature is placed in the buffer pointed
@@ -174,38 +205,38 @@ decodeECorDSASignature(SECOidTag algid, const SECItem *sig, unsigned char *dsig,
                        unsigned int len)
 {
     SECItem *dsasig = NULL; /* also used for ECDSA */
-    SECStatus rv = SECSuccess;
 
-    if ((algid != SEC_OID_ANSIX9_DSA_SIGNATURE) &&
-        (algid != SEC_OID_ANSIX962_EC_PUBLIC_KEY)) {
-        if (sig->len != len) {
-            PORT_SetError(SEC_ERROR_BAD_DER);
-            return SECFailure;
+    /* Safety: Ensure algId is as expected and that signature size is within maxmimums */
+    if (algid == SEC_OID_ANSIX9_DSA_SIGNATURE) {
+        if (len > DSA_MAX_SIGNATURE_LEN) {
+            goto loser;
         }
-
-        PORT_Memcpy(dsig, sig->data, sig->len);
-        return SECSuccess;
-    }
-
-    if (algid == SEC_OID_ANSIX962_EC_PUBLIC_KEY) {
+    } else if (algid == SEC_OID_ANSIX962_EC_PUBLIC_KEY) {
         if (len > MAX_ECKEY_LEN * 2) {
-            PORT_SetError(SEC_ERROR_BAD_DER);
-            return SECFailure;
+            goto loser;
         }
-    }
-    dsasig = DSAU_DecodeDerSigToLen((SECItem *)sig, len);
-
-    if ((dsasig == NULL) || (dsasig->len != len)) {
-        rv = SECFailure;
     } else {
-        PORT_Memcpy(dsig, dsasig->data, dsasig->len);
+        goto loser;
     }
 
-    if (dsasig != NULL)
+    /* Decode and pad to length */
+    dsasig = DSAU_DecodeDerSigToLen((SECItem *)sig, len);
+    if (dsasig == NULL) {
+        goto loser;
+    }
+    if (dsasig->len != len) {
         SECITEM_FreeItem(dsasig, PR_TRUE);
-    if (rv == SECFailure)
-        PORT_SetError(SEC_ERROR_BAD_DER);
-    return rv;
+        goto loser;
+    }
+
+    PORT_Memcpy(dsig, dsasig->data, len);
+    SECITEM_FreeItem(dsasig, PR_TRUE);
+
+    return SECSuccess;
+
+loser:
+    PORT_SetError(SEC_ERROR_BAD_DER);
+    return SECFailure;
 }
 
 const SEC_ASN1Template hashParameterTemplate[] =
@@ -215,6 +246,56 @@ const SEC_ASN1Template hashParameterTemplate[] =
       { SEC_ASN1_SKIP_REST },
       { 0 }
     };
+
+/*
+ * Get just the encryption algorithm from the signature algorithm
+ */
+SECOidTag
+sec_GetEncAlgFromSigAlg(SECOidTag sigAlg)
+{
+    /* get the "encryption" algorithm */
+    switch (sigAlg) {
+        case SEC_OID_PKCS1_RSA_ENCRYPTION:
+        case SEC_OID_PKCS1_MD2_WITH_RSA_ENCRYPTION:
+        case SEC_OID_PKCS1_MD5_WITH_RSA_ENCRYPTION:
+        case SEC_OID_PKCS1_SHA1_WITH_RSA_ENCRYPTION:
+        case SEC_OID_ISO_SHA_WITH_RSA_SIGNATURE:
+        case SEC_OID_ISO_SHA1_WITH_RSA_SIGNATURE:
+        case SEC_OID_PKCS1_SHA224_WITH_RSA_ENCRYPTION:
+        case SEC_OID_PKCS1_SHA256_WITH_RSA_ENCRYPTION:
+        case SEC_OID_PKCS1_SHA384_WITH_RSA_ENCRYPTION:
+        case SEC_OID_PKCS1_SHA512_WITH_RSA_ENCRYPTION:
+            return SEC_OID_PKCS1_RSA_ENCRYPTION;
+        case SEC_OID_PKCS1_RSA_PSS_SIGNATURE:
+            return SEC_OID_PKCS1_RSA_PSS_SIGNATURE;
+
+        /* what about normal DSA? */
+        case SEC_OID_ANSIX9_DSA_SIGNATURE_WITH_SHA1_DIGEST:
+        case SEC_OID_BOGUS_DSA_SIGNATURE_WITH_SHA1_DIGEST:
+        case SEC_OID_NIST_DSA_SIGNATURE_WITH_SHA224_DIGEST:
+        case SEC_OID_NIST_DSA_SIGNATURE_WITH_SHA256_DIGEST:
+            return SEC_OID_ANSIX9_DSA_SIGNATURE;
+        case SEC_OID_MISSI_DSS:
+        case SEC_OID_MISSI_KEA_DSS:
+        case SEC_OID_MISSI_KEA_DSS_OLD:
+        case SEC_OID_MISSI_DSS_OLD:
+            return SEC_OID_MISSI_DSS;
+        case SEC_OID_ANSIX962_ECDSA_SHA1_SIGNATURE:
+        case SEC_OID_ANSIX962_ECDSA_SHA224_SIGNATURE:
+        case SEC_OID_ANSIX962_ECDSA_SHA256_SIGNATURE:
+        case SEC_OID_ANSIX962_ECDSA_SHA384_SIGNATURE:
+        case SEC_OID_ANSIX962_ECDSA_SHA512_SIGNATURE:
+        case SEC_OID_ANSIX962_ECDSA_SIGNATURE_RECOMMENDED_DIGEST:
+        case SEC_OID_ANSIX962_ECDSA_SIGNATURE_SPECIFIED_DIGEST:
+            return SEC_OID_ANSIX962_EC_PUBLIC_KEY;
+        /* we don't implement MD4 hashes */
+        case SEC_OID_PKCS1_MD4_WITH_RSA_ENCRYPTION:
+        default:
+            PORT_SetError(SEC_ERROR_INVALID_ALGORITHM);
+            break;
+    }
+    return SEC_OID_UNKNOWN;
+}
 
 /*
  * Pulls the hash algorithm, signing algorithm, and key type out of a
@@ -229,15 +310,16 @@ const SEC_ASN1Template hashParameterTemplate[] =
  */
 SECStatus
 sec_DecodeSigAlg(const SECKEYPublicKey *key, SECOidTag sigAlg,
-                 const SECItem *param, SECOidTag *encalg, SECOidTag *hashalg)
+                 const SECItem *param, SECOidTag *encalgp, SECOidTag *hashalg)
 {
-    int len;
+    unsigned int len;
     PLArenaPool *arena;
     SECStatus rv;
     SECItem oid;
+    SECOidTag encalg;
 
     PR_ASSERT(hashalg != NULL);
-    PR_ASSERT(encalg != NULL);
+    PR_ASSERT(encalgp != NULL);
 
     switch (sigAlg) {
         /* We probably shouldn't be generating MD2 signatures either */
@@ -354,52 +436,13 @@ sec_DecodeSigAlg(const SECKEYPublicKey *key, SECOidTag sigAlg,
             PORT_SetError(SEC_ERROR_INVALID_ALGORITHM);
             return SECFailure;
     }
-    /* get the "encryption" algorithm */
-    switch (sigAlg) {
-        case SEC_OID_PKCS1_RSA_ENCRYPTION:
-        case SEC_OID_PKCS1_MD2_WITH_RSA_ENCRYPTION:
-        case SEC_OID_PKCS1_MD5_WITH_RSA_ENCRYPTION:
-        case SEC_OID_PKCS1_SHA1_WITH_RSA_ENCRYPTION:
-        case SEC_OID_ISO_SHA_WITH_RSA_SIGNATURE:
-        case SEC_OID_ISO_SHA1_WITH_RSA_SIGNATURE:
-        case SEC_OID_PKCS1_SHA224_WITH_RSA_ENCRYPTION:
-        case SEC_OID_PKCS1_SHA256_WITH_RSA_ENCRYPTION:
-        case SEC_OID_PKCS1_SHA384_WITH_RSA_ENCRYPTION:
-        case SEC_OID_PKCS1_SHA512_WITH_RSA_ENCRYPTION:
-            *encalg = SEC_OID_PKCS1_RSA_ENCRYPTION;
-            break;
-        case SEC_OID_PKCS1_RSA_PSS_SIGNATURE:
-            *encalg = SEC_OID_PKCS1_RSA_PSS_SIGNATURE;
-            break;
 
-        /* what about normal DSA? */
-        case SEC_OID_ANSIX9_DSA_SIGNATURE_WITH_SHA1_DIGEST:
-        case SEC_OID_BOGUS_DSA_SIGNATURE_WITH_SHA1_DIGEST:
-        case SEC_OID_NIST_DSA_SIGNATURE_WITH_SHA224_DIGEST:
-        case SEC_OID_NIST_DSA_SIGNATURE_WITH_SHA256_DIGEST:
-            *encalg = SEC_OID_ANSIX9_DSA_SIGNATURE;
-            break;
-        case SEC_OID_MISSI_DSS:
-        case SEC_OID_MISSI_KEA_DSS:
-        case SEC_OID_MISSI_KEA_DSS_OLD:
-        case SEC_OID_MISSI_DSS_OLD:
-            *encalg = SEC_OID_MISSI_DSS;
-            break;
-        case SEC_OID_ANSIX962_ECDSA_SHA1_SIGNATURE:
-        case SEC_OID_ANSIX962_ECDSA_SHA224_SIGNATURE:
-        case SEC_OID_ANSIX962_ECDSA_SHA256_SIGNATURE:
-        case SEC_OID_ANSIX962_ECDSA_SHA384_SIGNATURE:
-        case SEC_OID_ANSIX962_ECDSA_SHA512_SIGNATURE:
-        case SEC_OID_ANSIX962_ECDSA_SIGNATURE_RECOMMENDED_DIGEST:
-        case SEC_OID_ANSIX962_ECDSA_SIGNATURE_SPECIFIED_DIGEST:
-            *encalg = SEC_OID_ANSIX962_EC_PUBLIC_KEY;
-            break;
-        /* we don't implement MD4 hashes */
-        case SEC_OID_PKCS1_MD4_WITH_RSA_ENCRYPTION:
-        default:
-            PORT_SetError(SEC_ERROR_INVALID_ALGORITHM);
-            return SECFailure;
+    encalg = sec_GetEncAlgFromSigAlg(sigAlg);
+    if (encalg == SEC_OID_UNKNOWN) {
+        return SECFailure;
     }
+    *encalgp = encalg;
+
     return SECSuccess;
 }
 
@@ -423,6 +466,7 @@ vfy_CreateContext(const SECKEYPublicKey *key, const SECItem *sig,
     SECStatus rv;
     unsigned int sigLen;
     KeyType type;
+    PRUint32 policyFlags;
 
     /* make sure the encryption algorithm matches the key type */
     /* RSA-PSS algorithm can be used with both rsaKey and rsaPssKey */
@@ -430,6 +474,13 @@ vfy_CreateContext(const SECKEYPublicKey *key, const SECItem *sig,
     if ((key->keyType != type) &&
         ((key->keyType != rsaKey) || (type != rsaPssKey))) {
         PORT_SetError(SEC_ERROR_PKCS7_KEYALG_MISMATCH);
+        return NULL;
+    }
+
+    /* check the policy on the encryption algorithm */
+    if ((NSS_GetAlgorithmPolicy(encAlg, &policyFlags) == SECFailure) ||
+        !(policyFlags & NSS_USE_ALG_IN_ANY_SIGNATURE)) {
+        PORT_SetError(SEC_ERROR_SIGNATURE_ALGORITHM_DISABLED);
         return NULL;
     }
 
@@ -446,51 +497,63 @@ vfy_CreateContext(const SECKEYPublicKey *key, const SECItem *sig,
     cx->pkcs1RSADigestInfo = NULL;
     rv = SECSuccess;
     if (sig) {
-        switch (type) {
-            case rsaKey:
-                rv = recoverPKCS1DigestInfo(hashAlg, &cx->hashAlg,
-                                            &cx->pkcs1RSADigestInfo,
-                                            &cx->pkcs1RSADigestInfoLen,
-                                            cx->key,
-                                            sig, wincx);
-                break;
-            case rsaPssKey:
-                sigLen = SECKEY_SignatureLen(key);
-                if (sigLen == 0) {
-                    /* error set by SECKEY_SignatureLen */
-                    rv = SECFailure;
-                    break;
-                }
-                if (sig->len != sigLen) {
-                    PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
-                    rv = SECFailure;
-                    break;
-                }
-                PORT_Memcpy(cx->u.buffer, sig->data, sigLen);
-                break;
-            case dsaKey:
-            case ecKey:
-                sigLen = SECKEY_SignatureLen(key);
-                if (sigLen == 0) {
-                    /* error set by SECKEY_SignatureLen */
-                    rv = SECFailure;
-                    break;
-                }
-                rv = decodeECorDSASignature(encAlg, sig, cx->u.buffer, sigLen);
-                break;
-            default:
+        rv = SECFailure;
+        if (type == rsaKey) {
+            rv = recoverPKCS1DigestInfo(hashAlg, &cx->hashAlg,
+                                        &cx->pkcs1RSADigestInfo,
+                                        &cx->pkcs1RSADigestInfoLen,
+                                        cx->key,
+                                        sig, wincx);
+        } else {
+            sigLen = checkedSignatureLen(key);
+            /* Check signature length is within limits */
+            if (sigLen == 0) {
+                /* error set by checkedSignatureLen */
                 rv = SECFailure;
-                PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
-                break;
+                goto loser;
+            }
+            if (sigLen > sizeof(cx->u)) {
+                PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
+                rv = SECFailure;
+                goto loser;
+            }
+            switch (type) {
+                case rsaPssKey:
+                    if (sig->len != sigLen) {
+                        PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
+                        rv = SECFailure;
+                        goto loser;
+                    }
+                    PORT_Memcpy(cx->u.buffer, sig->data, sigLen);
+                    rv = SECSuccess;
+                    break;
+                case ecKey:
+                case dsaKey:
+                    /* decodeECorDSASignature will check sigLen == sig->len after padding */
+                    rv = decodeECorDSASignature(encAlg, sig, cx->u.buffer, sigLen);
+                    break;
+                default:
+                    /* Unreachable */
+                    rv = SECFailure;
+                    goto loser;
+            }
+        }
+        if (rv != SECSuccess) {
+            goto loser;
         }
     }
-
-    if (rv)
-        goto loser;
 
     /* check hash alg again, RSA may have changed it.*/
     if (HASH_GetHashTypeByOidTag(cx->hashAlg) == HASH_AlgNULL) {
         /* error set by HASH_GetHashTypeByOidTag */
+        goto loser;
+    }
+    /* check the policy on the hash algorithm. Do this after
+     * the rsa decode because some uses of this function get hash implicitly
+     * from the RSA signature itself. */
+    if ((NSS_GetAlgorithmPolicy(cx->hashAlg, &policyFlags) == SECFailure) ||
+        !(policyFlags & NSS_USE_ALG_IN_ANY_SIGNATURE)) {
+        PORT_SetError(SEC_ERROR_SIGNATURE_ALGORITHM_DISABLED);
         goto loser;
     }
 
@@ -622,11 +685,16 @@ VFY_EndWithSignature(VFYContext *cx, SECItem *sig)
     switch (cx->key->keyType) {
         case ecKey:
         case dsaKey:
-            dsasig.data = cx->u.buffer;
-            dsasig.len = SECKEY_SignatureLen(cx->key);
+            dsasig.len = checkedSignatureLen(cx->key);
             if (dsasig.len == 0) {
                 return SECFailure;
             }
+            if (dsasig.len > sizeof(cx->u)) {
+                PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
+                return SECFailure;
+            }
+            dsasig.data = cx->u.buffer;
+
             if (sig) {
                 rv = decodeECorDSASignature(cx->encAlg, sig, dsasig.data,
                                             dsasig.len);
@@ -658,8 +726,13 @@ VFY_EndWithSignature(VFYContext *cx, SECItem *sig)
                 }
 
                 rsasig.data = cx->u.buffer;
-                rsasig.len = SECKEY_SignatureLen(cx->key);
+                rsasig.len = checkedSignatureLen(cx->key);
                 if (rsasig.len == 0) {
+                    /* Error set by checkedSignatureLen */
+                    return SECFailure;
+                }
+                if (rsasig.len > sizeof(cx->u)) {
+                    PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
                     return SECFailure;
                 }
                 if (sig) {
@@ -721,7 +794,6 @@ vfy_VerifyDigest(const SECItem *digest, const SECKEYPublicKey *key,
     SECStatus rv;
     VFYContext *cx;
     SECItem dsasig; /* also used for ECDSA */
-
     rv = SECFailure;
 
     cx = vfy_CreateContext(key, sig, encAlg, hashAlg, NULL, wincx);
@@ -729,19 +801,25 @@ vfy_VerifyDigest(const SECItem *digest, const SECKEYPublicKey *key,
         switch (key->keyType) {
             case rsaKey:
                 rv = verifyPKCS1DigestInfo(cx, digest);
+                /* Error (if any) set by verifyPKCS1DigestInfo */
                 break;
-            case dsaKey:
             case ecKey:
+            case dsaKey:
                 dsasig.data = cx->u.buffer;
-                dsasig.len = SECKEY_SignatureLen(cx->key);
+                dsasig.len = checkedSignatureLen(cx->key);
                 if (dsasig.len == 0) {
+                    /* Error set by checkedSignatureLen */
+                    rv = SECFailure;
                     break;
                 }
-                if (PK11_Verify(cx->key, &dsasig, (SECItem *)digest, cx->wincx) !=
-                    SECSuccess) {
+                if (dsasig.len > sizeof(cx->u)) {
                     PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
-                } else {
-                    rv = SECSuccess;
+                    rv = SECFailure;
+                    break;
+                }
+                rv = PK11_Verify(cx->key, &dsasig, (SECItem *)digest, cx->wincx);
+                if (rv != SECSuccess) {
+                    PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
                 }
                 break;
             default:

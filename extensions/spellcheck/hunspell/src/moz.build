@@ -4,16 +4,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-UNIFIED_SOURCES += [
-    'affentry.cxx',
-    'affixmgr.cxx',
-    'csutil.cxx',
-    'hashmgr.cxx',
-    'hunspell.cxx',
-    'phonet.cxx',
-    'replist.cxx',
-    'suggestmgr.cxx',
-]
+include("sources.mozbuild")
+
+UNIFIED_SOURCES += hunspell_sources
 
 DEFINES['HUNSPELL_STATIC'] = True
 

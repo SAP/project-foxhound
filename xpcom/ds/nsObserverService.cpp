@@ -17,12 +17,14 @@
 #include "nsThreadUtils.h"
 #include "nsEnumeratorUtils.h"
 #include "xpcpublic.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/net/NeckoCommon.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
 #include "nsString.h"
-#include "GeckoProfiler.h"
 
 static const uint32_t kMinTelemetryNotifyObserversLatencyMs = 1;
 
@@ -98,7 +100,7 @@ nsObserverService::CollectReports(nsIHandleReportCallback* aHandleReport,
     nsPrintfCString suspectPath("observer-service-suspect/referent(topic=%s)",
                                 suspect.mTopic);
     aHandleReport->Callback(
-        /* process */ EmptyCString(), suspectPath, KIND_OTHER, UNITS_COUNT,
+        /* process */ ""_ns, suspectPath, KIND_OTHER, UNITS_COUNT,
         suspect.mReferentCount,
         nsLiteralCString("A topic with a suspiciously large number of "
                          "referents.  This may be symptomatic of a leak "
@@ -185,13 +187,14 @@ nsresult nsObserverService::FilterHttpOnTopics(const char* aTopic) {
   if (mozilla::net::IsNeckoChild() && !strncmp(aTopic, "http-on-", 8) &&
       strcmp(aTopic, "http-on-failed-opening-request") &&
       strcmp(aTopic, "http-on-opening-request") &&
-      strcmp(aTopic, "http-on-stop-request")) {
+      strcmp(aTopic, "http-on-stop-request") &&
+      strcmp(aTopic, "http-on-image-cache-response")) {
     nsCOMPtr<nsIConsoleService> console(
         do_GetService(NS_CONSOLESERVICE_CONTRACTID));
     nsCOMPtr<nsIScriptError> error(
         do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));
     error->Init(u"http-on-* observers only work in the parent process"_ns,
-                EmptyString(), EmptyString(), 0, 0, nsIScriptError::warningFlag,
+                u""_ns, u""_ns, 0, 0, nsIScriptError::warningFlag,
                 "chrome javascript", false /* from private window */,
                 true /* from chrome context */);
     console->LogMessage(error);
@@ -275,10 +278,12 @@ NS_IMETHODIMP nsObserverService::NotifyObservers(nsISupports* aSubject,
     return NS_ERROR_INVALID_ARG;
   }
 
+  MOZ_ASSERT(AppShutdown::IsNoOrLegalShutdownTopic(aTopic));
+
   mozilla::TimeStamp start = TimeStamp::Now();
 
-  AUTO_PROFILER_TEXT_MARKER_CAUSE("NotifyObservers", nsDependentCString(aTopic),
-                                  OTHER, Nothing(), profiler_get_backtrace());
+  AUTO_PROFILER_MARKER_TEXT("NotifyObservers", OTHER, MarkerStack::Capture(),
+                            nsDependentCString(aTopic));
   AUTO_PROFILER_LABEL_DYNAMIC_CSTR_NONSENSITIVE(
       "nsObserverService::NotifyObservers", OTHER, aTopic);
 

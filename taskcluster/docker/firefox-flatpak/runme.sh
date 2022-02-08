@@ -25,8 +25,8 @@ export DATE
 SCRIPT_DIRECTORY="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 TARGET_TAR_XZ_FULL_PATH="$ARTIFACTS_DIR/target.flatpak.tar.xz"
 SOURCE_DEST="${WORKSPACE}/source"
-FREEDESKTOP_VERSION="19.08"
-FIREFOX_BASEAPP_CHANNEL="stable"
+FREEDESKTOP_VERSION="21.08"
+FIREFOX_BASEAPP_CHANNEL="21.08"
 
 
 # XXX: these commands are temporarily, there's an upcoming fix in the upstream Docker image
@@ -75,12 +75,12 @@ cd "${WORKSPACE}"
 
 flatpak remote-add --user --if-not-exists --from flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 # XXX: added --user to `flatpak install` to avoid ambiguity
-flatpak install --user -y flathub org.mozilla.Firefox.BaseApp//${FIREFOX_BASEAPP_CHANNEL} --no-deps
+flatpak install --user -y flathub org.mozilla.firefox.BaseApp//${FIREFOX_BASEAPP_CHANNEL} --no-deps
 
 # XXX: this command is temporarily, there's an upcoming fix in the upstream Docker image
 # that we work on top of, from `freedesktopsdk`, that will make these two lines go away eventually
 mkdir -p build
-cp -r ~/.local/share/flatpak/app/org.mozilla.Firefox.BaseApp/current/active/files build/files
+cp -r ~/.local/share/flatpak/app/org.mozilla.firefox.BaseApp/current/active/files build/files
 
 ARCH=$(flatpak --default-arch)
 cat <<EOF > build/metadata
@@ -88,8 +88,7 @@ cat <<EOF > build/metadata
 name=org.mozilla.firefox
 runtime=org.freedesktop.Platform/${ARCH}/${FREEDESKTOP_VERSION}
 sdk=org.freedesktop.Sdk/${ARCH}/${FREEDESKTOP_VERSION}
-base=app/org.mozilla.Firefox.BaseApp/${ARCH}/${FIREFOX_BASEAPP_CHANNEL}
-
+base=app/org.mozilla.firefox.BaseApp/${ARCH}/${FIREFOX_BASEAPP_CHANNEL}
 [Extension org.mozilla.firefox.Locale]
 directory=share/runtime/langpack
 autodelete=true
@@ -130,8 +129,8 @@ mkdir -p "${appdir}/lib/firefox/distribution/extensions"
 # directory to where Firefox looks them up; this way only subset configured
 # on user system is downloaded vs all locales
 for locale in $locales; do
-    install -D -m644 -t "${appdir}/share/runtime/langpack/${locale:0:2}/" "${DISTRIBUTION_DIR}/extensions/langpack-${locale}@firefox.mozilla.org.xpi"
-    ln -sf "/app/share/runtime/langpack/${locale:0:2}/langpack-${locale}@firefox.mozilla.org.xpi" "${appdir}/lib/firefox/distribution/extensions/langpack-${locale}@firefox.mozilla.org.xpi"
+    install -D -m644 -t "${appdir}/share/runtime/langpack/${locale%%-*}/" "${DISTRIBUTION_DIR}/extensions/langpack-${locale}@firefox.mozilla.org.xpi"
+    ln -sf "/app/share/runtime/langpack/${locale%%-*}/langpack-${locale}@firefox.mozilla.org.xpi" "${appdir}/lib/firefox/distribution/extensions/langpack-${locale}@firefox.mozilla.org.xpi"
 done
 install -D -m644 -t "${appdir}/lib/firefox/distribution" "$DISTRIBUTION_DIR/distribution.ini"
 install -D -m644 -t "${appdir}/lib/firefox/distribution" policies.json
@@ -142,6 +141,7 @@ flatpak build-finish build                                      \
         --share=ipc                                             \
         --share=network                                         \
         --socket=pulseaudio                                     \
+        --socket=wayland                                        \
         --socket=x11                                            \
         --socket=pcsc                                           \
         --require-version=0.11.1                                \
@@ -155,7 +155,8 @@ flatpak build-finish build                                      \
         --talk-name=org.freedesktop.ScreenSaver                 \
         --talk-name="org.gtk.vfs.*"                             \
         --talk-name=org.freedesktop.Notifications               \
-        --talk-name=org.mpris.MediaPlayer2.org.mozilla.firefox  \
+        --own-name="org.mpris.MediaPlayer2.firefox.*"           \
+        --own-name="org.mozilla.firefox.*"                      \
         --command=firefox
 
 flatpak build-export --disable-sandbox --no-update-summary --exclude='/share/runtime/langpack/*/*' repo build "$FLATPAK_BRANCH"

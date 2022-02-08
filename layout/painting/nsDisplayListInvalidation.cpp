@@ -9,6 +9,8 @@
 #include "nsIFrame.h"
 #include "nsTableFrame.h"
 
+namespace mozilla {
+
 nsDisplayItemGeometry::nsDisplayItemGeometry(nsDisplayItem* aItem,
                                              nsDisplayListBuilder* aBuilder) {
   MOZ_COUNT_CTOR(nsDisplayItemGeometry);
@@ -27,6 +29,15 @@ nsDisplayItemGenericGeometry::nsDisplayItemGenericGeometry(
 
 bool ShouldSyncDecodeImages(nsDisplayListBuilder* aBuilder) {
   return aBuilder->ShouldSyncDecodeImages();
+}
+
+nsDisplayItemGeometry* GetPreviousGeometry(nsDisplayItem* aItem) {
+  if (RefPtr<layers::WebRenderFallbackData> data =
+          layers::GetWebRenderUserData<layers::WebRenderFallbackData>(
+              aItem->Frame(), aItem->GetPerFrameKey())) {
+    return data->GetGeometry();
+  }
+  return nullptr;
 }
 
 void nsDisplayItemGenericGeometry::MoveBy(const nsPoint& aOffset) {
@@ -80,10 +91,6 @@ void nsDisplayBoxShadowInnerGeometry::MoveBy(const nsPoint& aOffset) {
   mPaddingRect.MoveBy(aOffset);
 }
 
-nsDisplayBoxShadowOuterGeometry::nsDisplayBoxShadowOuterGeometry(
-    nsDisplayItem* aItem, nsDisplayListBuilder* aBuilder, float aOpacity)
-    : nsDisplayItemGenericGeometry(aItem, aBuilder), mOpacity(aOpacity) {}
-
 void nsDisplaySolidColorRegionGeometry::MoveBy(const nsPoint& aOffset) {
   nsDisplayItemGeometry::MoveBy(aOffset);
   mRegion.MoveBy(aOffset);
@@ -94,9 +101,7 @@ nsDisplaySVGEffectGeometry::nsDisplaySVGEffectGeometry(
     : nsDisplayItemGeometry(aItem, aBuilder),
       mBBox(aItem->BBoxInUserSpace()),
       mUserSpaceOffset(aItem->UserSpaceOffset()),
-      mFrameOffsetToReferenceFrame(aItem->ToReferenceFrame()),
-      mOpacity(aItem->Frame()->StyleEffects()->mOpacity),
-      mHandleOpacity(aItem->ShouldHandleOpacity()) {}
+      mFrameOffsetToReferenceFrame(aItem->ToReferenceFrame()) {}
 
 void nsDisplaySVGEffectGeometry::MoveBy(const nsPoint& aOffset) {
   mBounds.MoveBy(aOffset);
@@ -120,3 +125,5 @@ nsDisplayTableItemGeometry::nsDisplayTableItemGeometry(
     : nsDisplayItemGenericGeometry(aItem, aBuilder),
       nsImageGeometryMixin(aItem, aBuilder),
       mFrameOffsetToViewport(aFrameOffsetToViewport) {}
+
+}  // namespace mozilla

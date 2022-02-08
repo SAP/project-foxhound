@@ -10,7 +10,6 @@
 #include "Base64.h"
 
 #include "mozilla/ArrayUtils.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "nsIInputStream.h"
 #include "nsString.h"
@@ -23,7 +22,7 @@
 namespace {
 
 // BEGIN base64 encode code copied and modified from NSPR
-const unsigned char* base =
+const unsigned char* const base =
   (unsigned char*)"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                   "abcdefghijklmnopqrstuvwxyz"
                   "0123456789+/";
@@ -175,6 +174,20 @@ nsresult EncodeInputStream_Encoder(nsIInputStream* aStream, void* aClosure,
   return NS_OK;
 }
 
+mozilla::Result<uint32_t, nsresult> CalculateBase64EncodedLength(
+    const size_t aBinaryLen, const uint32_t aPrefixLen = 0) {
+  mozilla::CheckedUint32 res = aBinaryLen;
+  // base 64 encoded length is 4/3rds the length of the input data, rounded up
+  res += 2;
+  res /= 3;
+  res *= 4;
+  res += aPrefixLen;
+  if (!res.isValid()) {
+    return mozilla::Err(NS_ERROR_FAILURE);
+  }
+  return res.value();
+}
+
 template <typename T>
 nsresult EncodeInputStream(nsIInputStream* aInputStream, T& aDest,
                            uint32_t aCount, uint32_t aOffset) {
@@ -191,14 +204,14 @@ nsresult EncodeInputStream(nsIInputStream* aInputStream, T& aDest,
     aCount = (uint32_t)count64;
   }
 
-  uint64_t countlong = (count64 + 2) / 3 * 4;  // +2 due to integer math.
-  if (countlong + aOffset > UINT32_MAX) {
+  const auto base64LenOrErr = CalculateBase64EncodedLength(count64, aOffset);
+  if (base64LenOrErr.isErr()) {
+    // XXX For some reason, it was NS_ERROR_OUT_OF_MEMORY here instead of
+    // NS_ERROR_FAILURE, so we keep that.
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  uint32_t count = uint32_t(countlong);
-
-  if (!aDest.SetLength(count + aOffset, mozilla::fallible)) {
+  if (!aDest.SetLength(base64LenOrErr.inspect(), mozilla::fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
@@ -337,19 +350,19 @@ nsresult Base64EncodeInputStream(nsIInputStream* aInputStream, nsAString& aDest,
 
 nsresult Base64Encode(const char* aBinary, uint32_t aBinaryLen,
                       char** aBase64) {
-  // Check for overflow.
-  if (aBinaryLen > (UINT32_MAX / 4) * 3) {
-    return NS_ERROR_FAILURE;
-  }
-
   if (aBinaryLen == 0) {
     *aBase64 = (char*)moz_xmalloc(1);
     (*aBase64)[0] = '\0';
     return NS_OK;
   }
 
+  const auto base64LenOrErr = CalculateBase64EncodedLength(aBinaryLen);
+  if (base64LenOrErr.isErr()) {
+    return base64LenOrErr.inspectErr();
+  }
+  const uint32_t base64Len = base64LenOrErr.inspect();
+
   *aBase64 = nullptr;
-  uint32_t base64Len = ((aBinaryLen + 2) / 3) * 4;
 
   // Add one byte for null termination.
   UniqueFreePtr<char[]> base64((char*)malloc(base64Len + 1));
@@ -364,40 +377,81 @@ nsresult Base64Encode(const char* aBinary, uint32_t aBinaryLen,
   return NS_OK;
 }
 
-template <typename T>
-static nsresult Base64EncodeHelper(const T& aBinary, T& aBase64) {
-  // Check for overflow.
-  if (aBinary.Length() > (UINT32_MAX / 4) * 3) {
-    return NS_ERROR_FAILURE;
-  }
-
-  if (aBinary.IsEmpty()) {
-    aBase64.Truncate();
+template <bool Append = false, typename T, typename U>
+static nsresult Base64EncodeHelper(const T* const aBinary,
+                                   const size_t aBinaryLen,
+                                   const StringTaint& aTaint,
+                                   U& aBase64) {
+  if (aBinaryLen == 0) {
+    if (!Append) {
+      aBase64.Truncate();
+    }
     return NS_OK;
   }
 
-  uint32_t base64Len = ((aBinary.Length() + 2) / 3) * 4;
+  const uint32_t prefixLen = Append ? aBase64.Length() : 0;
+  const auto base64LenOrErr =
+      CalculateBase64EncodedLength(aBinaryLen, prefixLen);
+  if (base64LenOrErr.isErr()) {
+    return base64LenOrErr.inspectErr();
+  }
+  const uint32_t base64Len = base64LenOrErr.inspect();
 
-  nsresult rv;
-  auto handle = aBase64.BulkWrite(base64Len, 0, false, rv);
-  if (NS_FAILED(rv)) {
-    return rv;
+  auto handleOrErr = aBase64.BulkWrite(base64Len, prefixLen, false);
+  if (handleOrErr.isErr()) {
+    return handleOrErr.unwrapErr();
   }
 
-  Encode(aBinary.BeginReading(), aBinary.Length(), handle.Elements());
+  auto handle = handleOrErr.unwrap();
+
+  Encode(aBinary, aBinaryLen, handle.Elements() + prefixLen);
   handle.Finish(base64Len, false);
   // Taintfox: propagate taint
-  aBase64.AssignTaint(StringTaint::toBase64(aBinary.Taint()));
+  aBase64.AssignTaint(StringTaint::toBase64(aTaint));
 
   return NS_OK;
 }
 
+nsresult Base64EncodeAppend(const char* aBinary, uint32_t aBinaryLen,
+                            nsAString& aBase64) {
+  return Base64EncodeHelper<true>(aBinary, aBinaryLen, EmptyTaint, aBase64);
+}
+
+nsresult Base64EncodeAppend(const char* aBinary, uint32_t aBinaryLen,
+                            nsACString& aBase64) {
+  return Base64EncodeHelper<true>(aBinary, aBinaryLen, EmptyTaint, aBase64);
+}
+
+nsresult Base64EncodeAppend(const nsACString& aBinary, nsACString& aBase64) {
+  return Base64EncodeHelper<true>(aBinary.BeginReading(), aBinary.Length(), aBinary.Taint(),
+                                  aBase64);
+}
+
+nsresult Base64EncodeAppend(const nsACString& aBinary, nsAString& aBase64) {
+  return Base64EncodeHelper<true>(aBinary.BeginReading(), aBinary.Length(), aBinary.Taint(),
+                                  aBase64);
+}
+
+nsresult Base64Encode(const char* aBinary, uint32_t aBinaryLen,
+                      nsACString& aBase64) {
+  return Base64EncodeHelper(aBinary, aBinaryLen, EmptyTaint, aBase64);
+}
+
+nsresult Base64Encode(const char* aBinary, uint32_t aBinaryLen,
+                      nsAString& aBase64) {
+  return Base64EncodeHelper(aBinary, aBinaryLen, EmptyTaint, aBase64);
+}
+
 nsresult Base64Encode(const nsACString& aBinary, nsACString& aBase64) {
-  return Base64EncodeHelper(aBinary, aBase64);
+  return Base64EncodeHelper(aBinary.BeginReading(), aBinary.Length(), aBinary.Taint(), aBase64);
+}
+
+nsresult Base64Encode(const nsACString& aBinary, nsAString& aBase64) {
+  return Base64EncodeHelper(aBinary.BeginReading(), aBinary.Length(), aBinary.Taint(), aBase64);
 }
 
 nsresult Base64Encode(const nsAString& aBinary, nsAString& aBase64) {
-  return Base64EncodeHelper(aBinary, aBase64);
+  return Base64EncodeHelper(aBinary.BeginReading(), aBinary.Length(), aBinary.Taint(), aBase64);
 }
 
 template <typename T, typename U, typename Decoder>
@@ -543,17 +597,18 @@ static nsresult Base64DecodeString(const T& aBase64, T& aBinary) {
 
   uint32_t binaryLen = ((aBase64.Length() * 3) / 4);
 
-  nsresult rv;
-  auto handle = aBinary.BulkWrite(binaryLen, 0, false, rv);
-  if (NS_FAILED(rv)) {
+  auto handleOrErr = aBinary.BulkWrite(binaryLen, 0, false);
+  if (handleOrErr.isErr()) {
     // Must not touch the handle if failing here, but we
     // already truncated the string at the top, so it's
     // unchanged.
-    return rv;
+    return handleOrErr.unwrapErr();
   }
 
-  rv = Base64DecodeHelper(aBase64.BeginReading(), aBase64.Length(),
-                          handle.Elements(), &binaryLen);
+  auto handle = handleOrErr.unwrap();
+
+  nsresult rv = Base64DecodeHelper(aBase64.BeginReading(), aBase64.Length(),
+                                   handle.Elements(), &binaryLen);
   if (NS_FAILED(rv)) {
     // Retruncate to match old semantics of this method.
     handle.Finish(0, true);
@@ -667,19 +722,19 @@ nsresult Base64URLEncode(uint32_t aBinaryLen, const uint8_t* aBinary,
     return NS_OK;
   }
 
-  // Check for overflow.
-  if (aBinaryLen > (UINT32_MAX / 4) * 3) {
-    return NS_ERROR_FAILURE;
-  }
-
   // Allocate a buffer large enough to hold the encoded string with padding.
-  uint32_t base64Len = ((aBinaryLen + 2) / 3) * 4;
-
-  nsresult rv;
-  auto handle = aBase64.BulkWrite(base64Len, 0, false, rv);
-  if (NS_FAILED(rv)) {
-    return rv;
+  const auto base64LenOrErr = CalculateBase64EncodedLength(aBinaryLen);
+  if (base64LenOrErr.isErr()) {
+    return base64LenOrErr.inspectErr();
   }
+  const uint32_t base64Len = base64LenOrErr.inspect();
+
+  auto handleOrErr = aBase64.BulkWrite(base64Len, 0, false);
+  if (handleOrErr.isErr()) {
+    return handleOrErr.unwrapErr();
+  }
+
+  auto handle = handleOrErr.unwrap();
 
   char* base64 = handle.Elements();
 

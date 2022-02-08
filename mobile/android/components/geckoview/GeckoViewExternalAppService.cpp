@@ -8,14 +8,32 @@
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/WindowGlobalParent.h"
+#include "nsIChannel.h"
 
 #include "mozilla/widget/EventDispatcher.h"
 #include "mozilla/widget/nsWindow.h"
+#include "GeckoViewStreamListener.h"
 
 #include "JavaBuiltins.h"
 
-static const char16_t kExternalResponseMessage[] =
-    u"GeckoView:ExternalResponse";
+class StreamListener final : public mozilla::GeckoViewStreamListener {
+ public:
+  explicit StreamListener(nsWindow* aWindow)
+      : GeckoViewStreamListener(), mWindow(aWindow) {}
+
+  void SendWebResponse(mozilla::java::WebResponse::Param aResponse) {
+    mWindow->PassExternalResponse(aResponse);
+  }
+
+  void CompleteWithError(nsresult aStatus, nsIChannel* aChannel) {
+    // Currently we don't do anything about errors here
+  }
+
+  virtual ~StreamListener() {}
+
+ private:
+  RefPtr<nsWindow> mWindow;
+};
 
 mozilla::StaticRefPtr<GeckoViewExternalAppService>
     GeckoViewExternalAppService::sService;
@@ -46,13 +64,10 @@ NS_IMETHODIMP GeckoViewExternalAppService::CreateListener(
     const nsACString& aMimeContentType, nsIRequest* aRequest,
     mozilla::dom::BrowsingContext* aContentContext, bool aForceSave,
     nsIInterfaceRequestor* aWindowContext,
-    nsExternalAppHandler** aStreamListener) {
+    nsIStreamListener** aStreamListener) {
   using namespace mozilla;
   using namespace mozilla::dom;
   MOZ_ASSERT(XRE_IsParentProcess());
-
-  // We currently never want to read the channel, so cancel it immediately.
-  aRequest->Cancel(NS_ERROR_ABORT);
 
   nsresult rv;
   nsCOMPtr<nsIChannel> channel(do_QueryInterface(aRequest, &rv));
@@ -67,63 +82,13 @@ NS_IMETHODIMP GeckoViewExternalAppService::CreateListener(
   RefPtr<nsWindow> window = nsWindow::From(widget);
   MOZ_ASSERT(window);
 
-  widget::EventDispatcher* dispatcher = window->GetEventDispatcher();
-  MOZ_ASSERT(dispatcher);
+  RefPtr<StreamListener> listener = new StreamListener(window);
 
-  if (!dispatcher->HasListener(kExternalResponseMessage)) {
-    return NS_ERROR_ABORT;
-  }
+  rv = channel->SetNotificationCallbacks(listener);
+  NS_ENSURE_SUCCESS(rv, rv);
 
-  AutoTArray<jni::String::LocalRef, 4> keys;
-  AutoTArray<jni::Object::LocalRef, 4> values;
-
-  nsCOMPtr<nsIURI> uri;
-  if (NS_WARN_IF(NS_FAILED(channel->GetURI(getter_AddRefs(uri))))) {
-    return NS_ERROR_ABORT;
-  }
-
-  nsAutoCString uriSpec;
-  if (NS_WARN_IF(NS_FAILED(uri->GetDisplaySpec(uriSpec)))) {
-    return NS_ERROR_ABORT;
-  }
-
-  keys.AppendElement(jni::StringParam(u"uri"_ns));
-  values.AppendElement(jni::StringParam(uriSpec));
-
-  nsCString contentType;
-  if (NS_WARN_IF(NS_FAILED(channel->GetContentType(contentType)))) {
-    return NS_ERROR_ABORT;
-  }
-
-  keys.AppendElement(jni::StringParam(u"contentType"_ns));
-  values.AppendElement(jni::StringParam(contentType));
-
-  int64_t contentLength = 0;
-  if (NS_WARN_IF(NS_FAILED(channel->GetContentLength(&contentLength)))) {
-    return NS_ERROR_ABORT;
-  }
-
-  keys.AppendElement(jni::StringParam(u"contentLength"_ns));
-  values.AppendElement(java::sdk::Long::ValueOf(contentLength));
-
-  nsString filename;
-  if (NS_SUCCEEDED(channel->GetContentDispositionFilename(filename))) {
-    keys.AppendElement(jni::StringParam(u"filename"_ns));
-    values.AppendElement(jni::StringParam(filename));
-  }
-
-  auto bundleKeys = jni::ObjectArray::New<jni::String>(keys.Length());
-  auto bundleValues = jni::ObjectArray::New<jni::Object>(values.Length());
-  for (size_t i = 0; i < keys.Length(); ++i) {
-    bundleKeys->SetElement(i, keys[i]);
-    bundleValues->SetElement(i, values[i]);
-  }
-  auto bundle = java::GeckoBundle::New(bundleKeys, bundleValues);
-
-  Unused << NS_WARN_IF(
-      NS_FAILED(dispatcher->Dispatch(kExternalResponseMessage, bundle)));
-
-  return NS_ERROR_ABORT;
+  listener.forget(aStreamListener);
+  return NS_OK;
 }
 
 NS_IMETHODIMP GeckoViewExternalAppService::ApplyDecodingForExtension(

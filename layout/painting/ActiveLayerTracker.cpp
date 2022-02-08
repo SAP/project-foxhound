@@ -13,10 +13,12 @@
 #include "mozilla/EffectSet.h"
 #include "mozilla/MotionPathUtils.h"
 #include "mozilla/PodOperations.h"
+#include "mozilla/StaticPtr.h"
 #include "gfx2DGlue.h"
 #include "nsExpirationTracker.h"
 #include "nsContainerFrame.h"
 #include "nsIContent.h"
+#include "nsIScrollableFrame.h"
 #include "nsRefreshDriver.h"
 #include "nsPIDOMWindow.h"
 #include "mozilla/dom/Document.h"
@@ -25,6 +27,7 @@
 #include "nsTransitionManager.h"
 #include "nsDisplayList.h"
 #include "nsDOMCSSDeclaration.h"
+#include "nsLayoutUtils.h"
 
 namespace mozilla {
 
@@ -161,7 +164,7 @@ class LayerActivityTracker final
   bool mDestroying;
 };
 
-static LayerActivityTracker* gLayerActivityTracker = nullptr;
+static StaticAutoPtr<LayerActivityTracker> gLayerActivityTracker;
 
 LayerActivity::~LayerActivity() {
   if (mFrame || mContent) {
@@ -292,7 +295,7 @@ static void IncrementScaleRestyleCountIfNeeded(nsIFrame* aFrame,
     return;
   }
 
-  Size scale = transform2D.ScaleFactors(true);
+  Size scale = transform2D.ScaleFactors();
   if (aActivity->mPreviousTransformScale == Some(scale)) {
     return;  // Nothing changed.
   }
@@ -335,9 +338,9 @@ void ActiveLayerTracker::NotifyAnimated(nsIFrame* aFrame,
   LayerActivity* layerActivity = GetLayerActivityForUpdate(aFrame);
   uint8_t& mutationCount = layerActivity->RestyleCountForProperty(aProperty);
   if (mutationCount != 0xFF) {
-    nsAutoString oldValue;
+    nsAutoCString oldValue;
     aDOMCSSDecl->GetPropertyValue(aProperty, oldValue);
-    if (NS_ConvertUTF16toUTF8(oldValue) != aNewValue) {
+    if (oldValue != aNewValue) {
       // We know this is animated, so just hack the mutation count.
       mutationCount = 0xFF;
     }
@@ -416,7 +419,7 @@ static bool CheckScrollInducedActivity(
 
   nsIScrollableFrame* scrollFrame =
       do_QueryFrame(aLayerActivity->mAnimatingScrollHandlerFrame.GetFrame());
-  if (scrollFrame && (!aBuilder || scrollFrame->IsScrollingActive(aBuilder))) {
+  if (scrollFrame && scrollFrame->IsScrollingActiveNotMinimalDisplayPort()) {
     return true;
   }
 
@@ -604,9 +607,6 @@ void ActiveLayerTracker::SetCurrentScrollHandlerFrame(nsIFrame* aFrame) {
 }
 
 /* static */
-void ActiveLayerTracker::Shutdown() {
-  delete gLayerActivityTracker;
-  gLayerActivityTracker = nullptr;
-}
+void ActiveLayerTracker::Shutdown() { gLayerActivityTracker = nullptr; }
 
 }  // namespace mozilla

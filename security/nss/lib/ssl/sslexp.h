@@ -10,6 +10,7 @@
 
 #include "ssl.h"
 #include "sslerr.h"
+#include "pk11hpke.h"
 
 SEC_BEGIN_PROTOS
 
@@ -502,62 +503,96 @@ typedef SECStatus(PR_CALLBACK *SSLResumptionTokenCallback)(
                          (PRFileDesc * _fd, PRUint32 _size), \
                          (fd, size))
 
-/* Set the ESNI key pair on a socket (server side)
+/* If |enabled|, a GREASE ECH extension will be sent in every ClientHello,
+ * unless a valid and supported ECHConfig is configured to the socket
+ * (in which case real ECH takes precedence). If |!enabled|, it is not sent.*/
+#define SSL_EnableTls13GreaseEch(fd, enabled)        \
+    SSL_EXPERIMENTAL_API("SSL_EnableTls13GreaseEch", \
+                         (PRFileDesc * _fd, PRBool _enabled), (fd, enabled))
+
+/* If |enabled|, a server receiving a Client Hello containing the ech_is_inner
+ * (and not encrypted_client_hello) extension will respond with the ECH
+ * acceptance signal. This signals the client to continue with the inner
+ * transcript rather than outer. */
+#define SSL_EnableTls13BackendEch(fd, enabled)        \
+    SSL_EXPERIMENTAL_API("SSL_EnableTls13BackendEch", \
+                         (PRFileDesc * _fd, PRBool _enabled), (fd, enabled))
+
+/* Called by the client after an initial ECH connection fails with
+ * SSL_ERROR_ECH_RETRY_WITH_ECH. Returns compatible ECHConfigs, which
+ * are configured via SetClientEchConfigs for an ECH retry attempt.
+ * These configs MUST NOT be used for more than the single retry
+ * attempt. Subsequent connections MUST use advertised ECHConfigs. */
+#define SSL_GetEchRetryConfigs(fd, out)            \
+    SSL_EXPERIMENTAL_API("SSL_GetEchRetryConfigs", \
+                         (PRFileDesc * _fd,        \
+                          SECItem * _out),         \
+                         (fd, out))
+
+/* Called to remove all ECHConfigs from a socket (fd). */
+#define SSL_RemoveEchConfigs(fd)                 \
+    SSL_EXPERIMENTAL_API("SSL_RemoveEchConfigs", \
+                         (PRFileDesc * _fd),     \
+                         (fd))
+
+/* Set the ECHConfig and key pair on a socket (server side)
  *
  * fd -- the socket
+ * pubKey -- the server's SECKEYPublicKey for HPKE/ECH.
+ * privateKey -- the server's SECKEYPrivateKey for HPKE/ECH.
  * record/recordLen -- the encoded DNS record (not base64)
- *
- * Important: the suites that are advertised in the record must
- * be configured on, or this call will fail.
  */
-#define SSL_SetESNIKeyPair(fd,                                              \
-                           privKey, record, recordLen)                      \
-    SSL_EXPERIMENTAL_API("SSL_SetESNIKeyPair",                              \
+#define SSL_SetServerEchConfigs(fd, pubKey,                                 \
+                                privKey, record, recordLen)                 \
+    SSL_EXPERIMENTAL_API("SSL_SetServerEchConfigs",                         \
                          (PRFileDesc * _fd,                                 \
-                          SECKEYPrivateKey * _privKey,                      \
+                          const SECKEYPublicKey *_pubKey,                   \
+                          const SECKEYPrivateKey *_privKey,                 \
                           const PRUint8 *_record, unsigned int _recordLen), \
-                         (fd, privKey,                                      \
+                         (fd, pubKey, privKey,                              \
                           record, recordLen))
 
-/* Set the ESNI keys on a client
+/* Set ECHConfig(s) on a client. The first supported ECHConfig will be used.
  *
  * fd -- the socket
- * ensikeys/esniKeysLen -- the ESNI key structure (not base64)
- * dummyESNI -- the dummy ESNI to use (if any)
+ * echConfigs/echConfigsLen -- the ECHConfigs structure (not base64)
  */
-#define SSL_EnableESNI(fd, esniKeys, esniKeysLen, dummySNI) \
-    SSL_EXPERIMENTAL_API("SSL_EnableESNI",                  \
-                         (PRFileDesc * _fd,                 \
-                          const PRUint8 *_esniKeys,         \
-                          unsigned int _esniKeysLen,        \
-                          const char *_dummySNI),           \
-                         (fd, esniKeys, esniKeysLen, dummySNI))
+#define SSL_SetClientEchConfigs(fd, echConfigs, echConfigsLen) \
+    SSL_EXPERIMENTAL_API("SSL_SetClientEchConfigs",            \
+                         (PRFileDesc * _fd,                    \
+                          const PRUint8 *_echConfigs,          \
+                          unsigned int _echConfigsLen),        \
+                         (fd, echConfigs, echConfigsLen))
 
 /*
- * Generate an encoded ESNIKeys structure (presumably server side).
+ * Generate an encoded ECHConfig structure (presumably server side).
  *
- * cipherSuites -- the cipher suites that can be used
- * cipherSuitesCount -- the number of suites in cipherSuites
- * group -- the named group this key corresponds to
+ * configId -- an identifier for the configuration.
+ * publicName -- the public_name value to be placed in SNI.
+ * maxNameLen -- the maximum length of protected names
+ * kemId -- the HKPE KEM ID value
  * pubKey -- the public key for the key pair
- * pad -- the length to pad to
- * notBefore/notAfter -- validity range in seconds since epoch
+ * hpkeSuites -- the HPKE cipher suites that can be used
+ * hpkeSuitesCount -- the number of suites in hpkeSuites
  * out/outlen/maxlen -- where to output the data
  */
-#define SSL_EncodeESNIKeys(cipherSuites, cipherSuiteCount,          \
-                           group, pubKey, pad, notBefore, notAfter, \
-                           out, outlen, maxlen)                     \
-    SSL_EXPERIMENTAL_API("SSL_EncodeESNIKeys",                      \
-                         (PRUint16 * _cipherSuites,                 \
-                          unsigned int _cipherSuiteCount,           \
-                          SSLNamedGroup _group,                     \
-                          SECKEYPublicKey *_pubKey,                 \
-                          PRUint16 _pad,                            \
-                          PRUint64 _notBefore, PRUint64 _notAfter,  \
-                          PRUint8 *_out, unsigned int *_outlen,     \
-                          unsigned int _maxlen),                    \
-                         (cipherSuites, cipherSuiteCount,           \
-                          group, pubKey, pad, notBefore, notAfter,  \
+typedef struct HpkeSymmetricSuiteStr {
+    HpkeKdfId kdfId;
+    HpkeAeadId aeadId;
+} HpkeSymmetricSuite;
+#define SSL_EncodeEchConfigId(configId, publicName, maxNameLen,          \
+                              kemId, pubKey, hpkeSuites, hpkeSuiteCount, \
+                              out, outlen, maxlen)                       \
+    SSL_EXPERIMENTAL_API("SSL_EncodeEchConfigId",                        \
+                         (PRUint8 _configId, const char *_publicName,    \
+                          unsigned int _maxNameLen, HpkeKemId _kemId,    \
+                          const SECKEYPublicKey *_pubKey,                \
+                          const HpkeSymmetricSuite *_hpkeSuites,         \
+                          unsigned int _hpkeSuiteCount,                  \
+                          PRUint8 *_out, unsigned int *_outlen,          \
+                          unsigned int _maxlen),                         \
+                         (configId, publicName, maxNameLen,              \
+                          kemId, pubKey, hpkeSuites, hpkeSuiteCount,     \
                           out, outlen, maxlen))
 
 /* SSL_SetSecretCallback installs a callback that TLS calls when it installs new
@@ -1001,6 +1036,10 @@ typedef struct SSLMaskingContextStr {
 #define SSL_UseAltServerHelloType(fd, enable) SSL_DEPRECATED_EXPERIMENTAL_API
 #define SSL_SetupAntiReplay(a, b, c) SSL_DEPRECATED_EXPERIMENTAL_API
 #define SSL_InitAntiReplay(a, b, c) SSL_DEPRECATED_EXPERIMENTAL_API
+#define SSL_EnableESNI(a, b, c, d) SSL_DEPRECATED_EXPERIMENTAL_API
+#define SSL_EncodeESNIKeys(a, b, c, d, e, f, g, h, i, j) SSL_DEPRECATED_EXPERIMENTAL_API
+#define SSL_SetESNIKeyPair(a, b, c, d) SSL_DEPRECATED_EXPERIMENTAL_API
+#define SSL_EncodeEchConfig(a, b, c, d, e, f, g, h, i) SSL_DEPRECATED_EXPERIMENTAL_API
 
 SEC_END_PROTOS
 

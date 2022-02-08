@@ -3,18 +3,18 @@
 
 /*---
 info: If Type(x) is not Reference, return true
-es5id: 11.4.1_A2.1
+esid: sec-delete-operator-runtime-semantics-evaluation
 description: Checking primitive value and Object value cases
 ---*/
 
 //CHECK#1
 if (delete 1 !== true) {
-  $ERROR('#1: delete 1 === true');
+  throw new Test262Error('#1: delete 1 === true');
 }
 
 //CHECK#2
 if (delete new Object() !== true) {
-  $ERROR('#2: delete new Object() === true');
+  throw new Test262Error('#2: delete new Object() === true');
 }
 
 reportCompare(0, 0);

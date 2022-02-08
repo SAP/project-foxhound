@@ -43,6 +43,10 @@ void LIRGeneratorMIPS64::lowerDivI64(MDiv* div) {
   defineInt64(lir, div);
 }
 
+void LIRGeneratorMIPS64::lowerWasmBuiltinDivI64(MWasmBuiltinDivI64* div) {
+  MOZ_CRASH("We don't use runtime div for this architecture");
+}
+
 void LIRGeneratorMIPS64::lowerModI64(MMod* mod) {
   if (mod->isUnsigned()) {
     lowerUModI64(mod);
@@ -52,6 +56,10 @@ void LIRGeneratorMIPS64::lowerModI64(MMod* mod) {
   LDivOrModI64* lir = new (alloc())
       LDivOrModI64(useRegister(mod->lhs()), useRegister(mod->rhs()), temp());
   defineInt64(lir, mod);
+}
+
+void LIRGeneratorMIPS64::lowerWasmBuiltinModI64(MWasmBuiltinModI64* mod) {
+  MOZ_CRASH("We don't use runtime mod for this architecture");
 }
 
 void LIRGeneratorMIPS64::lowerUDivI64(MDiv* div) {
@@ -64,6 +72,39 @@ void LIRGeneratorMIPS64::lowerUModI64(MMod* mod) {
   LUDivOrModI64* lir = new (alloc())
       LUDivOrModI64(useRegister(mod->lhs()), useRegister(mod->rhs()), temp());
   defineInt64(lir, mod);
+}
+
+void LIRGeneratorMIPS64::lowerBigIntDiv(MBigIntDiv* ins) {
+  auto* lir = new (alloc()) LBigIntDiv(useRegister(ins->lhs()),
+                                       useRegister(ins->rhs()), temp(), temp());
+  define(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
+void LIRGeneratorMIPS64::lowerBigIntMod(MBigIntMod* ins) {
+  auto* lir = new (alloc()) LBigIntMod(useRegister(ins->lhs()),
+                                       useRegister(ins->rhs()), temp(), temp());
+  define(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
+void LIRGeneratorMIPS64::lowerAtomicLoad64(MLoadUnboxedScalar* ins) {
+  const LUse elements = useRegister(ins->elements());
+  const LAllocation index =
+      useRegisterOrIndexConstant(ins->index(), ins->storageType());
+
+  auto* lir = new (alloc()) LAtomicLoad64(elements, index, temp(), tempInt64());
+  define(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
+void LIRGeneratorMIPS64::lowerAtomicStore64(MStoreUnboxedScalar* ins) {
+  LUse elements = useRegister(ins->elements());
+  LAllocation index =
+      useRegisterOrIndexConstant(ins->index(), ins->writeType());
+  LAllocation value = useRegister(ins->value());
+
+  add(new (alloc()) LAtomicStore64(elements, index, value, tempInt64()), ins);
 }
 
 void LIRGenerator::visitBox(MBox* box) {
@@ -86,17 +127,6 @@ void LIRGenerator::visitBox(MBox* box) {
 
 void LIRGenerator::visitUnbox(MUnbox* unbox) {
   MDefinition* box = unbox->getOperand(0);
-
-  if (box->type() == MIRType::ObjectOrNull) {
-    LUnboxObjectOrNull* lir =
-        new (alloc()) LUnboxObjectOrNull(useRegisterAtStart(box));
-    if (unbox->fallible()) {
-      assignSnapshot(lir, unbox->bailoutKind());
-    }
-    defineReuseInput(lir, unbox, 0);
-    return;
-  }
-
   MOZ_ASSERT(box->type() == MIRType::Value);
 
   LUnbox* lir;
@@ -118,11 +148,10 @@ void LIRGenerator::visitUnbox(MUnbox* unbox) {
   define(lir, unbox);
 }
 
-void LIRGenerator::visitReturn(MReturn* ret) {
-  MDefinition* opd = ret->getOperand(0);
+void LIRGenerator::visitReturnImpl(MDefinition* opd, bool isGenerator) {
   MOZ_ASSERT(opd->type() == MIRType::Value);
 
-  LReturn* ins = new (alloc()) LReturn;
+  LReturn* ins = new (alloc()) LReturn(isGenerator);
   ins->setOperand(0, useFixed(opd, JSReturnReg));
   add(ins);
 }
@@ -153,10 +182,20 @@ void LIRGenerator::visitWasmTruncateToInt64(MWasmTruncateToInt64* ins) {
   defineInt64(new (alloc()) LWasmTruncateToInt64(useRegister(opd)), ins);
 }
 
+void LIRGeneratorMIPS64::lowerWasmBuiltinTruncateToInt64(
+    MWasmBuiltinTruncateToInt64* ins) {
+  MOZ_CRASH("We don't use it for this architecture");
+}
+
 void LIRGenerator::visitInt64ToFloatingPoint(MInt64ToFloatingPoint* ins) {
   MDefinition* opd = ins->input();
   MOZ_ASSERT(opd->type() == MIRType::Int64);
   MOZ_ASSERT(IsFloatingPointType(ins->type()));
 
   define(new (alloc()) LInt64ToFloatingPoint(useInt64Register(opd)), ins);
+}
+
+void LIRGeneratorMIPS64::lowerBuiltinInt64ToFloatingPoint(
+    MBuiltinInt64ToFloatingPoint* ins) {
+  MOZ_CRASH("We don't use it for this architecture");
 }

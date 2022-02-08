@@ -1,16 +1,8 @@
 "use strict";
 
-const SEPARATE_ABOUT_WELCOME_PREF = "browser.aboutwelcome.enabled";
 const { AboutWelcomeParent } = ChromeUtils.import(
   "resource:///actors/AboutWelcomeParent.jsm"
 );
-
-/**
- * Sets the aboutwelcome pref to enabled simplified welcome UI
- */
-async function setAboutWelcomePref(value) {
-  return pushPrefs([SEPARATE_ABOUT_WELCOME_PREF, value]);
-}
 
 async function openAboutWelcomeTab() {
   await setAboutWelcomePref(true);
@@ -62,10 +54,7 @@ add_task(async function test_About_Welcome_Location_Change() {
     aboutWelcomeActor.AboutWelcomeObserver,
     "AboutWelcomeObserver is not null"
   );
-  await BrowserTestUtils.loadURI(
-    gBrowser.selectedBrowser,
-    "http://example.com/#foo"
-  );
+  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "http://example.com/#foo");
   await BrowserTestUtils.waitForLocationChange(
     gBrowser,
     "http://example.com/#foo"

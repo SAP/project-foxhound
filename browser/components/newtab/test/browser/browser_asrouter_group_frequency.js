@@ -16,7 +16,7 @@ const { CFRPageActions } = ChromeUtils.import(
  */
 add_task(async function setup() {
   const initialMsgCount = ASRouter.state.messages.length;
-  const heartbeatMsg = CFRMessageProvider.getMessages().find(
+  const heartbeatMsg = (await CFRMessageProvider.getMessages()).find(
     m => m.id === "HEARTBEAT_TACTIC_2"
   );
   const testMessage = {
@@ -36,7 +36,7 @@ add_task(async function setup() {
     set: [
       [
         "browser.newtabpage.activity-stream.asrouter.providers.cfr",
-        `{"id":"cfr","enabled":true,"type":"remote-settings","bucket":"cfr","categories":["cfrAddons","cfrFeatures"],"updateCycleInMs":0}`,
+        `{"id":"cfr","enabled":true,"type":"remote-settings","bucket":"cfr","updateCycleInMs":0}`,
       ],
     ],
   });
@@ -85,7 +85,6 @@ add_task(async function test_heartbeat_tactic_2() {
   const groupConfiguration = {
     id: "messaging-experiments",
     enabled: true,
-    userPreferences: [],
     frequency: { lifetime: 2 },
   };
   const client = RemoteSettings("message-groups");
@@ -120,7 +119,7 @@ add_task(async function test_heartbeat_tactic_2() {
   Assert.ok(groupState.enabled, "Group is enabled");
 
   let tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
-  await BrowserTestUtils.loadURI(tab1.linkedBrowser, TEST_URL);
+  BrowserTestUtils.loadURI(tab1.linkedBrowser, TEST_URL);
 
   let chiclet = document.getElementById("contextual-feature-recommendation");
   Assert.ok(chiclet, "CFR chiclet element found (tab1)");
@@ -130,14 +129,16 @@ add_task(async function test_heartbeat_tactic_2() {
   );
 
   await BrowserTestUtils.waitForCondition(
-    () => ASRouter.state.messageImpressions[msg.id].length === 1,
+    () =>
+      ASRouter.state.messageImpressions[msg.id] &&
+      ASRouter.state.messageImpressions[msg.id].length === 1,
     "First impression recorded"
   );
 
   BrowserTestUtils.removeTab(tab1);
 
   let tab2 = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
-  await BrowserTestUtils.loadURI(tab2.linkedBrowser, TEST_URL);
+  BrowserTestUtils.loadURI(tab2.linkedBrowser, TEST_URL);
 
   Assert.ok(chiclet, "CFR chiclet element found (tab2)");
   await BrowserTestUtils.waitForCondition(
@@ -146,7 +147,9 @@ add_task(async function test_heartbeat_tactic_2() {
   );
 
   await BrowserTestUtils.waitForCondition(
-    () => ASRouter.state.messageImpressions[msg.id].length === 2,
+    () =>
+      ASRouter.state.messageImpressions[msg.id] &&
+      ASRouter.state.messageImpressions[msg.id].length === 2,
     "Second impression recorded"
   );
 
@@ -158,14 +161,15 @@ add_task(async function test_heartbeat_tactic_2() {
   BrowserTestUtils.removeTab(tab2);
 
   let tab3 = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
-  await BrowserTestUtils.loadURI(tab3.linkedBrowser, TEST_URL);
+  BrowserTestUtils.loadURI(tab3.linkedBrowser, TEST_URL);
 
   await BrowserTestUtils.waitForCondition(
     () => chiclet.hidden,
     "Heartbeat button should be hidden"
   );
   Assert.equal(
-    ASRouter.state.messageImpressions[msg.id].length,
+    ASRouter.state.messageImpressions[msg.id] &&
+      ASRouter.state.messageImpressions[msg.id].length,
     2,
     "Number of impressions did not increase"
   );
@@ -175,8 +179,7 @@ add_task(async function test_heartbeat_tactic_2() {
   info("Cleanup");
   await client.db.clear();
   // Reset group impressions
-  await ASRouter.setGroupState({ id: "messaging-experiments", value: true });
-  await ASRouter.setGroupState({ id: "cfr", value: true });
+  await ASRouter.resetGroupsState();
   // Reload the providers
   await ASRouter._updateMessageProviders();
   await ASRouter.loadMessagesFromAllProviders();

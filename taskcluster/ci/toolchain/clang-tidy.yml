@@ -21,11 +21,9 @@ job-defaults:
             - 'build/clang-plugin/moz.build'
             - 'build/clang-plugin/Makefile.in'
             - 'build/build-clang/build-clang.py'
-    run-on-projects:
-        - trunk
     fetches:
         fetch:
-            - clang-10
+            - clang-13
 
 linux64-clang-tidy:
     index:
@@ -38,10 +36,12 @@ linux64-clang-tidy:
             - 'build/build-clang/clang-tidy-linux64.json'
         resources:
             - 'build/build-clang/clang-tidy-linux64.json'
+    run-on-projects:
+        - trunk
     fetches:
         toolchain:
-            - linux64-binutils
-            - linux64-gcc-7
+            - linux64-clang-13
+            - linux64-toolchain-sysroot
 
 macosx64-clang-tidy:
     index:
@@ -49,25 +49,42 @@ macosx64-clang-tidy:
     treeherder:
         symbol: TM(clang-tidy)
     worker-type: b-linux-large
-    worker:
-        env:
-            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/macosx64/cross-releng.manifest"
     run:
-        using: toolchain-script
         script: build-clang.sh
-        tooltool-downloads: internal
         arguments:
             - 'build/build-clang/clang-tidy-macosx64.json'
         resources:
             - 'build/build-clang/clang-tidy-macosx64.json'
-            - 'taskcluster/scripts/misc/tooltool-download.sh'
+    run-on-projects:
+        - trunk
     fetches:
         toolchain:
-            - linux64-binutils
-            - linux64-cctools-port-clang-10
-            - linux64-clang-10
-            - linux64-gcc-7
-            - linux64-node
+            - linux64-cctools-port-clang-13
+            - linux64-clang-13-macosx-cross
+            - macosx64-sdk-11.0
+
+macosx64-arch64-clang-tidy:
+    index:
+        job-name: macosx64-aarch64-clang-tidy
+    treeherder:
+        symbol: TM(clang-tidy-aarch64)
+    worker-type: b-linux-large
+    worker:
+        env:
+            OSX_ARCH: arm64
+    run:
+        script: build-clang.sh
+        arguments:
+            - 'build/build-clang/clang-tidy-macosx64.json'
+        resources:
+            - 'build/build-clang/clang-tidy-macosx64.json'
+    run-on-projects:
+        - trunk
+    fetches:
+        toolchain:
+            - linux64-cctools-port-clang-13
+            - linux64-clang-13-macosx-cross
+            - macosx64-sdk-11.0
 
 win64-clang-tidy:
     description: "Clang-tidy toolchain build"
@@ -80,7 +97,7 @@ win64-clang-tidy:
     worker:
         max-run-time: 7200
         env:
-            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/vs2017.manifest"
+            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/vs2017-15.9.manifest"
     run:
         script: build-clang.sh
         arguments:
@@ -88,7 +105,36 @@ win64-clang-tidy:
         resources:
             - 'build/build-clang/clang-tidy-win64.json'
         tooltool-downloads: internal
+    run-on-projects:
+        - trunk
     fetches:
         fetch:
             - cmake
             - ninja
+
+linux64-clang-tidy-external:
+    attributes:
+        local-toolchain: false
+    index:
+        job-name: linux64-clang-tidy-external
+    treeherder:
+        symbol: TL(clang-tidy-e)
+    worker:
+        artifacts:
+            - name: project/civet/clang-tidy.tar.zst
+              path: /builds/worker/private-artifacts/clang-tidy.tar.zst
+              type: file
+    run:
+        toolchain-artifact: project/civet/clang-tidy.tar.zst
+        script: build-clang-tidy-external.sh
+        arguments:
+            - 'build/build-clang/clang-tidy-external-linux64.json'
+        resources:
+            - 'build/build-clang/clang-tidy-external-linux64.json'
+    run-on-projects: []
+    fetches:
+        fetch:
+            - civet-source
+        toolchain:
+            - linux64-clang-13
+            - linux64-toolchain-sysroot

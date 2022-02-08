@@ -5,21 +5,25 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WMFMediaDataDecoder.h"
+
 #include "VideoUtils.h"
 #include "WMFUtils.h"
+#include "mozilla/Logging.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "mozilla/SyncRunnable.h"
+#include "mozilla/TaskQueue.h"
 #include "mozilla/Telemetry.h"
 #include "nsTArray.h"
-
-#include "mozilla/Logging.h"
-#include "mozilla/SyncRunnable.h"
 
 #define LOG(...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
 
 namespace mozilla {
 
-WMFMediaDataDecoder::WMFMediaDataDecoder(MFTManager* aMFTManager,
-                                         TaskQueue* aTaskQueue)
-    : mTaskQueue(aTaskQueue), mMFTManager(aMFTManager) {}
+WMFMediaDataDecoder::WMFMediaDataDecoder(MFTManager* aMFTManager)
+    : mTaskQueue(
+          new TaskQueue(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
+                        "WMFMediaDataDecoder")),
+      mMFTManager(aMFTManager) {}
 
 WMFMediaDataDecoder::~WMFMediaDataDecoder() {}
 
@@ -28,52 +32,17 @@ RefPtr<MediaDataDecoder::InitPromise> WMFMediaDataDecoder::Init() {
   return InitPromise::CreateAndResolve(mMFTManager->GetType(), __func__);
 }
 
-// A single telemetry sample is reported for each MediaDataDecoder object
-// that has detected error or produced output successfully.
-static void SendTelemetry(unsigned long hr) {
-  // Collapse the error codes into a range of 0-0xff that can be viewed in
-  // telemetry histograms.  For most MF_E_* errors, unique samples are used,
-  // retaining the least significant 7 or 8 bits.  Other error codes are
-  // bucketed.
-  uint32_t sample;
-  if (SUCCEEDED(hr)) {
-    sample = 0;
-  } else if (hr < 0xc00d36b0) {
-    sample = 1;  // low bucket
-  } else if (hr < 0xc00d3700) {
-    sample = hr & 0xffU;  // MF_E_*
-  } else if (hr <= 0xc00d3705) {
-    sample = 0x80 + (hr & 0xfU);  // more MF_E_*
-  } else if (hr < 0xc00d6d60) {
-    sample = 2;  // mid bucket
-  } else if (hr <= 0xc00d6d78) {
-    sample = hr & 0xffU;  // MF_E_TRANSFORM_*
-  } else {
-    sample = 3;  // high bucket
-  }
-}
-
 RefPtr<ShutdownPromise> WMFMediaDataDecoder::Shutdown() {
   MOZ_DIAGNOSTIC_ASSERT(!mIsShutDown);
-
   mIsShutDown = true;
 
-  if (mTaskQueue) {
-    return InvokeAsync(mTaskQueue, this, __func__,
-                       &WMFMediaDataDecoder::ProcessShutdown);
-  }
-  return ProcessShutdown();
-}
-
-RefPtr<ShutdownPromise> WMFMediaDataDecoder::ProcessShutdown() {
-  if (mMFTManager) {
-    mMFTManager->Shutdown();
-    mMFTManager = nullptr;
-    if (!mRecordedError && mHasSuccessfulOutput) {
-      SendTelemetry(S_OK);
+  return InvokeAsync(mTaskQueue, __func__, [self = RefPtr{this}, this] {
+    if (mMFTManager) {
+      mMFTManager->Shutdown();
+      mMFTManager = nullptr;
     }
-  }
-  return ShutdownPromise::CreateAndResolve(true, __func__);
+    return mTaskQueue->BeginShutdown();
+  });
 }
 
 // Inserts data into the decoder's pipeline.
@@ -87,10 +56,14 @@ RefPtr<MediaDataDecoder::DecodePromise> WMFMediaDataDecoder::Decode(
 
 RefPtr<MediaDataDecoder::DecodePromise> WMFMediaDataDecoder::ProcessError(
     HRESULT aError, const char* aReason) {
-  if (!mRecordedError) {
-    SendTelemetry(aError);
-    mRecordedError = true;
-  }
+  MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
+
+  nsPrintfCString markerString(
+      "WMFMediaDataDecoder::ProcessError for decoder with description %s with "
+      "reason: %s",
+      GetDescriptionName().get(), aReason);
+  LOG(markerString.get());
+  PROFILER_MARKER_TEXT("WMFDecoder Error", MEDIA_PLAYBACK, {}, markerString);
 
   // TODO: For the error DXGI_ERROR_DEVICE_RESET, we could return
   // NS_ERROR_DOM_MEDIA_NEED_NEW_DECODER to get the latest device. Maybe retry
@@ -103,7 +76,10 @@ RefPtr<MediaDataDecoder::DecodePromise> WMFMediaDataDecoder::ProcessError(
 
 RefPtr<MediaDataDecoder::DecodePromise> WMFMediaDataDecoder::ProcessDecode(
     MediaRawData* aSample) {
+  MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
   DecodedData results;
+  LOG("ProcessDecode, type=%s, sample=%" PRId64,
+      TrackTypeToStr(mMFTManager->GetType()), aSample->mTime.ToMicroseconds());
   HRESULT hr = mMFTManager->Input(aSample);
   if (hr == MF_E_NOTACCEPTING) {
     hr = ProcessOutput(results);
@@ -116,6 +92,10 @@ RefPtr<MediaDataDecoder::DecodePromise> WMFMediaDataDecoder::ProcessDecode(
   if (FAILED(hr)) {
     NS_WARNING("MFTManager rejected sample");
     return ProcessError(hr, "MFTManager::Input");
+  }
+
+  if (mOutputsCount == 0) {
+    mInputTimesSet.insert(aSample->mTime.ToMicroseconds());
   }
 
   if (!mLastTime || aSample->mTime > *mLastTime) {
@@ -134,13 +114,52 @@ RefPtr<MediaDataDecoder::DecodePromise> WMFMediaDataDecoder::ProcessDecode(
   return ProcessError(hr, "MFTManager::Output(2)");
 }
 
+bool WMFMediaDataDecoder::ShouldGuardAgaintIncorrectFirstSample(
+    MediaData* aOutput) const {
+  // Incorrect first samples have only been observed in video tracks, so only
+  // guard video tracks.
+  if (mMFTManager->GetType() != TrackInfo::kVideoTrack) {
+    return false;
+  }
+
+  // By observation so far this issue only happens on Windows 10 so we don't
+  // need to enable this on other versions.
+  if (!IsWin10OrLater()) {
+    return false;
+  }
+
+  // This is not the first output sample so we don't need to guard it.
+  if (mOutputsCount != 0) {
+    return false;
+  }
+
+  // Output isn't in the map which contains the inputs we gave to the decoder.
+  // This is probably the invalid first sample. MFT decoder sometime will return
+  // incorrect first output to us, which always has 0 timestamp, even if the
+  // input we gave to MFT has timestamp that is way later than 0.
+  MOZ_ASSERT(!mInputTimesSet.empty());
+  return mInputTimesSet.find(aOutput->mTime.ToMicroseconds()) ==
+             mInputTimesSet.end() &&
+         aOutput->mTime.ToMicroseconds() == 0;
+}
+
 HRESULT
 WMFMediaDataDecoder::ProcessOutput(DecodedData& aResults) {
+  MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
   RefPtr<MediaData> output;
   HRESULT hr = S_OK;
   while (SUCCEEDED(hr = mMFTManager->Output(mLastStreamOffset, output))) {
     MOZ_ASSERT(output.get(), "Upon success, we must receive an output");
-    mHasSuccessfulOutput = true;
+    if (ShouldGuardAgaintIncorrectFirstSample(output)) {
+      LOG("Discarding sample with time %" PRId64
+          " because of ShouldGuardAgaintIncorrectFirstSample check",
+          output->mTime.ToMicroseconds());
+      continue;
+    }
+    if (++mOutputsCount == 1) {
+      // Got first valid sample, don't need to guard following sample anymore.
+      mInputTimesSet.clear();
+    }
     aResults.AppendElement(std::move(output));
     if (mDrainStatus == DrainStatus::DRAINING) {
       break;
@@ -150,12 +169,16 @@ WMFMediaDataDecoder::ProcessOutput(DecodedData& aResults) {
 }
 
 RefPtr<MediaDataDecoder::FlushPromise> WMFMediaDataDecoder::ProcessFlush() {
+  MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
   if (mMFTManager) {
     mMFTManager->Flush();
   }
+  LOG("ProcessFlush, type=%s", TrackTypeToStr(mMFTManager->GetType()));
   mDrainStatus = DrainStatus::DRAINED;
   mSamplesCount = 0;
+  mOutputsCount = 0;
   mLastTime.reset();
+  mInputTimesSet.clear();
   return FlushPromise::CreateAndResolve(true, __func__);
 }
 
@@ -167,6 +190,7 @@ RefPtr<MediaDataDecoder::FlushPromise> WMFMediaDataDecoder::Flush() {
 }
 
 RefPtr<MediaDataDecoder::DecodePromise> WMFMediaDataDecoder::ProcessDrain() {
+  MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
   if (!mMFTManager || mDrainStatus == DrainStatus::DRAINED) {
     return DecodePromise::CreateAndResolve(DecodedData(), __func__);
   }
@@ -215,7 +239,7 @@ RefPtr<MediaDataDecoder::DecodePromise> WMFMediaDataDecoder::ProcessDrain() {
       MOZ_ASSERT(mLastTime,
                  "We must have attempted to decode at least one frame to get "
                  "one decoded output");
-      results.LastElement()->mTime = *mLastTime;
+      results.LastElement()->As<AudioData>()->SetOriginalStartTime(*mLastTime);
     }
     return DecodePromise::CreateAndResolve(std::move(results), __func__);
   }
@@ -242,6 +266,7 @@ void WMFMediaDataDecoder::SetSeekThreshold(const media::TimeUnit& aTime) {
   RefPtr<WMFMediaDataDecoder> self = this;
   nsCOMPtr<nsIRunnable> runnable = NS_NewRunnableFunction(
       "WMFMediaDataDecoder::SetSeekThreshold", [self, aTime]() {
+        MOZ_ASSERT(self->mTaskQueue->IsCurrentThreadIn());
         media::TimeUnit threshold = aTime;
         self->mMFTManager->SetSeekThreshold(threshold);
       });

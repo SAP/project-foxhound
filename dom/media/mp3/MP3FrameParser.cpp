@@ -68,6 +68,10 @@ const ID3Parser::ID3Header& FrameParser::ID3Header() const {
   return mID3Parser.Header();
 }
 
+uint32_t FrameParser::TotalID3HeaderSize() const {
+  return mID3Parser.TotalHeadersSize();
+}
+
 const FrameParser::VBRHeader& FrameParser::VBRInfo() const {
   return mVBRHeader;
 }
@@ -77,12 +81,12 @@ Result<bool, nsresult> FrameParser::Parse(BufferReader* aReader,
   MOZ_ASSERT(aReader && aBytesToSkip);
   *aBytesToSkip = 0;
 
-  if (!mID3Parser.Header().HasSizeBeenSet() && !mFirstFrame.Length()) {
+  if (ID3Parser::IsBufferStartingWithID3Tag(aReader) && !mFirstFrame.Length()) {
     // No MP3 frames have been parsed yet, look for ID3v2 headers at file begin.
     // ID3v1 tags may only be at file end.
     // TODO: should we try to read ID3 tags at end of file/mid-stream, too?
     const size_t prevReaderOffset = aReader->Offset();
-    const uint32_t tagSize = mID3Parser.Parse(aReader).unwrapOr(0);
+    const uint32_t tagSize = mID3Parser.Parse(aReader);
     if (!!tagSize) {
       // ID3 tag found, skip past it.
       const uint32_t skipSize = tagSize - ID3Parser::ID3Header::SIZE;
@@ -342,10 +346,12 @@ int64_t FrameParser::VBRHeader::Offset(float aDurationFac) const {
   return offset;
 }
 
-Result<bool, nsresult> FrameParser::VBRHeader::ParseXing(
-    BufferReader* aReader) {
+Result<bool, nsresult> FrameParser::VBRHeader::ParseXing(BufferReader* aReader,
+                                                         size_t aFrameSize) {
   static const uint32_t XING_TAG = BigEndian::readUint32("Xing");
   static const uint32_t INFO_TAG = BigEndian::readUint32("Info");
+  static const uint32_t LAME_TAG = BigEndian::readUint32("LAME");
+  static const uint32_t LAVC_TAG = BigEndian::readUint32("Lavc");
 
   enum Flags {
     NUM_FRAMES = 0x01,
@@ -404,6 +410,41 @@ Result<bool, nsresult> FrameParser::VBRHeader::ParseXing(
     mScale = Some(scale);
   }
 
+  uint32_t lameOrLavcTag;
+  MOZ_TRY_VAR(lameOrLavcTag, aReader->ReadU32());
+
+  if (lameOrLavcTag == LAME_TAG || lameOrLavcTag == LAVC_TAG) {
+    // Skip 17 bytes after the LAME tag:
+    // - http://gabriel.mp3-tech.org/mp3infotag.html
+    // - 5 bytes for the encoder short version string
+    // - 1 byte for the info tag revision + VBR method
+    // - 1 byte for the lowpass filter value
+    // - 8 bytes for the ReplayGain information
+    // - 1 byte for the encoding flags + ATH Type
+    // - 1 byte for the specified bitrate if ABR, else the minimal bitrate
+    if (!aReader->Read(17)) {
+      return mozilla::Err(NS_ERROR_FAILURE);
+    }
+
+    // The encoder delay is three bytes, for two 12-bits integers are the
+    // encoder delay and the padding.
+    const uint8_t* delayPadding = aReader->Read(3);
+    if (!delayPadding) {
+      return mozilla::Err(NS_ERROR_FAILURE);
+    }
+    mEncoderDelay =
+        uint32_t(delayPadding[0]) << 4 | (delayPadding[1] & 0xf0) >> 4;
+    mEncoderPadding = uint32_t(delayPadding[1] & 0x0f) << 8 | delayPadding[2];
+
+    constexpr uint16_t DEFAULT_DECODER_DELAY = 529;
+    mEncoderDelay += DEFAULT_DECODER_DELAY + aFrameSize;  // ignore first frame.
+    mEncoderPadding -= std::min(mEncoderPadding, DEFAULT_DECODER_DELAY);
+
+    MP3LOG("VBRHeader::ParseXing: LAME encoder delay section: delay: %" PRIu16
+           " frames, padding: %" PRIu16 " frames",
+           mEncoderDelay, mEncoderPadding);
+  }
+
   return mType == XING;
 }
 
@@ -443,8 +484,8 @@ Result<bool, nsresult> FrameParser::VBRHeader::ParseVBRI(
   return false;
 }
 
-bool FrameParser::VBRHeader::Parse(BufferReader* aReader) {
-  auto res = std::make_pair(ParseVBRI(aReader), ParseXing(aReader));
+bool FrameParser::VBRHeader::Parse(BufferReader* aReader, size_t aFrameSize) {
+  auto res = std::make_pair(ParseVBRI(aReader), ParseXing(aReader, aFrameSize));
   const bool rv = (res.first.isOk() && res.first.unwrap()) ||
                   (res.second.isOk() && res.second.unwrap());
   if (rv) {
@@ -480,7 +521,7 @@ const FrameParser::FrameHeader& FrameParser::Frame::Header() const {
 }
 
 bool FrameParser::ParseVBRHeader(BufferReader* aReader) {
-  return mVBRHeader.Parse(aReader);
+  return mVBRHeader.Parse(aReader, CurrentFrame().Header().SamplesPerFrame());
 }
 
 // ID3Parser
@@ -503,18 +544,64 @@ static const uint8_t MIN_MAJOR_VER = 2;
 static const uint8_t MAX_MAJOR_VER = 4;
 }  // namespace id3_header
 
-Result<uint32_t, nsresult> ID3Parser::Parse(BufferReader* aReader) {
-  MOZ_ASSERT(aReader);
+/* static */
+bool ID3Parser::IsBufferStartingWithID3Tag(BufferReader* aReader) {
+  mozilla::Result<uint32_t, nsresult> res = aReader->PeekU24();
+  if (res.isErr()) {
+    return false;
+  }
+  // If buffer starts with ID3v2 tag, `rv` would be reverse and its content
+  // should be '3' 'D' 'I' from the lowest bit.
+  uint32_t rv = res.unwrap();
+  for (int idx = id3_header::ID_LEN - 1; idx >= 0; idx--) {
+    if ((rv & 0xff) != id3_header::ID[idx]) {
+      return false;
+    }
+    rv = rv >> 8;
+  }
+  return true;
+}
 
+uint32_t ID3Parser::Parse(BufferReader* aReader) {
+  MOZ_ASSERT(aReader);
+  MOZ_ASSERT(ID3Parser::IsBufferStartingWithID3Tag(aReader));
+
+  if (!mHeader.HasSizeBeenSet()) {
+    return ParseInternal(aReader);
+  }
+
+  // Encounter another possible ID3 header, if that is valid then we would use
+  // it and save the size of previous one in order to report the size of all ID3
+  // headers together in `TotalHeadersSize()`.
+  ID3Header prevHeader = mHeader;
+  mHeader.Reset();
+  uint32_t size = ParseInternal(aReader);
+  if (!size) {
+    // next ID3 is invalid, so revert the header.
+    mHeader = prevHeader;
+    return size;
+  }
+
+  mFormerID3Size += prevHeader.TotalTagSize();
+  return size;
+}
+
+uint32_t ID3Parser::ParseInternal(BufferReader* aReader) {
   for (auto res = aReader->ReadU8();
        res.isOk() && !mHeader.ParseNext(res.unwrap());
        res = aReader->ReadU8()) {
   }
-
   return mHeader.TotalTagSize();
 }
 
-void ID3Parser::Reset() { mHeader.Reset(); }
+void ID3Parser::Reset() {
+  mHeader.Reset();
+  mFormerID3Size = 0;
+}
+
+uint32_t ID3Parser::TotalHeadersSize() const {
+  return mHeader.TotalTagSize() + mFormerID3Size;
+}
 
 const ID3Parser::ID3Header& ID3Parser::Header() const { return mHeader; }
 

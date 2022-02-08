@@ -12,6 +12,7 @@
 #include "WebMDecoder.h"
 #include "WebMDemuxer.h"
 #include "mozilla/AbstractThread.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "nsMimeTypes.h"
 
 using namespace mozilla;
@@ -36,7 +37,7 @@ class BenchmarkRunner {
         [&]() { done = true; });
 
     // Wait until benchmark completes.
-    SpinEventLoopUntil([&]() { return done; });
+    SpinEventLoopUntil("BenchmarkRunner::Run"_ns, [&]() { return done; });
     return result;
   }
 

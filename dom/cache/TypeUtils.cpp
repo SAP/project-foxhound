@@ -6,8 +6,11 @@
 
 #include "mozilla/dom/cache/TypeUtils.h"
 
+#include <algorithm>
+#include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/CacheBinding.h"
+#include "mozilla/dom/CacheStorageBinding.h"
 #include "mozilla/dom/FetchTypes.h"
 #include "mozilla/dom/InternalRequest.h"
 #include "mozilla/dom/Request.h"
@@ -19,20 +22,17 @@
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/PFileDescriptorSetChild.h"
 #include "mozilla/ipc/InputStreamUtils.h"
-#include "mozilla/StaticPrefs_extensions.h"
+#include "nsCharSeparatedTokenizer.h"
 #include "nsCOMPtr.h"
+#include "nsHttp.h"
 #include "nsIIPCSerializableInputStream.h"
-#include "nsQueryObject.h"
 #include "nsPromiseFlatString.h"
+#include "nsQueryObject.h"
 #include "nsStreamUtils.h"
 #include "nsString.h"
 #include "nsURLParsers.h"
-#include "nsCRT.h"
-#include "nsHttp.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 using mozilla::ipc::AutoIPCStream;
 using mozilla::ipc::BackgroundChild;
@@ -48,11 +48,8 @@ static bool HasVaryStar(mozilla::dom::InternalHeaders* aHeaders) {
   aHeaders->Get("vary"_ns, varyHeaders, rv);
   MOZ_ALWAYS_TRUE(!rv.Failed());
 
-  char* rawBuffer = varyHeaders.BeginWriting();
-  char* token = nsCRT::strtok(rawBuffer, NS_HTTP_HEADER_SEPS, &rawBuffer);
-  for (; token;
-       token = nsCRT::strtok(rawBuffer, NS_HTTP_HEADER_SEPS, &rawBuffer)) {
-    nsDependentCString header(token);
+  for (const nsACString& header :
+       nsCCharSeparatedTokenizer(varyHeaders, NS_HTTP_HEADER_SEP).ToRange()) {
     if (header.EqualsLiteral("*")) {
       return true;
     }
@@ -60,17 +57,20 @@ static bool HasVaryStar(mozilla::dom::InternalHeaders* aHeaders) {
   return false;
 }
 
-void ToHeadersEntryList(nsTArray<HeadersEntry>& aOut,
-                        InternalHeaders* aHeaders) {
+nsTArray<HeadersEntry> ToHeadersEntryList(InternalHeaders* aHeaders) {
   MOZ_DIAGNOSTIC_ASSERT(aHeaders);
 
   AutoTArray<InternalHeaders::Entry, 16> entryList;
   aHeaders->GetEntries(entryList);
 
-  for (uint32_t i = 0; i < entryList.Length(); ++i) {
-    InternalHeaders::Entry& entry = entryList[i];
-    aOut.AppendElement(HeadersEntry(entry.mName, entry.mValue));
-  }
+  nsTArray<HeadersEntry> result;
+  result.SetCapacity(entryList.Length());
+  std::transform(entryList.cbegin(), entryList.cend(), MakeBackInserter(result),
+                 [](const auto& entry) {
+                   return HeadersEntry(entry.mName, entry.mValue);
+                 });
+
+  return result;
 }
 
 }  // namespace
@@ -136,7 +136,7 @@ void TypeUtils::ToCacheRequest(
   aOut.referrerPolicy() = aIn.ReferrerPolicy_();
   RefPtr<InternalHeaders> headers = aIn.Headers();
   MOZ_DIAGNOSTIC_ASSERT(headers);
-  ToHeadersEntryList(aOut.headers(), headers);
+  aOut.headers() = ToHeadersEntryList(headers);
   aOut.headersGuard() = headers->Guard();
   aOut.mode() = aIn.Mode();
   aOut.credentials() = aIn.GetCredentialsMode();
@@ -191,7 +191,7 @@ void TypeUtils::ToCacheResponseWithoutBody(CacheResponse& aOut,
     aRv.ThrowTypeError("Invalid Response object with a 'Vary: *' header.");
     return;
   }
-  ToHeadersEntryList(aOut.headers(), headers);
+  aOut.headers() = ToHeadersEntryList(headers);
   aOut.headersGuard() = headers->Guard();
   aOut.channelInfo() = aIn.GetChannelInfo().AsIPCChannelInfo();
   if (aIn.GetPrincipalInfo()) {
@@ -216,7 +216,7 @@ void TypeUtils::ToCacheResponse(
     return;
   }
 
-  RefPtr<InternalResponse> ir = aIn.GetInternalResponse();
+  SafeRefPtr<InternalResponse> ir = aIn.GetInternalResponse();
   ToCacheResponseWithoutBody(aOut, *ir, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
@@ -243,6 +243,12 @@ void TypeUtils::ToCacheQueryParams(CacheQueryParams& aOut,
   aOut.ignoreSearch() = aIn.mIgnoreSearch;
   aOut.ignoreMethod() = aIn.mIgnoreMethod;
   aOut.ignoreVary() = aIn.mIgnoreVary;
+}
+
+// static
+void TypeUtils::ToCacheQueryParams(CacheQueryParams& aOut,
+                                   const MultiCacheQueryOptions& aIn) {
+  ToCacheQueryParams(aOut, static_cast<const CacheQueryOptions&>(aIn));
   aOut.cacheNameSet() = aIn.mCacheName.WasPassed();
   if (aOut.cacheNameSet()) {
     aOut.cacheName() = aIn.mCacheName.Value();
@@ -254,14 +260,14 @@ void TypeUtils::ToCacheQueryParams(CacheQueryParams& aOut,
 already_AddRefed<Response> TypeUtils::ToResponse(const CacheResponse& aIn) {
   if (aIn.type() == ResponseType::Error) {
     // We don't bother tracking the internal error code for cached responses...
-    RefPtr<InternalResponse> error =
-        InternalResponse::NetworkError(NS_ERROR_FAILURE);
-    RefPtr<Response> r = new Response(GetGlobalObject(), error, nullptr);
+    RefPtr<Response> r =
+        new Response(GetGlobalObject(),
+                     InternalResponse::NetworkError(NS_ERROR_FAILURE), nullptr);
     return r.forget();
   }
 
-  RefPtr<InternalResponse> ir =
-      new InternalResponse(aIn.status(), aIn.statusText());
+  SafeRefPtr<InternalResponse> ir =
+      MakeSafeRefPtr<InternalResponse>(aIn.status(), aIn.statusText());
   ir->SetURLList(aIn.urlList());
 
   RefPtr<InternalHeaders> internalHeaders =
@@ -307,7 +313,8 @@ already_AddRefed<Response> TypeUtils::ToResponse(const CacheResponse& aIn) {
 
   ir->SetPaddingSize(aIn.paddingSize());
 
-  RefPtr<Response> ref = new Response(GetGlobalObject(), ir, nullptr);
+  RefPtr<Response> ref =
+      new Response(GetGlobalObject(), std::move(ir), nullptr);
   return ref.forget();
 }
 SafeRefPtr<InternalRequest> TypeUtils::ToInternalRequest(
@@ -353,13 +360,13 @@ SafeRefPtr<Request> TypeUtils::ToRequest(const CacheRequest& aIn) {
 // static
 already_AddRefed<InternalHeaders> TypeUtils::ToInternalHeaders(
     const nsTArray<HeadersEntry>& aHeadersEntryList, HeadersGuardEnum aGuard) {
-  nsTArray<InternalHeaders::Entry> entryList(aHeadersEntryList.Length());
-
-  for (uint32_t i = 0; i < aHeadersEntryList.Length(); ++i) {
-    const HeadersEntry& headersEntry = aHeadersEntryList[i];
-    entryList.AppendElement(
-        InternalHeaders::Entry(headersEntry.name(), headersEntry.value()));
-  }
+  nsTArray<InternalHeaders::Entry> entryList;
+  entryList.SetCapacity(aHeadersEntryList.Length());
+  std::transform(aHeadersEntryList.cbegin(), aHeadersEntryList.cend(),
+                 MakeBackInserter(entryList), [](const auto& headersEntry) {
+                   return InternalHeaders::Entry(headersEntry.name(),
+                                                 headersEntry.value());
+                 });
 
   RefPtr<InternalHeaders> ref =
       new InternalHeaders(std::move(entryList), aGuard);
@@ -416,7 +423,7 @@ void TypeUtils::ProcessURL(nsACString& aUrl, bool* aSchemeValidOut,
 
   if (queryLen < 0) {
     *aUrlWithoutQueryOut = aUrl;
-    *aUrlQueryOut = EmptyCString();
+    aUrlQueryOut->Truncate();
     return;
   }
 
@@ -467,8 +474,9 @@ SafeRefPtr<InternalRequest> TypeUtils::ToInternalRequest(const nsAString& aIn,
   GlobalObject global(cx, GetGlobalObject()->GetGlobalJSObject());
   MOZ_DIAGNOSTIC_ASSERT(!global.Failed());
 
+  RootedDictionary<RequestInit> requestInit(cx);
   SafeRefPtr<Request> request =
-      Request::Constructor(global, requestOrString, RequestInit(), aRv);
+      Request::Constructor(global, requestOrString, requestInit, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -502,6 +510,4 @@ void TypeUtils::SerializeCacheStream(
   aStreamCleanupList.AppendElement(std::move(autoStream));
 }
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache

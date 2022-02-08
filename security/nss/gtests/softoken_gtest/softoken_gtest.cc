@@ -11,10 +11,15 @@
 
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"
+#include "databuffer.h"
 #include <fstream>
+#include <chrono>
+#include <sqlite3.h>
+using namespace std::chrono;
+
+#include "softoken_dh_vectors.h"
 
 namespace nss_test {
-
 class SoftokenTest : public ::testing::Test {
  protected:
   SoftokenTest() : mNSSDBDir("SoftokenTest.d-") {}
@@ -37,6 +42,61 @@ class SoftokenTest : public ::testing::Test {
 
   ScopedUniqueDirectory mNSSDBDir;
 };
+
+TEST_F(SoftokenTest, CheckDefaultPbkdf2Iterations) {
+  ScopedPK11SlotInfo slot(PK11_GetInternalKeySlot());
+  ASSERT_TRUE(slot);
+  EXPECT_EQ(SECSuccess, PK11_InitPin(slot.get(), nullptr, "password"));
+
+  // Open key4.db and check encoded PBE algorithm and iteration count.
+  // Compare bytes against the expected values to avoid ASN.1 here.
+  std::string key_db = mNSSDBDir.GetPath() + "/key4.db";
+
+  sqlite3 *sql_db = NULL;
+  ASSERT_EQ(SQLITE_OK, sqlite3_open(key_db.c_str(), &sql_db));
+
+  char *query_str = sqlite3_mprintf("SELECT item2 FROM metaData;");
+  ASSERT_NE(nullptr, query_str);
+
+  sqlite3_stmt *statement = NULL;
+  ASSERT_EQ(SQLITE_OK,
+            sqlite3_prepare_v2(sql_db, query_str, -1, &statement, NULL));
+  ASSERT_EQ(SQLITE_ROW, sqlite3_step(statement));
+  unsigned int len = sqlite3_column_bytes(statement, 0);
+  const unsigned char *reader = sqlite3_column_text(statement, 0);
+
+  ASSERT_NE(nullptr, reader);
+  ASSERT_EQ(133U, len);
+
+  // pkcs5PBES2, pkcs5PBKDF2
+  const uint8_t pkcs5_with_pbkdf2[] = {
+      0x30, 0x81, 0x82, 0x30, 0x6E, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86,
+      0xF7, 0x0D, 0x01, 0x05, 0x0D, 0x30, 0x61, 0x30, 0x42, 0x06, 0x09,
+      0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x05, 0x0C, 0x30, 0x35};
+  EXPECT_EQ(0, memcmp(reader, pkcs5_with_pbkdf2, sizeof(pkcs5_with_pbkdf2)));
+  reader += sizeof(pkcs5_with_pbkdf2);
+
+  // Skip over the 32B random salt
+  const uint8_t salt_prefix[] = {0x04, 0x20};
+  EXPECT_EQ(0, memcmp(reader, salt_prefix, sizeof(salt_prefix)));
+  reader += sizeof(salt_prefix) + 0x20;
+
+  // Expect 10000 iterations
+  const uint8_t iterations[] = {0x02, 0x02, 0x27, 0x10};
+  EXPECT_EQ(0, memcmp(reader, iterations, sizeof(iterations)));
+  reader += sizeof(iterations);
+
+  // hmacWithSHA256, aes256-CBC
+  const uint8_t oids[] = {0x02, 0x01, 0x20, 0x30, 0x0A, 0x06, 0x08,
+                          0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x02,
+                          0x09, 0x30, 0x1B, 0x06, 0x09, 0x60, 0x86,
+                          0x48, 0x01, 0x65, 0x03, 0x04, 0x01, 0x2A};
+  EXPECT_EQ(0, memcmp(reader, oids, sizeof(oids)));
+
+  EXPECT_EQ(SQLITE_OK, sqlite3_finalize(statement));
+  sqlite3_free(query_str);
+  sqlite3_close(sql_db);
+}
 
 TEST_F(SoftokenTest, ResetSoftokenEmptyPassword) {
   ScopedPK11SlotInfo slot(PK11_GetInternalKeySlot());
@@ -511,8 +571,9 @@ static const PasswordPair PASSWORD_CHANGE_TESTS[] = {
     {"password", "password2"},  // non-empty to non-empty password
 };
 
-INSTANTIATE_TEST_CASE_P(SoftokenPasswordChangeTests, SoftokenPasswordChangeTest,
-                        ::testing::ValuesIn(PASSWORD_CHANGE_TESTS));
+INSTANTIATE_TEST_SUITE_P(SoftokenPasswordChangeTests,
+                         SoftokenPasswordChangeTest,
+                         ::testing::ValuesIn(PASSWORD_CHANGE_TESTS));
 
 class SoftokenNoDBTest : public ::testing::Test {};
 
@@ -527,11 +588,213 @@ TEST_F(SoftokenNoDBTest, NeedUserInitNoDB) {
   ASSERT_EQ(SECSuccess, NSS_Shutdown());
 }
 
+SECStatus test_dh_value(const PQGParams *params, const SECItem *pub_key_value,
+                        PRBool genFailOK, time_t *time) {
+  SECKEYDHParams dh_params;
+  dh_params.base = params->base;
+  dh_params.prime = params->prime;
+
+  ScopedPK11SlotInfo slot(PK11_GetInternalSlot());
+  EXPECT_TRUE(slot);
+  if (!slot) return SECFailure;
+
+  /* create a private/public key pair in with the given params */
+  SECKEYPublicKey *pub_tmp = nullptr;
+  ScopedSECKEYPrivateKey priv_key(
+      PK11_GenerateKeyPair(slot.get(), CKM_DH_PKCS_KEY_PAIR_GEN, &dh_params,
+                           &pub_tmp, PR_FALSE, PR_TRUE, nullptr));
+  if ((genFailOK) && ((priv_key.get() == nullptr) || (pub_tmp == nullptr))) {
+    return SECFailure;
+  }
+  EXPECT_NE(nullptr, priv_key.get()) << "PK11_GenerateKeyPair failed: "
+                                     << PORT_ErrorToName(PORT_GetError());
+  EXPECT_NE(nullptr, pub_tmp);
+  if ((priv_key.get() == nullptr) || (pub_tmp == nullptr)) return SECFailure;
+  ScopedSECKEYPublicKey pub_key(pub_tmp);
+  ScopedSECKEYPublicKey peer_pub_key_manager(nullptr);
+  SECKEYPublicKey *peer_pub_key = pub_key.get();
+
+  /* if a subprime has been given set it on the PKCS #11 key */
+  if (params->subPrime.data != nullptr) {
+    SECStatus rv;
+    EXPECT_EQ(SECSuccess, rv = PK11_WriteRawAttribute(
+                              PK11_TypePrivKey, priv_key.get(), CKA_SUBPRIME,
+                              (SECItem *)&params->subPrime))
+        << "PK11_WriteRawAttribute failed: "
+        << PORT_ErrorToString(PORT_GetError());
+    if (rv != SECSuccess) {
+      return rv;
+    }
+  }
+
+  /* find if we weren't passed a public value in, use the
+   * one we just generated */
+  if (pub_key_value && pub_key_value->data) {
+    peer_pub_key = SECKEY_CopyPublicKey(pub_key.get());
+    EXPECT_NE(nullptr, peer_pub_key);
+    if (peer_pub_key == nullptr) {
+      return SECFailure;
+    }
+    peer_pub_key->u.dh.publicValue = *pub_key_value;
+    peer_pub_key_manager.reset(peer_pub_key);
+  }
+
+  /* now do the derive. time it and return the time if
+   * the caller requested it. */
+  auto start = high_resolution_clock::now();
+  ScopedPK11SymKey derivedKey(PK11_PubDerive(
+      priv_key.get(), peer_pub_key, PR_FALSE, nullptr, nullptr,
+      CKM_DH_PKCS_DERIVE, CKM_HKDF_DERIVE, CKA_DERIVE, 32, nullptr));
+  auto stop = high_resolution_clock::now();
+  if (!derivedKey) {
+    std::cerr << "PK11_PubDerive failed: "
+              << PORT_ErrorToString(PORT_GetError()) << std::endl;
+  }
+
+  if (time) {
+    auto duration = duration_cast<microseconds>(stop - start);
+    *time = duration.count();
+  }
+  return derivedKey ? SECSuccess : SECFailure;
+}
+
+class SoftokenDhTest : public SoftokenTest {
+ protected:
+  SoftokenDhTest() : SoftokenTest("SoftokenDhTest.d-") {}
+#ifdef NSS_USE_TIMING_CODE
+  time_t reference_time[CLASS_LAST] = {0};
+#endif
+
+  virtual void SetUp() {
+    SoftokenTest::SetUp();
+
+#ifdef NSS_USE_TIMING_CODE
+    ScopedPK11SlotInfo slot(PK11_GetInternalSlot());
+    ASSERT_TRUE(slot);
+
+    time_t time;
+    for (int i = CLASS_FIRST; i < CLASS_LAST; i++) {
+      PQGParams params;
+      params.prime.data = (unsigned char *)reference_prime[i];
+      params.prime.len = reference_prime_len[i];
+      params.base.data = (unsigned char *)g2;
+      params.base.len = sizeof(g2);
+      params.subPrime.data = nullptr;
+      params.subPrime.len = 0;
+      ASSERT_EQ(SECSuccess, test_dh_value(&params, nullptr, PR_FALSE, &time));
+      reference_time[i] = time / 2 + 3 * time;
+    }
+#endif
+  };
+};
+
+const char *param_value(DhParamType param_type) {
+  switch (param_type) {
+    case TLS_APPROVED:
+      return "TLS_APPROVED";
+    case IKE_APPROVED:
+      return "IKE_APPROVED";
+    case SAFE_PRIME:
+      return "SAFE_PRIME";
+    case SAFE_PRIME_WITH_SUBPRIME:
+      return "SAFE_PRIME_WITH_SUBPRIME";
+    case KNOWN_SUBPRIME:
+      return "KNOWN_SUBPRIME";
+    case UNKNOWN_SUBPRIME:
+      return "UNKNOWN_SUBPRIME";
+    case WRONG_SUBPRIME:
+      return "WRONG_SUBPRIME";
+    case BAD_PUB_KEY:
+      return "BAD_PUB_KEY";
+  }
+  return "**Invalid**";
+}
+
+const char *key_value(DhKeyClass key_class) {
+  switch (key_class) {
+    case CLASS_1536:
+      return "CLASS_1536";
+    case CLASS_2048:
+      return "CLASS_2048";
+    case CLASS_3072:
+      return "CLASS_3072";
+    case CLASS_4096:
+      return "CLASS_4096";
+    case CLASS_6144:
+      return "CLASS_6144";
+    case CLASS_8192:
+      return "CLASS_8192";
+    case CLASS_LAST:
+      break;
+  }
+  return "**Invalid**";
+}
+
+class SoftokenDhValidate : public SoftokenDhTest,
+                           public ::testing::WithParamInterface<DhTestVector> {
+};
+
+/* test the DH validation process. In non-fips mode, only BAD_PUB_KEY tests
+ * should fail */
+TEST_P(SoftokenDhValidate, DhVectors) {
+  const DhTestVector dhTestValues = GetParam();
+  std::string testId = (char *)(dhTestValues.id);
+  std::string err = "Test(" + testId + ") failed";
+  SECStatus rv;
+  time_t time;
+
+  PQGParams params;
+  params.prime = dhTestValues.p;
+  params.base = dhTestValues.g;
+  params.subPrime = dhTestValues.q;
+
+  std::cerr << "Test: " + testId << std::endl
+            << "param_type: " << param_value(dhTestValues.param_type)
+            << ", key_class: " << key_value(dhTestValues.key_class) << std::endl
+            << "p: " << DataBuffer(dhTestValues.p.data, dhTestValues.p.len)
+            << std::endl
+            << "g: " << DataBuffer(dhTestValues.g.data, dhTestValues.g.len)
+            << std::endl
+            << "q: " << DataBuffer(dhTestValues.q.data, dhTestValues.q.len)
+            << std::endl
+            << "pub_key: "
+            << DataBuffer(dhTestValues.pub_key.data, dhTestValues.pub_key.len)
+            << std::endl;
+  rv = test_dh_value(&params, &dhTestValues.pub_key, PR_FALSE, &time);
+
+  switch (dhTestValues.param_type) {
+    case TLS_APPROVED:
+    case IKE_APPROVED:
+    case SAFE_PRIME:
+    case UNKNOWN_SUBPRIME:
+      EXPECT_EQ(SECSuccess, rv) << err;
+#ifdef NSS_USE_TIMING_CODE
+      EXPECT_LE(time, reference_time[dhTestValues.key_class]) << err;
+#endif
+      break;
+    case KNOWN_SUBPRIME:
+    case SAFE_PRIME_WITH_SUBPRIME:
+      EXPECT_EQ(SECSuccess, rv) << err;
+#ifdef NSS_USE_TIMING_CODE
+      EXPECT_GT(time, reference_time[dhTestValues.key_class]) << err;
+#endif
+      break;
+    case WRONG_SUBPRIME:
+    case BAD_PUB_KEY:
+      EXPECT_EQ(SECFailure, rv) << err;
+      break;
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(DhValidateCases, SoftokenDhValidate,
+                         ::testing::ValuesIn(DH_TEST_VECTORS));
+
 #ifndef NSS_FIPS_DISABLED
 
 class SoftokenFipsTest : public SoftokenTest {
  protected:
   SoftokenFipsTest() : SoftokenTest("SoftokenFipsTest.d-") {}
+  SoftokenFipsTest(const std::string &prefix) : SoftokenTest(prefix) {}
 
   virtual void SetUp() {
     SoftokenTest::SetUp();
@@ -540,10 +803,44 @@ class SoftokenFipsTest : public SoftokenTest {
     char *internal_name;
     ASSERT_FALSE(PK11_IsFIPS());
     internal_name = PR_smprintf("%s", SECMOD_GetInternalModule()->commonName);
-    ASSERT_EQ(SECSuccess, SECMOD_DeleteInternalModule(internal_name));
+    ASSERT_EQ(SECSuccess, SECMOD_DeleteInternalModule(internal_name))
+        << PORT_ErrorToName(PORT_GetError());
     PR_smprintf_free(internal_name);
     ASSERT_TRUE(PK11_IsFIPS());
   }
+};
+
+class SoftokenFipsDhTest : public SoftokenFipsTest {
+ protected:
+  SoftokenFipsDhTest() : SoftokenFipsTest("SoftokenFipsDhTest.d-") {}
+#ifdef NSS_USE_TIMING_CODE
+  time_t reference_time[CLASS_LAST] = {0};
+#endif
+
+  virtual void SetUp() {
+    SoftokenFipsTest::SetUp();
+
+    ScopedPK11SlotInfo slot(PK11_GetInternalSlot());
+    ASSERT_TRUE(slot);
+
+    ASSERT_EQ(SECSuccess, PK11_InitPin(slot.get(), nullptr, ""));
+    ASSERT_EQ(SECSuccess, PK11_Authenticate(slot.get(), PR_FALSE, nullptr));
+
+#ifdef NSS_USE_TIMING_CODE
+    time_t time;
+    for (int i = CLASS_FIRST; i < CLASS_LAST; i++) {
+      PQGParams params;
+      params.prime.data = (unsigned char *)reference_prime[i];
+      params.prime.len = reference_prime_len[i];
+      params.base.data = (unsigned char *)g2;
+      params.base.len = sizeof(g2);
+      params.subPrime.data = nullptr;
+      params.subPrime.len = 0;
+      ASSERT_EQ(SECSuccess, test_dh_value(&params, nullptr, PR_FALSE, &time));
+      reference_time[i] = time / 2 + 3 * time;
+    }
+#endif
+  };
 };
 
 const std::vector<std::string> kFipsPasswordCases[] = {
@@ -613,12 +910,70 @@ TEST_P(SoftokenFipsBadPasswordTest, SetBadPassword) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(FipsPasswordCases, SoftokenFipsPasswordTest,
-                        ::testing::ValuesIn(kFipsPasswordCases));
+class SoftokenFipsDhValidate
+    : public SoftokenFipsDhTest,
+      public ::testing::WithParamInterface<DhTestVector> {};
 
-INSTANTIATE_TEST_CASE_P(BadFipsPasswordCases, SoftokenFipsBadPasswordTest,
-                        ::testing::ValuesIn(kFipsPasswordBadCases));
+/* test the DH validation process. In fips mode, primes with unknown
+ * subprimes, and all sorts of bad public keys should fail */
+TEST_P(SoftokenFipsDhValidate, DhVectors) {
+  const DhTestVector dhTestValues = GetParam();
+  std::string testId = (char *)(dhTestValues.id);
+  std::string err = "Test(" + testId + ") failed";
+  time_t time;
+  PRBool genFailOK = PR_FALSE;
+  SECStatus rv;
 
+  PQGParams params;
+  params.prime = dhTestValues.p;
+  params.base = dhTestValues.g;
+  params.subPrime = dhTestValues.q;
+  std::cerr << "Test:" + testId << std::endl
+            << "param_type: " << param_value(dhTestValues.param_type)
+            << ", key_class: " << key_value(dhTestValues.key_class) << std::endl
+            << "p: " << DataBuffer(dhTestValues.p.data, dhTestValues.p.len)
+            << std::endl
+            << "g: " << DataBuffer(dhTestValues.g.data, dhTestValues.g.len)
+            << std::endl
+            << "q: " << DataBuffer(dhTestValues.q.data, dhTestValues.q.len)
+            << std::endl
+            << "pub_key: "
+            << DataBuffer(dhTestValues.pub_key.data, dhTestValues.pub_key.len)
+            << std::endl;
+
+  if ((dhTestValues.param_type != TLS_APPROVED) &&
+      (dhTestValues.param_type != IKE_APPROVED)) {
+    genFailOK = PR_TRUE;
+  }
+  rv = test_dh_value(&params, &dhTestValues.pub_key, genFailOK, &time);
+
+  switch (dhTestValues.param_type) {
+    case TLS_APPROVED:
+    case IKE_APPROVED:
+      EXPECT_EQ(SECSuccess, rv) << err;
+#ifdef NSS_USE_TIMING_CODE
+      EXPECT_LE(time, reference_time[dhTestValues.key_class]) << err;
+#endif
+      break;
+    case SAFE_PRIME:
+    case SAFE_PRIME_WITH_SUBPRIME:
+    case KNOWN_SUBPRIME:
+    case UNKNOWN_SUBPRIME:
+    case WRONG_SUBPRIME:
+    case BAD_PUB_KEY:
+      EXPECT_EQ(SECFailure, rv) << err;
+      break;
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(FipsPasswordCases, SoftokenFipsPasswordTest,
+                         ::testing::ValuesIn(kFipsPasswordCases));
+
+INSTANTIATE_TEST_SUITE_P(BadFipsPasswordCases, SoftokenFipsBadPasswordTest,
+                         ::testing::ValuesIn(kFipsPasswordBadCases));
+
+INSTANTIATE_TEST_SUITE_P(FipsDhCases, SoftokenFipsDhValidate,
+                         ::testing::ValuesIn(DH_TEST_VECTORS));
 #endif
 
 }  // namespace nss_test

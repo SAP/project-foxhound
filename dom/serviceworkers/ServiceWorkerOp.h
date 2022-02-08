@@ -9,6 +9,7 @@
 
 #include <functional>
 
+#include "mozilla/dom/ServiceWorkerOpPromise.h"
 #include "nsISupportsImpl.h"
 
 #include "ServiceWorkerEvents.h"
@@ -16,6 +17,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
 #include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/ServiceWorkerOpArgs.h"
@@ -61,6 +63,10 @@ class ServiceWorkerOp : public RemoteWorkerChild::Op {
   // Override to provide a runnable that's not a `ServiceWorkerOpRunnable.`
   virtual RefPtr<WorkerRunnable> GetRunnable(WorkerPrivate* aWorkerPrivate);
 
+  // Overridden by ServiceWorkerOp subclasses, it should return true when
+  // the ServiceWorkerOp was executed successfully (and false if it did fail).
+  // Content throwing an exception during event dispatch is still considered
+  // success.
   virtual bool Exec(JSContext* aCx, WorkerPrivate* aWorkerPrivate) = 0;
 
   // Override to reject any additional MozPromises that subclasses may contain.
@@ -164,6 +170,21 @@ class FetchEventOp final : public ExtendableEventOp,
 
   // Worker thread only; set when `FetchEvent::RespondWith()` is called.
   Maybe<FetchEventRespondWithClosure> mRespondWithClosure;
+
+  // Must be set to `nullptr` on the worker thread because `Promise`'s
+  // destructor must be called on the worker thread.
+  RefPtr<Promise> mHandled;
+
+  // Must be set to `nullptr` on the worker thread because `Promise`'s
+  // destructor must be called on the worker thread.
+  RefPtr<Promise> mPreloadResponse;
+
+  // Holds the callback that resolves mPreloadResponse.
+  MozPromiseRequestHolder<FetchEventPreloadResponsePromise>
+      mPreloadResponsePromiseRequestHolder;
+
+  TimeStamp mFetchHandlerStart;
+  TimeStamp mFetchHandlerFinish;
 };
 
 }  // namespace dom

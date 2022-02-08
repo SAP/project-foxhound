@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 ps{
     Currencies{
         AED{
@@ -334,6 +335,10 @@ ps{
             "LRD",
             "لايبيرين ډالر",
         }
+        LSL{
+            "LSL",
+            "Lesotho Loti",
+        }
         LYD{
             "LYD",
             "ليبياېي دينار",
@@ -361,6 +366,10 @@ ps{
         MNT{
             "MNT",
             "منګوليايي توګريک",
+        }
+        MOP{
+            "MOP",
+            "مکانيس پټاکا",
         }
         MRU{
             "MRU",
@@ -431,7 +440,7 @@ ps{
             "پاپوا نيوګاني کينا",
         }
         PHP{
-            "PHP",
+            "₱",
             "فلپاينۍ پسو",
         }
         PKR{
@@ -506,6 +515,10 @@ ps{
             "SRD",
             "سورينيمي ډالر",
         }
+        SSP{
+            "SSP",
+            "جنوب سوډاني پونډ",
+        }
         STN{
             "STN",
             "ساو ټوم او پرينسپي ډوبرا",
@@ -529,6 +542,10 @@ ps{
         TMT{
             "TMT",
             "ترکمانستاني منت",
+        }
+        TND{
+            "TND",
+            "تيونسې دينار",
         }
         TOP{
             "TOP",
@@ -595,7 +612,7 @@ ps{
             "ختيځ کربين ډالر",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "ختيځ افريقايي CFA فرانک",
         }
         XPF{
@@ -958,6 +975,10 @@ ps{
             one{"لايبيرين ډالر"}
             other{"لايبيرين ډالرې"}
         }
+        LSL{
+            one{"Lesotho loti"}
+            other{"Lesotho lotis"}
+        }
         LYD{
             one{"ليبياېي دينار"}
             other{"ليبياېي دينارونه"}
@@ -985,6 +1006,10 @@ ps{
         MNT{
             one{"منګوليايي توګريک"}
             other{"منګوليايي توګريکس"}
+        }
+        MOP{
+            one{"مکانيس پټاکا"}
+            other{"مکانيز پټاکاز"}
         }
         MRU{
             one{"موريشيسي ډالر"}
@@ -1154,6 +1179,10 @@ ps{
             one{"ترکمانستاني منت"}
             other{"ترکمانستاني منت"}
         }
+        TND{
+            one{"تيونسې دينار"}
+            other{"تونسي دينار"}
+        }
         TOP{
             one{"ټونګن پانګا"}
             other{"ټونګن پانګا"}
@@ -1243,5 +1272,4 @@ ps{
             other{"زيمبي کواچاز"}
         }
     }
-    Version{"37"}
 }

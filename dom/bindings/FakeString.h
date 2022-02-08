@@ -94,22 +94,19 @@ struct FakeString {
 
   operator mozilla::Span<const char_type>() const {
     MOZ_ASSERT(mDataInitialized);
-    return mozilla::MakeSpan(mData, Length());
+    // Explicitly specify template argument here to avoid instantiating
+    // Span<char_type> first and then implicitly converting to Span<const
+    // char_type>
+    return mozilla::Span<const char_type>{mData, Length()};
   }
 
-  operator mozilla::Span<char_type>() {
-    return mozilla::MakeSpan(BeginWriting(), Length());
-  }
-
-  mozilla::BulkWriteHandle<CharT> BulkWrite(size_type aCapacity,
-                                            size_type aPrefixToPreserve,
-                                            bool aAllowShrinking,
-                                            nsresult& aRv) {
+  mozilla::Result<mozilla::BulkWriteHandle<CharT>, nsresult> BulkWrite(
+      size_type aCapacity, size_type aPrefixToPreserve, bool aAllowShrinking) {
     MOZ_ASSERT(!mDataInitialized);
     InitData(mStorage, 0);
     mDataFlags |= DataFlags::INLINE;
     return ToAStringPtr()->BulkWrite(aCapacity, aPrefixToPreserve,
-                                     aAllowShrinking, aRv);
+                                     aAllowShrinking);
   }
 
   // Reserve space to write aLength chars, not including null-terminator.

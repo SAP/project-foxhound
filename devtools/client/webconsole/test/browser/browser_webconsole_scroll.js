@@ -3,7 +3,7 @@
 
 "use strict";
 
-const TEST_URI = `data:text/html;charset=utf-8,<p>Web Console test for  scroll.</p>
+const TEST_URI = `data:text/html;charset=utf-8,<!DOCTYPE html><p>Web Console test for  scroll.</p>
   <script>
     var a = () => b();
     var b = () => c();
@@ -39,7 +39,7 @@ add_task(async function() {
     "The console is scrolled to the bottom"
   );
 
-  await refreshTab();
+  await reloadBrowser();
 
   info("Console should be scrolled to bottom after refresh from page logs");
   await waitFor(() => findMessage(hud, "init-99"));

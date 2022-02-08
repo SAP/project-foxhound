@@ -84,9 +84,6 @@ class GridInspector {
     this.onNavigate = this.onNavigate.bind(this);
     this.onReflow = throttle(this.onReflow, 500, this);
     this.onSetGridOverlayColor = this.onSetGridOverlayColor.bind(this);
-    this.onShowGridOutlineHighlight = this.onShowGridOutlineHighlight.bind(
-      this
-    );
     this.onSidebarSelect = this.onSidebarSelect.bind(this);
     this.onToggleGridHighlighter = this.onToggleGridHighlighter.bind(this);
     this.onToggleShowGridAreas = this.onToggleShowGridAreas.bind(this);
@@ -95,6 +92,9 @@ class GridInspector {
     );
     this.onToggleShowInfiniteLines = this.onToggleShowInfiniteLines.bind(this);
     this.updateGridPanel = this.updateGridPanel.bind(this);
+    this.listenForGridHighlighterEvents = this.listenForGridHighlighterEvents.bind(
+      this
+    );
 
     this.init();
   }
@@ -116,33 +116,16 @@ class GridInspector {
       return;
     }
 
-    try {
-      // TODO: Call this again whenever targets are added or removed.
-      this.layoutFronts = await this.getLayoutFronts();
-    } catch (e) {
-      // This call might fail if called asynchrously after the toolbox is finished
-      // closing.
-      return;
-    }
-
     if (flags.testing) {
       // In tests, we start listening immediately to avoid having to simulate a mousemove.
-      this.highlighters.on("grid-highlighter-hidden", this.onHighlighterHidden);
-      this.highlighters.on("grid-highlighter-shown", this.onHighlighterShown);
+      this.listenForGridHighlighterEvents();
     } else {
       this.document.addEventListener(
         "mousemove",
-        () => {
-          this.highlighters.on(
-            "grid-highlighter-hidden",
-            this.onHighlighterHidden
-          );
-          this.highlighters.on(
-            "grid-highlighter-shown",
-            this.onHighlighterShown
-          );
-        },
-        { once: true }
+        this.listenForGridHighlighterEvents,
+        {
+          once: true,
+        }
       );
     }
 
@@ -152,6 +135,11 @@ class GridInspector {
     this.onSidebarSelect();
   }
 
+  listenForGridHighlighterEvents() {
+    this.highlighters.on("grid-highlighter-hidden", this.onHighlighterHidden);
+    this.highlighters.on("grid-highlighter-shown", this.onHighlighterShown);
+  }
+
   /**
    * Get the LayoutActor fronts for all interesting targets where we have inspectors.
    *
@@ -159,14 +147,10 @@ class GridInspector {
    */
   async getLayoutFronts() {
     const inspectorFronts = await this.inspector.getAllInspectorFronts();
-
-    const layoutFronts = [];
-    for (const { walker } of inspectorFronts) {
-      const layoutFront = await walker.getLayoutInspector();
-      layoutFronts.push(layoutFront);
-    }
-
-    return layoutFronts;
+    const layoutFronts = await Promise.all(
+      inspectorFronts.map(({ walker }) => walker.getLayoutInspector())
+    );
+    return layoutFronts.filter(front => !front.isDestroyed());
   }
 
   /**
@@ -181,6 +165,10 @@ class GridInspector {
       );
       this.highlighters.off("grid-highlighter-shown", this.onHighlighterShown);
     }
+    this.document.removeEventListener(
+      "mousemove",
+      this.listenForGridHighlighterEvents
+    );
 
     this.inspector.sidebar.off("select", this.onSidebarSelect);
     this.inspector.off("new-root", this.onNavigate);
@@ -190,14 +178,12 @@ class GridInspector {
     this._highlighters = null;
     this.document = null;
     this.inspector = null;
-    this.layoutFronts = null;
     this.store = null;
   }
 
   getComponentProps() {
     return {
       onSetGridOverlayColor: this.onSetGridOverlayColor,
-      onShowGridOutlineHighlight: this.onShowGridOutlineHighlight,
       onToggleGridHighlighter: this.onToggleGridHighlighter,
       onToggleShowGridAreas: this.onToggleShowGridAreas,
       onToggleShowGridLineNumbers: this.onToggleShowGridLineNumbers,
@@ -412,13 +398,7 @@ class GridInspector {
         writingMode: grid.writingMode,
       };
 
-      if (
-        isSubgrid &&
-        (await this.inspector.currentTarget.actorHasMethod(
-          "domwalker",
-          "getParentGridNode"
-        ))
-      ) {
+      if (isSubgrid) {
         let parentGridNodeFront;
 
         try {
@@ -462,16 +442,17 @@ class GridInspector {
    * @return {Array} The list of GridFronts
    */
   async getGrids() {
-    let gridFronts = [];
-
+    const promises = [];
     try {
-      for (const layoutFront of this.layoutFronts) {
-        gridFronts = gridFronts.concat(await layoutFront.getAllGrids());
+      const layoutFronts = await this.getLayoutFronts();
+      for (const layoutFront of layoutFronts) {
+        promises.push(layoutFront.getAllGrids());
       }
     } catch (e) {
       // This call might fail if called asynchrously after the toolbox is finished closing
     }
 
+    const gridFronts = (await Promise.all(promises)).flat();
     return gridFronts;
   }
 
@@ -632,38 +613,15 @@ class GridInspector {
         }
 
         // If the grid for which the color was updated currently has a highlighter, update
-        // the color.
+        // the color. If the node is not explicitly highlighted, we assume it's the
+        // parent grid for a subgrid.
         if (this.highlighters.gridHighlighters.has(node)) {
           this.highlighters.showGridHighlighter(node);
-        } else if (this.highlighters.parentGridHighlighters.has(node)) {
+        } else {
           this.highlighters.showParentGridHighlighter(node);
         }
       }
     }
-  }
-
-  /**
-   * Highlights the grid area and cell in the CSS Grid Highlighter for the given grid
-   * container element and selected grid area and cell options.
-   *
-   * @param  {NodeFront} node
-   *         The NodeFront of the grid container element for which the grid highlighter
-   *         is highlighted for.
-   * @param  {Object} options
-   *         The options object has the following properties which corresponds to the
-   *         required parameters for showing the grid cell or area highlights.
-   *         See css-grid.js.
-   *         {
-   *           showGridCell: {
-   *             gridFragmentIndex: Number,
-   *             rowNumber: Number,
-   *             columnNumber: Number,
-   *           },
-   *           showGridArea: String,
-   *         }
-   */
-  onShowGridOutlineHighlight(node, options) {
-    this.highlighters.showGridHighlighter(node, options);
   }
 
   /**

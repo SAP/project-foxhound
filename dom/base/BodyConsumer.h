@@ -10,7 +10,6 @@
 #include "mozilla/dom/AbortSignal.h"
 #include "mozilla/dom/MutableBlobStorage.h"
 #include "nsIInputStreamPump.h"
-#include "nsNetUtil.h"
 #include "nsIObserver.h"
 #include "nsWeakReference.h"
 
@@ -90,7 +89,7 @@ class BodyConsumer final : public nsIObserver,
   }
 
   // AbortFollower
-  void Abort() override;
+  void RunAbortAlgorithm() override;
 
  private:
   BodyConsumer(nsIEventTarget* aMainThreadEventTarget,

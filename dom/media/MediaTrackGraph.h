@@ -47,7 +47,7 @@ namespace mozilla {
 extern LazyLogModule gMediaTrackGraphLog;
 
 namespace dom {
-enum class AudioContextOperation;
+enum class AudioContextOperation : uint8_t;
 enum class AudioContextOperationFlags;
 enum class AudioContextState : uint8_t;
 }  // namespace dom
@@ -86,15 +86,42 @@ enum class AudioContextState : uint8_t;
  * reprocess it. This is triggered automatically by the MediaTrackGraph.
  */
 
+class AudioInputTrack;
 class AudioNodeEngine;
 class AudioNodeExternalInputTrack;
 class AudioNodeTrack;
+class DirectMediaTrackListener;
+class ForwardedInputTrack;
 class MediaInputPort;
 class MediaTrack;
 class MediaTrackGraph;
 class MediaTrackGraphImpl;
+class MediaTrackListener;
+class NativeInputTrack;
 class ProcessedMediaTrack;
 class SourceMediaTrack;
+
+// The interleaved audio input data from audio input callbacks
+class AudioInputSamples {
+ public:
+  AudioInputSamples() = default;
+  ~AudioInputSamples() = default;
+
+  const AudioDataValue* Data() const;
+  size_t FrameCount() const;
+  TrackRate Rate() const;
+  uint32_t Channels() const;
+
+  bool IsEmpty() const;
+  void Push(const AudioDataValue* aBuffer, size_t aFrames, TrackRate aRate,
+            uint32_t aChannels);
+  void Clear();
+
+ private:
+  nsTArray<AudioDataValue> mData;
+  TrackRate mRate = 0;
+  uint32_t mChannels = 0;
+};
 
 class AudioDataListenerInterface {
  protected:
@@ -112,17 +139,20 @@ class AudioDataListenerInterface {
                                 AudioDataValue* aBuffer, size_t aFrames,
                                 TrackRate aRate, uint32_t aChannels) = 0;
   /**
-   * An AudioCallbackDriver signaling that it has started and may notify of data
-   * soon.
+   * An AudioCallbackDriver with an input stream signaling that it has stopped
+   * for any reason and the AudioDataListener will not be notified of input data
+   * until the driver is restarted or another driver has started.
    */
-  virtual void NotifyStarted(MediaTrackGraphImpl* aGraph) = 0;
+  virtual void NotifyInputStopped(MediaTrackGraphImpl* aGraph) = 0;
+
   /**
    * Input data from a microphone (or other audio source.  This is not
    * guaranteed to be in any particular size chunks.
    */
   virtual void NotifyInputData(MediaTrackGraphImpl* aGraph,
                                const AudioDataValue* aBuffer, size_t aFrames,
-                               TrackRate aRate, uint32_t aChannels) = 0;
+                               TrackRate aRate, uint32_t aChannels,
+                               uint32_t aAlreadyBuffered) = 0;
 
   /**
    * Number of audio input channels.
@@ -190,17 +220,6 @@ struct AudioNodeSizes {
  *                last frame.
  */
 enum class DisabledTrackMode { ENABLED, SILENCE_BLACK, SILENCE_FREEZE };
-
-class AudioNodeEngine;
-class AudioNodeExternalInputTrack;
-class AudioNodeTrack;
-class DirectMediaTrackListener;
-class MediaInputPort;
-class MediaTrackGraphImpl;
-class MediaTrackListener;
-class ProcessedMediaTrack;
-class SourceMediaTrack;
-class ForwardedInputTrack;
 
 /**
  * A track of audio or video data. The media type must be known at construction
@@ -329,7 +348,7 @@ class MediaTrack : public mozilla::LinkedListElement<MediaTrack> {
 
   // A disabled track has video replaced by black, and audio replaced by
   // silence.
-  void SetEnabled(DisabledTrackMode aMode);
+  void SetDisabledTrackMode(DisabledTrackMode aMode);
 
   // End event will be notified by calling methods of aListener. It is the
   // responsibility of the caller to remove aListener before it is destroyed.
@@ -380,12 +399,14 @@ class MediaTrack : public mozilla::LinkedListElement<MediaTrack> {
   friend class MediaInputPort;
   friend class AudioNodeExternalInputTrack;
 
+  virtual AudioInputTrack* AsAudioInputTrack() { return nullptr; }
   virtual SourceMediaTrack* AsSourceTrack() { return nullptr; }
   virtual ProcessedMediaTrack* AsProcessedTrack() { return nullptr; }
   virtual AudioNodeTrack* AsAudioNodeTrack() { return nullptr; }
   virtual ForwardedInputTrack* AsForwardedInputTrack() { return nullptr; }
   virtual CrossGraphTransmitter* AsCrossGraphTransmitter() { return nullptr; }
   virtual CrossGraphReceiver* AsCrossGraphReceiver() { return nullptr; }
+  virtual NativeInputTrack* AsNativeInputTrack() { return nullptr; }
 
   // These Impl methods perform the core functionality of the control methods
   // above, on the media graph thread.
@@ -411,7 +432,7 @@ class MediaTrack : public mozilla::LinkedListElement<MediaTrack> {
   virtual void AddDirectListenerImpl(
       already_AddRefed<DirectMediaTrackListener> aListener);
   virtual void RemoveDirectListenerImpl(DirectMediaTrackListener* aListener);
-  virtual void SetEnabledImpl(DisabledTrackMode aMode);
+  virtual void SetDisabledTrackModeImpl(DisabledTrackMode aMode);
 
   void AddConsumer(MediaInputPort* aPort) { mConsumers.AppendElement(aPort); }
   void RemoveConsumer(MediaInputPort* aPort) {
@@ -419,6 +440,17 @@ class MediaTrack : public mozilla::LinkedListElement<MediaTrack> {
   }
   GraphTime StartTime() const { return mStartTime; }
   bool Ended() const { return mEnded; }
+
+  // Returns the current number of channels this track contains if it's an audio
+  // track. Calling this on a video track will trip assertions. Graph thread
+  // only.
+  virtual uint32_t NumberOfChannels() const = 0;
+
+  // The DisabledTrackMode after combining the explicit mode and that of the
+  // input, if any.
+  virtual DisabledTrackMode CombinedDisabledMode() const {
+    return mDisabledMode;
+  }
 
   template <class SegmentType>
   SegmentType* GetData() const {
@@ -498,9 +530,9 @@ class MediaTrack : public mozilla::LinkedListElement<MediaTrack> {
   virtual void DecrementSuspendCount();
 
  protected:
-  // Called on graph thread before handing control to the main thread to
-  // release tracks.
-  virtual void NotifyForcedShutdown() {}
+  // Called on graph thread either during destroy handling or before handing
+  // graph control to the main thread to release tracks.
+  virtual void OnGraphThreadDone() {}
 
   // |AdvanceTimeVaryingValuesToCurrentTime| will be override in
   // SourceMediaTrack.
@@ -525,6 +557,10 @@ class MediaTrack : public mozilla::LinkedListElement<MediaTrack> {
     mEndedNotificationSent = true;
     return true;
   }
+
+  // Notifies listeners and consumers of the change in disabled mode when the
+  // current combined mode is different from aMode.
+  void NotifyIfDisabledModeChangedFrom(DisabledTrackMode aOldMode);
 
   // This state is all initialized on the main thread but
   // otherwise modified only on the media graph thread.
@@ -612,16 +648,6 @@ class SourceMediaTrack : public MediaTrack {
    */
   void SetPullingEnabled(bool aEnabled);
 
-  // Users of audio inputs go through the track so it can track when the
-  // last track referencing an input goes away, so it can close the cubeb
-  // input. Main thread only.
-  nsresult OpenAudioInput(CubebUtils::AudioDeviceID aID,
-                          AudioDataListener* aListener);
-  // Main thread only.
-  void CloseAudioInput(Maybe<CubebUtils::AudioDeviceID>& aID);
-
-  // Main thread only.
-  void Destroy() override;
   // MediaTrackGraph thread only
   void DestroyImpl() override;
 
@@ -671,7 +697,7 @@ class SourceMediaTrack : public MediaTrack {
 
   // Overriding allows us to hold the mMutex lock while changing the track
   // enable status
-  void SetEnabledImpl(DisabledTrackMode aMode) override;
+  void SetDisabledTrackModeImpl(DisabledTrackMode aMode) override;
 
   // Overriding allows us to ensure mMutex is locked while changing the track
   // enable status
@@ -680,6 +706,8 @@ class SourceMediaTrack : public MediaTrack {
     mMutex.AssertCurrentThreadOwns();
     MediaTrack::ApplyTrackDisabling(aSegment, aRawSegment);
   }
+
+  uint32_t NumberOfChannels() const override;
 
   void RemoveAllDirectListenersImpl() override;
 
@@ -712,6 +740,9 @@ class SourceMediaTrack : public MediaTrack {
     bool mEnded;
     // True if the producer of this track is having data pulled by the graph.
     bool mPullingEnabled;
+    // True if the graph has notified this track that it will not be used
+    // again on the graph thread.
+    bool mGraphThreadDone;
   };
 
   bool NeedsMixing();
@@ -730,14 +761,20 @@ class SourceMediaTrack : public MediaTrack {
    */
   void NotifyDirectConsumers(MediaSegment* aSegment);
 
+  void OnGraphThreadDone() override {
+    MutexAutoLock lock(mMutex);
+    if (!mUpdateTrack) {
+      return;
+    }
+    mUpdateTrack->mGraphThreadDone = true;
+    if (!mUpdateTrack->mData) {
+      return;
+    }
+    mUpdateTrack->mData->Clear();
+  }
+
   virtual void AdvanceTimeVaryingValuesToCurrentTime(
       GraphTime aCurrentTime, GraphTime aBlockedTime) override;
-
-  // Only accessed on the MTG thread.  Used so to ask the MTGImpl to usecount
-  // users of a specific input.
-  // XXX Should really be a CubebUtils::AudioDeviceID, but they aren't
-  // copyable (opaque pointers)
-  RefPtr<AudioDataListener> mInputListener;
 
   // This must be acquired *before* MediaTrackGraphImpl's lock, if they are
   // held together.
@@ -788,13 +825,14 @@ class MediaInputPort final {
  private:
   // Do not call this constructor directly. Instead call
   // aDest->AllocateInputPort.
-  MediaInputPort(MediaTrack* aSource, ProcessedMediaTrack* aDest,
-                 uint16_t aInputNumber, uint16_t aOutputNumber)
+  MediaInputPort(MediaTrackGraphImpl* aGraph, MediaTrack* aSource,
+                 ProcessedMediaTrack* aDest, uint16_t aInputNumber,
+                 uint16_t aOutputNumber)
       : mSource(aSource),
         mDest(aDest),
         mInputNumber(aInputNumber),
         mOutputNumber(aOutputNumber),
-        mGraph(nullptr) {
+        mGraph(aGraph) {
     MOZ_COUNT_CTOR(MediaInputPort);
   }
 
@@ -804,27 +842,26 @@ class MediaInputPort final {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MediaInputPort)
 
-  // Called on graph manager thread
-  // Do not call these from outside MediaTrackGraph.cpp!
-  void Init();
-  // Called during message processing to trigger removal of this track.
-  void Disconnect();
-
-  // Control API
   /**
    * Disconnects and destroys the port. The caller must not reference this
-   * object again.
+   * object again. Main thread.
    */
   void Destroy();
 
-  // Any thread
+  // The remaining methods and members must always be called on the graph thread
+  // from within MediaTrackGraph.cpp.
+
+  void Init();
+  // Called during message processing to trigger removal of this port's source
+  // and destination tracks.
+  void Disconnect();
+
   MediaTrack* GetSource() const { return mSource; }
   ProcessedMediaTrack* GetDestination() const { return mDest; }
 
   uint16_t InputNumber() const { return mInputNumber; }
   uint16_t OutputNumber() const { return mOutputNumber; }
 
-  // Call on graph manager thread
   struct InputInterval {
     GraphTime mStart;
     GraphTime mEnd;
@@ -839,8 +876,8 @@ class MediaInputPort final {
   /**
    * Returns the graph that owns this port.
    */
-  MediaTrackGraphImpl* GraphImpl();
-  MediaTrackGraph* Graph();
+  MediaTrackGraphImpl* GraphImpl() const;
+  MediaTrackGraph* Graph() const;
 
   /**
    * Sets the graph that owns this track.  Should only be called once.
@@ -872,8 +909,6 @@ class MediaInputPort final {
   }
 
  private:
-  friend class MediaTrackGraphImpl;
-  friend class MediaTrack;
   friend class ProcessedMediaTrack;
   // Never modified after Init()
   MediaTrack* mSource;
@@ -961,6 +996,9 @@ class ProcessedMediaTrack : public MediaTrack {
   // true for echo loops, only for muted cycles.
   bool InMutedCycle() const { return mCycleMarker; }
 
+  // Used by ForwardedInputTrack to propagate the disabled mode along the graph.
+  virtual void OnInputDisabledModeChanged(DisabledTrackMode aMode) {}
+
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override {
     size_t amount = MediaTrack::SizeOfExcludingThis(aMallocSizeOf);
     // Not owned:
@@ -1034,16 +1072,12 @@ class MediaTrackGraph {
   static MediaTrackGraph* CreateNonRealtimeInstance(
       TrackRate aSampleRate, nsPIDOMWindowInner* aWindowId);
 
-  // Return the correct main thread for this graph. This always returns
-  // something that is valid. Thread safe.
-  AbstractThread* AbstractMainThread();
-
   // Idempotent
   void ForceShutDown();
 
   virtual nsresult OpenAudioInput(CubebUtils::AudioDeviceID aID,
                                   AudioDataListener* aListener) = 0;
-  virtual void CloseAudioInput(Maybe<CubebUtils::AudioDeviceID>& aID,
+  virtual void CloseAudioInput(CubebUtils::AudioDeviceID aID,
                                AudioDataListener* aListener) = 0;
 
   // Control API.

@@ -11,8 +11,11 @@
 #include "mozilla/MouseEvents.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_ui.h"
+#include "mozilla/ToString.h"
 #include "mozilla/dom/MouseEventBinding.h"
+#include "nsContainerFrame.h"
 #include "nsFrameList.h"  // for DEBUG_FRAME_DUMP
 #include "nsHTMLParts.h"
 #include "nsLayoutUtils.h"
@@ -25,7 +28,6 @@
 #include "nsIContentInlines.h"
 #include "nsIFrame.h"
 #include <algorithm>
-#include "LayersLogging.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -80,6 +82,17 @@ namespace mozilla {
  * more or less likely to be targeted than non-visited links.
  */
 
+// Enum that determines which type of elements to count as targets in the
+// search. Clickable elements are generally ones that respond to click events,
+// like form inputs and links and things with click event listeners.
+// Touchable elements are a much narrower set of elements; ones with touchstart
+// and touchend listeners.
+enum class SearchType {
+  None,
+  Clickable,
+  Touchable,
+};
+
 struct EventRadiusPrefs {
   bool mEnabled;            // other fields are valid iff this field is true
   uint32_t mVisitedWeight;  // in percent, i.e. default is 100
@@ -89,6 +102,7 @@ struct EventRadiusPrefs {
   uint32_t mRadiusLeftmm;
   bool mTouchOnly;
   bool mReposition;
+  SearchType mSearchType;
 
   explicit EventRadiusPrefs(EventClassID aEventClassID) {
     if (aEventClassID == eTouchEventClass) {
@@ -100,9 +114,9 @@ struct EventRadiusPrefs {
       mRadiusLeftmm = StaticPrefs::ui_touch_radius_leftmm();
       mTouchOnly = false;   // Always false, unlike mouse events.
       mReposition = false;  // Always false, unlike mouse events.
+      mSearchType = SearchType::Touchable;
 
     } else if (aEventClassID == eMouseEventClass) {
-      // Mostly for testing purposes
       mEnabled = StaticPrefs::ui_mouse_radius_enabled();
       mVisitedWeight = StaticPrefs::ui_mouse_radius_visitedWeight();
       mRadiusTopmm = StaticPrefs::ui_mouse_radius_topmm();
@@ -111,6 +125,7 @@ struct EventRadiusPrefs {
       mRadiusLeftmm = StaticPrefs::ui_mouse_radius_leftmm();
       mTouchOnly = StaticPrefs::ui_mouse_radius_inputSource_touchOnly();
       mReposition = StaticPrefs::ui_mouse_radius_reposition();
+      mSearchType = SearchType::Clickable;
 
     } else {
       mEnabled = false;
@@ -121,6 +136,7 @@ struct EventRadiusPrefs {
       mRadiusLeftmm = 0;
       mTouchOnly = false;
       mReposition = false;
+      mSearchType = SearchType::None;
     }
   }
 };
@@ -147,8 +163,18 @@ static bool HasTouchListener(nsIContent* aContent) {
     return false;
   }
 
-  return elm->HasListenersFor(nsGkAtoms::ontouchstart) ||
-         elm->HasListenersFor(nsGkAtoms::ontouchend);
+  return elm->HasNonSystemGroupListenersFor(nsGkAtoms::ontouchstart) ||
+         elm->HasNonSystemGroupListenersFor(nsGkAtoms::ontouchend);
+}
+
+static bool HasPointerListener(nsIContent* aContent) {
+  EventListenerManager* elm = aContent->GetExistingListenerManager();
+  if (!elm) {
+    return false;
+  }
+
+  return elm->HasListenersFor(nsGkAtoms::onpointerdown) ||
+         elm->HasListenersFor(nsGkAtoms::onpointerup);
 }
 
 static bool IsDescendant(nsIFrame* aFrame, nsIContent* aAncestor,
@@ -166,8 +192,24 @@ static bool IsDescendant(nsIFrame* aFrame, nsIContent* aAncestor,
   return false;
 }
 
+static nsIContent* GetTouchableAncestor(nsIFrame* aFrame,
+                                        nsAtom* aStopAt = nullptr) {
+  // Input events propagate up the content tree so we'll follow the content
+  // ancestors to look for elements accepting the touch event.
+  for (nsIContent* content = aFrame->GetContent(); content;
+       content = content->GetFlattenedTreeParent()) {
+    if (aStopAt && content->IsHTMLElement(aStopAt)) {
+      break;
+    }
+    if (HasTouchListener(content)) {
+      return content;
+    }
+  }
+  return nullptr;
+}
+
 static nsIContent* GetClickableAncestor(
-    nsIFrame* aFrame, nsAtom* stopAt = nullptr,
+    nsIFrame* aFrame, nsAtom* aStopAt = nullptr,
     nsAutoString* aLabelTargetId = nullptr) {
   // If the frame is `cursor:pointer` or inherits `cursor:pointer` from an
   // ancestor, treat it as clickable. This is a heuristic to deal with pages
@@ -183,7 +225,7 @@ static nsIContent* GetClickableAncestor(
   // this check to any non-auto cursor. Such a change would also pick up things
   // like contenteditable or input fields, which can then be removed from the
   // loop below, and would have better performance.
-  if (aFrame->StyleUI()->mCursor.keyword == StyleCursorKind::Pointer) {
+  if (aFrame->StyleUI()->Cursor().keyword == StyleCursorKind::Pointer) {
     return aFrame->GetContent();
   }
 
@@ -191,10 +233,11 @@ static nsIContent* GetClickableAncestor(
   // ancestors to look for elements accepting the click.
   for (nsIContent* content = aFrame->GetContent(); content;
        content = content->GetFlattenedTreeParent()) {
-    if (stopAt && content->IsHTMLElement(stopAt)) {
+    if (aStopAt && content->IsHTMLElement(aStopAt)) {
       break;
     }
-    if (HasTouchListener(content) || HasMouseListener(content)) {
+    if (HasTouchListener(content) || HasMouseListener(content) ||
+        HasPointerListener(content)) {
       return content;
     }
     if (content->IsAnyOfHTMLElements(nsGkAtoms::button, nsGkAtoms::input,
@@ -350,7 +393,7 @@ static nsIFrame* GetClosest(RelativeTo aRoot,
         f, nsRect(nsPoint(0, 0), f->GetSize()), aRoot,
         &preservesAxisAlignedRectangles);
     PET_LOG("Checking candidate %p with border box %s\n", f,
-            mozilla::layers::Stringify(borderBox).c_str());
+            ToString(borderBox).c_str());
     nsRegion region;
     region.And(exposedRegion, borderBox);
     if (region.IsEmpty()) {
@@ -371,12 +414,21 @@ static nsIFrame* GetClosest(RelativeTo aRoot,
       continue;
     }
 
-    nsIContent* clickableContent =
-        GetClickableAncestor(f, nsGkAtoms::body, &labelTargetId);
-    if (!aClickableAncestor && !clickableContent) {
-      PET_LOG("  candidate %p was not clickable\n", f);
-      continue;
+    if (aPrefs.mSearchType == SearchType::Clickable) {
+      nsIContent* clickableContent =
+          GetClickableAncestor(f, nsGkAtoms::body, &labelTargetId);
+      if (!aClickableAncestor && !clickableContent) {
+        PET_LOG("  candidate %p was not clickable\n", f);
+        continue;
+      }
+    } else if (aPrefs.mSearchType == SearchType::Touchable) {
+      nsIContent* touchableContent = GetTouchableAncestor(f, nsGkAtoms::body);
+      if (!touchableContent) {
+        PET_LOG("  candidate %p was not touchable\n", f);
+        continue;
+      }
     }
+
     // If our current closest frame is a descendant of 'f', skip 'f' (prefer
     // the nested frame).
     if (bestTarget && nsLayoutUtils::IsProperAncestorFrameCrossDoc(
@@ -409,6 +461,21 @@ static nsIFrame* GetClosest(RelativeTo aRoot,
   return bestTarget;
 }
 
+// Walk from aTarget up to aRoot, and return the first frame found with an
+// explicit z-index set on it. If no such frame is found, aRoot is returned.
+static const nsIFrame* FindZIndexAncestor(const nsIFrame* aTarget,
+                                          const nsIFrame* aRoot) {
+  const nsIFrame* candidate = aTarget;
+  while (candidate && candidate != aRoot) {
+    if (candidate->ZIndex().valueOr(0) > 0) {
+      PET_LOG("Restricting search to z-index root %p\n", candidate);
+      return candidate;
+    }
+    candidate = candidate->GetParent();
+  }
+  return aRoot;
+}
+
 nsIFrame* FindFrameTargetedByInputEvent(
     WidgetGUIEvent* aEvent, RelativeTo aRootFrame,
     const nsPoint& aPointRelativeToRootFrame, uint32_t aFlags) {
@@ -423,25 +490,13 @@ nsIFrame* FindFrameTargetedByInputEvent(
       "Found initial target %p for event class %s message %s point %s "
       "relative to root frame %s\n",
       target, ToChar(aEvent->mClass), ToChar(aEvent->mMessage),
-      mozilla::layers::Stringify(aPointRelativeToRootFrame).c_str(),
+      ToString(aPointRelativeToRootFrame).c_str(),
       ToString(aRootFrame).c_str());
 
   EventRadiusPrefs prefs(aEvent->mClass);
   if (!prefs.mEnabled || EventRetargetSuppression::IsActive()) {
     PET_LOG("Retargeting disabled\n");
     return target;
-  }
-  nsIContent* clickableAncestor = nullptr;
-  if (target) {
-    clickableAncestor = GetClickableAncestor(target, nsGkAtoms::body);
-    if (clickableAncestor) {
-      PET_LOG("Target %p is clickable\n", target);
-      // If the target that was directly hit has a clickable ancestor, that
-      // means it too is clickable. And since it is the same as or a descendant
-      // of clickableAncestor, it should become the root for the GetClosest
-      // search.
-      clickableAncestor = target->GetContent();
-    }
   }
 
   // Do not modify targeting for actual mouse hardware; only for mouse
@@ -458,13 +513,22 @@ nsIFrame* FindFrameTargetedByInputEvent(
   // a mouse event handler for example, targets that are !GetClickableAncestor
   // can never be targeted --- something nsSubDocumentFrame in an ancestor
   // document would be targeted instead.
-  const nsIFrame* restrictToDescendants =
-      target ? target->PresShell()->GetRootFrame() : aRootFrame.mFrame;
+  const nsIFrame* restrictToDescendants = [&]() -> const nsIFrame* {
+    if (target && target->PresContext() != aRootFrame.mFrame->PresContext()) {
+      return target->PresShell()->GetRootFrame();
+    }
+    return aRootFrame.mFrame;
+  }();
+
+  // If the target element inside an element with a z-index, restrict the
+  // search to other elements inside that z-index. This is a heuristic
+  // intended to help with a class of scenarios involving web modals or
+  // web popup type things. In particular it helps alleviate bug 1666792.
+  restrictToDescendants = FindZIndexAncestor(target, restrictToDescendants);
 
   nsRect targetRect = GetTargetRect(aRootFrame, aPointRelativeToRootFrame,
                                     restrictToDescendants, prefs, aFlags);
-  PET_LOG("Expanded point to target rect %s\n",
-          mozilla::layers::Stringify(targetRect).c_str());
+  PET_LOG("Expanded point to target rect %s\n", ToString(targetRect).c_str());
   AutoTArray<nsIFrame*, 8> candidates;
   nsresult rv = nsLayoutUtils::GetFramesForArea(aRootFrame, targetRect,
                                                 candidates, options);
@@ -472,12 +536,26 @@ nsIFrame* FindFrameTargetedByInputEvent(
     return target;
   }
 
-  nsIFrame* closestClickable =
+  nsIContent* clickableAncestor = nullptr;
+  if (target) {
+    clickableAncestor = GetClickableAncestor(target, nsGkAtoms::body);
+    if (clickableAncestor) {
+      PET_LOG("Target %p is clickable\n", target);
+      // If the target that was directly hit has a clickable ancestor, that
+      // means it too is clickable. And since it is the same as or a
+      // descendant of clickableAncestor, it should become the root for the
+      // GetClosest search.
+      clickableAncestor = target->GetContent();
+    }
+  }
+
+  nsIFrame* closest =
       GetClosest(aRootFrame, aPointRelativeToRootFrame, targetRect, prefs,
                  restrictToDescendants, clickableAncestor, candidates);
-  if (closestClickable) {
-    target = closestClickable;
+  if (closest) {
+    target = closest;
   }
+
   PET_LOG("Final target is %p\n", target);
 
 #ifdef DEBUG_FRAME_DUMP
@@ -485,7 +563,11 @@ nsIFrame* FindFrameTargetedByInputEvent(
   // Note that dumping the frame tree at the top of the function may flood
   // logcat on Android devices and cause the PET_LOGs to get dropped.
   if (MOZ_LOG_TEST(sEvtTgtLog, LogLevel::Verbose)) {
-    aRootFrame.mFrame->DumpFrameTree();
+    if (target) {
+      target->DumpFrameTree();
+    } else {
+      aRootFrame.mFrame->DumpFrameTree();
+    }
   }
 #endif
 

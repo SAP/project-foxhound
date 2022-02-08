@@ -11,7 +11,6 @@
 #include "js/RootingAPI.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/workerinternals/RuntimeService.h"
@@ -22,26 +21,30 @@
 #include "nsWrapperCache.h"
 
 namespace mozilla {
+class ErrorResult;
+
 namespace webgpu {
 class Instance;
 }  // namespace webgpu
 namespace dom {
 class StorageManager;
 class MediaCapabilities;
+class LockManager;
 
 namespace network {
 class Connection;
 }  // namespace network
 
 class WorkerNavigator final : public nsWrapperCache {
-  typedef struct workerinternals::RuntimeService::NavigatorProperties
-      NavigatorProperties;
+  using NavigatorProperties =
+      workerinternals::RuntimeService::NavigatorProperties;
 
   NavigatorProperties mProperties;
   RefPtr<StorageManager> mStorageManager;
   RefPtr<network::Connection> mConnection;
   RefPtr<dom::MediaCapabilities> mMediaCapabilities;
   RefPtr<webgpu::Instance> mWebGpu;
+  RefPtr<dom::LockManager> mLocks;
   bool mOnline;
 
   WorkerNavigator(const NavigatorProperties& aProperties, bool aOnline);
@@ -101,6 +104,8 @@ class WorkerNavigator final : public nsWrapperCache {
   dom::MediaCapabilities* MediaCapabilities();
 
   webgpu::Instance* Gpu();
+
+  dom::LockManager* Locks();
 };
 
 }  // namespace dom

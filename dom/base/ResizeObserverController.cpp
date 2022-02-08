@@ -6,16 +6,17 @@
 
 #include "mozilla/dom/ResizeObserverController.h"
 
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/ErrorEvent.h"
+#include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/Unused.h"
 #include "nsPresContext.h"
 #include "nsRefreshDriver.h"
 #include <limits>
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 void ResizeObserverNotificationHelper::WillRefresh(TimeStamp aTime) {
   MOZ_DIAGNOSTIC_ASSERT(mOwner, "Should've de-registered on-time!");
@@ -49,7 +50,7 @@ void ResizeObserverNotificationHelper::Register() {
     return;
   }
 
-  refreshDriver->AddRefreshObserver(this, FlushType::Display);
+  refreshDriver->AddRefreshObserver(this, FlushType::Display, "ResizeObserver");
   mRegistered = true;
 }
 
@@ -75,15 +76,22 @@ ResizeObserverNotificationHelper::~ResizeObserverNotificationHelper() {
   MOZ_RELEASE_ASSERT(!mOwner, "Forgot to clear weak pointer?");
 }
 
-void ResizeObserverController::Traverse(
-    nsCycleCollectionTraversalCallback& aCb) {
-  ImplCycleCollectionTraverse(aCb, mResizeObservers, "mResizeObservers");
-}
-
-void ResizeObserverController::Unlink() { mResizeObservers.Clear(); }
-
 void ResizeObserverController::ShellDetachedFromDocument() {
   mResizeObserverNotificationHelper->Unregister();
+}
+
+static void FlushLayoutForWholeBrowsingContextTree(Document& aDoc) {
+  if (BrowsingContext* bc = aDoc.GetBrowsingContext()) {
+    RefPtr<BrowsingContext> top = bc->Top();
+    top->PreOrderWalk([](BrowsingContext* aCur) {
+      if (Document* doc = aCur->GetExtantDocument()) {
+        doc->FlushPendingNotifications(FlushType::Layout);
+      }
+    });
+  } else {
+    // If there is no browsing context, we just flush this document itself.
+    aDoc.FlushPendingNotifications(FlushType::Layout);
+  }
 }
 
 void ResizeObserverController::Notify() {
@@ -117,8 +125,10 @@ void ResizeObserverController::Notify() {
                  "shallowestTargetDepth should be getting strictly deeper");
 
     // Flush layout, so that any callback functions' style changes / resizes
-    // get a chance to take effect.
-    doc->FlushPendingNotifications(FlushType::Layout);
+    // get a chance to take effect. The callback functions may do changes in its
+    // sub-documents or ancestors, so flushing layout for the whole browsing
+    // context tree makes sure we don't miss anyone.
+    FlushLayoutForWholeBrowsingContextTree(*doc);
 
     // To avoid infinite resize loop, we only gather all active observations
     // that have the depth of observed target element more than current
@@ -168,7 +178,9 @@ uint32_t ResizeObserverController::BroadcastAllActiveObservations() {
 
   // Copy the observers as this invokes the callbacks and could register and
   // unregister observers at will.
-  for (auto& observer : mResizeObservers.Clone()) {
+  const auto observers =
+      ToTArray<nsTArray<RefPtr<ResizeObserver>>>(mResizeObservers);
+  for (auto& observer : observers) {
     // MOZ_KnownLive because 'observers' is guaranteed to keep it
     // alive.
     //
@@ -220,8 +232,7 @@ void ResizeObserverController::AddSizeOfIncludingThis(
   size += mResizeObservers.ShallowSizeOfExcludingThis(mallocSizeOf);
   // TODO(emilio): Measure the observers individually or something? They aren't
   // really owned by us.
-  aSizes.mDOMResizeObserverControllerSize += size;
+  aSizes.mDOMSizes.mDOMResizeObserverControllerSize += size;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

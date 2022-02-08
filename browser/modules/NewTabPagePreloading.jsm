@@ -51,10 +51,15 @@ let NewTabPagePreloading = {
       BROWSER_NEW_TAB_URL,
     } = win;
 
+    let oa = E10SUtils.predictOriginAttributes({ window: win });
+
     let remoteType = E10SUtils.getRemoteTypeForURI(
       BROWSER_NEW_TAB_URL,
       gMultiProcessBrowser,
-      gFissionBrowser
+      gFissionBrowser,
+      E10SUtils.DEFAULT_REMOTE_TYPE,
+      null,
+      oa
     );
     let browser = gBrowser.createBrowser({
       isPreloadBrowser: true,
@@ -101,12 +106,15 @@ let NewTabPagePreloading = {
   },
 
   maybeCreatePreloadedBrowser(window) {
-    // If we're not enabled, have already got one, or are in a popup window,
-    // don't bother creating a preload browser - there's no point.
+    // If we're not enabled, have already got one, are in a popup window, or the
+    // window is minimized / occluded, don't bother creating a preload browser -
+    // there's no point.
     if (
       !this.enabled ||
       window.gBrowser.preloadedBrowser ||
-      !window.toolbar.visible
+      !window.toolbar.visible ||
+      window.windowState == window.STATE_MINIMIZED ||
+      window.isFullyOccluded
     ) {
       return;
     }
@@ -169,7 +177,7 @@ let NewTabPagePreloading = {
         ? "private"
         : "normal";
       this.browserCounts[countKey]--;
-      browser.setAttribute("preloadedState", "consumed");
+      browser.removeAttribute("preloadedState");
       browser.setAttribute("autocompletepopup", "PopupAutoComplete");
     }
 

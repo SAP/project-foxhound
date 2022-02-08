@@ -693,6 +693,72 @@ fn define_simd_arithmetic(
         .operands_in(vec![x, y])
         .operands_out(vec![a]),
     );
+
+    ig.push(
+        Inst::new(
+            "uadd_sat",
+            r#"
+        Add with unsigned saturation.
+
+        This is similar to `iadd` but the operands are interpreted as unsigned integers and their
+        summed result, instead of wrapping, will be saturated to the highest unsigned integer for
+        the controlling type (e.g. `0xFF` for i8).
+        "#,
+            &formats.binary,
+        )
+        .operands_in(vec![x, y])
+        .operands_out(vec![a]),
+    );
+
+    ig.push(
+        Inst::new(
+            "sadd_sat",
+            r#"
+        Add with signed saturation.
+
+        This is similar to `iadd` but the operands are interpreted as signed integers and their
+        summed result, instead of wrapping, will be saturated to the lowest or highest
+        signed integer for the controlling type (e.g. `0x80` or `0x7F` for i8). For example,
+        since an `sadd_sat.i8` of `0x70` and `0x70` is greater than `0x7F`, the result will be
+        clamped to `0x7F`.
+        "#,
+            &formats.binary,
+        )
+        .operands_in(vec![x, y])
+        .operands_out(vec![a]),
+    );
+
+    ig.push(
+        Inst::new(
+            "usub_sat",
+            r#"
+        Subtract with unsigned saturation.
+
+        This is similar to `isub` but the operands are interpreted as unsigned integers and their
+        difference, instead of wrapping, will be saturated to the lowest unsigned integer for
+        the controlling type (e.g. `0x00` for i8).
+        "#,
+            &formats.binary,
+        )
+        .operands_in(vec![x, y])
+        .operands_out(vec![a]),
+    );
+
+    ig.push(
+        Inst::new(
+            "ssub_sat",
+            r#"
+        Subtract with signed saturation.
+
+        This is similar to `isub` but the operands are interpreted as signed integers and their
+        difference, instead of wrapping, will be saturated to the lowest or highest
+        signed integer for the controlling type (e.g. `0x80` or `0x7F` for i8).
+        "#,
+            &formats.binary,
+        )
+        .operands_in(vec![x, y])
+        .operands_out(vec![a]),
+    );
 }
 
 #[allow(clippy::many_single_char_names)]
@@ -2071,7 +2137,7 @@ pub(crate) fn define(
     );
 
     let N =
-        &Operand::new("args", &entities.varargs).with_doc("Variable number of args for Stackmap");
+        &Operand::new("args", &entities.varargs).with_doc("Variable number of args for StackMap");
 
     ig.push(
         Inst::new(
@@ -2193,6 +2259,24 @@ pub(crate) fn define(
         .operands_out(vec![s]),
     );
 
+    let a = &Operand::new("a", TxN);
+    let x = &Operand::new("x", Int);
+
+    ig.push(
+        Inst::new(
+            "vhigh_bits",
+            r#"
+        Reduce a vector to a scalar integer.
+
+        Return a scalar integer, consisting of the concatenation of the most significant bit
+        of each lane of ``a``.
+        "#,
+            &formats.unary,
+        )
+        .operands_in(vec![a])
+        .operands_out(vec![x]),
+    );
+
     let a = &Operand::new("a", &Int.as_bool());
     let Cond = &Operand::new("Cond", &imm.intcc);
     let x = &Operand::new("x", Int);
@@ -2309,78 +2393,12 @@ pub(crate) fn define(
 
     ig.push(
         Inst::new(
-            "uadd_sat",
-            r#"
-        Add with unsigned saturation.
-
-        This is similar to `iadd` but the operands are interpreted as unsigned integers and their
-        summed result, instead of wrapping, will be saturated to the highest unsigned integer for
-        the controlling type (e.g. `0xFF` for i8).
-        "#,
-            &formats.binary,
-        )
-        .operands_in(vec![x, y])
-        .operands_out(vec![a]),
-    );
-
-    ig.push(
-        Inst::new(
-            "sadd_sat",
-            r#"
-        Add with signed saturation.
-
-        This is similar to `iadd` but the operands are interpreted as signed integers and their
-        summed result, instead of wrapping, will be saturated to the lowest or highest
-        signed integer for the controlling type (e.g. `0x80` or `0x7F` for i8). For example,
-        since an `sadd_sat.i8` of `0x70` and `0x70` is greater than `0x7F`, the result will be
-        clamped to `0x7F`.
-        "#,
-            &formats.binary,
-        )
-        .operands_in(vec![x, y])
-        .operands_out(vec![a]),
-    );
-
-    ig.push(
-        Inst::new(
             "isub",
             r#"
         Wrapping integer subtraction: `a := x - y \pmod{2^B}`.
 
         This instruction does not depend on the signed/unsigned interpretation
         of the operands.
-        "#,
-            &formats.binary,
-        )
-        .operands_in(vec![x, y])
-        .operands_out(vec![a]),
-    );
-
-    ig.push(
-        Inst::new(
-            "usub_sat",
-            r#"
-        Subtract with unsigned saturation.
-
-        This is similar to `isub` but the operands are interpreted as unsigned integers and their
-        difference, instead of wrapping, will be saturated to the lowest unsigned integer for
-        the controlling type (e.g. `0x00` for i8).
-        "#,
-            &formats.binary,
-        )
-        .operands_in(vec![x, y])
-        .operands_out(vec![a]),
-    );
-
-    ig.push(
-        Inst::new(
-            "ssub_sat",
-            r#"
-        Subtract with signed saturation.
-
-        This is similar to `isub` but the operands are interpreted as signed integers and their
-        difference, instead of wrapping, will be saturated to the lowest or highest
-        signed integer for the controlling type (e.g. `0x80` or `0x7F` for i8).
         "#,
             &formats.binary,
         )
@@ -3559,6 +3577,22 @@ pub(crate) fn define(
         .operands_out(vec![a]),
     );
 
+    ig.push(
+        Inst::new(
+            "fmin_pseudo",
+            r#"
+        Floating point pseudo-minimum, propagating NaNs.  This behaves differently from ``fmin``.
+        See <https://github.com/WebAssembly/simd/pull/122> for background.
+
+        The behaviour is defined as ``fmin_pseudo(a, b) = (b < a) ? b : a``, and the behaviour
+        for zero or NaN inputs follows from the behaviour of ``<`` with such inputs.
+        "#,
+            &formats.binary,
+        )
+        .operands_in(vec![x, y])
+        .operands_out(vec![a]),
+    );
+
     let a = &Operand::new("a", Float).with_doc("The larger of ``x`` and ``y``");
 
     ig.push(
@@ -3568,6 +3602,22 @@ pub(crate) fn define(
         Floating point maximum, propagating NaNs.
 
         If either operand is NaN, this returns a NaN.
+        "#,
+            &formats.binary,
+        )
+        .operands_in(vec![x, y])
+        .operands_out(vec![a]),
+    );
+
+    ig.push(
+        Inst::new(
+            "fmax_pseudo",
+            r#"
+        Floating point pseudo-maximum, propagating NaNs.  This behaves differently from ``fmax``.
+        See <https://github.com/WebAssembly/simd/pull/122> for background.
+
+        The behaviour is defined as ``fmax_pseudo(a, b) = (a < b) ? b : a``, and the behaviour
+        for zero or NaN inputs follows from the behaviour of ``<`` with such inputs.
         "#,
             &formats.binary,
         )
@@ -3748,12 +3798,9 @@ pub(crate) fn define(
         Inst::new(
             "scalar_to_vector",
             r#"
-    Scalar To Vector -- move a value out of a scalar register and into a vector register; the
-    scalar will be moved to the lowest-order bits of the vector register. Note that this
-    instruction is intended as a low-level legalization instruction and frontends should prefer
-    insertlane; on certain architectures, scalar_to_vector may zero the highest-order bits for some
-    types (e.g. integers) but not for others (e.g. floats).
-    "#,
+            Copies a scalar value to a vector value.  The scalar is copied into the
+            least significant lane of the vector, and all other lanes will be zero.
+            "#,
             &formats.unary,
         )
         .operands_in(vec![s])
@@ -3926,9 +3973,9 @@ pub(crate) fn define(
         Inst::new(
             "snarrow",
             r#"
-        Combine `x` and `y` into a vector with twice the lanes but half the integer width while 
+        Combine `x` and `y` into a vector with twice the lanes but half the integer width while
         saturating overflowing values to the signed maximum and minimum.
-        
+
         The lanes will be concatenated after narrowing. For example, when `x` and `y` are `i32x4`
         and `x = [x3, x2, x1, x0]` and `y = [y3, y2, y1, y0]`, then after narrowing the value
         returned is an `i16x8`: `a = [y3', y2', y1', y0', x3', x2', x1', x0']`.
@@ -3943,12 +3990,12 @@ pub(crate) fn define(
         Inst::new(
             "unarrow",
             r#"
-        Combine `x` and `y` into a vector with twice the lanes but half the integer width while 
+        Combine `x` and `y` into a vector with twice the lanes but half the integer width while
         saturating overflowing values to the unsigned maximum and minimum.
-        
+
         Note that all input lanes are considered signed: any negative lanes will overflow and be
         replaced with the unsigned minimum, `0x00`.
-        
+
         The lanes will be concatenated after narrowing. For example, when `x` and `y` are `i32x4`
         and `x = [x3, x2, x1, x0]` and `y = [y3, y2, y1, y0]`, then after narrowing the value
         returned is an `i16x8`: `a = [y3', y2', y1', y0', x3', x2', x1', x0']`.
@@ -3977,7 +4024,7 @@ pub(crate) fn define(
             "swiden_low",
             r#"
         Widen the low lanes of `x` using signed extension.
-        
+
         This will double the lane width and halve the number of lanes.
             "#,
             &formats.unary,
@@ -3991,7 +4038,7 @@ pub(crate) fn define(
             "swiden_high",
             r#"
         Widen the high lanes of `x` using signed extension.
-        
+
         This will double the lane width and halve the number of lanes.
             "#,
             &formats.unary,
@@ -4005,7 +4052,7 @@ pub(crate) fn define(
             "uwiden_low",
             r#"
         Widen the low lanes of `x` using unsigned extension.
-        
+
         This will double the lane width and halve the number of lanes.
             "#,
             &formats.unary,
@@ -4019,12 +4066,47 @@ pub(crate) fn define(
             "uwiden_high",
             r#"
         Widen the high lanes of `x` using unsigned extension.
-        
+
         This will double the lane width and halve the number of lanes.
             "#,
             &formats.unary,
         )
         .operands_in(vec![x])
+        .operands_out(vec![a]),
+    );
+
+    let I16x8 = &TypeVar::new(
+        "I16x8",
+        "A SIMD vector type containing 8 integer lanes each 16 bits wide.",
+        TypeSetBuilder::new()
+            .ints(16..16)
+            .simd_lanes(8..8)
+            .includes_scalars(false)
+            .build(),
+    );
+
+    let x = &Operand::new("x", I16x8);
+    let y = &Operand::new("y", I16x8);
+    let a = &Operand::new("a", &I16x8.merge_lanes());
+
+    ig.push(
+        Inst::new(
+            "widening_pairwise_dot_product_s",
+            r#"
+        Takes corresponding elements in `x` and `y`, performs a sign-extending length-doubling
+        multiplication on them, then adds adjacent pairs of elements to form the result.  For
+        example, if the input vectors are `[x3, x2, x1, x0]` and `[y3, y2, y1, y0]`, it produces
+        the vector `[r1, r0]`, where `r1 = sx(x3) * sx(y3) + sx(x2) * sx(y2)` and
+        `r0 = sx(x1) * sx(y1) + sx(x0) * sx(y0)`, and `sx(n)` sign-extends `n` to twice its width.
+
+        This will double the lane width and halve the number of lanes.  So the resulting
+        vector has the same number of bits as `x` and `y` do (individually).
+
+        See <https://github.com/WebAssembly/simd/pull/127> for background info.
+            "#,
+            &formats.binary,
+        )
+        .operands_in(vec![x, y])
         .operands_out(vec![a]),
     );
 
@@ -4243,6 +4325,26 @@ pub(crate) fn define(
         .operands_out(vec![a]),
     );
 
+    ig.push(
+        Inst::new(
+            "fcvt_low_from_sint",
+            r#"
+        Converts packed signed doubleword integers to packed double precision floating point.
+
+        Considering only the low half of the register, each lane in `x` is interpreted as a
+        signed doubleword integer that is then converted to a double precision float. This
+        instruction differs from fcvt_from_sint in that it converts half the number of lanes
+        which are converted to occupy twice the number of bits. No rounding should be needed
+        for the resulting float.
+
+        The result type will have half the number of vector lanes as the input.
+        "#,
+            &formats.unary,
+        )
+        .operands_in(vec![x])
+        .operands_out(vec![a]),
+    );
+
     let WideInt = &TypeVar::new(
         "WideInt",
         "An integer type with lanes from `i16` upwards",
@@ -4303,6 +4405,110 @@ pub(crate) fn define(
         .operands_in(vec![lo, hi])
         .operands_out(vec![a])
         .is_ghost(true),
+    );
+
+    // Instructions relating to atomic memory accesses and fences
+    let AtomicMem = &TypeVar::new(
+        "AtomicMem",
+        "Any type that can be stored in memory, which can be used in an atomic operation",
+        TypeSetBuilder::new().ints(8..64).build(),
+    );
+    let x = &Operand::new("x", AtomicMem).with_doc("Value to be atomically stored");
+    let a = &Operand::new("a", AtomicMem).with_doc("Value atomically loaded");
+    let e = &Operand::new("e", AtomicMem).with_doc("Expected value in CAS");
+    let p = &Operand::new("p", iAddr);
+    let MemFlags = &Operand::new("MemFlags", &imm.memflags);
+    let AtomicRmwOp = &Operand::new("AtomicRmwOp", &imm.atomic_rmw_op);
+
+    ig.push(
+        Inst::new(
+            "atomic_rmw",
+            r#"
+        Atomically read-modify-write memory at `p`, with second operand `x`.  The old value is
+        returned.  `p` has the type of the target word size, and `x` may be an integer type of
+        8, 16, 32 or 64 bits, even on a 32-bit target.  The type of the returned value is the
+        same as the type of `x`.  This operation is sequentially consistent and creates
+        happens-before edges that order normal (non-atomic) loads and stores.
+        "#,
+            &formats.atomic_rmw,
+        )
+        .operands_in(vec![MemFlags, AtomicRmwOp, p, x])
+        .operands_out(vec![a])
+        .can_load(true)
+        .can_store(true)
+        .other_side_effects(true),
+    );
+
+    ig.push(
+        Inst::new(
+            "atomic_cas",
+            r#"
+        Perform an atomic compare-and-swap operation on memory at `p`, with expected value `e`,
+        storing `x` if the value at `p` equals `e`.  The old value at `p` is returned,
+        regardless of whether the operation succeeds or fails.  `p` has the type of the target
+        word size, and `x` and `e` must have the same type and the same size, which may be an
+        integer type of 8, 16, 32 or 64 bits, even on a 32-bit target.  The type of the returned
+        value is the same as the type of `x` and `e`.  This operation is sequentially
+        consistent and creates happens-before edges that order normal (non-atomic) loads and
+        stores.
+        "#,
+            &formats.atomic_cas,
+        )
+        .operands_in(vec![MemFlags, p, e, x])
+        .operands_out(vec![a])
+        .can_load(true)
+        .can_store(true)
+        .other_side_effects(true),
+    );
+
+    ig.push(
+        Inst::new(
+            "atomic_load",
+            r#"
+        Atomically load from memory at `p`.
+
+        This is a polymorphic instruction that can load any value type which has a memory
+        representation.  It should only be used for integer types with 8, 16, 32 or 64 bits.
+        This operation is sequentially consistent and creates happens-before edges that order
+        normal (non-atomic) loads and stores.
+        "#,
+            &formats.load_no_offset,
+        )
+        .operands_in(vec![MemFlags, p])
+        .operands_out(vec![a])
+        .can_load(true)
+        .other_side_effects(true),
+    );
+
+    ig.push(
+        Inst::new(
+            "atomic_store",
+            r#"
+        Atomically store `x` to memory at `p`.
+
+        This is a polymorphic instruction that can store any value type with a memory
+        representation.  It should only be used for integer types with 8, 16, 32 or 64 bits.
+        This operation is sequentially consistent and creates happens-before edges that order
+        normal (non-atomic) loads and stores.
+        "#,
+            &formats.store_no_offset,
+        )
+        .operands_in(vec![MemFlags, x, p])
+        .can_store(true)
+        .other_side_effects(true),
+    );
+
+    ig.push(
+        Inst::new(
+            "fence",
+            r#"
+        A memory fence.  This must provide ordering to ensure that, at a minimum, neither loads
+        nor stores of any kind may move forwards or backwards across the fence.  This operation
+        is sequentially consistent.
+        "#,
+            &formats.nullary,
+        )
+        .other_side_effects(true),
     );
 
     ig.build()

@@ -7,9 +7,7 @@
 
 "use strict";
 
-const Cm = Components.manager;
-
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );

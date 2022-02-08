@@ -2,12 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* globals ExtensionAPI */
+/* globals ExtensionAPI, Services, XPCOMUtils */
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { FileUtils } = ChromeUtils.import(
   "resource://gre/modules/FileUtils.jsm"
 );
@@ -47,10 +43,26 @@ this.specialpowers = class extends ExtensionAPI {
         moduleURI: "resource://specialpowers/SpecialPowersParent.jsm",
       },
     });
+
+    ChromeUtils.registerWindowActor("AppTestDelegate", {
+      parent: {
+        moduleURI: "resource://specialpowers/AppTestDelegateParent.jsm",
+      },
+      child: {
+        moduleURI: "resource://specialpowers/AppTestDelegateChild.jsm",
+        events: {
+          DOMContentLoaded: { capture: true },
+          load: { capture: true },
+        },
+      },
+      allFrames: true,
+      includeChrome: true,
+    });
   }
 
   onShutdown() {
     ChromeUtils.unregisterWindowActor("SpecialPowers");
+    ChromeUtils.unregisterWindowActor("AppTestDelegate");
     resProto.setSubstitution("specialpowers", null);
   }
 };

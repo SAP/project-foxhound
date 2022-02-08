@@ -26,7 +26,7 @@ interface nsIProfilerStartParams : nsISupports
   readonly attribute double duration;
   readonly attribute double interval;
   readonly attribute uint32_t features;
-  readonly attribute uint64_t activeBrowsingContextID;
+  readonly attribute uint64_t activeTabID;
 
   [noscript, notxpcom, nostdcall] StringArrayRef getFilters();
 };
@@ -38,7 +38,7 @@ interface nsIProfiler : nsISupports
   void StartProfiler(in uint32_t aEntries, in double aInterval,
                      in Array<AUTF8String> aFeatures,
                      [optional] in Array<AUTF8String> aFilters,
-                     [optional] in uint64_t aActiveBrowsingContextID,
+                     [optional] in uint64_t aActiveTabID,
                      [optional] in double aDuration);
   void StopProfiler();
   boolean IsPaused();
@@ -47,7 +47,6 @@ interface nsIProfiler : nsISupports
   boolean IsSamplingPaused();
   void PauseSampling();
   void ResumeSampling();
-  void AddMarker(in string aMarker);
 
   /*
    * Resolves the returned promise after at least one full periodic sampling.
@@ -179,7 +178,4 @@ interface nsIProfiler : nsISupports
    * Dump the collected profile to a file.
    */
   void dumpProfileToFile(in string aFilename);
-
-  [noscript, notxpcom, nostdcall]
-  void receiveShutdownProfile(in nsCString aProfile);
 };

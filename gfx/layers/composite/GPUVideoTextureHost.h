@@ -21,34 +21,23 @@ class GPUVideoTextureHost : public TextureHost {
 
   void DeallocateDeviceData() override {}
 
-  virtual void SetTextureSourceProvider(
-      TextureSourceProvider* aProvider) override;
-
-  bool Lock() override;
-
-  void Unlock() override;
-
   gfx::SurfaceFormat GetFormat() const override;
-
-  void PrepareTextureSource(CompositableTextureSourceRef& aTexture) override;
-
-  bool BindTextureSource(CompositableTextureSourceRef& aTexture) override;
-  bool AcquireTextureSource(CompositableTextureSourceRef& aTexture) override;
 
   already_AddRefed<gfx::DataSourceSurface> GetAsSurface() override {
     return nullptr;  // XXX - implement this (for MOZ_DUMP_PAINTING)
   }
 
   gfx::YUVColorSpace GetYUVColorSpace() const override;
+  gfx::ColorDepth GetColorDepth() const override;
   gfx::ColorRange GetColorRange() const override;
 
   gfx::IntSize GetSize() const override;
 
+  bool IsValid() override;
+
 #ifdef MOZ_LAYERS_HAVE_LOG
   const char* Name() override { return "GPUVideoTextureHost"; }
 #endif
-
-  bool HasIntermediateBuffer() const override;
 
   void CreateRenderTexture(
       const wr::ExternalImageId& aExternalImageId) override;
@@ -66,15 +55,19 @@ class GPUVideoTextureHost : public TextureHost {
                         const wr::LayoutRect& aBounds,
                         const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
                         const Range<wr::ImageKey>& aImageKeys,
-                        const bool aPreferCompositorSurface) override;
+                        PushDisplayItemFlagSet aFlags) override;
+
+  bool SupportsExternalCompositing(WebRenderBackend aBackend) override;
+
+  void UnbindTextureSource() override;
+
+  void NotifyNotUsed() override;
 
  protected:
   GPUVideoTextureHost(TextureFlags aFlags,
                       const SurfaceDescriptorGPUVideo& aDescriptor);
 
   TextureHost* EnsureWrappedTextureHost();
-
-  void UpdatedInternal(const nsIntRegion* Region) override;
 
   RefPtr<TextureHost> mWrappedTextureHost;
   SurfaceDescriptorGPUVideo mDescriptor;

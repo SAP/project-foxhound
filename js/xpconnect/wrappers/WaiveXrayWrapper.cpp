@@ -7,38 +7,47 @@
 #include "WaiveXrayWrapper.h"
 #include "WrapperFactory.h"
 #include "jsapi.h"
+#include "js/CallAndConstruct.h"  // JS::IsCallable
 
 using namespace JS;
 
 namespace xpc {
 
-static bool WaiveAccessors(JSContext* cx,
-                           MutableHandle<PropertyDescriptor> desc) {
-  if (desc.hasGetterObject() && desc.getterObject()) {
-    RootedValue v(cx, JS::ObjectValue(*desc.getterObject()));
-    if (!WrapperFactory::WaiveXrayAndWrap(cx, &v)) {
-      return false;
-    }
-    desc.setGetterObject(&v.toObject());
-  }
-
-  if (desc.hasSetterObject() && desc.setterObject()) {
-    RootedValue v(cx, JS::ObjectValue(*desc.setterObject()));
-    if (!WrapperFactory::WaiveXrayAndWrap(cx, &v)) {
-      return false;
-    }
-    desc.setSetterObject(&v.toObject());
-  }
-  return true;
-}
-
 bool WaiveXrayWrapper::getOwnPropertyDescriptor(
     JSContext* cx, HandleObject wrapper, HandleId id,
-    MutableHandle<PropertyDescriptor> desc) const {
-  return CrossCompartmentWrapper::getOwnPropertyDescriptor(cx, wrapper, id,
-                                                           desc) &&
-         WrapperFactory::WaiveXrayAndWrap(cx, desc.value()) &&
-         WaiveAccessors(cx, desc);
+    MutableHandle<mozilla::Maybe<PropertyDescriptor>> desc) const {
+  if (!CrossCompartmentWrapper::getOwnPropertyDescriptor(cx, wrapper, id,
+                                                         desc)) {
+    return false;
+  }
+
+  if (desc.isNothing()) {
+    return true;
+  }
+
+  Rooted<PropertyDescriptor> desc_(cx, *desc);
+  if (desc_.hasValue()) {
+    if (!WrapperFactory::WaiveXrayAndWrap(cx, desc_.value())) {
+      return false;
+    }
+  }
+  if (desc_.hasGetter() && desc_.getter()) {
+    RootedValue v(cx, JS::ObjectValue(*desc_.getter()));
+    if (!WrapperFactory::WaiveXrayAndWrap(cx, &v)) {
+      return false;
+    }
+    desc_.setGetter(&v.toObject());
+  }
+  if (desc_.hasSetter() && desc_.setter()) {
+    RootedValue v(cx, JS::ObjectValue(*desc_.setter()));
+    if (!WrapperFactory::WaiveXrayAndWrap(cx, &v)) {
+      return false;
+    }
+    desc_.setSetter(&v.toObject());
+  }
+
+  desc.set(mozilla::Some(desc_.get()));
+  return true;
 }
 
 bool WaiveXrayWrapper::get(JSContext* cx, HandleObject wrapper,

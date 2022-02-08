@@ -6,10 +6,10 @@
 
 #include "SpeechGrammar.h"
 
+#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/SpeechGrammarBinding.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(SpeechGrammar, mParent)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(SpeechGrammar)
@@ -54,5 +54,4 @@ void SpeechGrammar::SetWeight(float aArg, ErrorResult& aRv) {
   aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

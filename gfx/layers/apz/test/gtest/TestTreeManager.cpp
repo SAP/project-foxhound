@@ -10,38 +10,31 @@
 
 class APZCTreeManagerGenericTester : public APZCTreeManagerTester {
  protected:
-  void CreateSimpleDTCScrollingLayer() {
-    const char* layerTreeSyntax = "t";
+  void CreateSimpleScrollingLayer() {
+    const char* treeShape = "x";
     nsIntRegion layerVisibleRegion[] = {
         nsIntRegion(IntRect(0, 0, 200, 200)),
     };
-    root = CreateLayerTree(layerTreeSyntax, layerVisibleRegion, nullptr, lm,
-                           layers);
-    SetScrollableFrameMetrics(root, ScrollableLayerGuid::START_SCROLL_ID,
+    CreateScrollData(treeShape, layerVisibleRegion);
+    SetScrollableFrameMetrics(layers[0], ScrollableLayerGuid::START_SCROLL_ID,
                               CSSRect(0, 0, 500, 500));
-
-    EventRegions regions;
-    regions.mHitRegion = nsIntRegion(IntRect(0, 0, 200, 200));
-    regions.mDispatchToContentHitRegion = regions.mHitRegion;
-    layers[0]->SetEventRegions(regions);
   }
 
   void CreateSimpleMultiLayerTree() {
-    const char* layerTreeSyntax = "c(tt)";
-    // LayerID                     0 12
+    const char* treeShape = "x(xx)";
+    // LayerID               0 12
     nsIntRegion layerVisibleRegion[] = {
         nsIntRegion(IntRect(0, 0, 100, 100)),
         nsIntRegion(IntRect(0, 0, 100, 50)),
         nsIntRegion(IntRect(0, 50, 100, 50)),
     };
-    root = CreateLayerTree(layerTreeSyntax, layerVisibleRegion, nullptr, lm,
-                           layers);
+    CreateScrollData(treeShape, layerVisibleRegion);
   }
 
   void CreatePotentiallyLeakingTree() {
-    const char* layerTreeSyntax = "c(c(c(t))c(c(t)))";
-    // LayerID                     0 1 2 3  4 5 6
-    root = CreateLayerTree(layerTreeSyntax, nullptr, nullptr, lm, layers);
+    const char* treeShape = "x(x(x(x))x(x(x)))";
+    // LayerID               0 1 2 3  4 5 6
+    CreateScrollData(treeShape);
     SetScrollableFrameMetrics(layers[0], ScrollableLayerGuid::START_SCROLL_ID);
     SetScrollableFrameMetrics(layers[2],
                               ScrollableLayerGuid::START_SCROLL_ID + 1);
@@ -53,15 +46,14 @@ class APZCTreeManagerGenericTester : public APZCTreeManagerTester {
                               ScrollableLayerGuid::START_SCROLL_ID + 3);
   }
 
-  void CreateTwoLayerDTCTree(int32_t aRootContentLayerIndex) {
-    const char* layerTreeSyntax = "c(t)";
-    // LayerID                     0 1
+  void CreateTwoLayerTree(int32_t aRootContentLayerIndex) {
+    const char* treeShape = "x(x)";
+    // LayerID               0 1
     nsIntRegion layerVisibleRegion[] = {
         nsIntRegion(IntRect(0, 0, 100, 100)),
         nsIntRegion(IntRect(0, 0, 100, 100)),
     };
-    root = CreateLayerTree(layerTreeSyntax, layerVisibleRegion, nullptr, lm,
-                           layers);
+    CreateScrollData(treeShape, layerVisibleRegion);
     SetScrollableFrameMetrics(layers[0], ScrollableLayerGuid::START_SCROLL_ID);
     SetScrollableFrameMetrics(layers[1],
                               ScrollableLayerGuid::START_SCROLL_ID + 1);
@@ -69,20 +61,15 @@ class APZCTreeManagerGenericTester : public APZCTreeManagerTester {
 
     // Make layers[aRootContentLayerIndex] the root content
     ModifyFrameMetrics(layers[aRootContentLayerIndex],
-                       [](FrameMetrics& fm) { fm.SetIsRootContent(true); });
-
-    // Both layers are fully dispatch-to-content
-    EventRegions regions;
-    regions.mHitRegion = nsIntRegion(IntRect(0, 0, 100, 100));
-    regions.mDispatchToContentHitRegion = regions.mHitRegion;
-    layers[0]->SetEventRegions(regions);
-    layers[1]->SetEventRegions(regions);
+                       [](ScrollMetadata& sm, FrameMetrics& fm) {
+                         fm.SetIsRootContent(true);
+                       });
   }
 };
 
 TEST_F(APZCTreeManagerGenericTester, ScrollablePaintedLayers) {
   CreateSimpleMultiLayerTree();
-  ScopedLayerTreeRegistration registration(manager, LayersId{0}, root, mcc);
+  ScopedLayerTreeRegistration registration(LayersId{0}, mcc);
 
   // both layers have the same scrollId
   SetScrollableFrameMetrics(layers[1], ScrollableLayerGuid::START_SCROLL_ID);
@@ -91,28 +78,15 @@ TEST_F(APZCTreeManagerGenericTester, ScrollablePaintedLayers) {
 
   TestAsyncPanZoomController* nullAPZC = nullptr;
   // so they should have the same APZC
-  EXPECT_FALSE(layers[0]->HasScrollableFrameMetrics());
+  EXPECT_FALSE(HasScrollableFrameMetrics(layers[0]));
   EXPECT_NE(nullAPZC, ApzcOf(layers[1]));
   EXPECT_NE(nullAPZC, ApzcOf(layers[2]));
-  EXPECT_EQ(ApzcOf(layers[1]), ApzcOf(layers[2]));
-
-  // Change the scrollId of layers[1], and verify the APZC changes
-  SetScrollableFrameMetrics(layers[1],
-                            ScrollableLayerGuid::START_SCROLL_ID + 1);
-  UpdateHitTestingTree();
-  EXPECT_NE(ApzcOf(layers[1]), ApzcOf(layers[2]));
-
-  // Change the scrollId of layers[2] to match that of layers[1], ensure we get
-  // the same APZC for both again
-  SetScrollableFrameMetrics(layers[2],
-                            ScrollableLayerGuid::START_SCROLL_ID + 1);
-  UpdateHitTestingTree();
   EXPECT_EQ(ApzcOf(layers[1]), ApzcOf(layers[2]));
 }
 
 TEST_F(APZCTreeManagerGenericTester, Bug1068268) {
   CreatePotentiallyLeakingTree();
-  ScopedLayerTreeRegistration registration(manager, LayersId{0}, root, mcc);
+  ScopedLayerTreeRegistration registration(LayersId{0}, mcc);
 
   UpdateHitTestingTree();
   RefPtr<HitTestingTreeNode> root = manager->GetRootNode();
@@ -132,11 +106,16 @@ TEST_F(APZCTreeManagerGenericTester, Bug1068268) {
   EXPECT_EQ(ApzcOf(layers[5]), ApzcOf(layers[6])->GetParent());
 }
 
-TEST_F(APZCTreeManagerGenericTester, Bug1194876) {
+class APZCTreeManagerGenericTesterMock : public APZCTreeManagerGenericTester {
+ public:
+  APZCTreeManagerGenericTesterMock() { CreateMockHitTester(); }
+};
+
+TEST_F(APZCTreeManagerGenericTesterMock, Bug1194876) {
   // Create a layer tree with parent and child scrollable layers, with the
   // child being the root content.
-  CreateTwoLayerDTCTree(1);
-  ScopedLayerTreeRegistration registration(manager, LayersId{0}, root, mcc);
+  CreateTwoLayerTree(1);
+  ScopedLayerTreeRegistration registration(LayersId{0}, mcc);
   UpdateHitTestingTree();
 
   uint64_t blockId;
@@ -147,7 +126,10 @@ TEST_F(APZCTreeManagerGenericTester, Bug1194876) {
   MultiTouchInput mti;
   mti = CreateMultiTouchInput(MultiTouchInput::MULTITOUCH_START, mcc->Time());
   mti.mTouches.AppendElement(
-      SingleTouchData(0, ParentLayerPoint(25, 50), ScreenSize(0, 0), 0, 0));
+      SingleTouchData(0, ScreenIntPoint(25, 50), ScreenSize(0, 0), 0, 0));
+  QueueMockHitResult(ScrollableLayerGuid::START_SCROLL_ID + 1,
+                     {CompositorHitTestFlags::eVisibleToHitTest,
+                      CompositorHitTestFlags::eIrregularArea});
   blockId = manager->ReceiveInputEvent(mti).mInputBlockId;
   manager->ContentReceivedInputBlock(blockId, false);
   targets.AppendElement(ApzcOf(layers[0])->GetGuid());
@@ -159,7 +141,14 @@ TEST_F(APZCTreeManagerGenericTester, Bug1194876) {
   // layers[1]. Again we tell it both touches landed on layers[0], but because
   // layers[1] is the RCD layer, it will end up being the multitouch target.
   mti.mTouches.AppendElement(
-      SingleTouchData(1, ParentLayerPoint(75, 50), ScreenSize(0, 0), 0, 0));
+      SingleTouchData(1, ScreenIntPoint(75, 50), ScreenSize(0, 0), 0, 0));
+  // Each touch will get hit-tested, so queue two hit-test results.
+  QueueMockHitResult(ScrollableLayerGuid::START_SCROLL_ID + 1,
+                     {CompositorHitTestFlags::eVisibleToHitTest,
+                      CompositorHitTestFlags::eIrregularArea});
+  QueueMockHitResult(ScrollableLayerGuid::START_SCROLL_ID + 1,
+                     {CompositorHitTestFlags::eVisibleToHitTest,
+                      CompositorHitTestFlags::eIrregularArea});
   blockId = manager->ReceiveInputEvent(mti).mInputBlockId;
   manager->ContentReceivedInputBlock(blockId, false);
   targets.AppendElement(ApzcOf(layers[0])->GetGuid());
@@ -172,11 +161,11 @@ TEST_F(APZCTreeManagerGenericTester, Bug1194876) {
   EXPECT_CALL(*mcc, HandleTap(TapType::eLongTap, _, _, _, _)).Times(0);
 }
 
-TEST_F(APZCTreeManagerGenericTester, TargetChangesMidGesture_Bug1570559) {
+TEST_F(APZCTreeManagerGenericTesterMock, TargetChangesMidGesture_Bug1570559) {
   // Create a layer tree with parent and child scrollable layers, with the
   // parent being the root content.
-  CreateTwoLayerDTCTree(0);
-  ScopedLayerTreeRegistration registration(manager, LayersId{0}, root, mcc);
+  CreateTwoLayerTree(0);
+  ScopedLayerTreeRegistration registration(LayersId{0}, mcc);
   UpdateHitTestingTree();
 
   uint64_t blockId;
@@ -188,7 +177,10 @@ TEST_F(APZCTreeManagerGenericTester, TargetChangesMidGesture_Bug1570559) {
   MultiTouchInput mti =
       CreateMultiTouchInput(MultiTouchInput::MULTITOUCH_START, mcc->Time());
   mti.mTouches.AppendElement(
-      SingleTouchData(0, ParentLayerPoint(25, 50), ScreenSize(0, 0), 0, 0));
+      SingleTouchData(0, ScreenIntPoint(25, 50), ScreenSize(0, 0), 0, 0));
+  QueueMockHitResult(ScrollableLayerGuid::START_SCROLL_ID + 1,
+                     {CompositorHitTestFlags::eVisibleToHitTest,
+                      CompositorHitTestFlags::eIrregularArea});
   blockId = manager->ReceiveInputEvent(mti).mInputBlockId;
   manager->ContentReceivedInputBlock(blockId, /* default prevented = */ false);
   targets.AppendElement(ApzcOf(layers[1])->GetGuid());
@@ -200,7 +192,14 @@ TEST_F(APZCTreeManagerGenericTester, TargetChangesMidGesture_Bug1570559) {
   // clear the parent's gesture state. The bug is that we fail to clear the
   // child's gesture state.
   mti.mTouches.AppendElement(
-      SingleTouchData(1, ParentLayerPoint(75, 50), ScreenSize(0, 0), 0, 0));
+      SingleTouchData(1, ScreenIntPoint(75, 50), ScreenSize(0, 0), 0, 0));
+  // Each touch will get hit-tested, so queue two hit-test results.
+  QueueMockHitResult(ScrollableLayerGuid::START_SCROLL_ID + 1,
+                     {CompositorHitTestFlags::eVisibleToHitTest,
+                      CompositorHitTestFlags::eIrregularArea});
+  QueueMockHitResult(ScrollableLayerGuid::START_SCROLL_ID + 1,
+                     {CompositorHitTestFlags::eVisibleToHitTest,
+                      CompositorHitTestFlags::eIrregularArea});
   blockId = manager->ReceiveInputEvent(mti).mInputBlockId;
   manager->ContentReceivedInputBlock(blockId, /* default prevented = */ true);
   targets.AppendElement(ApzcOf(layers[1])->GetGuid());
@@ -211,11 +210,11 @@ TEST_F(APZCTreeManagerGenericTester, TargetChangesMidGesture_Bug1570559) {
   EXPECT_CALL(*mcc, HandleTap(TapType::eLongTap, _, _, _, _)).Times(0);
 }
 
-TEST_F(APZCTreeManagerGenericTester, Bug1198900) {
+TEST_F(APZCTreeManagerGenericTesterMock, Bug1198900) {
   // This is just a test that cancels a wheel event to make sure it doesn't
   // crash.
-  CreateSimpleDTCScrollingLayer();
-  ScopedLayerTreeRegistration registration(manager, LayersId{0}, root, mcc);
+  CreateSimpleScrollingLayer();
+  ScopedLayerTreeRegistration registration(LayersId{0}, mcc);
   UpdateHitTestingTree();
 
   ScreenPoint origin(100, 50);
@@ -224,6 +223,9 @@ TEST_F(APZCTreeManagerGenericTester, Bug1198900) {
                        ScrollWheelInput::SCROLLDELTA_PIXEL, origin, 0, 10,
                        false, WheelDeltaAdjustmentStrategy::eNone);
   uint64_t blockId;
+  QueueMockHitResult(ScrollableLayerGuid::START_SCROLL_ID,
+                     {CompositorHitTestFlags::eVisibleToHitTest,
+                      CompositorHitTestFlags::eIrregularArea});
   blockId = manager->ReceiveInputEvent(swi).mInputBlockId;
   manager->ContentReceivedInputBlock(blockId, /* preventDefault= */ true);
 }
@@ -236,14 +238,17 @@ TEST_F(APZCTreeManagerTester, Bug1551582) {
   // The simple layer tree has a scrollable rect of 500x500 and a composition
   // bounds of 200x200, leading to a scroll range of (0,0,300,300).
   CreateSimpleScrollingLayer();
-  ScopedLayerTreeRegistration registration(manager, LayersId{0}, root, mcc);
+  ScopedLayerTreeRegistration registration(LayersId{0}, mcc);
   UpdateHitTestingTree();
 
   // Simulate the main thread scrolling to the end of the scroll range.
-  ModifyFrameMetrics(root, [](FrameMetrics& aMetrics) {
-    aMetrics.SetScrollOffset(CSSPoint(300, 300));
-    aMetrics.SetScrollGeneration(1);
-    aMetrics.SetScrollOffsetUpdateType(FrameMetrics::eMainThread);
+  ModifyFrameMetrics(root, [](ScrollMetadata& aSm, FrameMetrics& aMetrics) {
+    aMetrics.SetLayoutScrollOffset(CSSPoint(300, 300));
+    nsTArray<ScrollPositionUpdate> scrollUpdates;
+    scrollUpdates.AppendElement(ScrollPositionUpdate::NewScroll(
+        ScrollOrigin::Other, CSSPoint::ToAppUnits(CSSPoint(300, 300))));
+    aSm.SetScrollUpdates(scrollUpdates);
+    aMetrics.SetScrollGeneration(scrollUpdates.LastElement().GetGeneration());
   });
   UpdateHitTestingTree();
 
@@ -255,7 +260,7 @@ TEST_F(APZCTreeManagerTester, Bug1551582) {
   // Simulate the main thread shrinking the scrollable rect to 400x400 (and
   // thereby the scroll range to (0,0,200,200) without sending a new scroll
   // offset update for the clamped scroll position (200,200).
-  ModifyFrameMetrics(root, [](FrameMetrics& aMetrics) {
+  ModifyFrameMetrics(root, [](ScrollMetadata& aSm, FrameMetrics& aMetrics) {
     aMetrics.SetScrollableRect(CSSRect(0, 0, 400, 400));
   });
   UpdateHitTestingTree();
@@ -268,14 +273,17 @@ TEST_F(APZCTreeManagerTester, Bug1557424) {
   // The simple layer tree has a scrollable rect of 500x500 and a composition
   // bounds of 200x200, leading to a scroll range of (0,0,300,300).
   CreateSimpleScrollingLayer();
-  ScopedLayerTreeRegistration registration(manager, LayersId{0}, root, mcc);
+  ScopedLayerTreeRegistration registration(LayersId{0}, mcc);
   UpdateHitTestingTree();
 
   // Simulate the main thread scrolling to the end of the scroll range.
-  ModifyFrameMetrics(root, [](FrameMetrics& aMetrics) {
-    aMetrics.SetScrollOffset(CSSPoint(300, 300));
-    aMetrics.SetScrollGeneration(1);
-    aMetrics.SetScrollOffsetUpdateType(FrameMetrics::eMainThread);
+  ModifyFrameMetrics(root, [](ScrollMetadata& aSm, FrameMetrics& aMetrics) {
+    aMetrics.SetLayoutScrollOffset(CSSPoint(300, 300));
+    nsTArray<ScrollPositionUpdate> scrollUpdates;
+    scrollUpdates.AppendElement(ScrollPositionUpdate::NewScroll(
+        ScrollOrigin::Other, CSSPoint::ToAppUnits(CSSPoint(300, 300))));
+    aSm.SetScrollUpdates(scrollUpdates);
+    aMetrics.SetScrollGeneration(scrollUpdates.LastElement().GetGeneration());
   });
   UpdateHitTestingTree();
 
@@ -287,7 +295,7 @@ TEST_F(APZCTreeManagerTester, Bug1557424) {
   // Simulate the main thread expanding the composition bounds to 300x300 (and
   // thereby shrinking the scroll range to (0,0,200,200) without sending a new
   // scroll offset update for the clamped scroll position (200,200).
-  ModifyFrameMetrics(root, [](FrameMetrics& aMetrics) {
+  ModifyFrameMetrics(root, [](ScrollMetadata& aSm, FrameMetrics& aMetrics) {
     aMetrics.SetCompositionBounds(ParentLayerRect(0, 0, 300, 300));
   });
   UpdateHitTestingTree();

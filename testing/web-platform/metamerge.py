@@ -1,7 +1,12 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 import argparse
 import logging
 import os
-from collections import defaultdict, namedtuple
+import sys
+from collections import namedtuple
 
 from wptrunner.wptmanifest.serializer import serialize
 from wptrunner.wptmanifest.backends import base
@@ -87,18 +92,19 @@ def data_cls_getter(output_node, visited_node):
 
 
 def compile(stream, data_cls_getter=None, **kwargs):
-    return base.compile(Compiler,
-                        stream,
-                        data_cls_getter=data_cls_getter,
-                        **kwargs)
+    return base.compile(Compiler, stream, data_cls_getter=data_cls_getter, **kwargs)
 
 
 def get_manifest(manifest_path):
     """Get the ExpectedManifest for a particular manifest path"""
     try:
-        with open(manifest_path) as f:
-            return compile(f,
-                           data_cls_getter=data_cls_getter)
+        with open(manifest_path, "rb") as f:
+            try:
+                return compile(f, data_cls_getter=data_cls_getter)
+            except Exception:
+                f.seek(0)
+                sys.stderr.write("Error parsing:\n%s" % f.read().decode("utf8"))
+                raise
     except IOError:
         return None
 
@@ -123,20 +129,25 @@ class Differences(object):
         modified = []
         for item in self.modified:
             if isinstance(item, TestModified):
-                modified.append("  %s\n    %s\n%s" % (item[0], item[1], indent(str(item[2]), 4)))
+                modified.append(
+                    "  %s\n    %s\n%s" % (item[0], item[1], indent(str(item[2]), 4))
+                )
             else:
                 assert isinstance(item, ExpectedModified)
                 modified.append("  %s\n    %s %s" % item)
         return "Added:\n%s\nDeleted:\n%s\nModified:\n%s\n" % (
             "\n".join("  %s:\n    %s" % item for item in self.added),
             "\n".join("  %s" % item for item in self.deleted),
-            "\n".join(modified))
+            "\n".join(modified),
+        )
 
 
 TestModified = namedtuple("TestModified", ["test", "test_manifest", "differences"])
 
 
-ExpectedModified = namedtuple("ExpectedModified", ["test", "ancestor_manifest", "new_manifest"])
+ExpectedModified = namedtuple(
+    "ExpectedModified", ["test", "ancestor_manifest", "new_manifest"]
+)
 
 
 def compare_test(test, ancestor_manifest, new_manifest):
@@ -144,11 +155,15 @@ def compare_test(test, ancestor_manifest, new_manifest):
 
     compare_expected(changes, None, ancestor_manifest, new_manifest)
 
-    for subtest, ancestor_subtest_manifest in ancestor_manifest.child_map.iteritems():
-        compare_expected(changes, subtest, ancestor_subtest_manifest,
-                         new_manifest.child_map.get(subtest))
+    for subtest, ancestor_subtest_manifest in ancestor_manifest.child_map.items():
+        compare_expected(
+            changes,
+            subtest,
+            ancestor_subtest_manifest,
+            new_manifest.child_map.get(subtest),
+        )
 
-    for subtest, subtest_manifest in new_manifest.child_map.iteritems():
+    for subtest, subtest_manifest in new_manifest.child_map.items():
         if subtest not in ancestor_manifest.child_map:
             changes.added.append((subtest, subtest_manifest))
 
@@ -156,18 +171,32 @@ def compare_test(test, ancestor_manifest, new_manifest):
 
 
 def compare_expected(changes, subtest, ancestor_manifest, new_manifest):
-    if (not (ancestor_manifest and ancestor_manifest.has_key("expected")) and
-        (new_manifest and new_manifest.has_key("expected"))):
-        changes.modified.append(ExpectedModified(subtest, ancestor_manifest, new_manifest))
-    elif (ancestor_manifest and ancestor_manifest.has_key("expected") and
-          not (new_manifest and new_manifest.has_key("expected"))):
+    if not (
+        ancestor_manifest and ancestor_manifest.has_key("expected")  # noqa W601
+    ) and (
+        new_manifest and new_manifest.has_key("expected")  # noqa W601
+    ):
+        changes.modified.append(
+            ExpectedModified(subtest, ancestor_manifest, new_manifest)
+        )
+    elif (
+        ancestor_manifest
+        and ancestor_manifest.has_key("expected")  # noqa W601
+        and not (new_manifest and new_manifest.has_key("expected"))  # noqa W601
+    ):
         changes.deleted.append(subtest)
-    elif (ancestor_manifest and ancestor_manifest.has_key("expected") and
-          new_manifest and new_manifest.has_key("expected")):
+    elif (
+        ancestor_manifest
+        and ancestor_manifest.has_key("expected")  # noqa W601
+        and new_manifest
+        and new_manifest.has_key("expected")  # noqa W601
+    ):
         old_expected = ancestor_manifest.get("expected")
         new_expected = new_manifest.get("expected")
         if expected_values_changed(old_expected, new_expected):
-            changes.modified.append(ExpectedModified(subtest, ancestor_manifest, new_manifest))
+            changes.modified.append(
+                ExpectedModified(subtest, ancestor_manifest, new_manifest)
+            )
 
 
 def expected_values_changed(old_expected, new_expected):
@@ -191,18 +220,18 @@ def expected_values_changed(old_expected, new_expected):
 def record_changes(ancestor_manifest, new_manifest):
     changes = Differences()
 
-    for test, test_manifest in new_manifest.child_map.iteritems():
+    for test, test_manifest in new_manifest.child_map.items():
         if test not in ancestor_manifest.child_map:
             changes.added.append((test, test_manifest))
         else:
             ancestor_test_manifest = ancestor_manifest.child_map[test]
-            test_differences = compare_test(test,
-                                            ancestor_test_manifest,
-                                            test_manifest)
+            test_differences = compare_test(test, ancestor_test_manifest, test_manifest)
             if test_differences:
-                changes.modified.append(TestModified(test, test_manifest, test_differences))
+                changes.modified.append(
+                    TestModified(test, test_manifest, test_differences)
+                )
 
-    for test, test_manifest in ancestor_manifest.child_map.iteritems():
+    for test, test_manifest in ancestor_manifest.child_map.items():
         if test not in new_manifest.child_map:
             changes.deleted.append(test)
 
@@ -252,7 +281,6 @@ def get_parser_mergetool():
     return parser
 
 
-
 def make_changes(ancestor_manifest, current_manifest, new_manifest):
     changes = record_changes(ancestor_manifest, new_manifest)
     apply_changes(current_manifest, changes)
@@ -265,8 +293,9 @@ def run(ancestor, current, new, dest):
     current_manifest = get_manifest(current)
     new_manifest = get_manifest(new)
 
-
-    updated_current_str = make_changes(ancestor_manifest, current_manifest, new_manifest)
+    updated_current_str = make_changes(
+        ancestor_manifest, current_manifest, new_manifest
+    )
 
     if dest != "-":
         with open(dest, "wb") as f:

@@ -284,6 +284,16 @@ class MinidumpThread : public MinidumpObject {
   // GetMemory may return NULL even if the MinidumpThread is valid,
   // if the thread memory cannot be read.
   virtual MinidumpMemoryRegion* GetMemory();
+  // Corresponds to win32's GetLastError function, which records the last
+  // error value set by the OS for this thread. A more useful error message
+  // can be produced by passing this value to FormatMessage:
+  //
+  // https://docs.microsoft.com/windows/win32/debug/retrieving-the-last-error-code
+  //
+  // The value may also be looked up in Microsoft's System Error Codes listing:
+  //
+  // https://docs.microsoft.com/windows/win32/debug/system-error-codes
+  virtual uint32_t GetLastError();
   // GetContext may return NULL even if the MinidumpThread is valid.
   virtual MinidumpContext* GetContext();
 
@@ -787,6 +797,9 @@ class MinidumpUnloadedModule : public MinidumpObject,
   uint64_t shrink_down_delta() const override;
   void SetShrinkDownDelta(uint64_t shrink_down_delta) override;
 
+  // Print a human-readable representation of the object to stdout.
+  void Print();
+
  protected:
   explicit MinidumpUnloadedModule(Minidump* minidump);
 
@@ -844,6 +857,9 @@ class MinidumpUnloadedModuleList : public MinidumpStream,
       GetModuleAtIndex(unsigned int index) const override;
   const CodeModules* Copy() const override;
   vector<linked_ptr<const CodeModule>> GetShrunkRangeModules() const override;
+
+  // Print a human-readable representation of the object to stdout.
+  void Print();
 
  protected:
   explicit MinidumpUnloadedModuleList(Minidump* minidump_);
@@ -1135,6 +1151,137 @@ class MinidumpCrashpadInfo : public MinidumpStream {
   std::map<std::string, std::string> simple_annotations_;
 };
 
+// MinidumpMacCrashInfo wraps MDRawMacCrashInfo. It's an optional stream
+// in a minidump that records information from the __DATA,__crash_info
+// section of every module in the crashing process that contains one, and
+// which isn't empty of useful information. Only present on macOS.
+
+// Friendly wrapper for the information in MDRawMacCrashInfoRecord.
+typedef struct crash_info_record {
+  string module_path;
+  unsigned long version;
+  string message;
+  string signature_string;
+  string backtrace;
+  string message2;
+  unsigned long long thread;
+  unsigned int dialog_mode;
+  long long abort_cause; // Only valid when 'version' > 4
+  crash_info_record()
+      : version(0), thread(0), dialog_mode(0), abort_cause(0)
+    {}
+} crash_info_record_t;
+
+class MinidumpMacCrashInfo : public MinidumpStream {
+ public:
+  // A human-readable representation of the data from the __DATA,__crash_info
+  // sections in all of the crashing process's modules that have one, if
+  // it's not empty of useful data. Suitable for use by "minidump_stackwalk".
+  string description() const { return description_; }
+  // A "machine-readable" copy of the same information, suitable for use by
+  // "minidump_stalkwalk -m".
+  vector<crash_info_record_t> const records() {
+    return records_;
+  }
+
+  // Print a human-readable representation of the object to stdout.
+  void Print();
+
+ private:
+  friend class Minidump;
+
+  static const uint32_t kStreamType = MOZ_MACOS_CRASH_INFO_STREAM;
+
+  explicit MinidumpMacCrashInfo(Minidump* minidump_);
+
+  bool ReadCrashInfoRecord(MDLocationDescriptor location,
+                           uint32_t record_start_size);
+  bool Read(uint32_t expected_size);
+
+  string description_;
+  vector<crash_info_record_t> records_;
+};
+
+// MinidumpThreadName wraps MDRawThreadName
+class MinidumpThreadName : public MinidumpObject {
+ public:
+  ~MinidumpThreadName() override;
+
+  const MDRawThreadName* thread_name() const {
+    if (valid_) {
+      return &thread_name_;
+    }
+
+    return NULL;
+  }
+
+  uint32_t thread_id() const {
+    if (valid_) {
+      return thread_name_.thread_id;
+    }
+
+    return 0;
+  }
+
+  string name() const;
+
+  // Print a human-readable representation of the object to stdout.
+  void Print();
+
+ protected:
+  explicit MinidumpThreadName(Minidump* minidump);
+
+ private:
+  // These objects are managed by MinidumpThreadNameList
+  friend class MinidumpThreadNamesList;
+
+  // This works like MinidumpStream::Read, but is driven by
+  // MinidumpThreadNameList.
+  bool Read(uint32_t expected_size);
+
+  // Reads the thread name. This is done separately from Read to
+  // allow contiguous reading of thread names by MinidumpThreadNameList.
+  bool ReadAuxiliaryData();
+
+  bool valid_;
+  MDRawThreadName thread_name_;
+  const string* name_;
+};
+
+
+// MinidumpThreadNamesList contains all the names for threads in a process
+// in the form of MinidumpThreadNames.
+class MinidumpThreadNamesList : public MinidumpStream {
+ public:
+  ~MinidumpThreadNamesList() override;
+
+  unsigned int name_count() const {
+    return valid_ ? name_count_ : 0;
+  }
+
+  const string GetNameForThreadId(uint32_t thread_id) const;
+
+  // Print a human-readable representation of the object to stdout.
+  void Print();
+
+ protected:
+  explicit MinidumpThreadNamesList(Minidump* minidump_);
+
+ private:
+  friend class Minidump;
+
+  typedef vector<MinidumpThreadName> MinidumpThreadNames;
+
+  static const uint32_t kStreamType = MD_THREAD_NAMES_STREAM;
+
+  bool Read(uint32_t expected_size_) override;
+
+  MinidumpThreadNames* thread_names_;
+  uint32_t name_count_;
+  bool valid_;
+
+  DISALLOW_COPY_AND_ASSIGN(MinidumpThreadNamesList);
+};
 
 // Minidump is the user's interface to a minidump file.  It wraps MDRawHeader
 // and provides access to the minidump's top-level stream directory.
@@ -1198,6 +1345,8 @@ class Minidump {
   virtual MinidumpBreakpadInfo* GetBreakpadInfo();
   virtual MinidumpMemoryInfoList* GetMemoryInfoList();
   MinidumpCrashpadInfo* GetCrashpadInfo();
+  MinidumpMacCrashInfo* GetMacCrashInfo();
+  MinidumpThreadNamesList* GetThreadNamesList();
 
   // The next method also calls GetStream, but is exclusive for Linux dumps.
   virtual MinidumpLinuxMapsList *GetLinuxMapsList();

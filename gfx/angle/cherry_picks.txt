@@ -1,43 +1,79 @@
-commit 6c72b64f910d0b0f81456bec26ca295c865c04da
-Author: Geoff Lang <geofflang@chromium.org>
-Date:   Wed May 13 18:50:51 2020 -0400
+commit 23851a53779dfd3239b4cceb7f93df9ea6efb9c3
+Author: Jeff Gilbert <jgilbert@mozilla.com>
+Date:   Tue Sep 14 18:11:05 2021 -0700
 
-    Unset the ActiveTextureCache entry if the program does not reference it
+    If RoUninitialize iff SUCCEEDED(RoInitialize).
     
-    When changing uniforms of a program, State::onActiveTextureChange is
-    called to update the ActiveTextureCache. If the sampler uniform type
-    changes to TextureType::InvalidEnum, the entry in ActiveTextureCache was
-    not cleared. This causes stale entries in ActiveTextureCache because the
-    cache no longer matches what textures are bound and the cache does not
-    add references to the textures in it.
+    S_FALSE is success, so `SUCCEEDED(result) || result == S_FALSE` == `SUCCEEDED(result)`.
+    RPC_E_CHANGED_MODE is an Error, so we should not call RoUninitialize in that case.
     
-    BUG=chromium:1078375
-    BUG=chromium:1072406
-    BUG=chromium:1078866
+    Firefox bug: https://bugzilla.mozilla.org/show_bug.cgi?id=1717151
     
-    Change-Id: If9719dcd4fc865b2301db450eb8115e7cfe46c4a
-    Reviewed-on: https://chromium-review.googlesource.com/c/angle/angle/+/2199654
-    Reviewed-by: Tim Van Patten <timvp@google.com>
-    Commit-Queue: Geoff Lang <geofflang@chromium.org>
+    Change-Id: Ia42fe38967425522964a4f27034e38e9292ab249
 
-commit eabf2a79aac36223b5ab5c5b0810d5522095f0bc
+commit c79c27ff20b6a13441807d54ce2b8a487cc57d4a
+Author: Jeff Gilbert <jgilbert@mozilla.com>
+Date:   Mon Jul 19 16:46:50 2021 -0700
+
+    Define ANGLE_IS_64_BIT_CPU in common/platform.h.
+    
+    This is more reliable and reduces reliance on build flags.
+    Vendoring into Firefox, it's not trivial to replicate build flags,
+    but C++-native checks always work.
+    
+    Bug: angleproject:6186
+    Change-Id: Idafd4ef1954efbfa79eae86cddfaa8f2e3992296
+
+commit 33ffc12336370c17ba8da02c8e1f0eeb44951a7b
+Author: Jeff Gilbert <jgilbert@mozilla.com>
+Date:   Thu Jul 29 10:40:38 2021 -0700
+
+    Always include mac-only sources.
+    
+    Fixes build issues on mac until we can take b8d6f8aa93 instead.
+    
+    Change-Id: I4dafc86cdb167d23e8dd419ded9d0edfb3f76f3a
+
+commit 631763e48d2906e680112c79dd161522f553e0cc
+Author: Jeff Gilbert <jdashg@gmail.com>
+Date:   Thu Jul 15 15:56:45 2021 -0700
+
+    Add missing header to build config.
+
+commit 5cf86083d48f3bae5a169d51e56b538afda56367
+Author: Jeff Gilbert <jdashg@gmail.com>
+Date:   Thu Feb 11 17:34:00 2021 -0800
+
+    Don't assert for non-sampleable non-ms sources in blitRenderbufferRect if we can CopySubResource.
+    
+    In Firefox, we can have a source from DirectComposition without
+    D3D11_BIND_SHADER_RESOURCE. This is fine so long as our formats etc
+    match enough to hit the CopySubResource path.
+    Firefox bug: https://bugzilla.mozilla.org/show_bug.cgi?id=1692355
+
+commit 400476a0b2e1ba6dfa8413375e20c15c2ec9188a
+Author: Jeff Gilbert <jdashg@gmail.com>
+Date:   Wed Feb 3 18:50:38 2021 -0800
+
+    Add ANGLE_TRANSLATOR_ESSL_ONLY instead of using build system logic to choose.
+    
+    Build system logic is really hard to handle when vendoring into Gecko for Firefox.
+
+commit 406e1ed92a6fc4180257e65ec88398342a7015e7
+Author: Jeff Gilbert <jdashg@gmail.com>
+Date:   Mon Feb 1 17:35:56 2021 -0800
+
+    Build fixes needed by Gecko.
+
+commit d408f3f0f8d74427eef8a9200d29687629525502
 Author: Jeff Muizelaar <jrmuizel@gmail.com>
-Date:   Mon May 11 13:01:46 2020 -0400
+Date:   Mon Nov 9 17:09:12 2020 -0500
 
-    Use deviceContext instead of deviceContext1 (#24)
+    Bug 1620075. Add a feature flag to allow ES3 on 10.0 devices. (#26)
     
-    Sometimes we don't have a deviceContext1 (on Win7) and would crash. We
-    on't have any need to use it so just use deviceContext.
+    This lets us run WebRender on devices that only support D3D 10.0
 
-commit 19f1bef071c32df60d9d62a7907c42270d0a3dd7
-Author: Jeff Muizelaar <jrmuizel@gmail.com>
-Date:   Fri May 8 15:08:24 2020 -0400
-
-    Handle a null blend state. (#23)
-    
-    Null is used as the default blend state so we have to check for it.
-
-commit 8df54289d717eb0624a0ee16fd681c73a9472af4
+commit 53f3a3515e4bcf626042cfe0bf445cca4e728cf1
 Author: Jeff Muizelaar <jrmuizel@gmail.com>
 Date:   Wed May 6 14:04:42 2020 -0400
 
@@ -51,38 +87,7 @@ Date:   Wed May 6 14:04:42 2020 -0400
     If we detect that this is going to happen we fall back to the manual
     draw call path. This lets us use ClearView most of the time still.
 
-commit 3885ee272685941f6dfb6cd941d550b107f033d2
-Author: Jeff Gilbert <jgilbert@mozilla.com>
-Date:   Wed Jan 22 18:42:56 2020 -0800
-
-    Validate `context` before use in ValidateStreamConsumerGLTextureExternalAttribsNV.
-    
-    Firefox bug: https://bugzilla.mozilla.org/show_bug.cgi?id=1608235
-    
-    Bug: angleproject:4333
-    Change-Id: I957b6412f7c744e4bbaa7d8084b3c81ee58d45ca
-
-commit 5eaf76b0bfd1f149d7b03393500c6e49a393c167
-Author: Jeff Gilbert <jgilbert@mozilla.com>
-Date:   Thu Dec 26 20:58:48 2019 -0800
-
-    Lost no-error context should gracefully handle GetProgramiv.
-    
-    Includes test that a lost no-error context doesn't crash on getProgramiv.
-    Firefox bug: https://bugzilla.mozilla.org/show_bug.cgi?id=1601703
-    
-    Bug: angleproject:4244
-    Change-Id: Iaf86cabd0e70d644d5b0e9ef2f51e9edeee5d020
-
-commit 85f04c65943e0a7070a1419fffa246e5ec39d1a1
-Author: Jeff Gilbert <jgilbert@mozilla.com>
-Date:   Thu Dec 26 17:43:41 2019 -0800
-
-    clang-format
-    
-    Change-Id: Iadf327c12bc43d7daedcd80fc08683c55c182ccc
-
-commit f75ca830a4276c1b757f866aba3ab2429a27f69c
+commit 988c40cee12de022c9e7aa63d3d2de86d1310e1f
 Author: Dzmitry Malyshau <dmalyshau@mozilla.com>
 Date:   Thu Dec 5 13:02:14 2019 -0500
 
@@ -92,91 +97,30 @@ Date:   Thu Dec 5 13:02:14 2019 -0500
     
     Original reports were related to WebRender vertex texture updates that are RGBA32F and RGBA32U formats. Limiting the workaround to these formats would allow the affected platforms to upload regular texture data faster without stalls.
 
-commit 6bbe8f55d3e4b3b44394af323c5842296938ceab
-Author: Lee Salzman <lsalzman@mozilla.com>
-Date:   Fri Aug 2 07:11:16 2019 +1000
-
-    Use image upload workaround for Intel Ivy Bridge with D3D11 renderer.
-    
-    Firefox bug: https://bugzilla.mozilla.org/show_bug.cgi?id=1578910
-    
-    Bug: angleproject:3980
-    Change-Id: Ia14c5afd989365975bc57b303e59b4ef7669d522
-    Reviewed-on: https://chromium-review.googlesource.com/c/angle/angle/+/1845664
-    Reviewed-by: Geoff Lang <geofflang@chromium.org>
-    Commit-Queue: Geoff Lang <geofflang@chromium.org>
-
-commit fe53e2b60af2314d7fe7040915c1499ef3bb7274
-Author: Miko Mynttinen <mikokm@gmail.com>
-Date:   Fri Nov 1 17:23:03 2019 +0100
-
-    Remove static_assert for global mutex
-
-commit 7d5a10ac34cac9f629d0080302f1a754e902c66e
-Author: Miko Mynttinen <mikokm@gmail.com>
-Date:   Thu Sep 5 18:04:32 2019 +0200
-
-    Do not override symbol visibility attribute on non-windows builds
-
-commit 0f5a52939b91442075a787523fcf394bdccd4d54
+commit 3a1d51f5784f13373f60e4138c80dcbebdab5524
 Author: Miko Mynttinen <mikokm@gmail.com>
 Date:   Tue Sep 3 18:54:54 2019 +0200
 
     Disable debug layers
 
-commit fea78b079b9e778e240b06a0b8deadf57fe6d75a
-Author: Miko Mynttinen <mikokm@gmail.com>
-Date:   Tue Sep 3 20:04:28 2019 +0200
-
-    Fix MinGW include
-
-commit 811d7beadb57fdd4c999d0702fb48085b770c078
-Author: Jeff Gilbert <jgilbert@mozilla.com>
-Date:   Wed Mar 27 13:52:04 2019 -0700
-
-    Don't clamp in glBlendColor if context supports renderable [half-]float.
-    
-    Add test for glBlendColor >1.0, skipped on D3D9 since it's unsupportable
-    there.
-    
-    Bug: angleproject:3323
-    Change-Id: I3fcf867dae96bdadf8a0183269d8f27b659d0baf
-
-commit ea4db0f4e0c1b70dbe6e204e6afe77b23b8ea256
-Author: Glenn Watson <39062770+gw3583@users.noreply.github.com>
-Date:   Fri Aug 2 07:11:16 2019 +1000
-
-    Fix occasional corruption of vertex textures in HD4600 GPUs. (#19)
-    
-    This appears to be caused by the UpdateSubResource call,
-    which is worked around by enabling the other image upload
-    path that ANGLE supports.
-    
-    The workaround doesn't include a driver version, since the
-    bug is occurring in the most recent driver that is currently
-    available (15.40.42.5063, released 19th Mar 2019).
-
 Cherries picked
 ================================================================================
-Merge base from: origin/chromium/3865
+Merge base from: origin/chromium/4515
 
-commit 08b97da894b278c10e70b6888ac65e3972a13b31
-Author: Shahbaz Youssefi <syoussefi@chromium.org>
-Date:   Tue Jul 23 12:07:13 2019 -0400
+commit 018f85dea11fd5e41725750c6958695a6b8e8409
+Author: Jamie Madill <jmadill@chromium.org>
+Date:   Fri Sep 3 09:34:10 2021 -0400
 
-    Vulkan: Fix staging buffer alignment for pixel sizes > 4
+    WebGL: Make unsuccessful links fail subsequent draw calls.
     
-    Previously, all non-compressed formats were satisfied with a 4-byte
-    alignment.  The introduction of float formats changes this.
+    This protects against incomplete state updates during a failed
+    link call that can interfere with draw calls.
     
-    This change calculates the necessary alignment using the same code path
-    as compressed formats.
-    
-    Also fixes RGB9E5's pixelByte being calculated as 3 instead of 4.
-    
-    Bug: angleproject:3731
-    Change-Id: I6abfd1c294e7f863eb99d2468eaac09e5d714039
-    Reviewed-on: https://chromium-review.googlesource.com/c/angle/angle/+/1715205
-    Reviewed-by: Mohan Maiya <m.maiya@samsung.com>
+    Bug: angleproject:6358
+    Bug: chromium:1241123
+    Change-Id: Ie892654c3a58c69d6e35ba3c41758ab6269d8193
+    Reviewed-on: https://chromium-review.googlesource.com/c/angle/angle/+/3140496
+    Reviewed-by: Geoff Lang <geofflang@chromium.org>
+    Commit-Queue: Yuly Novikov <ynovikov@chromium.org>
+    Reviewed-on: https://chromium-review.googlesource.com/c/angle/angle/+/3152556
     Reviewed-by: Jamie Madill <jmadill@chromium.org>
-    Commit-Queue: Shahbaz Youssefi <syoussefi@chromium.org>

@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
 /**
  * Pending breakpoints reducer
  * @module reducers/pending-breakpoints
@@ -16,16 +14,13 @@ import {
 
 import { isPrettyURL } from "../utils/source";
 
-import type { SourcesState } from "./sources";
-import type { PendingBreakpoint, Source } from "../types";
-import type { Action } from "../actions/types";
-
-export type PendingBreakpointsState = { [string]: PendingBreakpoint };
-
-function update(state: PendingBreakpointsState = {}, action: Action) {
+function update(state = {}, action) {
   switch (action.type) {
     case "SET_BREAKPOINT":
-      return setBreakpoint(state, action);
+      if (action.status === "start") {
+        return setBreakpoint(state, action);
+      }
+      return state;
 
     case "REMOVE_BREAKPOINT":
       if (action.status === "start") {
@@ -44,22 +39,31 @@ function update(state: PendingBreakpointsState = {}, action: Action) {
   return state;
 }
 
-function setBreakpoint(state, { breakpoint }) {
-  if (breakpoint.options.hidden) {
-    return state;
-  }
+/**
+ * Return a location id representing a breakpoint's original location, or for
+ * pretty-printed sources, its generated location.
+ * @param {{ location: Location, originalLocation?: Location }} breakpoint
+ */
+function makePendingLocationIdFromBreakpoint(breakpoint) {
   const location =
     !breakpoint.location.sourceUrl || isPrettyURL(breakpoint.location.sourceUrl)
       ? breakpoint.generatedLocation
       : breakpoint.location;
-  const locationId = makePendingLocationId(location);
+  return makePendingLocationId(location);
+}
+
+function setBreakpoint(state, { breakpoint }) {
+  if (breakpoint.options.hidden) {
+    return state;
+  }
+  const locationId = makePendingLocationIdFromBreakpoint(breakpoint);
   const pendingBreakpoint = createPendingBreakpoint(breakpoint);
 
   return { ...state, [locationId]: pendingBreakpoint };
 }
 
-function removeBreakpoint(state, { location }) {
-  const locationId = makePendingLocationId(location);
+function removeBreakpoint(state, { breakpoint }) {
+  const locationId = makePendingLocationIdFromBreakpoint(breakpoint);
   state = { ...state };
 
   delete state[locationId];
@@ -69,25 +73,15 @@ function removeBreakpoint(state, { location }) {
 // Selectors
 // TODO: these functions should be moved out of the reducer
 
-type OuterState = {
-  pendingBreakpoints: PendingBreakpointsState,
-  sources: SourcesState,
-};
-
-export function getPendingBreakpoints(state: OuterState) {
+export function getPendingBreakpoints(state) {
   return state.pendingBreakpoints;
 }
 
-export function getPendingBreakpointList(
-  state: OuterState
-): PendingBreakpoint[] {
-  return (Object.values(getPendingBreakpoints(state)): any);
+export function getPendingBreakpointList(state) {
+  return Object.values(getPendingBreakpoints(state));
 }
 
-export function getPendingBreakpointsForSource(
-  state: OuterState,
-  source: Source
-): PendingBreakpoint[] {
+export function getPendingBreakpointsForSource(state, source) {
   return getPendingBreakpointList(state).filter(pendingBreakpoint => {
     return (
       pendingBreakpoint.location.sourceUrl === source.url ||

@@ -2,10 +2,9 @@
 // http://creativecommons.org/publicdomain/zero/1.0/
 
 "use strict";
-const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
 const {
   analyzeInputString,
-} = require("devtools/shared/webconsole/js-property-provider");
+} = require("devtools/shared/webconsole/analyze-input-string");
 
 add_task(() => {
   const tests = [
@@ -139,6 +138,68 @@ add_task(() => {
         lastStatement: `1\n.`,
         mainExpression: `1`,
         matchProp: ``,
+      },
+    },
+    {
+      desc: "string literal",
+      input: `"abc".`,
+      expected: {
+        isElementAccess: false,
+        isPropertyAccess: true,
+        expressionBeforePropertyAccess: `"abc"`,
+        lastStatement: `"abc".`,
+        mainExpression: `"abc"`,
+        matchProp: ``,
+      },
+    },
+    {
+      desc: "string literal containing backslash",
+      input: `"\\n".`,
+      expected: {
+        isElementAccess: false,
+        isPropertyAccess: true,
+        expressionBeforePropertyAccess: `"\\n"`,
+        lastStatement: `"\\n".`,
+        mainExpression: `"\\n"`,
+        matchProp: ``,
+      },
+    },
+    {
+      desc: "single quote string literal containing backslash",
+      input: `'\\r'.`,
+      expected: {
+        isElementAccess: false,
+        isPropertyAccess: true,
+        expressionBeforePropertyAccess: `'\\r'`,
+        lastStatement: `'\\r'.`,
+        mainExpression: `'\\r'`,
+        matchProp: ``,
+      },
+    },
+    {
+      desc: "template string literal containing backslash",
+      input: "`\\\\`.",
+      expected: {
+        isElementAccess: false,
+        isPropertyAccess: true,
+        expressionBeforePropertyAccess: "`\\\\`",
+        lastStatement: "`\\\\`.",
+        mainExpression: "`\\\\`",
+        matchProp: ``,
+      },
+    },
+    {
+      desc: "unterminated double quote string literal",
+      input: `"\n`,
+      expected: {
+        err: "unterminated string literal",
+      },
+    },
+    {
+      desc: "unterminated single quote string literal",
+      input: `'\n`,
+      expected: {
+        err: "unterminated string literal",
       },
     },
     {

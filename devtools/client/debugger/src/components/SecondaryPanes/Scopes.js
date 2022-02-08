@@ -2,12 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
 import React, { PureComponent } from "react";
-import { showMenu } from "devtools-contextmenu";
+import { showMenu } from "../../context-menu/menu";
 import { connect } from "../../utils/connect";
 import actions from "../../actions";
-import { features } from "../../utils/prefs";
 
 import {
   getSelectedSource,
@@ -18,56 +16,19 @@ import {
   isMapScopesEnabled,
   getThreadContext,
   getLastExpandedScopes,
+  getIsCurrentThreadPaused,
 } from "../../selectors";
 import { getScopes } from "../../utils/pause/scopes";
 import { getScopeItemPath } from "../../utils/pause/scopes/utils";
 
-// eslint-disable-next-line import/named
-import { objectInspector } from "devtools-reps";
-
-import type { ThreadContext, Why } from "../../types";
-import type { NamedValue } from "../../utils/pause/scopes/types";
+import { objectInspector } from "devtools/client/shared/components/reps/index";
 
 import "./Scopes.css";
 
 const { ObjectInspector } = objectInspector;
 
-type OwnProps = {||};
-type Props = {
-  cx: ThreadContext,
-  selectedFrame: Object,
-  generatedFrameScopes: Object,
-  originalFrameScopes: Object | null,
-  isLoading: boolean,
-  why: ?Why,
-  mapScopesEnabled: boolean,
-  openLink: typeof actions.openLink,
-  openElementInInspector: typeof actions.openElementInInspectorCommand,
-  highlightDomElement: typeof actions.highlightDomElement,
-  unHighlightDomElement: typeof actions.unHighlightDomElement,
-  toggleMapScopes: typeof actions.toggleMapScopes,
-  setExpandedScope: typeof actions.setExpandedScope,
-  addWatchpoint: typeof actions.addWatchpoint,
-  removeWatchpoint: typeof actions.removeWatchpoint,
-  expandedScopes: string[],
-};
-
-type State = {
-  originalScopes: ?(NamedValue[]),
-  generatedScopes: ?(NamedValue[]),
-  showOriginal: boolean,
-};
-
-type Node = {
-  contents: ?{
-    watchpoint: ?"get" | "set",
-  },
-  name: string,
-  path: string,
-};
-
-class Scopes extends PureComponent<Props, State> {
-  constructor(props: Props) {
+class Scopes extends PureComponent {
+  constructor(props) {
     const {
       why,
       selectedFrame,
@@ -84,14 +45,14 @@ class Scopes extends PureComponent<Props, State> {
     };
   }
 
-  componentWillReceiveProps(nextProps: Props) {
+  componentWillReceiveProps(nextProps) {
     const {
-      cx,
       selectedFrame,
       originalFrameScopes,
       generatedFrameScopes,
+      isPaused,
     } = this.props;
-    const isPausedChanged = cx.isPaused !== nextProps.cx.isPaused;
+    const isPausedChanged = isPaused !== nextProps.isPaused;
     const selectedFrameChanged = selectedFrame !== nextProps.selectedFrame;
     const originalFrameScopesChanged =
       originalFrameScopes !== nextProps.originalFrameScopes;
@@ -123,10 +84,10 @@ class Scopes extends PureComponent<Props, State> {
     this.props.toggleMapScopes();
   };
 
-  onContextMenu = (event: any, item: any) => {
+  onContextMenu = (event, item) => {
     const { addWatchpoint, removeWatchpoint } = this.props;
 
-    if (!features.watchpoints || !item.parent || !item.contents.configurable) {
+    if (!item.parent || !item.contents.configurable) {
       return;
     }
 
@@ -188,7 +149,7 @@ class Scopes extends PureComponent<Props, State> {
     showMenu(event, menuItems);
   };
 
-  renderWatchpointButton = (item: Node) => {
+  renderWatchpointButton = item => {
     const { removeWatchpoint } = this.props;
 
     if (
@@ -259,7 +220,7 @@ class Scopes extends PureComponent<Props, State> {
     }
 
     let stateText = L10N.getStr("scopes.notPaused");
-    if (cx.isPaused) {
+    if (this.props.isPaused) {
       if (isLoading) {
         stateText = L10N.getStr("loadingText");
       } else {
@@ -311,10 +272,11 @@ const mapStateToProps = state => {
     originalFrameScopes,
     generatedFrameScopes,
     expandedScopes: getLastExpandedScopes(state, cx.thread),
+    isPaused: getIsCurrentThreadPaused(state),
   };
 };
 
-export default connect<Props, OwnProps, _, _, _, _>(mapStateToProps, {
+export default connect(mapStateToProps, {
   openLink: actions.openLink,
   openElementInInspector: actions.openElementInInspectorCommand,
   highlightDomElement: actions.highlightDomElement,

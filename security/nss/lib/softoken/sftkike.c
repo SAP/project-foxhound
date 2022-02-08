@@ -465,7 +465,7 @@ sftk_ike_prf(CK_SESSION_HANDLE hSession, const SFTKAttribute *inKey,
     SFTKObject *newKeyObj = NULL;
     unsigned char outKeyData[HASH_LENGTH_MAX];
     unsigned char *newInKey = NULL;
-    unsigned int newInKeySize;
+    unsigned int newInKeySize = 0;
     unsigned int macSize;
     CK_RV crv = CKR_OK;
     prfContext context;
@@ -545,7 +545,7 @@ sftk_ike_prf(CK_SESSION_HANDLE hSession, const SFTKAttribute *inKey,
     crv = sftk_forceAttribute(outKey, CKA_VALUE, outKeyData, macSize);
 fail:
     if (newInKey) {
-        PORT_Free(newInKey);
+        PORT_ZFree(newInKey, newInKeySize);
     }
     if (newKeyValue) {
         sftk_FreeAttribute(newKeyValue);
@@ -720,6 +720,7 @@ sftk_ike1_appendix_b_prf(CK_SESSION_HANDLE hSession, const SFTKAttribute *inKey,
     unsigned int macSize;
     unsigned int outKeySize;
     unsigned int genKeySize;
+    PRBool quickMode = PR_FALSE;
     CK_RV crv;
     prfContext context;
 
@@ -748,6 +749,11 @@ sftk_ike1_appendix_b_prf(CK_SESSION_HANDLE hSession, const SFTKAttribute *inKey,
             crv = CKR_KEY_HANDLE_INVALID;
             goto fail;
         }
+        quickMode = PR_TRUE;
+    }
+
+    if (params->ulExtraDataLen != 0) {
+        quickMode = PR_TRUE;
     }
 
     macSize = prf_length(&context);
@@ -756,10 +762,16 @@ sftk_ike1_appendix_b_prf(CK_SESSION_HANDLE hSession, const SFTKAttribute *inKey,
         keySize = macSize;
     }
 
-    if (keySize <= inKey->attrib.ulValueLen) {
+    /* In appendix B, we are just expanding or contracting a single key.
+     * If the input key is less than or equal to the the key size we want,
+     * just subset the original key. In quick mode we are actually getting
+     * new keys (salted with our seed data and our gxy key), so we want to
+     * run through our algorithm */
+    if ((!quickMode) && (keySize <= inKey->attrib.ulValueLen)) {
         return sftk_forceAttribute(outKey, CKA_VALUE,
                                    inKey->attrib.pValue, keySize);
     }
+
     outKeySize = PR_ROUNDUP(keySize, macSize);
     outKeyData = PORT_Alloc(outKeySize);
     if (outKeyData == NULL) {
@@ -774,7 +786,7 @@ sftk_ike1_appendix_b_prf(CK_SESSION_HANDLE hSession, const SFTKAttribute *inKey,
      *   key is inKey
      */
     thisKey = outKeyData;
-    for (genKeySize = 0; genKeySize <= keySize; genKeySize += macSize) {
+    for (genKeySize = 0; genKeySize < keySize; genKeySize += macSize) {
         PRBool hashedData = PR_FALSE;
         crv = prf_init(&context, inKey->attrib.pValue, inKey->attrib.ulValueLen);
         if (crv != CKR_OK) {
@@ -855,10 +867,12 @@ fail:
  * K = inKey, S = seedKey | seedData
  */
 
-CK_RV
-sftk_ike_prf_plus(CK_SESSION_HANDLE hSession, const SFTKAttribute *inKey,
-                  const CK_NSS_IKE_PRF_PLUS_DERIVE_PARAMS *params, SFTKObject *outKey,
-                  unsigned int keySize)
+static CK_RV
+sftk_ike_prf_plus_raw(CK_SESSION_HANDLE hSession,
+                      const unsigned char *inKeyData, CK_ULONG inKeyLen,
+                      const CK_NSS_IKE_PRF_PLUS_DERIVE_PARAMS *params,
+                      unsigned char **outKeyDataPtr, unsigned int *outKeySizePtr,
+                      unsigned int keySize)
 {
     SFTKAttribute *seedValue = NULL;
     SFTKObject *seedKeyObj = NULL;
@@ -924,8 +938,7 @@ sftk_ike_prf_plus(CK_SESSION_HANDLE hSession, const SFTKAttribute *inKey,
             crv = CKR_KEY_SIZE_RANGE;
             goto fail;
         }
-        crv = prf_init(&context, inKey->attrib.pValue,
-                       inKey->attrib.ulValueLen);
+        crv = prf_init(&context, inKeyData, inKeyLen);
         if (crv != CKR_OK) {
             goto fail;
         }
@@ -964,7 +977,9 @@ sftk_ike_prf_plus(CK_SESSION_HANDLE hSession, const SFTKAttribute *inKey,
         lastKey = thisKey;
         thisKey += macSize;
     }
-    crv = sftk_forceAttribute(outKey, CKA_VALUE, outKeyData, keySize);
+    *outKeyDataPtr = outKeyData;
+    *outKeySizePtr = outKeySize;
+    outKeyData = NULL; /* don't free it here, our caller will free it */
 fail:
     if (outKeyData) {
         PORT_ZFree(outKeyData, outKeySize);
@@ -976,6 +991,30 @@ fail:
         sftk_FreeObject(seedKeyObj);
     }
     prf_free(&context);
+    return crv;
+}
+
+/*
+ * ike prf + with code to deliever results tosoftoken objects.
+ */
+CK_RV
+sftk_ike_prf_plus(CK_SESSION_HANDLE hSession, const SFTKAttribute *inKey,
+                  const CK_NSS_IKE_PRF_PLUS_DERIVE_PARAMS *params, SFTKObject *outKey,
+                  unsigned int keySize)
+{
+    unsigned char *outKeyData = NULL;
+    unsigned int outKeySize;
+    CK_RV crv;
+
+    crv = sftk_ike_prf_plus_raw(hSession, inKey->attrib.pValue,
+                                inKey->attrib.ulValueLen, params,
+                                &outKeyData, &outKeySize, keySize);
+    if (crv != CKR_OK) {
+        return crv;
+    }
+
+    crv = sftk_forceAttribute(outKey, CKA_VALUE, outKeyData, keySize);
+    PORT_ZFree(outKeyData, outKeySize);
     return crv;
 }
 
@@ -1294,7 +1333,21 @@ sftk_fips_IKE_PowerUpSelfTests(void)
         0x7f, 0x6f, 0x77, 0x2e, 0x5d, 0x65, 0xb5, 0x8e,
         0xb1, 0x13, 0x40, 0x96, 0xe8, 0x47, 0x8d, 0x2b
     };
+    static const PRUint8 ike_known_sha256_prf_plus[] = {
+        0xe6, 0xf1, 0x9b, 0x4a, 0x02, 0xe9, 0x73, 0x72,
+        0x93, 0x9f, 0xdb, 0x46, 0x1d, 0xb1, 0x49, 0xcb,
+        0x53, 0x08, 0x98, 0x3d, 0x41, 0x36, 0xfa, 0x8b,
+        0x47, 0x04, 0x49, 0x11, 0x0d, 0x6e, 0x96, 0x1d,
+        0xab, 0xbe, 0x94, 0x28, 0xa0, 0xb7, 0x9c, 0xa3,
+        0x29, 0xe1, 0x40, 0xf8, 0xf8, 0x88, 0xb9, 0xb5,
+        0x40, 0xd4, 0x54, 0x4d, 0x25, 0xab, 0x94, 0xd4,
+        0x98, 0xd8, 0x00, 0xbf, 0x6f, 0xef, 0xe8, 0x39
+    };
     SECStatus rv;
+    CK_RV crv;
+    unsigned char *outKeyData = NULL;
+    unsigned int outKeySize;
+    CK_NSS_IKE_PRF_PLUS_DERIVE_PARAMS ike_params;
 
     rv = prf_test(CKM_AES_XCBC_MAC,
                   ike_xcbc_known_key, sizeof(ike_xcbc_known_key),
@@ -1345,5 +1398,22 @@ sftk_fips_IKE_PowerUpSelfTests(void)
                   ike_sha512_known_plain_text,
                   sizeof(ike_sha512_known_plain_text),
                   ike_sha512_known_mac, sizeof(ike_sha512_known_mac));
+
+    ike_params.prfMechanism = CKM_SHA256_HMAC;
+    ike_params.bHasSeedKey = PR_FALSE;
+    ike_params.hSeedKey = CK_INVALID_HANDLE;
+    ike_params.pSeedData = (CK_BYTE_PTR)ike_sha256_known_plain_text;
+    ike_params.ulSeedDataLen = sizeof(ike_sha256_known_plain_text);
+    crv = sftk_ike_prf_plus_raw(CK_INVALID_HANDLE, ike_sha256_known_key,
+                                sizeof(ike_sha256_known_key), &ike_params,
+                                &outKeyData, &outKeySize, 64);
+    if ((crv != CKR_OK) ||
+        (outKeySize != sizeof(ike_known_sha256_prf_plus)) ||
+        (PORT_Memcmp(outKeyData, ike_known_sha256_prf_plus,
+                     sizeof(ike_known_sha256_prf_plus)) != 0)) {
+        PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+        return SECFailure;
+    }
+    PORT_ZFree(outKeyData, outKeySize);
     return rv;
 }

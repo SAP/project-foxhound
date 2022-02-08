@@ -22,17 +22,12 @@ class ExpandedPrincipal : public nsIExpandedPrincipal,
                           public mozilla::BasePrincipal {
  public:
   static already_AddRefed<ExpandedPrincipal> Create(
-      nsTArray<nsCOMPtr<nsIPrincipal>>& aAllowList,
+      const nsTArray<nsCOMPtr<nsIPrincipal>>& aAllowList,
       const mozilla::OriginAttributes& aAttrs);
 
   static PrincipalKind Kind() { return eExpandedPrincipal; }
 
-  // For use from the XPCOM factory constructor only.  Do not ever use this
-  // constructor by hand!
-  ExpandedPrincipal();
-
   NS_DECL_NSIEXPANDEDPRINCIPAL
-  NS_DECL_NSISERIALIZABLE
 
   NS_IMETHOD_(MozExternalRefCountType) AddRef() override {
     return nsJSPrincipals::AddRef();
@@ -69,8 +64,15 @@ class ExpandedPrincipal : public nsIExpandedPrincipal,
   static already_AddRefed<BasePrincipal> FromProperties(
       nsTArray<ExpandedPrincipal::KeyVal>& aFields);
 
+  class Deserializer : public BasePrincipal::Deserializer {
+   public:
+    NS_IMETHOD Read(nsIObjectInputStream* aStream) override;
+  };
+
  protected:
-  explicit ExpandedPrincipal(nsTArray<nsCOMPtr<nsIPrincipal>>& aAllowList);
+  explicit ExpandedPrincipal(nsTArray<nsCOMPtr<nsIPrincipal>>&& aPrincipals,
+                             const nsACString& aOriginNoSuffix,
+                             const mozilla::OriginAttributes& aAttrs);
 
   virtual ~ExpandedPrincipal();
 
@@ -80,11 +82,10 @@ class ExpandedPrincipal : public nsIExpandedPrincipal,
   bool MayLoadInternal(nsIURI* aURI) override;
 
  private:
-  nsTArray<nsCOMPtr<nsIPrincipal>> mPrincipals;
+  const nsTArray<nsCOMPtr<nsIPrincipal>> mPrincipals;
   nsCOMPtr<nsIContentSecurityPolicy> mCSP;
 };
 
-#define NS_EXPANDEDPRINCIPAL_CONTRACTID "@mozilla.org/expandedprincipal;1"
 #define NS_EXPANDEDPRINCIPAL_CID                     \
   {                                                  \
     0xe8ee88b0, 0x5571, 0x4086, {                    \

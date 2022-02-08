@@ -4,38 +4,46 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 %endif
 
-.popup-notification-icon,
-.identity-popup-permission-icon {
+#notification-popup-box {
+  height: calc(var(--urlbar-min-height) - 2px /* border */ - 2 * var(--urlbar-container-padding));
   -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
-  fill-opacity: 0.6;
+  fill-opacity: var(--urlbar-icon-fill-opacity);
+  color: inherit;
+  border-radius: var(--urlbar-icon-border-radius);
+}
+#notification-popup-box:hover {
+  background-color: hsla(0,0%,70%,.2);
+}
+#notification-popup-box:hover:active,
+#notification-popup-box[open] {
+  background-color: hsla(0,0%,70%,.3);
 }
 
-#notification-popup-box {
-  padding: 5px 0;
-  margin: -5px 0;
-  margin-inline-end: -5px;
-  padding-inline-end: 5px;
+.popup-notification-icon,
+.permission-popup-permission-icon {
+  -moz-context-properties: fill, fill-opacity;
+  fill: currentColor;
 }
 
 .blocked-permission-icon:-moz-focusring,
 .notification-anchor-icon:-moz-focusring {
   outline: var(--toolbarbutton-focus-outline);
-  outline-offset: 4px;
-  -moz-outline-radius: var(--toolbarbutton-border-radius);
+  outline-offset: calc(var(--urlbar-icon-padding) - 2px);
 }
 
 /* This class can be used alone or in combination with the class defining the
    type of icon displayed. This rule must be defined before the others in order
    for its list-style-image to be overridden. */
 .notification-anchor-icon {
-  list-style-image: url(chrome://browser/skin/notification-icons/default-info.svg);
+  list-style-image: url(chrome://global/skin/icons/info-filled.svg);
+  padding: var(--urlbar-icon-padding);
 }
 
 /* INDIVIDUAL NOTIFICATIONS */
 
 .focus-tab-by-prompt-icon {
-  list-style-image: url(chrome://browser/skin/notification-icons/focus-tab-by-prompt.svg);
+  list-style-image: url(chrome://global/skin/icons/info.svg);
 }
 
 .popup-notification-icon[popupid="storage-access"],
@@ -70,7 +78,15 @@
 }
 
 .popup-notification-icon[popupid="geolocation"] {
-  list-style-image: url(chrome://browser/skin/notification-icons/geo-detailed.svg);
+  list-style-image: url(chrome://browser/skin/notification-icons/geo.svg);
+}
+
+.open-protocol-handler-icon {
+  list-style-image: url(chrome://global/skin/icons/open-in-new.svg);
+}
+
+.open-protocol-handler-icon:-moz-locale-dir(rtl) {
+  transform: scaleX(-1);
 }
 
 .xr-icon {
@@ -90,7 +106,7 @@
 }
 
 .popup-notification-icon[popupid="autoplay-media"] {
-  list-style-image: url(chrome://browser/skin/notification-icons/autoplay-media-detailed.svg);
+  list-style-image: url(chrome://browser/skin/notification-icons/autoplay-media.svg);
 }
 
 .autoplay-media-icon.blocked-permission-icon {
@@ -117,16 +133,16 @@
 
 .popup-notification-icon[popupid="indexedDB-permissions-prompt"],
 .indexedDB-icon {
-  list-style-image: url(chrome://browser/skin/notification-icons/indexedDB.svg);
+  list-style-image: url(chrome://browser/skin/notification-icons/persistent-storage.svg);
 }
 
 .popup-notification-icon[popupid="password"],
-.login-icon {
+#password-notification-icon {
   list-style-image: url(chrome://browser/skin/login.svg);
 }
 
-.login-icon[extraAttr="attention"] {
-  fill: var(--toolbarbutton-icon-fill-attention);
+#password-notification-icon[extraAttr="attention"] {
+  fill: var(--toolbar-field-icon-fill-attention);
   fill-opacity: 1;
 }
 
@@ -155,7 +171,7 @@
 }
 
 .popup-notification-icon.microphone-icon {
-  list-style-image: url(chrome://browser/skin/notification-icons/microphone-detailed.svg);
+  list-style-image: url(chrome://browser/skin/notification-icons/microphone.svg);
 }
 
 .screen-icon {
@@ -170,6 +186,10 @@
   list-style-image: url(chrome://browser/skin/notification-icons/screen-blocked.svg);
 }
 
+.speaker-icon {
+  list-style-image: url(chrome://global/skin/media/audio.svg);
+}
+
 .midi-icon,
 .midi-sysex-icon,
 .popup-notification-icon[popupid="midi"],
@@ -177,58 +197,68 @@
   list-style-image: url(chrome://browser/skin/notification-icons/midi.svg);
 }
 
-.https-only-load-insecure-icon {
-  list-style-image: url(chrome://browser/skin/notification-icons/https-only-load-insecure-blocked.svg);
-}
-
 #canvas-notification-icon,
 .popup-notification-icon[popupid="canvas-permissions-prompt"],
 .canvas-icon {
-  list-style-image: url(chrome://browser/skin/notification-icons/canvas.svg);
+  list-style-image: url(chrome://browser/skin/canvas.svg);
 }
 
 .canvas-icon.blocked-permission-icon {
-  list-style-image: url(chrome://browser/skin/notification-icons/canvas-blocked.svg);
+  list-style-image: url(chrome://browser/skin/canvas-blocked.svg);
 }
 
 #webauthn-notification-icon,
 .popup-notification-icon[popupid^="webauthn-prompt-"] {
-  list-style-image: url(chrome://browser/skin/notification-icons/webauthn.svg);
+  list-style-image: url(chrome://browser/skin/fingerprint.svg);
+}
+
+#permission-popup-menulist {
+  margin-inline-end: 0;
 }
 
 #webRTC-preview:not([hidden]) {
-  display: grid;
+  min-width: 368px;
+  min-height: 10em;
+  -moz-box-orient: vertical;
+}
+
+#webRTC-previewVideo {
   border-radius: 4px;
   border: 1px solid var(--panel-separator-color);
-  overflow: hidden;
-  min-width: 300px;
-  min-height: 10em;
-}
-
-#webRTC-preview > *|* {
-  grid-area: 1 / 1;
-}
-
-html|*#webRTC-previewVideo {
-  width: 300px;
+  width: 368px;
   /* If we don't set the min-width, width is ignored. */
-  min-width: 300px;
+  min-width: 368px;
   min-height: 10em;
-  max-height: 200px;
+  max-height: 250px;
+}
+
+#webRTC-all-windows-shared,
+#webRTC-previewWarning {
+  font-size: 0.8em;
+}
+
+@media not (prefers-contrast) {
+  #webRTC-all-windows-shared,
+  #webRTC-previewWarning {
+    opacity: 0.6;
+  }
 }
 
 #webRTC-previewWarning {
-  background: rgba(255,217,99,.8) url("chrome://browser/skin/warning.svg") no-repeat .75em .75em;
-  color: #000;
-  -moz-context-properties: fill;
-  fill: currentColor;
-  margin: 0;
-  padding: .5em;
-  padding-inline-start: calc(1.5em + 16px);
-  border-top: 1px solid var(--panel-separator-color);
+  margin-block-start: 14px;
 }
 
-#webRTC-previewWarning:-moz-locale-dir(rtl) {
+/**
+ * All learn-more links tend to have an !important margin-top, but
+ * the small one below the WebRTC preview warning is special and
+ * doesn't have one by design.
+ */
+#webRTC-previewWarning-learnMore {
+  margin-top: 0 !important;
+  font-size: 0.75em;
+}
+
+#webRTC-previewWarningBox:-moz-locale-dir(rtl) {
   background-position: calc(100% - .75em) .75em;
 }
 
@@ -241,21 +271,18 @@ html|*#webRTC-previewVideo {
   list-style-image: url("chrome://browser/skin/notification-icons/popup.svg");
 }
 
-.popup-subitem {
-  list-style-image: url("chrome://browser/skin/notification-icons/popup-subitem.svg");
-  margin-inline-start: 42px;
-  width: 16px;
-  height: 16px;
-  -moz-context-properties: fill;
-  fill: currentColor;
+/**
+ * Bug 1708716: The blocked popup icon is just slightly vertically offset from
+ * the other icons that can appear alongside it in the URL bar due to how it's
+ * placed in the SVG file. We nudge it a little here to make it line up in a
+ * more aesthetically pleasing way.
+ */
+#blocked-permissions-container > .popup-icon {
+  transform: translateY(2px);
 }
 
-.popup-subitem:-moz-locale-dir(rtl) {
-  transform: scaleX(-1);
-}
-
-#identity-popup-popup-menulist,
-#identity-popup-popup-menulist > menupopup {
+#permission-popup-menulist,
+#permission-popup-menulist > menupopup {
   min-width: 6.5em;
 }
 
@@ -300,7 +327,7 @@ html|*#webRTC-previewVideo {
 }
 
 .popup-notification-icon[popupid="addon-install-confirmation"] {
-  list-style-image: url(chrome://browser/content/extension.svg);
+  list-style-image: url(chrome://mozapps/skin/extensions/extension.svg);
 }
 
 #addon-install-confirmation-notification[warning] .popup-notification-icon[popupid="addon-install-confirmation"] {
@@ -314,13 +341,13 @@ html|*#webRTC-previewVideo {
 /* OFFLINE APPS */
 
 .popup-notification-icon[popupid="offline-app-usage"] {
-  list-style-image: url(chrome://global/skin/icons/question-64.png);
+  list-style-image: url(chrome://global/skin/icons/help.svg);
 }
 
 /* PLUGINS */
 
 .plugin-icon {
-  list-style-image: url(chrome://global/skin/plugins/plugin.svg);
+  list-style-image: url(chrome://global/skin/icons/plugin.svg);
   transition: fill 1.5s;
 }
 
@@ -354,7 +381,7 @@ html|*#webRTC-previewVideo {
 }
 
 .plugin-blocked > .plugin-icon {
-  list-style-image: url(chrome://global/skin/plugins/plugin-blocked.svg);
+  list-style-image: url(chrome://global/skin/icons/plugin-blocked.svg);
   fill: #d92215 !important;
 }
 
@@ -410,12 +437,15 @@ html|*#webRTC-previewVideo {
 .popup-notification-icon[popupid="update-available"],
 .popup-notification-icon[popupid="update-downloading"],
 .popup-notification-icon[popupid="update-manual"],
+.popup-notification-icon[popupid="update-other-instance"],
 .popup-notification-icon[popupid="update-restart"] {
-  background: #74BF43 url(chrome://browser/skin/notification-icons/update.svg) no-repeat center;
-  border-radius: 50%;
+  background: url(chrome://browser/skin/update-badge.svg) no-repeat center;
+  -moz-context-properties: fill;
+  fill: var(--panel-banner-item-update-supported-bgcolor);
 }
 
 .popup-notification-icon[popupid="update-unsupported"] {
-  background: #FFE900 url(chrome://browser/skin/notification-icons/update.svg) no-repeat center;
-  border-radius: 50%;
+  background: url(chrome://global/skin/icons/warning.svg) no-repeat center;
+  -moz-context-properties: fill;
+  fill: var(--warning-icon-bgcolor);
 }

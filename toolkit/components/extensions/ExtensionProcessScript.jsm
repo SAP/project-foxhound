@@ -10,21 +10,21 @@
  * after startup, in *every* browser process live outside of this file.
  */
 
-var EXPORTED_SYMBOLS = ["ExtensionProcessScript"];
+var EXPORTED_SYMBOLS = ["ExtensionProcessScript", "ExtensionAPIRequestHandler"];
 
-const { MessageChannel } = ChromeUtils.import(
-  "resource://gre/modules/MessageChannel.jsm"
-);
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
 XPCOMUtils.defineLazyModuleGetters(this, {
+  AppConstants: "resource://gre/modules/AppConstants.jsm",
   ExtensionChild: "resource://gre/modules/ExtensionChild.jsm",
   ExtensionCommon: "resource://gre/modules/ExtensionCommon.jsm",
   ExtensionContent: "resource://gre/modules/ExtensionContent.jsm",
   ExtensionPageChild: "resource://gre/modules/ExtensionPageChild.jsm",
+  ExtensionWorkerChild: "resource://gre/modules/ExtensionWorkerChild.jsm",
+  Schemas: "resource://gre/modules/Schemas.jsm",
 });
 
 const { ExtensionUtils } = ChromeUtils.import(
@@ -35,7 +35,7 @@ XPCOMUtils.defineLazyGetter(this, "console", () =>
   ExtensionCommon.getConsole()
 );
 
-const { DefaultWeakMap, getInnerWindowID } = ExtensionUtils;
+const { DefaultWeakMap } = ExtensionUtils;
 
 const { sharedData } = Services.cpmm;
 
@@ -51,7 +51,12 @@ XPCOMUtils.defineLazyGetter(this, "isContentProcess", () => {
 });
 
 XPCOMUtils.defineLazyGetter(this, "isContentScriptProcess", () => {
-  return isContentProcess || !WebExtensionPolicy.useRemoteWebExtensions;
+  return (
+    isContentProcess ||
+    !WebExtensionPolicy.useRemoteWebExtensions ||
+    // Thunderbird still loads some content in the parent process.
+    AppConstants.MOZ_APP_NAME == "thunderbird"
+  );
 });
 
 var extensions = new DefaultWeakMap(policy => {
@@ -62,75 +67,11 @@ var pendingExtensions = new Map();
 
 var ExtensionManager;
 
-class ExtensionGlobal {
-  constructor(global) {
-    this.global = global;
-    this.global.addMessageListener("Extension:SetFrameData", this);
-
-    this.frameData = null;
-
-    MessageChannel.addListener(global, "Extension:Capture", this);
-    MessageChannel.addListener(global, "Extension:DetectLanguage", this);
-    MessageChannel.addListener(global, "WebNavigation:GetFrame", this);
-    MessageChannel.addListener(global, "WebNavigation:GetAllFrames", this);
-  }
-
-  get messageFilterStrict() {
-    return {
-      innerWindowID: getInnerWindowID(this.global.content),
-    };
-  }
-
-  getFrameData(force = false) {
-    if (!this.frameData && force) {
-      this.frameData = this.global.sendSyncMessage(
-        "Extension:GetTabAndWindowId"
-      )[0];
-    }
-    return this.frameData;
-  }
-
-  receiveMessage({ target, messageName, recipient, data, name }) {
-    switch (name) {
-      case "Extension:SetFrameData":
-        if (this.frameData) {
-          Object.assign(this.frameData, data);
-        } else {
-          this.frameData = data;
-        }
-        if (data.viewType && WebExtensionPolicy.isExtensionProcess) {
-          ExtensionPageChild.expectViewLoad(this.global, data.viewType);
-        }
-        return;
-    }
-
-    // SetFrameData does not have a recipient extension, or it would be
-    // an extension process. Anything following this point must have
-    // a recipient extension, so check access to the window.
-    let policy = WebExtensionPolicy.getByID(recipient.extensionId);
-    if (!policy.canAccessWindow(this.global.content)) {
-      throw new Error("Extension cannot access window");
-    }
-
-    return ExtensionContent.receiveMessage(
-      this.global,
-      messageName,
-      target,
-      data,
-      recipient
-    );
-  }
-}
-
 ExtensionManager = {
   // WeakMap<WebExtensionPolicy, Map<string, WebExtensionContentScript>>
   registeredContentScripts: new DefaultWeakMap(policy => new Map()),
 
-  globals: new WeakMap(),
-
   init() {
-    MessageChannel.setupMessageManagers([Services.cpmm]);
-
     Services.cpmm.addMessageListener("Extension:Startup", this);
     Services.cpmm.addMessageListener("Extension:Shutdown", this);
     Services.cpmm.addMessageListener("Extension:FlushJarCache", this);
@@ -138,12 +79,6 @@ ExtensionManager = {
     Services.cpmm.addMessageListener(
       "Extension:UnregisterContentScripts",
       this
-    );
-
-    // eslint-disable-next-line mozilla/balanced-listeners
-    Services.obs.addObserver(
-      global => this.globals.set(global, new ExtensionGlobal(global)),
-      "tab-content-frameloader-created"
     );
 
     this.updateStubExtensions();
@@ -213,12 +148,13 @@ ExtensionManager = {
         baseURL: extension.resourceURL,
 
         isPrivileged: extension.isPrivileged,
+        temporarilyInstalled: extension.temporarilyInstalled,
         permissions: extension.permissions,
         allowedOrigins: extension.allowedOrigins,
         webAccessibleResources: extension.webAccessibleResources,
 
+        manifestVersion: extension.manifestVersion,
         extensionPageCSP: extension.extensionPageCSP,
-        contentScriptCSP: extension.contentScriptCSP,
 
         localizeCallback,
 
@@ -376,11 +312,6 @@ ExtensionManager = {
 var ExtensionProcessScript = {
   extensions,
 
-  getFrameData(global, force) {
-    let extGlobal = ExtensionManager.globals.get(global);
-    return extGlobal && extGlobal.getFrameData(force);
-  },
-
   initExtension(extension) {
     return ExtensionManager.initExtensionPolicy(extension);
   },
@@ -411,6 +342,110 @@ var ExtensionProcessScript = {
     return ExtensionContent.contentScripts
       .get(contentScript)
       .injectInto(window);
+  },
+};
+
+var ExtensionAPIRequestHandler = {
+  initExtensionWorker(policy, serviceWorkerInfo) {
+    let extension = extensions.get(policy);
+
+    if (!extension) {
+      throw new Error(`Extension instance not found for addon ${policy.id}`);
+    }
+
+    ExtensionWorkerChild.initExtensionWorkerContext(
+      extension,
+      serviceWorkerInfo
+    );
+  },
+
+  onExtensionWorkerLoaded(policy, serviceWorkerDescriptorId) {
+    ExtensionWorkerChild.notifyExtensionWorkerContextLoaded(
+      serviceWorkerDescriptorId,
+      policy
+    );
+  },
+
+  onExtensionWorkerDestroyed(policy, serviceWorkerDescriptorId) {
+    ExtensionWorkerChild.destroyExtensionWorkerContext(
+      serviceWorkerDescriptorId
+    );
+  },
+
+  handleAPIRequest(policy, request) {
+    try {
+      let extension = extensions.get(policy);
+
+      if (!extension) {
+        throw new Error(`Extension instance not found for addon ${policy.id}`);
+      }
+
+      let context = this.getExtensionContextForAPIRequest({
+        extension,
+        request,
+      });
+
+      if (!context) {
+        throw new Error(
+          `Extension context not found for API request: ${request}`
+        );
+      }
+
+      // Add a property to the request object for the normalizedArgs.
+      request.normalizedArgs = this.validateAndNormalizeRequestArgs({
+        context,
+        request,
+      });
+
+      return context.childManager.handleWebIDLAPIRequest(request);
+    } catch (error) {
+      // Do not propagate errors that are not meant to be accessible to the
+      // extension, report it to the console and just throw the generic
+      // "An unexpected error occurred".
+      Cu.reportError(error);
+      return {
+        type: Ci.mozIExtensionAPIRequestResult.EXTENSION_ERROR,
+        value: new Error("An unexpected error occurred"),
+      };
+    }
+  },
+
+  getExtensionContextForAPIRequest({ extension, request }) {
+    if (request.serviceWorkerInfo) {
+      return ExtensionWorkerChild.getExtensionWorkerContext(
+        extension,
+        request.serviceWorkerInfo
+      );
+    }
+
+    return null;
+  },
+
+  validateAndNormalizeRequestArgs({ context, request }) {
+    if (!Schemas.checkPermissions(request.apiNamespace, context.extension)) {
+      throw new context.Error(
+        `Not enough privileges to access ${request.apiNamespace}`
+      );
+    }
+    if (request.requestType === "getProperty") {
+      return [];
+    }
+
+    if (request.apiObjectType) {
+      // skip parameter validation on request targeting an api object,
+      // even the JS-based implementation of the API objects are not
+      // going through the same kind of Schema based validation that
+      // the API namespaces methods and events go through.
+      //
+      // TODO(Bug 1728535): validate and normalize also this request arguments
+      // as a low priority follow up.
+      return request.args;
+    }
+
+    const { apiNamespace, apiName, args } = request;
+    // Validate and normalize parameters, set the normalized args on the
+    // mozIExtensionAPIRequest normalizedArgs property.
+    return Schemas.checkParameters(context, apiNamespace, apiName, args);
   },
 };
 

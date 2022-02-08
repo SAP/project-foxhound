@@ -10,9 +10,9 @@
 #include "Fetch.h"
 
 #include "mozilla/dom/Document.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsIGlobalObject.h"
 
-#include "nsCharSeparatedTokenizer.h"
 #include "nsDOMString.h"
 #include "nsJSUtils.h"
 #include "nsNetUtil.h"
@@ -40,7 +40,6 @@
 #include "mozilla/net/CookieJarSettings.h"
 
 #include "BodyExtractor.h"
-#include "EmptyBody.h"
 #include "FetchObserver.h"
 #include "InternalRequest.h"
 #include "InternalResponse.h"
@@ -51,8 +50,7 @@
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -97,11 +95,11 @@ class AbortSignalMainThread final : public AbortSignalImpl {
 NS_IMPL_CYCLE_COLLECTION_CLASS(AbortSignalMainThread)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(AbortSignalMainThread)
-  tmp->Unfollow();
+  AbortSignalImpl::Unlink(static_cast<AbortSignalImpl*>(tmp));
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(AbortSignalMainThread)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFollowingSignal)
+  AbortSignalImpl::Traverse(static_cast<AbortSignalImpl*>(tmp), cb);
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(AbortSignalMainThread)
@@ -111,18 +109,10 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(AbortSignalMainThread)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(AbortSignalMainThread)
 
-// This class helps the proxying of AbortSignalImpl changes cross threads.
-class AbortSignalProxy final : public AbortFollower {
-  // This is created and released on the main-thread.
-  RefPtr<AbortSignalImpl> mSignalImplMainThread;
+class AbortSignalProxy;
 
-  // The main-thread event target for runnable dispatching.
-  nsCOMPtr<nsIEventTarget> mMainThreadEventTarget;
-
-  // This value is used only for the creation of AbortSignalImpl on the
-  // main-thread. They are not updated.
-  const bool mAborted;
-
+class WorkerSignalFollower final : public AbortFollower {
+ public:
   // This runnable propagates changes from the AbortSignalImpl on workers to the
   // AbortSignalImpl on main-thread.
   class AbortSignalProxyRunnable final : public Runnable {
@@ -130,35 +120,68 @@ class AbortSignalProxy final : public AbortFollower {
 
    public:
     explicit AbortSignalProxyRunnable(AbortSignalProxy* aProxy)
-        : Runnable("dom::AbortSignalProxy::AbortSignalProxyRunnable"),
+        : Runnable("dom::WorkerSignalFollower::AbortSignalProxyRunnable"),
           mProxy(aProxy) {}
 
-    NS_IMETHOD
-    Run() override {
-      MOZ_ASSERT(NS_IsMainThread());
-      AbortSignalImpl* signalImpl =
-          mProxy->GetOrCreateSignalImplForMainThread();
-      signalImpl->Abort();
-      return NS_OK;
-    }
+    NS_IMETHOD Run() override;
   };
 
  public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(AbortSignalProxy)
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_CLASS(WorkerSignalFollower)
+
+  void RunAbortAlgorithm() override {}
+
+ private:
+  ~WorkerSignalFollower() = default;
+};
+
+NS_IMPL_CYCLE_COLLECTION_CLASS(WorkerSignalFollower)
+
+NS_IMPL_CYCLE_COLLECTING_ADDREF(WorkerSignalFollower)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(WorkerSignalFollower)
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(WorkerSignalFollower)
+  AbortFollower::Unlink(static_cast<AbortFollower*>(tmp));
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(WorkerSignalFollower)
+  AbortFollower::Traverse(static_cast<AbortFollower*>(tmp), cb);
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(WorkerSignalFollower)
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
+NS_INTERFACE_MAP_END
+
+// This class orchestrates the proxying of AbortSignal operations between the
+// main thread and a worker thread.
+class AbortSignalProxy final : public AbortFollower {
+  // This is created and released on the main-thread.
+  RefPtr<AbortSignalImpl> mSignalImplMainThread;
+
+  // The main-thread event target for runnable dispatching.
+  nsCOMPtr<nsIEventTarget> mMainThreadEventTarget;
+
+  // This value is used only when creating mSignalImplMainThread on the main
+  // thread, to create it in already-aborted state if necessary.  It does *not*
+  // reflect the instantaneous is-aborted status of the worker thread's
+  // AbortSignal.
+  const bool mAborted;
+
+ public:
+  NS_DECL_THREADSAFE_ISUPPORTS
 
   AbortSignalProxy(AbortSignalImpl* aSignalImpl,
                    nsIEventTarget* aMainThreadEventTarget)
       : mMainThreadEventTarget(aMainThreadEventTarget),
         mAborted(aSignalImpl->Aborted()) {
+    MOZ_ASSERT(!NS_IsMainThread());
     MOZ_ASSERT(mMainThreadEventTarget);
     Follow(aSignalImpl);
   }
 
-  void Abort() override {
-    RefPtr<AbortSignalProxyRunnable> runnable =
-        new AbortSignalProxyRunnable(this);
-    mMainThreadEventTarget->Dispatch(runnable.forget(), NS_DISPATCH_NORMAL);
-  }
+  // AbortFollower
+  void RunAbortAlgorithm() override;
 
   AbortSignalImpl* GetOrCreateSignalImplForMainThread() {
     MOZ_ASSERT(NS_IsMainThread());
@@ -168,9 +191,17 @@ class AbortSignalProxy final : public AbortFollower {
     return mSignalImplMainThread;
   }
 
-  AbortSignalImpl* GetSignalImplForTargetThread() { return mFollowingSignal; }
+  AbortSignalImpl* GetSignalImplForTargetThread() {
+    MOZ_ASSERT(!NS_IsMainThread());
+    return Signal();
+  }
 
-  void Shutdown() { Unfollow(); }
+  nsIEventTarget* MainThreadEventTarget() { return mMainThreadEventTarget; }
+
+  void Shutdown() {
+    MOZ_ASSERT(!NS_IsMainThread());
+    Unfollow();
+  }
 
  private:
   ~AbortSignalProxy() {
@@ -178,6 +209,24 @@ class AbortSignalProxy final : public AbortFollower {
                     mMainThreadEventTarget, mSignalImplMainThread.forget());
   }
 };
+
+NS_IMPL_ISUPPORTS0(AbortSignalProxy)
+
+NS_IMETHODIMP WorkerSignalFollower::AbortSignalProxyRunnable::Run() {
+  MOZ_ASSERT(NS_IsMainThread());
+  AbortSignalImpl* signalImpl = mProxy->GetOrCreateSignalImplForMainThread();
+  signalImpl->SignalAbort();
+  return NS_OK;
+}
+
+void AbortSignalProxy::RunAbortAlgorithm() {
+  MOZ_ASSERT(!NS_IsMainThread());
+  using AbortSignalProxyRunnable =
+      WorkerSignalFollower::AbortSignalProxyRunnable;
+  RefPtr<AbortSignalProxyRunnable> runnable =
+      new AbortSignalProxyRunnable(this);
+  MainThreadEventTarget()->Dispatch(runnable.forget(), NS_DISPATCH_NORMAL);
+}
 
 class WorkerFetchResolver final : public FetchDriverObserver {
   // Thread-safe:
@@ -188,6 +237,8 @@ class WorkerFetchResolver final : public FetchDriverObserver {
   RefPtr<FetchObserver> mFetchObserver;
   RefPtr<WeakWorkerRef> mWorkerRef;
   bool mIsShutdown;
+
+  Atomic<bool> mNeedOnDataAvailable;
 
  public:
   // Returns null if worker is shutting down.
@@ -262,9 +313,10 @@ class WorkerFetchResolver final : public FetchDriverObserver {
     return mFetchObserver;
   }
 
-  void OnResponseAvailableInternal(InternalResponse* aResponse) override;
+  void OnResponseAvailableInternal(
+      SafeRefPtr<InternalResponse> aResponse) override;
 
-  void OnResponseEnd(FetchDriverObserver::EndReason eReason) override;
+  void OnResponseEnd(FetchDriverObserver::EndReason aReason) override;
 
   bool NeedOnDataAvailable() override;
 
@@ -277,6 +329,7 @@ class WorkerFetchResolver final : public FetchDriverObserver {
     mIsShutdown = true;
     mPromiseProxy->CleanUp();
 
+    mNeedOnDataAvailable = false;
     mFetchObserver = nullptr;
 
     if (mSignalProxy) {
@@ -298,7 +351,8 @@ class WorkerFetchResolver final : public FetchDriverObserver {
       : mPromiseProxy(aProxy),
         mSignalProxy(aSignalProxy),
         mFetchObserver(aObserver),
-        mIsShutdown(false) {
+        mIsShutdown(false),
+        mNeedOnDataAvailable(!!aObserver) {
     MOZ_ASSERT(!NS_IsMainThread());
     MOZ_ASSERT(mPromiseProxy);
   }
@@ -326,7 +380,8 @@ class MainThreadFetchResolver final : public FetchDriverObserver {
         mSignalImpl(aSignalImpl),
         mMozErrors(aMozErrors) {}
 
-  void OnResponseAvailableInternal(InternalResponse* aResponse) override;
+  void OnResponseAvailableInternal(
+      SafeRefPtr<InternalResponse> aResponse) override;
 
   void SetLoadGroup(nsILoadGroup* aLoadGroup) { mLoadGroup = aLoadGroup; }
 
@@ -501,7 +556,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
         return nullptr;
       }
 
-      cookieJarSettings = mozilla::net::CookieJarSettings::Create();
+      cookieJarSettings = mozilla::net::CookieJarSettings::Create(principal);
     }
 
     if (!loadGroup) {
@@ -577,18 +632,28 @@ class ResolveFetchPromise : public Runnable {
 };
 
 void MainThreadFetchResolver::OnResponseAvailableInternal(
-    InternalResponse* aResponse) {
+    SafeRefPtr<InternalResponse> aResponse) {
   NS_ASSERT_OWNINGTHREAD(MainThreadFetchResolver);
   AssertIsOnMainThread();
 
   if (aResponse->Type() != ResponseType::Error) {
+    nsCOMPtr<nsIGlobalObject> go = mPromise->GetParentObject();
+    nsCOMPtr<nsPIDOMWindowInner> inner = do_QueryInterface(go);
+
+    // Notify the document when a fetch completes successfully. This is
+    // used by the password manager as a hint to observe DOM mutations.
+    // Call this prior to setting state to Complete so we can set up the
+    // observer before mutations occurs.
+    Document* doc = inner ? inner->GetExtantDoc() : nullptr;
+    if (doc) {
+      doc->NotifyFetchOrXHRSuccess();
+    }
+
     if (mFetchObserver) {
       mFetchObserver->SetState(FetchState::Complete);
     }
 
-    nsCOMPtr<nsIGlobalObject> go = mPromise->GetParentObject();
-    mResponse = new Response(go, aResponse, mSignalImpl);
-    nsCOMPtr<nsPIDOMWindowInner> inner = do_QueryInterface(go);
+    mResponse = new Response(go, std::move(aResponse), mSignalImpl);
     BrowsingContext* bc = inner ? inner->GetBrowsingContext() : nullptr;
     bc = bc ? bc->Top() : nullptr;
     if (bc && bc->IsLoading()) {
@@ -636,15 +701,15 @@ MainThreadFetchResolver::~MainThreadFetchResolver() {
 class WorkerFetchResponseRunnable final : public MainThreadWorkerRunnable {
   RefPtr<WorkerFetchResolver> mResolver;
   // Passed from main thread to worker thread after being initialized.
-  RefPtr<InternalResponse> mInternalResponse;
+  SafeRefPtr<InternalResponse> mInternalResponse;
 
  public:
   WorkerFetchResponseRunnable(WorkerPrivate* aWorkerPrivate,
                               WorkerFetchResolver* aResolver,
-                              InternalResponse* aResponse)
+                              SafeRefPtr<InternalResponse> aResponse)
       : MainThreadWorkerRunnable(aWorkerPrivate),
         mResolver(aResolver),
-        mInternalResponse(aResponse) {
+        mInternalResponse(std::move(aResponse)) {
     MOZ_ASSERT(mResolver);
   }
 
@@ -663,7 +728,7 @@ class WorkerFetchResponseRunnable final : public MainThreadWorkerRunnable {
 
       RefPtr<nsIGlobalObject> global = aWorkerPrivate->GlobalScope();
       RefPtr<Response> response =
-          new Response(global, mInternalResponse,
+          new Response(global, mInternalResponse.clonePtr(),
                        mResolver->GetAbortSignalForTargetThread());
       promise->MaybeResolve(response);
     } else {
@@ -767,7 +832,7 @@ class WorkerFetchResponseEndControlRunnable final
 };
 
 void WorkerFetchResolver::OnResponseAvailableInternal(
-    InternalResponse* aResponse) {
+    SafeRefPtr<InternalResponse> aResponse) {
   AssertIsOnMainThread();
 
   MutexAutoLock lock(mPromiseProxy->Lock());
@@ -776,7 +841,7 @@ void WorkerFetchResolver::OnResponseAvailableInternal(
   }
 
   RefPtr<WorkerFetchResponseRunnable> r = new WorkerFetchResponseRunnable(
-      mPromiseProxy->GetWorkerPrivate(), this, aResponse);
+      mPromiseProxy->GetWorkerPrivate(), this, std::move(aResponse));
 
   if (!r->Dispatch()) {
     NS_WARNING("Could not dispatch fetch response");
@@ -785,8 +850,7 @@ void WorkerFetchResolver::OnResponseAvailableInternal(
 
 bool WorkerFetchResolver::NeedOnDataAvailable() {
   AssertIsOnMainThread();
-  MutexAutoLock lock(mPromiseProxy->Lock());
-  return !!mFetchObserver;
+  return mNeedOnDataAvailable;
 }
 
 void WorkerFetchResolver::OnDataAvailable() {
@@ -1097,6 +1161,10 @@ bool FetchBody<Derived>::CheckBodyUsed() const {
   return bodyUsed;
 }
 
+template bool FetchBody<Request>::CheckBodyUsed() const;
+
+template bool FetchBody<Response>::CheckBodyUsed() const;
+
 template <class Derived>
 void FetchBody<Derived>::SetBodyUsed(JSContext* aCx, ErrorResult& aRv) {
   MOZ_ASSERT(aCx);
@@ -1168,6 +1236,9 @@ already_AddRefed<Promise> FetchBody<Derived>::ConsumeBody(
     return nullptr;
   }
 
+  nsAutoCString mimeType;
+  DerivedClass()->GetMimeType(mimeType);
+
   // Null bodies are a special-case in the fetch spec.  The Body mix-in can only
   // be "disturbed" or "locked" if its associated "body" is non-null.
   // Additionally, the Body min-in's "consume body" algorithm explicitly creates
@@ -1182,7 +1253,7 @@ already_AddRefed<Promise> FetchBody<Derived>::ConsumeBody(
   if (!bodyStream) {
     RefPtr<EmptyBody> emptyBody = EmptyBody::Create(
         DerivedClass()->GetParentObject(),
-        DerivedClass()->GetPrincipalInfo().get(), signalImpl, mMimeType, aRv);
+        DerivedClass()->GetPrincipalInfo().get(), signalImpl, mimeType, aRv);
     if (NS_WARN_IF(aRv.Failed())) {
       return nullptr;
     }
@@ -1215,7 +1286,7 @@ already_AddRefed<Promise> FetchBody<Derived>::ConsumeBody(
 
   RefPtr<Promise> promise = BodyConsumer::Create(
       global, mMainThreadEventTarget, bodyStream, signalImpl, aType,
-      BodyBlobURISpec(), BodyLocalPath(), MimeType(), blobStorageType, aRv);
+      BodyBlobURISpec(), BodyLocalPath(), mimeType, blobStorageType, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -1233,7 +1304,7 @@ template already_AddRefed<Promise> FetchBody<EmptyBody>::ConsumeBody(
     JSContext* aCx, BodyConsumer::ConsumeType aType, ErrorResult& aRv);
 
 template <class Derived>
-void FetchBody<Derived>::SetMimeType() {
+void FetchBody<Derived>::GetMimeType(nsACString& aMimeType) {
   // Extract mime type.
   ErrorResult result;
   nsCString contentTypeValues;
@@ -1246,19 +1317,13 @@ void FetchBody<Derived>::SetMimeType() {
   // This is from the "parse a header value" of the fetch spec.
   if (!contentTypeValues.IsVoid() && contentTypeValues.Find(",") == -1) {
     // Convert from a bytestring to a UTF8 CString.
-    CopyLatin1toUTF8(contentTypeValues, mMimeType);
-    ToLowerCase(mMimeType);
+    CopyLatin1toUTF8(contentTypeValues, aMimeType);
+    ToLowerCase(aMimeType);
   }
 }
 
-template void FetchBody<Request>::SetMimeType();
-
-template void FetchBody<Response>::SetMimeType();
-
-template <class Derived>
-void FetchBody<Derived>::OverrideMimeType(const nsACString& aMimeType) {
-  mMimeType = aMimeType;
-}
+template void FetchBody<Request>::GetMimeType(nsACString& aMimeType);
+template void FetchBody<Response>::GetMimeType(nsACString& aMimeType);
 
 template <class Derived>
 const nsACString& FetchBody<Derived>::BodyBlobURISpec() const {
@@ -1313,6 +1378,7 @@ template void FetchBody<Request>::SetReadableStreamBody(JSContext* aCx,
 template void FetchBody<Response>::SetReadableStreamBody(JSContext* aCx,
                                                          JSObject* aBody);
 
+#ifndef MOZ_DOM_STREAMS
 template <class Derived>
 void FetchBody<Derived>::GetBody(JSContext* aCx,
                                  JS::MutableHandle<JSObject*> aBodyOut,
@@ -1373,6 +1439,7 @@ template void FetchBody<Request>::GetBody(JSContext* aCx,
 
 template void FetchBody<Response>::GetBody(
     JSContext* aCx, JS::MutableHandle<JSObject*> aMessage, ErrorResult& aRv);
+#endif
 
 template <class Derived>
 void FetchBody<Derived>::LockStream(JSContext* aCx, JS::HandleObject aStream,
@@ -1472,7 +1539,7 @@ template void FetchBody<Response>::MaybeTeeReadableStreamBody(
     ErrorResult& aRv);
 
 template <class Derived>
-void FetchBody<Derived>::Abort() {
+void FetchBody<Derived>::RunAbortAlgorithm() {
   if (!mReadableStreamBody) {
     return;
   }
@@ -1489,9 +1556,78 @@ void FetchBody<Derived>::Abort() {
   AbortStream(cx, body, result);
 }
 
-template void FetchBody<Request>::Abort();
+template void FetchBody<Request>::RunAbortAlgorithm();
 
-template void FetchBody<Response>::Abort();
+template void FetchBody<Response>::RunAbortAlgorithm();
 
-}  // namespace dom
-}  // namespace mozilla
+NS_IMPL_ADDREF_INHERITED(EmptyBody, FetchBody<EmptyBody>)
+NS_IMPL_RELEASE_INHERITED(EmptyBody, FetchBody<EmptyBody>)
+
+NS_IMPL_CYCLE_COLLECTION_CLASS(EmptyBody)
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(EmptyBody, FetchBody<EmptyBody>)
+  AbortFollower::Unlink(static_cast<AbortFollower*>(tmp));
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mOwner)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mAbortSignalImpl)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mFetchStreamReader)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(EmptyBody,
+                                                  FetchBody<EmptyBody>)
+  AbortFollower::Traverse(static_cast<AbortFollower*>(tmp), cb);
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOwner)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAbortSignalImpl)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFetchStreamReader)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(EmptyBody, FetchBody<EmptyBody>)
+NS_IMPL_CYCLE_COLLECTION_TRACE_END
+
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(EmptyBody)
+NS_INTERFACE_MAP_END_INHERITING(FetchBody<EmptyBody>)
+
+EmptyBody::EmptyBody(nsIGlobalObject* aGlobal,
+                     mozilla::ipc::PrincipalInfo* aPrincipalInfo,
+                     AbortSignalImpl* aAbortSignalImpl,
+                     const nsACString& aMimeType,
+                     already_AddRefed<nsIInputStream> aBodyStream)
+    : FetchBody<EmptyBody>(aGlobal),
+      mAbortSignalImpl(aAbortSignalImpl),
+      mMimeType(aMimeType),
+      mBodyStream(std::move(aBodyStream)) {
+  if (aPrincipalInfo) {
+    mPrincipalInfo = MakeUnique<mozilla::ipc::PrincipalInfo>(*aPrincipalInfo);
+  }
+}
+
+EmptyBody::~EmptyBody() = default;
+
+/* static */
+already_AddRefed<EmptyBody> EmptyBody::Create(
+    nsIGlobalObject* aGlobal, mozilla::ipc::PrincipalInfo* aPrincipalInfo,
+    AbortSignalImpl* aAbortSignalImpl, const nsACString& aMimeType,
+    ErrorResult& aRv) {
+  nsCOMPtr<nsIInputStream> bodyStream;
+  aRv = NS_NewCStringInputStream(getter_AddRefs(bodyStream), ""_ns);
+  if (NS_WARN_IF(aRv.Failed())) {
+    return nullptr;
+  }
+
+  RefPtr<EmptyBody> emptyBody =
+      new EmptyBody(aGlobal, aPrincipalInfo, aAbortSignalImpl, aMimeType,
+                    bodyStream.forget());
+  return emptyBody.forget();
+}
+
+void EmptyBody::GetBody(nsIInputStream** aStream, int64_t* aBodyLength) {
+  MOZ_ASSERT(aStream);
+
+  if (aBodyLength) {
+    *aBodyLength = 0;
+  }
+
+  nsCOMPtr<nsIInputStream> bodyStream = mBodyStream;
+  bodyStream.forget(aStream);
+}
+
+}  // namespace mozilla::dom

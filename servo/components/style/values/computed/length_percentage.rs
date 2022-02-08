@@ -263,11 +263,11 @@ impl LengthPercentage {
             CalcNode::Leaf(l) => {
                 return match l {
                     CalcLengthPercentageLeaf::Length(l) => {
-                        Self::new_length(Length::new(clamping_mode.clamp(l.px())))
+                        Self::new_length(Length::new(clamping_mode.clamp(l.px())).normalized())
                     },
-                    CalcLengthPercentageLeaf::Percentage(p) => {
-                        Self::new_percent(Percentage(clamping_mode.clamp(p.0)))
-                    },
+                    CalcLengthPercentageLeaf::Percentage(p) => Self::new_percent(Percentage(
+                        clamping_mode.clamp(crate::values::normalize(p.0)),
+                    )),
                 }
             },
             _ => Self::new_calc_unchecked(Box::new(CalcLengthPercentage {
@@ -378,7 +378,7 @@ impl LengthPercentage {
     pub fn resolve(&self, basis: Length) -> Length {
         match self.unpack() {
             Unpacked::Length(l) => l,
-            Unpacked::Percentage(p) => Length::new(basis.px() * p.0),
+            Unpacked::Percentage(p) => (basis * p.0).normalized(),
             Unpacked::Calc(ref c) => c.resolve(basis),
         }
     }
@@ -607,22 +607,11 @@ impl CalcLengthPercentageLeaf {
 impl PartialOrd for CalcLengthPercentageLeaf {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         use self::CalcLengthPercentageLeaf::*;
-
-        if std::mem::discriminant(self) != std::mem::discriminant(other) {
-            return None;
-        }
-
+        // NOTE: Percentages can't be compared reasonably here because the
+        // percentage basis might be negative, see bug 1709018.
         match (self, other) {
             (&Length(ref one), &Length(ref other)) => one.partial_cmp(other),
-            (&Percentage(ref one), &Percentage(ref other)) => one.partial_cmp(other),
-            _ => {
-                match *self {
-                    Length(..) | Percentage(..) => {},
-                }
-                unsafe {
-                    debug_unreachable!("Forgot a branch?");
-                }
-            },
+            _ => None,
         }
     }
 }
@@ -707,7 +696,7 @@ impl CalcLengthPercentage {
                 })
             })
             .unwrap();
-        Length::new(self.clamping_mode.clamp(px))
+        Length::new(self.clamping_mode.clamp(px)).normalized()
     }
 }
 

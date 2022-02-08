@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 lv{
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"Abidžana"}
@@ -1906,6 +1906,9 @@ lv{
             ld{"Jekaterinburgas vasaras laiks"}
             lg{"Jekaterinburgas laiks"}
             ls{"Jekaterinburgas ziemas laiks"}
+        }
+        "meta:Yukon"{
+            ls{"Jukonas laiks"}
         }
         fallbackFormat{"{0} ({1})"}
         gmtFormat{"GMT{0}"}

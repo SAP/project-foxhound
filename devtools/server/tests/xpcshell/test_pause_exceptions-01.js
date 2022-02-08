@@ -1,6 +1,5 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
-/* eslint-disable no-shadow */
 
 "use strict";
 
@@ -10,13 +9,16 @@
  */
 
 add_task(
-  threadFrontTest(async ({ threadFront, debuggee }) => {
+  threadFrontTest(async ({ threadFront, debuggee, commands }) => {
     await executeOnNextTickAndWaitForPause(
       () => evaluateTestCode(debuggee),
       threadFront
     );
 
-    threadFront.pauseOnExceptions(true, false);
+    await commands.threadConfigurationCommand.updateConfiguration({
+      pauseOnExceptions: true,
+      ignoreCaughtExceptions: false,
+    });
     threadFront.resume();
 
     const packet = await waitForPause(threadFront);

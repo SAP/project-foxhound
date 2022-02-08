@@ -9,10 +9,12 @@
 #include <stdint.h>
 
 #include "mozilla/BasicEvents.h"
+#include "mozilla/Maybe.h"
 #include "nsCOMPtr.h"
 #include "nsAtom.h"
 #include "nsGkAtoms.h"
 #include "nsITransferable.h"
+#include "nsString.h"
 
 namespace mozilla {
 
@@ -47,6 +49,9 @@ class WidgetContentCommandEvent : public WidgetGUIEvent {
     return nullptr;
   }
 
+  // eContentCommandInsertText
+  mozilla::Maybe<nsString> mString;  // [in]
+
   // eContentCommandPasteTransferable
   nsCOMPtr<nsITransferable> mTransferable;  // [in]
 
@@ -72,6 +77,7 @@ class WidgetContentCommandEvent : public WidgetGUIEvent {
                                      bool aCopyTargets) {
     AssignGUIEventData(aEvent, aCopyTargets);
 
+    mString = aEvent.mString;
     mScroll = aEvent.mScroll;
     mOnlyEnabledCheck = aEvent.mOnlyEnabledCheck;
     mSucceeded = aEvent.mSucceeded;
@@ -135,51 +141,6 @@ class WidgetCommandEvent : public WidgetGUIEvent {
 
     // mCommand must have been initialized with the constructor.
   }
-};
-
-/******************************************************************************
- * mozilla::WidgetPluginEvent
- *
- * This event delivers only a native event to focused plugin.
- ******************************************************************************/
-
-class WidgetPluginEvent : public WidgetGUIEvent {
- private:
-  friend class dom::PBrowserParent;
-  friend class dom::PBrowserChild;
-
- public:
-  virtual WidgetPluginEvent* AsPluginEvent() override { return this; }
-
-  WidgetPluginEvent(bool aIsTrusted, EventMessage aMessage, nsIWidget* aWidget)
-      : WidgetGUIEvent(aIsTrusted, aMessage, aWidget, ePluginEventClass),
-        mRetargetToFocusedDocument(false) {}
-
-  virtual WidgetEvent* Duplicate() const override {
-    // NOTE: PluginEvent has to be dispatched to nsIFrame::HandleEvent().
-    //       So, this event needs to support Duplicate().
-    MOZ_ASSERT(mClass == ePluginEventClass,
-               "Duplicate() must be overridden by sub class");
-    // Not copying widget, it is a weak reference.
-    WidgetPluginEvent* result = new WidgetPluginEvent(false, mMessage, nullptr);
-    result->AssignPluginEventData(*this, true);
-    result->mFlags = mFlags;
-    return result;
-  }
-
-  // If true, this event needs to be retargeted to focused document.
-  // Otherwise, never retargeted. Defaults to false.
-  bool mRetargetToFocusedDocument;
-
-  void AssignPluginEventData(const WidgetPluginEvent& aEvent,
-                             bool aCopyTargets) {
-    AssignGUIEventData(aEvent, aCopyTargets);
-
-    mRetargetToFocusedDocument = aEvent.mRetargetToFocusedDocument;
-  }
-
- protected:
-  WidgetPluginEvent() : mRetargetToFocusedDocument(false) {}
 };
 
 }  // namespace mozilla

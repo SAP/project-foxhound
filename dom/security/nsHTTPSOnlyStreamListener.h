@@ -11,6 +11,8 @@
 #include "nsCOMPtr.h"
 #include "nsIStreamListener.h"
 
+class nsILoadInfo;
+
 /**
  * This event listener gets registered for requests that have been upgraded
  * using the HTTPS-only mode to log failed upgrades to the console.
@@ -22,7 +24,8 @@ class nsHTTPSOnlyStreamListener : public nsIStreamListener {
   NS_DECL_NSIREQUESTOBSERVER
   NS_DECL_NSISTREAMLISTENER
 
-  explicit nsHTTPSOnlyStreamListener(nsIStreamListener* aListener);
+  explicit nsHTTPSOnlyStreamListener(nsIStreamListener* aListener,
+                                     nsILoadInfo* aLoadInfo);
 
  private:
   virtual ~nsHTTPSOnlyStreamListener() = default;

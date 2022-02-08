@@ -1,4 +1,4 @@
-// |reftest| skip error:SyntaxError -- class-static-methods-private is not supported
+// |reftest| error:SyntaxError
 'use strict';
 // This file was procedurally generated from the following sources:
 // - src/generators/yield-identifier-spread-strict.case

@@ -28,62 +28,72 @@ with Files("MatchPattern.webidl"):
 with Files("WebExtension*.webidl"):
     BUG_COMPONENT = ("WebExtensions", "General")
 
+with Files("Glean*.webidl"):
+    BUG_COMPONENT = ("Toolkit", "Telemetry")
+
 PREPROCESSED_WEBIDL_FILES = [
-    'ChromeUtils.webidl',
+    "ChromeUtils.webidl",
 ]
 
 WEBIDL_FILES = [
-    'BrowsingContext.webidl',
-    'ChannelWrapper.webidl',
-    'ClonedErrorHolder.webidl',
-    'DebuggerNotification.webidl',
-    'DebuggerNotificationObserver.webidl',
-    'DebuggerUtils.webidl',
-    'DocumentL10n.webidl',
-    'DOMCollectedFrames.webidl',
-    'DominatorTree.webidl',
-    'DOMLocalization.webidl',
-    'Flex.webidl',
-    'Fluent.webidl',
-    'FrameLoader.webidl',
-    'HeapSnapshot.webidl',
-    'InspectorUtils.webidl',
-    'IOUtils.webidl',
-    'IteratorResult.webidl',
-    'JSActor.webidl',
-    'JSProcessActor.webidl',
-    'JSWindowActor.webidl',
-    'L10nOverlays.webidl',
-    'Localization.webidl',
-    'MatchGlob.webidl',
-    'MatchPattern.webidl',
-    'MediaController.webidl',
-    'MessageManager.webidl',
-    'MozDocumentObserver.webidl',
-    'MozSharedMap.webidl',
-    'MozStorageAsyncStatementParams.webidl',
-    'MozStorageStatementParams.webidl',
-    'MozStorageStatementRow.webidl',
-    'PrecompiledScript.webidl',
-    'PromiseDebugging.webidl',
-    'SessionStoreUtils.webidl',
-    'StructuredCloneHolder.webidl',
-    'TelemetryStopwatch.webidl',
-    'WebExtensionContentScript.webidl',
-    'WebExtensionPolicy.webidl',
-    'WindowGlobalActors.webidl',
-    'XULFrameElement.webidl',
-    'XULMenuElement.webidl',
-    'XULTextElement.webidl',
-    'XULTreeElement.webidl'
+    "BrowsingContext.webidl",
+    "ChannelWrapper.webidl",
+    "ClonedErrorHolder.webidl",
+    "DebuggerNotification.webidl",
+    "DebuggerNotificationObserver.webidl",
+    "DebuggerUtils.webidl",
+    "DocumentL10n.webidl",
+    "DOMCollectedFrames.webidl",
+    "DominatorTree.webidl",
+    "Flex.webidl",
+    "Fluent.webidl",
+    "FrameLoader.webidl",
+    "HeapSnapshot.webidl",
+    "InspectorUtils.webidl",
+    "IOUtils.webidl",
+    "IteratorResult.webidl",
+    "JSActor.webidl",
+    "JSProcessActor.webidl",
+    "JSWindowActor.webidl",
+    "L10nOverlays.webidl",
+    "L10nRegistry.webidl",
+    "MatchGlob.webidl",
+    "MatchPattern.webidl",
+    "MediaController.webidl",
+    "MessageManager.webidl",
+    "MozDocumentObserver.webidl",
+    "MozSharedMap.webidl",
+    "MozStorageAsyncStatementParams.webidl",
+    "MozStorageStatementParams.webidl",
+    "MozStorageStatementRow.webidl",
+    "NetDashboard.webidl",
+    "PathUtils.webidl",
+    "PrecompiledScript.webidl",
+    "PromiseDebugging.webidl",
+    "SessionStoreUtils.webidl",
+    "StructuredCloneHolder.webidl",
+    "TelemetryStopwatch.webidl",
+    "UserInteraction.webidl",
+    "WebExtensionContentScript.webidl",
+    "WebExtensionPolicy.webidl",
+    "WindowGlobalActors.webidl",
+    "XULFrameElement.webidl",
+    "XULMenuElement.webidl",
+    "XULTextElement.webidl",
+    "XULTreeElement.webidl",
 ]
 
-if CONFIG['MOZ_PLACES']:
+if CONFIG["MOZ_PLACES"]:
     WEBIDL_FILES += [
-        'PlacesEvent.webidl',
-        'PlacesObservers.webidl',
+        "PlacesEvent.webidl",
+        "PlacesObservers.webidl",
     ]
 
 WEBIDL_FILES += [
-    'PrioEncoder.webidl',
+    "Glean.webidl",
+    "GleanPings.webidl",
+]
+
+WEBIDL_FILES += [
+    "PrioEncoder.webidl",
 ]

@@ -225,7 +225,7 @@ class ThrottledEventQueue::Inner final : public nsISupports {
 
       // We only dispatch an executor runnable when we know there is something
       // in the queue, so this should never fail.
-      event = mEventQueue.GetEvent(nullptr, lock);
+      event = mEventQueue.GetEvent(lock);
       MOZ_ASSERT(event);
 
       // If there are more events in the queue, then dispatch the next
@@ -261,8 +261,10 @@ class ThrottledEventQueue::Inner final : public nsISupports {
   static already_AddRefed<Inner> Create(nsISerialEventTarget* aBaseTarget,
                                         const char* aName, uint32_t aPriority) {
     MOZ_ASSERT(NS_IsMainThread());
-    MOZ_ASSERT(ClearOnShutdown_Internal::sCurrentShutdownPhase ==
-               ShutdownPhase::NotInShutdown);
+    // FIXME: This assertion only worked when `sCurrentShutdownPhase` was not
+    // being updated.
+    // MOZ_ASSERT(ClearOnShutdown_Internal::sCurrentShutdownPhase ==
+    //            ShutdownPhase::NotInShutdown);
 
     RefPtr<Inner> ref = new Inner(aBaseTarget, aName, aPriority);
     return ref.forget();
@@ -281,7 +283,7 @@ class ThrottledEventQueue::Inner final : public nsISupports {
 
   already_AddRefed<nsIRunnable> GetEvent() {
     MutexAutoLock lock(mMutex);
-    return mEventQueue.GetEvent(nullptr, lock);
+    return mEventQueue.GetEvent(lock);
   }
 
   void AwaitIdle() const {

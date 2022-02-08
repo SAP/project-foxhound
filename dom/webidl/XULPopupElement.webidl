@@ -18,6 +18,14 @@ dictionary OpenPopupOptions {
   Event? triggerEvent = null;
 };
 
+dictionary ActivateMenuItemOptions {
+  boolean altKey = false;
+  boolean metaKey = false;
+  boolean ctrlKey = false;
+  boolean shiftKey = false;
+  short button = 0;
+};
+
 typedef (DOMString or OpenPopupOptions) StringOrOpenPopupOptions;
 
 [ChromeOnly,
@@ -116,6 +124,23 @@ interface XULPopupElement : XULElement
   void hidePopup(optional boolean cancel = false);
 
   /**
+   * Activate the item itemElement. This is the recommended way to "click" a
+   * menuitem in automated tests that involve menus.
+   * Fires the command event for the item and then closes the menu.
+   *
+   * Throws an InvalidStateError if the menu is not currently open, or if the
+   * menuitem is not inside this menu, or if the menuitem is hidden. The menuitem
+   * may be an item in a submenu, but that submenu must be open.
+   *
+   * @param itemElement The menuitem to activate.
+   * @param options Which modifier keys and button should be set on the command
+   *                event.
+   */
+  [Throws]
+  void activateItem(Element itemElement,
+                    optional ActivateMenuItemOptions options = {});
+
+  /**
    * Attribute getter and setter for label.
    */
   [SetterThrows]
@@ -141,6 +166,12 @@ interface XULPopupElement : XULElement
    * null.
    */
   readonly attribute Node? triggerNode;
+
+  /**
+   * True if the popup is anchored to a point or rectangle. False if it
+   * appears at a fixed screen coordinate.
+   */
+  readonly attribute boolean isAnchored;
 
   /**
    * Retrieve the anchor that was specified to openPopup or for menupopups in a
@@ -173,12 +204,6 @@ interface XULPopupElement : XULElement
    * Size the popup to the given dimensions
    */
   void sizeTo(long width, long height);
-
-  /** Returns the alignment position where the popup has appeared relative to its
-   *  anchor node or point, accounting for any flipping that occurred.
-   */
-  readonly attribute DOMString alignmentPosition;
-  readonly attribute long alignmentOffset;
 
   void setConstraintRect(DOMRectReadOnly rect);
 };

@@ -54,14 +54,14 @@ async function test_bookmarks_popup({
     try {
       if (!isNewBookmark) {
         await PlacesUtils.bookmarks.insert({
-          parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+          parentGuid: await PlacesUIUtils.defaultParentGuid,
           url: TEST_URL,
           title: "Home Page",
         });
       }
 
       info(`BookmarkingUI.status is ${BookmarkingUI.status}`);
-      await BrowserTestUtils.waitForCondition(
+      await TestUtils.waitForCondition(
         () => BookmarkingUI.status != BookmarkingUI.STATUS_UPDATING,
         "BookmarkingUI should not be updating"
       );
@@ -101,20 +101,13 @@ async function test_bookmarks_popup({
         "Page is starred"
       );
       Assert.equal(
-        bookmarkPanelTitle.value,
-        isNewBookmark
-          ? gNavigatorBundle.getString("editBookmarkPanel.newBookmarkTitle")
-          : gNavigatorBundle.getString("editBookmarkPanel.editBookmarkTitle"),
+        bookmarkPanelTitle.dataset.l10nId,
+        isNewBookmark ? "bookmarks-add-bookmark" : "bookmarks-edit-bookmark",
         "title should match isEditingBookmark state"
       );
       Assert.equal(
-        bookmarkRemoveButton.label,
-        isNewBookmark
-          ? gNavigatorBundle.getString("editBookmarkPanel.cancel.label")
-          : PluralForm.get(
-              1,
-              gNavigatorBundle.getString("editBookmark.removeBookmarks.label")
-            ).replace("#1", 1),
+        bookmarkRemoveButton.dataset.l10nId,
+        isNewBookmark ? "bookmark-panel-cancel" : "bookmark-panel-remove",
         "remove/cancel button label should match isEditingBookmark state"
       );
 
@@ -127,6 +120,7 @@ async function test_bookmarks_popup({
         );
       }
 
+      let defaultLocation = await PlacesUIUtils.defaultParentGuid;
       let bookmarkRemovedPromise = Promise.resolve();
       if (isBookmarkRemoved) {
         bookmarkRemovedPromise = PlacesTestUtils.waitForNotification(
@@ -134,8 +128,7 @@ async function test_bookmarks_popup({
           events =>
             events.some(
               event =>
-                event.parentGuid == PlacesUtils.bookmarks.unfiledGuid &&
-                TEST_URL == event.url
+                event.parentGuid == defaultLocation && TEST_URL == event.url
             ),
           "places"
         );
@@ -510,13 +503,11 @@ add_task(async function mouse_hovering_panel_should_prevent_autoclose() {
   await test_bookmarks_popup({
     isNewBookmark: true,
     async popupShowFn() {
-      await new Promise(resolve => {
-        EventUtils.synthesizeNativeMouseMove(
-          document.documentElement,
-          editBookmarkPanelRemoveButtonRect.left,
-          editBookmarkPanelRemoveButtonRect.top,
-          resolve
-        );
+      await EventUtils.promiseNativeMouseEvent({
+        type: "mousemove",
+        target: document.documentElement,
+        offsetX: editBookmarkPanelRemoveButtonRect.left,
+        offsetY: editBookmarkPanelRemoveButtonRect.top,
       });
       EventUtils.synthesizeKey("D", { accelKey: true }, window);
     },

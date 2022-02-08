@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 use serde_json::Value;
 use std::fmt;
 
@@ -31,10 +35,8 @@ impl fmt::Display for BuildInfo {
     }
 }
 
-// TODO(Henrik): Change into From
-//std::convert::From<&str>` is not implemented for `rustc_serialize::json::Json
-impl Into<Value> for BuildInfo {
-    fn into(self) -> Value {
+impl From<BuildInfo> for Value {
+    fn from(_: BuildInfo) -> Value {
         Value::String(BuildInfo::version().to_string())
     }
 }

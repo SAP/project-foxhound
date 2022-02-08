@@ -21,7 +21,9 @@
 var EXPORTED_SYMBOLS = ["TestUtils"];
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { clearTimeout, setTimeout } = ChromeUtils.import(
+  "resource://gre/modules/Timer.jsm"
+);
 
 var TestUtils = {
   executeSoon(callbackFn) {
@@ -51,19 +53,49 @@ var TestUtils = {
    * @resolves The array [subject, data] from the observed notification.
    */
   topicObserved(topic, checkFn) {
+    let startTime = Cu.now();
     return new Promise((resolve, reject) => {
-      Services.obs.addObserver(function observer(subject, topic, data) {
+      let removed = false;
+      function observer(subject, topic, data) {
         try {
           if (checkFn && !checkFn(subject, data)) {
             return;
           }
           Services.obs.removeObserver(observer, topic);
+          // checkFn could reference objects that need to be destroyed before
+          // the end of the test, so avoid keeping a reference to it after the
+          // promise resolves.
+          checkFn = null;
+          removed = true;
+          ChromeUtils.addProfilerMarker(
+            "TestUtils",
+            { startTime, category: "Test" },
+            "topicObserved: " + topic
+          );
           resolve([subject, data]);
         } catch (ex) {
           Services.obs.removeObserver(observer, topic);
+          checkFn = null;
+          removed = true;
           reject(ex);
         }
-      }, topic);
+      }
+      Services.obs.addObserver(observer, topic);
+
+      TestUtils.promiseTestFinished?.then(() => {
+        if (removed) {
+          return;
+        }
+
+        Services.obs.removeObserver(observer, topic);
+        let text = topic + " observer not removed before the end of test";
+        reject(text);
+        ChromeUtils.addProfilerMarker(
+          "TestUtils",
+          { startTime, category: "Test" },
+          "topicObserved: " + text
+        );
+      });
     });
   },
 
@@ -149,12 +181,16 @@ var TestUtils = {
    *
    * @param condition
    *        A condition function that must return true or false. If the
-   *        condition ever throws, this is also treated as a false. The
-   *        function can be an async function.
+   *        condition ever throws, this function fails and rejects the
+   *        returned promise. The function can be an async function.
+   * @param msg
+   *        A message used to describe the condition being waited for.
+   *        This message will be used to reject the promise should the
+   *        wait fail. It is also used to add a profiler marker.
    * @param interval
    *        The time interval to poll the condition function. Defaults
    *        to 100ms.
-   * @param attempts
+   * @param maxTries
    *        The number of times to poll before giving up and rejecting
    *        if the condition has not yet returned true. Defaults to 50
    *        (~5 seconds for 100ms intervals)
@@ -166,11 +202,20 @@ var TestUtils = {
    * instead. setInterval is not promise-safe.
    */
   waitForCondition(condition, msg, interval = 100, maxTries = 50) {
+    let startTime = Cu.now();
     return new Promise((resolve, reject) => {
       let tries = 0;
+      let timeoutId = 0;
       async function tryOnce() {
+        timeoutId = 0;
         if (tries >= maxTries) {
           msg += ` - timed out after ${maxTries} tries.`;
+          ChromeUtils.addProfilerMarker(
+            "TestUtils",
+            { startTime, category: "Test" },
+            `waitForCondition - ${msg}`
+          );
+          condition = null;
           reject(msg);
           return;
         }
@@ -179,21 +224,50 @@ var TestUtils = {
         try {
           conditionPassed = await condition();
         } catch (e) {
+          ChromeUtils.addProfilerMarker(
+            "TestUtils",
+            { startTime, category: "Test" },
+            `waitForCondition - ${msg}`
+          );
           msg += ` - threw exception: ${e}`;
+          condition = null;
           reject(msg);
           return;
         }
 
         if (conditionPassed) {
+          ChromeUtils.addProfilerMarker(
+            "TestUtils",
+            { startTime, category: "Test" },
+            `waitForCondition succeeded after ${tries} retries - ${msg}`
+          );
+          // Avoid keeping a reference to the condition function after the
+          // promise resolves, as this function could itself reference objects
+          // that should be GC'ed before the end of the test.
+          condition = null;
           resolve(conditionPassed);
           return;
         }
         tries++;
-        setTimeout(tryOnce, interval);
+        timeoutId = setTimeout(tryOnce, interval);
       }
 
-      // FIXME(bug 1596165): This could be a direct call, ideally.
-      setTimeout(tryOnce, interval);
+      TestUtils.promiseTestFinished?.then(() => {
+        if (!timeoutId) {
+          return;
+        }
+
+        clearTimeout(timeoutId);
+        msg += " - still pending at the end of the test";
+        ChromeUtils.addProfilerMarker(
+          "TestUtils",
+          { startTime, category: "Test" },
+          `waitForCondition - ${msg}`
+        );
+        reject("waitForCondition timer - " + msg);
+      });
+
+      TestUtils.executeSoon(tryOnce);
     });
   },
 

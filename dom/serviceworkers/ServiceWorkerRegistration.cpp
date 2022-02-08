@@ -7,6 +7,7 @@
 #include "ServiceWorkerRegistration.h"
 
 #include "mozilla/dom/DOMMozPromiseRequestHolder.h"
+#include "mozilla/dom/NavigationPreloadManager.h"
 #include "mozilla/dom/Notification.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PushManager.h"
@@ -14,17 +15,18 @@
 #include "mozilla/dom/ServiceWorkerRegistrationBinding.h"
 #include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/ScopeExit.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsPIDOMWindow.h"
 #include "RemoteServiceWorkerRegistrationImpl.h"
-#include "ServiceWorkerRegistrationImpl.h"
 
 namespace mozilla {
 namespace dom {
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(ServiceWorkerRegistration,
                                    DOMEventTargetHelper, mInstallingWorker,
-                                   mWaitingWorker, mActiveWorker, mPushManager);
+                                   mWaitingWorker, mActiveWorker,
+                                   mNavigationPreloadManager, mPushManager);
 
 NS_IMPL_ADDREF_INHERITED(ServiceWorkerRegistration, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(ServiceWorkerRegistration, DOMEventTargetHelper)
@@ -70,13 +72,8 @@ ServiceWorkerRegistration::CreateForMainThread(
   MOZ_ASSERT(aWindow);
   MOZ_ASSERT(NS_IsMainThread());
 
-  RefPtr<Inner> inner;
-  if (ServiceWorkerParentInterceptEnabled()) {
-    inner = new RemoteServiceWorkerRegistrationImpl(aDescriptor);
-  } else {
-    inner = new ServiceWorkerRegistrationMainThread(aDescriptor);
-  }
-  NS_ENSURE_TRUE(inner, nullptr);
+  const RefPtr<Inner> inner =
+      new RemoteServiceWorkerRegistrationImpl(aDescriptor);
 
   RefPtr<ServiceWorkerRegistration> registration =
       new ServiceWorkerRegistration(aWindow->AsGlobal(), aDescriptor, inner);
@@ -97,13 +94,8 @@ ServiceWorkerRegistration::CreateForWorker(
   MOZ_DIAGNOSTIC_ASSERT(aGlobal);
   aWorkerPrivate->AssertIsOnWorkerThread();
 
-  RefPtr<Inner> inner;
-  if (ServiceWorkerParentInterceptEnabled()) {
-    inner = new RemoteServiceWorkerRegistrationImpl(aDescriptor);
-  } else {
-    inner = new ServiceWorkerRegistrationWorkerThread(aDescriptor);
-  }
-  NS_ENSURE_TRUE(inner, nullptr);
+  const RefPtr<Inner> inner =
+      new RemoteServiceWorkerRegistrationImpl(aDescriptor);
 
   RefPtr<ServiceWorkerRegistration> registration =
       new ServiceWorkerRegistration(aGlobal, aDescriptor, inner);
@@ -152,6 +144,16 @@ already_AddRefed<ServiceWorker> ServiceWorkerRegistration::GetActive() const {
   return ref.forget();
 }
 
+already_AddRefed<NavigationPreloadManager>
+ServiceWorkerRegistration::NavigationPreload() {
+  if (!mNavigationPreloadManager) {
+    mNavigationPreloadManager =
+        MakeRefPtr<NavigationPreloadManager>(GetParentObject(), mInner);
+  }
+  RefPtr<NavigationPreloadManager> ref = mNavigationPreloadManager;
+  return ref.forget();
+}
+
 void ServiceWorkerRegistration::UpdateState(
     const ServiceWorkerRegistrationDescriptor& aDescriptor) {
   MOZ_DIAGNOSTIC_ASSERT(MatchesDescriptor(aDescriptor));
@@ -161,8 +163,8 @@ void ServiceWorkerRegistration::UpdateState(
   UpdateStateInternal(aDescriptor.GetInstalling(), aDescriptor.GetWaiting(),
                       aDescriptor.GetActive());
 
-  nsTArray<UniquePtr<VersionCallback>> callbackList;
-  mVersionCallbackList.SwapElements(callbackList);
+  nsTArray<UniquePtr<VersionCallback>> callbackList =
+      std::move(mVersionCallbackList);
   for (auto& cb : callbackList) {
     if (cb->mVersion > mDescriptor.Version()) {
       mVersionCallbackList.AppendElement(std::move(cb));

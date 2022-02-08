@@ -31,6 +31,12 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/PlacesUtils.jsm"
 );
 
+ChromeUtils.defineModuleGetter(
+  this,
+  "PlacesUIUtils",
+  "resource:///modules/PlacesUIUtils.jsm"
+);
+
 /**
  * Converts an array of chrome bookmark objects into one our own places code
  * understands.
@@ -102,15 +108,12 @@ ChromeProfileMigrator.prototype.getResources = async function Chrome_getResource
   if (chromeUserDataPath) {
     let profileFolder = OS.Path.join(chromeUserDataPath, aProfile.id);
     if (await OS.File.exists(profileFolder)) {
-      let localePropertySuffix = MigrationUtils._getLocalePropertyForBrowser(
-        this.getBrowserKey()
-      ).replace(/^source-name-/, "");
       let possibleResourcePromises = [
-        GetBookmarksResource(profileFolder, localePropertySuffix),
+        GetBookmarksResource(profileFolder),
         GetHistoryResource(profileFolder),
         GetCookiesResource(profileFolder),
       ];
-      if (AppConstants.platform == "win" || AppConstants.platform == "macosx") {
+      if (ChromeMigrationUtils.supportsLoginsForPlatform) {
         possibleResourcePromises.push(
           this._GetPasswordsResource(profileFolder)
         );
@@ -155,9 +158,10 @@ ChromeProfileMigrator.prototype.getSourceProfiles = async function Chrome_getSou
     return [];
   }
 
+  let localState;
   let profiles = [];
   try {
-    let localState = await ChromeMigrationUtils.getLocalState(
+    localState = await ChromeMigrationUtils.getLocalState(
       this._chromeUserDataPathSuffix
     );
     let info_cache = localState.profile.info_cache;
@@ -168,10 +172,13 @@ ChromeProfileMigrator.prototype.getSourceProfiles = async function Chrome_getSou
       });
     }
   } catch (e) {
-    Cu.reportError("Error detecting Chrome profiles: " + e);
+    // Avoid reporting NotFoundErrors from trying to get local state.
+    if (localState || e.name != "NotFoundError") {
+      Cu.reportError("Error detecting Chrome profiles: " + e);
+    }
     // If we weren't able to detect any profiles above, fallback to the Default profile.
-    let defaultProfilePath = OS.Path.join(chromeUserDataPath, "Default");
-    if (await OS.File.exists(defaultProfilePath)) {
+    let defaultProfilePath = PathUtils.join(chromeUserDataPath, "Default");
+    if (await IOUtils.exists(defaultProfilePath)) {
       profiles = [
         {
           id: "Default",
@@ -204,7 +211,7 @@ Object.defineProperty(ChromeProfileMigrator.prototype, "sourceLocked", {
   },
 });
 
-async function GetBookmarksResource(aProfileFolder, aLocalePropertySuffix) {
+async function GetBookmarksResource(aProfileFolder) {
   let bookmarksPath = OS.Path.join(aProfileFolder, "Bookmarks");
   if (!(await OS.File.exists(bookmarksPath))) {
     return null;
@@ -233,16 +240,11 @@ async function GetBookmarksResource(aProfileFolder, aLocalePropertySuffix) {
             roots.bookmark_bar.children,
             errorGatherer
           );
-          if (!MigrationUtils.isStartupMigration) {
-            parentGuid = await MigrationUtils.createImportedBookmarksFolder(
-              aLocalePropertySuffix,
-              parentGuid
-            );
-          }
           await MigrationUtils.insertManyBookmarksWrapper(
             bookmarks,
             parentGuid
           );
+          PlacesUIUtils.maybeToggleBookmarkToolbarVisibilityAfterMigration();
         }
 
         // Importing bookmark menu items
@@ -250,12 +252,6 @@ async function GetBookmarksResource(aProfileFolder, aLocalePropertySuffix) {
           // Bookmark menu
           let parentGuid = PlacesUtils.bookmarks.menuGuid;
           let bookmarks = convertBookmarks(roots.other.children, errorGatherer);
-          if (!MigrationUtils.isStartupMigration) {
-            parentGuid = await MigrationUtils.createImportedBookmarksFolder(
-              aLocalePropertySuffix,
-              parentGuid
-            );
-          }
           await MigrationUtils.insertManyBookmarksWrapper(
             bookmarks,
             parentGuid
@@ -627,7 +623,11 @@ ChromiumProfileMigrator.prototype.classID = Components.ID(
   "{8cece922-9720-42de-b7db-7cef88cb07ca}"
 );
 
-var EXPORTED_SYMBOLS = ["ChromeProfileMigrator", "ChromiumProfileMigrator"];
+var EXPORTED_SYMBOLS = [
+  "ChromeProfileMigrator",
+  "ChromiumProfileMigrator",
+  "BraveProfileMigrator",
+];
 
 /**
  * Chrome Canary
@@ -683,6 +683,19 @@ ChromeBetaMigrator.prototype.classID = Components.ID(
 if (AppConstants.platform != "macosx") {
   EXPORTED_SYMBOLS.push("ChromeBetaMigrator");
 }
+
+function BraveProfileMigrator() {
+  this._chromeUserDataPathSuffix = "Brave";
+  this._keychainServiceName = "Brave Browser Safe Storage";
+  this._keychainAccountName = "Brave Browser";
+}
+BraveProfileMigrator.prototype = Object.create(ChromeProfileMigrator.prototype);
+BraveProfileMigrator.prototype.classDescription = "Brave Browser Migrator";
+BraveProfileMigrator.prototype.contractID =
+  "@mozilla.org/profile/migrator;1?app=browser&type=brave";
+BraveProfileMigrator.prototype.classID = Components.ID(
+  "{4071880a-69e4-4c83-88b4-6c589a62801d}"
+);
 
 function ChromiumEdgeMigrator() {
   this._chromeUserDataPathSuffix = "Edge";

@@ -10,12 +10,11 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/Maybe.h"
 
 #include <utility>
 
-#include "jsapi.h"
 #include "jsexn.h"
-#include "jsfriendapi.h"
 #include "jsnum.h"
 #include "jspubtd.h"
 #include "NamespaceImports.h"
@@ -31,8 +30,11 @@
 #include "js/Conversions.h"
 #include "js/ErrorReport.h"
 #include "js/ForOfIterator.h"
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/friend/StackLimits.h"    // js::AutoCheckRecursionLimit
 #include "js/PropertySpec.h"
 #include "js/RootingAPI.h"
+#include "js/Stack.h"
 #include "js/TypeDecls.h"
 #include "js/Utility.h"
 #include "js/Value.h"
@@ -43,14 +45,14 @@
 #include "vm/JSFunction.h"
 #include "vm/JSObject.h"
 #include "vm/NativeObject.h"
-#include "vm/ObjectGroup.h"
 #include "vm/ObjectOperations.h"
 #include "vm/SavedStacks.h"
 #include "vm/SelfHosting.h"
 #include "vm/Shape.h"
 #include "vm/Stack.h"
 #include "vm/StringType.h"
-#include "vm/ToSource.h"  // js::ValueToSource
+#include "vm/ToSource.h"       // js::ValueToSource
+#include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "vm/ArrayObject-inl.h"
 #include "vm/JSContext-inl.h"
@@ -151,15 +153,24 @@ const ClassSpec ErrorObject::classSpecs[JSEXN_ERROR_LIMIT] = {
     IMPLEMENT_NONGLOBAL_ERROR_SPEC(LinkError),
     IMPLEMENT_NONGLOBAL_ERROR_SPEC(RuntimeError)};
 
-#define IMPLEMENT_ERROR_CLASS(name)                                   \
-  {                                                                   \
-    js_Error_str, /* yes, really, e.g. devtools depends on this. */   \
-        JSCLASS_HAS_CACHED_PROTO(JSProto_##name) |                    \
-            JSCLASS_HAS_RESERVED_SLOTS(ErrorObject::RESERVED_SLOTS) | \
-            JSCLASS_BACKGROUND_FINALIZE,                              \
-        &ErrorObjectClassOps,                                         \
-        &ErrorObject::classSpecs[JSProto_##name - JSProto_Error]      \
+#define IMPLEMENT_ERROR_CLASS_CORE(name, reserved_slots)         \
+  {                                                              \
+#    name,                                                       \
+        JSCLASS_HAS_CACHED_PROTO(JSProto_##name) |               \
+            JSCLASS_HAS_RESERVED_SLOTS(reserved_slots) |         \
+            JSCLASS_BACKGROUND_FINALIZE,                         \
+        &ErrorObjectClassOps,                                    \
+        &ErrorObject::classSpecs[JSProto_##name - JSProto_Error] \
   }
+
+#define IMPLEMENT_ERROR_CLASS(name) \
+  IMPLEMENT_ERROR_CLASS_CORE(name, ErrorObject::RESERVED_SLOTS)
+
+// Only used for classes that could be a Wasm trap. Classes that use this
+// macro should be kept in sync with the exception types that mightBeWasmTrap()
+// will return true for.
+#define IMPLEMENT_ERROR_CLASS_MAYBE_WASM_TRAP(name) \
+  IMPLEMENT_ERROR_CLASS_CORE(name, ErrorObject::RESERVED_SLOTS_MAYBE_WASM_TRAP)
 
 static void exn_finalize(JSFreeOp* fop, JSObject* obj);
 
@@ -178,7 +189,8 @@ static const JSClassOps ErrorObjectClassOps = {
 };
 
 const JSClass ErrorObject::classes[JSEXN_ERROR_LIMIT] = {
-    IMPLEMENT_ERROR_CLASS(Error), IMPLEMENT_ERROR_CLASS(InternalError),
+    IMPLEMENT_ERROR_CLASS(Error),
+    IMPLEMENT_ERROR_CLASS_MAYBE_WASM_TRAP(InternalError),
     IMPLEMENT_ERROR_CLASS(AggregateError), IMPLEMENT_ERROR_CLASS(EvalError),
     IMPLEMENT_ERROR_CLASS(RangeError), IMPLEMENT_ERROR_CLASS(ReferenceError),
     IMPLEMENT_ERROR_CLASS(SyntaxError), IMPLEMENT_ERROR_CLASS(TypeError),
@@ -186,7 +198,7 @@ const JSClass ErrorObject::classes[JSEXN_ERROR_LIMIT] = {
     // These Error subclasses are not accessible via the global object:
     IMPLEMENT_ERROR_CLASS(DebuggeeWouldRun),
     IMPLEMENT_ERROR_CLASS(CompileError), IMPLEMENT_ERROR_CLASS(LinkError),
-    IMPLEMENT_ERROR_CLASS(RuntimeError)};
+    IMPLEMENT_ERROR_CLASS_MAYBE_WASM_TRAP(RuntimeError)};
 
 static void exn_finalize(JSFreeOp* fop, JSObject* obj) {
   MOZ_ASSERT(fop->maybeOnHelperThread());
@@ -208,12 +220,35 @@ static ErrorObject* CreateErrorObject(JSContext* cx, const CallArgs& args,
     }
   }
 
+  // Don't interpret the two parameters following the message parameter as the
+  // non-standard fileName and lineNumber arguments when we have an options
+  // object argument.
+  bool hasOptions = args.get(messageArg + 1).isObject();
+
+  Rooted<mozilla::Maybe<Value>> cause(cx, mozilla::Nothing());
+  if (hasOptions) {
+    RootedObject options(cx, &args[messageArg + 1].toObject());
+
+    bool hasCause = false;
+    if (!HasProperty(cx, options, cx->names().cause, &hasCause)) {
+      return nullptr;
+    }
+
+    if (hasCause) {
+      RootedValue causeValue(cx);
+      if (!GetProperty(cx, options, options, cx->names().cause, &causeValue)) {
+        return nullptr;
+      }
+      cause = mozilla::Some(causeValue.get());
+    }
+  }
+
   // Find the scripted caller, but only ones we're allowed to know about.
   NonBuiltinFrameIter iter(cx, cx->realm()->principals());
 
   RootedString fileName(cx);
   uint32_t sourceId = 0;
-  if (args.length() > messageArg + 1) {
+  if (!hasOptions && args.length() > messageArg + 1) {
     fileName = ToString<CanGC>(cx, args[messageArg + 1]);
   } else {
     fileName = cx->runtime()->emptyString;
@@ -231,7 +266,7 @@ static ErrorObject* CreateErrorObject(JSContext* cx, const CallArgs& args,
   }
 
   uint32_t lineNumber, columnNumber = 0;
-  if (args.length() > messageArg + 2) {
+  if (!hasOptions && args.length() > messageArg + 2) {
     if (!ToUint32(cx, args[messageArg + 2], &lineNumber)) {
       return nullptr;
     }
@@ -246,7 +281,7 @@ static ErrorObject* CreateErrorObject(JSContext* cx, const CallArgs& args,
   }
 
   return ErrorObject::create(cx, exnType, stack, fileName, sourceId, lineNumber,
-                             columnNumber, nullptr, message, proto);
+                             columnNumber, nullptr, message, cause, proto);
 }
 
 static bool Error(JSContext* cx, unsigned argc, Value* vp) {
@@ -401,7 +436,7 @@ JSObject* ErrorObject::createConstructor(JSContext* cx, JSProtoKey key) {
     ctor =
         NewFunctionWithProto(cx, native, nargs, FunctionFlags::NATIVE_CTOR,
                              nullptr, ClassName(key, cx), proto,
-                             gc::AllocKind::FUNCTION_EXTENDED, SingletonObject);
+                             gc::AllocKind::FUNCTION_EXTENDED, TenuredObject);
   }
 
   if (!ctor) {
@@ -417,16 +452,25 @@ Shape* js::ErrorObject::assignInitialShape(JSContext* cx,
                                            Handle<ErrorObject*> obj) {
   MOZ_ASSERT(obj->empty());
 
-  if (!NativeObject::addDataProperty(cx, obj, cx->names().fileName,
-                                     FILENAME_SLOT, 0)) {
+  constexpr PropertyFlags propFlags = {PropertyFlag::Configurable,
+                                       PropertyFlag::Writable};
+
+  if (!NativeObject::addPropertyInReservedSlot(cx, obj, cx->names().fileName,
+                                               FILENAME_SLOT, propFlags)) {
     return nullptr;
   }
-  if (!NativeObject::addDataProperty(cx, obj, cx->names().lineNumber,
-                                     LINENUMBER_SLOT, 0)) {
+
+  if (!NativeObject::addPropertyInReservedSlot(cx, obj, cx->names().lineNumber,
+                                               LINENUMBER_SLOT, propFlags)) {
     return nullptr;
   }
-  return NativeObject::addDataProperty(cx, obj, cx->names().columnNumber,
-                                       COLUMNNUMBER_SLOT, 0);
+
+  if (!NativeObject::addPropertyInReservedSlot(
+          cx, obj, cx->names().columnNumber, COLUMNNUMBER_SLOT, propFlags)) {
+    return nullptr;
+  }
+
+  return obj->shape();
 }
 
 /* static */
@@ -434,14 +478,16 @@ bool js::ErrorObject::init(JSContext* cx, Handle<ErrorObject*> obj,
                            JSExnType type, UniquePtr<JSErrorReport> errorReport,
                            HandleString fileName, HandleObject stack,
                            uint32_t sourceId, uint32_t lineNumber,
-                           uint32_t columnNumber, HandleString message) {
+                           uint32_t columnNumber, HandleString message,
+                           Handle<mozilla::Maybe<JS::Value>> cause) {
+  MOZ_ASSERT(JSEXN_ERR <= type && type < JSEXN_ERROR_LIMIT);
   AssertObjectIsSavedFrameOrWrapper(cx, stack);
   cx->check(obj, stack);
 
   // Null out early in case of error, for exn_finalize's sake.
   obj->initReservedSlot(ERROR_REPORT_SLOT, PrivateValue(nullptr));
 
-  if (!EmptyShape::ensureInitialCustomShape<ErrorObject>(cx, obj)) {
+  if (!SharedShape::ensureInitialCustomShape<ErrorObject>(cx, obj)) {
     return false;
   }
 
@@ -449,14 +495,25 @@ bool js::ErrorObject::init(JSContext* cx, Handle<ErrorObject*> obj,
   // present in some error objects -- |Error.prototype|, |new Error("f")|,
   // |new Error("")| -- but not in others -- |new Error(undefined)|,
   // |new Error()|.
-  RootedShape messageShape(cx);
   if (message) {
-    messageShape = NativeObject::addDataProperty(cx, obj, cx->names().message,
-                                                 MESSAGE_SLOT, 0);
-    if (!messageShape) {
+    constexpr PropertyFlags propFlags = {PropertyFlag::Configurable,
+                                         PropertyFlag::Writable};
+    if (!NativeObject::addPropertyInReservedSlot(cx, obj, cx->names().message,
+                                                 MESSAGE_SLOT, propFlags)) {
       return false;
     }
-    MOZ_ASSERT(messageShape->slot() == MESSAGE_SLOT);
+  }
+
+  // Similar to the .message property, .cause is present only in some error
+  // objects -- |new Error("f", {cause: cause})| -- but not in other --
+  // |Error.prototype|, |new Error()|, |new Error("f")|.
+  if (cause.isSome()) {
+    constexpr PropertyFlags propFlags = {PropertyFlag::Configurable,
+                                         PropertyFlag::Writable};
+    if (!NativeObject::addPropertyInReservedSlot(cx, obj, cx->names().cause,
+                                                 CAUSE_SLOT, propFlags)) {
+      return false;
+    }
   }
 
   MOZ_ASSERT(obj->lookupPure(NameToId(cx->names().fileName))->slot() ==
@@ -468,20 +525,29 @@ bool js::ErrorObject::init(JSContext* cx, Handle<ErrorObject*> obj,
   MOZ_ASSERT_IF(
       message,
       obj->lookupPure(NameToId(cx->names().message))->slot() == MESSAGE_SLOT);
-
-  MOZ_ASSERT(JSEXN_ERR <= type && type < JSEXN_LIMIT);
+  MOZ_ASSERT_IF(
+      cause.isSome(),
+      obj->lookupPure(NameToId(cx->names().cause))->slot() == CAUSE_SLOT);
 
   JSErrorReport* report = errorReport.release();
-  obj->initReservedSlot(EXNTYPE_SLOT, Int32Value(type));
   obj->initReservedSlot(STACK_SLOT, ObjectOrNullValue(stack));
   obj->setReservedSlot(ERROR_REPORT_SLOT, PrivateValue(report));
   obj->initReservedSlot(FILENAME_SLOT, StringValue(fileName));
   obj->initReservedSlot(LINENUMBER_SLOT, Int32Value(lineNumber));
   obj->initReservedSlot(COLUMNNUMBER_SLOT, Int32Value(columnNumber));
   if (message) {
-    obj->setSlotWithType(cx, messageShape, StringValue(message));
+    obj->initReservedSlot(MESSAGE_SLOT, StringValue(message));
+  }
+  if (cause.isSome()) {
+    obj->initReservedSlot(CAUSE_SLOT, *cause.get());
+  } else {
+    obj->initReservedSlot(CAUSE_SLOT, MagicValue(JS_ERROR_WITHOUT_CAUSE));
   }
   obj->initReservedSlot(SOURCEID_SLOT, Int32Value(sourceId));
+  if (obj->mightBeWasmTrap()) {
+    MOZ_ASSERT(JSCLASS_RESERVED_SLOTS(obj->getClass()) > WASM_TRAP_SLOT);
+    obj->initReservedSlot(WASM_TRAP_SLOT, BooleanValue(false));
+  }
 
   return true;
 }
@@ -493,6 +559,7 @@ ErrorObject* js::ErrorObject::create(JSContext* cx, JSExnType errorType,
                                      uint32_t columnNumber,
                                      UniquePtr<JSErrorReport> report,
                                      HandleString message,
+                                     Handle<mozilla::Maybe<JS::Value>> cause,
                                      HandleObject protoArg /* = nullptr */) {
   AssertObjectIsSavedFrameOrWrapper(cx, stack);
 
@@ -516,7 +583,8 @@ ErrorObject* js::ErrorObject::create(JSContext* cx, JSExnType errorType,
   }
 
   if (!ErrorObject::init(cx, errObject, errorType, std::move(report), fileName,
-                         stack, sourceId, lineNumber, columnNumber, message)) {
+                         stack, sourceId, lineNumber, columnNumber, message,
+                         cause)) {
     return nullptr;
   }
 
@@ -688,6 +756,12 @@ bool js::ErrorObject::setStack_impl(JSContext* cx, const CallArgs& args) {
   return DefineDataProperty(cx, thisObj, cx->names().stack, val);
 }
 
+void js::ErrorObject::setFromWasmTrap() {
+  MOZ_ASSERT(mightBeWasmTrap());
+  MOZ_ASSERT(JSCLASS_RESERVED_SLOTS(getClass()) > WASM_TRAP_SLOT);
+  setReservedSlot(WASM_TRAP_SLOT, BooleanValue(true));
+}
+
 JSString* js::ErrorToSource(JSContext* cx, HandleObject obj) {
   RootedValue nameVal(cx);
   RootedString name(cx);
@@ -757,7 +831,8 @@ JSString* js::ErrorToSource(JSContext* cx, HandleObject obj) {
  * Return a string that may eval to something similar to the original object.
  */
 static bool exn_toSource(JSContext* cx, unsigned argc, Value* vp) {
-  if (!CheckRecursionLimit(cx)) {
+  AutoCheckRecursionLimit recursion(cx);
+  if (!recursion.check(cx)) {
     return false;
   }
   CallArgs args = CallArgsFromVp(argc, vp);

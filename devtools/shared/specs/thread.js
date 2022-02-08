@@ -25,6 +25,11 @@ types.addDictType("thread.frames", {
   frames: "array:frame",
 });
 
+types.addDictType("thread.breakpoint-options", {
+  condition: "nullable:string",
+  logValue: "nullable:string",
+});
+
 types.addDictType("paused-reason", {
   type: "string",
 
@@ -55,12 +60,8 @@ const threadSpec = generateActorSpec({
       actor: Option(0, "nullable:string"),
       frame: Option(0, "frame"),
       why: Option(0, "paused-reason"),
-      poppedFrames: Option(0, "nullable:json"),
-      error: Option(0, "nullable:json"),
     },
     resumed: {},
-    detached: {},
-    willInterrupt: {},
     newSource: {
       source: Option(0, "json"),
     },
@@ -71,10 +72,6 @@ const threadSpec = generateActorSpec({
       request: {
         options: Arg(0, "json"),
       },
-      response: {},
-    },
-    detach: {
-      request: {},
       response: {},
     },
     reconfigure: {
@@ -103,7 +100,9 @@ const threadSpec = generateActorSpec({
       },
     },
     sources: {
-      response: RetVal("array:json"),
+      response: {
+        sources: RetVal("array:json"),
+      },
     },
     skipBreakpoints: {
       request: {
@@ -124,7 +123,7 @@ const threadSpec = generateActorSpec({
     setBreakpoint: {
       request: {
         location: Arg(0, "json"),
-        options: Arg(1, "json"),
+        options: Arg(1, "thread.breakpoint-options"),
       },
     },
     removeBreakpoint: {
@@ -175,6 +174,13 @@ const threadSpec = generateActorSpec({
     toggleEventLogging: {
       request: {
         logEventBreakpoints: Arg(0, "string"),
+      },
+    },
+
+    isAttached: {
+      request: {},
+      response: {
+        value: RetVal("boolean"),
       },
     },
   },

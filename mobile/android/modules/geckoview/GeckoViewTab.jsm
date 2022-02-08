@@ -12,6 +12,11 @@ const { GeckoViewModule } = ChromeUtils.import(
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+const { ExtensionUtils } = ChromeUtils.import(
+  "resource://gre/modules/ExtensionUtils.jsm"
+);
+
+const { ExtensionError } = ExtensionUtils;
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   EventDispatcher: "resource://gre/modules/Messaging.jsm",
@@ -21,9 +26,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 
 class Tab {
   constructor(window) {
-    this.id = GeckoViewTabBridge.windowIdToTabId(
-      window.windowUtils.outerWindowID
-    );
+    this.id = GeckoViewTabBridge.windowIdToTabId(window.docShell.outerWindowID);
     this.browser = window.browser;
     this.active = false;
   }
@@ -34,6 +37,11 @@ class Tab {
 
   getActive() {
     return this.active;
+  }
+
+  get userContextId() {
+    return this.browser.ownerGlobal.moduleManager.settings
+      .unsafeSessionContextId;
   }
 }
 
@@ -77,10 +85,17 @@ const GeckoViewTabBridge = {
   async openOptionsPage(extensionId) {
     debug`openOptionsPage for extensionId ${extensionId}`;
 
-    return EventDispatcher.instance.sendRequestForResult({
-      type: "GeckoView:WebExtension:OpenOptionsPage",
-      extensionId,
-    });
+    try {
+      await EventDispatcher.instance.sendRequestForResult({
+        type: "GeckoView:WebExtension:OpenOptionsPage",
+        extensionId,
+      });
+    } catch (errorMessage) {
+      // The error message coming from GeckoView is about :OpenOptionsPage not
+      // being registered so we need to have one that's extension friendly
+      // here.
+      throw new ExtensionError("runtime.openOptionsPage is not supported");
+    }
   },
 
   /**
@@ -100,22 +115,20 @@ const GeckoViewTabBridge = {
   async createNewTab({ extensionId, createProperties } = {}) {
     debug`createNewTab`;
 
-    const sessionId = await EventDispatcher.instance.sendRequestForResult({
-      type: "GeckoView:WebExtension:NewTab",
-      extensionId,
-      createProperties,
-    });
+    const newSessionId = Services.uuid
+      .generateUUID()
+      .toString()
+      .slice(1, -1)
+      .replace(/-/g, "");
 
-    if (!sessionId) {
-      throw new Error("Cannot create new tab");
-    }
-
-    const window = await new Promise(resolve => {
+    // The window might already be open by the time we get the response, so we
+    // need to start waiting before we send the message.
+    const windowPromise = new Promise(resolve => {
       const handler = {
         observe(aSubject, aTopic, aData) {
           if (
             aTopic === "geckoview-window-created" &&
-            aSubject.name === sessionId
+            aSubject.name === newSessionId
           ) {
             Services.obs.removeObserver(handler, "geckoview-window-created");
             resolve(aSubject);
@@ -125,6 +138,25 @@ const GeckoViewTabBridge = {
       Services.obs.addObserver(handler, "geckoview-window-created");
     });
 
+    let didOpenSession = false;
+    try {
+      didOpenSession = await EventDispatcher.instance.sendRequestForResult({
+        type: "GeckoView:WebExtension:NewTab",
+        extensionId,
+        createProperties,
+        newSessionId,
+      });
+    } catch (errorMessage) {
+      // The error message coming from GeckoView is about :NewTab not being
+      // registered so we need to have one that's extension friendly here.
+      throw new ExtensionError("tabs.create is not supported");
+    }
+
+    if (!didOpenSession) {
+      throw new ExtensionError("Cannot create new tab");
+    }
+
+    const window = await windowPromise;
     if (!window.tab) {
       window.tab = new Tab(window);
     }
@@ -145,18 +177,26 @@ const GeckoViewTabBridge = {
    *         Throws an error if the GeckoView app doesn't allow extension to close tab.
    */
   async closeTab({ window, extensionId } = {}) {
-    await window.WindowEventDispatcher.sendRequestForResult({
-      type: "GeckoView:WebExtension:CloseTab",
-      extensionId,
-    });
+    try {
+      await window.WindowEventDispatcher.sendRequestForResult({
+        type: "GeckoView:WebExtension:CloseTab",
+        extensionId,
+      });
+    } catch (errorMessage) {
+      throw new ExtensionError(errorMessage);
+    }
   },
 
   async updateTab({ window, extensionId, updateProperties } = {}) {
-    await window.WindowEventDispatcher.sendRequestForResult({
-      type: "GeckoView:WebExtension:UpdateTab",
-      extensionId,
-      updateProperties,
-    });
+    try {
+      await window.WindowEventDispatcher.sendRequestForResult({
+        type: "GeckoView:WebExtension:UpdateTab",
+        extensionId,
+        updateProperties,
+      });
+    } catch (errorMessage) {
+      throw new ExtensionError(errorMessage);
+    }
   },
 };
 
@@ -183,4 +223,4 @@ class GeckoViewTab extends GeckoViewModule {
   }
 }
 
-const { debug, warn } = GeckoViewTab.initLogging("GeckoViewTab"); // eslint-disable-line no-unused-vars
+const { debug, warn } = GeckoViewTab.initLogging("GeckoViewTab");

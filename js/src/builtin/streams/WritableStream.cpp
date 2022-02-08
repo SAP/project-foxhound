@@ -9,11 +9,8 @@
 #include "builtin/streams/WritableStream.h"
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
-#include "mozilla/Attributes.h"  // MOZ_MUST_USE
 
-#include "jsapi.h"        // JS_ReportErrorNumberASCII
-#include "jsfriendapi.h"  // js::GetErrorMessage, JSMSG_*
-#include "jspubtd.h"      // JSProto_WritableStream
+#include "jspubtd.h"  // JSProto_WritableStream
 
 #include "builtin/streams/ClassSpecMacro.h"           // JS_STREAMS_CLASS_SPEC
 #include "builtin/streams/MiscellaneousOperations.h"  // js::MakeSizeAlgorithmFromSizeFunction, js::ReturnPromiseRejectedWithPendingError, js::ValidateAndNormalizeHighWaterMark
@@ -21,15 +18,17 @@
 #include "builtin/streams/WritableStreamDefaultWriter.h"  // js::CreateWritableStreamDefaultWriter
 #include "builtin/streams/WritableStreamOperations.h"  // js::WritableStream{Abort,Close{,QueuedOrInFlight}}
 #include "js/CallArgs.h"                               // JS::CallArgs{,FromVp}
-#include "js/Class.h"  // JS{Function,Property}Spec, JS_{FS,PS}_END, JSCLASS_PRIVATE_IS_NSISUPPORTS, JSCLASS_HAS_PRIVATE, JS_NULL_CLASS_OPS
-#include "js/RealmOptions.h"      // JS::RealmCreationOptions
-#include "js/RootingAPI.h"        // JS::Handle, JS::Rooted
-#include "js/Value.h"             // JS::{,Object}Value
-#include "vm/JSContext.h"         // JSContext
-#include "vm/JSObject.h"          // js::GetPrototypeFromBuiltinConstructor
-#include "vm/ObjectOperations.h"  // js::GetProperty
-#include "vm/PlainObject.h"       // js::PlainObject
-#include "vm/Realm.h"             // JS::Realm
+#include "js/Class.h"  // JS{Function,Property}Spec, JS_{FS,PS}_END, JSCLASS_SLOT0_IS_NSISUPPORTS, JS_NULL_CLASS_OPS
+#include "js/ErrorReport.h"           // JS_ReportErrorNumberASCII
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/RealmOptions.h"          // JS::RealmCreationOptions
+#include "js/RootingAPI.h"            // JS::Handle, JS::Rooted
+#include "js/Value.h"                 // JS::{,Object}Value
+#include "vm/JSContext.h"             // JSContext
+#include "vm/JSObject.h"              // js::GetPrototypeFromBuiltinConstructor
+#include "vm/ObjectOperations.h"      // js::GetProperty
+#include "vm/PlainObject.h"           // js::PlainObject
+#include "vm/Realm.h"                 // JS::Realm
 
 #include "vm/Compartment-inl.h"   // js::UnwrapAndTypeCheckThis
 #include "vm/JSContext-inl.h"     // JSContext::check
@@ -70,7 +69,7 @@ bool WritableStream::constructor(JSContext* cx, unsigned argc, Value* vp) {
   // Implicit in the spec: argument default values.
   Rooted<Value> underlyingSink(cx, args.get(0));
   if (underlyingSink.isUndefined()) {
-    JSObject* emptyObj = NewBuiltinClassInstance<PlainObject>(cx);
+    JSObject* emptyObj = NewPlainObject(cx);
     if (!emptyObj) {
       return false;
     }
@@ -79,7 +78,7 @@ bool WritableStream::constructor(JSContext* cx, unsigned argc, Value* vp) {
 
   Rooted<Value> strategy(cx, args.get(1));
   if (strategy.isUndefined()) {
-    JSObject* emptyObj = NewBuiltinClassInstance<PlainObject>(cx);
+    JSObject* emptyObj = NewPlainObject(cx);
     if (!emptyObj) {
       return false;
     }
@@ -278,5 +277,4 @@ static const JSPropertySpec WritableStream_properties[] = {
     JS_PSG("locked", WritableStream_locked, 0), JS_PS_END};
 
 JS_STREAMS_CLASS_SPEC(WritableStream, 0, SlotCount, 0,
-                      JSCLASS_PRIVATE_IS_NSISUPPORTS | JSCLASS_HAS_PRIVATE,
-                      JS_NULL_CLASS_OPS);
+                      JSCLASS_SLOT0_IS_NSISUPPORTS, JS_NULL_CLASS_OPS);

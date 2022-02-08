@@ -16,15 +16,24 @@ add_task(async function() {
   await waitForSelectedSource(dbg, "event-breakpoints");
 
   await dbg.actions.addEventListenerBreakpoints([
+    "event.control.focusin",
+    "event.control.focusout",
     "event.mouse.click",
     "event.xhr.load",
     "timer.timeout.set",
     "timer.timeout.fire",
+    "script.source.firstStatement",
   ]);
 
   invokeInTab("clickHandler");
   await waitForPaused(dbg);
   assertPauseLocation(dbg, 12);
+
+  const whyPaused = await waitFor(
+    () => dbg.win.document.querySelector(".why-paused")?.innerText
+  );
+  is(whyPaused, `Paused on event breakpoint\nDOM 'click' event`);
+
   await resume(dbg);
 
   invokeInTab("xhrHandler");
@@ -41,9 +50,24 @@ add_task(async function() {
   assertPauseLocation(dbg, 28);
   await resume(dbg);
 
+  invokeInTab("evalHandler");
+  await waitForPaused(dbg);
+  assertPauseLocation(dbg, 2, "https://example.com/eval-test.js");
+  await resume(dbg);
+
+  invokeOnElement("#focus-text", "focus");
+  await waitForPaused(dbg);
+  assertPauseLocation(dbg, 43);
+  await resume(dbg);
+
+  // wait for focus-out event to fire
+  await waitForPaused(dbg);
+  assertPauseLocation(dbg, 48);
+  await resume(dbg);
+
   // Test that we don't pause on event breakpoints when source is blackboxed.
   await clickElement(dbg, "blackbox");
-  await waitForDispatch(dbg, "BLACKBOX");
+  await waitForDispatch(dbg.store, "BLACKBOX");
 
   invokeInTab("clickHandler");
   is(isPaused(dbg), false);
@@ -56,16 +80,27 @@ add_task(async function() {
 
   // Cleanup - unblackbox the source
   await clickElement(dbg, "blackbox");
-  await waitForDispatch(dbg, "BLACKBOX");
+  await waitForDispatch(dbg.store, "BLACKBOX");
 });
 
-function assertPauseLocation(dbg, line) {
+function assertPauseLocation(dbg, line, url = "event-breakpoints.js") {
   const { location } = dbg.selectors.getVisibleSelectedFrame();
 
-  const source = findSource(dbg, "event-breakpoints.js");
+  const source = findSource(dbg, url);
 
   is(location.sourceId, source.id, `correct sourceId`);
   is(location.line, line, `correct line`);
 
   assertPausedLocation(dbg);
+}
+
+async function invokeOnElement(selector, action) {
+  await SpecialPowers.focus(gBrowser.selectedBrowser);
+  await SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [selector, action],
+    (_selector, _action) => {
+      content.document.querySelector(_selector)[_action]();
+    }
+  );
 }

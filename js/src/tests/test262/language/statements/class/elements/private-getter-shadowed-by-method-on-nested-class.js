@@ -1,4 +1,3 @@
-// |reftest| skip -- class-methods-private is not supported
 // This file was procedurally generated from the following sources:
 // - src/class-elements/private-getter-shadowed-by-method-on-nested-class.case
 // - src/class-elements/default/cls-decl.template

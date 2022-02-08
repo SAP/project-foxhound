@@ -4,7 +4,6 @@
 "use strict";
 
 Services.prefs.setBoolPref("extensions.blocklist.useMLBF", true);
-Services.prefs.setBoolPref("extensions.blocklist.useMLBF.stashes", true);
 
 createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1");
 
@@ -110,6 +109,40 @@ add_task(async function privileged_addon_blocked_by_stash() {
   // via the MLBF, but that is already covered by test_blocklist_mlbf.js ).
 });
 
+// To complement langpack_not_blocked_on_Nightly in test_blocklist_mlbf.js,
+// verify that langpacks can still be blocked through stashes.
+add_task(async function langpack_blocked_by_stash() {
+  const langpack_addon = {
+    id: "@blocked",
+    type: "locale",
+    version: "1",
+    signedDate: new Date(0), // = the MLBF's generationTime.
+    signedState: AddonManager.SIGNEDSTATE_SIGNED,
+  };
+  Assert.equal(
+    await Blocklist.getAddonBlocklistState(langpack_addon),
+    Ci.nsIBlocklistService.STATE_BLOCKED,
+    "Langpack add-ons can still be blocked by a stash"
+  );
+
+  // For comparison, when an add-on is only blocked by a MLBF, the block
+  // decision is ignored on Nightly (but blocked on non-Nightly).
+  langpack_addon.id = "@onlyblockedbymlbf";
+  if (AppConstants.NIGHTLY_BUILD) {
+    Assert.equal(
+      await Blocklist.getAddonBlocklistState(langpack_addon),
+      Ci.nsIBlocklistService.STATE_NOT_BLOCKED,
+      "Langpack add-ons cannot be blocked via a MLBF on Nightly"
+    );
+  } else {
+    Assert.equal(
+      await Blocklist.getAddonBlocklistState(langpack_addon),
+      Ci.nsIBlocklistService.STATE_BLOCKED,
+      "Langpack add-ons can be blocked via a MLBF on non-Nightly"
+    );
+  }
+});
+
 // Tests that invalid stash entries are ignored.
 add_task(async function invalid_stashes() {
   await AddonTestUtils.loadBlocklistRawData({
@@ -156,39 +189,7 @@ add_task(async function stash_time_order() {
   await checkBlockState("@b", "2", true);
 });
 
-// Tests that the correct records+attachment are chosen depending on the pref.
-add_task(async function mlbf_attachment_type_and_stash_is_correct() {
-  MLBF_LOAD_ATTEMPTS.length = 0;
-  const records = [
-    { stash_time: 0, stash: { blocked: ["@blocked:1"], unblocked: [] } },
-    { attachment_type: "bloomfilter-base", attachment: {}, generation_time: 0 },
-    { attachment_type: "bloomfilter-full", attachment: {}, generation_time: 1 },
-  ];
-  await AddonTestUtils.loadBlocklistRawData({ extensionsMLBF: records });
-  // Check that the pref works.
-  await checkBlockState("@blocked", "1", true);
-  await toggleStashPref(false);
-  await checkBlockState("@blocked", "1", false);
-  await toggleStashPref(true);
-  await checkBlockState("@blocked", "1", true);
-
-  Assert.deepEqual(
-    MLBF_LOAD_ATTEMPTS.map(r => r?.attachment_type),
-    [
-      // Initial load with pref true
-      "bloomfilter-base",
-      // Pref off.
-      "bloomfilter-full",
-      // Pref on again.
-      "bloomfilter-base",
-    ],
-    "Expected attempts to load MLBF as part of update"
-  );
-});
-
-// When stashes are disabled, "bloomfilter-full" may be used (as seen in the
-// previous test, mlbf_attachment_type_and_stash_is_correct). With stashes
-// enabled, "bloomfilter-full" should be ignored, however.
+// Attachments with unsupported attachment_type should be ignored.
 add_task(async function mlbf_bloomfilter_full_ignored() {
   MLBF_LOAD_ATTEMPTS.length = 0;
 
@@ -196,7 +197,7 @@ add_task(async function mlbf_bloomfilter_full_ignored() {
     extensionsMLBF: [{ attachment_type: "bloomfilter-full", attachment: {} }],
   });
 
-  // When stashes are enabled, only bloomfilter-base records should be used.
+  // Only bloomfilter-base records should be used.
   // Since there are no such records, we shouldn't find anything.
   Assert.deepEqual(MLBF_LOAD_ATTEMPTS, [null], "no matching MLBFs found");
 });

@@ -5,7 +5,7 @@
 
 // Test that the confirm dialog can be closed with different actions.
 
-const TEST_URI = `data:text/html;charset=utf-8,
+const TEST_URI = `data:text/html;charset=utf-8,<!DOCTYPE html>
 <head>
   <script>
     let sideEffect;
@@ -22,8 +22,7 @@ const TEST_URI = `data:text/html;charset=utf-8,
 add_task(async function() {
   const hud = await openNewTabAndConsole(TEST_URI);
   const { jsterm } = hud;
-  const target = await TargetFactory.forTab(gBrowser.selectedTab);
-  const toolbox = gDevTools.getToolbox(target);
+  const toolbox = await gDevTools.getToolboxForTab(gBrowser.selectedTab);
 
   let tooltip = await setInputValueForGetterConfirmDialog(
     toolbox,

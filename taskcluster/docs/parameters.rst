@@ -22,6 +22,11 @@ topic.
 Push Information
 ----------------
 
+``backstop``
+   Whether or not this push is a "backstop" push. That is a push where all
+   builds and tests should run to ensure regressions aren't accidentally
+   missed.
+
 ``base_repository``
    The repository from which to do an initial clone, utilizing any available
    caching.
@@ -118,13 +123,13 @@ specified programmatically using one of a variety of methods (e.g., parsing try
 syntax or reading a project-specific configuration file).
 
 ``filters``
-    List of filter functions (from ``taskcluster/taskgraph/filter_tasks.py``) to
+    List of filter functions (from ``taskcluster/gecko_taskgraph/filter_tasks.py``) to
     apply. This is usually defined internally, as filters are typically
     global.
 
 ``target_tasks_method``
     The method to use to determine the target task set.  This is the suffix of
-    one of the functions in ``taskcluster/taskgraph/target_tasks.py``.
+    one of the functions in ``taskcluster/gecko_taskgraph/target_tasks.py``.
 
 ``release_history``
    History of recent releases by platform and locale, used when generating
@@ -135,8 +140,12 @@ syntax or reading a project-specific configuration file).
 Optimization
 ------------
 
+``optimize_strategies``
+   A python path of the form ``<module>:<object>`` containing a dictionary of
+   optimization strategies to use, overwriting the defaults.
+
 ``optimize_target_tasks``
-    If true, then target tasks are eligible for optimization.
+   If true, then target tasks are eligible for optimization.
 
 ``do_not_optimize``
    Specify tasks to not optimize out of the graph. This is a list of labels.
@@ -164,25 +173,28 @@ Release Promotion
    Specify the next version for version bump tasks.
 
 ``release_type``
-   The type of release being promoted. One of "nightly", "beta", "esr68", "esr78", "release-rc", or "release".
+   The type of release being promoted. One of "nightly", "beta", "esr91", "release-rc", or "release".
 
 ``release_eta``
    The time and date when a release is scheduled to live. This value is passed to Balrog.
 
-``release_enable_partners``
+``release_enable_partner_repack``
    Boolean which controls repacking vanilla Firefox builds for partners.
 
-``release_partners``
-   List of partners to repack. A null value defaults to all.
-
-``release_partner_config``
-   Configuration for partner repacks.
-
-``release_partner_build_number``
-   The build number for partner repacks. We sometimes have multiple partner build numbers per release build number; this parameter lets us bump them independently. Defaults to 1.
+``release_enable_partner_attribution``
+   Boolean which controls adding attribution to vanilla Firefox builds for partners.
 
 ``release_enable_emefree``
    Boolean which controls repacking vanilla Firefox builds into EME-free builds.
+
+``release_partners``
+   List of partners to repack or attribute if a subset of the whole config. A null value defaults to all.
+
+``release_partner_config``
+   Configuration for partner repacks & attribution, as well as EME-free repacks.
+
+``release_partner_build_number``
+   The build number for partner repacks. We sometimes have multiple partner build numbers per release build number; this parameter lets us bump them independently. Defaults to 1.
 
 ``release_product``
    The product that is being released.
@@ -215,19 +227,6 @@ Repository Merge Day
 ``force-dry-run``
    Don't push any results to target repositories.
 
-
-Comm Push Information
----------------------
-
-These parameters correspond to the repository and revision of the comm-central
-repository to checkout. Their meaning is the same as the corresponding
-parameters for the gecko repository above. They are optional, but if any of
-them are specified, they must all be specified.
-
-``comm_base_repository``
-``comm_head_repository``
-``comm_head_rev``
-``comm_head_ref``
 
 Code Review
 -----------

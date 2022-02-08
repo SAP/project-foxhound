@@ -7,17 +7,17 @@
 #ifndef mozilla_dom_SessionStoreListener_h
 #define mozilla_dom_SessionStoreListener_h
 
+#include "SessionStoreData.h"
 #include "nsIDOMEventListener.h"
+#include "nsIObserver.h"
 #include "nsIPrivacyTransitionObserver.h"
 #include "nsIWebProgressListener.h"
-#include "SessionStoreData.h"
+#include "nsWeakReference.h"
 
 class nsITimer;
 
 namespace mozilla {
 namespace dom {
-
-class StorageEvent;
 
 class ContentSessionStore {
  public:
@@ -30,59 +30,19 @@ class ContentSessionStore {
   nsCString GetDocShellCaps();
   bool IsPrivateChanged() { return mPrivateChanged; }
   bool GetPrivateModeEnabled();
-  void SetScrollPositionChanged() { mScrollChanged = WITH_CHANGE; }
-  bool IsScrollPositionChanged() { return mScrollChanged != NO_CHANGE; }
-  void GetScrollPositions(nsTArray<nsCString>& aPositions,
-                          nsTArray<int32_t>& aPositionDescendants);
-  void SetFormDataChanged() { mFormDataChanged = WITH_CHANGE; }
-  bool IsFormDataChanged() { return mFormDataChanged != NO_CHANGE; }
-  nsTArray<InputFormData> GetInputs(
-      nsTArray<CollectedInputDataValue>& aIdVals,
-      nsTArray<CollectedInputDataValue>& aXPathVals);
 
-  // Use "mStorageStatus" to manage the status of storageChanges
-  bool IsStorageUpdated() { return mStorageStatus != NO_STORAGE; }
-  void ResetStorage() { mStorageStatus = RESET; }
-  /*
-    There are three situations we need entire session storage:
-    1. OnDocumentStart: PageLoad started
-    2. OnDocumentEnd: PageLoad completed
-    3. receive "browser:purge-sessionStorage" event
-    Use SetFullStorageNeeded() to set correct "mStorageStatus" and
-    reset the pending individual change.
-   */
-  void SetFullStorageNeeded();
-  void ResetStorageChanges();
-  // GetAndClearStorageChanges() is used for getting storageChanges.
-  // It clears the stored storage changes before returning.
-  // It will return true if it is a entire session storage.
-  // Otherwise, it will return false.
-  bool GetAndClearStorageChanges(nsTArray<nsCString>& aOrigins,
-                                 nsTArray<nsString>& aKeys,
-                                 nsTArray<nsString>& aValues);
-  // Using AppendSessionStorageChange() to append session storage change when
-  // receiving "MozSessionStorageChanged".
-  // Return true if there is a new storage change which is appended.
-  bool AppendSessionStorageChange(StorageEvent* aEvent);
-
-  void SetSHistoryChanged() { mSHistoryChanged = mSHistoryInParent; }
+  void SetSHistoryChanged();
   // request "collect sessionHistory" which is happened in the parent process
-  void SetSHistoryFromParentChanged() {
-    mSHistoryChangedFromParent = mSHistoryInParent;
-  }
   bool GetAndClearSHistoryChanged() {
     bool ret = mSHistoryChanged;
     mSHistoryChanged = false;
-    mSHistoryChangedFromParent = false;
     return ret;
   }
 
   void OnDocumentStart();
   void OnDocumentEnd();
   bool UpdateNeeded() {
-    return mPrivateChanged || mDocCapChanged || IsScrollPositionChanged() ||
-           IsFormDataChanged() || IsStorageUpdated() || mSHistoryChanged ||
-           mSHistoryChangedFromParent;
+    return mPrivateChanged || mDocCapChanged || mSHistoryChanged;
   }
 
  private:
@@ -92,35 +52,14 @@ class ContentSessionStore {
   nsCOMPtr<nsIDocShell> mDocShell;
   bool mPrivateChanged;
   bool mIsPrivate;
-  enum {
-    NO_CHANGE,
-    PAGELOADEDSTART,  // set when the state of document is STATE_START
-    WITH_CHANGE,      // set when the change event is observed
-  } mScrollChanged,
-      mFormDataChanged;
-  enum {
-    NO_STORAGE,
-    RESET,
-    FULLSTORAGE,
-    STORAGECHANGE,
-  } mStorageStatus;
   bool mDocCapChanged;
   nsCString mDocCaps;
-  // mOrigins, mKeys, mValues are for sessionStorage partial changes
-  nsTArray<nsCString> mOrigins;
-  nsTArray<nsString> mKeys;
-  nsTArray<nsString> mValues;
-  // need to collect sessionHistory
-  bool mSHistoryInParent;
   // mSHistoryChanged means there are history changes which are found
   // in the child process. The flag is set when
   //    1. webProgress changes to STATE_START
   //    2. webProgress changes to STATE_STOP
   //    3. receiving "DOMTitleChanged" event
   bool mSHistoryChanged;
-  // mSHistoryChangedFromParent means there are history changes which
-  // are found by session history listener in the parent process.
-  bool mSHistoryChangedFromParent;
 };
 
 class TabListener : public nsIDOMEventListener,
@@ -134,11 +73,12 @@ class TabListener : public nsIDOMEventListener,
   nsresult Init();
   ContentSessionStore* GetSessionStore() { return mSessionStore; }
   // the function is called only when TabListener is in parent process
-  bool ForceFlushFromParent(uint32_t aFlushId, bool aIsFinal = false);
+  bool ForceFlushFromParent();
   void RemoveListeners();
   void SetEpoch(uint32_t aEpoch) { mEpoch = aEpoch; }
   uint32_t GetEpoch() { return mEpoch; }
-  void UpdateSHistoryChanges(bool aImmediately);
+  void UpdateSHistoryChanges() { AddTimerForUpdate(); }
+  void SetOwnerContent(Element* aElement);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(TabListener, nsIDOMEventListener)
@@ -152,9 +92,9 @@ class TabListener : public nsIDOMEventListener,
   static void TimerCallback(nsITimer* aTimer, void* aClosure);
   void AddTimerForUpdate();
   void StopTimerForUpdate();
-  bool UpdateSessionStore(uint32_t aFlushId = 0, bool aIsFinal = false);
-  void ResetStorageChangeListener();
-  void RemoveStorageChangeListener();
+  void AddEventListeners();
+  void RemoveEventListeners();
+  bool UpdateSessionStore(bool aIsFlush = false);
   virtual ~TabListener();
 
   nsCOMPtr<nsIDocShell> mDocShell;
@@ -163,15 +103,11 @@ class TabListener : public nsIDOMEventListener,
   bool mProgressListenerRegistered;
   bool mEventListenerRegistered;
   bool mPrefObserverRegistered;
-  bool mStorageObserverRegistered;
-  bool mStorageChangeListenerRegistered;
   // Timer used to update data
   nsCOMPtr<nsITimer> mUpdatedTimer;
   bool mTimeoutDisabled;
   int32_t mUpdateInterval;
   uint32_t mEpoch;
-  // sessionHistory in the parent process
-  bool mSHistoryInParent;
 };
 
 }  // namespace dom

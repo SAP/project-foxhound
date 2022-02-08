@@ -9,6 +9,7 @@
 // Test deleting a Cache object from the tree using context menu
 
 add_task(async function() {
+  await pushPref("dom.security.https_first", false);
   await openTabAndSetupStorage(MAIN_DOMAIN + "storage-listings.html");
 
   const contextMenu = gPanelWindow.document.getElementById(
@@ -52,6 +53,4 @@ add_task(async function() {
     !gUI.tree.isSelected(cacheToDelete),
     "Cache item is no longer present in the tree"
   );
-
-  await finishTests();
 });

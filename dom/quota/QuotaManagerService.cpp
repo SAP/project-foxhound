@@ -6,28 +6,54 @@
 
 #include "QuotaManagerService.h"
 
+// Local includes
 #include "ActorsChild.h"
-#include "mozilla/BasePrincipal.h"
-#include "mozilla/ClearOnShutdown.h"
-#include "mozilla/Hal.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/Unused.h"
-#include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/ipc/BackgroundParent.h"
-#include "mozilla/ipc/BackgroundUtils.h"
-#include "mozilla/ipc/PBackgroundChild.h"
-#include "nsIUserIdleService.h"
-#include "nsIObserverService.h"
-#include "nsXULAppAPI.h"
+#include "Client.h"
 #include "QuotaManager.h"
 #include "QuotaRequests.h"
 
+// Global includes
+#include <cstdint>
+#include <cstring>
+#include <utility>
+#include "MainThreadUtils.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/Atomics.h"
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/Hal.h"
+#include "mozilla/MacroForEach.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/OriginAttributes.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPtr.h"
+#include "mozilla/Unused.h"
+#include "mozilla/Variant.h"
+#include "mozilla/dom/quota/PQuota.h"
+#include "mozilla/dom/quota/PersistenceType.h"
+#include "mozilla/dom/quota/ResultExtensions.h"
+#include "mozilla/fallible.h"
+#include "mozilla/hal_sandbox/PHal.h"
+#include "mozilla/ipc/BackgroundChild.h"
+#include "mozilla/ipc/BackgroundUtils.h"
+#include "mozilla/ipc/PBackgroundChild.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
+#include "nsCOMPtr.h"
+#include "nsContentUtils.h"
+#include "nsDebug.h"
+#include "nsError.h"
+#include "nsIObserverService.h"
+#include "nsIPrincipal.h"
+#include "nsIUserIdleService.h"
+#include "nsServiceManagerUtils.h"
+#include "nsStringFwd.h"
+#include "nsXULAppAPI.h"
+#include "nscore.h"
+
 #define PROFILE_BEFORE_CHANGE_QM_OBSERVER_ID "profile-before-change-qm"
 
-namespace mozilla {
-namespace dom {
-namespace quota {
+namespace mozilla::dom::quota {
 
 using namespace mozilla::ipc;
 
@@ -503,10 +529,8 @@ QuotaManagerService::InitTemporaryStorage(nsIQuotaRequest** _retval) {
 }
 
 NS_IMETHODIMP
-QuotaManagerService::InitStorageAndOrigin(nsIPrincipal* aPrincipal,
-                                          const nsACString& aPersistenceType,
-                                          const nsAString& aClientType,
-                                          nsIQuotaRequest** _retval) {
+QuotaManagerService::InitializePersistentOrigin(nsIPrincipal* aPrincipal,
+                                                nsIQuotaRequest** _retval) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(nsContentUtils::IsCallerChrome());
 
@@ -516,33 +540,12 @@ QuotaManagerService::InitStorageAndOrigin(nsIPrincipal* aPrincipal,
 
   RefPtr<Request> request = new Request();
 
-  InitStorageAndOriginParams params;
+  InitializePersistentOriginParams params;
 
   nsresult rv =
       CheckedPrincipalToPrincipalInfo(aPrincipal, params.principalInfo());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
-  }
-
-  const auto maybePersistenceType =
-      PersistenceTypeFromString(aPersistenceType, fallible);
-  if (NS_WARN_IF(maybePersistenceType.isNothing())) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  params.persistenceType() = maybePersistenceType.value();
-
-  if (aClientType.IsVoid()) {
-    params.clientTypeIsExplicit() = false;
-  } else {
-    Client::Type clientType;
-    bool ok = Client::TypeFromText(aClientType, clientType, fallible);
-    if (NS_WARN_IF(!ok)) {
-      return NS_ERROR_INVALID_ARG;
-    }
-
-    params.clientType() = clientType;
-    params.clientTypeIsExplicit() = true;
   }
 
   RequestInfo info(request, params);
@@ -551,6 +554,85 @@ QuotaManagerService::InitStorageAndOrigin(nsIPrincipal* aPrincipal,
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
+
+  request.forget(_retval);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+QuotaManagerService::InitializeTemporaryOrigin(
+    const nsACString& aPersistenceType, nsIPrincipal* aPrincipal,
+    nsIQuotaRequest** _retval) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(nsContentUtils::IsCallerChrome());
+
+  if (NS_WARN_IF(!StaticPrefs::dom_quotaManager_testing())) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  RefPtr<Request> request = new Request();
+
+  InitializeTemporaryOriginParams params;
+
+  const auto maybePersistenceType =
+      PersistenceTypeFromString(aPersistenceType, fallible);
+  if (NS_WARN_IF(maybePersistenceType.isNothing())) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  if (NS_WARN_IF(!IsBestEffortPersistenceType(maybePersistenceType.value()))) {
+    return NS_ERROR_FAILURE;
+  }
+
+  params.persistenceType() = maybePersistenceType.value();
+
+  nsresult rv =
+      CheckedPrincipalToPrincipalInfo(aPrincipal, params.principalInfo());
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  RequestInfo info(request, params);
+
+  rv = InitiateRequest(info);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  request.forget(_retval);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+QuotaManagerService::GetFullOriginMetadata(const nsACString& aPersistenceType,
+                                           nsIPrincipal* aPrincipal,
+                                           nsIQuotaRequest** _retval) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(nsContentUtils::IsCallerChrome());
+
+  QM_TRY(OkIf(StaticPrefs::dom_quotaManager_testing()), NS_ERROR_UNEXPECTED);
+
+  const auto maybePersistenceType =
+      PersistenceTypeFromString(aPersistenceType, fallible);
+  QM_TRY(OkIf(maybePersistenceType.isSome()), NS_ERROR_INVALID_ARG);
+  QM_TRY(OkIf(IsBestEffortPersistenceType(*maybePersistenceType)),
+         NS_ERROR_INVALID_ARG);
+
+  PrincipalInfo principalInfo;
+  QM_TRY(MOZ_TO_RESULT(PrincipalToPrincipalInfo(aPrincipal, &principalInfo)));
+  QM_TRY(OkIf(QuotaManager::IsPrincipalInfoValid(principalInfo)),
+         NS_ERROR_INVALID_ARG);
+
+  RefPtr<Request> request = new Request();
+
+  GetFullOriginMetadataParams params;
+
+  params.persistenceType() = *maybePersistenceType;
+  params.principalInfo() = std::move(principalInfo);
+
+  RequestInfo info(request, params);
+
+  QM_TRY(MOZ_TO_RESULT(InitiateRequest(info)));
 
   request.forget(_retval);
   return NS_OK;
@@ -961,6 +1043,4 @@ nsresult QuotaManagerService::IdleMaintenanceInfo::InitiateRequest(
   return NS_OK;
 }
 
-}  // namespace quota
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::quota

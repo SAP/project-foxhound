@@ -19,7 +19,8 @@ import {
   getTestState,
   setupTestBrowserHooks,
   setupTestPageAndContextHooks,
-} from './mocha-utils';
+  itFailsFirefox,
+} from './mocha-utils'; // eslint-disable-line import/extensions
 
 describe('Screenshots', function () {
   setupTestBrowserHooks();
@@ -49,21 +50,23 @@ describe('Screenshots', function () {
       });
       expect(screenshot).toBeGolden('screenshot-clip-rect.png');
     });
-    it('should clip elements to the viewport', async () => {
-      const { page, server } = getTestState();
-
-      await page.setViewport({ width: 500, height: 500 });
-      await page.goto(server.PREFIX + '/grid.html');
-      const screenshot = await page.screenshot({
-        clip: {
-          x: 50,
-          y: 600,
-          width: 100,
-          height: 100,
-        },
-      });
-      expect(screenshot).toBeGolden('screenshot-offscreen-clip.png');
-    });
+    it(
+      'should get screenshot bigger than the viewport',
+      async () => {
+        const { page, server } = getTestState();
+        await page.setViewport({ width: 50, height: 50 });
+        await page.goto(server.PREFIX + '/grid.html');
+        const screenshot = await page.screenshot({
+          clip: {
+            x: 25,
+            y: 25,
+            width: 100,
+            height: 100,
+          },
+        });
+        expect(screenshot).toBeGolden('screenshot-offscreen-clip.png');
+      }
+    );
     it('should run in parallel', async () => {
       const { page, server } = getTestState();
 
@@ -200,39 +203,42 @@ describe('Screenshots', function () {
       const screenshot = await elementHandle.screenshot();
       expect(screenshot).toBeGolden('screenshot-element-padding-border.png');
     });
-    it('should capture full element when larger than viewport', async () => {
-      const { page } = getTestState();
+    it(
+      'should capture full element when larger than viewport',
+      async () => {
+        const { page } = getTestState();
 
-      await page.setViewport({ width: 500, height: 500 });
+        await page.setViewport({ width: 500, height: 500 });
 
-      await page.setContent(`
-        something above
-        <style>
-        div.to-screenshot {
-          border: 1px solid blue;
-          width: 600px;
-          height: 600px;
-          margin-left: 50px;
-        }
-        ::-webkit-scrollbar{
-          display: none;
-        }
-        </style>
-        <div class="to-screenshot"></div>
-      `);
-      const elementHandle = await page.$('div.to-screenshot');
-      const screenshot = await elementHandle.screenshot();
-      expect(screenshot).toBeGolden(
-        'screenshot-element-larger-than-viewport.png'
-      );
+        await page.setContent(`
+          something above
+          <style>
+          div.to-screenshot {
+            border: 1px solid blue;
+            width: 600px;
+            height: 600px;
+            margin-left: 50px;
+          }
+          ::-webkit-scrollbar{
+            display: none;
+          }
+          </style>
+          <div class="to-screenshot"></div>
+        `);
+        const elementHandle = await page.$('div.to-screenshot');
+        const screenshot = await elementHandle.screenshot();
+        expect(screenshot).toBeGolden(
+          'screenshot-element-larger-than-viewport.png'
+        );
 
-      expect(
-        await page.evaluate(() => ({
-          w: window.innerWidth,
-          h: window.innerHeight,
-        }))
-      ).toEqual({ w: 500, h: 500 });
-    });
+        expect(
+          await page.evaluate(() => ({
+            w: window.innerWidth,
+            h: window.innerHeight,
+          }))
+        ).toEqual({ w: 500, h: 500 });
+      }
+    );
     it('should scroll element into view', async () => {
       const { page } = getTestState();
 
@@ -280,7 +286,10 @@ describe('Screenshots', function () {
 
       await page.setContent('<h1>remove this</h1>');
       const elementHandle = await page.$('h1');
-      await page.evaluate((element) => element.remove(), elementHandle);
+      await page.evaluate(
+        (element: HTMLElement) => element.remove(),
+        elementHandle
+      );
       const screenshotError = await elementHandle
         .screenshot()
         .catch((error) => error);

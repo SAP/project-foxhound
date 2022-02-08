@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-disable mozilla/reject-some-requires */
-
 "use strict";
 
 const {
@@ -51,7 +49,7 @@ async function getFormDataSections(
 
   const contentType = await getLongString(contentTypeLongString);
 
-  if (contentType.includes("x-www-form-urlencoded")) {
+  if (contentType && contentType.includes("x-www-form-urlencoded")) {
     const postDataLongString = postData.postData.text;
     const text = await getLongString(postDataLongString);
 
@@ -90,19 +88,21 @@ async function fetchHeaders(headers, getLongString) {
  */
 function fetchNetworkUpdatePacket(requestData, request, updateTypes) {
   const promises = [];
-  updateTypes.forEach(updateType => {
-    // Only stackTrace will be handled differently
-    if (updateType === "stackTrace") {
-      if (request.cause.stacktraceAvailable && !request.stacktrace) {
+  if (request) {
+    updateTypes.forEach(updateType => {
+      // Only stackTrace will be handled differently
+      if (updateType === "stackTrace") {
+        if (request.cause.stacktraceAvailable && !request.stacktrace) {
+          promises.push(requestData(request.id, updateType));
+        }
+        return;
+      }
+
+      if (request[`${updateType}Available`] && !request[updateType]) {
         promises.push(requestData(request.id, updateType));
       }
-      return;
-    }
-
-    if (request[`${updateType}Available`] && !request[updateType]) {
-      promises.push(requestData(request.id, updateType));
-    }
-  });
+    });
+  }
 
   return Promise.all(promises);
 }
@@ -585,32 +585,25 @@ async function getMessagePayload(payload, getLongString) {
 
 /**
  * This helper function is used for additional processing of
- * incoming network update packets. It's used by Network and
- * Console panel reducers.
+ * incoming network update packets. It makes sure the only valid
+ * update properties and the values are correct.
+ * It's used by Network and Console panel reducers.
+ * @param {object} update
+ *        The new update payload
+ * @param {object} request
+ *        The current request in the state
  */
-function processNetworkUpdates(update, request) {
-  const result = {};
+function processNetworkUpdates(update) {
+  const newRequest = {};
   for (const [key, value] of Object.entries(update)) {
     if (UPDATE_PROPS.includes(key)) {
-      result[key] = value;
-
-      switch (key) {
-        case "securityInfo":
-          result.securityState = value.state;
-          break;
-        case "securityState":
-          result.securityState = update.securityState || request.securityState;
-          break;
-        case "totalTime":
-          result.totalTime = update.totalTime;
-          break;
-        case "requestPostData":
-          result.requestHeadersFromUploadStream = value.uploadHeaders;
-          break;
+      newRequest[key] = value;
+      if (key == "requestPostData") {
+        newRequest.requestHeadersFromUploadStream = value.uploadHeaders;
       }
     }
   }
-  return result;
+  return newRequest;
 }
 
 /**
@@ -632,10 +625,47 @@ function isBase64(payload) {
 
 /**
  * Checks if the payload is of JSON type.
+ * This function also handles JSON with XSSI-escaping characters by skipping them.
+ * This function also handles Base64 encoded JSON.
  */
-function isJSON(payload) {
+function parseJSON(payloadUnclean) {
   let json, error;
-
+  const jsonpRegex = /^\s*([\w$]+)\s*\(\s*([^]*)\s*\)\s*;?\s*$/;
+  const [, jsonpCallback, jsonp] = payloadUnclean.match(jsonpRegex) || [];
+  if (jsonpCallback && jsonp) {
+    try {
+      json = parseJSON(jsonp).json;
+    } catch (err) {
+      error = err;
+    }
+    return { json, error, jsonpCallback };
+  }
+  // Start at the first likely JSON character,
+  // so that magic XSSI characters can be avoided
+  const firstSquare = payloadUnclean.indexOf("[");
+  const firstCurly = payloadUnclean.indexOf("{");
+  // This logic finds the first starting square or curly bracket.
+  // However, since Math.min will return -1 even if
+  // the other type of bracket was found and has an index,
+  // if one of the indexes is -1, the max value is returned
+  // (this value may also be -1, but that is checked for later on.)
+  const minFirst = Math.min(firstSquare, firstCurly);
+  let first;
+  if (minFirst === -1) {
+    first = Math.max(firstCurly, firstSquare);
+  } else {
+    first = minFirst;
+  }
+  let payload = "";
+  if (first !== -1) {
+    try {
+      payload = payloadUnclean.substring(first);
+    } catch (err) {
+      error = err;
+    }
+  } else {
+    payload = payloadUnclean;
+  }
   try {
     json = JSON.parse(payload);
   } catch (err) {
@@ -643,7 +673,7 @@ function isJSON(payload) {
       try {
         json = JSON.parse(atob(payload));
       } catch (err64) {
-        error = err;
+        error = err64;
       }
     } else {
       error = err;
@@ -657,7 +687,6 @@ function isJSON(payload) {
       return {};
     }
   }
-
   return {
     json,
     error,
@@ -693,5 +722,5 @@ module.exports = {
   processNetworkUpdates,
   propertiesEqual,
   ipToLong,
-  isJSON,
+  parseJSON,
 };

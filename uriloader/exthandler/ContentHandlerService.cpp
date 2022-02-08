@@ -10,6 +10,7 @@
 #include "nsIMutableArray.h"
 #include "nsIMIMEInfo.h"
 #include "nsIStringEnumerator.h"
+#include "nsReadableUtils.h"
 
 using mozilla::dom::ContentChild;
 using mozilla::dom::HandlerInfo;
@@ -123,7 +124,7 @@ NS_IMETHODIMP RemoteHandlerApp::LaunchWithURI(
 
 NS_IMPL_ISUPPORTS(RemoteHandlerApp, nsIHandlerApp)
 
-static inline void CopyHanderInfoTonsIHandlerInfo(
+static inline void CopyHandlerInfoTonsIHandlerInfo(
     const HandlerInfo& info, nsIHandlerInfo* aHandlerInfo) {
   HandlerApp preferredApplicationHandler = info.preferredApplicationHandler();
   nsCOMPtr<nsIHandlerApp> preferredApp(
@@ -134,23 +135,14 @@ static inline void CopyHanderInfoTonsIHandlerInfo(
       getter_AddRefs(possibleHandlers));
   possibleHandlers->AppendElement(preferredApp);
 
+  aHandlerInfo->SetPreferredAction(info.preferredAction());
+  aHandlerInfo->SetAlwaysAskBeforeHandling(info.alwaysAskBeforeHandling());
+
   if (info.isMIMEInfo()) {
-    const auto& fileExtensions = info.extensions();
-    bool first = true;
-    nsAutoCString extensionsStr;
-    for (const auto& extension : fileExtensions) {
-      if (!first) {
-        extensionsStr.Append(',');
-      }
-
-      extensionsStr.Append(extension);
-      first = false;
-    }
-
     nsCOMPtr<nsIMIMEInfo> mimeInfo(do_QueryInterface(aHandlerInfo));
     MOZ_ASSERT(mimeInfo,
                "parent and child don't agree on whether this is a MIME info");
-    mimeInfo->SetFileExtensions(extensionsStr);
+    mimeInfo->SetFileExtensions(StringJoin(","_ns, info.extensions()));
   }
 }
 
@@ -170,7 +162,7 @@ NS_IMETHODIMP ContentHandlerService::FillHandlerInfo(
   nsIHandlerInfoToHandlerInfo(aHandlerInfo, &info);
   mHandlerServiceChild->SendFillHandlerInfo(info, nsCString(aOverrideType),
                                             &returnedInfo);
-  CopyHanderInfoTonsIHandlerInfo(returnedInfo, aHandlerInfo);
+  CopyHandlerInfoTonsIHandlerInfo(returnedInfo, aHandlerInfo);
   return NS_OK;
 }
 
@@ -189,7 +181,7 @@ NS_IMETHODIMP ContentHandlerService::GetMIMEInfoFromOS(
     return rv;
   }
 
-  CopyHanderInfoTonsIHandlerInfo(returnedInfo, aHandlerInfo);
+  CopyHandlerInfoTonsIHandlerInfo(returnedInfo, aHandlerInfo);
   return NS_OK;
 }
 
@@ -231,17 +223,12 @@ ContentHandlerService::ExistsForProtocol(const nsACString& aProtocolScheme,
 
 NS_IMETHODIMP ContentHandlerService::GetTypeFromExtension(
     const nsACString& aFileExtension, nsACString& _retval) {
-  nsCString* cachedType = nullptr;
-  if (!!mExtToTypeMap.Get(aFileExtension, &cachedType) && !!cachedType) {
-    _retval.Assign(*cachedType);
-    return NS_OK;
-  }
-  nsCString type;
-  mHandlerServiceChild->SendGetTypeFromExtension(nsCString(aFileExtension),
-                                                 &type);
-  _retval.Assign(type);
-  mExtToTypeMap.Put(nsCString(aFileExtension), new nsCString(type));
-
+  _retval.Assign(*mExtToTypeMap.LookupOrInsertWith(aFileExtension, [&] {
+    nsCString type;
+    mHandlerServiceChild->SendGetTypeFromExtension(nsCString(aFileExtension),
+                                                   &type);
+    return MakeUnique<nsCString>(type);
+  }));
   return NS_OK;
 }
 

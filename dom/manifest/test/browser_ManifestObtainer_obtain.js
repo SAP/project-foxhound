@@ -1,8 +1,7 @@
-// Used by JSHint:
-/* global ok, is, Cu, BrowserTestUtils, add_task, gBrowser, requestLongerTimeout*/
 "use strict";
 
 Services.prefs.setBoolPref("dom.manifest.enabled", true);
+Services.prefs.setBoolPref("dom.security.https_first", false);
 
 const { ManifestObtainer } = ChromeUtils.import(
   "resource://gre/modules/ManifestObtainer.jsm"

@@ -8,20 +8,20 @@
 #define mozilla_dom_mediakeys_h__
 
 #include "DecoderDoctorLogger.h"
-#include "nsWrapperCache.h"
-#include "nsISupports.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/DetailedPromise.h"
 #include "mozilla/RefPtr.h"
-#include "nsCOMPtr.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsIDocumentActivity.h"
-#include "nsRefPtrHashtable.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/MediaKeysBinding.h"
+#include "mozilla/WeakPtr.h"
 #include "mozilla/dom/MediaKeyStatusMapBinding.h"  // For MediaKeyStatus
 #include "mozilla/dom/MediaKeySystemAccessBinding.h"
-#include "mozilla/DetailedPromise.h"
-#include "mozilla/WeakPtr.h"
+#include "mozilla/dom/MediaKeysBinding.h"
+#include "mozilla/dom/Promise.h"
+#include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsIObserver.h"
+#include "nsRefPtrHashtable.h"
+#include "nsTHashMap.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 
@@ -43,12 +43,12 @@ typedef nsRefPtrHashtable<nsStringHashKey, MediaKeySession> KeySessionHashMap;
 typedef nsRefPtrHashtable<nsUint32HashKey, dom::DetailedPromise> PromiseHashMap;
 typedef nsRefPtrHashtable<nsUint32HashKey, MediaKeySession>
     PendingKeySessionsHashMap;
-typedef nsDataHashtable<nsUint32HashKey, uint32_t> PendingPromiseIdTokenHashMap;
+typedef nsTHashMap<nsUint32HashKey, uint32_t> PendingPromiseIdTokenHashMap;
 typedef uint32_t PromiseId;
 
 // This class is used on the main thread only.
 // Note: its addref/release is not (and can't be) thread safe!
-class MediaKeys final : public nsIDocumentActivity,
+class MediaKeys final : public nsIObserver,
                         public nsWrapperCache,
                         public SupportsWeakPtr,
                         public DecoderDoctorLifeLogger<MediaKeys> {
@@ -57,9 +57,8 @@ class MediaKeys final : public nsIDocumentActivity,
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(MediaKeys)
-  // We want to listen to the owning document so we can shutdown if it goes
-  // inactive.
-  NS_DECL_NSIDOCUMENTACTIVITY
+
+  NS_DECL_NSIOBSERVER
 
   MediaKeys(nsPIDOMWindowInner* aParentWindow, const nsAString& aKeySystem,
             const MediaKeySystemConfiguration& aConfig);
@@ -73,6 +72,14 @@ class MediaKeys final : public nsIDocumentActivity,
 
   nsresult Bind(HTMLMediaElement* aElement);
   void Unbind();
+
+  // Checks if there's any activity happening that could capture the media
+  // the keys are associated with and then expose that media outside of the
+  // origin it is in.
+  //
+  // This method does not return the results of the check, but the MediaKeys
+  // will notify mProxy of the results using `NotifyOutputProtectionStatus`.
+  void CheckIsElementCapturePossible();
 
   // Javascript: readonly attribute DOMString keySystem;
   void GetKeySystem(nsString& retval) const;
@@ -137,6 +144,10 @@ class MediaKeys final : public nsIDocumentActivity,
   // Returns true if this MediaKeys has been bound to a media element.
   bool IsBoundToMediaElement() const;
 
+  // Indicates to a MediaKeys instance that the inner window parent of that
+  // instance is being destroyed, this should prompt the keys to shutdown.
+  void OnInnerWindowDestroy();
+
   void GetSessionsInfo(nsString& sessionsInfo);
 
   // JavaScript: MediaKeys.GetStatusForPolicy()
@@ -155,25 +166,41 @@ class MediaKeys final : public nsIDocumentActivity,
     promise->MaybeResolve(aResult);
   }
 
+  // The topic used for requests related to mediakeys -- observe this to be
+  // notified of such requests.
+  constexpr static const char* kMediaKeysRequestTopic = "mediakeys-request";
+
  private:
   // Instantiate CDMProxy instance.
   // It could be MediaDrmCDMProxy (Widevine on Fennec) or ChromiumCDMProxy (the
   // rest).
-  already_AddRefed<CDMProxy> CreateCDMProxy(nsISerialEventTarget* aMainThread);
+  already_AddRefed<CDMProxy> CreateCDMProxy();
 
   // Removes promise from mPromises, and returns it.
   already_AddRefed<DetailedPromise> RetrievePromise(PromiseId aId);
 
-  void RegisterActivityObserver();
-  void UnregisterActivityObserver();
+  // Helpers to connect and disconnect to the parent inner window. An inner
+  // window should track (via weak ptr) MediaKeys created within it so we can
+  // ensure MediaKeys are shutdown if that window is destroyed.
+  void ConnectInnerWindow();
+  void DisconnectInnerWindow();
 
   // Owning ref to proxy. The proxy has a weak reference back to the MediaKeys,
   // and the MediaKeys destructor clears the proxy's reference to the MediaKeys.
   RefPtr<CDMProxy> mProxy;
 
+  // The HTMLMediaElement the MediaKeys are associated with. Note that a
+  // MediaKeys instance may not be associated with any HTMLMediaElement so
+  // this can be null (we also cannot rely on a media element to drive shutdown
+  // for this reason).
   RefPtr<HTMLMediaElement> mElement;
-  RefPtr<Document> mDocument;
 
+  // The  inner window associated with an instance of MediaKeys. We will
+  // shutdown the media keys when this Window is destroyed. We do this from the
+  // window rather than a document to address the case where media keys can be
+  // created in an about:blank document that then performs an async load -- this
+  // recreates the document, but the inner window is preserved in such a case.
+  // See https://bugzilla.mozilla.org/show_bug.cgi?id=1675360 for more info.
   nsCOMPtr<nsPIDOMWindowInner> mParent;
   const nsString mKeySystem;
   KeySessionHashMap mKeySessions;
@@ -181,12 +208,26 @@ class MediaKeys final : public nsIDocumentActivity,
   PendingKeySessionsHashMap mPendingSessions;
   PromiseId mCreatePromiseId;
 
+  // The principal of the relevant settings object.
   RefPtr<nsIPrincipal> mPrincipal;
+  // The principal of the top level page. This can differ from mPrincipal if
+  // we're in an iframe.
   RefPtr<nsIPrincipal> mTopLevelPrincipal;
 
   const MediaKeySystemConfiguration mConfig;
 
   PendingPromiseIdTokenHashMap mPromiseIdToken;
+
+  // The topic a MediaKeys instance will observe to receive updates from
+  // EncryptedMediaChild.
+  constexpr static const char* kMediaKeysResponseTopic = "mediakeys-response";
+  // Tracks if we've added an observer for responses from the associated
+  // EncryptedMediaChild. When true an observer is already in place, otherwise
+  // the observer has not yet been added.
+  bool mObserverAdded = false;
+  // Stores the json request we will send to EncryptedMediaChild when querying
+  // output protection. Lazily populated upon first use.
+  nsString mCaptureCheckRequestJson;
 };
 
 }  // namespace dom

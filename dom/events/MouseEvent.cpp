@@ -10,8 +10,7 @@
 #include "nsIContent.h"
 #include "prtime.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 MouseEvent::MouseEvent(EventTarget* aOwner, nsPresContext* aPresContext,
                        WidgetMouseEventBase* aEvent)
@@ -153,6 +152,19 @@ void MouseEvent::InitNSMouseEvent(const nsAString& aType, bool aCanBubble,
   WidgetMouseEventBase* mouseEventBase = mEvent->AsMouseEventBase();
   mouseEventBase->mPressure = aPressure;
   mouseEventBase->mInputSource = aInputSource;
+}
+
+void MouseEvent::PreventClickEvent() {
+  if (WidgetMouseEvent* mouseEvent = mEvent->AsMouseEvent()) {
+    mouseEvent->mClickEventPrevented = true;
+  }
+}
+
+bool MouseEvent::ClickEventPrevented() {
+  if (WidgetMouseEvent* mouseEvent = mEvent->AsMouseEvent()) {
+    return mouseEvent->mClickEventPrevented;
+  }
+  return false;
 }
 
 int16_t MouseEvent::Button() {
@@ -324,8 +336,7 @@ uint16_t MouseEvent::MozInputSource() const {
   return mEvent->AsMouseEventBase()->mInputSource;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 using namespace mozilla;
 using namespace mozilla::dom;

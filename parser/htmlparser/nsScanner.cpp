@@ -227,10 +227,10 @@ nsresult nsScanner::Append(const char* aBuffer, uint32_t aLen) {
     uint32_t result;
     size_t read;
     size_t written;
-    Tie(result, read, written) =
+    // Do not use structured binding lest deal with [-Werror=unused-variable]
+    std::tie(result, read, written) =
         mUnicodeDecoder->DecodeToUTF16WithoutReplacement(
-            AsBytes(MakeSpan(aBuffer, aLen)),
-            MakeSpan(unichars, needed.value()),
+            AsBytes(Span(aBuffer, aLen)), Span(unichars, needed.value()),
             false);  // Retain bug about failure to handle EOF
     MOZ_ASSERT(result != kOutputFull);
     MOZ_ASSERT(read <= aLen);

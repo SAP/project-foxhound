@@ -2,15 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
 /**
  * Redux actions for the editor tabs
  * @module actions/tabs
  */
 
 import { removeDocument } from "../utils/editor";
-import { recordEvent } from "../utils/telemetry";
 import { selectSource } from "./sources";
 
 import {
@@ -19,10 +16,7 @@ import {
   getNewSelectedSourceId,
 } from "../selectors";
 
-import type { Action, ThunkArgs } from "./types";
-import type { Source, Context, SourceId, URL } from "../types";
-
-export function updateTab(source: Source, framework: string): Action {
+export function updateTab(source, framework) {
   const { url, id: sourceId, isOriginal } = source;
 
   return {
@@ -34,7 +28,7 @@ export function updateTab(source: Source, framework: string): Action {
   };
 }
 
-export function addTab(source: Source): Action {
+export function addTab(source) {
   const { url, id: sourceId, isOriginal } = source;
 
   return {
@@ -45,7 +39,7 @@ export function addTab(source: Source): Action {
   };
 }
 
-export function moveTab(url: URL, tabIndex: number): Action {
+export function moveTab(url, tabIndex) {
   return {
     type: "MOVE_TAB",
     url,
@@ -53,10 +47,7 @@ export function moveTab(url: URL, tabIndex: number): Action {
   };
 }
 
-export function moveTabBySourceId(
-  sourceId: SourceId,
-  tabIndex: number
-): Action {
+export function moveTabBySourceId(sourceId, tabIndex) {
   return {
     type: "MOVE_TAB_BY_SOURCE_ID",
     sourceId,
@@ -68,24 +59,15 @@ export function moveTabBySourceId(
  * @memberof actions/tabs
  * @static
  */
-export function closeTab(
-  cx: Context,
-  source: Source,
-  reason: string = "click"
-) {
-  return ({ dispatch, getState, client }: ThunkArgs) => {
+export function closeTab(cx, source, reason = "click") {
+  return ({ dispatch, getState, client }) => {
     removeDocument(source.id);
 
     const tabs = getSourceTabs(getState());
-    dispatch(({ type: "CLOSE_TAB", source }: Action));
+    dispatch({ type: "CLOSE_TAB", source });
 
     const sourceId = getNewSelectedSourceId(getState(), tabs);
     dispatch(selectSource(cx, sourceId));
-
-    recordEvent("close_source_tab", {
-      reason,
-      num_tabs: tabs.length,
-    });
   };
 }
 
@@ -93,15 +75,15 @@ export function closeTab(
  * @memberof actions/tabs
  * @static
  */
-export function closeTabs(cx: Context, urls: string[]) {
-  return ({ dispatch, getState, client }: ThunkArgs) => {
+export function closeTabs(cx, urls) {
+  return ({ dispatch, getState, client }) => {
     const sources = urls
       .map(url => getSourceByURL(getState(), url))
       .filter(Boolean);
 
     const tabs = getSourceTabs(getState());
     sources.map(source => removeDocument(source.id));
-    dispatch(({ type: "CLOSE_TABS", sources }: Action));
+    dispatch({ type: "CLOSE_TABS", sources });
 
     const sourceId = getNewSelectedSourceId(getState(), tabs);
     dispatch(selectSource(cx, sourceId));

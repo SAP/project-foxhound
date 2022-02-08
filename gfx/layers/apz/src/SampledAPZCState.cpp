@@ -14,7 +14,7 @@ SampledAPZCState::SampledAPZCState() {}
 
 SampledAPZCState::SampledAPZCState(const FrameMetrics& aMetrics)
     : mLayoutViewport(aMetrics.GetLayoutViewport()),
-      mScrollOffset(aMetrics.GetScrollOffset()),
+      mVisualScrollOffset(aMetrics.GetVisualScrollOffset()),
       mZoom(aMetrics.GetZoom()) {
   RemoveFractionalAsyncDelta();
 }
@@ -22,7 +22,7 @@ SampledAPZCState::SampledAPZCState(const FrameMetrics& aMetrics)
 SampledAPZCState::SampledAPZCState(const FrameMetrics& aMetrics,
                                    Maybe<CompositionPayload>&& aPayload)
     : mLayoutViewport(aMetrics.GetLayoutViewport()),
-      mScrollOffset(aMetrics.GetScrollOffset()),
+      mVisualScrollOffset(aMetrics.GetVisualScrollOffset()),
       mZoom(aMetrics.GetZoom()),
       mScrollPayload(std::move(aPayload)) {
   RemoveFractionalAsyncDelta();
@@ -32,7 +32,8 @@ bool SampledAPZCState::operator==(const SampledAPZCState& aOther) const {
   // The payload doesn't factor into equality, that just comes along for
   // the ride.
   return mLayoutViewport.IsEqualEdges(aOther.mLayoutViewport) &&
-         mScrollOffset == aOther.mScrollOffset && mZoom == aOther.mZoom;
+         mVisualScrollOffset == aOther.mVisualScrollOffset &&
+         mZoom == aOther.mZoom;
 }
 
 bool SampledAPZCState::operator!=(const SampledAPZCState& aOther) const {
@@ -45,24 +46,30 @@ Maybe<CompositionPayload> SampledAPZCState::TakeScrollPayload() {
 
 void SampledAPZCState::UpdateScrollProperties(const FrameMetrics& aMetrics) {
   mLayoutViewport = aMetrics.GetLayoutViewport();
-  mScrollOffset = aMetrics.GetScrollOffset();
+  mVisualScrollOffset = aMetrics.GetVisualScrollOffset();
+}
+
+void SampledAPZCState::UpdateScrollPropertiesWithRelativeDelta(
+    const FrameMetrics& aMetrics, const CSSPoint& aRelativeDelta) {
+  mVisualScrollOffset += aRelativeDelta;
+  KeepLayoutViewportEnclosingVisualViewport(aMetrics);
 }
 
 void SampledAPZCState::UpdateZoomProperties(const FrameMetrics& aMetrics) {
   mZoom = aMetrics.GetZoom();
 }
 
-void SampledAPZCState::ClampScrollOffset(const FrameMetrics& aMetrics) {
-  mScrollOffset = aMetrics.CalculateScrollRange().ClampPoint(mScrollOffset);
-  FrameMetrics::KeepLayoutViewportEnclosingVisualViewport(
-      CSSRect(mScrollOffset, aMetrics.CalculateCompositedSizeInCssPixels()),
-      aMetrics.GetScrollableRect(), mLayoutViewport);
+void SampledAPZCState::ClampVisualScrollOffset(const FrameMetrics& aMetrics) {
+  // Make sure that we use the local mZoom to do these calculations, because the
+  // one on aMetrics might be newer.
+  CSSRect scrollRange = FrameMetrics::CalculateScrollRange(
+      aMetrics.GetScrollableRect(), aMetrics.GetCompositionBounds(), mZoom);
+  mVisualScrollOffset = scrollRange.ClampPoint(mVisualScrollOffset);
+
+  KeepLayoutViewportEnclosingVisualViewport(aMetrics);
 }
 
-void SampledAPZCState::ZoomBy(const gfxSize& aScale) {
-  mZoom.xScale *= aScale.width;
-  mZoom.yScale *= aScale.height;
-}
+void SampledAPZCState::ZoomBy(float aScale) { mZoom.scale *= aScale; }
 
 void SampledAPZCState::RemoveFractionalAsyncDelta() {
   // This function is a performance hack. With non-WebRender, having small
@@ -77,15 +84,24 @@ void SampledAPZCState::RemoveFractionalAsyncDelta() {
   // a snapshot of APZ state (decoupling it from APZ assumptions) and provides
   // it as an input to the compositor (so all compositor state should be
   // internally consistent based on this input).
-  if (mLayoutViewport.TopLeft() == mScrollOffset) {
+  if (mLayoutViewport.TopLeft() == mVisualScrollOffset) {
     return;
   }
   ParentLayerPoint paintedOffset = mLayoutViewport.TopLeft() * mZoom;
-  ParentLayerPoint asyncOffset = mScrollOffset * mZoom;
+  ParentLayerPoint asyncOffset = mVisualScrollOffset * mZoom;
   if (FuzzyEqualsAdditive(paintedOffset.x, asyncOffset.x, COORDINATE_EPSILON) &&
       FuzzyEqualsAdditive(paintedOffset.y, asyncOffset.y, COORDINATE_EPSILON)) {
-    mScrollOffset = mLayoutViewport.TopLeft();
+    mVisualScrollOffset = mLayoutViewport.TopLeft();
   }
+}
+
+void SampledAPZCState::KeepLayoutViewportEnclosingVisualViewport(
+    const FrameMetrics& aMetrics) {
+  FrameMetrics::KeepLayoutViewportEnclosingVisualViewport(
+      CSSRect(mVisualScrollOffset,
+              FrameMetrics::CalculateCompositedSizeInCssPixels(
+                  aMetrics.GetCompositionBounds(), mZoom)),
+      aMetrics.GetScrollableRect(), mLayoutViewport);
 }
 
 }  // namespace layers

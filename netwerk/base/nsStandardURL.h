@@ -9,6 +9,8 @@
 #ifndef nsStandardURL_h__
 #define nsStandardURL_h__
 
+#include <bitset>
+
 #include "nsString.h"
 #include "nsISerializable.h"
 #include "nsIFileURL.h"
@@ -16,7 +18,6 @@
 #include "mozilla/Encoding.h"
 #include "nsCOMPtr.h"
 #include "nsURLHelper.h"
-#include "nsIClassInfo.h"
 #include "nsISizeOf.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/LinkedList.h"
@@ -39,6 +40,74 @@ namespace mozilla {
 class Encoding;
 namespace net {
 
+template <typename T>
+class URLSegmentNumber {
+  T mData{0};
+  bool mParity{false};
+
+ public:
+  URLSegmentNumber() = default;
+  explicit URLSegmentNumber(T data) : mData(data) {
+    mParity = CalculateParity();
+  }
+  bool operator==(URLSegmentNumber value) const { return mData == value.mData; }
+  bool operator!=(URLSegmentNumber value) const { return mData != value.mData; }
+  bool operator>(URLSegmentNumber value) const { return mData > value.mData; }
+  URLSegmentNumber operator+(int32_t value) const {
+    return URLSegmentNumber(mData + value);
+  }
+  URLSegmentNumber operator+(uint32_t value) const {
+    return URLSegmentNumber(mData + value);
+  }
+  URLSegmentNumber operator-(int32_t value) const {
+    return URLSegmentNumber(mData - value);
+  }
+  URLSegmentNumber operator-(uint32_t value) const {
+    return URLSegmentNumber(mData - value);
+  }
+  URLSegmentNumber operator+=(URLSegmentNumber value) {
+    mData += value.mData;
+    mParity = CalculateParity();
+    return *this;
+  }
+  URLSegmentNumber operator+=(T value) {
+    mData += value;
+    mParity = CalculateParity();
+    return *this;
+  }
+  URLSegmentNumber operator-=(URLSegmentNumber value) {
+    mData -= value.mData;
+    mParity = CalculateParity();
+    return *this;
+  }
+  URLSegmentNumber operator-=(T value) {
+    mData -= value;
+    mParity = CalculateParity();
+    return *this;
+  }
+  operator T() const { return mData; }
+  URLSegmentNumber& operator=(T value) {
+    mData = value;
+    mParity = CalculateParity();
+    return *this;
+  }
+  URLSegmentNumber& operator++() {
+    ++mData;
+    mParity = CalculateParity();
+    return *this;
+  }
+  URLSegmentNumber operator++(int) {
+    URLSegmentNumber value = *this;
+    *this += 1;
+    return value;
+  }
+  bool CalculateParity() const {
+    std::bitset<32> bits((uint32_t)mData);
+    return bits.count() % 2 == 0 ? false : true;
+  }
+  bool Parity() const { return mParity; }
+};
+
 //-----------------------------------------------------------------------------
 // standard URL implementation
 //-----------------------------------------------------------------------------
@@ -46,7 +115,6 @@ namespace net {
 class nsStandardURL : public nsIFileURL,
                       public nsIStandardURL,
                       public nsISerializable,
-                      public nsIClassInfo,
                       public nsISizeOf,
                       public nsISensitiveInfoHiddenURI
 #ifdef DEBUG_DUMP_URLS_AT_SHUTDOWN
@@ -65,7 +133,6 @@ class nsStandardURL : public nsIFileURL,
   NS_DECL_NSIFILEURL
   NS_DECL_NSISTANDARDURL
   NS_DECL_NSISERIALIZABLE
-  NS_DECL_NSICLASSINFO
   NS_DECL_NSISENSITIVEINFOHIDDENURI
 
   // nsISizeOf
@@ -80,10 +147,15 @@ class nsStandardURL : public nsIFileURL,
   // location and length of an url segment relative to mSpec
   //
   struct URLSegment {
-    uint32_t mPos;
-    int32_t mLen;
+#ifdef EARLY_BETA_OR_EARLIER
+    URLSegmentNumber<uint32_t> mPos{0};
+    URLSegmentNumber<int32_t> mLen{-1};
+#else
+    uint32_t mPos{0};
+    int32_t mLen{-1};
+#endif
 
-    URLSegment() : mPos(0), mLen(-1) {}
+    URLSegment() = default;
     URLSegment(uint32_t pos, int32_t len) : mPos(pos), mLen(len) {}
     URLSegment(const URLSegment& aCopy) = default;
     void Reset() {
@@ -191,7 +263,7 @@ class nsStandardURL : public nsIFileURL,
 
   bool ValidIPv6orHostname(const char* host, uint32_t length);
   static bool IsValidOfBase(unsigned char c, const uint32_t base);
-  nsresult NormalizeIDN(const nsACString& host, nsCString& result);
+  nsresult NormalizeIDN(const nsCString& host, nsCString& result);
   nsresult CheckIfHostIsAscii();
   void CoalescePath(netCoalesceFlags coalesceFlag, char* path);
 
@@ -224,27 +296,27 @@ class nsStandardURL : public nsIFileURL,
   char* AppendToSubstring(uint32_t pos, int32_t len, const char* tail);
 
   // dependent substring helpers
-  const nsDependentCSubstring Segment(uint32_t pos, int32_t len);  // see below
-  const nsDependentCSubstring Segment(const URLSegment& s) {
+  nsDependentCSubstring Segment(uint32_t pos, int32_t len);  // see below
+  nsDependentCSubstring Segment(const URLSegment& s) {
     return Segment(s.mPos, s.mLen);
   }
 
   // dependent substring getters
-  const nsDependentCSubstring Prepath();  // see below
-  const nsDependentCSubstring Scheme() { return Segment(mScheme); }
-  const nsDependentCSubstring Userpass(bool includeDelim = false);  // see below
-  const nsDependentCSubstring Username() { return Segment(mUsername); }
-  const nsDependentCSubstring Password() { return Segment(mPassword); }
-  const nsDependentCSubstring Hostport();  // see below
-  const nsDependentCSubstring Host();      // see below
-  const nsDependentCSubstring Path() { return Segment(mPath); }
-  const nsDependentCSubstring Filepath() { return Segment(mFilepath); }
-  const nsDependentCSubstring Directory() { return Segment(mDirectory); }
-  const nsDependentCSubstring Filename();  // see below
-  const nsDependentCSubstring Basename() { return Segment(mBasename); }
-  const nsDependentCSubstring Extension() { return Segment(mExtension); }
-  const nsDependentCSubstring Query() { return Segment(mQuery); }
-  const nsDependentCSubstring Ref() { return Segment(mRef); }
+  nsDependentCSubstring Prepath();  // see below
+  nsDependentCSubstring Scheme() { return Segment(mScheme); }
+  nsDependentCSubstring Userpass(bool includeDelim = false);  // see below
+  nsDependentCSubstring Username() { return Segment(mUsername); }
+  nsDependentCSubstring Password() { return Segment(mPassword); }
+  nsDependentCSubstring Hostport();  // see below
+  nsDependentCSubstring Host();      // see below
+  nsDependentCSubstring Path() { return Segment(mPath); }
+  nsDependentCSubstring Filepath() { return Segment(mFilepath); }
+  nsDependentCSubstring Directory() { return Segment(mDirectory); }
+  nsDependentCSubstring Filename();  // see below
+  nsDependentCSubstring Basename() { return Segment(mBasename); }
+  nsDependentCSubstring Extension() { return Segment(mExtension); }
+  nsDependentCSubstring Query() { return Segment(mQuery); }
+  nsDependentCSubstring Ref() { return Segment(mRef); }
 
   // shift the URLSegments to the right by diff
   void ShiftFromAuthority(int32_t diff);
@@ -266,13 +338,16 @@ class nsStandardURL : public nsIFileURL,
   void FindHostLimit(nsACString::const_iterator& aStart,
                      nsACString::const_iterator& aEnd);
 
-  // Asserts that the URLSegment has sane values
-  static void SanityCheck(const URLSegment&, const nsCString&);
+  // Asserts that the URL has sane values
+  void SanityCheck();
+
+  // Checks if the URL has a valid representation.
+  bool IsValid();
 
   // mSpec contains the normalized version of the URL spec (UTF-8 encoded).
   nsCString mSpec;
-  int32_t mDefaultPort;
-  int32_t mPort;
+  int32_t mDefaultPort{-1};
+  int32_t mPort{-1};
 
   // url parts (relative to mSpec)
   URLSegment mScheme;
@@ -309,7 +384,6 @@ class nsStandardURL : public nsIFileURL,
   // global objects.
   static StaticRefPtr<nsIIDNService> gIDN;
   static const char gHostLimitDigits[];
-  static bool gInitialized;
 
  public:
 #ifdef DEBUG_DUMP_URLS_AT_SHUTDOWN
@@ -328,8 +402,8 @@ class nsStandardURL : public nsIFileURL,
                            public nsISerializable {
     NS_FORWARD_SAFE_NSIURISETTERS_RET(BaseURIMutator<T>::mURI)
 
-    [[nodiscard]] NS_IMETHOD
-        Deserialize(const mozilla::ipc::URIParams& aParams) override {
+    [[nodiscard]] NS_IMETHOD Deserialize(
+        const mozilla::ipc::URIParams& aParams) override {
       return BaseURIMutator<T>::InitFromIPCParams(aParams);
     }
 
@@ -453,7 +527,7 @@ class nsStandardURL : public nsIFileURL,
       return NS_OK;
     }
 
-    explicit TemplatedMutator() : mMarkedFileURL(false) {}
+    explicit TemplatedMutator() = default;
 
    private:
     virtual ~TemplatedMutator() = default;
@@ -486,8 +560,7 @@ class nsStandardURL : public nsIFileURL,
 // Dependent substring getters
 //-----------------------------------------------------------------------------
 
-inline const nsDependentCSubstring nsStandardURL::Segment(uint32_t pos,
-                                                          int32_t len) {
+inline nsDependentCSubstring nsStandardURL::Segment(uint32_t pos, int32_t len) {
   if (len < 0) {
     pos = 0;
     len = 0;
@@ -495,13 +568,13 @@ inline const nsDependentCSubstring nsStandardURL::Segment(uint32_t pos,
   return Substring(mSpec, pos, uint32_t(len));
 }
 
-inline const nsDependentCSubstring nsStandardURL::Prepath() {
+inline nsDependentCSubstring nsStandardURL::Prepath() {
   uint32_t len = 0;
   if (mAuthority.mLen >= 0) len = mAuthority.mPos + mAuthority.mLen;
   return Substring(mSpec, 0, len);
 }
 
-inline const nsDependentCSubstring nsStandardURL::Userpass(bool includeDelim) {
+inline nsDependentCSubstring nsStandardURL::Userpass(bool includeDelim) {
   uint32_t pos = 0, len = 0;
   if (mUsername.mLen > 0 || mPassword.mLen > 0) {
     if (mUsername.mLen > 0) {
@@ -520,7 +593,7 @@ inline const nsDependentCSubstring nsStandardURL::Userpass(bool includeDelim) {
   return Substring(mSpec, pos, len);
 }
 
-inline const nsDependentCSubstring nsStandardURL::Hostport() {
+inline nsDependentCSubstring nsStandardURL::Hostport() {
   uint32_t pos = 0, len = 0;
   if (mAuthority.mLen > 0) {
     pos = mHost.mPos;
@@ -529,7 +602,7 @@ inline const nsDependentCSubstring nsStandardURL::Hostport() {
   return Substring(mSpec, pos, len);
 }
 
-inline const nsDependentCSubstring nsStandardURL::Host() {
+inline nsDependentCSubstring nsStandardURL::Host() {
   uint32_t pos = 0, len = 0;
   if (mHost.mLen > 0) {
     pos = mHost.mPos;
@@ -542,7 +615,7 @@ inline const nsDependentCSubstring nsStandardURL::Host() {
   return Substring(mSpec, pos, len);
 }
 
-inline const nsDependentCSubstring nsStandardURL::Filename() {
+inline nsDependentCSubstring nsStandardURL::Filename() {
   uint32_t pos = 0, len = 0;
   // if there is no basename, then there can be no extension
   if (mBasename.mLen > 0) {

@@ -1,5 +1,6 @@
+/* clang-format off */
 /* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,16 +11,18 @@
 #include "nsStringFwd.h"
 
 @class NSString;
+@class mozAccessible;
 
 namespace mozilla {
 namespace a11y {
 namespace utils {
 
 // convert an array of Gecko accessibles to an NSArray of native accessibles
-static inline NSMutableArray* ConvertToNSArray(nsTArray<Accessible*>& aArray);
+NSArray<mozAccessible*>* ConvertToNSArray(nsTArray<LocalAccessible*>& aArray);
 
-// convert an array of Gecko proxy accessibles to an NSArray of native accessibles
-static inline NSMutableArray* ConvertToNSArray(nsTArray<ProxyAccessible*>& aArray);
+// convert an array of Gecko proxy accessibles to an NSArray of native
+// accessibles
+NSArray<mozAccessible*>* ConvertToNSArray(nsTArray<RemoteAccessible*>& aArray);
 
 /**
  * Get a localized string from the string bundle.
@@ -32,7 +35,7 @@ NSString* LocalizedString(const nsString& aString);
  * accessible wrapper or proxy, and returns the value as an NSString.
  * nil if no attribute is found.
  */
-NSString* GetAccAttr(mozAccessible* aNativeAccessible, const char* aAttrName);
+NSString* GetAccAttr(mozAccessible* aNativeAccessible, nsAtom* aAttrName);
 }
 }
 }

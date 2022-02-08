@@ -16,6 +16,8 @@
 #include "nsCOMPtr.h"
 #include "nsCOMArray.h"
 
+#include "js/RootingAPI.h"
+#include "js/Value.h"
 #include "mozilla/jni/Refs.h"
 
 #include "nsIMutableArray.h"
@@ -30,8 +32,7 @@
 #include "mozilla/Types.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/jni/Utils.h"
-#include "nsIObserver.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 
 #include "Units.h"
 
@@ -55,7 +56,7 @@ class NetworkInformation;
 
 // The order and number of the members in this structure must correspond
 // to the attrsAppearance array in GeckoAppShell.getSystemColors()
-typedef struct AndroidSystemColors {
+struct AndroidSystemColors {
   nscolor textColorPrimary;
   nscolor textColorPrimaryInverse;
   nscolor textColorSecondary;
@@ -67,7 +68,8 @@ typedef struct AndroidSystemColors {
   nscolor colorBackground;
   nscolor panelColorForeground;
   nscolor panelColorBackground;
-} AndroidSystemColors;
+  nscolor colorAccent;
+};
 
 class AndroidBridge final {
  public:
@@ -92,18 +94,15 @@ class AndroidBridge final {
 
   static AndroidBridge* Bridge() { return sBridge; }
 
-  void ContentDocumentChanged(mozIDOMWindowProxy* aDOMWindow);
-  bool IsContentDocumentDisplayed(mozIDOMWindowProxy* aDOMWindow);
-
   bool GetHandlersForURL(const nsAString& aURL,
                          nsIMutableArray* handlersArray = nullptr,
                          nsIHandlerApp** aDefaultApp = nullptr,
-                         const nsAString& aAction = EmptyString());
+                         const nsAString& aAction = u""_ns);
 
   bool GetHandlersForMimeType(const nsAString& aMimeType,
                               nsIMutableArray* handlersArray = nullptr,
                               nsIHandlerApp** aDefaultApp = nullptr,
-                              const nsAString& aAction = EmptyString());
+                              const nsAString& aAction = u""_ns);
 
   bool HasHWVP8Encoder();
   bool HasHWVP8Decoder();
@@ -144,8 +143,6 @@ class AndroidBridge final {
   uint32_t GetScreenOrientation();
   uint16_t GetScreenAngle();
 
-  int GetAPIVersion() { return mAPIVersion; }
-
   nsresult GetProxyForURI(const nsACString& aSpec, const nsACString& aScheme,
                           const nsACString& aHost, const int32_t aPort,
                           nsACString& aResult);
@@ -172,29 +169,12 @@ class AndroidBridge final {
                                   uint32_t aCount, uint32_t* aRead);
 
  protected:
-  static nsDataHashtable<nsStringHashKey, nsString> sStoragePaths;
+  static nsTHashMap<nsStringHashKey, nsString> sStoragePaths;
 
   static AndroidBridge* sBridge;
 
   AndroidBridge();
   ~AndroidBridge();
-
-  int mAPIVersion;
-
-  // intput stream
-  jclass jReadableByteChannel;
-  jclass jChannels;
-  jmethodID jChannelCreate;
-  jmethodID jByteBufferRead;
-
-  jclass jInputStream;
-  jmethodID jClose;
-  jmethodID jAvailable;
-
-  jmethodID jCalculateLength;
-
-  // some convinient types to have around
-  jclass jStringClass;
 
   jni::Object::GlobalRef mMessageQueue;
   jfieldID mMessageQueueMessages;
@@ -341,11 +321,10 @@ class AutoLocalJNIFrame {
     }                                                \
   }
 
-class nsAndroidBridge final : public nsIAndroidBridge, public nsIObserver {
+class nsAndroidBridge final : public nsIAndroidBridge {
  public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIANDROIDBRIDGE
-  NS_DECL_NSIOBSERVER
 
   NS_FORWARD_SAFE_NSIANDROIDEVENTDISPATCHER(mEventDispatcher)
 
@@ -353,9 +332,6 @@ class nsAndroidBridge final : public nsIAndroidBridge, public nsIObserver {
 
  private:
   ~nsAndroidBridge();
-
-  void AddObservers();
-  void RemoveObservers();
 
   nsCOMPtr<nsIAndroidEventDispatcher> mEventDispatcher;
 

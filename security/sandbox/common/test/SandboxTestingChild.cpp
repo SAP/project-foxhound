@@ -3,8 +3,17 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
 #include "SandboxTestingChild.h"
+#include "SandboxTestingChildTests.h"
 #include "SandboxTestingThread.h"
+#include "mozilla/ipc/Endpoint.h"
+
+#ifdef XP_LINUX
+#  include "mozilla/Sandbox.h"
+#endif
+
+#include "nsXULAppAPI.h"
 
 namespace mozilla {
 
@@ -50,11 +59,30 @@ void SandboxTestingChild::Bind(Endpoint<PSandboxTestingChild>&& aEndpoint) {
   DebugOnly<bool> ok = aEndpoint.Bind(this);
   MOZ_ASSERT(ok);
 
-  // Placeholder usage of the APIs needed to report test results.
-  // This will be fleshed out with tests that are OS and process type dependent.
-  SendReportTestResults(nsCString("testId1"), true /* shouldSucceed */,
-                        true /* didSucceed*/,
-                        nsCString("These are some test results!"));
+#ifdef XP_LINUX
+  bool sandboxCrashOnError = SetSandboxCrashOnError(false);
+#endif
+
+  if (XRE_IsContentProcess()) {
+    RunTestsContent(this);
+  }
+
+  if (XRE_IsRDDProcess()) {
+    RunTestsRDD(this);
+  }
+
+  if (XRE_IsGMPluginProcess()) {
+    RunTestsGMPlugin(this);
+  }
+
+  if (XRE_IsSocketProcess()) {
+    RunTestsSocket(this);
+  }
+
+#ifdef XP_LINUX
+  SetSandboxCrashOnError(sandboxCrashOnError);
+#endif
+
   // Tell SandboxTest that this process is done with all tests.
   SendTestCompleted();
 }
@@ -76,5 +104,42 @@ bool SandboxTestingChild::RecvShutDown() {
   Close();
   return true;
 }
+
+void SandboxTestingChild::ReportNoTests() {
+  SendReportTestResults("dummy_test"_ns, /* shouldSucceed */ true,
+                        /* didSucceed */ true,
+                        "The test framework fails if there are no cases."_ns);
+}
+
+#ifdef XP_UNIX
+template <typename F>
+void SandboxTestingChild::ErrnoTest(const nsCString& aName, bool aExpectSuccess,
+                                    F&& aFunction) {
+  int status = aFunction() >= 0 ? 0 : errno;
+  PosixTest(aName, aExpectSuccess, status);
+}
+
+template <typename F>
+void SandboxTestingChild::ErrnoValueTest(const nsCString& aName,
+                                         bool aExpectEquals, int aExpectedErrno,
+                                         F&& aFunction) {
+  int status = aFunction() >= 0 ? 0 : errno;
+  PosixTest(aName, aExpectEquals, status == aExpectedErrno);
+}
+
+void SandboxTestingChild::PosixTest(const nsCString& aName, bool aExpectSuccess,
+                                    int aStatus) {
+  bool succeeded = aStatus == 0;
+  nsAutoCString message;
+  if (succeeded) {
+    message = "Succeeded"_ns;
+  } else {
+    message = "Error: "_ns;
+    message += strerror(aStatus);
+  }
+
+  SendReportTestResults(aName, aExpectSuccess, succeeded, message);
+}
+#endif  // XP_UNIX
 
 }  // namespace mozilla

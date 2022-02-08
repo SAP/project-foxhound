@@ -12,6 +12,7 @@
 #include "nsContentUtils.h"
 #include "mozilla/net/DNS.h"
 #include "prerror.h"
+#include "nsComponentManagerUtils.h"
 
 #define REQUEST 0x68656c6f
 #define RESPONSE 0x6f6c6568
@@ -108,8 +109,8 @@ UDPClientListener::OnPacketReceived(nsIUDPSocket* socket,
       ADD_FAILURE();
     }
     return NS_OK;
-  } else if (TEST_OUTPUT_STREAM != phase ||
-             !CheckMessageContent(message, RESPONSE)) {
+  }
+  if (TEST_OUTPUT_STREAM != phase || !CheckMessageContent(message, RESPONSE)) {
     mResult = NS_ERROR_FAILURE;
   }
 
@@ -172,7 +173,8 @@ UDPServerListener::OnPacketReceived(nsIUDPSocket* socket,
       ADD_FAILURE();
     }
     return NS_OK;
-  } else if (TEST_MULTICAST == phase && CheckMessageContent(message, REQUEST)) {
+  }
+  if (TEST_MULTICAST == phase && CheckMessageContent(message, REQUEST)) {
     mResult = NS_OK;
   } else if (TEST_SEND_API != phase ||
              !CheckMessageContent(message, RESPONSE)) {
@@ -193,7 +195,7 @@ UDPServerListener::OnStopListening(nsIUDPSocket*, nsresult) {
 /**
  * Multicast timer callback: detects delivery failure
  */
-class MulticastTimerCallback : public nsITimerCallback {
+class MulticastTimerCallback : public nsITimerCallback, public nsINamed {
  protected:
   virtual ~MulticastTimerCallback();
 
@@ -203,12 +205,13 @@ class MulticastTimerCallback : public nsITimerCallback {
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSITIMERCALLBACK
+  NS_DECL_NSINAMED
 
   nsresult mResult;
   RefPtr<WaitForCondition> mWaiter;
 };
 
-NS_IMPL_ISUPPORTS(MulticastTimerCallback, nsITimerCallback)
+NS_IMPL_ISUPPORTS(MulticastTimerCallback, nsITimerCallback, nsINamed)
 
 MulticastTimerCallback::~MulticastTimerCallback() = default;
 
@@ -221,6 +224,12 @@ MulticastTimerCallback::Notify(nsITimer* timer) {
   printf("Multicast ping timeout expired\n");
   mResult = NS_ERROR_FAILURE;
   mWaiter->Notify();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+MulticastTimerCallback::GetName(nsACString& aName) {
+  aName.AssignLiteral("MulticastTimerCallback");
   return NS_OK;
 }
 

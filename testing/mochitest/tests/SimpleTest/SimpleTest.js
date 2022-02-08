@@ -73,6 +73,7 @@ let xOriginRunner = {
     this.expected = url.searchParams.get("expected");
   },
   callHarnessMethod(applyOn, command, ...params) {
+    // Message handled by xOriginTestRunnerHandler in TestRunner.js
     this.harnessWindow.postMessage(
       {
         harnessType: "SimpleTest",
@@ -100,22 +101,26 @@ let xOriginRunner = {
     this.callHarnessMethod("runner", "expectChildProcessCrash");
   },
   requestLongerTimeout(factor) {
-    this.harnessWindow.postMessage(
-      {
-        harnessType: "SimpleTest",
-        command: "requestLongerTimeout",
-        applyOn: "runner",
-        params: [factor],
-      },
-      "*"
-    );
+    this.callHarnessMethod("runner", "requestLongerTimeout", factor);
   },
+  _lastAssertionCount: 0,
   testFinished(tests) {
+    var newAssertionCount = SpecialPowers.assertionCount();
+    var numAsserts = newAssertionCount - this._lastAssertionCount;
+    this._lastAssertionCount = newAssertionCount;
+    this.callHarnessMethod("runner", "addAssertionCount", numAsserts);
     this.callHarnessMethod("runner", "testFinished", tests);
   },
   structuredLogger: {
     info(msg) {
       xOriginRunner.callHarnessMethod("logger", "structuredLogger.info", msg);
+    },
+    warning(msg) {
+      xOriginRunner.callHarnessMethod(
+        "logger",
+        "structuredLogger.warning",
+        msg
+      );
     },
     error(msg) {
       xOriginRunner.callHarnessMethod("logger", "structuredLogger.error", msg);
@@ -420,7 +425,7 @@ SimpleTest.record = function(condition, name, diag, stack, expected) {
   if (SimpleTest.expected == "fail") {
     if (!test.result) {
       SimpleTest.num_failed++;
-      test.result = !test.result;
+      test.result = true;
     }
     successInfo = {
       status: "PASS",
@@ -923,257 +928,141 @@ SimpleTest.requestFlakyTimeout = function(reason) {
   SimpleTest._flakyTimeoutReason = reason;
 };
 
-SimpleTest._pendingWaitForFocusCount = 0;
+/**
+ * If the page is not yet loaded, waits for the load event. If the page is
+ * not yet focused, focuses and waits for the window to be focused.
+ * If the current page is 'about:blank', then the page is assumed to not
+ * yet be loaded. Pass true for expectBlankPage to not make this assumption
+ * if you expect a blank page to be present.
+ *
+ * The target object should be specified if it is different than 'window'. The
+ * actual focused window may be a descendant window of aObject.
+ *
+ * @param aObject
+ *        Optional object to be focused, and may be either:
+ *          window - a window object to focus
+ *          browser - a <browser>/<iframe> element. The top-level window
+ *                    within the frame will be focused.
+ *          browsing context - a browsing context containing a window to focus
+ *        If not specified, defaults to the global 'window'.
+ * @param expectBlankPage
+ *        True if targetWindow.location is 'about:blank'. Defaults to false
+ * @param aBlurSubframe
+ *        If true, and a subframe within the window to focus is focused, blur
+ *        it so that the specified window or browsing context will receive
+ *        focus events.
+ * @returns The browsing context that was focused.
+ */
+SimpleTest.promiseFocus = async function(
+  aObject,
+  aExpectBlankPage = false,
+  aBlurSubframe = false
+) {
+  let browser;
+  let browsingContext;
+  let windowToFocus;
+
+  if (!aObject) {
+    aObject = window;
+  }
+
+  async function waitForEvent(aTarget, aEventName) {
+    return new Promise(resolve => {
+      aTarget.addEventListener(aEventName, resolve, {
+        capture: true,
+        once: true,
+      });
+    });
+  }
+
+  if (SpecialPowers.wrap(Window).isInstance(aObject)) {
+    windowToFocus = aObject;
+
+    let isBlank = windowToFocus.location.href == "about:blank";
+    if (
+      aExpectBlankPage != isBlank ||
+      windowToFocus.document.readyState != "complete"
+    ) {
+      info("must wait for load");
+      await waitForEvent(windowToFocus, "load");
+    }
+  } else {
+    if (SpecialPowers.wrap(Element).isInstance(aObject)) {
+      // assume this is a browser/iframe element
+      browsingContext = aObject.browsingContext;
+    } else {
+      browsingContext = aObject;
+    }
+
+    browser =
+      browsingContext == aObject ? aObject.top.embedderElement : aObject;
+    windowToFocus = browser.ownerGlobal;
+  }
+
+  if (!windowToFocus.document.hasFocus()) {
+    info("must wait for focus");
+    let focusPromise = waitForEvent(windowToFocus.document, "focus");
+    SpecialPowers.focus(windowToFocus);
+    await focusPromise;
+  }
+
+  if (browser) {
+    if (windowToFocus.document.activeElement != browser) {
+      browser.focus();
+    }
+
+    info("must wait for focus in content");
+
+    // Make sure that the child process thinks it is focused as well.
+    await SpecialPowers.ensureFocus(browsingContext, aBlurSubframe);
+  } else {
+    if (aBlurSubframe) {
+      SpecialPowers.clearFocus(windowToFocus);
+    }
+
+    browsingContext = windowToFocus.browsingContext;
+  }
+
+  // Some tests rely on this delay, likely expecting layout or paint to occur.
+  await new Promise(resolve => {
+    SimpleTest.executeSoon(resolve);
+  });
+
+  return browsingContext;
+};
 
 /**
- * Version of waitForFocus that returns a promise. The Promise will
- * not resolve to the focused window, as it might be a CPOW (and Promises
- * cannot be resolved with CPOWs). If you require the focused window,
- * you should use waitForFocus instead.
+ * Version of promiseFocus that uses a callback. For compatibility,
+ * the callback is passed one argument, the window that was focused.
+ * If the focused window is not in the same process, null is supplied.
  */
-SimpleTest.promiseFocus = function(targetWindow, expectBlankPage) {
-  return new Promise(function(resolve, reject) {
-    SimpleTest.waitForFocus(
-      win => {
-        // Just resolve, without passing the window (see bug 1233497)
-        resolve();
-      },
-      targetWindow,
-      expectBlankPage
-    );
+SimpleTest.waitForFocus = function(callback, aObject, expectBlankPage) {
+  SimpleTest.promiseFocus(aObject, expectBlankPage).then(focusedBC => {
+    callback(focusedBC?.window);
   });
 };
-
-/**
- * If the page is not yet loaded, waits for the load event. In addition, if
- * the page is not yet focused, focuses and waits for the window to be
- * focused. Calls the callback when completed. If the current page is
- * 'about:blank', then the page is assumed to not yet be loaded. Pass true for
- * expectBlankPage to not make this assumption if you expect a blank page to
- * be present.
- *
- * targetWindow should be specified if it is different than 'window'. The actual
- * focused window may be a descendant of targetWindow.
- *
- * @param callback
- *        function called when load and focus are complete
- * @param targetWindow
- *        optional window to be loaded and focused, defaults to 'window'.
- *        This may also be a <browser> element, in which case the window within
- *        that browser will be focused. This cannot be a window CPOW.
- * @param expectBlankPage
- *        true if targetWindow.location is 'about:blank'. Defaults to false
- */
-SimpleTest.waitForFocus = function(callback, targetWindow, expectBlankPage) {
-  // A separate method is used that is serialized and passed to the child
-  // process via loadFrameScript. Once the child window is focused, the
-  // child will send the WaitForFocus:ChildFocused notification to the parent.
-  // If a child frame in a child process must be focused, a
-  // WaitForFocus:FocusChild message is then sent to the child to focus that
-  // child. This message is used so that the child frame can be passed to it.
-  /* eslint-disable mozilla/use-services */
-  function waitForFocusInner(targetWin, isChildProcess, expectBlank) {
-    /* Indicates whether the desired targetWindow has loaded or focused. The
-         finished flag is set when the callback has been called and is used to
-         reject extraneous events from invoking the callback again. */
-    var loaded = false,
-      focused = false,
-      finished = false;
-
-    function info(msg) {
-      if (!isChildProcess) {
-        SimpleTest.info(msg);
-      }
-    }
-
-    function focusedWindow() {
-      if (isChildProcess) {
-        return Cc["@mozilla.org/focus-manager;1"].getService(Ci.nsIFocusManager)
-          .focusedWindow;
-      }
-      return SpecialPowers.focusedWindow();
-    }
-
-    function getHref(aWindow) {
-      return isChildProcess
-        ? aWindow.location.href
-        : SpecialPowers.getPrivilegedProps(aWindow, "location.href");
-    }
-
-    /* Event listener for the load or focus events. It will also be called with
-         event equal to null to check if the page is already focused and loaded. */
-    function focusedOrLoaded(event) {
-      try {
-        if (event) {
-          if (event.type == "load") {
-            if (expectBlank != (event.target.location == "about:blank")) {
-              return;
-            }
-
-            loaded = true;
-          } else if (event.type == "focus") {
-            focused = true;
-          }
-
-          event.currentTarget.removeEventListener(
-            event.type,
-            focusedOrLoaded,
-            true
-          );
-        }
-
-        if (loaded && focused && !finished) {
-          finished = true;
-          if (isChildProcess) {
-            sendAsyncMessage("WaitForFocus:ChildFocused", {});
-          } else {
-            SimpleTest._pendingWaitForFocusCount--;
-            SimpleTest.executeSoon(function() {
-              callback(targetWin);
-            });
-          }
-        }
-      } catch (e) {
-        if (!isChildProcess) {
-          SimpleTest.ok(
-            false,
-            "Exception caught in focusedOrLoaded: " +
-              e.message +
-              ", at: " +
-              e.fileName +
-              " (" +
-              e.lineNumber +
-              ")"
-          );
-        }
-      }
-    }
-
-    function waitForLoadAndFocusOnWindow(desiredWindow) {
-      /* If the current document is about:blank and we are not expecting a blank
-             page (or vice versa), and the document has not yet loaded, wait for the
-             page to load. A common situation is to wait for a newly opened window
-             to load its content, and we want to skip over any intermediate blank
-             pages that load. This issue is described in bug 554873. */
-      loaded = expectBlank
-        ? getHref(desiredWindow) == "about:blank"
-        : getHref(desiredWindow) != "about:blank" &&
-          desiredWindow.document.readyState == "complete";
-      if (!loaded) {
-        info("must wait for load");
-        desiredWindow.addEventListener("load", focusedOrLoaded, true);
-      }
-
-      var childDesiredWindow = {};
-      if (isChildProcess) {
-        var fm = Cc["@mozilla.org/focus-manager;1"].getService(
-          Ci.nsIFocusManager
-        );
-        fm.getFocusedElementForWindow(desiredWindow, true, childDesiredWindow);
-        childDesiredWindow = childDesiredWindow.value;
-      } else {
-        childDesiredWindow = SpecialPowers.getFocusedElementForWindow(
-          desiredWindow,
-          true
-        );
-      }
-
-      /* If this is a child frame, ensure that the frame is focused. */
-      if (isChildProcess) {
-        focused = focusedWindow() == childDesiredWindow;
-      } else {
-        focused = SpecialPowers.compare(focusedWindow(), childDesiredWindow);
-      }
-      if (!focused) {
-        info("must wait for focus");
-        childDesiredWindow.addEventListener("focus", focusedOrLoaded, true);
-        if (isChildProcess) {
-          childDesiredWindow.focus();
-        } else {
-          SpecialPowers.focus(childDesiredWindow);
-        }
-      }
-
-      focusedOrLoaded(null);
-    }
-
-    if (isChildProcess) {
-      /* This message is used when an inner child frame must be focused. */
-      addMessageListener("WaitForFocus:FocusChild", function focusChild(msg) {
-        removeMessageListener("WaitForFocus:FocusChild", focusChild);
-        finished = false;
-        waitForLoadAndFocusOnWindow(msg.objects.child);
-      });
-    }
-
-    waitForLoadAndFocusOnWindow(targetWin);
-  }
-
-  SimpleTest._pendingWaitForFocusCount++;
-  if (!targetWindow) {
-    targetWindow = window;
-  }
-
-  expectBlankPage = !!expectBlankPage;
-
-  // If this is a request to focus a remote child window, the request must
-  // be forwarded to the child process.
-  //
-  // Even if the real |Components| doesn't exist, we might shim in a simple JS
-  // placebo for compat. An easy way to differentiate this from the real thing
-  // is whether the property is read-only or not.  The real |Components|
-  // property is read-only.
-  var c = Object.getOwnPropertyDescriptor(window, "Components");
-  var Ci;
-  if (c && c.value && !c.writable) {
-    // eslint-disable-next-line mozilla/use-cc-etc
-    Ci = Components.interfaces;
-  } else {
-    Ci = SpecialPowers.Ci;
-  }
-
-  var browser = null;
-  if (
-    typeof XULElement != "undefined" &&
-    targetWindow instanceof XULElement &&
-    targetWindow.localName == "browser"
-  ) {
-    browser = targetWindow;
-  }
-
-  if (browser && browser.isRemoteBrowser) {
-    browser.messageManager.addMessageListener(
-      "WaitForFocus:ChildFocused",
-      function waitTest(msg) {
-        browser.messageManager.removeMessageListener(
-          "WaitForFocus:ChildFocused",
-          waitTest
-        );
-        SimpleTest._pendingWaitForFocusCount--;
-        setTimeout(callback, 0, browser);
-      }
-    );
-
-    // Serialize the waitForFocusInner function and run it in the child process.
-    var frameScript =
-      "data:,(" +
-      waitForFocusInner.toString() +
-      ")(content, true, " +
-      expectBlankPage +
-      ");";
-    browser.messageManager.loadFrameScript(frameScript, true);
-    browser.focus();
-  } else {
-    // Otherwise, this is an attempt to focus a single process or parent window,
-    // so pass false for isChildProcess.
-    if (browser) {
-      targetWindow = browser.contentWindow;
-    }
-
-    waitForFocusInner(targetWindow, false, expectBlankPage);
-  }
-};
 /* eslint-enable mozilla/use-services */
+
+SimpleTest.stripLinebreaksAndWhitespaceAfterTags = function(aString) {
+  return aString.replace(/(>\s*(\r\n|\n|\r)*\s*)/gm, ">");
+};
+
+/*
+ * `navigator.platform` should include this, when the platform is Windows.
+ */
+const kPlatformWindows = "Win";
+
+/*
+ * See `SimpleTest.waitForClipboard`.
+ */
+const kTextHtmlPrefixClipboardDataWindows =
+  "<html><body>\n<!--StartFragment-->";
+
+/*
+ * See `SimpleTest.waitForClipboard`.
+ */
+const kTextHtmlSuffixClipboardDataWindows =
+  "<!--EndFragment-->\n</body>\n</html>";
 
 /*
  * Polls the clipboard waiting for the expected value. A known value different than
@@ -1189,8 +1078,8 @@ SimpleTest.waitForFocus = function(callback, targetWindow, expectBlankPage) {
  *        as LineFeed.  Therefore, you cannot include CarriageReturn to the
  *        string.
  *        If you specify string value and expect "text/html" data, this wraps
- *        the expected value with "<html><body>\n<!--StartFragment-->" and
- *        "<!--EndFragment-->\n</body>\n</html>" only when it runs on Windows
+ *        the expected value with `kTextHtmlPrefixClipboardDataWindows` and
+ *        `kTextHtmlSuffixClipboardDataWindows` only when it runs on Windows
  *        because they are appended only by nsDataObj.cpp for Windows.
  *        https://searchfox.org/mozilla-central/rev/8f7b017a31326515cb467e69eef1f6c965b4f00e/widget/windows/nsDataObj.cpp#1798-1805,1839-1840,1842
  *        Therefore, you can specify selected (copied) HTML data simply on any
@@ -1212,6 +1101,9 @@ SimpleTest.waitForFocus = function(callback, targetWindow, expectBlankPage) {
  *        interval defined by aTimeout.  When aExpectFailure is true, the argument
  *        aExpectedStringOrValidatorFn must be null, as it won't be used.
  *        Defaults to false.
+ * @param aDontInitializeClipboardIfExpectFailure [optional]
+ *        If aExpectFailure and this is set to true, this does NOT initialize
+ *        clipboard with random data before running aSetupFn.
  */
 SimpleTest.waitForClipboard = function(
   aExpectedStringOrValidatorFn,
@@ -1220,14 +1112,16 @@ SimpleTest.waitForClipboard = function(
   aFailureFn,
   aFlavor,
   aTimeout,
-  aExpectFailure
+  aExpectFailure,
+  aDontInitializeClipboardIfExpectFailure
 ) {
   let promise = SimpleTest.promiseClipboardChange(
     aExpectedStringOrValidatorFn,
     aSetupFn,
     aFlavor,
     aTimeout,
-    aExpectFailure
+    aExpectFailure,
+    aDontInitializeClipboardIfExpectFailure
   );
   promise.then(aSuccessFn).catch(aFailureFn);
 };
@@ -1240,7 +1134,8 @@ SimpleTest.promiseClipboardChange = async function(
   aSetupFn,
   aFlavor,
   aTimeout,
-  aExpectFailure
+  aExpectFailure,
+  aDontInitializeClipboardIfExpectFailure
 ) {
   let requestedFlavor = aFlavor || "text/unicode";
 
@@ -1272,7 +1167,9 @@ SimpleTest.promiseClipboardChange = async function(
       inputValidatorFn = function(aData) {
         return (
           aData.replace(/\r\n?/g, "\n") ===
-          `<html><body>\n<!--StartFragment-->${aExpectedStringOrValidatorFn}<!--EndFragment-->\n</body>\n</html>`
+          kTextHtmlPrefixClipboardDataWindows +
+            aExpectedStringOrValidatorFn +
+            kTextHtmlSuffixClipboardDataWindows
         );
       };
     } else {
@@ -1286,7 +1183,7 @@ SimpleTest.promiseClipboardChange = async function(
 
   let maxPolls = aTimeout ? aTimeout / 100 : 50;
 
-  async function putAndVerify(operationFn, validatorFn, flavor) {
+  async function putAndVerify(operationFn, validatorFn, flavor, expectFailure) {
     await operationFn();
 
     let data;
@@ -1298,7 +1195,7 @@ SimpleTest.promiseClipboardChange = async function(
           preExpectedVal = null;
         } else {
           SimpleTest.ok(
-            !aExpectFailure,
+            !expectFailure,
             "Clipboard has the given value: '" + data + "'"
           );
         }
@@ -1312,28 +1209,43 @@ SimpleTest.promiseClipboardChange = async function(
       });
     }
 
-    SimpleTest.ok(
-      aExpectFailure,
-      "Timed out while polling clipboard for pasted data, got: " + data
-    );
-    if (!aExpectFailure) {
-      throw new Error("failed");
+    let errorMsg = `Timed out while polling clipboard for ${
+      preExpectedVal ? "initialized" : "requested"
+    } data, got: ${data}`;
+    SimpleTest.ok(expectFailure, errorMsg);
+    if (!expectFailure) {
+      throw new Error(errorMsg);
     }
     return data;
   }
 
-  // First we wait for a known value different from the expected one.
-  await putAndVerify(
-    function() {
-      SpecialPowers.clipboardCopyString(preExpectedVal);
-    },
-    function(aData) {
-      return aData == preExpectedVal;
-    },
-    "text/unicode"
-  );
+  if (!aExpectFailure || !aDontInitializeClipboardIfExpectFailure) {
+    // First we wait for a known value different from the expected one.
+    SimpleTest.info(`Initializing clipboard with "${preExpectedVal}"...`);
+    await putAndVerify(
+      function() {
+        SpecialPowers.clipboardCopyString(preExpectedVal);
+      },
+      function(aData) {
+        return aData == preExpectedVal;
+      },
+      "text/unicode",
+      false
+    );
 
-  return putAndVerify(aSetupFn, inputValidatorFn, requestedFlavor);
+    SimpleTest.info(
+      "Succeeded initializing clipboard, start requested things..."
+    );
+  } else {
+    preExpectedVal = null;
+  }
+
+  return putAndVerify(
+    aSetupFn,
+    inputValidatorFn,
+    requestedFlavor,
+    aExpectFailure
+  );
 };
 
 /**
@@ -1348,34 +1260,27 @@ SimpleTest.promiseClipboardChange = async function(
  *        before timeout.
  */
 SimpleTest.waitForCondition = function(aCond, aCallback, aErrorMsg) {
-  var tries = 0;
-  var interval = setInterval(() => {
-    if (tries >= 30) {
-      ok(false, aErrorMsg);
-      moveOn();
-      return;
-    }
-    var conditionPassed;
+  this.promiseWaitForCondition(aCond, aErrorMsg).then(() => aCallback());
+};
+SimpleTest.promiseWaitForCondition = async function(aCond, aErrorMsg) {
+  for (let tries = 0; tries < 30; ++tries) {
+    // Wait 100ms between checks.
+    await new Promise(resolve => {
+      SimpleTest._originalSetTimeout.apply(window, [resolve, 100]);
+    });
+
+    let conditionPassed;
     try {
-      conditionPassed = aCond();
+      conditionPassed = await aCond();
     } catch (e) {
       ok(false, `${e}\n${e.stack}`);
       conditionPassed = false;
     }
     if (conditionPassed) {
-      moveOn();
+      return;
     }
-    tries++;
-  }, 100);
-  var moveOn = () => {
-    clearInterval(interval);
-    aCallback();
-  };
-};
-SimpleTest.promiseWaitForCondition = function(aCond, aErrorMsg) {
-  return new Promise(resolve => {
-    this.waitForCondition(aCond, resolve, aErrorMsg);
-  });
+  }
+  ok(false, aErrorMsg);
 };
 
 /**
@@ -1414,13 +1319,19 @@ SimpleTest.timeout = async function() {
   SimpleTest._timeoutFunctions = [];
 };
 
+SimpleTest.finishWithFailure = function(msg) {
+  SimpleTest.ok(false, msg);
+  SimpleTest.finish();
+};
+
 /**
  * Finishes the tests. This is automatically called, except when
  * SimpleTest.waitForExplicitFinish() has been invoked.
  **/
 SimpleTest.finish = function() {
   if (SimpleTest._alreadyFinished) {
-    var err = "[SimpleTest.finish()] this test already called finish!";
+    var err =
+      "TEST-UNEXPECTED-FAIL | SimpleTest | this test already called finish!";
     if (parentRunner) {
       parentRunner.structuredLogger.error(err);
     } else {
@@ -1499,17 +1410,6 @@ SimpleTest.finish = function() {
       SimpleTest.ok(
         false,
         "expectUncaughtException was called but no uncaught exception was detected!"
-      );
-    }
-    if (SimpleTest._pendingWaitForFocusCount != 0) {
-      SimpleTest.is(
-        SimpleTest._pendingWaitForFocusCount,
-        0,
-        "[SimpleTest.finish()] waitForFocus() was called a " +
-          "different number of times from the number of " +
-          "callbacks run.  Maybe the test terminated " +
-          "prematurely -- be sure to use " +
-          "SimpleTest.waitForExplicitFinish()."
       );
     }
     if (SimpleTest._tests.length == 0) {
@@ -2109,9 +2009,7 @@ function getAndroidSdk() {
       var versionString = nav.userAgent.includes("Android")
         ? "version"
         : "sdk_version";
-      gAndroidSdk = SpecialPowers.Cc["@mozilla.org/system-info;1"]
-        .getService(SpecialPowers.Ci.nsIPropertyBag2)
-        .getProperty(versionString);
+      gAndroidSdk = SpecialPowers.Services.sysinfo.getProperty(versionString);
     }
     document.documentElement.removeChild(iframe);
   }
@@ -2236,3 +2134,10 @@ var add_task = (function() {
 if (usesFailurePatterns()) {
   SimpleTest.requestCompleteLog();
 }
+
+addEventListener("message", async event => {
+  if (event.data == "SimpleTest:timeout") {
+    await SimpleTest.timeout();
+    SimpleTest.finish();
+  }
+});

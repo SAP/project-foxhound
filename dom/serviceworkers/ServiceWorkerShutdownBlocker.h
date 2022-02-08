@@ -13,11 +13,15 @@
 #include "nsITimer.h"
 
 #include "ServiceWorkerShutdownState.h"
+#include "mozilla/InitializedOnce.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/NotNull.h"
 #include "mozilla/HashTable.h"
 
 namespace mozilla {
 namespace dom {
+
+class ServiceWorkerManager;
 
 /**
  * Main thread only.
@@ -38,7 +42,8 @@ namespace dom {
  * shutdown will be forcefully unblocked.
  */
 class ServiceWorkerShutdownBlocker final : public nsIAsyncShutdownBlocker,
-                                           public nsITimerCallback {
+                                           public nsITimerCallback,
+                                           public nsINamed {
  public:
   using Progress = ServiceWorkerShutdownState::Progress;
   static const uint32_t kInvalidShutdownStateId = 0;
@@ -46,13 +51,15 @@ class ServiceWorkerShutdownBlocker final : public nsIAsyncShutdownBlocker,
   NS_DECL_ISUPPORTS
   NS_DECL_NSIASYNCSHUTDOWNBLOCKER
   NS_DECL_NSITIMERCALLBACK
+  NS_DECL_NSINAMED
 
   /**
    * Returns the registered shutdown blocker if registration succeeded and
    * nullptr otherwise.
    */
   static already_AddRefed<ServiceWorkerShutdownBlocker> CreateAndRegisterOn(
-      nsIAsyncShutdownClient* aShutdownBarrier);
+      nsIAsyncShutdownClient& aShutdownBarrier,
+      ServiceWorkerManager& aServiceWorkerManager);
 
   /**
    * Blocks shutdown until `aPromise` settles.
@@ -86,7 +93,8 @@ class ServiceWorkerShutdownBlocker final : public nsIAsyncShutdownBlocker,
   void ReportShutdownProgress(uint32_t aShutdownStateId, Progress aProgress);
 
  private:
-  ServiceWorkerShutdownBlocker();
+  explicit ServiceWorkerShutdownBlocker(
+      ServiceWorkerManager& aServiceWorkerManager);
 
   ~ServiceWorkerShutdownBlocker();
 
@@ -140,6 +148,9 @@ class ServiceWorkerShutdownBlocker final : public nsIAsyncShutdownBlocker,
   HashMap<uint32_t, ServiceWorkerShutdownState> mShutdownStates;
 
   nsCOMPtr<nsITimer> mTimer;
+  LazyInitializedOnceEarlyDestructible<
+      const NotNull<RefPtr<ServiceWorkerManager>>>
+      mServiceWorkerManager;
 };
 
 }  // namespace dom

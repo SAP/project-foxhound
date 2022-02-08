@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_gamepad_Gamepad_h
 #define mozilla_dom_gamepad_Gamepad_h
 
-#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/GamepadBinding.h"
 #include "mozilla/dom/GamepadButton.h"
+#include "mozilla/dom/GamepadHandle.h"
 #include "mozilla/dom/GamepadPose.h"
 #include "mozilla/dom/GamepadHapticActuator.h"
 #include "mozilla/dom/GamepadLightIndicator.h"
@@ -17,12 +17,15 @@
 #include "mozilla/dom/Performance.h"
 #include <stdint.h>
 #include "nsCOMPtr.h"
+#include "nsTHashMap.h"
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsWrapperCache.h"
 
 namespace mozilla {
 namespace dom {
+
+class GamepadHapticActuator;
 
 // Per spec:
 // https://dvcs.w3.org/hg/gamepad/raw-file/default/gamepad.html#remapping
@@ -40,7 +43,7 @@ const int kRightStickYAxis = 3;
 class Gamepad final : public nsISupports, public nsWrapperCache {
  public:
   Gamepad(nsISupports* aParent, const nsAString& aID, int32_t aIndex,
-          uint32_t aHashKey, GamepadMappingType aMapping, GamepadHand aHand,
+          GamepadHandle aHandle, GamepadMappingType aMapping, GamepadHand aHand,
           uint32_t aDisplayID, uint32_t aNumButtons, uint32_t aNumAxes,
           uint32_t aNumHaptics, uint32_t aNumLightIndicator,
           uint32_t aNumTouchEvents);
@@ -84,8 +87,6 @@ class Gamepad final : public nsISupports, public nsWrapperCache {
 
   int32_t Index() const { return mIndex; }
 
-  uint32_t HashKey() const { return mHashKey; }
-
   void GetButtons(nsTArray<RefPtr<GamepadButton>>& aButtons) const {
     aButtons = mButtons.Clone();
   }
@@ -108,6 +109,8 @@ class Gamepad final : public nsISupports, public nsWrapperCache {
     aTouchEvents = mTouchEvents.Clone();
   }
 
+  GamepadHandle GetHandle() const { return mHandle; }
+
  private:
   virtual ~Gamepad() = default;
   void UpdateTimestamp();
@@ -117,7 +120,7 @@ class Gamepad final : public nsISupports, public nsWrapperCache {
   nsString mID;
   int32_t mIndex;
   // the gamepad hash key in GamepadManager
-  uint32_t mHashKey;
+  GamepadHandle mHandle;
   uint32_t mDisplayId;
   uint32_t mTouchIdHashValue;
   // The mapping in use.
@@ -135,7 +138,7 @@ class Gamepad final : public nsISupports, public nsWrapperCache {
   nsTArray<RefPtr<GamepadHapticActuator>> mHapticActuators;
   nsTArray<RefPtr<GamepadLightIndicator>> mLightIndicators;
   nsTArray<RefPtr<GamepadTouch>> mTouchEvents;
-  nsDataHashtable<nsUint32HashKey, uint32_t> mTouchIdHash;
+  nsTHashMap<nsUint32HashKey, uint32_t> mTouchIdHash;
 };
 
 }  // namespace dom

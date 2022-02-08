@@ -4,10 +4,6 @@
 
 /* import-globals-from preferences.js */
 
-var { FeatureGate } = ChromeUtils.import(
-  "resource://featuregates/FeatureGate.jsm"
-);
-
 var gExperimentalPane = {
   inited: false,
   _template: null,
@@ -52,16 +48,41 @@ var gExperimentalPane = {
     this._observedPrefs = [];
   },
 
+  // Reset the features to their default values
+  async resetAllFeatures() {
+    let features = await gExperimentalPane.getFeatures();
+    for (let feature of features) {
+      Services.prefs.setBoolPref(feature.preference, feature.defaultValue);
+    }
+  },
+
+  async getFeatures() {
+    let searchParams = new URLSearchParams(document.documentURIObject.query);
+    let definitionsUrl = searchParams.get("definitionsUrl");
+    let features = await FeatureGate.all(definitionsUrl);
+    return features.filter(f => f.isPublic);
+  },
+
+  async _sortFeatures(features) {
+    // Sort the features alphabetically by their title
+    let titles = await document.l10n.formatMessages(
+      features.map(f => {
+        return { id: f.title };
+      })
+    );
+    titles = titles.map((title, index) => [title.attributes[0].value, index]);
+    titles.sort((a, b) => a[0].toLowerCase().localeCompare(b[0].toLowerCase()));
+    // Get the features in order of sorted titles.
+    return titles.map(([, index]) => features[index]);
+  },
+
   async init() {
     if (this.inited) {
       return;
     }
     this.inited = true;
 
-    let searchParams = new URLSearchParams(document.documentURIObject.query);
-    let definitionsUrl = searchParams.get("definitionsUrl");
-    let features = await FeatureGate.all(definitionsUrl);
-    features = features.filter(f => f.isPublic);
+    let features = await this.getFeatures();
     let shouldHide = !features.length;
     document.getElementById("category-experimental").hidden = shouldHide;
     // Cache the visibility so we can show it quicker in subsequent loads.
@@ -81,6 +102,14 @@ var gExperimentalPane = {
         return;
       }
     }
+
+    features = await this._sortFeatures(features);
+
+    setEventListener(
+      "experimentalCategory-reset",
+      "command",
+      gExperimentalPane.resetAllFeatures
+    );
 
     window.addEventListener("unload", () => this.removePrefObservers());
     this._template = document.getElementById("template-featureGate");
@@ -130,6 +159,5 @@ var gExperimentalPane = {
       preference.setElementValue(checkbox);
     }
     this._featureGatesContainer.appendChild(frag);
-    Preferences.updateAllElements();
   },
 };

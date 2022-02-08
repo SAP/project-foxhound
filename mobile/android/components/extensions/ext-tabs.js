@@ -230,14 +230,14 @@ this.tabs = class extends ExtensionAPI {
           register: fire => {
             const restricted = ["url", "favIconUrl", "title"];
 
-            function sanitize(extension, changeInfo) {
+            function sanitize(tab, changeInfo) {
               const result = {};
               let nonempty = false;
               for (const prop in changeInfo) {
-                if (
-                  extension.hasPermission("tabs") ||
-                  !restricted.includes(prop)
-                ) {
+                // In practice, changeInfo contains at most one property from
+                // restricted. Therefore it is not necessary to cache the value
+                // of tab.hasTabPermission outside the loop.
+                if (!restricted.includes(prop) || tab.hasTabPermission) {
                   nonempty = true;
                   result[prop] = changeInfo[prop];
                 }
@@ -246,7 +246,7 @@ this.tabs = class extends ExtensionAPI {
             }
 
             const fireForTab = (tab, changed) => {
-              const [needed, changeInfo] = sanitize(extension, changed);
+              const [needed, changeInfo] = sanitize(tab, changed);
               if (needed) {
                 fire.async(tab.id, changeInfo, tab.convert());
               }
@@ -256,7 +256,7 @@ this.tabs = class extends ExtensionAPI {
               const needed = [];
               let nativeTab;
               switch (event.type) {
-                case "DOMTitleChanged": {
+                case "pagetitlechanged": {
                   const window = getBrowserWindow(event.target.ownerGlobal);
                   nativeTab = window.tab;
 
@@ -299,10 +299,10 @@ this.tabs = class extends ExtensionAPI {
             };
 
             windowTracker.addListener("status", statusListener);
-            windowTracker.addListener("DOMTitleChanged", listener);
+            windowTracker.addListener("pagetitlechanged", listener);
             return () => {
               windowTracker.removeListener("status", statusListener);
-              windowTracker.removeListener("DOMTitleChanged", listener);
+              windowTracker.removeListener("pagetitlechanged", listener);
             };
           },
         }).api(),
@@ -331,6 +331,15 @@ this.tabs = class extends ExtensionAPI {
             }
           }
 
+          if (cookieStoreId) {
+            cookieStoreId = getUserContextIdForCookieStoreId(
+              extension,
+              cookieStoreId,
+              false // TODO bug 1372178: support creation of private browsing tabs
+            );
+          }
+          cookieStoreId = cookieStoreId ? cookieStoreId.toString() : undefined;
+
           const nativeTab = await GeckoViewTabBridge.createNewTab({
             extensionId: context.extension.id,
             createProperties: {
@@ -354,14 +363,23 @@ this.tabs = class extends ExtensionAPI {
             tabListener.initializingTabs.add(nativeTab);
           } else {
             url = "about:blank";
+          }
+
+          let { principal } = context;
+          if (url.startsWith("about:")) {
+            // Make sure things like about:blank and other about: URIs never
+            // inherit, and instead always get a NullPrincipal.
             flags |= Ci.nsIWebNavigation.LOAD_FLAGS_DISALLOW_INHERIT_PRINCIPAL;
+            // Falling back to content here as about: requires it, however is safe.
+            principal = Services.scriptSecurityManager.getLoadContextContentPrincipal(
+              Services.io.newURI(url),
+              browser.loadContext
+            );
           }
 
           browser.loadURI(url, {
             flags,
-            // GeckoView doesn't support about:newtab so we don't need to worry
-            // about using the system principal here.
-            triggeringPrincipal: context.principal,
+            triggeringPrincipal: principal,
           });
 
           if (active) {
@@ -455,17 +473,21 @@ this.tabs = class extends ExtensionAPI {
         },
 
         async query(queryInfo) {
-          if (!extension.hasPermission("tabs")) {
-            if (queryInfo.url !== null || queryInfo.title !== null) {
-              return Promise.reject({
-                message:
-                  'The "tabs" permission is required to use the query API with the "url" or "title" parameters',
-              });
-            }
-          }
           return Array.from(tabManager.query(queryInfo, context), tab =>
             tab.convert()
           );
+        },
+
+        async captureTab(tabId, options) {
+          const nativeTab = getTabOrActive(tabId);
+          await tabListener.awaitTabReady(nativeTab);
+
+          const { browser } = nativeTab;
+          const window = browser.ownerGlobal;
+          const zoom = window.windowUtils.fullZoom;
+
+          const tab = tabManager.wrapTab(nativeTab);
+          return tab.capture(context, zoom, options);
         },
 
         async captureVisibleTab(windowId, options) {
@@ -476,8 +498,9 @@ this.tabs = class extends ExtensionAPI {
 
           const tab = tabManager.wrapTab(window.tab);
           await tabListener.awaitTabReady(tab.nativeTab);
+          const zoom = window.windowUtils.fullZoom;
 
-          return tab.capture(context, options);
+          return tab.capture(context, zoom, options);
         },
 
         async executeScript(tabId, details) {

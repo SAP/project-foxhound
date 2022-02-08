@@ -6,6 +6,7 @@
 This module tries to make sure we have all dependencies installed on
 all our environments.
 """
+from __future__ import absolute_import
 import sys
 import os
 import subprocess
@@ -16,8 +17,7 @@ TOPDIR = os.path.join(os.path.dirname(__file__), "..")
 
 
 def install_reqs():
-    """ We install requirements one by one, with no cache, and in isolated mode.
-    """
+    """We install requirements one by one, with no cache, and in isolated mode."""
     try:
         import yaml  # NOQA
 
@@ -54,7 +54,7 @@ def install_reqs():
                             "--no-cache-dir",
                             "--isolated",
                             "--find-links",
-                            "https://pypi.pub.build.mozilla.org/pub",
+                            "https://pypi.pub.build.mozilla.org/pub/",
                             req,
                         ]
                     )
@@ -63,7 +63,7 @@ def install_reqs():
 
 
 def check():
-    """ Called by the runner.
+    """Called by the runner.
 
     The check function will restart the app after
     all deps have been installed.

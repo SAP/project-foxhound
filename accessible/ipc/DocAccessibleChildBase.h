@@ -15,7 +15,7 @@
 namespace mozilla {
 namespace a11y {
 
-class Accessible;
+class LocalAccessible;
 class AccShowEvent;
 
 class DocAccessibleChildBase : public PDocAccessibleChild {
@@ -44,8 +44,8 @@ class DocAccessibleChildBase : public PDocAccessibleChild {
   /**
    * Serializes a shown tree and sends it to the chrome process.
    */
-  void InsertIntoIpcTree(Accessible* aParent, Accessible* aChild,
-                         uint32_t aIdxInParent);
+  void InsertIntoIpcTree(LocalAccessible* aParent, LocalAccessible* aChild,
+                         uint32_t aIdxInParent, bool aSuppressShowEvent);
   void ShowEvent(AccShowEvent* aShowEvent);
 
   virtual void ActorDestroy(ActorDestroyReason) override {
@@ -57,9 +57,18 @@ class DocAccessibleChildBase : public PDocAccessibleChild {
     mDoc = nullptr;
   }
 
+  virtual mozilla::ipc::IPCResult RecvTakeFocus(const uint64_t& aID) override;
+
+  virtual mozilla::ipc::IPCResult RecvVerifyCache(
+      const uint64_t& aID, const uint64_t& aCacheDomain,
+      AccAttributes* aFields) override;
+
  protected:
-  static uint32_t InterfacesFor(Accessible* aAcc);
-  static void SerializeTree(Accessible* aRoot, nsTArray<AccessibleData>& aTree);
+  static void FlattenTree(LocalAccessible* aRoot,
+                          nsTArray<LocalAccessible*>& aTree);
+
+  static void SerializeTree(nsTArray<LocalAccessible*>& aTree,
+                            nsTArray<AccessibleData>& aData);
 
   virtual void MaybeSendShowEvent(ShowEventData& aData, bool aFromUser) {
     Unused << SendShowEvent(aData, aFromUser);
@@ -74,6 +83,8 @@ class DocAccessibleChildBase : public PDocAccessibleChild {
 
   bool IsConstructedInParentProcess() const { return mIsRemoteConstructed; }
   void SetConstructedInParentProcess() { mIsRemoteConstructed = true; }
+
+  LocalAccessible* IdToAccessible(const uint64_t& aID) const;
 
   DocAccessible* mDoc;
   bool mIsRemoteConstructed;

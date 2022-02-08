@@ -10,7 +10,7 @@ add_task(async function() {
 
   await addBreakpoint(dbg, "simple2", 3);
 
-  openFirstBreakpointContextMenu(dbg);
+  await openFirstBreakpointContextMenu(dbg);
   // select "Remove breakpoint"
   selectContextMenuItem(dbg, selectors.breakpointContextMenu.remove);
 
@@ -28,14 +28,9 @@ add_task(async function() {
   await addBreakpoint(dbg, "simple1", 5);
   await addBreakpoint(dbg, "simple1", 6);
 
-  openFirstBreakpointContextMenu(dbg);
+  await openFirstBreakpointContextMenu(dbg);
   // select "Disable Others"
-  // FIXME bug 1524374 this waitForDispatch call only sees one dispatch for
-  // SET_BREAKPOINT even though three are triggered, due to the order in
-  // which promises get resolved. The problem seems to indicate a coverage gap
-  // in waitUntilService(). Workaround this by only waiting for one dispatch,
-  // though this is fragile and could break again in the future.
-  let dispatched = waitForDispatch(dbg, "SET_BREAKPOINT", /* 2*/ 1);
+  let dispatched = waitForDispatch(dbg.store, "SET_BREAKPOINT", 2);
   selectContextMenuItem(dbg, selectors.breakpointContextMenu.disableOthers);
   await waitForState(dbg, state =>
     dbg.selectors
@@ -45,9 +40,9 @@ add_task(async function() {
   await dispatched;
   ok(true, "breakpoint at 4 is the only enabled breakpoint");
 
-  openFirstBreakpointContextMenu(dbg);
+  await openFirstBreakpointContextMenu(dbg);
   // select "Disable All"
-  dispatched = waitForDispatch(dbg, "SET_BREAKPOINT");
+  dispatched = waitForDispatch(dbg.store, "SET_BREAKPOINT");
   selectContextMenuItem(dbg, selectors.breakpointContextMenu.disableAll);
   await waitForState(dbg, state =>
     dbg.selectors.getBreakpointsList().every(bp => bp.disabled)
@@ -55,9 +50,9 @@ add_task(async function() {
   await dispatched;
   ok(true, "all breakpoints are disabled");
 
-  openFirstBreakpointContextMenu(dbg);
+  await openFirstBreakpointContextMenu(dbg);
   // select "Enable Others"
-  dispatched = waitForDispatch(dbg, "SET_BREAKPOINT", 2);
+  dispatched = waitForDispatch(dbg.store, "SET_BREAKPOINT", 2);
   selectContextMenuItem(dbg, selectors.breakpointContextMenu.enableOthers);
   await waitForState(dbg, state =>
     dbg.selectors
@@ -67,9 +62,9 @@ add_task(async function() {
   await dispatched;
   ok(true, "all breakpoints except line 1 are enabled");
 
-  openFirstBreakpointContextMenu(dbg);
+  await openFirstBreakpointContextMenu(dbg);
   // select "Remove Others"
-  dispatched = waitForDispatch(dbg, "REMOVE_BREAKPOINT", 2);
+  dispatched = waitForDispatch(dbg.store, "REMOVE_BREAKPOINT", 2);
   selectContextMenuItem(dbg, selectors.breakpointContextMenu.removeOthers);
   await waitForState(
     dbg,
@@ -81,6 +76,7 @@ add_task(async function() {
   ok(true, "remaining breakpoint should be on line 4");
 });
 
-function openFirstBreakpointContextMenu(dbg) {
+async function openFirstBreakpointContextMenu(dbg) {
   rightClickElement(dbg, "breakpointItem", 2);
+  await waitForContextMenu(dbg);
 }

@@ -9,7 +9,7 @@
 #include "nsLayoutStatics.h"
 #include "nscore.h"
 
-#include "DateTimeFormat.h"
+#include "mozilla/intl/AppDateTimeFormat.h"
 #include "MediaManager.h"
 #include "mozilla/dom/ServiceWorkerRegistrar.h"
 #include "nsAttrValue.h"
@@ -43,25 +43,26 @@
 #include "nsTextFrame.h"
 #include "nsCCUncollectableMarker.h"
 #include "nsTextFragment.h"
-#include "nsMediaFeatures.h"
 #include "nsCORSListenerProxy.h"
-#include "nsHTMLDNSPrefetch.h"
 #include "nsHtml5Module.h"
 #include "nsHTMLTags.h"
 #include "nsFocusManager.h"
 #include "nsListControlFrame.h"
+#include "mozilla/dom/HTMLDNSPrefetch.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/SVGElementFactory.h"
+#include "nsLanguageAtomService.h"
 #include "nsMathMLAtoms.h"
 #include "nsMathMLOperators.h"
 #include "Navigator.h"
 #include "StorageObserver.h"
 #include "CacheObserver.h"
 #include "DisplayItemClip.h"
+#include "HitTestInfo.h"
 #include "ActiveLayerTracker.h"
-#include "FrameLayerBuilder.h"
 #include "AnimationCommon.h"
 #include "LayerAnimationInfo.h"
+#include "mozilla/TimelineConsumers.h"
 
 #include "AudioChannelService.h"
 #include "mozilla/dom/PromiseDebugging.h"
@@ -91,7 +92,6 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/ProcessPriorityManager.h"
 #include "mozilla/PermissionManager.h"
-#include "nsApplicationCacheService.h"
 #include "mozilla/dom/CustomElementRegistry.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/IMEStateManager.h"
@@ -102,7 +102,6 @@
 #include "MediaDecoder.h"
 #include "mozilla/ClearSiteData.h"
 #include "mozilla/EditorController.h"
-#include "mozilla/Fuzzyfox.h"
 #include "mozilla/HTMLEditorController.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/StaticPresData.h"
@@ -122,9 +121,15 @@
 #include "mozilla/dom/localstorage/ActorsParent.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "mozilla/RemoteLazyInputStreamStorage.h"
+#include "nsLayoutUtils.h"
 #include "nsThreadManager.h"
 #include "mozilla/css/ImageLoader.h"
 #include "gfxUserFontSet.h"
+#include "RestoreTabContentObserver.h"
+#include "mozilla/intl/nsComplexBreaker.h"
+
+#include "nsRLBoxExpatDriver.h"
+#include "RLBoxWOFF2Types.h"
 
 using namespace mozilla;
 using namespace mozilla::net;
@@ -175,12 +180,11 @@ nsresult nsLayoutStatics::Initialize() {
 
   nsCellMap::Init();
 
-  mozilla::SharedFontList::Initialize();
   StaticPresData::Init();
   nsCSSRendering::Init();
   css::ImageLoader::Init();
 
-  rv = nsHTMLDNSPrefetch::Initialize();
+  rv = HTMLDNSPrefetch::Initialize();
   if (NS_FAILED(rv)) {
     NS_ERROR("Could not initialize HTML DNS prefetch");
     return rv;
@@ -236,6 +240,8 @@ nsresult nsLayoutStatics::Initialize() {
   PointerEventHandler::InitializeStatics();
   TouchManager::InitializeStatics();
 
+  TimelineConsumers::Init();
+
   nsWindowMemoryReporter::Init();
 
   SVGElementFactory::Init();
@@ -273,13 +279,7 @@ nsresult nsLayoutStatics::Initialize() {
     // On content process we initialize these components when PContentChild is
     // fully initialized.
     mozilla::dom::RemoteWorkerService::Initialize();
-    // This one should be initialized on the parent only
-    mozilla::dom::BrowserParent::InitializeStatics();
   }
-
-  nsThreadManager::InitializeShutdownObserver();
-
-  mozilla::Fuzzyfox::Start();
 
   ClearSiteData::Initialize();
 
@@ -293,6 +293,14 @@ nsresult nsLayoutStatics::Initialize() {
 
   ThirdPartyUtil::Startup();
 
+  RestoreTabContentObserver::Initialize();
+
+  ComplexBreaker::Initialize();
+
+  RLBoxExpatSandboxPool::Initialize();
+
+  RLBoxWOFF2SandboxPool::Initalize();
+
   return NS_OK;
 }
 
@@ -302,7 +310,6 @@ void nsLayoutStatics::Shutdown() {
 
   if (XRE_IsParentProcess() || XRE_IsContentProcess()) {
     ShutdownServo();
-    URLExtraData::ReleaseDummy();
   }
 
   mozilla::dom::AbstractRange::Shutdown();
@@ -320,10 +327,10 @@ void nsLayoutStatics::Shutdown() {
   IMEStateManager::Shutdown();
   EditorController::Shutdown();
   HTMLEditorController::Shutdown();
-  nsMediaFeatures::Shutdown();
-  nsHTMLDNSPrefetch::Shutdown();
+  HTMLDNSPrefetch::Shutdown();
   nsCSSRendering::Shutdown();
   StaticPresData::Shutdown();
+  nsLanguageAtomService::Shutdown();
 #ifdef DEBUG
   nsIFrame::DisplayReflowShutdown();
 #endif
@@ -361,7 +368,6 @@ void nsLayoutStatics::Shutdown() {
   nsGlobalWindowInner::ShutDown();
   nsGlobalWindowOuter::ShutDown();
   nsListControlFrame::Shutdown();
-  FrameLayerBuilder::Shutdown();
 
   CubebUtils::ShutdownLibrary();
   WebAudioUtils::Shutdown();
@@ -381,16 +387,16 @@ void nsLayoutStatics::Shutdown() {
   HTMLInputElement::DestroyUploadLastDir();
 
   nsLayoutUtils::Shutdown();
-  mozilla::SharedFontList::Shutdown();
 
   nsHyphenationManager::Shutdown();
   nsDOMMutationObserver::Shutdown();
 
-  DateTimeFormat::Shutdown();
+  mozilla::intl::AppDateTimeFormat::Shutdown();
 
   ContentParent::ShutDown();
 
   DisplayItemClip::Shutdown();
+  HitTestInfo::Shutdown();
 
   CacheObserver::Shutdown();
 
@@ -401,4 +407,8 @@ void nsLayoutStatics::Shutdown() {
   css::ImageLoader::Shutdown();
 
   mozilla::net::UrlClassifierFeatureFactory::Shutdown();
+
+  RestoreTabContentObserver::Shutdown();
+
+  ComplexBreaker::Shutdown();
 }

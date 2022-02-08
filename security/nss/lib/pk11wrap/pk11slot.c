@@ -1369,10 +1369,9 @@ PK11_InitToken(PK11SlotInfo *slot, PRBool loadCerts)
     if (status != PR_SUCCESS)
         return SECFailure;
 
-    rv = pk11_ReadProfileList(slot);
-    if (rv != SECSuccess) {
-        return SECFailure;
-    }
+    /* Not all tokens have profile objects or even recognize what profile
+     * objects are it's OK for pk11_ReadProfileList to fail */
+    (void)pk11_ReadProfileList(slot);
 
     if (!(slot->isInternal) && (slot->hasRandom)) {
         /* if this slot has a random number generater, use it to add entropy
@@ -2664,6 +2663,39 @@ NSSToken *
 PK11Slot_GetNSSToken(PK11SlotInfo *sl)
 {
     return sl->nssToken;
+}
+
+PRBool
+pk11slot_GetFIPSStatus(PK11SlotInfo *slot, CK_SESSION_HANDLE session,
+                       CK_OBJECT_HANDLE object, CK_ULONG operationType)
+{
+    SECMODModule *mod = slot->module;
+    CK_RV crv;
+    CK_ULONG fipsState = CKS_NSS_FIPS_NOT_OK;
+
+    /* handle the obvious conditions:
+     * 1) the module doesn't have a fipsIndicator - fips state must be false */
+    if (mod->fipsIndicator == NULL) {
+        return PR_FALSE;
+    }
+    /* 2) the session doesn't exist - fips state must be false */
+    if (session == CK_INVALID_HANDLE) {
+        return PR_FALSE;
+    }
+
+    /* go fetch the state */
+    crv = mod->fipsIndicator(session, object, operationType, &fipsState);
+    if (crv != CKR_OK) {
+        return PR_FALSE;
+    }
+    return (fipsState == CKS_NSS_FIPS_OK) ? PR_TRUE : PR_FALSE;
+}
+
+PRBool
+PK11_SlotGetLastFIPSStatus(PK11SlotInfo *slot)
+{
+    return pk11slot_GetFIPSStatus(slot, slot->session, CK_INVALID_HANDLE,
+                                  CKT_NSS_SESSION_LAST_CHECK);
 }
 
 /*

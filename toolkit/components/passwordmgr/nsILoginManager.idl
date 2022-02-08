@@ -7,6 +7,18 @@
 interface nsILoginInfo;
 interface nsIPropertyBag;
 
+[scriptable, uuid(43429075-ede6-41eb-ac69-a8cd4376b041)]
+interface nsILoginSearchCallback : nsISupports
+{
+  /**
+   * Called when a search is complete and the results are ready.
+   *
+   * @param aLogins
+   *        Logins found in the search.
+   */
+  void onSearchComplete(in Array<nsILoginInfo> aLogins);
+};
+
 [scriptable, uuid(38c7f6af-7df9-49c7-b558-2776b24e6cc1)]
 interface nsILoginManager : nsISupports {
   /**
@@ -101,11 +113,22 @@ interface nsILoginManager : nsISupports {
   void recordPasswordUse(in nsILoginInfo aLogin, in boolean aPrivateContextWithoutExplicitConsent, in AString aLoginType, in boolean aFilled);
 
   /**
-   * Remove all logins known to login manager.
+   * Remove all stored user facing logins.
+   *
+   * This will remove all the logins that a user can access through about:logins.
+   * This will not remove the FxA Sync key which is stored with the rest of a user's logins
+   * but is not accessible through about:logins
    *
    * The browser sanitization feature allows the user to clear any stored
    * passwords. This interface allows that to be done without getting each
-   * login first (which might require knowing the master password).
+   * login first.
+   *
+   */
+  void removeAllUserFacingLogins();
+
+  /**
+   * Completely remove all logins, including the user's FxA Sync key.
+   *
    */
   void removeAllLogins();
 
@@ -126,6 +149,15 @@ interface nsILoginManager : nsISupports {
    * @return A promise which resolves with a JS Array of nsILoginInfo objects.
    */
   Promise getAllLoginsAsync();
+
+  /**
+   * Like getAllLoginsAsync, but with a callback returning the search results.
+   *
+   * @param {nsILoginSearchCallback} aCallback
+   *        The interface to notify when the search is complete.
+   *
+   */
+  void getAllLoginsWithCallbackAsync(in nsILoginSearchCallback aCallback);
 
   /**
    * Obtain a list of all origins for which password saving is disabled.
@@ -231,6 +263,44 @@ interface nsILoginManager : nsISupports {
    * @return An array of nsILoginInfo objects.
    */
   Array<nsILoginInfo> searchLogins(in nsIPropertyBag matchData);
+
+  /**
+   * Returns the "sync id" used by Sync to know whether the store is current with
+   * respect to the sync servers.
+   *
+   * Returns null if the data doesn't exist or if the data can't be
+   * decrypted (including if the master-password prompt is cancelled). This is
+   * OK for Sync as it can't even begin syncing if the master-password is
+   * locked as the sync encrytion keys are stored in this login manager.
+   */
+  Promise getSyncID();
+
+  /**
+   * Sets the "sync id" used by Sync to know whether the store is current with
+   * respect to the sync servers. May be set to null.
+   *
+   * Throws if the data can't be encrypted (including if the master-password
+   * prompt is cancelled)
+   */
+  Promise setSyncID(in AString syncID);
+
+  /**
+   * Returns the timestamp of the last sync as a double (in seconds since Epoch
+   * rounded to two decimal places), or 0.0 if the data doesn't exist.
+   */
+  Promise getLastSync();
+
+  /**
+   * Sets the timestamp of the last sync.
+   */
+  Promise setLastSync(in double timestamp);
+
+  /**
+   * Ensures that the local sync ID for the engine matches the sync ID for
+   * the collection on the server. If they don't match, then we set
+    * the local sync ID to newSyncID and reset the last sync timestamp.
+   */
+  Promise ensureCurrentSyncID(in AString newSyncID);
 
  /**
   * True when a master password prompt is being displayed.

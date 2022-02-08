@@ -22,10 +22,7 @@ types.addType("sourcedata", {
     return longstringType.write(value, context, detail);
   },
   read: (value, context, detail) => {
-    // backward compatibility for FF67 or older: value might be an old style ArrayBuffer
-    // actor grip with type="arrayBuffer". The content should be the same so it can be
-    // translated to a regular ArrayBufferFront.
-    if (value.typeName === "arraybuffer" || value.type === "arrayBuffer") {
+    if (value.typeName === "arraybuffer") {
       return arraybufferType.read(value, context, detail);
     }
     return longstringType.read(value, context, detail);
@@ -77,8 +74,6 @@ const sourceSpec = generateActorSpec({
       },
     },
     source: {
-      // we are sending the type "source" to be compatible
-      // with FF67 and older
       request: {},
       response: RetVal("source.onsource"),
     },

@@ -633,7 +633,14 @@ fn set_registers<F: Function>(
     let mut checker: Option<CheckerContext> = None;
     let mut insn_blocks: Vec<BlockIx> = vec![];
     if use_checker {
-        checker = Some(CheckerContext::new(func, reg_universe, memory_moves));
+        checker = Some(CheckerContext::new(
+            func,
+            reg_universe,
+            memory_moves,
+            &[],
+            &[],
+            &[],
+        ));
         insn_blocks.resize(func.insns().len(), BlockIx::new(0));
         for block_ix in func.blocks() {
             for insn_ix in func.block_insns(block_ix) {
@@ -717,6 +724,7 @@ fn set_registers<F: Function>(
             mapper.set_use(vreg, rreg);
         }
 
+        let included_in_clobbers = func.is_included_in_clobbers(func.get_insn(iix));
         if mention_set.is_mod() {
             if let Some(prev_rreg) = mapper.lookup_use(vreg) {
                 debug_assert_eq!(prev_rreg, rreg, "different use allocs for {:?}", vreg);
@@ -727,7 +735,9 @@ fn set_registers<F: Function>(
 
             mapper.set_use(vreg, rreg);
             mapper.set_def(vreg, rreg);
-            clobbered_registers.insert(rreg);
+            if included_in_clobbers {
+                clobbered_registers.insert(rreg);
+            }
         }
 
         if mention_set.is_def() {
@@ -736,7 +746,9 @@ fn set_registers<F: Function>(
             }
 
             mapper.set_def(vreg, rreg);
-            clobbered_registers.insert(rreg);
+            if included_in_clobbers {
+                clobbered_registers.insert(rreg);
+            }
         }
     }
 

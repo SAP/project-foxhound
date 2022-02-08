@@ -22,11 +22,15 @@
         'pk11_curve25519_unittest.cc',
         'pk11_der_private_key_import_unittest.cc',
         'pk11_des_unittest.cc',
+        'pk11_dsa_unittest.cc',
         'pk11_ecdsa_unittest.cc',
         'pk11_ecdh_unittest.cc',
         'pk11_encrypt_derive_unittest.cc',
         'pk11_find_certs_unittest.cc',
         'pk11_hkdf_unittest.cc',
+        'pk11_hmac_unittest.cc',
+        'pk11_hpke_unittest.cc',
+        'pk11_ike_unittest.cc',
         'pk11_import_unittest.cc',
         'pk11_kbkdf.cc',
         'pk11_keygen.cc',
@@ -40,6 +44,7 @@
         'pk11_rsapkcs1_unittest.cc',
         'pk11_rsapss_unittest.cc',
         'pk11_seed_cbc_unittest.cc',
+        'pk11_signature_test.cc',
         '<(DEPTH)/gtests/common/gtests.cc'
       ],
       'dependencies': [

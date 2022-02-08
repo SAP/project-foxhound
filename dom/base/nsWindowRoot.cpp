@@ -28,9 +28,11 @@
 #include "xpcpublic.h"
 #include "nsCycleCollectionParticipant.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/HTMLTextAreaElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/JSActorService.h"
+#include "mozilla/dom/WindowGlobalParent.h"
 
 #ifdef MOZ_XUL
 #  include "nsXULElement.h"
@@ -218,13 +220,11 @@ nsresult nsWindowRoot::GetControllerForCommand(const char* aCommand,
             fm->GetActiveBrowsingContextInChrome()
                 ? fm->GetFocusedBrowsingContextInChrome()
                 : nullptr;
-        CanonicalBrowsingContext* canonicalFocusedBC =
-            CanonicalBrowsingContext::Cast(focusedBC);
-        if (canonicalFocusedBC) {
+        if (focusedBC) {
           // At this point, it is known that a child process is focused, so ask
           // its Controllers actor if the command is supported.
-          nsCOMPtr<nsIController> controller =
-              do_QueryActor("Controllers", canonicalFocusedBC);
+          nsCOMPtr<nsIController> controller = do_QueryActor(
+              "Controllers", focusedBC->Canonical()->GetCurrentWindowGlobal());
           if (controller) {
             bool supported;
             controller->SupportsCommand(aCommand, &supported);
@@ -280,8 +280,7 @@ nsresult nsWindowRoot::GetControllerForCommand(const char* aCommand,
 }
 
 void nsWindowRoot::GetEnabledDisabledCommandsForControllers(
-    nsIControllers* aControllers,
-    nsTHashtable<nsCStringHashKey>& aCommandsHandled,
+    nsIControllers* aControllers, nsTHashSet<nsCString>& aCommandsHandled,
     nsTArray<nsCString>& aEnabledCommands,
     nsTArray<nsCString>& aDisabledCommands) {
   uint32_t controllerCount;
@@ -322,7 +321,7 @@ void nsWindowRoot::GetEnabledDisabledCommandsForControllers(
 void nsWindowRoot::GetEnabledDisabledCommands(
     nsTArray<nsCString>& aEnabledCommands,
     nsTArray<nsCString>& aDisabledCommands) {
-  nsTHashtable<nsCStringHashKey> commandsHandled;
+  nsTHashSet<nsCString> commandsHandled;
 
   nsCOMPtr<nsIControllers> controllers;
   GetControllers(false, getter_AddRefs(controllers));
@@ -367,20 +366,20 @@ JSObject* nsWindowRoot::WrapObject(JSContext* aCx,
 
 void nsWindowRoot::AddBrowser(nsIRemoteTab* aBrowser) {
   nsWeakPtr weakBrowser = do_GetWeakReference(aBrowser);
-  mWeakBrowsers.PutEntry(weakBrowser);
+  mWeakBrowsers.Insert(weakBrowser);
 }
 
 void nsWindowRoot::RemoveBrowser(nsIRemoteTab* aBrowser) {
   nsWeakPtr weakBrowser = do_GetWeakReference(aBrowser);
-  mWeakBrowsers.RemoveEntry(weakBrowser);
+  mWeakBrowsers.Remove(weakBrowser);
 }
 
 void nsWindowRoot::EnumerateBrowsers(BrowserEnumerator aEnumFunc, void* aArg) {
   // Collect strong references to all browsers in a separate array in
   // case aEnumFunc alters mWeakBrowsers.
   nsTArray<nsCOMPtr<nsIRemoteTab>> remoteTabs;
-  for (auto iter = mWeakBrowsers.ConstIter(); !iter.Done(); iter.Next()) {
-    nsCOMPtr<nsIRemoteTab> remoteTab(do_QueryReferent(iter.Get()->GetKey()));
+  for (const auto& key : mWeakBrowsers) {
+    nsCOMPtr<nsIRemoteTab> remoteTab(do_QueryReferent(key));
     if (remoteTab) {
       remoteTabs.AppendElement(remoteTab);
     }

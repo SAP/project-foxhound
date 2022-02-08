@@ -7,11 +7,13 @@
 #include "nsImageModule.h"
 
 #include "mozilla/ModuleUtils.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_image.h"
 
 #include "DecodePool.h"
 #include "ImageFactory.h"
 #include "nsICategoryManager.h"
+#include "nsServiceManagerUtils.h"
 #include "ShutdownTracker.h"
 #include "SurfaceCache.h"
 #include "imgLoader.h"
@@ -56,10 +58,14 @@ nsresult mozilla::image::EnsureModuleInitialized() {
 
   static ImageEnablementCookie kAVIFCookie = {
       mozilla::StaticPrefs::image_avif_enabled, "image/avif"_ns};
+  static ImageEnablementCookie kJXLCookie = {
+      mozilla::StaticPrefs::image_jxl_enabled, "image/jxl"_ns};
   static ImageEnablementCookie kWebPCookie = {
       mozilla::StaticPrefs::image_webp_enabled, "image/webp"_ns};
   Preferences::RegisterCallbackAndCall(UpdateContentViewerRegistration,
                                        "image.avif.enabled", &kAVIFCookie);
+  Preferences::RegisterCallbackAndCall(UpdateContentViewerRegistration,
+                                       "image.jxl.enabled", &kJXLCookie);
   Preferences::RegisterCallbackAndCall(UpdateContentViewerRegistration,
                                        "image.webp.enabled", &kWebPCookie);
 

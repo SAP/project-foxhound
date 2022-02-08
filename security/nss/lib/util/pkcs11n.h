@@ -38,6 +38,9 @@
 #define CKO_NSS_BUILTIN_ROOT_LIST (CKO_NSS + 4)
 #define CKO_NSS_NEWSLOT (CKO_NSS + 5)
 #define CKO_NSS_DELSLOT (CKO_NSS + 6)
+#define CKO_NSS_VALIDATION (CKO_NSS + 7)
+
+#define CKV_NSS_FIPS_140 (CKO_NSS + 1)
 
 /*
  * NSS-defined key types
@@ -98,6 +101,11 @@
 #define CKA_NSS_MOZILLA_CA_POLICY (CKA_NSS + 34)
 #define CKA_NSS_SERVER_DISTRUST_AFTER (CKA_NSS + 35)
 #define CKA_NSS_EMAIL_DISTRUST_AFTER (CKA_NSS + 36)
+
+#define CKA_NSS_VALIDATION_TYPE (CKA_NSS + 36)
+#define CKA_NSS_VALIDATION_VERSION (CKA_NSS + 37)
+#define CKA_NSS_VALIDATION_LEVEL (CKA_NSS + 38)
+#define CKA_NSS_VALIDATION_MODULE_ID (CKA_NSS + 39)
 
 /*
  * Trust attributes:
@@ -269,6 +277,16 @@
 
 #define CKM_TLS_PRF_GENERAL 0x80000373UL
 
+/* FIPS Indicator defines */
+#define CKS_NSS_UNINITIALIZED 0xffffffffUL
+#define CKS_NSS_FIPS_NOT_OK 0UL
+#define CKS_NSS_FIPS_OK 1UL
+
+#define CKT_NSS_SESSION_CHECK 1UL
+#define CKT_NSS_OBJECT_CHECK 2UL
+#define CKT_NSS_BOTH_CHECK 3UL
+#define CKT_NSS_SESSION_LAST_CHECK 4UL
+
 typedef struct CK_NSS_JPAKEPublicValue {
     CK_BYTE *pGX;
     CK_ULONG ulGXLen;
@@ -333,6 +351,9 @@ typedef struct CK_NSS_AEAD_PARAMS {
 
 #define CKR_NSS_CERTDB_FAILED (CKR_NSS + 1)
 #define CKR_NSS_KEYDB_FAILED (CKR_NSS + 2)
+
+/* NSS specific types */
+typedef CK_ULONG CK_NSS_VALIDATION_TYPE;
 
 /* Mandatory parameter for the CKM_NSS_HKDF_* key deriviation mechanisms.
    See RFC 5869.
@@ -589,6 +610,18 @@ typedef struct CK_NSS_MODULE_FUNCTIONS {
     CK_NSS_ModuleDBFunc NSC_ModuleDBFunc;
 } CK_NSS_MODULE_FUNCTIONS;
 
+/* FIPS Indicator Interface. This may move to the normal PKCS #11 table
+ * in the future. For now it's called "Vendor NSS FIPS Interface" */
+typedef CK_RV (*CK_NSS_GetFIPSStatus)(CK_SESSION_HANDLE hSession,
+                                      CK_OBJECT_HANDLE hObject,
+                                      CK_ULONG ulOperationType,
+                                      CK_ULONG *pulFIPSStatus);
+
+typedef struct CK_NSS_FIPS_FUNCTIONS {
+    CK_VERSION version;
+    CK_NSS_GetFIPSStatus NSC_NSSGetFIPSStatus;
+} CK_NSS_FIPS_FUNCTIONS;
+
 /* There was an inconsistency between the spec and the header file in defining
  * the CK_GCM_PARAMS structure. The authoritative reference is the header file,
  * but NSS used the spec when adding it to its own header. In V3 we've
@@ -613,7 +646,7 @@ typedef CK_NSS_GCM_PARAMS CK_PTR CK_NSS_GCM_PARAMS_PTR;
 #define CK_INVALID_SESSION CK_INVALID_HANDLE
 #define CKR_KEY_PARAMS_INVALID 0x0000006B
 
-/* use the old wrong CK_GCM_PARAMS is NSS_PCKS11_2_0_COMPAT is defined */
+/* use the old wrong CK_GCM_PARAMS if NSS_PCKS11_2_0_COMPAT is defined */
 typedef struct CK_NSS_GCM_PARAMS CK_GCM_PARAMS;
 typedef CK_NSS_GCM_PARAMS CK_PTR CK_GCM_PARAMS_PTR;
 

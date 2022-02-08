@@ -9,6 +9,7 @@
 #include "gfxContext.h"
 #include "gfxUtils.h"
 #include "mozilla/gfx/2D.h"
+#include "nsCSSValue.h"
 #include "nsLayoutUtils.h"
 #include "nsNameSpaceManager.h"
 #include "nsMathMLChar.h"
@@ -211,6 +212,22 @@ nscoord nsMathMLFrame::CalcLength(nsPresContext* aPresContext,
 }
 
 /* static */
+void nsMathMLFrame::GetSubDropFromChild(nsIFrame* aChild, nscoord& aSubDrop,
+                                        float aFontSizeInflation) {
+  RefPtr<nsFontMetrics> fm =
+      nsLayoutUtils::GetFontMetricsForFrame(aChild, aFontSizeInflation);
+  GetSubDrop(fm, aSubDrop);
+}
+
+/* static */
+void nsMathMLFrame::GetSupDropFromChild(nsIFrame* aChild, nscoord& aSupDrop,
+                                        float aFontSizeInflation) {
+  RefPtr<nsFontMetrics> fm =
+      nsLayoutUtils::GetFontMetricsForFrame(aChild, aFontSizeInflation);
+  GetSupDrop(fm, aSupDrop);
+}
+
+/* static */
 void nsMathMLFrame::ParseNumericValue(const nsString& aString,
                                       nscoord* aLengthValue, uint32_t aFlags,
                                       nsPresContext* aPresContext,
@@ -240,6 +257,7 @@ void nsMathMLFrame::ParseNumericValue(const nsString& aString,
       CalcLength(aPresContext, aComputedStyle, cssValue, aFontSizeInflation);
 }
 
+namespace mozilla {
 #if defined(DEBUG) && defined(SHOW_BOUNDING_BOX)
 class nsDisplayMathMLBoundingMetrics final : public nsDisplayItem {
  public:
@@ -308,6 +326,8 @@ void nsDisplayMathMLBar::Paint(nsDisplayListBuilder* aBuilder,
       mFrame->GetVisitedDependentColor(&nsStyleText::mWebkitTextFillColor)));
   drawTarget->FillRect(rect, color);
 }
+
+}  // namespace mozilla
 
 void nsMathMLFrame::DisplayBar(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
                                const nsRect& aRect,

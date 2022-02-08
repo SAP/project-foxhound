@@ -1,4 +1,3 @@
-// |reftest| skip -- class-methods-private is not supported
 // This file was procedurally generated from the following sources:
 // - src/dstr-binding/ary-init-iter-no-close.case
 // - src/dstr-binding/default/cls-expr-private-gen-meth-dflt.template

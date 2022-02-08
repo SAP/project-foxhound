@@ -6,11 +6,11 @@
 
 #include "mozilla/dom/ClipboardEvent.h"
 #include "mozilla/ContentEvents.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/DataTransfer.h"
 #include "nsIClipboard.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 ClipboardEvent::ClipboardEvent(EventTarget* aOwner, nsPresContext* aPresContext,
                                InternalClipboardEvent* aEvent)
@@ -78,8 +78,7 @@ DataTransfer* ClipboardEvent::GetClipboardData() {
   return event->mClipboardData;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 using namespace mozilla;
 using namespace mozilla::dom;

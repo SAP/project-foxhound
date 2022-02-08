@@ -4,6 +4,7 @@
 
 interface nsIDocShell;
 interface nsISupports;
+interface nsISessionStoreRestoreData;
 
 /**
  * A callback passed to SessionStoreUtils.forEachNonDynamicChildFrame().
@@ -112,22 +113,27 @@ namespace SessionStoreUtils {
 
   boolean restoreFormData(Document document, optional CollectedData data = {});
 
-  /**
-   * Restores all sessionStorage "super cookies".
-   * @param aDocShell
-   *        A tab's docshell (containing the sessionStorage)
-   * @param aStorageData
-   *        A nested object with storage data to be restored that has hosts as
-   *        keys and per-origin session storage data as strings. For example:
-   *        {"https://example.com^userContextId=1": {"key": "value", "my_number": "123"}}
-   */
-   void restoreSessionStorage(nsIDocShell docShell, record<DOMString, record<DOMString, DOMString>> data);
+   nsISessionStoreRestoreData constructSessionStoreRestoreData();
+
+   [Throws]
+   Promise<void> initializeRestore(CanonicalBrowsingContext browsingContext,
+                                   nsISessionStoreRestoreData? data);
+
+   [Throws]
+   Promise<void> restoreDocShellState(
+      CanonicalBrowsingContext browsingContext,
+      UTF8String? url,
+      ByteString? docShellCaps);
+
+   void restoreSessionStorageFromParent(
+     CanonicalBrowsingContext browsingContext,
+     record<UTF8String, record<DOMString, DOMString>> sessionStorage);
 };
 
 [GenerateConversionToJS, GenerateInit]
 dictionary CollectedFileListValue
 {
-  required DOMString type;
+  DOMString type = "file";
   required sequence<DOMString> fileList;
 };
 
@@ -166,19 +172,23 @@ dictionary InputElementData {
 dictionary UpdateSessionStoreData {
   ByteString docShellCaps;
   boolean isPrivate;
-  sequence<ByteString> positions;
-  sequence<long> positionDescendants;
-  // The following are for input data
-  InputElementData id;
-  InputElementData xpath;
-  sequence<long> inputDescendants;
-  sequence<long> numId;
-  sequence<long> numXPath;
-  sequence<DOMString> innerHTML;
-  sequence<ByteString> url;
-  // for sessionStorage
-  sequence<ByteString> storageOrigins;
-  sequence<DOMString> storageKeys;
-  sequence<DOMString> storageValues;
-  boolean isFullStorage;
+};
+
+[GenerateConversionToJS]
+dictionary SessionStoreWindowStateChange {
+  SessionStoreFormData formdata;
+  SessionStoreScroll scroll;
+  boolean hasChildren;
+  required sequence<unsigned long> path;
+};
+
+dictionary SessionStoreFormData {
+  ByteString url;
+  record<DOMString, CollectedFormDataValue> id;
+  record<DOMString, CollectedFormDataValue> xpath;
+  DOMString innerHTML;
+};
+
+dictionary SessionStoreScroll {
+  ByteString scroll;
 };

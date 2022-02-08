@@ -133,11 +133,16 @@ class FeatureGate {
       return;
     }
     let features = await FeatureGate.all();
-    let enabledFeatures = features
-      .filter(async f => f.getValue())
-      .map(f => f.preference)
-      .join(",");
-    crashReporter.annotateCrashReport("ExperimentalFeatures", enabledFeatures);
+    let enabledFeatures = [];
+    for (let feature of features) {
+      if (await feature.getValue()) {
+        enabledFeatures.push(feature.preference);
+      }
+    }
+    crashReporter.annotateCrashReport(
+      "ExperimentalFeatures",
+      enabledFeatures.join(",")
+    );
   }
 
   /**
@@ -222,13 +227,9 @@ class FeatureGate {
   static targetingFacts = new Map([
     ["release", AppConstants.MOZ_UPDATE_CHANNEL === "release"],
     ["beta", AppConstants.MOZ_UPDATE_CHANNEL === "beta"],
-    ["dev-edition", AppConstants.MOZ_UPDATE_CHANNEL === "aurora"],
-    [
-      "nightly",
-      AppConstants.MOZ_UPDATE_CHANNEL === "nightly" ||
-        /* Treat local builds the same as Nightly builds */
-        AppConstants.MOZ_UPDATE_CHANNEL === "default",
-    ],
+    ["early_beta_or_earlier", AppConstants.EARLY_BETA_OR_EARLIER],
+    ["dev-edition", AppConstants.MOZ_DEV_EDITION],
+    ["nightly", AppConstants.NIGHTLY_BUILD],
     ["win", AppConstants.platform === "win"],
     ["mac", AppConstants.platform === "macosx"],
     ["linux", AppConstants.platform === "linux"],

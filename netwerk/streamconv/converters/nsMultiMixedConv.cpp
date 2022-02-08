@@ -20,20 +20,16 @@
 #include "nsIURI.h"
 #include "nsHttpHeaderArray.h"
 #include "mozilla/AutoRestore.h"
+#include "mozilla/Tokenizer.h"
+#include "nsComponentManagerUtils.h"
+
+using namespace mozilla;
 
 nsPartChannel::nsPartChannel(nsIChannel* aMultipartChannel, uint32_t aPartID,
                              nsIStreamListener* aListener)
     : mMultipartChannel(aMultipartChannel),
       mListener(aListener),
-      mStatus(NS_OK),
-      mLoadFlags(0),
-      mContentDisposition(0),
-      mContentLength(UINT64_MAX),
-      mIsByteRangeRequest(false),
-      mByteRangeStart(0),
-      mByteRangeEnd(0),
-      mPartID(aPartID),
-      mIsLastPart(false) {
+      mPartID(aPartID) {
   // Inherit the load flags from the original channel...
   mMultipartChannel->GetLoadFlags(&mLoadFlags);
 
@@ -220,9 +216,7 @@ nsPartChannel::GetIsDocument(bool* aIsDocument) {
 
 NS_IMETHODIMP
 nsPartChannel::GetLoadGroup(nsILoadGroup** aLoadGroup) {
-  *aLoadGroup = mLoadGroup;
-  NS_IF_ADDREF(*aLoadGroup);
-
+  *aLoadGroup = do_AddRef(mLoadGroup).take();
   return NS_OK;
 }
 
@@ -383,8 +377,7 @@ NS_IMETHODIMP
 nsPartChannel::GetBaseChannel(nsIChannel** aReturn) {
   NS_ENSURE_ARG_POINTER(aReturn);
 
-  *aReturn = mMultipartChannel;
-  NS_IF_ADDREF(*aReturn);
+  *aReturn = do_AddRef(mMultipartChannel).take();
   return NS_OK;
 }
 
@@ -544,10 +537,6 @@ nsMultiMixedConv::OnDataAvailable(nsIRequest* request, nsIInputStream* inStr,
 NS_IMETHODIMP
 nsMultiMixedConv::OnStopRequest(nsIRequest* request, nsresult aStatus) {
   nsresult rv;
-
-  if (mBoundary.IsEmpty()) {  // no token, no love.
-    return NS_ERROR_FAILURE;
-  }
 
   if (mPartChannel) {
     mPartChannel->SetIsLastPart();
@@ -775,27 +764,15 @@ void nsMultiMixedConv::SwitchToControlParsing() {
 
 // nsMultiMixedConv methods
 nsMultiMixedConv::nsMultiMixedConv()
-    : mCurrentPartID(0),
-      mInOnDataAvailable(false),
-      mResponseHeader(HEADER_UNKNOWN),
-      // XXX: This is a hack to bypass the raw pointer to refcounted object in
-      // lambda analysis. It should be removed and replaced when the
-      // IncrementalTokenizer API is improved to avoid the need for such
-      // workarounds.
-      //
-      // This is safe because `mTokenizer` will not outlive `this`, meaning that
-      // this std::bind object will be destroyed before `this` dies.
-      mTokenizer(std::bind(&nsMultiMixedConv::ConsumeToken, this,
-                           std::placeholders::_1)) {
-  mContentLength = UINT64_MAX;
-  mByteRangeStart = 0;
-  mByteRangeEnd = 0;
-  mTotalSent = 0;
-  mIsByteRangeRequest = false;
-  mParserState = INIT;
-  mRawData = nullptr;
-  mRequestListenerNotified = false;
-}
+    // XXX: This is a hack to bypass the raw pointer to refcounted object in
+    // lambda analysis. It should be removed and replaced when the
+    // IncrementalTokenizer API is improved to avoid the need for such
+    // workarounds.
+    //
+    // This is safe because `mTokenizer` will not outlive `this`, meaning
+    // that this std::bind object will be destroyed before `this` dies.
+    : mTokenizer(std::bind(&nsMultiMixedConv::ConsumeToken, this,
+                           std::placeholders::_1)) {}
 
 nsresult nsMultiMixedConv::SendStart() {
   nsresult rv = NS_OK;
@@ -883,8 +860,9 @@ nsresult nsMultiMixedConv::SendStop(nsresult aStatus) {
     // Remove the channel from its load group (if any)
     nsCOMPtr<nsILoadGroup> loadGroup;
     (void)mPartChannel->GetLoadGroup(getter_AddRefs(loadGroup));
-    if (loadGroup)
+    if (loadGroup) {
       (void)loadGroup->RemoveRequest(mPartChannel, mContext, aStatus);
+    }
   }
 
   mPartChannel = nullptr;
@@ -926,8 +904,9 @@ nsresult nsMultiMixedConv::SendData() {
   if (mContentLength != UINT64_MAX) {
     // make sure that we don't send more than the mContentLength
     // XXX why? perhaps the Content-Length header was actually wrong!!
-    if ((uint64_t(mRawDataLength) + mTotalSent) > mContentLength)
+    if ((uint64_t(mRawDataLength) + mTotalSent) > mContentLength) {
       mRawDataLength = static_cast<uint32_t>(mContentLength - mTotalSent);
+    }
 
     if (mRawDataLength == 0) return NS_OK;
   }

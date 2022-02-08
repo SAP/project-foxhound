@@ -11,7 +11,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_privacy.h"
-#include "mozilla/intl/MozLocale.h"
+#include "mozilla/intl/Locale.h"
 #include "mozilla/intl/OSPreferences.h"
 #include "nsDirectoryService.h"
 #include "nsDirectoryServiceDefs.h"
@@ -19,6 +19,9 @@
 #include "nsStringEnumerator.h"
 #include "nsXULAppAPI.h"
 #include "nsZipArchive.h"
+#ifdef XP_WIN
+#  include "WinUtils.h"
+#endif
 
 #define INTL_SYSTEM_LOCALES_CHANGED "intl:system-locales-changed"
 
@@ -58,18 +61,27 @@ static void SplitLocaleListStringIntoArray(nsACString& str,
 static void ReadRequestedLocales(nsTArray<nsCString>& aRetVal) {
   nsAutoCString str;
   nsresult rv = Preferences::GetCString(REQUESTED_LOCALES_PREF, str);
+  // isRepack means this is a version of Firefox specifically
+  // built for one language.
+  const bool isRepack =
+#ifdef XP_WIN
+      !mozilla::widget::WinUtils::HasPackageIdentity();
+#else
+      true;
+#endif
 
-  // We handle three scenarios here:
+  // We handle four scenarios here:
   //
   // 1) The pref is not set - use default locale
-  // 2) The pref is set to "" - use OS locales
-  // 3) The pref is set to a value - parse the locale list and use it
+  // 2) The pref is not set and we're a packaged app - use OS locales
+  // 3) The pref is set to "" - use OS locales
+  // 4) The pref is set to a value - parse the locale list and use it
   if (NS_SUCCEEDED(rv)) {
     if (str.Length() == 0) {
-      // If the pref string is empty, we'll take requested locales
-      // from the OS.
+      // Case 3
       OSPreferences::GetInstance()->GetSystemLocales(aRetVal);
     } else {
+      // Case 4
       SplitLocaleListStringIntoArray(str, aRetVal);
     }
   }
@@ -78,9 +90,15 @@ static void ReadRequestedLocales(nsTArray<nsCString>& aRetVal) {
   // or parsing of the pref didn't produce any usable
   // result.
   if (aRetVal.IsEmpty()) {
-    nsAutoCString defaultLocale;
-    LocaleService::GetInstance()->GetDefaultLocale(defaultLocale);
-    aRetVal.AppendElement(defaultLocale);
+    if (isRepack) {
+      // Case 1
+      nsAutoCString defaultLocale;
+      LocaleService::GetInstance()->GetDefaultLocale(defaultLocale);
+      aRetVal.AppendElement(defaultLocale);
+    } else {
+      // Case 2
+      OSPreferences::GetInstance()->GetSystemLocales(aRetVal);
+    }
   }
 }
 
@@ -147,20 +165,24 @@ LocaleService* LocaleService::GetInstance() {
           mozilla::services::GetObserverService();
       if (obs) {
         obs->AddObserver(sInstance, INTL_SYSTEM_LOCALES_CHANGED, true);
+        obs->AddObserver(sInstance, NS_XPCOM_SHUTDOWN_OBSERVER_ID, true);
       }
     }
-    ClearOnShutdown(&sInstance, ShutdownPhase::Shutdown);
+    // DOM might use ICUUtils and LocaleService during UnbindFromTree by
+    // final cycle collection.
+    ClearOnShutdown(&sInstance, ShutdownPhase::CCPostLastCycleCollection);
   }
   return sInstance;
 }
 
-LocaleService::~LocaleService() {
+void LocaleService::RemoveObservers() {
   if (mIsServer) {
     Preferences::RemoveObservers(this, kObservedPrefs);
 
     nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
     if (obs) {
       obs->RemoveObserver(this, INTL_SYSTEM_LOCALES_CHANGED);
+      obs->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID);
     }
   }
 }
@@ -235,18 +257,11 @@ void LocaleService::LocalesChanged() {
 }
 
 bool LocaleService::IsLocaleRTL(const nsACString& aLocale) {
-  // First, let's check if there's a manual override
-  // preference for directionality set.
-  int pref = Preferences::GetInt("intl.uidirection", -1);
-  if (pref >= 0) {
-    return (pref > 0);
-  }
-
   return unic_langid_is_rtl(&aLocale);
 }
 
 bool LocaleService::IsAppLocaleRTL() {
-  // First, check if there is a pseudo locale `bidi` set.
+  // Next, check if there is a pseudo locale `bidi` set.
   nsAutoCString pseudoLocale;
   if (NS_SUCCEEDED(Preferences::GetCString("intl.l10n.pseudo", pseudoLocale))) {
     if (pseudoLocale.EqualsLiteral("bidi")) {
@@ -270,6 +285,8 @@ LocaleService::Observe(nsISupports* aSubject, const char* aTopic,
   if (!strcmp(aTopic, INTL_SYSTEM_LOCALES_CHANGED)) {
     RequestedLocalesChanged();
     WebExposedLocalesChanged();
+  } else if (!strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID)) {
+    RemoveObservers();
   } else {
     NS_ConvertUTF16toUTF8 pref(aData);
     // At the moment the only thing we're observing are settings indicating
@@ -286,9 +303,20 @@ LocaleService::Observe(nsISupports* aSubject, const char* aTopic,
 
 bool LocaleService::LanguagesMatch(const nsACString& aRequested,
                                    const nsACString& aAvailable) {
-  Locale requested = Locale(aRequested);
-  Locale available = Locale(aAvailable);
-  return requested.GetLanguage().Equals(available.GetLanguage());
+  Locale requested;
+  auto requestedResult = LocaleParser::TryParse(aRequested, requested);
+  Locale available;
+  auto availableResult = LocaleParser::TryParse(aAvailable, available);
+
+  if (requestedResult.isErr() || availableResult.isErr()) {
+    return false;
+  }
+
+  if (requested.Canonicalize().isErr() || available.Canonicalize().isErr()) {
+    return false;
+  }
+
+  return requested.Language().Span() == available.Language().Span();
 }
 
 bool LocaleService::IsServer() { return mIsServer; }
@@ -372,8 +400,10 @@ LocaleService::GetDefaultLocale(nsACString& aRetVal) {
     // just use our hard-coded default below.
     GetGREFileContents("update.locale", &locale);
     locale.Trim(" \t\n\r");
+#ifdef MOZ_UPDATER
     // This should never be empty.
     MOZ_ASSERT(!locale.IsEmpty());
+#endif
     if (CanonicalizeLanguageId(locale)) {
       mDefaultLocale.Assign(locale);
     }
@@ -508,9 +538,14 @@ LocaleService::NegotiateLanguages(const nsTArray<nsCString>& aRequested,
     return NS_ERROR_INVALID_ARG;
   }
 
+#ifdef DEBUG
+  Locale parsedLocale;
+  auto result = LocaleParser::TryParse(aDefaultLocale, parsedLocale);
+
   MOZ_ASSERT(
-      aDefaultLocale.IsEmpty() || Locale(aDefaultLocale).IsWellFormed(),
+      aDefaultLocale.IsEmpty() || result.isOk(),
       "If specified, default locale must be a well-formed BCP47 language tag.");
+#endif
 
   if (aStrategy == kLangNegStrategyLookup && aDefaultLocale.IsEmpty()) {
     NS_WARNING(

@@ -5,14 +5,18 @@ root:
     - type: scroll-frame
       bounds: [0, 0, 500, 200]
       content-size: [500, 500]
+      clip-to-frame: true
       id: 2
       items:
       - type: rect
         bounds: [0, 0, 500, 200]
         color: white
-    - type: rect
+    - type: clip
       bounds: [0, 0, 500, 200]
-      color: white
+      items:
+      - type: rect
+        bounds: [0, 0, 500, 200]
+        color: white
     - text: "The sun has frightened off the night!"
       origin: 20 40
       size: 20

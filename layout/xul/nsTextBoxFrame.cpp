@@ -8,9 +8,9 @@
 
 #include "gfx2DGlue.h"
 #include "gfxUtils.h"
+#include "mozilla/intl/BidiEmbeddingLevel.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ComputedStyle.h"
-#include "mozilla/EventStateManager.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/layers/RenderRootStateManager.h"
@@ -18,6 +18,7 @@
 #include "nsFontMetrics.h"
 #include "nsReadableUtils.h"
 #include "nsCOMPtr.h"
+#include "nsCRT.h"
 #include "nsGkAtoms.h"
 #include "nsPresContext.h"
 #include "gfxContext.h"
@@ -84,11 +85,6 @@ nsresult nsTextBoxFrame::AttributeChanged(int32_t aNameSpaceID,
     XULRedraw(state);
   }
 
-  // If the accesskey changed, register for the new value
-  // The old value has been unregistered in nsXULElement::SetAttr
-  if (aAttribute == nsGkAtoms::accesskey || aAttribute == nsGkAtoms::control)
-    RegUnregAccessKey(true);
-
   return NS_OK;
 }
 
@@ -111,16 +107,6 @@ void nsTextBoxFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   bool aResize;
   bool aRedraw;
   UpdateAttributes(nullptr, aResize, aRedraw); /* update all */
-
-  // register access key
-  RegUnregAccessKey(true);
-}
-
-void nsTextBoxFrame::DestroyFrom(nsIFrame* aDestructRoot,
-                                 PostDestroyData& aPostDestroyData) {
-  // unregister access key
-  RegUnregAccessKey(false);
-  nsLeafBoxFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
 bool nsTextBoxFrame::AlwaysAppendAccessKey() {
@@ -239,6 +225,8 @@ void nsTextBoxFrame::UpdateAttributes(nsAtom* aAttribute, bool& aResize,
   }
 }
 
+namespace mozilla {
+
 class nsDisplayXULTextBox final : public nsPaintedDisplayItem {
  public:
   nsDisplayXULTextBox(nsDisplayListBuilder* aBuilder, nsTextBoxFrame* aFrame)
@@ -276,13 +264,11 @@ static void PaintTextShadowCallback(gfxContext* aCtx, nsPoint aShadowOffset,
 
 void nsDisplayXULTextBox::Paint(nsDisplayListBuilder* aBuilder,
                                 gfxContext* aCtx) {
-  DrawTargetAutoDisableSubpixelAntialiasing disable(aCtx->GetDrawTarget(),
-                                                    IsSubpixelAADisabled());
-
   // Paint the text shadow before doing any foreground stuff
   nsRect drawRect =
       static_cast<nsTextBoxFrame*>(mFrame)->mTextDrawRect + ToReferenceFrame();
-  nsLayoutUtils::PaintTextShadow(mFrame, aCtx, drawRect, GetPaintRect(),
+  nsLayoutUtils::PaintTextShadow(mFrame, aCtx, drawRect,
+                                 GetPaintRect(aBuilder, aCtx),
                                  mFrame->StyleText()->mColor.ToColor(),
                                  PaintTextShadowCallback, (void*)this);
 
@@ -292,7 +278,8 @@ void nsDisplayXULTextBox::Paint(nsDisplayListBuilder* aBuilder,
 void nsDisplayXULTextBox::PaintTextToContext(gfxContext* aCtx, nsPoint aOffset,
                                              const nscolor* aColor) {
   static_cast<nsTextBoxFrame*>(mFrame)->PaintTitle(
-      *aCtx, GetPaintRect(), ToReferenceFrame() + aOffset, aColor);
+      *aCtx, mFrame->InkOverflowRectRelativeToSelf() + ToReferenceFrame(),
+      ToReferenceFrame() + aOffset, aColor);
 }
 
 bool nsDisplayXULTextBox::CreateWebRenderCommands(
@@ -336,6 +323,8 @@ nsRect nsDisplayXULTextBox::GetComponentAlphaBounds(
   return static_cast<nsTextBoxFrame*>(mFrame)->GetComponentAlphaBounds() +
          ToReferenceFrame();
 }
+
+}  // namespace mozilla
 
 void nsTextBoxFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                       const nsDisplayListSet& aLists) {
@@ -496,7 +485,8 @@ void nsTextBoxFrame::DrawText(gfxContext& aRenderingContext,
 
   if (mState & NS_FRAME_IS_BIDI) {
     presContext->SetBidiEnabled();
-    nsBidiLevel level = nsBidiPresUtils::BidiLevelFromStyle(Style());
+    mozilla::intl::BidiEmbeddingLevel level =
+        nsBidiPresUtils::BidiLevelFromStyle(Style());
     if (mAccessKeyInfo && mAccessKeyInfo->mAccesskeyIndex != kNotFound) {
       // We let the RenderText function calculate the mnemonic's
       // underline position for us.
@@ -945,7 +935,7 @@ nsTextBoxFrame::DoXULLayout(nsBoxLayoutState& aBoxLayoutState) {
   // extend beyond that.
   nsRect visualBounds;
   visualBounds.UnionRect(scrollBounds, textRect);
-  nsOverflowAreas overflow(visualBounds, scrollBounds);
+  OverflowAreas overflow(visualBounds, scrollBounds);
 
   if (textStyle->HasTextShadow()) {
     // text-shadow extends our visual but not scrollable bounds
@@ -1107,40 +1097,3 @@ nsresult nsTextBoxFrame::GetFrameName(nsAString& aResult) const {
   return NS_OK;
 }
 #endif
-
-// If you make changes to this function, check its counterparts
-// in nsBoxFrame and nsXULLabelFrame
-nsresult nsTextBoxFrame::RegUnregAccessKey(bool aDoReg) {
-  // if we have no content, we can't do anything
-  if (!mContent) return NS_ERROR_FAILURE;
-
-  // check if we have a |control| attribute
-  // do this check first because few elements have control attributes, and we
-  // can weed out most of the elements quickly.
-
-  // XXXjag a side-effect is that we filter out anonymous <label>s
-  // in e.g. <menu>, <menuitem>, <button>. These <label>s inherit
-  // |accesskey| and would otherwise register themselves, overwriting
-  // the content we really meant to be registered.
-  if (!mContent->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::control))
-    return NS_OK;
-
-  // see if we even have an access key
-  nsAutoString accessKey;
-  mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::accesskey,
-                                 accessKey);
-
-  if (accessKey.IsEmpty()) return NS_OK;
-
-  // With a valid PresContext we can get the ESM
-  // and (un)register the access key
-  EventStateManager* esm = PresContext()->EventStateManager();
-
-  uint32_t key = accessKey.First();
-  if (aDoReg)
-    esm->RegisterAccessKey(mContent->AsElement(), key);
-  else
-    esm->UnregisterAccessKey(mContent->AsElement(), key);
-
-  return NS_OK;
-}

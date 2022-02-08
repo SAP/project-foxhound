@@ -42,6 +42,7 @@ struct EntriesAndBrowsingContextData;
 [ref] native nsIntRect(nsIntRect);
 [ptr] native nsDocShellEditorDataPtr(nsDocShellEditorData);
 [ptr] native nsDocShellLoadStatePtr(nsDocShellLoadState);
+[ptr] native SHEntrySharedParentStatePtr(mozilla::dom::SHEntrySharedParentState);
 webidl BrowsingContext;
 
 [builtinclass, scriptable, uuid(0dad26b8-a259-42c7-93f1-2fa7fc076e45)]
@@ -76,6 +77,11 @@ interface nsISHEntry : nsISupports
     attribute AString title;
 
     /**
+     * The name of the browsing context.
+     */
+    attribute AString name;
+
+    /**
      * Was the entry created as a result of a subframe navigation?
      * - Will be 'false' when a frameset page is visited for the first time.
      * - Will be 'true' for all history entries created as a result of a
@@ -91,11 +97,20 @@ interface nsISHEntry : nsISupports
      */
     [infallible] attribute boolean hasUserInteraction;
 
+    /**
+     * Whether the load that created this entry was triggered by user activation.
+     * (e.g.: The user clicked a link)
+     * Remembering this flag enables replaying the sec-fetch-* headers.
+     */
+    [infallible] attribute boolean hasUserActivation;
+
     /** Referrer Info*/
     [infallible] attribute nsIReferrerInfo referrerInfo;
 
     /** Content viewer, for fast restoration of presentation */
     [infallible] attribute nsIContentViewer contentViewer;
+
+    [infallible] readonly attribute boolean isInBFCache;
 
     /** Whether the content viewer is marked "sticky" */
     [infallible] attribute boolean sticky;
@@ -225,7 +240,7 @@ interface nsISHEntry : nsISupports
     [infallible] readonly attribute boolean loadedInThisProcess;
 
     /**
-     * The session history it belongs to.
+     * The session history it belongs to. This is set only on the root entries.
      */
     [noscript, infallible] attribute nsISHistory shistory;
 
@@ -315,7 +330,8 @@ interface nsISHEntry : nsISupports
                            in bool srcdocEntry,
                            in nsIURI baseURI,
                            in bool saveLayoutState,
-                           in bool expired);
+                           in bool expired,
+                           in bool userActivation);
 
     nsISHEntry clone();
 
@@ -353,7 +369,8 @@ interface nsISHEntry : nsISupports
      * the BFCache entry will evict the SHEntry, since the two entries
      * correspond to the same document.
      */
-    [noscript, notxpcom] boolean hasBFCacheEntry(in nsIBFCacheEntry aEntry);
+    [noscript, notxpcom]
+    boolean hasBFCacheEntry(in SHEntrySharedParentStatePtr aEntry);
 
     /**
      * Adopt aEntry's BFCacheEntry, so now both this and aEntry point to
@@ -376,13 +393,12 @@ interface nsISHEntry : nsISupports
     boolean sharesDocumentWith(in nsISHEntry aEntry);
 
     /**
-     * Sets an SHEntry to reflect that it is a history type load. As
-     * nsIDocShellLoadInfo and its LoadType enum were removed, this is the
+     * Sets an SHEntry to reflect that it is a history type load. This is the
      * equivalent to doing
      *
      * shEntry.loadType = 4;
      *
-     * in js, but easier to maintain and less opaque.
+     * in js, but is easier to maintain and less opaque.
      */
     void setLoadTypeAsHistory();
 
@@ -403,8 +419,8 @@ interface nsISHEntry : nsISupports
     nsISHEntry GetChildAt(in long aIndex);
 
     /**
-     * If this entry has no dynamically added child, get the child SHEntry 
-     * at the given offset. The loadtype of the returned entry is set 
+     * If this entry has no dynamically added child, get the child SHEntry
+     * at the given offset. The loadtype of the returned entry is set
      * to its parent's loadtype.
      */
     [notxpcom] void GetChildSHEntryIfHasNoDynamicallyAddedChild(in long aChildOffset,
@@ -421,9 +437,9 @@ interface nsISHEntry : nsISupports
     * Remove all children of this entry and call abandonBFCacheEntry.
     */
     [notxpcom] void ClearEntry();
-    
+
     /**
-     * Create nsDocShellLoadState and fill it with information. 
+     * Create nsDocShellLoadState and fill it with information.
      * Don't set nsSHEntry here to avoid serializing it.
      */
     [noscript] nsDocShellLoadStatePtr CreateLoadInfo();
@@ -442,4 +458,3 @@ interface nsISHEntry : nsISupports
                                                    in BrowsingContext aTopBC,
                                                    in BrowsingContext aIgnoreBC);
 };
-

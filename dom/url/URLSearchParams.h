@@ -7,19 +7,35 @@
 #ifndef mozilla_dom_URLSearchParams_h
 #define mozilla_dom_URLSearchParams_h
 
-#include "js/StructuredClone.h"
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/ErrorResult.h"
+#include <cstdint>
+#include "ErrorList.h"
+#include "js/RootingAPI.h"
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/UniquePtr.h"
+#include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
 #include "nsISupports.h"
-#include "nsIInputStream.h"
+#include "nsString.h"
+#include "nsTArray.h"
+#include "nsWrapperCache.h"
 
+class JSObject;
 class nsIGlobalObject;
+class nsIInputStream;
+struct JSContext;
+struct JSStructuredCloneReader;
+struct JSStructuredCloneWriter;
 
 namespace mozilla {
+
+class ErrorResult;
+class URLParams;
+
 namespace dom {
 
+class GlobalObject;
 class URLSearchParams;
 class USVStringSequenceSequenceOrUSVStringUSVStringRecordOrUSVString;
 
@@ -28,75 +44,6 @@ class URLSearchParamsObserver : public nsISupports {
   virtual ~URLSearchParamsObserver() = default;
 
   virtual void URLSearchParamsUpdated(URLSearchParams* aFromThis) = 0;
-};
-
-// This class is used in BasePrincipal and it's _extremely_ important that the
-// attributes are kept in the correct order. If this changes, please, update
-// BasePrincipal code.
-
-class URLParams final {
- public:
-  URLParams() = default;
-
-  ~URLParams() { DeleteAll(); }
-
-  class ForEachIterator {
-   public:
-    virtual bool URLParamsIterator(const nsAString& aName,
-                                   const nsAString& aValue) = 0;
-  };
-
-  static bool Parse(const nsACString& aInput, ForEachIterator& aIterator);
-
-  static bool Extract(const nsACString& aInput, const nsAString& aName,
-                      nsAString& aValue);
-
-  void ParseInput(const nsACString& aInput);
-
-  void Serialize(nsAString& aValue) const;
-
-  void Get(const nsAString& aName, nsString& aRetval);
-
-  void GetAll(const nsAString& aName, nsTArray<nsString>& aRetval);
-
-  void Set(const nsAString& aName, const nsAString& aValue);
-
-  void Append(const nsAString& aName, const nsAString& aValue);
-
-  bool Has(const nsAString& aName);
-
-  void Delete(const nsAString& aName);
-
-  void DeleteAll() { mParams.Clear(); }
-
-  uint32_t Length() const { return mParams.Length(); }
-
-  const nsAString& GetKeyAtIndex(uint32_t aIndex) const {
-    MOZ_ASSERT(aIndex < mParams.Length());
-    return mParams[aIndex].mKey;
-  }
-
-  const nsAString& GetValueAtIndex(uint32_t aIndex) const {
-    MOZ_ASSERT(aIndex < mParams.Length());
-    return mParams[aIndex].mValue;
-  }
-
-  nsresult Sort();
-
-  bool ReadStructuredClone(JSStructuredCloneReader* aReader);
-
-  bool WriteStructuredClone(JSStructuredCloneWriter* aWriter) const;
-
- private:
-  static void DecodeString(const nsACString& aInput, nsAString& aOutput);
-  static void ConvertString(const nsACString& aInput, nsAString& aOutput);
-
-  struct Param {
-    nsString mKey;
-    nsString mValue;
-  };
-
-  nsTArray<Param> mParams;
 };
 
 class URLSearchParams final : public nsISupports, public nsWrapperCache {
@@ -157,6 +104,10 @@ class URLSearchParams final : public nsISupports, public nsWrapperCache {
                        nsACString& aCharset) const;
 
  private:
+  bool ReadStructuredClone(JSStructuredCloneReader* aReader);
+
+  bool WriteStructuredClone(JSStructuredCloneWriter* aWriter) const;
+
   void AppendInternal(const nsAString& aName, const nsAString& aValue);
 
   void DeleteAll();

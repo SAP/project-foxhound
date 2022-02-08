@@ -9,7 +9,9 @@
 #include "jsapi.h"
 #include "mozilla/TypedEnumBits.h"
 #include "mozilla/TelemetryProcessEnums.h"
+#include "nsHashtablesFwd.h"
 #include "nsIScriptError.h"
+#include "nsTHashSet.h"
 #include "nsTHashtable.h"
 #include "nsHashKeys.h"
 #include "nsXULAppAPI.h"
@@ -18,7 +20,7 @@ namespace mozilla {
 namespace Telemetry {
 namespace Common {
 
-typedef nsTHashtable<nsCStringHashKey> StringHashSet;
+typedef nsTHashSet<nsCString> StringHashSet;
 
 enum class RecordedProcessType : uint16_t {
   Main = (1 << GeckoProcessType_Default),  // Also known as "parent process"
@@ -87,12 +89,33 @@ bool CanRecordProduct(SupportedProduct aProducts);
 
 /**
  * Return the number of milliseconds since process start using monotonic
- * timestamps (unaffected by system clock changes).
+ * timestamps (unaffected by system clock changes). Depending on the platform,
+ * this can include the time the device was suspended (Windows) or not (Linux,
+ * macOS).
  *
- * @return NS_OK on success, NS_ERROR_NOT_AVAILABLE if TimeStamp doesn't have
- *               the data.
+ * @return NS_OK on success.
  */
 nsresult MsSinceProcessStart(double* aResult);
+
+/**
+ * Return the number of milliseconds since process start using monotonic
+ * timestamps (unaffected by system clock changes), including the time the
+ * system was suspended.
+ *
+ * @return NS_OK on success, NS_ERROR_NOT_AVAILABLE if the data is unavailable
+ * (this can happen on old operating systems).
+ */
+nsresult MsSinceProcessStartIncludingSuspend(double* aResult);
+
+/**
+ * Return the number of milliseconds since process start using monotonic
+ * timestamps (unaffected by system clock changes), excluding the time the
+ * system was suspended.
+ *
+ * @return NS_OK on success, NS_ERROR_NOT_AVAILABLE if the data is unavailable
+ * (this can happen on old operating systems).
+ */
+nsresult MsSinceProcessStartExcludingSuspend(double* aResult);
 
 /**
  * Dumps a log message to the Browser Console using the provided level.

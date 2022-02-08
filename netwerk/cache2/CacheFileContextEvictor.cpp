@@ -5,9 +5,11 @@
 #include "CacheLog.h"
 #include "CacheFileContextEvictor.h"
 #include "CacheFileIOManager.h"
+#include "CacheFileMetadata.h"
 #include "CacheIndex.h"
 #include "CacheIndexIterator.h"
 #include "CacheFileUtils.h"
+#include "CacheObserver.h"
 #include "nsIFile.h"
 #include "LoadContextInfo.h"
 #include "nsThreadUtils.h"
@@ -15,10 +17,10 @@
 #include "nsIDirectoryEnumerator.h"
 #include "mozilla/Base64.h"
 #include "mozilla/IntegerPrintfMacros.h"
-#include "mozilla/net/MozURL.h"
+#include "nsContentUtils.h"
+#include "nsNetUtil.h"
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 #define CONTEXT_EVICTION_PREFIX "ce_"
 const uint32_t kContextEvictionPrefixLength =
@@ -26,8 +28,7 @@ const uint32_t kContextEvictionPrefixLength =
 
 bool CacheFileContextEvictor::sDiskAlreadySearched = false;
 
-CacheFileContextEvictor::CacheFileContextEvictor()
-    : mEvicting(false), mIndexIsUpToDate(false) {
+CacheFileContextEvictor::CacheFileContextEvictor() {
   LOG(("CacheFileContextEvictor::CacheFileContextEvictor() [this=%p]", this));
 }
 
@@ -398,8 +399,10 @@ nsresult CacheFileContextEvictor::LoadEvictInfoFromDisk() {
       auto split = decoded.Split('\t');
       MOZ_ASSERT(decoded.CountChar('\t') == 1);
 
-      origin = split.Get(0);
-      decoded = split.Get(1);
+      auto splitIt = split.begin();
+      origin = *splitIt;
+      ++splitIt;
+      decoded = *splitIt;
     }
 
     nsCOMPtr<nsILoadContextInfo> info;
@@ -439,9 +442,6 @@ nsresult CacheFileContextEvictor::GetContextFile(
     const nsAString& aOrigin, nsIFile** _retval) {
   nsresult rv;
 
-  nsAutoCString leafName;
-  leafName.AssignLiteral(CONTEXT_EVICTION_PREFIX);
-
   nsAutoCString keyPrefix;
   if (aPinned) {
     // Mark pinned context files with a tab char at the start.
@@ -458,16 +458,16 @@ nsresult CacheFileContextEvictor::GetContextFile(
     keyPrefix.Append(NS_ConvertUTF16toUTF8(aOrigin));
   }
 
-  nsAutoCString data64;
-  rv = Base64Encode(keyPrefix, data64);
+  nsAutoCString leafName;
+  leafName.AssignLiteral(CONTEXT_EVICTION_PREFIX);
+
+  rv = Base64EncodeAppend(keyPrefix, leafName);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
   // Replace '/' with '-' since '/' cannot be part of the filename.
-  data64.ReplaceChar('/', '-');
-
-  leafName.Append(data64);
+  leafName.ReplaceChar('/', '-');
 
   nsCOMPtr<nsIFile> file;
   rv = mCacheDirectory->Clone(getter_AddRefs(file));
@@ -607,7 +607,8 @@ void CacheFileContextEvictor::EvictEntries() {
                               mEntries[0]->mOrigin);
       mEntries.RemoveElementAt(0);
       continue;
-    } else if (NS_FAILED(rv)) {
+    }
+    if (NS_FAILED(rv)) {
       LOG(
           ("CacheFileContextEvictor::EvictEntries() - Iterator failed to "
            "provide next hash (shutdown?), keeping eviction info on disk."
@@ -675,19 +676,25 @@ void CacheFileContextEvictor::EvictEntries() {
         continue;
       }
 
-      RefPtr<MozURL> url;
-      rv = MozURL::Init(getter_AddRefs(url), uriSpec);
+      nsCOMPtr<nsIURI> uri;
+      rv = NS_NewURI(getter_AddRefs(uri), uriSpec);
       if (NS_FAILED(rv)) {
         LOG(
             ("CacheFileContextEvictor::EvictEntries() - Skipping entry since "
-             "MozURL "
-             "fails in the parsing of the uriSpec"));
+             "NS_NewURI failed to parse the uriSpec"));
         continue;
       }
 
-      nsAutoCString urlOrigin;
-      url->Origin(urlOrigin);
-      if (!urlOrigin.Equals(NS_ConvertUTF16toUTF8(mEntries[0]->mOrigin))) {
+      nsAutoString urlOrigin;
+      rv = nsContentUtils::GetUTFOrigin(uri, urlOrigin);
+      if (NS_FAILED(rv)) {
+        LOG(
+            ("CacheFileContextEvictor::EvictEntries() - Skipping entry since "
+             "We failed to extract an origin"));
+        continue;
+      }
+
+      if (!urlOrigin.Equals(mEntries[0]->mOrigin)) {
         LOG(
             ("CacheFileContextEvictor::EvictEntries() - Skipping entry since "
              "origin "
@@ -731,5 +738,4 @@ void CacheFileContextEvictor::EvictEntries() {
   MOZ_ASSERT_UNREACHABLE("We should never get here");
 }
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net

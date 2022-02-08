@@ -2,23 +2,24 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
-loader: taskgraph.loader.test:loader
+loader: gecko_taskgraph.loader.test:loader
 
 kind-dependencies:
     - build
     - build-signing
+    - repackage
     - fetch
     - toolchain
 
 transforms:
-    - taskgraph.transforms.tests:transforms
-    - taskgraph.transforms.job:transforms
-    - taskgraph.transforms.task:transforms
+    - gecko_taskgraph.transforms.test:transforms
+    - gecko_taskgraph.transforms.job:transforms
+    - gecko_taskgraph.transforms.task:transforms
 
 # Each stanza in a file pointed to by 'jobs-from' describes a particular test
 # suite or sub-suite. These are processed through the transformations described
 # above to produce a bunch of tasks. See the schema in
-# `taskcluster/taskgraph/transforms/tests.py` for a description of the fields
+# `taskcluster/gecko_taskgraph/transforms/test/__init__.py` for a description of the fields
 # used in these files.
 
 # Adding a new test type or running tests on a new platform? Be sure to review
@@ -35,9 +36,6 @@ jobs-from:
     - mochitest.yml
     - raptor.yml
     - raptor-chrome.yml
-    - raptor-chromium.yml
-    - raptor-fenix.yml
-    - raptor-fennec68.yml
     - raptor-gve.yml
     - raptor-refbrow.yml
     - reftest.yml
@@ -56,6 +54,11 @@ job-defaults:
                     .*-devedition/.*: false
                     default: true
             default: false
+    mozharness:
+        requires-signed-builds:
+            by-test-platform:
+                macosx1100.*: true
+                default: false
     fetches:
         toolchain:
             by-test-platform:
@@ -66,6 +69,8 @@ job-defaults:
                     - macosx64-minidump-stackwalk
                     - macosx64-fix-stacks
                 android-em-7.*:
+                    - android-system-image-x86_64-linux
+                    - android-avd-x86_64-linux
                     - android-emulator-linux
                     - linux64-minidump-stackwalk
                     - linux64-fix-stacks

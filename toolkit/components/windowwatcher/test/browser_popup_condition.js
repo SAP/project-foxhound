@@ -15,11 +15,6 @@ add_task(async function test_popup_conditions() {
     //   * resizable (defaults to true)
     //   * scrollbars (defaults to false)
     //   * status (defaults to false)
-    // and also the following shouldn't be specified:
-    //   * left or screenX
-    //   * top or screenY
-    //   * width or innerWidth
-    //   * height or innerHeight
     { features: "location,menubar,resizable,scrollbars,status", popup: false },
     { features: "toolbar,menubar,resizable,scrollbars,status", popup: false },
     {
@@ -76,11 +71,11 @@ add_task(async function test_popup_conditions() {
     { features: "location,menubar,resizable,scrollbars", popup: true },
     { features: "location,menubar,resizable,scrollbars,status=0", popup: true },
 
-    // If either width or innerWidth is specified, popup.
-    { features: "location,menubar,scrollbars,status,width=100", popup: true },
+    // width and innerWidth have no effect.
+    { features: "location,menubar,scrollbars,status,width=100", popup: false },
     {
       features: "location,menubar,scrollbars,status,innerWidth=100",
-      popup: true,
+      popup: false,
     },
 
     // outerWidth has no effect.
@@ -205,7 +200,7 @@ add_task(async function test_popup_conditions() {
           },
           async function(browser) {
             const newWinPromise = BrowserTestUtils.waitForNewWindow();
-            await BrowserTestUtils.loadURI(gBrowser, SCRIPT_PAGE);
+            BrowserTestUtils.loadURI(gBrowser, SCRIPT_PAGE);
 
             const win = await newWinPromise;
             const parentChromeFlags = getParentChromeFlags(win);
@@ -242,7 +237,7 @@ add_task(async function test_popup_conditions() {
               gBrowser,
               OPEN_PAGE
             );
-            await BrowserTestUtils.loadURI(gBrowser, SCRIPT_PAGE);
+            BrowserTestUtils.loadURI(gBrowser, SCRIPT_PAGE);
 
             let tab = await newTabPromise;
             BrowserTestUtils.removeTab(tab);
@@ -262,7 +257,7 @@ add_task(async function test_popup_conditions() {
               false,
               OPEN_PAGE
             );
-            await BrowserTestUtils.loadURI(gBrowser, SCRIPT_PAGE);
+            BrowserTestUtils.loadURI(gBrowser, SCRIPT_PAGE);
 
             await pagePromise;
           }

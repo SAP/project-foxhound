@@ -15,10 +15,11 @@ var {
   getString,
 } = require("resource://devtools/client/styleeditor/StyleEditorUtil.jsm");
 
-var StyleEditorPanel = function StyleEditorPanel(panelWin, toolbox) {
+var StyleEditorPanel = function StyleEditorPanel(panelWin, toolbox, commands) {
   EventEmitter.decorate(this);
 
   this._toolbox = toolbox;
+  this._commands = commands;
   this._panelWin = panelWin;
   this._panelDoc = panelWin.document;
 
@@ -43,11 +44,14 @@ StyleEditorPanel.prototype = {
     );
 
     // Initialize the UI
-    this.UI = new StyleEditorUI(this._toolbox, this._panelDoc, cssProperties);
+    this.UI = new StyleEditorUI(
+      this._toolbox,
+      this._commands,
+      this._panelDoc,
+      cssProperties
+    );
     this.UI.on("error", this._showError);
     await this.UI.initialize();
-
-    this.isReady = true;
 
     return this;
   },

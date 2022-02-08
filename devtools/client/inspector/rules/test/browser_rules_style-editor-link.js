@@ -5,65 +5,90 @@
 
 // Test the links from the rule-view to the styleeditor
 
-const STYLESHEET_DATA_URL_CONTENTS = ["#first {", "color: blue", "}"].join(
-  "\n"
-);
+const STYLESHEET_DATA_URL_CONTENTS = `#first {
+color: blue
+}`;
 const STYLESHEET_DATA_URL = `data:text/css,${encodeURIComponent(
   STYLESHEET_DATA_URL_CONTENTS
 )}`;
 
 const EXTERNAL_STYLESHEET_FILE_NAME = "doc_style_editor_link.css";
-const EXTERNAL_STYLESHEET_URL = URL_ROOT + EXTERNAL_STYLESHEET_FILE_NAME;
+const EXTERNAL_STYLESHEET_URL = URL_ROOT_SSL + EXTERNAL_STYLESHEET_FILE_NAME;
 
-const DOCUMENT_URL =
-  "data:text/html;charset=utf-8," +
-  encodeURIComponent(`
+const DOCUMENT_HTML = encodeURIComponent(`
   <html>
-  <head>
-  <title>Rule view style editor link test</title>
-  <style type="text/css">
-  html { color: #000000; }
-  div { font-variant: small-caps; color: #000000; }
-  .nomatches {color: #ff0000;}</style> <div id="first" style="margin: 10em;
-  font-size: 14pt; font-family: helvetica, sans-serif; color: #AAA">
-  </style>
-  <style>
-  div { font-weight: bold; }
-  </style>
-  <link rel="stylesheet" type="text/css" href="${STYLESHEET_DATA_URL}">
-  <link rel="stylesheet" type="text/css" href="${EXTERNAL_STYLESHEET_URL}">
-  </head>
-  <body>
-  <h1>Some header text</h1>
-  <p id="salutation" style="font-size: 12pt">hi.</p>
-  <p id="body" style="font-size: 12pt">I am a test-case. This text exists
-  solely to provide some things to
-  <span style="color: yellow" class="highlight">
-  highlight</span> and <span style="font-weight: bold">count</span>
-  style list-items in the box at right. If you are reading this,
-  you should go do something else instead. Maybe read a book. Or better
-  yet, write some test-cases for another bit of code.
-  <span style="font-style: italic">some text</span></p>
-  <p id="closing">more text</p>
-  <p>even more text</p>
-  </div>
-  </body>
+    <head>
+      <title>Rule view style editor link test</title>
+      <style type="text/css">
+        html { color: #000000; }
+        div { font-variant: small-caps; color: #000000; }
+        .nomatches {color: #ff0000;}
+      </style>
+      <style>
+        div { font-weight: bold; }
+      </style>
+      <link rel="stylesheet" type="text/css" href="${STYLESHEET_DATA_URL}">
+      <link rel="stylesheet" type="text/css" href="${EXTERNAL_STYLESHEET_URL}">
+    </head>
+    <body>
+      <div id="first" style="margin: 10em;font-size: 14pt; font-family: helvetica, sans-serif; color: #AAA">
+        <h1>Some header text</h1>
+        <p id="salutation" style="font-size: 12pt">hi.</p>
+        <p id="body" style="font-size: 12pt">I am a test-case. This text exists
+        solely to provide some things to
+        <span style="color: yellow" class="highlight">
+        highlight</span> and <span style="font-weight: bold">count</span>
+        style list-items in the box at right. If you are reading this,
+        you should go do something else instead. Maybe read a book. Or better
+        yet, write some test-cases for another bit of code.
+        <span style="font-style: italic">some text</span></p>
+        <p id="closing">more text</p>
+        <p>even more text</p>
+      </div>
+    </body>
   </html>
 `);
 
-add_task(async function() {
-  await addTab(DOCUMENT_URL);
-  const { toolbox, inspector, view, testActor } = await openRuleView();
-  await selectNode("div", inspector);
+const DOCUMENT_DATA_URL = "data:text/html;charset=utf-8," + DOCUMENT_HTML;
+const EXAMPLE_ORG_DOCUMENT_URL =
+  "https://example.org/document-builder.sjs?html=" + DOCUMENT_HTML;
 
-  testRuleViewLinkLabel(view);
-  await testFirstInlineStyleSheet(view, toolbox, testActor);
-  await testSecondInlineStyleSheet(view, toolbox, testActor);
-  await testExternalStyleSheet(view, toolbox, testActor);
-  await testDisabledStyleEditor(view, toolbox);
+add_task(async function() {
+  await addTab(DOCUMENT_DATA_URL);
+  const { toolbox, inspector, view } = await openRuleView();
+
+  await testAllStylesheets(inspector, view, toolbox);
+
+  info("Navigate to the example.org document");
+  await navigateTo(EXAMPLE_ORG_DOCUMENT_URL);
+  await testAllStylesheets(inspector, view, toolbox);
 });
 
-async function testFirstInlineStyleSheet(view, toolbox, testActor) {
+add_task(async function() {
+  info("Check that link to the style editor works after tab reload");
+  await addTab(EXAMPLE_ORG_DOCUMENT_URL);
+  const { toolbox, inspector, view } = await openRuleView();
+
+  info("Reload the example.org document");
+  // Use navigateTo as it waits for the inspector to be ready.
+  await navigateTo(EXAMPLE_ORG_DOCUMENT_URL);
+  await testAllStylesheets(inspector, view, toolbox);
+});
+
+async function testAllStylesheets(inspector, view, toolbox) {
+  await selectNode("div", inspector);
+  await testRuleViewLinkLabel(view);
+  await testDisabledStyleEditor(view, toolbox);
+  await testFirstInlineStyleSheet(view, toolbox);
+  await testSecondInlineStyleSheet(view, toolbox);
+  await testExternalStyleSheet(view, toolbox);
+
+  info("Switch back to the inspector panel");
+  await toolbox.selectTool("inspector");
+  await selectNode("body", inspector);
+}
+
+async function testFirstInlineStyleSheet(view, toolbox) {
   info("Testing inline stylesheet");
 
   info("Listening for toolbox switch to the styleeditor");
@@ -75,54 +100,59 @@ async function testFirstInlineStyleSheet(view, toolbox, testActor) {
 
   ok(true, "Switched to the style-editor panel in the toolbox");
 
-  await validateStyleEditorSheet(editor, 0, testActor);
+  await validateStyleEditorSheet(toolbox, editor, 0);
 }
 
-async function testSecondInlineStyleSheet(view, toolbox, testActor) {
+async function testSecondInlineStyleSheet(view, toolbox) {
   info("Testing second inline stylesheet");
 
-  info("Waiting for the stylesheet editor to be selected");
-  const panel = toolbox.getCurrentPanel();
-  const onSelected = panel.UI.once("editor-selected");
+  const styleEditorPanel = toolbox.getCurrentPanel();
+  const onEditorSelected = styleEditorPanel.UI.once("editor-selected");
 
   info("Switching back to the inspector panel in the toolbox");
   await toolbox.selectTool("inspector");
+  const onToolSelected = toolbox.once("styleeditor-selected");
 
   info("Clicking on second inline stylesheet link");
   clickLinkByIndex(view, 3);
-  const editor = await onSelected;
+
+  info("Wait for the stylesheet editor to be selected");
+  const editor = await onEditorSelected;
+  await onToolSelected;
 
   is(
     toolbox.currentToolId,
     "styleeditor",
     "The style editor is selected again"
   );
-  await validateStyleEditorSheet(editor, 1, testActor);
+  await validateStyleEditorSheet(toolbox, editor, 1);
 }
 
-async function testExternalStyleSheet(view, toolbox, testActor) {
+async function testExternalStyleSheet(view, toolbox) {
   info("Testing external stylesheet");
-
-  info("Waiting for the stylesheet editor to be selected");
-  const panel = toolbox.getCurrentPanel();
-  const onSelected = panel.UI.once("editor-selected");
+  const styleEditorPanel = toolbox.getCurrentPanel();
+  const onEditorSelected = styleEditorPanel.UI.once("editor-selected");
 
   info("Switching back to the inspector panel in the toolbox");
   await toolbox.selectTool("inspector");
+  const onToolSelected = toolbox.once("styleeditor-selected");
 
   info("Clicking on an external stylesheet link");
   clickLinkByIndex(view, 1);
-  const editor = await onSelected;
+
+  info("Wait for the stylesheet editor to be selected");
+  const editor = await onEditorSelected;
+  await onToolSelected;
 
   is(
     toolbox.currentToolId,
     "styleeditor",
     "The style editor is selected again"
   );
-  await validateStyleEditorSheet(editor, 2, testActor);
+  await validateStyleEditorSheet(toolbox, editor, 2);
 }
 
-async function validateStyleEditorSheet(editor, expectedSheetIndex, testActor) {
+async function validateStyleEditorSheet(toolbox, editor, expectedSheetIndex) {
   info("validating style editor stylesheet");
   is(
     editor.styleSheet.styleSheetIndex,
@@ -132,9 +162,15 @@ async function validateStyleEditorSheet(editor, expectedSheetIndex, testActor) {
 
   const href = editor.styleSheet.href || editor.styleSheet.nodeHref;
 
-  const expectedHref = await testActor.eval(
-    `document.styleSheets[${expectedSheetIndex}].href ||
-     document.location.href`
+  const expectedHref = await SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [expectedSheetIndex],
+    _expectedSheetIndex => {
+      return (
+        content.document.styleSheets[_expectedSheetIndex].href ||
+        content.document.location.href
+      );
+    }
   );
 
   is(href, expectedHref, "loaded stylesheet href matches document stylesheet");
@@ -153,6 +189,8 @@ async function testDisabledStyleEditor(view, toolbox) {
   info("Clicking on a link");
   testUnselectableRuleViewLink(view, 1);
   clickLinkByIndex(view, 1);
+  // Wait for a bit just to make sure the click didn't had an impact
+  await wait(2000);
 
   is(toolbox.currentToolId, "inspector", "The click should have no effect");
 
@@ -160,18 +198,11 @@ async function testDisabledStyleEditor(view, toolbox) {
   Services.prefs.setBoolPref("devtools.styleeditor.enabled", true);
   gDevTools.emit("tool-registered", "styleeditor");
 
-  info("Clicking on a link");
-  const onStyleEditorSelected = toolbox.once("styleeditor-selected");
-  clickLinkByIndex(view, 1);
-  await onStyleEditorSelected;
-  is(toolbox.currentToolId, "styleeditor", "Style Editor should be selected");
-
   Services.prefs.clearUserPref("devtools.styleeditor.enabled");
 }
 
-function testRuleViewLinkLabel(view) {
+async function testRuleViewLinkLabel(view) {
   info("Checking the data URL link label");
-
   let link = getRuleViewLinkByIndex(view, 1);
   let labelElem = link.querySelector(".ruleview-rule-source-label");
   let value = labelElem.textContent;

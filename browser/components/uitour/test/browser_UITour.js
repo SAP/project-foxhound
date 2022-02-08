@@ -5,14 +5,16 @@
 
 var gTestTab;
 var gContentAPI;
-var gContentWindow;
 
-ChromeUtils.import(
-  "resource://testing-common/TelemetryArchiveTesting.jsm",
-  this
+const { TelemetryArchiveTesting } = ChromeUtils.import(
+  "resource://testing-common/TelemetryArchiveTesting.jsm"
 );
-ChromeUtils.import("resource://gre/modules/ProfileAge.jsm", this);
-ChromeUtils.import("resource://gre/modules/UpdateUtils.jsm", this);
+const { ProfileAge } = ChromeUtils.import(
+  "resource://gre/modules/ProfileAge.jsm"
+);
+const { UpdateUtils } = ChromeUtils.import(
+  "resource://gre/modules/UpdateUtils.jsm"
+);
 
 function test() {
   UITourTest();
@@ -82,14 +84,15 @@ var tests = [
       let highlight = document.getElementById("UITourHighlight");
       is_element_hidden(highlight, "Highlight should initially be hidden");
 
-      gContentAPI.showHighlight("urlbar");
-      waitForElementToBeVisible(
-        highlight,
-        done,
-        "Highlight should be shown on a unsecure host when override pref is set"
-      );
+      gContentAPI.showHighlight("urlbar").then(() => {
+        waitForElementToBeVisible(
+          highlight,
+          done,
+          "Highlight should be shown on a unsecure host when override pref is set"
+        );
 
-      Services.prefs.setBoolPref("browser.uitour.requireSecure", true);
+        Services.prefs.setBoolPref("browser.uitour.requireSecure", true);
+      });
     }, "http://example.org/");
   },
   function test_disabled(done) {
@@ -98,14 +101,15 @@ var tests = [
     let bookmarksMenu = document.getElementById("bookmarks-menu-button");
     is(bookmarksMenu.open, false, "Bookmark menu should initially be closed");
 
-    gContentAPI.showMenu("bookmarks");
-    is(
-      bookmarksMenu.open,
-      false,
-      "Bookmark menu should not open when feature is disabled"
-    );
+    gContentAPI.showMenu("bookmarks").then(() => {
+      is(
+        bookmarksMenu.open,
+        false,
+        "Bookmark menu should not open when feature is disabled"
+      );
 
-    Services.prefs.setBoolPref("browser.uitour.enabled", true);
+      Services.prefs.setBoolPref("browser.uitour.enabled", true);
+    });
     done();
   },
   function test_highlight(done) {
@@ -186,8 +190,13 @@ var tests = [
         true,
         "Highlight should be rounded-rectangle styled"
       );
+      CustomizableUI.removeWidgetFromArea("home-button");
       done();
     }
+    info("Adding home button.");
+    CustomizableUI.addWidgetToArea("home-button", "nav-bar");
+    // Force the button to get layout so we can show the highlight.
+    document.getElementById("home-button").clientHeight;
     let highlight = document.getElementById("UITourHighlight");
     is_element_hidden(highlight, "Highlight should initially be hidden");
 
@@ -198,9 +207,9 @@ var tests = [
       "Highlight should be shown after showHighlight()"
     );
   },
-  function test_highlight_customize_auto_open_close(done) {
+  function test_highlight_addons_auto_open_close(done) {
     let highlight = document.getElementById("UITourHighlight");
-    gContentAPI.showHighlight("customize");
+    gContentAPI.showHighlight("addons");
     waitForElementToBeVisible(
       highlight,
       function checkPanelIsOpen() {
@@ -232,7 +241,7 @@ var tests = [
       "Highlight should be shown after showHighlight() for fixed panel items"
     );
   },
-  function test_highlight_customize_manual_open_close(done) {
+  function test_highlight_addons_manual_open_close(done) {
     let highlight = document.getElementById("UITourHighlight");
     // Manually open the app menu then show a highlight there. The menu should remain open.
     let shownPromise = promisePanelShown(window);
@@ -240,7 +249,7 @@ var tests = [
     shownPromise
       .then(() => {
         isnot(PanelUI.panel.state, "closed", "Panel should have opened");
-        gContentAPI.showHighlight("customize");
+        gContentAPI.showHighlight("addons");
 
         waitForElementToBeVisible(
           highlight,

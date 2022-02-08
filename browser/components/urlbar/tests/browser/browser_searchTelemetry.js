@@ -30,13 +30,11 @@ add_task(async function prepare() {
 
   // Move the mouse away from the urlbar one-offs so that a one-off engine is
   // not inadvertently selected.
-  await new Promise(resolve => {
-    EventUtils.synthesizeNativeMouseMove(
-      window.document.documentElement,
-      0,
-      0,
-      resolve
-    );
+  await EventUtils.promiseNativeMouseEvent({
+    type: "mousemove",
+    target: window.document.documentElement,
+    offsetX: 0,
+    offsetY: 0,
   });
 });
 
@@ -194,16 +192,10 @@ async function compareCounts(clickCallback) {
   // * FHR
 
   let engine = await Services.search.getDefault();
-  let engineID = "org.mozilla.testsearchsuggestions";
 
-  let histogramKey = engineID + ".urlbar";
+  let histogramKey = `other-${engine.name}.urlbar`;
   let histogram = Services.telemetry.getKeyedHistogramById("SEARCH_COUNTS");
   histogram.clear();
-
-  // FHR -- first make sure the engine has an identifier so that FHR is happy.
-  Object.defineProperty(engine.wrappedJSObject, "identifier", {
-    value: engineID,
-  });
 
   gURLBar.focus();
   await clickCallback();

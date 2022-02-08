@@ -2,9 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-
 from marionette_harness import BaseMarionetteTestRunner
-from testcase import TelemetryTestCase
+
+from telemetry_harness.testcase import TelemetryTestCase
 
 SERVER_URL = "http://localhost:8000"
 
@@ -32,6 +32,7 @@ class TelemetryTestRunner(BaseMarionetteTestRunner):
                 # Disable smart sizing because it changes prefs at startup. (bug 1547750)
                 "browser.cache.disk.smart_size.enabled": False,
                 "toolkit.telemetry.server": "{}/pings".format(SERVER_URL),
+                "telemetry.fog.test.localhost_port": -1,
                 "toolkit.telemetry.initDelay": 1,
                 "toolkit.telemetry.minSubsessionLength": 0,
                 "datareporting.healthreport.uploadEnabled": True,
@@ -44,6 +45,9 @@ class TelemetryTestRunner(BaseMarionetteTestRunner):
                 # Disable Normandy to avoid extra subsessions due to Experiment
                 # activation in tests (bug 1641571)
                 "app.normandy.enabled": False,
+                # Disable Normandy a little harder (bug 1608807).
+                # This should also disable Nimbus.
+                "app.shield.optoutstudies.enabled": False,
             }
         )
 

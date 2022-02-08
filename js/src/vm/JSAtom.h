@@ -7,6 +7,7 @@
 #ifndef vm_JSAtom_h
 #define vm_JSAtom_h
 
+#include "mozilla/HashFunctions.h"
 #include "mozilla/Maybe.h"
 
 #include "gc/MaybeRooted.h"
@@ -27,45 +28,36 @@ class PropertyName;
 
 } /* namespace js */
 
-/* Well-known predefined C strings. */
-#define DECLARE_PROTO_STR(name, clasp) extern const char js_##name##_str[];
-JS_FOR_EACH_PROTOTYPE(DECLARE_PROTO_STR)
-#undef DECLARE_PROTO_STR
-
-#define DECLARE_CONST_CHAR_STR(idpart, id, text) \
-  extern const char js_##idpart##_str[];
-FOR_EACH_COMMON_PROPERTYNAME(DECLARE_CONST_CHAR_STR)
-#undef DECLARE_CONST_CHAR_STR
-
 namespace js {
-
-class AutoAccessAtomsZone;
 
 /*
  * Atom tracing and garbage collection hooks.
  */
-void TraceAtoms(JSTracer* trc, const AutoAccessAtomsZone& access);
+void TraceAtoms(JSTracer* trc);
 
 void TraceWellKnownSymbols(JSTracer* trc);
 
-/* N.B. must correspond to boolean tagging behavior. */
-enum PinningBehavior { DoNotPinAtom = false, PinAtom = true };
-
 extern JSAtom* Atomize(
     JSContext* cx, const char* bytes, size_t length,
-    js::PinningBehavior pin = js::DoNotPinAtom,
     const mozilla::Maybe<uint32_t>& indexValue = mozilla::Nothing());
 
+extern JSAtom* Atomize(JSContext* cx, HashNumber hash, const char* bytes,
+                       size_t length);
+
 template <typename CharT>
-extern JSAtom* AtomizeChars(JSContext* cx, const CharT* chars, size_t length,
-                            js::PinningBehavior pin = js::DoNotPinAtom);
+extern JSAtom* AtomizeChars(JSContext* cx, const CharT* chars, size_t length);
+
+/* Atomize characters when the value of HashString is already known. */
+template <typename CharT>
+extern JSAtom* AtomizeChars(JSContext* cx, mozilla::HashNumber hash,
+                            const CharT* chars, size_t length);
 
 // TaintFox: convenience function to convert a character buffer to either a JSAtom or a
 // JSLinearString depening on whether taint information is available or not.
 template <typename CharT>
 extern JSLinearString*
 AtomizeCharsIfUntainted(JSContext* cx, const CharT* chars, size_t length,
-                        const StringTaint& taint, js::PinningBehavior pin = js::DoNotPinAtom);
+                        const StringTaint& taint);
 
 /**
  * Create an atom whose contents are those of the |utf8ByteLength| code units
@@ -76,38 +68,24 @@ AtomizeCharsIfUntainted(JSContext* cx, const CharT* chars, size_t length,
 extern JSAtom* AtomizeUTF8Chars(JSContext* cx, const char* utf8Chars,
                                 size_t utf8ByteLength);
 
-/**
- * Create an atom whose contents are those of the |wtf8ByteLength| code units
- * starting at |wtf8Chars|, interpreted as WTF-8.
- *
- * Throws if the code units do not contain valid WTF-8.
- */
-extern JSAtom* AtomizeWTF8Chars(JSContext* cx, const char* wtf8Chars,
-                                size_t wtf8ByteLength);
-
-extern JSAtom* AtomizeString(JSContext* cx, JSString* str,
-                             js::PinningBehavior pin = js::DoNotPinAtom);
+extern JSAtom* AtomizeString(JSContext* cx, JSString* str);
 
 // TaintFox: Convenience function which atomizes the given string
 // only if it is not tainted (since that would loose the taint information).
 // This is meant as a replacement for AtomizeString.
 extern JSLinearString*
-AtomizeIfUntainted(JSContext* cx, JSString* str,
-                   js::PinningBehavior pin = js::DoNotPinAtom);
+AtomizeIfUntainted(JSContext* cx, JSString* str);
 
 template <AllowGC allowGC>
 extern JSAtom* ToAtom(JSContext* cx,
                       typename MaybeRooted<JS::Value, allowGC>::HandleType v);
 
-// These functions are declared in vm/Xdr.h
-//
-// template<XDRMode mode>
-// XDRResult
-// XDRAtom(XDRState<mode>* xdr, js::MutableHandleAtom atomp);
-
-// template<XDRMode mode>
-// XDRResult
-// XDRAtomOrNull(XDRState<mode>* xdr, js::MutableHandleAtom atomp);
+/*
+ * Pin an atom so that it is never collected. Avoid using this if possible.
+ *
+ * This function does not GC.
+ */
+extern bool PinAtom(JSContext* cx, JSAtom* atom);
 
 extern JS::Handle<PropertyName*> ClassName(JSProtoKey key, JSContext* cx);
 

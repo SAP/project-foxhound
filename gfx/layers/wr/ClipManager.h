@@ -13,10 +13,9 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/webrender/WebRenderAPI.h"
 
-class nsDisplayItem;
-
 namespace mozilla {
 
+class nsDisplayItem;
 struct ActiveScrolledRoot;
 struct DisplayItemClipChain;
 
@@ -60,7 +59,8 @@ class ClipManager {
   void BeginList(const StackingContextHelper& aStackingContext);
   void EndList(const StackingContextHelper& aStackingContext);
 
-  wr::WrSpaceAndClipChain SwitchItem(nsDisplayItem* aItem);
+  wr::WrSpaceAndClipChain SwitchItem(nsDisplayListBuilder* aBuilder,
+                                     nsDisplayItem* aItem);
   ~ClipManager();
 
   void PushOverrideForASR(const ActiveScrolledRoot* aASR,
@@ -70,10 +70,10 @@ class ClipManager {
  private:
   wr::WrSpatialId SpatialIdAfterOverride(const wr::WrSpatialId& aSpatialId);
 
-  Maybe<wr::WrSpaceAndClip> GetScrollLayer(const ActiveScrolledRoot* aASR);
+  Maybe<wr::WrSpatialId> GetScrollLayer(const ActiveScrolledRoot* aASR);
 
-  Maybe<wr::WrSpaceAndClip> DefineScrollLayers(const ActiveScrolledRoot* aASR,
-                                               nsDisplayItem* aItem);
+  Maybe<wr::WrSpatialId> DefineScrollLayers(const ActiveScrolledRoot* aASR,
+                                            nsDisplayItem* aItem);
 
   Maybe<wr::WrClipChainId> DefineClipChain(const DisplayItemClipChain* aChain,
                                            int32_t aAppUnitsPerDevPixel);
@@ -93,7 +93,8 @@ class ClipManager {
   // general we need to do this anytime PushOverrideForASR is called, as that is
   // called for the same set of conditions for which we cannot deduplicate
   // clips.
-  typedef std::unordered_map<const DisplayItemClipChain*, wr::WrClipId>
+  typedef std::unordered_map<const DisplayItemClipChain*,
+                             AutoTArray<wr::WrClipId, 4>>
       ClipIdMap;
   std::stack<ClipIdMap> mCacheStack;
 

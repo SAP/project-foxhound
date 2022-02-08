@@ -18,6 +18,7 @@
 #include "WebGLVertexArray.h"
 
 #include "mozilla/Casting.h"
+#include "mozilla/ResultVariant.h"
 
 namespace mozilla {
 
@@ -199,12 +200,6 @@ CheckVertexAttribPointer(const bool isWebgl2,
       calc.baseType = webgl::AttribBaseType::Float;
       break;
 
-    case LOCAL_GL_FIXED:
-      isTypeValid = isWebgl2;
-      bytesPerType = 4;
-      calc.baseType = webgl::AttribBaseType::Float;
-      break;
-
     case LOCAL_GL_INT_2_10_10_10_REV:
     case LOCAL_GL_UNSIGNED_INT_2_10_10_10_REV:
       if (desc.channels != 4) {
@@ -258,7 +253,7 @@ CheckVertexAttribPointer(const bool isWebgl2,
   return calc;
 }
 
-void DoVertexAttribPointer(GLContext& gl, const uint32_t index,
+void DoVertexAttribPointer(gl::GLContext& gl, const uint32_t index,
                            const webgl::VertAttribPointerDesc& desc) {
   if (desc.intFunc) {
     gl.fVertexAttribIPointer(index, desc.channels, desc.type,

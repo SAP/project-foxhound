@@ -10,6 +10,7 @@ const { XPCOMUtils } = ChromeUtils.import(
 );
 
 XPCOMUtils.defineLazyModuleGetters(this, {
+  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
   GeckoViewUtils: "resource://gre/modules/GeckoViewUtils.jsm",
   Services: "resource://gre/modules/Services.jsm",
 });
@@ -91,24 +92,16 @@ class GeckoViewPermission {
 
   handleMediaRequest(aRequest) {
     const constraints = aRequest.getConstraints();
-    const callId = aRequest.callID;
+    const { callID, devices } = aRequest;
     const denyRequest = _ => {
-      Services.obs.notifyObservers(null, "getUserMedia:response:deny", callId);
+      Services.obs.notifyObservers(null, "getUserMedia:response:deny", callID);
     };
 
     const win = Services.wm.getOuterWindowWithId(aRequest.windowID);
-    new Promise((resolve, reject) => {
-      win.navigator.mozGetUserMediaDevices(
-        constraints,
-        resolve,
-        reject,
-        aRequest.innerWindowID,
-        callId
-      );
-      // Release the request first.
-      aRequest = undefined;
-    })
-      .then(devices => {
+    // Release the request first.
+    aRequest = undefined;
+    Promise.resolve()
+      .then(() => {
         if (win.closed) {
           return Promise.resolve();
         }
@@ -137,7 +130,7 @@ class GeckoViewPermission {
         }
 
         const dispatcher = GeckoViewUtils.getDispatcherForWindow(win);
-        const uri = win.document.documentURIObject;
+        const uri = win.top.document.documentURIObject;
         return dispatcher
           .sendRequestForResult({
             type: "GeckoView:MediaPermission",
@@ -166,8 +159,7 @@ class GeckoViewPermission {
                 throw new Error("invalid video id");
               }
               Services.cpmm.sendAsyncMessage("GeckoView:AddCameraPermission", {
-                origin: win.document.nodePrincipal.origin,
-                documentURI: win.document.documentURI,
+                origin: win.top.document.nodePrincipal.origin,
               });
               allowedDevices.appendElement(video);
             }
@@ -183,7 +175,7 @@ class GeckoViewPermission {
             Services.obs.notifyObservers(
               allowedDevices,
               "getUserMedia:response:allow",
-              callId
+              callID
             );
           });
       })
@@ -236,7 +228,7 @@ class GeckoViewPermission {
     const perm = types.queryElementAt(0, Ci.nsIContentPermissionType);
     if (
       perm.type === "desktop-notification" &&
-      !aRequest.isHandlingUserInput &&
+      !aRequest.hasValidTransientUserGestureActivation &&
       Services.prefs.getBoolPref(
         "dom.webnotifications.requireuserinteraction",
         true
@@ -250,35 +242,56 @@ class GeckoViewPermission {
     const dispatcher = GeckoViewUtils.getDispatcherForWindow(
       aRequest.window ? aRequest.window : aRequest.element.ownerGlobal
     );
+    const principal =
+      perm.type == "storage-access"
+        ? aRequest.principal
+        : aRequest.topLevelPrincipal;
     dispatcher
       .sendRequestForResult({
         type: "GeckoView:ContentPermission",
-        uri: aRequest.principal.URI.displaySpec,
+        uri: principal.URI.displaySpec,
+        thirdPartyOrigin: aRequest.principal.origin,
+        principal: E10SUtils.serializePrincipal(principal),
         perm: perm.type,
+        value: perm.capability,
+        contextId: principal.originAttributes.geckoViewSessionContextId ?? null,
+        privateMode: principal.privateBrowsingId != 0,
       })
-      .then(granted => {
-        if (!granted) {
-          return false;
+      .then(value => {
+        if (value == Services.perms.ALLOW_ACTION) {
+          // Ask for app permission after asking for content permission.
+          if (perm.type === "geolocation") {
+            return this.getAppPermissions(dispatcher, [
+              PERM_ACCESS_FINE_LOCATION,
+            ]);
+          }
         }
-        // Ask for app permission after asking for content permission.
-        if (perm.type === "geolocation") {
-          return this.getAppPermissions(dispatcher, [
-            PERM_ACCESS_FINE_LOCATION,
-          ]);
-        }
-        return true;
+        return value;
       })
       .catch(error => {
         Cu.reportError("Permission error: " + error);
-        return /* granted */ false;
+        return /* value */ Services.perms.DENY_ACTION;
       })
-      .then(granted => {
-        (granted ? aRequest.allow : aRequest.cancel)();
+      .then(value => {
+        // The storage access code adds itself to the perm manager; no need for us to do it.
+        if (perm.type == "storage-access") {
+          if (value == Services.perms.ALLOW_ACTION) {
+            aRequest.allow({ "storage-access": "allow" });
+          } else {
+            aRequest.cancel();
+          }
+          aRequest = undefined;
+          return;
+        }
+
+        (value == Services.perms.ALLOW_ACTION
+          ? aRequest.allow
+          : aRequest.cancel)();
         Services.perms.addFromPrincipal(
-          aRequest.principal,
+          principal,
           perm.type,
-          granted ? Services.perms.ALLOW_ACTION : Services.perms.DENY_ACTION,
-          Services.perms.EXPIRE_SESSION
+          value,
+          Services.perms.EXPIRE_NEVER
         );
         // Manually release the target request here to facilitate garbage collection.
         aRequest = undefined;

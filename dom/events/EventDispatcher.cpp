@@ -15,6 +15,7 @@
 #include "nsINode.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsPIDOMWindow.h"
+#include "nsRefreshDriver.h"
 #include "AnimationEvent.h"
 #include "BeforeUnloadEvent.h"
 #include "ClipboardEvent.h"
@@ -22,7 +23,6 @@
 #include "CompositionEvent.h"
 #include "DeviceMotionEvent.h"
 #include "DragEvent.h"
-#include "GeckoProfiler.h"
 #include "KeyboardEvent.h"
 #include "Layers.h"
 #include "mozilla/BasePrincipal.h"
@@ -39,6 +39,7 @@
 #include "mozilla/dom/MutationEvent.h"
 #include "mozilla/dom/NotifyPaintEvent.h"
 #include "mozilla/dom/PageTransitionEvent.h"
+#include "mozilla/dom/PerformanceEventTiming.h"
 #include "mozilla/dom/PointerEvent.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ScrollAreaEvent.h"
@@ -57,21 +58,13 @@
 #include "mozilla/ipc/MessageChannel.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/Unused.h"
-
-#ifdef MOZ_TASK_TRACER
-#  include "GeckoTaskTracer.h"
-#  include "mozilla/dom/Element.h"
-#  include "mozilla/Likely.h"
-using namespace mozilla::tasktracer;
-#endif
-
-#ifdef MOZ_GECKO_PROFILER
-#  include "ProfilerMarkerPayload.h"
-#endif
 
 namespace mozilla {
 
@@ -105,10 +98,10 @@ static bool IsEventTargetChrome(EventTarget* aEventTarget,
   }
 
   Document* doc = nullptr;
-  if (nsCOMPtr<nsINode> node = do_QueryInterface(aEventTarget)) {
+  if (nsINode* node = nsINode::FromEventTargetOrNull(aEventTarget)) {
     doc = node->OwnerDoc();
-  } else if (nsCOMPtr<nsPIDOMWindowInner> window =
-                 do_QueryInterface(aEventTarget)) {
+  } else if (nsPIDOMWindowInner* window =
+                 nsPIDOMWindowInner::FromEventTargetOrNull(aEventTarget)) {
     doc = window->GetExtantDoc();
   }
 
@@ -390,7 +383,7 @@ class EventTargetChainItem {
     bool mIsChromeHandler : 1;
 
    private:
-    typedef uint32_t RawFlags;
+    using RawFlags = uint32_t;
     void SetRawFlags(RawFlags aRawFlags) {
       static_assert(
           sizeof(EventTargetChainFlags) <= sizeof(RawFlags),
@@ -697,16 +690,18 @@ EventTargetChainItem* EventTargetChainItemForChromeTarget(
 }
 
 static bool ShouldClearTargets(WidgetEvent* aEvent) {
-  nsCOMPtr<nsIContent> finalTarget;
-  nsCOMPtr<nsIContent> finalRelatedTarget;
-  if ((finalTarget = do_QueryInterface(aEvent->mTarget)) &&
-      finalTarget->SubtreeRoot()->IsShadowRoot()) {
-    return true;
+  if (nsIContent* finalTarget =
+          nsIContent::FromEventTargetOrNull(aEvent->mTarget)) {
+    if (finalTarget->SubtreeRoot()->IsShadowRoot()) {
+      return true;
+    }
   }
 
-  if ((finalRelatedTarget = do_QueryInterface(aEvent->mRelatedTarget)) &&
-      finalRelatedTarget->SubtreeRoot()->IsShadowRoot()) {
-    return true;
+  if (nsIContent* finalRelatedTarget =
+          nsIContent::FromEventTargetOrNull(aEvent->mRelatedTarget)) {
+    if (finalRelatedTarget->SubtreeRoot()->IsShadowRoot()) {
+      return true;
+    }
   }
   // XXXsmaug Check also all the touch objects.
 
@@ -739,36 +734,20 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
   NS_ENSURE_TRUE(!nsContentUtils::IsInStableOrMetaStableState(),
                  NS_ERROR_DOM_INVALID_STATE_ERR);
 
-#ifdef MOZ_TASK_TRACER
-  if (MOZ_UNLIKELY(mozilla::tasktracer::IsStartLogging())) {
-    nsAutoCString eventType;
-    nsAutoString eventTypeU16;
-    if (aDOMEvent) {
-      aDOMEvent->GetType(eventTypeU16);
-    } else {
-      Event::GetWidgetEventType(aEvent, eventTypeU16);
-    }
-    eventType = NS_ConvertUTF16toUTF8(eventTypeU16);
-
-    nsCOMPtr<Element> element = do_QueryInterface(aTarget);
-    nsAutoString elementId;
-    nsAutoString elementTagName;
-    if (element) {
-      element->GetId(elementId);
-      element->GetTagName(elementTagName);
-    }
-    AddLabel("Event [%s] dispatched at target [id:%s tag:%s]", eventType.get(),
-             NS_ConvertUTF16toUTF8(elementId).get(),
-             NS_ConvertUTF16toUTF8(elementTagName).get());
-  }
-#endif
-
   nsCOMPtr<EventTarget> target = do_QueryInterface(aTarget);
+
+  RefPtr<PerformanceEventTiming> eventTimingEntry;
+  // Similar to PerformancePaintTiming, we don't need to
+  // expose them for printing documents
+  if (aPresContext && !aPresContext->IsPrintingOrPrintPreview()) {
+    eventTimingEntry =
+        PerformanceEventTiming::TryGenerateEventTiming(target, aEvent);
+  }
 
   bool retargeted = false;
 
   if (aEvent->mFlags.mRetargetToNonNativeAnonymous) {
-    nsCOMPtr<nsIContent> content = do_QueryInterface(target);
+    nsIContent* content = nsIContent::FromEventTargetOrNull(target);
     if (content && content->IsInNativeAnonymousSubtree()) {
       nsCOMPtr<EventTarget> newTarget =
           content->FindFirstNonChromeOnlyAccessContent();
@@ -810,7 +789,7 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
         MOZ_CRASH("This is unsafe! Fix the caller!");
       }
     };
-    if (nsCOMPtr<nsINode> node = do_QueryInterface(target)) {
+    if (nsINode* node = nsINode::FromEventTargetOrNull(target)) {
       // If this is a node, it's possible that this is some sort of DOM tree
       // that is never accessed by script (for example an SVG image or XBL
       // binding document or whatnot).  We really only want to warn/assert here
@@ -849,7 +828,7 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
     if (!sCachedMainThreadChain) {
       sCachedMainThreadChain = new nsTArray<EventTargetChainItem>();
     }
-    chain.SwapElements(*sCachedMainThreadChain);
+    chain = std::move(*sCachedMainThreadChain);
     chain.SetCapacity(128);
   }
 
@@ -890,14 +869,18 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
 
   bool clearTargets = false;
 
-  nsCOMPtr<nsIContent> content = do_QueryInterface(aEvent->mOriginalTarget);
+  nsCOMPtr<nsIContent> content =
+      nsIContent::FromEventTargetOrNull(aEvent->mOriginalTarget);
   bool isInAnon = content && content->IsInNativeAnonymousSubtree();
 
   aEvent->mFlags.mIsBeingDispatched = true;
 
   // Create visitor object and start event dispatching.
   // GetEventTargetParent for the original target.
-  nsEventStatus status = aEventStatus ? *aEventStatus : nsEventStatus_eIgnore;
+  nsEventStatus status = aDOMEvent && aDOMEvent->DefaultPrevented()
+                             ? nsEventStatus_eConsumeNoDefault
+                         : aEventStatus ? *aEventStatus
+                                        : nsEventStatus_eIgnore;
   nsCOMPtr<EventTarget> targetForPreVisitor = aEvent->mTarget;
   EventChainPreVisitor preVisitor(aPresContext, aEvent, aDOMEvent, status,
                                   isInAnon, targetForPreVisitor);
@@ -970,7 +953,8 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
         topEtci = parentEtci;
       } else {
         bool ignoreBecauseOfShadowDOM = preVisitor.mIgnoreBecauseOfShadowDOM;
-        nsCOMPtr<nsINode> disabledTarget = do_QueryInterface(parentTarget);
+        nsCOMPtr<nsINode> disabledTarget =
+            nsINode::FromEventTargetOrNull(parentTarget);
         parentEtci = MayRetargetToChromeIfCanNotHandleEvent(
             chain, preVisitor, parentEtci, topEtci, disabledTarget);
         if (parentEtci && preVisitor.mCanHandle) {
@@ -1003,6 +987,22 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
           chain[i].PreHandleEvent(preVisitor);
         }
 
+        RefPtr<nsRefreshDriver> refreshDriver;
+        if (aPresContext && aPresContext->GetRootPresContext() &&
+            aEvent->IsTrusted() &&
+            (aEvent->mMessage == eKeyPress ||
+             aEvent->mMessage == eMouseClick)) {
+          refreshDriver = aPresContext->GetRootPresContext()->RefreshDriver();
+          if (refreshDriver) {
+            refreshDriver->EnterUserInputProcessing();
+          }
+        }
+        auto cleanup = MakeScopeExit([&] {
+          if (refreshDriver) {
+            refreshDriver->ExitUserInputProcessing();
+          }
+        });
+
         clearTargets = ShouldClearTargets(aEvent);
 
         // Handle the chain.
@@ -1010,7 +1010,6 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
         MOZ_RELEASE_ASSERT(!aEvent->mPath);
         aEvent->mPath = &chain;
 
-#ifdef MOZ_GECKO_PROFILER
         if (profiler_is_active()) {
           // Add a profiler label and a profiler marker for the actual
           // dispatch of the event.
@@ -1020,8 +1019,8 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
             // This is tiny bit slow, but happens only once per event.
             // Similar code also in EventListenerManager.
             nsCOMPtr<EventTarget> et = aEvent->mOriginalTarget;
-            RefPtr<Event> event = EventDispatcher::CreateEvent(
-                et, aPresContext, aEvent, EmptyString());
+            RefPtr<Event> event =
+                EventDispatcher::CreateEvent(et, aPresContext, aEvent, u""_ns);
             event.swap(postVisitor.mDOMEvent);
           }
           nsAutoString typeStr;
@@ -1031,43 +1030,87 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
 
           nsCOMPtr<nsIDocShell> docShell;
           docShell = nsContentUtils::GetDocShellForEventTarget(aEvent->mTarget);
-          Maybe<uint64_t> innerWindowID;
+          MarkerInnerWindowId innerWindowId;
           if (nsCOMPtr<nsPIDOMWindowInner> inner =
                   do_QueryInterface(aEvent->mTarget->GetOwnerGlobal())) {
-            innerWindowID = Some(inner->WindowID());
+            innerWindowId = MarkerInnerWindowId{inner->WindowID()};
           }
-          PROFILER_ADD_MARKER_WITH_PAYLOAD(
-              "DOMEvent", DOM, DOMEventMarkerPayload,
-              (typeStr, aEvent->mTimeStamp, "DOMEvent", TRACING_INTERVAL_START,
-               innerWindowID));
+
+          struct DOMEventMarker {
+            static constexpr Span<const char> MarkerTypeName() {
+              return MakeStringSpan("DOMEvent");
+            }
+            static void StreamJSONMarkerData(
+                baseprofiler::SpliceableJSONWriter& aWriter,
+                const ProfilerString16View& aEventType,
+                const TimeStamp& aStartTime, const TimeStamp& aEventTimeStamp) {
+              aWriter.StringProperty("eventType",
+                                     NS_ConvertUTF16toUTF8(aEventType));
+              // This is the event processing latency, which is the time from
+              // when the event was created, to when it was started to be
+              // processed. Note that the computation of this latency is
+              // deferred until serialization time, at the expense of some extra
+              // memory.
+              aWriter.DoubleProperty(
+                  "latency", (aStartTime - aEventTimeStamp).ToMilliseconds());
+            }
+            static MarkerSchema MarkerTypeDisplay() {
+              using MS = MarkerSchema;
+              MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable,
+                        MS::Location::TimelineOverview};
+              schema.SetChartLabel("{marker.data.eventType}");
+              schema.SetTooltipLabel("{marker.data.eventType} - DOMEvent");
+              schema.SetTableLabel("{marker.data.eventType}");
+              schema.AddKeyLabelFormat("latency", "Latency",
+                                       MS::Format::Duration);
+              return schema;
+            }
+          };
+
+          auto startTime = TimeStamp::Now();
+          profiler_add_marker("DOMEvent", geckoprofiler::category::DOM,
+                              {MarkerTiming::IntervalStart(),
+                               MarkerInnerWindowId(innerWindowId)},
+                              DOMEventMarker{}, typeStr, startTime,
+                              aEvent->mTimeStamp);
 
           EventTargetChainItem::HandleEventTargetChain(chain, postVisitor,
                                                        aCallback, cd);
 
-          PROFILER_ADD_MARKER_WITH_PAYLOAD(
-              "DOMEvent", DOM, DOMEventMarkerPayload,
-              (typeStr, aEvent->mTimeStamp, "DOMEvent", TRACING_INTERVAL_END,
-               innerWindowID));
-        } else
-#endif
-        {
+          profiler_add_marker(
+              "DOMEvent", geckoprofiler::category::DOM,
+              {MarkerTiming::IntervalEnd(), std::move(innerWindowId)},
+              DOMEventMarker{}, typeStr, startTime, aEvent->mTimeStamp);
+        } else {
           EventTargetChainItem::HandleEventTargetChain(chain, postVisitor,
                                                        aCallback, cd);
         }
         aEvent->mPath = nullptr;
 
-        if (aEvent->mMessage == eKeyPress && aEvent->IsTrusted()) {
-          if (aPresContext && aPresContext->GetRootPresContext()) {
-            nsRefreshDriver* driver =
-                aPresContext->GetRootPresContext()->RefreshDriver();
-            if (driver && driver->ViewManagerFlushIsPending()) {
-              nsIWidget* widget = aPresContext->GetRootWidget();
-              layers::LayerManager* lm =
-                  widget ? widget->GetLayerManager() : nullptr;
-              if (lm) {
-                lm->RegisterPayload({layers::CompositionPayloadType::eKeyPress,
-                                     aEvent->mTimeStamp});
+        if (aPresContext && aPresContext->GetRootPresContext() &&
+            aEvent->IsTrusted()) {
+          nsRefreshDriver* driver =
+              aPresContext->GetRootPresContext()->RefreshDriver();
+          if (driver && driver->HasPendingTick()) {
+            switch (aEvent->mMessage) {
+              case eKeyPress:
+                driver->RegisterCompositionPayload(
+                    {layers::CompositionPayloadType::eKeyPress,
+                     aEvent->mTimeStamp});
+                break;
+              case eMouseClick: {
+                if (aEvent->AsMouseEvent()->mInputSource ==
+                        MouseEvent_Binding::MOZ_SOURCE_MOUSE ||
+                    aEvent->AsMouseEvent()->mInputSource ==
+                        MouseEvent_Binding::MOZ_SOURCE_TOUCH) {
+                  driver->RegisterCompositionPayload(
+                      {layers::CompositionPayloadType::eMouseUpFollowedByClick,
+                       aEvent->mTimeStamp});
+                }
+                break;
               }
+              default:
+                break;
             }
           }
         }
@@ -1087,6 +1130,9 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
   aEvent->mFlags.mIsBeingDispatched = false;
   aEvent->mFlags.mDispatchedAtLeastOnce = true;
 
+  if (eventTimingEntry) {
+    eventTimingEntry->FinalizeEventTiming(aEvent->mTarget);
+  }
   // https://dom.spec.whatwg.org/#concept-event-dispatch
   // step 10. If clearTargets, then:
   //          1. Set event's target to null.
@@ -1101,7 +1147,7 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
   }
 
   if (!externalDOMEvent && preVisitor.mDOMEvent) {
-    // An dom::Event was created while dispatching the event.
+    // A dom::Event was created while dispatching the event.
     // Duplicate private data if someone holds a pointer to it.
     nsrefcnt rc = 0;
     NS_RELEASE2(preVisitor.mDOMEvent, rc);
@@ -1253,7 +1299,7 @@ nsresult EventDispatcher::DispatchDOMEvent(nsISupports* aTarget,
   if (aEventType.LowerCaseEqualsLiteral("deviceorientationevent")) {
     DeviceOrientationEventInit init;
     RefPtr<Event> event =
-        DeviceOrientationEvent::Constructor(aOwner, EmptyString(), init);
+        DeviceOrientationEvent::Constructor(aOwner, u""_ns, init);
     event->MarkUninitialized();
     return event.forget();
   }
@@ -1285,8 +1331,7 @@ nsresult EventDispatcher::DispatchDOMEvent(nsISupports* aTarget,
   }
   if (aEventType.LowerCaseEqualsLiteral("hashchangeevent")) {
     HashChangeEventInit init;
-    RefPtr<Event> event =
-        HashChangeEvent::Constructor(aOwner, EmptyString(), init);
+    RefPtr<Event> event = HashChangeEvent::Constructor(aOwner, u""_ns, init);
     event->MarkUninitialized();
     return event.forget();
   }
@@ -1295,7 +1340,7 @@ nsresult EventDispatcher::DispatchDOMEvent(nsISupports* aTarget,
   }
   if (aEventType.LowerCaseEqualsLiteral("storageevent")) {
     RefPtr<Event> event =
-        StorageEvent::Constructor(aOwner, EmptyString(), StorageEventInit());
+        StorageEvent::Constructor(aOwner, u""_ns, StorageEventInit());
     event->MarkUninitialized();
     return event.forget();
   }

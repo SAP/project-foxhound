@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 chr{
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"ᎠᏈᏣᏂ"}
@@ -1903,6 +1903,9 @@ chr{
             ld{"ᏰᎧᏖᎵᏂᏊᎦ ᎪᎩ ᎠᏟᎢᎵᏒ"}
             lg{"ᏰᎧᏖᎵᏂᏊᎦ ᎠᏟᎢᎵᏒ"}
             ls{"ᏰᎧᏖᎵᏂᏊᎦ ᎠᏟᎶᏍᏗ ᎠᏟᎢᎵᏒ"}
+        }
+        "meta:Yukon"{
+            ls{"ᏳᎧᏂ ᎠᏟᎢᎵᏒ"}
         }
         fallbackFormat{"{1} ({0})"}
         gmtFormat{"GMT{0}"}

@@ -6,7 +6,7 @@
 #include "nsAccessibleRelation.h"
 
 #include "Relation.h"
-#include "Accessible.h"
+#include "LocalAccessible.h"
 #include "xpcAccessibleDocument.h"
 
 #include "nsArrayUtils.h"
@@ -17,13 +17,14 @@ using namespace mozilla::a11y;
 nsAccessibleRelation::nsAccessibleRelation(uint32_t aType, Relation* aRel)
     : mType(aType) {
   mTargets = do_CreateInstance(NS_ARRAY_CONTRACTID);
-  Accessible* targetAcc = nullptr;
-  while ((targetAcc = aRel->Next()))
+  LocalAccessible* targetAcc = nullptr;
+  while ((targetAcc = aRel->Next())) {
     mTargets->AppendElement(static_cast<nsIAccessible*>(ToXPC(targetAcc)));
+  }
 }
 
 nsAccessibleRelation::nsAccessibleRelation(
-    uint32_t aType, const nsTArray<ProxyAccessible*>* aTargets)
+    uint32_t aType, const nsTArray<RemoteAccessible*>* aTargets)
     : mType(aType) {
   mTargets = do_CreateInstance(NS_ARRAY_CONTRACTID);
   for (uint32_t idx = 0; idx < aTargets->Length(); ++idx) {

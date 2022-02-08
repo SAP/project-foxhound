@@ -2,6 +2,9 @@
 Default Search Engines
 ======================
 
+Default Engine
+==============
+
 The search service specifies default search engines via the `configuration
 schema`_.
 
@@ -17,11 +20,44 @@ The default engine may change when:
 * The user chooses to set a different engine via preferences.
 * The user installs an add-on which sets its default as one of the application
   provided engines.
-* The user installs an add-on which supplies a different engine and allows the
-  different engine to be set as default.
+* The user installs an add-on which supplies a different engine and the user allows
+  the different engine to be set as default.
+* The user or Firefox (e.g. via blocklist) causes the default engine to be removed.
+
+Add-ons and Prompting for Default
+---------------------------------
+
+The prompt for selecting a search engine from an add-on as default is shown to
+the user on installation of the add-on. It may also be shown if an add-on is
+re-enabled, if the default engine was not changed in the meantime.
+
+The following diagram shows the full flow for search engines from add-ons:
+
+.. image:: ./search-add-on-prompts-flow.png
+    :align: center
+    :alt: Flowchart for prompting for default engine for Search Engines related to add-ons.
+
+When the Default Engine is Removed
+==================================
+
+If the default engine is removed by the user, or by Firefox in the case of a
+blocklist or for some other region, the new default engine is chosen by the
+following process.
+
+* If the default engine specified by the configuration for the user's region and locale
+  is visible, then it will be selected as default.
+* If there is another engine visible, fall back to the first engine identified
+  as a general search engine (see below).
+* If there are no other visible engines, unhide the region/locale default engine
+  from the configuration and set it as default if it is not the one being removed.
+* Otherwise, unhide the first general search engine, or the first visible engine.
+
+A general search engine is defined as one that returns general search results,
+for example Google or DuckDuckGo. A non-general search engine returns results
+for a specific area, e.g. shopping, books, dictionaries.
 
 Add-ons and App-provided Engines
---------------------------------
+================================
 
 An add-on may set the name of the search provider in the manifest.json to be
 the name of an app-provided engine. In this case:

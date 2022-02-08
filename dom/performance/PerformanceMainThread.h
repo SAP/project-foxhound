@@ -14,6 +14,7 @@ namespace mozilla {
 namespace dom {
 
 class PerformanceNavigationTiming;
+class PerformanceEventTiming;
 
 class PerformanceMainThread final : public Performance,
                                     public PerformanceStorage {
@@ -35,9 +36,20 @@ class PerformanceMainThread final : public Performance,
   virtual void AddEntry(nsIHttpChannel* channel,
                         nsITimedChannel* timedChannel) override;
 
-  void AddRawEntry(UniquePtr<PerformanceTimingData>,
+  // aData must be non-null.
+  virtual void AddEntry(const nsString& entryName,
+                        const nsString& initiatorType,
+                        UniquePtr<PerformanceTimingData>&& aData) override;
+
+  // aPerformanceTimingData must be non-null.
+  void AddRawEntry(UniquePtr<PerformanceTimingData> aPerformanceTimingData,
                    const nsAString& aInitiatorType,
                    const nsAString& aEntryName);
+  virtual void SetFCPTimingEntry(PerformancePaintTiming* aEntry) override;
+
+  void InsertEventTimingEntry(PerformanceEventTiming*) override;
+  void BufferEventTimingEntryIfNeeded(PerformanceEventTiming*) override;
+  void DispatchPendingEventTimingEntries() override;
 
   TimeStamp CreationTimeStamp() const override;
 
@@ -59,16 +71,33 @@ class PerformanceMainThread final : public Performance,
   // The GetEntries* methods need to be overriden in order to add the
   // the document entry of type navigation.
   virtual void GetEntries(nsTArray<RefPtr<PerformanceEntry>>& aRetval) override;
+
+  // Return entries which qualify availableFromTimeline boolean check
   virtual void GetEntriesByType(
+      const nsAString& aEntryType,
+      nsTArray<RefPtr<PerformanceEntry>>& aRetval) override;
+
+  // There are entries that we don't want expose via performance, however
+  // we do want PerformanceObserver to get them
+  void GetEntriesByTypeForObserver(
       const nsAString& aEntryType,
       nsTArray<RefPtr<PerformanceEntry>>& aRetval) override;
   virtual void GetEntriesByName(
       const nsAString& aName, const Optional<nsAString>& aEntryType,
       nsTArray<RefPtr<PerformanceEntry>>& aRetval) override;
 
+  void UpdateNavigationTimingEntry() override;
   void QueueNavigationTimingEntry() override;
 
   bool CrossOriginIsolated() const override;
+
+  size_t SizeOfEventEntries(mozilla::MallocSizeOf aMallocSizeOf) const override;
+
+  static constexpr uint32_t kDefaultEventTimingBufferSize = 150;
+  static constexpr uint32_t kDefaultEventTimingDurationThreshold = 104;
+  static constexpr double kDefaultEventTimingMinDuration = 16.0;
+
+  class EventCounts* EventCounts() override;
 
  protected:
   ~PerformanceMainThread();
@@ -89,9 +118,27 @@ class PerformanceMainThread final : public Performance,
   nsCOMPtr<nsITimedChannel> mChannel;
   RefPtr<PerformanceTiming> mTiming;
   RefPtr<PerformanceNavigation> mNavigation;
+  RefPtr<PerformancePaintTiming> mFCPTiming;
   JS::Heap<JSObject*> mMozMemory;
 
   const bool mCrossOriginIsolated;
+
+  nsTArray<RefPtr<PerformanceEventTiming>> mEventTimingEntries;
+
+  AutoCleanLinkedList<RefPtr<PerformanceEventTiming>>
+      mPendingEventTimingEntries;
+  bool mHasDispatchedInputEvent = false;
+
+  RefPtr<PerformanceEventTiming> mFirstInputEvent;
+  RefPtr<PerformanceEventTiming> mPendingPointerDown;
+
+ private:
+  bool mHasQueuedRefreshdriverObserver = false;
+
+  RefPtr<class EventCounts> mEventCounts;
+  void IncEventCount(const nsAtom* aType);
+
+  PresShell* GetPresShell();
 };
 
 }  // namespace dom

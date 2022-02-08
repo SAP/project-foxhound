@@ -1,3 +1,8 @@
+const { AppConstants } = SpecialPowers.Cu.import(
+  "resource://gre/modules/AppConstants.jsm",
+  {}
+);
+
 // In each list of tests below, test file types that are not supported should
 // be ignored. To make sure tests respect that, we include a file of type
 // "bogus/duh" in each list.
@@ -53,6 +58,7 @@ var gSmallTests = [
     width: 320,
     height: 240,
     duration: 0.266,
+    contentDuration: 0.133,
   },
   {
     name: "seek-short.webm",
@@ -414,6 +420,39 @@ var gPlayTests = [
   // Test playback of a WebM file with resolution changes.
   { name: "resolution-change.webm", type: "video/webm", duration: 6.533 },
 
+  // The following webm files test cases where the webm metadata dimensions do
+  // not match those in the stream. See bug 1695033 for more info.
+
+  // Reference file with correct dimensions (webm metadata matches stream
+  // resolution).
+  { name: "bipbop_short_vp8.webm", type: "video/webm", duration: 1.011 },
+
+  // The webm resolution is greater in both dimensions than the in stream
+  // resolution.
+  {
+    name: "bipbop_short_pixel_metadata_bigger_than_in_stream_vp8.webm",
+    type: "video/webm",
+    duration: 1.011,
+  },
+
+  // The webm resolution is correct for height, but is narrower than the stream
+  // resolution.
+  {
+    name: "bipbop_short_pixel_metadata_narrower_than_in_stream_vp8.webm",
+    type: "video/webm",
+    duration: 1.011,
+  },
+
+  // The webm resolution is smaller in both dimensions than the in stream
+  // resolution.
+  {
+    name: "bipbop_short_pixel_metadata_smaller_than_in_stream_vp8.webm",
+    type: "video/webm",
+    duration: 1.011,
+  },
+
+  // End of webm dimension clashing files.
+
   // A really short, low sample rate, single channel file. This tests whether
   // we can handle playing files when only push very little audio data to the
   // hardware.
@@ -465,9 +504,6 @@ var gPlayTests = [
   // Test playback of a MP4 file with a non-zero start time (and audio starting
   // a second later).
   { name: "bipbop-lateaudio.mp4", type: "video/mp4" },
-  // Ambisonics AAC, requires AAC extradata to be set when creating decoder (see bug 1431169)
-  // Also test 4.0 decoding.
-  { name: "ambisonics.mp4", type: "audio/mp4", duration: 16.48 },
   // Opus in MP4 channel mapping=0 sample file (content shorter due to preskip)
   {
     name: "opus-sample.mp4",
@@ -521,6 +557,15 @@ var gPlayTests = [
     height: 240,
     duration: 3.13,
   },
+  // A file that has no codec delay at the container level, but has a delay at
+  // the codec level.
+  {
+    name: "no-container-codec-delay.webm",
+    type: "video/webm",
+  },
+  // A file that has a codec delay at a container level of 0, but as a delay at
+  // the codec level that is non-zero.
+  { name: "invalid-preskip.webm", type: "audio/webm; codecs=opus" },
 
   // Invalid file
   { name: "bogus.duh", type: "bogus/duh", duration: Number.NaN },
@@ -531,6 +576,65 @@ const win32 =
   !SpecialPowers.Services.appinfo.is64Bit;
 if (!win32) {
   gPlayTests.push({ name: "av1.mp4", type: "video/mp4", duration: 1.0 });
+}
+
+// AAC files with different sample rates. We add these here as some are added
+// conditionally.
+gPlayTests.push(
+  {
+    name: "bipbop_audio_aac_8k.mp4",
+    type: "audio/mp4",
+    duration: 1.06,
+  },
+  {
+    name: "bipbop_audio_aac_22.05k.mp4",
+    type: "audio/mp4",
+    duration: 1.06,
+  },
+  {
+    name: "bipbop_audio_aac_44.1k.mp4",
+    type: "audio/mp4",
+    duration: 1.06,
+  },
+  {
+    name: "bipbop_audio_aac_48k.mp4",
+    type: "audio/mp4",
+    duration: 1.06,
+  }
+);
+if (AppConstants.platform != "win") {
+  // Windows WMF decoder doesn't do >48K everywhere. See bug 1698639.
+  gPlayTests.push(
+    {
+      name: "bipbop_audio_aac_88.2k.mp4",
+      type: "audio/mp4",
+      duration: 1.06,
+    },
+    {
+      name: "bipbop_audio_aac_96k.mp4",
+      type: "audio/mp4",
+      duration: 1.06,
+    }
+  );
+}
+
+// ambisonics.mp4 causes intermittents, so we conditionally add it until we fix
+// the root cause.
+const skipAmbisonics =
+  // Bug 1484451 - skip on mac debug
+  (AppConstants.platform == "macosx" && AppConstants.DEBUG) ||
+  // Bug 1483259 - skip on linux64 opt
+  (AppConstants.platform == "linux" &&
+    !AppConstants.DEBUG &&
+    SpecialPowers.Services.appinfo.is64Bit);
+if (!skipAmbisonics) {
+  // Ambisonics AAC, requires AAC extradata to be set when creating decoder (see bug 1431169)
+  // Also test 4.0 decoding.
+  gPlayTests.push({
+    name: "ambisonics.mp4",
+    type: "audio/mp4",
+    duration: 16.48,
+  });
 }
 
 var gSeekToNextFrameTests = [
@@ -616,7 +720,6 @@ var gInvalidTests = [
   { name: "invalid-cmap-s0c0.opus", type: "audio/ogg; codecs=opus" },
   { name: "invalid-cmap-s0c2.opus", type: "audio/ogg; codecs=opus" },
   { name: "invalid-cmap-s1c2.opus", type: "audio/ogg; codecs=opus" },
-  { name: "invalid-preskip.webm", type: "audio/webm; codecs=opus" },
 ];
 
 var gInvalidPlayTests = [
@@ -881,9 +984,7 @@ if (
   manifestNavigator().userAgent.includes("Mobile") ||
   manifestNavigator().userAgent.includes("Tablet")
 ) {
-  androidVersion = SpecialPowers.Cc["@mozilla.org/system-info;1"]
-    .getService(SpecialPowers.Ci.nsIPropertyBag2)
-    .getProperty("version");
+  androidVersion = SpecialPowers.Services.sysinfo.getProperty("version");
 }
 
 function getAndroidVersion() {
@@ -1865,6 +1966,152 @@ var gEMETests = [
     sessionType: "temporary",
     sessionCount: 1,
     duration: 2.08,
+  },
+  // The following cbcs files are created using shaka-packager using commands like
+  // ./packager-win.exe 'in=bipbop_2s.mp4,stream=audio,init_segment=bipbop_cbcs_1_9_audio_init.mp4,segment_template=bipbop_cbcs_1_9_audio_$Number$.m4s' \
+  // 'in=bipbop_2s.mp4,stream=video,init_segment=bipbop_cbcs_1_9_video_init.mp4,segment_template=bipbop_cbcs_1_9_video_$Number$.m4s' --protection_scheme cbcs \
+  // --enable_raw_key_encryption --keys label=:key_id=7e571d047e571d047e571d047e571d21:key=7e5744447e5744447e5744447e574421 --iv 11223344556677889900112233445566 \
+  // --clear_lead 0 --crypt_byte_block 1 --skip_byte_block 9
+  // See bug 1726202 for more details on their creation.
+  {
+    name: "mp4 h264 + aac clearkey cbcs 1:9 pattern",
+    tracks: [
+      {
+        name: "video",
+        type: 'video/mp4; codecs="avc1.4d4015"',
+        fragments: [
+          "bipbop_cbcs_1_9_video_init.mp4",
+          "bipbop_cbcs_1_9_video_1.m4s",
+        ],
+      },
+      {
+        name: "audio",
+        type: 'audio/mp4; codecs="mp4a.40.2"',
+        fragments: [
+          "bipbop_cbcs_1_9_audio_init.mp4",
+          "bipbop_cbcs_1_9_audio_1.m4s",
+        ],
+      },
+    ],
+    keys: {
+      // "keyid" : "key"
+      "7e571d047e571d047e571d047e571d21": "7e5744447e5744447e5744447e574421",
+    },
+    sessionType: "temporary",
+    sessionCount: 2,
+    duration: 2.04,
+  },
+  {
+    name: "mp4 h264 + aac clearkey cbcs 5:5 pattern",
+    tracks: [
+      {
+        name: "video",
+        type: 'video/mp4; codecs="avc1.4d4015"',
+        fragments: [
+          "bipbop_cbcs_5_5_video_init.mp4",
+          "bipbop_cbcs_5_5_video_1.m4s",
+        ],
+      },
+      {
+        name: "audio",
+        type: 'audio/mp4; codecs="mp4a.40.2"',
+        fragments: [
+          "bipbop_cbcs_5_5_audio_init.mp4",
+          "bipbop_cbcs_5_5_audio_1.m4s",
+        ],
+      },
+    ],
+    keys: {
+      // "keyid" : "key"
+      "7e571d047e571d047e571d047e571d21": "7e5744447e5744447e5744447e574421",
+    },
+    sessionType: "temporary",
+    sessionCount: 2,
+    duration: 2.04,
+  },
+  {
+    name: "mp4 h264 + aac clearkey cbcs 10:0 pattern",
+    tracks: [
+      {
+        name: "video",
+        type: 'video/mp4; codecs="avc1.4d4015"',
+        fragments: [
+          "bipbop_cbcs_10_0_video_init.mp4",
+          "bipbop_cbcs_10_0_video_1.m4s",
+        ],
+      },
+      {
+        name: "audio",
+        type: 'audio/mp4; codecs="mp4a.40.2"',
+        fragments: [
+          "bipbop_cbcs_10_0_audio_init.mp4",
+          "bipbop_cbcs_10_0_audio_1.m4s",
+        ],
+      },
+    ],
+    keys: {
+      // "keyid" : "key"
+      "7e571d047e571d047e571d047e571d21": "7e5744447e5744447e5744447e574421",
+    },
+    sessionType: "temporary",
+    sessionCount: 2,
+    duration: 2.04,
+  },
+  {
+    name: "mp4 h264 + aac clearkey cbcs 7:7 pattern",
+    tracks: [
+      {
+        name: "video",
+        type: 'video/mp4; codecs="avc1.4d4015"',
+        fragments: [
+          "bipbop_cbcs_7_7_video_init.mp4",
+          "bipbop_cbcs_7_7_video_1.m4s",
+        ],
+      },
+      {
+        name: "audio",
+        type: 'audio/mp4; codecs="mp4a.40.2"',
+        fragments: [
+          "bipbop_cbcs_7_7_audio_init.mp4",
+          "bipbop_cbcs_7_7_audio_1.m4s",
+        ],
+      },
+    ],
+    keys: {
+      // "keyid" : "key"
+      "7e571d047e571d047e571d047e571d21": "7e5744447e5744447e5744447e574421",
+    },
+    sessionType: "temporary",
+    sessionCount: 2,
+    duration: 2.04,
+  },
+  {
+    name: "mp4 h264 + aac clearkey cbcs 9:8 pattern",
+    tracks: [
+      {
+        name: "video",
+        type: 'video/mp4; codecs="avc1.4d4015"',
+        fragments: [
+          "bipbop_cbcs_9_8_video_init.mp4",
+          "bipbop_cbcs_9_8_video_1.m4s",
+        ],
+      },
+      {
+        name: "audio",
+        type: 'audio/mp4; codecs="mp4a.40.2"',
+        fragments: [
+          "bipbop_cbcs_9_8_audio_init.mp4",
+          "bipbop_cbcs_9_8_audio_1.m4s",
+        ],
+      },
+    ],
+    keys: {
+      // "keyid" : "key"
+      "7e571d047e571d047e571d047e571d21": "7e5744447e5744447e5744447e574421",
+    },
+    sessionType: "temporary",
+    sessionCount: 2,
+    duration: 2.04,
   },
 ];
 

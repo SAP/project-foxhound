@@ -37,6 +37,11 @@
   direction: rtl;
 }
 
+/* XUL doesn't show outlines by default */
+:focus-visible {
+  outline: initial;
+}
+
 /*
  * Native anonymous popups and tooltips in html are document-level, which means
  * that they don't inherit from the root, so this is needed.
@@ -95,7 +100,7 @@ iframe {
 /******** window & page ******/
 
 window {
-  overflow: -moz-hidden-unscrollable;
+  overflow: clip;
   -moz-box-orient: vertical;
 }
 
@@ -106,6 +111,15 @@ vbox {
 }
 
 /********** label **********/
+
+label {
+  display: inline-block;
+}
+
+description {
+  display: flow-root;
+}
+
 label.text-link, label[onclick] {
   -moz-user-focus: normal;
 }
@@ -123,6 +137,13 @@ html|label.toolbarbutton-badge:empty {
   display: none;
 }
 
+/********** button **********/
+
+button {
+  -moz-default-appearance: button;
+  appearance: auto;
+}
+
 /******** browser, editor, iframe ********/
 
 browser,
@@ -137,6 +158,15 @@ iframe {
   iframe {
     display: block;
   }
+}
+
+/* Allow the browser to shrink below its intrinsic size, to match legacy
+ * behavior */
+browser {
+  align-self: stretch;
+  justify-self: stretch;
+  min-height: 0;
+  min-width: 0;
 }
 
 /*********** popup notification ************/
@@ -164,7 +194,7 @@ groupbox {
 
 %ifndef MOZ_WIDGET_GTK
 titlebar,
-toolbar:not([nowindowdrag="true"]):not([customizing="true"]) {
+toolbar:not([nowindowdrag="true"], [customizing="true"]) {
   -moz-window-dragging: drag;
 }
 %endif
@@ -232,6 +262,9 @@ tooltip {
 tooltip {
   -moz-box-orient: vertical;
   white-space: pre-wrap;
+}
+
+tooltip:not([position]) {
   margin-top: 21px;
 }
 
@@ -249,16 +282,23 @@ tooltip {
      for repaints.
      These properties are not implemented on other platforms. */
   panel[type="arrow"]:not([animate="false"]) {
-    -moz-window-opacity: 0;
-    -moz-window-transform: translateY(-70px);
     transition-property: -moz-window-transform, -moz-window-opacity;
     transition-duration: 0.18s, 0.18s;
     transition-timing-function:
       var(--animation-easing-function), ease-out;
   }
 
-  panel[type="arrow"][side="bottom"]:not([animate="false"]) {
-    -moz-window-transform: translateY(70px);
+  /* Only do the fade-in animation on pre-Big Sur to avoid missing shadows on
+   * Big Sur, see bug 1672091. */
+  @media (-moz-mac-big-sur-theme: 0) {
+    panel[type="arrow"]:not([animate="false"]) {
+      -moz-window-opacity: 0;
+      -moz-window-transform: translateY(-70px);
+    }
+
+    panel[type="arrow"][side="bottom"]:not([animate="false"]) {
+      -moz-window-transform: translateY(70px);
+    }
   }
 
   /* [animate] is here only so that this rule has greater specificity than the
@@ -272,6 +312,7 @@ tooltip {
   }
 
   panel[type="arrow"][animate][animate="cancel"] {
+    -moz-window-opacity: 0;
     -moz-window-transform: none;
   }
 %else
@@ -310,27 +351,6 @@ panel[type="arrow"][animating] {
   pointer-events: none;
 }
 
-/******** grid **********/
-
-grid {
-  display: -moz-grid;
-}
-
-rows,
-columns {
-  display: -moz-grid-group;
-}
-
-row,
-column {
-  display: -moz-grid-line;
-}
-
-rows,
-column {
-  -moz-box-orient: vertical;
-}
-
 /******** tree ******/
 
 treecolpicker {
@@ -339,7 +359,7 @@ treecolpicker {
 
 treechildren {
   display: -moz-box;
-  -moz-user-select: none;
+  user-select: none;
   -moz-box-flex: 1;
 }
 
@@ -397,10 +417,6 @@ stack > *|*:not(:-moz-native-anonymous) {
   min-height: 0;
 }
 
-legacy-stack {
-  display: -moz-stack;
-}
-
 /********** tabbox *********/
 
 tabbox {
@@ -444,7 +460,7 @@ tooltip[titletip="true"] {
 /********** textbox **********/
 
 search-textbox {
-  -moz-user-select: text;
+  user-select: text;
   text-shadow: none;
 }
 
@@ -474,7 +490,7 @@ search-textbox {
 .autocomplete-richlistitem {
   -moz-box-orient: vertical;
   -moz-box-align: center;
-  overflow: -moz-hidden-unscrollable;
+  overflow: clip;
 }
 
 %endif
@@ -553,6 +569,15 @@ wizard {
   height: 30em;
 }
 
+wizard > wizardpage {
+  grid-area: 1 / 1;
+  min-height: 0;
+}
+
+wizard > wizardpage:not(.selected) {
+  visibility: hidden;
+}
+
 wizardpage {
   -moz-box-orient: vertical;
   overflow: auto;
@@ -570,14 +595,8 @@ findbar {
   overflow-x: hidden;
 }
 
-/*********** tabmodalprompt ************/
-tabmodalprompt {
-  overflow: hidden;
-  text-shadow: none;
-}
-
 /* Some elements that in HTML blocks should be inline-level by default */
-label, button, image {
+button, image {
   display: -moz-inline-box;
 }
 

@@ -5,7 +5,9 @@
 const { ComponentUtils } = ChromeUtils.import(
   "resource://gre/modules/ComponentUtils.jsm"
 );
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
@@ -22,6 +24,16 @@ ChromeUtils.defineModuleGetter(
   this,
   "JSONFile",
   "resource://gre/modules/JSONFile.jsm"
+);
+const { Integration } = ChromeUtils.import(
+  "resource://gre/modules/Integration.jsm"
+);
+
+/* global DownloadIntegration */
+Integration.downloads.defineModuleGetter(
+  this,
+  "DownloadIntegration",
+  "resource://gre/modules/DownloadIntegration.jsm"
 );
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -54,7 +66,10 @@ HandlerService.prototype = {
   get _store() {
     if (!this.__store) {
       this.__store = new JSONFile({
-        path: OS.Path.join(OS.Constants.Path.profileDir, "handlers.json"),
+        path: PathUtils.join(
+          Services.dirsvc.get("ProfD", Ci.nsIFile).path,
+          "handlers.json"
+        ),
         dataPostProcessor: this._dataPostProcessor.bind(this),
       });
     }
@@ -75,6 +90,11 @@ HandlerService.prototype = {
       this._migrateProtocolHandlersIfNeeded();
 
       Services.obs.notifyObservers(null, "handlersvc-store-initialized");
+
+      // Bug 1736924: run migration for browser.download.improvements_to_download_panel if applicable.
+      // Since we need DownloadsViewInternally to verify mimetypes, we run this after
+      // DownloadsViewInternally is registered via the 'handlersvc-store-initialized' notification.
+      this._migrateDownloadsImprovementsIfNeeded();
     }
   },
 
@@ -85,6 +105,7 @@ HandlerService.prototype = {
           defaultHandlersVersion: {},
           mimeTypes: {},
           schemes: {},
+          isDownloadsImprovementsAlreadyMigrated: false,
         };
   },
 
@@ -267,6 +288,64 @@ HandlerService.prototype = {
           }
         }
       },
+      // See https://bugzilla.mozilla.org/show_bug.cgi?id=1526890 for context.
+      "secure-mail": () => {
+        const kSubstitutions = new Map([
+          [
+            "http://compose.mail.yahoo.co.jp/ym/Compose?To=%s",
+            "https://mail.yahoo.co.jp/compose/?To=%s",
+          ],
+          [
+            "http://www.inbox.lv/rfc2368/?value=%s",
+            "https://mail.inbox.lv/compose?to=%s",
+          ],
+          [
+            "http://poczta.interia.pl/mh/?mailto=%s",
+            "https://poczta.interia.pl/mh/?mailto=%s",
+          ],
+          [
+            "http://win.mail.ru/cgi-bin/sentmsg?mailto=%s",
+            "https://e.mail.ru/cgi-bin/sentmsg?mailto=%s",
+          ],
+        ]);
+
+        function maybeReplaceURL(app) {
+          if (app instanceof Ci.nsIWebHandlerApp) {
+            let { uriTemplate } = app;
+            let sub = kSubstitutions.get(uriTemplate);
+            if (sub) {
+              app.uriTemplate = sub;
+              return true;
+            }
+          }
+          return false;
+        }
+        let mailHandler = gExternalProtocolService.getProtocolHandlerInfo(
+          "mailto"
+        );
+        if (this.exists(mailHandler)) {
+          this.fillHandlerInfo(mailHandler, "");
+          let handlers = mailHandler.possibleApplicationHandlers;
+          let shouldStore = false;
+          for (let i = handlers.length - 1; i >= 0; i--) {
+            let app = handlers.queryElementAt(i, Ci.nsIHandlerApp);
+            // Note: will evaluate the RHS because it's a binary rather than
+            // logical or.
+            shouldStore |= maybeReplaceURL(app);
+          }
+          // Then check the preferred handler.
+          if (mailHandler.preferredApplicationHandler) {
+            shouldStore |= maybeReplaceURL(
+              mailHandler.preferredApplicationHandler
+            );
+          }
+          // Then store, if we changed anything. Note that store() handles
+          // duplicates, so we don't have to.
+          if (shouldStore) {
+            this.store(mailHandler);
+          }
+        }
+      },
     };
     let migrationsToRun = Services.prefs.getCharPref(
       "browser.handlers.migrations",
@@ -312,7 +391,10 @@ HandlerService.prototype = {
   asyncInit() {
     if (!this.__store) {
       this.__store = new JSONFile({
-        path: OS.Path.join(OS.Constants.Path.profileDir, "handlers.json"),
+        path: PathUtils.join(
+          Services.dirsvc.get("ProfD", Ci.nsIFile).path,
+          "handlers.json"
+        ),
         dataPostProcessor: this._dataPostProcessor.bind(this),
       });
       this.__store
@@ -327,13 +409,61 @@ HandlerService.prototype = {
     }
   },
 
+  /**
+   * Update already existing handlers for non-internal mimetypes to have prefs set from alwaysAsk
+   * to saveToDisk. However, if reading an internal mimetype and set to alwaysAsk, update to use handleInternally.
+   * This migration is needed since browser.download.improvements_to_download_panel does not
+   * override user preferences if preferredAction = alwaysAsk. By doing so, we can ensure that file prompt
+   * behaviours remain consistent for most files.
+   *
+   * See Bug 1736924 for more information.
+   */
+  _migrateDownloadsImprovementsIfNeeded() {
+    // Migrate if the preference is enabled AND if the migration has never been run before.
+    // Otherwise, we risk overwriting preferences for existing profiles!
+    if (
+      Services.prefs.getBoolPref(
+        "browser.download.improvements_to_download_panel"
+      ) &&
+      !Services.policies.getActivePolicies()?.Handlers &&
+      !this._store.data.isDownloadsImprovementsAlreadyMigrated
+    ) {
+      for (let [type, mimeInfo] of Object.entries(this._store.data.mimeTypes)) {
+        let isViewableInternally = DownloadIntegration.shouldViewDownloadInternally(
+          type
+        );
+        let isAskOnly = mimeInfo && mimeInfo.ask;
+
+        if (isAskOnly) {
+          if (isViewableInternally) {
+            mimeInfo.action = Ci.nsIHandlerInfo.handleInternally;
+          } else {
+            mimeInfo.action = Ci.nsIHandlerInfo.saveToDisk;
+          }
+
+          // Sets alwaysAskBeforeHandling to false. Needed to ensure that:
+          // preferredAction appears as expected in preferences table; and
+          // downloads behaviour is updated to never show UCT window.
+          mimeInfo.ask = false;
+        }
+      }
+
+      this._store.data.isDownloadsImprovementsAlreadyMigrated = true;
+      this._store.saveSoon();
+    }
+  },
+
   // nsIHandlerService
   enumerate() {
     let handlers = Cc["@mozilla.org/array;1"].createInstance(
       Ci.nsIMutableArray
     );
-    for (let type of Object.keys(this._store.data.mimeTypes)) {
-      let handler = gMIMEService.getFromTypeAndExtension(type, null);
+    for (let [type, typeInfo] of Object.entries(this._store.data.mimeTypes)) {
+      let primaryExtension = typeInfo.extensions?.[0] ?? null;
+      let handler = gMIMEService.getFromTypeAndExtension(
+        type,
+        primaryExtension
+      );
       handlers.appendElement(handler);
     }
     for (let type of Object.keys(this._store.data.schemes)) {
@@ -386,7 +516,14 @@ HandlerService.prototype = {
     if (
       handlerInfo.preferredAction == Ci.nsIHandlerInfo.saveToDisk ||
       handlerInfo.preferredAction == Ci.nsIHandlerInfo.useSystemDefault ||
-      handlerInfo.preferredAction == Ci.nsIHandlerInfo.handleInternally
+      handlerInfo.preferredAction == Ci.nsIHandlerInfo.handleInternally ||
+      // For files (ie mimetype rather than protocol handling info), ensure
+      // we can store the "always ask" state, too:
+      (handlerInfo.preferredAction == Ci.nsIHandlerInfo.alwaysAsk &&
+        this._isMIMEInfo(handlerInfo) &&
+        Services.prefs.getBoolPref(
+          "browser.download.improvements_to_download_panel"
+        ))
     ) {
       storedHandlerInfo.action = handlerInfo.preferredAction;
     } else {
@@ -501,6 +638,8 @@ HandlerService.prototype = {
       for (let extension of storedHandlerInfo.extensions) {
         handlerInfo.appendExtension(extension);
       }
+    } else if (this._mockedHandler) {
+      this._insertMockedHandler(handlerInfo);
     }
   },
 
@@ -664,6 +803,58 @@ HandlerService.prototype = {
       }
     }
     return "";
+  },
+
+  _mockedHandler: null,
+  _mockedProtocol: null,
+
+  _insertMockedHandler(handlerInfo) {
+    if (handlerInfo.type == this._mockedProtocol) {
+      handlerInfo.preferredApplicationHandler = this._mockedHandler;
+      handlerInfo.possibleApplicationHandlers.insertElementAt(
+        this._mockedHandler,
+        0
+      );
+    }
+  },
+
+  // test-only: mock the handler instance for a particular protocol/scheme
+  mockProtocolHandler(protocol) {
+    if (!protocol) {
+      this._mockedProtocol = null;
+      this._mockedHandler = null;
+      return;
+    }
+    this._mockedProtocol = protocol;
+    this._mockedHandler = {
+      QueryInterface: ChromeUtils.generateQI([Ci.nsILocalHandlerApp]),
+      launchWithURI(uri, context) {
+        Services.obs.notifyObservers(uri, "mocked-protocol-handler");
+      },
+      name: "Mocked handler",
+      detailedDescription: "Mocked handler for tests",
+      equals(x) {
+        return x == this;
+      },
+      get executable() {
+        if (AppConstants.platform == "macosx") {
+          // We need an app path that isn't us, nor in our app bundle, and
+          // Apple no longer allows us to read the default-shipped apps
+          // in /Applications/ - except for Safari, it would appear!
+          let f = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
+          f.initWithPath("/Applications/Safari.app");
+          return f;
+        }
+        return Services.dirsvc.get("XCurProcD", Ci.nsIFile);
+      },
+      parameterCount: 0,
+      clearParameters() {},
+      appendParameter() {},
+      getParameter() {},
+      parameterExists() {
+        return false;
+      },
+    };
   },
 };
 

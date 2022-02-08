@@ -11,10 +11,11 @@
 #include "mozilla/Types.h"
 #include "mozilla/WindowsDllBlocklist.h"
 
+#include "CrashAnnotations.h"
 #include "DllBlocklist.h"
-#include "FunctionTableResolver.h"
 #include "LoaderPrivateAPI.h"
 #include "ModuleLoadFrame.h"
+#include "SharedSection.h"
 
 // clang-format off
 #define MOZ_LITERAL_UNICODE_STRING(s)                                        \
@@ -40,6 +41,8 @@ DLL_BLOCKLIST_DEFINITIONS_BEGIN
 DLL_BLOCKLIST_DEFINITIONS_END
 #endif
 
+using WritableBuffer = mozilla::glue::detail::WritableBuffer<1024>;
+
 class MOZ_STATIC_CLASS MOZ_TRIVIAL_CTOR_DTOR NativeNtBlockSet final {
   struct NativeNtBlockSetEntry {
     NativeNtBlockSetEntry() = default;
@@ -58,7 +61,7 @@ class MOZ_STATIC_CLASS MOZ_TRIVIAL_CTOR_DTOR NativeNtBlockSet final {
   ~NativeNtBlockSet() = default;
 
   void Add(const UNICODE_STRING& aName, uint64_t aVersion);
-  void Write(HANDLE aFile);
+  void Write(WritableBuffer& buffer);
 
  private:
   static NativeNtBlockSetEntry* NewEntry(const UNICODE_STRING& aName,
@@ -95,10 +98,9 @@ void NativeNtBlockSet::Add(const UNICODE_STRING& aName, uint64_t aVersion) {
   }
 }
 
-void NativeNtBlockSet::Write(HANDLE aFile) {
+void NativeNtBlockSet::Write(WritableBuffer& aBuffer) {
   // NB: If this function is called, it is long after kernel32 is initialized,
   // so it is safe to use Win32 calls here.
-  DWORD nBytes;
   char buf[MAX_PATH];
 
   // It would be nicer to use RAII here. However, its destructor
@@ -117,26 +119,24 @@ void NativeNtBlockSet::Write(HANDLE aFile) {
       }
 
       // write name[,v.v.v.v];
-      if (!WriteFile(aFile, buf, convOk, &nBytes, nullptr)) {
-        continue;
-      }
+      aBuffer.Write(buf, convOk);
 
       if (entry->mVersion != DllBlockInfo::ALL_VERSIONS) {
-        WriteFile(aFile, ",", 1, &nBytes, nullptr);
+        aBuffer.Write(",", 1);
         uint16_t parts[4];
         parts[0] = entry->mVersion >> 48;
         parts[1] = (entry->mVersion >> 32) & 0xFFFF;
         parts[2] = (entry->mVersion >> 16) & 0xFFFF;
         parts[3] = entry->mVersion & 0xFFFF;
         for (size_t p = 0; p < mozilla::ArrayLength(parts); ++p) {
-          ltoa(parts[p], buf, 10);
-          WriteFile(aFile, buf, strlen(buf), &nBytes, nullptr);
+          _ltoa_s(parts[p], buf, sizeof(buf), 10);
+          aBuffer.Write(buf, strlen(buf));
           if (p != mozilla::ArrayLength(parts) - 1) {
-            WriteFile(aFile, ".", 1, &nBytes, nullptr);
+            aBuffer.Write(".", 1);
           }
         }
       }
-      WriteFile(aFile, ";", 1, &nBytes, nullptr);
+      aBuffer.Write(";", 1);
     }
   }
   MOZ_SEH_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {}
@@ -146,8 +146,12 @@ void NativeNtBlockSet::Write(HANDLE aFile) {
 
 static NativeNtBlockSet gBlockSet;
 
-extern "C" void MOZ_EXPORT NativeNtBlockSet_Write(HANDLE aHandle) {
-  gBlockSet.Write(aHandle);
+extern "C" void MOZ_EXPORT
+NativeNtBlockSet_Write(CrashReporter::AnnotationWriter& aWriter) {
+  WritableBuffer buffer;
+  gBlockSet.Write(buffer);
+  aWriter.Write(CrashReporter::Annotation::BlockedDllList, buffer.Data(),
+                buffer.Length());
 }
 
 enum class BlockAction {
@@ -242,8 +246,72 @@ struct DllBlockInfoComparator {
 
 static BOOL WINAPI NoOp_DllMain(HINSTANCE, DWORD, LPVOID) { return TRUE; }
 
-static BlockAction DetermineBlockAction(const UNICODE_STRING& aLeafName,
-                                        void* aBaseAddress) {
+// This helper function checks whether a given module is included
+// in the executable's Import Table.  Because an injected module's
+// DllMain may revert the Import Table to the original state, we parse
+// the Import Table every time a module is loaded without creating a cache.
+static bool IsDependentModule(
+    const UNICODE_STRING& aModuleLeafName,
+    mozilla::freestanding::Kernel32ExportsSolver& aK32Exports) {
+  // We enable automatic DLL blocking only in early Beta or earlier for now
+  // because it caused a compat issue (bug 1682304 and 1704373).
+#if defined(EARLY_BETA_OR_EARLIER)
+  aK32Exports.Resolve(mozilla::freestanding::gK32ExportsResolveOnce);
+  if (!aK32Exports.IsResolved()) {
+    return false;
+  }
+
+  mozilla::nt::PEHeaders exeHeaders(aK32Exports.mGetModuleHandleW(nullptr));
+  if (!exeHeaders || !exeHeaders.IsImportDirectoryTampered()) {
+    // If no tampering is detected, no need to enumerate the Import Table.
+    return false;
+  }
+
+  bool isDependent = false;
+  exeHeaders.EnumImportChunks(
+      [&isDependent, &aModuleLeafName, &exeHeaders](const char* aDepModule) {
+        // If |aDepModule| is within the PE image, it's not an injected module
+        // but a legitimate dependent module.
+        if (isDependent || exeHeaders.IsWithinImage(aDepModule)) {
+          return;
+        }
+
+        UNICODE_STRING depModuleLeafName;
+        mozilla::nt::AllocatedUnicodeString depModuleName(aDepModule);
+        mozilla::nt::GetLeafName(&depModuleLeafName, depModuleName);
+        isDependent = (::RtlCompareUnicodeString(
+                           &aModuleLeafName, &depModuleLeafName, TRUE) == 0);
+      });
+  return isDependent;
+#else
+  return false;
+#endif
+}
+
+// Allowing a module to be loaded but detour the entrypoint to NoOp_DllMain
+// so that the module has no chance to interact with our code.  We need this
+// technique to safely block a module injected by IAT tampering because
+// blocking such a module makes a process fail to launch.
+static bool RedirectToNoOpEntryPoint(
+    const mozilla::nt::PEHeaders& aModule,
+    mozilla::freestanding::Kernel32ExportsSolver& aK32Exports) {
+  aK32Exports.Resolve(mozilla::freestanding::gK32ExportsResolveOnce);
+  if (!aK32Exports.IsResolved()) {
+    return false;
+  }
+
+  mozilla::interceptor::WindowsDllEntryPointInterceptor interceptor(
+      aK32Exports);
+  if (!interceptor.Set(aModule, NoOp_DllMain)) {
+    return false;
+  }
+
+  return true;
+}
+
+static BlockAction DetermineBlockAction(
+    const UNICODE_STRING& aLeafName, void* aBaseAddress,
+    mozilla::freestanding::Kernel32ExportsSolver* aK32Exports) {
   if (mozilla::nt::Contains12DigitHexString(aLeafName) ||
       mozilla::nt::IsFileNameAtLeast16HexDigits(aLeafName)) {
     return BlockAction::Deny;
@@ -270,27 +338,8 @@ static BlockAction DetermineBlockAction(const UNICODE_STRING& aLeafName,
 
   gBlockSet.Add(entry.mName, version);
 
-  if (entry.mFlags & DllBlockInfo::REDIRECT_TO_NOOP_ENTRYPOINT) {
-    // For modules with REDIRECT_TO_NOOP_ENTRYPOINT, we allow a module to be
-    // loaded but detour the entrypoint to NoOp_DllMain so that the module has
-    // no chance to interact with our code.  We need this technique to safely
-    // block a module injected by IAT tampering because blocking such a module
-    // makes a process fail to launch.
-    // If we fail to detour a module's entrypoint, we reluctantly allow the
-    // module for free.
-
-    static RTL_RUN_ONCE sRunOnce = RTL_RUN_ONCE_INIT;
-    mozilla::freestanding::gK32.Resolve(sRunOnce);
-    if (!mozilla::freestanding::gK32.IsResolved()) {
-      return BlockAction::Allow;
-    }
-
-    mozilla::interceptor::WindowsDllEntryPointInterceptor interceptor(
-        mozilla::freestanding::gK32);
-    if (!interceptor.Set(headers, NoOp_DllMain)) {
-      return BlockAction::Allow;
-    }
-
+  if ((entry.mFlags & DllBlockInfo::REDIRECT_TO_NOOP_ENTRYPOINT) &&
+      aK32Exports && RedirectToNoOpEntryPoint(headers, *aK32Exports)) {
     return BlockAction::NoOpEntryPoint;
   }
 
@@ -301,6 +350,7 @@ namespace mozilla {
 namespace freestanding {
 
 CrossProcessDllInterceptor::FuncHookType<LdrLoadDllPtr> stub_LdrLoadDll;
+RTL_RUN_ONCE gK32ExportsResolveOnce = RTL_RUN_ONCE_INIT;
 
 NTSTATUS NTAPI patched_LdrLoadDll(PWCHAR aDllPath, PULONG aFlags,
                                   PUNICODE_STRING aDllName,
@@ -343,8 +393,14 @@ NTSTATUS NTAPI patched_NtMapViewOfSection(
     return STATUS_ACCESS_DENIED;
   }
 
-  // We don't care about mappings that aren't MEM_IMAGE
-  if (!(mbi.Type & MEM_IMAGE)) {
+  // We don't care about mappings that aren't MEM_IMAGE or executable.
+  // We check for the AllocationProtect, not the Protect field because
+  // the first section of a mapped image is always PAGE_READONLY even
+  // when it's mapped as an executable.
+  constexpr DWORD kPageExecutable = PAGE_EXECUTE | PAGE_EXECUTE_READ |
+                                    PAGE_EXECUTE_READWRITE |
+                                    PAGE_EXECUTE_WRITECOPY;
+  if (!(mbi.Type & MEM_IMAGE) || !(mbi.AllocationProtect & kPageExecutable)) {
     return stubStatus;
   }
 
@@ -360,31 +416,72 @@ NTSTATUS NTAPI patched_NtMapViewOfSection(
   UNICODE_STRING leafOnStack;
   nt::GetLeafName(&leafOnStack, sectionFileName);
 
-  // Check blocklist
-  BlockAction blockAction = DetermineBlockAction(leafOnStack, *aBaseAddress);
-
-  if (blockAction == BlockAction::Allow) {
-    if (nt::RtlGetProcessHeap()) {
-      ModuleLoadFrame::NotifySectionMap(
-          nt::AllocatedUnicodeString(sectionFileName), *aBaseAddress,
-          stubStatus);
-    }
-    return stubStatus;
+  bool isDependent = false;
+  auto resultView = freestanding::gSharedSection.GetView();
+  // Small optimization: Since loading a dependent module does not involve
+  // LdrLoadDll, we know isDependent is false if we hold a top frame.
+  if (resultView.isOk() && !ModuleLoadFrame::ExistsTopFrame()) {
+    isDependent =
+        IsDependentModule(leafOnStack, resultView.inspect()->mK32Exports);
   }
 
-  if (blockAction == BlockAction::SubstituteLSP) {
-    // The process heap needs to be available here because
-    // NotifyLSPSubstitutionRequired below copies a given string into the heap.
-    // We use a soft assert here, assuming LSP load always occurs after the heap
-    // is initialized.
-    MOZ_ASSERT(nt::RtlGetProcessHeap());
+  BlockAction blockAction;
+  if (isDependent) {
+    // Add an NT dv\path to the shared section so that a sandbox process can
+    // use it to bypass CIG.  In a sandbox process, this addition fails
+    // because we cannot map the section to a writable region, but it's
+    // ignorable because the paths have been added by the browser process.
+    Unused << freestanding::gSharedSection.AddDepenentModule(sectionFileName);
 
-    // Notify patched_LdrLoadDll that it will be necessary to perform a
-    // substitution before returning.
-    ModuleLoadFrame::NotifyLSPSubstitutionRequired(&leafOnStack);
+    // For a dependent module, try redirection instead of blocking it.
+    // If we fail, we reluctantly allow the module for free.
+    mozilla::nt::PEHeaders headers(*aBaseAddress);
+    blockAction =
+        RedirectToNoOpEntryPoint(headers, resultView.inspect()->mK32Exports)
+            ? BlockAction::NoOpEntryPoint
+            : BlockAction::Allow;
+  } else {
+    // Check blocklist
+    blockAction = DetermineBlockAction(
+        leafOnStack, *aBaseAddress,
+        resultView.isOk() ? &resultView.inspect()->mK32Exports : nullptr);
   }
 
-  if (blockAction == BlockAction::NoOpEntryPoint) {
+  ModuleLoadInfo::Status loadStatus = ModuleLoadInfo::Status::Blocked;
+
+  switch (blockAction) {
+    case BlockAction::Allow:
+      loadStatus = ModuleLoadInfo::Status::Loaded;
+      break;
+
+    case BlockAction::NoOpEntryPoint:
+      loadStatus = ModuleLoadInfo::Status::Redirected;
+      break;
+
+    case BlockAction::SubstituteLSP:
+      // The process heap needs to be available here because
+      // NotifyLSPSubstitutionRequired below copies a given string into
+      // the heap. We use a soft assert here, assuming LSP load always
+      // occurs after the heap is initialized.
+      MOZ_ASSERT(nt::RtlGetProcessHeap());
+
+      // Notify patched_LdrLoadDll that it will be necessary to perform
+      // a substitution before returning.
+      ModuleLoadFrame::NotifyLSPSubstitutionRequired(&leafOnStack);
+      break;
+
+    default:
+      break;
+  }
+
+  if (nt::RtlGetProcessHeap()) {
+    ModuleLoadFrame::NotifySectionMap(
+        nt::AllocatedUnicodeString(sectionFileName), *aBaseAddress, stubStatus,
+        loadStatus, isDependent);
+  }
+
+  if (loadStatus == ModuleLoadInfo::Status::Loaded ||
+      loadStatus == ModuleLoadInfo::Status::Redirected) {
     return stubStatus;
   }
 

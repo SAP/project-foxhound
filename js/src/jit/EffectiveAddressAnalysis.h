@@ -7,11 +7,10 @@
 #ifndef jit_EffectiveAddressAnalysis_h
 #define jit_EffectiveAddressAnalysis_h
 
-#include "jit/MIRGenerator.h"
-
 namespace js {
 namespace jit {
 
+class MIRGenerator;
 class MIRGraph;
 
 class EffectiveAddressAnalysis {
@@ -25,7 +24,7 @@ class EffectiveAddressAnalysis {
   EffectiveAddressAnalysis(MIRGenerator* mir, MIRGraph& graph)
       : mir_(mir), graph_(graph) {}
 
-  MOZ_MUST_USE bool analyze();
+  [[nodiscard]] bool analyze();
 };
 
 } /* namespace jit */

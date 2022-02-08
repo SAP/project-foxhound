@@ -9,6 +9,7 @@ const {
   Component,
   createFactory,
 } = require("devtools/client/shared/vendor/react");
+const dom = require("devtools/client/shared/vendor/react-dom-factories");
 
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const { connect } = require("devtools/client/shared/vendor/react-redux");
@@ -20,7 +21,7 @@ const { l10n } = require("devtools/client/webconsole/utils/messages");
 const targetSelectors = require("devtools/client/framework/reducers/targets");
 
 loader.lazyGetter(this, "TARGET_TYPES", function() {
-  return require("devtools/shared/resources/target-list").TargetList.TYPES;
+  return require("devtools/shared/commands/target/target-command").TYPES;
 });
 
 // Additional Components
@@ -47,9 +48,33 @@ class EvaluationContextSelector extends Component {
       updateInstantEvaluationResultForCurrentExpression:
         PropTypes.func.isRequired,
       selectedTarget: PropTypes.object,
+      lastTargetRefresh: PropTypes.number,
       targets: PropTypes.array,
       webConsoleUI: PropTypes.object.isRequired,
     };
+  }
+
+  shouldComponentUpdate(nextProps) {
+    if (this.props.selectedTarget !== nextProps.selectedTarget) {
+      return true;
+    }
+
+    if (this.props.lastTargetRefresh !== nextProps.lastTargetRefresh) {
+      return true;
+    }
+
+    if (this.props.targets.length !== nextProps.targets.length) {
+      return true;
+    }
+
+    for (let i = 0; i < nextProps.targets.length; i++) {
+      const target = this.props.targets[i];
+      const nextTarget = nextProps.targets[i];
+      if (target.url != nextTarget.url || target.name != nextTarget.name) {
+        return true;
+      }
+    }
+    return false;
   }
 
   componentDidUpdate(prevProps) {
@@ -60,7 +85,7 @@ class EvaluationContextSelector extends Component {
 
   getIcon(target) {
     if (target.targetType === TARGET_TYPES.FRAME) {
-      return "resource://devtools/client/debugger/images/globe-small.svg";
+      return "chrome://devtools/content/debugger/images/globe-small.svg";
     }
 
     if (
@@ -68,11 +93,11 @@ class EvaluationContextSelector extends Component {
       target.targetType === TARGET_TYPES.SHARED_WORKER ||
       target.targetType === TARGET_TYPES.SERVICE_WORKER
     ) {
-      return "resource://devtools/client/debugger/images/worker.svg";
+      return "chrome://devtools/content/debugger/images/worker.svg";
     }
 
     if (target.targetType === TARGET_TYPES.PROCESS) {
-      return "resource://devtools/client/debugger/images/window.svg";
+      return "chrome://devtools/content/debugger/images/window.svg";
     }
 
     return null;
@@ -134,7 +159,7 @@ class EvaluationContextSelector extends Component {
     for (const [targetType, menuItems] of Object.entries(dict)) {
       if (menuItems.length > 0) {
         items.push(
-          MenuItem({ role: "menuseparator", key: `${targetType}-separator` }),
+          dom.hr({ role: "menuseparator", key: `${targetType}-separator` }),
           ...menuItems
         );
       }
@@ -188,6 +213,7 @@ const toolboxConnected = connect(
   state => ({
     targets: targetSelectors.getToolboxTargets(state),
     selectedTarget: targetSelectors.getSelectedTarget(state),
+    lastTargetRefresh: targetSelectors.getLastTargetRefresh(state),
   }),
   dispatch => ({
     selectTarget: actorID => dispatch(frameworkActions.selectTarget(actorID)),

@@ -30,15 +30,15 @@ const CONFIG_UPDATED = [
 ];
 
 async function getEngineNames() {
-  let engines = await Services.search.getDefaultEngines();
+  let engines = await Services.search.getAppProvidedEngines();
   return engines.map(engine => engine._name);
 }
 
 add_task(async function setup() {
-  await useTestEngines("test-extensions", null, CONFIG_DEFAULT);
+  await SearchTestUtils.useTestEngines("test-extensions", null, CONFIG_DEFAULT);
   await AddonTestUtils.promiseStartupManager();
   registerCleanupFunction(AddonTestUtils.promiseShutdownManager);
-  SearchTestUtils.useMockIdleService(registerCleanupFunction);
+  SearchTestUtils.useMockIdleService();
   await Services.search.init();
 });
 

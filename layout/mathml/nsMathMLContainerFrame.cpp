@@ -68,6 +68,8 @@ nsresult nsMathMLContainerFrame::ReflowError(DrawTarget* aDrawTarget,
   return NS_OK;
 }
 
+namespace mozilla {
+
 class nsDisplayMathMLError : public nsPaintedDisplayItem {
  public:
   nsDisplayMathMLError(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame)
@@ -100,6 +102,8 @@ void nsDisplayMathMLError::Paint(nsDisplayListBuilder* aBuilder,
   nsLayoutUtils::DrawUniDirString(errorMsg.get(), uint32_t(errorMsg.Length()),
                                   nsPoint(pt.x, pt.y + ascent), *fm, *aCtx);
 }
+
+}  // namespace mozilla
 
 /* /////////////
  * nsIMathMLFrame - support methods for stretchy elements
@@ -749,7 +753,7 @@ void nsMathMLContainerFrame::GatherAndStoreOverflow(ReflowOutput* aMetrics) {
 }
 
 bool nsMathMLContainerFrame::ComputeCustomOverflow(
-    nsOverflowAreas& aOverflowAreas) {
+    OverflowAreas& aOverflowAreas) {
   // All non-child-frame content such as nsMathMLChars (and most child-frame
   // content) is included in mBoundingMetrics.
   nsRect boundingBox(
@@ -960,7 +964,7 @@ void nsMathMLContainerFrame::GetIntrinsicISizeMetrics(
       // margin, so we may end up with too much space, but, with stretchy
       // characters, this is an approximation anyway.
       nscoord width = nsLayoutUtils::IntrinsicForContainer(
-          aRenderingContext, childFrame, nsLayoutUtils::PREF_ISIZE);
+          aRenderingContext, childFrame, IntrinsicISizeType::PrefISize);
 
       childDesiredSize.Width() = width;
       childDesiredSize.mBoundingMetrics.width = width;
@@ -1142,7 +1146,7 @@ class nsMathMLContainerFrame::RowChildFrameIterator {
     // add inter frame spacing
     const nsStyleFont* font = mParentFrame->StyleFont();
     nscoord space =
-        GetInterFrameSpacing(font->mScriptLevel, prevFrameType, mChildFrameType,
+        GetInterFrameSpacing(font->mMathDepth, prevFrameType, mChildFrameType,
                              &mFromFrameType, &mCarrySpace);
     mX += space * GetThinSpace(font);
     return *this;
@@ -1293,7 +1297,7 @@ static nscoord AddInterFrameSpacingToSize(ReflowOutput& aDesiredSize,
     return 0;
   }
   if (parentContent->IsAnyOfMathMLElements(nsGkAtoms::math, nsGkAtoms::mtd_)) {
-    gap = GetInterFrameSpacingFor(aFrame->StyleFont()->mScriptLevel, parent,
+    gap = GetInterFrameSpacingFor(aFrame->StyleFont()->mMathDepth, parent,
                                   aFrame);
     // add our own italic correction
     nscoord leftCorrection = 0, italicCorrection = 0;

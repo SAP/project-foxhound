@@ -16,9 +16,8 @@
 class imgRequestProxy;
 class nsImageBoxFrame;
 
-class nsDisplayXULImage;
-
 namespace mozilla {
+class nsDisplayXULImage;
 class PresShell;
 }  // namespace mozilla
 
@@ -43,7 +42,7 @@ class nsImageBoxFrame final : public nsLeafBoxFrame {
   typedef mozilla::layers::ImageContainer ImageContainer;
   typedef mozilla::layers::LayerManager LayerManager;
 
-  friend class nsDisplayXULImage;
+  friend class mozilla::nsDisplayXULImage;
   NS_DECL_FRAMEARENA_HELPERS(nsImageBoxFrame)
   NS_DECL_QUERYFRAME
 
@@ -73,11 +72,17 @@ class nsImageBoxFrame final : public nsLeafBoxFrame {
 #endif
 
   /**
-   * Gets the image request to be loaded from the current style.
+   * Gets the image to be loaded from the current style. May be null if themed,
+   * or if not an url image.
    *
-   * May be null if themed.
+   * TODO(emilio): Maybe support list-style-image: linear-gradient() etc?
    */
-  imgRequestProxy* GetRequestFromStyle();
+  const mozilla::StyleImage* GetImageFromStyle(const ComputedStyle&) const;
+  const mozilla::StyleImage* GetImageFromStyle() const {
+    return GetImageFromStyle(*Style());
+  }
+
+  mozilla::ImageResolution GetImageResolution() const;
 
   /**
    * Update mUseSrcAttr from appropriate content attributes or from
@@ -149,22 +154,15 @@ class nsImageBoxFrame final : public nsLeafBoxFrame {
   bool mSuppressStyleCheck;
 };  // class nsImageBoxFrame
 
-class nsDisplayXULImage final : public nsDisplayImageContainer {
+namespace mozilla {
+class nsDisplayXULImage final : public nsPaintedDisplayItem {
  public:
   nsDisplayXULImage(nsDisplayListBuilder* aBuilder, nsImageBoxFrame* aFrame)
-      : nsDisplayImageContainer(aBuilder, aFrame) {
+      : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayXULImage);
   }
   MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayXULImage)
 
-  virtual bool CanOptimizeToImageLayer(LayerManager* aManager,
-                                       nsDisplayListBuilder* aBuilder) override;
-  virtual already_AddRefed<imgIContainer> GetImage() override;
-  virtual nsRect GetDestRect() const override;
-  virtual void UpdateDrawResult(
-      mozilla::image::ImgDrawResult aResult) override {
-    nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, aResult);
-  }
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder,
                            bool* aSnap) const override {
     *aSnap = true;
@@ -188,5 +186,7 @@ class nsDisplayXULImage final : public nsDisplayImageContainer {
 
   NS_DISPLAY_DECL_NAME("XULImage", TYPE_XUL_IMAGE)
 };
+
+}  // namespace mozilla
 
 #endif /* nsImageBoxFrame_h___ */

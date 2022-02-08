@@ -26,6 +26,11 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
+  "PlacesUIUtils",
+  "resource:///modules/PlacesUIUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
   "WindowsRegistry",
   "resource://gre/modules/WindowsRegistry.jsm"
 );
@@ -410,12 +415,6 @@ Bookmarks.prototype = {
     return (async () => {
       // Import to the bookmarks menu.
       let folderGuid = PlacesUtils.bookmarks.menuGuid;
-      if (!MigrationUtils.isStartupMigration) {
-        folderGuid = await MigrationUtils.createImportedBookmarksFolder(
-          this.importedAppLabel,
-          folderGuid
-        );
-      }
       await this._migrateFolder(this._favoritesFolder, folderGuid);
     })().then(
       () => aCallback(true),
@@ -428,12 +427,11 @@ Bookmarks.prototype = {
 
   async _migrateFolder(aSourceFolder, aDestFolderGuid) {
     let bookmarks = await this._getBookmarksInFolder(aSourceFolder);
-    if (bookmarks.length) {
-      await MigrationUtils.insertManyBookmarksWrapper(
-        bookmarks,
-        aDestFolderGuid
-      );
+    if (!bookmarks.length) {
+      return;
     }
+
+    await MigrationUtils.insertManyBookmarksWrapper(bookmarks, aDestFolderGuid);
   },
 
   async _getBookmarksInFolder(aSourceFolder) {
@@ -457,13 +455,8 @@ Bookmarks.prototype = {
           if (isBookmarksFolder && entry.isReadable()) {
             // Import to the bookmarks toolbar.
             let folderGuid = PlacesUtils.bookmarks.toolbarGuid;
-            if (!MigrationUtils.isStartupMigration) {
-              folderGuid = await MigrationUtils.createImportedBookmarksFolder(
-                this.importedAppLabel,
-                folderGuid
-              );
-            }
             await this._migrateFolder(entry, folderGuid);
+            PlacesUIUtils.maybeToggleBookmarkToolbarVisibilityAfterMigration();
           } else if (entry.isReadable()) {
             let childBookmarks = await this._getBookmarksInFolder(entry);
             rv.push({
@@ -748,11 +741,17 @@ function getTypedURLs(registryKeyPath) {
   ].createInstance(Ci.nsIWindowsRegKey);
   let cTypes = new CtypesKernelHelpers();
   try {
-    typedURLKey.open(
-      Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
-      registryKeyPath + "\\TypedURLs",
-      Ci.nsIWindowsRegKey.ACCESS_READ
-    );
+    try {
+      typedURLKey.open(
+        Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
+        registryKeyPath + "\\TypedURLs",
+        Ci.nsIWindowsRegKey.ACCESS_READ
+      );
+    } catch (ex) {
+      // Ignore errors opening this registry key - if it doesn't work, there's
+      // no way we can get useful info here.
+      return typedURLs;
+    }
     try {
       typedURLTimeKey.open(
         Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,

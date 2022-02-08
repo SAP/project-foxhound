@@ -7,6 +7,8 @@
 #include "mozilla/dom/BrowsingContextGroup.h"
 
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/InputTaskManager.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/dom/BrowsingContextBinding.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ContentChild.h"
@@ -15,36 +17,45 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/ThrottledEventQueue.h"
 #include "nsFocusManager.h"
+#include "nsTHashMap.h"
 
 namespace mozilla {
 namespace dom {
 
+// Maximum number of successive dialogs before we prompt users to disable
+// dialogs for this window.
+#define MAX_SUCCESSIVE_DIALOG_COUNT 5
+
 static StaticRefPtr<BrowsingContextGroup> sChromeGroup;
 
-static StaticAutoPtr<
-    nsDataHashtable<nsUint64HashKey, RefPtr<BrowsingContextGroup>>>
+static StaticAutoPtr<nsTHashMap<uint64_t, RefPtr<BrowsingContextGroup>>>
     sBrowsingContextGroups;
 
 already_AddRefed<BrowsingContextGroup> BrowsingContextGroup::GetOrCreate(
     uint64_t aId) {
   if (!sBrowsingContextGroups) {
     sBrowsingContextGroups =
-        new nsDataHashtable<nsUint64HashKey, RefPtr<BrowsingContextGroup>>();
+        new nsTHashMap<nsUint64HashKey, RefPtr<BrowsingContextGroup>>();
     ClearOnShutdown(&sBrowsingContextGroups);
   }
 
-  auto entry = sBrowsingContextGroups->LookupForAdd(aId);
-  RefPtr<BrowsingContextGroup> group =
-      entry.OrInsert([&] { return do_AddRef(new BrowsingContextGroup(aId)); });
-  return group.forget();
+  return do_AddRef(sBrowsingContextGroups->LookupOrInsertWith(
+      aId, [&aId] { return do_AddRef(new BrowsingContextGroup(aId)); }));
+}
+
+already_AddRefed<BrowsingContextGroup> BrowsingContextGroup::GetExisting(
+    uint64_t aId) {
+  if (sBrowsingContextGroups) {
+    return do_AddRef(sBrowsingContextGroups->Get(aId));
+  }
+  return nullptr;
 }
 
 already_AddRefed<BrowsingContextGroup> BrowsingContextGroup::Create() {
   return GetOrCreate(nsContentUtils::GenerateBrowsingContextId());
 }
 
-BrowsingContextGroup::BrowsingContextGroup(uint64_t aId)
-    : mId(aId), mToplevelsSuspended(false) {
+BrowsingContextGroup::BrowsingContextGroup(uint64_t aId) : mId(aId) {
   mTimerEventQueue = ThrottledEventQueue::Create(
       GetMainThreadSerialEventTarget(), "BrowsingContextGroup timer queue");
 
@@ -53,48 +64,53 @@ BrowsingContextGroup::BrowsingContextGroup(uint64_t aId)
 }
 
 void BrowsingContextGroup::Register(nsISupports* aContext) {
+  MOZ_DIAGNOSTIC_ASSERT(!mDestroyed);
   MOZ_DIAGNOSTIC_ASSERT(aContext);
-  mContexts.PutEntry(aContext);
+  mContexts.Insert(aContext);
 }
 
 void BrowsingContextGroup::Unregister(nsISupports* aContext) {
+  MOZ_DIAGNOSTIC_ASSERT(!mDestroyed);
   MOZ_DIAGNOSTIC_ASSERT(aContext);
-  mContexts.RemoveEntry(aContext);
+  mContexts.Remove(aContext);
 
-  if (mContexts.IsEmpty()) {
-    // There are no synced contexts still referencing this group. We can clear
-    // all subscribers.
-    UnsubscribeAllContentParents();
+  MaybeDestroy();
+}
 
-    // We may have been deleted here as the ContentChild/Parent may
-    // have held the last references to `this`.
-    // Do not access any members at this point.
+void BrowsingContextGroup::EnsureHostProcess(ContentParent* aProcess) {
+  MOZ_DIAGNOSTIC_ASSERT(!mDestroyed);
+  MOZ_DIAGNOSTIC_ASSERT(this != sChromeGroup,
+                        "cannot have content host for chrome group");
+  MOZ_DIAGNOSTIC_ASSERT(aProcess->GetRemoteType() != PREALLOC_REMOTE_TYPE,
+                        "cannot use preallocated process as host");
+  MOZ_DIAGNOSTIC_ASSERT(!aProcess->GetRemoteType().IsEmpty(),
+                        "host process must have remote type");
+
+  if (aProcess->IsDead() ||
+      mHosts.WithEntryHandle(aProcess->GetRemoteType(), [&](auto&& entry) {
+        if (entry) {
+          MOZ_DIAGNOSTIC_ASSERT(
+              entry.Data() == aProcess,
+              "There's already another host process for this remote type");
+          return false;
+        }
+
+        // This process wasn't already marked as our host, so insert it, and
+        // begin subscribing, unless the process is still launching.
+        entry.Insert(do_AddRef(aProcess));
+
+        return true;
+      })) {
+    aProcess->AddBrowsingContextGroup(this);
   }
 }
 
-void BrowsingContextGroup::Subscribe(ContentParent* aOriginProcess) {
-  MOZ_DIAGNOSTIC_ASSERT(aOriginProcess);
-  mSubscribers.PutEntry(aOriginProcess);
-  aOriginProcess->OnBrowsingContextGroupSubscribe(this);
-}
-
-void BrowsingContextGroup::Unsubscribe(ContentParent* aOriginProcess) {
-  MOZ_DIAGNOSTIC_ASSERT(aOriginProcess);
-  mSubscribers.RemoveEntry(aOriginProcess);
-  aOriginProcess->OnBrowsingContextGroupUnsubscribe(this);
-
-  // If this origin process embeds any non-discarded windowless
-  // BrowsingContexts, make sure to discard them, as this process is going away.
-  // Nested subframes will be discarded by WindowGlobalParent when it is
-  // destroyed by IPC.
-  nsTArray<RefPtr<BrowsingContext>> toDiscard;
-  for (auto& context : mToplevels) {
-    if (context->Canonical()->IsEmbeddedInProcess(aOriginProcess->ChildID())) {
-      toDiscard.AppendElement(context);
-    }
-  }
-  for (auto& context : toDiscard) {
-    context->Detach(/* aFromIPC */ true);
+void BrowsingContextGroup::RemoveHostProcess(ContentParent* aProcess) {
+  MOZ_DIAGNOSTIC_ASSERT(aProcess);
+  MOZ_DIAGNOSTIC_ASSERT(aProcess->GetRemoteType() != PREALLOC_REMOTE_TYPE);
+  auto entry = mHosts.Lookup(aProcess->GetRemoteType());
+  if (entry && entry.Data() == aProcess) {
+    entry.Remove();
   }
 }
 
@@ -106,20 +122,33 @@ static void CollectContextInitializers(
   // content process consistent.
   for (auto& context : aContexts) {
     aInits.AppendElement(context->GetIPCInitializer());
-    for (auto& window : context->GetWindowContexts()) {
+    for (const auto& window : context->GetWindowContexts()) {
       aInits.AppendElement(window->GetIPCInitializer());
       CollectContextInitializers(window->Children(), aInits);
     }
   }
 }
 
-void BrowsingContextGroup::EnsureSubscribed(ContentParent* aProcess) {
-  MOZ_DIAGNOSTIC_ASSERT(aProcess);
-  if (mSubscribers.Contains(aProcess)) {
+void BrowsingContextGroup::Subscribe(ContentParent* aProcess) {
+  MOZ_DIAGNOSTIC_ASSERT(!mDestroyed);
+  MOZ_DIAGNOSTIC_ASSERT(aProcess && !aProcess->IsLaunching());
+  MOZ_DIAGNOSTIC_ASSERT(aProcess->GetRemoteType() != PREALLOC_REMOTE_TYPE);
+
+  // Check if we're already subscribed to this process.
+  if (!mSubscribers.EnsureInserted(aProcess)) {
     return;
   }
 
-  Subscribe(aProcess);
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  // If the process is already marked as dead, we won't be the host, but may
+  // still need to subscribe to the process due to creating a popup while
+  // shutting down.
+  if (!aProcess->IsDead()) {
+    auto hostEntry = mHosts.Lookup(aProcess->GetRemoteType());
+    MOZ_DIAGNOSTIC_ASSERT(hostEntry && hostEntry.Data() == aProcess,
+                          "Cannot subscribe a non-host process");
+  }
+#endif
 
   // FIXME: This won't send non-discarded children of discarded BCs, but those
   // BCs will be in the process of being destroyed anyway.
@@ -143,45 +172,134 @@ void BrowsingContextGroup::EnsureSubscribed(ContentParent* aProcess) {
     }
 
     if (focused || active) {
-      Unused << aProcess->SendSetupFocusedAndActive(focused, active);
+      Unused << aProcess->SendSetupFocusedAndActive(
+          focused, fm->GetActionIdForFocusedBrowsingContextInChrome(), active,
+          fm->GetActionIdForActiveBrowsingContextInChrome());
     }
   }
 }
 
-void BrowsingContextGroup::SetToplevelsSuspended(bool aSuspended) {
+void BrowsingContextGroup::Unsubscribe(ContentParent* aProcess) {
+  MOZ_DIAGNOSTIC_ASSERT(aProcess);
+  MOZ_DIAGNOSTIC_ASSERT(aProcess->GetRemoteType() != PREALLOC_REMOTE_TYPE);
+  mSubscribers.Remove(aProcess);
+  aProcess->RemoveBrowsingContextGroup(this);
+
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  auto hostEntry = mHosts.Lookup(aProcess->GetRemoteType());
+  MOZ_DIAGNOSTIC_ASSERT(!hostEntry || hostEntry.Data() != aProcess,
+                        "Unsubscribing existing host entry");
+#endif
+}
+
+ContentParent* BrowsingContextGroup::GetHostProcess(
+    const nsACString& aRemoteType) {
+  return mHosts.GetWeak(aRemoteType);
+}
+
+void BrowsingContextGroup::UpdateToplevelsSuspendedIfNeeded() {
+  if (!StaticPrefs::dom_suspend_inactive_enabled()) {
+    return;
+  }
+
+  mToplevelsSuspended = ShouldSuspendAllTopLevelContexts();
   for (const auto& context : mToplevels) {
     nsPIDOMWindowOuter* outer = context->GetDOMWindow();
-    if (outer) {
-      nsCOMPtr<nsPIDOMWindowInner> inner = outer->GetCurrentInnerWindow();
-      if (inner) {
-        if (aSuspended && !inner->GetWasSuspendedByGroup()) {
-          inner->Suspend();
-          inner->SetWasSuspendedByGroup(true);
-        } else if (!aSuspended && inner->GetWasSuspendedByGroup()) {
-          inner->Resume();
-          inner->SetWasSuspendedByGroup(false);
-        }
-      }
+    if (!outer) {
+      continue;
+    }
+    nsCOMPtr<nsPIDOMWindowInner> inner = outer->GetCurrentInnerWindow();
+    if (!inner) {
+      continue;
+    }
+    if (mToplevelsSuspended && !inner->GetWasSuspendedByGroup()) {
+      inner->Suspend();
+      inner->SetWasSuspendedByGroup(true);
+    } else if (!mToplevelsSuspended && inner->GetWasSuspendedByGroup()) {
+      inner->Resume();
+      inner->SetWasSuspendedByGroup(false);
     }
   }
-
-  mToplevelsSuspended = aSuspended;
 }
 
-BrowsingContextGroup::~BrowsingContextGroup() {
-  UnsubscribeAllContentParents();
+bool BrowsingContextGroup::ShouldSuspendAllTopLevelContexts() const {
+  for (const auto& context : mToplevels) {
+    if (!context->InactiveForSuspend()) {
+      return false;
+    }
+  }
+  return true;
 }
 
-void BrowsingContextGroup::UnsubscribeAllContentParents() {
+BrowsingContextGroup::~BrowsingContextGroup() { Destroy(); }
+
+void BrowsingContextGroup::Destroy() {
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  if (mDestroyed) {
+    MOZ_DIAGNOSTIC_ASSERT(mHosts.Count() == 0);
+    MOZ_DIAGNOSTIC_ASSERT(mSubscribers.Count() == 0);
+    MOZ_DIAGNOSTIC_ASSERT_IF(sBrowsingContextGroups,
+                             !sBrowsingContextGroups->Contains(Id()) ||
+                                 *sBrowsingContextGroups->Lookup(Id()) != this);
+  }
+  mDestroyed = true;
+#endif
+
+  // Make sure to call `RemoveBrowsingContextGroup` for every entry in both
+  // `mHosts` and `mSubscribers`. This will visit most entries twice, but
+  // `RemoveBrowsingContextGroup` is safe to call multiple times.
+  for (const auto& entry : mHosts.Values()) {
+    entry->RemoveBrowsingContextGroup(this);
+  }
+  for (const auto& key : mSubscribers) {
+    key->RemoveBrowsingContextGroup(this);
+  }
+  mHosts.Clear();
+  mSubscribers.Clear();
+
   if (sBrowsingContextGroups) {
     sBrowsingContextGroups->Remove(Id());
   }
+}
 
-  for (auto iter = mSubscribers.Iter(); !iter.Done(); iter.Next()) {
-    nsRefPtrHashKey<ContentParent>* entry = iter.Get();
-    entry->GetKey()->OnBrowsingContextGroupUnsubscribe(this);
+void BrowsingContextGroup::AddKeepAlive() {
+  MOZ_DIAGNOSTIC_ASSERT(!mDestroyed);
+  MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess());
+  mKeepAliveCount++;
+}
+
+void BrowsingContextGroup::RemoveKeepAlive() {
+  MOZ_DIAGNOSTIC_ASSERT(!mDestroyed);
+  MOZ_DIAGNOSTIC_ASSERT(mKeepAliveCount > 0);
+  MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess());
+  mKeepAliveCount--;
+
+  MaybeDestroy();
+}
+
+auto BrowsingContextGroup::MakeKeepAlivePtr() -> KeepAlivePtr {
+  AddKeepAlive();
+  return KeepAlivePtr{do_AddRef(this).take()};
+}
+
+void BrowsingContextGroup::MaybeDestroy() {
+  // Once there are no synced contexts referencing a `BrowsingContextGroup`, we
+  // can clear subscribers and destroy this group. We only do this in the parent
+  // process, as it will orchestrate destruction of BCGs in content processes.
+  if (XRE_IsParentProcess() && mContexts.IsEmpty() && mKeepAliveCount == 0 &&
+      this != sChromeGroup) {
+    Destroy();
+
+    // We may have been deleted here, as `Destroy()` will clear references. Do
+    // not access any members at this point.
   }
-  mSubscribers.Clear();
+}
+
+void BrowsingContextGroup::ChildDestroy() {
+  MOZ_DIAGNOSTIC_ASSERT(XRE_IsContentProcess());
+  MOZ_DIAGNOSTIC_ASSERT(!mDestroyed);
+  MOZ_DIAGNOSTIC_ASSERT(mContexts.IsEmpty());
+  Destroy();
 }
 
 nsISupports* BrowsingContextGroup::GetParentObject() const {
@@ -233,6 +351,66 @@ void BrowsingContextGroup::FlushPostMessageEvents() {
   }
 }
 
+bool BrowsingContextGroup::HasActiveBC() {
+  for (auto& topLevelBC : Toplevels()) {
+    if (topLevelBC->IsActive()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void BrowsingContextGroup::IncInputEventSuspensionLevel() {
+  MOZ_ASSERT(StaticPrefs::dom_input_events_canSuspendInBCG_enabled());
+  if (!mHasIncreasedInputTaskManagerSuspensionLevel && HasActiveBC()) {
+    IncInputTaskManagerSuspensionLevel();
+  }
+  ++mInputEventSuspensionLevel;
+}
+
+void BrowsingContextGroup::DecInputEventSuspensionLevel() {
+  MOZ_ASSERT(StaticPrefs::dom_input_events_canSuspendInBCG_enabled());
+  --mInputEventSuspensionLevel;
+  if (!mInputEventSuspensionLevel &&
+      mHasIncreasedInputTaskManagerSuspensionLevel) {
+    DecInputTaskManagerSuspensionLevel();
+  }
+}
+
+void BrowsingContextGroup::DecInputTaskManagerSuspensionLevel() {
+  MOZ_ASSERT(StaticPrefs::dom_input_events_canSuspendInBCG_enabled());
+  MOZ_ASSERT(mHasIncreasedInputTaskManagerSuspensionLevel);
+
+  InputTaskManager::Get()->DecSuspensionLevel();
+  mHasIncreasedInputTaskManagerSuspensionLevel = false;
+}
+
+void BrowsingContextGroup::IncInputTaskManagerSuspensionLevel() {
+  MOZ_ASSERT(StaticPrefs::dom_input_events_canSuspendInBCG_enabled());
+  MOZ_ASSERT(!mHasIncreasedInputTaskManagerSuspensionLevel);
+  MOZ_ASSERT(HasActiveBC());
+
+  InputTaskManager::Get()->IncSuspensionLevel();
+  mHasIncreasedInputTaskManagerSuspensionLevel = true;
+}
+
+void BrowsingContextGroup::UpdateInputTaskManagerIfNeeded(bool aIsActive) {
+  MOZ_ASSERT(StaticPrefs::dom_input_events_canSuspendInBCG_enabled());
+  if (!aIsActive) {
+    if (mHasIncreasedInputTaskManagerSuspensionLevel) {
+      MOZ_ASSERT(mInputEventSuspensionLevel > 0);
+      if (!HasActiveBC()) {
+        DecInputTaskManagerSuspensionLevel();
+      }
+    }
+  } else {
+    if (mInputEventSuspensionLevel &&
+        !mHasIncreasedInputTaskManagerSuspensionLevel) {
+      IncInputTaskManagerSuspensionLevel();
+    }
+  }
+}
+
 /* static */
 BrowsingContextGroup* BrowsingContextGroup::GetChromeGroup() {
   MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess());
@@ -246,35 +424,31 @@ BrowsingContextGroup* BrowsingContextGroup::GetChromeGroup() {
 
 void BrowsingContextGroup::GetDocGroups(nsTArray<DocGroup*>& aDocGroups) {
   MOZ_ASSERT(NS_IsMainThread());
-  for (auto iter = mDocGroups.ConstIter(); !iter.Done(); iter.Next()) {
-    aDocGroups.AppendElement(iter.Data());
-  }
+  AppendToArray(aDocGroups, mDocGroups.Values());
 }
 
 already_AddRefed<DocGroup> BrowsingContextGroup::AddDocument(
     const nsACString& aKey, Document* aDocument) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  RefPtr<DocGroup>& docGroup = mDocGroups.GetOrInsert(aKey);
-  if (!docGroup) {
-    docGroup = DocGroup::Create(this, aKey);
-  }
+  RefPtr<DocGroup>& docGroup = mDocGroups.LookupOrInsertWith(
+      aKey, [&] { return DocGroup::Create(this, aKey); });
 
   docGroup->AddDocument(aDocument);
   return do_AddRef(docGroup);
 }
 
-void BrowsingContextGroup::RemoveDocument(const nsACString& aKey,
-                                          Document* aDocument) {
+void BrowsingContextGroup::RemoveDocument(Document* aDocument,
+                                          DocGroup* aDocGroup) {
   MOZ_ASSERT(NS_IsMainThread());
-  RefPtr<DocGroup> docGroup = aDocument->GetDocGroup();
+  RefPtr<DocGroup> docGroup = aDocGroup;
   // Removing the last document in DocGroup might decrement the
   // DocGroup BrowsingContextGroup's refcount to 0.
   RefPtr<BrowsingContextGroup> kungFuDeathGrip(this);
   docGroup->RemoveDocument(aDocument);
 
   if (docGroup->IsEmpty()) {
-    mDocGroups.Remove(aKey);
+    mDocGroups.Remove(docGroup->GetKey());
   }
 }
 
@@ -296,15 +470,43 @@ void BrowsingContextGroup::GetAllGroups(
     return;
   }
 
-  aGroups.SetCapacity(sBrowsingContextGroups->Count());
-  for (auto& group : *sBrowsingContextGroups) {
-    aGroups.AppendElement(group.GetData());
+  aGroups = ToArray(sBrowsingContextGroups->Values());
+}
+
+// For tests only.
+void BrowsingContextGroup::ResetDialogAbuseState() {
+  mDialogAbuseCount = 0;
+  // Reset the timer.
+  mLastDialogQuitTime =
+      TimeStamp::Now() -
+      TimeDuration::FromSeconds(DEFAULT_SUCCESSIVE_DIALOG_TIME_LIMIT);
+}
+
+bool BrowsingContextGroup::DialogsAreBeingAbused() {
+  if (mLastDialogQuitTime.IsNull() || nsContentUtils::IsCallerChrome()) {
+    return false;
   }
+
+  TimeDuration dialogInterval(TimeStamp::Now() - mLastDialogQuitTime);
+  if (dialogInterval.ToSeconds() <
+      Preferences::GetInt("dom.successive_dialog_time_limit",
+                          DEFAULT_SUCCESSIVE_DIALOG_TIME_LIMIT)) {
+    mDialogAbuseCount++;
+
+    return PopupBlocker::GetPopupControlState() > PopupBlocker::openAllowed ||
+           mDialogAbuseCount > MAX_SUCCESSIVE_DIALOG_COUNT;
+  }
+
+  // Reset the abuse counter
+  mDialogAbuseCount = 0;
+
+  return false;
 }
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(BrowsingContextGroup, mContexts,
-                                      mToplevels, mSubscribers,
-                                      mTimerEventQueue, mWorkerEventQueue)
+                                      mToplevels, mHosts, mSubscribers,
+                                      mTimerEventQueue, mWorkerEventQueue,
+                                      mDocGroups)
 
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(BrowsingContextGroup, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(BrowsingContextGroup, Release)

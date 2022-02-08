@@ -194,8 +194,6 @@ class SpecialPowersChild extends JSWindowActorChild {
     this._unexpectedCrashDumpFiles = {};
     this._crashDumpDir = null;
     this._mfl = null;
-    this._applyingPermissions = false;
-    this._observingPermissions = false;
     this._asyncObservers = new WeakMap();
     this._xpcomabi = null;
     this._os = null;
@@ -231,12 +229,9 @@ class SpecialPowersChild extends JSWindowActorChild {
     let window = this.contentWindow;
     // We should not invoke the getter.
     if (!("SpecialPowers" in window.wrappedJSObject)) {
-      this._windowID = window.windowUtils.currentInnerWindowID;
+      this._windowID = window.windowGlobalChild.innerWindowId;
 
       defineSpecialPowers(this);
-      if (this.IsInNestedFrame) {
-        this.addPermission("allowXULXBL", true, window.document);
-      }
     }
   }
 
@@ -313,6 +308,52 @@ class SpecialPowersChild extends JSWindowActorChild {
       case "Spawn":
         let { task, args, caller, taskId, imports } = message.data;
         return this._spawnTask(task, args, caller, taskId, imports);
+
+      case "EnsureFocus":
+        // Ensure that the focus is in this child document. Returns a browsing
+        // context of a child frame if a subframe should be focused or undefined
+        // otherwise.
+
+        // If a subframe node is focused, then the focus will actually
+        // be within that subframe's document. If blurSubframe is true,
+        // then blur the subframe so that this parent document is focused
+        // instead. If blurSubframe is false, then return the browsing
+        // context for that subframe. The parent process will then call back
+        // into this same code but in the process for that subframe.
+        let focusedNode = this.document.activeElement;
+        let subframeFocused =
+          ChromeUtils.getClassName(focusedNode) == "HTMLIFrameElement" ||
+          ChromeUtils.getClassName(focusedNode) == "HTMLFrameElement" ||
+          ChromeUtils.getClassName(focusedNode) == "XULFrameElement";
+        if (subframeFocused) {
+          if (message.data.blurSubframe) {
+            Services.focus.clearFocus(this.contentWindow);
+          } else {
+            if (!this.document.hasFocus()) {
+              this.contentWindow.focus();
+            }
+            return Promise.resolve(focusedNode.browsingContext);
+          }
+        }
+
+        // A subframe is not focused, so if this document is
+        // not focused, focus it and wait for the focus event.
+        if (!this.document.hasFocus()) {
+          return new Promise(resolve => {
+            this.document.addEventListener(
+              "focus",
+              () => {
+                resolve();
+              },
+              {
+                capture: true,
+                once: true,
+              }
+            );
+            this.contentWindow.focus();
+          });
+        }
+        break;
 
       case "Assert":
         {
@@ -478,30 +519,6 @@ class SpecialPowersChild extends JSWindowActorChild {
   }
 
   async registeredServiceWorkers() {
-    // For the time being, if parent_intercept is false, we can assume that
-    // ServiceWorkers registered by the current test are all known to the SWM in
-    // this process.
-    if (
-      !Services.prefs.getBoolPref("dom.serviceWorkers.parent_intercept", false)
-    ) {
-      let swm = Cc["@mozilla.org/serviceworkers/manager;1"].getService(
-        Ci.nsIServiceWorkerManager
-      );
-      let regs = swm.getAllRegistrations();
-
-      // XXX This is shared with SpecialPowersAPIParent.jsm
-      let workers = new Array(regs.length);
-      for (let i = 0; i < workers.length; ++i) {
-        let { scope, scriptSpec } = regs.queryElementAt(
-          i,
-          Ci.nsIServiceWorkerRegistrationInfo
-        );
-        workers[i] = { scope, scriptSpec };
-      }
-
-      return workers;
-    }
-
     // Please see the comment in SpecialPowersObserver.jsm above
     // this._serviceWorkerListener's assignment for what this returns.
     if (this._serviceWorkerRegistered) {
@@ -577,10 +594,7 @@ class SpecialPowersChild extends JSWindowActorChild {
 
   loadChromeScript(urlOrFunction, sandboxOptions) {
     // Create a unique id for this chrome script
-    let uuidGenerator = Cc["@mozilla.org/uuid-generator;1"].getService(
-      Ci.nsIUUIDGenerator
-    );
-    let id = uuidGenerator.generateUUID().toString();
+    let id = Services.uuid.generateUUID().toString();
 
     // Tells chrome code to evaluate this chrome script
     let scriptArgs = { id, sandboxOptions };
@@ -695,6 +709,10 @@ class SpecialPowersChild extends JSWindowActorChild {
     return Cr;
   }
 
+  get isHeadless() {
+    return Cc["@mozilla.org/gfx/info;1"].getService(Ci.nsIGfxInfo).isHeadless;
+  }
+
   get addProfilerMarker() {
     return ChromeUtils.addProfilerMarker;
   }
@@ -788,14 +806,14 @@ class SpecialPowersChild extends JSWindowActorChild {
     return this.sendQuery("SPProcessCrashService", message);
   }
 
-  _setTimeout(callback) {
+  _setTimeout(callback, delay = 0) {
     // for mochitest-browser
     if (typeof this.chromeWindow != "undefined") {
-      this.chromeWindow.setTimeout(callback, 0);
+      this.chromeWindow.setTimeout(callback, delay);
     }
     // for mochitest-plain
     else {
-      this.contentWindow.setTimeout(callback, 0);
+      this.contentWindow.setTimeout(callback, delay);
     }
   }
 
@@ -829,144 +847,28 @@ class SpecialPowersChild extends JSWindowActorChild {
      Allow can be a boolean value of true/false or ALLOW_ACTION/DENY_ACTION/PROMPT_ACTION/UNKNOWN_ACTION
   */
   async pushPermissions(inPermissions, callback) {
-    inPermissions = Cu.waiveXrays(inPermissions);
-    var pendingPermissions = [];
-    var cleanupPermissions = [];
-
-    for (var p in inPermissions) {
-      var permission = inPermissions[p];
-      var originalValue = Ci.nsIPermissionManager.UNKNOWN_ACTION;
-      var context = WrapPrivileged.unwrap(Cu.unwaiveXrays(permission.context)); // Sometimes |context| is a DOM object on which we expect
-      // to be able to access .nodePrincipal, so we need to unwaive.
-      if (
-        await this.testPermission(
-          permission.type,
-          Ci.nsIPermissionManager.ALLOW_ACTION,
-          context
-        )
-      ) {
-        originalValue = Ci.nsIPermissionManager.ALLOW_ACTION;
-      } else if (
-        await this.testPermission(
-          permission.type,
-          Ci.nsIPermissionManager.DENY_ACTION,
-          context
-        )
-      ) {
-        originalValue = Ci.nsIPermissionManager.DENY_ACTION;
-      } else if (
-        await this.testPermission(
-          permission.type,
-          Ci.nsIPermissionManager.PROMPT_ACTION,
-          context
-        )
-      ) {
-        originalValue = Ci.nsIPermissionManager.PROMPT_ACTION;
-      } else if (
-        await this.testPermission(
-          permission.type,
-          Ci.nsICookiePermission.ACCESS_SESSION,
-          context
-        )
-      ) {
-        originalValue = Ci.nsICookiePermission.ACCESS_SESSION;
-      }
-
-      let principal = this._getPrincipalFromArg(context);
-      if (principal.isSystemPrincipal) {
-        continue;
-      }
-
-      let perm;
-      if (typeof permission.allow !== "boolean") {
-        perm = permission.allow;
-      } else {
-        perm = permission.allow
-          ? Ci.nsIPermissionManager.ALLOW_ACTION
-          : Ci.nsIPermissionManager.DENY_ACTION;
-      }
-
-      if (permission.remove) {
-        perm = Ci.nsIPermissionManager.UNKNOWN_ACTION;
-      }
-
-      if (originalValue == perm) {
-        continue;
-      }
-
-      var todo = {
-        op: "add",
-        type: permission.type,
-        permission: perm,
-        value: perm,
+    let permissions = [];
+    for (let perm of inPermissions) {
+      let principal = this._getPrincipalFromArg(perm.context);
+      permissions.push({
+        ...perm,
+        context: null,
         principal,
-        expireType:
-          typeof permission.expireType === "number" ? permission.expireType : 0, // default: EXPIRE_NEVER
-        expireTime:
-          typeof permission.expireTime === "number" ? permission.expireTime : 0,
-      };
-
-      var cleanupTodo = Object.assign({}, todo);
-
-      if (permission.remove) {
-        todo.op = "remove";
-      }
-
-      pendingPermissions.push(todo);
-
-      /* Push original permissions value or clear into cleanup array */
-      if (originalValue == Ci.nsIPermissionManager.UNKNOWN_ACTION) {
-        cleanupTodo.op = "remove";
-      } else {
-        cleanupTodo.value = originalValue;
-        cleanupTodo.permission = originalValue;
-      }
-      cleanupPermissions.push(cleanupTodo);
-    }
-
-    if (pendingPermissions.length > 0) {
-      // The callback needs to be delayed twice. One delay is because the pref
-      // service doesn't guarantee the order it calls its observers in, so it
-      // may notify the observer holding the callback before the other
-      // observers have been notified and given a chance to make the changes
-      // that the callback checks for. The second delay is because pref
-      // observers often defer making their changes by posting an event to the
-      // event loop.
-      if (!this._observingPermissions) {
-        this._observingPermissions = true;
-        // If specialpowers is in main-process, then we can add a observer
-        // to get all 'perm-changed' signals. Otherwise, it can't receive
-        // all signals, so we register a observer in specialpowersobserver(in
-        // main-process) and get signals from it.
-        if (this.isMainProcess()) {
-          this.permissionObserverProxy._specialPowersAPI = this;
-          Services.obs.addObserver(
-            this.permissionObserverProxy,
-            "perm-changed"
-          );
-        } else {
-          this.registerObservers("perm-changed");
-          // bind() is used to set 'this' to SpecialPowersAPI itself.
-          this._addMessageListener(
-            "specialpowers-perm-changed",
-            this.permChangedProxy.bind(this)
-          );
-        }
-      }
-      this._permissionsUndoStack.push(cleanupPermissions);
-      await new Promise(resolve => {
-        this._pendingPermissions.push([
-          pendingPermissions,
-          this._delayCallbackTwice(resolve),
-        ]);
-        this._applyPermissions();
       });
-    } else {
-      await this.promiseTimeout();
     }
-    if (callback) {
-      callback();
-    }
+
+    await this.sendQuery("PushPermissions", permissions).then(callback);
+    await this.promiseTimeout(0);
+  }
+
+  async popPermissions(callback = null) {
+    await this.sendQuery("PopPermissions").then(callback);
+    await this.promiseTimeout(0);
+  }
+
+  async flushPermissions(callback = null) {
+    await this.sendQuery("FlushPermissions").then(callback);
+    await this.promiseTimeout(0);
   }
 
   /*
@@ -991,97 +893,47 @@ class SpecialPowersChild extends JSWindowActorChild {
     return this.sendQuery("SPObserverService", msg);
   }
 
-  permChangedProxy(aMessage) {
-    let permission = aMessage.json.permission;
-    let aData = aMessage.json.aData;
-    this._permissionObserver.observe(permission, aData);
-  }
-
-  popPermissions(callback) {
-    let promise = new Promise(resolve => {
-      if (this._permissionsUndoStack.length > 0) {
-        // See pushPermissions comment regarding delay.
-        let cb = this._delayCallbackTwice(resolve);
-        /* Each pop from the stack will yield an object {op/type/permission/value/url/appid/isInIsolatedMozBrowserElement} or null */
-        this._pendingPermissions.push([this._permissionsUndoStack.pop(), cb]);
-        this._applyPermissions();
-      } else {
-        if (this._observingPermissions) {
-          this._observingPermissions = false;
-          this._removeMessageListener(
-            "specialpowers-perm-changed",
-            this.permChangedProxy.bind(this)
-          );
-        }
-        this._setTimeout(resolve);
-      }
-    });
-    if (callback) {
-      promise.then(callback);
-    }
-    return promise;
-  }
-
-  flushPermissions(callback) {
-    while (this._permissionsUndoStack.length > 1) {
-      this.popPermissions(null);
-    }
-
-    return this.popPermissions(callback);
-  }
-
-  setTestPluginEnabledState(newEnabledState, pluginName) {
-    return this.sendQuery("SPSetTestPluginEnabledState", {
-      newEnabledState,
-      pluginName,
-    });
-  }
-
-  /*
-    Iterate through one atomic set of permissions actions and perform allow/deny as appropriate.
-    All actions performed must modify the relevant permission.
-  */
-  _applyPermissions() {
-    if (this._applyingPermissions || this._pendingPermissions.length <= 0) {
-      return;
-    }
-
-    /* Set lock and get prefs from the _pendingPrefs queue */
-    this._applyingPermissions = true;
-    var transaction = this._pendingPermissions.shift();
-    var pendingActions = transaction[0];
-    var callback = transaction[1];
-    var lastPermission = pendingActions[pendingActions.length - 1];
-
-    var self = this;
-    this._permissionObserver._self = self;
-    this._permissionObserver._lastPermission = lastPermission;
-    this._permissionObserver._callback = callback;
-    this._permissionObserver._nextCallback = function() {
-      self._applyingPermissions = false;
-      // Now apply any permissions that may have been queued while we were applying
-      self._applyPermissions();
-    };
-
-    for (var idx in pendingActions) {
-      var perm = pendingActions[idx];
-      this.sendAsyncMessage("SPPermissionManager", perm);
-    }
-  }
-
   async pushPrefEnv(inPrefs, callback = null) {
-    await this.sendQuery("PushPrefEnv", inPrefs).then(callback);
-    await this.promiseTimeout(0);
+    let { requiresRefresh } = await this.sendQuery("PushPrefEnv", inPrefs);
+    if (callback) {
+      await callback();
+    }
+    if (requiresRefresh) {
+      await this._promiseEarlyRefresh();
+    }
   }
 
   async popPrefEnv(callback = null) {
-    await this.sendQuery("PopPrefEnv").then(callback);
-    await this.promiseTimeout(0);
+    let { popped, requiresRefresh } = await this.sendQuery("PopPrefEnv");
+    if (callback) {
+      await callback(popped);
+    }
+    if (requiresRefresh) {
+      await this._promiseEarlyRefresh();
+    }
   }
 
   async flushPrefEnv(callback = null) {
-    await this.sendQuery("FlushPrefEnv").then(callback);
-    await this.promiseTimeout(0);
+    let { requiresRefresh } = await this.sendQuery("FlushPrefEnv");
+    if (callback) {
+      await callback();
+    }
+    if (requiresRefresh) {
+      await this._promiseEarlyRefresh();
+    }
+  }
+
+  _promiseEarlyRefresh() {
+    return new Promise(r => {
+      // for mochitest-browser
+      if (typeof this.chromeWindow != "undefined") {
+        this.chromeWindow.requestAnimationFrame(r);
+      }
+      // for mochitest-plain
+      else {
+        this.contentWindow.requestAnimationFrame(r);
+      }
+    });
   }
 
   _addObserverProxy(notification) {
@@ -1374,18 +1226,12 @@ class SpecialPowersChild extends JSWindowActorChild {
     BrowsingContext.getFromWindow(window).textZoom = zoom;
   }
 
-  getOverrideDPPX(window) {
-    return this._getMUDV(window).overrideDPPX;
-  }
-  setOverrideDPPX(window, dppx) {
-    this._getMUDV(window).overrideDPPX = dppx;
+  emulateMedium(window, mediaType) {
+    BrowsingContext.getFromWindow(window).top.mediumOverride = mediaType;
   }
 
-  emulateMedium(window, mediaType) {
-    this._getMUDV(window).emulateMedium(mediaType);
-  }
   stopEmulatingMedium(window) {
-    this._getMUDV(window).stopEmulatingMedium();
+    BrowsingContext.getFromWindow(window).top.mediumOverride = "";
   }
 
   // Takes a snapshot of the given window and returns a <canvas>
@@ -1763,13 +1609,14 @@ class SpecialPowersChild extends JSWindowActorChild {
     });
   }
 
-  snapshotContext(target, rect, background) {
+  snapshotContext(target, rect, background, resetScrollPosition = false) {
     let browsingContext = this._browsingContextForTarget(target);
 
     return this.sendQuery("Snapshot", {
       browsingContext,
       rect,
       background,
+      resetScrollPosition,
     }).then(imageData => {
       return this.contentWindow.createImageBitmap(imageData);
     });
@@ -1824,6 +1671,14 @@ class SpecialPowersChild extends JSWindowActorChild {
     this._SimpleTest = val;
   }
 
+  async evictAllContentViewers() {
+    if (Services.appinfo.sessionHistoryInParent) {
+      await this.sendQuery("EvictAllContentViewers");
+    } else {
+      this.browsingContext.top.childSessionHistory.legacySHistory.evictAllContentViewers();
+    }
+  }
+
   /**
    * Sets this actor as the default assertion result handler for tasks
    * which originate in a window without a test harness.
@@ -1850,6 +1705,10 @@ class SpecialPowersChild extends JSWindowActorChild {
     return Services.focus.focusedWindow;
   }
 
+  clearFocus(aWindow) {
+    Services.focus.clearFocus(aWindow);
+  }
+
   focus(aWindow) {
     // This is called inside TestRunner._makeIframe without aWindow, because of assertions in oop mochitests
     // With aWindow, it is called in SimpleTest.waitForFocus to allow popup window opener focus switching
@@ -1865,6 +1724,13 @@ class SpecialPowersChild extends JSWindowActorChild {
     } catch (e) {
       Cu.reportError(e);
     }
+  }
+
+  ensureFocus(aBrowsingContext, aBlurSubframe) {
+    return this.sendQuery("EnsureFocus", {
+      browsingContext: aBrowsingContext,
+      blurSubframe: aBlurSubframe,
+    });
   }
 
   getClipboardData(flavor, whichClipboard) {
@@ -1915,10 +1781,7 @@ class SpecialPowersChild extends JSWindowActorChild {
     if (cid) {
       componentRegistrar.unregisterFactory(currentCID, currentFactory);
     } else {
-      let uuidGenerator = Cc["@mozilla.org/uuid-generator;1"].getService(
-        Ci.nsIUUIDGenerator
-      );
-      cid = uuidGenerator.generateUUID();
+      cid = Services.uuid.generateUUID();
     }
 
     // Restore the original factory.
@@ -1944,25 +1807,30 @@ class SpecialPowersChild extends JSWindowActorChild {
     return debugsvc.assertionCount;
   }
 
+  /**
+   * @param arg one of the following:
+   *            - A URI string.
+   *            - A document node.
+   *            - A dictionary including a URL (`url`) and origin attributes (`attr`).
+   */
   _getPrincipalFromArg(arg) {
-    let principal;
-    let secMan = Services.scriptSecurityManager;
+    arg = WrapPrivileged.unwrap(Cu.unwaiveXrays(arg));
 
-    if (typeof arg == "string") {
-      // It's an URL.
-      let uri = Services.io.newURI(arg);
-      principal = secMan.createContentPrincipal(uri, {});
-    } else if (arg.nodePrincipal) {
+    if (arg.nodePrincipal) {
       // It's a document.
-      // In some tests the arg is a wrapped DOM element, so we unwrap it first.
-      principal = WrapPrivileged.unwrap(arg).nodePrincipal;
-    } else {
-      let uri = Services.io.newURI(arg.url);
-      let attrs = arg.originAttributes || {};
-      principal = secMan.createContentPrincipal(uri, attrs);
+      return arg.nodePrincipal;
     }
 
-    return principal;
+    let secMan = Services.scriptSecurityManager;
+    if (typeof arg == "string") {
+      // It's a URL.
+      let uri = Services.io.newURI(arg);
+      return secMan.createContentPrincipal(uri, {});
+    }
+
+    let uri = Services.io.newURI(arg.url);
+    let attrs = arg.originAttributes || {};
+    return secMan.createContentPrincipal(uri, attrs);
   }
 
   async addPermission(type, allow, arg, expireType, expireTime) {
@@ -1971,13 +1839,10 @@ class SpecialPowersChild extends JSWindowActorChild {
       return; // nothing to do
     }
 
-    let permission;
-    if (typeof allow !== "boolean") {
-      permission = allow;
-    } else {
-      permission = allow
-        ? Ci.nsIPermissionManager.ALLOW_ACTION
-        : Ci.nsIPermissionManager.DENY_ACTION;
+    let permission = allow;
+    if (typeof permission === "boolean") {
+      permission =
+        Ci.nsIPermissionManager[allow ? "ALLOW_ACTION" : "DENY_ACTION"];
     }
 
     var msg = {
@@ -1992,6 +1857,13 @@ class SpecialPowersChild extends JSWindowActorChild {
     await this.sendQuery("SPPermissionManager", msg);
   }
 
+  /**
+   * @param type see nsIPermissionsManager::testPermissionFromPrincipal.
+   * @param arg one of the following:
+   *            - A URI string.
+   *            - A document node.
+   *            - A dictionary including a URL (`url`) and origin attributes (`attr`).
+   */
   async removePermission(type, arg) {
     let principal = this._getPrincipalFromArg(arg);
     if (principal.isSystemPrincipal) {
@@ -2141,6 +2013,10 @@ class SpecialPowersChild extends JSWindowActorChild {
       sendMessage(...args) {
         sp.sendAsyncMessage("SPExtensionMessage", { id, args });
       },
+
+      grantActiveTab(tabId) {
+        sp.sendAsyncMessage("SPExtensionGrantActiveTab", { id, tabId });
+      },
     };
 
     this.sendAsyncMessage("SPLoadExtension", { ext, id });
@@ -2273,6 +2149,11 @@ class SpecialPowersChild extends JSWindowActorChild {
     });
   }
 
+  /**
+   * Which commands are available can be determined by checking which commands
+   * are registered. See \ref
+   * nsIControllerCommandTable.registerCommand(in String, in nsIControllerCommand).
+   */
   doCommand(window, cmd, param) {
     switch (cmd) {
       case "cmd_align":
@@ -2296,6 +2177,9 @@ class SpecialPowersChild extends JSWindowActorChild {
     return window.docShell.isCommandEnabled(cmd);
   }
 
+  /**
+   * See \ref nsIContentViewerEdit.setCommandNode(in Node).
+   */
   setCommandNode(window, node) {
     return window.docShell.contentViewer
       .QueryInterface(Ci.nsIContentViewerEdit)
@@ -2407,74 +2291,5 @@ SpecialPowersChild.prototype._proxiedObservers = {
   },
 };
 
-SpecialPowersChild.prototype.permissionObserverProxy = {
-  // 'this' in permChangedObserverProxy is the permChangedObserverProxy
-  // object itself. The '_specialPowersAPI' will be set to the 'SpecialPowersChild'
-  // object to call the member function in SpecialPowersChild.
-  _specialPowersAPI: null,
-  observe(aSubject, aTopic, aData) {
-    if (aTopic == "perm-changed") {
-      var permission = aSubject.QueryInterface(Ci.nsIPermission);
-      this._specialPowersAPI._permissionObserver.observe(permission, aData);
-    }
-  },
-};
-
-SpecialPowersChild.prototype._permissionObserver = {
-  _self: null,
-  _lastPermission: {},
-  _callBack: null,
-  _nextCallback: null,
-  _obsDataMap: {
-    deleted: "remove",
-    added: "add",
-  },
-  observe(permission, aData) {
-    if (this._self._applyingPermissions) {
-      if (permission.type == this._lastPermission.type) {
-        this._self._setTimeout(this._callback);
-        this._self._setTimeout(this._nextCallback);
-        this._callback = null;
-        this._nextCallback = null;
-      }
-    } else {
-      var found = false;
-      for (
-        var i = 0;
-        !found && i < this._self._permissionsUndoStack.length;
-        i++
-      ) {
-        var undos = this._self._permissionsUndoStack[i];
-        for (var j = 0; j < undos.length; j++) {
-          var undo = undos[j];
-          if (
-            undo.op == this._obsDataMap[aData] &&
-            undo.type == permission.type
-          ) {
-            // Remove this undo item if it has been done by others(not
-            // specialpowers itself.)
-            undos.splice(j, 1);
-            found = true;
-            break;
-          }
-        }
-        if (!undos.length) {
-          // Remove the empty row in permissionsUndoStack
-          this._self._permissionsUndoStack.splice(i, 1);
-        }
-      }
-    }
-  },
-};
-
 SpecialPowersChild.prototype.EARLY_BETA_OR_EARLIER =
   AppConstants.EARLY_BETA_OR_EARLIER;
-
-// Due to an unfortunate accident of history, when this API was
-// subclassed using `Thing.prototype = new SpecialPowersChild()`, existing
-// code depends on all SpecialPowers instances using the same arrays for
-// these.
-Object.assign(SpecialPowersChild.prototype, {
-  _permissionsUndoStack: [],
-  _pendingPermissions: [],
-});

@@ -23,23 +23,24 @@ class ContentProcessTargetFront extends TargetMixin(
 
   form(json) {
     this.actorID = json.actor;
+    this.processID = json.processID;
 
     // Save the full form for Target class usage.
     // Do not use `form` name to avoid colliding with protocol.js's `form` method
     this.targetForm = json;
+
+    this.remoteType = json.remoteType;
   }
 
   get name() {
-    return `Content Process (pid ${this.processID})`;
-  }
-
-  attach() {
-    // All target actors have a console actor to attach.
-    // All but xpcshell test actors... which is using a ContentProcessTargetActor
-    if (this.targetForm.consoleActor) {
-      return this.attachConsole();
+    // @backward-compat { version 87 } We now have `remoteType` attribute.
+    if (this.remoteType) {
+      return `(pid ${this.processID}) ${this.remoteType.replace(
+        "webIsolated=",
+        ""
+      )}`;
     }
-    return Promise.resolve();
+    return `(pid ${this.processID}) Content Process`;
   }
 
   reconfigure() {

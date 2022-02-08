@@ -56,6 +56,16 @@ The files may define any of the following special variables:
         # ...
     ]
 
+    # A list of category registrations
+    Categories = {
+        'category': {
+            'name': 'value',
+            'other-name': ('value', ProcessSelector.MAIN_PROCESS_ONLY),
+            # ...
+        },
+        # ...
+    }
+
 Class definitions may have the following properties:
 
 ``name`` (optional)
@@ -75,7 +85,11 @@ Class definitions may have the following properties:
 ``categories`` (optional)
   A dict of category entries to register for this component's contract ID.
   Each key in the dict is the name of the category. Each value is either a
-  string containing a single entry name, or a list of entry name strings.
+  string containing a single entry, or a list of entries.  Each entry is either
+  a string name, or a dictionary of the form ``{'name': 'value', 'backgroundtasks':
+  BackgroundTasksSelector.ALL_TASKS}``.  By default, category entries are registered
+  for **no background tasks**: they have
+  ``'backgroundtasks': BackgroundTasksSelector.NO_TASKS``.
 
 ``type`` (optional, default=``nsISupports``)
   The fully-qualified type of the class implementing this component. Defaults
@@ -270,3 +284,26 @@ This will define each of the following category entries:
 * ``"content-policy"`` ``"m-foo",`` ``"@mozilla.org/foo;1"``
 * ``"Gecko-Content-Viewers"`` ``"image/jpeg"`` ``"@mozilla.org/foo;1"``
 * ``"Gecko-Content-Viewers"`` ``"image/png"`` ``"@mozilla.org/foo;1"``
+
+Some category entries do not have a contract ID as a value. These entries can
+be specified by adding to a global ``Categories`` dictionary:
+
+.. code-block:: python
+
+    Categories = {
+        'app-startup': {
+            'Mapi Support': 'service,@mozilla.org/mapisupport;1',
+        }
+    }
+
+It is possible to limit these on a per-process basis by using a tuple as the
+value:
+
+.. code-block:: python
+
+    Categories = {
+        'app-startup': {
+            'MainProcessSingleton': ('service,@mozilla.org/main-process-singleton;1', ProcessSelector.MAIN_PROCESS_ONLY),
+        }
+    }
+

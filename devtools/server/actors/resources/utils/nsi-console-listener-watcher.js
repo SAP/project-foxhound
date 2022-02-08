@@ -26,15 +26,10 @@ class nsIConsoleListenerWatcher {
    *        - onAvailable: mandatory function
    *          This will be called for each resource.
    */
-  constructor(targetActor, { onAvailable }) {
+  async watch(targetActor, { onAvailable }) {
     if (!this.shouldHandleTarget(targetActor)) {
       return;
     }
-
-    // The following code expects the ThreadActor to be instantiated (in prepareStackForRemote)
-    // The Thread Actor is instantiated via Target.attach, but we should probably review
-    // this and only instantiate the actor instead of attaching the target.
-    targetActor.attach();
 
     // Create the consoleListener.
     const listener = {
@@ -57,7 +52,7 @@ class nsIConsoleListenerWatcher {
     // Remove unwanted cache messages and send an array of resources.
     const messages = [];
     for (const message of cachedMessages) {
-      if (!this.shouldHandleMessage(targetActor, message)) {
+      if (!this.shouldHandleMessage(targetActor, message, true)) {
         continue;
       }
 

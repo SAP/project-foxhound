@@ -3,6 +3,9 @@
 
 "use strict";
 
+const { CryptoUtils } = ChromeUtils.import(
+  "resource://services-crypto/utils.js"
+);
 const { FxAccounts } = ChromeUtils.import(
   "resource://gre/modules/FxAccounts.jsm"
 );
@@ -10,16 +13,15 @@ const { FxAccountsClient } = ChromeUtils.import(
   "resource://gre/modules/FxAccountsClient.jsm"
 );
 const {
-  ASSERTION_LIFETIME,
-  CERT_LIFETIME,
   ERRNO_INVALID_AUTH_TOKEN,
   ERROR_NETWORK,
   ERROR_NO_ACCOUNT,
-  KEY_LIFETIME,
+  FX_OAUTH_CLIENT_ID,
   ONLOGIN_NOTIFICATION,
   ONLOGOUT_NOTIFICATION,
   ONVERIFIED_NOTIFICATION,
-  SCOPE_OLD_SYNC,
+  DEPRECATED_SCOPE_ECOSYSTEM_TELEMETRY,
+  PREF_LAST_FXA_USER,
 } = ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
 const { PromiseUtils } = ChromeUtils.import(
   "resource://gre/modules/PromiseUtils.jsm"
@@ -153,13 +155,27 @@ function MockFxAccountsClient() {
     });
   };
 
+  this.getScopedKeyData = function(sessionToken, client_id, scopes) {
+    Assert.ok(sessionToken);
+    Assert.equal(client_id, FX_OAUTH_CLIENT_ID);
+    Assert.equal(scopes, SCOPE_OLD_SYNC);
+    return new Promise(resolve => {
+      do_timeout(50, () => {
+        resolve({
+          "https://identity.mozilla.com/apps/oldsync": {
+            identifier: "https://identity.mozilla.com/apps/oldsync",
+            keyRotationSecret:
+              "0000000000000000000000000000000000000000000000000000000000000000",
+            keyRotationTimestamp: 1234567890123,
+          },
+        });
+      });
+    });
+  };
+
   this.resendVerificationEmail = function(sessionToken) {
     // Return the session token to show that we received it in the first place
     return Promise.resolve(sessionToken);
-  };
-
-  this.signCertificate = function() {
-    throw new Error("no");
   };
 
   this.signOut = () => Promise.resolve();
@@ -191,14 +207,6 @@ function MockFxAccounts(credentials = null) {
       let storage = new MockStorageManager();
       storage.initialize(newCredentials);
       return new AccountState(storage);
-    },
-    getCertificateSigned(sessionToken, serializedPublicKey) {
-      _("mock getCertificateSigned\n");
-      this._getCertificateSigned_calls.push([
-        sessionToken,
-        serializedPublicKey,
-      ]);
-      return this._d_signCertificate.promise;
     },
     fxAccountsClient: new MockFxAccountsClient(),
     observerPreloads: [],
@@ -260,14 +268,10 @@ add_task(async function test_get_signed_in_user_initially_unset() {
   let account = await MakeFxAccounts();
   let credentials = {
     email: "foo@example.com",
-    uid: "1234@lcip.org",
-    assertion: "foobar",
+    uid: "1234567890abcdef1234567890abcdef",
     sessionToken: "dead",
-    kSync: "beef",
-    kXCS: "cafe",
-    kExtSync: "bacon",
-    kExtKbHash: "cheese",
     verified: true,
+    ...MOCK_ACCOUNT_KEYS,
   };
   let result = await account.getSignedInUser();
   Assert.equal(result, null);
@@ -277,7 +281,7 @@ add_task(async function test_get_signed_in_user_initially_unset() {
   // getSignedInUser only returns a subset.
   result = await account.getSignedInUser();
   Assert.deepEqual(result.email, credentials.email);
-  Assert.deepEqual(result.assertion, undefined);
+  Assert.deepEqual(result.scopedKeys, undefined);
   Assert.deepEqual(result.kSync, undefined);
   Assert.deepEqual(result.kXCS, undefined);
   Assert.deepEqual(result.kExtSync, undefined);
@@ -285,21 +289,11 @@ add_task(async function test_get_signed_in_user_initially_unset() {
   // for the sake of testing, use the low-level function to check it's all there
   result = await account._internal.currentAccountState.getUserAccountData();
   Assert.deepEqual(result.email, credentials.email);
-  Assert.deepEqual(result.assertion, credentials.assertion);
-  Assert.deepEqual(result.kSync, credentials.kSync);
-  Assert.deepEqual(result.kXCS, credentials.kXCS);
-  Assert.deepEqual(result.kExtSync, credentials.kExtSync);
-  Assert.deepEqual(result.kExtKbHash, credentials.kExtKbHash);
-
-  // Delete the memory cache and force the user
-  // to be read and parsed from storage (e.g. disk via JSONStorage).
-  result = await account._internal.currentAccountState.getUserAccountData();
-  Assert.equal(result.email, credentials.email);
-  Assert.equal(result.assertion, credentials.assertion);
-  Assert.equal(result.kSync, credentials.kSync);
-  Assert.equal(result.kXCS, credentials.kXCS);
-  Assert.equal(result.kExtSync, credentials.kExtSync);
-  Assert.equal(result.kExtKbHash, credentials.kExtKbHash);
+  Assert.deepEqual(result.scopedKeys, credentials.scopedKeys);
+  Assert.ok(result.kSync);
+  Assert.ok(result.kXCS);
+  Assert.ok(result.kExtSync);
+  Assert.ok(result.kExtKbHash);
 
   // sign out
   let localOnly = true;
@@ -315,14 +309,10 @@ add_task(async function test_set_signed_in_user_signs_out_previous_account() {
   let signOutServerCalled = false;
   let credentials = {
     email: "foo@example.com",
-    uid: "1234@lcip.org",
-    assertion: "foobar",
+    uid: "1234567890abcdef1234567890abcdef",
     sessionToken: "dead",
-    kSync: "beef",
-    kXCS: "cafe",
-    kExtSync: "bacon",
-    kExtKbHash: "cheese",
     verified: true,
+    ...MOCK_ACCOUNT_KEYS,
   };
   let account = await MakeFxAccounts({ credentials });
 
@@ -339,34 +329,30 @@ add_task(async function test_update_account_data() {
   _("Check updateUserAccountData does the right thing.");
   let credentials = {
     email: "foo@example.com",
-    uid: "1234@lcip.org",
-    assertion: "foobar",
+    uid: "1234567890abcdef1234567890abcdef",
     sessionToken: "dead",
-    kSync: "beef",
-    kXCS: "cafe",
-    kExtSync: "bacon",
-    kExtKbHash: "cheese",
     verified: true,
+    ...MOCK_ACCOUNT_KEYS,
   };
   let account = await MakeFxAccounts({ credentials });
 
   let newCreds = {
     email: credentials.email,
     uid: credentials.uid,
-    assertion: "new_assertion",
+    sessionToken: "alive",
   };
   await account._internal.updateUserAccountData(newCreds);
   Assert.equal(
-    (await account._internal.getUserAccountData()).assertion,
-    "new_assertion",
+    (await account._internal.getUserAccountData()).sessionToken,
+    "alive",
     "new field value was saved"
   );
 
   // but we should fail attempting to change the uid.
   newCreds = {
     email: credentials.email,
-    uid: "another_uid",
-    assertion: "new_assertion",
+    uid: "11111111111111111111222222222222",
+    sessionToken: "alive",
   };
   await Assert.rejects(
     account._internal.updateUserAccountData(newCreds),
@@ -375,150 +361,23 @@ add_task(async function test_update_account_data() {
 
   // should fail without the uid.
   newCreds = {
-    assertion: "new_assertion",
+    sessionToken: "alive",
   };
   await Assert.rejects(
     account._internal.updateUserAccountData(newCreds),
-    /The specified credentials aren't for the current user/
+    /The specified credentials have no uid/
   );
 
   // and should fail with a field name that's not known by storage.
   newCreds = {
     email: credentials.email,
-    uid: "another_uid",
+    uid: "11111111111111111111222222222222",
     foo: "bar",
   };
   await Assert.rejects(
     account._internal.updateUserAccountData(newCreds),
     /The specified credentials aren't for the current user/
   );
-});
-
-add_task(async function test_getCertificateOffline() {
-  _("getCertificateOffline()");
-  let credentials = {
-    email: "foo@example.com",
-    uid: "1234@lcip.org",
-    sessionToken: "dead",
-    verified: true,
-  };
-  let fxa = await MakeFxAccounts({ credentials });
-  // Test that an expired cert throws if we're offline.
-  let offline = Services.io.offline;
-  Services.io.offline = true;
-  await fxa._internal
-    .getKeypairAndCertificate(fxa._internal.currentAccountState)
-    .then(
-      result => {
-        Services.io.offline = offline;
-        do_throw("Unexpected success");
-      },
-      err => {
-        Services.io.offline = offline;
-        // ... so we have to check the error string.
-        Assert.equal(err, "Error: OFFLINE");
-      }
-    );
-  await fxa.signOut(/* localOnly = */ true);
-});
-
-add_task(async function test_getCertificateCached() {
-  _("getCertificateCached()");
-  let credentials = {
-    email: "foo@example.com",
-    uid: "1234@lcip.org",
-    sessionToken: "dead",
-    verified: true,
-    // A cached keypair and cert that remain valid.
-    keyPair: {
-      validUntil: Date.now() + KEY_LIFETIME + 10000,
-      rawKeyPair: "good-keypair",
-    },
-    cert: {
-      validUntil: Date.now() + CERT_LIFETIME + 10000,
-      rawCert: "good-cert",
-    },
-  };
-  let fxa = await MakeFxAccounts({ credentials });
-
-  let { keyPair, certificate } = await fxa._internal.getKeypairAndCertificate(
-    fxa._internal.currentAccountState
-  );
-  // should have the same keypair and cert.
-  Assert.equal(keyPair, credentials.keyPair.rawKeyPair);
-  Assert.equal(certificate, credentials.cert.rawCert);
-  await fxa.signOut(/* localOnly = */ true);
-});
-
-add_task(async function test_getCertificateExpiredCert() {
-  _("getCertificateExpiredCert()");
-  let credentials = {
-    email: "foo@example.com",
-    uid: "1234@lcip.org",
-    sessionToken: "dead",
-    verified: true,
-    // A cached keypair that remains valid.
-    keyPair: {
-      validUntil: Date.now() + KEY_LIFETIME + 10000,
-      rawKeyPair: "good-keypair",
-    },
-    // A cached certificate which has expired.
-    cert: {
-      validUntil: Date.parse("Mon, 13 Jan 2000 21:45:06 GMT"),
-      rawCert: "expired-cert",
-    },
-  };
-  let fxa = await MakeFxAccounts({
-    internal: {
-      getCertificateSigned() {
-        return "new cert";
-      },
-    },
-    credentials,
-  });
-  let { keyPair, certificate } = await fxa._internal.getKeypairAndCertificate(
-    fxa._internal.currentAccountState
-  );
-  // should have the same keypair but a new cert.
-  Assert.equal(keyPair, credentials.keyPair.rawKeyPair);
-  Assert.notEqual(certificate, credentials.cert.rawCert);
-  await fxa.signOut(/* localOnly = */ true);
-});
-
-add_task(async function test_getCertificateExpiredKeypair() {
-  _("getCertificateExpiredKeypair()");
-  let credentials = {
-    email: "foo@example.com",
-    uid: "1234@lcip.org",
-    sessionToken: "dead",
-    verified: true,
-    // A cached keypair that has expired.
-    keyPair: {
-      validUntil: Date.now() - 1000,
-      rawKeyPair: "expired-keypair",
-    },
-    // A cached certificate which remains valid.
-    cert: {
-      validUntil: Date.now() + CERT_LIFETIME + 10000,
-      rawCert: "expired-cert",
-    },
-  };
-  let fxa = await MakeFxAccounts({
-    internal: {
-      getCertificateSigned() {
-        return "new cert";
-      },
-    },
-    credentials,
-  });
-  let { keyPair, certificate } = await fxa._internal.getKeypairAndCertificate(
-    fxa._internal.currentAccountState
-  );
-  // even though the cert was valid, the fact the keypair was not means we
-  // should have fetched both.
-  Assert.notEqual(keyPair, credentials.keyPair.rawKeyPair);
-  Assert.notEqual(certificate, credentials.cert.rawCert);
-  await fxa.signOut(/* localOnly = */ true);
 });
 
 // Sanity-check that our mocked client is working correctly
@@ -547,13 +406,19 @@ add_test(function test_verification_poll() {
   makeObserver(ONVERIFIED_NOTIFICATION, function() {
     log.debug("test_verification_poll observed onverified");
     // Once email verification is complete, we will observe onverified
-    fxa._internal.getUserAccountData().then(user => {
-      // And confirm that the user's state has changed
-      Assert.equal(user.verified, true);
-      Assert.equal(user.email, test_user.email);
-      Assert.ok(login_notification_received);
-      run_next_test();
-    });
+    fxa._internal
+      .getUserAccountData()
+      .then(user => {
+        // And confirm that the user's state has changed
+        Assert.equal(user.verified, true);
+        Assert.equal(user.email, test_user.email);
+        Assert.equal(
+          Services.prefs.getStringPref(PREF_LAST_FXA_USER),
+          CryptoUtils.sha256Base64(test_user.email)
+        );
+        Assert.ok(login_notification_received);
+      })
+      .finally(run_next_test);
   });
 
   makeObserver(ONLOGIN_NOTIFICATION, function() {
@@ -806,7 +671,7 @@ add_test(function test_pollEmailStatus_push() {
   });
 });
 
-add_test(function test_getKeys() {
+add_test(function test_getKeyForScope() {
   let fxa = new MockFxAccounts();
   let user = getTestUser("eusebius");
 
@@ -815,7 +680,8 @@ add_test(function test_getKeys() {
 
   fxa.setSignedInUser(user).then(() => {
     fxa._internal.getUserAccountData().then(user2 => {
-      // Before getKeys, we have no keys
+      // Before getKeyForScope, we have no keys
+      Assert.equal(!!user2.scopedKeys, false);
       Assert.equal(!!user2.kSync, false);
       Assert.equal(!!user2.kXCS, false);
       Assert.equal(!!user2.kExtSync, false);
@@ -824,11 +690,12 @@ add_test(function test_getKeys() {
       Assert.equal(!!user2.keyFetchToken, true);
       Assert.equal(!!user2.unwrapBKey, true);
 
-      fxa.keys.getKeys().then(() => {
+      fxa.keys.getKeyForScope(SCOPE_OLD_SYNC).then(() => {
         fxa._internal.getUserAccountData().then(user3 => {
           // Now we should have keys
           Assert.equal(fxa._internal.isUserEmailVerified(user3), true);
           Assert.equal(!!user3.verified, true);
+          Assert.notEqual(null, user3.scopedKeys);
           Assert.notEqual(null, user3.kSync);
           Assert.notEqual(null, user3.kXCS);
           Assert.notEqual(null, user3.kExtSync);
@@ -842,7 +709,7 @@ add_test(function test_getKeys() {
   });
 });
 
-add_task(async function test_getKeys_kb_migration() {
+add_task(async function test_getKeyForScope_kb_migration() {
   let fxa = new MockFxAccounts();
   let user = getTestUser("eusebius");
 
@@ -852,10 +719,25 @@ add_task(async function test_getKeys_kb_migration() {
   user.kB = "eaf9570b7219a4187d3d6bf3cec2770c2e0719b7cc0dfbb38243d6f1881675e9";
 
   await fxa.setSignedInUser(user);
-  await fxa.keys.getKeys();
+  await fxa.keys.getKeyForScope(SCOPE_OLD_SYNC);
   let newUser = await fxa._internal.getUserAccountData();
   Assert.equal(newUser.kA, null);
   Assert.equal(newUser.kB, null);
+  Assert.deepEqual(newUser.scopedKeys, {
+    "https://identity.mozilla.com/apps/oldsync": {
+      kid: "1234567890123-IqQv4onc7VcVE1kTQkyyOw",
+      k:
+        "DW_ll5GwX6SJ5GPqJVAuMUP2t6kDqhUulc2cbt26xbTcaKGQl-9l29FHAQ7kUiJETma4s9fIpEHrt909zgFang",
+      kty: "oct",
+    },
+    "sync:addon_storage": {
+      kid: "1234567890123-pBOR6B6JulbJr3BxKVOqIU4Cq_WAjFp4ApLn5NRVARE",
+      k:
+        "ut7VPrNYfXkA5gTopo2GCr-d4wtclV08TV26Y_Jv2IJlzYWSP26dzRau87gryIA5qJxZ7NnojeCadBjH2U-QyQ",
+      kty: "oct",
+    },
+  });
+  // These hex values were manually confirmed to be equivalent to the b64 values above.
   Assert.equal(
     newUser.kSync,
     "0d6fe59791b05fa489e463ea25502e3143f6b7a903aa152e95cd9c6eddbac5b4" +
@@ -869,11 +751,69 @@ add_task(async function test_getKeys_kb_migration() {
   );
   Assert.equal(
     newUser.kExtKbHash,
-    "25ed0ab3ae2f1e5365d923c9402d4255770dbe6ce79b09ed49f516985c0aa0c1"
+    "a41391e81e89ba56c9af70712953aa214e02abf5808c5a780292e7e4d4550111"
   );
 });
 
-add_task(async function test_getKeys_nonexistent_account() {
+add_task(async function test_getKeyForScope_scopedKeys_migration() {
+  let fxa = new MockFxAccounts();
+  let user = getTestUser("eusebius");
+
+  user.verified = true;
+  // Set-up the keys in deprecated fields.
+  user.kSync = MOCK_ACCOUNT_KEYS.kSync;
+  user.kXCS = MOCK_ACCOUNT_KEYS.kXCS;
+  user.kExtSync = MOCK_ACCOUNT_KEYS.kExtSync;
+  user.kExtKbHash = MOCK_ACCOUNT_KEYS.kExtKbHash;
+  Assert.equal(user.scopedKeys, null);
+
+  await fxa.setSignedInUser(user);
+  await fxa.keys.getKeyForScope(SCOPE_OLD_SYNC);
+  let newUser = await fxa._internal.getUserAccountData();
+  Assert.equal(newUser.kA, null);
+  Assert.equal(newUser.kB, null);
+  // It should have correctly formatted the corresponding scoped keys.
+  const expectedScopedKeys = { ...MOCK_ACCOUNT_KEYS.scopedKeys };
+  Assert.deepEqual(newUser.scopedKeys, expectedScopedKeys);
+  // And left the existing key fields unchanged.
+  Assert.equal(newUser.kSync, user.kSync);
+  Assert.equal(newUser.kXCS, user.kXCS);
+  Assert.equal(newUser.kExtSync, user.kExtSync);
+  Assert.equal(newUser.kExtKbHash, user.kExtKbHash);
+});
+
+add_task(
+  async function test_getKeyForScope_scopedKeys_migration_removes_deprecated_scoped_keys() {
+    let fxa = new MockFxAccounts();
+    let user = getTestUser("eusebius");
+
+    const EXTRA_SCOPE = "an unknown, but non-deprecated scope";
+    user.verified = true;
+    user.ecosystemUserId = "ecoUserId";
+    user.ecosystemAnonId = "ecoAnonId";
+    user.scopedKeys = {
+      ...MOCK_ACCOUNT_KEYS.scopedKeys,
+      [DEPRECATED_SCOPE_ECOSYSTEM_TELEMETRY]:
+        MOCK_ACCOUNT_KEYS.scopedKeys[SCOPE_OLD_SYNC],
+      [EXTRA_SCOPE]: MOCK_ACCOUNT_KEYS.scopedKeys[SCOPE_OLD_SYNC],
+    };
+
+    await fxa.setSignedInUser(user);
+    await fxa.keys.getKeyForScope(SCOPE_OLD_SYNC);
+    let newUser = await fxa._internal.getUserAccountData();
+    // It should have removed the deprecated ecosystem_telemetry key,
+    // but left the other keys intact.
+    const expectedScopedKeys = {
+      ...MOCK_ACCOUNT_KEYS.scopedKeys,
+      [EXTRA_SCOPE]: MOCK_ACCOUNT_KEYS.scopedKeys[SCOPE_OLD_SYNC],
+    };
+    Assert.deepEqual(newUser.scopedKeys, expectedScopedKeys);
+    Assert.equal(newUser.ecosystemUserId, null);
+    Assert.equal(newUser.ecosystemAnonId, null);
+  }
+);
+
+add_task(async function test_getKeyForScope_nonexistent_account() {
   let fxa = new MockFxAccounts();
   let bismarck = getTestUser("bismarck");
 
@@ -891,13 +831,16 @@ add_task(async function test_getKeys_nonexistent_account() {
 
   let promiseLogout = new Promise(resolve => {
     makeObserver(ONLOGOUT_NOTIFICATION, function() {
-      log.debug("test_getKeys_nonexistent_account observed logout");
+      log.debug("test_getKeyForScope_nonexistent_account observed logout");
       resolve();
     });
   });
 
   // XXX - the exception message here isn't ideal, but doesn't really matter...
-  await Assert.rejects(fxa.keys.getKeys(), /A different user signed in/);
+  await Assert.rejects(
+    fxa.keys.getKeyForScope(SCOPE_OLD_SYNC),
+    /A different user signed in/
+  );
 
   await promiseLogout;
 
@@ -905,8 +848,8 @@ add_task(async function test_getKeys_nonexistent_account() {
   Assert.equal(user, null);
 });
 
-// getKeys with invalid keyFetchToken should delete keyFetchToken from storage
-add_task(async function test_getKeys_invalid_token() {
+// getKeyForScope with invalid keyFetchToken should delete keyFetchToken from storage
+add_task(async function test_getKeyForScope_invalid_token() {
   let fxa = new MockFxAccounts();
   let yusuf = getTestUser("yusuf");
 
@@ -921,24 +864,29 @@ add_task(async function test_getKeys_invalid_token() {
   };
 
   await fxa.setSignedInUser(yusuf);
+  let user = await fxa._internal.getUserAccountData();
+  Assert.notEqual(user.encryptedSendTabKeys, null);
 
   try {
-    await fxa.keys.getKeys();
+    await fxa.keys.getKeyForScope(SCOPE_OLD_SYNC);
     Assert.ok(false);
   } catch (err) {
     Assert.equal(err.code, 401);
     Assert.equal(err.errno, ERRNO_INVALID_AUTH_TOKEN);
   }
 
-  let user = await fxa._internal.getUserAccountData();
+  user = await fxa._internal.getUserAccountData();
   Assert.equal(user.email, yusuf.email);
   Assert.equal(user.keyFetchToken, null);
+  // We verify that encryptedSendTabKeys are also wiped
+  // when a user's credentials are wiped
+  Assert.equal(user.encryptedSendTabKeys, null);
   await fxa._internal.abortExistingFlow();
 });
 
 // This is the exact same test vectors as
 // https://github.com/mozilla/fxa-crypto-relier/blob/f94f441159029a645a474d4b6439c38308da0bb0/test/deriver/ScopedKeys.js#L58
-add_task(async function test_getScopedKeys_oldsync() {
+add_task(async function test_getKeyForScope_oldsync() {
   let fxa = new MockFxAccounts();
   let client = fxa._internal.fxAccountsClient;
   client.getScopedKeyData = () =>
@@ -953,44 +901,42 @@ add_task(async function test_getScopedKeys_oldsync() {
   let user = {
     ...getTestUser("eusebius"),
     uid: "aeaa1725c7a24ff983c6295725d5fc9b",
+    kB: "eaf9570b7219a4187d3d6bf3cec2770c2e0719b7cc0dfbb38243d6f1881675e9",
     verified: true,
-    kSync:
-      "0d6fe59791b05fa489e463ea25502e3143f6b7a903aa152e95cd9c6eddbac5b4dc68a19097ef65dbd147010ee45222444e66b8b3d7c8a441ebb7dd3dce015a9e",
-    kXCS: "22a42fe289dced5715135913424cb23b",
-    kExtSync:
-      "baded53eb3587d7900e604e8a68d860abf9de30b5c955d3c4d5dba63f26fd88265cd85923f6e9dcd16aef3b82bc88039a89c59ecd9e88de09a7418c7d94f90c9",
-    kExtKbHash:
-      "b776a89db29f22daedd154b44ff88397d0b210223fb956f5a749521dd8de8ddf",
   };
   await fxa.setSignedInUser(user);
-  const keys = await fxa.keys.getScopedKeys(
-    `${SCOPE_OLD_SYNC} profile`,
-    "123456789a"
-  );
-  Assert.deepEqual(keys, {
-    [SCOPE_OLD_SYNC]: {
-      scope: SCOPE_OLD_SYNC,
-      kid: "1510726317123-IqQv4onc7VcVE1kTQkyyOw",
-      k:
-        "DW_ll5GwX6SJ5GPqJVAuMUP2t6kDqhUulc2cbt26xbTcaKGQl-9l29FHAQ7kUiJETma4s9fIpEHrt909zgFang",
-      kty: "oct",
-    },
+  const key = await fxa.keys.getKeyForScope(SCOPE_OLD_SYNC);
+  Assert.deepEqual(key, {
+    scope: SCOPE_OLD_SYNC,
+    kid: "1510726317123-IqQv4onc7VcVE1kTQkyyOw",
+    k:
+      "DW_ll5GwX6SJ5GPqJVAuMUP2t6kDqhUulc2cbt26xbTcaKGQl-9l29FHAQ7kUiJETma4s9fIpEHrt909zgFang",
+    kty: "oct",
   });
 });
 
-add_task(async function test_getScopedKeys_unavailable_key() {
+add_task(async function test_getScopedKeys_unavailable_scope() {
+  let fxa = new MockFxAccounts();
+  let user = {
+    ...getTestUser("eusebius"),
+    uid: "aeaa1725c7a24ff983c6295725d5fc9b",
+    verified: true,
+    ...MOCK_ACCOUNT_KEYS,
+  };
+  await fxa.setSignedInUser(user);
+  await Assert.rejects(
+    fxa.keys.getKeyForScope("otherkeybearingscope"),
+    /Key not available for scope/
+  );
+});
+
+add_task(async function test_getScopedKeys_misconfigured_fxa_server() {
   let fxa = new MockFxAccounts();
   let client = fxa._internal.fxAccountsClient;
   client.getScopedKeyData = () =>
     Promise.resolve({
-      "https://identity.mozilla.com/apps/oldsync": {
-        identifier: "https://identity.mozilla.com/apps/oldsync",
-        keyRotationSecret:
-          "0000000000000000000000000000000000000000000000000000000000000000",
-        keyRotationTimestamp: 1510726317123,
-      },
-      otherkeybearingscope: {
-        identifier: "otherkeybearingscope",
+      wrongscope: {
+        identifier: "wrongscope",
         keyRotationSecret:
           "0000000000000000000000000000000000000000000000000000000000000000",
         keyRotationTimestamp: 1510726331712,
@@ -1010,17 +956,14 @@ add_task(async function test_getScopedKeys_unavailable_key() {
   };
   await fxa.setSignedInUser(user);
   await Assert.rejects(
-    fxa.keys.getScopedKeys(
-      `${SCOPE_OLD_SYNC} otherkeybearingscope profile`,
-      "123456789a"
-    ),
-    /Unavailable key material for otherkeybearingscope/
+    fxa.keys.getKeyForScope(SCOPE_OLD_SYNC),
+    /The FxA server did not grant Firefox the `oldsync` scope/
   );
 });
 
-// fetchAndUnwrapKeys with no keyFetchToken should trigger signOut
+// _fetchAndUnwrapAndDeriveKeys with no keyFetchToken should trigger signOut
 // XXX - actually, it probably shouldn't - bug 1572313.
-add_test(function test_fetchAndUnwrapKeys_no_token() {
+add_test(function test_fetchAndUnwrapAndDeriveKeys_no_token() {
   let fxa = new MockFxAccounts();
   let user = getTestUser("lettuce.protheroe");
   delete user.keyFetchToken;
@@ -1035,7 +978,7 @@ add_test(function test_fetchAndUnwrapKeys_no_token() {
   fxa
     .setSignedInUser(user)
     .then(user2 => {
-      return fxa.keys.fetchAndUnwrapKeys();
+      return fxa.keys._fetchAndUnwrapAndDeriveKeys();
     })
     .catch(error => {
       log.info("setSignedInUser correctly rejected");
@@ -1079,164 +1022,6 @@ add_test(function test_overlapping_signins() {
       });
     });
   });
-});
-
-add_task(async function test_getAssertion_invalid_token() {
-  let fxa = new MockFxAccounts();
-
-  let client = fxa._internal.fxAccountsClient;
-  client.accountStatus = () => Promise.resolve(true);
-  client.sessionStatus = () => Promise.resolve(false);
-
-  let creds = {
-    sessionToken: "sessionToken",
-    kSync: expandHex("11"),
-    kXCS: expandHex("66"),
-    kExtSync: expandHex("88"),
-    kExtKbHash: expandHex("22"),
-    verified: true,
-    email: "sonia@example.com",
-  };
-  await fxa.setSignedInUser(creds);
-  // we have what we still believe to be a valid session token, so we should
-  // consider that we have a local session.
-  Assert.ok(await fxa.hasLocalSession());
-
-  try {
-    let promiseAssertion = fxa._internal.getAssertion("audience.example.com");
-    fxa._internal._d_signCertificate.reject({
-      code: 401,
-      errno: ERRNO_INVALID_AUTH_TOKEN,
-    });
-    await promiseAssertion;
-    Assert.ok(false, "getAssertion should reject invalid session token");
-  } catch (err) {
-    Assert.equal(err.code, 401);
-    Assert.equal(err.errno, ERRNO_INVALID_AUTH_TOKEN);
-  }
-
-  let user = await fxa._internal.getUserAccountData();
-  Assert.equal(user.email, creds.email);
-  Assert.equal(user.sessionToken, null);
-  Assert.ok(!(await fxa.hasLocalSession()));
-});
-
-add_task(async function test_getAssertion() {
-  let fxa = new MockFxAccounts();
-
-  let creds = {
-    sessionToken: "sessionToken",
-    kSync: expandHex("11"),
-    kXCS: expandHex("66"),
-    kExtSync: expandHex("88"),
-    kExtKbHash: expandHex("22"),
-    verified: true,
-  };
-  // By putting kSync/kXCS/kExtSync/kExtKbHash/verified in "creds", we skip ahead
-  // to the "we're ready" stage.
-  await fxa.setSignedInUser(creds);
-
-  _("== ready to go\n");
-  // Start with a nice arbitrary but realistic date.  Here we use a nice RFC
-  // 1123 date string like we would get from an HTTP header. Over the course of
-  // the test, we will update 'now', but leave 'start' where it is.
-  let now = Date.parse("Mon, 13 Jan 2014 21:45:06 GMT");
-  let start = now;
-  fxa._internal._now_is = now;
-
-  let d = fxa._internal.getAssertion("audience.example.com");
-  // At this point, a thread has been spawned to generate the keys.
-  _("-- back from fxa.getAssertion\n");
-  fxa._internal._d_signCertificate.resolve("cert1");
-  let assertion = await d;
-  Assert.equal(fxa._internal._getCertificateSigned_calls.length, 1);
-  Assert.equal(fxa._internal._getCertificateSigned_calls[0][0], "sessionToken");
-  Assert.notEqual(assertion, null);
-  _("ASSERTION: " + assertion + "\n");
-  let pieces = assertion.split("~");
-  Assert.equal(pieces[0], "cert1");
-  let userData = await fxa._internal.getUserAccountData();
-  let keyPair = userData.keyPair;
-  let cert = userData.cert;
-  Assert.notEqual(keyPair, undefined);
-  _(keyPair.validUntil + "\n");
-  let p2 = pieces[1].split(".");
-  let header = JSON.parse(atob(p2[0]));
-  _("HEADER: " + JSON.stringify(header) + "\n");
-  Assert.equal(header.alg, "DS128");
-  let payload = JSON.parse(atob(p2[1]));
-  _("PAYLOAD: " + JSON.stringify(payload) + "\n");
-  Assert.equal(payload.aud, "audience.example.com");
-  Assert.equal(keyPair.validUntil, start + KEY_LIFETIME);
-  Assert.equal(cert.validUntil, start + CERT_LIFETIME);
-  _("delta: " + Date.parse(payload.exp - start) + "\n");
-  let exp = Number(payload.exp);
-
-  Assert.equal(exp, now + ASSERTION_LIFETIME);
-
-  // Reset for next call.
-  fxa._internal._d_signCertificate = PromiseUtils.defer();
-
-  // Getting a new assertion "soon" (i.e., w/o incrementing "now"), even for
-  // a new audience, should not provoke key generation or a signing request.
-  assertion = await fxa._internal.getAssertion("other.example.com");
-
-  // There were no additional calls - same number of getcert calls as before
-  Assert.equal(fxa._internal._getCertificateSigned_calls.length, 1);
-
-  // Wait an hour; assertion use period expires, but not the certificate
-  now += ONE_HOUR_MS;
-  fxa._internal._now_is = now;
-
-  // This won't block on anything - will make an assertion, but not get a
-  // new certificate.
-  assertion = await fxa._internal.getAssertion("third.example.com");
-
-  // Test will time out if that failed (i.e., if that had to go get a new cert)
-  pieces = assertion.split("~");
-  Assert.equal(pieces[0], "cert1");
-  p2 = pieces[1].split(".");
-  header = JSON.parse(atob(p2[0]));
-  payload = JSON.parse(atob(p2[1]));
-  Assert.equal(payload.aud, "third.example.com");
-
-  // The keypair and cert should have the same validity as before, but the
-  // expiration time of the assertion should be different.  We compare this to
-  // the initial start time, to which they are relative, not the current value
-  // of "now".
-  userData = await fxa._internal.getUserAccountData();
-
-  keyPair = userData.keyPair;
-  cert = userData.cert;
-  Assert.equal(keyPair.validUntil, start + KEY_LIFETIME);
-  Assert.equal(cert.validUntil, start + CERT_LIFETIME);
-  exp = Number(payload.exp);
-  Assert.equal(exp, now + ASSERTION_LIFETIME);
-
-  // Now we wait even longer, and expect both assertion and cert to expire.  So
-  // we will have to get a new keypair and cert.
-  now += ONE_DAY_MS;
-  fxa._internal._now_is = now;
-  d = fxa._internal.getAssertion("fourth.example.com");
-  fxa._internal._d_signCertificate.resolve("cert2");
-  assertion = await d;
-  Assert.equal(fxa._internal._getCertificateSigned_calls.length, 2);
-  Assert.equal(fxa._internal._getCertificateSigned_calls[1][0], "sessionToken");
-  pieces = assertion.split("~");
-  Assert.equal(pieces[0], "cert2");
-  p2 = pieces[1].split(".");
-  header = JSON.parse(atob(p2[0]));
-  payload = JSON.parse(atob(p2[1]));
-  Assert.equal(payload.aud, "fourth.example.com");
-  userData = await fxa._internal.getUserAccountData();
-  keyPair = userData.keyPair;
-  cert = userData.cert;
-  Assert.equal(keyPair.validUntil, now + KEY_LIFETIME);
-  Assert.equal(cert.validUntil, now + CERT_LIFETIME);
-  exp = Number(payload.exp);
-
-  Assert.equal(exp, now + ASSERTION_LIFETIME);
-  _("----- DONE ----\n");
 });
 
 add_task(async function test_resend_email_not_signed_in() {
@@ -1361,29 +1146,6 @@ Services.prefs.setCharPref(
   "https://example.com/v1"
 );
 
-add_test(function test_getOAuthToken() {
-  let fxa = new MockFxAccounts();
-  let alice = getTestUser("alice");
-  alice.verified = true;
-  let oauthTokenCalled = false;
-
-  fxa._internal._d_signCertificate.resolve("cert1");
-
-  let client = fxa._internal.fxAccountsOAuthGrantClient;
-  client.getTokenFromAssertion = () => {
-    oauthTokenCalled = true;
-    return Promise.resolve({ access_token: "token" });
-  };
-
-  fxa.setSignedInUser(alice).then(() => {
-    fxa.getOAuthToken({ scope: "profile" }).then(result => {
-      Assert.ok(oauthTokenCalled);
-      Assert.equal(result, "token");
-      run_next_test();
-    });
-  });
-});
-
 add_test(async function test_getOAuthTokenWithSessionToken() {
   Services.prefs.setBoolPref(
     "identity.fxaccounts.useSessionTokensForOAuth",
@@ -1473,66 +1235,33 @@ add_task(async function test_getOAuthTokenCachedWithSessionToken() {
   );
 });
 
-add_test(function test_getOAuthTokenScoped() {
-  let fxa = new MockFxAccounts();
-  let alice = getTestUser("alice");
-  alice.verified = true;
-  let oauthTokenCalled = false;
-
-  fxa._internal._d_signCertificate.resolve("cert1");
-
-  let client = fxa._internal.fxAccountsOAuthGrantClient;
-  client.getTokenFromAssertion = (_assertion, scopeString) => {
-    equal(scopeString, "bar foo"); // scopes are sorted locally before request.
-    oauthTokenCalled = true;
-    return Promise.resolve({ access_token: "token" });
-  };
-
-  fxa.setSignedInUser(alice).then(() => {
-    fxa.getOAuthToken({ scope: ["foo", "bar"] }).then(result => {
-      Assert.ok(oauthTokenCalled);
-      Assert.equal(result, "token");
-      run_next_test();
-    });
-  });
-});
-
-add_task(async function test_getOAuthTokenCached() {
+add_test(function test_getOAuthTokenScopedWithSessionToken() {
   let fxa = new MockFxAccounts();
   let alice = getTestUser("alice");
   alice.verified = true;
   let numOauthTokenCalls = 0;
 
-  fxa._internal._d_signCertificate.resolve("cert1");
-
-  let client = fxa._internal.fxAccountsOAuthGrantClient;
-  client.getTokenFromAssertion = () => {
-    numOauthTokenCalls += 1;
-    return Promise.resolve({ access_token: "token" });
+  let client = fxa._internal.fxAccountsClient;
+  client.accessTokenWithSessionToken = async (
+    _sessionTokenHex,
+    _clientId,
+    scopeString
+  ) => {
+    equal(scopeString, "bar foo"); // scopes are sorted locally before request.
+    numOauthTokenCalls++;
+    return MOCK_TOKEN_RESPONSE;
   };
 
-  await fxa.setSignedInUser(alice);
-  let result = await fxa.getOAuthToken({
-    scope: "profile",
-    service: "test-service",
+  fxa.setSignedInUser(alice).then(() => {
+    fxa.getOAuthToken({ scope: ["foo", "bar"] }).then(result => {
+      Assert.equal(numOauthTokenCalls, 1);
+      Assert.equal(
+        result,
+        "43793fdfffec22eb39fc3c44ed09193a6fde4c24e5d6a73f73178597b268af69"
+      );
+      run_next_test();
+    });
   });
-  Assert.equal(numOauthTokenCalls, 1);
-  Assert.equal(result, "token");
-
-  // requesting it again should not re-fetch the token.
-  result = await fxa.getOAuthToken({
-    scope: "profile",
-    service: "test-service",
-  });
-  Assert.equal(numOauthTokenCalls, 1);
-  Assert.equal(result, "token");
-  // But requesting the same service and a different scope *will* get a new one.
-  result = await fxa.getOAuthToken({
-    scope: "something-else",
-    service: "test-service",
-  });
-  Assert.equal(numOauthTokenCalls, 2);
-  Assert.equal(result, "token");
 });
 
 add_task(async function test_getOAuthTokenCachedScopeNormalization() {
@@ -1541,12 +1270,14 @@ add_task(async function test_getOAuthTokenCachedScopeNormalization() {
   alice.verified = true;
   let numOAuthTokenCalls = 0;
 
-  fxa._internal._d_signCertificate.resolve("cert1");
-
-  let client = fxa._internal.fxAccountsOAuthGrantClient;
-  client.getTokenFromAssertion = () => {
-    numOAuthTokenCalls += 1;
-    return Promise.resolve({ access_token: "token" });
+  let client = fxa._internal.fxAccountsClient;
+  client.accessTokenWithSessionToken = async (
+    _sessionTokenHex,
+    _clientId,
+    scopeString
+  ) => {
+    numOAuthTokenCalls++;
+    return MOCK_TOKEN_RESPONSE;
   };
 
   await fxa.setSignedInUser(alice);
@@ -1555,29 +1286,41 @@ add_task(async function test_getOAuthTokenCachedScopeNormalization() {
     service: "test-service",
   });
   Assert.equal(numOAuthTokenCalls, 1);
-  Assert.equal(result, "token");
+  Assert.equal(
+    result,
+    "43793fdfffec22eb39fc3c44ed09193a6fde4c24e5d6a73f73178597b268af69"
+  );
 
-  // requesting it again with the scope array in a different order not re-fetch the token.
+  // requesting it again with the scope array in a different order should not re-fetch the token.
   result = await fxa.getOAuthToken({
     scope: ["bar", "foo"],
     service: "test-service",
   });
   Assert.equal(numOAuthTokenCalls, 1);
-  Assert.equal(result, "token");
-  // requesting it again with the scope array in different case not re-fetch the token.
+  Assert.equal(
+    result,
+    "43793fdfffec22eb39fc3c44ed09193a6fde4c24e5d6a73f73178597b268af69"
+  );
+  // requesting it again with the scope array in different case should not re-fetch the token.
   result = await fxa.getOAuthToken({
     scope: ["Bar", "Foo"],
     service: "test-service",
   });
   Assert.equal(numOAuthTokenCalls, 1);
-  Assert.equal(result, "token");
+  Assert.equal(
+    result,
+    "43793fdfffec22eb39fc3c44ed09193a6fde4c24e5d6a73f73178597b268af69"
+  );
   // But requesting with a new entry in the array does fetch one.
   result = await fxa.getOAuthToken({
     scope: ["foo", "bar", "etc"],
     service: "test-service",
   });
   Assert.equal(numOAuthTokenCalls, 2);
-  Assert.equal(result, "token");
+  Assert.equal(
+    result,
+    "43793fdfffec22eb39fc3c44ed09193a6fde4c24e5d6a73f73178597b268af69"
+  );
 });
 
 add_test(function test_getOAuthToken_invalid_param() {
@@ -1647,146 +1390,17 @@ add_test(function test_getOAuthToken_error() {
   let alice = getTestUser("alice");
   alice.verified = true;
 
-  fxa._internal._d_signCertificate.resolve("cert1");
-
-  let client = fxa._internal.fxAccountsOAuthGrantClient;
-  client.getTokenFromAssertion = () => {
+  let client = fxa._internal.fxAccountsClient;
+  client.accessTokenWithSessionToken = () => {
     return Promise.reject("boom");
   };
 
   fxa.setSignedInUser(alice).then(() => {
     fxa.getOAuthToken({ scope: "profile" }).catch(err => {
+      equal(err.details, "boom");
       run_next_test();
     });
   });
-});
-
-add_task(async function test_getOAuthToken_authErrorRefreshesCertificate() {
-  let fxa = new MockFxAccounts();
-  let alice = getTestUser("alice");
-  alice.verified = true;
-
-  fxa._internal._d_signCertificate.resolve("cert1");
-
-  let client = fxa._internal.fxAccountsOAuthGrantClient;
-  let numTokenCalls = 0;
-  client.getTokenFromAssertion = () => {
-    numTokenCalls++;
-    // First time around, reject with a 401.
-    if (numTokenCalls == 1) {
-      return Promise.reject({
-        code: 401,
-        errno: 1104,
-      });
-    }
-    // Second time around, succeed.
-    if (numTokenCalls == 2) {
-      return Promise.resolve({ access_token: "token" });
-    }
-    throw new Error("too many token calls");
-  };
-
-  await fxa.setSignedInUser(alice);
-  let result = await fxa.getOAuthToken({ scope: "profile" });
-
-  Assert.equal(result, "token");
-
-  Assert.equal(numTokenCalls, 2);
-  Assert.equal(fxa._internal._getCertificateSigned_calls.length, 2);
-});
-
-add_test(async function test_getAccessToken() {
-  let fxa = new MockFxAccounts();
-  let alice = getTestUser("alice");
-  alice.verified = true;
-  let oauthTokenCalled = false;
-  const TTL = 100;
-  const SCOPE = "https://identity.mozilla.com/apps/oldsync";
-
-  fxa._internal._d_signCertificate.resolve("cert1");
-
-  let client = fxa._internal.fxAccountsOAuthGrantClient;
-  client.getTokenFromAssertion = (assertion, scopeString, ttl) => {
-    Assert.ok(assertion);
-    Assert.equal(scopeString, SCOPE);
-    Assert.equal(ttl, TTL);
-    oauthTokenCalled = true;
-    return Promise.resolve({ access_token: "token" });
-  };
-
-  const KEY_DATA = {
-    "https://identity.mozilla.com/apps/oldsync": {
-      k:
-        "3TVYx0exDTbrc5SGMkNg_C_eoNfjV0elHClP7npHrAtrlJu-esNyTUQaR6UcJBVYilPr8-T4BqWlIp4TOpKavA",
-      kid: "1569964308879-5y6waestOxDDM-Ia4_2u1Q",
-      kty: "oct",
-      scope: "https://identity.mozilla.com/apps/oldsync",
-    },
-  };
-
-  fxa._internal.keys.getScopedKeys = () => Promise.resolve(KEY_DATA);
-
-  await fxa.setSignedInUser(alice);
-  let result = await fxa.getAccessToken(SCOPE, TTL);
-  Assert.ok(oauthTokenCalled);
-  Assert.equal(result.scope, SCOPE);
-  Assert.equal(result.key, KEY_DATA[SCOPE]);
-  Assert.equal(result.token, "token");
-  // Test that the scoped key cache works
-  fxa._internal.keys.getScopedKeys = () => {
-    throw new Error("Should not be called");
-  };
-  result = await fxa.getAccessToken(SCOPE, TTL);
-  Assert.ok(oauthTokenCalled);
-  Assert.equal(result.scope, SCOPE);
-  Assert.equal(result.key, KEY_DATA[SCOPE]);
-  Assert.equal(result.token, "token");
-  run_next_test();
-});
-
-add_test(function test_getAccessToken_error_bad_scope() {
-  let fxa = new MockFxAccounts();
-  fxa.getAccessToken().catch(err => {
-    Assert.equal(err.details, "Missing or invalid 'scope' option");
-    run_next_test();
-  });
-});
-
-add_test(async function test_getAccessToken_no_scoped_keys() {
-  let fxa = new MockFxAccounts();
-  let alice = getTestUser("alice");
-  alice.verified = true;
-  let oauthTokenCalled = false;
-  const TTL = 100;
-  const SCOPE = "profile";
-
-  fxa._internal._d_signCertificate.resolve("cert1");
-
-  let client = fxa._internal.fxAccountsOAuthGrantClient;
-  client.getTokenFromAssertion = () => {
-    oauthTokenCalled = true;
-    return Promise.resolve({ access_token: "token" });
-  };
-
-  fxa._internal.keys.getScopedKeys = () => Promise.resolve({});
-
-  await fxa.setSignedInUser(alice);
-  let result = await fxa.getAccessToken(SCOPE, TTL);
-  Assert.ok(oauthTokenCalled);
-  Assert.equal(result.scope, SCOPE);
-  Assert.equal(result.key, undefined);
-  Assert.equal(result.token, "token");
-
-  // Test that the scoped key cache works
-  fxa._internal.keys.getScopedKeys = () => {
-    throw new Error("Should not be called");
-  };
-  result = await fxa.getAccessToken(SCOPE, TTL);
-  Assert.ok(oauthTokenCalled);
-  Assert.equal(result.scope, SCOPE);
-  Assert.equal(result.key, undefined);
-  Assert.equal(result.token, "token");
-  run_next_test();
 });
 
 add_task(async function test_listAttachedOAuthClients() {
@@ -2016,11 +1630,12 @@ function expandBytes(two_hex) {
 function getTestUser(name) {
   return {
     email: name + "@example.com",
-    uid: "1ad7f502-4cc7-4ec1-a209-071fd2fae348",
+    uid: "1ad7f5024cc74ec1a209071fd2fae348",
     sessionToken: name + "'s session token",
     keyFetchToken: name + "'s keyfetch token",
     unwrapBKey: expandHex("44"),
     verified: false,
+    encryptedSendTabKeys: name + "'s encrypted Send tab keys",
   };
 }
 

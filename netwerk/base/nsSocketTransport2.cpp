@@ -7,6 +7,7 @@
 #include "nsSocketTransport2.h"
 
 #include "mozilla/Attributes.h"
+#include "mozilla/SyncRunnable.h"
 #include "mozilla/Telemetry.h"
 #include "nsIOService.h"
 #include "nsStreamUtils.h"
@@ -34,8 +35,8 @@
 #include "nsIDNSRecord.h"
 #include "nsIDNSByTypeRecord.h"
 #include "nsICancelable.h"
+#include "NetworkDataCountLayer.h"
 #include "QuicSocketControl.h"
-#include "TCPFastOpenLayer.h"
 #include <algorithm>
 #include "sslexp.h"
 #include "mozilla/net/SSLTokensCache.h"
@@ -252,11 +253,7 @@ nsresult ErrorAccordingToNSPR(PRErrorCode errorCode) {
 //-----------------------------------------------------------------------------
 
 nsSocketInputStream::nsSocketInputStream(nsSocketTransport* trans)
-    : mTransport(trans),
-      mReaderRefCnt(0),
-      mCondition(NS_OK),
-      mCallbackFlags(0),
-      mByteCount(0) {}
+    : mTransport(trans) {}
 
 // called on the socket transport thread...
 //
@@ -343,9 +340,9 @@ nsSocketInputStream::Available(uint64_t* avail) {
 
     mTransport->ReleaseFD_Locked(fd);
 
-    if (n >= 0)
+    if (n >= 0) {
       *avail = n;
-    else {
+    } else {
       PRErrorCode code = PR_GetError();
       if (code == PR_WOULD_BLOCK_ERROR) return NS_OK;
       mCondition = ErrorAccordingToNSPR(code);
@@ -366,8 +363,9 @@ nsSocketInputStream::Read(char* buf, uint32_t count, uint32_t* countRead) {
   {
     MutexAutoLock lock(mTransport->mLock);
 
-    if (NS_FAILED(mCondition))
+    if (NS_FAILED(mCondition)) {
       return (mCondition == NS_BASE_STREAM_CLOSED) ? NS_OK : mCondition;
+    }
 
     fd = mTransport->GetFD_Locked();
     if (!fd) return NS_BASE_STREAM_WOULD_BLOCK;
@@ -392,9 +390,9 @@ nsSocketInputStream::Read(char* buf, uint32_t count, uint32_t* countRead) {
 
     mTransport->ReleaseFD_Locked(fd);
 
-    if (n > 0)
+    if (n > 0) {
       mByteCount += (*countRead = n);
-    else if (n < 0) {
+    } else if (n < 0) {
       PRErrorCode code = PR_GetError();
       if (code == PR_WOULD_BLOCK_ERROR) return NS_BASE_STREAM_WOULD_BLOCK;
       mCondition = ErrorAccordingToNSPR(code);
@@ -434,10 +432,11 @@ nsSocketInputStream::CloseWithStatus(nsresult reason) {
   {
     MutexAutoLock lock(mTransport->mLock);
 
-    if (NS_SUCCEEDED(mCondition))
+    if (NS_SUCCEEDED(mCondition)) {
       rv = mCondition = reason;
-    else
+    } else {
       rv = NS_OK;
+    }
   }
   if (NS_FAILED(rv)) mTransport->OnInputClosed(rv);
   return NS_OK;
@@ -458,8 +457,9 @@ nsSocketInputStream::AsyncWait(nsIInputStreamCallback* callback, uint32_t flags,
       //
       mCallback = NS_NewInputStreamReadyEvent("nsSocketInputStream::AsyncWait",
                                               callback, target);
-    } else
+    } else {
       mCallback = callback;
+    }
     mCallbackFlags = flags;
 
     hasError = NS_FAILED(mCondition);
@@ -483,11 +483,7 @@ nsSocketInputStream::AsyncWait(nsIInputStreamCallback* callback, uint32_t flags,
 //-----------------------------------------------------------------------------
 
 nsSocketOutputStream::nsSocketOutputStream(nsSocketTransport* trans)
-    : mTransport(trans),
-      mWriterRefCnt(0),
-      mCondition(NS_OK),
-      mCallbackFlags(0),
-      mByteCount(0) {}
+    : mTransport(trans) {}
 
 // called on the socket transport thread...
 //
@@ -550,31 +546,13 @@ nsSocketOutputStream::Write(const char* buf, uint32_t count,
   // not reject that.
 
   PRFileDesc* fd = nullptr;
-  bool fastOpenInProgress;
   {
     MutexAutoLock lock(mTransport->mLock);
 
     if (NS_FAILED(mCondition)) return mCondition;
 
-    fd = mTransport->GetFD_LockedAlsoDuringFastOpen();
+    fd = mTransport->GetFD_Locked();
     if (!fd) return NS_BASE_STREAM_WOULD_BLOCK;
-
-    fastOpenInProgress = mTransport->FastOpenInProgress();
-  }
-
-  if (fastOpenInProgress) {
-    // If we are in the fast open phase, we should not write more data
-    // than TCPFastOpenLayer can accept. If we write more data, this data
-    // will be buffered in tls and we want to avoid that.
-    uint32_t availableSpace = TCPFastOpenGetBufferSizeLeft(fd);
-    count = (count > availableSpace) ? availableSpace : count;
-    if (!count) {
-      {
-        MutexAutoLock lock(mTransport->mLock);
-        mTransport->ReleaseFD_Locked(fd);
-      }
-      return NS_BASE_STREAM_WOULD_BLOCK;
-    }
   }
 
   SOCKET_LOG(("  calling PR_Write [count=%u]\n", count));
@@ -596,9 +574,9 @@ nsSocketOutputStream::Write(const char* buf, uint32_t count,
 
     mTransport->ReleaseFD_Locked(fd);
 
-    if (n > 0)
+    if (n > 0) {
       mByteCount += (*countWritten = n);
-    else if (n < 0) {
+    } else if (n < 0) {
       PRErrorCode code = PR_GetError();
       if (code == PR_WOULD_BLOCK_ERROR) return NS_BASE_STREAM_WOULD_BLOCK;
       mCondition = ErrorAccordingToNSPR(code);
@@ -609,11 +587,7 @@ nsSocketOutputStream::Write(const char* buf, uint32_t count,
 
   // only send this notification if we have indeed written some data.
   // see bug 196827 for an example of why this is important.
-  // During a fast open we are actually not sending data, the data will be
-  // only buffered in the TCPFastOpenLayer. Therefore we will call
-  // SendStatus(NS_NET_STATUS_SENDING_TO) when we really send data (i.e. when
-  // TCPFastOpenFinish is called.
-  if ((n > 0) && !fastOpenInProgress) {
+  if ((n > 0)) {
     mTransport->SendStatus(NS_NET_STATUS_SENDING_TO);
   }
 
@@ -658,10 +632,11 @@ nsSocketOutputStream::CloseWithStatus(nsresult reason) {
   {
     MutexAutoLock lock(mTransport->mLock);
 
-    if (NS_SUCCEEDED(mCondition))
+    if (NS_SUCCEEDED(mCondition)) {
       rv = mCondition = reason;
-    else
+    } else {
       rv = NS_OK;
+    }
   }
   if (NS_FAILED(rv)) mTransport->OnOutputClosed(rv);
   return NS_OK;
@@ -681,8 +656,9 @@ nsSocketOutputStream::AsyncWait(nsIOutputStreamCallback* callback,
       // build event proxy
       //
       mCallback = NS_NewOutputStreamReadyEvent(callback, target);
-    } else
+    } else {
       mCallback = callback;
+    }
 
     mCallbackFlags = flags;
   }
@@ -695,53 +671,10 @@ nsSocketOutputStream::AsyncWait(nsIOutputStreamCallback* callback,
 //-----------------------------------------------------------------------------
 
 nsSocketTransport::nsSocketTransport()
-    : mPort(0),
-      mProxyPort(0),
-      mOriginPort(0),
-      mProxyTransparent(false),
-      mProxyTransparentResolvesHost(false),
-      mHttpsProxy(false),
-      mConnectionFlags(0),
-      mResetFamilyPreference(false),
-      mTlsFlags(0),
-      mReuseAddrPort(false),
-      mState(STATE_CLOSED),
-      mAttached(false),
-      mInputClosed(true),
-      mOutputClosed(true),
-      mResolving(false),
-      mDNSLookupStatus(NS_OK),
-      mDNSARequestFinished(0),
-      mEsniQueried(false),
-      mEsniUsed(false),
-      mResolvedByTRR(false),
-      mNetAddrIsSet(false),
-      mSelfAddrIsSet(false),
-      mLock("nsSocketTransport.mLock"),
-      mFD(this),
-      mFDref(0),
-      mFDconnected(false),
-      mFDFastOpenInProgress(false),
+    : mFD(this),
       mSocketTransportService(gSocketTransportService),
       mInput(this),
-      mOutput(this),
-      mLingerPolarity(false),
-      mLingerTimeout(0),
-      mQoSBits(0x00),
-      mKeepaliveEnabled(false),
-      mKeepaliveIdleTimeS(-1),
-      mKeepaliveRetryIntervalS(-1),
-      mKeepaliveProbeCount(-1),
-      mFastOpenCallback(nullptr),
-      mFastOpenLayerHasBufferedData(false),
-      mFastOpenStatus(TFO_NOT_SET),
-      mFirstRetryError(NS_OK),
-      mDoNotRetryToConnect(false),
-      mUsingQuic(false) {
-  this->mNetAddr.raw.family = 0;
-  this->mNetAddr.inet = {};
-  this->mSelfAddr.raw.family = 0;
-  this->mSelfAddr.inet = {};
+      mOutput(this) {
   SOCKET_LOG(("creating nsSocketTransport @%p\n", this));
 
   mTimeouts[TIMEOUT_CONNECT] = UINT16_MAX;     // no timeout
@@ -756,11 +689,17 @@ nsresult nsSocketTransport::Init(const nsTArray<nsCString>& types,
                                  const nsACString& host, uint16_t port,
                                  const nsACString& hostRoute,
                                  uint16_t portRoute,
-                                 nsIProxyInfo* givenProxyInfo) {
+                                 nsIProxyInfo* givenProxyInfo,
+                                 nsIDNSRecord* dnsRecord) {
   nsCOMPtr<nsProxyInfo> proxyInfo;
   if (givenProxyInfo) {
     proxyInfo = do_QueryInterface(givenProxyInfo);
     NS_ENSURE_ARG(proxyInfo);
+  }
+
+  if (dnsRecord) {
+    mExternalDNSResolution = true;
+    mDNSRecord = do_QueryInterface(dnsRecord);
   }
 
   // init socket type info
@@ -822,19 +761,17 @@ nsresult nsSocketTransport::Init(const nsTArray<nsCString>& types,
   // now verify that each socket type has a registered socket provider.
   for (uint32_t i = 0, type = 0; i < typeCount; ++i) {
     // store socket types
-    if (i == 0 && proxyType)
+    if (i == 0 && proxyType) {
       mTypes.AppendElement(proxyType);
-    else
+    } else {
       mTypes.AppendElement(types[type++]);
+    }
 
-    // quic does not have a socketProvider.
-    if (!mTypes[i].EqualsLiteral("quic")) {
-      nsCOMPtr<nsISocketProvider> provider;
-      rv = spserv->GetSocketProvider(mTypes[i].get(), getter_AddRefs(provider));
-      if (NS_FAILED(rv)) {
-        NS_WARNING("no registered socket provider");
-        return rv;
-      }
+    nsCOMPtr<nsISocketProvider> provider;
+    rv = spserv->GetSocketProvider(mTypes[i].get(), getter_AddRefs(provider));
+    if (NS_FAILED(rv)) {
+      NS_WARNING("no registered socket provider");
+      return rv;
     }
 
     // note if socket type corresponds to a transparent proxy
@@ -892,16 +829,17 @@ nsresult nsSocketTransport::InitWithConnectedSocket(PRFileDesc* fd,
   NS_ASSERTION(!mFD.IsInitialized(), "already initialized");
 
   char buf[kNetAddrMaxCStrBufSize];
-  NetAddrToString(addr, buf, sizeof(buf));
+  addr->ToStringBuffer(buf, sizeof(buf));
   mHost.Assign(buf);
 
   uint16_t port;
-  if (addr->raw.family == AF_INET)
+  if (addr->raw.family == AF_INET) {
     port = addr->inet.port;
-  else if (addr->raw.family == AF_INET6)
+  } else if (addr->raw.family == AF_INET6) {
     port = addr->inet6.port;
-  else
+  } else {
     port = 0;
+  }
   mPort = ntohs(port);
 
   memcpy(&mNetAddr, addr, sizeof(NetAddr));
@@ -965,15 +903,6 @@ void nsSocketTransport::SendStatus(nsresult status) {
     switch (status) {
       case NS_NET_STATUS_SENDING_TO:
         progress = mOutput.ByteCount();
-        // If Fast Open is used, we buffer some data in TCPFastOpenLayer,
-        // This data can  be only tls data or application data as well.
-        // socketTransport should send status only if it really has sent
-        // application data. socketTransport cannot query transaction for
-        // that info but it can know if transaction has send data if
-        // mOutput.ByteCount() is > 0.
-        if (progress == 0) {
-          return;
-        }
         break;
       case NS_NET_STATUS_RECEIVING_FROM:
         progress = mInput.ByteCount();
@@ -1028,22 +957,54 @@ nsresult nsSocketTransport::ResolveHost() {
     }
   }
 
-  nsCOMPtr<nsIDNSService> dns = do_GetService(kDNSServiceCID, &rv);
-  if (NS_FAILED(rv)) return rv;
+  if (mExternalDNSResolution) {
+    MOZ_ASSERT(mDNSRecord);
+    mState = STATE_RESOLVING;
+    return PostEvent(MSG_DNS_LOOKUP_COMPLETE, NS_OK, nullptr);
+  }
+
+  nsCOMPtr<nsIDNSService> dns = nullptr;
+  auto initTask = [&dns]() { dns = do_GetService(kDNSServiceCID); };
+  if (!NS_IsMainThread()) {
+    // Forward to the main thread synchronously.
+    RefPtr<nsIThread> mainThread = do_GetMainThread();
+    if (!mainThread) {
+      return NS_ERROR_FAILURE;
+    }
+
+    SyncRunnable::DispatchToThread(
+        mainThread,
+        new SyncRunnable(NS_NewRunnableFunction(
+            "nsSocketTransport::ResolveHost->GetDNSService", initTask)));
+  } else {
+    initTask();
+  }
+  if (!dns) {
+    return NS_ERROR_FAILURE;
+  }
 
   mResolving = true;
 
   uint32_t dnsFlags = 0;
-  if (mConnectionFlags & nsSocketTransport::BYPASS_CACHE)
+  if (mConnectionFlags & nsSocketTransport::BYPASS_CACHE) {
     dnsFlags = nsIDNSService::RESOLVE_BYPASS_CACHE;
-  if (mConnectionFlags & nsSocketTransport::REFRESH_CACHE)
+  }
+  if (mConnectionFlags & nsSocketTransport::REFRESH_CACHE) {
     dnsFlags = nsIDNSService::RESOLVE_REFRESH_CACHE;
-  if (mConnectionFlags & nsSocketTransport::DISABLE_IPV6)
+  }
+  if (mConnectionFlags & nsSocketTransport::DISABLE_IPV6) {
     dnsFlags |= nsIDNSService::RESOLVE_DISABLE_IPV6;
-  if (mConnectionFlags & nsSocketTransport::DISABLE_IPV4)
+  }
+  if (mConnectionFlags & nsSocketTransport::DISABLE_IPV4) {
     dnsFlags |= nsIDNSService::RESOLVE_DISABLE_IPV4;
-  if (mConnectionFlags & nsSocketTransport::DISABLE_TRR)
+  }
+  if (mConnectionFlags & nsSocketTransport::DISABLE_TRR) {
     dnsFlags |= nsIDNSService::RESOLVE_DISABLE_TRR;
+  }
+
+  if (mConnectionFlags & nsSocketTransport::USE_IP_HINT_ADDRESS) {
+    dnsFlags |= nsIDNSService::RESOLVE_IP_HINT;
+  }
 
   dnsFlags |= nsIDNSService::GetFlagsFromTRRMode(
       nsISocketTransport::GetTRRModeFromFlags(mConnectionFlags));
@@ -1064,39 +1025,10 @@ nsresult nsSocketTransport::ResolveHost() {
     SOCKET_LOG(("nsSocketTransport %p origin %s doing dns for %s\n", this,
                 mOriginHost.get(), SocketHost().get()));
   }
-  rv = dns->AsyncResolveNative(SocketHost(), dnsFlags, this,
-                               mSocketTransportService, mOriginAttributes,
-                               getter_AddRefs(mDNSRequest));
-  mEsniQueried = false;
-  if (mSocketTransportService->IsEsniEnabled() && NS_SUCCEEDED(rv) &&
-      !(mConnectionFlags & (DONT_TRY_ESNI | BE_CONSERVATIVE))) {
-    bool isSSL = false;
-    for (unsigned int i = 0; i < mTypes.Length(); ++i) {
-      if (mTypes[i].EqualsLiteral("ssl")) {
-        isSSL = true;
-        break;
-      }
-    }
-    if (isSSL) {
-      SOCKET_LOG((" look for esni txt record"));
-      nsAutoCString esniHost;
-      esniHost.Append("_esni.");
-      // This might end up being the SocketHost
-      // see https://github.com/ekr/draft-rescorla-tls-esni/issues/61
-      esniHost.Append(SocketHost());
-      rv = dns->AsyncResolveByTypeNative(
-          esniHost, nsIDNSService::RESOLVE_TYPE_TXT, dnsFlags, this,
-          mSocketTransportService, mOriginAttributes,
-          getter_AddRefs(mDNSTxtRequest));
-      if (NS_FAILED(rv)) {
-        SOCKET_LOG(("  dns request by type failed."));
-        mDNSTxtRequest = nullptr;
-        rv = NS_OK;
-      } else {
-        mEsniQueried = true;
-      }
-    }
-  }
+  rv =
+      dns->AsyncResolveNative(SocketHost(), nsIDNSService::RESOLVE_TYPE_DEFAULT,
+                              dnsFlags, nullptr, this, mSocketTransportService,
+                              mOriginAttributes, getter_AddRefs(mDNSRequest));
 
   if (NS_SUCCEEDED(rv)) {
     SOCKET_LOG(("  advancing to STATE_RESOLVING\n"));
@@ -1132,54 +1064,32 @@ nsresult nsSocketTransport::BuildSocket(PRFileDesc*& fd, bool& proxyTransparent,
   fd = nullptr;
 
   uint32_t controlFlags = 0;
-  if (mProxyTransparentResolvesHost)
+  if (mProxyTransparentResolvesHost) {
     controlFlags |= nsISocketProvider::PROXY_RESOLVES_HOST;
+  }
 
-  if (mConnectionFlags & nsISocketTransport::ANONYMOUS_CONNECT)
+  if (mConnectionFlags & nsISocketTransport::ANONYMOUS_CONNECT) {
     controlFlags |= nsISocketProvider::ANONYMOUS_CONNECT;
+  }
 
-  if (mConnectionFlags & nsISocketTransport::NO_PERMANENT_STORAGE)
+  if (mConnectionFlags & nsISocketTransport::NO_PERMANENT_STORAGE) {
     controlFlags |= nsISocketProvider::NO_PERMANENT_STORAGE;
+  }
 
-  if (mConnectionFlags & nsISocketTransport::BE_CONSERVATIVE)
+  if (mConnectionFlags & nsISocketTransport::BE_CONSERVATIVE) {
     controlFlags |= nsISocketProvider::BE_CONSERVATIVE;
+  }
+
+  if (mConnectionFlags &
+      nsISocketTransport::ANONYMOUS_CONNECT_ALLOW_CLIENT_CERT) {
+    controlFlags |= nsISocketProvider::ANONYMOUS_CONNECT_ALLOW_CLIENT_CERT;
+  }
 
   // by setting host to mOriginHost, instead of mHost we send the
   // SocketProvider (e.g. PSM) the origin hostname but can still do DNS
   // on an explicit alternate service host name
   const char* host = mOriginHost.get();
   int32_t port = (int32_t)mOriginPort;
-
-  if (mTypes[0].EqualsLiteral("quic")) {
-    fd = PR_OpenUDPSocket(mNetAddr.raw.family);
-    if (!fd) {
-      SOCKET_LOG(("  error creating UDP nspr socket [rv=%" PRIx32 "]\n",
-                  static_cast<uint32_t>(rv)));
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-
-    mUsingQuic = true;
-    // Create security control and info object for quic.
-    RefPtr<QuicSocketControl> quicCtrl = new QuicSocketControl(controlFlags);
-    quicCtrl->SetHostName(mHttpsProxy ? mProxyHost.get() : host);
-    quicCtrl->SetPort(mHttpsProxy ? mProxyPort : port);
-    nsCOMPtr<nsISupports> secinfo;
-    quicCtrl->QueryInterface(NS_GET_IID(nsISupports), (void**)(&secinfo));
-
-    // remember security info and give notification callbacks to PSM...
-    nsCOMPtr<nsIInterfaceRequestor> callbacks;
-    {
-      MutexAutoLock lock(mLock);
-      mSecInfo = secinfo;
-      callbacks = mCallbacks;
-      SOCKET_LOG(
-          ("  [secinfo=%p callbacks=%p]\n", mSecInfo.get(), mCallbacks.get()));
-    }
-    // don't call into PSM while holding mLock!!
-    quicCtrl->SetNotificationCallbacks(callbacks);
-
-    return NS_OK;
-  }
 
   nsCOMPtr<nsISocketProviderService> spserv =
       nsSocketProviderService::GetOrCreate();
@@ -1294,7 +1204,9 @@ nsresult nsSocketTransport::InitiateSocket() {
     return NS_ERROR_ABORT;
   }
   if (gIOService->IsOffline()) {
-    if (!isLocal) return NS_ERROR_OFFLINE;
+    if (StaticPrefs::network_disable_localhost_when_offline() || !isLocal) {
+      return NS_ERROR_OFFLINE;
+    }
   } else if (!isLocal) {
 #ifdef DEBUG
     // all IP networking has to be done from the parent
@@ -1305,8 +1217,8 @@ nsresult nsSocketTransport::InitiateSocket() {
 #endif
 
     if (NS_SUCCEEDED(mCondition) && xpc::AreNonLocalConnectionsDisabled() &&
-        !(IsIPAddrAny(&mNetAddr) || IsIPAddrLocal(&mNetAddr) ||
-          IsIPAddrShared(&mNetAddr))) {
+        !(mNetAddr.IsIPAddrAny() || mNetAddr.IsIPAddrLocal() ||
+          mNetAddr.IsIPAddrShared())) {
       nsAutoCString ipaddr;
       RefPtr<nsNetAddr> netaddr = new nsNetAddr(&mNetAddr);
       netaddr->GetAddress(ipaddr);
@@ -1328,13 +1240,14 @@ nsresult nsSocketTransport::InitiateSocket() {
   // Hosts/Proxy Hosts that are Local IP Literals should not be speculatively
   // connected - Bug 853423.
   if (mConnectionFlags & nsISocketTransport::DISABLE_RFC1918 &&
-      IsIPAddrLocal(&mNetAddr)) {
+      mNetAddr.IsIPAddrLocal()) {
     if (SOCKET_LOG_ENABLED()) {
       nsAutoCString netAddrCString;
       netAddrCString.SetLength(kIPv6CStrBufSize);
-      if (!NetAddrToString(&mNetAddr, netAddrCString.BeginWriting(),
-                           kIPv6CStrBufSize))
+      if (!mNetAddr.ToStringBuffer(netAddrCString.BeginWriting(),
+                                   kIPv6CStrBufSize)) {
         netAddrCString = "<IP-to-string failed>"_ns;
+      }
       SOCKET_LOG(
           ("nsSocketTransport::InitiateSocket skipping "
            "speculative connection for host [%s:%d] proxy "
@@ -1418,79 +1331,67 @@ nsresult nsSocketTransport::InitiateSocket() {
   status = PR_SetSocketOption(fd, &opt);
   NS_ASSERTION(status == PR_SUCCESS, "unable to make socket non-blocking");
 
-  if (mUsingQuic) {
-    opt.option = PR_SockOpt_RecvBufferSize;
-    opt.value.recv_buffer_size =
-        StaticPrefs::network_http_http3_recvBufferSize();
-    status = PR_SetSocketOption(fd, &opt);
+  if (mReuseAddrPort) {
+    SOCKET_LOG(("  Setting port/addr reuse socket options\n"));
+
+    // Set ReuseAddr for TCP sockets to enable having several
+    // sockets bound to same local IP and port
+    PRSocketOptionData opt_reuseaddr;
+    opt_reuseaddr.option = PR_SockOpt_Reuseaddr;
+    opt_reuseaddr.value.reuse_addr = PR_TRUE;
+    status = PR_SetSocketOption(fd, &opt_reuseaddr);
     if (status != PR_SUCCESS) {
-      SOCKET_LOG(("  Couldn't set recv buffer size"));
+      SOCKET_LOG(("  Couldn't set reuse addr socket option: %d\n", status));
+    }
+
+    // And also set ReusePort for platforms supporting this socket option
+    PRSocketOptionData opt_reuseport;
+    opt_reuseport.option = PR_SockOpt_Reuseport;
+    opt_reuseport.value.reuse_port = PR_TRUE;
+    status = PR_SetSocketOption(fd, &opt_reuseport);
+    if (status != PR_SUCCESS &&
+        PR_GetError() != PR_OPERATION_NOT_SUPPORTED_ERROR) {
+      SOCKET_LOG(("  Couldn't set reuse port socket option: %d\n", status));
     }
   }
 
-  if (!mUsingQuic) {
-    if (mReuseAddrPort) {
-      SOCKET_LOG(("  Setting port/addr reuse socket options\n"));
+  // disable the nagle algorithm - if we rely on it to coalesce writes into
+  // full packets the final packet of a multi segment POST/PUT or pipeline
+  // sequence is delayed a full rtt
+  opt.option = PR_SockOpt_NoDelay;
+  opt.value.no_delay = true;
+  PR_SetSocketOption(fd, &opt);
 
-      // Set ReuseAddr for TCP sockets to enable having several
-      // sockets bound to same local IP and port
-      PRSocketOptionData opt_reuseaddr;
-      opt_reuseaddr.option = PR_SockOpt_Reuseaddr;
-      opt_reuseaddr.value.reuse_addr = PR_TRUE;
-      status = PR_SetSocketOption(fd, &opt_reuseaddr);
-      if (status != PR_SUCCESS) {
-        SOCKET_LOG(("  Couldn't set reuse addr socket option: %d\n", status));
-      }
-
-      // And also set ReusePort for platforms supporting this socket option
-      PRSocketOptionData opt_reuseport;
-      opt_reuseport.option = PR_SockOpt_Reuseport;
-      opt_reuseport.value.reuse_port = PR_TRUE;
-      status = PR_SetSocketOption(fd, &opt_reuseport);
-      if (status != PR_SUCCESS &&
-          PR_GetError() != PR_OPERATION_NOT_SUPPORTED_ERROR) {
-        SOCKET_LOG(("  Couldn't set reuse port socket option: %d\n", status));
-      }
-    }
-
-    // disable the nagle algorithm - if we rely on it to coalesce writes into
-    // full packets the final packet of a multi segment POST/PUT or pipeline
-    // sequence is delayed a full rtt
-    opt.option = PR_SockOpt_NoDelay;
-    opt.value.no_delay = true;
+  // if the network.tcp.sendbuffer preference is set, use it to size SO_SNDBUF
+  // The Windows default of 8KB is too small and as of vista sp1, autotuning
+  // only applies to receive window
+  int32_t sndBufferSize;
+  mSocketTransportService->GetSendBufferSize(&sndBufferSize);
+  if (sndBufferSize > 0) {
+    opt.option = PR_SockOpt_SendBufferSize;
+    opt.value.send_buffer_size = sndBufferSize;
     PR_SetSocketOption(fd, &opt);
+  }
 
-    // if the network.tcp.sendbuffer preference is set, use it to size SO_SNDBUF
-    // The Windows default of 8KB is too small and as of vista sp1, autotuning
-    // only applies to receive window
-    int32_t sndBufferSize;
-    mSocketTransportService->GetSendBufferSize(&sndBufferSize);
-    if (sndBufferSize > 0) {
-      opt.option = PR_SockOpt_SendBufferSize;
-      opt.value.send_buffer_size = sndBufferSize;
-      PR_SetSocketOption(fd, &opt);
-    }
-
-    if (mQoSBits) {
-      opt.option = PR_SockOpt_IpTypeOfService;
-      opt.value.tos = mQoSBits;
-      PR_SetSocketOption(fd, &opt);
-    }
+  if (mQoSBits) {
+    opt.option = PR_SockOpt_IpTypeOfService;
+    opt.value.tos = mQoSBits;
+    PR_SetSocketOption(fd, &opt);
+  }
 
 #if defined(XP_WIN)
-    // The linger is turned off by default. This is not a hard close, but
-    // closesocket should return immediately and operating system tries to send
-    // remaining data for certain, implementation specific, amount of time.
-    // https://msdn.microsoft.com/en-us/library/ms739165.aspx
-    //
-    // Turn the linger option on an set the interval to 0. This will cause hard
-    // close of the socket.
-    opt.option = PR_SockOpt_Linger;
-    opt.value.linger.polarity = 1;
-    opt.value.linger.linger = 0;
-    PR_SetSocketOption(fd, &opt);
+  // The linger is turned off by default. This is not a hard close, but
+  // closesocket should return immediately and operating system tries to send
+  // remaining data for certain, implementation specific, amount of time.
+  // https://msdn.microsoft.com/en-us/library/ms739165.aspx
+  //
+  // Turn the linger option on an set the interval to 0. This will cause hard
+  // close of the socket.
+  opt.option = PR_SockOpt_Linger;
+  opt.value.linger.polarity = 1;
+  opt.value.linger.linger = 0;
+  PR_SetSocketOption(fd, &opt);
 #endif
-  }
 
   // inform socket transport about this newly created socket...
   rv = mSocketTransportService->AttachSocket(fd, this);
@@ -1517,7 +1418,7 @@ nsresult nsSocketTransport::InitiateSocket() {
 
   if (SOCKET_LOG_ENABLED()) {
     char buf[kNetAddrMaxCStrBufSize];
-    NetAddrToString(&mNetAddr, buf, sizeof(buf));
+    mNetAddr.ToStringBuffer(buf, sizeof(buf));
     SOCKET_LOG(("  trying address: %s\n", buf));
   }
 
@@ -1525,6 +1426,7 @@ nsresult nsSocketTransport::InitiateSocket() {
   // Initiate the connect() to the host...
   //
   PRNetAddr prAddr;
+  memset(&prAddr, 0, sizeof(prAddr));
   {
     if (mBindAddr) {
       MutexAutoLock lock(mLock);
@@ -1553,28 +1455,17 @@ nsresult nsSocketTransport::InitiateSocket() {
   }
 #endif
 
-  if (!mDNSRecordTxt.IsEmpty() && !mUsingQuic && mSecInfo) {
-    nsCOMPtr<nsISSLSocketControl> secCtrl = do_QueryInterface(mSecInfo);
-    if (secCtrl) {
-      SOCKET_LOG(("nsSocketTransport::InitiateSocket set esni keys."));
-      rv = secCtrl->SetEsniTxt(mDNSRecordTxt);
+  nsCOMPtr<nsISSLSocketControl> secCtrl = do_QueryInterface(mSecInfo);
+  if (secCtrl) {
+    if (!mEchConfig.IsEmpty() &&
+        !(mConnectionFlags & (DONT_TRY_ECH | BE_CONSERVATIVE))) {
+      SOCKET_LOG(("nsSocketTransport::InitiateSocket set echconfig."));
+      rv = secCtrl->SetEchConfig(mEchConfig);
       if (NS_FAILED(rv)) {
         return rv;
       }
-      mEsniUsed = true;
+      mEchConfigUsed = true;
     }
-  }
-
-  if (mUsingQuic) {
-    //
-    // we pretend that we are connected!
-    //
-    if (PR_Connect(fd, &prAddr, NS_SOCKET_CONNECT_TIMEOUT) == PR_SUCCESS) {
-      OnSocketConnected();
-      return NS_OK;
-    }
-    PRErrorCode code = PR_GetError();
-    return ErrorAccordingToNSPR(code);
   }
 
   // We use PRIntervalTime here because we need
@@ -1585,14 +1476,12 @@ nsresult nsSocketTransport::InitiateSocket() {
     connectStarted = PR_IntervalNow();
   }
 
-  bool tfo = false;
-  if (!mProxyTransparent && mFastOpenCallback &&
-      mFastOpenCallback->FastOpenEnabled()) {
-    if (NS_SUCCEEDED(AttachTCPFastOpenIOLayer(fd))) {
-      tfo = true;
+  if (Telemetry::CanRecordPrereleaseData() ||
+      Telemetry::CanRecordReleaseData()) {
+    if (NS_FAILED(AttachNetworkDataCountLayer(fd))) {
       SOCKET_LOG(
-          ("nsSocketTransport::InitiateSocket TCP Fast Open "
-           "started [this=%p]\n",
+          ("nsSocketTransport::InitiateSocket "
+           "AttachNetworkDataCountLayer failed [this=%p]\n",
            this));
     }
   }
@@ -1602,67 +1491,6 @@ nsresult nsSocketTransport::InitiateSocket() {
   PRErrorCode code = PR_GetError();
   if (status == PR_SUCCESS) {
     PR_SetFDInheritable(fd, false);
-  }
-  if ((status == PR_SUCCESS) && tfo) {
-    {
-      MutexAutoLock lock(mLock);
-      mFDFastOpenInProgress = true;
-    }
-    SOCKET_LOG(("Using TCP Fast Open."));
-    rv = mFastOpenCallback->StartFastOpen();
-    if (NS_FAILED(rv)) {
-      if (NS_SUCCEEDED(mCondition)) {
-        mCondition = rv;
-      }
-      mFastOpenCallback = nullptr;
-      MutexAutoLock lock(mLock);
-      mFDFastOpenInProgress = false;
-      return rv;
-    }
-    status = PR_FAILURE;
-    connectCalled = false;
-    bool fastOpenNotSupported = false;
-    TCPFastOpenFinish(fd, code, fastOpenNotSupported, mFastOpenStatus);
-
-    // If we have sent data, trigger a socket status event.
-    if (mFastOpenStatus == TFO_DATA_SENT) {
-      SendStatus(NS_NET_STATUS_SENDING_TO);
-    }
-
-    // If we have still some data buffered this data must be flush before
-    // mOutput.OnSocketReady(NS_OK) is called in
-    // nsSocketTransport::OnSocketReady, partially to keep socket status
-    // event in order.
-    mFastOpenLayerHasBufferedData = TCPFastOpenGetCurrentBufferSize(fd);
-
-    MOZ_ASSERT((mFastOpenStatus == TFO_NOT_TRIED) ||
-               (mFastOpenStatus == TFO_DISABLED) ||
-               (mFastOpenStatus == TFO_DATA_SENT) ||
-               (mFastOpenStatus == TFO_TRIED));
-    mFastOpenCallback->SetFastOpenStatus(mFastOpenStatus);
-    SOCKET_LOG(
-        ("called StartFastOpen - code=%d; fastOpen is %s "
-         "supported.\n",
-         code, fastOpenNotSupported ? "not" : ""));
-    SOCKET_LOG(("TFO status %d\n", mFastOpenStatus));
-
-    if (fastOpenNotSupported) {
-      // When TCP_FastOpen is turned off on the local host
-      // SendTo will return PR_NOT_TCP_SOCKET_ERROR. This is only
-      // on Linux.
-      // If a windows version does not support Fast Open, the return value
-      // will be PR_NOT_IMPLEMENTED_ERROR. This is only for windows 10
-      // versions older than version 1607, because we do not have subverion
-      // to check, we need to call PR_SendTo to check if it is supported.
-      mFastOpenCallback->FastOpenNotSupported();
-      // FastOpenNotSupported will set Fast Open as not supported globally.
-      // For this connection we will pretend that we still use fast open,
-      // because of the fallback mechanism in case we need to restart the
-      // attached transaction.
-      connectCalled = true;
-    }
-  } else {
-    mFastOpenCallback = nullptr;
   }
 
   if (gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase() &&
@@ -1687,12 +1515,12 @@ nsresult nsSocketTransport::InitiateSocket() {
     //
     // If the PR_Connect(...) would block, then poll for a connection.
     //
-    if ((PR_WOULD_BLOCK_ERROR == code) || (PR_IN_PROGRESS_ERROR == code))
+    if ((PR_WOULD_BLOCK_ERROR == code) || (PR_IN_PROGRESS_ERROR == code)) {
       mPollFlags = (PR_POLL_EXCEPT | PR_POLL_WRITE);
-    //
-    // If the socket is already connected, then return success...
-    //
-    else if (PR_IS_CONNECTED_ERROR == code) {
+      //
+      // If the socket is already connected, then return success...
+      //
+    } else if (PR_IS_CONNECTED_ERROR == code) {
       //
       // we are connected!
       //
@@ -1740,8 +1568,9 @@ nsresult nsSocketTransport::InitiateSocket() {
       }
 
       rv = ErrorAccordingToNSPR(code);
-      if ((rv == NS_ERROR_CONNECTION_REFUSED) && !mProxyHost.IsEmpty())
+      if ((rv == NS_ERROR_CONNECTION_REFUSED) && !mProxyHost.IsEmpty()) {
         rv = NS_ERROR_PROXY_CONNECTION_REFUSED;
+      }
     }
   }
   return rv;
@@ -1769,6 +1598,15 @@ bool nsSocketTransport::RecoverFromError() {
   if (mNetAddrIsSet && mNetAddr.raw.family == AF_LOCAL) return false;
 #endif
 
+  if ((mConnectionFlags & nsSocketTransport::USE_IP_HINT_ADDRESS) &&
+      mCondition == NS_ERROR_UNKNOWN_HOST &&
+      (mState == MSG_DNS_LOOKUP_COMPLETE || mState == MSG_ENSURE_CONNECT)) {
+    SOCKET_LOG(("  try again without USE_IP_HINT_ADDRESS"));
+    mConnectionFlags &= ~nsSocketTransport::USE_IP_HINT_ADDRESS;
+    mState = STATE_CLOSED;
+    return NS_SUCCEEDED(PostEvent(MSG_ENSURE_CONNECT, NS_OK));
+  }
+
   // can only recover from errors in these states
   if (mState != STATE_RESOLVING && mState != STATE_CONNECTING) {
     SOCKET_LOG(("  not in a recoverable state"));
@@ -1782,29 +1620,10 @@ bool nsSocketTransport::RecoverFromError() {
 
   // all connection failures need to be reported to DNS so that the next
   // time we will use a different address if available.
-  // Skip conditions that can be cause by TCP Fast Open.
-  if ((!mFDFastOpenInProgress ||
-       ((mCondition != NS_ERROR_CONNECTION_REFUSED) &&
-        (mCondition != NS_ERROR_NET_TIMEOUT) &&
-        (mCondition != NS_BASE_STREAM_CLOSED) &&
-        (mCondition != NS_ERROR_PROXY_CONNECTION_REFUSED))) &&
-      mState == STATE_CONNECTING && mDNSRecord) {
+  if (mState == STATE_CONNECTING && mDNSRecord) {
     mDNSRecord->ReportUnusable(SocketPort());
   }
 
-#if defined(_WIN64) && defined(WIN95)
-  // can only recover from these errors
-  if (mCondition != NS_ERROR_CONNECTION_REFUSED &&
-      mCondition != NS_ERROR_PROXY_CONNECTION_REFUSED &&
-      mCondition != NS_ERROR_NET_TIMEOUT &&
-      mCondition != NS_ERROR_UNKNOWN_HOST &&
-      mCondition != NS_ERROR_UNKNOWN_PROXY_HOST &&
-      !(mFDFastOpenInProgress && (mCondition == NS_ERROR_FAILURE))) {
-    SOCKET_LOG(("  not a recoverable error %" PRIx32,
-                static_cast<uint32_t>(mCondition)));
-    return false;
-  }
-#else
   if (mCondition != NS_ERROR_CONNECTION_REFUSED &&
       mCondition != NS_ERROR_PROXY_CONNECTION_REFUSED &&
       mCondition != NS_ERROR_NET_TIMEOUT &&
@@ -1814,83 +1633,82 @@ bool nsSocketTransport::RecoverFromError() {
                 static_cast<uint32_t>(mCondition)));
     return false;
   }
-#endif
 
   bool tryAgain = false;
-  if (mFDFastOpenInProgress &&
-      ((mCondition == NS_ERROR_CONNECTION_REFUSED) ||
-       (mCondition == NS_ERROR_NET_TIMEOUT) ||
-#if defined(_WIN64) && defined(WIN95)
-       // On Windows PR_ContinueConnect can return NS_ERROR_FAILURE.
-       // This will be fixed in bug 1386719 and this is just a temporary
-       // work around.
-       (mCondition == NS_ERROR_FAILURE) ||
-#endif
-       (mCondition == NS_ERROR_PROXY_CONNECTION_REFUSED))) {
-    // TCP Fast Open can be blocked by middle boxes so we will retry
-    // without it.
-    tryAgain = true;
-    // If we cancel the connection because backup socket was successfully
-    // connected, mFDFastOpenInProgress will be true but mFastOpenCallback
-    // will be nullptr.
-    if (mFastOpenCallback) {
-      mFastOpenCallback->SetFastOpenConnected(mCondition, true);
-    }
-    mFastOpenCallback = nullptr;
 
-  } else {
-    // This is only needed for telemetry.
-    if (NS_SUCCEEDED(mFirstRetryError)) {
-      mFirstRetryError = mCondition;
-    }
-    if ((mState == STATE_CONNECTING) && mDNSRecord) {
-      if (mNetAddr.raw.family == AF_INET) {
-        if (mSocketTransportService->IsTelemetryEnabledAndNotSleepPhase()) {
-          Telemetry::Accumulate(Telemetry::IPV4_AND_IPV6_ADDRESS_CONNECTIVITY,
-                                UNSUCCESSFUL_CONNECTING_TO_IPV4_ADDRESS);
-        }
-      } else if (mNetAddr.raw.family == AF_INET6) {
-        if (mSocketTransportService->IsTelemetryEnabledAndNotSleepPhase()) {
-          Telemetry::Accumulate(Telemetry::IPV4_AND_IPV6_ADDRESS_CONNECTIVITY,
-                                UNSUCCESSFUL_CONNECTING_TO_IPV6_ADDRESS);
-        }
+  if ((mState == STATE_CONNECTING) && mDNSRecord) {
+    if (mNetAddr.raw.family == AF_INET) {
+      if (mSocketTransportService->IsTelemetryEnabledAndNotSleepPhase()) {
+        Telemetry::Accumulate(Telemetry::IPV4_AND_IPV6_ADDRESS_CONNECTIVITY,
+                              UNSUCCESSFUL_CONNECTING_TO_IPV4_ADDRESS);
+      }
+    } else if (mNetAddr.raw.family == AF_INET6) {
+      if (mSocketTransportService->IsTelemetryEnabledAndNotSleepPhase()) {
+        Telemetry::Accumulate(Telemetry::IPV4_AND_IPV6_ADDRESS_CONNECTIVITY,
+                              UNSUCCESSFUL_CONNECTING_TO_IPV6_ADDRESS);
       }
     }
+  }
 
-    if (mConnectionFlags & RETRY_WITH_DIFFERENT_IP_FAMILY &&
-        mCondition == NS_ERROR_UNKNOWN_HOST && mState == STATE_RESOLVING &&
-        !mProxyTransparentResolvesHost) {
-      SOCKET_LOG(("  trying lookup again with opposite ip family\n"));
+  if (mConnectionFlags & RETRY_WITH_DIFFERENT_IP_FAMILY &&
+      mCondition == NS_ERROR_UNKNOWN_HOST && mState == STATE_RESOLVING &&
+      !mProxyTransparentResolvesHost) {
+    SOCKET_LOG(("  trying lookup again with opposite ip family\n"));
+    mConnectionFlags ^= (DISABLE_IPV6 | DISABLE_IPV4);
+    mConnectionFlags &= ~RETRY_WITH_DIFFERENT_IP_FAMILY;
+    // This will tell the consuming half-open to reset preference on the
+    // connection entry
+    mResetFamilyPreference = true;
+    tryAgain = true;
+  }
+
+  // try next ip address only if past the resolver stage...
+  if (mState == STATE_CONNECTING && mDNSRecord) {
+    nsresult rv = mDNSRecord->GetNextAddr(SocketPort(), &mNetAddr);
+    mDNSRecord->IsTRR(&mResolvedByTRR);
+    if (NS_SUCCEEDED(rv)) {
+      SOCKET_LOG(("  trying again with next ip address\n"));
+      tryAgain = true;
+    } else if (mExternalDNSResolution) {
+      mRetryDnsIfPossible = true;
+      bool trrEnabled;
+      mDNSRecord->IsTRR(&trrEnabled);
+      // Bug 1648147 - If the server responded with `0.0.0.0` or `::` then we
+      // should intentionally not fallback to regular DNS.
+      if (trrEnabled && !StaticPrefs::network_trr_fallback_on_zero_response() &&
+          ((mNetAddr.raw.family == AF_INET && mNetAddr.inet.ip == 0) ||
+           (mNetAddr.raw.family == AF_INET6 && mNetAddr.inet6.ip.u64[0] == 0 &&
+            mNetAddr.inet6.ip.u64[1] == 0))) {
+        SOCKET_LOG(("  TRR returned 0.0.0.0 and there are no other IPs"));
+        mRetryDnsIfPossible = false;
+      }
+    } else if (mConnectionFlags & RETRY_WITH_DIFFERENT_IP_FAMILY) {
+      SOCKET_LOG(("  failed to connect, trying with opposite ip family\n"));
+      // Drop state to closed.  This will trigger new round of DNS
+      // resolving bellow.
+      mState = STATE_CLOSED;
       mConnectionFlags ^= (DISABLE_IPV6 | DISABLE_IPV4);
       mConnectionFlags &= ~RETRY_WITH_DIFFERENT_IP_FAMILY;
       // This will tell the consuming half-open to reset preference on the
       // connection entry
       mResetFamilyPreference = true;
       tryAgain = true;
-    }
+    } else if (!(mConnectionFlags & DISABLE_TRR)) {
+      bool trrEnabled;
+      mDNSRecord->IsTRR(&trrEnabled);
 
-    // try next ip address only if past the resolver stage...
-    if (mState == STATE_CONNECTING && mDNSRecord) {
-      nsresult rv = mDNSRecord->GetNextAddr(SocketPort(), &mNetAddr);
-      mDNSRecord->IsTRR(&mResolvedByTRR);
-      if (NS_SUCCEEDED(rv)) {
-        SOCKET_LOG(("  trying again with next ip address\n"));
-        tryAgain = true;
-      } else if (mConnectionFlags & RETRY_WITH_DIFFERENT_IP_FAMILY) {
-        SOCKET_LOG(("  failed to connect, trying with opposite ip family\n"));
-        // Drop state to closed.  This will trigger new round of DNS
-        // resolving bellow.
-        mState = STATE_CLOSED;
-        mConnectionFlags ^= (DISABLE_IPV6 | DISABLE_IPV4);
-        mConnectionFlags &= ~RETRY_WITH_DIFFERENT_IP_FAMILY;
-        // This will tell the consuming half-open to reset preference on the
-        // connection entry
-        mResetFamilyPreference = true;
-        tryAgain = true;
-      } else if (!(mConnectionFlags & DISABLE_TRR)) {
-        bool trrEnabled;
-        mDNSRecord->IsTRR(&trrEnabled);
-        if (trrEnabled) {
+      // Bug 1648147 - If the server responded with `0.0.0.0` or `::` then we
+      // should intentionally not fallback to regular DNS.
+      if (!StaticPrefs::network_trr_fallback_on_zero_response() &&
+          ((mNetAddr.raw.family == AF_INET && mNetAddr.inet.ip == 0) ||
+           (mNetAddr.raw.family == AF_INET6 && mNetAddr.inet6.ip.u64[0] == 0 &&
+            mNetAddr.inet6.ip.u64[1] == 0))) {
+        SOCKET_LOG(("  TRR returned 0.0.0.0 and there are no other IPs"));
+      } else if (trrEnabled) {
+        uint32_t trrMode = 0;
+        mDNSRecord->GetEffectiveTRRMode(&trrMode);
+        // If current trr mode is trr only, we should not retry.
+        if (trrMode != 3) {
           // Drop state to closed.  This will trigger a new round of
           // DNS resolving. Bypass the cache this time since the
           // cached data came from TRR and failed already!
@@ -1932,12 +1750,12 @@ void nsSocketTransport::OnMsgInputClosed(nsresult reason) {
 
   mInputClosed = true;
   // check if event should affect entire transport
-  if (NS_FAILED(reason) && (reason != NS_BASE_STREAM_CLOSED))
+  if (NS_FAILED(reason) && (reason != NS_BASE_STREAM_CLOSED)) {
     mCondition = reason;  // XXX except if NS_FAILED(mCondition), right??
-  else if (mOutputClosed)
+  } else if (mOutputClosed) {
     mCondition =
         NS_BASE_STREAM_CLOSED;  // XXX except if NS_FAILED(mCondition), right??
-  else {
+  } else {
     if (mState == STATE_TRANSFERRING) mPollFlags &= ~PR_POLL_READ;
     mInput.OnSocketReady(reason);
   }
@@ -1953,12 +1771,12 @@ void nsSocketTransport::OnMsgOutputClosed(nsresult reason) {
 
   mOutputClosed = true;
   // check if event should affect entire transport
-  if (NS_FAILED(reason) && (reason != NS_BASE_STREAM_CLOSED))
+  if (NS_FAILED(reason) && (reason != NS_BASE_STREAM_CLOSED)) {
     mCondition = reason;  // XXX except if NS_FAILED(mCondition), right??
-  else if (mInputClosed)
+  } else if (mInputClosed) {
     mCondition =
         NS_BASE_STREAM_CLOSED;  // XXX except if NS_FAILED(mCondition), right??
-  else {
+  } else {
     if (mState == STATE_TRANSFERRING) mPollFlags &= ~PR_POLL_WRITE;
     mOutput.OnSocketReady(reason);
   }
@@ -1975,14 +1793,6 @@ void nsSocketTransport::OnSocketConnected() {
   // because we need to make sure its value does not change due to failover
   mNetAddrIsSet = true;
 
-  if (mFDFastOpenInProgress && mFastOpenCallback) {
-    // mFastOpenCallback can be null when for example h2 is negotiated on
-    // another connection to the same host and all connections are
-    // abandoned.
-    mFastOpenCallback->SetFastOpenConnected(NS_OK, false);
-  }
-  mFastOpenCallback = nullptr;
-
   // assign mFD (must do this within the transport lock), but take care not
   // to trample over mFDref if mFD is already set.
   {
@@ -1991,7 +1801,6 @@ void nsSocketTransport::OnSocketConnected() {
     NS_ASSERTION(mFDref == 1, "wrong socket ref count");
     SetSocketName(mFD);
     mFDconnected = true;
-    mFDFastOpenInProgress = false;
     mPollTimeout = mTimeouts[TIMEOUT_READ_WRITE];
   }
 
@@ -2030,26 +1839,6 @@ PRFileDesc* nsSocketTransport::GetFD_Locked() {
   if (mFD.IsInitialized()) mFDref++;
 
   return mFD;
-}
-
-PRFileDesc* nsSocketTransport::GetFD_LockedAlsoDuringFastOpen() {
-  mLock.AssertCurrentThreadOwns();
-
-  // mFD is not available to the streams while disconnected.
-  if (!mFDconnected && !mFDFastOpenInProgress) {
-    return nullptr;
-  }
-
-  if (mFD.IsInitialized()) {
-    mFDref++;
-  }
-
-  return mFD;
-}
-
-bool nsSocketTransport::FastOpenInProgress() {
-  mLock.AssertCurrentThreadOwns();
-  return mFDFastOpenInProgress;
 }
 
 class ThunkPRClose : public Runnable {
@@ -2155,11 +1944,14 @@ void nsSocketTransport::OnSocketEvent(uint32_t type, nsresult status,
         // need. Internet address families require a DNS lookup (or possibly
         // several) before we can connect.
 #if defined(XP_UNIX)
-        if (mNetAddrIsSet && mNetAddr.raw.family == AF_LOCAL)
+        if (mNetAddrIsSet && mNetAddr.raw.family == AF_LOCAL) {
           mCondition = InitiateSocket();
-        else
+        } else {
+#else
+        {
 #endif
           mCondition = ResolveHost();
+        }
 
       } else {
         SOCKET_LOG(("  ignoring redundant event\n"));
@@ -2167,14 +1959,13 @@ void nsSocketTransport::OnSocketEvent(uint32_t type, nsresult status,
       break;
 
     case MSG_DNS_LOOKUP_COMPLETE:
-      if (mDNSRequest ||
-          mDNSTxtRequest) {  // only send this if we actually resolved anything
+      if (mDNSRequest) {  // only send this if we actually resolved anything
         SendStatus(NS_NET_STATUS_RESOLVED_HOST);
       }
 
       SOCKET_LOG(("  MSG_DNS_LOOKUP_COMPLETE\n"));
       mDNSRequest = nullptr;
-      mDNSTxtRequest = nullptr;
+
       if (mDNSRecord) {
         mDNSRecord->GetNextAddr(SocketPort(), &mNetAddr);
         mDNSRecord->IsTRR(&mResolvedByTRR);
@@ -2187,10 +1978,11 @@ void nsSocketTransport::OnSocketEvent(uint32_t type, nsresult status,
         // transport resolves the real host here, so there's no fixup
         // (see bug 226943).
         if ((status == NS_ERROR_UNKNOWN_HOST) && !mProxyTransparent &&
-            !mProxyHost.IsEmpty())
+            !mProxyHost.IsEmpty()) {
           mCondition = NS_ERROR_UNKNOWN_PROXY_HOST;
-        else
+        } else {
           mCondition = status;
+        }
       } else if (mState == STATE_RESOLVING) {
         mCondition = InitiateSocket();
       }
@@ -2235,10 +2027,12 @@ void nsSocketTransport::OnSocketEvent(uint32_t type, nsresult status,
   if (NS_FAILED(mCondition)) {
     SOCKET_LOG(("  after event [this=%p cond=%" PRIx32 "]\n", this,
                 static_cast<uint32_t>(mCondition)));
-    if (!mAttached)  // need to process this error ourselves...
+    if (!mAttached) {  // need to process this error ourselves...
       OnSocketDetached(nullptr);
-  } else if (mPollFlags == PR_POLL_EXCEPT)
+    }
+  } else if (mPollFlags == PR_POLL_EXCEPT) {
     mPollFlags = 0;  // make idle
+  }
 }
 
 //-----------------------------------------------------------------------------
@@ -2252,23 +2046,6 @@ void nsSocketTransport::OnSocketReady(PRFileDesc* fd, int16_t outFlags) {
     SOCKET_LOG(("socket timeout expired\n"));
     mCondition = NS_ERROR_NET_TIMEOUT;
     return;
-  }
-
-  if ((mState == STATE_TRANSFERRING) && mFastOpenLayerHasBufferedData) {
-    // We have some data buffered in TCPFastOpenLayer. We will flush them
-    // first. We need to do this first before calling OnSocketReady below
-    // so that the socket status events are kept in the correct order.
-    mFastOpenLayerHasBufferedData = TCPFastOpenFlushBuffer(fd);
-    if (mFastOpenLayerHasBufferedData) {
-      return;
-    }
-    SendStatus(NS_NET_STATUS_SENDING_TO);
-
-    // If we are done sending the buffered data continue with the normal
-    // path.
-    // In case of an error, TCPFastOpenFlushBuffer will return false and
-    // the normal code path will pick up the error.
-    mFastOpenLayerHasBufferedData = false;
   }
 
   if (mState == STATE_TRANSFERRING) {
@@ -2304,25 +2081,6 @@ void nsSocketTransport::OnSocketReady(PRFileDesc* fd, int16_t outFlags) {
     }
 
     PRStatus status = PR_ConnectContinue(fd, outFlags);
-
-#if defined(_WIN64) && defined(WIN95)
-#  ifndef TCP_FASTOPEN
-#    define TCP_FASTOPEN 15
-#  endif
-
-    if (mFDFastOpenInProgress && mFastOpenCallback &&
-        (mFastOpenStatus == TFO_DATA_SENT)) {
-      PROsfd osfd = PR_FileDesc2NativeHandle(fd);
-      BOOL option = 0;
-      int len = sizeof(option);
-      PRInt32 rv = getsockopt((SOCKET)osfd, IPPROTO_TCP, TCP_FASTOPEN,
-                              (char*)&option, &len);
-      if (!rv && !option) {
-        // On error, I will let the normal necko paths pickup the error.
-        mFastOpenCallback->SetFastOpenStatus(TFO_DATA_COOKIE_NOT_ACCEPTED);
-      }
-    }
-#endif
 
     if (gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase() &&
         connectStarted) {
@@ -2381,8 +2139,9 @@ void nsSocketTransport::OnSocketReady(PRFileDesc* fd, int16_t outFlags) {
         //
         mCondition = ErrorAccordingToNSPR(code);
         if ((mCondition == NS_ERROR_CONNECTION_REFUSED) &&
-            !mProxyHost.IsEmpty())
+            !mProxyHost.IsEmpty()) {
           mCondition = NS_ERROR_PROXY_CONNECTION_REFUSED;
+        }
         SOCKET_LOG(("  connection failed! [reason=%" PRIx32 "]\n",
                     static_cast<uint32_t>(mCondition)));
       }
@@ -2422,34 +2181,16 @@ void nsSocketTransport::OnSocketDetached(PRFileDesc* fd) {
     }
   }
 
-  mFastOpenLayerHasBufferedData = false;
-
   // If we are not shutting down try again.
-  if (!gIOService->IsNetTearingDown() && RecoverFromError())
+  if (!gIOService->IsNetTearingDown() && RecoverFromError()) {
     mCondition = NS_OK;
-  else {
+  } else {
     mState = STATE_CLOSED;
-
-    // The error can happened before we start fast open. In that case do not
-    // call mFastOpenCallback->SetFastOpenConnected; If error happends during
-    // fast open, inform the halfOpenSocket.
-    // If we cancel the connection because backup socket was successfully
-    // connected, mFDFastOpenInProgress will be true but mFastOpenCallback
-    // will be nullptr.
-    if (mFDFastOpenInProgress && mFastOpenCallback) {
-      mFastOpenCallback->SetFastOpenConnected(mCondition, false);
-    }
-    mFastOpenCallback = nullptr;
 
     // make sure there isn't any pending DNS request
     if (mDNSRequest) {
       mDNSRequest->Cancel(NS_ERROR_ABORT);
       mDNSRequest = nullptr;
-    }
-
-    if (mDNSTxtRequest) {
-      mDNSTxtRequest->Cancel(NS_ERROR_ABORT);
-      mDNSTxtRequest = nullptr;
     }
 
     //
@@ -2458,18 +2199,6 @@ void nsSocketTransport::OnSocketDetached(PRFileDesc* fd) {
     mInput.OnSocketReady(mCondition);
     mOutput.OnSocketReady(mCondition);
   }
-
-  // If FastOpen has been used (mFDFastOpenInProgress==true),
-  // mFastOpenCallback must be nullptr now. We decided to recover from
-  // error like NET_TIMEOUT, CONNECTION_REFUSED or we have called
-  // SetFastOpenConnected(mCondition) in this function a couple of lines
-  // above.
-  // If FastOpen has not been used (mFDFastOpenInProgress==false) it can be
-  // that mFastOpenCallback is no null, this is the case when we recover from
-  // errors like UKNOWN_HOST in which case socket was not been connected yet
-  // and mFastOpenCallback-StartFastOpen was not be called yet (but we can
-  // still call it in the next try).
-  MOZ_ASSERT(!(mFDFastOpenInProgress && mFastOpenCallback));
 
   // break any potential reference cycle between the security info object
   // and ourselves by resetting its notification callbacks object.  see
@@ -2495,7 +2224,6 @@ void nsSocketTransport::OnSocketDetached(PRFileDesc* fd) {
       // flag mFD as unusable; this prevents other consumers from
       // acquiring a reference to mFD.
       mFDconnected = false;
-      mFDFastOpenInProgress = false;
     }
 
     // We must release mCallbacks and mEventSink to avoid memory leak
@@ -2521,7 +2249,7 @@ void nsSocketTransport::IsLocal(bool* aIsLocal) {
     }
 #endif
 
-    *aIsLocal = IsLoopBackAddress(&mNetAddr);
+    *aIsLocal = mNetAddr.IsLoopbackAddr();
   }
 }
 
@@ -2535,7 +2263,8 @@ NS_IMPL_CI_INTERFACE_GETTER(nsSocketTransport, nsISocketTransport, nsITransport,
 
 NS_IMETHODIMP
 nsSocketTransport::OpenInputStream(uint32_t flags, uint32_t segsize,
-                                   uint32_t segcount, nsIInputStream** result) {
+                                   uint32_t segcount,
+                                   nsIInputStream** aResult) {
   SOCKET_LOG(
       ("nsSocketTransport::OpenInputStream [this=%p flags=%x]\n", this, flags));
 
@@ -2543,6 +2272,7 @@ nsSocketTransport::OpenInputStream(uint32_t flags, uint32_t segsize,
 
   nsresult rv;
   nsCOMPtr<nsIAsyncInputStream> pipeIn;
+  nsCOMPtr<nsIInputStream> result;
 
   if (!(flags & OPEN_UNBUFFERED) || (flags & OPEN_BLOCKING)) {
     // XXX if the caller wants blocking, then the caller also gets buffered!
@@ -2562,24 +2292,27 @@ nsSocketTransport::OpenInputStream(uint32_t flags, uint32_t segsize,
                       NS_ASYNCCOPY_VIA_WRITESEGMENTS, segsize);
     if (NS_FAILED(rv)) return rv;
 
-    *result = pipeIn;
-  } else
-    *result = &mInput;
+    result = pipeIn;
+  } else {
+    result = &mInput;
+  }
 
   // flag input stream as open
   mInputClosed = false;
 
   rv = PostEvent(MSG_ENSURE_CONNECT);
-  if (NS_FAILED(rv)) return rv;
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
-  NS_ADDREF(*result);
+  result.forget(aResult);
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsSocketTransport::OpenOutputStream(uint32_t flags, uint32_t segsize,
                                     uint32_t segcount,
-                                    nsIOutputStream** result) {
+                                    nsIOutputStream** aResult) {
   SOCKET_LOG(("nsSocketTransport::OpenOutputStream [this=%p flags=%x]\n", this,
               flags));
 
@@ -2587,6 +2320,7 @@ nsSocketTransport::OpenOutputStream(uint32_t flags, uint32_t segsize,
 
   nsresult rv;
   nsCOMPtr<nsIAsyncOutputStream> pipeOut;
+  nsCOMPtr<nsIOutputStream> result;
   if (!(flags & OPEN_UNBUFFERED) || (flags & OPEN_BLOCKING)) {
     // XXX if the caller wants blocking, then the caller also gets buffered!
     // bool openBuffered = !(flags & OPEN_UNBUFFERED);
@@ -2605,9 +2339,10 @@ nsSocketTransport::OpenOutputStream(uint32_t flags, uint32_t segsize,
                       NS_ASYNCCOPY_VIA_READSEGMENTS, segsize);
     if (NS_FAILED(rv)) return rv;
 
-    *result = pipeOut;
-  } else
-    *result = &mOutput;
+    result = pipeOut;
+  } else {
+    result = &mOutput;
+  }
 
   // flag output stream as open
   mOutputClosed = false;
@@ -2615,7 +2350,7 @@ nsSocketTransport::OpenOutputStream(uint32_t flags, uint32_t segsize,
   rv = PostEvent(MSG_ENSURE_CONNECT);
   if (NS_FAILED(rv)) return rv;
 
-  NS_ADDREF(*result);
+  result.forget(aResult);
   return NS_OK;
 }
 
@@ -2628,11 +2363,6 @@ nsSocketTransport::Close(nsresult reason) {
 
   mDoNotRetryToConnect = true;
 
-  if (mFDFastOpenInProgress && mFastOpenCallback) {
-    mFastOpenCallback->SetFastOpenConnected(reason, false);
-  }
-  mFastOpenCallback = nullptr;
-
   mInput.CloseWithStatus(reason);
   mOutput.CloseWithStatus(reason);
   return NS_OK;
@@ -2641,14 +2371,14 @@ nsSocketTransport::Close(nsresult reason) {
 NS_IMETHODIMP
 nsSocketTransport::GetSecurityInfo(nsISupports** secinfo) {
   MutexAutoLock lock(mLock);
-  NS_IF_ADDREF(*secinfo = mSecInfo);
+  *secinfo = do_AddRef(mSecInfo).take();
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsSocketTransport::GetSecurityCallbacks(nsIInterfaceRequestor** callbacks) {
   MutexAutoLock lock(mLock);
-  NS_IF_ADDREF(*callbacks = mCallbacks);
+  *callbacks = do_AddRef(mCallbacks).take();
   return NS_OK;
 }
 
@@ -2696,14 +2426,8 @@ NS_IMETHODIMP
 nsSocketTransport::IsAlive(bool* result) {
   *result = false;
 
-  // During Fast Open we need to return true here.
-  if (mFDFastOpenInProgress) {
-    *result = true;
-    return NS_OK;
-  }
-
   nsresult conditionWhileLocked = NS_OK;
-  PRFileDescAutoLock fd(this, false, &conditionWhileLocked);
+  PRFileDescAutoLock fd(this, &conditionWhileLocked);
   if (NS_FAILED(conditionWhileLocked) || !fd.IsInitialized()) {
     return NS_OK;
   }
@@ -2713,8 +2437,9 @@ nsSocketTransport::IsAlive(bool* result) {
   char c;
   int32_t rval = PR_Recv(fd, &c, 1, PR_MSG_PEEK, 0);
 
-  if ((rval > 0) || (rval < 0 && PR_GetError() == PR_WOULD_BLOCK_ERROR))
+  if ((rval > 0) || (rval < 0 && PR_GetError() == PR_WOULD_BLOCK_ERROR)) {
     *result = true;
+  }
 
   return NS_OK;
 }
@@ -2911,39 +2636,41 @@ nsSocketTransport::GetQoSBits(uint8_t* aQoSBits) {
 
 NS_IMETHODIMP
 nsSocketTransport::GetRecvBufferSize(uint32_t* aSize) {
-  PRFileDescAutoLock fd(this, false);
+  PRFileDescAutoLock fd(this);
   if (!fd.IsInitialized()) return NS_ERROR_NOT_CONNECTED;
 
   nsresult rv = NS_OK;
   PRSocketOptionData opt;
   opt.option = PR_SockOpt_RecvBufferSize;
-  if (PR_GetSocketOption(fd, &opt) == PR_SUCCESS)
+  if (PR_GetSocketOption(fd, &opt) == PR_SUCCESS) {
     *aSize = opt.value.recv_buffer_size;
-  else
+  } else {
     rv = NS_ERROR_FAILURE;
+  }
 
   return rv;
 }
 
 NS_IMETHODIMP
 nsSocketTransport::GetSendBufferSize(uint32_t* aSize) {
-  PRFileDescAutoLock fd(this, false);
+  PRFileDescAutoLock fd(this);
   if (!fd.IsInitialized()) return NS_ERROR_NOT_CONNECTED;
 
   nsresult rv = NS_OK;
   PRSocketOptionData opt;
   opt.option = PR_SockOpt_SendBufferSize;
-  if (PR_GetSocketOption(fd, &opt) == PR_SUCCESS)
+  if (PR_GetSocketOption(fd, &opt) == PR_SUCCESS) {
     *aSize = opt.value.send_buffer_size;
-  else
+  } else {
     rv = NS_ERROR_FAILURE;
+  }
 
   return rv;
 }
 
 NS_IMETHODIMP
 nsSocketTransport::SetRecvBufferSize(uint32_t aSize) {
-  PRFileDescAutoLock fd(this, false);
+  PRFileDescAutoLock fd(this);
   if (!fd.IsInitialized()) return NS_ERROR_NOT_CONNECTED;
 
   nsresult rv = NS_OK;
@@ -2957,7 +2684,7 @@ nsSocketTransport::SetRecvBufferSize(uint32_t aSize) {
 
 NS_IMETHODIMP
 nsSocketTransport::SetSendBufferSize(uint32_t aSize) {
-  PRFileDescAutoLock fd(this, false);
+  PRFileDescAutoLock fd(this);
   if (!fd.IsInitialized()) return NS_ERROR_NOT_CONNECTED;
 
   nsresult rv = NS_OK;
@@ -2976,64 +2703,21 @@ nsSocketTransport::OnLookupComplete(nsICancelable* request, nsIDNSRecord* rec,
               ".",
               this, static_cast<uint32_t>(status)));
 
-  if (request == mDNSTxtRequest) {
-    if (NS_SUCCEEDED(status)) {
-      nsCOMPtr<nsIDNSTXTRecord> txtResponse = do_QueryInterface(rec);
-      txtResponse->GetRecordsAsOneString(mDNSRecordTxt);
-      mDNSRecordTxt.Trim(" ");
-    }
-    Telemetry::Accumulate(Telemetry::ESNI_KEYS_RECORDS_FOUND,
-                          NS_SUCCEEDED(status));
-    // flag host lookup complete for the benefit of the ResolveHost method.
-    if (!mDNSRequest) {
-      mResolving = false;
-      MOZ_ASSERT(mDNSARequestFinished);
-      Telemetry::Accumulate(
-          Telemetry::ESNI_KEYS_RECORD_FETCH_DELAYS,
-          PR_IntervalToMilliseconds(PR_IntervalNow() - mDNSARequestFinished));
-
-      nsresult rv =
-          PostEvent(MSG_DNS_LOOKUP_COMPLETE, mDNSLookupStatus, nullptr);
-
-      // if posting a message fails, then we should assume that the socket
-      // transport has been shutdown.  this should never happen!  if it does
-      // it means that the socket transport service was shutdown before the
-      // DNS service.
-      if (NS_FAILED(rv)) {
-        NS_WARNING("unable to post DNS lookup complete message");
-      }
-    } else {
-      mDNSTxtRequest = nullptr;
-    }
-    return NS_OK;
-  }
-
-  if (NS_FAILED(status) && mDNSTxtRequest) {
-    mDNSTxtRequest->Cancel(NS_ERROR_ABORT);
-  } else if (NS_SUCCEEDED(status)) {
-    mDNSRecord = rec;
+  if (NS_SUCCEEDED(status)) {
+    mDNSRecord = do_QueryInterface(rec);
+    MOZ_ASSERT(mDNSRecord);
   }
 
   // flag host lookup complete for the benefit of the ResolveHost method.
-  if (!mDNSTxtRequest) {
-    if (mEsniQueried) {
-      Telemetry::Accumulate(Telemetry::ESNI_KEYS_RECORD_FETCH_DELAYS, 0);
-    }
-    mResolving = false;
-    nsresult rv = PostEvent(MSG_DNS_LOOKUP_COMPLETE, status, nullptr);
+  mResolving = false;
+  nsresult rv = PostEvent(MSG_DNS_LOOKUP_COMPLETE, status, nullptr);
 
-    // if posting a message fails, then we should assume that the socket
-    // transport has been shutdown.  this should never happen!  if it does
-    // it means that the socket transport service was shutdown before the
-    // DNS service.
-    if (NS_FAILED(rv)) {
-      NS_WARNING("unable to post DNS lookup complete message");
-    }
-  } else {
-    mDNSLookupStatus =
-        status;  // remember the status to send it when esni lookup is ready.
-    mDNSRequest = nullptr;
-    mDNSARequestFinished = PR_IntervalNow();
+  // if posting a message fails, then we should assume that the socket
+  // transport has been shutdown.  this should never happen!  if it does
+  // it means that the socket transport service was shutdown before the
+  // DNS service.
+  if (NS_FAILED(rv)) {
+    NS_WARNING("unable to post DNS lookup complete message");
   }
 
   return NS_OK;
@@ -3042,7 +2726,8 @@ nsSocketTransport::OnLookupComplete(nsICancelable* request, nsIDNSRecord* rec,
 // nsIInterfaceRequestor
 NS_IMETHODIMP
 nsSocketTransport::GetInterface(const nsIID& iid, void** result) {
-  if (iid.Equals(NS_GET_IID(nsIDNSRecord))) {
+  if (iid.Equals(NS_GET_IID(nsIDNSRecord)) ||
+      iid.Equals(NS_GET_IID(nsIDNSAddrRecord))) {
     return mDNSRecord ? mDNSRecord->QueryInterface(iid, result)
                       : NS_ERROR_NO_INTERFACE;
   }
@@ -3101,8 +2786,12 @@ nsSocketTransport::SetConnectionFlags(uint32_t value) {
       ("nsSocketTransport::SetConnectionFlags %p flags=%u", this, value));
 
   mConnectionFlags = value;
-  mIsPrivate = value & nsISocketTransport::NO_PERMANENT_STORAGE;
+  return NS_OK;
+}
 
+NS_IMETHODIMP
+nsSocketTransport::SetIsPrivate(bool aIsPrivate) {
+  mIsPrivate = aIsPrivate;
   return NS_OK;
 }
 
@@ -3140,7 +2829,7 @@ nsresult nsSocketTransport::SetKeepaliveEnabledInternal(bool aEnable) {
   MOZ_ASSERT(mKeepaliveProbeCount > 0 &&
              mKeepaliveProbeCount <= kMaxTCPKeepCount);
 
-  PRFileDescAutoLock fd(this, true);
+  PRFileDescAutoLock fd(this);
   if (NS_WARN_IF(!fd.IsInitialized())) {
     return NS_ERROR_NOT_INITIALIZED;
   }
@@ -3288,7 +2977,7 @@ nsSocketTransport::SetKeepaliveVals(int32_t aIdleTime, int32_t aRetryInterval) {
        this, mKeepaliveEnabled ? "enabled" : "disabled", mKeepaliveIdleTimeS,
        mKeepaliveRetryIntervalS, mKeepaliveProbeCount));
 
-  PRFileDescAutoLock fd(this, true);
+  PRFileDescAutoLock fd(this);
   if (NS_WARN_IF(!fd.IsInitialized())) {
     return NS_ERROR_NULL_POINTER;
   }
@@ -3589,32 +3278,40 @@ void nsSocketTransport::SendPRBlockingTelemetry(
 }
 
 NS_IMETHODIMP
-nsSocketTransport::SetFastOpenCallback(TCPFastOpen* aFastOpen) {
-  mFastOpenCallback = aFastOpen;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsSocketTransport::GetFirstRetryError(nsresult* aFirstRetryError) {
-  *aFirstRetryError = mFirstRetryError;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 nsSocketTransport::GetResetIPFamilyPreference(bool* aReset) {
   *aReset = mResetFamilyPreference;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsSocketTransport::GetEsniUsed(bool* aEsniUsed) {
-  *aEsniUsed = mEsniUsed;
+nsSocketTransport::GetEchConfigUsed(bool* aEchConfigUsed) {
+  *aEchConfigUsed = mEchConfigUsed;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSocketTransport::SetEchConfig(const nsACString& aEchConfig) {
+  mEchConfig = aEchConfig;
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsSocketTransport::ResolvedByTRR(bool* aResolvedByTRR) {
   *aResolvedByTRR = mResolvedByTRR;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSocketTransport::GetRetryDnsIfPossible(bool* aRetryDns) {
+  *aRetryDns = mRetryDnsIfPossible;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSocketTransport::GetStatus(nsresult* aStatus) {
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+
+  *aStatus = mCondition;
   return NS_OK;
 }
 

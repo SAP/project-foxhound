@@ -13,6 +13,10 @@
 
 #include "algorithm"
 
+#if defined(MOZ_CODE_COVERAGE)
+#  include "nsString.h"
+#endif
+
 #if defined(MOZ_ENABLE_FORKSERVER)
 #  include <stdlib.h>
 #  include <sys/types.h>
@@ -26,10 +30,17 @@
 
 #  include "mozilla/Unused.h"
 #  include "mozilla/ScopeExit.h"
+#  include "mozilla/ipc/ProcessUtils.h"
 
 using namespace mozilla::ipc;
 #endif
 
+#if defined(MOZ_CODE_COVERAGE)
+#  include "prenv.h"
+#  include "mozilla/ipc/EnvironmentMap.h"
+#endif
+
+#include "base/command_line.h"
 #include "base/eintr_wrapper.h"
 #include "base/logging.h"
 #include "mozilla/ipc/FileDescriptor.h"
@@ -161,7 +172,14 @@ void AppProcessBuilder::InitAppProcess(int* argcp, char*** argvp) {
   ReplaceArguments(argcp, argvp);
 }
 
-static void handle_sigchld(int s) { waitpid(-1, nullptr, WNOHANG); }
+static void handle_sigchld(int s) {
+  while (true) {
+    if (waitpid(-1, nullptr, WNOHANG) <= 0) {
+      // On error, or no process changed state.
+      break;
+    }
+  }
+}
 
 static void InstallChildSignalHandler() {
   // Since content processes are not children of the chrome process
@@ -184,6 +202,7 @@ static void ReserveFileDescriptors() {
 void InitForkServerProcess() {
   InstallChildSignalHandler();
   ReserveFileDescriptors();
+  SetThisProcessName("forkserver");
 }
 
 static bool LaunchAppWithForkServer(const std::vector<std::string>& argv,
@@ -225,6 +244,7 @@ bool LaunchApp(const std::vector<std::string>& argv,
   EnvironmentArray envp = BuildEnvironmentArray(options.env_map);
   mozilla::ipc::FileDescriptorShuffle shuffle;
   if (!shuffle.Init(options.fds_to_remap)) {
+    DLOG(WARNING) << "FileDescriptorShuffle::Init failed";
     return false;
   }
 
@@ -250,7 +270,10 @@ bool LaunchApp(const std::vector<std::string>& argv,
   pid_t pid = fork();
 #endif
 
-  if (pid < 0) return false;
+  if (pid < 0) {
+    DLOG(WARNING) << "fork() failed: " << strerror(errno);
+    return false;
+  }
 
   if (pid == 0) {
     // In the child:
@@ -270,6 +293,19 @@ bool LaunchApp(const std::vector<std::string>& argv,
     for (size_t i = 0; i < argv.size(); i++)
       argv_cstr[i] = const_cast<char*>(argv[i].c_str());
     argv_cstr[argv.size()] = NULL;
+
+#ifdef MOZ_CODE_COVERAGE
+    const char* gcov_child_prefix = PR_GetEnv("GCOV_CHILD_PREFIX");
+    if (gcov_child_prefix) {
+      const pid_t child_pid = getpid();
+      nsAutoCString new_gcov_prefix(gcov_child_prefix);
+      new_gcov_prefix.Append(std::to_string((size_t)child_pid));
+      EnvironmentMap new_map = options.env_map;
+      new_map[ENVIRONMENT_LITERAL("GCOV_PREFIX")] =
+          ENVIRONMENT_STRING(new_gcov_prefix.get());
+      envp = BuildEnvironmentArray(new_map);
+    }
+#endif
 
     execve(argv_cstr[0], argv_cstr.get(), envp.get());
     // if we get here, we're in serious trouble and should complain loudly

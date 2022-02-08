@@ -155,15 +155,7 @@ nsresult nsButtonBoxFrame::HandleEvent(nsPresContext* aPresContext,
 
     case eMouseClick: {
       WidgetMouseEvent* mouseEvent = aEvent->AsMouseEvent();
-
-      if (mouseEvent->IsLeftClickEvent()
-#ifdef XP_MACOSX
-          // On Mac, ctrl-click will send a context menu event from the widget,
-          // so we don't want to dispatch widget command if it is redispatched
-          // from the mouse event with ctrl key is pressed.
-          && !mouseEvent->IsControl()
-#endif
-      ) {
+      if (mouseEvent->IsLeftClickEvent()) {
         MouseClicked(mouseEvent);
       }
       break;
@@ -210,5 +202,6 @@ void nsButtonBoxFrame::MouseClicked(WidgetGUIEvent* aEvent) {
       content, aEvent->IsTrusted(), nullptr, presShell, inputEvent->IsControl(),
       inputEvent->IsAlt(), inputEvent->IsShift(), inputEvent->IsMeta(),
       mouseEvent ? mouseEvent->mInputSource
-                 : MouseEvent_Binding::MOZ_SOURCE_UNKNOWN);
+                 : MouseEvent_Binding::MOZ_SOURCE_UNKNOWN,
+      mouseEvent ? mouseEvent->mButton : 0);
 }

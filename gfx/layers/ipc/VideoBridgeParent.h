@@ -7,8 +7,8 @@
 #ifndef gfx_layers_ipc_VideoBridgeParent_h_
 #define gfx_layers_ipc_VideoBridgeParent_h_
 
-#include "mozilla/layers/PVideoBridgeParent.h"
 #include "mozilla/layers/ISurfaceAllocator.h"
+#include "mozilla/layers/PVideoBridgeParent.h"
 
 namespace mozilla {
 namespace layers {
@@ -22,17 +22,19 @@ class VideoBridgeParent final : public PVideoBridgeParent,
  public:
   ~VideoBridgeParent();
 
-  static VideoBridgeParent* GetSingleton(Maybe<VideoBridgeSource>& aSource);
+  static VideoBridgeParent* GetSingleton(
+      const Maybe<VideoBridgeSource>& aSource);
 
   static void Open(Endpoint<PVideoBridgeParent>&& aEndpoint,
                    VideoBridgeSource aSource);
+  static void Shutdown();
 
   TextureHost* LookupTexture(uint64_t aSerial);
 
   // PVideoBridgeParent
   void ActorDestroy(ActorDestroyReason aWhy) override;
   PTextureParent* AllocPTextureParent(const SurfaceDescriptor& aSharedData,
-                                      const ReadLockDescriptor& aReadLock,
+                                      ReadLockDescriptor& aReadLock,
                                       const LayersBackend& aLayersBackend,
                                       const TextureFlags& aFlags,
                                       const uint64_t& aSerial);
@@ -64,6 +66,7 @@ class VideoBridgeParent final : public PVideoBridgeParent,
   void Bind(Endpoint<PVideoBridgeParent>&& aEndpoint);
 
   void ActorDealloc() override;
+  void ReleaseCompositorThread();
 
   // This keeps us alive until ActorDestroy(), at which point we do a
   // deferred destruction of ourselves.

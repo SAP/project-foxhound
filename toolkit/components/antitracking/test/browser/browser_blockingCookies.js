@@ -2,6 +2,12 @@
 
 requestLongerTimeout(4);
 
+// Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
+Services.prefs.setBoolPref("network.cookie.sameSite.laxByDefault", false);
+registerCleanupFunction(() => {
+  Services.prefs.clearUserPref("network.cookie.sameSite.laxByDefault");
+});
+
 AntiTracking.runTestInNormalAndPrivateMode(
   "Set/Get Cookies",
   // Blocking callback
@@ -103,13 +109,19 @@ AntiTracking.runTestInNormalAndPrivateMode(
     is(document.cookie, "", "No cookies for me");
     document.cookie = "name=value";
 
+    let effectiveCookieBehavior = SpecialPowers.isContentWindowPrivate(window)
+      ? SpecialPowers.Services.prefs.getIntPref(
+          "network.cookie.cookieBehavior.pbmode"
+        )
+      : SpecialPowers.Services.prefs.getIntPref(
+          "network.cookie.cookieBehavior"
+        );
+
     if (
       [
         SpecialPowers.Ci.nsICookieService.BEHAVIOR_REJECT,
         SpecialPowers.Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN,
-      ].includes(
-        SpecialPowers.Services.prefs.getIntPref("network.cookie.cookieBehavior")
-      )
+      ].includes(effectiveCookieBehavior)
     ) {
       is(document.cookie, "", "No cookies for me");
     } else {

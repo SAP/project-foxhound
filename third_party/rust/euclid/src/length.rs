@@ -11,11 +11,13 @@
 use crate::approxeq::ApproxEq;
 use crate::num::Zero;
 use crate::scale::Scale;
+use crate::approxord::{max, min};
 
 use crate::num::One;
 use core::cmp::Ordering;
 use core::fmt;
 use core::hash::{Hash, Hasher};
+use core::iter::Sum;
 use core::marker::PhantomData;
 use core::ops::{Add, Div, Mul, Neg, Sub};
 use core::ops::{AddAssign, DivAssign, MulAssign, SubAssign};
@@ -82,15 +84,15 @@ impl<T, U> Length<T, U> {
 }
 
 impl<T: Clone, U> Length<T, U> {
-    /// Unpack the underlying value from the wrapper, cloning it.
-    pub fn get(&self) -> T {
-        self.0.clone()
+    /// Unpack the underlying value from the wrapper.
+    pub fn get(self) -> T {
+        self.0
     }
 
     /// Cast the unit
     #[inline]
-    pub fn cast_unit<V>(&self) -> Length<T, V> {
-        Length::new(self.0.clone())
+    pub fn cast_unit<V>(self) -> Length<T, V> {
+        Length::new(self.0)
     }
 
     /// Linearly interpolate between this length and another length.
@@ -110,7 +112,7 @@ impl<T: Clone, U> Length<T, U> {
     /// assert_eq!(from.lerp(to,  2.0), Length::new(16.0));
     /// ```
     #[inline]
-    pub fn lerp(&self, other: Self, t: T) -> Self
+    pub fn lerp(self, other: Self, t: T) -> Self
     where
         T: One + Sub<Output = T> + Mul<Output = T> + Add<Output = T>,
     {
@@ -119,26 +121,34 @@ impl<T: Clone, U> Length<T, U> {
     }
 }
 
+impl<T: PartialOrd, U> Length<T, U> {
+    /// Returns minimum between this length and another length.
+    #[inline]
+    pub fn min(self, other: Self) -> Self {
+        min(self, other)
+    }
+
+    /// Returns maximum between this length and another length.
+    #[inline]
+    pub fn max(self, other: Self) -> Self {
+        max(self, other)
+    }
+}
+
 impl<T: NumCast + Clone, U> Length<T, U> {
     /// Cast from one numeric representation to another, preserving the units.
     #[inline]
-    pub fn cast<NewT: NumCast>(&self) -> Length<NewT, U> {
+    pub fn cast<NewT: NumCast>(self) -> Length<NewT, U> {
         self.try_cast().unwrap()
     }
 
     /// Fallible cast from one numeric representation to another, preserving the units.
-    pub fn try_cast<NewT: NumCast>(&self) -> Option<Length<NewT, U>> {
-        NumCast::from(self.get()).map(Length::new)
+    pub fn try_cast<NewT: NumCast>(self) -> Option<Length<NewT, U>> {
+        NumCast::from(self.0).map(Length::new)
     }
 }
 
 impl<T: fmt::Debug, U> fmt::Debug for Length<T, U> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl<T: fmt::Display, U> fmt::Display for Length<T, U> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(f)
     }
@@ -163,6 +173,29 @@ impl<T: Add, U> Add for Length<T, U> {
 
     fn add(self, other: Self) -> Self::Output {
         Length::new(self.0 + other.0)
+    }
+}
+
+// length + &length
+impl<T: Add + Copy, U> Add<&Self> for Length<T, U> {
+    type Output = Length<T::Output, U>;
+
+    fn add(self, other: &Self) -> Self::Output {
+        Length::new(self.0 + other.0)
+    }
+}
+
+// length_iter.copied().sum()
+impl<T: Add<Output = T> + Zero, U> Sum for Length<T, U> {
+    fn sum<I: Iterator<Item=Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), Add::add)
+    }
+}
+
+// length_iter.sum()
+impl<'a, T: 'a + Add<Output = T> + Copy + Zero, U: 'a> Sum<&'a Self> for Length<T, U> {
+    fn sum<I: Iterator<Item=&'a Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), Add::add)
     }
 }
 
@@ -359,26 +392,20 @@ mod tests {
     }
 
     #[test]
-    fn test_get_clones_length_value() {
-        // Calling get returns a clone of the Length's value.
-        // To test this, we need something clone-able - hence a vector.
-        let mut length: Length<Vec<i32>, Inch> = Length::new(vec![1, 2, 3]);
-
-        let value = length.get();
-        length.0.push(4);
-
-        assert_eq!(value, vec![1, 2, 3]);
-        assert_eq!(length.get(), vec![1, 2, 3, 4]);
-    }
-
-    #[test]
     fn test_add() {
         let length1: Length<u8, Mm> = Length::new(250);
         let length2: Length<u8, Mm> = Length::new(5);
 
-        let result = length1 + length2;
+        assert_eq!((length1 + length2).get(), 255);
+        assert_eq!((length1 + &length2).get(), 255);
+    }
 
-        assert_eq!(result.get(), 255);
+    #[test]
+    fn test_sum() {
+        type L = Length<f32, Mm>;
+        let lengths = [L::new(1.0), L::new(2.0), L::new(3.0)];
+
+        assert_eq!(lengths.iter().sum::<L>(), L::new(6.0));
     }
 
     #[test]

@@ -8,6 +8,7 @@
 
 #  include "PlatformDecoderModule.h"
 #  include "dav1d/dav1d.h"
+#  include "nsRefPtrHashtable.h"
 
 namespace mozilla {
 
@@ -32,6 +33,9 @@ class DAV1DDecoder : public MediaDataDecoder,
 
   void ReleaseDataBuffer(const uint8_t* buf);
 
+  static Maybe<gfx::YUVColorSpace> GetColorSpace(const Dav1dPicture& aPicture,
+                                                 LazyLogModule& aLogger);
+
  private:
   ~DAV1DDecoder() = default;
   RefPtr<DecodePromise> InvokeDecode(MediaRawData* aSample);
@@ -40,9 +44,10 @@ class DAV1DDecoder : public MediaDataDecoder,
 
   Dav1dContext* mContext = nullptr;
 
-  const VideoInfo& mInfo;
+  const VideoInfo mInfo;
   const RefPtr<TaskQueue> mTaskQueue;
   const RefPtr<layers::ImageContainer> mImageContainer;
+  const RefPtr<layers::KnowsCompositor> mImageAllocator;
 
   // Keep the buffers alive until dav1d
   // does not need them any more.

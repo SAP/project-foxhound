@@ -9,10 +9,6 @@
 #include "builtin/streams/WritableStreamWriterOperations.h"
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
-#include "mozilla/Attributes.h"  // MOZ_MUST_USE
-
-#include "jsapi.h"        // JS_ReportErrorNumberASCII, JS_ReportErrorASCII
-#include "jsfriendapi.h"  // js::GetErrorMessage, JSMSG_*
 
 #include "builtin/streams/MiscellaneousOperations.h"  // js::PromiseRejectedWithPendingError
 #include "builtin/streams/WritableStream.h"  // js::WritableStream
@@ -20,11 +16,13 @@
 #include "builtin/streams/WritableStreamDefaultControllerOperations.h"  // js::WritableStreamDefaultController{Close,GetDesiredSize}
 #include "builtin/streams/WritableStreamDefaultWriter.h"  // js::WritableStreamDefaultWriter
 #include "builtin/streams/WritableStreamOperations.h"  // js::WritableStream{Abort,CloseQueuedOrInFlight}
-#include "js/Promise.h"                                // JS::PromiseState
-#include "js/Value.h"        // JS::Value, JS::{Int32,Null}Value
-#include "vm/Compartment.h"  // JS::Compartment
-#include "vm/Interpreter.h"  // js::GetAndClearException
-#include "vm/JSContext.h"    // JSContext
+#include "js/ErrorReport.h"           // JS_ReportErrorNumberASCII
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/Promise.h"               // JS::PromiseState
+#include "js/Value.h"                 // JS::Value, JS::{Int32,Null}Value
+#include "vm/Compartment.h"           // JS::Compartment
+#include "vm/Interpreter.h"           // js::GetAndClearException
+#include "vm/JSContext.h"             // JSContext
 #include "vm/PromiseObject.h"  // js::PromiseObject, js::PromiseResolvedWithUndefined
 
 #include "builtin/Promise-inl.h"  // js::SetSettledPromiseIsHandled
@@ -233,7 +231,7 @@ static bool EnsurePromiseRejected(
  * Streams spec, 4.6.5.
  *  WritableStreamDefaultWriterEnsureClosedPromiseRejected( writer, error )
  */
-MOZ_MUST_USE bool js::WritableStreamDefaultWriterEnsureClosedPromiseRejected(
+[[nodiscard]] bool js::WritableStreamDefaultWriterEnsureClosedPromiseRejected(
     JSContext* cx, Handle<WritableStreamDefaultWriter*> unwrappedWriter,
     Handle<Value> error) {
   return EnsurePromiseRejected(
@@ -245,7 +243,7 @@ MOZ_MUST_USE bool js::WritableStreamDefaultWriterEnsureClosedPromiseRejected(
  * Streams spec, 4.6.6.
  *  WritableStreamDefaultWriterEnsureReadyPromiseRejected( writer, error )
  */
-MOZ_MUST_USE bool js::WritableStreamDefaultWriterEnsureReadyPromiseRejected(
+[[nodiscard]] bool js::WritableStreamDefaultWriterEnsureReadyPromiseRejected(
     JSContext* cx, Handle<WritableStreamDefaultWriter*> unwrappedWriter,
     Handle<Value> error) {
   return EnsurePromiseRejected(

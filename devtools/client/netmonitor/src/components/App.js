@@ -15,6 +15,11 @@ const {
 } = require("devtools/client/shared/redux/visibility-handler-connect");
 
 // Components
+loader.lazyGetter(this, "AppErrorBoundary", function() {
+  return createFactory(
+    require("devtools/client/shared/components/AppErrorBoundary")
+  );
+});
 loader.lazyGetter(this, "MonitorPanel", function() {
   return createFactory(
     require("devtools/client/netmonitor/src/components/MonitorPanel")
@@ -29,6 +34,12 @@ loader.lazyGetter(this, "DropHarHandler", function() {
   return createFactory(
     require("devtools/client/netmonitor/src/components/DropHarHandler")
   );
+});
+
+// Localized strings for (devtools/client/locales/en-US/startup.properties)
+loader.lazyGetter(this, "L10N", function() {
+  const { LocalizationHelper } = require("devtools/shared/l10n");
+  return new LocalizationHelper("devtools/client/locales/startup.properties");
 });
 
 const { div } = dom;
@@ -73,24 +84,30 @@ class App extends Component {
 
     return div(
       { className: "network-monitor" },
-      !statisticsOpen
-        ? DropHarHandler(
-            {
-              actions,
-              openSplitConsole,
-            },
-            MonitorPanel({
-              actions,
+      AppErrorBoundary(
+        {
+          className: "app-error-boundary",
+          panel: L10N.getStr("netmonitor.label"),
+        },
+        !statisticsOpen
+          ? DropHarHandler(
+              {
+                actions,
+                openSplitConsole,
+              },
+              MonitorPanel({
+                actions,
+                connector,
+                openSplitConsole,
+                sourceMapURLService,
+                openLink,
+                toolboxDoc,
+              })
+            )
+          : StatisticsPanel({
               connector,
-              openSplitConsole,
-              sourceMapURLService,
-              openLink,
-              toolboxDoc,
             })
-          )
-        : StatisticsPanel({
-            connector,
-          })
+      )
     );
   }
 }

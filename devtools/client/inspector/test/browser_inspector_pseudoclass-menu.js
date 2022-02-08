@@ -14,15 +14,17 @@ const TEST_URI =
 const PSEUDOS = PSEUDO_CLASSES.map(pseudo => pseudo.substr(1));
 
 add_task(async function() {
-  const { inspector, testActor } = await openInspectorForURL(TEST_URI);
+  const { inspector, highlighterTestFront } = await openInspectorForURL(
+    TEST_URI
+  );
   await selectNode("div", inspector);
 
   const allMenuItems = openContextMenuAndGetAllItems(inspector);
 
-  await testMenuItems(testActor, allMenuItems, inspector);
+  await testMenuItems(highlighterTestFront, allMenuItems, inspector);
 });
 
-async function testMenuItems(testActor, allMenuItems, inspector) {
+async function testMenuItems(highlighterTestFront, allMenuItems, inspector) {
   for (const pseudo of PSEUDOS) {
     const menuItem = allMenuItems.find(
       item => item.id === "node-menu-pseudo-" + pseudo
@@ -43,7 +45,14 @@ async function testMenuItems(testActor, allMenuItems, inspector) {
     await onRefresh;
     await onMutations;
 
-    const hasLock = await testActor.hasPseudoClassLock("div", ":" + pseudo);
+    const hasLock = await SpecialPowers.spawn(
+      gBrowser.selectedBrowser,
+      [`:${pseudo}`],
+      pseudoClass => {
+        const element = content.document.querySelector("div");
+        return InspectorUtils.hasPseudoClassLock(element, pseudoClass);
+      }
+    );
     ok(hasLock, "pseudo-class lock has been applied");
   }
 }

@@ -1,12 +1,11 @@
 import pytest
 
 from datetime import datetime, timedelta
-from six import integer_types, text_type
 
 
 from tests.support.asserts import assert_error, assert_success
 from tests.support.helpers import clear_all_cookies
-from tests.support.inline import inline
+
 
 def get_named_cookie(session, name):
     return session.transport.send(
@@ -15,7 +14,12 @@ def get_named_cookie(session, name):
             name=name))
 
 
-def test_no_browsing_context(session, closed_window):
+def test_no_top_browsing_context(session, closed_window):
+    response = get_named_cookie(session, "foo")
+    assert_error(response, "no such window")
+
+
+def test_no_browsing_context(session, closed_frame):
     response = get_named_cookie(session, "foo")
     assert_error(response, "no such window")
 
@@ -32,13 +36,13 @@ def test_get_named_session_cookie(session, url):
     # table for cookie conversion
     # https://w3c.github.io/webdriver/#dfn-table-for-cookie-conversion
     assert "name" in cookie
-    assert isinstance(cookie["name"], text_type)
+    assert isinstance(cookie["name"], str)
     assert "value" in cookie
-    assert isinstance(cookie["value"], text_type)
+    assert isinstance(cookie["value"], str)
     assert "path" in cookie
-    assert isinstance(cookie["path"], text_type)
+    assert isinstance(cookie["path"], str)
     assert "domain" in cookie
-    assert isinstance(cookie["domain"], text_type)
+    assert isinstance(cookie["domain"], str)
     assert "secure" in cookie
     assert isinstance(cookie["secure"], bool)
     assert "httpOnly" in cookie
@@ -46,7 +50,7 @@ def test_get_named_session_cookie(session, url):
     if "expiry" in cookie:
         assert cookie.get("expiry") is None
     assert "sameSite" in cookie
-    assert isinstance(cookie["sameSite"], text_type)
+    assert isinstance(cookie["sameSite"], str)
 
     assert cookie["name"] == "foo"
     assert cookie["value"] == "bar"
@@ -66,14 +70,13 @@ def test_get_named_cookie(session, url):
     assert isinstance(cookie, dict)
 
     assert "name" in cookie
-    assert isinstance(cookie["name"], text_type)
+    assert isinstance(cookie["name"], str)
     assert "value" in cookie
-    assert isinstance(cookie["value"], text_type)
+    assert isinstance(cookie["value"], str)
     assert "expiry" in cookie
-    assert isinstance(cookie["expiry"], integer_types)
+    assert isinstance(cookie["expiry"], int)
     assert "sameSite" in cookie
-    assert isinstance(cookie["sameSite"], text_type)
-
+    assert isinstance(cookie["sameSite"], str)
 
     assert cookie["name"] == "foo"
     assert cookie["value"] == "bar"
@@ -82,7 +85,7 @@ def test_get_named_cookie(session, url):
         cookie["expiry"]).strftime(utc_string_format) == a_day_from_now
 
 
-def test_duplicated_cookie(session, url, server_config):
+def test_duplicated_cookie(session, url, server_config, inline):
     new_cookie = {
         "name": "hello",
         "value": "world",
@@ -108,11 +111,11 @@ def test_duplicated_cookie(session, url, server_config):
     assert isinstance(cookie, dict)
 
     assert "name" in cookie
-    assert isinstance(cookie["name"], text_type)
+    assert isinstance(cookie["name"], str)
     assert "value" in cookie
-    assert isinstance(cookie["value"], text_type)
+    assert isinstance(cookie["value"], str)
     assert "sameSite" in cookie
-    assert isinstance(cookie["sameSite"], text_type)
+    assert isinstance(cookie["sameSite"], str)
 
     assert cookie["name"] == new_cookie["name"]
     assert cookie["value"] == "newworld"
@@ -131,11 +134,11 @@ def test_get_cookie_with_same_site_flag(session, url, same_site):
     assert isinstance(cookie, dict)
 
     assert "name" in cookie
-    assert isinstance(cookie["name"], text_type)
+    assert isinstance(cookie["name"], str)
     assert "value" in cookie
-    assert isinstance(cookie["value"], text_type)
+    assert isinstance(cookie["value"], str)
     assert "sameSite" in cookie
-    assert isinstance(cookie["sameSite"], text_type)
+    assert isinstance(cookie["sameSite"], str)
 
     assert cookie["name"] == "foo"
     assert cookie["value"] == "bar"

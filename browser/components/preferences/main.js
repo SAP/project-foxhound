@@ -8,41 +8,8 @@
 /* import-globals-from ../../base/content/aboutDialog-appUpdater.js */
 /* global MozXULElement */
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var { Downloads } = ChromeUtils.import("resource://gre/modules/Downloads.jsm");
-var { FileUtils } = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
-var { TransientPrefs } = ChromeUtils.import(
-  "resource:///modules/TransientPrefs.jsm"
-);
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
-var { L10nRegistry } = ChromeUtils.import(
-  "resource://gre/modules/L10nRegistry.jsm"
-);
-var { HomePage } = ChromeUtils.import("resource:///modules/HomePage.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "CloudStorage",
-  "resource://gre/modules/CloudStorage.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "SelectionChangedMenulist",
-  "resource:///modules/SelectionChangedMenulist.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "UpdateUtils",
-  "resource://gre/modules/UpdateUtils.jsm"
-);
-
-XPCOMUtils.defineLazyServiceGetters(this, {
-  gHandlerService: [
-    "@mozilla.org/uriloader/handler-service;1",
-    "nsIHandlerService",
-  ],
-  gMIMEService: ["@mozilla.org/mime;1", "nsIMIMEService"],
+XPCOMUtils.defineLazyModuleGetters(this, {
+  BackgroundUpdate: "resource://gre/modules/BackgroundUpdate.jsm",
 });
 
 // Constants & Enumeration Values
@@ -50,56 +17,31 @@ const TYPE_PDF = "application/pdf";
 
 const PREF_PDFJS_DISABLED = "pdfjs.disabled";
 
-const PREF_DISABLED_PLUGIN_TYPES = "plugin.disable_full_page_plugin_for_types";
-
 // Pref for when containers is being controlled
 const PREF_CONTAINERS_EXTENSION = "privacy.userContext.extension";
-
-// Preferences that affect which entries to show in the list.
-const PREF_SHOW_PLUGINS_IN_LIST = "browser.download.show_plugins_in_list";
-const PREF_HIDE_PLUGINS_WITHOUT_EXTENSIONS =
-  "browser.download.hide_plugins_without_extensions";
 
 // Strings to identify ExtensionSettingsStore overrides
 const CONTAINERS_KEY = "privacy.containers";
 
-const AUTO_UPDATE_CHANGED_TOPIC = "auto-update-config-change";
-
-// The nsHandlerInfoAction enumeration values in nsIHandlerInfo identify
-// the actions the application can take with content of various types.
-// But since nsIHandlerInfo doesn't support plugins, there's no value
-// identifying the "use plugin" action, so we use this constant instead.
-const kActionUsePlugin = 5;
+const AUTO_UPDATE_CHANGED_TOPIC =
+  UpdateUtils.PER_INSTALLATION_PREFS["app.update.auto"].observerTopic;
+const BACKGROUND_UPDATE_CHANGED_TOPIC =
+  UpdateUtils.PER_INSTALLATION_PREFS["app.update.background.enabled"]
+    .observerTopic;
 
 const ICON_URL_APP =
   AppConstants.platform == "linux"
     ? "moz-icon://dummy.exe?size=16"
     : "chrome://browser/skin/preferences/application.png";
 
-// For CSS. Can be one of "ask", "save", "handleInternally" or "plugin". If absent, the icon URL
+// For CSS. Can be one of "ask", "save" or "handleInternally". If absent, the icon URL
 // was set by us to a custom handler icon and CSS should not try to override it.
 const APP_ICON_ATTR_NAME = "appHandlerIcon";
-
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
-
-if (AppConstants.MOZ_DEV_EDITION) {
-  ChromeUtils.defineModuleGetter(
-    this,
-    "fxAccounts",
-    "resource://gre/modules/FxAccounts.jsm"
-  );
-  ChromeUtils.defineModuleGetter(
-    this,
-    "FxAccounts",
-    "resource://gre/modules/FxAccounts.jsm"
-  );
-}
 
 Preferences.addAll([
   // Startup
   { id: "browser.startup.page", type: "int" },
   { id: "browser.privatebrowsing.autostart", type: "bool" },
-  { id: "browser.sessionstore.warnOnQuit", type: "bool" },
 
   // Downloads
   { id: "browser.download.useDownloadDir", type: "bool" },
@@ -122,6 +64,8 @@ Preferences.addAll([
   browser.tabs.warnOnOpen
   - true if the user should be warned if he attempts to open a lot of tabs at
     once (e.g. a large folder of bookmarks), false otherwise
+  browser.warnOnQuitShortcut
+  - true if the user should be warned if they quit using the keyboard shortcut
   browser.taskbar.previews.enable
   - true if tabs are to be shown in the Windows 7 taskbar
   */
@@ -129,8 +73,9 @@ Preferences.addAll([
   { id: "browser.link.open_newwindow", type: "int" },
   { id: "browser.tabs.loadInBackground", type: "bool", inverted: true },
   { id: "browser.tabs.warnOnClose", type: "bool" },
+  { id: "browser.warnOnQuitShortcut", type: "bool" },
   { id: "browser.tabs.warnOnOpen", type: "bool" },
-  { id: "browser.ctrlTab.recentlyUsedOrder", type: "bool" },
+  { id: "browser.ctrlTab.sortByRecentlyUsed", type: "bool" },
 
   // CFR
   {
@@ -206,6 +151,9 @@ Preferences.addAll([
     id: "media.videocontrols.picture-in-picture.video-toggle.enabled",
     type: "bool",
   },
+
+  // Media
+  { id: "media.hardwaremediakeys.enabled", type: "bool" },
 ]);
 
 if (AppConstants.HAVE_SHELL_SERVICE) {
@@ -232,6 +180,16 @@ if (AppConstants.MOZ_UPDATER) {
   }
 }
 
+XPCOMUtils.defineLazyGetter(this, "gHasWinPackageId", () => {
+  let hasWinPackageId = false;
+  try {
+    hasWinPackageId = Services.sysinfo.getProperty("hasWinPackageId");
+  } catch (_ex) {
+    // The hasWinPackageId property doesn't exist; assume it would be false.
+  }
+  return hasWinPackageId;
+});
+
 // A promise that resolves when the list of application handlers is loaded.
 // We store this in a global so tests can await it.
 var promiseLoadHandlersList;
@@ -245,13 +203,11 @@ function getBundleForLocales(newLocales) {
       Services.locale.lastFallbackLocale,
     ])
   );
-  function generateBundles(resourceIds) {
-    return L10nRegistry.generateBundles(locales, resourceIds);
-  }
   return new Localization(
     ["browser/preferences/preferences.ftl", "branding/brand.ftl"],
     false,
-    { generateBundles }
+    undefined,
+    locales
   );
 }
 
@@ -411,15 +367,29 @@ var gMainPane = {
       } catch (ex) {}
     }
 
-    // The "closing multiple tabs" and "opening multiple tabs might slow down
-    // &brandShortName;" warnings provide options for not showing these
-    // warnings again. When the user disabled them, we provide checkboxes to
-    // re-enable the warnings.
-    if (!TransientPrefs.prefShouldBeVisible("browser.tabs.warnOnClose")) {
-      document.getElementById("warnCloseMultiple").hidden = true;
-    }
+    // The "opening multiple tabs might slow down Firefox" warning provides
+    // an option for not showing this warning again. When the user disables it,
+    // we provide checkboxes to re-enable the warning.
     if (!TransientPrefs.prefShouldBeVisible("browser.tabs.warnOnOpen")) {
       document.getElementById("warnOpenMany").hidden = true;
+    }
+
+    if (AppConstants.platform != "win") {
+      let quitKeyElement = window.browsingContext.topChromeWindow.document.getElementById(
+        "key_quitApplication"
+      );
+      if (quitKeyElement) {
+        let quitKey = ShortcutUtils.prettifyShortcut(quitKeyElement);
+        document.l10n.setAttributes(
+          document.getElementById("warnOnQuitKey"),
+          "confirm-on-quit-with-key",
+          { quitKey }
+        );
+      } else {
+        // If the quit key element does not exist, then the quit key has
+        // been disabled, so just hide the checkbox.
+        document.getElementById("warnOnQuitKey").hidden = true;
+      }
     }
 
     setEventListener("ctrlTabRecentlyUsedOrder", "command", function() {
@@ -493,6 +463,11 @@ var gMainPane = {
       "command",
       gMainPane.showTranslationExceptions
     );
+    setEventListener(
+      "fxtranslateButton",
+      "command",
+      gMainPane.showTranslationExceptions
+    );
     Preferences.get("font.language.group").on(
       "change",
       gMainPane._rebuildFonts.bind(gMainPane)
@@ -519,14 +494,30 @@ var gMainPane = {
       gMainPane.showContainerSettings
     );
 
+    // For media control toggle button, we support it on Windows 8.1+ (NT6.3),
+    // MacOs 10.4+ (darwin8.0, but we already don't support that) and
+    // gtk-based Linux.
+    if (
+      AppConstants.isPlatformAndVersionAtLeast("win", "6.3") ||
+      AppConstants.platform == "macosx" ||
+      AppConstants.MOZ_WIDGET_GTK
+    ) {
+      document.getElementById("mediaControlBox").hidden = false;
+      let mediaControlLearnMoreUrl =
+        Services.urlFormatter.formatURLPref("app.support.baseURL") +
+        "media-keyboard-control";
+      let link = document.getElementById("mediaControlLearnMore");
+      link.setAttribute("href", mediaControlLearnMoreUrl);
+    }
+
     // Initializes the fonts dropdowns displayed in this pane.
     this._rebuildFonts();
 
     this.updateOnScreenKeyboardVisibility();
 
     // Show translation preferences if we may:
-    const prefName = "browser.translation.ui.show";
-    if (Services.prefs.getBoolPref(prefName)) {
+    const translationsPrefName = "browser.translation.ui.show";
+    if (Services.prefs.getBoolPref(translationsPrefName)) {
       let row = document.getElementById("translationBox");
       row.removeAttribute("hidden");
       // Showing attribution only for Bing Translator.
@@ -536,6 +527,13 @@ var gMainPane = {
       if (Translation.translationEngine == "Bing") {
         document.getElementById("bingAttribution").removeAttribute("hidden");
       }
+    }
+
+    // Firefox Translations settings panel
+    const fxtranslationsDisabledPrefName = "extensions.translations.disabled";
+    if (!Services.prefs.getBoolPref(fxtranslationsDisabledPrefName, true)) {
+      let fxtranslationRow = document.getElementById("fxtranslationsBox");
+      fxtranslationRow.hidden = false;
     }
 
     let drmInfoURL =
@@ -623,18 +621,29 @@ var gMainPane = {
     }
 
     if (AppConstants.MOZ_UPDATER) {
-      // XXX Workaround bug 1523453 -- changing selectIndex of a <deck> before
-      // frame construction could confuse nsDeckFrame::RemoveFrame().
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          gAppUpdater = new appUpdater();
-        });
-      });
+      gAppUpdater = new appUpdater();
       setEventListener("showUpdateHistory", "command", gMainPane.showUpdates);
 
       let updateDisabled =
         Services.policies && !Services.policies.isAllowed("appUpdate");
-      if (updateDisabled || UpdateUtils.appUpdateAutoSettingIsLocked()) {
+
+      if (gHasWinPackageId) {
+        // When we're running inside an app package, there's no point in
+        // displaying any update content here, and it would get confusing if we
+        // did, because our updater is not enabled.
+        // We can't rely on the hidden attribute for the toplevel elements,
+        // because of the pane hiding/showing code interfering.
+        document
+          .getElementById("updatesCategory")
+          .setAttribute("style", "display: none !important");
+        document
+          .getElementById("updateApp")
+          .setAttribute("style", "display: none !important");
+      } else if (
+        updateDisabled ||
+        UpdateUtils.appUpdateAutoSettingIsLocked() ||
+        gApplicationUpdateService.manualUpdateOnly
+      ) {
         document.getElementById("updateAllowDescription").hidden = true;
         document.getElementById("updateSettingsContainer").hidden = true;
         if (updateDisabled && AppConstants.MOZ_MAINTENANCE_SERVICE) {
@@ -645,12 +654,19 @@ var gMainPane = {
         document.getElementById("autoDesktop").removeAttribute("selected");
         document.getElementById("manualDesktop").removeAttribute("selected");
         // Start reading the correct value from the disk
-        this.updateReadPrefs();
-        setEventListener(
-          "updateRadioGroup",
-          "command",
-          gMainPane.updateWritePrefs
-        );
+        this.readUpdateAutoPref();
+        setEventListener("updateRadioGroup", "command", event => {
+          if (event.target.id == "backgroundUpdate") {
+            this.writeBackgroundUpdatePref();
+          } else {
+            this.writeUpdateAutoPref();
+          }
+        });
+        if (this.isBackgroundUpdateUIAvailable()) {
+          document.getElementById("backgroundUpdate").hidden = false;
+          // Start reading the background update pref's value from the disk.
+          this.readBackgroundUpdatePref();
+        }
       }
 
       if (AppConstants.platform == "win") {
@@ -661,7 +677,9 @@ var gMainPane = {
           "updateSettingsContainer"
         );
         updateContainer.classList.add("updateSettingCrossUserWarningContainer");
-        document.getElementById("updateSettingCrossUserWarning").hidden = false;
+        document.getElementById(
+          "updateSettingCrossUserWarningDesc"
+        ).hidden = false;
       }
 
       if (AppConstants.MOZ_MAINTENANCE_SERVICE) {
@@ -690,9 +708,8 @@ var gMainPane = {
 
     // Observe preferences that influence what we display so we can rebuild
     // the view when they change.
-    Services.prefs.addObserver(PREF_SHOW_PLUGINS_IN_LIST, this);
-    Services.prefs.addObserver(PREF_HIDE_PLUGINS_WITHOUT_EXTENSIONS, this);
     Services.obs.addObserver(this, AUTO_UPDATE_CHANGED_TOPIC);
+    Services.obs.addObserver(this, BACKGROUND_UPDATE_CHANGED_TOPIC);
 
     setEventListener("filter", "command", gMainPane.filter);
     setEventListener("typeColumn", "click", gMainPane.sort);
@@ -917,26 +934,12 @@ var gMainPane = {
 
     let newValue;
     let checkbox = document.getElementById("browserRestoreSession");
-    let warnOnQuitCheckbox = document.getElementById(
-      "browserRestoreSessionQuitWarning"
-    );
-    if (pbAutoStartPref.value || startupPref.locked) {
-      checkbox.setAttribute("disabled", "true");
-      warnOnQuitCheckbox.setAttribute("disabled", "true");
-    } else {
-      checkbox.removeAttribute("disabled");
-    }
+    checkbox.disabled = pbAutoStartPref.value || startupPref.locked;
     newValue = pbAutoStartPref.value
       ? false
       : startupPref.value === this.STARTUP_PREF_RESTORE_SESSION;
     if (checkbox.checked !== newValue) {
       checkbox.checked = newValue;
-      let warnOnQuitPref = Preferences.get("browser.sessionstore.warnOnQuit");
-      if (newValue && !warnOnQuitPref.locked && !pbAutoStartPref.value) {
-        warnOnQuitCheckbox.removeAttribute("disabled");
-      } else {
-        warnOnQuitCheckbox.setAttribute("disabled", "true");
-      }
     }
   },
   /**
@@ -1077,6 +1080,18 @@ var gMainPane = {
 
       let description = document.createXULElement("description");
       description.classList.add("message-bar-description");
+
+      // TODO: This should preferably use `Intl.LocaleInfo` when bug 1693576 is fixed.
+      if (
+        i == 0 &&
+        (locales[0] == "ar" ||
+          locales[0] == "ckb" ||
+          locales[0] == "fa" ||
+          locales[0] == "he" ||
+          locales[0] == "ur")
+      ) {
+        description.classList.add("rtl-locale");
+      }
       description.setAttribute("flex", "1");
       description.textContent = messages[i];
       messageContainer.appendChild(description);
@@ -1183,22 +1198,14 @@ var gMainPane = {
     const startupPref = Preferences.get("browser.startup.page");
     let newValue;
 
-    let warnOnQuitCheckbox = document.getElementById(
-      "browserRestoreSessionQuitWarning"
-    );
     if (value) {
       // We need to restore the blank homepage setting in our other pref
       if (startupPref.value === this.STARTUP_PREF_BLANK) {
         HomePage.safeSet("about:blank");
       }
       newValue = this.STARTUP_PREF_RESTORE_SESSION;
-      let warnOnQuitPref = Preferences.get("browser.sessionstore.warnOnQuit");
-      if (!warnOnQuitPref.locked) {
-        warnOnQuitCheckbox.removeAttribute("disabled");
-      }
     } else {
       newValue = this.STARTUP_PREF_HOMEPAGE;
-      warnOnQuitCheckbox.setAttribute("disabled", "true");
     }
     startupPref.value = newValue;
   },
@@ -1219,6 +1226,9 @@ var gMainPane = {
    * browser.tabs.warnOnClose - bool
    *   True - If when closing a window with multiple tabs the user is warned and
    *          allowed to cancel the action, false to just close the window.
+   * browser.warnOnQuitShortcut - bool
+   *   True - If the keyboard shortcut (Ctrl/Cmd+Q) is pressed, the user should
+   *          be warned, false to just quit without prompting.
    * browser.tabs.warnOnOpen - bool
    *   True - Whether the user should be warned when trying to open a lot of
    *          tabs at once (e.g. a large folder of bookmarks), allowing to
@@ -1268,12 +1278,14 @@ var gMainPane = {
         defaultBrowserBox.hidden = true;
         return;
       }
-      let setDefaultPane = document.getElementById("setDefaultPane");
       let isDefault = shellSvc.isDefaultBrowser(false, true);
-      setDefaultPane.selectedIndex = isDefault ? 1 : 0;
+      let setDefaultPane = document.getElementById("setDefaultPane");
+      setDefaultPane.classList.toggle("is-default", isDefault);
       let alwaysCheck = document.getElementById("alwaysCheckDefault");
-      alwaysCheck.disabled =
-        alwaysCheck.disabled || (isDefault && alwaysCheck.checked);
+      let alwaysCheckPref = Preferences.get(
+        "browser.shell.checkDefaultBrowser"
+      );
+      alwaysCheck.disabled = alwaysCheckPref.locked || isDefault;
     }
   },
 
@@ -1301,8 +1313,9 @@ var gMainPane = {
         return;
       }
 
-      let selectedIndex = shellSvc.isDefaultBrowser(false, true) ? 1 : 0;
-      document.getElementById("setDefaultPane").selectedIndex = selectedIndex;
+      let isDefault = shellSvc.isDefaultBrowser(false, true);
+      let setDefaultPane = document.getElementById("setDefaultPane");
+      setDefaultPane.classList.toggle("is-default", isDefault);
     }
   },
 
@@ -1336,9 +1349,8 @@ var gMainPane = {
     let opts = { selected: gMainPane.selectedLocales, search, telemetryId };
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/browserLanguages.xhtml",
-      null,
-      opts,
-      this.browserLanguagesClosed
+      { closingCallback: this.browserLanguagesClosed },
+      opts
     );
   },
 
@@ -1410,7 +1422,7 @@ var gMainPane = {
   configureFonts() {
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/fonts.xhtml",
-      "resizable=no"
+      { features: "resizable=no" }
     );
   },
 
@@ -1421,7 +1433,7 @@ var gMainPane = {
   configureColors() {
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/colors.xhtml",
-      "resizable=no"
+      { features: "resizable=no" }
     );
   },
 
@@ -1432,9 +1444,7 @@ var gMainPane = {
   showConnections() {
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/connection.xhtml",
-      null,
-      null,
-      this.updateProxySettingsUI.bind(this)
+      { closingCallback: this.updateProxySettingsUI.bind(this) }
     );
   },
 
@@ -1715,6 +1725,17 @@ var gMainPane = {
   },
 
   buildContentProcessCountMenuList() {
+    if (Services.appinfo.fissionAutostart) {
+      document.getElementById("limitContentProcess").hidden = true;
+      document.getElementById("contentProcessCount").hidden = true;
+      document.getElementById(
+        "contentProcessCountEnabledDescription"
+      ).hidden = true;
+      document.getElementById(
+        "contentProcessCountDisabledDescription"
+      ).hidden = true;
+      return;
+    }
     if (Services.appinfo.browserTabsRemoteAutostart) {
       let processCountPref = Preferences.get("dom.ipc.processCount");
       let defaultProcessCount = processCountPref.defaultValue;
@@ -1751,30 +1772,31 @@ var gMainPane = {
   /**
    * Selects the correct item in the update radio group
    */
-  async updateReadPrefs() {
+  async readUpdateAutoPref() {
     if (
       AppConstants.MOZ_UPDATER &&
-      (!Services.policies || Services.policies.isAllowed("appUpdate"))
+      (!Services.policies || Services.policies.isAllowed("appUpdate")) &&
+      !gHasWinPackageId
     ) {
       let radiogroup = document.getElementById("updateRadioGroup");
+
       radiogroup.disabled = true;
-      try {
-        let enabled = await UpdateUtils.getAppUpdateAutoEnabled();
-        radiogroup.value = enabled;
-        radiogroup.disabled = false;
-      } catch (error) {
-        Cu.reportError(error);
-      }
+      let enabled = await UpdateUtils.getAppUpdateAutoEnabled();
+      radiogroup.value = enabled;
+      radiogroup.disabled = false;
+
+      this.maybeDisableBackgroundUpdateControls();
     }
   },
 
   /**
-   * Writes the value of the update radio group to the disk
+   * Writes the value of the automatic update radio group to the disk
    */
-  async updateWritePrefs() {
+  async writeUpdateAutoPref() {
     if (
       AppConstants.MOZ_UPDATER &&
-      (!Services.policies || Services.policies.isAllowed("appUpdate"))
+      (!Services.policies || Services.policies.isAllowed("appUpdate")) &&
+      !gHasWinPackageId
     ) {
       let radiogroup = document.getElementById("updateRadioGroup");
       let updateAutoValue = radiogroup.value == "true";
@@ -1784,10 +1806,12 @@ var gMainPane = {
         radiogroup.disabled = false;
       } catch (error) {
         Cu.reportError(error);
-        await this.updateReadPrefs();
+        await this.readUpdateAutoPref();
         await this.reportUpdatePrefWriteError(error);
         return;
       }
+
+      this.maybeDisableBackgroundUpdateControls();
 
       // If the value was changed to false the user should be given the option
       // to discard an update if there is one.
@@ -1797,11 +1821,85 @@ var gMainPane = {
     }
   },
 
+  isBackgroundUpdateUIAvailable() {
+    return (
+      AppConstants.MOZ_UPDATER &&
+      AppConstants.MOZ_UPDATE_AGENT &&
+      // This UI controls a per-installation pref. It won't necessarily work
+      // properly if per-installation prefs aren't supported.
+      UpdateUtils.PER_INSTALLATION_PREFS_SUPPORTED &&
+      (!Services.policies || Services.policies.isAllowed("appUpdate")) &&
+      !gHasWinPackageId &&
+      !UpdateUtils.appUpdateSettingIsLocked("app.update.background.enabled")
+    );
+  },
+
+  maybeDisableBackgroundUpdateControls() {
+    if (this.isBackgroundUpdateUIAvailable()) {
+      let radiogroup = document.getElementById("updateRadioGroup");
+      let updateAutoEnabled = radiogroup.value == "true";
+
+      // This control is only active if auto update is enabled.
+      document.getElementById("backgroundUpdate").disabled = !updateAutoEnabled;
+    }
+  },
+
+  async readBackgroundUpdatePref() {
+    const prefName = "app.update.background.enabled";
+    if (this.isBackgroundUpdateUIAvailable()) {
+      let backgroundCheckbox = document.getElementById("backgroundUpdate");
+
+      // When the page first loads, the checkbox is unchecked until we finish
+      // reading the config file from the disk. But, ideally, we don't want to
+      // give the user the impression that this setting has somehow gotten
+      // turned off and they need to turn it back on. We also don't want the
+      // user interacting with the control, expecting a particular behavior, and
+      // then have the read complete and change the control in an unexpected
+      // way. So we disable the control while we are reading.
+      // The only entry points for this function are page load and user
+      // interaction with the control. By disabling the control to prevent
+      // further user interaction, we prevent the possibility of entering this
+      // function a second time while we are still reading.
+      backgroundCheckbox.disabled = true;
+
+      // If we haven't already done this, it might result in the effective value
+      // of the Background Update pref changing. Thus, we should do it before
+      // we tell the user what value this pref has.
+      await BackgroundUpdate.ensureExperimentToRolloutTransitionPerformed();
+
+      let enabled = await UpdateUtils.readUpdateConfigSetting(prefName);
+      backgroundCheckbox.checked = enabled;
+      this.maybeDisableBackgroundUpdateControls();
+    }
+  },
+
+  async writeBackgroundUpdatePref() {
+    const prefName = "app.update.background.enabled";
+    if (this.isBackgroundUpdateUIAvailable()) {
+      let backgroundCheckbox = document.getElementById("backgroundUpdate");
+      backgroundCheckbox.disabled = true;
+      let backgroundUpdateEnabled = backgroundCheckbox.checked;
+      try {
+        await UpdateUtils.writeUpdateConfigSetting(
+          prefName,
+          backgroundUpdateEnabled
+        );
+      } catch (error) {
+        Cu.reportError(error);
+        await this.readBackgroundUpdatePref();
+        await this.reportUpdatePrefWriteError(error);
+        return;
+      }
+
+      this.maybeDisableBackgroundUpdateControls();
+    }
+  },
+
   async reportUpdatePrefWriteError(error) {
     let [title, message] = await document.l10n.formatValues([
-      { id: "update-setting-write-failure-title" },
+      { id: "update-setting-write-failure-title2" },
       {
-        id: "update-setting-write-failure-message",
+        id: "update-setting-write-failure-message2",
         args: { path: error.path },
       },
     ]);
@@ -1826,7 +1924,7 @@ var gMainPane = {
     let um = Cc["@mozilla.org/updates/update-manager;1"].getService(
       Ci.nsIUpdateManager
     );
-    if (!um.activeUpdate) {
+    if (!um.readyUpdate && !um.downloadingUpdate) {
       return;
     }
 
@@ -1865,8 +1963,9 @@ var gMainPane = {
       let aus = Cc["@mozilla.org/updates/update-service;1"].getService(
         Ci.nsIApplicationUpdateService
       );
-      aus.stopDownload();
-      um.cleanupActiveUpdate();
+      await aus.stopDownload();
+      um.cleanupReadyUpdate();
+      um.cleanupDownloadingUpdate();
     }
   },
 
@@ -1879,12 +1978,9 @@ var gMainPane = {
 
   destroy() {
     window.removeEventListener("unload", this);
-    Services.prefs.removeObserver(PREF_SHOW_PLUGINS_IN_LIST, this);
-    Services.prefs.removeObserver(PREF_HIDE_PLUGINS_WITHOUT_EXTENSIONS, this);
-
     Services.prefs.removeObserver(PREF_CONTAINERS_EXTENSION, this);
-
     Services.obs.removeObserver(this, AUTO_UPDATE_CHANGED_TOPIC);
+    Services.obs.removeObserver(this, BACKGROUND_UPDATE_CHANGED_TOPIC);
   },
 
   // nsISupports
@@ -1902,24 +1998,27 @@ var gMainPane = {
       // Rebuild the list when there are changes to preferences that influence
       // whether or not to show certain entries in the list.
       if (!this._storingAction) {
-        // These two prefs alter the list of visible types, so we have to rebuild
-        // that list when they change.
-        if (
-          aData == PREF_SHOW_PLUGINS_IN_LIST ||
-          aData == PREF_HIDE_PLUGINS_WITHOUT_EXTENSIONS
-        ) {
-          await this._rebuildVisibleTypes();
-          await this._rebuildView();
-          await this._sortListView();
-        } else {
-          await this._rebuildView();
-        }
+        await this._rebuildView();
       }
     } else if (aTopic == AUTO_UPDATE_CHANGED_TOPIC) {
+      if (!AppConstants.MOZ_UPDATER) {
+        return;
+      }
       if (aData != "true" && aData != "false") {
         throw new Error("Invalid preference value for app.update.auto");
       }
       document.getElementById("updateRadioGroup").value = aData;
+      this.maybeDisableBackgroundUpdateControls();
+    } else if (aTopic == BACKGROUND_UPDATE_CHANGED_TOPIC) {
+      if (!AppConstants.MOZ_UPDATER || !AppConstants.MOZ_UPDATE_AGENT) {
+        return;
+      }
+      if (aData != "true" && aData != "false") {
+        throw new Error(
+          "Invalid preference value for app.update.background.enabled"
+        );
+      }
+      document.getElementById("backgroundUpdate").checked = aData == "true";
     }
   },
 
@@ -1938,7 +2037,6 @@ var gMainPane = {
 
   _loadData() {
     this._loadInternalHandlers();
-    this._loadPluginHandlers();
     this._loadApplicationHandlers();
   },
 
@@ -1947,54 +2045,22 @@ var gMainPane = {
    * applications menu.
    */
   _loadInternalHandlers() {
-    var internalHandlers = [new PDFHandlerInfoWrapper()];
+    let internalHandlers = [new PDFHandlerInfoWrapper()];
+
+    let enabledHandlers = Services.prefs
+      .getCharPref("browser.download.viewableInternally.enabledTypes", "")
+      .trim();
+    if (enabledHandlers) {
+      for (let ext of enabledHandlers.split(",")) {
+        internalHandlers.push(
+          new ViewableInternallyHandlerInfoWrapper(ext.trim())
+        );
+      }
+    }
     for (let internalHandler of internalHandlers) {
       if (internalHandler.enabled) {
         this._handledTypes[internalHandler.type] = internalHandler;
       }
-    }
-  },
-
-  /**
-   * Load the set of handlers defined by plugins.
-   *
-   * Note: if there's more than one plugin for a given MIME type, we assume
-   * the last one is the one that the application will use.  That may not be
-   * correct, but it's how we've been doing it for years.
-   *
-   * Perhaps we should instead query navigator.mimeTypes for the set of types
-   * supported by the application and then get the plugin from each MIME type's
-   * enabledPlugin property.  But if there's a plugin for a type, we need
-   * to know about it even if it isn't enabled, since we're going to give
-   * the user an option to enable it.
-   *
-   * Also note that enabledPlugin does not get updated when
-   * plugin.disable_full_page_plugin_for_types changes, so even if we could use
-   * enabledPlugin to get the plugin that would be used, we'd still need to
-   * check the pref ourselves to find out if it's enabled.
-   */
-  _loadPluginHandlers() {
-    "use strict";
-
-    let mimeTypes = navigator.mimeTypes;
-
-    for (let mimeType of mimeTypes) {
-      let handlerInfoWrapper;
-      if (mimeType.type in this._handledTypes) {
-        handlerInfoWrapper = this._handledTypes[mimeType.type];
-      } else {
-        let wrappedHandlerInfo = gMIMEService.getFromTypeAndExtension(
-          mimeType.type,
-          null
-        );
-        handlerInfoWrapper = new HandlerInfoWrapper(
-          mimeType.type,
-          wrappedHandlerInfo
-        );
-        handlerInfoWrapper.handledOnlyByPlugin = true;
-        this._handledTypes[mimeType.type] = handlerInfoWrapper;
-      }
-      handlerInfoWrapper.pluginName = mimeType.enabledPlugin.name;
     }
   },
 
@@ -2012,8 +2078,6 @@ var gMainPane = {
         handlerInfoWrapper = new HandlerInfoWrapper(type, wrappedHandlerInfo);
         this._handledTypes[type] = handlerInfoWrapper;
       }
-
-      handlerInfoWrapper.handledOnlyByPlugin = false;
     }
   },
 
@@ -2053,13 +2117,6 @@ var gMainPane = {
     // to determine whether or not to annotate descriptions with their types to
     // distinguish duplicate descriptions from each other.
     let visibleDescriptions = new Map();
-
-    // Get the preferences that help determine what types to show.
-    var showPlugins = Services.prefs.getBoolPref(PREF_SHOW_PLUGINS_IN_LIST);
-    var hidePluginsWithoutExtensions = Services.prefs.getBoolPref(
-      PREF_HIDE_PLUGINS_WITHOUT_EXTENSIONS
-    );
-
     for (let type in this._handledTypes) {
       // Yield before processing each handler info object to avoid monopolizing
       // the main thread, as the objects are retrieved lazily, and retrieval
@@ -2067,27 +2124,6 @@ var gMainPane = {
       await new Promise(resolve => Services.tm.dispatchToMainThread(resolve));
 
       let handlerInfo = this._handledTypes[type];
-
-      // Hide plugins without associated extensions if so prefed so we don't
-      // show a whole bunch of obscure types handled by plugins on Mac.
-      // Note: though protocol types don't have extensions, we still show them;
-      // the pref is only meant to be applied to MIME types, since plugins are
-      // only associated with MIME types.
-      // FIXME: should we also check the "suffixes" property of the plugin?
-      // Filed as bug 395135.
-      if (
-        hidePluginsWithoutExtensions &&
-        handlerInfo.handledOnlyByPlugin &&
-        handlerInfo.wrappedHandlerInfo instanceof Ci.nsIMIMEInfo &&
-        !handlerInfo.primaryExtension
-      ) {
-        continue;
-      }
-
-      // Hide types handled only by plugins if so prefed.
-      if (handlerInfo.handledOnlyByPlugin && !showPlugins) {
-        continue;
-      }
 
       // We couldn't find any reason to exclude the type, so include it.
       this._visibleTypes.push(handlerInfo);
@@ -2365,21 +2401,6 @@ var gMainPane = {
       }
     }
 
-    // Create a menu item for the plugin.
-    if (handlerInfo.pluginName) {
-      var pluginMenuItem = document.createXULElement("menuitem");
-      pluginMenuItem.setAttribute("action", kActionUsePlugin);
-      document.l10n.setAttributes(
-        pluginMenuItem,
-        "applications-use-plugin-in",
-        {
-          "plugin-name": handlerInfo.pluginName,
-        }
-      );
-      pluginMenuItem.setAttribute(APP_ICON_ATTR_NAME, "plugin");
-      menuPopup.appendChild(pluginMenuItem);
-    }
-
     // Create a menu item for selecting a local application.
     let canOpenWithOtherApp = true;
     if (AppConstants.platform == "win") {
@@ -2420,6 +2441,12 @@ var gMainPane = {
     if (handlerInfo.alwaysAskBeforeHandling) {
       menu.selectedItem = askMenuItem;
     } else {
+      // The nsHandlerInfoAction enumeration values in nsIHandlerInfo identify
+      // the actions the application can take with content of various types.
+      // But since we've stopped support for plugins, there's no value
+      // identifying the "use plugin" action, so we use this constant instead.
+      const kActionUsePlugin = 5;
+
       switch (handlerInfo.preferredAction) {
         case Ci.nsIHandlerInfo.handleInternally:
           if (internalMenuItem) {
@@ -2456,8 +2483,8 @@ var gMainPane = {
           }
           break;
         case kActionUsePlugin:
-          // The plugin may have been removed, if so, select 'always ask':
-          menu.selectedItem = pluginMenuItem || askMenuItem;
+          // We no longer support plugins, select "ask" instead:
+          menu.selectedItem = askMenuItem;
           break;
         case Ci.nsIHandlerInfo.saveToDisk:
           menu.selectedItem = saveMenuItem;
@@ -2540,7 +2567,7 @@ var gMainPane = {
    * Filter the list when the user enters a filter term into the filter field.
    */
   filter() {
-    this._rebuildView();
+    this._rebuildView(); // FIXME: Should this be await since bug 1508156?
   },
 
   focusFilterBox() {
@@ -2555,8 +2582,7 @@ var gMainPane = {
   // we make changes that may spawn such updates.
   // XXXgijs: this was definitely necessary when we changed feed preferences
   // from within _storeAction and its calltree. Now, it may still be
-  // necessary, either to avoid calling _rebuildView or to avoid the plugin-
-  // related prefs change code. bug 1499350 has more details.
+  // necessary, to avoid calling _rebuildView. bug 1499350 has more details.
   _storingAction: false,
 
   onSelectAction(aActionItem) {
@@ -2573,13 +2599,6 @@ var gMainPane = {
     var handlerInfo = this.selectedHandlerListItem.handlerInfoWrapper;
 
     let action = parseInt(aActionItem.getAttribute("action"));
-
-    // Set the plugin state if we're enabling or disabling a plugin.
-    if (action == kActionUsePlugin) {
-      handlerInfo.enablePluginType();
-    } else if (handlerInfo.pluginName && !handlerInfo.isDisabledPluginType) {
-      handlerInfo.disablePluginType();
-    }
 
     // Set the preferred application handler.
     // We leave the existing preferred app in the list when we set
@@ -2603,10 +2622,6 @@ var gMainPane = {
 
     handlerInfo.store();
 
-    // Make sure the handler info object is flagged to indicate that there is
-    // now some user configuration for the type.
-    handlerInfo.handledOnlyByPlugin = false;
-
     // Update the action label and image to reflect the new preferred action.
     this.selectedHandlerListItem.refreshAction();
   },
@@ -2629,9 +2644,8 @@ var gMainPane = {
 
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/applicationManager.xhtml",
-      "resizable=no",
-      handlerInfo,
-      onComplete
+      { features: "resizable=no", closingCallback: onComplete },
+      handlerInfo
     );
   },
 
@@ -2695,9 +2709,8 @@ var gMainPane = {
 
       gSubDialog.open(
         "chrome://global/content/appPicker.xhtml",
-        null,
-        params,
-        onAppSelected
+        { closingCallback: onAppSelected },
+        params
       );
     } else {
       let winTitle = await document.l10n.formatValue(
@@ -2749,7 +2762,7 @@ var gMainPane = {
     var fph = Services.io
       .getProtocolHandler("file")
       .QueryInterface(Ci.nsIFileProtocolHandler);
-    var urlSpec = fph.getURLSpecFromFile(aFile);
+    var urlSpec = fph.getURLSpecFromActualFile(aFile);
 
     return "moz-icon://" + urlSpec + "?size=16";
   },
@@ -2977,6 +2990,18 @@ var gMainPane = {
   },
 
   async displayDownloadDirPrefTask() {
+    // We're async for localization reasons, and we can get called several
+    // times in the same turn of the event loop (!) because of how the
+    // preferences bindings work... but the speed of localization
+    // shouldn't impact what gets displayed to the user in the end - the
+    // last call should always win.
+    // To accomplish this, store a unique object when we enter this function,
+    // and if by the end of the function that stored object has been
+    // overwritten, don't update the UI but leave it to the last
+    // caller to this function to do.
+    let token = {};
+    this._downloadDisplayToken = token;
+
     var folderListPref = Preferences.get("browser.download.folderList");
     var downloadFolder = document.getElementById("downloadFolder");
     var currentDirPref = Preferences.get("browser.download.dir");
@@ -2999,28 +3024,35 @@ var gMainPane = {
     }
 
     // Display a 'pretty' label or the path in the UI.
-    // note: downloadFolder.value is not read elsewhere in the code, its only purpose is to display to the user
+    let folderValue;
     if (folderIndex == 2) {
       // Force the left-to-right direction when displaying a custom path.
-      downloadFolder.value = currentDirPref.value
+      folderValue = currentDirPref.value
         ? `\u2066${currentDirPref.value.path}\u2069`
         : "";
-      iconUrlSpec = fph.getURLSpecFromFile(currentDirPref.value);
+      iconUrlSpec = fph.getURLSpecFromDir(currentDirPref.value);
     } else if (folderIndex == 1) {
       // 'Downloads'
-      [downloadFolder.value] = await document.l10n.formatValues([
+      [folderValue] = await document.l10n.formatValues([
         { id: "downloads-folder-name" },
       ]);
-      iconUrlSpec = fph.getURLSpecFromFile(await this._indexToFolder(1));
+      iconUrlSpec = fph.getURLSpecFromDir(await this._indexToFolder(1));
     } else {
       // 'Desktop'
-      [downloadFolder.value] = await document.l10n.formatValues([
+      [folderValue] = await document.l10n.formatValues([
         { id: "desktop-folder-name" },
       ]);
-      iconUrlSpec = fph.getURLSpecFromFile(
+      iconUrlSpec = fph.getURLSpecFromDir(
         await this._getDownloadsFolder("Desktop")
       );
     }
+    // Ensure that the last entry to this function always wins
+    // (see comment at the start of this method):
+    if (this._downloadDisplayToken != token) {
+      return;
+    }
+    // note: downloadFolder.value is not read elsewhere in the code, its only purpose is to display to the user
+    downloadFolder.value = folderValue;
     downloadFolder.style.backgroundImage =
       "url(moz-icon://" + iconUrlSpec + "?size=16)";
   },
@@ -3248,7 +3280,7 @@ function localizeElement(node, l10n) {
  *
  * We create an instance of this wrapper for each entry we might display
  * in the prefpane, and we compose the instances from various sources,
- * including plugins and the handler service.
+ * including the handler service.
  *
  * We don't implement all the original nsIHandlerInfo functionality,
  * just the stuff that the prefpane needs.
@@ -3258,27 +3290,6 @@ class HandlerInfoWrapper {
     this.type = type;
     this.wrappedHandlerInfo = handlerInfo;
     this.disambiguateDescription = false;
-
-    // A plugin that can handle this type, if any.
-    //
-    // Note: just because we have one doesn't mean it *will* handle the type.
-    // That depends on whether or not the type is in the list of types for which
-    // plugin handling is disabled.
-    this.pluginName = "";
-
-    // Whether or not this type is only handled by a plugin or is also handled
-    // by some user-configured action as specified in the handler info object.
-    //
-    // Note: we can't just check if there's a handler info object for this type,
-    // because OS and user configuration is mixed up in the handler info object,
-    // so we always need to retrieve it for the OS info and can't tell whether
-    // it represents only OS-default information or user-configured information.
-    //
-    // FIXME: once handler info records are broken up into OS-provided records
-    // and user-configured records, stop using this boolean flag and simply
-    // check for the presence of a user-configured record to determine whether
-    // or not this type is only handled by a plugin.  Filed as bug 395142.
-    this.handledOnlyByPlugin = false;
   }
 
   get description() {
@@ -3340,9 +3351,6 @@ class HandlerInfoWrapper {
           return "handleInternally";
         }
         break;
-
-      case kActionUsePlugin:
-        return "plugin";
     }
 
     return "";
@@ -3446,11 +3454,6 @@ class HandlerInfoWrapper {
 
   // What to do with content of this type.
   get preferredAction() {
-    // If we have an enabled plugin, then the action is to use that plugin.
-    if (this.pluginName && !this.isDisabledPluginType) {
-      return kActionUsePlugin;
-    }
-
     // If the action is to use a helper app, but we don't have a preferred
     // handler app, then switch to using the system default, if any; otherwise
     // fall back to saving to disk, which is the default action in nsMIMEInfo.
@@ -3472,36 +3475,10 @@ class HandlerInfoWrapper {
   }
 
   set preferredAction(aNewValue) {
-    // If the action is to use the plugin,
-    // we must set the preferred action to "save to disk".
-    // But only if it's not currently the preferred action.
-    if (
-      aNewValue == kActionUsePlugin &&
-      this.preferredAction != Ci.nsIHandlerInfo.saveToDisk
-    ) {
-      aNewValue = Ci.nsIHandlerInfo.saveToDisk;
-    }
-
-    // We don't modify the preferred action if the new action is to use a plugin
-    // because handler info objects don't understand our custom "use plugin"
-    // value.  Also, leaving it untouched means that we can automatically revert
-    // to the old setting if the user ever removes the plugin.
-
-    if (aNewValue != kActionUsePlugin) {
-      this.wrappedHandlerInfo.preferredAction = aNewValue;
-    }
+    this.wrappedHandlerInfo.preferredAction = aNewValue;
   }
 
   get alwaysAskBeforeHandling() {
-    // If this type is handled only by a plugin, we can't trust the value
-    // in the handler info object, since it'll be a default based on the absence
-    // of any user configuration, and the default in that case is to always ask,
-    // even though we never ask for content handled by a plugin, so special case
-    // plugin-handled types by returning false here.
-    if (this.pluginName && this.handledOnlyByPlugin) {
-      return false;
-    }
-
     // If this is a protocol type and the preferred action is "save to disk",
     // which is invalid for such types, then return true here to override that
     // action.  This could happen when the preferred action is to use a helper
@@ -3523,10 +3500,6 @@ class HandlerInfoWrapper {
   }
 
   // The primary file extension associated with this type, if any.
-  //
-  // XXX Plugin objects contain an array of MimeType objects with "suffixes"
-  // properties; if this object has an associated plugin, shouldn't we check
-  // those properties for an extension?
   get primaryExtension() {
     try {
       if (
@@ -3538,67 +3511,6 @@ class HandlerInfoWrapper {
     } catch (ex) {}
 
     return null;
-  }
-
-  get isDisabledPluginType() {
-    return this._getDisabledPluginTypes().includes(this.type);
-  }
-
-  _getDisabledPluginTypes() {
-    var types = "";
-
-    if (Services.prefs.prefHasUserValue(PREF_DISABLED_PLUGIN_TYPES)) {
-      types = Services.prefs.getCharPref(PREF_DISABLED_PLUGIN_TYPES);
-    }
-
-    // Only split if the string isn't empty so we don't end up with an array
-    // containing a single empty string.
-    if (types != "") {
-      return types.split(",");
-    }
-
-    return [];
-  }
-
-  disablePluginType() {
-    var disabledPluginTypes = this._getDisabledPluginTypes();
-
-    if (!disabledPluginTypes.includes(this.type)) {
-      disabledPluginTypes.push(this.type);
-    }
-
-    Services.prefs.setCharPref(
-      PREF_DISABLED_PLUGIN_TYPES,
-      disabledPluginTypes.join(",")
-    );
-
-    // Update the category manager so existing browser windows update.
-    Services.catMan.deleteCategoryEntry(
-      "Gecko-Content-Viewers",
-      this.type,
-      false
-    );
-  }
-
-  enablePluginType() {
-    var disabledPluginTypes = this._getDisabledPluginTypes();
-
-    var type = this.type;
-    disabledPluginTypes = disabledPluginTypes.filter(v => v != type);
-
-    Services.prefs.setCharPref(
-      PREF_DISABLED_PLUGIN_TYPES,
-      disabledPluginTypes.join(",")
-    );
-
-    // Update the category manager so existing browser windows update.
-    Services.catMan.addCategoryEntry(
-      "Gecko-Content-Viewers",
-      this.type,
-      "@mozilla.org/content/plugin/document-loader-factory;1",
-      false,
-      true
-    );
   }
 
   store() {
@@ -3630,8 +3542,9 @@ class HandlerInfoWrapper {
  * menu.
  */
 class InternalHandlerInfoWrapper extends HandlerInfoWrapper {
-  constructor(mimeType) {
-    super(mimeType, gMIMEService.getFromTypeAndExtension(mimeType, null));
+  constructor(mimeType, extension) {
+    let type = gMIMEService.getFromTypeAndExtension(mimeType, extension);
+    super(mimeType || type.type, type);
   }
 
   // Override store so we so we can notify any code listening for registration
@@ -3643,22 +3556,24 @@ class InternalHandlerInfoWrapper extends HandlerInfoWrapper {
   get enabled() {
     throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
   }
-
-  get description() {
-    return { id: this._appPrefLabel };
-  }
 }
 
 class PDFHandlerInfoWrapper extends InternalHandlerInfoWrapper {
   constructor() {
-    super(TYPE_PDF);
-  }
-
-  get _appPrefLabel() {
-    return "applications-type-pdf";
+    super(TYPE_PDF, null);
   }
 
   get enabled() {
     return !Services.prefs.getBoolPref(PREF_PDFJS_DISABLED);
+  }
+}
+
+class ViewableInternallyHandlerInfoWrapper extends InternalHandlerInfoWrapper {
+  constructor(extension) {
+    super(null, extension);
+  }
+
+  get enabled() {
+    return DownloadIntegration.shouldViewDownloadInternally(this.type);
   }
 }

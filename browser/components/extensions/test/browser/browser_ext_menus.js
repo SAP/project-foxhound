@@ -6,26 +6,6 @@
 const PAGE =
   "http://mochi.test:8888/browser/browser/components/extensions/test/browser/context.html";
 
-async function openContextMenuInPageActionPanel(extension, win = window) {
-  win.gURLBar.setPageProxyState("valid");
-  await promiseAnimationFrame(win);
-  const mainPanelshown = BrowserTestUtils.waitForEvent(
-    BrowserPageActions.panelNode,
-    "popupshown"
-  );
-  EventUtils.synthesizeMouseAtCenter(
-    BrowserPageActions.mainButtonNode,
-    {},
-    win
-  );
-  await mainPanelshown;
-  let buttonID =
-    "#" +
-    BrowserPageActions.panelButtonNodeIDForActionID(makeWidgetId(extension.id));
-  let menuID = "pageActionContextMenu";
-  return openChromeContextMenu(menuID, buttonID, win);
-}
-
 add_task(async function test_permissions() {
   function background() {
     browser.test.sendMessage("apis", {
@@ -172,57 +152,6 @@ add_task(async function test_actionContextMenus() {
   await extension.unload();
 });
 
-add_task(async function test_hiddenPageActionContextMenu() {
-  const manifest = {
-    page_action: {},
-    permissions: ["menus"],
-  };
-
-  async function background() {
-    const contexts = ["page_action"];
-
-    const parentId = browser.menus.create({ contexts, title: "parent" });
-    browser.menus.create({ parentId, title: "click A" });
-    browser.menus.create({ parentId, title: "click B" });
-
-    for (let i = 1; i < 9; i++) {
-      browser.menus.create({ contexts, id: `${i}`, title: `click ${i}` });
-    }
-
-    const [tab] = await browser.tabs.query({ active: true });
-    await browser.pageAction.hide(tab.id);
-    browser.test.sendMessage("ready", tab.id);
-  }
-
-  const extension = ExtensionTestUtils.loadExtension({ manifest, background });
-  const tab = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    "http://example.com/"
-  );
-
-  await extension.startup();
-  await extension.awaitMessage("ready");
-
-  const menu = await openContextMenuInPageActionPanel(extension);
-  const menuItems = Array.prototype.filter.call(menu.children, node => {
-    return window.getComputedStyle(node).visibility == "visible";
-  });
-
-  is(menuItems.length, 4, "Correct number of children");
-  const [dontShowItem, separator, manageItem, removeItem] = menuItems;
-
-  is(dontShowItem.label, "Remove from Address Bar", "Correct first child");
-  is(separator.tagName, "menuseparator", "Correct second child");
-  is(manageItem.label, "Manage Extension\u2026", "Correct third child");
-  is(removeItem.label, "Remove Extension", "Correct fourth child");
-
-  await closeChromeContextMenu(menu.id);
-  await closeChromeContextMenu(BrowserPageActions.panelNode.id);
-
-  BrowserTestUtils.removeTab(tab);
-  await extension.unload();
-});
-
 add_task(async function test_bookmarkContextMenu() {
   const ext = ExtensionTestUtils.loadExtension({
     manifest: {
@@ -238,9 +167,9 @@ add_task(async function test_bookmarkContextMenu() {
     },
   });
 
-  await toggleBookmarksToolbar(true);
   await ext.startup();
   await ext.awaitMessage("ready");
+  await toggleBookmarksToolbar(true);
 
   let menu = await openChromeContextMenu(
     "placesContext",

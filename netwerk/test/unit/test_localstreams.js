@@ -56,7 +56,7 @@ function test_stream(stream) {
     dump("Trying to read " + avail + " bytes\n");
     // Note: Verification that this does return as much bytes as we asked for is
     // done in the binarystream implementation
-    var data = binstream.readByteArray(avail);
+    binstream.readByteArray(avail);
 
     numread += avail;
   }
@@ -71,8 +71,7 @@ function stream_for_file(file) {
 }
 
 function stream_from_channel(file) {
-  var ios = Cc["@mozilla.org/network/io-service;1"].getService(Ci.nsIIOService);
-  var uri = ios.newFileURI(file);
+  var uri = Services.io.newFileURI(file);
   return NetUtil.newChannel({
     uri,
     loadUsingSystemPrincipal: true,

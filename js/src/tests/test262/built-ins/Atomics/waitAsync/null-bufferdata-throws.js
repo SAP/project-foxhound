@@ -26,7 +26,7 @@ info: |
 includes: [detachArrayBuffer.js]
 features: [Atomics.waitAsync, ArrayBuffer, Atomics, TypedArray]
 ---*/
-assert.sameValue(typeof Atomics.waitAsync, 'function');
+assert.sameValue(typeof Atomics.waitAsync, 'function', 'The value of `typeof Atomics.waitAsync` is "function"');
 const i32a = new Int32Array(
   new ArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 4)
 );
@@ -40,11 +40,11 @@ const poisoned = {
 try {
   $DETACHBUFFER(i32a.buffer); // Detaching a non-shared ArrayBuffer sets the [[ArrayBufferData]] value to null
 } catch (error) {
-  $ERROR(`An unexpected error occurred when detaching ArrayBuffer: ${error.message}`);
+  throw new Test262Error(`An unexpected error occurred when detaching ArrayBuffer: ${error.message}`);
 }
 
 assert.throws(TypeError, function() {
   Atomics.waitAsync(i32a, poisoned, poisoned, poisoned);
-}, '`Atomics.waitAsync(i32a, poisoned, poisoned, poisoned)` throws TypeError');
+}, '`Atomics.waitAsync(i32a, poisoned, poisoned, poisoned)` throws a TypeError exception');
 
 reportCompare(0, 0);

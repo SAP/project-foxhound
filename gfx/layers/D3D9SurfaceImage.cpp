@@ -11,6 +11,7 @@
 #include "mozilla/layers/CompositableForwarder.h"
 #include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/gfx/Types.h"
+#include "mozilla/ProfilerLabels.h"
 
 namespace mozilla {
 namespace layers {
@@ -66,7 +67,6 @@ void DXGID3D9TextureData::FillInfo(TextureData::Info& aInfo) const {
   aInfo.format = mFormat;
   aInfo.supportsMoz2D = false;
   aInfo.canExposeMappedData = false;
-  aInfo.hasIntermediateBuffer = false;
   aInfo.hasSynchronization = false;
 }
 
@@ -80,13 +80,20 @@ already_AddRefed<IDirect3DSurface9> DXGID3D9TextureData::GetD3D9Surface()
 }
 
 bool DXGID3D9TextureData::Serialize(SurfaceDescriptor& aOutDescriptor) {
+  SurfaceDescriptorD3D10 desc((WindowsHandle)(mHandle), mFormat, GetSize(),
+                              gfx::YUVColorSpace::Identity,
+                              gfx::ColorRange::FULL);
   // In reality, with D3D9 we will only ever deal with RGBA textures.
-  bool isYUV = mFormat == SurfaceFormat::NV12 ||
-               mFormat == SurfaceFormat::P010 || mFormat == SurfaceFormat::P016;
-  aOutDescriptor = SurfaceDescriptorD3D10(
-      (WindowsHandle)(mHandle), mFormat, GetSize(),
-      isYUV ? gfx::YUVColorSpace::BT601 : gfx::YUVColorSpace::UNKNOWN,
-      gfx::ColorRange::LIMITED);
+  bool isYUV = mFormat == gfx::SurfaceFormat::NV12 ||
+               mFormat == gfx::SurfaceFormat::P010 ||
+               mFormat == gfx::SurfaceFormat::P016;
+  if (isYUV) {
+    gfxCriticalError() << "Unexpected YUV format for DXGID3D9TextureData: "
+                       << mFormat;
+    desc.yUVColorSpace() = gfx::YUVColorSpace::BT601;
+    desc.colorRange() = gfx::ColorRange::LIMITED;
+  }
+  aOutDescriptor = desc;
   return true;
 }
 
@@ -174,8 +181,6 @@ already_AddRefed<IDirect3DSurface9> D3D9SurfaceImage::GetD3D9Surface() const {
   NS_ENSURE_TRUE(SUCCEEDED(hr), nullptr);
   return textureSurface.forget();
 }
-
-const D3DSURFACE_DESC& D3D9SurfaceImage::GetDesc() const { return mDesc; }
 
 HANDLE
 D3D9SurfaceImage::GetShareHandle() const { return mShareHandle; }

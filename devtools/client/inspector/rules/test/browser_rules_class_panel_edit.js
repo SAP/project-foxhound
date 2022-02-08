@@ -7,7 +7,7 @@
 
 add_task(async function() {
   await addTab("data:text/html;charset=utf-8,<body class='class1 class2'>");
-  const { view, testActor } = await openRuleView();
+  const { view } = await openRuleView();
 
   info("Open the class panel");
   view.showClassPanel();
@@ -20,7 +20,7 @@ add_task(async function() {
     { name: "class1", state: false },
     { name: "class2", state: true },
   ]);
-  let newClassName = await testActor.getAttribute("body", "class");
+  let newClassName = await getContentPageElementAttribute("body", "class");
   is(newClassName, "class2", "The class attribute has been updated in the DOM");
 
   info("Click on class2 and check the same thing");
@@ -29,7 +29,7 @@ add_task(async function() {
     { name: "class1", state: false },
     { name: "class2", state: false },
   ]);
-  newClassName = await testActor.getAttribute("body", "class");
+  newClassName = await getContentPageElementAttribute("body", "class");
   is(newClassName, "", "The class attribute has been updated in the DOM");
 
   info("Click on class2 and checks that the class is added again");
@@ -38,7 +38,7 @@ add_task(async function() {
     { name: "class1", state: false },
     { name: "class2", state: true },
   ]);
-  newClassName = await testActor.getAttribute("body", "class");
+  newClassName = await getContentPageElementAttribute("body", "class");
   is(newClassName, "class2", "The class attribute has been updated in the DOM");
 
   info("And finally, click on class1 again and checks it is added again");
@@ -47,7 +47,7 @@ add_task(async function() {
     { name: "class1", state: true },
     { name: "class2", state: true },
   ]);
-  newClassName = await testActor.getAttribute("body", "class");
+  newClassName = await getContentPageElementAttribute("body", "class");
   is(
     newClassName,
     "class1 class2",

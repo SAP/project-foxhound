@@ -17,7 +17,7 @@ const NON_ISSUED_KEY_HASH = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 // separated by newlines ('\n')
 
 function checkStateWritten(aSubject, aTopic, aData) {
-  if (aData == PRELOAD_STATE_FILE_NAME) {
+  if (aData == CLIENT_AUTH_FILE_NAME) {
     return;
   }
 
@@ -108,7 +108,6 @@ function run_test() {
       "@mozilla.org/security/transportsecurityinfo;1"
     ].createInstance(Ci.nsITransportSecurityInfo);
     SSService.processHeader(
-      Ci.nsISiteSecurityService.HEADER_HSTS,
       uris[uriIndex],
       maxAge + includeSubdomains,
       secInfo,

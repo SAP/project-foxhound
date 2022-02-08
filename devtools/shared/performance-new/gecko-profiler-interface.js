@@ -28,27 +28,12 @@ loader.lazyRequireGetter(
 const IS_SUPPORTED_PLATFORM = "nsIProfiler" in Ci;
 
 /**
- * The GeckoProfiler already has an interface to control it through the
- * nsIProfiler component. However, this class implements an interface that can
- * be used on both the actor, and the profiler popup. This allows us to share
- * the UI for the devtools front-end and the profiler popup code. The devtools
- * code needs to work through the actor system, while the popup code controls
- * the Gecko Profiler on the current browser.
+ * This is an implementation of the perf actor API, using nsIProfiler.
+ * It is in a separate class from the actual perf actor implementation
+ * for historical reasons only. It could be moved into perf.js.
  */
 class ActorReadyGeckoProfilerInterface {
-  /**
-   * @param {Object} options
-   * @param options.gzipped - This flag controls whether or not to gzip the profile when
-   *   capturing it. The profiler popup wants a gzipped profile in an array buffer, while
-   *   the devtools want the full object. See Bug 1581963 to perhaps provide an API
-   *   to request the gzipped profile. This would then remove this configuration from
-   *   the GeckoProfilerInterface.
-   */
-  constructor(
-    options = {
-      gzipped: true,
-    }
-  ) {
+  constructor() {
     // Only setup the observers on a supported platform.
     if (IS_SUPPORTED_PLATFORM) {
       this._observer = {
@@ -62,7 +47,6 @@ class ActorReadyGeckoProfilerInterface {
       );
       Services.obs.addObserver(this._observer, "last-pb-context-exited");
     }
-    this.gzipped = options.gzipped;
 
     EventEmitter.decorate(this);
   }
@@ -89,19 +73,18 @@ class ActorReadyGeckoProfilerInterface {
     // to be tweaked or made configurable as needed.
     const settings = {
       entries: options.entries || 1000000,
-      // Window length should be Infinite if nothing's been passed.
-      // options.duration is supported for `perfActorVersion > 0`.
       duration: options.duration || 0,
       interval: options.interval || 1,
       features: options.features || [
         "js",
         "stackwalk",
+        "cpu",
         "responsiveness",
         "threads",
         "leaf",
       ],
       threads: options.threads || ["GeckoMain", "Compositor"],
-      activeBrowsingContextID: RecordingUtils.getActiveBrowsingContextID(),
+      activeTabID: RecordingUtils.getActiveBrowserID(),
     };
 
     try {
@@ -111,7 +94,7 @@ class ActorReadyGeckoProfilerInterface {
         settings.interval,
         settings.features,
         settings.threads,
-        settings.activeBrowsingContextID,
+        settings.activeTabID,
         settings.duration
       );
     } catch (e) {
@@ -157,26 +140,19 @@ class ActorReadyGeckoProfilerInterface {
     let profile;
     try {
       // Attempt to pull out the data.
-      if (this.gzipped) {
-        profile = await Services.profiler.getProfileDataAsGzippedArrayBuffer();
-      } else {
-        profile = await Services.profiler.getProfileDataAsync();
+      profile = await Services.profiler.getProfileDataAsync();
 
-        if (Object.keys(profile).length === 0) {
-          console.error(
-            "An empty object was received from getProfileDataAsync.getProfileDataAsync(), " +
-              "meaning that a profile could not successfully be serialized and captured."
-          );
-          profile = null;
-        }
+      if (Object.keys(profile).length === 0) {
+        console.error(
+          "An empty object was received from getProfileDataAsync.getProfileDataAsync(), " +
+            "meaning that a profile could not successfully be serialized and captured."
+        );
+        profile = null;
       }
     } catch (e) {
       // Explicitly set the profile to null if there as an error.
       profile = null;
-      console.error(
-        `There was an error fetching a profile (gzipped: ${this.gzipped})`,
-        e
-      );
+      console.error(`There was an error fetching a profile`, e);
     }
 
     // Stop and discard the buffers.
@@ -213,7 +189,10 @@ class ActorReadyGeckoProfilerInterface {
     // events in the perf actor.
     switch (topic) {
       case "chrome-document-global-created":
-        if (PrivateBrowsingUtils.isWindowPrivate(subject)) {
+        if (
+          subject.isChromeWindow &&
+          PrivateBrowsingUtils.isWindowPrivate(subject)
+        ) {
           this.emit("profile-locked-by-private-browsing");
         }
         break;
@@ -228,7 +207,7 @@ class ActorReadyGeckoProfilerInterface {
           param.interval,
           param.features,
           param.duration,
-          param.activeBrowsingContextID
+          param.activeTabID
         );
         break;
       case "profiler-stopped":
@@ -246,24 +225,6 @@ class ActorReadyGeckoProfilerInterface {
       return [];
     }
     return Services.profiler.GetFeatures();
-  }
-
-  /**
-   * @param {string} type
-   * @param {() => void} listener
-   */
-  on(type, listener) {
-    // This is a stub for TypeScript. This function is assigned by the EventEmitter
-    // decorator.
-  }
-
-  /**
-   * @param {string} type
-   * @param {() => void} listener
-   */
-  off(type, listener) {
-    // This is a stub for TypeScript. This function is assigned by the EventEmitter
-    // decorator.
   }
 }
 

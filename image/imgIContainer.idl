@@ -10,20 +10,27 @@ webidl Document;
 
 %{C++
 #include "ImgDrawResult.h"
-#include "gfxContext.h"
-#include "gfxMatrix.h"
-#include "gfxRect.h"
-#include "mozilla/gfx/2D.h"
+#include "gfxPoint.h"
+#include "mozilla/gfx/Types.h"
 #include "mozilla/AspectRatio.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "nsRect.h"
 #include "nsSize.h"
+#include "nsTArray.h"
 #include "limits.h"
 
+class gfxContext;
+
 namespace mozilla {
+struct AspectRatio;
+
+namespace gfx {
+class SourceSurface;
+}
+
+class WindowRenderer;
 namespace layers {
-class LayerManager;
 class ImageContainer;
 }
 }
@@ -40,7 +47,10 @@ namespace mozilla {
 namespace image {
 
 class ImageRegion;
+class ImageIntRegion;
+class WebRenderImageProvider;
 struct Orientation;
+struct Resolution;
 
 }
 }
@@ -61,11 +71,14 @@ native nsSize(nsSize);
 [ptr] native nsIFrame(nsIFrame);
 native TempRefImageContainer(already_AddRefed<mozilla::layers::ImageContainer>);
 [ptr] native ImageContainer(mozilla::layers::ImageContainer);
+[ptr] native WebRenderImageProvider(mozilla::image::WebRenderImageProvider);
 [ref] native ImageRegion(mozilla::image::ImageRegion);
-[ptr] native LayerManager(mozilla::layers::LayerManager);
+[ptr] native WindowRenderer(mozilla::WindowRenderer);
 native Orientation(mozilla::image::Orientation);
+native ImageResolution(mozilla::image::Resolution);
 [ref] native TimeStamp(mozilla::TimeStamp);
 [ref] native MaybeSVGImageContext(mozilla::Maybe<mozilla::SVGImageContext>);
+[ref] native MaybeImageIntRegion(mozilla::Maybe<mozilla::image::ImageIntRegion>);
 native TempRefSourceSurface(already_AddRefed<mozilla::gfx::SourceSurface>);
 native TempRefImgIContainer(already_AddRefed<imgIContainer>);
 native nsIntSizeByVal(nsIntSize);
@@ -157,9 +170,9 @@ interface imgIContainer : nsISupports
   readonly attribute boolean animated;
 
   /**
-   * Producer ID for image containers created by this image.
+   * Provider ID for image providers created by this image.
    */
-  [infallible] readonly attribute unsigned long producerId;
+  [infallible] readonly attribute unsigned long providerId;
 
   /**
    * Flags for imgIContainer operations.
@@ -195,11 +208,6 @@ interface imgIContainer : nsISupports
    * frame of any size (it could be neither the requested size, nor the
    * intrinsic size) to be substituted.
    *
-   * FLAG_WANT_DATA_SURFACE: Can be passed to GetFrame when the caller wants a
-   * DataSourceSurface instead of a hardware accelerated surface. This can be
-   * important for performance (by avoiding an upload to/readback from the GPU)
-   * when the caller knows they want a SourceSurface of type DATA.
-   *
    * FLAG_BYPASS_SURFACE_CACHE: Forces drawing to happen rather than taking
    * cached rendering from the surface cache. This is used when we are printing,
    * for example, where we want the vector commands from VectorImages to end up
@@ -230,6 +238,9 @@ interface imgIContainer : nsISupports
    *
    * FLAG_DECODE_TO_SRGB_COLORSPACE: Instead of converting the colorspace to
    * the display's colorspace, use sRGB.
+   *
+   * FLAG_RECORD_BLOB: Instead of rasterizing an SVG image on the main thread,
+   * record the drawing commands using blob images.
    */
   const unsigned long FLAG_NONE                            = 0x0;
   const unsigned long FLAG_SYNC_DECODE                     = 0x1;
@@ -239,12 +250,12 @@ interface imgIContainer : nsISupports
   const unsigned long FLAG_DECODE_NO_COLORSPACE_CONVERSION = 0x10;
   const unsigned long FLAG_CLAMP                           = 0x20;
   const unsigned long FLAG_HIGH_QUALITY_SCALING            = 0x40;
-  const unsigned long FLAG_WANT_DATA_SURFACE               = 0x80;
-  const unsigned long FLAG_BYPASS_SURFACE_CACHE            = 0x100;
-  const unsigned long FLAG_FORCE_PRESERVEASPECTRATIO_NONE  = 0x200;
-  const unsigned long FLAG_FORCE_UNIFORM_SCALING           = 0x400;
-  const unsigned long FLAG_AVOID_REDECODE_FOR_SIZE         = 0x800;
-  const unsigned long FLAG_DECODE_TO_SRGB_COLORSPACE       = 0x1000;
+  const unsigned long FLAG_BYPASS_SURFACE_CACHE            = 0x80;
+  const unsigned long FLAG_FORCE_PRESERVEASPECTRATIO_NONE  = 0x100;
+  const unsigned long FLAG_FORCE_UNIFORM_SCALING           = 0x200;
+  const unsigned long FLAG_AVOID_REDECODE_FOR_SIZE         = 0x400;
+  const unsigned long FLAG_DECODE_TO_SRGB_COLORSPACE       = 0x800;
+  const unsigned long FLAG_RECORD_BLOB                     = 0x1000;
 
   /**
    * A constant specifying the default set of decode flags (i.e., the default
@@ -308,39 +319,21 @@ interface imgIContainer : nsISupports
 
   /**
    * @return true if getImageContainer() is expected to return a valid
-   *         ImageContainer when passed the given @Manager and @Flags
+   *         ImageContainer when passed the given @Renderer and @Flags
    *         parameters.
    */
-  [noscript, notxpcom] boolean isImageContainerAvailable(in LayerManager aManager,
+  [noscript, notxpcom] boolean isImageContainerAvailable(in WindowRenderer aRenderer,
                                                          in uint32_t aFlags);
-  /**
-   * Attempts to create an ImageContainer (and Image) containing the current
-   * frame at its native size.
-   *
-   * Avoid calling this unless you're actually going to layerize this image.
-   *
-   * @param aManager The LayerManager which will be used to create the
-   *                 ImageContainer.
-   * @param aFlags Decoding / drawing flags (in other words, FLAG_* flags).
-   *               Currently only FLAG_SYNC_DECODE and FLAG_SYNC_DECODE_IF_FAST
-   *               are supported.
-   * @return An ImageContainer for the current frame, or nullptr if one could
-   *         not be created.
-   */
-  [noscript, notxpcom] TempRefImageContainer getImageContainer(in LayerManager aManager,
-                                                               in uint32_t aFlags);
 
   /**
-   * Attempts to create an ImageContainer (and Image) containing the current
-   * frame at the given size. Match the requested size is best effort; it's
-   * not guaranteed that the surface you get will be a perfect match. (Some
-   * reasons you may get a surface of a different size include: if you
-   * requested upscaling, or if downscale-during-decode is disabled.)
+   * Attempts to find a WebRenderImageProvider containing the current frame at
+   * the given size. Match the requested size is best effort; it's not
+   * guaranteed that the surface you get will be a perfect match. (Some reasons
+   * you may get a surface of a different size include: if you requested
+   * upscaling, or if downscale-during-decode is disabled.)
    *
-   * Avoid calling this unless you're actually going to layerize this image.
-   *
-   * @param aManager The LayerManager which will be used to create the
-   *                 ImageContainer.
+   * @param aRenderer The WindowRenderer which will be used to render the
+   *                  ImageContainer.
    * @param aSVGContext If specified, SVG-related rendering context, such as
    *                    overridden attributes on the image document's root <svg>
    *                    node, and the size of the viewport that the full image
@@ -348,24 +341,16 @@ interface imgIContainer : nsISupports
    * @param aFlags Decoding / drawing flags (in other words, FLAG_* flags).
    *               Currently only FLAG_SYNC_DECODE and FLAG_SYNC_DECODE_IF_FAST
    *               are supported.
-   * @param aContainer Return value for ImageContainer for the current frame.
-   *                   May be null depending on the draw result.
+   * @param aProvider Return value for WebRenderImageProvider for the current
+   *                  frame. May be null depending on the draw result.
    * @return The draw result for the current frame.
    */
-  [noscript, notxpcom] ImgDrawResult getImageContainerAtSize(in LayerManager aManager,
-                                                             [const] in nsIntSize aSize,
-                                                             [const] in MaybeSVGImageContext aSVGContext,
-                                                             in uint32_t aFlags,
-                                                             out ImageContainer aOutContainer);
-
-  /**
-   * @return true if getImageContainer() is expected to return a valid
-   *         ImageContainer when passed the given @Manager, @Size and @Flags
-   *         parameters.
-   */
-  [noscript, notxpcom] boolean isImageContainerAvailableAtSize(in LayerManager aManager,
-                                                               [const] in nsIntSize aSize,
-                                                               in uint32_t aFlags);
+  [noscript, notxpcom] ImgDrawResult getImageProvider(in WindowRenderer aRenderer,
+                                                      [const] in nsIntSize aSize,
+                                                      [const] in MaybeSVGImageContext aSVGContext,
+                                                      [const] in MaybeImageIntRegion aRegion,
+                                                      in uint32_t aFlags,
+                                                      out WebRenderImageProvider aProvider);
 
   /**
    * Draw the requested frame of this image onto the context specified.
@@ -633,10 +618,10 @@ interface imgIContainer : nsISupports
   [notxpcom] Orientation getOrientation();
 
   /*
-   * Returns whether the image handles the orientation returned by
-   * getOrientation() itself.
+   * Returns the intrinsic resolution of the image, or 1.0 if the image doesn't
+   * declare any.
    */
-  [notxpcom] bool handledOrientation();
+  [notxpcom] ImageResolution getResolution();
 
   /*
    * Returns the delay, in ms, between the first and second frame. If this
@@ -681,7 +666,7 @@ interface imgIContainer : nsISupports
    * Propagate the use counters (if any) from this container to the passed in
    * document.
    */
-  [noscript, notxpcom] void propagateUseCounters(in Document aDocument);
+  [noscript, notxpcom] void propagateUseCounters(in Document aReferencingDocument);
 
   %{C++
   /*

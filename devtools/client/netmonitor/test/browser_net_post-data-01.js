@@ -7,6 +7,11 @@
  * Tests if the POST requests display the correct information in the UI.
  */
 add_task(async function() {
+  // Using https-first for this test is blocked on Bug 1733420.
+  // We cannot assert status text "Och Aye" with HTTPS requests to httpd.js, instead
+  // we get "Connected"
+  await pushPref("dom.security.https_first", false);
+
   const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
 
   // Set a higher panel height in order to get full CodeMirror content
@@ -67,25 +72,21 @@ add_task(async function() {
     }
   );
 
-  // Wait for all accordion items updated by react
-  const wait = waitForDOM(document, "#request-panel .accordion-item", 2);
+  // Wait for raw data toggle to be displayed
+  const wait = waitForDOM(
+    document,
+    "#request-panel .raw-data-toggle-input .devtools-checkbox-toggle"
+  );
   EventUtils.sendMouseEvent(
     { type: "mousedown" },
     document.querySelectorAll(".request-list-item")[0]
   );
-  EventUtils.sendMouseEvent(
-    { type: "click" },
-    document.querySelector("#request-tab")
-  );
+  clickOnSidebarTab(document, "request");
   await wait;
   await testParamsTab("urlencoded");
 
-  // Wait for all accordion items and editor updated by react
-  const waitForAccordionItems = waitForDOM(
-    document,
-    "#request-panel .accordion-item",
-    1
-  );
+  // Wait for header and CodeMirror editor to be displayed
+  const waitForHeader = waitForDOM(document, "#request-panel .data-header");
   const waitForSourceEditor = waitForDOM(
     document,
     "#request-panel .CodeMirror-code"
@@ -94,7 +95,7 @@ add_task(async function() {
     { type: "mousedown" },
     document.querySelectorAll(".request-list-item")[1]
   );
-  await Promise.all([waitForAccordionItems, waitForSourceEditor]);
+  await Promise.all([waitForHeader, waitForSourceEditor]);
   await testParamsTab("multipart");
 
   return teardown(monitor);
@@ -111,9 +112,9 @@ add_task(async function() {
     }
 
     is(
-      tabpanel.querySelectorAll(".accordion-item").length,
-      type == "urlencoded" ? 2 : 1,
-      "There should be correct number of accordion items displayed in this tabpanel."
+      tabpanel.querySelectorAll(".raw-data-toggle").length,
+      type == "urlencoded" ? 1 : 0,
+      "The display of the raw request data toggle must be correct."
     );
     is(
       tabpanel.querySelectorAll(".empty-notice").length,
@@ -121,10 +122,8 @@ add_task(async function() {
       "The empty notice should not be displayed in this tabpanel."
     );
 
-    const accordionItems = tabpanel.querySelectorAll(".accordion-item");
-
     is(
-      accordionItems[0].querySelector(".accordion-header-label").textContent,
+      tabpanel.querySelector(".data-label").textContent,
       L10N.getStr(
         type == "urlencoded" ? "paramsFormData" : "paramsPostPayload"
       ),

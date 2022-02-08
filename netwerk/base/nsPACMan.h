@@ -119,7 +119,7 @@ class nsPACMan final : public nsIStreamLoaderObserver,
    *        If set to false the callback can be made from the PAC thread
    */
   nsresult AsyncGetProxyForURI(nsIURI* uri, nsPACManCallback* callback,
-                               uint32_t flags, bool mustCallbackOnMainThread);
+                               uint32_t flags, bool mainThreadResponse);
 
   /**
    * This method may be called to reload the PAC file.  While we are loading
@@ -260,7 +260,7 @@ class nsPACMan final : public nsIStreamLoaderObserver,
   nsresult DispatchToPAC(already_AddRefed<nsIRunnable> aEvent,
                          bool aSync = false);
 
-  ProxyAutoConfig mPAC;
+  UniquePtr<ProxyAutoConfigBase> mPAC;
   nsCOMPtr<nsIThread> mPACThread;
   nsCOMPtr<nsISystemProxySettings> mSystemProxySettings;
   nsCOMPtr<nsIDHCPClient> mDHCPClient;

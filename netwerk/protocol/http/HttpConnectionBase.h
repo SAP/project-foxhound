@@ -53,16 +53,6 @@ class HttpConnectionBase : public nsSupportsWeakReference {
 
   HttpConnectionBase();
 
-  // Initialize the connection:
-  //  info        - specifies the connection parameters.
-  //  maxHangTime - limits the amount of time this connection can spend on a
-  //                single transaction before it should no longer be kept
-  //                alive.  a value of 0xffff indicates no limit.
-  [[nodiscard]] virtual nsresult Init(
-      nsHttpConnectionInfo* info, uint16_t maxHangTime, nsISocketTransport*,
-      nsIAsyncInputStream*, nsIAsyncOutputStream*, bool connectedTransport,
-      nsIInterfaceRequestor*, PRIntervalTime) = 0;
-
   // Activate causes the given transaction to be processed on this
   // connection.  It fails if there is already an existing transaction unless
   // a multiplexing protocol such as SPDY is being used
@@ -77,7 +67,6 @@ class HttpConnectionBase : public nsSupportsWeakReference {
 
   virtual void DontReuse() = 0;
 
-  nsISocketTransport* Transport() { return mSocketTransport; }
   virtual nsAHttpTransaction* Transaction() = 0;
   nsHttpConnectionInfo* ConnectionInfo() { return mConnInfo; }
 
@@ -116,7 +105,7 @@ class HttpConnectionBase : public nsSupportsWeakReference {
   virtual bool CanAcceptWebsocket() { return false; }
 
   void GetConnectionInfo(nsHttpConnectionInfo** ci) {
-    NS_IF_ADDREF(*ci = mConnInfo);
+    *ci = do_AddRef(mConnInfo).take();
   }
   virtual void GetSecurityInfo(nsISupports** result) = 0;
 
@@ -128,7 +117,7 @@ class HttpConnectionBase : public nsSupportsWeakReference {
   virtual bool IsProxyConnectInProgress() = 0;
   virtual bool LastTransactionExpectedNoContent() = 0;
   virtual void SetLastTransactionExpectedNoContent(bool) = 0;
-  int64_t BytesWritten() { return mTotalBytesWritten; }  // includes TLS
+  virtual int64_t BytesWritten() = 0;  // includes TLS
   void SetSecurityCallbacks(nsIInterfaceRequestor* aCallbacks);
   void SetTrafficCategory(HttpTrafficCategory);
 
@@ -141,35 +130,35 @@ class HttpConnectionBase : public nsSupportsWeakReference {
   PRIntervalTime Rtt() { return mRtt; }
   virtual void SetEvent(nsresult aStatus) = 0;
 
- protected:
-  nsCOMPtr<nsISocketTransport> mSocketTransport;
+  virtual nsISocketTransport* Transport() { return nullptr; }
 
+  virtual nsresult GetSelfAddr(NetAddr* addr) = 0;
+  virtual nsresult GetPeerAddr(NetAddr* addr) = 0;
+  virtual bool ResolvedByTRR() = 0;
+  virtual bool GetEchConfigUsed() = 0;
+
+ protected:
   // The capabailities associated with the most recent transaction
-  uint32_t mTransactionCaps;
+  uint32_t mTransactionCaps{0};
 
   RefPtr<nsHttpConnectionInfo> mConnInfo;
 
-  bool mExperienced;
+  bool mExperienced{false};
 
-  bool mBootstrappedTimingsSet;
+  bool mBootstrappedTimingsSet{false};
   TimingStruct mBootstrappedTimings;
 
-  int64_t mTotalBytesWritten;  // does not include CONNECT tunnel
-
-  Mutex mCallbacksLock;
+  Mutex mCallbacksLock{"nsHttpConnection::mCallbacksLock"};
   nsMainThreadPtrHandle<nsIInterfaceRequestor> mCallbacks;
 
   nsTArray<HttpTrafficCategory> mTrafficCategory;
-  PRIntervalTime mRtt;
+  PRIntervalTime mRtt{0};
+  nsresult mErrorBeforeConnect = NS_OK;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(HttpConnectionBase, HTTPCONNECTIONBASE_IID)
 
 #define NS_DECL_HTTPCONNECTIONBASE                                             \
-  [[nodiscard]] nsresult Init(                                                 \
-      nsHttpConnectionInfo*, uint16_t, nsISocketTransport*,                    \
-      nsIAsyncInputStream*, nsIAsyncOutputStream*, bool,                       \
-      nsIInterfaceRequestor*, PRIntervalTime) override;                        \
   [[nodiscard]] nsresult Activate(nsAHttpTransaction*, uint32_t, int32_t)      \
       override;                                                                \
   [[nodiscard]] nsresult OnHeadersAvailable(                                   \

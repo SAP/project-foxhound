@@ -455,7 +455,9 @@ struct IndexSubtableRecord
     unsigned int old_cbdt_prime_length = bitmap_size_context->cbdt_prime->length;
 
     // Set to invalid state to indicate filling glyphs is not yet started.
-    records->resize (records->length + 1);
+    if (unlikely (!c->serializer->check_success (records->resize (records->length + 1))))
+      return_trace (false);
+
     (*records)[records->length - 1].firstGlyphIndex = 1;
     (*records)[records->length - 1].lastGlyphIndex = 0;
     bitmap_size_context->size += IndexSubtableRecord::min_size;
@@ -506,9 +508,9 @@ struct IndexSubtableRecord
 						   offset, length, format);
   }
 
-  HBGlyphID			firstGlyphIndex;
-  HBGlyphID			lastGlyphIndex;
-  LOffsetTo<IndexSubtable>	offsetToSubtable;
+  HBGlyphID16			firstGlyphIndex;
+  HBGlyphID16			lastGlyphIndex;
+  Offset32To<IndexSubtable>	offsetToSubtable;
   public:
   DEFINE_SIZE_STATIC (8);
 };
@@ -565,6 +567,8 @@ struct IndexSubtableArray
 
     hb_vector_t<hb_pair_t<hb_codepoint_t, const IndexSubtableRecord*>> lookup;
     build_lookup (c, bitmap_size_context, &lookup);
+    if (unlikely (!c->serializer->propagate_error (lookup)))
+      return false;
 
     bitmap_size_context->size = 0;
     bitmap_size_context->num_tables = 0;
@@ -668,15 +672,15 @@ struct BitmapSizeTable
   }
 
   protected:
-  LNNOffsetTo<IndexSubtableArray>
+  NNOffset32To<IndexSubtableArray>
 			indexSubtableArrayOffset;
   HBUINT32		indexTablesSize;
   HBUINT32		numberOfIndexSubtables;
   HBUINT32		colorRef;
   SBitLineMetrics	horizontal;
   SBitLineMetrics	vertical;
-  HBGlyphID		startGlyphIndex;
-  HBGlyphID		endGlyphIndex;
+  HBGlyphID16		startGlyphIndex;
+  HBGlyphID16		endGlyphIndex;
   HBUINT8		ppemX;
   HBUINT8		ppemY;
   HBUINT8		bitDepth;
@@ -693,7 +697,7 @@ struct BitmapSizeTable
 struct GlyphBitmapDataFormat17
 {
   SmallGlyphMetrics	glyphMetrics;
-  LArrayOf<HBUINT8>	data;
+  Array32Of<HBUINT8>	data;
   public:
   DEFINE_SIZE_ARRAY (9, data);
 };
@@ -701,14 +705,14 @@ struct GlyphBitmapDataFormat17
 struct GlyphBitmapDataFormat18
 {
   BigGlyphMetrics	glyphMetrics;
-  LArrayOf<HBUINT8>	data;
+  Array32Of<HBUINT8>	data;
   public:
   DEFINE_SIZE_ARRAY (12, data);
 };
 
 struct GlyphBitmapDataFormat19
 {
-  LArrayOf<HBUINT8>	data;
+  Array32Of<HBUINT8>	data;
   public:
   DEFINE_SIZE_ARRAY (4, data);
 };
@@ -734,7 +738,7 @@ struct CBLC
 						 cbdt_prime->length,
 						 HB_MEMORY_MODE_WRITABLE,
 						 cbdt_prime->arrayZ,
-						 free);
+						 hb_free);
     cbdt_prime->init ();  // Leak arrayZ to the blob.
     bool ret = c->plan->add_table (HB_OT_TAG_CBDT, cbdt_prime_blob);
     hb_blob_destroy (cbdt_prime_blob);
@@ -794,7 +798,7 @@ struct CBLC
 
   protected:
   FixedVersion<>		version;
-  LArrayOf<BitmapSizeTable>	sizeTables;
+  Array32Of<BitmapSizeTable>	sizeTables;
   public:
   DEFINE_SIZE_ARRAY (8, sizeTables);
 };

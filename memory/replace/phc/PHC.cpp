@@ -55,12 +55,16 @@
 //
 // The basic cost of PHC's operation is as follows.
 //
-// - The physical memory cost is 64 * 4 KiB = 256 KiB per process (assuming 4
-//   KiB pages) plus some metadata (including stack traces) for each page.
+// - The physical memory cost is 64 pages plus some metadata (including stack
+//   traces) for each page. This amounts to 256 KiB per process on
+//   architectures with 4 KiB pages and 1024 KiB on macOS/AArch64 which uses
+//   16 KiB pages.
 //
 // - The virtual memory cost is the physical memory cost plus the guard pages:
-//   another 64 * 4 KiB = 256 KiB per process. PHC is currently only enabled on
-//   64-bit platforms so the impact of the virtual memory usage is negligible.
+//   another 64 pages. This amounts to another 256 KiB per process on
+//   architectures with 4 KiB pages and 1024 KiB on macOS/AArch64 which uses
+//   16 KiB pages. PHC is currently only enabled on 64-bit platforms so the
+//   impact of the virtual memory usage is negligible.
 //
 // - Every allocation requires a size check and a decrement-and-check of an
 //   atomic counter. When the counter reaches zero a PHC allocation can occur,
@@ -216,8 +220,7 @@ void StackTrace::Fill() {
 
   PNT_TIB pTib = reinterpret_cast<PNT_TIB>(NtCurrentTeb());
   void* stackEnd = static_cast<void*>(pTib->StackBase);
-  FramePointerStackWalk(StackWalkCallback, /* aSkipFrames = */ 0, kMaxFrames,
-                        this, fp, stackEnd);
+  FramePointerStackWalk(StackWalkCallback, kMaxFrames, this, fp, stackEnd);
 #elif defined(XP_MACOSX)
   // This avoids MozStackWalk(), which has become unusably slow on Mac due to
   // changes in libunwind.
@@ -225,16 +228,14 @@ void StackTrace::Fill() {
   // This code is cribbed from the Gecko Profiler, which also uses
   // FramePointerStackWalk() on Mac: Registers::SyncPopulate() for the frame
   // pointer, and GetStackTop() for the stack end.
-  void** fp;
-  asm(
-      // Dereference %rbp to get previous %rbp
-      "movq (%%rbp), %0\n\t"
-      : "=r"(fp));
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wframe-address"
+  void** fp = reinterpret_cast<void**>(__builtin_frame_address(1));
+#  pragma GCC diagnostic pop
   void* stackEnd = pthread_get_stackaddr_np(pthread_self());
-  FramePointerStackWalk(StackWalkCallback, /* skipFrames = */ 0, kMaxFrames,
-                        this, fp, stackEnd);
+  FramePointerStackWalk(StackWalkCallback, kMaxFrames, this, fp, stackEnd);
 #else
-  MozStackWalk(StackWalkCallback, /* aSkipFrames = */ 0, kMaxFrames, this);
+  MozStackWalk(StackWalkCallback, nullptr, kMaxFrames, this);
 #endif
 }
 
@@ -286,8 +287,16 @@ using Time = uint64_t;   // A moment in time.
 using Delay = uint32_t;  // A time duration.
 
 // PHC only runs if the page size is 4 KiB; anything more is uncommon and would
-// use too much memory. So we hardwire this size.
-static const size_t kPageSize = 4096;
+// use too much memory. So we hardwire this size for all platforms but macOS
+// on ARM processors. For the latter we make an exception because the minimum
+// page size supported is 16KiB so there's no way to go below that.
+static const size_t kPageSize =
+#if defined(XP_MACOSX) && defined(__aarch64__)
+    16384
+#else
+    4096
+#endif
+    ;
 
 // There are two kinds of page.
 // - Allocation pages, from which allocations are made.
@@ -308,7 +317,9 @@ static const size_t kAllPagesSize = kNumAllPages * kPageSize;
 //
 // Also note that, unlike mozjemalloc, PHC doesn't have a poison value for freed
 // allocations because freed allocations are protected by OS page protection.
+#ifdef DEBUG
 const uint8_t kAllocJunk = 0xe4;
+#endif
 
 // The maximum time.
 static const Time kMaxTime = ~(Time(0));
@@ -1099,8 +1110,8 @@ static void FreePage(GMutLock aLock, uintptr_t aIndex,
     return;
   }
 #else
-  if (!mmap(pagePtr, kPageSize, PROT_NONE, MAP_FIXED | MAP_PRIVATE | MAP_ANON,
-            -1, 0)) {
+  if (mmap(pagePtr, kPageSize, PROT_NONE, MAP_FIXED | MAP_PRIVATE | MAP_ANON,
+           -1, 0) == MAP_FAILED) {
     return;
   }
 #endif
@@ -1361,8 +1372,9 @@ static size_t replace_malloc_usable_size(usable_ptr_t aPtr) {
   return gMut->PageUsableSize(lock, index);
 }
 
-void replace_jemalloc_stats(jemalloc_stats_t* aStats) {
-  sMallocTable.jemalloc_stats(aStats);
+void replace_jemalloc_stats(jemalloc_stats_t* aStats,
+                            jemalloc_bin_stats_t* aBinStats) {
+  sMallocTable.jemalloc_stats_internal(aStats, aBinStats);
 
   // Add all the pages to `mapped`.
   size_t mapped = kAllPagesSize;
@@ -1528,7 +1540,7 @@ class PHCBridge : public ReplaceMallocBridge {
 void replace_init(malloc_table_t* aMallocTable, ReplaceMallocBridge** aBridge) {
   // Don't run PHC if the page size isn't 4 KiB.
   jemalloc_stats_t stats;
-  aMallocTable->jemalloc_stats(&stats);
+  aMallocTable->jemalloc_stats_internal(&stats, nullptr);
   if (stats.page_size != kPageSize) {
     return;
   }
@@ -1549,7 +1561,7 @@ void replace_init(malloc_table_t* aMallocTable, ReplaceMallocBridge** aBridge) {
   aMallocTable->malloc_usable_size = replace_malloc_usable_size;
   // default malloc_good_size: the default suffices.
 
-  aMallocTable->jemalloc_stats = replace_jemalloc_stats;
+  aMallocTable->jemalloc_stats_internal = replace_jemalloc_stats;
   // jemalloc_purge_freed_pages: the default suffices.
   // jemalloc_free_dirty_pages: the default suffices.
   // jemalloc_thread_local_arena: the default suffices.

@@ -32,6 +32,11 @@ var prefs = [
   // Increase the content response timeout because some tests do preventDefault
   // and we want to make sure APZ actually waits for them.
   ["apz.content_response_timeout", 60000],
+  // Disable touch resampling so that touch events are processed without delay
+  // and we don't zoom more than expected due to overprediction.
+  ["android.touch_resampling.enabled", false],
+  // Tests depend on window.visualViewport
+  ["dom.visualviewport.enabled", true],
 ];
 
 // Increase the tap timeouts so the one-touch-pinch gesture is still detected
@@ -72,7 +77,7 @@ if (isApzEnabled()) {
   SimpleTest.waitForExplicitFinish();
   window.onload = function() {
     runSubtestsSeriallyInFreshWindows(subtests)
-    .then(SimpleTest.finish, SimpleTest.finish);
+    .then(SimpleTest.finish, SimpleTest.finishWithFailure);
   };
 }
 

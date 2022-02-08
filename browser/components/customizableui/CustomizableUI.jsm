@@ -22,6 +22,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.jsm",
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.jsm",
+  HomePage: "resource:///modules/HomePage.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(this, "gWidgetsBundle", function() {
@@ -30,13 +31,6 @@ XPCOMUtils.defineLazyGetter(this, "gWidgetsBundle", function() {
   return Services.strings.createBundle(kUrl);
 });
 
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "gELS",
-  "@mozilla.org/eventlistenerservice;1",
-  "nsIEventListenerService"
-);
-
 const kDefaultThemeID = "default-theme@mozilla.org";
 
 const kSpecialWidgetPfx = "customizableui-special-";
@@ -44,11 +38,14 @@ const kSpecialWidgetPfx = "customizableui-special-";
 const kPrefCustomizationState = "browser.uiCustomization.state";
 const kPrefCustomizationAutoAdd = "browser.uiCustomization.autoAdd";
 const kPrefCustomizationDebug = "browser.uiCustomization.debug";
-const kPrefDrawInTitlebar = "browser.tabs.drawInTitlebar";
-const kPrefExtraDragSpace = "browser.tabs.extraDragSpace";
+const kPrefDrawInTitlebar = "browser.tabs.inTitlebar";
 const kPrefUIDensity = "browser.uidensity";
 const kPrefAutoTouchMode = "browser.touchmode.auto";
 const kPrefAutoHideDownloadsButton = "browser.download.autohideButton";
+const kPrefProtonToolbarVersion = "browser.proton.toolbar.version";
+const kPrefHomeButtonUsed = "browser.engagement.home-button.has-used";
+const kPrefLibraryButtonUsed = "browser.engagement.library-button.has-used";
+const kPrefSidebarButtonUsed = "browser.engagement.sidebar-button.has-used";
 
 const kExpectedWindowURL = AppConstants.BROWSER_CHROME_URL;
 
@@ -66,7 +63,7 @@ const kSubviewEvents = ["ViewShowing", "ViewHiding"];
  * The current version. We can use this to auto-add new default widgets as necessary.
  * (would be const but isn't because of testing purposes)
  */
-var kVersion = 16;
+var kVersion = 17;
 
 /**
  * Buttons removed from built-ins by version they were removed. kVersion must be
@@ -103,9 +100,24 @@ var gPlacements = new Map();
  */
 var gFuturePlacements = new Map();
 
-// XXXunf Temporary. Need a nice way to abstract functions to build widgets
-//       of these types.
-var gSupportedWidgetTypes = new Set(["button", "view", "custom"]);
+var gSupportedWidgetTypes = new Set([
+  // A button that does a command.
+  "button",
+
+  // A button that opens a view in a panel (or in a subview of the panel).
+  "view",
+
+  // A combination of the above, which looks different depending on whether it's
+  // located in the toolbar or in the panel: When located in the toolbar, shown
+  // as a combined item of a button and a dropmarker button. The button triggers
+  // the command and the dropmarker button opens the view. When located in the
+  // panel, shown as one item which opens the view, and the button command
+  // cannot be triggered separately.
+  "button-and-view",
+
+  // A custom widget that defines its own markup.
+  "custom",
+]);
 
 /**
  * gPanelsForWindow is a list of known panels in a window which we may need to close
@@ -162,7 +174,6 @@ var gListeners = new Set();
 var gUIStateBeforeReset = {
   uiCustomizationState: null,
   drawInTitlebar: null,
-  extraDragSpace: null,
   currentTheme: null,
   uiDensity: null,
   autoTouchMode: null,
@@ -206,6 +217,7 @@ var CustomizableUIInternal = {
     this._defineBuiltInWidgets();
     this.loadSavedState();
     this._updateForNewVersion();
+    this._updateForNewProtonVersion();
     this._markObsoleteBuiltinButtonsSeen();
 
     this.registerArea(
@@ -222,19 +234,17 @@ var CustomizableUIInternal = {
       "back-button",
       "forward-button",
       "stop-reload-button",
-      "home-button",
+      Services.policies.isAllowed("removeHomeButtonByDefault")
+        ? null
+        : "home-button",
       "spring",
       "urlbar-container",
       "spring",
+      "save-to-pocket-button",
       "downloads-button",
-      "library-button",
-      "sidebar-button",
+      AppConstants.MOZ_DEV_EDITION ? "developer-button" : null,
       "fxa-toolbar-menu-button",
-    ];
-
-    if (AppConstants.MOZ_DEV_EDITION) {
-      navbarPlacements.splice(7, 0, "developer-button");
-    }
+    ].filter(name => name);
 
     this.registerArea(
       CustomizableUI.AREA_NAVBAR,
@@ -277,12 +287,14 @@ var CustomizableUIInternal = {
       {
         type: CustomizableUI.TYPE_TOOLBAR,
         defaultPlacements: ["personal-bookmarks"],
-        defaultCollapsed: true,
+        defaultCollapsed: "newtab",
       },
       true
     );
 
     SearchWidgetTracker.init();
+
+    Services.obs.addObserver(this, "browser-set-toolbar-visibility");
   },
 
   onEnabled(addon) {
@@ -566,6 +578,87 @@ var CustomizableUIInternal = {
         navbarPlacements.push("fxa-toolbar-menu-button");
       }
     }
+
+    // Add the save to Pocket button left of downloads button.
+    if (currentVersion < 17 && gSavedState.placements) {
+      let navbarPlacements = gSavedState.placements[CustomizableUI.AREA_NAVBAR];
+      let persistedPageActionsPref = Services.prefs.getCharPref(
+        "browser.pageActions.persistedActions",
+        ""
+      );
+      let pocketPreviouslyInUrl = true;
+      try {
+        let persistedPageActionsData = JSON.parse(persistedPageActionsPref);
+        // If Pocket was previously not in the url bar, let's not put it in the toolbar.
+        // It'll still be an option to add from the customization page.
+        pocketPreviouslyInUrl = persistedPageActionsData.idsInUrlbar.includes(
+          "pocket"
+        );
+      } catch (e) {}
+      if (navbarPlacements && pocketPreviouslyInUrl) {
+        // Pocket's new home is next to the downloads button, or the next best spot.
+        let newPosition =
+          navbarPlacements.indexOf("downloads-button") ??
+          navbarPlacements.indexOf("fxa-toolbar-menu-button") ??
+          navbarPlacements.length;
+
+        navbarPlacements.splice(newPosition, 0, "save-to-pocket-button");
+      }
+    }
+  },
+
+  _updateForNewProtonVersion() {
+    const VERSION = 3;
+    let currentVersion = Services.prefs.getIntPref(
+      kPrefProtonToolbarVersion,
+      0
+    );
+    if (currentVersion >= VERSION) {
+      return;
+    }
+
+    let placements = gSavedState?.placements?.[CustomizableUI.AREA_NAVBAR];
+
+    if (!placements) {
+      // The profile was created with this version, so no need to migrate.
+      Services.prefs.setIntPref(kPrefProtonToolbarVersion, VERSION);
+      return;
+    }
+
+    // Remove the home button if it hasn't been used and is set to about:home
+    if (currentVersion < 1) {
+      let homePage = HomePage.get();
+      if (
+        placements.includes("home-button") &&
+        !Services.prefs.getBoolPref(kPrefHomeButtonUsed) &&
+        (homePage == "about:home" || homePage == "about:blank") &&
+        Services.policies.isAllowed("removeHomeButtonByDefault")
+      ) {
+        placements.splice(placements.indexOf("home-button"), 1);
+      }
+    }
+
+    // Remove the library button if it hasn't been used
+    if (currentVersion < 2) {
+      if (
+        placements.includes("library-button") &&
+        !Services.prefs.getBoolPref(kPrefLibraryButtonUsed)
+      ) {
+        placements.splice(placements.indexOf("library-button"), 1);
+      }
+    }
+
+    // Remove the library button if it hasn't been used
+    if (currentVersion < 3) {
+      if (
+        placements.includes("sidebar-button") &&
+        !Services.prefs.getBoolPref(kPrefSidebarButtonUsed)
+      ) {
+        placements.splice(placements.indexOf("sidebar-button"), 1);
+      }
+    }
+
+    Services.prefs.setIntPref(kPrefProtonToolbarVersion, VERSION);
   },
 
   /**
@@ -1081,8 +1174,8 @@ var CustomizableUIInternal = {
   },
 
   addPanelCloseListeners(aPanel) {
-    gELS.addSystemEventListener(aPanel, "click", this, false);
-    gELS.addSystemEventListener(aPanel, "keypress", this, false);
+    Services.els.addSystemEventListener(aPanel, "click", this, false);
+    Services.els.addSystemEventListener(aPanel, "keypress", this, false);
     let win = aPanel.ownerGlobal;
     if (!gPanelsForWindow.has(win)) {
       gPanelsForWindow.set(win, new Set());
@@ -1091,8 +1184,8 @@ var CustomizableUIInternal = {
   },
 
   removePanelCloseListeners(aPanel) {
-    gELS.removeSystemEventListener(aPanel, "click", this, false);
-    gELS.removeSystemEventListener(aPanel, "keypress", this, false);
+    Services.els.removeSystemEventListener(aPanel, "click", this, false);
+    Services.els.removeSystemEventListener(aPanel, "keypress", this, false);
     let win = aPanel.ownerGlobal;
     let panels = gPanelsForWindow.get(win);
     if (panels) {
@@ -1701,7 +1794,29 @@ var CustomizableUIInternal = {
       if (aWidget.onBeforeCreated) {
         aWidget.onBeforeCreated(aDocument);
       }
-      node = aDocument.createXULElement("toolbarbutton");
+
+      let button = aDocument.createXULElement("toolbarbutton");
+      button.classList.add("toolbarbutton-1");
+
+      let viewbutton = null;
+      if (aWidget.type == "button-and-view") {
+        button.setAttribute("id", aWidget.id + "-button");
+        let dropmarker = aDocument.createXULElement("toolbarbutton");
+        dropmarker.setAttribute("id", aWidget.id + "-dropmarker");
+        dropmarker.classList.add(
+          "toolbarbutton-1",
+          "toolbarbutton-combined-buttons-dropmarker"
+        );
+        node = aDocument.createXULElement("toolbaritem");
+        node.classList.add("toolbaritem-combined-buttons");
+        node.append(button, dropmarker);
+        viewbutton = dropmarker;
+      } else {
+        node = button;
+        if (aWidget.type == "view") {
+          viewbutton = button;
+        }
+      }
 
       node.setAttribute("id", aWidget.id);
       node.setAttribute("widget-id", aWidget.id);
@@ -1714,14 +1829,21 @@ var CustomizableUIInternal = {
       if (aWidget.tabSpecific) {
         node.setAttribute("tabspecific", aWidget.tabSpecific);
       }
-      node.setAttribute("label", this.getLocalizedProperty(aWidget, "label"));
-      let additionalTooltipArguments = [];
+      if (aWidget.locationSpecific) {
+        node.setAttribute("locationspecific", aWidget.locationSpecific);
+      }
+      if (aWidget.keepBroadcastAttributesWhenCustomizing) {
+        node.setAttribute(
+          "keepbroadcastattributeswhencustomizing",
+          aWidget.keepBroadcastAttributesWhenCustomizing
+        );
+      }
+
+      let shortcut;
       if (aWidget.shortcutId) {
         let keyEl = aDocument.getElementById(aWidget.shortcutId);
         if (keyEl) {
-          additionalTooltipArguments.push(
-            ShortcutUtils.prettifyShortcut(keyEl)
-          );
+          shortcut = ShortcutUtils.prettifyShortcut(keyEl);
         } else {
           log.error(
             "Key element with id '" +
@@ -1733,13 +1855,44 @@ var CustomizableUIInternal = {
         }
       }
 
-      let tooltip = this.getLocalizedProperty(
-        aWidget,
-        "tooltiptext",
-        additionalTooltipArguments
-      );
-      if (tooltip) {
-        node.setAttribute("tooltiptext", tooltip);
+      if (aWidget.l10nId) {
+        node.setAttribute("data-l10n-id", aWidget.l10nId);
+        if (button != node) {
+          // This is probably a "button-and-view" widget, such as the Profiler
+          // button. In that case, "node" is the "toolbaritem" container, and
+          // "button" the main button (see above).
+          // In this case, the values on the "node" is used in the Customize
+          // view, as well as the tooltips over both buttons; the values on the
+          // "button" are used in the overflow menu.
+          button.setAttribute("data-l10n-id", aWidget.l10nId);
+        }
+
+        if (shortcut) {
+          node.setAttribute("data-l10n-args", JSON.stringify({ shortcut }));
+          if (button != node) {
+            // This is probably a "button-and-view" widget.
+            button.setAttribute("data-l10n-args", JSON.stringify({ shortcut }));
+          }
+        }
+      } else {
+        node.setAttribute("label", this.getLocalizedProperty(aWidget, "label"));
+        if (button != node) {
+          // This is probably a "button-and-view" widget.
+          button.setAttribute("label", node.getAttribute("label"));
+        }
+
+        let tooltip = this.getLocalizedProperty(
+          aWidget,
+          "tooltiptext",
+          shortcut ? [shortcut] : []
+        );
+        if (tooltip) {
+          node.setAttribute("tooltiptext", tooltip);
+          if (button != node) {
+            // This is probably a "button-and-view" widget.
+            button.setAttribute("tooltiptext", tooltip);
+          }
+        }
       }
 
       let commandHandler = this.handleWidgetCommand.bind(this, aWidget, node);
@@ -1747,11 +1900,13 @@ var CustomizableUIInternal = {
       let clickHandler = this.handleWidgetClick.bind(this, aWidget, node);
       node.addEventListener("click", clickHandler);
 
-      let nodeClasses = ["toolbarbutton-1", "chromeclass-toolbar-additional"];
+      node.classList.add("chromeclass-toolbar-additional");
 
-      // If the widget has a view, and has view showing / hiding listeners,
-      // hook those up to this widget.
-      if (aWidget.type == "view") {
+      // If the widget has a view, register a keypress handler because opening
+      // a view with the keyboard has slightly different focus handling than
+      // opening a view with the mouse. (When opened with the keyboard, the
+      // first item in the view should be focused after opening.)
+      if (viewbutton) {
         log.debug(
           "Widget " +
             aWidget.id +
@@ -1759,7 +1914,7 @@ var CustomizableUIInternal = {
         );
 
         if (aWidget.source == CustomizableUI.SOURCE_BUILTIN) {
-          nodeClasses.push("subviewbutton-nav");
+          node.classList.add("subviewbutton-nav");
         }
 
         let keyPressHandler = this.handleWidgetKeyPress.bind(
@@ -1767,9 +1922,8 @@ var CustomizableUIInternal = {
           aWidget,
           node
         );
-        node.addEventListener("keypress", keyPressHandler);
+        viewbutton.addEventListener("keypress", keyPressHandler);
       }
-      node.setAttribute("class", nodeClasses.join(" "));
 
       if (aWidget.onCreated) {
         aWidget.onCreated(node);
@@ -1875,6 +2029,41 @@ var CustomizableUIInternal = {
     );
   },
 
+  doWidgetCommand(aWidget, aNode, aEvent) {
+    if (aWidget.onCommand) {
+      try {
+        aWidget.onCommand.call(null, aEvent);
+      } catch (e) {
+        log.error(e);
+      }
+    } else {
+      // XXXunf Need to think this through more, and formalize.
+      Services.obs.notifyObservers(
+        aNode,
+        "customizedui-widget-command",
+        aWidget.id
+      );
+    }
+  },
+
+  showWidgetView(aWidget, aNode, aEvent) {
+    let ownerWindow = aNode.ownerGlobal;
+    let area = this.getPlacementOfWidget(aNode.id).area;
+    let areaType = CustomizableUI.getAreaType(area);
+    let anchor = aNode;
+    if (areaType != CustomizableUI.TYPE_MENU_PANEL) {
+      let wrapper = this.wrapWidget(aWidget.id).forWindow(ownerWindow);
+
+      let hasMultiView = !!aNode.closest("panelmultiview");
+      if (wrapper && !hasMultiView && wrapper.anchor) {
+        this.hidePanelForNode(aNode);
+        anchor = wrapper.anchor;
+      }
+    }
+
+    ownerWindow.PanelUI.showSubView(aWidget.viewId, anchor, aEvent);
+  },
+
   handleWidgetCommand(aWidget, aNode, aEvent) {
     // Note that aEvent can be a keypress event for widgets of type "view".
     log.debug("handleWidgetCommand");
@@ -1888,36 +2077,26 @@ var CustomizableUIInternal = {
     }
 
     if (aWidget.type == "button") {
-      if (aWidget.onCommand) {
-        try {
-          aWidget.onCommand.call(null, aEvent);
-        } catch (e) {
-          log.error(e);
-        }
-      } else {
-        // XXXunf Need to think this through more, and formalize.
-        Services.obs.notifyObservers(
-          aNode,
-          "customizedui-widget-command",
-          aWidget.id
-        );
-      }
+      this.doWidgetCommand(aWidget, aNode, aEvent);
     } else if (aWidget.type == "view") {
-      let ownerWindow = aNode.ownerGlobal;
+      this.showWidgetView(aWidget, aNode, aEvent);
+    } else if (aWidget.type == "button-and-view") {
+      // Do the command if we're in the toolbar and the button was clicked.
+      // Otherwise, including when we have currently overflowed out of the
+      // toolbar, open the view. There is no way to trigger the command while
+      // the widget is in the panel, by design.
+      let button = aNode.firstElementChild;
       let area = this.getPlacementOfWidget(aNode.id).area;
       let areaType = CustomizableUI.getAreaType(area);
-      let anchor = aNode;
-      if (areaType != CustomizableUI.TYPE_MENU_PANEL) {
-        let wrapper = this.wrapWidget(aWidget.id).forWindow(ownerWindow);
-
-        let hasMultiView = !!aNode.closest("panelmultiview");
-        if (wrapper && !hasMultiView && wrapper.anchor) {
-          this.hidePanelForNode(aNode);
-          anchor = wrapper.anchor;
-        }
+      if (
+        areaType == CustomizableUI.TYPE_TOOLBAR &&
+        button.contains(aEvent.target) &&
+        !aNode.hasAttribute("overflowedItem")
+      ) {
+        this.doWidgetCommand(aWidget, aNode, aEvent);
+      } else {
+        this.showWidgetView(aWidget, aNode, aEvent);
       }
-
-      ownerWindow.PanelUI.showSubView(aWidget.viewId, anchor, aEvent);
     }
   },
 
@@ -2097,7 +2276,8 @@ var CustomizableUIInternal = {
     while (target.parentNode && target.localName != "panel") {
       if (
         target.getAttribute("closemenu") == "none" ||
-        target.getAttribute("widget-type") == "view"
+        target.getAttribute("widget-type") == "view" ||
+        target.getAttribute("widget-type") == "button-and-view"
       ) {
         return;
       }
@@ -2163,7 +2343,9 @@ var CustomizableUIInternal = {
     }
 
     // Destroyed API widgets are in gSeenWidgets, but not in gPalette:
-    if (gSeenWidgets.has(aWidgetId)) {
+    // The Pocket button is a default API widget that acts like a custom widget.
+    // If it's not in gPalette, it doesn't exist.
+    if (gSeenWidgets.has(aWidgetId) || aWidgetId === "save-to-pocket-button") {
       return false;
     }
 
@@ -2723,9 +2905,12 @@ var CustomizableUIInternal = {
       defaultArea: null,
       shortcutId: null,
       tabSpecific: false,
+      locationSpecific: false,
       tooltiptext: null,
+      l10nId: null,
       showInPrivateBrowsing: true,
       _introducedInVersion: -1,
+      keepBroadcastAttributesWhenCustomizing: false,
     };
 
     if (typeof aData.id != "string" || !/^[a-z0-9-_]{1,}$/i.test(aData.id)) {
@@ -2753,7 +2938,7 @@ var CustomizableUIInternal = {
       widget[prop] = aData[prop];
     }
 
-    const kOptStringProps = ["label", "tooltiptext", "shortcutId"];
+    const kOptStringProps = ["l10nId", "label", "tooltiptext", "shortcutId"];
     for (let prop of kOptStringProps) {
       if (typeof aData[prop] == "string") {
         widget[prop] = aData[prop];
@@ -2765,7 +2950,9 @@ var CustomizableUIInternal = {
       "showInPrivateBrowsing",
       "overflows",
       "tabSpecific",
+      "locationSpecific",
       "localized",
+      "keepBroadcastAttributesWhenCustomizing",
     ];
     for (let prop of kOptBoolProps) {
       if (typeof aData[prop] == "boolean") {
@@ -2812,10 +2999,11 @@ var CustomizableUIInternal = {
       widget.onBeforeCommand = aData.onBeforeCommand;
     }
 
-    if (widget.type == "button") {
+    if (widget.type == "button" || widget.type == "button-and-view") {
       widget.onCommand =
         typeof aData.onCommand == "function" ? aData.onCommand : null;
-    } else if (widget.type == "view") {
+    }
+    if (widget.type == "view" || widget.type == "button-and-view") {
       if (typeof aData.viewId != "string") {
         log.error(
           "Expected a string for widget " +
@@ -2918,7 +3106,7 @@ var CustomizableUIInternal = {
           true
         );
       }
-      if (widget.type == "view") {
+      if (widget.type == "view" || widget.type == "button-and-view") {
         let viewNode = window.document.getElementById(widget.viewId);
         if (viewNode) {
           for (let eventName of kSubviewEvents) {
@@ -2927,6 +3115,7 @@ var CustomizableUIInternal = {
               viewNode.removeEventListener(eventName, widget[handler]);
             }
           }
+          viewNode._addedEventListeners = false;
         }
       }
       if (widgetNode && widget.onDestroyed) {
@@ -2978,15 +3167,8 @@ var CustomizableUIInternal = {
 
   _resetUIState() {
     try {
-      // kPrefDrawInTitlebar may not be defined on Linux/Gtk+ which throws an exception
-      // and leads to whole test failure. Let's set a fallback default value to avoid that,
-      // both titlebar states are tested anyway and it's not important which state is tested first.
-      gUIStateBeforeReset.drawInTitlebar = Services.prefs.getBoolPref(
-        kPrefDrawInTitlebar,
-        false
-      );
-      gUIStateBeforeReset.extraDragSpace = Services.prefs.getBoolPref(
-        kPrefExtraDragSpace
+      gUIStateBeforeReset.drawInTitlebar = Services.prefs.getIntPref(
+        kPrefDrawInTitlebar
       );
       gUIStateBeforeReset.uiCustomizationState = Services.prefs.getCharPref(
         kPrefCustomizationState
@@ -3004,7 +3186,6 @@ var CustomizableUIInternal = {
 
     Services.prefs.clearUserPref(kPrefCustomizationState);
     Services.prefs.clearUserPref(kPrefDrawInTitlebar);
-    Services.prefs.clearUserPref(kPrefExtraDragSpace);
     Services.prefs.clearUserPref(kPrefUIDensity);
     Services.prefs.clearUserPref(kPrefAutoTouchMode);
     Services.prefs.clearUserPref(kPrefAutoHideDownloadsButton);
@@ -3038,7 +3219,9 @@ var CustomizableUIInternal = {
           if (defaultCollapsed !== null) {
             win.setToolbarVisibility(
               areaNode,
-              !defaultCollapsed,
+              typeof defaultCollapsed == "string"
+                ? defaultCollapsed
+                : !defaultCollapsed,
               isFirstChangedToolbar
             );
           }
@@ -3067,7 +3250,6 @@ var CustomizableUIInternal = {
       uiDensity,
       autoTouchMode,
       autoHideDownloadsButton,
-      extraDragSpace,
     } = gUIStateBeforeReset;
     gNewElementCount = gUIStateBeforeReset.newElementCount;
 
@@ -3076,8 +3258,7 @@ var CustomizableUIInternal = {
     this._clearPreviousUIState();
 
     Services.prefs.setCharPref(kPrefCustomizationState, uiCustomizationState);
-    Services.prefs.setBoolPref(kPrefDrawInTitlebar, drawInTitlebar);
-    Services.prefs.setBoolPref(kPrefExtraDragSpace, extraDragSpace);
+    Services.prefs.setIntPref(kPrefDrawInTitlebar, drawInTitlebar);
     Services.prefs.setIntPref(kPrefUIDensity, uiDensity);
     Services.prefs.setBoolPref(kPrefAutoTouchMode, autoTouchMode);
     Services.prefs.setBoolPref(
@@ -3239,7 +3420,9 @@ var CustomizableUIInternal = {
 
   get inDefaultState() {
     for (let [areaId, props] of gAreas) {
-      let defaultPlacements = props.get("defaultPlacements");
+      let defaultPlacements = props
+        .get("defaultPlacements")
+        .filter(item => this.widgetExists(item));
       let currentPlacements = gPlacements.get(areaId);
       // We're excluding all of the placement IDs for items that do not exist,
       // and items that have removable="false",
@@ -3270,13 +3453,25 @@ var CustomizableUIInternal = {
         }
 
         if (props.get("type") == CustomizableUI.TYPE_TOOLBAR) {
-          let attribute =
-            container.getAttribute("type") == "menubar"
-              ? "autohide"
-              : "collapsed";
-          let collapsed = container.getAttribute(attribute) == "true";
+          let collapsed = null;
           let defaultCollapsed = props.get("defaultCollapsed");
-          if (defaultCollapsed !== null && collapsed != defaultCollapsed) {
+          let nondefaultState = false;
+          if (areaId == CustomizableUI.AREA_BOOKMARKS) {
+            collapsed = Services.prefs.getCharPref(
+              "browser.toolbars.bookmarks.visibility"
+            );
+            nondefaultState = Services.prefs.prefHasUserValue(
+              "browser.toolbars.bookmarks.visibility"
+            );
+          } else {
+            let attribute =
+              container.getAttribute("type") == "menubar"
+                ? "autohide"
+                : "collapsed";
+            collapsed = container.getAttribute(attribute) == "true";
+            nondefaultState = collapsed != defaultCollapsed;
+          }
+          if (defaultCollapsed !== null && nondefaultState) {
             log.debug(
               "Found " +
                 areaId +
@@ -3338,11 +3533,6 @@ var CustomizableUIInternal = {
       return false;
     }
 
-    if (Services.prefs.prefHasUserValue(kPrefExtraDragSpace)) {
-      log.debug(kPrefExtraDragSpace + " pref is non-default");
-      return false;
-    }
-
     // This should just be `gDefaultTheme.isActive`, but bugs...
     if (gDefaultTheme && gDefaultTheme.id != gSelectedTheme.id) {
       log.debug(gSelectedTheme.id + " theme is non-default");
@@ -3361,6 +3551,13 @@ var CustomizableUIInternal = {
         window.setToolbarVisibility(toolbar, aIsVisible, isFirstChangedToolbar);
         isFirstChangedToolbar = false;
       }
+    }
+  },
+
+  observe(aSubject, aTopic, aData) {
+    if (aTopic == "browser-set-toolbar-visibility") {
+      let [toolbar, visibility] = JSON.parse(aData);
+      CustomizableUI.setToolbarVisibility(toolbar, visibility == "true");
     }
   },
 };
@@ -3736,10 +3933,21 @@ var CustomizableUI = {
    *                  'button' - for simple button widgets (the default)
    *                  'view'   - for buttons that open a panel or subview,
    *                             depending on where they are placed.
+   *                  'button-and-view' - A combination of 'button' and 'view',
+   *                             which looks different depending on whether it's
+   *                             located in the toolbar or in the panel: When
+   *                             located in the toolbar, the widget is shown as
+   *                             a combined item of a button and a dropmarker
+   *                             button. The button triggers the command and the
+   *                             dropmarker button opens the view. When located
+   *                             in the panel, shown as one item which opens the
+   *                             view, and the button command cannot be
+   *                             triggered separately.
    *                  'custom' - for fine-grained control over the creation
    *                             of the widget.
-   * - viewId:        Only useful for views (and required there): the id of the
-   *                  <panelview> that should be shown when clicking the widget.
+   * - viewId:        Only useful for views and button-and-view widgets (and
+   *                  required there): the id of the <panelview> that should be
+   *                  shown when clicking the widget.
    * - onBuild(aDoc): Only useful for custom widgets (and required there); a
    *                  function that will be invoked with the document in which
    *                  to build a widget. Should return the DOM node that has
@@ -3764,14 +3972,15 @@ var CustomizableUI = {
    *                          change the button's icon in preparation to the
    *                          pending command action. Called for both type=button
    *                          and type=view.
-   * - onCommand(aEvt): Only useful for button widgets; a function that will be
-   *                    invoked when the user activates the button.
+   * - onCommand(aEvt): Only useful for button and button-and-view widgets; a
+   *                    function that will be invoked when the user activates
+   *                    the button.
    * - onClick(aEvt): Attached to all widgets; a function that will be invoked
    *                  when the user clicks the widget.
-   * - onViewShowing(aEvt): Only useful for views; a function that will be
-   *                  invoked when a user shows your view. If any event
-   *                  handler calls aEvt.preventDefault(), the view will
-   *                  not be shown.
+   * - onViewShowing(aEvt): Only useful for views and button-and-view widgets; a
+   *                  function that will be invoked when a user shows your view.
+   *                  If any event handler calls aEvt.preventDefault(), the view
+   *                  will not be shown.
    *
    *                  The event's `detail` property is an object with an
    *                  `addBlocker` method. Handlers which need to
@@ -3782,6 +3991,9 @@ var CustomizableUI = {
    *                  value `false`, the view will not be shown.
    * - onViewHiding(aEvt): Only useful for views; a function that will be
    *                  invoked when a user hides your view.
+   * - l10nId:        fluent string identifier to use for localizing attributes
+   *                  on the widget. If present, preferred over the
+   *                  label/tooltiptext.
    * - tooltiptext:   string to use for the tooltip of the widget
    * - label:         string to use for the label of the widget
    * - localized:     If true, or undefined, attempt to retrieve the
@@ -3800,8 +4012,14 @@ var CustomizableUI = {
    *                  (which have strings inside
    *                  customizableWidgets.properties). If you're in an add-on,
    *                  you should not set this property.
+   *                  If l10nId is provided, the resulting shortcut is passed
+   *                  as the "$shortcut" variable to the fluent message.
    * - showInPrivateBrowsing: whether to show the widget in private browsing
    *                          mode (optional, default: true)
+   * - tabSpecific:      If true, closes the panel if the tab changes.
+   * - locationSpecific: If true, closes the panel if the location changes.
+   *                     This is similar to tabSpecific, but also if the location
+   *                     changes in the same tab, we may want to close the panel.
    *
    * @param aProperties the specifications for the widget.
    * @return a wrapper around the created widget (see getWidget)
@@ -4060,7 +4278,6 @@ var CustomizableUI = {
     return (
       gUIStateBeforeReset.uiCustomizationState != null ||
       gUIStateBeforeReset.drawInTitlebar != null ||
-      gUIStateBeforeReset.extraDragSpace != null ||
       gUIStateBeforeReset.currentTheme != null ||
       gUIStateBeforeReset.autoTouchMode != null ||
       gUIStateBeforeReset.uiDensity != null
@@ -4149,6 +4366,8 @@ var CustomizableUI = {
   },
 
   /**
+   * DEPRECATED! Use fluent instead.
+   *
    * Get a localized property off a (widget?) object.
    *
    * NB: this is unlikely to be useful unless you're in Firefox code, because
@@ -4394,6 +4613,7 @@ var CustomizableUI = {
               event.altKey,
               event.shiftKey,
               event.metaKey,
+              0,
               event.sourceEvent,
               0
             );
@@ -4416,6 +4636,16 @@ var CustomizableUI = {
       if (menuChild.localName == "menuitem") {
         subviewItem.classList.add("subviewbutton");
       }
+
+      // We make it possible to supply an alternative Fluent key when cloning
+      // this menuitem into the AppMenu or panel contexts. This is because
+      // we often use Title Case in menuitems in native menus, but want to use
+      // Sentence case in the AppMenu / panels.
+      let l10nId = menuChild.getAttribute("appmenu-data-l10n-id");
+      if (l10nId) {
+        subviewItem.setAttribute("data-l10n-id", l10nId);
+      }
+
       fragment.appendChild(subviewItem);
     }
     aSubview.appendChild(fragment);
@@ -4566,8 +4796,13 @@ function WidgetSingleWrapper(aWidget, aNode) {
     if (!anchorId) {
       anchorId = aNode.getAttribute("cui-anchorid");
     }
-
-    return anchorId ? aNode.ownerDocument.getElementById(anchorId) : aNode;
+    if (anchorId) {
+      return aNode.ownerDocument.getElementById(anchorId);
+    }
+    if (aWidget.type == "button-and-view") {
+      return aNode.lastElementChild;
+    }
+    return aNode;
   });
 
   this.__defineGetter__("overflowed", function() {
@@ -4858,7 +5093,7 @@ OverflowableToolbar.prototype = {
       let mainViewId = multiview.getAttribute("mainViewId");
       let mainView = doc.getElementById(mainViewId);
       let contextMenu = doc.getElementById(mainView.getAttribute("context"));
-      gELS.addSystemEventListener(contextMenu, "command", this, true);
+      Services.els.addSystemEventListener(contextMenu, "command", this, true);
       let anchor = this._chevron.icon;
 
       let popupshown = false;
@@ -4938,7 +5173,12 @@ OverflowableToolbar.prototype = {
     let contextMenuId = this._panel.getAttribute("context");
     if (contextMenuId) {
       let contextMenu = doc.getElementById(contextMenuId);
-      gELS.removeSystemEventListener(contextMenu, "command", this, true);
+      Services.els.removeSystemEventListener(
+        contextMenu,
+        "command",
+        this,
+        true
+      );
     }
   },
 

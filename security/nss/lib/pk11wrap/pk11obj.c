@@ -1321,23 +1321,23 @@ PK11_UnwrapPrivKey(PK11SlotInfo *slot, PK11SymKey *wrappingKey,
                                                                 NULL, perm, sensitive);
                 SECKEY_DestroyPrivateKey(privKey);
                 PK11_FreeSlot(int_slot);
+                SECITEM_FreeItem(param_free, PR_TRUE);
                 return newPrivKey;
             }
         }
         if (int_slot)
             PK11_FreeSlot(int_slot);
         PORT_SetError(PK11_MapError(crv));
+        SECITEM_FreeItem(param_free, PR_TRUE);
         return NULL;
     }
+    SECITEM_FreeItem(param_free, PR_TRUE);
     return PK11_MakePrivKey(slot, nullKey, PR_FALSE, privKeyID, wincx);
 
 loser:
-    if (newKey) {
-        PK11_FreeSymKey(newKey);
-    }
-    if (ck_id) {
-        SECITEM_FreeItem(ck_id, PR_TRUE);
-    }
+    PK11_FreeSymKey(newKey);
+    SECITEM_FreeItem(ck_id, PR_TRUE);
+    SECITEM_FreeItem(param_free, PR_TRUE);
     return NULL;
 }
 
@@ -2264,4 +2264,19 @@ pk11_GetLowLevelKeyFromHandle(PK11SlotInfo *slot, CK_OBJECT_HANDLE handle)
     item->len = theTemplate[0].ulValueLen;
 
     return item;
+}
+
+PRBool
+PK11_ObjectGetFIPSStatus(PK11ObjectType objType, void *objSpec)
+{
+    PK11SlotInfo *slot = NULL;
+    CK_OBJECT_HANDLE handle = 0;
+
+    handle = PK11_GetObjectHandle(objType, objSpec, &slot);
+    if (handle == CK_INVALID_HANDLE) {
+        PORT_SetError(SEC_ERROR_UNKNOWN_OBJECT_TYPE);
+        return PR_FALSE;
+    }
+    return pk11slot_GetFIPSStatus(slot, slot->session, handle,
+                                  CKT_NSS_OBJECT_CHECK);
 }

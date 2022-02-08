@@ -19,7 +19,6 @@ var SidebarUI = {
             .getAttribute("label"),
           url: "chrome://browser/content/places/bookmarksSidebar.xhtml",
           menuId: "menu_bookmarksSidebar",
-          buttonId: "sidebar-switcher-bookmarks",
         },
       ],
       [
@@ -30,7 +29,6 @@ var SidebarUI = {
             .getAttribute("label"),
           url: "chrome://browser/content/places/historySidebar.xhtml",
           menuId: "menu_historySidebar",
-          buttonId: "sidebar-switcher-history",
           triggerButtonId: "appMenuViewHistorySidebar",
         },
       ],
@@ -42,8 +40,6 @@ var SidebarUI = {
             .getAttribute("label"),
           url: "chrome://browser/content/syncedtabs/sidebar.xhtml",
           menuId: "menu_tabsSidebar",
-          buttonId: "sidebar-switcher-tabs",
-          triggerButtonId: "PanelUI-remotetabs-view-sidebar",
         },
       ],
     ]));
@@ -444,6 +440,9 @@ var SidebarUI = {
    * @return {Promise<boolean>}
    */
   async show(commandID, triggerNode) {
+    let panelType = commandID.substring(4, commandID.length - 7);
+    Services.telemetry.keyedScalarAdd("sidebar.opened", panelType, 1);
+
     // Extensions without private window access wont be in the
     // sidebars map.
     if (!this.sidebars.has(commandID)) {
@@ -470,6 +469,9 @@ var SidebarUI = {
    * @return {Promise<boolean>}
    */
   async showInitially(commandID) {
+    let panelType = commandID.substring(4, commandID.length - 7);
+    Services.telemetry.keyedScalarAdd("sidebar.opened", panelType, 1);
+
     // Extensions without private window access wont be in the
     // sidebars map.
     if (!this.sidebars.has(commandID)) {
@@ -567,21 +569,18 @@ var SidebarUI = {
    * none if the argument is an empty string.
    */
   selectMenuItem(commandID) {
-    for (let [id, { menuId, buttonId, triggerButtonId }] of this.sidebars) {
+    for (let [id, { menuId, triggerButtonId }] of this.sidebars) {
       let menu = document.getElementById(menuId);
-      let button = document.getElementById(buttonId);
       let triggerbutton =
         triggerButtonId && document.getElementById(triggerButtonId);
       if (id == commandID) {
         menu.setAttribute("checked", "true");
-        button.setAttribute("checked", "true");
         if (triggerbutton) {
           triggerbutton.setAttribute("checked", "true");
           updateToggleControlLabel(triggerbutton);
         }
       } else {
         menu.removeAttribute("checked");
-        button.removeAttribute("checked");
         if (triggerbutton) {
           triggerbutton.removeAttribute("checked");
           updateToggleControlLabel(triggerbutton);

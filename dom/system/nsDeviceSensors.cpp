@@ -18,7 +18,7 @@
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/DeviceLightEvent.h"
 #include "mozilla/dom/DeviceOrientationEvent.h"
-#include "mozilla/dom/DeviceProximityEvent.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/UserProximityEvent.h"
 #include "mozilla/ErrorResult.h"
@@ -195,15 +195,12 @@ static bool WindowCannotReceiveSensorEvent(nsPIDOMWindowInner* aWindow) {
   }
 
   nsPIDOMWindowOuter* windowOuter = aWindow->GetOuterWindow();
-  bool disabled =
-      windowOuter->IsBackground() || !windowOuter->IsTopLevelWindowActive();
-  if (disabled) {
+  BrowsingContext* topBC = aWindow->GetBrowsingContext()->Top();
+  if (windowOuter->IsBackground() || !topBC->GetIsActiveBrowserWindow()) {
     return true;
   }
 
   // Check to see if this window is a cross-origin iframe:
-
-  auto topBC = aWindow->GetBrowsingContext()->Top();
   if (!topBC->IsInProcess()) {
     return true;
   }
@@ -333,7 +330,7 @@ void nsDeviceSensors::Notify(const mozilla::hal::SensorData& aSensorData) {
         FireDOMOrientationEvent(target, orient.alpha, orient.beta, orient.gamma,
                                 Orientation::kRelative);
       } else if (type == nsIDeviceSensorData::TYPE_PROXIMITY) {
-        FireDOMProximityEvent(target, x, y, z);
+        MaybeFireDOMUserProximityEvent(target, x, z);
       } else if (type == nsIDeviceSensorData::TYPE_LIGHT) {
         FireDOMLightEvent(target, x);
       }
@@ -355,26 +352,8 @@ void nsDeviceSensors::FireDOMLightEvent(mozilla::dom::EventTarget* aTarget,
   aTarget->DispatchEvent(*event);
 }
 
-void nsDeviceSensors::FireDOMProximityEvent(mozilla::dom::EventTarget* aTarget,
-                                            double aValue, double aMin,
-                                            double aMax) {
-  DeviceProximityEventInit init;
-  init.mBubbles = true;
-  init.mCancelable = false;
-  init.mValue = aValue;
-  init.mMin = aMin;
-  init.mMax = aMax;
-  RefPtr<DeviceProximityEvent> event =
-      DeviceProximityEvent::Constructor(aTarget, u"deviceproximity"_ns, init);
-  event->SetTrusted(true);
-
-  aTarget->DispatchEvent(*event);
-
-  // Some proximity sensors only support a binary near or
-  // far measurement. In this case, the sensor should report
-  // its maximum range value in the far state and a lesser
-  // value in the near state.
-
+void nsDeviceSensors::MaybeFireDOMUserProximityEvent(
+    mozilla::dom::EventTarget* aTarget, double aValue, double aMax) {
   bool near = (aValue < aMax);
   if (mIsUserProximityNear != near) {
     mIsUserProximityNear = near;
@@ -531,7 +510,7 @@ bool nsDeviceSensors::IsSensorAllowedByPref(uint32_t aType,
       if (!StaticPrefs::device_sensors_motion_enabled()) {
         return false;
       } else if (doc) {
-        doc->WarnOnceAbout(Document::eMotionEvent);
+        doc->WarnOnceAbout(DeprecatedOperations::eMotionEvent);
       }
       break;
     case nsIDeviceSensorData::TYPE_GAME_ROTATION_VECTOR:
@@ -541,7 +520,7 @@ bool nsDeviceSensors::IsSensorAllowedByPref(uint32_t aType,
       if (!StaticPrefs::device_sensors_orientation_enabled()) {
         return false;
       } else if (doc) {
-        doc->WarnOnceAbout(Document::eOrientationEvent);
+        doc->WarnOnceAbout(DeprecatedOperations::eOrientationEvent);
       }
       break;
     case nsIDeviceSensorData::TYPE_PROXIMITY:
@@ -549,7 +528,7 @@ bool nsDeviceSensors::IsSensorAllowedByPref(uint32_t aType,
       if (!StaticPrefs::device_sensors_proximity_enabled()) {
         return false;
       } else if (doc) {
-        doc->WarnOnceAbout(Document::eProximityEvent, true);
+        doc->WarnOnceAbout(DeprecatedOperations::eProximityEvent, true);
       }
       break;
     case nsIDeviceSensorData::TYPE_LIGHT:
@@ -557,7 +536,7 @@ bool nsDeviceSensors::IsSensorAllowedByPref(uint32_t aType,
       if (!StaticPrefs::device_sensors_ambientLight_enabled()) {
         return false;
       } else if (doc) {
-        doc->WarnOnceAbout(Document::eAmbientLightEvent, true);
+        doc->WarnOnceAbout(DeprecatedOperations::eAmbientLightEvent, true);
       }
       break;
     default:

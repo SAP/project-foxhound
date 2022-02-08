@@ -64,6 +64,12 @@ ChromeUtils.defineModuleGetter(
 
 ChromeUtils.defineModuleGetter(this, "PdfJs", "resource://pdf.js/PdfJs.jsm");
 
+ChromeUtils.defineModuleGetter(
+  this,
+  "PdfSandbox",
+  "resource://pdf.js/PdfSandbox.jsm"
+);
+
 XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest"]);
 
 var Svc = {};
@@ -168,13 +174,6 @@ function getLocalizedStrings(path) {
   }
   return map;
 }
-function getLocalizedString(strings, id, property) {
-  property = property || "textContent";
-  if (id in strings) {
-    return strings[id][property];
-  }
-  return id;
-}
 
 function isValidMatchesCount(data) {
   if (typeof data !== "object" || data === null) {
@@ -277,6 +276,55 @@ class ChromeActions {
       fontTypesUsed: {},
       fallbackErrorsReported: {},
     };
+    this.sandbox = null;
+    this.unloadListener = null;
+  }
+
+  createSandbox(data, sendResponse) {
+    function sendResp(res) {
+      if (sendResponse) {
+        sendResponse(res);
+      }
+      return res;
+    }
+
+    if (!getBoolPref(PREF_PREFIX + ".enableScripting", false)) {
+      return sendResp(false);
+    }
+
+    if (this.sandbox !== null) {
+      return sendResp(true);
+    }
+
+    try {
+      this.sandbox = new PdfSandbox(this.domWindow, data);
+    } catch (err) {
+      // If there's an error here, it means that something is really wrong
+      // on pdf.js side during sandbox initialization phase.
+      Cu.reportError(err);
+      return sendResp(false);
+    }
+
+    this.unloadListener = () => {
+      this.destroySandbox();
+    };
+    this.domWindow.addEventListener("unload", this.unloadListener);
+
+    return sendResp(true);
+  }
+
+  dispatchEventInSandbox(event) {
+    if (this.sandbox) {
+      this.sandbox.dispatchEvent(event);
+    }
+  }
+
+  destroySandbox() {
+    if (this.sandbox) {
+      this.domWindow.removeEventListener("unload", this.unloadListener);
+      this.sandbox.destroy();
+      this.sandbox = null;
+    }
   }
 
   isInPrivateBrowsing() {
@@ -306,6 +354,29 @@ class ChromeActions {
       filename = "document.pdf";
     }
     var blobUri = NetUtil.newURI(blobUrl);
+
+    // If the download was triggered from the ctrl/cmd+s or "Save Page As"
+    // or the download button, launch the "Save As" dialog.
+    const saveOnDownload = getBoolPref(
+      "browser.download.improvements_to_download_panel",
+      false
+    );
+
+    if (
+      data.sourceEventType == "save" ||
+      (saveOnDownload && data.sourceEventType == "download")
+    ) {
+      let actor = getActor(this.domWindow);
+      actor.sendAsyncMessage("PDFJS:Parent:saveURL", {
+        blobUrl,
+        filename,
+      });
+      return;
+    }
+
+    // The download is from the fallback bar or the download button, so trigger
+    // the open dialog to make it easier for users to save in the downloads
+    // folder or launch a different PDF viewer.
     var extHelperAppSvc = Cc[
       "@mozilla.org/uriloader/external-helper-app-service;1"
     ].getService(Ci.nsIExternalHelperAppService);
@@ -495,6 +566,9 @@ class ChromeActions {
           ] = true;
         }
         break;
+      case "tagged":
+        PdfJsTelemetry.onTagged(probeInfo.tagged);
+        break;
     }
   }
 
@@ -503,34 +577,7 @@ class ChromeActions {
    * @param {function} sendResponse - Callback function.
    */
   fallback(args, sendResponse) {
-    var featureId = args.featureId;
-
-    var domWindow = this.domWindow;
-    var strings = getLocalizedStrings("chrome.properties");
-    var message;
-    if (featureId === "forms") {
-      message = getLocalizedString(strings, "unsupported_feature_forms");
-    } else {
-      message = getLocalizedString(strings, "unsupported_feature");
-    }
-    PdfJsTelemetry.onFallbackShown(featureId);
-
-    // Request the display of a notification warning in the associated window
-    // when the renderer isn't sure a pdf displayed correctly.
-    let actor = getActor(domWindow);
-    if (actor) {
-      actor.sendAsyncMessage("PDFJS:Parent:displayWarning", {
-        message,
-        label: getLocalizedString(strings, "open_with_different_viewer"),
-        accessKey: getLocalizedString(
-          strings,
-          "open_with_different_viewer",
-          "accessKey"
-        ),
-      });
-
-      actor.fallbackCallback = sendResponse;
-    }
+    sendResponse(false);
   }
 
   updateFindControlState(data) {
@@ -555,12 +602,18 @@ class ChromeActions {
     if (isValidMatchesCount(data.matchesCount)) {
       matchesCount = data.matchesCount;
     }
+    // Same for the `rawQuery` property.
+    let rawQuery = null;
+    if (typeof data.rawQuery === "string") {
+      rawQuery = data.rawQuery;
+    }
 
     let actor = getActor(this.domWindow);
     actor?.sendAsyncMessage("PDFJS:Parent:updateControlState", {
       result,
       findPrevious,
       matchesCount,
+      rawQuery,
     });
   }
 
@@ -774,6 +827,7 @@ class RangedChromeActions extends ChromeActions {
         length: this.contentLength,
         data,
         done,
+        filename: this.contentDispositionFilename,
       },
       PDF_VIEWER_ORIGIN
     );
@@ -862,6 +916,7 @@ class StandardChromeActions extends ChromeActions {
           pdfjsLoadAction: "complete",
           data,
           errorCode,
+          filename: this.contentDispositionFilename,
         },
         PDF_VIEWER_ORIGIN
       );
@@ -1003,7 +1058,7 @@ PdfStreamConverter.prototype = {
     let { processType, PROCESS_TYPE_DEFAULT } = Services.appinfo;
     // If we're not in the parent, or are the default, then just say yes.
     if (processType != PROCESS_TYPE_DEFAULT || PdfJs.cachedIsDefault()) {
-      return true;
+      return { shouldOpen: true };
     }
 
     // OK, PDF.js might not be the default. Find out if we've misled the user
@@ -1016,24 +1071,27 @@ PdfStreamConverter.prototype = {
     if (!mime) {
       // This shouldn't happen, but we can't fix what isn't there. Assume
       // we're OK to handle with PDF.js
-      return true;
+      return { shouldOpen: true };
     }
 
     const { saveToDisk, useHelperApp, useSystemDefault } = Ci.nsIHandlerInfo;
     let { preferredAction, alwaysAskBeforeHandling } = mime;
+    // return this info so getConvertedType can use it.
+    let rv = { alwaysAskBeforeHandling, shouldOpen: false };
     // If the user has indicated they want to be asked or want to save to
     // disk, we shouldn't render inline immediately:
     if (alwaysAskBeforeHandling || preferredAction == saveToDisk) {
-      return false;
+      return rv;
     }
     // If we have usable helper app info, don't use PDF.js
     if (preferredAction == useHelperApp && this._usableHandler(mime)) {
-      return false;
+      return rv;
     }
     // If we want the OS default and that's not Firefox, don't use PDF.js
     if (preferredAction == useSystemDefault && !mime.isCurrentAppOSDefault()) {
-      return false;
+      return rv;
     }
+    rv.shouldOpen = true;
     // Log that we're doing this to help debug issues if people end up being
     // surprised by this behaviour.
     Cu.reportError("Found unusable PDF preferences. Fixing back to PDF.js");
@@ -1050,11 +1108,16 @@ PdfStreamConverter.prototype = {
     // We can be invoked for application/octet-stream; check if we want the
     // channel first:
     if (aFromType != "application/pdf") {
-      let isPDF = channelURI?.QueryInterface(Ci.nsIURL).fileExtension == "pdf";
-      let typeIsOctetStream = aFromType == "application/octet-stream";
+      let ext = channelURI?.QueryInterface(Ci.nsIURL).fileExtension;
+      let isPDF = ext.toLowerCase() == "pdf";
+      let browsingContext = aChannel?.loadInfo.targetBrowsingContext;
+      let toplevelOctetStream =
+        aFromType == "application/octet-stream" &&
+        browsingContext &&
+        !browsingContext.parent;
       if (
         !isPDF ||
-        !typeIsOctetStream ||
+        !toplevelOctetStream ||
         !getBoolPref(PREF_PREFIX + ".handleOctetStream", false)
       ) {
         throw new Components.Exception(
@@ -1065,14 +1128,33 @@ PdfStreamConverter.prototype = {
       // fall through, this appears to be a pdf.
     }
 
-    if (this._validateAndMaybeUpdatePDFPrefs()) {
+    let {
+      alwaysAskBeforeHandling,
+      shouldOpen,
+    } = this._validateAndMaybeUpdatePDFPrefs();
+
+    if (shouldOpen) {
       return HTML;
     }
-    // Hm, so normally, no pdfjs. However... if this is a file: channel loaded
-    // with system principal, load it anyway:
+    // Hm, so normally, no pdfjs. However... if this is a file: channel there
+    // are some edge-cases.
     if (channelURI?.schemeIs("file")) {
+      // If we're loaded with system principal, we were likely handed the PDF
+      // by the OS or directly from the URL bar. Assume we should load it:
       let triggeringPrincipal = aChannel.loadInfo?.triggeringPrincipal;
       if (triggeringPrincipal?.isSystemPrincipal) {
+        return HTML;
+      }
+
+      // If we're loading from a file: link, load it in PDF.js unless the user
+      // has told us they always want to open/save PDFs.
+      // This is because handing off the choice to open in Firefox itself
+      // through the dialog doesn't work properly and making it work is
+      // non-trivial (see https://bugzilla.mozilla.org/show_bug.cgi?id=1680147#c3 )
+      // - and anyway, opening the file is what we do for *all*
+      // other file types we handle internally (and users can then use other UI
+      // to save or open it with other apps from there).
+      if (triggeringPrincipal?.schemeIs("file") && alwaysAskBeforeHandling) {
         return HTML;
       }
     }
@@ -1135,8 +1217,10 @@ PdfStreamConverter.prototype = {
 
     aRequest.QueryInterface(Ci.nsIWritablePropertyBag);
 
+    var contentDisposition = aRequest.DISPOSITION_INLINE;
     var contentDispositionFilename;
     try {
+      contentDisposition = aRequest.contentDisposition;
       contentDispositionFilename = aRequest.contentDispositionFilename;
     } catch (e) {}
 
@@ -1155,8 +1239,17 @@ PdfStreamConverter.prototype = {
       aRequest.setResponseHeader("Refresh", "", false);
     }
 
-    PdfJsTelemetry.onViewerIsUsed();
+    PdfJsTelemetry.onViewerIsUsed(
+      contentDisposition == aRequest.DISPOSITION_ATTACHMENT
+    );
     PdfJsTelemetry.onDocumentSize(aRequest.contentLength);
+
+    // The document will be loaded via the stream converter as html,
+    // but since we may have come here via a download or attachment
+    // that was opened directly, force the content disposition to be
+    // inline so that the html document will be loaded normally instead
+    // of going to the helper service.
+    aRequest.contentDisposition = Ci.nsIChannel.DISPOSITION_FORCE_INLINE;
 
     // Creating storage for PDF data
     var contentLength = aRequest.contentLength;

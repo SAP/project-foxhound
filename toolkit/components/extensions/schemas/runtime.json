@@ -7,7 +7,7 @@
     "namespace": "manifest",
     "types": [
       {
-        "$extend": "Permission",
+        "$extend": "OptionalPermission",
         "choices": [{
           "type": "string",
           "enum": [
@@ -64,7 +64,7 @@
       {
         "id": "PlatformArch",
         "type": "string",
-        "enum": ["arm", "x86-32", "x86-64"],
+        "enum": ["aarch64", "arm", "ppc64", "s390x", "sparc64", "x86-32", "x86-64"],
         "allowedContexts": ["content", "devtools"],
         "description": "The machine's processor architecture."
       },
@@ -160,6 +160,7 @@
     "functions": [
       {
         "name": "getBackgroundPage",
+        "max_manifest_version": 2,
         "type": "function",
         "description": "Retrieves the JavaScript 'window' object for the background page running inside the current extension/app. If the background page is an event page, the system will ensure it is loaded before calling the callback. If there is no background page, an error is set.",
         "async": "callback",
@@ -220,6 +221,24 @@
         "returns": {
           "type": "string",
           "description": "The fully-qualified URL to the resource."
+        }
+      },
+      {
+        "name": "getFrameId",
+        "type": "function",
+        "allowedContexts": ["content", "devtools"],
+        "description": "Get the frameId of any window global or frame element.",
+        "parameters": [
+          {
+            "type": "any",
+            "name": "target",
+            "description": "A WindowProxy or a Browsing Context container element (IFrame, Frame, Embed, Object) for the target frame."
+          }
+        ],
+        "allowCrossOriginArguments": true,
+        "returns": {
+          "type": "number",
+          "description": "The frameId of the target frame, or -1 if it doesn't exist."
         }
       },
       {

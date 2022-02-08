@@ -17,6 +17,7 @@
 #include "nsLocalFile.h"
 #include "nsIWindowsRegKey.h"
 #include "nsXULAppAPI.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/WindowsVersion.h"
 
@@ -210,7 +211,7 @@ nsresult nsOSHelperAppService::GetMIMEInfoFromRegistry(const nsString& fileType,
 
   // OK, the default value here is the description of the type.
   nsAutoString description;
-  rv = regKey->ReadStringValue(EmptyString(), description);
+  rv = regKey->ReadStringValue(u""_ns, description);
   if (NS_SUCCEEDED(rv)) pInfo->SetDescription(description);
 
   return NS_OK;
@@ -243,7 +244,7 @@ bool nsOSHelperAppService::typeFromExtEquals(const char16_t* aExt,
 
   nsAutoString type;
   rv = regKey->ReadStringValue(u"Content Type"_ns, type);
-  if (NS_SUCCEEDED(rv)) eq = type.EqualsASCII(aType);
+  if (NS_SUCCEEDED(rv)) eq = type.LowerCaseEqualsASCII(aType);
 
   return eq;
 }
@@ -294,7 +295,7 @@ nsresult nsOSHelperAppService::GetDefaultAppInfo(
     if (NS_FAILED(rv)) return NS_ERROR_FAILURE;
 
     // OK, the default value here is the description of the type.
-    rv = regKey->ReadStringValue(EmptyString(), handlerCommand);
+    rv = regKey->ReadStringValue(u""_ns, handlerCommand);
     if (NS_FAILED(rv)) {
       // Check if there is a DelegateExecute string
       nsAutoString delegateExecute;
@@ -310,7 +311,7 @@ nsresult nsOSHelperAppService::GetDefaultAppInfo(
                         delegateExecuteRegPath,
                         nsIWindowsRegKey::ACCESS_QUERY_VALUE);
       if (NS_SUCCEEDED(rv)) {
-        rv = chkKey->ReadStringValue(EmptyString(), handlerCommand);
+        rv = chkKey->ReadStringValue(u""_ns, handlerCommand);
       }
 
       if (NS_FAILED(rv)) {
@@ -322,7 +323,7 @@ nsresult nsOSHelperAppService::GetDefaultAppInfo(
                           delegateExecuteRegPath,
                           nsIWindowsRegKey::ACCESS_QUERY_VALUE);
         NS_ENSURE_SUCCESS(rv, rv);
-        rv = chkKey->ReadStringValue(EmptyString(), handlerCommand);
+        rv = chkKey->ReadStringValue(u""_ns, handlerCommand);
         NS_ENSURE_SUCCESS(rv, rv);
       }
     }
@@ -373,8 +374,13 @@ already_AddRefed<nsMIMEInfoWin> nsOSHelperAppService::GetByExtension(
   fileExtToUse.Append(aFileExt);
 
   // don't append the '.' for our APIs.
-  mimeInfo->AppendExtension(NS_ConvertUTF16toUTF8(Substring(fileExtToUse, 1)));
-  mimeInfo->SetPreferredAction(nsIMIMEInfo::useSystemDefault);
+  nsAutoCString lowerFileExt =
+      NS_ConvertUTF16toUTF8(Substring(fileExtToUse, 1));
+  ToLowerCase(lowerFileExt);
+  mimeInfo->AppendExtension(lowerFileExt);
+  mozilla::StaticPrefs::browser_download_improvements_to_download_panel()
+      ? mimeInfo->SetPreferredAction(nsIMIMEInfo::saveToDisk)
+      : mimeInfo->SetPreferredAction(nsIMIMEInfo::useSystemDefault);
 
   nsAutoString appInfo;
   bool found;
@@ -453,9 +459,6 @@ nsOSHelperAppService::GetMIMEInfoFromOS(const nsACString& aMIMEType,
     // Without an extension from the mimetype or the file, we can't
     // do anything here.
     mi = new nsMIMEInfoWin(flatType.get());
-    if (!aFileExt.IsEmpty()) {
-      mi->AppendExtension(aFileExt);
-    }
     mi.forget(aMIMEInfo);
     return NS_OK;
   }
@@ -518,9 +521,11 @@ nsOSHelperAppService::GetMIMEInfoFromOS(const nsACString& aMIMEType,
   *aFound = false;
   mi = new nsMIMEInfoWin(flatType.get());
   // If we didn't resort to the mime type's extension, we must have had a
-  // valid extension, so stick it on the mime info.
+  // valid extension, so stick its lowercase version on the mime info.
   if (!usedMimeTypeExtensionForLookup) {
-    mi->AppendExtension(aFileExt);
+    nsAutoCString lowerFileExt;
+    ToLowerCase(aFileExt, lowerFileExt);
+    mi->AppendExtension(lowerFileExt);
   }
   mi.forget(aMIMEInfo);
   return NS_OK;

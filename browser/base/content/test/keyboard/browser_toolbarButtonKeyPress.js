@@ -3,6 +3,8 @@
 
 "use strict";
 
+const kDevPanelID = "PanelUI-developer-tools";
+
 /**
  * Test the behavior of key presses on various toolbar buttons.
  */
@@ -60,6 +62,7 @@ add_task(async function testAppMenuButtonWrongKey() {
 // Test activation of the Library button from the keyboard.
 // The Library menu should appear and focus should move inside it.
 add_task(async function testLibraryButtonPress() {
+  CustomizableUI.addWidgetToArea("library-button", "nav-bar");
   let button = document.getElementById("library-button");
   forceFocus(button);
   EventUtils.synthesizeKey(" ");
@@ -70,6 +73,7 @@ add_task(async function testLibraryButtonPress() {
   let hidden = BrowserTestUtils.waitForEvent(document, "popuphidden", true);
   view.closest("panel").hidePopup();
   await hidden;
+  CustomizableUI.removeWidgetFromArea("library-button");
 });
 
 // Test activation of the Developer button from the keyboard.
@@ -83,7 +87,7 @@ add_task(async function testDeveloperButtonPress() {
   let button = document.getElementById("developer-button");
   forceFocus(button);
   EventUtils.synthesizeKey(" ");
-  let view = document.getElementById("PanelUI-developer");
+  let view = document.getElementById(kDevPanelID);
   let focused = BrowserTestUtils.waitForEvent(view, "focus", true);
   await focused;
   ok(true, "Focus inside Developer menu after toolbar button pressed");
@@ -104,7 +108,7 @@ add_task(async function testDeveloperButtonWrongKey() {
   forceFocus(button);
   EventUtils.synthesizeKey("KEY_Tab");
   await TestUtils.waitForTick();
-  let panel = document.getElementById("PanelUI-developer").closest("panel");
+  let panel = document.getElementById(kDevPanelID).closest("panel");
   ok(!panel || panel.state == "closed", "Developer menu not open after tab");
   CustomizableUI.reset();
 });
@@ -112,12 +116,18 @@ add_task(async function testDeveloperButtonWrongKey() {
 // Test activation of the Page actions button from the keyboard.
 // The Page Actions menu should appear and focus should move inside it.
 add_task(async function testPageActionsButtonPress() {
+  // The page actions button is not normally visible, so we must
+  // unhide it.
+  BrowserPageActions.mainButtonNode.style.visibility = "visible";
+  registerCleanupFunction(() => {
+    BrowserPageActions.mainButtonNode.style.removeProperty("visibility");
+  });
   await BrowserTestUtils.withNewTab("https://example.com", async function() {
     let button = document.getElementById("pageActionButton");
     forceFocus(button);
+    EventUtils.synthesizeKey(" ");
     let view = document.getElementById("pageActionPanelMainView");
     let focused = BrowserTestUtils.waitForEvent(view, "focus", true);
-    EventUtils.synthesizeKey(" ");
     await focused;
     ok(true, "Focus inside Page Actions menu after toolbar button pressed");
     let hidden = BrowserTestUtils.waitForEvent(document, "popuphidden", true);
@@ -150,44 +160,22 @@ add_task(async function testBackForwardButtonPress() {
   });
 });
 
-// Test activation of the Send Tab to Device button from the keyboard.
-// This is a page action button built at runtime by PageActions.
-// The Send Tab to Device menu should appear and focus should move inside it.
-add_task(async function testSendTabToDeviceButtonPress() {
-  await BrowserTestUtils.withNewTab("https://example.com", async function() {
-    PageActions.actionForID("sendToDevice").pinnedToUrlbar = true;
-    let button = document.getElementById("pageAction-urlbar-sendToDevice");
-    forceFocus(button);
-    let mainPopupSet = document.getElementById("mainPopupSet");
-    let focused = BrowserTestUtils.waitForEvent(mainPopupSet, "focus", true);
-    EventUtils.synthesizeKey(" ");
-    await focused;
-    let view = document.getElementById(
-      "pageAction-urlbar-sendToDevice-subview"
-    );
-    ok(
-      view.contains(document.activeElement),
-      "Focus inside Page Actions menu after toolbar button pressed"
-    );
-    let hidden = BrowserTestUtils.waitForEvent(document, "popuphidden", true);
-    view.closest("panel").hidePopup();
-    await hidden;
-    PageActions.actionForID("sendToDevice").pinnedToUrlbar = false;
-  });
-});
-
 // Test activation of the Reload button from the keyboard.
 // This is a toolbarbutton with a click handler and no command handler, but
 // the toolbar keyboard navigation code should handle keyboard activation.
 add_task(async function testReloadButtonPress() {
-  await BrowserTestUtils.withNewTab("https://example.com", async function(
+  await BrowserTestUtils.withNewTab("https://example.com/1", async function(
     aBrowser
   ) {
     let button = document.getElementById("reload-button");
+    info("Waiting for button to be enabled.");
     await TestUtils.waitForCondition(() => !button.disabled);
-    forceFocus(button);
     let loaded = BrowserTestUtils.browserLoaded(aBrowser);
+    info("Focusing button");
+    forceFocus(button);
+    info("Pressing space on the button");
     EventUtils.synthesizeKey(" ");
+    info("Waiting for load.");
     await loaded;
     ok(true, "Page loaded after Reload button pressed");
   });
@@ -196,6 +184,7 @@ add_task(async function testReloadButtonPress() {
 // Test activation of the Sidebars button from the keyboard.
 // This is a toolbarbutton with a command handler.
 add_task(async function testSidebarsButtonPress() {
+  CustomizableUI.addWidgetToArea("sidebar-button", "nav-bar");
   let button = document.getElementById("sidebar-button");
   ok(!button.checked, "Sidebars button not checked at start of test");
   let sidebarBox = document.getElementById("sidebar-box");
@@ -216,6 +205,7 @@ add_task(async function testSidebarsButtonPress() {
   await TestUtils.waitForCondition(() => !button.checked);
   ok(true, "Sidebars button not checked after press");
   ok(sidebarBox.hidden, "Sidebar hidden after press");
+  CustomizableUI.removeWidgetFromArea("sidebar-button");
 });
 
 // Test activation of the Bookmark this page button from the keyboard.
@@ -225,7 +215,7 @@ add_task(async function testBookmarkButtonPress() {
   await BrowserTestUtils.withNewTab("https://example.com", async function(
     aBrowser
   ) {
-    let button = document.getElementById("star-button");
+    let button = document.getElementById("star-button-box");
     forceFocus(button);
     StarUI._createPanelIfNeeded();
     let panel = document.getElementById("editBookmarkPanel");
@@ -305,13 +295,14 @@ add_task(async function testDownloadsButtonPress() {
 });
 
 // Test activation of the Save to Pocket button from the keyboard.
-// This is a page action button which shows an iframe (wantsIframe: true).
-// The Pocket iframe should appear and focus should move inside it.
+// This is a customizable widget button which shows an popup panel
+// with a browser element to embed the pocket UI into it.
+// The Pocket panel should appear and focus should move inside it.
 add_task(async function testPocketButtonPress() {
   await BrowserTestUtils.withNewTab("https://example.com", async function(
     aBrowser
   ) {
-    let button = document.getElementById("pocket-button");
+    let button = document.getElementById("save-to-pocket-button");
     forceFocus(button);
     // The panel is created on the fly, so we can't simply wait for focus
     // inside it.
@@ -319,13 +310,13 @@ add_task(async function testPocketButtonPress() {
     EventUtils.synthesizeKey(" ");
     let event = await showing;
     let panel = event.target;
-    is(panel.id, "pageActionActivatedActionPanel");
+    is(panel.id, "customizationui-widget-panel");
     let focused = BrowserTestUtils.waitForEvent(panel, "focus", true);
     await focused;
     is(
       document.activeElement.tagName,
-      "iframe",
-      "Focus inside Pocket iframe after Bookmark button pressed"
+      "browser",
+      "Focus inside Pocket panel after Bookmark button pressed"
     );
     let hidden = BrowserTestUtils.waitForEvent(panel, "popuphidden");
     EventUtils.synthesizeKey("KEY_Escape");

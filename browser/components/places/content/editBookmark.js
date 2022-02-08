@@ -6,12 +6,17 @@ var { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
+XPCOMUtils.defineLazyModuleGetters(this, {
+  CustomizableUI: "resource:///modules/CustomizableUI.jsm",
+});
+
 var gEditItemOverlay = {
   // Array of PlacesTransactions accumulated by internal changes. It can be used
   // to wait for completion.
   transactionPromises: null,
   _observersAdded: false,
   _staticFoldersListBuilt: false,
+  _didChangeFolder: false,
 
   _paneInfo: null,
   _setPaneInfo(aInitInfo) {
@@ -147,6 +152,10 @@ var gEditItemOverlay = {
     );
   },
 
+  get didChangeFolder() {
+    return this._didChangeFolder;
+  },
+
   // the first field which was edited after this panel was initialized for
   // a certain item
   _firstEditedField: "",
@@ -207,19 +216,19 @@ var gEditItemOverlay = {
   /**
    * Initialize the panel.
    *
-   * @param aInfo
-   *        An object having:
-   *        1. one of the following properties:
-   *        - node: either a result node or a node-like object representing the
-   *          item to be edited. A node-like object must have the following
-   *          properties (with values that match exactly those a result node
-   *          would have): itemId, bookmarkGuid, uri, title, type.
-   *        - uris: an array of uris for bulk tagging.
-   *
-   *        2. any of the following optional properties:
-   *          - hiddenRows (Strings array): list of rows to be hidden regardless
-   *            of the item edited. Possible values: "title", "location",
-   *            "keyword", "folderPicker".
+   * @param {object} aInfo
+   * @param {object} [aInfo.node]
+   *   If aInfo.uris is not specified, this must be specified.
+   *   Either a result node or a node-like object representing the item to be edited.
+   *   A node-like object must have the following properties (with values that
+   *   match exactly those a result node would have):
+   *   itemId, bookmarkGuid, uri, title, type.
+   * @param {nsIURI[]} [aInfo.uris]
+   *   If aInfo.node is not specified, this must be specified.
+   *   An array of uris for bulk tagging.
+   * @param {string[]} [hiddenRows]
+   *   List of rows to be hidden regardless of the item edited. Possible values:
+   *   "title", "location", "keyword", "folderPicker".
    */
   initPanel(aInfo) {
     if (typeof aInfo != "object" || aInfo === null) {
@@ -244,6 +253,7 @@ var gEditItemOverlay = {
       this.uninitPanel(false);
     }
 
+    this._didChangeFolder = false;
     this.transactionPromises = [];
 
     let {
@@ -257,6 +267,14 @@ var gEditItemOverlay = {
       focusedElement,
       onPanelReady,
     } = this._setPaneInfo(aInfo);
+
+    // If we're creating a new item on the toolbar, show it:
+    if (
+      aInfo.isNewBookmark &&
+      parentGuid == PlacesUtils.bookmarks.toolbarGuid
+    ) {
+      this._autoshowBookmarksToolbar();
+    }
 
     let showOrCollapse = (
       rowId,
@@ -320,6 +338,16 @@ var gEditItemOverlay = {
     // Observe changes.
     if (!this._observersAdded) {
       PlacesUtils.bookmarks.addObserver(this);
+      this.handlePlacesEvents = this.handlePlacesEvents.bind(this);
+      PlacesUtils.observers.addListener(
+        [
+          "bookmark-moved",
+          "bookmark-tags-changed",
+          "bookmark-title-changed",
+          "bookmark-url-changed",
+        ],
+        this.handlePlacesEvents
+      );
       window.addEventListener("unload", this);
       this._observersAdded = true;
     }
@@ -343,7 +371,7 @@ var gEditItemOverlay = {
         elt = document.querySelector("vbox:not([collapsed=true]) > input");
       }
       if (elt) {
-        elt.focus();
+        elt.focus({ preventScroll: true });
         elt.select();
       }
     };
@@ -357,6 +385,8 @@ var gEditItemOverlay = {
 
   /**
    * Finds tags that are in common among this._currentInfo.uris;
+   *
+   * @returns {string[]}
    */
   _getCommonTags() {
     if ("_cachedCommonTags" in this._paneInfo) {
@@ -410,13 +440,15 @@ var gEditItemOverlay = {
 
   /**
    * Appends a menu-item representing a bookmarks folder to a menu-popup.
-   * @param aMenupopup
-   *        The popup to which the menu-item should be added.
-   * @param aFolderGuid
-   *        The identifier of the bookmarks folder.
-   * @param aTitle
-   *        The title to use as a label.
-   * @return the new menu item.
+   *
+   * @param {DOMElement} aMenupopup
+   *   The popup to which the menu-item should be added.
+   * @param {string} aFolderGuid
+   *   The identifier of the bookmarks folder.
+   * @param {string} aTitle
+   *   The title to use as a label.
+   * @returns {DOMElement}
+   *   The new menu item.
    */
   _appendFolderItemToMenupopup(aMenupopup, aFolderGuid, aTitle) {
     // First make sure the folders-separator is visible
@@ -534,6 +566,15 @@ var gEditItemOverlay = {
 
     if (this._observersAdded) {
       PlacesUtils.bookmarks.removeObserver(this);
+      PlacesUtils.observers.removeListener(
+        [
+          "bookmark-moved",
+          "bookmark-tags-changed",
+          "bookmark-title-changed",
+          "bookmark-url-changed",
+        ],
+        this.handlePlacesEvents
+      );
       window.removeEventListener("unload", this);
       this._observersAdded = false;
     }
@@ -545,6 +586,7 @@ var gEditItemOverlay = {
 
     this._setPaneInfo(null);
     this._firstEditedField = "";
+    this._didChangeFolder = false;
     this.transactionPromises = [];
   },
 
@@ -572,9 +614,14 @@ var gEditItemOverlay = {
   },
 
   /**
-   * For a given array of currently-set tags and the tags-input-field
-   * value, returns which tags should be removed and which should be added in
-   * the form of { removedTags: [...], newTags: [...] }.
+   * Works out the necessary changes for a given array of currently-set tags and
+   * the tags-input-field value.
+   *
+   * @param {string[]} aCurrentTags
+   *   The tags to compare.
+   * @returns {object}
+   *   Returns which tags should be removed and which should be added in
+   *   the form of an object: `{ removedTags: [...], newTags: [...] }`.
    */
   _getTagsChanges(aCurrentTags) {
     let inputTags = this._getTagsArrayFromTagsInputField();
@@ -670,10 +717,10 @@ var gEditItemOverlay = {
 
   /**
    * Stores the first-edit field for this dialog, if the passed-in field
-   * is indeed the first edited field
-   * @param aNewField
-   *        the id of the field that may be set (without the "editBMPanel_"
-   *        prefix)
+   * is indeed the first edited field.
+   *
+   * @param {string} aNewField
+   *   The id of the field that may be set (without the "editBMPanel_" prefix).
    */
   _mayUpdateFirstEditField(aNewField) {
     // * The first-edit-field behavior is not applied in the multi-edit case
@@ -735,7 +782,8 @@ var gEditItemOverlay = {
 
     let newURI;
     try {
-      newURI = PlacesUIUtils.createFixedURI(this._locationField.value);
+      newURI = Services.uriFixup.getFixupURIInfo(this._locationField.value)
+        .preferredURI;
     } catch (ex) {
       // TODO: Bug 1089141 - Provide some feedback about the invalid url.
       return;
@@ -784,6 +832,9 @@ var gEditItemOverlay = {
       this._element("chooseFolderSeparator").hidden = this._element(
         "chooseFolderMenuItem"
       ).hidden = false;
+      // Stop editing if we were (will no-op if not). This avoids permanently
+      // breaking the tree if/when it is reshown.
+      this._folderTree.stopEditing(false);
       // Unlinking the view will break the connection with the result. We don't
       // want to pay for live updates while the view is not visible.
       this._folderTree.view = null;
@@ -816,11 +867,13 @@ var gEditItemOverlay = {
    * folder. If the items-count limit (see
    * browser.bookmarks.editDialog.maxRecentFolders preference) is reached, the
    * new item replaces the last menu-item.
-   * @param aFolderGuid
-   *        The identifier of the bookmarks folder.
-   * @param aTitle
-   *        The title to use in case of menuitem creation.
-   * @return handle to the menuitem.
+   *
+   * @param {string} aFolderGuid
+   *   The identifier of the bookmarks folder.
+   * @param {string} aTitle
+   *   The title to use in case of menuitem creation.
+   * @returns {DOMElement}
+   *   The handle to the menuitem.
    */
   _getFolderMenuItem(aFolderGuid, aTitle) {
     let menupopup = this._folderMenuList.menupopup;
@@ -876,8 +929,12 @@ var gEditItemOverlay = {
 
       // Auto-show the bookmarks toolbar when adding / moving an item there.
       if (containerGuid == PlacesUtils.bookmarks.toolbarGuid) {
-        Services.obs.notifyObservers(null, "autoshow-bookmarks-toolbar");
+        this._autoshowBookmarksToolbar();
       }
+
+      // Unless the user cancels the panel, we'll use the chosen folder as
+      // the default for new bookmarks.
+      this._didChangeFolder = true;
     }
 
     // Update folder-tree selection
@@ -891,6 +948,27 @@ var gEditItemOverlay = {
         this._folderTree.selectItems([containerGuid]);
       }
     }
+  },
+
+  _autoshowBookmarksToolbar() {
+    let neverShowToolbar =
+      Services.prefs.getCharPref(
+        "browser.toolbars.bookmarks.visibility",
+        "newtab"
+      ) == "never";
+    let toolbar = document.getElementById("PersonalToolbar");
+    if (!toolbar.collapsed || neverShowToolbar) {
+      return;
+    }
+
+    let placement = CustomizableUI.getPlacementOfWidget("personal-bookmarks");
+    let area = placement && placement.area;
+    if (area != CustomizableUI.AREA_BOOKMARKS) {
+      return;
+    }
+
+    // Show the toolbar but don't persist it permanently open
+    setToolbarVisibility(toolbar, true, false);
   },
 
   onFolderTreeSelect() {
@@ -999,7 +1077,8 @@ var gEditItemOverlay = {
   /**
    * Splits "tagsField" element value, returning an array of valid tag strings.
    *
-   * @return Array of tag strings found in the field value.
+   * @returns {string[]}
+   *   Array of tag strings found in the field value.
    */
   _getTagsArrayFromTagsInputField() {
     let tags = this._element("tagsField").value;
@@ -1066,6 +1145,64 @@ var gEditItemOverlay = {
       case "select":
         this._onFolderListSelected();
         break;
+    }
+  },
+
+  async handlePlacesEvents(events) {
+    for (const event of events) {
+      switch (event.type) {
+        case "bookmark-moved":
+          if (!this._paneInfo.isItem || this._paneInfo.itemId != event.id) {
+            return;
+          }
+
+          this._paneInfo.parentGuid = event.parentGuid;
+
+          if (
+            !this._paneInfo.visibleRows.has("folderRow") ||
+            event.parentGuid === this._folderMenuList.selectedItem.folderGuid
+          ) {
+            return;
+          }
+
+          // Just setting selectItem _does not_ trigger oncommand, so we don't
+          // recurse.
+          const bm = await PlacesUtils.bookmarks.fetch(event.parentGuid);
+          this._folderMenuList.selectedItem = this._getFolderMenuItem(
+            event.parentGuid,
+            bm.title
+          );
+          break;
+        case "bookmark-tags-changed":
+          if (this._paneInfo.visibleRows.has("tagsRow")) {
+            this._onTagsChange(event.guid).catch(Cu.reportError);
+          }
+          break;
+        case "bookmark-title-changed":
+          if (this._paneInfo.isItem || this._paneInfo.isTag) {
+            // This also updates titles of folders in the folder menu list.
+            this._onItemTitleChange(event.id, event.title, event.guid);
+          }
+          break;
+        case "bookmark-url-changed":
+          if (!this._paneInfo.isItem || this._paneInfo.itemId != event.id) {
+            return;
+          }
+
+          const newURI = Services.io.newURI(event.url);
+          if (!newURI.equals(this._paneInfo.uri)) {
+            this._paneInfo.uri = newURI;
+            if (this._paneInfo.visibleRows.has("locationRow")) {
+              this._initLocationField();
+            }
+
+            if (this._paneInfo.visibleRows.has("tagsRow")) {
+              delete this._paneInfo._cachedCommonTags;
+              this._onTagsChange(event.guid, newURI).catch(Cu.reportError);
+            }
+          }
+          break;
+      }
     }
   },
 
@@ -1178,38 +1315,11 @@ var gEditItemOverlay = {
     aParentId,
     aGuid
   ) {
-    if (aProperty == "tags" && this._paneInfo.visibleRows.has("tagsRow")) {
-      this._onTagsChange(aGuid).catch(Cu.reportError);
-      return;
-    }
-    if (
-      aProperty == "title" &&
-      (this._paneInfo.isItem || this._paneInfo.isTag)
-    ) {
-      // This also updates titles of folders in the folder menu list.
-      this._onItemTitleChange(aItemId, aValue, aGuid);
-      return;
-    }
-
     if (!this._paneInfo.isItem || this._paneInfo.itemId != aItemId) {
       return;
     }
 
     switch (aProperty) {
-      case "uri":
-        let newURI = Services.io.newURI(aValue);
-        if (!newURI.equals(this._paneInfo.uri)) {
-          this._paneInfo.uri = newURI;
-          if (this._paneInfo.visibleRows.has("locationRow")) {
-            this._initLocationField();
-          }
-
-          if (this._paneInfo.visibleRows.has("tagsRow")) {
-            delete this._paneInfo._cachedCommonTags;
-            this._onTagsChange(aGuid, newURI).catch(Cu.reportError);
-          }
-        }
-        break;
       case "keyword":
         if (this._paneInfo.visibleRows.has("keywordRow")) {
           this._initKeywordField(aValue).catch(Cu.reportError);
@@ -1217,44 +1327,6 @@ var gEditItemOverlay = {
         break;
     }
   },
-
-  onItemMoved(
-    id,
-    oldParentId,
-    oldIndex,
-    newParentId,
-    newIndex,
-    type,
-    guid,
-    oldParentGuid,
-    newParentGuid
-  ) {
-    if (!this._paneInfo.isItem || this._paneInfo.itemId != id) {
-      return;
-    }
-
-    this._paneInfo.parentGuid = newParentGuid;
-
-    if (
-      !this._paneInfo.visibleRows.has("folderRow") ||
-      newParentGuid == this._folderMenuList.selectedItem.folderGuid
-    ) {
-      return;
-    }
-
-    // Just setting selectItem _does not_ trigger oncommand, so we don't
-    // recurse.
-    PlacesUtils.bookmarks.fetch(newParentGuid).then(bm => {
-      this._folderMenuList.selectedItem = this._getFolderMenuItem(
-        newParentGuid,
-        bm.title
-      );
-    });
-  },
-
-  onBeginUpdateBatch() {},
-  onEndUpdateBatch() {},
-  onItemVisited() {},
 };
 
 XPCOMUtils.defineLazyGetter(gEditItemOverlay, "_folderTree", () => {

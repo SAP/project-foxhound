@@ -67,9 +67,10 @@ XPCOMUtils.defineLazyGetter(this, "standaloneStylesheets", () => {
 
   if (AppConstants.platform === "macosx") {
     stylesheets.push("chrome://browser/content/extension-mac-panel.css");
-  }
-  if (AppConstants.platform === "win") {
+  } else if (AppConstants.platform === "win") {
     stylesheets.push("chrome://browser/content/extension-win-panel.css");
+  } else if (AppConstants.platform === "linux") {
+    stylesheets.push("chrome://browser/content/extension-linux-panel.css");
   }
   return stylesheets;
 });
@@ -180,6 +181,8 @@ class BasePopup {
     }
     browser.removeEventListener("pagetitlechanged", this);
     browser.removeEventListener("DOMWindowClose", this);
+    browser.removeEventListener("DoZoomEnlargeBy10", this);
+    browser.removeEventListener("DoZoomReduceBy10", this);
   }
 
   // Returns the name of the event fired on `viewNode` when the popup is being
@@ -245,10 +248,21 @@ class BasePopup {
               if (this.destroyed) {
                 return;
               }
-              this.browser.messageManager.sendAsyncMessage(
-                "Extension:GrabFocus",
-                {}
-              );
+              // Wait the reflow before asking the popup panel to grab the focus, otherwise
+              // `nsFocusManager::SetFocus` may ignore out request because the panel view
+              // visibility is still set to `nsViewVisibility_kHide` (waiting the document
+              // to be fully flushed makes us sure that when the popup panel grabs the focus
+              // nsMenuPopupFrame::LayoutPopup has already been colled and set the frame
+              // visibility to `nsViewVisibility_kShow`).
+              this.browser.ownerGlobal.promiseDocumentFlushed(() => {
+                if (this.destroyed) {
+                  return;
+                }
+                this.browser.messageManager.sendAsyncMessage(
+                  "Extension:GrabFocus",
+                  {}
+                );
+              });
             })
             .catch(() => {
               // If the panel closes too fast an exception is raised here and tests will fail.
@@ -263,6 +277,30 @@ class BasePopup {
       case "DOMWindowClose":
         this.closePopup();
         break;
+
+      case "DoZoomEnlargeBy10": {
+        const browser = event.target;
+        let { ZoomManager } = browser.ownerGlobal;
+        let zoom = this.browser.fullZoom;
+        zoom += 0.1;
+        if (zoom > ZoomManager.MAX) {
+          zoom = ZoomManager.MAX;
+        }
+        browser.fullZoom = zoom;
+        break;
+      }
+
+      case "DoZoomReduceBy10": {
+        const browser = event.target;
+        let { ZoomManager } = browser.ownerGlobal;
+        let zoom = browser.fullZoom;
+        zoom -= 0.1;
+        if (zoom < ZoomManager.MIN) {
+          zoom = ZoomManager.MIN;
+        }
+        browser.fullZoom = zoom;
+        break;
+      }
     }
   }
 
@@ -275,7 +313,7 @@ class BasePopup {
     let browser = document.createXULElement("browser");
     browser.setAttribute("type", "content");
     browser.setAttribute("disableglobalhistory", "true");
-    browser.setAttribute("transparent", "true");
+    browser.setAttribute("messagemanagergroup", "webext-browsers");
     browser.setAttribute("class", "webextension-popup-browser");
     browser.setAttribute("webextension-view-type", "popup");
     browser.setAttribute("tooltip", "aHTMLTooltip");
@@ -283,11 +321,18 @@ class BasePopup {
     browser.setAttribute("autocompletepopup", "PopupAutoComplete");
     browser.setAttribute("selectmenulist", "ContentSelectDropdown");
     browser.setAttribute("selectmenuconstrained", "false");
-    browser.sameProcessAsFrameLoader = this.extension.groupFrameLoader;
+
+    // Ensure the browser will initially load in the same group as other
+    // browsers from the same extension.
+    browser.setAttribute(
+      "initialBrowsingContextGroupId",
+      this.extension.policy.browsingContextGroupId
+    );
 
     if (this.extension.remote) {
       browser.setAttribute("remote", "true");
       browser.setAttribute("remoteType", this.extension.remoteType);
+      browser.setAttribute("maychangeremoteness", "true");
     }
 
     // We only need flex sizing for the sake of the slide-in sub-views of the
@@ -313,14 +358,13 @@ class BasePopup {
 
     stack.appendChild(browser);
     viewNode.appendChild(stack);
+
     if (!this.extension.remote) {
       // FIXME: bug 1494029 - this code used to rely on the browser binding
       // accessing browser.contentWindow. This is a stopgap to continue doing
       // that, but we should get rid of it in the long term.
       browser.contentWindow; // eslint-disable-line no-unused-expressions
     }
-
-    ExtensionParent.apiManager.emit("extension-browser-inserted", browser);
 
     let setupBrowser = browser => {
       let mm = browser.messageManager;
@@ -329,20 +373,14 @@ class BasePopup {
       mm.addMessageListener("Extension:BrowserResized", this);
       browser.addEventListener("pagetitlechanged", this);
       browser.addEventListener("DOMWindowClose", this);
+      browser.addEventListener("DoZoomEnlargeBy10", this, true); // eslint-disable-line mozilla/balanced-listeners
+      browser.addEventListener("DoZoomReduceBy10", this, true); // eslint-disable-line mozilla/balanced-listeners
+
+      ExtensionParent.apiManager.emit("extension-browser-inserted", browser);
       return browser;
     };
 
-    if (!popupURL) {
-      // For remote browsers, we can't do any setup until the frame loader is
-      // created. Non-remote browsers get a message manager immediately, so
-      // there's no need to wait for the load event.
-      if (this.extension.remote) {
-        return readyPromise.then(() => setupBrowser(browser));
-      }
-      return setupBrowser(browser);
-    }
-
-    return readyPromise.then(() => {
+    const initBrowser = () => {
       setupBrowser(browser);
       let mm = browser.messageManager;
 
@@ -360,7 +398,22 @@ class BasePopup {
         maxHeight: 600,
         stylesheets: this.STYLESHEETS,
       });
+    };
 
+    browser.addEventListener("DidChangeBrowserRemoteness", initBrowser); // eslint-disable-line mozilla/balanced-listeners
+
+    if (!popupURL) {
+      // For remote browsers, we can't do any setup until the frame loader is
+      // created. Non-remote browsers get a message manager immediately, so
+      // there's no need to wait for the load event.
+      if (this.extension.remote) {
+        return readyPromise.then(() => setupBrowser(browser));
+      }
+      return setupBrowser(browser);
+    }
+
+    return readyPromise.then(() => {
+      initBrowser();
       browser.loadURI(popupURL, {
         triggeringPrincipal: this.extension.principal,
       });

@@ -8,7 +8,7 @@
 #include "ContentBlockingNotifier.h"
 #include "AntiTrackingUtils.h"
 
-#include "mozilla/AbstractEventQueue.h"
+#include "mozilla/EventQueue.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/BrowsingContext.h"
@@ -73,6 +73,7 @@ void ReportUnblockingToConsole(
 
         switch (aReason) {
           case ContentBlockingNotifier::eStorageAccessAPI:
+          case ContentBlockingNotifier::ePrivilegeStorageAccessForOriginAPI:
             messageWithSameOrigin = "CookieAllowedForOriginByStorageAccessAPI";
             break;
 
@@ -171,7 +172,7 @@ void ReportBlockingToConsole(uint64_t aWindowID, nsIURI* aURI,
 
           case uint32_t(
               nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN):
-            message = "CookiePartitionedForeign";
+            message = "CookiePartitionedForeign2";
             category = "cookiePartitionedForeign"_ns;
             break;
 
@@ -496,7 +497,7 @@ void ContentBlockingNotifier::OnDecision(BrowsingContext* aBrowsingContext,
 
 /* static */
 void ContentBlockingNotifier::OnEvent(nsIChannel* aTrackingChannel,
-                                      uint32_t aRejectedReason) {
+                                      uint32_t aRejectedReason, bool aBlocked) {
   MOZ_ASSERT(XRE_IsParentProcess() && aTrackingChannel);
 
   nsCOMPtr<nsIURI> uri;
@@ -507,7 +508,7 @@ void ContentBlockingNotifier::OnEvent(nsIChannel* aTrackingChannel,
     Unused << nsContentUtils::GetASCIIOrigin(uri, trackingOrigin);
   }
 
-  return ContentBlockingNotifier::OnEvent(aTrackingChannel, true,
+  return ContentBlockingNotifier::OnEvent(aTrackingChannel, aBlocked,
                                           aRejectedReason, trackingOrigin);
 }
 

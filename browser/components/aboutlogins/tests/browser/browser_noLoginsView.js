@@ -56,13 +56,13 @@ add_task(async function test_no_logins_class() {
         content.document.l10n.getAttributes(
           loginIntro.shadowRoot.querySelector(".heading")
         ).id,
-        "about-logins-login-intro-heading-logged-out",
+        "about-logins-login-intro-heading-logged-out2",
         "The default message should be the non-logged-in message"
       );
       ok(
         loginIntro.shadowRoot
           .querySelector("a.intro-help-link")
-          .href.includes("lockwise"),
+          .href.includes("password-manager-remember-delete-edit-logins"),
         "Check support href populated"
       );
 

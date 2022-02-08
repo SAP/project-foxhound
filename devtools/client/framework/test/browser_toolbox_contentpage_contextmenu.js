@@ -22,8 +22,9 @@ add_task(async function() {
 });
 
 async function checkConflictWithContentPageMenu(tab) {
-  const target = await TargetFactory.forTab(tab);
-  const toolbox = await gDevTools.showToolbox(target, "inspector");
+  const toolbox = await gDevTools.showToolboxForTab(tab, {
+    toolId: "inspector",
+  });
 
   info("Check that the content page context menu works as expected");
   const contextMenu = document.getElementById("contentAreaContextMenu");
@@ -69,8 +70,14 @@ async function checkConflictWithContentPageMenu(tab) {
 
   info("Check that the toolbox context menu is closed when pressing ESCAPE");
   const onContextMenuHidden = toolbox.once("menu-close");
-  EventUtils.sendKey("ESCAPE", toolbox.win);
+  if (Services.prefs.getBoolPref("widget.macos.native-context-menus", false)) {
+    info("Using hidePopup semantics because of macOS native context menus.");
+    textboxContextMenu.hidePopup();
+  } else {
+    EventUtils.sendKey("ESCAPE", toolbox.win);
+  }
   await onContextMenuHidden;
+  is(textboxContextMenu.state, "closed", "Toolbox contextmenu is closed.");
 
   await toolbox.destroy();
 }

@@ -10,14 +10,10 @@
 #include "nsTArray.h"
 #include "nsUnicodeProperties.h"
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/intl/Segmenter.h"
 
 using namespace mozilla::unicode;
 using namespace mozilla::intl;
-
-/*static*/
-already_AddRefed<LineBreaker> LineBreaker::Create() {
-  return RefPtr<LineBreaker>(new LineBreaker()).forget();
-}
 
 /*
 
@@ -370,18 +366,19 @@ static inline bool IS_HYPHEN(char16_t u) {
   return (u == U_HYPHEN || u == 0x2010 ||  // HYPHEN
           u == 0x2012 ||                   // FIGURE DASH
           u == 0x2013 ||                   // EN DASH
-#if ANDROID
-          /* Bug 1647377: On Android, we don't have a "platform" backend
-           * that supports Tibetan (nsRuleBreaker.cpp only knows about
-           * Thai), so instead we just treat the TSHEG like a hyphen to
-           * provide basic line-breaking possibilities.
+#if ANDROID || XP_WIN
+          /* Bug 1647377: On Android and Windows, we don't have a "platform"
+           * backend that supports Tibetan (nsRuleBreaker.cpp only knows about
+           * Thai, and ScriptBreak doesn't handle Tibetan well either), so
+           * instead we just treat the TSHEG like a hyphen to provide basic
+           * line-breaking possibilities.
            */
           u == 0x0F0B ||  // TIBETAN MARK INTERSYLLABIC TSHEG
 #endif
           u == 0x058A);  // ARMENIAN HYPHEN
 }
 
-static int8_t GetClass(uint32_t u, LineBreaker::Strictness aLevel,
+static int8_t GetClass(uint32_t u, LineBreakRule aLevel,
                        bool aIsChineseOrJapanese) {
   // Mapping for Unicode LineBreak.txt classes to the (simplified) set of
   // character classes used here.
@@ -398,7 +395,7 @@ static int8_t GetClass(uint32_t u, LineBreaker::Strictness aLevel,
       /* AMBIGUOUS = 1,                     [AI] */ CLASS_CHARACTER,
       /* ALPHABETIC = 2,                    [AL] */ CLASS_CHARACTER,
       /* BREAK_BOTH = 3,                    [B2] */ CLASS_CHARACTER,
-      /* BREAK_AFTER = 4,                   [BA] */ CLASS_CHARACTER,
+      /* BREAK_AFTER = 4,                   [BA] */ CLASS_BREAKABLE,
       /* BREAK_BEFORE = 5,                  [BB] */ CLASS_OPEN_LIKE_CHARACTER,
       /* MANDATORY_BREAK = 6,               [BK] */ CLASS_CHARACTER,
       /* CONTINGENT_BREAK = 7,              [CB] */ CLASS_CHARACTER,
@@ -447,12 +444,12 @@ static int8_t GetClass(uint32_t u, LineBreaker::Strictness aLevel,
   // Overrides based on rules for the different line-break values given in
   // https://drafts.csswg.org/css-text-3/#line-break-property
   switch (aLevel) {
-    case LineBreaker::Strictness::Auto:
+    case LineBreakRule::Auto:
       // For now, just use legacy Gecko behavior.
       // XXX Possible enhancement - vary strictness according to line width
       // or other criteria.
       break;
-    case LineBreaker::Strictness::Strict:
+    case LineBreakRule::Strict:
       if (cls == U_LB_CONDITIONAL_JAPANESE_STARTER ||
           (u == 0x3095 || u == 0x3096 || u == 0x30f5 || u == 0x30f6)) {
         return CLASS_CLOSE;
@@ -476,7 +473,7 @@ static int8_t GetClass(uint32_t u, LineBreaker::Strictness aLevel,
         }
       }
       break;
-    case LineBreaker::Strictness::Normal:
+    case LineBreakRule::Normal:
       if (cls == U_LB_CONDITIONAL_JAPANESE_STARTER) {
         return CLASS_BREAKABLE;
       }
@@ -499,7 +496,7 @@ static int8_t GetClass(uint32_t u, LineBreaker::Strictness aLevel,
         }
       }
       break;
-    case LineBreaker::Strictness::Loose:
+    case LineBreakRule::Loose:
       if (cls == U_LB_CONDITIONAL_JAPANESE_STARTER) {
         return CLASS_BREAKABLE;
       }
@@ -527,7 +524,7 @@ static int8_t GetClass(uint32_t u, LineBreaker::Strictness aLevel,
         }
       }
       break;
-    case LineBreaker::Strictness::Anywhere:
+    case LineBreakRule::Anywhere:
       MOZ_ASSERT_UNREACHABLE("should have been handled already");
       break;
   }
@@ -626,10 +623,11 @@ static int8_t GetClass(uint32_t u, LineBreaker::Strictness aLevel,
         return GETCLASSFROMTABLE(gLBClass00, uint16_t(U_HYPHEN));
       }
     } else if (0x0F00 == h) {
-      // Tibetan chars with class = BA
-      if (0x34 == l || 0x7f == l || 0x85 == l || 0xbe == l || 0xbf == l ||
-          0xd2 == l) {
-        return CLASS_BREAKABLE;
+      // We treat Tibetan TSHEG as a hyphen (when not using platform breaker);
+      // other Tibetan chars with LineBreak class=BA will be handled by the
+      // default sUnicodeLineBreakToClass mapping below.
+      if (l == 0x0B) {
+        return GETCLASSFROMTABLE(gLBClass00, uint16_t(U_HYPHEN));
       }
     } else if (0x1800 == h) {
       if (0x0E == l) {
@@ -829,8 +827,7 @@ class ContextState {
 };
 
 static int8_t ContextualAnalysis(char32_t prev, char32_t cur, char32_t next,
-                                 ContextState& aState,
-                                 LineBreaker::Strictness aLevel,
+                                 ContextState& aState, LineBreakRule aLevel,
                                  bool aIsChineseOrJapanese) {
   // Don't return CLASS_OPEN/CLASS_CLOSE if aState.UseJISX4051 is FALSE.
 
@@ -912,65 +909,48 @@ static int8_t ContextualAnalysis(char32_t prev, char32_t cur, char32_t next,
   return GetClass(cur, aLevel, aIsChineseOrJapanese);
 }
 
-int32_t LineBreaker::WordMove(const char16_t* aText, uint32_t aLen,
-                              uint32_t aPos, int8_t aDirection) {
-  bool textNeedsJISx4051 = false;
+int32_t LineBreaker::Next(const char16_t* aText, uint32_t aLen, uint32_t aPos) {
+  MOZ_ASSERT(aText);
+
+  if (aPos >= aLen) {
+    return NS_LINEBREAKER_NEED_MORE_TEXT;
+  }
+
+  bool textNeedsComplexLineBreak = false;
   int32_t begin, end;
 
   for (begin = aPos; begin > 0 && !NS_IsSpace(aText[begin - 1]); --begin) {
     if (IS_CJK_CHAR(aText[begin]) ||
         NS_NeedsPlatformNativeHandling(aText[begin])) {
-      textNeedsJISx4051 = true;
+      textNeedsComplexLineBreak = true;
     }
   }
   for (end = aPos + 1; end < int32_t(aLen) && !NS_IsSpace(aText[end]); ++end) {
     if (IS_CJK_CHAR(aText[end]) || NS_NeedsPlatformNativeHandling(aText[end])) {
-      textNeedsJISx4051 = true;
+      textNeedsComplexLineBreak = true;
     }
   }
 
   int32_t ret;
-  AutoTArray<uint8_t, 2000> breakState;
-  if (!textNeedsJISx4051) {
+  if (!textNeedsComplexLineBreak) {
     // No complex text character, do not try to do complex line break.
     // (This is required for serializers. See Bug #344816.)
-    if (aDirection < 0) {
-      ret = (begin == int32_t(aPos)) ? begin - 1 : begin;
-    } else {
-      ret = end;
-    }
+    ret = end;
   } else {
+    AutoTArray<uint8_t, 2000> breakState;
     // XXX(Bug 1631371) Check if this should use a fallible operation as it
     // pretended earlier.
     breakState.AppendElements(end - begin);
-    GetJISx4051Breaks(aText + begin, end - begin, WordBreak::Normal,
-                      Strictness::Auto, false, breakState.Elements());
+    ComputeBreakPositions(aText + begin, end - begin, WordBreakRule::Normal,
+                          LineBreakRule::Auto, false, breakState.Elements());
 
     ret = aPos;
     do {
-      ret += aDirection;
+      ++ret;
     } while (begin < ret && ret < end && !breakState[ret - begin]);
   }
 
   return ret;
-}
-
-int32_t LineBreaker::Next(const char16_t* aText, uint32_t aLen, uint32_t aPos) {
-  NS_ASSERTION(aText, "aText shouldn't be null");
-  NS_ASSERTION(aLen > aPos,
-               "Bad position passed to nsJISx4051LineBreaker::Next");
-
-  int32_t nextPos = WordMove(aText, aLen, aPos, 1);
-  return nextPos < int32_t(aLen) ? nextPos : NS_LINEBREAKER_NEED_MORE_TEXT;
-}
-
-int32_t LineBreaker::Prev(const char16_t* aText, uint32_t aLen, uint32_t aPos) {
-  NS_ASSERTION(aText, "aText shouldn't be null");
-  NS_ASSERTION(aLen >= aPos && aPos > 0,
-               "Bad position passed to nsJISx4051LineBreaker::Prev");
-
-  int32_t prevPos = WordMove(aText, aLen, aPos, -1);
-  return prevPos > 0 ? prevPos : NS_LINEBREAKER_NEED_MORE_TEXT;
 }
 
 static bool SuppressBreakForKeepAll(uint32_t aPrev, uint32_t aCh) {
@@ -1001,10 +981,9 @@ static bool SuppressBreakForKeepAll(uint32_t aPrev, uint32_t aCh) {
          affectedByKeepAll(GetLineBreakClass(aCh));
 }
 
-void LineBreaker::GetJISx4051Breaks(const char16_t* aChars, uint32_t aLength,
-                                    WordBreak aWordBreak, Strictness aLevel,
-                                    bool aIsChineseOrJapanese,
-                                    uint8_t* aBreakBefore) {
+void LineBreaker::ComputeBreakPositions(
+    const char16_t* aChars, uint32_t aLength, WordBreakRule aWordBreak,
+    LineBreakRule aLevel, bool aIsChineseOrJapanese, uint8_t* aBreakBefore) {
   uint32_t cur;
   int8_t lastClass = CLASS_NONE;
   ContextState state(aChars, aLength);
@@ -1014,24 +993,25 @@ void LineBreaker::GetJISx4051Breaks(const char16_t* aChars, uint32_t aLength,
     uint32_t chLen = ch > 0xFFFFu ? 2 : 1;
     int8_t cl;
 
-    if (NEED_CONTEXTUAL_ANALYSIS(ch)) {
-      char32_t prev, next;
-      if (cur > 0) {
-        // not using state.GetUnicodeCharAt() here because we're looking back
-        // rather than forward for possible surrogates
-        prev = aChars[cur - 1];
-        if (cur > 1 && NS_IS_SURROGATE_PAIR(aChars[cur - 2], prev)) {
-          prev = SURROGATE_TO_UCS4(aChars[cur - 2], prev);
-        }
-      } else {
-        prev = 0;
+    auto prev = [=]() -> char32_t {
+      if (!cur) {
+        return 0;
       }
+      char32_t c = aChars[cur - 1];
+      if (cur > 1 && NS_IS_SURROGATE_PAIR(aChars[cur - 2], c)) {
+        c = SURROGATE_TO_UCS4(aChars[cur - 2], c);
+      }
+      return c;
+    };
+
+    if (NEED_CONTEXTUAL_ANALYSIS(ch)) {
+      char32_t next;
       if (cur + chLen < aLength) {
         next = state.GetUnicodeCharAt(cur + chLen);
       } else {
         next = 0;
       }
-      cl = ContextualAnalysis(prev, ch, next, state, aLevel,
+      cl = ContextualAnalysis(prev(), ch, next, state, aLevel,
                               aIsChineseOrJapanese);
     } else {
       if (ch == U_EQUAL) state.NotifySeenEqualsSign();
@@ -1045,7 +1025,7 @@ void LineBreaker::GetJISx4051Breaks(const char16_t* aChars, uint32_t aLength,
     // _CLOSE_LIKE_CHARACTER, or _NUMERIC by GetClass(), but those classes also
     // include others that we don't want to touch here, so we re-check the
     // Unicode line-break class to determine which ones to modify.
-    if (aWordBreak == WordBreak::BreakAll &&
+    if (aWordBreak == WordBreakRule::BreakAll &&
         (cl == CLASS_CHARACTER || cl == CLASS_CLOSE ||
          cl == CLASS_CLOSE_LIKE_CHARACTER || cl == CLASS_NUMERIC)) {
       auto cls = GetLineBreakClass(ch);
@@ -1064,18 +1044,24 @@ void LineBreaker::GetJISx4051Breaks(const char16_t* aChars, uint32_t aLength,
     if (cur > 0) {
       NS_ASSERTION(CLASS_COMPLEX != lastClass || CLASS_COMPLEX != cl,
                    "Loop should have prevented adjacent complex chars here");
-      auto prev = [=]() {
-        char32_t c = aChars[cur - 1];
-        if (cur > 1 && NS_IS_SURROGATE_PAIR(aChars[cur - 2], c)) {
-          c = SURROGATE_TO_UCS4(aChars[cur - 2], c);
-        }
-        return c;
-      };
       allowBreak =
           (state.UseConservativeBreaking() ? GetPairConservative(lastClass, cl)
-                                           : GetPair(lastClass, cl)) &&
-          (aWordBreak != WordBreak::KeepAll ||
-           !SuppressBreakForKeepAll(prev(), ch));
+                                           : GetPair(lastClass, cl));
+      // Special cases where a normally-allowed break is suppressed:
+      if (allowBreak) {
+        // word-break:keep-all suppresses breaks between certain line-break
+        // classes.
+        if (aWordBreak == WordBreakRule::KeepAll &&
+            SuppressBreakForKeepAll(prev(), ch)) {
+          allowBreak = false;
+        }
+        // We also don't allow a break within a run of U+3000 chars unless
+        // word-break:break-all is in effect.
+        if (ch == 0x3000 && prev() == 0x3000 &&
+            aWordBreak != WordBreakRule::BreakAll) {
+          allowBreak = false;
+        }
+      }
     }
     aBreakBefore[cur] = allowBreak;
     if (allowBreak) state.NotifyBreakBefore();
@@ -1094,7 +1080,7 @@ void LineBreaker::GetJISx4051Breaks(const char16_t* aChars, uint32_t aLength,
         }
       }
 
-      if (aWordBreak == WordBreak::BreakAll) {
+      if (aWordBreak == WordBreakRule::BreakAll) {
         // For break-all, we don't need to run a dictionary-based breaking
         // algorithm, we just allow breaks between all grapheme clusters.
         ClusterIterator ci(aChars + cur, end - cur);
@@ -1103,7 +1089,7 @@ void LineBreaker::GetJISx4051Breaks(const char16_t* aChars, uint32_t aLength,
           aBreakBefore[ci - aChars] = true;
         }
       } else {
-        NS_GetComplexLineBreaks(aChars + cur, end - cur, aBreakBefore + cur);
+        ComplexBreaker::GetBreaks(aChars + cur, end - cur, aBreakBefore + cur);
         // restore breakability at chunk begin, which was always set to false
         // by the complex line breaker
         aBreakBefore[cur] = allowBreak;
@@ -1122,10 +1108,11 @@ void LineBreaker::GetJISx4051Breaks(const char16_t* aChars, uint32_t aLength,
   }
 }
 
-void LineBreaker::GetJISx4051Breaks(const uint8_t* aChars, uint32_t aLength,
-                                    WordBreak aWordBreak, Strictness aLevel,
-                                    bool aIsChineseOrJapanese,
-                                    uint8_t* aBreakBefore) {
+void LineBreaker::ComputeBreakPositions(const uint8_t* aChars, uint32_t aLength,
+                                        WordBreakRule aWordBreak,
+                                        LineBreakRule aLevel,
+                                        bool aIsChineseOrJapanese,
+                                        uint8_t* aBreakBefore) {
   uint32_t cur;
   int8_t lastClass = CLASS_NONE;
   ContextState state(aChars, aLength);
@@ -1143,7 +1130,7 @@ void LineBreaker::GetJISx4051Breaks(const uint8_t* aChars, uint32_t aLength,
       state.NotifyNonHyphenCharacter(ch);
       cl = GetClass(ch, aLevel, aIsChineseOrJapanese);
     }
-    if (aWordBreak == WordBreak::BreakAll &&
+    if (aWordBreak == WordBreakRule::BreakAll &&
         (cl == CLASS_CHARACTER || cl == CLASS_CLOSE ||
          cl == CLASS_CLOSE_LIKE_CHARACTER || cl == CLASS_NUMERIC)) {
       auto cls = GetLineBreakClass(ch);
@@ -1159,7 +1146,7 @@ void LineBreaker::GetJISx4051Breaks(const uint8_t* aChars, uint32_t aLength,
       allowBreak =
           (state.UseConservativeBreaking() ? GetPairConservative(lastClass, cl)
                                            : GetPair(lastClass, cl)) &&
-          (aWordBreak != WordBreak::KeepAll ||
+          (aWordBreak != WordBreakRule::KeepAll ||
            !SuppressBreakForKeepAll(aChars[cur - 1], ch));
     }
     aBreakBefore[cur] = allowBreak;

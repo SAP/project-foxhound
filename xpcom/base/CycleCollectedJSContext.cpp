@@ -19,6 +19,7 @@
 #include "mozilla/CycleCollectedJSRuntime.h"
 #include "mozilla/DebuggerOnGCRunnable.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimelineConsumers.h"
@@ -60,6 +61,7 @@ CycleCollectedJSContext::CycleCollectedJSContext()
       mDoingStableStates(false),
       mTargetedMicroTaskRecursionDepth(0),
       mMicroTaskLevel(0),
+      mSuppressionGeneration(0),
       mDebuggerRecursionDepth(0),
       mMicroTaskRecursionDepth(0),
       mFinalizationRegistryCleanup(this) {
@@ -220,8 +222,8 @@ class PromiseJobRunnable final : public MicroTaskRunnable {
   }
 
   virtual bool Suppressed() override {
-    nsIGlobalObject* global =
-        xpc::NativeGlobal(mCallback->CallbackPreserveColor());
+    JSObject* callback = mCallback->CallbackPreserveColor();
+    nsIGlobalObject* global = callback ? xpc::NativeGlobal(callback) : nullptr;
     return global && global->IsInSyncOperation();
   }
 
@@ -290,7 +292,7 @@ class CycleCollectedJSContext::SavedMicroTaskQueue
 
  private:
   CycleCollectedJSContext* ccjs;
-  std::queue<RefPtr<MicroTaskRunnable>> mQueue;
+  std::deque<RefPtr<MicroTaskRunnable>> mQueue;
 };
 
 js::UniquePtr<JS::JobQueue::SavedJobQueue>
@@ -328,7 +330,7 @@ void CycleCollectedJSContext::PromiseRejectionTrackerCallback(
       RefPtr<Promise> promise =
           Promise::CreateFromExisting(xpc::NativeGlobal(aPromise), aPromise);
       aboutToBeNotified.AppendElement(promise);
-      unhandled.Put(promiseID, std::move(promise));
+      unhandled.InsertOrUpdate(promiseID, std::move(promise));
     }
   } else {
     PromiseDebugging::AddConsumedRejection(aPromise);
@@ -378,13 +380,13 @@ void CycleCollectedJSContext::SetPendingException(Exception* aException) {
   mPendingException = aException;
 }
 
-std::queue<RefPtr<MicroTaskRunnable>>&
+std::deque<RefPtr<MicroTaskRunnable>>&
 CycleCollectedJSContext::GetMicroTaskQueue() {
   MOZ_ASSERT(mJSContext);
   return mPendingMicroTaskRunnables;
 }
 
-std::queue<RefPtr<MicroTaskRunnable>>&
+std::deque<RefPtr<MicroTaskRunnable>>&
 CycleCollectedJSContext::GetDebuggerMicroTaskQueue() {
   MOZ_ASSERT(mJSContext);
   return mDebuggerMicroTaskQueue;
@@ -497,6 +499,8 @@ void CycleCollectedJSContext::IsIdleGCTaskNeeded() const {
     using mozilla::IdleRunnable::IdleRunnable;
 
    public:
+    IdleTimeGCTaskRunnable() : IdleRunnable("IdleTimeGCTask") {}
+
     NS_IMETHOD Run() override {
       CycleCollectedJSRuntime* ccrt = CycleCollectedJSRuntime::Get();
       if (ccrt) {
@@ -504,8 +508,6 @@ void CycleCollectedJSContext::IsIdleGCTaskNeeded() const {
       }
       return NS_OK;
     }
-
-    nsresult Cancel() override { return NS_OK; }
   };
 
   if (Runtime()->IsIdleGCTaskNeeded()) {
@@ -563,7 +565,7 @@ void CycleCollectedJSContext::DispatchToMicroTask(
   JS::JobQueueMayNotBeEmpty(Context());
 
   LogMicroTaskRunnable::LogDispatch(runnable.get());
-  mPendingMicroTaskRunnables.push(std::move(runnable));
+  mPendingMicroTaskRunnables.push_back(std::move(runnable));
 }
 
 class AsyncMutationHandler final : public mozilla::Runnable {
@@ -581,6 +583,25 @@ class AsyncMutationHandler final : public mozilla::Runnable {
     return NS_OK;
   }
 };
+
+SuppressedMicroTasks::SuppressedMicroTasks(CycleCollectedJSContext* aContext)
+    : mContext(aContext),
+      mSuppressionGeneration(aContext->mSuppressionGeneration) {}
+
+bool SuppressedMicroTasks::Suppressed() {
+  if (mSuppressionGeneration == mContext->mSuppressionGeneration) {
+    return true;
+  }
+
+  for (std::deque<RefPtr<MicroTaskRunnable>>::reverse_iterator it =
+           mSuppressedMicroTaskRunnables.rbegin();
+       it != mSuppressedMicroTaskRunnables.rend(); ++it) {
+    mContext->GetMicroTaskQueue().push_front(*it);
+  }
+  mContext->mSuppressedMicroTasks = nullptr;
+
+  return false;
+}
 
 bool CycleCollectedJSContext::PerformMicroTaskCheckPoint(bool aForce) {
   if (mPendingMicroTaskRunnables.empty() && mDebuggerMicroTaskQueue.empty()) {
@@ -612,18 +633,19 @@ bool CycleCollectedJSContext::PerformMicroTaskCheckPoint(bool aForce) {
   MOZ_ASSERT(aForce ? currentDepth == 0 : currentDepth > 0);
   mMicroTaskRecursionDepth = currentDepth;
 
+  AUTO_PROFILER_TRACING_MARKER("JS", "Perform microtasks", JS);
+
   bool didProcess = false;
   AutoSlowOperation aso;
 
-  std::queue<RefPtr<MicroTaskRunnable>> suppressed;
   for (;;) {
     RefPtr<MicroTaskRunnable> runnable;
     if (!mDebuggerMicroTaskQueue.empty()) {
       runnable = std::move(mDebuggerMicroTaskQueue.front());
-      mDebuggerMicroTaskQueue.pop();
+      mDebuggerMicroTaskQueue.pop_front();
     } else if (!mPendingMicroTaskRunnables.empty()) {
       runnable = std::move(mPendingMicroTaskRunnables.front());
-      mPendingMicroTaskRunnables.pop();
+      mPendingMicroTaskRunnables.pop_front();
     } else {
       break;
     }
@@ -634,10 +656,16 @@ bool CycleCollectedJSContext::PerformMicroTaskCheckPoint(bool aForce) {
       // all suppressed tasks in mDebuggerMicroTaskQueue unexpectedly.
       MOZ_ASSERT(NS_IsMainThread());
       JS::JobQueueMayNotBeEmpty(Context());
-      suppressed.push(runnable);
+      if (runnable != mSuppressedMicroTasks) {
+        if (!mSuppressedMicroTasks) {
+          mSuppressedMicroTasks = new SuppressedMicroTasks(this);
+        }
+        mSuppressedMicroTasks->mSuppressedMicroTaskRunnables.push_back(
+            runnable);
+      }
     } else {
       if (mPendingMicroTaskRunnables.empty() &&
-          mDebuggerMicroTaskQueue.empty() && suppressed.empty()) {
+          mDebuggerMicroTaskQueue.empty() && !mSuppressedMicroTasks) {
         JS::JobQueueIsEmpty(Context());
       }
       didProcess = true;
@@ -652,7 +680,9 @@ bool CycleCollectedJSContext::PerformMicroTaskCheckPoint(bool aForce) {
   // Note, it is possible that we end up keeping these suppressed tasks around
   // for some time, but no longer than spinning the event loop nestedly
   // (sync XHR, alert, etc.)
-  mPendingMicroTaskRunnables.swap(suppressed);
+  if (mSuppressedMicroTasks) {
+    mPendingMicroTaskRunnables.push_back(mSuppressedMicroTasks);
+  }
 
   AfterProcessMicrotasks();
 
@@ -667,7 +697,7 @@ void CycleCollectedJSContext::PerformDebuggerMicroTaskCheckpoint() {
   for (;;) {
     // For a debugger microtask checkpoint, we always use the debugger microtask
     // queue.
-    std::queue<RefPtr<MicroTaskRunnable>>* microtaskQueue =
+    std::deque<RefPtr<MicroTaskRunnable>>* microtaskQueue =
         &GetDebuggerMicroTaskQueue();
 
     if (microtaskQueue->empty()) {
@@ -680,7 +710,7 @@ void CycleCollectedJSContext::PerformDebuggerMicroTaskCheckpoint() {
     LogMicroTaskRunnable::Run log(runnable.get());
 
     // This function can re-enter, so we remove the element before calling.
-    microtaskQueue->pop();
+    microtaskQueue->pop_front();
 
     if (mPendingMicroTaskRunnables.empty() && mDebuggerMicroTaskQueue.empty()) {
       JS::JobQueueIsEmpty(Context());
@@ -749,15 +779,16 @@ nsresult CycleCollectedJSContext::NotifyUnhandledRejections::Cancel() {
   return NS_OK;
 }
 
-class FinalizationRegistryCleanup::CleanupRunnable : public CancelableRunnable {
+class FinalizationRegistryCleanup::CleanupRunnable
+    : public DiscardableRunnable {
  public:
   explicit CleanupRunnable(FinalizationRegistryCleanup* aCleanupWork)
-      : CancelableRunnable("CleanupRunnable"), mCleanupWork(aCleanupWork) {}
+      : DiscardableRunnable("CleanupRunnable"), mCleanupWork(aCleanupWork) {}
 
   // MOZ_CAN_RUN_SCRIPT_BOUNDARY until Runnable::Run is MOZ_CAN_RUN_SCRIPT.  See
   // bug 1535398.
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  NS_IMETHODIMP Run() {
+  NS_IMETHOD Run() override {
     mCleanupWork->DoCleanup();
     return NS_OK;
   }

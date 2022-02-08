@@ -23,7 +23,7 @@ namespace dom {
  * the main thread where tab instances live.
  */
 class ContentProcess : public mozilla::ipc::ProcessChild {
-  typedef mozilla::ipc::ProcessChild ProcessChild;
+  using ProcessChild = mozilla::ipc::ProcessChild;
 
  public:
   explicit ContentProcess(ProcessId aParentPid) : ProcessChild(aParentPid) {}
@@ -35,12 +35,12 @@ class ContentProcess : public mozilla::ipc::ProcessChild {
 
  private:
   ContentChild mContent;
-  mozilla::ipc::ScopedXREEmbed mXREEmbed;
-
 #if defined(XP_WIN)
-  // This object initializes and configures COM.
+  // This object initializes and configures COM. This must happen prior to
+  // constructing mXREEmbed.
   mozilla::mscom::ProcessRuntime mCOMRuntime;
 #endif
+  mozilla::ipc::ScopedXREEmbed mXREEmbed;
 
   ContentProcess(const ContentProcess&) = delete;
 

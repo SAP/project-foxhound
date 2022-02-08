@@ -16,6 +16,7 @@
 #include "mozilla/RefPtr.h"
 #include "gfx2DGlue.h"
 #include "gfxImageSurface.h"
+#include "gfxPlatform.h"
 #include "gfxTypes.h"
 #include "ImageContainer.h"
 #include "mozilla/layers/ImageDataSerializer.h"
@@ -152,24 +153,6 @@ void TestTextureClientSurface(TextureClient* texture,
 
   ASSERT_TRUE(host.get() != nullptr);
   ASSERT_EQ(host->GetFlags(), texture->GetFlags());
-
-  // host read
-
-  // XXX - this can fail because lock tries to upload the texture but it needs a
-  // Compositor to do that. We could add a DummyComposior for testing but I am
-  // not sure it'll be worth it. Maybe always test against a BasicCompositor,
-  // but the latter needs a widget...
-  if (host->Lock()) {
-    RefPtr<mozilla::gfx::DataSourceSurface> hostDataSurface =
-        host->GetAsSurface();
-
-    DataSourceSurface::ScopedMap map(hostDataSurface, DataSourceSurface::READ);
-    RefPtr<gfxImageSurface> hostSurface = new gfxImageSurface(
-        map.GetData(), hostDataSurface->GetSize(), map.GetStride(),
-        SurfaceFormatToImageFormat(hostDataSurface->GetFormat()));
-    AssertSurfacesEqual(surface, hostSurface.get());
-    host->Unlock();
-  }
 }
 
 // Same as above, for YCbCr surfaces
@@ -200,14 +183,6 @@ void TestTextureClientYCbCr(TextureClient* client, PlanarYCbCrData& ycbcrData) {
 
   ASSERT_TRUE(host.get() != nullptr);
   ASSERT_EQ(host->GetFlags(), client->GetFlags());
-
-  // host read
-
-  if (host->Lock()) {
-    // This will work iff the compositor is not BasicCompositor
-    ASSERT_EQ(host->GetFormat(), mozilla::gfx::SurfaceFormat::YUV);
-    host->Unlock();
-  }
 }
 
 }  // namespace layers
@@ -296,10 +271,10 @@ TEST(Layers, TextureYCbCrSerialization)
   }
 
   RefPtr<TextureClient> client = TextureClient::CreateForYCbCr(
-      imageBridge, clientData.mYSize, clientData.mYStride, clientData.mCbCrSize,
-      clientData.mCbCrStride, StereoMode::MONO, ColorDepth::COLOR_8,
-      YUVColorSpace::BT601, ColorRange::LIMITED,
-      TextureFlags::DEALLOCATE_CLIENT);
+      imageBridge, clientData.GetPictureRect(), clientData.mYSize,
+      clientData.mYStride, clientData.mCbCrSize, clientData.mCbCrStride,
+      StereoMode::MONO, ColorDepth::COLOR_8, YUVColorSpace::BT601,
+      ColorRange::LIMITED, TextureFlags::DEALLOCATE_CLIENT);
 
   TestTextureClientYCbCr(client, clientData);
 

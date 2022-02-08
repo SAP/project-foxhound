@@ -43,7 +43,8 @@ class HttpBackgroundChannelParent final : public PHttpBackgroundChannelParent {
   bool OnStartRequest(const nsHttpResponseHead& aResponseHead,
                       const bool& aUseResponseHead,
                       const nsHttpHeaderArray& aRequestHeaders,
-                      const HttpChannelOnStartRequestArgs& aArgs);
+                      const HttpChannelOnStartRequestArgs& aArgs,
+                      const nsCOMPtr<nsICacheEntry>& aCacheEntry);
 
   // To send OnTransportAndData message over background channel.
   bool OnTransportAndData(const nsresult& aChannelStatus,
@@ -56,6 +57,10 @@ class HttpBackgroundChannelParent final : public PHttpBackgroundChannelParent {
                      const ResourceTimingStructArgs& aTiming,
                      const nsHttpHeaderArray& aResponseTrailers,
                      const nsTArray<ConsoleReportCollected>& aConsoleReports);
+
+  // When ODA and OnStopRequest are sending from socket process to child
+  // process, this is the last IPC message sent from parent process.
+  bool OnConsoleReport(const nsTArray<ConsoleReportCollected>& aConsoleReports);
 
   // To send OnAfterLastPart message over background channel.
   bool OnAfterLastPart(const nsresult aStatus);

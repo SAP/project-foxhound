@@ -49,8 +49,7 @@ class ChromeProcessController : public mozilla::layers::GeckoContentController {
   void Destroy() override;
 
   // GeckoContentController interface
-  void NotifyLayerTransforms(
-      const nsTArray<MatrixMessage>& aTransforms) override;
+  void NotifyLayerTransforms(nsTArray<MatrixMessage>&& aTransforms) override;
   void RequestContentRepaint(const RepaintRequest& aRequest) override;
   bool IsRepaintThread() override;
   void DispatchToRepaintThread(already_AddRefed<Runnable> aTask) override;
@@ -76,6 +75,8 @@ class ChromeProcessController : public mozilla::layers::GeckoContentController {
   void NotifyAsyncAutoscrollRejected(
       const ScrollableLayerGuid::ViewID& aScrollId) override;
   void CancelAutoscroll(const ScrollableLayerGuid& aGuid) override;
+
+  PresShell* GetTopLevelPresShell() const override { return GetPresShell(); }
 
  private:
   nsCOMPtr<nsIWidget> mWidget;

@@ -24,35 +24,42 @@ class SampledAPZCState {
   bool operator!=(const SampledAPZCState& aOther) const;
 
   CSSRect GetLayoutViewport() const { return mLayoutViewport; }
-  CSSPoint GetScrollOffset() const { return mScrollOffset; }
-  CSSToParentLayerScale2D GetZoom() const { return mZoom; }
+  CSSPoint GetVisualScrollOffset() const { return mVisualScrollOffset; }
+  CSSToParentLayerScale GetZoom() const { return mZoom; }
   Maybe<CompositionPayload> TakeScrollPayload();
 
   void UpdateScrollProperties(const FrameMetrics& aMetrics);
+  void UpdateScrollPropertiesWithRelativeDelta(const FrameMetrics& aMetrics,
+                                               const CSSPoint& aRelativeDelta);
+
   void UpdateZoomProperties(const FrameMetrics& aMetrics);
 
   /**
-   * Re-clamp mScrollOffset to the scroll range specified by the provided
+   * Re-clamp mVisualScrollOffset to the scroll range specified by the provided
    * metrics. This only needs to be called if the scroll offset changes
    * outside of AsyncPanZoomController::SampleCompositedAsyncTransform().
    * It also recalculates mLayoutViewport so that it continues to enclose
    * the visual viewport. This only needs to be called if the
    * layout viewport changes outside of SampleCompositedAsyncTransform().
    */
-  void ClampScrollOffset(const FrameMetrics& aMetrics);
+  void ClampVisualScrollOffset(const FrameMetrics& aMetrics);
 
-  void ZoomBy(const gfxSize& aScale);
+  void ZoomBy(float aScale);
 
  private:
   // These variables cache the layout viewport, scroll offset, and zoom stored
   // in |Metrics()| at the time this class was constructed.
   CSSRect mLayoutViewport;
-  CSSPoint mScrollOffset;
-  CSSToParentLayerScale2D mZoom;
+  CSSPoint mVisualScrollOffset;
+  CSSToParentLayerScale mZoom;
   // An optional payload that rides along with the sampled state.
   Maybe<CompositionPayload> mScrollPayload;
 
   void RemoveFractionalAsyncDelta();
+  // A handy wrapper to call
+  // FrameMetrics::KeepLayoutViewportEnclosingVisualViewport with this
+  // SampledAPZCState and the given |aMetrics|.
+  void KeepLayoutViewportEnclosingVisualViewport(const FrameMetrics& aMetrics);
 };
 
 }  // namespace layers

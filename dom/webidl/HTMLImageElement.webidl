@@ -16,7 +16,7 @@ interface imgIRequest;
 interface URI;
 interface nsIStreamListener;
 
-[NamedConstructor=Image(optional unsigned long width, optional unsigned long height),
+[LegacyFactoryFunction=Image(optional unsigned long width, optional unsigned long height),
  Exposed=Window]
 interface HTMLImageElement : HTMLElement {
   [HTMLConstructor] constructor();
@@ -63,7 +63,7 @@ partial interface HTMLImageElement {
            [CEReactions, SetterThrows]
            attribute DOMString longDesc;
 
-  [CEReactions, SetterThrows] attribute [TreatNullAs=EmptyString] DOMString border;
+  [CEReactions, SetterThrows] attribute [LegacyNullToEmptyString] DOMString border;
 };
 
 // [Update me: not in whatwg spec yet]
@@ -97,8 +97,6 @@ interface mixin MozImageLoadingContent {
 
   [ChromeOnly]
   attribute boolean loadingEnabled;
-  [ChromeOnly]
-  readonly attribute short imageBlockingStatus;
   /**
    * Same as addNativeObserver but intended for scripted observers or observers
    * from another or without a document.
@@ -115,7 +113,7 @@ interface mixin MozImageLoadingContent {
   imgIRequest? getRequest(long aRequestType);
   [ChromeOnly,Throws]
   long getRequestType(imgIRequest aRequest);
-  [ChromeOnly,Throws]
+  [ChromeOnly]
   readonly attribute URI? currentURI;
   // Gets the final URI of the current request, if available.
   // Otherwise, returns null.
@@ -129,8 +127,6 @@ interface mixin MozImageLoadingContent {
    */
   [ChromeOnly,Throws]
   void forceReload(optional boolean aNotify = true);
-  [ChromeOnly]
-  void forceImageState(boolean aForce, unsigned long long aState);
 };
 
 HTMLImageElement includes MozImageLoadingContent;

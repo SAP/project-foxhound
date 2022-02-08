@@ -5,7 +5,7 @@
  * Instead of adding reflows to the list, you should be modifying your code to
  * avoid the reflow.
  *
- * See https://developer.mozilla.org/en-US/Firefox/Performance_best_practices_for_Firefox_fe_engineers
+ * See https://firefox-source-docs.mozilla.org/performance/bestpractices.html
  * for tips on how to do that.
  */
 const EXPECTED_REFLOWS = [
@@ -25,6 +25,13 @@ add_task(async function() {
 
   await ensureNoPreloadedBrowser();
   await disableFxaBadge();
+
+  // The test starts on about:blank and opens an about:blank
+  // tab which triggers opening the toolbar since
+  // ensureNoPreloadedBrowser sets AboutNewTab.newTabURL to about:blank.
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.toolbars.bookmarks.visibility", "never"]],
+  });
 
   // Compute the number of tabs we can put into the strip without
   // overflowing, and remove one, so that we can create

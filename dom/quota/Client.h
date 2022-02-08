@@ -7,15 +7,20 @@
 #ifndef mozilla_dom_quota_client_h__
 #define mozilla_dom_quota_client_h__
 
-#include "mozilla/dom/quota/QuotaCommon.h"
-
-#include "mozilla/dom/LocalStorageCommon.h"
+#include "ErrorList.h"
+#include "mozilla/Atomics.h"
+#include "mozilla/Result.h"
 #include "mozilla/dom/ipc/IdType.h"
+#include "mozilla/dom/quota/PersistenceType.h"
+#include "nsHashKeys.h"
+#include "nsISupports.h"
+#include "nsStringFwd.h"
+#include "nsTHashSet.h"
 
-#include "PersistenceType.h"
+// XXX Remove this dependency.
+#include "mozilla/dom/LocalStorageCommon.h"
 
 class nsIFile;
-class nsIRunnable;
 
 #define IDB_DIRECTORY_NAME "idb"
 #define DOMCACHE_DIRECTORY_NAME "cache"
@@ -25,8 +30,14 @@ class nsIRunnable;
 // Deprecated
 #define ASMJSCACHE_DIRECTORY_NAME "asmjs"
 
-BEGIN_QUOTA_NAMESPACE
+namespace mozilla::dom {
+template <typename T>
+struct Nullable;
+}
 
+namespace mozilla::dom::quota {
+
+struct OriginMetadata;
 class OriginScope;
 class QuotaManager;
 class UsageInfo;
@@ -36,7 +47,7 @@ class UsageInfo;
 // to participate in centralized quota and storage handling.
 class Client {
  public:
-  typedef Atomic<bool> AtomicBool;
+  using AtomicBool = Atomic<bool>;
 
   enum Type {
     IDB = 0,
@@ -45,6 +56,17 @@ class Client {
     SDB,
     LS,
     TYPE_MAX
+  };
+
+  class DirectoryLockIdTable final {
+    nsTHashSet<uint64_t> mIds;
+
+   public:
+    void Put(const int64_t aId) { mIds.Insert(aId); }
+
+    bool Has(const int64_t aId) const { return mIds.Contains(aId); }
+
+    bool Filled() const { return mIds.Count(); }
   };
 
   static Type TypeMax() {
@@ -58,9 +80,7 @@ class Client {
 
   static bool TypeToText(Type aType, nsAString& aText, const fallible_t&);
 
-  static void TypeToText(Type aType, nsAString& aText);
-
-  static void TypeToText(Type aType, nsACString& aText);
+  static nsAutoCString TypeToText(Type aType);
 
   static bool TypeFromText(const nsAString& aText, Type& aType,
                            const fallible_t&);
@@ -74,6 +94,14 @@ class Client {
   static bool IsDeprecatedClient(const nsAString& aText) {
     return aText.EqualsLiteral(ASMJSCACHE_DIRECTORY_NAME);
   }
+
+  template <typename T>
+  static bool IsLockForObjectContainedInLockTable(
+      const T& aObject, const DirectoryLockIdTable& aIds);
+
+  template <typename T>
+  static bool IsLockForObjectAcquiredAndContainedInLockTable(
+      const T& aObject, const DirectoryLockIdTable& aIds);
 
   NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
 
@@ -93,17 +121,16 @@ class Client {
   }
 
   virtual Result<UsageInfo, nsresult> InitOrigin(
-      PersistenceType aPersistenceType, const nsACString& aGroup,
-      const nsACString& aOrigin, const AtomicBool& aCanceled) = 0;
+      PersistenceType aPersistenceType, const OriginMetadata& aOriginMetadata,
+      const AtomicBool& aCanceled) = 0;
 
-  virtual nsresult InitOriginWithoutTracking(PersistenceType aPersistenceType,
-                                             const nsACString& aGroup,
-                                             const nsACString& aOrigin,
-                                             const AtomicBool& aCanceled) = 0;
+  virtual nsresult InitOriginWithoutTracking(
+      PersistenceType aPersistenceType, const OriginMetadata& aOriginMetadata,
+      const AtomicBool& aCanceled) = 0;
 
   virtual Result<UsageInfo, nsresult> GetUsageForOrigin(
-      PersistenceType aPersistenceType, const nsACString& aGroup,
-      const nsACString& aOrigin, const AtomicBool& aCanceled) = 0;
+      PersistenceType aPersistenceType, const OriginMetadata& aOriginMetadata,
+      const AtomicBool& aCanceled) = 0;
 
   // This method is called when origins are about to be cleared
   // (except the case when clearing is triggered by the origin eviction).
@@ -119,20 +146,33 @@ class Client {
   virtual void ReleaseIOThreadObjects() = 0;
 
   // Methods which are called on the background thread.
-  virtual void AbortOperations(const nsACString& aOrigin) = 0;
+  virtual void AbortOperationsForLocks(
+      const DirectoryLockIdTable& aDirectoryLockIds) = 0;
 
   virtual void AbortOperationsForProcess(ContentParentId aContentParentId) = 0;
+
+  virtual void AbortAllOperations() = 0;
 
   virtual void StartIdleMaintenance() = 0;
 
   virtual void StopIdleMaintenance() = 0;
 
-  virtual void ShutdownWorkThreads() = 0;
+  // Returns true if there is work that needs to be waited for.
+  bool InitiateShutdownWorkThreads();
+  void FinalizeShutdownWorkThreads();
+
+  virtual nsCString GetShutdownStatus() const = 0;
+  virtual bool IsShutdownCompleted() const = 0;
+  virtual void ForceKillActors() = 0;
+
+ private:
+  virtual void InitiateShutdown() = 0;
+  virtual void FinalizeShutdown() = 0;
 
  protected:
   virtual ~Client() = default;
 };
 
-END_QUOTA_NAMESPACE
+}  // namespace mozilla::dom::quota
 
 #endif  // mozilla_dom_quota_client_h__

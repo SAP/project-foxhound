@@ -6,23 +6,57 @@
 
 #include "WorkerError.h"
 
+#include <stdio.h>
+#include <algorithm>
+#include <utility>
+#include "MainThreadUtils.h"
+#include "WorkerPrivate.h"
+#include "WorkerRunnable.h"
+#include "WorkerScope.h"
+#include "js/ComparisonOperators.h"
+#include "js/UniquePtr.h"
+#include "js/friend/ErrorMessages.h"
+#include "jsapi.h"
 #include "mozilla/ArrayAlgorithm.h"
+#include "mozilla/ArrayIterator.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/BasicEvents.h"
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/EventDispatcher.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/Span.h"
+#include "mozilla/ThreadSafeWeakPtr.h"
+#include "mozilla/Unused.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ErrorEvent.h"
 #include "mozilla/dom/ErrorEventBinding.h"
+#include "mozilla/dom/Event.h"
+#include "mozilla/dom/EventBinding.h"
+#include "mozilla/dom/EventTarget.h"
 #include "mozilla/dom/RemoteWorkerChild.h"
+#include "mozilla/dom/RemoteWorkerTypes.h"
+#include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
 #include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/dom/SimpleGlobalObject.h"
+#include "mozilla/dom/Worker.h"
+#include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerDebuggerGlobalScopeBinding.h"
 #include "mozilla/dom/WorkerGlobalScopeBinding.h"
-#include "mozilla/EventDispatcher.h"
-#include "nsGlobalWindowInner.h"
+#include "mozilla/fallible.h"
+#include "nsCOMPtr.h"
+#include "nsDebug.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsIConsoleService.h"
+#include "nsIScriptError.h"
 #include "nsScriptError.h"
-#include "WorkerRunnable.h"
-#include "WorkerPrivate.h"
-#include "WorkerScope.h"
+#include "nsServiceManagerUtils.h"
+#include "nsString.h"
+#include "nsWrapperCacheInlines.h"
+#include "nscore.h"
+#include "xpcpublic.h"
 
 namespace mozilla {
 namespace dom {
@@ -82,26 +116,13 @@ class ReportErrorRunnable final : public WorkerDebuggeeRunnable {
       // worker error reporting will crash.  Instead, pass the error to
       // the ServiceWorkerManager to report on any controlled documents.
       if (aWorkerPrivate->IsServiceWorker()) {
-        if (ServiceWorkerParentInterceptEnabled()) {
-          RefPtr<RemoteWorkerChild> actor(
-              aWorkerPrivate->GetRemoteWorkerControllerWeakRef());
+        RefPtr<RemoteWorkerChild> actor(
+            aWorkerPrivate->GetRemoteWorkerControllerWeakRef());
 
-          Unused << NS_WARN_IF(!actor);
+        Unused << NS_WARN_IF(!actor);
 
-          if (actor) {
-            actor->ErrorPropagationOnMainThread(nullptr, false);
-          }
-
-        } else {
-          RefPtr<ServiceWorkerManager> swm =
-              ServiceWorkerManager::GetInstance();
-          if (swm) {
-            swm->HandleError(aCx, aWorkerPrivate->GetPrincipal(),
-                             aWorkerPrivate->ServiceWorkerScope(),
-                             aWorkerPrivate->ScriptURL(), EmptyString(),
-                             EmptyString(), EmptyString(), 0, 0,
-                             nsIScriptError::errorFlag, JSEXN_ERR);
-          }
+        if (actor) {
+          actor->ErrorPropagationOnMainThread(nullptr, false);
         }
 
         return true;
@@ -174,25 +195,13 @@ class ReportGenericErrorRunnable final : public WorkerDebuggeeRunnable {
     }
 
     if (aWorkerPrivate->IsServiceWorker()) {
-      if (ServiceWorkerParentInterceptEnabled()) {
-        RefPtr<RemoteWorkerChild> actor(
-            aWorkerPrivate->GetRemoteWorkerControllerWeakRef());
+      RefPtr<RemoteWorkerChild> actor(
+          aWorkerPrivate->GetRemoteWorkerControllerWeakRef());
 
-        Unused << NS_WARN_IF(!actor);
+      Unused << NS_WARN_IF(!actor);
 
-        if (actor) {
-          actor->ErrorPropagationOnMainThread(nullptr, false);
-        }
-
-      } else {
-        RefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
-        if (swm) {
-          swm->HandleError(aCx, aWorkerPrivate->GetPrincipal(),
-                           aWorkerPrivate->ServiceWorkerScope(),
-                           aWorkerPrivate->ScriptURL(), EmptyString(),
-                           EmptyString(), EmptyString(), 0, 0,
-                           nsIScriptError::errorFlag, JSEXN_ERR);
-        }
+      if (actor) {
+        actor->ErrorPropagationOnMainThread(nullptr, false);
       }
 
       return true;
@@ -216,7 +225,7 @@ class ReportGenericErrorRunnable final : public WorkerDebuggeeRunnable {
 }  // namespace
 
 void WorkerErrorBase::AssignErrorBase(JSErrorBase* aReport) {
-  mFilename = NS_ConvertUTF8toUTF16(aReport->filename);
+  CopyUTF8toUTF16(MakeStringSpan(aReport->filename), mFilename);
   mLineNumber = aReport->lineno;
   mColumnNumber = aReport->column;
   mErrorNumber = aReport->errorNumber;
@@ -279,6 +288,7 @@ void WorkerErrorReport::ReportError(
       init.mMessage = aReport->mMessage;
       init.mFilename = aReport->mFilename;
       init.mLineno = aReport->mLineNumber;
+      init.mColno = aReport->mColumnNumber;
       init.mError = aException;
     }
 

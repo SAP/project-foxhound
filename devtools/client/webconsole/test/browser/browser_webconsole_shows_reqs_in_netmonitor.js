@@ -4,13 +4,13 @@
 "use strict";
 
 const TEST_URI =
-  "data:text/html;charset=utf8,Test that the web console " +
+  "data:text/html;charset=utf8,<!DOCTYPE html>Test that the web console " +
   "displays requests that have been recorded in the " +
   "netmonitor, even if the console hadn't opened yet.";
 
 const TEST_FILE = "test-network-request.html";
 const TEST_PATH =
-  "http://example.com/browser/devtools/client/webconsole/test/browser/" +
+  "https://example.com/browser/devtools/client/webconsole/test/browser/" +
   TEST_FILE;
 
 const NET_PREF = "devtools.webconsole.filter.net";
@@ -26,7 +26,6 @@ registerCleanupFunction(async () => {
 });
 
 add_task(async function() {
-  await pushPref("devtools.target-switching.enabled", true);
   const toolbox = await openNewTabAndToolbox(TEST_URI, "netmonitor");
   info("Network panel is open.");
 

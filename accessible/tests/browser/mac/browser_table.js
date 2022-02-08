@@ -5,8 +5,94 @@
 "use strict";
 
 /* import-globals-from ../../mochitest/role.js */
-
 loadScripts({ name: "role.js", dir: MOCHITESTS_DIR });
+
+/* import-globals-from ../../mochitest/attributes.js */
+loadScripts({ name: "attributes.js", dir: MOCHITESTS_DIR });
+
+/**
+ * Helper function to test table consistency.
+ */
+function testTableConsistency(table, expectedRowCount, expectedColumnCount) {
+  is(table.getAttributeValue("AXRole"), "AXTable", "Correct role for table");
+
+  let tableChildren = table.getAttributeValue("AXChildren");
+  // XXX: Should be expectedRowCount+ExpectedColumnCount+1 children, rows (incl headers) + cols + headers
+  // if we're trying to match Safari.
+  is(
+    tableChildren.length,
+    expectedRowCount + expectedColumnCount,
+    "Table has children = rows (4) + cols (3)"
+  );
+  for (let i = 0; i < tableChildren.length; i++) {
+    let currChild = tableChildren[i];
+    if (i < expectedRowCount) {
+      is(
+        currChild.getAttributeValue("AXRole"),
+        "AXRow",
+        "Correct role for row"
+      );
+    } else {
+      is(
+        currChild.getAttributeValue("AXRole"),
+        "AXColumn",
+        "Correct role for col"
+      );
+      is(
+        currChild.getAttributeValue("AXRoleDescription"),
+        "column",
+        "Correct role desc for col"
+      );
+    }
+  }
+
+  is(
+    table.getAttributeValue("AXColumnCount"),
+    expectedColumnCount,
+    "Table has correct column count."
+  );
+  is(
+    table.getAttributeValue("AXRowCount"),
+    expectedRowCount,
+    "Table has correct row count."
+  );
+
+  let cols = table.getAttributeValue("AXColumns");
+  is(cols.length, expectedColumnCount, "Table has col list of correct length");
+  for (let i = 0; i < cols.length; i++) {
+    let currCol = cols[i];
+    let currChildren = currCol.getAttributeValue("AXChildren");
+    is(
+      currChildren.length,
+      expectedRowCount,
+      "Column has correct number of cells"
+    );
+    for (let j = 0; j < currChildren.length; j++) {
+      let currChild = currChildren[j];
+      is(
+        currChild.getAttributeValue("AXRole"),
+        "AXCell",
+        "Column child is cell"
+      );
+    }
+  }
+
+  let rows = table.getAttributeValue("AXRows");
+  is(rows.length, expectedRowCount, "Table has row list of correct length");
+  for (let i = 0; i < rows.length; i++) {
+    let currRow = rows[i];
+    let currChildren = currRow.getAttributeValue("AXChildren");
+    is(
+      currChildren.length,
+      expectedColumnCount,
+      "Row has correct number of cells"
+    );
+    for (let j = 0; j < currChildren.length; j++) {
+      let currChild = currChildren[j];
+      is(currChild.getAttributeValue("AXRole"), "AXCell", "Row child is cell");
+    }
+  }
+}
 
 /**
  * Test table, columns, rows
@@ -22,76 +108,7 @@ addAccessibleTask(
   </table>`,
   async (browser, accDoc) => {
     let table = getNativeInterface(accDoc, "customers");
-    is(table.getAttributeValue("AXRole"), "AXTable", "Correct role for table");
-
-    let tableChildren = table.getAttributeValue("AXChildren");
-    // XXX: Should be 8 children, rows (incl headers) + cols + headers
-    // if we're trying to match Safari.
-    is(tableChildren.length, 7, "Table has children = rows (4) + cols (3)");
-    for (let i = 0; i < tableChildren.length; i++) {
-      let currChild = tableChildren[i];
-      if (i < 4) {
-        is(
-          currChild.getAttributeValue("AXRole"),
-          "AXRow",
-          "Correct role for row"
-        );
-      } else {
-        is(
-          currChild.getAttributeValue("AXRole"),
-          "AXColumn",
-          "Correct role for col"
-        );
-        is(
-          currChild.getAttributeValue("AXRoleDescription"),
-          "column",
-          "Correct role desc for col"
-        );
-      }
-    }
-
-    is(
-      table.getAttributeValue("AXColumnCount"),
-      3,
-      "Table has correct column count."
-    );
-    is(
-      table.getAttributeValue("AXRowCount"),
-      4,
-      "Table has correct row count."
-    );
-
-    let cols = table.getAttributeValue("AXColumns");
-    is(cols.length, 3, "Table has col list of correct length");
-    for (let i = 0; i < cols.length; i++) {
-      let currCol = cols[i];
-      let currChildren = currCol.getAttributeValue("AXChildren");
-      is(currChildren.length, 4, "Column has correct number of cells");
-      for (let j = 0; j < currChildren.length; j++) {
-        let currChild = currChildren[j];
-        is(
-          currChild.getAttributeValue("AXRole"),
-          "AXCell",
-          "Column child is cell"
-        );
-      }
-    }
-
-    let rows = table.getAttributeValue("AXRows");
-    is(rows.length, 4, "Table has row list of correct length");
-    for (let i = 0; i < rows.length; i++) {
-      let currRow = rows[i];
-      let currChildren = currRow.getAttributeValue("AXChildren");
-      is(currChildren.length, 3, "Row has correct number of cells");
-      for (let j = 0; j < currChildren.length; j++) {
-        let currChild = currChildren[j];
-        is(
-          currChild.getAttributeValue("AXRole"),
-          "AXCell",
-          "Row child is cell"
-        );
-      }
-    }
+    testTableConsistency(table, 4, 3);
 
     const rowText = [
       "Madrigal Electromotive GmbH",
@@ -110,7 +127,7 @@ addAccessibleTask(
     });
     await reorder;
 
-    cols = table.getAttributeValue("AXColumns");
+    let cols = table.getAttributeValue("AXColumns");
     is(cols.length, 3, "Table has col list of correct length");
     for (let i = 0; i < cols.length; i++) {
       let currCol = cols[i];
@@ -206,6 +223,302 @@ addAccessibleTask(
       colHeaders.map(c => c.getAttributeValue("AXDOMIdentifier")),
       ["header1", "header1", "header2"],
       "Correct column headers"
+    );
+  }
+);
+
+addAccessibleTask(
+  `<table id="table">
+    <tr>
+      <td>Foo</td>
+    </tr>
+  </table>`,
+  (browser, accDoc) => {
+    // Make sure we guess this table to be a layout table.
+    testAttrs(
+      findAccessibleChildByID(accDoc, "table"),
+      { "layout-guess": "true" },
+      true
+    );
+
+    let table = getNativeInterface(accDoc, "table");
+    is(
+      table.getAttributeValue("AXRole"),
+      "AXGroup",
+      "Correct role (AXGroup) for layout table"
+    );
+
+    let children = table.getAttributeValue("AXChildren");
+    is(
+      children.length,
+      1,
+      "Layout table has single child (no additional columns)"
+    );
+  }
+);
+
+addAccessibleTask(
+  `<div id="table" role="table">
+    <span style="display: block;">
+      <div role="row">
+        <div role="cell">Cell 1</div>
+        <div role="cell">Cell 2</div>
+      </div>
+    </span>
+    <span style="display: block;">
+      <div role="row">
+        <span style="display: block;">
+          <div role="cell">Cell 3</div>
+          <div role="cell">Cell 4</div>
+        </span>
+      </div>
+    </span>
+  </div>`,
+  async (browser, accDoc) => {
+    let table = getNativeInterface(accDoc, "table");
+    testTableConsistency(table, 2, 2);
+  }
+);
+
+/*
+ * After executing function 'change', verify that the element identified by the
+ * id 'elem' recieves the event 'event'. After the event, check if the given
+ * native accessible 'table' is a layout or data table by role using 'isLayout'.
+ */
+async function testIsLayout(table, elem, event, change, isLayout) {
+  info(
+    "Changing " +
+      elem +
+      ", expecting table change to " +
+      (isLayout ? "AXGroup" : "AXTable")
+  );
+  const toWait = waitForEvent(event, elem);
+  await change();
+  await toWait;
+  is(
+    table.getAttributeValue("AXRole"),
+    isLayout ? "AXGroup" : "AXTable",
+    "Table role correct after change"
+  );
+}
+
+/*
+ * The following attributes should fire an attribute changed
+ * event, which in turn invalidates the layout-table cache
+ * associated with the given table. After adding and removing
+ * each attr, verify the table is a data or layout table,
+ * appropriately. Attrs: summary, abbr, scope, headers
+ */
+addAccessibleTask(
+  `<table id="sampleTable" summary="example summary">
+    <tr role="presentation">
+      <td id="cellOne">cell1</td>
+      <td>cell2</td>
+    </tr>
+    <tr>
+      <td id="cellThree">cell3</td>
+      <td>cell4</td>
+    </tr>
+  </table>`,
+  async (browser, accDoc) => {
+    let table = getNativeInterface(accDoc, "sampleTable");
+    // summary attr should take precedence over role="presentation" to make this
+    // a data table
+    is(table.getAttributeValue("AXRole"), "AXTable", "Table is data table");
+
+    info("Removing summary attr");
+    // after summary is removed, we should have a layout table
+    await testIsLayout(
+      table,
+      "sampleTable",
+      EVENT_OBJECT_ATTRIBUTE_CHANGED,
+      async () => {
+        await SpecialPowers.spawn(browser, [], () => {
+          content.document
+            .getElementById("sampleTable")
+            .removeAttribute("summary");
+        });
+      },
+      true
+    );
+
+    info("Setting abbr attr");
+    // after abbr is set we should have a data table again
+    await testIsLayout(
+      table,
+      "cellOne",
+      EVENT_OBJECT_ATTRIBUTE_CHANGED,
+      async () => {
+        await SpecialPowers.spawn(browser, [], () => {
+          content.document
+            .getElementById("cellOne")
+            .setAttribute("abbr", "hello world");
+        });
+      },
+      false
+    );
+
+    info("Removing abbr attr");
+    // after abbr is removed we should have a layout table again
+    await testIsLayout(
+      table,
+      "cellOne",
+      EVENT_OBJECT_ATTRIBUTE_CHANGED,
+      async () => {
+        await SpecialPowers.spawn(browser, [], () => {
+          content.document.getElementById("cellOne").removeAttribute("abbr");
+        });
+      },
+      true
+    );
+
+    info("Setting scope attr");
+    // after scope is set we should have a data table again
+    await testIsLayout(
+      table,
+      "cellOne",
+      EVENT_OBJECT_ATTRIBUTE_CHANGED,
+      async () => {
+        await SpecialPowers.spawn(browser, [], () => {
+          content.document
+            .getElementById("cellOne")
+            .setAttribute("scope", "col");
+        });
+      },
+      false
+    );
+
+    info("Removing scope attr");
+    // remove scope should give layout
+    await testIsLayout(
+      table,
+      "cellOne",
+      EVENT_OBJECT_ATTRIBUTE_CHANGED,
+      async () => {
+        await SpecialPowers.spawn(browser, [], () => {
+          content.document.getElementById("cellOne").removeAttribute("scope");
+        });
+      },
+      true
+    );
+
+    info("Setting headers attr");
+    // add headers attr should give data
+    await testIsLayout(
+      table,
+      "cellThree",
+      EVENT_OBJECT_ATTRIBUTE_CHANGED,
+      async () => {
+        await SpecialPowers.spawn(browser, [], () => {
+          content.document
+            .getElementById("cellThree")
+            .setAttribute("headers", "cellOne");
+        });
+      },
+      false
+    );
+
+    info("Removing headers attr");
+    // remove headers attr should give layout
+    await testIsLayout(
+      table,
+      "cellThree",
+      EVENT_OBJECT_ATTRIBUTE_CHANGED,
+      async () => {
+        await SpecialPowers.spawn(browser, [], () => {
+          content.document
+            .getElementById("cellThree")
+            .removeAttribute("headers");
+        });
+      },
+      true
+    );
+  }
+);
+
+/*
+ * The following style changes should fire a table style changed
+ * event, which in turn invalidates the layout-table cache
+ * associated with the given table.
+ */
+addAccessibleTask(
+  `<table id="sampleTable">
+    <tr id="rowOne">
+      <td id="cellOne">cell1</td>
+      <td>cell2</td>
+    </tr>
+    <tr>
+      <td>cell3</td>
+      <td>cell4</td>
+    </tr>
+  </table>`,
+  async (browser, accDoc) => {
+    let table = getNativeInterface(accDoc, "sampleTable");
+    // we should start as a layout table
+    is(table.getAttributeValue("AXRole"), "AXGroup", "Table is layout table");
+
+    info("Adding cell border");
+    // after cell border added, we should have a data table
+    await testIsLayout(
+      table,
+      "cellOne",
+      EVENT_TABLE_STYLING_CHANGED,
+      async () => {
+        await SpecialPowers.spawn(browser, [], () => {
+          content.document
+            .getElementById("cellOne")
+            .style.setProperty("border", "5px solid green");
+        });
+      },
+      false
+    );
+
+    info("Removing cell border");
+    // after cell border removed, we should have a layout table
+    await testIsLayout(
+      table,
+      "cellOne",
+      EVENT_TABLE_STYLING_CHANGED,
+      async () => {
+        await SpecialPowers.spawn(browser, [], () => {
+          content.document
+            .getElementById("cellOne")
+            .style.removeProperty("border");
+        });
+      },
+      true
+    );
+
+    info("Adding row background");
+    // after row background added, we should have a data table
+    await testIsLayout(
+      table,
+      "rowOne",
+      EVENT_TABLE_STYLING_CHANGED,
+      async () => {
+        await SpecialPowers.spawn(browser, [], () => {
+          content.document
+            .getElementById("rowOne")
+            .style.setProperty("background-color", "green");
+        });
+      },
+      false
+    );
+
+    info("Removing row background");
+    // after row background removed, we should have a layout table
+    await testIsLayout(
+      table,
+      "rowOne",
+      EVENT_TABLE_STYLING_CHANGED,
+      async () => {
+        await SpecialPowers.spawn(browser, [], () => {
+          content.document
+            .getElementById("rowOne")
+            .style.removeProperty("background-color");
+        });
+      },
+      true
     );
   }
 );

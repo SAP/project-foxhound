@@ -6,14 +6,20 @@
 
 #include "ActorsChild.h"
 
-#include "LocalStorageCommon.h"
+#include "ErrorList.h"
 #include "LSDatabase.h"
-#include "LSObject.h"
 #include "LSObserver.h"
 #include "LSSnapshot.h"
+#include "LocalStorageCommon.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/Result.h"
+#include "mozilla/dom/LSValue.h"
+#include "mozilla/dom/Storage.h"
+#include "mozilla/dom/quota/QuotaCommon.h"
+#include "mozilla/ipc/BackgroundUtils.h"
+#include "nsCOMPtr.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /*******************************************************************************
  * LSDatabaseChild
@@ -133,12 +139,9 @@ mozilla::ipc::IPCResult LSObserverChild::RecvObserve(
     return IPC_OK();
   }
 
-  auto principalOrErr = PrincipalInfoToPrincipal(aPrincipalInfo);
-  if (NS_WARN_IF(principalOrErr.isErr())) {
-    return IPC_FAIL_NO_REASON(this);
-  }
-
-  nsCOMPtr<nsIPrincipal> principal = principalOrErr.unwrap();
+  QM_TRY_INSPECT(const auto& principal,
+                 PrincipalInfoToPrincipal(aPrincipalInfo),
+                 IPC_FAIL_NO_REASON(this));
 
   Storage::NotifyChange(/* aStorage */ nullptr, principal, aKey,
                         aOldValue.AsString(), aNewValue.AsString(),
@@ -319,5 +322,4 @@ mozilla::ipc::IPCResult LSSnapshotChild::RecvMarkDirty() {
   return IPC_OK();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

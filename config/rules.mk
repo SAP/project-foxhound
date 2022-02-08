@@ -20,10 +20,6 @@ ifndef INCLUDED_CONFIG_MK
 include $(topsrcdir)/config/config.mk
 endif
 
-ifndef INCLUDED_VERSION_MK
-include $(MOZILLA_DIR)/config/version.mk
-endif
-
 USE_AUTOTARGETS_MK = 1
 include $(MOZILLA_DIR)/config/makefiles/makeutils.mk
 
@@ -103,8 +99,6 @@ ifdef LIB_IS_C_ONLY
 MKSHLIB			= $(MKCSHLIB)
 endif
 
-EMBED_MANIFEST_AT=2
-
 endif # MKSHLIB
 endif # FORCE_SHARED_LIB
 
@@ -178,7 +172,7 @@ endif
 
 ifdef COMPILE_ENVIRONMENT
 ifndef TARGETS
-TARGETS			= $(LIBRARY) $(SHARED_LIBRARY) $(PROGRAM) $(SIMPLE_PROGRAMS) $(HOST_PROGRAM) $(HOST_SIMPLE_PROGRAMS) $(HOST_SHARED_LIBRARY) $(WASM_LIBRARY)
+TARGETS			= $(LIBRARY) $(SHARED_LIBRARY) $(PROGRAM) $(SIMPLE_PROGRAMS) $(HOST_PROGRAM) $(HOST_SIMPLE_PROGRAMS) $(HOST_SHARED_LIBRARY)
 endif
 
 COBJS = $(notdir $(CSRCS:.c=.$(OBJ_SUFFIX)))
@@ -216,36 +210,6 @@ SIMPLE_PROGRAMS :=
 HOST_SHARED_LIBRARY :=
 HOST_PROGRAM :=
 HOST_SIMPLE_PROGRAMS :=
-WASM_LIBRARY :=
-endif
-
-WASM_ARCHIVE = $(addsuffix .$(WASM_OBJ_SUFFIX),$(WASM_LIBRARY))
-
-ALL_TRASH = \
-	$(GARBAGE) $(TARGETS) $(OBJS) $(PROGOBJS) LOGS TAGS a.out \
-	$(filter-out $(ASFILES),$(OBJS:.$(OBJ_SUFFIX)=.s)) $(OBJS:.$(OBJ_SUFFIX)=.ii) \
-	$(OBJS:.$(OBJ_SUFFIX)=.i) \
-	$(HOST_PROGOBJS) $(HOST_OBJS) $(IMPORT_LIBRARY) \
-	so_locations _gen _stubs $(wildcard *.res) $(wildcard *.RES) \
-	$(wildcard *.pdb) $(CODFILE) $(IMPORT_LIBRARY) \
-	$(SHARED_LIBRARY:$(DLL_SUFFIX)=.exp) $(wildcard *.ilk) \
-	$(PROGRAM:$(BIN_SUFFIX)=.exp) $(SIMPLE_PROGRAMS:$(BIN_SUFFIX)=.exp) \
-	$(PROGRAM:$(BIN_SUFFIX)=.lib) $(SIMPLE_PROGRAMS:$(BIN_SUFFIX)=.lib) \
-	$(SIMPLE_PROGRAMS:$(BIN_SUFFIX)=.$(OBJ_SUFFIX)) \
-	$(WASM_ARCHIVE) $(wildcard gts_tmp_*) $(LIBRARY:%.a=.%.timestamp)
-ALL_TRASH_DIRS = \
-	$(GARBAGE_DIRS) /no-such-file
-
-ifdef QTDIR
-GARBAGE                 += $(MOCSRCS)
-endif
-
-ifdef SIMPLE_PROGRAMS
-GARBAGE			+= $(SIMPLE_PROGRAMS:%=%.$(OBJ_SUFFIX))
-endif
-
-ifdef HOST_SIMPLE_PROGRAMS
-GARBAGE			+= $(HOST_SIMPLE_PROGRAMS:%=%.$(OBJ_SUFFIX))
 endif
 
 ifdef MACH
@@ -284,8 +248,6 @@ ifndef HOST_PROGOBJS
 HOST_PROGOBJS		= $(HOST_OBJS)
 endif
 
-GARBAGE_DIRS    += $(wildcard $(CURDIR)/$(MDDEPDIR))
-
 #
 # Tags: emacs (etags), vi (ctags)
 # TAG_PROGRAM := ctags -L -
@@ -306,9 +268,9 @@ endif
 #
 
 ifeq ($(OS_ARCH),Darwin)
-ifdef SHARED_LIBRARY
+ifneq (,$(SHARED_LIBRARY))
 _LOADER_PATH := @executable_path
-EXTRA_DSO_LDOPTS	+= -dynamiclib -install_name $(_LOADER_PATH)/$(SHARED_LIBRARY) -compatibility_version 1 -current_version 1 -single_module
+EXTRA_DSO_LDOPTS	+= -dynamiclib -install_name $(_LOADER_PATH)/$@ -compatibility_version 1 -current_version 1
 endif
 endif
 
@@ -397,13 +359,24 @@ ECHO := true
 QUIET := -q
 endif
 
-# Do everything from scratch
-everything::
-	$(MAKE) clean
-	$(MAKE) all
-
 # Dependencies which, if modified, should cause everything to rebuild
 GLOBAL_DEPS += Makefile $(addprefix $(DEPTH)/config/,$(INCLUDED_AUTOCONF_MK)) $(MOZILLA_DIR)/config/config.mk
+
+ifeq ($(MOZ_WIDGET_TOOLKIT),windows)
+# We always build .res files for programs and shared libraries
+resfile = $(notdir $1).res
+# We also build .res files for simple programs if a corresponding manifest
+# exists. We'll generate a .rc file that includes the manifest.
+ifdef GNU_CC
+# Skip on mingw builds because of bug 1657863
+resfile_for_manifest =
+else
+resfile_for_manifest = $(if $(wildcard $(srcdir)/$(notdir $1).manifest),$(call resfile,$1))
+endif
+else
+resfile =
+resfile_for_manifest =
+endif
 
 ##############################################
 ifdef COMPILE_ENVIRONMENT
@@ -411,7 +384,7 @@ compile:: host target
 
 host:: $(HOST_OBJS) $(HOST_PROGRAM) $(HOST_SIMPLE_PROGRAMS) $(HOST_RUST_PROGRAMS) $(HOST_RUST_LIBRARY_FILE) $(HOST_SHARED_LIBRARY)
 
-target:: $(filter-out $(MOZBUILD_NON_DEFAULT_TARGETS),$(LIBRARY) $(SHARED_LIBRARY) $(PROGRAM) $(SIMPLE_PROGRAMS) $(RUST_LIBRARY_FILE) $(RUST_PROGRAMS) $(WASM_LIBRARY))
+target:: $(filter-out $(MOZBUILD_NON_DEFAULT_TARGETS),$(LIBRARY) $(SHARED_LIBRARY) $(PROGRAM) $(SIMPLE_PROGRAMS) $(RUST_LIBRARY_FILE) $(RUST_PROGRAMS))
 
 ifndef LIBRARY
 ifdef OBJS
@@ -427,21 +400,6 @@ syms::
 include $(MOZILLA_DIR)/config/makefiles/target_binaries.mk
 endif
 
-clean clobber realclean clobber_all::
-	-$(RM) $(ALL_TRASH)
-	-$(RM) -r $(ALL_TRASH_DIRS)
-
-clean clobber realclean clobber_all distclean::
-	$(foreach dir,$(DIRS),-$(call SUBMAKE,$@,$(dir)))
-
-distclean::
-	-$(RM) -r $(ALL_TRASH_DIRS)
-	-$(RM) $(ALL_TRASH)  \
-	Makefile .HSancillary \
-	$(wildcard *.$(OBJ_SUFFIX)) $(wildcard *.ho) $(wildcard host_*.o*) \
-	$(wildcard *.$(LIB_SUFFIX)) $(wildcard *$(DLL_SUFFIX)) \
-	$(wildcard *.$(IMPORT_LIB_SUFFIX))
-
 alltags:
 	$(RM) TAGS
 	find $(topsrcdir) -name dist -prune -o \( -name '*.[hc]' -o -name '*.cp' -o -name '*.cpp' -o -name '*.idl' \) -print | $(TAG_PROGRAM)
@@ -454,22 +412,12 @@ endef
 # PROGRAM = Foo
 # creates OBJS, links with LIBS to create Foo
 #
-$(PROGRAM): $(PROGOBJS) $(STATIC_LIBS) $(EXTRA_DEPS) $(RESFILE) $(GLOBAL_DEPS) $(call mkdir_deps,$(FINAL_TARGET))
+$(PROGRAM): $(PROGOBJS) $(STATIC_LIBS) $(EXTRA_DEPS) $(call resfile,$(PROGRAM)) $(GLOBAL_DEPS) $(call mkdir_deps,$(FINAL_TARGET))
 	$(REPORT_BUILD)
-	@$(RM) $@.manifest
 ifeq (_WINNT,$(GNU_CC)_$(OS_ARCH))
-	$(LINKER) -OUT:$@ -PDB:$(LINK_PDBFILE) -IMPLIB:$(basename $(@F)).lib $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(MOZ_PROGRAM_LDFLAGS) $($(notdir $@)_OBJS) $(RESFILE) $(STATIC_LIBS) $(SHARED_LIBS) $(OS_LIBS)
-ifdef MSMANIFEST_TOOL
-	@if test -f $@.manifest; then \
-		echo "Manifest in objdir is not supported"; \
-		exit 1; \
-	elif test -f '$(srcdir)/$(notdir $@).manifest'; then \
-		echo 'Embedding manifest from $(srcdir_rel)/$(notdir $@).manifest'; \
-		$(call WINEWRAP,$(MT)) -NOLOGO -MANIFEST '$(srcdir_rel)/$(notdir $@).manifest' -OUTPUTRESOURCE:$@\;1; \
-	fi
-endif	# MSVC with manifest tool
+	$(LINKER) -OUT:$@ -PDB:$(LINK_PDBFILE) -IMPLIB:$(basename $(@F)).lib $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(MOZ_PROGRAM_LDFLAGS) $($(notdir $@)_OBJS) $(filter %.res,$^) $(STATIC_LIBS) $(SHARED_LIBS) $(OS_LIBS)
 else # !WINNT || GNU_CC
-	$(call EXPAND_CC_OR_CXX,$@) -o $@ $(COMPUTED_CXX_LDFLAGS) $(PGO_CFLAGS) $($(notdir $@)_OBJS) $(RESFILE) $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(STATIC_LIBS) $(MOZ_PROGRAM_LDFLAGS) $(SHARED_LIBS) $(OS_LIBS)
+	$(call EXPAND_CC_OR_CXX,$@) -o $@ $(COMPUTED_CXX_LDFLAGS) $(PGO_CFLAGS) $($(notdir $@)_OBJS) $(filter %.res,$^) $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(STATIC_LIBS) $(MOZ_PROGRAM_LDFLAGS) $(SHARED_LIBS) $(OS_LIBS)
 	$(call py_action,check_binary,--target $@)
 endif # WINNT && !GNU_CC
 
@@ -484,15 +432,6 @@ $(HOST_PROGRAM): $(HOST_PROGOBJS) $(HOST_LIBS) $(HOST_EXTRA_DEPS) $(GLOBAL_DEPS)
 	$(REPORT_BUILD)
 ifeq (_WINNT,$(GNU_CC)_$(HOST_OS_ARCH))
 	$(HOST_LINKER) -OUT:$@ -PDB:$(HOST_PDBFILE) $($(notdir $@)_OBJS) $(WIN32_EXE_LDFLAGS) $(HOST_LDFLAGS) $(HOST_LINKER_LIBPATHS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
-ifdef MSMANIFEST_TOOL
-	@if test -f $@.manifest; then \
-		echo "Manifest in objdir is not supported"; \
-		exit 1; \
-	elif test -f '$(srcdir)/$(notdir $@).manifest'; then \
-		echo 'Embedding manifest from $(srcdir_rel)/$(notdir $@).manifest'; \
-		$(call WINEWRAP,$(MT)) -NOLOGO -MANIFEST '$(srcdir_rel)/$(notdir $@).manifest' -OUTPUTRESOURCE:$@\;1; \
-	fi
-endif	# MSVC with manifest tool
 else
 ifeq ($(HOST_CPP_PROG_LINK),1)
 	$(HOST_CXX) -o $@ $(HOST_CXX_LDFLAGS) $(HOST_LDFLAGS) $($(notdir $@)_OBJS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
@@ -512,20 +451,17 @@ endif
 # SIMPLE_PROGRAMS = Foo Bar
 # creates Foo.o Bar.o, links with LIBS to create Foo, Bar.
 #
-$(SIMPLE_PROGRAMS): %$(BIN_SUFFIX): %.$(OBJ_SUFFIX) $(STATIC_LIBS) $(EXTRA_DEPS) $(GLOBAL_DEPS)
+define simple_program_deps
+$1: $(1:$(BIN_SUFFIX)=.$(OBJ_SUFFIX)) $(STATIC_LIBS) $(EXTRA_DEPS) $(call resfile_for_manifest,$1) $(GLOBAL_DEPS)
+endef
+$(foreach p,$(SIMPLE_PROGRAMS),$(eval $(call simple_program_deps,$(p))))
+
+$(SIMPLE_PROGRAMS):
 	$(REPORT_BUILD)
 ifeq (_WINNT,$(GNU_CC)_$(OS_ARCH))
-	$(LINKER) -out:$@ -pdb:$(LINK_PDBFILE) $($@_OBJS) $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(MOZ_PROGRAM_LDFLAGS) $(STATIC_LIBS) $(SHARED_LIBS) $(OS_LIBS)
-ifdef MSMANIFEST_TOOL
-	@if test -f $@.manifest; then \
-		echo "Manifest in objdir is not supported"; \
-		exit 1; \
-	elif test -f '$(srcdir)/$(notdir $@).manifest'; then \
-		$(call WINEWRAP,$(MT)) -NOLOGO -MANIFEST '$(srcdir_rel)/$(notdir $@).manifest' -OUTPUTRESOURCE:$@\;1; \
-	fi
-endif	# MSVC with manifest tool
+	$(LINKER) -out:$@ -pdb:$(LINK_PDBFILE) $($@_OBJS) $(filter %.res,$^) $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(MOZ_PROGRAM_LDFLAGS) $(STATIC_LIBS) $(SHARED_LIBS) $(OS_LIBS)
 else
-	$(call EXPAND_CC_OR_CXX,$@) $(COMPUTED_CXX_LDFLAGS) $(PGO_CFLAGS) -o $@ $($@_OBJS) $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(STATIC_LIBS) $(MOZ_PROGRAM_LDFLAGS) $(SHARED_LIBS) $(OS_LIBS)
+	$(call EXPAND_CC_OR_CXX,$@) $(COMPUTED_CXX_LDFLAGS) $(PGO_CFLAGS) -o $@ $($@_OBJS) $(filter %.res,$^) $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(STATIC_LIBS) $(MOZ_PROGRAM_LDFLAGS) $(SHARED_LIBS) $(OS_LIBS)
 	$(call py_action,check_binary,--target $@)
 endif # WINNT && !GNU_CC
 
@@ -558,22 +494,11 @@ $(LIBRARY): $(OBJS) $(STATIC_LIBS) $(EXTRA_DEPS) $(GLOBAL_DEPS)
 
 $(WASM_ARCHIVE): $(CWASMOBJS) $(CPPWASMOBJS) $(STATIC_LIBS) $(EXTRA_DEPS) $(GLOBAL_DEPS)
 	$(REPORT_BUILD_VERBOSE)
-	$(RM) $(WASM_LIBRARY).$(WASM_OBJ_SUFFIX)
-	$(WASM_CXX) $(OUTOPTION)$@ -Wl,--export-all $(WASM_LDFLAGS) $(CWASMOBJS) $(CPPWASMOBJS)
+	$(RM) $(WASM_ARCHIVE)
+	$(WASM_CXX) -o $@ -Wl,--export-all -Wl,--stack-first -Wl,-z,stack-size=$(if $(MOZ_OPTIMIZE),262144,1048576) -Wl,--no-entry -Wl,--growable-table $(CWASMOBJS) $(CPPWASMOBJS) -lwasi-emulated-process-clocks
 
-lucet_options := \
-    --target $(LUCETC_TARGET) \
-    --target-cpu baseline \
-    --bindings $(topsrcdir)/third_party/rust/lucet-wasi/bindings.json \
-    --guard-size 4GiB \
-    --min-reserved-size 4GiB \
-    --max-reserved-size 4GiB \
-    --opt-level 2
-
-$(WASM_LIBRARY): $(WASM_LIBRARY).$(WASM_OBJ_SUFFIX)
-	$(REPORT_BUILD)
-	$(RM) $(WASM_LIBRARY)
-	env LD="$(CC)" LDFLAGS="$(LUCETC_LDFLAGS)" $(LUCETC) $(lucet_options) $(WASM_LIBRARY).$(WASM_OBJ_SUFFIX) -o $(WASM_LIBRARY)
+$(addsuffix .c,$(WASM_ARCHIVE)): $(WASM_ARCHIVE) $(DIST)/host/bin/wasm2c$(HOST_BIN_SUFFIX)
+	$(DIST)/host/bin/wasm2c$(HOST_BIN_SUFFIX) -o $@ $<
 
 ifeq ($(OS_ARCH),WINNT)
 # Import libraries are created by the rules creating shared libraries.
@@ -600,26 +525,15 @@ endif
 # symlinks back to the originals. The symlinks are a no-op for stabs debugging,
 # so no need to conditionalize on OS version or debugging format.
 
-$(SHARED_LIBRARY): $(OBJS) $(RESFILE) $(STATIC_LIBS) $(EXTRA_DEPS) $(GLOBAL_DEPS)
+$(SHARED_LIBRARY): $(OBJS) $(call resfile,$(SHARED_LIBRARY)) $(STATIC_LIBS) $(EXTRA_DEPS) $(GLOBAL_DEPS)
 	$(REPORT_BUILD)
 ifndef INCREMENTAL_LINKER
 	$(RM) $@
 endif
-	$(MKSHLIB) $($@_OBJS) $(RESFILE) $(LDFLAGS) $(STATIC_LIBS) $(SHARED_LIBS) $(EXTRA_DSO_LDOPTS) $(MOZ_GLUE_LDFLAGS) $(OS_LIBS)
+	$(MKSHLIB) $($@_OBJS) $(filter %.res,$^) $(LDFLAGS) $(STATIC_LIBS) $(SHARED_LIBS) $(EXTRA_DSO_LDOPTS) $(MOZ_GLUE_LDFLAGS) $(OS_LIBS)
 	$(call py_action,check_binary,--target $@)
 
 ifeq (_WINNT,$(GNU_CC)_$(OS_ARCH))
-ifdef MSMANIFEST_TOOL
-ifdef EMBED_MANIFEST_AT
-	@if test -f $@.manifest; then \
-		echo "Manifest in objdir is not supported"; \
-		exit 1; \
-	elif test -f '$(srcdir)/$@.manifest'; then \
-		echo 'Embedding manifest from $(srcdir_rel)/$@.manifest'; \
-		$(call WINEWRAP,$(MT)) -NOLOGO -MANIFEST '$(srcdir_rel)/$@.manifest' -OUTPUTRESOURCE:$@\;$(EMBED_MANIFEST_AT); \
-	fi
-endif   # EMBED_MANIFEST_AT
-endif	# MSVC with manifest tool
 endif	# WINNT && !GCC
 	chmod +x $@
 ifdef ENABLE_STRIP
@@ -670,7 +584,7 @@ $(COBJS):
 
 $(CWASMOBJS):
 	$(REPORT_BUILD_VERBOSE)
-	$(WASM_CC) $(OUTOPTION)$@ -c $(WASM_CFLAGS) $($(notdir $<)_FLAGS) $<
+	$(WASM_CC) -o $@ -c $(WASM_CFLAGS) $($(notdir $<)_FLAGS) $<
 
 WINEWRAP = $(if $(and $(filter %.exe,$1),$(WINE)),$(WINE) $1,$1)
 
@@ -750,7 +664,7 @@ $(CPPOBJS):
 $(CPPWASMOBJS):
 	$(REPORT_BUILD_VERBOSE)
 	$(call BUILDSTATUS,OBJECT_FILE $@)
-	$(WASM_CXX) $(OUTOPTION)$@ -c $(WASM_CXXFLAGS) $($(notdir $<)_FLAGS) $<
+	$(WASM_CXX) -o $@ -c $(WASM_CXXFLAGS) $($(notdir $<)_FLAGS) $<
 
 $(CMMOBJS):
 	$(REPORT_BUILD_VERBOSE)
@@ -863,14 +777,13 @@ endif
 
 endif
 
-$(RESFILE): %.res: $(RCFILE)
+# EXTRA_DEPS contains manifests (manually added in Makefile.in ; bug 1498414)
+%.res: $(or $(RCFILE),%.rc) $(MOZILLA_DIR)/config/create_res.py $(EXTRA_DEPS)
 	$(REPORT_BUILD)
-	@echo Creating Resource file: $@
-ifdef GNU_CC
-	$(RC) $(RCFLAGS) $(filter-out -U%,$(DEFINES)) $(INCLUDES:-I%=--include-dir %) $(OUTOPTION)$@ $<
-else
-	$(call WINEWRAP,$(RC)) $(RCFLAGS) -r $(DEFINES) $(INCLUDES:-I%=-I$(call relativize,%)) $(OUTOPTION)$@ $(call relativize,$<)
-endif
+	$(PYTHON3) $(MOZILLA_DIR)/config/create_res.py $(DEFINES) $(INCLUDES) -o $@ $<
+
+$(notdir $(addsuffix .rc,$(PROGRAM) $(SHARED_LIBRARY) $(SIMPLE_PROGRAMS) module)): %.rc: $(RCINCLUDE) $(MOZILLA_DIR)/config/create_rc.py
+	$(PYTHON3) $(MOZILLA_DIR)/config/create_rc.py '$(if $(filter module,$*),,$*)' '$(RCINCLUDE)'
 
 # Cancel GNU make built-in implicit rules
 MAKEFLAGS += -r
@@ -954,50 +867,8 @@ endif
 # hacks in recursivemake.py that check if Makefile.in sets the variable.
 ifneq ($(XPI_PKGNAME),)
 tools realchrome::
-ifdef STRIP_XPI
-ifndef MOZ_DEBUG
-	@echo 'Stripping $(XPI_PKGNAME) package directory...'
-	@echo $(FINAL_TARGET)
-	@cd $(FINAL_TARGET) && find . ! -type d \
-			! -name '*.js' \
-			! -name '*.xpt' \
-			! -name '*.gif' \
-			! -name '*.jpg' \
-			! -name '*.png' \
-			! -name '*.xpm' \
-			! -name '*.txt' \
-			! -name '*.rdf' \
-			! -name '*.sh' \
-			! -name '*.properties' \
-			! -name '*.dtd' \
-			! -name '*.html' \
-			! -name '*.xul' \
-			! -name '*.css' \
-			! -name '*.xml' \
-			! -name '*.jar' \
-			! -name '*.dat' \
-			! -name '*.tbl' \
-			! -name '*.src' \
-			! -name '*.reg' \
-			$(PLATFORM_EXCLUDE_LIST) \
-			-exec $(STRIP) $(STRIP_FLAGS) {} >/dev/null 2>&1 \;
-endif
-endif
 	@echo 'Packaging $(XPI_PKGNAME).xpi...'
 	$(call py_action,zip,-C $(FINAL_TARGET) ../$(XPI_PKGNAME).xpi '*')
-endif
-
-# See comment above about moving this out of the tools tier.
-ifdef INSTALL_EXTENSION_ID
-ifndef XPI_NAME
-$(error XPI_NAME must be set for INSTALL_EXTENSION_ID)
-endif
-
-tools::
-	$(RM) -r '$(DIST)/bin/distribution$(DIST_SUBDIR:%=/%)/extensions/$(INSTALL_EXTENSION_ID)'
-	$(NSINSTALL) -D '$(DIST)/bin/distribution$(DIST_SUBDIR:%=/%)/extensions/$(INSTALL_EXTENSION_ID)'
-	$(call copy_dir,$(FINAL_TARGET),$(DIST)/bin/distribution$(DIST_SUBDIR:%=/%)/extensions/$(INSTALL_EXTENSION_ID))
-
 endif
 
 #############################################################################
@@ -1215,7 +1086,7 @@ endif
 # Fake targets.  Always run these rules, even if a file/directory with that
 # name already exists.
 #
-.PHONY: all alltags boot chrome realchrome clean clobber clobber_all export install libs makefiles realclean run_apprunner tools $(DIRS) FORCE
+.PHONY: all alltags boot chrome realchrome export install libs makefiles run_apprunner tools $(DIRS) FORCE
 
 # Used as a dependency to force targets to rebuild
 FORCE:
@@ -1242,7 +1113,6 @@ FREEZE_VARIABLES = \
   EXPORTS \
   DIRS \
   LIBRARY \
-  WASM_LIBRARY \
   MODULE \
   $(NULL)
 

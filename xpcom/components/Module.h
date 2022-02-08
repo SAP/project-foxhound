@@ -21,7 +21,7 @@ namespace mozilla {
  * via a module loader.
  */
 struct Module {
-  static const unsigned int kVersion = 80;
+  static const unsigned int kVersion = 96;
 
   struct CIDEntry;
 
@@ -71,6 +71,17 @@ struct Module {
 
   static constexpr size_t kMaxProcessSelector =
       size_t(ProcessSelector::ALLOW_IN_GPU_RDD_VR_AND_SOCKET_PROCESS);
+
+  /**
+   * This allows category entries to be marked so that they are or are
+   * not loaded when in backgroundtask mode.
+   */
+  // Note: This must be kept in sync with the selector matching in
+  // StaticComponents.cpp.in.
+  enum BackgroundTasksSelector {
+    NO_TASKS = 0x0,
+    ALL_TASKS = 0xFFFF,
+  };
 
   /**
    * The constructor callback is an implementation detail of the default binary

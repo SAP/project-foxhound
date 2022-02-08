@@ -25,7 +25,7 @@ class VRParent final : public PVRParent {
   explicit VRParent();
 
   bool Init(base::ProcessId aParentPid, const char* aParentBuildID,
-            MessageLoop* aIOLoop, UniquePtr<IPC::Channel> aChannel);
+            mozilla::ipc::ScopedPort aPort);
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
   bool GetOpenVRControllerActionPath(nsCString* aPath);
   bool GetOpenVRControllerManifestPath(VRControllerType aType,
@@ -48,11 +48,12 @@ class VRParent final : public PVRParent {
   mozilla::ipc::IPCResult RecvRequestMemoryReport(
       const uint32_t& generation, const bool& anonymize,
       const bool& minimizeMemoryUsage,
-      const Maybe<ipc::FileDescriptor>& DMDFile);
+      const Maybe<ipc::FileDescriptor>& DMDFile,
+      const RequestMemoryReportResolver& aResolver);
 
  private:
   nsCString mOpenVRControllerAction;
-  nsDataHashtable<nsUint32HashKey, nsCString> mOpenVRControllerManifest;
+  nsTHashMap<nsUint32HashKey, nsCString> mOpenVRControllerManifest;
   RefPtr<VRGPUParent> mVRGPUParent;
   DISALLOW_COPY_AND_ASSIGN(VRParent);
 };

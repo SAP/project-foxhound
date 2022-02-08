@@ -175,25 +175,7 @@ function removeAllChildNodes(node) {
 }
 
 var Settings = {
-  SETTINGS: [
-    // data upload
-    {
-      pref: PREF_FHR_UPLOAD_ENABLED,
-      defaultPrefValue: false,
-    },
-    // extended "Telemetry" recording
-    {
-      pref: PREF_TELEMETRY_ENABLED,
-      defaultPrefValue: false,
-    },
-  ],
-
   attachObservers() {
-    for (let s of this.SETTINGS) {
-      let setting = s;
-      Preferences.observe(setting.pref, this.render, this);
-    }
-
     let elements = document.getElementsByClassName("change-data-choices-link");
     for (let el of elements) {
       el.parentElement.addEventListener("click", function(event) {
@@ -213,12 +195,6 @@ var Settings = {
           }
         }
       });
-    }
-  },
-
-  detachObservers() {
-    for (let setting of this.SETTINGS) {
-      Preferences.ignore(setting.pref, this.render, this);
     }
   },
 
@@ -663,31 +639,6 @@ var EnvironmentData = {
     this.createAddonSection(dataDiv, ping);
   },
 
-  renderPersona(addonObj, addonSection, sectionTitle) {
-    let table = document.createElement("table");
-    table.setAttribute("id", sectionTitle);
-    this.appendAddonSubsectionTitle(sectionTitle, table);
-    this.appendRow(table, "persona", addonObj.persona);
-    addonSection.appendChild(table);
-  },
-
-  renderActivePlugins(addonObj, addonSection, sectionTitle) {
-    let table = document.createElement("table");
-    table.setAttribute("id", sectionTitle);
-    this.appendAddonSubsectionTitle(sectionTitle, table);
-
-    for (let plugin of addonObj) {
-      let data = explodeObject(plugin);
-      this.appendHeadingName(table, data.get("name"));
-
-      for (let [key, value] of data) {
-        this.appendRow(table, key, value);
-      }
-    }
-
-    addonSection.appendChild(table);
-  },
-
   renderAddonsObject(addonObj, addonSection, sectionTitle) {
     let table = document.createElement("table");
     table.setAttribute("id", sectionTitle);
@@ -740,18 +691,12 @@ var EnvironmentData = {
     addonSection.setAttribute("class", "subsection-data subdata");
     let addons = ping.environment.addons;
     this.renderAddonsObject(addons.activeAddons, addonSection, "activeAddons");
-    this.renderActivePlugins(
-      addons.activePlugins,
-      addonSection,
-      "activePlugins"
-    );
     this.renderKeyValueObject(addons.theme, addonSection, "theme");
     this.renderAddonsObject(
       addons.activeGMPlugins,
       addonSection,
       "activeGMPlugins"
     );
-    this.renderPersona(addons, addonSection, "persona");
 
     let hasAddonData = !!Object.keys(ping.environment.addons).length;
     let s = GenericSubsection.renderSubsectionHeader(
@@ -1372,6 +1317,37 @@ var Search = {
     return [isPassFunc, filter];
   },
 
+  filterTextRows(table, filterText) {
+    let [isPassFunc, filter] = this.chooseFilter(filterText);
+    let allElementHidden = true;
+
+    let needLowerCase = isPassFunc === this.isPassText;
+    let elements = table.rows;
+    for (let element of elements) {
+      if (element.firstChild.nodeName == "th") {
+        continue;
+      }
+      for (let cell of element.children) {
+        let subject = needLowerCase
+          ? cell.textContent.toLowerCase()
+          : cell.textContent;
+        element.hidden = !isPassFunc(subject, filter);
+        if (!element.hidden) {
+          if (allElementHidden) {
+            allElementHidden = false;
+          }
+          // Don't need to check the rest of this row.
+          break;
+        }
+      }
+    }
+    // Unhide the first row:
+    if (!allElementHidden) {
+      table.rows[0].hidden = false;
+    }
+    return allElementHidden;
+  },
+
   filterElements(elements, filterText) {
     let [isPassFunc, filter] = this.chooseFilter(filterText);
     let allElementHidden = true;
@@ -1445,9 +1421,12 @@ var Search = {
       return false;
     }
     let noSearchResults = true;
+    // In the home section, we search all other sections:
     if (section.id === "home-section") {
       return this.homeSearch(text);
-    } else if (section.id === "histograms-section") {
+    }
+
+    if (section.id === "histograms-section") {
       let histograms = section.getElementsByClassName("histogram");
       noSearchResults = this.filterElements(histograms, text);
     } else if (section.id === "keyed-histograms-section") {
@@ -1466,6 +1445,15 @@ var Search = {
         keyedElements.push({ key, datas });
       }
       noSearchResults = this.filterKeyedElements(keyedElements, text);
+    } else if (section.matches(".text-search")) {
+      let tables = section.querySelectorAll("table");
+      for (let table of tables) {
+        // If we unhide anything, flip noSearchResults to
+        // false so we don't show the "no results" bits.
+        if (!this.filterTextRows(table, text)) {
+          noSearchResults = false;
+        }
+      }
     } else if (section.querySelector(".sub-section")) {
       let keyedSubSections = [];
       let subsections = section.querySelectorAll(".sub-section");
@@ -2276,15 +2264,6 @@ function setupListeners() {
   let search = document.getElementById("search");
   search.addEventListener("input", Search.searchHandler);
 
-  // Clean up observers when page is closed
-  window.addEventListener(
-    "unload",
-    function(aEvent) {
-      Settings.detachObservers();
-    },
-    { once: true }
-  );
-
   document
     .getElementById("captured-stacks-fetch-symbols")
     .addEventListener("click", function() {
@@ -2386,8 +2365,6 @@ function openJsonInFirefoxJsonViewer(json) {
 
 function onLoad() {
   window.removeEventListener("load", onLoad);
-  Telemetry.scalarAdd("telemetry.about_telemetry_pageload", 1);
-
   // Set the text in the page header and elsewhere that needs the server owner.
   setupServerOwnerBranding();
 

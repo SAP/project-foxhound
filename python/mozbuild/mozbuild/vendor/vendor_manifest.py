@@ -6,7 +6,9 @@ from __future__ import absolute_import, print_function, unicode_literals
 
 import os
 import re
+import sys
 import glob
+import shutil
 import logging
 import tarfile
 import requests
@@ -15,59 +17,77 @@ import mozfile
 import mozpack.path as mozpath
 
 from mozbuild.base import MozbuildObject
+from mozbuild.vendor.rewrite_mozbuild import (
+    add_file_to_moz_build_file,
+    remove_file_from_moz_build_file,
+    MozBuildRewriteException,
+)
 
-DEFAULT_EXCLUDE_FILES = [
-    ".git*",
-]
+DEFAULT_EXCLUDE_FILES = [".git*"]
 
 
 class VendorManifest(MozbuildObject):
-    def vendor(self, yaml_file, manifest, revision, check_for_update):
+    def vendor(self, yaml_file, manifest, revision, check_for_update, add_to_exports):
         self.manifest = manifest
         if "vendor-directory" not in self.manifest["vendoring"]:
             self.manifest["vendoring"]["vendor-directory"] = os.path.dirname(yaml_file)
 
         self.source_host = self.get_source_host()
 
-        commit, timestamp = self.source_host.upstream_commit(revision)
+        # Check that updatebot key is available for libraries with existing
+        # moz.yaml files but missing updatebot information
+        if "updatebot" in self.manifest:
+            ref_type = self.manifest["updatebot"]["tracking"]
+            if ref_type == "tag":
+                ref, timestamp = self.source_host.upstream_tag(revision)
+            else:
+                ref, timestamp = self.source_host.upstream_commit(revision)
+        else:
+            ref_type = "commit"
+            ref, timestamp = self.source_host.upstream_commit(revision)
+
         self.log(
             logging.INFO,
             "vendor",
-            {"commit": commit, "timestamp": timestamp},
-            "Latest commit is {commit} from {timestamp}",
+            {"ref_type": ref_type, "ref": ref, "timestamp": timestamp},
+            "Latest {ref_type} is {ref} from {timestamp}",
         )
 
-        if self.manifest["origin"]["revision"] == commit:
+        if self.manifest["origin"]["revision"] == ref:
             self.log(
                 logging.INFO,
                 "vendor",
-                {},
-                "Latest upstream commit matches commit in-tree. Returning.",
+                {"ref_type": ref_type},
+                "Latest upstream {ref_type} matches {ref_type} in-tree. Returning.",
             )
             return
         elif check_for_update:
-            print("%s" % commit)
+            print("%s %s" % (ref, timestamp))
             return
 
-        self.fetch_and_unpack(commit)
+        self.fetch_and_unpack(ref)
 
-        self.log(logging.INFO, "clean_upstream", {}, "Removing unnecessary files.")
+        self.log(logging.INFO, "vendor", {}, "Removing unnecessary files.")
         self.clean_upstream()
 
-        self.log(logging.INFO, "update_moz.yaml", {}, "Updating moz.yaml.")
-        self.update_yaml(yaml_file, commit, timestamp)
+        self.log(logging.INFO, "vendor", {}, "Updating moz.yaml.")
+        self.update_yaml(yaml_file, ref, timestamp)
 
-        self.log(logging.INFO, "update_files", {}, "Updating files")
-        self.update_files(commit, yaml_file)
+        self.log(logging.INFO, "vendor", {}, "Updating files")
+        self.update_files(ref, yaml_file)
 
         self.log(
-            logging.INFO,
-            "add_remove_files",
-            {},
-            "Registering changes with version control.",
+            logging.INFO, "vendor", {}, "Registering changes with version control."
         )
         self.repository.add_remove_files(
             self.manifest["vendoring"]["vendor-directory"], os.path.dirname(yaml_file)
+        )
+
+        self.log(logging.INFO, "vendor", {}, "Updating moz.build files")
+        self.update_moz_build(
+            self.manifest["vendoring"]["vendor-directory"],
+            os.path.dirname(yaml_file),
+            add_to_exports,
         )
 
         self.log(
@@ -131,14 +151,17 @@ class VendorManifest(MozbuildObject):
 
             self.log(
                 logging.INFO,
-                "unpack",
+                "vendor",
                 {"vendor_dir": vendor_dir},
                 "Unpacking upstream files from {vendor_dir}.",
             )
             tar.extractall(vendor_dir)
 
+            has_prefix = all(map(lambda name: name.startswith(prefix), tar.getnames()))
+            tar.close()
+
             # GitLab puts everything properly down a directory; move it up.
-            if all(map(lambda name: name.startswith(prefix), tar.getnames())):
+            if has_prefix:
                 tardir = mozpath.join(vendor_dir, prefix)
                 mozfile.copy_contents(tardir, vendor_dir)
                 mozfile.remove(tardir)
@@ -147,14 +170,16 @@ class VendorManifest(MozbuildObject):
         """Remove files we don't want to import."""
         to_exclude = []
         vendor_dir = self.manifest["vendoring"]["vendor-directory"]
-        for pattern in self.manifest["vendoring"]["exclude"] + DEFAULT_EXCLUDE_FILES:
+        for pattern in (
+            self.manifest["vendoring"].get("exclude", []) + DEFAULT_EXCLUDE_FILES
+        ):
             if "*" in pattern:
                 to_exclude.extend(glob.iglob(mozpath.join(vendor_dir, pattern)))
             else:
                 to_exclude.append(mozpath.join(vendor_dir, pattern))
         self.log(
             logging.INFO,
-            "clean_upstream",
+            "vendor",
             {"files": to_exclude},
             "Removing: " + str(to_exclude),
         )
@@ -182,8 +207,8 @@ class VendorManifest(MozbuildObject):
 
         assert len(replacements) == replaced
 
-        with open(yaml_file, "w") as f:
-            f.write("".join(yaml))
+        with open(yaml_file, "wb") as f:
+            f.write(("".join(yaml) + "\n").encode("utf-8"))
 
     def update_files(self, revision, yaml_file):
         def get_full_path(path, support_cwd=False):
@@ -191,6 +216,10 @@ class VendorManifest(MozbuildObject):
                 path = path.replace("{cwd}", ".")
             elif "{yaml_dir}" in path:
                 path = path.replace("{yaml_dir}", os.path.dirname(yaml_file))
+            elif "{vendor_dir}" in path:
+                path = path.replace(
+                    "{vendor_dir}", self.manifest["vendoring"]["vendor-directory"]
+                )
             else:
                 path = mozpath.join(
                     self.manifest["vendoring"]["vendor-directory"], path
@@ -206,7 +235,7 @@ class VendorManifest(MozbuildObject):
                 dst = get_full_path(update["to"])
 
                 self.log(
-                    logging.DEBUG,
+                    logging.INFO,
                     "vendor",
                     {"src": src, "dst": dst},
                     "Performing copy-file action src: {src} dst: {dst}",
@@ -216,11 +245,45 @@ class VendorManifest(MozbuildObject):
                     contents = f.read()
                 with open(dst, "w") as f:
                     f.write(contents)
+            elif update["action"] == "move-dir":
+                src = get_full_path(update["from"])
+                dst = get_full_path(update["to"])
+
+                self.log(
+                    logging.INFO,
+                    "vendor",
+                    {"src": src, "dst": dst},
+                    "action: move-dir src: {src} dst: {dst}",
+                )
+
+                if not os.path.isdir(src):
+                    raise Exception(
+                        "Cannot move from a source directory %s that is not a directory"
+                        % src
+                    )
+                os.makedirs(dst, exist_ok=True)
+
+                def copy_tree(src, dst):
+                    names = os.listdir(src)
+                    os.makedirs(dst, exist_ok=True)
+
+                    for name in names:
+                        srcname = os.path.join(src, name)
+                        dstname = os.path.join(dst, name)
+
+                        if os.path.isdir(srcname):
+                            copy_tree(srcname, dstname)
+                        else:
+                            shutil.copy2(srcname, dstname)
+
+                copy_tree(src, dst)
+                shutil.rmtree(src)
+
             elif update["action"] == "replace-in-file":
                 file = get_full_path(update["file"])
 
                 self.log(
-                    logging.DEBUG,
+                    logging.INFO,
                     "vendor",
                     {"file": file},
                     "Performing replace-in-file action file: {file}",
@@ -237,7 +300,7 @@ class VendorManifest(MozbuildObject):
             elif update["action"] == "delete-path":
                 path = get_full_path(update["path"])
                 self.log(
-                    logging.DEBUG,
+                    logging.INFO,
                     "vendor",
                     {"path": path},
                     "Performing delete-path action path: {path}",
@@ -247,13 +310,87 @@ class VendorManifest(MozbuildObject):
                 script = get_full_path(update["script"], support_cwd=True)
                 run_dir = get_full_path(update["cwd"])
                 self.log(
-                    logging.DEBUG,
+                    logging.INFO,
                     "vendor",
                     {"script": script, "run_dir": run_dir},
                     "Performing run-script action script: {script} working dir: {run_dir}",
                 )
-                self.run_process(
-                    args=[script], cwd=run_dir, log_name=script,
-                )
+                self.run_process(args=[script], cwd=run_dir, log_name=script)
             else:
                 assert False, "Unknown action supplied (how did this pass validation?)"
+
+    def update_moz_build(self, vendoring_dir, moz_yaml_dir, add_to_exports):
+        if vendoring_dir == moz_yaml_dir:
+            vendoring_dir = moz_yaml_dir = None
+
+        # If you edit this (especially for header files) you should double check
+        # rewrite_mozbuild.py around 'assignment_type'
+        source_suffixes = [".cc", ".c", ".cpp", ".S", ".asm"]
+        header_suffixes = [".h", ".hpp"]
+
+        files_removed = self.repository.get_changed_files(diff_filter="D")
+        files_added = self.repository.get_changed_files(diff_filter="A")
+
+        # Filter the files added to just source files we track in moz.build files.
+        files_added = [
+            f for f in files_added if any([f.endswith(s) for s in source_suffixes])
+        ]
+        header_files_to_add = [
+            f for f in files_added if any([f.endswith(s) for s in header_suffixes])
+        ]
+        if add_to_exports:
+            files_added += header_files_to_add
+        elif header_files_to_add:
+            self.log(
+                logging.WARNIGN,
+                "header_files_warning",
+                {},
+                (
+                    "We found %s header files in the update, pass --add-to-exports if you want"
+                    + " to attempt to include them in EXPORTS blocks: %s"
+                )
+                % (len(header_files_to_add), header_files_to_add),
+            )
+
+        self.log(
+            logging.DEBUG,
+            "vendor",
+            {"added": len(files_added), "removed": len(files_removed)},
+            "Found {added} files added and {removed} files removed.",
+        )
+
+        should_abort = False
+        for f in files_added:
+            try:
+                add_file_to_moz_build_file(f, moz_yaml_dir, vendoring_dir)
+            except MozBuildRewriteException:
+                self.log(
+                    logging.ERROR,
+                    "vendor",
+                    {},
+                    "Could not add %s to the appropriate moz.build file" % f,
+                )
+                should_abort = True
+
+        for f in files_removed:
+            try:
+                remove_file_from_moz_build_file(f, moz_yaml_dir, vendoring_dir)
+            except MozBuildRewriteException:
+                self.log(
+                    logging.ERROR,
+                    "vendor",
+                    {},
+                    "Could not remove %s from the appropriate moz.build file" % f,
+                )
+                should_abort = True
+
+        if should_abort:
+            self.log(
+                logging.ERROR,
+                "vendor",
+                {},
+                "This is a deficiency in ./mach vendor . "
+                + "Please review the affected files before committing.",
+            )
+            # Exit with -1 to distinguish this from the Exception case of exiting with 1
+            sys.exit(-1)

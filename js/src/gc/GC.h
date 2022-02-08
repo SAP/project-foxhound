@@ -11,19 +11,18 @@
 #ifndef gc_GC_h
 #define gc_GC_h
 
-#include "jsapi.h"
-
 #include "gc/AllocKind.h"
 #include "gc/GCEnum.h"
+#include "js/GCAPI.h"
+#include "js/HeapAPI.h"
+#include "js/RealmIterators.h"
+#include "js/RealmOptions.h"
 #include "js/TraceKind.h"
 
-class JSExternalString;
-class JSFatInlineString;
 class JSTracer;
 
 namespace js {
 
-class AccessorShape;
 class FatInlineAtom;
 class NormalAtom;
 
@@ -32,25 +31,8 @@ class Nursery;
 namespace gc {
 
 class Arena;
-struct Chunk;
+class TenuredChunk;
 struct Cell;
-
-/*
- * Map from C++ type to alloc kind for non-object types. JSObject does not have
- * a 1:1 mapping, so must use Arena::thingSize.
- *
- * The AllocKind is available as MapTypeToFinalizeKind<SomeType>::kind.
- */
-template <typename T>
-struct MapTypeToFinalizeKind {};
-#define EXPAND_MAPTYPETOFINALIZEKIND(allocKind, traceKind, type, sizedType, \
-                                     bgFinal, nursery, compact)             \
-  template <>                                                               \
-  struct MapTypeToFinalizeKind<type> {                                      \
-    static const AllocKind kind = AllocKind::allocKind;                     \
-  };
-FOR_EACH_NONOBJECT_ALLOCKIND(EXPAND_MAPTYPETOFINALIZEKIND)
-#undef EXPAND_MAPTYPETOFINALIZEKIND
 
 } /* namespace gc */
 
@@ -71,7 +53,7 @@ extern unsigned NotifyGCPreSwap(JSObject* a, JSObject* b);
 
 extern void NotifyGCPostSwap(JSObject* a, JSObject* b, unsigned preResult);
 
-using IterateChunkCallback = void (*)(JSRuntime*, void*, gc::Chunk*,
+using IterateChunkCallback = void (*)(JSRuntime*, void*, gc::TenuredChunk*,
                                       const JS::AutoRequireNoGC&);
 using IterateZoneCallback = void (*)(JSRuntime*, void*, JS::Zone*,
                                      const JS::AutoRequireNoGC&);
@@ -114,12 +96,10 @@ using IterateScriptCallback = void (*)(JSRuntime*, void*, BaseScript*,
 
 /*
  * Invoke scriptCallback on every in-use script for the given realm or for all
- * realms if it is null.
+ * realms if it is null. The scripts may or may not have bytecode.
  */
 extern void IterateScripts(JSContext* cx, JS::Realm* realm, void* data,
                            IterateScriptCallback scriptCallback);
-extern void IterateLazyScripts(JSContext* cx, JS::Realm* realm, void* data,
-                               IterateScriptCallback lazyScriptCallback);
 
 JS::Realm* NewRealm(JSContext* cx, JSPrincipals* principals,
                     const JS::RealmOptions& options);
@@ -128,13 +108,7 @@ namespace gc {
 
 void FinishGC(JSContext* cx, JS::GCReason = JS::GCReason::FINISH_GC);
 
-/*
- * Merge all contents of source into target. This can only be used if source is
- * the only realm in its zone.
- */
-void MergeRealms(JS::Realm* source, JS::Realm* target);
-
-void CollectSelfHostingZone(JSContext* cx);
+void WaitForBackgroundTasks(JSContext* cx);
 
 enum VerifierType { PreBarrierVerifier };
 
@@ -158,11 +132,25 @@ static inline void MaybeVerifyBarriers(JSContext* cx, bool always = false) {}
 #endif
 
 /*
- * Instances of this class prevent GC while they are live by updating the
- * |JSContext::suppressGC| counter. Use of this class is highly
- * discouraged. Please carefully read the comment in vm/JSContext.h above
- * |suppressGC| and take all appropriate precautions before instantiating this
- * class.
+ * Instances of this class prevent GC from happening while they are live. If an
+ * allocation causes a heap threshold to be exceeded, no GC will be performed
+ * and the allocation will succeed. Allocation may still fail for other reasons.
+ *
+ * Use of this class is highly discouraged, since without GC system memory can
+ * become exhausted and this can cause crashes at places where we can't handle
+ * allocation failure.
+ *
+ * Use of this is permissible in situations where it would be impossible (or at
+ * least very difficult) to tolerate GC and where only a fixed number of objects
+ * are allocated, such as:
+ *
+ *  - error reporting
+ *  - JIT bailout handling
+ *  - brain transplants (JSObject::swap)
+ *  - debugging utilities not exposed to the browser
+ *
+ * This works by updating the |JSContext::suppressGC| counter which is checked
+ * at the start of GC.
  */
 class MOZ_RAII JS_HAZ_GC_SUPPRESSED AutoSuppressGC {
   int32_t& suppressGC_;

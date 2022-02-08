@@ -11,6 +11,7 @@
 #include "nsIInputStream.h"
 #include "nsIBinaryOutputStream.h"
 #include "nsIObjectOutputStream.h"
+#include "prtime.h"
 
 #include <ctime>
 #include <iomanip>
@@ -46,12 +47,12 @@ void CompositionRecorder::WriteCollectedFrames() {
   // of milliseconds between midnight 1 January 1970 UTC and mRecordingStart,
   // unfortunately, mozilla::TimeStamp does not have a built-in way of doing
   // that. However, PR_Now() returns the number of microseconds since midnight 1
-  // January 1970 UTC. We call PR_Now() and TimeStamp::NowUnfuzzed() very
+  // January 1970 UTC. We call PR_Now() and TimeStamp::Now() very
   // closely to each other so that they return their representation of "the same
   // time", and then compute (Now - (Now - mRecordingStart)).
   std::stringstream str;
   nsCString recordingStartTime;
-  TimeDuration delta = TimeStamp::NowUnfuzzed() - mRecordingStart;
+  TimeDuration delta = TimeStamp::Now() - mRecordingStart;
   recordingStartTime.AppendFloat(
       static_cast<double>(PR_Now() / 1000.0 - delta.ToMilliseconds()));
   str << gfxVars::LayersWindowRecordingPath() << "windowrecording-"
@@ -80,7 +81,7 @@ void CompositionRecorder::WriteCollectedFrames() {
 CollectedFrames CompositionRecorder::GetCollectedFrames() {
   nsTArray<CollectedFrame> frames;
 
-  TimeDuration delta = TimeStamp::NowUnfuzzed() - mRecordingStart;
+  TimeDuration delta = TimeStamp::Now() - mRecordingStart;
   double recordingStart = PR_Now() / 1000.0 - delta.ToMilliseconds();
 
   for (RefPtr<RecordedFrame>& frame : mCollectedFrames) {
@@ -89,7 +90,7 @@ CollectedFrames CompositionRecorder::GetCollectedFrames() {
     RefPtr<DataSourceSurface> surf = frame->GetSourceSurface();
     double offset = (frame->GetTimeStamp() - mRecordingStart).ToMilliseconds();
 
-    gfxUtils::EncodeSourceSurface(surf, ImageType::PNG, EmptyString(),
+    gfxUtils::EncodeSourceSurface(surf, ImageType::PNG, u""_ns,
                                   gfxUtils::eDataURIEncode, nullptr, &buffer);
 
     frames.EmplaceBack(offset, std::move(buffer));

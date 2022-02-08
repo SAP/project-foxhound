@@ -6,12 +6,14 @@
 #ifndef WEBGLCONTEXT_H_
 #define WEBGLCONTEXT_H_
 
+#include <bitset>
 #include <memory>
 #include <stdarg.h>
 
 #include "GLContextTypes.h"
 #include "GLDefs.h"
 #include "GLScreenBuffer.h"
+#include "js/ScalarType.h"  // js::Scalar::Type
 #include "mozilla/Attributes.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/dom/BindingDeclarations.h"
@@ -19,13 +21,11 @@
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/EnumeratedArray.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
 #include "nsICanvasRenderingContextInternal.h"
-#include "nsLayoutUtils.h"
 #include "nsTArray.h"
 #include "SurfaceTypes.h"
 #include "ScopedGLHelpers.h"
@@ -43,7 +43,6 @@
 // Generated
 #include "nsICanvasRenderingContextInternal.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
-#include "nsLayoutUtils.h"
 #include "mozilla/dom/WebGLRenderingContextBinding.h"
 #include "mozilla/dom/WebGL2RenderingContextBinding.h"
 
@@ -471,10 +470,6 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
 
   WebGLTexture* GetActiveTex(const GLenum texTarget) const;
 
-  already_AddRefed<layers::Layer> GetCanvasLayer(nsDisplayListBuilder* builder,
-                                                 layers::Layer* oldLayer,
-                                                 layers::LayerManager* manager);
-
   Maybe<ICRData> InitializeCanvasRenderer(layers::LayersBackend backend);
 
   gl::GLContext* GL() const { return gl; }
@@ -493,7 +488,7 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
  public:
   void Present(WebGLFramebuffer*, layers::TextureType, const bool webvr);
   RefPtr<gfx::DataSourceSurface> GetFrontBufferSnapshot();
-  bool FrontBufferSnapshotInto(Range<uint8_t>);
+  Maybe<uvec2> FrontBufferSnapshotInto(Maybe<Range<uint8_t>>);
   Maybe<layers::SurfaceDescriptor> GetFrontBuffer(WebGLFramebuffer*,
                                                   const bool webvr);
 
@@ -540,16 +535,15 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
   void BindRenderbuffer(GLenum target, WebGLRenderbuffer* fb);
   void BindVertexArray(WebGLVertexArray* vao);
   void BlendColor(GLclampf r, GLclampf g, GLclampf b, GLclampf a);
-  void BlendEquationSeparate(GLenum modeRGB, GLenum modeAlpha);
-  void BlendFuncSeparate(GLenum srcRGB, GLenum dstRGB, GLenum srcAlpha,
-                         GLenum dstAlpha);
+  void BlendEquationSeparate(Maybe<GLuint> i, GLenum modeRGB, GLenum modeAlpha);
+  void BlendFuncSeparate(Maybe<GLuint> i, GLenum srcRGB, GLenum dstRGB,
+                         GLenum srcAlpha, GLenum dstAlpha);
   GLenum CheckFramebufferStatus(GLenum target);
   void Clear(GLbitfield mask);
   void ClearColor(GLclampf r, GLclampf g, GLclampf b, GLclampf a);
   void ClearDepth(GLclampf v);
   void ClearStencil(GLint v);
-  void ColorMask(WebGLboolean r, WebGLboolean g, WebGLboolean b,
-                 WebGLboolean a);
+  void ColorMask(Maybe<GLuint> i, uint8_t mask);
   void CompileShader(WebGLShader& shader);
 
  private:
@@ -705,12 +699,7 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
 
   // -----------------------------------------------------------------------------
   // State and State Requests (WebGLContextState.cpp)
- private:
-  void SetEnabled(const char* funcName, GLenum cap, bool enabled);
-
- public:
-  void Disable(GLenum cap) { SetEnabled("disabled", cap, false); }
-  void Enable(GLenum cap) { SetEnabled("enabled", cap, true); }
+  void SetEnabled(GLenum cap, Maybe<GLuint> i, bool enabled);
   bool GetStencilBits(GLint* const out_stencilBits) const;
 
   virtual Maybe<double> GetParameter(GLenum pname);
@@ -720,13 +709,12 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
 
  private:
   // State tracking slots
-  realGLboolean mDitherEnabled = 1;
-  realGLboolean mRasterizerDiscardEnabled = 0;
-  realGLboolean mScissorTestEnabled = 0;
-  realGLboolean mDepthTestEnabled = 0;
-  realGLboolean mStencilTestEnabled = 0;
-  realGLboolean mBlendEnabled = 0;
-  GLenum mGenerateMipmapHint = 0;
+  bool mDitherEnabled = true;
+  bool mRasterizerDiscardEnabled = false;
+  bool mScissorTestEnabled = false;
+  bool mDepthTestEnabled = false;
+  bool mStencilTestEnabled = false;
+  GLenum mGenerateMipmapHint = LOCAL_GL_DONT_CARE;
 
   struct ScissorRect final {
     GLint x;
@@ -739,7 +727,7 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
   ScissorRect mScissorRect = {};
 
   bool ValidateCapabilityEnum(GLenum cap);
-  realGLboolean* GetStateTrackingSlot(GLenum cap);
+  bool* GetStateTrackingSlot(GLenum cap, GLuint i);
 
   // Allocation debugging variables
   mutable uint64_t mDataAllocGLCallCount = 0;
@@ -873,8 +861,8 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
   void DeleteWebGLObjectsArray(nsTArray<WebGLObjectType>& array);
 
   GLuint mActiveTexture = 0;
-  GLenum mDefaultFB_DrawBuffer0 = 0;
-  GLenum mDefaultFB_ReadBuffer = 0;
+  GLenum mDefaultFB_DrawBuffer0 = LOCAL_GL_BACK;
+  GLenum mDefaultFB_ReadBuffer = LOCAL_GL_BACK;
 
   mutable GLenum mWebGLError = 0;
 
@@ -1153,11 +1141,15 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
   GLuint mStencilValueMaskBack = 0;
   GLuint mStencilWriteMaskFront = 0;
   GLuint mStencilWriteMaskBack = 0;
-  uint8_t mColorWriteMask = 0xf;  // bitmask
-  realGLboolean mDepthWriteMask = 0;
-  GLfloat mColorClearValue[4];
+  uint8_t mColorWriteMask0 = 0xf;  // bitmask
+  mutable uint8_t mDriverColorMask0 = 0xf;
+  bool mDepthWriteMask = true;
+  GLfloat mColorClearValue[4] = {0, 0, 0, 0};
   GLint mStencilClearValue = 0;
-  GLfloat mDepthClearValue = 0.0;
+  GLfloat mDepthClearValue = 1.0f;
+
+  std::bitset<webgl::kMaxDrawBuffers> mColorWriteMaskNonzero = -1;
+  std::bitset<webgl::kMaxDrawBuffers> mBlendEnabled = 0;
 
   GLint mViewportX = 0;
   GLint mViewportY = 0;
@@ -1165,7 +1157,7 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
   GLsizei mViewportHeight = 0;
   bool mAlreadyWarnedAboutViewportLargerThanDest = false;
 
-  GLfloat mLineWidth = 0.0;
+  GLfloat mLineWidth = 1.0;
 
   WebGLContextLossHandler mContextLossHandler;
 
@@ -1188,7 +1180,6 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
   bool mNeedsFakeNoStencil = false;
   bool mNeedsFakeNoStencil_UserFBs = false;
 
-  mutable uint8_t mDriverColorMask = 0;
   bool mDriverDepthTest = false;
   bool mDriverStencilTest = false;
 
@@ -1239,35 +1230,7 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
 
   template <typename... Args>
   void GeneratePerfWarning(const char* const fmt, const Args&... args) const {
-    if (!ShouldGeneratePerfWarnings()) return;
-
-    const auto funcName = FuncName();
-    nsCString msg;
-    msg.AppendPrintf("WebGL perf warning: %s: ", funcName);
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wformat-security"
-#elif defined(__GNUC__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wformat-security"
-#endif
-    msg.AppendPrintf(fmt, args...);
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#elif defined(__GNUC__)
-#  pragma GCC diagnostic pop
-#endif
-
-    GenerateErrorImpl(0, msg);
-
-    mNumPerfWarnings++;
-    if (!ShouldGeneratePerfWarnings()) {
-      GenerateWarning(
-          "After reporting %u, no further WebGL perf warnings will"
-          " be reported for this WebGL context.",
-          uint32_t(mNumPerfWarnings));
-    }
+    GenerateError(webgl::kErrorPerfWarning, fmt, args...);
   }
 
  public:

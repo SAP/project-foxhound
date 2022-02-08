@@ -16,35 +16,18 @@ const PAGECONTENT_TRANSLATED =
   "</iframe>" +
   "</div></body></html>";
 
-function synthesizeNativeMouseClick(aWin, aScreenX, aScreenY) {
-  const utils = SpecialPowers.getDOMWindowUtils(aWin);
-  const scale = utils.screenPixelsPerCSSPixel;
-
-  utils.sendNativeMouseEvent(
-    aScreenX * scale,
-    aScreenY * scale,
-    nativeMouseDownEventMsg(),
-    0,
-    aWin.document.documentElement,
-    () => {
-      utils.sendNativeMouseEvent(
-        aScreenX * scale,
-        aScreenY * scale,
-        nativeMouseUpEventMsg(),
-        0,
-        aWin.document.documentElement
-      );
-    }
-  );
-}
-
 function openSelectPopup(selectPopup, x, y, win) {
   const popupShownPromise = BrowserTestUtils.waitForEvent(
     selectPopup,
     "popupshown"
   );
 
-  synthesizeNativeMouseClick(win, x, y);
+  EventUtils.synthesizeNativeMouseEvent({
+    type: "click",
+    target: win.document.documentElement,
+    screenX: x,
+    screenY: y,
+  });
 
   return popupShownPromise;
 }
@@ -58,7 +41,7 @@ add_task(async function() {
     newWin.gBrowser.selectedBrowser,
     true /* includeSubFrames */
   );
-  await BrowserTestUtils.loadURI(newWin.gBrowser.selectedBrowser, pageUrl);
+  BrowserTestUtils.loadURI(newWin.gBrowser.selectedBrowser, pageUrl);
   await browserLoadedPromise;
 
   newWin.gBrowser.selectedBrowser.focus();
@@ -123,19 +106,32 @@ add_task(async function() {
   let popupRect = selectPopup.getBoundingClientRect();
   is(
     popupRect.x,
-    iframeX + iframeBorderLeft + selectRect.x - newWin.mozInnerScreenX,
+    iframeX +
+      iframeBorderLeft +
+      selectRect.x -
+      newWin.mozInnerScreenX +
+      parseFloat(getComputedStyle(selectPopup).marginLeft),
     "x position of the popup"
   );
 
   let expectedYPosition =
-    iframeY + selectRect.y + iframeBorderTop - newWin.mozInnerScreenY;
+    iframeY +
+    selectRect.y +
+    iframeBorderTop -
+    newWin.mozInnerScreenY +
+    parseFloat(getComputedStyle(selectPopup).marginTop);
   // On platforms other than MaxOSX the popup menu is positioned below the
   // option element.
   if (!navigator.platform.includes("Mac")) {
     expectedYPosition += selectRect.height;
   }
 
-  is(popupRect.y, expectedYPosition, "y position of the popup");
+  isfuzzy(
+    popupRect.y,
+    expectedYPosition,
+    window.windowUtils.screenPixelsPerCSSPixel,
+    "y position of the popup"
+  );
 
   await hideSelectPopup(selectPopup, "enter", newWin);
 

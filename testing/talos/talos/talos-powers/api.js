@@ -2,18 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* globals ExtensionAPI */
+/* globals ExtensionAPI, Services, XPCOMUtils */
 
 const { ComponentUtils } = ChromeUtils.import(
   "resource://gre/modules/ComponentUtils.jsm"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
 XPCOMUtils.defineLazyModuleGetters(this, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   OS: "resource://gre/modules/osfile.jsm",
-  Services: "resource://gre/modules/Services.jsm",
   PerTestCoverageUtils: "resource://testing-common/PerTestCoverageUtils.jsm",
 });
 
@@ -35,6 +31,7 @@ Cu.importGlobalProperties(["TextEncoder"]);
 const Cm = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
 
 let frameScriptURL;
+let profilerStartTime;
 
 function TalosPowersService() {
   this.wrappedJSObject = this;
@@ -122,7 +119,7 @@ TalosPowersService.prototype = {
     Services.profiler.StartProfiler(
       data.entries,
       data.interval,
-      ["js", "leaf", "stackwalk", "threads"],
+      data.featuresArray,
       data.threadsArray
     );
 
@@ -175,9 +172,8 @@ TalosPowersService.prototype = {
    */
   profilerPause(marker = null) {
     if (marker) {
-      ChromeUtils.addProfilerMarker(marker);
+      this.addIntervalMarker(marker, profilerStartTime);
     }
-
     Services.profiler.PauseSampling();
   },
 
@@ -191,16 +187,35 @@ TalosPowersService.prototype = {
   profilerResume(marker = null) {
     Services.profiler.ResumeSampling();
 
+    profilerStartTime = Cu.now();
+
     if (marker) {
-      ChromeUtils.addProfilerMarker(marker);
+      this.addInstantMarker(marker);
     }
   },
 
   /**
-   * Adds a marker to the Profile in the parent process.
+   * Adds an instant marker to the Profile in the parent process.
+   *
+   * @param marker (string)  A marker to set.
+   *
    */
-  profilerMarker(marker) {
-    ChromeUtils.addProfilerMarker(marker);
+  addInstantMarker(marker) {
+    ChromeUtils.addProfilerMarker("Talos", undefined, marker);
+  },
+
+  /**
+   * Adds a marker to the Profile in the parent process.
+   *
+   * @param marker (string)
+   *        A marker to set before pausing.
+   *
+   * @param startTime (number)
+   *        Start time, used to create an interval profile marker. If
+   *        undefined, a single instance marker will be placed.
+   */
+  addIntervalMarker(marker, startTime) {
+    ChromeUtils.addProfilerMarker("Talos", startTime, marker);
   },
 
   receiveProfileCommand(message) {
@@ -229,7 +244,7 @@ TalosPowersService.prototype = {
       }
 
       case "Profiler:Pause": {
-        this.profilerPause(data.marker);
+        this.profilerPause(data.marker, data.startTime);
         mm.sendAsyncMessage(ACK_NAME, { name });
         break;
       }
@@ -241,8 +256,9 @@ TalosPowersService.prototype = {
       }
 
       case "Profiler:Marker": {
-        this.profilerMarker(data.marker);
+        this.profilerMarker(data.marker, data.startTime);
         mm.sendAsyncMessage(ACK_NAME, { name });
+        break;
       }
     }
   },
@@ -395,7 +411,7 @@ this.talos_powers = class extends ExtensionAPI {
       resProto.ALLOW_CONTENT_ACCESS
     );
 
-    frameScriptURL = this.extension.baseURI.resolve(
+    frameScriptURL = this.extension.rootURI.resolve(
       "chrome/talos-powers-content.js"
     );
 

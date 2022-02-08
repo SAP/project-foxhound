@@ -2,15 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
-loader: taskgraph.loader.transform:loader
+loader: gecko_taskgraph.loader.transform:loader
 
 kind-dependencies:
     - toolchain
 
 transforms:
-    - taskgraph.transforms.openh264:transforms
-    - taskgraph.transforms.job:transforms
-    - taskgraph.transforms.task:transforms
+    - gecko_taskgraph.transforms.openh264:transforms
+    - gecko_taskgraph.transforms.job:transforms
+    - gecko_taskgraph.transforms.task:transforms
 
 job-defaults:
     description: "Build OpenH264 plugin"
@@ -43,12 +43,13 @@ jobs:
             script: mozharness/scripts/openh264_build.py
             config:
                 - openh264/linux32.py
-            tooltool-downloads: public
         fetches:
             toolchain:
                 - linux64-binutils
                 - linux64-clang
+                - linux64-dump_syms
                 - linux64-nasm
+                - sysroot-i686-linux-gnu
     linux64/opt:
         attributes:
             build_platform: linux64
@@ -67,12 +68,13 @@ jobs:
             script: mozharness/scripts/openh264_build.py
             config:
                 - openh264/linux64.py
-            tooltool-downloads: public
         fetches:
             toolchain:
                 - linux64-binutils
                 - linux64-clang
+                - linux64-dump_syms
                 - linux64-nasm
+                - sysroot-x86_64-linux-gnu
     macosx64/opt:
         attributes:
             build_platform: macosx64
@@ -91,11 +93,37 @@ jobs:
             script: mozharness/scripts/openh264_build.py
             config:
                 - openh264/macosx64.py
-            tooltool-downloads: internal
         fetches:
             toolchain:
                 - linux64-cctools-port
                 - linux64-clang
+                - linux64-dump_syms
+                - linux64-nasm
+                - macosx64-sdk-10.11
+    macosx64-aarch64/opt:
+        attributes:
+            build_platform: macosx64-aarch64
+            build_type: opt
+        treeherder:
+            platform: macosx64-aarch64/opt
+        worker-type: b-linux
+        worker:
+            max-run-time: 1800
+            artifacts:
+                - name: private/openh264
+                  path: /builds/worker/workspace/openh264/artifacts
+                  type: directory
+        run:
+            using: mozharness
+            script: mozharness/scripts/openh264_build.py
+            config:
+                - openh264/macosx64-aarch64.py
+        fetches:
+            toolchain:
+                - linux64-cctools-port
+                - linux64-clang
+                - linux64-dump_syms
+                - macosx64-sdk-11.0
     win32/opt:
         attributes:
             build_platform: win32
@@ -117,7 +145,9 @@ jobs:
             tooltool-downloads: internal
         fetches:
             toolchain:
-                - win64-clang-cl
+                - win64-clang
+                - win64-dump_syms
+                - win64-nasm
     win64/opt:
         attributes:
             build_platform: win64
@@ -139,7 +169,9 @@ jobs:
             tooltool-downloads: internal
         fetches:
             toolchain:
-                - win64-clang-cl
+                - win64-clang
+                - win64-dump_syms
+                - win64-nasm
     win64-aarch64/opt:
         attributes:
             build_platform: win64-aarch64
@@ -161,4 +193,5 @@ jobs:
             tooltool-downloads: internal
         fetches:
             toolchain:
-                - win64-clang-cl
+                - win64-clang
+                - win64-dump_syms

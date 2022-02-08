@@ -9,10 +9,13 @@
 
 #include "mozilla/HalTypes.h"
 
+class nsFrameLoader;
+
 namespace mozilla {
 namespace dom {
-class ContentParent;
 class BrowserParent;
+class CanonicalBrowsingContext;
+class ContentParent;
 }  // namespace dom
 
 /**
@@ -68,8 +71,12 @@ class ProcessPriorityManager final {
    */
   static bool CurrentProcessIsForeground();
 
-  static void TabActivityChanged(dom::BrowserParent* aBrowserParent,
-                                 bool aIsActive);
+  static void ActivityChanged(dom::CanonicalBrowsingContext* aBC,
+                              bool aIsActive);
+  static void ActivityChanged(dom::BrowserParent* aBrowserParent,
+                              bool aIsActive);
+
+  static void RemoteBrowserFrameShown(nsFrameLoader* aFrameLoader);
 
  private:
   ProcessPriorityManager();

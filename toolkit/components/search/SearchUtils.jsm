@@ -34,7 +34,7 @@ class LoadListener {
   _callback = null;
   _channel = null;
   _countRead = 0;
-  _engine = null;
+  _expectedContentType = null;
   _stream = null;
   QueryInterface = ChromeUtils.generateQI([
     Ci.nsIRequestObserver,
@@ -44,10 +44,22 @@ class LoadListener {
     Ci.nsIProgressEventSink,
   ]);
 
-  constructor(channel, engine, callback) {
+  /**
+   * Constructor
+   *
+   * @param {nsIChannel} channel
+   *   The initial channel to load from.
+   * @param {RegExp} expectedContentType
+   *   A regular expression to match the expected content type to.
+   * @param {function} callback
+   *   A callback to receive the loaded data. The callback is passed the bytes
+   *   (array) and the content type received. The bytes argument may be null if
+   *   no data could be loaded.
+   */
+  constructor(channel, expectedContentType, callback) {
     this._channel = channel;
-    this._engine = engine;
     this._callback = callback;
+    this._expectedContentType = expectedContentType;
   }
 
   // nsIRequestObserver
@@ -70,10 +82,15 @@ class LoadListener {
       logConsole.warn("loadListener: request failed!");
       // send null so the callback can deal with the failure
       this._bytes = null;
+    } else if (!this._expectedContentType.test(this._channel.contentType)) {
+      logConsole.warn(
+        "loadListener: Content type does not match expected",
+        this._channel.contentType
+      );
+      this._bytes = null;
     }
-    this._callback(this._bytes, this._engine);
+    this._callback(this._bytes, this._bytes ? this._channel.contentType : "");
     this._channel = null;
-    this._engine = null;
   }
 
   // nsIStreamListener
@@ -158,15 +175,38 @@ var SearchUtils = {
   // cause big delays when loading them at startup.
   MAX_ICON_SIZE: 20000,
 
-  // Default charset to use for sending search parameters. ISO-8859-1 is used to
-  // match previous nsInternetSearchService behavior as a URL parameter. Label
-  // resolution causes windows-1252 to be actually used.
-  DEFAULT_QUERY_CHARSET: "ISO-8859-1",
+  DEFAULT_QUERY_CHARSET: "UTF-8",
 
   // A tag to denote when we are using the "default_locale" of an engine.
   DEFAULT_TAG: "default",
 
+  MOZ_PARAM: {
+    DATE: "moz:date",
+    DIST_ID: "moz:distributionID",
+    LOCALE: "moz:locale",
+    OFFICIAL: "moz:official",
+  },
+
   LoadListener,
+
+  // This is a list of search engines that we currently consider to be "General"
+  // search, as opposed to a vertical search engine such as one used for
+  // shopping, book search, etc.
+  //
+  // Currently these are a list of hard-coded application provided ones. At some
+  // point in the future we expect to allow WebExtensions to specify by themselves,
+  // however this needs more definition on the "vertical" search terms, and the
+  // effects before we enable it.
+  GENERAL_SEARCH_ENGINE_IDS: new Set([
+    "google@search.mozilla.org",
+    "ddg@search.mozilla.org",
+    "bing@search.mozilla.org",
+    "baidu@search.mozilla.org",
+    "ecosia@search.mozilla.org",
+    "qwant@search.mozilla.org",
+    "yahoo-jp@search.mozilla.org",
+    "yandex@search.mozilla.org",
+  ]),
 
   /**
    * Notifies watchers of SEARCH_ENGINE_TOPIC about changes to an engine or to
@@ -235,14 +275,14 @@ var SearchUtils = {
   },
 
   /**
-   * Current cache version. This should be incremented if the format of the cache
-   * file is modified.
+   * Current settings version. This should be incremented if the format of the
+   * settings file is modified.
    *
    * @returns {number}
-   *   The current cache version.
+   *   The current settings version.
    */
-  get CACHE_VERSION() {
-    return this.gModernConfig ? 5 : 3;
+  get SETTINGS_VERSION() {
+    return 6;
   },
 
   /**
@@ -302,13 +342,6 @@ var SearchUtils = {
     return hasher.finish(true);
   },
 };
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  SearchUtils,
-  "gModernConfig",
-  SearchUtils.BROWSER_SEARCH_PREF + "modernConfig",
-  false
-);
 
 XPCOMUtils.defineLazyPreferenceGetter(
   SearchUtils,

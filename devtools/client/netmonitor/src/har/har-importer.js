@@ -5,6 +5,9 @@
 "use strict";
 
 const { TIMING_KEYS } = require("devtools/client/netmonitor/src/constants");
+const {
+  getUrlDetails,
+} = require("devtools/client/netmonitor/src/utils/request-utils");
 
 var guid = 0;
 
@@ -47,6 +50,7 @@ HarImporter.prototype = {
           startedMs: startedMs,
           method: entry.request.method,
           url: entry.request.url,
+          urlDetails: getUrlDetails(entry.request.url),
           isXHR: false,
           cause: {
             loadingDocumentUri: "",
@@ -86,7 +90,7 @@ HarImporter.prototype = {
         },
         totalTime: TIMING_KEYS.reduce((sum, type) => {
           const time = entry.timings[type];
-          return time != -1 ? sum + time : sum;
+          return typeof time != "undefined" && time != -1 ? sum + time : sum;
         }, 0),
 
         httpVersion: entry.request.httpVersion,
@@ -129,9 +133,9 @@ HarImporter.prototype = {
       this.actions.updateRequest(requestId, data, false);
 
       // Page timing markers
-      const pageTimings = pages.get(entry.pageref).pageTimings;
-      let onContentLoad = pageTimings.onContentLoad || 0;
-      let onLoad = pageTimings.onLoad || 0;
+      const pageTimings = pages.get(entry.pageref)?.pageTimings;
+      let onContentLoad = (pageTimings && pageTimings.onContentLoad) || 0;
+      let onLoad = (pageTimings && pageTimings.onLoad) || 0;
 
       // Set 0 as the default value
       onContentLoad = onContentLoad != -1 ? onContentLoad : 0;

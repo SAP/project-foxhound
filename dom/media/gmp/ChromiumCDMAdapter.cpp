@@ -8,13 +8,14 @@
 #include <utility>
 
 #include "GMPLog.h"
-#include "VideoUtils.h"
 #include "WidevineUtils.h"
 #include "content_decryption_module.h"
 #include "content_decryption_module_ext.h"
 #include "gmp-api/gmp-entrypoints.h"
 #include "gmp-api/gmp-video-codec.h"
+#include "mozilla/ArrayUtils.h"
 #include "mozilla/HelperMacros.h"
+#include "mozilla/dom/KeySystemNames.h"
 
 #ifdef XP_WIN
 #  include "WinUtils.h"
@@ -100,38 +101,45 @@ GMPErr ChromiumCDMAdapter::GMPInit(const GMPPlatformAPI* aPlatformAPI) {
 }
 
 GMPErr ChromiumCDMAdapter::GMPGetAPI(const char* aAPIName, void* aHostAPI,
-                                     void** aPluginAPI, uint32_t aDecryptorId) {
-  GMP_LOG_DEBUG("ChromiumCDMAdapter::GMPGetAPI(%s, 0x%p, 0x%p, %u) this=0x%p",
-                aAPIName, aHostAPI, aPluginAPI, aDecryptorId, this);
+                                     void** aPluginAPI,
+                                     const nsCString& aKeySystem) {
+  MOZ_ASSERT(
+      aKeySystem.EqualsLiteral(kWidevineKeySystemName) ||
+          aKeySystem.EqualsLiteral(kClearKeyKeySystemName) ||
+          aKeySystem.EqualsLiteral(kClearKeyWithProtectionQueryKeySystemName) ||
+          aKeySystem.EqualsLiteral("fake"),
+      "Should not get an unrecognized key system. Why didn't it get "
+      "blocked by MediaKeySystemAccess?");
+  GMP_LOG_DEBUG("ChromiumCDMAdapter::GMPGetAPI(%s, 0x%p, 0x%p, %s) this=0x%p",
+                aAPIName, aHostAPI, aPluginAPI, aKeySystem.get(), this);
   bool isCdm10 = !strcmp(aAPIName, CHROMIUM_CDM_API);
 
   if (!isCdm10) {
     MOZ_ASSERT_UNREACHABLE("We only support and expect cdm10!");
     GMP_LOG_DEBUG(
-        "ChromiumCDMAdapter::GMPGetAPI(%s, 0x%p, 0x%p, %u) this=0x%p got "
+        "ChromiumCDMAdapter::GMPGetAPI(%s, 0x%p, 0x%p) this=0x%p got "
         "unsupported CDM version!",
-        aAPIName, aHostAPI, aPluginAPI, aDecryptorId, this);
+        aAPIName, aHostAPI, aPluginAPI, this);
     return GMPGenericErr;
   }
   auto create = reinterpret_cast<decltype(::CreateCdmInstance)*>(
       PR_FindFunctionSymbol(mLib, "CreateCdmInstance"));
   if (!create) {
     GMP_LOG_DEBUG(
-        "ChromiumCDMAdapter::GMPGetAPI(%s, 0x%p, 0x%p, %u) this=0x%p "
+        "ChromiumCDMAdapter::GMPGetAPI(%s, 0x%p, 0x%p) this=0x%p "
         "FAILED to find CreateCdmInstance",
-        aAPIName, aHostAPI, aPluginAPI, aDecryptorId, this);
+        aAPIName, aHostAPI, aPluginAPI, this);
     return GMPGenericErr;
   }
 
   const int version = cdm::ContentDecryptionModule_10::kVersion;
-  void* cdm = create(version, EME_KEY_SYSTEM_WIDEVINE,
-                     mozilla::ArrayLength(EME_KEY_SYSTEM_WIDEVINE) - 1,
+  void* cdm = create(version, aKeySystem.get(), aKeySystem.Length(),
                      &ChromiumCdmHost, aHostAPI);
   if (!cdm) {
     GMP_LOG_DEBUG(
-        "ChromiumCDMAdapter::GMPGetAPI(%s, 0x%p, 0x%p, %u) this=0x%p "
+        "ChromiumCDMAdapter::GMPGetAPI(%s, 0x%p, 0x%p) this=0x%p "
         "FAILED to create cdm version %d",
-        aAPIName, aHostAPI, aPluginAPI, aDecryptorId, this, version);
+        aAPIName, aHostAPI, aPluginAPI, this, version);
     return GMPGenericErr;
   }
   GMP_LOG_DEBUG("cdm: 0x%p, version: %d", cdm, version);

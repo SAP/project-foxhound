@@ -72,7 +72,10 @@ async function promptNoDelegate(aThirdPartyOrgin, audio = true, video = true) {
     `expected camera to be ${video ? "" : "not"} shared`
   );
   await indicator;
-  await checkSharingUI({ audio, video });
+  await checkSharingUI({ audio, video }, undefined, undefined, {
+    video: { scope: SitePermissions.SCOPE_PERSISTENT },
+    audio: { scope: SitePermissions.SCOPE_PERSISTENT },
+  });
 
   // Cleanup.
   await closeStream(false, "frame4");
@@ -92,10 +95,8 @@ async function promptNoDelegateScreenSharing(aThirdPartyOrgin) {
   await promise;
   await observerPromise;
 
-  checkDeviceSelectors(false, false, true);
+  checkDeviceSelectors(["screen"]);
   const notification = PopupNotifications.panel.firstElementChild;
-  const iconclass = notification.getAttribute("iconclass");
-  ok(iconclass.includes("screen-icon"), "panel using screen icon");
 
   // The 'Remember this decision' checkbox is hidden.
   const checkbox = notification.checkbox;
@@ -144,7 +145,9 @@ async function promptNoDelegateScreenSharing(aThirdPartyOrgin) {
   );
 
   await indicator;
-  await checkSharingUI({ screen: "Screen" });
+  await checkSharingUI({ screen: "Screen" }, undefined, undefined, {
+    screen: { scope: SitePermissions.SCOPE_PERSISTENT },
+  });
   await closeStream(false, "frame4");
 
   PermissionTestUtils.remove(uri, "screen");
@@ -165,7 +168,7 @@ var gTests = [
       await promiseRequestDevice(true, true, "frame1");
       await promise;
       await observerPromise;
-      checkDeviceSelectors(true, true);
+      checkDeviceSelectors(["microphone", "camera"]);
 
       // The 'Remember this decision' checkbox is visible.
       const notification = PopupNotifications.panel.firstElementChild;
@@ -215,10 +218,8 @@ var gTests = [
       await promise;
       await observerPromise;
 
-      checkDeviceSelectors(false, false, true);
+      checkDeviceSelectors(["screen"]);
       const notification = PopupNotifications.panel.firstElementChild;
-      const iconclass = notification.getAttribute("iconclass");
-      ok(iconclass.includes("screen-icon"), "panel using screen icon");
 
       // The 'Remember this decision' checkbox is visible.
       const checkbox = notification.checkbox;
@@ -243,7 +244,7 @@ var gTests = [
         noWindowOrScreenItem,
         "'Select Window or Screen' is the selected item"
       );
-      is(menulist.value, -1, "no window or screen is selected by default");
+      is(menulist.value, "-1", "no window or screen is selected by default");
       ok(
         noWindowOrScreenItem.disabled,
         "'Select Window or Screen' item is disabled"
@@ -365,13 +366,20 @@ var gTests = [
 
           await closeStream(false, aIframeId);
         } else if (aExpect == PromptResult.DENY) {
-          const observerPromise = expectObserverCalled(
-            "recording-window-ended"
+          const promises = [];
+          // frame3 disallows by feature Permissions Policy before request.
+          if (aIframeId != "frame3") {
+            promises.push(
+              expectObserverCalled("getUserMedia:request"),
+              expectObserverCalled("getUserMedia:response:deny")
+            );
+          }
+          promises.push(
+            expectObserverCalled("recording-window-ended"),
+            promiseMessage(permissionError),
+            promiseRequestDevice(audio, video, aIframeId, screen)
           );
-          const promise = promiseMessage(permissionError);
-          await promiseRequestDevice(audio, video, aIframeId, screen);
-          await promise;
-          await observerPromise;
+          await Promise.all(promises);
         }
 
         PermissionTestUtils.remove(uri, aRequestType);
@@ -728,7 +736,10 @@ var gTests = [
         "expected camera and microphone to be shared"
       );
       await indicator;
-      await checkSharingUI({ audio: true, video: true });
+      await checkSharingUI({ audio: true, video: true }, undefined, undefined, {
+        audio: { scope: SitePermissions.SCOPE_PERSISTENT },
+        video: { scope: SitePermissions.SCOPE_PERSISTENT },
+      });
       await closeStream(true);
 
       // Check that we get a prompt.
@@ -782,7 +793,6 @@ add_task(async function test() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["permissions.delegation.enabled", true],
-      ["dom.security.featurePolicy.enabled", true],
       ["dom.security.featurePolicy.header.enabled", true],
       ["dom.security.featurePolicy.webidl.enabled", true],
     ],

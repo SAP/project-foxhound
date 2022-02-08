@@ -1,41 +1,56 @@
+/* Any copyright is dedicated to the Public Domain.
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
+
+"use strict";
+
+requestLongerTimeout(2);
+
 var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { EnterprisePolicyTesting, PoliciesPrefTracker } = ChromeUtils.import(
+  "resource://testing-common/EnterprisePolicyTesting.jsm"
+);
 
 ChromeUtils.defineModuleGetter(
   this,
   "DoHController",
   "resource:///modules/DoHController.jsm"
 );
+ChromeUtils.defineModuleGetter(
+  this,
+  "DoHConfigController",
+  "resource:///modules/DoHConfig.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "DoHTestUtils",
+  "resource://testing-common/DoHTestUtils.jsm"
+);
 
 const SUBDIALOG_URL =
   "chrome://browser/content/preferences/dialogs/connection.xhtml";
 const TRR_MODE_PREF = "network.trr.mode";
 const TRR_URI_PREF = "network.trr.uri";
-const TRR_RESOLVERS_PREF = "network.trr.resolvers";
 const TRR_CUSTOM_URI_PREF = "network.trr.custom_uri";
 const ROLLOUT_ENABLED_PREF = "doh-rollout.enabled";
 const ROLLOUT_SELF_ENABLED_PREF = "doh-rollout.self-enabled";
 const HEURISTICS_DISABLED_PREF = "doh-rollout.disable-heuristics";
-const DEFAULT_RESOLVER_VALUE = "https://mozilla.cloudflare-dns.com/dns-query";
-const NEXTDNS_RESOLVER_VALUE = "https://firefox.dns.nextdns.io/";
+const FIRST_RESOLVER_VALUE = DoHTestUtils.providers[0].uri;
+const SECOND_RESOLVER_VALUE = DoHTestUtils.providers[1].uri;
+const DEFAULT_RESOLVER_VALUE = FIRST_RESOLVER_VALUE;
 
 const modeCheckboxSelector = "#networkDnsOverHttps";
 const uriTextboxSelector = "#networkCustomDnsOverHttpsInput";
 const resolverMenulistSelector = "#networkDnsOverHttpsResolverChoices";
 const defaultPrefValues = Object.freeze({
   [TRR_MODE_PREF]: 0,
-  [TRR_URI_PREF]: "https://mozilla.cloudflare-dns.com/dns-query",
-  [TRR_RESOLVERS_PREF]: JSON.stringify([
-    { name: "Cloudflare", url: DEFAULT_RESOLVER_VALUE },
-    { name: "example.org", url: "https://example.org/dns-query" },
-  ]),
   [TRR_CUSTOM_URI_PREF]: "",
 });
 
 async function resetPrefs() {
+  await DoHTestUtils.resetRemoteSettingsConfig();
   await DoHController._uninit();
   Services.prefs.clearUserPref(TRR_MODE_PREF);
   Services.prefs.clearUserPref(TRR_URI_PREF);
-  Services.prefs.clearUserPref(TRR_RESOLVERS_PREF);
   Services.prefs.clearUserPref(TRR_CUSTOM_URI_PREF);
   Services.prefs.getChildList("doh-rollout.").forEach(pref => {
     Services.prefs.clearUserPref(pref);
@@ -45,12 +60,13 @@ async function resetPrefs() {
   Services.telemetry.clearEvents();
   await DoHController.init();
 }
-
+Services.prefs.setStringPref("network.trr.confirmationNS", "skip");
 let preferencesOpen = new Promise(res => open_preferences(res));
 
-registerCleanupFunction(() => {
-  resetPrefs();
+registerCleanupFunction(async () => {
+  await resetPrefs();
   gBrowser.removeCurrentTab();
+  Services.prefs.clearUserPref("network.trr.confirmationNS");
 });
 
 async function openConnectionsSubDialog() {
@@ -84,20 +100,33 @@ async function testWithProperties(props, startTime) {
       ": testWithProperties: testing with " +
       JSON.stringify(props)
   );
-  let rolloutReadyPref = ROLLOUT_SELF_ENABLED_PREF;
+
+  // There are two different signals that the DoHController is ready, depending
+  // on the config being tested. If we're setting the TRR mode pref, we should
+  // expect the disable-heuristics pref to be set as the signal. Else, we can
+  // expect the self-enabled pref as the signal.
+  let rolloutReadyPromise;
   if (props.hasOwnProperty(TRR_MODE_PREF)) {
-    Services.prefs.setIntPref(TRR_MODE_PREF, props[TRR_MODE_PREF]);
-    if ([2, 3, 5].includes(props[TRR_MODE_PREF])) {
-      rolloutReadyPref = HEURISTICS_DISABLED_PREF;
+    if (
+      [2, 3, 5].includes(props[TRR_MODE_PREF]) &&
+      props.hasOwnProperty(ROLLOUT_ENABLED_PREF)
+    ) {
+      // Only initialize the promise if we're going to enable the rollout -
+      // otherwise we will never await it, which could cause a leak if it doesn't
+      // end up resolving.
+      rolloutReadyPromise = waitForPrefObserver(HEURISTICS_DISABLED_PREF);
     }
+    Services.prefs.setIntPref(TRR_MODE_PREF, props[TRR_MODE_PREF]);
   }
   if (props.hasOwnProperty(ROLLOUT_ENABLED_PREF)) {
-    let prefPromise = waitForPrefObserver(rolloutReadyPref);
+    if (!rolloutReadyPromise) {
+      rolloutReadyPromise = waitForPrefObserver(ROLLOUT_SELF_ENABLED_PREF);
+    }
     Services.prefs.setBoolPref(
       ROLLOUT_ENABLED_PREF,
       props[ROLLOUT_ENABLED_PREF]
     );
-    await prefPromise;
+    await rolloutReadyPromise;
   }
   if (props.hasOwnProperty(TRR_CUSTOM_URI_PREF)) {
     Services.prefs.setStringPref(
@@ -107,10 +136,6 @@ async function testWithProperties(props, startTime) {
   }
   if (props.hasOwnProperty(TRR_URI_PREF)) {
     Services.prefs.setStringPref(TRR_URI_PREF, props[TRR_URI_PREF]);
-  }
-  if (props.hasOwnProperty(TRR_RESOLVERS_PREF)) {
-    info(`Setting ${TRR_RESOLVERS_PREF} to ${props[TRR_RESOLVERS_PREF]}`);
-    Services.prefs.setStringPref(TRR_RESOLVERS_PREF, props[TRR_RESOLVERS_PREF]);
   }
 
   let dialog = await openConnectionsSubDialog();
@@ -249,12 +274,19 @@ async function testWithProperties(props, startTime) {
   info(Date.now() - startTime + ": testWithProperties: prefs changed");
 
   if (props.hasOwnProperty("expectedFinalUriPref")) {
-    let uriPref = Services.prefs.getStringPref(TRR_URI_PREF);
-    is(
-      uriPref,
-      props.expectedFinalUriPref,
-      "uri pref ended up with the expected value"
-    );
+    if (props.expectedFinalUriPref) {
+      let uriPref = Services.prefs.getStringPref(TRR_URI_PREF);
+      is(
+        uriPref,
+        props.expectedFinalUriPref,
+        "uri pref ended up with the expected value"
+      );
+    } else {
+      ok(
+        !Services.prefs.prefHasUserValue(TRR_URI_PREF),
+        "uri pref ended up with the expected value (unset)"
+      );
+    }
   }
 
   if (props.hasOwnProperty("expectedModePref")) {
@@ -291,17 +323,16 @@ async function testWithProperties(props, startTime) {
 
 add_task(async function default_values() {
   let customUriPref = Services.prefs.getStringPref(TRR_CUSTOM_URI_PREF);
-  let uriPref = Services.prefs.getStringPref(TRR_URI_PREF);
+  let uriPrefHasUserValue = Services.prefs.prefHasUserValue(TRR_URI_PREF);
   let modePref = Services.prefs.getIntPref(TRR_MODE_PREF);
   is(
     modePref,
     defaultPrefValues[TRR_MODE_PREF],
     `Actual value of ${TRR_MODE_PREF} matches expected default value`
   );
-  is(
-    uriPref,
-    defaultPrefValues[TRR_URI_PREF],
-    `Actual value of ${TRR_URI_PREF} matches expected default value`
+  ok(
+    !uriPrefHasUserValue,
+    `Actual value of ${TRR_URI_PREF} matches expected default value (unset)`
   );
   is(
     customUriPref,
@@ -312,7 +343,7 @@ add_task(async function default_values() {
 
 let testVariations = [
   // verify state with defaults
-  { name: "default", expectedModePref: 0, expectedUriValue: "" },
+  { name: "default", expectedModePref: 5, expectedUriValue: "" },
 
   // verify each of the modes maps to the correct checked state
   { name: "mode 0", [TRR_MODE_PREF]: 0, expectedModeChecked: false },
@@ -320,7 +351,6 @@ let testVariations = [
     name: "mode 1",
     [TRR_MODE_PREF]: 1,
     expectedModeChecked: false,
-    expectedFinalUriPref: DEFAULT_RESOLVER_VALUE,
   },
   {
     name: "mode 2",
@@ -338,7 +368,6 @@ let testVariations = [
     name: "mode 4",
     [TRR_MODE_PREF]: 4,
     expectedModeChecked: false,
-    expectedFinalUriPref: DEFAULT_RESOLVER_VALUE,
   },
   { name: "mode 5", [TRR_MODE_PREF]: 5, expectedModeChecked: false },
   // verify an out of bounds mode value maps to the correct checked state
@@ -402,14 +431,22 @@ let testVariations = [
   {
     name: "Select NextDNS as TRR provider",
     [TRR_MODE_PREF]: 2,
-    selectResolver: NEXTDNS_RESOLVER_VALUE,
-    expectedFinalUriPref: NEXTDNS_RESOLVER_VALUE,
+    selectResolver: SECOND_RESOLVER_VALUE,
+    expectedFinalUriPref: SECOND_RESOLVER_VALUE,
+  },
+  // Test selecting non-default, non-custom TRR provider, NextDNS,
+  // with DoH not enabled. The provider selection should stick.
+  {
+    name: "Select NextDNS as TRR provider in mode 0",
+    [TRR_MODE_PREF]: 0,
+    selectResolver: SECOND_RESOLVER_VALUE,
+    expectedFinalUriPref: SECOND_RESOLVER_VALUE,
   },
   {
     name: "return to default from NextDNS",
     [TRR_MODE_PREF]: 2,
-    [TRR_URI_PREF]: NEXTDNS_RESOLVER_VALUE,
-    expectedResolverListValue: NEXTDNS_RESOLVER_VALUE,
+    [TRR_URI_PREF]: SECOND_RESOLVER_VALUE,
+    expectedResolverListValue: SECOND_RESOLVER_VALUE,
     selectResolver: DEFAULT_RESOLVER_VALUE,
     expectedFinalUriPref: DEFAULT_RESOLVER_VALUE,
   },
@@ -460,11 +497,9 @@ let testVariations = [
   },
   {
     name: "empty default resolver list",
-    [TRR_RESOLVERS_PREF]: "",
     [TRR_MODE_PREF]: 2,
     [TRR_URI_PREF]: "https://example.com",
     [TRR_CUSTOM_URI_PREF]: "",
-    [TRR_RESOLVERS_PREF]: "",
     expectedUriValue: "https://example.com",
     expectedResolverListValue: "custom",
     expectedFinalUriPref: "https://example.com",
@@ -476,8 +511,287 @@ for (let props of testVariations) {
   add_task(async function testVariation() {
     await preferencesOpen;
     let startTime = Date.now();
-    await resetPrefs();
     info("starting test: " + props.name);
     await testWithProperties(props, startTime);
+    await resetPrefs();
   });
 }
+
+add_task(async function testRemoteSettingsEnable() {
+  // Enable the rollout.
+  await DoHTestUtils.loadRemoteSettingsConfig({
+    providers: "example-1, example-2",
+    rolloutEnabled: true,
+    steeringEnabled: false,
+    steeringProviders: "",
+    autoDefaultEnabled: false,
+    autoDefaultProviders: "",
+    id: "global",
+  });
+
+  let doTest = async (cancelOrAccept = "cancel") => {
+    let dialog = await openConnectionsSubDialog();
+    await dialog.uiReady;
+    let doc = dialog.document;
+    let dialogElement = doc.getElementById("ConnectionsDialog");
+    let modeCheckbox = doc.querySelector(modeCheckboxSelector);
+    ok(modeCheckbox.checked, "The mode checkbox should be checked.");
+    let dialogClosingPromise = BrowserTestUtils.waitForEvent(
+      dialogElement,
+      "dialogclosing"
+    );
+    if (cancelOrAccept == "cancel") {
+      dialogElement.cancelDialog();
+    } else {
+      dialogElement.acceptDialog();
+    }
+    await dialogClosingPromise;
+    if (cancelOrAccept == "cancel") {
+      try {
+        await TestUtils.waitForCondition(() =>
+          Services.prefs.prefHasUserValue("doh-rollout.disable-heuristics")
+        );
+        ok(false, "Heuristics were disabled when they shouldn't have been!");
+      } catch (e) {
+        ok(true, "Heuristics remained enabled.");
+      }
+      is(Services.prefs.getStringPref("network.trr.uri"), "");
+      ok(!Services.prefs.prefHasUserValue("network.trr.mode"));
+    } else {
+      // If accepting, the chosen provider is persisted to network.trr.uri
+      // and heuristics should get disabled.
+      await TestUtils.waitForCondition(() =>
+        Services.prefs.prefHasUserValue("doh-rollout.disable-heuristics")
+      );
+      ok(
+        Services.prefs.getBoolPref("doh-rollout.disable-heuristics"),
+        "Heurstics were disabled."
+      );
+      is(
+        Services.prefs.getStringPref("network.trr.uri"),
+        DEFAULT_RESOLVER_VALUE
+      );
+      is(Services.prefs.getIntPref("network.trr.mode"), 2);
+    }
+  };
+
+  for (let action of ["cancel", "accept"]) {
+    await doTest(action);
+  }
+});
+
+add_task(async function testEnterprisePolicy() {
+  async function closeDialog(dialog) {
+    let dialogClosingPromise = BrowserTestUtils.waitForEvent(
+      dialog,
+      "dialogclosing"
+    );
+
+    dialog.cancelDialog();
+    await dialogClosingPromise;
+  }
+
+  async function withPolicy(policy, fn, preFn = () => {}) {
+    await resetPrefs();
+    PoliciesPrefTracker.start();
+    await EnterprisePolicyTesting.setupPolicyEngineWithJson(policy);
+
+    await preFn();
+
+    let dialog = await openConnectionsSubDialog();
+    await dialog.uiReady;
+
+    let doc = dialog.document;
+
+    let dialogElement = doc.getElementById("ConnectionsDialog");
+    let modeCheckbox = doc.querySelector(modeCheckboxSelector);
+    let resolverMenulist = doc.querySelector(resolverMenulistSelector);
+    let uriTextbox = doc.querySelector(uriTextboxSelector);
+
+    await fn({
+      dialog,
+      dialogElement,
+      modeCheckbox,
+      resolverMenulist,
+      doc,
+      uriTextbox,
+    });
+
+    await closeDialog(dialogElement);
+    EnterprisePolicyTesting.resetRunOnceState();
+    PoliciesPrefTracker.stop();
+  }
+
+  info("Check that a locked policy does not allow any changes in the UI");
+  await withPolicy(
+    {
+      policies: {
+        DNSOverHTTPS: {
+          Enabled: true,
+          ProviderURL: "https://examplelocked.com/provider",
+          ExcludedDomains: ["examplelocked.com", "example.org"],
+          Locked: true,
+        },
+      },
+    },
+    async res => {
+      ok(res.modeCheckbox.checked, "The mode checkbox should be checked.");
+      is(res.modeCheckbox.disabled, true, "The checkbox should be locked.");
+
+      is(res.resolverMenulist.value, "custom", "Resolver list shows custom");
+      is(
+        res.resolverMenulist.disabled,
+        true,
+        "The resolver list should be locked."
+      );
+
+      is(res.uriTextbox.disabled, true, "The custom URI should be locked.");
+    }
+  );
+
+  info("Check that an unlocked policy has editable fields in the dialog");
+  await withPolicy(
+    {
+      policies: {
+        DNSOverHTTPS: {
+          Enabled: true,
+          ProviderURL: "https://example.com/provider",
+          ExcludedDomains: ["example.com", "example.org"],
+        },
+      },
+    },
+    async res => {
+      ok(res.modeCheckbox.checked, "The mode checkbox should be checked.");
+      is(
+        res.modeCheckbox.disabled,
+        false,
+        "The checkbox should not be locked."
+      );
+
+      is(res.resolverMenulist.value, "custom", "Resolver list shows custom");
+      is(
+        res.resolverMenulist.disabled,
+        false,
+        "The resolver list should not be locked."
+      );
+
+      is(
+        res.uriTextbox.value,
+        "https://example.com/provider",
+        "Expected custom resolver"
+      );
+      is(
+        res.uriTextbox.disabled,
+        false,
+        "The custom URI should not be locked."
+      );
+    }
+  );
+
+  info("Check that a locked disabled policy disables the buttons");
+  await withPolicy(
+    {
+      policies: {
+        DNSOverHTTPS: {
+          Enabled: false,
+          ProviderURL: "https://example.com/provider",
+          ExcludedDomains: ["example.com", "example.org"],
+          Locked: true,
+        },
+      },
+    },
+    async res => {
+      ok(!res.modeCheckbox.checked, "The mode checkbox should be unchecked.");
+      is(res.modeCheckbox.disabled, true, "The checkbox should be locked.");
+
+      is(res.resolverMenulist.value, "custom", "Resolver list shows custom");
+      is(
+        res.resolverMenulist.disabled,
+        true,
+        "The resolver list should be locked."
+      );
+
+      is(res.uriTextbox.disabled, true, "The custom URI should be locked.");
+    }
+  );
+
+  info("Check that an unlocked disabled policy has editable fields");
+  await withPolicy(
+    {
+      policies: {
+        DNSOverHTTPS: {
+          Enabled: false,
+          ProviderURL: "https://example.com/provider",
+          ExcludedDomains: ["example.com", "example.org"],
+        },
+      },
+    },
+    async res => {
+      ok(!res.modeCheckbox.checked, "The mode checkbox should be unchecked.");
+      is(
+        res.modeCheckbox.disabled,
+        false,
+        "The checkbox should not be locked."
+      );
+
+      is(res.resolverMenulist.value, "custom", "Resolver list shows custom");
+      is(
+        res.resolverMenulist.disabled,
+        true,
+        "The resolver list should be locked."
+      );
+
+      is(res.uriTextbox.disabled, true, "The custom URI should be locked.");
+    }
+  );
+
+  info("Check that the remote settings config doesn't override the policy");
+  await withPolicy(
+    {
+      policies: {
+        DNSOverHTTPS: {
+          Enabled: true,
+          ProviderURL: "https://example.com/provider",
+          ExcludedDomains: ["example.com", "example.org"],
+        },
+      },
+    },
+    async res => {
+      ok(res.modeCheckbox.checked, "The mode checkbox should be checked.");
+      is(
+        res.modeCheckbox.disabled,
+        false,
+        "The checkbox should not be locked."
+      );
+
+      is(res.resolverMenulist.value, "custom", "Resolver list shows custom");
+      is(
+        res.resolverMenulist.disabled,
+        false,
+        "The resolver list should not be locked."
+      );
+
+      is(
+        res.uriTextbox.value,
+        "https://example.com/provider",
+        "Expected custom resolver"
+      );
+      is(
+        res.uriTextbox.disabled,
+        false,
+        "The custom URI should not be locked."
+      );
+    },
+    async function runAfterSettingPolicy() {
+      await DoHTestUtils.loadRemoteSettingsConfig({
+        providers: "example-1, example-2",
+        rolloutEnabled: true,
+        steeringEnabled: false,
+        steeringProviders: "",
+        autoDefaultEnabled: false,
+        autoDefaultProviders: "",
+        id: "global",
+      });
+    }
+  );
+});

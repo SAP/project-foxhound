@@ -216,3 +216,43 @@ User action for turning off the DoH feature
 User action for continuing to use the DoH feature
 
 * args: (none)
+
+### `CONFIGURE_HOMEPAGE`
+
+Action for configuring the user homepage and restoring defaults.
+
+* args:
+```ts
+{
+  homePage: "default" | null;
+  newtab: "default" | null;
+  layout: {
+    search: boolean;
+    topsites: boolean;
+    highlights: boolean;
+    topstories: boolean;
+    snippets: boolean;
+  }
+}
+```
+
+### `PIN_FIREFOX_TO_TASKBAR`
+
+Action for pinning Firefox to the user's taskbar.
+
+* args: (none)
+
+### `SET_DEFAULT_BROWSER`
+
+Action for configuring the default browser to Firefox on the user's system.
+
+* args: (none)
+
+### `ENABLE_TOTAL_COOKIE_PROTECTION`
+
+Action for enabling the Total Cookie Protection feature.
+
+### `ENABLE_TOTAL_COOKIE_PROTECTION_SECTION_AND_OPT_OUT`
+
+Action for disabling the Total Cookie Protection feature and enabling an
+additional privacy section in about:preferences.

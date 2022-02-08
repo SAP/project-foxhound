@@ -9,7 +9,6 @@ describe("Top Stories Feed", () => {
   let SECTION_ID;
   let SPOC_IMPRESSION_TRACKING_PREF;
   let REC_IMPRESSION_TRACKING_PREF;
-  let MIN_DOMAIN_AFFINITIES_UPDATE_TIME;
   let DEFAULT_RECS_EXPIRE_TIME;
   let instance;
   let clock;
@@ -50,27 +49,6 @@ describe("Top Stories Feed", () => {
       sections: new Map([["topstories", { options: FAKE_OPTIONS }]]),
     };
 
-    class FakeUserDomainAffinityProvider {
-      constructor(
-        timeSegments,
-        parameterSets,
-        maxHistoryQueryResults,
-        version,
-        scores
-      ) {
-        this.timeSegments = timeSegments;
-        this.parameterSets = parameterSets;
-        this.maxHistoryQueryResults = maxHistoryQueryResults;
-        this.version = version;
-        this.scores = scores;
-      }
-
-      getAffinities() {
-        return {};
-      }
-    }
-    class FakePersonalityProvider extends FakeUserDomainAffinityProvider {}
-
     ({
       TopStoriesFeed,
       STORIES_UPDATE_TIME,
@@ -78,24 +56,24 @@ describe("Top Stories Feed", () => {
       SECTION_ID,
       SPOC_IMPRESSION_TRACKING_PREF,
       REC_IMPRESSION_TRACKING_PREF,
-      MIN_DOMAIN_AFFINITIES_UPDATE_TIME,
       DEFAULT_RECS_EXPIRE_TIME,
     } = injector({
       "lib/ActivityStreamPrefs.jsm": { Prefs: FakePrefs },
       "lib/ShortURL.jsm": { shortURL: shortURLStub },
-      "lib/PersonalityProvider.jsm": {
-        PersonalityProvider: FakePersonalityProvider,
-      },
-      "lib/UserDomainAffinityProvider.jsm": {
-        UserDomainAffinityProvider: FakeUserDomainAffinityProvider,
-      },
       "lib/SectionsManager.jsm": { SectionsManager: sectionsManagerStub },
     }));
 
     instance = new TopStoriesFeed();
     instance.store = {
       getState() {
-        return { Prefs: { values: { showSponsored: true } } };
+        return {
+          Prefs: {
+            values: {
+              showSponsored: true,
+              "feeds.section.topstories": true,
+            },
+          },
+        };
       },
       dispatch: sinon.spy(),
     };
@@ -117,6 +95,7 @@ describe("Top Stories Feed", () => {
         Prefs: {
           values: {
             "discoverystream.config": JSON.stringify({ enabled: true }),
+            "feeds.section.topstories": true,
           },
         },
       });
@@ -129,6 +108,7 @@ describe("Top Stories Feed", () => {
         Prefs: {
           values: {
             "discoverystream.config": JSON.stringify({ enabled: false }),
+            "feeds.section.topstories": true,
           },
         },
       });
@@ -172,6 +152,7 @@ describe("Top Stories Feed", () => {
           values: {
             "discoverystream.config": JSON.stringify({ enabled: true }),
             "discoverystream.enabled": true,
+            "feeds.section.topstories": true,
           },
         },
       });
@@ -193,6 +174,7 @@ describe("Top Stories Feed", () => {
         Prefs: {
           values: {
             "discoverystream.config": JSON.stringify({ enabled: false }),
+            "feeds.section.topstories": true,
           },
         },
       });
@@ -257,6 +239,79 @@ describe("Top Stories Feed", () => {
       });
       assert.calledOnce(instance.lazyLoadTopStories);
       assert.notCalled(instance.onInit);
+    });
+    it("should not init props if ds pref is true", () => {
+      sinon.stub(instance, "initializeProperties");
+      instance.propertiesInitialized = false;
+      instance.store.getState = () => ({
+        Prefs: {
+          values: {
+            "discoverystream.config": JSON.stringify({ enabled: false }),
+            "discoverystream.enabled": true,
+            "feeds.section.topstories": true,
+          },
+        },
+      });
+      instance.lazyLoadTopStories({
+        dsPref: JSON.stringify({ enabled: true }),
+      });
+      assert.notCalled(instance.initializeProperties);
+    });
+    it("should fire init if user pref is true", () => {
+      sinon.stub(instance, "onInit");
+      instance.store.getState = () => ({
+        Prefs: {
+          values: {
+            "discoverystream.config": JSON.stringify({ enabled: false }),
+            "discoverystream.enabled": false,
+            "feeds.section.topstories": false,
+          },
+        },
+      });
+      instance.lazyLoadTopStories({ userPref: true });
+      assert.calledOnce(instance.onInit);
+    });
+    it("should fire uninit if topstories update to false", () => {
+      sinon.stub(instance, "uninit");
+      instance.discoveryStreamEnabled = false;
+      instance.onAction({
+        type: at.PREF_CHANGED,
+        data: {
+          value: false,
+          name: "feeds.section.topstories",
+        },
+      });
+      assert.calledOnce(instance.uninit);
+      instance.discoveryStreamEnabled = true;
+      instance.onAction({
+        type: at.PREF_CHANGED,
+        data: {
+          value: false,
+          name: "feeds.section.topstories",
+        },
+      });
+      assert.calledTwice(instance.uninit);
+    });
+    it("should fire lazyLoadTopstories if topstories update to true", () => {
+      sinon.stub(instance, "lazyLoadTopStories");
+      instance.discoveryStreamEnabled = false;
+      instance.onAction({
+        type: at.PREF_CHANGED,
+        data: {
+          value: true,
+          name: "feeds.section.topstories",
+        },
+      });
+      assert.calledOnce(instance.lazyLoadTopStories);
+      instance.discoveryStreamEnabled = true;
+      instance.onAction({
+        type: at.PREF_CHANGED,
+        data: {
+          value: true,
+          name: "feeds.section.topstories",
+        },
+      });
+      assert.calledTwice(instance.lazyLoadTopStories);
     });
   });
 
@@ -367,12 +422,11 @@ describe("Top Stories Feed", () => {
     it("should set spocs cache on fetch", async () => {
       const response = {
         recommendations: [{ id: "1" }, { id: "2" }],
-        settings: { timeSegments: {}, domainAffinityParameterSets: {} },
+        settings: {},
         spocs: [{ id: "spoc1" }],
       };
 
       instance.show_spocs = true;
-      instance.personalized = true;
       instance.stories_endpoint = "stories-endpoint";
 
       let fetchStub = globals.sandbox.stub();
@@ -446,7 +500,6 @@ describe("Top Stories Feed", () => {
           referrer: "referrer",
           url: "rec-url",
           hostname: "rec-url",
-          min_score: 0,
           score: 1,
           spoc_meta: {},
         },
@@ -516,7 +569,6 @@ describe("Top Stories Feed", () => {
           referrer: "referrer",
           url: "rec-url",
           hostname: "domain",
-          min_score: 0,
           score: 1,
           spoc_meta: {},
         },
@@ -700,13 +752,12 @@ describe("Top Stories Feed", () => {
     });
   });
   describe("#personalization", () => {
-    it("should sort stories if personalization is preffed on", async () => {
+    it("should sort stories", async () => {
       const response = {
         recommendations: [{ id: "1" }, { id: "2" }],
-        settings: { timeSegments: {}, domainAffinityParameterSets: {} },
+        settings: {},
       };
 
-      instance.personalized = true;
       instance.compareScore = sinon.spy();
       instance.stories_endpoint = "stories-endpoint";
 
@@ -724,36 +775,12 @@ describe("Top Stories Feed", () => {
       await instance.fetchStories();
       assert.calledOnce(instance.compareScore);
     });
-    it("should not sort stories if personalization is preffed off", async () => {
-      const response = `{
-        "recommendations":  [{"id" : "1"}, {"id" : "2"}],
-        "settings": {"timeSegments": {}, "domainAffinityParameterSets": {}}
-      }`;
-
-      instance.personalized = false;
-      instance.compareScore = sinon.spy();
-      instance.stories_endpoint = "stories-endpoint";
-
-      let fetchStub = globals.sandbox.stub();
-      globals.set("fetch", fetchStub);
-      globals.set("NewTabUtils", {
-        blockedLinks: { isBlocked: globals.sandbox.spy() },
-      });
-      fetchStub.resolves({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve(response),
-      });
-
-      await instance.fetchStories();
-      assert.notCalled(instance.compareScore);
-    });
     it("should sort items based on relevance score", () => {
       let items = [{ score: 0.1 }, { score: 0.2 }];
       items = items.sort(instance.compareScore);
       assert.deepEqual(items, [{ score: 0.2 }, { score: 0.1 }]);
     });
-    it("should rotate items if personalization is preffed on", () => {
+    it("should rotate items", () => {
       let items = [
         { guid: "g1" },
         { guid: "g2" },
@@ -762,7 +789,6 @@ describe("Top Stories Feed", () => {
         { guid: "g5" },
         { guid: "g6" },
       ];
-      instance.personalized = true;
 
       // No impressions should leave items unchanged
       let rotated = instance.rotate(items);
@@ -812,58 +838,8 @@ describe("Top Stories Feed", () => {
         rotated
       );
     });
-    it("should not rotate items if personalization is preffed off", () => {
-      let items = [
-        { guid: "g1" },
-        { guid: "g2" },
-        { guid: "g3" },
-        { guid: "g4" },
-      ];
-
-      instance.personalized = false;
-
-      instance._prefs.get = pref =>
-        pref === REC_IMPRESSION_TRACKING_PREF &&
-        JSON.stringify({ g1: 1, g2: 1, g3: 1 });
-      clock.tick(DEFAULT_RECS_EXPIRE_TIME + 1);
-      let rotated = instance.rotate(items);
-      assert.deepEqual(items, rotated);
-    });
-    it("should not dispatch ITEM_RELEVANCE_SCORE_DURATION metrics for not personalized", () => {
-      instance.personalized = false;
-      instance.dispatchRelevanceScore(50);
-      assert.notCalled(instance.store.dispatch);
-    });
-    it("should not dispatch v2 ITEM_RELEVANCE_SCORE_DURATION until initialized", () => {
-      instance.personalized = true;
-      instance.affinityProviderV2 = { use_v2: true };
-      instance.affinityProvider = {};
-      instance.dispatchRelevanceScore(50);
-      assert.notCalled(instance.store.dispatch);
-      instance.affinityProvider = { initialized: true };
-      instance.dispatchRelevanceScore(50);
-      assert.calledOnce(instance.store.dispatch);
-      const [action] = instance.store.dispatch.firstCall.args;
-      assert.equal(action.type, "TELEMETRY_PERFORMANCE_EVENT");
-      assert.equal(
-        action.data.event,
-        "PERSONALIZATION_V2_ITEM_RELEVANCE_SCORE_DURATION"
-      );
-    });
-    it("should dispatch v1 ITEM_RELEVANCE_SCORE_DURATION", () => {
-      instance.personalized = true;
-      instance.dispatchRelevanceScore(50);
-      assert.calledOnce(instance.store.dispatch);
-      const [action] = instance.store.dispatch.firstCall.args;
-      assert.equal(action.type, "TELEMETRY_PERFORMANCE_EVENT");
-      assert.equal(
-        action.data.event,
-        "PERSONALIZATION_V1_ITEM_RELEVANCE_SCORE_DURATION"
-      );
-    });
     it("should record top story impressions", async () => {
       instance._prefs = { get: pref => undefined, set: sinon.spy() };
-      instance.personalized = true;
 
       clock.tick(1);
       let expectedPrefValue = JSON.stringify({ 1: 1, 2: 1, 3: 1 });
@@ -917,7 +893,6 @@ describe("Top Stories Feed", () => {
     });
     it("should not record top story impressions for non-view impressions", async () => {
       instance._prefs = { get: pref => undefined, set: sinon.spy() };
-      instance.personalized = true;
 
       instance.onAction({
         type: at.TELEMETRY_IMPRESSION_STATS,
@@ -965,30 +940,6 @@ describe("Top Stories Feed", () => {
         JSON.stringify({ 3: 1 })
       );
     });
-    it("should re init on affinityProviderV2 pref change", async () => {
-      sinon.stub(instance, "uninit");
-      sinon.stub(instance, "init");
-      sinon.stub(instance, "clearCache").returns(Promise.resolve());
-      await instance.onAction({
-        type: at.PREF_CHANGED,
-        data: {
-          name: "feeds.section.topstories.options",
-          value: JSON.stringify({ version: 2 }),
-        },
-      });
-      assert.calledOnce(instance.uninit);
-      assert.calledOnce(instance.init);
-      assert.calledOnce(instance.clearCache);
-    });
-    it("should use UserDomainAffinityProvider from affinityProividerSwitcher not using v2", async () => {
-      instance.affinityProviderV2 = { use_v2: false };
-      sinon.stub(instance, "UserDomainAffinityProvider");
-      sinon.stub(instance, "PersonalityProvider");
-
-      await instance.affinityProividerSwitcher();
-      assert.notCalled(instance.PersonalityProvider);
-      assert.calledOnce(instance.UserDomainAffinityProvider);
-    });
     it("should not change provider with badly formed JSON", async () => {
       sinon.stub(instance, "uninit");
       sinon.stub(instance, "init");
@@ -1003,141 +954,6 @@ describe("Top Stories Feed", () => {
       assert.notCalled(instance.uninit);
       assert.notCalled(instance.init);
       assert.notCalled(instance.clearCache);
-    });
-    it("should use PersonalityProvider from affinityProividerSwitcher using v2", async () => {
-      instance.affinityProviderV2 = { use_v2: true };
-      sinon.stub(instance, "UserDomainAffinityProvider");
-      sinon.stub(instance, "PersonalityProvider");
-      instance.PersonalityProvider = () => ({ init: sinon.stub() });
-
-      const provider = instance.affinityProividerSwitcher();
-      assert.calledOnce(provider.init);
-      assert.notCalled(instance.UserDomainAffinityProvider);
-    });
-    it("should use init and callback from affinityProividerSwitcher using v2", async () => {
-      const stories = { recommendations: {} };
-      sinon.stub(instance, "doContentUpdate");
-      sinon.stub(instance, "rotate").returns(stories);
-      sinon.stub(instance, "transform");
-      instance.cache.get = () => ({ stories });
-      instance.cache.set = sinon.spy();
-      instance.affinityProvider = { getAffinities: () => ({}) };
-      await instance.onPersonalityProviderInit();
-
-      assert.calledOnce(instance.doContentUpdate);
-      assert.calledWith(
-        instance.doContentUpdate,
-        { stories: { recommendations: {} } },
-        false
-      );
-      assert.calledOnce(instance.rotate);
-      assert.calledOnce(instance.transform);
-      const { args } = instance.cache.set.firstCall;
-      assert.equal(args[0], "domainAffinities");
-      assert.equal(args[1]._timestamp, 0);
-    });
-    it("should call dispatchUpdateEvent from affinityProividerSwitcher using v2", async () => {
-      const stories = { recommendations: {} };
-      sinon.stub(instance, "rotate").returns(stories);
-      sinon.stub(instance, "transform");
-      sinon.spy(instance, "dispatchUpdateEvent");
-      instance.cache.get = () => ({ stories });
-      instance.cache.set = sinon.spy();
-      instance.affinityProvider = { getAffinities: () => ({}) };
-
-      await instance.onPersonalityProviderInit();
-
-      assert.calledOnce(instance.dispatchUpdateEvent);
-    });
-    it("should return an object for UserDomainAffinityProvider", () => {
-      assert.equal(typeof instance.UserDomainAffinityProvider(), "object");
-    });
-    it("should return an object for PersonalityProvider", () => {
-      assert.equal(typeof instance.PersonalityProvider(), "object");
-    });
-    it("should call affinityProividerSwitcher on loadCachedData", async () => {
-      instance.affinityProviderV2 = true;
-      instance.personalized = true;
-      sinon
-        .stub(instance, "affinityProividerSwitcher")
-        .returns(Promise.resolve());
-      const domainAffinities = {
-        parameterSets: {
-          default: {
-            recencyFactor: 0.4,
-            frequencyFactor: 0.5,
-            combinedDomainFactor: 0.5,
-            perfectFrequencyVisits: 10,
-            perfectCombinedDomainScore: 2,
-            multiDomainBoost: 0.1,
-            itemScoreFactor: 0,
-          },
-        },
-        scores: { "a.com": 1, "b.com": 0.9 },
-        maxHistoryQueryResults: 1000,
-        timeSegments: {},
-        version: "v1",
-      };
-
-      instance.cache.get = () => ({ domainAffinities });
-      await instance.loadCachedData();
-      assert.calledOnce(instance.affinityProividerSwitcher);
-    });
-    it("should change domainAffinitiesLastUpdated on loadCachedData", async () => {
-      instance.affinityProviderV2 = true;
-      instance.personalized = true;
-      const domainAffinities = {
-        parameterSets: {
-          default: {
-            recencyFactor: 0.4,
-            frequencyFactor: 0.5,
-            combinedDomainFactor: 0.5,
-            perfectFrequencyVisits: 10,
-            perfectCombinedDomainScore: 2,
-            multiDomainBoost: 0.1,
-            itemScoreFactor: 0,
-          },
-        },
-        scores: { "a.com": 1, "b.com": 0.9 },
-        maxHistoryQueryResults: 1000,
-        timeSegments: {},
-        version: "v1",
-      };
-
-      instance.cache.get = () => ({ domainAffinities });
-      await instance.loadCachedData();
-      assert.notEqual(instance.domainAffinitiesLastUpdated, 0);
-    });
-    it("should return false and do nothing if v2 already set", () => {
-      instance.affinityProviderV2 = { use_v2: true, model_keys: ["item1orig"] };
-      const result = instance.processAffinityProividerVersion({
-        version: 2,
-        model_keys: ["item1"],
-      });
-      assert.isTrue(instance.affinityProviderV2.use_v2);
-      assert.isFalse(result);
-      assert.equal(instance.affinityProviderV2.model_keys[0], "item1orig");
-    });
-    it("should return false and do nothing if v1 already set", () => {
-      instance.affinityProviderV2 = null;
-      const result = instance.processAffinityProividerVersion({ version: 1 });
-      assert.isFalse(result);
-      assert.isNull(instance.affinityProviderV2);
-    });
-    it("should return true and set v2", () => {
-      const result = instance.processAffinityProividerVersion({
-        version: 2,
-        model_keys: ["item1"],
-      });
-      assert.isTrue(instance.affinityProviderV2.use_v2);
-      assert.isTrue(result);
-      assert.equal(instance.affinityProviderV2.model_keys[0], "item1");
-    });
-    it("should return true and set v1", () => {
-      instance.affinityProviderV2 = {};
-      const result = instance.processAffinityProividerVersion({ version: 1 });
-      assert.isTrue(result);
-      assert.isNull(instance.affinityProviderV2);
     });
   });
   describe("#spocs", async () => {
@@ -1180,7 +996,6 @@ describe("Top Stories Feed", () => {
       globals.set("NewTabUtils", {
         blockedLinks: { isBlocked: globals.sandbox.spy() },
       });
-      instance.dispatchRelevanceScore = () => {};
 
       const response = {
         settings: { spocsPerNewTabs: 0.5 },
@@ -1192,7 +1007,6 @@ describe("Top Stories Feed", () => {
         ],
       };
 
-      instance.personalized = true;
       instance.show_spocs = true;
       instance.stories_endpoint = "stories-endpoint";
       instance.storiesLoaded = true;
@@ -1261,12 +1075,10 @@ describe("Top Stories Feed", () => {
     });
     it("should delay inserting spoc if stories haven't been fetched", async () => {
       let fetchStub = globals.sandbox.stub();
-      instance.dispatchRelevanceScore = () => {};
       instance.dispatchSpocDone = () => {};
       sectionsManagerStub.sections.set("topstories", {
         options: {
           show_spocs: true,
-          personalized: true,
           stories_endpoint: "stories-endpoint",
         },
       });
@@ -1322,7 +1134,6 @@ describe("Top Stories Feed", () => {
       sectionsManagerStub.sections.set("topstories", {
         options: {
           show_spocs: false,
-          personalized: true,
           stories_endpoint: "stories-endpoint",
         },
       });
@@ -1374,12 +1185,10 @@ describe("Top Stories Feed", () => {
     });
     it("should not insert spoc if user opted out", async () => {
       let fetchStub = globals.sandbox.stub();
-      instance.dispatchRelevanceScore = () => {};
       instance.dispatchSpocDone = () => {};
       sectionsManagerStub.sections.set("topstories", {
         options: {
           show_spocs: true,
-          personalized: true,
           stories_endpoint: "stories-endpoint",
         },
       });
@@ -1418,7 +1227,6 @@ describe("Top Stories Feed", () => {
       sectionsManagerStub.sections.set("topstories", {
         options: {
           show_spocs: true,
-          personalized: true,
           stories_endpoint: "stories-endpoint",
         },
       });
@@ -1482,6 +1290,7 @@ describe("Top Stories Feed", () => {
       await instance.fetchStories();
 
       let expectedPrefValue = JSON.stringify({ 5: [0] });
+      let expectedPrefValueCallTwo = JSON.stringify({ 2: 0, 3: 0 });
       instance.onAction({
         type: at.TELEMETRY_IMPRESSION_STATS,
         data: {
@@ -1494,10 +1303,16 @@ describe("Top Stories Feed", () => {
         SPOC_IMPRESSION_TRACKING_PREF,
         expectedPrefValue
       );
+      assert.calledWith(
+        instance._prefs.set.secondCall,
+        REC_IMPRESSION_TRACKING_PREF,
+        expectedPrefValueCallTwo
+      );
 
       clock.tick(1);
       instance._prefs.get = pref => expectedPrefValue;
-      let expectedPrefValueCallTwo = JSON.stringify({ 5: [0, 1] });
+      let expectedPrefValueCallThree = JSON.stringify({ 5: [0, 1] });
+      let expectedPrefValueCallFour = JSON.stringify({ 2: 1, 3: 1, 5: [0] });
       instance.onAction({
         type: at.TELEMETRY_IMPRESSION_STATS,
         data: {
@@ -1506,13 +1321,18 @@ describe("Top Stories Feed", () => {
         },
       });
       assert.calledWith(
-        instance._prefs.set.secondCall,
+        instance._prefs.set.thirdCall,
         SPOC_IMPRESSION_TRACKING_PREF,
-        expectedPrefValueCallTwo
+        expectedPrefValueCallThree
+      );
+      assert.calledWith(
+        instance._prefs.set.getCall(3),
+        REC_IMPRESSION_TRACKING_PREF,
+        expectedPrefValueCallFour
       );
 
       clock.tick(1);
-      instance._prefs.get = pref => expectedPrefValueCallTwo;
+      instance._prefs.get = pref => expectedPrefValueCallThree;
       instance.onAction({
         type: at.TELEMETRY_IMPRESSION_STATS,
         data: {
@@ -1521,9 +1341,14 @@ describe("Top Stories Feed", () => {
         },
       });
       assert.calledWith(
-        instance._prefs.set.thirdCall,
+        instance._prefs.set.getCall(4),
         SPOC_IMPRESSION_TRACKING_PREF,
         JSON.stringify({ 5: [0, 1], 6: [2] })
+      );
+      assert.calledWith(
+        instance._prefs.set.getCall(5),
+        REC_IMPRESSION_TRACKING_PREF,
+        JSON.stringify({ 2: 2, 3: 2, 5: [0, 1] })
       );
     });
     it("should not record spoc/campaign impressions for non-view impressions", async () => {
@@ -1618,7 +1443,7 @@ describe("Top Stories Feed", () => {
 
       let expectedPrefValue = JSON.stringify({ 5: [0], 6: [0] });
       assert.calledWith(
-        instance._prefs.set.secondCall,
+        instance._prefs.set.thirdCall,
         SPOC_IMPRESSION_TRACKING_PREF,
         expectedPrefValue
       );
@@ -1639,19 +1464,17 @@ describe("Top Stories Feed", () => {
 
       // should remove campaign 5 from pref as no longer active
       assert.calledWith(
-        instance._prefs.set.thirdCall,
+        instance._prefs.set.getCall(4),
         SPOC_IMPRESSION_TRACKING_PREF,
         JSON.stringify({ 6: [0] })
       );
     });
     it("should maintain frequency caps when inserting spocs", async () => {
       let fetchStub = globals.sandbox.stub();
-      instance.dispatchRelevanceScore = () => {};
       instance.dispatchSpocDone = () => {};
       sectionsManagerStub.sections.set("topstories", {
         options: {
           show_spocs: true,
-          personalized: true,
           stories_endpoint: "stories-endpoint",
         },
       });
@@ -1750,12 +1573,10 @@ describe("Top Stories Feed", () => {
     });
     it("should maintain client-side MAX_LIFETIME_CAP", async () => {
       let fetchStub = globals.sandbox.stub();
-      instance.dispatchRelevanceScore = () => {};
       instance.dispatchSpocDone = () => {};
       sectionsManagerStub.sections.set("topstories", {
         options: {
           show_spocs: true,
-          personalized: true,
           stories_endpoint: "stories-endpoint",
         },
       });
@@ -1837,73 +1658,6 @@ describe("Top Stories Feed", () => {
         read_more_endpoint: undefined,
       });
     });
-    it("should update domain affinities on idle-daily, if personalization preffed on", async () => {
-      instance.init();
-      instance.affinityProvider = undefined;
-      instance.cache.set = sinon.spy();
-
-      instance.observe("", "idle-daily");
-      assert.isUndefined(instance.affinityProvider);
-
-      instance.personalized = true;
-      instance.updateSettings({
-        timeSegments: {},
-        domainAffinityParameterSets: {},
-      });
-      clock.tick(MIN_DOMAIN_AFFINITIES_UPDATE_TIME);
-      await instance.observe("", "idle-daily");
-      assert.isDefined(instance.affinityProvider);
-      assert.calledOnce(instance.cache.set);
-      assert.calledWith(
-        instance.cache.set,
-        "domainAffinities",
-        Object.assign({}, instance.affinityProvider.getAffinities(), {
-          _timestamp: MIN_DOMAIN_AFFINITIES_UPDATE_TIME,
-        })
-      );
-    });
-    it("should not update domain affinities too often", () => {
-      instance.init();
-      instance.affinityProvider = undefined;
-      instance.cache.set = sinon.spy();
-
-      instance.personalized = true;
-      instance.updateSettings({
-        timeSegments: {},
-        domainAffinityParameterSets: {},
-      });
-      clock.tick(MIN_DOMAIN_AFFINITIES_UPDATE_TIME);
-      instance.domainAffinitiesLastUpdated = Date.now();
-      instance.observe("", "idle-daily");
-      assert.isUndefined(instance.affinityProvider);
-    });
-    it("should send performance telemetry when updating domain affinities", async () => {
-      instance.getPocketState = () => {};
-      instance.dispatchPocketCta = () => {};
-      instance.init();
-      instance.personalized = true;
-      clock.tick(MIN_DOMAIN_AFFINITIES_UPDATE_TIME);
-      instance.updateSettings({
-        timeSegments: {},
-        domainAffinityParameterSets: {},
-      });
-      await instance.observe("", "idle-daily");
-
-      assert.calledOnce(instance.store.dispatch);
-      let [action] = instance.store.dispatch.firstCall.args;
-      assert.equal(action.type, at.TELEMETRY_PERFORMANCE_EVENT);
-      assert.equal(
-        action.data.event,
-        "topstories.domain.affinity.calculation.ms"
-      );
-    });
-    it("should add idle-daily observer right away, before waiting on init data", async () => {
-      const addObserver = globals.sandbox.stub();
-      globals.set("Services", { obs: { addObserver } });
-      const initPromise = instance.onInit();
-      assert.calledOnce(addObserver);
-      await initPromise;
-    });
     it("should not call init and uninit if data doesn't match on options change ", () => {
       sinon.spy(instance, "init");
       sinon.spy(instance, "uninit");
@@ -1944,26 +1698,6 @@ describe("Top Stories Feed", () => {
 
       assert.deepEqual(instance.spocs, [{ url: "not_blocked" }]);
     });
-    it("should reset domain affinity scores if version changed", async () => {
-      instance.init();
-      instance.personalized = true;
-      instance.resetDomainAffinityScores = sinon.spy();
-      instance.updateSettings({
-        timeSegments: {},
-        domainAffinityParameterSets: {},
-        version: "1",
-      });
-      clock.tick(MIN_DOMAIN_AFFINITIES_UPDATE_TIME);
-      await instance.observe("", "idle-daily");
-      assert.notCalled(instance.resetDomainAffinityScores);
-
-      instance.updateSettings({
-        timeSegments: {},
-        domainAffinityParameterSets: {},
-        version: "2",
-      });
-      assert.calledOnce(instance.resetDomainAffinityScores);
-    });
   });
   describe("#loadCachedData", () => {
     it("should update section with cached stories and topics if available", async () => {
@@ -1998,7 +1732,6 @@ describe("Top Stories Feed", () => {
           referrer: "referrer",
           url: "rec-url",
           hostname: "rec-url",
-          min_score: 0,
           score: 0.98,
           spoc_meta: {},
         },
@@ -2070,7 +1803,6 @@ describe("Top Stories Feed", () => {
               hostname: undefined,
               icon: undefined,
               image: undefined,
-              min_score: 0,
               referrer: "referrer",
               score: 1,
               spoc_meta: {},
@@ -2083,63 +1815,6 @@ describe("Top Stories Feed", () => {
         },
         true
       );
-    });
-    it("should initialize user domain affinity provider from cache if personalization is preffed on", async () => {
-      const domainAffinities = {
-        parameterSets: {
-          default: {
-            recencyFactor: 0.4,
-            frequencyFactor: 0.5,
-            combinedDomainFactor: 0.5,
-            perfectFrequencyVisits: 10,
-            perfectCombinedDomainScore: 2,
-            multiDomainBoost: 0.1,
-            itemScoreFactor: 0,
-          },
-        },
-        scores: { "a.com": 1, "b.com": 0.9 },
-        maxHistoryQueryResults: 1000,
-        timeSegments: {},
-        version: "v1",
-      };
-
-      instance.affinityProvider = undefined;
-      instance.cache.get = () => ({ domainAffinities });
-
-      await instance.loadCachedData();
-      assert.isUndefined(instance.affinityProvider);
-      instance.personalized = true;
-      await instance.loadCachedData();
-      assert.isDefined(instance.affinityProvider);
-      assert.deepEqual(
-        instance.affinityProvider.timeSegments,
-        domainAffinities.timeSegments
-      );
-      assert.equal(
-        instance.affinityProvider.maxHistoryQueryResults,
-        domainAffinities.maxHistoryQueryResults
-      );
-      assert.deepEqual(
-        instance.affinityProvider.parameterSets,
-        domainAffinities.parameterSets
-      );
-      assert.deepEqual(
-        instance.affinityProvider.scores,
-        domainAffinities.scores
-      );
-      assert.deepEqual(
-        instance.affinityProvider.version,
-        domainAffinities.version
-      );
-    });
-    it("should clear domain affinity cache when history is cleared", () => {
-      instance.cache.set = sinon.spy();
-      instance.affinityProvider = {};
-      instance.personalized = true;
-
-      instance.onAction({ type: at.PLACES_HISTORY_CLEARED });
-      assert.calledWith(instance.cache.set, "domainAffinities", {});
-      assert.isUndefined(instance.affinityProvider);
     });
   });
   describe("#pocket", () => {

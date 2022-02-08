@@ -17,381 +17,397 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsITrackingDBService"
 );
 
-var Fingerprinting = {
-  PREF_ENABLED: "privacy.trackingprotection.fingerprinting.enabled",
-  reportBreakageLabel: "fingerprinting",
-
-  strings: {
-    get subViewBlocked() {
-      delete this.subViewBlocked;
-      return (this.subViewBlocked = gNavigatorBundle.getString(
-        "contentBlocking.fingerprintersView.blocked.label"
-      ));
-    },
-
-    get subViewTitleBlocking() {
-      delete this.subViewTitleBlocking;
-      return (this.subViewTitleBlocking = gNavigatorBundle.getString(
-        "protections.blocking.fingerprinters.title"
-      ));
-    },
-
-    get subViewTitleNotBlocking() {
-      delete this.subViewTitleNotBlocking;
-      return (this.subViewTitleNotBlocking = gNavigatorBundle.getString(
-        "protections.notBlocking.fingerprinters.title"
-      ));
-    },
-  },
-
-  init() {
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "enabled",
-      this.PREF_ENABLED,
-      false,
-      this.updateCategoryItem.bind(this)
-    );
-  },
-
-  get categoryItem() {
-    let item = document.getElementById(
-      "protections-popup-category-fingerprinters"
-    );
-    if (item) {
-      delete this.categoryItem;
-      this.categoryItem = item;
+/**
+ * Represents a protection category shown in the protections UI. For the most
+ * common categories we can directly instantiate this category. Some protections
+ * categories inherit from this class and overwrite some of its members.
+ */
+class ProtectionCategory {
+  /**
+   * Creates a protection category.
+   * @param {string} id - Identifier of the category. Used to query the category
+   * UI elements in the DOM.
+   * @param {Object} options - Category options.
+   * @param {string} options.prefEnabled - ID of pref which controls the
+   * category enabled state.
+   * @param {string} [options.reportBreakageLabel] - Telemetry label to use when
+   * users report TP breakage. Defaults to protection ID.
+   * @param {string} [options.l10nId] - Identifier l10n strings are keyed under
+   * for this category. Defaults to protection ID.
+   * @param {Object} flags - Flags for this category to look for in the content
+   * blocking event and content blocking log.
+   * @param {Number} [flags.load] - Load flag for this protection category. If
+   * omitted, we will never match a isAllowing check for this category.
+   * @param {Number} [flags.block] - Block flag for this protection category. If
+   * omitted, we will never match a isBlocking check for this category.
+   * @param {Number} [flags.shim] - Shim flag for this protection category. This
+   * flag is set if we replaced tracking content with a non-tracking shim
+   * script.
+   * @param {Number} [flags.allow] - Allow flag for this protection category.
+   * This flag is set if we explicitly allow normally blocked tracking content.
+   * The webcompat extension can do this if it needs to unblock content on user
+   * opt-in.
+   */
+  constructor(
+    id,
+    { prefEnabled, reportBreakageLabel, l10nId },
+    {
+      load,
+      block,
+      shim = Ci.nsIWebProgressListener.STATE_REPLACED_TRACKING_CONTENT,
+      allow = Ci.nsIWebProgressListener.STATE_ALLOWED_TRACKING_CONTENT,
     }
-    return item;
-  },
+  ) {
+    this._id = id;
+    this.prefEnabled = prefEnabled;
+    this._reportBreakageLabel = reportBreakageLabel || id;
 
+    this._flags = { load, block, shim, allow };
+
+    if (
+      Services.prefs.getPrefType(this.prefEnabled) == Services.prefs.PREF_BOOL
+    ) {
+      XPCOMUtils.defineLazyPreferenceGetter(
+        this,
+        "_enabled",
+        this.prefEnabled,
+        false,
+        this.updateCategoryItem.bind(this)
+      );
+    }
+
+    l10nId = l10nId || id;
+    this.strings = {};
+    XPCOMUtils.defineLazyGetter(this.strings, "subViewBlocked", () =>
+      gNavigatorBundle.getString(`contentBlocking.${l10nId}View.blocked.label`)
+    );
+    XPCOMUtils.defineLazyGetter(this.strings, "subViewTitleBlocking", () =>
+      gNavigatorBundle.getString(`protections.blocking.${l10nId}.title`)
+    );
+    XPCOMUtils.defineLazyGetter(this.strings, "subViewTitleNotBlocking", () =>
+      gNavigatorBundle.getString(`protections.notBlocking.${l10nId}.title`)
+    );
+
+    XPCOMUtils.defineLazyGetter(this, "subView", () =>
+      document.getElementById(`protections-popup-${this._id}View`)
+    );
+
+    XPCOMUtils.defineLazyGetter(this, "subViewHeading", () =>
+      document.getElementById(`protections-popup-${this._id}View-heading`)
+    );
+
+    XPCOMUtils.defineLazyGetter(this, "subViewList", () =>
+      document.getElementById(`protections-popup-${this._id}View-list`)
+    );
+
+    XPCOMUtils.defineLazyGetter(this, "subViewShimAllowHint", () =>
+      document.getElementById(
+        `protections-popup-${this._id}View-shim-allow-hint`
+      )
+    );
+  }
+
+  // Child classes may override these to do init / teardown. We expect them to
+  // be called when the protections panel is initialized or destroyed.
+  init() {}
+  uninit() {}
+
+  // Some child classes may overide this getter.
+  get enabled() {
+    return this._enabled;
+  }
+
+  get reportBreakageLabel() {
+    return this._reportBreakageLabel;
+  }
+
+  /**
+   * Get the category item associated with this protection from the main
+   * protections panel.
+   * @returns {xul:toolbarbutton|undefined} - Item or undefined if the panel is
+   * not yet initialized.
+   */
+  get categoryItem() {
+    // We don't use defineLazyGetter for the category item, since it may be null
+    // on first access.
+    return (
+      this._categoryItem ||
+      (this._categoryItem = document.getElementById(
+        `protections-popup-category-${this._id}`
+      ))
+    );
+  }
+
+  /**
+   * Defaults to enabled state. May be overridden by child classes.
+   * @returns {boolean} - Whether the protection is set to block trackers.
+   */
+  get blockingEnabled() {
+    return this.enabled;
+  }
+
+  /**
+   * Update the category item state in the main view of the protections panel.
+   * Determines whether the category is set to block trackers.
+   * @returns {boolean} - true if the state has been updated, false if the
+   * protections popup has not been initialized yet.
+   */
   updateCategoryItem() {
     // Can't get `this.categoryItem` without the popup. Using the popup instead
     // of `this.categoryItem` to guard access, because the category item getter
     // can trigger bug 1543537. If there's no popup, we'll be called again the
     // first time the popup shows.
-    if (gProtectionsHandler._protectionsPopup) {
-      this.categoryItem.classList.toggle("blocked", this.enabled);
+    if (!gProtectionsHandler._protectionsPopup) {
+      return false;
     }
-  },
+    this.categoryItem.classList.toggle("blocked", this.enabled);
+    return true;
+  }
 
-  get subView() {
-    delete this.subView;
-    return (this.subView = document.getElementById(
-      "protections-popup-fingerprintersView"
-    ));
-  },
-
-  get subViewList() {
-    delete this.subViewList;
-    return (this.subViewList = document.getElementById(
-      "protections-popup-fingerprintersView-list"
-    ));
-  },
-
-  isBlocking(state) {
-    return (
-      (state &
-        Ci.nsIWebProgressListener.STATE_BLOCKED_FINGERPRINTING_CONTENT) !=
-      0
-    );
-  },
-
-  isAllowing(state) {
-    return (
-      (state & Ci.nsIWebProgressListener.STATE_LOADED_FINGERPRINTING_CONTENT) !=
-      0
-    );
-  },
-
-  isDetected(state) {
-    return this.isBlocking(state) || this.isAllowing(state);
-  },
-
-  updateSubView() {
-    let contentBlockingLog = gBrowser.selectedBrowser.getContentBlockingLog();
-    contentBlockingLog = JSON.parse(contentBlockingLog);
-
-    let fragment = document.createDocumentFragment();
-    for (let [origin, actions] of Object.entries(contentBlockingLog)) {
-      let listItem = this._createListItem(origin, actions);
-      if (listItem) {
-        fragment.appendChild(listItem);
-      }
-    }
+  /**
+   * Update the category sub view that is shown when users click on the category
+   * button.
+   */
+  async updateSubView() {
+    let { items, anyShimAllowed } = await this._generateSubViewListItems();
+    this.subViewShimAllowHint.hidden = !anyShimAllowed;
 
     this.subViewList.textContent = "";
-    this.subViewList.append(fragment);
+    this.subViewList.append(items);
     this.subView.setAttribute(
       "title",
-      this.enabled && !gProtectionsHandler.hasException
+      this.blockingEnabled && !gProtectionsHandler.hasException
         ? this.strings.subViewTitleBlocking
         : this.strings.subViewTitleNotBlocking
     );
-  },
+  }
 
+  /**
+   * Create a list of items, each representing a tracker.
+   * @returns {Object} result - An object containing the results.
+   * @returns {HTMLDivElement[]} result.items - Generated tracker items. May be
+   * empty.
+   * @returns {boolean} result.anyShimAllowed - Flag indicating if any of the
+   * items have been unblocked by a shim script.
+   */
+  async _generateSubViewListItems() {
+    let contentBlockingLog = gBrowser.selectedBrowser.getContentBlockingLog();
+    contentBlockingLog = JSON.parse(contentBlockingLog);
+    let anyShimAllowed = false;
+
+    let fragment = document.createDocumentFragment();
+    for (let [origin, actions] of Object.entries(contentBlockingLog)) {
+      let { item, shimAllowed } = await this._createListItem(origin, actions);
+      if (!item) {
+        continue;
+      }
+      anyShimAllowed = anyShimAllowed || shimAllowed;
+      fragment.appendChild(item);
+    }
+
+    return {
+      items: fragment,
+      anyShimAllowed,
+    };
+  }
+
+  /**
+   * Create a DOM item representing a tracker.
+   * @param {string} origin - Origin of the tracker.
+   * @param {Array} actions - Array of actions from the content blocking log
+   * associated with the tracking origin.
+   * @returns {Object} result - An object containing the results.
+   * @returns {HTMLDListElement} [options.item] - Generated item or null if we
+   * don't have an item for this origin based on the actions log.
+   * @returns {boolean} options.shimAllowed - Flag indicating whether the
+   * tracking origin was allowed by a shim script.
+   */
   _createListItem(origin, actions) {
-    let isAllowed = actions.some(([state]) => this.isAllowing(state));
+    let isAllowed = actions.some(
+      ([state]) => this.isAllowing(state) && !this.isShimming(state)
+    );
     let isDetected =
       isAllowed || actions.some(([state]) => this.isBlocking(state));
 
     if (!isDetected) {
-      return null;
+      return {};
     }
 
-    let listItem = document.createXULElement("hbox");
+    // Create an item to hold the origin label and shim allow indicator. Using
+    // an html element here, so we can use CSS flex rather than -moz-box, which
+    // handles the label overflow in combination with the icon correctly.
+    let listItem = document.createElementNS(
+      "http://www.w3.org/1999/xhtml",
+      "div"
+    );
     listItem.className = "protections-popup-list-item";
     listItem.classList.toggle("allowed", isAllowed);
-    // Repeat the host in the tooltip in case it's too long
-    // and overflows in our panel.
-    listItem.tooltipText = origin;
 
     let label = document.createXULElement("label");
+    // Repeat the host in the tooltip in case it's too long
+    // and overflows in our panel.
+    label.tooltipText = origin;
     label.value = origin;
     label.className = "protections-popup-list-host-label";
     label.setAttribute("crop", "end");
     listItem.append(label);
 
-    return listItem;
-  },
-};
-
-var Cryptomining = {
-  PREF_ENABLED: "privacy.trackingprotection.cryptomining.enabled",
-  reportBreakageLabel: "cryptomining",
-
-  strings: {
-    get subViewBlocked() {
-      delete this.subViewBlocked;
-      return (this.subViewBlocked = gNavigatorBundle.getString(
-        "contentBlocking.cryptominersView.blocked.label"
-      ));
-    },
-
-    get subViewTitleBlocking() {
-      delete this.subViewTitleBlocking;
-      return (this.subViewTitleBlocking = gNavigatorBundle.getString(
-        "protections.blocking.cryptominers.title"
-      ));
-    },
-
-    get subViewTitleNotBlocking() {
-      delete this.subViewTitleNotBlocking;
-      return (this.subViewTitleNotBlocking = gNavigatorBundle.getString(
-        "protections.notBlocking.cryptominers.title"
-      ));
-    },
-  },
-
-  init() {
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "enabled",
-      this.PREF_ENABLED,
-      false,
-      this.updateCategoryItem.bind(this)
-    );
-  },
-
-  get categoryItem() {
-    let item = document.getElementById(
-      "protections-popup-category-cryptominers"
-    );
-    if (item) {
-      delete this.categoryItem;
-      this.categoryItem = item;
+    // Determine whether we should show a shim-allow indicator for this item.
+    let shimAllowed = actions.some(([flag]) => flag == this._flags.allow);
+    if (shimAllowed) {
+      listItem.append(this._getShimAllowIndicator());
     }
-    return item;
-  },
 
-  updateCategoryItem() {
-    // Can't get `this.categoryItem` without the popup. Using the popup instead
-    // of `this.categoryItem` to guard access, because the category item getter
-    // can trigger bug 1543537. If there's no popup, we'll be called again the
-    // first time the popup shows.
-    if (gProtectionsHandler._protectionsPopup) {
-      this.categoryItem.classList.toggle("blocked", this.enabled);
-    }
-  },
+    return { item: listItem, shimAllowed };
+  }
 
-  get subView() {
-    delete this.subView;
-    return (this.subView = document.getElementById(
-      "protections-popup-cryptominersView"
-    ));
-  },
+  /**
+   * Create an indicator icon for marking origins that have been allowed by a
+   * shim script.
+   * @returns {HTMLImageElement} - Created element.
+   */
+  _getShimAllowIndicator() {
+    let allowIndicator = document.createXULElement("image");
+    document.l10n.setAttributes(
+      allowIndicator,
+      "protections-panel-shim-allowed-indicator"
+    );
+    allowIndicator.tooltipText = this.strings.subViewShimAllowedTooltip;
+    allowIndicator.classList.add(
+      "protections-popup-list-host-shim-allow-indicator"
+    );
+    return allowIndicator;
+  }
 
-  get subViewList() {
-    delete this.subViewList;
-    return (this.subViewList = document.getElementById(
-      "protections-popup-cryptominersView-list"
-    ));
-  },
-
+  /**
+   * @param {Number} state - Content blocking event flags.
+   * @returns {boolean} - Whether the protection has blocked a tracker.
+   */
   isBlocking(state) {
-    return (
-      (state & Ci.nsIWebProgressListener.STATE_BLOCKED_CRYPTOMINING_CONTENT) !=
-      0
-    );
-  },
+    return (state & this._flags.block) != 0;
+  }
 
+  /**
+   * @param {Number} state - Content blocking event flags.
+   * @returns {boolean} - Whether the protection has allowed a tracker.
+   */
   isAllowing(state) {
-    return (
-      (state & Ci.nsIWebProgressListener.STATE_LOADED_CRYPTOMINING_CONTENT) != 0
-    );
-  },
+    return (state & this._flags.load) != 0;
+  }
 
+  /**
+   * @param {Number} state - Content blocking event flags.
+   * @returns {boolean} - Whether the protection has detected (blocked or
+   * allowed) a tracker.
+   */
   isDetected(state) {
     return this.isBlocking(state) || this.isAllowing(state);
+  }
+
+  /**
+   * @param {Number} state - Content blocking event flags.
+   * @returns {boolean} - Whether the protections has allowed a tracker that
+   * would have normally been blocked.
+   */
+  isShimming(state) {
+    return (state & this._flags.shim) != 0 && this.isAllowing(state);
+  }
+}
+
+let Fingerprinting = new ProtectionCategory(
+  "fingerprinters",
+  {
+    prefEnabled: "privacy.trackingprotection.fingerprinting.enabled",
+    reportBreakageLabel: "fingerprinting",
   },
+  {
+    load: Ci.nsIWebProgressListener.STATE_LOADED_FINGERPRINTING_CONTENT,
+    block: Ci.nsIWebProgressListener.STATE_BLOCKED_FINGERPRINTING_CONTENT,
+  }
+);
 
-  updateSubView() {
-    let contentBlockingLog = gBrowser.selectedBrowser.getContentBlockingLog();
-    contentBlockingLog = JSON.parse(contentBlockingLog);
+let Cryptomining = new ProtectionCategory(
+  "cryptominers",
+  {
+    prefEnabled: "privacy.trackingprotection.cryptomining.enabled",
+    reportBreakageLabel: "cryptomining",
+  },
+  {
+    load: Ci.nsIWebProgressListener.STATE_LOADED_CRYPTOMINING_CONTENT,
+    block: Ci.nsIWebProgressListener.STATE_BLOCKED_CRYPTOMINING_CONTENT,
+  }
+);
 
-    let fragment = document.createDocumentFragment();
-    for (let [origin, actions] of Object.entries(contentBlockingLog)) {
-      let listItem = this._createListItem(origin, actions);
-      if (listItem) {
-        fragment.appendChild(listItem);
+let TrackingProtection = new (class TrackingProtection extends ProtectionCategory {
+  constructor() {
+    super(
+      "trackers",
+      {
+        l10nId: "trackingContent",
+        prefEnabled: "privacy.trackingprotection.enabled",
+        reportBreakageLabel: "trackingprotection",
+      },
+      {
+        load: null,
+        block: Ci.nsIWebProgressListener.STATE_BLOCKED_TRACKING_CONTENT,
       }
-    }
-
-    this.subViewList.textContent = "";
-    this.subViewList.append(fragment);
-    this.subView.setAttribute(
-      "title",
-      this.enabled && !gProtectionsHandler.hasException
-        ? this.strings.subViewTitleBlocking
-        : this.strings.subViewTitleNotBlocking
     );
-  },
 
-  _createListItem(origin, actions) {
-    let isAllowed = actions.some(([state]) => this.isAllowing(state));
-    let isDetected =
-      isAllowed || actions.some(([state]) => this.isBlocking(state));
-
-    if (!isDetected) {
-      return null;
-    }
-
-    let listItem = document.createXULElement("hbox");
-    listItem.className = "protections-popup-list-item";
-    listItem.classList.toggle("allowed", isAllowed);
-    // Repeat the host in the tooltip in case it's too long
-    // and overflows in our panel.
-    listItem.tooltipText = origin;
-
-    let label = document.createXULElement("label");
-    label.value = origin;
-    label.className = "protections-popup-list-host-label";
-    label.setAttribute("crop", "end");
-    listItem.append(label);
-
-    return listItem;
-  },
-};
-
-var TrackingProtection = {
-  reportBreakageLabel: "trackingprotection",
-  PREF_ENABLED_GLOBALLY: "privacy.trackingprotection.enabled",
-  PREF_ENABLED_IN_PRIVATE_WINDOWS: "privacy.trackingprotection.pbmode.enabled",
-  PREF_TRACKING_TABLE: "urlclassifier.trackingTable",
-  PREF_TRACKING_ANNOTATION_TABLE: "urlclassifier.trackingAnnotationTable",
-  PREF_ANNOTATIONS_LEVEL_2_ENABLED:
-    "privacy.annotate_channels.strict_list.enabled",
-  enabledGlobally: false,
-  enabledInPrivateWindows: false,
-
-  get categoryItem() {
-    let item = document.getElementById(
-      "protections-popup-category-tracking-protection"
+    // Blocked label has custom key, overwrite the getter.
+    XPCOMUtils.defineLazyGetter(this.strings, "subViewBlocked", () =>
+      gNavigatorBundle.getString("contentBlocking.trackersView.blocked.label")
     );
-    if (item) {
-      delete this.categoryItem;
-      this.categoryItem = item;
-    }
-    return item;
-  },
 
-  get subView() {
-    delete this.subView;
-    return (this.subView = document.getElementById(
-      "protections-popup-trackersView"
-    ));
-  },
-
-  get subViewList() {
-    delete this.subViewList;
-    return (this.subViewList = document.getElementById(
-      "protections-popup-trackersView-list"
-    ));
-  },
-
-  strings: {
-    get subViewBlocked() {
-      delete this.subViewBlocked;
-      return (this.subViewBlocked = gNavigatorBundle.getString(
-        "contentBlocking.trackersView.blocked.label"
-      ));
-    },
-
-    get subViewTitleBlocking() {
-      delete this.subViewTitleBlocking;
-      return (this.subViewTitleBlocking = gNavigatorBundle.getString(
-        "protections.blocking.trackingContent.title"
-      ));
-    },
-
-    get subViewTitleNotBlocking() {
-      delete this.subViewTitleNotBlocking;
-      return (this.subViewTitleNotBlocking = gNavigatorBundle.getString(
-        "protections.notBlocking.trackingContent.title"
-      ));
-    },
-  },
-
-  init() {
-    this.updateEnabled();
-
-    Services.prefs.addObserver(this.PREF_ENABLED_GLOBALLY, this);
-    Services.prefs.addObserver(this.PREF_ENABLED_IN_PRIVATE_WINDOWS, this);
+    this.prefEnabledInPrivateWindows =
+      "privacy.trackingprotection.pbmode.enabled";
+    this.prefTrackingTable = "urlclassifier.trackingTable";
+    this.prefTrackingAnnotationTable = "urlclassifier.trackingAnnotationTable";
+    this.prefAnnotationsLevel2Enabled =
+      "privacy.annotate_channels.strict_list.enabled";
+    this.enabledGlobally = false;
+    this.enabledInPrivateWindows = false;
 
     XPCOMUtils.defineLazyPreferenceGetter(
       this,
       "trackingTable",
-      this.PREF_TRACKING_TABLE,
-      false
+      this.prefTrackingTable,
+      ""
     );
     XPCOMUtils.defineLazyPreferenceGetter(
       this,
       "trackingAnnotationTable",
-      this.PREF_TRACKING_ANNOTATION_TABLE,
-      false
+      this.prefTrackingAnnotationTable,
+      ""
     );
     XPCOMUtils.defineLazyPreferenceGetter(
       this,
       "annotationsLevel2Enabled",
-      this.PREF_ANNOTATIONS_LEVEL_2_ENABLED,
+      this.prefAnnotationsLevel2Enabled,
       false
     );
-  },
+  }
+
+  init() {
+    this.updateEnabled();
+
+    Services.prefs.addObserver(this.prefEnabled, this);
+    Services.prefs.addObserver(this.prefEnabledInPrivateWindows, this);
+  }
 
   uninit() {
-    Services.prefs.removeObserver(this.PREF_ENABLED_GLOBALLY, this);
-    Services.prefs.removeObserver(this.PREF_ENABLED_IN_PRIVATE_WINDOWS, this);
-  },
+    Services.prefs.removeObserver(this.prefEnabled, this);
+    Services.prefs.removeObserver(this.prefEnabledInPrivateWindows, this);
+  }
 
   observe() {
     this.updateEnabled();
     this.updateCategoryItem();
-  },
+  }
 
   get trackingProtectionLevel2Enabled() {
     const CONTENT_TABLE = "content-track-digest256";
     return this.trackingTable.includes(CONTENT_TABLE);
-  },
+  }
 
   get enabled() {
     return (
@@ -399,28 +415,14 @@ var TrackingProtection = {
       (this.enabledInPrivateWindows &&
         PrivateBrowsingUtils.isWindowPrivate(window))
     );
-  },
+  }
 
   updateEnabled() {
-    this.enabledGlobally = Services.prefs.getBoolPref(
-      this.PREF_ENABLED_GLOBALLY
-    );
+    this.enabledGlobally = Services.prefs.getBoolPref(this.prefEnabled);
     this.enabledInPrivateWindows = Services.prefs.getBoolPref(
-      this.PREF_ENABLED_IN_PRIVATE_WINDOWS
+      this.prefEnabledInPrivateWindows
     );
-  },
-
-  updateCategoryItem() {
-    if (this.categoryItem) {
-      this.categoryItem.classList.toggle("blocked", this.enabled);
-    }
-  },
-
-  isBlocking(state) {
-    return (
-      (state & Ci.nsIWebProgressListener.STATE_BLOCKED_TRACKING_CONTENT) != 0
-    );
-  },
+  }
 
   isAllowingLevel1(state) {
     return (
@@ -428,7 +430,7 @@ var TrackingProtection = {
         Ci.nsIWebProgressListener.STATE_LOADED_LEVEL_1_TRACKING_CONTENT) !=
       0
     );
-  },
+  }
 
   isAllowingLevel2(state) {
     return (
@@ -436,30 +438,17 @@ var TrackingProtection = {
         Ci.nsIWebProgressListener.STATE_LOADED_LEVEL_2_TRACKING_CONTENT) !=
       0
     );
-  },
+  }
 
   isAllowing(state) {
     return this.isAllowingLevel1(state) || this.isAllowingLevel2(state);
-  },
-
-  isDetected(state) {
-    return this.isBlocking(state) || this.isAllowing(state);
-  },
+  }
 
   async updateSubView() {
     let previousURI = gBrowser.currentURI.spec;
     let previousWindow = gBrowser.selectedBrowser.innerWindowID;
 
-    let contentBlockingLog = gBrowser.selectedBrowser.getContentBlockingLog();
-    contentBlockingLog = JSON.parse(contentBlockingLog);
-
-    let fragment = document.createDocumentFragment();
-    for (let [origin, actions] of Object.entries(contentBlockingLog)) {
-      let listItem = await this._createListItem(origin, actions);
-      if (listItem) {
-        fragment.appendChild(listItem);
-      }
-    }
+    let { items, anyShimAllowed } = await this._generateSubViewListItems();
 
     // If we don't have trackers we would usually not show the menu item
     // allowing the user to show the sub-panel. However, in the edge case
@@ -467,11 +456,11 @@ var TrackingProtection = {
     // not detect trackers on the page using the basic list, we currently
     // still show the panel. To reduce the confusion, tell the user that we have
     // not detected any tracker.
-    if (!fragment.childNodes.length) {
+    if (!items.childNodes.length) {
       let emptyBox = document.createXULElement("vbox");
       let emptyImage = document.createXULElement("image");
       emptyImage.classList.add("protections-popup-trackersView-empty-image");
-      emptyImage.classList.add("tracking-protection-icon");
+      emptyImage.classList.add("trackers-icon");
 
       let emptyLabel = document.createXULElement("label");
       emptyLabel.classList.add("protections-popup-empty-label");
@@ -481,7 +470,7 @@ var TrackingProtection = {
 
       emptyBox.appendChild(emptyImage);
       emptyBox.appendChild(emptyLabel);
-      fragment.appendChild(emptyBox);
+      items.appendChild(emptyBox);
 
       this.subViewList.classList.add("empty");
     } else {
@@ -493,8 +482,10 @@ var TrackingProtection = {
       previousURI == gBrowser.currentURI.spec &&
       previousWindow == gBrowser.selectedBrowser.innerWindowID
     ) {
+      this.subViewShimAllowHint.hidden = !anyShimAllowed;
+
       this.subViewList.textContent = "";
-      this.subViewList.append(fragment);
+      this.subViewList.append(items);
       this.subView.setAttribute(
         "title",
         this.enabled && !gProtectionsHandler.hasException
@@ -502,16 +493,18 @@ var TrackingProtection = {
           : this.strings.subViewTitleNotBlocking
       );
     }
-  },
+  }
 
   async _createListItem(origin, actions) {
     // Figure out if this list entry was actually detected by TP or something else.
-    let isAllowed = actions.some(([state]) => this.isAllowing(state));
+    let isAllowed = actions.some(
+      ([state]) => this.isAllowing(state) && !this.isShimming(state)
+    );
     let isDetected =
       isAllowed || actions.some(([state]) => this.isBlocking(state));
 
     if (!isDetected) {
-      return null;
+      return {};
     }
 
     // Because we might use different lists for annotation vs. blocking, we
@@ -527,89 +520,86 @@ var TrackingProtection = {
           0
       )
     ) {
-      return null;
+      return {};
     }
 
-    let listItem = document.createXULElement("hbox");
+    let listItem = document.createElementNS(
+      "http://www.w3.org/1999/xhtml",
+      "div"
+    );
     listItem.className = "protections-popup-list-item";
     listItem.classList.toggle("allowed", isAllowed);
-    // Repeat the host in the tooltip in case it's too long
-    // and overflows in our panel.
-    listItem.tooltipText = origin;
 
     let label = document.createXULElement("label");
+    // Repeat the host in the tooltip in case it's too long
+    // and overflows in our panel.
+    label.tooltipText = origin;
     label.value = origin;
     label.className = "protections-popup-list-host-label";
     label.setAttribute("crop", "end");
     listItem.append(label);
 
-    return listItem;
-  },
-};
-
-var ThirdPartyCookies = {
-  PREF_ENABLED: "network.cookie.cookieBehavior",
-  PREF_ENABLED_VALUES: [
-    // These values match the ones exposed under the Content Blocking section
-    // of the Preferences UI.
-    Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN, // Block all third-party cookies
-    Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER, // Block third-party cookies from trackers
-    Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN, // Block trackers and patition third-party trackers
-    Ci.nsICookieService.BEHAVIOR_REJECT, // Block all cookies
-  ],
-
-  get categoryItem() {
-    let item = document.getElementById("protections-popup-category-cookies");
-    if (item) {
-      delete this.categoryItem;
-      this.categoryItem = item;
+    let shimAllowed = actions.some(([flag]) => flag == this._flags.allow);
+    if (shimAllowed) {
+      listItem.append(this._getShimAllowIndicator());
     }
-    return item;
-  },
 
-  get subView() {
-    delete this.subView;
-    return (this.subView = document.getElementById(
-      "protections-popup-cookiesView"
-    ));
-  },
+    return { item: listItem, shimAllowed };
+  }
+})();
 
-  get subViewHeading() {
-    delete this.subViewHeading;
-    return (this.subViewHeading = document.getElementById(
-      "protections-popup-cookiesView-heading"
-    ));
-  },
+let ThirdPartyCookies = new (class ThirdPartyCookies extends ProtectionCategory {
+  constructor() {
+    super(
+      "cookies",
+      {
+        // This would normally expect a boolean pref. However, this category
+        // overwrites the enabled getter for custom handling of cookie behavior
+        // states.
+        prefEnabled: "network.cookie.cookieBehavior",
+      },
+      {
+        // ThirdPartyCookies implements custom flag processing.
+        allow: null,
+        shim: null,
+        load: null,
+        block: null,
+      }
+    );
 
-  get subViewList() {
-    delete this.subViewList;
-    return (this.subViewList = document.getElementById(
-      "protections-popup-cookiesView-list"
-    ));
-  },
+    XPCOMUtils.defineLazyGetter(this, "categoryLabel", () =>
+      document.getElementById("protections-popup-cookies-category-label")
+    );
 
-  strings: {
-    get subViewAllowed() {
-      delete this.subViewAllowed;
-      return (this.subViewAllowed = gNavigatorBundle.getString(
-        "contentBlocking.cookiesView.allowed.label"
-      ));
-    },
-
-    get subViewBlocked() {
-      delete this.subViewAllowed;
-      return (this.subViewAllowed = gNavigatorBundle.getString(
-        "contentBlocking.cookiesView.blocked.label"
-      ));
-    },
-
-    get subViewTitleNotBlocking() {
-      delete this.subViewTitleNotBlocking;
-      return (this.subViewTitleNotBlocking = gNavigatorBundle.getString(
+    // Not blocking title has custom key, overwrite the getter.
+    XPCOMUtils.defineLazyGetter(this.strings, "subViewTitleNotBlocking", () =>
+      gNavigatorBundle.getString(
         "protections.notBlocking.crossSiteTrackingCookies.title"
-      ));
-    },
-  },
+      )
+    );
+
+    // Cookie permission state label.
+    XPCOMUtils.defineLazyGetter(this.strings, "subViewAllowed", () =>
+      gNavigatorBundle.getString("contentBlocking.cookiesView.allowed.label")
+    );
+
+    this.prefEnabledValues = [
+      // These values match the ones exposed under the Content Blocking section
+      // of the Preferences UI.
+      Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN, // Block all third-party cookies
+      Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER, // Block third-party cookies from trackers
+      Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN, // Block trackers and patition third-party trackers
+      Ci.nsICookieService.BEHAVIOR_REJECT, // Block all cookies
+    ];
+
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "behaviorPref",
+      this.prefEnabled,
+      Ci.nsICookieService.BEHAVIOR_ACCEPT,
+      this.updateCategoryItem.bind(this)
+    );
+  }
 
   get reportBreakageLabel() {
     switch (this.behaviorPref) {
@@ -631,35 +621,50 @@ var ThirdPartyCookies = {
       case Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN:
         return "cookierestrictionsforeignpartitioned";
     }
-  },
+  }
 
-  init() {
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "behaviorPref",
-      this.PREF_ENABLED,
-      Ci.nsICookieService.BEHAVIOR_ACCEPT,
-      this.updateCategoryItem.bind(this)
+  isBlocking(state) {
+    return (
+      (state & Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_TRACKER) != 0 ||
+      (state & Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_SOCIALTRACKER) !=
+        0 ||
+      (state & Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_ALL) != 0 ||
+      (state & Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_BY_PERMISSION) !=
+        0 ||
+      (state & Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_FOREIGN) != 0
     );
-  },
+  }
 
-  get categoryLabel() {
-    delete this.categoryLabel;
-    return (this.categoryLabel = document.getElementById(
-      "protections-popup-cookies-category-label"
-    ));
-  },
+  isDetected(state) {
+    if (this.isBlocking(state)) {
+      return true;
+    }
+
+    if (
+      [
+        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
+        Ci.nsICookieService.BEHAVIOR_ACCEPT,
+      ].includes(this.behaviorPref)
+    ) {
+      return (
+        (state & Ci.nsIWebProgressListener.STATE_COOKIES_LOADED_TRACKER) != 0 ||
+        (SocialTracking.enabled &&
+          (state &
+            Ci.nsIWebProgressListener.STATE_COOKIES_LOADED_SOCIALTRACKER) !=
+            0)
+      );
+    }
+
+    // We don't have specific flags for the other cookie behaviors so just
+    // fall back to STATE_COOKIES_LOADED.
+    return (state & Ci.nsIWebProgressListener.STATE_COOKIES_LOADED) != 0;
+  }
 
   updateCategoryItem() {
-    // Can't get `this.categoryItem` without the popup. Using the popup instead
-    // of `this.categoryItem` to guard access, because the category item getter
-    // can trigger bug 1543537. If there's no popup, we'll be called again the
-    // first time the popup shows.
-    if (!gProtectionsHandler._protectionsPopup) {
+    if (!super.updateCategoryItem()) {
       return;
     }
-    this.categoryItem.classList.toggle("blocked", this.enabled);
-
     let label;
 
     if (!this.enabled) {
@@ -689,49 +694,11 @@ var ThirdPartyCookies = {
     this.categoryLabel.textContent = label
       ? gNavigatorBundle.getString(label)
       : "";
-  },
+  }
 
   get enabled() {
-    return this.PREF_ENABLED_VALUES.includes(this.behaviorPref);
-  },
-
-  isBlocking(state) {
-    return (
-      (state & Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_TRACKER) != 0 ||
-      (state & Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_SOCIALTRACKER) !=
-        0 ||
-      (state & Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_ALL) != 0 ||
-      (state & Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_BY_PERMISSION) !=
-        0 ||
-      (state & Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_FOREIGN) != 0
-    );
-  },
-
-  isDetected(state) {
-    if (this.isBlocking(state)) {
-      return true;
-    }
-
-    if (
-      [
-        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
-        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
-        Ci.nsICookieService.BEHAVIOR_ACCEPT,
-      ].includes(this.behaviorPref)
-    ) {
-      return (
-        (state & Ci.nsIWebProgressListener.STATE_COOKIES_LOADED_TRACKER) != 0 ||
-        (SocialTracking.enabled &&
-          (state &
-            Ci.nsIWebProgressListener.STATE_COOKIES_LOADED_SOCIALTRACKER) !=
-            0)
-      );
-    }
-
-    // We don't have specific flags for the other cookie behaviors so just
-    // fall back to STATE_COOKIES_LOADED.
-    return (state & Ci.nsIWebProgressListener.STATE_COOKIES_LOADED) != 0;
-  },
+    return this.prefEnabledValues.includes(this.behaviorPref);
+  }
 
   updateSubView() {
     let contentBlockingLog = gBrowser.selectedBrowser.getContentBlockingLog();
@@ -813,15 +780,16 @@ var ThirdPartyCookies = {
     }
 
     this.subView.setAttribute("title", gNavigatorBundle.getString(title));
-  },
+  }
 
   _getExceptionState(origin) {
-    for (let perm of Services.perms.getAllForPrincipal(
-      gBrowser.contentPrincipal
-    )) {
-      if (perm.type == "3rdPartyStorage^" + origin) {
-        return perm.capability;
-      }
+    let thirdPartyStorage = Services.perms.testPermissionFromPrincipal(
+      gBrowser.contentPrincipal,
+      "3rdPartyStorage^" + origin
+    );
+
+    if (thirdPartyStorage != Services.perms.UNKNOWN_ACTION) {
+      return thirdPartyStorage;
     }
 
     let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
@@ -830,7 +798,7 @@ var ThirdPartyCookies = {
     // Cookie exceptions get "inherited" from parent- to sub-domain, so we need to
     // make sure to include parent domains in the permission check for "cookie".
     return Services.perms.testPermissionFromPrincipal(principal, "cookie");
-  },
+  }
 
   _clearException(origin) {
     for (let perm of Services.perms.getAllForPrincipal(
@@ -854,7 +822,7 @@ var ThirdPartyCookies = {
         Services.perms.removePermission(perm);
       }
     }
-  },
+  }
 
   // Transforms and filters cookie entries in the content blocking log
   // so that we can categorize and display them in the UI.
@@ -938,10 +906,13 @@ var ThirdPartyCookies = {
     }
 
     return newLog;
-  },
+  }
 
   _createListItem({ origin, isAllowed, exceptionState }) {
-    let listItem = document.createXULElement("hbox");
+    let listItem = document.createElementNS(
+      "http://www.w3.org/1999/xhtml",
+      "div"
+    );
     listItem.className = "protections-popup-list-item";
     // Repeat the origin in the tooltip in case it's too long
     // and overflows in our panel.
@@ -957,31 +928,29 @@ var ThirdPartyCookies = {
       (isAllowed && exceptionState == Services.perms.ALLOW_ACTION) ||
       (!isAllowed && exceptionState == Services.perms.DENY_ACTION)
     ) {
-      let stateLabel;
+      listItem.classList.add("protections-popup-list-item-with-state");
+
+      let stateLabel = document.createXULElement("label");
+      stateLabel.className = "protections-popup-list-state-label";
       if (isAllowed) {
-        stateLabel = document.createXULElement("label");
         stateLabel.value = this.strings.subViewAllowed;
-        stateLabel.className = "protections-popup-list-state-label";
-        listItem.append(stateLabel);
         listItem.classList.toggle("allowed", true);
       } else {
-        stateLabel = document.createXULElement("label");
         stateLabel.value = this.strings.subViewBlocked;
-        stateLabel.className = "protections-popup-list-state-label";
-        listItem.append(stateLabel);
       }
 
       let removeException = document.createXULElement("button");
-      removeException.className = "identity-popup-permission-remove-button";
+      removeException.className = "permission-popup-permission-remove-button";
       removeException.tooltipText = gNavigatorBundle.getFormattedString(
         "contentBlocking.cookiesView.removeButton.tooltip",
         [origin]
       );
+      removeException.appendChild(stateLabel);
+
       removeException.addEventListener(
         "click",
         () => {
           this._clearException(origin);
-          stateLabel.remove();
           removeException.remove();
           listItem.classList.toggle("allowed", !isAllowed);
         },
@@ -991,51 +960,40 @@ var ThirdPartyCookies = {
     }
 
     return listItem;
-  },
-};
+  }
+})();
 
-var SocialTracking = {
-  PREF_STP_TP_ENABLED: "privacy.trackingprotection.socialtracking.enabled",
-  PREF_STP_COOKIE_ENABLED: "privacy.socialtracking.block_cookies.enabled",
-  PREF_COOKIE_BEHAVIOR: "network.cookie.cookieBehavior",
-  reportBreakageLabel: "socialtracking",
+let SocialTracking = new (class SocialTrackingProtection extends ProtectionCategory {
+  constructor() {
+    super(
+      "socialblock",
+      {
+        l10nId: "socialMediaTrackers",
+        prefEnabled: "privacy.socialtracking.block_cookies.enabled",
+        reportBreakageLabel: "socialtracking",
+      },
+      {
+        load: Ci.nsIWebProgressListener.STATE_LOADED_SOCIALTRACKING_CONTENT,
+        block: Ci.nsIWebProgressListener.STATE_BLOCKED_SOCIALTRACKING_CONTENT,
+      }
+    );
 
-  strings: {
-    get subViewBlocked() {
-      delete this.subViewBlocked;
-      return (this.subViewBlocked = gNavigatorBundle.getString(
-        "contentBlocking.fingerprintersView.blocked.label"
-      ));
-    },
+    this.prefStpTpEnabled = "privacy.trackingprotection.socialtracking.enabled";
+    this.prefSTPCookieEnabled = this.prefEnabled;
+    this.prefCookieBehavior = "network.cookie.cookieBehavior";
 
-    get subViewTitleBlocking() {
-      delete this.subViewTitleBlocking;
-      return (this.subViewTitleBlocking = gNavigatorBundle.getString(
-        "protections.blocking.socialMediaTrackers.title"
-      ));
-    },
-
-    get subViewTitleNotBlocking() {
-      delete this.subViewTitleNotBlocking;
-      return (this.subViewTitleNotBlocking = gNavigatorBundle.getString(
-        "protections.notBlocking.socialMediaTrackers.title"
-      ));
-    },
-  },
-
-  init() {
     XPCOMUtils.defineLazyPreferenceGetter(
       this,
       "socialTrackingProtectionEnabled",
-      this.PREF_STP_TP_ENABLED,
+      this.prefStpTpEnabled,
       false,
       this.updateCategoryItem.bind(this)
     );
     XPCOMUtils.defineLazyPreferenceGetter(
       this,
       "rejectTrackingCookies",
-      this.PREF_COOKIE_BEHAVIOR,
-      false,
+      this.prefCookieBehavior,
+      null,
       this.updateCategoryItem.bind(this),
       val =>
         [
@@ -1043,21 +1001,36 @@ var SocialTracking = {
           Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
         ].includes(val)
     );
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "enabled",
-      this.PREF_STP_COOKIE_ENABLED,
-      false,
-      this.updateCategoryItem.bind(this)
-    );
-  },
+  }
 
   get blockingEnabled() {
     return (
       (this.socialTrackingProtectionEnabled || this.rejectTrackingCookies) &&
       this.enabled
     );
-  },
+  }
+
+  isBlockingCookies(state) {
+    return (
+      (state & Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_SOCIALTRACKER) !=
+      0
+    );
+  }
+
+  isBlocking(state) {
+    return super.isBlocking(state) || this.isBlockingCookies(state);
+  }
+
+  isAllowing(state) {
+    if (this.socialTrackingProtectionEnabled) {
+      return super.isAllowing(state);
+    }
+
+    return (
+      (state & Ci.nsIWebProgressListener.STATE_COOKIES_LOADED_SOCIALTRACKER) !=
+      0
+    );
+  }
 
   updateCategoryItem() {
     // Can't get `this.categoryItem` without the popup. Using the popup instead
@@ -1073,110 +1046,8 @@ var SocialTracking = {
       this.categoryItem.setAttribute("uidisabled", true);
     }
     this.categoryItem.classList.toggle("blocked", this.blockingEnabled);
-  },
-
-  isBlocking(state) {
-    let socialtrackingContentBlocked =
-      (state &
-        Ci.nsIWebProgressListener.STATE_BLOCKED_SOCIALTRACKING_CONTENT) !=
-      0;
-    let socialtrackingCookieBlocked =
-      (state & Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_SOCIALTRACKER) !=
-      0;
-    return socialtrackingCookieBlocked || socialtrackingContentBlocked;
-  },
-
-  isAllowing(state) {
-    if (this.socialTrackingProtectionEnabled) {
-      return (
-        (state &
-          Ci.nsIWebProgressListener.STATE_LOADED_SOCIALTRACKING_CONTENT) !=
-        0
-      );
-    }
-
-    return (
-      (state & Ci.nsIWebProgressListener.STATE_COOKIES_LOADED_SOCIALTRACKER) !=
-      0
-    );
-  },
-
-  isDetected(state) {
-    return this.isBlocking(state) || this.isAllowing(state);
-  },
-
-  get categoryItem() {
-    let item = document.getElementById(
-      "protections-popup-category-socialblock"
-    );
-    if (item) {
-      delete this.categoryItem;
-      this.categoryItem = item;
-    }
-    return item;
-  },
-
-  get subView() {
-    delete this.subView;
-    return (this.subView = document.getElementById(
-      "protections-popup-socialblockView"
-    ));
-  },
-
-  get subViewList() {
-    delete this.subViewList;
-    return (this.subViewList = document.getElementById(
-      "protections-popup-socialblockView-list"
-    ));
-  },
-
-  updateSubView() {
-    let contentBlockingLog = gBrowser.selectedBrowser.getContentBlockingLog();
-    contentBlockingLog = JSON.parse(contentBlockingLog);
-
-    let fragment = document.createDocumentFragment();
-    for (let [origin, actions] of Object.entries(contentBlockingLog)) {
-      let listItem = this._createListItem(origin, actions);
-      if (listItem) {
-        fragment.appendChild(listItem);
-      }
-    }
-
-    this.subViewList.textContent = "";
-    this.subViewList.append(fragment);
-    this.subView.setAttribute(
-      "title",
-      this.blockingEnabled && !gProtectionsHandler.hasException
-        ? this.strings.subViewTitleBlocking
-        : this.strings.subViewTitleNotBlocking
-    );
-  },
-
-  _createListItem(origin, actions) {
-    let isAllowed = actions.some(([state]) => this.isAllowing(state));
-    let isDetected =
-      isAllowed || actions.some(([state]) => this.isBlocking(state));
-
-    if (!isDetected) {
-      return null;
-    }
-
-    let listItem = document.createXULElement("hbox");
-    listItem.className = "protections-popup-list-item";
-    listItem.classList.toggle("allowed", isAllowed);
-    // Repeat the host in the tooltip in case it's too long
-    // and overflows in our panel.
-    listItem.tooltipText = origin;
-
-    let label = document.createXULElement("label");
-    label.value = origin;
-    label.className = "protections-popup-list-host-label";
-    label.setAttribute("crop", "end");
-    listItem.append(label);
-
-    return listItem;
-  },
-};
+  }
+})();
 
 /**
  * Utility object to handle manipulations of the protections indicators in the UI
@@ -1194,7 +1065,7 @@ var gProtectionsHandler = {
 
       this.maybeSetMilestoneCounterText();
 
-      for (let blocker of this.blockers) {
+      for (let blocker of Object.values(this.blockers)) {
         blocker.updateCategoryItem();
       }
 
@@ -1202,6 +1073,15 @@ var gProtectionsHandler = {
       document.getElementById(
         "protections-popup-sendReportView-learn-more"
       ).href = baseURL + "blocking-breakage";
+
+      let shimAllowLearnMoreURL =
+        baseURL + "smartblock-enhanced-tracking-protection";
+
+      document
+        .querySelectorAll(".protections-popup-shim-allow-learn-more")
+        .forEach(label => {
+          label.href = shimAllowLearnMoreURL;
+        });
     }
   },
 
@@ -1216,12 +1096,6 @@ var gProtectionsHandler = {
     delete this.iconBox;
     return (this.iconBox = document.getElementById(
       "tracking-protection-icon-box"
-    ));
-  },
-  get animatedIcon() {
-    delete this.animatedIcon;
-    return (this.animatedIcon = document.getElementById(
-      "tracking-protection-icon-animatable-image"
     ));
   },
   get _protectionsIconBox() {
@@ -1413,19 +1287,15 @@ var gProtectionsHandler = {
   // It may also contain an init() and uninit() function, which will be called
   // on gProtectionsHandler.init() and gProtectionsHandler.uninit().
   // The buttons in the protections panel will appear in the same order as this array.
-  blockers: [
+  blockers: {
     SocialTracking,
     ThirdPartyCookies,
     TrackingProtection,
     Fingerprinting,
     Cryptomining,
-  ],
+  },
 
   init() {
-    this.animatedIcon.addEventListener("animationend", () =>
-      this.iconBox.removeAttribute("animate")
-    );
-
     XPCOMUtils.defineLazyPreferenceGetter(
       this,
       "_protectionsPopupToastTimeout",
@@ -1437,7 +1307,7 @@ var gProtectionsHandler = {
       this,
       "milestoneListPref",
       "browser.contentblocking.cfr-milestone.milestones",
-      [],
+      "[]",
       () => this.maybeSetMilestoneCounterText(),
       val => JSON.parse(val)
     );
@@ -1454,7 +1324,7 @@ var gProtectionsHandler = {
       this,
       "milestoneTimestampPref",
       "browser.contentblocking.cfr-milestone.milestone-shown-time",
-      0,
+      "0",
       null,
       val => parseInt(val)
     );
@@ -1467,7 +1337,7 @@ var gProtectionsHandler = {
       () => this.maybeSetMilestoneCounterText()
     );
 
-    for (let blocker of this.blockers) {
+    for (let blocker of Object.values(this.blockers)) {
       if (blocker.init) {
         blocker.init();
       }
@@ -1478,7 +1348,7 @@ var gProtectionsHandler = {
   },
 
   uninit() {
-    for (let blocker of this.blockers) {
+    for (let blocker of Object.values(this.blockers)) {
       if (blocker.uninit) {
         blocker.uninit();
       }
@@ -1600,11 +1470,9 @@ var gProtectionsHandler = {
 
   onPopupShown(event) {
     if (event.target == this._protectionsPopup) {
-      window.addEventListener("focus", this, true);
+      PopupNotifications.suppressWhileOpen(this._protectionsPopup);
 
-      // Add the "open" attribute to the tracking protection icon container
-      // for styling.
-      this._trackingProtectionIconContainer.setAttribute("open", "true");
+      window.addEventListener("focus", this, true);
 
       // Insert the info message if needed. This will be shown once and then
       // remain collapsed.
@@ -1623,7 +1491,6 @@ var gProtectionsHandler = {
   onPopupHidden(event) {
     if (event.target == this._protectionsPopup) {
       window.removeEventListener("focus", this, true);
-      this._trackingProtectionIconContainer.removeAttribute("open");
     }
   },
 
@@ -1753,7 +1620,7 @@ var gProtectionsHandler = {
    */
   updatePanelForBlockingEvent(event, isShown) {
     // Update the categories:
-    for (let blocker of this.blockers) {
+    for (let blocker of Object.values(this.blockers)) {
       if (blocker.categoryItem.hasAttribute("uidisabled")) {
         continue;
       }
@@ -1830,7 +1697,6 @@ var gProtectionsHandler = {
   onContentBlockingEvent(event, webProgress, isSimulated, previousState) {
     // Don't deal with about:, file: etc.
     if (!ContentBlockingAllowList.canHandle(gBrowser.selectedBrowser)) {
-      this.iconBox.removeAttribute("animate");
       this.iconBox.removeAttribute("active");
       this.iconBox.removeAttribute("hasException");
       return;
@@ -1848,7 +1714,7 @@ var gProtectionsHandler = {
     );
 
     // Update blocker state and find if they detected or blocked anything.
-    for (let blocker of this.blockers) {
+    for (let blocker of Object.values(this.blockers)) {
       if (blocker.categoryItem?.hasAttribute("uidisabled")) {
         continue;
       }
@@ -1865,17 +1731,6 @@ var gProtectionsHandler = {
     this._categoryItemOrderInvalidated = true;
 
     // Now, update the icon UI:
-
-    // Reset the animation in case the user is switching tabs or if no blockers were detected
-    // (this is most likely happening because the user navigated on to a different site). This
-    // allows us to play it from the start without choppiness next time.
-    if (isSimulated || !this.anyBlocking) {
-      this.iconBox.removeAttribute("animate");
-      // Only play the animation when the shield is not already shown on the page (the visibility
-      // of the shield based on this onSecurityChange be determined afterwards).
-    } else if (this.anyBlocking && !this.iconBox.hasAttribute("active")) {
-      this.iconBox.setAttribute("animate", "true");
-    }
 
     // We consider the shield state "active" when some kind of blocking activity
     // occurs on the page.  Note that merely allowing the loading of content that
@@ -2038,7 +1893,7 @@ var gProtectionsHandler = {
     this._protectionsPopupNotBlockingHeader.hidden = true;
     this._protectionsPopupNotFoundHeader.hidden = true;
 
-    for (let { categoryItem } of this.blockers) {
+    for (let { categoryItem } of Object.values(this.blockers)) {
       if (
         categoryItem.classList.contains("notFound") ||
         categoryItem.hasAttribute("uidisabled")
@@ -2209,7 +2064,7 @@ var gProtectionsHandler = {
 
     let date = await TrackingDBService.getEarliestRecordedDate();
     let dateLocaleStr = new Date(date).toLocaleDateString("default", {
-      month: "short",
+      month: "long",
       year: "numeric",
     });
 
@@ -2389,15 +2244,13 @@ var gProtectionsHandler = {
     body += `userAgent: ${navigator.userAgent}\n`;
 
     body += "\n**Preferences**\n";
-    body += `${
-      TrackingProtection.PREF_ENABLED_GLOBALLY
-    }: ${Services.prefs.getBoolPref(
-      TrackingProtection.PREF_ENABLED_GLOBALLY
+    body += `${TrackingProtection.prefEnabled}: ${Services.prefs.getBoolPref(
+      TrackingProtection.prefEnabled
     )}\n`;
     body += `${
-      TrackingProtection.PREF_ENABLED_IN_PRIVATE_WINDOWS
+      TrackingProtection.prefEnabledInPrivateWindows
     }: ${Services.prefs.getBoolPref(
-      TrackingProtection.PREF_ENABLED_IN_PRIVATE_WINDOWS
+      TrackingProtection.prefEnabledInPrivateWindows
     )}\n`;
     body += `urlclassifier.trackingTable: ${Services.prefs.getStringPref(
       "urlclassifier.trackingTable"
@@ -2408,8 +2261,8 @@ var gProtectionsHandler = {
     body += `network.http.referer.defaultPolicy.pbmode: ${Services.prefs.getIntPref(
       "network.http.referer.defaultPolicy.pbmode"
     )}\n`;
-    body += `${ThirdPartyCookies.PREF_ENABLED}: ${Services.prefs.getIntPref(
-      ThirdPartyCookies.PREF_ENABLED
+    body += `${ThirdPartyCookies.prefEnabled}: ${Services.prefs.getIntPref(
+      ThirdPartyCookies.prefEnabled
     )}\n`;
     body += `network.cookie.lifetimePolicy: ${Services.prefs.getIntPref(
       "network.cookie.lifetimePolicy"
@@ -2420,11 +2273,11 @@ var gProtectionsHandler = {
     body += `privacy.restrict3rdpartystorage.expiration: ${Services.prefs.getIntPref(
       "privacy.restrict3rdpartystorage.expiration"
     )}\n`;
-    body += `${Fingerprinting.PREF_ENABLED}: ${Services.prefs.getBoolPref(
-      Fingerprinting.PREF_ENABLED
+    body += `${Fingerprinting.prefEnabled}: ${Services.prefs.getBoolPref(
+      Fingerprinting.prefEnabled
     )}\n`;
-    body += `${Cryptomining.PREF_ENABLED}: ${Services.prefs.getBoolPref(
-      Cryptomining.PREF_ENABLED
+    body += `${Cryptomining.prefEnabled}: ${Services.prefs.getBoolPref(
+      Cryptomining.prefEnabled
     )}\n`;
     body += `\nhasException: ${this.hasException}\n`;
 
@@ -2433,7 +2286,7 @@ var gProtectionsHandler = {
     formData.set("body", body);
 
     let activatedBlockers = [];
-    for (let blocker of this.blockers) {
+    for (let blocker of Object.values(this.blockers)) {
       if (blocker.activated) {
         activatedBlockers.push(blocker.reportBreakageLabel);
       }

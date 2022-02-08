@@ -16,11 +16,13 @@
 #include "nsIMozBrowserFrame.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/dom/ChromeMessageSender.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/MessageManagerBinding.h"
 #include "mozilla/dom/SameProcessMessageQueue.h"
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/WindowProxyHolder.h"
 #include "mozilla/dom/JSActorService.h"
+#include "mozilla/HoldDropJSObjects.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -114,7 +116,6 @@ InProcessBrowserChildMessageManager::~InProcessBrowserChildMessageManager() {
     JSActorService::UnregisterChromeEventTarget(this);
   }
 
-  mAnonymousGlobalScopes.Clear();
   mozilla::DropJSObjects(this);
 }
 
@@ -184,25 +185,6 @@ already_AddRefed<nsIEventTarget>
 InProcessBrowserChildMessageManager::GetTabEventTarget() {
   nsCOMPtr<nsIEventTarget> target = GetMainThreadEventTarget();
   return target.forget();
-}
-
-uint64_t InProcessBrowserChildMessageManager::ChromeOuterWindowID() {
-  if (!mDocShell) {
-    return 0;
-  }
-
-  nsCOMPtr<nsIDocShellTreeItem> root;
-  nsresult rv = mDocShell->GetInProcessRootTreeItem(getter_AddRefs(root));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return 0;
-  }
-
-  nsPIDOMWindowOuter* topWin = root->GetWindow();
-  if (!topWin) {
-    return 0;
-  }
-
-  return topWin->WindowID();
 }
 
 void InProcessBrowserChildMessageManager::FireUnloadEvent() {

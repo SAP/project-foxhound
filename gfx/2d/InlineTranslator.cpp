@@ -109,4 +109,13 @@ already_AddRefed<DrawTarget> InlineTranslator::CreateDrawTarget(
   return drawTarget.forget();
 }
 
+already_AddRefed<SourceSurface> InlineTranslator::LookupExternalSurface(
+    uint64_t aKey) {
+  if (!mExternalSurfaces) {
+    return nullptr;
+  }
+  RefPtr<SourceSurface> surface = mExternalSurfaces->Get(aKey);
+  return surface.forget();
+}
+
 }  // namespace mozilla::gfx

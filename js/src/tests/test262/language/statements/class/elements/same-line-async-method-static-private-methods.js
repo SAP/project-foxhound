@@ -1,4 +1,4 @@
-// |reftest| skip async -- class-static-methods-private is not supported
+// |reftest| async
 // This file was procedurally generated from the following sources:
 // - src/class-elements/static-private-methods.case
 // - src/class-elements/productions/cls-decl-after-same-line-async-method.template

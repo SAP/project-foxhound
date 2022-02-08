@@ -20,12 +20,6 @@ gfxWindowsSurface::gfxWindowsSurface(HDC dc, uint32_t flags)
   InitWithDC(flags);
 }
 
-gfxWindowsSurface::gfxWindowsSurface(IDirect3DSurface9* surface, uint32_t flags)
-    : mOwnsDC(false), mDC(0), mWnd(nullptr) {
-  cairo_surface_t* surf = cairo_win32_surface_create_with_d3dsurface9(surface);
-  Init(surf);
-}
-
 void gfxWindowsSurface::MakeInvalid(mozilla::gfx::IntSize& size) {
   size = mozilla::gfx::IntSize(-1, -1);
 }
@@ -65,46 +59,10 @@ gfxWindowsSurface::gfxWindowsSurface(cairo_surface_t* csurf)
 
 void gfxWindowsSurface::InitWithDC(uint32_t flags) {
   if (flags & FLAG_IS_TRANSPARENT) {
-    Init(cairo_win32_surface_create_with_alpha(mDC));
+    Init(cairo_win32_surface_create_with_format(mDC, CAIRO_FORMAT_ARGB32));
   } else {
     Init(cairo_win32_surface_create(mDC));
   }
-}
-
-already_AddRefed<gfxASurface> gfxWindowsSurface::CreateSimilarSurface(
-    gfxContentType aContent, const mozilla::gfx::IntSize& aSize) {
-  if (!mSurface || !mSurfaceValid) {
-    return nullptr;
-  }
-
-  cairo_surface_t* surface;
-  if (GetContentType() == gfxContentType::COLOR_ALPHA) {
-    // When creating a similar surface to a transparent surface, ensure
-    // the new surface uses a DIB. cairo_surface_create_similar won't
-    // use  a DIB for a gfxContentType::COLOR surface if this surface doesn't
-    // have a DIB (e.g. if we're a transparent window surface). But
-    // we need a DIB to perform well if the new surface is composited into
-    // a surface that's the result of
-    // create_similar(gfxContentType::COLOR_ALPHA) (e.g. a backbuffer for the
-    // window) --- that new surface *would* have a DIB.
-    gfxImageFormat gformat =
-        gfxPlatform::GetPlatform()->OptimalFormatForContent(aContent);
-    cairo_format_t cformat = GfxFormatToCairoFormat(gformat);
-    surface =
-        cairo_win32_surface_create_with_dib(cformat, aSize.width, aSize.height);
-  } else {
-    surface = cairo_surface_create_similar(
-        mSurface, (cairo_content_t)(int)aContent, aSize.width, aSize.height);
-  }
-
-  if (cairo_surface_status(surface)) {
-    cairo_surface_destroy(surface);
-    return nullptr;
-  }
-
-  RefPtr<gfxASurface> result = Wrap(surface, aSize);
-  cairo_surface_destroy(surface);
-  return result.forget();
 }
 
 gfxWindowsSurface::~gfxWindowsSurface() {
@@ -154,6 +112,11 @@ const mozilla::gfx::IntSize gfxWindowsSurface::GetSize() const {
       mSurface != nullptr,
       "CairoSurface() shouldn't be nullptr when mSurfaceValid is TRUE!");
 
-  return mozilla::gfx::IntSize(cairo_win32_surface_get_width(mSurface),
-                               cairo_win32_surface_get_height(mSurface));
+  int width, height;
+  if (cairo_win32_surface_get_size(mSurface, &width, &height) !=
+      CAIRO_STATUS_SUCCESS) {
+    return mozilla::gfx::IntSize(-1, -1);
+  }
+
+  return mozilla::gfx::IntSize(width, height);
 }

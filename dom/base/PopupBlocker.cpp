@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/Components.h"
 #include "mozilla/dom/PopupBlocker.h"
 #include "mozilla/dom/UserActivation.h"
 #include "mozilla/BasePrincipal.h"
@@ -15,8 +16,7 @@
 #include "nsXULPopupManager.h"
 #include "nsIPermissionManager.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -27,10 +27,6 @@ static PopupBlocker::PopupControlState sPopupControlState =
 static uint32_t sPopupStatePusherCount = 0;
 
 static TimeStamp sLastAllowedExternalProtocolIFrameTimeStamp;
-
-// This token is by default set to false. When a popup/filePicker is shown, it
-// is set to true.
-static bool sUnusedPopupToken = false;
 
 static uint32_t sOpenPopupSpamCount = 0;
 
@@ -119,44 +115,18 @@ PopupBlocker::GetPopupControlState() {
 }
 
 /* static */
-bool PopupBlocker::CanShowPopupByPermission(nsIPrincipal* aPrincipal) {
-  MOZ_ASSERT(aPrincipal);
-  uint32_t permit;
+uint32_t PopupBlocker::GetPopupPermission(nsIPrincipal* aPrincipal) {
+  uint32_t permit = nsIPermissionManager::UNKNOWN_ACTION;
   nsCOMPtr<nsIPermissionManager> permissionManager =
-      services::GetPermissionManager();
+      components::PermissionManager::Service();
 
-  if (permissionManager &&
-      NS_SUCCEEDED(permissionManager->TestPermissionFromPrincipal(
-          aPrincipal, "popup"_ns, &permit))) {
-    if (permit == nsIPermissionManager::ALLOW_ACTION) {
-      return true;
-    }
-    if (permit == nsIPermissionManager::DENY_ACTION) {
-      return false;
-    }
+  if (permissionManager) {
+    permissionManager->TestPermissionFromPrincipal(aPrincipal, "popup"_ns,
+                                                   &permit);
   }
 
-  return !StaticPrefs::dom_disable_open_during_load();
+  return permit;
 }
-
-/* static */
-bool PopupBlocker::TryUsePopupOpeningToken(nsIPrincipal* aPrincipal) {
-  MOZ_ASSERT(sPopupStatePusherCount);
-
-  if (!sUnusedPopupToken) {
-    sUnusedPopupToken = true;
-    return true;
-  }
-
-  if (aPrincipal && aPrincipal->IsSystemPrincipal()) {
-    return true;
-  }
-
-  return false;
-}
-
-/* static */
-bool PopupBlocker::IsPopupOpeningTokenUnused() { return sUnusedPopupToken; }
 
 /* static */
 void PopupBlocker::PopupStatePusherCreated() { ++sPopupStatePusherCount; }
@@ -164,10 +134,7 @@ void PopupBlocker::PopupStatePusherCreated() { ++sPopupStatePusherCount; }
 /* static */
 void PopupBlocker::PopupStatePusherDestroyed() {
   MOZ_ASSERT(sPopupStatePusherCount);
-
-  if (!--sPopupStatePusherCount) {
-    sUnusedPopupToken = false;
-  }
+  --sPopupStatePusherCount;
 }
 
 // static
@@ -175,7 +142,7 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
     WidgetEvent* aEvent, Event* aDOMEvent) {
   // generally if an event handler is running, new windows are disallowed.
   // check for exceptions:
-  PopupBlocker::PopupControlState abuse = PopupBlocker::openAbused;
+  PopupBlocker::PopupControlState abuse = PopupBlocker::openBlocked;
 
   if (aDOMEvent && aDOMEvent->GetWantsPopupControlCheck()) {
     nsAutoString type;
@@ -191,7 +158,6 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
       // triggered while handling user input. See
       // UserActivation::IsUserInteractionEvent() for details.
       if (UserActivation::IsHandlingUserInput()) {
-        abuse = PopupBlocker::openBlocked;
         switch (aEvent->mMessage) {
           case eFormSelect:
             if (PopupAllowedForEvent("select")) {
@@ -213,7 +179,6 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
       // while handling user input. See
       // UserActivation::IsUserInteractionEvent() for details.
       if (UserActivation::IsHandlingUserInput()) {
-        abuse = PopupBlocker::openBlocked;
         switch (aEvent->mMessage) {
           case eEditorInput:
             if (PopupAllowedForEvent("input")) {
@@ -230,7 +195,6 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
       // while handling user input. See
       // UserActivation::IsUserInteractionEvent() for details.
       if (UserActivation::IsHandlingUserInput()) {
-        abuse = PopupBlocker::openBlocked;
         switch (aEvent->mMessage) {
           case eFormChange:
             if (PopupAllowedForEvent("change")) {
@@ -247,7 +211,6 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
       break;
     case eKeyboardEventClass:
       if (aEvent->IsTrusted()) {
-        abuse = PopupBlocker::openBlocked;
         uint32_t key = aEvent->AsKeyboardEvent()->mKeyCode;
         switch (aEvent->mMessage) {
           case eKeyPress:
@@ -278,7 +241,6 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
       break;
     case eTouchEventClass:
       if (aEvent->IsTrusted()) {
-        abuse = PopupBlocker::openBlocked;
         switch (aEvent->mMessage) {
           case eTouchStart:
             if (PopupAllowedForEvent("touchstart")) {
@@ -297,8 +259,10 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
       break;
     case eMouseEventClass:
       if (aEvent->IsTrusted()) {
-        if (aEvent->AsMouseEvent()->mButton == MouseButton::ePrimary) {
-          abuse = PopupBlocker::openBlocked;
+        // Let's ignore MouseButton::eSecondary because that is handled as
+        // context menu.
+        if (aEvent->AsMouseEvent()->mButton == MouseButton::ePrimary ||
+            aEvent->AsMouseEvent()->mButton == MouseButton::eMiddle) {
           switch (aEvent->mMessage) {
             case eMouseUp:
               if (PopupAllowedForEvent("mouseup")) {
@@ -334,8 +298,6 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
           // it becomes a compat issue
           if (PopupAllowedForEvent("auxclick")) {
             abuse = PopupBlocker::openControlled;
-          } else {
-            abuse = PopupBlocker::openBlocked;
           }
         }
 
@@ -343,8 +305,6 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
           case eContextMenu:
             if (PopupAllowedForEvent("contextmenu")) {
               abuse = PopupBlocker::openControlled;
-            } else {
-              abuse = PopupBlocker::openBlocked;
             }
             break;
           default:
@@ -354,7 +314,8 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
       break;
     case ePointerEventClass:
       if (aEvent->IsTrusted() &&
-          aEvent->AsPointerEvent()->mButton == MouseButton::ePrimary) {
+          (aEvent->AsPointerEvent()->mButton == MouseButton::ePrimary ||
+           aEvent->AsPointerEvent()->mButton == MouseButton::eMiddle)) {
         switch (aEvent->mMessage) {
           case ePointerUp:
             if (PopupAllowedForEvent("pointerup")) {
@@ -376,7 +337,6 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
       // triggered while handling user input. See
       // UserActivation::IsUserInteractionEvent() for details.
       if (UserActivation::IsHandlingUserInput()) {
-        abuse = PopupBlocker::openBlocked;
         switch (aEvent->mMessage) {
           case eFormSubmit:
             if (PopupAllowedForEvent("submit")) {
@@ -421,6 +381,10 @@ void PopupBlocker::Shutdown() {
 
 /* static */
 bool PopupBlocker::ConsumeTimerTokenForExternalProtocolIframe() {
+  if (!StaticPrefs::dom_delay_block_external_protocol_in_iframes_enabled()) {
+    return false;
+  }
+
   TimeStamp now = TimeStamp::Now();
 
   if (sLastAllowedExternalProtocolIFrameTimeStamp.IsNull()) {
@@ -429,7 +393,7 @@ bool PopupBlocker::ConsumeTimerTokenForExternalProtocolIframe() {
   }
 
   if ((now - sLastAllowedExternalProtocolIFrameTimeStamp).ToSeconds() <
-      (StaticPrefs::dom_delay_block_external_protocol_in_iframes())) {
+      StaticPrefs::dom_delay_block_external_protocol_in_iframes()) {
     return false;
   }
 
@@ -459,8 +423,7 @@ void PopupBlocker::UnregisterOpenPopupSpam() {
 /* static */
 uint32_t PopupBlocker::GetOpenPopupSpamCount() { return sOpenPopupSpamCount; }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 AutoPopupStatePusherInternal::AutoPopupStatePusherInternal(
     mozilla::dom::PopupBlocker::PopupControlState aState, bool aForce)

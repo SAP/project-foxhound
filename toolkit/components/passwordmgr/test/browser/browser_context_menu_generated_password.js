@@ -48,24 +48,12 @@ add_task(async function test_hidden_by_prefs() {
       await SimpleTest.promiseFocus(browser.ownerGlobal);
 
       await openPasswordContextMenu(browser, passwordInputSelector);
-
       let generatedPasswordItem = document.getElementById(
         "fill-login-generated-password"
       );
-      let fillLoginItem = document.getElementById("fill-login");
-      let generatedPasswordSeparator = document.getElementById(
-        "fill-login-and-generated-password-separator"
-      );
-
       ok(
         !BrowserTestUtils.is_visible(generatedPasswordItem),
         "generated password item is hidden"
-      );
-      is(
-        BrowserTestUtils.is_visible(fillLoginItem) ||
-          BrowserTestUtils.is_visible(generatedPasswordItem),
-        BrowserTestUtils.is_visible(generatedPasswordSeparator),
-        "separator should only be visible if one of the login items is visible"
       );
 
       CONTEXT_MENU.hidePopup();
@@ -88,24 +76,12 @@ add_task(async function test_fill_hidden_by_login_saving_disabled() {
       await SimpleTest.promiseFocus(browser.ownerGlobal);
 
       await openPasswordContextMenu(browser, passwordInputSelector);
-
       let generatedPasswordItem = document.getElementById(
         "fill-login-generated-password"
       );
-      let fillLoginItem = document.getElementById("fill-login");
-      let generatedPasswordSeparator = document.getElementById(
-        "fill-login-and-generated-password-separator"
-      );
-
       ok(
         !BrowserTestUtils.is_visible(generatedPasswordItem),
         "generated password item is hidden"
-      );
-      is(
-        BrowserTestUtils.is_visible(fillLoginItem) ||
-          BrowserTestUtils.is_visible(generatedPasswordItem),
-        BrowserTestUtils.is_visible(generatedPasswordSeparator),
-        "separator should only be visible if one of the login items is visible"
       );
 
       CONTEXT_MENU.hidePopup();
@@ -133,26 +109,14 @@ add_task(async function test_fill_hidden_by_locked_master_password() {
         passwordInputSelector,
         () => false
       );
-
       let generatedPasswordItem = document.getElementById(
         "fill-login-generated-password"
       );
-      let fillLoginItem = document.getElementById("fill-login");
-      let generatedPasswordSeparator = document.getElementById(
-        "fill-login-and-generated-password-separator"
-      );
-
       ok(
         BrowserTestUtils.is_visible(generatedPasswordItem),
         "generated password item is visible"
       );
       ok(generatedPasswordItem.disabled, "generated password item is disabled");
-      is(
-        BrowserTestUtils.is_visible(fillLoginItem) ||
-          BrowserTestUtils.is_visible(generatedPasswordItem),
-        BrowserTestUtils.is_visible(generatedPasswordSeparator),
-        "separator should only be visible if one of the login items is visible"
-      );
 
       CONTEXT_MENU.hidePopup();
     }
@@ -176,9 +140,8 @@ add_task(async function fill_generated_password_empty_field() {
         function checkInitialFieldValue(inputSelector) {
           const input = content.document.querySelector(inputSelector);
           is(input.value.length, 0, "Password field is empty");
-          is(
-            content.getComputedStyle(input).filter,
-            "none",
+          ok(
+            !input.matches(":autofill"),
             "Password field should not be highlighted"
           );
         }
@@ -201,9 +164,8 @@ add_task(async function fill_generated_password_empty_field() {
             LTU.generation.LENGTH,
             "Password field was filled with generated password"
           );
-          isnot(
-            content.getComputedStyle(input).filter,
-            "none",
+          ok(
+            input.matches(":autofill"),
             "Password field should be highlighted"
           );
           LTU.loginField.checkPasswordMasked(input, false, "after fill");
@@ -246,9 +208,8 @@ add_task(async function fill_generated_password_nonempty_field() {
         [[passwordInputSelector]],
         function checkInitialFieldValue(inputSelector) {
           const input = content.document.querySelector(inputSelector);
-          is(
-            content.getComputedStyle(input).filter,
-            "none",
+          ok(
+            !input.matches(":autofill"),
             "Password field should not be highlighted"
           );
         }
@@ -271,9 +232,8 @@ add_task(async function fill_generated_password_nonempty_field() {
             LTU.generation.LENGTH,
             "Password field was filled with generated password"
           );
-          isnot(
-            content.getComputedStyle(input).filter,
-            "none",
+          ok(
+            input.matches(":autofill"),
             "Password field should be highlighted"
           );
           LTU.loginField.checkPasswordMasked(input, false, "after fill");
@@ -339,9 +299,8 @@ add_task(async function fill_generated_password_with_matching_logins() {
             LTU.generation.LENGTH,
             "Password field was filled with generated password"
           );
-          isnot(
-            content.getComputedStyle(input).filter,
-            "none",
+          ok(
+            input.matches(":autofill"),
             "Password field should be highlighted"
           );
           LTU.loginField.checkPasswordMasked(input, false, "after fill");
@@ -412,7 +371,7 @@ add_task(async function fill_generated_password_with_matching_logins() {
     "Generated password shouldn't have changed to match the filled password"
   );
 
-  Services.logins.removeAllLogins();
+  Services.logins.removeAllUserFacingLogins();
   LoginTestUtils.resetGeneratedPasswordsCache();
 });
 
@@ -432,9 +391,8 @@ add_task(async function test_edited_generated_password_in_new_tab() {
         function checkInitialFieldValue(inputSelector) {
           const input = content.document.querySelector(inputSelector);
           is(input.value.length, 0, "Password field is empty");
-          is(
-            content.getComputedStyle(input).filter,
-            "none",
+          ok(
+            !input.matches(":autofill"),
             "Password field should not be highlighted"
           );
         }
@@ -457,9 +415,8 @@ add_task(async function test_edited_generated_password_in_new_tab() {
             LTU.generation.LENGTH,
             "Password field was filled with generated password"
           );
-          isnot(
-            content.getComputedStyle(input).filter,
-            "none",
+          ok(
+            input.matches(":autofill"),
             "Password field should be highlighted"
           );
           LTU.loginField.checkPasswordMasked(input, false, "after fill");

@@ -63,30 +63,28 @@ ChromeUtils.defineModuleGetter(
   // with region names based on en-US. This is
   // necessary for tests that expect to match
   // on region code display names.
-  const { L10nRegistry, FileSource } = ChromeUtils.import(
-    "resource://gre/modules/L10nRegistry.jsm"
-  );
-
-  const fs = {
-    "toolkit/intl/regionNames.ftl": `
+  const fs = [
+    {
+      path: "toolkit/intl/regionNames.ftl",
+      source: `
 region-name-us = United States
-region-name-nz = New Zeland
+region-name-nz = New Zealand
 region-name-au = Australia
 region-name-ca = Canada
 region-name-tw = Taiwan
     `,
-  };
-
-  L10nRegistry.loadSync = function(url) {
-    if (!fs.hasOwnProperty(url)) {
-      return false;
-    }
-    return fs[url];
-  };
+    },
+  ];
 
   let locales = Services.locale.packagedLocales;
-  const mockSource = new FileSource("mock", locales, "");
-  L10nRegistry.registerSources([mockSource]);
+  const mockSource = L10nFileSource.createMock(
+    "mock",
+    "app",
+    locales,
+    "resource://mock_path",
+    fs
+  );
+  L10nRegistry.getInstance().registerSources([mockSource]);
 }
 
 do_get_profile();
@@ -142,8 +140,7 @@ async function initProfileStorage(
   collectionName = "addresses"
 ) {
   let { FormAutofillStorage } = ChromeUtils.import(
-    "resource://formautofill/FormAutofillStorage.jsm",
-    null
+    "resource://autofill/FormAutofillStorage.jsm"
   );
   let path = getTempFile(fileName).path;
   let profileStorage = new FormAutofillStorage(path);
@@ -209,10 +206,10 @@ var AddressDataLoader, FormAutofillUtils;
 async function runHeuristicsTest(patterns, fixturePathPrefix) {
   add_task(async function setup() {
     ({ FormAutofillHeuristics, LabelUtils } = ChromeUtils.import(
-      "resource://formautofill/FormAutofillHeuristics.jsm"
+      "resource://autofill/FormAutofillHeuristics.jsm"
     ));
     ({ AddressDataLoader, FormAutofillUtils } = ChromeUtils.import(
-      "resource://formautofill/FormAutofillUtils.jsm"
+      "resource://autofill/FormAutofillUtils.jsm"
     ));
   });
 
@@ -307,6 +304,10 @@ add_task(async function head_initialize() {
     true
   );
   Services.prefs.setBoolPref(
+    "extensions.formautofill.creditCards.enabled",
+    true
+  );
+  Services.prefs.setBoolPref(
     "extensions.formautofill.heuristics.enabled",
     true
   );
@@ -320,6 +321,7 @@ add_task(async function head_initialize() {
     Services.prefs.clearUserPref(
       "extensions.formautofill.creditCards.available"
     );
+    Services.prefs.clearUserPref("extensions.formautofill.creditCards.enabled");
     Services.prefs.clearUserPref("extensions.formautofill.heuristics.enabled");
     Services.prefs.clearUserPref("extensions.formautofill.section.enabled");
     Services.prefs.clearUserPref("dom.forms.autocomplete.formautofill");

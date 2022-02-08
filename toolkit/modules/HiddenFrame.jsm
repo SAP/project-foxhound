@@ -20,9 +20,7 @@ function ensureCleanupRegistered() {
   if (!cleanupRegistered) {
     cleanupRegistered = true;
     Services.obs.addObserver(function() {
-      for (let hiddenFrame of ChromeUtils.nondeterministicGetWeakSetKeys(
-        gAllHiddenFrames
-      )) {
+      for (let hiddenFrame of gAllHiddenFrames) {
         hiddenFrame.destroy();
       }
     }, "xpcom-shutdown");
@@ -82,7 +80,14 @@ HiddenFrame.prototype = {
 
   _create() {
     ensureCleanupRegistered();
-    this._browser = Services.appShell.createWindowlessBrowser(true);
+    let chromeFlags = Ci.nsIWebBrowserChrome.CHROME_REMOTE_WINDOW;
+    if (Services.appinfo.fissionAutostart) {
+      chromeFlags |= Ci.nsIWebBrowserChrome.CHROME_FISSION_WINDOW;
+    }
+    this._browser = Services.appShell.createWindowlessBrowser(
+      true,
+      chromeFlags
+    );
     this._browser.QueryInterface(Ci.nsIInterfaceRequestor);
     gAllHiddenFrames.add(this);
     this._webProgress = this._browser.getInterface(Ci.nsIWebProgress);

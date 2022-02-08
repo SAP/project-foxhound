@@ -37,7 +37,7 @@ describe("Network message reducer:", () => {
     packet.actor = "message1";
     updatePacket.actor = "message1";
     dispatch(actions.messagesAdd([packet]));
-    dispatch(actions.networkMessageUpdate(updatePacket, null));
+    dispatch(actions.networkMessageUpdates([updatePacket], null));
   });
 
   describe("networkMessagesUpdateById", () => {
@@ -47,13 +47,41 @@ describe("Network message reducer:", () => {
       };
 
       dispatch(
-        actions.networkUpdateRequest("message1", {
-          requestHeaders: headers,
-        })
+        actions.networkUpdateRequests([
+          {
+            id: "message1",
+            data: {
+              requestHeaders: headers,
+            },
+          },
+        ])
       );
 
       const networkUpdates = getAllNetworkMessagesUpdateById(getState());
       expect(networkUpdates.message1.requestHeaders).toBe(headers);
+    });
+
+    it("makes sure multiple HTTP updates of same request does not override", () => {
+      dispatch(
+        actions.networkUpdateRequests([
+          {
+            id: "message1",
+            data: {
+              stacktrace: [{}],
+            },
+          },
+          {
+            id: "message1",
+            data: {
+              requestHeaders: { headers: [] },
+            },
+          },
+        ])
+      );
+
+      const networkUpdates = getAllNetworkMessagesUpdateById(getState());
+      expect(networkUpdates.message1.requestHeaders).toNotBe(undefined);
+      expect(networkUpdates.message1.stacktrace).toNotBe(undefined);
     });
 
     it("adds fetched HTTP security info", () => {
@@ -62,9 +90,14 @@ describe("Network message reducer:", () => {
       };
 
       dispatch(
-        actions.networkUpdateRequest("message1", {
-          securityInfo: securityInfo,
-        })
+        actions.networkUpdateRequests([
+          {
+            id: "message1",
+            data: {
+              securityInfo: securityInfo,
+            },
+          },
+        ])
       );
 
       const networkUpdates = getAllNetworkMessagesUpdateById(getState());
@@ -82,9 +115,14 @@ describe("Network message reducer:", () => {
       };
 
       dispatch(
-        actions.networkUpdateRequest("message1", {
-          requestPostData,
-        })
+        actions.networkUpdateRequests([
+          {
+            id: "message1",
+            data: {
+              requestPostData,
+            },
+          },
+        ])
       );
 
       const { message1 } = getAllNetworkMessagesUpdateById(getState());

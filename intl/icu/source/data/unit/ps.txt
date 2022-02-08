@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 ps{
-    Version{"37"}
     durationUnits{
         hm{"h:mm"}
         hms{"h:mm:ss"}
@@ -105,15 +105,64 @@ ps{
             }
         }
         compound{
+            10p-1{"پرېکړه{0}"}
+            10p-12{"پیکو {0}"}
+            10p-15{"فيمتو {0}"}
+            10p-18{"أتو{0}"}
+            10p-2{"سانتي {0}"}
+            10p-21{"زیپټو {0}"}
+            10p-24{"یکوټو {0}"}
+            10p-3{"ملی {0}"}
+            10p-6{"مایکرو {0}"}
+            10p-9{"نانو {0}"}
+            10p1{"ډیکا {0}"}
+            10p12{"تیرا {0}"}
+            10p15{"پیټا {0}"}
+            10p18{"إکساء {0}"}
+            10p2{"هیکو {0}"}
+            10p21{"زیټا {0}"}
+            10p24{"یوټا {0}"}
+            10p3{"کیلو {0}"}
+            10p6{"میگا {0}"}
+            10p9{"ګیګا {0}"}
             per{"{0}في {1}"}
+            power2{
+                one{
+                    _{
+                        _{"{0}مربع"}
+                    }
+                }
+                other{
+                    _{
+                        _{"{0} مربع"}
+                    }
+                }
+            }
+            power3{
+                one{
+                    _{
+                        _{"کیوبک {0}"}
+                    }
+                }
+                other{
+                    _{
+                        _{"{0}معکب"}
+                    }
+                }
+            }
         }
         concentr{
+            item{
+                dnam{"توکي"}
+                one{"{0} توکی"}
+                other{"{0} توکی"}
+            }
             karat{
                 dnam{"قيراط"}
                 one{"{0} قيراط"}
                 other{"{0} قيراط"}
             }
-            milligram-per-deciliter{
+            milligram-ofglucose-per-deciliter{
                 dnam{"ملي ګرام في ډيسي ليټر"}
                 one{"{0} ملي ګرام في ډيسي ليټر"}
                 other{"{0} ملي ګرام في ډيسي ليټر"}
@@ -253,7 +302,7 @@ ps{
                 other{"{0} لسيزې"}
             }
             microsecond{
-                dnam{"مايکرو ثانيه"}
+                dnam{"مايکرو ثانيې"}
                 one{"{0} μs"}
                 other{"{0} μs"}
             }
@@ -312,8 +361,8 @@ ps{
         energy{
             british-thermal-unit{
                 dnam{"بريتانوي ترمل يونټس"}
-                one{"{0} بريتانوي ترمل يونټ"}
-                other{"{0} بريتانوي ترمل يونټس"}
+                one{"برتانوي ترمل یونټ"}
+                other{"{0} برتانوي ترمل يونټس"}
             }
             calorie{
                 dnam{"کيلريز"}
@@ -349,6 +398,9 @@ ps{
                 dnam{"کيلو واټ ساعته"}
                 one{"{0} کيلو واټ ساعت"}
                 other{"{0} کيلو واټ ساعته"}
+            }
+            therm-us{
+                dnam{"متحده ایالاتو ترمامونه"}
             }
         }
         force{
@@ -386,6 +438,9 @@ ps{
             }
         }
         graphics{
+            em{
+                dnam{"ټايپو ګرافيک em"}
+            }
             megapixel{
                 dnam{"ميګا فکسلسز"}
             }
@@ -407,11 +462,20 @@ ps{
                 one{"{0} ډيسي متر"}
                 other{"{0} ډيسي متره"}
             }
+            fathom{
+                dnam{"فتومونه"}
+                one{"{0} fathom"}
+                other{"{0} فتومونه"}
+            }
             foot{
                 dnam{"فټه"}
                 one{"{0} فټ"}
                 other{"{0} فټه"}
                 per{"{0}هر فټ"}
+            }
+            furlong{
+                one{"{0} fur"}
+                other{"{0} فرلانګونه"}
             }
             inch{
                 dnam{"انچې"}
@@ -468,6 +532,8 @@ ps{
             }
             parsec{
                 dnam{"پارسيکس"}
+                one{"{0} في ثانيه"}
+                other{"{0} في ثانيې"}
             }
             picometer{
                 dnam{"پيکو متره"}
@@ -643,7 +709,6 @@ ps{
                 dnam{"پاسکیلز"}
             }
             pound-force-per-square-inch{
-                dnam{"پاونډز في مربع انچ"}
                 one{"{0} پاونډ في مربع انچ"}
                 other{"{0} پاونډز في مربع انچ"}
             }
@@ -683,8 +748,6 @@ ps{
             }
             generic{
                 dnam{"°"}
-                one{"{0}°"}
-                other{"{0}°"}
             }
             kelvin{
                 dnam{"کيلونز"}
@@ -714,6 +777,10 @@ ps{
                 dnam{"بيرلز"}
                 one{"{0} بېرل"}
                 other{"{0} بېرلز"}
+            }
+            bushel{
+                one{"{0} bu"}
+                other{"{0} بوشیل"}
             }
             centiliter{
                 dnam{"سنټي ليټرز"}
@@ -767,6 +834,20 @@ ps{
                 one{"{0} ډيسي ليټر"}
                 other{"{0} ډيسي ليټرز"}
             }
+            dessert-spoon{
+                dnam{"مچ چمچ"}
+                one{"{0} dessert spoon"}
+                other{"{0} مچ چمچ"}
+            }
+            dram{
+                dnam{"ډرام"}
+                one{"{0} ډرام"}
+                other{"{0} ډرام"}
+            }
+            drop{
+                one{"{0} څاڅک"}
+                other{"{0} څاڅک"}
+            }
             fluid-ounce-imperial{
                 dnam{"امپيريل مايع اونس"}
                 one{"{0} امپيريل مايع اونس"}
@@ -799,10 +880,19 @@ ps{
                 one{"{0} ملي ليټر"}
                 other{"{0} ملي ليټرز"}
             }
+            pinch{
+                dnam{"چنه"}
+                one{"{0} چنه"}
+                other{"{0} چنه"}
+            }
             quart{
                 dnam{"څلورمه"}
                 one{"{0} څلورمه"}
                 other{"{0} څلورمه"}
+            }
+            quart-imperial{
+                one{"{0} Imp. quart"}
+                other{"{0} Imp. quart"}
             }
             tablespoon{
                 dnam{"د ميز کاچوغه"}
@@ -816,9 +906,46 @@ ps{
     }
     unitsNarrow{
         compound{
+            10p-1{"d{0}"}
+            10p-12{"p{0}"}
+            10p-15{"f{0}"}
+            10p-18{"a{0}"}
+            10p-2{"c{0}"}
+            10p-21{"z{0}"}
+            10p-24{"y{0}"}
+            10p-3{"m{0}"}
+            10p-6{"μ{0}"}
+            10p-9{"n{0}"}
+            10p1{"da{0}"}
+            10p12{"T{0}"}
+            10p15{"P{0}"}
+            10p18{"E{0}"}
+            10p2{"h{0}"}
+            10p21{"Z{0}"}
+            10p24{"Y{0}"}
+            10p3{"k{0}"}
+            10p6{"M{0}"}
+            10p9{"G{0}"}
             per{"{0}/{1}"}
+            power2{
+                one{
+                    _{
+                        _{"مربع {0}"}
+                    }
+                }
+                other{
+                    _{
+                        _{"{0}²"}
+                    }
+                }
+            }
         }
         concentr{
+            item{
+                dnam{"توکی"}
+                one{"{0} توکی"}
+                other{"{0} توکی"}
+            }
             percent{
                 dnam{"سلنه"}
                 one{"{0}%"}
@@ -830,6 +957,9 @@ ps{
                 dnam{"L/100km"}
                 one{"{0} L/100km"}
                 other{"{0} L/100km"}
+            }
+            mile-per-gallon-imperial{
+                dnam{"mpg UK"}
             }
         }
         coordinate{
@@ -881,6 +1011,12 @@ ps{
                 other{"{0} y"}
             }
         }
+        force{
+            kilowatt-hour-per-100-kilometer{
+                one{"{0} kWh/100km"}
+                other{"{0}kWh/100km"}
+            }
+        }
         length{
             centimeter{
                 dnam{"cm"}
@@ -930,7 +1066,20 @@ ps{
             }
         }
         volume{
+            dessert-spoon-imperial{
+                one{"{0}dsp-Imp"}
+                other{"{0}dsp-Imp"}
+            }
+            fluid-ounce-imperial{
+                one{"{0}fl oz Im"}
+                other{"{0}fl oz Im"}
+            }
+            gallon-imperial{
+                one{"{0}galIm"}
+                other{"{0}galIm"}
+            }
             liter{
+                dnam{"لیټر"}
                 one{"{0}L"}
                 other{"{0}L"}
             }
@@ -1033,15 +1182,65 @@ ps{
             }
         }
         compound{
+            1024p3{"Gi{0}"}
+            10p-1{"d{0}"}
+            10p-12{"p{0}"}
+            10p-15{"f{0}"}
+            10p-18{"a{0}"}
+            10p-2{"c{0}"}
+            10p-21{"z{0}"}
+            10p-24{"y{0}"}
+            10p-3{"m{0}"}
+            10p-6{"μ{0}"}
+            10p-9{"n{0}"}
+            10p1{"da{0}"}
+            10p12{"T{0}"}
+            10p15{"P{0}"}
+            10p18{"E{0}"}
+            10p2{"h{0}"}
+            10p21{"Z{0}"}
+            10p24{"Y{0}"}
+            10p3{"k{0}"}
+            10p6{"M{0}"}
+            10p9{"G{0}"}
             per{"{0}/{1}"}
+            power2{
+                one{
+                    _{
+                        _{"مربع {0}"}
+                    }
+                }
+                other{
+                    _{
+                        _{"{0}²"}
+                    }
+                }
+            }
+            power3{
+                one{
+                    _{
+                        _{"{0}³"}
+                    }
+                }
+                other{
+                    _{
+                        _{"{0}³"}
+                    }
+                }
+            }
         }
         concentr{
+            item{
+                dnam{"توکی"}
+                one{"{0} توکی"}
+                other{"{0} توکی"}
+            }
             karat{
                 dnam{"قيراط"}
                 one{"{0} kt"}
                 other{"{0} kt"}
             }
-            milligram-per-deciliter{
+            milligram-ofglucose-per-deciliter{
                 dnam{"mg/dL"}
                 one{"{0} mg/dL"}
                 other{"{0} mg/dL"}
@@ -1184,11 +1383,6 @@ ps{
                 other{"{0} h"}
                 per{"{0}/h"}
             }
-            microsecond{
-                dnam{"μs"}
-                one{"{0} μs"}
-                other{"{0} μs"}
-            }
             millisecond{
                 dnam{"ms"}
                 one{"{0} ms"}
@@ -1291,6 +1485,11 @@ ps{
                 one{"{0} kWh"}
                 other{"{0} kWh"}
             }
+            therm-us{
+                dnam{"US تهرم"}
+                one{"{0} US therm"}
+                other{"{0} US therm"}
+            }
         }
         force{
             newton{
@@ -1322,6 +1521,18 @@ ps{
                 other{"{0} MHz"}
             }
         }
+        graphics{
+            dot-per-centimeter{
+                dnam{"dpcm"}
+            }
+            em{
+                dnam{"em"}
+            }
+            megapixel{
+                one{"{0} MP"}
+                other{"{0} MP"}
+            }
+        }
         length{
             astronomical-unit{
                 dnam{"au"}
@@ -1339,11 +1550,25 @@ ps{
                 one{"{0} dm"}
                 other{"{0} dm"}
             }
+            earth-radius{
+                one{"{0} R⊕"}
+                other{"{0} R⊕"}
+            }
+            fathom{
+                dnam{"فتومونه"}
+                one{"{0} fth"}
+                other{"{0} fth"}
+            }
             foot{
                 dnam{"فټه"}
                 one{"{0} ft"}
                 other{"{0} ft"}
                 per{"{0}/ft"}
+            }
+            furlong{
+                dnam{"فرلانګونه"}
+                one{"{0} fur"}
+                other{"{0} fur"}
             }
             inch{
                 dnam{"انچې"}
@@ -1369,9 +1594,9 @@ ps{
                 per{"{0}/m"}
             }
             micrometer{
-                dnam{"µmeters"}
-                one{"{0} µm"}
-                other{"{0} µm"}
+                dnam{"μmeters"}
+                one{"{0} μm"}
+                other{"{0} μm"}
             }
             mile{
                 dnam{"ميلونه"}
@@ -1399,7 +1624,7 @@ ps{
                 other{"{0} nmi"}
             }
             parsec{
-                dnam{"parsecs"}
+                dnam{"پارسيکس"}
                 one{"{0} pc"}
                 other{"{0} pc"}
             }
@@ -1462,9 +1687,9 @@ ps{
                 other{"{0} t"}
             }
             microgram{
-                dnam{"µg"}
-                one{"{0} µg"}
-                other{"{0} µg"}
+                dnam{"μg"}
+                one{"{0} μg"}
+                other{"{0} μg"}
             }
             milligram{
                 dnam{"mg"}
@@ -1619,6 +1844,11 @@ ps{
             barrel{
                 dnam{"بېرل"}
             }
+            bushel{
+                dnam{"بوشیل"}
+                one{"{0} bu"}
+                other{"{0} bu"}
+            }
             centiliter{
                 dnam{"cL"}
                 one{"{0} cL"}
@@ -1676,6 +1906,24 @@ ps{
                 one{"{0} dL"}
                 other{"{0} dL"}
             }
+            dessert-spoon{
+                dnam{"dstspn"}
+                one{"{0} dstspn"}
+                other{"{0} dstspn"}
+            }
+            dessert-spoon-imperial{
+                dnam{"dstspn Imp"}
+            }
+            dram{
+                dnam{"ډرام مایع"}
+                one{"{0} dram fl"}
+                other{"{0} dram fl"}
+            }
+            drop{
+                dnam{"څاڅک"}
+                one{"{0} څاڅک"}
+                other{"{0} څاڅک"}
+            }
             fluid-ounce{
                 dnam{"fl oz"}
                 one{"{0} fl oz"}
@@ -1694,12 +1942,15 @@ ps{
                 dnam{"Imp. gal"}
                 one{"{0} gal Imp."}
                 other{"{0} gal Imp."}
-                per{"{0}/gal Imp."}
             }
             hectoliter{
                 dnam{"hL"}
                 one{"{0} hL"}
                 other{"{0} hL"}
+            }
+            jigger{
+                one{"{0} جګر"}
+                other{"{0} جګر"}
             }
             liter{
                 dnam{"ليټرز"}
@@ -1717,6 +1968,11 @@ ps{
                 one{"{0} mL"}
                 other{"{0} mL"}
             }
+            pinch{
+                dnam{"چنه"}
+                one{"{0} چنه"}
+                other{"{0} چنه"}
+            }
             pint{
                 dnam{"pints"}
                 one{"{0} pt"}
@@ -1731,6 +1987,11 @@ ps{
                 dnam{"qts"}
                 one{"{0} qt"}
                 other{"{0} qt"}
+            }
+            quart-imperial{
+                dnam{"qt Imp"}
+                one{"{0} qt Imp."}
+                other{"{0} qt Imp."}
             }
             tablespoon{
                 dnam{"tbsp"}

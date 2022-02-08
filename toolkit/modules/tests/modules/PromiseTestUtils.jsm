@@ -10,12 +10,8 @@
 
 var EXPORTED_SYMBOLS = ["PromiseTestUtils"];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
-ChromeUtils.import("resource://testing-common/Assert.jsm", this);
-
-// Keep "JSMPromise" separate so "Promise" still refers to DOM Promises.
-let JSMPromise = ChromeUtils.import("resource://gre/modules/Promise.jsm", {})
-  .Promise;
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { Assert } = ChromeUtils.import("resource://testing-common/Assert.jsm");
 
 var PromiseTestUtils = {
   /**
@@ -65,12 +61,6 @@ var PromiseTestUtils = {
 
     PromiseDebugging.addUncaughtRejectionObserver(this);
 
-    // Promise.jsm rejections are only reported to this observer when requested,
-    // so we don't have to store a key to remove them when consumed.
-    JSMPromise.Debugging.addUncaughtErrorObserver(rejection =>
-      this._rejections.push(rejection)
-    );
-
     this._initialized = true;
   },
   _initialized: false,
@@ -84,9 +74,25 @@ var PromiseTestUtils = {
     }
 
     PromiseDebugging.removeUncaughtRejectionObserver(this);
-    JSMPromise.Debugging.clearUncaughtErrorObservers();
 
     this._initialized = false;
+  },
+
+  /**
+   * Called only by the test infrastructure, collect all the
+   * JavaScript Developer Errors that have been thrown and
+   * treat them as uncaught promise rejections.
+   */
+  collectJSDevErrors() {
+    let recentJSDevError = ChromeUtils.recentJSDevError;
+    if (!recentJSDevError) {
+      // Either `recentJSDevError` is not implemented in this version or there is no recent JS dev error.
+      return;
+    }
+    ChromeUtils.clearRecentJSDevError();
+    Promise.reject(
+      `${recentJSDevError.message}\n${recentJSDevError.stack}\ndetected at\n`
+    );
   },
 
   /**
@@ -111,7 +117,10 @@ var PromiseTestUtils = {
 
     PromiseDebugging.addUncaughtRejectionObserver(observer);
     Promise.reject(this._ensureDOMPromiseRejectionsProcessedReason);
-    Services.tm.spinEventLoopUntil(() => observed);
+    Services.tm.spinEventLoopUntil(
+      "Test(PromiseTestUtils.jsm:ensureDOMPromiseRejectionsProcessed)",
+      () => observed
+    );
     PromiseDebugging.removeUncaughtRejectionObserver(observer);
   },
   _ensureDOMPromiseRejectionsProcessedReason: {},
@@ -143,7 +152,7 @@ var PromiseTestUtils = {
         // Ignore the special promise for ensureDOMPromiseRejectionsProcessed.
         return;
       }
-      message = reason.message || "" + reason;
+      message = reason?.message || "" + reason;
     } catch (ex) {}
 
     // We should convert the rejection stack to a string immediately. This is
@@ -236,9 +245,6 @@ var PromiseTestUtils = {
    * This is called by the test suite at the end of each test function.
    */
   assertNoUncaughtRejections() {
-    // Ask Promise.jsm to report all uncaught rejections to the observer now.
-    JSMPromise.Debugging.flushUncaughtErrors();
-
     // If there is any uncaught rejection left at this point, the test fails.
     while (this._rejections.length) {
       let rejection = this._rejections.shift();

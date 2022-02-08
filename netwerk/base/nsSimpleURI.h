@@ -13,6 +13,7 @@
 #include "nsIClassInfo.h"
 #include "nsISizeOf.h"
 #include "nsIURIMutator.h"
+#include "nsISimpleURIMutator.h"
 
 namespace mozilla {
 namespace net {
@@ -24,19 +25,15 @@ namespace net {
     }                                                \
   }
 
-class nsSimpleURI : public nsIURI,
-                    public nsISerializable,
-                    public nsIClassInfo,
-                    public nsISizeOf {
+class nsSimpleURI : public nsIURI, public nsISerializable, public nsISizeOf {
  protected:
-  nsSimpleURI();
+  nsSimpleURI() = default;
   virtual ~nsSimpleURI() = default;
 
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIURI
   NS_DECL_NSISERIALIZABLE
-  NS_DECL_NSICLASSINFO
 
   static already_AddRefed<nsSimpleURI> From(nsIURI* aURI);
 
@@ -58,20 +55,21 @@ class nsSimpleURI : public nsIURI,
   // enum used in a few places to specify how .ref attribute should be handled
   enum RefHandlingEnum { eIgnoreRef, eHonorRef, eReplaceRef };
 
-  virtual nsresult Clone(nsIURI** aURI);
-  virtual nsresult SetSpecInternal(const nsACString& input);
-  virtual nsresult SetScheme(const nsACString& input);
+  virtual nsresult Clone(nsIURI** result);
+  virtual nsresult SetSpecInternal(const nsACString& aSpec,
+                                   bool aStripWhitespace = false);
+  virtual nsresult SetScheme(const nsACString& scheme);
   virtual nsresult SetUserPass(const nsACString& input);
   nsresult SetUsername(const nsACString& input);
   virtual nsresult SetPassword(const nsACString& input);
   virtual nsresult SetHostPort(const nsACString& aValue);
   virtual nsresult SetHost(const nsACString& input);
   virtual nsresult SetPort(int32_t port);
-  virtual nsresult SetPathQueryRef(const nsACString& input);
-  virtual nsresult SetRef(const nsACString& input);
-  virtual nsresult SetFilePath(const nsACString& input);
-  virtual nsresult SetQuery(const nsACString& input);
-  virtual nsresult SetQueryWithEncoding(const nsACString& input,
+  virtual nsresult SetPathQueryRef(const nsACString& aPath);
+  virtual nsresult SetRef(const nsACString& aRef);
+  virtual nsresult SetFilePath(const nsACString& aFilePath);
+  virtual nsresult SetQuery(const nsACString& aQuery);
+  virtual nsresult SetQueryWithEncoding(const nsACString& aQuery,
                                         const Encoding* encoding);
   nsresult ReadPrivate(nsIObjectInputStream* stream);
 
@@ -98,9 +96,10 @@ class nsSimpleURI : public nsIURI,
 
   // Helper to share code between Clone methods.
   virtual nsresult CloneInternal(RefHandlingEnum refHandlingMode,
-                                 const nsACString& newRef, nsIURI** clone);
+                                 const nsACString& newRef, nsIURI** result);
 
-  nsresult SetPathQueryRefEscaped(const nsACString& aPath, bool aNeedsEscape);
+  nsresult EscapeAndSetPathQueryRef(const nsACString& aPath);
+  nsresult SetPathQueryRefInternal(const nsACString& aPath);
 
   bool Deserialize(const mozilla::ipc::URIParams&);
 
@@ -109,13 +108,14 @@ class nsSimpleURI : public nsIURI,
   nsCString mRef;   // so that URIs with different refs can share string data.
   nsCString
       mQuery;  // so that URLs with different querys can share string data.
-  bool mMutable;
-  bool mIsRefValid;    // To distinguish between empty-ref and no-ref.
-  bool mIsQueryValid;  // To distinguish between empty-query and no-query.
+  bool mIsRefValid{false};  // To distinguish between empty-ref and no-ref.
+  // To distinguish between empty-query and no-query.
+  bool mIsQueryValid{false};
 
  public:
   class Mutator final : public nsIURIMutator,
                         public BaseURIMutator<nsSimpleURI>,
+                        public nsISimpleURIMutator,
                         public nsISerializable {
     NS_DECL_ISUPPORTS
     NS_FORWARD_SAFE_NSIURISETTERS_RET(mURI)
@@ -128,6 +128,22 @@ class nsSimpleURI : public nsIURI,
 
     [[nodiscard]] NS_IMETHOD Read(nsIObjectInputStream* aStream) override {
       return InitFromInputStream(aStream);
+    }
+
+    [[nodiscard]] NS_IMETHOD SetSpecAndFilterWhitespace(
+        const nsACString& aSpec, nsIURIMutator** aMutator) override {
+      if (aMutator) {
+        *aMutator = do_AddRef(this).take();
+      }
+
+      nsresult rv = NS_OK;
+      RefPtr<nsSimpleURI> uri = new nsSimpleURI();
+      rv = uri->SetSpecInternal(aSpec, /* filterWhitespace */ true);
+      if (NS_FAILED(rv)) {
+        return rv;
+      }
+      mURI = std::move(uri);
+      return NS_OK;
     }
 
     explicit Mutator() = default;

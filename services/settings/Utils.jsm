@@ -8,6 +8,9 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+const { ServiceRequest } = ChromeUtils.import(
+  "resource://gre/modules/ServiceRequest.jsm"
+);
 ChromeUtils.defineModuleGetter(
   this,
   "AppConstants",
@@ -59,12 +62,16 @@ var Utils = {
       Ci.nsIEnvironment
     );
     const isXpcshell = env.exists("XPCSHELL_TEST_PROFILE_DIR");
-    return AppConstants.RELEASE_OR_BETA && !Cu.isInAutomation && !isXpcshell
+    const isNotThunderbird = AppConstants.MOZ_APP_NAME != "thunderbird";
+    return AppConstants.RELEASE_OR_BETA &&
+      !Cu.isInAutomation &&
+      !isXpcshell &&
+      isNotThunderbird
       ? "https://firefox.settings.services.mozilla.com/v1"
       : gServerURL;
   },
 
-  CHANGES_PATH: "/buckets/monitor/collections/changes/records",
+  CHANGES_PATH: "/buckets/monitor/collections/changes/changeset",
 
   /**
    * Logger instance.
@@ -93,6 +100,79 @@ var Utils = {
   },
 
   /**
+   * A wrapper around `ServiceRequest` that behaves like `fetch()`.
+   *
+   * Use this in order to leverage the `beConservative` flag, for
+   * example to avoid using HTTP3 to fetch critical data.
+   *
+   * @param input a resource
+   * @param init request options
+   * @returns a Response object
+   */
+  async fetch(input, init = {}) {
+    return new Promise(function(resolve, reject) {
+      const request = new ServiceRequest();
+      function fallbackOrReject(err) {
+        if (
+          // At most one recursive Utils.fetch call (bypassProxy=false to true).
+          bypassProxy ||
+          !request.isProxied ||
+          !request.bypassProxyEnabled
+        ) {
+          reject(err);
+          return;
+        }
+        // TODO: Remove ?. when https://phabricator.services.mozilla.com/D127170 lands
+        ServiceRequest.logProxySource?.(request.channel, "remote-settings");
+        resolve(Utils.fetch(input, { ...init, bypassProxy: true }));
+      }
+
+      request.onerror = () =>
+        fallbackOrReject(new TypeError("NetworkError: Network request failed"));
+      request.ontimeout = () =>
+        fallbackOrReject(new TypeError("Timeout: Network request failed"));
+      request.onabort = () =>
+        fallbackOrReject(new DOMException("Aborted", "AbortError"));
+      request.onload = () => {
+        // Parse raw response headers into `Headers` object.
+        const headers = new Headers();
+        const rawHeaders = request.getAllResponseHeaders();
+        rawHeaders
+          .trim()
+          .split(/[\r\n]+/)
+          .forEach(line => {
+            const parts = line.split(": ");
+            const header = parts.shift();
+            const value = parts.join(": ");
+            headers.set(header, value);
+          });
+
+        const responseAttributes = {
+          status: request.status,
+          statusText: request.statusText,
+          url: request.responseURL,
+          headers,
+        };
+        resolve(new Response(request.response, responseAttributes));
+      };
+
+      const { method = "GET", headers = {}, bypassProxy = false } = init;
+
+      request.open(method, input, { bypassProxy });
+      // By default, XMLHttpRequest converts the response based on the
+      // Content-Type header, or UTF-8 otherwise. This may mangle binary
+      // responses. Avoid that by requesting the raw bytes.
+      request.responseType = "arraybuffer";
+
+      for (const [name, value] of Object.entries(headers)) {
+        request.setRequestHeader(name, value);
+      }
+
+      request.send();
+    });
+  },
+
+  /**
    * Check if local data exist for the specified client.
    *
    * @param {RemoteSettingsClient} client
@@ -114,7 +194,10 @@ var Utils = {
   async hasLocalDump(bucket, collection) {
     try {
       await fetch(
-        `resource://app/defaults/settings/${bucket}/${collection}.json`
+        `resource://app/defaults/settings/${bucket}/${collection}.json`,
+        {
+          method: "HEAD",
+        }
       );
       return true;
     } catch (e) {
@@ -123,7 +206,66 @@ var Utils = {
   },
 
   /**
+   * Look up the last modification time of the JSON dump.
+   *
+   * @param {String} bucket
+   * @param {String} collection
+   * @return {int} The last modification time of the dump. -1 if non-existent.
+   */
+  async getLocalDumpLastModified(bucket, collection) {
+    if (!this._dumpStats) {
+      if (!this._dumpStatsInitPromise) {
+        this._dumpStatsInitPromise = (async () => {
+          try {
+            let res = await fetch(
+              "resource://app/defaults/settings/last_modified.json"
+            );
+            this._dumpStats = await res.json();
+          } catch (e) {
+            log.warn(`Failed to load last_modified.json: ${e}`);
+            this._dumpStats = {};
+          }
+          delete this._dumpStatsInitPromise;
+        })();
+      }
+      await this._dumpStatsInitPromise;
+    }
+    const identifier = `${bucket}/${collection}`;
+    let lastModified = this._dumpStats[identifier];
+    if (lastModified === undefined) {
+      try {
+        let res = await fetch(
+          `resource://app/defaults/settings/${bucket}/${collection}.json`
+        );
+        let records = (await res.json()).data;
+        // Records in dumps are sorted by last_modified, newest first.
+        // https://searchfox.org/mozilla-central/rev/5b3444ad300e244b5af4214212e22bd9e4b7088a/taskcluster/docker/periodic-updates/scripts/periodic_file_updates.sh#304
+        lastModified = records[0]?.last_modified || 0;
+      } catch (e) {
+        lastModified = -1;
+      }
+      this._dumpStats[identifier] = lastModified;
+    }
+    return lastModified;
+  },
+
+  /**
    * Fetch the list of remote collections and their timestamp.
+   * ```
+   *   {
+   *     "timestamp": 1486545678,
+   *     "changes":[
+   *       {
+   *         "host":"kinto-ota.dev.mozaws.net",
+   *         "last_modified":1450717104423,
+   *         "bucket":"blocklists",
+   *         "collection":"certificates"
+   *       },
+   *       ...
+   *     ],
+   *     "metadata": {}
+   *   }
+   * ```
    * @param {String} serverUrl         The server URL (eg. `https://server.org/v1`)
    * @param {int}    expectedTimestamp The timestamp that the server is supposed to return.
    *                                   We obtained it from the Megaphone notification payload,
@@ -135,28 +277,13 @@ var Utils = {
   async fetchLatestChanges(serverUrl, options = {}) {
     const { expectedTimestamp, lastEtag = "", filters = {} } = options;
 
-    //
-    // Fetch the list of changes objects from the server that looks like:
-    // {"data":[
-    //   {
-    //     "host":"kinto-ota.dev.mozaws.net",
-    //     "last_modified":1450717104423,
-    //     "bucket":"blocklists",
-    //     "collection":"certificates"
-    //    }]}
-
     let url = serverUrl + Utils.CHANGES_PATH;
-
-    // Use ETag to obtain a `304 Not modified` when no change occurred,
-    // and `?_since` parameter to only keep entries that weren't processed yet.
-    const headers = {};
-    const params = { ...filters };
+    const params = {
+      ...filters,
+      _expected: expectedTimestamp ?? 0,
+    };
     if (lastEtag != "") {
-      headers["If-None-Match"] = lastEtag;
       params._since = lastEtag;
-    }
-    if (expectedTimestamp) {
-      params._expected = expectedTimestamp;
     }
     if (params) {
       url +=
@@ -165,52 +292,43 @@ var Utils = {
           .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
           .join("&");
     }
-    const response = await fetch(url, { headers });
+    const response = await Utils.fetch(url);
 
-    let changes = [];
-    // If no changes since last time, go on with empty list of changes.
-    if (response.status != 304) {
-      if (response.status >= 500) {
+    if (response.status >= 500) {
+      throw new Error(`Server error ${response.status} ${response.statusText}`);
+    }
+
+    const is404FromCustomServer =
+      response.status == 404 &&
+      Services.prefs.prefHasUserValue("services.settings.server");
+
+    const ct = response.headers.get("Content-Type");
+    if (!is404FromCustomServer && (!ct || !ct.includes("application/json"))) {
+      throw new Error(`Unexpected content-type "${ct}"`);
+    }
+
+    let payload;
+    try {
+      payload = await response.json();
+    } catch (e) {
+      payload = e.message;
+    }
+
+    if (!payload.hasOwnProperty("changes")) {
+      // If the server is failing, the JSON response might not contain the
+      // expected data. For example, real server errors (Bug 1259145)
+      // or dummy local server for tests (Bug 1481348)
+      if (!is404FromCustomServer) {
         throw new Error(
-          `Server error ${response.status} ${response.statusText}`
+          `Server error ${url} ${response.status} ${
+            response.statusText
+          }: ${JSON.stringify(payload)}`
         );
       }
-
-      const is404FromCustomServer =
-        response.status == 404 &&
-        Services.prefs.prefHasUserValue("services.settings.server");
-
-      const ct = response.headers.get("Content-Type");
-      if (!is404FromCustomServer && (!ct || !ct.includes("application/json"))) {
-        throw new Error(`Unexpected content-type "${ct}"`);
-      }
-      let payload;
-      try {
-        payload = await response.json();
-      } catch (e) {
-        payload = e.message;
-      }
-
-      if (!payload.hasOwnProperty("data")) {
-        // If the server is failing, the JSON response might not contain the
-        // expected data. For example, real server errors (Bug 1259145)
-        // or dummy local server for tests (Bug 1481348)
-        if (!is404FromCustomServer) {
-          throw new Error(
-            `Server error ${response.status} ${
-              response.statusText
-            }: ${JSON.stringify(payload)}`
-          );
-        }
-      } else {
-        changes = payload.data;
-      }
     }
-    // The server should always return ETag. But we've had situations where the CDN
-    // was interfering.
-    const currentEtag = response.headers.has("ETag")
-      ? response.headers.get("ETag")
-      : undefined;
+
+    const { changes = [], timestamp } = payload;
+
     let serverTimeMillis = Date.parse(response.headers.get("Date"));
     // Since the response is served via a CDN, the Date header value could have been cached.
     const cacheAgeSeconds = response.headers.has("Age")
@@ -233,7 +351,7 @@ var Utils = {
 
     return {
       changes,
-      currentEtag,
+      currentEtag: `"${timestamp}"`,
       serverTimeMillis,
       backoffSeconds,
       ageSeconds,

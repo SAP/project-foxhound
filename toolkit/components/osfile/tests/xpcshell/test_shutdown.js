@@ -1,6 +1,7 @@
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
-ChromeUtils.import("resource://gre/modules/Promise.jsm", this);
-ChromeUtils.import("resource://gre/modules/osfile.jsm", this);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { PromiseUtils } = ChromeUtils.import(
+  "resource://gre/modules/PromiseUtils.jsm"
+);
 
 add_task(function init() {
   do_get_profile();
@@ -16,7 +17,7 @@ add_task(async function system_shutdown() {
   // Test that closed directories do not cause warnings
   function testLeaksOf(resource, topic) {
     return (async function() {
-      let deferred = Promise.defer();
+      let deferred = PromiseUtils.defer();
 
       // Register observer
       Services.prefs.setBoolPref("toolkit.asyncshutdown.testing", true);

@@ -10,8 +10,6 @@
 SimpleTest.ignoreAllUncaughtExceptions(true);
 SimpleTest.requestLongerTimeout(2);
 
-const TEST_URL =
-  "http://example.com/browser/browser/base/content/test/fullscreen/open_and_focus_helper.html";
 const IFRAME_ID = "testIframe";
 
 async function testWindowOpen(iframeID) {
@@ -22,7 +20,7 @@ async function testWindowOpen(iframeID) {
   let popup;
   await testExpectFullScreenExit(tab.linkedBrowser, true, async () => {
     info("Calling window.open()");
-    popup = await jsWindowOpen(tab.linkedBrowser, iframeID);
+    popup = await jsWindowOpen(tab.linkedBrowser, true, iframeID);
   });
 
   // Cleanup

@@ -61,12 +61,12 @@ function serveChangesEntries(serverTime, entries) {
     response.setStatusLine(null, 200, "OK");
     response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setHeader("Date", new Date(serverTime).toUTCString());
+    const latest = entries[0]?.last_modified ?? 42;
     if (entries.length) {
-      const latest = entries[0].last_modified;
       response.setHeader("ETag", `"${latest}"`);
       response.setHeader("Last-Modified", new Date(latest).toGMTString());
     }
-    response.write(JSON.stringify({ data: entries }));
+    response.write(JSON.stringify({ timestamp: latest, changes: entries }));
   };
 }
 
@@ -86,7 +86,7 @@ add_task(clear_state);
 
 add_task(async function test_an_event_is_sent_on_start() {
   server.registerPathHandler(CHANGES_PATH, (request, response) => {
-    response.write(JSON.stringify({ data: [] }));
+    response.write(JSON.stringify({ timestamp: 42, changes: [] }));
     response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setHeader("ETag", '"42"');
     response.setHeader("Date", new Date().toUTCString());
@@ -263,16 +263,7 @@ add_task(async function test_check_up_to_date() {
   );
 
   const serverTime = 4000;
-  function server304(request, response) {
-    if (
-      request.hasHeader("if-none-match") &&
-      request.getHeader("if-none-match") == '"1100"'
-    ) {
-      response.setHeader("Date", new Date(serverTime).toUTCString());
-      response.setStatusLine(null, 304, "Service Not Modified");
-    }
-  }
-  server.registerPathHandler(CHANGES_PATH, server304);
+  server.registerPathHandler(CHANGES_PATH, serveChangesEntries(serverTime, []));
 
   Services.prefs.setCharPref(PREF_LAST_ETAG, '"1100"');
 
@@ -286,7 +277,7 @@ add_task(async function test_check_up_to_date() {
   };
   Services.obs.addObserver(observer, "remote-settings:changes-poll-end");
 
-  // If server has no change, a 304 is received, maybeSync() is not called.
+  // If server has no change, maybeSync() is not called.
   let maybeSyncCalled = false;
   const c = RemoteSettings("test-collection", {
     bucketName: "test-bucket",
@@ -322,10 +313,13 @@ add_task(async function test_expected_timestamp() {
         collection: "with-cache-busting",
       },
     ];
-    if (request.queryString == `_expected=${encodeURIComponent('"42"')}`) {
+    if (
+      request.queryString.includes(`_expected=${encodeURIComponent('"42"')}`)
+    ) {
       response.write(
         JSON.stringify({
-          data: entries,
+          timestamp: 1110,
+          changes: entries,
         })
       );
     }
@@ -352,7 +346,8 @@ add_task(async function test_client_last_check_is_saved() {
   server.registerPathHandler(CHANGES_PATH, (request, response) => {
     response.write(
       JSON.stringify({
-        data: [
+        timestamp: 42,
+        changes: [
           {
             id: "695c2407-de79-4408-91c7-70720dd59d78",
             last_modified: 1100,
@@ -384,6 +379,11 @@ add_task(async function test_client_last_check_is_saved() {
 });
 add_task(clear_state);
 
+const TELEMETRY_EVENTS_FILTERS = {
+  category: "uptake.remotecontent.result",
+  method: "uptake",
+};
+
 add_task(async function test_age_of_data_is_reported_in_uptake_status() {
   await withFakeChannel("nightly", async () => {
     const serverTime = 1552323900000;
@@ -403,31 +403,34 @@ add_task(async function test_age_of_data_is_reported_in_uptake_status() {
 
     await RemoteSettings.pollChanges();
 
-    TelemetryTestUtils.assertEvents([
+    TelemetryTestUtils.assertEvents(
       [
-        "uptake.remotecontent.result",
-        "uptake",
-        "remotesettings",
-        UptakeTelemetry.STATUS.SUCCESS,
-        {
-          source: TELEMETRY_HISTOGRAM_POLL_KEY,
-          age: "3600",
-          trigger: "manual",
-        },
+        [
+          "uptake.remotecontent.result",
+          "uptake",
+          "remotesettings",
+          UptakeTelemetry.STATUS.SUCCESS,
+          {
+            source: TELEMETRY_HISTOGRAM_POLL_KEY,
+            age: "3600",
+            trigger: "manual",
+          },
+        ],
+        [
+          "uptake.remotecontent.result",
+          "uptake",
+          "remotesettings",
+          UptakeTelemetry.STATUS.SUCCESS,
+          {
+            source: TELEMETRY_HISTOGRAM_SYNC_KEY,
+            duration: () => true,
+            trigger: "manual",
+            timestamp: `"${recordsTimestamp}"`,
+          },
+        ],
       ],
-      [
-        "uptake.remotecontent.result",
-        "uptake",
-        "remotesettings",
-        UptakeTelemetry.STATUS.SUCCESS,
-        {
-          source: TELEMETRY_HISTOGRAM_SYNC_KEY,
-          duration: () => true,
-          trigger: "manual",
-          timestamp: `"${recordsTimestamp}"`,
-        },
-      ],
-    ]);
+      TELEMETRY_EVENTS_FILTERS
+    );
   });
 });
 add_task(clear_state);
@@ -454,30 +457,33 @@ add_task(
 
       await RemoteSettings.pollChanges();
 
-      TelemetryTestUtils.assertEvents([
+      TelemetryTestUtils.assertEvents(
         [
-          "uptake.remotecontent.result",
-          "uptake",
-          "remotesettings",
-          "success",
-          {
-            source: TELEMETRY_HISTOGRAM_POLL_KEY,
-            age: () => true,
-            trigger: "manual",
-          },
+          [
+            "uptake.remotecontent.result",
+            "uptake",
+            "remotesettings",
+            "success",
+            {
+              source: TELEMETRY_HISTOGRAM_POLL_KEY,
+              age: () => true,
+              trigger: "manual",
+            },
+          ],
+          [
+            "uptake.remotecontent.result",
+            "uptake",
+            "remotesettings",
+            "success",
+            {
+              source: TELEMETRY_HISTOGRAM_SYNC_KEY,
+              duration: v => v >= 1000,
+              trigger: "manual",
+            },
+          ],
         ],
-        [
-          "uptake.remotecontent.result",
-          "uptake",
-          "remotesettings",
-          "success",
-          {
-            source: TELEMETRY_HISTOGRAM_SYNC_KEY,
-            duration: v => v >= 1000,
-            trigger: "manual",
-          },
-        ],
-      ]);
+        TELEMETRY_EVENTS_FILTERS
+      );
     });
   }
 );
@@ -501,20 +507,20 @@ add_task(async function test_success_with_partial_list() {
         collection: "poll-test-collection",
       },
     ];
-    if (request.queryString == `_since=${encodeURIComponent('"42"')}`) {
+    if (request.queryString.includes(`_since=${encodeURIComponent('"42"')}`)) {
       response.write(
         JSON.stringify({
-          data: entries.slice(0, 1),
+          timestamp: 43,
+          changes: entries.slice(0, 1),
         })
       );
-      response.setHeader("ETag", '"43"');
     } else {
       response.write(
         JSON.stringify({
-          data: entries,
+          timestamp: 42,
+          changes: entries,
         })
       );
-      response.setHeader("ETag", '"42"');
     }
     response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setHeader("Date", new Date().toUTCString());
@@ -717,34 +723,34 @@ add_task(async function test_client_error() {
     TELEMETRY_HISTOGRAM_SYNC_KEY
   );
 
+  const collectionDetails = {
+    id: "b6ba7fab-a40a-4d03-a4af-6b627f3c5b36",
+    last_modified: 42,
+    host: "localhost",
+    bucket: "main",
+    collection: "some-entry",
+  };
   server.registerPathHandler(
     CHANGES_PATH,
-    serveChangesEntries(10000, [
-      {
-        id: "b6ba7fab-a40a-4d03-a4af-6b627f3c5b36",
-        last_modified: 42,
-        host: "localhost",
-        bucket: "main",
-        collection: "some-entry",
-      },
-    ])
+    serveChangesEntries(10000, [collectionDetails])
   );
   const c = RemoteSettings("some-entry");
   c.maybeSync = () => {
-    throw new Error("boom");
+    throw new RemoteSettingsClient.CorruptedDataError("main/some-entry");
   };
 
-  let notificationObserved = false;
+  let notificationsObserved = [];
   const observer = {
     observe(aSubject, aTopic, aData) {
-      Services.obs.removeObserver(this, "remote-settings:changes-poll-end");
-      notificationObserved = true;
+      Services.obs.removeObserver(this, aTopic);
+      notificationsObserved.push([aTopic, aSubject.wrappedJSObject]);
     },
   };
   Services.obs.addObserver(observer, "remote-settings:changes-poll-end");
+  Services.obs.addObserver(observer, "remote-settings:sync-error");
   Services.prefs.setIntPref(PREF_LAST_ETAG, 42);
 
-  // pollChanges() fails with adequate error and no notification.
+  // pollChanges() fails with adequate error and a sync-error notification.
   let error;
   try {
     await RemoteSettings.pollChanges();
@@ -752,11 +758,25 @@ add_task(async function test_client_error() {
     error = e;
   }
 
-  Assert.ok(
-    !notificationObserved,
-    "a notification should not have been observed"
+  Assert.equal(
+    notificationsObserved.length,
+    1,
+    "only the error notification should not have been observed"
   );
-  Assert.ok(/boom/.test(error.message), "original client error is thrown");
+  console.log(notificationsObserved);
+  let [topicObserved, subjectObserved] = notificationsObserved[0];
+  Assert.equal(topicObserved, "remote-settings:sync-error");
+  Assert.ok(
+    subjectObserved.error instanceof RemoteSettingsClient.CorruptedDataError,
+    `original error is provided (got ${subjectObserved.error})`
+  );
+  Assert.deepEqual(
+    subjectObserved.error.details,
+    collectionDetails,
+    "information about collection is provided"
+  );
+
+  Assert.ok(/Corrupted/.test(error.message), "original client error is thrown");
   // When an error occurs, last etag was not overwritten.
   Assert.equal(Services.prefs.getIntPref(PREF_LAST_ETAG), 42);
   // ensure that we've accumulated the correct telemetry
@@ -774,7 +794,7 @@ add_task(async function test_check_clockskew_is_updated() {
   function serverResponse(request, response) {
     response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setHeader("Date", new Date(serverTime).toUTCString());
-    response.write(JSON.stringify({ data: [] }));
+    response.write(JSON.stringify({ timestamp: 42, changes: [] }));
     response.setStatusLine(null, 200, "OK");
   }
   server.registerPathHandler(CHANGES_PATH, serverResponse);
@@ -817,7 +837,7 @@ add_task(async function test_check_clockskew_takes_age_into_account() {
     response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setHeader("Date", new Date(serverTime).toUTCString());
     response.setHeader("Age", `${ageCDNSeconds}`);
-    response.write(JSON.stringify({ data: [] }));
+    response.write(JSON.stringify({ timestamp: 42, changes: [] }));
     response.setStatusLine(null, 200, "OK");
   }
   server.registerPathHandler(CHANGES_PATH, serverResponse);
@@ -837,7 +857,7 @@ add_task(async function test_backoff() {
   function simulateBackoffResponse(request, response) {
     response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setHeader("Backoff", "10");
-    response.write(JSON.stringify({ data: [] }));
+    response.write(JSON.stringify({ timestamp: 42, changes: [] }));
     response.setStatusLine(null, 200, "OK");
   }
   server.registerPathHandler(CHANGES_PATH, simulateBackoffResponse);
@@ -1012,7 +1032,7 @@ add_task(async function test_syncs_clients_with_local_dump() {
 add_task(clear_state);
 
 add_task(async function test_adding_client_resets_polling() {
-  function serve200or304(request, response) {
+  function serve200(request, response) {
     const entries = [
       {
         id: "aa71e6cc-9f37-447a-b6e0-c025e8eabd03",
@@ -1022,27 +1042,26 @@ add_task(async function test_adding_client_resets_polling() {
         collection: "a-collection",
       },
     ];
-    if (request.queryString == `_since=${encodeURIComponent('"42"')}`) {
+    if (request.queryString.includes("_since")) {
       response.write(
         JSON.stringify({
-          data: entries.slice(0, 1),
+          timestamp: 42,
+          changes: [],
         })
       );
-      response.setHeader("ETag", '"42"');
-      response.setStatusLine(null, 304, "Not Modified");
     } else {
       response.write(
         JSON.stringify({
-          data: entries,
+          timestamp: 42,
+          changes: entries,
         })
       );
-      response.setHeader("ETag", '"42"');
-      response.setStatusLine(null, 200, "OK");
     }
+    response.setStatusLine(null, 200, "OK");
     response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setHeader("Date", new Date().toUTCString());
   }
-  server.registerPathHandler(CHANGES_PATH, serve200or304);
+  server.registerPathHandler(CHANGES_PATH, serve200);
 
   // Poll once, without any client for "a-collection"
   await RemoteSettings.pollChanges();
@@ -1084,7 +1103,7 @@ add_task(
       ];
       response.write(
         JSON.stringify({
-          data: entries,
+          changes: entries,
         })
       );
       response.setHeader("ETag", '"42"');

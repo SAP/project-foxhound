@@ -11,12 +11,12 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLMeterElement.h"
 #include "nsIContent.h"
+#include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsGkAtoms.h"
 #include "nsNameSpaceManager.h"
 #include "nsNodeInfoManager.h"
 #include "nsContentCreatorFunctions.h"
-#include "nsCheckboxRadioFrame.h"
 #include "nsFontMetrics.h"
 #include "nsCSSPseudoElements.h"
 #include "nsStyleConsts.h"
@@ -43,7 +43,6 @@ void nsMeterFrame::DestroyFrom(nsIFrame* aDestructRoot,
   NS_ASSERTION(!GetPrevContinuation(),
                "nsMeterFrame should not have continuations; if it does we "
                "need to call RegUnregAccessKey only for the first.");
-  nsCheckboxRadioFrame::RegUnRegAccessKey(static_cast<nsIFrame*>(this), false);
   aPostDestroyData.AddAnonymousContent(mBarDiv.forget());
   nsContainerFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
@@ -90,17 +89,13 @@ void nsMeterFrame::Reflow(nsPresContext* aPresContext,
                "nsMeterFrame should not have continuations; if it does we "
                "need to call RegUnregAccessKey only for the first.");
 
-  if (mState & NS_FRAME_FIRST_REFLOW) {
-    nsCheckboxRadioFrame::RegUnRegAccessKey(this, true);
-  }
-
   nsIFrame* barFrame = mBarDiv->GetPrimaryFrame();
   NS_ASSERTION(barFrame, "The meter frame should have a child with a frame!");
 
   ReflowBarFrame(barFrame, aPresContext, aReflowInput, aStatus);
 
-  aDesiredSize.SetSize(aReflowInput.GetWritingMode(),
-                       aReflowInput.ComputedSizeWithBorderPadding());
+  const auto wm = aReflowInput.GetWritingMode();
+  aDesiredSize.SetSize(wm, aReflowInput.ComputedSizeWithBorderPadding(wm));
 
   aDesiredSize.SetOverflowAreasToDesiredBounds();
   ConsiderChildOverflow(aDesiredSize.mOverflowAreas, barFrame);
@@ -187,7 +182,7 @@ nsresult nsMeterFrame::AttributeChanged(int32_t aNameSpaceID,
 LogicalSize nsMeterFrame::ComputeAutoSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
+    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
     ComputeSizeFlags aFlags) {
   RefPtr<nsFontMetrics> fontMet =
       nsLayoutUtils::GetFontMetricsForFrame(this, 1.0f);
@@ -232,11 +227,8 @@ bool nsMeterFrame::ShouldUseNativeStyle() const {
   // - neither frame has author specified rules setting the border or the
   //   background.
   return StyleDisplay()->EffectiveAppearance() == StyleAppearance::Meter &&
-         !PresContext()->HasAuthorSpecifiedRules(
-             this, NS_AUTHOR_SPECIFIED_BORDER_OR_BACKGROUND) &&
-         barFrame &&
+         !Style()->HasAuthorSpecifiedBorderOrBackground() && barFrame &&
          barFrame->StyleDisplay()->EffectiveAppearance() ==
              StyleAppearance::Meterchunk &&
-         !PresContext()->HasAuthorSpecifiedRules(
-             barFrame, NS_AUTHOR_SPECIFIED_BORDER_OR_BACKGROUND);
+         !barFrame->Style()->HasAuthorSpecifiedBorderOrBackground();
 }

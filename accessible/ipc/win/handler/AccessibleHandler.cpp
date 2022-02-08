@@ -47,9 +47,9 @@ const WCHAR kEmulatedWindowClassName[] = L"MozillaContentWindowClass";
 const uint32_t kEmulatedWindowClassNameNChars =
     sizeof(kEmulatedWindowClassName) / sizeof(WCHAR);
 // Mask to get the content process portion of a Windows accessible unique id.
-// This is bits 24 through 30 (LSB 0) of the id. This must be kept in sync
+// This is bits 23 through 30 (LSB 0) of the id. This must be kept in sync
 // with kNumContentProcessIDBits in accessible/windows/msaa/MsaaIdGenerator.cpp.
-const uint32_t kIdContentProcessMask = 0x7F000000;
+const uint32_t kIdContentProcessMask = 0x7F800000;
 
 static mscom::Factory<AccessibleHandler> sHandlerFactory;
 
@@ -63,9 +63,6 @@ AccessibleHandler::Create(IUnknown* aOuter, REFIID aIid, void** aOutInterface) {
 
   HRESULT hr;
   RefPtr<AccessibleHandler> handler(new AccessibleHandler(aOuter, &hr));
-  if (!handler) {
-    return E_OUTOFMEMORY;
-  }
   if (FAILED(hr)) {
     return hr;
   }
@@ -220,16 +217,23 @@ AccessibleHandler::MaybeUpdateCachedData() {
     return E_POINTER;
   }
 
-  // Clean up the old data.
-  CleanupDynamicIA2Data(mCachedData.mDynamicData,
-                        mCachedDynamicDataMarshaledByCom);
-  HRESULT hr =
-      mCachedData.mGeckoBackChannel->Refresh(&mCachedData.mDynamicData);
+  // While we're making the outgoing COM call below, an incoming COM call can
+  // be handled which calls ReadHandlerPayload or re-enters this function.
+  // Therefore, we mustn't update the cached data directly lest it be mutated
+  // elsewhere before the outgoing COM call returns and cause corruption or
+  // memory leaks. Instead, pass a temporary struct and update the cached data
+  // only after this call completes.
+  DynamicIA2Data newData;
+  HRESULT hr = mCachedData.mGeckoBackChannel->Refresh(&newData);
   if (SUCCEEDED(hr)) {
+    // Clean up the old data.
+    CleanupDynamicIA2Data(mCachedData.mDynamicData,
+                          mCachedDynamicDataMarshaledByCom);
+    mCachedData.mDynamicData = newData;
+    mCachedDynamicDataMarshaledByCom = true;
     // We just updated the cache, so update this object's cache generation
     // so we only update the cache again after the next change.
     mCacheGen = gen;
-    mCachedDynamicDataMarshaledByCom = true;
   }
   return hr;
 }
@@ -1307,25 +1311,6 @@ AccessibleHandler::get_selectionRanges(IA2Range** ranges, long* nRanges) {
   return mIA2PassThru->get_selectionRanges(ranges, nRanges);
 }
 
-static const GUID kUnsupportedServices[] = {
-    // clang-format off
-  // Unknown, queried by Windows
-  {0x33f139ee, 0xe509, 0x47f7, {0xbf, 0x39, 0x83, 0x76, 0x44, 0xf7, 0x45, 0x76}},
-  // Unknown, queried by Windows
-  {0xFDA075CF, 0x7C8B, 0x498C, { 0xB5, 0x14, 0xA9, 0xCB, 0x52, 0x1B, 0xBF, 0xB4 }},
-  // Unknown, queried by Windows
-  {0x8EDAA462, 0x21F4, 0x4C87, { 0xA0, 0x12, 0xB3, 0xCD, 0xA3, 0xAB, 0x01, 0xFC }},
-  // Unknown, queried by Windows
-  {0xacd46652, 0x829d, 0x41cb, { 0xa5, 0xfc, 0x17, 0xac, 0xf4, 0x36, 0x61, 0xac }},
-  // SID_IsUIAutomationObject (undocumented), queried by Windows
-  {0xb96fdb85, 0x7204, 0x4724, { 0x84, 0x2b, 0xc7, 0x05, 0x9d, 0xed, 0xb9, 0xd0 }},
-  // IIS_IsOleaccProxy (undocumented), queried by Windows
-  {0x902697FA, 0x80E4, 0x4560, {0x80, 0x2A, 0xA1, 0x3F, 0x22, 0xA6, 0x47, 0x09}},
-  // IID_IHTMLElement, queried by JAWS
-  {0x3050F1FF, 0x98B5, 0x11CF, {0xBB, 0x82, 0x00, 0xAA, 0x00, 0xBD, 0xCE, 0x0B}}
-    // clang-format on
-};
-
 /*** IServiceProvider ***/
 
 HRESULT
@@ -2153,4 +2138,9 @@ extern "C" HRESULT __stdcall DllUnregisterServer() {
   }
 
   return ProxyDllUnregisterServer();
+}
+
+extern "C" HRESULT __stdcall RegisterMsix() {
+  return mozilla::mscom::Handler::Register(CLSID_AccessibleHandler,
+                                           /* aMsixContainer */ true);
 }

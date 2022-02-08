@@ -51,22 +51,30 @@ let extData = {
 };
 
 let contextMenuItems = {
-  "context-navigation": "hidden",
   "context-sep-navigation": "hidden",
   "context-viewsource": "",
-  "context-viewinfo": "disabled",
   "inspect-separator": "hidden",
   "context-inspect": "hidden",
   "context-inspect-a11y": "hidden",
   "context-bookmarkpage": "hidden",
 };
+if (AppConstants.platform == "macosx") {
+  contextMenuItems["context-back"] = "hidden";
+  contextMenuItems["context-forward"] = "hidden";
+  contextMenuItems["context-reload"] = "hidden";
+  contextMenuItems["context-stop"] = "hidden";
+} else {
+  contextMenuItems["context-navigation"] = "hidden";
+}
 
 const type = "extension";
 
-function assertTelemetryMatches(events) {
+async function assertTelemetryMatches(events) {
   events = events.map(([method, object, value, extra]) => {
     return { method, object, value, extra };
   });
+  // Wait a tick for telemetry
+  await Promise.resolve().then();
   TelemetryTestUtils.assertEvents(events, {
     category: "addonsManager",
     method: /^(action|link|view)$/,
@@ -76,6 +84,10 @@ function assertTelemetryMatches(events) {
 add_task(async function test_setup() {
   // Clear any previosuly collected telemetry event.
   Services.telemetry.clearEvents();
+  CustomizableUI.addWidgetToArea("home-button", "nav-bar");
+  registerCleanupFunction(() =>
+    CustomizableUI.removeWidgetFromArea("home-button")
+  );
 });
 
 add_task(async function browseraction_popup_contextmenu() {
@@ -105,6 +117,7 @@ add_task(async function browseraction_popup_contextmenu_hidden_items() {
 
   let item, state;
   for (const itemID in contextMenuItems) {
+    info(`Checking ${itemID}`);
     item = contentAreaContextMenu.querySelector(`#${itemID}`);
     state = contextMenuItems[itemID];
 
@@ -136,9 +149,9 @@ add_task(async function browseraction_popup_image_contextmenu() {
     "#testimg"
   );
 
-  let item = contentAreaContextMenu.querySelector("#context-viewimageinfo");
+  let item = contentAreaContextMenu.querySelector("#context-copyimage");
   ok(!item.hidden);
-  ok(item.disabled);
+  ok(!item.disabled);
 
   await closeContextMenu(contentAreaContextMenu);
 
@@ -356,7 +369,7 @@ add_task(async function browseraction_contextmenu_manage_extension() {
 
   info("Run tests in normal mode");
   await main(false);
-  assertTelemetryMatches([
+  await assertTelemetryMatches([
     ["action", "browserAction", null, { action: "manage", addonId: id }],
     ["view", "aboutAddons", "detail", { addonId: id, type }],
     ["action", "browserAction", null, { action: "manage", addonId: id }],
@@ -365,7 +378,7 @@ add_task(async function browseraction_contextmenu_manage_extension() {
 
   info("Run tests in customize mode");
   await main(true);
-  assertTelemetryMatches([
+  await assertTelemetryMatches([
     ["action", "browserAction", null, { action: "manage", addonId: id }],
     ["view", "aboutAddons", "detail", { addonId: id, type }],
     ["action", "browserAction", null, { action: "manage", addonId: id }],
@@ -459,8 +472,13 @@ add_task(async function browseraction_contextmenu_remove_extension() {
     _response: 1,
     QueryInterface: ChromeUtils.generateQI(["nsIPromptService"]),
     confirmEx: function(...args) {
-      promptService._confirmExArgs = args;
+      promptService._resolveArgs(args);
       return promptService._response;
+    },
+    confirmArgs() {
+      return new Promise(resolve => {
+        promptService._resolveArgs = resolve;
+      });
     },
   };
   Services.prompt = promptService;
@@ -470,6 +488,7 @@ add_task(async function browseraction_contextmenu_remove_extension() {
 
   async function testContextMenu(menuId, customizing) {
     info(`Open browserAction context menu in ${menuId}`);
+    let confirmArgs = promptService.confirmArgs();
     let menu = await openContextMenu(menuId, buttonId, win);
 
     info(`Choosing 'Remove Extension' in ${menuId} should show confirm dialog`);
@@ -477,9 +496,12 @@ add_task(async function browseraction_contextmenu_remove_extension() {
       ".customize-context-removeExtension"
     );
     await closeChromeContextMenu(menuId, removeExtension, win);
-    is(promptService._confirmExArgs[1], `Remove ${name}`);
-    is(promptService._confirmExArgs[2], `Remove ${name} from ${brand}?`);
-    is(promptService._confirmExArgs[4], "Remove");
+    let args = await confirmArgs;
+    is(args[1], `Remove ${name}?`);
+    if (!Services.prefs.getBoolPref("prompts.windowPromptSubDialog", false)) {
+      is(args[2], `Remove ${name} from ${brand}?`);
+    }
+    is(args[4], "Remove");
     return menu;
   }
 
@@ -493,7 +515,7 @@ add_task(async function browseraction_contextmenu_remove_extension() {
     win,
   });
 
-  assertTelemetryMatches([
+  await assertTelemetryMatches([
     [
       "action",
       "browserAction",
@@ -516,7 +538,7 @@ add_task(async function browseraction_contextmenu_remove_extension() {
     win,
   });
 
-  assertTelemetryMatches([
+  await assertTelemetryMatches([
     [
       "action",
       "browserAction",
@@ -547,7 +569,7 @@ add_task(async function browseraction_contextmenu_remove_extension() {
   await testContextMenu("toolbar-context-menu", false);
   await uninstalled;
 
-  assertTelemetryMatches([
+  await assertTelemetryMatches([
     [
       "action",
       "browserAction",
@@ -645,8 +667,13 @@ add_task(async function browseraction_contextmenu_report_extension() {
       "Got about:addons tab selected"
     );
 
-    await BrowserTestUtils.browserLoaded(browser);
-
+    // Do not wait for the about:addons tab to be loaded if its
+    // document is already readyState==complete.
+    // This prevents intermittent timeout failures while running
+    // this test in optimized builds.
+    if (browser.contentDocument?.readyState != "complete") {
+      await BrowserTestUtils.browserLoaded(browser);
+    }
     await testReportDialog();
 
     // Close the new about:addons tab when running in customize mode,
@@ -662,7 +689,8 @@ add_task(async function browseraction_contextmenu_report_extension() {
       await customizationReady;
     } else {
       info("Navigate the about:addons tab to about:blank");
-      await BrowserTestUtils.loadURI(browser, "about:blank");
+      BrowserTestUtils.loadURI(browser, "about:blank");
+      await BrowserTestUtils.browserLoaded(browser);
     }
 
     return menu;

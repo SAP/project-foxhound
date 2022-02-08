@@ -10,18 +10,12 @@ import re
 import shutil
 from pathlib import Path
 
-from mozperftest.utils import install_package
+from mozperftest.utils import install_package, get_output_dir
 from mozperftest.test.noderunner import NodeRunner
-from mozperftest.test.browsertime.setup import (
-    system_prerequisites,
-    append_system_env,
-)
-from mozperftest.test.browsertime.script import ScriptInfo
+from mozperftest.test.browsertime.visualtools import get_dependencies, xvfb
 
 
 BROWSERTIME_SRC_ROOT = Path(__file__).parent
-PILLOW_VERSION = "6.2.1"
-PYSSIM_VERSION = "0.4"
 
 
 def matches(args, *flags):
@@ -51,8 +45,7 @@ class NodeException(Exception):
 
 
 class BrowsertimeRunner(NodeRunner):
-    """Runs a browsertime test.
-    """
+    """Runs a browsertime test."""
 
     name = "browsertime"
     activated = True
@@ -83,6 +76,13 @@ class BrowsertimeRunner(NodeRunner):
             "default": "",
             "help": "Extra options passed to browsertime.js",
         },
+        "xvfb": {"action": "store_true", "default": False, "help": "Use xvfb"},
+        "no-window-recorder": {
+            "action": "store_true",
+            "default": False,
+            "help": "Use the window recorder",
+        },
+        "viewport-size": {"type": str, "default": "1280x1024", "help": "Viewport size"},
     }
 
     def __init__(self, env, mach_cmd):
@@ -122,11 +122,41 @@ class BrowsertimeRunner(NodeRunner):
     @property
     def browsertime_js(self):
         root = os.environ.get("BROWSERTIME", self.state_path)
-        return Path(root, "node_modules", "browsertime", "bin", "browsertime.js")
+        path = Path(root, "node_modules", "browsertime", "bin", "browsertime.js")
+        if path.exists():
+            os.environ["BROWSERTIME_JS"] = str(path)
+        return path
+
+    @property
+    def visualmetrics_py(self):
+        root = os.environ.get("BROWSERTIME", self.state_path)
+        path = Path(
+            root, "node_modules", "browsertime", "browsertime", "visualmetrics.py"
+        )
+        if path.exists():
+            os.environ["VISUALMETRICS_PY"] = str(path)
+        return path
+
+    def _should_install(self):
+        # If browsertime doesn't exist, install it
+        if not self.visualmetrics_py.exists() or not self.browsertime_js.exists():
+            return True
+
+        # Browsertime exists, check if it's outdated
+        with Path(BROWSERTIME_SRC_ROOT, "package.json").open() as new, Path(
+            os.environ.get("BROWSERTIME", self.state_path),
+            "node_modules",
+            "browsertime",
+            "package.json",
+        ).open() as old:
+            old_pkg = json.load(old)
+            new_pkg = json.load(new)
+
+        return not old_pkg["_from"].endswith(new_pkg["devDependencies"]["browsertime"])
 
     def setup(self):
-        """Install browsertime and visualmetrics.py prerequisites and the Node.js package.
-        """
+        """Install browsertime and visualmetrics.py prerequisites and the Node.js package."""
+
         node = self.get_arg("node")
         if node is not None:
             os.environ["NODEJS"] = node
@@ -134,27 +164,20 @@ class BrowsertimeRunner(NodeRunner):
         super(BrowsertimeRunner, self).setup()
         install_url = self.get_arg("install-url")
 
-        tests = self.get_arg("tests", [])
-        if len(tests) != 1:
-            # we don't support auto-discovery (no test passed) or multiple
-            # tests here yet.
-            raise NotImplementedError()
-
-        self._test_script = ScriptInfo(tests[0])
-
         # installing Python deps on the fly
-        for dep in ("Pillow==%s" % PILLOW_VERSION, "pyssim==%s" % PYSSIM_VERSION):
-            install_package(self.virtualenv_manager, dep, ignore_failure=True)
+        visualmetrics = self.get_arg("visualmetrics", False)
+
+        if visualmetrics:
+            # installing Python deps on the fly
+            for dep in get_dependencies():
+                install_package(self.virtualenv_manager, dep, ignore_failure=True)
 
         # check if the browsertime package has been deployed correctly
         # for this we just check for the browsertime directory presence
-        if self.browsertime_js.exists() and not self.get_arg("clobber"):
+        # we also make sure the visual metrics module is there *if*
+        # we need it
+        if not self._should_install() and not self.get_arg("clobber"):
             return
-
-        if install_url is None:
-            system_prerequisites(
-                str(self.state_path), str(self.artifact_cache_path), self.log, self.info
-            )
 
         # preparing ~/.mozbuild/browsertime
         for file in ("package.json", "package-lock.json"):
@@ -223,10 +246,6 @@ class BrowsertimeRunner(NodeRunner):
             no_optional=install_url or automation,
         )
 
-    def append_env(self, append_path=True):
-        env = super(BrowsertimeRunner, self).append_env(append_path)
-        return append_system_env(env, str(self.state_path), append_path)
-
     def extra_default_args(self, args=[]):
         # Add Mozilla-specific default arguments.  This is tricky because browsertime is quite
         # loose about arguments; repeat arguments are generally accepted but then produce
@@ -240,6 +259,8 @@ class BrowsertimeRunner(NodeRunner):
         # Default to not collect HAR.  Override with `--skipHar=false`.
         if not matches(args, "--har", "--skipHar", "--gzipHar"):
             extra_args.append("--skipHar")
+
+        extra_args.extend(["--viewPort", self.get_arg("viewport-size")])
 
         if not matches(args, "--android"):
             binary = self.get_arg("binary")
@@ -293,27 +314,44 @@ class BrowsertimeRunner(NodeRunner):
 
         return args_list
 
+    def _line_handler(self, line):
+        line_matcher = re.compile(r"(\[\d{4}-\d{2}-\d{2}.*\])\s+([a-zA-Z]+):\s+(.*)")
+        match = line_matcher.match(line)
+        if not match:
+            return
+
+        date, level, msg = match.groups()
+        msg = msg.replace("{", "{{").replace("}", "}}")
+        level = level.lower()
+        if "error" in level:
+            self.error("Mozperftest failed to run: ", msg)
+        elif "warning" in level:
+            self.warning(msg)
+        else:
+            self.info(msg)
+
     def run(self, metadata):
+        self._test_script = metadata.script
         self.setup()
         cycles = self.get_arg("cycles", 1)
         for cycle in range(1, cycles + 1):
+
             # Build an output directory
             output = self.get_arg("output")
-            if output is not None:
-                result_dir = pathlib.Path(output, f"browsertime-results-{cycle}")
-            else:
-                result_dir = pathlib.Path(
-                    self.topsrcdir, "artifacts", f"browsertime-results-{cycle}"
-                )
-            result_dir.mkdir(parents=True, exist_ok=True)
-            result_dir = result_dir.resolve()
+            if output is None:
+                output = pathlib.Path(self.topsrcdir, "artifacts")
+            result_dir = get_output_dir(output, f"browsertime-results-{cycle}")
 
             # Run the test cycle
-            metadata.run_hook("before_cycle", cycle=cycle)
+            metadata.run_hook(
+                "before_cycle", metadata, self.env, cycle, self._test_script
+            )
             try:
                 metadata = self._one_cycle(metadata, result_dir)
             finally:
-                metadata.run_hook("after_cycle", cycle=cycle)
+                metadata.run_hook(
+                    "after_cycle", metadata, self.env, cycle, self._test_script
+                )
         return metadata
 
     def _one_cycle(self, metadata, result_dir):
@@ -329,8 +367,24 @@ class BrowsertimeRunner(NodeRunner):
             self._test_script["filename"],
         ]
 
+        # Set *all* prefs found in browser_prefs because
+        # browsertime will override the ones found in firefox.profileTemplate
+        # with its own defaults at `firefoxPreferences.js`
+        # Using `--firefox.preference` ensures we override them.
+        # see https://github.com/sitespeedio/browsertime/issues/1427
+        browser_prefs = metadata.get_options("browser_prefs")
+        for key, value in browser_prefs.items():
+            args += ["--firefox.preference", f"{key}:{value}"]
+
         if self.get_arg("verbose"):
             args += ["-vvv"]
+
+        # if the visualmetrics layer is activated, we want to feed it
+        visualmetrics = self.get_arg("visualmetrics", False)
+        if visualmetrics:
+            args += ["--video", "true"]
+            if not self.get_arg("no-window-recorder"):
+                args += ["--firefox.windowRecorder", "true"]
 
         extra_options = self.get_arg("extra-options")
         if extra_options:
@@ -338,7 +392,7 @@ class BrowsertimeRunner(NodeRunner):
                 option = option.strip()
                 if not option:
                     continue
-                option = option.split("=")
+                option = option.split("=", 1)
                 if len(option) != 2:
                     self.warning(
                         f"Skipping browsertime option {option} as it "
@@ -356,7 +410,13 @@ class BrowsertimeRunner(NodeRunner):
         extra = self.extra_default_args(args=args)
         command = [str(self.browsertime_js)] + extra + args
         self.info("Running browsertime with this command %s" % " ".join(command))
-        exit_code = self.node(command)
+
+        if visualmetrics and self.get_arg("xvfb"):
+            with xvfb():
+                exit_code = self.node(command, self._line_handler)
+        else:
+            exit_code = self.node(command, self._line_handler)
+
         if exit_code != 0:
             raise NodeException(exit_code)
 

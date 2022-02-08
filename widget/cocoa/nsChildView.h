@@ -9,7 +9,7 @@
 // formal protocols
 #include "mozView.h"
 #ifdef ACCESSIBILITY
-#  include "mozilla/a11y/Accessible.h"
+#  include "mozilla/a11y/LocalAccessible.h"
 #  include "mozAccessibleProtocol.h"
 #endif
 
@@ -262,6 +262,8 @@ class ChildViewMouseTracker {
                                  BOOL isClickThrough = NO);
   static void MouseExitedWindow(NSEvent* aEvent);
   static void MouseEnteredWindow(NSEvent* aEvent);
+  static void NativeMenuOpened();
+  static void NativeMenuClosed();
   static void ReEvaluateMouseEnterState(NSEvent* aEvent = nil, ChildView* aOldView = nil);
   static void ResendLastMouseMoveEvent();
   static ChildView* ViewForEvent(NSEvent* aEvent);
@@ -342,7 +344,6 @@ class nsChildView final : public nsBaseWidget {
   void EnsureContentLayerForMainThreadPainting();
 
   virtual void* GetNativeData(uint32_t aDataType) override;
-  virtual nsresult ConfigureChildren(const nsTArray<Configuration>& aConfigurations) override;
   virtual LayoutDeviceIntPoint WidgetToScreenOffset() override;
   virtual bool ShowsResizeIndicator(LayoutDeviceIntRect* aResizerRect) override { return false; }
 
@@ -354,8 +355,7 @@ class nsChildView final : public nsBaseWidget {
   virtual bool WidgetTypeSupportsAcceleration() override;
   virtual bool ShouldUseOffMainThreadCompositing() override;
 
-  virtual void SetCursor(nsCursor aDefaultCursor, imgIContainer* aCursor, uint32_t aHotspotX,
-                         uint32_t aHotspotY) override;
+  virtual void SetCursor(const Cursor&) override;
 
   virtual nsresult SetTitle(const nsAString& title) override;
 
@@ -375,16 +375,10 @@ class nsChildView final : public nsBaseWidget {
   virtual TextEventDispatcherListener* GetNativeTextEventDispatcherListener() override;
   [[nodiscard]] virtual nsresult AttachNativeKeyEvent(
       mozilla::WidgetKeyboardEvent& aEvent) override;
-  virtual bool GetEditCommands(NativeKeyBindingsType aType,
-                               const mozilla::WidgetKeyboardEvent& aEvent,
-                               nsTArray<mozilla::CommandInt>& aCommands) override;
-  void GetEditCommandsRemapped(NativeKeyBindingsType aType,
-                               const mozilla::WidgetKeyboardEvent& aEvent,
-                               nsTArray<mozilla::CommandInt>& aCommands, uint32_t aGeckoKeyCode,
-                               uint32_t aCocoaKeyCode);
+  MOZ_CAN_RUN_SCRIPT virtual bool GetEditCommands(
+      NativeKeyBindingsType aType, const mozilla::WidgetKeyboardEvent& aEvent,
+      nsTArray<mozilla::CommandInt>& aCommands) override;
 
-  virtual nsTransparencyMode GetTransparencyMode() override;
-  virtual void SetTransparencyMode(nsTransparencyMode aMode) override;
   virtual void SuppressAnimation(bool aSuppress) override;
 
   virtual nsresult SynthesizeNativeKeyEvent(int32_t aNativeKeyboardLayout, int32_t aNativeKeyCode,
@@ -392,13 +386,17 @@ class nsChildView final : public nsBaseWidget {
                                             const nsAString& aUnmodifiedCharacters,
                                             nsIObserver* aObserver) override;
 
-  virtual nsresult SynthesizeNativeMouseEvent(LayoutDeviceIntPoint aPoint, uint32_t aNativeMessage,
-                                              uint32_t aModifierFlags,
+  virtual nsresult SynthesizeNativeMouseEvent(LayoutDeviceIntPoint aPoint,
+                                              NativeMouseMessage aNativeMessage,
+                                              mozilla::MouseButton aButton,
+                                              nsIWidget::Modifiers aModifierFlags,
                                               nsIObserver* aObserver) override;
 
   virtual nsresult SynthesizeNativeMouseMove(LayoutDeviceIntPoint aPoint,
                                              nsIObserver* aObserver) override {
-    return SynthesizeNativeMouseEvent(aPoint, NSMouseMoved, 0, aObserver);
+    return SynthesizeNativeMouseEvent(aPoint, NativeMouseMessage::Move,
+                                      mozilla::MouseButton::eNotPressed,
+                                      nsIWidget::Modifiers::NO_MODIFIERS, aObserver);
   }
   virtual nsresult SynthesizeNativeMouseScrollEvent(LayoutDeviceIntPoint aPoint,
                                                     uint32_t aNativeMessage, double aDeltaX,
@@ -410,6 +408,9 @@ class nsChildView final : public nsBaseWidget {
                                               LayoutDeviceIntPoint aPoint, double aPointerPressure,
                                               uint32_t aPointerOrientation,
                                               nsIObserver* aObserver) override;
+
+  virtual nsresult SynthesizeNativeTouchpadDoubleTap(LayoutDeviceIntPoint aPoint,
+                                                     uint32_t aModifierFlags) override;
 
   // Mac specific methods
 
@@ -424,7 +425,7 @@ class nsChildView final : public nsBaseWidget {
   void HandleMainThreadCATransaction();
 
 #ifdef ACCESSIBILITY
-  already_AddRefed<mozilla::a11y::Accessible> GetDocumentAccessible();
+  already_AddRefed<mozilla::a11y::LocalAccessible> GetDocumentAccessible();
 #endif
 
   virtual void CreateCompositor() override;
@@ -481,18 +482,14 @@ class nsChildView final : public nsBaseWidget {
     return nsCocoaUtils::DevPixelsToCocoaPoints(aRect, BackingScaleFactor());
   }
 
-  [[nodiscard]] virtual nsresult StartPluginIME(const mozilla::WidgetKeyboardEvent& aKeyboardEvent,
-                                                int32_t aPanelX, int32_t aPanelY,
-                                                nsString& aCommitted) override;
-
-  virtual void SetPluginFocused(bool& aFocused) override;
-
-  bool IsPluginFocused() { return mPluginFocused; }
-
   virtual LayoutDeviceIntPoint GetClientOffset() override;
 
   void DispatchAPZWheelInputEvent(mozilla::InputData& aEvent, bool aCanTriggerSwipe);
   nsEventStatus DispatchAPZInputEvent(mozilla::InputData& aEvent);
+
+  void DispatchDoubleTapGesture(mozilla::TimeStamp aEventTimeStamp,
+                                LayoutDeviceIntPoint aScreenPosition,
+                                mozilla::Modifiers aModifiers);
 
   void SwipeFinished();
 
@@ -512,6 +509,12 @@ class nsChildView final : public nsBaseWidget {
   // (such as a window resize) and we can start modifying CALayers from the
   // compositor thread again.
   void UnsuspendAsyncCATransactions();
+
+  // Called by nsCocoaWindow when the window's fullscreen state changes.
+  void UpdateFullscreen(bool aFullscreen);
+
+  // Called by nsCocoaWindow when a mouse move has occurred.
+  void NoteMouseMoveAtTime(const mozilla::TimeStamp& aTime);
 
  protected:
   virtual ~nsChildView();
@@ -572,8 +575,6 @@ class nsChildView final : public nsBaseWidget {
   bool mVisible;
   bool mDrawing;
   bool mIsDispatchPaint;  // Is a paint event being dispatched
-
-  bool mPluginFocused;
 
   RefPtr<mozilla::layers::NativeLayerRootCA> mNativeLayerRoot;
 

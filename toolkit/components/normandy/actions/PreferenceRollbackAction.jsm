@@ -44,6 +44,23 @@ class PreferenceRollbackAction extends BaseAction {
     const { rolloutSlug } = recipe.arguments;
     const rollout = await PreferenceRollouts.get(rolloutSlug);
 
+    if (PreferenceRollouts.GRADUATION_SET.has(rolloutSlug)) {
+      // graduated rollouts can't be rolled back
+      TelemetryEvents.sendEvent(
+        "unenrollFailed",
+        "preference_rollback",
+        rolloutSlug,
+        {
+          reason: "in-graduation-set",
+          enrollmentId:
+            rollout?.enrollmentId ?? TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+        }
+      );
+      throw new Error(
+        `Cannot rollback rollout in graduation set "${rolloutSlug}".`
+      );
+    }
+
     if (!rollout) {
       this.log.debug(`Rollback ${rolloutSlug} not applicable, skipping`);
       return;
@@ -54,7 +71,9 @@ class PreferenceRollbackAction extends BaseAction {
         this.log.info(`Rolling back ${rolloutSlug}`);
         rollout.state = PreferenceRollouts.STATE_ROLLED_BACK;
         for (const { preferenceName, previousValue } of rollout.preferences) {
-          PrefUtils.setPref("default", preferenceName, previousValue);
+          PrefUtils.setPref(preferenceName, previousValue, {
+            branch: "default",
+          });
         }
         await PreferenceRollouts.update(rollout);
         TelemetryEvents.sendEvent(

@@ -7,11 +7,20 @@
 /* base class for rendering objects that do not have child lists */
 
 #include "nsLeafFrame.h"
+
+#include "mozilla/PresShell.h"
 #include "nsPresContext.h"
 
 using namespace mozilla;
 
 nsLeafFrame::~nsLeafFrame() = default;
+
+/* virtual */
+void nsLeafFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
+                                   const nsDisplayListSet& aLists) {
+  DO_GLOBAL_REFLOW_COUNT_DSP("nsLeafFrame");
+  DisplayBorderBackgroundOutline(aBuilder, aLists);
+}
 
 /* virtual */
 nscoord nsLeafFrame::GetMinISize(gfxContext* aRenderingContext) {
@@ -33,7 +42,7 @@ nscoord nsLeafFrame::GetPrefISize(gfxContext* aRenderingContext) {
 LogicalSize nsLeafFrame::ComputeAutoSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
+    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
     ComputeSizeFlags aFlags) {
   const WritingMode wm = GetWritingMode();
   LogicalSize result(wm, GetIntrinsicISize(), GetIntrinsicBSize());

@@ -118,7 +118,7 @@ async function test_save_change(testData) {
 
       // Submit the form with the new credentials. This will cause the doorhanger
       // notification to be displayed.
-      let formSubmittedPromise = listenForTestNotification("FormSubmit");
+      let formSubmittedPromise = listenForTestNotification("ShowDoorhanger");
       await SpecialPowers.spawn(browser, [], async function() {
         let doc = this.content.document;
         doc.getElementById("form-basic").submit();
@@ -160,5 +160,5 @@ async function test_save_change(testData) {
   );
 
   // Clean up the database before the next test case is executed.
-  Services.logins.removeAllLogins();
+  Services.logins.removeAllUserFacingLogins();
 }

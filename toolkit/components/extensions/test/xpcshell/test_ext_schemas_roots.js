@@ -3,9 +3,6 @@
 "use strict";
 
 const { SchemaRoot } = ChromeUtils.import("resource://gre/modules/Schemas.jsm");
-const { ExtensionCommon } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionCommon.jsm"
-);
 
 let { SchemaAPIInterface } = ExtensionCommon;
 
@@ -141,6 +138,7 @@ class TallyingAPIImplementation extends SchemaAPIInterface {
 
 let wrapper = {
   url: "moz-extension://b66e3509-cdb3-44f6-8eb8-c8b39b3a1d27/",
+  manifestVersion: 2,
 
   cloneScope: global,
 

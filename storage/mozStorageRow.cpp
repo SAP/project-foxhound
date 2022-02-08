@@ -4,12 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozStorageRow.h"
+
 #include "nsString.h"
 
 #include "sqlite3.h"
 #include "mozStoragePrivateHelpers.h"
 #include "Variant.h"
-#include "mozStorageRow.h"
 
 namespace mozilla {
 namespace storage {
@@ -62,7 +63,7 @@ nsresult Row::initialize(sqlite3_stmt* aStatement) {
     const char* name = ::sqlite3_column_name(aStatement, i);
     if (!name) break;
     nsAutoCString colName(name);
-    mNameHashtable.Put(colName, i);
+    mNameHashtable.InsertOrUpdate(colName, i);
   }
 
   return NS_OK;

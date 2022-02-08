@@ -25,7 +25,7 @@ class LIRGeneratorARM64 : public LIRGeneratorShared {
   LAllocation useByteOpRegisterAtStart(MDefinition* mir);
   LAllocation useByteOpRegisterOrNonDoubleConstant(MDefinition* mir);
 
-  inline LDefinition tempToUnbox() { return temp(); }
+  LDefinition tempToUnbox();
 
   bool needTempForPostBarrier() { return true; }
 
@@ -36,10 +36,13 @@ class LIRGeneratorARM64 : public LIRGeneratorShared {
 
   void lowerUntypedPhiInput(MPhi* phi, uint32_t inputPosition, LBlock* block,
                             size_t lirIndex);
-  void lowerInt64PhiInput(MPhi*, uint32_t, LBlock*, size_t) {
-    MOZ_CRASH("NYI");
+  void lowerInt64PhiInput(MPhi* phi, uint32_t inputPosition, LBlock* block,
+                          size_t lirIndex) {
+    lowerTypedPhiInput(phi, inputPosition, block, lirIndex);
   }
-  void defineInt64Phi(MPhi*, size_t) { MOZ_CRASH("NYI"); }
+  void defineInt64Phi(MPhi* phi, size_t lirIndex) {
+    defineTypedPhi(phi, lirIndex);
+  }
   void lowerForShift(LInstructionHelper<1, 2, 0>* ins, MDefinition* mir,
                      MDefinition* lhs, MDefinition* rhs);
   void lowerUrshD(MUrsh* mir);
@@ -51,6 +54,8 @@ class LIRGeneratorARM64 : public LIRGeneratorShared {
   void lowerForALU(LInstructionHelper<1, 2, 0>* ins, MDefinition* mir,
                    MDefinition* lhs, MDefinition* rhs);
 
+  void lowerForALUInt64(LInstructionHelper<INT64_PIECES, INT64_PIECES, 0>* ins,
+                        MDefinition* mir, MDefinition* input);
   void lowerForALUInt64(
       LInstructionHelper<INT64_PIECES, 2 * INT64_PIECES, 0>* ins,
       MDefinition* mir, MDefinition* lhs, MDefinition* rhs);
@@ -61,6 +66,10 @@ class LIRGeneratorARM64 : public LIRGeneratorShared {
       LInstructionHelper<INT64_PIECES, INT64_PIECES + 1, Temps>* ins,
       MDefinition* mir, MDefinition* lhs, MDefinition* rhs);
 
+  void lowerForCompareI64AndBranch(MTest* mir, MCompare* comp, JSOp op,
+                                   MDefinition* left, MDefinition* right,
+                                   MBasicBlock* ifTrue, MBasicBlock* ifFalse);
+
   void lowerForFPU(LInstructionHelper<1, 1, 0>* ins, MDefinition* mir,
                    MDefinition* input);
 
@@ -68,17 +77,46 @@ class LIRGeneratorARM64 : public LIRGeneratorShared {
   void lowerForFPU(LInstructionHelper<1, 2, Temps>* ins, MDefinition* mir,
                    MDefinition* lhs, MDefinition* rhs);
 
+  void lowerBuiltinInt64ToFloatingPoint(MBuiltinInt64ToFloatingPoint* ins);
+  void lowerWasmBuiltinTruncateToInt64(MWasmBuiltinTruncateToInt64* ins);
   void lowerForBitAndAndBranch(LBitAndAndBranch* baab, MInstruction* mir,
                                MDefinition* lhs, MDefinition* rhs);
+  void lowerWasmBuiltinTruncateToInt32(MWasmBuiltinTruncateToInt32* ins);
   void lowerTruncateDToInt32(MTruncateToInt32* ins);
   void lowerTruncateFToInt32(MTruncateToInt32* ins);
   void lowerDivI(MDiv* div);
   void lowerModI(MMod* mod);
   void lowerDivI64(MDiv* div);
+  void lowerWasmBuiltinDivI64(MWasmBuiltinDivI64* div);
   void lowerModI64(MMod* mod);
+  void lowerWasmBuiltinModI64(MWasmBuiltinModI64* mod);
+  void lowerUDivI64(MDiv* div);
+  void lowerUModI64(MMod* mod);
+  void lowerNegI(MInstruction* ins, MDefinition* input);
+  void lowerNegI64(MInstruction* ins, MDefinition* input);
   void lowerMulI(MMul* mul, MDefinition* lhs, MDefinition* rhs);
   void lowerUDiv(MDiv* div);
   void lowerUMod(MMod* mod);
+  void lowerWasmSelectI(MWasmSelect* select);
+  void lowerWasmSelectI64(MWasmSelect* select);
+  bool canSpecializeWasmCompareAndSelect(MCompare::CompareType compTy,
+                                         MIRType insTy);
+  void lowerWasmCompareAndSelect(MWasmSelect* ins, MDefinition* lhs,
+                                 MDefinition* rhs, MCompare::CompareType compTy,
+                                 JSOp jsop);
+
+  void lowerBigIntLsh(MBigIntLsh* ins);
+  void lowerBigIntRsh(MBigIntRsh* ins);
+  void lowerBigIntDiv(MBigIntDiv* ins);
+  void lowerBigIntMod(MBigIntMod* ins);
+
+  void lowerAtomicLoad64(MLoadUnboxedScalar* ins);
+  void lowerAtomicStore64(MStoreUnboxedScalar* ins);
+
+#ifdef ENABLE_WASM_SIMD
+  bool canFoldReduceSimd128AndBranch(wasm::SimdOp op);
+  bool canEmitWasmReduceSimd128AtUses(MWasmReduceSimd128* ins);
+#endif
 
   LTableSwitchV* newLTableSwitchV(MTableSwitch* ins);
   LTableSwitch* newLTableSwitch(const LAllocation& in,

@@ -6,7 +6,7 @@
 #ifndef Telemetry_h__
 #define Telemetry_h__
 
-#include "mozilla/GuardObjects.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/TelemetryEventEnums.h"
 #include "mozilla/TelemetryHistogramEnums.h"
 #include "mozilla/TelemetryOriginEnums.h"
@@ -36,7 +36,11 @@ struct KeyedHistogramAccumulation;
 struct ScalarAction;
 struct KeyedScalarAction;
 struct ChildEventData;
-struct EventExtraEntry;
+
+struct EventExtraEntry {
+  nsCString key;
+  nsCString value;
+};
 
 /**
  * Initialize the Telemetry service on the main thread at startup.
@@ -243,17 +247,12 @@ const char* GetHistogramName(HistogramID id);
 class MOZ_RAII RuntimeAutoTimer {
  public:
   explicit RuntimeAutoTimer(Telemetry::HistogramID aId,
-                            TimeStamp aStart = TimeStamp::Now()
-                                MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : id(aId), start(aStart) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-  }
+                            TimeStamp aStart = TimeStamp::Now())
+      : id(aId), start(aStart) {}
   explicit RuntimeAutoTimer(Telemetry::HistogramID aId, const nsCString& aKey,
-                            TimeStamp aStart = TimeStamp::Now()
-                                MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+                            TimeStamp aStart = TimeStamp::Now())
       : id(aId), key(aKey), start(aStart) {
     MOZ_ASSERT(!aKey.IsEmpty(), "The key must not be empty.");
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   }
 
   ~RuntimeAutoTimer() {
@@ -268,23 +267,16 @@ class MOZ_RAII RuntimeAutoTimer {
   Telemetry::HistogramID id;
   const nsCString key;
   const TimeStamp start;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 template <HistogramID id>
 class MOZ_RAII AutoTimer {
  public:
-  explicit AutoTimer(TimeStamp aStart = TimeStamp::Now()
-                         MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : start(aStart) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-  }
+  explicit AutoTimer(TimeStamp aStart = TimeStamp::Now()) : start(aStart) {}
 
-  explicit AutoTimer(const nsCString& aKey, TimeStamp aStart = TimeStamp::Now()
-                                                MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+  explicit AutoTimer(const nsCString& aKey, TimeStamp aStart = TimeStamp::Now())
       : start(aStart), key(aKey) {
     MOZ_ASSERT(!aKey.IsEmpty(), "The key must not be empty.");
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   }
 
   ~AutoTimer() {
@@ -298,17 +290,12 @@ class MOZ_RAII AutoTimer {
  private:
   const TimeStamp start;
   const nsCString key;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 class MOZ_RAII RuntimeAutoCounter {
  public:
-  explicit RuntimeAutoCounter(
-      HistogramID aId,
-      uint32_t counterStart = 0 MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : id(aId), counter(counterStart) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-  }
+  explicit RuntimeAutoCounter(HistogramID aId, uint32_t counterStart = 0)
+      : id(aId), counter(counterStart) {}
 
   ~RuntimeAutoCounter() { Accumulate(id, counter); }
 
@@ -339,17 +326,12 @@ class MOZ_RAII RuntimeAutoCounter {
  private:
   HistogramID id;
   uint32_t counter;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 template <HistogramID id>
 class MOZ_RAII AutoCounter {
  public:
-  explicit AutoCounter(
-      uint32_t counterStart = 0 MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : counter(counterStart) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-  }
+  explicit AutoCounter(uint32_t counterStart = 0) : counter(counterStart) {}
 
   ~AutoCounter() { Accumulate(id, counter); }
 
@@ -379,7 +361,6 @@ class MOZ_RAII AutoCounter {
 
  private:
   uint32_t counter;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 /**
@@ -451,30 +432,6 @@ void EnteringShutdownStage();
  */
 const uint32_t kSlowSQLThresholdForMainThread = 50;
 const uint32_t kSlowSQLThresholdForHelperThreads = 100;
-
-class ProcessedStack;
-
-/**
- * Record the main thread's call stack after it hangs.
- *
- * @param aDuration - Approximate duration of main thread hang, in seconds
- * @param aStack - Array of PCs from the hung call stack
- * @param aSystemUptime - System uptime at the time of the hang, in minutes
- * @param aFirefoxUptime - Firefox uptime at the time of the hang, in minutes
- * @param aAnnotations - Any annotations to be added to the report
- */
-#if defined(MOZ_GECKO_PROFILER)
-/**
- * Record the current thread's call stack on demand. Note that, the stack is
- * only captured once. Subsequent calls result in incrementing the capture
- * counter.
- *
- * @param aKey - A user defined key associated with the captured stack.
- *
- * NOTE: Unwinding call stacks is an expensive operation performance-wise.
- */
-void CaptureStack(const nsCString& aKey);
-#endif
 
 /**
  * Record a failed attempt at locking the user's profile.
@@ -569,18 +526,13 @@ void ScalarSetMaximum(mozilla::Telemetry::ScalarID aId, const nsAString& aKey,
 template <ScalarID id>
 class MOZ_RAII AutoScalarTimer {
  public:
-  explicit AutoScalarTimer(TimeStamp aStart = TimeStamp::Now()
-                               MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : start(aStart) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-  }
+  explicit AutoScalarTimer(TimeStamp aStart = TimeStamp::Now())
+      : start(aStart) {}
 
   explicit AutoScalarTimer(const nsAString& aKey,
-                           TimeStamp aStart = TimeStamp::Now()
-                               MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+                           TimeStamp aStart = TimeStamp::Now())
       : start(aStart), key(aKey) {
     MOZ_ASSERT(!aKey.IsEmpty(), "The key must not be empty.");
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   }
 
   ~AutoScalarTimer() {
@@ -596,7 +548,6 @@ class MOZ_RAII AutoScalarTimer {
  private:
   const TimeStamp start;
   const nsString key;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 /**

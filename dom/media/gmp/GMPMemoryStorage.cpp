@@ -6,19 +6,14 @@
 #include "GMPStorage.h"
 #include "nsClassHashtable.h"
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 class GMPMemoryStorage : public GMPStorage {
  public:
   GMPErr Open(const nsCString& aRecordName) override {
     MOZ_ASSERT(!IsOpen(aRecordName));
 
-    Record* record = nullptr;
-    if (!mRecords.Get(aRecordName, &record)) {
-      record = new Record();
-      mRecords.Put(aRecordName, record);
-    }
+    Record* record = mRecords.GetOrInsertNew(aRecordName);
     record->mIsOpen = true;
     return GMPNoErr;
   }
@@ -77,5 +72,4 @@ already_AddRefed<GMPStorage> CreateGMPMemoryStorage() {
   return RefPtr<GMPStorage>(new GMPMemoryStorage()).forget();
 }
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp

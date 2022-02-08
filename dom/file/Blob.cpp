@@ -12,6 +12,7 @@
 #include "mozilla/dom/BodyStream.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "MultipartBlobImpl.h"
 #include "nsIGlobalObject.h"
 #include "nsIInputStream.h"
@@ -20,8 +21,7 @@
 #include "StringBlobImpl.h"
 #include "js/GCAPI.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(Blob)
 
@@ -306,10 +306,7 @@ class BlobBodyStreamHolder final : public BodyStreamHolder {
 
   BlobBodyStreamHolder() { mozilla::HoldJSObjects(this); }
 
-  void NullifyStream() override {
-    mozilla::DropJSObjects(this);
-    mStream = nullptr;
-  }
+  void NullifyStream() override { mozilla::DropJSObjects(this); }
 
   void MarkAsRead() override {}
 
@@ -351,6 +348,7 @@ NS_INTERFACE_MAP_END_INHERITING(BodyStreamHolder)
 
 }  // anonymous namespace
 
+#ifndef MOZ_DOM_STREAMS
 void Blob::Stream(JSContext* aCx, JS::MutableHandle<JSObject*> aStream,
                   ErrorResult& aRv) {
   nsCOMPtr<nsIInputStream> stream;
@@ -373,6 +371,6 @@ void Blob::Stream(JSContext* aCx, JS::MutableHandle<JSObject*> aStream,
 
   aStream.set(holder->GetReadableStreamBody());
 }
+#endif
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

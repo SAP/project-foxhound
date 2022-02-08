@@ -6,7 +6,7 @@
 "use strict";
 
 const TEST_URI =
-  "data:text/html;charset=utf-8,Web Console test for editor resize";
+  "data:text/html;charset=utf-8,<!DOCTYPE html>Web Console test for editor resize";
 
 add_task(async function() {
   await pushPref("devtools.webconsole.input.editor", true);
@@ -66,7 +66,7 @@ async function resize(resizer, clientX) {
   await waitFor(() => doc.querySelector(".dragging"));
 
   const event = new MouseEvent("mousemove", { clientX });
-  resizer.ownerDocument.dispatchEvent(event);
+  resizer.dispatchEvent(event);
 
   info("Mouse up to stop resizing");
   EventUtils.synthesizeMouseAtCenter(

@@ -55,23 +55,23 @@ pub enum ImmutableScriptFlagsEnum {
     #[allow(dead_code)]
     IsDerivedClassConstructor = 1 << 19,
     #[allow(dead_code)]
-    IsFieldInitializer = 1 << 20,
+    IsSyntheticFunction = 1 << 20,
     #[allow(dead_code)]
-    HasRest = 1 << 21,
+    UseMemberInitializers = 1 << 21,
     #[allow(dead_code)]
-    NeedsFunctionEnvironmentObjects = 1 << 22,
+    HasRest = 1 << 22,
     #[allow(dead_code)]
-    FunctionHasExtraBodyVarScope = 1 << 23,
+    NeedsFunctionEnvironmentObjects = 1 << 23,
     #[allow(dead_code)]
-    ShouldDeclareArguments = 1 << 24,
+    FunctionHasExtraBodyVarScope = 1 << 24,
     #[allow(dead_code)]
-    ArgumentsHasVarBinding = 1 << 25,
+    ShouldDeclareArguments = 1 << 25,
     #[allow(dead_code)]
-    AlwaysNeedsArgsObj = 1 << 26,
+    NeedsArgsObj = 1 << 26,
     #[allow(dead_code)]
     HasMappedArgsObj = 1 << 27,
     #[allow(dead_code)]
-    IsLikelyConstructorWrapper = 1 << 28,
+    IsInlinableLargeFunction = 1 << 28,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -85,31 +85,31 @@ pub enum MutableScriptFlagsEnum {
     #[allow(dead_code)]
     HasDebugScript = 1 << 11,
     #[allow(dead_code)]
-    NeedsArgsAnalysis = 1 << 12,
-    #[allow(dead_code)]
-    NeedsArgsObj = 1 << 13,
-    #[allow(dead_code)]
     AllowRelazify = 1 << 14,
     #[allow(dead_code)]
     SpewEnabled = 1 << 15,
     #[allow(dead_code)]
-    BaselineDisabled = 1 << 16,
+    NeedsFinalWarmUpCount = 1 << 16,
     #[allow(dead_code)]
-    IonDisabled = 1 << 17,
+    BaselineDisabled = 1 << 17,
     #[allow(dead_code)]
-    FailedBoundsCheck = 1 << 18,
+    IonDisabled = 1 << 18,
     #[allow(dead_code)]
-    FailedShapeGuard = 1 << 19,
+    Uninlineable = 1 << 19,
     #[allow(dead_code)]
-    HadFrequentBailouts = 1 << 20,
+    FailedBoundsCheck = 1 << 21,
     #[allow(dead_code)]
-    HadOverflowBailout = 1 << 21,
+    HadLICMInvalidation = 1 << 22,
     #[allow(dead_code)]
-    Uninlineable = 1 << 22,
+    HadReorderingBailout = 1 << 23,
     #[allow(dead_code)]
-    InvalidatedIdempotentCache = 1 << 23,
+    HadEagerTruncationBailout = 1 << 24,
     #[allow(dead_code)]
-    FailedLexicalCheck = 1 << 24,
+    FailedLexicalCheck = 1 << 25,
+    #[allow(dead_code)]
+    HadSpeculativePhiBailout = 1 << 26,
+    #[allow(dead_code)]
+    HadUnboxFoldingBailout = 1 << 27,
 }
 
 // @@@@ END TYPES @@@@
@@ -156,7 +156,6 @@ pub struct ImmutableScriptData {
     pub body_scope_index: u32,
     pub num_ic_entries: u32,
     pub fun_length: u16,
-    pub num_bytecode_type_sets: u32,
     pub bytecode: Vec<u8>,
     pub scope_notes: Vec<ScopeNote>,
     // TODO: Add resume_offsets and try_notes.
@@ -219,7 +218,7 @@ impl From<ImmutableScriptDataList> for Vec<ImmutableScriptData> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SourceExtent {
     pub source_start: u32,
     pub source_end: u32,
@@ -231,12 +230,24 @@ pub struct SourceExtent {
 }
 
 impl SourceExtent {
-    pub fn top_level_script(lineno: u32, column: u32) -> Self {
+    fn new() -> Self {
         Self {
             source_start: 0,
             source_end: 0,
             to_string_start: 0,
             to_string_end: 0,
+
+            lineno: 0,
+            column: 0,
+        }
+    }
+
+    pub fn top_level_script(length: u32, lineno: u32, column: u32) -> Self {
+        Self {
+            source_start: 0,
+            source_end: length,
+            to_string_start: 0,
+            to_string_end: length,
 
             lineno,
             column,
@@ -315,6 +326,22 @@ pub struct ScriptStencil {
 }
 
 impl ScriptStencil {
+    fn empty_top_level_script() -> Self {
+        Self {
+            immutable_flags: ImmutableScriptFlags::new(),
+            gcthings: Vec::new(),
+            immutable_script_data: None,
+            extent: SourceExtent::new(),
+            fun_name: None,
+            fun_nargs: 0,
+            fun_flags: FunctionFlags::empty(),
+            lazy_function_enclosing_scope_index: None,
+            is_standalone_function: false,
+            was_function_emitted: false,
+            is_singleton_function: false,
+        }
+    }
+
     pub fn top_level_script(
         gcthings: Vec<GCThing>,
         immutable_script_data: ImmutableScriptDataIndex,
@@ -341,7 +368,7 @@ impl ScriptStencil {
         is_generator: bool,
         is_async: bool,
         fun_flags: FunctionFlags,
-        lazy_function_enclosing_scope_index: ScopeIndex,
+        lazy_function_enclosing_scope_index: Option<ScopeIndex>,
     ) -> Self {
         let mut flags = ImmutableScriptFlagsEnum::IsFunction as u32;
         if is_generator {
@@ -359,7 +386,7 @@ impl ScriptStencil {
             fun_name,
             fun_nargs: 0,
             fun_flags,
-            lazy_function_enclosing_scope_index: Some(lazy_function_enclosing_scope_index),
+            lazy_function_enclosing_scope_index,
             is_standalone_function: false,
             was_function_emitted: false,
             is_singleton_function: false,
@@ -408,16 +435,10 @@ impl ScriptStencil {
             .set(ImmutableScriptFlagsEnum::ShouldDeclareArguments);
     }
 
-    pub fn set_arguments_has_var_binding(&mut self) {
+    pub fn set_needs_args_obj(&mut self) {
         debug_assert!(self.is_lazy_function());
         self.immutable_flags
-            .set(ImmutableScriptFlagsEnum::ArgumentsHasVarBinding);
-    }
-
-    pub fn set_always_needs_args_obj(&mut self) {
-        debug_assert!(self.is_lazy_function());
-        self.immutable_flags
-            .set(ImmutableScriptFlagsEnum::AlwaysNeedsArgsObj);
+            .set(ImmutableScriptFlagsEnum::NeedsArgsObj);
     }
 
     pub fn set_has_mapped_args_obj(&mut self) {
@@ -513,6 +534,12 @@ impl ScriptStencilList {
         }
     }
 
+    pub fn new_with_empty_top_level() -> Self {
+        Self {
+            scripts: vec![ScriptStencil::empty_top_level_script()],
+        }
+    }
+
     pub fn push(&mut self, script: ScriptStencil) -> ScriptStencilIndex {
         let index = self.scripts.len();
         self.scripts.push(script);
@@ -525,6 +552,10 @@ impl ScriptStencilList {
 
     pub fn get_mut<'a>(&'a mut self, index: ScriptStencilIndex) -> &'a mut ScriptStencil {
         &mut self.scripts[usize::from(index)]
+    }
+
+    pub fn set_top_level(&mut self, top_level: ScriptStencil) {
+        self.scripts[0] = top_level;
     }
 }
 

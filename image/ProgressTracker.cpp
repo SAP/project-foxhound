@@ -153,28 +153,28 @@ class AsyncNotifyRunnable : public Runnable {
   nsTArray<RefPtr<IProgressObserver>> mObservers;
 };
 
-ProgressTracker::MediumHighRunnable::MediumHighRunnable(
+ProgressTracker::RenderBlockingRunnable::RenderBlockingRunnable(
     already_AddRefed<AsyncNotifyRunnable>&& aEvent)
     : PrioritizableRunnable(std::move(aEvent),
-                            nsIRunnablePriority::PRIORITY_MEDIUMHIGH) {}
+                            nsIRunnablePriority::PRIORITY_RENDER_BLOCKING) {}
 
-void ProgressTracker::MediumHighRunnable::AddObserver(
+void ProgressTracker::RenderBlockingRunnable::AddObserver(
     IProgressObserver* aObserver) {
   static_cast<AsyncNotifyRunnable*>(mRunnable.get())->AddObserver(aObserver);
 }
 
-void ProgressTracker::MediumHighRunnable::RemoveObserver(
+void ProgressTracker::RenderBlockingRunnable::RemoveObserver(
     IProgressObserver* aObserver) {
   static_cast<AsyncNotifyRunnable*>(mRunnable.get())->RemoveObserver(aObserver);
 }
 
 /* static */
-already_AddRefed<ProgressTracker::MediumHighRunnable>
-ProgressTracker::MediumHighRunnable::Create(
+already_AddRefed<ProgressTracker::RenderBlockingRunnable>
+ProgressTracker::RenderBlockingRunnable::Create(
     already_AddRefed<AsyncNotifyRunnable>&& aEvent) {
   MOZ_ASSERT(NS_IsMainThread());
-  RefPtr<ProgressTracker::MediumHighRunnable> event(
-      new ProgressTracker::MediumHighRunnable(std::move(aEvent)));
+  RefPtr<ProgressTracker::RenderBlockingRunnable> event(
+      new ProgressTracker::RenderBlockingRunnable(std::move(aEvent)));
   return event.forget();
 }
 
@@ -200,7 +200,7 @@ void ProgressTracker::Notify(IProgressObserver* aObserver) {
     mRunnable->AddObserver(aObserver);
   } else {
     RefPtr<AsyncNotifyRunnable> ev = new AsyncNotifyRunnable(this, aObserver);
-    mRunnable = ProgressTracker::MediumHighRunnable::Create(ev.forget());
+    mRunnable = ProgressTracker::RenderBlockingRunnable::Create(ev.forget());
     mEventTarget->Dispatch(mRunnable, NS_DISPATCH_NORMAL);
   }
 }
@@ -275,8 +275,8 @@ struct MOZ_STACK_CLASS ImageObserverNotifier<const ObserverTable*> {
 
   template <typename Lambda>
   void operator()(Lambda aFunc) {
-    for (auto iter = mObservers->ConstIter(); !iter.Done(); iter.Next()) {
-      RefPtr<IProgressObserver> observer = iter.Data().get();
+    for (const auto& weakObserver : mObservers->Values()) {
+      RefPtr<IProgressObserver> observer = weakObserver.get();
       if (observer && (mIgnoreDeferral || !observer->NotificationsDeferred())) {
         aFunc(observer);
       }
@@ -434,11 +434,11 @@ void ProgressTracker::AddObserver(IProgressObserver* aObserver) {
   }
 
   mObservers.Write([=](ObserverTable* aTable) {
-    MOZ_ASSERT(!aTable->Get(observer, nullptr),
+    MOZ_ASSERT(!aTable->Contains(observer),
                "Adding duplicate entry for image observer");
 
     WeakPtr<IProgressObserver> weakPtr = observer.get();
-    aTable->Put(observer, weakPtr);
+    aTable->InsertOrUpdate(observer, weakPtr);
   });
 
   MOZ_ASSERT(mObserversWithTargets <= ObserverCount());

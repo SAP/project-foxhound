@@ -6,7 +6,7 @@
 #include "domstubs.idl"
 #include "nsIDroppedLinkHandler.idl"
 
-interface nsIWebBrowserChrome3;
+interface nsIWebBrowserChrome;
 
 webidl ContentFrameMessageManager;
 
@@ -19,8 +19,6 @@ native CommandsArray(nsTArray<nsCString>);
 interface nsIBrowserChild : nsISupports
 {
   readonly attribute ContentFrameMessageManager messageManager;
-
-  attribute nsIWebBrowserChrome3 webBrowserChrome;
 
   [notxpcom] void sendRequestFocus(in boolean canFocus, in CallerType aCallerType);
 
@@ -37,17 +35,13 @@ interface nsIBrowserChild : nsISupports
   attribute boolean hasSiblings;
 
   /**
-   * Tell the nsIBrowserChild that it should begin sending its nsIWebProgress
-   * events to its nsIBrowserParent.
-   *
-   * This should be called once the frame script for the nsIBrowserChild has
-   * loaded.
-   */
-  void beginSendingWebProgressEventsToParent();
-
-  /**
    * Send a message from the BrowserChild to the BrowserParent that a
    * nsIWebNavigation navigation finished in the child.
    */
   void notifyNavigationFinished();
+
+  /**
+   * Id of the chrome window the tab is within.
+   */
+  readonly attribute uint64_t chromeOuterWindowID;
 };

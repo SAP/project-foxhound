@@ -9,10 +9,12 @@
 #include <ole2.h>
 #include <shlobj.h>
 
+#include "nsComponentManagerUtils.h"
 #include "nsDataObj.h"
 #include "nsArrayUtils.h"
 #include "nsClipboard.h"
 #include "nsReadableUtils.h"
+#include "nsICookieJarSettings.h"
 #include "nsITransferable.h"
 #include "nsISupportsPrimitives.h"
 #include "IEnumFE.h"
@@ -24,8 +26,11 @@
 #include "nsEscape.h"
 #include "nsIURL.h"
 #include "nsNetUtil.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/Unused.h"
+#include "nsProxyRelease.h"
+#include "nsIObserverService.h"
 #include "nsIOutputStream.h"
 #include "nscore.h"
 #include "nsDirectoryServiceDefs.h"
@@ -38,6 +43,7 @@
 #include "nsMimeTypes.h"
 #include "imgIEncoder.h"
 #include "imgITools.h"
+#include "WinUtils.h"
 
 #include "mozilla/LazyIdleThread.h"
 #include <algorithm>
@@ -68,8 +74,9 @@ nsDataObj::CStream::~CStream() {}
 //-----------------------------------------------------------------------------
 // helper - initializes the stream
 nsresult nsDataObj::CStream::Init(nsIURI* pSourceURI,
-                                  uint32_t aContentPolicyType,
-                                  nsIPrincipal* aRequestingPrincipal) {
+                                  nsContentPolicyType aContentPolicyType,
+                                  nsIPrincipal* aRequestingPrincipal,
+                                  nsICookieJarSettings* aCookieJarSettings) {
   // we can not create a channel without a requestingPrincipal
   if (!aRequestingPrincipal) {
     return NS_ERROR_FAILURE;
@@ -77,8 +84,7 @@ nsresult nsDataObj::CStream::Init(nsIURI* pSourceURI,
   nsresult rv;
   rv = NS_NewChannel(getter_AddRefs(mChannel), pSourceURI, aRequestingPrincipal,
                      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT,
-                     aContentPolicyType,
-                     nullptr,  // nsICookieJarSettings
+                     aContentPolicyType, aCookieJarSettings,
                      nullptr,  // PerformanceStorage
                      nullptr,  // loadGroup
                      nullptr,  // aCallbacks
@@ -155,7 +161,8 @@ NS_IMETHODIMP nsDataObj::CStream::OnStopRequest(nsIRequest* aRequest,
 // and cancel the operation.
 nsresult nsDataObj::CStream::WaitForCompletion() {
   // We are guaranteed OnStopRequest will get called, so this should be ok.
-  SpinEventLoopUntil([&]() { return mChannelRead; });
+  SpinEventLoopUntil("widget:nsDataObj::CStream::WaitForCompletion"_ns,
+                     [&]() { return mChannelRead; });
 
   if (!mChannelData.Length()) mChannelResult = NS_ERROR_FAILURE;
 
@@ -312,8 +319,14 @@ HRESULT nsDataObj::CreateStream(IStream** outStream) {
       mTransferable->GetRequestingPrincipal();
   MOZ_ASSERT(requestingPrincipal, "can not create channel without a principal");
 
-  uint32_t contentPolicyType = mTransferable->GetContentPolicyType();
-  rv = pStream->Init(sourceURI, contentPolicyType, requestingPrincipal);
+  // Note that the cookieJarSettings could be null if the data object is for the
+  // image copy. We will fix this in Bug 1690532.
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings =
+      mTransferable->GetCookieJarSettings();
+
+  nsContentPolicyType contentPolicyType = mTransferable->GetContentPolicyType();
+  rv = pStream->Init(sourceURI, contentPolicyType, requestingPrincipal,
+                     cookieJarSettings);
   if (NS_FAILED(rv)) {
     pStream->Release();
     return E_FAIL;
@@ -430,14 +443,11 @@ STDMETHODIMP nsDataObj::CMemStream::Stat(STATSTG* statstg, DWORD dwFlags) {
   memset((void*)statstg, 0, sizeof(STATSTG));
 
   if (dwFlags != STATFLAG_NONAME) {
-    const nsString& wideFileName = EmptyString();
-
-    uint32_t nMaxNameLength = (wideFileName.Length() * 2) + 2;
-    void* retBuf = CoTaskMemAlloc(nMaxNameLength);  // freed by caller
+    constexpr size_t kMaxNameLength = sizeof(wchar_t);
+    void* retBuf = CoTaskMemAlloc(kMaxNameLength);  // freed by caller
     if (!retBuf) return STG_E_INSUFFICIENTMEMORY;
 
-    ZeroMemory(retBuf, nMaxNameLength);
-    memcpy(retBuf, wideFileName.get(), wideFileName.Length() * 2);
+    ZeroMemory(retBuf, kMaxNameLength);
     statstg->pwcsName = (LPOLESTR)retBuf;
   }
 
@@ -529,11 +539,17 @@ STDMETHODIMP nsDataObj::QueryInterface(REFIID riid, void** ppv) {
 STDMETHODIMP_(ULONG) nsDataObj::AddRef() {
   ++m_cRef;
   NS_LOG_ADDREF(this, m_cRef, "nsDataObj", sizeof(*this));
+
+  // When the first reference is taken, hold our own internal reference.
+  if (m_cRef == 1) {
+    mKeepAlive = this;
+  }
+
   return m_cRef;
 }
 
 namespace {
-class RemoveTempFileHelper final : public nsIObserver {
+class RemoveTempFileHelper final : public nsIObserver, public nsINamed {
  public:
   explicit RemoveTempFileHelper(nsIFile* aTempFile) : mTempFile(aTempFile) {
     MOZ_ASSERT(mTempFile);
@@ -563,6 +579,7 @@ class RemoveTempFileHelper final : public nsIObserver {
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
+  NS_DECL_NSINAMED
 
  private:
   ~RemoveTempFileHelper() {
@@ -575,7 +592,7 @@ class RemoveTempFileHelper final : public nsIObserver {
   nsCOMPtr<nsITimer> mTimer;
 };
 
-NS_IMPL_ISUPPORTS(RemoveTempFileHelper, nsIObserver);
+NS_IMPL_ISUPPORTS(RemoveTempFileHelper, nsIObserver, nsINamed);
 
 NS_IMETHODIMP
 RemoveTempFileHelper::Observe(nsISupports* aSubject, const char* aTopic,
@@ -602,6 +619,12 @@ RemoveTempFileHelper::Observe(nsISupports* aSubject, const char* aTopic,
   }
   return NS_OK;
 }
+
+NS_IMETHODIMP
+RemoveTempFileHelper::GetName(nsACString& aName) {
+  aName.AssignLiteral("RemoveTempFileHelper");
+  return NS_OK;
+}
 }  // namespace
 
 //-----------------------------------------------------
@@ -609,6 +632,12 @@ STDMETHODIMP_(ULONG) nsDataObj::Release() {
   --m_cRef;
 
   NS_LOG_RELEASE(this, m_cRef, "nsDataObj");
+
+  // If we hold the last reference, submit release of it to the main thread.
+  if (m_cRef == 1 && mKeepAlive) {
+    NS_ReleaseOnMainThread("nsDataObj release", mKeepAlive.forget(), true);
+  }
+
   if (0 != m_cRef) return m_cRef;
 
   // We have released our last ref on this object and need to delete the
@@ -621,6 +650,10 @@ STDMETHODIMP_(ULONG) nsDataObj::Release() {
     mCachedTempFile = nullptr;
     helper->Attach();
   }
+
+  // In case the destructor ever AddRef/Releases, ensure we don't delete twice
+  // or take mKeepAlive as another reference.
+  m_cRef = 1;
 
   delete this;
 
@@ -643,6 +676,9 @@ BOOL nsDataObj::FormatsMatch(const FORMATETC& source,
 //-----------------------------------------------------
 STDMETHODIMP nsDataObj::GetData(LPFORMATETC aFormat, LPSTGMEDIUM pSTM) {
   if (!mTransferable) return DV_E_FORMATETC;
+
+  // Hold an extra reference in case we end up spinning the event loop.
+  RefPtr<nsDataObj> keepAliveDuringGetData(this);
 
   uint32_t dfInx = 0;
 
@@ -1140,7 +1176,7 @@ static bool CreateFilenameFromTextW(nsString& aText, const wchar_t* aExtension,
 
 static bool GetLocalizedString(const char* aName, nsAString& aString) {
   nsCOMPtr<nsIStringBundleService> stringService =
-      mozilla::services::GetStringBundleService();
+      mozilla::components::StringBundle::Service();
   if (!stringService) return false;
 
   nsCOMPtr<nsIStringBundle> stringBundle;
@@ -1485,7 +1521,7 @@ HRESULT nsDataObj::GetText(const nsACString& aDataFlavor, FORMATETC& aFE,
       NS_WARNING("Oh no, couldn't convert unicode to plain text");
       return S_OK;
     }
-  } else if (aFE.cfFormat == nsClipboard::CF_HTML) {
+  } else if (aFE.cfFormat == nsClipboard::GetHtmlClipboardFormat()) {
     // Someone is asking for win32's HTML flavor. Convert our html fragment
     // from unicode to UTF-8 then put it into a format specified by msft.
     NS_ConvertUTF16toUTF8 converter(reinterpret_cast<char16_t*>(data));
@@ -1502,7 +1538,7 @@ HRESULT nsDataObj::GetText(const nsACString& aDataFlavor, FORMATETC& aFE,
       NS_WARNING("Oh no, couldn't convert to HTML");
       return S_OK;
     }
-  } else if (aFE.cfFormat != nsClipboard::CF_CUSTOMTYPES) {
+  } else if (aFE.cfFormat != nsClipboard::GetCustomClipboardFormat()) {
     // we assume that any data that isn't caught above is unicode. This may
     // be an erroneous assumption, but is true so far.
     allocLen += sizeof(char16_t);

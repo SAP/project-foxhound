@@ -6,18 +6,14 @@
 
 #include "chrome/common/ipc_channel_utils.h"
 
+#include "mozilla/ProfilerMarkers.h"
 #include "chrome/common/ipc_message.h"
-
-#ifdef MOZ_GECKO_PROFILER
-#  include "ProfilerMarkerPayload.h"
-#endif
 
 namespace IPC {
 
 void AddIPCProfilerMarker(const Message& aMessage, int32_t aOtherPid,
                           mozilla::ipc::MessageDirection aDirection,
                           mozilla::ipc::MessagePhase aPhase) {
-#ifdef MOZ_GECKO_PROFILER
   if (aMessage.routing_id() != MSG_ROUTING_NONE &&
       profiler_feature_active(ProfilerFeature::IPCMessages)) {
     if (aOtherPid == -1) {
@@ -25,13 +21,20 @@ void AddIPCProfilerMarker(const Message& aMessage, int32_t aOtherPid,
       return;
     }
 
-    PROFILER_ADD_MARKER_WITH_PAYLOAD(
-        "IPC", IPC, IPCMarkerPayload,
-        (aOtherPid, aMessage.seqno(), aMessage.type(),
-         mozilla::ipc::UnknownSide, aDirection, aPhase, aMessage.is_sync(),
-         mozilla::TimeStamp::NowUnfuzzed()));
+    if (profiler_is_locked_on_current_thread()) {
+      // One of the profiler mutexes is locked on this thread, don't record
+      // markers, because we don't want to expose profiler IPCs due to the
+      // profiler itself, and also to avoid possible re-entrancy issues.
+      return;
+    }
+
+    // The current timestamp must be given to the `IPCMarker` payload.
+    [[maybe_unused]] const mozilla::TimeStamp now = mozilla::TimeStamp::Now();
+    PROFILER_MARKER("IPC", IPC, mozilla::MarkerTiming::InstantAt(now),
+                    IPCMarker, now, now, aOtherPid, aMessage.seqno(),
+                    aMessage.type(), mozilla::ipc::UnknownSide, aDirection,
+                    aPhase, aMessage.is_sync());
   }
-#endif
 }
 
 }  // namespace IPC

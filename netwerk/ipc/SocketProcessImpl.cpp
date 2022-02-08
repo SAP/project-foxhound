@@ -5,17 +5,20 @@
 
 #include "SocketProcessImpl.h"
 
-#include "ProcessUtils.h"
 #include "base/command_line.h"
 #include "base/shared_memory.h"
 #include "base/string_util.h"
 #include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/Preferences.h"
-#include "ProcessUtils.h"
+#include "mozilla/GeckoArgs.h"
+#include "mozilla/ipc/ProcessUtils.h"
 #include "mozilla/ipc/IOThreadChild.h"
 
 #if defined(OS_WIN) && defined(MOZ_SANDBOX)
 #  include "mozilla/sandboxTarget.h"
+#elif defined(__OpenBSD__) && defined(MOZ_SANDBOX)
+#  include "mozilla/SandboxSettings.h"
+#  include "prlink.h"
 #endif
 
 #ifdef OS_POSIX
@@ -47,59 +50,25 @@ bool SocketProcessImpl::Init(int aArgc, char* aArgv[]) {
   LoadLibraryW(L"softokn3.dll");
   LoadLibraryW(L"freebl3.dll");
   mozilla::SandboxTarget::Instance()->StartSandbox();
+#elif defined(__OpenBSD__) && defined(MOZ_SANDBOX)
+  PR_LoadLibrary("libnss3.so");
+  PR_LoadLibrary("libsoftokn3.so");
+  PR_LoadLibrary("libfreebl3.so");
+  StartOpenBSDSandbox(GeckoProcessType_Socket);
 #endif
-  char* parentBuildID = nullptr;
-  char* prefsHandle = nullptr;
-  char* prefMapHandle = nullptr;
-  char* prefsLen = nullptr;
-  char* prefMapSize = nullptr;
 
-  for (int i = 1; i < aArgc; i++) {
-    if (!aArgv[i]) {
-      continue;
-    }
-
-    if (strcmp(aArgv[i], "-parentBuildID") == 0) {
-      if (++i == aArgc) {
-        return false;
-      }
-
-      parentBuildID = aArgv[i];
-
-#ifdef XP_WIN
-    } else if (strcmp(aArgv[i], "-prefsHandle") == 0) {
-      if (++i == aArgc) {
-        return false;
-      }
-      prefsHandle = aArgv[i];
-    } else if (strcmp(aArgv[i], "-prefMapHandle") == 0) {
-      if (++i == aArgc) {
-        return false;
-      }
-      prefMapHandle = aArgv[i];
-#endif
-    } else if (strcmp(aArgv[i], "-prefsLen") == 0) {
-      if (++i == aArgc) {
-        return false;
-      }
-      prefsLen = aArgv[i];
-    } else if (strcmp(aArgv[i], "-prefMapSize") == 0) {
-      if (++i == aArgc) {
-        return false;
-      }
-      prefMapSize = aArgv[i];
-    }
-  }
-
-  ipc::SharedPreferenceDeserializer deserializer;
-  if (!deserializer.DeserializeFromSharedMemory(prefsHandle, prefMapHandle,
-                                                prefsLen, prefMapSize)) {
+  Maybe<const char*> parentBuildID =
+      geckoargs::sParentBuildID.Get(aArgc, aArgv);
+  if (parentBuildID.isNothing()) {
     return false;
   }
 
-  return mSocketProcessChild.Init(ParentPid(), parentBuildID,
-                                  IOThreadChild::message_loop(),
-                                  IOThreadChild::TakeChannel());
+  if (!ProcessChild::InitPrefs(aArgc, aArgv)) {
+    return false;
+  }
+
+  return mSocketProcessChild.Init(ParentPid(), *parentBuildID,
+                                  IOThreadChild::TakeInitialPort());
 }
 
 void SocketProcessImpl::CleanUp() { mSocketProcessChild.CleanUp(); }

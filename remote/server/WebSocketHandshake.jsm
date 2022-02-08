@@ -10,23 +10,21 @@ var EXPORTED_SYMBOLS = ["WebSocketHandshake"];
 
 const CC = Components.Constructor;
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-const { executeSoon } = ChromeUtils.import("chrome://remote/content/Sync.jsm");
-
-XPCOMUtils.defineLazyGetter(this, "WebSocket", () => {
-  return Services.appShell.hiddenDOMWindow.WebSocket;
+XPCOMUtils.defineLazyModuleGetters(this, {
+  executeSoon: "chrome://remote/content/shared/Sync.jsm",
 });
 
-const CryptoHash = CC(
-  "@mozilla.org/security/hash;1",
-  "nsICryptoHash",
-  "initWithString"
-);
-const threadManager = Cc["@mozilla.org/thread-manager;1"].getService();
+XPCOMUtils.defineLazyGetter(this, "CryptoHash", () => {
+  return CC("@mozilla.org/security/hash;1", "nsICryptoHash", "initWithString");
+});
+
+XPCOMUtils.defineLazyGetter(this, "threadManager", () => {
+  return Cc["@mozilla.org/thread-manager;1"].getService();
+});
 
 // TODO(ato): Merge this with httpd.js so that we can respond to both HTTP/1.1
 // as well as WebSocket requests on the same server.
@@ -65,9 +63,14 @@ function writeString(output, data) {
   });
 }
 
-/** Write HTTP response (array of strings) to async output stream. */
-function writeHttpResponse(output, response) {
-  const s = response.join("\r\n") + "\r\n\r\n";
+/**
+ * Write HTTP response with headers (array of strings) and body
+ * to async output stream.
+ */
+function writeHttpResponse(output, headers, body = "") {
+  headers.push(`Content-Length: ${body.length}`);
+
+  const s = headers.join("\r\n") + `\r\n\r\n${body}`;
   return writeString(output, s);
 }
 
@@ -82,8 +85,10 @@ function processRequest({ requestLine, headers }) {
   }
 
   const upgrade = headers.get("upgrade");
-  if (!upgrade || upgrade !== "websocket") {
-    throw new Error("The handshake request has incorrect Upgrade header");
+  if (!upgrade || upgrade.toLowerCase() !== "websocket") {
+    throw new Error(
+      `The handshake request has incorrect Upgrade header: ${upgrade}`
+    );
   }
 
   const connection = headers.get("connection");
@@ -91,8 +96,8 @@ function processRequest({ requestLine, headers }) {
     !connection ||
     !connection
       .split(",")
-      .map(t => t.trim())
-      .includes("Upgrade")
+      .map(t => t.trim().toLowerCase())
+      .includes("upgrade")
   ) {
     throw new Error("The handshake request has incorrect Connection header");
   }
@@ -135,13 +140,23 @@ async function serverHandshake(request, output) {
     // Send response headers
     await writeHttpResponse(output, [
       "HTTP/1.1 101 Switching Protocols",
+      "Server: httpd.js",
       "Upgrade: websocket",
       "Connection: Upgrade",
       `Sec-WebSocket-Accept: ${acceptKey}`,
     ]);
   } catch (error) {
     // Send error response in case of error
-    await writeHttpResponse(output, ["HTTP/1.1 400 Bad Request"]);
+    await writeHttpResponse(
+      output,
+      [
+        "HTTP/1.1 400 Bad Request",
+        "Server: httpd.js",
+        "Content-Type: text/plain",
+      ],
+      error.message
+    );
+
     throw error;
   }
 }

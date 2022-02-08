@@ -12,14 +12,15 @@
     "schema": "chrome://extensions/content/schemas/browser_action.json",
     "scopes": ["addon_parent"],
     "events": ["update", "uninstall", "disable"],
-    "manifest": ["browser_action"],
+    "manifest": ["browser_action", "action"],
     "paths": [
-      ["browserAction"]
+      ["browserAction"],
+      ["action"]
     ]
   },
   "browsingData": {
-    "url": "chrome://browser/content/parent/ext-browsingData.js",
-    "schema": "chrome://browser/content/schemas/browsing_data.json",
+    "url": "chrome://extensions/content/parent/ext-browsingData.js",
+    "schema": "chrome://extensions/content/schemas/browsing_data.json",
     "scopes": ["addon_parent"],
     "paths": [
       ["browsingData"]
@@ -36,7 +37,7 @@
   "chrome_settings_overrides": {
     "url": "chrome://browser/content/parent/ext-chrome-settings-overrides.js",
     "scopes": [],
-    "events": ["update", "uninstall", "disable", "enabling"],
+    "events": ["update", "uninstall", "disable"],
     "schema": "chrome://browser/content/schemas/chrome_settings_overrides.json",
     "settings": true,
     "manifest": ["chrome_settings_overrides"]

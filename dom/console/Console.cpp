@@ -9,8 +9,10 @@
 #include "mozilla/dom/ConsoleBinding.h"
 #include "ConsoleCommon.h"
 
-#include "js/Array.h"  // JS::GetArrayLength, JS::NewArrayObject
+#include "js/Array.h"               // JS::GetArrayLength, JS::NewArrayObject
+#include "js/PropertyAndElement.h"  // JS_DefineElement, JS_DefineProperty, JS_GetElement
 #include "mozilla/dom/BlobBinding.h"
+#include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/File.h"
@@ -27,8 +29,12 @@
 #include "mozilla/dom/WorkletImpl.h"
 #include "mozilla/dom/WorkletThread.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/JSObjectHolder.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_devtools.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDOMNavigationTiming.h"
 #include "nsGlobalWindow.h"
@@ -38,6 +44,7 @@
 #include "nsContentUtils.h"
 #include "nsDocShell.h"
 #include "nsProxyRelease.h"
+#include "nsReadableUtils.h"
 #include "mozilla/ConsoleTimelineMarker.h"
 #include "mozilla/TimestampTimelineMarker.h"
 
@@ -69,8 +76,7 @@
 
 using namespace mozilla::dom::exceptions;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 struct ConsoleStructuredCloneData {
   nsCOMPtr<nsIGlobalObject> mGlobal;
@@ -1640,6 +1646,7 @@ bool Console::PopulateConsoleNotificationInTheTargetScope(
     case MethodAssert:
     case MethodGroup:
     case MethodGroupCollapsed:
+    case MethodTrace:
       event.mArguments.Construct();
       event.mStyles.Construct();
       if (NS_WARN_IF(!ProcessArguments(aCx, aArguments,
@@ -1734,9 +1741,8 @@ bool Console::PopulateConsoleNotificationInTheTargetScope(
       js::SetFunctionNativeReserved(funObj, SLOT_RAW_STACK,
                                     JS::PrivateValue(aData->mStack.get()));
 
-      if (NS_WARN_IF(!JS_DefineProperty(
-              aCx, eventObj, "stacktrace", funObj, nullptr,
-              JSPROP_ENUMERATE | JSPROP_GETTER | JSPROP_SETTER))) {
+      if (NS_WARN_IF(!JS_DefineProperty(aCx, eventObj, "stacktrace", funObj,
+                                        nullptr, JSPROP_ENUMERATE))) {
         return false;
       }
     }
@@ -2055,24 +2061,21 @@ static void ComposeAndStoreGroupName(JSContext* aCx,
                                      const Sequence<JS::Value>& aData,
                                      nsAString& aName,
                                      nsTArray<nsString>* aGroupStack) {
-  for (uint32_t i = 0; i < aData.Length(); ++i) {
-    if (i != 0) {
-      aName.AppendLiteral(" ");
-    }
+  StringJoinAppend(
+      aName, u" "_ns, aData, [aCx](nsAString& dest, const JS::Value& valueRef) {
+        JS::Rooted<JS::Value> value(aCx, valueRef);
+        JS::Rooted<JSString*> jsString(aCx, JS::ToString(aCx, value));
+        if (!jsString) {
+          return;
+        }
 
-    JS::Rooted<JS::Value> value(aCx, aData[i]);
-    JS::Rooted<JSString*> jsString(aCx, JS::ToString(aCx, value));
-    if (!jsString) {
-      return;
-    }
+        nsAutoJSString string;
+        if (!string.init(aCx, jsString)) {
+          return;
+        }
 
-    nsAutoJSString string;
-    if (!string.init(aCx, jsString)) {
-      return;
-    }
-
-    aName.Append(string);
-  }
+        dest.Append(string);
+      });
 
   aGroupStack->AppendElement(aName);
 }
@@ -2115,11 +2118,15 @@ Console::TimerStatus Console::StartTimer(JSContext* aCx, const JS::Value& aName,
 
   aTimerLabel = label;
 
-  auto entry = mTimerRegistry.LookupForAdd(label);
-  if (entry) {
+  if (mTimerRegistry.WithEntryHandle(label, [&](auto&& entry) {
+        if (entry) {
+          return true;
+        }
+        entry.Insert(aTimestamp);
+        return false;
+      })) {
     return eTimerAlreadyExists;
   }
-  entry.OrInsert([&aTimestamp]() { return aTimestamp; });
 
   *aTimerValue = aTimestamp;
   return eTimerDone;
@@ -2271,18 +2278,18 @@ uint32_t Console::IncreaseCounter(JSContext* aCx,
   aCountLabel = string;
 
   const bool maxCountersReached = mCounterRegistry.Count() >= MAX_PAGE_COUNTERS;
-  auto entry = mCounterRegistry.LookupForAdd(aCountLabel);
-  if (entry) {
-    ++entry.Data();
-  } else {
-    entry.OrInsert([]() { return 1; });
-    if (maxCountersReached) {
-      // oops, we speculatively added an entry even though we shouldn't
-      mCounterRegistry.Remove(aCountLabel);
-      return MAX_PAGE_COUNTERS;
-    }
-  }
-  return entry.Data();
+  return mCounterRegistry.WithEntryHandle(
+      aCountLabel, [maxCountersReached](auto&& entry) -> uint32_t {
+        if (entry) {
+          ++entry.Data();
+        } else {
+          if (maxCountersReached) {
+            return MAX_PAGE_COUNTERS;
+          }
+          entry.Insert(1);
+        }
+        return entry.Data();
+      });
 }
 
 uint32_t Console::ResetCounter(JSContext* aCx,
@@ -2806,8 +2813,42 @@ void Console::ExecuteDumpFunction(const nsAString& aMessage) {
   fflush(stdout);
 }
 
+ConsoleLogLevel PrefToValue(const nsAString& aPref,
+                            const ConsoleLogLevel aLevel) {
+  if (!NS_IsMainThread()) {
+    NS_WARNING("Console.maxLogLevelPref is not supported on workers!");
+    return ConsoleLogLevel::All;
+  }
+  if (aPref.IsEmpty()) {
+    return aLevel;
+  }
+
+  NS_ConvertUTF16toUTF8 pref(aPref);
+  nsAutoCString value;
+  nsresult rv = Preferences::GetCString(pref.get(), value);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return aLevel;
+  }
+
+  int index = FindEnumStringIndexImpl(value.get(), value.Length(),
+                                      ConsoleLogLevelValues::strings);
+  if (NS_WARN_IF(index < 0)) {
+    nsString message;
+    message.AssignLiteral("Invalid Console.maxLogLevelPref value: ");
+    message.Append(NS_ConvertUTF8toUTF16(value));
+
+    nsContentUtils::LogSimpleConsoleError(message, "chrome", false,
+                                          true /* from chrome context*/);
+    return aLevel;
+  }
+
+  MOZ_ASSERT(index < (int)ConsoleLogLevelValues::Count);
+  return static_cast<ConsoleLogLevel>(index);
+}
+
 bool Console::ShouldProceed(MethodName aName) const {
-  return WebIDLLogLevelToInteger(mMaxLogLevel) <=
+  ConsoleLogLevel maxLogLevel = PrefToValue(mMaxLogLevelPref, mMaxLogLevel);
+  return WebIDLLogLevelToInteger(maxLogLevel) <=
          InternalLogLevelToInteger(aName);
 }
 
@@ -2854,8 +2895,6 @@ uint32_t Console::WebIDLLogLevelToInteger(ConsoleLogLevel aLevel) const {
           "ConsoleLogLevel is out of sync with the Console implementation!");
       return 0;
   }
-
-  return 0;
 }
 
 uint32_t Console::InternalLogLevelToInteger(MethodName aName) const {
@@ -2910,8 +2949,6 @@ uint32_t Console::InternalLogLevelToInteger(MethodName aName) const {
       MOZ_CRASH("MethodName is out of sync with the Console implementation!");
       return 0;
   }
-
-  return 0;
 }
 
 bool Console::ArgumentData::Initialize(JSContext* aCx,
@@ -2948,5 +2985,4 @@ bool Console::ArgumentData::PopulateArgumentsSequence(
   return true;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

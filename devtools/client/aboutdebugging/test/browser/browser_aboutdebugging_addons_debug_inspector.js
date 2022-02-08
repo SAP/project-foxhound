@@ -48,20 +48,6 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
   );
   const toolbox = getToolbox(devtoolsWindow);
 
-  const onToolboxClose = gDevTools.once("toolbox-destroyed");
-  toolboxTestScript(toolbox, devtoolsTab);
-
-  // The test script will not close the toolbox and will timeout if it fails, so reaching
-  // this point in the test is enough to assume the test was successful.
-  info("Wait for the toolbox to close");
-  await onToolboxClose;
-  ok(true, "Addon toolbox closed");
-
-  await removeTemporaryExtension(ADDON_NAME, document);
-  await removeTab(tab);
-});
-
-async function toolboxTestScript(toolbox, devtoolsTab) {
   const inspector = await toolbox.selectTool("inspector");
   const nodeActor = await inspector.walker.querySelector(
     inspector.walker.rootNode,
@@ -78,8 +64,23 @@ async function toolboxTestScript(toolbox, devtoolsTab) {
     "nodeActor has the expected inlineTextChild value"
   );
 
-  info("Wait for all pending requests to settle on the DevToolsClient");
-  await toolbox.target.client.waitForRequestsToSettle();
+  info("Check that the color scheme simulation buttons are hidden");
+  const lightButtonIsHidden = inspector.panelDoc
+    .querySelector("#color-scheme-simulation-light-toggle")
+    ?.hasAttribute("hidden");
+  const darkButtonIsHidded = inspector.panelDoc
+    .querySelector("#color-scheme-simulation-dark-toggle")
+    ?.hasAttribute("hidden");
+  ok(
+    lightButtonIsHidden,
+    "The light color scheme simulation button exists and is hidden"
+  );
+  ok(
+    darkButtonIsHidded,
+    "The dark color scheme simulation button exists and is hidden"
+  );
 
-  await removeTab(devtoolsTab);
-}
+  await closeAboutDevtoolsToolbox(document, devtoolsTab, window);
+  await removeTemporaryExtension(ADDON_NAME, document);
+  await removeTab(tab);
+});

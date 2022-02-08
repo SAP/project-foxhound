@@ -15,8 +15,7 @@ using namespace mozilla::ipc;
 // This file contains the implementation of core InProcess lifecycle management
 // facilities.
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 StaticRefPtr<InProcessParent> InProcessParent::sSingleton;
 StaticRefPtr<InProcessChild> InProcessChild::sSingleton;
@@ -138,15 +137,30 @@ InProcessParent::GetOsPid(int32_t* aOsPid) {
   return NS_OK;
 }
 
+NS_IMETHODIMP InProcessParent::GetRemoteType(nsACString& aRemoteType) {
+  aRemoteType = NOT_REMOTE_TYPE;
+  return NS_OK;
+}
+
 NS_IMETHODIMP
 InProcessParent::GetActor(const nsACString& aName, JSContext* aCx,
                           JSProcessActorParent** aActor) {
   ErrorResult error;
   RefPtr<JSProcessActorParent> actor =
-      JSActorManager::GetActor(aName, error).downcast<JSProcessActorParent>();
+      JSActorManager::GetActor(aCx, aName, error)
+          .downcast<JSProcessActorParent>();
   if (error.MaybeSetPendingException(aCx)) {
     return NS_ERROR_FAILURE;
   }
+  actor.forget(aActor);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+InProcessParent::GetExistingActor(const nsACString& aName,
+                                  JSProcessActorParent** aActor) {
+  RefPtr<JSProcessActorParent> actor =
+      JSActorManager::GetExistingActor(aName).downcast<JSProcessActorParent>();
   actor.forget(aActor);
   return NS_OK;
 }
@@ -177,6 +191,8 @@ InProcessParent::GetCanSend(bool* aCanSend) {
 
 ContentParent* InProcessParent::AsContentParent() { return nullptr; }
 
+JSActorManager* InProcessParent::AsJSActorManager() { return this; }
+
 ////////////////////////
 // nsIDOMProcessChild //
 ////////////////////////
@@ -192,10 +208,20 @@ InProcessChild::GetActor(const nsACString& aName, JSContext* aCx,
                          JSProcessActorChild** aActor) {
   ErrorResult error;
   RefPtr<JSProcessActorChild> actor =
-      JSActorManager::GetActor(aName, error).downcast<JSProcessActorChild>();
+      JSActorManager::GetActor(aCx, aName, error)
+          .downcast<JSProcessActorChild>();
   if (error.MaybeSetPendingException(aCx)) {
     return NS_ERROR_FAILURE;
   }
+  actor.forget(aActor);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+InProcessChild::GetExistingActor(const nsACString& aName,
+                                 JSProcessActorChild** aActor) {
+  RefPtr<JSProcessActorChild> actor =
+      JSActorManager::GetExistingActor(aName).downcast<JSProcessActorChild>();
   actor.forget(aActor);
   return NS_OK;
 }
@@ -225,6 +251,8 @@ InProcessChild::GetCanSend(bool* aCanSend) {
 }
 
 ContentChild* InProcessChild::AsContentChild() { return nullptr; }
+
+JSActorManager* InProcessChild::AsJSActorManager() { return this; }
 
 ////////////////////////////////
 // In-Process Actor Utilities //
@@ -291,5 +319,4 @@ IProtocol* InProcessChild::ParentActorFor(IProtocol* aActor) {
 NS_IMPL_ISUPPORTS(InProcessParent, nsIDOMProcessParent, nsIObserver)
 NS_IMPL_ISUPPORTS(InProcessChild, nsIDOMProcessChild)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

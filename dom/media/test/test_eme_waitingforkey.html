@@ -70,16 +70,8 @@ function startTest(test, token)
   .then(() => manager.finished(token));
 }
 
-function beginTest() {
-  manager.runTests(gEMETests, startTest);
-}
-
-if (!IsMacOSSnowLeopardOrEarlier()) {
-  SimpleTest.waitForExplicitFinish();
-  SetupEMEPref(beginTest);
-} else {
-  todo(false, "Test disabled on this platform.");
-}
+SimpleTest.waitForExplicitFinish();
+manager.runTests(gEMETests, startTest);
 </script>
 </pre>
 </body>

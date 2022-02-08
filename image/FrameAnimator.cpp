@@ -11,6 +11,7 @@
 #include "RasterImage.h"
 #include "imgIContainer.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/ProfilerLabels.h"
 #include "mozilla/StaticPrefs_image.h"
 
 namespace mozilla {
@@ -54,9 +55,20 @@ const gfx::IntRect AnimationState::UpdateStateInternal(
 
     // If we can seek to the current animation frame we consider it decoded.
     // Animated images are never fully decoded unless very short.
-    mIsCurrentlyDecoded =
-        bool(aResult.Surface()) &&
-        NS_SUCCEEDED(aResult.Surface().Seek(mCurrentAnimationFrameIndex));
+    // Note that we use GetFrame instead of Seek here. The difference is that
+    // Seek eventually calls AnimationFrameBuffer::Get with aForDisplay == true,
+    // whereas GetFrame calls AnimationFrameBuffer::Get with aForDisplay ==
+    // false. The aForDisplay can change whether those functions succeed or not
+    // (only for the first frame). Since this is not for display we want to pass
+    // aForDisplay == false, but also for consistency with
+    // RequestRefresh/AdvanceFrame, because we want our state to be in sync with
+    // those functions. The user of Seek (GetCompositedFrame) doesn't need to be
+    // in sync with our state.
+    RefPtr<imgFrame> currentFrame =
+        bool(aResult.Surface())
+            ? aResult.Surface().GetFrame(mCurrentAnimationFrameIndex)
+            : nullptr;
+    mIsCurrentlyDecoded = !!currentFrame;
   }
 
   gfx::IntRect ret;
@@ -73,8 +85,7 @@ const gfx::IntRect AnimationState::UpdateStateInternal(
         ret.SizeTo(aSize);
       }
       mCompositedFrameInvalid = false;
-    } else if (aResult.Type() == MatchType::NOT_FOUND ||
-               aResult.Type() == MatchType::PENDING) {
+    } else {
       if (mHasRequestedDecode) {
         MOZ_ASSERT(StaticPrefs::image_mem_animated_discardable_AtStartup());
         mCompositedFrameInvalid = true;
@@ -307,7 +318,6 @@ RefreshResult FrameAnimator::AdvanceFrame(AnimationState& aState,
 
   // Set currentAnimationFrameIndex at the last possible moment
   aState.mCurrentAnimationFrameIndex = nextFrameIndex;
-  aState.mCompositedFrameRequested = false;
   aCurrentFrame = std::move(nextFrame);
   aFrames.Advance(nextFrameIndex);
 
@@ -331,6 +341,10 @@ void FrameAnimator::ResetAnimation(AnimationState& aState) {
   }
 
   result.Surface().Reset();
+
+  // Calling Reset on the surface of the animation can cause discarding surface
+  // providers to throw out all their frames so refresh our state.
+  aState.UpdateStateInternal(result, mSize);
 }
 
 RefreshResult FrameAnimator::RequestRefresh(AnimationState& aState,
@@ -380,7 +394,7 @@ RefreshResult FrameAnimator::RequestRefresh(AnimationState& aState,
   // If nothing has accessed the composited frame since the last time we
   // advanced, then there is no point in continuing to advance the animation.
   // This has the effect of freezing the animation while not in view.
-  if (!aState.mCompositedFrameRequested &&
+  if (!result.Surface().MayAdvance() &&
       aState.MaybeAdvanceAnimationFrameTime(aTime)) {
     return ret;
   }
@@ -428,12 +442,17 @@ RefreshResult FrameAnimator::RequestRefresh(AnimationState& aState,
 
 LookupResult FrameAnimator::GetCompositedFrame(AnimationState& aState,
                                                bool aMarkUsed) {
-  aState.mCompositedFrameRequested = true;
-
   LookupResult result = SurfaceCache::Lookup(
       ImageKey(mImage),
       RasterSurfaceKey(mSize, DefaultSurfaceFlags(), PlaybackType::eAnimated),
       aMarkUsed);
+
+  if (result) {
+    // If we are getting the frame directly (e.g. through tests or canvas), we
+    // need to ensure the animation is marked to allow advancing to the next
+    // frame.
+    result.Surface().MarkMayAdvance();
+  }
 
   if (aState.mCompositedFrameInvalid) {
     MOZ_ASSERT(StaticPrefs::image_mem_animated_discardable_AtStartup());
@@ -452,7 +471,7 @@ LookupResult FrameAnimator::GetCompositedFrame(AnimationState& aState,
       // getting called which calls UpdateState. The reason we care about this
       // is that img.decode promises won't resolve until GetCompositedFrame
       // returns a frame.
-      UnorientedIntRect rect = UnorientedIntRect::FromUnknownRect(
+      OrientedIntRect rect = OrientedIntRect::FromUnknownRect(
           aState.UpdateStateInternal(result, mSize));
 
       if (!rect.IsEmpty()) {

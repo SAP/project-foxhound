@@ -171,16 +171,13 @@ Predictor::Action::Action(bool fullUri, bool predict, Predictor::Reason reason,
 }
 
 NS_IMETHODIMP
-Predictor::Action::OnCacheEntryCheck(nsICacheEntry* entry,
-                                     nsIApplicationCache* appCache,
-                                     uint32_t* result) {
+Predictor::Action::OnCacheEntryCheck(nsICacheEntry* entry, uint32_t* result) {
   *result = nsICacheEntryOpenCallback::ENTRY_WANTED;
   return NS_OK;
 }
 
 NS_IMETHODIMP
 Predictor::Action::OnCacheEntryAvailable(nsICacheEntry* entry, bool isNew,
-                                         nsIApplicationCache* appCache,
                                          nsresult result) {
   MOZ_ASSERT(NS_IsMainThread(), "Got cache entry off main thread!");
 
@@ -232,10 +229,8 @@ NS_IMPL_ISUPPORTS(Predictor, nsINetworkPredictor, nsIObserver,
                   nsICacheEntryMetaDataVisitor, nsINetworkPredictorVerifier)
 
 Predictor::Predictor()
-    : mInitialized(false),
-      mStartupTime(0),
-      mLastStartupTime(0),
-      mStartupCount(1) {
+
+{
   MOZ_ASSERT(!sSelf, "multiple Predictor instances!");
   sSelf = this;
 }
@@ -574,7 +569,7 @@ Predictor::PredictNative(nsIURI* targetURI, nsIURI* sourceURI,
       return NS_ERROR_INVALID_ARG;
   }
 
-  Predictor::Reason argReason;
+  Predictor::Reason argReason{};
   argReason.mPredict = reason;
 
   // First we open the regular cache entry, to ensure we don't gum up the works
@@ -592,13 +587,13 @@ Predictor::PredictNative(nsIURI* targetURI, nsIURI* sourceURI,
   RefPtr<LoadContextInfo> lci = new LoadContextInfo(false, originAttributes);
 
   nsresult rv = mCacheStorageService->DiskCacheStorage(
-      lci, false, getter_AddRefs(cacheDiskStorage));
+      lci, getter_AddRefs(cacheDiskStorage));
   NS_ENSURE_SUCCESS(rv, rv);
 
   uint32_t openFlags =
       nsICacheStorage::OPEN_READONLY | nsICacheStorage::OPEN_SECRETLY |
       nsICacheStorage::OPEN_PRIORITY | nsICacheStorage::CHECK_MULTITHREADED;
-  cacheDiskStorage->AsyncOpenURI(uriKey, EmptyCString(), openFlags, uriAction);
+  cacheDiskStorage->AsyncOpenURI(uriKey, ""_ns, openFlags, uriAction);
 
   // Now we do the origin-only (and therefore predictor-only) entry
   nsCOMPtr<nsIURI> targetOrigin;
@@ -730,7 +725,7 @@ bool Predictor::PredictForPageload(nsICacheEntry* entry, nsIURI* targetURI,
   if (WouldRedirect(entry, loadCount, lastLoad, globalDegradation,
                     getter_AddRefs(redirectURI))) {
     mPreconnects.AppendElement(redirectURI);
-    Predictor::Reason reason;
+    Predictor::Reason reason{};
     reason.mPredict = nsINetworkPredictor::PREDICT_LOAD;
     RefPtr<Predictor::Action> redirectAction = new Predictor::Action(
         Predictor::Action::IS_FULL_URI, Predictor::Action::DO_PREDICT, reason,
@@ -741,7 +736,7 @@ bool Predictor::PredictForPageload(nsICacheEntry* entry, nsIURI* targetURI,
     nsCOMPtr<nsICacheStorage> cacheDiskStorage;
 
     rv = mCacheStorageService->DiskCacheStorage(
-        lci, false, getter_AddRefs(cacheDiskStorage));
+        lci, getter_AddRefs(cacheDiskStorage));
     NS_ENSURE_SUCCESS(rv, false);
 
     PREDICTOR_LOG(("    Predict redirect uri=%s action=%p",
@@ -749,7 +744,7 @@ bool Predictor::PredictForPageload(nsICacheEntry* entry, nsIURI* targetURI,
     uint32_t openFlags =
         nsICacheStorage::OPEN_READONLY | nsICacheStorage::OPEN_SECRETLY |
         nsICacheStorage::OPEN_PRIORITY | nsICacheStorage::CHECK_MULTITHREADED;
-    cacheDiskStorage->AsyncOpenURI(redirectURI, EmptyCString(), openFlags,
+    cacheDiskStorage->AsyncOpenURI(redirectURI, ""_ns, openFlags,
                                    redirectAction);
     return RunPredictions(nullptr, *lci->OriginAttributesPtr(), verifier);
   }
@@ -935,9 +930,8 @@ void Predictor::CalculatePredictions(nsICacheEntry* entry, nsIURI* referrer,
   // Since the visitor gets called under a cache lock, all we do there is get
   // copies of the keys/values we care about, and then do the real work here
   entry->VisitMetaData(this);
-  nsTArray<nsCString> keysToOperateOn, valuesToOperateOn;
-  keysToOperateOn.SwapElements(mKeysToOperateOn);
-  valuesToOperateOn.SwapElements(mValuesToOperateOn);
+  nsTArray<nsCString> keysToOperateOn = std::move(mKeysToOperateOn),
+                      valuesToOperateOn = std::move(mValuesToOperateOn);
 
   MOZ_ASSERT(keysToOperateOn.Length() == valuesToOperateOn.Length());
   for (size_t i = 0; i < keysToOperateOn.Length(); ++i) {
@@ -1140,10 +1134,9 @@ bool Predictor::RunPredictions(nsIURI* referrer,
   bool predicted = false;
   uint32_t len, i;
 
-  nsTArray<nsCOMPtr<nsIURI>> prefetches, preconnects, preresolves;
-  prefetches.SwapElements(mPrefetches);
-  preconnects.SwapElements(mPreconnects);
-  preresolves.SwapElements(mPreresolves);
+  nsTArray<nsCOMPtr<nsIURI>> prefetches = std::move(mPrefetches),
+                             preconnects = std::move(mPreconnects),
+                             preresolves = std::move(mPreresolves);
 
   Telemetry::AutoCounter<Telemetry::PREDICTOR_TOTAL_PREDICTIONS>
       totalPredictions;
@@ -1189,23 +1182,21 @@ bool Predictor::RunPredictions(nsIURI* referrer,
     uri->GetAsciiHost(hostname);
     PREDICTOR_LOG(("    doing preresolve %s", hostname.get()));
     nsCOMPtr<nsICancelable> tmpCancelable;
-    mDnsService->AsyncResolveNative(hostname,
-                                    (nsIDNSService::RESOLVE_PRIORITY_MEDIUM |
-                                     nsIDNSService::RESOLVE_SPECULATE),
-                                    mDNSListener, nullptr, originAttributes,
-                                    getter_AddRefs(tmpCancelable));
+    mDnsService->AsyncResolveNative(
+        hostname, nsIDNSService::RESOLVE_TYPE_DEFAULT,
+        (nsIDNSService::RESOLVE_PRIORITY_MEDIUM |
+         nsIDNSService::RESOLVE_SPECULATE),
+        nullptr, mDNSListener, nullptr, originAttributes,
+        getter_AddRefs(tmpCancelable));
 
-    // Fetch esni keys if needed.
-    if (StaticPrefs::network_security_esni_enabled() &&
-        uri->SchemeIs("https")) {
-      nsAutoCString esniHost;
-      esniHost.Append("_esni.");
-      esniHost.Append(hostname);
-      mDnsService->AsyncResolveByTypeNative(
-          esniHost, nsIDNSService::RESOLVE_TYPE_TXT,
+    // Fetch HTTPS RR if needed.
+    if (StaticPrefs::network_dns_upgrade_with_https_rr() ||
+        StaticPrefs::network_dns_use_https_rr_as_altsvc()) {
+      mDnsService->AsyncResolveNative(
+          hostname, nsIDNSService::RESOLVE_TYPE_HTTPSSVC,
           (nsIDNSService::RESOLVE_PRIORITY_MEDIUM |
            nsIDNSService::RESOLVE_SPECULATE),
-          mDNSListener, nullptr, originAttributes,
+          nullptr, mDNSListener, nullptr, originAttributes,
           getter_AddRefs(tmpCancelable));
     }
 
@@ -1335,7 +1326,7 @@ Predictor::LearnNative(nsIURI* targetURI, nsIURI* sourceURI,
   Telemetry::AutoCounter<Telemetry::PREDICTOR_LEARN_ATTEMPTS> learnAttempts;
   ++learnAttempts;
 
-  Predictor::Reason argReason;
+  Predictor::Reason argReason{};
   argReason.mLearn = reason;
 
   // We always open the full uri (general cache) entry first, so we don't gum up
@@ -1359,7 +1350,7 @@ Predictor::LearnNative(nsIURI* targetURI, nsIURI* sourceURI,
 
   RefPtr<LoadContextInfo> lci = new LoadContextInfo(false, originAttributes);
 
-  rv = mCacheStorageService->DiskCacheStorage(lci, false,
+  rv = mCacheStorageService->DiskCacheStorage(lci,
                                               getter_AddRefs(cacheDiskStorage));
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1374,8 +1365,7 @@ Predictor::LearnNative(nsIURI* targetURI, nsIURI* sourceURI,
     // opened ASAP.
     uriOpenFlags |= nsICacheStorage::OPEN_PRIORITY;
   }
-  cacheDiskStorage->AsyncOpenURI(uriKey, EmptyCString(), uriOpenFlags,
-                                 uriAction);
+  cacheDiskStorage->AsyncOpenURI(uriKey, ""_ns, uriOpenFlags, uriAction);
 
   // Now we open the origin-only (and therefore predictor-only) entry
   RefPtr<Predictor::Action> originAction = new Predictor::Action(
@@ -1454,9 +1444,8 @@ void Predictor::LearnInternal(PredictorLearnReason reason, nsICacheEntry* entry,
         // get copies of the keys/values we care about, and then do the real
         // work here
         entry->VisitMetaData(this);
-        nsTArray<nsCString> keysToOperateOn, valuesToOperateOn;
-        keysToOperateOn.SwapElements(mKeysToOperateOn);
-        valuesToOperateOn.SwapElements(mValuesToOperateOn);
+        nsTArray<nsCString> keysToOperateOn = std::move(mKeysToOperateOn),
+                            valuesToOperateOn = std::move(mValuesToOperateOn);
 
         MOZ_ASSERT(keysToOperateOn.Length() == valuesToOperateOn.Length());
         for (size_t i = 0; i < keysToOperateOn.Length(); ++i) {
@@ -1768,16 +1757,13 @@ Predictor::Resetter::Resetter(Predictor* predictor)
     : mEntriesToVisit(0), mPredictor(predictor) {}
 
 NS_IMETHODIMP
-Predictor::Resetter::OnCacheEntryCheck(nsICacheEntry* entry,
-                                       nsIApplicationCache* appCache,
-                                       uint32_t* result) {
+Predictor::Resetter::OnCacheEntryCheck(nsICacheEntry* entry, uint32_t* result) {
   *result = nsICacheEntryOpenCallback::ENTRY_WANTED;
   return NS_OK;
 }
 
 NS_IMETHODIMP
 Predictor::Resetter::OnCacheEntryAvailable(nsICacheEntry* entry, bool isNew,
-                                           nsIApplicationCache* appCache,
                                            nsresult result) {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -1793,8 +1779,7 @@ Predictor::Resetter::OnCacheEntryAvailable(nsICacheEntry* entry, bool isNew,
   }
 
   entry->VisitMetaData(this);
-  nsTArray<nsCString> keysToDelete;
-  keysToDelete.SwapElements(mKeysToDelete);
+  nsTArray<nsCString> keysToDelete = std::move(mKeysToDelete);
 
   for (size_t i = 0; i < keysToDelete.Length(); ++i) {
     const char* key = keysToDelete[i].BeginReading();
@@ -1854,7 +1839,7 @@ Predictor::Resetter::OnCacheEntryInfo(nsIURI* uri, const nsACString& idEnhance,
     nsCOMPtr<nsICacheStorage> cacheDiskStorage;
 
     rv = mPredictor->mCacheStorageService->DiskCacheStorage(
-        aInfo, false, getter_AddRefs(cacheDiskStorage));
+        aInfo, getter_AddRefs(cacheDiskStorage));
 
     NS_ENSURE_SUCCESS(rv, rv);
     cacheDiskStorage->AsyncDoomURI(uri, idEnhance, nullptr);
@@ -1877,13 +1862,12 @@ Predictor::Resetter::OnCacheEntryVisitCompleted() {
 
   nsresult rv;
 
-  nsTArray<nsCOMPtr<nsIURI>> urisToVisit;
-  urisToVisit.SwapElements(mURIsToVisit);
+  nsTArray<nsCOMPtr<nsIURI>> urisToVisit = std::move(mURIsToVisit);
 
   MOZ_ASSERT(mEntriesToVisit == urisToVisit.Length());
 
-  nsTArray<nsCOMPtr<nsILoadContextInfo>> infosToVisit;
-  infosToVisit.SwapElements(mInfosToVisit);
+  nsTArray<nsCOMPtr<nsILoadContextInfo>> infosToVisit =
+      std::move(mInfosToVisit);
 
   MOZ_ASSERT(mEntriesToVisit == infosToVisit.Length());
 
@@ -1898,15 +1882,22 @@ Predictor::Resetter::OnCacheEntryVisitCompleted() {
     nsCOMPtr<nsICacheStorage> cacheDiskStorage;
 
     rv = mPredictor->mCacheStorageService->DiskCacheStorage(
-        infosToVisit[i], false, getter_AddRefs(cacheDiskStorage));
+        infosToVisit[i], getter_AddRefs(cacheDiskStorage));
     NS_ENSURE_SUCCESS(rv, rv);
 
     urisToVisit[i]->GetAsciiSpec(u);
-    cacheDiskStorage->AsyncOpenURI(urisToVisit[i], EmptyCString(),
-                                   nsICacheStorage::OPEN_READONLY |
-                                       nsICacheStorage::OPEN_SECRETLY |
-                                       nsICacheStorage::CHECK_MULTITHREADED,
-                                   this);
+    rv = cacheDiskStorage->AsyncOpenURI(
+        urisToVisit[i], ""_ns,
+        nsICacheStorage::OPEN_READONLY | nsICacheStorage::OPEN_SECRETLY |
+            nsICacheStorage::CHECK_MULTITHREADED,
+        this);
+    if (NS_FAILED(rv)) {
+      mEntriesToVisit--;
+      if (!mEntriesToVisit) {
+        Complete();
+        return NS_OK;
+      }
+    }
   }
 
   return NS_OK;
@@ -2195,6 +2186,8 @@ Predictor::PrefetchListener::OnStopRequest(nsIRequest* aRequest,
                    static_cast<uint32_t>(rv)));
   } else {
     rv = cachingChannel->ForceCacheEntryValidFor(0);
+    Telemetry::AccumulateCategorical(
+        Telemetry::LABELS_PREDICTOR_PREFETCH_USE_STATUS::Not200);
     PREDICTOR_LOG(("    removing any forced validity rv=%" PRIX32,
                    static_cast<uint32_t>(rv)));
   }
@@ -2291,7 +2284,7 @@ void Predictor::UpdateCacheabilityInternal(
 
   RefPtr<LoadContextInfo> lci = new LoadContextInfo(false, originAttributes);
 
-  rv = mCacheStorageService->DiskCacheStorage(lci, false,
+  rv = mCacheStorageService->DiskCacheStorage(lci,
                                               getter_AddRefs(cacheDiskStorage));
   if (NS_FAILED(rv)) {
     PREDICTOR_LOG(("    cannot get disk cache storage"));
@@ -2307,7 +2300,7 @@ void Predictor::UpdateCacheabilityInternal(
   nsAutoCString uri;
   targetURI->GetAsciiSpec(uri);
   PREDICTOR_LOG(("    uri=%s action=%p", uri.get(), action.get()));
-  cacheDiskStorage->AsyncOpenURI(sourceURI, EmptyCString(), openFlags, action);
+  cacheDiskStorage->AsyncOpenURI(sourceURI, ""_ns, openFlags, action);
 }
 
 NS_IMPL_ISUPPORTS(Predictor::CacheabilityAction, nsICacheEntryOpenCallback,
@@ -2315,7 +2308,6 @@ NS_IMPL_ISUPPORTS(Predictor::CacheabilityAction, nsICacheEntryOpenCallback,
 
 NS_IMETHODIMP
 Predictor::CacheabilityAction::OnCacheEntryCheck(nsICacheEntry* entry,
-                                                 nsIApplicationCache* appCache,
                                                  uint32_t* result) {
   *result = nsICacheEntryOpenCallback::ENTRY_WANTED;
   return NS_OK;
@@ -2334,9 +2326,9 @@ enum PrefetchDecisionReason {
 }
 
 NS_IMETHODIMP
-Predictor::CacheabilityAction::OnCacheEntryAvailable(
-    nsICacheEntry* entry, bool isNew, nsIApplicationCache* appCache,
-    nsresult result) {
+Predictor::CacheabilityAction::OnCacheEntryAvailable(nsICacheEntry* entry,
+                                                     bool isNew,
+                                                     nsresult result) {
   MOZ_ASSERT(NS_IsMainThread());
   // This is being opened read-only, so isNew should always be false
   MOZ_ASSERT(!isNew);
@@ -2364,9 +2356,8 @@ Predictor::CacheabilityAction::OnCacheEntryAvailable(
     return NS_OK;
   }
 
-  nsTArray<nsCString> keysToCheck, valuesToCheck;
-  keysToCheck.SwapElements(mKeysToCheck);
-  valuesToCheck.SwapElements(mValuesToCheck);
+  nsTArray<nsCString> keysToCheck = std::move(mKeysToCheck),
+                      valuesToCheck = std::move(mValuesToCheck);
 
   bool hasQueryString = false;
   nsAutoCString query;

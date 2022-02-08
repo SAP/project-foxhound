@@ -20,6 +20,7 @@
 #include "Registry.h"
 #include "RemoteSettings.h"
 #include "ScheduledTask.h"
+#include "SetDefaultBrowser.h"
 #include "Telemetry.h"
 
 // The AGENT_REGKEY_NAME is dependent on MOZ_APP_VENDOR and MOZ_APP_BASENAME,
@@ -108,7 +109,8 @@ static void RemoveAllRegistryEntries() {
 
   // If no other installs are using this key, remove it now.
   if (!keyStillInUse) {
-    RegDeleteKeyW(HKEY_CURRENT_USER, AGENT_REGKEY_NAME);
+    // Use RegDeleteTreeW to remove the cache as well, which is in subkey.
+    RegDeleteTreeW(HKEY_CURRENT_USER, AGENT_REGKEY_NAME);
   }
 }
 
@@ -201,6 +203,28 @@ class RegistryMutex {
   }
 };
 
+// Returns false (without setting aResult) if reading last run time failed.
+static bool CheckIfAppRanRecently(bool* aResult) {
+  const ULONGLONG kTaskExpirationDays = 90;
+  const ULONGLONG kTaskExpirationSeconds = kTaskExpirationDays * 24 * 60 * 60;
+
+  MaybeQwordResult lastRunTimeResult =
+      RegistryGetValueQword(IsPrefixed::Prefixed, L"AppLastRunTime");
+  if (lastRunTimeResult.isErr()) {
+    return false;
+  }
+  mozilla::Maybe<ULONGLONG> lastRunTimeMaybe = lastRunTimeResult.unwrap();
+  if (!lastRunTimeMaybe.isSome()) {
+    return false;
+  }
+
+  ULONGLONG secondsSinceLastRunTime =
+      SecondsPassedSince(lastRunTimeMaybe.value());
+
+  *aResult = secondsSinceLastRunTime < kTaskExpirationSeconds;
+  return true;
+}
+
 // We expect to be given a command string in argv[1], perhaps followed by other
 // arguments depending on the command. The valid commands are:
 // register-task [unique-token]
@@ -227,6 +251,8 @@ class RegistryMutex {
 //   Actually performs the default agent task, which currently means generating
 //   and sending our telemetry ping and possibly showing a notification to the
 //   user if their browser has switched from Firefox to Edge with Blink.
+// set-default-browser-user-choice [app-user-model-id]
+//   Set the default browser via the UserChoice registry keys.
 int wmain(int argc, wchar_t** argv) {
   if (argc < 2 || !argv[1]) {
     return E_INVALIDARG;
@@ -246,31 +272,35 @@ int wmain(int argc, wchar_t** argv) {
   // The uninstall and unregister commands are allowed even if the policy
   // disabling the task is set, so that uninstalls and updates always work.
   // Similarly, debug commands are always allowed.
-  if (!wcscmp(argv[1], L"uninstall") || !wcscmp(argv[1], L"unregister-task")) {
+  if (!wcscmp(argv[1], L"uninstall")) {
     if (argc < 3 || !argv[2]) {
       return E_INVALIDARG;
     }
 
-    if (!wcscmp(argv[1], L"uninstall")) {
-      // We aren't actually going to check whether we got the mutex here.
-      // Ideally we would acquire it since we are about to access the registry,
-      // so we would like to block simultaneous users of our registry key.
-      // But there are two reasons that it is preferable to ignore a mutex
-      // wait timeout here:
-      //   1. If we fail to uninstall our prefixed registry entries, the
-      //      registry key containing them will never be removed, even when the
-      //      last installation is uninstalled.
-      //   2. If we timed out waiting on the mutex, it implies that there are
-      //      other installations. If there are other installations, there will
-      //      be other prefixed registry entries. If there are other prefixed
-      //      registry entries, we won't remove the whole key or touch the
-      //      unprefixed entries during uninstallation. Therefore, we should
-      //      be able to safely uninstall without stepping on anyone's toes.
-      regMutex.Acquire();
+    // We aren't actually going to check whether we got the mutex here.
+    // Ideally we would acquire it since we are about to access the registry,
+    // so we would like to block simultaneous users of our registry key.
+    // But there are two reasons that it is preferable to ignore a mutex
+    // wait timeout here:
+    //   1. If we fail to uninstall our prefixed registry entries, the
+    //      registry key containing them will never be removed, even when the
+    //      last installation is uninstalled.
+    //   2. If we timed out waiting on the mutex, it implies that there are
+    //      other installations. If there are other installations, there will
+    //      be other prefixed registry entries. If there are other prefixed
+    //      registry entries, we won't remove the whole key or touch the
+    //      unprefixed entries during uninstallation. Therefore, we should
+    //      be able to safely uninstall without stepping on anyone's toes.
+    regMutex.Acquire();
 
-      RemoveAllRegistryEntries();
+    RemoveAllRegistryEntries();
+    return RemoveTasks(argv[2], WhichTasks::AllTasksForInstallation);
+  } else if (!wcscmp(argv[1], L"unregister-task")) {
+    if (argc < 3 || !argv[2]) {
+      return E_INVALIDARG;
     }
-    return RemoveTask(argv[2]);
+
+    return RemoveTasks(argv[2], WhichTasks::WdbaTaskOnly);
   } else if (!wcscmp(argv[1], L"debug-remote-disabled")) {
     int disabled = IsAgentRemoteDisabled();
     std::cerr << "default-browser-agent: IsAgentRemoteDisabled: " << disabled
@@ -335,6 +365,14 @@ int wmain(int argc, wchar_t** argv) {
       return HRESULT_FROM_WIN32(ERROR_SHARING_VIOLATION);
     }
 
+    // Check that Firefox ran recently, if not then stop here.
+    // Also stop if no timestamp was found, which most likely indicates
+    // that Firefox was not yet run.
+    bool ranRecently = false;
+    if (!CheckIfAppRanRecently(&ranRecently) || !ranRecently) {
+      return SCHED_E_TASK_ATTEMPTED;
+    }
+
     // Check for remote disable and (re-)enable before (potentially)
     // updating registry entries and showing notifications.
     if (IsAgentRemoteDisabled()) {
@@ -351,6 +389,12 @@ int wmain(int argc, wchar_t** argv) {
         MaybeShowNotification(browserInfo, argv[2]);
 
     return SendDefaultBrowserPing(browserInfo, activitiesPerformed);
+  } else if (!wcscmp(argv[1], L"set-default-browser-user-choice")) {
+    if (argc < 3 || !argv[2]) {
+      return E_INVALIDARG;
+    }
+
+    return SetDefaultBrowserUserChoice(argv[2]);
   } else {
     return E_INVALIDARG;
   }

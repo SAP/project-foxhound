@@ -12,11 +12,13 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/Unused.h"
 
+#include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
@@ -33,6 +35,7 @@
 
 #include "jsfriendapi.h"
 #include "js/Exception.h"  // JS::ExceptionStack
+#include "js/Object.h"     // JS::GetCompartment
 #include "js/StructuredClone.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindow.h"
@@ -474,9 +477,8 @@ void Promise::HandleException(JSContext* aCx) {
 already_AddRefed<Promise> Promise::CreateFromExisting(
     nsIGlobalObject* aGlobal, JS::Handle<JSObject*> aPromiseObj,
     PropagateUserInteraction aPropagateUserInteraction) {
-  MOZ_ASSERT(
-      js::GetObjectCompartment(aGlobal->GetGlobalJSObjectPreserveColor()) ==
-      js::GetObjectCompartment(aPromiseObj));
+  MOZ_ASSERT(JS::GetCompartment(aGlobal->GetGlobalJSObjectPreserveColor()) ==
+             JS::GetCompartment(aPromiseObj));
   RefPtr<Promise> p = new Promise(aGlobal);
   p->mPromiseObj = aPromiseObj;
   if (aPropagateUserInteraction == ePropagateUserInteraction &&
@@ -510,12 +512,20 @@ void Promise::ReportRejectedPromise(JSContext* aCx, JS::HandleObject aPromise) {
   MOZ_ASSERT(JS::GetPromiseState(aPromise) == JS::PromiseState::Rejected);
 
   bool isChrome = false;
-  nsGlobalWindowInner* win = nullptr;
   uint64_t innerWindowID = 0;
+  nsGlobalWindowInner* winForDispatch = nullptr;
   if (MOZ_LIKELY(NS_IsMainThread())) {
     isChrome = nsContentUtils::ObjectPrincipal(aPromise)->IsSystemPrincipal();
-    win = xpc::WindowGlobalOrNull(aPromise);
-    innerWindowID = win ? win->WindowID() : 0;
+
+    if (nsGlobalWindowInner* win = xpc::WindowGlobalOrNull(aPromise)) {
+      winForDispatch = win;
+      innerWindowID = win->WindowID();
+    } else if (nsGlobalWindowInner* win = xpc::SandboxWindowOrNull(
+                   JS::GetNonCCWObjectGlobal(aPromise), aCx)) {
+      // Don't dispatch rejections from the sandbox to the associated DOM
+      // window.
+      innerWindowID = win->WindowID();
+    }
   } else if (const WorkerPrivate* wp = GetCurrentThreadWorkerPrivate()) {
     isChrome = wp->UsesSystemPrincipal();
     innerWindowID = wp->WindowID();
@@ -572,15 +582,15 @@ void Promise::ReportRejectedPromise(JSContext* aCx, JS::HandleObject aPromise) {
 
   // Now post an event to do the real reporting async
   RefPtr<AsyncErrorReporter> event = new AsyncErrorReporter(xpcReport);
-  if (win) {
-    if (!win->IsDying()) {
+  if (winForDispatch) {
+    if (!winForDispatch->IsDying()) {
       // Exceptions from a dying window will cause the window to leak.
       event->SetException(aCx, result);
       if (resolutionSite) {
         event->SerializeStack(aCx, resolutionSite);
       }
     }
-    win->Dispatch(mozilla::TaskCategory::Other, event.forget());
+    winForDispatch->Dispatch(mozilla::TaskCategory::Other, event.forget());
   } else {
     NS_DispatchToMainThread(event);
   }
@@ -796,8 +806,6 @@ void PromiseWorkerProxy::CleanUp() {
     // Release the Promise and remove the PromiseWorkerProxy from the holders of
     // the worker thread since the Promise has been resolved/rejected or the
     // worker thread has been cancelled.
-    mWorkerRef = nullptr;
-
     CleanProperties();
   }
   Release();
@@ -850,5 +858,63 @@ Promise::PromiseState Promise::State() const {
   return PromiseState::Pending;
 }
 
+void Promise::SetSettledPromiseIsHandled() {
+  AutoAllowLegacyScriptExecution exemption;
+  AutoEntryScript aes(mGlobal, "Set settled promise handled");
+  JSContext* cx = aes.cx();
+  JS::RootedObject promiseObj(cx, mPromiseObj);
+  JS::SetSettledPromiseIsHandled(cx, promiseObj);
+}
+
+/* static */
+already_AddRefed<Promise> Promise::CreateResolvedWithUndefined(
+    nsIGlobalObject* global, ErrorResult& aRv) {
+  RefPtr<Promise> returnPromise = Promise::Create(global, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+  returnPromise->MaybeResolveWithUndefined();
+  return returnPromise.forget();
+}
+
 }  // namespace dom
 }  // namespace mozilla
+
+extern "C" {
+
+// These functions are used in the implementation of ffi bindings for
+// dom::Promise from Rust.
+
+void DomPromise_AddRef(mozilla::dom::Promise* aPromise) {
+  MOZ_ASSERT(aPromise);
+  aPromise->AddRef();
+}
+
+void DomPromise_Release(mozilla::dom::Promise* aPromise) {
+  MOZ_ASSERT(aPromise);
+  aPromise->Release();
+}
+
+#define DOM_PROMISE_FUNC_WITH_VARIANT(name, func)                         \
+  void name(mozilla::dom::Promise* aPromise, nsIVariant* aVariant) {      \
+    MOZ_ASSERT(aPromise);                                                 \
+    MOZ_ASSERT(aVariant);                                                 \
+    mozilla::dom::AutoEntryScript aes(aPromise->GetGlobalObject(),        \
+                                      "Promise resolution or rejection"); \
+    JSContext* cx = aes.cx();                                             \
+                                                                          \
+    JS::Rooted<JS::Value> val(cx);                                        \
+    nsresult rv = NS_OK;                                                  \
+    if (!XPCVariant::VariantDataToJS(cx, aVariant, &rv, &val)) {          \
+      aPromise->MaybeRejectWithTypeError(                                 \
+          "Failed to convert nsIVariant to JS");                          \
+      return;                                                             \
+    }                                                                     \
+    aPromise->func(val);                                                  \
+  }
+
+DOM_PROMISE_FUNC_WITH_VARIANT(DomPromise_RejectWithVariant, MaybeReject)
+DOM_PROMISE_FUNC_WITH_VARIANT(DomPromise_ResolveWithVariant, MaybeResolve)
+
+#undef DOM_PROMISE_FUNC_WITH_VARIANT
+}

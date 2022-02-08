@@ -6,8 +6,8 @@
 
 #include "MobileViewportManager.h"
 
-#include "LayersLogging.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ToString.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/EventTarget.h"
@@ -17,13 +17,15 @@
 #include "nsViewportInfo.h"
 #include "UnitTransforms.h"
 
-static mozilla::LazyLogModule sApzMvmLog("apz.mobileviewport");
-#define MVM_LOG(...) MOZ_LOG(sApzMvmLog, LogLevel::Debug, (__VA_ARGS__))
+mozilla::LazyLogModule MobileViewportManager::gLog("apz.mobileviewport");
+#define MVM_LOG(...) \
+  MOZ_LOG(MobileViewportManager::gLog, LogLevel::Debug, (__VA_ARGS__))
 
 NS_IMPL_ISUPPORTS(MobileViewportManager, nsIDOMEventListener, nsIObserver)
 
 #define DOM_META_ADDED u"DOMMetaAdded"_ns
 #define DOM_META_CHANGED u"DOMMetaChanged"_ns
+#define FULLSCREEN_CHANGED u"fullscreenchange"_ns
 #define LOAD u"load"_ns
 #define BEFORE_FIRST_PAINT "before-first-paint"_ns
 
@@ -43,9 +45,14 @@ MobileViewportManager::MobileViewportManager(MVMContext* aContext,
 
   mContext->AddEventListener(DOM_META_ADDED, this, false);
   mContext->AddEventListener(DOM_META_CHANGED, this, false);
+  mContext->AddEventListener(FULLSCREEN_CHANGED, this, false);
   mContext->AddEventListener(LOAD, this, true);
 
   mContext->AddObserver(this, BEFORE_FIRST_PAINT.Data(), false);
+
+  // We need to initialize the display size and the CSS viewport size before
+  // the initial reflow happens.
+  UpdateSizesBeforeReflow();
 }
 
 MobileViewportManager::~MobileViewportManager() = default;
@@ -55,6 +62,7 @@ void MobileViewportManager::Destroy() {
 
   mContext->RemoveEventListener(DOM_META_ADDED, this, false);
   mContext->RemoveEventListener(DOM_META_CHANGED, this, false);
+  mContext->RemoveEventListener(FULLSCREEN_CHANGED, this, false);
   mContext->RemoveEventListener(LOAD, this, true);
 
   mContext->RemoveObserver(this, BEFORE_FIRST_PAINT.Data());
@@ -133,6 +141,9 @@ MobileViewportManager::HandleEvent(dom::Event* event) {
     HandleDOMMetaAdded();
   } else if (type.Equals(DOM_META_CHANGED)) {
     MVM_LOG("%p: got a dom-meta-changed event\n", this);
+    RefreshViewportSize(mPainted);
+  } else if (type.Equals(FULLSCREEN_CHANGED)) {
+    MVM_LOG("%p: got a fullscreenchange event\n", this);
     RefreshViewportSize(mPainted);
   } else if (type.Equals(LOAD)) {
     MVM_LOG("%p: got a load event\n", this);
@@ -500,7 +511,7 @@ void MobileViewportManager::UpdateVisualViewportSize(
   ScreenSize compositionSize = ScreenSize(GetCompositionSize(aDisplaySize));
 
   CSSSize compSize = compositionSize / aZoom;
-  MVM_LOG("%p: Setting VVPS %s\n", this, Stringify(compSize).c_str());
+  MVM_LOG("%p: Setting VVPS %s\n", this, ToString(compSize).c_str());
   mContext->SetVisualViewportSize(compSize);
 }
 
@@ -560,13 +571,9 @@ void MobileViewportManager::RefreshVisualViewportSize() {
 void MobileViewportManager::UpdateSizesBeforeReflow() {
   if (Maybe<LayoutDeviceIntSize> newDisplaySize =
           mContext->GetContentViewerSize()) {
-    if (mDisplaySize == *newDisplaySize) {
-      return;
-    }
-
     mDisplaySize = *newDisplaySize;
     MVM_LOG("%p: Reflow starting, display size updated to %s\n", this,
-            Stringify(mDisplaySize).c_str());
+            ToString(mDisplaySize).c_str());
 
     if (mDisplaySize.width == 0 || mDisplaySize.height == 0) {
       return;
@@ -577,7 +584,7 @@ void MobileViewportManager::UpdateSizesBeforeReflow() {
     nsViewportInfo viewportInfo = mContext->GetViewportInfo(displaySize);
     mMobileViewportSize = viewportInfo.GetSize();
     MVM_LOG("%p: MVSize updated to %s\n", this,
-            Stringify(mMobileViewportSize).c_str());
+            ToString(mMobileViewportSize).c_str());
   }
 }
 
@@ -637,7 +644,7 @@ void MobileViewportManager::RefreshViewportSize(bool aForceAdjustResolution) {
           viewportInfo.IsDefaultZoomValid());
 
   CSSSize viewport = viewportInfo.GetSize();
-  MVM_LOG("%p: Computed CSS viewport %s\n", this, Stringify(viewport).c_str());
+  MVM_LOG("%p: Computed CSS viewport %s\n", this, ToString(viewport).c_str());
 
   if (!mIsFirstPaint && mMobileViewportSize == viewport) {
     // Nothing changed, so no need to do a reflow
@@ -673,6 +680,7 @@ void MobileViewportManager::RefreshViewportSize(bool aForceAdjustResolution) {
 
   if (mManagerType == ManagerType::VisualViewportOnly) {
     MVM_LOG("%p: Visual-only, so aborting before reflow\n", this);
+    mIsFirstPaint = false;
     return;
   }
 
@@ -680,7 +688,7 @@ void MobileViewportManager::RefreshViewportSize(bool aForceAdjustResolution) {
 
   // Kick off a reflow.
   MVM_LOG("%p: Triggering reflow with viewport %s\n", this,
-          Stringify(viewport).c_str());
+          ToString(viewport).c_str());
   mContext->Reflow(viewport);
 
   // We are going to fit the content to the display width if the initial-scale
@@ -713,7 +721,7 @@ void MobileViewportManager::ShrinkToDisplaySizeIfNeeded() {
   if (Maybe<CSSRect> scrollableRect =
           mContext->CalculateScrollableRectForRSF()) {
     MVM_LOG("%p: ShrinkToDisplaySize using scrollableRect %s\n", this,
-            Stringify(scrollableRect->Size()).c_str());
+            ToString(scrollableRect->Size()).c_str());
     UpdateResolutionForContentSizeChange(scrollableRect->Size());
   }
 }
@@ -727,4 +735,13 @@ CSSSize MobileViewportManager::GetIntrinsicCompositionSize() const {
                             compositionSize, mMobileViewportSize);
 
   return ScreenSize(compositionSize) / intrinsicScale;
+}
+
+ParentLayerSize MobileViewportManager::GetCompositionSizeWithoutDynamicToolbar()
+    const {
+  ScreenIntSize displaySize = ViewAs<ScreenPixel>(
+      mDisplaySize, PixelCastJustification::LayoutDeviceIsScreenForBounds);
+  return ViewAs<ParentLayerPixel>(
+      ScreenSize(GetCompositionSize(displaySize)),
+      PixelCastJustification::ScreenIsParentLayerForRoot);
 }

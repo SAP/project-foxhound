@@ -11,7 +11,7 @@
 #include "mozilla/dom/MediaMetadata.h"
 #include "mozilla/dom/MediaSessionBinding.h"
 #include "mozilla/Maybe.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsISupportsImpl.h"
 
 namespace mozilla {
@@ -180,16 +180,24 @@ class MediaStatusManager : public IMediaInfoUpdater {
   MediaEventSource<MediaMetadataBase>& MetadataChangedEvent() {
     return mMetadataChangedEvent;
   }
+
   MediaEventSource<PositionState>& PositionChangedEvent() {
     return mPositionStateChangedEvent;
   }
 
+  MediaEventSource<MediaSessionPlaybackState>& PlaybackChangedEvent() {
+    return mPlaybackStateChangedEvent;
+  }
+
   // Return the actual playback state.
-  MediaSessionPlaybackState GetState() const;
+  MediaSessionPlaybackState PlaybackState() const;
+
+  // When page title changes, we might need to update it on the default
+  // metadata as well.
+  void NotifyPageTitleChanged();
 
  protected:
   ~MediaStatusManager() = default;
-  virtual void HandleActualPlaybackStateChanged() = 0;
 
   // This event would be notified when the active media session changes its
   // supported actions.
@@ -204,6 +212,8 @@ class MediaStatusManager : public IMediaInfoUpdater {
   // media session and owns the audio focus within a tab.
   Maybe<uint64_t> mActiveMediaSessionContextId;
 
+  void ClearActiveMediaSessionContextIdIfNeeded();
+
  private:
   nsString GetDefaultFaviconURL() const;
   nsString GetDefaultTitle() const;
@@ -213,7 +223,6 @@ class MediaStatusManager : public IMediaInfoUpdater {
 
   bool IsSessionOwningAudioFocus(uint64_t aBrowsingContextId) const;
   void SetActiveMediaSessionContextId(uint64_t aBrowsingContextId);
-  void ClearActiveMediaSessionContextIdIfNeeded();
   void HandleAudioFocusOwnerChanged(Maybe<uint64_t>& aBrowsingContextId);
 
   void NotifySupportedKeysChangedIfNeeded(uint64_t aBrowsingContextId);
@@ -222,6 +231,8 @@ class MediaStatusManager : public IMediaInfoUpdater {
   // Use copyable array so that we can use the result as a parameter for the
   // media event.
   CopyableTArray<MediaSessionAction> GetSupportedActions() const;
+
+  void StoreMediaSessionContextIdOnWindowContext();
 
   // When the amount of playing media changes, we would use this function to
   // update the guessed playback state.
@@ -252,11 +263,12 @@ class MediaStatusManager : public IMediaInfoUpdater {
   MediaSessionPlaybackState mActualPlaybackState =
       MediaSessionPlaybackState::None;
 
-  nsDataHashtable<nsUint64HashKey, MediaSessionInfo> mMediaSessionInfoMap;
+  nsTHashMap<nsUint64HashKey, MediaSessionInfo> mMediaSessionInfoMap;
   MediaEventProducer<MediaMetadataBase> mMetadataChangedEvent;
   MediaEventProducer<nsTArray<MediaSessionAction>>
       mSupportedActionsChangedEvent;
   MediaEventProducer<PositionState> mPositionStateChangedEvent;
+  MediaEventProducer<MediaSessionPlaybackState> mPlaybackStateChangedEvent;
   MediaPlaybackStatus mPlaybackStatusDelegate;
 };
 

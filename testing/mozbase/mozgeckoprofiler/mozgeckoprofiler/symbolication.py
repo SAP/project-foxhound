@@ -1,7 +1,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import
+from __future__ import absolute_import, division
 
 import hashlib
 import os
@@ -19,12 +19,13 @@ LOG = get_proxy_logger("profiler")
 
 if six.PY2:
     # Import for Python 2
-    from cStringIO import StringIO
+    from cStringIO import StringIO as sio
     from urllib2 import urlopen
 else:
     # Import for Python 3
-    from io import StringIO
+    from io import BytesIO as sio
     from urllib.request import urlopen
+
     # Symbolication is broken when using type 'str' in python 2.7, so we use 'basestring'.
     # But for python 3.0 compatibility, 'basestring' isn't defined, but the 'str' type works.
     # So we force 'basestring' to 'str'.
@@ -57,7 +58,7 @@ class OSXSymbolDumper:
             return (
                 subprocess.Popen(["lipo", "-info", filename], stdout=subprocess.PIPE)
                 .communicate()[0]
-                .split(":")[2]
+                .split(b":")[2]
                 .strip()
                 .split()
             )
@@ -73,15 +74,15 @@ class OSXSymbolDumper:
                 return None
 
             module = stdout.splitlines()[0]
-            bits = module.split(" ", 4)
+            bits = module.split(b" ", 4)
             if len(bits) != 5:
                 return None
             _, platform, cpu_arch, actual_breakpad_id, debug_file = bits
 
-            if actual_breakpad_id != expected_breakpad_id:
+            if str(actual_breakpad_id, "utf-8") != expected_breakpad_id:
                 return None
 
-            with open(output_filename, "w") as f:
+            with open(output_filename, "wb") as f:
                 f.write(stdout)
             return output_filename
 
@@ -115,7 +116,7 @@ class LinuxSymbolDumper:
         if proc.returncode != 0:
             return
 
-        with open(output_filename, "w") as f:
+        with open(output_filename, "wb") as f:
             f.write(stdout)
 
             # Append nm -D output to the file. On Linux, most system libraries
@@ -166,7 +167,7 @@ class ProfileSymbolicator:
         )
         try:
             io = urlopen(symbol_zip_url, None, 30)
-            with zipfile.ZipFile(StringIO(io.read())) as zf:
+            with zipfile.ZipFile(sio(io.read())) as zf:
                 self.integrate_symbol_zip(zf)
             self._create_file_if_not_exists(self._marker_file(symbol_zip_url))
         except IOError:
@@ -195,7 +196,9 @@ class ProfileSymbolicator:
 
     def _marker_file(self, symbol_zip_url):
         marker_dir = os.path.join(self.options["symbolPaths"]["FIREFOX"], ".markers")
-        return os.path.join(marker_dir, hashlib.sha1(symbol_zip_url).hexdigest())
+        return os.path.join(
+            marker_dir, hashlib.sha1(symbol_zip_url.encode("utf-8")).hexdigest()
+        )
 
     def have_integrated(self, symbol_zip_url):
         return os.path.isfile(self._marker_file(symbol_zip_url))
@@ -311,7 +314,7 @@ class ProfileSymbolicator:
         left = 0
         right = len(libs) - 1
         while left <= right:
-            mid = (left + right) / 2
+            mid = (left + right) // 2
             if address >= libs[mid]["end"]:
                 left = mid + 1
             elif address < libs[mid]["start"]:
@@ -329,6 +332,7 @@ class ProfileSymbolicator:
             if lib["start"] not in libs_with_symbols:
                 libs_with_symbols[lib["start"]] = {"library": lib, "symbols": set()}
             libs_with_symbols[lib["start"]]["symbols"].add(address)
+        # pylint: disable=W1656
         return libs_with_symbols.values()
 
     def _resolve_symbols(self, symbols_to_resolve):

@@ -13,22 +13,26 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/net/NeckoChild.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StoragePrincipalHelper.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
+#include "nsICookieJarSettings.h"
 #include "nsIChannel.h"
 #include "nsIClassifiedChannel.h"
 #include "nsIHttpChannel.h"
 #include "nsIEffectiveTLDService.h"
 #include "nsIURI.h"
 #include "nsIPrefBranch.h"
+#include "nsIWebProgressListener.h"
 #include "nsServiceManagerUtils.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
 #include "ThirdPartyUtil.h"
+#include "nsIConsoleReportCollector.h"
 
 using namespace mozilla::ipc;
 
@@ -52,7 +56,7 @@ already_AddRefed<CookieServiceChild> CookieServiceChild::GetSingleton() {
 }
 
 NS_IMPL_ISUPPORTS(CookieServiceChild, nsICookieService, nsIObserver,
-                  nsITimerCallback, nsISupportsWeakReference)
+                  nsITimerCallback, nsINamed, nsISupportsWeakReference)
 
 CookieServiceChild::CookieServiceChild() {
   NS_ASSERTION(IsNeckoChild(), "not a child process");
@@ -92,15 +96,14 @@ CookieServiceChild::CookieServiceChild() {
 
 void CookieServiceChild::MoveCookies() {
   TimeStamp start = TimeStamp::Now();
-  for (auto iter = mCookiesMap.Iter(); !iter.Done(); iter.Next()) {
-    CookiesList* cookiesList = iter.UserData();
+  for (const auto& cookiesList : mCookiesMap.Values()) {
     CookiesList newCookiesList;
     for (uint32_t i = 0; i < cookiesList->Length(); ++i) {
       Cookie* cookie = cookiesList->ElementAt(i);
       RefPtr<Cookie> newCookie = cookie->Clone();
       newCookiesList.AppendElement(newCookie);
     }
-    cookiesList->SwapElements(newCookiesList);
+    *cookiesList = std::move(newCookiesList);
   }
 
   Telemetry::AccumulateTimeDelta(Telemetry::COOKIE_TIME_MOVING_MS, start);
@@ -113,6 +116,12 @@ CookieServiceChild::Notify(nsITimer* aTimer) {
   } else {
     MOZ_CRASH("Unknown timer");
   }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+CookieServiceChild::GetName(nsACString& aName) {
+  aName.AssignLiteral("CookieServiceChild");
   return NS_OK;
 }
 
@@ -268,7 +277,7 @@ void CookieServiceChild::RecordDocumentCookie(Cookie* aCookie,
   mCookiesMap.Get(key, &cookiesList);
 
   if (!cookiesList) {
-    cookiesList = mCookiesMap.LookupOrAdd(key);
+    cookiesList = mCookiesMap.GetOrInsertNew(key);
   }
   for (uint32_t i = 0; i < cookiesList->Length(); i++) {
     Cookie* cookie = cookiesList->ElementAt(i);
@@ -323,7 +332,7 @@ CookieServiceChild::Observe(nsISupports* aSubject, const char* aTopic,
 }
 
 NS_IMETHODIMP
-CookieServiceChild::GetCookieStringFromDocument(Document* aDocument,
+CookieServiceChild::GetCookieStringFromDocument(dom::Document* aDocument,
                                                 nsACString& aCookieString) {
   NS_ENSURE_ARG(aDocument);
 
@@ -353,7 +362,10 @@ CookieServiceChild::GetCookieStringFromDocument(Document* aDocument,
   }
 
   nsAutoCString hostFromURI;
-  principal->GetAsciiHost(hostFromURI);
+  rv = nsContentUtils::GetHostOrIPv6WithBrackets(principal, hostFromURI);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return NS_OK;
+  }
 
   nsAutoCString pathFromURI;
   principal->GetFilePath(pathFromURI);
@@ -363,8 +375,12 @@ CookieServiceChild::GetCookieStringFromDocument(Document* aDocument,
   // in gtests we don't have a window, let's consider those requests as 3rd
   // party.
   if (innerWindow) {
-    thirdParty = nsContentUtils::IsThirdPartyWindowOrChannel(innerWindow,
-                                                             nullptr, nullptr);
+    ThirdPartyUtil* thirdPartyUtil = ThirdPartyUtil::GetInstance();
+
+    if (thirdPartyUtil) {
+      Unused << thirdPartyUtil->IsThirdPartyWindow(
+          innerWindow->GetOuterWindow(), nullptr, &thirdParty);
+    }
   }
 
   bool isPotentiallyTrustworthy =
@@ -435,7 +451,7 @@ CookieServiceChild::GetCookieStringFromHttp(nsIURI* /*aHostURI*/,
 
 NS_IMETHODIMP
 CookieServiceChild::SetCookieStringFromDocument(
-    Document* aDocument, const nsACString& aCookieString) {
+    dom::Document* aDocument, const nsACString& aCookieString) {
   NS_ENSURE_ARG(aDocument);
 
   nsCOMPtr<nsIURI> documentURI;
@@ -461,8 +477,12 @@ CookieServiceChild::SetCookieStringFromDocument(
   // in gtests we don't have a window, let's consider those requests as 3rd
   // party.
   if (innerWindow) {
-    thirdParty = nsContentUtils::IsThirdPartyWindowOrChannel(innerWindow,
-                                                             nullptr, nullptr);
+    ThirdPartyUtil* thirdPartyUtil = ThirdPartyUtil::GetInstance();
+
+    if (thirdPartyUtil) {
+      Unused << thirdPartyUtil->IsThirdPartyWindow(
+          innerWindow->GetOuterWindow(), nullptr, &thirdParty);
+    }
   }
 
   if (thirdParty &&
@@ -591,6 +611,7 @@ CookieServiceChild::SetCookieStringFromHttp(nsIURI* aHostURI,
     if (!CookieCommons::CheckCookiePermission(aChannel, cookieData)) {
       COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, aCookieString,
                         "cookie rejected by permission manager");
+      constexpr auto CONSOLE_REJECTION_CATEGORY = "cookiesRejection"_ns;
       CookieLogging::LogMessageToConsole(
           crc, aHostURI, nsIScriptError::warningFlag,
           CONSOLE_REJECTION_CATEGORY, "CookieRejectedByPermissionManager"_ns,

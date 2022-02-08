@@ -18,7 +18,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Services: "resource://gre/modules/Services.jsm",
 });
 
-const { debug, warn } = GeckoViewUtils.initLogging("GeckoViewPrompt"); // eslint-disable-line no-unused-vars
+const { debug, warn } = GeckoViewUtils.initLogging("GeckoViewPrompt");
 
 class PromptFactory {
   constructor() {
@@ -440,9 +440,6 @@ class PromptFactory {
   asyncPromptAuth() {
     return this.callProxy("asyncPromptAuth", arguments);
   }
-  asyncPromptAuthBC() {
-    return this.callProxy("asyncPromptAuth", arguments);
-  }
 }
 
 PromptFactory.prototype.classID = Components.ID(
@@ -617,25 +614,16 @@ class PromptDelegate {
     return true;
   }
 
-  promptPassword(aTitle, aText, aPassword, aCheckMsg, aCheckState) {
+  promptPassword(aTitle, aText, aPassword) {
     return this._promptUsernameAndPassword(
       aTitle,
       aText,
       /* aUsername */ undefined,
-      aPassword,
-      aCheckMsg,
-      aCheckState
+      aPassword
     );
   }
 
-  promptUsernameAndPassword(
-    aTitle,
-    aText,
-    aUsername,
-    aPassword,
-    aCheckMsg,
-    aCheckState
-  ) {
+  promptUsernameAndPassword(aTitle, aText, aUsername, aPassword) {
     const msg = {
       type: "auth",
       mode: aUsername ? "auth" : "password",
@@ -645,15 +633,10 @@ class PromptDelegate {
         password: aPassword.value,
       },
     };
-    const result = this._prompter.showPrompt(
-      this._addText(aTitle, aText, this._addCheck(aCheckMsg, aCheckState, msg))
-    );
+    const result = this._prompter.showPrompt(this._addText(aTitle, aText, msg));
     // OK: result && result.password !== undefined
     // Cancel: result && result.password === undefined
     // Error: !result
-    if (result && aCheckState) {
-      aCheckState.value = !!result.checkValue;
-    }
     if (!result || result.password === undefined) {
       return false;
     }
@@ -717,10 +700,7 @@ class PromptDelegate {
     );
   }
 
-  _fillAuthInfo(aAuthInfo, aCheckState, aResult) {
-    if (aResult && aCheckState) {
-      aCheckState.value = !!aResult.checkValue;
-    }
+  _fillAuthInfo(aAuthInfo, aResult) {
     if (!aResult || aResult.password === undefined) {
       return false;
     }
@@ -744,62 +724,24 @@ class PromptDelegate {
     return true;
   }
 
-  promptAuth(aChannel, aLevel, aAuthInfo, aCheckMsg, aCheckState) {
+  promptAuth(aChannel, aLevel, aAuthInfo) {
     const result = this._prompter.showPrompt(
-      this._addCheck(
-        aCheckMsg,
-        aCheckState,
-        this._getAuthMsg(aChannel, aLevel, aAuthInfo)
-      )
+      this._getAuthMsg(aChannel, aLevel, aAuthInfo)
     );
     // OK: result && result.password !== undefined
     // Cancel: result && result.password === undefined
     // Error: !result
-    return this._fillAuthInfo(aAuthInfo, aCheckState, result);
+    return this._fillAuthInfo(aAuthInfo, result);
   }
 
-  asyncPromptAuth(
-    aChannel,
-    aCallback,
-    aContext,
-    aLevel,
-    aAuthInfo,
-    aCheckMsg,
-    aCheckState
-  ) {
-    let responded = false;
-    const callback = result => {
-      // OK: result && result.password !== undefined
-      // Cancel: result && result.password === undefined
-      // Error: !result
-      if (responded) {
-        return;
-      }
-      responded = true;
-      if (this._fillAuthInfo(aAuthInfo, aCheckState, result)) {
-        aCallback.onAuthAvailable(aContext, aAuthInfo);
-      } else {
-        aCallback.onAuthCancelled(aContext, /* userCancel */ true);
-      }
-    };
-    this._prompter.asyncShowPrompt(
-      this._addCheck(
-        aCheckMsg,
-        aCheckState,
-        this._getAuthMsg(aChannel, aLevel, aAuthInfo)
-      ),
-      callback
+  async asyncPromptAuth(aChannel, aLevel, aAuthInfo) {
+    const result = await this._prompter.asyncShowPromptPromise(
+      this._getAuthMsg(aChannel, aLevel, aAuthInfo)
     );
-    return {
-      QueryInterface: ChromeUtils.generateQI(["nsICancelable"]),
-      cancel() {
-        if (responded) {
-          return;
-        }
-        responded = true;
-        aCallback.onAuthCancelled(aContext, /* userCancel */ false);
-      },
-    };
+    // OK: result && result.password !== undefined
+    // Cancel: result && result.password === undefined
+    // Error: !result
+    return this._fillAuthInfo(aAuthInfo, result);
   }
 
   _getAuthText(aChannel, aAuthInfo) {

@@ -33,6 +33,194 @@ var caTreeView;
  * @type nsICertTree
  */
 var serverTreeView;
+
+var overrideService;
+
+function createRichlistItem(item) {
+  let innerHbox = document.createXULElement("hbox");
+  innerHbox.setAttribute("align", "center");
+  innerHbox.setAttribute("flex", "1");
+
+  let row = document.createXULElement("label");
+  row.setAttribute("flex", "1");
+  row.setAttribute("crop", "right");
+  row.setAttribute("style", "margin-inline-start: 15px;");
+  if ("raw" in item) {
+    row.setAttribute("value", item.raw);
+  } else {
+    document.l10n.setAttributes(row, item.l10nid);
+  }
+  row.setAttribute("ordinal", "1");
+  innerHbox.appendChild(row);
+
+  return innerHbox;
+}
+
+var serverRichList = {
+  richlist: undefined,
+
+  buildRichList() {
+    let overrides = overrideService.getOverrides().map(item => {
+      let cert = null;
+      if (item.dbKey !== "") {
+        cert = certdb.findCertByDBKey(item.dbKey);
+      }
+      return {
+        hostPort: item.hostPort,
+        dbKey: item.dbKey,
+        asciiHost: item.asciiHost,
+        port: item.port,
+        originAttributes: item.originAttributes,
+        isTemporary: item.isTemporary,
+        displayName: cert !== null ? cert.displayName : "",
+      };
+    });
+    overrides.sort((a, b) => {
+      let criteria = ["hostPort", "displayName"];
+      for (let c of criteria) {
+        let res = a[c].localeCompare(b[c]);
+        if (res !== 0) {
+          return res;
+        }
+      }
+      return 0;
+    });
+
+    this.richlist.textContent = "";
+    this.richlist.clearSelection();
+
+    let frag = document.createDocumentFragment();
+    for (let override of overrides) {
+      let richlistitem = this._richBoxAddItem(override);
+      frag.appendChild(richlistitem);
+    }
+    this.richlist.appendChild(frag);
+
+    this._setButtonState();
+    this.richlist.addEventListener("select", () => this._setButtonState());
+  },
+
+  _richBoxAddItem(item) {
+    let richlistitem = document.createXULElement("richlistitem");
+
+    richlistitem.setAttribute("dbKey", item.dbKey);
+    richlistitem.setAttribute("host", item.asciiHost);
+    richlistitem.setAttribute("port", item.port);
+    richlistitem.setAttribute("hostPort", item.hostPort);
+    richlistitem.setAttribute(
+      "originAttributes",
+      JSON.stringify(item.originAttributes)
+    );
+
+    let hbox = document.createXULElement("hbox");
+    hbox.setAttribute("flex", "1");
+    hbox.setAttribute("equalsize", "always");
+
+    hbox.appendChild(createRichlistItem({ raw: item.hostPort }));
+    hbox.appendChild(
+      createRichlistItem(
+        item.displayName !== ""
+          ? { raw: item.displayName }
+          : { l10nid: "no-cert-stored-for-override" }
+      )
+    );
+    hbox.appendChild(
+      createRichlistItem({
+        l10nid: item.isTemporary ? "temporary-override" : "permanent-override",
+      })
+    );
+
+    richlistitem.appendChild(hbox);
+
+    return richlistitem;
+  },
+
+  deleteSelectedRichListItem() {
+    let selectedItem = this.richlist.selectedItem;
+    if (!selectedItem) {
+      return;
+    }
+
+    let retVals = {
+      deleteConfirmed: false,
+    };
+    window.browsingContext.topChromeWindow.openDialog(
+      "chrome://pippki/content/deletecert.xhtml",
+      "",
+      "chrome,centerscreen,modal",
+      "websites_tab",
+      [
+        {
+          hostPort: selectedItem.attributes.hostPort.value,
+        },
+      ],
+      retVals
+    );
+
+    if (retVals.deleteConfirmed) {
+      overrideService.clearValidityOverride(
+        selectedItem.attributes.host.value,
+        selectedItem.attributes.port.value,
+        JSON.parse(selectedItem.attributes.originAttributes.value)
+      );
+      this.buildRichList();
+    }
+  },
+
+  viewSelectedRichListItem() {
+    let selectedItem = this.richlist.selectedItem;
+    if (!selectedItem) {
+      return;
+    }
+
+    let dbKey = selectedItem.getAttribute("dbKey");
+    if (dbKey) {
+      let cert = certdb.findCertByDBKey(dbKey);
+      viewCertHelper(window, cert);
+    }
+  },
+
+  exportSelectedRichListItem() {
+    let selectedItem = this.richlist.selectedItem;
+    if (!selectedItem) {
+      return;
+    }
+
+    let dbKey = selectedItem.getAttribute("dbKey");
+    if (dbKey) {
+      let cert = certdb.findCertByDBKey(dbKey);
+      exportToFile(window, cert);
+    }
+  },
+
+  addException() {
+    let retval = {
+      exceptionAdded: false,
+    };
+    window.browsingContext.topChromeWindow.openDialog(
+      "chrome://pippki/content/exceptionDialog.xhtml",
+      "",
+      "chrome,centerscreen,modal",
+      retval
+    );
+    if (retval.exceptionAdded) {
+      this.buildRichList();
+    }
+  },
+
+  _setButtonState() {
+    let websiteViewButton = document.getElementById("websites_viewButton");
+    let websiteExportButton = document.getElementById("websites_exportButton");
+    let websiteDeleteButton = document.getElementById("websites_deleteButton");
+
+    let certKey = this.richlist.selectedItem?.getAttribute("dbKey");
+    let cert = certKey && certdb.findCertByDBKey(certKey);
+
+    websiteDeleteButton.disabled = this.richlist.selectedIndex < 0;
+    websiteExportButton.disabled = !cert;
+    websiteViewButton.disabled = websiteExportButton.disabled;
+  },
+};
 /**
  * Cert tree for the "People" tab.
  * @type nsICertTree
@@ -46,13 +234,13 @@ var userTreeView;
 
 var clientAuthRememberService;
 
-var richlist;
-
 var rememberedDecisionsRichList = {
+  richlist: undefined,
+
   buildRichList() {
     let rememberedDecisions = clientAuthRememberService.getDecisions();
 
-    let oldItems = richlist.querySelectorAll("richlistitem");
+    let oldItems = this.richlist.querySelectorAll("richlistitem");
     for (let item of oldItems) {
       item.remove();
     }
@@ -62,23 +250,9 @@ var rememberedDecisionsRichList = {
       let richlistitem = this._richBoxAddItem(decision);
       frag.appendChild(richlistitem);
     }
-    richlist.appendChild(frag);
-  },
+    this.richlist.appendChild(frag);
 
-  _createItem(item) {
-    let innerHbox = document.createXULElement("hbox");
-    innerHbox.setAttribute("align", "center");
-    innerHbox.setAttribute("flex", "1");
-
-    let row = document.createXULElement("label");
-    row.setAttribute("flex", "1");
-    row.setAttribute("crop", "right");
-    row.setAttribute("style", "margin-inline-start: 15px;");
-    row.setAttribute("value", item);
-    row.setAttribute("ordinal", "1");
-    innerHbox.appendChild(row);
-
-    return innerHbox;
+    this.richlist.addEventListener("select", () => this.setButtonState());
   },
 
   _richBoxAddItem(item) {
@@ -91,13 +265,30 @@ var rememberedDecisionsRichList = {
     hbox.setAttribute("flex", "1");
     hbox.setAttribute("equalsize", "always");
 
-    let tmpCert = certdb.findCertByDBKey(item.dbKey);
+    hbox.appendChild(createRichlistItem({ raw: item.asciiHost }));
+    if (item.dbKey == "") {
+      hbox.appendChild(
+        createRichlistItem({ l10nid: "send-no-client-certificate" })
+      );
 
-    hbox.appendChild(this._createItem(item.asciiHost));
-
-    hbox.appendChild(this._createItem(tmpCert.commonName));
-
-    hbox.appendChild(this._createItem(tmpCert.serialNumber));
+      hbox.appendChild(createRichlistItem({ raw: "" }));
+    } else {
+      let tmpCert = certdb.findCertByDBKey(item.dbKey);
+      // The certificate corresponding to this item's dbKey may not be
+      // available (for example, if it was stored on a token that's been
+      // removed, or if it was deleted).
+      if (tmpCert) {
+        hbox.appendChild(createRichlistItem({ raw: tmpCert.commonName }));
+        hbox.appendChild(createRichlistItem({ raw: tmpCert.serialNumber }));
+      } else {
+        hbox.appendChild(
+          createRichlistItem({ l10nid: "certificate-not-available" })
+        );
+        hbox.appendChild(
+          createRichlistItem({ l10nid: "certificate-not-available" })
+        );
+      }
+    }
 
     richlistitem.appendChild(hbox);
 
@@ -105,8 +296,8 @@ var rememberedDecisionsRichList = {
   },
 
   deleteSelectedRichListItem() {
-    let selectedItem = richlist.selectedItem;
-    let index = richlist.selectedIndex;
+    let selectedItem = this.richlist.selectedItem;
+    let index = this.richlist.selectedIndex;
     if (index < 0) {
       return;
     }
@@ -116,17 +307,33 @@ var rememberedDecisionsRichList = {
     );
 
     this.buildRichList();
+    this.setButtonState();
   },
 
   viewSelectedRichListItem() {
-    let selectedItem = richlist.selectedItem;
-    let index = richlist.selectedIndex;
+    let selectedItem = this.richlist.selectedItem;
+    let index = this.richlist.selectedIndex;
     if (index < 0) {
       return;
     }
 
-    let cert = certdb.findCertByDBKey(selectedItem.attributes.dbKey.value);
-    viewCertHelper(window, cert);
+    if (selectedItem.attributes.dbKey.value != "") {
+      let cert = certdb.findCertByDBKey(selectedItem.attributes.dbKey.value);
+      viewCertHelper(window, cert);
+    }
+  },
+
+  setButtonState() {
+    let rememberedDeleteButton = document.getElementById(
+      "remembered_deleteButton"
+    );
+    let rememberedViewButton = document.getElementById("remembered_viewButton");
+
+    rememberedDeleteButton.disabled = this.richlist.selectedIndex < 0;
+    rememberedViewButton.disabled =
+      this.richlist.selectedItem == null
+        ? true
+        : this.richlist.selectedItem.attributes.dbKey.value == "";
   },
 };
 
@@ -141,12 +348,6 @@ function LoadCerts() {
   );
   caTreeView.loadCertsFromCache(certcache, Ci.nsIX509Cert.CA_CERT);
   document.getElementById("ca-tree").view = caTreeView;
-
-  serverTreeView = Cc["@mozilla.org/security/nsCertTree;1"].createInstance(
-    Ci.nsICertTree
-  );
-  serverTreeView.loadCertsFromCache(certcache, Ci.nsIX509Cert.SERVER_CERT);
-  document.getElementById("server-tree").view = serverTreeView;
 
   emailTreeView = Cc["@mozilla.org/security/nsCertTree;1"].createInstance(
     Ci.nsICertTree
@@ -164,9 +365,19 @@ function LoadCerts() {
     "@mozilla.org/security/clientAuthRememberService;1"
   ].getService(Ci.nsIClientAuthRememberService);
 
-  richlist = document.getElementById("rememberedList");
+  overrideService = Cc["@mozilla.org/security/certoverride;1"].getService(
+    Ci.nsICertOverrideService
+  );
+
+  rememberedDecisionsRichList.richlist = document.getElementById(
+    "rememberedList"
+  );
+  serverRichList.richlist = document.getElementById("serverList");
 
   rememberedDecisionsRichList.buildRichList();
+  serverRichList.buildRichList();
+
+  rememberedDecisionsRichList.setButtonState();
 
   enableBackupAllButton();
 }
@@ -180,7 +391,6 @@ function getSelectedCerts() {
   var ca_tab = document.getElementById("ca_tab");
   var mine_tab = document.getElementById("mine_tab");
   var others_tab = document.getElementById("others_tab");
-  var websites_tab = document.getElementById("websites_tab");
   var items = null;
   if (ca_tab.selected) {
     items = caTreeView.selection;
@@ -188,8 +398,6 @@ function getSelectedCerts() {
     items = userTreeView.selection;
   } else if (others_tab.selected) {
     items = emailTreeView.selection;
-  } else if (websites_tab.selected) {
-    items = serverTreeView.selection;
   }
   selected_certs = [];
   var cert = null;
@@ -211,8 +419,6 @@ function getSelectedCerts() {
           cert = userTreeView.getCert(j);
         } else if (others_tab.selected) {
           cert = emailTreeView.getCert(j);
-        } else if (websites_tab.selected) {
-          cert = serverTreeView.getCert(j);
         }
         if (cert) {
           var sc = selected_certs.length;
@@ -228,7 +434,6 @@ function getSelectedTreeItems() {
   var ca_tab = document.getElementById("ca_tab");
   var mine_tab = document.getElementById("mine_tab");
   var others_tab = document.getElementById("others_tab");
-  var websites_tab = document.getElementById("websites_tab");
   var items = null;
   if (ca_tab.selected) {
     items = caTreeView.selection;
@@ -236,8 +441,6 @@ function getSelectedTreeItems() {
     items = userTreeView.selection;
   } else if (others_tab.selected) {
     items = emailTreeView.selection;
-  } else if (websites_tab.selected) {
-    items = serverTreeView.selection;
   }
   selected_certs = [];
   selected_tree_items = [];
@@ -261,8 +464,6 @@ function getSelectedTreeItems() {
           tree_item = userTreeView.getTreeItem(j);
         } else if (others_tab.selected) {
           tree_item = emailTreeView.getTreeItem(j);
-        } else if (websites_tab.selected) {
-          tree_item = serverTreeView.getTreeItem(j);
         }
         if (tree_item) {
           var sc = selected_tree_items.length;
@@ -366,15 +567,6 @@ function ca_enableButtons() {
 function mine_enableButtons() {
   let idList = ["mine_viewButton", "mine_backupButton", "mine_deleteButton"];
   enableButtonsForCertTree(userTreeView, idList);
-}
-
-function websites_enableButtons() {
-  let idList = [
-    "websites_viewButton",
-    "websites_exportButton",
-    "websites_deleteButton",
-  ];
-  enableButtonsForCertTree(serverTreeView, idList);
 }
 
 function email_enableButtons() {
@@ -540,7 +732,6 @@ function deleteCerts() {
 
   const treeViewMap = {
     mine_tab: userTreeView,
-    websites_tab: serverTreeView,
     ca_tab: caTreeView,
     others_tab: emailTreeView,
   };
@@ -624,15 +815,4 @@ async function addEmailCert() {
       caTreeView.selection.clearSelection();
     }
   });
-}
-
-function addException() {
-  window.browsingContext.topChromeWindow.openDialog(
-    "chrome://pippki/content/exceptionDialog.xhtml",
-    "",
-    "chrome,centerscreen,modal"
-  );
-  var certcache = certdb.getCerts();
-  serverTreeView.loadCertsFromCache(certcache, Ci.nsIX509Cert.SERVER_CERT);
-  serverTreeView.selection.clearSelection();
 }

@@ -21,13 +21,12 @@ ChromiumCDMProxy::ChromiumCDMProxy(dom::MediaKeys* aKeys,
                                    const nsAString& aKeySystem,
                                    GMPCrashHelper* aCrashHelper,
                                    bool aDistinctiveIdentifierRequired,
-                                   bool aPersistentStateRequired,
-                                   nsISerialEventTarget* aMainThread)
+                                   bool aPersistentStateRequired)
     : CDMProxy(aKeys, aKeySystem, aDistinctiveIdentifierRequired,
-               aPersistentStateRequired, aMainThread),
+               aPersistentStateRequired),
       mCrashHelper(aCrashHelper),
       mCDMMutex("ChromiumCDMProxy"),
-      mGMPThread(GetGMPAbstractThread()) {
+      mGMPThread(GetGMPThread()) {
   MOZ_ASSERT(NS_IsMainThread());
 }
 
@@ -64,13 +63,14 @@ void ChromiumCDMProxy::Init(PromiseId aPromiseId, const nsAString& aOrigin,
     return;
   }
 
-  gmp::NodeId nodeId(aOrigin, aTopLevelOrigin, aGMPName);
-  RefPtr<AbstractThread> thread = mGMPThread;
+  gmp::NodeIdParts nodeIdParts{nsString(aOrigin), nsString(aTopLevelOrigin),
+                               nsString(aGMPName)};
+  nsCOMPtr<nsISerialEventTarget> thread = mGMPThread;
   RefPtr<ChromiumCDMProxy> self(this);
   nsCString keySystem = NS_ConvertUTF16toUTF8(mKeySystem);
   RefPtr<Runnable> task(NS_NewRunnableFunction(
       "ChromiumCDMProxy::Init",
-      [self, nodeId, helper, aPromiseId, thread, keySystem]() -> void {
+      [self, nodeIdParts, helper, aPromiseId, thread, keySystem]() -> void {
         MOZ_ASSERT(self->IsOnOwnerThread());
 
         RefPtr<gmp::GeckoMediaPluginService> service =
@@ -83,7 +83,7 @@ void ChromiumCDMProxy::Init(PromiseId aPromiseId, const nsAString& aOrigin,
           return;
         }
         RefPtr<gmp::GetCDMParentPromise> promise =
-            service->GetCDM(nodeId, {keySystem}, helper);
+            service->GetCDM(nodeIdParts, keySystem, helper);
         promise->Then(
             thread, __func__,
             [self, aPromiseId, thread](RefPtr<gmp::ChromiumCDMParent> cdm) {
@@ -187,7 +187,7 @@ void ChromiumCDMProxy::ShutdownCDMIfExists() {
 
 #ifdef DEBUG
 bool ChromiumCDMProxy::IsOnOwnerThread() {
-  return mGMPThread->IsCurrentThreadIn();
+  return mGMPThread && mGMPThread->IsOnCurrentThread();
 }
 #endif
 
@@ -337,6 +337,64 @@ void ChromiumCDMProxy::RemoveSession(const nsAString& aSessionId,
       aPromiseId));
 }
 
+void ChromiumCDMProxy::QueryOutputProtectionStatus() {
+  MOZ_ASSERT(NS_IsMainThread());
+  EME_LOG("ChromiumCDMProxy::QueryOutputProtectionStatus(this=%p)", this);
+
+  if (mKeys.IsNull()) {
+    EME_LOG(
+        "ChromiumCDMProxy::QueryOutputProtectionStatus(this=%p), mKeys "
+        "missing!",
+        this);
+    // If we can't get mKeys, we're probably in shutdown. But do our best to
+    // respond to the request and indicate the check failed.
+    NotifyOutputProtectionStatus(OutputProtectionCheckStatus::CheckFailed,
+                                 OutputProtectionCaptureStatus::Unused);
+    return;
+  }
+  // The keys will call back via `NotifyOutputProtectionStatus` to notify the
+  // result of the check.
+  mKeys->CheckIsElementCapturePossible();
+}
+
+void ChromiumCDMProxy::NotifyOutputProtectionStatus(
+    OutputProtectionCheckStatus aCheckStatus,
+    OutputProtectionCaptureStatus aCaptureStatus) {
+  MOZ_ASSERT(NS_IsMainThread());
+  // If the check failed aCaptureStatus should be unused, otherwise not.
+  MOZ_ASSERT_IF(aCheckStatus == OutputProtectionCheckStatus::CheckFailed,
+                aCaptureStatus == OutputProtectionCaptureStatus::Unused);
+  MOZ_ASSERT_IF(aCheckStatus == OutputProtectionCheckStatus::CheckSuccessful,
+                aCaptureStatus != OutputProtectionCaptureStatus::Unused);
+  EME_LOG(
+      "ChromiumCDMProxy::NotifyOutputProtectionStatus(this=%p) "
+      "aCheckStatus=%" PRIu8 " aCaptureStatus=%" PRIu8,
+      this, static_cast<uint8_t>(aCheckStatus),
+      static_cast<uint8_t>(aCaptureStatus));
+
+  RefPtr<gmp::ChromiumCDMParent> cdm = GetCDMParent();
+  if (!cdm) {
+    // If we're in shutdown the CDM may have been cleared while a notification
+    // is in flight. If this happens outside of shutdown we have a bug.
+    MOZ_ASSERT(mIsShutdown);
+    return;
+  }
+
+  uint32_t linkMask{};
+  uint32_t protectionMask{};  // Unused/always zeroed.
+  if (aCheckStatus == OutputProtectionCheckStatus::CheckSuccessful &&
+      aCaptureStatus == OutputProtectionCaptureStatus::CapturePossilbe) {
+    // The result indicates the capture is possible, so set the mask
+    // to indicate this.
+    linkMask |= cdm::OutputLinkTypes::kLinkTypeNetwork;
+  }
+  mGMPThread->Dispatch(NewRunnableMethod<bool, uint32_t, uint32_t>(
+      "gmp::ChromiumCDMParent::NotifyOutputProtectionStatus", cdm,
+      &gmp::ChromiumCDMParent::NotifyOutputProtectionStatus,
+      aCheckStatus == OutputProtectionCheckStatus::CheckSuccessful, linkMask,
+      protectionMask));
+}
+
 void ChromiumCDMProxy::Shutdown() {
   MOZ_ASSERT(NS_IsMainThread());
   EME_LOG("ChromiumCDMProxy::Shutdown(this=%p) mCDM=%p, mIsShutdown=%s", this,
@@ -369,6 +427,10 @@ void ChromiumCDMProxy::RejectPromise(PromiseId aId, ErrorResult&& aException,
           this, aId, aException.ErrorCodeAsInt(), aReason.get());
   if (!mKeys.IsNull()) {
     mKeys->RejectPromise(aId, std::move(aException), aReason);
+  } else {
+    // We don't have a MediaKeys object to pass the exception to, so silence
+    // the exception to avoid it asserting due to being unused.
+    aException.SuppressException();
   }
 }
 

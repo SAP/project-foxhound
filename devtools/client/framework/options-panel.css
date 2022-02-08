@@ -47,6 +47,7 @@
 
 .options-vertical-pane fieldset {
   border: none;
+  min-inline-size: auto;
 }
 
 .options-vertical-pane fieldset legend {
@@ -69,6 +70,8 @@
   display: flex;
   padding: 4px 0;
   align-items: center;
+  width: max-content;
+  max-width: 100%;
 }
 
 /* Add padding for label of select inputs in order to
@@ -125,7 +128,7 @@
 }
 
 .deprecation-notice::before {
-  background-image: url("chrome://global/skin/icons/warning.svg");
+  background-image: url("chrome://devtools/skin/images/alert.svg");
   content: '';
   display: inline-block;
   flex-shrink: 0;

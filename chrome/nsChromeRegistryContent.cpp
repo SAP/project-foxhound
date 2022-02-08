@@ -60,13 +60,13 @@ void nsChromeRegistryContent::RegisterPackage(const ChromePackage& aPackage) {
     if (NS_FAILED(rv)) return;
   }
 
-  PackageEntry* entry = new PackageEntry;
+  UniquePtr<PackageEntry> entry = MakeUnique<PackageEntry>();
   entry->flags = aPackage.flags;
   entry->contentBaseURI = content;
   entry->localeBaseURI = locale;
   entry->skinBaseURI = skin;
 
-  mPackagesHash.Put(aPackage.package, entry);
+  mPackagesHash.InsertOrUpdate(aPackage.package, std::move(entry));
 }
 
 void nsChromeRegistryContent::RegisterSubstitution(
@@ -103,7 +103,7 @@ void nsChromeRegistryContent::RegisterOverride(
   rv = NS_NewURI(getter_AddRefs(overrideURI), aOverride.overrideURI.spec);
   if (NS_FAILED(rv)) return;
 
-  mOverrideTable.Put(chromeURI, overrideURI);
+  mOverrideTable.InsertOrUpdate(chromeURI, overrideURI);
 }
 
 nsIURI* nsChromeRegistryContent::GetBaseURIFromPackage(

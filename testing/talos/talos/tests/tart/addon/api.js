@@ -1,12 +1,6 @@
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  Services: "resource://gre/modules/Services.jsm",
-});
+/* globals Services, XPCOMUtils */
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
@@ -85,7 +79,9 @@ this.tart = class extends ExtensionAPI {
         break;
 
       case "runTest":
-        new win.Tart().startTest(sendResult, command.data);
+        win.gBrowserInit.idleTasksFinishedPromise.then(() => {
+          new win.Tart().startTest(sendResult, command.data);
+        });
         break;
 
       case "setASAP":

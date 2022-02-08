@@ -12,11 +12,14 @@
 #include "mozilla/SVGContainerFrame.h"
 #include "mozilla/UniquePtr.h"
 #include "nsRegion.h"
+#include "nsTHashSet.h"
 
 class gfxContext;
 
 namespace mozilla {
+class AutoSVGViewHandler;
 class SVGForeignObjectFrame;
+class SVGFragmentIdentifier;
 class PresShell;
 }  // namespace mozilla
 
@@ -36,6 +39,8 @@ class SVGOuterSVGFrame final : public SVGDisplayContainerFrame,
 
   friend nsContainerFrame* ::NS_NewSVGOuterSVGFrame(
       mozilla::PresShell* aPresShell, ComputedStyle* aStyle);
+  friend class AutoSVGViewHandler;
+  friend class SVGFragmentIdentifier;
 
  protected:
   explicit SVGOuterSVGFrame(ComputedStyle* aStyle, nsPresContext* aPresContext);
@@ -56,13 +61,14 @@ class SVGOuterSVGFrame final : public SVGDisplayContainerFrame,
   virtual nscoord GetPrefISize(gfxContext* aRenderingContext) override;
 
   virtual IntrinsicSize GetIntrinsicSize() override;
-  virtual AspectRatio GetIntrinsicRatio() override;
+  AspectRatio GetIntrinsicRatio() const override;
 
-  virtual LogicalSize ComputeSize(
+  SizeComputationResult ComputeSize(
       gfxContext* aRenderingContext, WritingMode aWritingMode,
       const LogicalSize& aCBSize, nscoord aAvailableISize,
-      const LogicalSize& aMargin, const LogicalSize& aBorder,
-      const LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
+      const LogicalSize& aMargin, const LogicalSize& aBorderPadding,
+      const mozilla::StyleSizeOverrides& aSizeOverrides,
+      ComputeSizeFlags aFlags) override;
 
   virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
                       const ReflowInput& aReflowInput,
@@ -71,7 +77,7 @@ class SVGOuterSVGFrame final : public SVGDisplayContainerFrame,
   virtual void DidReflow(nsPresContext* aPresContext,
                          const ReflowInput* aReflowInput) override;
 
-  virtual void UnionChildOverflow(nsOverflowAreas& aOverflowAreas) override;
+  void UnionChildOverflow(mozilla::OverflowAreas& aOverflowAreas) override;
 
   virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                 const nsDisplayListSet& aLists) override;
@@ -90,6 +96,11 @@ class SVGOuterSVGFrame final : public SVGDisplayContainerFrame,
     return MakeFrameName(u"SVGOuterSVG"_ns, aResult);
   }
 #endif
+
+  void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
+
+  void DestroyFrom(nsIFrame* aDestructRoot,
+                   PostDestroyData& aPostDestroyData) override;
 
   virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
                                     int32_t aModType) override;
@@ -173,23 +184,20 @@ class SVGOuterSVGFrame final : public SVGDisplayContainerFrame,
   bool mCallingReflowSVG;
 
   /* Returns true if our content is the document element and our document is
-   * embedded in an HTML 'object' or 'embed' element. Set
-   * aEmbeddingFrame to obtain the nsIFrame for the embedding HTML element.
-   */
-  bool IsRootOfReplacedElementSubDoc(nsIFrame** aEmbeddingFrame = nullptr);
-
-  /* Returns true if our content is the document element and our document is
    * being used as an image.
    */
   bool IsRootOfImage();
+
+  void MaybeSendIntrinsicSizeAndRatioToEmbedder();
+  void MaybeSendIntrinsicSizeAndRatioToEmbedder(Maybe<IntrinsicSize>,
+                                                Maybe<AspectRatio>);
 
   // This is temporary until display list based invalidation is implemented for
   // SVG.
   // A hash-set containing our SVGForeignObjectFrame descendants. Note we use
   // a hash-set to avoid the O(N^2) behavior we'd get tearing down an SVG frame
   // subtree if we were to use a list (see bug 381285 comment 20).
-  UniquePtr<nsTHashtable<nsPtrHashKey<SVGForeignObjectFrame>>>
-      mForeignObjectHash;
+  UniquePtr<nsTHashSet<SVGForeignObjectFrame*>> mForeignObjectHash;
 
   nsRegion mInvalidRegion;
 
@@ -197,11 +205,8 @@ class SVGOuterSVGFrame final : public SVGDisplayContainerFrame,
 
   bool mViewportInitialized;
   bool mIsRootContent;
-
- private:
-  template <typename... Args>
-  bool IsContainingWindowElementOfType(nsIFrame** aContainingWindowFrame,
-                                       Args... aArgs) const;
+  bool mIsInObjectOrEmbed;
+  bool mIsInIframe;
 };
 
 ////////////////////////////////////////////////////////////////////////

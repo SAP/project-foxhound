@@ -8,7 +8,7 @@
 #define __MAI_HYPERLINK_H__
 
 #include "nsMai.h"
-#include "Accessible.h"
+#include "LocalAccessible.h"
 
 struct _AtkHyperlink;
 typedef struct _AtkHyperlink AtkHyperlink;
@@ -22,27 +22,34 @@ namespace a11y {
 
 class MaiHyperlink {
  public:
-  explicit MaiHyperlink(AccessibleOrProxy aHyperLink);
+  explicit MaiHyperlink(Accessible* aHyperLink);
   ~MaiHyperlink();
 
  public:
   AtkHyperlink* GetAtkHyperlink() const { return mMaiAtkHyperlink; }
-  Accessible* GetAccHyperlink() {
-    if (!mHyperlink.IsAccessible()) return nullptr;
+  LocalAccessible* GetAccHyperlink() {
+    if (!mHyperlink || !mHyperlink->IsLocal()) return nullptr;
 
-    Accessible* link = mHyperlink.AsAccessible();
-    if (!link) {
-      return nullptr;
-    }
+    LocalAccessible* link = mHyperlink->AsLocal();
 
     NS_ASSERTION(link->IsLink(), "Why isn't it a link!");
     return link;
   }
 
-  ProxyAccessible* Proxy() const { return mHyperlink.AsProxy(); }
+  RemoteAccessible* Proxy() const {
+    return mHyperlink ? mHyperlink->AsRemote() : nullptr;
+  }
+
+  Accessible* Acc() {
+    if (!mHyperlink) {
+      return nullptr;
+    }
+    NS_ASSERTION(mHyperlink->IsLink(), "Why isn't it a link!");
+    return mHyperlink;
+  }
 
  protected:
-  AccessibleOrProxy mHyperlink;
+  Accessible* mHyperlink;
   AtkHyperlink* mMaiAtkHyperlink;
 };
 

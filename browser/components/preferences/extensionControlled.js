@@ -6,26 +6,21 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "AddonManager",
-  "resource://gre/modules/AddonManager.jsm"
+var { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "BrowserUtils",
-  "resource://gre/modules/BrowserUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "DeferredTask",
-  "resource://gre/modules/DeferredTask.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionSettingsStore",
-  "resource://gre/modules/ExtensionSettingsStore.jsm"
-);
+
+// Note: we get loaded in dialogs so we need to define our
+// own getters, separate from preferences.js .
+XPCOMUtils.defineLazyModuleGetters(this, {
+  AddonManager: "resource://gre/modules/AddonManager.jsm",
+  BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
+  DeferredTask: "resource://gre/modules/DeferredTask.jsm",
+  ExtensionPreferencesManager:
+    "resource://gre/modules/ExtensionPreferencesManager.jsm",
+  ExtensionSettingsStore: "resource://gre/modules/ExtensionSettingsStore.jsm",
+  Management: "resource://gre/modules/Extension.jsm",
+});
 
 const PREF_SETTING_TYPE = "prefs";
 const PROXY_KEY = "proxy.settings";
@@ -34,8 +29,6 @@ const API_PROXY_PREFS = [
   "network.proxy.http",
   "network.proxy.http_port",
   "network.proxy.share_proxy_settings",
-  "network.proxy.ftp",
-  "network.proxy.ftp_port",
   "network.proxy.ssl",
   "network.proxy.ssl_port",
   "network.proxy.socks",
@@ -49,10 +42,8 @@ const API_PROXY_PREFS = [
 
 let extensionControlledContentIds = {
   "privacy.containers": "browserContainersExtensionContent",
-  homepage_override: "browserHomePageExtensionContent",
-  newTabURL: "browserNewTabExtensionContent",
   webNotificationsDisabled: "browserNotificationsPermissionExtensionContent",
-  defaultSearch: "browserDefaultSearchExtensionContent",
+  "services.passwordSavingEnabled": "passwordManagerExtensionContent",
   "proxy.settings": "proxyExtensionContent",
   get "websites.trackingProtectionMode"() {
     return {
@@ -63,10 +54,8 @@ let extensionControlledContentIds = {
 };
 
 const extensionControlledL10nKeys = {
-  homepage_override: "homepage-override",
-  newTabURL: "new-tab-url",
   webNotificationsDisabled: "web-notifications",
-  defaultSearch: "default-search",
+  "services.passwordSavingEnabled": "password-saving",
   "privacy.containers": "privacy-containers",
   "websites.trackingProtectionMode": "websites-content-blocking-all-trackers",
   "proxy.settings": "proxy-config",
@@ -247,7 +236,7 @@ function showEnableExtensionMessage(settingName) {
   };
   let label = document.createXULElement("label");
   let addonIcon = icon(
-    "chrome://mozapps/skin/extensions/extension.svg",
+    "chrome://mozapps/skin/extensions/extensionGeneric.svg",
     "addons-icon"
   );
   let toolbarIcon = icon("chrome://browser/skin/menu.svg", "menu-icon");
@@ -270,6 +259,30 @@ function makeDisableControllingExtension(type, settingName) {
     let addon = await AddonManager.getAddonByID(id);
     await addon.disable();
   };
+}
+
+/**
+ *  Initialize listeners though the Management API to update the UI
+ *  when an extension is controlling a pref.
+ * @param {string} type
+ * @param {string} prefId The unique id of the setting
+ * @param {HTMLElement} controlledElement
+ */
+async function initListenersForPrefChange(type, prefId, controlledElement) {
+  await Management.asyncLoadSettingsModules();
+
+  let managementObserver = async () => {
+    let managementControlled = await handleControllingExtension(type, prefId);
+    // Enterprise policy may have locked the pref, so we need to preserve that
+    controlledElement.disabled =
+      managementControlled || Services.prefs.prefIsLocked(prefId);
+  };
+  managementObserver();
+  Management.on(`extension-setting-changed:${prefId}`, managementObserver);
+
+  window.addEventListener("unload", () => {
+    Management.off(`extension-setting-changed:${prefId}`, managementObserver);
+  });
 }
 
 function initializeProxyUI(container) {

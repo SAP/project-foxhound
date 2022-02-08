@@ -21,6 +21,7 @@
 #include "nsMemory.h"
 #include "nsPrintfCString.h"
 #include "nsQuickSort.h"
+#include "nsReadableUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsToolkit.h"
 #include "nsUnicharUtils.h"
@@ -448,38 +449,32 @@ static const nsCString GetKeyLocationName(uint32_t aLocation) {
   }
 }
 
-static const nsCString GetCharacterCodeName(const char16_t* aChars,
-                                            uint32_t aLength) {
+static const nsCString GetCharacterCodeNames(const char16_t* aChars,
+                                             uint32_t aLength) {
   if (!aLength) {
-    return EmptyCString();
+    return ""_ns;
   }
   nsCString result;
-  for (uint32_t i = 0; i < aLength; ++i) {
-    if (!result.IsEmpty()) {
-      result.AppendLiteral(", ");
-    } else {
-      result.AssignLiteral("\"");
-    }
-    result.Append(GetCharacterCodeName(aChars[i]));
-  }
+  result.AssignLiteral("\"");
+  StringJoinAppend(result, ", "_ns, Span{aChars, aLength},
+                   [](nsACString& dest, const char16_t charValue) {
+                     dest.Append(GetCharacterCodeName(charValue));
+                   });
   result.AppendLiteral("\"");
   return result;
 }
 
-static const nsCString GetCharacterCodeName(
+static const nsCString GetCharacterCodeNames(
     const UniCharsAndModifiers& aUniCharsAndModifiers) {
   if (aUniCharsAndModifiers.IsEmpty()) {
-    return EmptyCString();
+    return ""_ns;
   }
   nsCString result;
-  for (uint32_t i = 0; i < aUniCharsAndModifiers.Length(); i++) {
-    if (!result.IsEmpty()) {
-      result.AppendLiteral(", ");
-    } else {
-      result.AssignLiteral("\"");
-    }
-    result.Append(GetCharacterCodeName(aUniCharsAndModifiers.CharAt(i)));
-  }
+  result.AssignLiteral("\"");
+  StringJoinAppend(result, ", "_ns, Span{aUniCharsAndModifiers.ToString()},
+                   [](nsACString& dest, const char16_t charValue) {
+                     dest.Append(GetCharacterCodeName(charValue));
+                   });
   result.AppendLiteral("\"");
   return result;
 }
@@ -543,10 +538,6 @@ static const nsCString GetMessageName(UINT aMessage) {
       return "WM_DEADCHAR"_ns;
     case WM_SYSDEADCHAR:
       return "WM_SYSDEADCHAR"_ns;
-    case MOZ_WM_KEYDOWN:
-      return "MOZ_WM_KEYDOWN"_ns;
-    case MOZ_WM_KEYUP:
-      return "MOZ_WM_KEYUP"_ns;
     case WM_APPCOMMAND:
       return "WM_APPCOMMAND"_ns;
     case WM_QUIT:
@@ -751,8 +742,6 @@ static const nsCString ToString(const MSG& aMSG) {
     case WM_KEYUP:
     case WM_SYSKEYDOWN:
     case WM_SYSKEYUP:
-    case MOZ_WM_KEYDOWN:
-    case MOZ_WM_KEYUP:
       result.AppendPrintf(
           "virtual keycode=%s, repeat count=%d, "
           "scancode=0x%02X, extended key=%s, "
@@ -1373,7 +1362,6 @@ void NativeKey::InitIsSkippableForKeyOrChar(const MSG& aLastKeyMSG) {
   switch (mMsg.message) {
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
-    case MOZ_WM_KEYDOWN:
     case WM_CHAR:
     case WM_SYSCHAR:
     case WM_DEADCHAR:
@@ -1386,7 +1374,6 @@ void NativeKey::InitIsSkippableForKeyOrChar(const MSG& aLastKeyMSG) {
       switch (aLastKeyMSG.message) {
         case WM_KEYDOWN:
         case WM_SYSKEYDOWN:
-        case MOZ_WM_KEYDOWN:
           if (aLastKeyMSG.wParam == VK_PACKET) {
             // If the last message was VK_PACKET, that means that a keyboard
             // utility tried to insert a character.  So, current message is
@@ -1424,9 +1411,7 @@ void NativeKey::InitWithKeyOrChar() {
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
     case WM_KEYUP:
-    case WM_SYSKEYUP:
-    case MOZ_WM_KEYDOWN:
-    case MOZ_WM_KEYUP: {
+    case WM_SYSKEYUP: {
       // Modify sLastKeyMSG now since retrieving following char messages may
       // cause sending another key message if odd tool hooks GetMessage(),
       // PeekMessage().
@@ -2010,14 +1995,13 @@ char16_t NativeKey::ComputeUnicharFromScanCode() const {
       ComputeVirtualKeyCodeFromScanCode(), MAPVK_VK_TO_CHAR, mKeyboardLayout));
 }
 
-nsEventStatus NativeKey::InitKeyEvent(WidgetKeyboardEvent& aKeyEvent,
-                                      const MSG* aMsgSentToPlugin) const {
-  return InitKeyEvent(aKeyEvent, mModKeyState, aMsgSentToPlugin);
+nsEventStatus NativeKey::InitKeyEvent(WidgetKeyboardEvent& aKeyEvent) const {
+  return InitKeyEvent(aKeyEvent, mModKeyState);
 }
 
-nsEventStatus NativeKey::InitKeyEvent(WidgetKeyboardEvent& aKeyEvent,
-                                      const ModifierKeyState& aModKeyState,
-                                      const MSG* aMsgSentToPlugin) const {
+nsEventStatus NativeKey::InitKeyEvent(
+    WidgetKeyboardEvent& aKeyEvent,
+    const ModifierKeyState& aModKeyState) const {
   if (mWidget->Destroyed()) {
     MOZ_CRASH("NativeKey tries to dispatch a key event on destroyed widget");
   }
@@ -2077,10 +2061,6 @@ nsEventStatus NativeKey::InitKeyEvent(WidgetKeyboardEvent& aKeyEvent,
   aKeyEvent.mLocation = GetKeyLocation();
   aModKeyState.InitInputEvent(aKeyEvent);
 
-  if (aMsgSentToPlugin) {
-    MaybeInitPluginEventOfKeyEvent(aKeyEvent, *aMsgSentToPlugin);
-  }
-
   KeyboardLayout::NotifyIdleServiceOfUserActivity();
 
   MOZ_LOG(
@@ -2099,18 +2079,6 @@ nsEventStatus NativeKey::InitKeyEvent(WidgetKeyboardEvent& aKeyEvent,
 
   return aKeyEvent.DefaultPrevented() ? nsEventStatus_eConsumeNoDefault
                                       : nsEventStatus_eIgnore;
-}
-
-void NativeKey::MaybeInitPluginEventOfKeyEvent(
-    WidgetKeyboardEvent& aKeyEvent, const MSG& aMsgSentToPlugin) const {
-  if (mWidget->GetInputContext().mIMEState.mEnabled != IMEState::PLUGIN) {
-    return;
-  }
-  NPEvent pluginEvent;
-  pluginEvent.event = aMsgSentToPlugin.message;
-  pluginEvent.wParam = aMsgSentToPlugin.wParam;
-  pluginEvent.lParam = aMsgSentToPlugin.lParam;
-  aKeyEvent.mPluginEvent.Copy(pluginEvent);
 }
 
 bool NativeKey::DispatchCommandEvent(uint32_t aEventCommand) const {
@@ -2255,7 +2223,7 @@ bool NativeKey::HandleAppCommandMessage() const {
              "event...",
              this));
     WidgetKeyboardEvent keydownEvent(true, eKeyDown, mWidget);
-    nsEventStatus status = InitKeyEvent(keydownEvent, mModKeyState, &mMsg);
+    nsEventStatus status = InitKeyEvent(keydownEvent, mModKeyState);
     MOZ_LOG(sNativeKeyLogger, LogLevel::Info,
             ("%p   NativeKey::HandleAppCommandMessage(), tries to dispatch "
              "keydown event...",
@@ -2386,7 +2354,7 @@ bool NativeKey::HandleAppCommandMessage() const {
              "event...",
              this));
     WidgetKeyboardEvent keyupEvent(true, eKeyUp, mWidget);
-    nsEventStatus status = InitKeyEvent(keyupEvent, mModKeyState, &mMsg);
+    nsEventStatus status = InitKeyEvent(keyupEvent, mModKeyState);
     MOZ_LOG(sNativeKeyLogger, LogLevel::Info,
             ("%p   NativeKey::HandleAppCommandMessage(), dispatching keyup "
              "event...",
@@ -2458,7 +2426,7 @@ bool NativeKey::HandleKeyDownMessage(bool* aEventDispatched) const {
   }
 
   bool defaultPrevented = false;
-  if (mFakeCharMsgs || IsKeyMessageOnPlugin() ||
+  if (mFakeCharMsgs ||
       !RedirectedKeyDownMessageManager::IsRedirectedMessage(mMsg)) {
     nsresult rv = mDispatcher->BeginNativeInputTransaction();
     if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -2476,16 +2444,14 @@ bool NativeKey::HandleKeyDownMessage(bool* aEventDispatched) const {
              "event...",
              this));
 
-    EventMessage keyDownMessage =
-        IsKeyMessageOnPlugin() ? eKeyDownOnPlugin : eKeyDown;
-    WidgetKeyboardEvent keydownEvent(true, keyDownMessage, mWidget);
-    nsEventStatus status = InitKeyEvent(keydownEvent, mModKeyState, &mMsg);
+    WidgetKeyboardEvent keydownEvent(true, eKeyDown, mWidget);
+    nsEventStatus status = InitKeyEvent(keydownEvent, mModKeyState);
     MOZ_LOG(
         sNativeKeyLogger, LogLevel::Info,
         ("%p   NativeKey::HandleKeyDownMessage(), dispatching keydown event...",
          this));
     bool dispatched = mDispatcher->DispatchKeyboardEvent(
-        keyDownMessage, keydownEvent, status, const_cast<NativeKey*>(this));
+        eKeyDown, keydownEvent, status, const_cast<NativeKey*>(this));
     if (aEventDispatched) {
       *aEventDispatched = dispatched;
     }
@@ -2500,18 +2466,6 @@ bool NativeKey::HandleKeyDownMessage(bool* aEventDispatched) const {
       return false;
     }
     defaultPrevented = status == nsEventStatus_eConsumeNoDefault;
-
-    // We don't need to handle key messages on plugin for eKeyPress since
-    // eKeyDownOnPlugin is handled as both eKeyDown and eKeyPress.
-    if (IsKeyMessageOnPlugin()) {
-      MOZ_LOG(
-          sNativeKeyLogger, LogLevel::Info,
-          ("%p   NativeKey::HandleKeyDownMessage(), doesn't dispatch keypress "
-           "event(s) because it's a keydown message on windowed plugin, "
-           "defaultPrevented=%s",
-           this, GetBoolName(defaultPrevented)));
-      return defaultPrevented;
-    }
 
     if (mWidget->Destroyed() || IsFocusedWindowChanged()) {
       MOZ_LOG(sNativeKeyLogger, LogLevel::Info,
@@ -2536,8 +2490,7 @@ bool NativeKey::HandleKeyDownMessage(bool* aEventDispatched) const {
     // application, we shouldn't redirect the message to it because the keydown
     // message is processed by us, so, nobody shouldn't process it.
     HWND focusedWnd = ::GetFocus();
-    if (!defaultPrevented && !mFakeCharMsgs && !IsKeyMessageOnPlugin() &&
-        focusedWnd && !mWidget->PluginHasFocus() && !isIMEEnabled &&
+    if (!defaultPrevented && !mFakeCharMsgs && focusedWnd && !isIMEEnabled &&
         WinUtils::IsIMEEnabled(mWidget->GetInputContext())) {
       RedirectedKeyDownMessageManager::RemoveNextCharMessage(focusedWnd);
 
@@ -2603,7 +2556,6 @@ bool NativeKey::HandleKeyDownMessage(bool* aEventDispatched) const {
             ("%p   NativeKey::HandleKeyDownMessage(), not dispatching keypress "
              "event because preceding keydown event was consumed",
              this));
-    MaybeDispatchPluginEventsForRemovedCharMessages();
     return true;
   }
 
@@ -2628,8 +2580,7 @@ bool NativeKey::HandleKeyDownMessage(bool* aEventDispatched) const {
             ("%p   NativeKey::HandleKeyDownMessage(), tries to be dispatching "
              "keypress events...",
              this));
-    return (MaybeDispatchPluginEventsForRemovedCharMessages() ||
-            DispatchKeyPressEventsWithoutCharMessage());
+    return DispatchKeyPressEventsWithoutCharMessage();
   }
 
   // If WM_KEYDOWN of VK_PACKET isn't followed by WM_CHAR, we don't need to
@@ -2780,7 +2731,7 @@ bool NativeKey::HandleCharMessage(const MSG& aCharMsg,
       IsPrintableCharMessage(aCharMsg)) {
     modKeyState.Unset(MODIFIER_ALT | MODIFIER_CONTROL);
   }
-  nsEventStatus status = InitKeyEvent(keypressEvent, modKeyState, &aCharMsg);
+  nsEventStatus status = InitKeyEvent(keypressEvent, modKeyState);
   MOZ_LOG(sNativeKeyLogger, LogLevel::Info,
           ("%p   NativeKey::HandleCharMessage(), dispatching keypress event...",
            this));
@@ -2843,14 +2794,13 @@ bool NativeKey::HandleKeyUpMessage(bool* aEventDispatched) const {
   MOZ_LOG(sNativeKeyLogger, LogLevel::Debug,
           ("%p   NativeKey::HandleKeyUpMessage(), initializing keyup event...",
            this));
-  EventMessage keyUpMessage = IsKeyMessageOnPlugin() ? eKeyUpOnPlugin : eKeyUp;
-  WidgetKeyboardEvent keyupEvent(true, keyUpMessage, mWidget);
-  nsEventStatus status = InitKeyEvent(keyupEvent, mModKeyState, &mMsg);
+  WidgetKeyboardEvent keyupEvent(true, eKeyUp, mWidget);
+  nsEventStatus status = InitKeyEvent(keyupEvent, mModKeyState);
   MOZ_LOG(sNativeKeyLogger, LogLevel::Info,
           ("%p   NativeKey::HandleKeyUpMessage(), dispatching keyup event...",
            this));
   bool dispatched = mDispatcher->DispatchKeyboardEvent(
-      keyUpMessage, keyupEvent, status, const_cast<NativeKey*>(this));
+      eKeyUp, keyupEvent, status, const_cast<NativeKey*>(this));
   if (aEventDispatched) {
     *aEventDispatched = dispatched;
   }
@@ -2871,13 +2821,6 @@ bool NativeKey::HandleKeyUpMessage(bool* aEventDispatched) const {
 
 bool NativeKey::NeedsToHandleWithoutFollowingCharMessages() const {
   MOZ_ASSERT(IsKeyDownMessage());
-
-  // We cannot know following char messages of key messages in a plugin
-  // process.  So, let's compute the character to be inputted with every
-  // printable key should be computed with the keyboard layout.
-  if (IsKeyMessageOnPlugin()) {
-    return true;
-  }
 
   // If the key combination is reserved by the system, the caller shouldn't
   // do anything with following WM_*CHAR messages.  So, let's return true here.
@@ -2986,7 +2929,6 @@ bool NativeKey::IsSamePhysicalKeyMessage(const MSG& aKeyOrCharMsg1,
 
 bool NativeKey::GetFollowingCharMessage(MSG& aCharMsg) {
   MOZ_ASSERT(IsKeyDownMessage());
-  MOZ_ASSERT(!IsKeyMessageOnPlugin());
 
   aCharMsg.message = WM_NULL;
 
@@ -3408,71 +3350,6 @@ bool NativeKey::GetFollowingCharMessage(MSG& aCharMsg) {
   return false;
 }
 
-bool NativeKey::MaybeDispatchPluginEventsForRemovedCharMessages() const {
-  MOZ_ASSERT(IsKeyDownMessage());
-  MOZ_ASSERT(!IsKeyMessageOnPlugin());
-
-  for (size_t i = 0;
-       i < mFollowingCharMsgs.Length() && mWidget->ShouldDispatchPluginEvent();
-       ++i) {
-    MOZ_LOG(
-        sNativeKeyLogger, LogLevel::Info,
-        ("%p   NativeKey::MaybeDispatchPluginEventsForRemovedCharMessages(), "
-         "dispatching %uth plugin event for %s...",
-         this, i + 1, ToString(mFollowingCharMsgs[i]).get()));
-    MOZ_RELEASE_ASSERT(
-        !mWidget->Destroyed(),
-        "NativeKey tries to dispatch a plugin event on destroyed widget");
-    mWidget->DispatchPluginEvent(mFollowingCharMsgs[i]);
-    if (mWidget->Destroyed() || IsFocusedWindowChanged()) {
-      MOZ_LOG(
-          sNativeKeyLogger, LogLevel::Info,
-          ("%p   NativeKey::MaybeDispatchPluginEventsForRemovedCharMessages(), "
-           "%uth plugin event caused %s",
-           this, i + 1,
-           mWidget->Destroyed() ? "destroying the widget" : "focus change"));
-      return true;
-    }
-    MOZ_LOG(
-        sNativeKeyLogger, LogLevel::Info,
-        ("%p   NativeKey::MaybeDispatchPluginEventsForRemovedCharMessages(), "
-         "dispatched %uth plugin event",
-         this, i + 1));
-  }
-
-  // Dispatch odd char messages which are caused by ATOK or WXG (both of them
-  // are Japanese IME) and removed by RemoveFollowingOddCharMessages().
-  for (size_t i = 0;
-       i < mRemovedOddCharMsgs.Length() && mWidget->ShouldDispatchPluginEvent();
-       ++i) {
-    MOZ_LOG(
-        sNativeKeyLogger, LogLevel::Info,
-        ("%p   NativeKey::MaybeDispatchPluginEventsForRemovedCharMessages(), "
-         "dispatching %uth plugin event for odd char message, %s...",
-         this, i + 1, ToString(mFollowingCharMsgs[i]).get()));
-    MOZ_RELEASE_ASSERT(
-        !mWidget->Destroyed(),
-        "NativeKey tries to dispatch a plugin event on destroyed widget");
-    mWidget->DispatchPluginEvent(mRemovedOddCharMsgs[i]);
-    if (mWidget->Destroyed() || IsFocusedWindowChanged()) {
-      MOZ_LOG(
-          sNativeKeyLogger, LogLevel::Info,
-          ("%p   NativeKey::MaybeDispatchPluginEventsForRemovedCharMessages(), "
-           "%uth plugin event for odd char message caused %s",
-           this, i + 1,
-           mWidget->Destroyed() ? "destroying the widget" : "focus change"));
-      return true;
-    }
-    MOZ_LOG(
-        sNativeKeyLogger, LogLevel::Info,
-        ("%p   NativeKey::MaybeDispatchPluginEventsForRemovedCharMessages(), "
-         "dispatched %uth plugin event for odd char message",
-         this, i + 1));
-  }
-
-  return false;
-}
-
 void NativeKey::ComputeInputtingStringWithKeyboardLayout() {
   KeyboardLayout* keyboardLayout = KeyboardLayout::GetInstance();
 
@@ -3602,9 +3479,7 @@ bool NativeKey::DispatchKeyPressEventsWithRetrievedCharMessages() const {
   // We don't need to send char message here if there are two or more retrieved
   // messages because we need to set each message to each eKeyPress event.
   bool needsCallback = mFollowingCharMsgs.Length() > 1;
-  nsEventStatus status =
-      InitKeyEvent(keypressEvent, modKeyState,
-                   !needsCallback ? &mFollowingCharMsgs[0] : nullptr);
+  nsEventStatus status = InitKeyEvent(keypressEvent, modKeyState);
   MOZ_LOG(sNativeKeyLogger, LogLevel::Info,
           ("%p   NativeKey::DispatchKeyPressEventsWithRetrievedCharMessages(), "
            "dispatching keypress event(s)...",
@@ -3699,9 +3574,7 @@ void NativeKey::WillDispatchKeyboardEvent(WidgetKeyboardEvent& aKeyboardEvent,
         continue;
       }
       if (foundPrintableCharMessages++ == aIndex) {
-        // Found message which caused the eKeyPress event.  Let's set the
-        // message for plugin if it's necessary.
-        MaybeInitPluginEventOfKeyEvent(aKeyboardEvent, mFollowingCharMsgs[i]);
+        // Found message which caused the eKeyPress event.
         break;
       }
     }
@@ -4357,18 +4230,18 @@ nsCString KeyboardLayout::GetLayoutName(HKL aLayout) const {
   nsCOMPtr<nsIWindowsRegKey> regKey =
       do_CreateInstance("@mozilla.org/windows-registry-key;1");
   if (NS_WARN_IF(!regKey)) {
-    return EmptyCString();
+    return ""_ns;
   }
   nsresult rv =
       regKey->Open(nsIWindowsRegKey::ROOT_KEY_LOCAL_MACHINE,
                    nsString(kKeyboardLayouts), nsIWindowsRegKey::ACCESS_READ);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    return EmptyCString();
+    return ""_ns;
   }
   uint32_t childCount = 0;
   if (NS_WARN_IF(NS_FAILED(regKey->GetChildCount(&childCount))) ||
       NS_WARN_IF(!childCount)) {
-    return EmptyCString();
+    return ""_ns;
   }
   for (uint32_t i = 0; i < childCount; i++) {
     nsAutoString childName;
@@ -4407,7 +4280,7 @@ nsCString KeyboardLayout::GetLayoutName(HKL aLayout) const {
     }
     return NS_ConvertUTF16toUTF8(buf);
   }
-  return EmptyCString();
+  return ""_ns;
 }
 
 void KeyboardLayout::LoadLayout(HKL aLayout) {
@@ -4471,7 +4344,7 @@ void KeyboardLayout::LoadLayout(HKL aLayout) {
                 ("  %s (%d): DeadChar(%s, %s) (ret=%d)",
                  kVirtualKeyName[virtualKey], vki,
                  GetShiftStateName(shiftState).get(),
-                 GetCharacterCodeName(deadChar, 1).get(), ret));
+                 GetCharacterCodeNames(deadChar, 1).get(), ret));
       } else {
         if (ret == 1) {
           // dead-key can pair only with exactly one base character.
@@ -4482,7 +4355,7 @@ void KeyboardLayout::LoadLayout(HKL aLayout) {
                 ("  %s (%d): NormalChar(%s, %s) (ret=%d)",
                  kVirtualKeyName[virtualKey], vki,
                  GetShiftStateName(shiftState).get(),
-                 GetCharacterCodeName(uniChars, ret).get(), ret));
+                 GetCharacterCodeNames(uniChars, ret).get(), ret));
       }
 
       // If the key inputs at least one character with AltGr modifier,
@@ -4494,11 +4367,11 @@ void KeyboardLayout::LoadLayout(HKL aLayout) {
         MOZ_LOG(sKeyboardLayoutLogger, LogLevel::Info,
                 ("  Found a key (%s) changed by AltGr: %s -> %s (%s) (ret=%d)",
                  kVirtualKeyName[virtualKey],
-                 GetCharacterCodeName(
+                 GetCharacterCodeNames(
                      mVirtualKeys[vki].GetNativeUniChars(
                          shiftState - VirtualKey::ShiftStateIndex::eAltGr))
                      .get(),
-                 GetCharacterCodeName(
+                 GetCharacterCodeNames(
                      mVirtualKeys[vki].GetNativeUniChars(shiftState))
                      .get(),
                  GetShiftStateName(shiftState).get(), ret));
@@ -4805,10 +4678,10 @@ uint32_t KeyboardLayout::GetDeadKeyCombinations(
                 sKeyboardLayoutLogger, LogLevel::Debug,
                 ("  %s -> %s (%d): DeadKeyEntry(%s, %s) (ret=%d)",
                  kVirtualKeyName[aDeadKey], kVirtualKeyName[virtualKey], vki,
-                 GetCharacterCodeName(compositeChars, 1).get(),
+                 GetCharacterCodeNames(compositeChars, 1).get(),
                  ret <= 0
                      ? "''"
-                     : GetCharacterCodeName(baseChars, std::min(ret, 5)).get(),
+                     : GetCharacterCodeNames(baseChars, std::min(ret, 5)).get(),
                  ret));
             break;
           }
@@ -4823,7 +4696,7 @@ uint32_t KeyboardLayout::GetDeadKeyCombinations(
                  kVirtualKeyName[aDeadKey], kVirtualKeyName[virtualKey], vki,
                  ret <= 0
                      ? "''"
-                     : GetCharacterCodeName(compositeChars, std::min(ret, 5))
+                     : GetCharacterCodeNames(compositeChars, std::min(ret, 5))
                            .get(),
                  ret));
             break;

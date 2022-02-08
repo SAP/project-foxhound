@@ -5,13 +5,15 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Hal.h"
+#include "base/process_util.h"
 #include "mozilla/HalWakeLock.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
 #include "nsClassHashtable.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsHashKeys.h"
 #include "nsIPropertyBag2.h"
+#include "nsIObserver.h"
 #include "nsIObserverService.h"
 
 using namespace mozilla;
@@ -26,7 +28,7 @@ struct LockCount {
   CopyableTArray<uint64_t> processes;
 };
 
-typedef nsDataHashtable<nsUint64HashKey, LockCount> ProcessLockTable;
+typedef nsTHashMap<nsUint64HashKey, LockCount> ProcessLockTable;
 typedef nsClassHashtable<nsStringHashKey, ProcessLockTable> LockTable;
 
 int sActiveListeners = 0;
@@ -175,16 +177,18 @@ void ModifyWakeLock(const nsAString& aTopic, hal::WakeLockControl aLockAdjust,
     return;
   }
 
-  ProcessLockTable* table = sLockTable->Get(aTopic);
   LockCount processCount;
   LockCount totalCount;
-  if (!table) {
-    table = new ProcessLockTable();
-    sLockTable->Put(aTopic, table);
-  } else {
-    table->Get(aProcessID, &processCount);
-    CountWakeLocks(table, &totalCount);
-  }
+  ProcessLockTable* const table =
+      sLockTable->WithEntryHandle(aTopic, [&](auto&& entry) {
+        if (!entry) {
+          entry.Insert(MakeUnique<ProcessLockTable>());
+        } else {
+          Unused << entry.Data()->Get(aProcessID, &processCount);
+          CountWakeLocks(entry->get(), &totalCount);
+        }
+        return entry->get();
+      });
 
   MOZ_ASSERT(processCount.numLocks >= processCount.numHidden);
   MOZ_ASSERT(aLockAdjust >= 0 || processCount.numLocks > 0);
@@ -204,7 +208,7 @@ void ModifyWakeLock(const nsAString& aTopic, hal::WakeLockControl aLockAdjust,
   totalCount.numHidden += aHiddenAdjust;
 
   if (processCount.numLocks) {
-    table->Put(aProcessID, processCount);
+    table->InsertOrUpdate(aProcessID, processCount);
   } else {
     table->Remove(aProcessID);
   }

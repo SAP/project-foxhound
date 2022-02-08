@@ -6,9 +6,12 @@
 #include "ObjectModel.h"
 
 #include "Adapter.h"
+#include "ShaderModule.h"
+#include "CompilationInfo.h"
 #include "Device.h"
 #include "CommandEncoder.h"
 #include "Instance.h"
+#include "Texture.h"
 
 namespace mozilla {
 namespace webgpu {
@@ -28,6 +31,8 @@ void ObjectBase::GetLabel(nsAString& aValue) const { aValue = mLabel; }
 void ObjectBase::SetLabel(const nsAString& aLabel) { mLabel = aLabel; }
 
 template class ChildOf<Adapter>;
+template class ChildOf<ShaderModule>;
+template class ChildOf<CompilationInfo>;
 template class ChildOf<CommandEncoder>;
 template class ChildOf<Device>;
 template class ChildOf<Instance>;

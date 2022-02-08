@@ -9,6 +9,7 @@
 #include "MediaTrackListener.h"
 #include "AudioNodeEngine.h"
 #include "ThreeDPoint.h"
+#include "Tracing.h"
 #include "AudioChannelFormat.h"
 #include "AudioParamTimeline.h"
 #include "AudioContext.h"
@@ -54,7 +55,7 @@ AudioNodeTrack::~AudioNodeTrack() {
   MOZ_COUNT_DTOR(AudioNodeTrack);
 }
 
-void AudioNodeTrack::NotifyForcedShutdown() { mEngine->NotifyForcedShutdown(); }
+void AudioNodeTrack::OnGraphThreadDone() { mEngine->OnGraphThreadDone(); }
 
 void AudioNodeTrack::DestroyImpl() {
   // These are graph thread objects, so clean up on graph thread.
@@ -91,7 +92,8 @@ already_AddRefed<AudioNodeTrack> AudioNodeTrack::Create(
   if (isRealtime && !aCtx->ShouldSuspendNewTrack()) {
     nsTArray<RefPtr<mozilla::MediaTrack>> tracks;
     tracks.AppendElement(track);
-    aGraph->ApplyAudioContextOperation(aCtx->DestinationTrack(), move(tracks),
+    aGraph->ApplyAudioContextOperation(aCtx->DestinationTrack(),
+                                       std::move(tracks),
                                        AudioContextOperation::Resume);
   }
   return track.forget();
@@ -141,6 +143,7 @@ void AudioNodeTrack::SetTrackTimeParameter(uint32_t aIndex,
           mRelativeToTrack(aRelativeToTrack),
           mIndex(aIndex) {}
     void Run() override {
+      TRACE("AudioNodeTrack::SetTrackTimeParameterImpl");
       static_cast<AudioNodeTrack*>(mTrack)->SetTrackTimeParameterImpl(
           mIndex, mRelativeToTrack, mTrackTime);
     }
@@ -169,6 +172,7 @@ void AudioNodeTrack::SetDoubleParameter(uint32_t aIndex, double aValue) {
     Message(AudioNodeTrack* aTrack, uint32_t aIndex, double aValue)
         : ControlMessage(aTrack), mValue(aValue), mIndex(aIndex) {}
     void Run() override {
+      TRACE("AudioNodeTrack::SetDoubleParameter");
       static_cast<AudioNodeTrack*>(mTrack)->Engine()->SetDoubleParameter(
           mIndex, mValue);
     }
@@ -185,6 +189,7 @@ void AudioNodeTrack::SetInt32Parameter(uint32_t aIndex, int32_t aValue) {
     Message(AudioNodeTrack* aTrack, uint32_t aIndex, int32_t aValue)
         : ControlMessage(aTrack), mValue(aValue), mIndex(aIndex) {}
     void Run() override {
+      TRACE("AudioNodeTrack::SetInt32Parameter");
       static_cast<AudioNodeTrack*>(mTrack)->Engine()->SetInt32Parameter(mIndex,
                                                                         mValue);
     }
@@ -206,6 +211,7 @@ void AudioNodeTrack::SendTimelineEvent(uint32_t aIndex,
           mSampleRate(aTrack->mSampleRate),
           mIndex(aIndex) {}
     void Run() override {
+      TRACE("AudioNodeTrack::RecvTimelineEvent");
       static_cast<AudioNodeTrack*>(mTrack)->Engine()->RecvTimelineEvent(mIndex,
                                                                         mEvent);
     }
@@ -222,6 +228,7 @@ void AudioNodeTrack::SetBuffer(AudioChunk&& aBuffer) {
     Message(AudioNodeTrack* aTrack, AudioChunk&& aBuffer)
         : ControlMessage(aTrack), mBuffer(aBuffer) {}
     void Run() override {
+      TRACE("AudioNodeTrack::SetBuffer");
       static_cast<AudioNodeTrack*>(mTrack)->Engine()->SetBuffer(
           std::move(mBuffer));
     }
@@ -241,6 +248,7 @@ void AudioNodeTrack::SetReverb(WebCore::Reverb* aReverb,
           mReverb(aReverb),
           mImpulseChanelCount(aImpulseChannelCount) {}
     void Run() override {
+      TRACE("AudioNodeTrack::SetReverb");
       static_cast<AudioNodeTrack*>(mTrack)->Engine()->SetReverb(
           mReverb.release(), mImpulseChanelCount);
     }
@@ -252,20 +260,20 @@ void AudioNodeTrack::SetReverb(WebCore::Reverb* aReverb,
       MakeUnique<Message>(this, aReverb, aImpulseChannelCount));
 }
 
-void AudioNodeTrack::SetRawArrayData(nsTArray<float>& aData) {
+void AudioNodeTrack::SetRawArrayData(nsTArray<float>&& aData) {
   class Message final : public ControlMessage {
    public:
-    Message(AudioNodeTrack* aTrack, nsTArray<float>& aData)
-        : ControlMessage(aTrack) {
-      mData.SwapElements(aData);
-    }
+    Message(AudioNodeTrack* aTrack, nsTArray<float>&& aData)
+        : ControlMessage(aTrack), mData(std::move(aData)) {}
     void Run() override {
-      static_cast<AudioNodeTrack*>(mTrack)->Engine()->SetRawArrayData(mData);
+      TRACE("AudioNodeTrack::SetRawArrayData");
+      static_cast<AudioNodeTrack*>(mTrack)->Engine()->SetRawArrayData(
+          std::move(mData));
     }
     nsTArray<float> mData;
   };
 
-  GraphImpl()->AppendMessage(MakeUnique<Message>(this, aData));
+  GraphImpl()->AppendMessage(MakeUnique<Message>(this, std::move(aData)));
 }
 
 void AudioNodeTrack::SetChannelMixingParameters(
@@ -281,6 +289,7 @@ void AudioNodeTrack::SetChannelMixingParameters(
           mChannelCountMode(aChannelCountMode),
           mChannelInterpretation(aChannelInterpretation) {}
     void Run() override {
+      TRACE("AudioNodeTrack::SetChannelMixingParameters");
       static_cast<AudioNodeTrack*>(mTrack)->SetChannelMixingParametersImpl(
           mNumberOfChannels, mChannelCountMode, mChannelInterpretation);
     }
@@ -299,6 +308,7 @@ void AudioNodeTrack::SetPassThrough(bool aPassThrough) {
     Message(AudioNodeTrack* aTrack, bool aPassThrough)
         : ControlMessage(aTrack), mPassThrough(aPassThrough) {}
     void Run() override {
+      TRACE("AudioNodeTrack::SetPassThrough");
       static_cast<AudioNodeTrack*>(mTrack)->mPassThrough = mPassThrough;
     }
     bool mPassThrough;
@@ -312,7 +322,10 @@ void AudioNodeTrack::SendRunnable(already_AddRefed<nsIRunnable> aRunnable) {
    public:
     Message(MediaTrack* aTrack, already_AddRefed<nsIRunnable> aRunnable)
         : ControlMessage(aTrack), mRunnable(aRunnable) {}
-    void Run() override { mRunnable->Run(); }
+    void Run() override {
+      TRACE("AudioNodeTrack::SendRunnable");
+      mRunnable->Run();
+    }
 
    private:
     nsCOMPtr<nsIRunnable> mRunnable;
@@ -356,6 +369,7 @@ class AudioNodeTrack::AdvanceAndResumeMessage final : public ControlMessage {
   AdvanceAndResumeMessage(AudioNodeTrack* aTrack, TrackTime aAdvance)
       : ControlMessage(aTrack), mAdvance(aAdvance) {}
   void Run() override {
+    TRACE("AudioNodeTrack::AdvanceAndResumeMessage");
     auto ns = static_cast<AudioNodeTrack*>(mTrack);
     ns->mStartTime -= mAdvance;
     ns->mSegment->AppendNullData(mAdvance);
@@ -534,10 +548,8 @@ void AudioNodeTrack::ProcessInput(GraphTime aFrom, GraphTime aTo,
                               &finished);
       } else {
         mEngine->ProcessBlocksOnPorts(
-            this, aFrom,
-            MakeSpan(mInputChunks.Elements(), mEngine->InputCount()),
-            MakeSpan(mLastChunks.Elements(), mEngine->OutputCount()),
-            &finished);
+            this, aFrom, Span(mInputChunks.Elements(), mEngine->InputCount()),
+            Span(mLastChunks.Elements(), mEngine->OutputCount()), &finished);
       }
     }
     for (uint16_t i = 0; i < outputCount; ++i) {
@@ -596,7 +608,7 @@ void AudioNodeTrack::AdvanceOutputSegment() {
 
   AudioChunk copyChunk = *mLastChunks[0].AsMutableChunk();
   AudioSegment tmpSegment;
-  tmpSegment.AppendAndConsumeChunk(&copyChunk);
+  tmpSegment.AppendAndConsumeChunk(std::move(copyChunk));
 
   for (const auto& l : mTrackListeners) {
     // Notify MediaTrackListeners.
@@ -655,6 +667,7 @@ class AudioNodeTrack::CheckForInactiveMessage final : public ControlMessage {
   explicit CheckForInactiveMessage(AudioNodeTrack* aTrack)
       : ControlMessage(aTrack) {}
   void Run() override {
+    TRACE("AudioNodeTrack::CheckForInactive");
     auto ns = static_cast<AudioNodeTrack*>(mTrack);
     ns->CheckForInactive();
   }

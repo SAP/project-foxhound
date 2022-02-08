@@ -1,9 +1,11 @@
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
-ChromeUtils.import("resource://normandy/lib/AddonStudies.jsm", this);
-ChromeUtils.import("resource://normandy/lib/PreferenceExperiments.jsm", this);
-ChromeUtils.import("resource://normandy/lib/ShieldPreferences.jsm", this);
+const { PreferenceExperiments } = ChromeUtils.import(
+  "resource://normandy/lib/PreferenceExperiments.jsm"
+);
+const { ShieldPreferences } = ChromeUtils.import(
+  "resource://normandy/lib/ShieldPreferences.jsm"
+);
 
 const OPT_OUT_STUDIES_ENABLED_PREF = "app.shield.optoutstudies.enabled";
 
@@ -18,15 +20,15 @@ const {
 ShieldPreferences.init();
 
 decorate_task(
-  withMockPreferences,
+  withMockPreferences(),
   AddonStudies.withStudies([
     addonStudyFactory({ active: true }),
     addonStudyFactory({ active: true }),
   ]),
-  async function testDisableStudiesWhenOptOutDisabled(
+  async function testDisableStudiesWhenOptOutDisabled({
     mockPreferences,
-    [study1, study2]
-  ) {
+    addonStudies: [study1, study2],
+  }) {
     mockPreferences.set(OPT_OUT_STUDIES_ENABLED_PREF, true);
     const observers = [
       studyEndObserved(study1.recipeId),
@@ -45,17 +47,17 @@ decorate_task(
 );
 
 decorate_task(
-  withMockPreferences,
+  withMockPreferences(),
   PreferenceExperiments.withMockExperiments([
     preferenceStudyFactory({ active: true }),
     preferenceStudyFactory({ active: true }),
   ]),
   withStub(PreferenceExperiments, "stop"),
-  async function testDisableExperimentsWhenOptOutDisabled(
+  async function testDisableExperimentsWhenOptOutDisabled({
     mockPreferences,
-    [study1, study2],
-    stopStub
-  ) {
+    prefExperiments: [study1, study2],
+    stopStub,
+  }) {
     mockPreferences.set(OPT_OUT_STUDIES_ENABLED_PREF, true);
     let stopArgs = [];
     let stoppedBoth = new Promise(resolve => {
@@ -72,8 +74,20 @@ decorate_task(
     await stoppedBoth;
 
     Assert.deepEqual(stopArgs, [
-      [study1.slug, { reason: "general-opt-out" }],
-      [study2.slug, { reason: "general-opt-out" }],
+      [
+        study1.slug,
+        {
+          reason: "general-opt-out",
+          caller: "observePrefChange::general-opt-out",
+        },
+      ],
+      [
+        study2.slug,
+        {
+          reason: "general-opt-out",
+          caller: "observePrefChange::general-opt-out",
+        },
+      ],
     ]);
   }
 );

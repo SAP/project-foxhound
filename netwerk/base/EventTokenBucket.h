@@ -103,7 +103,7 @@ class EventTokenBucket : public nsITimerCallback,
   friend class RunNotifyEvent;
   friend class SetTimerEvent;
 
-  bool TryImmediateDispatch(TokenBucketCancelable* event);
+  bool TryImmediateDispatch(TokenBucketCancelable* cancelable);
   void SetRate(uint32_t eventsPerSecond, uint32_t burstSize);
 
   void DispatchEvents();
@@ -121,7 +121,7 @@ class EventTokenBucket : public nsITimerCallback,
 
   bool mPaused;
   bool mStopped;
-  nsDeque<TokenBucketCancelable> mEvents;
+  nsRefPtrDeque<TokenBucketCancelable> mEvents;
   bool mTimerArmed;
   TimeStamp mLastUpdate;
 

@@ -9,12 +9,17 @@
 <?xml-stylesheet href="chrome://browser/content/preferences/dialogs/clearSiteData.css" type="text/css"?>
 
 <window id="ClearSiteDataDialog"
-        windowtype="Browser:ClearSiteData"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         xmlns:html="http://www.w3.org/1999/xhtml"
         data-l10n-id="clear-site-data-window"
         data-l10n-attrs="title, style"
-        persist="screenX screenY width height">
+        persist="width height">
+
+  <dialog
+    buttons="accept,cancel"
+    data-l10n-id="clear-site-data-dialog"
+    data-l10n-attrs="buttonlabelaccept, buttonaccesskeyaccept"
+  >
 
   <linkset>
     <html:link rel="localization" href="branding/brand.ftl"/>
@@ -40,11 +45,5 @@
       </vbox>
     </vbox>
   </vbox>
-
-  <hbox class="actionButtons" pack="end">
-    <button id="cancelButton"
-            data-l10n-id="clear-site-data-cancel"/>
-    <button id="clearButton"
-            data-l10n-id="clear-site-data-clear"/>
-  </hbox>
+  </dialog>
 </window>

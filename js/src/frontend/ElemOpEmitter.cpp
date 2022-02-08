@@ -14,13 +14,8 @@
 using namespace js;
 using namespace js::frontend;
 
-ElemOpEmitter::ElemOpEmitter(BytecodeEmitter* bce, Kind kind, ObjKind objKind,
-                             NameVisibility visibility)
-    : bce_(bce), kind_(kind), objKind_(objKind), visibility_(visibility) {
-  // Can't access private names of super!
-  MOZ_ASSERT_IF(visibility == NameVisibility::Private,
-                objKind != ObjKind::Super);
-}
+ElemOpEmitter::ElemOpEmitter(BytecodeEmitter* bce, Kind kind, ObjKind objKind)
+    : bce_(bce), kind_(kind), objKind_(objKind) {}
 
 bool ElemOpEmitter::prepareForObj() {
   MOZ_ASSERT(state_ == State::Start);
@@ -34,12 +29,6 @@ bool ElemOpEmitter::prepareForObj() {
 bool ElemOpEmitter::prepareForKey() {
   MOZ_ASSERT(state_ == State::Obj);
 
-  if (!isSuper() && isIncDec()) {
-    if (!bce_->emit1(JSOp::CheckObjCoercible)) {
-      //            [stack] OBJ
-      return false;
-    }
-  }
   if (isCall()) {
     if (!bce_->emit1(JSOp::Dup)) {
       //            [stack] # if Super
@@ -59,6 +48,8 @@ bool ElemOpEmitter::prepareForKey() {
 bool ElemOpEmitter::emitGet() {
   MOZ_ASSERT(state_ == State::Key);
 
+  // Inc/dec and compound assignment use the KEY twice, but if it's an object,
+  // it must be converted ToPropertyKey only once, per spec.
   if (isIncDec() || isCompoundAssignment()) {
     if (!bce_->emit1(JSOp::ToPropertyKey)) {
       //            [stack] # if Super
@@ -68,6 +59,7 @@ bool ElemOpEmitter::emitGet() {
       return false;
     }
   }
+
   if (isSuper()) {
     if (!bce_->emitSuperBase()) {
       //            [stack] THIS? THIS KEY SUPERBASE
@@ -91,14 +83,10 @@ bool ElemOpEmitter::emitGet() {
   JSOp op;
   if (isSuper()) {
     op = JSOp::GetElemSuper;
-  } else if (isCall()) {
-    op = JSOp::CallElem;
-  } else if (isPrivateGet()) {
-    op = JSOp::GetPrivateElem;
   } else {
     op = JSOp::GetElem;
   }
-  if (!bce_->emitElemOpBase(op, ShouldInstrument::Yes)) {
+  if (!bce_->emitElemOpBase(op)) {
     //              [stack] # if Get
     //              [stack] ELEM
     //              [stack] # if Call
@@ -156,7 +144,6 @@ bool ElemOpEmitter::skipObjAndKeyAndRhs() {
 bool ElemOpEmitter::emitDelete() {
   MOZ_ASSERT(state_ == State::Key);
   MOZ_ASSERT(isDelete());
-  MOZ_ASSERT(!isPrivate());
 
   if (isSuper()) {
     if (!bce_->emit1(JSOp::ToPropertyKey)) {
@@ -200,15 +187,12 @@ bool ElemOpEmitter::emitAssignment() {
 
   MOZ_ASSERT_IF(isPropInit(), !isSuper());
 
-  JSOp setOp = isPropInit()
-                   ? (isPrivate() ? JSOp::InitPrivateElem : JSOp::InitElem)
-                   : isSuper() ? bce_->sc->strict() ? JSOp::StrictSetElemSuper
-                                                    : JSOp::SetElemSuper
-                               : isPrivate()
-                                     ? JSOp::SetPrivateElem
-                                     : bce_->sc->strict() ? JSOp::StrictSetElem
-                                                          : JSOp::SetElem;
-  if (!bce_->emitElemOpBase(setOp, ShouldInstrument::Yes)) {
+  JSOp setOp = isPropInit() ? JSOp::InitElem
+               : isSuper()  ? bce_->sc->strict() ? JSOp::StrictSetElemSuper
+                                                 : JSOp::SetElemSuper
+               : bce_->sc->strict() ? JSOp::StrictSetElem
+                                    : JSOp::SetElem;
+  if (!bce_->emitElemOpBase(setOp)) {
     //              [stack] ELEM
     return false;
   }
@@ -254,10 +238,8 @@ bool ElemOpEmitter::emitIncDec() {
   JSOp setOp =
       isSuper()
           ? (bce_->sc->strict() ? JSOp::StrictSetElemSuper : JSOp::SetElemSuper)
-          : isPrivate()
-                ? JSOp::SetPrivateElem
-                : (bce_->sc->strict() ? JSOp::StrictSetElem : JSOp::SetElem);
-  if (!bce_->emitElemOpBase(setOp, ShouldInstrument::Yes)) {
+          : (bce_->sc->strict() ? JSOp::StrictSetElem : JSOp::SetElem);
+  if (!bce_->emitElemOpBase(setOp)) {
     //              [stack] N? N+1
     return false;
   }

@@ -20,6 +20,9 @@
 
   --searchbox-no-match-background-color: #ffe5e5;
   --searchbox-no-match-stroke-color: var(--red-60);
+
+  /* Default to light form controls */
+  color-scheme: light;
 }
 
 :root.theme-dark {
@@ -29,6 +32,8 @@
 
   --searchbox-no-match-background-color: #402325;
   --searchbox-no-match-stroke-color: var(--red-50);
+
+  color-scheme: dark;
 }
 
 :root[platform="mac"] {
@@ -356,13 +361,14 @@ checkbox:-moz-focusring {
 }
 
 /* Icon-only buttons */
-.devtools-button:hover:not(:disabled)::before,
+.devtools-button:hover::before,
 .devtools-button.checked::before {
   opacity: 1;
 }
 
 /* Button states */
 .devtools-button:disabled {
+  pointer-events: none;
   opacity: 0.5 !important;
 }
 
@@ -370,7 +376,7 @@ checkbox:-moz-focusring {
   background-color: var(--theme-toolbar-hover);
 }
 
-.devtools-button:empty:not(:disabled):not([aria-expanded="true"]):hover {
+.devtools-button:empty:not([aria-expanded="true"]):hover {
   background: var(--toolbarbutton-hover-background);
 }
 
@@ -388,17 +394,17 @@ checkbox:-moz-focusring {
 
 /* Selectable button which is unchecked. */
 
-.devtools-button:not(:empty):not(:disabled):not(.checked):hover,
-.devtools-button:empty:not(:disabled):-moz-any(:hover:active,.checked),
+.devtools-button:not(:empty, .checked):hover,
+.devtools-button:empty:is(:hover:active,.checked),
 .devtools-button[aria-haspopup="menu"][aria-expanded="true"] {
   background-color: var(--toolbarbutton-hover-background);
 }
 
-.devtools-button:not(:empty):not(.checked):not(:disabled):hover:active {
+.devtools-button:not(:empty, .checked):hover:active {
   background-color: var(--theme-selection-background-hover);
 }
 
-.devtools-button:not(:empty):not(.checked):not(:disabled):focus {
+.devtools-button:not(:empty, .checked):focus {
   background-color: var(--toolbarbutton-focus-background);
   color: var(--toolbarbutton-focus-color);
 }
@@ -408,7 +414,7 @@ checkbox:-moz-focusring {
   color: var(--theme-toolbarbutton-color);
 }
 
-.devtools-togglebutton:not([aria-pressed="true"]):hover:not(:active) {
+.devtools-togglebutton:hover:not([aria-pressed="true"], :active) {
   background-color: var(--theme-toolbarbutton-hover-background);
 }
 
@@ -453,7 +459,7 @@ checkbox:-moz-focusring {
 }
 
 .devtools-button.devtools-feature-callout::after {
-  content: url("chrome://browser/skin/badge-blue.svg");
+  content: url("chrome://global/skin/icons/badge-blue.svg");
   width: 14px;
   height: 14px;
   display: block;

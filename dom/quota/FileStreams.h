@@ -7,14 +7,29 @@
 #ifndef mozilla_dom_quota_filestreams_h__
 #define mozilla_dom_quota_filestreams_h__
 
-#include "QuotaCommon.h"
+// Local includes
+#include "Client.h"
 
+// Global includes
+#include <cstdint>
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/dom/quota/CommonMetadata.h"
+#include "mozilla/dom/quota/PersistenceType.h"
+#include "mozilla/dom/quota/QuotaObject.h"
 #include "nsFileStreams.h"
+#include "nsISupports.h"
+#include "nscore.h"
 
-#include "PersistenceType.h"
-#include "QuotaObject.h"
+class nsIFile;
 
-BEGIN_QUOTA_NAMESPACE
+namespace mozilla {
+class Runnable;
+}
+
+namespace mozilla::dom::quota {
+
+class QuotaObject;
 
 template <class FileStreamBase>
 class FileQuotaStream : public FileStreamBase {
@@ -27,19 +42,18 @@ class FileQuotaStream : public FileStreamBase {
   Close() override;
 
  protected:
-  FileQuotaStream(PersistenceType aPersistenceType, const nsACString& aGroup,
-                  const nsACString& aOrigin, Client::Type aClientType)
+  FileQuotaStream(PersistenceType aPersistenceType,
+                  const OriginMetadata& aOriginMetadata,
+                  Client::Type aClientType)
       : mPersistenceType(aPersistenceType),
-        mGroup(aGroup),
-        mOrigin(aOrigin),
+        mOriginMetadata(aOriginMetadata),
         mClientType(aClientType) {}
 
   // nsFileStreamBase override
   virtual nsresult DoOpen() override;
 
   PersistenceType mPersistenceType;
-  nsCString mGroup;
-  nsCString mOrigin;
+  OriginMetadata mOriginMetadata;
   Client::Type mClientType;
   RefPtr<QuotaObject> mQuotaObject;
 };
@@ -53,9 +67,9 @@ class FileQuotaStreamWithWrite : public FileQuotaStream<FileStreamBase> {
 
  protected:
   FileQuotaStreamWithWrite(PersistenceType aPersistenceType,
-                           const nsACString& aGroup, const nsACString& aOrigin,
+                           const OriginMetadata& aOriginMetadata,
                            Client::Type aClientType)
-      : FileQuotaStream<FileStreamBase>(aPersistenceType, aGroup, aOrigin,
+      : FileQuotaStream<FileStreamBase>(aPersistenceType, aOriginMetadata,
                                         aClientType) {}
 };
 
@@ -64,9 +78,10 @@ class FileInputStream : public FileQuotaStream<nsFileInputStream> {
   NS_INLINE_DECL_REFCOUNTING_INHERITED(FileInputStream,
                                        FileQuotaStream<nsFileInputStream>)
 
-  FileInputStream(PersistenceType aPersistenceType, const nsACString& aGroup,
-                  const nsACString& aOrigin, Client::Type aClientType)
-      : FileQuotaStream<nsFileInputStream>(aPersistenceType, aGroup, aOrigin,
+  FileInputStream(PersistenceType aPersistenceType,
+                  const OriginMetadata& aOriginMetadata,
+                  Client::Type aClientType)
+      : FileQuotaStream<nsFileInputStream>(aPersistenceType, aOriginMetadata,
                                            aClientType) {}
 
  private:
@@ -78,10 +93,11 @@ class FileOutputStream : public FileQuotaStreamWithWrite<nsFileOutputStream> {
   NS_INLINE_DECL_REFCOUNTING_INHERITED(
       FileOutputStream, FileQuotaStreamWithWrite<nsFileOutputStream>);
 
-  FileOutputStream(PersistenceType aPersistenceType, const nsACString& aGroup,
-                   const nsACString& aOrigin, Client::Type aClientType)
-      : FileQuotaStreamWithWrite<nsFileOutputStream>(aPersistenceType, aGroup,
-                                                     aOrigin, aClientType) {}
+  FileOutputStream(PersistenceType aPersistenceType,
+                   const OriginMetadata& aOriginMetadata,
+                   Client::Type aClientType)
+      : FileQuotaStreamWithWrite<nsFileOutputStream>(
+            aPersistenceType, aOriginMetadata, aClientType) {}
 
  private:
   virtual ~FileOutputStream() { Close(); }
@@ -92,30 +108,30 @@ class FileStream : public FileQuotaStreamWithWrite<nsFileStream> {
   NS_INLINE_DECL_REFCOUNTING_INHERITED(FileStream,
                                        FileQuotaStreamWithWrite<nsFileStream>)
 
-  FileStream(PersistenceType aPersistenceType, const nsACString& aGroup,
-             const nsACString& aOrigin, Client::Type aClientType)
-      : FileQuotaStreamWithWrite<nsFileStream>(aPersistenceType, aGroup,
-                                               aOrigin, aClientType) {}
+  FileStream(PersistenceType aPersistenceType,
+             const OriginMetadata& aOriginMetadata, Client::Type aClientType)
+      : FileQuotaStreamWithWrite<nsFileStream>(aPersistenceType,
+                                               aOriginMetadata, aClientType) {}
 
  private:
   virtual ~FileStream() { Close(); }
 };
 
-already_AddRefed<FileInputStream> CreateFileInputStream(
-    PersistenceType aPersistenceType, const nsACString& aGroup,
-    const nsACString& aOrigin, Client::Type aClientType, nsIFile* aFile,
-    int32_t aIOFlags = -1, int32_t aPerm = -1, int32_t aBehaviorFlags = 0);
+Result<NotNull<RefPtr<FileInputStream>>, nsresult> CreateFileInputStream(
+    PersistenceType aPersistenceType, const OriginMetadata& aOriginMetadata,
+    Client::Type aClientType, nsIFile* aFile, int32_t aIOFlags = -1,
+    int32_t aPerm = -1, int32_t aBehaviorFlags = 0);
 
-already_AddRefed<FileOutputStream> CreateFileOutputStream(
-    PersistenceType aPersistenceType, const nsACString& aGroup,
-    const nsACString& aOrigin, Client::Type aClientType, nsIFile* aFile,
-    int32_t aIOFlags = -1, int32_t aPerm = -1, int32_t aBehaviorFlags = 0);
+Result<NotNull<RefPtr<FileOutputStream>>, nsresult> CreateFileOutputStream(
+    PersistenceType aPersistenceType, const OriginMetadata& aOriginMetadata,
+    Client::Type aClientType, nsIFile* aFile, int32_t aIOFlags = -1,
+    int32_t aPerm = -1, int32_t aBehaviorFlags = 0);
 
-already_AddRefed<FileStream> CreateFileStream(
-    PersistenceType aPersistenceType, const nsACString& aGroup,
-    const nsACString& aOrigin, Client::Type aClientType, nsIFile* aFile,
-    int32_t aIOFlags = -1, int32_t aPerm = -1, int32_t aBehaviorFlags = 0);
+Result<NotNull<RefPtr<FileStream>>, nsresult> CreateFileStream(
+    PersistenceType aPersistenceType, const OriginMetadata& aOriginMetadata,
+    Client::Type aClientType, nsIFile* aFile, int32_t aIOFlags = -1,
+    int32_t aPerm = -1, int32_t aBehaviorFlags = 0);
 
-END_QUOTA_NAMESPACE
+}  // namespace mozilla::dom::quota
 
 #endif /* mozilla_dom_quota_filestreams_h__ */

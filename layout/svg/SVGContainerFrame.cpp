@@ -67,7 +67,7 @@ void SVGContainerFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
   mFrames.DestroyFrame(aOldFrame);
 }
 
-bool SVGContainerFrame::ComputeCustomOverflow(nsOverflowAreas& aOverflowAreas) {
+bool SVGContainerFrame::ComputeCustomOverflow(OverflowAreas& aOverflowAreas) {
   if (mState & NS_FRAME_IS_NONDISPLAY) {
     // We don't maintain overflow rects.
     // XXX It would have be better if the restyle request hadn't even happened.
@@ -104,10 +104,10 @@ void SVGContainerFrame::ReflowSVGNonDisplayText(nsIFrame* aContainer) {
   if (!aContainer->HasAnyStateBits(NS_FRAME_IS_DIRTY)) {
     return;
   }
-  NS_ASSERTION(aContainer->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY) ||
-                   !aContainer->IsFrameOfType(nsIFrame::eSVG),
-               "it is wasteful to call ReflowSVGNonDisplayText on a container "
-               "frame that is not NS_FRAME_IS_NONDISPLAY");
+  MOZ_ASSERT(aContainer->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY) ||
+                 !aContainer->IsFrameOfType(nsIFrame::eSVG),
+             "it is wasteful to call ReflowSVGNonDisplayText on a container "
+             "frame that is not NS_FRAME_IS_NONDISPLAY or not SVG");
   for (nsIFrame* kid : aContainer->PrincipalChildList()) {
     LayoutFrameType type = kid->Type();
     if (type == LayoutFrameType::SVGText) {
@@ -128,6 +128,7 @@ void SVGDisplayContainerFrame::Init(nsIContent* aContent,
   if (!IsSVGOuterSVGFrame()) {
     AddStateBits(aParent->GetStateBits() & NS_STATE_SVG_CLIPPATH_CHILD);
   }
+  AddStateBits(NS_FRAME_MAY_BE_TRANSFORMED);
   SVGContainerFrame::Init(aContent, aParent, aPrevInFlow);
 }
 
@@ -281,8 +282,8 @@ nsIFrame* SVGDisplayContainerFrame::GetFrameForPoint(const gfxPoint& aPoint) {
 }
 
 void SVGDisplayContainerFrame::ReflowSVG() {
-  NS_ASSERTION(SVGUtils::OuterSVGIsCallingReflowSVG(this),
-               "This call is probably a wasteful mistake");
+  MOZ_ASSERT(SVGUtils::AnyOuterSVGIsCallingReflowSVG(this),
+             "This call is probably a wasteful mistake");
 
   MOZ_ASSERT(!HasAnyStateBits(NS_FRAME_IS_NONDISPLAY),
              "ReflowSVG mechanism not designed for this");
@@ -309,7 +310,7 @@ void SVGDisplayContainerFrame::ReflowSVG() {
     RemoveStateBits(NS_FRAME_FIRST_REFLOW);  // tell our children
   }
 
-  nsOverflowAreas overflowRects;
+  OverflowAreas overflowRects;
 
   for (nsIFrame* kid = mFrames.FirstChild(); kid; kid = kid->GetNextSibling()) {
     ISVGDisplayableFrame* SVGFrame = do_QueryFrame(kid);
@@ -326,8 +327,10 @@ void SVGDisplayContainerFrame::ReflowSVG() {
       // Inside a non-display container frame, we might have some
       // SVGTextFrames.  We need to cause those to get reflowed in
       // case they are the target of a rendering observer.
-      NS_ASSERTION(kid->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY),
-                   "expected kid to be a NS_FRAME_IS_NONDISPLAY frame");
+      MOZ_ASSERT(
+          kid->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY) ||
+              !kid->IsFrameOfType(nsIFrame::eSVG),
+          "expected kid to be a NS_FRAME_IS_NONDISPLAY frame or not SVG");
       if (kid->HasAnyStateBits(NS_FRAME_IS_DIRTY)) {
         SVGContainerFrame* container = do_QueryFrame(kid);
         if (container && container->GetContent()->IsSVGElement()) {

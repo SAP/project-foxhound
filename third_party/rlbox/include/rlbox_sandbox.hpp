@@ -8,6 +8,7 @@
 #  include <chrono>
 #endif
 #include <cstdlib>
+#include <limits>
 #include <map>
 #include <mutex>
 #ifndef RLBOX_USE_CUSTOM_SHARED_LOCK
@@ -17,6 +18,7 @@
 #  include <sstream>
 #  include <string>
 #endif
+#include <stdint.h>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -46,12 +48,15 @@ namespace convert_fn_ptr_to_sandbox_equivalent_detail {
     T_Ret (*)(T_Args...));
 }
 
-#ifdef RLBOX_MEASURE_TRANSITION_TIMES
+#if defined(RLBOX_MEASURE_TRANSITION_TIMES) ||                                 \
+  defined(RLBOX_TRANSITION_ACTION_OUT) || defined(RLBOX_TRANSITION_ACTION_IN)
 enum class rlbox_transition
 {
   INVOKE,
   CALLBACK
 };
+#endif
+#ifdef RLBOX_MEASURE_TRANSITION_TIMES
 struct rlbox_transition_timing
 {
   rlbox_transition invoke;
@@ -104,6 +109,8 @@ private:
   RLBOX_SHARED_LOCK(func_ptr_cache_lock);
   std::map<std::string, void*> func_ptr_map;
 
+  app_pointer_map<typename T_Sbx::T_PointerType> app_ptr_map;
+
   // This variable tracks of the sandbox has already been created/destroyed.
   // APIs in this class should be called only when the sandbox is created.
   // However, it is expensive to check in APIs such as invoke or in the callback
@@ -124,10 +131,12 @@ private:
   std::mutex callback_lock;
   std::vector<void*> callback_keys;
 
+  void* transition_state = nullptr;
+
   template<typename T>
-  using convert_fn_ptr_to_sandbox_equivalent_t = decltype(
-    ::rlbox::convert_fn_ptr_to_sandbox_equivalent_detail::helper<T_Sbx>(
-      std::declval<T>()));
+  using convert_fn_ptr_to_sandbox_equivalent_t =
+    decltype(::rlbox::convert_fn_ptr_to_sandbox_equivalent_detail::helper<
+             T_Sbx>(std::declval<T>()));
 
   template<typename T>
   inline constexpr void check_invoke_param_type_is_ok()
@@ -165,7 +174,7 @@ private:
       constexpr auto unknownCase = !(cond1 || cond2);
       rlbox_detail_static_fail_because(
         unknownCase,
-        "Arguments to a sandbox function call should be primitives  or wrapped "
+        "Arguments to a sandbox function call should be primitives or wrapped "
         "types like tainted, callbacks etc.");
     }
   }
@@ -191,7 +200,14 @@ private:
       tainted<T_NoRef, T_Sbx> ret = param;
       return ret.UNSAFE_sandboxed(*this);
     } else {
-      rlbox_detail_static_fail_because(detail::true_v<T_NoRef>, "Unknown case");
+      rlbox_detail_static_fail_because(
+        detail::true_v<T_NoRef>,
+        "Only tainted types, callbacks or primitive values such as ints can be "
+        "passed as parameters.\n"
+        "To make a parameter tainted, try moving the allocation into the "
+        "sandbox.\n"
+        "If the parameter is a callback, try registering the callback via the "
+        "register_callback API.");
     }
   }
 
@@ -240,7 +256,20 @@ private:
                                  ns });
     });
 #endif
-
+#ifdef RLBOX_TRANSITION_ACTION_OUT
+    RLBOX_TRANSITION_ACTION_OUT(rlbox_transition::CALLBACK,
+                                nullptr /* func_name */,
+                                key /* func_ptr */,
+                                sandbox.transition_state);
+#endif
+#ifdef RLBOX_TRANSITION_ACTION_IN
+    auto on_exit_transition = rlbox::detail::make_scope_exit([&] {
+      RLBOX_TRANSITION_ACTION_IN(rlbox_transition::CALLBACK,
+                                 nullptr /* func_name */,
+                                 key /* func_ptr */,
+                                 sandbox.transition_state);
+    });
+#endif
     if constexpr (std::is_void_v<T_Func_Ret>) {
       (*target_fn_ptr)(
         sandbox,
@@ -305,14 +334,24 @@ private:
       }
     }
 
-    detail::dynamic_check(
-      false,
-      "Internal error: Could not find the sandbox associated with example "
-      "pointer. Please file a bug.");
     return nullptr;
   }
 
+  template<typename... T_Args>
+  static auto impl_create_sandbox_helper(rlbox_sandbox<T_Sbx>* this_ptr,
+                                         T_Args... args)
+  {
+    return this_ptr->impl_create_sandbox(std::forward<T_Args>(args)...);
+  }
+
 public:
+  /**
+   * @brief Unused member that allows the calling code to save data in a
+   * "per-sandbox" storage. This can be useful to save context which is used
+   * in callbacks.
+   */
+  void* sandbox_storage;
+
   /***** Function to adjust for custom machine models *****/
 
   template<typename T>
@@ -333,7 +372,7 @@ public:
    * implementation. For the null sandbox, no arguments are necessary.
    */
   template<typename... T_Args>
-  inline auto create_sandbox(T_Args... args)
+  inline bool create_sandbox(T_Args... args)
   {
 #ifdef RLBOX_MEASURE_TRANSITION_TIMES
     // Warm up the timer. The first call is always slow (at least on the test
@@ -351,15 +390,29 @@ public:
       "create_sandbox called when sandbox already created/is being "
       "created concurrently");
 
-    return detail::return_first_result(
-      [&]() {
-        return this->impl_create_sandbox(std::forward<T_Args>(args)...);
-      },
-      [&]() {
-        sandbox_created.store(Sandbox_Status::CREATED);
-        RLBOX_ACQUIRE_UNIQUE_GUARD(lock, sandbox_list_lock);
-        sandbox_list.push_back(this);
-      });
+    using T_Result = rlbox::detail::polyfill::invoke_result_t<
+      decltype(impl_create_sandbox_helper<T_Args...>),
+      decltype(this),
+      T_Args...>;
+
+    bool created = true;
+    if constexpr (std::is_same_v<T_Result, void>) {
+      this->impl_create_sandbox(std::forward<T_Args>(args)...);
+    } else if constexpr (std::is_same_v<T_Result, bool>) {
+      created = this->impl_create_sandbox(std::forward<T_Args>(args)...);
+    } else {
+      rlbox_detail_static_fail_because(
+        (!std::is_same_v<T_Result, void> && !std::is_same_v<T_Result, bool>),
+        "Expected impl_create_sandbox to return void or a boolean");
+    }
+
+    if (created) {
+      sandbox_created.store(Sandbox_Status::CREATED);
+      RLBOX_ACQUIRE_UNIQUE_GUARD(lock, sandbox_list_lock);
+      sandbox_list.push_back(this);
+    }
+
+    return created;
   }
 
   /**
@@ -478,7 +531,25 @@ public:
     }
 
     detail::dynamic_check(count != 0, "Malloc tried to allocate 0 bytes");
-    auto ptr_in_sandbox = this->impl_malloc_in_sandbox(sizeof(T) * count);
+    if constexpr (sizeof(T) >= std::numeric_limits<uint32_t>::max()) {
+      rlbox_detail_static_fail_because(sizeof(T) >=
+                                         std::numeric_limits<uint32_t>::max(),
+                                       "Tried to allocate an object over 4GB.");
+    }
+    auto total_size = static_cast<uint64_t>(sizeof(T)) * count;
+    if constexpr (sizeof(size_t) == 4) {
+      // On a 32-bit platform, we need to make sure that total_size is not >=4GB
+      detail::dynamic_check(total_size < std::numeric_limits<uint32_t>::max(),
+                            "Tried to allocate memory over 4GB");
+    } else if constexpr (sizeof(size_t) != 8) {
+      // Double check we are on a 64-bit platform
+      // Note for static checks we need to have some dependence on T, so adding
+      // a dummy
+      constexpr bool dummy = sizeof(T) >= 0;
+      rlbox_detail_static_fail_because(dummy && sizeof(size_t) != 8,
+                                       "Expected 32 or 64 bit platform.");
+    }
+    auto ptr_in_sandbox = this->impl_malloc_in_sandbox(total_size);
     auto ptr = get_unsandboxed_pointer<T*>(ptr_in_sandbox);
     if (!ptr) {
       return tainted<T*, T_Sbx>(nullptr);
@@ -511,12 +582,42 @@ public:
   }
 
   /**
+   * @brief Free the memory referenced by a tainted_volatile pointer ref.
+   *
+   * @param ptr_ref Pointer reference to sandbox memory to free.
+   */
+  template<typename T>
+  inline void free_in_sandbox(tainted_volatile<T, T_Sbx>& ptr_ref)
+  {
+    tainted<T, T_Sbx> ptr = ptr_ref;
+    free_in_sandbox(ptr);
+  }
+
+  /**
+   * @brief Free the memory referenced by a tainted_opaque pointer.
+   *
+   * @param ptr_opaque Opaque pointer to sandbox memory to free.
+   */
+  template<typename T>
+  inline void free_in_sandbox(tainted_opaque<T, T_Sbx> ptr_opaque)
+  {
+    tainted<T, T_Sbx> ptr = from_opaque(ptr_opaque);
+    free_in_sandbox(ptr);
+  }
+
+  /**
    * @brief Check if two pointers are in the same sandbox.
    * For the null-sandbox, this always returns true.
    */
   static inline bool is_in_same_sandbox(const void* p1, const void* p2)
   {
-    return T_Sbx::impl_is_in_same_sandbox(p1, p2);
+    const size_t num_args =
+      detail::func_arg_nums_v<decltype(T_Sbx::impl_is_in_same_sandbox)>;
+    if constexpr (num_args == 2) {
+      return T_Sbx::impl_is_in_same_sandbox(p1, p2);
+    } else {
+      return T_Sbx::impl_is_in_same_sandbox(p1, p2, find_sandbox_from_example);
+    }
   }
 
   /**
@@ -544,6 +645,47 @@ public:
     return this->impl_get_memory_location();
   }
 
+  void* get_transition_state() { return transition_state; }
+
+  void set_transition_state(void* new_state) { transition_state = new_state; }
+
+  /**
+   * @brief For internal use only.
+   * Grant access of the passed in buffer in to the sandbox instance. Called by
+   * internal APIs only if the underlying sandbox supports
+   * can_grant_deny_access by including the line
+   * ```
+   * using can_grant_deny_access = void;
+   * ```
+   */
+  template<typename T>
+  inline tainted<T*, T_Sbx> INTERNAL_grant_access(T* src,
+                                                  size_t num,
+                                                  bool& success)
+  {
+    auto ret = this->impl_grant_access(src, num, success);
+    return tainted<T*, T_Sbx>::internal_factory(ret);
+  }
+
+  /**
+   * @brief For internal use only.
+   * Grant access of the passed in buffer in to the sandbox instance. Called by
+   * internal APIs only if the underlying sandbox supports
+   * can_grant_deny_access by including the line
+   * ```
+   * using can_grant_deny_access = void;
+   * ```
+   */
+  template<typename T>
+  inline T* INTERNAL_deny_access(tainted<T*, T_Sbx> src,
+                                 size_t num,
+                                 bool& success)
+  {
+    auto ret =
+      this->impl_deny_access(src.INTERNAL_unverified_safe(), num, success);
+    return ret;
+  }
+
   void* lookup_symbol(const char* func_name)
   {
     {
@@ -556,6 +698,29 @@ public:
     }
 
     void* func_ptr = this->impl_lookup_symbol(func_name);
+    RLBOX_ACQUIRE_UNIQUE_GUARD(lock, func_ptr_cache_lock);
+    func_ptr_map[func_name] = func_ptr;
+    return func_ptr;
+  }
+
+  void* internal_lookup_symbol(const char* func_name)
+  {
+    {
+      RLBOX_ACQUIRE_SHARED_GUARD(lock, func_ptr_cache_lock);
+
+      auto func_ptr_ref = func_ptr_map.find(func_name);
+      if (func_ptr_ref != func_ptr_map.end()) {
+        return func_ptr_ref->second;
+      }
+    }
+
+    void* func_ptr = 0;
+    if constexpr (rlbox::detail::
+                    has_member_using_needs_internal_lookup_symbol_v<T_Sbx>) {
+      func_ptr = this->impl_internal_lookup_symbol(func_name);
+    } else {
+      func_ptr = this->impl_lookup_symbol(func_name);
+    }
     RLBOX_ACQUIRE_UNIQUE_GUARD(lock, func_ptr_cache_lock);
     func_ptr_map[func_name] = func_ptr;
     return func_ptr;
@@ -589,6 +754,16 @@ public:
       int64_t ns = duration_cast<nanoseconds>(exit_time - enter_time).count();
       transition_times.push_back(rlbox_transition_timing{
         rlbox_transition::INVOKE, func_name, func_ptr, ns });
+    });
+#endif
+#ifdef RLBOX_TRANSITION_ACTION_IN
+    RLBOX_TRANSITION_ACTION_IN(
+      rlbox_transition::INVOKE, func_name, func_ptr, transition_state);
+#endif
+#ifdef RLBOX_TRANSITION_ACTION_OUT
+    auto on_exit_transition = rlbox::detail::make_scope_exit([&] {
+      RLBOX_TRANSITION_ACTION_OUT(
+        rlbox_transition::INVOKE, func_name, func_ptr, transition_state);
     });
 #endif
     (check_invoke_param_type_is_ok<T_Args>(), ...);
@@ -650,7 +825,7 @@ public:
   {
     rlbox_detail_static_fail_because(
       detail::true_v<T_Ret>,
-      "Modify the callback to change the first parameter to a sandbox."
+      "Modify the callback to change the first parameter to a sandbox. "
       "For instance if a callback has type\n\n"
       "int foo() {...}\n\n"
       "Change this to \n\n"
@@ -683,11 +858,11 @@ public:
     {
       rlbox_detail_static_fail_because(
         cond1,
-        "Modify the callback to change the first parameter to a sandbox."
+        "Modify the callback to change the first parameter to a sandbox. "
         "For instance if a callback has type\n\n"
         "int foo(int a, int b) {...}\n\n"
         "Change this to \n\n"
-        "tainted<int, T_Sbx> foo(rlbox_sandbox<T_Sbx>& sandbox,"
+        "tainted<int, T_Sbx> foo(rlbox_sandbox<T_Sbx>& sandbox, "
         "tainted<int, T_Sbx> a, tainted<int, T_Sbx> b) {...}\n");
     }
     else if_constexpr_named(
@@ -696,11 +871,11 @@ public:
       rlbox_detail_static_fail_because(
         cond2,
         "Change all arguments to the callback have to be tainted or "
-        "tainted_opaque."
+        "tainted_opaque. "
         "For instance if a callback has type\n\n"
         "int foo(int a, int b) {...}\n\n"
         "Change this to \n\n"
-        "tainted<int, T_Sbx> foo(rlbox_sandbox<T_Sbx>& sandbox,"
+        "tainted<int, T_Sbx> foo(rlbox_sandbox<T_Sbx>& sandbox, "
         "tainted<int, T_Sbx> a, tainted<int, T_Sbx> b) {...}\n");
     }
     else if_constexpr_named(
@@ -708,11 +883,11 @@ public:
     {
       rlbox_detail_static_fail_because(
         cond3,
-        "Change all static array arguments to the callback to be pointers."
+        "Change all static array arguments to the callback to be pointers. "
         "For instance if a callback has type\n\n"
         "int foo(int a[4]) {...}\n\n"
         "Change this to \n\n"
-        "tainted<int, T_Sbx> foo(rlbox_sandbox<T_Sbx>& sandbox,"
+        "tainted<int, T_Sbx> foo(rlbox_sandbox<T_Sbx>& sandbox, "
         "tainted<int*, T_Sbx> a) {...}\n");
     }
     else if_constexpr_named(
@@ -722,11 +897,11 @@ public:
       rlbox_detail_static_fail_because(
         cond4,
         "Change the callback return type to be tainted or tainted_opaque if it "
-        "is not void."
+        "is not void. "
         "For instance if a callback has type\n\n"
         "int foo(int a, int b) {...}\n\n"
         "Change this to \n\n"
-        "tainted<int, T_Sbx> foo(rlbox_sandbox<T_Sbx>& sandbox,"
+        "tainted<int, T_Sbx> foo(rlbox_sandbox<T_Sbx>& sandbox, "
         "tainted<int, T_Sbx> a, tainted<int, T_Sbx> b) {...}\n");
     }
     else
@@ -783,7 +958,8 @@ public:
   inline tainted<T*, T_Sbx> INTERNAL_get_sandbox_function_name(
     const char* func_name)
   {
-    return INTERNAL_get_sandbox_function_ptr<T>(lookup_symbol(func_name));
+    return INTERNAL_get_sandbox_function_ptr<T>(
+      internal_lookup_symbol(func_name));
   }
 
   // this is an internal function invoked from macros, so it has be public
@@ -793,12 +969,68 @@ public:
     return tainted<T*, T_Sbx>::internal_factory(reinterpret_cast<T*>(func_ptr));
   }
 
+  /**
+   * @brief Create a "fake" pointer referring to a location in the application
+   * memory
+   *
+   * @param ptr The pointer to refer to
+   *
+   * @return The app_pointer object that refers to this location.
+   */
+  template<typename T>
+  app_pointer<T*, T_Sbx> get_app_pointer(T* ptr)
+  {
+    auto max_ptr = (typename T_Sbx::T_PointerType)(get_total_memory() - 1);
+    auto idx = app_ptr_map.get_app_pointer_idx((void*)ptr, max_ptr);
+    auto idx_as_ptr = this->template impl_get_unsandboxed_pointer<T>(idx);
+    // Right now we simply assume that any integer can be converted to a valid
+    // pointer in the sandbox This may not be true for some sandboxing mechanism
+    // plugins in the future In this case, we will have to come up with
+    // something more clever to construct indexes that look like valid pointers
+    // Add a check for now to make sure things work fine
+    detail::dynamic_check(is_pointer_in_sandbox_memory(idx_as_ptr),
+                          "App pointers are not currently supported for this "
+                          "rlbox sandbox plugin. Please file a bug.");
+    auto ret = app_pointer<T*, T_Sbx>(
+      &app_ptr_map, idx, reinterpret_cast<T*>(idx_as_ptr));
+    return ret;
+  }
+
+  /**
+   * @brief The mirror of get_app_pointer. Take a tainted pointer which is
+   * actually an app_pointer, and get the application location being pointed to
+   *
+   * @param tainted_ptr The tainted pointer that is actually an app_pointer
+   *
+   * @return The original location being referred to by the app_ptr
+   */
+  template<typename T>
+  T* lookup_app_ptr(tainted<T*, T_Sbx> tainted_ptr)
+  {
+    auto idx = tainted_ptr.get_raw_sandbox_value(*this);
+    void* ret = app_ptr_map.lookup_index(idx);
+    return reinterpret_cast<T*>(ret);
+  }
+
 #ifdef RLBOX_MEASURE_TRANSITION_TIMES
   inline std::vector<rlbox_transition_timing>&
   process_and_get_transition_times()
   {
     return transition_times;
   }
+  inline int64_t get_total_ns_time_in_sandbox_and_transitions()
+  {
+    int64_t ret = 0;
+    for (auto& transition_time : transition_times) {
+      if (transition_time.invoke == rlbox_transition::INVOKE) {
+        ret += transition_time.time;
+      } else {
+        ret -= transition_time.time;
+      }
+    }
+    return ret;
+  }
+  inline void clear_transition_times() { transition_times.clear(); }
 #endif
 };
 

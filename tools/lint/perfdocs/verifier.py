@@ -67,14 +67,14 @@ class Verifier(object):
     descriptions that can be used to build up a document.
     """
 
-    def __init__(self, workspace_dir):
+    def __init__(self, workspace_dir, taskgraph=None):
         """
         Initialize the Verifier.
 
         :param str workspace_dir: Path to the top-level checkout directory.
         """
         self.workspace_dir = workspace_dir
-        self._gatherer = Gatherer(workspace_dir)
+        self._gatherer = Gatherer(workspace_dir, taskgraph)
 
     def validate_descriptions(self, framework_info):
         """
@@ -163,7 +163,10 @@ class Verifier(object):
             for test_name, manifest_path in test_list.items():
                 tb = os.path.basename(manifest_path)
                 tb = re.sub("\..*", "", tb)
-                if stests.get(tb) or stests.get(test_name):
+                if (
+                    stests.get(tb, None) is not None
+                    or stests.get(test_name, None) is not None
+                ):
                     # Test description exists, continue with the next test
                     tests_found += 1
                     continue
@@ -210,7 +213,7 @@ class Verifier(object):
             Recompute the description in case it's a file.
             """
             desc_path = os.path.join(self.workspace_dir, desc)
-            if os.path.exists(desc_path):
+            if os.path.exists(desc_path) and os.path.isfile(desc_path):
                 with open(desc_path, "r") as f:
                     desc = f.readlines()
             return desc

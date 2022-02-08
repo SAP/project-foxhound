@@ -8,9 +8,12 @@
  */
 
 add_task(async function() {
+  // Using https-first for this test is blocked on Bug 1733420.
+  await pushPref("dom.security.https_first", false);
+
   const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
 
-  const { tab, monitor } = await initNetMonitor(SIMPLE_SJS, {
+  const { monitor } = await initNetMonitor(SIMPLE_SJS, {
     requestCount: 1,
   });
   info("Starting test... ");
@@ -25,7 +28,7 @@ add_task(async function() {
   store.dispatch(Actions.batchEnable(false));
 
   const wait = waitForNetworkEvents(monitor, 1);
-  tab.linkedBrowser.reload();
+  await reloadBrowser();
   await wait;
 
   is(
@@ -296,18 +299,19 @@ add_task(async function() {
 
   async function testResponseTab() {
     const tabpanel = await selectTab(PANELS.RESPONSE, 3);
-    await waitForDOM(document, ".accordion .source-editor-mount");
+    await waitForDOM(document, "#response-panel .source-editor-mount");
 
-    const responseAccordion = tabpanel.querySelector(".accordion");
     is(
-      responseAccordion.querySelectorAll(".accordion-item").length,
-      1,
-      "There should be 1 response scope displayed in this tabpanel."
+      tabpanel.querySelectorAll(
+        "#response-panel .raw-data-toggle-input .devtools-checkbox-toggle"
+      ).length,
+      0,
+      "The raw data toggle should not be shown in this tabpanel."
     );
     is(
-      responseAccordion.querySelectorAll(".source-editor-mount").length,
+      tabpanel.querySelectorAll(".source-editor-mount").length,
       1,
-      "The response payload tab should be open initially."
+      "The response payload should be shown initially."
     );
   }
 
@@ -353,7 +357,10 @@ add_task(async function() {
     )[pos];
 
     const onPanelOpen = waitForDOM(document, `#${tabName}-panel`);
-    EventUtils.sendMouseEvent({ type: "click" }, tabEl);
+    clickOnSidebarTab(
+      document,
+      tabEl.id.substring(0, tabEl.id.indexOf("-tab"))
+    );
     await onPanelOpen;
 
     is(

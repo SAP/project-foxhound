@@ -19,7 +19,6 @@ xul|tab[visuallyselected] {
 
 /* Overriding appearance also avoids incorrect selection background color with
    light text. */
-xul|button > xul|*.button-box,
 xul|menulist::part(label-box),
 xul|*.radio-label-box,
 xul|*.checkbox-label-box {
@@ -28,10 +27,6 @@ xul|*.checkbox-label-box {
 
 xul|button[type="menu"] > xul|*.button-box > xul|*.button-menu-dropmarker {
   appearance: none !important;
-}
-
-xul|*.help-button > xul|*.button-box > xul|*.button-icon {
-  margin-inline-end: 0;
 }
 
 xul|menulist {
@@ -43,18 +38,8 @@ xul|menulist::part(dropmarker) {
   margin-block: 6px;
 }
 
-xul|checkbox[checked] > xul|*.checkbox-check,
-xul|*.radio-check[selected] {
-  background-color: -moz-field;
-  fill: -moz-fieldText;
-}
-
 xul|menulist:-moz-focusring::part(label-box) {
   outline: none;
-}
-
-html|input[type="checkbox"]:-moz-focusring + html|label:before {
-  outline: 1px dotted;
 }
 
 html|button {

@@ -9,18 +9,18 @@
 
 #include "mozilla/TextUtils.h"
 #include "mozilla/UniquePtr.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsTArray.h"
 
 template <typename char_type>
 struct HashKeyType;
 template <>
 struct HashKeyType<char16_t> {
-  typedef nsStringHashKey HashType;
+  using HashType = nsStringHashKey;
 };
 template <>
 struct HashKeyType<char> {
-  typedef nsCStringHashKey HashType;
+  using HashType = nsCStringHashKey;
 };
 
 template <typename char_type>
@@ -35,7 +35,7 @@ class TMimeType final {
 
   nsTString<char_type> mType;
   nsTString<char_type> mSubtype;
-  nsDataHashtable<typename HashKeyType<char_type>::HashType, ParameterValue>
+  nsTHashMap<typename HashKeyType<char_type>::HashType, ParameterValue>
       mParameters;
   nsTArray<nsTString<char_type>> mParameterNames;
 

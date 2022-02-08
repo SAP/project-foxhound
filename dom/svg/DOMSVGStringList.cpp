@@ -56,11 +56,9 @@ NS_INTERFACE_MAP_END
 // DidChangeStringListList.
 class MOZ_RAII AutoChangeStringListNotifier : public mozAutoDocUpdate {
  public:
-  explicit AutoChangeStringListNotifier(
-      DOMSVGStringList* aStringList MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+  explicit AutoChangeStringListNotifier(DOMSVGStringList* aStringList)
       : mozAutoDocUpdate(aStringList->mElement->GetComposedDoc(), true),
         mStringList(aStringList) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
     MOZ_ASSERT(mStringList, "Expecting non-null stringList");
     mEmptyOrOldValue = mStringList->mElement->WillChangeStringList(
         mStringList->mIsConditionalProcessingAttribute, mStringList->mAttrEnum,
@@ -76,7 +74,6 @@ class MOZ_RAII AutoChangeStringListNotifier : public mozAutoDocUpdate {
  private:
   DOMSVGStringList* const mStringList;
   nsAttrValue mEmptyOrOldValue;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 /* static */
@@ -204,7 +201,7 @@ SVGStringList& DOMSVGStringList::InternalList() const {
     nsCOMPtr<dom::SVGTests> tests = do_QueryObject(mElement);
     return tests->mStringListAttributes[mAttrEnum];
   }
-  return mElement->GetStringListInfo().mStringLists[mAttrEnum];
+  return mElement->GetStringListInfo().mValues[mAttrEnum];
 }
 
 }  // namespace dom

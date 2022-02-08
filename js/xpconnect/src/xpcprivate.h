@@ -73,17 +73,20 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/DefineEnum.h"
-#include "mozilla/GuardObjects.h"
+#include "mozilla/HashFunctions.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/mozalloc.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/Vector.h"
 
 #include "mozilla/dom/ScriptSettings.h"
 
@@ -95,9 +98,10 @@
 #include "xpcpublic.h"
 #include "js/HashTable.h"
 #include "js/GCHashTable.h"
+#include "js/Object.h"              // JS::GetClass, JS::GetCompartment
+#include "js/PropertyAndElement.h"  // JS_DefineProperty
 #include "js/TracingAPI.h"
 #include "js/WeakMapPtr.h"
-#include "PLDHashTable.h"
 #include "nscore.h"
 #include "nsXPCOM.h"
 #include "nsCycleCollectionParticipant.h"
@@ -136,7 +140,6 @@
 #include "nsHashKeys.h"
 #include "nsWrapperCache.h"
 #include "nsStringBuffer.h"
-#include "nsDataHashtable.h"
 #include "nsDeque.h"
 
 #include "nsIScriptSecurityManager.h"
@@ -161,6 +164,7 @@
 
 namespace mozilla {
 namespace dom {
+class AutoEntryScript;
 class Exception;
 }  // namespace dom
 }  // namespace mozilla
@@ -187,7 +191,7 @@ static inline bool IS_WN_CLASS(const JSClass* clazz) {
 }
 
 static inline bool IS_WN_REFLECTOR(JSObject* obj) {
-  return IS_WN_CLASS(js::GetObjectClass(obj));
+  return IS_WN_CLASS(JS::GetClass(obj));
 }
 
 /***************************************************************************
@@ -247,7 +251,6 @@ class nsXPConnect final : public nsIXPConnect {
 
   XPCJSContext* mContext = nullptr;
   XPCJSRuntime* mRuntime = nullptr;
-  bool mShuttingDown;
 
   friend class nsIXPConnect;
 
@@ -365,8 +368,6 @@ class XPCJSContext final : public mozilla::CycleCollectedJSContext,
     IDX_CONSTRUCTOR = 0,
     IDX_TO_STRING,
     IDX_TO_SOURCE,
-    IDX_LAST_RESULT,
-    IDX_RETURN_CODE,
     IDX_VALUE,
     IDX_QUERY_INTERFACE,
     IDX_COMPONENTS,
@@ -375,16 +376,10 @@ class XPCJSContext final : public mozilla::CycleCollectedJSContext,
     IDX_CR,
     IDX_CU,
     IDX_WRAPPED_JSOBJECT,
-    IDX_OBJECT,
-    IDX_FUNCTION,
     IDX_PROTOTYPE,
-    IDX_CREATE_INSTANCE,
-    IDX_ITEM,
-    IDX_PROTO,
     IDX_EVAL,
     IDX_CONTROLLERS,
     IDX_CONTROLLERS_CLASS,
-    IDX_REALFRAMEELEMENT,
     IDX_LENGTH,
     IDX_NAME,
     IDX_UNDEFINED,
@@ -394,6 +389,7 @@ class XPCJSContext final : public mozilla::CycleCollectedJSContext,
     IDX_COLUMNNUMBER,
     IDX_STACK,
     IDX_MESSAGE,
+    IDX_CAUSE,
     IDX_ERRORS,
     IDX_LASTINDEX,
     IDX_THEN,
@@ -448,6 +444,7 @@ class XPCJSContext final : public mozilla::CycleCollectedJSContext,
   // Accumulates total time we actually waited for telemetry
   mozilla::TimeDuration mSlowScriptActualWait;
   bool mTimeoutAccumulated;
+  bool mExecutedChromeScript;
 
   bool mHasScriptActivity;
 
@@ -486,8 +483,11 @@ class XPCJSRuntime final : public mozilla::CycleCollectedJSRuntime {
 
   NativeSetMap* GetNativeSetMap() const { return mNativeSetMap.get(); }
 
-  XPCWrappedNativeProtoMap* GetDyingWrappedNativeProtoMap() const {
-    return mDyingWrappedNativeProtoMap.get();
+  using WrappedNativeProtoVector =
+      mozilla::Vector<mozilla::UniquePtr<XPCWrappedNativeProto>, 0,
+                      InfallibleAllocPolicy>;
+  WrappedNativeProtoVector& GetDyingWrappedNativeProtos() {
+    return mDyingWrappedNativeProtos;
   }
 
   XPCWrappedNativeScopeList& GetWrappedNativeScopes() {
@@ -533,7 +533,7 @@ class XPCJSRuntime final : public mozilla::CycleCollectedJSRuntime {
       nsCycleCollectionNoteRootCallback& cb) override;
   void UnmarkSkippableJSHolders();
   void PrepareForForgetSkippable() override;
-  void BeginCycleCollectionCallback() override;
+  void BeginCycleCollectionCallback(mozilla::CCReason aReason) override;
   void EndCycleCollectionCallback(
       mozilla::CycleCollectorResults& aResults) override;
   void DispatchDeferredDeletion(bool aContinuation,
@@ -547,8 +547,8 @@ class XPCJSRuntime final : public mozilla::CycleCollectedJSRuntime {
   static void DoCycleCollectionCallback(JSContext* cx);
   static void FinalizeCallback(JSFreeOp* fop, JSFinalizeStatus status,
                                void* data);
-  static void WeakPointerZonesCallback(JSContext* cx, void* data);
-  static void WeakPointerCompartmentCallback(JSContext* cx,
+  static void WeakPointerZonesCallback(JSTracer* trc, void* data);
+  static void WeakPointerCompartmentCallback(JSTracer* trc,
                                              JS::Compartment* comp, void* data);
 
   inline void AddVariantRoot(XPCTraceableVariant* variant);
@@ -612,15 +612,16 @@ class XPCJSRuntime final : public mozilla::CycleCollectedJSRuntime {
     }
   };
 
-  struct SweepPolicy {
-    static bool needsSweep(RefPtr<mozilla::BasePrincipal>* /* unused */,
-                           JS::Heap<JSObject*>* value) {
-      return JS::GCPolicy<JS::Heap<JSObject*>>::needsSweep(value);
+  struct MapEntryGCPolicy {
+    static bool traceWeak(JSTracer* trc,
+                          RefPtr<mozilla::BasePrincipal>* /* unused */,
+                          JS::Heap<JSObject*>* value) {
+      return JS::GCPolicy<JS::Heap<JSObject*>>::traceWeak(trc, value);
     }
   };
 
   typedef JS::GCHashMap<RefPtr<mozilla::BasePrincipal>, JS::Heap<JSObject*>,
-                        Hasher, js::SystemAllocPolicy, SweepPolicy>
+                        Hasher, js::SystemAllocPolicy, MapEntryGCPolicy>
       Principal2JSObjectMap;
 
   mozilla::UniquePtr<JSObject2WrappedJSMap> mWrappedJSMap;
@@ -629,7 +630,7 @@ class XPCJSRuntime final : public mozilla::CycleCollectedJSRuntime {
   mozilla::UniquePtr<NativeSetMap> mNativeSetMap;
   Principal2JSObjectMap mUAWidgetScopeMap;
   XPCWrappedNativeScopeList mWrappedNativeScopes;
-  mozilla::UniquePtr<XPCWrappedNativeProtoMap> mDyingWrappedNativeProtoMap;
+  WrappedNativeProtoVector mDyingWrappedNativeProtos;
   bool mGCIsRunning;
   nsTArray<nsISupports*> mNativesToReleaseArray;
   bool mDoingFinalization;
@@ -796,8 +797,6 @@ class MOZ_STACK_CLASS XPCCallContext final {
 extern const JSClass XPC_WN_NoHelper_JSClass;
 extern const JSClass XPC_WN_Proto_JSClass;
 extern const JSClass XPC_WN_Tearoff_JSClass;
-#define XPC_WN_TEAROFF_RESERVED_SLOTS 1
-#define XPC_WN_TEAROFF_FLAT_OBJECT_SLOT 0
 extern const JSClass XPC_WN_NoHelper_Proto_JSClass;
 
 extern bool XPC_WN_CallMethod(JSContext* cx, unsigned argc, JS::Value* vp);
@@ -852,7 +851,7 @@ class XPCWrappedNativeScope final
 
   static void SweepAllWrappedNativeTearOffs();
 
-  void UpdateWeakPointersAfterGC();
+  void UpdateWeakPointersAfterGC(JSTracer* trc);
 
   static void DebugDumpAllScopes(int16_t depth);
 
@@ -1114,7 +1113,7 @@ class MOZ_STACK_CLASS XPCNativeSetKey final {
   XPCNativeSet* GetBaseSet() const { return mBaseSet; }
   XPCNativeInterface* GetAddition() const { return mAddition; }
 
-  PLDHashNumber Hash() const;
+  mozilla::HashNumber Hash() const;
 
   // Allow shallow copy
 
@@ -1199,14 +1198,16 @@ class XPCNativeSet final {
 /***********************************************/
 // XPCWrappedNativeProtos hold the additional shared wrapper data for
 // XPCWrappedNative whose native objects expose nsIClassInfo.
+//
 // The XPCWrappedNativeProto is owned by its mJSProtoObject, until that object
 // is finalized. After that, it is owned by XPCJSRuntime's
-// mDyingWrappedNativeProtoMap. See
-// XPCWrappedNativeProto::JSProtoObjectFinalized and
-// XPCJSRuntime::FinalizeCallback.
+// mDyingWrappedNativeProtos. See XPCWrappedNativeProto::JSProtoObjectFinalized
+// and XPCJSRuntime::FinalizeCallback.
 
 class XPCWrappedNativeProto final {
  public:
+  enum Slots { ProtoSlot, SlotCount };
+
   static XPCWrappedNativeProto* GetNewOrUsed(JSContext* cx,
                                              XPCWrappedNativeScope* scope,
                                              nsIClassInfo* classInfo,
@@ -1231,6 +1232,8 @@ class XPCWrappedNativeProto final {
   void JSProtoObjectFinalized(JSFreeOp* fop, JSObject* obj);
   void JSProtoObjectMoved(JSObject* obj, const JSObject* old);
 
+  static XPCWrappedNativeProto* Get(JSObject* obj);
+
   void SystemIsBeingShutDown();
 
   void DebugDump(int16_t depth);
@@ -1242,14 +1245,6 @@ class XPCWrappedNativeProto final {
   }
 
   void TraceJS(JSTracer* trc) { TraceSelf(trc); }
-
-  /*
-  void WriteBarrierPre(JSContext* cx) {
-    if (JS::IsIncrementalBarrierNeeded(cx) && mJSProtoObject) {
-      mJSProtoObject.writeBarrierPre(cx);
-    }
-  }
-  */
 
   // NOP. This is just here to make the AutoMarkingPtr code compile.
   void Mark() const {}
@@ -1287,6 +1282,8 @@ class XPCWrappedNativeProto final {
 
 class XPCWrappedNativeTearOff final {
  public:
+  enum Slots { FlatObjectSlot, TearOffSlot, SlotCount };
+
   bool IsAvailable() const { return mInterface == nullptr; }
   bool IsReserved() const { return mInterface == (XPCNativeInterface*)1; }
   bool IsValid() const { return !IsAvailable() && !IsReserved(); }
@@ -1303,6 +1300,8 @@ class XPCWrappedNativeTearOff final {
 
   void JSObjectFinalized() { SetJSObject(nullptr); }
   void JSObjectMoved(JSObject* obj, const JSObject* old);
+
+  static XPCWrappedNativeTearOff* Get(JSObject* obj);
 
   XPCWrappedNativeTearOff() : mInterface(nullptr), mJSObject(nullptr) {
     MOZ_COUNT_CTOR(XPCWrappedNativeTearOff);
@@ -1414,7 +1413,7 @@ class XPCWrappedNative final : public nsIXPConnectWrappedNative {
 
   static XPCWrappedNative* Get(JSObject* obj) {
     MOZ_ASSERT(IS_WN_REFLECTOR(obj));
-    return (XPCWrappedNative*)js::GetObjectPrivate(obj);
+    return JS::GetObjectISupports<XPCWrappedNative>(obj);
   }
 
  private:
@@ -1507,7 +1506,7 @@ class XPCWrappedNative final : public nsIXPConnectWrappedNative {
 
   // Returns a string that should be freed with js_free, or nullptr on
   // failure.
-  char* ToString(JSContext* cx, XPCWrappedNativeTearOff* to = nullptr) const;
+  char* ToString(XPCWrappedNativeTearOff* to = nullptr) const;
 
   static nsIXPCScriptable* GatherProtoScriptable(nsIClassInfo* classInfo);
 
@@ -1647,9 +1646,9 @@ class nsXPCWrappedJS final : protected nsAutoXPTCStub,
   // XPCWrappedJS.cpp for more details.
   bool IsSubjectToFinalization() const { return IsValid() && mRefCnt == 1; }
 
-  void UpdateObjectPointerAfterGC() {
+  void UpdateObjectPointerAfterGC(JSTracer* trc) {
     MOZ_ASSERT(IsRootWrapper());
-    JS_UpdateWeakPointerAfterGC(&mJSObj);
+    JS_UpdateWeakPointerAfterGC(trc, &mJSObj);
   }
 
   bool IsAggregatedToNative() const { return mRoot->mOuter != nullptr; }
@@ -1686,7 +1685,7 @@ class nsXPCWrappedJS final : protected nsAutoXPTCStub,
 
  private:
   JS::Compartment* Compartment() const {
-    return js::GetObjectCompartment(mJSObj.unbarrieredGet());
+    return JS::GetCompartment(mJSObj.unbarrieredGet());
   }
 
   // These methods are defined in XPCWrappedJSClass.cpp to preserve VCS blame.
@@ -1952,10 +1951,8 @@ class MOZ_RAII AutoScriptEvaluate {
    * Saves the JSContext as well as initializing our state
    * @param cx The JSContext, this can be null, we don't do anything then
    */
-  explicit AutoScriptEvaluate(JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : mJSContext(cx), mEvaluated(false) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-  }
+  explicit AutoScriptEvaluate(JSContext* cx)
+      : mJSContext(cx), mEvaluated(false) {}
 
   /**
    * Does the pre script evaluation.
@@ -1975,7 +1972,6 @@ class MOZ_RAII AutoScriptEvaluate {
   mozilla::Maybe<JS::AutoSaveExceptionState> mState;
   bool mEvaluated;
   mozilla::Maybe<JSAutoRealm> mAutoRealm;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 
   // No copying or assignment allowed
   AutoScriptEvaluate(const AutoScriptEvaluate&) = delete;
@@ -1985,8 +1981,7 @@ class MOZ_RAII AutoScriptEvaluate {
 /***************************************************************************/
 class MOZ_RAII AutoResolveName {
  public:
-  AutoResolveName(XPCCallContext& ccx,
-                  JS::HandleId name MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+  AutoResolveName(XPCCallContext& ccx, JS::HandleId name)
       : mContext(ccx.GetContext()),
         mOld(ccx, mContext->SetResolveName(name))
 #ifdef DEBUG
@@ -1994,7 +1989,6 @@ class MOZ_RAII AutoResolveName {
         mCheck(ccx, name)
 #endif
   {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   }
 
   ~AutoResolveName() {
@@ -2008,7 +2002,6 @@ class MOZ_RAII AutoResolveName {
 #ifdef DEBUG
   JS::RootedId mCheck;
 #endif
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 /***************************************************************************/
@@ -2093,15 +2086,6 @@ using AutoMarkingWrappedNativeTearOffPtr =
     TypedAutoMarkingPtr<XPCWrappedNativeTearOff>;
 using AutoMarkingWrappedNativeProtoPtr =
     TypedAutoMarkingPtr<XPCWrappedNativeProto>;
-
-/***************************************************************************/
-namespace xpc {
-// Allocates a string that grants all access ("AllAccess")
-char* CloneAllAccess();
-
-// Returns access if wideName is in list
-char* CheckAccessList(const char16_t* wideName, const char* const list[]);
-} /* namespace xpc */
 
 /***************************************************************************/
 // in xpcvariant.cpp...
@@ -2203,10 +2187,6 @@ class XPCTraceableVariant : public XPCVariant, public XPCRootSetElem {
 /***************************************************************************/
 // Utilities
 
-inline void* xpc_GetJSPrivate(JSObject* obj) {
-  return js::GetObjectPrivate(obj);
-}
-
 inline JSContext* xpc_GetSafeJSContext() {
   return XPCJSContext::Get()->Context();
 }
@@ -2236,6 +2216,7 @@ struct GlobalProperties {
   bool DefineInSandbox(JSContext* cx, JS::HandleObject obj);
 
   // Interface objects we can expose.
+  bool AbortController : 1;
   bool Blob : 1;
   bool ChromeUtils : 1;
   bool CSS : 1;
@@ -2264,6 +2245,8 @@ struct GlobalProperties {
   bool URL : 1;
   bool URLSearchParams : 1;
   bool XMLHttpRequest : 1;
+  bool WebSocket : 1;
+  bool Window : 1;
   bool XMLSerializer : 1;
 
   // Ad-hoc property names we implement.
@@ -2272,9 +2255,12 @@ struct GlobalProperties {
   bool caches : 1;
   bool crypto : 1;
   bool fetch : 1;
+  bool structuredClone : 1;
   bool indexedDB : 1;
   bool isSecureContext : 1;
   bool rtcIdentityProvider : 1;
+  bool glean : 1;
+  bool gleanPings : 1;
 
  private:
   bool Define(JSContext* cx, JS::HandleObject obj);
@@ -2610,7 +2596,7 @@ class CompartmentPrivate {
   }
 
   static CompartmentPrivate* Get(JSObject* object) {
-    JS::Compartment* compartment = js::GetObjectCompartment(object);
+    JS::Compartment* compartment = JS::GetCompartment(object);
     return Get(compartment);
   }
 
@@ -2652,22 +2638,22 @@ class CompartmentPrivate {
   bool wasShutdown;
 
   JSObject2WrappedJSMap* GetWrappedJSMap() const { return mWrappedJSMap.get(); }
-  void UpdateWeakPointersAfterGC();
+  void UpdateWeakPointersAfterGC(JSTracer* trc);
 
   void SystemIsBeingShutDown();
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf);
 
-  struct SweepPolicy {
-    static bool needsSweep(const void* /* unused */,
-                           JS::Heap<JSObject*>* value) {
-      return JS::GCPolicy<JS::Heap<JSObject*>>::needsSweep(value);
+  struct MapEntryGCPolicy {
+    static bool traceWeak(JSTracer* trc, const void* /* unused */,
+                          JS::Heap<JSObject*>* value) {
+      return JS::GCPolicy<JS::Heap<JSObject*>>::traceWeak(trc, value);
     }
   };
 
   typedef JS::GCHashMap<const void*, JS::Heap<JSObject*>,
                         mozilla::PointerHasher<const void*>,
-                        js::SystemAllocPolicy, SweepPolicy>
+                        js::SystemAllocPolicy, MapEntryGCPolicy>
       RemoteProxyMap;
   RemoteProxyMap& GetRemoteProxyMap() { return mRemoteProxies; }
 
@@ -2868,11 +2854,6 @@ void xpc_DelocalizeRuntime(JSRuntime* rt);
 // Inlines use the above - include last.
 
 #include "XPCInlines.h"
-
-/***************************************************************************/
-// Maps have inlines that use the above - include last.
-
-#include "XPCMaps.h"
 
 /***************************************************************************/
 

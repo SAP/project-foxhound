@@ -45,6 +45,13 @@ class AppUpdater {
       "@mozilla.org/updates/update-manager;1",
       "nsIUpdateManager"
     );
+    this.QueryInterface = ChromeUtils.generateQI([
+      "nsIObserver",
+      "nsIProgressEventSink",
+      "nsIRequestObserver",
+      "nsISupportsWeakReference",
+    ]);
+    Services.obs.addObserver(this, "update-swap", /* ownsWeak */ true);
   }
 
   /**
@@ -53,7 +60,7 @@ class AppUpdater {
    * listeners are called.
    */
   check() {
-    if (!AppConstants.MOZ_UPDATER) {
+    if (!AppConstants.MOZ_UPDATER || this.updateDisabledByPackage) {
       this._setStatus(AppUpdater.STATUS.NO_UPDATER);
       return;
     }
@@ -104,10 +111,10 @@ class AppUpdater {
       );
     }
     return (
-      this.um.activeUpdate &&
-      (this.um.activeUpdate.state == "pending" ||
-        this.um.activeUpdate.state == "pending-service" ||
-        this.um.activeUpdate.state == "pending-elevate")
+      this.um.readyUpdate &&
+      (this.um.readyUpdate.state == "pending" ||
+        this.um.readyUpdate.state == "pending-service" ||
+        this.um.readyUpdate.state == "pending-elevate")
     );
   }
 
@@ -119,9 +126,9 @@ class AppUpdater {
       );
     }
     return (
-      this.um.activeUpdate &&
-      (this.um.activeUpdate.state == "applied" ||
-        this.um.activeUpdate.state == "applied-service")
+      this.um.readyUpdate &&
+      (this.um.readyUpdate.state == "applied" ||
+        this.um.readyUpdate.state == "applied-service")
     );
   }
 
@@ -132,8 +139,8 @@ class AppUpdater {
     let errorCode;
     if (this.update) {
       errorCode = this.update.errorCode;
-    } else if (this.um.activeUpdate) {
-      errorCode = this.um.activeUpdate.errorCode;
+    } else if (this.um.readyUpdate) {
+      errorCode = this.um.readyUpdate.errorCode;
     }
     // If the state is pending and the error code is not 0, staging must have
     // failed.
@@ -146,8 +153,8 @@ class AppUpdater {
       let errorCode;
       if (this.update) {
         errorCode = this.update.errorCode;
-      } else if (this.um.activeUpdate) {
-        errorCode = this.um.activeUpdate.errorCode;
+      } else if (this.um.readyUpdate) {
+        errorCode = this.um.readyUpdate.errorCode;
       }
       // If the state is pending and the error code is not 0, staging must have
       // failed and Firefox should be restarted to try to apply the update
@@ -162,7 +169,10 @@ class AppUpdater {
     if (this.update) {
       return this.update.state == "downloading";
     }
-    return this.um.activeUpdate && this.um.activeUpdate.state == "downloading";
+    return (
+      this.um.downloadingUpdate &&
+      this.um.downloadingUpdate.state == "downloading"
+    );
   }
 
   // true when updating has been disabled by enterprise policy
@@ -170,9 +180,28 @@ class AppUpdater {
     return Services.policies && !Services.policies.isAllowed("appUpdate");
   }
 
+  // true if updating is disabled because we're running in an app package.
+  // This is distinct from updateDisabledByPolicy because we need to avoid
+  // messages being shown to the user about an "administrator" handling
+  // updates; packaged apps may be getting updated by an administrator or they
+  // may not be, and we don't have a good way to tell the difference from here,
+  // so we err to the side of less confusion for unmanaged users.
+  get updateDisabledByPackage() {
+    try {
+      return Services.sysinfo.getProperty("hasWinPackageId");
+    } catch (_ex) {
+      // The hasWinPackageId property doesn't exist; assume it would be false.
+    }
+    return false;
+  }
+
   // true when updating in background is enabled.
   get updateStagingEnabled() {
-    return !this.updateDisabledByPolicy && this.aus.canStageUpdates;
+    return (
+      !this.updateDisabledByPolicy &&
+      !this.updateDisabledByPackage &&
+      this.aus.canStageUpdates
+    );
   }
 
   /**
@@ -202,7 +231,7 @@ class AppUpdater {
         /**
          * See nsIUpdateService.idl
          */
-        onCheckComplete: (aRequest, aUpdates) => {
+        onCheckComplete: async (aRequest, aUpdates) => {
           this.update = this.aus.selectUpdate(aUpdates);
           if (!this.update) {
             this._setStatus(AppUpdater.STATUS.NO_UPDATES_FOUND);
@@ -223,7 +252,7 @@ class AppUpdater {
             this.promiseAutoUpdateSetting = UpdateUtils.getAppUpdateAutoEnabled();
           }
           this.promiseAutoUpdateSetting.then(updateAuto => {
-            if (updateAuto) {
+            if (updateAuto && !this.aus.manualUpdateOnly) {
               // automatically download and install
               this.startDownload();
             } else {
@@ -236,7 +265,7 @@ class AppUpdater {
         /**
          * See nsIUpdateService.idl
          */
-        onError: (aRequest, aUpdate) => {
+        onError: async (aRequest, aUpdate) => {
           // Errors in the update check are treated as no updates found. If the
           // update check fails repeatedly without a success the user will be
           // notified with the normal app update user interface so this is safe.
@@ -258,7 +287,7 @@ class AppUpdater {
    */
   _waitForUpdateToStage() {
     if (!this.update) {
-      this.update = this.um.activeUpdate;
+      this.update = this.um.readyUpdate;
     }
     this.update.QueryInterface(Ci.nsIWritablePropertyBag);
     this.update.setProperty("foregroundDownload", "true");
@@ -271,13 +300,13 @@ class AppUpdater {
    */
   startDownload() {
     if (!this.update) {
-      this.update = this.um.activeUpdate;
+      this.update = this.um.downloadingUpdate;
     }
     this.update.QueryInterface(Ci.nsIWritablePropertyBag);
     this.update.setProperty("foregroundDownload", "true");
 
-    let state = this.aus.downloadUpdate(this.update, false);
-    if (state == "failed") {
+    let success = this.aus.downloadUpdate(this.update, false);
+    if (!success) {
       this._setStatus(AppUpdater.STATUS.DOWNLOAD_FAILED);
       return;
     }
@@ -323,10 +352,21 @@ class AppUpdater {
       case Cr.NS_OK:
         this.aus.removeDownloadListener(this);
         if (this.updateStagingEnabled) {
-          this._setStatus(AppUpdater.STATUS.STAGING);
+          // It could be that another instance was started during the download,
+          // and if that happened, then we actually should not advance to the
+          // STAGING status because the staging process isn't really happening
+          // until that instance exits (or we time out waiting).
+          if (this.aus.isOtherInstanceHandlingUpdates) {
+            this._setStatus(AppUpdater.OTHER_INSTANCE_HANDLING_UPDATES);
+          } else {
+            this._setStatus(AppUpdater.STATUS.STAGING);
+          }
+          // But we should register the staging observer in either case, because
+          // if we do time out waiting for the other instance to exit, then
+          // staging really will start at that point.
           this._awaitStagingComplete();
         } else {
-          this._setStatus(AppUpdater.STATUS.READY_FOR_RESTART);
+          this._awaitDownloadComplete();
         }
         break;
       default:
@@ -349,6 +389,19 @@ class AppUpdater {
   }
 
   /**
+   * This function registers an observer that watches for the download
+   * to complete. Once it does, it updates the status accordingly.
+   */
+  _awaitDownloadComplete() {
+    let observer = (aSubject, aTopic, aData) => {
+      // Update the UI when the download is finished
+      this._setStatus(AppUpdater.STATUS.READY_FOR_RESTART);
+      Services.obs.removeObserver(observer, "update-downloaded");
+    };
+    Services.obs.addObserver(observer, "update-downloaded");
+  }
+
+  /**
    * This function registers an observer that watches for the staging process
    * to complete. Once it does, it sets the status to either request that the
    * user restarts to install the update on success, request that the user
@@ -358,32 +411,41 @@ class AppUpdater {
   _awaitStagingComplete() {
     let observer = (aSubject, aTopic, aData) => {
       // Update the UI when the background updater is finished
-      let status = aData;
-      if (
-        status == "applied" ||
-        status == "applied-service" ||
-        status == "pending" ||
-        status == "pending-service" ||
-        status == "pending-elevate"
-      ) {
-        // If the update is successfully applied, or if the updater has
-        // fallen back to non-staged updates, show the "Restart to Update"
-        // button.
-        this._setStatus(AppUpdater.STATUS.READY_FOR_RESTART);
-      } else if (status == "failed") {
-        // Background update has failed, let's show the UI responsible for
-        // prompting the user to update manually.
-        this._setStatus(AppUpdater.STATUS.DOWNLOAD_FAILED);
-      } else if (status == "downloading") {
-        // We've fallen back to downloading the complete update because the
-        // partial update failed to get staged in the background.
-        // Therefore we need to keep our observer.
-        this._setupDownloadListener();
-        return;
+      switch (aTopic) {
+        case "update-staged":
+          let status = aData;
+          if (
+            status == "applied" ||
+            status == "applied-service" ||
+            status == "pending" ||
+            status == "pending-service" ||
+            status == "pending-elevate"
+          ) {
+            // If the update is successfully applied, or if the updater has
+            // fallen back to non-staged updates, show the "Restart to Update"
+            // button.
+            this._setStatus(AppUpdater.STATUS.READY_FOR_RESTART);
+          } else if (status == "failed") {
+            // Background update has failed, let's show the UI responsible for
+            // prompting the user to update manually.
+            this._setStatus(AppUpdater.STATUS.DOWNLOAD_FAILED);
+          } else if (status == "downloading") {
+            // We've fallen back to downloading the complete update because the
+            // partial update failed to get staged in the background.
+            // Therefore we need to keep our observer.
+            this._setupDownloadListener();
+            return;
+          }
+          break;
+        case "update-error":
+          this._setStatus(AppUpdater.STATUS.DOWNLOAD_FAILED);
+          break;
       }
       Services.obs.removeObserver(observer, "update-staged");
+      Services.obs.removeObserver(observer, "update-error");
     };
     Services.obs.addObserver(observer, "update-staged");
+    Services.obs.addObserver(observer, "update-error");
   }
 
   /**
@@ -399,7 +461,7 @@ class AppUpdater {
    */
   get status() {
     if (!this._status) {
-      if (!AppConstants.MOZ_UPDATER) {
+      if (!AppConstants.MOZ_UPDATER || this.updateDisabledByPackage) {
         this._status = AppUpdater.STATUS.NO_UPDATER;
       } else if (this.updateDisabledByPolicy) {
         this._status = AppUpdater.STATUS.UPDATE_DISABLED_BY_POLICY;
@@ -458,6 +520,43 @@ class AppUpdater {
     }
     return status;
   }
+
+  observe(subject, topic, status) {
+    switch (topic) {
+      case "update-swap":
+        this._handleUpdateSwap();
+        break;
+    }
+  }
+
+  _handleUpdateSwap() {
+    // This function exists to deal with the fact that we support handling 2
+    // updates at once: a ready update and a downloading update. But AppUpdater
+    // only ever really considers a single update at a time.
+    // We see an update swap just when the downloading update has finished
+    // downloading and is being swapped into UpdateManager.readyUpdate. At this
+    // point, we are in one of two states. Either:
+    //  a) The update that is being swapped in is the update that this
+    //     AppUpdater has already been tracking, or
+    //  b) We've been tracking the ready update. Now that the downloading
+    //     update is about to be swapped into the place of the ready update, we
+    //     need to switch over to tracking the new update.
+    if (
+      this._status == AppUpdater.STATUS.DOWNLOADING ||
+      this._status == AppUpdater.STATUS.STAGING
+    ) {
+      // We are already tracking the correct update.
+      return;
+    }
+
+    if (this.updateStagingEnabled) {
+      this._setStatus(AppUpdater.STATUS.STAGING);
+      this._awaitStagingComplete();
+    } else {
+      this._setStatus(AppUpdater.STATUS.DOWNLOADING);
+      this._awaitDownloadComplete();
+    }
+  }
 }
 
 AppUpdater.STATUS = {
@@ -505,4 +604,40 @@ AppUpdater.STATUS = {
 
   // An update is downloaded and staged and will be applied on restart.
   READY_FOR_RESTART: 12,
+
+  /**
+   * Is the given `status` a terminal state in the update state machine?
+   *
+   * A terminal state means that the `check()` method has completed.
+   *
+   * N.b.: `DOWNLOAD_AND_INSTALL` is not considered terminal because the normal
+   * flow is that Firefox will show UI prompting the user to install, and when
+   * the user interacts, the `check()` method will continue through the update
+   * state machine.
+   *
+   * @returns {boolean} `true` if `status` is terminal.
+   */
+  isTerminalStatus(status) {
+    return ![
+      AppUpdater.STATUS.CHECKING,
+      AppUpdater.STATUS.DOWNLOAD_AND_INSTALL,
+      AppUpdater.STATUS.DOWNLOADING,
+      AppUpdater.STATUS.NEVER_CHECKED,
+      AppUpdater.STATUS.STAGING,
+    ].includes(status);
+  },
+
+  /**
+   * Turn the given `status` into a string for debugging.
+   *
+   * @returns {?string} representation of given numerical `status`.
+   */
+  debugStringFor(status) {
+    for (let [k, v] of Object.entries(AppUpdater.STATUS)) {
+      if (v == status) {
+        return k;
+      }
+    }
+    return null;
+  },
 };

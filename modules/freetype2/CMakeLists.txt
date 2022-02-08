@@ -1,6 +1,6 @@
 # CMakeLists.txt
 #
-# Copyright (C) 2013-2020 by
+# Copyright (C) 2013-2021 by
 # David Turner, Robert Wilhelm, and Werner Lemberg.
 #
 # Written originally by John Cary <cary@txcorp.com>
@@ -103,6 +103,9 @@ if (NOT CMAKE_VERSION VERSION_LESS 3.3)
   # Allow symbol visibility settings also on static libraries. CMake < 3.3
   # only sets the property on a shared library build.
   cmake_policy(SET CMP0063 NEW)
+
+  # Support new IN_LIST if() operator.
+  cmake_policy(SET CMP0057 NEW)
 endif ()
 
 include(CheckIncludeFile)
@@ -146,8 +149,8 @@ endif ()
 project(freetype C)
 
 set(VERSION_MAJOR "2")
-set(VERSION_MINOR "10")
-set(VERSION_PATCH "2")
+set(VERSION_MINOR "11")
+set(VERSION_PATCH "0")
 
 # Generate LIBRARY_VERSION and LIBRARY_SOVERSION.
 set(LIBTOOL_REGEX "version_info='([0-9]+):([0-9]+):([0-9]+)'")
@@ -205,7 +208,7 @@ endif ()
 
 
 # Find dependencies
-set(HARFBUZZ_MIN_VERSION "1.8.0")
+set(HARFBUZZ_MIN_VERSION "2.0.0")
 if (FT_WITH_HARFBUZZ)
   find_package(HarfBuzz ${HARFBUZZ_MIN_VERSION} REQUIRED)
 else ()
@@ -240,9 +243,8 @@ endif ()
 if (UNIX)
   check_include_file("unistd.h" HAVE_UNISTD_H)
   check_include_file("fcntl.h" HAVE_FCNTL_H)
-  check_include_file("stdint.h" HAVE_STDINT_H)
 
-  file(READ "${PROJECT_SOURCE_DIR}/builds/unix/ftconfig.in"
+  file(READ "${PROJECT_SOURCE_DIR}/builds/unix/ftconfig.h.in"
     FTCONFIG_H)
   if (HAVE_UNISTD_H)
     string(REGEX REPLACE
@@ -254,13 +256,6 @@ if (UNIX)
       "#undef +(HAVE_FCNTL_H)" "#define \\1 1"
       FTCONFIG_H "${FTCONFIG_H}")
   endif ()
-  if (HAVE_STDINT_H)
-    string(REGEX REPLACE
-      "#undef +(HAVE_STDINT_H)" "#define \\1 1"
-      FTCONFIG_H "${FTCONFIG_H}")
-  endif ()
-  string(REPLACE "/undef " "#undef "
-    FTCONFIG_H "${FTCONFIG_H}")
 else ()
   file(READ "${PROJECT_SOURCE_DIR}/include/freetype/config/ftconfig.h"
     FTCONFIG_H)
@@ -355,6 +350,7 @@ set(BASE_SRCS
   src/pshinter/pshinter.c
   src/psnames/psnames.c
   src/raster/raster.c
+  src/sdf/sdf.c
   src/sfnt/sfnt.c
   src/smooth/smooth.c
   src/truetype/truetype.c
@@ -365,6 +361,8 @@ set(BASE_SRCS
 
 if (UNIX)
   list(APPEND BASE_SRCS "builds/unix/ftsystem.c")
+elseif (WIN32)
+  list(APPEND BASE_SRCS "builds/windows/ftsystem.c")
 else ()
   list(APPEND BASE_SRCS "src/base/ftsystem.c")
 endif ()
@@ -448,6 +446,7 @@ endif ()
 
 
 set(PKG_CONFIG_REQUIRED_PRIVATE "")
+set(PKG_CONFIG_LIBS_PRIVATE "")
 
 if (ZLIB_FOUND)
   target_link_libraries(freetype PRIVATE ${ZLIB_LIBRARIES})
@@ -457,7 +456,7 @@ endif ()
 if (BZIP2_FOUND)
   target_link_libraries(freetype PRIVATE ${BZIP2_LIBRARIES})
   target_include_directories(freetype PRIVATE ${BZIP2_INCLUDE_DIR}) # not BZIP2_INCLUDE_DIRS
-  list(APPEND PKG_CONFIG_REQUIRED_PRIVATE "bzip2")
+  list(APPEND PKG_CONFIG_LIBS_PRIVATE "-lbz2")
 endif ()
 if (PNG_FOUND)
   target_link_libraries(freetype PRIVATE ${PNG_LIBRARIES})
@@ -465,9 +464,9 @@ if (PNG_FOUND)
   target_include_directories(freetype PRIVATE ${PNG_INCLUDE_DIRS})
   list(APPEND PKG_CONFIG_REQUIRED_PRIVATE "libpng")
 endif ()
-if (HARFBUZZ_FOUND)
-  target_link_libraries(freetype PRIVATE ${HARFBUZZ_LIBRARIES})
-  target_include_directories(freetype PRIVATE ${HARFBUZZ_INCLUDE_DIRS})
+if (HarfBuzz_FOUND)
+  target_link_libraries(freetype PRIVATE ${HarfBuzz_LIBRARY})
+  target_include_directories(freetype PRIVATE ${HarfBuzz_INCLUDE_DIRS})
   list(APPEND PKG_CONFIG_REQUIRED_PRIVATE "harfbuzz >= ${HARFBUZZ_MIN_VERSION}")
 endif ()
 if (BROTLIDEC_FOUND)
@@ -499,41 +498,45 @@ endif ()
 
 if (NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
   # Generate the pkg-config file
-  if (UNIX)
-    file(READ "${PROJECT_SOURCE_DIR}/builds/unix/freetype2.in" FREETYPE2_PC_IN)
+  file(READ "${PROJECT_SOURCE_DIR}/builds/unix/freetype2.in" FREETYPE2_PC_IN)
 
-    string(REPLACE ";" ", " PKG_CONFIG_REQUIRED_PRIVATE "${PKG_CONFIG_REQUIRED_PRIVATE}")
+  string(REPLACE ";" ", " PKG_CONFIG_REQUIRED_PRIVATE "${PKG_CONFIG_REQUIRED_PRIVATE}")
 
-    string(REPLACE "%prefix%" ${CMAKE_INSTALL_PREFIX}
-           FREETYPE2_PC_IN ${FREETYPE2_PC_IN})
-    string(REPLACE "%exec_prefix%" "\${prefix}"
-           FREETYPE2_PC_IN ${FREETYPE2_PC_IN})
-    string(REPLACE "%libdir%" "\${prefix}/${CMAKE_INSTALL_LIBDIR}"
-           FREETYPE2_PC_IN ${FREETYPE2_PC_IN})
-    string(REPLACE "%includedir%" "\${prefix}/${CMAKE_INSTALL_INCLUDEDIR}"
-           FREETYPE2_PC_IN ${FREETYPE2_PC_IN})
-    string(REPLACE "%ft_version%" "${LIBTOOL_CURRENT}.${LIBTOOL_REVISION}.${LIBTOOL_AGE}"
-           FREETYPE2_PC_IN ${FREETYPE2_PC_IN})
-    string(REPLACE "%REQUIRES_PRIVATE%" "${PKG_CONFIG_REQUIRED_PRIVATE}"
-           FREETYPE2_PC_IN ${FREETYPE2_PC_IN})
-    string(REPLACE "%LIBS_PRIVATE%" ""  # All libs support pkg-config
-           FREETYPE2_PC_IN ${FREETYPE2_PC_IN})
+  string(REPLACE "%prefix%" ${CMAKE_INSTALL_PREFIX}
+          FREETYPE2_PC_IN ${FREETYPE2_PC_IN})
+  string(REPLACE "%exec_prefix%" "\${prefix}"
+          FREETYPE2_PC_IN ${FREETYPE2_PC_IN})
+  string(REPLACE "%libdir%" "\${prefix}/${CMAKE_INSTALL_LIBDIR}"
+          FREETYPE2_PC_IN ${FREETYPE2_PC_IN})
+  string(REPLACE "%includedir%" "\${prefix}/${CMAKE_INSTALL_INCLUDEDIR}"
+          FREETYPE2_PC_IN ${FREETYPE2_PC_IN})
+  string(REPLACE "%ft_version%" "${LIBTOOL_CURRENT}.${LIBTOOL_REVISION}.${LIBTOOL_AGE}"
+          FREETYPE2_PC_IN ${FREETYPE2_PC_IN})
+  string(REPLACE "%REQUIRES_PRIVATE%" "${PKG_CONFIG_REQUIRED_PRIVATE}"
+          FREETYPE2_PC_IN ${FREETYPE2_PC_IN})
+  string(REPLACE "%LIBS_PRIVATE%" "${PKG_CONFIG_LIBS_PRIVATE}"
+          FREETYPE2_PC_IN ${FREETYPE2_PC_IN})
 
-    set(FREETYPE2_PC_IN_NAME "${PROJECT_BINARY_DIR}/freetype2.pc")
-    if (EXISTS "${FREETYPE2_PC_IN_NAME}")
-      file(READ "${FREETYPE2_PC_IN_NAME}" ORIGINAL_FREETYPE2_PC_IN)
-    else ()
-      set(ORIGINAL_FREETYPE2_PC_IN "")
-    endif ()
-    if (NOT (ORIGINAL_FREETYPE2_PC_IN STREQUAL FREETYPE2_PC_IN))
-      file(WRITE "${FREETYPE2_PC_IN_NAME}" ${FREETYPE2_PC_IN})
-    endif ()
-
-    install(
-      FILES ${PROJECT_BINARY_DIR}/freetype2.pc
-      DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
-      COMPONENT pkgconfig)
+  set(FREETYPE2_PC_IN_NAME "${PROJECT_BINARY_DIR}/freetype2.pc")
+  if (EXISTS "${FREETYPE2_PC_IN_NAME}")
+    file(READ "${FREETYPE2_PC_IN_NAME}" ORIGINAL_FREETYPE2_PC_IN)
+  else ()
+    set(ORIGINAL_FREETYPE2_PC_IN "")
   endif ()
+  if (NOT (ORIGINAL_FREETYPE2_PC_IN STREQUAL FREETYPE2_PC_IN))
+    file(WRITE "${FREETYPE2_PC_IN_NAME}" ${FREETYPE2_PC_IN})
+  endif ()
+
+  install(
+    FILES ${PROJECT_BINARY_DIR}/freetype2.pc
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+    COMPONENT pkgconfig)
+
+  include(CMakePackageConfigHelpers)
+  write_basic_package_version_file(
+    ${PROJECT_BINARY_DIR}/freetype-config-version.cmake
+    VERSION ${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}
+    COMPATIBILITY SameMajorVersion)
 
   install(
     TARGETS freetype
@@ -548,6 +551,10 @@ if (NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
       DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/freetype
       FILE freetype-config.cmake
       COMPONENT headers)
+  install(
+    FILES ${PROJECT_BINARY_DIR}/freetype-config-version.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/freetype
+    COMPONENT headers)
 endif ()
 
 
@@ -555,7 +562,7 @@ endif ()
 set(CPACK_PACKAGE_NAME ${CMAKE_PROJECT_NAME})
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "The FreeType font rendering library.")
 set(CPACK_PACKAGE_DESCRIPTION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/README")
-set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/docs/LICENSE.TXT")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.TXT")
 
 set(CPACK_PACKAGE_VERSION_MAJOR ${VERSION_MAJOR})
 set(CPACK_PACKAGE_VERSION_MINOR ${VERSION_MINOR})

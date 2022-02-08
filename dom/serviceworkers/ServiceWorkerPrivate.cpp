@@ -14,6 +14,7 @@
 #include "ServiceWorkerUtils.h"
 #include "nsContentUtils.h"
 #include "nsICacheInfoChannel.h"
+#include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIHttpHeaderVisitor.h"
 #include "nsINamed.h"
@@ -29,6 +30,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/CycleCollectedJSContext.h"  // for MicroTaskRunnable
 #include "mozilla/JSObjectHolder.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/dom/Client.h"
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/FetchUtil.h"
@@ -47,8 +49,11 @@
 #include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/Services.h"
+#include "mozilla/StoragePrincipalHelper.h"
+#include "mozilla/Telemetry.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/Unused.h"
 #include "nsIReferrerInfo.h"
 
@@ -96,18 +101,16 @@ ServiceWorkerPrivate::ServiceWorkerPrivate(ServiceWorkerInfo* aInfo)
   mIdleWorkerTimer = NS_NewTimer();
   MOZ_ASSERT(mIdleWorkerTimer);
 
-  if (ServiceWorkerParentInterceptEnabled()) {
-    RefPtr<ServiceWorkerPrivateImpl> inner = new ServiceWorkerPrivateImpl(this);
+  RefPtr<ServiceWorkerPrivateImpl> inner = new ServiceWorkerPrivateImpl(this);
 
-    // Assert in all debug builds as well as non-debug Nightly and Dev Edition.
+  // Assert in all debug builds as well as non-debug Nightly and Dev Edition.
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
-    MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(inner->Initialize()));
+  MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(inner->Initialize()));
 #else
-    MOZ_ALWAYS_SUCCEEDS(inner->Initialize());
+  MOZ_ALWAYS_SUCCEEDS(inner->Initialize());
 #endif
 
-    mInner = std::move(inner);
-  }
+  mInner = std::move(inner);
 }
 
 ServiceWorkerPrivate::~ServiceWorkerPrivate() {
@@ -827,7 +830,7 @@ class SendPushEventRunnable final
     RefPtr<PushErrorReporter> errorReporter =
         new PushErrorReporter(aWorkerPrivate, mMessageId);
 
-    PushEventInit pei;
+    RootedDictionary<PushEventInit> pei(aCx);
     if (mData) {
       const nsTArray<uint8_t>& bytes = mData.ref();
       JSObject* data =
@@ -1200,7 +1203,6 @@ class FetchEventRunnable : public ExtendableFunctionalEventWorkerRunnable,
   nsCString mMethod;
   nsString mClientId;
   nsString mResultingClientId;
-  bool mMarkLaunchServiceWorkerEnd;
   RequestCache mCacheMode;
   RequestMode mRequestMode;
   RequestRedirect mRequestRedirect;
@@ -1229,7 +1231,6 @@ class FetchEventRunnable : public ExtendableFunctionalEventWorkerRunnable,
         mScriptSpec(aScriptSpec),
         mClientId(aClientId),
         mResultingClientId(aResultingClientId),
-        mMarkLaunchServiceWorkerEnd(aMarkLaunchServiceWorkerEnd),
         mCacheMode(RequestCache::Default),
         mRequestMode(RequestMode::No_cors),
         mRequestRedirect(RequestRedirect::Follow)
@@ -1286,7 +1287,7 @@ class FetchEventRunnable : public ExtendableFunctionalEventWorkerRunnable,
     MOZ_ASSERT(httpChannel, "How come we don't have an HTTP channel?");
 
     mReferrerPolicy = ReferrerPolicy::_empty;
-    mReferrer = EmptyString();
+    mReferrer.Truncate();
     nsCOMPtr<nsIReferrerInfo> referrerInfo = httpChannel->GetReferrerInfo();
     if (referrerInfo) {
       mReferrerPolicy = referrerInfo->ReferrerPolicy();
@@ -1339,20 +1340,6 @@ class FetchEventRunnable : public ExtendableFunctionalEventWorkerRunnable,
   bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
     MOZ_ASSERT(aWorkerPrivate);
 
-    if (mMarkLaunchServiceWorkerEnd) {
-      mInterceptedChannel->SetLaunchServiceWorkerEnd(TimeStamp::Now());
-
-      // A probe to measure sw launch time for telemetry.
-      TimeStamp launchStartTime = TimeStamp();
-      mInterceptedChannel->GetLaunchServiceWorkerStart(&launchStartTime);
-
-      TimeStamp launchEndTime = TimeStamp();
-      mInterceptedChannel->GetLaunchServiceWorkerEnd(&launchEndTime);
-      Telemetry::AccumulateTimeDelta(Telemetry::SERVICE_WORKER_LAUNCH_TIME,
-                                     launchStartTime, launchEndTime);
-    }
-
-    mInterceptedChannel->SetDispatchFetchEventEnd(TimeStamp::Now());
     return DispatchFetchEvent(aCx, aWorkerPrivate);
   }
 
@@ -1375,19 +1362,12 @@ class FetchEventRunnable : public ExtendableFunctionalEventWorkerRunnable,
     explicit ResumeRequest(
         nsMainThreadPtrHandle<nsIInterceptedChannel>& aChannel)
         : Runnable("dom::FetchEventRunnable::ResumeRequest"),
-          mChannel(aChannel) {
-      mChannel->SetFinishResponseStart(TimeStamp::Now());
-    }
+          mChannel(aChannel) {}
 
     NS_IMETHOD Run() override {
       MOZ_ASSERT(NS_IsMainThread());
 
-      TimeStamp timeStamp = TimeStamp::Now();
-      mChannel->SetHandleFetchEventEnd(timeStamp);
-      mChannel->SetChannelResetEnd(timeStamp);
-      mChannel->SaveTimeStamps();
-
-      nsresult rv = mChannel->ResetInterception();
+      nsresult rv = mChannel->ResetInterception(false);
       if (NS_FAILED(rv)) {
         NS_WARNING("Failed to resume intercepted network request");
         mChannel->CancelInterception(rv);
@@ -1483,8 +1463,6 @@ class FetchEventRunnable : public ExtendableFunctionalEventWorkerRunnable,
     event->PostInit(mInterceptedChannel, mRegistration, mScriptSpec);
     event->SetTrusted(true);
 
-    mInterceptedChannel->SetHandleFetchEventStart(TimeStamp::Now());
-
     nsresult rv2 = DispatchExtendableEventOnWorkerScope(
         aCx, aWorkerPrivate->GlobalScope(), event, nullptr);
     if ((NS_WARN_IF(NS_FAILED(rv2)) &&
@@ -1533,8 +1511,7 @@ nsresult ServiceWorkerPrivate::SendFetchEvent(
   if (isNonSubresourceRequest) {
     registration = swm->GetRegistration(mInfo->Principal(), mInfo->Scope());
   } else {
-    nsCOMPtr<nsILoadInfo> loadInfo;
-    channel->GetLoadInfo(getter_AddRefs(loadInfo));
+    nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
 
     // We'll check for a null registration below rather than an error code here.
     Unused << swm->GetClientRegistration(loadInfo->GetClientInfo().ref(),
@@ -1547,7 +1524,7 @@ nsresult ServiceWorkerPrivate::SendFetchEvent(
   // condition we handle the reset here instead of returning an error which
   // would in turn trigger a console report.
   if (!registration) {
-    nsresult rv = aChannel->ResetInterception();
+    nsresult rv = aChannel->ResetInterception(false);
     if (NS_FAILED(rv)) {
       NS_WARNING("Failed to resume intercepted network request");
       aChannel->CancelInterception(rv);
@@ -1559,7 +1536,7 @@ nsresult ServiceWorkerPrivate::SendFetchEvent(
   // any fetch event handlers, then abort the interception and maybe trigger
   // the soft update algorithm.
   if (!mInfo->HandlesFetch()) {
-    nsresult rv = aChannel->ResetInterception();
+    nsresult rv = aChannel->ResetInterception(false);
     if (NS_FAILED(rv)) {
       NS_WARNING("Failed to resume intercepted network request");
       aChannel->CancelInterception(rv);
@@ -1576,16 +1553,9 @@ nsresult ServiceWorkerPrivate::SendFetchEvent(
                                   aResultingClientId);
   }
 
-  aChannel->SetLaunchServiceWorkerStart(TimeStamp::Now());
-  aChannel->SetDispatchFetchEventStart(TimeStamp::Now());
-
   bool newWorkerCreated = false;
   rv = SpawnWorkerIfNeeded(FetchEvent, &newWorkerCreated, aLoadGroup);
   NS_ENSURE_SUCCESS(rv, rv);
-
-  if (!newWorkerCreated) {
-    aChannel->SetLaunchServiceWorkerEnd(TimeStamp::Now());
-  }
 
   nsMainThreadPtrHandle<nsIInterceptedChannel> handle(
       new nsMainThreadPtrHolder<nsIInterceptedChannel>("nsIInterceptedChannel",
@@ -1703,20 +1673,48 @@ nsresult ServiceWorkerPrivate::SpawnWorkerIfNeeded(WakeUpReason aWhy,
 
   info.mPrincipal = mInfo->Principal();
   info.mLoadingPrincipal = info.mPrincipal;
-  // PartitionedPrincipal for ServiceWorkers is equal to mPrincipal because, at
-  // the moment, ServiceWorkers are not exposed in partitioned contexts.
-  info.mPartitionedPrincipal = info.mPrincipal;
 
-  info.mCookieJarSettings = mozilla::net::CookieJarSettings::Create();
+  info.mCookieJarSettings =
+      mozilla::net::CookieJarSettings::Create(info.mPrincipal);
+
   MOZ_ASSERT(info.mCookieJarSettings);
 
-  net::CookieJarSettings::Cast(info.mCookieJarSettings)
-      ->SetPartitionKey(info.mResolvedScriptURI);
+  // We can get the partitionKey from the principal of the ServiceWorker because
+  // it's a foreign partitioned principal. In other words, the principal will
+  // have the partitionKey if it's in a third-party context. Otherwise, we can
+  // set the partitionKey via the script URI because it's in the first-party
+  // context.
+  if (!info.mPrincipal->OriginAttributesRef().mPartitionKey.IsEmpty()) {
+    net::CookieJarSettings::Cast(info.mCookieJarSettings)
+        ->SetPartitionKey(info.mPrincipal->OriginAttributesRef().mPartitionKey);
+  } else {
+    net::CookieJarSettings::Cast(info.mCookieJarSettings)
+        ->SetPartitionKey(info.mResolvedScriptURI);
+  }
+
+  if (StaticPrefs::privacy_partition_serviceWorkers()) {
+    nsCOMPtr<nsIPrincipal> partitionedPrincipal;
+    StoragePrincipalHelper::CreatePartitionedPrincipalForServiceWorker(
+        info.mPrincipal, info.mCookieJarSettings,
+        getter_AddRefs(partitionedPrincipal));
+
+    info.mPartitionedPrincipal = partitionedPrincipal;
+  } else {
+    // The partitioned principal will be the same as the mPrincipal if
+    // partitioned service worker is disabled.
+    info.mPartitionedPrincipal = info.mPrincipal;
+  }
 
   info.mStorageAccess =
       StorageAllowedForServiceWorker(info.mPrincipal, info.mCookieJarSettings);
 
   info.mOriginAttributes = mInfo->GetOriginAttributes();
+
+  // We don't have a good way to know if a service worker is regsitered under a
+  // third-party context. The only information we can rely on is if the service
+  // worker is running under a partitioned principal.
+  info.mIsThirdPartyContextToTopWindow =
+      !mInfo->Principal()->OriginAttributesRef().mPartitionKey.IsEmpty();
 
   // Verify that we don't have any CSP on pristine client.
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
@@ -1749,8 +1747,8 @@ nsresult ServiceWorkerPrivate::SpawnWorkerIfNeeded(WakeUpReason aWhy,
   NS_ConvertUTF8toUTF16 scriptSpec(mInfo->ScriptSpec());
 
   mWorkerPrivate = WorkerPrivate::Constructor(jsapi.cx(), scriptSpec, false,
-                                              WorkerTypeService, VoidString(),
-                                              EmptyCString(), &info, error);
+                                              WorkerKindService, VoidString(),
+                                              ""_ns, &info, error);
   if (NS_WARN_IF(error.Failed())) {
     return error.StealNSResult();
   }
@@ -1807,8 +1805,8 @@ void ServiceWorkerPrivate::TerminateWorker() {
     // Any pending events are never going to fire on this worker.  Cancel
     // them so that intercepted channels can be reset and other resources
     // cleaned up.
-    nsTArray<RefPtr<WorkerRunnable>> pendingEvents;
-    mPendingFunctionalEvents.SwapElements(pendingEvents);
+    nsTArray<RefPtr<WorkerRunnable>> pendingEvents =
+        std::move(mPendingFunctionalEvents);
     for (uint32_t i = 0; i < pendingEvents.Length(); ++i) {
       pendingEvents[i]->Cancel();
     }
@@ -1868,8 +1866,8 @@ void ServiceWorkerPrivate::UpdateState(ServiceWorkerState aState) {
     return;
   }
 
-  nsTArray<RefPtr<WorkerRunnable>> pendingEvents;
-  mPendingFunctionalEvents.SwapElements(pendingEvents);
+  nsTArray<RefPtr<WorkerRunnable>> pendingEvents =
+      std::move(mPendingFunctionalEvents);
 
   for (uint32_t i = 0; i < pendingEvents.Length(); ++i) {
     RefPtr<WorkerRunnable> r = std::move(pendingEvents[i]);
@@ -1982,7 +1980,7 @@ namespace {
 class ServiceWorkerPrivateTimerCallback final : public nsITimerCallback,
                                                 public nsINamed {
  public:
-  typedef void (ServiceWorkerPrivate::*Method)(nsITimer*);
+  using Method = void (ServiceWorkerPrivate::*)(nsITimer*);
 
   ServiceWorkerPrivateTimerCallback(ServiceWorkerPrivate* aServiceWorkerPrivate,
                                     Method aMethod)

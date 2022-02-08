@@ -144,8 +144,13 @@ impl ArgAssigner for Args {
             return ValueConversion::VectorSplit.into();
         }
 
-        // Small integers are extended to the size of a pointer register.
-        if ty.is_int() && ty.bits() < u16::from(self.pointer_bits) {
+        // Small integers are extended to the size of a pointer register, but
+        // only in ABIs that require this. The Baldrdash (SpiderMonkey) ABI
+        // does, but our other supported ABIs on x86 do not.
+        if ty.is_int()
+            && ty.bits() < u16::from(self.pointer_bits)
+            && self.call_conv.extends_baldrdash()
+        {
             match arg.extension {
                 ArgumentExtension::None => {}
                 ArgumentExtension::Uext => return ValueConversion::Uext(self.pointer_type).into(),
@@ -498,14 +503,18 @@ fn callee_saved_regs_used(isa: &dyn TargetIsa, func: &ir::Function) -> RegisterS
 pub fn prologue_epilogue(func: &mut ir::Function, isa: &dyn TargetIsa) -> CodegenResult<()> {
     match func.signature.call_conv {
         // For now, just translate fast and cold as system_v.
-        CallConv::Fast | CallConv::Cold | CallConv::SystemV => {
+        CallConv::Fast | CallConv::Cold | CallConv::SystemV | CallConv::WasmtimeSystemV => {
             system_v_prologue_epilogue(func, isa)
         }
-        CallConv::WindowsFastcall => fastcall_prologue_epilogue(func, isa),
+        CallConv::WindowsFastcall | CallConv::WasmtimeFastcall => {
+            fastcall_prologue_epilogue(func, isa)
+        }
         CallConv::BaldrdashSystemV | CallConv::BaldrdashWindows => {
             baldrdash_prologue_epilogue(func, isa)
         }
         CallConv::Probestack => unimplemented!("probestack calling convention"),
+        CallConv::Baldrdash2020 => unimplemented!("Baldrdash ABI 2020"),
+        CallConv::AppleAarch64 => unreachable!(),
     }
 }
 
@@ -992,7 +1001,7 @@ fn insert_common_epilogues(
         pos.goto_last_inst(block);
         if let Some(inst) = pos.current_inst() {
             if pos.func.dfg[inst].opcode().is_return() {
-                insert_common_epilogue(inst, stack_size, pos, reg_type, csrs, sp_arg_index);
+                insert_common_epilogue(inst, block, stack_size, pos, reg_type, csrs, sp_arg_index);
             }
         }
     }
@@ -1002,6 +1011,7 @@ fn insert_common_epilogues(
 /// This is used by common calling conventions such as System V.
 fn insert_common_epilogue(
     inst: ir::Inst,
+    block: ir::Block,
     stack_size: i64,
     pos: &mut EncCursor,
     reg_type: ir::types::Type,
@@ -1061,12 +1071,13 @@ fn insert_common_epilogue(
         assert!(csrs.iter(FPR).len() == 0);
     }
 
-    pos.func.epilogues_start.push(
+    pos.func.epilogues_start.push((
         first_fpr_load
             .or(sp_adjust_inst)
             .or(first_csr_pop_inst)
             .unwrap_or(fp_pop_inst),
-    );
+        block,
+    ));
 }
 
 #[cfg(feature = "unwind")]
@@ -1075,17 +1086,17 @@ pub fn create_unwind_info(
     isa: &dyn TargetIsa,
 ) -> CodegenResult<Option<crate::isa::unwind::UnwindInfo>> {
     use crate::isa::unwind::UnwindInfo;
+    use crate::machinst::UnwindInfoKind;
 
     // Assumption: RBP is being used as the frame pointer for both calling conventions
     // In the future, we should be omitting frame pointer as an optimization, so this will change
-    Ok(match func.signature.call_conv {
-        CallConv::Fast | CallConv::Cold | CallConv::SystemV => {
-            super::unwind::systemv::create_unwind_info(func, isa, Some(RU::rbp.into()))?
-                .map(|u| UnwindInfo::SystemV(u))
+    Ok(match isa.unwind_info_kind() {
+        UnwindInfoKind::SystemV => {
+            super::unwind::systemv::create_unwind_info(func, isa)?.map(|u| UnwindInfo::SystemV(u))
         }
-        CallConv::WindowsFastcall => {
+        UnwindInfoKind::Windows => {
             super::unwind::winx64::create_unwind_info(func, isa)?.map(|u| UnwindInfo::WindowsX64(u))
         }
-        _ => None,
+        UnwindInfoKind::None => None,
     })
 }

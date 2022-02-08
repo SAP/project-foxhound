@@ -43,7 +43,6 @@
 #include "js/Value.h"       // JS::Value
 
 using mozilla::AsBytes;
-using mozilla::MakeSpan;
 using mozilla::MakeUnique;
 using mozilla::PodCopy;
 using mozilla::Span;
@@ -221,7 +220,7 @@ nsBinaryOutputStream::WriteWStringZ(const char16_t* aString) {
   }
 
 #ifdef IS_BIG_ENDIAN
-  rv = WriteBytes(AsBytes(MakeSpan(aString, length)));
+  rv = WriteBytes(AsBytes(Span(aString, length)));
 #else
   // XXX use WriteSegments here to avoid copy!
   char16_t* copy;
@@ -236,7 +235,7 @@ nsBinaryOutputStream::WriteWStringZ(const char16_t* aString) {
   }
   NS_ASSERTION((uintptr_t(aString) & 0x1) == 0, "aString not properly aligned");
   mozilla::NativeEndian::copyAndSwapToBigEndian(copy, aString, length);
-  rv = WriteBytes(AsBytes(MakeSpan(copy, length)));
+  rv = WriteBytes(AsBytes(Span(copy, length)));
   if (copy != temp) {
     free(copy);
   }
@@ -267,7 +266,7 @@ nsresult nsBinaryOutputStream::WriteBytes(Span<const uint8_t> aBytes) {
 
 NS_IMETHODIMP
 nsBinaryOutputStream::WriteBytesFromJS(const char* aString, uint32_t aLength) {
-  return WriteBytes(AsBytes(MakeSpan(aString, aLength)));
+  return WriteBytes(AsBytes(Span(aString, aLength)));
 }
 
 NS_IMETHODIMP
@@ -787,9 +786,9 @@ nsBinaryInputStream::ReadByteArray(uint32_t aLength,
 }
 
 NS_IMETHODIMP
-nsBinaryInputStream::ReadArrayBuffer(uint32_t aLength,
+nsBinaryInputStream::ReadArrayBuffer(uint64_t aLength,
                                      JS::Handle<JS::Value> aBuffer,
-                                     JSContext* aCx, uint32_t* aReadLength) {
+                                     JSContext* aCx, uint64_t* aReadLength) {
   if (!aBuffer.isObject()) {
     return NS_ERROR_FAILURE;
   }
@@ -798,20 +797,20 @@ nsBinaryInputStream::ReadArrayBuffer(uint32_t aLength,
     return NS_ERROR_FAILURE;
   }
 
-  uint32_t bufferLength = JS::GetArrayBufferByteLength(buffer);
+  size_t bufferLength = JS::GetArrayBufferByteLength(buffer);
   if (bufferLength < aLength) {
     return NS_ERROR_FAILURE;
   }
 
-  uint32_t bufSize = std::min<uint32_t>(aLength, 4096);
+  uint32_t bufSize = std::min<uint64_t>(aLength, 4096);
   UniquePtr<char[]> buf = MakeUnique<char[]>(bufSize);
 
-  uint32_t pos = 0;
+  uint64_t pos = 0;
   *aReadLength = 0;
   do {
     // Read data into temporary buffer.
     uint32_t bytesRead;
-    uint32_t amount = std::min(aLength - pos, bufSize);
+    uint32_t amount = std::min<uint64_t>(aLength - pos, bufSize);
     nsresult rv = Read(buf.get(), amount, &bytesRead);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;

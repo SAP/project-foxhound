@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta charset=utf-8>
+<meta name="timeout" content="long">
 <title>Testing normalizing white-space sequence after execCommand("delete", false, "")</title>
 <script src=../include/implementation.js></script>
 <script>var testsJsLibraryOnly = true</script>
@@ -184,6 +185,7 @@ function runTests() {
     { initialText: "a&nbsp;&nbsp;&nbsp;b[]|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;c", expectedText: ["a&nbsp;&nbsp;&nbsp;[]", "&nbsp; &nbsp; &nbsp;c"] },
     { initialText: "a&nbsp;&nbsp;&nbsp;b|[]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;c", expectedText: ["a&nbsp;&nbsp;&nbsp;[]", "&nbsp; &nbsp; &nbsp;c"] },
     { initialText: "a&nbsp;&nbsp;&nbsp;|b[]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;c", expectedText: ["a&nbsp;&nbsp;&nbsp;[]", "&nbsp; &nbsp; &nbsp;c"] },
+    { initialText: "a&nbsp;&nbsp;&nbsp;[]|b&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;c", expectedText: ["a&nbsp;&nbsp;[]", "b&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;c"] },
     { initialText: "a&nbsp;&nbsp;&nbsp;|&nbsp;b[]&nbsp;&nbsp;&nbsp;&nbsp;c", expectedText: ["a&nbsp;&nbsp;&nbsp;", "&nbsp;[] &nbsp; &nbsp;c"] },
 
     { initialText: "a&nbsp;&nbsp;&nbsp;|&nbsp;|[]&nbsp;&nbsp;&nbsp;&nbsp;c", expectedText: ["a&nbsp;&nbsp;&nbsp;[]", "&nbsp; &nbsp; c"] },

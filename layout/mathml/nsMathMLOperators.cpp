@@ -6,7 +6,7 @@
 
 #include "nsMathMLOperators.h"
 #include "nsCOMPtr.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsHashKeys.h"
 #include "nsNetUtil.h"
 #include "nsTArray.h"
@@ -29,8 +29,7 @@ struct OperatorData {
 static int32_t gTableRefCount = 0;
 static uint32_t gOperatorCount = 0;
 static OperatorData* gOperatorArray = nullptr;
-static nsDataHashtable<nsStringHashKey, OperatorData*>* gOperatorTable =
-    nullptr;
+static nsTHashMap<nsStringHashKey, OperatorData*>* gOperatorTable = nullptr;
 static bool gGlobalsInitialized = false;
 
 static const char16_t kDashCh = char16_t('#');
@@ -149,7 +148,7 @@ static bool SetOperator(OperatorData* aOperatorData, nsOperatorFlags aForm,
   aOperatorData->mFlags |= aForm;
   aOperatorData->mStr.Assign(value);
   value.AppendInt(aForm, 10);
-  gOperatorTable->Put(value, aOperatorData);
+  gOperatorTable->InsertOrUpdate(value, aOperatorData);
 
 #ifdef DEBUG
   NS_LossyConvertUTF16toASCII str(aAttributes);
@@ -251,7 +250,6 @@ static nsresult InitOperators(void) {
                 if (!gOperatorArray) {
                   if (0 == gOperatorCount) return NS_ERROR_UNEXPECTED;
                   gOperatorArray = new OperatorData[gOperatorCount];
-                  if (!gOperatorArray) return NS_ERROR_OUT_OF_MEMORY;
                 }
                 operatorData = &gOperatorArray[index];
               } else {
@@ -274,7 +272,7 @@ static nsresult InitOperators(void) {
 static nsresult InitOperatorGlobals() {
   gGlobalsInitialized = true;
   nsresult rv = NS_ERROR_OUT_OF_MEMORY;
-  gOperatorTable = new nsDataHashtable<nsStringHashKey, OperatorData*>();
+  gOperatorTable = new nsTHashMap<nsStringHashKey, OperatorData*>();
   if (gOperatorTable) {
     rv = InitOperators();
   }

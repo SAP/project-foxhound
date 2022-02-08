@@ -29,6 +29,7 @@ const { XPCOMUtils } = ChromeUtils.import(
 XPCOMUtils.defineLazyModuleGetters(this, {
   AppConstants: "resource://gre/modules/AppConstants.jsm",
   DownloadHistory: "resource://gre/modules/DownloadHistory.jsm",
+  DownloadPaths: "resource://gre/modules/DownloadPaths.jsm",
   E10SUtils: "resource://gre/modules/E10SUtils.jsm",
   FileUtils: "resource://gre/modules/FileUtils.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
@@ -110,7 +111,7 @@ function deserializeUnknownProperties(aObject, aSerializable, aFilterFn) {
  */
 async function isPlaceholder(path) {
   try {
-    if ((await OS.File.stat(path)).size == 0) {
+    if ((await IOUtils.stat(path)).size == 0) {
       return true;
     }
   } catch (ex) {
@@ -311,6 +312,11 @@ Download.prototype = {
    * and rejected if the attempt fails.
    */
   _currentAttempt: null,
+
+  /**
+   * The download was launched to open from the Downloads Panel.
+   */
+  _launchedFromPanel: false,
 
   /**
    * Starts the download for the first time, or restarts a download that failed
@@ -598,7 +604,10 @@ Download.prototype = {
           new FileUtils.File(this.target.path)
         );
       } else if (
-        Services.prefs.getBoolPref("browser.helperApps.deleteTempFileOnExit")
+        Services.prefs.getBoolPref("browser.helperApps.deleteTempFileOnExit") &&
+        !Services.prefs.getBoolPref(
+          "browser.download.improvements_to_download_panel"
+        )
       ) {
         gExternalAppLauncher.deleteTemporaryFileOnExit(
           new FileUtils.File(this.target.path)
@@ -643,6 +652,45 @@ Download.prototype = {
       );
     }
 
+    if (this.error?.becauseBlockedByReputationCheck) {
+      Services.telemetry
+        .getKeyedHistogramById("DOWNLOADS_USER_ACTION_ON_BLOCKED_DOWNLOAD")
+        .add(this.error.reputationCheckVerdict, 2); // unblock
+    }
+
+    if (
+      this.error?.reputationCheckVerdict == DownloadError.BLOCK_VERDICT_INSECURE
+    ) {
+      // In this Error case, the download was actually canceled before it was
+      // passed to the Download UI. So we need to start the download here.
+      this.error = null;
+      this.succeeded = false;
+      this.hasBlockedData = false;
+      // This ensures the verdict will not get set again after the browser
+      // restarts and the download gets serialized and de-serialized again.
+      delete this._unknownProperties?.errorObj;
+      this.start()
+        .catch(err => {
+          if (err.becauseTargetFailed) {
+            // In case we cannot write to the target file
+            // retry with a new unique name
+            let uniquePath = DownloadPaths.createNiceUniqueFile(
+              new FileUtils.File(this.target.path)
+            ).path;
+            this.target.path = uniquePath;
+            return this.start();
+          }
+          return Promise.reject(err);
+        })
+        .catch(err => {
+          this.error = err;
+          this._notifyChange();
+        });
+      this._notifyChange();
+      this._promiseUnblock = DownloadIntegration.downloadDone(this);
+      return this._promiseUnblock;
+    }
+
     if (!this.hasBlockedData) {
       return Promise.reject(
         new Error("unblock may only be called on Downloads with blocked data.")
@@ -651,7 +699,7 @@ Download.prototype = {
 
     this._promiseUnblock = (async () => {
       try {
-        await OS.File.move(this.target.partFilePath, this.target.path);
+        await IOUtils.move(this.target.partFilePath, this.target.path);
         await this.target.refresh();
       } catch (ex) {
         await this.refresh();
@@ -687,6 +735,16 @@ Download.prototype = {
       return Promise.reject(
         new Error("Download is being unblocked, cannot confirmBlock.")
       );
+    }
+
+    if (this.error?.becauseBlockedByReputationCheck) {
+      // We have to record the telemetry in both DownloadsCommon.deleteDownload
+      // and confirmBlock here. The former is for cases where users click
+      // "Remove file" in the download panel and the latter is when
+      // users click "X" button in about:downloads.
+      Services.telemetry
+        .getKeyedHistogramById("DOWNLOADS_USER_ACTION_ON_BLOCKED_DOWNLOAD")
+        .add(this.error.reputationCheckVerdict, 1); // confirm block
     }
 
     if (!this.hasBlockedData) {
@@ -734,6 +792,10 @@ Download.prototype = {
       return Promise.reject(
         new Error("launch can only be called if the download succeeded")
       );
+    }
+
+    if (this._launchedFromPanel) {
+      Services.telemetry.scalarAdd("downloads.file_opened", 1);
     }
 
     return DownloadIntegration.launchDownload(this, options);
@@ -966,7 +1028,7 @@ Download.prototype = {
         this.target.partFilePath
       ) {
         try {
-          let stat = await OS.File.stat(this.target.partFilePath);
+          let stat = await IOUtils.stat(this.target.partFilePath);
 
           // Ignore the result if the state has changed meanwhile.
           if (!this.stopped || this._finalized) {
@@ -982,11 +1044,20 @@ Download.prototype = {
             );
           }
         } catch (ex) {
-          if (!(ex instanceof OS.File.Error) || !ex.becauseNoSuchFile) {
+          if (ex.name != "NotFoundError") {
             throw ex;
           }
           // Ignore the result if the state has changed meanwhile.
           if (!this.stopped || this._finalized) {
+            return;
+          }
+          // In case we've blocked the Download becasue its
+          // insecure, we should not set hasBlockedData to
+          // false as its required to show the Unblock option.
+          if (
+            this.error.reputationCheckVerdict ==
+            DownloadError.BLOCK_VERDICT_INSECURE
+          ) {
             return;
           }
 
@@ -1004,6 +1075,11 @@ Download.prototype = {
    * from starting again after having been stopped.
    */
   _finalized: false,
+
+  /**
+   * True if the "finalize" has been called and fully finished it's execution.
+   */
+  _finalizeExecuted: false,
 
   /**
    * Ensures that the download is stopped, and optionally removes any partial
@@ -1027,16 +1103,24 @@ Download.prototype = {
   finalize(aRemovePartialData) {
     // Prevents the download from starting again after having been stopped.
     this._finalized = true;
+    let promise;
 
     if (aRemovePartialData) {
       // Cancel the download, in case it is currently in progress, then remove
       // any partially downloaded data.  The removal operation waits for
       // cancellation to be completed before resolving the promise it returns.
       this.cancel();
-      return this.removePartialData();
+      promise = this.removePartialData();
+    } else {
+      // Just cancel the download, in case it is currently in progress.
+      promise = this.cancel();
     }
-    // Just cancel the download, in case it is currently in progress.
-    return this.cancel();
+    promise.then(() => {
+      // At this point, either removing data / just cancelling the download should be done.
+      this._finalizeExecuted = true;
+    });
+
+    return promise;
   },
 
   /**
@@ -1112,6 +1196,10 @@ Download.prototype = {
           );
         }
         changeMade = true;
+      }
+
+      if (this.hasProgress && this.target && !this.target.partFileExists) {
+        this.target.refreshPartFileState();
       }
     }
 
@@ -1352,6 +1440,12 @@ DownloadSource.prototype = {
   loadingPrincipal: null,
 
   /**
+   * Represents the cookieJarSettings of the download source, could be null if
+   * the download source is not from a document.
+   */
+  cookieJarSettings: null,
+
+  /**
    * Returns a static representation of the current object state.
    *
    * @return A JavaScript object that can be serialized to JSON.
@@ -1365,11 +1459,6 @@ DownloadSource.prototype = {
     if (this.allowHttpStatus) {
       // If the callback was used, we can't reproduce this across sessions.
       return null;
-    }
-
-    // Simplify the representation if we don't have other details.
-    if (!this.isPrivate && !this.referrerInfo && !this._unknownProperties) {
-      return this.url;
     }
 
     let serializable = { url: this.url };
@@ -1391,7 +1480,19 @@ DownloadSource.prototype = {
         : E10SUtils.serializePrincipal(this.loadingPrincipal);
     }
 
+    if (this.cookieJarSettings) {
+      serializable.cookieJarSettings = isString(this.cookieJarSettings)
+        ? this.cookieJarSettings
+        : E10SUtils.serializeCookieJarSettings(this.cookieJarSettings);
+    }
+
     serializeUnknownProperties(this, serializable);
+
+    // Simplify the representation if we don't have other details.
+    if (Object.keys(serializable).length === 1) {
+      // serializable's only key is "url", just return the URL as a string.
+      return this.url;
+    }
     return serializable;
   },
 };
@@ -1408,8 +1509,11 @@ DownloadSource.prototype = {
  *          isPrivate: Indicates whether the download originated from a private
  *                     window.  If omitted, the download is public.
  *          referrerInfo: represents the referrerInfo of the download source.
- *                        Can be omitted or null for examnple if the download
+ *                        Can be omitted or null for example if the download
  *                        source is not HTTP.
+ *          cookieJarSettings: represents the cookieJarSettings of the download
+ *                             source. Can be omitted or null if the download
+ *                             source is not from a document.
  *          adjustChannel: For downloads handled by (default) DownloadCopySaver,
  *                         this function can adjust the network channel before
  *                         it is opened, for example to change the HTTP headers
@@ -1468,13 +1572,24 @@ DownloadSource.fromSerializable = function(aSerializable) {
       source.allowHttpStatus = aSerializable.allowHttpStatus;
     }
 
+    if ("cookieJarSettings" in aSerializable) {
+      if (aSerializable.cookieJarSettings instanceof Ci.nsICookieJarSettings) {
+        source.cookieJarSettings = aSerializable.cookieJarSettings;
+      } else {
+        source.cookieJarSettings = E10SUtils.deserializeCookieJarSettings(
+          aSerializable.cookieJarSettings
+        );
+      }
+    }
+
     deserializeUnknownProperties(
       source,
       aSerializable,
       property =>
         property != "url" &&
         property != "isPrivate" &&
-        property != "referrerInfo"
+        property != "referrerInfo" &&
+        property != "cookieJarSettings"
     );
   }
 
@@ -1510,6 +1625,12 @@ DownloadTarget.prototype = {
   exists: false,
 
   /**
+   * Indicates whether the part file exists. Like `exists`, this is updated
+   * dynamically to reduce I/O compared to checking the target file directly.
+   */
+  partFileExists: false,
+
+  /**
    * Size in bytes of the target file, or zero if the download has not finished.
    *
    * Even if the target file does not exist anymore, this property may still
@@ -1540,15 +1661,31 @@ DownloadTarget.prototype = {
    */
   async refresh() {
     try {
-      this.size = (await OS.File.stat(this.path)).size;
+      this.size = (await IOUtils.stat(this.path)).size;
       this.exists = true;
     } catch (ex) {
       // Report any error not caused by the file not being there. In any case,
       // the size of the download is not updated and the known value is kept.
-      if (!(ex instanceof OS.File.Error && ex.becauseNoSuchFile)) {
+      if (ex.name != "NotFoundError") {
         Cu.reportError(ex);
       }
       this.exists = false;
+    }
+    this.refreshPartFileState();
+  },
+
+  async refreshPartFileState() {
+    if (!this.partFilePath) {
+      this.partFileExists = false;
+      return;
+    }
+    try {
+      this.partFileExists = (await IOUtils.stat(this.partFilePath)).size > 0;
+    } catch (ex) {
+      if (ex.name != "NotFoundError") {
+        Cu.reportError(ex);
+      }
+      this.partFileExists = false;
     }
   },
 
@@ -1690,7 +1827,9 @@ var DownloadError = function(aProperties) {
  */
 DownloadError.BLOCK_VERDICT_MALWARE = "Malware";
 DownloadError.BLOCK_VERDICT_POTENTIALLY_UNWANTED = "PotentiallyUnwanted";
+DownloadError.BLOCK_VERDICT_INSECURE = "Insecure";
 DownloadError.BLOCK_VERDICT_UNCOMMON = "Uncommon";
+DownloadError.BLOCK_VERDICT_DOWNLOAD_SPAM = "DownloadSpam";
 
 DownloadError.prototype = {
   __proto__: Error.prototype,
@@ -2231,6 +2370,9 @@ DownloadCopySaver.prototype = {
             uri: download.source.url,
             contentPolicyType: Ci.nsIContentPolicy.TYPE_SAVEAS_DOWNLOAD,
             loadingPrincipal: download.source.loadingPrincipal,
+            // triggeringPrincipal must be the system principal to prevent the
+            // request from being mistaken as a third-party request.
+            triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
             securityFlags:
               Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
           });
@@ -2252,11 +2394,30 @@ DownloadCopySaver.prototype = {
           // Stored computed referrerInfo;
           download.source.referrerInfo = channel.referrerInfo;
         }
+        if (
+          channel instanceof Ci.nsIHttpChannel &&
+          download.source.cookieJarSettings
+        ) {
+          channel.loadInfo.cookieJarSettings =
+            download.source.cookieJarSettings;
+        }
+
+        if (download.source.userContextId) {
+          // Getters and setters only exist on originAttributes,
+          // so it has to be cloned, changed, and re-set
+          channel.loadInfo.originAttributes = {
+            ...channel.loadInfo.originAttributes,
+            userContextId: download.source.userContextId,
+          };
+        }
 
         // This makes the channel be corretly throttled during page loads
         // and also prevents its caching.
         if (channel instanceof Ci.nsIHttpChannelInternal) {
           channel.channelIsForDownload = true;
+
+          // Include cookies even if cookieBehavior is BEHAVIOR_REJECT_FOREIGN.
+          channel.forceAllowThirdPartyCookie = true;
         }
 
         if (
@@ -2266,12 +2427,12 @@ DownloadCopySaver.prototype = {
           keepPartialData
         ) {
           try {
-            let stat = await OS.File.stat(partFilePath);
+            let stat = await IOUtils.stat(partFilePath);
             channel.resumeAt(stat.size, this.entityID);
             resumeAttempted = true;
             resumeFromBytes = stat.size;
           } catch (ex) {
-            if (!(ex instanceof OS.File.Error) || !ex.becauseNoSuchFile) {
+            if (ex.name != "NotFoundError") {
               throw ex;
             }
           }
@@ -2338,6 +2499,10 @@ DownloadCopySaver.prototype = {
       verdict,
     } = await DownloadIntegration.shouldBlockForReputationCheck(download);
     if (shouldBlock) {
+      Services.telemetry
+        .getKeyedHistogramById("DOWNLOADS_USER_ACTION_ON_BLOCKED_DOWNLOAD")
+        .add(verdict, 0);
+
       let newProperties = { progress: 100, hasPartialData: false };
 
       // We will remove the potentially dangerous file if instructed by
@@ -2359,7 +2524,21 @@ DownloadCopySaver.prototype = {
     }
 
     if (partFilePath) {
-      await OS.File.move(partFilePath, targetPath);
+      try {
+        await IOUtils.move(partFilePath, targetPath);
+      } catch (e) {
+        if (e.name === "NotAllowedError") {
+          // In case we cannot write to the target file
+          // retry with a new unique name
+          let uniquePath = DownloadPaths.createNiceUniqueFile(
+            new FileUtils.File(targetPath)
+          ).path;
+          await IOUtils.move(partFilePath, uniquePath);
+          this.download.target.path = uniquePath;
+        } else {
+          throw e;
+        }
+      }
     }
   },
 
@@ -2381,18 +2560,13 @@ DownloadCopySaver.prototype = {
     // Defined inline so removeData can be shared with DownloadLegacySaver.
     async function _tryToRemoveFile(path) {
       try {
-        await OS.File.remove(path);
+        await IOUtils.remove(path);
       } catch (ex) {
         // On Windows we may get an access denied error instead of a no such
         // file error if the file existed before, and was recently deleted. This
         // is likely to happen when the component that executed the download has
         // just deleted the target file itself.
-        if (
-          !(
-            ex instanceof OS.File.Error &&
-            (ex.becauseNoSuchFile || ex.becauseAccessDenied)
-          )
-        ) {
+        if (!["NotFoundError", "NotAllowedError"].includes(ex.name)) {
           Cu.reportError(ex);
         }
       }

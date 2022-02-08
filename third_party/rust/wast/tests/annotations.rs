@@ -78,7 +78,7 @@ fn assert_local_name(name: &str, wat: &str) -> anyhow::Result<()> {
     for s in get_name_section(&wasm)? {
         match s? {
             Name::Local(n) => {
-                let mut reader = n.get_function_local_reader()?;
+                let mut reader = n.get_indirect_map()?;
                 let section = reader.read()?;
                 let mut map = section.get_map()?;
                 let naming = map.read()?;
@@ -94,14 +94,15 @@ fn assert_local_name(name: &str, wat: &str) -> anyhow::Result<()> {
 }
 
 fn get_name_section(wasm: &[u8]) -> anyhow::Result<NameSectionReader<'_>> {
-    for section in ModuleReader::new(wasm)? {
-        let section = section?;
-        match section.code {
-            SectionCode::Custom {
-                kind: CustomSectionKind::Name,
-                ..
-            } => return Ok(section.get_name_section_reader()?),
-            _ => {}
+    for payload in Parser::new(0).parse_all(&wasm) {
+        if let Payload::CustomSection {
+            name: "name",
+            data,
+            data_offset,
+            range: _,
+        } = payload?
+        {
+            return Ok(NameSectionReader::new(data, data_offset)?);
         }
     }
     panic!("no name section found");
@@ -113,12 +114,12 @@ fn custom_section_order() -> anyhow::Result<()> {
         r#"
             (module
               (@custom "A" "aaa")
-              (type $t (func))
+              (type (func))
               (@custom "B" (after func) "bbb")
               (@custom "C" (before func) "ccc")
               (@custom "D" (after last) "ddd")
               (table 10 funcref)
-              (func (type $t))
+              (func (type 0))
               (@custom "E" (after import) "eee")
               (@custom "F" (before type) "fff")
               (@custom "G" (after data) "ggg")
@@ -129,26 +130,34 @@ fn custom_section_order() -> anyhow::Result<()> {
             )
         "#,
     )?;
-    let mut wasm = ModuleReader::new(&wasm)?;
-    let custom_kind = |name| SectionCode::Custom {
-        name,
-        kind: CustomSectionKind::Unknown,
-    };
-    assert_eq!(wasm.read()?.code, custom_kind("K"));
-    assert_eq!(wasm.read()?.code, custom_kind("F"));
-    assert_eq!(wasm.read()?.code, SectionCode::Type);
-    assert_eq!(wasm.read()?.code, custom_kind("E"));
-    assert_eq!(wasm.read()?.code, custom_kind("C"));
-    assert_eq!(wasm.read()?.code, custom_kind("J"));
-    assert_eq!(wasm.read()?.code, SectionCode::Function);
-    assert_eq!(wasm.read()?.code, custom_kind("B"));
-    assert_eq!(wasm.read()?.code, custom_kind("I"));
-    assert_eq!(wasm.read()?.code, SectionCode::Table);
-    assert_eq!(wasm.read()?.code, SectionCode::Code);
-    assert_eq!(wasm.read()?.code, custom_kind("H"));
-    assert_eq!(wasm.read()?.code, custom_kind("G"));
-    assert_eq!(wasm.read()?.code, custom_kind("A"));
-    assert_eq!(wasm.read()?.code, custom_kind("D"));
-    assert!(wasm.eof());
+    macro_rules! assert_matches {
+        ($a:expr, $b:pat $(,)?) => {
+            match &$a {
+                $b => {}
+                a => panic!("`{:?}` doesn't match `{}`", a, stringify!($b)),
+            }
+        };
+    }
+    let wasm = Parser::new(0)
+        .parse_all(&wasm)
+        .collect::<Result<Vec<_>>>()?;
+    assert_matches!(wasm[0], Payload::Version { .. });
+    assert_matches!(wasm[1], Payload::CustomSection { name: "K", .. });
+    assert_matches!(wasm[2], Payload::CustomSection { name: "F", .. });
+    assert_matches!(wasm[3], Payload::TypeSection(_));
+    assert_matches!(wasm[4], Payload::CustomSection { name: "E", .. });
+    assert_matches!(wasm[5], Payload::CustomSection { name: "C", .. });
+    assert_matches!(wasm[6], Payload::CustomSection { name: "J", .. });
+    assert_matches!(wasm[7], Payload::FunctionSection(_));
+    assert_matches!(wasm[8], Payload::CustomSection { name: "B", .. });
+    assert_matches!(wasm[9], Payload::CustomSection { name: "I", .. });
+    assert_matches!(wasm[10], Payload::TableSection(_));
+    assert_matches!(wasm[11], Payload::CodeSectionStart { .. });
+    assert_matches!(wasm[12], Payload::CodeSectionEntry { .. });
+    assert_matches!(wasm[13], Payload::CustomSection { name: "H", .. });
+    assert_matches!(wasm[14], Payload::CustomSection { name: "G", .. });
+    assert_matches!(wasm[15], Payload::CustomSection { name: "A", .. });
+    assert_matches!(wasm[16], Payload::CustomSection { name: "D", .. });
+    assert_matches!(wasm[17], Payload::End);
     Ok(())
 }

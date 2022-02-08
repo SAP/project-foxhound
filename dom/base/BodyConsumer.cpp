@@ -7,6 +7,7 @@
 #include "BodyConsumer.h"
 
 #include "mozilla/dom/BlobBinding.h"
+#include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/BodyUtil.h"
 #include "mozilla/dom/File.h"
@@ -21,8 +22,12 @@
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
+#include "mozilla/ScopeExit.h"
+#include "nsComponentManagerUtils.h"
+#include "nsIFile.h"
 #include "nsIThreadRetargetableRequest.h"
 #include "nsIStreamLoader.h"
+#include "nsNetUtil.h"
 #include "nsProxyRelease.h"
 
 // Undefine the macro of CreateFile to avoid FileCreatorHelper#CreateFile being
@@ -31,8 +36,7 @@
 #  undef CreateFile
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -291,9 +295,13 @@ NS_IMPL_ISUPPORTS(ConsumeBodyDoneObserver, nsIStreamLoaderObserver)
     WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
     MOZ_ASSERT(workerPrivate);
 
-    RefPtr<StrongWorkerRef> strongWorkerRef = StrongWorkerRef::Create(
-        workerPrivate, "BodyConsumer",
-        [consumer]() { consumer->ShutDownMainThreadConsuming(); });
+    RefPtr<StrongWorkerRef> strongWorkerRef =
+        StrongWorkerRef::Create(workerPrivate, "BodyConsumer", [consumer]() {
+          consumer->mConsumePromise = nullptr;
+          consumer->mBodyConsumed = true;
+          consumer->ReleaseObject();
+          consumer->ShutDownMainThreadConsuming();
+        });
     if (NS_WARN_IF(!strongWorkerRef)) {
       aRv.Throw(NS_ERROR_FAILURE);
       return nullptr;
@@ -502,9 +510,9 @@ void BodyConsumer::BeginConsumeBodyMainThread(ThreadSafeWorkerRef* aWorkerRef) {
     // file, then generate and return a File blob.
     nsCOMPtr<nsIFile> file;
     rv = GetBodyLocalFile(getter_AddRefs(file));
-    if (!NS_WARN_IF(NS_FAILED(rv)) && file) {
+    if (!NS_WARN_IF(NS_FAILED(rv)) && file && !aWorkerRef) {
       ChromeFilePropertyBag bag;
-      bag.mType = NS_ConvertUTF8toUTF16(mBodyMimeType);
+      CopyUTF8toUTF16(mBodyMimeType, bag.mType);
 
       ErrorResult error;
       RefPtr<Promise> promise =
@@ -544,7 +552,7 @@ void BodyConsumer::BeginConsumeBodyMainThread(ThreadSafeWorkerRef* aWorkerRef) {
     listener = loader;
   }
 
-  rv = pump->AsyncRead(listener, nullptr);
+  rv = pump->AsyncRead(listener);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }
@@ -803,7 +811,7 @@ NS_IMETHODIMP BodyConsumer::Observe(nsISupports* aSubject, const char* aTopic,
   return NS_OK;
 }
 
-void BodyConsumer::Abort() {
+void BodyConsumer::RunAbortAlgorithm() {
   AssertIsOnTargetThread();
   ShutDownMainThreadConsuming();
   ContinueConsumeBody(NS_ERROR_DOM_ABORT_ERR, 0, nullptr);
@@ -811,5 +819,4 @@ void BodyConsumer::Abort() {
 
 NS_IMPL_ISUPPORTS(BodyConsumer, nsIObserver, nsISupportsWeakReference)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

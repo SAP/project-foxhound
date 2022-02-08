@@ -5,6 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/TestFunctions.h"
 #include "mozilla/dom/TestFunctionsBinding.h"
 #include "mozilla/dom/WindowBinding.h"
@@ -14,8 +15,7 @@
 #include "nsComponentManagerUtils.h"
 #include "nsGlobalWindowInner.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /* static */
 TestFunctions* TestFunctions::Constructor(GlobalObject& aGlobal) {
@@ -312,5 +312,4 @@ bool TestFunctions::WrapObject(JSContext* aCx,
   return TestFunctions_Binding::Wrap(aCx, this, aGivenProto, aWrapper);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

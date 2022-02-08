@@ -8,7 +8,6 @@
 #define nsObserverList_h___
 
 #include "nsISupports.h"
-#include "nsCOMPtr.h"
 #include "nsCOMArray.h"
 #include "nsIObserver.h"
 #include "nsHashKeys.h"
@@ -26,7 +25,9 @@ class nsObserverList : public nsCharPtrHashKey {
 
   nsObserverList(nsObserverList&& aOther)
       : nsCharPtrHashKey(std::move(aOther)),
-        mObservers(std::move(aOther.mObservers)) {}
+        mObservers(std::move(aOther.mObservers)) {
+    MOZ_COUNT_CTOR(nsObserverList);
+  }
 
   MOZ_COUNTED_DTOR(nsObserverList)
 
@@ -37,9 +38,9 @@ class nsObserverList : public nsCharPtrHashKey {
                        const char16_t* aSomeData);
   void GetObserverList(nsISimpleEnumerator** aEnumerator);
 
-  // Fill an array with the observers of this category.
+  // Clone an array with the observers of this category.
   // The array is filled in last-added-first order.
-  void FillObserverArray(nsCOMArray<nsIObserver>& aArray);
+  nsCOMArray<nsIObserver> ReverseCloneObserverArray();
 
   // Like FillObserverArray(), but only for strongly held observers.
   void AppendStrongObservers(nsCOMArray<nsIObserver>& aArray);

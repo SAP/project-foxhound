@@ -13,7 +13,11 @@ add_task(async function() {
 });
 
 async function testForGivenDir(dir) {
-  await pushPref("intl.uidirection", dir === "rtl" ? 1 : -1);
+  if (dir === "rtl") {
+    await pushPref("intl.l10n.pseudo", "bidi");
+  } else {
+    await pushPref("intl.l10n.pseudo", "");
+  }
 
   // Reset visibleColumns so we only get the default ones
   // and not all that are set in head.js
@@ -26,7 +30,7 @@ async function testForGivenDir(dir) {
   );
 
   // Init network monitor
-  const { tab, monitor } = await initNetMonitor(SIMPLE_URL, {
+  const { monitor } = await initNetMonitor(SIMPLE_URL, {
     requestCount: 1,
   });
   info("Starting test... ");
@@ -37,7 +41,7 @@ async function testForGivenDir(dir) {
 
   // Wait for network events (to have some requests in the table)
   const wait = waitForNetworkEvents(monitor, 1);
-  tab.linkedBrowser.reload();
+  await reloadBrowser();
   await wait;
 
   const headers = document.querySelector(".requests-list-headers");

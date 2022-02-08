@@ -12,10 +12,14 @@
 #include "nsIPrincipal.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIAppStartup.h"
+#include "nsJSPrincipals.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "xpcpublic.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/Components.h"
+#include "mozilla/ProfilerLabels.h"
+#include "nsFocusManager.h"
 
 namespace mozilla {
 
@@ -48,6 +52,8 @@ WindowDestroyedEvent::WindowDestroyedEvent(nsGlobalWindowOuter* aWindow,
 NS_IMETHODIMP
 WindowDestroyedEvent::Run() {
   AUTO_PROFILER_LABEL("WindowDestroyedEvent::Run", OTHER);
+
+  nsCOMPtr<nsPIDOMWindowOuter> nukedOuter;
 
   nsCOMPtr<nsIObserverService> observerService = services::GetObserverService();
   if (!observerService) {
@@ -102,6 +108,7 @@ WindowDestroyedEvent::Run() {
           nsGlobalWindowOuter* outer =
               nsGlobalWindowOuter::FromSupports(window);
           currentInner = outer->GetCurrentInnerWindowInternal();
+          nukedOuter = outer;
         }
         NS_ENSURE_TRUE(currentInner, NS_OK);
 
@@ -134,6 +141,13 @@ WindowDestroyedEvent::Run() {
         }
       }
     } break;
+  }
+
+  if (nukedOuter) {
+    nsFocusManager* fm = nsFocusManager::GetFocusManager();
+    if (fm) {
+      fm->WasNuked(nukedOuter);
+    }
   }
 
   return NS_OK;

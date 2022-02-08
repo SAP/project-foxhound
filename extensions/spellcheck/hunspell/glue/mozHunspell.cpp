@@ -66,11 +66,15 @@
 #include "nsUnicharUtils.h"
 #include "nsCRT.h"
 #include "mozInlineSpellChecker.h"
-#include <stdlib.h>
 #include "nsIPrefBranch.h"
+#include "nsIPrefService.h"
 #include "nsNetUtil.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/Components.h"
+#include "mozilla/Services.h"
+
+#include <stdlib.h>
+#include <tuple>
 
 using mozilla::dom::ContentParent;
 using namespace mozilla;
@@ -133,8 +137,8 @@ mozHunspell::~mozHunspell() {
 }
 
 NS_IMETHODIMP
-mozHunspell::GetDictionary(nsAString& aDictionary) {
-  aDictionary = mDictionary;
+mozHunspell::GetDictionary(nsACString& aDictionary) {
+  CopyUTF16toUTF8(mDictionary, aDictionary);
   return NS_OK;
 }
 
@@ -143,7 +147,7 @@ mozHunspell::GetDictionary(nsAString& aDictionary) {
  * dictionaries converter
  */
 NS_IMETHODIMP
-mozHunspell::SetDictionary(const nsAString& aDictionary) {
+mozHunspell::SetDictionary(const nsACString& aDictionary) {
   if (aDictionary.IsEmpty()) {
     delete mHunspell;
     mHunspell = nullptr;
@@ -155,7 +159,8 @@ mozHunspell::SetDictionary(const nsAString& aDictionary) {
     return NS_OK;
   }
 
-  nsIURI* affFile = mDictionaries.GetWeak(aDictionary);
+  NS_ConvertUTF8toUTF16 dict(aDictionary);
+  nsIURI* affFile = mDictionaries.GetWeak(dict);
   if (!affFile) {
     return NS_ERROR_FILE_NOT_FOUND;
   }
@@ -180,10 +185,10 @@ mozHunspell::SetDictionary(const nsAString& aDictionary) {
   // valid mHunspell instance which needs cleaned up.
   delete mHunspell;
 
-  mDictionary = aDictionary;
+  mDictionary = dict;
   mAffixFileName = affFileName;
 
-  mHunspell = new Hunspell(affFileName.get(), dictFileName.get());
+  mHunspell = RLBoxHunspell::Create(affFileName, dictFileName);
   if (!mHunspell) return NS_ERROR_OUT_OF_MEMORY;
 
   auto encoding =
@@ -211,10 +216,10 @@ NS_IMETHODIMP mozHunspell::SetPersonalDictionary(
 }
 
 NS_IMETHODIMP mozHunspell::GetDictionaryList(
-    nsTArray<nsString>& aDictionaries) {
+    nsTArray<nsCString>& aDictionaries) {
   MOZ_ASSERT(aDictionaries.IsEmpty());
-  for (auto iter = mDictionaries.Iter(); !iter.Done(); iter.Next()) {
-    aDictionaries.AppendElement(iter.Key());
+  for (const auto& key : mDictionaries.Keys()) {
+    aDictionaries.AppendElement(NS_ConvertUTF16toUTF8(key));
   }
 
   return NS_OK;
@@ -273,8 +278,9 @@ void mozHunspell::LoadDictionaryList(bool aNotifyChildProcesses) {
     LoadDictionariesFromDir(mDynamicDirectories[i]);
   }
 
-  for (auto iter = mDynamicDictionaries.Iter(); !iter.Done(); iter.Next()) {
-    mDictionaries.Put(iter.Key(), iter.Data());
+  for (const auto& dictionaryEntry : mDynamicDictionaries) {
+    mDictionaries.InsertOrUpdate(dictionaryEntry.GetKey(),
+                                 dictionaryEntry.GetData());
   }
 
   DictionariesChanged(aNotifyChildProcesses);
@@ -292,14 +298,14 @@ void mozHunspell::DictionariesChanged(bool aNotifyChildProcesses) {
   // Check if the current dictionary is still available.
   // If not, try to replace it with another dictionary of the same language.
   if (!mDictionary.IsEmpty()) {
-    nsresult rv = SetDictionary(mDictionary);
+    nsresult rv = SetDictionary(NS_ConvertUTF16toUTF8(mDictionary));
     if (NS_SUCCEEDED(rv)) return;
   }
 
   // If the current dictionary has gone, and we don't have a good replacement,
   // set no current dictionary.
   if (!mDictionary.IsEmpty()) {
-    SetDictionary(EmptyString());
+    SetDictionary(EmptyCString());
   }
 }
 
@@ -345,7 +351,7 @@ mozHunspell::LoadDictionariesFromDir(nsIFile* aDir) {
     rv = NS_NewFileURI(getter_AddRefs(uri), file);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    mDictionaries.Put(dict, uri);
+    mDictionaries.InsertOrUpdate(dict, uri);
   }
 
   return NS_OK;
@@ -356,7 +362,7 @@ nsresult mozHunspell::ConvertCharset(const nsAString& aStr, std::string& aDst) {
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  auto src = MakeSpan(aStr.BeginReading(), aStr.Length());
+  auto src = Span(aStr.BeginReading(), aStr.Length());
   CheckedInt<size_t> needed =
       mEncoder->MaxBufferLengthFromUTF16WithoutReplacement(src.Length());
   if (!needed.isValid()) {
@@ -366,14 +372,12 @@ nsresult mozHunspell::ConvertCharset(const nsAString& aStr, std::string& aDst) {
   aDst.resize(needed.value());
 
   char* dstPtr = &aDst[0];
-  auto dst = MakeSpan(reinterpret_cast<uint8_t*>(dstPtr), needed.value());
+  auto dst = Span(reinterpret_cast<uint8_t*>(dstPtr), needed.value());
 
   uint32_t result;
-  size_t read;
   size_t written;
-  Tie(result, read, written) =
+  std::tie(result, std::ignore, written) =
       mEncoder->EncodeFromUTF16WithoutReplacement(src, dst, true);
-  Unused << read;
   MOZ_ASSERT(result != kOutputFull);
   if (result != kInputEmpty) {
     return NS_ERROR_UENC_NOMAPPING;
@@ -479,8 +483,8 @@ NS_IMETHODIMP mozHunspell::AddDictionary(const nsAString& aLang,
                                          nsIURI* aFile) {
   NS_ENSURE_TRUE(aFile, NS_ERROR_INVALID_ARG);
 
-  mDynamicDictionaries.Put(aLang, aFile);
-  mDictionaries.Put(aLang, aFile);
+  mDynamicDictionaries.InsertOrUpdate(aLang, aFile);
+  mDictionaries.InsertOrUpdate(aLang, aFile);
   DictionariesChanged(true);
   return NS_OK;
 }

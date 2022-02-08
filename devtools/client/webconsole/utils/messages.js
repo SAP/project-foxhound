@@ -6,12 +6,7 @@
 
 const Services = require("Services");
 const l10n = require("devtools/client/webconsole/utils/l10n");
-const {
-  getUrlDetails,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
-const {
-  ResourceWatcher,
-} = require("devtools/shared/resources/resource-watcher");
+const ResourceCommand = require("devtools/shared/commands/resource/resource-command");
 
 // URL Regex, common idioms:
 //
@@ -99,23 +94,23 @@ function prepareMessage(resource, idGenerator) {
  */
 function transformResource(resource) {
   switch (resource.resourceType || resource.type) {
-    case ResourceWatcher.TYPES.CONSOLE_MESSAGE: {
+    case ResourceCommand.TYPES.CONSOLE_MESSAGE: {
       return transformConsoleAPICallResource(resource);
     }
 
-    case ResourceWatcher.TYPES.PLATFORM_MESSAGE: {
+    case ResourceCommand.TYPES.PLATFORM_MESSAGE: {
       return transformPlatformMessageResource(resource);
     }
 
-    case ResourceWatcher.TYPES.ERROR_MESSAGE: {
+    case ResourceCommand.TYPES.ERROR_MESSAGE: {
       return transformPageErrorResource(resource);
     }
 
-    case ResourceWatcher.TYPES.CSS_MESSAGE: {
+    case ResourceCommand.TYPES.CSS_MESSAGE: {
       return transformCSSMessageResource(resource);
     }
 
-    case ResourceWatcher.TYPES.NETWORK_EVENT: {
+    case ResourceCommand.TYPES.NETWORK_EVENT: {
       return transformNetworkEventResource(resource);
     }
 
@@ -277,7 +272,6 @@ function transformConsoleAPICallResource(consoleMessageResource) {
     userProvidedStyles: message.styles,
     prefix: message.prefix,
     private: message.private,
-    logpointId: message.logpointId,
     chromeContext: message.chromeContext,
   });
 }
@@ -362,24 +356,7 @@ function transformCSSMessageResource(cssMessageResource) {
 }
 
 function transformNetworkEventResource(networkEventResource) {
-  return new NetworkEventMessage({
-    targetFront: networkEventResource.targetFront,
-    actor: networkEventResource.actor,
-    isXHR: networkEventResource.isXHR,
-    request: networkEventResource.request,
-    response: networkEventResource.response,
-    timeStamp: networkEventResource.timeStamp,
-    totalTime: networkEventResource.totalTime,
-    url: networkEventResource.request.url,
-    urlDetails: getUrlDetails(networkEventResource.request.url),
-    method: networkEventResource.request.method,
-    updates: networkEventResource.updates,
-    cause: networkEventResource.cause,
-    private: networkEventResource.private,
-    securityState: networkEventResource.securityState,
-    chromeContext: networkEventResource.chromeContext,
-    blockedReason: networkEventResource.blockedReason,
-  });
+  return new NetworkEventMessage(networkEventResource);
 }
 
 function transformEvaluationResultPacket(packet) {
@@ -408,7 +385,10 @@ function transformEvaluationResultPacket(packet) {
     parameter = helperResult.object;
   } else if (helperResult?.type === "error") {
     try {
-      exceptionMessage = l10n.getStr(helperResult.message);
+      exceptionMessage = l10n.getFormatStr(
+        helperResult.message,
+        helperResult.messageArgs || []
+      );
     } catch (ex) {
       exceptionMessage = helperResult.message;
     }
@@ -532,12 +512,25 @@ function isPacketPrivate(packet) {
 function createWarningGroupMessage(id, type, firstMessage) {
   return new ConsoleMessage({
     id,
+    allowRepeating: false,
     level: MESSAGE_LEVEL.WARN,
     source: MESSAGE_SOURCE.CONSOLE_FRONTEND,
     type,
     messageText: getWarningGroupLabel(firstMessage),
     timeStamp: firstMessage.timeStamp,
     innerWindowID: firstMessage.innerWindowID,
+  });
+}
+
+function createSimpleTableMessage(columns, items, timeStamp) {
+  return new ConsoleMessage({
+    allowRepeating: false,
+    level: MESSAGE_LEVEL.LOG,
+    source: MESSAGE_SOURCE.CONSOLE_FRONTEND,
+    type: MESSAGE_TYPE.SIMPLE_TABLE,
+    columns,
+    items,
+    timeStamp: timeStamp,
   });
 }
 
@@ -790,13 +783,14 @@ function getNaturalOrder(messageA, messageB) {
 function isMessageNetworkError(message) {
   return (
     message.source === MESSAGE_SOURCE.NETWORK &&
-    message?.response?.status &&
-    message.response.status.toString().match(/^[4,5]\d\d$/)
+    message?.status &&
+    message?.status.toString().match(/^[4,5]\d\d$/)
   );
 }
 
 module.exports = {
   createWarningGroupMessage,
+  createSimpleTableMessage,
   getArrayTypeNames,
   getDescriptorValue,
   getInitialMessageCountForViewport,

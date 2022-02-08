@@ -8,14 +8,13 @@
 #include "MediaTrackGraph.h"
 #include "nsContentUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 void AudioStreamTrack::AddAudioOutput(void* aKey) {
   if (Ended()) {
     return;
   }
-  if (UniquePtr<CrossGraphManager>* cgm = mCrossGraphs.Get(aKey)) {
+  if (UniquePtr<CrossGraphPort>* cgm = mCrossGraphs.Get(aKey)) {
     (*cgm)->AddAudioOutput(aKey);
     return;
   }
@@ -26,7 +25,7 @@ void AudioStreamTrack::RemoveAudioOutput(void* aKey) {
   if (Ended()) {
     return;
   }
-  if (UniquePtr<CrossGraphManager>* cgm = mCrossGraphs.Get(aKey)) {
+  if (UniquePtr<CrossGraphPort>* cgm = mCrossGraphs.Get(aKey)) {
     (*cgm)->RemoveAudioOutput(aKey);
     return;
   }
@@ -37,7 +36,7 @@ void AudioStreamTrack::SetAudioOutputVolume(void* aKey, float aVolume) {
   if (Ended()) {
     return;
   }
-  if (UniquePtr<CrossGraphManager>* cgm = mCrossGraphs.Get(aKey)) {
+  if (UniquePtr<CrossGraphPort>* cgm = mCrossGraphs.Get(aKey)) {
     (*cgm)->SetAudioOutputVolume(aKey, aVolume);
     return;
   }
@@ -61,9 +60,9 @@ void AudioStreamTrack::SetReadyState(MediaStreamTrackState aState) {
   if (!mCrossGraphs.IsEmpty() && !Ended() &&
       mReadyState == MediaStreamTrackState::Live &&
       aState == MediaStreamTrackState::Ended) {
-    for (auto iter = mCrossGraphs.Iter(); !iter.Done(); iter.Next()) {
-      (*iter.Data())->Destroy();
-      (*iter.Data()).reset();
+    for (const auto& data : mCrossGraphs.Values()) {
+      (*data)->Destroy();
+      data->reset();
     }
     mCrossGraphs.Clear();
   }
@@ -73,24 +72,34 @@ void AudioStreamTrack::SetReadyState(MediaStreamTrackState aState) {
 RefPtr<GenericPromise> AudioStreamTrack::SetAudioOutputDevice(
     void* key, AudioDeviceInfo* aSink) {
   MOZ_ASSERT(aSink);
+
   if (Ended()) {
     return GenericPromise::CreateAndResolve(true, __func__);
   }
-  CrossGraphManager* manager = CrossGraphManager::Connect(this, aSink, mWindow);
+
+  UniquePtr<CrossGraphPort> manager =
+      CrossGraphPort::Connect(this, aSink, mWindow);
   if (!manager) {
+    // We are setting the default output device.
     auto entry = mCrossGraphs.Lookup(key);
-    MOZ_ASSERT(entry);
-    (*entry.Data())->Destroy();
-    entry.Remove();
+    if (entry) {
+      // There is an existing non-default output device for this track. Remove
+      // it.
+      (*entry.Data())->Destroy();
+      entry.Remove();
+    }
     return GenericPromise::CreateAndResolve(true, __func__);
   }
-  UniquePtr<CrossGraphManager>* crossGraphPtr = mCrossGraphs.LookupOrAdd(key);
-  if (*crossGraphPtr) {
-    (*crossGraphPtr)->Destroy();
+
+  // We are setting a non-default output device.
+  UniquePtr<CrossGraphPort>& crossGraphPtr = *mCrossGraphs.GetOrInsertNew(key);
+  if (crossGraphPtr) {
+    // This key already has a non-default output device set. Destroy it.
+    crossGraphPtr->Destroy();
   }
-  (*crossGraphPtr).reset(manager);
-  return manager->EnsureConnected();
+
+  crossGraphPtr = std::move(manager);
+  return crossGraphPtr->EnsureConnected();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

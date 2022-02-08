@@ -60,8 +60,6 @@ class nsBoxFrame : public nsContainerFrame {
   }
   virtual nsBoxLayout* GetXULLayoutManager() override { return mLayoutManager; }
 
-  virtual nsresult XULRelayoutChildAtOrdinal(nsIFrame* aChild) override;
-
   virtual nsSize GetXULPrefSize(nsBoxLayoutState& aBoxLayoutState) override;
   virtual nsSize GetXULMinSize(nsBoxLayoutState& aBoxLayoutState) override;
   virtual nsSize GetXULMaxSize(nsBoxLayoutState& aBoxLayoutState) override;
@@ -127,9 +125,9 @@ class nsBoxFrame : public nsContainerFrame {
   virtual void DidReflow(nsPresContext* aPresContext,
                          const ReflowInput* aReflowInput) override;
 
-  virtual bool HonorPrintBackgroundSettings() override;
+  virtual bool HonorPrintBackgroundSettings() const override;
 
-  // virtual so nsStackFrame, nsButtonBoxFrame, nsSliderFrame and nsMenuFrame
+  // virtual so nsButtonBoxFrame, nsSliderFrame and nsMenuFrame
   // can override it
   virtual void BuildDisplayListForChildren(nsDisplayListBuilder* aBuilder,
                                            const nsDisplayListSet& aLists);
@@ -153,6 +151,10 @@ class nsBoxFrame : public nsContainerFrame {
    * Return our wrapper block, if any.
    */
   void AppendDirectlyOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult) override;
+
+  // Gets a next / prev sibling accounting for ordinal group. Slow, please avoid
+  // usage if possible.
+  static nsIFrame* SlowOrdinalGroupAwareSibling(nsIFrame*, bool aNext);
 
  private:
   explicit nsBoxFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
@@ -188,11 +190,6 @@ class nsBoxFrame : public nsContainerFrame {
   // this frame. Return true if a single valid point was found.
   bool GetEventPoint(mozilla::WidgetGUIEvent* aEvent,
                      mozilla::LayoutDeviceIntPoint& aPoint);
-
- protected:
-  void RegUnregAccessKey(bool aDoReg);
-
-  void CheckBoxOrder();
 
  private:
   void CacheAttributes();

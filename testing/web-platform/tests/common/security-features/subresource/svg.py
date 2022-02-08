@@ -1,7 +1,7 @@
 import os, sys
 from wptserve.utils import isomorphic_decode
-sys.path.insert(0, os.path.dirname(os.path.abspath(isomorphic_decode(__file__))))
-import subresource
+import importlib
+subresource = importlib.import_module("common.security-features.subresource.subresource")
 
 def generate_payload(request, server_data):
     data = (u'{"headers": %(headers)s}') % server_data
@@ -13,8 +13,8 @@ def generate_payload(request, server_data):
 
 def generate_payload_embedded(request, server_data):
     return subresource.get_template(u"svg.embedded.template") % {
-        b"id": request.GET[b"id"],
-        b"property": request.GET[b"property"]}
+        u"id": isomorphic_decode(request.GET[b"id"]),
+        u"property": isomorphic_decode(request.GET[b"property"])}
 
 def generate_report_headers_payload(request, server_data):
     stashed_data = request.server.stash.take(request.GET[b"id"])

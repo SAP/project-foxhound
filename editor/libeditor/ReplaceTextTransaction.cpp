@@ -7,11 +7,28 @@
 
 #include "HTMLEditUtils.h"
 
+#include "mozilla/Logging.h"
 #include "mozilla/OwningNonNull.h"
+#include "mozilla/ToString.h"
 
 namespace mozilla {
 
 using namespace dom;
+
+std::ostream& operator<<(std::ostream& aStream,
+                         const ReplaceTextTransaction& aTransaction) {
+  aStream << "{ mTextNode=" << aTransaction.mTextNode.get();
+  if (aTransaction.mTextNode) {
+    aStream << " (" << *aTransaction.mTextNode << ")";
+  }
+  aStream << ", mStringToInsert=\""
+          << NS_ConvertUTF16toUTF8(aTransaction.mStringToInsert).get() << "\""
+          << ", mStringToBeReplaced=\""
+          << NS_ConvertUTF16toUTF8(aTransaction.mStringToBeReplaced).get()
+          << "\", mOffset=" << aTransaction.mOffset
+          << ", mEditorBase=" << aTransaction.mEditorBase.get() << " }";
+  return aStream;
+}
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(ReplaceTextTransaction, EditTransactionBase,
                                    mEditorBase, mTextNode)
@@ -22,6 +39,10 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ReplaceTextTransaction)
 NS_INTERFACE_MAP_END_INHERITING(EditTransactionBase)
 
 NS_IMETHODIMP ReplaceTextTransaction::DoTransaction() {
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p ReplaceTextTransaction::%s this=%s", this, __FUNCTION__,
+           ToString(*this).c_str()));
+
   if (NS_WARN_IF(!mEditorBase) || NS_WARN_IF(!mTextNode) ||
       NS_WARN_IF(!HTMLEditUtils::IsSimplyEditableNode(*mTextNode))) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -52,17 +73,21 @@ NS_IMETHODIMP ReplaceTextTransaction::DoTransaction() {
   if (NS_WARN_IF(!selection)) {
     return NS_ERROR_FAILURE;
   }
-  DebugOnly<nsresult> rvIgnored =
-      selection->Collapse(textNode, mOffset + mStringToInsert.Length());
+  DebugOnly<nsresult> rvIgnored = selection->CollapseInLimiter(
+      textNode, mOffset + mStringToInsert.Length());
   if (NS_WARN_IF(editorBase->Destroyed())) {
     return NS_ERROR_EDITOR_DESTROYED;
   }
   NS_ASSERTION(NS_SUCCEEDED(rvIgnored),
-               "Selection::Collapse() failed, but ignored");
+               "Selection::CollapseInLimiter() failed, but ignored");
   return NS_OK;
 }
 
 NS_IMETHODIMP ReplaceTextTransaction::UndoTransaction() {
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p ReplaceTextTransaction::%s this=%s", this, __FUNCTION__,
+           ToString(*this).c_str()));
+
   if (NS_WARN_IF(!mEditorBase) || NS_WARN_IF(!mTextNode) ||
       NS_WARN_IF(!HTMLEditUtils::IsSimplyEditableNode(*mTextNode))) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -107,17 +132,21 @@ NS_IMETHODIMP ReplaceTextTransaction::UndoTransaction() {
   if (NS_WARN_IF(!selection)) {
     return NS_ERROR_FAILURE;
   }
-  DebugOnly<nsresult> rvIgnored =
-      selection->Collapse(textNode, mOffset + mStringToBeReplaced.Length());
+  DebugOnly<nsresult> rvIgnored = selection->CollapseInLimiter(
+      textNode, mOffset + mStringToBeReplaced.Length());
   if (NS_WARN_IF(editorBase->Destroyed())) {
     return NS_ERROR_EDITOR_DESTROYED;
   }
   NS_ASSERTION(NS_SUCCEEDED(rvIgnored),
-               "Selection::Collapse() failed, but ignored");
+               "Selection::CollapseInLimiter() failed, but ignored");
   return NS_OK;
 }
 
 NS_IMETHODIMP ReplaceTextTransaction::RedoTransaction() {
+  MOZ_LOG(GetLogModule(), LogLevel::Info,
+          ("%p ReplaceTextTransaction::%s this=%s", this, __FUNCTION__,
+           ToString(*this).c_str()));
+
   if (NS_WARN_IF(!mEditorBase) || NS_WARN_IF(!mTextNode) ||
       NS_WARN_IF(!HTMLEditUtils::IsSimplyEditableNode(*mTextNode))) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -162,13 +191,13 @@ NS_IMETHODIMP ReplaceTextTransaction::RedoTransaction() {
   if (NS_WARN_IF(!selection)) {
     return NS_ERROR_FAILURE;
   }
-  DebugOnly<nsresult> rvIgnored =
-      selection->Collapse(textNode, mOffset + mStringToInsert.Length());
+  DebugOnly<nsresult> rvIgnored = selection->CollapseInLimiter(
+      textNode, mOffset + mStringToInsert.Length());
   if (NS_WARN_IF(editorBase->Destroyed())) {
     return NS_ERROR_EDITOR_DESTROYED;
   }
   NS_ASSERTION(NS_SUCCEEDED(rvIgnored),
-               "Selection::Collapse() failed, but ignored");
+               "Selection::CollapseInLimiter() failed, but ignored");
   return NS_OK;
 }
 

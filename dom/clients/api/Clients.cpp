@@ -6,6 +6,7 @@
 
 #include "Clients.h"
 
+#include "Client.h"
 #include "ClientDOMUtil.h"
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/ClientManager.h"
@@ -16,12 +17,12 @@
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/SchedulerGroup.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StorageAccess.h"
 #include "nsIGlobalObject.h"
 #include "nsString.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using mozilla::ipc::CSPInfo;
 using mozilla::ipc::PrincipalInfo;
@@ -90,7 +91,9 @@ already_AddRefed<Promise> Clients::Get(const nsAString& aClientID,
             NS_ENSURE_TRUE_VOID(holder->GetParentObject());
             RefPtr<Client> client = new Client(
                 holder->GetParentObject(), aResult.get_ClientInfoAndState());
-            if (client->GetStorageAccess() == StorageAccess::eAllow) {
+            if (client->GetStorageAccess() == StorageAccess::eAllow ||
+                (StaticPrefs::privacy_partition_serviceWorkers() &&
+                 ShouldPartitionStorage(client->GetStorageAccess()))) {
               outerPromise->MaybeResolve(std::move(client));
               return;
             }
@@ -170,7 +173,9 @@ already_AddRefed<Promise> Clients::MatchAll(const ClientQueryOptions& aOptions,
         for (const ClientInfoAndState& value :
              aResult.get_ClientList().values()) {
           RefPtr<Client> client = new Client(global, value);
-          if (client->GetStorageAccess() != StorageAccess::eAllow) {
+          if (client->GetStorageAccess() != StorageAccess::eAllow &&
+              (!StaticPrefs::privacy_partition_serviceWorkers() ||
+               !ShouldPartitionStorage(client->GetStorageAccess()))) {
             storageDenied = true;
             continue;
           }
@@ -284,5 +289,4 @@ already_AddRefed<Promise> Clients::Claim(ErrorResult& aRv) {
   return outerPromise.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

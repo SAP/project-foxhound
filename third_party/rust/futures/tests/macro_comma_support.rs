@@ -1,10 +1,9 @@
-#[macro_use]
-extern crate futures;
-
 use futures::{
     executor::block_on,
     future::{self, FutureExt},
+    join, ready,
     task::Poll,
+    try_join,
 };
 
 #[test]
@@ -17,6 +16,8 @@ fn ready() {
 
 #[test]
 fn poll() {
+    use futures::poll;
+
     block_on(async {
         let _ = poll!(async {}.boxed(),);
     })

@@ -24,6 +24,10 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   TargetingContext: "resource://messaging-system/targeting/Targeting.jsm",
   fxAccounts: "resource://gre/modules/FxAccounts.jsm",
   Region: "resource://gre/modules/Region.jsm",
+  TelemetrySession: "resource://gre/modules/TelemetrySession.jsm",
+  HomePage: "resource:///modules/HomePage.jsm",
+  AboutNewTab: "resource:///modules/AboutNewTab.jsm",
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -90,20 +94,22 @@ XPCOMUtils.defineLazyPreferenceGetter(
   this,
   "snippetsUserPref",
   "browser.newtabpage.activity-stream.feeds.snippets",
-  true
+  false
 );
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "TrackingDBService",
-  "@mozilla.org/tracking-db-service;1",
-  "nsITrackingDBService"
-);
+
+XPCOMUtils.defineLazyServiceGetters(this, {
+  BrowserHandler: ["@mozilla.org/browser/clh;1", "nsIBrowserHandler"],
+  TrackingDBService: [
+    "@mozilla.org/tracking-db-service;1",
+    "nsITrackingDBService",
+  ],
+});
 
 const FXA_USERNAME_PREF = "services.sync.username";
 
 const { activityStreamProvider: asProvider } = NewTabUtils;
 
-const FXA_ATTACHED_CLIENTS_UPDATE_INTERVAL = 2 * 60 * 60 * 1000; // Two hours
+const FXA_ATTACHED_CLIENTS_UPDATE_INTERVAL = 4 * 60 * 60 * 1000; // Four hours
 const FRECENT_SITES_UPDATE_INTERVAL = 6 * 60 * 60 * 1000; // Six hours
 const FRECENT_SITES_IGNORE_BLOCKED = false;
 const FRECENT_SITES_NUM_ITEMS = 25;
@@ -121,7 +127,8 @@ const jexlEvaluationCache = new Map();
 function CachedTargetingGetter(
   property,
   options = null,
-  updateInterval = FRECENT_SITES_UPDATE_INTERVAL
+  updateInterval = FRECENT_SITES_UPDATE_INTERVAL,
+  getter = asProvider
 ) {
   return {
     _lastUpdated: 0,
@@ -134,7 +141,7 @@ function CachedTargetingGetter(
     async get() {
       const now = Date.now();
       if (now - this._lastUpdated >= updateInterval) {
-        this._value = await asProvider[property](options);
+        this._value = await getter[property](options);
         this._lastUpdated = now;
       }
       return this._value;
@@ -188,11 +195,13 @@ function CheckBrowserNeedsUpdate(
       return new Promise((resolve, reject) => {
         const now = Date.now();
         const updateServiceListener = {
-          onCheckComplete(request, updates) {
+          // eslint-disable-next-line require-await
+          async onCheckComplete(request, updates) {
             checker._value = !!updates.length;
             resolve(checker._value);
           },
-          onError(request, update) {
+          // eslint-disable-next-line require-await
+          async onError(request, update) {
             reject(request);
           },
 
@@ -203,8 +212,12 @@ function CheckBrowserNeedsUpdate(
           const checkerInstance = UpdateChecker.createInstance(
             Ci.nsIUpdateChecker
           );
-          checkerInstance.checkForUpdates(updateServiceListener, true);
-          this._lastUpdated = now;
+          if (checkerInstance.canCheckForUpdates) {
+            checkerInstance.checkForUpdates(updateServiceListener, true);
+            this._lastUpdated = now;
+          } else {
+            resolve(false);
+          }
         } else {
           resolve(this._value);
         }
@@ -220,6 +233,9 @@ const QueryCache = {
     Object.keys(this.queries).forEach(query => {
       this.queries[query].expire();
     });
+    Object.keys(this.getters).forEach(key => {
+      this.getters[key].expire();
+    });
   },
   queries: {
     TopFrecentSites: new CachedTargetingGetter("getTopFrecentSites", {
@@ -233,6 +249,15 @@ const QueryCache = {
     CheckBrowserNeedsUpdate: new CheckBrowserNeedsUpdate(),
     RecentBookmarks: new CachedTargetingGetter("getRecentBookmarks"),
     ListAttachedOAuthClients: new CacheListAttachedOAuthClients(),
+    UserMonthlyActivity: new CachedTargetingGetter("getUserMonthlyActivity"),
+  },
+  getters: {
+    doesAppNeedPin: new CachedTargetingGetter(
+      "doesAppNeedPin",
+      null,
+      FRECENT_SITES_UPDATE_INTERVAL,
+      ShellService
+    ),
   },
 };
 
@@ -277,26 +302,12 @@ function sortMessagesByWeightedRank(messages) {
 function getSortedMessages(messages, options = {}) {
   let { ordered } = { ordered: false, ...options };
   let result = messages;
-  let hasScores;
 
   if (!ordered) {
     result = sortMessagesByWeightedRank(result);
   }
 
   result.sort((a, b) => {
-    // If we find at least one score, we need to apply filtering by threshold at the end.
-    if (!isNaN(a.score) || !isNaN(b.score)) {
-      hasScores = true;
-    }
-
-    // First sort by score if we're doing personalization:
-    if (a.score > b.score || (!isNaN(a.score) && isNaN(b.score))) {
-      return -1;
-    }
-    if (a.score < b.score || (isNaN(a.score) && !isNaN(b.score))) {
-      return 1;
-    }
-
     // Next, sort by priority
     if (a.priority > b.priority || (!isNaN(a.priority) && isNaN(b.priority))) {
       return -1;
@@ -326,15 +337,50 @@ function getSortedMessages(messages, options = {}) {
     return 0;
   });
 
-  if (hasScores && !isNaN(ASRouterPreferences.personalizedCfrThreshold)) {
-    return result.filter(
-      message =>
-        isNaN(message.score) ||
-        message.score >= ASRouterPreferences.personalizedCfrThreshold
-    );
+  return result;
+}
+
+/**
+ * parseAboutPageURL - Parse a URL string retrieved from about:home and about:new, returns
+ *                    its type (web extenstion or custom url) and the parsed url(s)
+ *
+ * @param {string} url - A URL string for home page or newtab page
+ * @returns {Object} {
+ *   isWebExt: boolean,
+ *   isCustomUrl: boolean,
+ *   urls: Array<{url: string, host: string}>
+ * }
+ */
+function parseAboutPageURL(url) {
+  let ret = {
+    isWebExt: false,
+    isCustomUrl: false,
+    urls: [],
+  };
+  if (url.startsWith("moz-extension://")) {
+    ret.isWebExt = true;
+    ret.urls.push({ url, host: "" });
+  } else {
+    // The home page URL could be either a single URL or a list of "|" separated URLs.
+    // Note that it should work with "about:home" and "about:blank", in which case the
+    // "host" is set as an empty string.
+    for (const _url of url.split("|")) {
+      if (!["about:home", "about:newtab", "about:blank"].includes(_url)) {
+        ret.isCustomUrl = true;
+      }
+      try {
+        const parsedURL = new URL(_url);
+        const host = parsedURL.hostname.replace(/^www\./i, "");
+        ret.urls.push({ url: _url, host });
+      } catch (e) {}
+    }
+    // If URL parsing failed, just return the given url with an empty host
+    if (!ret.urls.length) {
+      ret.urls.push({ url, host: "" });
+    }
   }
 
-  return result;
+  return ret;
 }
 
 const TargetingGetters = {
@@ -350,8 +396,6 @@ const TargetingGetters = {
   get browserSettings() {
     const { settings } = TelemetryEnvironment.currentEnvironment;
     return {
-      // This way of getting attribution is deprecated - use atttributionData instead
-      attribution: settings.attribution,
       update: settings.update,
     };
   },
@@ -373,12 +417,6 @@ const TargetingGetters = {
   },
   get isFxAEnabled() {
     return isFxAEnabled;
-  },
-  get trailheadInterrupt() {
-    return ASRouterPreferences.trailhead.trailheadInterrupt;
-  },
-  get trailheadTriplet() {
-    return ASRouterPreferences.trailhead.trailheadTriplet;
   },
   get sync() {
     return {
@@ -418,7 +456,7 @@ const TargetingGetters = {
     return new Promise(resolve => {
       // Note: calling init ensures this code is only executed after Search has been initialized
       Services.search
-        .getDefaultEngines()
+        .getAppProvidedEngines()
         .then(engines => {
           resolve({
             current: Services.search.defaultEngine.identifier,
@@ -542,12 +580,6 @@ const TargetingGetters = {
   get platformName() {
     return AppConstants.platform;
   },
-  get scores() {
-    return ASRouterPreferences.personalizedCfrScores;
-  },
-  get scoreThreshold() {
-    return ASRouterPreferences.personalizedCfrThreshold;
-  },
   get isChinaRepack() {
     return (
       Services.prefs
@@ -558,6 +590,78 @@ const TargetingGetters = {
   },
   get userId() {
     return ClientEnvironment.userId;
+  },
+  get profileRestartCount() {
+    // Counter starts at 1 when a profile is created, substract 1 so the value
+    // returned matches expectations
+    return (
+      TelemetrySession.getMetadata("targeting").profileSubsessionCounter - 1
+    );
+  },
+  get homePageSettings() {
+    const url = HomePage.get();
+    const { isWebExt, isCustomUrl, urls } = parseAboutPageURL(url);
+
+    return {
+      isWebExt,
+      isCustomUrl,
+      urls,
+      isDefault: HomePage.isDefault,
+      isLocked: HomePage.locked,
+    };
+  },
+  get newtabSettings() {
+    const url = AboutNewTab.newTabURL;
+    const { isWebExt, isCustomUrl, urls } = parseAboutPageURL(url);
+
+    return {
+      isWebExt,
+      isCustomUrl,
+      isDefault: AboutNewTab.activityStreamEnabled,
+      url: urls[0].url,
+      host: urls[0].host,
+    };
+  },
+  get isFissionExperimentEnabled() {
+    return (
+      Services.appinfo.fissionExperimentStatus ===
+      Ci.nsIXULRuntime.eExperimentStatusTreatment
+    );
+  },
+  get activeNotifications() {
+    let window = BrowserWindowTracker.getTopWindow();
+
+    // Technically this doesn't mean we have active notifications,
+    // but because we use !activeNotifications to check for conflicts, this should return true
+    if (!window) {
+      return true;
+    }
+
+    if (
+      window.gURLBar?.view.isOpen ||
+      window.gNotificationBox?.currentNotification ||
+      window.gBrowser.getNotificationBox()?.currentNotification
+    ) {
+      return true;
+    }
+
+    return false;
+  },
+
+  get isMajorUpgrade() {
+    return BrowserHandler.majorUpgrade;
+  },
+
+  get hasActiveEnterprisePolicies() {
+    return Services.policies.status === Services.policies.ACTIVE;
+  },
+
+  get userMonthlyActivity() {
+    return QueryCache.queries.UserMonthlyActivity.get();
+  },
+
+  get doesAppNeedPin() {
+    return QueryCache.getters.doesAppNeedPin.get();
   },
 };
 
@@ -582,6 +686,10 @@ this.ASRouterTargeting = {
       (candidateMessageTrigger.params &&
         trigger.param.host &&
         candidateMessageTrigger.params.includes(trigger.param.host)) ||
+      (candidateMessageTrigger.params &&
+        trigger.param.type &&
+        candidateMessageTrigger.params.filter(t => t === trigger.param.type)
+          .length) ||
       (candidateMessageTrigger.params &&
         trigger.param.type &&
         candidateMessageTrigger.params.filter(
@@ -635,6 +743,9 @@ this.ASRouterTargeting = {
           return result.value;
         }
       }
+      // Used to report the source of the targeting error in the case of
+      // undesired events
+      targetingContext.setTelemetrySource(message.id);
       result = await targetingContext.evalWithDefault(message.targeting);
       if (shouldCache) {
         jexlEvaluationCache.set(message.targeting, {

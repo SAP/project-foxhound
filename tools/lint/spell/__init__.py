@@ -4,6 +4,7 @@
 
 import os
 import re
+import subprocess
 
 # py2-compat
 try:
@@ -14,7 +15,6 @@ except ImportError:
 from mozfile import which
 
 from mozlint import result
-from mozlint.util import pip
 from mozlint.util.implementation import LintProcess
 
 here = os.path.abspath(os.path.dirname(__file__))
@@ -43,13 +43,20 @@ CODESPELL_FORMAT_REGEX = re.compile(r"(.*):(.*): (.*) ==> (.*)$")
 
 
 class CodespellProcess(LintProcess):
+    fixed = 0
+    _fix = None
+
     def process_line(self, line):
         try:
             match = CODESPELL_FORMAT_REGEX.match(line)
             abspath, line, typo, correct = match.groups()
         except AttributeError:
-            print("Unable to match regex against output: {}".format(line))
+            if "FIXED: " not in line:
+                print("Unable to match regex against output: {}".format(line))
             return
+
+        if CodespellProcess._fix:
+            CodespellProcess.fixed += 1
 
         # Ignore false positive like aParent (which would be fixed to apparent)
         # See https://github.com/lucasdemarchi/codespell/issues/314
@@ -87,9 +94,22 @@ def get_codespell_binary():
 
 
 def setup(root, **lintargs):
-    if not pip.reinstall_program(CODESPELL_REQUIREMENTS_PATH):
+    virtualenv_manager = lintargs["virtualenv_manager"]
+    try:
+        virtualenv_manager.install_pip_requirements(
+            CODESPELL_REQUIREMENTS_PATH, quiet=True
+        )
+    except subprocess.CalledProcessError:
         print(CODESPELL_INSTALL_ERROR)
         return 1
+
+
+def get_codespell_version(binary):
+    return subprocess.check_output(
+        [which("python"), binary, "--version"],
+        universal_newlines=True,
+        stderr=subprocess.STDOUT,
+    )
 
 
 def lint(paths, config, fix=None, **lintargs):
@@ -103,10 +123,6 @@ def lint(paths, config, fix=None, **lintargs):
 
     config["root"] = lintargs["root"]
 
-    skip_files = ""
-    if "exclude" in config:
-        skip_files = "--skip=*.dic,{}".format(",".join(config["exclude"]))
-
     exclude_list = os.path.join(here, "exclude-list.txt")
     cmd_args = [
         which("python"),
@@ -119,14 +135,30 @@ def lint(paths, config, fix=None, **lintargs):
         #    that were disabled in dictionary.
         "--quiet-level=7",
         "--ignore-words=" + exclude_list,
-        skip_files,
     ]
 
-    if fix:
-        cmd_args.append("--write-changes")
+    if "exclude" in config:
+        cmd_args.append("--skip=*.dic,{}".format(",".join(config["exclude"])))
+
     log.debug("Command: {}".format(" ".join(cmd_args)))
+    log.debug("Version: {}".format(get_codespell_version(binary)))
+
+    if fix:
+        CodespellProcess._fix = True
 
     base_command = cmd_args + paths
-
     run_process(config, base_command)
-    return results
+
+    if fix:
+        global results
+        results = []
+        cmd_args.append("--write-changes")
+        log.debug("Command: {}".format(" ".join(cmd_args)))
+        log.debug("Version: {}".format(get_codespell_version(binary)))
+        base_command = cmd_args + paths
+        run_process(config, base_command)
+        CodespellProcess.fixed = CodespellProcess.fixed - len(results)
+    else:
+        CodespellProcess.fixed = 0
+
+    return {"results": results, "fixed": CodespellProcess.fixed}

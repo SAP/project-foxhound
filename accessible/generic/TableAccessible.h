@@ -7,13 +7,16 @@
 #ifndef TABLE_ACCESSIBLE_H
 #define TABLE_ACCESSIBLE_H
 
+#include "TableCellAccessible.h"
+#include "nsPointerHashKeys.h"
+#include "nsRefPtrHashtable.h"
 #include "nsString.h"
 #include "nsTArray.h"
 
 namespace mozilla {
 namespace a11y {
 
-class Accessible;
+class LocalAccessible;
 
 /**
  * Accessible table interface.
@@ -23,7 +26,7 @@ class TableAccessible {
   /**
    * Return the caption accessible if any for this table.
    */
-  virtual Accessible* Caption() const { return nullptr; }
+  virtual LocalAccessible* Caption() const { return nullptr; }
 
   /**
    * Get the summary for this table.
@@ -43,7 +46,7 @@ class TableAccessible {
   /**
    * Return the accessible for the cell at the given row and column indices.
    */
-  virtual Accessible* CellAt(uint32_t aRowIdx, uint32_t aColIdx) {
+  virtual LocalAccessible* CellAt(uint32_t aRowIdx, uint32_t aColIdx) {
     return nullptr;
   }
 
@@ -137,7 +140,7 @@ class TableAccessible {
   /**
    * Get the set of selected cells.
    */
-  virtual void SelectedCells(nsTArray<Accessible*>* aCells) = 0;
+  virtual void SelectedCells(nsTArray<LocalAccessible*>* aCells) = 0;
 
   /**
    * Get the set of selected cell indices.
@@ -182,9 +185,10 @@ class TableAccessible {
   /**
    * Convert the table to an Accessible*.
    */
-  virtual Accessible* AsAccessible() = 0;
+  virtual LocalAccessible* AsAccessible() = 0;
 
-  typedef nsRefPtrHashtable<nsPtrHashKey<const TableCellAccessible>, Accessible>
+  typedef nsRefPtrHashtable<nsPtrHashKey<const TableCellAccessible>,
+                            LocalAccessible>
       HeaderCache;
 
   /**
@@ -200,12 +204,12 @@ class TableAccessible {
   /**
    * Return row accessible at the given row index.
    */
-  Accessible* RowAt(int32_t aRow);
+  LocalAccessible* RowAt(int32_t aRow);
 
   /**
    * Return cell accessible at the given column index in the row.
    */
-  Accessible* CellInRowAt(Accessible* aRow, int32_t aColumn);
+  LocalAccessible* CellInRowAt(LocalAccessible* aRow, int32_t aColumn);
 
  private:
   HeaderCache mHeaderCache;

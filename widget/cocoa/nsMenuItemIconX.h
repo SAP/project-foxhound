@@ -10,53 +10,60 @@
 #ifndef nsMenuItemIconX_h_
 #define nsMenuItemIconX_h_
 
-#include "nsIconLoaderService.h"
+#import <Cocoa/Cocoa.h>
+
+#include "mozilla/widget/IconLoader.h"
 
 class nsIconLoaderService;
 class nsIURI;
 class nsIContent;
 class nsIPrincipal;
 class imgRequestProxy;
-class nsMenuObjectX;
+class nsMenuParentX;
 
-#import <Cocoa/Cocoa.h>
+namespace mozilla {
+class ComputedStyle;
+}
 
-class nsMenuItemIconX : public nsIconLoaderObserver {
+class nsMenuItemIconX final : public mozilla::widget::IconLoader::Listener {
  public:
-  nsMenuItemIconX(nsMenuObjectX* aMenuItem, nsIContent* aContent,
-                  NSMenuItem* aNativeMenuItem);
+  class Listener {
+   public:
+    virtual void IconUpdated() = 0;
+  };
 
- private:
-  virtual ~nsMenuItemIconX();
+  explicit nsMenuItemIconX(Listener* aListener);
+  ~nsMenuItemIconX();
 
- public:
-  // SetupIcon succeeds if it was able to set up the icon, or if there should
-  // be no icon, in which case it clears any existing icon but still succeeds.
-  nsresult SetupIcon();
+  // SetupIcon starts the icon load. Once the icon has loaded,
+  // nsMenuParentX::IconUpdated will be called. The icon image needs to be
+  // retrieved from GetIconImage(). If aContent is an icon-less menuitem,
+  // GetIconImage() will return nil. If it does have an icon, GetIconImage()
+  // will return a transparent placeholder icon during the load and the actual
+  // icon when the load is completed.
+  void SetupIcon(nsIContent* aContent);
 
-  // GetIconURI fails if the item should not have any icon.
-  nsresult GetIconURI(nsIURI** aIconURI);
+  // Implements this method for mozilla::widget::IconLoader::Listener.
+  // Called once the icon load is complete.
+  nsresult OnComplete(imgIContainer* aImage) override;
 
-  // Overrides nsIconLoaderObserver::OnComplete. Handles the NSImage* created
-  // by nsIconLoaderService.
-  nsresult OnComplete(NSImage* aImage) override;
-
-  // Unless we take precautions, we may outlive the object that created us
-  // (mMenuObject, which owns our native menu item (mNativeMenuItem)).
-  // Destroy() should be called from mMenuObject's destructor to prevent
-  // this from happening.  See bug 499600.
-  void Destroy();
+  // Returns a weak reference to the icon image that is owned by this class. Can
+  // return nil.
+  NSImage* GetIconImage() const { return mIconImage; }
 
  protected:
-  nsCOMPtr<nsIContent> mContent;
-  nsContentPolicyType mContentType;
-  nsMenuObjectX* mMenuObject;  // [weak]
+  // Returns whether there should be an icon.
+  bool StartIconLoad(nsIContent* aContent);
+
+  // GetIconURI returns null if the item should not have any icon.
+  already_AddRefed<nsIURI> GetIconURI(nsIContent* aContent);
+
+  nsCOMPtr<nsIContent> mContent;  // always non-null
+  Listener* mListener;            // [weak]
   nsIntRect mImageRegionRect;
-  bool mSetIcon;
-  NSMenuItem* mNativeMenuItem;  // [weak]
-  // The icon loader object should never outlive its creating nsMenuItemIconX
-  // object.
-  RefPtr<nsIconLoaderService> mIconLoader;
+  RefPtr<mozilla::ComputedStyle> mComputedStyle;
+  NSImage* mIconImage = nil;  // [strong]
+  RefPtr<mozilla::widget::IconLoader> mIconLoader;
 };
 
 #endif  // nsMenuItemIconX_h_

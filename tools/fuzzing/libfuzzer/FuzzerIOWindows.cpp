@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 // IO functions implementation for Windows.
 //===----------------------------------------------------------------------===//
-#include "FuzzerDefs.h"
+#include "FuzzerPlatform.h"
 #if LIBFUZZER_WINDOWS
 
 #include "FuzzerExtFunctions.h"
@@ -98,11 +98,12 @@ size_t FileSize(const std::string &Path) {
   return size.QuadPart;
 }
 
-void ListFilesInDirRecursive(const std::string &Dir, long *Epoch,
+int ListFilesInDirRecursive(const std::string &Dir, long *Epoch,
                              Vector<std::string> *V, bool TopDir) {
+  int Res;
   auto E = GetEpoch(Dir);
   if (Epoch)
-    if (E && *Epoch >= E) return;
+    if (E && *Epoch >= E) return 0;
 
   std::string Path(Dir);
   assert(!Path.empty());
@@ -116,9 +117,9 @@ void ListFilesInDirRecursive(const std::string &Dir, long *Epoch,
   if (FindHandle == INVALID_HANDLE_VALUE)
   {
     if (GetLastError() == ERROR_FILE_NOT_FOUND)
-      return;
+      return 0;
     Printf("No such file or directory: %s; exiting\n", Dir.c_str());
-    exit(1);
+    return 1;
   }
 
   do {
@@ -131,7 +132,9 @@ void ListFilesInDirRecursive(const std::string &Dir, long *Epoch,
                                FindInfo.cFileName[1] == '.'))
         continue;
 
-      ListFilesInDirRecursive(FileName, Epoch, V, false);
+      int Res = ListFilesInDirRecursive(FileName, Epoch, V, false);
+      if (Res != 0)
+        return Res;
     }
     else if (IsFile(FileName, FindInfo.dwFileAttributes))
       V->push_back(FileName);
@@ -145,6 +148,7 @@ void ListFilesInDirRecursive(const std::string &Dir, long *Epoch,
 
   if (Epoch && TopDir)
     *Epoch = E;
+  return 0;
 }
 
 
@@ -219,12 +223,8 @@ void RemoveFile(const std::string &Path) {
   _unlink(Path.c_str());
 }
 
-void DiscardOutput(int Fd) {
-  FILE* Temp = fopen("nul", "w");
-  if (!Temp)
-    return;
-  _dup2(_fileno(Temp), Fd);
-  fclose(Temp);
+void RenameFile(const std::string &OldPath, const std::string &NewPath) {
+  rename(OldPath.c_str(), NewPath.c_str());
 }
 
 intptr_t GetHandleFromFd(int fd) {

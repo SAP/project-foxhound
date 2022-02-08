@@ -15,6 +15,12 @@ Firefox Source Tree Documentation
    {contributing_doc}
 
 .. toctree::
+   :caption: Firefox User Guide
+   :maxdepth: 2
+
+   {user_guide}
+
+.. toctree::
    :caption: Source Code Documentation
    :maxdepth: 2
 
@@ -43,6 +49,12 @@ Firefox Source Tree Documentation
    :maxdepth: 1
 
    {python_doc}
+
+.. toctree::
+   :caption: Metrics Collected in Firefox
+   :maxdepth: 1
+
+   {metrics_doc}
 
 
 Indices and tables

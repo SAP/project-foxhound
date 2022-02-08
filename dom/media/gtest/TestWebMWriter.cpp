@@ -17,34 +17,37 @@ using namespace mozilla;
 class WebMOpusTrackEncoder : public OpusTrackEncoder {
  public:
   explicit WebMOpusTrackEncoder(TrackRate aTrackRate)
-      : OpusTrackEncoder(aTrackRate) {}
-  bool TestOpusCreation(int aChannels, int aSamplingRate) {
-    if (NS_SUCCEEDED(Init(aChannels, aSamplingRate))) {
+      : OpusTrackEncoder(aTrackRate, mEncodedAudioQueue) {}
+  bool TestOpusCreation(int aChannels) {
+    if (NS_SUCCEEDED(Init(aChannels))) {
       return true;
     }
     return false;
   }
+  MediaQueue<EncodedFrame> mEncodedAudioQueue;
 };
 
 class WebMVP8TrackEncoder : public VP8TrackEncoder {
  public:
   explicit WebMVP8TrackEncoder(TrackRate aTrackRate = 90000)
-      : VP8TrackEncoder(nullptr, aTrackRate, FrameDroppingMode::DISALLOW) {}
+      : VP8TrackEncoder(nullptr, aTrackRate, mEncodedVideoQueue,
+                        FrameDroppingMode::DISALLOW) {}
 
   bool TestVP8Creation(int32_t aWidth, int32_t aHeight, int32_t aDisplayWidth,
                        int32_t aDisplayHeight) {
-    if (NS_SUCCEEDED(Init(aWidth, aHeight, aDisplayWidth, aDisplayHeight))) {
+    if (NS_SUCCEEDED(
+            Init(aWidth, aHeight, aDisplayWidth, aDisplayHeight, 30))) {
       return true;
     }
     return false;
   }
+  MediaQueue<EncodedFrame> mEncodedVideoQueue;
 };
 
-static void GetOpusMetadata(int aChannels, int aSampleRate,
-                            TrackRate aTrackRate,
+static void GetOpusMetadata(int aChannels, TrackRate aTrackRate,
                             nsTArray<RefPtr<TrackMetadataBase>>& aMeta) {
   WebMOpusTrackEncoder opusEncoder(aTrackRate);
-  EXPECT_TRUE(opusEncoder.TestOpusCreation(aChannels, aSampleRate));
+  EXPECT_TRUE(opusEncoder.TestOpusCreation(aChannels));
   aMeta.AppendElement(opusEncoder.GetMetadata());
 }
 
@@ -63,7 +66,7 @@ const uint32_t FIXED_FRAMESIZE = 500;
 
 class TestWebMWriter : public WebMWriter {
  public:
-  TestWebMWriter() : WebMWriter(), mTimestamp(0) {}
+  TestWebMWriter() : WebMWriter() {}
 
   // When we append an I-Frame into WebM muxer, the muxer will treat previous
   // data as "a cluster".
@@ -72,28 +75,25 @@ class TestWebMWriter : public WebMWriter {
   void AppendDummyFrame(EncodedFrame::FrameType aFrameType,
                         uint64_t aDuration) {
     nsTArray<RefPtr<EncodedFrame>> encodedVideoData;
-    nsTArray<uint8_t> frameData;
-    RefPtr<EncodedFrame> videoData = new EncodedFrame();
+    auto frameData = MakeRefPtr<EncodedFrame::FrameData>();
     // Create dummy frame data.
-    frameData.SetLength(FIXED_FRAMESIZE);
-    videoData->mFrameType = aFrameType;
-    videoData->mTime = mTimestamp;
-    videoData->mDuration = aDuration;
-    videoData->SwapInFrameData(frameData);
-    encodedVideoData.AppendElement(videoData);
+    frameData->SetLength(FIXED_FRAMESIZE);
+    encodedVideoData.AppendElement(
+        MakeRefPtr<EncodedFrame>(mTimestamp, aDuration, PR_USEC_PER_SEC,
+                                 aFrameType, std::move(frameData)));
     WriteEncodedTrack(encodedVideoData, 0);
-    mTimestamp += aDuration;
+    mTimestamp += media::TimeUnit::FromMicroseconds(aDuration);
   }
 
   bool HaveValidCluster() {
     nsTArray<nsTArray<uint8_t>> encodedBuf;
     GetContainerData(&encodedBuf, 0);
-    return (encodedBuf.Length() > 0) ? true : false;
+    return !encodedBuf.IsEmpty();
   }
 
   // Timestamp accumulator that increased by AppendDummyFrame.
   // Keep it public that we can do some testcases about it.
-  uint64_t mTimestamp;
+  media::TimeUnit mTimestamp;
 };
 
 TEST(WebMWriter, Metadata)
@@ -109,18 +109,18 @@ TEST(WebMWriter, Metadata)
 
   nsTArray<RefPtr<TrackMetadataBase>> meta;
 
+  TrackRate trackRate = 44100;
+
   // Get opus metadata.
   int channel = 1;
-  int sampleRate = 44100;
-  TrackRate aTrackRate = 90000;
-  GetOpusMetadata(channel, sampleRate, aTrackRate, meta);
+  GetOpusMetadata(channel, trackRate, meta);
 
   // Get vp8 metadata
   int32_t width = 640;
   int32_t height = 480;
   int32_t displayWidth = 640;
   int32_t displayHeight = 480;
-  GetVP8Metadata(width, height, displayWidth, displayHeight, aTrackRate, meta);
+  GetVP8Metadata(width, height, displayWidth, displayHeight, trackRate, meta);
 
   // Set metadata
   writer.SetMetadata(meta);
@@ -133,17 +133,16 @@ TEST(WebMWriter, Cluster)
 {
   TestWebMWriter writer;
   nsTArray<RefPtr<TrackMetadataBase>> meta;
+  TrackRate trackRate = 48000;
   // Get opus metadata.
   int channel = 1;
-  int sampleRate = 48000;
-  TrackRate aTrackRate = 90000;
-  GetOpusMetadata(channel, sampleRate, aTrackRate, meta);
+  GetOpusMetadata(channel, trackRate, meta);
   // Get vp8 metadata
   int32_t width = 320;
   int32_t height = 240;
   int32_t displayWidth = 320;
   int32_t displayHeight = 240;
-  GetVP8Metadata(width, height, displayWidth, displayHeight, aTrackRate, meta);
+  GetVP8Metadata(width, height, displayWidth, displayHeight, trackRate, meta);
   writer.SetMetadata(meta);
 
   nsTArray<nsTArray<uint8_t>> encodedBuf;
@@ -153,22 +152,18 @@ TEST(WebMWriter, Cluster)
 
   // write the first I-Frame.
   writer.AppendDummyFrame(EncodedFrame::VP8_I_FRAME, FIXED_DURATION);
-  // No data because the cluster is not closed.
-  EXPECT_FALSE(writer.HaveValidCluster());
+  EXPECT_TRUE(writer.HaveValidCluster());
 
   // The second I-Frame.
   writer.AppendDummyFrame(EncodedFrame::VP8_I_FRAME, FIXED_DURATION);
-  // Should have data because the first cluster is closed.
   EXPECT_TRUE(writer.HaveValidCluster());
 
   // P-Frame.
   writer.AppendDummyFrame(EncodedFrame::VP8_P_FRAME, FIXED_DURATION);
-  // No data because the cluster is not closed.
-  EXPECT_FALSE(writer.HaveValidCluster());
+  EXPECT_TRUE(writer.HaveValidCluster());
 
   // The third I-Frame.
   writer.AppendDummyFrame(EncodedFrame::VP8_I_FRAME, FIXED_DURATION);
-  // Should have data because the second cluster is closed.
   EXPECT_TRUE(writer.HaveValidCluster());
 }
 
@@ -176,51 +171,49 @@ TEST(WebMWriter, FLUSH_NEEDED)
 {
   TestWebMWriter writer;
   nsTArray<RefPtr<TrackMetadataBase>> meta;
+  TrackRate trackRate = 44100;
   // Get opus metadata.
   int channel = 2;
-  int sampleRate = 44100;
-  TrackRate aTrackRate = 100000;
-  GetOpusMetadata(channel, sampleRate, aTrackRate, meta);
+  GetOpusMetadata(channel, trackRate, meta);
   // Get vp8 metadata
   int32_t width = 176;
   int32_t height = 352;
   int32_t displayWidth = 176;
   int32_t displayHeight = 352;
-  GetVP8Metadata(width, height, displayWidth, displayHeight, aTrackRate, meta);
+  GetVP8Metadata(width, height, displayWidth, displayHeight, trackRate, meta);
   writer.SetMetadata(meta);
+  // Have data because the metadata is finished.
+  EXPECT_TRUE(writer.HaveValidCluster());
 
   // write the first I-Frame.
   writer.AppendDummyFrame(EncodedFrame::VP8_I_FRAME, FIXED_DURATION);
 
   // P-Frame
   writer.AppendDummyFrame(EncodedFrame::VP8_P_FRAME, FIXED_DURATION);
-  // Have data because the metadata is finished.
+  // Have data because frames were written.
   EXPECT_TRUE(writer.HaveValidCluster());
-  // No data because the cluster is not closed and the metatdata had been
-  // retrieved
+  // No data because the previous check emptied it.
   EXPECT_FALSE(writer.HaveValidCluster());
 
   nsTArray<nsTArray<uint8_t>> encodedBuf;
-  // Have data because the flag ContainerWriter::FLUSH_NEEDED
+  // No data because the flag ContainerWriter::FLUSH_NEEDED does nothing.
   writer.GetContainerData(&encodedBuf, ContainerWriter::FLUSH_NEEDED);
-  EXPECT_TRUE(encodedBuf.Length() > 0);
+  EXPECT_TRUE(encodedBuf.IsEmpty());
   encodedBuf.Clear();
 
   // P-Frame
   writer.AppendDummyFrame(EncodedFrame::VP8_P_FRAME, FIXED_DURATION);
-  // No data because there is no cluster right now. The I-Frame had been
-  // flushed out.
-  EXPECT_FALSE(writer.HaveValidCluster());
+  // Have data because we continue the previous cluster.
+  EXPECT_TRUE(writer.HaveValidCluster());
 
   // I-Frame
   writer.AppendDummyFrame(EncodedFrame::VP8_I_FRAME, FIXED_DURATION);
-  // No data because a cluster must starts form I-Frame and the
-  // cluster is not closed.
-  EXPECT_FALSE(writer.HaveValidCluster());
+  // Have data with a new cluster.
+  EXPECT_TRUE(writer.HaveValidCluster());
 
   // I-Frame
   writer.AppendDummyFrame(EncodedFrame::VP8_I_FRAME, FIXED_DURATION);
-  // Have data because the previous cluster is closed.
+  // Have data with a new cluster.
   EXPECT_TRUE(writer.HaveValidCluster());
 }
 
@@ -297,17 +290,16 @@ TEST(WebMWriter, bug970774_aspect_ratio)
 {
   TestWebMWriter writer;
   nsTArray<RefPtr<TrackMetadataBase>> meta;
+  TrackRate trackRate = 44100;
   // Get opus metadata.
   int channel = 1;
-  int sampleRate = 44100;
-  TrackRate aTrackRate = 90000;
-  GetOpusMetadata(channel, sampleRate, aTrackRate, meta);
+  GetOpusMetadata(channel, trackRate, meta);
   // Set vp8 metadata
   int32_t width = 640;
   int32_t height = 480;
   int32_t displayWidth = 1280;
   int32_t displayHeight = 960;
-  GetVP8Metadata(width, height, displayWidth, displayHeight, aTrackRate, meta);
+  GetVP8Metadata(width, height, displayWidth, displayHeight, trackRate, meta);
   writer.SetMetadata(meta);
 
   // write the first I-Frame.
@@ -356,7 +348,7 @@ TEST(WebMWriter, bug970774_aspect_ratio)
       rv = nestegg_track_audio_params(context, track, &params);
       EXPECT_EQ(rv, 0);
       EXPECT_EQ(channel, static_cast<int>(params.channels));
-      EXPECT_EQ(static_cast<double>(sampleRate), params.rate);
+      EXPECT_EQ(static_cast<double>(trackRate), params.rate);
     }
   }
   if (context) {

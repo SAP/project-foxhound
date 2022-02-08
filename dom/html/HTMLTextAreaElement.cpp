@@ -9,8 +9,9 @@
 #include "mozAutoDocUpdate.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/HTMLFormSubmission.h"
+#include "mozilla/dom/FormData.h"
 #include "mozilla/dom/HTMLTextAreaElementBinding.h"
+#include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/MappedDeclarations.h"
@@ -28,7 +29,6 @@
 #include "mozilla/dom/Document.h"
 #include "nsIFormControlFrame.h"
 #include "nsIFormControl.h"
-#include "nsIForm.h"
 #include "nsIFrame.h"
 #include "nsITextControlFrame.h"
 #include "nsLayoutUtils.h"
@@ -39,17 +39,18 @@
 #include "nsReadableUtils.h"
 #include "nsStyleConsts.h"
 #include "nsBaseCommandController.h"
+#include "nsTextControlFrame.h"
 #include "nsXULControllers.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(TextArea)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 HTMLTextAreaElement::HTMLTextAreaElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
     FromParser aFromParser)
-    : TextControlElement(std::move(aNodeInfo), aFromParser, NS_FORM_TEXTAREA),
+    : TextControlElement(std::move(aNodeInfo), aFromParser,
+                         FormControlType::Textarea),
       mValueChanged(false),
       mLastValueChangeWasInteractive(false),
       mHandlingSelect(false),
@@ -119,11 +120,14 @@ nsresult HTMLTextAreaElement::Clone(dom::NodeInfo* aNodeInfo,
     GetValueInternal(value, true);
 
     // SetValueInternal handles setting mValueChanged for us
-    rv = it->SetValueInternal(value, TextControlState::eSetValue_Notify);
-    NS_ENSURE_SUCCESS(rv, rv);
+    if (NS_WARN_IF(
+            NS_FAILED(rv = it->SetValueInternal(
+                          value, {ValueSetterOption::SetValueChanged})))) {
+      return rv;
+    }
   }
 
-  it->mLastValueChangeWasInteractive = mLastValueChangeWasInteractive;
+  it->SetLastValueChangeWasInteractive(mLastValueChangeWasInteractive);
   it.forget(aResult);
   return NS_OK;
 }
@@ -131,42 +135,14 @@ nsresult HTMLTextAreaElement::Clone(dom::NodeInfo* aNodeInfo,
 // nsIContent
 
 void HTMLTextAreaElement::Select() {
-  // XXX Bug?  We have to give the input focus before contents can be
-  // selected
-
-  FocusTristate state = FocusState();
-  if (state == eUnfocusable) {
-    return;
-  }
-
-  nsFocusManager* fm = nsFocusManager::GetFocusManager();
-
-  RefPtr<nsPresContext> presContext = GetPresContext(eForComposedDoc);
-  if (state == eInactiveWindow) {
-    if (fm) fm->SetFocus(this, nsIFocusManager::FLAG_NOSCROLL);
-    SelectAll(presContext);
-    return;
-  }
-
-  nsEventStatus status = nsEventStatus_eIgnore;
-  WidgetGUIEvent event(true, eFormSelect, nullptr);
-  // XXXbz HTMLInputElement guards against this reentering; shouldn't we?
-  EventDispatcher::Dispatch(static_cast<nsIContent*>(this), presContext, &event,
-                            nullptr, &status);
-
-  // If the DOM event was not canceled (e.g. by a JS event handler
-  // returning false)
-  if (status == nsEventStatus_eIgnore) {
-    if (fm) {
+  if (FocusState() != FocusTristate::eUnfocusable) {
+    if (RefPtr<nsFocusManager> fm = nsFocusManager::GetFocusManager()) {
       fm->SetFocus(this, nsIFocusManager::FLAG_NOSCROLL);
-
-      // ensure that the element is actually focused
-      if (this == fm->GetFocusedElement()) {
-        // Now Select all the text!
-        SelectAll(presContext);
-      }
     }
   }
+
+  SetSelectionRange(0, UINT32_MAX, mozilla::dom::Optional<nsAString>(),
+                    IgnoreErrors());
 }
 
 NS_IMETHODIMP
@@ -174,7 +150,7 @@ HTMLTextAreaElement::SelectAll(nsPresContext* aPresContext) {
   nsIFormControlFrame* formControlFrame = GetFormControlFrame(true);
 
   if (formControlFrame) {
-    formControlFrame->SetFormProperty(nsGkAtoms::select, EmptyString());
+    formControlFrame->SetFormProperty(nsGkAtoms::select, u""_ns);
   }
 
   return NS_OK;
@@ -182,7 +158,7 @@ HTMLTextAreaElement::SelectAll(nsPresContext* aPresContext) {
 
 bool HTMLTextAreaElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
                                           int32_t* aTabIndex) {
-  if (nsGenericHTMLFormElementWithState::IsHTMLFocusable(
+  if (nsGenericHTMLFormControlElementWithState::IsHTMLFocusable(
           aWithMouse, aIsFocusable, aTabIndex)) {
     return true;
   }
@@ -259,16 +235,6 @@ nsresult HTMLTextAreaElement::CreateEditor() {
   return mState->PrepareEditor();
 }
 
-void HTMLTextAreaElement::UpdateOverlayTextVisibility(bool aNotify) {
-  MOZ_ASSERT(mState);
-  mState->UpdateOverlayTextVisibility(aNotify);
-}
-
-bool HTMLTextAreaElement::GetPlaceholderVisibility() {
-  MOZ_ASSERT(mState);
-  return mState->GetPlaceholderVisibility();
-}
-
 void HTMLTextAreaElement::SetPreviewValue(const nsAString& aValue) {
   MOZ_ASSERT(mState);
   mState->SetPreviewText(aValue, true);
@@ -292,24 +258,18 @@ void HTMLTextAreaElement::EnablePreview() {
 
 bool HTMLTextAreaElement::IsPreviewEnabled() { return mIsPreviewEnabled; }
 
-bool HTMLTextAreaElement::GetPreviewVisibility() {
-  MOZ_ASSERT(mState);
-  return mState->GetPreviewVisibility();
-}
-
-nsresult HTMLTextAreaElement::SetValueInternal(const nsAString& aValue,
-                                               uint32_t aFlags) {
+nsresult HTMLTextAreaElement::SetValueInternal(
+    const nsAString& aValue, const ValueSetterOptions& aOptions) {
   MOZ_ASSERT(mState);
 
   // Need to set the value changed flag here if our value has in fact changed
-  // (i.e. if eSetValue_Notify is in aFlags), so that
-  // nsTextControlFrame::UpdateValueDisplay retrieves the correct value if
-  // needed.
-  if (aFlags & TextControlState::eSetValue_Notify) {
+  // (i.e. if ValueSetterOption::SetValueChanged is in aOptions), so that
+  // retrieves the correct value if needed.
+  if (aOptions.contains(ValueSetterOption::SetValueChanged)) {
     SetValueChanged(true);
   }
 
-  if (!mState->SetValue(aValue, aFlags)) {
+  if (!mState->SetValue(aValue, aOptions)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
@@ -329,9 +289,9 @@ void HTMLTextAreaElement::SetValue(const nsAString& aValue,
   GetValueInternal(currentValue, true);
 
   nsresult rv = SetValueInternal(
-      aValue, TextControlState::eSetValue_ByContent |
-                  TextControlState::eSetValue_Notify |
-                  TextControlState::eSetValue_MoveCursorToEndIfValueChanged);
+      aValue,
+      {ValueSetterOption::ByContentAPI, ValueSetterOption::SetValueChanged,
+       ValueSetterOption::MoveCursorToEndIfValueChanged});
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aError.Throw(rv);
     return;
@@ -344,10 +304,9 @@ void HTMLTextAreaElement::SetValue(const nsAString& aValue,
 
 void HTMLTextAreaElement::SetUserInput(const nsAString& aValue,
                                        nsIPrincipal& aSubjectPrincipal) {
-  SetValueInternal(
-      aValue, TextControlState::eSetValue_BySetUserInput |
-                  TextControlState::eSetValue_Notify |
-                  TextControlState::eSetValue_MoveCursorToEndIfValueChanged);
+  SetValueInternal(aValue, {ValueSetterOption::BySetUserInputAPI,
+                            ValueSetterOption::SetValueChanged,
+                            ValueSetterOption::MoveCursorToEndIfValueChanged});
 }
 
 nsresult HTMLTextAreaElement::SetValueChanged(bool aValueChanged) {
@@ -361,10 +320,28 @@ nsresult HTMLTextAreaElement::SetValueChanged(bool aValueChanged) {
   }
 
   if (mValueChanged != previousValue) {
+    UpdateTooLongValidityState();
+    UpdateTooShortValidityState();
+    // We need to do this unconditionally because the validity ui bits depend on
+    // this.
     UpdateState(true);
   }
 
   return NS_OK;
+}
+
+void HTMLTextAreaElement::SetLastValueChangeWasInteractive(
+    bool aWasInteractive) {
+  if (aWasInteractive == mLastValueChangeWasInteractive) {
+    return;
+  }
+  mLastValueChangeWasInteractive = aWasInteractive;
+  const bool wasValid = IsValid();
+  UpdateTooLongValidityState();
+  UpdateTooShortValidityState();
+  if (wasValid != IsValid()) {
+    UpdateState(true);
+  }
 }
 
 void HTMLTextAreaElement::GetDefaultValue(nsAString& aDefaultValue,
@@ -421,22 +398,27 @@ void HTMLTextAreaElement::MapAttributesIntoRule(
     }
   }
 
-  nsGenericHTMLFormElementWithState::MapDivAlignAttributeInto(aAttributes,
-                                                              aDecls);
-  nsGenericHTMLFormElementWithState::MapCommonAttributesInto(aAttributes,
-                                                             aDecls);
+  nsGenericHTMLFormControlElementWithState::MapDivAlignAttributeInto(
+      aAttributes, aDecls);
+  nsGenericHTMLFormControlElementWithState::MapCommonAttributesInto(aAttributes,
+                                                                    aDecls);
 }
 
 nsChangeHint HTMLTextAreaElement::GetAttributeChangeHint(
     const nsAtom* aAttribute, int32_t aModType) const {
   nsChangeHint retval =
-      nsGenericHTMLFormElementWithState::GetAttributeChangeHint(aAttribute,
-                                                                aModType);
+      nsGenericHTMLFormControlElementWithState::GetAttributeChangeHint(
+          aAttribute, aModType);
+
+  const bool isAdditionOrRemoval =
+      aModType == MutationEvent_Binding::ADDITION ||
+      aModType == MutationEvent_Binding::REMOVAL;
+
   if (aAttribute == nsGkAtoms::rows || aAttribute == nsGkAtoms::cols) {
     retval |= NS_STYLE_HINT_REFLOW;
   } else if (aAttribute == nsGkAtoms::wrap) {
     retval |= nsChangeHint_ReconstructFrame;
-  } else if (aAttribute == nsGkAtoms::placeholder) {
+  } else if (aAttribute == nsGkAtoms::placeholder && isAdditionOrRemoval) {
     retval |= nsChangeHint_ReconstructFrame;
   }
   return retval;
@@ -488,7 +470,7 @@ void HTMLTextAreaElement::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
     aVisitor.mWantsPreHandleEvent = true;
   }
 
-  nsGenericHTMLFormElementWithState::GetEventTargetParent(aVisitor);
+  nsGenericHTMLFormControlElementWithState::GetEventTargetParent(aVisitor);
 }
 
 nsresult HTMLTextAreaElement::PreHandleEvent(EventChainVisitor& aVisitor) {
@@ -496,7 +478,7 @@ nsresult HTMLTextAreaElement::PreHandleEvent(EventChainVisitor& aVisitor) {
     // Fire onchange (if necessary), before we do the blur, bug 370521.
     FireChangeEventIfNeeded();
   }
-  return nsGenericHTMLFormElementWithState::PreHandleEvent(aVisitor);
+  return nsGenericHTMLFormControlElementWithState::PreHandleEvent(aVisitor);
 }
 
 void HTMLTextAreaElement::FireChangeEventIfNeeded() {
@@ -677,8 +659,9 @@ void HTMLTextAreaElement::GetValueFromSetRangeText(nsAString& aValue) {
 
 nsresult HTMLTextAreaElement::SetValueFromSetRangeText(
     const nsAString& aValue) {
-  return SetValueInternal(aValue, TextControlState::eSetValue_ByContent |
-                                      TextControlState::eSetValue_Notify);
+  return SetValueInternal(aValue, {ValueSetterOption::ByContentAPI,
+                                   ValueSetterOption::BySetRangeTextAPI,
+                                   ValueSetterOption::SetValueChanged});
 }
 
 nsresult HTMLTextAreaElement::Reset() {
@@ -686,20 +669,14 @@ nsresult HTMLTextAreaElement::Reset() {
   GetDefaultValue(resetVal, IgnoreErrors());
   SetValueChanged(false);
 
-  nsresult rv =
-      SetValueInternal(resetVal, TextControlState::eSetValue_Internal);
+  nsresult rv = SetValueInternal(resetVal, ValueSetterOption::ByInternalAPI);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
 }
 
 NS_IMETHODIMP
-HTMLTextAreaElement::SubmitNamesValues(HTMLFormSubmission* aFormSubmission) {
-  // Disabled elements don't submit
-  if (IsDisabled()) {
-    return NS_OK;
-  }
-
+HTMLTextAreaElement::SubmitNamesValues(FormData* aFormData) {
   //
   // Get the name (if no name, no submit)
   //
@@ -718,13 +695,10 @@ HTMLTextAreaElement::SubmitNamesValues(HTMLFormSubmission* aFormSubmission) {
   //
   // Submit
   //
-  return aFormSubmission->AddNameValuePair(name, value);
+  return aFormData->AddNameValuePair(name, value);
 }
 
-NS_IMETHODIMP
-HTMLTextAreaElement::SaveState() {
-  nsresult rv = NS_OK;
-
+void HTMLTextAreaElement::SaveState() {
   // Only save if value != defaultValue (bug 62713)
   PresState* state = nullptr;
   if (mValueChanged) {
@@ -733,13 +707,11 @@ HTMLTextAreaElement::SaveState() {
       nsAutoString value;
       GetValueInternal(value, true);
 
-      rv = nsLinebreakConverter::ConvertStringLineBreaks(
-          value, nsLinebreakConverter::eLinebreakPlatform,
-          nsLinebreakConverter::eLinebreakContent);
-
-      if (NS_FAILED(rv)) {
+      if (NS_FAILED(nsLinebreakConverter::ConvertStringLineBreaks(
+              value, nsLinebreakConverter::eLinebreakPlatform,
+              nsLinebreakConverter::eLinebreakContent))) {
         NS_ERROR("Converting linebreaks failed!");
-        return rv;
+        return;
       }
 
       state->contentData() =
@@ -750,7 +722,6 @@ HTMLTextAreaElement::SaveState() {
   if (mDisabledChanged) {
     if (!state) {
       state = GetPrimaryPresState();
-      rv = NS_OK;
     }
     if (state) {
       // We do not want to save the real disabled state but the disabled
@@ -759,7 +730,6 @@ HTMLTextAreaElement::SaveState() {
       state->disabledSet() = true;
     }
   }
-  return rv;
 }
 
 bool HTMLTextAreaElement::RestoreState(PresState* aState) {
@@ -770,8 +740,7 @@ bool HTMLTextAreaElement::RestoreState(PresState* aState) {
     SetValue(state.get_TextContentData().value(), rv);
     ENSURE_SUCCESS(rv, false);
     if (state.get_TextContentData().lastValueChangeWasInteractive()) {
-      mLastValueChangeWasInteractive = true;
-      UpdateState(true);
+      SetLastValueChangeWasInteractive(true);
     }
   }
   if (aState->disabledSet() && !aState->disabled()) {
@@ -782,7 +751,8 @@ bool HTMLTextAreaElement::RestoreState(PresState* aState) {
 }
 
 EventStates HTMLTextAreaElement::IntrinsicState() const {
-  EventStates state = nsGenericHTMLFormElementWithState::IntrinsicState();
+  EventStates state =
+      nsGenericHTMLFormControlElementWithState::IntrinsicState();
 
   if (IsCandidateForConstraintValidation()) {
     if (IsValid()) {
@@ -790,11 +760,9 @@ EventStates HTMLTextAreaElement::IntrinsicState() const {
     } else {
       state |= NS_EVENT_STATE_INVALID;
       // :-moz-ui-invalid always apply if the element suffers from a custom
-      // error and never applies if novalidate is set on the form owner.
-      if ((!mForm ||
-           !mForm->HasAttr(kNameSpaceID_None, nsGkAtoms::novalidate)) &&
-          (GetValidityState(VALIDITY_STATE_CUSTOM_ERROR) ||
-           (mCanShowInvalidUI && ShouldShowValidityUI()))) {
+      // error.
+      if (GetValidityState(VALIDITY_STATE_CUSTOM_ERROR) ||
+          (mCanShowInvalidUI && ShouldShowValidityUI())) {
         state |= NS_EVENT_STATE_MOZ_UI_INVALID;
       }
     }
@@ -804,19 +772,16 @@ EventStates HTMLTextAreaElement::IntrinsicState() const {
     //    :-moz-ui-invalid applying before it was focused ;
     // 2. The element is either valid or isn't allowed to have
     //    :-moz-ui-invalid applying ;
-    // 3. The element has no form owner or its form owner doesn't have the
-    //    novalidate attribute set ;
-    // 4. The element has already been modified or the user tried to submit the
+    // 3. The element has already been modified or the user tried to submit the
     //    form owner while invalid.
-    if ((!mForm || !mForm->HasAttr(kNameSpaceID_None, nsGkAtoms::novalidate)) &&
-        (mCanShowValidUI && ShouldShowValidityUI() &&
-         (IsValid() || (state.HasState(NS_EVENT_STATE_MOZ_UI_INVALID) &&
-                        !mCanShowInvalidUI)))) {
+    if (mCanShowValidUI && ShouldShowValidityUI() &&
+        (IsValid() || (state.HasState(NS_EVENT_STATE_MOZ_UI_INVALID) &&
+                       !mCanShowInvalidUI))) {
       state |= NS_EVENT_STATE_MOZ_UI_VALID;
     }
   }
 
-  if (HasAttr(kNameSpaceID_None, nsGkAtoms::placeholder) && IsValueEmpty()) {
+  if (HasAttr(nsGkAtoms::placeholder) && IsValueEmpty()) {
     state |= NS_EVENT_STATE_PLACEHOLDERSHOWN;
   }
 
@@ -826,7 +791,7 @@ EventStates HTMLTextAreaElement::IntrinsicState() const {
 nsresult HTMLTextAreaElement::BindToTree(BindContext& aContext,
                                          nsINode& aParent) {
   nsresult rv =
-      nsGenericHTMLFormElementWithState::BindToTree(aContext, aParent);
+      nsGenericHTMLFormControlElementWithState::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // If there is a disabled fieldset in the parent chain, the element is now
@@ -841,7 +806,7 @@ nsresult HTMLTextAreaElement::BindToTree(BindContext& aContext,
 }
 
 void HTMLTextAreaElement::UnbindFromTree(bool aNullParent) {
-  nsGenericHTMLFormElementWithState::UnbindFromTree(aNullParent);
+  nsGenericHTMLFormControlElementWithState::UnbindFromTree(aNullParent);
 
   // We might be no longer disabled because of parent chain changed.
   UpdateValueMissingValidityState();
@@ -859,8 +824,8 @@ nsresult HTMLTextAreaElement::BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
     mDisabledChanged = true;
   }
 
-  return nsGenericHTMLFormElementWithState::BeforeSetAttr(aNameSpaceID, aName,
-                                                          aValue, aNotify);
+  return nsGenericHTMLFormControlElementWithState::BeforeSetAttr(
+      aNameSpaceID, aName, aValue, aNotify);
 }
 
 void HTMLTextAreaElement::CharacterDataChanged(nsIContent* aContent,
@@ -926,15 +891,19 @@ nsresult HTMLTextAreaElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
       UpdateTooLongValidityState();
     } else if (aName == nsGkAtoms::minlength) {
       UpdateTooShortValidityState();
+    } else if (aName == nsGkAtoms::placeholder) {
+      if (nsTextControlFrame* f = do_QueryFrame(GetPrimaryFrame())) {
+        f->PlaceholderChanged(aOldValue, aValue);
+      }
     }
   }
 
-  return nsGenericHTMLFormElementWithState::AfterSetAttr(
+  return nsGenericHTMLFormControlElementWithState::AfterSetAttr(
       aNameSpaceID, aName, aValue, aOldValue, aSubjectPrincipal, aNotify);
 }
 
 nsresult HTMLTextAreaElement::CopyInnerTo(Element* aDest) {
-  nsresult rv = nsGenericHTMLFormElementWithState::CopyInnerTo(aDest);
+  nsresult rv = nsGenericHTMLFormControlElementWithState::CopyInnerTo(aDest);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (aDest->OwnerDoc()->IsStaticDocument()) {
@@ -959,14 +928,14 @@ bool HTMLTextAreaElement::IsValueEmpty() const {
 }
 
 void HTMLTextAreaElement::SetCustomValidity(const nsAString& aError) {
-  nsIConstraintValidation::SetCustomValidity(aError);
+  ConstraintValidation::SetCustomValidity(aError);
 
   UpdateState(true);
 }
 
 bool HTMLTextAreaElement::IsTooLong() {
   if (!mValueChanged || !mLastValueChangeWasInteractive ||
-      !HasAttr(kNameSpaceID_None, nsGkAtoms::maxlength)) {
+      !HasAttr(nsGkAtoms::maxlength)) {
     return false;
   }
 
@@ -984,7 +953,7 @@ bool HTMLTextAreaElement::IsTooLong() {
 
 bool HTMLTextAreaElement::IsTooShort() {
   if (!mValueChanged || !mLastValueChangeWasInteractive ||
-      !HasAttr(kNameSpaceID_None, nsGkAtoms::minlength)) {
+      !HasAttr(nsGkAtoms::minlength)) {
     return false;
   }
 
@@ -1022,7 +991,8 @@ void HTMLTextAreaElement::UpdateValueMissingValidityState() {
 
 void HTMLTextAreaElement::UpdateBarredFromConstraintValidation() {
   SetBarredFromConstraintValidation(
-      HasAttr(kNameSpaceID_None, nsGkAtoms::readonly) || IsDisabled());
+      HasAttr(kNameSpaceID_None, nsGkAtoms::readonly) ||
+      HasFlag(ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR) || IsDisabled());
 }
 
 nsresult HTMLTextAreaElement::GetValidationMessage(
@@ -1069,8 +1039,8 @@ nsresult HTMLTextAreaElement::GetValidationMessage(
       aValidationMessage = message;
     } break;
     default:
-      rv = nsIConstraintValidation::GetValidationMessage(aValidationMessage,
-                                                         aType);
+      rv =
+          ConstraintValidation::GetValidationMessage(aValidationMessage, aType);
   }
 
   return rv;
@@ -1148,7 +1118,7 @@ void HTMLTextAreaElement::FieldSetDisabledChanged(bool aNotify) {
   // This *has* to be called before UpdateBarredFromConstraintValidation and
   // UpdateValueMissingValidityState because these two functions depend on our
   // disabled state.
-  nsGenericHTMLFormElementWithState::FieldSetDisabledChanged(aNotify);
+  nsGenericHTMLFormControlElementWithState::FieldSetDisabledChanged(aNotify);
 
   UpdateValueMissingValidityState();
   UpdateBarredFromConstraintValidation();
@@ -1167,5 +1137,4 @@ void HTMLTextAreaElement::GetAutocomplete(DOMString& aValue) {
       attributeVal, aValue, mAutocompleteAttrState);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

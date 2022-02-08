@@ -1,3 +1,7 @@
+import org.tomlj.Toml
+import org.tomlj.TomlParseResult
+import org.tomlj.TomlTable
+
 def tryInt = { string ->
     if (string == null) {
         return string
@@ -8,12 +12,35 @@ def tryInt = { string ->
     return string
 }
 
+// Parses the Cargo.lock and returns the version for the given package name.
+def getRustVersionFor(packageName) {
+    String version = null;
+    TomlParseResult result = Toml.parse(file("Cargo.lock").getText());
+    for (object in result.getArray("package").toList()) {
+        def table = (TomlTable) object
+        if (table.getString("name") == packageName) {
+            if (version != null) {
+                throw new StopExecutionException("Multiple versions for '${packageName}' found." +
+                        " Ensure '${packageName}' is only included once.")
+            }
+            version = table.getString("version")
+        }
+    }
+    return version
+}
+
 allprojects {
     // Expose the per-object-directory configuration to all projects.
     ext {
         mozconfig = gradle.mozconfig
         topsrcdir = gradle.mozconfig.topsrcdir
         topobjdir = gradle.mozconfig.topobjdir
+
+        gleanVersion = "42.1.0"
+        if (gleanVersion != getRustVersionFor("glean")) {
+          throw new StopExecutionException("Mismatched Glean version, expected: ${gleanVersion}," +
+              " found ${getRustVersionFor("glean")}")
+        }
 
         buildToolsVersion = mozconfig.substs.ANDROID_BUILD_TOOLS_VERSION
         compileSdkVersion = tryInt(mozconfig.substs.ANDROID_TARGET_SDK)
@@ -71,22 +98,15 @@ buildscript {
         }
     }
 
-    ext.kotlin_version = '1.3.41'
-    ext.support_library_version = '28.0.0'
-    ext.jacoco_version = '0.8.1'
-    ext.lifecycle_library_version = '1.1.1'
-
-    if (gradle.mozconfig.substs.MOZ_ANDROID_GOOGLE_PLAY_SERVICES) {
-        ext.google_play_services_version = '15.0.1'
-        ext.google_play_services_cast_version = '16.0.0'
-        ext.google_play_services_fido_version = '17.0.0'
-    }
+    ext.kotlin_version = '1.5.20'
 
     dependencies {
-        classpath 'org.mozilla.apilint:apilint:0.3.0'
-        classpath 'com.android.tools.build:gradle:3.4.2'
+        classpath 'org.mozilla.apilint:apilint:0.4.4'
+        classpath 'com.android.tools.build:gradle:4.2.0'
         classpath 'com.getkeepsafe.dexcount:dexcount-gradle-plugin:0.8.2'
         classpath 'org.apache.commons:commons-exec:1.3'
+        classpath 'com.diffplug.spotless:spotless-plugin-gradle:5.16.0'
+        classpath 'org.tomlj:tomlj:1.0.0'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
@@ -120,15 +140,9 @@ ext.geckoBinariesOnlyIf = { task ->
         return false
     }
 
-    // Multi-l10n builds set `AB_CD=multi`, which isn't a valid locale.  This
-    // causes the
-    //
-    // |mach build| > |mach gradle| >
-    // |mach build mobile/android/base/generated_android_code_and_resources| >
-    // AndroidManifest.xml > strings.xml > multi/brand.dtd
-    //
-    // dependency chain to fail, since multi isn't a real locale.  To avoid
-    // this, if Gradle is invoked with AB_CD=multi, we don't invoke Make at all.
+    // Multi-l10n builds set `AB_CD=multi`, which isn't a valid locale.  To
+    // avoid failures, if Gradle is invoked with AB_CD=multi, we don't invoke
+    // Make at all.
     if ('multi' == System.env.AB_CD) {
         rootProject.logger.lifecycle("Skipping task ${task.path} because: AB_CD=multi")
         return false
@@ -154,15 +168,10 @@ class MachExec extends Exec {
         // $topsrcdir/settings.gradle.
         project.ext.mozconfig.mozconfig.env.unmodified.each { k, v -> environment.remove(k) }
         environment project.ext.mozconfig.orig_mozconfig.env.unmodified
+        environment 'MOZCONFIG', project.ext.mozconfig.substs.MOZCONFIG
     }
 }
 
-// Why |mach build mobile/android/base/...| and |mach build faster|?  |mach
-// build faster| generates dependentlibs.list, which in turn depends on compiled
-// code.  That causes a circular dependency between Java compilation/JNI wrapper
-// generation/native code compilation.  So we have the special target for
-// Android-specific generated code, and the |mach build faster| target for all
-// the stuff that goes into the omnijar.
 task machBuildFaster(type: MachExec) {
     onlyIf rootProject.ext.geckoBinariesOnlyIf
 
@@ -183,42 +192,31 @@ task machBuildFaster(type: MachExec) {
     errorOutput = standardOutput
 }
 
-def createMachStagePackageTask(name) {
-    return task(name, type: MachExec) {
-        onlyIf rootProject.ext.geckoBinariesOnlyIf
+task machStagePackage(type: MachExec) {
+    onlyIf rootProject.ext.geckoBinariesOnlyIf
 
-        dependsOn rootProject.machBuildFaster
+    dependsOn rootProject.machBuildFaster
 
-        workingDir "${topobjdir}"
+    workingDir "${topobjdir}"
 
-        // We'd prefer this to be a `mach` invocation, but `mach build
-        // mobile/android/installer/stage-package` doesn't work as expected.
-        commandLine mozconfig.substs.GMAKE
-        args '-C'
-        args "${topobjdir}/mobile/android/installer"
-        args 'stage-package'
+    // We'd prefer this to be a `mach` invocation, but `mach build
+    // mobile/android/installer/stage-package` doesn't work as expected.
+    commandLine mozconfig.substs.GMAKE
+    args '-C'
+    args "${topobjdir}/mobile/android/installer"
+    args 'stage-package'
 
-        outputs.file "${topobjdir}/dist/fennec/assets/${mozconfig.substs.ANDROID_CPU_ARCH}/libxul.so"
-        outputs.file "${topobjdir}/dist/fennec/lib/${mozconfig.substs.ANDROID_CPU_ARCH}/libmozglue.so"
-
-        // Force running `stage-package`.
-        outputs.upToDateWhen { false }
-
-        // `path` is like `:machStagePackage`.
-        standardOutput = new TaggedLogOutputStream("${path}>", logger)
-        errorOutput = standardOutput
-    }
-}
-
-createMachStagePackageTask("machStagePackageForFennec").with {
-    outputs.file "${topobjdir}/dist/fennec/assets/omni.ja"
-}
-
-createMachStagePackageTask("machStagePackageForGeckoview").with {
-    args 'MOZ_GECKOVIEW_JAR=1'
     outputs.file "${topobjdir}/dist/geckoview/assets/omni.ja"
-    // Avoid races between stage-package invocations.
-    mustRunAfter tasks["machStagePackageForFennec"]
+
+    outputs.file "${topobjdir}/dist/geckoview/assets/${mozconfig.substs.ANDROID_CPU_ARCH}/libxul.so"
+    outputs.file "${topobjdir}/dist/geckoview/lib/${mozconfig.substs.ANDROID_CPU_ARCH}/libmozglue.so"
+
+    // Force running `stage-package`.
+    outputs.upToDateWhen { false }
+
+    // `path` is like `:machStagePackage`.
+    standardOutput = new TaggedLogOutputStream("${path}>", logger)
+    errorOutput = standardOutput
 }
 
 afterEvaluate {
@@ -268,6 +266,20 @@ idea {
             excludeDirs -= file(topobjdir)
             excludeDirs += files(file(topobjdir).listFiles())
             excludeDirs -= file("${topobjdir}/gradle")
+        }
+    }
+}
+
+subprojects {
+    apply plugin: "com.diffplug.spotless"
+
+    spotless {
+        java {
+            target project.fileTree(project.projectDir) {
+                include '**/*.java'
+                exclude '**/thirdparty/**'
+            }
+            googleJavaFormat('1.7')
         }
     }
 }

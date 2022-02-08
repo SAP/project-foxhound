@@ -21,7 +21,7 @@
 #   }
 #
 # - action tasks - See:
-#   * taskcluster/taskgraph/actions/registry.py,
+#   * taskcluster/gecko_taskgraph/actions/registry.py,
 #   * https://docs.taskcluster.net/docs/manual/using/actions/spec
 #   * ci-admin:ciadmin/generate/in_tree_actions.py
 #
@@ -157,6 +157,7 @@ tasks:
                       - 'assume:repo:${repoUrl[8:]}:branch:default'
                       - 'queue:route:notify.email.${ownerEmail}.*'
                       - 'in-tree:hook-action:project-${trustDomain}/in-tree-action-${repository.level}-*'
+                      - 'index:insert-task:${trustDomain}.v2.${repository.project}.*'
                   else:
                       $if: 'tasks_for == "action"'
                       then:
@@ -221,9 +222,9 @@ tasks:
 
                   # Note: This task is built server side without the context or tooling that
                   # exist in tree so we must hard code the hash
-                  image: 'taskcluster/decision:2.2.0@sha256:0e9689e94605eb8395f5b49141a48148416b0d825f6f7be04c29642d1a85ee3d'
+                  image: 'mozillareleases/gecko_decision:3.0.1@sha256:9964730ed951584e65032bd1d6a2b7ede6d880a8b7aefb72d0d7f82346d834e3'
 
-                  maxRunTime: 1800
+                  maxRunTime: 3600
 
                   command:
                       - /builds/worker/bin/run-task
@@ -250,6 +251,7 @@ tasks:
                                 --owner='${ownerEmail}'
                                 --level='${repository.level}'
                                 --tasks-for='${tasks_for}'
+                                --repository-type=hg
                                 --base-repository="$GECKO_BASE_REPOSITORY"
                                 --head-repository="$GECKO_HEAD_REPOSITORY"
                                 --head-ref="$GECKO_HEAD_REF"

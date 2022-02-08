@@ -10,6 +10,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "Units.h"
 
 namespace mozilla {
 
@@ -53,9 +54,7 @@ class HTMLVideoElement final : public HTMLMediaElement {
 
   virtual void UnbindFromTree(bool aNullParent = true) override;
 
-  // Set size with the current video frame's height and width.
-  // If there is no video frame, returns NS_ERROR_FAILURE.
-  nsresult GetVideoSize(nsIntSize* size);
+  mozilla::Maybe<mozilla::CSSIntSize> GetVideoSize() const;
 
   virtual void UpdateMediaSize(const nsIntSize& aSize) override;
 
@@ -129,9 +128,6 @@ class HTMLVideoElement final : public HTMLMediaElement {
 
   bool MozHasAudio() const;
 
-  // Gives access to the decoder's frame statistics, if present.
-  FrameStatistics* GetFrameStatistics();
-
   already_AddRefed<VideoPlaybackQuality> GetVideoPlaybackQuality();
 
   bool MozOrientationLockEnabled() const {
@@ -151,6 +147,8 @@ class HTMLVideoElement final : public HTMLMediaElement {
 
   void OnSecondaryVideoContainerInstalled(
       const RefPtr<VideoFrameContainer>& aSecondaryContainer) override;
+
+  void OnSecondaryVideoOutputFirstFrameRendered();
 
  protected:
   virtual ~HTMLVideoElement();
@@ -175,6 +173,8 @@ class HTMLVideoElement final : public HTMLMediaElement {
 
   bool mIsOrientationLocked;
 
+  WatchManager<HTMLVideoElement> mVideoWatchManager;
+
  private:
   bool SetVisualCloneTarget(
       RefPtr<HTMLVideoElement> aVisualCloneTarget,
@@ -192,11 +192,11 @@ class HTMLVideoElement final : public HTMLMediaElement {
   // Set when mVisualCloneTarget is set, and resolved (and unset) when the
   // secondary container has been applied to the underlying resource.
   RefPtr<Promise> mVisualCloneTargetPromise;
-  // Set when mVisualCloneTarget is set and we are playing a MediaStream with a
-  // video track. This is the output wrapping the VideoFrameContainer of
-  // mVisualCloneTarget, so the selected video track can render its frames to
-  // it.
-  RefPtr<SecondaryVideoOutput> mSecondaryVideoOutput;
+  // Set when beginning to clone visually and we are playing a MediaStream.
+  // This is the output wrapping the VideoFrameContainer of mVisualCloneTarget,
+  // so we can render its first frame, and resolve mVisualCloneTargetPromise as
+  // we do.
+  RefPtr<FirstFrameVideoOutput> mSecondaryVideoOutput;
   // If this video is the clone target of another video element,
   // then mVisualCloneSource points to that originating video
   // element.

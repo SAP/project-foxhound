@@ -7,7 +7,6 @@
 
 #if defined(MOZ_WIDGET_ANDROID)
 #  include "apz/src/APZCTreeManager.h"
-#  include "mozilla/layers/AsyncCompositionManager.h"
 #endif
 #include <utility>
 
@@ -15,10 +14,10 @@
 #include "SynchronousTask.h"
 #include "mozilla/Unused.h"
 #include "mozilla/gfx/Types.h"
+#include "mozilla/ipc/Endpoint.h"
 #include "mozilla/layers/Compositor.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/CompositorThread.h"
-#include "mozilla/layers/LayerManagerComposite.h"
 #include "mozilla/layers/UiCompositorControllerMessageTypes.h"
 #include "mozilla/layers/WebRenderBridgeParent.h"
 
@@ -96,7 +95,7 @@ UiCompositorControllerParent::RecvInvalidateAndRender() {
           mRootLayerTreeId);
   if (parent) {
     parent->Invalidate();
-    parent->ScheduleComposition();
+    parent->ScheduleComposition(wr::RenderReasons::OTHER);
   }
   return IPC_OK();
 }
@@ -127,13 +126,8 @@ mozilla::ipc::IPCResult UiCompositorControllerParent::RecvDefaultClearColor(
   LayerTreeState* state =
       CompositorBridgeParent::GetIndirectShadowTree(mRootLayerTreeId);
 
-  if (state && state->mLayerManager) {
-    Compositor* compositor = state->mLayerManager->GetCompositor();
-    if (compositor) {
-      // Android Color is ARGB which is apparently unusual.
-      compositor->SetDefaultClearColor(
-          gfx::DeviceColor::UnusualFromARGB(aColor));
-    }
+  if (state && state->mWrBridge) {
+    state->mWrBridge->SetClearColor(gfx::DeviceColor::UnusualFromARGB(aColor));
   }
 
   return IPC_OK();
@@ -145,13 +139,9 @@ UiCompositorControllerParent::RecvRequestScreenPixels() {
   LayerTreeState* state =
       CompositorBridgeParent::GetIndirectShadowTree(mRootLayerTreeId);
 
-  if (state && state->mLayerManager && state->mParent) {
-    state->mLayerManager->RequestScreenPixels(this);
-    state->mParent->Invalidate();
-    state->mParent->ScheduleComposition();
-  } else if (state && state->mWrBridge) {
+  if (state && state->mWrBridge) {
     state->mWrBridge->RequestScreenPixels(this);
-    state->mWrBridge->ScheduleForcedGenerateFrame();
+    state->mWrBridge->ScheduleForcedGenerateFrame(wr::RenderReasons::OTHER);
   }
 #endif  // defined(MOZ_WIDGET_ANDROID)
 
@@ -212,12 +202,12 @@ void UiCompositorControllerParent::NotifyFirstPaint() {
 }
 
 void UiCompositorControllerParent::NotifyUpdateScreenMetrics(
-    const FrameMetrics& aMetrics) {
+    const GeckoViewMetrics& aMetrics) {
 #if defined(MOZ_WIDGET_ANDROID)
+  // TODO: Need to handle different x-and y-scales.
   CSSToScreenScale scale = ViewTargetAs<ScreenPixel>(
-      aMetrics.GetZoom().ToScaleFactor(),
-      PixelCastJustification::ScreenIsParentLayerForRoot);
-  ScreenPoint scrollOffset = aMetrics.GetScrollOffset() * scale;
+      aMetrics.mZoom, PixelCastJustification::ScreenIsParentLayerForRoot);
+  ScreenPoint scrollOffset = aMetrics.mVisualScrollOffset * scale;
   CompositorThread()->Dispatch(NewRunnableMethod<ScreenPoint, CSSToScreenScale>(
       "UiCompositorControllerParent::SendRootFrameMetrics", this,
       &UiCompositorControllerParent::SendRootFrameMetrics, scrollOffset,
@@ -245,6 +235,7 @@ void UiCompositorControllerParent::InitializeForSameProcess() {
   // This function is called by UiCompositorControllerChild in the main thread.
   // So dispatch to the compositor thread to Initialize.
   if (!CompositorThreadHolder::IsInCompositorThread()) {
+    SetOtherProcessId(base::GetCurrentProcId());
     SynchronousTask task(
         "UiCompositorControllerParent::InitializeForSameProcess");
 

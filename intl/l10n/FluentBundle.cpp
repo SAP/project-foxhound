@@ -7,15 +7,44 @@
 #include "FluentBundle.h"
 #include "nsContentUtils.h"
 #include "mozilla/dom/UnionTypes.h"
+#include "mozilla/intl/NumberFormat.h"
+#include "mozilla/intl/DateTimeFormat.h"
+#include "mozilla/intl/DateTimePatternGenerator.h"
+#include "nsIInputStream.h"
 #include "nsStringFwd.h"
 #include "nsTArray.h"
-#include "unicode/numberformatter.h"
-#include "unicode/datefmt.h"
+#include "js/PropertyAndElement.h"  // JS_DefineElement
 
 using namespace mozilla::dom;
 
 namespace mozilla {
 namespace intl {
+
+class SizeableUTF8Buffer {
+ public:
+  using CharType = char;
+
+  bool reserve(size_t size) {
+    mBuffer.reset(reinterpret_cast<CharType*>(malloc(size)));
+    mCapacity = size;
+    return true;
+  }
+
+  CharType* data() { return mBuffer.get(); }
+
+  size_t capacity() const { return mCapacity; }
+
+  void written(size_t amount) { mWritten = amount; }
+
+  size_t mWritten = 0;
+  size_t mCapacity = 0;
+
+  struct FreePolicy {
+    void operator()(const void* ptr) { free(const_cast<void*>(ptr)); }
+  };
+
+  UniquePtr<CharType[], FreePolicy> mBuffer;
+};
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(FluentPattern, mParent)
 
@@ -160,35 +189,41 @@ bool extendJSArrayWithErrors(JSContext* aCx, JS::Handle<JSObject*> aErrors,
   return true;
 }
 
+/* static */
+void FluentBundle::ConvertArgs(const L10nArgs& aArgs,
+                               nsTArray<ffi::L10nArg>& aRetVal) {
+  aRetVal.SetCapacity(aArgs.Entries().Length());
+  for (const auto& entry : aArgs.Entries()) {
+    if (!entry.mValue.IsNull()) {
+      const auto& value = entry.mValue.Value();
+
+      if (value.IsUTF8String()) {
+        aRetVal.AppendElement(ffi::L10nArg{
+            &entry.mKey,
+            ffi::FluentArgument::String(&value.GetAsUTF8String())});
+      } else {
+        aRetVal.AppendElement(ffi::L10nArg{
+            &entry.mKey, ffi::FluentArgument::Double_(value.GetAsDouble())});
+      }
+    }
+  }
+}
+
 void FluentBundle::FormatPattern(JSContext* aCx, const FluentPattern& aPattern,
                                  const Nullable<L10nArgs>& aArgs,
                                  const Optional<JS::Handle<JSObject*>>& aErrors,
                                  nsACString& aRetVal, ErrorResult& aRv) {
-  nsTArray<nsCString> argIds;
-  nsTArray<ffi::FluentArgument> argValues;
+  nsTArray<ffi::L10nArg> l10nArgs;
 
   if (!aArgs.IsNull()) {
     const L10nArgs& args = aArgs.Value();
-    for (auto& entry : args.Entries()) {
-      if (!entry.mValue.IsNull()) {
-        argIds.AppendElement(entry.mKey);
-
-        auto& value = entry.mValue.Value();
-        if (value.IsUTF8String()) {
-          argValues.AppendElement(
-              ffi::FluentArgument::String(&value.GetAsUTF8String()));
-        } else {
-          argValues.AppendElement(
-              ffi::FluentArgument::Double_(value.GetAsDouble()));
-        }
-      }
-    }
+    ConvertArgs(args, l10nArgs);
   }
 
   nsTArray<nsCString> errors;
   bool succeeded = fluent_bundle_format_pattern(mRaw.get(), &aPattern.mId,
-                                                &aPattern.mAttrName, &argIds,
-                                                &argValues, &aRetVal, &errors);
+                                                &aPattern.mAttrName, &l10nArgs,
+                                                &aRetVal, &errors);
 
   if (!succeeded) {
     return aRv.ThrowInvalidStateError(
@@ -208,127 +243,163 @@ void FluentBundle::FormatPattern(JSContext* aCx, const FluentPattern& aPattern,
 extern "C" {
 ffi::RawNumberFormatter* FluentBuiltInNumberFormatterCreate(
     const nsCString* aLocale, const ffi::FluentNumberOptionsRaw* aOptions) {
-  auto grouping = aOptions->use_grouping
-                      ? UNumberGroupingStrategy::UNUM_GROUPING_AUTO
-                      : UNumberGroupingStrategy::UNUM_GROUPING_OFF;
-
-  auto formatter =
-      icu::number::NumberFormatter::with().grouping(grouping).integerWidth(
-          icu::number::IntegerWidth::zeroFillTo(
-              aOptions->minimum_integer_digits));
-
-  // JS uses ROUND_HALFUP strategy, ICU by default uses ROUND_HALFEVEN.
-  // See: http://userguide.icu-project.org/formatparse/numbers/rounding-modes
-  formatter = formatter.roundingMode(UNUM_ROUND_HALFUP);
-
-  if (aOptions->style == ffi::FluentNumberStyleRaw::Currency) {
-    UErrorCode ec = U_ZERO_ERROR;
-    formatter = formatter.unit(icu::CurrencyUnit(aOptions->currency.get(), ec));
-    MOZ_ASSERT(U_SUCCESS(ec), "Failed to format the currency unit.");
+  NumberFormatOptions options;
+  switch (aOptions->style) {
+    case ffi::FluentNumberStyleRaw::Decimal:
+      break;
+    case ffi::FluentNumberStyleRaw::Currency: {
+      std::string currency = aOptions->currency.get();
+      switch (aOptions->currency_display) {
+        case ffi::FluentNumberCurrencyDisplayStyleRaw::Symbol:
+          options.mCurrency = Some(std::make_pair(
+              currency, NumberFormatOptions::CurrencyDisplay::Symbol));
+          break;
+        case ffi::FluentNumberCurrencyDisplayStyleRaw::Code:
+          options.mCurrency = Some(std::make_pair(
+              currency, NumberFormatOptions::CurrencyDisplay::Code));
+          break;
+        case ffi::FluentNumberCurrencyDisplayStyleRaw::Name:
+          options.mCurrency = Some(std::make_pair(
+              currency, NumberFormatOptions::CurrencyDisplay::Name));
+          break;
+        default:
+          MOZ_ASSERT_UNREACHABLE();
+          break;
+      }
+    } break;
+    case ffi::FluentNumberStyleRaw::Percent:
+      options.mPercent = true;
+      break;
+    default:
+      MOZ_ASSERT_UNREACHABLE();
+      break;
   }
-  if (aOptions->style == ffi::FluentNumberStyleRaw::Percent) {
-    formatter = formatter.unit(icu::NoUnit::percent());
-  }
+
+  options.mGrouping = aOptions->use_grouping
+                          ? NumberFormatOptions::Grouping::Auto
+                          : NumberFormatOptions::Grouping::Never;
+  options.mMinIntegerDigits = Some(aOptions->minimum_integer_digits);
 
   if (aOptions->minimum_significant_digits >= 0 ||
       aOptions->maximum_significant_digits >= 0) {
-    auto precision = icu::number::Precision::minMaxSignificantDigits(
-                         aOptions->minimum_significant_digits,
-                         aOptions->maximum_significant_digits)
-                         .minMaxFraction(aOptions->minimum_fraction_digits,
-                                         aOptions->maximum_fraction_digits);
-    formatter = formatter.precision(precision);
+    options.mSignificantDigits =
+        Some(std::make_pair(aOptions->minimum_significant_digits,
+                            aOptions->maximum_significant_digits));
   } else {
-    auto precision = icu::number::Precision::minMaxFraction(
-        aOptions->minimum_fraction_digits, aOptions->maximum_fraction_digits);
-    formatter = formatter.precision(precision);
+    options.mFractionDigits = Some(std::make_pair(
+        aOptions->minimum_fraction_digits, aOptions->maximum_fraction_digits));
   }
 
-  return reinterpret_cast<ffi::RawNumberFormatter*>(
-      formatter.locale(aLocale->get()).clone().orphan());
+  Result<UniquePtr<NumberFormat>, ICUError> result =
+      NumberFormat::TryCreate(aLocale->get(), options);
+
+  MOZ_ASSERT(result.isOk());
+
+  if (result.isOk()) {
+    return reinterpret_cast<ffi::RawNumberFormatter*>(
+        result.unwrap().release());
+  }
+
+  return nullptr;
 }
 
 uint8_t* FluentBuiltInNumberFormatterFormat(
-    const ffi::RawNumberFormatter* aFormatter, double input,
-    uint32_t* aOutCount) {
-  auto formatter =
-      reinterpret_cast<const icu::number::LocalizedNumberFormatter*>(
-          aFormatter);
-  UErrorCode ec = U_ZERO_ERROR;
-  icu::number::FormattedNumber result = formatter->formatDouble(input, ec);
-  icu::UnicodeString str = result.toTempString(ec);
-  return reinterpret_cast<uint8_t*>(ToNewUTF8String(
-      nsDependentSubstring(str.getBuffer(), str.length()), aOutCount));
+    const ffi::RawNumberFormatter* aFormatter, double input, size_t* aOutCount,
+    size_t* aOutCapacity) {
+  const NumberFormat* nf = reinterpret_cast<const NumberFormat*>(aFormatter);
+
+  SizeableUTF8Buffer buffer;
+  if (nf->format(input, buffer).isOk()) {
+    *aOutCount = buffer.mWritten;
+    *aOutCapacity = buffer.mCapacity;
+    return reinterpret_cast<uint8_t*>(buffer.mBuffer.release());
+  }
+
+  return nullptr;
 }
 
 void FluentBuiltInNumberFormatterDestroy(ffi::RawNumberFormatter* aFormatter) {
-  delete reinterpret_cast<icu::number::LocalizedNumberFormatter*>(aFormatter);
+  delete reinterpret_cast<NumberFormat*>(aFormatter);
 }
 
 /* DateTime */
 
-static icu::DateFormat::EStyle GetICUStyle(ffi::FluentDateTimeStyle aStyle) {
+static Maybe<DateTimeFormat::Style> GetStyle(ffi::FluentDateTimeStyle aStyle) {
   switch (aStyle) {
     case ffi::FluentDateTimeStyle::Full:
-      return icu::DateFormat::FULL;
+      return Some(DateTimeFormat::Style::Full);
     case ffi::FluentDateTimeStyle::Long:
-      return icu::DateFormat::LONG;
+      return Some(DateTimeFormat::Style::Long);
     case ffi::FluentDateTimeStyle::Medium:
-      return icu::DateFormat::MEDIUM;
+      return Some(DateTimeFormat::Style::Medium);
     case ffi::FluentDateTimeStyle::Short:
-      return icu::DateFormat::SHORT;
+      return Some(DateTimeFormat::Style::Short);
     case ffi::FluentDateTimeStyle::None:
-      return icu::DateFormat::NONE;
-    default:
-      MOZ_ASSERT_UNREACHABLE("Unsupported date time style.");
-      return icu::DateFormat::NONE;
+      return Nothing();
   }
+  MOZ_ASSERT_UNREACHABLE();
+  return Nothing();
 }
 
 ffi::RawDateTimeFormatter* FluentBuiltInDateTimeFormatterCreate(
     const nsCString* aLocale, const ffi::FluentDateTimeOptionsRaw* aOptions) {
-  icu::DateFormat* dtmf = nullptr;
-  if (aOptions->date_style != ffi::FluentDateTimeStyle::None &&
-      aOptions->time_style != ffi::FluentDateTimeStyle::None) {
-    dtmf = icu::DateFormat::createDateTimeInstance(
-        GetICUStyle(aOptions->date_style), GetICUStyle(aOptions->time_style),
-        aLocale->get());
-  } else if (aOptions->date_style != ffi::FluentDateTimeStyle::None) {
-    dtmf = icu::DateFormat::createDateInstance(
-        GetICUStyle(aOptions->date_style), aLocale->get());
-  } else if (aOptions->time_style != ffi::FluentDateTimeStyle::None) {
-    dtmf = icu::DateFormat::createTimeInstance(
-        GetICUStyle(aOptions->time_style), aLocale->get());
-  } else {
-    if (aOptions->skeleton.IsEmpty()) {
-      dtmf = icu::DateFormat::createDateTimeInstance(
-          icu::DateFormat::DEFAULT, icu::DateFormat::DEFAULT, aLocale->get());
-    } else {
-      UErrorCode status = U_ZERO_ERROR;
-      dtmf = icu::DateFormat::createInstanceForSkeleton(
-          aOptions->skeleton.get(), aLocale->get(), status);
-    }
+  auto genResult = DateTimePatternGenerator::TryCreate(aLocale->get());
+  if (genResult.isErr()) {
+    MOZ_ASSERT_UNREACHABLE("There was an error in DateTimeFormat");
+    return nullptr;
   }
-  MOZ_RELEASE_ASSERT(dtmf, "Failed to create a format for the skeleton.");
+  UniquePtr<DateTimePatternGenerator> dateTimePatternGenerator =
+      genResult.unwrap();
 
-  return reinterpret_cast<ffi::RawDateTimeFormatter*>(dtmf);
+  if (aOptions->date_style == ffi::FluentDateTimeStyle::None &&
+      aOptions->time_style == ffi::FluentDateTimeStyle::None &&
+      !aOptions->skeleton.IsEmpty()) {
+    auto result = DateTimeFormat::TryCreateFromSkeleton(
+        Span(aLocale->get(), aLocale->Length()),
+        Span(aOptions->skeleton.get(), aOptions->skeleton.Length()),
+        dateTimePatternGenerator.get(), Nothing());
+    if (result.isErr()) {
+      MOZ_ASSERT_UNREACHABLE("There was an error in DateTimeFormat");
+      return nullptr;
+    }
+
+    return reinterpret_cast<ffi::RawDateTimeFormatter*>(
+        result.unwrap().release());
+  }
+
+  DateTimeFormat::StyleBag style;
+  style.date = GetStyle(aOptions->date_style);
+  style.time = GetStyle(aOptions->time_style);
+
+  auto result = DateTimeFormat::TryCreateFromStyle(
+      Span(aLocale->get(), aLocale->Length()), style,
+      dateTimePatternGenerator.get());
+
+  if (result.isErr()) {
+    MOZ_ASSERT_UNREACHABLE("There was an error in DateTimeFormat");
+    return nullptr;
+  }
+
+  return reinterpret_cast<ffi::RawDateTimeFormatter*>(
+      result.unwrap().release());
 }
 
 uint8_t* FluentBuiltInDateTimeFormatterFormat(
-    const ffi::RawDateTimeFormatter* aFormatter, double input,
+    const ffi::RawDateTimeFormatter* aFormatter, double aUnixEpoch,
     uint32_t* aOutCount) {
-  auto formatter = reinterpret_cast<const icu::DateFormat*>(aFormatter);
-  UDate myDate = input;
+  const auto* dtFormat = reinterpret_cast<const DateTimeFormat*>(aFormatter);
 
-  icu::UnicodeString str;
-  formatter->format(myDate, str);
-  return reinterpret_cast<uint8_t*>(ToNewUTF8String(
-      nsDependentSubstring(str.getBuffer(), str.length()), aOutCount));
+  SizeableUTF8Buffer buffer;
+  dtFormat->TryFormat(aUnixEpoch, buffer).unwrap();
+
+  *aOutCount = buffer.mWritten;
+
+  return reinterpret_cast<uint8_t*>(buffer.mBuffer.release());
 }
 
 void FluentBuiltInDateTimeFormatterDestroy(
     ffi::RawDateTimeFormatter* aFormatter) {
-  delete reinterpret_cast<icu::DateFormat*>(aFormatter);
+  delete reinterpret_cast<const DateTimeFormat*>(aFormatter);
 }
 }
 

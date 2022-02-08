@@ -24,8 +24,8 @@
   </routing>
   <repositories>
     <repository>
-      <id>jcenter</id>
-      <name>jcenter</name>
+      <id>mozilla</id>
+      <name>Mozilla Maven</name>
       <providerRole>org.sonatype.nexus.proxy.repository.Repository</providerRole>
       <providerHint>maven2</providerHint>
       <localStatus>IN_SERVICE</localStatus>
@@ -41,7 +41,7 @@
         <provider>file</provider>
       </localStorage>
       <remoteStorage>
-        <url>https://jcenter.bintray.com/</url>
+        <url>https://maven.mozilla.org/maven2/</url>
       </remoteStorage>
       <externalConfiguration>
         <repositoryPolicy>RELEASE</repositoryPolicy>

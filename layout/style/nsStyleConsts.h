@@ -91,14 +91,6 @@ enum class StyleDisplay : uint16_t {
       StyleDisplayFrom(StyleDisplayOutside::Block, StyleDisplayInside::MozBox),
   MozInlineBox =
       StyleDisplayFrom(StyleDisplayOutside::Inline, StyleDisplayInside::MozBox),
-  MozGrid =
-      StyleDisplayFrom(StyleDisplayOutside::XUL, StyleDisplayInside::MozGrid),
-  MozGridGroup = StyleDisplayFrom(StyleDisplayOutside::XUL,
-                                  StyleDisplayInside::MozGridGroup),
-  MozGridLine = StyleDisplayFrom(StyleDisplayOutside::XUL,
-                                 StyleDisplayInside::MozGridLine),
-  MozStack =
-      StyleDisplayFrom(StyleDisplayOutside::XUL, StyleDisplayInside::MozStack),
   MozDeck =
       StyleDisplayFrom(StyleDisplayOutside::XUL, StyleDisplayInside::MozDeck),
   MozPopup =
@@ -251,14 +243,6 @@ enum class StyleShapeSourceType : uint8_t {
   Shape,
   Box,
   Path,  // SVG path function
-};
-
-// text-justify
-enum class StyleTextJustify : uint8_t {
-  None,
-  Auto,
-  InterWord,
-  InterCharacter,
 };
 
 // user-focus
@@ -420,9 +404,9 @@ enum class StyleGridTrackBreadth : uint8_t {
 #define NS_MATHML_MATHVARIANT_LOOPED 17
 #define NS_MATHML_MATHVARIANT_STRETCHED 18
 
-// See nsStyleFont::mMathDisplay
-#define NS_MATHML_DISPLAYSTYLE_INLINE 0
-#define NS_MATHML_DISPLAYSTYLE_BLOCK 1
+// See nsStyleFont::mMathStyle
+#define NS_STYLE_MATH_STYLE_COMPACT 0
+#define NS_STYLE_MATH_STYLE_NORMAL 1
 
 // See nsStyleDisplay.mPosition
 enum class StylePositionProperty : uint8_t {
@@ -567,12 +551,6 @@ enum class StyleRubyAlign : uint8_t {
   SpaceAround,
 };
 
-// ruby-position, see nsStyleText
-enum class StyleRubyPosition : uint8_t {
-  Over,
-  Under,
-};
-
 // See nsStyleText
 enum class StyleTextSizeAdjust : uint8_t {
   None,
@@ -607,17 +585,6 @@ enum class StyleEmptyCells : uint8_t {
   Hide,
   Show,
 };
-
-// Constants for the caption-side property. Note that despite having "physical"
-// names, these are actually interpreted according to the table's writing-mode:
-// TOP and BOTTOM are treated as block-start and -end respectively, and LEFT
-// and RIGHT are treated as line-left and -right.
-#define NS_STYLE_CAPTION_SIDE_TOP 0
-#define NS_STYLE_CAPTION_SIDE_RIGHT 1
-#define NS_STYLE_CAPTION_SIDE_BOTTOM 2
-#define NS_STYLE_CAPTION_SIDE_LEFT 3
-#define NS_STYLE_CAPTION_SIDE_TOP_OUTSIDE 4
-#define NS_STYLE_CAPTION_SIDE_BOTTOM_OUTSIDE 5
 
 // constants for cell "scope" attribute
 #define NS_STYLE_CELL_SCOPE_ROW 0
@@ -663,6 +630,7 @@ enum class StyleWindowShadow : uint8_t {
   Menu,
   Tooltip,
   Sheet,
+  Cliprounded,  // clip border to popup border-radius
 };
 
 // dominant-baseline
@@ -676,14 +644,6 @@ enum class StyleDominantBaseline : uint8_t {
   Middle,
   TextAfterEdge,
   TextBeforeEdge,
-};
-
-// image-rendering
-enum class StyleImageRendering : uint8_t {
-  Auto,
-  Optimizespeed,
-  Optimizequality,
-  CrispEdges,
 };
 
 // mask-type
@@ -786,9 +746,6 @@ enum class StyleMaskComposite : uint8_t {
   Intersect,
   Exclude
 };
-
-// See nsStyleText::mControlCharacterVisibility
-enum class StyleControlCharacterVisibility : uint8_t { Hidden = 0, Visible };
 
 // scroll-behavior
 enum class StyleScrollBehavior : uint8_t {

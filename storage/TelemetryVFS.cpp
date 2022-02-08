@@ -78,7 +78,7 @@ class IOThreadAutoTimer {
       IOInterposeObserver::Operation aOp = IOInterposeObserver::OpNone)
       : start(TimeStamp::Now()),
         id(aId)
-#if defined(MOZ_GECKO_PROFILER) && !defined(XP_WIN)
+#if !defined(XP_WIN)
         ,
         op(aOp)
 #endif
@@ -94,7 +94,7 @@ class IOThreadAutoTimer {
   explicit IOThreadAutoTimer(IOInterposeObserver::Operation aOp)
       : start(TimeStamp::Now()),
         id(Telemetry::HistogramCount)
-#if defined(MOZ_GECKO_PROFILER) && !defined(XP_WIN)
+#if !defined(XP_WIN)
         ,
         op(aOp)
 #endif
@@ -111,7 +111,7 @@ class IOThreadAutoTimer {
     // We don't report SQLite I/O on Windows because we have a comprehensive
     // mechanism for intercepting I/O on that platform that captures a superset
     // of the data captured here.
-#if defined(MOZ_GECKO_PROFILER) && !defined(XP_WIN)
+#if !defined(XP_WIN)
     if (IOInterposer::IsObservedOperation(op)) {
       const char* main_ref = "sqlite-mainthread";
       const char* other_ref = "sqlite-otherthread";
@@ -122,13 +122,13 @@ class IOThreadAutoTimer {
       // Report observation
       IOInterposer::Report(ob);
     }
-#endif /* defined(MOZ_GECKO_PROFILER) && !defined(XP_WIN) */
+#endif /* !defined(XP_WIN) */
   }
 
  private:
   const TimeStamp start;
   const Telemetry::HistogramID id;
-#if defined(MOZ_GECKO_PROFILER) && !defined(XP_WIN)
+#if !defined(XP_WIN)
   IOInterposeObserver::Operation op;
 #endif
 };
@@ -664,11 +664,11 @@ static const char* xNextSystemCall(sqlite3_vfs* vfs, const char* zName) {
 namespace mozilla {
 namespace storage {
 
-const char* GetVFSName(bool exclusive) {
+const char* GetTelemetryVFSName(bool exclusive) {
   return exclusive ? "telemetry-vfs-excl" : "telemetry-vfs";
 }
 
-sqlite3_vfs* ConstructTelemetryVFS(bool exclusive) {
+UniquePtr<sqlite3_vfs> ConstructTelemetryVFS(bool exclusive) {
 #if defined(XP_WIN)
 #  define EXPECTED_VFS "win32"
 #  define EXPECTED_VFS_EXCL "win32"
@@ -691,8 +691,8 @@ sqlite3_vfs* ConstructTelemetryVFS(bool exclusive) {
     return nullptr;
   }
 
-  sqlite3_vfs* tvfs = new ::sqlite3_vfs;
-  memset(tvfs, 0, sizeof(::sqlite3_vfs));
+  auto tvfs = MakeUnique<::sqlite3_vfs>();
+  memset(tvfs.get(), 0, sizeof(::sqlite3_vfs));
   // If the VFS version is higher than the last known one, you should update
   // this VFS adding appropriate methods for any methods added in the version
   // change.
@@ -701,7 +701,7 @@ sqlite3_vfs* ConstructTelemetryVFS(bool exclusive) {
   tvfs->szOsFile =
       sizeof(telemetry_file) - sizeof(sqlite3_file) + vfs->szOsFile;
   tvfs->mxPathname = vfs->mxPathname;
-  tvfs->zName = GetVFSName(exclusive);
+  tvfs->zName = GetTelemetryVFSName(exclusive);
   tvfs->pAppData = vfs;
   tvfs->xOpen = xOpen;
   tvfs->xDelete = xDelete;

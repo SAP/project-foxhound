@@ -1,7 +1,6 @@
-#![allow(dead_code)]
 use crate::prelude::*;
-use crate::version::{EntryV1_0, InstanceV1_0};
 use crate::vk;
+use crate::{EntryCustom, Instance};
 use std::ffi::CStr;
 use std::mem;
 
@@ -12,12 +11,11 @@ pub struct TimelineSemaphore {
 }
 
 impl TimelineSemaphore {
-    pub fn new<E: EntryV1_0, I: InstanceV1_0>(entry: &E, instance: &I) -> TimelineSemaphore {
+    pub fn new<L>(entry: &EntryCustom<L>, instance: &Instance) -> Self {
         let timeline_semaphore_fn = vk::KhrTimelineSemaphoreFn::load(|name| unsafe {
             mem::transmute(entry.get_instance_proc_addr(instance.handle(), name.as_ptr()))
         });
-
-        TimelineSemaphore {
+        Self {
             handle: instance.handle(),
             timeline_semaphore_fn,
         }
@@ -34,14 +32,9 @@ impl TimelineSemaphore {
         semaphore: vk::Semaphore,
     ) -> VkResult<u64> {
         let mut value = 0;
-        let err_code = self
-            .timeline_semaphore_fn
-            .get_semaphore_counter_value_khr(device, semaphore, &mut value);
-
-        match err_code {
-            vk::Result::SUCCESS => Ok(value),
-            _ => Err(err_code),
-        }
+        self.timeline_semaphore_fn
+            .get_semaphore_counter_value_khr(device, semaphore, &mut value)
+            .result_with_success(value)
     }
 
     #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/vkWaitSemaphores.html>"]
@@ -51,14 +44,9 @@ impl TimelineSemaphore {
         wait_info: &vk::SemaphoreWaitInfo,
         timeout: u64,
     ) -> VkResult<()> {
-        let err_code = self
-            .timeline_semaphore_fn
-            .wait_semaphores_khr(device, wait_info, timeout);
-
-        match err_code {
-            vk::Result::SUCCESS => Ok(()),
-            _ => Err(err_code),
-        }
+        self.timeline_semaphore_fn
+            .wait_semaphores_khr(device, wait_info, timeout)
+            .into()
     }
 
     #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/vkSignalSemaphore.html>"]
@@ -67,14 +55,9 @@ impl TimelineSemaphore {
         device: vk::Device,
         signal_info: &vk::SemaphoreSignalInfo,
     ) -> VkResult<()> {
-        let err_code = self
-            .timeline_semaphore_fn
-            .signal_semaphore_khr(device, signal_info);
-
-        match err_code {
-            vk::Result::SUCCESS => Ok(()),
-            _ => Err(err_code),
-        }
+        self.timeline_semaphore_fn
+            .signal_semaphore_khr(device, signal_info)
+            .into()
     }
 
     pub fn fp(&self) -> &vk::KhrTimelineSemaphoreFn {

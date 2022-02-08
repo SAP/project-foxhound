@@ -9,10 +9,10 @@
 #include "mozilla/Encoding.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "nsContentUtils.h"
+
 #include <stdint.h>
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 void TextDecoder::Init(const nsAString& aLabel,
                        const TextDecoderOptions& aOptions, ErrorResult& aRv) {
@@ -55,7 +55,8 @@ void TextDecoder::Decode(Span<const uint8_t> aInput, const bool aStream,
     return;
   }
 
-  if (!aOutDecodedString.SetLength(needed.value(), fallible)) {
+  auto output = aOutDecodedString.GetMutableData(needed.value(), fallible);
+  if (!output) {
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
@@ -63,22 +64,20 @@ void TextDecoder::Decode(Span<const uint8_t> aInput, const bool aStream,
   uint32_t result;
   size_t read;
   size_t written;
-  bool hadErrors;
   if (mFatal) {
-    Tie(result, read, written) = mDecoder->DecodeToUTF16WithoutReplacement(
-        aInput, aOutDecodedString, !aStream);
+    std::tie(result, read, written) =
+        mDecoder->DecodeToUTF16WithoutReplacement(aInput, *output, !aStream);
     if (result != kInputEmpty) {
       aRv.ThrowTypeError<MSG_DOM_DECODING_FAILED>();
       return;
     }
   } else {
-    Tie(result, read, written, hadErrors) =
-        mDecoder->DecodeToUTF16(aInput, aOutDecodedString, !aStream);
+    std::tie(result, read, written, std::ignore) =
+        mDecoder->DecodeToUTF16(aInput, *output, !aStream);
   }
   MOZ_ASSERT(result == kInputEmpty);
   MOZ_ASSERT(read == aInput.Length());
   MOZ_ASSERT(written <= aOutDecodedString.Length());
-  Unused << hadErrors;
 
   if (!aOutDecodedString.SetLength(written, fallible)) {
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
@@ -116,7 +115,7 @@ void TextDecoder::Decode(const Optional<ArrayBufferViewOrArrayBuffer>& aBuffer,
     data = buf.GetAsArrayBuffer().Data();
     length = buf.GetAsArrayBuffer().Length();
   }
-  Decode(MakeSpan(data, length), aOptions.mStream, aOutDecodedString, aRv);
+  Decode(Span(data, length), aOptions.mStream, aOutDecodedString, aRv);
 }
 
 void TextDecoder::GetEncoding(nsAString& aEncoding) {
@@ -124,5 +123,4 @@ void TextDecoder::GetEncoding(nsAString& aEncoding) {
   nsContentUtils::ASCIIToLower(aEncoding);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

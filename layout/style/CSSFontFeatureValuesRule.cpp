@@ -8,13 +8,16 @@
 #include "mozilla/dom/CSSFontFeatureValuesRuleBinding.h"
 #include "mozilla/ServoBindings.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 size_t CSSFontFeatureValuesRule::SizeOfIncludingThis(
     MallocSizeOf aMallocSizeOf) const {
   // TODO Implement this!
   return aMallocSizeOf(this);
+}
+
+StyleCssRuleType CSSFontFeatureValuesRule::Type() const {
+  return StyleCssRuleType::FontFeatureValues;
 }
 
 #ifdef DEBUG
@@ -28,23 +31,28 @@ void CSSFontFeatureValuesRule::List(FILE* out, int32_t aIndent) const {
 }
 #endif
 
+void CSSFontFeatureValuesRule::SetRawAfterClone(
+    RefPtr<RawServoFontFeatureValuesRule> aRaw) {
+  mRawRule = std::move(aRaw);
+}
+
 /* CSSRule implementation */
 
-void CSSFontFeatureValuesRule::GetCssText(nsAString& aCssText) const {
+void CSSFontFeatureValuesRule::GetCssText(nsACString& aCssText) const {
   Servo_FontFeatureValuesRule_GetCssText(mRawRule, &aCssText);
 }
 
 /* CSSFontFeatureValuesRule implementation */
 
-void CSSFontFeatureValuesRule::GetFontFamily(nsAString& aFamilyListStr) {
+void CSSFontFeatureValuesRule::GetFontFamily(nsACString& aFamilyListStr) {
   Servo_FontFeatureValuesRule_GetFontFamily(mRawRule, &aFamilyListStr);
 }
 
-void CSSFontFeatureValuesRule::GetValueText(nsAString& aValueText) {
+void CSSFontFeatureValuesRule::GetValueText(nsACString& aValueText) {
   Servo_FontFeatureValuesRule_GetValueText(mRawRule, &aValueText);
 }
 
-void CSSFontFeatureValuesRule::SetFontFamily(const nsAString& aFontFamily,
+void CSSFontFeatureValuesRule::SetFontFamily(const nsACString& aFontFamily,
                                              ErrorResult& aRv) {
   if (IsReadOnly()) {
     return;
@@ -53,7 +61,7 @@ void CSSFontFeatureValuesRule::SetFontFamily(const nsAString& aFontFamily,
   aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
 }
 
-void CSSFontFeatureValuesRule::SetValueText(const nsAString& aValueText,
+void CSSFontFeatureValuesRule::SetValueText(const nsACString& aValueText,
                                             ErrorResult& aRv) {
   if (IsReadOnly()) {
     return;
@@ -73,5 +81,4 @@ JSObject* CSSFontFeatureValuesRule::WrapObject(
   return CSSFontFeatureValuesRule_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

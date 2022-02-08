@@ -105,31 +105,26 @@ macro_rules! define_keyword_type {
     };
 }
 
-/// Place a Gecko profiler label on the stack.
-///
-/// The `label_type` argument must be the name of a variant of `ProfilerLabel`.
-#[cfg(feature = "gecko_profiler")]
-#[macro_export]
-macro_rules! profiler_label {
-    ($label_type:ident) => {
-        let mut _profiler_label =
-            ::std::mem::MaybeUninit::<$crate::gecko_bindings::structs::AutoProfilerLabel>::uninit();
-        let _profiler_label = if $crate::gecko::profiler::profiler_is_active() {
-            unsafe {
-                Some($crate::gecko::profiler::AutoProfilerLabel::new(
-                    &mut _profiler_label,
-                    $crate::gecko::profiler::ProfilerLabel::$label_type,
-                ))
-            }
-        } else {
-            None
-        };
+#[cfg(feature = "servo")]
+macro_rules! local_name {
+    ($s:tt) => {
+        $crate::values::GenericAtomIdent(html5ever::local_name!($s))
     };
 }
 
-/// No-op when the Gecko profiler is not available.
-#[cfg(not(feature = "gecko_profiler"))]
-#[macro_export]
-macro_rules! profiler_label {
-    ($label_type:ident) => {};
+#[cfg(feature = "servo")]
+macro_rules! ns {
+    () => {
+        $crate::values::GenericAtomIdent(html5ever::ns!())
+    };
+    ($s:tt) => {
+        $crate::values::GenericAtomIdent(html5ever::ns!($s))
+    };
+}
+
+#[cfg(feature = "gecko")]
+macro_rules! local_name {
+    ($s:tt) => {
+        $crate::values::AtomIdent(atom!($s))
+    };
 }

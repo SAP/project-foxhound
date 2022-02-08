@@ -1,6 +1,7 @@
 <!DOCTYPE HTML>
 <html>
 <head>
+  <meta charset="utf-8">
   <title>WebNavigation onCommitted Test</title>
   <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
@@ -16,13 +17,7 @@ add_task(async function() {
   const extension = ExtensionTestUtils.loadExtension({
     manifest: {
       permissions: ["webNavigation", "tabs"],
-      applications: {
-        gecko: {
-          id: "test_ext_webNavigation_onCommitted@tests.mozilla.org",
-        },
-      },
     },
-    useAddonManager: "permanent",
     async background() {
       const url = "http://mochi.test:8888/";
       const [tab, tabDetails] = await Promise.all([

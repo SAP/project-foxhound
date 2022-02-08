@@ -1,13 +1,11 @@
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/IndexedDB.jsm", this);
-ChromeUtils.import("resource://gre/modules/AddonManager.jsm", this);
-ChromeUtils.import("resource://testing-common/TestUtils.jsm", this);
-ChromeUtils.import("resource://testing-common/AddonTestUtils.jsm", this);
-ChromeUtils.import("resource://normandy/lib/AddonStudies.jsm", this);
-ChromeUtils.import("resource://normandy/lib/TelemetryEvents.jsm", this);
-ChromeUtils.import("resource://gre/modules/IndexedDB.jsm", this);
-
+const { IndexedDB } = ChromeUtils.import(
+  "resource://gre/modules/IndexedDB.jsm"
+);
+const { AddonManager } = ChromeUtils.import(
+  "resource://gre/modules/AddonManager.jsm"
+);
 const { NormandyTestUtils } = ChromeUtils.import(
   "resource://testing-common/NormandyTestUtils.jsm"
 );
@@ -20,16 +18,15 @@ const {
 AddonTestUtils.initMochitest(this);
 
 decorate_task(AddonStudies.withStudies(), async function testGetMissing() {
-  is(
-    await AddonStudies.get("does-not-exist"),
-    null,
+  ok(
+    !(await AddonStudies.get("does-not-exist")),
     "get returns null when the requested study does not exist"
   );
 });
 
 decorate_task(
   AddonStudies.withStudies([addonStudyFactory({ slug: "test-study" })]),
-  async function testGet([study]) {
+  async function testGet({ addonStudies: [study] }) {
     const storedStudy = await AddonStudies.get(study.recipeId);
     Assert.deepEqual(study, storedStudy, "get retrieved a study from storage.");
   }
@@ -37,11 +34,11 @@ decorate_task(
 
 decorate_task(
   AddonStudies.withStudies([addonStudyFactory(), addonStudyFactory()]),
-  async function testGetAll(studies) {
+  async function testGetAll({ addonStudies }) {
     const storedStudies = await AddonStudies.getAll();
     Assert.deepEqual(
       new Set(storedStudies),
-      new Set(studies),
+      new Set(addonStudies),
       "getAll returns every stored study."
     );
   }
@@ -49,7 +46,7 @@ decorate_task(
 
 decorate_task(
   AddonStudies.withStudies([addonStudyFactory({ slug: "test-study" })]),
-  async function testHas([study]) {
+  async function testHas({ addonStudies: [study] }) {
     let hasStudy = await AddonStudies.has(study.recipeId);
     ok(hasStudy, "has returns true for a study that exists in storage.");
 
@@ -66,7 +63,7 @@ decorate_task(
     addonStudyFactory({ slug: "test-study1" }),
     addonStudyFactory({ slug: "test-study2" }),
   ]),
-  async function testClear([study1, study2]) {
+  async function testClear({ addonStudies: [study1, study2] }) {
     const hasAll =
       (await AddonStudies.has(study1.recipeId)) &&
       (await AddonStudies.has(study2.recipeId));
@@ -82,7 +79,7 @@ decorate_task(
 
 decorate_task(
   AddonStudies.withStudies([addonStudyFactory({ slug: "foo" })]),
-  async function testUpdate([study]) {
+  async function testUpdate({ addonStudies: [study] }) {
     Assert.deepEqual(await AddonStudies.get(study.recipeId), study);
 
     const updatedStudy = {
@@ -109,16 +106,16 @@ decorate_task(
       studyEndDate: new Date(2012, 1),
     }),
   ]),
-  withSendEventStub,
+  withSendEventSpy(),
   withInstalledWebExtension(
     { id: "installed@example.com" },
-    /* expectUninstall: */ true
+    { expectUninstall: true }
   ),
-  async function testInit(
-    [activeUninstalledStudy, activeInstalledStudy, inactiveStudy],
-    sendEventStub,
-    [addonId, addonFile]
-  ) {
+  async function testInit({
+    addonStudies: [activeUninstalledStudy, activeInstalledStudy, inactiveStudy],
+    sendEventSpy,
+    installedWebExtension: { addonId },
+  }) {
     await AddonStudies.init();
 
     const newActiveStudy = await AddonStudies.get(
@@ -175,7 +172,7 @@ decorate_task(
     );
 
     // Only activeUninstalledStudy should have generated any events
-    ok(sendEventStub.calledOnce, "no extra events should be generated");
+    ok(sendEventSpy.calledOnce, "no extra events should be generated");
 
     // Clean up
     const addon = await AddonManager.getAddonByID(addonId);
@@ -201,30 +198,25 @@ decorate_task(
   withInstalledWebExtensionSafe({ id: "installed1@example.com" }),
   withInstalledWebExtension({ id: "installed2@example.com" }),
   withStub(TelemetryEnvironment, "setExperimentActive"),
-  async function testInit(
-    studies,
-    [extensionId1],
-    [extensionId2],
-    setExperimentActiveStub
-  ) {
+  async function testInit({ addonStudies, setExperimentActiveStub }) {
     await AddonStudies.init();
     Assert.deepEqual(
       setExperimentActiveStub.args,
       [
         [
-          studies[0].slug,
-          studies[0].branch,
+          addonStudies[0].slug,
+          addonStudies[0].branch,
           {
             type: "normandy-addonstudy",
-            enrollmentId: studies[0].enrollmentId,
+            enrollmentId: addonStudies[0].enrollmentId,
           },
         ],
         [
-          studies[1].slug,
-          studies[1].branch,
+          addonStudies[1].slug,
+          addonStudies[1].branch,
           {
             type: "normandy-addonstudy",
-            enrollmentId: studies[1].enrollmentId,
+            enrollmentId: addonStudies[1].enrollmentId,
           },
         ],
       ],
@@ -244,10 +236,13 @@ decorate_task(
   ]),
   withInstalledWebExtension(
     { id: "installed@example.com" },
-    /* expectUninstall: */ true
+    { expectUninstall: true }
   ),
-  async function testInit([study], [id, addonFile]) {
-    const addon = await AddonManager.getAddonByID(id);
+  async function testInit({
+    addonStudies: [study],
+    installedWebExtension: { addonId },
+  }) {
+    const addon = await AddonManager.getAddonByID(addonId);
     await addon.uninstall();
     await TestUtils.topicObserved("shield-study-ended", (subject, message) => {
       return message === `${study.recipeId}`;
@@ -270,7 +265,9 @@ decorate_task(
     NormandyTestUtils.factories.addonStudyFactory({ active: true }),
     NormandyTestUtils.factories.branchedAddonStudyFactory(),
   ]),
-  async function testRemoveOldAddonStudies([noBranchStudy, branchedStudy]) {
+  async function testRemoveOldAddonStudies({
+    addonStudies: [noBranchStudy, branchedStudy],
+  }) {
     // pre check, both studies are active
     const preActiveIds = (await AddonStudies.getAllActive()).map(
       addon => addon.recipeId

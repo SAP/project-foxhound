@@ -72,6 +72,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=558036
       testAttrs("live", {"live": "polite"}, true);
       testAttrs("live2", {"live": "polite"}, true);
       testAbsentAttrs("live3", {"live": ""});
+      if (MAC) {
+        testAttrs("alert", {"live": "assertive"}, true);
+      } else {
+        testAbsentAttrs("alert", {"live": "assertive"});
+      }
       testAttrs("log", {"live": "polite"}, true);
       testAttrs("logAssertive", {"live": "assertive"}, true);
       testAttrs("marquee", {"live": "off"}, true);
@@ -82,6 +87,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=558036
       // container-live object attribute
       testAttrs("liveChild", {"container-live": "polite"}, true);
       testAttrs("live2Child", {"container-live": "polite"}, true);
+      if (MAC) {
+        testAttrs("alertChild", {"container-live": "assertive"}, true);
+      } else {
+        testAbsentAttrs("alertChild", {"container-live": "assertive"});
+      }
       testAttrs("logChild", {"container-live": "polite"}, true);
       testAttrs("logAssertiveChild", {"container-live": "assertive"}, true);
       testAttrs("marqueeChild", {"container-live": "off"}, true);
@@ -161,6 +171,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=558036
       testAttrs("aside1", {"xml-roles": "group"}, true);
       testAttrs("aside2", {"xml-roles": "complementary"}, true);
 
+      // non-standard data-at-shortcutkeys attribute:
+      testAttrs("shortcuts", {'data-at-shortcutkeys': '{"n":"New message","r":"Reply to message"}'}, true);
+
       SimpleTest.finish();
     }
 
@@ -231,6 +244,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=558036
   <div id="live" aria-live="polite">excuse <div id="liveChild">me</div></div>
   <div id="live2" role="marquee" aria-live="polite">excuse <div id="live2Child">me</div></div>
   <div id="live3" role="region">excuse</div>
+  <div id="alert" role="alert">excuse <div id="alertChild">me</div></div>
   <div id="log" role="log">excuse <div id="logChild">me</div></div>
   <div id="logAssertive" role="log" aria-live="assertive">excuse <div id="logAssertiveChild">me</div></div>
   <div id="marquee" role="marquee">excuse <div id="marqueeChild">me</div></div>
@@ -279,5 +293,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=558036
   <aside id="aside0" role="note">aside 0</aside>
   <aside id="aside1" role="group">aside 1</aside>
   <aside id="aside2">aside 2</aside>
+
+  <!-- Shortcuts for web applications -->
+  <div id="shortcuts" data-at-shortcutkeys='{"n":"New message","r":"Reply to message"}'></div>
 </body>
 </html>

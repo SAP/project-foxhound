@@ -1,7 +1,16 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 // Base preferences file for web-platform-tests.
 /* globals user_pref */
+// Don't use the new tab page but about:blank for opened tabs
+user_pref("browser.newtabpage.enabled", false);
 // Don't restore the last open set of tabs if the browser has crashed
 user_pref("browser.sessionstore.resume_from_crash", false);
+// Don't show the Bookmarks Toolbar on any tab (the above pref that
+// disables the New Tab Page ends up showing the toolbar on about:blank).
+user_pref("browser.toolbars.bookmarks.visibility", "never");
 // Only install add-ons from the profile and the application scope
 // Also ensure that those are not getting disabled.
 // see: https://developer.mozilla.org/en/Installing_extensions
@@ -22,6 +31,9 @@ user_pref("network.proxy.type", 0);
 user_pref("places.history.enabled", false);
 // Suppress automatic safe mode after crashes
 user_pref("toolkit.startup.max_resumed_crashes", -1);
+// Run the font loader task eagerly for more predictable behavior
+user_pref("gfx.font_loader.delay", 0);
+user_pref("gfx.font_loader.interval", 0);
 // Disable antialiasing for the Ahem font.
 user_pref("gfx.font_rendering.ahem_antialias_none", true);
 // Disable antiphishing popup
@@ -45,10 +57,15 @@ user_pref("media.block-autoplay-until-in-foreground", false);
 // Disable dark scrollbars as it can be semi-transparent that many reftests
 // don't expect.
 user_pref("widget.disable-dark-scrollbar", true);
+// Don't enable paint suppression when the background is unknown. While paint
+// is suppressed, synthetic click events and co. go to the old page, which can
+// be confusing for tests that send click events before the first paint.
+user_pref("nglayout.initialpaint.unsuppress_with_no_background", true);
 user_pref("media.block-autoplay-until-in-foreground", false);
 // Enable AppCache globally for now whilst it's being removed in Bug 1584984
-user_pref("browser.cache.offline.storage.enable", true);
 user_pref("browser.cache.offline.enable", true);
 // Enable blocking access to storage from tracking resources by default.
 // We don't want to run WPT using BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN (5 - aka Dynamic First Party Isolation) yet.
 user_pref("network.cookie.cookieBehavior", 4);
+// Force a light color scheme unless explicitly overriden by pref.
+user_pref("layout.css.prefers-color-scheme.content-override", 1);

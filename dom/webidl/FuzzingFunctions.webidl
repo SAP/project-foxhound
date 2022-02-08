@@ -17,11 +17,27 @@ interface FuzzingFunctions {
    * Synchronously perform a garbage collection.
    */
   static void garbageCollect();
+ 
+  /**
+   * Synchronously perform a compacting garbage collection.
+   */
+  static void garbageCollectCompacting();
+
+  /**
+   * Trigger a forced crash.
+   */
+  static void crash(optional DOMString reason = "");
 
   /**
    * Synchronously perform a cycle collection.
    */
   static void cycleCollect();
+
+  /**
+   * Send a memory pressure event, causes shrinking GC, cycle collection and
+   * other actions.
+   */
+  static void memoryPressure();
 
   /**
    * Enable accessibility.
@@ -31,13 +47,14 @@ interface FuzzingFunctions {
 
   /**
    * synthesizeKeyboardEvents() synthesizes a set of "keydown",
-   * "keypress" (only when it's necessary) and "keyup" events on focused
-   * widget.  This is currently not aware of APZ since this dispatches the
-   * events into focused PresShell in current process.  I.e., dispatched
-   * events won't be handled by some default action handlers which are only
-   * in the main process.  Note that this does not allow to synthesize
-   * keyboard events if this is called from a keyboard event or composition
-   * event listener.
+   * "keypress" (only when it's necessary) and "keyup" events in top DOM window
+   * in current process (and the synthesized events will be retargeted to
+   * focused window/document/element).  I.e, this is currently not dispatched
+   * via the main process if you call this in a content process.  Therefore, in
+   * the case, some default action handlers which are only in the main process
+   * will never run.  Note that this does not allow to synthesize keyboard
+   * events if this is called from a keyboard event or composition event
+   * listener.
    *
    * @param aKeyValue          If you want to synthesize non-printable key
    *                           events, you need to set one of key values

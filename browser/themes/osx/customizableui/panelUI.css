@@ -4,64 +4,55 @@
 
 %include ../../shared/customizableui/panelUI.inc.css
 
-.restoreallitem > .toolbarbutton-icon {
-  display: none;
+#customizationui-widget-panel[viewId="PanelUI-profiler"][type="arrow"][side="top"],
+#customizationui-widget-panel[viewId="PanelUI-profiler"][type="arrow"][side="bottom"] {
+  margin-inline: -8px;
 }
 
-.subviewbutton {
-  padding-inline-start: 18px;
+#customizationui-widget-panel[viewId="PanelUI-profiler"][type="arrow"][side="left"],
+#customizationui-widget-panel[viewId="PanelUI-profiler"][type="arrow"][side="right"] {
+  margin-block: -8px;
 }
 
-.subviewbutton.download {
-  padding-inline-start: 14px;
+#downloadsPanel,
+#widget-overflow,
+#appMenu-popup,
+#customizationui-widget-panel,
+#identity-popup,
+#permission-popup,
+#protections-popup,
+#appMenu-notification-popup {
+  margin-top: -1px; /* Overrides value from panelUI.inc.css */
 }
 
-panelmultiview .toolbaritem-combined-buttons > spacer.before-label {
-  width: 42px; /* 18px toolbarbutton padding + 16px icon + 8px label padding start */
+#BMB_bookmarksPopup {
+  margin-top: -4px; /* Overrides value from panelUI.inc.css */
 }
 
-#appMenu-addon-banners > .addon-banner-item,
+.panel-subview-body {
+  scrollbar-color: color-mix(in srgb, currentColor 26%, transparent) transparent;
+}
+
 #appMenu-mainView > .panel-subview-body > .panel-banner-item {
   padding-inline-start: 18px;
 }
 
-#appMenu-fxa-status[fxastatus="signedin"] > #appMenu-fxa-label {
-  /* 18px space before the avatar, then 16px for the avatar */
-  padding-inline-start: 34px;
-  margin-inline-start: -34px;
-}
-
-#appMenu-fxa-status[fxastatus="signedin"] > #appMenu-fxa-avatar {
-  margin-inline-start: 18px;
-}
-
-.subviewbutton:not(:-moz-any([image],[targetURI],.bookmark-item)) > .menu-iconic-left {
+.subviewbutton:not([image],[targetURI],.bookmark-item) > .menu-iconic-left {
   display: none;
 }
 
-#BMB_bookmarksPopup menupopup[placespopup=true]:-moz-lwtheme {
-  appearance: none;
-  background: transparent;
+#BMB_bookmarksPopup .subviewbutton > .menu-iconic-left {
+  margin-inline-end: 3px;
 }
 
-#BMB_bookmarksPopup menupopup[placespopup=true]:-moz-lwtheme::part(innerbox) {
-  background: var(--arrowpanel-background);
-  border-radius: var(--arrowpanel-border-radius);
-  box-shadow: 0 0 0 1px var(--arrowpanel-border-color);
-  color: var(--arrowpanel-color);
-  border: none;
-  margin: 1px;
+#BMB_bookmarksPopup .subviewbutton > .menu-iconic-text {
+  padding-inline-start: 0;
 }
 
 /* Override OSX-specific toolkit styles for the bookmarks panel */
 menu.subviewbutton > .menu-right {
   margin-inline-end: -4px;
   appearance: none;
-}
-
-.PanelUI-subView menuseparator,
-.cui-widget-panelview menuseparator {
-  padding: 0 !important;
 }
 
 .PanelUI-remotetabs-clientcontainer > label[itemtype="client"] {
@@ -90,11 +81,11 @@ menu.subviewbutton > .menu-right {
 }
 
 .panel-button@buttonStateHover@ {
-  background-color: var(--arrowpanel-dimmed-further);
+  background-color: var(--panel-item-hover-bgcolor);
 }
 
 .panel-button@buttonStateActive@ {
-  background-color: var(--arrowpanel-dimmed-even-further);
+  background-color: var(--panel-item-active-bgcolor);
 }
 
 .panel-button:-moz-focusring {

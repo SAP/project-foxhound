@@ -24,13 +24,14 @@ add_task(async function() {
   // Open a tab that registers a push service worker.
   const swTab = await addTab(TAB_URL);
 
-  info("Forward service worker messages to the test");
-  await forwardServiceWorkerMessage(swTab);
-
   info(
     "Wait for the service worker to claim the test window before proceeding."
   );
-  await onTabMessage(swTab, "sw-claimed");
+  await SpecialPowers.spawn(
+    swTab.linkedBrowser,
+    [],
+    () => content.wrappedJSObject.onSwClaimed
+  );
 
   info("Wait until the service worker appears and is running");
   const targetElement = await waitForServiceWorkerRunning(
@@ -43,7 +44,7 @@ add_task(async function() {
   ok(pushButton, "Found its push button");
 
   info("Click on the Push button and wait for the push notification");
-  const onPushNotification = onTabMessage(swTab, "sw-pushed");
+  const onPushNotification = onServiceWorkerMessage(swTab, "sw-pushed");
   pushButton.click();
   await onPushNotification;
 

@@ -11,6 +11,7 @@
 
 #include "mozilla/dom/MouseEvent.h"
 #include "mozilla/dom/PointerEventBinding.h"
+#include "mozilla/Maybe.h"
 
 class nsPresContext;
 
@@ -49,6 +50,7 @@ class PointerEvent : public MouseEvent {
   bool IsPrimary();
   void GetPointerType(nsAString& aPointerType, CallerType aCallerType);
   void GetCoalescedEvents(nsTArray<RefPtr<PointerEvent>>& aPointerEvents);
+  void GetPredictedEvents(nsTArray<RefPtr<PointerEvent>>& aPointerEvents);
 
  protected:
   ~PointerEvent() = default;
@@ -59,6 +61,10 @@ class PointerEvent : public MouseEvent {
   bool ShouldResistFingerprinting(CallerType aCallerType);
 
   nsTArray<RefPtr<PointerEvent>> mCoalescedEvents;
+  nsTArray<RefPtr<PointerEvent>> mPredictedEvents;
+
+  // This is used to store the pointerType assigned from constructor.
+  Maybe<nsString> mPointerType;
 };
 
 void ConvertPointerTypeToString(uint16_t aPointerTypeSrc,

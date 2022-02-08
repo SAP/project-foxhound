@@ -5,7 +5,7 @@
 
 #include "EventQueue.h"
 
-#include "Accessible-inl.h"
+#include "LocalAccessible-inl.h"
 #include "nsEventShell.h"
 #include "DocAccessible.h"
 #include "DocAccessibleChild.h"
@@ -14,9 +14,10 @@
 #ifdef A11Y_LOG
 #  include "Logging.h"
 #endif
+#include "Relation.h"
 
-using namespace mozilla;
-using namespace mozilla::a11y;
+namespace mozilla {
+namespace a11y {
 
 // Defines the number of selection add/remove events in the queue when they
 // aren't packed into single selection within event.
@@ -42,37 +43,65 @@ bool EventQueue::PushEvent(AccEvent* aEvent) {
       (aEvent->mEventType == nsIAccessibleEvent::EVENT_NAME_CHANGE ||
        aEvent->mEventType == nsIAccessibleEvent::EVENT_TEXT_REMOVED ||
        aEvent->mEventType == nsIAccessibleEvent::EVENT_TEXT_INSERTED)) {
-    PushNameChange(aEvent->mAccessible);
+    PushNameOrDescriptionChange(aEvent->mAccessible);
   }
   return true;
 }
 
-bool EventQueue::PushNameChange(Accessible* aTarget) {
-  // Fire name change event on parent given that this event hasn't been
-  // coalesced, the parent's name was calculated from its subtree, and the
+bool EventQueue::PushNameOrDescriptionChange(LocalAccessible* aTarget) {
+  // Fire name/description change event on parent or related LocalAccessible
+  // being labelled/described given that this event hasn't been coalesced, the
+  // dependent's name/description was calculated from this subtree, and the
   // subtree was changed.
-  if (aTarget->HasNameDependentParent()) {
-    // Only continue traversing up the tree if it's possible that the parent
-    // accessible's name can depend on this accessible's name.
-    Accessible* parent = aTarget->Parent();
-    while (parent &&
-           nsTextEquivUtils::HasNameRule(parent, eNameFromSubtreeIfReqRule)) {
-      // Test possible name dependent parent.
-      if (nsTextEquivUtils::HasNameRule(parent, eNameFromSubtreeRule)) {
+  const bool doName = aTarget->HasNameDependent();
+  const bool doDesc = aTarget->HasDescriptionDependent();
+  if (!doName && !doDesc) {
+    return false;
+  }
+  bool pushed = false;
+  bool nameCheckAncestor = true;
+  // Only continue traversing up the tree if it's possible that the parent
+  // LocalAccessible's name (or a LocalAccessible being labelled by this
+  // LocalAccessible or an ancestor) can depend on this LocalAccessible's name.
+  LocalAccessible* parent = aTarget;
+  do {
+    // Test possible name dependent parent.
+    if (doName) {
+      if (nameCheckAncestor && parent != aTarget &&
+          nsTextEquivUtils::HasNameRule(parent, eNameFromSubtreeRule)) {
         nsAutoString name;
         ENameValueFlag nameFlag = parent->Name(name);
         // If name is obtained from subtree, fire name change event.
         if (nameFlag == eNameFromSubtree) {
           RefPtr<AccEvent> nameChangeEvent =
               new AccEvent(nsIAccessibleEvent::EVENT_NAME_CHANGE, parent);
-          return PushEvent(nameChangeEvent);
+          pushed |= PushEvent(nameChangeEvent);
         }
-        break;
+        nameCheckAncestor = false;
       }
-      parent = parent->Parent();
+
+      Relation rel = parent->RelationByType(RelationType::LABEL_FOR);
+      while (LocalAccessible* relTarget = rel.Next()) {
+        RefPtr<AccEvent> nameChangeEvent =
+            new AccEvent(nsIAccessibleEvent::EVENT_NAME_CHANGE, relTarget);
+        pushed |= PushEvent(nameChangeEvent);
+      }
     }
-  }
-  return false;
+
+    if (doDesc) {
+      Relation rel = parent->RelationByType(RelationType::DESCRIPTION_FOR);
+      while (LocalAccessible* relTarget = rel.Next()) {
+        RefPtr<AccEvent> descChangeEvent = new AccEvent(
+            nsIAccessibleEvent::EVENT_DESCRIPTION_CHANGE, relTarget);
+        pushed |= PushEvent(descChangeEvent);
+      }
+    }
+
+    parent = parent->LocalParent();
+  } while (parent &&
+           nsTextEquivUtils::HasNameRule(parent, eNameFromSubtreeIfReqRule));
+
+  return pushed;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -85,7 +114,7 @@ void EventQueue::CoalesceEvents() {
 
   switch (tailEvent->mEventRule) {
     case AccEvent::eCoalesceReorder: {
-      DebugOnly<Accessible*> target = tailEvent->mAccessible.get();
+      DebugOnly<LocalAccessible*> target = tailEvent->mAccessible.get();
       MOZ_ASSERT(
           target->IsApplication() || target->IsOuterDoc() ||
               target->IsXULTree(),
@@ -139,8 +168,9 @@ void EventQueue::CoalesceEvents() {
           AccStateChangeEvent* tailSCEvent = downcast_accEvent(tailEvent);
           if (thisSCEvent->mState == tailSCEvent->mState) {
             thisEvent->mEventRule = AccEvent::eDoNotEmit;
-            if (thisSCEvent->mIsEnabled != tailSCEvent->mIsEnabled)
+            if (thisSCEvent->mIsEnabled != tailSCEvent->mIsEnabled) {
               tailEvent->mEventRule = AccEvent::eDoNotEmit;
+            }
           }
         }
       }
@@ -159,8 +189,9 @@ void EventQueue::CoalesceEvents() {
           AccTextSelChangeEvent* thisTSCEvent = downcast_accEvent(thisEvent);
           AccTextSelChangeEvent* tailTSCEvent = downcast_accEvent(tailEvent);
           if (thisTSCEvent->mSel == tailTSCEvent->mSel ||
-              thisEvent->mAccessible == tailEvent->mAccessible)
+              thisEvent->mAccessible == tailEvent->mAccessible) {
             thisEvent->mEventRule = AccEvent::eDoNotEmit;
+          }
         }
       }
       break;  // eCoalesceTextSelChange
@@ -205,8 +236,9 @@ void EventQueue::CoalesceSelChangeEvents(AccSelChangeEvent* aTailEvent,
         AccEvent* prevEvent = mEvents[jdx];
         if (prevEvent->mEventRule == aTailEvent->mEventRule) {
           AccSelChangeEvent* prevSelChangeEvent = downcast_accEvent(prevEvent);
-          if (prevSelChangeEvent->mWidget == aTailEvent->mWidget)
+          if (prevSelChangeEvent->mWidget == aTailEvent->mWidget) {
             prevSelChangeEvent->mEventRule = AccEvent::eDoNotEmit;
+          }
         }
       }
     }
@@ -259,8 +291,9 @@ void EventQueue::CoalesceSelChangeEvents(AccSelChangeEvent* aTailEvent,
 
   // Convert into selection add since control has single selection but other
   // selection events for this control are queued.
-  if (aTailEvent->mEventType == nsIAccessibleEvent::EVENT_SELECTION)
+  if (aTailEvent->mEventType == nsIAccessibleEvent::EVENT_SELECTION) {
     aTailEvent->mEventType = nsIAccessibleEvent::EVENT_SELECTION_ADD;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -268,8 +301,7 @@ void EventQueue::CoalesceSelChangeEvents(AccSelChangeEvent* aTailEvent,
 
 void EventQueue::ProcessEventQueue() {
   // Process only currently queued events.
-  nsTArray<RefPtr<AccEvent> > events;
-  events.SwapElements(mEvents);
+  const nsTArray<RefPtr<AccEvent> > events = std::move(mEvents);
 
   uint32_t eventCount = events.Length();
 #ifdef A11Y_LOG
@@ -283,7 +315,7 @@ void EventQueue::ProcessEventQueue() {
   for (uint32_t idx = 0; idx < eventCount; idx++) {
     AccEvent* event = events[idx];
     if (event->mEventRule != AccEvent::eDoNotEmit) {
-      Accessible* target = event->GetAccessible();
+      LocalAccessible* target = event->GetAccessible();
       if (!target || target->IsDefunct()) continue;
 
       // Dispatch the focus event if target is still focused.
@@ -331,3 +363,6 @@ void EventQueue::ProcessEventQueue() {
     if (!mDocument) return;
   }
 }
+
+}  // namespace a11y
+}  // namespace mozilla

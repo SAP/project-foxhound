@@ -7,12 +7,15 @@ const kURL2 = "data:text/html,I shouldn't be here!";
  * Also check that we switch back to the original tab on exiting Print Preview.
  */
 add_task(async function() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["print.tab_modal.enabled", false]],
+  });
   await BrowserTestUtils.withNewTab(kURL1, async function(browser) {
     let originalTab = gBrowser.selectedTab;
     let tab = BrowserTestUtils.addTab(gBrowser, kURL2);
     document.getElementById("cmd_printPreview").doCommand();
     gBrowser.selectedTab = tab;
-    await BrowserTestUtils.waitForCondition(
+    await TestUtils.waitForCondition(
       () => gInPrintPreviewMode,
       "should be in print preview mode"
     );
@@ -40,7 +43,7 @@ add_task(async function() {
     let tabSwitched = BrowserTestUtils.switchTab(gBrowser, () => {
       PrintUtils.exitPrintPreview();
     });
-    await BrowserTestUtils.waitForCondition(
+    await TestUtils.waitForCondition(
       () => !gInPrintPreviewMode,
       "should no longer be in print preview mode"
     );

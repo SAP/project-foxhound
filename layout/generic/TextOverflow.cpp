@@ -140,8 +140,8 @@ static bool IsFrameDescendantOfAny(
     nsIFrame* aChild, const TextOverflow::FrameHashtable& aSetOfFrames,
     nsIFrame* aCommonAncestor) {
   for (nsIFrame* f = aChild; f && f != aCommonAncestor;
-       f = nsLayoutUtils::GetCrossDocParentFrame(f)) {
-    if (aSetOfFrames.GetEntry(f)) {
+       f = nsLayoutUtils::GetCrossDocParentFrameInProcess(f)) {
+    if (aSetOfFrames.Contains(f)) {
       return true;
     }
   }
@@ -159,11 +159,9 @@ class nsDisplayTextOverflowMarker final : public nsPaintedDisplayItem {
         mAscent(aAscent) {
     MOZ_COUNT_CTOR(nsDisplayTextOverflowMarker);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayTextOverflowMarker() {
-    MOZ_COUNT_DTOR(nsDisplayTextOverflowMarker);
-  }
-#endif
+
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayTextOverflowMarker)
+
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder,
                            bool* aSnap) const override {
     *aSnap = false;
@@ -211,16 +209,13 @@ static void PaintTextShadowCallback(gfxContext* aCtx, nsPoint aShadowOffset,
 
 void nsDisplayTextOverflowMarker::Paint(nsDisplayListBuilder* aBuilder,
                                         gfxContext* aCtx) {
-  DrawTargetAutoDisableSubpixelAntialiasing disable(aCtx->GetDrawTarget(),
-                                                    IsSubpixelAADisabled());
-
   nscolor foregroundColor =
       nsLayoutUtils::GetColor(mFrame, &nsStyleText::mWebkitTextFillColor);
 
   // Paint the text-shadows for the overflow marker
-  nsLayoutUtils::PaintTextShadow(mFrame, aCtx, mRect, GetPaintRect(),
-                                 foregroundColor, PaintTextShadowCallback,
-                                 (void*)this);
+  nsLayoutUtils::PaintTextShadow(mFrame, aCtx, mRect,
+                                 GetPaintRect(aBuilder, aCtx), foregroundColor,
+                                 PaintTextShadowCallback, (void*)this);
   aCtx->SetColor(gfx::sRGBColor::FromABGR(foregroundColor));
   PaintTextToContext(aCtx, nsPoint(0, 0));
 }
@@ -391,7 +386,7 @@ void TextOverflow::ExamineFrameSubtree(nsIFrame* aFrame,
     }
     if (isAtomic && ((mIStart.mActive && overflowIStart) ||
                      (mIEnd.mActive && overflowIEnd))) {
-      aFramesToHide->PutEntry(aFrame);
+      aFramesToHide->Insert(aFrame);
     } else if (isAtomic || frameType == LayoutFrameType::Text) {
       AnalyzeMarkerEdges(aFrame, frameType, aInsideMarkersArea, aFramesToHide,
                          aAlignmentEdges, aFoundVisibleTextOrAtomic,
@@ -472,7 +467,7 @@ void TextOverflow::AnalyzeMarkerEdges(nsIFrame* aFrame,
         }
       }
     } else {
-      aFramesToHide->PutEntry(aFrame);
+      aFramesToHide->Insert(aFrame);
     }
   } else if (!insideIStartEdge || !insideIEndEdge) {
     // frame is outside
@@ -480,7 +475,7 @@ void TextOverflow::AnalyzeMarkerEdges(nsIFrame* aFrame,
       aAlignmentEdges->AccumulateOuter(mBlockWM, borderRect);
     }
     if (IsAtomicElement(aFrame, aFrameType)) {
-      aFramesToHide->PutEntry(aFrame);
+      aFramesToHide->Insert(aFrame);
     }
   } else {
     // frame is inside

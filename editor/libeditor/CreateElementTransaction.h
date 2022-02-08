@@ -6,10 +6,10 @@
 #ifndef CreateElementTransaction_h
 #define CreateElementTransaction_h
 
-#include "mozilla/EditorDOMPoint.h"
-#include "mozilla/EditTransactionBase.h"
+#include "EditorDOMPoint.h"
+#include "EditTransactionBase.h"
+
 #include "mozilla/RefPtr.h"
-#include "mozilla/dom/Element.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupportsImpl.h"
 
@@ -19,22 +19,25 @@ class nsAtom;
  * A transaction that creates a new node in the content tree.
  */
 namespace mozilla {
+namespace dom {
+class Element;
+}
 
-class EditorBase;
+class HTMLEditor;
 
 class CreateElementTransaction final : public EditTransactionBase {
  protected:
   template <typename PT, typename CT>
-  CreateElementTransaction(EditorBase& aEditorBase, nsAtom& aTag,
+  CreateElementTransaction(HTMLEditor& aHTMLEditor, nsAtom& aTagName,
                            const EditorDOMPointBase<PT, CT>& aPointToInsert);
 
  public:
   /**
    * Create a transaction for creating a new child node of the container of
-   * aPointToInsert of type aTag.
+   * aPointToInsert of type aTagName.
    *
-   * @param aEditorBase     The editor which manages the transaction.
-   * @param aTag            The tag (P, HR, TABLE, etc.) for the new element.
+   * @param aHTMLEditor     The editor which manages the transaction.
+   * @param aTagName        The tag (P, HR, TABLE, etc.) for the new element.
    * @param aPointToInsert  The new node will be inserted before the child at
    *                        aPointToInsert.  If this refers end of the container
    *                        or after, the new node will be appended to the
@@ -42,7 +45,7 @@ class CreateElementTransaction final : public EditTransactionBase {
    */
   template <typename PT, typename CT>
   static already_AddRefed<CreateElementTransaction> Create(
-      EditorBase& aEditorBase, nsAtom& aTag,
+      HTMLEditor& aHTMLEditor, nsAtom& aTagName,
       const EditorDOMPointBase<PT, CT>& aPointToInsert);
 
   NS_DECL_ISUPPORTS_INHERITED
@@ -56,6 +59,9 @@ class CreateElementTransaction final : public EditTransactionBase {
 
   dom::Element* GetNewElement() const { return mNewElement; }
 
+  friend std::ostream& operator<<(std::ostream& aStream,
+                                  const CreateElementTransaction& aTransaction);
+
  protected:
   virtual ~CreateElementTransaction() = default;
 
@@ -65,7 +71,7 @@ class CreateElementTransaction final : public EditTransactionBase {
   MOZ_CAN_RUN_SCRIPT void InsertNewNode(ErrorResult& aError);
 
   // The document into which the new node will be inserted.
-  RefPtr<EditorBase> mEditorBase;
+  RefPtr<HTMLEditor> mHTMLEditor;
 
   // The tag (mapping to object type) for the new element.
   RefPtr<nsAtom> mTag;

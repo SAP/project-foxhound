@@ -8,29 +8,54 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "nsMenuBaseX.h"
+#include "mozilla/WeakPtr.h"
+
 #include "nsIMutationObserver.h"
 #include "nsHashKeys.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsString.h"
 
+class nsMenuBarX;
 class nsMenuItemX;
 class nsChangeObserver;
 class nsIWidget;
 class nsIContent;
 
-class nsMenuGroupOwnerX : public nsMenuObjectX, public nsIMutationObserver {
- public:
-  nsMenuGroupOwnerX();
+@class MOZMenuItemRepresentedObject;
 
-  nsresult Create(mozilla::dom::Element* aContent);
+// Fixed command IDs that work even without a JS listener, for our fallback menu bar.
+// Dynamic command IDs start counting from eCommand_ID_Last.
+enum {
+  eCommand_ID_About = 1,
+  eCommand_ID_Prefs = 2,
+  eCommand_ID_Quit = 3,
+  eCommand_ID_HideApp = 4,
+  eCommand_ID_HideOthers = 5,
+  eCommand_ID_ShowAll = 6,
+  eCommand_ID_Update = 7,
+  eCommand_ID_TouchBar = 8,
+  eCommand_ID_Last = 9
+};
+
+// The menu group owner observes DOM mutations, notifies registered nsChangeObservers, and manages
+// command registration.
+// There is one owner per menubar, and one per standalone native menu.
+class nsMenuGroupOwnerX : public nsIMutationObserver {
+ public:
+  // Both parameters can be null.
+  nsMenuGroupOwnerX(mozilla::dom::Element* aElement, nsMenuBarX* aMenuBarIfMenuBar);
 
   void RegisterForContentChanges(nsIContent* aContent, nsChangeObserver* aMenuObject);
   void UnregisterForContentChanges(nsIContent* aContent);
-  uint32_t RegisterForCommand(nsMenuItemX* aItem);
+  uint32_t RegisterForCommand(nsMenuItemX* aMenuItem);
   void UnregisterCommand(uint32_t aCommandID);
-  nsMenuItemX* GetMenuItemForCommandID(uint32_t inCommandID);
-  void AddMenuItemInfoToSet(MenuItemInfo* info);
+  nsMenuItemX* GetMenuItemForCommandID(uint32_t aCommandID);
+
+  // The representedObject that's used for all menu items under this menu group owner.
+  MOZMenuItemRepresentedObject* GetRepresentedObject() { return mRepresentedObject; }
+
+  // If this is the group owner for a menubar, return the menubar, otherwise nullptr.
+  nsMenuBarX* GetMenuBar() { return mMenuBar.get(); }
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIMUTATIONOBSERVER
@@ -40,20 +65,25 @@ class nsMenuGroupOwnerX : public nsMenuObjectX, public nsIMutationObserver {
 
   nsChangeObserver* LookupContentChangeObserver(nsIContent* aContent);
 
-  uint32_t mCurrentCommandID;  // unique command id (per menu-bar) to
-                               // give to next item that asks
+  RefPtr<nsIContent> mContent;
+
+  // Unique command id (per menu-bar) to give to next item that asks.
+  uint32_t mCurrentCommandID = eCommand_ID_Last;
 
   // stores observers for content change notification
-  nsDataHashtable<nsPtrHashKey<nsIContent>, nsChangeObserver*> mContentToObserverTable;
+  nsTHashMap<nsPtrHashKey<nsIContent>, nsChangeObserver*> mContentToObserverTable;
 
   // stores mapping of command IDs to menu objects
-  nsDataHashtable<nsUint32HashKey, nsMenuItemX*> mCommandToMenuObjectTable;
+  nsTHashMap<nsUint32HashKey, nsMenuItemX*> mCommandToMenuObjectTable;
 
-  // Stores references to all the MenuItemInfo objects created with weak
-  // references to us.  They may live longer than we do, so when we're
-  // destroyed we need to clear all their weak references.  This avoids
-  // crashes in -[NativeMenuItemTarget menuItemHit:].  See bug 1131473.
-  NSMutableSet* mInfoSet;
+  MOZMenuItemRepresentedObject* mRepresentedObject = nil;  // [strong]
+  mozilla::WeakPtr<nsMenuBarX> mMenuBar;
 };
+
+@interface MOZMenuItemRepresentedObject : NSObject
+- (id)initWithMenuGroupOwner:(nsMenuGroupOwnerX*)aMenuGroupOwner;
+- (void)setMenuGroupOwner:(nsMenuGroupOwnerX*)aMenuGroupOwner;
+- (nsMenuGroupOwnerX*)menuGroupOwner;
+@end
 
 #endif  // nsMenuGroupOwner_h_

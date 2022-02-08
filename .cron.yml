@@ -15,9 +15,9 @@ jobs:
           by-project:
               # No default
               mozilla-beta:
-                  - {weekday: 'Monday', hour: 2, minute: 0}
-                  - {weekday: 'Wednesday', hour: 2, minute: 0}
-                  - {weekday: 'Friday', hour: 2, minute: 0}
+                  - {weekday: 'Sunday', hour: 21, minute: 0}
+                  - {weekday: 'Tuesday', hour: 21, minute: 0}
+                  - {weekday: 'Thursday', hour: 21, minute: 0}
 
     - name: nightly-desktop
       job:
@@ -29,7 +29,8 @@ jobs:
           - mozilla-central
       when:
           by-project:
-              # Match buildbot starts for now
+              # Please update the `searchfox-index` job `mozilla-central` `when`
+              # times as well if updating the times here.
               mozilla-central: [{hour: 10, minute: 0}, {hour: 22, minute: 0}]
               # No default
 
@@ -95,28 +96,6 @@ jobs:
           by-project:
               mozilla-central: [{hour: 10, minute: 0}]
 
-    - name: tp6m-fennec-v68
-      job:
-          type: decision-task
-          treeherder-symbol: f68
-          target-tasks-method: fennec_v68
-          include-push-tasks: true
-      run-on-projects:
-          - mozilla-central
-      when:
-          - {weekday: 'Saturday', hour: 5, minute: 0}
-
-    - name: live-site-perf-testing
-      job:
-          type: decision-task
-          treeherder-symbol: lst
-          target-tasks-method: live_site_perf_testing
-          include-push-tasks: true
-      run-on-projects:
-          - mozilla-central
-      when:
-          - {weekday: 'Sunday', hour: 5, minute: 0}
-
     - name: general-perf-testing
       job:
           type: decision-task
@@ -130,6 +109,8 @@ jobs:
           - {weekday: 'Wednesday', hour: 10, minute: 30}
           - {weekday: 'Friday', hour: 10, minute: 30}
 
+    # For more context on this job, see:
+    # https://github.com/mozsearch/mozsearch-mozilla#how-searchfoxorg-stays-up-to-date
     - name: searchfox-index
       job:
           type: decision-task
@@ -139,20 +120,51 @@ jobs:
           - mozilla-central
           - mozilla-beta
           - mozilla-release
-          - mozilla-esr68
-          - mozilla-esr78
+          - mozilla-esr91
+          - elm
       when:
-          - {hour: 10, minute: 0}
+          by-project:
+              # We want to run at both of the times the nightly runs.
+              mozilla-central: [{hour: 10, minute: 0}, {hour: 22, minute: 0}]
+              # For all other jobs we just run once daily matching the 10 UTC
+              # nightly which is designed to align with searchfox's AWS cron
+              # jobs (for legacy reasons) rather than trying to align with
+              # specific builds.  (Ex: mozilla-beta has a "daily-releases" job
+              # that currently runs 3 times a week.)
+              #
+              # Note that for branches that don't change a lot this will result
+              # in a redundant job being scheduled each day rather than reusing
+              # the previous day's job.  This is only beneficial in the sense
+              # that there's no risk of expiration for artifacts and is a
+              # trade-off to avoid stale indices.  Bug 1686981 tracks fixing
+              # this.
+              mozilla-beta: [{hour: 10, minute: 0}]
+              mozilla-release: [{hour: 10, minute: 0}]
+              mozilla-esr91: [{hour: 10, minute: 0}]
+              elm: [{hour: 10, minute: 0}]
 
-    - name: coverity-tree-analysis
+    - name: linux64-clang-trunk-perf
       job:
           type: decision-task
-          treeherder-symbol: CoverityTA
-          target-tasks-method: coverity_static_analysis_full
+          treeherder-symbol: linux64-clang-trunk-perf
+          target-tasks-method: linux64_clang_trunk_perf
       run-on-projects:
           - mozilla-central
       when:
-          - {hour: 10, minute: 0}
+          - {hour: 2, minute: 0}
+
+    - name: updatebot-cron-job
+      job:
+          type: decision-task
+          treeherder-symbol: updatebot
+          target-tasks-method: updatebot_cron
+      run-on-projects:
+          - mozilla-central
+      when:
+          - {hour: 0, minute: 0}
+          - {hour: 6, minute: 0}
+          - {hour: 12, minute: 0}
+          - {hour: 18, minute: 0}
 
     - name: customv8-update
       job:
@@ -187,8 +199,7 @@ jobs:
           - mozilla-central
           - mozilla-beta
           - mozilla-release
-          - mozilla-esr68
-          - mozilla-esr78
+          - mozilla-esr91
       when:
           by-project:
               # No default branch
@@ -201,10 +212,7 @@ jobs:
               mozilla-release:
                   - {hour: 7, minute: 0}
                   - {hour: 19, minute: 0}
-              mozilla-esr68:
-                  - {hour: 7, minute: 0}
-                  - {hour: 19, minute: 0}
-              mozilla-esr78:
+              mozilla-esr91:
                   - {hour: 7, minute: 0}
                   - {hour: 19, minute: 0}
 
@@ -217,24 +225,10 @@ jobs:
           - mozilla-central
           - mozilla-beta
           - mozilla-release
-          - mozilla-esr68
-          - mozilla-esr78
+          - mozilla-esr91
       when:
-          - {weekday: 'Monday', hour: 10, minute: 0}
-          - {weekday: 'Thursday', hour: 10, minute: 0}
-
-    - name: python-dependency-update
-      job:
-          type: decision-task
-          treeherder-symbol: Nfile
-          target-tasks-method: python_dependency_update
-      run-on-projects:
-          - mozilla-central
-      when:
-          by-project:
-              # No default branch
-              mozilla-central:
-                  - {weekday: 'Monday', hour: 10, minute: 0}
+          - {weekday: 'Monday', hour: 8, minute: 0}
+          - {weekday: 'Thursday', hour: 8, minute: 0}
 
     - name: raptor-tp6m
       job:
@@ -252,6 +246,17 @@ jobs:
           - {weekday: 'Friday', hour: 3, minute: 0}
           - {weekday: 'Saturday', hour: 3, minute: 0}
           - {weekday: 'Sunday', hour: 3, minute: 0}
+
+    - name: perftest-s7
+      job:
+          type: decision-task
+          treeherder-symbol: tp6m
+          target-tasks-method: perftest_s7
+          include-push-tasks: true
+      run-on-projects:
+          - mozilla-central
+      when:
+          - {weekday: 'Saturday', hour: 3, minute: 0}
 
     - name: condprof
       job:
@@ -273,10 +278,8 @@ jobs:
       run-on-projects:
           - mozilla-central
           - mozilla-beta
-          - mozilla-esr68
-          # no mozilla-esr78
       when:
-          - {minute: 45}
+          - {hour: 18, minute: 45}
 
     - name: system-symbols
       job:
@@ -298,9 +301,31 @@ jobs:
       when:
           - {hour: 4, minute: 00}
 
+    - name: perftest-on-autoland
+      job:
+          type: decision-task
+          treeherder-symbol: perftest-auto
+          target-tasks-method: perftest-on-autoland
+      run-on-projects:
+          - autoland
+      when:
+          - {hour: 4, minute: 00}
+
     - name: scriptworker-canary
       job:
           type: trigger-action
           action-name: scriptworker-canary
           include-cron-input: true
       when: []  # never (hook only)
+
+    - name: l10n-cross-channel
+      job:
+          type: decision-task
+          treeherder-symbol: l10n-cross-channel
+          target-tasks-method: l10n-cross-channel
+      run-on-projects:
+          - mozilla-central
+      when:
+          by-project:
+              mozilla-central: [{hour: 11, minute: 0}, {hour: 23, minute: 0}]
+              default: []

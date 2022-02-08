@@ -6,7 +6,11 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "nsCRT.h"
+#include "nsDeviceContextSpecWin.h"
+#include "nsPrintSettingsImpl.h"
 #include "WinUtils.h"
+
+using namespace mozilla;
 
 // Using paper sizes from wingdi.h and the units given there, plus a little
 // extra research for the ones it doesn't give. Looks like the list hasn't
@@ -159,6 +163,46 @@ nsPrintSettingsWin::nsPrintSettingsWin(const nsPrintSettingsWin& aPS)
   *this = aPS;
 }
 
+/* static */
+void nsPrintSettingsWin::PaperSizeUnitFromDmPaperSize(short aPaperSize,
+                                                      int16_t& aPaperSizeUnit) {
+  if (aPaperSize > 0 && aPaperSize < int32_t(ArrayLength(kPaperSizeUnits))) {
+    aPaperSizeUnit = kPaperSizeUnits[aPaperSize];
+  }
+}
+
+void nsPrintSettingsWin::InitWithInitializer(
+    const PrintSettingsInitializer& aSettings) {
+  nsPrintSettings::InitWithInitializer(aSettings);
+
+  if (aSettings.mDevmodeWStorage.Length() < sizeof(DEVMODEW)) {
+    return;
+  }
+
+  // SetDevMode copies the DEVMODE.
+  SetDevMode(const_cast<DEVMODEW*>(reinterpret_cast<const DEVMODEW*>(
+      aSettings.mDevmodeWStorage.Elements())));
+
+  if (mDevMode->dmFields & DM_SCALE) {
+    // Since we do the scaling, grab the DEVMODE value and reset it back to 100.
+    double scale = double(mDevMode->dmScale) / 100.0f;
+    if (mScaling == 1.0 || scale != 1.0) {
+      SetScaling(scale);
+    }
+    mDevMode->dmScale = 100;
+  }
+}
+
+already_AddRefed<nsIPrintSettings> CreatePlatformPrintSettings(
+    const PrintSettingsInitializer& aSettings) {
+  RefPtr<nsPrintSettings> settings = aSettings.mPrintSettings.get();
+  if (!settings) {
+    settings = MakeRefPtr<nsPrintSettingsWin>();
+  }
+  settings->InitWithInitializer(aSettings);
+  return settings.forget();
+}
+
 /** ---------------------------------------------------
  *  See documentation in nsPrintSettingsWin.h
  *	@update
@@ -219,51 +263,6 @@ NS_IMETHODIMP nsPrintSettingsWin::SetDevMode(DEVMODEW* aDevMode) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsPrintSettingsWin::GetPrintableWidthInInches(double* aPrintableWidthInInches) {
-  MOZ_ASSERT(aPrintableWidthInInches);
-  *aPrintableWidthInInches = mPrintableWidthInInches;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsPrintSettingsWin::SetPrintableWidthInInches(double aPrintableWidthInInches) {
-  mPrintableWidthInInches = aPrintableWidthInInches;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsPrintSettingsWin::GetPrintableHeightInInches(
-    double* aPrintableHeightInInches) {
-  MOZ_ASSERT(aPrintableHeightInInches);
-  *aPrintableHeightInInches = mPrintableHeightInInches;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsPrintSettingsWin::SetPrintableHeightInInches(
-    double aPrintableHeightInInches) {
-  mPrintableHeightInInches = aPrintableHeightInInches;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsPrintSettingsWin::GetEffectivePageSize(double* aWidth, double* aHeight) {
-  // If printable page size not set, fall back to nsPrintSettings.
-  if (mPrintableWidthInInches == 0l || mPrintableHeightInInches == 0l) {
-    return nsPrintSettings::GetEffectivePageSize(aWidth, aHeight);
-  }
-
-  if (mOrientation == kPortraitOrientation) {
-    *aWidth = NS_INCHES_TO_TWIPS(mPrintableWidthInInches);
-    *aHeight = NS_INCHES_TO_TWIPS(mPrintableHeightInInches);
-  } else {
-    *aHeight = NS_INCHES_TO_TWIPS(mPrintableWidthInInches);
-    *aWidth = NS_INCHES_TO_TWIPS(mPrintableHeightInInches);
-  }
-  return NS_OK;
-}
-
 void nsPrintSettingsWin::InitUnwriteableMargin(HDC aHdc) {
   mozilla::gfx::MarginDouble margin =
       mozilla::widget::WinUtils::GetUnwriteableMarginsForDeviceInInches(aHdc);
@@ -280,13 +279,40 @@ void nsPrintSettingsWin::CopyFromNative(HDC aHdc, DEVMODEW* aDevMode) {
 
   mIsInitedFromPrinter = true;
   if (aDevMode->dmFields & DM_ORIENTATION) {
-    mOrientation = int32_t(aDevMode->dmOrientation == DMORIENT_PORTRAIT
-                               ? kPortraitOrientation
-                               : kLandscapeOrientation);
+    const bool areSheetsOfPaperPortraitMode =
+        (aDevMode->dmOrientation == DMORIENT_PORTRAIT);
+
+    // If our Windows print settings say that we're producing portrait-mode
+    // sheets of paper, then our page format must also be portrait-mode; unless
+    // we've got a pages-per-sheet value with orthogonal pages/sheets, in which
+    // case it's reversed.
+    const bool arePagesPortraitMode =
+        (areSheetsOfPaperPortraitMode != HasOrthogonalSheetsAndPages());
+
+    // Record the orientation of the pages (determined above) in mOrientation:
+    mOrientation = int32_t(arePagesPortraitMode ? kPortraitOrientation
+                                                : kLandscapeOrientation);
   }
 
   if (aDevMode->dmFields & DM_COPIES) {
     mNumCopies = aDevMode->dmCopies;
+  }
+
+  if (aDevMode->dmFields & DM_DUPLEX) {
+    switch (aDevMode->dmDuplex) {
+      default:
+        MOZ_ASSERT_UNREACHABLE("bad value for dmDuplex field");
+        [[fallthrough]];
+      case DMDUP_SIMPLEX:
+        mDuplex = kDuplexNone;
+        break;
+      case DMDUP_VERTICAL:
+        mDuplex = kDuplexFlipOnLongEdge;
+        break;
+      case DMDUP_HORIZONTAL:
+        mDuplex = kDuplexFlipOnShortEdge;
+        break;
+    }
   }
 
   // Since we do the scaling, grab their value and reset back to 100.
@@ -299,72 +325,67 @@ void nsPrintSettingsWin::CopyFromNative(HDC aHdc, DEVMODEW* aDevMode) {
   }
 
   if (aDevMode->dmFields & DM_PAPERSIZE) {
-    mPaperData = aDevMode->dmPaperSize;
-    // If not a paper size we know about, the unit will be the last one saved.
-    if (mPaperData > 0 &&
-        mPaperData < int32_t(mozilla::ArrayLength(kPaperSizeUnits))) {
-      mPaperSizeUnit = kPaperSizeUnits[mPaperData];
-    }
-  } else {
-    mPaperData = -1;
+    mPaperId.Truncate(0);
+    mPaperId.AppendInt(aDevMode->dmPaperSize);
+    // If it is not a paper size we know about, the unit will remain unchanged.
+    PaperSizeUnitFromDmPaperSize(aDevMode->dmPaperSize, mPaperSizeUnit);
+  }
+
+  if (aDevMode->dmFields & DM_COLOR) {
+    mPrintInColor = aDevMode->dmColor == DMCOLOR_COLOR;
   }
 
   InitUnwriteableMargin(aHdc);
 
-  // The length and width in DEVMODE are always in tenths of a millimeter.
-  double sizeUnitToTenthsOfAmm =
-      10L * (mPaperSizeUnit == kPaperSizeInches ? MM_PER_INCH_FLOAT : 1L);
-  if (aDevMode->dmFields & DM_PAPERLENGTH) {
-    mPaperHeight = aDevMode->dmPaperLength / sizeUnitToTenthsOfAmm;
-  } else {
-    mPaperHeight = -1l;
-  }
+  int pixelsPerInchY = ::GetDeviceCaps(aHdc, LOGPIXELSY);
+  int physicalHeight = ::GetDeviceCaps(aHdc, PHYSICALHEIGHT);
+  double physicalHeightInch = double(physicalHeight) / pixelsPerInchY;
+  int pixelsPerInchX = ::GetDeviceCaps(aHdc, LOGPIXELSX);
+  int physicalWidth = ::GetDeviceCaps(aHdc, PHYSICALWIDTH);
+  double physicalWidthInch = double(physicalWidth) / pixelsPerInchX;
 
-  if (aDevMode->dmFields & DM_PAPERWIDTH) {
-    mPaperWidth = aDevMode->dmPaperWidth / sizeUnitToTenthsOfAmm;
-  } else {
-    mPaperWidth = -1l;
-  }
+  // Get the paper size from the device context rather than the DEVMODE, because
+  // it is always available.
+  double paperHeightInch = mOrientation == kPortraitOrientation
+                               ? physicalHeightInch
+                               : physicalWidthInch;
+  mPaperHeight = mPaperSizeUnit == kPaperSizeInches
+                     ? paperHeightInch
+                     : paperHeightInch * MM_PER_INCH_FLOAT;
 
-  // Note: we only scale the printing using the LOGPIXELSY, so we use that
-  // when calculating the surface width as well as the height.
-  int32_t printableWidthInDots = GetDeviceCaps(aHdc, PHYSICALWIDTH);
-  int32_t printableHeightInDots = GetDeviceCaps(aHdc, PHYSICALHEIGHT);
-  int32_t heightDPI = GetDeviceCaps(aHdc, LOGPIXELSY);
+  double paperWidthInch = mOrientation == kPortraitOrientation
+                              ? physicalWidthInch
+                              : physicalHeightInch;
+  mPaperWidth = mPaperSizeUnit == kPaperSizeInches
+                    ? paperWidthInch
+                    : paperWidthInch * MM_PER_INCH_FLOAT;
 
-  // Keep these values in portrait format, so we can reflect our own changes
-  // to mOrientation.
-  if (mOrientation == kPortraitOrientation) {
-    mPrintableWidthInInches = double(printableWidthInDots) / heightDPI;
-    mPrintableHeightInInches = double(printableHeightInDots) / heightDPI;
-  } else {
-    mPrintableHeightInInches = double(printableWidthInDots) / heightDPI;
-    mPrintableWidthInInches = double(printableHeightInDots) / heightDPI;
-  }
-
-  // Using Y to match existing code for print scaling calculations.
-  mResolution = heightDPI;
+  // Using LOGPIXELSY to match existing code for print scaling calculations.
+  mResolution = pixelsPerInchY;
 }
 
 void nsPrintSettingsWin::CopyToNative(DEVMODEW* aDevMode) {
   MOZ_ASSERT(aDevMode);
 
-  if (mPaperData >= 0) {
-    aDevMode->dmPaperSize = mPaperData;
+  if (!mPaperId.IsEmpty()) {
+    aDevMode->dmPaperSize = _wtoi((const wchar_t*)mPaperId.BeginReading());
     aDevMode->dmFields |= DM_PAPERSIZE;
   } else {
     aDevMode->dmPaperSize = 0;
     aDevMode->dmFields &= ~DM_PAPERSIZE;
   }
 
+  aDevMode->dmFields |= DM_COLOR;
+  aDevMode->dmColor = mPrintInColor ? DMCOLOR_COLOR : DMCOLOR_MONOCHROME;
+
   // The length and width in DEVMODE are always in tenths of a millimeter.
-  double sizeUnitToTenthsOfAmm =
-      10L * (mPaperSizeUnit == kPaperSizeInches ? MM_PER_INCH_FLOAT : 1L);
+  double tenthsOfAmmPerSizeUnit =
+      mPaperSizeUnit == kPaperSizeInches ? MM_PER_INCH_FLOAT * 10.0 : 10.0;
 
   // Note: small page sizes can be required here for sticker, label and slide
   // printers etc. see bug 1271900.
   if (mPaperHeight > 0) {
-    aDevMode->dmPaperLength = mPaperHeight * sizeUnitToTenthsOfAmm;
+    aDevMode->dmPaperLength = std::round(mPaperHeight * tenthsOfAmmPerSizeUnit);
     aDevMode->dmFields |= DM_PAPERLENGTH;
   } else {
     aDevMode->dmPaperLength = 0;
@@ -372,7 +393,7 @@ void nsPrintSettingsWin::CopyToNative(DEVMODEW* aDevMode) {
   }
 
   if (mPaperWidth > 0) {
-    aDevMode->dmPaperWidth = mPaperWidth * sizeUnitToTenthsOfAmm;
+    aDevMode->dmPaperWidth = std::round(mPaperWidth * tenthsOfAmmPerSizeUnit);
     aDevMode->dmFields |= DM_PAPERWIDTH;
   } else {
     aDevMode->dmPaperWidth = 0;
@@ -380,7 +401,7 @@ void nsPrintSettingsWin::CopyToNative(DEVMODEW* aDevMode) {
   }
 
   // Setup Orientation
-  aDevMode->dmOrientation = mOrientation == kPortraitOrientation
+  aDevMode->dmOrientation = GetSheetOrientation() == kPortraitOrientation
                                 ? DMORIENT_PORTRAIT
                                 : DMORIENT_LANDSCAPE;
   aDevMode->dmFields |= DM_ORIENTATION;
@@ -388,6 +409,25 @@ void nsPrintSettingsWin::CopyToNative(DEVMODEW* aDevMode) {
   // Setup Number of Copies
   aDevMode->dmCopies = mNumCopies;
   aDevMode->dmFields |= DM_COPIES;
+
+  // Setup Simplex/Duplex mode
+  switch (mDuplex) {
+    case kDuplexNone:
+      aDevMode->dmDuplex = DMDUP_SIMPLEX;
+      aDevMode->dmFields |= DM_DUPLEX;
+      break;
+    case kDuplexFlipOnLongEdge:
+      aDevMode->dmDuplex = DMDUP_VERTICAL;
+      aDevMode->dmFields |= DM_DUPLEX;
+      break;
+    case kDuplexFlipOnShortEdge:
+      aDevMode->dmDuplex = DMDUP_HORIZONTAL;
+      aDevMode->dmFields |= DM_DUPLEX;
+      break;
+    default:
+      MOZ_ASSERT_UNREACHABLE("bad value for duplex option");
+      break;
+  }
 }
 
 //-------------------------------------------
@@ -429,69 +469,3 @@ nsresult nsPrintSettingsWin::_Assign(nsIPrintSettings* aPS) {
   *this = *psWin;
   return NS_OK;
 }
-
-//----------------------------------------------------------------------
-// Testing of assign and clone
-// This define turns on the testing module below
-// so at start up it writes and reads the prefs.
-#ifdef DEBUG_rodsX
-#  include "nsIPrintSettingsService.h"
-#  include "nsIServiceManager.h"
-class Tester {
- public:
-  Tester();
-};
-Tester::Tester() {
-  nsCOMPtr<nsIPrintSettings> ps;
-  nsresult rv;
-  nsCOMPtr<nsIPrintSettingsService> printService =
-      do_GetService("@mozilla.org/gfx/printsettings-service;1", &rv);
-  if (NS_SUCCEEDED(rv)) {
-    rv = printService->CreatePrintSettings(getter_AddRefs(ps));
-  }
-
-  if (ps) {
-    ps->SetPrintOptions(nsIPrintSettings::kPrintOddPages, true);
-    ps->SetPrintOptions(nsIPrintSettings::kPrintEvenPages, false);
-    ps->SetMarginTop(1.0);
-    ps->SetMarginLeft(1.0);
-    ps->SetMarginBottom(1.0);
-    ps->SetMarginRight(1.0);
-    ps->SetScaling(0.5);
-    ps->SetPrintBGColors(true);
-    ps->SetPrintBGImages(true);
-    ps->SetPrintRange(15);
-    ps->SetHeaderStrLeft(NS_ConvertUTF8toUTF16("Left").get());
-    ps->SetHeaderStrCenter(NS_ConvertUTF8toUTF16("Center").get());
-    ps->SetHeaderStrRight(NS_ConvertUTF8toUTF16("Right").get());
-    ps->SetFooterStrLeft(NS_ConvertUTF8toUTF16("Left").get());
-    ps->SetFooterStrCenter(NS_ConvertUTF8toUTF16("Center").get());
-    ps->SetFooterStrRight(NS_ConvertUTF8toUTF16("Right").get());
-    ps->SetPaperName(NS_ConvertUTF8toUTF16("Paper Name").get());
-    ps->SetPaperData(1);
-    ps->SetPaperWidth(100.0);
-    ps->SetPaperHeight(50.0);
-    ps->SetPaperSizeUnit(nsIPrintSettings::kPaperSizeMillimeters);
-    ps->SetPrintReversed(true);
-    ps->SetPrintInColor(true);
-    ps->SetOrientation(nsIPrintSettings::kLandscapeOrientation);
-    ps->SetPrintCommand(NS_ConvertUTF8toUTF16("Command").get());
-    ps->SetNumCopies(2);
-    ps->SetPrinterName(NS_ConvertUTF8toUTF16("Printer Name").get());
-    ps->SetPrintToFile(true);
-    ps->SetToFileName(NS_ConvertUTF8toUTF16("File Name").get());
-    ps->SetPrintPageDelay(1000);
-
-    nsCOMPtr<nsIPrintSettings> ps2;
-    if (NS_SUCCEEDED(rv)) {
-      rv = printService->CreatePrintSettings(getter_AddRefs(ps2));
-    }
-
-    ps2->Assign(ps);
-
-    nsCOMPtr<nsIPrintSettings> psClone;
-    ps2->Clone(getter_AddRefs(psClone));
-  }
-}
-Tester gTester;
-#endif

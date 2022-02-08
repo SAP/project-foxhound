@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Logging.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "nsAsyncRedirectVerifyHelper.h"
 #include "nsThreadUtils.h"
 #include "nsNetUtil.h"
@@ -46,13 +47,6 @@ class nsAsyncVerifyRedirectCallbackEvent : public Runnable {
   nsresult mResult;
 };
 
-nsAsyncRedirectVerifyHelper::nsAsyncRedirectVerifyHelper()
-    : mFlags(0),
-      mWaitingForRedirectCallback(false),
-      mCallbackInitiated(false),
-      mExpectedCallbacks(0),
-      mResult(NS_OK) {}
-
 nsAsyncRedirectVerifyHelper::~nsAsyncRedirectVerifyHelper() {
   NS_ASSERTION(NS_FAILED(mResult) || mExpectedCallbacks == 0,
                "Did not receive all required callbacks!");
@@ -91,7 +85,8 @@ nsresult nsAsyncRedirectVerifyHelper::Init(
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (synchronize) {
-    if (!SpinEventLoopUntil([&]() { return !mWaitingForRedirectCallback; })) {
+    if (!SpinEventLoopUntil("nsAsyncRedirectVerifyHelper::Init"_ns,
+                            [&]() { return !mWaitingForRedirectCallback; })) {
       return NS_ERROR_UNEXPECTED;
     }
   }

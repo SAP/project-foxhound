@@ -5,6 +5,7 @@
 #include "CacheIndex.h"
 #include "CacheLog.h"
 #include "CacheFileUtils.h"
+#include "CacheObserver.h"
 #include "LoadContextInfo.h"
 #include "mozilla/Tokenizer.h"
 #include "mozilla/Telemetry.h"
@@ -13,9 +14,7 @@
 #include <algorithm>
 #include "mozilla/Unused.h"
 
-namespace mozilla {
-namespace net {
-namespace CacheFileUtils {
+namespace mozilla::net::CacheFileUtils {
 
 // This designates the format for the "alt-data" metadata.
 // When the format changes we need to update the version.
@@ -664,6 +663,4 @@ void BuildAlternativeDataInfo(const char* aInfo, int64_t aOffset,
   _retval.Append(aInfo);
 }
 
-}  // namespace CacheFileUtils
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net::CacheFileUtils

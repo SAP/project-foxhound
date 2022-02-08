@@ -158,10 +158,10 @@ impl<'a, 'b: 'a, E: 'a> InvalidationProcessor<'a, E>
 where
     E: TElement,
 {
-    /// We need to invalidate style on an eager pseudo-element, in order to
-    /// process changes that could otherwise end up in ::before or ::after
-    /// content being generated.
-    fn invalidates_on_eager_pseudo_element(&self) -> bool {
+    /// We need to invalidate style on pseudo-elements, in order to process
+    /// changes that could otherwise end up in ::before or ::after content being
+    /// generated, and invalidate lazy pseudo caches.
+    fn invalidates_on_pseudo_element(&self) -> bool {
         true
     }
 
@@ -216,13 +216,13 @@ where
             // TODO(emilio): Do this more efficiently!
             snapshot.each_class(|c| {
                 if !element.has_class(c, CaseSensitivity::CaseSensitive) {
-                    classes_removed.push(c.clone())
+                    classes_removed.push(c.0.clone())
                 }
             });
 
             element.each_class(|c| {
                 if !snapshot.has_class(c, CaseSensitivity::CaseSensitive) {
-                    classes_added.push(c.clone())
+                    classes_added.push(c.0.clone())
                 }
             })
         }

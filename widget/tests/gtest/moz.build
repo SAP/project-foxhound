@@ -5,11 +5,23 @@
 # file, you can obtain one at http://mozilla.org/MPL/2.0/.
 
 UNIFIED_SOURCES = [
-    'TestTimeConverter.cpp',
+    "TestTimeConverter.cpp",
+    "TestTouchResampler.cpp",
 ]
 
-FINAL_LIBRARY = 'xul-gtest'
+if CONFIG["OS_ARCH"] == "WINNT":
+    UNIFIED_SOURCES += [
+        "MockWinWidget.cpp",
+        "TestWinWindowOcclusionTracker.cpp",
+        "TestWinWindowOcclusionTrackerInteractive.cpp",
+    ]
+
+FINAL_LIBRARY = "xul-gtest"
 
 LOCAL_INCLUDES += [
-    '/widget',
+    "/widget",
 ]
+
+DisableStlWrapping()
+
+REQUIRES_UNIFIED_BUILD = True

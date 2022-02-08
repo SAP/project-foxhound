@@ -141,20 +141,16 @@ mozIntl.getCalendarInfo(locale)
 The API will return the following calendar information for a given locale code:
 
 * firstDayOfWeek
-    an integer in the range 1=Sunday to 7=Saturday indicating the day
-    considered the first day of the week in calendars, e.g. 1 for en-US,
-    2 for en-GB, 1 for bn-IN
+    an integer in the range 1=Monday to 7=Sunday indicating the day
+    considered the first day of the week in calendars, e.g. 7 for en-US,
+    1 for en-GB, 7 for bn-IN
 * minDays
     an integer in the range of 1 to 7 indicating the minimum number
     of days required in the first week of the year, e.g. 1 for en-US, 4 for de
-* weekendStart
-    an integer in the range 1=Sunday to 7=Saturday indicating the day
-    considered the beginning of a weekend, e.g. 7 for en-US, 7 for en-GB,
-    1 for bn-IN
-* weekendEnd
-    an integer in the range 1=Sunday to 7=Saturday indicating the day
-    considered the end of a weekend, e.g. 1 for en-US, 1 for en-GB,
-    1 for bn-IN (note that "weekend" is *not* necessarily two days)
+* weekend
+    an array with values in the range 1=Monday to 7=Sunday indicating the days
+    of the week considered as part of the weekend, e.g. [6, 7] for en-US and en-GB,
+    [7] for bn-IN (note that "weekend" is *not* necessarily two days)
 
 Those bits of information should be especially useful for any UI that works
 with calendar data.
@@ -166,75 +162,53 @@ Example:
     // omitting the `locale` argument will make the API return data for the
     // current Gecko application UI locale.
     let {
-      firstDayOfWeek,  // 2
+      firstDayOfWeek,  // 1
       minDays,         // 4
-      weekendStart,    // 7
-      weekendEnd,      // 1
+      weekend,         // [6, 7]
       calendar,        // "gregory"
       locale,          // "pl"
     } = Services.intl.getCalendarInfo();
 
 
-mozIntl.getDisplayNames(locales, options)
+mozIntl.DisplayNames(locales, options)
 -----------------------------------------
 
-:js:`getDisplayNames` API is useful to retrieve various terms available in the
-internationalization API.
+:js:`DisplayNames` API is useful to retrieve various terms available in the
+internationalization API. :js:`mozIntl.DisplayNames` extends the standard
+`Intl.DisplayNames`_ to additionally provide localization for date-time types.
 
 The API takes a locale fallback chain list, and an options object which can contain
 two keys:
 
-* :js:`style` which can takes values :js:`short`, :js:`medium`, :js:`long`
-* :js:`keys` which is a list of keys in the following pattern:
-
-  * :js:`dates/fields/{year|month|week|day}`
-  * :js:`dates/gregorian/months/{january|...|december}`
-  * :js:`dates/gregorian/weekdays/{sunday|...|saturday}`
-  * :js:`dates/gregorian/dayperiods/{am|pm}`
-
-The return object provides values for the requested keys for the given locale and
-style.
+* :js:`style` which can take values :js:`narrow`, :js:`short`, :js:`abbreviated`, :js:`long`
+* :js:`type` which can take values :js:`language`, :js:`script`, :js:`region`,
+  :js:`currency`, :js:`weekday`, :js:`month`, :js:`quarter`, :js:`dayPeriod`,
+  :js:`dateTimeField`
 
 Example:
 
 .. code-block:: javascript
 
-    let {
-      locale,    // "pl"
-      style,     // "long"
-      values
-    } = Services.intl.getDisplayNames(undefined, {
-      style: "long",
-      keys: [
-        "dates/fields/year",
-        "dates/gregorian/months/january",
-        "dates/gregorian/weekdays/monday",
-        "dates/gregorian/dayperiods/am"
-      ]
+    let dateTimeFieldDisplayNames = new Services.intl.DisplayNames(undefined, {
+      type: "dateTimeField",
     });
+    dateTimeFieldDisplayNames.resolvedOptions().locale = "pl";
+    dateTimeFieldDisplayNames.of("year") = "rok";
 
-    values["dates/fields/year"] == "rok";
-    values["dates/gregorian/months/january"] = "styczeń";
-    values["dates/gregorian/weekdays/monday"] = "poniedziałek";
-    values["dates/gregorian/dayperiods/am"] = "AM";
+    let monthDisplayNames = new Services.intl.DisplayNames(undefined, {
+      type: "month", style: "long",
+    });
+    monthDisplayNames.of(1) = "styczeń";
 
+    let weekdaysDisplayNames = new Services.intl.DisplayNames(undefined, {
+      type: "weekday", style: "short",
+    });
+    weekdaysDisplayNames.of(1) = "pon";
 
-mozIntl.getLocaleInfo(locales, options)
----------------------------------------
-
-The API returns a simple object with information about the requested locale.
-
-At the moment the only bit handled by the API is directionality defined as `direction`
-key on the returned object.
-
-Example:
-
-.. code-block:: javascript
-
-    let {
-      locale,    // "pl"
-      direction: // "ltr"
-    } = Services.intl.getLocaleInfo(undefined);
+    let dayPeriodsDisplayNames = new Services.intl.DisplayNames(undefined, {
+      type: "dayPeriod", style: "narrow",
+    });
+    dayPeriodsDisplayNames.of("am") = "AM";
 
 
 mozIntl.RelativeTimeFormat(locales, options)
@@ -371,3 +345,4 @@ and file a bug in the component `Core::Internationalization`_ to request it.
 .. _CLDR: http://cldr.unicode.org/
 .. _ICU: http://site.icu-project.org/
 .. _Core::Internationalization: https://bugzilla.mozilla.org/enter_bug.cgi?product=Core&component=Internationalization
+.. _Intl.DisplayNames: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/DisplayNames

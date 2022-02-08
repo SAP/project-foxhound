@@ -10,6 +10,8 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/WebRequest.jsm"
 );
 
+var { parseMatchPatterns } = ExtensionUtils;
+
 // The guts of a WebRequest event handler.  Takes care of converting
 // |details| parameter when invoking listeners.
 function registerEvent(
@@ -21,7 +23,7 @@ function registerEvent(
   remoteTab = null
 ) {
   let listener = async data => {
-    let event = data.serialize(eventName, extension);
+    let event = data.serialize(eventName);
     if (data.registerTraceableChannel) {
       // If this is a primed listener, no tabParent was passed in here,
       // but the convert() callback later in this function will be called
@@ -43,7 +45,7 @@ function registerEvent(
       ...extension.optionalOrigins.patterns,
     ]);
 
-    filter2.urls = new MatchPatternSet(filter.urls);
+    filter2.urls = parseMatchPatterns(filter.urls);
 
     if (!perms.overlapsAll(filter2.urls)) {
       Cu.reportError(

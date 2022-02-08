@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 use mozprofile::preferences::Pref;
 
 // ALL CHANGES TO THIS FILE MUST HAVE REVIEW FROM A GECKODRIVER PEER!
@@ -68,16 +72,16 @@ lazy_static! {
         // Do not warn on quitting Firefox
         ("browser.warnOnQuit", Pref::new(false)),
 
-        // Do not show datareporting policy notifications which can
-        // interfere with tests
-        ("datareporting.healthreport.about.reportUrl", Pref::new("http://%(server)s/dummy/abouthealthreport/")),  // removed in Firefox 59
+        // Defensively disable data reporting systems
         ("datareporting.healthreport.documentServerURI", Pref::new("http://%(server)s/dummy/healthreport/")),
         ("datareporting.healthreport.logging.consoleEnabled", Pref::new(false)),
         ("datareporting.healthreport.service.enabled", Pref::new(false)),
         ("datareporting.healthreport.service.firstRun", Pref::new(false)),
         ("datareporting.healthreport.uploadEnabled", Pref::new(false)),
+
+        // Do not show datareporting policy notifications which can
+        // interfere with tests
         ("datareporting.policy.dataSubmissionEnabled", Pref::new(false)),
-        ("datareporting.policy.dataSubmissionPolicyAccepted", Pref::new(false)),
         ("datareporting.policy.dataSubmissionPolicyBypassNotification", Pref::new(true)),
 
         // Disable the ProcessHangMonitor
@@ -90,10 +94,6 @@ lazy_static! {
 
         // Disable intalling any distribution extensions or add-ons
         ("extensions.installDistroAddons", Pref::new(false)),
-
-        // Disable extensions compatibility dialogue.
-        // TODO: Remove once minimum supported Firefox release is 61.
-        ("extensions.showMismatchUI", Pref::new(false)),
 
         // Turn off extension updates so they do not bother tests
         ("extensions.update.enabled", Pref::new(false)),
@@ -120,11 +120,11 @@ lazy_static! {
         // that may cause unexpected test timeouts.
         ("idle.lastDailyNotification", Pref::new(-1)),
 
-        // Show chrome errors and warnings in the error console
-        ("javascript.options.showInConsole", Pref::new(true)),
-
         // Disable download and usage of OpenH264, and Widevine plugins
         ("media.gmp-manager.updateEnabled", Pref::new(false)),
+
+        // Disable the GFX sanity window
+        ("media.sanity-test.disabled", Pref::new(true)),
 
         // Do not prompt with long usernames or passwords in URLs
         // TODO: Remove once minimum supported Firefox release is 61.
@@ -145,16 +145,32 @@ lazy_static! {
         ("security.certerrors.mitm.priming.enabled", Pref::new(false)),
 
         // Ensure blocklist updates don't hit the network
-        ("services.settings.server", Pref::new("http://%(server)s/dummy/blocklist/")),
+        ("services.settings.server", Pref::new("")),
 
         // Disable first run pages
         ("startup.homepage_welcome_url", Pref::new("about:blank")),
         ("startup.homepage_welcome_url.additional", Pref::new("")),
 
+        // asrouter expects a plain object or null
+        ("browser.newtabpage.activity-stream.asrouter.providers.cfr", Pref::new("null")),
+        // TODO: Remove once minimum supported Firefox release is 93.
+        ("browser.newtabpage.activity-stream.asrouter.providers.cfr-fxa", Pref::new("null")),
+        ("browser.newtabpage.activity-stream.asrouter.providers.snippets", Pref::new("null")),
+        ("browser.newtabpage.activity-stream.asrouter.providers.message-groups", Pref::new("null")),
+        ("browser.newtabpage.activity-stream.asrouter.providers.whats-new-panel", Pref::new("null")),
+        ("browser.newtabpage.activity-stream.asrouter.providers.messaging-experiments", Pref::new("null")),
+        ("browser.newtabpage.activity-stream.feeds.system.topstories", Pref::new(false)),
+        ("browser.newtabpage.activity-stream.feeds.snippets", Pref::new(false)),
+        ("browser.newtabpage.activity-stream.tippyTop.service.endpoint", Pref::new("")),
+        ("browser.newtabpage.activity-stream.discoverystream.config", Pref::new("[]")),
+
+        // For Activity Stream firstrun page, use an empty string to avoid fetching.
+        ("browser.newtabpage.activity-stream.fxaccounts.endpoint", Pref::new("")),
+
         // Prevent starting into safe mode after application crashes
         ("toolkit.startup.max_resumed_crashes", Pref::new(-1)),
 
-        // We want to collect telemetry, but we don't want to send in the results
-        ("toolkit.telemetry.server", Pref::new("https://%(server)s/dummy/telemetry/")),
+        // Disable webapp updates.
+        ("browser.webapps.checkForUpdates", Pref::new(0)),
     ];
 }

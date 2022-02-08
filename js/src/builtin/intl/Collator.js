@@ -80,7 +80,7 @@ function resolveCollatorInternals(lazyCollatorData) {
  */
 function getCollatorInternals(obj) {
     assert(IsObject(obj), "getCollatorInternals called with non-object");
-    assert(GuardToCollator(obj) !== null, "getCollatorInternals called with non-Collator");
+    assert(intl_GuardToCollator(obj) !== null, "getCollatorInternals called with non-Collator");
 
     var internals = getIntlObjectInternals(obj);
     assert(internals.type === "Collator", "bad type escaped getIntlObjectInternals");
@@ -109,7 +109,7 @@ function getCollatorInternals(obj) {
  */
 function InitializeCollator(collator, locales, options) {
     assert(IsObject(collator), "InitializeCollator called with non-object");
-    assert(GuardToCollator(collator) != null, "InitializeCollator called with non-Collator");
+    assert(intl_GuardToCollator(collator) != null, "InitializeCollator called with non-Collator");
 
     // Lazy Collator data has the following structure:
     //
@@ -119,6 +119,7 @@ function InitializeCollator(collator, locales, options) {
     //     opt: // opt object computed in InitializeCollator
     //       {
     //         localeMatcher: "lookup" / "best fit",
+    //         co: string matching a Unicode extension type / undefined
     //         kn: true / false / undefined,
     //         kf: "upper" / "lower" / "false" / undefined
     //       }
@@ -151,12 +152,18 @@ function InitializeCollator(collator, locales, options) {
     lazyCollatorData.usage = u;
 
     // Step 8.
-    var opt = new Record();
+    var opt = new_Record();
     lazyCollatorData.opt = opt;
 
     // Steps 9-10.
     var matcher = GetOption(options, "localeMatcher", "string", ["lookup", "best fit"], "best fit");
     opt.localeMatcher = matcher;
+
+    // https://github.com/tc39/ecma402/pull/459
+    var collation = GetOption(options, "collation", "string", undefined, undefined);
+    if (collation !== undefined)
+        collation = intl_ValidateAndCanonicalizeUnicodeExtensionType(collation, "collation", "co");
+    opt.co = collation;
 
     // Steps 11-13.
     var numericValue = GetOption(options, "numeric", "boolean", undefined, undefined);
@@ -317,7 +324,7 @@ function createCollatorCompare(collator) {
 
         // Step 2.
         assert(IsObject(collator), "collatorCompareToBind called with non-object");
-        assert(GuardToCollator(collator) !== null, "collatorCompareToBind called with non-Collator");
+        assert(intl_GuardToCollator(collator) !== null, "collatorCompareToBind called with non-Collator");
 
         // Steps 3-6
         var X = ToString(x);
@@ -338,14 +345,14 @@ function createCollatorCompare(collator) {
  * Spec: ECMAScript Internationalization API Specification, 10.3.3.
  */
 // Uncloned functions with `$` prefix are allocated as extended function
-// to store the original name in `_SetCanonicalName`.
+// to store the original name in `SetCanonicalName`.
 function $Intl_Collator_compare_get() {
     // Step 1.
     var collator = this;
 
     // Steps 2-3.
-    if (!IsObject(collator) || (collator = GuardToCollator(collator)) === null)
-        return callFunction(CallCollatorMethodIfWrapped, this, "$Intl_Collator_compare_get");
+    if (!IsObject(collator) || (collator = intl_GuardToCollator(collator)) === null)
+        return callFunction(intl_CallCollatorMethodIfWrapped, this, "$Intl_Collator_compare_get");
 
     var internals = getCollatorInternals(collator);
 
@@ -358,7 +365,7 @@ function $Intl_Collator_compare_get() {
     // Step 5.
     return internals.boundCompare;
 }
-_SetCanonicalName($Intl_Collator_compare_get, "get compare");
+SetCanonicalName($Intl_Collator_compare_get, "get compare");
 
 /**
  * Returns the resolved options for a Collator object.
@@ -370,8 +377,8 @@ function Intl_Collator_resolvedOptions() {
     var collator = this;
 
     // Steps 2-3.
-    if (!IsObject(collator) || (collator = GuardToCollator(collator)) === null)
-        return callFunction(CallCollatorMethodIfWrapped, this, "Intl_Collator_resolvedOptions");
+    if (!IsObject(collator) || (collator = intl_GuardToCollator(collator)) === null)
+        return callFunction(intl_CallCollatorMethodIfWrapped, this, "Intl_Collator_resolvedOptions");
 
     var internals = getCollatorInternals(collator);
 

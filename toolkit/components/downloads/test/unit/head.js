@@ -9,11 +9,6 @@
 
 "use strict";
 
-// Globals
-
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
 var { Integration } = ChromeUtils.import(
   "resource://gre/modules/Integration.jsm"
 );
@@ -21,68 +16,23 @@ var { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "DownloadPaths",
-  "resource://gre/modules/DownloadPaths.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Downloads",
-  "resource://gre/modules/Downloads.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "HttpServer",
-  "resource://testing-common/httpd.js"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "NetUtil",
-  "resource://gre/modules/NetUtil.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Promise",
-  "resource://gre/modules/Promise.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "E10SUtils",
-  "resource://gre/modules/E10SUtils.jsm"
-);
-
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "FileTestUtils",
-  "resource://testing-common/FileTestUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "MockRegistrar",
-  "resource://testing-common/MockRegistrar.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "TestUtils",
-  "resource://testing-common/TestUtils.jsm"
-);
+XPCOMUtils.defineLazyModuleGetters(this, {
+  AppConstants: "resource://gre/modules/AppConstants.jsm",
+  DownloadPaths: "resource://gre/modules/DownloadPaths.jsm",
+  Downloads: "resource://gre/modules/Downloads.jsm",
+  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
+  FileTestUtils: "resource://testing-common/FileTestUtils.jsm",
+  FileUtils: "resource://gre/modules/FileUtils.jsm",
+  HttpServer: "resource://testing-common/httpd.js",
+  MockRegistrar: "resource://testing-common/MockRegistrar.jsm",
+  NetUtil: "resource://gre/modules/NetUtil.jsm",
+  OS: "resource://gre/modules/osfile.jsm",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
+  Services: "resource://gre/modules/Services.jsm",
+  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.jsm",
+  TestUtils: "resource://testing-common/TestUtils.jsm",
+});
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
@@ -225,6 +175,18 @@ function getTempFile(leafName) {
 }
 
 /**
+ * Check for file existence.
+ * @param {string} path The file path.
+ */
+async function fileExists(path) {
+  try {
+    return (await IOUtils.stat(path)).type == "regular";
+  } catch (ex) {
+    return false;
+  }
+}
+
+/**
  * Waits for pending events to be processed.
  *
  * @return {Promise}
@@ -257,7 +219,7 @@ function promiseTimeout(aTime) {
  *        String containing the URI that will be visited.
  *
  * @return {Promise}
- * @resolves Array [aTime, aTransitionType] from nsINavHistoryObserver.onVisit.
+ * @resolves Array [aTime, aTransitionType] from page-visited places event.
  * @rejects Never.
  */
 function promiseWaitForVisit(aUrl) {
@@ -307,6 +269,7 @@ function promiseNewDownload(aSourceUrl) {
  *          isPrivate: Boolean indicating whether the download originated from a
  *                     private window.
  *          referrerInfo: referrerInfo for the download source.
+ *          cookieJarSettings: cookieJarSettings for the download source.
  *          targetFile: nsIFile for the target, or null to use a temporary file.
  *          outPersist: Receives a reference to the created nsIWebBrowserPersist
  *                      instance.
@@ -397,6 +360,10 @@ function promiseStartLegacyDownload(aSourceUrl, aOptions) {
 
         let isPrivate = aOptions && aOptions.isPrivate;
         let referrerInfo = aOptions ? aOptions.referrerInfo : null;
+        let cookieJarSettings = aOptions ? aOptions.cookieJarSettings : null;
+        let classification =
+          aOptions?.downloadClassification ??
+          Ci.nsITransfer.DOWNLOAD_ACCEPTABLE;
         // Initialize the components so they reference each other.  This will cause
         // the Download object to be created and added to the public downloads.
         transfer.init(
@@ -407,7 +374,9 @@ function promiseStartLegacyDownload(aSourceUrl, aOptions) {
           null,
           null,
           persist,
-          isPrivate
+          isPrivate,
+          classification,
+          null
         );
         persist.progressListener = transfer;
 
@@ -417,6 +386,7 @@ function promiseStartLegacyDownload(aSourceUrl, aOptions) {
           Services.scriptSecurityManager.getSystemPrincipal(),
           0,
           referrerInfo,
+          cookieJarSettings,
           null,
           null,
           targetFile,
@@ -572,6 +542,33 @@ function promiseDownloadStarted(aDownload) {
 }
 
 /**
+ * Waits for a download to finish.
+ *
+ * @param aDownload
+ *        The Download object to wait upon.
+ *
+ * @return {Promise}
+ * @resolves When the download succeeded or errored.
+ * @rejects Never.
+ */
+function promiseDownloadFinished(aDownload) {
+  return new Promise(resolve => {
+    // Wait for the download to finish.
+    let onchange = function() {
+      if (aDownload.succeeded || aDownload.error) {
+        aDownload.onchange = null;
+        resolve();
+      }
+    };
+
+    // Register for the notification, but also call the function directly in
+    // case the download already reached the expected progress.
+    aDownload.onchange = onchange;
+    onchange();
+  });
+}
+
+/**
  * Waits for a download to finish, in case it has not finished already.
  *
  * @param aDownload
@@ -629,43 +626,191 @@ function promiseNewList(aIsPrivate) {
  * @resolves When the operation completes.
  * @rejects Never.
  */
-function promiseVerifyContents(aPath, aExpectedContents) {
-  return (async function() {
-    let file = new FileUtils.File(aPath);
+async function promiseVerifyContents(aPath, aExpectedContents) {
+  let file = new FileUtils.File(aPath);
 
-    if (!(await OS.File.exists(aPath))) {
-      do_throw("File does not exist: " + aPath);
-    }
+  if (!(await IOUtils.exists(aPath))) {
+    do_throw("File does not exist: " + aPath);
+  }
 
-    if ((await OS.File.stat(aPath)).size == 0) {
-      do_throw("File is empty: " + aPath);
-    }
+  if ((await IOUtils.stat(aPath)).size == 0) {
+    do_throw("File is empty: " + aPath);
+  }
 
-    await new Promise(resolve => {
-      NetUtil.asyncFetch(
-        { uri: NetUtil.newURI(file), loadUsingSystemPrincipal: true },
-        function(aInputStream, aStatus) {
-          Assert.ok(Components.isSuccessCode(aStatus));
-          let contents = NetUtil.readInputStreamToString(
-            aInputStream,
-            aInputStream.available()
-          );
-          if (
-            contents.length > TEST_DATA_SHORT.length * 2 ||
-            /[^\x20-\x7E]/.test(contents)
-          ) {
-            // Do not print the entire content string to the test log.
-            Assert.equal(contents.length, aExpectedContents.length);
-            Assert.ok(contents == aExpectedContents);
-          } else {
-            // Print the string if it is short and made of printable characters.
-            Assert.equal(contents, aExpectedContents);
-          }
-          resolve();
+  await new Promise(resolve => {
+    NetUtil.asyncFetch(
+      { uri: NetUtil.newURI(file), loadUsingSystemPrincipal: true },
+      function(aInputStream, aStatus) {
+        Assert.ok(Components.isSuccessCode(aStatus));
+        let contents = NetUtil.readInputStreamToString(
+          aInputStream,
+          aInputStream.available()
+        );
+        if (
+          contents.length > TEST_DATA_SHORT.length * 2 ||
+          /[^\x20-\x7E]/.test(contents)
+        ) {
+          // Do not print the entire content string to the test log.
+          Assert.equal(contents.length, aExpectedContents.length);
+          Assert.ok(contents == aExpectedContents);
+        } else {
+          // Print the string if it is short and made of printable characters.
+          Assert.equal(contents, aExpectedContents);
         }
-      );
+        resolve();
+      }
+    );
+  });
+}
+
+/**
+ * Creates and starts a new download, configured to keep partial data, and
+ * returns only when the first part of "interruptible_resumable.txt" has been
+ * saved to disk.  You must call "continueResponses" to allow the interruptible
+ * request to continue.
+ *
+ * This function uses either DownloadCopySaver or DownloadLegacySaver based on
+ * the current test run.
+ *
+ * @param aOptions
+ *        An optional object used to control the behavior of this function.
+ *        You may pass an object with a subset of the following fields:
+ *        {
+ *          useLegacySaver: Boolean indicating whether to launch a legacy download.
+ *        }
+ *
+ * @return {Promise}
+ * @resolves The newly created Download object, still in progress.
+ * @rejects JavaScript exception.
+ */
+async function promiseStartDownload_tryToKeepPartialData({
+  useLegacySaver = false,
+} = {}) {
+  mustInterruptResponses();
+
+  // Start a new download and configure it to keep partially downloaded data.
+  let download;
+  if (!useLegacySaver) {
+    let targetFilePath = getTempFile(TEST_TARGET_FILE_NAME).path;
+    download = await Downloads.createDownload({
+      source: httpUrl("interruptible_resumable.txt"),
+      target: {
+        path: targetFilePath,
+        partFilePath: targetFilePath + ".part",
+      },
     });
-  })();
+    download.tryToKeepPartialData = true;
+    download.start().catch(() => {});
+  } else {
+    // Start a download using nsIExternalHelperAppService, that is configured
+    // to keep partially downloaded data by default.
+    download = await promiseStartExternalHelperAppServiceDownload();
+  }
+
+  await promiseDownloadMidway(download);
+  await promisePartFileReady(download);
+
+  return download;
+}
+
+/**
+ * This function should be called after the progress notification for a download
+ * is received, and waits for the worker thread of BackgroundFileSaver to
+ * receive the data to be written to the ".part" file on disk.
+ *
+ * @return {Promise}
+ * @resolves When the ".part" file has been written to disk.
+ * @rejects JavaScript exception.
+ */
+async function promisePartFileReady(aDownload) {
+  // We don't have control over the file output code in BackgroundFileSaver.
+  // After we receive the download progress notification, we may only check
+  // that the ".part" file has been created, while its size cannot be
+  // determined because the file is currently open.
+  try {
+    do {
+      await promiseTimeout(50);
+    } while (!(await IOUtils.exists(aDownload.target.partFilePath)));
+  } catch (ex) {
+    if (!(ex instanceof IOUtils.Error)) {
+      throw ex;
+    }
+    // This indicates that the file has been created and cannot be accessed.
+    // The specific error might vary with the platform.
+    info("Expected exception while checking existence: " + ex.toString());
+    // Wait some more time to allow the write to complete.
+    await promiseTimeout(100);
+  }
+}
+
+/**
+ * Create a download which will be reputation blocked.
+ *
+ * @param options
+ *        {
+ *           keepPartialData: bool,
+ *           keepBlockedData: bool,
+ *           useLegacySaver: bool,
+ *           verdict: string indicating the detailed reason for the block,
+ *        }
+ * @return {Promise}
+ * @resolves The reputation blocked download.
+ * @rejects JavaScript exception.
+ */
+async function promiseBlockedDownload({
+  keepPartialData,
+  keepBlockedData,
+  useLegacySaver,
+  verdict = Downloads.Error.BLOCK_VERDICT_UNCOMMON,
+} = {}) {
+  let blockFn = base => ({
+    shouldBlockForReputationCheck: () =>
+      Promise.resolve({
+        shouldBlock: true,
+        verdict,
+      }),
+    shouldKeepBlockedData: () => Promise.resolve(keepBlockedData),
+  });
+
+  Integration.downloads.register(blockFn);
+  function cleanup() {
+    Integration.downloads.unregister(blockFn);
+  }
+  registerCleanupFunction(cleanup);
+
+  let download;
+
+  try {
+    if (keepPartialData) {
+      download = await promiseStartDownload_tryToKeepPartialData({
+        useLegacySaver,
+      });
+      continueResponses();
+    } else if (useLegacySaver) {
+      download = await promiseStartLegacyDownload();
+    } else {
+      download = await promiseNewDownload();
+      await download.start();
+      do_throw("The download should have blocked.");
+    }
+
+    await promiseDownloadStopped(download);
+    do_throw("The download should have blocked.");
+  } catch (ex) {
+    if (!(ex instanceof Downloads.Error) || !ex.becauseBlocked) {
+      throw ex;
+    }
+    Assert.ok(ex.becauseBlockedByReputationCheck);
+    Assert.equal(ex.reputationCheckVerdict, verdict);
+    Assert.ok(download.error.becauseBlockedByReputationCheck);
+    Assert.equal(download.error.reputationCheckVerdict, verdict);
+  }
+
+  Assert.ok(download.stopped);
+  Assert.ok(!download.succeeded);
+
+  cleanup();
+  return download;
 }
 
 /**
@@ -688,7 +833,7 @@ function startFakeServer() {
 /**
  * This is an internal reference that should not be used directly by tests.
  */
-var _gDeferResponses = Promise.defer();
+var _gDeferResponses = PromiseUtils.defer();
 
 /**
  * Ensures that all the interruptible requests started after this function is
@@ -716,7 +861,7 @@ function mustInterruptResponses() {
   _gDeferResponses.resolve();
 
   info("Interruptible responses will be blocked midway.");
-  _gDeferResponses = Promise.defer();
+  _gDeferResponses = PromiseUtils.defer();
 }
 
 /**
@@ -843,6 +988,17 @@ add_task(function test_common_initialize() {
   registerCleanupFunction(function() {
     Services.prefs.clearUserPref("browser.cache.disk.enable");
     Services.prefs.clearUserPref("browser.cache.memory.enable");
+  });
+
+  // Allow relaxing default referrer.
+  Services.prefs.setBoolPref(
+    "network.http.referer.disallowCrossSiteRelaxingDefault",
+    false
+  );
+  registerCleanupFunction(function() {
+    Services.prefs.clearUserPref(
+      "network.http.referer.disallowCrossSiteRelaxingDefault"
+    );
   });
 
   registerInterruptibleHandler(

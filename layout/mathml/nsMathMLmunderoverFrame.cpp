@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsMathMLmunderoverFrame.h"
+#include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsMathMLmmultiscriptsFrame.h"
 #include "mozilla/dom/MathMLElement.h"
@@ -55,7 +56,7 @@ nsMathMLmunderoverFrame::UpdatePresentationData(uint32_t aFlagsValues,
   // disable the stretch-all flag if we are going to act like a
   // subscript-superscript pair
   if (NS_MATHML_EMBELLISH_IS_MOVABLELIMITS(mEmbellishData.flags) &&
-      StyleFont()->mMathDisplay == NS_MATHML_DISPLAYSTYLE_INLINE) {
+      StyleFont()->mMathStyle == NS_STYLE_MATH_STYLE_COMPACT) {
     mPresentationData.flags &= ~NS_MATHML_STRETCH_ALL_CHILDREN_HORIZONTALLY;
   } else {
     mPresentationData.flags |= NS_MATHML_STRETCH_ALL_CHILDREN_HORIZONTALLY;
@@ -134,8 +135,8 @@ void nsMathMLmunderoverFrame::ReflowCallbackCanceled() {
 void nsMathMLmunderoverFrame::SetPendingPostReflowIncrementScriptLevel() {
   MOZ_ASSERT(!mPostReflowIncrementScriptLevelCommands.IsEmpty());
 
-  nsTArray<SetIncrementScriptLevelCommand> commands;
-  commands.SwapElements(mPostReflowIncrementScriptLevelCommands);
+  nsTArray<SetIncrementScriptLevelCommand> commands =
+      std::move(mPostReflowIncrementScriptLevelCommands);
 
   for (const auto& command : commands) {
     nsIFrame* child = PrincipalChildList().FrameAt(command.mChildIndex);
@@ -255,7 +256,7 @@ XXX The winner is the outermost setting in conflicting settings like these:
 
   bool subsupDisplay =
       NS_MATHML_EMBELLISH_IS_MOVABLELIMITS(mEmbellishData.flags) &&
-      StyleFont()->mMathDisplay == NS_MATHML_DISPLAYSTYLE_INLINE;
+      StyleFont()->mMathStyle == NS_STYLE_MATH_STYLE_COMPACT;
 
   // disable the stretch-all flag if we are going to act like a superscript
   if (subsupDisplay) {
@@ -349,7 +350,7 @@ The REC says:
 
 i.e.,:
  if (NS_MATHML_EMBELLISH_IS_MOVABLELIMITS(mEmbellishDataflags) &&
-     StyleFont()->mMathDisplay == NS_MATHML_DISPLAYSTYLE_INLINE) {
+     StyleFont()->mMathStyle == NS_STYLE_MATH_STYLE_COMPACT) {
   // place like subscript-superscript pair
  }
  else {
@@ -363,7 +364,7 @@ nsresult nsMathMLmunderoverFrame::Place(DrawTarget* aDrawTarget,
                                         ReflowOutput& aDesiredSize) {
   float fontSizeInflation = nsLayoutUtils::FontSizeInflationFor(this);
   if (NS_MATHML_EMBELLISH_IS_MOVABLELIMITS(mEmbellishData.flags) &&
-      StyleFont()->mMathDisplay == NS_MATHML_DISPLAYSTYLE_INLINE) {
+      StyleFont()->mMathStyle == NS_STYLE_MATH_STYLE_COMPACT) {
     // place like sub sup or subsup
     if (mContent->IsMathMLElement(nsGkAtoms::munderover_)) {
       return nsMathMLmmultiscriptsFrame::PlaceMultiScript(
@@ -583,7 +584,7 @@ nsresult nsMathMLmunderoverFrame::Place(DrawTarget* aDrawTarget,
       mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::align,
                                      valueAlign)) {
     mContent->OwnerDoc()->WarnOnceAbout(
-        dom::Document::eMathML_DeprecatedAlignmentAttributes);
+        dom::DeprecatedOperations::eMathML_DeprecatedAlignmentAttributes);
     if (valueAlign.EqualsLiteral("left")) {
       alignPosition = left;
     } else if (valueAlign.EqualsLiteral("right")) {

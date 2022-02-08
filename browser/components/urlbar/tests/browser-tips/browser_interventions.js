@@ -23,10 +23,11 @@ add_task(async function refresh() {
       "Restore default settings and remove old add-ons for optimal performance.",
     button: /^Refresh .+…$/,
     awaitCallback() {
-      return promiseAlertDialog("cancel", [
+      return BrowserTestUtils.promiseAlertDialog(
+        "cancel",
         "chrome://global/content/resetProfile.xhtml",
-        "chrome://global/content/resetProfile.xul",
-      ]);
+        { isSubDialog: true }
+      );
     },
   });
 });
@@ -41,10 +42,13 @@ add_task(async function clear() {
     title: "Clear your cache, cookies, history and more.",
     button: "Choose What to Clear…",
     awaitCallback() {
-      return promiseAlertDialog("cancel", [
+      return BrowserTestUtils.promiseAlertDialog(
+        "cancel",
         "chrome://browser/content/sanitize.xhtml",
-        "chrome://browser/content/sanitize.xul",
-      ]);
+        {
+          isSubDialog: true,
+        }
+      );
     },
   });
 });
@@ -113,6 +117,72 @@ add_task(async function multipleInterventionsInOneEngagement() {
   );
 });
 
+// Test the result of UrlbarProviderInterventions.isActive()
+// and whether or not the function calucates the score.
+add_task(async function testIsActive() {
+  const testData = [
+    {
+      description: "Test for search string that activates the intervention",
+      searchString: "firefox slow",
+      expectedActive: true,
+      expectedScoreCalculated: true,
+    },
+    {
+      description:
+        "Test for search string that does not activate the intervention",
+      searchString: "example slow",
+      expectedActive: false,
+      expectedScoreCalculated: true,
+    },
+    {
+      description: "Test for empty search string",
+      searchString: "",
+      expectedActive: false,
+      expectedScoreCalculated: false,
+    },
+    {
+      description: "Test for an URL",
+      searchString: "https://firefox/slow",
+      expectedActive: false,
+      expectedScoreCalculated: false,
+    },
+    {
+      description: "Test for a data URL",
+      searchString: "data:text/html,<div>firefox slow</div>",
+      expectedActive: false,
+      expectedScoreCalculated: false,
+    },
+    {
+      description: "Test for string like URL",
+      searchString: "firefox://slow",
+      expectedActive: false,
+      expectedScoreCalculated: false,
+    },
+  ];
+
+  for (const {
+    description,
+    searchString,
+    expectedActive,
+    expectedScoreCalculated,
+  } of testData) {
+    info(description);
+
+    // Set null to currentTip to know whether or not UrlbarProviderInterventions
+    // calculated the score.
+    UrlbarProviderInterventions.currentTip = null;
+
+    const isActive = UrlbarProviderInterventions.isActive({ searchString });
+    Assert.equal(isActive, expectedActive, "Result of isAcitive is correct");
+    const isScoreCalculated = UrlbarProviderInterventions.currentTip !== null;
+    Assert.equal(
+      isScoreCalculated,
+      expectedScoreCalculated,
+      "The score is calculated correctly"
+    );
+  }
+});
+
 add_task(async function tipsAreEnglishOnly() {
   // Test that Interventions are working in en-US.
   let result = (await awaitTip(SEARCH_STRINGS.REFRESH, window))[0];
@@ -123,8 +193,8 @@ add_task(async function tipsAreEnglishOnly() {
   await UrlbarTestUtils.promisePopupClose(window, () => gURLBar.blur());
 
   // We will need to fetch new engines when we switch locales.
-  let searchReinit = SearchTestUtils.promiseSearchNotification(
-    "reinit-complete"
+  let enginesReloaded = SearchTestUtils.promiseSearchNotification(
+    "engines-reloaded"
   );
 
   const originalAvailable = Services.locale.availableLocales;
@@ -133,18 +203,18 @@ add_task(async function tipsAreEnglishOnly() {
   Services.locale.requestedLocales = ["de"];
 
   registerCleanupFunction(async () => {
-    let searchReinit2 = SearchTestUtils.promiseSearchNotification(
-      "reinit-complete"
+    let enginesReloaded2 = SearchTestUtils.promiseSearchNotification(
+      "engines-reloaded"
     );
     Services.locale.requestedLocales = originalRequested;
     Services.locale.availableLocales = originalAvailable;
-    await searchReinit2;
+    await enginesReloaded2;
   });
 
   let appLocales = Services.locale.appLocalesAsBCP47;
   Assert.equal(appLocales[0], "de");
 
-  await searchReinit;
+  await enginesReloaded;
 
   // Interventions should no longer work in the new locale.
   await awaitNoTip(SEARCH_STRINGS.CLEAR, window);
@@ -195,7 +265,7 @@ add_task(async function pickHelpButton() {
     Assert.ok(BrowserTestUtils.is_visible(helpButton));
     EventUtils.synthesizeMouseAtCenter(helpButton, {});
 
-    await BrowserTestUtils.loadURI(gBrowser.selectedBrowser, helpUrl);
+    BrowserTestUtils.loadURI(gBrowser.selectedBrowser, helpUrl);
     await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 
     const scalars = TelemetryTestUtils.getProcessScalars("parent", true, true);

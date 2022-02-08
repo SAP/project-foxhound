@@ -9,6 +9,7 @@
 
 /* High level class and public functions implementation. */
 
+#include "js/Transcoding.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Base64.h"
 #include "mozilla/Likely.h"
@@ -16,6 +17,9 @@
 
 #include "XPCWrapper.h"
 #include "jsfriendapi.h"
+#include "js/AllocationLogging.h"  // JS::SetLogCtorDtorFunctions
+#include "js/CompileOptions.h"     // JS::ReadOnlyCompileOptions
+#include "js/Object.h"             // JS::GetClass
 #include "js/ProfilingStack.h"
 #include "GeckoProfiler.h"
 #include "nsJSEnvironment.h"
@@ -69,7 +73,7 @@ const char XPC_SCRIPT_ERROR_CONTRACTID[] = "@mozilla.org/scripterror;1";
 
 /***************************************************************************/
 
-nsXPConnect::nsXPConnect() : mShuttingDown(false) {
+nsXPConnect::nsXPConnect() {
 #ifdef MOZ_GECKO_PROFILER
   JS::SetProfilingThreadCallbacks(profiler_register_thread,
                                   profiler_unregister_thread);
@@ -110,7 +114,6 @@ nsXPConnect::~nsXPConnect() {
   // get by with only the second GC. :-(
   mRuntime->GarbageCollect(JS::GCReason::XPCONNECT_SHUTDOWN);
 
-  mShuttingDown = true;
   XPCWrappedNativeScope::SystemIsBeingShutDown();
   mRuntime->SystemIsBeingShutDown();
 
@@ -138,7 +141,7 @@ void nsXPConnect::InitStatics() {
 #ifdef NS_BUILD_REFCNT_LOGGING
   // These functions are used for reporting leaks, so we register them as early
   // as possible to avoid missing any classes' creations.
-  js::SetLogCtorDtorFunctions(NS_LogCtor, NS_LogDtor);
+  JS::SetLogCtorDtorFunctions(NS_LogCtor, NS_LogDtor);
 #endif
   ReadOnlyPage::Init();
 
@@ -400,7 +403,7 @@ static inline T UnexpectedFailure(T rv) {
 }
 
 void xpc::TraceXPCGlobal(JSTracer* trc, JSObject* obj) {
-  if (js::GetObjectClass(obj)->flags & JSCLASS_DOM_GLOBAL) {
+  if (JS::GetClass(obj)->flags & JSCLASS_DOM_GLOBAL) {
     mozilla::dom::TraceProtoAndIfaceCache(trc, obj);
   }
 
@@ -496,7 +499,7 @@ bool InitGlobalObject(JSContext* aJSContext, JS::Handle<JSObject*> aGlobal,
   JSAutoRealm ar(aJSContext, aGlobal);
 
   // Stuff coming through this path always ends up as a DOM global.
-  MOZ_ASSERT(js::GetObjectClass(aGlobal)->flags & JSCLASS_DOM_GLOBAL);
+  MOZ_ASSERT(JS::GetClass(aGlobal)->flags & JSCLASS_DOM_GLOBAL);
 
   if (!(aFlags & xpc::OMIT_COMPONENTS_OBJECT)) {
     // XPCCallContext gives us an active request needed to save/restore.
@@ -918,109 +921,6 @@ void SetLocationForGlobal(JSObject* global, nsIURI* locationURI) {
 
 }  // namespace xpc
 
-NS_IMETHODIMP
-nsXPConnect::WriteScript(nsIObjectOutputStream* stream, JSContext* cx,
-                         JSScript* scriptArg) {
-  RootedScript script(cx, scriptArg);
-
-  uint8_t flags = 0;  // We don't have flags anymore.
-  nsresult rv = stream->Write8(flags);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  TranscodeBuffer buffer;
-  TranscodeResult code;
-  code = EncodeScript(cx, buffer, script);
-
-  if (code != TranscodeResult_Ok) {
-    if ((code & TranscodeResult_Failure) != 0) {
-      return NS_ERROR_FAILURE;
-    }
-    MOZ_ASSERT((code & TranscodeResult_Throw) != 0);
-    JS_ClearPendingException(cx);
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  size_t size = buffer.length();
-  if (size > UINT32_MAX) {
-    return NS_ERROR_FAILURE;
-  }
-  rv = stream->Write32(size);
-  if (NS_SUCCEEDED(rv)) {
-    // Ideally we could just pass "buffer" here.  See bug 1566574.
-    rv = stream->WriteBytes(MakeSpan(buffer.begin(), size));
-  }
-
-  return rv;
-}
-
-NS_IMETHODIMP
-nsXPConnect::ReadScript(nsIObjectInputStream* stream, JSContext* cx,
-                        JSScript** scriptp) {
-  uint8_t flags;
-  nsresult rv = stream->Read8(&flags);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  // We don't serialize mutedError-ness of scripts, which is fine as long as
-  // we only serialize system and XUL-y things. We can detect this by checking
-  // where the caller wants us to deserialize.
-  //
-  // CompilationScope() could theoretically GC, so get that out of the way
-  // before comparing to the cx global.
-  JSObject* loaderGlobal = xpc::CompilationScope();
-  MOZ_RELEASE_ASSERT(nsContentUtils::IsSystemCaller(cx) ||
-                     CurrentGlobalOrNull(cx) == loaderGlobal);
-
-  uint32_t size;
-  rv = stream->Read32(&size);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  char* data;
-  rv = stream->ReadBytes(size, &data);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  TranscodeBuffer buffer;
-  buffer.replaceRawBuffer(reinterpret_cast<uint8_t*>(data), size);
-
-  {
-    TranscodeResult code;
-    Rooted<JSScript*> script(cx);
-    code = DecodeScript(cx, buffer, &script);
-    if (code == TranscodeResult_Ok) {
-      *scriptp = script.get();
-    }
-
-    if (code != TranscodeResult_Ok) {
-      if ((code & TranscodeResult_Failure) != 0) {
-        return NS_ERROR_FAILURE;
-      }
-      MOZ_ASSERT((code & TranscodeResult_Throw) != 0);
-      JS_ClearPendingException(cx);
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-  }
-
-  return rv;
-}
-
-NS_IMETHODIMP
-nsXPConnect::GetIsShuttingDown(bool* aIsShuttingDown) {
-  if (!aIsShuttingDown) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  *aIsShuttingDown = mShuttingDown;
-
-  return NS_OK;
-}
-
 // static
 nsIXPConnect* nsIXPConnect::XPConnect() {
   // Do a release-mode assert that we're not doing anything significant in
@@ -1050,7 +950,7 @@ MOZ_EXPORT void DumpCompleteHeap() {
     return;
   }
 
-  nsJSContext::CycleCollectNow(alltracesListener);
+  nsJSContext::CycleCollectNow(CCReason::DUMP_HEAP, alltracesListener);
 }
 
 }  // extern "C"

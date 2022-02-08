@@ -35,7 +35,9 @@ impl<'a> Decoder<'a> {
         self.offset
     }
 
-    /// Skip n bytes.  Panics if `n` is too large.
+    /// Skip n bytes.
+    /// # Panics
+    /// If the remaining quantity is less than `n`.
     pub fn skip(&mut self, n: usize) {
         assert!(self.remaining() >= n);
         self.offset += n;
@@ -89,7 +91,9 @@ impl<'a> Decoder<'a> {
         Some(res)
     }
 
-    /// Decodes an unsigned integer of length 1..8.
+    /// Decodes an unsigned integer of length 1..=8.
+    /// # Panics
+    /// This panics if `n` is not in the range `1..=8`.
     pub fn decode_uint(&mut self, n: usize) -> Option<u64> {
         assert!(n > 0 && n <= 8);
         if self.remaining() < n {
@@ -105,10 +109,11 @@ impl<'a> Decoder<'a> {
     }
 
     /// Decodes a QUIC varint.
+    #[allow(clippy::missing_panics_doc)] // See https://github.com/rust-lang/rust-clippy/issues/6699
     pub fn decode_varint(&mut self) -> Option<u64> {
         let b1 = match self.decode_byte() {
             Some(b) => b,
-            _ => return None,
+            None => return None,
         };
         match b1 >> 6 {
             0 => Some(u64::from(b1 & 0x3f)),
@@ -129,7 +134,7 @@ impl<'a> Decoder<'a> {
     fn decode_checked(&mut self, n: Option<u64>) -> Option<&'a [u8]> {
         let len = match n {
             Some(l) => l,
-            _ => return None,
+            None => return None,
         };
         if let Ok(l) = usize::try_from(len) {
             self.decode(l)
@@ -165,7 +170,7 @@ impl<'a> Deref for Decoder<'a> {
 
 impl<'a> Debug for Decoder<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.write_str(&hex_with_len(self))
+        f.write_str(&hex_with_len(&self[..]))
     }
 }
 
@@ -173,6 +178,16 @@ impl<'a> From<&'a [u8]> for Decoder<'a> {
     #[must_use]
     fn from(buf: &'a [u8]) -> Decoder<'a> {
         Decoder::new(buf)
+    }
+}
+
+impl<'a, T> From<&'a T> for Decoder<'a>
+where
+    T: AsRef<[u8]>,
+{
+    #[must_use]
+    fn from(buf: &'a T) -> Decoder<'a> {
+        Decoder::new(buf.as_ref())
     }
 }
 
@@ -191,6 +206,8 @@ pub struct Encoder {
 
 impl Encoder {
     /// Static helper function for previewing the results of encoding without doing it.
+    /// # Panics
+    /// When `v` is too large.
     #[must_use]
     pub fn varint_len(v: u64) -> usize {
         match () {
@@ -200,6 +217,14 @@ impl Encoder {
             _ if v < (1 << 62) => 8,
             _ => panic!("Varint value too large"),
         }
+    }
+
+    /// Static helper to determine how long a varint-prefixed array encodes to.
+    /// # Panics
+    /// When `len` doesn't fit in a `u64`.
+    #[must_use]
+    pub fn vvec_len(len: usize) -> usize {
+        Self::varint_len(u64::try_from(len).unwrap()) + len
     }
 
     /// Default construction of an empty buffer.
@@ -216,16 +241,26 @@ impl Encoder {
         }
     }
 
+    /// Get the capacity of the underlying buffer: the number of bytes that can be
+    /// written without causing an allocation to occur.
+    #[must_use]
+    pub fn capacity(&self) -> usize {
+        self.buf.capacity()
+    }
+
     /// Create a view of the current contents of the buffer.
     /// Note: for a view of a slice, use `Decoder::new(&enc[s..e])`
     #[must_use]
     pub fn as_decoder(&self) -> Decoder {
-        Decoder::new(&self)
+        Decoder::new(self)
     }
 
     /// Don't use this except in testing.
+    /// # Panics
+    /// When `s` contains non-hex values or an odd number of values.
     #[must_use]
-    pub fn from_hex(s: &str) -> Self {
+    pub fn from_hex(s: impl AsRef<str>) -> Self {
+        let s = s.as_ref();
         if s.len() % 2 != 0 {
             panic!("Needs to be even length");
         }
@@ -253,6 +288,8 @@ impl Encoder {
     }
 
     /// Encode an integer of any size up to u64.
+    /// # Panics
+    /// When `n` is outside the range `1..=8`.
     #[allow(clippy::cast_possible_truncation)]
     pub fn encode_uint<T: Into<u64>>(&mut self, n: usize, v: T) -> &mut Self {
         let v = v.into();
@@ -264,6 +301,8 @@ impl Encoder {
     }
 
     /// Encode a QUIC varint.
+    /// # Panics
+    /// When `v >= 1<<62`.
     pub fn encode_varint<T: Into<u64>>(&mut self, v: T) -> &mut Self {
         let v = v.into();
         match () {
@@ -277,31 +316,40 @@ impl Encoder {
     }
 
     /// Encode a vector in TLS style.
+    /// # Panics
+    /// When `v` is longer than 2^64.
     pub fn encode_vec(&mut self, n: usize, v: &[u8]) -> &mut Self {
         self.encode_uint(n, u64::try_from(v.len()).unwrap())
             .encode(v)
     }
 
     /// Encode a vector in TLS style using a closure for the contents.
+    /// # Panics
+    /// When `f()` returns a length larger than `2^8n`.
     #[allow(clippy::cast_possible_truncation)]
     pub fn encode_vec_with<F: FnOnce(&mut Self)>(&mut self, n: usize, f: F) -> &mut Self {
         let start = self.buf.len();
         self.buf.resize(self.buf.len() + n, 0);
         f(self);
         let len = self.buf.len() - start - n;
+        assert!(len < (1 << (n * 8)));
         for i in 0..n {
-            self.buf[start + i] = ((len >> (8 * (n - i - 1))) & 0xff) as u8
+            self.buf[start + i] = ((len >> (8 * (n - i - 1))) & 0xff) as u8;
         }
         self
     }
 
     /// Encode a vector with a varint length.
+    /// # Panics
+    /// When `v` is longer than 2^64.
     pub fn encode_vvec(&mut self, v: &[u8]) -> &mut Self {
         self.encode_varint(u64::try_from(v.len()).unwrap())
             .encode(v)
     }
 
     /// Encode a vector with a varint length using a closure.
+    /// # Panics
+    /// When `f()` writes more than 2^62 bytes.
     #[allow(clippy::cast_possible_truncation)]
     pub fn encode_vvec_with<F: FnOnce(&mut Self)>(&mut self, f: F) -> &mut Self {
         let start = self.buf.len();
@@ -344,11 +392,24 @@ impl Encoder {
     pub fn truncate(&mut self, len: usize) {
         self.buf.truncate(len);
     }
+
+    /// Pad the buffer to `len` with bytes set to `v`.
+    pub fn pad_to(&mut self, len: usize, v: u8) {
+        if len > self.buf.len() {
+            self.buf.resize(len, v);
+        }
+    }
 }
 
 impl Debug for Encoder {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.write_str(&hex_with_len(self))
+    }
+}
+
+impl AsRef<[u8]> for Encoder {
+    fn as_ref(&self) -> &[u8] {
+        self.buf.as_ref()
     }
 }
 
@@ -368,10 +429,10 @@ impl From<&[u8]> for Encoder {
     }
 }
 
-impl Into<Vec<u8>> for Encoder {
+impl From<Encoder> for Vec<u8> {
     #[must_use]
-    fn into(self) -> Vec<u8> {
-        self.buf
+    fn from(buf: Encoder) -> Self {
+        buf.buf
     }
 }
 
@@ -425,7 +486,7 @@ mod tests {
         assert_eq!(dec.decode_remainder(), &[0x01, 0x23, 0x45]);
         assert!(dec.decode(2).is_none());
 
-        let mut dec = Decoder::from(&enc[0..0]);
+        let mut dec = Decoder::from(&[]);
         assert_eq!(dec.decode_remainder().len(), 0);
     }
 
@@ -544,6 +605,40 @@ mod tests {
     }
 
     #[test]
+    fn encoded_lengths() {
+        assert_eq!(Encoder::varint_len(0), 1);
+        assert_eq!(Encoder::varint_len(0x3f), 1);
+        assert_eq!(Encoder::varint_len(0x40), 2);
+        assert_eq!(Encoder::varint_len(0x3fff), 2);
+        assert_eq!(Encoder::varint_len(0x4000), 4);
+        assert_eq!(Encoder::varint_len(0x3fff_ffff), 4);
+        assert_eq!(Encoder::varint_len(0x4000_0000), 8);
+    }
+
+    #[test]
+    #[should_panic]
+    fn encoded_length_oob() {
+        let _ = Encoder::varint_len(1 << 62);
+    }
+
+    #[test]
+    fn encoded_vvec_lengths() {
+        assert_eq!(Encoder::vvec_len(0), 1);
+        assert_eq!(Encoder::vvec_len(0x3f), 0x40);
+        assert_eq!(Encoder::vvec_len(0x40), 0x42);
+        assert_eq!(Encoder::vvec_len(0x3fff), 0x4001);
+        assert_eq!(Encoder::vvec_len(0x4000), 0x4004);
+        assert_eq!(Encoder::vvec_len(0x3fff_ffff), 0x4000_0003);
+        assert_eq!(Encoder::vvec_len(0x4000_0000), 0x4000_0008);
+    }
+
+    #[test]
+    #[should_panic]
+    fn encoded_vvec_length_oob() {
+        let _ = Encoder::vvec_len(1 << 62);
+    }
+
+    #[test]
     fn encode_byte() {
         let mut enc = Encoder::default();
 
@@ -575,7 +670,7 @@ mod tests {
     fn builder_from_slice() {
         let slice = &[1, 2, 3];
         let enc = Encoder::from(&slice[..]);
-        assert_eq!(enc, Encoder::from_hex("010203"))
+        assert_eq!(enc, Encoder::from_hex("010203"));
     }
 
     #[test]
@@ -662,6 +757,15 @@ mod tests {
     }
 
     #[test]
+    #[should_panic]
+    fn encode_vec_with_overflow() {
+        let mut enc = Encoder::default();
+        enc.encode_vec_with(1, |enc_inner| {
+            enc_inner.encode(&[0xb0; 256]);
+        });
+    }
+
+    #[test]
     fn encode_vvec() {
         let mut enc = Encoder::default();
         enc.encode_vvec(&[1, 2, 0x34]);
@@ -683,9 +787,8 @@ mod tests {
         enc.encode_vvec_with(|enc_inner| {
             enc_inner.encode(&[0xa5; 65]);
         });
-        let mut v: Vec<u8> = enc.into();
-        let _ = v.split_off(3);
-        assert_eq!(v, vec![0x40, 0x41, 0xa5]);
+        let v: Vec<u8> = enc.into();
+        assert_eq!(&v[..3], &[0x40, 0x41, 0xa5]);
     }
 
     // Test that Deref to &[u8] works for Encoder.
@@ -712,5 +815,16 @@ mod tests {
         let mut enc = Encoder::from_hex("010234");
         enc[0] = 0xff;
         assert_eq!(enc, Encoder::from_hex("ff0234"));
+    }
+
+    #[test]
+    fn pad() {
+        let mut enc = Encoder::from_hex("010234");
+        enc.pad_to(5, 0);
+        assert_eq!(enc, Encoder::from_hex("0102340000"));
+        enc.pad_to(4, 0);
+        assert_eq!(enc, Encoder::from_hex("0102340000"));
+        enc.pad_to(7, 0xc2);
+        assert_eq!(enc, Encoder::from_hex("0102340000c2c2"));
     }
 }

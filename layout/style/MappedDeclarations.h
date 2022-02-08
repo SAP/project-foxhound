@@ -96,9 +96,15 @@ class MappedDeclarations final {
     Servo_DeclarationBlock_SetIntValue(mDecl, aId, aValue);
   }
 
-  // Set "counter-reset: list-item <integer>".
-  void SetCounterResetListItem(int32_t aValue) {
-    Servo_DeclarationBlock_SetCounterResetListItem(mDecl, aValue);
+  // Set "math-depth: <integer>" or "math-depth: add(<integer>)"
+  void SetMathDepthValue(int32_t aValue, bool aIsRelative) {
+    Servo_DeclarationBlock_SetMathDepthValue(mDecl, aValue, aIsRelative);
+  }
+
+  // Set "counter-reset: list-item <integer>".  If aIsReversed is true then
+  // "list-item" instead becomes "reversed(list-item)".
+  void SetCounterResetListItem(int32_t aValue, bool aIsReversed) {
+    Servo_DeclarationBlock_SetCounterResetListItem(mDecl, aValue, aIsReversed);
   }
 
   // Set "counter-set: list-item <integer>".
@@ -173,7 +179,7 @@ class MappedDeclarations final {
   }
 
   // Set font-family to a string
-  void SetFontFamily(const nsString& aValue) {
+  void SetFontFamily(const nsACString& aValue) {
     Servo_DeclarationBlock_SetFontFamily(mDecl, &aValue);
   }
 

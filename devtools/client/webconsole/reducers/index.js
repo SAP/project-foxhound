@@ -14,9 +14,6 @@ const {
   notifications,
 } = require("devtools/client/webconsole/reducers/notifications");
 const { history } = require("devtools/client/webconsole/reducers/history");
-const {
-  default: objectInspector,
-} = require("devtools/client/debugger/packages/devtools-reps/src/object-inspector/reducer");
 
 exports.reducers = {
   autocomplete,
@@ -26,5 +23,4 @@ exports.reducers = {
   ui,
   notifications,
   history,
-  objectInspector,
 };

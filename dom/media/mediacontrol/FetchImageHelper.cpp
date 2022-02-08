@@ -7,6 +7,8 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/Logging.h"
 #include "mozilla/NullPrincipal.h"
+#include "nsIChannel.h"
+#include "nsNetUtil.h"
 
 mozilla::LazyLogModule gFetchImageLog("FetchImageHelper");
 
@@ -17,8 +19,7 @@ mozilla::LazyLogModule gFetchImageLog("FetchImageHelper");
 
 using namespace mozilla::gfx;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 FetchImageHelper::FetchImageHelper(const MediaImage& aImage)
     : mSrc(aImage.mSrc) {}
@@ -103,7 +104,8 @@ nsresult FetchImageHelper::ImageFetchListener::FetchDecodedImageFromURI(
   nsresult rv =
       NS_NewChannel(getter_AddRefs(channel), aURI, nullPrincipal,
                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
-                    nsIContentPolicy::TYPE_INTERNAL_IMAGE);
+                    nsIContentPolicy::TYPE_INTERNAL_IMAGE, nullptr, nullptr,
+                    nullptr, nullptr, nsIRequest::LOAD_ANONYMOUS);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -158,5 +160,4 @@ NS_IMETHODIMP FetchImageHelper::ImageFetchListener::OnImageReady(
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

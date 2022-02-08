@@ -15,7 +15,7 @@
 #include "nsThreadUtils.h"
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
 #include "mozilla/StaticPrefs_dom.h"
 
 #include "nsCycleCollectionParticipant.h"
@@ -24,7 +24,9 @@
 #include "mozilla/LoadInfo.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_extensions.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StorageAccess.h"
+#include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/DOMMozPromiseRequestHolder.h"
 #include "mozilla/dom/MessageEvent.h"
@@ -38,7 +40,6 @@
 
 #include "RemoteServiceWorkerContainerImpl.h"
 #include "ServiceWorker.h"
-#include "ServiceWorkerContainerImpl.h"
 #include "ServiceWorkerRegistration.h"
 #include "ServiceWorkerUtils.h"
 
@@ -73,9 +74,8 @@ bool IsInPrivateBrowsing(JSContext* const aCx) {
 bool IsServiceWorkersTestingEnabledInWindow(JSObject* const aGlobal) {
   if (const nsCOMPtr<nsPIDOMWindowInner> innerWindow =
           Navigator::GetWindowFromGlobal(aGlobal)) {
-    if (const nsCOMPtr<nsPIDOMWindowOuter> outerWindow =
-            innerWindow->GetOuterWindow()) {
-      return outerWindow->GetServiceWorkersTestingEnabled();
+    if (auto* bc = innerWindow->GetBrowsingContext()) {
+      return bc->Top()->ServiceWorkersTestingEnabled();
     }
   }
   return false;
@@ -87,6 +87,8 @@ bool IsServiceWorkersTestingEnabledInWindow(JSObject* const aGlobal) {
 bool ServiceWorkerContainer::IsEnabled(JSContext* aCx, JSObject* aGlobal) {
   MOZ_ASSERT(NS_IsMainThread());
 
+  // FIXME: Why does this need to root? Shouldn't the caller root aGlobal for
+  // us?
   JS::Rooted<JSObject*> global(aCx, aGlobal);
 
   if (!StaticPrefs::dom_serviceWorkers_enabled()) {
@@ -101,27 +103,14 @@ bool ServiceWorkerContainer::IsEnabled(JSContext* aCx, JSObject* aGlobal) {
     return true;
   }
 
-  const bool isTestingEnabledInWindow =
-      IsServiceWorkersTestingEnabledInWindow(global);
-  const bool isTestingEnabledByPref =
-      StaticPrefs::dom_serviceWorkers_testing_enabled();
-  const bool isTestingEnabled =
-      isTestingEnabledByPref || isTestingEnabledInWindow;
-
-  return isTestingEnabled;
+  return StaticPrefs::dom_serviceWorkers_testing_enabled() ||
+         IsServiceWorkersTestingEnabledInWindow(global);
 }
 
 // static
 already_AddRefed<ServiceWorkerContainer> ServiceWorkerContainer::Create(
     nsIGlobalObject* aGlobal) {
-  RefPtr<Inner> inner;
-  if (ServiceWorkerParentInterceptEnabled()) {
-    inner = new RemoteServiceWorkerContainerImpl();
-  } else {
-    inner = new ServiceWorkerContainerImpl();
-  }
-  NS_ENSURE_TRUE(inner, nullptr);
-
+  RefPtr<Inner> inner = new RemoteServiceWorkerContainerImpl();
   RefPtr<ServiceWorkerContainer> ref =
       new ServiceWorkerContainer(aGlobal, inner.forget());
   return ref.forget();
@@ -611,7 +600,7 @@ void ServiceWorkerContainer::GetScopeForUrl(const nsAString& aUrl,
                                             nsString& aScope,
                                             ErrorResult& aRv) {
   nsCOMPtr<nsIServiceWorkerManager> swm =
-      mozilla::services::GetServiceWorkerManager();
+      mozilla::components::ServiceWorkerManager::Service();
   if (!swm) {
     aRv.Throw(NS_ERROR_FAILURE);
     return;
@@ -623,13 +612,20 @@ void ServiceWorkerContainer::GetScopeForUrl(const nsAString& aUrl,
     return;
   }
 
-  nsCOMPtr<Document> doc = window->GetExtantDoc();
-  if (NS_WARN_IF(!doc)) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+  nsCOMPtr<nsIPrincipal> principal;
+  nsresult rv = StoragePrincipalHelper::GetPrincipal(
+      window,
+      StaticPrefs::privacy_partition_serviceWorkers()
+          ? StoragePrincipalHelper::eForeignPartitionedPrincipal
+          : StoragePrincipalHelper::eRegularPrincipal,
+      getter_AddRefs(principal));
+
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    aRv.Throw(rv);
     return;
   }
 
-  aRv = swm->GetScopeForUrl(doc->NodePrincipal(), aUrl, aScope);
+  aRv = swm->GetScopeForUrl(principal, aUrl, aScope);
 }
 
 nsIGlobalObject* ServiceWorkerContainer::GetGlobalIfValid(
@@ -656,7 +652,10 @@ nsIGlobalObject* ServiceWorkerContainer::GetGlobalIfValid(
   // the registration it increases the chance they can bypass the storage
   // block via postMessage(), etc.
   auto storageAllowed = StorageAllowedForWindow(window);
-  if (NS_WARN_IF(storageAllowed != StorageAccess::eAllow)) {
+  if (NS_WARN_IF(storageAllowed != StorageAccess::eAllow &&
+                 (!StaticPrefs::privacy_partition_serviceWorkers() ||
+                  !StoragePartitioningEnabled(storageAllowed,
+                                              doc->CookieJarSettings())))) {
     if (aStorageFailureCB) {
       aStorageFailureCB(doc);
     }
@@ -763,32 +762,6 @@ nsresult FillInOriginNoSuffix(const ServiceWorkerDescriptor& aServiceWorker,
   return NS_OK;
 }
 
-already_AddRefed<ServiceWorker> GetOrCreateServiceWorkerWithoutWarnings(
-    nsIGlobalObject* const aGlobal,
-    const ServiceWorkerDescriptor& aDescriptor) {
-  // In child-intercept mode we have to verify that the registration
-  // exists in the current process. This exact check is also performed
-  // (indirectly) in nsIGlobalObject::GetOrCreateServiceWorker, but it
-  // also emits a warning when the registration is not present. To
-  // to avoid having too many warnings, we do a precheck here.
-  if (!ServiceWorkerParentInterceptEnabled()) {
-    const RefPtr<ServiceWorkerManager> serviceWorkerManager =
-        ServiceWorkerManager::GetInstance();
-    if (!serviceWorkerManager) {
-      return nullptr;
-    }
-
-    const RefPtr<ServiceWorkerRegistrationInfo> registration =
-        serviceWorkerManager->GetRegistration(aDescriptor.PrincipalInfo(),
-                                              aDescriptor.Scope());
-    if (!registration) {
-      return nullptr;
-    }
-  }
-
-  return aGlobal->GetOrCreateServiceWorker(aDescriptor).forget();
-}
-
 }  // namespace
 
 Result<Ok, bool> ServiceWorkerContainer::FillInMessageEventInit(
@@ -804,7 +777,7 @@ Result<Ok, bool> ServiceWorkerContainer::FillInMessageEventInit(
   //  these steps." - 6.4 of postMessage
   //  See: https://w3c.github.io/ServiceWorker/#service-worker-postmessage
   const RefPtr<ServiceWorker> serviceWorkerInstance =
-      GetOrCreateServiceWorkerWithoutWarnings(aGlobal, aMessage.mServiceWorker);
+      aGlobal->GetOrCreateServiceWorker(aMessage.mServiceWorker);
   if (serviceWorkerInstance) {
     aInit.mSource.SetValue().SetAsServiceWorker() = serviceWorkerInstance;
   }

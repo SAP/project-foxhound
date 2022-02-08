@@ -31,24 +31,24 @@ class ApplicationAccessible : public AccessibleWrap {
 
   NS_INLINE_DECL_REFCOUNTING_INHERITED(ApplicationAccessible, AccessibleWrap)
 
-  // Accessible
+  // LocalAccessible
   virtual void Shutdown() override;
   virtual nsIntRect Bounds() const override;
   virtual nsRect BoundsInAppUnits() const override;
-  virtual already_AddRefed<nsIPersistentProperties> NativeAttributes() override;
+  virtual already_AddRefed<AccAttributes> NativeAttributes() override;
   virtual GroupPos GroupPosition() override;
   virtual ENameValueFlag Name(nsString& aName) const override;
   virtual void ApplyARIAState(uint64_t* aState) const override;
-  virtual void Description(nsString& aDescription) override;
+  virtual void Description(nsString& aDescription) const override;
   virtual void Value(nsString& aValue) const override;
   virtual mozilla::a11y::role NativeRole() const override;
   virtual uint64_t State() override;
   virtual uint64_t NativeState() const override;
   virtual Relation RelationByType(RelationType aType) const override;
 
-  virtual Accessible* ChildAtPoint(int32_t aX, int32_t aY,
-                                   EWhichChildAtPoint aWhichChild) override;
-  virtual Accessible* FocusedChild() override;
+  virtual LocalAccessible* LocalChildAtPoint(
+      int32_t aX, int32_t aY, EWhichChildAtPoint aWhichChild) override;
+  virtual LocalAccessible* FocusedChild() override;
 
   // ActionAccessible
   virtual KeyBinding AccessKey() const override;
@@ -91,15 +91,15 @@ class ApplicationAccessible : public AccessibleWrap {
  protected:
   virtual ~ApplicationAccessible() {}
 
-  // Accessible
-  virtual Accessible* GetSiblingAtOffset(
+  // LocalAccessible
+  virtual LocalAccessible* GetSiblingAtOffset(
       int32_t aOffset, nsresult* aError = nullptr) const override;
 
  private:
   nsCOMPtr<nsIXULAppInfo> mAppInfo;
 };
 
-inline ApplicationAccessible* Accessible::AsApplication() {
+inline ApplicationAccessible* LocalAccessible::AsApplication() {
   return IsApplication() ? static_cast<ApplicationAccessible*>(this) : nullptr;
 }
 

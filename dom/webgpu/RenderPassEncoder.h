@@ -6,11 +6,16 @@
 #ifndef GPU_RenderPassEncoder_H_
 #define GPU_RenderPassEncoder_H_
 
+#include "mozilla/Scoped.h"
+#include "mozilla/dom/TypedArray.h"
 #include "ObjectModel.h"
 
 namespace mozilla {
+class ErrorResult;
+
 namespace dom {
 class DoubleSequenceOrGPUColorDict;
+struct GPURenderPassDescriptor;
 template <typename T>
 class Sequence;
 namespace binding_detail {
@@ -19,10 +24,22 @@ class AutoSequence;
 }  // namespace binding_detail
 }  // namespace dom
 namespace webgpu {
+namespace ffi {
+struct WGPURenderPass;
+}  // namespace ffi
 
+class BindGroup;
+class Buffer;
 class CommandEncoder;
 class RenderBundle;
 class RenderPipeline;
+class TextureView;
+
+struct ScopedFfiRenderTraits {
+  using type = ffi::WGPURenderPass*;
+  static type empty();
+  static void release(type raw);
+};
 
 class RenderPassEncoder final : public ObjectBase,
                                 public ChildOf<CommandEncoder> {
@@ -37,18 +54,23 @@ class RenderPassEncoder final : public ObjectBase,
   virtual ~RenderPassEncoder();
   void Cleanup() {}
 
-  ffi::WGPURawPass mRaw;
+  Scoped<ScopedFfiRenderTraits> mPass;
   // keep all the used objects alive while the pass is recorded
   nsTArray<RefPtr<const BindGroup>> mUsedBindGroups;
   nsTArray<RefPtr<const Buffer>> mUsedBuffers;
   nsTArray<RefPtr<const RenderPipeline>> mUsedPipelines;
   nsTArray<RefPtr<const TextureView>> mUsedTextureViews;
+  nsTArray<RefPtr<const RenderBundle>> mUsedRenderBundles;
 
  public:
+  // programmable pass encoder
   void SetBindGroup(uint32_t aSlot, const BindGroup& aBindGroup,
                     const dom::Sequence<uint32_t>& aDynamicOffsets);
+  // render encoder base
   void SetPipeline(const RenderPipeline& aPipeline);
-  void SetIndexBuffer(const Buffer& aBuffer, uint64_t aOffset, uint64_t aSize);
+  void SetIndexBuffer(const Buffer& aBuffer,
+                      const dom::GPUIndexFormat& aIndexFormat, uint64_t aOffset,
+                      uint64_t aSize);
   void SetVertexBuffer(uint32_t aSlot, const Buffer& aBuffer, uint64_t aOffset,
                        uint64_t aSize);
   void Draw(uint32_t aVertexCount, uint32_t aInstanceCount,
@@ -59,6 +81,14 @@ class RenderPassEncoder final : public ObjectBase,
   void DrawIndirect(const Buffer& aIndirectBuffer, uint64_t aIndirectOffset);
   void DrawIndexedIndirect(const Buffer& aIndirectBuffer,
                            uint64_t aIndirectOffset);
+  // self
+  void SetViewport(float x, float y, float width, float height, float minDepth,
+                   float maxDepth);
+  void SetScissorRect(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+  void SetBlendConstant(const dom::DoubleSequenceOrGPUColorDict& color);
+  void SetStencilReference(uint32_t reference);
+  void ExecuteBundles(
+      const dom::Sequence<OwningNonNull<RenderBundle>>& aBundles);
   void EndPass(ErrorResult& aRv);
 };
 

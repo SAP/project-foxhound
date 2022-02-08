@@ -4,7 +4,7 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = ["TelemetryScheduler"];
+var EXPORTED_SYMBOLS = ["TelemetryScheduler", "Policy"];
 
 const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
@@ -15,16 +15,12 @@ const { TelemetryUtils } = ChromeUtils.import(
   "resource://gre/modules/TelemetryUtils.jsm"
 );
 const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm",
-  this
+  "resource://gre/modules/XPCOMUtils.jsm"
 );
 const { clearTimeout, setTimeout } = ChromeUtils.import(
   "resource://gre/modules/Timer.jsm"
 );
 // Other pings
-const { EcosystemTelemetry } = ChromeUtils.import(
-  "resource://gre/modules/EcosystemTelemetry.jsm"
-);
 const { TelemetryPrioPing } = ChromeUtils.import(
   "resource://gre/modules/PrioPing.jsm"
 );
@@ -375,7 +371,6 @@ var TelemetryScheduler = {
       this._log.trace("_schedulerTickLogic - Periodic ping due.");
       this._lastPeriodicPingTime = now;
       // Send other pings.
-      EcosystemTelemetry.periodicPing();
       TelemetryPrioPing.periodicPing();
     }
 

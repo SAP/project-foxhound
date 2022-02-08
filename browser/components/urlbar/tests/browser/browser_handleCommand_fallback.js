@@ -22,30 +22,26 @@ const TEST_STRINGS = [
 ];
 
 add_task(async function() {
+  // Disable autofill so mozilla.org isn't autofilled below.
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.autoFill", false]],
+  });
+
   sandbox = sinon.createSandbox();
-  let engine = await Services.search.addEngineWithDetails("MozSearch", {
-    alias: "moz",
-    method: "GET",
-    template: "http://example.com/?q={searchTerms}",
-  });
-  let engine2 = await Services.search.addEngineWithDetails("MozSearch2", {
-    alias: "@moz",
-    method: "GET",
-    template: "http://example.com/?q={searchTerms}",
-  });
+  await SearchTestUtils.installSearchExtension();
+  await SearchTestUtils.installSearchExtension({ name: "Example2" });
+
   let bm = await PlacesUtils.bookmarks.insert({
     parentGuid: PlacesUtils.bookmarks.unfiledGuid,
-    url: "http://example.com/?q=%s",
+    url: "https://example.com/?q=%s",
     title: "test",
   });
   await PlacesUtils.keywords.insert({
     keyword: "keyword",
-    url: "http://example.com/?q=%s",
+    url: "https://example.com/?q=%s",
   });
   registerCleanupFunction(async () => {
     sandbox.restore();
-    await Services.search.removeEngine(engine);
-    await Services.search.removeEngine(engine2);
     await PlacesUtils.bookmarks.remove(bm);
     await UrlbarTestUtils.formHistory.clear();
   });
@@ -66,6 +62,7 @@ add_task(async function() {
   // confirm the same string without a view and without an input event, and
   // compare the arguments.
   for (let value of TEST_STRINGS) {
+    info(`Input the value normally and Enter. Value: ${value}`);
     let promise = promiseLoadURL();
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
       window,
@@ -74,12 +71,19 @@ add_task(async function() {
     EventUtils.synthesizeKey("KEY_Enter");
     let args = await promise;
     Assert.ok(args.length, "Sanity check");
-    // Close the panel and confirm again.
+    info("Close the panel and confirm again.");
     promise = promiseLoadURL();
     await UrlbarTestUtils.promisePopupClose(window);
     EventUtils.synthesizeKey("KEY_Enter");
     Assert.deepEqual(await promise, args, "Check arguments are coherent");
-    // Set the value directly and Enter.
+
+    info("Set the value directly and Enter.");
+    // To properly testing the original value we must be out of search mode.
+    if (gURLBar.searchMode) {
+      await UrlbarTestUtils.exitSearchMode(window);
+      // Exiting search mode may reopen the panel.
+      await UrlbarTestUtils.promisePopupClose(window);
+    }
     promise = promiseLoadURL();
     gURLBar.value = value;
     let spy = sinon.spy(UrlbarUtils, "getHeuristicResultFor");
@@ -87,6 +91,7 @@ add_task(async function() {
     spy.restore();
     Assert.ok(spy.called, "invoked getHeuristicResultFor");
     Assert.deepEqual(await promise, args, "Check arguments are coherent");
+    gURLBar.handleRevert();
   }
 });
 
@@ -122,6 +127,10 @@ add_task(async function no_heuristic_test() {
   // confirm the same string without a view and without an input event, and
   // compare the arguments.
   for (let value of TEST_STRINGS) {
+    // To properly testing the original value we must be out of search mode.
+    if (gURLBar.searchMode) {
+      await UrlbarTestUtils.exitSearchMode(window);
+    }
     let promise = promiseLoadURL();
     gURLBar.value = value;
     EventUtils.synthesizeKey("KEY_Enter");

@@ -51,15 +51,19 @@ impl MetricType for MemoryDistributionMetric {
     }
 }
 
+// IMPORTANT:
+//
+// When changing this implementation, make sure all the operations are
+// also declared in the related trait in `../traits/`.
 impl MemoryDistributionMetric {
-    /// Create a new memory distribution metric.
+    /// Creates a new memory distribution metric.
     pub fn new(meta: CommonMetricData, memory_unit: MemoryUnit) -> Self {
         Self { meta, memory_unit }
     }
 
     /// Accumulates the provided sample in the metric.
     ///
-    /// ## Arguments
+    /// # Arguments
     ///
     /// * `sample` - The sample to be recorded by the metric. The sample is assumed to be in the
     ///   configured memory unit of the metric.
@@ -67,7 +71,7 @@ impl MemoryDistributionMetric {
     /// ## Notes
     ///
     /// Values bigger than 1 Terabyte (2<sup>40</sup> bytes) are truncated
-    /// and an `ErrorType::InvalidValue` error is recorded.
+    /// and an [`ErrorType::InvalidValue`] error is recorded.
     pub fn accumulate(&self, glean: &Glean, sample: u64) {
         if !self.should_record(glean) {
             return;
@@ -103,23 +107,27 @@ impl MemoryDistributionMetric {
     /// will take care of filtering and reporting errors for any provided negative
     /// sample.
     ///
-    /// Please note that this assumes that the provided samples are already in the
-    /// "unit" declared by the instance of the implementing metric type (e.g. if the
-    /// implementing class is a [MemoryDistributionMetricType] and the instance this
-    /// method was called on is using [MemoryUnit.Kilobyte], then `samples` are assumed
-    /// to be in that unit).
+    /// Please note that this assumes that the provided samples are already in
+    /// the "unit" declared by the instance of the metric type (e.g. if the the
+    /// instance this method was called on is using [`MemoryUnit::Kilobyte`], then
+    /// `samples` are assumed to be in that unit).
     ///
-    /// ## Arguments
+    /// # Arguments
     ///
     /// * `samples` - The vector holding the samples to be recorded by the metric.
     ///
     /// ## Notes
     ///
-    /// Discards any negative value in `samples` and report an `ErrorType::InvalidValue`
+    /// Discards any negative value in `samples` and report an [`ErrorType::InvalidValue`]
     /// for each of them.
+    ///
     /// Values bigger than 1 Terabyte (2<sup>40</sup> bytes) are truncated
-    /// and an `ErrorType::InvalidValue` error is recorded.
+    /// and an [`ErrorType::InvalidValue`] error is recorded.
     pub fn accumulate_samples_signed(&self, glean: &Glean, samples: Vec<i64>) {
+        if !self.should_record(glean) {
+            return;
+        }
+
         let mut num_negative_samples = 0;
         let mut num_too_log_samples = 0;
 
@@ -174,14 +182,15 @@ impl MemoryDistributionMetric {
 
     /// **Test-only API (exported for FFI purposes).**
     ///
-    /// Get the currently stored value as an integer.
+    /// Gets the currently stored value as an integer.
     ///
     /// This doesn't clear the stored value.
     pub fn test_get_value(&self, glean: &Glean, storage_name: &str) -> Option<DistributionData> {
-        match StorageManager.snapshot_metric(
+        match StorageManager.snapshot_metric_for_test(
             glean.storage(),
             storage_name,
             &self.meta.identifier(glean),
+            self.meta.lifetime,
         ) {
             Some(Metric::MemoryDistribution(hist)) => Some(snapshot(&hist)),
             _ => None,
@@ -190,7 +199,7 @@ impl MemoryDistributionMetric {
 
     /// **Test-only API (exported for FFI purposes).**
     ///
-    /// Get the currently-stored histogram as a JSON String of the serialized value.
+    /// Gets the currently-stored histogram as a JSON String of the serialized value.
     ///
     /// This doesn't clear the stored value.
     pub fn test_get_value_as_json_string(

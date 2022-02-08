@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
 import React, { Component } from "react";
 import PropTypes from "prop-types";
 import classnames from "classnames";
@@ -21,10 +20,10 @@ import {
   getOrientation,
 } from "../selectors";
 
-import type { OrientationType } from "../reducers/types";
-import type { Source } from "../types";
+const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
+const SplitBox = require("devtools/client/shared/components/splitter/SplitBox");
+const AppErrorBoundary = require("devtools/client/shared/components/AppErrorBoundary");
 
-import { KeyShortcuts } from "devtools-modules";
 import Services from "devtools-services";
 const shortcuts = new KeyShortcuts({ window });
 
@@ -40,14 +39,8 @@ const verticalLayoutBreakpoint = window.matchMedia(
 import "./variables.css";
 import "./App.css";
 
-// $FlowIgnore
-import "devtools-launchpad/src/components/Root.css";
-
-import type { ActiveSearchType } from "../selectors";
-
 import "./shared/menu.css";
 
-import SplitBox from "devtools-splitter";
 import ProjectSearch from "./ProjectSearch";
 import PrimaryPanes from "./PrimaryPanes";
 import Editor from "./Editor";
@@ -57,41 +50,8 @@ import EditorTabs from "./Editor/Tabs";
 import EditorFooter from "./Editor/Footer";
 import QuickOpenModal from "./QuickOpenModal";
 
-type OwnProps = {|
-  toolboxDoc: Object,
-|};
-type Props = {
-  selectedSource: ?Source,
-  orientation: OrientationType,
-  startPanelCollapsed: boolean,
-  endPanelCollapsed: boolean,
-  activeSearch: ?ActiveSearchType,
-  quickOpenEnabled: boolean,
-  toolboxDoc: Object,
-  setActiveSearch: typeof actions.setActiveSearch,
-  closeActiveSearch: typeof actions.closeActiveSearch,
-  closeProjectSearch: typeof actions.closeProjectSearch,
-  openQuickOpen: typeof actions.openQuickOpen,
-  closeQuickOpen: typeof actions.closeQuickOpen,
-  setOrientation: typeof actions.setOrientation,
-};
-
-type State = {
-  shortcutsModalEnabled: boolean,
-  startPanelSize: number,
-  endPanelSize: number,
-};
-
-class App extends Component<Props, State> {
-  onLayoutChange: Function;
-  getChildContext: Function;
-  renderEditorPane: Function;
-  renderLayout: Function;
-  toggleQuickOpenModal: Function;
-  onEscape: Function;
-  onCommandSlash: Function;
-
-  constructor(props: Props) {
+class App extends Component {
+  constructor(props) {
     super(props);
     this.state = {
       shortcutsModalEnabled: false,
@@ -102,6 +62,7 @@ class App extends Component<Props, State> {
 
   getChildContext() {
     return {
+      fluentBundles: this.props.fluentBundles,
       toolboxDoc: this.props.toolboxDoc,
       shortcuts,
       l10n: L10N,
@@ -113,8 +74,8 @@ class App extends Component<Props, State> {
     verticalLayoutBreakpoint.addListener(this.onLayoutChange);
     this.setOrientation();
 
-    shortcuts.on(L10N.getStr("symbolSearch.search.key2"), (_, e) =>
-      this.toggleQuickOpenModal(_, e, "@")
+    shortcuts.on(L10N.getStr("symbolSearch.search.key2"), e =>
+      this.toggleQuickOpenModal(e, "@")
     );
 
     const searchKeys = [
@@ -123,8 +84,8 @@ class App extends Component<Props, State> {
     ];
     searchKeys.forEach(key => shortcuts.on(key, this.toggleQuickOpenModal));
 
-    shortcuts.on(L10N.getStr("gotoLineModal.key3"), (_, e) =>
-      this.toggleQuickOpenModal(_, e, ":")
+    shortcuts.on(L10N.getStr("gotoLineModal.key3"), e =>
+      this.toggleQuickOpenModal(e, ":")
     );
 
     shortcuts.on("Escape", this.onEscape);
@@ -150,7 +111,7 @@ class App extends Component<Props, State> {
     shortcuts.off("Escape", this.onEscape);
   }
 
-  onEscape = (_: mixed, e: KeyboardEvent) => {
+  onEscape = e => {
     const {
       activeSearch,
       closeActiveSearch,
@@ -183,11 +144,7 @@ class App extends Component<Props, State> {
     return this.props.orientation === "horizontal";
   }
 
-  toggleQuickOpenModal = (
-    _: mixed,
-    e: SyntheticEvent<HTMLElement>,
-    query?: string
-  ) => {
+  toggleQuickOpenModal = (e, query) => {
     const { quickOpenEnabled, openQuickOpen, closeQuickOpen } = this.props;
 
     e.preventDefault();
@@ -320,16 +277,21 @@ class App extends Component<Props, State> {
     const { quickOpenEnabled } = this.props;
     return (
       <div className={classnames("debugger")}>
-        <A11yIntention>
-          {this.renderLayout()}
-          {quickOpenEnabled === true && (
-            <QuickOpenModal
-              shortcutsModalEnabled={this.state.shortcutsModalEnabled}
-              toggleShortcutsModal={() => this.toggleShortcutsModal()}
-            />
-          )}
-          {this.renderShortcutsModal()}
-        </A11yIntention>
+        <AppErrorBoundary
+          className="app-error-boundary"
+          panel={L10N.getStr("ToolboxDebugger.label")}
+        >
+          <A11yIntention>
+            {this.renderLayout()}
+            {quickOpenEnabled === true && (
+              <QuickOpenModal
+                shortcutsModalEnabled={this.state.shortcutsModalEnabled}
+                toggleShortcutsModal={() => this.toggleShortcutsModal()}
+              />
+            )}
+            {this.renderShortcutsModal()}
+          </A11yIntention>
+        </AppErrorBoundary>
       </div>
     );
   }
@@ -339,6 +301,7 @@ App.childContextTypes = {
   toolboxDoc: PropTypes.object,
   shortcuts: PropTypes.object,
   l10n: PropTypes.object,
+  fluentBundles: PropTypes.array,
 };
 
 const mapStateToProps = state => ({
@@ -350,7 +313,7 @@ const mapStateToProps = state => ({
   orientation: getOrientation(state),
 });
 
-export default connect<Props, OwnProps, _, _, _, _>(mapStateToProps, {
+export default connect(mapStateToProps, {
   setActiveSearch: actions.setActiveSearch,
   closeActiveSearch: actions.closeActiveSearch,
   closeProjectSearch: actions.closeProjectSearch,

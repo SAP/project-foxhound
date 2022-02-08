@@ -3,72 +3,15 @@
 
 "use strict";
 
-ChromeUtils.import(
-  "resource://testing-common/HandlerServiceTestUtils.jsm",
-  this
-);
-
-let gHandlerService = Cc["@mozilla.org/uriloader/handler-service;1"].getService(
-  Ci.nsIHandlerService
-);
-
 const TEST_PATH = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
   "https://example.com"
 );
 
-const CONTENT_HANDLING_URL = "chrome://mozapps/content/handling/dialog.xhtml";
+const CONTENT_HANDLING_URL =
+  "chrome://mozapps/content/handling/appChooser.xhtml";
 
-let gOldMailHandlers = [];
-
-add_task(async function setup() {
-  let mailHandlerInfo = HandlerServiceTestUtils.getHandlerInfo("mailto");
-
-  // Remove extant web handlers because they have icons that
-  // we fetch from the web, which isn't allowed in tests.
-  let handlers = mailHandlerInfo.possibleApplicationHandlers;
-  for (let i = handlers.Count() - 1; i >= 0; i--) {
-    try {
-      let handler = handlers.queryElementAt(i, Ci.nsIWebHandlerApp);
-      gOldMailHandlers.push(handler);
-      // If we get here, this is a web handler app. Remove it:
-      handlers.removeElementAt(i);
-    } catch (ex) {}
-  }
-
-  let previousHandling = mailHandlerInfo.alwaysAskBeforeHandling;
-  mailHandlerInfo.alwaysAskBeforeHandling = true;
-
-  // Create a dummy web mail handler so we always know the mailto: protocol.
-  // Without this, the test fails on VMs without a default mailto: handler,
-  // because no dialog is ever shown, as we ignore subframe navigations to
-  // protocols that cannot be handled.
-  let dummy = Cc["@mozilla.org/uriloader/web-handler-app;1"].createInstance(
-    Ci.nsIWebHandlerApp
-  );
-  dummy.name = "Handler 1";
-  dummy.uriTemplate = "https://example.com/first/%s";
-  mailHandlerInfo.possibleApplicationHandlers.appendElement(dummy);
-
-  gHandlerService.store(mailHandlerInfo);
-  registerCleanupFunction(() => {
-    // Re-add the original protocol handlers:
-    let mailHandlers = mailHandlerInfo.possibleApplicationHandlers;
-    for (let i = handlers.Count() - 1; i >= 0; i--) {
-      try {
-        // See if this is a web handler. If it is, it'll throw, otherwise,
-        // we will remove it.
-        mailHandlers.queryElementAt(i, Ci.nsIWebHandlerApp);
-        mailHandlers.removeElementAt(i);
-      } catch (ex) {}
-    }
-    for (let h of gOldMailHandlers) {
-      mailHandlers.appendElement(h);
-    }
-    mailHandlerInfo.alwaysAskBeforeHandling = previousHandling;
-    gHandlerService.store(mailHandlerInfo);
-  });
-});
+add_task(setupMailHandler);
 
 /**
  * Check that if we open the protocol handler dialog from a subframe, we close
@@ -81,24 +24,33 @@ add_task(async function test_closed_by_tab_closure() {
   );
 
   // Wait for the window and then click the link.
-  let dialogWindowPromise = BrowserTestUtils.domWindowOpenedAndLoaded();
+  let dialogWindowPromise = waitForProtocolAppChooserDialog(
+    tab.linkedBrowser,
+    true
+  );
+
   BrowserTestUtils.synthesizeMouseAtCenter(
     "a:link",
     {},
     tab.linkedBrowser.browsingContext.children[0]
   );
+
   let dialog = await dialogWindowPromise;
 
   is(
-    dialog.document.location.href,
+    dialog._frame.contentDocument.location.href,
     CONTENT_HANDLING_URL,
     "Dialog URL is as expected"
   );
-  let dialogClosedPromise = BrowserTestUtils.domWindowClosed(dialog);
+  let dialogClosedPromise = waitForProtocolAppChooserDialog(
+    tab.linkedBrowser,
+    false
+  );
+
   info("Removing tab to close the dialog.");
   gBrowser.removeTab(tab);
   await dialogClosedPromise;
-  ok(dialog.closed, "The dialog should have been closed.");
+  ok(!dialog._frame.contentWindow, "The dialog should have been closed.");
 });
 
 /**
@@ -112,7 +64,11 @@ add_task(async function test_closed_by_tab_navigation() {
   );
 
   // Wait for the window and then click the link.
-  let dialogWindowPromise = BrowserTestUtils.domWindowOpenedAndLoaded();
+  let dialogWindowPromise = waitForProtocolAppChooserDialog(
+    tab.linkedBrowser,
+    true
+  );
+
   BrowserTestUtils.synthesizeMouseAtCenter(
     "a:link",
     {},
@@ -121,11 +77,14 @@ add_task(async function test_closed_by_tab_navigation() {
   let dialog = await dialogWindowPromise;
 
   is(
-    dialog.document.location.href,
+    dialog._frame.contentDocument.location.href,
     CONTENT_HANDLING_URL,
     "Dialog URL is as expected"
   );
-  let dialogClosedPromise = BrowserTestUtils.domWindowClosed(dialog);
+  let dialogClosedPromise = waitForProtocolAppChooserDialog(
+    tab.linkedBrowser,
+    false
+  );
   info(
     "Set up unload handler to ensure we don't break when the window global gets cleared"
   );
@@ -136,7 +95,7 @@ add_task(async function test_closed_by_tab_navigation() {
   info("Navigating tab to a different but same origin page.");
   BrowserTestUtils.loadURI(tab.linkedBrowser, TEST_PATH);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, TEST_PATH);
-  ok(!dialog.closed, "Dialog should stay open.");
+  ok(dialog._frame.contentWindow, "Dialog should stay open.");
 
   // The use of weak references in various parts of the code means that we're
   // susceptible to dropping crucial bits of our implementation on the floor,
@@ -157,7 +116,7 @@ add_task(async function test_closed_by_tab_navigation() {
     CROSS_ORIGIN_TEST_PATH
   );
   await dialogClosedPromise;
-  ok(dialog.closed, "The dialog should have been closed.");
+  ok(!dialog._frame.contentWindow, "The dialog should have been closed.");
 
   // Avoid errors from aborted loads by waiting for it to finish.
   await loadPromise;
@@ -174,7 +133,10 @@ add_task(async function test_multiple_dialogs() {
   );
 
   // Wait for the window and then click the link.
-  let dialogWindowPromise = BrowserTestUtils.domWindowOpenedAndLoaded();
+  let dialogWindowPromise = waitForProtocolAppChooserDialog(
+    tab.linkedBrowser,
+    true
+  );
   BrowserTestUtils.synthesizeMouseAtCenter(
     "a:link",
     {},
@@ -183,7 +145,7 @@ add_task(async function test_multiple_dialogs() {
   let dialog = await dialogWindowPromise;
 
   is(
-    dialog.document.location.href,
+    dialog._frame.contentDocument.location.href,
     CONTENT_HANDLING_URL,
     "Dialog URL is as expected"
   );
@@ -196,35 +158,30 @@ add_task(async function test_multiple_dialogs() {
   // Wait for a few ticks:
   // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
   await new Promise(r => setTimeout(r, 100));
-  // Check we don't have more of these windows:
-  let relevantOpenWindows = [];
-  for (let win of Services.wm.getEnumerator(null)) {
-    let href = win.location.href;
-    if (
-      !win.closed &&
-      href != AppConstants.BROWSER_CHROME_URL &&
-      !href.endsWith("browser-harness.xhtml")
-    ) {
-      relevantOpenWindows.push(win);
-    }
-  }
-  is(relevantOpenWindows.length, 1, "Should only have 1 window open");
-  for (let i = 1; i < relevantOpenWindows.length; i++) {
-    ok(
-      false,
-      "Unexpected open window with href: " +
-        relevantOpenWindows[i].location.href
-    );
-  }
+  // Check we only have one dialog
+
+  let tabDialogBox = gBrowser.getTabDialogBox(tab.linkedBrowser);
+  let dialogs = tabDialogBox
+    .getTabDialogManager()
+    ._dialogs.filter(d => d._openedURL == CONTENT_HANDLING_URL);
+
+  is(dialogs.length, 1, "Should only have 1 dialog open");
 
   // Close the dialog:
-  let dialogClosedPromise = BrowserTestUtils.domWindowClosed(dialog);
+  let dialogClosedPromise = waitForProtocolAppChooserDialog(
+    tab.linkedBrowser,
+    false
+  );
   dialog.close();
-  await dialogClosedPromise;
-  ok(dialog.closed, "The dialog should have been closed.");
+  dialog = await dialogClosedPromise;
+
+  ok(!dialog._openedURL, "The dialog should have been closed.");
 
   // Then reopen the dialog again, to make sure we don't keep blocking:
-  dialogWindowPromise = BrowserTestUtils.domWindowOpenedAndLoaded();
+  dialogWindowPromise = waitForProtocolAppChooserDialog(
+    tab.linkedBrowser,
+    true
+  );
   BrowserTestUtils.synthesizeMouseAtCenter(
     "a:link",
     {},
@@ -233,16 +190,19 @@ add_task(async function test_multiple_dialogs() {
   dialog = await dialogWindowPromise;
 
   is(
-    dialog.document.location.href,
+    dialog._frame.contentDocument.location.href,
     CONTENT_HANDLING_URL,
     "Second dialog URL is as expected"
   );
 
-  dialogClosedPromise = BrowserTestUtils.domWindowClosed(dialog);
+  dialogClosedPromise = waitForProtocolAppChooserDialog(
+    tab.linkedBrowser,
+    false
+  );
   info("Removing tab to close the dialog.");
   gBrowser.removeTab(tab);
   await dialogClosedPromise;
-  ok(dialog.closed, "The dialog should have been closed again.");
+  ok(!dialog._frame.contentWindow, "The dialog should have been closed again.");
 });
 
 /**
@@ -256,7 +216,10 @@ add_task(async function invisible_iframes() {
   );
 
   // Ensure we notice the dialog opening:
-  let dialogWindowPromise = BrowserTestUtils.domWindowOpenedAndLoaded();
+  let dialogWindowPromise = waitForProtocolAppChooserDialog(
+    tab.linkedBrowser,
+    true
+  );
   await SpecialPowers.spawn(tab.linkedBrowser, [], function() {
     let frame = content.document.createElement("iframe");
     frame.style.display = "none";
@@ -266,12 +229,15 @@ add_task(async function invisible_iframes() {
   let dialog = await dialogWindowPromise;
 
   is(
-    dialog.document.location.href,
+    dialog._frame.contentDocument.location.href,
     CONTENT_HANDLING_URL,
     "Dialog opens as expected for invisible iframe"
   );
   // Close the dialog:
-  let dialogClosedPromise = BrowserTestUtils.domWindowClosed(dialog);
+  let dialogClosedPromise = waitForProtocolAppChooserDialog(
+    tab.linkedBrowser,
+    false
+  );
   dialog.close();
   await dialogClosedPromise;
   gBrowser.removeTab(tab);
@@ -287,7 +253,10 @@ add_task(async function nested_iframes() {
   );
 
   // Ensure we notice the dialog opening:
-  let dialogWindowPromise = BrowserTestUtils.domWindowOpenedAndLoaded();
+  let dialogWindowPromise = waitForProtocolAppChooserDialog(
+    tab.linkedBrowser,
+    true
+  );
   let innerLoaded = BrowserTestUtils.browserLoaded(
     tab.linkedBrowser,
     true,
@@ -328,12 +297,101 @@ add_task(async function nested_iframes() {
   let dialog = await dialogWindowPromise;
 
   is(
-    dialog.document.location.href,
+    dialog._frame.contentDocument.location.href,
     CONTENT_HANDLING_URL,
     "Dialog opens as expected for deeply nested cross-origin iframe"
   );
   // Close the dialog:
-  let dialogClosedPromise = BrowserTestUtils.domWindowClosed(dialog);
+  let dialogClosedPromise = waitForProtocolAppChooserDialog(
+    tab.linkedBrowser,
+    false
+  );
+  dialog.close();
+  await dialogClosedPromise;
+  gBrowser.removeTab(tab);
+});
+
+add_task(async function test_oop_iframe() {
+  const URI = `data:text/html,<div id="root"><iframe src="http://example.com/document-builder.sjs?html=<a href='mailto:help@example.com'>Mail it</a>"></iframe></div>`;
+
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, URI);
+
+  // Wait for the window and then click the link.
+  let dialogWindowPromise = waitForProtocolAppChooserDialog(
+    tab.linkedBrowser,
+    true
+  );
+
+  BrowserTestUtils.synthesizeMouseAtCenter(
+    "a:link",
+    {},
+    tab.linkedBrowser.browsingContext.children[0]
+  );
+
+  let dialog = await dialogWindowPromise;
+
+  is(
+    dialog._frame.contentDocument.location.href,
+    CONTENT_HANDLING_URL,
+    "Dialog URL is as expected"
+  );
+  let dialogClosedPromise = waitForProtocolAppChooserDialog(
+    tab.linkedBrowser,
+    false
+  );
+
+  info("Removing tab to close the dialog.");
+  gBrowser.removeTab(tab);
+  await dialogClosedPromise;
+  ok(!dialog._frame.contentWindow, "The dialog should have been closed.");
+});
+
+/**
+ * Check that a cross-origin iframe can navigate the top frame
+ * to an external protocol.
+ */
+add_task(async function xorigin_iframe_can_navigate_top() {
+  let tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "https://example.com/"
+  );
+
+  // Ensure we notice the dialog opening:
+  let dialogWindowPromise = waitForProtocolAppChooserDialog(
+    tab.linkedBrowser,
+    true
+  );
+  let innerLoaded = BrowserTestUtils.browserLoaded(
+    tab.linkedBrowser,
+    true,
+    "https://example.org/"
+  );
+  info("Constructing frame");
+  await SpecialPowers.spawn(tab.linkedBrowser, [], function() {
+    let frame = content.document.createElement("iframe");
+    frame.src = "https://example.org/"; // cross-origin frame.
+    content.document.body.prepend(frame);
+  });
+  await innerLoaded;
+
+  info("Navigating top bc from frame");
+  let parentBC = tab.linkedBrowser.browsingContext;
+  await SpecialPowers.spawn(parentBC.children[0], [], async function() {
+    content.eval("window.top.location.href = 'mailto:example@example.com';");
+  });
+
+  let dialog = await dialogWindowPromise;
+
+  is(
+    dialog._frame.contentDocument.location.href,
+    CONTENT_HANDLING_URL,
+    "Dialog opens as expected for navigating the top frame from an x-origin frame."
+  );
+  // Close the dialog:
+  let dialogClosedPromise = waitForProtocolAppChooserDialog(
+    tab.linkedBrowser,
+    false
+  );
   dialog.close();
   await dialogClosedPromise;
   gBrowser.removeTab(tab);

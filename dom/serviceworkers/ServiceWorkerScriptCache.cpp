@@ -6,7 +6,8 @@
 
 #include "ServiceWorkerScriptCache.h"
 
-#include "js/Array.h"  // JS::GetArrayLength
+#include "js/Array.h"               // JS::GetArrayLength
+#include "js/PropertyAndElement.h"  // JS_GetElement
 #include "mozilla/Unused.h"
 #include "mozilla/dom/CacheBinding.h"
 #include "mozilla/dom/cache/CacheStorage.h"
@@ -18,8 +19,10 @@
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/net/CookieJarSettings.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_extensions.h"
 #include "nsICacheInfoChannel.h"
+#include "nsIHttpChannel.h"
 #include "nsIStreamLoader.h"
 #include "nsIThreadRetargetableRequest.h"
 #include "nsIUUIDGenerator.h"
@@ -302,7 +305,7 @@ class CompareManager final : public PromiseNativeHandler {
     if (mAreScriptsEqual) {
       MOZ_ASSERT(mCallback);
       mCallback->ComparisonResult(aStatus, true /* aSameScripts */, mOnFailure,
-                                  EmptyString(), mMaxScope, mLoadFlags);
+                                  u""_ns, mMaxScope, mLoadFlags);
       Cleanup();
       return;
     }
@@ -543,7 +546,8 @@ class CompareManager final : public PromiseNativeHandler {
       return rv;
     }
 
-    RefPtr<InternalResponse> ir = new InternalResponse(200, "OK"_ns);
+    SafeRefPtr<InternalResponse> ir =
+        MakeSafeRefPtr<InternalResponse>(200, "OK"_ns);
     ir->SetBody(body, aCN->Buffer().Length());
     ir->SetURLList(aCN->URLList());
 
@@ -557,7 +561,7 @@ class CompareManager final : public PromiseNativeHandler {
     ir->Headers()->Fill(*(internalHeaders.get()), IgnoreErrors());
 
     RefPtr<Response> response =
-        new Response(aCache->GetGlobalObject(), ir, nullptr);
+        new Response(aCache->GetGlobalObject(), std::move(ir), nullptr);
 
     RequestOrUSVString request;
     request.SetAsUSVString().ShareOrDependUpon(aCN->URL());
@@ -661,9 +665,19 @@ nsresult CompareNetwork::Initialize(nsIPrincipal* aPrincipal,
 
   // Create a new cookieJarSettings.
   nsCOMPtr<nsICookieJarSettings> cookieJarSettings =
-      mozilla::net::CookieJarSettings::Create();
+      mozilla::net::CookieJarSettings::Create(aPrincipal);
 
-  net::CookieJarSettings::Cast(cookieJarSettings)->SetPartitionKey(uri);
+  // Populate the partitionKey by using the given prinicpal. The ServiceWorkers
+  // are using the foreign partitioned principal, so we can get the partitionKey
+  // from it and the partitionKey will only exist if it's in the third-party
+  // context. In first-party context, we can still use the uri to set the
+  // partitionKey.
+  if (!aPrincipal->OriginAttributesRef().mPartitionKey.IsEmpty()) {
+    net::CookieJarSettings::Cast(cookieJarSettings)
+        ->SetPartitionKey(aPrincipal->OriginAttributesRef().mPartitionKey);
+  } else {
+    net::CookieJarSettings::Cast(cookieJarSettings)->SetPartitionKey(uri);
+  }
 
   // Note that because there is no "serviceworker" RequestContext type, we can
   // use the TYPE_INTERNAL_SCRIPT content policy types when loading a service
@@ -934,7 +948,81 @@ CompareNetwork::OnStreamComplete(nsIStreamLoader* aLoader,
   }
 
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(request);
-  MOZ_ASSERT(httpChannel, "How come we don't have an HTTP channel?");
+
+  // Main scripts cannot be redirected successfully, however extensions
+  // may successfuly redirect imported scripts to a moz-extension url
+  // (if listed in the web_accessible_resources manifest property).
+  //
+  // When the service worker is initially registered the imported scripts
+  // will be loaded from the child process (see dom/workers/ScriptLoader.cpp)
+  // and in that case this method will only be called for the main script.
+  //
+  // When a registered worker is loaded again (e.g. when the webpage calls
+  // the ServiceWorkerRegistration's update method):
+  //
+  // - both the main and imported scripts are loaded by the
+  //   CompareManager::FetchScript
+  // - the update requests for the imported scripts will also be calling this
+  //   method and we should expect scripts redirected to an extension script
+  //   to have a null httpChannel.
+  //
+  // The request that triggers this method is:
+  //
+  // - the one that is coming from the network (which may be intercepted by
+  //   WebRequest listeners in extensions and redirected to a web_accessible
+  //   moz-extension url)
+  // - it will then be compared with a previous response that we may have
+  //   in the cache
+  //
+  // When the next service worker update occurs, if the request (for an imported
+  // script) is not redirected by an extension the cache entry is invalidated
+  // and a network request is triggered for the import.
+  if (!httpChannel) {
+    // Redirecting a service worker main script should fail before reaching this
+    // method.
+    // If a main script is somehow redirected, the diagnostic assert will crash
+    // in non-release builds.  Release builds will return an explicit error.
+    MOZ_DIAGNOSTIC_ASSERT(!mIsMainScript,
+                          "Unexpected ServiceWorker main script redirected");
+    if (mIsMainScript) {
+      return NS_ERROR_UNEXPECTED;
+    }
+
+    nsCOMPtr<nsIPrincipal> channelPrincipal;
+
+    nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
+    if (!ssm) {
+      return NS_ERROR_UNEXPECTED;
+    }
+
+    nsresult rv = ssm->GetChannelResultPrincipal(
+        channel, getter_AddRefs(channelPrincipal));
+
+    // An extension did redirect a non-MainScript request to a moz-extension url
+    // (in that case the originalURL is the resolved jar URI and so we have to
+    // look to the channel principal instead).
+    if (channelPrincipal->SchemeIs("moz-extension")) {
+      char16_t* buffer = nullptr;
+      size_t len = 0;
+
+      rv = ScriptLoader::ConvertToUTF16(channel, aString, aLen, u"UTF-8"_ns,
+                                        nullptr, buffer, len);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return rv;
+      }
+
+      mBuffer.Adopt(buffer, len);
+
+      return NS_OK;
+    }
+
+    // Make non-release and debug builds to crash if this happens and fail
+    // explicitly on release builds.
+    MOZ_DIAGNOSTIC_ASSERT(false,
+                          "ServiceWorker imported script redirected to an url "
+                          "with an unexpected scheme");
+    return NS_ERROR_UNEXPECTED;
+  }
 
   bool requestSucceeded;
   rv = httpChannel->GetRequestSucceeded(&requestSucceeded);
@@ -1178,7 +1266,7 @@ void CompareCache::ManageValueResult(JSContext* aCx,
     return;
   }
 
-  rv = mPump->AsyncRead(loader, nullptr);
+  rv = mPump->AsyncRead(loader);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     mPump = nullptr;
     Finish(rv, false);
@@ -1312,8 +1400,8 @@ void CompareManager::RejectedCallback(JSContext* aCx,
 
 void CompareManager::Fail(nsresult aStatus) {
   MOZ_ASSERT(NS_IsMainThread());
-  mCallback->ComparisonResult(aStatus, false /* aIsEqual */, mOnFailure,
-                              EmptyString(), EmptyCString(), mLoadFlags);
+  mCallback->ComparisonResult(aStatus, false /* aIsEqual */, mOnFailure, u""_ns,
+                              ""_ns, mLoadFlags);
   Cleanup();
 }
 

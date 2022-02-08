@@ -5,12 +5,10 @@
 "use strict";
 
 const { EnterprisePolicyTesting, PoliciesPrefTracker } = ChromeUtils.import(
-  "resource://testing-common/EnterprisePolicyTesting.jsm",
-  null
+  "resource://testing-common/EnterprisePolicyTesting.jsm"
 );
 const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm",
-  null
+  "resource://testing-common/TestUtils.jsm"
 );
 
 ChromeUtils.defineModuleGetter(
@@ -43,26 +41,32 @@ function checkUnlockedPref(prefName, prefValue) {
 
 // Checks that a page was blocked by seeing if it was replaced with about:neterror
 async function checkBlockedPage(url, expectedBlocked) {
-  await BrowserTestUtils.withNewTab(
-    {
-      gBrowser,
+  let newTab = BrowserTestUtils.addTab(gBrowser);
+  gBrowser.selectedTab = newTab;
+
+  if (expectedBlocked) {
+    let promise = BrowserTestUtils.waitForErrorPage(gBrowser.selectedBrowser);
+    BrowserTestUtils.loadURI(gBrowser, url);
+    await promise;
+    is(
+      newTab.linkedBrowser.documentURI.spec.startsWith(
+        "about:neterror?e=blockedByPolicy"
+      ),
+      true,
+      "Should be blocked by policy"
+    );
+  } else {
+    let promise = BrowserTestUtils.browserStopped(gBrowser, url);
+    BrowserTestUtils.loadURI(gBrowser, url);
+    await promise;
+
+    is(
+      newTab.linkedBrowser.documentURI.spec,
       url,
-      waitForLoad: false,
-      waitForStateStop: true,
-    },
-    async function() {
-      await BrowserTestUtils.waitForCondition(async function() {
-        let blocked = await SpecialPowers.spawn(
-          gBrowser.selectedBrowser,
-          [],
-          async function() {
-            return content.document.documentURI.startsWith("about:neterror");
-          }
-        );
-        return blocked == expectedBlocked;
-      }, `Page ${url} block was correct (expected=${expectedBlocked}).`);
-    }
-  );
+      "Should not be blocked by policy"
+    );
+  }
+  BrowserTestUtils.removeTab(newTab);
 }
 
 async function check_homepage({
@@ -192,3 +196,38 @@ registerCleanupFunction(async function policies_headjs_finishWithCleanSlate() {
   EnterprisePolicyTesting.resetRunOnceState();
   PoliciesPrefTracker.stop();
 });
+
+function waitForAddonInstall(addonId) {
+  return new Promise(resolve => {
+    let listener = {
+      onInstallEnded(install, addon) {
+        if (addon.id == addonId) {
+          AddonManager.removeInstallListener(listener);
+          resolve();
+        }
+      },
+      onDownloadFailed() {
+        AddonManager.removeInstallListener(listener);
+        resolve();
+      },
+      onInstallFailed() {
+        AddonManager.removeInstallListener(listener);
+        resolve();
+      },
+    };
+    AddonManager.addInstallListener(listener);
+  });
+}
+
+function waitForAddonUninstall(addonId) {
+  return new Promise(resolve => {
+    let listener = {};
+    listener.onUninstalled = addon => {
+      if (addon.id == addonId) {
+        AddonManager.removeAddonListener(listener);
+        resolve();
+      }
+    };
+    AddonManager.addAddonListener(listener);
+  });
+}

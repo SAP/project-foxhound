@@ -7,7 +7,12 @@
 #ifndef RETAINEDDISPLAYLISTHELPERS_H_
 #define RETAINEDDISPLAYLISTHELPERS_H_
 
+#include "mozilla/Span.h"
 #include "PLDHashTable.h"
+
+class nsIFrame;
+
+namespace mozilla {
 
 struct DisplayItemKey {
   bool operator==(const DisplayItemKey& aOther) const {
@@ -111,9 +116,9 @@ class DirectedAcyclicGraph {
 
   mozilla::Span<Index<T>> GetDirectPredecessors(Index<T> aNodeIndex) {
     NodeInfo& node = mNodesInfo[aNodeIndex.val];
-    return mozilla::MakeSpan(mDirectPredecessorList)
-        .Subspan(node.mIndexInDirectPredecessorList,
-                 node.mDirectPredecessorCount);
+    const auto span = mozilla::Span{mDirectPredecessorList};
+    return span.Subspan(node.mIndexInDirectPredecessorList,
+                        node.mDirectPredecessorCount);
   }
 
   template <typename OtherUnits>
@@ -176,5 +181,7 @@ struct OldItemInfo {
 
 bool AnyContentAncestorModified(nsIFrame* aFrame,
                                 nsIFrame* aStopAtFrame = nullptr);
+
+}  // namespace mozilla
 
 #endif  // RETAINEDDISPLAYLISTHELPERS_H_

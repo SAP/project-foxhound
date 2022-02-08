@@ -23,7 +23,7 @@ if (DEBUG_ALLOCATIONS) {
   // as it instantiates custom Debugger API instances and has to be running in a distinct
   // compartments from DevTools and system scopes (JSMs, XPCOM,...)
   const { DevToolsLoader } = ChromeUtils.import(
-    "resource://devtools/shared/Loader.jsm"
+    "resource://devtools/shared/loader/Loader.jsm"
   );
   const loader = new DevToolsLoader({
     invisibleToDebugger: true,
@@ -44,18 +44,25 @@ if (DEBUG_ALLOCATIONS) {
 }
 
 const { loader, require } = ChromeUtils.import(
-  "resource://devtools/shared/Loader.jsm"
+  "resource://devtools/shared/loader/Loader.jsm"
 );
 
 const { gDevTools } = require("devtools/client/framework/devtools");
-const { TargetFactory } = require("devtools/client/framework/target");
+const {
+  TabDescriptorFactory,
+} = require("devtools/client/framework/tab-descriptor-factory");
+const {
+  CommandsFactory,
+} = require("devtools/shared/commands/commands-factory");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 
-// This is overridden in files that load shared-head via loadSubScript.
-// eslint-disable-next-line prefer-const
-let promise = require("promise");
-const defer = require("devtools/shared/defer");
 const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
+
+loader.lazyRequireGetter(
+  this,
+  "ResponsiveUIManager",
+  "devtools/client/responsive/manager"
+);
 
 const TEST_DIR = gTestPath.substr(0, gTestPath.lastIndexOf("/"));
 const CHROME_URL_ROOT = TEST_DIR + "/";
@@ -85,13 +92,19 @@ const URL_ROOT_ORG_SSL = CHROME_URL_ROOT.replace(
 );
 const URL_ROOT_NET = CHROME_URL_ROOT.replace(
   "chrome://mochitests/content/",
-  "http://example.org/"
+  "http://example.net/"
+);
+const URL_ROOT_NET_SSL = CHROME_URL_ROOT.replace(
+  "chrome://mochitests/content/",
+  "https://example.net/"
 );
 // mochi.test:8888 is the actual primary location where files are served.
 const URL_ROOT_MOCHI_8888 = CHROME_URL_ROOT.replace(
   "chrome://mochitests/content/",
   "http://mochi.test:8888/"
 );
+
+const TARGET_SWITCHING_PREF = "devtools.target-switching.server.enabled";
 
 try {
   Services.scriptloader.loadSubScript(
@@ -115,8 +128,8 @@ require("devtools/client/framework/devtools-browser");
  * Observer code to register the test actor in every DevTools server which
  * starts registering its own actors.
  *
- * We require immediately the test actor file, because it will force to load and
- * register the front and the spec for TestActor. Normally specs and fronts are
+ * We require immediately the highlighter test actor file, because it will force to load and
+ * register the front and the spec for HighlighterTestActor. Normally specs and fronts are
  * in separate files registered in specs/index.js. But here to simplify the
  * setup everything is in the same file and we force to load it here.
  *
@@ -127,25 +140,25 @@ require("devtools/client/framework/devtools-browser");
  * alive until the test ends.
  *
  * To avoid leaks, the observer needs to be removed at the end of each test.
- * The test cleanup will send the async message "remove-devtools-testactor-observer",
+ * The test cleanup will send the async message "remove-devtools-highlightertestactor-observer",
  * we listen to this message to cleanup the observer.
  */
-function testActorBootstrap() {
-  const TEST_ACTOR_URL =
-    "chrome://mochitests/content/browser/devtools/client/shared/test/test-actor.js";
+function highlighterTestActorBootstrap() {
+  const HIGHLIGHTER_TEST_ACTOR_URL =
+    "chrome://mochitests/content/browser/devtools/client/shared/test/highlighter-test-actor.js";
 
   const { require: _require } = ChromeUtils.import(
-    "resource://devtools/shared/Loader.jsm"
+    "resource://devtools/shared/loader/Loader.jsm"
   );
-  _require(TEST_ACTOR_URL);
+  _require(HIGHLIGHTER_TEST_ACTOR_URL);
 
   const Services = _require("Services");
 
   const actorRegistryObserver = subject => {
     const actorRegistry = subject.wrappedJSObject;
-    actorRegistry.registerModule(TEST_ACTOR_URL, {
-      prefix: "test",
-      constructor: "TestActor",
+    actorRegistry.registerModule(HIGHLIGHTER_TEST_ACTOR_URL, {
+      prefix: "highlighterTest",
+      constructor: "HighlighterTestActor",
       type: { target: true },
     });
   };
@@ -170,39 +183,63 @@ function testActorBootstrap() {
   );
 }
 
-const testActorBootstrapScript = "data:,(" + testActorBootstrap + ")()";
+const highlighterTestActorBootstrapScript =
+  "data:,(" + highlighterTestActorBootstrap + ")()";
 Services.ppmm.loadProcessScript(
-  testActorBootstrapScript,
+  highlighterTestActorBootstrapScript,
   // Load this script in all processes (created or to be created)
   true
 );
 
 registerCleanupFunction(() => {
   Services.ppmm.broadcastAsyncMessage("remove-devtools-testactor-observer");
-  Services.ppmm.removeDelayedProcessScript(testActorBootstrapScript);
+  Services.ppmm.removeDelayedProcessScript(highlighterTestActorBootstrapScript);
 });
 
-// Spawn an instance of the test actor for the given toolbox
-async function getTestActor(toolbox) {
-  return toolbox.target.getFront("test");
+/**
+ * Spawn an instance of the highlighter test actor for the given toolbox
+ *
+ * @param {Toolbox} toolbox
+ * @param {Object} options
+ * @param {Function} options.target: Optional target to get the highlighterTestFront for.
+ *        If not provided, the top level target will be used.
+ * @returns {HighlighterTestFront}
+ */
+async function getHighlighterTestFront(toolbox, { target } = {}) {
+  // Loading the Inspector panel in order to overwrite the TestActor getter for the
+  // highlighter instance with a method that points to the currently visible
+  // Box Model Highlighter managed by the Inspector panel.
+  const inspector = await toolbox.loadTool("inspector");
+
+  const highlighterTestFront = await (target || toolbox.target).getFront(
+    "highlighterTest"
+  );
+  // Override the highligher getter with a method to return the active box model
+  // highlighter. Adaptation for multi-process scenarios where there can be multiple
+  // highlighters, one per process.
+  highlighterTestFront.highlighter = () => {
+    return inspector.highlighters.getActiveHighlighter(
+      inspector.highlighters.TYPES.BOXMODEL
+    );
+  };
+  return highlighterTestFront;
 }
 
-// Sometimes, we need the test actor before opening or without a toolbox then just
-// create a front for the given `tab`
-async function getTestActorWithoutToolbox(tab) {
-  const { DevToolsServer } = require("devtools/server/devtools-server");
-  const { DevToolsClient } = require("devtools/client/devtools-client");
+/**
+ * Spawn an instance of the highlighter test actor for the given tab, when we need the
+ * highlighter test front before opening or without a toolbox.
+ *
+ * @param {Tab} tab
+ * @returns {HighlighterTestFront}
+ */
+async function getHighlighterTestFrontWithoutToolbox(tab) {
+  const commands = await CommandsFactory.forTab(tab);
+  // Initialize the TargetCommands which require some async stuff to be done
+  // before being fully ready. This will define the `targetCommand.targetFront` attribute.
+  await commands.targetCommand.startListening();
 
-  // We need to spawn a client instance,
-  // but for that we have to first ensure a server is running
-  DevToolsServer.init();
-  DevToolsServer.registerAllActors();
-  const client = new DevToolsClient(DevToolsServer.connectPipe());
-  await client.connect();
-
-  const descriptor = await client.mainRoot.getTab({ tab });
-  const targetFront = await descriptor.getTarget();
-  return targetFront.getFront("test");
+  const targetFront = commands.targetCommand.targetFront;
+  return targetFront.getFront("highlighterTest");
 }
 
 // All test are asynchronous
@@ -248,20 +285,6 @@ registerCleanupFunction(() => {
   Services.obs.removeObserver(ConsoleObserver, "console-api-log-event");
 });
 
-var waitForTime = DevToolsUtils.waitForTime;
-
-function loadFrameScriptUtils(browser = gBrowser.selectedBrowser) {
-  let mm = browser.messageManager;
-  const frameURL =
-    "chrome://mochitests/content/browser/devtools/client/shared/test/frame-script-utils.js";
-  info("Loading the helper frame script " + frameURL);
-  mm.loadFrameScript(frameURL, false);
-  SimpleTest.registerCleanupFunction(() => {
-    mm = null;
-  });
-  return mm;
-}
-
 Services.prefs.setBoolPref("devtools.inspector.three-pane-enabled", true);
 
 // Disable this preference to reduce exceptions related to pending `listWorkers`
@@ -290,7 +313,17 @@ registerCleanupFunction(() => {
   );
 });
 
+var {
+  BrowserConsoleManager,
+} = require("devtools/client/webconsole/browser-console-manager");
+
 registerCleanupFunction(async function cleanup() {
+  // Closing the browser console if there's one
+  const browserConsole = BrowserConsoleManager.getBrowserConsole();
+  if (browserConsole) {
+    await safeCloseBrowserConsole({ clearOutput: true });
+  }
+
   // Close any tab opened by the test.
   // There should be only one tab opened by default when firefox starts the test.
   while (gBrowser.tabs.length > 1) {
@@ -316,6 +349,51 @@ registerCleanupFunction(async function cleanup() {
     }
   }
 });
+
+async function safeCloseBrowserConsole({ clearOutput = false } = {}) {
+  const hud = BrowserConsoleManager.getBrowserConsole();
+  if (!hud) {
+    return;
+  }
+
+  if (clearOutput) {
+    info("Clear the browser console output");
+    const { ui } = hud;
+    const promises = [ui.once("messages-cleared")];
+    // If there's an object inspector, we need to wait for the actors to be released.
+    if (ui.outputNode.querySelector(".object-inspector")) {
+      promises.push(ui.once("fronts-released"));
+    }
+    ui.clearOutput(true);
+    await Promise.all(promises);
+    info("Browser console cleared");
+  }
+
+  info("Wait for all Browser Console targets to be attached");
+  // It might happen that waitForAllTargetsToBeAttached does not resolve, so we set a
+  // timeout of 1s before closing
+  await Promise.race([
+    waitForAllTargetsToBeAttached(hud.commands.targetCommand),
+    wait(1000),
+  ]);
+
+  info("Close the Browser Console");
+  await BrowserConsoleManager.closeBrowserConsole();
+  info("Browser Console closed");
+}
+
+/**
+ * Returns a Promise that resolves when all the targets are fully attached.
+ *
+ * @param {TargetCommand} targetCommand
+ */
+function waitForAllTargetsToBeAttached(targetCommand) {
+  return Promise.allSettled(
+    targetCommand
+      .getAllTargets(targetCommand.ALL_TYPES)
+      .map(target => target._onThreadInitialized)
+  );
+}
 
 /**
  * Add a new test tab in the browser and load the given url.
@@ -350,6 +428,8 @@ var addTab = async function(url, options = {}) {
 
   if (waitForLoad) {
     await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+    // Waiting for presShell helps with test timeouts in webrender platforms.
+    await waitForPresShell(tab.linkedBrowser);
     info("Tab added and finished loading");
   } else {
     info("Tab added");
@@ -375,17 +455,20 @@ var removeTab = async function(tab) {
 };
 
 /**
- * Refresh the provided tab.
- * @param {Object} tab The tab to be refreshed. Defaults to the currently selected tab.
- * @return Promise<undefined> resolved when the tab is successfully refreshed.
+ * Alias for navigateTo which will reuse the current URI of the provided browser
+ * to trigger a navigation.
  */
-var refreshTab = async function(tab = gBrowser.selectedTab) {
-  info("Refreshing tab.");
-  const finished = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-  gBrowser.reloadTab(tab);
-  await finished;
-  info("Tab finished refreshing.");
-};
+async function reloadBrowser({
+  browser = gBrowser.selectedBrowser,
+  isErrorPage = false,
+  waitForLoad = true,
+} = {}) {
+  return navigateTo(browser.currentURI.spec, {
+    browser,
+    isErrorPage,
+    waitForLoad,
+  });
+}
 
 /**
  * Navigate the currently selected tab to a new URL and wait for it to load.
@@ -394,96 +477,259 @@ var refreshTab = async function(tab = gBrowser.selectedTab) {
  *
  * @param {String} url The url to be loaded in the current tab.
  * @param {JSON} options Optional dictionary object with the following keys:
- *        - {Boolean} isErrorPage You may pass `true` is the URL is an error
- *                    page. Otherwise BrowserTestUtils.browserLoaded will wait
- *                    for 'load' event, which never fires for error pages.
+ *        - {XULBrowser} browser
+ *          The browser element which should navigate. Defaults to the selected
+ *          browser.
+ *        - {Boolean} isErrorPage
+ *          You may pass `true` if the URL is an error page. Otherwise
+ *          BrowserTestUtils.browserLoaded will wait for 'load' event, which
+ *          never fires for error pages.
+ *        - {Boolean} waitForLoad
+ *          You may pass `false` if the page load is expected to be blocked by
+ *          a script or a breakpoint.
  *
  * @return a promise that resolves when the page has fully loaded.
  */
-async function navigateTo(uri, { isErrorPage = false } = {}) {
-  const target = await TargetFactory.forTab(gBrowser.selectedTab);
-  const toolbox = gDevTools.getToolbox(target);
+async function navigateTo(
+  uri,
+  {
+    browser = gBrowser.selectedBrowser,
+    isErrorPage = false,
+    waitForLoad = true,
+  } = {}
+) {
+  const waitForDevToolsReload = await watchForDevToolsReload(browser, {
+    isErrorPage,
+    waitForLoad,
+  });
 
-  // If we're switching origins, we need to wait for the 'switched-target'
-  // event to make sure everything is ready.
-  // Navigating from/to pages loaded in the parent process, like about:robots,
-  // also spawn new targets.
-  // (If target-switching pref is false, the toolbox will reboot)
-  const onTargetSwitched = toolbox.targetList.once("switched-target");
-  // Otherwise, if we don't switch target, it is safe to wait for navigate event.
-  const onNavigate = target.once("navigate");
+  uri = uri.replaceAll("\n", "");
+  info(`Navigating to "${uri}"`);
 
-  // Register panel-specific listeners, which would be useful to wait
-  // for panel-specific events.
-  const onPanelReloaded = waitForPanelReload(
-    toolbox.currentToolId,
-    toolbox.target,
-    toolbox.getCurrentPanel()
-  );
-
-  info(`Load document "${uri}"`);
-  const browser = gBrowser.selectedBrowser;
-  const currentPID = browser.browsingContext.currentWindowGlobal.osPid;
   const onBrowserLoaded = BrowserTestUtils.browserLoaded(
     browser,
+    // includeSubFrames
     false,
-    null,
+    // resolve on this specific page to load (if null, it would be any page load)
+    loadedUrl => {
+      // loadedUrl is encoded, while uri might not be.
+      return loadedUrl === uri || decodeURI(loadedUrl) === uri;
+    },
     isErrorPage
   );
-  await BrowserTestUtils.loadURI(browser, uri);
 
-  info(`Waiting for page to be loaded…`);
-  await onBrowserLoaded;
-  info(`→ page loaded`);
-
-  // Compare the PIDs (and not the toolbox's targets) as PIDs are updated also immediately,
-  // while target may be updated slightly later.
-  const switchedToAnotherProcess =
-    currentPID !== browser.browsingContext.currentWindowGlobal.osPid;
-
-  // If we switched to another process and the target switching pref is false,
-  // the toolbox will close and reopen.
-  // For now, this helper doesn't support this case
-  if (
-    switchedToAnotherProcess &&
-    !Services.prefs.getBoolPref("devtools.target-switching.enabled", false)
-  ) {
-    ok(
-      false,
-      `navigateTo(${uri}) navigated to another process, but the target-switching preference is false`
-    );
-    return;
-  }
-
-  if (onPanelReloaded) {
-    info(`Waiting for ${toolbox.currentToolId} to be reloaded…`);
-    await onPanelReloaded();
-    info(`→ panel reloaded`);
-  }
-
-  // If the tab navigated to another process, expect a target switching
-  if (switchedToAnotherProcess) {
-    info(`Waiting for target switch…`);
-    await onTargetSwitched;
-    info(`→ switched-target emitted`);
+  // if we're navigating to the same page we're already on, use reloadTab instead as the
+  // behavior slightly differs from loadURI (e.g. scroll position isn't keps with the latter).
+  if (uri === browser.currentURI.spec) {
+    gBrowser.reloadTab(gBrowser.getTabForBrowser(browser));
   } else {
-    info(`Waiting for target 'navigate' event…`);
-    await onNavigate;
-    info(`→ 'navigate' emitted`);
+    BrowserTestUtils.loadURI(browser, uri);
   }
+
+  if (waitForLoad) {
+    info(`Waiting for page to be loaded…`);
+    await onBrowserLoaded;
+    info(`→ page loaded`);
+  }
+
+  await waitForDevToolsReload();
 }
 
 /**
- * Return a function, specific for each panel, in order
- * to wait for any update which may happen when reloading a page.
+ * This method should be used to watch for completion of any browser navigation
+ * performed with a DevTools UI.
+ *
+ * It should watch for:
+ * - Toolbox reload
+ * - Toolbox commands reload
+ * - RDM reload
+ * - RDM commands reload
+ *
+ * And it should work both for target switching or old-style navigations.
+ *
+ * This method, similarly to all the other watch* navigation methods in this file,
+ * is async but returns another method which should be called after the navigation
+ * is done. Browser navigation might be monitored differently depending on the
+ * situation, so it's up to the caller to handle it as needed.
+ *
+ * Typically, this would be used as follows:
+ * ```
+ *   async function someNavigationHelper(browser) {
+ *     const waitForDevToolsFn = await watchForDevToolsReload(browser);
+ *
+ *     // This step should wait for the load to be completed from the browser's
+ *     // point of view, so that waitForDevToolsFn can compare pIds, browsing
+ *     // contexts etc... and check if we should expect a target switch
+ *     await performBrowserNavigation(browser);
+ *
+ *     await waitForDevToolsFn();
+ *   }
+ * ```
  */
-function waitForPanelReload(currentToolId, target, panel) {
-  if (currentToolId == "inspector") {
-    const inspector = panel;
-    const markuploaded = inspector.once("markuploaded");
-    const onNewRoot = inspector.once("new-root");
-    const onUpdated = inspector.once("inspector-updated");
-    const onReloaded = inspector.once("reloaded");
+async function watchForDevToolsReload(
+  browser,
+  { isErrorPage = false, waitForLoad = true } = {}
+) {
+  const waitForToolboxReload = await _watchForToolboxReload(browser, {
+    isErrorPage,
+    waitForLoad,
+  });
+  const waitForResponsiveReload = await _watchForResponsiveReload(browser, {
+    isErrorPage,
+    waitForLoad,
+  });
+
+  return async function() {
+    info("Wait for the toolbox to reload");
+    await waitForToolboxReload();
+
+    info("Wait for Responsive UI to reload");
+    await waitForResponsiveReload();
+  };
+}
+
+/**
+ * Start watching for the toolbox reload to be completed:
+ * - watch for the toolbox's commands to be fully reloaded
+ * - watch for the toolbox's current panel to be reloaded
+ */
+async function _watchForToolboxReload(
+  browser,
+  { isErrorPage, waitForLoad } = {}
+) {
+  const tab = gBrowser.getTabForBrowser(browser);
+
+  const toolbox = await gDevTools.getToolboxForTab(tab);
+
+  if (!toolbox) {
+    // No toolbox to wait for
+    return function() {};
+  }
+
+  const waitForCurrentPanelReload = watchForCurrentPanelReload(toolbox);
+  const waitForToolboxCommandsReload = await watchForCommandsReload(
+    toolbox.commands,
+    { isErrorPage, waitForLoad }
+  );
+  const checkTargetSwitching = await watchForTargetSwitching(
+    toolbox.commands,
+    browser
+  );
+
+  return async function() {
+    const isTargetSwitching = checkTargetSwitching();
+
+    info(`Waiting for toolbox commands to be reloaded…`);
+    await waitForToolboxCommandsReload(isTargetSwitching);
+
+    // TODO: We should wait for all loaded panels to reload here, because some
+    // of them might still perform background updates.
+    if (waitForCurrentPanelReload) {
+      info(`Waiting for ${toolbox.currentToolId} to be reloaded…`);
+      await waitForCurrentPanelReload();
+      info(`→ panel reloaded`);
+    }
+  };
+}
+
+/**
+ * Start watching for Responsive UI (RDM) reload to be completed:
+ * - watch for the Responsive UI's commands to be fully reloaded
+ * - watch for the Responsive UI's target switch to be done
+ */
+async function _watchForResponsiveReload(
+  browser,
+  { isErrorPage, waitForLoad } = {}
+) {
+  const tab = gBrowser.getTabForBrowser(browser);
+  const ui = ResponsiveUIManager.getResponsiveUIForTab(tab);
+
+  if (!ui) {
+    // No responsive UI to wait for
+    return function() {};
+  }
+
+  const onResponsiveTargetSwitch = ui.once("responsive-ui-target-switch-done");
+  const waitForResponsiveCommandsReload = await watchForCommandsReload(
+    ui.commands,
+    { isErrorPage, waitForLoad }
+  );
+  const checkTargetSwitching = await watchForTargetSwitching(
+    ui.commands,
+    browser
+  );
+
+  return async function() {
+    const isTargetSwitching = checkTargetSwitching();
+
+    info(`Waiting for responsive ui commands to be reloaded…`);
+    await waitForResponsiveCommandsReload(isTargetSwitching);
+
+    if (isTargetSwitching) {
+      await onResponsiveTargetSwitch;
+    }
+  };
+}
+
+/**
+ * Watch for the current panel selected in the provided toolbox to be reloaded.
+ * Some panels implement custom events that should be expected for every reload.
+ *
+ * Note about returning a method instead of a promise:
+ * In general this pattern is useful so that we can check if a target switch
+ * occurred or not, and decide which events to listen for. So far no panel is
+ * behaving differently whether there was a target switch or not. But to remain
+ * consistent with other watch* methods we still return a function here.
+ *
+ * @param {Toolbox}
+ *        The Toolbox instance which is going to experience a reload
+ * @return {function} An async method to be called and awaited after the reload
+ *         started. Will return `null` for panels which don't implement any
+ *         specific reload event.
+ */
+function watchForCurrentPanelReload(toolbox) {
+  return _watchForPanelReload(toolbox, toolbox.currentToolId);
+}
+
+/**
+ * Watch for all the panels loaded in the provided toolbox to be reloaded.
+ * Some panels implement custom events that should be expected for every reload.
+ *
+ * Note about returning a method instead of a promise:
+ * See comment for watchForCurrentPanelReload
+ *
+ * @param {Toolbox}
+ *        The Toolbox instance which is going to experience a reload
+ * @return {function} An async method to be called and awaited after the reload
+ *         started.
+ */
+function watchForLoadedPanelsReload(toolbox) {
+  const waitForPanels = [];
+  for (const [id] of toolbox.getToolPanels()) {
+    // Store a watcher method for each panel already loaded.
+    waitForPanels.push(_watchForPanelReload(toolbox, id));
+  }
+
+  return function() {
+    return Promise.all(
+      waitForPanels.map(async watchPanel => {
+        // Wait for all panels to be reloaded.
+        if (watchPanel) {
+          await watchPanel();
+        }
+      })
+    );
+  };
+}
+
+function _watchForPanelReload(toolbox, toolId) {
+  const panel = toolbox.getPanel(toolId);
+
+  if (toolId == "inspector") {
+    const markuploaded = panel.once("markuploaded");
+    const onNewRoot = panel.once("new-root");
+    const onUpdated = panel.once("inspector-updated");
+    const onReloaded = panel.once("reloaded");
 
     return async function() {
       info("Waiting for markup view to load after navigation.");
@@ -498,25 +744,152 @@ function waitForPanelReload(currentToolId, target, panel) {
       info("Waiting for inspector updates after page reload");
       await onReloaded;
     };
-  } else if (currentToolId == "netmonitor") {
-    const monitor = panel;
-    const onReloaded = monitor.once("reloaded");
+  } else if (toolId == "netmonitor") {
+    const onReloaded = panel.once("reloaded");
     return async function() {
       info("Waiting for netmonitor updates after page reload");
+      await onReloaded;
+    };
+  } else if (toolId == "accessibility") {
+    const onReloaded = panel.once("reloaded");
+    return async function() {
+      info("Waiting for accessibility updates after page reload");
       await onReloaded;
     };
   }
   return null;
 }
 
+/**
+ * Watch for a Commands instance to be reloaded after a navigation.
+ *
+ * As for other navigation watch* methods, this should be called before the
+ * navigation starts, and the function it returns should be called after the
+ * navigation is done from a Browser point of view.
+ *
+ * !!! The wait function expects a `isTargetSwitching` argument to be provided,
+ * which needs to be monitored using watchForTargetSwitching !!!
+ */
+async function watchForCommandsReload(
+  commands,
+  { isErrorPage = false, waitForLoad = true } = {}
+) {
+  // If we're switching origins, we need to wait for the 'switched-target'
+  // event to make sure everything is ready.
+  // Navigating from/to pages loaded in the parent process, like about:robots,
+  // also spawn new targets.
+  // (If target switching is disabled, the toolbox will reboot)
+  const onTargetSwitched = commands.targetCommand.once("switched-target");
+
+  // Wait until we received a page load resource:
+  // - dom-complete if we can wait for a full page load
+  // - dom-loading otherwise
+  // This allows to wait for page load for consumers calling directly
+  // waitForDevTools instead of navigateTo/reloadBrowser.
+  // This is also useful as an alternative to target switching, when no target
+  // switch is supposed to happen.
+  const waitForCompleteLoad = waitForLoad && !isErrorPage;
+  const documentEventName = waitForCompleteLoad
+    ? "dom-complete"
+    : "dom-loading";
+
+  const {
+    onResource: onTopLevelDomEvent,
+  } = await commands.resourceCommand.waitForNextResource(
+    commands.resourceCommand.TYPES.DOCUMENT_EVENT,
+    {
+      ignoreExistingResources: true,
+      predicate: resource =>
+        resource.targetFront.isTopLevel && resource.name === documentEventName,
+    }
+  );
+
+  return async function(isTargetSwitching) {
+    if (typeof isTargetSwitching === "undefined") {
+      throw new Error("isTargetSwitching was not provided to the wait method");
+    }
+
+    if (isTargetSwitching) {
+      info(`Waiting for target switch…`);
+      await onTargetSwitched;
+      info(`→ switched-target emitted`);
+    }
+
+    info(`Waiting for '${documentEventName}' resource…`);
+    await onTopLevelDomEvent;
+    info(`→ '${documentEventName}' resource emitted`);
+
+    return isTargetSwitching;
+  };
+}
+
+/**
+ * Watch if an upcoming navigation will trigger a target switching, for the
+ * provided Commands instance and the provided Browser.
+ *
+ * As for other navigation watch* methods, this should be called before the
+ * navigation starts, and the function it returns should be called after the
+ * navigation is done from a Browser point of view.
+ */
+async function watchForTargetSwitching(commands, browser) {
+  browser = browser || gBrowser.selectedBrowser;
+  const currentPID = browser.browsingContext.currentWindowGlobal.osPid;
+  const currentBrowsingContextID = browser.browsingContext.id;
+
+  // If the current top-level target follows the window global lifecycle, a
+  // target switch will occur regardless of process changes.
+  const targetFollowsWindowLifecycle =
+    commands.targetCommand.targetFront.targetForm.followWindowGlobalLifeCycle;
+
+  return function() {
+    // Compare the PIDs (and not the toolbox's targets) as PIDs are updated also immediately,
+    // while target may be updated slightly later.
+    const switchedProcess =
+      currentPID !== browser.browsingContext.currentWindowGlobal.osPid;
+    const switchedBrowsingContext =
+      currentBrowsingContextID !== browser.browsingContext.id;
+
+    return (
+      targetFollowsWindowLifecycle || switchedProcess || switchedBrowsingContext
+    );
+  };
+}
+
+/**
+ * Create a Target for the provided tab and attach to it before resolving.
+ * This should only be used for tests which don't involve the frontend or a
+ * toolbox. Typically, retrieving the target and attaching to it should be
+ * handled at framework level when a Toolbox is used.
+ *
+ * @param {XULTab} tab
+ *        The tab for which a target should be created.
+ * @return {WindowGlobalTargetFront} The attached target front.
+ */
+async function createAndAttachTargetForTab(tab) {
+  info("Creating and attaching to a local tab target");
+
+  const commands = await CommandsFactory.forTab(tab);
+
+  // Initialize the TargetCommands which require some async stuff to be done
+  // before being fully ready. This will define the `targetCommand.targetFront` attribute.
+  await commands.targetCommand.startListening();
+
+  const target = commands.targetCommand.targetFront;
+  return target;
+}
+
 function isFissionEnabled() {
   return SpecialPowers.useRemoteSubframes;
 }
 
-function isTargetSwitchingEnabled() {
-  return (
-    isFissionEnabled() &&
-    Services.prefs.getBoolPref("devtools.target-switching.enabled", false)
+function isServerTargetSwitchingEnabled() {
+  return Services.prefs.getBoolPref(TARGET_SWITCHING_PREF);
+}
+
+function isEveryFrameTargetEnabled() {
+  return Services.prefs.getBoolPref(
+    "devtools.every-frame-target.enabled",
+    false
   );
 }
 
@@ -525,48 +898,19 @@ function isTargetSwitchingEnabled() {
  * @param {string} url  The URL to open.
  * @param {String} hostType Optional hostType, as defined in Toolbox.HostType
  * @return A promise that is resolved once the tab and inspector have loaded
- *         with an object: { tab, toolbox, inspector }.
+ *         with an object: { tab, toolbox, inspector, highlighterTestFront }.
  */
 var openInspectorForURL = async function(url, hostType) {
   const tab = await addTab(url);
-  const { inspector, toolbox, testActor } = await openInspector(hostType);
-  return { tab, inspector, toolbox, testActor };
+  const { inspector, toolbox, highlighterTestFront } = await openInspector(
+    hostType
+  );
+  return { tab, inspector, toolbox, highlighterTestFront };
 };
 
 async function getActiveInspector() {
-  const target = await TargetFactory.forTab(gBrowser.selectedTab);
-  return gDevTools.getToolbox(target).getPanel("inspector");
-}
-
-/**
- * Simulate a key event from a <key> element.
- * @param {DOMNode} key
- */
-function synthesizeKeyFromKeyTag(key) {
-  is(key && key.tagName, "key", "Successfully retrieved the <key> node");
-
-  const modifiersAttr = key.getAttribute("modifiers");
-
-  let name = null;
-
-  if (key.getAttribute("keycode")) {
-    name = key.getAttribute("keycode");
-  } else if (key.getAttribute("key")) {
-    name = key.getAttribute("key");
-  }
-
-  isnot(name, null, "Successfully retrieved keycode/key");
-
-  const modifiers = {
-    shiftKey: !!modifiersAttr.match("shift"),
-    ctrlKey: !!modifiersAttr.match("control"),
-    altKey: !!modifiersAttr.match("alt"),
-    metaKey: !!modifiersAttr.match("meta"),
-    accelKey: !!modifiersAttr.match("accel"),
-  };
-
-  info("Synthesizing key " + name + " " + JSON.stringify(modifiers));
-  EventUtils.synthesizeKey(name, modifiers);
+  const toolbox = await gDevTools.getToolboxForTab(gBrowser.selectedTab);
+  return toolbox.getPanel("inspector");
 }
 
 /**
@@ -593,6 +937,80 @@ function synthesizeKeyShortcut(key, target) {
 
   info("Synthesizing key shortcut: " + key);
   EventUtils.synthesizeKey(shortcut.key || "", keyEvent, target);
+}
+
+var waitForTime = DevToolsUtils.waitForTime;
+
+/**
+ * Wait for a tick.
+ * @return {Promise}
+ */
+function waitForTick() {
+  return new Promise(resolve => DevToolsUtils.executeSoon(resolve));
+}
+
+/**
+ * This shouldn't be used in the tests, but is useful when writing new tests or
+ * debugging existing tests in order to introduce delays in the test steps
+ *
+ * @param {Number} ms
+ *        The time to wait
+ * @return A promise that resolves when the time is passed
+ */
+function wait(ms) {
+  return new Promise(resolve => {
+    setTimeout(resolve, ms);
+    info("Waiting " + ms / 1000 + " seconds.");
+  });
+}
+
+/**
+ * Wait for a predicate to return a result.
+ *
+ * @param function condition
+ *        Invoked once in a while until it returns a truthy value. This should be an
+ *        idempotent function, since we have to run it a second time after it returns
+ *        true in order to return the value.
+ * @param string message [optional]
+ *        A message to output if the condition fails.
+ * @param number interval [optional]
+ *        How often the predicate is invoked, in milliseconds.
+ *        Can be set globally for a test via `waitFor.overrideIntervalForTestFile = someNumber;`.
+ * @param number maxTries [optional]
+ *        How many times the predicate is invoked before timing out.
+ *        Can be set globally for a test via `waitFor.overrideMaxTriesForTestFile = someNumber;`.
+ * @return object
+ *         A promise that is resolved with the result of the condition.
+ */
+async function waitFor(condition, message = "", interval = 10, maxTries = 500) {
+  // Update interval & maxTries if overrides are defined on the waitFor object.
+  interval =
+    typeof waitFor.overrideIntervalForTestFile !== "undefined"
+      ? waitFor.overrideIntervalForTestFile
+      : interval;
+  maxTries =
+    typeof waitFor.overrideMaxTriesForTestFile !== "undefined"
+      ? waitFor.overrideMaxTriesForTestFile
+      : maxTries;
+
+  try {
+    const value = await BrowserTestUtils.waitForCondition(
+      condition,
+      message,
+      interval,
+      maxTries
+    );
+    return value;
+  } catch (e) {
+    const errorMessage =
+      "Failed waitFor(): " +
+      message +
+      "\n" +
+      "Failed condition: " +
+      condition +
+      "\n";
+    throw new Error(errorMessage);
+  }
 }
 
 /**
@@ -707,29 +1125,6 @@ function loadHelperScript(filePath) {
 }
 
 /**
- * Wait for a tick.
- * @return {Promise}
- */
-function waitForTick() {
-  return new Promise(resolve => DevToolsUtils.executeSoon(resolve));
-}
-
-/**
- * This shouldn't be used in the tests, but is useful when writing new tests or
- * debugging existing tests in order to introduce delays in the test steps
- *
- * @param {Number} ms
- *        The time to wait
- * @return A promise that resolves when the time is passed
- */
-function wait(ms) {
-  return new Promise(resolve => {
-    setTimeout(resolve, ms);
-    info("Waiting " + ms / 1000 + " seconds.");
-  });
-}
-
-/**
  * Open the toolbox in a given tab.
  * @param {XULNode} tab The tab the toolbox should be opened in.
  * @param {String} toolId Optional. The ID of the tool to be selected.
@@ -740,10 +1135,9 @@ var openToolboxForTab = async function(tab, toolId, hostType) {
   info("Opening the toolbox");
 
   let toolbox;
-  const target = await TargetFactory.forTab(tab);
 
   // Check if the toolbox is already loaded.
-  toolbox = gDevTools.getToolbox(target);
+  toolbox = await gDevTools.getToolboxForTab(tab);
   if (toolbox) {
     if (!toolId || (toolId && toolbox.getPanel(toolId))) {
       info("Toolbox is already opened");
@@ -752,7 +1146,7 @@ var openToolboxForTab = async function(tab, toolId, hostType) {
   }
 
   // If not, load it now.
-  toolbox = await gDevTools.showToolbox(target, toolId, hostType);
+  toolbox = await gDevTools.showToolboxForTab(tab, { toolId, hostType });
 
   // Make sure that the toolbox frame is focused.
   await new Promise(resolve => waitForFocus(resolve, toolbox.win));
@@ -782,11 +1176,8 @@ var openNewTabAndToolbox = async function(url, toolId, hostType) {
  * closed.
  */
 var closeTabAndToolbox = async function(tab = gBrowser.selectedTab) {
-  if (TargetFactory.isKnownTab(tab)) {
-    const target = await TargetFactory.forTab(tab);
-    if (target) {
-      await gDevTools.closeToolbox(target);
-    }
+  if (TabDescriptorFactory.isKnownTab(tab)) {
+    await gDevTools.closeToolboxForTab(tab);
   }
 
   await removeTab(tab);
@@ -804,6 +1195,38 @@ var closeToolboxAndTab = async function(toolbox) {
   await toolbox.destroy();
   await removeTab(gBrowser.selectedTab);
 };
+
+/**
+ * Retrieve all tool ids compatible with a target created for the provided tab.
+ *
+ * @param {XULTab} tab
+ *        The tab for which we want to get the list of supported toolIds
+ * @return {Array<String>} array of tool ids
+ */
+async function getSupportedToolIds(tab) {
+  info("Getting the entire list of tools supported in this tab");
+
+  let shouldDestroyToolbox = false;
+
+  // Get the toolbox for this tab, or create one if needed.
+  let toolbox = await gDevTools.getToolboxForTab(tab);
+  if (!toolbox) {
+    toolbox = await gDevTools.showToolboxForTab(tab);
+    shouldDestroyToolbox = true;
+  }
+
+  const toolIds = gDevTools
+    .getToolDefinitionArray()
+    .filter(def => def.isTargetSupported(toolbox.target))
+    .map(def => def.id);
+
+  if (shouldDestroyToolbox) {
+    // Only close the toolbox if it was explicitly created here.
+    await toolbox.destroy();
+  }
+
+  return toolIds;
+}
 
 /**
  * Waits until a predicate returns true.
@@ -835,30 +1258,6 @@ async function asyncWaitUntil(predicate, interval = 10) {
     // Test the predicate again.
     success = await predicate();
   }
-}
-
-/**
- * Takes a string `script` and evaluates it directly in the content
- * in potentially a different process.
- */
-let MM_INC_ID = 0;
-function evalInDebuggee(script, browser = gBrowser.selectedBrowser) {
-  return new Promise(resolve => {
-    const id = MM_INC_ID++;
-    const mm = browser.messageManager;
-    mm.sendAsyncMessage("devtools:test:eval", { script, id });
-    mm.addMessageListener("devtools:test:eval:response", handler);
-
-    function handler({ data }) {
-      if (id !== data.id) {
-        return;
-      }
-
-      info(`Successfully evaled in debuggee: ${script}`);
-      mm.removeMessageListener("devtools:test:eval:response", handler);
-      resolve(data.value);
-    }
-  });
 }
 
 /**
@@ -957,8 +1356,7 @@ function lookupPath(obj, path) {
 }
 
 var closeToolbox = async function() {
-  const target = await TargetFactory.forTab(gBrowser.selectedTab);
-  await gDevTools.closeToolbox(target);
+  await gDevTools.closeToolboxForTab(gBrowser.selectedTab);
 };
 
 /**
@@ -975,6 +1373,13 @@ function emptyClipboard() {
  */
 function isWindows() {
   return Services.appinfo.OS === "WINNT";
+}
+
+/**
+ * Enables server target switching
+ */
+async function enableTargetSwitching() {
+  await pushPref(TARGET_SWITCHING_PREF, true);
 }
 
 /**
@@ -1047,7 +1452,7 @@ async function registerActorInContentProcess(url, options) {
     args => {
       // eslint-disable-next-line no-shadow
       const { require } = ChromeUtils.import(
-        "resource://devtools/shared/Loader.jsm"
+        "resource://devtools/shared/loader/Loader.jsm"
       );
       const {
         ActorRegistry,
@@ -1082,25 +1487,415 @@ function getCurrentTestFilePath() {
 }
 
 /**
- * Wait for a single resource of the provided resourceType.
+ * Unregister all registered service workers.
  *
- * @param {ResourceWatcher} resourceWatcher
- *        The ResourceWatcher instance that should emit the expected resource.
- * @param {String} resourceType
- *        One of ResourceWatcher.TYPES, type of the expected resource.
- * @return {Object}
- *         - resource {Object} the resource itself
- *         - targetFront {TargetFront} the target which owns the resource
+ * @param {DevToolsClient} client
  */
-function waitForResourceOnce(resourceWatcher, resourceType) {
-  return new Promise(resolve => {
-    const onAvailable = ({ targetFront, resource }) => {
-      resolve({ targetFront, resource });
-      resourceWatcher.unwatchResources([resourceType], { onAvailable });
+async function unregisterAllServiceWorkers(client) {
+  info("Wait until all workers have a valid registrationFront");
+  let workers;
+  await asyncWaitUntil(async function() {
+    workers = await client.mainRoot.listAllWorkers();
+    const allWorkersRegistered = workers.service.every(
+      worker => !!worker.registrationFront
+    );
+    return allWorkersRegistered;
+  });
+
+  info("Unregister all service workers");
+  const promises = [];
+  for (const worker of workers.service) {
+    promises.push(worker.registrationFront.unregister());
+  }
+  await Promise.all(promises);
+}
+
+/**********************
+ * Screenshot helpers *
+ **********************/
+
+/**
+ * Returns an object containing the r,g and b colors of the provided image at
+ * the passed position
+ *
+ * @param {Image} image
+ * @param {Int} x
+ * @param {Int} y
+ * @returns Object with the following properties:
+ *           - {Int} r: The red component of the pixel
+ *           - {Int} g: The green component of the pixel
+ *           - {Int} b: The blue component of the pixel
+ */
+
+function colorAt(image, x, y) {
+  // Create a test canvas element.
+  const HTML_NS = "http://www.w3.org/1999/xhtml";
+  const canvas = document.createElementNS(HTML_NS, "canvas");
+  canvas.width = image.width;
+  canvas.height = image.height;
+
+  // Draw the image in the canvas
+  const context = canvas.getContext("2d");
+  context.drawImage(image, 0, 0, image.width, image.height);
+
+  // Return the color found at the provided x,y coordinates as a "r, g, b" string.
+  const [r, g, b] = context.getImageData(x, y, 1, 1).data;
+  return { r, g, b };
+}
+
+let allDownloads = [];
+/**
+ * Returns a Promise that resolves when a new screenshot is available in the download folder.
+ */
+async function waitUntilScreenshot() {
+  const { Downloads } = require("resource://gre/modules/Downloads.jsm");
+  const list = await Downloads.getList(Downloads.ALL);
+
+  return new Promise(function(resolve) {
+    const view = {
+      onDownloadAdded: async download => {
+        await download.whenSucceeded();
+        if (allDownloads.includes(download)) {
+          return;
+        }
+
+        allDownloads.push(download);
+        resolve(download.target.path);
+        list.removeView(view);
+      },
     };
-    resourceWatcher.watchResources([resourceType], {
-      ignoreExistingResources: true,
-      onAvailable,
+
+    list.addView(view);
+  });
+}
+
+/**
+ * Clear all the download references.
+ */
+async function resetDownloads() {
+  info("Reset downloads");
+  const { Downloads } = require("resource://gre/modules/Downloads.jsm");
+  const publicList = await Downloads.getList(Downloads.PUBLIC);
+  const downloads = await publicList.getAll();
+  for (const download of downloads) {
+    publicList.remove(download);
+    await download.finalize(true);
+  }
+  allDownloads = [];
+}
+
+/**
+ * Return a screenshot of the currently selected node in the inspector (using the internal
+ * Inspector#screenshotNode method).
+ *
+ * @param {Inspector} inspector
+ * @returns {Image}
+ */
+async function takeNodeScreenshot(inspector) {
+  // Cleanup all downloads at the end of the test.
+  registerCleanupFunction(resetDownloads);
+
+  info(
+    "Call screenshotNode() and wait until the screenshot is found in the Downloads"
+  );
+  const whenScreenshotSucceeded = waitUntilScreenshot();
+  inspector.screenshotNode();
+  const filePath = await whenScreenshotSucceeded;
+
+  info("Create an image using the downloaded fileas source");
+  const image = new Image();
+  const onImageLoad = once(image, "load");
+  image.src = OS.Path.toFileURI(filePath);
+  await onImageLoad;
+
+  info("Remove the downloaded screenshot file");
+  await OS.File.remove(filePath);
+
+  // See intermittent Bug 1508435. Even after removing the file, tests still manage to
+  // reuse files from the previous test if they have the same name. Since our file name
+  // is based on a timestamp that has "second" precision, wait for one second to make sure
+  // screenshots will have different names.
+  info(
+    "Wait for one second to make sure future screenshots will use a different name"
+  );
+  await new Promise(r => setTimeout(r, 1000));
+
+  return image;
+}
+
+/**
+ * Check that the provided image has the expected width, height, and color.
+ * NOTE: This test assumes that the image is only made of a single color and will only
+ * check one pixel.
+ */
+async function assertSingleColorScreenshotImage(
+  image,
+  width,
+  height,
+  { r, g, b }
+) {
+  info(`Assert ${image.src} content`);
+  const ratio = await SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [],
+    () => content.wrappedJSObject.devicePixelRatio
+  );
+
+  is(
+    image.width,
+    ratio * width,
+    `node screenshot has the expected width (dpr = ${ratio})`
+  );
+  is(
+    image.height,
+    height * ratio,
+    `node screenshot has the expected height (dpr = ${ratio})`
+  );
+
+  const color = colorAt(image, 0, 0);
+  is(color.r, r, "node screenshot has the expected red component");
+  is(color.g, g, "node screenshot has the expected green component");
+  is(color.b, b, "node screenshot has the expected blue component");
+}
+
+/**
+ * Check that the provided image has the expected color at a given position
+ */
+function checkImageColorAt({ image, x = 0, y, expectedColor, label }) {
+  const color = colorAt(image, x, y);
+  is(`rgb(${Object.values(color).join(", ")})`, expectedColor, label);
+}
+
+/**
+ * Assert that a given parent pool has the expected number of children for
+ * a given typeName.
+ */
+function checkPoolChildrenSize(parentPool, typeName, expected) {
+  const children = [...parentPool.poolChildren()];
+  const childrenByType = children.filter(pool => pool.typeName === typeName);
+  is(
+    childrenByType.length,
+    expected,
+    `${parentPool.actorID} should have ${expected} children of type ${typeName}`
+  );
+}
+
+/**
+ * Wait for a specific action type to be dispatched.
+ *
+ * If the action is async and defines a `status` property, this helper will wait
+ * for the status to reach either "error" or "done".
+ *
+ * @param {Object} store
+ *        Redux store where the action should be dispatched.
+ * @param {String} actionType
+ *        The actionType to wait for.
+ * @param {Number} repeat
+ *        Optional, number of time the action is expected to be dispatched.
+ *        Defaults to 1
+ * @return {Promise}
+ */
+function waitForDispatch(store, actionType, repeat = 1) {
+  let count = 0;
+  return new Promise(resolve => {
+    store.dispatch({
+      type: "@@service/waitUntil",
+      predicate: action => {
+        const isDone =
+          !action.status ||
+          action.status === "done" ||
+          action.status === "error";
+
+        if (action.type === actionType && isDone && ++count == repeat) {
+          return true;
+        }
+
+        return false;
+      },
+      run: (dispatch, getState, action) => {
+        resolve(action);
+      },
     });
   });
 }
+
+/**
+ * Retrieve a browsing context in nested frames.
+ *
+ * @param {BrowsingContext|XULBrowser} browsingContext
+ *        The topmost browsing context under which we should search for the
+ *        browsing context.
+ * @param {Array<String>} selectors
+ *        Array of CSS selectors that form a path to a specific nested frame.
+ * @return {BrowsingContext} The nested browsing context.
+ */
+async function getBrowsingContextInFrames(browsingContext, selectors) {
+  let context = browsingContext;
+
+  if (!Array.isArray(selectors)) {
+    throw new Error(
+      "getBrowsingContextInFrames called with an invalid selectors argument"
+    );
+  }
+
+  if (selectors.length === 0) {
+    throw new Error(
+      "getBrowsingContextInFrames called with an empty selectors array"
+    );
+  }
+
+  const clonedSelectors = [...selectors];
+  while (clonedSelectors.length) {
+    const selector = clonedSelectors.shift();
+    context = await SpecialPowers.spawn(context, [selector], _selector => {
+      return content.document.querySelector(_selector).browsingContext;
+    });
+  }
+
+  return context;
+}
+
+/**
+ * Synthesize a mouse event on an element, after ensuring that it is visible
+ * in the viewport.
+ *
+ * @param {String|Array} selector: The node selector to get the node target for the event.
+ *        To target an element in a specific iframe, pass an array of CSS selectors
+ *        (e.g. ["iframe", ".el-in-iframe"])
+ * @param {number} x
+ * @param {number} y
+ * @param {object} options: Options that will be passed to BrowserTestUtils.synthesizeMouse
+ */
+async function safeSynthesizeMouseEventInContentPage(
+  selector,
+  x,
+  y,
+  options = {}
+) {
+  let context = gBrowser.selectedBrowser.browsingContext;
+
+  // If an array of selector is passed, we need to retrieve the context in which the node
+  // lives in.
+  if (Array.isArray(selector)) {
+    if (selector.length === 1) {
+      selector = selector[0];
+    } else {
+      context = await getBrowsingContextInFrames(
+        context,
+        // only pass the iframe path
+        selector.slice(0, -1)
+      );
+      // retrieve the last item of the selector, which should be the one for the node we want.
+      selector = selector.at(-1);
+    }
+  }
+
+  await scrollContentPageNodeIntoView(context, selector);
+  BrowserTestUtils.synthesizeMouse(selector, x, y, options, context);
+}
+
+/**
+ * Synthesize a mouse event at the center of an element, after ensuring that it is visible
+ * in the viewport.
+ *
+ * @param {String|Array} selector: The node selector to get the node target for the event.
+ *        To target an element in a specific iframe, pass an array of CSS selectors
+ *        (e.g. ["iframe", ".el-in-iframe"])
+ * @param {object} options: Options that will be passed to BrowserTestUtils.synthesizeMouse
+ */
+async function safeSynthesizeMouseEventAtCenterInContentPage(
+  selector,
+  options = {}
+) {
+  let context = gBrowser.selectedBrowser.browsingContext;
+
+  // If an array of selector is passed, we need to retrieve the context in which the node
+  // lives in.
+  if (Array.isArray(selector)) {
+    if (selector.length === 1) {
+      selector = selector[0];
+    } else {
+      context = await getBrowsingContextInFrames(
+        context,
+        // only pass the iframe path
+        selector.slice(0, -1)
+      );
+      // retrieve the last item of the selector, which should be the one for the node we want.
+      selector = selector.at(-1);
+    }
+  }
+
+  await scrollContentPageNodeIntoView(context, selector);
+  BrowserTestUtils.synthesizeMouseAtCenter(selector, options, context);
+}
+
+/**
+ * Scroll into view an element in the content page matching the passed selector
+ *
+ * @param {BrowsingContext} browsingContext: The browsing context the element lives in.
+ * @param {String} selector: The node selector to get the node to scroll into view
+ * @returns {Promise}
+ */
+function scrollContentPageNodeIntoView(browsingContext, selector) {
+  return SpecialPowers.spawn(browsingContext, [selector], function(
+    innerSelector
+  ) {
+    const node = content.wrappedJSObject.document.querySelector(innerSelector);
+    node.scrollIntoView();
+  });
+}
+
+/**
+ * Change the zoom level of the selected page.
+ *
+ * @param {Number} zoomLevel
+ */
+function setContentPageZoomLevel(zoomLevel) {
+  gBrowser.selectedBrowser.fullZoom = zoomLevel;
+}
+
+/**
+ * Wait for the next DOCUMENT_EVENT dom-complete resource on a top-level target
+ *
+ * @param {Object} commands
+ * @return {Promise<Object>}
+ *         Return a promise which resolves once we fully settle the resource listener.
+ *         You should await for its resolution before doing the action which may fire
+ *         your resource.
+ *         This promise will resolve with an object containing a `onDomCompleteResource` property,
+ *         which is also a promise, that will resolve once a "top-level" DOCUMENT_EVENT dom-complete
+ *         is received.
+ */
+async function waitForNextTopLevelDomCompleteResource(commands) {
+  const {
+    onResource: onDomCompleteResource,
+  } = await commands.resourceCommand.waitForNextResource(
+    commands.resourceCommand.TYPES.DOCUMENT_EVENT,
+    {
+      ignoreExistingResources: true,
+      predicate: resource =>
+        resource.name === "dom-complete" && resource.targetFront.isTopLevel,
+    }
+  );
+  return { onDomCompleteResource };
+}
+
+/**
+ * Wait for the provided context to have a valid presShell. This can be useful
+ * for tests which try to create popup panels or interact with the document very
+ * early.
+ *
+ * @param {BrowsingContext} context
+ **/
+const waitForPresShell = function(context) {
+  return SpecialPowers.spawn(context, [], async () => {
+    const winUtils = SpecialPowers.getDOMWindowUtils(content);
+    await ContentTaskUtils.waitForCondition(() => {
+      try {
+        return !!winUtils.getPresShellId();
+      } catch (e) {
+        return false;
+      }
+    }, "Waiting for a valid presShell");
+  });
+};

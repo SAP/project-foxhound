@@ -3,9 +3,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+var EXPORTED_SYMBOLS = ["AutoScrollChild"];
+
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-var EXPORTED_SYMBOLS = ["AutoScrollChild"];
+ChromeUtils.defineModuleGetter(
+  this,
+  "BrowserUtils",
+  "resource://gre/modules/BrowserUtils.jsm"
+);
 
 class AutoScrollChild extends JSWindowActorChild {
   constructor() {
@@ -25,41 +31,48 @@ class AutoScrollChild extends JSWindowActorChild {
     this.autoscrollLoop = this.autoscrollLoop.bind(this);
   }
 
-  isAutoscrollBlocker(node) {
+  isAutoscrollBlocker(event) {
     let mmPaste = Services.prefs.getBoolPref("middlemouse.paste");
     let mmScrollbarPosition = Services.prefs.getBoolPref(
       "middlemouse.scrollbarPosition"
     );
+    let node = event.originalTarget;
     let content = node.ownerGlobal;
 
-    while (node) {
-      if (
-        (node instanceof content.HTMLAnchorElement ||
-          node instanceof content.HTMLAreaElement) &&
-        node.hasAttribute("href")
-      ) {
+    // If the node is in editable document or content, we don't want to start
+    // autoscroll.
+    if (mmPaste) {
+      if (node.ownerDocument?.designMode == "on") {
         return true;
       }
-
-      if (
-        mmPaste &&
-        (node instanceof content.HTMLInputElement ||
-          node instanceof content.HTMLTextAreaElement)
-      ) {
+      const element =
+        node.nodeType === content.Node.ELEMENT_NODE ? node : node.parentElement;
+      if (element.isContentEditable) {
         return true;
       }
+    }
 
-      if (
-        node instanceof content.XULElement &&
-        ((mmScrollbarPosition &&
-          (node.localName == "scrollbar" ||
-            node.localName == "scrollcorner")) ||
-          node.localName == "treechildren")
-      ) {
-        return true;
-      }
+    // Don't start if we're on a link.
+    let [href] = BrowserUtils.hrefAndLinkNodeForClickEvent(event);
+    if (href) {
+      return true;
+    }
 
-      node = node.parentNode;
+    // Or if we're pasting into an input field of sorts.
+    if (
+      mmPaste &&
+      node.closest("input,textarea")?.constructor.name.startsWith("HTML")
+    ) {
+      return true;
+    }
+
+    // Or if we're on a scrollbar or XUL <tree>
+    if (
+      (mmScrollbarPosition &&
+        node.closest("scrollbar,scrollcorner") instanceof content.XULElement) ||
+      node.closest("treechildren") instanceof content.XULElement
+    ) {
+      return true;
     }
     return false;
   }
@@ -204,9 +217,9 @@ class AutoScrollChild extends JSWindowActorChild {
     }
 
     Services.els.addSystemEventListener(this.document, "mousemove", this, true);
+    Services.els.addSystemEventListener(this.document, "mouseup", this, true);
     this.document.addEventListener("pagehide", this, true);
 
-    this._ignoreMouseEvents = true;
     this._startX = event.screenX;
     this._startY = event.screenY;
     this._screenX = event.screenX;
@@ -245,6 +258,12 @@ class AutoScrollChild extends JSWindowActorChild {
       Services.els.removeSystemEventListener(
         this.document,
         "mousemove",
+        this,
+        true
+      );
+      Services.els.removeSystemEventListener(
+        this.document,
+        "mouseup",
         this,
         true
       );
@@ -318,27 +337,67 @@ class AutoScrollChild extends JSWindowActorChild {
     this._scrollable.ownerGlobal.requestAnimationFrame(this.autoscrollLoop);
   }
 
-  handleEvent(event) {
-    if (event.type == "mousemove") {
-      this._screenX = event.screenX;
-      this._screenY = event.screenY;
-    } else if (event.type == "mousedown") {
+  canStartAutoScrollWith(event) {
+    if (
+      !event.isTrusted ||
+      event.defaultPrevented ||
+      event.button !== 1 ||
+      event.clickEventPrevented()
+    ) {
+      return false;
+    }
+
+    for (const modifier of ["shift", "alt", "ctrl", "meta"]) {
       if (
-        event.isTrusted & !event.defaultPrevented &&
-        event.button == 1 &&
-        !this._scrollable &&
-        !this.isAutoscrollBlocker(event.originalTarget)
+        event[modifier + "Key"] &&
+        Services.prefs.getBoolPref(
+          `general.autoscroll.prevent_to_start.${modifier}Key`,
+          false
+        )
       ) {
-        this.startScroll(event);
+        return false;
       }
-    } else if (event.type == "pagehide") {
-      if (this._scrollable) {
-        var doc = this._scrollable.ownerDocument || this._scrollable.document;
-        if (doc == event.target) {
-          this.sendAsyncMessage("Autoscroll:Cancel");
-          this.stopScroll();
+    }
+    if (
+      event.getModifierState("OS") &&
+      Services.prefs.getBoolPref("general.autoscroll.prevent_to_start.osKey")
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  handleEvent(event) {
+    switch (event.type) {
+      case "mousemove":
+        this._screenX = event.screenX;
+        this._screenY = event.screenY;
+        break;
+      case "mousedown":
+        if (
+          this.canStartAutoScrollWith(event) &&
+          !this._scrollable &&
+          !this.isAutoscrollBlocker(event)
+        ) {
+          this.startScroll(event);
         }
-      }
+      // fallthrough
+      case "mouseup":
+        if (this._scrollable) {
+          // Middle mouse click event shouldn't be fired in web content for
+          // compatibility with Chrome.
+          event.preventClickEvent();
+        }
+        break;
+      case "pagehide":
+        if (this._scrollable) {
+          var doc = this._scrollable.ownerDocument || this._scrollable.document;
+          if (doc == event.target) {
+            this.sendAsyncMessage("Autoscroll:Cancel");
+            this.stopScroll();
+          }
+        }
+        break;
     }
   }
 

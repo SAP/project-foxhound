@@ -15,7 +15,7 @@ namespace widget {
 NS_IMPL_ISUPPORTS(AndroidAlerts, nsIAlertsService)
 
 StaticAutoPtr<AndroidAlerts::ListenerMap> AndroidAlerts::sListenerMap;
-nsDataHashtable<nsStringHashKey, java::WebNotification::GlobalRef>
+nsTHashMap<nsStringHashKey, java::WebNotification::GlobalRef>
     AndroidAlerts::mNotificationsMap;
 
 NS_IMETHODIMP
@@ -33,7 +33,7 @@ AndroidAlerts::ShowAlertNotification(
 NS_IMETHODIMP
 AndroidAlerts::ShowAlert(nsIAlertNotification* aAlert,
                          nsIObserver* aAlertListener) {
-  return ShowPersistentNotification(EmptyString(), aAlert, aAlertListener);
+  return ShowPersistentNotification(u""_ns, aAlert, aAlertListener);
 }
 
 NS_IMETHODIMP
@@ -80,10 +80,19 @@ AndroidAlerts::ShowPersistentNotification(const nsAString& aPersistentData,
   nsCOMPtr<nsIURI> uri;
   rv = aAlert->GetURI(getter_AddRefs(uri));
   NS_ENSURE_SUCCESS(rv, NS_OK);
-  MOZ_ASSERT(uri);
 
   nsCString spec;
-  rv = uri->GetDisplaySpec(spec);
+  if (uri) {
+    rv = uri->GetDisplaySpec(spec);
+    NS_ENSURE_SUCCESS(rv, NS_OK);
+  }
+
+  bool silent;
+  rv = aAlert->GetSilent(&silent);
+  NS_ENSURE_SUCCESS(rv, NS_OK);
+
+  nsTArray<uint32_t> vibrate;
+  rv = aAlert->GetVibrate(vibrate);
   NS_ENSURE_SUCCESS(rv, NS_OK);
 
   if (aPersistentData.IsEmpty() && aAlertListener) {
@@ -91,23 +100,23 @@ AndroidAlerts::ShowPersistentNotification(const nsAString& aPersistentData,
       sListenerMap = new ListenerMap();
     }
     // This will remove any observers already registered for this name.
-    sListenerMap->Put(name, aAlertListener);
+    sListenerMap->InsertOrUpdate(name, aAlertListener);
   }
 
   java::WebNotification::LocalRef notification = notification->New(
-      title, name, cookie, text, imageUrl, dir, lang, requireInteraction, spec);
+      title, name, cookie, text, imageUrl, dir, lang, requireInteraction, spec,
+      silent, jni::IntArray::From(vibrate));
   java::GeckoRuntime::LocalRef runtime = java::GeckoRuntime::GetInstance();
   if (runtime != NULL) {
     runtime->NotifyOnShow(notification);
   }
-  mNotificationsMap.Put(name, notification);
+  mNotificationsMap.InsertOrUpdate(name, notification);
 
   return NS_OK;
 }
 
 NS_IMETHODIMP
-AndroidAlerts::CloseAlert(const nsAString& aAlertName,
-                          nsIPrincipal* aPrincipal) {
+AndroidAlerts::CloseAlert(const nsAString& aAlertName) {
   java::WebNotification::LocalRef notification =
       mNotificationsMap.Get(aAlertName);
   if (!notification) {

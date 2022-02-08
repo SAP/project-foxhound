@@ -14,12 +14,14 @@ from mozperftest.layers import Layer
 # Add here any option that might point to a DMG file we want to extract. The key
 # is name of the option and the value, the file in the DMG we want to use for
 # the option.
-POTENTIAL_DMGS = {"browsertime-binary": "Contents/MacOS/firefox"}
+POTENTIAL_DMGS = {
+    "browsertime-binary": "Contents/MacOS/firefox",
+    "xpcshell-xre-path": "Contents/MacOS",
+}
 
 
 class MacosDevice(Layer):
-    """Runs on macOS to mount DMGs if we see one.
-    """
+    """Runs on macOS to mount DMGs if we see one."""
 
     name = "macos"
     activated = platform.system() == "Darwin"
@@ -36,7 +38,7 @@ class MacosDevice(Layer):
             universal_newlines=True,
         )
 
-        stdout, stderr = p.communicate(timeout=15)
+        stdout, stderr = p.communicate(timeout=45)
         if p.returncode != 0:
             raise subprocess.CalledProcessError(
                 stdout=stdout, stderr=stderr, returncode=p.returncode
@@ -46,6 +48,9 @@ class MacosDevice(Layer):
 
     def extract_app(self, dmg, target):
         mount = Path(tempfile.mkdtemp())
+
+        if not Path(dmg).exists():
+            raise FileNotFoundError(dmg)
 
         # mounting the DMG with hdiutil
         cmd = f"hdiutil attach -nobrowse -mountpoint {str(mount)} {dmg}"
@@ -100,7 +105,7 @@ class MacosDevice(Layer):
             self._tmp_dirs.append(target)
             self.extract_app(dmg_file, target)
 
-            # ... find a specific file if needed ...
+            # ... find a specific file or directory if needed ...
             path = target / path_in_dmg
             if not path.exists():
                 raise FileNotFoundError(str(path))

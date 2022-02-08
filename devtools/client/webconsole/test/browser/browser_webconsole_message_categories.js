@@ -7,10 +7,10 @@
 const { MESSAGE_CATEGORY } = require("devtools/shared/constants");
 
 const TEST_URI =
-  "data:text/html;charset=utf-8,Web Console test for " +
+  "data:text/html;charset=utf-8,<!DOCTYPE html>Web Console test for " +
   "bug 595934 - message categories coverage.";
 const TESTS_PATH =
-  "http://example.com/browser/devtools/client/webconsole/test/browser/";
+  "https://example.com/browser/devtools/client/webconsole/test/browser/";
 const TESTS = [
   {
     // #0
@@ -89,9 +89,14 @@ const TESTS = [
 ];
 
 add_task(async function() {
+  // Disable bfcache for Fission for now.
+  // If Fission is disabled, the pref is no-op.
+  await SpecialPowers.pushPrefEnv({
+    set: [["fission.bfcacheInParent", false]],
+  });
+
   requestLongerTimeout(2);
 
-  await pushPref("devtools.target-switching.enabled", true);
   await pushPref("devtools.webconsole.filter.css", true);
   await pushPref("devtools.webconsole.filter.net", true);
 

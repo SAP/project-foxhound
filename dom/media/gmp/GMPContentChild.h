@@ -9,6 +9,10 @@
 #include "mozilla/gmp/PGMPContentChild.h"
 #include "GMPSharedMemManager.h"
 
+#if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
+#  include "mozilla/SandboxTestingChild.h"
+#endif
+
 namespace mozilla {
 namespace gmp {
 
@@ -16,24 +20,32 @@ class GMPChild;
 
 class GMPContentChild : public PGMPContentChild, public GMPSharedMem {
  public:
-  explicit GMPContentChild(GMPChild* aChild);
-  virtual ~GMPContentChild();
+  // Mark AddRef and Release as `final`, as they overload pure virtual
+  // implementations in PGMPContentChild.
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GMPContentChild, final)
+
+  explicit GMPContentChild(GMPChild* aChild) : mGMPChild(aChild) {}
 
   MessageLoop* GMPMessageLoop();
 
   mozilla::ipc::IPCResult RecvPGMPVideoDecoderConstructor(
-      PGMPVideoDecoderChild* aActor, const uint32_t& aDecryptorId) override;
+      PGMPVideoDecoderChild* aActor) override;
   mozilla::ipc::IPCResult RecvPGMPVideoEncoderConstructor(
       PGMPVideoEncoderChild* aActor) override;
   mozilla::ipc::IPCResult RecvPChromiumCDMConstructor(
-      PChromiumCDMChild* aActor) override;
+      PChromiumCDMChild* aActor, const nsCString& aKeySystem) override;
 
-  already_AddRefed<PGMPVideoDecoderChild> AllocPGMPVideoDecoderChild(
-      const uint32_t& aDecryptorId);
+  already_AddRefed<PGMPVideoDecoderChild> AllocPGMPVideoDecoderChild();
 
   already_AddRefed<PGMPVideoEncoderChild> AllocPGMPVideoEncoderChild();
 
-  already_AddRefed<PChromiumCDMChild> AllocPChromiumCDMChild();
+  already_AddRefed<PChromiumCDMChild> AllocPChromiumCDMChild(
+      const nsCString& aKeySystem);
+
+#if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
+  mozilla::ipc::IPCResult RecvInitSandboxTesting(
+      Endpoint<PSandboxTestingChild>&& aEndpoint);
+#endif
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
   void ProcessingError(Result aCode, const char* aReason) override;
@@ -45,6 +57,9 @@ class GMPContentChild : public PGMPContentChild, public GMPSharedMem {
   bool IsUsed();
 
   GMPChild* mGMPChild;
+
+ private:
+  ~GMPContentChild() = default;
 };
 
 }  // namespace gmp

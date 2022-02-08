@@ -56,8 +56,8 @@ static void SetQueryKeyInt64(const nsCString& aValue,
                              Int64QuerySetter setter);
 
 // options setters
-typedef decltype(
-    &nsINavHistoryQueryOptions::SetExpandQueries) BoolOptionsSetter;
+typedef decltype(&nsINavHistoryQueryOptions::SetExpandQueries)
+    BoolOptionsSetter;
 typedef decltype(&nsINavHistoryQueryOptions::SetMaxResults) Uint32OptionsSetter;
 typedef decltype(&nsINavHistoryQueryOptions::SetResultType) Uint16OptionsSetter;
 static void SetOptionsKeyBool(const nsCString& aValue,
@@ -550,7 +550,8 @@ nsresult ParseQueryBooleanString(const nsCString& aString, bool* aValue) {
   if (aString.EqualsLiteral("1") || aString.EqualsLiteral("true")) {
     *aValue = true;
     return NS_OK;
-  } else if (aString.EqualsLiteral("0") || aString.EqualsLiteral("false")) {
+  }
+  if (aString.EqualsLiteral("0") || aString.EqualsLiteral("false")) {
     *aValue = false;
     return NS_OK;
   }

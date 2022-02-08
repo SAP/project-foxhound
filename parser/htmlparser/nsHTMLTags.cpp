@@ -5,7 +5,6 @@
 
 #include "nsHTMLTags.h"
 #include "nsCRT.h"
-#include "nsDataHashtable.h"
 #include "nsReadableUtils.h"
 #include "nsString.h"
 #include "nsUnicharUtils.h"
@@ -49,13 +48,13 @@ nsresult nsHTMLTags::AddRefTable(void) {
       // because this is truly static data.
       nsString tmp;
       tmp.AssignLiteral(tagName, nsString::char_traits::length(tagName));
-      gTagTable->Put(tmp, tagValue);
+      gTagTable->InsertOrUpdate(tmp, tagValue);
 
       // All the HTML tag names are static atoms within nsGkAtoms, and they are
       // registered before this code is reached.
       nsStaticAtom* atom = NS_GetStaticAtom(tmp);
       MOZ_ASSERT(atom);
-      gTagAtomTable->Put(atom, tagValue);
+      gTagAtomTable->InsertOrUpdate(atom, tagValue);
     }
 
 #ifdef DEBUG

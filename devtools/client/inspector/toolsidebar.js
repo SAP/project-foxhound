@@ -282,7 +282,7 @@ ToolSidebar.prototype = {
    *         The sidebar tab id to select.
    */
   show: function(id) {
-    this._tabbox.removeAttribute("hidden");
+    this._tabbox.hidden = false;
 
     // If an id is given, select the corresponding sidebar tab.
     if (id) {
@@ -296,7 +296,7 @@ ToolSidebar.prototype = {
    * Show the sidebar.
    */
   hide: function() {
-    this._tabbox.setAttribute("hidden", "true");
+    this._tabbox.hidden = true;
 
     this.emit("hide");
   },
@@ -318,6 +318,8 @@ ToolSidebar.prototype = {
     }
 
     this._toolPanel.emit("sidebar-destroyed", this);
+
+    this.ReactDOM.unmountComponentAtNode(this._tabbox);
 
     this._tabs = null;
     this._tabbox = null;

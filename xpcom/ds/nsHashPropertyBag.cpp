@@ -67,7 +67,7 @@ nsHashPropertyBagBase::SetProperty(const nsAString& aName, nsIVariant* aValue) {
     return NS_ERROR_INVALID_ARG;
   }
 
-  mPropertyHash.Put(aName, aValue);
+  mPropertyHash.InsertOrUpdate(aName, aValue);
 
   return NS_OK;
 }
@@ -236,9 +236,8 @@ nsHashPropertyBagBase::SetPropertyAsInterface(const nsAString& aProp,
 }
 
 void nsHashPropertyBagBase::CopyFrom(const nsHashPropertyBagBase* aOther) {
-  for (auto iter = aOther->mPropertyHash.ConstIter(); !iter.Done();
-       iter.Next()) {
-    SetProperty(iter.Key(), iter.UserData());
+  for (const auto& entry : aOther->mPropertyHash) {
+    SetProperty(entry.GetKey(), entry.GetWeak());
   }
 }
 
@@ -264,6 +263,23 @@ void nsHashPropertyBagBase::CopyFrom(nsIPropertyBag* aOther) {
       NS_WARNING("Unable to copy nsIPropertyBag");
     }
   }
+}
+
+nsresult nsGetProperty::operator()(const nsIID& aIID,
+                                   void** aInstancePtr) const {
+  nsresult rv;
+
+  if (mPropBag) {
+    rv = mPropBag->GetPropertyAsInterface(mPropName, aIID, aInstancePtr);
+  } else {
+    rv = NS_ERROR_NULL_POINTER;
+    *aInstancePtr = 0;
+  }
+
+  if (mErrorPtr) {
+    *mErrorPtr = rv;
+  }
+  return rv;
 }
 
 /*
@@ -309,6 +325,27 @@ nsHashPropertyBag::~nsHashPropertyBag() {
         new ProxyHashtableDestructor(std::move(mPropertyHash));
     MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(runnable));
   }
+}
+
+/*
+ * nsHashPropertyBagOMT implementation
+ */
+NS_IMPL_ADDREF(nsHashPropertyBagOMT)
+NS_IMPL_RELEASE(nsHashPropertyBagOMT)
+
+NS_INTERFACE_MAP_BEGIN(nsHashPropertyBagOMT)
+  NS_INTERFACE_MAP_ENTRY(nsIWritablePropertyBag)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsIPropertyBag, nsIWritablePropertyBag)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIWritablePropertyBag)
+  NS_INTERFACE_MAP_ENTRY(nsIPropertyBag2)
+  NS_INTERFACE_MAP_ENTRY(nsIWritablePropertyBag2)
+NS_INTERFACE_MAP_END
+
+nsHashPropertyBagOMT::nsHashPropertyBagOMT() {
+  // nsHashPropertyBagOMT is supposed to be used off-main thread. If you need a
+  // single threaded property bag on the main thread, you should consider using
+  // nsHashPropertyBagCC instead, to prevent leaks.
+  MOZ_ASSERT(!NS_IsMainThread());
 }
 
 /*

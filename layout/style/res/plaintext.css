@@ -17,6 +17,12 @@ html:not([dir]) pre { /* Not a UA sheet, so doesn't use :-moz-has-dir-attr */
   unicode-bidi: plaintext;
 }
 
+@-moz-document unobservable-document() {
+  :root {
+    color-scheme: light dark;
+  }
+}
+
 /* NOTE(emilio): For some reason some pages, mainly bing.com, load a bunch of
  * scripts in zero-size <object> elements, see bug 1548449.
  *

@@ -10,28 +10,44 @@
 #include "GLContext.h"
 #include "GLLibraryEGL.h"
 #include "nsRegion.h"
+#include <memory>
 
-class gfxASurface;
 namespace mozilla {
+namespace layers {
+class SurfaceTextureImage;
+}  // namespace layers
 namespace widget {
 class CompositorWidget;
 }  // namespace widget
 namespace gl {
 
-class GLContextEGL : public GLContext {
-  friend class TextureImageEGL;
+RefPtr<GLLibraryEGL> DefaultEglLibrary(nsACString* const out_failureId);
 
-  static already_AddRefed<GLContextEGL> CreateGLContext(
-      GLLibraryEGL*, const GLContextDesc&, EGLConfig config, EGLSurface surface,
-      const bool useGles, nsACString* const out_failureId);
+inline std::shared_ptr<EglDisplay> DefaultEglDisplay(
+    nsACString* const out_failureId) {
+  const auto lib = DefaultEglLibrary(out_failureId);
+  if (!lib) {
+    return nullptr;
+  }
+  return lib->DefaultDisplay(out_failureId);
+}
 
+// -
+
+class GLContextEGL final : public GLContext {
  public:
   MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(GLContextEGL, override)
-  GLContextEGL(GLLibraryEGL*, const GLContextDesc&, EGLConfig config,
-               EGLSurface surface, EGLContext context);
 
+  static RefPtr<GLContextEGL> CreateGLContext(
+      std::shared_ptr<EglDisplay>, const GLContextDesc&, EGLConfig config,
+      EGLSurface surface, const bool useGles, nsACString* const out_failureId);
+
+ private:
+  GLContextEGL(std::shared_ptr<EglDisplay>, const GLContextDesc&,
+               EGLConfig config, EGLSurface surface, EGLContext context);
   ~GLContextEGL();
 
+ public:
   virtual GLContextType GetContextType() const override {
     return GLContextType::EGL;
   }
@@ -47,8 +63,8 @@ class GLContextEGL : public GLContext {
 
   void SetIsDoubleBuffered(bool aIsDB) { mIsDoubleBuffered = aIsDB; }
 
-  virtual bool IsANGLE() const override { return mEgl->IsANGLE(); }
-  virtual bool IsWARP() const override { return mEgl->IsWARP(); }
+  virtual bool IsANGLE() const override { return mEgl->mLib->IsANGLE(); }
+  virtual bool IsWARP() const override { return mEgl->mIsWARP; }
 
   virtual bool BindTexImage() override;
 
@@ -71,16 +87,14 @@ class GLContextEGL : public GLContext {
 
   virtual void SetDamage(const nsIntRegion& aDamageRegion) override;
 
-  virtual void GetWSIInfo(nsCString* const out) const override;
+  GLint GetBufferAge() const override;
 
-  // hold a reference to the given surface
-  // for the lifetime of this context.
-  void HoldSurface(gfxASurface* aSurf);
+  virtual void GetWSIInfo(nsCString* const out) const override;
 
   EGLSurface GetEGLSurface() const { return mSurface; }
 
-  bool HasBufferAge() const;
-  EGLint GetBufferAge() const;
+  bool HasExtBufferAge() const;
+  bool HasKhrPartialUpdate() const;
 
   bool BindTex2DOffscreen(GLContext* aOffscreen);
   void UnbindTex2DOffscreen(GLContext* aOffscreen);
@@ -88,17 +102,20 @@ class GLContextEGL : public GLContext {
 
   void Destroy();
 
-  static already_AddRefed<GLContextEGL> CreateEGLPBufferOffscreenContext(
-      const GLContextCreateDesc&, const gfx::IntSize& size,
-      nsACString* const out_FailureId);
-  static already_AddRefed<GLContextEGL> CreateEGLPBufferOffscreenContextImpl(
-      const GLContextCreateDesc&, const gfx::IntSize& size, bool aUseGles,
-      nsACString* const out_FailureId);
+  static RefPtr<GLContextEGL> CreateEGLPBufferOffscreenContext(
+      std::shared_ptr<EglDisplay>, const GLContextCreateDesc&,
+      const gfx::IntSize& size, nsACString* const out_FailureId);
+  static RefPtr<GLContextEGL> CreateEGLPBufferOffscreenContextImpl(
+      std::shared_ptr<EglDisplay>, const GLContextCreateDesc&,
+      const gfx::IntSize& size, bool aUseGles, nsACString* const out_FailureId);
 
-#if defined(MOZ_WAYLAND) || defined(MOZ_WIDGET_ANDROID)
   static EGLSurface CreateEGLSurfaceForCompositorWidget(
       widget::CompositorWidget* aCompositorWidget, const EGLConfig aConfig);
+
+#ifdef MOZ_X11
+  static bool FindVisual(int* const out_visualId);
 #endif
+
  protected:
   friend class GLContextProviderEGL;
   friend class GLContextEGLFactory;
@@ -106,7 +123,7 @@ class GLContextEGL : public GLContext {
   virtual void OnMarkDestroyed() override;
 
  public:
-  const RefPtr<GLLibraryEGL> mEgl;
+  const std::shared_ptr<EglDisplay> mEgl;
   const EGLConfig mConfig;
   const EGLContext mContext;
 
@@ -115,7 +132,6 @@ class GLContextEGL : public GLContext {
   const EGLSurface mFallbackSurface;
 
   EGLSurface mSurfaceOverride = EGL_NO_SURFACE;
-  RefPtr<gfxASurface> mThebesSurface;
   bool mBound = false;
 
   bool mIsPBuffer = false;
@@ -127,20 +143,19 @@ class GLContextEGL : public GLContext {
   nsIntRegion mDamageRegion;
 
   static EGLSurface CreatePBufferSurfaceTryingPowerOfTwo(
-      GLLibraryEGL*, EGLConfig config, EGLenum bindToTextureFormat,
+      EglDisplay&, EGLConfig, EGLenum bindToTextureFormat,
       gfx::IntSize& pbsize);
-#if defined(MOZ_WAYLAND)
-  static EGLSurface CreateWaylandBufferSurface(GLLibraryEGL*, EGLConfig config,
+
+  static EGLSurface CreateWaylandBufferSurface(EglDisplay&, EGLConfig,
                                                gfx::IntSize& pbsize);
-#endif
-#if defined(MOZ_WIDGET_ANDROID)
+
  public:
-  EGLSurface CreateCompatibleSurface(void* aWindow);
-#endif  // defined(MOZ_WIDGET_ANDROID)
+  EGLSurface CreateCompatibleSurface(void* aWindow) const;
 };
 
-bool CreateConfig(GLLibraryEGL* const egl, EGLConfig* aConfig, int32_t depth,
-                  bool aEnableDepthBuffer, bool aUseGles);
+bool CreateConfig(EglDisplay&, EGLConfig* aConfig, int32_t aDepth,
+                  bool aEnableDepthBuffer, bool aUseGles,
+                  bool aAllowFallback = true);
 
 }  // namespace gl
 }  // namespace mozilla

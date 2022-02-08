@@ -7,8 +7,10 @@
 #include "mozilla/dom/JSActor.h"
 #include "mozilla/dom/JSActorBinding.h"
 
+#include "chrome/common/ipc_channel.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/FunctionRef.h"
+#include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/ClonedErrorHolder.h"
 #include "mozilla/dom/ClonedErrorHolderBinding.h"
 #include "mozilla/dom/DOMException.h"
@@ -18,13 +20,13 @@
 #include "mozilla/dom/PWindowGlobal.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/RootedDictionary.h"
+#include "mozilla/dom/ipc/StructuredCloneData.h"
 #include "js/Promise.h"
 #include "xpcprivate.h"
-#include "nsASCIIMask.h"
+#include "nsFrameMessageManager.h"
 #include "nsICrashReporter.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(JSActor)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
@@ -46,9 +48,8 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(JSActor)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mGlobal)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWrappedJS)
-  for (auto& query : tmp->mPendingQueries) {
-    CycleCollectionNoteChild(cb, query.GetData().mPromise.get(),
-                             "Pending Query Promise");
+  for (const auto& query : tmp->mPendingQueries.Values()) {
+    CycleCollectionNoteChild(cb, query.mPromise.get(), "Pending Query Promise");
   }
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
@@ -61,23 +62,20 @@ JSActor::JSActor(nsISupports* aGlobal) {
   }
 }
 
-void JSActor::StartDestroy() {
-  InvokeCallback(CallbackFunction::WillDestroy);
-  mCanSend = false;
-}
+void JSActor::StartDestroy() { mCanSend = false; }
 
 void JSActor::AfterDestroy() {
   mCanSend = false;
 
   // Take our queries out, in case somehow rejecting promises can trigger
   // additions or removals.
-  nsDataHashtable<nsUint64HashKey, PendingQuery> pendingQueries;
-  mPendingQueries.SwapElements(pendingQueries);
-  for (auto& entry : pendingQueries) {
+  const nsTHashMap<nsUint64HashKey, PendingQuery> pendingQueries =
+      std::move(mPendingQueries);
+  for (const auto& entry : pendingQueries.Values()) {
     nsPrintfCString message(
         "Actor '%s' destroyed before query '%s' was resolved", mName.get(),
-        NS_LossyConvertUTF16toASCII(entry.GetData().mMessageName).get());
-    entry.GetData().mPromise->MaybeRejectWithAbortError(message);
+        NS_LossyConvertUTF16toASCII(entry.mMessageName).get());
+    entry.mPromise->MaybeRejectWithAbortError(message);
   }
 
   InvokeCallback(CallbackFunction::DidDestroy);
@@ -90,18 +88,13 @@ void JSActor::InvokeCallback(CallbackFunction callback) {
   AutoEntryScript aes(GetParentObject(), "JSActor destroy callback");
   JSContext* cx = aes.cx();
   MozJSActorCallbacks callbacksHolder;
-  NS_ENSURE_TRUE_VOID(GetWrapper());
-  JS::Rooted<JS::Value> val(cx, JS::ObjectValue(*GetWrapper()));
+  JS::Rooted<JS::Value> val(cx, JS::ObjectOrNullValue(GetWrapper()));
   if (NS_WARN_IF(!callbacksHolder.Init(cx, val))) {
     return;
   }
 
   // Destroy callback is optional.
-  if (callback == CallbackFunction::WillDestroy) {
-    if (callbacksHolder.mWillDestroy.WasPassed()) {
-      callbacksHolder.mWillDestroy.Value()->Call(this);
-    }
-  } else if (callback == CallbackFunction::DidDestroy) {
+  if (callback == CallbackFunction::DidDestroy) {
     if (callbacksHolder.mDidDestroy.WasPassed()) {
       callbacksHolder.mDidDestroy.Value()->Call(this);
     }
@@ -114,6 +107,10 @@ void JSActor::InvokeCallback(CallbackFunction callback) {
 
 nsresult JSActor::QueryInterfaceActor(const nsIID& aIID, void** aPtr) {
   MOZ_ASSERT(nsContentUtils::IsSafeToRunScript());
+  if (!GetWrapperPreserveColor()) {
+    // If we have no preserved wrapper, we won't implement any interfaces.
+    return NS_NOINTERFACE;
+  }
 
   if (!mWrappedJS) {
     AutoEntryScript aes(GetParentObject(), "JSActor query interface");
@@ -146,18 +143,6 @@ bool JSActor::AllowMessage(const JSActorMessageMeta& aMetadata,
     return true;
   }
 
-  nsAutoString messageName(NS_ConvertUTF8toUTF16(aMetadata.actorName()));
-  messageName.AppendLiteral("::");
-  messageName.Append(aMetadata.messageName());
-
-  // Remove digits to avoid spamming telemetry if anybody is dynamically
-  // generating message names with numbers in them.
-  messageName.StripTaggedASCII(ASCIIMask::Mask0to9());
-
-  Telemetry::ScalarAdd(
-      Telemetry::ScalarID::DOM_IPC_REJECTED_WINDOW_ACTOR_MESSAGE, messageName,
-      1);
-
   return false;
 }
 
@@ -166,25 +151,40 @@ void JSActor::SetName(const nsACString& aName) {
   mName = aName;
 }
 
-static ipc::StructuredCloneData CloneJSStack(JSContext* aCx,
-                                             JS::Handle<JSObject*> aStack) {
-  JS::Rooted<JS::Value> stackVal(aCx, JS::ObjectOrNullValue(aStack));
-
-  {
-    IgnoredErrorResult rv;
-    ipc::StructuredCloneData data;
-    data.Write(aCx, stackVal, rv);
-    if (!rv.Failed()) {
-      return data;
-    }
+void JSActor::ThrowStateErrorForGetter(const char* aName,
+                                       ErrorResult& aRv) const {
+  if (mName.IsEmpty()) {
+    aRv.ThrowInvalidStateError(nsPrintfCString(
+        "Cannot access property '%s' before actor is initialized", aName));
+  } else {
+    aRv.ThrowInvalidStateError(nsPrintfCString(
+        "Cannot access property '%s' after actor '%s' has been destroyed",
+        aName, mName.get()));
   }
-  ErrorResult rv;
-  ipc::StructuredCloneData data;
-  data.Write(aCx, JS::NullHandleValue, rv);
+}
+
+static Maybe<ipc::StructuredCloneData> TryClone(JSContext* aCx,
+                                                JS::Handle<JS::Value> aValue) {
+  Maybe<ipc::StructuredCloneData> data{std::in_place};
+
+  // Try to directly serialize the passed-in data, and return it to our caller.
+  IgnoredErrorResult rv;
+  data->Write(aCx, aValue, rv);
+  if (rv.Failed()) {
+    // Serialization failed, return `Nothing()` instead.
+    JS_ClearPendingException(aCx);
+    data.reset();
+  }
   return data;
 }
 
-static ipc::StructuredCloneData CaptureJSStack(JSContext* aCx) {
+static Maybe<ipc::StructuredCloneData> CloneJSStack(
+    JSContext* aCx, JS::Handle<JSObject*> aStack) {
+  JS::Rooted<JS::Value> stackVal(aCx, JS::ObjectOrNullValue(aStack));
+  return TryClone(aCx, stackVal);
+}
+
+static Maybe<ipc::StructuredCloneData> CaptureJSStack(JSContext* aCx) {
   JS::Rooted<JSObject*> stack(aCx, nullptr);
   if (JS::IsAsyncStackCaptureEnabledForRealm(aCx) &&
       !JS::CaptureCurrentStack(aCx, &stack)) {
@@ -196,9 +196,9 @@ static ipc::StructuredCloneData CaptureJSStack(JSContext* aCx) {
 
 void JSActor::SendAsyncMessage(JSContext* aCx, const nsAString& aMessageName,
                                JS::Handle<JS::Value> aObj, ErrorResult& aRv) {
-  ipc::StructuredCloneData data;
+  Maybe<ipc::StructuredCloneData> data{std::in_place};
   if (!nsFrameMessageManager::GetParamsForMessage(
-          aCx, aObj, JS::UndefinedHandleValue, data)) {
+          aCx, aObj, JS::UndefinedHandleValue, *data)) {
     aRv.ThrowDataCloneError(nsPrintfCString(
         "Failed to serialize message '%s::%s'",
         NS_LossyConvertUTF16toASCII(aMessageName).get(), mName.get()));
@@ -217,9 +217,9 @@ already_AddRefed<Promise> JSActor::SendQuery(JSContext* aCx,
                                              const nsAString& aMessageName,
                                              JS::Handle<JS::Value> aObj,
                                              ErrorResult& aRv) {
-  ipc::StructuredCloneData data;
+  Maybe<ipc::StructuredCloneData> data{std::in_place};
   if (!nsFrameMessageManager::GetParamsForMessage(
-          aCx, aObj, JS::UndefinedHandleValue, data)) {
+          aCx, aObj, JS::UndefinedHandleValue, *data)) {
     aRv.ThrowDataCloneError(nsPrintfCString(
         "Failed to serialize message '%s::%s'",
         NS_LossyConvertUTF16toASCII(aMessageName).get(), mName.get()));
@@ -243,17 +243,18 @@ already_AddRefed<Promise> JSActor::SendQuery(JSContext* aCx,
   meta.queryId() = mNextQueryId++;
   meta.kind() = JSActorMessageKind::Query;
 
-  mPendingQueries.Put(meta.queryId(),
-                      PendingQuery{promise, meta.messageName()});
+  mPendingQueries.InsertOrUpdate(meta.queryId(),
+                                 PendingQuery{promise, meta.messageName()});
 
   SendRawMessage(meta, std::move(data), CaptureJSStack(aCx), aRv);
   return promise.forget();
 }
 
-void JSActor::ReceiveMessageOrQuery(JSContext* aCx,
-                                    const JSActorMessageMeta& aMetadata,
-                                    JS::Handle<JS::Value> aData,
-                                    ErrorResult& aRv) {
+void JSActor::CallReceiveMessage(JSContext* aCx,
+                                 const JSActorMessageMeta& aMetadata,
+                                 JS::Handle<JS::Value> aData,
+                                 JS::MutableHandle<JS::Value> aRetVal,
+                                 ErrorResult& aRv) {
   // The argument which we want to pass to IPC.
   RootedDictionary<ReceiveMessageArgument> argument(aCx);
   argument.mTarget = this;
@@ -262,45 +263,57 @@ void JSActor::ReceiveMessageOrQuery(JSContext* aCx,
   argument.mJson = aData;
   argument.mSync = false;
 
-  JS::Rooted<JSObject*> self(aCx, GetWrapper());
-  JS::Rooted<JSObject*> global(aCx, JS::GetNonCCWObjectGlobal(self));
+  if (GetWrapperPreserveColor()) {
+    // Invoke the actual callback.
+    JS::Rooted<JSObject*> global(aCx, JS::GetNonCCWObjectGlobal(GetWrapper()));
+    RefPtr<MessageListener> messageListener =
+        new MessageListener(GetWrapper(), global, nullptr, nullptr);
+    messageListener->ReceiveMessage(argument, aRetVal, aRv,
+                                    "JSActor receive message",
+                                    MessageListener::eRethrowExceptions);
+  } else {
+    aRv.ThrowTypeError<MSG_NOT_CALLABLE>("Property 'receiveMessage'");
+  }
+}
 
-  // We only need to create a promise if we're dealing with a query here. It
-  // will be resolved or rejected once the listener has been called. Our
-  // listener on this promise will then send the reply.
-  RefPtr<Promise> promise;
-  if (aMetadata.kind() == JSActorMessageKind::Query) {
-    promise = Promise::Create(xpc::NativeGlobal(global), aRv);
-    if (NS_WARN_IF(aRv.Failed())) {
-      return;
-    }
+void JSActor::ReceiveMessage(JSContext* aCx,
+                             const JSActorMessageMeta& aMetadata,
+                             JS::Handle<JS::Value> aData, ErrorResult& aRv) {
+  MOZ_ASSERT(aMetadata.kind() == JSActorMessageKind::Message);
+  JS::Rooted<JS::Value> retval(aCx);
+  CallReceiveMessage(aCx, aMetadata, aData, &retval, aRv);
+}
 
-    RefPtr<QueryHandler> handler = new QueryHandler(this, aMetadata, promise);
-    promise->AppendNativeHandler(handler);
+void JSActor::ReceiveQuery(JSContext* aCx, const JSActorMessageMeta& aMetadata,
+                           JS::Handle<JS::Value> aData, ErrorResult& aRv) {
+  MOZ_ASSERT(aMetadata.kind() == JSActorMessageKind::Query);
+
+  // This promise will be resolved or rejected once the listener has been
+  // called. Our listener on this promise will then send the reply.
+  RefPtr<Promise> promise = Promise::Create(GetParentObject(), aRv);
+  if (NS_WARN_IF(aRv.Failed())) {
+    return;
   }
 
-  // Invoke the actual callback.
+  RefPtr<QueryHandler> handler = new QueryHandler(this, aMetadata, promise);
+  promise->AppendNativeHandler(handler);
+
+  ErrorResult error;
   JS::Rooted<JS::Value> retval(aCx);
-  RefPtr<MessageListener> messageListener =
-      new MessageListener(self, global, nullptr, nullptr);
-  messageListener->ReceiveMessage(argument, &retval, aRv,
-                                  "JSActor receive message",
-                                  MessageListener::eRethrowExceptions);
+  CallReceiveMessage(aCx, aMetadata, aData, &retval, error);
 
   // If we have a promise, resolve or reject it respectively.
-  if (promise) {
-    if (aRv.Failed()) {
-      if (aRv.IsUncatchableException()) {
-        aRv.SuppressException();
-        promise->MaybeRejectWithTimeoutError(
-            "Message handler threw uncatchable exception");
-      } else {
-        promise->MaybeReject(std::move(aRv));
-      }
+  if (error.Failed()) {
+    if (error.IsUncatchableException()) {
+      promise->MaybeRejectWithTimeoutError(
+          "Message handler threw uncatchable exception");
     } else {
-      promise->MaybeResolve(retval);
+      promise->MaybeReject(std::move(error));
     }
+  } else {
+    promise->MaybeResolve(retval);
   }
+  error.SuppressException();
 }
 
 void JSActor::ReceiveQueryReply(JSContext* aCx,
@@ -311,7 +324,7 @@ void JSActor::ReceiveQueryReply(JSContext* aCx,
     return;
   }
 
-  Maybe<PendingQuery> query = mPendingQueries.GetAndRemove(aMetadata.queryId());
+  Maybe<PendingQuery> query = mPendingQueries.Extract(aMetadata.queryId());
   if (NS_WARN_IF(!query)) {
     aRv.ThrowUnknownError("Received reply for non-pending query");
     return;
@@ -333,8 +346,8 @@ void JSActor::ReceiveQueryReply(JSContext* aCx,
 }
 
 void JSActor::SendRawMessageInProcess(const JSActorMessageMeta& aMeta,
-                                      ipc::StructuredCloneData&& aData,
-                                      ipc::StructuredCloneData&& aStack,
+                                      Maybe<ipc::StructuredCloneData>&& aData,
+                                      Maybe<ipc::StructuredCloneData>&& aStack,
                                       OtherSideCallback&& aGetOtherSide) {
   MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess());
   NS_DispatchToMainThread(NS_NewRunnableFunction(
@@ -362,7 +375,9 @@ void JSActor::QueryHandler::RejectedCallback(JSContext* aCx,
                                              JS::Handle<JS::Value> aValue) {
   if (!mActor) {
     // Make sure that this rejection is reported. See comment below.
-    Unused << JS::CallOriginalPromiseReject(aCx, aValue);
+    if (!JS::CallOriginalPromiseReject(aCx, aValue)) {
+      JS_ClearPendingException(aCx);
+    }
     return;
   }
 
@@ -384,23 +399,18 @@ void JSActor::QueryHandler::RejectedCallback(JSContext* aCx,
     }
   }
 
-  Maybe<ipc::StructuredCloneData> data;
-  data.emplace();
-  IgnoredErrorResult rv;
-  data->Write(aCx, value, rv);
-  if (rv.Failed()) {
-    // Failed to clone the rejection value. Make sure that this rejection is
-    // reported, despite being "handled". This is done by creating a new
-    // promise in the rejected state, and throwing it away. This will be
-    // reported as an unhandled rejected promise.
-    Unused << JS::CallOriginalPromiseReject(aCx, aValue);
-
-    data.reset();
-    data.emplace();
-    data->Write(aCx, JS::UndefinedHandleValue, rv);
+  Maybe<ipc::StructuredCloneData> data = TryClone(aCx, value);
+  if (!data) {
+    // Failed to clone the rejection value. Make sure that this
+    // rejection is reported, despite being "handled". This is done by
+    // creating a new promise in the rejected state, and throwing it
+    // away. This will be reported as an unhandled rejected promise.
+    if (!JS::CallOriginalPromiseReject(aCx, aValue)) {
+      JS_ClearPendingException(aCx);
+    }
   }
 
-  SendReply(aCx, JSActorMessageKind::QueryReject, std::move(*data));
+  SendReply(aCx, JSActorMessageKind::QueryReject, std::move(data));
 }
 
 void JSActor::QueryHandler::ResolvedCallback(JSContext* aCx,
@@ -409,12 +419,14 @@ void JSActor::QueryHandler::ResolvedCallback(JSContext* aCx,
     return;
   }
 
-  ipc::StructuredCloneData data;
-  data.InitScope(JS::StructuredCloneScope::DifferentProcess);
+  Maybe<ipc::StructuredCloneData> data{std::in_place};
+  data->InitScope(JS::StructuredCloneScope::DifferentProcess);
 
   IgnoredErrorResult error;
-  data.Write(aCx, aValue, error);
+  data->Write(aCx, aValue, error);
   if (NS_WARN_IF(error.Failed())) {
+    JS_ClearPendingException(aCx);
+
     nsAutoCString msg;
     msg.Append(mActor->Name());
     msg.Append(':');
@@ -427,6 +439,8 @@ void JSActor::QueryHandler::ResolvedCallback(JSContext* aCx,
     JS::Rooted<JS::Value> val(aCx);
     if (ToJSValue(aCx, exc, &val)) {
       RejectedCallback(aCx, val);
+    } else {
+      JS_ClearPendingException(aCx);
     }
     return;
   }
@@ -435,7 +449,7 @@ void JSActor::QueryHandler::ResolvedCallback(JSContext* aCx,
 }
 
 void JSActor::QueryHandler::SendReply(JSContext* aCx, JSActorMessageKind aKind,
-                                      ipc::StructuredCloneData&& aData) {
+                                      Maybe<ipc::StructuredCloneData>&& aData) {
   MOZ_ASSERT(mActor);
 
   JSActorMessageMeta meta;
@@ -462,5 +476,4 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(JSActor::QueryHandler)
 
 NS_IMPL_CYCLE_COLLECTION(JSActor::QueryHandler, mActor, mPromise)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

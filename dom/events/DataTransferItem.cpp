@@ -11,18 +11,23 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/EventForwards.h"
+#include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/DataTransferItemBinding.h"
 #include "mozilla/dom/Directory.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/FileSystem.h"
 #include "mozilla/dom/FileSystemDirectoryEntry.h"
 #include "mozilla/dom/FileSystemFileEntry.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIClipboard.h"
+#include "nsIFile.h"
+#include "nsIInputStream.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsNetUtil.h"
 #include "nsQueryObject.h"
 #include "nsContentUtils.h"
+#include "nsThreadUtils.h"
 #include "nsVariant.h"
 
 namespace {
@@ -39,8 +44,7 @@ FileMimeNameData kFileMimeNameMap[] = {
 
 }  // anonymous namespace
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(DataTransferItem, mData, mPrincipal,
                                       mDataTransfer, mCachedFile)
@@ -576,5 +580,4 @@ DataTransferItem::GetGlobalFromDataTransfer() {
   return global.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

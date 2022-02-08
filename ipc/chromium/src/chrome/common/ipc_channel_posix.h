@@ -11,17 +11,18 @@
 
 #include <sys/socket.h>  // for CMSG macros
 
-#include <queue>
+#include <atomic>
 #include <string>
 #include <vector>
 #include <list>
 
 #include "base/message_loop.h"
 #include "base/task.h"
-#include "chrome/common/file_descriptor_set_posix.h"
 
 #include "mozilla/Maybe.h"
+#include "mozilla/Queue.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/UniquePtrExtensions.h"
 
 namespace IPC {
 
@@ -50,14 +51,24 @@ class Channel::ChannelImpl : public MessageLoopForIO::Watcher {
   int GetFileDescriptor() const { return pipe_; }
   void CloseClientFileDescriptor();
 
+  int32_t OtherPid() const { return other_pid_; }
+
   // See the comment in ipc_channel.h for info on Unsound_IsClosed() and
   // Unsound_NumQueuedMessages().
   bool Unsound_IsClosed() const;
   uint32_t Unsound_NumQueuedMessages() const;
 
+#if defined(OS_MACOSX)
+  void SetOtherMachTask(task_t task);
+
+  void StartAcceptingMachPorts(Mode mode);
+#endif
+
  private:
   void Init(Mode mode, Listener* listener);
   bool CreatePipe(Mode mode);
+  void SetPipe(int fd);
+  bool PipeBufHasSpaceAfter(size_t already_written);
   bool EnqueueHelloMessage();
 
   bool ProcessIncomingMessages();
@@ -69,6 +80,11 @@ class Channel::ChannelImpl : public MessageLoopForIO::Watcher {
 
 #if defined(OS_MACOSX)
   void CloseDescriptors(uint32_t pending_fd_id);
+
+  // Called on a Message immediately before it is sent/recieved to transfer
+  // handles to the remote process, or accept handles from the remote process.
+  bool AcceptMachPorts(Message& msg);
+  bool TransferMachPorts(Message& msg);
 #endif
 
   void OutputQueuePush(mozilla::UniquePtr<Message> msg);
@@ -92,12 +108,13 @@ class Channel::ChannelImpl : public MessageLoopForIO::Watcher {
 
   int server_listen_pipe_;
   int pipe_;
-  int client_pipe_;  // The client end of our socketpair().
+  int client_pipe_;        // The client end of our socketpair().
+  unsigned pipe_buf_len_;  // The SO_SNDBUF value of pipe_, or 0 if unknown.
 
   Listener* listener_;
 
   // Messages to be sent are queued here.
-  std::queue<mozilla::UniquePtr<Message>> output_queue_;
+  mozilla::Queue<mozilla::UniquePtr<Message>, 64> output_queue_;
 
   // We read from the pipe into these buffers.
   size_t input_buf_offset_;
@@ -117,7 +134,7 @@ class Channel::ChannelImpl : public MessageLoopForIO::Watcher {
   // it's big enough.
   static constexpr size_t kControlBufferHeaderSize = 32;
   static constexpr size_t kControlBufferSize =
-      FileDescriptorSet::MAX_DESCRIPTORS_PER_MESSAGE * sizeof(int) +
+      IPC::Message::MAX_DESCRIPTORS_PER_MESSAGE * sizeof(int) +
       kControlBufferHeaderSize;
 
   // Large incoming messages that span multiple pipe buffers get built-up in the
@@ -136,7 +153,7 @@ class Channel::ChannelImpl : public MessageLoopForIO::Watcher {
   bool processing_incoming_;
 
   // This flag is set after we've closed the channel.
-  bool closed_;
+  std::atomic<bool> closed_;
 
   // We keep track of the PID of the other side of this channel so that we can
   // record this when generating logs of IPC messages.
@@ -145,24 +162,29 @@ class Channel::ChannelImpl : public MessageLoopForIO::Watcher {
 #if defined(OS_MACOSX)
   struct PendingDescriptors {
     uint32_t id;
-    RefPtr<FileDescriptorSet> fds;
-
-    PendingDescriptors() : id(0) {}
-    PendingDescriptors(uint32_t id, FileDescriptorSet* fds)
-        : id(id), fds(fds) {}
+    nsTArray<mozilla::UniqueFileHandle> handles;
   };
 
   std::list<PendingDescriptors> pending_fds_;
 
   // A generation ID for RECEIVED_FD messages.
   uint32_t last_pending_fd_id_;
+
+  // Whether or not to accept mach ports from a remote process, and whether this
+  // process is the privileged side of a IPC::Channel which can transfer mach
+  // ports.
+  bool accept_mach_ports_ = false;
+  bool privileged_ = false;
+
+  // If available, the task port for the remote process.
+  mozilla::UniqueMachSendRight other_task_;
 #endif
 
-  // This variable is updated so it matches output_queue_.size(), except we can
+  // This variable is updated so it matches output_queue_.Count(), except we can
   // read output_queue_length_ from any thread (if we're OK getting an
   // occasional out-of-date or bogus value).  We use output_queue_length_ to
   // implement Unsound_NumQueuedMessages.
-  size_t output_queue_length_;
+  std::atomic<size_t> output_queue_length_;
 
   ScopedRunnableMethodFactory<ChannelImpl> factory_;
 

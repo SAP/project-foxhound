@@ -19,7 +19,7 @@
 
 using namespace mozilla;
 
-#define ALERT_CHROME_URL "chrome://global/content/alerts/alert.xhtml"
+#define ALERT_CHROME_URL "chrome://global/content/alerts/alert.xhtml"_ns
 
 namespace {
 StaticRefPtr<nsXULAlerts> gXULAlerts;
@@ -101,10 +101,12 @@ nsXULAlerts::ShowAlertNotification(
   nsCOMPtr<nsIAlertNotification> alert =
       do_CreateInstance(ALERT_NOTIFICATION_CONTRACTID);
   NS_ENSURE_TRUE(alert, NS_ERROR_FAILURE);
-  nsresult rv =
-      alert->Init(aAlertName, aImageUrl, aAlertTitle, aAlertText,
-                  aAlertTextClickable, aAlertCookie, aBidi, aLang, aData,
-                  aPrincipal, aInPrivateBrowsing, aRequireInteraction);
+  // vibrate is unused for now
+  nsTArray<uint32_t> vibrate;
+  nsresult rv = alert->Init(aAlertName, aImageUrl, aAlertTitle, aAlertText,
+                            aAlertTextClickable, aAlertCookie, aBidi, aLang,
+                            aData, aPrincipal, aInPrivateBrowsing,
+                            aRequireInteraction, false, vibrate);
   NS_ENSURE_SUCCESS(rv, rv);
   return ShowAlert(alert, aAlertListener);
 }
@@ -356,11 +358,11 @@ nsXULAlerts::ShowAlertWithIconURI(nsIAlertNotification* aAlert,
   if (inPrivateBrowsing) {
     features.AppendLiteral(",private");
   }
-  rv = wwatch->OpenWindow(nullptr, ALERT_CHROME_URL, "_blank", features.get(),
+  rv = wwatch->OpenWindow(nullptr, ALERT_CHROME_URL, "_blank"_ns, features,
                           argsArray, getter_AddRefs(newWindow));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  mNamedWindows.Put(name, newWindow);
+  mNamedWindows.InsertOrUpdate(name, newWindow);
   alertObserver->SetAlertWindow(newWindow);
 
   return NS_OK;
@@ -392,7 +394,7 @@ nsXULAlerts::SetSuppressForScreenSharing(bool aSuppress) {
 }
 
 NS_IMETHODIMP
-nsXULAlerts::CloseAlert(const nsAString& aAlertName, nsIPrincipal* aPrincipal) {
+nsXULAlerts::CloseAlert(const nsAString& aAlertName) {
   mozIDOMWindowProxy* alert = mNamedWindows.GetWeak(aAlertName);
   if (nsCOMPtr<nsPIDOMWindowOuter> domWindow =
           nsPIDOMWindowOuter::From(alert)) {

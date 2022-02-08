@@ -143,6 +143,7 @@ enum class OperatingSystem : uint8_t {
   OSX10_13,
   OSX10_14,
   OSX10_15,
+  OSX11_0,
   Android,
   Ios
 };
@@ -170,6 +171,8 @@ enum class DeviceFamily : uint8_t {
   MicrosoftAll,
   ParallelsAll,
   QualcommAll,
+  AppleAll,
+  AmazonAll,
   IntelGMA500,
   IntelGMA900,
   IntelGMA950,
@@ -179,7 +182,8 @@ enum class DeviceFamily : uint8_t {
   IntelHDGraphicsToIvyBridge,
   IntelHDGraphicsToSandyBridge,
   IntelHaswell,
-  IntelHD3000,
+  IntelSandyBridge,
+  IntelGen7Baytrail,
   IntelHD520,
   IntelMobileHDGraphics,
   NvidiaBlockD3D9Layers,
@@ -193,10 +197,11 @@ enum class DeviceFamily : uint8_t {
   Bug1155608,
   Bug1207665,
   Bug1447141,
-  NvidiaBlockWebRender,
+  AmdR600,
   NvidiaRolloutWebRender,
   IntelRolloutWebRender,
   IntelModernRolloutWebRender,
+  IntelWebRenderBlocked,
   AtiRolloutWebRender,
 
   Max
@@ -214,6 +219,8 @@ enum class DeviceVendor : uint8_t {
   Qualcomm,
   MicrosoftBasic,
   MicrosoftHyperV,
+  Apple,
+  Amazon,
 
   Max
 };
@@ -228,10 +235,19 @@ enum DriverVendor : uint8_t {
   MesaLLVMPipe,
   MesaSoftPipe,
   MesaSWRast,
+  MesaSWUnknown,
+  // AMD
+  MesaR600,
+  // Nouveau: Open-source nvidia
+  MesaNouveau,
   // A generic ID to be provided when we can't determine the DRI driver on Mesa.
   MesaUnknown,
   // Wildcard for all non-Mesa drivers.
   NonMesaAll,
+  // Wildcard for all hardware Mesa drivers.
+  HardwareMesaAll,
+  // Wildcard for all software Mesa drivers.
+  SoftwareMesaAll,
 
   Max
 };
@@ -253,6 +269,7 @@ enum class DesktopEnvironment : uint8_t {
   Deepin,
   Dwm,
   Budgie,
+  Sway,
   Unknown,
   Max
 };
@@ -465,7 +482,7 @@ inline bool ParseDriverVersion(const nsAString& aVersion,
                                uint64_t* aNumericVersion) {
   *aNumericVersion = 0;
 
-#if defined(XP_WIN) || defined(MOZ_X11)
+#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
   int a, b, c, d;
   char aStr[8], bStr[8], cStr[8], dStr[8];
   /* honestly, why do I even bother */

@@ -24,13 +24,12 @@
 #include "nsIInputStream.h"
 #include "nsIMultiPartChannel.h"
 #include "nsIHttpChannel.h"
-#include "nsIApplicationCache.h"
-#include "nsIApplicationCacheChannel.h"
 #include "nsMimeTypes.h"
 
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIScriptSecurityManager.h"
+#include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 
 #include "plstr.h"   // PL_strcasestr(...)
@@ -59,7 +58,7 @@ imgRequest::imgRequest(imgLoader* aLoader, const ImageCacheKey& aCacheKey)
       mFirstProxy(nullptr),
       mValidator(nullptr),
       mInnerWindowId(0),
-      mCORSMode(imgIRequest::CORS_NONE),
+      mCORSMode(CORS_NONE),
       mImageErrorCode(NS_OK),
       mImageAvailable(false),
       mIsDeniedCrossSiteCORSRequest(false),
@@ -88,7 +87,8 @@ nsresult imgRequest::Init(nsIURI* aURI, nsIURI* aFinalURI,
                           bool aHadInsecureRedirect, nsIRequest* aRequest,
                           nsIChannel* aChannel, imgCacheEntry* aCacheEntry,
                           mozilla::dom::Document* aLoadingDocument,
-                          nsIPrincipal* aTriggeringPrincipal, int32_t aCORSMode,
+                          nsIPrincipal* aTriggeringPrincipal,
+                          mozilla::CORSMode aCORSMode,
                           nsIReferrerInfo* aReferrerInfo) {
   MOZ_ASSERT(NS_IsMainThread(), "Cannot use nsIURI off main thread!");
 
@@ -544,7 +544,18 @@ void imgRequest::SetCacheValidation(imgCacheEntry* aCacheEntry,
     return;
   }
 
-  auto info = nsContentUtils::GetSubresourceCacheValidationInfo(aRequest);
+  RefPtr<imgRequest> req = aCacheEntry->GetRequest();
+  MOZ_ASSERT(req);
+  RefPtr<nsIURI> uri;
+  req->GetURI(getter_AddRefs(uri));
+  // TODO(emilio): Seems we should be able to assert `uri` is not null, but we
+  // get here in such cases sometimes (like for some redirects, see
+  // docshell/test/chrome/test_bug89419.xhtml).
+  //
+  // We have the original URI in the cache key though, probably we should be
+  // using that instead of relying on Init() getting called.
+  auto info = nsContentUtils::GetSubresourceCacheValidationInfo(
+      aRequest, uri, nsContentUtils::SubresourceKind::Image);
 
   // Expiration time defaults to 0. We set the expiration time on our entry if
   // it hasn't been set yet.
@@ -561,66 +572,6 @@ void imgRequest::SetCacheValidation(imgCacheEntry* aCacheEntry,
   if (info.mMustRevalidate) {
     aCacheEntry->SetMustValidate(info.mMustRevalidate);
   }
-}
-
-namespace {
-
-already_AddRefed<nsIApplicationCache> GetApplicationCache(
-    nsIRequest* aRequest) {
-  nsresult rv;
-
-  nsCOMPtr<nsIApplicationCacheChannel> appCacheChan =
-      do_QueryInterface(aRequest);
-  if (!appCacheChan) {
-    return nullptr;
-  }
-
-  bool fromAppCache;
-  rv = appCacheChan->GetLoadedFromApplicationCache(&fromAppCache);
-  NS_ENSURE_SUCCESS(rv, nullptr);
-
-  if (!fromAppCache) {
-    return nullptr;
-  }
-
-  nsCOMPtr<nsIApplicationCache> appCache;
-  rv = appCacheChan->GetApplicationCache(getter_AddRefs(appCache));
-  NS_ENSURE_SUCCESS(rv, nullptr);
-
-  return appCache.forget();
-}
-
-}  // namespace
-
-bool imgRequest::CacheChanged(nsIRequest* aNewRequest) {
-  nsCOMPtr<nsIApplicationCache> newAppCache = GetApplicationCache(aNewRequest);
-
-  // Application cache not involved at all or the same app cache involved
-  // in both of the loads (original and new).
-  if (newAppCache == mApplicationCache) {
-    return false;
-  }
-
-  // In a rare case it may happen that two objects still refer
-  // the same application cache version.
-  if (newAppCache && mApplicationCache) {
-    nsresult rv;
-
-    nsAutoCString oldAppCacheClientId, newAppCacheClientId;
-    rv = mApplicationCache->GetClientID(oldAppCacheClientId);
-    NS_ENSURE_SUCCESS(rv, true);
-    rv = newAppCache->GetClientID(newAppCacheClientId);
-    NS_ENSURE_SUCCESS(rv, true);
-
-    if (oldAppCacheClientId == newAppCacheClientId) {
-      return false;
-    }
-  }
-
-  // When we get here, app caches differ or app cache is involved
-  // just in one of the loads what we also consider as a change
-  // in a loading cache.
-  return true;
 }
 
 bool imgRequest::GetMultipart() const {
@@ -700,8 +651,6 @@ imgRequest::OnStartRequest(nsIRequest* aRequest) {
 
   SetCacheValidation(mCacheEntry, aRequest);
 
-  mApplicationCache = GetApplicationCache(aRequest);
-
   // Shouldn't we be dead already if this gets hit?
   // Probably multipart/x-mixed-replace...
   RefPtr<ProgressTracker> progressTracker = GetProgressTracker();
@@ -780,8 +729,7 @@ imgRequest::OnStopRequest(nsIRequest* aRequest, nsresult status) {
   // trigger a failure, since the image might be waiting for more non-optional
   // data and this is the point where we break the news that it's not coming.
   if (image) {
-    nsresult rv =
-        image->OnImageDataComplete(aRequest, nullptr, status, lastPart);
+    nsresult rv = image->OnImageDataComplete(aRequest, status, lastPart);
 
     // If we got an error in the OnImageDataComplete() call, we don't want to
     // proceed as if nothing bad happened. However, we also want to give
@@ -1053,7 +1001,7 @@ imgRequest::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInStr,
       } else {
         nsCOMPtr<nsIRunnable> runnable =
             new FinishPreparingForNewPartRunnable(this, std::move(result));
-        eventTarget->Dispatch(CreateMediumHighRunnable(runnable.forget()),
+        eventTarget->Dispatch(CreateRenderBlockingRunnable(runnable.forget()),
                               NS_DISPATCH_NORMAL);
       }
     }
@@ -1068,7 +1016,7 @@ imgRequest::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInStr,
   // Notify the image that it has new data.
   if (aInStr) {
     nsresult rv =
-        image->OnImageDataAvailable(aRequest, nullptr, aInStr, aOffset, aCount);
+        image->OnImageDataAvailable(aRequest, aInStr, aOffset, aCount);
 
     if (NS_FAILED(rv)) {
       MOZ_LOG(gImgLog, LogLevel::Warning,

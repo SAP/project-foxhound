@@ -1,12 +1,23 @@
 const DIRECTORY_PATH = "/browser/toolkit/components/passwordmgr/test/browser/";
 
-ChromeUtils.import("resource://gre/modules/LoginHelper.jsm", this);
+const { LoginHelper } = ChromeUtils.import(
+  "resource://gre/modules/LoginHelper.jsm"
+);
 const { LoginManagerParent } = ChromeUtils.import(
   "resource://gre/modules/LoginManagerParent.jsm"
 );
-ChromeUtils.import("resource://testing-common/LoginTestUtils.jsm", this);
-ChromeUtils.import("resource://testing-common/ContentTaskUtils.jsm", this);
-ChromeUtils.import("resource://testing-common/TelemetryTestUtils.jsm", this);
+const { LoginTestUtils } = ChromeUtils.import(
+  "resource://testing-common/LoginTestUtils.jsm"
+);
+const { ContentTaskUtils } = ChromeUtils.import(
+  "resource://testing-common/ContentTaskUtils.jsm"
+);
+const { TelemetryTestUtils } = ChromeUtils.import(
+  "resource://testing-common/TelemetryTestUtils.jsm"
+);
+const { PromptTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PromptTestUtils.jsm"
+);
 
 add_task(async function common_initialize() {
   await SpecialPowers.pushPrefEnv({
@@ -17,6 +28,12 @@ add_task(async function common_initialize() {
       ["toolkit.telemetry.ipcBatchTimeout", 0],
     ],
   });
+  if (LoginHelper.relatedRealmsEnabled) {
+    await LoginTestUtils.remoteSettings.setupWebsitesWithSharedCredentials();
+    registerCleanupFunction(async function() {
+      await LoginTestUtils.remoteSettings.cleanWebsitesWithSharedCredentials();
+    });
+  }
 });
 
 registerCleanupFunction(
@@ -112,8 +129,7 @@ async function submitFormAndGetResults(
 ) {
   async function contentSubmitForm([contentFormAction, contentSelectorValues]) {
     const { WrapPrivileged } = ChromeUtils.import(
-      "resource://specialpowers/WrapPrivileged.jsm",
-      this
+      "resource://specialpowers/WrapPrivileged.jsm"
     );
     let doc = content.document;
     let form = doc.querySelector("form");
@@ -140,11 +156,15 @@ async function submitFormAndGetResults(
     }
     form.submit();
   }
+
+  let loadPromise = BrowserTestUtils.browserLoaded(browser);
   await SpecialPowers.spawn(
     browser,
     [[formAction, selectorValues]],
     contentSubmitForm
   );
+  await loadPromise;
+
   let result = await getFormSubmitResponseResult(
     browser,
     formAction,
@@ -183,8 +203,13 @@ async function getFormSubmitResponseResult(
       }, `Wait for form submission load (${resultURL})`);
       let username = content.document.querySelector(usernameSelector)
         .textContent;
-      let password = content.document.querySelector(passwordSelector)
-        .textContent;
+      // Bug 1686071: Since generated passwords can have special characters in them,
+      // we need to unescape the characters. These special characters are automatically escaped
+      // when we submit a form in `submitFormAndGetResults`.
+      // Otherwise certain tests will intermittently fail when these special characters are present in the passwords.
+      let password = unescape(
+        content.document.querySelector(passwordSelector).textContent
+      );
       return {
         username,
         password,
@@ -221,7 +246,7 @@ function testSubmittingLoginForm(
       );
       ok(true, "form submission loaded");
       if (aTaskFn) {
-        await aTaskFn(fieldValues);
+        await aTaskFn(fieldValues, browser);
       }
       return fieldValues;
     }
@@ -415,8 +440,7 @@ async function cleanupPasswordNotifications(
 async function clearMessageCache(browser) {
   await SpecialPowers.spawn(browser, [], async () => {
     const { LoginManagerChild } = ChromeUtils.import(
-      "resource://gre/modules/LoginManagerChild.jsm",
-      this
+      "resource://gre/modules/LoginManagerChild.jsm"
     );
     let docState = LoginManagerChild.forWindow(content).stateForDocument(
       content.document
@@ -470,10 +494,10 @@ async function updateDoorhangerInputValues(
     info(`setInputValue: on target: ${target.id}, value: ${value}`);
     target.focus();
     target.select();
-    await EventUtils.synthesizeKey("KEY_Backspace");
     info(
-      `setInputValue: target.value: ${target.value}, sending new value string`
+      `setInputValue: current value: '${target.value}', setting new value '${value}'`
     );
+    await EventUtils.synthesizeKey("KEY_Backspace");
     await EventUtils.sendString(value);
     await EventUtils.synthesizeKey("KEY_Tab");
     return Promise.resolve();
@@ -496,6 +520,81 @@ async function updateDoorhangerInputValues(
       await setInputValue(usernameField, newValues.username);
     }
   }
+}
+
+/**
+ * Open doorhanger autocomplete popup and select a username value.
+ *
+ * @param {string} text the text value of the username that should be selected.
+ *                 Noop if `text` is falsy.
+ */
+async function selectDoorhangerUsername(text) {
+  await _selectDoorhanger(
+    text,
+    "#password-notification-username",
+    "#password-notification-username-dropmarker"
+  );
+}
+
+/**
+ * Open doorhanger autocomplete popup and select a password value.
+ *
+ * @param {string} text the text value of the password that should be selected.
+ *                 Noop if `text` is falsy.
+ */
+async function selectDoorhangerPassword(text) {
+  await _selectDoorhanger(
+    text,
+    "#password-notification-password",
+    "#password-notification-password-dropmarker"
+  );
+}
+
+async function _selectDoorhanger(text, inputSelector, dropmarkerSelector) {
+  if (!text) {
+    return;
+  }
+
+  info("Opening doorhanger suggestion popup");
+
+  let doorhangerPopup = document.getElementById("password-notification");
+  let dropmarker = doorhangerPopup.querySelector(dropmarkerSelector);
+
+  let autocompletePopup = document.getElementById("PopupAutoComplete");
+  let popupShown = BrowserTestUtils.waitForEvent(
+    autocompletePopup,
+    "popupshown"
+  );
+  // the dropmarker gets un-hidden async when looking up username suggestions
+  await TestUtils.waitForCondition(() => !dropmarker.hidden);
+
+  EventUtils.synthesizeMouseAtCenter(dropmarker, {});
+
+  await popupShown;
+
+  let suggestions = [
+    ...document
+      .getElementById("PopupAutoComplete")
+      .getElementsByTagName("richlistitem"),
+  ].filter(richlistitem => !richlistitem.collapsed);
+
+  let suggestionText = suggestions.map(
+    richlistitem => richlistitem.querySelector(".ac-title-text").innerHTML
+  );
+
+  let targetIndex = suggestionText.indexOf(text);
+  ok(targetIndex != -1, "Suggestions include expected text");
+
+  let promiseHidden = BrowserTestUtils.waitForEvent(
+    autocompletePopup,
+    "popuphidden"
+  );
+
+  info("Selecting doorhanger suggestion");
+
+  EventUtils.synthesizeMouseAtCenter(suggestions[targetIndex], {});
+
+  await promiseHidden;
 }
 
 // End popup notification (doorhanger) functions //
@@ -533,15 +632,21 @@ async function openPasswordManager(openingFunc, waitForFilter) {
 
 // Autocomplete popup related functions //
 
-async function openACPopup(popup, browser, inputSelector) {
+async function openACPopup(
+  popup,
+  browser,
+  inputSelector,
+  iframeBrowsingContext = null
+) {
   let promiseShown = BrowserTestUtils.waitForEvent(popup, "popupshown");
 
   await SimpleTest.promiseFocus(browser);
   info("content window focused");
 
   // Focus the username field to open the popup.
+  let target = iframeBrowsingContext || browser;
   await SpecialPowers.spawn(
-    browser,
+    target,
     [[inputSelector]],
     function openAutocomplete(sel) {
       content.document.querySelector(sel).focus();
@@ -570,6 +675,7 @@ async function fillGeneratedPasswordFromOpenACPopup(
   let popup = browser.ownerDocument.getElementById("PopupAutoComplete");
   let item;
 
+  await new Promise(requestAnimationFrame);
   await TestUtils.waitForCondition(() => {
     item = popup.querySelector(`[originaltype="generatedPassword"]`);
     return item && !EventUtils.isHidden(item);
@@ -612,7 +718,8 @@ async function openPasswordContextMenu(
   browser,
   input,
   assertCallback = null,
-  browsingContext = null
+  browsingContext = null,
+  openFillMenu = null
 ) {
   const doc = browser.ownerDocument;
   const CONTEXT_MENU = doc.getElementById("contentAreaContextMenu");
@@ -654,13 +761,15 @@ async function openPasswordContextMenu(
     }
   }
 
-  // Synthesize a mouse click over the fill login menu header.
-  let popupShownPromise = BrowserTestUtils.waitForCondition(
-    () => POPUP_HEADER.open && BrowserTestUtils.is_visible(LOGIN_POPUP),
-    "Waiting for header to be open and submenu to be visible"
-  );
-  EventUtils.synthesizeMouseAtCenter(POPUP_HEADER, {}, browser.ownerGlobal);
-  await popupShownPromise;
+  if (openFillMenu) {
+    // Open the fill login menu.
+    let popupShownPromise = BrowserTestUtils.waitForEvent(
+      LOGIN_POPUP,
+      "popupshown"
+    );
+    POPUP_HEADER.openMenu(true);
+    await popupShownPromise;
+  }
 }
 
 /**
@@ -699,7 +808,7 @@ async function doFillGeneratedPasswordContextMenuItem(browser, passwordInput) {
     "fill-login-generated-password"
   );
   let generatedPasswordSeparator = document.getElementById(
-    "fill-login-and-generated-password-separator"
+    "passwordmgr-items-separator"
   );
 
   ok(
@@ -719,7 +828,8 @@ async function doFillGeneratedPasswordContextMenuItem(browser, passwordInput) {
     SimpleTest.executeSoon(resolve);
   });
 
-  EventUtils.synthesizeMouseAtCenter(generatedPasswordItem, {});
+  let contextMenu = document.getElementById("contentAreaContextMenu");
+  contextMenu.activateItem(generatedPasswordItem);
 
   await promiseShown;
   await fillGeneratedPasswordFromOpenACPopup(browser, passwordInput);

@@ -21,8 +21,8 @@ webidl BrowsingContext;
 native LoadContextRef(already_AddRefed<nsISupports>);
 %{C++
 #include "nsTArray.h"
-#include "mozilla/BasePrincipal.h"
 #include "mozilla/LoadTainting.h"
+#include "mozilla/OriginAttributes.h"
 #include "mozilla/UniquePtr.h"
 #include "nsStringFwd.h"
 
@@ -411,6 +411,12 @@ interface nsILoadInfo : nsISupports
   [infallible] readonly attribute unsigned long sandboxFlags;
 
   /**
+  *   The TriggingSandboxFlags are the SandboxFlags of the entity
+  *   responsible for causing the load to occur.
+  */
+  [infallible] attribute unsigned long triggeringSandboxFlags;
+
+  /**
    * Allows to query only the security mode bits from above.
    */
   [infallible] readonly attribute unsigned long securityMode;
@@ -449,6 +455,26 @@ interface nsILoadInfo : nsISupports
    * request and not upgrade it. (e.g in the case of OCSP.
    */
   const unsigned long HTTPS_ONLY_EXEMPT = (1 << 3);
+
+  /**
+   * This flag can only ever be set on top-level loads. It indicates
+   * that the top-level https connection succeeded. This flag is mostly
+   * used to counter time-outs which allows to cancel the channel
+   * if the https load has not started.
+   */
+  const unsigned long HTTPS_ONLY_TOP_LEVEL_LOAD_IN_PROGRESS = (1 << 4);
+
+  /**
+   * This flag indicates that the request should not be logged to the
+   * console.
+   */
+  const unsigned long HTTPS_ONLY_DO_NOT_LOG_TO_CONSOLE = (1 << 5);
+
+  /**
+   * This flag indicates that the request should not be logged to the
+   * console.
+   */
+  const unsigned long HTTPS_ONLY_UPGRADED_HTTPS_FIRST = (1 << 6);
 
   /**
    * Upgrade state of HTTPS-Only Mode. The flag HTTPS_ONLY_EXEMPT can get
@@ -515,11 +541,23 @@ interface nsILoadInfo : nsISupports
    */
   attribute nsICookieJarSettings cookieJarSettings;
 
+  cenum StoragePermissionState : 8 {
+    NoStoragePermission = 0,
+    HasStoragePermission = 1,
+    StoragePermissionAllowListed = 2,
+  };
+
   /**
-   * True if the loading document has the storage permission. This value would
-   * be set during opening the channel.
+   * The result of the storage permission check of the loading document. This
+   * value would be set during opening the channel.
    */
-  [infallible] attribute boolean hasStoragePermission;
+  [infallible] attribute nsILoadInfo_StoragePermissionState
+        storagePermission;
+
+  /**
+   * True if the load was triggered by a meta refresh.
+   */
+  [infallible] attribute boolean isMetaRefresh;
 
   /**
    * If forceInheritPrincipal is true, the data coming from the channel should
@@ -616,12 +654,12 @@ interface nsILoadInfo : nsISupports
   [infallible] attribute boolean sendCSPViolationEvents;
 
 %{ C++
-  inline nsContentPolicyType GetExternalContentPolicyType()
+  inline ExtContentPolicyType GetExternalContentPolicyType()
   {
     nsContentPolicyType result;
     mozilla::DebugOnly<nsresult> rv = GetExternalContentPolicyType(&result);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
-    return result;
+    return static_cast<ExtContentPolicyType>(result);
   }
 %}
 
@@ -669,6 +707,13 @@ interface nsILoadInfo : nsISupports
   [infallible] readonly attribute boolean browserUpgradeInsecureRequests;
 
   /**
+   * Returns true if the display content was or will get upgraded from http to https.
+   * Requires 'security.mixed_content.upgrade_display_content' pref to be true.
+   * Flag is set purely to collect telemetry.
+   */
+  [infallible] attribute boolean browserDidUpgradeInsecureRequests;
+
+  /**
    * Returns true if the the page is https and the content is upgradable from http
    * requires 'security.mixed_content.upgrade_display_content' pref to be false.
    * See browserUpgradeInsecureRequests for more details, this only happens
@@ -685,11 +730,6 @@ interface nsILoadInfo : nsISupports
    * If true, insecure redirects to a data: URI are allowed.
    */
   [infallible] attribute boolean allowInsecureRedirectToDataURI;
-
-   /**
-   * If true, CORS checks will be skipped.
-   */
-  [infallible] attribute boolean bypassCORSChecks;
 
   /**
    * If true, the content policy security check is excluded from web requests.
@@ -817,12 +857,11 @@ interface nsILoadInfo : nsISupports
    * the channels got redirected] to the loadinfo, so that at every point this
    * array provides us information about all the redirects this channel went
    * through.
-   * @param entry, the nsIRedirectHistoryEntry before the channel
-   *         got redirected.
+   * @param channelToDeriveFrom the channel being redirected
    * @param aIsInternalRedirect should be true if the channel is going
    *        through an internal redirect, otherwise false.
    */
-  void appendRedirectHistoryEntry(in nsIRedirectHistoryEntry entry,
+  void appendRedirectHistoryEntry(in nsIChannel channelToDeriveFrom,
                                   in boolean isInternalRedirect);
 
   /**
@@ -992,25 +1031,26 @@ interface nsILoadInfo : nsISupports
   attribute nsIURI resultPrincipalURI;
 
   /**
-   * Returns the null principal of the resulting resource if the SANDBOXED_ORIGIN
-   * flag is set.  Otherwise returns null.  This is used by
-   * GetChannelResultPrincipal() to ensure that the same null principal object
-   * is returned every time.
+   * Returns a unique nsID used to construct the null principal for the
+   * resulting resource if the SANDBOXED_ORIGIN flag is set.  This is used by
+   * GetChannelResultPrincipal() to ensure that the same null principal is
+   * returned every time.
    */
-  [notxpcom, nostdcall] readonly attribute nsIPrincipal sandboxedLoadingPrincipal;
+  [noscript, nostdcall, notxpcom]
+  nsIDRef GetSandboxedNullPrincipalID();
+
+  /**
+   * Generates a new nsID to be returned by a future call to
+   * `GetSandboxedNullPrincipalID()`.
+   */
+  [noscript, nostdcall, notxpcom]
+  void ResetSandboxedNullPrincipalID();
 
   /**
    * Return the top-level principal, which is the principal of the top-level
    * window.
    */
   [notxpcom, nostdcall] readonly attribute nsIPrincipal topLevelPrincipal;
-
-  /**
-   * Return the top-level storage area principal, which is the principal of
-   * the top-level window if it's not a 3rd party context, non tracking
-   * resource.
-   */
-  [notxpcom, nostdcall] readonly attribute nsIPrincipal topLevelStorageAreaPrincipal;
 
   /**
    * Note which client (i.e. global) initiated this network request.  All
@@ -1210,12 +1250,6 @@ interface nsILoadInfo : nsISupports
   [infallible] attribute boolean documentHasUserInteracted;
 
   /**
-    * This attribute represents whether the document to which this
-    * load belongs had finished loading when the load was initiated.
-    */
-  [infallible] attribute boolean documentHasLoaded;
-
-  /**
     * During a top-level document channel redirect from tracking to
     * non-tracking resources, our anti-tracking heuristic, grants the storage
     * access permission for a short amount of seconds (See
@@ -1224,6 +1258,12 @@ interface nsILoadInfo : nsISupports
     * of a chain of redirects.
     */
   [infallible] attribute boolean allowListFutureDocumentsCreatedFromThisRedirectChain;
+
+  /**
+   * Indicates that we need to check if we should apply the anti-tracking
+   * heuristic after the channel has been classified.
+   */
+  [infallible] attribute boolean needForCheckingAntiTrackingHeuristic;
 
   /**
    * A snapshot of the nonce at load start time which is used for CSP
@@ -1327,4 +1367,28 @@ interface nsILoadInfo : nsISupports
    */
   [infallible] attribute nsILoadInfo_CrossOriginEmbedderPolicy
         loadingEmbedderPolicy;
+
+  /**
+   * This attribute will be true if this is a load triggered by a media
+   * element.
+   */
+  [infallible] attribute boolean isMediaRequest;
+
+  /**
+   * This attribute will be true if this is a load triggered by a media
+   * element and it's an initial request.
+   */
+  [infallible] attribute boolean isMediaInitialRequest;
+
+  /**
+   * This attribute will be true if the fetch request is from object or embed
+   * elements
+   */
+  [infallible] attribute boolean isFromObjectOrEmbed;
+  
+  /**
+   * If this is non-null, this property holds the URI as it was before query
+   * stripping was performed.
+   */
+  attribute nsIURI unstrippedURI;
 };

@@ -2,16 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
 import React from "react";
 import { shallow } from "enzyme";
 import WhyPaused from "../SecondaryPanes/WhyPaused.js";
 
-function render(why: Object, delay: ?number) {
+function render(why, delay) {
   const props = { why, delay };
-
-  // $FlowIgnore
   const component = shallow(<WhyPaused.WrappedComponent {...props} />);
 
   return { component, props };
@@ -31,7 +27,8 @@ describe("WhyPaused", () => {
     const why = {
       type: "exception",
       exception: {
-        class: "Error",
+        class: "ReferenceError",
+        isError: true,
         preview: {
           name: "ReferenceError",
           message: "o is not defined",

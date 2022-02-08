@@ -7,9 +7,12 @@
 #include "mozilla/dom/SVGFEConvolveMatrixElement.h"
 #include "mozilla/dom/SVGFEConvolveMatrixElementBinding.h"
 #include "mozilla/SVGFilterInstance.h"
+#include "mozilla/SVGUtils.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "DOMSVGAnimatedNumberList.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/BindContext.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(FEConvolveMatrix)
 
@@ -217,6 +220,15 @@ bool SVGFEConvolveMatrixElement::AttributeAffectsRendering(
            aAttribute == nsGkAtoms::preserveAlpha ||
            aAttribute == nsGkAtoms::edgeMode ||
            aAttribute == nsGkAtoms::kernelMatrix));
+}
+
+nsresult SVGFEConvolveMatrixElement::BindToTree(BindContext& aCtx,
+                                                nsINode& aParent) {
+  if (aCtx.InComposedDoc()) {
+    aCtx.OwnerDoc().SetUseCounter(eUseCounter_custom_feConvolveMatrix);
+  }
+
+  return SVGFE::BindToTree(aCtx, aParent);
 }
 
 //----------------------------------------------------------------------

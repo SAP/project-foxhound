@@ -8,43 +8,22 @@ var EXPORTED_SYMBOLS = [
   "PageActions",
   // PageActions.Action
   // PageActions.ACTION_ID_BOOKMARK
-  // PageActions.ACTION_ID_PIN_TAB
-  // PageActions.ACTION_ID_BOOKMARK_SEPARATOR
   // PageActions.ACTION_ID_BUILT_IN_SEPARATOR
   // PageActions.ACTION_ID_TRANSIENT_SEPARATOR
 ];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
-  "resource://gre/modules/AppConstants.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "AsyncShutdown",
-  "resource://gre/modules/AsyncShutdown.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "BinarySearch",
-  "resource://gre/modules/BinarySearch.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "SiteSpecificBrowserService",
-  "resource:///modules/SiteSpecificBrowserService.jsm"
-);
+XPCOMUtils.defineLazyModuleGetters(this, {
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
+  BinarySearch: "resource://gre/modules/BinarySearch.jsm",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
+  Services: "resource://gre/modules/Services.jsm",
+});
 
 const ACTION_ID_BOOKMARK = "bookmark";
-const ACTION_ID_PIN_TAB = "pinTab";
-const ACTION_ID_BOOKMARK_SEPARATOR = "bookmarkSeparator";
 const ACTION_ID_BUILT_IN_SEPARATOR = "builtInSeparator";
 const ACTION_ID_TRANSIENT_SEPARATOR = "transientSeparator";
 
@@ -59,9 +38,15 @@ function escapeCSSURL(url) {
 
 var PageActions = {
   /**
-   * Inits.  Call to init.
+   * Initializes PageActions.
+   *
+   * @param {boolean} addShutdownBlocker
+   *   This param exists only for tests.  Normally the default value of true
+   *   must be used.
    */
-  init() {
+  init(addShutdownBlocker = true) {
+    this._initBuiltInActions();
+
     let callbacks = this._deferredAddActionCalls;
     delete this._deferredAddActionCalls;
 
@@ -76,11 +61,11 @@ var PageActions = {
 
     // Now place them all in each window.  Instead of splitting the register and
     // place steps, we could simply call addAction, which does both, but doing
-    // it this way means that all windows initially place their actions the same
-    // way -- placeAllActions -- regardless of whether they're open when this
-    // method is called or opened later.
+    // it this way means that all windows initially place their actions in the
+    // urlbar the same way -- placeAllActions -- regardless of whether they're
+    // open when this method is called or opened later.
     for (let bpa of allBrowserPageActions()) {
-      bpa.placeAllActions();
+      bpa.placeAllActionsInUrlbar();
     }
 
     // These callbacks are deferred until init happens and all built-in actions
@@ -89,15 +74,17 @@ var PageActions = {
       callbacks.shift()();
     }
 
-    // Purge removed actions from persisted state on shutdown.  The point is not
-    // to do it on Action.remove().  That way actions that are removed and
-    // re-added while the app is running will have their urlbar placement and
-    // other state remembered and restored.  This happens for upgraded and
-    // downgraded extensions, for example.
-    AsyncShutdown.profileBeforeChange.addBlocker(
-      "PageActions: purging unregistered actions from cache",
-      () => this._purgeUnregisteredPersistedActions()
-    );
+    if (addShutdownBlocker) {
+      // Purge removed actions from persisted state on shutdown.  The point is
+      // not to do it on Action.remove().  That way actions that are removed and
+      // re-added while the app is running will have their urlbar placement and
+      // other state remembered and restored.  This happens for upgraded and
+      // downgraded extensions, for example.
+      AsyncShutdown.profileBeforeChange.addBlocker(
+        "PageActions: purging unregistered actions from cache",
+        () => this._purgeUnregisteredPersistedActions()
+      );
+    }
   },
 
   _deferredAddActionCalls: [],
@@ -265,19 +252,15 @@ var PageActions = {
       this._nonBuiltInActions.splice(index, 0, action);
     }
 
-    if (this._persistedActions.ids.includes(action.id)) {
-      // The action has been seen before.  Override its pinnedToUrlbar value
-      // with the persisted value.  Set the private version of that property
-      // so that onActionToggledPinnedToUrlbar isn't called, which happens when
-      // the public version is set.
-      action._pinnedToUrlbar = this._persistedActions.idsInUrlbar.includes(
-        action.id
-      );
-    } else {
+    let isNew = !this._persistedActions.ids.includes(action.id);
+    if (isNew) {
       // The action is new.  Store it in the persisted actions.
       this._persistedActions.ids.push(action.id);
-      this._updateIDsPinnedToUrlbarForAction(action);
     }
+
+    // Actions are always pinned to the urlbar, except for panel separators.
+    action._pinnedToUrlbar = !action.__isSeparator;
+    this._updateIDsPinnedToUrlbarForAction(action);
   },
 
   _updateIDsPinnedToUrlbarForAction(action) {
@@ -368,10 +351,29 @@ var PageActions = {
   },
 
   _loadPersistedActions() {
+    let actions;
     try {
       let json = Services.prefs.getStringPref(PREF_PERSISTED_ACTIONS);
-      this._persistedActions = this._migratePersistedActions(JSON.parse(json));
+      actions = this._migratePersistedActions(JSON.parse(json));
     } catch (ex) {}
+
+    // Handle migrating to and from Proton.  We want to gracefully handle
+    // downgrades from Proton, and since Proton is controlled by a pref, we also
+    // don't want to assume that a downgrade is possible only by downgrading the
+    // app.  That makes it hard to use the normal migration approach of creating
+    // a new persisted actions version, so we handle Proton migration specially.
+    // We try-catch it separately from the earlier _migratePersistedActions call
+    // because it should not be short-circuited when the pref load or usual
+    // migration fails.
+    try {
+      actions = this._migratePersistedActionsProton(actions);
+    } catch (ex) {}
+
+    // If `actions` is still not defined, then this._persistedActions will
+    // remain its default value.
+    if (actions) {
+      this._persistedActions = actions;
+    }
   },
 
   _purgeUnregisteredPersistedActions() {
@@ -420,6 +422,24 @@ var PageActions = {
     };
   },
 
+  _migratePersistedActionsProton(actions) {
+    if (actions?.idsInUrlbarPreProton) {
+      // continue with Proton
+    } else if (actions) {
+      // upgrade to Proton
+      actions.idsInUrlbarPreProton = [...(actions.idsInUrlbar || [])];
+    } else {
+      // new profile with Proton
+      actions = {
+        ids: [],
+        idsInUrlbar: [],
+        idsInUrlbarPreProton: [],
+        version: PERSISTED_ACTIONS_CURRENT_VERSION,
+      };
+    }
+    return actions;
+  },
+
   // This keeps track of all actions, even those that are not currently
   // registered because they have been removed, so long as
   // _purgeUnregisteredPersistedActions has not been called.
@@ -449,8 +469,8 @@ var PageActions = {
  *
  * @param id (string, required)
  *        The action's ID.  Treat this like the ID of a DOM node.
- * @param title (string, required)
- *        The action's title.
+ * @param title (string, optional)
+ *        The action's title. It is optional for built in actions.
  * @param anchorIDOverride (string, optional)
  *        Pass a string to override the node to which the action's activated-
  *        action panel is anchored.
@@ -545,7 +565,7 @@ var PageActions = {
 function Action(options) {
   setProperties(this, options, {
     id: true,
-    title: !options._isSeparator,
+    title: false,
     anchorIDOverride: false,
     disabled: false,
     extensionID: false,
@@ -564,6 +584,7 @@ function Action(options) {
     onShowingInPanel: false,
     onSubviewPlaced: false,
     onSubviewShowing: false,
+    onPinToUrlbarToggled: false,
     pinnedToUrlbar: false,
     tooltip: false,
     urlbarIDOverride: false,
@@ -670,8 +691,8 @@ Action.prototype = {
     if (this.pinnedToUrlbar != shown) {
       this._pinnedToUrlbar = shown;
       PageActions.onActionToggledPinnedToUrlbar(this);
+      this.onPinToUrlbarToggled();
     }
-    return this.pinnedToUrlbar;
   },
 
   /**
@@ -733,7 +754,8 @@ Action.prototype = {
   },
 
   /**
-   * The action's title (string)
+   * The action's title (string). Note, built in actions will
+   * not have a title property.
    */
   getTitle(browserWindow = null) {
     return this._getProperties(browserWindow).title;
@@ -1050,6 +1072,14 @@ Action.prototype = {
       this._onSubviewShowing(panelViewNode);
     }
   },
+  /**
+   * Call this when an icon in the url is pinned or unpinned.
+   */
+  onPinToUrlbarToggled() {
+    if (this._onPinToUrlbarToggled) {
+      this._onPinToUrlbarToggled();
+    }
+  },
 
   /**
    * Removes the action's DOM nodes from all browser windows.
@@ -1073,8 +1103,19 @@ Action.prototype = {
    *         disabled.
    */
   shouldShowInPanel(browserWindow) {
+    // When Proton is enabled, the extension page actions should behave similarly
+    // to a transient action, and be hidden from the urlbar overflow menu if they
+    // are disabled (as in the urlbar when the overflow menu isn't available)
+    //
+    // TODO(Bug 1704139): as a follow up we may look into just set on all
+    // extensions pageActions `_transient: true`, at least once we sunset
+    // the proton preference and we don't need the pre-Proton behavior anymore,
+    // and remove this special case.
+    const isProtonExtensionAction = this.extensionID;
+
     return (
-      (!this.__transient || !this.getDisabled(browserWindow)) &&
+      (!(this.__transient || isProtonExtensionAction) ||
+        !this.getDisabled(browserWindow)) &&
       this.canShowInWindow(browserWindow)
     );
   },
@@ -1096,7 +1137,7 @@ Action.prototype = {
   },
 
   get _isBuiltIn() {
-    let builtInIDs = ["pocket", "screenshots_mozilla_org"].concat(
+    let builtInIDs = ["screenshots_mozilla_org"].concat(
       gBuiltInActions.filter(a => !a.__isSeparator).map(a => a.id)
     );
     return builtInIDs.includes(this.id);
@@ -1112,10 +1153,8 @@ PageActions.Action = Action;
 PageActions.ACTION_ID_BUILT_IN_SEPARATOR = ACTION_ID_BUILT_IN_SEPARATOR;
 PageActions.ACTION_ID_TRANSIENT_SEPARATOR = ACTION_ID_TRANSIENT_SEPARATOR;
 
-// These are only necessary so that Pocket and the test can use them.
+// These are only necessary so that the test can use them.
 PageActions.ACTION_ID_BOOKMARK = ACTION_ID_BOOKMARK;
-PageActions.ACTION_ID_PIN_TAB = ACTION_ID_PIN_TAB;
-PageActions.ACTION_ID_BOOKMARK_SEPARATOR = ACTION_ID_BOOKMARK_SEPARATOR;
 PageActions.PREF_PERSISTED_ACTIONS = PREF_PERSISTED_ACTIONS;
 
 // Sorted in the order in which they should appear in the page action panel.
@@ -1124,199 +1163,25 @@ PageActions.PREF_PERSISTED_ACTIONS = PREF_PERSISTED_ACTIONS;
 // NOTE: If you add items to this list (or system add-on actions that we
 // want to keep track of), make sure to also update Histograms.json for the
 // new actions.
-var gBuiltInActions = [
-  // bookmark
-  {
-    id: ACTION_ID_BOOKMARK,
-    urlbarIDOverride: "star-button-box",
-    _urlbarNodeInMarkup: true,
-    // The title is set by BookmarkingUI.updateBookmarkPageMenuItem().
-    title: "",
-    pinnedToUrlbar: true,
-    onShowingInPanel(buttonNode) {
-      browserPageActions(buttonNode).bookmark.onShowingInPanel(buttonNode);
-    },
-    onCommand(event, buttonNode) {
-      browserPageActions(buttonNode).bookmark.onCommand(event, buttonNode);
-    },
-  },
+var gBuiltInActions;
 
-  // pin tab
-  {
-    id: ACTION_ID_PIN_TAB,
-    // The title is set in browser-pageActions.js.
-    title: "",
-    onBeforePlacedInWindow(browserWindow) {
-      function handlePinEvent() {
-        browserPageActions(browserWindow).pinTab.updateState();
-      }
-      function handleWindowUnload() {
-        for (let event of ["TabPinned", "TabUnpinned"]) {
-          browserWindow.removeEventListener(event, handlePinEvent);
-        }
-      }
-
-      for (let event of ["TabPinned", "TabUnpinned"]) {
-        browserWindow.addEventListener(event, handlePinEvent);
-      }
-      browserWindow.addEventListener("unload", handleWindowUnload, {
-        once: true,
-      });
-    },
-    onPlacedInPanel(buttonNode) {
-      browserPageActions(buttonNode).pinTab.updateState();
-    },
-    onPlacedInUrlbar(buttonNode) {
-      browserPageActions(buttonNode).pinTab.updateState();
-    },
-    onLocationChange(browserWindow) {
-      browserPageActions(browserWindow).pinTab.updateState();
-    },
-    onCommand(event, buttonNode) {
-      browserPageActions(buttonNode).pinTab.onCommand(event, buttonNode);
-    },
-  },
-
-  // separator
-  {
-    id: ACTION_ID_BOOKMARK_SEPARATOR,
-    _isSeparator: true,
-  },
-
-  // copy URL
-  {
-    id: "copyURL",
-    title: "copyURL-title",
-    onBeforePlacedInWindow(browserWindow) {
-      browserPageActions(browserWindow).copyURL.onBeforePlacedInWindow(
-        browserWindow
-      );
-    },
-    onCommand(event, buttonNode) {
-      browserPageActions(buttonNode).copyURL.onCommand(event, buttonNode);
-    },
-  },
-
-  // email link
-  {
-    id: "emailLink",
-    title: "emailLink-title",
-    onBeforePlacedInWindow(browserWindow) {
-      browserPageActions(browserWindow).emailLink.onBeforePlacedInWindow(
-        browserWindow
-      );
-    },
-    onCommand(event, buttonNode) {
-      browserPageActions(buttonNode).emailLink.onCommand(event, buttonNode);
-    },
-  },
-
-  // add search engine
-  {
-    id: "addSearchEngine",
-    // The title is set in browser-pageActions.js.
-    title: "",
-    isBadged: true,
-    _transient: true,
-    onShowingInPanel(buttonNode) {
-      browserPageActions(buttonNode).addSearchEngine.onShowingInPanel();
-    },
-    onCommand(event, buttonNode) {
-      browserPageActions(buttonNode).addSearchEngine.onCommand(
-        event,
-        buttonNode
-      );
-    },
-    onSubviewShowing(panelViewNode) {
-      browserPageActions(panelViewNode).addSearchEngine.onSubviewShowing(
-        panelViewNode
-      );
-    },
-  },
-];
-
-// send to device
-if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
-  gBuiltInActions.push({
-    id: "sendToDevice",
-    // The actual title is set by each window, per window, and depends on the
-    // number of tabs that are selected.
-    title: "sendToDevice",
-    onBeforePlacedInWindow(browserWindow) {
-      browserPageActions(browserWindow).sendToDevice.onBeforePlacedInWindow(
-        browserWindow
-      );
-    },
-    onLocationChange(browserWindow) {
-      browserPageActions(browserWindow).sendToDevice.onLocationChange();
-    },
-    wantsSubview: true,
-    onSubviewPlaced(panelViewNode) {
-      browserPageActions(panelViewNode).sendToDevice.onSubviewPlaced(
-        panelViewNode
-      );
-    },
-    onSubviewShowing(panelViewNode) {
-      browserPageActions(panelViewNode).sendToDevice.onShowingSubview(
-        panelViewNode
-      );
-    },
-  });
-}
-
-if (SiteSpecificBrowserService.isEnabled) {
-  gBuiltInActions.push({
-    id: "launchSSB",
-    // Hardcoded for now. Localization tracked in bug 1602528.
-    title: "Use This Site in App Mode",
-    onLocationChange(browserWindow) {
-      browserPageActions(browserWindow).launchSSB.updateState();
-    },
-    onCommand(event, buttonNode) {
-      browserPageActions(buttonNode).launchSSB.onCommand(event, buttonNode);
-    },
-  });
-}
-
-// share URL
-if (AppConstants.platform == "macosx") {
-  gBuiltInActions.push({
-    id: "shareURL",
-    title: "shareURL-title",
-    onShowingInPanel(buttonNode) {
-      browserPageActions(buttonNode).shareURL.onShowingInPanel(buttonNode);
-    },
-    onBeforePlacedInWindow(browserWindow) {
-      browserPageActions(browserWindow).shareURL.onBeforePlacedInWindow(
-        browserWindow
-      );
-    },
-    wantsSubview: true,
-    onSubviewShowing(panelViewNode) {
-      browserPageActions(panelViewNode).shareURL.onShowingSubview(
-        panelViewNode
-      );
-    },
-  });
-}
-
-if (AppConstants.isPlatformAndVersionAtLeast("win", "6.4")) {
-  gBuiltInActions.push(
-    // Share URL
+PageActions._initBuiltInActions = function() {
+  gBuiltInActions = [
+    // bookmark
     {
-      id: "shareURL",
-      title: "shareURL-title",
-      onBeforePlacedInWindow(buttonNode) {
-        browserPageActions(buttonNode).shareURL.onBeforePlacedInWindow(
-          buttonNode
-        );
+      id: ACTION_ID_BOOKMARK,
+      urlbarIDOverride: "star-button-box",
+      _urlbarNodeInMarkup: true,
+      pinnedToUrlbar: true,
+      onShowingInPanel(buttonNode) {
+        browserPageActions(buttonNode).bookmark.onShowingInPanel(buttonNode);
       },
       onCommand(event, buttonNode) {
-        browserPageActions(buttonNode).shareURL.onCommand(event, buttonNode);
+        browserPageActions(buttonNode).bookmark.onCommand(event, buttonNode);
       },
-    }
-  );
-}
+    },
+  ];
+};
 
 /**
  * Gets a BrowserPageActions object in a browser window.

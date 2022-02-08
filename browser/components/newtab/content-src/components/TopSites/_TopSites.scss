@@ -1,25 +1,26 @@
-$top-sites-size: $grid-unit;
-$top-sites-border-radius: 4px;
-$top-sites-title-height: 30px;
-$top-sites-vertical-space: 8px;
-$screenshot-size: cover;
+@use 'sass:math';
+
+$top-sites-size: $grid-unit-small;
+$top-sites-border-radius: 8px;
+$top-sites-icon-border-radius: 4px;
 $rich-icon-size: 96px;
-$default-icon-wrapper-size: 42px;
+$default-icon-wrapper-size: 32px;
 $default-icon-size: 32px;
 $default-icon-offset: 6px;
-$half-base-gutter: $base-gutter / 2;
+$half-base-gutter: math.div($base-gutter, 2);
 $hover-transition-duration: 150ms;
-
-.top-sites {
-  // Take back the margin from the bottom row of vertical spacing as well as the
-  // extra whitespace below the title text as it's vertically centered.
-  margin-bottom: $section-spacing - ($top-sites-vertical-space + $top-sites-title-height / 3);
-}
+$letter-fallback-color: $white;
 
 .top-sites-list {
   list-style: none;
   margin: 0 (-$half-base-gutter);
   padding: 0;
+
+  &:not(.dnd-active) {
+    .top-site-outer:is(.active, :focus, :hover) {
+      background: var(--newtab-element-hover-color);
+    }
+  }
 
   // Two columns
   @media (max-width: $break-point-medium) {
@@ -89,25 +90,14 @@ $hover-transition-duration: 150ms;
       display: inline-block;
     }
   }
-
-  li {
-    margin: 0 0 $top-sites-vertical-space;
-  }
-
-  &:not(.dnd-active) {
-    .top-site-outer:-moz-any(.active, :focus, :hover) {
-      .tile {
-        @include fade-in;
-      }
-
-      @include context-menu-button-hover;
-    }
-  }
 }
 
 // container for drop zone
 .top-site-outer {
-  padding: 0 $half-base-gutter;
+  width: 120px;
+  padding: 20px $half-base-gutter 4px;
+  border-radius: 8px;
+
   display: inline-block;
 
   // container for context menu
@@ -118,24 +108,49 @@ $hover-transition-duration: 150ms;
       color: inherit;
       display: block;
       outline: none;
-
-      &:-moz-any(.active, :focus) {
-        .tile {
-          @include fade-in;
-        }
-      }
     }
   }
 
-  @include context-menu-button;
+  &:is(:hover) {
+    .context-menu-button {
+      opacity: 1;
+    }
+  }
+
+  .context-menu-button {
+    background-image: url('chrome://global/skin/icons/more.svg');
+    border: 0;
+    border-radius: 4px;
+    cursor: pointer;
+    fill: var(--newtab-text-primary-color);
+    -moz-context-properties: fill;
+    height: 20px;
+    width: 20px;
+    inset-inline-end: -9px;
+    opacity: 0;
+    position: absolute;
+    top: -20px;
+    transition: opacity 200ms;
+
+    &:is(:active, :focus) {
+      outline: 0;
+      opacity: 1;
+      background-color: var(--newtab-element-hover-color);
+      fill: var(--newtab-primary-action-background);
+    }
+  }
 
   .tile { // sass-lint:disable-block property-sort-order
     border-radius: $top-sites-border-radius;
-    box-shadow: inset $inner-box-shadow, var(--newtab-card-shadow);
-    cursor: pointer;
+    box-shadow: $shadow-card;
+    background-color: var(--newtab-background-color-secondary);
+    justify-content: center;
+    margin: 0 auto;
     height: $top-sites-size;
-    position: relative;
     width: $top-sites-size;
+
+    cursor: pointer;
+    position: relative;
 
     // For letter fallback
     align-items: center;
@@ -143,41 +158,40 @@ $hover-transition-duration: 150ms;
     display: flex;
     font-size: 32px;
     font-weight: 200;
-    justify-content: center;
     text-transform: uppercase; // sass-lint:disable-line no-disallowed-properties
-    transition: box-shadow $hover-transition-duration;
 
-    &::before {
-      content: attr(data-fallback);
-    }
-  }
+    .icon-wrapper {
+      border-radius: 4px;
+      width: 48px;
+      height: 48px;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
 
-  .screenshot {
-    background-color: $white;
-    background-position: top left;
-    background-size: $screenshot-size;
-    border-radius: $top-sites-border-radius;
-    box-shadow: inset $inner-box-shadow;
-    height: 100%;
-    left: 0;
-    opacity: 0;
-    position: absolute;
-    top: 0;
-    transition: opacity 1s;
-    width: 100%;
-
-    &.active {
-      opacity: 1;
+      &.letter-fallback::before {
+        content: attr(data-fallback);
+        text-transform: uppercase; // sass-lint:disable-line no-disallowed-properties
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 64px;
+        font-weight: 800;
+        transform: rotate(-10deg);
+        top: 6px;
+        position: relative;
+        color: $letter-fallback-color;
+      }
     }
   }
 
   // Some common styles for all icons (rich and default) in top sites
   .top-site-icon {
-    background-color: var(--newtab-topsites-background-color);
+    background-color: var(--newtab-background-color-secondary);
     background-position: center center;
     background-repeat: no-repeat;
-    border-radius: $top-sites-border-radius;
-    box-shadow: var(--newtab-topsites-icon-shadow);
+    border-radius: $top-sites-icon-border-radius;
     position: absolute;
   }
 
@@ -192,9 +206,7 @@ $hover-transition-duration: 150ms;
   .default-icon,
   .search-topsite {
     background-size: $default-icon-size;
-    bottom: -$default-icon-offset;
     height: $default-icon-wrapper-size;
-    inset-inline-end: -$default-icon-offset;
     width: $default-icon-wrapper-size;
 
     // for corner letter fallback
@@ -209,27 +221,54 @@ $hover-transition-duration: 150ms;
   }
 
   .search-topsite {
-    background-image: url('#{$image-path}glyph-search-16.svg');
-    background-size: 26px;
-    background-color: $blue-60;
+    background-image: url('chrome://global/skin/icons/search-glass.svg');
+    background-size: 16px;
+    background-color: var(--newtab-primary-action-background);
     border-radius: $default-icon-wrapper-size;
     -moz-context-properties: fill;
-    fill: $white;
-    box-shadow: var(--newtab-card-shadow);
+    fill: var(--newtab-primary-element-text-color);
+    box-shadow: $shadow-card;
     transition-duration: $hover-transition-duration;
     transition-property: background-size, bottom, inset-inline-end, height, width;
+    height: 32px;
+    width: 32px;
+    bottom: -$default-icon-offset;
+    inset-inline-end: -$default-icon-offset;
   }
 
-  &:hover .search-topsite {
-    $hover-icon-wrapper-size: $default-icon-wrapper-size + 4;
-    $hover-icon-offset: -$default-icon-offset - 3;
+  &.placeholder {
+    .tile {
+      box-shadow: $inner-box-shadow;
+    }
+  }
 
-    background-size: 28px;
-    border-radius: $hover-icon-wrapper-size;
-    bottom: $hover-icon-offset;
-    height: $hover-icon-wrapper-size;
-    inset-inline-end: $hover-icon-offset;
-    width: $hover-icon-wrapper-size;
+  .title {
+    color: var(--newtab-text-primary-color);
+    padding-top: 8px;
+    font: caption;
+    text-align: center;
+    position: relative;
+
+    .icon {
+      margin-inline-end: 2px;
+      fill: var(--newtab-text-primary-color);
+    }
+
+    span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sponsored-label {
+      color: var(--newtab-text-secondary-color);
+      font-size: 0.9em;
+    }
+
+    &:not(.sponsored) .sponsored-label {
+      visibility: hidden;
+    }
   }
 
   // We want all search shortcuts to have a white background in case they have transparency.
@@ -239,56 +278,12 @@ $hover-transition-duration: 150ms;
     }
   }
 
-  .title {
-    color: var(--newtab-topsites-label-color);
-    font: message-box;
-    height: $top-sites-title-height;
-    line-height: $top-sites-title-height;
-    text-align: center;
-    width: $top-sites-size;
-    position: relative;
-
-    .icon {
-      fill: var(--newtab-icon-tertiary-color);
-      inset-inline-start: 0;
-      position: absolute;
-      top: 10px;
-    }
-
-    span {
-      height: $top-sites-title-height;
-      display: block;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    &.pinned {
-      span {
-        padding: 0 13px;
-      }
-    }
-  }
-
   .edit-button {
     background-image: url('#{$image-path}glyph-edit-16.svg');
   }
 
-  &.placeholder {
-    .tile {
-      box-shadow: inset $inner-box-shadow;
-    }
-
-    .screenshot {
-      display: none;
-    }
-  }
-
   &.dragged {
     .tile {
-      background: $grey-20;
-      box-shadow: none;
-
       *,
       &::before {
         display: none;
@@ -302,6 +297,10 @@ $hover-transition-duration: 150ms;
 }
 
 .edit-topsites-wrapper {
+  .top-site-inner > .top-site-button > .tile {
+    border: 1px solid var(--newtab-border-color);
+  }
+
   .modal {
     box-shadow: $shadow-secondary;
     left: 0;
@@ -433,7 +432,7 @@ $hover-transition-duration: 150ms;
         width: 960px;
         height: 16px;
         -moz-context-properties: fill;
-        fill: $blue-50;
+        fill: var(--newtab-primary-action-background);
         background-image: url('chrome://browser/skin/tabbrowser/loading.svg');
         animation: tab-throbber-animation 1.05s steps(60) infinite;
 
@@ -445,18 +444,13 @@ $hover-transition-duration: 150ms;
 
     input {
       &[type='text'] {
-        background-color: var(--newtab-textbox-background-color);
+        background-color: var(--newtab-background-color-secondary);
         border: $input-border;
         margin: 8px 0;
         padding: 0 8px;
         height: 32px;
         width: 100%;
         font-size: 15px;
-
-        &:focus {
-          border: $input-border-active;
-          box-shadow: var(--newtab-textbox-focus-boxshadow);
-        }
 
         &[disabled] {
           border: $input-border;
@@ -477,7 +471,7 @@ $hover-transition-duration: 150ms;
 
     .error-tooltip {
       animation: fade-up-tt 450ms;
-      background: $red-60;
+      background: var(--newtab-status-error);
       border-radius: 2px;
       color: $white;
       inset-inline-start: 3px;
@@ -488,7 +482,7 @@ $hover-transition-duration: 150ms;
 
       // tooltip caret
       &::before {
-        background: $red-60;
+        background: var(--newtab-status-error);
         bottom: -8px;
         content: '.';
         height: 16px;
@@ -525,7 +519,7 @@ $hover-transition-duration: 150ms;
 
   // prevent text selection of keyword label when clicking to select
   .title {
-    -moz-user-select: none;
+    user-select: none;
   }
 
   // CSS styled checkbox
@@ -574,7 +568,7 @@ $hover-transition-duration: 150ms;
     top: $checkbox-offset;
     width: 21px;
     -moz-context-properties: fill;
-    fill: var(--newtab-link-primary-color);
+    fill: var(--newtab-primary-action-background);
     z-index: 2;
 
     [dir='rtl'] & {
@@ -586,7 +580,7 @@ $hover-transition-duration: 150ms;
   // when selected, highlight the tile
   [type='checkbox']:checked + label {
     .tile {
-      box-shadow: 0 0 0 2px var(--newtab-link-primary-color);
+      box-shadow: $shadow-focus;
     }
   }
 
@@ -602,7 +596,7 @@ $hover-transition-duration: 150ms;
   // accessibility
   [type='checkbox']:checked:focus + label::before,
   [type='checkbox']:not(:checked):focus + label::before {
-    border: 1px dotted var(--newtab-link-primary-color);
+    border: 1px dotted var(--newtab-primary-action-background);
   }
 }
 
@@ -617,4 +611,13 @@ $hover-transition-duration: 150ms;
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+// used for TopSites impression wrapper
+.topsite-impression-observer {
+  position: absolute;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }

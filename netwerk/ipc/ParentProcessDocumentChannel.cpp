@@ -7,12 +7,17 @@
 
 #include "ParentProcessDocumentChannel.h"
 
+#include "mozilla/extensions/StreamFilterParent.h"
 #include "mozilla/net/ParentChannelWrapper.h"
 #include "mozilla/net/UrlClassifierCommon.h"
 #include "mozilla/StaticPrefs_extensions.h"
+#include "nsCRT.h"
 #include "nsDocShell.h"
 #include "nsIObserverService.h"
 #include "nsIClassifiedChannel.h"
+#include "nsIXULRuntime.h"
+#include "nsHttpHandler.h"
+#include "nsDocShellLoadState.h"
 
 extern mozilla::LazyLogModule gDocumentChannelLog;
 #define LOG(fmt) MOZ_LOG(gDocumentChannelLog, mozilla::LogLevel::Verbose, fmt)
@@ -67,6 +72,13 @@ ParentProcessDocumentChannel::RedirectToRealChannel(
     }
   }
   mStreamFilterEndpoints = std::move(aStreamFilterEndpoints);
+
+  if (mDocumentLoadListener->IsDocumentLoad() &&
+      mozilla::SessionHistoryInParent() && GetDocShell() &&
+      mDocumentLoadListener->GetLoadingSessionHistoryInfo()) {
+    GetDocShell()->SetLoadingSessionHistoryInfo(
+        *mDocumentLoadListener->GetLoadingSessionHistoryInfo());
+  }
 
   RefPtr<RedirectToRealChannelPromise> p = mPromise.Ensure(__func__);
   // We make the promise use direct task dispatch in order to reduce the number
@@ -133,7 +145,7 @@ NS_IMETHODIMP ParentProcessDocumentChannel::AsyncOpen(
   MOZ_ASSERT(docShell);
 
   bool isDocumentLoad = mLoadInfo->GetExternalContentPolicyType() !=
-                        nsIContentPolicy::TYPE_OBJECT;
+                        ExtContentPolicy::TYPE_OBJECT;
 
   mDocumentLoadListener = MakeRefPtr<DocumentLoadListener>(
       docShell->GetBrowsingContext()->Canonical(), isDocumentLoad);
@@ -151,29 +163,27 @@ NS_IMETHODIMP ParentProcessDocumentChannel::AsyncOpen(
   gHttpHandler->OnOpeningDocumentRequest(this);
 
   if (isDocumentLoad) {
-    GetDocShell()->GetBrowsingContext()->SetCurrentLoadIdentifier(
+    // Return value of setting synced field should be checked. See bug 1656492.
+    Unused << GetDocShell()->GetBrowsingContext()->SetCurrentLoadIdentifier(
         Some(mLoadState->GetLoadIdentifier()));
   }
 
   nsresult rv = NS_OK;
   Maybe<dom::ClientInfo> initialClientInfo = mInitialClientInfo;
 
-  const bool hasValidTransientUserGestureActivation =
-      docShell->GetBrowsingContext()->HasValidTransientUserGestureActivation();
-
   RefPtr<DocumentLoadListener::OpenPromise> promise;
   if (isDocumentLoad) {
     promise = mDocumentLoadListener->OpenDocument(
-        mLoadState, mCacheKey, Some(mChannelId), mAsyncOpenTime, mTiming,
-        std::move(initialClientInfo), hasValidTransientUserGestureActivation,
-        Some(mUriModified), Some(mIsXFOError), 0 /* ProcessId */, &rv);
+        mLoadState, mCacheKey, Some(mChannelId), TimeStamp::Now(), mTiming,
+        std::move(initialClientInfo), Some(mUriModified), Some(mIsXFOError),
+        nullptr /* ContentParent */, &rv);
   } else {
     promise = mDocumentLoadListener->OpenObject(
-        mLoadState, mCacheKey, Some(mChannelId), mAsyncOpenTime, mTiming,
+        mLoadState, mCacheKey, Some(mChannelId), TimeStamp::Now(), mTiming,
         std::move(initialClientInfo), InnerWindowIDForExtantDoc(docShell),
         mLoadFlags, mLoadInfo->InternalContentPolicyType(),
-        hasValidTransientUserGestureActivation,
-        UserActivation::IsHandlingUserInput(), 0 /* ProcessId */, &rv);
+        dom::UserActivation::IsHandlingUserInput(), nullptr /* ContentParent */,
+        nullptr /* ObjectUpgradeHandler */, &rv);
   }
 
   if (NS_FAILED(rv)) {

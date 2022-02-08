@@ -14,10 +14,13 @@ namespace mozilla {
 namespace layers {
 
 class APZInputBridgeChild : public PAPZInputBridgeChild, public APZInputBridge {
-  NS_INLINE_DECL_REFCOUNTING(APZInputBridgeChild, final)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(APZInputBridgeChild, final)
 
  public:
-  APZInputBridgeChild();
+  static RefPtr<APZInputBridgeChild> Create(
+      const uint64_t& aProcessToken,
+      Endpoint<PAPZInputBridgeChild>&& aEndpoint);
+
   void Destroy();
 
   APZEventResult ReceiveInputEvent(InputData& aEvent) override;
@@ -28,14 +31,20 @@ class APZInputBridgeChild : public PAPZInputBridgeChild, public APZInputBridge {
                              uint64_t* aOutFocusSequenceNumber,
                              LayersId* aOutLayersId) override;
 
-  void UpdateWheelTransaction(LayoutDeviceIntPoint aRefPoint,
-                              EventMessage aEventMessage) override;
+  void UpdateWheelTransaction(
+      LayoutDeviceIntPoint aRefPoint, EventMessage aEventMessage,
+      const Maybe<ScrollableLayerGuid>& aTargetGuid) override;
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
+
+  explicit APZInputBridgeChild(const uint64_t& aProcessToken);
   virtual ~APZInputBridgeChild();
 
  private:
-  bool mDestroyed;
+  void Open(Endpoint<PAPZInputBridgeChild>&& aEndpoint);
+
+  bool mIsOpen;
+  uint64_t mProcessToken;
 };
 
 }  // namespace layers

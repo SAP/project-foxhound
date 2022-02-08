@@ -17,9 +17,7 @@ const Config = {
 
 const FRAMEWORK_KEYS = ["hasFastClick", "hasMobify", "hasMarfeel"];
 
-browser.pageActionExtras.setLabelForHistogram("webcompat");
-
-browser.pageAction.onClicked.addListener(tab => {
+browser.helpMenu.onHelpMenuCommand.addListener(tab => {
   return getWebCompatInfoForTab(tab).then(
     info => {
       return openWebCompatTab(info);
@@ -100,7 +98,6 @@ function getWebCompatInfoForTab(tab) {
   return Promise.all([
     browser.browserInfo.getBlockList(),
     browser.browserInfo.getBuildID(),
-    browser.browserInfo.getGPUInfo(),
     browser.browserInfo.getGraphicsPrefs(),
     browser.browserInfo.getUpdateChannel(),
     browser.browserInfo.hasTouchScreen(),
@@ -114,7 +111,6 @@ function getWebCompatInfoForTab(tab) {
     ([
       blockList,
       buildID,
-      GPUs,
       graphicsPrefs,
       channel,
       hasTouchScreen,
@@ -137,7 +133,6 @@ function getWebCompatInfoForTab(tab) {
           channel,
           consoleLog,
           frameworks,
-          GPUs,
           hasTouchScreen,
           "mixed active content blocked":
             frameInfo.hasMixedActiveContentBlocked,
@@ -158,14 +153,6 @@ function stripNonASCIIChars(str) {
   // eslint-disable-next-line no-control-regex
   return str.replace(/[^\x00-\x7F]/g, "");
 }
-
-browser.l10n
-  .getMessage("wc-reporter.label2")
-  .then(browser.pageActionExtras.setDefaultTitle, () => {});
-
-browser.l10n
-  .getMessage("wc-reporter.tooltip")
-  .then(browser.pageActionExtras.setTooltipText, () => {});
 
 async function openWebCompatTab(compatInfo) {
   const url = new URL(Config.newIssueEndpoint);

@@ -15,16 +15,19 @@
  * @typedef {import("./@types/perf").PanelWindow} PanelWindow
  * @typedef {import("./@types/perf").Toolbox} Toolbox
  * @typedef {import("./@types/perf").Target} Target
+ * @typedef {import("./@types/perf").Commands} Commands
  */
 
 class PerformancePanel {
   /**
    * @param {PanelWindow} iframeWindow
    * @param {Toolbox} toolbox
+   * @param {Commands} commands
    */
-  constructor(iframeWindow, toolbox) {
+  constructor(iframeWindow, toolbox, commands) {
     this.panelWin = iframeWindow;
     this.toolbox = toolbox;
+    this.commands = commands;
 
     const EventEmitter = require("devtools/shared/event-emitter");
     EventEmitter.decorate(this);
@@ -58,11 +61,9 @@ class PerformancePanel {
     this.panelWin.gToolbox = this.toolbox;
     this.panelWin.gIsPanelDestroyed = false;
 
-    const perfFront = await this.target.client.mainRoot.getFront("perf");
+    const perfFront = await this.commands.client.mainRoot.getFront("perf");
 
-    this.isReady = true;
-    this.emit("ready");
-    this.panelWin.gInit(perfFront, "devtools");
+    await this.panelWin.gInit(perfFront, "devtools");
     return this;
   }
 

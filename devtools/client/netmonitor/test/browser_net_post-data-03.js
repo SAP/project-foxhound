@@ -26,10 +26,7 @@ add_task(async function() {
   // Wait for all tree view updated by react
   let wait = waitForDOM(document, "#headers-panel .accordion-item", 3);
   store.dispatch(Actions.toggleNetworkDetails());
-  EventUtils.sendMouseEvent(
-    { type: "click" },
-    document.querySelector("#headers-tab")
-  );
+  clickOnSidebarTab(document, "headers");
   await wait;
 
   let tabpanel = document.querySelector("#headers-panel");
@@ -73,12 +70,12 @@ add_task(async function() {
     "The second request header value was incorrect."
   );
 
-  // Wait for all tree sections updated by react
-  wait = waitForDOM(document, "#request-panel .accordion-item", 2);
-  EventUtils.sendMouseEvent(
-    { type: "click" },
-    document.querySelector("#request-tab")
+  // Wait for raw data toggle to be displayed
+  wait = waitForDOM(
+    document,
+    "#request-panel .raw-data-toggle-input .devtools-checkbox-toggle"
   );
+  clickOnSidebarTab(document, "request");
   await wait;
 
   tabpanel = document.querySelector("#request-panel");
@@ -93,8 +90,7 @@ add_task(async function() {
   );
 
   is(
-    tabpanel.querySelector(".accordion-item .accordion-header-label")
-      .textContent,
+    tabpanel.querySelector(".data-label").textContent,
     L10N.getStr("paramsFormData"),
     "The form data section doesn't have the correct title."
   );

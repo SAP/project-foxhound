@@ -3,12 +3,18 @@
  * torn out into its own window.
  */
 
-const URIS = ["about:blank", "about:sessionrestore", "about:privatebrowsing"];
+const URIS = [
+  "about:blank",
+  "about:home",
+  "about:sessionrestore",
+  "about:privatebrowsing",
+];
 
 add_task(async function() {
   for (let uri of URIS) {
     let tab = BrowserTestUtils.addTab(gBrowser);
-    await BrowserTestUtils.loadURI(tab.linkedBrowser, uri);
+    BrowserTestUtils.loadURI(tab.linkedBrowser, uri);
+    await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
     let win = gBrowser.replaceTabWithWindow(tab);
 
@@ -34,10 +40,14 @@ add_task(async function() {
       uri,
       uri + ": uri loaded in detached tab"
     );
+
+    const expectedActiveElement = tab.isEmpty
+      ? win.gURLBar.inputField
+      : win.gBrowser.selectedBrowser;
     Assert.equal(
       win.document.activeElement,
-      win.gBrowser.selectedBrowser,
-      uri + ": browser is focused"
+      expectedActiveElement,
+      uri + ": the active element is expected"
     );
     Assert.equal(win.gURLBar.value, "", uri + ": urlbar is empty");
     Assert.ok(win.gURLBar.placeholder, uri + ": placeholder text is present");

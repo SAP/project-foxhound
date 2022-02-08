@@ -15,8 +15,11 @@ macro_rules! debug {
 }
 
 #[repr(C)]
-struct LockedTexture { _private: [u8; 0] }
+struct LockedTexture {
+    _private: [u8; 0],
+}
 
+#[allow(dead_code)]
 extern "C" {
     fn ActiveTexture(texture: GLenum);
     fn BindTexture(target: GLenum, texture: GLuint);
@@ -62,37 +65,13 @@ extern "C" {
         level: GLint,
     );
     fn CheckFramebufferStatus(target: GLenum) -> GLenum;
-    fn InvalidateFramebuffer(
-        target: GLenum,
-        num_attachments: GLsizei,
-        attachments: *const GLenum,
-    );
-    fn TexStorage3D(
-        target: GLenum,
-        levels: GLint,
-        internal_format: GLenum,
-        width: GLsizei,
-        height: GLsizei,
-        depth: GLsizei,
-    );
+    fn InvalidateFramebuffer(target: GLenum, num_attachments: GLsizei, attachments: *const GLenum);
     fn TexImage2D(
         target: GLenum,
         level: GLint,
         internal_format: GLint,
         width: GLsizei,
         height: GLsizei,
-        border: GLint,
-        format: GLenum,
-        ty: GLenum,
-        data: *const c_void,
-    );
-    fn TexImage3D(
-        target: GLenum,
-        level: GLint,
-        internal_format: GLint,
-        width: GLsizei,
-        height: GLsizei,
-        depth: GLsizei,
         border: GLint,
         format: GLenum,
         ty: GLenum,
@@ -105,19 +84,6 @@ extern "C" {
         yoffset: GLint,
         width: GLsizei,
         height: GLsizei,
-        format: GLenum,
-        ty: GLenum,
-        data: *const c_void,
-    );
-    fn TexSubImage3D(
-        target: GLenum,
-        level: GLint,
-        xoffset: GLint,
-        yoffset: GLint,
-        zoffset: GLint,
-        width: GLsizei,
-        height: GLsizei,
-        depth: GLsizei,
         format: GLenum,
         ty: GLenum,
         data: *const c_void,
@@ -153,12 +119,11 @@ extern "C" {
         transpose: GLboolean,
         value: *const GLfloat,
     );
-
     fn DrawElementsInstanced(
         mode: GLenum,
         count: GLsizei,
         type_: GLenum,
-        indices: *const c_void,
+        indices: GLintptr,
         instancecount: GLsizei,
     );
     fn EnableVertexAttribArray(index: GLuint);
@@ -167,13 +132,6 @@ extern "C" {
     fn GetLinkStatus(program: GLuint) -> GLint;
     fn UseProgram(program: GLuint);
     fn SetViewport(x: GLint, y: GLint, width: GLsizei, height: GLsizei);
-    fn FramebufferTextureLayer(
-        target: GLenum,
-        attachment: GLenum,
-        texture: GLuint,
-        level: GLint,
-        layer: GLint,
-    );
     fn FramebufferRenderbuffer(
         target: GLenum,
         attachment: GLenum,
@@ -187,6 +145,31 @@ extern "C" {
     fn ClearColor(r: GLfloat, g: GLfloat, b: GLfloat, a: GLfloat);
     fn ClearDepth(depth: GLdouble);
     fn Clear(mask: GLbitfield);
+    fn ClearTexSubImage(
+        target: GLenum,
+        level: GLint,
+        xoffset: GLint,
+        yoffset: GLint,
+        zoffset: GLint,
+        width: GLsizei,
+        height: GLsizei,
+        depth: GLsizei,
+        format: GLenum,
+        ty: GLenum,
+        data: *const c_void,
+    );
+    fn ClearTexImage(target: GLenum, level: GLint, format: GLenum, ty: GLenum, data: *const c_void);
+    fn ClearColorRect(
+        fbo: GLuint,
+        xoffset: GLint,
+        yoffset: GLint,
+        width: GLsizei,
+        height: GLsizei,
+        r: GLfloat,
+        g: GLfloat,
+        b: GLfloat,
+        a: GLfloat,
+    );
     fn PixelStorei(name: GLenum, param: GLint);
     fn ReadPixels(
         x: GLint,
@@ -227,17 +210,6 @@ extern "C" {
         width: GLsizei,
         height: GLsizei,
     );
-    fn CopyTexSubImage3D(
-        target: GLenum,
-        level: GLint,
-        xoffset: GLint,
-        yoffset: GLint,
-        zoffset: GLint,
-        x: GLint,
-        y: GLint,
-        width: GLsizei,
-        height: GLsizei,
-    );
     fn BlitFramebuffer(
         src_x0: GLint,
         src_y0: GLint,
@@ -255,7 +227,14 @@ extern "C" {
     fn GetString(name: GLenum) -> *const c_char;
     fn GetStringi(name: GLenum, index: GLuint) -> *const c_char;
     fn GetError() -> GLenum;
-    fn InitDefaultFramebuffer(width: i32, height: i32, stride: i32, buf: *mut c_void);
+    fn InitDefaultFramebuffer(
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        stride: i32,
+        buf: *mut c_void,
+    );
     fn GetColorBuffer(
         fbo: GLuint,
         flush: GLboolean,
@@ -263,6 +242,7 @@ extern "C" {
         height: *mut i32,
         stride: *mut i32,
     ) -> *mut c_void;
+    fn ResolveFramebuffer(fbo: GLuint);
     fn SetTextureBuffer(
         tex: GLuint,
         internal_format: GLenum,
@@ -273,6 +253,7 @@ extern "C" {
         min_width: GLsizei,
         min_height: GLsizei,
     );
+    fn SetTextureParameter(tex: GLuint, pname: GLenum, param: GLint);
     fn DeleteTexture(n: GLuint);
     fn DeleteRenderbuffer(n: GLuint);
     fn DeleteFramebuffer(n: GLuint);
@@ -285,6 +266,12 @@ extern "C" {
     fn LockTexture(tex: GLuint) -> *mut LockedTexture;
     fn LockResource(resource: *mut LockedTexture);
     fn UnlockResource(resource: *mut LockedTexture);
+    fn GetResourceBuffer(
+        resource: *mut LockedTexture,
+        width: *mut i32,
+        height: *mut i32,
+        stride: *mut i32,
+    ) -> *mut c_void;
     fn Composite(
         locked_dst: *mut LockedTexture,
         locked_src: *mut LockedTexture,
@@ -294,20 +281,56 @@ extern "C" {
         src_height: GLsizei,
         dst_x: GLint,
         dst_y: GLint,
+        dst_width: GLsizei,
+        dst_height: GLsizei,
         opaque: GLboolean,
         flip: GLboolean,
+        filter: GLenum,
+        clip_x: GLint,
+        clip_y: GLint,
+        clip_width: GLsizei,
+        clip_height: GLsizei,
+    );
+    fn CompositeYUV(
+        locked_dst: *mut LockedTexture,
+        locked_y: *mut LockedTexture,
+        locked_u: *mut LockedTexture,
+        locked_v: *mut LockedTexture,
+        color_space: YuvRangedColorSpace,
+        color_depth: GLuint,
+        src_x: GLint,
+        src_y: GLint,
+        src_width: GLsizei,
+        src_height: GLsizei,
+        dst_x: GLint,
+        dst_y: GLint,
+        dst_width: GLsizei,
+        dst_height: GLsizei,
+        flip: GLboolean,
+        clip_x: GLint,
+        clip_y: GLint,
+        clip_width: GLsizei,
+        clip_height: GLsizei,
     );
     fn CreateContext() -> *mut c_void;
+    fn ReferenceContext(ctx: *mut c_void);
     fn DestroyContext(ctx: *mut c_void);
     fn MakeCurrent(ctx: *mut c_void);
+    fn ReportMemory(ctx: *mut c_void, size_of_op: unsafe extern "C" fn(ptr: *const c_void) -> usize) -> usize;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Context(*mut c_void);
 
 impl Context {
     pub fn create() -> Self {
         Context(unsafe { CreateContext() })
+    }
+
+    pub fn reference(&self) {
+        unsafe {
+            ReferenceContext(self.0);
+        }
     }
 
     pub fn destroy(&self) {
@@ -322,9 +345,17 @@ impl Context {
         }
     }
 
-    pub fn init_default_framebuffer(&self, width: i32, height: i32, stride: i32, buf: *mut c_void) {
+    pub fn init_default_framebuffer(
+        &self,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        stride: i32,
+        buf: *mut c_void,
+    ) {
         unsafe {
-            InitDefaultFramebuffer(width, height, stride, buf);
+            InitDefaultFramebuffer(x, y, width, height, stride, buf);
         }
     }
 
@@ -333,8 +364,37 @@ impl Context {
             let mut width: i32 = 0;
             let mut height: i32 = 0;
             let mut stride: i32 = 0;
-            let data_ptr = GetColorBuffer(fbo, flush as GLboolean, &mut width, &mut height, &mut stride);
+            let data_ptr = GetColorBuffer(
+                fbo,
+                flush as GLboolean,
+                &mut width,
+                &mut height,
+                &mut stride,
+            );
             (data_ptr, width, height, stride)
+        }
+    }
+
+    pub fn resolve_framebuffer(&self, fbo: GLuint) {
+        unsafe {
+            ResolveFramebuffer(fbo);
+        }
+    }
+
+    pub fn clear_color_rect(
+        &self,
+        fbo: GLuint,
+        xoffset: GLint,
+        yoffset: GLint,
+        width: GLsizei,
+        height: GLsizei,
+        r: f32,
+        g: f32,
+        b: f32,
+        a: f32,
+    ) {
+        unsafe {
+            ClearColorRect(fbo, xoffset, yoffset, width, height, r, g, b, a);
         }
     }
 
@@ -363,6 +423,12 @@ impl Context {
         }
     }
 
+    pub fn set_texture_parameter(&self, tex: GLuint, pname: GLenum, param: GLint) {
+        unsafe {
+            SetTextureParameter(tex, pname, param);
+        }
+    }
+
     pub fn lock_framebuffer(&self, fbo: GLuint) -> Option<LockedResource> {
         unsafe {
             let resource = LockFramebuffer(fbo);
@@ -383,6 +449,10 @@ impl Context {
                 None
             }
         }
+    }
+
+    pub fn report_memory(&self, size_of_op: unsafe extern "C" fn(ptr: *const c_void) -> usize) -> usize {
+        unsafe { ReportMemory(self.0, size_of_op) }
     }
 }
 
@@ -418,6 +488,7 @@ fn calculate_length(width: GLsizei, height: GLsizei, format: GLenum, pixel_type:
         UNSIGNED_SHORT => 2,
         SHORT => 2,
         FLOAT => 4,
+        UNSIGNED_INT_8_8_8_8_REV => 1,
         _ => panic!("unsupported pixel_type for read_pixels: {:?}", pixel_type),
     };
 
@@ -492,8 +563,8 @@ impl Gl for Context {
             let u = str::from_utf8(s).unwrap();
             const PREFIX: &'static str = "// shader: ";
             if let Some(start) = u.find(PREFIX) {
-                if let Some(end) = u[start ..].find('\n') {
-                    let name = u[start + PREFIX.len() .. start + end].trim();
+                if let Some(end) = u[start..].find('\n') {
+                    let name = u[start + PREFIX.len()..start + end].trim();
                     debug!("shader name: {}", name);
                     unsafe {
                         let c_string = CString::new(name).unwrap();
@@ -962,7 +1033,6 @@ impl Gl for Context {
         panic!();
     }
 
-    // FIXME: Does not verify buffer size -- unsafe!
     fn tex_image_3d(
         &self,
         target: GLenum,
@@ -976,24 +1046,7 @@ impl Gl for Context {
         ty: GLenum,
         opt_data: Option<&[u8]>,
     ) {
-        unsafe {
-            let pdata = match opt_data {
-                Some(data) => data.as_ptr() as *const GLvoid,
-                None => ptr::null(),
-            };
-            TexImage3D(
-                target,
-                level,
-                internal_format,
-                width,
-                height,
-                depth,
-                border,
-                format,
-                ty,
-                pdata,
-            );
-        }
+        panic!();
     }
 
     fn copy_tex_image_2d(
@@ -1038,11 +1091,7 @@ impl Gl for Context {
         width: GLsizei,
         height: GLsizei,
     ) {
-        unsafe {
-            CopyTexSubImage3D(
-                target, level, xoffset, yoffset, zoffset, x, y, width, height,
-            );
-        }
+        panic!();
     }
 
     fn tex_sub_image_2d(
@@ -1124,22 +1173,7 @@ impl Gl for Context {
         data: &[u8],
     ) {
         debug!("tex_sub_image_3d");
-        //panic!();
-        unsafe {
-            TexSubImage3D(
-                target,
-                level,
-                xoffset,
-                yoffset,
-                zoffset,
-                width,
-                height,
-                depth,
-                format,
-                ty,
-                data.as_ptr() as *const c_void,
-            );
-        }
+        panic!();
     }
 
     fn tex_sub_image_3d_pbo(
@@ -1156,21 +1190,7 @@ impl Gl for Context {
         ty: GLenum,
         offset: usize,
     ) {
-        unsafe {
-            TexSubImage3D(
-                target,
-                level,
-                xoffset,
-                yoffset,
-                zoffset,
-                width,
-                height,
-                depth,
-                format,
-                ty,
-                offset as *const c_void,
-            );
-        }
+        panic!();
     }
 
     fn tex_storage_2d(
@@ -1196,10 +1216,7 @@ impl Gl for Context {
         height: GLsizei,
         depth: GLsizei,
     ) {
-        //panic!();
-        unsafe {
-            TexStorage3D(target, levels, internal_format, width, height, depth);
-        }
+        panic!();
     }
 
     fn get_tex_image_into_buffer(
@@ -1359,10 +1376,7 @@ impl Gl for Context {
             "framebuffer_texture_layer {} {} {} {} {}",
             target, attachment, texture, level, layer
         );
-        //panic!();
-        unsafe {
-            FramebufferTextureLayer(target, attachment, texture, level, layer);
-        }
+        panic!();
     }
 
     fn blit_framebuffer(
@@ -1484,7 +1498,9 @@ impl Gl for Context {
     }
 
     fn draw_arrays(&self, mode: GLenum, first: GLint, count: GLsizei) {
-        panic!();
+        unsafe {
+            DrawElementsInstanced(mode, count, NONE, first as GLintptr, 1);
+        }
     }
 
     fn draw_arrays_instanced(
@@ -1494,7 +1510,9 @@ impl Gl for Context {
         count: GLsizei,
         primcount: GLsizei,
     ) {
-        panic!();
+        unsafe {
+            DrawElementsInstanced(mode, count, NONE, first as GLintptr, primcount);
+        }
     }
 
     fn draw_elements(
@@ -1510,13 +1528,7 @@ impl Gl for Context {
         );
         //panic!();
         unsafe {
-            DrawElementsInstanced(
-                mode,
-                count,
-                element_type,
-                indices_offset as *const c_void,
-                1,
-            );
+            DrawElementsInstanced(mode, count, element_type, indices_offset as GLintptr, 1);
         }
     }
 
@@ -1538,7 +1550,7 @@ impl Gl for Context {
                 mode,
                 count,
                 element_type,
-                indices_offset as *const c_void,
+                indices_offset as GLintptr,
                 primcount,
             );
         }
@@ -2106,7 +2118,7 @@ impl Gl for Context {
         //ptr::null()
     }
 
-    fn client_wait_sync(&self, sync: GLsync, flags: GLbitfield, timeout: GLuint64) {
+    fn client_wait_sync(&self, sync: GLsync, flags: GLbitfield, timeout: GLuint64) -> GLenum {
         panic!();
     }
 
@@ -2179,7 +2191,7 @@ impl Gl for Context {
 
     // GL_KHR_blend_equation_advanced
     fn blend_barrier_khr(&self) {
-        panic!();
+        // No barrier required, so nothing to do
     }
 
     // GL_CHROMIUM_copy_texture
@@ -2257,6 +2269,20 @@ impl Gl for Context {
     ) {
         unimplemented!("Not supported by SWGL");
     }
+
+    fn buffer_storage(
+        &self,
+        target: GLenum,
+        size: GLsizeiptr,
+        data: *const GLvoid,
+        flags: GLbitfield,
+    ) {
+        unimplemented!("Not supported by SWGL");
+    }
+
+    fn flush_mapped_buffer_range(&self, target: GLenum, offset: GLintptr, length: GLsizeiptr) {
+        unimplemented!("Not supported by SWGL");
+    }
 }
 
 /// A resource that is intended for sharing between threads.
@@ -2269,19 +2295,39 @@ pub struct LockedResource(*mut LockedTexture);
 unsafe impl Send for LockedResource {}
 unsafe impl Sync for LockedResource {}
 
+#[repr(u8)]
+pub enum YuvRangedColorSpace {
+    Rec601Narrow = 0,
+    Rec601Full,
+    Rec709Narrow,
+    Rec709Full,
+    Rec2020Narrow,
+    Rec2020Full,
+    GbrIdentity,
+}
+
 impl LockedResource {
-    /// Composites from a locked resource to another locked resource
+    /// Composites from a locked resource to another locked resource. The band
+    /// offset and height are relative to the destination rectangle and specify
+    /// how to clip the composition into appropriate range for this band.
     pub fn composite(
         &self,
         locked_src: &LockedResource,
         src_x: GLint,
         src_y: GLint,
         src_width: GLsizei,
-        src_height: GLint,
+        src_height: GLsizei,
         dst_x: GLint,
         dst_y: GLint,
+        dst_width: GLsizei,
+        dst_height: GLsizei,
         opaque: bool,
         flip: bool,
+        filter: GLenum,
+        clip_x: GLint,
+        clip_y: GLint,
+        clip_width: GLsizei,
+        clip_height: GLsizei,
     ) {
         unsafe {
             Composite(
@@ -2293,23 +2339,91 @@ impl LockedResource {
                 src_height,
                 dst_x,
                 dst_y,
+                dst_width,
+                dst_height,
                 opaque as GLboolean,
                 flip as GLboolean,
+                filter,
+                clip_x,
+                clip_y,
+                clip_width,
+                clip_height,
             );
+        }
+    }
+
+    /// Composites from locked resources representing YUV planes
+    pub fn composite_yuv(
+        &self,
+        locked_y: &LockedResource,
+        locked_u: &LockedResource,
+        locked_v: &LockedResource,
+        color_space: YuvRangedColorSpace,
+        color_depth: GLuint,
+        src_x: GLint,
+        src_y: GLint,
+        src_width: GLsizei,
+        src_height: GLsizei,
+        dst_x: GLint,
+        dst_y: GLint,
+        dst_width: GLsizei,
+        dst_height: GLsizei,
+        flip: bool,
+        clip_x: GLint,
+        clip_y: GLint,
+        clip_width: GLsizei,
+        clip_height: GLsizei,
+    ) {
+        unsafe {
+            CompositeYUV(
+                self.0,
+                locked_y.0,
+                locked_u.0,
+                locked_v.0,
+                color_space,
+                color_depth,
+                src_x,
+                src_y,
+                src_width,
+                src_height,
+                dst_x,
+                dst_y,
+                dst_width,
+                dst_height,
+                flip as GLboolean,
+                clip_x,
+                clip_y,
+                clip_width,
+                clip_height,
+            );
+        }
+    }
+
+    /// Get the underlying buffer for a locked resource
+    pub fn get_buffer(&self) -> (*mut c_void, i32, i32, i32) {
+        unsafe {
+            let mut width: i32 = 0;
+            let mut height: i32 = 0;
+            let mut stride: i32 = 0;
+            let data_ptr = GetResourceBuffer(self.0, &mut width, &mut height, &mut stride);
+            (data_ptr, width, height, stride)
         }
     }
 }
 
 impl Clone for LockedResource {
     fn clone(&self) -> Self {
-        unsafe { LockResource(self.0); }
+        unsafe {
+            LockResource(self.0);
+        }
         LockedResource(self.0)
     }
 }
 
 impl Drop for LockedResource {
     fn drop(&mut self) {
-        unsafe { UnlockResource(self.0); }
+        unsafe {
+            UnlockResource(self.0);
+        }
     }
 }
-

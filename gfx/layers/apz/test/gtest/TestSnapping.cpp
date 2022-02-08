@@ -11,16 +11,16 @@
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_mousewheel.h"
 
-class APZCSnappingTester : public APZCTreeManagerTester {};
+class APZCSnappingTesterMock : public APZCTreeManagerTester {
+ public:
+  APZCSnappingTesterMock() { CreateMockHitTester(); }
+};
 
-TEST_F(APZCSnappingTester, Bug1265510) {
-  SCOPED_GFX_VAR(UseWebRender, bool, false);
-
-  const char* layerTreeSyntax = "c(t)";
+TEST_F(APZCSnappingTesterMock, Bug1265510) {
+  const char* treeShape = "x(x)";
   nsIntRegion layerVisibleRegion[] = {nsIntRegion(IntRect(0, 0, 100, 100)),
                                       nsIntRegion(IntRect(0, 100, 100, 100))};
-  root =
-      CreateLayerTree(layerTreeSyntax, layerVisibleRegion, nullptr, lm, layers);
+  CreateScrollData(treeShape, layerVisibleRegion);
   SetScrollableFrameMetrics(root, ScrollableLayerGuid::START_SCROLL_ID,
                             CSSRect(0, 0, 100, 200));
   SetScrollableFrameMetrics(layers[1], ScrollableLayerGuid::START_SCROLL_ID + 1,
@@ -32,12 +32,12 @@ TEST_F(APZCSnappingTester, Bug1265510) {
   snap.mSnapPositionY.AppendElement(0 * AppUnitsPerCSSPixel());
   snap.mSnapPositionY.AppendElement(100 * AppUnitsPerCSSPixel());
 
-  ScrollMetadata metadata = root->GetScrollMetadata(0);
-  metadata.SetSnapInfo(ScrollSnapInfo(snap));
-  root->SetScrollMetadata(metadata);
+  ModifyFrameMetrics(root, [&](ScrollMetadata& aSm, FrameMetrics&) {
+    aSm.SetSnapInfo(ScrollSnapInfo(snap));
+  });
 
   UniquePtr<ScopedLayerTreeRegistration> registration =
-      MakeUnique<ScopedLayerTreeRegistration>(manager, LayersId{0}, root, mcc);
+      MakeUnique<ScopedLayerTreeRegistration>(LayersId{0}, mcc);
   UpdateHitTestingTree();
 
   TestAsyncPanZoomController* outer = ApzcOf(layers[0]);
@@ -47,6 +47,7 @@ TEST_F(APZCSnappingTester, Bug1265510) {
   // (6 lines of 10px each). APZC will actually scroll to y=100 because of the
   // mandatory snap coordinate there.
   TimeStamp now = mcc->Time();
+  QueueMockHitResult(ScrollableLayerGuid::START_SCROLL_ID);
   SmoothWheel(manager, ScreenIntPoint(50, 80), ScreenPoint(0, 6), now);
   // Advance in 5ms increments until we've scrolled by 70px. At this point, the
   // closest snap point is y=100, and the inner frame should be under the mouse
@@ -56,13 +57,14 @@ TEST_F(APZCSnappingTester, Bug1265510) {
                  AsyncPanZoomController::AsyncTransformConsumer::eForHitTesting)
              .y < 70) {
     mcc->AdvanceByMillis(5);
-    outer->AdvanceAnimations(mcc->Time());
+    outer->AdvanceAnimations(mcc->GetSampleTime());
   }
   // Now do another wheel in a new transaction. This should start scrolling the
   // inner frame; we verify that it does by checking the inner scroll position.
   TimeStamp newTransactionTime =
       now + TimeDuration::FromMilliseconds(
                 StaticPrefs::mousewheel_transaction_timeout() + 100);
+  QueueMockHitResult(ScrollableLayerGuid::START_SCROLL_ID + 1);
   SmoothWheel(manager, ScreenIntPoint(50, 80), ScreenPoint(0, 6),
               newTransactionTime);
   inner->AdvanceAnimationsUntilEnd();
@@ -85,15 +87,12 @@ TEST_F(APZCSnappingTester, Bug1265510) {
           .y);
 }
 
-TEST_F(APZCSnappingTester, Snap_After_Pinch) {
-  SCOPED_GFX_VAR(UseWebRender, bool, false);
-
-  const char* layerTreeSyntax = "c";
+TEST_F(APZCSnappingTesterMock, Snap_After_Pinch) {
+  const char* treeShape = "x";
   nsIntRegion layerVisibleRegion[] = {
       nsIntRegion(IntRect(0, 0, 100, 100)),
   };
-  root =
-      CreateLayerTree(layerTreeSyntax, layerVisibleRegion, nullptr, lm, layers);
+  CreateScrollData(treeShape, layerVisibleRegion);
   SetScrollableFrameMetrics(root, ScrollableLayerGuid::START_SCROLL_ID,
                             CSSRect(0, 0, 100, 200));
 
@@ -107,13 +106,13 @@ TEST_F(APZCSnappingTester, Snap_After_Pinch) {
   // Save the scroll snap info on the root APZC.
   // Also mark the root APZC as "root content", since APZC only allows
   // zooming on the root content APZC.
-  ScrollMetadata metadata = root->GetScrollMetadata(0);
-  metadata.SetSnapInfo(ScrollSnapInfo(snap));
-  metadata.GetMetrics().SetIsRootContent(true);
-  root->SetScrollMetadata(metadata);
+  ModifyFrameMetrics(root, [&](ScrollMetadata& aSm, FrameMetrics& aMetrics) {
+    aSm.SetSnapInfo(ScrollSnapInfo(snap));
+    aMetrics.SetIsRootContent(true);
+  });
 
   UniquePtr<ScopedLayerTreeRegistration> registration =
-      MakeUnique<ScopedLayerTreeRegistration>(manager, LayersId{0}, root, mcc);
+      MakeUnique<ScopedLayerTreeRegistration>(LayersId{0}, mcc);
   UpdateHitTestingTree();
 
   RefPtr<TestAsyncPanZoomController> apzc = ApzcOf(root);
@@ -125,5 +124,5 @@ TEST_F(APZCSnappingTester, Snap_After_Pinch) {
   PinchWithPinchInput(apzc, ScreenIntPoint(50, 50), ScreenIntPoint(50, 50),
                       1.2f);
 
-  apzc->AssertStateIsSmoothScroll();
+  apzc->AssertStateIsSmoothMsdScroll();
 }

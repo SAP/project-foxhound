@@ -5,13 +5,15 @@
 
 #include "mozilla/dom/WebGPUBinding.h"
 #include "CanvasContext.h"
-#include "SwapChain.h"
 #include "nsDisplayList.h"
 #include "LayerUserData.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/layers/CompositorManagerChild.h"
+#include "mozilla/layers/ImageDataSerializer.h"
+#include "mozilla/layers/LayersSurfaces.h"
 #include "mozilla/layers/RenderRootStateManager.h"
 #include "mozilla/layers/WebRenderBridgeChild.h"
+#include "ipc/WebGPUChild.h"
 
 namespace mozilla {
 namespace webgpu {
@@ -19,7 +21,7 @@ namespace webgpu {
 NS_IMPL_CYCLE_COLLECTING_ADDREF(CanvasContext)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(CanvasContext)
 
-GPU_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(CanvasContext, mSwapChain,
+GPU_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(CanvasContext, mTexture, mBridge,
                                        mCanvasElement, mOffscreenCanvas)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(CanvasContext)
@@ -38,10 +40,7 @@ CanvasContext::~CanvasContext() {
 }
 
 void CanvasContext::Cleanup() {
-  if (mSwapChain) {
-    mSwapChain->Destroy(mExternalImageId);
-    mSwapChain = nullptr;
-  }
+  Unconfigure();
   if (mRenderRootStateManager && mImageKey) {
     mRenderRootStateManager->AddImageKeyForDiscard(mImageKey.value());
     mRenderRootStateManager = nullptr;
@@ -54,47 +53,37 @@ JSObject* CanvasContext::WrapObject(JSContext* aCx,
   return dom::GPUCanvasContext_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-already_AddRefed<layers::Layer> CanvasContext::GetCanvasLayer(
-    nsDisplayListBuilder* aBuilder, layers::Layer* aOldLayer,
-    layers::LayerManager* aManager) {
-  return nullptr;
-}
-
 bool CanvasContext::UpdateWebRenderCanvasData(
     nsDisplayListBuilder* aBuilder, WebRenderCanvasData* aCanvasData) {
   return true;
 }
 
-RefPtr<SwapChain> CanvasContext::ConfigureSwapChain(
-    const dom::GPUSwapChainDescriptor& aDesc, ErrorResult& aRv) {
-  Cleanup();
+void CanvasContext::Configure(const dom::GPUCanvasConfiguration& aDesc) {
+  Unconfigure();
 
-  gfx::SurfaceFormat format;
   switch (aDesc.mFormat) {
     case dom::GPUTextureFormat::Rgba8unorm:
-      format = gfx::SurfaceFormat::R8G8B8A8;
+      mGfxFormat = gfx::SurfaceFormat::R8G8B8A8;
       break;
     case dom::GPUTextureFormat::Bgra8unorm:
-      format = gfx::SurfaceFormat::B8G8R8A8;
+      mGfxFormat = gfx::SurfaceFormat::B8G8R8A8;
       break;
     default:
-      aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-      return nullptr;
+      NS_WARNING("Specified swap chain format is not supported");
+      return;
   }
 
-  dom::GPUExtent3DDict extent;
-  extent.mWidth = mWidth;
-  extent.mHeight = mHeight;
-  extent.mDepth = 1;
-  mSwapChain = new SwapChain(aDesc, extent, mExternalImageId, format);
+  gfx::IntSize actualSize(mWidth, mHeight);
+  mTexture = aDesc.mDevice->InitSwapChain(aDesc, mExternalImageId, mGfxFormat,
+                                          &actualSize);
+  mTexture->mTargetCanvasElement = mCanvasElement;
+  mBridge = aDesc.mDevice->GetBridge();
+  mGfxSize = actualSize;
 
   // Force a new frame to be built, which will execute the
   // `CanvasContextType::WebGPU` switch case in `CreateWebRenderCommands` and
   // populate the WR user data.
   mCanvasElement->InvalidateCanvas();
-
-  mSwapChain->GetCurrentTexture()->mTargetCanvasElement = mCanvasElement;
-  return mSwapChain;
 }
 
 Maybe<wr::ImageKey> CanvasContext::GetImageKey() const { return mImageKey; }
@@ -107,17 +96,40 @@ wr::ImageKey CanvasContext::CreateImageKey(
   return key;
 }
 
+void CanvasContext::Unconfigure() {
+  if (mBridge && mBridge->IsOpen()) {
+    mBridge->SendSwapChainDestroy(mExternalImageId);
+  }
+  mBridge = nullptr;
+  mTexture = nullptr;
+}
+
+dom::GPUTextureFormat CanvasContext::GetPreferredFormat(Adapter&) const {
+  return dom::GPUTextureFormat::Bgra8unorm;
+}
+
+RefPtr<Texture> CanvasContext::GetCurrentTexture() { return mTexture; }
+
 bool CanvasContext::UpdateWebRenderLocalCanvasData(
     layers::WebRenderLocalCanvasData* aCanvasData) {
-  if (!mSwapChain || !mSwapChain->GetGpuBridge()) {
+  if (!mTexture) {
     return false;
   }
 
-  aCanvasData->mGpuBridge = mSwapChain->GetGpuBridge();
-  aCanvasData->mGpuTextureId = mSwapChain->GetCurrentTexture()->mId;
+  aCanvasData->mGpuBridge = mBridge.get();
+  aCanvasData->mGpuTextureId = mTexture->mId;
   aCanvasData->mExternalImageId = mExternalImageId;
-  aCanvasData->mFormat = mSwapChain->mFormat;
+  aCanvasData->mFormat = mGfxFormat;
   return true;
+}
+
+wr::ImageDescriptor CanvasContext::MakeImageDescriptor() const {
+  const layers::RGBDescriptor rgbDesc(mGfxSize, mGfxFormat);
+  const auto targetStride = layers::ImageDataSerializer::GetRGBStride(rgbDesc);
+  const bool preferCompositorSurface = true;
+  return wr::ImageDescriptor(mGfxSize, targetStride, mGfxFormat,
+                             wr::OpacityType::HasAlphaChannel,
+                             preferCompositorSurface);
 }
 
 }  // namespace webgpu

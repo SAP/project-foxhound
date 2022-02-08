@@ -123,11 +123,11 @@ add_task(async function testWindowTitle() {
   });
 
   await extension.startup();
-  let {
+  const {
     Management: {
       global: { windowTracker },
     },
-  } = ChromeUtils.import("resource://gre/modules/Extension.jsm", null);
+  } = ChromeUtils.import("resource://gre/modules/Extension.jsm");
 
   async function createApiWin(options) {
     let promiseLoaded = BrowserTestUtils.waitForNewWindow({ url: START_URL });
@@ -191,7 +191,7 @@ add_task(async function testWindowTitle() {
   let promiseLoaded = BrowserTestUtils.browserLoaded(
     realWin.gBrowser.selectedBrowser
   );
-  await BrowserTestUtils.loadURI(realWin.gBrowser.selectedBrowser, NEW_URL);
+  BrowserTestUtils.loadURI(realWin.gBrowser.selectedBrowser, NEW_URL);
   await promiseLoaded;
   await verifyTitle(
     realWin,

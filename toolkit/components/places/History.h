@@ -17,7 +17,7 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/dom/Link.h"
 #include "mozilla/dom/PContentChild.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsIMemoryReporter.h"
 #include "nsIObserver.h"
 #include "nsString.h"
@@ -61,7 +61,7 @@ class History final : public BaseHistory,
   NS_IMETHOD SetURITitle(nsIURI*, const nsAString&) final;
 
   // BaseHistory
-  void StartPendingVisitedQueries(const PendingVisitedQueries&) final;
+  void StartPendingVisitedQueries(PendingVisitedQueries&&) final;
 
   History();
 
@@ -72,14 +72,8 @@ class History final : public BaseHistory,
    *
    * @param aVisitData
    *        The visit data to use to populate a new row in moz_places.
-   * @param aShouldNotifyFrecencyChanged
-   *        Whether to dispatch OnFrecencyChanged notifications.
-   *        Defaults to true. Set to false if you (the caller) are
-   *        doing many inserts and will dispatch your own
-   *        OnManyFrecenciesChanged notification.
    */
-  nsresult InsertPlace(VisitData& aVisitData,
-                       bool aShouldNotifyFrecencyChanged = true);
+  nsresult InsertPlace(VisitData& aVisitData);
 
   /**
    * Updates an entry in moz_places with the data in aVisitData.
@@ -202,7 +196,7 @@ class History final : public BaseHistory,
     bool mHidden;
   };
 
-  nsDataHashtable<nsURIHashKey, RecentURIVisit> mRecentlyVisitedURIs;
+  nsTHashMap<nsURIHashKey, RecentURIVisit> mRecentlyVisitedURIs;
 };
 
 }  // namespace places

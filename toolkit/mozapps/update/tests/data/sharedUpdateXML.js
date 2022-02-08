@@ -55,6 +55,8 @@ const ERR_OLDER_VERSION_OR_SAME_BUILD = 90;
 const ERR_UPDATE_STATE_NONE = 91;
 const ERR_CHANNEL_CHANGE = 92;
 
+const WRITE_ERROR_BACKGROUND_TASK_SHARING_VIOLATION = 106;
+
 const STATE_FAILED_DELIMETER = ": ";
 
 const STATE_FAILED_LOADSOURCE_ERROR_WRONG_SIZE =
@@ -99,6 +101,10 @@ const STATE_FAILED_INVALID_CALLBACK_PATH_ERROR =
   STATE_FAILED + STATE_FAILED_DELIMETER + INVALID_CALLBACK_PATH_ERROR;
 const STATE_FAILED_INVALID_CALLBACK_DIR_ERROR =
   STATE_FAILED + STATE_FAILED_DELIMETER + INVALID_CALLBACK_DIR_ERROR;
+const STATE_FAILED_WRITE_ERROR_BACKGROUND_TASK_SHARING_VIOLATION =
+  STATE_FAILED +
+  STATE_FAILED_DELIMETER +
+  WRITE_ERROR_BACKGROUND_TASK_SHARING_VIOLATION;
 
 const DEFAULT_UPDATE_VERSION = "999999.0";
 
@@ -335,6 +341,11 @@ function getUpdateString(aUpdateProps) {
   let disableBITS = aUpdateProps.disableBITS
     ? 'disableBITS="' + aUpdateProps.disableBITS + '" '
     : "";
+  let disableBackgroundUpdates = aUpdateProps.disableBackgroundUpdates
+    ? 'disableBackgroundUpdates="' +
+      aUpdateProps.disableBackgroundUpdates +
+      '" '
+    : "";
   let custom1 = aUpdateProps.custom1 ? aUpdateProps.custom1 + " " : "";
   let custom2 = aUpdateProps.custom2 ? aUpdateProps.custom2 + " " : "";
   let buildID = 'buildID="' + aUpdateProps.buildID + '"';
@@ -348,6 +359,7 @@ function getUpdateString(aUpdateProps) {
     detailsURL +
     promptWaitTime +
     disableBITS +
+    disableBackgroundUpdates +
     custom1 +
     custom2 +
     buildID

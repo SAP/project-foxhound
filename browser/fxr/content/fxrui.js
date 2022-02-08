@@ -141,13 +141,6 @@ function setupBrowser() {
     // WebExtensions, since this FxR UI doesn't participate in typical
     // startup activities
     Services.obs.notifyObservers(window, "extensions-late-startup");
-
-    // Load this script in the content process to start and allow scripts for
-    // WebExtensions that run in the content process
-    browser.messageManager.loadFrameScript(
-      "chrome://fxr/content/fxr-content.js",
-      true // allowDelayedLoad
-    );
   }
 }
 
@@ -212,10 +205,12 @@ function setupUrlBar() {
       if (PrivateBrowsingUtils.isWindowPrivate(window)) {
         flags |= Services.uriFixup.FIXUP_FLAG_PRIVATE_CONTEXT;
       }
+      let { preferredURI } = Services.uriFixup.getFixupURIInfo(
+        valueToFixUp,
+        flags
+      );
 
-      let uriToLoad = Services.uriFixup.createFixupURI(valueToFixUp, flags);
-
-      browser.loadUrlWithSystemPrincipal(uriToLoad.spec);
+      browser.loadUrlWithSystemPrincipal(preferredURI.spec);
       browser.focus();
     }
   });

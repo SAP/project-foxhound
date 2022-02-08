@@ -315,8 +315,7 @@ void nsHTMLFramesetFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   mNonBlankChildCount = mChildCount;
   // add blank frames for frameset cells that had no content provided
   for (int blankX = mChildCount; blankX < numCells; blankX++) {
-    RefPtr<ComputedStyle> pseudoComputedStyle;
-    pseudoComputedStyle =
+    RefPtr<ComputedStyle> pseudoComputedStyle =
         presShell->StyleSet()->ResolveNonInheritingAnonymousBoxStyle(
             PseudoStyleType::framesetBlank);
 
@@ -1364,17 +1363,17 @@ void nsHTMLFramesetBorderFrame::PaintBorder(DrawTarget* aDrawTarget,
 
   if (widthInPixels <= 0) return;
 
-  ColorPattern bgColor(ToDeviceColor(LookAndFeel::GetColor(
-      LookAndFeel::ColorID::WidgetBackground, NS_RGB(200, 200, 200))));
+  ColorPattern bgColor(ToDeviceColor(LookAndFeel::Color(
+      LookAndFeel::ColorID::Window, this, NS_RGB(200, 200, 200))));
 
-  ColorPattern fgColor(ToDeviceColor(LookAndFeel::GetColor(
-      LookAndFeel::ColorID::WidgetForeground, NS_RGB(0, 0, 0))));
+  ColorPattern fgColor(ToDeviceColor(LookAndFeel::Color(
+      LookAndFeel::ColorID::Windowtext, this, NS_RGB(0, 0, 0))));
 
-  ColorPattern hltColor(ToDeviceColor(LookAndFeel::GetColor(
-      LookAndFeel::ColorID::Widget3DHighlight, NS_RGB(255, 255, 255))));
+  ColorPattern hltColor(ToDeviceColor(LookAndFeel::Color(
+      LookAndFeel::ColorID::Threedhighlight, this, NS_RGB(255, 255, 255))));
 
-  ColorPattern sdwColor(ToDeviceColor(LookAndFeel::GetColor(
-      LookAndFeel::ColorID::Widget3DShadow, NS_RGB(128, 128, 128))));
+  ColorPattern sdwColor(ToDeviceColor(LookAndFeel::Color(
+      LookAndFeel::ColorID::Threedshadow, this, NS_RGB(128, 128, 128))));
 
   ColorPattern color(ToDeviceColor(NS_RGB(255, 255, 255)));  // default to white
   if (mVisibility) {
@@ -1526,8 +1525,8 @@ void nsDisplayFramesetBlank::Paint(nsDisplayListBuilder* aBuilder,
                                    gfxContext* aCtx) {
   DrawTarget* drawTarget = aCtx->GetDrawTarget();
   int32_t appUnitsPerDevPixel = mFrame->PresContext()->AppUnitsPerDevPixel();
-  Rect rect =
-      NSRectToSnappedRect(GetPaintRect(), appUnitsPerDevPixel, *drawTarget);
+  Rect rect = NSRectToSnappedRect(GetPaintRect(aBuilder, aCtx),
+                                  appUnitsPerDevPixel, *drawTarget);
   ColorPattern white(ToDeviceColor(sRGBColor::OpaqueWhite()));
   drawTarget->FillRect(rect, white);
 }

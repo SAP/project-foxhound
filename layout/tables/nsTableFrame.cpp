@@ -47,6 +47,7 @@
 #include "nsDisplayList.h"
 #include "nsIScrollableFrame.h"
 #include "nsCSSProps.h"
+#include "nsLayoutUtils.h"
 #include "nsStyleChangeList.h"
 #include <algorithm>
 
@@ -109,6 +110,14 @@ struct TableReflowInput {
                              table->GetRowSpacing(table->GetRowCount());
       availSize.BSize(wm) = std::max(0, availSize.BSize(wm));
     }
+  }
+
+  void ReduceAvailableBSizeBy(WritingMode aWM, nscoord aAmount) {
+    if (availSize.BSize(aWM) == NS_UNCONSTRAINEDSIZE) {
+      return;
+    }
+    availSize.BSize(aWM) -= aAmount;
+    availSize.BSize(aWM) = std::max(0, availSize.BSize(aWM));
   }
 };
 
@@ -480,10 +489,10 @@ void nsTableFrame::ResetRowIndices(
   RowGroupArray rowGroups;
   OrderRowGroups(rowGroups);
 
-  nsTHashtable<nsPtrHashKey<nsTableRowGroupFrame> > excludeRowGroups;
+  nsTHashSet<nsTableRowGroupFrame*> excludeRowGroups;
   nsFrameList::Enumerator excludeRowGroupsEnumerator(aRowGroupsToExclude);
   while (!excludeRowGroupsEnumerator.AtEnd()) {
-    excludeRowGroups.PutEntry(
+    excludeRowGroups.Insert(
         static_cast<nsTableRowGroupFrame*>(excludeRowGroupsEnumerator.get()));
 #ifdef DEBUG
     {
@@ -507,7 +516,7 @@ void nsTableFrame::ResetRowIndices(
   int32_t rowIndex = 0;
   for (uint32_t rgIdx = 0; rgIdx < rowGroups.Length(); rgIdx++) {
     nsTableRowGroupFrame* rgFrame = rowGroups[rgIdx];
-    if (!excludeRowGroups.GetEntry(rgFrame)) {
+    if (!excludeRowGroups.Contains(rgFrame)) {
       const nsFrameList& rowFrames = rgFrame->PrincipalChildList();
       for (nsFrameList::Enumerator rows(rowFrames); !rows.AtEnd();
            rows.Next()) {
@@ -1119,108 +1128,12 @@ void nsTableFrame::GetChildLists(nsTArray<ChildList>* aLists) const {
   mColGroups.AppendIfNonempty(aLists, kColGroupList);
 }
 
-nsRect nsDisplayTableItem::GetBounds(nsDisplayListBuilder* aBuilder,
-                                     bool* aSnap) const {
-  *aSnap = false;
-  return mFrame->InkOverflowRectRelativeToSelf() + ToReferenceFrame();
-}
-
-void nsDisplayTableItem::UpdateForFrameBackground(nsIFrame* aFrame) {
-  ComputedStyle* bgSC;
-  if (!nsCSSRendering::FindBackground(aFrame, &bgSC)) return;
-  if (!bgSC->StyleBackground()->HasFixedBackground(aFrame)) return;
-
-  mPartHasFixedBackground = true;
-}
-
-nsDisplayItemGeometry* nsDisplayTableItem::AllocateGeometry(
-    nsDisplayListBuilder* aBuilder) {
-  return new nsDisplayTableItemGeometry(
-      this, aBuilder, mFrame->GetOffsetTo(mFrame->PresShell()->GetRootFrame()));
-}
-
-void nsDisplayTableItem::ComputeInvalidationRegion(
-    nsDisplayListBuilder* aBuilder, const nsDisplayItemGeometry* aGeometry,
-    nsRegion* aInvalidRegion) const {
-  auto geometry = static_cast<const nsDisplayTableItemGeometry*>(aGeometry);
-
-  bool invalidateForAttachmentFixed = false;
-  if (mDrawsBackground && mPartHasFixedBackground) {
-    nsPoint frameOffsetToViewport =
-        mFrame->GetOffsetTo(mFrame->PresShell()->GetRootFrame());
-    invalidateForAttachmentFixed =
-        frameOffsetToViewport != geometry->mFrameOffsetToViewport;
-  }
-
-  if (invalidateForAttachmentFixed ||
-      (aBuilder->ShouldSyncDecodeImages() &&
-       geometry->ShouldInvalidateToSyncDecodeImages())) {
-    bool snap;
-    aInvalidRegion->Or(*aInvalidRegion, GetBounds(aBuilder, &snap));
-  }
-
-  nsDisplayItem::ComputeInvalidationRegion(aBuilder, aGeometry, aInvalidRegion);
-}
-
-// A display item that draws all collapsed borders for a table.
-// At some point, we may want to find a nicer partitioning for dividing
-// border-collapse segments into their own display items.
-class nsDisplayTableBorderCollapse final : public nsDisplayTableItem {
- public:
-  nsDisplayTableBorderCollapse(nsDisplayListBuilder* aBuilder,
-                               nsTableFrame* aFrame)
-      : nsDisplayTableItem(aBuilder, aFrame) {
-    MOZ_COUNT_CTOR(nsDisplayTableBorderCollapse);
-  }
-  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayTableBorderCollapse)
-
-  void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
-  bool CreateWebRenderCommands(
-      wr::DisplayListBuilder& aBuilder, wr::IpcResourceUpdateQueue& aResources,
-      const StackingContextHelper& aSc,
-      layers::RenderRootStateManager* aManager,
-      nsDisplayListBuilder* aDisplayListBuilder) override;
-  NS_DISPLAY_DECL_NAME("TableBorderCollapse", TYPE_TABLE_BORDER_COLLAPSE)
-};
-
-void nsDisplayTableBorderCollapse::Paint(nsDisplayListBuilder* aBuilder,
-                                         gfxContext* aCtx) {
-  nsPoint pt = ToReferenceFrame();
-  DrawTarget* drawTarget = aCtx->GetDrawTarget();
-
-  gfxPoint devPixelOffset = nsLayoutUtils::PointToGfxPoint(
-      pt, mFrame->PresContext()->AppUnitsPerDevPixel());
-
-  // XXX we should probably get rid of this translation at some stage
-  // But that would mean modifying PaintBCBorders, ugh
-  AutoRestoreTransform autoRestoreTransform(drawTarget);
-  drawTarget->SetTransform(
-      drawTarget->GetTransform().PreTranslate(ToPoint(devPixelOffset)));
-
-  static_cast<nsTableFrame*>(mFrame)->PaintBCBorders(*drawTarget,
-                                                     GetPaintRect() - pt);
-}
-
-bool nsDisplayTableBorderCollapse::CreateWebRenderCommands(
-    wr::DisplayListBuilder& aBuilder, wr::IpcResourceUpdateQueue& aResources,
-    const StackingContextHelper& aSc,
-    mozilla::layers::RenderRootStateManager* aManager,
-    nsDisplayListBuilder* aDisplayListBuilder) {
-  static_cast<nsTableFrame*>(mFrame)->CreateWebRenderCommandsForBCBorders(
-      aBuilder, aSc, GetPaintRect(), ToReferenceFrame());
-  return true;
-}
-
 static inline bool FrameHasBorder(nsIFrame* f) {
   if (!f->StyleVisibility()->IsVisible()) {
     return false;
   }
 
-  if (f->StyleBorder()->HasBorder()) {
-    return true;
-  }
-
-  return false;
+  return f->StyleBorder()->HasBorder();
 }
 
 void nsTableFrame::CalcHasBCBorders() {
@@ -1278,6 +1191,10 @@ void nsTableFrame::CalcHasBCBorders() {
   }
 
   SetHasBCBorders(false);
+}
+
+namespace mozilla {
+class nsDisplayTableBorderCollapse;
 }
 
 // table paint code is concerned primarily with borders and bg color
@@ -1340,8 +1257,7 @@ nsMargin nsTableFrame::GetDeflationForBackground(
   return GetOuterBCBorder(wm).GetPhysicalMargin(wm);
 }
 
-nsIFrame::LogicalSides nsTableFrame::GetLogicalSkipSides(
-    const ReflowInput* aReflowInput) const {
+LogicalSides nsTableFrame::GetLogicalSkipSides() const {
   LogicalSides skip(mWritingMode);
   if (MOZ_UNLIKELY(StyleBorder()->mBoxDecorationBreak ==
                    StyleBoxDecorationBreak::Clone)) {
@@ -1350,10 +1266,10 @@ nsIFrame::LogicalSides nsTableFrame::GetLogicalSkipSides(
 
   // frame attribute was accounted for in nsHTMLTableElement::MapTableBorderInto
   // account for pagination
-  if (nullptr != GetPrevInFlow()) {
+  if (GetPrevInFlow()) {
     skip |= eLogicalSideBitsBStart;
   }
-  if (nullptr != GetNextInFlow()) {
+  if (GetNextInFlow()) {
     skip |= eLogicalSideBitsBEnd;
   }
   return skip;
@@ -1502,19 +1418,24 @@ nsTableFrame::IntrinsicISizeOffsets(nscoord aPercentageBasis) {
 }
 
 /* virtual */
-LogicalSize nsTableFrame::ComputeSize(
+nsIFrame::SizeComputationResult nsTableFrame::ComputeSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
+    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
     ComputeSizeFlags aFlags) {
-  LogicalSize result = nsContainerFrame::ComputeSize(
-      aRenderingContext, aWM, aCBSize, aAvailableISize, aMargin, aBorder,
-      aPadding, aFlags);
+  // Only table wrapper calls this method, and it should use our writing mode.
+  MOZ_ASSERT(aWM == GetWritingMode(),
+             "aWM should be the same as our writing mode!");
 
-  // XXX The code below doesn't make sense if the caller's writing mode
-  // is orthogonal to this frame's. Not sure yet what should happen then;
-  // for now, just bail out.
-  if (aWM.IsVertical() != GetWritingMode().IsVertical()) {
+  auto result = nsContainerFrame::ComputeSize(
+      aRenderingContext, aWM, aCBSize, aAvailableISize, aMargin, aBorderPadding,
+      aSizeOverrides, aFlags);
+
+  // If our containing block wants to override inner table frame's inline-size
+  // (e.g. when resolving flex base size), don't enforce the min inline-size
+  // later in this method.
+  if (aSizeOverrides.mApplyOverridesVerbatim && aSizeOverrides.mStyleISize &&
+      aSizeOverrides.mStyleISize->IsLengthPercentage()) {
     return result;
   }
 
@@ -1524,8 +1445,8 @@ LogicalSize nsTableFrame::ComputeSize(
 
   // Tables never shrink below their min inline-size.
   nscoord minISize = GetMinISize(aRenderingContext);
-  if (minISize > result.ISize(aWM)) {
-    result.ISize(aWM) = minISize;
+  if (minISize > result.mLogicalSize.ISize(aWM)) {
+    result.mLogicalSize.ISize(aWM) = minISize;
   }
 
   return result;
@@ -1563,11 +1484,11 @@ nscoord nsTableFrame::TableShrinkISizeToFit(gfxContext* aRenderingContext,
 LogicalSize nsTableFrame::ComputeAutoSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
+    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
     ComputeSizeFlags aFlags) {
   // Tables always shrink-wrap.
-  nscoord cbBased = aAvailableISize - aMargin.ISize(aWM) - aBorder.ISize(aWM) -
-                    aPadding.ISize(aWM);
+  nscoord cbBased =
+      aAvailableISize - aMargin.ISize(aWM) - aBorderPadding.ISize(aWM);
   return LogicalSize(aWM, TableShrinkISizeToFit(aRenderingContext, cbBased),
                      NS_UNCONSTRAINEDSIZE);
 }
@@ -1729,9 +1650,14 @@ void nsTableFrame::Reflow(nsPresContext* aPresContext,
   DO_GLOBAL_REFLOW_COUNT("nsTableFrame");
   DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
+  MOZ_ASSERT(!HasAnyStateBits(NS_FRAME_OUT_OF_FLOW),
+             "The nsTableWrapperFrame should be the out-of-flow if needed");
+
+  const WritingMode wm = aReflowInput.GetWritingMode();
+  MOZ_ASSERT(aReflowInput.ComputedLogicalMargin(wm).IsAllZero(),
+             "Only nsTableWrapperFrame can have margins!");
 
   bool isPaginated = aPresContext->IsPaginated();
-  WritingMode wm = aReflowInput.GetWritingMode();
 
   if (!GetPrevInFlow() && !mTableLayoutStrategy) {
     NS_ERROR("strategy should have been created in Init");
@@ -1876,7 +1802,7 @@ void nsTableFrame::Reflow(nsPresContext* aPresContext,
 
   aDesiredSize.ISize(wm) =
       aReflowInput.ComputedISize() +
-      aReflowInput.ComputedLogicalBorderPadding().IStartEnd(wm);
+      aReflowInput.ComputedLogicalBorderPadding(wm).IStartEnd(wm);
   if (!haveDesiredBSize) {
     CalcDesiredBSize(aReflowInput, aDesiredSize);
   }
@@ -1926,7 +1852,8 @@ void nsTableFrame::Reflow(nsPresContext* aPresContext,
   // make sure the table overflow area does include the table rect.
   nsRect tableRect(0, 0, aDesiredSize.Width(), aDesiredSize.Height());
 
-  if (!ShouldApplyOverflowClipping(aReflowInput.mStyleDisplay)) {
+  if (ShouldApplyOverflowClipping(aReflowInput.mStyleDisplay) !=
+      PhysicalAxes::Both) {
     // collapsed border may leak out
     LogicalMargin bcMargin = GetExcludedOuterBCBorder(wm);
     tableRect.Inflate(bcMargin.GetPhysicalMargin(wm));
@@ -1969,7 +1896,7 @@ void nsTableFrame::FixupPositionedTableParts(nsPresContext* aPresContext,
     availSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
     ReflowInput reflowInput(aPresContext, positionedPart,
                             aReflowInput.mRenderingContext, availSize,
-                            ReflowInput::DUMMY_PARENT_REFLOW_INPUT);
+                            ReflowInput::InitFlag::DummyParentReflowInput);
     nsReflowStatus reflowStatus;
 
     // Reflow absolutely-positioned descendants of the positioned part.
@@ -1998,10 +1925,10 @@ void nsTableFrame::FixupPositionedTableParts(nsPresContext* aPresContext,
   nsLayoutUtils::UnionChildOverflow(this, aDesiredSize.mOverflowAreas);
 }
 
-bool nsTableFrame::ComputeCustomOverflow(nsOverflowAreas& aOverflowAreas) {
+bool nsTableFrame::ComputeCustomOverflow(OverflowAreas& aOverflowAreas) {
   // As above in Reflow, make sure the table overflow area includes the table
   // rect, and check for collapsed borders leaking out.
-  if (!ShouldApplyOverflowClipping(StyleDisplay())) {
+  if (ShouldApplyOverflowClipping(StyleDisplay()) != PhysicalAxes::Both) {
     nsRect bounds(nsPoint(0, 0), GetSize());
     WritingMode wm = GetWritingMode();
     LogicalMargin bcMargin = GetExcludedOuterBCBorder(wm);
@@ -2028,7 +1955,7 @@ void nsTableFrame::ReflowTable(ReflowOutput& aDesiredSize,
   WritingMode wm = aReflowInput.GetWritingMode();
   aDesiredSize.ISize(wm) =
       aReflowInput.ComputedISize() +
-      aReflowInput.ComputedLogicalBorderPadding().IStartEnd(wm);
+      aReflowInput.ComputedLogicalBorderPadding(wm).IStartEnd(wm);
   TableReflowInput reflowInput(
       aReflowInput, LogicalSize(wm, aDesiredSize.ISize(wm), aAvailBSize));
   ReflowChildren(reflowInput, aStatus, aLastChildReflowed,
@@ -2106,7 +2033,7 @@ void nsTableFrame::PushChildren(const RowGroupArray& aRowGroups,
     nextInFlow->mFrames.InsertFrames(nextInFlow, prevSibling, frames);
   } else {
     // Add the frames to our overflow list.
-    SetOverflowFrames(frames);
+    SetOverflowFrames(std::move(frames));
   }
 }
 
@@ -2129,7 +2056,7 @@ void nsTableFrame::AdjustForCollapsingRowsCols(
   nsTableFrame* firstInFlow = static_cast<nsTableFrame*>(FirstInFlow());
   nscoord iSize = firstInFlow->GetCollapsedISize(aWM, aBorderPadding);
   nscoord rgISize = iSize - GetColSpacing(-1) - GetColSpacing(GetColCount());
-  nsOverflowAreas overflow;
+  OverflowAreas overflow;
   // Walk the list of children
   for (uint32_t childX = 0; childX < rowGroups.Length(); childX++) {
     nsTableRowGroupFrame* rgFrame = rowGroups[childX];
@@ -2634,9 +2561,20 @@ static LogicalMargin GetSeparateModelBorderPadding(
   const nsStyleBorder* border = aComputedStyle->StyleBorder();
   LogicalMargin borderPadding(aWM, border->GetComputedBorder());
   if (aReflowInput) {
-    borderPadding += aReflowInput->ComputedLogicalPadding();
+    borderPadding += aReflowInput->ComputedLogicalPadding(aWM);
   }
   return borderPadding;
+}
+
+void nsTableFrame::GetCollapsedBorderPadding(
+    Maybe<LogicalMargin>& aBorder, Maybe<LogicalMargin>& aPadding) const {
+  if (IsBorderCollapse()) {
+    // Border-collapsed tables don't use any of their padding, and only part of
+    // their border.
+    const auto wm = GetWritingMode();
+    aBorder.emplace(GetIncludedOuterBCBorder(wm));
+    aPadding.emplace(wm);
+  }
 }
 
 LogicalMargin nsTableFrame::GetChildAreaOffset(
@@ -2647,15 +2585,15 @@ LogicalMargin nsTableFrame::GetChildAreaOffset(
 }
 
 void nsTableFrame::InitChildReflowInput(ReflowInput& aReflowInput) {
-  nsMargin border;
+  const auto childWM = aReflowInput.GetWritingMode();
+  LogicalMargin border(childWM);
   if (IsBorderCollapse()) {
     nsTableRowGroupFrame* rgFrame =
         static_cast<nsTableRowGroupFrame*>(aReflowInput.mFrame);
-    WritingMode wm = GetWritingMode();
-    border = rgFrame->GetBCBorderWidth(wm).GetPhysicalMargin(wm);
+    border = rgFrame->GetBCBorderWidth(childWM);
   }
-  const nsMargin padding;
-  aReflowInput.Init(PresContext(), Nothing(), &border, &padding);
+  const LogicalMargin zeroPadding(childWM);
+  aReflowInput.Init(PresContext(), Nothing(), Some(border), Some(zeroPadding));
 
   NS_ASSERTION(!mBits.mResizedColumns ||
                    !aReflowInput.mParentReflowInput->mFlags.mSpecialBSizeReflow,
@@ -2690,9 +2628,7 @@ void nsTableFrame::PlaceChild(TableReflowInput& aReflowInput,
   aReflowInput.bCoord += aKidDesiredSize.BSize(wm);
 
   // If our bsize is constrained, then update the available bsize
-  if (NS_UNCONSTRAINEDSIZE != aReflowInput.availSize.BSize(wm)) {
-    aReflowInput.availSize.BSize(wm) -= aKidDesiredSize.BSize(wm);
-  }
+  aReflowInput.ReduceAvailableBSizeBy(wm, aKidDesiredSize.BSize(wm));
 }
 
 void nsTableFrame::OrderRowGroups(RowGroupArray& aChildren,
@@ -2772,7 +2708,7 @@ nsresult nsTableFrame::SetupHeaderFooterChild(
   availSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
   ReflowInput kidReflowInput(presContext, aReflowInput.reflowInput, aFrame,
                              availSize, Nothing(),
-                             ReflowInput::CALLER_WILL_INIT);
+                             ReflowInput::InitFlag::CallerWillInit);
   InitChildReflowInput(kidReflowInput);
   kidReflowInput.mFlags.mIsTopOfPage = true;
   ReflowOutput desiredSize(aReflowInput.reflowInput);
@@ -2801,7 +2737,7 @@ void nsTableFrame::PlaceRepeatedFooter(TableReflowInput& aReflowInput,
   kidAvailSize.BSize(wm) = aFooterHeight;
   ReflowInput footerReflowInput(presContext, aReflowInput.reflowInput, aTfoot,
                                 kidAvailSize, Nothing(),
-                                ReflowInput::CALLER_WILL_INIT);
+                                ReflowInput::InitFlag::CallerWillInit);
   InitChildReflowInput(footerReflowInput);
   aReflowInput.bCoord += GetRowSpacing(GetRowCount());
 
@@ -2824,7 +2760,7 @@ void nsTableFrame::PlaceRepeatedFooter(TableReflowInput& aReflowInput,
 void nsTableFrame::ReflowChildren(TableReflowInput& aReflowInput,
                                   nsReflowStatus& aStatus,
                                   nsIFrame*& aLastChildReflowed,
-                                  nsOverflowAreas& aOverflowAreas) {
+                                  OverflowAreas& aOverflowAreas) {
   aStatus.Reset();
   aLastChildReflowed = nullptr;
 
@@ -2882,14 +2818,21 @@ void nsTableFrame::ReflowChildren(TableReflowInput& aReflowInput,
   // using the footer's prev-in-flow's height instead of reflowing it again,
   // but there's no real need.
   if (isPaginated) {
+    bool reorder = false;
     if (thead && !GetPrevInFlow()) {
+      reorder = thead->GetNextInFlow();
       nscoord desiredHeight;
       nsresult rv = SetupHeaderFooterChild(aReflowInput, thead, &desiredHeight);
       if (NS_FAILED(rv)) return;
     }
     if (tfoot) {
+      reorder = reorder || tfoot->GetNextInFlow();
       nsresult rv = SetupHeaderFooterChild(aReflowInput, tfoot, &footerHeight);
       if (NS_FAILED(rv)) return;
+    }
+    if (reorder) {
+      // Reorder row groups - the reflow may have changed the nextinflows.
+      OrderRowGroups(rowGroups, &thead, &tfoot);
     }
   }
   // if the child is a tbody in paginated mode reduce the height by a repeated
@@ -2944,7 +2887,7 @@ void nsTableFrame::ReflowChildren(TableReflowInput& aReflowInput,
       // Reflow the child into the available space
       ReflowInput kidReflowInput(presContext, aReflowInput.reflowInput,
                                  kidFrame, kidAvailSize, Nothing(),
-                                 ReflowInput::CALLER_WILL_INIT);
+                                 ReflowInput::InitFlag::CallerWillInit);
       InitChildReflowInput(kidReflowInput);
 
       // If this isn't the first row group, and the previous row group has a
@@ -2956,13 +2899,10 @@ void nsTableFrame::ReflowChildren(TableReflowInput& aReflowInput,
         kidReflowInput.mFlags.mIsTopOfPage = false;
       }
       aReflowInput.bCoord += cellSpacingB;
-      if (NS_UNCONSTRAINEDSIZE != aReflowInput.availSize.BSize(wm)) {
-        aReflowInput.availSize.BSize(wm) -= cellSpacingB;
-      }
+      aReflowInput.ReduceAvailableBSizeBy(wm, cellSpacingB);
       // record the presence of a next in flow, it might get destroyed so we
       // need to reorder the row group array
-      bool reorder = false;
-      if (kidFrame->GetNextInFlow()) reorder = true;
+      const bool reorder = kidFrame->GetNextInFlow();
 
       LogicalPoint kidPosition(wm, aReflowInput.iCoord, aReflowInput.bCoord);
       aStatus.Reset();
@@ -2971,7 +2911,7 @@ void nsTableFrame::ReflowChildren(TableReflowInput& aReflowInput,
                   aStatus);
 
       if (reorder) {
-        // reorder row groups the reflow may have changed the nextinflows
+        // Reorder row groups - the reflow may have changed the nextinflows.
         OrderRowGroups(rowGroups, &thead, &tfoot);
         childX = rowGroups.IndexOf(kidFrame);
         if (childX == RowGroupArray::NoIndex) {
@@ -3116,10 +3056,7 @@ void nsTableFrame::ReflowChildren(TableReflowInput& aReflowInput,
       }
       aReflowInput.bCoord += kidRect.BSize(wm);
 
-      // If our bsize is constrained then update the available bsize.
-      if (NS_UNCONSTRAINEDSIZE != aReflowInput.availSize.BSize(wm)) {
-        aReflowInput.availSize.BSize(wm) -= cellSpacingB + kidRect.BSize(wm);
-      }
+      aReflowInput.ReduceAvailableBSizeBy(wm, cellSpacingB + kidRect.BSize(wm));
     }
   }
 
@@ -3602,6 +3539,10 @@ nscoord nsTableFrame::GetLogicalBaseline(WritingMode aWM) const {
 bool nsTableFrame::GetNaturalBaselineBOffset(
     WritingMode aWM, BaselineSharingGroup aBaselineGroup,
     nscoord* aBaseline) const {
+  if (StyleDisplay()->IsContainLayout()) {
+    return false;
+  }
+
   RowGroupArray orderedRowGroups;
   OrderRowGroups(orderedRowGroups);
   // XXX not sure if this should be the size of the containing block instead.
@@ -3710,9 +3651,7 @@ bool nsTableFrame::IsAutoLayout() {
   // auto-layout (at least as long as
   // FixedTableLayoutStrategy::GetPrefISize returns nscoord_MAX)
   const auto& iSize = StylePosition()->ISize(GetWritingMode());
-  return iSize.IsAuto() ||
-         (iSize.IsExtremumLength() &&
-          iSize.AsExtremumLength() == StyleExtremumLength::MaxContent);
+  return iSize.IsAuto() || iSize.IsMaxContent();
 }
 
 #ifdef DEBUG_FRAME_DUMP
@@ -3837,14 +3776,38 @@ void nsTableFrame::Dump(bool aDumpRows, bool aDumpCols, bool aDumpCellMap) {
 #endif
 
 bool nsTableFrame::ColumnHasCellSpacingBefore(int32_t aColIndex) const {
+  if (aColIndex == 0) {
+    return true;
+  }
   // Since fixed-layout tables should not have their column sizes change
   // as they load, we assume that all columns are significant.
-  if (LayoutStrategy()->GetType() == nsITableLayoutStrategy::Fixed) return true;
-  // the first column is always significant
-  if (aColIndex == 0) return true;
-  nsTableCellMap* cellMap = GetCellMap();
-  if (!cellMap) return false;
-  return cellMap->GetNumCellsOriginatingInCol(aColIndex) > 0;
+  auto* fif = static_cast<nsTableFrame*>(FirstInFlow());
+  if (fif->LayoutStrategy()->GetType() == nsITableLayoutStrategy::Fixed) {
+    return true;
+  }
+  nsTableCellMap* cellMap = fif->GetCellMap();
+  if (!cellMap) {
+    return false;
+  }
+  if (cellMap->GetNumCellsOriginatingInCol(aColIndex) > 0) {
+    return true;
+  }
+  // Check if we have a <col> element with a non-zero definite inline size.
+  // Note: percentages and calc(%) are intentionally not considered.
+  if (const auto* col = fif->GetColFrame(aColIndex)) {
+    const auto& iSize = col->StylePosition()->ISize(GetWritingMode());
+    if (iSize.ConvertsToLength() && iSize.ToLength() > 0) {
+      const auto& maxISize = col->StylePosition()->MaxISize(GetWritingMode());
+      if (!maxISize.ConvertsToLength() || maxISize.ToLength() > 0) {
+        return true;
+      }
+    }
+    const auto& minISize = col->StylePosition()->MinISize(GetWritingMode());
+    if (minISize.ConvertsToLength() && minISize.ToLength() > 0) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /********************************************************************************
@@ -4320,14 +4283,14 @@ bool BCMapCellIterator::SetNewRowGroup(bool aFindFirstDamagedRow) {
         if ((mAreaStart.y >= mRowGroupStart) &&
             (mAreaStart.y <= mRowGroupEnd)) {
           // the damage area starts in the row group
-          if (aFindFirstDamagedRow) {
-            // find the correct first damaged row
-            int32_t numRows = mAreaStart.y - mRowGroupStart;
-            for (int32_t i = 0; i < numRows; i++) {
-              firstRow = firstRow->GetNextRow();
-              if (!firstRow) ABORT1(false);
-            }
+
+          // find the correct first damaged row
+          int32_t numRows = mAreaStart.y - mRowGroupStart;
+          for (int32_t i = 0; i < numRows; i++) {
+            firstRow = firstRow->GetNextRow();
+            if (!firstRow) ABORT1(false);
           }
+
         } else {
           continue;
         }
@@ -4975,8 +4938,8 @@ void nsTableFrame::ExpandBCDamageArea(TableArea& aArea) const {
         }
       }
       // check for spanners on the left and right
-      int32_t iterStartY = -1;
-      int32_t iterEndY = -1;
+      int32_t iterStartY;
+      int32_t iterEndY;
       if ((dStartY >= rgStartY) && (dStartY <= rgEndY)) {
         // the damage area starts in the row group
         iterStartY = dStartY;
@@ -4989,22 +4952,25 @@ void nsTableFrame::ExpandBCDamageArea(TableArea& aArea) const {
         // the damage area contains the row group
         iterStartY = rgStartY;
         iterEndY = rgEndY;
+      } else {
+        // the damage area does not overlap the row group
+        continue;
       }
-      if ((iterStartY >= 0) && (iterEndY >= 0)) {
-        for (int32_t y = iterStartY; y <= iterEndY; y++) {
-          if (uint32_t(y - rgStartY) >= cellMap->mRows.Length()) ABORT0();
-          const nsCellMap::CellDataArray& row = cellMap->mRows[y - rgStartY];
-          CellData* cellData = row.SafeElementAt(dStartX);
+      NS_ASSERTION(iterStartY >= 0 && iterEndY >= 0,
+                   "table index values are expected to be nonnegative");
+      for (int32_t y = iterStartY; y <= iterEndY; y++) {
+        if (uint32_t(y - rgStartY) >= cellMap->mRows.Length()) ABORT0();
+        const nsCellMap::CellDataArray& row = cellMap->mRows[y - rgStartY];
+        CellData* cellData = row.SafeElementAt(dStartX);
+        if (cellData && (cellData->IsColSpan())) {
+          haveSpanner = true;
+          break;
+        }
+        if (dEndX < (numCols - 1)) {
+          cellData = row.SafeElementAt(dEndX + 1);
           if (cellData && (cellData->IsColSpan())) {
             haveSpanner = true;
             break;
-          }
-          if (dEndX < (numCols - 1)) {
-            cellData = row.SafeElementAt(dEndX + 1);
-            if (cellData && (cellData->IsColSpan())) {
-              haveSpanner = true;
-              break;
-            }
           }
         }
       }
@@ -6280,7 +6246,6 @@ bool BCPaintBorderIterator::SetDamageArea(const nsRect& aDirtyRect) {
 
   Reset();
   mBlockDirInfo = new BCBlockDirSeg[mDamageArea.ColCount() + 1];
-  if (!mBlockDirInfo) return false;
   return true;
 }
 
@@ -6831,31 +6796,35 @@ static void AdjustAndPushBevel(wr::DisplayListBuilder& aBuilder,
 
   if (horizontal) {
     if (aIsStart) {
-      aRect.origin.x += offset;
+      aRect.min.x += offset;
+      aRect.max.x += offset;
     } else {
-      bevelRect.origin.x += aRect.size.width - offset;
+      bevelRect.min.x += aRect.width() - offset;
+      bevelRect.max.x += aRect.width() - offset;
     }
-    aRect.size.width -= offset;
-    bevelRect.size.height = aRect.size.height;
-    bevelRect.size.width = offset;
+    aRect.max.x -= offset;
+    bevelRect.max.y = bevelRect.min.y + aRect.height();
+    bevelRect.max.x = bevelRect.min.x + offset;
     if (aBevel.mSide == eSideTop) {
-      borderWidths.bottom = aRect.size.height;
+      borderWidths.bottom = aRect.height();
     } else {
-      borderWidths.top = aRect.size.height;
+      borderWidths.top = aRect.height();
     }
   } else {
     if (aIsStart) {
-      aRect.origin.y += offset;
+      aRect.min.y += offset;
+      aRect.max.y += offset;
     } else {
-      bevelRect.origin.y += aRect.size.height - offset;
+      bevelRect.min.y += aRect.height() - offset;
+      bevelRect.max.y += aRect.height() - offset;
     }
-    aRect.size.height -= offset;
-    bevelRect.size.width = aRect.size.width;
-    bevelRect.size.height = offset;
+    aRect.max.y -= offset;
+    bevelRect.max.x = bevelRect.min.x + aRect.width();
+    bevelRect.max.y = bevelRect.min.y + offset;
     if (aBevel.mSide == eSideLeft) {
-      borderWidths.right = aRect.size.width;
+      borderWidths.right = aRect.width();
     } else {
-      borderWidths.left = aRect.size.width;
+      borderWidths.left = aRect.width();
     }
   }
 
@@ -6917,7 +6886,7 @@ static void CreateWRCommandsForBorderSegment(
   }
   const bool horizontal = aBorderParams.mStartBevelSide == eSideTop ||
                           aBorderParams.mStartBevelSide == eSideBottom;
-  auto borderWidth = horizontal ? r.size.height : r.size.width;
+  auto borderWidth = horizontal ? r.height() : r.width();
 
   // All border style is set to none except left side. So setting the widths of
   // each side to width of rect is fine.
@@ -7498,3 +7467,111 @@ void nsTableFrame::UpdateStyleOfOwnedAnonBoxesForTableWrapper(
   MOZ_ASSERT(!aWrapperFrame->HasAnyStateBits(NS_FRAME_OWNS_ANON_BOXES),
              "Wrapper frame doesn't have any anon boxes of its own!");
 }
+
+namespace mozilla {
+
+nsRect nsDisplayTableItem::GetBounds(nsDisplayListBuilder* aBuilder,
+                                     bool* aSnap) const {
+  *aSnap = false;
+  return mFrame->InkOverflowRectRelativeToSelf() + ToReferenceFrame();
+}
+
+void nsDisplayTableItem::UpdateForFrameBackground(nsIFrame* aFrame) {
+  ComputedStyle* bgSC;
+  if (!nsCSSRendering::FindBackground(aFrame, &bgSC)) return;
+  if (!bgSC->StyleBackground()->HasFixedBackground(aFrame)) return;
+
+  mPartHasFixedBackground = true;
+}
+
+nsDisplayItemGeometry* nsDisplayTableItem::AllocateGeometry(
+    nsDisplayListBuilder* aBuilder) {
+  return new nsDisplayTableItemGeometry(
+      this, aBuilder, mFrame->GetOffsetTo(mFrame->PresShell()->GetRootFrame()));
+}
+
+void nsDisplayTableItem::ComputeInvalidationRegion(
+    nsDisplayListBuilder* aBuilder, const nsDisplayItemGeometry* aGeometry,
+    nsRegion* aInvalidRegion) const {
+  auto geometry = static_cast<const nsDisplayTableItemGeometry*>(aGeometry);
+
+  bool invalidateForAttachmentFixed = false;
+  if (mDrawsBackground && mPartHasFixedBackground) {
+    nsPoint frameOffsetToViewport =
+        mFrame->GetOffsetTo(mFrame->PresShell()->GetRootFrame());
+    invalidateForAttachmentFixed =
+        frameOffsetToViewport != geometry->mFrameOffsetToViewport;
+  }
+
+  if (invalidateForAttachmentFixed ||
+      (aBuilder->ShouldSyncDecodeImages() &&
+       geometry->ShouldInvalidateToSyncDecodeImages())) {
+    bool snap;
+    aInvalidRegion->Or(*aInvalidRegion, GetBounds(aBuilder, &snap));
+  }
+
+  nsDisplayItem::ComputeInvalidationRegion(aBuilder, aGeometry, aInvalidRegion);
+}
+
+nsDisplayTableBackgroundSet::nsDisplayTableBackgroundSet(
+    nsDisplayListBuilder* aBuilder, nsIFrame* aTable)
+    : mBuilder(aBuilder) {
+  mPrevTableBackgroundSet = mBuilder->SetTableBackgroundSet(this);
+  mozilla::DebugOnly<const nsIFrame*> reference =
+      mBuilder->FindReferenceFrameFor(aTable, &mToReferenceFrame);
+  MOZ_ASSERT(nsLayoutUtils::FindNearestCommonAncestorFrame(reference, aTable));
+  mDirtyRect = mBuilder->GetDirtyRect();
+}
+
+// A display item that draws all collapsed borders for a table.
+// At some point, we may want to find a nicer partitioning for dividing
+// border-collapse segments into their own display items.
+class nsDisplayTableBorderCollapse final : public nsDisplayTableItem {
+ public:
+  nsDisplayTableBorderCollapse(nsDisplayListBuilder* aBuilder,
+                               nsTableFrame* aFrame)
+      : nsDisplayTableItem(aBuilder, aFrame) {
+    MOZ_COUNT_CTOR(nsDisplayTableBorderCollapse);
+  }
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayTableBorderCollapse)
+
+  void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
+  bool CreateWebRenderCommands(
+      wr::DisplayListBuilder& aBuilder, wr::IpcResourceUpdateQueue& aResources,
+      const StackingContextHelper& aSc,
+      layers::RenderRootStateManager* aManager,
+      nsDisplayListBuilder* aDisplayListBuilder) override;
+  NS_DISPLAY_DECL_NAME("TableBorderCollapse", TYPE_TABLE_BORDER_COLLAPSE)
+};
+
+void nsDisplayTableBorderCollapse::Paint(nsDisplayListBuilder* aBuilder,
+                                         gfxContext* aCtx) {
+  nsPoint pt = ToReferenceFrame();
+  DrawTarget* drawTarget = aCtx->GetDrawTarget();
+
+  gfxPoint devPixelOffset = nsLayoutUtils::PointToGfxPoint(
+      pt, mFrame->PresContext()->AppUnitsPerDevPixel());
+
+  // XXX we should probably get rid of this translation at some stage
+  // But that would mean modifying PaintBCBorders, ugh
+  AutoRestoreTransform autoRestoreTransform(drawTarget);
+  drawTarget->SetTransform(
+      drawTarget->GetTransform().PreTranslate(ToPoint(devPixelOffset)));
+
+  static_cast<nsTableFrame*>(mFrame)->PaintBCBorders(
+      *drawTarget, GetPaintRect(aBuilder, aCtx) - pt);
+}
+
+bool nsDisplayTableBorderCollapse::CreateWebRenderCommands(
+    wr::DisplayListBuilder& aBuilder, wr::IpcResourceUpdateQueue& aResources,
+    const StackingContextHelper& aSc,
+    mozilla::layers::RenderRootStateManager* aManager,
+    nsDisplayListBuilder* aDisplayListBuilder) {
+  bool dummy;
+  static_cast<nsTableFrame*>(mFrame)->CreateWebRenderCommandsForBCBorders(
+      aBuilder, aSc, GetBounds(aDisplayListBuilder, &dummy),
+      ToReferenceFrame());
+  return true;
+}
+
+}  // namespace mozilla

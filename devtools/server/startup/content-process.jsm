@@ -13,8 +13,8 @@
  * The actual server startup itself is in this JSM so that code can be cached.
  */
 
-/* exported init */
-const EXPORTED_SYMBOLS = ["init"];
+/* exported initContentProcessTarget */
+const EXPORTED_SYMBOLS = ["initContentProcessTarget"];
 
 let gLoader;
 
@@ -27,7 +27,7 @@ function setupServer(mm) {
 
   // Lazy load Loader.jsm to prevent loading any devtools dependency too early.
   const { DevToolsLoader } = ChromeUtils.import(
-    "resource://devtools/shared/Loader.jsm"
+    "resource://devtools/shared/loader/Loader.jsm"
   );
 
   // Init a custom, invisible DevToolsServer, in order to not pollute the
@@ -63,9 +63,10 @@ function setupServer(mm) {
   return gLoader;
 }
 
-function init(msg) {
+function initContentProcessTarget(msg) {
   const mm = msg.target;
   const prefix = msg.data.prefix;
+  const watcherActorID = msg.data.watcherActorID;
 
   // Setup a server if none started yet
   const loader = setupServer(mm);
@@ -82,7 +83,7 @@ function init(msg) {
   const actor = new ContentProcessTargetActor(conn);
   actor.manage(actor);
 
-  const response = { actor: actor.form() };
+  const response = { watcherActorID, prefix, actor: actor.form() };
   mm.sendAsyncMessage("debug:content-process-actor", response);
 
   // Clean up things when the client disconnects
@@ -98,8 +99,12 @@ function init(msg) {
     mm.removeMessageListener("debug:content-process-disconnect", onDestroy);
 
     // Call DevToolsServerConnection.close to destroy all child actors. It should end up
-    // calling DevToolsServerConnection.onClosed that would actually cleanup all actor
+    // calling DevToolsServerConnection.onTransportClosed that would actually cleanup all actor
     // pools.
     conn.close();
   });
+  return {
+    actor,
+    connection: conn,
+  };
 }

@@ -14,22 +14,11 @@ add_task(async function setup() {
 add_task(async function test_open_feedback() {
   const menuArray = [
     {
-      urlFinal: "https://example.com/firefox-lockwise",
+      urlFinal:
+        "https://example.com/password-manager-remember-delete-edit-logins",
       urlBase: "https://example.com/",
       pref: "app.support.baseURL",
       selector: ".menuitem-help",
-    },
-    {
-      urlFinal: "https://example.com/android?utm_creative=Elipsis_Menu",
-      urlBase: "https://example.com/android?utm_creative=",
-      pref: "signon.management.page.mobileAndroidURL",
-      selector: ".menuitem-mobile-android",
-    },
-    {
-      urlFinal: "https://example.com/apple?utm_creative=Elipsis_Menu",
-      urlBase: "https://example.com/apple?utm_creative=",
-      pref: "signon.management.page.mobileAppleURL",
-      selector: ".menuitem-mobile-ios",
     },
   ];
 

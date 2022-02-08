@@ -5,11 +5,12 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DetailedPromise.h"
+
+#include "VideoUtils.h"
 #include "mozilla/dom/DOMException.h"
 #include "nsPrintfCString.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 DetailedPromise::DetailedPromise(nsIGlobalObject* aGlobal,
                                  const nsACString& aName)
@@ -94,5 +95,4 @@ void DetailedPromise::MaybeReportTelemetry(eStatus aStatus) {
   Telemetry::Accumulate(tid, latency);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

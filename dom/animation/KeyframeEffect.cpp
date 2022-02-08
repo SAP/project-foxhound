@@ -6,7 +6,6 @@
 
 #include "mozilla/dom/KeyframeEffect.h"
 
-#include "FrameLayerBuilder.h"
 #include "mozilla/dom/Animation.h"
 #include "mozilla/dom/KeyframeAnimationOptionsBinding.h"
 // For UnrestrictedDoubleOrKeyframeAnimationOptions;
@@ -32,11 +31,15 @@
 #include "nsCSSPropertyIDSet.h"
 #include "nsCSSProps.h"             // For nsCSSProps::PropHasFlags
 #include "nsCSSPseudoElements.h"    // For PseudoStyleType
+#include "nsCSSRendering.h"         // For IsCanvasFrame
 #include "nsDOMMutationObserver.h"  // For nsAutoAnimationMutationBatch
 #include "nsIFrame.h"
 #include "nsIFrameInlines.h"
+#include "nsIScrollableFrame.h"
 #include "nsPresContextInlines.h"
 #include "nsRefreshDriver.h"
+#include "js/PropertyAndElement.h"  // JS_DefineProperty
+#include "WindowRenderer.h"
 
 namespace mozilla {
 
@@ -101,11 +104,7 @@ KeyframeEffect::KeyframeEffect(Document* aDocument,
                      mTarget.mPseudoType},
       mKeyframes(aOther.mKeyframes.Clone()),
       mProperties(aOther.mProperties.Clone()),
-      mBaseValues(aOther.mBaseValues.Count()) {
-  for (auto iter = aOther.mBaseValues.ConstIter(); !iter.Done(); iter.Next()) {
-    mBaseValues.Put(iter.Key(), RefPtr{iter.Data()});
-  }
-}
+      mBaseValues(aOther.mBaseValues.Clone()) {}
 
 JSObject* KeyframeEffect::WrapObject(JSContext* aCx,
                                      JS::Handle<JSObject*> aGivenProto) {
@@ -531,14 +530,13 @@ void KeyframeEffect::EnsureBaseStyles(
     EnsureBaseStyle(property, presContext, aComputedValues, baseComputedStyle);
   }
 
-  if (aBaseStylesChanged != nullptr) {
-    for (auto iter = mBaseValues.Iter(); !iter.Done(); iter.Next()) {
-      if (AnimationValue(iter.Data()) !=
-          AnimationValue(previousBaseStyles.Get(iter.Key()))) {
-        *aBaseStylesChanged = true;
-        break;
-      }
-    }
+  if (aBaseStylesChanged != nullptr &&
+      std::any_of(
+          mBaseValues.cbegin(), mBaseValues.cend(), [&](const auto& entry) {
+            return AnimationValue(entry.GetData()) !=
+                   AnimationValue(previousBaseStyles.Get(entry.GetKey()));
+          })) {
+    *aBaseStylesChanged = true;
   }
 }
 
@@ -574,7 +572,7 @@ void KeyframeEffect::EnsureBaseStyle(
       Servo_ComputedValues_ExtractAnimationValue(aBaseComputedStyle,
                                                  aProperty.mProperty)
           .Consume();
-  mBaseValues.Put(aProperty.mProperty, std::move(baseValue));
+  mBaseValues.InsertOrUpdate(aProperty.mProperty, std::move(baseValue));
 }
 
 void KeyframeEffect::WillComposeStyle() {
@@ -738,8 +736,8 @@ void KeyframeEffect::ResetPartialPrerendered() {
     return;
   }
 
-  if (layers::LayerManager* layerManager = widget->GetLayerManager()) {
-    layerManager->RemovePartialPrerenderedAnimation(
+  if (WindowRenderer* windowRenderer = widget->GetWindowRenderer()) {
+    windowRenderer->RemovePartialPrerenderedAnimation(
         mAnimation->IdOnCompositor(), mAnimation);
   }
 }
@@ -784,9 +782,9 @@ static KeyframeEffectParams KeyframeEffectParamsFromUnion(
     return result;
   }
 
-  RefPtr<nsAtom> pseudoAtom =
-      nsCSSPseudoElements::GetPseudoAtom(options.mPseudoElement);
-  if (!pseudoAtom) {
+  Maybe<PseudoStyleType> pseudoType =
+      nsCSSPseudoElements::GetPseudoType(options.mPseudoElement);
+  if (!pseudoType) {
     // Per the spec, we throw SyntaxError for syntactically invalid pseudos.
     aRv.ThrowSyntaxError(
         nsPrintfCString("'%s' is a syntactically invalid pseudo-element.",
@@ -794,8 +792,7 @@ static KeyframeEffectParams KeyframeEffectParamsFromUnion(
     return result;
   }
 
-  result.mPseudoType = nsCSSPseudoElements::GetPseudoType(
-      pseudoAtom, CSSEnabledState::ForAllContent);
+  result.mPseudoType = *pseudoType;
   if (!IsSupportedPseudoForWebAnimation(result.mPseudoType)) {
     // Per the spec, we throw SyntaxError for unsupported pseudos.
     aRv.ThrowSyntaxError(
@@ -834,8 +831,7 @@ already_AddRefed<KeyframeEffect> KeyframeEffect::ConstructKeyframeEffect(
     return nullptr;
   }
 
-  TimingParams timingParams =
-      TimingParams::FromOptionsUnion(aOptions, doc, aRv);
+  TimingParams timingParams = TimingParams::FromOptionsUnion(aOptions, aRv);
   if (aRv.Failed()) {
     return nullptr;
   }
@@ -881,7 +877,7 @@ nsTArray<AnimationProperty> KeyframeEffect::BuildProperties(
              " should not be modified");
 #endif
 
-  mKeyframes.SwapElements(keyframesCopy);
+  mKeyframes = std::move(keyframesCopy);
   return result;
 }
 
@@ -904,8 +900,12 @@ void KeyframeEffect::UpdateTarget(Element* aElement,
   }
 
   if (mTarget) {
-    UnregisterTarget();
+    // Call ResetIsRunningOnCompositor() prior to UnregisterTarget() since
+    // ResetIsRunningOnCompositor() might try to get the EffectSet associated
+    // with this keyframe effect to remove partial pre-render animation from
+    // the layer manager.
     ResetIsRunningOnCompositor();
+    UnregisterTarget();
 
     RequestRestyle(EffectCompositor::RestyleType::Layer);
 
@@ -1014,16 +1014,13 @@ already_AddRefed<ComputedStyle> KeyframeEffect::GetTargetComputedStyle(
   MOZ_ASSERT(mTarget,
              "Should only have a document when we have a target element");
 
-  nsAtom* pseudo = PseudoStyle::IsPseudoElement(mTarget.mPseudoType)
-                       ? nsCSSPseudoElements::GetPseudoAtom(mTarget.mPseudoType)
-                       : nullptr;
-
   OwningAnimationTarget kungfuDeathGrip(mTarget.mElement, mTarget.mPseudoType);
 
   return aFlushType == Flush::Style
-             ? nsComputedDOMStyle::GetComputedStyle(mTarget.mElement, pseudo)
+             ? nsComputedDOMStyle::GetComputedStyle(mTarget.mElement,
+                                                    mTarget.mPseudoType)
              : nsComputedDOMStyle::GetComputedStyleNoFlush(mTarget.mElement,
-                                                           pseudo);
+                                                           mTarget.mPseudoType);
 }
 
 #ifdef DEBUG
@@ -1033,12 +1030,11 @@ void DumpAnimationProperties(
   for (auto& p : aAnimationProperties) {
     printf("%s\n", nsCString(nsCSSProps::GetStringValue(p.mProperty)).get());
     for (auto& s : p.mSegments) {
-      nsString fromValue, toValue;
+      nsAutoCString fromValue, toValue;
       s.mFromValue.SerializeSpecifiedValue(p.mProperty, aRawSet, fromValue);
       s.mToValue.SerializeSpecifiedValue(p.mProperty, aRawSet, toValue);
-      printf("  %f..%f: %s..%s\n", s.mFromKey, s.mToKey,
-             NS_ConvertUTF16toUTF8(fromValue).get(),
-             NS_ConvertUTF16toUTF8(toValue).get());
+      printf("  %f..%f: %s..%s\n", s.mFromKey, s.mToKey, fromValue.get(),
+             toValue.get());
     }
   }
 }
@@ -1088,17 +1084,16 @@ already_AddRefed<KeyframeEffect> KeyframeEffect::Constructor(
 
 void KeyframeEffect::SetPseudoElement(const nsAString& aPseudoElement,
                                       ErrorResult& aRv) {
-  PseudoStyleType pseudoType = PseudoStyleType::NotPseudo;
   if (DOMStringIsNull(aPseudoElement)) {
-    UpdateTarget(mTarget.mElement, pseudoType);
+    UpdateTarget(mTarget.mElement, PseudoStyleType::NotPseudo);
     return;
   }
 
-  // Note: GetPseudoAtom() also returns nullptr for the null string,
+  // Note: GetPseudoType() returns Some(NotPseudo) for the null string,
   // so we handle null case before this.
-  RefPtr<nsAtom> pseudoAtom =
-      nsCSSPseudoElements::GetPseudoAtom(aPseudoElement);
-  if (!pseudoAtom) {
+  Maybe<PseudoStyleType> pseudoType =
+      nsCSSPseudoElements::GetPseudoType(aPseudoElement);
+  if (!pseudoType || *pseudoType == PseudoStyleType::NotPseudo) {
     // Per the spec, we throw SyntaxError for syntactically invalid pseudos.
     aRv.ThrowSyntaxError(
         nsPrintfCString("'%s' is a syntactically invalid pseudo-element.",
@@ -1106,9 +1101,7 @@ void KeyframeEffect::SetPseudoElement(const nsAString& aPseudoElement,
     return;
   }
 
-  pseudoType = nsCSSPseudoElements::GetPseudoType(
-      pseudoAtom, CSSEnabledState::ForAllContent);
-  if (!IsSupportedPseudoForWebAnimation(pseudoType)) {
+  if (!IsSupportedPseudoForWebAnimation(*pseudoType)) {
     // Per the spec, we throw SyntaxError for unsupported pseudos.
     aRv.ThrowSyntaxError(
         nsPrintfCString("'%s' is an unsupported pseudo-element.",
@@ -1116,7 +1109,7 @@ void KeyframeEffect::SetPseudoElement(const nsAString& aPseudoElement,
     return;
   }
 
-  UpdateTarget(mTarget.mElement, pseudoType);
+  UpdateTarget(mTarget.mElement, *pseudoType);
 }
 
 static void CreatePropertyValue(
@@ -1127,7 +1120,7 @@ static void CreatePropertyValue(
   aResult.mOffset = aOffset;
 
   if (!aValue.IsNull()) {
-    nsString stringValue;
+    nsAutoCString stringValue;
     aValue.SerializeSpecifiedValue(aProperty, aRawSet, stringValue);
     aResult.mValue.Construct(stringValue);
   }
@@ -1136,7 +1129,7 @@ static void CreatePropertyValue(
     aResult.mEasing.Construct();
     aTimingFunction->AppendToString(aResult.mEasing.Value());
   } else {
-    aResult.mEasing.Construct(u"linear"_ns);
+    aResult.mEasing.Construct("linear"_ns);
   }
 
   aResult.mComposite = aComposite;
@@ -1294,7 +1287,7 @@ void KeyframeEffect::GetKeyframes(JSContext* aCx, nsTArray<JSObject*>& aResult,
 
     JS::Rooted<JSObject*> keyframeObject(aCx, &keyframeJSValue.toObject());
     for (const PropertyValuePair& propertyValue : keyframe.mPropertyValues) {
-      nsAutoString stringValue;
+      nsAutoCString stringValue;
       // Don't serialize the custom properties for this keyframe.
       if (propertyValue.mProperty ==
           nsCSSPropertyID::eCSSPropertyExtra_variable) {
@@ -1334,7 +1327,7 @@ void KeyframeEffect::GetKeyframes(JSContext* aCx, nsTArray<JSObject*>& aResult,
       }
 
       JS::Rooted<JS::Value> value(aCx);
-      if (!ToJSValue(aCx, stringValue, &value) ||
+      if (!NonVoidUTF8StringToJsval(aCx, stringValue, &value) ||
           !JS_DefineProperty(aCx, keyframeObject, name, value,
                              JSPROP_ENUMERATE)) {
         aRv.Throw(NS_ERROR_FAILURE);
@@ -1539,26 +1532,16 @@ bool KeyframeEffect::CanThrottleOverflowChangesInScrollable(
     return true;
   }
 
-  bool hasIntersectionObservers = doc->HasIntersectionObservers();
-
   // If we know that the animation cannot cause overflow,
   // we can just disable flushes for this animation.
 
-  // If we don't show scrollbars and have no intersection observers, we don't
-  // care about overflow.
-  if (LookAndFeel::GetInt(LookAndFeel::IntID::ShowHideScrollbars) == 0 &&
-      !hasIntersectionObservers) {
+  // If we have no intersection observers, we don't care about overflow.
+  if (!doc->HasIntersectionObservers()) {
     return true;
   }
 
   if (CanThrottleOverflowChanges(aFrame)) {
     return true;
-  }
-
-  // If we have any intersection observers, we unthrottle this transform
-  // animation periodically.
-  if (hasIntersectionObservers) {
-    return false;
   }
 
   // If the nearest scrollable ancestor has overflow:hidden,
@@ -2056,6 +2039,15 @@ KeyframeEffect::MatchForCompositor KeyframeEffect::IsMatchForCompositor(
 
   if (aPropertySet.HasProperty(eCSSProperty_background_color)) {
     if (!StaticPrefs::gfx_omta_background_color()) {
+      return KeyframeEffect::MatchForCompositor::No;
+    }
+
+    // We don't yet support off-main-thread background-color animations on
+    // canvas frame or on <body> which genarate nsDisplayCanvasBackgroundColor
+    // or nsDisplaySolidColor display item.
+    if (nsCSSRendering::IsCanvasFrame(aFrame) ||
+        (aFrame->GetContent() &&
+         aFrame->GetContent()->IsHTMLElement(nsGkAtoms::body))) {
       return KeyframeEffect::MatchForCompositor::No;
     }
   }

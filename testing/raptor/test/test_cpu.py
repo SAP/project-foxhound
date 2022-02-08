@@ -1,12 +1,12 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 
 import os
 import sys
-import mock
+from unittest import mock
 import mozunit
 
 # need this so the raptor unit tests can find output & filter classes
@@ -23,7 +23,6 @@ def test_no_device():
         "geckoview",
         "org.mozilla.org.mozilla.geckoview_example",
         cpu_test=True,
-        no_conditioned_profile=True,
     )
     raptor.device = None
     resp = cpu.start_android_cpu_profiler(raptor)
@@ -165,6 +164,7 @@ def test_usage_with_fallback():
             cpu_profiler.polls.append(0)
 
             # Verify the response contains our expected CPU % of 8
+            # pylint --py3k W1619
             avg_cpuinfo_data = {
                 "type": "cpu",
                 "test": "usage_with_fallback-avg",

@@ -167,7 +167,7 @@ class BaseAction {
 
     // If capabilties don't match, we can't even be sure that the arguments
     // should be valid. In that case don't try to validate them.
-    if (suitability !== BaseAction.suitability.CAPABILITES_MISMATCH) {
+    if (suitability !== BaseAction.suitability.CAPABILITIES_MISMATCH) {
       try {
         recipe.arguments = this.validateArguments(recipe.arguments);
       } catch (error) {
@@ -224,7 +224,7 @@ class BaseAction {
    * other methods may be called on this method, and all relevant
    * recipes will be assumed to have been seen.
    */
-  async finalize() {
+  async finalize(options) {
     // It's possible that no recipes used this action, so processRecipe()
     // was never called. In that case, we should ensure that we call
     // _preExecute() here.
@@ -237,7 +237,7 @@ class BaseAction {
       }
       case BaseAction.STATE_READY: {
         try {
-          await this._finalize();
+          await this._finalize(options);
           status = Uptake.ACTION_SUCCESS;
         } catch (err) {
           status = Uptake.ACTION_POST_EXECUTION_ERROR;
@@ -284,7 +284,7 @@ class BaseAction {
    * here. It will be executed once after all recipes have been
    * processed.
    */
-  async _finalize() {
+  async _finalize(_options = {}) {
     // Does nothing, may be overridden
   }
 }
@@ -308,7 +308,7 @@ BaseAction.suitability = {
    * Use caution when interacting with this recipe, as it may not match the
    * expected schema.
    */
-  CAPABILITES_MISMATCH: "RECIPE_SUITABILITY_CAPABILITIES_MISMATCH",
+  CAPABILITIES_MISMATCH: "RECIPE_SUITABILITY_CAPABILITIES_MISMATCH",
 
   /**
    * The recipe is suitable to execute in this client.
@@ -339,7 +339,7 @@ BaseAction.suitabilitySet = new Set(Object.values(BaseAction.suitability));
 
 BaseAction.suitabilityToUptakeStatus = {
   [BaseAction.suitability.SIGNATURE_ERROR]: Uptake.RECIPE_INVALID_SIGNATURE,
-  [BaseAction.suitability.CAPABILITES_MISMATCH]:
+  [BaseAction.suitability.CAPABILITIES_MISMATCH]:
     Uptake.RECIPE_INCOMPATIBLE_CAPABILITIES,
   [BaseAction.suitability.FILTER_MATCH]: Uptake.RECIPE_SUCCESS,
   [BaseAction.suitability.FILTER_MISMATCH]: Uptake.RECIPE_DIDNT_MATCH_FILTER,

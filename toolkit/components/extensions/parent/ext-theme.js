@@ -8,8 +8,6 @@
 
 /* eslint-disable complexity */
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 ChromeUtils.defineModuleGetter(
   this,
   "LightweightThemeManager",
@@ -68,6 +66,13 @@ class Theme {
             images: {},
             properties: {},
           };
+          if (this.lwtDarkStyles) {
+            this.lwtDarkStyles.experimental = {
+              colors: {},
+              images: {},
+              properties: {},
+            };
+          }
           const { baseURI } = this.extension;
           if (experiment.stylesheet) {
             experiment.stylesheet = baseURI.resolve(experiment.stylesheet);
@@ -118,7 +123,7 @@ class Theme {
     if (this.windowId) {
       this.lwtData.window = windowTracker.getWindow(
         this.windowId
-      ).windowUtils.outerWindowID;
+      ).docShell.outerWindowID;
       windowOverrides.set(this.windowId, this);
     } else {
       windowOverrides.clear();
@@ -204,7 +209,6 @@ class Theme {
         case "toolbar_field":
         case "toolbar_field_text":
         case "toolbar_field_border":
-        case "toolbar_field_separator":
         case "toolbar_field_focus":
         case "toolbar_field_text_focus":
         case "toolbar_field_border_focus":
@@ -219,6 +223,7 @@ class Theme {
         case "popup_highlight":
         case "popup_highlight_text":
         case "ntp_background":
+        case "ntp_card_background":
         case "ntp_text":
         case "sidebar":
         case "sidebar_border":
@@ -384,9 +389,7 @@ class Theme {
     };
 
     if (windowId) {
-      lwtData.window = windowTracker.getWindow(
-        windowId
-      ).windowUtils.outerWindowID;
+      lwtData.window = windowTracker.getWindow(windowId).docShell.outerWindowID;
       windowOverrides.delete(windowId);
     } else {
       windowOverrides.clear();

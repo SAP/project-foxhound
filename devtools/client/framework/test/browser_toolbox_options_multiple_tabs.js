@@ -19,12 +19,11 @@ add_task(async function() {
 
 async function openToolboxOptionsInNewTab() {
   const tab = await addTab(URL);
-  const target = await TargetFactory.forTab(tab);
-  const toolbox = await gDevTools.showToolbox(target);
+  const toolbox = await gDevTools.showToolboxForTab(tab);
   const doc = toolbox.doc;
   const panel = await toolbox.selectTool("options");
   const { id } = panel.panelDoc.querySelector(
-    "#default-tools-box input[type=checkbox]:not([data-unsupported]):not([checked])"
+    "#default-tools-box input[type=checkbox]:not([data-unsupported], [checked])"
   );
 
   return {

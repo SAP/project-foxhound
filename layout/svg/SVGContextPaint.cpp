@@ -9,8 +9,10 @@
 #include "gfxContext.h"
 #include "gfxUtils.h"
 #include "mozilla/gfx/2D.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/SVGDocument.h"
+#include "mozilla/extensions/WebExtensionPolicy.h"
 #include "mozilla/StaticPrefs_svg.h"
 #include "mozilla/SVGObserverUtils.h"
 #include "mozilla/SVGUtils.h"
@@ -52,7 +54,12 @@ bool SVGContextPaint::IsAllowedForImageFromURI(nsIURI* aURI) {
   // specifically ones that are "ours". WebExtensions are moz-extension://
   // regardless if the extension is in-tree or not. Since we don't want
   // extension developers coming to rely on image context paint either, we only
-  // enable context-paint for extensions that are signed by Mozilla.
+  // enable context-paint for extensions that are owned by Mozilla
+  // (based on the extension permission "internal:svgContextPropertiesAllowed").
+  //
+  // We also allow this for browser UI icons that are served up from
+  // Mozilla-controlled domains listed in the
+  // svg.context-properties.content.allowed-domains pref.
   //
   nsAutoCString scheme;
   if (NS_SUCCEEDED(aURI->GetScheme(scheme)) &&
@@ -62,14 +69,21 @@ bool SVGContextPaint::IsAllowedForImageFromURI(nsIURI* aURI) {
   }
   RefPtr<BasePrincipal> principal =
       BasePrincipal::CreateContentPrincipal(aURI, OriginAttributes());
-  nsString addonId;
-  if (NS_SUCCEEDED(principal->GetAddonId(addonId))) {
-    if (StringEndsWith(addonId, u"@mozilla.org"_ns) ||
-        StringEndsWith(addonId, u"@mozilla.com"_ns)) {
-      return true;
-    }
+
+  RefPtr<extensions::WebExtensionPolicy> addonPolicy = principal->AddonPolicy();
+  if (addonPolicy) {
+    // Only allowed for extensions that have the
+    // internal:svgContextPropertiesAllowed permission (added internally from
+    // to Mozilla-owned extensions, see `isMozillaExtension` function
+    // defined in Extension.jsm for the exact criteria).
+    return addonPolicy->HasPermission(
+        nsGkAtoms::svgContextPropertiesAllowedPermission);
   }
-  return false;
+
+  bool isInAllowList = false;
+  principal->IsURIInPrefList("svg.context-properties.content.allowed-domains",
+                             &isInAllowList);
+  return isInAllowList;
 }
 
 /**
@@ -280,7 +294,7 @@ already_AddRefed<gfxPattern> SVGContextPaintImpl::Paint::GetPattern(
       return nullptr;
   }
 
-  mPatternCache.Put(aOpacity, RefPtr{pattern});
+  mPatternCache.InsertOrUpdate(aOpacity, RefPtr{pattern});
   return pattern.forget();
 }
 

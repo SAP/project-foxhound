@@ -13,7 +13,8 @@
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPtr.h"
 #include "nsXULAppAPI.h"
-#include "TransportSecurityInfo.h"  // For EVStatus
+#include "TransportSecurityInfo.h"
+#include "CertVerifier.h"  // For EVStatus
 
 namespace mozilla {
 namespace net {
@@ -41,6 +42,9 @@ class SSLTokensCache : public nsIMemoryReporter {
 
   static nsresult Put(const nsACString& aKey, const uint8_t* aToken,
                       uint32_t aTokenLen, nsITransportSecurityInfo* aSecInfo);
+  static nsresult Put(const nsACString& aKey, const uint8_t* aToken,
+                      uint32_t aTokenLen, nsITransportSecurityInfo* aSecInfo,
+                      PRUint32 aExpirationTime);
   static nsresult Get(const nsACString& aKey, nsTArray<uint8_t>& aToken);
   static bool GetSessionCacheInfo(const nsACString& aKey,
                                   SessionCacheInfo& aResult);
@@ -61,7 +65,7 @@ class SSLTokensCache : public nsIMemoryReporter {
   static mozilla::StaticRefPtr<SSLTokensCache> gInstance;
   static StaticMutex sLock;
 
-  uint32_t mCacheSize;  // Actual cache size in bytes
+  uint32_t mCacheSize{0};  // Actual cache size in bytes
 
   class TokenCacheRecord {
    public:
@@ -69,7 +73,7 @@ class SSLTokensCache : public nsIMemoryReporter {
     void Reset();
 
     nsCString mKey;
-    PRUint32 mExpirationTime;
+    PRUint32 mExpirationTime = 0;
     nsTArray<uint8_t> mToken;
     SessionCacheInfo mSessionCacheInfo;
   };

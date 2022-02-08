@@ -31,7 +31,7 @@ namespace mozilla {
 //
 // class IPCTimeout
 //
-NS_IMPL_ISUPPORTS(IPCTimeout, nsIObserver)
+NS_IMPL_ISUPPORTS(IPCTimeout, nsITimerCallback, nsINamed)
 
 // static
 IPCTimeout* IPCTimeout::CreateInstance(AggregatedResults* aResults) {
@@ -47,7 +47,7 @@ IPCTimeout::IPCTimeout(AggregatedResults* aResults, uint32_t aDelay)
     : mResults(aResults) {
   MOZ_ASSERT(aResults);
   MOZ_ASSERT(aDelay > 0);
-  mozilla::DebugOnly<nsresult> rv = NS_NewTimerWithObserver(
+  mozilla::DebugOnly<nsresult> rv = NS_NewTimerWithCallback(
       getter_AddRefs(mTimer), this, aDelay, nsITimer::TYPE_ONE_SHOT);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
   LOG(("IPCTimeout timer created"));
@@ -64,11 +64,15 @@ void IPCTimeout::Cancel() {
 }
 
 NS_IMETHODIMP
-IPCTimeout::Observe(nsISupports* aSubject, const char* aTopic,
-                    const char16_t* aData) {
-  MOZ_ASSERT(strcmp(aTopic, NS_TIMER_CALLBACK_TOPIC) == 0);
+IPCTimeout::Notify(nsITimer* aTimer) {
   LOG(("IPCTimeout timer triggered"));
   mResults->ResolveNow();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+IPCTimeout::GetName(nsACString& aName) {
+  aName.AssignLiteral("IPCTimeout");
   return NS_OK;
 }
 
@@ -242,14 +246,15 @@ PerformanceMetricsCollector::RequestMetricsInternal() {
   LOG(("[%s] Expecting %d results back", nsIDToCString(uuid).get(),
        numResultsRequired));
   results->SetNumResultsRequired(numResultsRequired);
-  mAggregatedResults.Put(uuid, std::move(results));
+  const auto& aggregatedResult =
+      mAggregatedResults.InsertOrUpdate(uuid, std::move(results));
 
   // calling all content processes via IPDL (async)
   for (uint32_t i = 0; i < numChildren; i++) {
     if (NS_WARN_IF(!children[i]->SendRequestPerformanceMetrics(uuid))) {
       LOG(("[%s] Failed to send request to child %d", nsIDToCString(uuid).get(),
            i));
-      mAggregatedResults.GetValue(uuid)->get()->Abort(NS_ERROR_FAILURE);
+      aggregatedResult->Abort(NS_ERROR_FAILURE);
       return RequestMetricsPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
     }
     LOG(("[%s] Request sent to child %d", nsIDToCString(uuid).get(), i));
@@ -291,7 +296,7 @@ nsresult PerformanceMetricsCollector::DataReceived(
 nsresult PerformanceMetricsCollector::DataReceivedInternal(
     const nsID& aUUID, const nsTArray<PerformanceInfo>& aMetrics) {
   MOZ_ASSERT(gInstance == this);
-  UniquePtr<AggregatedResults>* results = mAggregatedResults.GetValue(aUUID);
+  auto results = mAggregatedResults.Lookup(aUUID);
   if (!results) {
     LOG(("[%s] UUID is gone from mAggregatedResults",
          nsIDToCString(aUUID).get()));

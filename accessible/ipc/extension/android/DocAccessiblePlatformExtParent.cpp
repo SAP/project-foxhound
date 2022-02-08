@@ -20,15 +20,16 @@ mozilla::ipc::IPCResult DocAccessiblePlatformExtParent::RecvSetPivotBoundaries(
   MOZ_ASSERT(aFirstDoc);
   MOZ_ASSERT(aLastDoc);
 
-  SessionAccessibility* sessionAcc = SessionAccessibility::GetInstanceFor(
-      static_cast<DocAccessibleParent*>(Manager()));
+  RefPtr<SessionAccessibility> sessionAcc =
+      SessionAccessibility::GetInstanceFor(
+          static_cast<DocAccessibleParent*>(Manager()));
   if (!sessionAcc) {
     return IPC_OK();
   }
 
-  ProxyAccessible* first =
+  RemoteAccessible* first =
       static_cast<DocAccessibleParent*>(aFirstDoc)->GetAccessible(aFirst);
-  ProxyAccessible* last =
+  RemoteAccessible* last =
       static_cast<DocAccessibleParent*>(aLastDoc)->GetAccessible(aLast);
 
   // We may not have proxy accessibles available yet for those accessibles

@@ -66,6 +66,7 @@ add_test(function test_sockets() {
     [],
     "127.0.0.1",
     gServerSocket.port,
+    null,
     null
   );
   let listener = {
@@ -98,13 +99,12 @@ function run_test() {
     true
   );
 
-  let ioService = Cc["@mozilla.org/network/io-service;1"].getService(
-    Ci.nsIIOService
-  );
+  // We always resolve localhost as it's hardcoded without the following pref:
+  Services.prefs.setBoolPref("network.proxy.allow_hijacking_localhost", true);
 
   gHttpServer.start(-1);
 
-  let uri = ioService.newURI(
+  let uri = Services.io.newURI(
     "http://localhost:" + gHttpServer.identity.primaryPort
   );
   let channel = NetUtil.newChannel({ uri, loadUsingSystemPrincipal: true });
@@ -112,6 +112,7 @@ function run_test() {
   channel.open();
 
   gServerSocket.init(-1, true, -1);
+  Services.prefs.clearUserPref("network.proxy.allow_hijacking_localhost");
 
   run_next_test();
 }

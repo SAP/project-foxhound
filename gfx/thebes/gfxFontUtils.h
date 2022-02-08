@@ -6,20 +6,36 @@
 #ifndef GFX_FONT_UTILS_H
 #define GFX_FONT_UTILS_H
 
-#include "gfxFontVariations.h"
+#include <string.h>
+#include <algorithm>
+#include <new>
+#include <utility>
 #include "gfxPlatform.h"
-#include "nsComponentManagerUtils.h"
-#include "nsTArray.h"
 #include "ipc/IPCMessageUtils.h"
+#include "ipc/IPCMessageUtilsSpecializations.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/Casting.h"
-#include "mozilla/Encoding.h"
 #include "mozilla/EndianUtils.h"
-#include "mozilla/Likely.h"
+#include "mozilla/FontPropertyTypes.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/UniquePtr.h"
-
+#include "nsStringFwd.h"
+#include "nsTArray.h"
+#include "nscore.h"
 #include "zlib.h"
-#include <algorithm>
+
+class PickleIterator;
+class gfxFontEntry;
+struct gfxFontVariationAxis;
+struct gfxFontVariationInstance;
+
+namespace mozilla {
+class Encoding;
+namespace gfx {
+struct DeviceColor;
+}
+}  // namespace mozilla
 
 /* Bug 341128 - w32api defines min/max which causes problems with <bitset> */
 #ifdef __MINGW32__
@@ -496,11 +512,14 @@ inline void gfxSparseBitSet::Union(const SharedBitSet& aBitset) {
       mBlockIndex[i] = uint16_t(mBlocks.Length() - 1);
       continue;
     }
-    // else set existing target block to the union of both
-    uint32_t* dst = reinterpret_cast<uint32_t*>(&mBlocks[mBlockIndex[i]].mBits);
-    const uint32_t* src =
-        reinterpret_cast<const uint32_t*>(&blocks[blockIndex[i]].mBits);
-    for (uint32_t j = 0; j < BLOCK_SIZE / 4; ++j) {
+    // Else set existing target block to the union of both.
+    // Note that blocks in SharedBitSet may not be 4-byte aligned, so we don't
+    // try to optimize by casting to uint32_t* here and processing 4 bytes at
+    // once, as this could result in misaligned access.
+    uint8_t* dst = reinterpret_cast<uint8_t*>(&mBlocks[mBlockIndex[i]].mBits);
+    const uint8_t* src =
+        reinterpret_cast<const uint8_t*>(&blocks[blockIndex[i]].mBits);
+    for (uint32_t j = 0; j < BLOCK_SIZE; ++j) {
       dst[j] |= src[j];
     }
   }
@@ -1159,6 +1178,7 @@ class gfxFontUtils {
       const mozilla::gfx::DeviceColor& aDefaultColor,
       nsTArray<uint16_t>& aGlyphs,
       nsTArray<mozilla::gfx::DeviceColor>& aColors);
+  static bool HasColorLayersForGlyph(hb_blob_t* aCOLR, uint32_t aGlyphId);
 
   // Helper used to implement gfxFontEntry::GetVariation{Axes,Instances} for
   // platforms where the native font APIs don't provide the info we want
@@ -1203,6 +1223,16 @@ class gfxFontUtils {
   static const mozilla::Encoding* gISOFontNameCharsets[];
   static const mozilla::Encoding* gMSFontNameCharsets[];
 };
+
+// Factors used to weight the distances between the available and target font
+// properties during font-matching. These ensure that we respect the CSS-fonts
+// requirement that font-stretch >> font-style >> font-weight; and in addition,
+// a mismatch between the desired and actual glyph presentation (emoji vs text)
+// will take precedence over any of the style attributes.
+constexpr double kPresentationMismatch = 1.0e12;
+constexpr double kStretchFactor = 1.0e8;
+constexpr double kStyleFactor = 1.0e4;
+constexpr double kWeightFactor = 1.0e0;
 
 // style distance ==> [0,500]
 static inline double StyleDistance(const mozilla::SlantStyleRange& aRange,

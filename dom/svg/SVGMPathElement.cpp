@@ -8,8 +8,10 @@
 
 #include "nsDebug.h"
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/SVGObserverUtils.h"
+#include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/SVGAnimateMotionElement.h"
-#include "mozilla/dom/SVGPathElement.h"
+#include "mozilla/dom/SVGGeometryElement.h"
 #include "nsContentUtils.h"
 #include "nsIReferrerInfo.h"
 #include "mozilla/dom/SVGMPathElementBinding.h"
@@ -170,7 +172,7 @@ void SVGMPathElement::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
 //----------------------------------------------------------------------
 // Public helper methods
 
-SVGPathElement* SVGMPathElement::GetReferencedPath() {
+SVGGeometryElement* SVGMPathElement::GetReferencedPath() {
   if (!HasAttr(kNameSpaceID_XLink, nsGkAtoms::href) &&
       !HasAttr(kNameSpaceID_None, nsGkAtoms::href)) {
     MOZ_ASSERT(!mPathTracker.get(),
@@ -180,8 +182,8 @@ SVGPathElement* SVGMPathElement::GetReferencedPath() {
   }
 
   nsIContent* genericTarget = mPathTracker.get();
-  if (genericTarget && genericTarget->IsSVGElement(nsGkAtoms::path)) {
-    return static_cast<SVGPathElement*>(genericTarget);
+  if (genericTarget && genericTarget->IsNodeOfType(nsINode::eSHAPE)) {
+    return static_cast<SVGGeometryElement*>(genericTarget);
   }
   return nullptr;
 }
@@ -191,9 +193,13 @@ SVGPathElement* SVGMPathElement::GetReferencedPath() {
 
 void SVGMPathElement::UpdateHrefTarget(nsIContent* aParent,
                                        const nsAString& aHrefStr) {
+  nsCOMPtr<nsIURI> baseURI = GetBaseURI();
+  if (nsContentUtils::IsLocalRefURL(aHrefStr)) {
+    baseURI = SVGObserverUtils::GetBaseURLForLocalRef(this, baseURI);
+  }
   nsCOMPtr<nsIURI> targetURI;
   nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(targetURI), aHrefStr,
-                                            OwnerDoc(), GetBaseURI());
+                                            OwnerDoc(), baseURI);
 
   // Stop observing old target (if any)
   if (mPathTracker.get()) {

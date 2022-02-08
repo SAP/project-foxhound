@@ -27,6 +27,12 @@ add_task(async function test_fullscreen_cross_origin() {
         () => !document.documentElement.hasAttribute("inDOMFullscreen")
       );
 
+      let tabbrowser = browser.ownerDocument.querySelector("#tabbrowser-tabs");
+      ok(
+        !tabbrowser.hasAttribute("closebuttons"),
+        "Close buttons should be visible on every tab"
+      );
+
       // Request fullscreen from iframe
       await SpecialPowers.spawn(browser, [], async function() {
         let frame = content.document.getElementById("frameAllowed");
@@ -43,9 +49,6 @@ add_task(async function test_fullscreen_cross_origin() {
             frameDoc.addEventListener(message, handler);
           });
 
-          // In fission, we may not have docShell active automatically,
-          // Force docShell active manually
-          content.docShell.isActive = true;
           frameDoc.getElementById("request").click();
           await waitForFullscreen;
         });
@@ -54,6 +57,11 @@ add_task(async function test_fullscreen_cross_origin() {
       // Make sure there is attribute "inDOMFullscreen" after requesting fullscreen.
       await TestUtils.waitForCondition(() =>
         document.documentElement.hasAttribute("inDOMFullscreen")
+      );
+
+      await TestUtils.waitForCondition(
+        () => tabbrowser.hasAttribute("closebuttons"),
+        "Close buttons should be visible only on the active tab (tabs have width=0 so closebuttons gets set on them)"
       );
     });
   }
@@ -64,7 +72,6 @@ add_task(async function test_fullscreen_cross_origin() {
       ["full-screen-api.allow-trusted-requests-only", false],
       ["full-screen-api.transition-duration.enter", "0 0"],
       ["full-screen-api.transition-duration.leave", "0 0"],
-      ["dom.security.featurePolicy.enabled", true],
       ["dom.security.featurePolicy.header.enabled", true],
       ["dom.security.featurePolicy.webidl.enabled", true],
     ],
@@ -87,6 +94,11 @@ add_task(async function test_fullscreen_cross_origin() {
   // Wait until attribute "inDOMFullscreen" is removed.
   await TestUtils.waitForCondition(
     () => !document.documentElement.hasAttribute("inDOMFullscreen")
+  );
+
+  await TestUtils.waitForCondition(
+    () => !gBrowser.tabContainer.hasAttribute("closebuttons"),
+    "Close buttons should come back to every tab"
   );
 
   // Remove the remaining tab and leave the test.

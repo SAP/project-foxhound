@@ -50,15 +50,20 @@ pub trait Stream {
     ///
     /// # Panics
     ///
-    /// Once a stream is finished, i.e. `Ready(None)` has been returned, further
-    /// calls to `poll_next` may result in a panic or other "bad behavior".  If
-    /// this is difficult to guard against then the `fuse` adapter can be used
+    /// Once a stream has finished (returned `Ready(None)` from `poll_next`), calling its
+    /// `poll_next` method again may panic, block forever, or cause other kinds of
+    /// problems; the `Stream` trait places no requirements on the effects of
+    /// such a call. However, as the `poll_next` method is not marked `unsafe`,
+    /// Rust's usual rules apply: calls must never cause undefined behavior
+    /// (memory corruption, incorrect use of `unsafe` functions, or the like),
+    /// regardless of the stream's state.
+    ///
+    /// If this is difficult to guard against then the [`fuse`] adapter can be used
     /// to ensure that `poll_next` always returns `Ready(None)` in subsequent
     /// calls.
-    fn poll_next(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Self::Item>>;
+    ///
+    /// [`fuse`]: https://docs.rs/futures/0.3/futures/stream/trait.StreamExt.html#method.fuse
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>>;
 
     /// Returns the bounds on the remaining length of the stream.
     ///
@@ -95,10 +100,7 @@ pub trait Stream {
 impl<S: ?Sized + Stream + Unpin> Stream for &mut S {
     type Item = S::Item;
 
-    fn poll_next(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         S::poll_next(Pin::new(&mut **self), cx)
     }
 
@@ -114,10 +116,7 @@ where
 {
     type Item = <P::Target as Stream>::Item;
 
-    fn poll_next(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.get_mut().as_mut().poll_next(cx)
     }
 
@@ -177,35 +176,36 @@ pub trait TryStream: Stream + private_try_stream::Sealed {
     /// This method is a stopgap for a compiler limitation that prevents us from
     /// directly inheriting from the `Stream` trait; in the future it won't be
     /// needed.
-    fn try_poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>)
-        -> Poll<Option<Result<Self::Ok, Self::Error>>>;
+    fn try_poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Ok, Self::Error>>>;
 }
 
 impl<S, T, E> TryStream for S
-    where S: ?Sized + Stream<Item = Result<T, E>>
+where
+    S: ?Sized + Stream<Item = Result<T, E>>,
 {
     type Ok = T;
     type Error = E;
 
-    fn try_poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>)
-        -> Poll<Option<Result<Self::Ok, Self::Error>>>
-    {
+    fn try_poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Ok, Self::Error>>> {
         self.poll_next(cx)
     }
 }
 
 #[cfg(feature = "alloc")]
 mod if_alloc {
-    use alloc::boxed::Box;
     use super::*;
+    use alloc::boxed::Box;
 
     impl<S: ?Sized + Stream + Unpin> Stream for Box<S> {
         type Item = S::Item;
 
-        fn poll_next(
-            mut self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-        ) -> Poll<Option<Self::Item>> {
+        fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
             Pin::new(&mut **self).poll_next(cx)
         }
 
@@ -218,10 +218,7 @@ mod if_alloc {
     impl<S: Stream> Stream for std::panic::AssertUnwindSafe<S> {
         type Item = S::Item;
 
-        fn poll_next(
-            self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-        ) -> Poll<Option<S::Item>> {
+        fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<S::Item>> {
             unsafe { self.map_unchecked_mut(|x| &mut x.0) }.poll_next(cx)
         }
 

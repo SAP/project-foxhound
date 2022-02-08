@@ -8,9 +8,12 @@ set -v
 
 cd $GECKO_PATH
 
+# Needed for Nexus
+export PATH=$JAVA_HOME/bin:$PATH
+
 . taskcluster/scripts/misc/android-gradle-dependencies/before.sh
 
-export MOZCONFIG=mobile/android/config/mozconfigs/android-api-16-gradle-dependencies/nightly
+export MOZCONFIG=mobile/android/config/mozconfigs/android-arm-gradle-dependencies/nightly
 ./mach build
 ./mach android gradle-dependencies
 

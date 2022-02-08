@@ -25,6 +25,336 @@ ChromeUtils.defineModuleGetter(
 );
 
 /**
+ * A helper class to deal with CSV import rows.
+ */
+class ImportRowProcessor {
+  uniqueLoginIdentifiers = new Set();
+  originToRows = new Map();
+  summary = [];
+  mandatoryFields = ["origin", "password"];
+
+  /**
+   * Validates if the login data contains a GUID that was already found in a previous row in the current import.
+   * If this is the case, the summary will be updated with an error.
+   * @param {object} loginData
+   *        An vanilla object for the login without any methods.
+   * @returns {boolean} True if there is an error, false otherwise.
+   */
+  checkNonUniqueGuidError(loginData) {
+    if (loginData.guid) {
+      if (this.uniqueLoginIdentifiers.has(loginData.guid)) {
+        this.addLoginToSummary({ ...loginData }, "error");
+        return true;
+      }
+      this.uniqueLoginIdentifiers.add(loginData.guid);
+    }
+    return false;
+  }
+
+  /**
+   * Validates if the login data contains invalid fields that are mandatory like origin and password.
+   * If this is the case, the summary will be updated with an error.
+   * @param {object} loginData
+   *        An vanilla object for the login without any methods.
+   * @returns {boolean} True if there is an error, false otherwise.
+   */
+  checkMissingMandatoryFieldsError(loginData) {
+    loginData.origin = LoginHelper.getLoginOrigin(loginData.origin);
+    for (let mandatoryField of this.mandatoryFields) {
+      if (!loginData[mandatoryField]) {
+        const missingFieldRow = this.addLoginToSummary(
+          { ...loginData },
+          "error_missing_field"
+        );
+        missingFieldRow.field_name = mandatoryField;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Validates if there is already an existing entry with similar values.
+   * If there are similar values but not identical, a new "modified" entry will be added to the summary.
+   * If there are identical values, a new "no_change" entry will be added to the summary
+   * If either of these is the case, it will return true.
+   * @param {object} loginData
+   *        An vanilla object for the login without any methods.
+   * @returns {boolean} True if the entry is similar or identical to another previously processed entry, false otherwise.
+   */
+  async checkExistingEntry(loginData) {
+    if (loginData.guid) {
+      // First check for `guid` matches if it's set.
+      // `guid` matches will allow every kind of update, including reverting
+      // to older passwords which can be useful if the user wants to recover
+      // an old password.
+      let existingLogins = await Services.logins.searchLoginsAsync({
+        guid: loginData.guid,
+        origin: loginData.origin, // Ignored outside of GV.
+      });
+
+      if (existingLogins.length) {
+        log.debug("maybeImportLogins: Found existing login with GUID");
+        // There should only be one `guid` match.
+        let existingLogin = existingLogins[0].QueryInterface(
+          Ci.nsILoginMetaInfo
+        );
+
+        if (
+          loginData.username !== existingLogin.username ||
+          loginData.password !== existingLogin.password ||
+          loginData.httpRealm !== existingLogin.httpRealm ||
+          loginData.formActionOrigin !== existingLogin.formActionOrigin ||
+          `${loginData.timeCreated}` !== `${existingLogin.timeCreated}` ||
+          `${loginData.timePasswordChanged}` !==
+            `${existingLogin.timePasswordChanged}`
+        ) {
+          // Use a property bag rather than an nsILoginInfo so we don't clobber
+          // properties that the import source doesn't provide.
+          let propBag = LoginHelper.newPropertyBag(loginData);
+          this.addLoginToSummary({ ...existingLogin }, "modified", propBag);
+          return true;
+        }
+        this.addLoginToSummary({ ...existingLogin }, "no_change");
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Validates if there is a conflict with previous rows based on the origin.
+   * We need to check the logins that we've already decided to add, to see if this is a duplicate.
+   * If this is the case, we mark this one as "no_change" in the summary and return true.
+   * @param {object} login
+   *        A login object.
+   * @returns {boolean} True if the entry is similar or identical to another previously processed entry, false otherwise.
+   */
+  checkConflictingOriginWithPreviousRows(login) {
+    let rowsPerOrigin = this.originToRows.get(login.origin);
+    if (rowsPerOrigin) {
+      if (
+        rowsPerOrigin.some(r =>
+          login.matches(r.login, false /* ignorePassword */)
+        )
+      ) {
+        this.addLoginToSummary(login, "no_change");
+        return true;
+      }
+      for (let row of rowsPerOrigin) {
+        let newLogin = row.login;
+        if (login.username == newLogin.username) {
+          this.addLoginToSummary(login, "no_change");
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Validates if there is a conflict with existing logins based on the origin.
+   * If this is the case and there are some changes, we mark it as "modified" in the summary.
+   * If it matches an existing login without any extra modifications, we mark it as "no_change".
+   * For both cases we return true.
+   * @param {object} login
+   *        A login object.
+   * @returns {boolean} True if the entry is similar or identical to another previously processed entry, false otherwise.
+   */
+  checkConflictingWithExistingLogins(login) {
+    // While here we're passing formActionOrigin and httpRealm, they could be empty/null and get
+    // ignored in that case, leading to multiple logins for the same username.
+    let existingLogins = Services.logins.findLogins(
+      login.origin,
+      login.formActionOrigin,
+      login.httpRealm
+    );
+    // Check for an existing login that matches *including* the password.
+    // If such a login exists, we do not need to add a new login.
+    if (
+      existingLogins.some(l => login.matches(l, false /* ignorePassword */))
+    ) {
+      this.addLoginToSummary(login, "no_change");
+      return true;
+    }
+    // Now check for a login with the same username, where it may be that we have an
+    // updated password.
+    let foundMatchingLogin = false;
+    for (let existingLogin of existingLogins) {
+      if (login.username == existingLogin.username) {
+        foundMatchingLogin = true;
+        existingLogin.QueryInterface(Ci.nsILoginMetaInfo);
+        if (
+          (login.password != existingLogin.password) &
+          (login.timePasswordChanged > existingLogin.timePasswordChanged)
+        ) {
+          // if a login with the same username and different password already exists and it's older
+          // than the current one, update its password and timestamp.
+          let propBag = Cc["@mozilla.org/hash-property-bag;1"].createInstance(
+            Ci.nsIWritablePropertyBag
+          );
+          propBag.setProperty("password", login.password);
+          propBag.setProperty("timePasswordChanged", login.timePasswordChanged);
+          this.addLoginToSummary({ ...existingLogin }, "modified", propBag);
+          return true;
+        }
+      }
+    }
+    // if the new login is an update or is older than an exiting login, don't add it.
+    if (foundMatchingLogin) {
+      this.addLoginToSummary(login, "no_change");
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Validates if there are any invalid values using LoginHelper.checkLoginValues.
+   * If this is the case we mark it as "error" and return true.
+   * @param {object} login
+   *        A login object.
+   * @param {object} loginData
+   *        An vanilla object for the login without any methods.
+   * @returns {boolean} True if there is a validation error we return true, false otherwise.
+   */
+  checkLoginValuesError(login, loginData) {
+    try {
+      // Ensure we only send checked logins through, since the validation is optimized
+      // out from the bulk APIs below us.
+      LoginHelper.checkLoginValues(login);
+    } catch (e) {
+      this.addLoginToSummary({ ...loginData }, "error");
+      Cu.reportError(e);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Creates a new login from loginData.
+   * @param {object} loginData
+   *        An vanilla object for the login without any methods.
+   * @returns {object} A login object.
+   */
+  createNewLogin(loginData) {
+    let login = Cc["@mozilla.org/login-manager/loginInfo;1"].createInstance(
+      Ci.nsILoginInfo
+    );
+    login.init(
+      loginData.origin,
+      loginData.formActionOrigin,
+      loginData.httpRealm,
+      loginData.username,
+      loginData.password,
+      loginData.usernameElement || "",
+      loginData.passwordElement || ""
+    );
+
+    login.QueryInterface(Ci.nsILoginMetaInfo);
+    login.timeCreated = loginData.timeCreated;
+    login.timeLastUsed = loginData.timeLastUsed || loginData.timeCreated;
+    login.timePasswordChanged =
+      loginData.timePasswordChanged || loginData.timeCreated;
+    login.timesUsed = loginData.timesUsed || 1;
+    login.guid = loginData.guid || null;
+    return login;
+  }
+
+  /**
+   * Cleans the action and realm field of the loginData.
+   * @param {object} loginData
+   *        An vanilla object for the login without any methods.
+   */
+  cleanupActionAndRealmFields(loginData) {
+    const cleanOrigin = loginData.formActionOrigin
+      ? LoginHelper.getLoginOrigin(loginData.formActionOrigin, true)
+      : "";
+    loginData.formActionOrigin =
+      cleanOrigin || (typeof loginData.httpRealm == "string" ? null : "");
+
+    loginData.httpRealm =
+      typeof loginData.httpRealm == "string" ? loginData.httpRealm : null;
+  }
+
+  /**
+   * Adds a login to the summary.
+   * @param {object} login
+   *        A login object.
+   * @param {string} result
+   *        The result type. One of "added", "modified", "error", "error_invalid_origin", "error_invalid_password" or "no_change".
+   * @param {object} propBag
+   *        An optional parameter with the properties bag.
+   * @returns {object} The row that was added.
+   */
+  addLoginToSummary(login, result, propBag) {
+    let rows = this.originToRows.get(login.origin) || [];
+    if (rows.length === 0) {
+      this.originToRows.set(login.origin, rows);
+    }
+    const newSummaryRow = { result, login, propBag };
+    rows.push(newSummaryRow);
+    this.summary.push(newSummaryRow);
+    return newSummaryRow;
+  }
+
+  /**
+   * Iterates over all then rows where more than two match the same origin. It mutates the internal state of the processor.
+   * It makes sure that if the `timePasswordChanged` field is present it will be used to decide if it's a "no_change" or "added".
+   * The entry with the oldest `timePasswordChanged` will be "added", the rest will be "no_change".
+   */
+  markLastTimePasswordChangedAsModified() {
+    const originUserToRowMap = new Map();
+    for (let currentRow of this.summary) {
+      if (
+        currentRow.result === "added" ||
+        currentRow.result === "modified" ||
+        currentRow.result === "no_change"
+      ) {
+        const originAndUser =
+          currentRow.login.origin + currentRow.login.username;
+        let lastTimeChangedRow = originUserToRowMap.get(originAndUser);
+        if (lastTimeChangedRow) {
+          if (
+            (currentRow.login.password != lastTimeChangedRow.login.password) &
+            (currentRow.login.timePasswordChanged >
+              lastTimeChangedRow.login.timePasswordChanged)
+          ) {
+            lastTimeChangedRow.result = "no_change";
+            currentRow.result = "added";
+            originUserToRowMap.set(originAndUser, currentRow);
+          }
+        } else {
+          originUserToRowMap.set(originAndUser, currentRow);
+        }
+      }
+    }
+  }
+
+  /**
+   * Iterates over all then rows where more than two match the same origin. It mutates the internal state of the processor.
+   * It makes sure that if the `timePasswordChanged` field is present it will be used to decide if it's a "no_change" or "added".
+   * The entry with the oldest `timePasswordChanged` will be "added", the rest will be "no_change".
+   * @returns {Object[]} An entry for each processed row containing how the row was processed and the login data.
+   */
+  async processLoginsAndBuildSummary() {
+    this.markLastTimePasswordChangedAsModified();
+    for (let summaryRow of this.summary) {
+      try {
+        if (summaryRow.result === "added") {
+          summaryRow.login = await Services.logins.addLogin(summaryRow.login);
+        } else if (summaryRow.result === "modified") {
+          Services.logins.modifyLogin(summaryRow.login, summaryRow.propBag);
+        }
+      } catch (e) {
+        Cu.reportError(e);
+        summaryRow.result = "error";
+      }
+    }
+    return this.summary;
+  }
+}
+
+/**
  * Contains functions shared by different Login Manager components.
  */
 this.LoginHelper = {
@@ -32,12 +362,19 @@ this.LoginHelper = {
   enabled: null,
   storageEnabled: null,
   formlessCaptureEnabled: null,
+  formRemovalCaptureEnabled: null,
   generationAvailable: null,
   generationConfidenceThreshold: null,
   generationEnabled: null,
+  improvedPasswordRulesEnabled: null,
+  improvedPasswordRulesCollection: "password-rules",
   includeOtherSubdomainsInLookup: null,
   insecureAutofill: null,
   privateBrowsingCaptureEnabled: null,
+  remoteRecipesEnabled: null,
+  remoteRecipesCollection: "password-recipes",
+  relatedRealmsEnabled: null,
+  relatedRealmsCollection: "websites-with-shared-credential-backends",
   schemeUpgrades: null,
   showAutoCompleteFooter: null,
   showAutoCompleteImport: null,
@@ -70,6 +407,9 @@ this.LoginHelper = {
     this.formlessCaptureEnabled = Services.prefs.getBoolPref(
       "signon.formlessCapture.enabled"
     );
+    this.formRemovalCaptureEnabled = Services.prefs.getBoolPref(
+      "signon.formRemovalCapture.enabled"
+    );
     this.generationAvailable = Services.prefs.getBoolPref(
       "signon.generation.available"
     );
@@ -78,6 +418,9 @@ this.LoginHelper = {
     );
     this.generationEnabled = Services.prefs.getBoolPref(
       "signon.generation.enabled"
+    );
+    this.improvedPasswordRulesEnabled = Services.prefs.getBoolPref(
+      "signon.improvedPasswordRules.enabled"
     );
     this.insecureAutofill = Services.prefs.getBoolPref(
       "signon.autofillForms.http"
@@ -96,19 +439,18 @@ this.LoginHelper = {
       "signon.showAutoCompleteFooter"
     );
 
-    // Only enable experiment telemetry for specific pref-controlled branches.
     this.showAutoCompleteImport = Services.prefs.getStringPref(
       "signon.showAutoCompleteImport",
       ""
     );
-    if (["control", "import"].includes(this.showAutoCompleteImport)) {
-      Services.telemetry.setEventRecordingEnabled("exp_import", true);
-    } else {
-      Services.telemetry.setEventRecordingEnabled("exp_import", false);
-    }
 
     this.storeWhenAutocompleteOff = Services.prefs.getBoolPref(
       "signon.storeWhenAutocompleteOff"
+    );
+
+    this.suggestImportCount = Services.prefs.getIntPref(
+      "signon.suggestImportCount",
+      0
     );
 
     if (
@@ -131,6 +473,15 @@ this.LoginHelper = {
 
     this.userInputRequiredToCapture = Services.prefs.getBoolPref(
       "signon.userInputRequiredToCapture.enabled"
+    );
+    this.usernameOnlyFormEnabled = Services.prefs.getBoolPref(
+      "signon.usernameOnlyForm.enabled"
+    );
+    this.remoteRecipesEnabled = Services.prefs.getBoolPref(
+      "signon.recipes.remoteRecipes.enabled"
+    );
+    this.relatedRealmsEnabled = Services.prefs.getBoolPref(
+      "signon.relatedRealms.enabled"
     );
   },
 
@@ -344,6 +695,8 @@ this.LoginHelper = {
       schemeUpgrades: false,
       acceptWildcardMatch: false,
       acceptDifferentSubdomains: false,
+      acceptRelatedRealms: false,
+      relatedRealms: [],
     }
   ) {
     if (aLoginOrigin == aSearchOrigin) {
@@ -379,6 +732,18 @@ this.LoginHelper = {
             (aOptions.schemeUpgrades && schemeMatches))
         ) {
           return true;
+        }
+        if (
+          aOptions.acceptRelatedRealms &&
+          aOptions.relatedRealms.length &&
+          (loginURI.scheme == searchURI.scheme ||
+            (aOptions.schemeUpgrades && schemeMatches))
+        ) {
+          for (let relatedOrigin of aOptions.relatedRealms) {
+            if (Services.eTLD.hasRootDomain(loginURI.host, relatedOrigin)) {
+              return true;
+            }
+          }
         }
       }
 
@@ -873,16 +1238,19 @@ this.LoginHelper = {
    *
    * @param {Element} element
    *                  the field we want to check.
+   * @param {Object} options
+   * @param {bool} [options.ignoreConnect] - Whether to ignore checking isConnected
+   *                                         of the element.
    *
    * @returns {Boolean} true if the field can
    *                    be treated as a password input
    */
-  isPasswordFieldType(element) {
+  isPasswordFieldType(element, { ignoreConnect = false } = {}) {
     if (ChromeUtils.getClassName(element) !== "HTMLInputElement") {
       return false;
     }
 
-    if (!element.isConnected) {
+    if (!element.isConnected && !ignoreConnect) {
       // If the element isn't connected then it isn't visible to the user so
       // shouldn't be considered. It must have been connected in the past.
       return false;
@@ -908,16 +1276,19 @@ this.LoginHelper = {
    *
    * @param {Element} element
    *                  the field we want to check.
+   * @param {Object} options
+   * @param {bool} [options.ignoreConnect] - Whether to ignore checking isConnected
+   *                                         of the element.
    *
    * @returns {Boolean} true if the field type is one
    *                    of the username types.
    */
-  isUsernameFieldType(element) {
+  isUsernameFieldType(element, { ignoreConnect = false } = {}) {
     if (ChromeUtils.getClassName(element) !== "HTMLInputElement") {
       return false;
     }
 
-    if (!element.isConnected) {
+    if (!element.isConnected && !ignoreConnect) {
       // If the element isn't connected then it isn't visible to the user so
       // shouldn't be considered. It must have been connected in the past.
       return false;
@@ -961,170 +1332,175 @@ this.LoginHelper = {
   },
 
   /**
+   * Infer whether a form is a sign-in form by searching keywords
+   * in its attributes
+   *
+   * @param {Element} element
+   *                  the form we want to check.
+   *
+   * @returns {boolean} True if any of the rules matches
+   */
+  isInferredLoginForm(formElement) {
+    // This is copied from 'loginFormAttrRegex' in NewPasswordModel.jsm
+    const loginExpr = /login|log in|log on|log-on|sign in|sigin|sign\/in|sign-in|sign on|sign-on/i;
+
+    if (this._elementAttrsMatchRegex(formElement, loginExpr)) {
+      return true;
+    }
+
+    return false;
+  },
+
+  /**
+   * Infer whether an input field is a username field by searching
+   * 'username' keyword in its attributes
+   *
+   * @param {Element} element
+   *                  the field we want to check.
+   *
+   * @returns {boolean} True if any of the rules matches
+   */
+  isInferredUsernameField(element) {
+    const expr = /username/i;
+
+    let ac = element.getAutocompleteInfo()?.fieldName;
+    if (ac && ac == "username") {
+      return true;
+    }
+
+    if (
+      this._elementAttrsMatchRegex(element, expr) ||
+      this._hasLabelMatchingRegex(element, expr)
+    ) {
+      return true;
+    }
+
+    return false;
+  },
+
+  /**
+   * Search for keywords that indicates the input field is not likely a
+   * field of a username login form.
+   *
+   * @param {Element} element
+   *                  the input field we want to check.
+   *
+   * @returns {boolean} True if any of the rules matches
+   */
+  isInferredNonUsernameField(element) {
+    const expr = /search|code/i;
+
+    if (
+      this._elementAttrsMatchRegex(element, expr) ||
+      this._hasLabelMatchingRegex(element, expr)
+    ) {
+      return true;
+    }
+
+    return false;
+  },
+
+  /**
+   * Infer whether an input field is an email field by searching
+   * 'email' keyword in its attributes.
+   *
+   * @param {Element} element
+   *                  the field we want to check.
+   *
+   * @returns {boolean} True if any of the rules matches
+   */
+  isInferredEmailField(element) {
+    const expr = /email/i;
+
+    if (element.type == "email") {
+      return true;
+    }
+
+    let ac = element.getAutocompleteInfo()?.fieldName;
+    if (ac && ac == "email") {
+      return true;
+    }
+
+    if (
+      this._elementAttrsMatchRegex(element, expr) ||
+      this._hasLabelMatchingRegex(element, expr)
+    ) {
+      return true;
+    }
+
+    return false;
+  },
+
+  /**
+   * Test whether the element has the keyword in its attributes.
+   * The tested attributes include id, name, className, and placeholder.
+   */
+  _elementAttrsMatchRegex(element, regex) {
+    if (
+      regex.test(element.id) ||
+      regex.test(element.name) ||
+      regex.test(element.className)
+    ) {
+      return true;
+    }
+
+    let placeholder = element.getAttribute("placeholder");
+    if (placeholder && regex.test(placeholder)) {
+      return true;
+    }
+    return false;
+  },
+
+  /**
+   * Test whether associated labels of the element have the keyword.
+   * This is a simplified rule of hasLabelMatchingRegex in NewPasswordModel.jsm
+   * Consider changing it if this is not good enough.
+   */
+  _hasLabelMatchingRegex(element, regex) {
+    if (element.labels !== null && element.labels.length) {
+      if (regex.test(element.labels[0].textContent)) {
+        return true;
+      }
+    }
+
+    return false;
+  },
+
+  /**
    * For each login, add the login to the password manager if a similar one
    * doesn't already exist. Merge it otherwise with the similar existing ones.
    *
    * @param {Object[]} loginDatas - For each login, the data that needs to be added.
-   * @returns {nsILoginInfo[]} the newly added logins, filtered if no login was added.
+   * @returns {Object[]} An entry for each processed row containing how the row was processed and the login data.
    */
   async maybeImportLogins(loginDatas) {
-    let loginsToAdd = [];
-    let loginMap = new Map();
+    const processor = new ImportRowProcessor();
     for (let rawLoginData of loginDatas) {
       // Do some sanitization on a clone of the loginData.
       let loginData = ChromeUtils.shallowClone(rawLoginData);
-      loginData.origin = this.getLoginOrigin(loginData.origin);
-      if (!loginData.origin) {
+      if (processor.checkNonUniqueGuidError(loginData)) {
         continue;
       }
-
-      loginData.formActionOrigin =
-        this.getLoginOrigin(loginData.formActionOrigin, true) ||
-        (typeof loginData.httpRealm == "string" ? null : "");
-
-      loginData.httpRealm =
-        typeof loginData.httpRealm == "string" ? loginData.httpRealm : null;
-
-      if (loginData.guid) {
-        // First check for `guid` matches if it's set.
-        // `guid` matches will allow every kind of update, including reverting
-        // to older passwords which can be useful if the user wants to recover
-        // an old password.
-        let existingLogins = await Services.logins.searchLoginsAsync({
-          guid: loginData.guid,
-          origin: loginData.origin, // Ignored outside of GV.
-        });
-
-        if (existingLogins.length) {
-          log.debug("maybeImportLogins: Found existing login with GUID");
-          // There should only be one `guid` match.
-          let existingLogin = existingLogins[0].QueryInterface(
-            Ci.nsILoginMetaInfo
-          );
-
-          // Use a property bag rather than an nsILoginInfo so we don't clobber
-          // properties that the import source doesn't provide.
-          let propBag = this.newPropertyBag(loginData);
-          Services.logins.modifyLogin(existingLogin, propBag);
-          // Updated a login so we're done.
-          continue;
-        }
-      }
-
-      // create a new login
-      let login = Cc["@mozilla.org/login-manager/loginInfo;1"].createInstance(
-        Ci.nsILoginInfo
-      );
-      login.init(
-        loginData.origin,
-        loginData.formActionOrigin,
-        loginData.httpRealm,
-        loginData.username,
-        loginData.password,
-        loginData.usernameElement || "",
-        loginData.passwordElement || ""
-      );
-
-      login.QueryInterface(Ci.nsILoginMetaInfo);
-      login.timeCreated = loginData.timeCreated;
-      login.timeLastUsed = loginData.timeLastUsed || loginData.timeCreated;
-      login.timePasswordChanged =
-        loginData.timePasswordChanged || loginData.timeCreated;
-      login.timesUsed = loginData.timesUsed || 1;
-      login.guid = loginData.guid || null;
-
-      try {
-        // Ensure we only send checked logins through, since the validation is optimized
-        // out from the bulk APIs below us.
-        this.checkLoginValues(login);
-      } catch (e) {
-        Cu.reportError(e);
+      if (processor.checkMissingMandatoryFieldsError(loginData)) {
         continue;
       }
-
-      // First, we need to check the logins that we've already decided to add, to
-      // see if this is a duplicate. This should mirror the logic below for
-      // existingLogins, but only for the array of logins we're adding.
-      let newLogins = loginMap.get(login.origin) || [];
-      if (!newLogins) {
-        loginMap.set(login.origin, newLogins);
-      } else {
-        if (newLogins.some(l => login.matches(l, false /* ignorePassword */))) {
-          continue;
-        }
-        let foundMatchingNewLogin = false;
-        for (let newLogin of newLogins) {
-          if (login.username == newLogin.username) {
-            foundMatchingNewLogin = true;
-            newLogin.QueryInterface(Ci.nsILoginMetaInfo);
-            if (
-              (login.password != newLogin.password) &
-              (login.timePasswordChanged > newLogin.timePasswordChanged)
-            ) {
-              // if a login with the same username and different password already exists and it's older
-              // than the current one, update its password and timestamp.
-              newLogin.password = login.password;
-              newLogin.timePasswordChanged = login.timePasswordChanged;
-            }
-          }
-        }
-
-        if (foundMatchingNewLogin) {
-          continue;
-        }
-      }
-
-      // While here we're passing formActionOrigin and httpRealm, they could be empty/null and get
-      // ignored in that case, leading to multiple logins for the same username.
-      let existingLogins = Services.logins.findLogins(
-        login.origin,
-        login.formActionOrigin,
-        login.httpRealm
-      );
-      // Check for an existing login that matches *including* the password.
-      // If such a login exists, we do not need to add a new login.
-      if (
-        existingLogins.some(l => login.matches(l, false /* ignorePassword */))
-      ) {
+      processor.cleanupActionAndRealmFields(loginData);
+      if (await processor.checkExistingEntry(loginData)) {
         continue;
       }
-      // Now check for a login with the same username, where it may be that we have an
-      // updated password.
-      let foundMatchingLogin = false;
-      for (let existingLogin of existingLogins) {
-        if (login.username == existingLogin.username) {
-          foundMatchingLogin = true;
-          existingLogin.QueryInterface(Ci.nsILoginMetaInfo);
-          if (
-            (login.password != existingLogin.password) &
-            (login.timePasswordChanged > existingLogin.timePasswordChanged)
-          ) {
-            // if a login with the same username and different password already exists and it's older
-            // than the current one, update its password and timestamp.
-            let propBag = Cc["@mozilla.org/hash-property-bag;1"].createInstance(
-              Ci.nsIWritablePropertyBag
-            );
-            propBag.setProperty("password", login.password);
-            propBag.setProperty(
-              "timePasswordChanged",
-              login.timePasswordChanged
-            );
-            Services.logins.modifyLogin(existingLogin, propBag);
-          }
-        }
-      }
-      // if the new login is an update or is older than an exiting login, don't add it.
-      if (foundMatchingLogin) {
+      let login = processor.createNewLogin(loginData);
+      if (processor.checkLoginValuesError(login, loginData)) {
         continue;
       }
-
-      newLogins.push(login);
-      loginsToAdd.push(login);
+      if (processor.checkConflictingOriginWithPreviousRows(login)) {
+        continue;
+      }
+      if (processor.checkConflictingWithExistingLogins(login)) {
+        continue;
+      }
+      processor.addLoginToSummary(login, "added");
     }
-    if (!loginsToAdd.length) {
-      return [];
-    }
-    return Services.logins.addLogins(loginsToAdd);
+    return processor.processLoginsAndBuildSummary();
   },
 
   /**
@@ -1147,7 +1523,6 @@ this.LoginHelper = {
         obj[i] = login[i];
       }
     }
-
     return obj;
   },
 
@@ -1184,8 +1559,12 @@ this.LoginHelper = {
   /**
    * As above, but for an array of objects.
    */
-  vanillaObjectsToLogins(logins) {
-    return logins.map(this.vanillaObjectToLogin);
+  vanillaObjectsToLogins(vanillaObjects) {
+    const logins = [];
+    for (const vanillaObject of vanillaObjects) {
+      logins.push(this.vanillaObjectToLogin(vanillaObject));
+    }
+    return logins;
   },
 
   /**

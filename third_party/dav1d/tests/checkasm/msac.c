@@ -43,13 +43,13 @@ typedef unsigned (*decode_bool_equi_fn)(MsacContext *s);
 typedef unsigned (*decode_bool_fn)(MsacContext *s, unsigned f);
 
 typedef struct {
-    decode_symbol_adapt_fn symbol_adapt4;
-    decode_symbol_adapt_fn symbol_adapt8;
-    decode_symbol_adapt_fn symbol_adapt16;
-    decode_adapt_fn        bool_adapt;
-    decode_bool_equi_fn    bool_equi;
-    decode_bool_fn         bool;
-    decode_adapt_fn        hi_tok;
+    decode_symbol_adapt_fn decode_symbol_adapt4;
+    decode_symbol_adapt_fn decode_symbol_adapt8;
+    decode_symbol_adapt_fn decode_symbol_adapt16;
+    decode_adapt_fn        decode_bool_adapt;
+    decode_bool_equi_fn    decode_bool_equi;
+    decode_bool_fn         decode_bool;
+    decode_adapt_fn        decode_hi_tok;
 } MsacDSPContext;
 
 static void randomize_cdf(uint16_t *const cdf, const int n) {
@@ -104,7 +104,9 @@ static void msac_dump(unsigned c_res, unsigned a_res,
 }
 
 #define CHECK_SYMBOL_ADAPT(n, n_min, n_max) do {                           \
-    if (check_func(c->symbol_adapt##n, "msac_decode_symbol_adapt%d", n)) { \
+    if (check_func(c->decode_symbol_adapt##n,                              \
+                   "msac_decode_symbol_adapt%d", n))                       \
+    {                                                                      \
         for (int cdf_update = 0; cdf_update <= 1; cdf_update++) {          \
             for (int ns = n_min; ns <= n_max; ns++) {                      \
                 dav1d_msac_init(&s_c, buf, BUF_SIZE, !cdf_update);         \
@@ -140,11 +142,11 @@ static void check_decode_symbol(MsacDSPContext *const c, uint8_t *const buf) {
     report("decode_symbol");
 }
 
-static void check_decode_bool(MsacDSPContext *const c, uint8_t *const buf) {
+static void check_decode_bool_adapt(MsacDSPContext *const c, uint8_t *const buf) {
     MsacContext s_c, s_a;
 
-    if (check_func(c->bool_adapt, "msac_decode_bool_adapt")) {
-        declare_func(unsigned, MsacContext *s, uint16_t *cdf);
+    declare_func(unsigned, MsacContext *s, uint16_t *cdf);
+    if (check_func(c->decode_bool_adapt, "msac_decode_bool_adapt")) {
         uint16_t cdf[2][2];
         for (int cdf_update = 0; cdf_update <= 1; cdf_update++) {
             dav1d_msac_init(&s_c, buf, BUF_SIZE, !cdf_update);
@@ -165,9 +167,13 @@ static void check_decode_bool(MsacDSPContext *const c, uint8_t *const buf) {
                 bench_new(&s_a, cdf[1]);
         }
     }
+}
 
-    if (check_func(c->bool_equi, "msac_decode_bool_equi")) {
-        declare_func(unsigned, MsacContext *s);
+static void check_decode_bool_equi(MsacDSPContext *const c, uint8_t *const buf) {
+    MsacContext s_c, s_a;
+
+    declare_func(unsigned, MsacContext *s);
+    if (check_func(c->decode_bool_equi, "msac_decode_bool_equi")) {
         dav1d_msac_init(&s_c, buf, BUF_SIZE, 1);
         s_a = s_c;
         for (int i = 0; i < 64; i++) {
@@ -180,9 +186,13 @@ static void check_decode_bool(MsacDSPContext *const c, uint8_t *const buf) {
         }
         bench_new(&s_a);
     }
+}
 
-    if (check_func(c->bool, "msac_decode_bool")) {
-        declare_func(unsigned, MsacContext *s, unsigned f);
+static void check_decode_bool(MsacDSPContext *const c, uint8_t *const buf) {
+    MsacContext s_c, s_a;
+
+    declare_func(unsigned, MsacContext *s, unsigned f);
+    if (check_func(c->decode_bool, "msac_decode_bool")) {
         dav1d_msac_init(&s_c, buf, BUF_SIZE, 1);
         s_a = s_c;
         for (int i = 0; i < 64; i++) {
@@ -197,6 +207,12 @@ static void check_decode_bool(MsacDSPContext *const c, uint8_t *const buf) {
         bench_new(&s_a, 16384);
     }
 
+}
+
+static void check_decode_bool_funcs(MsacDSPContext *const c, uint8_t *const buf) {
+    check_decode_bool_adapt(c, buf);
+    check_decode_bool_equi(c, buf);
+    check_decode_bool(c, buf);
     report("decode_bool");
 }
 
@@ -204,8 +220,8 @@ static void check_decode_hi_tok(MsacDSPContext *const c, uint8_t *const buf) {
     ALIGN_STK_16(uint16_t, cdf, 2, [16]);
     MsacContext s_c, s_a;
 
-    if (check_func(c->hi_tok, "msac_decode_hi_tok")) {
-        declare_func(unsigned, MsacContext *s, uint16_t *cdf);
+    declare_func(unsigned, MsacContext *s, uint16_t *cdf);
+    if (check_func(c->decode_hi_tok, "msac_decode_hi_tok")) {
         for (int cdf_update = 0; cdf_update <= 1; cdf_update++) {
             dav1d_msac_init(&s_c, buf, BUF_SIZE, !cdf_update);
             s_a = s_c;
@@ -231,38 +247,38 @@ static void check_decode_hi_tok(MsacDSPContext *const c, uint8_t *const buf) {
 
 void checkasm_check_msac(void) {
     MsacDSPContext c;
-    c.symbol_adapt4  = dav1d_msac_decode_symbol_adapt_c;
-    c.symbol_adapt8  = dav1d_msac_decode_symbol_adapt_c;
-    c.symbol_adapt16 = dav1d_msac_decode_symbol_adapt_c;
-    c.bool_adapt     = dav1d_msac_decode_bool_adapt_c;
-    c.bool_equi      = dav1d_msac_decode_bool_equi_c;
-    c.bool           = dav1d_msac_decode_bool_c;
-    c.hi_tok         = dav1d_msac_decode_hi_tok_c;
+    c.decode_symbol_adapt4  = dav1d_msac_decode_symbol_adapt_c;
+    c.decode_symbol_adapt8  = dav1d_msac_decode_symbol_adapt_c;
+    c.decode_symbol_adapt16 = dav1d_msac_decode_symbol_adapt_c;
+    c.decode_bool_adapt     = dav1d_msac_decode_bool_adapt_c;
+    c.decode_bool_equi      = dav1d_msac_decode_bool_equi_c;
+    c.decode_bool           = dav1d_msac_decode_bool_c;
+    c.decode_hi_tok         = dav1d_msac_decode_hi_tok_c;
 
 #if (ARCH_AARCH64 || ARCH_ARM) && HAVE_ASM
     if (dav1d_get_cpu_flags() & DAV1D_ARM_CPU_FLAG_NEON) {
-        c.symbol_adapt4  = dav1d_msac_decode_symbol_adapt4_neon;
-        c.symbol_adapt8  = dav1d_msac_decode_symbol_adapt8_neon;
-        c.symbol_adapt16 = dav1d_msac_decode_symbol_adapt16_neon;
-        c.bool_adapt     = dav1d_msac_decode_bool_adapt_neon;
-        c.bool_equi      = dav1d_msac_decode_bool_equi_neon;
-        c.bool           = dav1d_msac_decode_bool_neon;
-        c.hi_tok         = dav1d_msac_decode_hi_tok_neon;
+        c.decode_symbol_adapt4  = dav1d_msac_decode_symbol_adapt4_neon;
+        c.decode_symbol_adapt8  = dav1d_msac_decode_symbol_adapt8_neon;
+        c.decode_symbol_adapt16 = dav1d_msac_decode_symbol_adapt16_neon;
+        c.decode_bool_adapt     = dav1d_msac_decode_bool_adapt_neon;
+        c.decode_bool_equi      = dav1d_msac_decode_bool_equi_neon;
+        c.decode_bool           = dav1d_msac_decode_bool_neon;
+        c.decode_hi_tok         = dav1d_msac_decode_hi_tok_neon;
     }
 #elif ARCH_X86 && HAVE_ASM
     if (dav1d_get_cpu_flags() & DAV1D_X86_CPU_FLAG_SSE2) {
-        c.symbol_adapt4  = dav1d_msac_decode_symbol_adapt4_sse2;
-        c.symbol_adapt8  = dav1d_msac_decode_symbol_adapt8_sse2;
-        c.symbol_adapt16 = dav1d_msac_decode_symbol_adapt16_sse2;
-        c.bool_adapt     = dav1d_msac_decode_bool_adapt_sse2;
-        c.bool_equi      = dav1d_msac_decode_bool_equi_sse2;
-        c.bool           = dav1d_msac_decode_bool_sse2;
-        c.hi_tok         = dav1d_msac_decode_hi_tok_sse2;
+        c.decode_symbol_adapt4  = dav1d_msac_decode_symbol_adapt4_sse2;
+        c.decode_symbol_adapt8  = dav1d_msac_decode_symbol_adapt8_sse2;
+        c.decode_symbol_adapt16 = dav1d_msac_decode_symbol_adapt16_sse2;
+        c.decode_bool_adapt     = dav1d_msac_decode_bool_adapt_sse2;
+        c.decode_bool_equi      = dav1d_msac_decode_bool_equi_sse2;
+        c.decode_bool           = dav1d_msac_decode_bool_sse2;
+        c.decode_hi_tok         = dav1d_msac_decode_hi_tok_sse2;
     }
 
 #if ARCH_X86_64
     if (dav1d_get_cpu_flags() & DAV1D_X86_CPU_FLAG_AVX2) {
-        c.symbol_adapt16 = dav1d_msac_decode_symbol_adapt16_avx2;
+        c.decode_symbol_adapt16 = dav1d_msac_decode_symbol_adapt16_avx2;
     }
 #endif
 #endif
@@ -272,6 +288,6 @@ void checkasm_check_msac(void) {
         buf[i] = rnd();
 
     check_decode_symbol(&c, buf);
-    check_decode_bool(&c, buf);
+    check_decode_bool_funcs(&c, buf);
     check_decode_hi_tok(&c, buf);
 }

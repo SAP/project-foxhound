@@ -5,7 +5,6 @@
 "use strict";
 
 const EventEmitter = require("devtools/shared/event-emitter");
-const promise = require("promise");
 const Services = require("Services");
 
 loader.lazyRequireGetter(
@@ -114,7 +113,7 @@ BottomHost.prototype = {
       this._splitter = null;
     }
 
-    return promise.resolve(null);
+    return Promise.resolve(null);
   },
 };
 
@@ -196,7 +195,7 @@ class SidebarHost {
       this._browserPanel.removeChild(this.frame);
     }
 
-    return promise.resolve(null);
+    return Promise.resolve(null);
   }
 }
 
@@ -248,6 +247,14 @@ WindowHost.prototype = {
         PrivateBrowsingUtils.isWindowPrivate(this.hostTab.ownerGlobal)
       ) {
         flags += ",private";
+      }
+
+      // If the current window is a non-fission window, force the non-fission
+      // flag. Otherwise switching to window host from a non-fission window in
+      // a fission Firefox (!) will attempt to swapFrameLoaders between fission
+      // and non-fission frames. See Bug 1650963.
+      if (this.hostTab && !this.hostTab.ownerGlobal.gFissionBrowser) {
+        flags += ",non-fission";
       }
 
       const win = Services.ww.openWindow(
@@ -321,7 +328,7 @@ WindowHost.prototype = {
       this._window.close();
     }
 
-    return promise.resolve(null);
+    return Promise.resolve(null);
   },
 };
 
@@ -363,7 +370,7 @@ BrowserToolboxHost.prototype = {
 
   // Do nothing. The BrowserToolbox is destroyed by quitting the application.
   destroy: function() {
-    return promise.resolve(null);
+    return Promise.resolve(null);
   },
 };
 
@@ -381,7 +388,7 @@ PageHost.prototype = {
   type: "page",
 
   create: function() {
-    return promise.resolve(this.frame);
+    return Promise.resolve(this.frame);
   },
 
   // Do nothing.
@@ -392,7 +399,7 @@ PageHost.prototype = {
 
   // Do nothing.
   destroy: function() {
-    return promise.resolve(null);
+    return Promise.resolve(null);
   },
 };
 

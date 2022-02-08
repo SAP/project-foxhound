@@ -32,17 +32,12 @@ const known_scripts = {
     // Logging related
     "resource://gre/modules/Log.jsm",
 
-    // Session store
-    "resource:///modules/sessionstore/ContentSessionStore.jsm",
-
     // Browser front-end
     "resource:///actors/AboutReaderChild.jsm",
     "resource:///actors/BrowserTabChild.jsm",
     "resource:///actors/LinkHandlerChild.jsm",
-    "resource:///actors/SearchTelemetryChild.jsm",
-    "resource://gre/actors/AutoCompleteChild.jsm",
-    "resource://gre/modules/ActorManagerChild.jsm",
-    "resource://gre/modules/E10SUtils.jsm",
+    "resource:///actors/PageStyleChild.jsm",
+    "resource:///actors/SearchSERPTelemetryChild.jsm",
     "resource://gre/modules/Readerable.jsm",
 
     // Telemetry
@@ -52,24 +47,35 @@ const known_scripts = {
     // Extensions
     "resource://gre/modules/ExtensionProcessScript.jsm",
     "resource://gre/modules/ExtensionUtils.jsm",
-    "resource://gre/modules/MessageChannel.jsm",
   ]),
   frameScripts: new Set([
     // Test related
     "chrome://mochikit/content/shutdown-leaks-collector.js",
-
-    // Browser front-end
-    "chrome://global/content/browser-content.js",
-
-    // Extensions
-    "resource://gre/modules/addons/Content.js",
   ]),
   processScripts: new Set([
     "chrome://global/content/process-content.js",
-    "resource:///modules/ContentObservers.js",
     "resource://gre/modules/extensionProcessScriptLoader.js",
+    "resource://gre/modules/URLQueryStrippingListProcessScript.js",
   ]),
 };
+
+if (!gFissionBrowser) {
+  known_scripts.modules.add(
+    "resource:///modules/sessionstore/ContentSessionStore.jsm"
+  );
+}
+
+if (AppConstants.NIGHTLY_BUILD) {
+  // URL Query Stripping. This will only be loaded if the URL Query Stripping
+  // is enabled by default during the startup. This currently only happens in
+  // Nightly channel.
+  //
+  // Bug 1743418 will try to remove this from content startup script.
+
+  known_scripts.modules.add(
+    "resource://gre/modules/URLQueryStrippingListService.jsm"
+  );
+}
 
 // Items on this list *might* load when creating the process, as opposed to
 // items in the main list, which we expect will always load.
@@ -86,8 +92,11 @@ const intermittently_loaded_scripts = {
     "resource://webcompat/AboutCompat.jsm",
 
     // Test related
+    "chrome://remote/content/marionette/actors/MarionetteEventsChild.jsm",
+    "chrome://remote/content/shared/Log.jsm",
     "resource://testing-common/BrowserTestUtilsChild.jsm",
     "resource://testing-common/ContentEventListenerChild.jsm",
+    "resource://specialpowers/AppTestDelegateChild.jsm",
     "resource://specialpowers/SpecialPowersChild.jsm",
     "resource://specialpowers/WrapPrivileged.jsm",
   ]),
@@ -112,6 +121,11 @@ add_task(async function() {
 
   let tab = await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
+    url:
+      getRootDirectory(gTestPath).replace(
+        "chrome://mochitests/content",
+        "http://example.com"
+      ) + "file_empty.html",
     forceNewProcess: true,
   });
 
@@ -177,76 +191,13 @@ add_task(async function() {
     loadedInfo.processScripts[uri] = "";
   }
 
-  let loadedList = {};
-
-  for (let scriptType in known_scripts) {
-    loadedList[scriptType] = Object.keys(loadedInfo[scriptType]).filter(c => {
-      if (!known_scripts[scriptType].has(c)) {
-        return true;
-      }
-      known_scripts[scriptType].delete(c);
-      return false;
-    });
-
-    loadedList[scriptType] = loadedList[scriptType].filter(c => {
-      return !intermittently_loaded_scripts[scriptType].has(c);
-    });
-
-    is(
-      loadedList[scriptType].length,
-      0,
-      `should have no unexpected ${scriptType} loaded on content process startup`
-    );
-
-    for (let script of loadedList[scriptType]) {
-      record(
-        false,
-        `Unexpected ${scriptType} loaded during content process startup: ${script}`,
-        undefined,
-        loadedInfo[scriptType][script]
-      );
-    }
-
-    is(
-      known_scripts[scriptType].size,
-      0,
-      `all known ${scriptType} scripts should have been loaded`
-    );
-
-    for (let script of known_scripts[scriptType]) {
-      ok(
-        false,
-        `${scriptType} is expected to load for content process startup but wasn't: ${script}`
-      );
-    }
-
-    if (kDumpAllStacks) {
-      info(`Stacks for all loaded ${scriptType}:`);
-      for (let file in loadedInfo[scriptType]) {
-        if (loadedInfo[scriptType][file]) {
-          info(
-            `${file}\n------------------------------------\n` +
-              loadedInfo[scriptType][file] +
-              "\n"
-          );
-        }
-      }
-    }
-  }
-
-  for (let scriptType in forbiddenScripts) {
-    for (let script of forbiddenScripts[scriptType]) {
-      let loaded = script in loadedInfo[scriptType];
-      if (loaded) {
-        record(
-          false,
-          `Forbidden ${scriptType} loaded during content process startup: ${script}`,
-          undefined,
-          loadedInfo[scriptType][script]
-        );
-      }
-    }
-  }
+  checkLoadedScripts({
+    loadedInfo,
+    known: known_scripts,
+    intermittent: intermittently_loaded_scripts,
+    forbidden: forbiddenScripts,
+    dumpAllStacks: kDumpAllStacks,
+  });
 
   BrowserTestUtils.removeTab(tab);
 });

@@ -6,6 +6,10 @@
 
 // Wrap in a block to prevent leaking to window scope.
 {
+  XPCOMUtils.defineLazyModuleGetters(this, {
+    SearchOneOffs: "resource:///modules/SearchOneOffs.jsm",
+  });
+
   /**
    * A richlistbox popup custom element for for a browser search autocomplete
    * widget.
@@ -18,9 +22,8 @@
         // First handle deciding if we are showing the reduced version of the
         // popup containing only the preferences button. We do this if the
         // glass icon has been clicked if the text field is empty.
-        let searchbar = document.getElementById("searchbar");
-        if (searchbar.hasAttribute("showonlysettings")) {
-          searchbar.removeAttribute("showonlysettings");
+        if (this.searchbar.hasAttribute("showonlysettings")) {
+          this.searchbar.removeAttribute("showonlysettings");
           this.setAttribute("showonlysettings", "true");
 
           // Setting this with an xbl-inherited attribute gets overridden the
@@ -78,6 +81,12 @@
       };
     }
 
+    // We override this because even though we have a shadow root, we want our
+    // inheritance to be done on the light tree.
+    getElementForAttrInheritance(selector) {
+      return this.querySelector(selector);
+    }
+
     initialize() {
       super.initialize();
       this.initializeAttributeInheritance();
@@ -86,6 +95,7 @@
       this._searchbarEngine = this.querySelector(".search-panel-header");
       this._searchbarEngineName = this.querySelector(".searchbar-engine-name");
       this._oneOffButtons = new SearchOneOffs(this._searchOneOffsContainer);
+      this._searchbar = document.getElementById("searchbar");
     }
 
     get oneOffButtons() {
@@ -101,8 +111,10 @@
         <image class="searchbar-engine-image"></image>
         <label class="searchbar-engine-name" flex="1" crop="end" role="presentation"></label>
       </hbox>
+      <menuseparator class="searchbar-separator"/>
       <richlistbox class="autocomplete-richlistbox search-panel-tree" flex="1"></richlistbox>
-      <hbox class="search-one-offs"></hbox>
+      <menuseparator class="searchbar-separator"/>
+      <hbox class="search-one-offs" is_searchbar="true"/>
     `;
     }
 
@@ -125,6 +137,13 @@
         this.initialize();
       }
       return this._searchbarEngineName;
+    }
+
+    get searchbar() {
+      if (!this._searchbar) {
+        this.initialize();
+      }
+      return this._searchbar;
     }
 
     get bundle() {
@@ -150,14 +169,7 @@
         return;
       }
 
-      let searchBar = BrowserSearch.searchBar;
-      let popupForSearchBar = searchBar && searchBar.textbox == this.mInput;
-      if (popupForSearchBar) {
-        searchBar.telemetrySearchDetails = {
-          index: this.selectedIndex,
-          kind: "mouse",
-        };
-      }
+      this.searchbar.telemetrySelectedIndex = this.selectedIndex;
 
       // Check for unmodified left-click, and use default behavior
       if (
@@ -172,43 +184,42 @@
       }
 
       // Check for middle-click or modified clicks on the search bar
-      if (popupForSearchBar) {
-        BrowserUsageTelemetry.recordSearchbarSelectedResultMethod(
-          aEvent,
-          this.selectedIndex
-        );
+      BrowserSearchTelemetry.recordSearchSuggestionSelectionMethod(
+        aEvent,
+        "searchbar",
+        this.selectedIndex
+      );
 
-        // Handle search bar popup clicks
-        let search = this.input.controller.getValueAt(this.selectedIndex);
+      // Handle search bar popup clicks
+      let search = this.input.controller.getValueAt(this.selectedIndex);
 
-        // open the search results according to the clicking subtlety
-        let where = whereToOpenLink(aEvent, false, true);
-        let params = {};
+      // open the search results according to the clicking subtlety
+      let where = whereToOpenLink(aEvent, false, true);
+      let params = {};
 
-        // But open ctrl/cmd clicks on autocomplete items in a new background tab.
-        let modifier =
-          AppConstants.platform == "macosx" ? aEvent.metaKey : aEvent.ctrlKey;
-        if (
-          where == "tab" &&
-          aEvent instanceof MouseEvent &&
-          (aEvent.button == 1 || modifier)
-        ) {
-          params.inBackground = true;
-        }
+      // But open ctrl/cmd clicks on autocomplete items in a new background tab.
+      let modifier =
+        AppConstants.platform == "macosx" ? aEvent.metaKey : aEvent.ctrlKey;
+      if (
+        where == "tab" &&
+        aEvent instanceof MouseEvent &&
+        (aEvent.button == 1 || modifier)
+      ) {
+        params.inBackground = true;
+      }
 
-        // leave the popup open for background tab loads
-        if (!(where == "tab" && params.inBackground)) {
-          // close the autocomplete popup and revert the entered search term
-          this.closePopup();
-          this.input.controller.handleEscape();
-        }
+      // leave the popup open for background tab loads
+      if (!(where == "tab" && params.inBackground)) {
+        // close the autocomplete popup and revert the entered search term
+        this.closePopup();
+        this.input.controller.handleEscape();
+      }
 
-        searchBar.doSearch(search, where, null, params);
-        if (where == "tab" && params.inBackground) {
-          searchBar.focus();
-        } else {
-          searchBar.value = search;
-        }
+      this.searchbar.doSearch(search, where, null, params);
+      if (where == "tab" && params.inBackground) {
+        this.searchbar.focus();
+      } else {
+        this.searchbar.value = search;
       }
     }
 
@@ -243,8 +254,7 @@
      */
     /* eslint-disable-next-line valid-jsdoc */
     handleOneOffSearch(event, engine, where, params) {
-      let searchbar = document.getElementById("searchbar");
-      searchbar.handleSearchCommandWhere(event, engine, where, params);
+      this.searchbar.handleSearchCommandWhere(event, engine, where, params);
     }
 
     /**

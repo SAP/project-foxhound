@@ -37,3 +37,23 @@ function largeArray() {
   }
   debugger;
 }
+
+function classPreview() {
+  class Foo {
+    x = 1;
+    #privateVar = 2;
+    static #privateStatic = { first: "a", second: "b" };
+    #privateMethod() {
+      return this.#privateVar;
+    }
+    breakFn() {
+      let i = this.x * this.#privateVar + Foo.#privateStatic;
+      if (#privateVar in this && this.#privateVar !== 0) {
+        i = i * 2;
+      }
+      debugger;
+    }
+  }
+  const foo = new Foo();
+  foo.breakFn();
+}

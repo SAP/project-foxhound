@@ -8,15 +8,18 @@
 <?xml-stylesheet href="chrome://browser/skin/preferences/preferences.css" type="text/css"?>
 
 <window id="TranslationDialog"
-        windowtype="Browser:TranslationExceptions"
         data-l10n-id="translation-window"
         data-l10n-attrs="title, style"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         xmlns:html="http://www.w3.org/1999/xhtml"
         onload="gTranslationExceptions.onLoad();"
         onunload="gTranslationExceptions.uninit();"
-        persist="screenX screenY width height"
-        onkeypress="gTranslationExceptions.onWindowKeyPress(event);">
+        persist="width height">
+
+  <dialog
+    buttons="accept"
+    data-l10n-id="translation-dialog"
+    data-l10n-attrs="buttonlabelaccept, buttonaccesskeyaccept">
 
   <linkset>
     <html:link rel="localization" href="browser/preferences/translation.ftl"/>
@@ -79,7 +82,6 @@
             data-l10n-id="translation-sites-button-remove-all"
             oncommand="gTranslationExceptions.onAllSitesDeleted();"/>
     <spacer flex="1"/>
-    <button oncommand="window.close();"
-            data-l10n-id="translation-button-close"/>
   </hbox>
+  </dialog>
 </window>

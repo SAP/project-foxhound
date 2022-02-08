@@ -28,10 +28,6 @@ namespace widget {
 
 // Key code constants
 enum {
-#if !defined(MAC_OS_X_VERSION_10_12) || MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_12
-  kVK_RightCommand = 0x36,  // right command key
-#endif
-
   kVK_PC_PrintScreen = kVK_F13,
   kVK_PC_ScrollLock = kVK_F14,
   kVK_PC_Pause = kVK_F15,
@@ -819,13 +815,13 @@ class TextInputHandlerBase : public TextEventDispatcherListener {
   static bool IsPrintableChar(char16_t aChar);
 
   /**
-   * IsNormalCharInputtingEvent() checks whether aKeyEvent causes text input.
+   * IsNormalCharInputtingEvent() checks whether aNativeEvent causes text input.
    *
-   * @param aKeyEvent             A key event.
+   * @param aNativeEvent          A key event.
    * @return                      TRUE if the key event causes text input.
    *                              Otherwise, FALSE.
    */
-  static bool IsNormalCharInputtingEvent(const WidgetKeyboardEvent& aKeyEvent);
+  static bool IsNormalCharInputtingEvent(NSEvent* aNativeEvent);
 
   /**
    * IsModifierKey() checks whether the native keyCode is for a modifier key.
@@ -1171,7 +1167,7 @@ class TextInputHandler : public IMEInputHandler {
   /**
    * KeyDown event handler.
    *
-   * @param aNativeEvent          A native NSKeyDown event.
+   * @param aNativeEvent          A native NSEventTypeKeyDown event.
    * @param aUniqueId             A unique ID for the event.
    * @return                      TRUE if the event is dispatched to web
    *                              contents or chrome contents. Otherwise, FALSE.
@@ -1181,14 +1177,14 @@ class TextInputHandler : public IMEInputHandler {
   /**
    * KeyUp event handler.
    *
-   * @param aNativeEvent          A native NSKeyUp event.
+   * @param aNativeEvent          A native NSEventTypeKeyUp event.
    */
   void HandleKeyUpEvent(NSEvent* aNativeEvent);
 
   /**
    * FlagsChanged event handler.
    *
-   * @param aNativeEvent          A native NSFlagsChanged event.
+   * @param aNativeEvent          A native NSEventTypeFlagsChanged event.
    */
   void HandleFlagsChanged(NSEvent* aNativeEvent);
 
@@ -1246,11 +1242,11 @@ class TextInputHandler : public IMEInputHandler {
     ModifierKey(NSUInteger aFlags, unsigned short aKeyCode) : flags(aFlags), keyCode(aKeyCode) {}
 
     NSUInteger GetDeviceDependentFlags() const {
-      return (flags & ~NSDeviceIndependentModifierFlagsMask);
+      return (flags & ~NSEventModifierFlagDeviceIndependentFlagsMask);
     }
 
     NSUInteger GetDeviceIndependentFlags() const {
-      return (flags & NSDeviceIndependentModifierFlagsMask);
+      return (flags & NSEventModifierFlagDeviceIndependentFlagsMask);
     }
   };
   typedef nsTArray<ModifierKey> ModifierKeyArray;

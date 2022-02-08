@@ -14,6 +14,7 @@
 
 #include "ipc/IPCMessageUtils.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/SeekableStreamWrapper.h"
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "nsCOMPtr.h"
 #include "nsComponentManagerUtils.h"
@@ -41,7 +42,7 @@ class nsMIMEInputStream : public nsIMIMEInputStream,
   virtual ~nsMIMEInputStream() = default;
 
  public:
-  nsMIMEInputStream();
+  nsMIMEInputStream() = default;
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIINPUTSTREAM
@@ -67,8 +68,8 @@ class nsMIMEInputStream : public nsIMIMEInputStream,
 
   struct MOZ_STACK_CLASS ReadSegmentsState {
     nsCOMPtr<nsIInputStream> mThisStream;
-    nsWriteSegmentFun mWriter;
-    void* mClosure;
+    nsWriteSegmentFun mWriter{nullptr};
+    void* mClosure{nullptr};
   };
   static nsresult ReadSegCb(nsIInputStream* aIn, void* aClosure,
                             const char* aFromRawSegment, uint32_t aToOffset,
@@ -83,9 +84,9 @@ class nsMIMEInputStream : public nsIMIMEInputStream,
   nsTArray<HeaderEntry> mHeaders;
 
   nsCOMPtr<nsIInputStream> mStream;
-  bool mStartedReading;
+  bool mStartedReading{false};
 
-  mozilla::Mutex mMutex;
+  mozilla::Mutex mMutex{"nsMIMEInputStream::mMutex"};
 
   // This is protected by mutex.
   nsCOMPtr<nsIInputStreamCallback> mAsyncWaitCallback;
@@ -124,9 +125,6 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CI_INTERFACE_GETTER(nsMIMEInputStream, nsIMIMEInputStream,
                             nsIAsyncInputStream, nsIInputStream,
                             nsISeekableStream, nsITellableStream)
-
-nsMIMEInputStream::nsMIMEInputStream()
-    : mStartedReading(false), mMutex("nsMIMEInputStream::mMutex") {}
 
 NS_IMETHODIMP
 nsMIMEInputStream::AddHeader(const char* aName, const char* aValue) {
@@ -168,8 +166,7 @@ nsMIMEInputStream::SetData(nsIInputStream* aStream) {
 NS_IMETHODIMP
 nsMIMEInputStream::GetData(nsIInputStream** aStream) {
   NS_ENSURE_ARG_POINTER(aStream);
-  *aStream = mStream;
-  NS_IF_ADDREF(*aStream);
+  *aStream = do_AddRef(mStream).take();
   return NS_OK;
 }
 
@@ -403,9 +400,6 @@ bool nsMIMEInputStream::Deserialize(
   const MIMEInputStreamParams& params = aParams.get_MIMEInputStreamParams();
   const Maybe<InputStreamParams>& wrappedParams = params.optionalStream();
 
-  mHeaders = params.headers().Clone();
-  mStartedReading = params.startedReading();
-
   if (wrappedParams.isSome()) {
     nsCOMPtr<nsIInputStream> stream;
     stream = InputStreamHelper::DeserializeInputStream(wrappedParams.ref(),
@@ -415,8 +409,22 @@ bool nsMIMEInputStream::Deserialize(
       return false;
     }
 
-    mStream = stream;
+    // nsMIMEInputStream requires that the underlying data stream be seekable,
+    // as is checked in `SetData`. Ensure that the stream we deserialized is
+    // seekable before using it.
+    nsCOMPtr<nsIInputStream> seekable;
+    nsresult rv = mozilla::SeekableStreamWrapper::MaybeWrap(
+        stream.forget(), getter_AddRefs(seekable));
+    if (NS_FAILED(rv)) {
+      NS_WARNING("Failed to ensure wrapped input stream is seekable");
+      return false;
+    }
+
+    MOZ_ALWAYS_SUCCEEDS(SetData(seekable));
   }
+
+  mHeaders = params.headers().Clone();
+  mStartedReading = params.startedReading();
 
   return true;
 }

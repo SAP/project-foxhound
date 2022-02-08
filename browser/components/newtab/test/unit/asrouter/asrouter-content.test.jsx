@@ -1,16 +1,9 @@
-import {
-  ASRouterUISurface,
-  ASRouterUtils,
-} from "content-src/asrouter/asrouter-content";
+import { ASRouterUISurface } from "content-src/asrouter/asrouter-content";
+import { ASRouterUtils } from "content-src/asrouter/asrouter-utils";
 import { GlobalOverrider } from "test/unit/utils";
-import { OUTGOING_MESSAGE_NAME as AS_GENERAL_OUTGOING_MESSAGE_NAME } from "content-src/lib/init-store";
 import { FAKE_LOCAL_MESSAGES } from "./constants";
-import { OnboardingMessageProvider } from "lib/OnboardingMessageProvider.jsm";
 import React from "react";
 import { mount } from "enzyme";
-import { Trailhead } from "../../../content-src/asrouter/templates/Trailhead/Trailhead";
-import { Triplets } from "../../../content-src/asrouter/templates/FirstRun/Triplets";
-import { actionCreators as ac } from "common/Actions.jsm";
 
 let [FAKE_MESSAGE] = FAKE_LOCAL_MESSAGES;
 const FAKE_NEWSLETTER_SNIPPET = FAKE_LOCAL_MESSAGES.find(
@@ -24,39 +17,45 @@ const FAKE_BELOW_SEARCH_SNIPPET = FAKE_LOCAL_MESSAGES.find(
 FAKE_MESSAGE = Object.assign({}, FAKE_MESSAGE, { provider: "fakeprovider" });
 
 describe("ASRouterUtils", () => {
-  let global;
+  let globalOverrider;
   let sandbox;
-  let fakeSendAsyncMessage;
+  let globals;
   beforeEach(() => {
-    global = new GlobalOverrider();
+    globalOverrider = new GlobalOverrider();
     sandbox = sinon.createSandbox();
-    fakeSendAsyncMessage = sandbox.stub();
-    global.set({ RPMSendAsyncMessage: fakeSendAsyncMessage });
+    globals = {
+      ASRouterMessage: sandbox.stub(),
+    };
+    globalOverrider.set(globals);
   });
   afterEach(() => {
     sandbox.restore();
-    global.restore();
+    globalOverrider.restore();
   });
   it("should send a message with the right payload data", () => {
     ASRouterUtils.sendTelemetry({ id: 1, event: "CLICK" });
 
-    assert.calledOnce(fakeSendAsyncMessage);
-    assert.calledWith(fakeSendAsyncMessage, AS_GENERAL_OUTGOING_MESSAGE_NAME);
-    const [, payload] = fakeSendAsyncMessage.firstCall.args;
-    assert.propertyVal(payload.data, "id", 1);
-    assert.propertyVal(payload.data, "event", "CLICK");
+    assert.calledOnce(globals.ASRouterMessage);
+    assert.calledWith(globals.ASRouterMessage, {
+      type: "AS_ROUTER_TELEMETRY_USER_EVENT",
+      meta: { from: "ActivityStream:Content", to: "ActivityStream:Main" },
+      data: {
+        id: 1,
+        event: "CLICK",
+      },
+    });
   });
 });
 
 describe("ASRouterUISurface", () => {
   let wrapper;
-  let globalO;
+  let globalOverrider;
   let sandbox;
   let headerPortal;
   let footerPortal;
   let root;
   let fakeDocument;
-  let fetchStub;
+  let globals;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -64,11 +63,6 @@ describe("ASRouterUISurface", () => {
     footerPortal = document.createElement("div");
     root = document.createElement("div");
     sandbox.stub(footerPortal, "querySelector").returns(footerPortal);
-    fetchStub = sandbox.stub(global, "fetch").resolves({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({}),
-    });
     fakeDocument = {
       location: { href: "" },
       _listeners: new Set(),
@@ -111,13 +105,18 @@ describe("ASRouterUISurface", () => {
         return document.createElement(tag);
       },
     };
-    globalO = new GlobalOverrider();
-    globalO.set({
-      RPMAddMessageListener: sandbox.stub(),
-      RPMRemoveMessageListener: sandbox.stub(),
-      RPMSendAsyncMessage: sandbox.stub(),
-    });
-
+    globals = {
+      ASRouterMessage: sandbox.stub().resolves(),
+      ASRouterAddParentListener: sandbox.stub(),
+      ASRouterRemoveParentListener: sandbox.stub(),
+      fetch: sandbox.stub().resolves({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({}),
+      }),
+    };
+    globalOverrider = new GlobalOverrider();
+    globalOverrider.set(globals);
     sandbox.stub(ASRouterUtils, "sendTelemetry");
 
     wrapper = mount(<ASRouterUISurface document={fakeDocument} />);
@@ -125,7 +124,7 @@ describe("ASRouterUISurface", () => {
 
   afterEach(() => {
     sandbox.restore();
-    globalO.restore();
+    globalOverrider.restore();
   });
 
   it("should render the component if a message id is defined", () => {
@@ -177,18 +176,6 @@ describe("ASRouterUISurface", () => {
     assert.equal(footerPortal.childElementCount, 0);
   });
 
-  it("should render a trailhead message in the header portal", async () => {
-    // wrapper = shallow(<ASRouterUISurface document={fakeDocument} />);
-    const message = (
-      await OnboardingMessageProvider.getUntranslatedMessages()
-    ).find(msg => msg.template === "trailhead");
-
-    wrapper.setState({ message });
-
-    assert.isTrue(headerPortal.childElementCount > 0);
-    assert.equal(footerPortal.childElementCount, 0);
-  });
-
   it("should dispatch an event to select the correct theme", () => {
     const stub = sandbox.stub(window, "dispatchEvent");
     sandbox
@@ -237,77 +224,6 @@ describe("ASRouterUISurface", () => {
     });
   });
 
-  describe("trailhead", () => {
-    it("should render trailhead if a trailhead message is received", async () => {
-      const message = (
-        await OnboardingMessageProvider.getUntranslatedMessages()
-      ).find(msg => msg.template === "trailhead");
-      wrapper.setState({ message });
-      assert.lengthOf(wrapper.find(Trailhead), 1);
-    });
-
-    it("should render Triplets if a trailhead message with bundle is received", async () => {
-      const FAKE_TRIPLETS_BUNDLE = [
-        {
-          id: "test",
-          content: {
-            title: { string_id: "foo" },
-            text: { string_id: "text1" },
-            icon: "icon",
-            primary_button: {
-              label: { string_id: "button1" },
-              action: {
-                type: "OPEN_URL",
-                data: { args: "https://example.com/" },
-              },
-            },
-          },
-        },
-      ];
-      const message = (
-        await OnboardingMessageProvider.getUntranslatedMessages()
-      ).find(msg => msg.template === "trailhead");
-      wrapper.setState({
-        message: { ...message, bundle: FAKE_TRIPLETS_BUNDLE },
-      });
-      assert.lengthOf(wrapper.find(Triplets), 1);
-    });
-
-    it("should send NEW_TAB_MESSAGE_REQUEST if a bundle card id is blocked or cleared", async () => {
-      sandbox.stub(ASRouterUtils, "sendMessage");
-      const FAKE_TRIPLETS_BUNDLE_1 = [
-        {
-          id: "CARD_1",
-          content: {
-            title: { string_id: "onboarding-private-browsing-title" },
-            text: { string_id: "onboarding-private-browsing-text" },
-            icon: "icon",
-            primary_button: {
-              label: { string_id: "onboarding-button-label-get-started" },
-              action: {
-                type: "OPEN_URL",
-                data: { args: "https://example.com/" },
-              },
-            },
-          },
-        },
-      ];
-      const message = (
-        await OnboardingMessageProvider.getUntranslatedMessages()
-      ).find(msg => msg.id === "TRAILHEAD_1");
-      wrapper.setState({
-        message: { ...message, bundle: FAKE_TRIPLETS_BUNDLE_1 },
-      });
-
-      wrapper.instance().clearMessage("CARD_1");
-      assert.calledOnce(ASRouterUtils.sendMessage);
-      assert.calledWithExactly(ASRouterUtils.sendMessage, {
-        type: "NEWTAB_MESSAGE_REQUEST",
-        data: { endpoint: undefined },
-      });
-    });
-  });
-
   describe("impressions", () => {
     function simulateVisibilityChange(value) {
       fakeDocument.visibilityState = value;
@@ -315,11 +231,11 @@ describe("ASRouterUISurface", () => {
 
     it("should call blockById after CTA link is clicked", () => {
       wrapper.setState({ message: FAKE_MESSAGE });
-      sandbox.stub(ASRouterUtils, "blockById");
+      sandbox.stub(ASRouterUtils, "blockById").resolves();
       wrapper.instance().sendClick({ target: { dataset: { metric: "" } } });
 
       assert.calledOnce(ASRouterUtils.blockById);
-      assert.calledWithExactly(ASRouterUtils.blockById, FAKE_MESSAGE.id);
+      assert.calledWith(ASRouterUtils.blockById, FAKE_MESSAGE.id);
     });
 
     it("should executeAction if defined on the anchor", () => {
@@ -497,7 +413,7 @@ describe("ASRouterUISurface", () => {
   describe(".fetchFlowParams", () => {
     let dispatchStub;
     const assertCalledWithURL = url =>
-      assert.calledWith(fetchStub, new URL(url).toString(), {
+      assert.calledWith(globals.fetch, new URL(url).toString(), {
         credentials: "omit",
       });
     beforeEach(() => {
@@ -531,58 +447,22 @@ describe("ASRouterUISurface", () => {
     });
     it("should return flowId, flowBeginTime, deviceId on a 200 response", async () => {
       const flowInfo = { flowId: "foo", flowBeginTime: 123, deviceId: "bar" };
-      fetchStub.withArgs("https://accounts.firefox.com/metrics-flow").resolves({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve(flowInfo),
-      });
+      globals.fetch
+        .withArgs("https://accounts.firefox.com/metrics-flow")
+        .resolves({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(flowInfo),
+        });
 
       const result = await wrapper.instance().fetchFlowParams();
       assert.deepEqual(result, flowInfo);
-    });
-    it("should return {} and dispatch a TELEMETRY_UNDESIRED_EVENT on a non-200 response", async () => {
-      fetchStub.withArgs("https://accounts.firefox.com/metrics-flow").resolves({
-        ok: false,
-        status: 400,
-        statusText: "Client error",
-        url: "https://accounts.firefox.com/metrics-flow",
-      });
-
-      const result = await wrapper.instance().fetchFlowParams();
-      assert.deepEqual(result, {});
-      assert.calledWith(
-        dispatchStub,
-        ac.OnlyToMain({
-          type: "TELEMETRY_UNDESIRED_EVENT",
-          data: {
-            event: "FXA_METRICS_FETCH_ERROR",
-            value: 400,
-          },
-        })
-      );
-    });
-    it("should return {} and dispatch a TELEMETRY_UNDESIRED_EVENT on a parsing erorr", async () => {
-      fetchStub.withArgs("https://accounts.firefox.com/metrics-flow").resolves({
-        ok: false,
-        status: 200,
-        // No json to parse, throws an error
-      });
-
-      const result = await wrapper.instance().fetchFlowParams();
-      assert.deepEqual(result, {});
-      assert.calledWith(
-        dispatchStub,
-        ac.OnlyToMain({
-          type: "TELEMETRY_UNDESIRED_EVENT",
-          data: { event: "FXA_METRICS_ERROR" },
-        })
-      );
     });
 
     describe(".onUserAction", () => {
       it("if the action.type is ENABLE_FIREFOX_MONITOR, it should generate the right monitor URL given some flowParams", async () => {
         const flowInfo = { flowId: "foo", flowBeginTime: 123, deviceId: "bar" };
-        fetchStub
+        globals.fetch
           .withArgs(
             "https://accounts.firefox.com/metrics-flow?utm_term=avocado"
           )

@@ -12,7 +12,7 @@
  * order and not sorted.
  */
 add_task(async function() {
-  const { tab, monitor } = await initNetMonitor(SIMPLE_SJS, {
+  const { monitor } = await initNetMonitor(HTTPS_SIMPLE_SJS, {
     requestCount: 1,
   });
   info("Starting test... ");
@@ -22,7 +22,7 @@ add_task(async function() {
   store.dispatch(Actions.batchEnable(false));
 
   const wait = waitForNetworkEvents(monitor, 1);
-  tab.linkedBrowser.reload();
+  await reloadBrowser();
   await wait;
 
   // Verify request and response headers.
@@ -71,6 +71,9 @@ async function verifyHeaders(monitor) {
     "Cookie",
     "Host",
     "Pragma",
+    "Sec-Fetch-Dest",
+    "Sec-Fetch-Mode",
+    "Sec-Fetch-Site",
     "Upgrade-Insecure-Requests",
     "User-Agent",
   ];
@@ -138,6 +141,9 @@ async function verifyRawHeaders(monitor) {
     "Connection",
     "Cookie",
     "Upgrade-Insecure-Requests",
+    "Sec-Fetch-Dest",
+    "Sec-Fetch-Mode",
+    "Sec-Fetch-Site",
     "Pragma",
     "Cache-Control",
   ];

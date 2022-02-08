@@ -7,18 +7,27 @@
 #define DOM_MEDIA_ENCODER_MUXER_H_
 
 #include "MediaQueue.h"
+#include "mozilla/media/MediaUtils.h"
 
 namespace mozilla {
 
 class ContainerWriter;
+class EncodedFrame;
+class TrackMetadataBase;
 
 // Generic Muxer class that helps pace the output from track encoders to the
 // ContainerWriter, so time never appears to go backwards.
 // Note that the entire class is written for single threaded access.
 class Muxer {
  public:
-  explicit Muxer(UniquePtr<ContainerWriter> aWriter);
+  Muxer(UniquePtr<ContainerWriter> aWriter,
+        MediaQueue<EncodedFrame>& aEncodedAudioQueue,
+        MediaQueue<EncodedFrame>& aEncodedVideoQueue);
   ~Muxer() = default;
+
+  // Disconnects MediaQueues such that they will no longer be consumed.
+  // Idempotent.
+  void Disconnect();
 
   // Returns true when all tracks have ended, and all data has been muxed and
   // fetched.
@@ -30,20 +39,6 @@ class Muxer {
   // Sets metadata for all tracks. This may only be called once.
   nsresult SetMetadata(const nsTArray<RefPtr<TrackMetadataBase>>& aMetadata);
 
-  // Adds an encoded audio frame for muxing
-  void AddEncodedAudioFrame(EncodedFrame* aFrame);
-
-  // Adds an encoded video frame for muxing
-  void AddEncodedVideoFrame(EncodedFrame* aFrame);
-
-  // Marks the audio track as ended. Once all tracks for which we have metadata
-  // have ended, GetData() will drain and the muxer will be marked as finished.
-  void AudioEndOfStream();
-
-  // Marks the video track as ended. Once all tracks for which we have metadata
-  // have ended, GetData() will drain and the muxer will be marked as finished.
-  void VideoEndOfStream();
-
   // Gets the data that has been muxed and written into the container so far.
   nsresult GetData(nsTArray<nsTArray<uint8_t>>* aOutputBuffers);
 
@@ -52,14 +47,16 @@ class Muxer {
   nsresult Mux();
 
   // Audio frames that have been encoded and are pending write to the muxer.
-  MediaQueue<EncodedFrame> mEncodedAudioFrames;
+  MediaQueue<EncodedFrame>& mEncodedAudioQueue;
   // Video frames that have been encoded and are pending write to the muxer.
-  MediaQueue<EncodedFrame> mEncodedVideoFrames;
+  MediaQueue<EncodedFrame>& mEncodedVideoQueue;
+  // Listeners driving the muxing as encoded data gets produced.
+  MediaEventListener mAudioPushListener;
+  MediaEventListener mAudioFinishListener;
+  MediaEventListener mVideoPushListener;
+  MediaEventListener mVideoFinishListener;
   // The writer for the specific container we're recording into.
   UniquePtr<ContainerWriter> mWriter;
-  // How much each audio time stamp should be delayed in microseconds. Used to
-  // adjust for opus codec delay.
-  uint64_t mAudioCodecDelay = 0;
   // True once metadata has been set in the muxer.
   bool mMetadataSet = false;
   // True once metadata has been written to file.

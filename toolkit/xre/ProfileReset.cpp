@@ -19,7 +19,7 @@
 #include "mozilla/Components.h"
 #include "mozilla/XREAppData.h"
 
-#include "mozilla/Services.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/Unused.h"
 #include "prtime.h"
 
@@ -48,7 +48,7 @@ nsresult ProfileResetCleanup(nsToolkitProfileService* aService,
 
   // Get the friendly name for the backup directory.
   nsCOMPtr<nsIStringBundleService> sbs =
-      mozilla::services::GetStringBundleService();
+      mozilla::components::StringBundle::Service();
   if (!sbs) return NS_ERROR_FAILURE;
 
   nsCOMPtr<nsIStringBundle> sb;
@@ -118,15 +118,14 @@ nsresult ProfileResetCleanup(nsToolkitProfileService* aService,
   if (!appStartup) return NS_ERROR_FAILURE;
 
   nsCOMPtr<mozIDOMWindowProxy> progressWindow;
-  rv = windowWatcher->OpenWindow(nullptr, kResetProgressURL, "_blank",
-                                 "centerscreen,chrome,titlebar", nullptr,
-                                 getter_AddRefs(progressWindow));
+  rv = windowWatcher->OpenWindow(nullptr, nsDependentCString(kResetProgressURL),
+                                 "_blank"_ns, "centerscreen,chrome,titlebar"_ns,
+                                 nullptr, getter_AddRefs(progressWindow));
   if (NS_FAILED(rv)) return rv;
 
   // Create a new thread to do the bulk of profile cleanup to stay responsive.
-  nsCOMPtr<nsIThreadManager> tm = do_GetService(NS_THREADMANAGER_CONTRACTID);
   nsCOMPtr<nsIThread> cleanupThread;
-  rv = tm->NewThread(0, 0, getter_AddRefs(cleanupThread));
+  rv = NS_NewNamedThread("ResetCleanup", getter_AddRefs(cleanupThread));
   if (NS_SUCCEEDED(rv)) {
     nsCOMPtr<nsIRunnable> runnable = new ProfileResetCleanupAsyncTask(
         profileDir, profileLocalDir, containerDest, leafName);
@@ -134,7 +133,8 @@ nsresult ProfileResetCleanup(nsToolkitProfileService* aService,
     // The result callback will shut down the worker thread.
 
     // Wait for the cleanup thread to complete.
-    SpinEventLoopUntil([&]() { return gProfileResetCleanupCompleted; });
+    SpinEventLoopUntil("xre:ProfileResetCreateBackup"_ns,
+                       [&]() { return gProfileResetCleanupCompleted; });
   } else {
     gProfileResetCleanupCompleted = true;
     NS_WARNING("Cleanup thread creation failed");

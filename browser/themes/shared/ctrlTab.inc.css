@@ -11,10 +11,10 @@
 %ifdef XP_MACOSX
   -moz-window-shadow: none;
 %endif
-  background: hsla(0,0%,40%,.85);
-  color: white;
-  border-style: none;
-  padding: 20px 10px 10px;
+  --panel-background: hsla(0,0%,40%,.85);
+  --panel-color: white;
+  --panel-border-color: transparent;
+  --panel-padding: 20px 10px 10px;
 %ifndef XP_MACOSX
   font-weight: bold;
 %endif
@@ -23,8 +23,7 @@
 .ctrlTab-preview,
 #ctrlTab-showAll {
   appearance: none;
-  /* !important overrides the :hover color from button.css on Linux */
-  color: inherit !important;
+  color: inherit;
   /* remove the :-moz-focusring outline from button.css on Windows */
   outline: none !important;
   margin: 0;
@@ -91,4 +90,3 @@
 .ctrlTab-label {
   text-align: center;
 }
-

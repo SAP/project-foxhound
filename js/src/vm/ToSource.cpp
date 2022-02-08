@@ -6,20 +6,21 @@
 
 #include "vm/ToSource.h"
 
-#include "mozilla/ArrayUtils.h"     // mozilla::ArrayLength
 #include "mozilla/Assertions.h"     // MOZ_ASSERT
 #include "mozilla/FloatingPoint.h"  // mozilla::IsNegativeZero
 
+#include <iterator>  // std::size
 #include <stdint.h>  // uint32_t
 
-#include "jsfriendapi.h"  // CheckRecursionLimit, GetBuiltinClass
-
-#include "builtin/Array.h"    // ArrayToSource
-#include "builtin/Boolean.h"  // BooleanToString
-#include "builtin/Object.h"   // ObjectToSource
-#include "gc/Allocator.h"     // CanGC
-#include "js/Class.h"         // ESClass
-#include "js/Symbol.h"        // SymbolCode, JS::WellKnownSymbolLimit
+#include "builtin/Array.h"          // ArrayToSource
+#include "builtin/Boolean.h"        // BooleanToString
+#include "builtin/Object.h"         // ObjectToSource
+#include "gc/Allocator.h"           // CanGC
+#include "js/CallAndConstruct.h"    // JS::IsCallable
+#include "js/Class.h"               // ESClass
+#include "js/friend/StackLimits.h"  // js::AutoCheckRecursionLimit
+#include "js/Object.h"              // JS::GetBuiltinClass
+#include "js/Symbol.h"              // SymbolCode, JS::WellKnownSymbolLimit
 #include "js/TypeDecls.h"  // Rooted{Function, Object, String, Value}, HandleValue, Latin1Char
 #include "js/Utility.h"         // UniqueChars
 #include "js/Value.h"           // JS::Value
@@ -32,6 +33,7 @@
 #include "vm/Printer.h"         // QuoteString
 #include "vm/SelfHosting.h"     // CallSelfHostedFunction
 #include "vm/Stack.h"           // FixedInvokeArgs
+#include "vm/StaticStrings.h"   // StaticStrings
 #include "vm/StringType.h"      // NewStringCopy{N,Z}, ToString
 #include "vm/SymbolType.h"      // Symbol
 
@@ -42,6 +44,8 @@
 using namespace js;
 
 using mozilla::IsNegativeZero;
+
+using JS::GetBuiltinClass;
 
 /*
  * Convert a JSString to its source expression; returns null after reporting an
@@ -56,7 +60,9 @@ static JSString* StringToSource(JSContext* cx, JSString* str) {
   return NewStringCopyZ<CanGC>(cx, chars.get());
 }
 
-static JSString* SymbolToSource(JSContext* cx, Symbol* symbol) {
+static JSString* SymbolToSource(JSContext* cx, JS::Symbol* symbol) {
+  using JS::SymbolCode;
+
   RootedString desc(cx, symbol->description());
   SymbolCode code = symbol->code();
   if (symbol->isWellKnownSymbol()) {
@@ -64,29 +70,27 @@ static JSString* SymbolToSource(JSContext* cx, Symbol* symbol) {
     return desc;
   }
 
-  JSStringBuilder buf(cx);
   if (code == SymbolCode::PrivateNameSymbol) {
     MOZ_ASSERT(desc);
-    if (!buf.append('#') || !buf.append(desc)) {
-      return nullptr;
-    }
-  } else {
-    MOZ_ASSERT(code == SymbolCode::InSymbolRegistry ||
-               code == SymbolCode::UniqueSymbol);
+    return desc;
+  }
 
-    if (code == SymbolCode::InSymbolRegistry ? !buf.append("Symbol.for(")
-                                             : !buf.append("Symbol(")) {
+  MOZ_ASSERT(code == SymbolCode::InSymbolRegistry ||
+             code == SymbolCode::UniqueSymbol);
+
+  JSStringBuilder buf(cx);
+  if (code == SymbolCode::InSymbolRegistry ? !buf.append("Symbol.for(")
+                                           : !buf.append("Symbol(")) {
+    return nullptr;
+  }
+  if (desc) {
+    UniqueChars quoted = QuoteString(cx, desc, '"');
+    if (!quoted || !buf.append(quoted.get(), strlen(quoted.get()))) {
       return nullptr;
     }
-    if (desc) {
-      UniqueChars quoted = QuoteString(cx, desc, '"');
-      if (!quoted || !buf.append(quoted.get(), strlen(quoted.get()))) {
-        return nullptr;
-      }
-    }
-    if (!buf.append(')')) {
-      return nullptr;
-    }
+  }
+  if (!buf.append(')')) {
+    return nullptr;
   }
   return buf.finishString();
 }
@@ -114,7 +118,8 @@ static JSString* BoxedToSource(JSContext* cx, HandleObject obj,
 }
 
 JSString* js::ValueToSource(JSContext* cx, HandleValue v) {
-  if (!CheckRecursionLimit(cx)) {
+  AutoCheckRecursionLimit recursion(cx);
+  if (!recursion.check(cx)) {
     return nullptr;
   }
   cx->check(v);
@@ -140,8 +145,7 @@ JSString* js::ValueToSource(JSContext* cx, HandleValue v) {
       if (IsNegativeZero(v.toDouble())) {
         static const Latin1Char negativeZero[] = {'-', '0'};
 
-        return NewStringCopyN<CanGC>(cx, negativeZero,
-                                     mozilla::ArrayLength(negativeZero));
+        return NewStringCopyN<CanGC>(cx, negativeZero, std::size(negativeZero));
       }
       [[fallthrough]];
     case JS::ValueType::Int32:

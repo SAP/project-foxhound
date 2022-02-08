@@ -3,7 +3,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-var EXPORTED_SYMBOLS = ["Finder", "GetClipboardSearchString"];
+var EXPORTED_SYMBOLS = [
+  "Finder",
+  "GetClipboardSearchString",
+  "SetClipboardSearchString",
+];
 
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
@@ -13,21 +17,10 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(
   this,
-  "BrowserUtils",
-  "resource://gre/modules/BrowserUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
   "FinderIterator",
   "resource://gre/modules/FinderIterator.jsm"
 );
 
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "Clipboard",
-  "@mozilla.org/widget/clipboard;1",
-  "nsIClipboard"
-);
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "ClipboardHelper",
@@ -37,6 +30,8 @@ XPCOMUtils.defineLazyServiceGetter(
 
 const kSelectionMaxLen = 150;
 const kMatchesCountLimitPref = "accessibility.typeaheadfind.matchesCountLimit";
+
+const activeFinderRoots = new WeakSet();
 
 function Finder(docShell) {
   this._fastFind = Cc["@mozilla.org/typeaheadfind;1"].createInstance(
@@ -61,6 +56,10 @@ function Finder(docShell) {
   );
 }
 
+Finder.isFindbarVisible = function(docShell) {
+  return activeFinderRoots.has(docShell.browsingContext.top);
+};
+
 Finder.prototype = {
   get iterator() {
     if (!this._iterator) {
@@ -80,6 +79,7 @@ Finder.prototype = {
       // need to clear from the selection.
       this._highlighter.hide(window);
       this._highlighter.clear(window);
+      this.highlighter.removeScrollMarks();
     }
     this.listeners = [];
     this._docShell
@@ -143,14 +143,7 @@ Finder.prototype = {
   },
 
   set clipboardSearchString(aSearchString) {
-    if (!aSearchString || !Clipboard.supportsFindClipboard()) {
-      return;
-    }
-
-    ClipboardHelper.copyStringToClipboard(
-      aSearchString,
-      Ci.nsIClipboard.kFindClipboard
-    );
+    SetClipboardSearchString(aSearchString);
   },
 
   set caseSensitive(aSensitive) {
@@ -367,6 +360,9 @@ Finder.prototype = {
     );
 
     let results = await Promise.all([highlightPromise, matchCountPromise]);
+
+    this.highlighter.updateScrollMarks();
+
     if (results[1]) {
       return Object.assign(results[1], results[0]);
     } else if (results[0]) {
@@ -377,8 +373,8 @@ Finder.prototype = {
   },
 
   getInitialSelection() {
+    let initialSelection = this.getActiveSelectionText().selectedText;
     this._getWindow().setTimeout(() => {
-      let initialSelection = this.getActiveSelectionText().selectedText;
       for (let l of this._listeners) {
         try {
           l.onCurrentSelection(initialSelection, true);
@@ -454,6 +450,7 @@ Finder.prototype = {
       this.highlighter.clearCurrentOutline(window);
     } else {
       this.highlighter.clear(window);
+      this.highlighter.removeScrollMarks();
     }
   },
 
@@ -494,12 +491,13 @@ Finder.prototype = {
   onFindbarClose() {
     this.enableSelection();
     this.highlighter.highlight(false);
+    this.highlighter.removeScrollMarks();
     this.iterator.reset();
-    BrowserUtils.trackToolbarVisibility(this._docShell, "findbar", false);
+    activeFinderRoots.delete(this._docShell.browsingContext.top);
   },
 
   onFindbarOpen() {
-    BrowserUtils.trackToolbarVisibility(this._docShell, "findbar", true);
+    activeFinderRoots.add(this._docShell.browsingContext.top);
   },
 
   onModalHighlightChange(useModalHighlight) {
@@ -803,7 +801,7 @@ Finder.prototype = {
 
 function GetClipboardSearchString(aLoadContext) {
   let searchString = "";
-  if (!Clipboard.supportsFindClipboard()) {
+  if (!Services.clipboard.supportsFindClipboard()) {
     return searchString;
   }
 
@@ -814,7 +812,7 @@ function GetClipboardSearchString(aLoadContext) {
     trans.init(aLoadContext);
     trans.addDataFlavor("text/unicode");
 
-    Clipboard.getData(trans, Ci.nsIClipboard.kFindClipboard);
+    Services.clipboard.getData(trans, Ci.nsIClipboard.kFindClipboard);
 
     let data = {};
     trans.getTransferData("text/unicode", data);
@@ -825,4 +823,15 @@ function GetClipboardSearchString(aLoadContext) {
   } catch (ex) {}
 
   return searchString;
+}
+
+function SetClipboardSearchString(aSearchString) {
+  if (!aSearchString || !Services.clipboard.supportsFindClipboard()) {
+    return;
+  }
+
+  ClipboardHelper.copyStringToClipboard(
+    aSearchString,
+    Ci.nsIClipboard.kFindClipboard
+  );
 }

@@ -14,12 +14,17 @@
  * limitations under the License.
  */
 
-import { assert } from './assert';
-import { helper, debugError, PuppeteerEventListener } from './helper';
-import Protocol from '../protocol';
-import { CDPSession } from './Connection';
+import { assert } from './assert.js';
+import { helper, debugError, PuppeteerEventListener } from './helper.js';
+import { Protocol } from 'devtools-protocol';
+import { CDPSession } from './Connection.js';
 
-import { EVALUATION_SCRIPT_URL } from './ExecutionContext';
+import { EVALUATION_SCRIPT_URL } from './ExecutionContext.js';
+
+/**
+ * @internal
+ */
+export { PuppeteerEventListener };
 
 /**
  * The CoverageEntry class represents one entry of the coverage report.
@@ -118,8 +123,8 @@ export class Coverage {
   }
 
   /**
-   * @param options - defaults to
-   * `{ resetOnNavigation : true, reportAnonymousScripts : false }`
+   * @param options - Set of configurable options for coverage defaults to `{
+   * resetOnNavigation : true, reportAnonymousScripts : false }`
    * @returns Promise that resolves when coverage is started.
    *
    * @remarks
@@ -145,7 +150,8 @@ export class Coverage {
   }
 
   /**
-   * @param options - defaults to `{ resetOnNavigation : true }`
+   * @param options - Set of configurable options for coverage, defaults to `{
+   * resetOnNavigation : true }`
    * @returns Promise that resolves when coverage is started.
    */
   async startCSSCoverage(options: CSSCoverageOptions = {}): Promise<void> {
@@ -164,7 +170,10 @@ export class Coverage {
   }
 }
 
-class JSCoverage {
+/**
+ * @public
+ */
+export class JSCoverage {
   _client: CDPSession;
   _enabled = false;
   _scriptURLs = new Map<string, string>();
@@ -184,10 +193,8 @@ class JSCoverage {
     } = {}
   ): Promise<void> {
     assert(!this._enabled, 'JSCoverage is already enabled');
-    const {
-      resetOnNavigation = true,
-      reportAnonymousScripts = false,
-    } = options;
+    const { resetOnNavigation = true, reportAnonymousScripts = false } =
+      options;
     this._resetOnNavigation = resetOnNavigation;
     this._reportAnonymousScripts = reportAnonymousScripts;
     this._enabled = true;
@@ -223,7 +230,7 @@ class JSCoverage {
   }
 
   async _onScriptParsed(
-    event: Protocol.Debugger.scriptParsedPayload
+    event: Protocol.Debugger.ScriptParsedEvent
   ): Promise<void> {
     // Ignore puppeteer-injected scripts
     if (event.url === EVALUATION_SCRIPT_URL) return;
@@ -246,10 +253,10 @@ class JSCoverage {
     this._enabled = false;
 
     const result = await Promise.all<
-      Protocol.Profiler.takePreciseCoverageReturnValue,
-      Protocol.Profiler.stopPreciseCoverageReturnValue,
-      Protocol.Profiler.disableReturnValue,
-      Protocol.Debugger.disableReturnValue
+      Protocol.Profiler.TakePreciseCoverageResponse,
+      void,
+      void,
+      void
     >([
       this._client.send('Profiler.takePreciseCoverage'),
       this._client.send('Profiler.stopPreciseCoverage'),
@@ -277,7 +284,10 @@ class JSCoverage {
   }
 }
 
-class CSSCoverage {
+/**
+ * @public
+ */
+export class CSSCoverage {
   _client: CDPSession;
   _enabled = false;
   _stylesheetURLs = new Map<string, string>();
@@ -322,9 +332,7 @@ class CSSCoverage {
     this._stylesheetSources.clear();
   }
 
-  async _onStyleSheet(
-    event: Protocol.CSS.styleSheetAddedPayload
-  ): Promise<void> {
+  async _onStyleSheet(event: Protocol.CSS.StyleSheetAddedEvent): Promise<void> {
     const header = event.header;
     // Ignore anonymous scripts
     if (!header.sourceURL) return;

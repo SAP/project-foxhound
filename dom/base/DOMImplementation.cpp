@@ -10,11 +10,11 @@
 #include "mozilla/dom/DOMImplementationBinding.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsContentUtils.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentType.h"
 #include "nsTextNode.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // QueryInterface implementation for DOMImplementation
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMImplementation)
@@ -26,6 +26,18 @@ NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(DOMImplementation, mOwner)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(DOMImplementation)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(DOMImplementation)
+
+DOMImplementation::DOMImplementation(Document* aOwner,
+                                     nsIGlobalObject* aScriptObject,
+                                     nsIURI* aDocumentURI, nsIURI* aBaseURI)
+    : mOwner(aOwner),
+      mScriptObject(do_GetWeakReference(aScriptObject)),
+      mDocumentURI(aDocumentURI),
+      mBaseURI(aBaseURI) {
+  MOZ_ASSERT(aOwner);
+}
+
+DOMImplementation::~DOMImplementation() = default;
 
 JSObject* DOMImplementation::WrapObject(JSContext* aCx,
                                         JS::Handle<JSObject*> aGivenProto) {
@@ -96,11 +108,11 @@ nsresult DOMImplementation::CreateDocument(const nsAString& aNamespaceURI,
   // document to the new instance.
 
   if (aNamespaceURI.EqualsLiteral("http://www.w3.org/1999/xhtml")) {
-    doc->SetContentType(u"application/xhtml+xml"_ns);
+    doc->SetContentType("application/xhtml+xml"_ns);
   } else if (aNamespaceURI.EqualsLiteral("http://www.w3.org/2000/svg")) {
-    doc->SetContentType(u"image/svg+xml"_ns);
+    doc->SetContentType("image/svg+xml"_ns);
   } else {
-    doc->SetContentType(u"application/xml"_ns);
+    doc->SetContentType("application/xml"_ns);
   }
 
   doc->SetReadyStateInternal(Document::READYSTATE_COMPLETE);
@@ -128,8 +140,8 @@ nsresult DOMImplementation::CreateHTMLDocument(const nsAString& aTitle,
   RefPtr<DocumentType> doctype =
       NS_NewDOMDocumentType(mOwner->NodeInfoManager(),
                             nsGkAtoms::html,  // aName
-                            EmptyString(),    // aPublicId
-                            EmptyString(),    // aSystemId
+                            u""_ns,           // aPublicId
+                            u""_ns,           // aSystemId
                             VoidString());    // aInternalSubset
 
   nsCOMPtr<nsIGlobalObject> scriptHandlingObject =
@@ -138,40 +150,51 @@ nsresult DOMImplementation::CreateHTMLDocument(const nsAString& aTitle,
   NS_ENSURE_STATE(!mScriptObject || scriptHandlingObject);
 
   nsCOMPtr<Document> doc;
-  nsresult rv = NS_NewDOMDocument(
-      getter_AddRefs(doc), EmptyString(), EmptyString(), doctype, mDocumentURI,
-      mBaseURI, mOwner->NodePrincipal(), true, scriptHandlingObject,
-      DocumentFlavorLegacyGuess);
+  nsresult rv =
+      NS_NewDOMDocument(getter_AddRefs(doc), u""_ns, u""_ns, doctype,
+                        mDocumentURI, mBaseURI, mOwner->NodePrincipal(), true,
+                        scriptHandlingObject, DocumentFlavorLegacyGuess);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  ErrorResult error;
   nsCOMPtr<Element> root =
       doc->CreateElem(u"html"_ns, nullptr, kNameSpaceID_XHTML);
-  rv = doc->AppendChildTo(root, false);
-  NS_ENSURE_SUCCESS(rv, rv);
+  doc->AppendChildTo(root, false, error);
+  if (error.Failed()) {
+    return error.StealNSResult();
+  }
 
   nsCOMPtr<Element> head =
       doc->CreateElem(u"head"_ns, nullptr, kNameSpaceID_XHTML);
-  rv = root->AppendChildTo(head, false);
-  NS_ENSURE_SUCCESS(rv, rv);
+  root->AppendChildTo(head, false, error);
+  if (error.Failed()) {
+    return error.StealNSResult();
+  }
 
   if (!DOMStringIsNull(aTitle)) {
     nsCOMPtr<Element> title =
         doc->CreateElem(u"title"_ns, nullptr, kNameSpaceID_XHTML);
-    rv = head->AppendChildTo(title, false);
-    NS_ENSURE_SUCCESS(rv, rv);
+    head->AppendChildTo(title, false, error);
+    if (error.Failed()) {
+      return error.StealNSResult();
+    }
 
     RefPtr<nsTextNode> titleText =
         new (doc->NodeInfoManager()) nsTextNode(doc->NodeInfoManager());
     rv = titleText->SetText(aTitle, false);
     NS_ENSURE_SUCCESS(rv, rv);
-    rv = title->AppendChildTo(titleText, false);
-    NS_ENSURE_SUCCESS(rv, rv);
+    title->AppendChildTo(titleText, false, error);
+    if (error.Failed()) {
+      return error.StealNSResult();
+    }
   }
 
   nsCOMPtr<Element> body =
       doc->CreateElem(u"body"_ns, nullptr, kNameSpaceID_XHTML);
-  rv = root->AppendChildTo(body, false);
-  NS_ENSURE_SUCCESS(rv, rv);
+  root->AppendChildTo(body, false, error);
+  if (error.Failed()) {
+    return error.StealNSResult();
+  }
 
   doc->SetReadyStateInternal(Document::READYSTATE_COMPLETE);
 
@@ -187,5 +210,4 @@ already_AddRefed<Document> DOMImplementation::CreateHTMLDocument(
   return document.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

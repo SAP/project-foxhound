@@ -44,6 +44,8 @@ class OriginAttributes;
 
 interface nsIURI;
 
+webidl WebExtensionPolicy;
+
 [ptr] native JSContext(JSContext);
 [ptr] native JSPrincipals(JSPrincipals);
 [ref] native PrincipalArray(const nsTArray<nsCOMPtr<nsIPrincipal>>);
@@ -51,7 +53,7 @@ interface nsIURI;
 native ReferrerPolicy(mozilla::dom::ReferrerPolicy);
 
 [scriptable, builtinclass, uuid(f75f502d-79fd-48be-a079-e5a7b8f80c8b)]
-interface nsIPrincipal : nsISerializable
+interface nsIPrincipal : nsISupports
 {
     /**
      * Returns whether the other principal is equivalent to this principal.
@@ -258,16 +260,16 @@ interface nsIPrincipal : nsISerializable
     readonly attribute ACString host;
 
     /**
-     * Returns the prepath of the principals uri
+     * Returns the prePath of the principals uri
      * follows the format scheme:
      * "scheme://username:password@hostname:portnumber/"
      */
-    [noscript] readonly attribute ACString prepath;
+    readonly attribute ACString prePath;
 
     /**
      * Returns the filePath of the principals uri. See nsIURI.
      */
-    [noscript] readonly attribute ACString filePath;
+    readonly attribute ACString filePath;
 
     /**
       * Returns the ASCII Spec from the Principals URI.
@@ -278,6 +280,15 @@ interface nsIPrincipal : nsISerializable
       * just for logging purposes!
      */
     readonly attribute ACString asciiSpec;
+
+    /**
+      * Returns the Spec from the Principals URI.
+      * Might return the empty string, e.g. for the case of
+      * a SystemPrincipal or an EpxandedPrincipal.
+      *
+      * WARNING: Do not land new Code using, as this will be removed soon
+     */
+    readonly attribute ACString spec;
 
     /* Returns the Pre Path of the Principals URI with
     * user:pass stripped for privacy and spoof prevention
@@ -299,22 +310,22 @@ interface nsIPrincipal : nsISerializable
     *
     * @param scheme    The scheme to be checked
     */
+    [infallible]
     boolean schemeIs(in string scheme);
 
-    // Nicer, C++ Callable Version of SchemeIs
-    %{C++
-      inline bool SchemeIs(const char* aScheme) {
-        bool ret;
-        SchemeIs(aScheme, &ret);
-        return ret;
-      }
-    %}
-
     /*
-    * Checks if the Principal's URI is contained in the given Pref
-    * @param pref    The pref to be checked
-    */
-    bool isURIInPrefList(in string pref);
+     * Checks if the Principal's URI is contained in the given Pref
+     * @param pref    The pref to be checked
+     */
+    [infallible]
+    boolean isURIInPrefList(in string pref);
+
+    /**
+     * Check if the Principal's URI is contained in the given list
+     * @param list The list to be checked
+     */
+    [infallible]
+    boolean isURIInList(in ACString list);
 
     /*
     * Uses NS_Security Compare to determine if the
@@ -332,7 +343,9 @@ interface nsIPrincipal : nsISerializable
     /*
     *  Generates a Cache-Key for the Cors-Preflight Cache
     */
-    ACString getPrefLightCacheKey(in nsIURI aURI ,in bool aWithCredentials);
+    [noscript]
+    ACString getPrefLightCacheKey(in nsIURI aURI ,in bool aWithCredentials,
+                                  in const_OriginAttributes aOriginAttributes);
 
 
     /*
@@ -388,7 +401,7 @@ interface nsIPrincipal : nsISerializable
     readonly attribute ACString originNoSuffix;
 
     /**
-     * A string of the form !key1=value1&key2=value2, where each pair represents
+     * A string of the form ^key1=value1&key2=value2, where each pair represents
      * an attribute with a non-default value. If all attributes have default
      * values, this is the empty string.
      *
@@ -407,10 +420,14 @@ interface nsIPrincipal : nsISerializable
      * For most principals, |siteOrigin| matches |origin| precisely. Only
      * principals which allow mutating |domain|, such as ContentPrincipal,
      * override the default implementation in BasePrincipal.
-     *
-     * TODO(nika): Use this in DocGroup.
      */
     readonly attribute ACString siteOrigin;
+
+    /**
+     * The base part of |siteOrigin| without the concatenation with
+     * |originSuffix|.
+     */
+    readonly attribute ACString siteOriginNoSuffix;
 
     /**
      * The base domain of the principal URI to which this principal pertains
@@ -424,7 +441,7 @@ interface nsIPrincipal : nsISerializable
      */
     readonly attribute AString addonId;
 
-    readonly attribute nsISupports addonPolicy;
+    readonly attribute WebExtensionPolicy addonPolicy;
 
     /**
      * Gets the id of the user context this principal is inside.  If this
@@ -524,6 +541,26 @@ interface nsIPrincipal : nsISerializable
      * Returns if the principal is for an IP address.
      */
     [infallible] readonly attribute boolean isIpAddress;
+
+    /**
+     * Returns if the principal is for a local IP address.
+     */
+    [infallible] readonly attribute boolean isLocalIpAddress;
+
+    /**
+     * If this principal is a null principal, reconstruct the precursor
+     * principal which this null principal was derived from. This may be null,
+     * in which case this is not a null principal, there is no known precursor
+     * to this null principal, it was created by a privileged context, or there
+     * was a bugged origin in the precursor string.
+     *
+     * WARNING: Be careful when using this principal, as it is not part of the
+     * security properties of the null principal, and should NOT be used to
+     * grant a resource with a null principal access to resources from its
+     * precursor origin. This is only to be used for places where tracking how
+     * null principals were created is necessary.
+     */
+    [infallible] readonly attribute nsIPrincipal precursorPrincipal;
 };
 
 /**

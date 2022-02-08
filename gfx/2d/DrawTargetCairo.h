@@ -48,7 +48,6 @@ class GradientStopsCairo : public GradientStops {
 class DrawTargetCairo final : public DrawTarget {
  public:
   MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(DrawTargetCairo, override)
-  friend class BorrowedCairoContext;
   friend class BorrowedXlibDrawable;
 
   DrawTargetCairo();
@@ -59,6 +58,11 @@ class DrawTargetCairo final : public DrawTarget {
   virtual BackendType GetBackendType() const override {
     return BackendType::CAIRO;
   }
+
+  virtual void Link(const char* aDestination, const Rect& aRect) override;
+  virtual void Destination(const char* aDestination,
+                           const Point& aPoint) override;
+
   virtual already_AddRefed<SourceSurface> Snapshot() override;
   virtual IntSize GetSize() const override;
 
@@ -128,6 +132,11 @@ class DrawTargetCairo final : public DrawTarget {
                          const Matrix& aMaskTransform,
                          const IntRect& aBounds = IntRect(),
                          bool aCopyBackground = false) override;
+  virtual void PushLayerWithBlend(
+      bool aOpaque, Float aOpacity, SourceSurface* aMask,
+      const Matrix& aMaskTransform, const IntRect& aBounds = IntRect(),
+      bool aCopyBackground = false,
+      CompositionOp = CompositionOp::OP_OVER) override;
   virtual void PopLayer() override;
 
   virtual already_AddRefed<PathBuilder> CreatePathBuilder(
@@ -217,11 +226,14 @@ class DrawTargetCairo final : public DrawTarget {
   cairo_font_options_t* mFontOptions;
 
   struct PushedLayer {
-    PushedLayer(Float aOpacity, bool aWasPermittingSubpixelAA)
+    PushedLayer(Float aOpacity, CompositionOp aCompositionOp,
+                bool aWasPermittingSubpixelAA)
         : mOpacity(aOpacity),
+          mCompositionOp(aCompositionOp),
           mMaskPattern(nullptr),
           mWasPermittingSubpixelAA(aWasPermittingSubpixelAA) {}
     Float mOpacity;
+    CompositionOp mCompositionOp;
     cairo_pattern_t* mMaskPattern;
     bool mWasPermittingSubpixelAA;
   };

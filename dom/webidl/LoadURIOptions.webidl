@@ -68,9 +68,25 @@ dictionary LoadURIOptions {
    */
   boolean hasValidUserGestureActivation = false;
 
+
+  /**
+  * The SandboxFlags of the entity thats
+  * responsible for causing the load.
+  */
+  unsigned long triggeringSandboxFlags = 0;
   /**
    * If non-0, a value to pass to nsIDocShell::setCancelContentJSEpoch
    * when initiating the load.
    */
   long cancelContentJSEpoch = 0;
+
+  /**
+   * If this is passed, it will control which remote type is used to finish this
+   * load. Ignored for non-`about:` loads.
+   *
+   * NOTE: This is _NOT_ defaulted to `null`, as `null` is the value for
+   * `NOT_REMOTE_TYPE`, and we need to determine the difference between no
+   * `remoteTypeOverride` and a `remoteTypeOverride` of `NOT_REMOTE_TYPE`.
+   */
+  UTF8String? remoteTypeOverride;
 };

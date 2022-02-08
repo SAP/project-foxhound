@@ -2,9 +2,13 @@
    waitForTime, waitUntil */
 "use strict";
 
-const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
+const { require } = ChromeUtils.import(
+  "resource://devtools/shared/loader/Loader.jsm"
+);
 const Services = require("Services");
-const { TargetFactory } = require("devtools/client/framework/target");
+const {
+  CommandsFactory,
+} = require("devtools/shared/commands/commands-factory");
 
 // Always log packets when running tests.
 Services.prefs.setBoolPref("devtools.debugger.log", true);
@@ -22,8 +26,24 @@ SimpleTest.registerCleanupFunction(function() {
 
 async function getTargetForSelectedTab() {
   const browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
-  const target = await TargetFactory.forTab(browserWindow.gBrowser.selectedTab);
-  return target;
+  const commands = await CommandsFactory.forTab(
+    browserWindow.gBrowser.selectedTab
+  );
+  await commands.targetCommand.startListening();
+  const isEveryFrameTargetEnabled = Services.prefs.getBoolPref(
+    "devtools.every-frame-target.enabled",
+    false
+  );
+  if (!isEveryFrameTargetEnabled) {
+    return commands.targetCommand.targetFront;
+  }
+
+  // If EFT is enabled, we need to retrieve the target of the test document
+  const targets = await commands.targetCommand.getAllTargets([
+    commands.targetCommand.TYPES.FRAME,
+  ]);
+
+  return targets.find(t => t.url !== "chrome://mochikit/content/harness.xhtml");
 }
 
 async function startServerAndGetSelectedTabMemory() {

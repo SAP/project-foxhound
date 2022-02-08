@@ -8,8 +8,8 @@
 
 #include "mozilla/dom/SVGSVGElement.h"
 #include "mozilla/dom/SVGViewElement.h"
+#include "mozilla/SVGOuterSVGFrame.h"
 #include "nsCharSeparatedTokenizer.h"
-#include "nsContentUtils.h"  // for nsCharSeparatedTokenizerTemplate
 #include "SVGAnimatedTransformList.h"
 
 namespace mozilla {
@@ -24,8 +24,6 @@ static bool IsMatchingParameter(const nsAString& aString,
          aString.CharAt(aParameterName.Length()) == '(';
 }
 
-inline bool IgnoreWhitespace(char16_t aChar) { return false; }
-
 static SVGViewElement* GetViewElement(Document* aDocument,
                                       const nsAString& aId) {
   Element* element = aDocument->GetElementById(aId);
@@ -37,10 +35,8 @@ static SVGViewElement* GetViewElement(Document* aDocument,
 // Handles setting/clearing the root's mSVGView pointer.
 class MOZ_RAII AutoSVGViewHandler {
  public:
-  explicit AutoSVGViewHandler(
-      SVGSVGElement* aRoot MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+  explicit AutoSVGViewHandler(SVGSVGElement* aRoot)
       : mRoot(aRoot), mValid(false) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
     mWasOverridden = mRoot->UseCurrentView();
     mRoot->mSVGView = nullptr;
     mRoot->mCurrentViewID = nullptr;
@@ -56,6 +52,11 @@ class MOZ_RAII AutoSVGViewHandler {
       mRoot->mSVGView = std::move(mSVGView);
     }
     mRoot->InvalidateTransformNotifyFrame();
+    if (nsIFrame* f = mRoot->GetPrimaryFrame()) {
+      if (SVGOuterSVGFrame* osf = do_QueryFrame(f)) {
+        osf->MaybeSendIntrinsicSizeAndRatioToEmbedder();
+      }
+    }
   }
 
   void CreateSVGView() {
@@ -113,7 +114,6 @@ class MOZ_RAII AutoSVGViewHandler {
   UniquePtr<SVGView> mSVGView;
   bool mValid;
   bool mWasOverridden;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 bool SVGFragmentIdentifier::ProcessSVGViewSpec(const nsAString& aViewSpec,
@@ -127,7 +127,7 @@ bool SVGFragmentIdentifier::ProcessSVGViewSpec(const nsAString& aViewSpec,
   // Each token is a SVGViewAttribute
   int32_t bracketPos = aViewSpec.FindChar('(');
   uint32_t lengthOfViewSpec = aViewSpec.Length() - bracketPos - 2;
-  nsCharSeparatedTokenizerTemplate<IgnoreWhitespace> tokenizer(
+  nsCharSeparatedTokenizerTemplate<NS_TokenizerIgnoreNothing> tokenizer(
       Substring(aViewSpec, bracketPos + 1, lengthOfViewSpec), ';');
 
   if (!tokenizer.hasMoreTokens()) {
@@ -174,6 +174,11 @@ bool SVGFragmentIdentifier::ProcessFragmentIdentifier(
     *rootElement->mCurrentViewID = aAnchorName;
     rootElement->mSVGView = nullptr;
     rootElement->InvalidateTransformNotifyFrame();
+    if (nsIFrame* f = rootElement->GetPrimaryFrame()) {
+      if (SVGOuterSVGFrame* osf = do_QueryFrame(f)) {
+        osf->MaybeSendIntrinsicSizeAndRatioToEmbedder();
+      }
+    }
     // not an svgView()-style fragment identifier, return false so the caller
     // continues processing to match any :target pseudo elements
     return false;

@@ -6,11 +6,11 @@
 #include "MediaPlaybackDelayPolicy.h"
 
 #include "nsPIDOMWindow.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/StaticPrefs_media.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using AudibleState = AudioChannelService::AudibleState;
 
@@ -152,10 +152,7 @@ bool MediaPlaybackDelayPolicy::ShouldDelayPlayback(
   const Document* doc = aElement->OwnerDoc();
   nsPIDOMWindowInner* inner = nsPIDOMWindowInner::From(doc->GetInnerWindow());
   nsPIDOMWindowOuter* outer = nsPIDOMWindowOuter::GetFromCurrentInner(inner);
-  if (!outer) {
-    return false;
-  }
-  return outer->GetMediaSuspend() == nsISuspendedTypes::SUSPENDED_BLOCK;
+  return outer && outer->ShouldDelayMediaFromStart();
 }
 
 RefPtr<ResumeDelayedPlaybackAgent>
@@ -166,5 +163,4 @@ MediaPlaybackDelayPolicy::CreateResumeDelayedPlaybackAgent(
   return agent->InitDelegate(aElement, aIsAudible) ? agent : nullptr;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -54,10 +54,7 @@ add_task(async function() {
     async function(browser) {
       let menu_cut_disabled, menu_copy_disabled;
 
-      await BrowserTestUtils.loadURI(
-        browser,
-        "data:text/html,<div>hello!</div>"
-      );
+      BrowserTestUtils.loadURI(browser, "data:text/html,<div>hello!</div>");
       await BrowserTestUtils.browserLoaded(browser);
       browser.focus();
       await new Promise(resolve => waitForFocus(resolve, window));
@@ -74,7 +71,9 @@ add_task(async function() {
       is(menu_copy_disabled, false, "menu_copy should be enabled");
       await new Promise(closeMenu);
 
-      await BrowserTestUtils.loadURI(
+      // When there is no text selected in the contentEditable, we expect the Cut
+      // and Copy commands to be disabled.
+      BrowserTestUtils.loadURI(
         browser,
         "data:text/html,<div contentEditable='true'>hello!</div>"
       );
@@ -87,6 +86,28 @@ add_task(async function() {
       await new Promise(openMenu);
       menu_cut_disabled =
         menuPopup.querySelector("#menu_cut").getAttribute("disabled") == "true";
+      is(menu_cut_disabled, true, "menu_cut should be disabled");
+      menu_copy_disabled =
+        menuPopup.querySelector("#menu_copy").getAttribute("disabled") ==
+        "true";
+      is(menu_copy_disabled, true, "menu_copy should be disabled");
+      await new Promise(closeMenu);
+
+      // When the text of the contentEditable is selected, the Cut and Copy commands
+      // should be enabled.
+      BrowserTestUtils.loadURI(
+        browser,
+        "data:text/html,<div contentEditable='true'>hello!</div><script>r=new Range;r.selectNodeContents(document.body.firstChild);document.getSelection().addRange(r);</script>"
+      );
+      await BrowserTestUtils.browserLoaded(browser);
+      browser.focus();
+      await new Promise(resolve => waitForFocus(resolve, window));
+      await new Promise(resolve =>
+        window.requestAnimationFrame(() => executeSoon(resolve))
+      );
+      await new Promise(openMenu);
+      menu_cut_disabled =
+        menuPopup.querySelector("#menu_cut").getAttribute("disabled") == "true";
       is(menu_cut_disabled, false, "menu_cut should be enabled");
       menu_copy_disabled =
         menuPopup.querySelector("#menu_copy").getAttribute("disabled") ==
@@ -94,7 +115,7 @@ add_task(async function() {
       is(menu_copy_disabled, false, "menu_copy should be enabled");
       await new Promise(closeMenu);
 
-      await BrowserTestUtils.loadURI(browser, "about:preferences");
+      BrowserTestUtils.loadURI(browser, "about:preferences");
       await BrowserTestUtils.browserLoaded(browser);
       browser.focus();
       await new Promise(resolve => waitForFocus(resolve, window));

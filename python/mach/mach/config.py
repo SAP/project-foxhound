@@ -17,6 +17,7 @@ settings are available.
 from __future__ import absolute_import, unicode_literals
 
 import collections
+import collections.abc
 import os
 import sys
 import six
@@ -82,7 +83,7 @@ class BooleanType(ConfigType):
 
     @staticmethod
     def to_config(value):
-        return 'true' if value else 'false'
+        return "true" if value else "false"
 
 
 class IntegerType(ConfigType):
@@ -118,11 +119,11 @@ class PathType(StringType):
 
 
 TYPE_CLASSES = {
-    'string': StringType,
-    'boolean': BooleanType,
-    'int': IntegerType,
-    'pos_int': PositiveIntegerType,
-    'path': PathType,
+    "string": StringType,
+    "boolean": BooleanType,
+    "int": IntegerType,
+    "pos_int": PositiveIntegerType,
+    "path": PathType,
 }
 
 
@@ -134,6 +135,7 @@ def reraise_attribute_error(func):
     """Used to make sure __getattr__ wrappers around __getitem__
     raise AttributeError instead of KeyError.
     """
+
     @wraps(func)
     def _(*args, **kwargs):
         try:
@@ -141,10 +143,11 @@ def reraise_attribute_error(func):
         except KeyError:
             exc_class, exc, tb = sys.exc_info()
             six.reraise(AttributeError().__class__, exc, tb)
+
     return _
 
 
-class ConfigSettings(collections.Mapping):
+class ConfigSettings(collections.abc.Mapping):
     """Interface for configuration settings.
 
     This is the main interface to the configuration.
@@ -190,15 +193,16 @@ class ConfigSettings(collections.Mapping):
     will result in exceptions being raised.
     """
 
-    class ConfigSection(collections.MutableMapping, object):
+    class ConfigSection(collections.abc.MutableMapping, object):
         """Represents an individual config section."""
-        def __init__(self, config, name, settings):
-            object.__setattr__(self, '_config', config)
-            object.__setattr__(self, '_name', name)
-            object.__setattr__(self, '_settings', settings)
 
-            wildcard = any(s == '*' for s in self._settings)
-            object.__setattr__(self, '_wildcard', wildcard)
+        def __init__(self, config, name, settings):
+            object.__setattr__(self, "_config", config)
+            object.__setattr__(self, "_name", name)
+            object.__setattr__(self, "_settings", settings)
+
+            wildcard = any(s == "*" for s in self._settings)
+            object.__setattr__(self, "_wildcard", wildcard)
 
         @property
         def options(self):
@@ -211,16 +215,18 @@ class ConfigSettings(collections.Mapping):
             if option in self._settings:
                 return self._settings[option]
             if self._wildcard:
-                return self._settings['*']
-            raise KeyError('Option not registered with provider: %s' % option)
+                return self._settings["*"]
+            raise KeyError("Option not registered with provider: %s" % option)
 
         def _validate(self, option, value):
             meta = self.get_meta(option)
-            meta['type_cls'].validate(value)
+            meta["type_cls"].validate(value)
 
-            if 'choices' in meta and value not in meta['choices']:
-                raise ValueError("Value '%s' must be one of: %s" % (
-                                 value, ', '.join(sorted(meta['choices']))))
+            if "choices" in meta and value not in meta["choices"]:
+                raise ValueError(
+                    "Value '%s' must be one of: %s"
+                    % (value, ", ".join(sorted(meta["choices"])))
+                )
 
         # MutableMapping interface
         def __len__(self):
@@ -236,12 +242,12 @@ class ConfigSettings(collections.Mapping):
             meta = self.get_meta(k)
 
             if self._config.has_option(self._name, k):
-                v = meta['type_cls'].from_config(self._config, self._name, k)
+                v = meta["type_cls"].from_config(self._config, self._name, k)
             else:
-                v = meta.get('default', DefaultValue)
+                v = meta.get("default", DefaultValue)
 
             if v == DefaultValue:
-                raise KeyError('No default value registered: %s' % k)
+                raise KeyError("No default value registered: %s" % k)
 
             self._validate(k, v)
             return v
@@ -253,7 +259,7 @@ class ConfigSettings(collections.Mapping):
             if not self._config.has_section(self._name):
                 self._config.add_section(self._name)
 
-            self._config.set(self._name, k, meta['type_cls'].to_config(v))
+            self._config.set(self._name, k, meta["type_cls"].to_config(v))
 
         def __delitem__(self, k):
             self._config.remove_option(self._name, k)
@@ -295,7 +301,7 @@ class ConfigSettings(collections.Mapping):
         """
         filtered = [f for f in filenames if os.path.exists(f)]
 
-        fps = [open(f, 'rt') for f in filtered]
+        fps = [open(f, "rt") for f in filtered]
         self.load_fps(fps)
         self.loaded_files.update(set(filtered))
         for fp in fps:
@@ -312,19 +318,12 @@ class ConfigSettings(collections.Mapping):
         self._config.write(fh)
 
     @classmethod
-    def _format_metadata(cls, provider, section, option, type_cls, description,
-                         default=DefaultValue, extra=None):
+    def _format_metadata(cls, type_cls, description, default=DefaultValue, extra=None):
         """Formats and returns the metadata for a setting.
 
         Each setting must have:
 
-            section -- str section to which the setting belongs. This is how
-                settings are grouped.
-
-            option -- str id for the setting. This must be unique within the
-                section it appears.
-
-            type -- a ConfigType-derived type defining the type of the setting.
+            type_cls -- a ConfigType-derived type defining the type of the setting.
 
             description -- str describing how to use the setting and where it
                 applies.
@@ -340,13 +339,10 @@ class ConfigSettings(collections.Mapping):
         if isinstance(type_cls, string_types):
             type_cls = TYPE_CLASSES[type_cls]
 
-        meta = {
-            'description': description,
-            'type_cls': type_cls,
-        }
+        meta = {"description": description, "type_cls": type_cls}
 
         if default != DefaultValue:
-            meta['default'] = default
+            meta["default"] = default
 
         if extra:
             meta.update(extra)
@@ -357,7 +353,7 @@ class ConfigSettings(collections.Mapping):
         """Register a SettingsProvider with this settings interface."""
 
         if self._finalized:
-            raise ConfigException('Providers cannot be registered after finalized.')
+            raise ConfigException("Providers cannot be registered after finalized.")
 
         settings = provider.config_settings
         if callable(settings):
@@ -365,13 +361,14 @@ class ConfigSettings(collections.Mapping):
 
         config_settings = collections.defaultdict(dict)
         for setting in settings:
-            section, option = setting[0].split('.')
+            section, option = setting[0].split(".")
 
             if option in config_settings[section]:
-                raise ConfigException('Setting has already been registered: %s.%s' % (
-                                section, option))
+                raise ConfigException(
+                    "Setting has already been registered: %s.%s" % (section, option)
+                )
 
-            meta = self._format_metadata(provider, section, option, *setting[1:])
+            meta = self._format_metadata(*setting[1:])
             config_settings[section][option] = meta
 
         for section_name, settings in config_settings.items():
@@ -379,8 +376,9 @@ class ConfigSettings(collections.Mapping):
 
             for k, v in settings.items():
                 if k in section:
-                    raise ConfigException('Setting already registered: %s.%s' %
-                                          (section_name, k))
+                    raise ConfigException(
+                        "Setting already registered: %s.%s" % (section_name, k)
+                    )
 
                 section[k] = v
 

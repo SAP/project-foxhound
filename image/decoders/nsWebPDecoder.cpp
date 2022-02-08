@@ -5,6 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ImageLogging.h"  // Must appear first
+#include "gfxPlatform.h"
+#include "mozilla/TelemetryHistogramEnums.h"
 #include "nsWebPDecoder.h"
 
 #include "RasterImage.h"
@@ -193,7 +195,7 @@ LexerResult nsWebPDecoder::UpdateBuffer(SourceBufferIterator& aIterator,
   return ReadData();
 }
 
-nsresult nsWebPDecoder::CreateFrame(const nsIntRect& aFrameRect) {
+nsresult nsWebPDecoder::CreateFrame(const OrientedIntRect& aFrameRect) {
   MOZ_ASSERT(HasSize());
   MOZ_ASSERT(!mDecoder);
 
@@ -255,7 +257,8 @@ nsresult nsWebPDecoder::CreateFrame(const nsIntRect& aFrameRect) {
 
   Maybe<AnimationParams> animParams;
   if (!IsFirstFrameDecode()) {
-    animParams.emplace(aFrameRect, mTimeout, mCurrentFrame, mBlend, mDisposal);
+    animParams.emplace(aFrameRect.ToUnknownRect(), mTimeout, mCurrentFrame,
+                       mBlend, mDisposal);
   }
 
   Maybe<SurfacePipe> pipe = SurfacePipeFactory::CreateSurfacePipe(
@@ -297,8 +300,8 @@ void nsWebPDecoder::ApplyColorProfile(const char* aProfile, size_t aLength) {
   MOZ_ASSERT(!mGotColorProfile);
   mGotColorProfile = true;
 
-  if (mCMSMode == eCMSMode_Off || !GetCMSOutputProfile() ||
-      (mCMSMode == eCMSMode_TaggedOnly && !aProfile)) {
+  if (mCMSMode == CMSMode::Off || !GetCMSOutputProfile() ||
+      (mCMSMode == CMSMode::TaggedOnly && !aProfile)) {
     return;
   }
 
@@ -428,7 +431,7 @@ LexerResult nsWebPDecoder::ReadPayload(WebPDemuxer* aDemuxer,
 }
 
 LexerResult nsWebPDecoder::ReadSingle(const uint8_t* aData, size_t aLength,
-                                      const IntRect& aFrameRect) {
+                                      const OrientedIntRect& aFrameRect) {
   MOZ_ASSERT(!IsMetadataDecode());
   MOZ_ASSERT(aData);
   MOZ_ASSERT(aLength > 0);
@@ -558,7 +561,8 @@ LexerResult nsWebPDecoder::ReadMultiple(WebPDemuxer* aDemuxer,
     mFormat = iter.has_alpha || mCurrentFrame > 0 ? SurfaceFormat::OS_RGBA
                                                   : SurfaceFormat::OS_RGBX;
     mTimeout = FrameTimeout::FromRawMilliseconds(iter.duration);
-    nsIntRect frameRect(iter.x_offset, iter.y_offset, iter.width, iter.height);
+    OrientedIntRect frameRect(iter.x_offset, iter.y_offset, iter.width,
+                              iter.height);
 
     rv = ReadSingle(iter.fragment.bytes, iter.fragment.size, frameRect);
     complete = complete && !WebPDemuxNextFrame(&iter);

@@ -10,11 +10,12 @@
 #include "mozilla/dom/PaymentRequestUpdateEvent.h"
 #include "BasicCardPayment.h"
 #include "PaymentAddress.h"
+#include "PaymentRequest.h"
+#include "PaymentRequestManager.h"
 #include "PaymentRequestUtils.h"
 #include "mozilla/EventStateManager.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(PaymentResponse)
 
@@ -279,6 +280,10 @@ void PaymentResponse::RespondRetry(const nsAString& aMethodName,
                                    const nsAString& aPayerName,
                                    const nsAString& aPayerEmail,
                                    const nsAString& aPayerPhone) {
+  // mRetryPromise could be nulled when document activity is changed.
+  if (!mRetryPromise) {
+    return;
+  }
   mMethodName = aMethodName;
   mShippingOption = aShippingOption;
   mShippingAddress = aShippingAddress;
@@ -450,5 +455,4 @@ nsresult PaymentResponse::DispatchUpdateEvent(const nsAString& aType) {
   return rv.StealNSResult();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -11,18 +11,13 @@ const { XPCOMUtils } = ChromeUtils.import(
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 ChromeUtils.defineModuleGetter(
   this,
-  "BrowserUtils",
-  "resource://gre/modules/BrowserUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PageActions",
-  "resource:///modules/PageActions.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
   "Pocket",
   "chrome://pocket/content/Pocket.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "CustomizableUI",
+  "resource:///modules/CustomizableUI.jsm"
 );
 ChromeUtils.defineModuleGetter(
   this,
@@ -43,131 +38,42 @@ XPCOMUtils.defineLazyGetter(this, "gStrings", () => {
   );
 });
 
-var PocketPageAction = {
-  pageAction: null,
-  urlbarNode: null,
-
+var PocketCustomizableWidget = {
   init() {
-    let id = "pocket";
-    this.pageAction = PageActions.actionForID(id);
-    if (!this.pageAction) {
-      this.pageAction = PageActions.addAction(
-        new PageActions.Action({
-          id,
-          title: "pocket-title",
-          pinnedToUrlbar: true,
-          wantsIframe: true,
-          urlbarIDOverride: "pocket-button",
-          anchorIDOverride: "pocket-button",
-          _insertBeforeActionID: PageActions.ACTION_ID_PIN_TAB,
-          _urlbarNodeInMarkup: true,
-          onBeforePlacedInWindow(window) {
-            let action = PageActions.actionForID("pocket");
-            window.BrowserPageActions.takeActionTitleFromPanel(action);
-          },
-          onIframeShowing(iframe, panel) {
-            Pocket.onShownInPhotonPageActionPanel(panel, iframe);
+    CustomizableUI.createWidget({
+      id: "save-to-pocket-button",
+      l10nId: "save-to-pocket-button",
+      type: "view",
+      viewId: "PanelUI-savetopocket",
+      // This closes any open Pocket panels if you change location.
+      locationSpecific: true,
+      onViewShowing(aEvent) {
+        let panelView = aEvent.target;
+        let panelNode = panelView.querySelector(
+          ".PanelUI-savetopocket-container"
+        );
+        let doc = panelNode.ownerDocument;
+        let frame = doc.createXULElement("browser");
 
-            let doc = panel.ownerDocument;
-            let urlbarNode = doc.getElementById("pocket-button");
-            if (!urlbarNode) {
-              return;
-            }
+        frame.setAttribute("type", "content");
+        frame.setAttribute("remote", true);
+        panelNode.appendChild(frame);
 
-            BrowserUtils.setToolbarButtonHeightProperty(urlbarNode);
+        SaveToPocket.onShownInToolbarPanel(panelNode, frame);
+      },
+      onViewHiding(aEvent) {
+        let panelView = aEvent.target;
+        let panelNode = panelView.querySelector(
+          ".PanelUI-savetopocket-container"
+        );
 
-            PocketPageAction.urlbarNode = urlbarNode;
-            PocketPageAction.urlbarNode.setAttribute("open", "true");
-
-            let browser = panel.ownerGlobal.gBrowser.selectedBrowser;
-            PocketPageAction.pocketedBrowser = browser;
-            PocketPageAction.pocketedBrowserInnerWindowID =
-              browser.innerWindowID;
-          },
-          onIframeHidden(iframe, panel) {
-            if (iframe.getAttribute("itemAdded") == "true") {
-              iframe.ownerGlobal.LibraryUI.triggerLibraryAnimation("pocket");
-            }
-
-            if (!PocketPageAction.urlbarNode) {
-              return;
-            }
-            PocketPageAction.urlbarNode.removeAttribute("animate");
-            PocketPageAction.urlbarNode.removeAttribute("open");
-            delete PocketPageAction.urlbarNode;
-
-            if (iframe.getAttribute("itemAdded") == "true") {
-              PocketPageAction.innerWindowIDsByBrowser.set(
-                PocketPageAction.pocketedBrowser,
-                PocketPageAction.pocketedBrowserInnerWindowID
-              );
-            } else {
-              PocketPageAction.innerWindowIDsByBrowser.delete(
-                PocketPageAction.pocketedBrowser
-              );
-            }
-            PocketPageAction.updateUrlbarNodeState(panel.ownerGlobal);
-            delete PocketPageAction.pocketedBrowser;
-            delete PocketPageAction.pocketedBrowserInnerWindowID;
-          },
-          onLocationChange(browserWindow) {
-            PocketPageAction.updateUrlbarNodeState(browserWindow);
-          },
-        })
-      );
-    }
-    Pocket.pageAction = this.pageAction;
+        panelNode.textContent = "";
+        SaveToPocket.updateToolbarNodeState(panelNode.ownerGlobal);
+      },
+    });
   },
-
-  // For pocketed inner windows, this maps their <browser>s to those inner
-  // window IDs.  If a browser's inner window changes, then the mapped ID will
-  // be out of date, meaning that the new inner window has not been pocketed.
-  // If a browser goes away, then it'll be gone from this map too since it's
-  // weak.  To tell whether a window has been pocketed then, look up its browser
-  // in this map and compare the mapped inner window ID to the ID of the current
-  // inner window.
-  get innerWindowIDsByBrowser() {
-    delete this.innerWindowIDsByBrowser;
-    return (this.innerWindowIDsByBrowser = new WeakMap());
-  },
-
-  // Sets or removes the "pocketed" attribute on the Pocket urlbar button as
-  // necessary.
-  updateUrlbarNodeState(browserWindow) {
-    if (!this.pageAction) {
-      return;
-    }
-    let { BrowserPageActions } = browserWindow;
-    let urlbarNode = browserWindow.document.getElementById(
-      BrowserPageActions.urlbarButtonNodeIDForActionID(this.pageAction.id)
-    );
-    if (!urlbarNode || urlbarNode.hidden) {
-      return;
-    }
-    let browser = browserWindow.gBrowser.selectedBrowser;
-    let pocketedInnerWindowID = this.innerWindowIDsByBrowser.get(browser);
-    if (pocketedInnerWindowID == browser.innerWindowID) {
-      // The current window in this browser is pocketed.
-      urlbarNode.setAttribute("pocketed", "true");
-    } else {
-      // The window isn't pocketed.
-      urlbarNode.removeAttribute("pocketed");
-    }
-  },
-
   shutdown() {
-    if (!this.pageAction) {
-      return;
-    }
-
-    for (let win of browserWindows()) {
-      let doc = win.document;
-      let pocketButton = doc.getElementById("pocket-button");
-      pocketButton.setAttribute("hidden", "true");
-    }
-
-    this.pageAction.remove();
-    this.pageAction = null;
+    CustomizableUI.destroyWidget("save-to-pocket-button");
   },
 };
 
@@ -215,11 +121,11 @@ var PocketContextMenu = {
 
 var PocketOverlay = {
   startup() {
-    PocketPageAction.init();
+    PocketCustomizableWidget.init();
     PocketContextMenu.init();
   },
   shutdown() {
-    PocketPageAction.shutdown();
+    PocketCustomizableWidget.shutdown();
     PocketContextMenu.shutdown();
   },
 };
@@ -269,10 +175,11 @@ var SaveToPocket = {
 
   _readerButtonData: {
     id: "pocket-button",
+    telemetryId: "save-to-pocket",
     label: gStrings.formatStringFromName("readerView.savetopocket.label", [
       "Pocket",
     ]),
-    image: "chrome://global/skin/reader/pocket.svg",
+    image: "chrome://global/skin/icons/pocket.svg",
     width: 16,
     height: 16,
   },
@@ -295,6 +202,71 @@ var SaveToPocket = {
     this.updateElements(newValue);
   },
 
+  // Sets or removes the "pocketed" attribute on the Pocket urlbar button as
+  // necessary.
+  updateToolbarNodeState(browserWindow) {
+    const toolbarNode = browserWindow.document.getElementById(
+      "save-to-pocket-button"
+    );
+    if (!toolbarNode || toolbarNode.hidden) {
+      return;
+    }
+
+    let browser = browserWindow.gBrowser.selectedBrowser;
+
+    let pocketedInnerWindowID = this.innerWindowIDsByBrowser.get(browser);
+    if (pocketedInnerWindowID == browser.innerWindowID) {
+      // The current window in this browser is pocketed.
+      toolbarNode.setAttribute("pocketed", "true");
+    } else {
+      // The window isn't pocketed.
+      toolbarNode.removeAttribute("pocketed");
+    }
+  },
+
+  // For pocketed inner windows, this maps their <browser>s to those inner
+  // window IDs.  If a browser's inner window changes, then the mapped ID will
+  // be out of date, meaning that the new inner window has not been pocketed.
+  // If a browser goes away, then it'll be gone from this map too since it's
+  // weak.  To tell whether a window has been pocketed then, look up its browser
+  // in this map and compare the mapped inner window ID to the ID of the current
+  // inner window.
+  get innerWindowIDsByBrowser() {
+    delete this.innerWindowIDsByBrowser;
+    return (this.innerWindowIDsByBrowser = new WeakMap());
+  },
+
+  onLocationChange(browserWindow) {
+    this.updateToolbarNodeState(browserWindow);
+  },
+
+  /**
+   * Functions related to the Pocket panel UI.
+   */
+  onShownInToolbarPanel(panel, frame) {
+    let window = panel.ownerGlobal;
+    window.pktUI.setToolbarPanelFrame(frame);
+    Pocket._initPanelView(window);
+  },
+
+  // If an item is saved to Pocket, we cache the browser's inner window ID,
+  // so if you navigate to that tab again, we can check the ID
+  // and see if we need to update the toolbar icon.
+  itemSaved() {
+    const browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
+    const browser = browserWindow.gBrowser.selectedBrowser;
+    SaveToPocket.innerWindowIDsByBrowser.set(browser, browser.innerWindowID);
+  },
+
+  // If an item is removed from Pocket, we remove that browser's inner window ID,
+  // so if you navigate to that tab again, we can check the ID
+  // and see if we need to update the toolbar icon.
+  itemDeleted() {
+    const browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
+    const browser = browserWindow.gBrowser.selectedBrowser;
+    SaveToPocket.innerWindowIDsByBrowser.delete(browser);
+  },
+
   updateElements(enabled) {
     // loop through windows and show/hide all our elements.
     for (let win of browserWindows()) {
@@ -306,6 +278,12 @@ var SaveToPocket = {
     if (enabled) {
       win.document.documentElement.removeAttribute("pocketdisabled");
     } else {
+      // Hide the context menu items to ensure separator logic works.
+      let savePageMenu = win.document.getElementById("context-pocket");
+      let saveLinkMenu = win.document.getElementById(
+        "context-savelinktopocket"
+      );
+      savePageMenu.hidden = saveLinkMenu.hidden = true;
       win.document.documentElement.setAttribute("pocketdisabled", "true");
     }
   },
@@ -325,7 +303,8 @@ var SaveToPocket = {
         break;
       }
       case "Reader:Clicked-pocket-button": {
-        PocketPageAction.pageAction.doCommand(message.target.ownerGlobal);
+        // Saves the currently viewed page.
+        Pocket.savePage(message.target);
         break;
       }
     }

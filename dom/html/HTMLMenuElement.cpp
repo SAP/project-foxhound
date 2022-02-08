@@ -13,6 +13,7 @@
 #include "mozilla/dom/HTMLMenuItemElement.h"
 #include "nsIMenuBuilder.h"
 #include "nsAttrValueInlines.h"
+#include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsIURI.h"
 
@@ -20,8 +21,7 @@
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Menu)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 enum MenuType : uint8_t { MENU_TYPE_CONTEXT = 1, MENU_TYPE_TOOLBAR };
 
@@ -78,7 +78,7 @@ void HTMLMenuElement::Build(nsIMenuBuilder* aBuilder) {
     return;
   }
 
-  BuildSubmenu(EmptyString(), this, aBuilder);
+  BuildSubmenu(u""_ns, this, aBuilder);
 }
 
 nsresult HTMLMenuElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
@@ -86,7 +86,8 @@ nsresult HTMLMenuElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                        const nsAttrValue* aOldValue,
                                        nsIPrincipal* aSubjectPrincipal,
                                        bool aNotify) {
-  if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::type) {
+  if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::type &&
+      StaticPrefs::dom_menuitem_enabled()) {
     if (aValue) {
       mType = aValue->GetEnumValue();
     } else {
@@ -102,7 +103,8 @@ bool HTMLMenuElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                                      const nsAString& aValue,
                                      nsIPrincipal* aMaybeScriptedPrincipal,
                                      nsAttrValue& aResult) {
-  if (aNamespaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::type) {
+  if (aNamespaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::type &&
+      StaticPrefs::dom_menuitem_enabled()) {
     return aResult.ParseEnumValue(aValue, kMenuTypeTable, false,
                                   kMenuDefaultType);
   }
@@ -213,5 +215,4 @@ JSObject* HTMLMenuElement::WrapNode(JSContext* aCx,
   return HTMLMenuElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

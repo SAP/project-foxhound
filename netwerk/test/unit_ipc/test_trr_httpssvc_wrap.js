@@ -3,6 +3,10 @@
 let h2Port;
 let prefs;
 
+const dns = Cc["@mozilla.org/network/dns-service;1"].getService(
+  Ci.nsIDNSService
+);
+
 function setup() {
   let env = Cc["@mozilla.org/process/environment;1"].getService(
     Ci.nsIEnvironment
@@ -13,19 +17,19 @@ function setup() {
 
   // Set to allow the cert presented by our H2 server
   do_get_profile();
-  prefs = Cc["@mozilla.org/preferences-service;1"].getService(Ci.nsIPrefBranch);
+  prefs = Services.prefs;
 
   prefs.setBoolPref("network.security.esni.enabled", false);
   prefs.setBoolPref("network.http.spdy.enabled", true);
   prefs.setBoolPref("network.http.spdy.enabled.http2", true);
   // the TRR server is on 127.0.0.1
-  prefs.setCharPref("network.trr.bootstrapAddress", "127.0.0.1");
+  prefs.setCharPref("network.trr.bootstrapAddr", "127.0.0.1");
 
   // make all native resolve calls "secretly" resolve localhost instead
   prefs.setBoolPref("network.dns.native-is-localhost", true);
 
   // 0 - off, 1 - race, 2 TRR first, 3 TRR only, 4 shadow
-  prefs.setIntPref("network.trr.mode", 2); // TRR first
+  prefs.setIntPref("network.trr.mode", 3); // TRR first
   prefs.setBoolPref("network.trr.wait-for-portal", false);
   // don't confirm that TRR is working, just go!
   prefs.setCharPref("network.trr.confirmationNS", "skip");
@@ -56,13 +60,14 @@ registerCleanupFunction(() => {
   prefs.clearUserPref("network.trr.allow-rfc1918");
   prefs.clearUserPref("network.trr.useGET");
   prefs.clearUserPref("network.trr.confirmationNS");
-  prefs.clearUserPref("network.trr.bootstrapAddress");
+  prefs.clearUserPref("network.trr.bootstrapAddr");
   prefs.clearUserPref("network.trr.blacklist-duration");
   prefs.clearUserPref("network.trr.request-timeout");
   prefs.clearUserPref("network.trr.clear-cache-on-pref-change");
 });
 
 function run_test() {
+  prefs.setIntPref("network.trr.mode", 3);
   prefs.setCharPref(
     "network.trr.uri",
     "https://foo.example.com:" + h2Port + "/httpssvc"
@@ -75,6 +80,11 @@ function run_test() {
       `https://foo.example.com:${port}/dns-query`
     );
     do_send_remote_message("mode3-port-done");
+  });
+
+  do_await_remote_message("clearCache").then(() => {
+    dns.clearCache(true);
+    do_send_remote_message("clearCache-done");
   });
 
   run_test_in_child("../unit/test_trr_httpssvc.js");

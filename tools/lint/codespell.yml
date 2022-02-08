@@ -30,16 +30,15 @@ codespell:
         - mobile/android/locales/en-US/
         - mobile/locales/en-US/
         - netwerk/locales/en-US/
+        - netwerk/docs/
         - python/docs/
         - python/mach/docs/
         - python/mozlint/
-        - python/safety/
         - remote/doc/
         - security/manager/locales/en-US/
         - services/sync/locales/en-US/
         - taskcluster/docs/
         - testing/geckodriver/doc/
-        - testing/marionette/doc/
         - testing/mozbase/docs/
         - toolkit/components/extensions/docs/
         - toolkit/components/normandy/docs/
@@ -57,7 +56,10 @@ codespell:
         - tools/tryselect/
         - uriloader/docs/
     exclude:
+        - devtools/docs/contributor/tools/storage/
+        - tools/lint/cpp/mingw-headers.txt
         - tools/lint/test/test_codespell.py
+        - "**/package-lock.json"
     # List of extensions coming from:
     # tools/lint/{flake8,eslint}.yml
     # tools/mach_commands.py (clang-format)

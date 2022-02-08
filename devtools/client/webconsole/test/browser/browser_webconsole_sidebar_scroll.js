@@ -5,7 +5,7 @@
 
 "use strict";
 
-const TEST_URI = `data:text/html;charset=utf8,Test sidebar scroll`;
+const TEST_URI = `data:text/html;charset=utf8,<!DOCTYPE html>Test sidebar scroll`;
 
 add_task(async function() {
   // Should be removed when sidebar work is complete
@@ -26,6 +26,13 @@ add_task(async function() {
   const onSidebarShown = waitFor(() =>
     hud.ui.document.querySelector(".sidebar")
   );
+  AccessibilityUtils.setEnv({
+    // Component that renders a node handles keyboard interactions on the
+    // container level.
+    focusableRule: false,
+    interactiveRule: false,
+    labelRule: false,
+  });
   EventUtils.sendMouseEvent(
     {
       type: "click",
@@ -34,6 +41,7 @@ add_task(async function() {
     object,
     hud.ui.window
   );
+  AccessibilityUtils.resetEnv();
   await onSidebarShown;
   const sidebarContents = hud.ui.document.querySelector(".sidebar-contents");
 

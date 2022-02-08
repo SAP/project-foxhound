@@ -25,10 +25,10 @@ const TreeView = createFactory(TreeViewClass);
 const PropertiesViewContextMenu = require("devtools/client/netmonitor/src/widgets/PropertiesViewContextMenu");
 
 loader.lazyGetter(this, "Rep", function() {
-  return require("devtools/client/shared/components/reps/reps").REPS.Rep;
+  return require("devtools/client/shared/components/reps/index").REPS.Rep;
 });
 loader.lazyGetter(this, "MODE", function() {
-  return require("devtools/client/shared/components/reps/reps").MODE;
+  return require("devtools/client/shared/components/reps/index").MODE;
 });
 
 // Constants
@@ -55,6 +55,7 @@ class PropertiesView extends Component {
       enableInput: PropTypes.bool,
       expandableStrings: PropTypes.bool,
       expandedNodes: PropTypes.object,
+      useBaseTreeViewExpand: PropTypes.bool,
       filterText: PropTypes.string,
       cropLimit: PropTypes.number,
       targetSearchResult: PropTypes.object,
@@ -64,6 +65,7 @@ class PropertiesView extends Component {
       defaultSelectFirstNode: PropTypes.bool,
       useQuotes: PropTypes.bool,
       onClickRow: PropTypes.func,
+      contextMenuFormatters: PropTypes.object,
     };
   }
 
@@ -74,6 +76,8 @@ class PropertiesView extends Component {
       expandableStrings: false,
       cropLimit: 1024,
       useQuotes: true,
+      contextMenuFormatters: {},
+      useBaseTreeViewExpand: false,
     };
   }
 
@@ -157,9 +161,14 @@ class PropertiesView extends Component {
     // if data exists and can be copied, then show the contextmenu
     if (typeof object === "object") {
       if (!this.contextMenu) {
-        this.contextMenu = new PropertiesViewContextMenu({});
+        this.contextMenu = new PropertiesViewContextMenu({
+          customFormatters: this.props.contextMenuFormatters,
+        });
       }
-      this.contextMenu.open(evt, { member, object: this.props.object });
+      this.contextMenu.open(evt, window.getSelection(), {
+        member,
+        object: this.props.object,
+      });
     }
   }
 
@@ -187,6 +196,7 @@ class PropertiesView extends Component {
 
   render() {
     const {
+      useBaseTreeViewExpand,
       expandedNodes,
       object,
       renderValue,
@@ -194,6 +204,21 @@ class PropertiesView extends Component {
       selectPath,
     } = this.props;
 
+    let currentExpandedNodes;
+    // In the TreeView, when the component is re-rendered
+    // the state of `expandedNodes` is persisted by default
+    // e.g. when you open a node and filter the properties list,
+    // the node remains open.
+    // We have the prop `useBaseTreeViewExpand` to flag when we want to use
+    // this functionality or not.
+    if (!useBaseTreeViewExpand) {
+      currentExpandedNodes =
+        expandedNodes ||
+        TreeViewClass.getExpandedNodes(object, {
+          maxLevel: AUTO_EXPAND_MAX_LEVEL,
+          maxNodes: AUTO_EXPAND_MAX_NODES,
+        });
+    }
     return div(
       { className: "properties-view" },
       div(
@@ -202,12 +227,9 @@ class PropertiesView extends Component {
           ...this.props,
           ref: () => this.scrollSelectedIntoView(),
           columns: [{ id: "value", width: "100%" }],
-          expandedNodes:
-            expandedNodes ||
-            TreeViewClass.getExpandedNodes(object, {
-              maxLevel: AUTO_EXPAND_MAX_LEVEL,
-              maxNodes: AUTO_EXPAND_MAX_NODES,
-            }),
+
+          expandedNodes: currentExpandedNodes,
+
           onFilter: props => this.onFilter(props),
           renderValue: renderValue || this.renderValueWithRep,
           onContextMenuRow: this.onContextMenuRow,

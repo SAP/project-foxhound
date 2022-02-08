@@ -1,4 +1,4 @@
-// |reftest| skip async -- class-methods-private is not supported
+// |reftest| async
 // This file was procedurally generated from the following sources:
 // - src/dstr-binding/obj-ptrn-rest-skip-non-enumerable.case
 // - src/dstr-binding/default/cls-expr-async-private-gen-meth-dflt.template

@@ -9,7 +9,7 @@
 
 #include "jsapi.h"
 #include "jsfriendapi.h"
-#include "js/PropertySpec.h"
+#include "js/Object.h"  // JS::GetClass, JS::GetReservedSlot
 #include "js/Wrapper.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
@@ -18,10 +18,10 @@
 #include "mozilla/dom/PrototypeList.h"  // auto-generated
 #include "mozilla/dom/WebIDLPrefs.h"    // auto-generated
 
-#include "mozilla/dom/JSSlots.h"
-
 class nsCycleCollectionParticipant;
 class nsWrapperCache;
+struct JSFunctionSpec;
+struct JSPropertySpec;
 struct JSStructuredCloneReader;
 struct JSStructuredCloneWriter;
 class nsIGlobalObject;
@@ -74,7 +74,8 @@ inline bool IsSecureContextOrObjectIsFromSecureContext(JSContext* aCx,
 
 typedef bool (*ResolveOwnProperty)(
     JSContext* cx, JS::Handle<JSObject*> wrapper, JS::Handle<JSObject*> obj,
-    JS::Handle<jsid> id, JS::MutableHandle<JS::PropertyDescriptor> desc);
+    JS::Handle<jsid> id,
+    JS::MutableHandle<mozilla::Maybe<JS::PropertyDescriptor>> desc);
 
 typedef bool (*EnumerateOwnProperties)(JSContext* cx,
                                        JS::Handle<JSObject*> wrapper,
@@ -111,6 +112,7 @@ static const uint32_t ServiceWorkerGlobalScope = 1u << 4;
 static const uint32_t WorkerDebuggerGlobalScope = 1u << 5;
 static const uint32_t WorkletGlobalScope = 1u << 6;
 static const uint32_t AudioWorkletGlobalScope = 1u << 7;
+static const uint32_t PaintWorkletGlobalScope = 1u << 8;
 }  // namespace GlobalNames
 
 struct PrefableDisablers {
@@ -244,6 +246,67 @@ static_assert(
 // aforementioned assertions in the getters. Upcast() is used to convert
 // specific instances to this "base" type.
 //
+// An example
+// ----------
+// NativeProperties points to various things, and it can be hard to keep track.
+// The following example shows the layout.
+//
+// Imagine an example interface, with:
+// - 10 properties
+//   - 6 methods, 3 with no disablers struct, 2 sharing the same disablers
+//     struct, 1 using a different disablers struct
+//   - 4 attributes, all with no disablers
+// - The property order is such that those using the same disablers structs are
+//   together. (This is not guaranteed, but it makes the example simpler.)
+//
+// Each PropertyInfo also contain indices into sMethods/sMethods_specs (for
+// method infos) and sAttributes/sAttributes_specs (for attributes), which let
+// them find their spec, but these are not shown.
+//
+//   sNativeProperties             sNativeProperties_        sNativeProperties_
+//   ----                          sortedPropertyIndices[10] propertyInfos[10]
+//   - <several scalar fields>     ----                      ----
+//   - sortedPropertyIndices ----> <10 indices>         +--> 0 info (method)
+//   - duos[2]                     ----                 |    1 info (method)
+//     ----(methods)                                    |    2 info (method)
+//     0 - mPrefables -------> points to sMethods below |    3 info (method)
+//       - mPropertyInfos ------------------------------+    4 info (method)
+//     1 - mPrefables -------> points to sAttributes below   5 info (method)
+//       - mPropertyInfos ---------------------------------> 6 info (attr)
+//     ----                                                  7 info (attr)
+//   ----                                                    8 info (attr)
+//                                                           9 info (attr)
+//                                                           ----
+//
+// sMethods has three entries (excluding the terminator) because there are
+// three disablers structs. The {nullptr,nullptr} serves as the terminator.
+// There are also END terminators within sMethod_specs; the need for these
+// terminators (as opposed to a length) is deeply embedded in SpiderMonkey.
+// Disablers structs are suffixed with the index of the first spec they cover.
+//
+//   sMethods                               sMethods_specs
+//   ----                                   ----
+//   0 - nullptr                     +----> 0 spec
+//     - specs ----------------------+      1 spec
+//   1 - disablers ---> disablers4          2 spec
+//     - specs ------------------------+    3 END
+//   2 - disablers ---> disablers7     +--> 4 spec
+//     - specs ----------------------+      5 spec
+//   3 - nullptr                     |      6 END
+//     - nullptr                     +----> 7 spec
+//   ----                                   8 END
+//
+// sAttributes has a single entry (excluding the terminator) because all of the
+// specs lack disablers.
+//
+//   sAttributes                            sAttributes_specs
+//   ----                                   ----
+//   0 - nullptr                     +----> 0 spec
+//     - specs ----------------------+      1 spec
+//   1 - nullptr                            2 spec
+//     - nullptr                            3 spec
+//   ----                                   4 END
+//                                          ----
 template <int N>
 struct NativePropertiesN {
   // Duo structs are stored in the duos[] array, and each element in the array
@@ -322,6 +385,11 @@ typedef NativePropertiesN<7> NativeProperties;
 struct NativePropertiesHolder {
   const NativeProperties* regular;
   const NativeProperties* chromeOnly;
+  // Points to a static bool that's set to true once the regular and chromeOnly
+  // NativeProperties have been inited. This is a pointer to a bool instead of
+  // a bool value because NativePropertiesHolder is stored by value in
+  // a static const NativePropertyHooks.
+  bool* inited;
 };
 
 // Helper structure for Xrays for DOM binding objects. The same instance is used
@@ -501,22 +569,22 @@ struct DOMIfaceAndProtoJSClass {
 class ProtoAndIfaceCache;
 
 inline bool DOMGlobalHasProtoAndIFaceCache(JSObject* global) {
-  MOZ_ASSERT(js::GetObjectClass(global)->flags & JSCLASS_DOM_GLOBAL);
+  MOZ_ASSERT(JS::GetClass(global)->flags & JSCLASS_DOM_GLOBAL);
   // This can be undefined if we GC while creating the global
-  return !js::GetReservedSlot(global, DOM_PROTOTYPE_SLOT).isUndefined();
+  return !JS::GetReservedSlot(global, DOM_PROTOTYPE_SLOT).isUndefined();
 }
 
 inline bool HasProtoAndIfaceCache(JSObject* global) {
-  if (!(js::GetObjectClass(global)->flags & JSCLASS_DOM_GLOBAL)) {
+  if (!(JS::GetClass(global)->flags & JSCLASS_DOM_GLOBAL)) {
     return false;
   }
   return DOMGlobalHasProtoAndIFaceCache(global);
 }
 
 inline ProtoAndIfaceCache* GetProtoAndIfaceCache(JSObject* global) {
-  MOZ_ASSERT(js::GetObjectClass(global)->flags & JSCLASS_DOM_GLOBAL);
+  MOZ_ASSERT(JS::GetClass(global)->flags & JSCLASS_DOM_GLOBAL);
   return static_cast<ProtoAndIfaceCache*>(
-      js::GetReservedSlot(global, DOM_PROTOTYPE_SLOT).toPrivate());
+      JS::GetReservedSlot(global, DOM_PROTOTYPE_SLOT).toPrivate());
 }
 
 }  // namespace dom

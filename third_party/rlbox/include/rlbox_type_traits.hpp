@@ -27,6 +27,41 @@ using valid_return_t =
 template<typename T>
 using valid_param_t = std::conditional_t<std::is_void_v<T>, void*, T>;
 
+namespace func_first_arg_detail {
+  template<typename Ret, typename Arg, typename... Rest>
+  Arg func_first_arg_t_helper(Ret (*)(Arg, Rest...));
+
+  template<typename Ret, typename F, typename Arg, typename... Rest>
+  Arg func_first_arg_t_helper(Ret (F::*)(Arg, Rest...));
+
+  template<typename Ret, typename F, typename Arg, typename... Rest>
+  Arg func_first_arg_t_helper(Ret (F::*)(Arg, Rest...) const);
+
+  template<typename F>
+  decltype(func_first_arg_t_helper(&F::operator())) first_argument_helper(F);
+}
+
+template<typename T>
+using func_first_arg_t =
+  decltype(func_first_arg_detail::first_argument_helper(std::declval<T>()));
+
+namespace func_arg_nums_v_detail {
+  template<typename T_Ret, typename... T_Args>
+  constexpr size_t helper_two(T_Ret (*)(T_Args...))
+  {
+    return sizeof...(T_Args);
+  }
+  template<typename T_Func>
+  constexpr size_t helper()
+  {
+    constexpr T_Func* ptr = nullptr;
+    return helper_two(ptr);
+  }
+}
+
+template<typename T_Func>
+constexpr size_t func_arg_nums_v = func_arg_nums_v_detail::helper<T_Func>();
+
 template<typename T>
 using valid_array_el_t =
   std::conditional_t<std::is_void_v<T> || std::is_function_v<T>, int, T>;
@@ -42,10 +77,6 @@ constexpr bool is_func_or_func_ptr = std::is_function_v<T> || is_func_ptr_v<T>;
 template<typename T>
 constexpr bool is_one_level_ptr_v =
   std::is_pointer_v<T> && !std::is_pointer_v<std::remove_pointer_t<T>>;
-
-template<typename T_To, typename T_From>
-constexpr bool is_same_or_same_ref_v =
-  std::is_same_v<T_To, T_From>&& std::is_reference_v<T_To&, T_From>;
 
 template<typename T_This, typename T_Target>
 using add_const_if_this_const_t =
@@ -383,7 +414,8 @@ namespace convert_detail {
     T_LongLongType,
     T_PointerType,
     std::enable_if_t<std::is_unsigned_v<T> && !std::is_same_v<T, bool> &&
-                     !std::is_const_v<T> && !std::is_enum_v<T>>>
+                     !std::is_same_v<T, char> && !std::is_const_v<T> &&
+                     !std::is_enum_v<T>>>
   {
     using type = std::make_unsigned_t<
       typename convert_base_types_t_helper<std::make_signed_t<T>,
@@ -476,5 +508,39 @@ using convert_base_types_t =
                                                        T_LongType,
                                                        T_LongLongType,
                                                        T_PointerType>::type;
+
+namespace unsigned_int_of_size_t_detail {
+  template<typename T, typename T_Enable = void>
+  struct unsigned_int_of_size_t_helper;
+
+  template<typename T>
+  struct unsigned_int_of_size_t_helper<T, std::enable_if_t<sizeof(T) == 1>>
+  {
+    using type = uint8_t;
+  };
+
+  template<typename T>
+  struct unsigned_int_of_size_t_helper<T, std::enable_if_t<sizeof(T) == 2>>
+  {
+    using type = uint16_t;
+  };
+
+  template<typename T>
+  struct unsigned_int_of_size_t_helper<T, std::enable_if_t<sizeof(T) == 4>>
+  {
+    using type = uint32_t;
+  };
+
+  template<typename T>
+  struct unsigned_int_of_size_t_helper<T, std::enable_if_t<sizeof(T) == 8>>
+  {
+    using type = uint64_t;
+  };
+}
+
+template<typename T>
+using unsigned_int_of_size_t =
+  typename unsigned_int_of_size_t_detail::unsigned_int_of_size_t_helper<
+    T>::type;
 
 }

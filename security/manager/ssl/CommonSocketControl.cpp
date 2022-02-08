@@ -13,8 +13,13 @@
 #include "SharedSSLState.h"
 #include "sslt.h"
 #include "ssl.h"
+#include "mozilla/net/SSLTokensCache.h"
+#include "nsICertOverrideService.h"
+#include "nsITlsHandshakeListener.h"
 
 using namespace mozilla;
+
+extern LazyLogModule gPIPNSSLog;
 
 NS_IMPL_ISUPPORTS_INHERITED(CommonSocketControl, TransportSecurityInfo,
                             nsISSLSocketControl)
@@ -30,6 +35,7 @@ CommonSocketControl::CommonSocketControl(uint32_t aProviderFlags)
 NS_IMETHODIMP
 CommonSocketControl::GetNotificationCallbacks(
     nsIInterfaceRequestor** aCallbacks) {
+  MutexAutoLock lock(mMutex);
   *aCallbacks = mCallbacks;
   NS_IF_ADDREF(*aCallbacks);
   return NS_OK;
@@ -38,6 +44,7 @@ CommonSocketControl::GetNotificationCallbacks(
 NS_IMETHODIMP
 CommonSocketControl::SetNotificationCallbacks(
     nsIInterfaceRequestor* aCallbacks) {
+  MutexAutoLock lock(mMutex);
   mCallbacks = aCallbacks;
   return NS_OK;
 }
@@ -87,8 +94,11 @@ CommonSocketControl::TestJoinConnection(const nsACString& npnProtocol,
   // Different ports may not be joined together
   if (port != GetPort()) return NS_OK;
 
-  // Make sure NPN has been completed and matches requested npnProtocol
-  if (!mNPNCompleted || !mNegotiatedNPN.Equals(npnProtocol)) return NS_OK;
+  {
+    MutexAutoLock lock(mMutex);
+    // Make sure NPN has been completed and matches requested npnProtocol
+    if (!mNPNCompleted || !mNegotiatedNPN.Equals(npnProtocol)) return NS_OK;
+  }
 
   IsAcceptableForHost(hostname, _retval);  // sets _retval
   return NS_OK;
@@ -112,6 +122,20 @@ CommonSocketControl::IsAcceptableForHost(const nsACString& hostname,
   // handshake has completed.
   if (!mHandshakeCompleted || !HasServerCert()) {
     return NS_OK;
+  }
+
+  // Security checks can only be skipped when running xpcshell tests.
+  if (PR_GetEnv("XPCSHELL_TEST_PROFILE_DIR")) {
+    nsCOMPtr<nsICertOverrideService> overrideService =
+        do_GetService(NS_CERTOVERRIDE_CONTRACTID);
+    if (overrideService) {
+      bool securityCheckDisabled = false;
+      overrideService->GetSecurityCheckDisabled(&securityCheckDisabled);
+      if (securityCheckDisabled) {
+        *_retval = true;
+        return NS_OK;
+      }
+    }
   }
 
   // If the cert has error bits (e.g. it is untrusted) then do not join.
@@ -142,6 +166,8 @@ CommonSocketControl::IsAcceptableForHost(const nsACString& hostname,
   if (!nssCert) {
     return NS_OK;
   }
+
+  MutexAutoLock lock(mMutex);
 
   // An empty mSucceededCertChain means the server certificate verification
   // failed before, so don't join in this case.
@@ -177,27 +203,64 @@ CommonSocketControl::IsAcceptableForHost(const nsACString& hostname,
     return NS_OK;
   }
 
-  mozilla::psm::CertVerifier::PinningMode pinningMode =
-      mozilla::psm::PublicSSLState()->PinningMode();
-  if (pinningMode != mozilla::psm::CertVerifier::pinningDisabled) {
-    bool chainHasValidPins;
-    bool enforceTestMode =
-        (pinningMode == mozilla::psm::CertVerifier::pinningEnforceTestMode);
-    nsresult nsrv = mozilla::psm::PublicKeyPinningService::ChainHasValidPins(
-        mSucceededCertChain, PromiseFlatCString(hostname).BeginReading(), Now(),
-        enforceTestMode, GetOriginAttributes(), chainHasValidPins, nullptr);
+  nsTArray<nsTArray<uint8_t>> rawDerCertList;
+  nsTArray<Span<const uint8_t>> derCertSpanList;
+  for (const auto& cert : mSucceededCertChain) {
+    rawDerCertList.EmplaceBack();
+    nsresult nsrv = cert->GetRawDER(rawDerCertList.LastElement());
     if (NS_FAILED(nsrv)) {
-      return NS_OK;
+      return nsrv;
     }
+    derCertSpanList.EmplaceBack(rawDerCertList.LastElement());
+  }
+  bool chainHasValidPins;
+  nsresult nsrv = mozilla::psm::PublicKeyPinningService::ChainHasValidPins(
+      derCertSpanList, PromiseFlatCString(hostname).BeginReading(), Now(),
+      mIsBuiltCertChainRootBuiltInRoot, chainHasValidPins, nullptr);
+  if (NS_FAILED(nsrv)) {
+    return NS_OK;
+  }
 
-    if (!chainHasValidPins) {
-      return NS_OK;
-    }
+  if (!chainHasValidPins) {
+    return NS_OK;
   }
 
   // All tests pass
   *_retval = true;
   return NS_OK;
+}
+
+void CommonSocketControl::RebuildCertificateInfoFromSSLTokenCache() {
+  nsAutoCString key;
+  GetPeerId(key);
+  mozilla::net::SessionCacheInfo info;
+  if (!mozilla::net::SSLTokensCache::GetSessionCacheInfo(key, info)) {
+    MOZ_LOG(
+        gPIPNSSLog, LogLevel::Debug,
+        ("CommonSocketControl::RebuildCertificateInfoFromSSLTokenCache cannot "
+         "find cached info."));
+    return;
+  }
+
+  RefPtr<nsNSSCertificate> nssc = nsNSSCertificate::ConstructFromDER(
+      BitwiseCast<char*, uint8_t*>(info.mServerCertBytes.Elements()),
+      info.mServerCertBytes.Length());
+  if (!nssc) {
+    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+            ("RebuildCertificateInfoFromSSLTokenCache failed to construct "
+             "server cert"));
+    return;
+  }
+
+  SetServerCert(nssc, info.mEVStatus);
+  SetCertificateTransparencyStatus(info.mCertificateTransparencyStatus);
+  if (info.mSucceededCertChainBytes) {
+    SetSucceededCertChain(std::move(*info.mSucceededCertChainBytes));
+  }
+
+  if (info.mIsBuiltCertChainRootBuiltInRoot) {
+    SetIsBuiltCertChainRootBuiltInRoot(*info.mIsBuiltCertChainRootBuiltInRoot);
+  }
 }
 
 NS_IMETHODIMP
@@ -274,6 +337,25 @@ CommonSocketControl::SetEsniTxt(const nsACString& aEsniTxt) {
 }
 
 NS_IMETHODIMP
-CommonSocketControl::GetPeerId(nsACString& aResult) {
+CommonSocketControl::GetEchConfig(nsACString& aEchConfig) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
+
+NS_IMETHODIMP
+CommonSocketControl::SetEchConfig(const nsACString& aEchConfig) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+CommonSocketControl::GetRetryEchConfig(nsACString& aEchConfig) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+CommonSocketControl::SetHandshakeCallbackListener(
+    nsITlsHandshakeCallbackListener* callback) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+CommonSocketControl::DisableEarlyData(void) { return NS_ERROR_NOT_IMPLEMENTED; }

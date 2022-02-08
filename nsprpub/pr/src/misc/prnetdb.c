@@ -166,9 +166,7 @@ static PRBool _pr_have_inet6_if = PR_FALSE;
 #undef DEBUG_QUERY_IFS
 
 #if defined(AIX) \
-    || (defined(DARWIN) && (!defined(HAVE_GETIFADDRS) \
-        || (defined(XP_MACOSX) && (!defined(MAC_OS_X_VERSION_10_2) || \
-        MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_2))))
+    || (defined(DARWIN) && !defined(HAVE_GETIFADDRS))
 
 /*
  * Use SIOCGIFCONF ioctl on platforms that don't have routing
@@ -1250,7 +1248,7 @@ PR_IMPLEMENT(PRStatus) PR_GetProtoByName(
     }
 #endif  /* defined(_PR_HAVE_GETPROTO_R_INT) */
 
-    if (PR_NETDB_BUF_SIZE > buflen)
+    if (PR_MIN_NETDB_BUF_SIZE > buflen)
     {
         PR_SetError(PR_INVALID_ARGUMENT_ERROR, 0);
         return PR_FAILURE;
@@ -1333,7 +1331,7 @@ PR_IMPLEMENT(PRStatus) PR_GetProtoByNumber(
     }
 #endif /* defined(_PR_HAVE_GETPROTO_R_INT) */
 
-    if (PR_NETDB_BUF_SIZE > buflen)
+    if (PR_MIN_NETDB_BUF_SIZE > buflen)
     {
         PR_SetError(PR_INVALID_ARGUMENT_ERROR, 0);
         return PR_FAILURE;

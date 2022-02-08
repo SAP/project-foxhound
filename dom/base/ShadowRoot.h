@@ -7,6 +7,7 @@
 #ifndef mozilla_dom_shadowroot_h__
 #define mozilla_dom_shadowroot_h__
 
+#include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/DocumentBinding.h"
 #include "mozilla/dom/DocumentFragment.h"
 #include "mozilla/dom/DocumentOrShadowRoot.h"
@@ -27,6 +28,8 @@ namespace mozilla {
 
 class EventChainPreVisitor;
 class ServoStyleRuleMap;
+
+enum class StyleRuleChangeKind : uint32_t;
 
 namespace css {
 class Rule;
@@ -50,18 +53,23 @@ class ShadowRoot final : public DocumentFragment,
   NS_DECL_ISUPPORTS_INHERITED
 
   ShadowRoot(Element* aElement, ShadowRootMode aMode,
+             Element::DelegatesFocus aDelegatesFocus,
+             SlotAssignmentMode aSlotAssignment,
              already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
   void AddSizeOfExcludingThis(nsWindowSizes&, size_t* aNodeSize) const final;
 
-  // Try to reassign an element to a slot.
-  void MaybeReassignElement(Element&);
+  // Try to reassign an element or text to a slot.
+  void MaybeReassignContent(nsIContent& aElementOrText);
   // Called when an element is inserted as a direct child of our host. Tries to
   // slot the child in one of our slots.
   void MaybeSlotHostChild(nsIContent&);
   // Called when a direct child of our host is removed. Tries to un-slot the
   // child from the currently-assigned slot, if any.
   void MaybeUnslotHostChild(nsIContent&);
+
+  // Find the first focusable element in this tree.
+  Element* GetFirstFocusable(bool aWithMouse) const;
 
   // Shadow DOM v1
   Element* Host() const {
@@ -72,12 +80,16 @@ class ShadowRoot final : public DocumentFragment,
   }
 
   ShadowRootMode Mode() const { return mMode; }
+  bool DelegatesFocus() const {
+    return mDelegatesFocus == Element::DelegatesFocus::Yes;
+  }
+  SlotAssignmentMode SlotAssignment() const { return mSlotAssignment; }
   bool IsClosed() const { return mMode == ShadowRootMode::Closed; }
 
   void RemoveSheetFromStyles(StyleSheet&);
   void RuleAdded(StyleSheet&, css::Rule&);
   void RuleRemoved(StyleSheet&, css::Rule&);
-  void RuleChanged(StyleSheet&, css::Rule*);
+  void RuleChanged(StyleSheet&, css::Rule*, StyleRuleChangeKind);
   void ImportRuleLoaded(CSSImportRule&, StyleSheet&);
   void SheetCloned(StyleSheet&);
   void StyleSheetApplicableStateChanged(StyleSheet&);
@@ -102,35 +114,6 @@ class ShadowRoot final : public DocumentFragment,
   // connected.
   nsresult Bind();
 
- private:
-  void InsertSheetIntoAuthorData(size_t aIndex, StyleSheet&,
-                                 const nsTArray<RefPtr<StyleSheet>>&);
-
-  void AppendStyleSheet(StyleSheet& aSheet) {
-    InsertSheetAt(SheetCount(), aSheet);
-  }
-
-  /**
-   * Represents the insertion point in a slot for a given node.
-   */
-  struct SlotAssignment {
-    HTMLSlotElement* mSlot = nullptr;
-    Maybe<uint32_t> mIndex;
-
-    SlotAssignment() = default;
-    SlotAssignment(HTMLSlotElement* aSlot, const Maybe<uint32_t>& aIndex)
-        : mSlot(aSlot), mIndex(aIndex) {}
-  };
-
-  /**
-   * Return the assignment corresponding to the content node at this particular
-   * point in time.
-   *
-   * It's the caller's responsibility to actually call InsertAssignedNode /
-   * AppendAssignedNode in the slot as needed.
-   */
-  SlotAssignment SlotAssignmentFor(nsIContent&);
-
   /**
    * Explicitly invalidates the style and layout of the flattened-tree subtree
    * rooted at the element.
@@ -147,6 +130,35 @@ class ShadowRoot final : public DocumentFragment,
    */
   void InvalidateStyleAndLayoutOnSubtree(Element*);
 
+ private:
+  void InsertSheetIntoAuthorData(size_t aIndex, StyleSheet&,
+                                 const nsTArray<RefPtr<StyleSheet>>&);
+
+  void AppendStyleSheet(StyleSheet& aSheet) {
+    InsertSheetAt(SheetCount(), aSheet);
+  }
+
+  /**
+   * Represents the insertion point in a slot for a given node.
+   */
+  struct SlotInsertionPoint {
+    HTMLSlotElement* mSlot = nullptr;
+    Maybe<uint32_t> mIndex;
+
+    SlotInsertionPoint() = default;
+    SlotInsertionPoint(HTMLSlotElement* aSlot, const Maybe<uint32_t>& aIndex)
+        : mSlot(aSlot), mIndex(aIndex) {}
+  };
+
+  /**
+   * Return the assignment corresponding to the content node at this particular
+   * point in time.
+   *
+   * It's the caller's responsibility to actually call InsertAssignedNode /
+   * AppendAssignedNode in the slot as needed.
+   */
+  SlotInsertionPoint SlotInsertionPointFor(nsIContent&);
+
  public:
   void AddSlot(HTMLSlotElement* aSlot);
   void RemoveSlot(HTMLSlotElement* aSlot);
@@ -158,6 +170,8 @@ class ShadowRoot final : public DocumentFragment,
 
   void PartAdded(const Element&);
   void PartRemoved(const Element&);
+
+  IMPL_EVENT_HANDLER(slotchange);
 
   const nsTArray<const Element*>& Parts() const { return mParts; }
 
@@ -204,12 +218,20 @@ class ShadowRoot final : public DocumentFragment,
     mIsUAWidget = true;
   }
 
+  bool IsAvailableToElementInternals() const {
+    return mIsAvailableToElementInternals;
+  }
+
+  void SetAvailableToElementInternals() {
+    mIsAvailableToElementInternals = true;
+  }
+
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
 
   // nsIRadioGroupContainer
-  NS_IMETHOD WalkRadioGroup(const nsAString& aName, nsIRadioVisitor* aVisitor,
-                            bool aFlushContent) override {
-    return DocumentOrShadowRoot::WalkRadioGroup(aName, aVisitor, aFlushContent);
+  NS_IMETHOD WalkRadioGroup(const nsAString& aName,
+                            nsIRadioVisitor* aVisitor) override {
+    return DocumentOrShadowRoot::WalkRadioGroup(aName, aVisitor);
   }
   virtual void SetCurrentRadioButton(const nsAString& aName,
                                      HTMLInputElement* aRadio) override {
@@ -258,6 +280,10 @@ class ShadowRoot final : public DocumentFragment,
 
   const ShadowRootMode mMode;
 
+  Element::DelegatesFocus mDelegatesFocus;
+
+  const SlotAssignmentMode mSlotAssignment;
+
   // The computed data from the style sheets.
   UniquePtr<RawServoAuthorStyles> mServoStyles;
   UniquePtr<mozilla::ServoStyleRuleMap> mStyleRuleMap;
@@ -272,7 +298,10 @@ class ShadowRoot final : public DocumentFragment,
   // tree.
   nsTArray<const Element*> mParts;
 
-  bool mIsUAWidget;
+  bool mIsUAWidget : 1;
+
+  // https://dom.spec.whatwg.org/#shadowroot-available-to-element-internals
+  bool mIsAvailableToElementInternals : 1;
 
   nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 };

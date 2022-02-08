@@ -18,15 +18,15 @@
 
 #include "nsThreadUtils.h"
 
-#include "signaling/src/sdp/RsdparsaSdpParser.h"
-#include "signaling/src/sdp/SipccSdpParser.h"
-#include "signaling/src/sdp/SdpMediaSection.h"
-#include "signaling/src/sdp/SdpAttribute.h"
-#include "signaling/src/sdp/ParsingResultComparer.h"
+#include "sdp/RsdparsaSdpParser.h"
+#include "sdp/SipccSdpParser.h"
+#include "sdp/SdpMediaSection.h"
+#include "sdp/SdpAttribute.h"
+#include "sdp/ParsingResultComparer.h"
 
 extern "C" {
-#include "signaling/src/sdp/sipcc/sdp.h"
-#include "signaling/src/sdp/sipcc/sdp_private.h"
+#include "sipcc_sdp.h"
+#include "sdp_private.h"
 }
 
 #ifdef CRLF

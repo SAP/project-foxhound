@@ -7,11 +7,10 @@
 #ifndef jit_x86_Assembler_x86_h
 #define jit_x86_Assembler_x86_h
 
-#include "mozilla/ArrayUtils.h"
+#include <iterator>
 
 #include "jit/CompactBuffer.h"
 #include "jit/JitCode.h"
-#include "jit/JitRealm.h"
 #include "jit/shared/Assembler-shared.h"
 #include "jit/x86-shared/Constants-x86-shared.h"
 
@@ -44,6 +43,10 @@ static constexpr FloatRegister xmm6 =
 static constexpr FloatRegister xmm7 =
     FloatRegister(X86Encoding::xmm7, FloatRegisters::Double);
 
+// Vector registers fixed for use with some instructions, e.g. PBLENDVB.
+static constexpr FloatRegister vmm0 =
+    FloatRegister(X86Encoding::xmm0, FloatRegisters::Simd128);
+
 static constexpr Register InvalidReg{X86Encoding::invalid_reg};
 static constexpr FloatRegister InvalidFloatReg = FloatRegister();
 
@@ -52,19 +55,29 @@ static constexpr Register JSReturnReg_Data = edx;
 static constexpr Register StackPointer = esp;
 static constexpr Register FramePointer = ebp;
 static constexpr Register ReturnReg = eax;
-static constexpr Register64 ReturnReg64(edi, eax);
 static constexpr FloatRegister ReturnFloat32Reg =
     FloatRegister(X86Encoding::xmm0, FloatRegisters::Single);
 static constexpr FloatRegister ReturnDoubleReg =
     FloatRegister(X86Encoding::xmm0, FloatRegisters::Double);
 static constexpr FloatRegister ReturnSimd128Reg =
     FloatRegister(X86Encoding::xmm0, FloatRegisters::Simd128);
-static constexpr FloatRegister ScratchFloat32Reg =
+static constexpr FloatRegister ScratchFloat32Reg_ =
     FloatRegister(X86Encoding::xmm7, FloatRegisters::Single);
-static constexpr FloatRegister ScratchDoubleReg =
+static constexpr FloatRegister ScratchDoubleReg_ =
     FloatRegister(X86Encoding::xmm7, FloatRegisters::Double);
 static constexpr FloatRegister ScratchSimd128Reg =
     FloatRegister(X86Encoding::xmm7, FloatRegisters::Simd128);
+
+// Note, EDX:EAX is the system ABI 64-bit return register, and it is to our
+// advantage to keep the SpiderMonkey ABI in sync with the system ABI.
+//
+// However, using EDX here means that we have to use a register that does not
+// have a word or byte part (eg DX/DH/DL) in some other places; notably,
+// ABINonArgReturnReg1 is EDI.  If this becomes a problem and ReturnReg64 has to
+// be something other than EDX:EAX, then jitted code that calls directly to C++
+// will need to shuffle the return value from EDX:EAX into ReturnReg64 directly
+// after the call.  See bug 1730161 for discussion and a patch that does that.
+static constexpr Register64 ReturnReg64(edx, eax);
 
 // Avoid ebp, which is the FramePointer, which is unavailable in some modes.
 static constexpr Register CallTempReg0 = edi;
@@ -76,8 +89,7 @@ static constexpr Register CallTempReg5 = edx;
 
 // We have no arg regs, so our NonArgRegs are just our CallTempReg*
 static constexpr Register CallTempNonArgRegs[] = {edi, eax, ebx, ecx, esi, edx};
-static constexpr uint32_t NumCallTempNonArgRegs =
-    mozilla::ArrayLength(CallTempNonArgRegs);
+static constexpr uint32_t NumCallTempNonArgRegs = std::size(CallTempNonArgRegs);
 
 class ABIArgGenerator {
   uint32_t stackOffset_;
@@ -88,6 +100,7 @@ class ABIArgGenerator {
   ABIArg next(MIRType argType);
   ABIArg& current() { return current_; }
   uint32_t stackBytesConsumedSoFar() const { return stackOffset_; }
+  void increaseStackOffset(uint32_t bytes) { stackOffset_ += bytes; }
 };
 
 // These registers may be volatile or nonvolatile.
@@ -97,14 +110,14 @@ static constexpr Register ABINonArgReg2 = ecx;
 static constexpr Register ABINonArgReg3 = edx;
 
 // This register may be volatile or nonvolatile. Avoid xmm7 which is the
-// ScratchDoubleReg.
+// ScratchDoubleReg_.
 static constexpr FloatRegister ABINonArgDoubleReg =
     FloatRegister(X86Encoding::xmm0, FloatRegisters::Double);
 
 // These registers may be volatile or nonvolatile.
 // Note: these three registers are all guaranteed to be different
 static constexpr Register ABINonArgReturnReg0 = ecx;
-static constexpr Register ABINonArgReturnReg1 = edx;
+static constexpr Register ABINonArgReturnReg1 = edi;
 static constexpr Register ABINonVolatileReg = ebx;
 
 // This register is guaranteed to be clobberable during the prologue and
@@ -179,10 +192,12 @@ static_assert(JitStackAlignment % SimdMemoryAlignment == 0,
 static constexpr uint32_t WasmStackAlignment = SimdMemoryAlignment;
 static constexpr uint32_t WasmTrapInstructionLength = 2;
 
-// The offsets are dynamically asserted during
-// code generation in the prologue/epilogue.
+// See comments in wasm::GenerateFunctionPrologue.  The difference between these
+// is the size of the largest callable prologue on the platform.  (We could make
+// the tail offset 3, but I have opted for 4 as that results in a better-aligned
+// branch target.)
 static constexpr uint32_t WasmCheckedCallEntryOffset = 0u;
-static constexpr uint32_t WasmCheckedTailEntryOffset = 16u;
+static constexpr uint32_t WasmCheckedTailEntryOffset = 4u;
 
 struct ImmTag : public Imm32 {
   explicit ImmTag(JSValueTag mask) : Imm32(int32_t(mask)) {}
@@ -229,14 +244,13 @@ static constexpr ValueOperand JSReturnOperand{JSReturnReg_Type,
                                               JSReturnReg_Data};
 
 class Assembler : public AssemblerX86Shared {
-  void writeRelocation(JmpSrc src) {
-    jumpRelocations_.writeUnsigned(src.offset());
-  }
+  Vector<RelativePatch, 8, SystemAllocPolicy> jumps_;
+
   void addPendingJump(JmpSrc src, ImmPtr target, RelocationKind kind) {
     enoughMemory_ &=
         jumps_.append(RelativePatch(src.offset(), target.value, kind));
     if (kind == RelocationKind::JITCODE) {
-      writeRelocation(src);
+      jumpRelocations_.writeUnsigned(src.offset());
     }
   }
 
@@ -258,6 +272,15 @@ class Assembler : public AssemblerX86Shared {
   // Copy the assembly code to the given buffer, and perform any pending
   // relocations relying on the target address.
   void executableCopy(uint8_t* buffer);
+
+  void assertNoGCThings() const {
+#ifdef DEBUG
+    MOZ_ASSERT(dataRelocations_.length() == 0);
+    for (auto& j : jumps_) {
+      MOZ_ASSERT(j.kind == RelocationKind::HARDCODED);
+    }
+#endif
+  }
 
   // Actual assembly emitting functions.
 
@@ -455,12 +478,6 @@ class Assembler : public AssemblerX86Shared {
     MOZ_ASSERT(src.size() == 16);
     MOZ_ASSERT(dest.size() == 16);
     masm.vhaddpd_rr(src.encoding(), dest.encoding());
-  }
-  void vsubpd(FloatRegister src1, FloatRegister src0, FloatRegister dest) {
-    MOZ_ASSERT(HasSSE2());
-    MOZ_ASSERT(src0.size() == 16);
-    MOZ_ASSERT(dest.size() == 16);
-    masm.vsubpd_rr(src1.encoding(), src0.encoding(), dest.encoding());
   }
 
   void fild(const Operand& src) {

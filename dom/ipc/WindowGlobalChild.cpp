@@ -17,17 +17,24 @@
 #include "mozilla/dom/BrowserBridgeChild.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/SecurityPolicyViolationEvent.h"
+#include "mozilla/dom/SessionStoreRestoreData.h"
+#include "mozilla/dom/SessionStoreDataCollector.h"
 #include "mozilla/dom/WindowGlobalActorsBinding.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/dom/InProcessChild.h"
 #include "mozilla/dom/InProcessParent.h"
+#include "mozilla/ipc/Endpoint.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/ScopeExit.h"
+#include "GeckoProfiler.h"
 #include "nsContentUtils.h"
 #include "nsDocShell.h"
 #include "nsFocusManager.h"
 #include "nsFrameLoaderOwner.h"
 #include "nsGlobalWindowInner.h"
 #include "nsFrameLoaderOwner.h"
+#include "nsNetUtil.h"
 #include "nsQueryObject.h"
 #include "nsSerializationHelper.h"
 #include "nsFrameLoader.h"
@@ -41,11 +48,7 @@
 using namespace mozilla::ipc;
 using namespace mozilla::dom::ipc;
 
-namespace mozilla {
-namespace dom {
-
-typedef nsRefPtrHashtable<nsUint64HashKey, WindowGlobalChild> WGCByIdMap;
-static StaticAutoPtr<WGCByIdMap> gWindowGlobalChildById;
+namespace mozilla::dom {
 
 WindowGlobalChild::WindowGlobalChild(dom::WindowContext* aWindowContext,
                                      nsIPrincipal* aPrincipal,
@@ -60,7 +63,6 @@ WindowGlobalChild::WindowGlobalChild(dom::WindowContext* aWindowContext,
     NS_NewURI(getter_AddRefs(mDocumentURI), "about:blank");
   }
 
-#ifdef MOZ_GECKO_PROFILER
   // Registers a DOM Window with the profiler. It re-registers the same Inner
   // Window ID with different URIs because when a Browsing context is first
   // loaded, the first url loaded in it will be about:blank. This call keeps the
@@ -69,10 +71,9 @@ WindowGlobalChild::WindowGlobalChild(dom::WindowContext* aWindowContext,
   if (BrowsingContext()->GetParent()) {
     embedderInnerWindowID = BrowsingContext()->GetEmbedderInnerWindowId();
   }
-  profiler_register_page(BrowsingContext()->Id(), InnerWindowId(),
+  profiler_register_page(BrowsingContext()->BrowserId(), InnerWindowId(),
                          aDocumentURI->GetSpecOrDefault(),
                          embedderInnerWindowID);
-#endif
 }
 
 already_AddRefed<WindowGlobalChild> WindowGlobalChild::Create(
@@ -87,7 +88,7 @@ already_AddRefed<WindowGlobalChild> WindowGlobalChild::Create(
   nsILoadInfo::CrossOriginOpenerPolicy policy;
   if (httpChan &&
       loadInfo->GetExternalContentPolicyType() ==
-          nsIContentPolicy::TYPE_DOCUMENT &&
+          ExtContentPolicy::TYPE_DOCUMENT &&
       NS_SUCCEEDED(httpChan->GetCrossOriginOpenerPolicy(&policy))) {
     MOZ_DIAGNOSTIC_ASSERT(policy ==
                           aWindow->GetBrowsingContext()->GetOpenerPolicy());
@@ -114,7 +115,12 @@ already_AddRefed<WindowGlobalChild> WindowGlobalChild::Create(
         BrowserChild::GetFrom(static_cast<mozIDOMWindow*>(aWindow));
     MOZ_ASSERT(browserChild);
 
-    MOZ_DIAGNOSTIC_ASSERT(!aWindow->GetBrowsingContext()->IsDiscarded());
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+    dom::BrowsingContext* bc = aWindow->GetBrowsingContext();
+#endif
+
+    MOZ_DIAGNOSTIC_ASSERT(bc->AncestorsAreCurrent());
+    MOZ_DIAGNOSTIC_ASSERT(bc->IsInProcess());
 
     ManagedEndpoint<PWindowGlobalParent> endpoint =
         browserChild->OpenPWindowGlobalEndpoint(wgc);
@@ -137,32 +143,24 @@ already_AddRefed<WindowGlobalChild> WindowGlobalChild::CreateDisconnected(
 
   // Create our new WindowContext
   if (XRE_IsParentProcess()) {
-    windowContext =
-        WindowGlobalParent::CreateDisconnected(aInit, /* aInProcess */ true);
+    windowContext = WindowGlobalParent::CreateDisconnected(aInit);
   } else {
     dom::WindowContext::FieldValues fields = aInit.context().mFields;
-    windowContext =
-        new dom::WindowContext(browsingContext, aInit.context().mInnerWindowId,
-                               aInit.context().mOuterWindowId,
-                               /* aInProcess */ true, std::move(fields));
+    windowContext = new dom::WindowContext(
+        browsingContext, aInit.context().mInnerWindowId,
+        aInit.context().mOuterWindowId, std::move(fields));
   }
 
   RefPtr<WindowGlobalChild> windowChild = new WindowGlobalChild(
       windowContext, aInit.principal(), aInit.documentURI());
+  windowContext->mIsInProcess = true;
+  windowContext->mWindowGlobalChild = windowChild;
   return windowChild.forget();
 }
 
 void WindowGlobalChild::Init() {
+  MOZ_ASSERT(mWindowContext->mWindowGlobalChild == this);
   mWindowContext->Init();
-
-  // Register this WindowGlobal in the gWindowGlobalParentsById map.
-  if (!gWindowGlobalChildById) {
-    gWindowGlobalChildById = new WGCByIdMap();
-    ClearOnShutdown(&gWindowGlobalChildById);
-  }
-  auto entry = gWindowGlobalChildById->LookupForAdd(InnerWindowId());
-  MOZ_RELEASE_ASSERT(!entry, "Duplicate WindowGlobalChild entry for ID!");
-  entry.OrInsert([&] { return this; });
 }
 
 void WindowGlobalChild::InitWindowGlobal(nsGlobalWindowInner* aWindow) {
@@ -179,8 +177,10 @@ void WindowGlobalChild::OnNewDocument(Document* aDocument) {
   // added here should also be added to WindowGlobalActor::WindowInitializer.
 
   // FIXME: Perhaps these should be combined into a smaller number of messages?
+  SendSetIsInitialDocument(aDocument->IsInitialDocument());
   SetDocumentURI(aDocument->GetDocumentURI());
-  SetDocumentPrincipal(aDocument->NodePrincipal());
+  SetDocumentPrincipal(aDocument->NodePrincipal(),
+                       aDocument->EffectiveStoragePrincipal());
 
   nsCOMPtr<nsITransportSecurityInfo> securityInfo;
   if (nsCOMPtr<nsIChannel> channel = aDocument->GetChannel()) {
@@ -215,9 +215,15 @@ void WindowGlobalChild::OnNewDocument(Document* aDocument) {
   txn.SetIsThirdPartyTrackingResourceWindow(
       nsContentUtils::IsThirdPartyTrackingResourceWindow(mWindowGlobal));
   txn.SetIsSecureContext(mWindowGlobal->IsSecureContext());
-  auto policy = aDocument->GetEmbedderPolicy();
-  if (policy.isSome()) {
-    txn.SetEmbedderPolicy(policy.ref());
+  if (auto policy = aDocument->GetEmbedderPolicy()) {
+    txn.SetEmbedderPolicy(*policy);
+  }
+
+  if (nsCOMPtr<nsIChannel> channel = aDocument->GetChannel()) {
+    nsCOMPtr<nsILoadInfo> loadInfo(channel->LoadInfo());
+    txn.SetIsOriginalFrameSource(loadInfo->GetOriginalFrameSrcLoad());
+  } else {
+    txn.SetIsOriginalFrameSource(false);
   }
 
   // Init Mixed Content Fields
@@ -226,25 +232,21 @@ void WindowGlobalChild::OnNewDocument(Document* aDocument) {
   if (innerDocURI) {
     txn.SetIsSecure(innerDocURI->SchemeIs("https"));
   }
-  nsCOMPtr<nsIChannel> mixedChannel;
-  mWindowGlobal->GetDocShell()->GetMixedContentChannel(
-      getter_AddRefs(mixedChannel));
-  // A non null mixedContent channel on the docshell indicates,
-  // that the user has overriden mixed content to allow mixed
-  // content loads to happen.
-  if (mixedChannel && (mixedChannel == aDocument->GetChannel())) {
-    txn.SetAllowMixedContent(true);
-  }
-  txn.Commit(mWindowContext);
+
+  MOZ_DIAGNOSTIC_ASSERT(mDocumentPrincipal->GetIsLocalIpAddress() ==
+                        mWindowContext->IsLocalIP());
+
+  MOZ_ALWAYS_SUCCEEDS(txn.Commit(mWindowContext));
 }
 
 /* static */
 already_AddRefed<WindowGlobalChild> WindowGlobalChild::GetByInnerWindowId(
     uint64_t aInnerWindowId) {
-  if (!gWindowGlobalChildById) {
-    return nullptr;
+  if (RefPtr<dom::WindowContext> context =
+          dom::WindowContext::GetById(aInnerWindowId)) {
+    return do_AddRef(context->GetWindowGlobalChild());
   }
-  return gWindowGlobalChildById->Get(aInnerWindowId);
+  return nullptr;
 }
 
 dom::BrowsingContext* WindowGlobalChild::BrowsingContext() {
@@ -298,7 +300,7 @@ bool WindowGlobalChild::IsProcessRoot() {
 void WindowGlobalChild::BeforeUnloadAdded() {
   // Don't bother notifying the parent if we don't have an IPC link open.
   if (mBeforeUnloadListeners == 0 && CanSend()) {
-    SendSetHasBeforeUnload(true);
+    Unused << mWindowContext->SetHasBeforeUnload(true);
   }
 
   mBeforeUnloadListeners++;
@@ -309,29 +311,28 @@ void WindowGlobalChild::BeforeUnloadRemoved() {
   mBeforeUnloadListeners--;
   MOZ_ASSERT(mBeforeUnloadListeners >= 0);
 
-  // Don't bother notifying the parent if we don't have an IPC link open.
-  if (mBeforeUnloadListeners == 0 && CanSend()) {
-    SendSetHasBeforeUnload(false);
+  if (mBeforeUnloadListeners == 0) {
+    Unused << mWindowContext->SetHasBeforeUnload(false);
   }
 }
 
 void WindowGlobalChild::Destroy() {
-  // Destroying a WindowGlobalChild requires running script, so hold off on
-  // doing it until we can safely run JS callbacks.
-  nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
-      "WindowGlobalChild::Destroy", [self = RefPtr<WindowGlobalChild>(this)]() {
-        // Make a copy so that we can avoid potential iterator invalidation when
-        // calling the user-provided Destroy() methods.
-        self->JSActorWillDestroy();
+  JSActorWillDestroy();
 
-        // Perform async IPC shutdown unless we're not in-process, and our
-        // BrowserChild is in the process of being destroyed, which will destroy
-        // us as well.
-        RefPtr<BrowserChild> browserChild = self->GetBrowserChild();
-        if (!browserChild || !browserChild->IsDestroyed()) {
-          self->SendDestroy();
-        }
-      }));
+  mWindowContext->Discard();
+
+  // Perform async IPC shutdown unless we're not in-process, and our
+  // BrowserChild is in the process of being destroyed, which will destroy
+  // us as well.
+  RefPtr<BrowserChild> browserChild = GetBrowserChild();
+  if (!browserChild || !browserChild->IsDestroyed()) {
+    SendDestroy();
+  }
+
+  if (mSessionStoreDataCollector) {
+    mSessionStoreDataCollector->Cancel();
+    mSessionStoreDataCollector = nullptr;
+  }
 }
 
 mozilla::ipc::IPCResult WindowGlobalChild::RecvMakeFrameLocal(
@@ -377,12 +378,13 @@ mozilla::ipc::IPCResult WindowGlobalChild::RecvMakeFrameRemote(
   MOZ_LOG(BrowsingContext::GetLog(), LogLevel::Debug,
           ("RecvMakeFrameRemote ID=%" PRIx64, aFrameContext.ContextId()));
 
-  // Immediately resolve the promise, acknowledging the request.
-  aResolve(true);
-
   if (!aLayersId.IsValid()) {
     return IPC_FAIL(this, "Received an invalid LayersId");
   }
+
+  // Resolve the promise when this function exits, as we'll have fully unloaded
+  // at that point.
+  auto scopeExit = MakeScopeExit([&] { aResolve(true); });
 
   // Get a BrowsingContext if we're not null or discarded. We don't want to
   // early-return before we connect the BrowserBridgeChild, as otherwise we'll
@@ -402,20 +404,22 @@ mozilla::ipc::IPCResult WindowGlobalChild::RecvMakeFrameRemote(
     return IPC_OK();
   }
 
+  // Synchronously delete de actor here rather than using SendBeginDestroy(), as
+  // we haven't initialized it yet.
+  auto deleteBridge =
+      MakeScopeExit([&] { BrowserBridgeChild::Send__delete__(bridge); });
+
   // Immediately tear down the actor if we don't have a valid FrameContext.
   if (NS_WARN_IF(aFrameContext.IsNullOrDiscarded())) {
-    BrowserBridgeChild::Send__delete__(bridge);
     return IPC_OK();
   }
 
   RefPtr<Element> embedderElt = frameContext->GetEmbedderElement();
   if (NS_WARN_IF(!embedderElt)) {
-    BrowserBridgeChild::Send__delete__(bridge);
     return IPC_OK();
   }
 
   if (NS_WARN_IF(embedderElt->GetOwnerGlobal() != GetWindowGlobal())) {
-    BrowserBridgeChild::Send__delete__(bridge);
     return IPC_OK();
   }
 
@@ -426,9 +430,11 @@ mozilla::ipc::IPCResult WindowGlobalChild::RecvMakeFrameRemote(
   IgnoredErrorResult rv;
   flo->ChangeRemotenessWithBridge(bridge, rv);
   if (NS_WARN_IF(rv.Failed())) {
-    BrowserBridgeChild::Send__delete__(bridge);
     return IPC_OK();
   }
+
+  // Everything succeeded, so don't delete the bridge.
+  deleteBridge.release();
 
   return IPC_OK();
 }
@@ -437,13 +443,8 @@ mozilla::ipc::IPCResult WindowGlobalChild::RecvDrawSnapshot(
     const Maybe<IntRect>& aRect, const float& aScale,
     const nscolor& aBackgroundColor, const uint32_t& aFlags,
     DrawSnapshotResolver&& aResolve) {
-  nsCOMPtr<nsIDocShell> docShell = BrowsingContext()->GetDocShell();
-  if (!docShell) {
-    aResolve(gfx::PaintFragment{});
-    return IPC_OK();
-  }
-
-  aResolve(gfx::PaintFragment::Record(docShell, aRect, aScale, aBackgroundColor,
+  aResolve(gfx::PaintFragment::Record(BrowsingContext(), aRect, aScale,
+                                      aBackgroundColor,
                                       (gfx::CrossProcessPaintFlags)aFlags));
   return IPC_OK();
 }
@@ -539,19 +540,58 @@ mozilla::ipc::IPCResult WindowGlobalChild::RecvAddBlockedFrameNodeByClassifier(
   return IPC_OK();
 }
 
-IPCResult WindowGlobalChild::RecvRawMessage(const JSActorMessageMeta& aMeta,
-                                            const ClonedMessageData& aData,
-                                            const ClonedMessageData& aStack) {
-  StructuredCloneData data;
-  data.BorrowFromClonedMessageDataForChild(aData);
-  StructuredCloneData stack;
-  stack.BorrowFromClonedMessageDataForChild(aStack);
+mozilla::ipc::IPCResult WindowGlobalChild::RecvResetScalingZoom() {
+  if (Document* doc = mWindowGlobal->GetExtantDoc()) {
+    if (PresShell* ps = doc->GetPresShell()) {
+      ps->SetResolutionAndScaleTo(1.0,
+                                  ResolutionChangeOrigin::MainThreadAdjustment);
+    }
+  }
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult WindowGlobalChild::RecvSetContainerFeaturePolicy(
+    dom::FeaturePolicy* aContainerFeaturePolicy) {
+  mContainerFeaturePolicy = aContainerFeaturePolicy;
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult WindowGlobalChild::RecvRestoreDocShellState(
+    const dom::sessionstore::DocShellRestoreState& aState,
+    RestoreDocShellStateResolver&& aResolve) {
+  if (mWindowGlobal) {
+    SessionStoreUtils::RestoreDocShellState(mWindowGlobal->GetDocShell(),
+                                            aState);
+  }
+  aResolve(true);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult WindowGlobalChild::RecvRestoreTabContent(
+    dom::SessionStoreRestoreData* aData, RestoreTabContentResolver&& aResolve) {
+  aData->RestoreInto(BrowsingContext());
+  aResolve(true);
+  return IPC_OK();
+}
+
+IPCResult WindowGlobalChild::RecvRawMessage(
+    const JSActorMessageMeta& aMeta, const Maybe<ClonedMessageData>& aData,
+    const Maybe<ClonedMessageData>& aStack) {
+  Maybe<StructuredCloneData> data;
+  if (aData) {
+    data.emplace();
+    data->BorrowFromClonedMessageDataForChild(*aData);
+  }
+  Maybe<StructuredCloneData> stack;
+  if (aStack) {
+    stack.emplace();
+    stack->BorrowFromClonedMessageDataForChild(*aStack);
+  }
   ReceiveRawMessage(aMeta, std::move(data), std::move(stack));
   return IPC_OK();
 }
 
 void WindowGlobalChild::SetDocumentURI(nsIURI* aDocumentURI) {
-#ifdef MOZ_GECKO_PROFILER
   // Registers a DOM Window with the profiler. It re-registers the same Inner
   // Window ID with different URIs because when a Browsing context is first
   // loaded, the first url loaded in it will be about:blank. This call keeps the
@@ -560,19 +600,20 @@ void WindowGlobalChild::SetDocumentURI(nsIURI* aDocumentURI) {
   if (BrowsingContext()->GetParent()) {
     embedderInnerWindowID = BrowsingContext()->GetEmbedderInnerWindowId();
   }
-  profiler_register_page(BrowsingContext()->Id(), InnerWindowId(),
+  profiler_register_page(BrowsingContext()->BrowserId(), InnerWindowId(),
                          aDocumentURI->GetSpecOrDefault(),
                          embedderInnerWindowID);
-#endif
   mDocumentURI = aDocumentURI;
   SendUpdateDocumentURI(aDocumentURI);
 }
 
 void WindowGlobalChild::SetDocumentPrincipal(
-    nsIPrincipal* aNewDocumentPrincipal) {
+    nsIPrincipal* aNewDocumentPrincipal,
+    nsIPrincipal* aNewDocumentStoragePrincipal) {
   MOZ_ASSERT(mDocumentPrincipal->Equals(aNewDocumentPrincipal));
   mDocumentPrincipal = aNewDocumentPrincipal;
-  SendUpdateDocumentPrincipal(aNewDocumentPrincipal);
+  SendUpdateDocumentPrincipal(aNewDocumentPrincipal,
+                              aNewDocumentStoragePrincipal);
 }
 
 const nsACString& WindowGlobalChild::GetRemoteType() {
@@ -584,8 +625,14 @@ const nsACString& WindowGlobalChild::GetRemoteType() {
 }
 
 already_AddRefed<JSWindowActorChild> WindowGlobalChild::GetActor(
-    const nsACString& aName, ErrorResult& aRv) {
-  return JSActorManager::GetActor(aName, aRv).downcast<JSWindowActorChild>();
+    JSContext* aCx, const nsACString& aName, ErrorResult& aRv) {
+  return JSActorManager::GetActor(aCx, aName, aRv)
+      .downcast<JSWindowActorChild>();
+}
+
+already_AddRefed<JSWindowActorChild> WindowGlobalChild::GetExistingActor(
+    const nsACString& aName) {
+  return JSActorManager::GetExistingActor(aName).downcast<JSWindowActorChild>();
 }
 
 already_AddRefed<JSActor> WindowGlobalChild::InitJSActor(
@@ -610,20 +657,42 @@ void WindowGlobalChild::ActorDestroy(ActorDestroyReason aWhy) {
   MOZ_ASSERT(nsContentUtils::IsSafeToRunScript(),
              "Destroying WindowGlobalChild can run script");
 
-  gWindowGlobalChildById->Remove(InnerWindowId());
+  // If our WindowContext hasn't been marked as discarded yet, ensure it's
+  // marked as discarded at this point.
+  mWindowContext->Discard();
 
-#ifdef MOZ_GECKO_PROFILER
   profiler_unregister_page(InnerWindowId());
-#endif
 
   // Destroy our JSActors, and reject any pending queries.
   JSActorDidDestroy();
 }
 
-WindowGlobalChild::~WindowGlobalChild() {
-  MOZ_ASSERT(!gWindowGlobalChildById ||
-             !gWindowGlobalChildById->Contains(InnerWindowId()));
+bool WindowGlobalChild::IsSameOriginWith(
+    const dom::WindowContext* aOther) const {
+  if (aOther == WindowContext()) {
+    return true;
+  }
+
+  MOZ_DIAGNOSTIC_ASSERT(WindowContext()->Group() == aOther->Group());
+  if (nsGlobalWindowInner* otherWin = aOther->GetInnerWindow()) {
+    return mDocumentPrincipal->Equals(otherWin->GetPrincipal());
+  }
+  return false;
 }
+
+bool WindowGlobalChild::SameOriginWithTop() {
+  return IsSameOriginWith(WindowContext()->TopWindowContext());
+}
+
+void WindowGlobalChild::UnblockBFCacheFor(BFCacheStatus aStatus) {
+  SendUpdateBFCacheStatus(0, aStatus);
+}
+
+void WindowGlobalChild::BlockBFCacheFor(BFCacheStatus aStatus) {
+  SendUpdateBFCacheStatus(aStatus, 0);
+}
+
+WindowGlobalChild::~WindowGlobalChild() = default;
 
 JSObject* WindowGlobalChild::WrapObject(JSContext* aCx,
                                         JS::Handle<JSObject*> aGivenProto) {
@@ -634,7 +703,20 @@ nsISupports* WindowGlobalChild::GetParentObject() {
   return xpc::NativeGlobal(xpc::PrivilegedJunkScope());
 }
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(WindowGlobalChild, mWindowGlobal)
+void WindowGlobalChild::SetSessionStoreDataCollector(
+    SessionStoreDataCollector* aCollector) {
+  mSessionStoreDataCollector = aCollector;
+}
+
+SessionStoreDataCollector* WindowGlobalChild::GetSessionStoreDataCollector()
+    const {
+  return mSessionStoreDataCollector;
+}
+
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_WEAK_PTR(WindowGlobalChild, mWindowGlobal,
+                                               mContainerFeaturePolicy,
+                                               mWindowContext,
+                                               mSessionStoreDataCollector)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(WindowGlobalChild)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
@@ -644,5 +726,4 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(WindowGlobalChild)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(WindowGlobalChild)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

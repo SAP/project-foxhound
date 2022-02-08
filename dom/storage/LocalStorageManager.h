@@ -16,9 +16,9 @@
 #include "mozilla/dom/Storage.h"
 
 #include "nsTHashtable.h"
-#include "nsDataHashtable.h"
 #include "nsClassHashtable.h"
 #include "nsHashKeys.h"
+#include "nsTHashMap.h"
 
 namespace mozilla {
 
@@ -37,7 +37,10 @@ class LocalStorageManager final : public nsIDOMStorageManager,
   LocalStorageManager();
 
   // Reads the preference for DOM storage quota
-  static uint32_t GetQuota();
+  static uint32_t GetOriginQuota();
+
+  // Reads the preference for DOM storage site quota
+  static uint32_t GetSiteQuota();
 
   // Gets (but not ensures) cache for the given scope
   LocalStorageCache* GetCache(const nsACString& aOriginSuffix,
@@ -45,7 +48,7 @@ class LocalStorageManager final : public nsIDOMStorageManager,
 
   // Returns object keeping usage cache for the scope.
   already_AddRefed<StorageUsage> GetOriginUsage(
-      const nsACString& aOriginNoSuffix);
+      const nsACString& aOriginNoSuffix, uint32_t aPrivateBrowsingId);
 
   static nsAutoCString CreateOrigin(const nsACString& aOriginSuffix,
                                     const nsACString& aOriginNoSuffix);
@@ -87,7 +90,7 @@ class LocalStorageManager final : public nsIDOMStorageManager,
   // initalized, this also starts preload of persistent data.
   already_AddRefed<LocalStorageCache> PutCache(
       const nsACString& aOriginSuffix, const nsACString& aOriginNoSuffix,
-      nsIPrincipal* aPrincipal);
+      const nsACString& aQuotaKey, nsIPrincipal* aPrincipal);
 
   enum class CreateMode {
     // GetStorage: do not create if it's not already in memory.
@@ -106,7 +109,7 @@ class LocalStorageManager final : public nsIDOMStorageManager,
                               Storage** aRetval);
 
   // Suffix->origin->cache map
-  typedef nsTHashtable<LocalStorageCacheHashKey> CacheOriginHashtable;
+  using CacheOriginHashtable = nsTHashtable<LocalStorageCacheHashKey>;
   nsClassHashtable<nsCStringHashKey, CacheOriginHashtable> mCaches;
 
   void ClearCaches(uint32_t aUnloadFlags,
@@ -121,7 +124,7 @@ class LocalStorageManager final : public nsIDOMStorageManager,
 
  private:
   // Keeps usage cache objects for eTLD+1 scopes we have touched.
-  nsDataHashtable<nsCStringHashKey, RefPtr<StorageUsage> > mUsages;
+  nsTHashMap<nsCString, RefPtr<StorageUsage> > mUsages;
 
   friend class LocalStorageCache;
   friend class StorageDBChild;

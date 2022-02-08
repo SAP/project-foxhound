@@ -67,7 +67,7 @@ function cacheDataForContext(loadContextInfo) {
     };
     // Visiting the disk cache also visits memory storage so we do not
     // need to use Services.cache2.memoryCacheStorage() here.
-    let storage = Services.cache2.diskCacheStorage(loadContextInfo, false);
+    let storage = Services.cache2.diskCacheStorage(loadContextInfo);
     storage.asyncVisitStorage(cacheVisitor, true);
   });
 }
@@ -153,6 +153,7 @@ async function doInit(aMode) {
       ["network.predictor.enabled", false],
       ["network.predictor.enable-prefetch", false],
       ["privacy.partition.network_state", false],
+      ["dom.security.https_first", false],
     ],
   });
   clearAllImageCaches();

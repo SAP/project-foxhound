@@ -60,20 +60,20 @@ class AccessibleCaretManagerTester : public ::testing::Test {
   class MockAccessibleCaretManager : public AccessibleCaretManager {
    public:
     using CaretMode = AccessibleCaretManager::CaretMode;
-    using AccessibleCaretManager::HideCarets;
+    using AccessibleCaretManager::HideCaretsAndDispatchCaretStateChangedEvent;
     using AccessibleCaretManager::UpdateCarets;
 
-    MockAccessibleCaretManager() : AccessibleCaretManager(nullptr) {
-      mFirstCaret = MakeUnique<MockAccessibleCaret>();
-      mSecondCaret = MakeUnique<MockAccessibleCaret>();
-    }
+    MockAccessibleCaretManager()
+        : AccessibleCaretManager(nullptr,
+                                 Carets{MakeUnique<MockAccessibleCaret>(),
+                                        MakeUnique<MockAccessibleCaret>()}) {}
 
     MockAccessibleCaret& FirstCaret() {
-      return static_cast<MockAccessibleCaret&>(*mFirstCaret);
+      return static_cast<MockAccessibleCaret&>(*mCarets.GetFirst());
     }
 
     MockAccessibleCaret& SecondCaret() {
-      return static_cast<MockAccessibleCaret&>(*mSecondCaret);
+      return static_cast<MockAccessibleCaret&>(*mCarets.GetSecond());
     }
 
     bool CompareTreePosition(nsIFrame* aStartFrame,
@@ -89,17 +89,20 @@ class AccessibleCaretManagerTester : public ::testing::Test {
 
     bool UpdateCaretsForOverlappingTilt() override { return true; }
 
-    void UpdateCaretsForAlwaysTilt(nsIFrame* aStartFrame,
-                                   nsIFrame* aEndFrame) override {
-      if (mFirstCaret->IsVisuallyVisible()) {
-        mFirstCaret->SetAppearance(Appearance::Left);
+    void UpdateCaretsForAlwaysTilt(const nsIFrame* aStartFrame,
+                                   const nsIFrame* aEndFrame) override {
+      if (mCarets.GetFirst()->IsVisuallyVisible()) {
+        mCarets.GetFirst()->SetAppearance(Appearance::Left);
       }
-      if (mSecondCaret->IsVisuallyVisible()) {
-        mSecondCaret->SetAppearance(Appearance::Right);
+      if (mCarets.GetSecond()->IsVisuallyVisible()) {
+        mCarets.GetSecond()->SetAppearance(Appearance::Right);
       }
     }
 
-    bool IsTerminated() const override { return false; }
+    Terminated IsTerminated() const override { return Terminated::No; }
+    bool IsScrollStarted() const { return mIsScrollStarted; }
+
+    Terminated MaybeFlushLayout() override { return Terminated::No; }
 
     MOCK_CONST_METHOD0(GetCaretMode, CaretMode());
     MOCK_METHOD1(DispatchCaretStateChangedEvent,
@@ -649,7 +652,7 @@ MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION {
   EXPECT_EQ(FirstCaretAppearance(), Appearance::Normal);
   check.Call("updatecarets");
 
-  mManager.HideCarets();
+  mManager.HideCaretsAndDispatchCaretStateChangedEvent();
   EXPECT_EQ(FirstCaretAppearance(), Appearance::None);
   check.Call("hidecarets");
 
@@ -715,6 +718,11 @@ MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION {
                               CaretChangedReason::Updateposition));
     EXPECT_CALL(check, Call("scrollend3"));
   }
+
+  // Simulate a pinch-zoom operation before tapping on an empty content.
+  mManager.OnScrollStart();
+  mManager.OnScrollEnd();
+  EXPECT_EQ(mManager.IsScrollStarted(), false);
 
   // Simulate a single tap on an empty content.
   mManager.UpdateCarets();

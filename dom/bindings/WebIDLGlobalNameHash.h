@@ -26,7 +26,7 @@ struct WebIDLNameTableEntry {
   // Check whether a constructor should be enabled for the given object.
   // Note that the object should NOT be an Xray, since Xrays will end up
   // defining constructors on the underlying object.
-  typedef bool (*ConstructorEnabled)(JSContext* cx, JS::Handle<JSObject*> obj);
+  using ConstructorEnabled = bool (*)(JSContext* cx, JS::Handle<JSObject*> obj);
 
   uint16_t mNameOffset;
   uint16_t mNameLength;
@@ -38,14 +38,14 @@ struct WebIDLNameTableEntry {
 
 class WebIDLGlobalNameHash {
  public:
-  typedef WebIDLNameTableEntry::ConstructorEnabled ConstructorEnabled;
+  using ConstructorEnabled = WebIDLNameTableEntry::ConstructorEnabled;
 
   // Returns false if something failed. aFound is set to true if the name is in
   // the hash, whether it's enabled or not.
-  static bool DefineIfEnabled(JSContext* aCx, JS::Handle<JSObject*> aObj,
-                              JS::Handle<jsid> aId,
-                              JS::MutableHandle<JS::PropertyDescriptor> aDesc,
-                              bool* aFound);
+  static bool DefineIfEnabled(
+      JSContext* aCx, JS::Handle<JSObject*> aObj, JS::Handle<jsid> aId,
+      JS::MutableHandle<mozilla::Maybe<JS::PropertyDescriptor>> aDesc,
+      bool* aFound);
 
   static bool MayResolve(jsid aId);
 

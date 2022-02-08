@@ -7,6 +7,11 @@
 newtab-page-title = New Tab
 newtab-settings-button =
     .title = Customize your New Tab page
+newtab-personalize-icon-label =
+    .title = Personalize new tab
+    .aria-label = Personalize new tab
+newtab-personalize-dialog-label =
+    .aria-label = Personalize
 
 ## Search box component.
 
@@ -15,17 +20,32 @@ newtab-search-box-search-button =
     .title = Search
     .aria-label = Search
 
-newtab-search-box-search-the-web-text = Search the Web
-newtab-search-box-search-the-web-input =
-    .placeholder = Search the Web
-    .title = Search the Web
-    .aria-label = Search the Web
+# Variables
+#  $engine (String): the name of the user's default search engine
+newtab-search-box-handoff-text = Search with { $engine } or enter address
+newtab-search-box-handoff-text-no-engine = Search or enter address
+# Variables
+#  $engine (String): the name of the user's default search engine
+newtab-search-box-handoff-input =
+    .placeholder = Search with { $engine } or enter address
+    .title = Search with { $engine } or enter address
+    .aria-label = Search with { $engine } or enter address
+newtab-search-box-handoff-input-no-engine =
+    .placeholder = Search or enter address
+    .title = Search or enter address
+    .aria-label = Search or enter address
+
+newtab-search-box-text = Search the web
+newtab-search-box-input =
+    .placeholder = Search the web
+    .aria-label = Search the web
 
 ## Top Sites - General form dialog.
 
 newtab-topsites-add-search-engine-header = Add Search Engine
-newtab-topsites-add-topsites-header = New Top Site
+newtab-topsites-add-shortcut-header = New Shortcut
 newtab-topsites-edit-topsites-header = Edit Top Site
+newtab-topsites-edit-shortcut-header = Edit Shortcut
 newtab-topsites-title-label = Title
 newtab-topsites-title-input =
     .placeholder = Enter a title
@@ -52,6 +72,10 @@ newtab-topsites-add-button = Add
 newtab-confirm-delete-history-p1 = Are you sure you want to delete every instance of this page from your history?
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = This action cannot be undone.
+
+## Top Sites - Sponsored label
+
+newtab-topsite-sponsored = Sponsored
 
 ## Context Menu - Action Tooltips.
 
@@ -148,6 +172,12 @@ newtab-label-sponsored = { $sponsorOrSource } · Sponsored
 #  $sponsor (String): This is the name of a sponsor
 newtab-label-sponsored-by = Sponsored by { $sponsor }
 
+# This string is used under the image of story cards to indicate source and time to read
+# Variables:
+#  $source (String): This is the name of a company or their domain
+#  $timeToRead (Number): This is the estimated number of minutes to read this story
+newtab-label-source-read-time = { $source } · { $timeToRead } min
+
 ## Section Menu: These strings are displayed in the section context menu and are
 ## meant as a call to action for the given section.
 
@@ -172,7 +202,7 @@ newtab-section-expand-section-label =
 ## Section Headers.
 
 newtab-section-header-topsites = Top Sites
-newtab-section-header-highlights = Highlights
+newtab-section-header-recent-activity = Recent activity
 # Variables:
 #  $provider (String): Name of the corresponding content provider.
 newtab-section-header-pocket = Recommended by { $provider }
@@ -185,7 +215,6 @@ newtab-empty-section-highlights = Start browsing, and we’ll show some of the g
 # Variables:
 #  $provider (String): Name of the content provider for this section, e.g "Pocket".
 newtab-empty-section-topstories = You’ve caught up. Check back later for more top stories from { $provider }. Can’t wait? Select a popular topic to find more great stories from around the web.
-
 
 ## Empty Section (Content Discovery Experience). These show when there are no more stories or when some stories fail to load.
 
@@ -200,13 +229,48 @@ newtab-discovery-empty-section-topstories-timed-out = Oops! We almost loaded thi
 
 # This is shown at the bottom of the trending stories section and precedes a list of links to popular topics.
 newtab-pocket-read-more = Popular Topics:
+newtab-pocket-new-topics-title = Want even more stories? See these popular topics from { -pocket-brand-name }
 newtab-pocket-more-recommendations = More Recommendations
 newtab-pocket-learn-more = Learn more
 newtab-pocket-cta-button = Get { -pocket-brand-name }
 newtab-pocket-cta-text = Save the stories you love in { -pocket-brand-name }, and fuel your mind with fascinating reads.
+newtab-pocket-pocket-firefox-family = { -pocket-brand-name } is part of the { -brand-product-name } family
+
+# A save to Pocket button that shows over the card thumbnail on hover.
+newtab-pocket-save-to-pocket = Save to { -pocket-brand-name }
+newtab-pocket-saved-to-pocket = Saved to { -pocket-brand-name }
+
+# This is a button shown at the bottom of the Pocket section that loads more stories when clicked.
+newtab-pocket-load-more-stories-button = Load more stories
+
+## Pocket Final Card Section.
+## This is for the final card in the Pocket grid.
+
+newtab-pocket-last-card-title = You’re all caught up!
+newtab-pocket-last-card-desc = Check back later for more.
+newtab-pocket-last-card-image =
+    .alt = You’re all caught up
 
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
 newtab-error-fallback-info = Oops, something went wrong loading this content.
 newtab-error-fallback-refresh-link = Refresh page to try again.
+
+## Customization Menu
+
+newtab-custom-shortcuts-title = Shortcuts
+newtab-custom-shortcuts-subtitle = Sites you save or visit
+newtab-custom-row-selector =
+        { $num ->
+            [one] { $num } row
+           *[other] { $num } rows
+        }
+newtab-custom-sponsored-sites = Sponsored shortcuts
+newtab-custom-pocket-title = Recommended by { -pocket-brand-name }
+newtab-custom-pocket-subtitle = Exceptional content curated by { -pocket-brand-name }, part of the { -brand-product-name } family
+newtab-custom-pocket-sponsored = Sponsored stories
+newtab-custom-recent-title = Recent activity
+newtab-custom-recent-subtitle = A selection of recent sites and content
+newtab-custom-close-button = Close
+newtab-custom-settings = Manage more settings

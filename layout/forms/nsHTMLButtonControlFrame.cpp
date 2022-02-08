@@ -14,7 +14,6 @@
 #include "nsGkAtoms.h"
 #include "nsButtonFrameRenderer.h"
 #include "nsCSSAnonBoxes.h"
-#include "nsCheckboxRadioFrame.h"
 #include "nsNameSpaceManager.h"
 #include "nsDisplayList.h"
 #include <algorithm>
@@ -35,12 +34,6 @@ nsHTMLButtonControlFrame::nsHTMLButtonControlFrame(ComputedStyle* aStyle,
     : nsContainerFrame(aStyle, aPresContext, aID) {}
 
 nsHTMLButtonControlFrame::~nsHTMLButtonControlFrame() = default;
-
-void nsHTMLButtonControlFrame::DestroyFrom(nsIFrame* aDestructRoot,
-                                           PostDestroyData& aPostDestroyData) {
-  nsCheckboxRadioFrame::RegUnRegAccessKey(static_cast<nsIFrame*>(this), false);
-  nsContainerFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
-}
 
 void nsHTMLButtonControlFrame::Init(nsIContent* aContent,
                                     nsContainerFrame* aParent,
@@ -133,7 +126,7 @@ nscoord nsHTMLButtonControlFrame::GetMinISize(gfxContext* aRenderingContext) {
   } else {
     nsIFrame* kid = mFrames.FirstChild();
     result = nsLayoutUtils::IntrinsicForContainer(aRenderingContext, kid,
-                                                  nsLayoutUtils::MIN_ISIZE);
+                                                  IntrinsicISizeType::MinISize);
   }
   return result;
 }
@@ -145,8 +138,8 @@ nscoord nsHTMLButtonControlFrame::GetPrefISize(gfxContext* aRenderingContext) {
     result = 0;
   } else {
     nsIFrame* kid = mFrames.FirstChild();
-    result = nsLayoutUtils::IntrinsicForContainer(aRenderingContext, kid,
-                                                  nsLayoutUtils::PREF_ISIZE);
+    result = nsLayoutUtils::IntrinsicForContainer(
+        aRenderingContext, kid, IntrinsicISizeType::PrefISize);
   }
   return result;
 }
@@ -159,10 +152,6 @@ void nsHTMLButtonControlFrame::Reflow(nsPresContext* aPresContext,
   DO_GLOBAL_REFLOW_COUNT("nsHTMLButtonControlFrame");
   DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
-
-  if (mState & NS_FRAME_FIRST_REFLOW) {
-    nsCheckboxRadioFrame::RegUnRegAccessKey(static_cast<nsIFrame*>(this), true);
-  }
 
   // Reflow the child
   nsIFrame* firstKid = mFrames.FirstChild();
@@ -208,7 +197,8 @@ void nsHTMLButtonControlFrame::ReflowButtonContents(
   availSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
 
   // shorthand for a value we need to use in a bunch of places
-  const LogicalMargin& clbp = aButtonReflowInput.ComputedLogicalBorderPadding();
+  const LogicalMargin& clbp =
+      aButtonReflowInput.ComputedLogicalBorderPadding(wm);
 
   LogicalPoint childPos(wm);
   childPos.I(wm) = clbp.IStart(wm);
@@ -344,6 +334,10 @@ bool nsHTMLButtonControlFrame::GetVerticalAlignBaseline(
 bool nsHTMLButtonControlFrame::GetNaturalBaselineBOffset(
     mozilla::WritingMode aWM, BaselineSharingGroup aBaselineGroup,
     nscoord* aBaseline) const {
+  if (StyleDisplay()->IsContainLayout()) {
+    return false;
+  }
+
   nsIFrame* inner = mFrames.FirstChild();
   if (MOZ_UNLIKELY(inner->GetWritingMode().IsOrthogonalTo(aWM))) {
     return false;

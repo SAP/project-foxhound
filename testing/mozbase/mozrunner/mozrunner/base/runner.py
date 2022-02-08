@@ -5,6 +5,7 @@
 
 from __future__ import absolute_import
 
+import six
 import os
 import subprocess
 import sys
@@ -13,7 +14,7 @@ from abc import ABCMeta, abstractproperty
 
 from mozlog import get_default_logger
 from mozprocess import ProcessHandler
-from six import string_types, text_type
+from six import ensure_str, string_types
 
 try:
     import mozcrash
@@ -25,27 +26,38 @@ from ..application import DefaultContext
 from ..errors import RunnerNotStartedError
 
 
+@six.add_metaclass(ABCMeta)
 class BaseRunner(object):
     """
     The base runner class for all mozrunner objects, both local and remote.
     """
-    __metaclass__ = ABCMeta
-    last_test = 'mozrunner-startup'
+
+    last_test = "mozrunner-startup"
     process_handler = None
     timeout = None
     output_timeout = None
 
-    def __init__(self, app_ctx=None, profile=None, clean_profile=True, env=None,
-                 process_class=None, process_args=None, symbols_path=None,
-                 dump_save_path=None, addons=None):
+    def __init__(
+        self,
+        app_ctx=None,
+        profile=None,
+        clean_profile=True,
+        env=None,
+        process_class=None,
+        process_args=None,
+        symbols_path=None,
+        dump_save_path=None,
+        addons=None,
+        explicit_cleanup=False,
+    ):
         self.app_ctx = app_ctx or DefaultContext()
 
         if isinstance(profile, string_types):
-            self.profile = self.app_ctx.profile_class(profile=profile,
-                                                      addons=addons)
+            self.profile = self.app_ctx.profile_class(profile=profile, addons=addons)
         else:
-            self.profile = profile or self.app_ctx.profile_class(**getattr(self.app_ctx,
-                                                                           'profile_args', {}))
+            self.profile = profile or self.app_ctx.profile_class(
+                **getattr(self.app_ctx, "profile_args", {})
+            )
 
         self.logger = get_default_logger()
 
@@ -62,9 +74,12 @@ class BaseRunner(object):
         self.dump_save_path = dump_save_path
 
         self.crashed = 0
+        self.explicit_cleanup = explicit_cleanup
 
     def __del__(self):
-        self.cleanup()
+        if not self.explicit_cleanup:
+            # If we're relying on the gc for cleanup do the same with the profile
+            self.cleanup(keep_profile=True)
 
     @abstractproperty
     def command(self):
@@ -86,7 +101,9 @@ class BaseRunner(object):
         else:
             raise RunnerNotStartedError("returncode accessed before runner started")
 
-    def start(self, debug_args=None, interactive=False, timeout=None, outputTimeout=None):
+    def start(
+        self, debug_args=None, interactive=False, timeout=None, outputTimeout=None
+    ):
         """
         Run self.command in the proper environment.
 
@@ -110,32 +127,29 @@ class BaseRunner(object):
             cmd = list(debug_args) + cmd
 
         if self.logger:
-            self.logger.info('Application command: %s' % ' '.join(cmd))
+            self.logger.info("Application command: %s" % " ".join(cmd))
 
-        encoded_env = {}
+        str_env = {}
         for k in self.env:
             v = self.env[k]
-            if isinstance(v, text_type):
-                v = v.encode('utf-8')
-            if isinstance(k, text_type):
-                k = k.encode('utf-8')
-            encoded_env[k] = v
+            str_env[ensure_str(k)] = ensure_str(v)
 
         if interactive:
-            self.process_handler = subprocess.Popen(cmd, env=encoded_env)
+            self.process_handler = subprocess.Popen(cmd, env=str_env)
             # TODO: other arguments
         else:
             # this run uses the managed processhandler
             try:
-                process = self.process_class(cmd, env=encoded_env, **self.process_args)
+                process = self.process_class(cmd, env=str_env, **self.process_args)
                 process.run(self.timeout, self.output_timeout)
 
                 self.process_handler = process
             except Exception as e:
-                reraise(RunnerNotStartedError,
-                        RunnerNotStartedError(
-                            "Failed to start the process: {}".format(e)),
-                        sys.exc_info()[2])
+                reraise(
+                    RunnerNotStartedError,
+                    RunnerNotStartedError("Failed to start the process: {}".format(e)),
+                    sys.exc_info()[2],
+                )
 
         self.crashed = 0
         return self.process_handler.pid
@@ -172,11 +186,13 @@ class BaseRunner(object):
         """
         return self.returncode is None
 
-    def stop(self, sig=None):
+    def stop(self, sig=None, timeout=None):
         """
         Kill the process.
 
         :param sig: Signal used to kill the process, defaults to SIGKILL
+                    (has no effect on Windows).
+        :param timeout: Maximum time to wait for the processs to exit
                     (has no effect on Windows).
         :returns: the process return code if process was already stopped,
                   -<signal> if process was killed (Unix only)
@@ -193,7 +209,7 @@ class BaseRunner(object):
         if isinstance(self.process_handler, subprocess.Popen):
             self.process_handler.kill()
         else:
-            self.process_handler.kill(sig=sig)
+            self.process_handler.kill(sig=sig, timeout=timeout)
 
         return self.returncode
 
@@ -204,8 +220,9 @@ class BaseRunner(object):
         self.stop()
         self.process_handler = None
 
-    def check_for_crashes(self, dump_directory=None, dump_save_path=None,
-                          test_name=None, quiet=False):
+    def check_for_crashes(
+        self, dump_directory=None, dump_save_path=None, test_name=None, quiet=False
+    ):
         """Check for possible crashes and output the stack traces.
 
         :param dump_directory: Directory to search for minidump files
@@ -218,7 +235,7 @@ class BaseRunner(object):
         crash_count = 0
 
         if not dump_directory:
-            dump_directory = os.path.join(self.profile.profile, 'minidumps')
+            dump_directory = os.path.join(self.profile.profile, "minidumps")
 
         if not dump_save_path:
             dump_save_path = self.dump_save_path
@@ -234,7 +251,8 @@ class BaseRunner(object):
                         dump_directory,
                         self.symbols_path,
                         dump_save_path=dump_save_path,
-                        test=test_name)
+                        test=test_name,
+                    )
                 else:
                     self.logger.warning("Can not log crashes without mozcrash")
             else:
@@ -244,7 +262,8 @@ class BaseRunner(object):
                         self.symbols_path,
                         dump_save_path=dump_save_path,
                         test_name=test_name,
-                        quiet=quiet)
+                        quiet=quiet,
+                    )
 
             self.crashed += crash_count
         except Exception:
@@ -252,8 +271,10 @@ class BaseRunner(object):
 
         return crash_count
 
-    def cleanup(self):
+    def cleanup(self, keep_profile=False):
         """
         Cleanup all runner state
         """
         self.stop()
+        if not keep_profile:
+            self.profile.cleanup()

@@ -2,74 +2,141 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
 import { setupCommands, clientCommands } from "./firefox/commands";
-import { setupEvents, clientEvents } from "./firefox/events";
-import { features, prefs } from "../utils/prefs";
+import {
+  setupCreate,
+  createPause,
+  prepareSourcePayload,
+} from "./firefox/create";
+import { features } from "../utils/prefs";
+
+import { recordEvent } from "../utils/telemetry";
+import sourceQueue from "../utils/source-queue";
 
 let actions;
+let commands;
+let targetCommand;
+let resourceCommand;
 
-export async function onConnect(
-  connection: any,
-  _actions: Object
-): Promise<void> {
-  const { devToolsClient, targetList } = connection;
+export async function onConnect(_commands, _resourceCommand, _actions, store) {
   actions = _actions;
+  commands = _commands;
+  targetCommand = _commands.targetCommand;
+  resourceCommand = _resourceCommand;
 
-  setupCommands({ devToolsClient, targetList });
-  setupEvents({ actions, devToolsClient });
-  const { targetFront } = targetList;
-  if (targetFront.isBrowsingContext || targetFront.isParentProcess) {
-    targetList.listenForWorkers = true;
-    if (targetFront.localTab && features.windowlessServiceWorkers) {
-      targetList.listenForServiceWorkers = true;
-      targetList.destroyServiceWorkersOnNavigation = true;
+  setupCommands(commands);
+  setupCreate({ store });
+
+  sourceQueue.initialize(actions);
+
+  const { descriptorFront } = commands;
+  const { targetFront } = targetCommand;
+
+  // For tab, browser and webextension toolboxes, we want to enable watching for
+  // worker targets as soon as the debugger is opened.
+  // And also for service workers, if the related experimental feature is enabled
+  if (
+    descriptorFront.isTabDescriptor ||
+    descriptorFront.isWebExtensionDescriptor ||
+    descriptorFront.isBrowserProcessDescriptor
+  ) {
+    targetCommand.listenForWorkers = true;
+    if (descriptorFront.isLocalTab && features.windowlessServiceWorkers) {
+      targetCommand.listenForServiceWorkers = true;
+      targetCommand.destroyServiceWorkersOnNavigation = true;
     }
-    await targetList.startListening();
+    await targetCommand.startListening();
   }
+  // `pauseWorkersUntilAttach` is one option set when the debugger panel is opened rather that from the toolbox.
+  // The reason is to support early breakpoints in workers, which will force the workers to pause
+  // and later on (when TargetMixin.attachThread is called) resume worker execution, after passing the breakpoints.
+  // We only observe workers when the debugger panel is opened (see the few lines before and listenForWorkers = true).
+  // So if we were passing `pauseWorkersUntilAttach=true` from the toolbox code, workers would freeze as we would not watch
+  // for their targets and not resume them.
+  const options = { pauseWorkersUntilAttach: true };
+  await commands.threadConfigurationCommand.updateConfiguration(options);
 
-  await targetList.watchTargets(
-    targetList.ALL_TYPES,
-    onTargetAvailable,
-    onTargetDestroyed
+  // We should probably only pass descriptor informations from here
+  // so only pass if that's a WebExtension toolbox.
+  // And let actions.willNavigate/NAVIGATE pass the current/selected thread
+  // from onTargetAvailable
+  await actions.connect(
+    targetFront.url,
+    targetFront.threadFront.actor,
+    targetFront.isWebExtension
   );
+
+  await targetCommand.watchTargets({
+    types: targetCommand.ALL_TYPES,
+    onAvailable: onTargetAvailable,
+    onDestroyed: onTargetDestroyed,
+  });
+
+  // Use independant listeners for SOURCE and THREAD_STATE in order to ease
+  // doing batching and notify about a set of SOURCE's in one redux action.
+  await resourceCommand.watchResources([resourceCommand.TYPES.SOURCE], {
+    onAvailable: onSourceAvailable,
+  });
+  await resourceCommand.watchResources([resourceCommand.TYPES.THREAD_STATE], {
+    onAvailable: onThreadStateAvailable,
+  });
+
+  await resourceCommand.watchResources([resourceCommand.TYPES.ERROR_MESSAGE], {
+    onAvailable: actions.addExceptionFromResources,
+  });
+  await resourceCommand.watchResources([resourceCommand.TYPES.DOCUMENT_EVENT], {
+    onAvailable: onDocumentEventAvailable,
+    // we only care about future events for DOCUMENT_EVENT
+    ignoreExistingResources: true,
+  });
 }
 
-async function onTargetAvailable({
-  targetFront,
-  isTargetSwitching,
-}): Promise<void> {
+export function onDisconnect() {
+  targetCommand.unwatchTargets({
+    types: targetCommand.ALL_TYPES,
+    onAvailable: onTargetAvailable,
+    onDestroyed: onTargetDestroyed,
+  });
+  resourceCommand.unwatchResources([resourceCommand.TYPES.SOURCE], {
+    onAvailable: onSourceAvailable,
+  });
+  resourceCommand.unwatchResources([resourceCommand.TYPES.THREAD_STATE], {
+    onAvailable: onThreadStateAvailable,
+  });
+  resourceCommand.unwatchResources([resourceCommand.TYPES.ERROR_MESSAGE], {
+    onAvailable: actions.addExceptionFromResources,
+  });
+  resourceCommand.unwatchResources([resourceCommand.TYPES.DOCUMENT_EVENT], {
+    onAvailable: onDocumentEventAvailable,
+  });
+  sourceQueue.clear();
+}
+
+async function onTargetAvailable({ targetFront, isTargetSwitching }) {
+  const isBrowserToolbox = commands.descriptorFront.isBrowserProcessDescriptor;
+  const isNonTopLevelFrameTarget =
+    !targetFront.isTopLevel &&
+    targetFront.targetType === targetCommand.TYPES.FRAME;
+
+  if (isBrowserToolbox && isNonTopLevelFrameTarget) {
+    // In the BrowserToolbox, non-top-level frame targets are already
+    // debugged via content-process targets.
+    // Do not attach the thread here, as it was already done by the
+    // corresponding content-process target.
+    return;
+  }
+
   if (!targetFront.isTopLevel) {
     await actions.addTarget(targetFront);
     return;
   }
 
-  if (isTargetSwitching) {
-    // Simulate navigation actions when target switching.
-    // The will-navigate event will be missed when using target switching,
-    // however `navigate` corresponds more or less to the load event, so it
-    // should still be received on the new target.
-    actions.willNavigate({ url: targetFront.url });
-  }
-
-  // Make sure targetFront.threadFront is availabled and attached.
-  await targetFront.onThreadAttached;
-
+  // At this point, we expect the target and its thread to be attached.
   const { threadFront } = targetFront;
   if (!threadFront) {
+    console.error("The thread for", targetFront, "isn't attached.");
     return;
   }
-
-  targetFront.on("will-navigate", actions.willNavigate);
-  targetFront.on("navigate", actions.navigated);
-
-  await threadFront.reconfigure({
-    observeAsmJS: true,
-    pauseWorkersUntilAttach: true,
-    skipBreakpoints: prefs.skipPausing,
-    logEventBreakpoints: prefs.logEventBreakpoints,
-  });
 
   // Retrieve possible event listener breakpoints
   actions.getEventListenerBreakpointTypes().catch(e => console.error(e));
@@ -78,24 +145,55 @@ async function onTargetAvailable({
   // they are active once attached.
   actions.addEventListenerBreakpoints([]).catch(e => console.error(e));
 
-  const { traits } = targetFront;
-  await actions.connect(
-    targetFront.url,
-    threadFront.actor,
-    traits,
-    targetFront.isWebExtension
-  );
-
-  await clientCommands.checkIfAlreadyPaused();
   await actions.addTarget(targetFront);
 }
 
-function onTargetDestroyed({ targetFront }): void {
-  if (targetFront.isTopLevel) {
-    targetFront.off("will-navigate", actions.willNavigate);
-    targetFront.off("navigate", actions.navigated);
-  }
+function onTargetDestroyed({ targetFront }) {
   actions.removeTarget(targetFront);
 }
 
-export { clientCommands, clientEvents };
+async function onSourceAvailable(sources) {
+  const frontendSources = await Promise.all(
+    sources
+      .filter(source => {
+        return !source.targetFront.isDestroyed();
+      })
+      .map(async source => {
+        const threadFront = await source.targetFront.getFront("thread");
+        const frontendSource = prepareSourcePayload(threadFront, source);
+        return frontendSource;
+      })
+  );
+  await actions.newGeneratedSources(frontendSources);
+}
+
+async function onThreadStateAvailable(resources) {
+  for (const resource of resources) {
+    if (resource.targetFront.isDestroyed()) {
+      continue;
+    }
+    const threadFront = await resource.targetFront.getFront("thread");
+    if (resource.state == "paused") {
+      const pause = await createPause(threadFront.actor, resource);
+      await actions.paused(pause);
+      recordEvent("pause", { reason: resource.why.type });
+    } else if (resource.state == "resumed") {
+      await actions.resumed(threadFront.actorID);
+    }
+  }
+}
+
+function onDocumentEventAvailable(events) {
+  for (const event of events) {
+    // Only consider top level document, and ignore remote iframes top document
+    if (!event.targetFront.isTopLevel) continue;
+
+    if (event.name == "will-navigate") {
+      actions.willNavigate({ url: event.newURI });
+    } else if (event.name == "dom-complete") {
+      actions.navigated();
+    }
+  }
+}
+
+export { clientCommands };

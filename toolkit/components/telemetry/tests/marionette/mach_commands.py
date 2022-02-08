@@ -8,10 +8,9 @@ import logging
 import os
 import sys
 
-from mach.decorators import CommandProvider, Command
+from mach.decorators import Command
 
 from mozbuild.base import (
-    MachCommandBase,
     MachCommandConditions as conditions,
     BinaryNotFoundException,
 )
@@ -48,12 +47,12 @@ def run_telemetry(tests, binary=None, topsrcdir=None, **kwargs):
     args.binary = binary
     args.logger = kwargs.pop("log", None)
 
-    for k, v in kwargs.iteritems():
+    for k, v in kwargs.items():
         setattr(args, k, v)
 
     parser.verify_usage(args)
 
-    os.environ['MOZ_IGNORE_NSS_SHUTDOWN_LEAKS'] = '1'
+    os.environ["MOZ_IGNORE_NSS_SHUTDOWN_LEAKS"] = "1"
 
     if not args.logger:
         args.logger = commandline.setup_logging(
@@ -62,36 +61,38 @@ def run_telemetry(tests, binary=None, topsrcdir=None, **kwargs):
     failed = MarionetteHarness(TelemetryTestRunner, args=vars(args)).run()
     if failed > 0:
         return 1
-    else:
-        return 0
+    return 0
 
 
-@CommandProvider
-class TelemetryTest(MachCommandBase):
-    @Command(
-        "telemetry-tests-client",
-        category="testing",
-        description="Run tests specifically for the Telemetry client",
-        conditions=[conditions.is_firefox_or_android],
-        parser=create_parser_tests,
-    )
-    def telemetry_test(self, tests, **kwargs):
-        if "test_objects" in kwargs:
-            tests = []
-            for obj in kwargs["test_objects"]:
-                tests.append(obj["file_relpath"])
-            del kwargs["test_objects"]
-        if not kwargs.get("binary") and conditions.is_firefox(self):
-            try:
-                kwargs["binary"] = self.get_binary_path("app")
-            except BinaryNotFoundException as e:
-                self.log(logging.ERROR, 'telemetry-tests-client',
-                         {'error': str(e)},
-                         'ERROR: {error}')
-                self.log(logging.INFO, 'telemetry-tests-client',
-                         {'help': e.help()},
-                         '{help}')
-                return 1
-        if not kwargs.get("server_root"):
-            kwargs["server_root"] = "toolkit/components/telemetry/tests/marionette/harness/www"
-        return run_telemetry(tests, topsrcdir=self.topsrcdir, **kwargs)
+@Command(
+    "telemetry-tests-client",
+    category="testing",
+    description="Run tests specifically for the Telemetry client",
+    conditions=[conditions.is_firefox_or_android],
+    parser=create_parser_tests,
+)
+def telemetry_test(command_context, tests, **kwargs):
+    if "test_objects" in kwargs:
+        tests = []
+        for obj in kwargs["test_objects"]:
+            tests.append(obj["file_relpath"])
+        del kwargs["test_objects"]
+    if not kwargs.get("binary") and conditions.is_firefox(command_context):
+        try:
+            kwargs["binary"] = command_context.get_binary_path("app")
+        except BinaryNotFoundException as e:
+            command_context.log(
+                logging.ERROR,
+                "telemetry-tests-client",
+                {"error": str(e)},
+                "ERROR: {error}",
+            )
+            command_context.log(
+                logging.INFO, "telemetry-tests-client", {"help": e.help()}, "{help}"
+            )
+            return 1
+    if not kwargs.get("server_root"):
+        kwargs[
+            "server_root"
+        ] = "toolkit/components/telemetry/tests/marionette/harness/www"
+    return run_telemetry(tests, topsrcdir=command_context.topsrcdir, **kwargs)

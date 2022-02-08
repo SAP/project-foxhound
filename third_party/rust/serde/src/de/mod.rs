@@ -104,7 +104,7 @@
 //! [`Deserialize`]: ../trait.Deserialize.html
 //! [`Deserializer`]: ../trait.Deserializer.html
 //! [`LinkedHashMap<K, V>`]: https://docs.rs/linked-hash-map/*/linked_hash_map/struct.LinkedHashMap.html
-//! [`bincode`]: https://github.com/TyOverby/bincode
+//! [`bincode`]: https://github.com/servo/bincode
 //! [`linked-hash-map`]: https://crates.io/crates/linked-hash-map
 //! [`serde_derive`]: https://crates.io/crates/serde_derive
 //! [`serde_json`]: https://github.com/serde-rs/json
@@ -118,7 +118,6 @@ use lib::*;
 
 pub mod value;
 
-mod from_primitive;
 mod ignored_any;
 mod impls;
 mod utf8;
@@ -393,7 +392,7 @@ pub enum Unexpected<'a> {
 }
 
 impl<'a> fmt::Display for Unexpected<'a> {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         use self::Unexpected::*;
         match *self {
             Bool(b) => write!(formatter, "boolean `{}`", b),

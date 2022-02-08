@@ -5,7 +5,7 @@
 
 // Check evaluating and expanding getters in the Browser Console.
 const TEST_URI =
-  "data:text/html;charset=utf8,<h1>Object Inspector on Getters</h1>";
+  "data:text/html;charset=utf8,<!DOCTYPE html><h1>Object Inspector on Getters</h1>";
 const { ELLIPSIS } = require("devtools/shared/l10n");
 
 add_task(async function() {
@@ -101,9 +101,6 @@ add_task(async function() {
   await testProxyGetter(oi);
   await testThrowingGetter(oi);
   await testLongStringGetter(oi, LONGSTRING);
-
-  info("Close the Browser Console");
-  await BrowserConsoleManager.toggleBrowserConsole();
 });
 
 async function testStringGetter(oi) {

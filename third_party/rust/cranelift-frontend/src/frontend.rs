@@ -459,19 +459,21 @@ impl<'a> FunctionBuilder<'a> {
     /// for another function.
     pub fn finalize(&mut self) {
         // Check that all the `Block`s are filled and sealed.
-        debug_assert!(
-            self.func_ctx.blocks.iter().all(
-                |(block, block_data)| block_data.pristine || self.func_ctx.ssa.is_sealed(block)
-            ),
-            "all blocks should be sealed before dropping a FunctionBuilder"
-        );
-        debug_assert!(
-            self.func_ctx
-                .blocks
-                .values()
-                .all(|block_data| block_data.pristine || block_data.filled),
-            "all blocks should be filled before dropping a FunctionBuilder"
-        );
+        #[cfg(debug_assertions)]
+        {
+            for (block, block_data) in self.func_ctx.blocks.iter() {
+                assert!(
+                    block_data.pristine || self.func_ctx.ssa.is_sealed(block),
+                    "FunctionBuilder finalized, but block {} is not sealed",
+                    block,
+                );
+                assert!(
+                    block_data.pristine || block_data.filled,
+                    "FunctionBuilder finalized, but block {} is not filled",
+                    block,
+                );
+            }
+        }
 
         // In debug mode, check that all blocks are valid basic blocks.
         #[cfg(debug_assertions)]
@@ -638,6 +640,7 @@ impl<'a> FunctionBuilder<'a> {
         dest_align: u8,
         src_align: u8,
         non_overlapping: bool,
+        mut flags: MemFlags,
     ) {
         // Currently the result of guess work, not actual profiling.
         const THRESHOLD: u64 = 4;
@@ -674,7 +677,6 @@ impl<'a> FunctionBuilder<'a> {
             return;
         }
 
-        let mut flags = MemFlags::new();
         flags.set_aligned();
 
         // Load all of the memory first. This is necessary in case `dest` overlaps.
@@ -730,6 +732,7 @@ impl<'a> FunctionBuilder<'a> {
         ch: u8,
         size: u64,
         buffer_align: u8,
+        mut flags: MemFlags,
     ) {
         // Currently the result of guess work, not actual profiling.
         const THRESHOLD: u64 = 4;
@@ -761,14 +764,13 @@ impl<'a> FunctionBuilder<'a> {
             let size = self.ins().iconst(config.pointer_type(), size as i64);
             self.call_memset(config, buffer, ch, size);
         } else {
-            let mut flags = MemFlags::new();
             flags.set_aligned();
 
             let ch = u64::from(ch);
             let raw_value = if int_type == types::I64 {
-                (ch << 32) | (ch << 16) | (ch << 8) | ch
+                ch * 0x0101010101010101_u64
             } else if int_type == types::I32 {
-                (ch << 16) | (ch << 8) | ch
+                ch * 0x01010101_u64
             } else if int_type == types::I16 {
                 (ch << 8) | ch
             } else {
@@ -849,7 +851,9 @@ mod tests {
     use alloc::string::ToString;
     use cranelift_codegen::entity::EntityRef;
     use cranelift_codegen::ir::types::*;
-    use cranelift_codegen::ir::{AbiParam, ExternalName, Function, InstBuilder, Signature};
+    use cranelift_codegen::ir::{
+        AbiParam, ExternalName, Function, InstBuilder, MemFlags, Signature,
+    };
     use cranelift_codegen::isa::CallConv;
     use cranelift_codegen::settings;
     use cranelift_codegen::verifier::verify_function;
@@ -972,12 +976,13 @@ mod tests {
         let shared_builder = settings::builder();
         let shared_flags = settings::Flags::new(shared_builder);
 
-        let triple = ::target_lexicon::Triple::from_str("arm").expect("Couldn't create arm triple");
+        let triple =
+            ::target_lexicon::Triple::from_str("x86_64").expect("Couldn't create x86_64 triple");
 
         let target = isa::lookup(triple)
             .ok()
             .map(|b| b.finish(shared_flags))
-            .expect("This test requires arm support.");
+            .expect("This test requires x86_64 support.");
 
         let mut sig = Signature::new(target.default_call_conv());
         sig.returns.push(AbiParam::new(I32));
@@ -1010,13 +1015,13 @@ mod tests {
         assert_eq!(
             func.display(None).to_string(),
             "function %sample() -> i32 system_v {
-    sig0 = (i32, i32, i32) system_v
+    sig0 = (i64, i64, i64) system_v
     fn0 = %Memcpy sig0
 
 block0:
-    v3 = iconst.i32 0
+    v3 = iconst.i64 0
     v1 -> v3
-    v2 = iconst.i32 0
+    v2 = iconst.i64 0
     v0 -> v2
     call fn0(v1, v0, v1)
     return v1
@@ -1033,12 +1038,13 @@ block0:
         let shared_builder = settings::builder();
         let shared_flags = settings::Flags::new(shared_builder);
 
-        let triple = ::target_lexicon::Triple::from_str("arm").expect("Couldn't create arm triple");
+        let triple =
+            ::target_lexicon::Triple::from_str("x86_64").expect("Couldn't create x86_64 triple");
 
         let target = isa::lookup(triple)
             .ok()
             .map(|b| b.finish(shared_flags))
-            .expect("This test requires arm support.");
+            .expect("This test requires x86_64 support.");
 
         let mut sig = Signature::new(target.default_call_conv());
         sig.returns.push(AbiParam::new(I32));
@@ -1059,7 +1065,16 @@ block0:
             let src = builder.use_var(x);
             let dest = builder.use_var(y);
             let size = 8;
-            builder.emit_small_memory_copy(target.frontend_config(), dest, src, size, 8, 8, true);
+            builder.emit_small_memory_copy(
+                target.frontend_config(),
+                dest,
+                src,
+                size,
+                8,
+                8,
+                true,
+                MemFlags::new(),
+            );
             builder.ins().return_(&[dest]);
 
             builder.seal_all_blocks();
@@ -1070,9 +1085,9 @@ block0:
             func.display(None).to_string(),
             "function %sample() -> i32 system_v {
 block0:
-    v4 = iconst.i32 0
+    v4 = iconst.i64 0
     v1 -> v4
-    v3 = iconst.i32 0
+    v3 = iconst.i64 0
     v0 -> v3
     v2 = load.i64 aligned v0
     store aligned v2, v1
@@ -1090,12 +1105,13 @@ block0:
         let shared_builder = settings::builder();
         let shared_flags = settings::Flags::new(shared_builder);
 
-        let triple = ::target_lexicon::Triple::from_str("arm").expect("Couldn't create arm triple");
+        let triple =
+            ::target_lexicon::Triple::from_str("x86_64").expect("Couldn't create x86_64 triple");
 
         let target = isa::lookup(triple)
             .ok()
             .map(|b| b.finish(shared_flags))
-            .expect("This test requires arm support.");
+            .expect("This test requires x86_64 support.");
 
         let mut sig = Signature::new(target.default_call_conv());
         sig.returns.push(AbiParam::new(I32));
@@ -1116,7 +1132,16 @@ block0:
             let src = builder.use_var(x);
             let dest = builder.use_var(y);
             let size = 8192;
-            builder.emit_small_memory_copy(target.frontend_config(), dest, src, size, 8, 8, true);
+            builder.emit_small_memory_copy(
+                target.frontend_config(),
+                dest,
+                src,
+                size,
+                8,
+                8,
+                true,
+                MemFlags::new(),
+            );
             builder.ins().return_(&[dest]);
 
             builder.seal_all_blocks();
@@ -1126,15 +1151,15 @@ block0:
         assert_eq!(
             func.display(None).to_string(),
             "function %sample() -> i32 system_v {
-    sig0 = (i32, i32, i32) system_v
+    sig0 = (i64, i64, i64) system_v
     fn0 = %Memcpy sig0
 
 block0:
-    v4 = iconst.i32 0
+    v4 = iconst.i64 0
     v1 -> v4
-    v3 = iconst.i32 0
+    v3 = iconst.i64 0
     v0 -> v3
-    v2 = iconst.i32 8192
+    v2 = iconst.i64 8192
     call fn0(v1, v0, v2)
     return v1
 }
@@ -1150,12 +1175,13 @@ block0:
         let shared_builder = settings::builder();
         let shared_flags = settings::Flags::new(shared_builder);
 
-        let triple = ::target_lexicon::Triple::from_str("arm").expect("Couldn't create arm triple");
+        let triple =
+            ::target_lexicon::Triple::from_str("x86_64").expect("Couldn't create x86_64 triple");
 
         let target = isa::lookup(triple)
             .ok()
             .map(|b| b.finish(shared_flags))
-            .expect("This test requires arm support.");
+            .expect("This test requires x86_64 support.");
 
         let mut sig = Signature::new(target.default_call_conv());
         sig.returns.push(AbiParam::new(I32));
@@ -1173,7 +1199,7 @@ block0:
 
             let dest = builder.use_var(y);
             let size = 8;
-            builder.emit_small_memset(target.frontend_config(), dest, 1, size, 8);
+            builder.emit_small_memset(target.frontend_config(), dest, 1, size, 8, MemFlags::new());
             builder.ins().return_(&[dest]);
 
             builder.seal_all_blocks();
@@ -1184,9 +1210,9 @@ block0:
             func.display(None).to_string(),
             "function %sample() -> i32 system_v {
 block0:
-    v2 = iconst.i32 0
+    v2 = iconst.i64 0
     v0 -> v2
-    v1 = iconst.i64 0x0001_0001_0101
+    v1 = iconst.i64 0x0101_0101_0101_0101
     store aligned v1, v0
     return v0
 }
@@ -1202,12 +1228,13 @@ block0:
         let shared_builder = settings::builder();
         let shared_flags = settings::Flags::new(shared_builder);
 
-        let triple = ::target_lexicon::Triple::from_str("arm").expect("Couldn't create arm triple");
+        let triple =
+            ::target_lexicon::Triple::from_str("x86_64").expect("Couldn't create x86_64 triple");
 
         let target = isa::lookup(triple)
             .ok()
             .map(|b| b.finish(shared_flags))
-            .expect("This test requires arm support.");
+            .expect("This test requires x86_64 support.");
 
         let mut sig = Signature::new(target.default_call_conv());
         sig.returns.push(AbiParam::new(I32));
@@ -1225,7 +1252,7 @@ block0:
 
             let dest = builder.use_var(y);
             let size = 8192;
-            builder.emit_small_memset(target.frontend_config(), dest, 1, size, 8);
+            builder.emit_small_memset(target.frontend_config(), dest, 1, size, 8, MemFlags::new());
             builder.ins().return_(&[dest]);
 
             builder.seal_all_blocks();
@@ -1235,14 +1262,14 @@ block0:
         assert_eq!(
             func.display(None).to_string(),
             "function %sample() -> i32 system_v {
-    sig0 = (i32, i32, i32) system_v
+    sig0 = (i64, i32, i64) system_v
     fn0 = %Memset sig0
 
 block0:
-    v4 = iconst.i32 0
+    v4 = iconst.i64 0
     v0 -> v4
     v1 = iconst.i8 1
-    v2 = iconst.i32 8192
+    v2 = iconst.i64 8192
     v3 = uextend.i32 v1
     call fn0(v0, v3, v2)
     return v0

@@ -2,14 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
-loader: taskgraph.loader.multi_dep:loader
+loader: gecko_taskgraph.loader.multi_dep:loader
 
 group-by: platform
 
 transforms:
-    - taskgraph.transforms.l10n:transforms
-    - taskgraph.transforms.job:transforms
-    - taskgraph.transforms.task:transforms
+    - gecko_taskgraph.transforms.l10n:transforms
+    - gecko_taskgraph.transforms.job:transforms
+    - gecko_taskgraph.transforms.task:transforms
 
 kind-dependencies:
     - build
@@ -50,11 +50,11 @@ job-template:
                 win.*:
                     - linux64-wine
                     - linux64-liblowercase
+                    - nsis
         fetch:
             by-build-platform:
                 default: []
                 win.*:
-                    - nsis-3.01-win
                     - upx-3.95-win
     tooltool:
         by-build-platform:
@@ -75,27 +75,21 @@ job-template:
             linux-shippable.*: ['release']  # Do not run on autoland - Bug 1599197
             default: ['all']
     worker-type: b-linux
-    docker-image:
-        by-build-platform:
-            linux.*: {in-tree: debian8-amd64-build}
-            default: {in-tree: debian10-amd64-build}
+    docker-image: {in-tree: debian11-amd64-build}
     treeherder:
         symbol: L10n
         tier: 1
         platform:
             by-build-platform:
                 linux64: linux64/opt
-                linux64-pgo: linux64-pgo/opt
                 linux64-shippable: linux64-shippable/opt
                 linux: linux32/opt
                 linux-shippable: linux32-shippable/opt
                 macosx64: osx-cross/opt
                 macosx64-shippable: osx-shippable/opt
                 win32: windows2012-32/opt
-                win32-pgo: windows2012-32-pgo/opt
                 win32-shippable: windows2012-32-shippable/opt
                 win64: windows2012-64/opt
-                win64-pgo: windows2012-64-pgo/opt
                 win64-shippable: windows2012-64-shippable/opt
     env:
         by-build-platform:

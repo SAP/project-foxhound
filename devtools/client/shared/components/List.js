@@ -24,13 +24,7 @@ const {
 
 loader.lazyRequireGetter(
   this,
-  "wrapMoveFocus",
-  "devtools/client/shared/focus",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "getFocusableElements",
+  ["getFocusableElements", "wrapMoveFocus"],
   "devtools/client/shared/focus",
   true
 );
@@ -120,7 +114,7 @@ class ListItemClass extends Component {
         }`,
         id: item.key,
         onClick,
-        onKeyDownCapture: active && this._onKeyDown,
+        onKeyDownCapture: active ? this._onKeyDown : null,
       },
       div(
         {

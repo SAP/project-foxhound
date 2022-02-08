@@ -12,6 +12,7 @@
 #include "mozilla/TimeStamp.h"
 #include "nsISupportsImpl.h"
 #include "nsTArray.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 namespace layers {
@@ -19,7 +20,8 @@ namespace layers {
 struct FrameMetrics;
 
 class WheelScrollAnimation;
-class KeyboardScrollAnimation;
+class OverscrollAnimation;
+class SmoothMsdScrollAnimation;
 class SmoothScrollAnimation;
 
 class AsyncPanZoomAnimation {
@@ -68,15 +70,18 @@ class AsyncPanZoomAnimation {
     return std::move(mDeferredTasks);
   }
 
-  virtual KeyboardScrollAnimation* AsKeyboardScrollAnimation() {
+  virtual WheelScrollAnimation* AsWheelScrollAnimation() { return nullptr; }
+  virtual SmoothMsdScrollAnimation* AsSmoothMsdScrollAnimation() {
     return nullptr;
   }
-  virtual WheelScrollAnimation* AsWheelScrollAnimation() { return nullptr; }
   virtual SmoothScrollAnimation* AsSmoothScrollAnimation() { return nullptr; }
+  virtual OverscrollAnimation* AsOverscrollAnimation() { return nullptr; }
 
   virtual bool WantsRepaints() { return true; }
 
   virtual void Cancel(CancelAnimationFlags aFlags) {}
+
+  virtual bool WasTriggeredByScript() const { return false; }
 
  protected:
   // Protected destructor, to discourage deletion outside of Release():

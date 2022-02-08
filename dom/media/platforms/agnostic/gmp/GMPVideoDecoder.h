@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/layers/KnowsCompositor.h"
 #if !defined(GMPVideoDecoder_h_)
 #  define GMPVideoDecoder_h_
 
@@ -16,14 +17,13 @@
 
 namespace mozilla {
 
-struct GMPVideoDecoderParams {
+struct MOZ_STACK_CLASS GMPVideoDecoderParams {
   explicit GMPVideoDecoderParams(const CreateDecoderParams& aParams);
 
   const VideoInfo& mConfig;
-  TaskQueue* mTaskQueue;
   layers::ImageContainer* mImageContainer;
-  layers::LayersBackend mLayersBackend;
-  RefPtr<GMPCrashHelper> mCrashHelper;
+  GMPCrashHelper* mCrashHelper;
+  layers::KnowsCompositor* mKnowsCompositor;
 };
 
 DDLoggedTypeDeclNameAndBase(GMPVideoDecoder, MediaDataDecoder);
@@ -61,7 +61,6 @@ class GMPVideoDecoder : public MediaDataDecoder,
  protected:
   virtual void InitTags(nsTArray<nsCString>& aTags);
   virtual nsCString GetNodeId();
-  virtual uint32_t DecryptorId() const { return 0; }
   virtual GMPUniquePtr<GMPVideoEncodedFrame> CreateFrame(MediaRawData* aSample);
   virtual const VideoInfo& GetConfig() const;
 
@@ -90,6 +89,7 @@ class GMPVideoDecoder : public MediaDataDecoder,
 
   int64_t mLastStreamOffset = 0;
   RefPtr<layers::ImageContainer> mImageContainer;
+  RefPtr<layers::KnowsCompositor> mKnowsCompositor;
 
   MozPromiseHolder<DecodePromise> mDecodePromise;
   MozPromiseHolder<DecodePromise> mDrainPromise;

@@ -12,7 +12,7 @@ const { AppConstants } = ChromeUtils.import(
 const { BitsError, BitsUnknownError } = ChromeUtils.import(
   "resource://gre/modules/Bits.jsm"
 );
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var AUSTLMY = {
   // Telemetry for the application update background update check occurs when
@@ -31,6 +31,12 @@ var AUSTLMY = {
   EXTERNAL: "EXTERNAL",
   // The update check was performed by the call to notify in nsUpdateService.js.
   NOTIFY: "NOTIFY",
+  // The update check was performed after an update is already ready. There is
+  // currently no way for a user to initiate an update check when there is a
+  // ready update (the UI just prompts you to install the ready update). So
+  // subsequent update checks are necessarily "notify" update checks, not
+  // "external" ones.
+  SUBSEQUENT: "SUBSEQUENT",
 
   /**
    * Values for the UPDATE_CHECK_CODE_NOTIFY and UPDATE_CHECK_CODE_EXTERNAL
@@ -92,6 +98,12 @@ var AUSTLMY = {
   CHK_DISABLED_BY_POLICY: 37,
   // Update check failed due to write error
   CHK_ERR_WRITE_FAILURE: 38,
+  // Update check was delayed because another instance of the application is
+  // currently running
+  CHK_OTHER_INSTANCE: 39,
+  // Cannot yet download update because no partial patch is available and an
+  // update has already been downloaded.
+  CHK_NO_PARTIAL_PATCH: 40,
 
   /**
    * Submit a telemetry ping for the update check result code or a telemetry
@@ -104,8 +116,10 @@ var AUSTLMY = {
    *         The histogram id suffix for histogram IDs:
    *         UPDATE_CHECK_CODE_EXTERNAL
    *         UPDATE_CHECK_CODE_NOTIFY
+   *         UPDATE_CHECK_CODE_SUBSEQUENT
    *         UPDATE_CHECK_NO_UPDATE_EXTERNAL
    *         UPDATE_CHECK_NO_UPDATE_NOTIFY
+   *         UPDATE_CHECK_NO_UPDATE_SUBSEQUENT
    * @param  aCode
    *         An integer value as defined by the values that start with CHK_ in
    *         the above section.
@@ -133,8 +147,9 @@ var AUSTLMY = {
    *
    * @param  aSuffix
    *         The histogram id suffix for histogram IDs:
-   *         UPDATE_CHK_EXTENDED_ERROR_EXTERNAL
-   *         UPDATE_CHK_EXTENDED_ERROR_NOTIFY
+   *         UPDATE_CHECK_EXTENDED_ERROR_EXTERNAL
+   *         UPDATE_CHECK_EXTENDED_ERROR_NOTIFY
+   *         UPDATE_CHECK_EXTENDED_ERROR_SUBSEQUENT
    * @param  aCode
    *         The extended error value return by a failed update check.
    */
@@ -415,8 +430,10 @@ var AUSTLMY = {
    *         The histogram id suffix for histogram IDs:
    *         UPDATE_INVALID_LASTUPDATETIME_EXTERNAL
    *         UPDATE_INVALID_LASTUPDATETIME_NOTIFY
+   *         UPDATE_INVALID_LASTUPDATETIME_SUBSEQUENT
    *         UPDATE_LAST_NOTIFY_INTERVAL_DAYS_EXTERNAL
    *         UPDATE_LAST_NOTIFY_INTERVAL_DAYS_NOTIFY
+   *         UPDATE_LAST_NOTIFY_INTERVAL_DAYS_SUBSEQUENT
    */
   pingLastUpdateTime: function UT_pingLastUpdateTime(aSuffix) {
     const PREF_APP_UPDATE_LASTUPDATETIME =
@@ -460,8 +477,10 @@ var AUSTLMY = {
    *         The histogram id suffix for histogram IDs:
    *         UPDATE_SERVICE_INSTALLED_EXTERNAL
    *         UPDATE_SERVICE_INSTALLED_NOTIFY
+   *         UPDATE_SERVICE_INSTALLED_SUBSEQUENT
    *         UPDATE_SERVICE_MANUALLY_UNINSTALLED_EXTERNAL
    *         UPDATE_SERVICE_MANUALLY_UNINSTALLED_NOTIFY
+   *         UPDATE_SERVICE_MANUALLY_UNINSTALLED_SUBSEQUENT
    * @param  aInstalled
    *         Whether the service is installed.
    */
@@ -505,18 +524,6 @@ var AUSTLMY = {
         // count type histogram
         Services.telemetry.getHistogramById(id).add();
       }
-    } catch (e) {
-      Cu.reportError(e);
-    }
-  },
-
-  /**
-   * Submit a telemetry ping for a boolean scalar when we attempt to fix
-   * the update directory permissions this session.
-   */
-  pingFixUpdateDirectoryPermissionsAttempted: function UT_PFUDPA() {
-    try {
-      Services.telemetry.scalarSet("update.fix_permissions_attempted", true);
     } catch (e) {
       Cu.reportError(e);
     }
@@ -611,6 +618,20 @@ var AUSTLMY = {
     } catch (e) {
       Cu.reportError(e);
     }
+  },
+
+  /**
+   * Valid keys for the update.moveresult scalar.
+   */
+  MOVE_RESULT_SUCCESS: "SUCCESS",
+  MOVE_RESULT_UNKNOWN_FAILURE: "UNKNOWN_FAILURE",
+
+  /**
+   * Reports the passed result of attempting to move the downloading update
+   * into the ready update directory.
+   */
+  pingMoveResult: function UT_pingMoveResult(aResult) {
+    Services.telemetry.keyedScalarAdd("update.move_result", aResult, 1);
   },
 };
 Object.freeze(AUSTLMY);

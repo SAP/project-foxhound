@@ -9,7 +9,7 @@
 
 #include "imgIRequest.h"
 
-#include "nsILoadGroup.h"
+#include "nsIPrincipal.h"
 #include "nsISupportsPriority.h"
 #include "nsITimedChannel.h"
 #include "nsCOMPtr.h"
@@ -19,7 +19,6 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/Rect.h"
 
-#include "imgRequest.h"
 #include "IProgressObserver.h"
 
 #define NS_IMGREQUESTPROXY_CID                       \
@@ -31,6 +30,7 @@
 
 class imgCacheValidator;
 class imgINotificationObserver;
+class imgRequest;
 class imgStatusNotifyRunnable;
 class ProxyBehaviour;
 
@@ -123,7 +123,8 @@ class imgRequestProxy : public mozilla::PreloaderBase,
                      Document* aLoadingDocument, imgRequestProxy** aClone);
   nsresult Clone(imgINotificationObserver* aObserver,
                  Document* aLoadingDocument, imgRequestProxy** aClone);
-  already_AddRefed<imgRequestProxy> GetStaticRequest(Document* aLoadingDocument);
+  already_AddRefed<imgRequestProxy> GetStaticRequest(
+      Document* aLoadingDocument);
 
   imgRequest* GetOwner() const;
 
@@ -171,12 +172,7 @@ class imgRequestProxy : public mozilla::PreloaderBase,
   //   (b) whether mOwner has instantiated its image yet
   already_AddRefed<ProgressTracker> GetProgressTracker() const;
 
-  nsITimedChannel* TimedChannel() {
-    if (!GetOwner()) {
-      return nullptr;
-    }
-    return GetOwner()->GetTimedChannel();
-  }
+  nsITimedChannel* TimedChannel();
 
   already_AddRefed<Image> GetImage() const;
   bool HasImage() const;

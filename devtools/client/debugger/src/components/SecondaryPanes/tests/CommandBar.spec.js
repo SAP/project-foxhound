@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
 import React from "react";
 import { shallow } from "enzyme";
 import CommandBar from "../CommandBar";
@@ -26,7 +24,6 @@ describe("CommandBar", () => {
     // the shortcuts.on function
     const context = { shortcuts: { on: jest.fn() } };
 
-    // $FlowIgnore
     shallow(<CommandBar.WrappedComponent {...props} />, { context });
 
     // get the keyboard event listeners recorded from the "on" spy.
@@ -38,7 +35,7 @@ describe("CommandBar", () => {
     keyEventHandlers
       .filter(i => i[0] === "F8")
       .forEach(([_, handler]) => {
-        handler(null, mockEvent);
+        handler(mockEvent);
       });
 
     expect(props.breakOnNext).toHaveBeenCalled();
@@ -61,7 +58,6 @@ describe("CommandBar", () => {
     // the shortcuts.on function
     const context = { shortcuts: { on: jest.fn() } };
 
-    // $FlowIgnore
     shallow(<CommandBar.WrappedComponent {...props} />, { context });
 
     // get the keyboard event listeners recorded from the "on" spy.
@@ -73,7 +69,7 @@ describe("CommandBar", () => {
     keyEventHandlers
       .filter(i => i[0] === "F8")
       .forEach(([_, handler]) => {
-        handler(null, mockEvent);
+        handler(mockEvent);
       });
     expect(props.resume).toHaveBeenCalled();
     expect(props.breakOnNext).not.toHaveBeenCalled();

@@ -1,19 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-function promiseManyFrecenciesChanged() {
-  return new Promise(resolve => {
-    let obs = new NavHistoryObserver();
-    obs.onManyFrecenciesChanged = () => {
-      Assert.ok(true, "onManyFrecenciesChanged is triggered.");
-      PlacesUtils.history.removeObserver(obs);
-      resolve();
-    };
-
-    PlacesUtils.history.addObserver(obs);
-  });
-}
-
 add_task(async function test_eraseEverything() {
   await PlacesTestUtils.addVisits({
     uri: NetUtil.newURI("http://example.com/"),
@@ -42,11 +29,6 @@ add_task(async function test_eraseEverything() {
     url: "http://mozilla.org/",
   });
   checkBookmarkObject(unfiledBookmarkInFolder);
-  await setItemAnnotation(
-    unfiledBookmarkInFolder.guid,
-    "testanno1",
-    "testvalue1"
-  );
 
   let menuFolder = await PlacesUtils.bookmarks.insert({
     parentGuid: PlacesUtils.bookmarks.menuGuid,
@@ -65,7 +47,6 @@ add_task(async function test_eraseEverything() {
     url: "http://mozilla.org/",
   });
   checkBookmarkObject(menuBookmarkInFolder);
-  await setItemAnnotation(menuBookmarkInFolder.guid, "testanno1", "testvalue1");
 
   let toolbarFolder = await PlacesUtils.bookmarks.insert({
     parentGuid: PlacesUtils.bookmarks.toolbarGuid,
@@ -84,36 +65,24 @@ add_task(async function test_eraseEverything() {
     url: "http://mozilla.org/",
   });
   checkBookmarkObject(toolbarBookmarkInFolder);
-  await setItemAnnotation(
-    toolbarBookmarkInFolder.guid,
-    "testanno1",
-    "testvalue1"
-  );
 
   await PlacesTestUtils.promiseAsyncUpdates();
   Assert.ok(frecencyForUrl("http://example.com/") > frecencyForExample);
   Assert.ok(frecencyForUrl("http://example.com/") > frecencyForMozilla);
 
-  let manyFrecenciesPromise = promiseManyFrecenciesChanged();
+  const promise = PlacesTestUtils.waitForNotification(
+    "pages-rank-changed",
+    () => true,
+    "places"
+  );
 
   await PlacesUtils.bookmarks.eraseEverything();
 
-  // Ensure we get an onManyFrecenciesChanged notification.
-  await manyFrecenciesPromise;
+  // Ensure we get an pages-rank-changed event.
+  await promise;
 
   Assert.equal(frecencyForUrl("http://example.com/"), frecencyForExample);
   Assert.equal(frecencyForUrl("http://example.com/"), frecencyForMozilla);
-
-  // Check there are no orphan annotations.
-  let conn = await PlacesUtils.promiseDBConnection();
-  let annoAttrs = await conn.execute(
-    `SELECT id, name FROM moz_anno_attributes`
-  );
-  Assert.equal(annoAttrs.length, 0);
-  let annos = await conn.execute(
-    `SELECT item_id, anno_attribute_id FROM moz_items_annos`
-  );
-  Assert.equal(annos.length, 0);
 });
 
 add_task(async function test_eraseEverything_roots() {

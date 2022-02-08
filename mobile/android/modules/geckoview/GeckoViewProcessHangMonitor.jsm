@@ -101,7 +101,7 @@ class GeckoViewProcessHangMonitor extends GeckoViewModule {
   observe(aSubject, aTopic, aData) {
     debug`observe(aTopic=${aTopic})`;
     aSubject.QueryInterface(Ci.nsIHangReport);
-    if (!aSubject.isReportForBrowser(this.browser.frameLoader)) {
+    if (!aSubject.isReportForBrowserOrChildren(this.browser.frameLoader)) {
       return;
     }
 
@@ -130,24 +130,11 @@ class GeckoViewProcessHangMonitor extends GeckoViewModule {
   }
 
   /**
-   * Terminate whatever is causing this report, be it an add-on, page script,
-   * or plug-in. This is done without updating any report notifications.
+   * Terminate whatever is causing this report, be it an add-on or page script.
+   * This is done without updating any report notifications.
    */
   stopHang(report) {
-    switch (report.hangType) {
-      case report.SLOW_SCRIPT: {
-        if (report.addonId) {
-          report.terminateGlobal();
-        } else {
-          report.terminateScript();
-        }
-        break;
-      }
-      case report.PLUGIN_HANG: {
-        report.terminatePlugin();
-        break;
-      }
-    }
+    report.terminateScript();
   }
 
   /**
@@ -177,16 +164,11 @@ class GeckoViewProcessHangMonitor extends GeckoViewModule {
    * construct an information bundle
    */
   notifyReport(report) {
-    const message = {
+    this.eventDispatcher.sendRequest({
       type: "GeckoView:HangReport",
       hangId: this._reportLookupIndex.get(report),
-    };
-
-    if (report.hangType == report.SLOW_SCRIPT) {
-      message.hangType = "SLOW_SCRIPT";
-      message.scriptFileName = report.scriptFileName;
-      this.eventDispatcher.sendRequest(message);
-    }
+      scriptFileName: report.scriptFileName,
+    });
   }
 
   /**
@@ -237,7 +219,6 @@ class GeckoViewProcessHangMonitor extends GeckoViewModule {
   }
 }
 
-// eslint-disable-next-line no-unused-vars
 const { debug, warn } = GeckoViewProcessHangMonitor.initLogging(
   "GeckoViewProcessHangMonitor"
 );

@@ -6,9 +6,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/JSProcessActorProtocol.h"
+#include "mozilla/dom/InProcessChild.h"
+#include "mozilla/dom/JSProcessActorBinding.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/JSActorBinding.h"
+#include "mozilla/dom/PContent.h"
+#include "nsContentUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(JSProcessActorProtocol)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(JSProcessActorProtocol)
@@ -96,13 +102,15 @@ NS_IMETHODIMP JSProcessActorProtocol::Observe(nsISupports* aSubject,
   }
 
   // Ensure our actor is present.
-  RefPtr<JSActor> actor = manager->GetActor(mName, IgnoreErrors());
-  if (!actor) {
+  AutoJSAPI jsapi;
+  jsapi.Init();
+  RefPtr<JSActor> actor = manager->GetActor(jsapi.cx(), mName, IgnoreErrors());
+  if (!actor || NS_WARN_IF(!actor->GetWrapperPreserveColor())) {
     return NS_OK;
   }
 
   // Build a observer callback.
-  JS::Rooted<JSObject*> global(RootingCx(),
+  JS::Rooted<JSObject*> global(jsapi.cx(),
                                JS::GetNonCCWObjectGlobal(actor->GetWrapper()));
   RefPtr<MozObserverCallback> observerCallback =
       new MozObserverCallback(actor->GetWrapper(), global, nullptr, nullptr);
@@ -139,18 +147,23 @@ bool JSProcessActorProtocol::RemoteTypePrefixMatches(
   return false;
 }
 
-bool JSProcessActorProtocol::Matches(const nsACString& aRemoteType) {
+bool JSProcessActorProtocol::Matches(const nsACString& aRemoteType,
+                                     ErrorResult& aRv) {
   if (!mIncludeParent && aRemoteType.IsEmpty()) {
+    aRv.ThrowNotSupportedError(nsPrintfCString(
+        "Process protocol '%s' doesn't match the parent process", mName.get()));
     return false;
   }
 
   if (!mRemoteTypes.IsEmpty() &&
       !RemoteTypePrefixMatches(RemoteTypePrefix(aRemoteType))) {
+    aRv.ThrowNotSupportedError(nsPrintfCString(
+        "Process protocol '%s' doesn't support remote type '%s'", mName.get(),
+        PromiseFlatCString(aRemoteType).get()));
     return false;
   }
 
   return true;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -113,10 +113,11 @@
 //! which invoke their member's destructors through C++ code.
 
 #![allow(non_camel_case_types)]
+#![allow(clippy::missing_safety_doc)]
+#![allow(clippy::new_without_default)]
+#![allow(clippy::result_unit_err)]
 
-#[macro_use]
-extern crate bitflags;
-
+use bitflags::bitflags;
 use std::borrow;
 use std::cmp;
 use std::fmt;
@@ -127,7 +128,6 @@ use std::os::raw::c_void;
 use std::ptr;
 use std::slice;
 use std::str;
-use std::u32;
 
 mod conversions;
 
@@ -153,37 +153,30 @@ const SHRINKING_THRESHOLD: usize = 64;
 // Internal Implementation Flags //
 ///////////////////////////////////
 
-mod data_flags {
-    bitflags! {
-        // While this has the same layout as u16, it cannot be passed
-        // over FFI safely as a u16.
-        #[repr(C)]
-        pub struct DataFlags: u16 {
-            const TERMINATED = 1 << 0; // IsTerminated returns true
-            const VOIDED = 1 << 1; // IsVoid returns true
-            const REFCOUNTED = 1 << 2; // mData points to a heap-allocated, shareable, refcounted
-                                       // buffer
-            const OWNED = 1 << 3; // mData points to a heap-allocated, raw buffer
-            const INLINE = 1 << 4; // mData points to a writable, inline buffer
-            const LITERAL = 1 << 5; // mData points to a string literal; TERMINATED will also be set
-        }
+bitflags! {
+    // While this has the same layout as u16, it cannot be passed
+    // over FFI safely as a u16.
+    #[repr(C)]
+    struct DataFlags: u16 {
+        const TERMINATED = 1 << 0; // IsTerminated returns true
+        const VOIDED = 1 << 1; // IsVoid returns true
+        const REFCOUNTED = 1 << 2; // mData points to a heap-allocated, shareable, refcounted
+                                    // buffer
+        const OWNED = 1 << 3; // mData points to a heap-allocated, raw buffer
+        const INLINE = 1 << 4; // mData points to a writable, inline buffer
+        const LITERAL = 1 << 5; // mData points to a string literal; TERMINATED will also be set
     }
 }
 
-mod class_flags {
-    bitflags! {
-        // While this has the same layout as u16, it cannot be passed
-        // over FFI safely as a u16.
-        #[repr(C)]
-        pub struct ClassFlags: u16 {
-            const INLINE = 1 << 0; // |this|'s buffer is inline
-            const NULL_TERMINATED = 1 << 1; // |this| requires its buffer is null-terminated
-        }
+bitflags! {
+    // While this has the same layout as u16, it cannot be passed
+    // over FFI safely as a u16.
+    #[repr(C)]
+    struct ClassFlags: u16 {
+        const INLINE = 1 << 0; // |this|'s buffer is inline
+        const NULL_TERMINATED = 1 << 1; // |this| requires its buffer is null-terminated
     }
 }
-
-use class_flags::ClassFlags;
-use data_flags::DataFlags;
 
 ////////////////////////////////////
 // Generic String Bindings Macros //
@@ -287,7 +280,7 @@ impl<'a> Drop for nsAStringBulkWriteHandle<'a> {
             let mut this = self.string.as_repr_mut();
             this.as_mut().length = 1u32;
             *(this.as_mut().data.as_mut()) = 0xFFFDu16;
-            *(this.as_mut().data.as_ptr().offset(1isize)) = 0;
+            *(this.as_mut().data.as_ptr().add(1)) = 0;
         }
     }
 }
@@ -317,13 +310,13 @@ impl<'a> Drop for nsACStringBulkWriteHandle<'a> {
             if self.capacity >= 3 {
                 this.as_mut().length = 3u32;
                 *(this.as_mut().data.as_mut()) = 0xEFu8;
-                *(this.as_mut().data.as_ptr().offset(1isize)) = 0xBFu8;
-                *(this.as_mut().data.as_ptr().offset(2isize)) = 0xBDu8;
-                *(this.as_mut().data.as_ptr().offset(3isize)) = 0;
+                *(this.as_mut().data.as_ptr().add(1)) = 0xBFu8;
+                *(this.as_mut().data.as_ptr().add(2)) = 0xBDu8;
+                *(this.as_mut().data.as_ptr().add(3)) = 0;
             } else {
                 this.as_mut().length = 1u32;
                 *(this.as_mut().data.as_mut()) = 0x1Au8; // U+FFFD doesn't fit
-                *(this.as_mut().data.as_ptr().offset(1isize)) = 0;
+                *(this.as_mut().data.as_ptr().add(1)) = 0;
             }
         }
     }
@@ -390,7 +383,7 @@ macro_rules! define_string_types {
             type Target = $AString;
             fn deref(&self) -> &$AString {
                 unsafe {
-                    mem::transmute(self)
+                    &*(self as *const _ as *const $AString)
                 }
             }
         }
@@ -398,7 +391,7 @@ macro_rules! define_string_types {
         impl DerefMut for $StringRepr {
             fn deref_mut(&mut self) -> &mut $AString {
                 unsafe {
-                    mem::transmute(self)
+                    &mut *(self as *mut _ as *mut $AString)
                 }
             }
         }
@@ -453,7 +446,7 @@ macro_rules! define_string_types {
                 unsafe {
                     let mut this = self.string.as_repr_mut();
                     this.as_mut().length = length as u32;
-                    *(this.as_mut().data.as_ptr().offset(length as isize)) = 0;
+                    *(this.as_mut().data.as_ptr().add(length)) = 0;
                     if cfg!(debug_assertions) {
                         // Overwrite the unused part in debug builds. Note
                         // that capacity doesn't include space for the zero
@@ -462,7 +455,7 @@ macro_rules! define_string_types {
                         // not reflected in the capacity number.
                         // write_bytes() takes care of multiplying the length
                         // by the size of T.
-                        ptr::write_bytes(this.as_mut().data.as_ptr().offset((length + 1) as isize),
+                        ptr::write_bytes(this.as_mut().data.as_ptr().add(length + 1),
                                          0xE4u8,
                                          self.capacity - length);
                     }
@@ -555,6 +548,23 @@ macro_rules! define_string_types {
                 }
             }
 
+            /// Mark the string's data as void. If `true`, the string will be truncated.
+            ///
+            /// A void string is generally converted to a `null` JS value by bindings code.
+            pub fn set_is_void(&mut self, is_void: bool) {
+                if is_void {
+                    self.truncate();
+                }
+                unsafe {
+                    self.as_repr_mut().as_mut().dataflags.set(DataFlags::VOIDED, is_void);
+                }
+            }
+
+            /// Returns whether the string's data is voided.
+            pub fn is_void(&self) -> bool {
+                self.as_repr().dataflags.contains(DataFlags::VOIDED)
+            }
+
             /// Set the length of the string to the passed-in length, and expand
             /// the backing capacity to match. This method is unsafe as it can
             /// expose uninitialized memory when len is greater than the current
@@ -644,7 +654,7 @@ macro_rules! define_string_types {
                                             capacity: usize,
                                             units_to_preserve: usize,
                                             allow_shrinking: bool) -> Result<usize, ()> {
-                if capacity > u32::max_value() as usize {
+                if capacity > u32::MAX as usize {
                     Err(())
                 } else {
                     let capacity32 = capacity as u32;
@@ -652,7 +662,7 @@ macro_rules! define_string_types {
                                                     capacity32,
                                                     units_to_preserve as u32,
                                                     allow_shrinking && capacity > SHRINKING_THRESHOLD);
-                    if rounded == u32::max_value() {
+                    if rounded == u32::MAX {
                         return Err(())
                     }
                     Ok(rounded as usize)
@@ -661,9 +671,9 @@ macro_rules! define_string_types {
 
             fn as_repr(&self) -> &$StringRepr {
                 // All $AString values point to a struct prefix which is
-                // identical to $StringRepr, this we can transmute `self`
-                // into $StringRepr to get the reference to the underlying
-                // data.
+                // identical to $StringRepr, thus we can cast `self`
+                // into *const $StringRepr to get the reference to the
+                // underlying data.
                 unsafe {
                     &*(self as *const _ as *const $StringRepr)
                 }
@@ -696,10 +706,10 @@ macro_rules! define_string_types {
             fn deref(&self) -> &[$char_t] {
                 unsafe {
                     // All $AString values point to a struct prefix which is
-                    // identical to $StringRepr, this we can transmute `self`
-                    // into $StringRepr to get the reference to the underlying
-                    // data.
-                    let this: &$StringRepr = mem::transmute(self);
+                    // identical to $StringRepr, thus we can cast `self`
+                    // into *const $StringRepr to get the reference to the
+                    // underlying data.
+                    let this = &*(self as *const _ as *const $StringRepr);
                     slice::from_raw_parts(this.data.as_ptr(), this.length as usize)
                 }
             }
@@ -962,7 +972,7 @@ macro_rules! define_string_types {
                 $String {
                     hdr: $StringRepr {
                         data: unsafe { ptr::NonNull::new_unchecked(ptr) },
-                        length: length,
+                        length,
                         dataflags: DataFlags::OWNED | DataFlags::TERMINATED,
                         classflags: ClassFlags::NULL_TERMINATED,
                         taint: ptr::null_mut(),
@@ -1268,6 +1278,7 @@ impl nsAString {
     ///
     /// This is needed because the default ToString implementation goes through
     /// fmt::Display, and thus allocates the string twice.
+    #[allow(clippy::inherent_to_string_shadow_display)]
     pub fn to_string(&self) -> String {
         String::from_utf16_lossy(&self[..])
     }
@@ -1362,26 +1373,22 @@ pub mod test_helpers {
         ($T:ty, $fname:ident) => {
             #[no_mangle]
             #[allow(non_snake_case)]
-            pub extern "C" fn $fname(size: *mut usize, align: *mut usize) {
-                unsafe {
-                    *size = mem::size_of::<$T>();
-                    *align = mem::align_of::<$T>();
-                }
+            pub unsafe extern "C" fn $fname(size: *mut usize, align: *mut usize) {
+                *size = mem::size_of::<$T>();
+                *align = mem::align_of::<$T>();
             }
         };
         ($T:ty, $U:ty, $V:ty, $fname:ident) => {
             #[no_mangle]
             #[allow(non_snake_case)]
-            pub extern "C" fn $fname(size: *mut usize, align: *mut usize) {
-                unsafe {
-                    *size = mem::size_of::<$T>();
-                    *align = mem::align_of::<$T>();
+            pub unsafe extern "C" fn $fname(size: *mut usize, align: *mut usize) {
+                *size = mem::size_of::<$T>();
+                *align = mem::align_of::<$T>();
 
-                    assert_eq!(*size, mem::size_of::<$U>());
-                    assert_eq!(*align, mem::align_of::<$U>());
-                    assert_eq!(*size, mem::size_of::<$V>());
-                    assert_eq!(*align, mem::align_of::<$V>());
-                }
+                assert_eq!(*size, mem::size_of::<$U>());
+                assert_eq!(*align, mem::align_of::<$U>());
+                assert_eq!(*size, mem::size_of::<$V>());
+                assert_eq!(*align, mem::align_of::<$V>());
             }
         };
     }
@@ -1409,38 +1416,40 @@ pub mod test_helpers {
         ($T:ty, $U:ty, $V:ty, $member:ident, $method:ident) => {
             #[no_mangle]
             #[allow(non_snake_case)]
-            pub extern "C" fn $method(size: *mut usize, align: *mut usize, offset: *mut usize) {
-                unsafe {
-                    // Create a temporary value of type T to get offsets, sizes
-                    // and alignments from.
-                    let tmp: mem::MaybeUninit<$T> = mem::MaybeUninit::uninit();
-                    // FIXME: This should use &raw references when available,
-                    // this is technically UB as it creates a reference to
-                    // uninitialized memory, but there's no better way to do
-                    // this right now.
-                    let tmp = &*tmp.as_ptr();
-                    *size = mem::size_of_val(&tmp.$member);
-                    *align = mem::align_of_val(&tmp.$member);
-                    *offset = (&tmp.$member as *const _ as usize) - (tmp as *const $T as usize);
+            pub unsafe extern "C" fn $method(
+                size: *mut usize,
+                align: *mut usize,
+                offset: *mut usize,
+            ) {
+                // Create a temporary value of type T to get offsets, sizes
+                // and alignments from.
+                let tmp: mem::MaybeUninit<$T> = mem::MaybeUninit::uninit();
+                // FIXME: This should use &raw references when available,
+                // this is technically UB as it creates a reference to
+                // uninitialized memory, but there's no better way to do
+                // this right now.
+                let tmp = &*tmp.as_ptr();
+                *size = mem::size_of_val(&tmp.$member);
+                *align = mem::align_of_val(&tmp.$member);
+                *offset = (&tmp.$member as *const _ as usize) - (tmp as *const $T as usize);
 
-                    let tmp: mem::MaybeUninit<$U> = mem::MaybeUninit::uninit();
-                    let tmp = &*tmp.as_ptr();
-                    assert_eq!(*size, mem::size_of_val(&tmp.hdr.$member));
-                    assert_eq!(*align, mem::align_of_val(&tmp.hdr.$member));
-                    assert_eq!(
-                        *offset,
-                        (&tmp.hdr.$member as *const _ as usize) - (tmp as *const $U as usize)
-                    );
+                let tmp: mem::MaybeUninit<$U> = mem::MaybeUninit::uninit();
+                let tmp = &*tmp.as_ptr();
+                assert_eq!(*size, mem::size_of_val(&tmp.hdr.$member));
+                assert_eq!(*align, mem::align_of_val(&tmp.hdr.$member));
+                assert_eq!(
+                    *offset,
+                    (&tmp.hdr.$member as *const _ as usize) - (tmp as *const $U as usize)
+                );
 
-                    let tmp: mem::MaybeUninit<$V> = mem::MaybeUninit::uninit();
-                    let tmp = &*tmp.as_ptr();
-                    assert_eq!(*size, mem::size_of_val(&tmp.hdr.$member));
-                    assert_eq!(*align, mem::align_of_val(&tmp.hdr.$member));
-                    assert_eq!(
-                        *offset,
-                        (&tmp.hdr.$member as *const _ as usize) - (tmp as *const $V as usize)
-                    );
-                }
+                let tmp: mem::MaybeUninit<$V> = mem::MaybeUninit::uninit();
+                let tmp = &*tmp.as_ptr();
+                assert_eq!(*size, mem::size_of_val(&tmp.hdr.$member));
+                assert_eq!(*align, mem::align_of_val(&tmp.hdr.$member));
+                assert_eq!(
+                    *offset,
+                    (&tmp.hdr.$member as *const _ as usize) - (tmp as *const $V as usize)
+                );
             }
         };
     }
@@ -1518,7 +1527,7 @@ pub mod test_helpers {
 
     #[no_mangle]
     #[allow(non_snake_case)]
-    pub extern "C" fn Rust_Test_NsStringFlags(
+    pub unsafe extern "C" fn Rust_Test_NsStringFlags(
         f_terminated: *mut u16,
         f_voided: *mut u16,
         f_refcounted: *mut u16,
@@ -1528,29 +1537,25 @@ pub mod test_helpers {
         f_class_inline: *mut u16,
         f_class_null_terminated: *mut u16,
     ) {
-        unsafe {
-            *f_terminated = DataFlags::TERMINATED.bits();
-            *f_voided = DataFlags::VOIDED.bits();
-            *f_refcounted = DataFlags::REFCOUNTED.bits();
-            *f_owned = DataFlags::OWNED.bits();
-            *f_inline = DataFlags::INLINE.bits();
-            *f_literal = DataFlags::LITERAL.bits();
-            *f_class_inline = ClassFlags::INLINE.bits();
-            *f_class_null_terminated = ClassFlags::NULL_TERMINATED.bits();
-        }
+        *f_terminated = DataFlags::TERMINATED.bits();
+        *f_voided = DataFlags::VOIDED.bits();
+        *f_refcounted = DataFlags::REFCOUNTED.bits();
+        *f_owned = DataFlags::OWNED.bits();
+        *f_inline = DataFlags::INLINE.bits();
+        *f_literal = DataFlags::LITERAL.bits();
+        *f_class_inline = ClassFlags::INLINE.bits();
+        *f_class_null_terminated = ClassFlags::NULL_TERMINATED.bits();
     }
 
     #[no_mangle]
     #[allow(non_snake_case)]
-    pub extern "C" fn Rust_InlineCapacityFromRust(
+    pub unsafe extern "C" fn Rust_InlineCapacityFromRust(
         cstring: *const nsACString,
         string: *const nsAString,
         cstring_capacity: *mut usize,
         string_capacity: *mut usize,
     ) {
-        unsafe {
-            *cstring_capacity = (*cstring).inline_capacity().unwrap();
-            *string_capacity = (*string).inline_capacity().unwrap();
-        }
+        *cstring_capacity = (*cstring).inline_capacity().unwrap();
+        *string_capacity = (*string).inline_capacity().unwrap();
     }
 }

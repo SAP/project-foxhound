@@ -7,13 +7,12 @@
 #define mozilla_dom_HTMLSelectElement_h
 
 #include "mozilla/Attributes.h"
+#include "mozilla/dom/ConstraintValidation.h"
 #include "nsGenericHTMLElement.h"
-#include "nsIConstraintValidation.h"
 
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/UnionTypes.h"
 #include "mozilla/dom/HTMLOptionsCollection.h"
-#include "mozilla/ErrorResult.h"
 #include "nsCheapSets.h"
 #include "nsCOMPtr.h"
 #include "nsError.h"
@@ -27,6 +26,7 @@ class nsISelectControlFrame;
 
 namespace mozilla {
 
+class ErrorResult;
 class EventChainPostVisitor;
 class EventChainPreVisitor;
 class SelectContentData;
@@ -34,7 +34,7 @@ class PresState;
 
 namespace dom {
 
-class HTMLFormSubmission;
+class FormData;
 class HTMLSelectElement;
 
 class MOZ_STACK_CLASS SafeOptionListMutation {
@@ -64,8 +64,8 @@ class MOZ_STACK_CLASS SafeOptionListMutation {
   /** Whether we should be notifying when we make various method calls on
       mSelect */
   const bool mNotify;
-  /** The selected index at mutation start. */
-  int32_t mInitialSelectedIndex;
+  /** The selected option at mutation start. */
+  RefPtr<HTMLOptionElement> mInitialSelectedOption;
   /** Option list must be recreated if more than one mutation is detected. */
   nsMutationGuard mGuard;
 };
@@ -73,8 +73,8 @@ class MOZ_STACK_CLASS SafeOptionListMutation {
 /**
  * Implementation of &lt;select&gt;
  */
-class HTMLSelectElement final : public nsGenericHTMLFormElementWithState,
-                                public nsIConstraintValidation {
+class HTMLSelectElement final : public nsGenericHTMLFormControlElementWithState,
+                                public ConstraintValidation {
  public:
   /**
    *  IS_SELECTED   whether to set the option(s) to true or false
@@ -98,7 +98,7 @@ class HTMLSelectElement final : public nsGenericHTMLFormElementWithState,
     NO_RESELECT = 1 << 4
   };
 
-  using nsIConstraintValidation::GetValidationMessage;
+  using ConstraintValidation::GetValidationMessage;
 
   explicit HTMLSelectElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
@@ -129,9 +129,6 @@ class HTMLSelectElement final : public nsGenericHTMLFormElementWithState,
   bool Disabled() const { return GetBoolAttr(nsGkAtoms::disabled); }
   void SetDisabled(bool aVal, ErrorResult& aRv) {
     SetHTMLBoolAttr(nsGkAtoms::disabled, aVal, aRv);
-  }
-  HTMLFormElement* GetForm() const {
-    return nsGenericHTMLFormElementWithState::GetForm();
   }
   bool Multiple() const { return GetBoolAttr(nsGkAtoms::multiple); }
   void SetMultiple(bool aVal, ErrorResult& aRv) {
@@ -199,16 +196,20 @@ class HTMLSelectElement final : public nsGenericHTMLFormElementWithState,
 
   virtual bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
                                int32_t* aTabIndex) override;
-  virtual nsresult InsertChildBefore(nsIContent* aKid, nsIContent* aBeforeThis,
-                                     bool aNotify) override;
+  virtual void InsertChildBefore(nsIContent* aKid, nsIContent* aBeforeThis,
+                                 bool aNotify, ErrorResult& aRv) override;
   virtual void RemoveChildNode(nsIContent* aKid, bool aNotify) override;
+
+  // nsGenericHTMLElement
+  virtual bool IsDisabledForEvents(WidgetEvent* aEvent) override;
+
+  // nsGenericHTMLFormElement
+  void SaveState() override;
+  bool RestoreState(PresState* aState) override;
 
   // Overriden nsIFormControl methods
   NS_IMETHOD Reset() override;
-  NS_IMETHOD SubmitNamesValues(HTMLFormSubmission* aFormSubmission) override;
-  NS_IMETHOD SaveState() override;
-  virtual bool RestoreState(PresState* aState) override;
-  virtual bool IsDisabledForEvents(WidgetEvent* aEvent) override;
+  NS_IMETHOD SubmitNamesValues(FormData* aFormData) override;
 
   virtual void FieldSetDisabledChanged(bool aNotify) override;
 
@@ -292,12 +293,12 @@ class HTMLSelectElement final : public nsGenericHTMLFormElementWithState,
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLSelectElement,
-                                           nsGenericHTMLFormElementWithState)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(
+      HTMLSelectElement, nsGenericHTMLFormControlElementWithState)
 
   HTMLOptionsCollection* GetOptions() { return mOptions; }
 
-  // nsIConstraintValidation
+  // ConstraintValidation
   nsresult GetValidationMessage(nsAString& aValidationMessage,
                                 ValidityStateType aType) override;
 

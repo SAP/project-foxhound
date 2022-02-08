@@ -83,63 +83,6 @@ class TlsExtensionTruncator : public TlsExtensionFilter {
   size_t length_;
 };
 
-class TlsExtensionAppender : public TlsHandshakeFilter {
- public:
-  TlsExtensionAppender(const std::shared_ptr<TlsAgent>& a,
-                       uint8_t handshake_type, uint16_t ext, DataBuffer& data)
-      : TlsHandshakeFilter(a, {handshake_type}), extension_(ext), data_(data) {}
-
-  virtual PacketFilter::Action FilterHandshake(const HandshakeHeader& header,
-                                               const DataBuffer& input,
-                                               DataBuffer* output) {
-    TlsParser parser(input);
-    if (!TlsExtensionFilter::FindExtensions(&parser, header)) {
-      return KEEP;
-    }
-    *output = input;
-
-    // Increase the length of the extensions block.
-    if (!UpdateLength(output, parser.consumed(), 2)) {
-      return KEEP;
-    }
-
-    // Extensions in Certificate are nested twice.  Increase the size of the
-    // certificate list.
-    if (header.handshake_type() == kTlsHandshakeCertificate) {
-      TlsParser p2(input);
-      if (!p2.SkipVariable(1)) {
-        ADD_FAILURE();
-        return KEEP;
-      }
-      if (!UpdateLength(output, p2.consumed(), 3)) {
-        return KEEP;
-      }
-    }
-
-    size_t offset = output->len();
-    offset = output->Write(offset, extension_, 2);
-    WriteVariable(output, offset, data_, 2);
-
-    return CHANGE;
-  }
-
- private:
-  bool UpdateLength(DataBuffer* output, size_t offset, size_t size) {
-    uint32_t len;
-    if (!output->Read(offset, size, &len)) {
-      ADD_FAILURE();
-      return false;
-    }
-
-    len += 4 + data_.len();
-    output->Write(offset, len, size);
-    return true;
-  }
-
-  const uint16_t extension_;
-  const DataBuffer data_;
-};
-
 class TlsExtensionTestBase : public TlsConnectTestBase {
  protected:
   TlsExtensionTestBase(SSLProtocolVariant variant, uint16_t version)
@@ -231,11 +174,13 @@ class TlsExtensionTest13
     // Convert the version encoding for DTLS, if needed.
     if (variant_ == ssl_variant_datagram) {
       switch (version) {
-#ifdef DTLS_1_3_DRAFT_VERSION
         case SSL_LIBRARY_VERSION_TLS_1_3:
+#ifdef DTLS_1_3_DRAFT_VERSION
           version = 0x7f00 | DTLS_1_3_DRAFT_VERSION;
-          break;
+#else
+          version = SSL_LIBRARY_VERSION_DTLS_1_3_WIRE;
 #endif
+          break;
         case SSL_LIBRARY_VERSION_TLS_1_2:
           version = SSL_LIBRARY_VERSION_DTLS_1_2_WIRE;
           break;
@@ -383,6 +328,27 @@ TEST_P(TlsExtensionTestGeneric, AlpnMismatch) {
   ClientHelloErrorTest(nullptr, kTlsAlertNoApplicationProtocol);
 }
 
+TEST_P(TlsExtensionTestGeneric, AlpnDisabledServer) {
+  const uint8_t client_alpn[] = {0x01, 0x61};
+  client_->EnableAlpn(client_alpn, sizeof(client_alpn));
+  server_->EnableAlpn(nullptr, 0);
+
+  ClientHelloErrorTest(nullptr, kTlsAlertUnsupportedExtension);
+}
+
+TEST_P(TlsConnectGeneric, AlpnDisabled) {
+  server_->EnableAlpn(nullptr, 0);
+  Connect();
+
+  SSLNextProtoState state;
+  uint8_t buf[255] = {0};
+  unsigned int buf_len = 3;
+  EXPECT_EQ(SECSuccess, SSL_GetNextProto(client_->ssl_fd(), &state, buf,
+                                         &buf_len, sizeof(buf)));
+  EXPECT_EQ(SSL_NEXT_PROTO_NO_SUPPORT, state);
+  EXPECT_EQ(0U, buf_len);
+}
+
 // Many of these tests fail in TLS 1.3 because the extension is encrypted, which
 // prevents modification of the value from the ServerHello.
 TEST_P(TlsExtensionTestPre13, AlpnReturnedEmptyList) {
@@ -464,7 +430,10 @@ TEST_P(TlsExtensionTest12Plus, SignatureAlgorithmsBadLength) {
 }
 
 TEST_P(TlsExtensionTest12Plus, SignatureAlgorithmsTrailingData) {
-  const uint8_t val[] = {0x00, 0x02, 0x04, 0x01, 0x00};  // sha-256, rsa
+  // make sure the test uses an algorithm that is legal for
+  // tls 1.3 (or tls 1.3 will throw a handshake failure alert
+  // instead of a decode error alert)
+  const uint8_t val[] = {0x00, 0x02, 0x08, 0x09, 0x00};  // sha-256, rsa-pss-pss
   DataBuffer extension(val, sizeof(val));
   ClientHelloErrorTest(std::make_shared<TlsExtensionReplacer>(
       client_, ssl_signature_algorithms_xtn, extension));
@@ -1156,13 +1125,34 @@ TEST_P(TlsExtensionTest13, HrrThenRemoveSupportedGroups) {
 }
 
 TEST_P(TlsExtensionTest13, EmptyVersionList) {
-  static const uint8_t ext[] = {0x00, 0x00};
-  ConnectWithBogusVersionList(ext, sizeof(ext));
+  static const uint8_t kExt[] = {0x00, 0x00};
+  ConnectWithBogusVersionList(kExt, sizeof(kExt));
 }
 
 TEST_P(TlsExtensionTest13, OddVersionList) {
-  static const uint8_t ext[] = {0x00, 0x01, 0x00};
-  ConnectWithBogusVersionList(ext, sizeof(ext));
+  static const uint8_t kExt[] = {0x00, 0x01, 0x00};
+  ConnectWithBogusVersionList(kExt, sizeof(kExt));
+}
+
+TEST_P(TlsExtensionTest13, SignatureAlgorithmsInvalidTls13) {
+  // testing the case where we ask for a invalid parameter for tls13
+  const uint8_t val[] = {0x00, 0x02, 0x04, 0x01};  // sha-256, rsa-pkcs1
+  DataBuffer extension(val, sizeof(val));
+  ClientHelloErrorTest(std::make_shared<TlsExtensionReplacer>(
+                           client_, ssl_signature_algorithms_xtn, extension),
+                       kTlsAlertHandshakeFailure);
+}
+
+// Use the stream version number for TLS 1.3 (0x0304) in DTLS.
+TEST_F(TlsConnectDatagram13, TlsVersionInDtls) {
+  static const uint8_t kExt[] = {0x02, 0x03, 0x04};
+
+  DataBuffer versions_buf(kExt, sizeof(kExt));
+  MakeTlsFilter<TlsExtensionReplacer>(client_, ssl_tls13_supported_versions_xtn,
+                                      versions_buf);
+  ConnectExpectAlert(server_, kTlsAlertProtocolVersion);
+  client_->CheckErrorCode(SSL_ERROR_PROTOCOL_VERSION_ALERT);
+  server_->CheckErrorCode(SSL_ERROR_UNSUPPORTED_VERSION);
 }
 
 // TODO: this only tests extensions in server messages.  The client can extend
@@ -1289,6 +1279,7 @@ TEST_P(TlsBogusExtensionTest13, AddBogusExtensionNewSessionTicket) {
 
 TEST_P(TlsConnectStream, IncludePadding) {
   EnsureTlsSetup();
+  SSL_EnableTls13GreaseEch(client_->ssl_fd(), PR_FALSE);  // Don't GREASE
 
   // This needs to be long enough to push a TLS 1.0 ClientHello over 255, but
   // short enough not to push a TLS 1.3 ClientHello over 511.
@@ -1313,47 +1304,47 @@ TEST_F(TlsConnectDatagram13, Dtls13RejectLegacyCookie) {
   client_->CheckErrorCode(SSL_ERROR_ILLEGAL_PARAMETER_ALERT);
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     ExtensionStream, TlsExtensionTestGeneric,
     ::testing::Combine(TlsConnectTestBase::kTlsVariantsStream,
                        TlsConnectTestBase::kTlsVAll));
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     ExtensionDatagram, TlsExtensionTestGeneric,
     ::testing::Combine(TlsConnectTestBase::kTlsVariantsDatagram,
                        TlsConnectTestBase::kTlsV11Plus));
-INSTANTIATE_TEST_CASE_P(ExtensionDatagramOnly, TlsExtensionTestDtls,
-                        TlsConnectTestBase::kTlsV11Plus);
+INSTANTIATE_TEST_SUITE_P(ExtensionDatagramOnly, TlsExtensionTestDtls,
+                         TlsConnectTestBase::kTlsV11Plus);
 
-INSTANTIATE_TEST_CASE_P(ExtensionTls12, TlsExtensionTest12,
-                        ::testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
-                                           TlsConnectTestBase::kTlsV12));
+INSTANTIATE_TEST_SUITE_P(ExtensionTls12, TlsExtensionTest12,
+                         ::testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
+                                            TlsConnectTestBase::kTlsV12));
 
-INSTANTIATE_TEST_CASE_P(ExtensionTls12Plus, TlsExtensionTest12Plus,
-                        ::testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
-                                           TlsConnectTestBase::kTlsV12Plus));
+INSTANTIATE_TEST_SUITE_P(ExtensionTls12Plus, TlsExtensionTest12Plus,
+                         ::testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
+                                            TlsConnectTestBase::kTlsV12Plus));
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     ExtensionPre13Stream, TlsExtensionTestPre13,
     ::testing::Combine(TlsConnectTestBase::kTlsVariantsStream,
                        TlsConnectTestBase::kTlsV10ToV12));
-INSTANTIATE_TEST_CASE_P(ExtensionPre13Datagram, TlsExtensionTestPre13,
-                        ::testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
-                                           TlsConnectTestBase::kTlsV11V12));
+INSTANTIATE_TEST_SUITE_P(ExtensionPre13Datagram, TlsExtensionTestPre13,
+                         ::testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
+                                            TlsConnectTestBase::kTlsV11V12));
 
-INSTANTIATE_TEST_CASE_P(ExtensionTls13, TlsExtensionTest13,
-                        TlsConnectTestBase::kTlsVariantsAll);
+INSTANTIATE_TEST_SUITE_P(ExtensionTls13, TlsExtensionTest13,
+                         TlsConnectTestBase::kTlsVariantsAll);
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     BogusExtensionStream, TlsBogusExtensionTestPre13,
     ::testing::Combine(TlsConnectTestBase::kTlsVariantsStream,
                        TlsConnectTestBase::kTlsV10ToV12));
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     BogusExtensionDatagram, TlsBogusExtensionTestPre13,
     ::testing::Combine(TlsConnectTestBase::kTlsVariantsDatagram,
                        TlsConnectTestBase::kTlsV11V12));
 
-INSTANTIATE_TEST_CASE_P(BogusExtension13, TlsBogusExtensionTest13,
-                        ::testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
-                                           TlsConnectTestBase::kTlsV13));
+INSTANTIATE_TEST_SUITE_P(BogusExtension13, TlsBogusExtensionTest13,
+                         ::testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
+                                            TlsConnectTestBase::kTlsV13));
 
 }  // namespace nss_test

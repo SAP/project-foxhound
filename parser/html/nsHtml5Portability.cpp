@@ -7,6 +7,15 @@
 #include "nsAtom.h"
 #include "nsHtml5TreeBuilder.h"
 #include "nsString.h"
+#include "mozilla/CheckedInt.h"
+
+int32_t nsHtml5Portability::checkedAdd(int32_t a, int32_t b) {
+  mozilla::CheckedInt<int32_t> sum(a);
+  sum += b;
+  MOZ_RELEASE_ASSERT(sum.isValid(),
+                     "HTML input too large for signed 32-bit integer.");
+  return sum.value();
+}
 
 nsAtom* nsHtml5Portability::newLocalNameFromBuffer(char16_t* buf,
                                                    int32_t length,
@@ -31,7 +40,7 @@ nsHtml5String nsHtml5Portability::newStringFromBuffer(
     return nsHtml5String::EmptyString();
   }
   if (maybeAtomize &&
-      !ContainsWhiteSpace(mozilla::MakeSpan(buf + offset, length))) {
+      !ContainsWhiteSpace(mozilla::Span(buf + offset, length))) {
     return nsHtml5String::FromAtom(
         NS_AtomizeMainThread(nsDependentSubstring(buf + offset, length)));
   }

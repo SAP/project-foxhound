@@ -130,7 +130,8 @@ void WebGLContext::BindFramebuffer(GLenum target, WebGLFramebuffer* wfb) {
   funcScope.mBindFailureGuard = false;
 }
 
-void WebGLContext::BlendEquationSeparate(GLenum modeRGB, GLenum modeAlpha) {
+void WebGLContext::BlendEquationSeparate(Maybe<GLuint> i, GLenum modeRGB,
+                                         GLenum modeAlpha) {
   const FuncScope funcScope(*this, "blendEquationSeparate");
   if (IsContextLost()) return;
 
@@ -139,7 +140,20 @@ void WebGLContext::BlendEquationSeparate(GLenum modeRGB, GLenum modeAlpha) {
     return;
   }
 
-  gl->fBlendEquationSeparate(modeRGB, modeAlpha);
+  if (i) {
+    MOZ_RELEASE_ASSERT(
+        IsExtensionEnabled(WebGLExtensionID::OES_draw_buffers_indexed));
+    const auto limit = MaxValidDrawBuffers();
+    if (*i >= limit) {
+      ErrorInvalidValue("`index` (%u) must be < %s (%u)", *i,
+                        "MAX_DRAW_BUFFERS", limit);
+      return;
+    }
+
+    gl->fBlendEquationSeparatei(*i, modeRGB, modeAlpha);
+  } else {
+    gl->fBlendEquationSeparate(modeRGB, modeAlpha);
+  }
 }
 
 static bool ValidateBlendFuncEnum(WebGLContext* webgl, GLenum factor,
@@ -193,8 +207,9 @@ static bool ValidateBlendFuncEnums(WebGLContext* webgl, GLenum srcRGB,
   return true;
 }
 
-void WebGLContext::BlendFuncSeparate(GLenum srcRGB, GLenum dstRGB,
-                                     GLenum srcAlpha, GLenum dstAlpha) {
+void WebGLContext::BlendFuncSeparate(Maybe<GLuint> i, GLenum srcRGB,
+                                     GLenum dstRGB, GLenum srcAlpha,
+                                     GLenum dstAlpha) {
   const FuncScope funcScope(*this, "blendFuncSeparate");
   if (IsContextLost()) return;
 
@@ -206,7 +221,20 @@ void WebGLContext::BlendFuncSeparate(GLenum srcRGB, GLenum dstRGB,
   if (!ValidateBlendFuncEnumsCompatibility(srcRGB, dstRGB, "srcRGB and dstRGB"))
     return;
 
-  gl->fBlendFuncSeparate(srcRGB, dstRGB, srcAlpha, dstAlpha);
+  if (i) {
+    MOZ_RELEASE_ASSERT(
+        IsExtensionEnabled(WebGLExtensionID::OES_draw_buffers_indexed));
+    const auto limit = MaxValidDrawBuffers();
+    if (*i >= limit) {
+      ErrorInvalidValue("`index` (%u) must be < %s (%u)", *i,
+                        "MAX_DRAW_BUFFERS", limit);
+      return;
+    }
+
+    gl->fBlendFuncSeparatei(*i, srcRGB, dstRGB, srcAlpha, dstAlpha);
+  } else {
+    gl->fBlendFuncSeparate(srcRGB, dstRGB, srcAlpha, dstAlpha);
+  }
 }
 
 GLenum WebGLContext::CheckFramebufferStatus(GLenum target) {
@@ -978,9 +1006,12 @@ void WebGLContext::ReadPixelsPbo(const webgl::ReadPixelsDesc& desc,
 static webgl::PackingInfo DefaultReadPixelPI(
     const webgl::FormatUsageInfo* usage) {
   MOZ_ASSERT(usage->IsRenderable());
-
-  switch (usage->format->componentType) {
+  const auto& format = *usage->format;
+  switch (format.componentType) {
     case webgl::ComponentType::NormUInt:
+      if (format.r == 16) {
+        return {LOCAL_GL_RGBA, LOCAL_GL_UNSIGNED_SHORT};
+      }
       return {LOCAL_GL_RGBA, LOCAL_GL_UNSIGNED_BYTE};
 
     case webgl::ComponentType::Int:
@@ -1074,7 +1105,17 @@ static bool ValidateReadPixelsFormatAndType(
 
   ////
 
-  webgl->ErrorInvalidOperation("Incompatible format or type.");
+  // clang-format off
+  webgl->ErrorInvalidOperation(
+      "Format and type %s/%s incompatible with this %s attachment."
+      " This framebuffer requires either %s/%s or"
+      " getParameter(IMPLEMENTATION_COLOR_READ_FORMAT/_TYPE) %s/%s.",
+      EnumString(pi.format).c_str(), EnumString(pi.type).c_str(),
+      srcUsage->format->name,
+      EnumString(defaultPI.format).c_str(), EnumString(defaultPI.type).c_str(),
+      EnumString(implPI.format).c_str(), EnumString(implPI.type).c_str());
+  // clang-format on
+
   return false;
 }
 
@@ -1275,11 +1316,22 @@ void WebGLContext::StencilOpSeparate(GLenum face, GLenum sfail, GLenum dpfail,
 void WebGLContext::UniformData(const uint32_t loc, const bool transpose,
                                const Range<const uint8_t>& data) const {
   const FuncScope funcScope(*this, "uniform setter");
+
+  if (!IsWebGL2() && transpose) {
+    GenerateError(LOCAL_GL_INVALID_VALUE, "`transpose`:true requires WebGL 2.");
+    return;
+  }
+
+  // -
+
   const auto& link = mActiveProgramLinkInfo;
   if (!link) return;
 
   const auto locInfo = MaybeFind(link->locationMap, loc);
-  if (!locInfo) return;
+  if (!locInfo) {
+    // Null WebGLUniformLocations become -1, which will end up here.
+    return;
+  }
 
   const auto& validationInfo = locInfo->info;
   const auto& activeInfo = validationInfo.info;
@@ -1289,20 +1341,11 @@ void WebGLContext::UniformData(const uint32_t loc, const bool transpose,
   // -
 
   const auto lengthInType = data.length() / sizeof(float);
-  if (!lengthInType || lengthInType % channels != 0) {
-    GenerateError(LOCAL_GL_INVALID_VALUE,
-                  "(uniform %s) `values` length (%u) must be a positive "
-                  "integer multiple of "
-                  "size of %s.",
-                  activeInfo.name.c_str(), lengthInType,
-                  EnumString(activeInfo.elemType).c_str());
-    return;
-  }
   const auto elemCount = lengthInType / channels;
   if (elemCount > 1 && !validationInfo.isArray) {
     GenerateError(
         LOCAL_GL_INVALID_OPERATION,
-        "(uniform %s) `values` length (%u) must exactle match size of %s.",
+        "(uniform %s) `values` length (%u) must exactly match size of %s.",
         activeInfo.name.c_str(), lengthInType,
         EnumString(activeInfo.elemType).c_str());
     return;
@@ -1422,8 +1465,8 @@ void WebGLContext::Viewport(GLint x, GLint y, GLsizei width, GLsizei height) {
   }
 
   const auto& limits = Limits();
-  width = std::min(width, static_cast<GLsizei>(limits.maxViewportDims[0]));
-  height = std::min(height, static_cast<GLsizei>(limits.maxViewportDims[1]));
+  width = std::min(width, static_cast<GLsizei>(limits.maxViewportDim));
+  height = std::min(height, static_cast<GLsizei>(limits.maxViewportDim));
 
   gl->fViewport(x, y, width, height);
 

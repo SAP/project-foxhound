@@ -8,6 +8,7 @@
 #define mozilla_EventListenerManager_h_
 
 #include "mozilla/BasicEvents.h"
+#include "mozilla/dom/AbortFollower.h"
 #include "mozilla/dom/EventListenerBinding.h"
 #include "mozilla/JSEventHandler.h"
 #include "mozilla/MemoryReporting.h"
@@ -28,6 +29,7 @@ namespace mozilla {
 
 class ELMCreationDetector;
 class EventListenerManager;
+class ListenerSignalFollower;
 
 namespace dom {
 class Event;
@@ -35,8 +37,8 @@ class EventTarget;
 class Element;
 }  // namespace dom
 
-typedef dom::CallbackObjectHolder<dom::EventListener, nsIDOMEventListener>
-    EventListenerHolder;
+using EventListenerHolder =
+    dom::CallbackObjectHolder<dom::EventListener, nsIDOMEventListener>;
 
 struct EventListenerFlags {
   friend class EventListenerManager;
@@ -154,11 +156,12 @@ class EventListenerManagerBase {
   uint16_t mMayHaveKeyEventListener : 1;
   uint16_t mMayHaveInputOrCompositionEventListener : 1;
   uint16_t mMayHaveSelectionChangeEventListener : 1;
+  uint16_t mMayHaveFormSelectEventListener : 1;
   uint16_t mClearingListeners : 1;
   uint16_t mIsMainThreadELM : 1;
   uint16_t mHasNonPrivilegedClickListeners : 1;
   uint16_t mUnknownNonPrivilegedClickListeners : 1;
-  // uint16_t mUnused : 2;
+  // uint16_t mUnused : 1;
 };
 
 /*
@@ -169,7 +172,36 @@ class EventListenerManager final : public EventListenerManagerBase {
   ~EventListenerManager();
 
  public:
+  struct Listener;
+  class ListenerSignalFollower : public dom::AbortFollower {
+   public:
+    explicit ListenerSignalFollower(EventListenerManager* aListenerManager,
+                                    Listener* aListener);
+
+    NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+    NS_DECL_CYCLE_COLLECTION_CLASS(ListenerSignalFollower)
+
+    void RunAbortAlgorithm() override;
+
+    void Disconnect() {
+      mListenerManager = nullptr;
+      mListener.Reset();
+      Unfollow();
+    }
+
+   protected:
+    ~ListenerSignalFollower() = default;
+
+    EventListenerManager* mListenerManager;
+    EventListenerHolder mListener;
+    RefPtr<nsAtom> mTypeAtom;
+    EventMessage mEventMessage;
+    bool mAllEvents;
+    EventListenerFlags mFlags;
+  };
+
   struct Listener {
+    RefPtr<ListenerSignalFollower> mSignalFollower;
     EventListenerHolder mListener;
     RefPtr<nsAtom> mTypeAtom;
     EventMessage mEventMessage;
@@ -190,6 +222,7 @@ class EventListenerManager final : public EventListenerManagerBase {
     bool mHandlerIsString : 1;
     bool mAllEvents : 1;
     bool mIsChrome : 1;
+    bool mEnabled : 1;
 
     EventListenerFlags mFlags;
 
@@ -205,29 +238,36 @@ class EventListenerManager final : public EventListenerManagerBase {
           mListenerIsHandler(false),
           mHandlerIsString(false),
           mAllEvents(false),
-          mIsChrome(false) {}
+          mIsChrome(false),
+          mEnabled(true) {}
 
     Listener(Listener&& aOther)
-        : mListener(std::move(aOther.mListener)),
+        : mSignalFollower(std::move(aOther.mSignalFollower)),
+          mListener(std::move(aOther.mListener)),
           mTypeAtom(std::move(aOther.mTypeAtom)),
           mEventMessage(aOther.mEventMessage),
           mListenerType(aOther.mListenerType),
           mListenerIsHandler(aOther.mListenerIsHandler),
           mHandlerIsString(aOther.mHandlerIsString),
           mAllEvents(aOther.mAllEvents),
-          mIsChrome(aOther.mIsChrome) {
+          mIsChrome(aOther.mIsChrome),
+          mEnabled(aOther.mEnabled) {
       aOther.mEventMessage = eVoidEvent;
       aOther.mListenerType = eNoListener;
       aOther.mListenerIsHandler = false;
       aOther.mHandlerIsString = false;
       aOther.mAllEvents = false;
       aOther.mIsChrome = false;
+      aOther.mEnabled = true;
     }
 
     ~Listener() {
       if ((mListenerType == eJSEventListener) && mListener) {
         static_cast<JSEventHandler*>(mListener.GetXPCOMCallback())
             ->Disconnect();
+      }
+      if (mSignalFollower) {
+        mSignalFollower->Disconnect();
       }
     }
 
@@ -292,7 +332,8 @@ class EventListenerManager final : public EventListenerManagerBase {
   void AddEventListenerByType(
       EventListenerHolder aListener, const nsAString& type,
       const EventListenerFlags& aFlags,
-      const dom::Optional<bool>& aPassive = dom::Optional<bool>());
+      const dom::Optional<bool>& aPassive = dom::Optional<bool>(),
+      dom::AbortSignal* aSignal = nullptr);
   void RemoveEventListenerByType(nsIDOMEventListener* aListener,
                                  const nsAString& type,
                                  const EventListenerFlags& aFlags) {
@@ -367,10 +408,15 @@ class EventListenerManager final : public EventListenerManagerBase {
   bool HasMutationListeners();
 
   /**
-   * Allows us to quickly determine whether we have unload or beforeunload
-   * listeners registered.
+   * Allows us to quickly determine whether we have unload listeners registered.
    */
   bool HasUnloadListeners();
+
+  /**
+   * Allows us to quickly determine whether we have beforeunload listeners
+   * registered.
+   */
+  bool HasBeforeUnloadListeners();
 
   /**
    * Returns the mutation bits depending on which mutation listeners are
@@ -393,6 +439,11 @@ class EventListenerManager final : public EventListenerManagerBase {
   bool HasListenersFor(nsAtom* aEventNameWithOn) const;
 
   /**
+   * Similar to HasListenersFor, but ignores system group listeners.
+   */
+  bool HasNonSystemGroupListenersFor(nsAtom* aEventNameWithOn) const;
+
+  /**
    * Returns true if there is at least one event listener.
    */
   bool HasListeners() const;
@@ -403,28 +454,41 @@ class EventListenerManager final : public EventListenerManagerBase {
    */
   nsresult GetListenerInfo(nsTArray<RefPtr<nsIEventListenerInfo>>& aList);
 
+  nsresult IsListenerEnabled(nsAString& aType, JSObject* aListener,
+                             bool aCapturing, bool aAllowsUntrusted,
+                             bool aInSystemEventGroup, bool aIsHandler,
+                             bool* aEnabled);
+
+  nsresult SetListenerEnabled(nsAString& aType, JSObject* aListener,
+                              bool aCapturing, bool aAllowsUntrusted,
+                              bool aInSystemEventGroup, bool aIsHandler,
+                              bool aEnabled);
+
   uint32_t GetIdentifierForEvent(nsAtom* aEvent);
 
   /**
    * Returns true if there may be a paint event listener registered,
    * false if there definitely isn't.
    */
-  bool MayHavePaintEventListener() { return mMayHavePaintEventListener; }
+  bool MayHavePaintEventListener() const { return mMayHavePaintEventListener; }
 
   /**
    * Returns true if there may be a touch event listener registered,
    * false if there definitely isn't.
    */
-  bool MayHaveTouchEventListener() { return mMayHaveTouchEventListener; }
+  bool MayHaveTouchEventListener() const { return mMayHaveTouchEventListener; }
 
-  bool MayHaveMouseEnterLeaveEventListener() {
+  bool MayHaveMouseEnterLeaveEventListener() const {
     return mMayHaveMouseEnterLeaveEventListener;
   }
-  bool MayHavePointerEnterLeaveEventListener() {
+  bool MayHavePointerEnterLeaveEventListener() const {
     return mMayHavePointerEnterLeaveEventListener;
   }
-  bool MayHaveSelectionChangeEventListener() {
+  bool MayHaveSelectionChangeEventListener() const {
     return mMayHaveSelectionChangeEventListener;
+  }
+  bool MayHaveFormSelectEventListener() const {
+    return mMayHaveFormSelectEventListener;
   }
 
   bool HasNonPrivilegedClickListeners();
@@ -433,14 +497,14 @@ class EventListenerManager final : public EventListenerManagerBase {
    * Returns true if there may be a key event listener (keydown, keypress,
    * or keyup) registered, or false if there definitely isn't.
    */
-  bool MayHaveKeyEventListener() { return mMayHaveKeyEventListener; }
+  bool MayHaveKeyEventListener() const { return mMayHaveKeyEventListener; }
 
   /**
    * Returns true if there may be an advanced input event listener (input,
    * compositionstart, compositionupdate, or compositionend) registered,
    * or false if there definitely isn't.
    */
-  bool MayHaveInputOrCompositionEventListener() {
+  bool MayHaveInputOrCompositionEventListener() const {
     return mMayHaveInputOrCompositionEventListener;
   }
 
@@ -460,6 +524,8 @@ class EventListenerManager final : public EventListenerManagerBase {
   bool HasApzAwareListeners();
   bool IsApzAwareListener(Listener* aListener);
   bool IsApzAwareEvent(nsAtom* aEvent);
+
+  bool HasNonPassiveWheelListener();
 
   // Return true if aListener is a non-chrome-privileged click event listner
   bool IsNonChromeClickListener(Listener* aListener);
@@ -530,6 +596,13 @@ class EventListenerManager final : public EventListenerManagerBase {
   void EnableDevice(EventMessage aEventMessage);
   void DisableDevice(EventMessage aEventMessage);
 
+  bool HasListenersForInternal(nsAtom* aEventNameWithOn,
+                               bool aIgnoreSystemGroup) const;
+
+  Listener* GetListenerFor(nsAString& aType, JSObject* aListener,
+                           bool aCapturing, bool aAllowsUntrusted,
+                           bool aInSystemEventGroup, bool aIsHandler);
+
  public:
   /**
    * Set the "inline" event listener for aEventName to aHandler.  If
@@ -590,7 +663,8 @@ class EventListenerManager final : public EventListenerManagerBase {
   void AddEventListenerInternal(EventListenerHolder aListener,
                                 EventMessage aEventMessage, nsAtom* aTypeAtom,
                                 const EventListenerFlags& aFlags,
-                                bool aHandler = false, bool aAllEvents = false);
+                                bool aHandler = false, bool aAllEvents = false,
+                                dom::AbortSignal* aSignal = nullptr);
   void RemoveEventListenerInternal(EventListenerHolder aListener,
                                    EventMessage aEventMessage,
                                    nsAtom* aUserType,

@@ -12,17 +12,13 @@ if CONFIG['CPU_ARCH'] != 'aarch64':
     ASFLAGS += ['-I%s/media/ffvpx/libavutil/x86/' % TOPSRCDIR]
 
 if CONFIG['FFVPX_ASFLAGS']:
-    if CONFIG['FFVPX_USE_YASM']:
-        USE_YASM = True
+    if CONFIG['FFVPX_USE_NASM']:
+        USE_NASM = True
 
     if CONFIG['OS_ARCH'] == 'WINNT':
        # Fix inline symbols and math defines for windows.
         DEFINES['_USE_MATH_DEFINES'] = True
         DEFINES['inline'] = "__inline"
-
-    if USE_YASM and not CONFIG['YASM_HAS_AVX2']:
-        DEFINES['YASM_MISSING_AVX2'] = True
-
 
 LOCAL_INCLUDES += ['/media/ffvpx']
 
@@ -51,11 +47,6 @@ if CONFIG['CC_TYPE'] in ('clang', 'clang-cl'):
         CFLAGS += [
             '-Wno-inconsistent-dllimport',
             '-Wno-macro-redefined', # 'WIN32_LEAN_AND_MEAN' macro redefined
-        ]
-    if CONFIG['CC_TYPE'] == 'clang':
-        CFLAGS += [
-            # Workaround for https://bugs.llvm.org/show_bug.cgi?id=26828#c4 :
-            '-ffreestanding',
         ]
 else:
     CFLAGS += [

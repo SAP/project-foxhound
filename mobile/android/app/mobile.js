@@ -1,6 +1,8 @@
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+#filter dumbComments emptyLines substitution
+
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 // Non-static prefs that are specific to Firefox on Android belong in this file
 // (unless there is a compelling and documented reason for them to belong in
@@ -9,8 +11,6 @@
 // Please indent all prefs defined within #ifdef/#ifndef conditions. This
 // improves readability, particular for conditional blocks that exceed a single
 // screen.
-
-#filter substitution
 
 // For browser.js element
 //
@@ -56,13 +56,9 @@ pref("toolkit.zoomManager.zoomValues", ".2,.3,.5,.67,.8,.9,1,1.1,1.2,1.33,1.5,1.
 pref("browser.viewport.defaultZoom", -1);
 
 // Show/Hide scrollbars when active/inactive
-pref("ui.showHideScrollbars", 1);
 pref("ui.useOverlayScrollbars", 1);
 pref("ui.scrollbarFadeBeginDelay", 450);
 pref("ui.scrollbarFadeDuration", 0);
-
-/* turn off the caret blink after 10 cycles */
-pref("ui.caretBlinkCount", 10);
 
 pref("browser.cache.memory_limit", 5120); // 5 MB
 
@@ -102,6 +98,9 @@ pref("network.predictor.preserve", 50); // percentage of predictor data to keep 
 // Use JS mDNS as a fallback
 pref("network.mdns.use_js_fallback", false);
 
+// CookieBehavior setting for the private browsing.
+pref("network.cookie.cookieBehavior.pbmode", 4);
+
 /* How many times should have passed before the remote tabs list is refreshed */
 pref("browser.display.remotetabs.timeout", 10);
 
@@ -136,7 +135,6 @@ pref("browser.helperApps.deleteTempFileOnExit", false);
 
 /* password manager */
 pref("signon.rememberSignons", true);
-pref("signon.autofillForms.http", true);
 pref("signon.expireMasterPassword", false);
 pref("signon.debug", false);
 
@@ -158,6 +156,9 @@ pref("xpinstall.whitelist.add", "https://addons.mozilla.org");
 
 pref("extensions.langpacks.signatures.required", true);
 pref("xpinstall.signatures.required", true);
+
+// Use blocklist v2 until blocklist v3 is enabled on Android - bug 1639050
+pref("extensions.blocklist.useMLBF", false);
 
 // Disable add-ons that are not installed by the user in all scopes by default (See the SCOPE
 // constants in AddonManager.jsm for values to use here, and Bug 1405528 for a rationale).
@@ -183,8 +184,8 @@ pref("extensions.update.background.url", "https://versioncheck-bg.addons.mozilla
 pref("extensions.getAddons.cache.enabled", true);
 pref("extensions.getAddons.search.browseURL", "https://addons.mozilla.org/%LOCALE%/android/search?q=%TERMS%&platform=%OS%&appver=%VERSION%");
 pref("extensions.getAddons.browseAddons", "https://addons.mozilla.org/%LOCALE%/android/collections/4757633/mob/?page=1&collection_sort=-popularity");
-pref("extensions.getAddons.get.url", "https://services.addons.mozilla.org/api/v3/addons/search/?guid=%IDS%&lang=%LOCALE%");
-pref("extensions.getAddons.langpacks.url", "https://services.addons.mozilla.org/api/v3/addons/language-tools/?app=android&type=language&appversion=%VERSION%");
+pref("extensions.getAddons.get.url", "https://services.addons.mozilla.org/api/v4/addons/search/?guid=%IDS%&lang=%LOCALE%");
+pref("extensions.getAddons.langpacks.url", "https://services.addons.mozilla.org/api/v4/addons/language-tools/?app=android&type=language&appversion=%VERSION%");
 
 /* preference for the locale picker */
 pref("extensions.getLocales.get.url", "");
@@ -193,12 +194,7 @@ pref("extensions.compatability.locales.buildid", "0");
 /* Don't let XPIProvider install distribution add-ons; we do our own thing on mobile. */
 pref("extensions.installDistroAddons", false);
 
-pref("extensions.webextPermissionPrompts", true);
 pref("extensions.webextOptionalPermissionPrompts", true);
-
-// Add-on content security policies.
-pref("extensions.webextensions.base-content-security-policy", "script-src 'self' https://* moz-extension: blob: filesystem: 'unsafe-eval' 'unsafe-inline'; object-src 'self' https://* moz-extension: blob: filesystem:;");
-pref("extensions.webextensions.default-content-security-policy", "script-src 'self'; object-src 'self';");
 
 pref("extensions.webextensions.background-delayed-startup", true);
 
@@ -222,17 +218,9 @@ pref("accessibility.typeaheadfind.casesensitive", 0);
 pref("accessibility.browsewithcaret_shortcut.enabled", false);
 pref("findbar.matchdiacritics", 0);
 
-// Whether the character encoding menu is under the main Firefox button. This
-// preference is a string so that localizers can alter it.
-pref("browser.menu.showCharacterEncoding", "chrome://browser/locale/browser.properties");
-
 // SSL error page behaviour
 pref("browser.ssl_override_behavior", 2);
 pref("browser.xul.error_pages.expert_bad_cert", false);
-
-// Market-specific search defaults
-pref("browser.search.geoSpecificDefaults", true);
-pref("browser.search.geoSpecificDefaults.url", "https://search.services.mozilla.com/1/%APP%/%VERSION%/%CHANNEL%/%LOCALE%/%REGION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%");
 
 // disable updating
 pref("browser.search.update", false);
@@ -314,7 +302,6 @@ pref("privacy.item.syncAccount", true);
 
 pref("javascript.options.mem.high_water_mark", 32);
 
-pref("dom.max_chrome_script_run_time", 0); // disable slow script dialog for chrome
 pref("dom.max_script_run_time", 20);
 
 // Absolute path to the devtools unix domain socket file used
@@ -380,11 +367,6 @@ pref("app.update.url.android", "https://aus5.mozilla.org/update/4/%PRODUCT%/%VER
   pref("app.update.channel", "@MOZ_UPDATE_CHANNEL@");
 #endif
 
-// threshold where a tap becomes a drag, in 1/240" reference pixels
-// The names of the preferences are to be in sync with EventStateManager.cpp
-pref("ui.dragThresholdX", 25);
-pref("ui.dragThresholdY", 25);
-
 pref("layers.async-video.enabled", true);
 
 // APZ physics settings (fling acceleration, fling curving and axis lock) have
@@ -393,7 +375,6 @@ pref("apz.axis_lock.breakout_angle", "0.7853982");    // PI / 4 (45 degrees)
 pref("apz.axis_lock.mode", 1); // Use "strict" axis locking
 pref("apz.content_response_timeout", 600);
 pref("apz.drag.enabled", false);
-pref("apz.fling_accel_interval_ms", 750);
 pref("apz.fling_curve_function_x1", "0.59");
 pref("apz.fling_curve_function_y1", "0.46");
 pref("apz.fling_curve_function_x2", "0.05");
@@ -407,18 +388,6 @@ pref("apz.overscroll.enabled", true);
 pref("apz.second_tap_tolerance", "0.3");
 pref("apz.touch_move_tolerance", "0.03");
 pref("apz.touch_start_tolerance", "0.06");
-
-// Enable the Visual Viewport API
-pref("dom.visualviewport.enabled", true);
-
-pref("layers.progressive-paint", true);
-pref("layers.low-precision-buffer", true);
-// We want to limit layers for two reasons:
-// 1) We can't scroll smoothly if we have to many draw calls
-// 2) Pages that have too many layers consume too much memory and crash.
-// By limiting the number of layers on mobile we're making the main thread
-// work harder keep scrolling smooth and memory low.
-pref("layers.max-active", 20);
 
 pref("notification.feature.enabled", true);
 
@@ -485,8 +454,6 @@ pref("devtools.console.stdout.chrome", true);
 pref("device.camera.enabled", true);
 pref("media.realtime_decoder.enabled", true);
 
-pref("javascript.options.showInConsole", true);
-
 pref("full-screen-api.enabled", true);
 
 pref("direct-texture.force.enabled", false);
@@ -551,8 +518,6 @@ pref("media.plugins.enabled", true);
 //  8 = Force software decoding
 // 16 = Force hardware decoding
 pref("media.stagefright.omxcodec.flags", 0);
-
-pref("layers.enable-tiles", true);
 
 // Enable the dynamic toolbar
 pref("browser.chrome.dynamictoolbar", true);
@@ -668,11 +633,9 @@ pref("media.navigator.permission.device", true);
 pref("extensions.systemAddon.update.url", "https://aus5.mozilla.org/update/3/SystemAddons/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml");
 pref("extensions.systemAddon.update.enabled", true);
 
-// E10s stuff. We don't support 'file' or 'priveleged' process types.
-pref("browser.tabs.remote.separateFileUriProcess", false);
+// E10s stuff. We don't support 'privileged' process types.
 pref("browser.tabs.remote.separatePrivilegedContentProcess", false);
 pref("browser.tabs.remote.enforceRemoteTypeRestrictions", false);
 
 // Allow Web Authentication
 pref("security.webauth.webauthn_enable_android_fido2", true);
-pref("browser.tabs.remote.separatePrivilegedMozillaWebContentProcess", false);

@@ -37,7 +37,6 @@ ${helpers.predefined_type(
     engines="gecko",
     extra_prefixes="moz webkit",
     animation_value_type="discrete",
-    needs_context=False,
     spec="https://drafts.csswg.org/css-ui-4/#propdef-user-select",
 )}
 
@@ -54,7 +53,7 @@ ${helpers.single_keyword(
 
 ${helpers.single_keyword(
     "-moz-window-shadow",
-    "default none menu tooltip sheet",
+    "default none menu tooltip sheet cliprounded",
     engines="gecko",
     gecko_ffi_name="mWindowShadow",
     gecko_enum_prefix="StyleWindowShadow",

@@ -4,8 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "Accessible-inl.h"
+#include "LocalAccessible-inl.h"
 
+#include "nsComponentManagerUtils.h"
 #include "nsIAccessible.h"
 #include "nsIMutableArray.h"
 #include "xpcAccessibleDocument.h"
@@ -21,7 +22,7 @@ xpcAccessibleSelectable::GetSelectedItems(nsIArray** aSelectedItems) {
   if (!Intl()) return NS_ERROR_FAILURE;
   MOZ_ASSERT(Intl()->IsSelect(), "Called on non selectable widget!");
 
-  AutoTArray<Accessible*, 10> items;
+  AutoTArray<LocalAccessible*, 10> items;
   Intl()->SelectedItems(&items);
 
   uint32_t itemCount = items.Length();
@@ -32,8 +33,9 @@ xpcAccessibleSelectable::GetSelectedItems(nsIArray** aSelectedItems) {
       do_CreateInstance(NS_ARRAY_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  for (uint32_t idx = 0; idx < itemCount; idx++)
+  for (uint32_t idx = 0; idx < itemCount; idx++) {
     xpcItems->AppendElement(static_cast<nsIAccessible*>(ToXPC(items[idx])));
+  }
 
   NS_ADDREF(*aSelectedItems = xpcItems);
   return NS_OK;

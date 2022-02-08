@@ -143,6 +143,10 @@ function listenFor(name, key) {
   };
 }
 
+async function visibleEngines() {
+  return (await Services.search.getVisibleEngines()).map(e => e.identifier);
+}
+
 add_task(async function setup() {
   Services.prefs.setBoolPref("browser.search.separatePrivateDefault", true);
   Services.prefs.setBoolPref(
@@ -150,8 +154,8 @@ add_task(async function setup() {
     true
   );
 
-  SearchTestUtils.useMockIdleService(registerCleanupFunction);
-  await useTestEngines("data", null, CONFIG);
+  SearchTestUtils.useMockIdleService();
+  await SearchTestUtils.useTestEngines("data", null, CONFIG);
   await AddonTestUtils.promiseStartupManager();
 });
 
@@ -162,7 +166,7 @@ add_task(async function test_initial_config_correct() {
 
   await Services.search.init();
 
-  const installedEngines = await Services.search.getDefaultEngines();
+  const installedEngines = await Services.search.getAppProvidedEngines();
   Assert.deepEqual(
     installedEngines.map(e => e.identifier),
     [
@@ -229,27 +233,23 @@ add_task(async function test_config_updated_engine_changes() {
 
   Assert.deepEqual(
     enginesAdded,
-    ["engine-resourceicon-gd", "engine-reordered", "engine-same-name-gd"],
+    ["engine-resourceicon-gd", "engine-reordered"],
     "Should have added the correct engines"
   );
 
   Assert.deepEqual(
     enginesModified.sort(),
-    ["engine", "engine-chromeicon", "engine-pref"],
+    ["engine", "engine-chromeicon", "engine-pref", "engine-same-name-gd"],
     "Should have modified the expected engines"
   );
 
   Assert.deepEqual(
     enginesRemoved,
-    [
-      "engine-rel-searchform-purpose",
-      "engine-resourceicon",
-      "engine-same-name",
-    ],
+    ["engine-rel-searchform-purpose", "engine-resourceicon"],
     "Should have removed the expected engine"
   );
 
-  const installedEngines = await Services.search.getDefaultEngines();
+  const installedEngines = await Services.search.getAppProvidedEngines();
 
   Assert.deepEqual(
     installedEngines.map(e => e.identifier),
@@ -297,8 +297,44 @@ add_task(async function test_config_updated_engine_changes() {
   );
 
   Assert.equal(
-    Services.prefs.getBoolPref("browser.search.useDBForOrder", false),
+    Services.search.wrappedJSObject._settings.getAttribute("useSavedOrder"),
     false,
-    "Should not have set the useDBForOrder preference"
+    "Should not have set the useSavedOrder preference"
+  );
+});
+
+add_task(async function test_user_settings_persist() {
+  let reload = SearchTestUtils.promiseSearchNotification("engines-reloaded");
+  Region._setHomeRegion("");
+  await reload;
+
+  Assert.ok(
+    (await visibleEngines()).includes("engine-rel-searchform-purpose"),
+    "Rel Searchform engine should be included by default"
+  );
+
+  let settingsFileWritten = promiseAfterSettings();
+  let engine = await Services.search.getEngineByName(
+    "engine-rel-searchform-purpose"
+  );
+  await Services.search.removeEngine(engine);
+  await settingsFileWritten;
+
+  Assert.ok(
+    !(await visibleEngines()).includes("engine-rel-searchform-purpose"),
+    "Rel Searchform engine has been removed"
+  );
+
+  reload = SearchTestUtils.promiseSearchNotification("engines-reloaded");
+  Region._setHomeRegion("FR");
+  await reload;
+
+  reload = SearchTestUtils.promiseSearchNotification("engines-reloaded");
+  Region._setHomeRegion("");
+  await reload;
+
+  Assert.ok(
+    !(await visibleEngines()).includes("engine-rel-searchform-purpose"),
+    "Rel Searchform removal should be remembered"
   );
 });

@@ -149,23 +149,29 @@ function initTemporaryStorage(callback) {
   return request;
 }
 
-function initStorageAndOrigin(principal, persistence, callback) {
-  let request = SpecialPowers._getQuotaManager().initStorageAndOrigin(
-    principal,
-    persistence
+function initPersistentOrigin(principal, callback) {
+  let request = SpecialPowers._getQuotaManager().initializePersistentOrigin(
+    principal
   );
   request.callback = callback;
 
   return request;
 }
 
-function initStorageAndChromeOrigin(persistence, callback) {
-  let principal = Cc["@mozilla.org/systemprincipal;1"].createInstance(
-    Ci.nsIPrincipal
+function initTemporaryOrigin(persistence, principal, callback) {
+  let request = SpecialPowers._getQuotaManager().initializeTemporaryOrigin(
+    persistence,
+    principal
   );
-  let request = SpecialPowers._getQuotaManager().initStorageAndOrigin(
-    principal,
-    persistence
+  request.callback = callback;
+
+  return request;
+}
+
+function getFullOriginMetadata(persistence, principal, callback) {
+  const request = SpecialPowers._getQuotaManager().getFullOriginMetadata(
+    persistence,
+    principal
   );
   request.callback = callback;
 
@@ -187,19 +193,6 @@ function clearOrigin(principal, persistence, callback) {
   let request = SpecialPowers._getQuotaManager().clearStoragesForPrincipal(
     principal,
     persistence
-  );
-  request.callback = callback;
-
-  return request;
-}
-
-function clearChromeOrigin(callback) {
-  let principal = Cc["@mozilla.org/systemprincipal;1"].createInstance(
-    Ci.nsIPrincipal
-  );
-  let request = SpecialPowers._getQuotaManager().clearStoragesForPrincipal(
-    principal,
-    "persistent"
   );
   request.callback = callback;
 

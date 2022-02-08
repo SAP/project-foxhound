@@ -19,7 +19,7 @@
 #ifndef shell_wasm_h
 #define shell_wasm_h
 
-#include "wasm/WasmTypes.h"
+#include "wasm/WasmTypeDecls.h"
 
 namespace js {
 namespace wasm {
@@ -28,8 +28,8 @@ namespace wasm {
 // char16_t array + length) into serialized bytes. If there is an error
 // other than out-of-memory an error message string will be stored in 'error'.
 
-extern MOZ_MUST_USE bool TextToBinary(const char16_t* text, size_t textLen,
-                                      Bytes* bytes, UniqueChars* error);
+[[nodiscard]] extern bool TextToBinary(const char16_t* text, size_t textLen,
+                                       Bytes* bytes, UniqueChars* error);
 
 // Decode the binary wasm module given and return the offsets of all
 // instructions inside of the the code section.

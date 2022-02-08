@@ -93,8 +93,8 @@ interface HTMLInputElement : HTMLElement {
   [CEReactions, Pure, SetterThrows]
            attribute DOMString defaultValue;
   [CEReactions, Pure, SetterThrows, NeedsCallerType]
-           attribute [TreatNullAs=EmptyString] DOMString value;
-  [Throws, Func="HTMLInputElement::ValueAsDateEnabled"]
+           attribute [LegacyNullToEmptyString] DOMString value;
+  [Throws]
            attribute object? valueAsDate;
   [Pure, SetterThrows]
            attribute unrestricted double valueAsNumber;
@@ -182,6 +182,10 @@ partial interface HTMLInputElement {
   // This function will return null if @autocomplete is not defined for the
   // current @type
   AutocompleteInfo? getAutocompleteInfo();
+
+  [ChromeOnly]
+  // The show/hide password state for a type=password control.
+  attribute boolean showPassword;
 };
 
 interface mixin MozEditableElement {
@@ -248,40 +252,36 @@ dictionary DateTimeValue {
 };
 
 partial interface HTMLInputElement {
-  [Pref="dom.forms.datetime", ChromeOnly]
+  [ChromeOnly]
   DateTimeValue getDateTimeInputBoxValue();
 
-  [Pref="dom.forms.datetime", ChromeOnly]
+  [ChromeOnly]
   readonly attribute Element? dateTimeBoxElement;
 
-  [Pref="dom.forms.datetime", ChromeOnly,
-   BinaryName="getMinimumAsDouble"]
+  [ChromeOnly, BinaryName="getMinimumAsDouble"]
   double getMinimum();
 
-  [Pref="dom.forms.datetime", ChromeOnly,
-   BinaryName="getMaximumAsDouble"]
+  [ChromeOnly, BinaryName="getMaximumAsDouble"]
   double getMaximum();
 
-  [Pref="dom.forms.datetime", Func="IsChromeOrUAWidget"]
+  [Func="IsChromeOrUAWidget"]
   void openDateTimePicker(optional DateTimeValue initialValue = {});
 
-  [Pref="dom.forms.datetime", Func="IsChromeOrUAWidget"]
+  [Func="IsChromeOrUAWidget"]
   void updateDateTimePicker(optional DateTimeValue value = {});
 
-  [Pref="dom.forms.datetime", Func="IsChromeOrUAWidget"]
+  [Func="IsChromeOrUAWidget"]
   void closeDateTimePicker();
 
-  [Pref="dom.forms.datetime", Func="IsChromeOrUAWidget"]
+  [Func="IsChromeOrUAWidget"]
   void setFocusState(boolean aIsFocused);
 
-  [Pref="dom.forms.datetime", Func="IsChromeOrUAWidget"]
+  [Func="IsChromeOrUAWidget"]
   void updateValidityState();
 
-  [Pref="dom.forms.datetime", Func="IsChromeOrUAWidget",
-   BinaryName="getStepAsDouble"]
+  [Func="IsChromeOrUAWidget", BinaryName="getStepAsDouble"]
   double getStep();
 
-  [Pref="dom.forms.datetime", Func="IsChromeOrUAWidget",
-   BinaryName="getStepBaseAsDouble"]
+  [Func="IsChromeOrUAWidget", BinaryName="getStepBaseAsDouble"]
   double getStepBase();
 };

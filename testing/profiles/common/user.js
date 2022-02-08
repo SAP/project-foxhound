@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 // Common preferences file used by both unittest and perf harnesses.
 /* globals user_pref */
 user_pref("app.update.checkInstallTime", false);
@@ -5,13 +9,12 @@ user_pref("app.update.disabledForTesting", true);
 user_pref("browser.chrome.guess_favicon", false);
 user_pref("browser.dom.window.dump.enabled", true);
 user_pref("devtools.console.stdout.chrome", true);
-// Use a python-eval-able empty JSON array even though asrouter expects plain object
-user_pref("browser.newtabpage.activity-stream.asrouter.providers.cfr", "[]");
-user_pref("browser.newtabpage.activity-stream.asrouter.providers.cfr-fxa", "[]");
-user_pref("browser.newtabpage.activity-stream.asrouter.providers.snippets", "[]");
-user_pref("browser.newtabpage.activity-stream.asrouter.providers.message-groups", "[]");
-user_pref("browser.newtabpage.activity-stream.asrouter.providers.whats-new-panel", "[]");
-user_pref("browser.newtabpage.activity-stream.asrouter.providers.messaging-experiments", "[]");
+// asrouter expects a plain object or null
+user_pref("browser.newtabpage.activity-stream.asrouter.providers.cfr", "null");
+user_pref("browser.newtabpage.activity-stream.asrouter.providers.snippets", "null");
+user_pref("browser.newtabpage.activity-stream.asrouter.providers.message-groups", "null");
+user_pref("browser.newtabpage.activity-stream.asrouter.providers.whats-new-panel", "null");
+user_pref("browser.newtabpage.activity-stream.asrouter.providers.messaging-experiments", "null");
 user_pref("browser.newtabpage.activity-stream.feeds.system.topstories", false);
 user_pref("browser.newtabpage.activity-stream.feeds.snippets", false);
 user_pref("browser.newtabpage.activity-stream.tippyTop.service.endpoint", "");
@@ -25,8 +28,6 @@ user_pref("browser.pagethumbnails.capturing_disabled", true);
 // Tell the search service we are running in the US.  This also has the desired
 // side-effect of preventing our geoip lookup.
 user_pref("browser.search.region", "US");
-// This will prevent HTTP requests for region defaults.
-user_pref("browser.search.geoSpecificDefaults", false);
 // Disable webapp updates.  Yes, it is supposed to be an integer.
 user_pref("browser.webapps.checkForUpdates", 0);
 // We do not wish to display datareporting policy notifications as it might
@@ -74,3 +75,8 @@ user_pref("geo.provider.network.compare.url", "");
 user_pref("browser.region.network.url", "");
 // Do not unload tabs on low memory when testing
 user_pref("browser.tabs.unloadOnLowMemory", false);
+// Don't pull Top Sites content from the network
+user_pref("browser.topsites.contile.enabled", false);
+// Default Glean to "record but don't report" mode. Docs:
+// https://firefox-source-docs.mozilla.org/toolkit/components/glean/dev/preferences.html
+user_pref("telemetry.fog.test.localhost_port", -1);

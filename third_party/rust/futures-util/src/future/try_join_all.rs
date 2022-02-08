@@ -1,63 +1,28 @@
 //! Definition of the `TryJoinAll` combinator, waiting for all of a list of
 //! futures to finish with either success or error.
 
+use alloc::boxed::Box;
+use alloc::vec::Vec;
 use core::fmt;
 use core::future::Future;
 use core::iter::FromIterator;
 use core::mem;
 use core::pin::Pin;
 use core::task::{Context, Poll};
-use alloc::boxed::Box;
-use alloc::vec::Vec;
 
-use super::TryFuture;
-
-#[derive(Debug)]
-enum ElemState<F>
-where
-    F: TryFuture,
-{
-    Pending(F),
-    Done(Option<F::Ok>),
-}
-
-impl<F> ElemState<F>
-where
-    F: TryFuture,
-{
-    fn pending_pin_mut(self: Pin<&mut Self>) -> Option<Pin<&mut F>> {
-        // Safety: Basic enum pin projection, no drop + optionally Unpin based
-        // on the type of this variant
-        match unsafe { self.get_unchecked_mut() } {
-            ElemState::Pending(f) => Some(unsafe { Pin::new_unchecked(f) }),
-            ElemState::Done(_) => None,
-        }
-    }
-
-    fn take_done(self: Pin<&mut Self>) -> Option<F::Ok> {
-        // Safety: Going from pin to a variant we never pin-project
-        match unsafe { self.get_unchecked_mut() } {
-            ElemState::Pending(_) => None,
-            ElemState::Done(output) => output.take(),
-        }
-    }
-}
-
-impl<F> Unpin for ElemState<F> where F: TryFuture + Unpin {}
+use super::{assert_future, TryFuture, TryMaybeDone};
 
 fn iter_pin_mut<T>(slice: Pin<&mut [T]>) -> impl Iterator<Item = Pin<&mut T>> {
     // Safety: `std` _could_ make this unsound if it were to decide Pin's
     // invariants aren't required to transmit through slices. Otherwise this has
     // the same safety as a normal field pin projection.
-    unsafe { slice.get_unchecked_mut() }
-        .iter_mut()
-        .map(|t| unsafe { Pin::new_unchecked(t) })
+    unsafe { slice.get_unchecked_mut() }.iter_mut().map(|t| unsafe { Pin::new_unchecked(t) })
 }
 
 enum FinalState<E = ()> {
     Pending,
     AllDone,
-    Error(E)
+    Error(E),
 }
 
 /// Future for the [`try_join_all`] function.
@@ -66,7 +31,7 @@ pub struct TryJoinAll<F>
 where
     F: TryFuture,
 {
-    elems: Pin<Box<[ElemState<F>]>>,
+    elems: Pin<Box<[TryMaybeDone<F>]>>,
 }
 
 impl<F> fmt::Debug for TryJoinAll<F>
@@ -76,9 +41,7 @@ where
     F::Error: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TryJoinAll")
-            .field("elems", &self.elems)
-            .finish()
+        f.debug_struct("TryJoinAll").field("elems", &self.elems).finish()
     }
 }
 
@@ -125,10 +88,10 @@ where
     I: IntoIterator,
     I::Item: TryFuture,
 {
-    let elems: Box<[_]> = i.into_iter().map(ElemState::Pending).collect();
-    TryJoinAll {
-        elems: elems.into(),
-    }
+    let elems: Box<[_]> = i.into_iter().map(TryMaybeDone::Future).collect();
+    assert_future::<Result<Vec<<I::Item as TryFuture>::Ok>, <I::Item as TryFuture>::Error>, _>(
+        TryJoinAll { elems: elems.into() },
+    )
 }
 
 impl<F> Future for TryJoinAll<F>
@@ -140,17 +103,13 @@ where
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut state = FinalState::AllDone;
 
-        for mut elem in iter_pin_mut(self.elems.as_mut()) {
-            if let Some(pending) = elem.as_mut().pending_pin_mut() {
-                match pending.try_poll(cx) {
-                    Poll::Pending => state = FinalState::Pending,
-                    Poll::Ready(output) => match output {
-                        Ok(item) => elem.set(ElemState::Done(Some(item))),
-                        Err(e) => {
-                            state = FinalState::Error(e);
-                            break;
-                        }
-                    }
+        for elem in iter_pin_mut(self.elems.as_mut()) {
+            match elem.try_poll(cx) {
+                Poll::Pending => state = FinalState::Pending,
+                Poll::Ready(Ok(())) => {}
+                Poll::Ready(Err(e)) => {
+                    state = FinalState::Error(e);
+                    break;
                 }
             }
         }
@@ -159,15 +118,14 @@ where
             FinalState::Pending => Poll::Pending,
             FinalState::AllDone => {
                 let mut elems = mem::replace(&mut self.elems, Box::pin([]));
-                let results = iter_pin_mut(elems.as_mut())
-                    .map(|e| e.take_done().unwrap())
-                    .collect();
+                let results =
+                    iter_pin_mut(elems.as_mut()).map(|e| e.take_output().unwrap()).collect();
                 Poll::Ready(Ok(results))
-            },
+            }
             FinalState::Error(e) => {
                 let _ = mem::replace(&mut self.elems, Box::pin([]));
                 Poll::Ready(Err(e))
-            },
+            }
         }
     }
 }

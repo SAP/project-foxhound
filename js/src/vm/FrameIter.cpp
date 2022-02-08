@@ -14,6 +14,7 @@
 #include <stdlib.h>  // getenv
 
 #include "jit/BaselineFrame.h"   // js::jit::BaselineFrame
+#include "jit/JitFrames.h"       // js::jit::EnsureBareExitFrame
 #include "jit/JSJitFrameIter.h"  // js::jit::{FrameType,InlineFrameIterator,JSJitFrameIter,MaybeReadFallback,SnapshotIterator}
 #include "js/GCAPI.h"            // JS::AutoSuppressGCAnalysis
 #include "js/Principals.h"       // JSSubsumesOp
@@ -240,9 +241,6 @@ OnlyJSJitFrameIter::OnlyJSJitFrameIter(jit::JitActivation* act)
     : JitFrameIter(act) {
   settle();
 }
-
-OnlyJSJitFrameIter::OnlyJSJitFrameIter(JSContext* cx)
-    : OnlyJSJitFrameIter(cx->activation()->asJit()) {}
 
 OnlyJSJitFrameIter::OnlyJSJitFrameIter(const ActivationIterator& iter)
     : OnlyJSJitFrameIter(iter->asJit()) {}
@@ -527,6 +525,15 @@ bool FrameIter::isEvalFrame() const {
       }
       MOZ_ASSERT(isWasm());
       return false;
+  }
+  MOZ_CRASH("Unexpected state");
+}
+
+bool FrameIter::isModuleFrame() const {
+  MOZ_ASSERT(!done());
+
+  if (hasScript()) {
+    return script()->isModule();
   }
   MOZ_CRASH("Unexpected state");
 }
@@ -826,8 +833,7 @@ bool FrameIter::matchCallee(JSContext* cx, JS::Handle<JSFunction*> fun) const {
   // the script clones do not use the same script, they also have a different
   // group and Ion will not inline them interchangeably.
   //
-  // See: js::jit::InlineFrameIterator::findNextFrame(),
-  //      js::CloneFunctionAndScript()
+  // See: js::jit::InlineFrameIterator::findNextFrame()
   if (currentCallee->hasBaseScript()) {
     if (currentCallee->baseScript() != fun->baseScript()) {
       return false;

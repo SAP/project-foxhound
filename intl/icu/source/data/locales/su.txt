@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 su{
     AuxExemplarCharacters{"[á à ă â å ä ã ā æ ç è ĕ ê ë ē í ì ĭ î ï ī ñ ó ò ŏ ô ö ø ō œ ú ù ŭ û ü ū ÿ]"}
     ExemplarCharacters{"[a b c d e é f g h i j k l m n o p q r s t u v w x y z]"}
@@ -12,6 +13,7 @@ su{
     NumberElements{
         latn{
             patterns{
+                currencyFormat{"¤#,##0.00"}
                 decimalFormat{"#,##0.###"}
             }
             symbols{
@@ -22,7 +24,6 @@ su{
             }
         }
     }
-    Version{"37"}
     calendar{
         generic{
             DateTimePatterns{
@@ -35,10 +36,20 @@ su{
                 "d MMM y G",
                 "d/M/y GGGGG",
                 "{1}, {0}",
-                "{1} 'pukul' {0}",
-                "{1} 'pukul' {0}",
+                "{1} 'jam' {0}",
+                "{1} 'jam' {0}",
                 "{1}, {0}",
                 "{1}, {0}",
+            }
+            DateTimeSkeletons{
+                "Hmmsszzzz",
+                "Hmmssz",
+                "Hmmss",
+                "Hmm",
+                "GyMMMMEEEEd",
+                "GyMMMMd",
+                "GyMMMd",
+                "GGGGGyMd",
             }
             intervalFormats{
                 fallback{"{0} – {1}"}
@@ -55,10 +66,20 @@ su{
                 "d MMM y",
                 "d/M/yy",
                 "{1}, {0}",
-                "{1} 'pukul' {0}",
-                "{1} 'pukul' {0}",
+                "{1} 'jam' {0}",
+                "{1} 'jam' {0}",
                 "{1}, {0}",
                 "{1}, {0}",
+            }
+            DateTimeSkeletons{
+                "Hmmsszzzz",
+                "Hmmssz",
+                "Hmmss",
+                "Hmm",
+                "yMMMMEEEEd",
+                "yMMMMd",
+                "yMMMd",
+                "yyMd",
             }
             availableFormats{
                 Bhm{"h.mm B"}
@@ -74,6 +95,7 @@ su{
                 GyMMM{"MMM y G"}
                 GyMMMEd{"E, d MMM y G"}
                 GyMMMd{"d MMM y G"}
+                GyMd{"d/M/y GGGGG"}
                 Hm{"HH.mm"}
                 Hms{"HH.mm.ss"}
                 Hmsv{"HH.mm.ss v"}
@@ -107,7 +129,7 @@ su{
                         "Sen",
                         "Sal",
                         "Reb",
-                        "Kam",
+                        "Kem",
                         "Jum",
                         "Sap",
                     }
@@ -125,7 +147,7 @@ su{
                         "Senén",
                         "Salasa",
                         "Rebo",
-                        "Kamis",
+                        "Kemis",
                         "Jumaah",
                         "Saptu",
                     }
@@ -136,7 +158,7 @@ su{
                         "Sen",
                         "Sal",
                         "Reb",
-                        "Kam",
+                        "Kem",
                         "Jum",
                         "Sap",
                     }
@@ -154,7 +176,7 @@ su{
                         "Senén",
                         "Salasa",
                         "Rebo",
-                        "Kamis",
+                        "Kemis",
                         "Jumaah",
                         "Saptu",
                     }
@@ -277,9 +299,6 @@ su{
             }
         }
     }
-    delimiters{
-        quotationEnd{"”"}
-    }
     fields{
         day{
             dn{"dinten"}
@@ -355,6 +374,13 @@ su{
         }
         second-short{
             dn{"dtk."}
+        }
+        sun{
+            relative{
+                "-1"{"Minggu kamari"}
+                "0"{"Minggu ieu"}
+                "1"{"Minggu payun"}
+            }
         }
         week{
             dn{"minggu"}

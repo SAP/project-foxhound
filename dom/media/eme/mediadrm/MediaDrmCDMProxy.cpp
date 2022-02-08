@@ -25,10 +25,9 @@ MediaDrmSessionType ToMediaDrmSessionType(
 MediaDrmCDMProxy::MediaDrmCDMProxy(dom::MediaKeys* aKeys,
                                    const nsAString& aKeySystem,
                                    bool aDistinctiveIdentifierRequired,
-                                   bool aPersistentStateRequired,
-                                   nsISerialEventTarget* aMainThread)
+                                   bool aPersistentStateRequired)
     : CDMProxy(aKeys, aKeySystem, aDistinctiveIdentifierRequired,
-               aPersistentStateRequired, aMainThread),
+               aPersistentStateRequired),
       mCDM(nullptr),
       mShutdownCalled(false) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -147,6 +146,18 @@ void MediaDrmCDMProxy::RemoveSession(const nsAString& aSessionId,
   // TODO: Implement RemoveSession.
   RejectPromiseWithStateError(
       aPromiseId, "Currently Fennec does not support RemoveSession"_ns);
+}
+
+void MediaDrmCDMProxy::QueryOutputProtectionStatus() {
+  // TODO(bryce): determine if this is needed for Android and implement as
+  // needed. See also `NotifyOutputProtectionStatus`.
+}
+
+void MediaDrmCDMProxy::NotifyOutputProtectionStatus(
+    OutputProtectionCheckStatus aCheckStatus,
+    OutputProtectionCaptureStatus aCaptureStatus) {
+  // TODO(bryce): determine if this is needed for Android and implement as
+  // needed. See also `QueryOutputProtectionStatus`.
 }
 
 void MediaDrmCDMProxy::Shutdown() {

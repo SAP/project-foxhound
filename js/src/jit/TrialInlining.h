@@ -7,8 +7,23 @@
 #ifndef jit_TrialInlining_h
 #define jit_TrialInlining_h
 
+#include "mozilla/Attributes.h"
+#include "mozilla/Maybe.h"
+
+#include <stddef.h>
+#include <stdint.h>
+
+#include "jstypes.h"
+#include "NamespaceImports.h"
+
+#include "gc/Barrier.h"
 #include "jit/CacheIR.h"
-#include "vm/BytecodeLocation.h"
+#include "jit/ICStubSpace.h"
+#include "js/RootingAPI.h"
+#include "js/TypeDecls.h"
+#include "js/UniquePtr.h"
+#include "js/Vector.h"
+#include "vm/JSScript.h"
 
 /*
  * [SMDOC] Trial Inlining
@@ -32,8 +47,27 @@
  * The same approach can be used to inline recursively.
  */
 
+class JS_PUBLIC_API JSTracer;
+struct JS_PUBLIC_API JSContext;
+
+class JSFunction;
+
+namespace JS {
+class Zone;
+}
+
 namespace js {
+
+class BytecodeLocation;
+
 namespace jit {
+
+class BaselineFrame;
+class CacheIRWriter;
+class ICCacheIRStub;
+class ICEntry;
+class ICFallbackStub;
+class ICScript;
 
 /*
  * An InliningRoot is owned by a JitScript. In turn, it owns the set
@@ -42,9 +76,11 @@ namespace jit {
 class InliningRoot {
  public:
   explicit InliningRoot(JSContext* cx, JSScript* owningScript)
-      : owningScript_(owningScript), inlinedScripts_(cx) {}
+      : owningScript_(owningScript),
+        inlinedScripts_(cx),
+        totalBytecodeSize_(owningScript->length()) {}
 
-  FallbackICStubSpace* fallbackStubSpace() { return &fallbackStubSpace_; }
+  JitScriptICStubSpace* jitScriptStubSpace() { return &jitScriptStubSpace_; }
 
   void trace(JSTracer* trc);
 
@@ -53,25 +89,57 @@ class InliningRoot {
   uint32_t numInlinedScripts() const { return inlinedScripts_.length(); }
 
   void purgeOptimizedStubs(Zone* zone);
+  void resetWarmUpCounts(uint32_t count);
 
   JSScript* owningScript() const { return owningScript_; }
 
+  size_t totalBytecodeSize() const { return totalBytecodeSize_; }
+
+  void addToTotalBytecodeSize(size_t size) { totalBytecodeSize_ += size; }
+
  private:
-  FallbackICStubSpace fallbackStubSpace_ = {};
+  JitScriptICStubSpace jitScriptStubSpace_ = {};
   HeapPtr<JSScript*> owningScript_;
   js::Vector<js::UniquePtr<ICScript>> inlinedScripts_;
+
+  // Bytecode size of outer script and all inlined scripts.
+  size_t totalBytecodeSize_;
 };
 
-class InlinableCallData {
+class InlinableOpData {
+ public:
+  JSFunction* target = nullptr;
+  ICScript* icScript = nullptr;
+  const uint8_t* endOfSharedPrefix = nullptr;
+};
+
+class InlinableCallData : public InlinableOpData {
  public:
   ObjOperandId calleeOperand;
   CallFlags callFlags;
-  const uint8_t* endOfSharedPrefix = nullptr;
-  JSFunction* target = nullptr;
-  ICScript* icScript = nullptr;
 };
 
-mozilla::Maybe<InlinableCallData> FindInlinableCallData(ICStub* stub);
+class InlinableGetterData : public InlinableOpData {
+ public:
+  ValOperandId receiverOperand;
+  bool sameRealm = false;
+};
+
+class InlinableSetterData : public InlinableOpData {
+ public:
+  ObjOperandId receiverOperand;
+  ValOperandId rhsOperand;
+  bool sameRealm = false;
+};
+
+mozilla::Maybe<InlinableOpData> FindInlinableOpData(ICCacheIRStub* stub,
+                                                    BytecodeLocation loc);
+
+mozilla::Maybe<InlinableCallData> FindInlinableCallData(ICCacheIRStub* stub);
+mozilla::Maybe<InlinableGetterData> FindInlinableGetterData(
+    ICCacheIRStub* stub);
+mozilla::Maybe<InlinableSetterData> FindInlinableSetterData(
+    ICCacheIRStub* stub);
 
 class MOZ_RAII TrialInliner {
  public:
@@ -81,20 +149,27 @@ class MOZ_RAII TrialInliner {
 
   JSContext* cx() { return cx_; }
 
-  MOZ_MUST_USE bool tryInlining();
-  MOZ_MUST_USE bool maybeInlineCall(const ICEntry& entry, BytecodeLocation loc);
+  [[nodiscard]] bool tryInlining();
+  [[nodiscard]] bool maybeInlineCall(ICEntry& entry, ICFallbackStub* fallback,
+                                     BytecodeLocation loc);
+  [[nodiscard]] bool maybeInlineGetter(ICEntry& entry, ICFallbackStub* fallback,
+                                       BytecodeLocation loc, CacheKind kind);
+  [[nodiscard]] bool maybeInlineSetter(ICEntry& entry, ICFallbackStub* fallback,
+                                       BytecodeLocation loc, CacheKind kind);
 
-  static bool canInline(JSFunction* target);
+  static bool canInline(JSFunction* target, HandleScript caller,
+                        BytecodeLocation loc);
 
  private:
-  ICStub* maybeSingleStub(const ICEntry& entry);
-  void cloneSharedPrefix(ICStub* stub, const uint8_t* endOfPrefix,
+  ICCacheIRStub* maybeSingleStub(const ICEntry& entry);
+  void cloneSharedPrefix(ICCacheIRStub* stub, const uint8_t* endOfPrefix,
                          CacheIRWriter& writer);
   ICScript* createInlinedICScript(JSFunction* target, BytecodeLocation loc);
-  void replaceICStub(const ICEntry& entry, CacheIRWriter& writer,
-                     CacheKind kind);
+  [[nodiscard]] bool replaceICStub(ICEntry& entry, ICFallbackStub* fallback,
+                                   CacheIRWriter& writer, CacheKind kind);
 
-  bool shouldInline(JSFunction* target, BytecodeLocation loc);
+  bool shouldInline(JSFunction* target, ICCacheIRStub* stub,
+                    BytecodeLocation loc);
 
   JSContext* cx_;
   HandleScript script_;

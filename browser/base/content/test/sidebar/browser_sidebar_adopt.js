@@ -12,6 +12,13 @@ function failIfSidebarFocusedFires() {
   ok(false, "This event shouldn't have fired");
 }
 
+add_task(function setup() {
+  CustomizableUI.addWidgetToArea("sidebar-button", "nav-bar");
+  registerCleanupFunction(() =>
+    CustomizableUI.removeWidgetFromArea("sidebar-button")
+  );
+});
+
 add_task(async function testAdoptedTwoWindows() {
   // First open a new window, show the sidebar in that window, and close it.
   // Then, open another new window and confirm that the sidebar is closed since it is

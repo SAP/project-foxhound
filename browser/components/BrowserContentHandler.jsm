@@ -44,8 +44,6 @@ XPCOMUtils.defineLazyGetter(this, "gSystemPrincipal", () =>
 );
 XPCOMUtils.defineLazyGlobalGetters(this, [URL]);
 
-const NEWINSTALL_PAGE = "about:newinstall";
-
 // One-time startup homepage override configurations
 const ONCE_DOMAINS = ["mozilla.org", "firefox.com"];
 const ONCE_PREF = "browser.startup.homepage_override.once";
@@ -65,10 +63,10 @@ function resolveURIInternal(aCmdLine, aArgument) {
   var uriFixup = Services.uriFixup;
 
   if (!(uri instanceof Ci.nsIFileURL)) {
-    return uriFixup.createFixupURI(
+    return Services.uriFixup.getFixupURIInfo(
       aArgument,
       uriFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS
-    );
+    ).preferredURI;
   }
 
   try {
@@ -83,7 +81,7 @@ function resolveURIInternal(aCmdLine, aArgument) {
   // doesn't exist. Try URI fixup heuristics: see bug 290782.
 
   try {
-    uri = uriFixup.createFixupURI(aArgument, 0);
+    uri = Services.uriFixup.getFixupURIInfo(aArgument).preferredURI;
   } catch (e) {
     Cu.reportError(e);
   }
@@ -92,14 +90,13 @@ function resolveURIInternal(aCmdLine, aArgument) {
 }
 
 let gKiosk = false;
-
+let gMajorUpgrade = false;
 var gFirstWindow = false;
 
 const OVERRIDE_NONE = 0;
 const OVERRIDE_NEW_PROFILE = 1;
 const OVERRIDE_NEW_MSTONE = 2;
 const OVERRIDE_NEW_BUILD_ID = 3;
-const OVERRIDE_ALTERNATE_PROFILE = 4;
 /**
  * Determines whether a home page override is needed.
  * Returns:
@@ -111,12 +108,6 @@ const OVERRIDE_ALTERNATE_PROFILE = 4;
  *  OVERRIDE_NONE otherwise.
  */
 function needHomepageOverride(prefb) {
-  let pService = Cc["@mozilla.org/toolkit/profile-service;1"].getService(
-    Ci.nsIToolkitProfileService
-  );
-  if (pService.createdAlternateProfile) {
-    return OVERRIDE_ALTERNATE_PROFILE;
-  }
   var savedmstone = prefb.getCharPref(
     "browser.startup.homepage_override.mstone",
     ""
@@ -142,6 +133,9 @@ function needHomepageOverride(prefb) {
     // a way to make existing profiles retain the default that we removed.
     if (savedmstone) {
       prefb.setBoolPref("browser.rights.3.shown", true);
+
+      // Remember that we saw a major version change.
+      gMajorUpgrade = true;
     }
 
     prefb.setCharPref("browser.startup.homepage_override.mstone", mstone);
@@ -233,59 +227,42 @@ function openBrowserWindow(
   if (!urlOrUrlList) {
     // Just pass in the defaultArgs directly. We'll use system principal on the other end.
     args = [gBrowserContentHandler.getArgs(isStartup)];
-  } else {
-    let pService = Cc["@mozilla.org/toolkit/profile-service;1"].getService(
-      Ci.nsIToolkitProfileService
-    );
-    if (isStartup && pService.createdAlternateProfile) {
-      let url = NEWINSTALL_PAGE;
-      if (Array.isArray(urlOrUrlList)) {
-        urlOrUrlList.unshift(url);
-      } else {
-        urlOrUrlList = [url, urlOrUrlList];
-      }
-    }
-
-    if (Array.isArray(urlOrUrlList)) {
-      // There isn't an explicit way to pass a principal here, so we load multiple URLs
-      // with system principal when we get to actually loading them.
-      if (
-        !triggeringPrincipal ||
-        !triggeringPrincipal.equals(gSystemPrincipal)
-      ) {
-        throw new Error(
-          "Can't open multiple URLs with something other than system principal."
-        );
-      }
-      // Passing an nsIArray for the url disables the "|"-splitting behavior.
-      let uriArray = Cc["@mozilla.org/array;1"].createInstance(
-        Ci.nsIMutableArray
+  } else if (Array.isArray(urlOrUrlList)) {
+    // There isn't an explicit way to pass a principal here, so we load multiple URLs
+    // with system principal when we get to actually loading them.
+    if (!triggeringPrincipal || !triggeringPrincipal.equals(gSystemPrincipal)) {
+      throw new Error(
+        "Can't open multiple URLs with something other than system principal."
       );
-      urlOrUrlList.forEach(function(uri) {
-        var sstring = Cc["@mozilla.org/supports-string;1"].createInstance(
-          Ci.nsISupportsString
-        );
-        sstring.data = uri;
-        uriArray.appendElement(sstring);
-      });
-      args = [uriArray];
-    } else {
-      // Always pass at least 3 arguments to avoid the "|"-splitting behavior,
-      // ie. avoid the loadOneOrMoreURIs function.
-      // Also, we need to pass the triggering principal.
-      args = [
-        urlOrUrlList,
-        null, // charset
-        null, // refererInfo
-        postData,
-        undefined, // allowThirdPartyFixup; this would be `false` but that
-        // needs a conversion. Hopefully bug 1485961 will fix.
-        undefined, // user context id
-        null, // origin principal
-        null, // origin storage principal
-        triggeringPrincipal,
-      ];
     }
+    // Passing an nsIArray for the url disables the "|"-splitting behavior.
+    let uriArray = Cc["@mozilla.org/array;1"].createInstance(
+      Ci.nsIMutableArray
+    );
+    urlOrUrlList.forEach(function(uri) {
+      var sstring = Cc["@mozilla.org/supports-string;1"].createInstance(
+        Ci.nsISupportsString
+      );
+      sstring.data = uri;
+      uriArray.appendElement(sstring);
+    });
+    args = [uriArray];
+  } else {
+    // Always pass at least 3 arguments to avoid the "|"-splitting behavior,
+    // ie. avoid the loadOneOrMoreURIs function.
+    // Also, we need to pass the triggering principal.
+    args = [
+      urlOrUrlList,
+      null, // charset
+      null, // refererInfo
+      postData,
+      undefined, // allowThirdPartyFixup; this would be `false` but that
+      // needs a conversion. Hopefully bug 1485961 will fix.
+      undefined, // user context id
+      null, // origin principal
+      null, // origin storage principal
+      triggeringPrincipal,
+    ];
   }
 
   if (isStartup) {
@@ -301,9 +278,11 @@ function openBrowserWindow(
         ).usePrivateBrowsing = true;
       }
 
+      let openTime = win.openTime;
       win.location = chromeURL;
       win.arguments = args; // <-- needs to be a plain JS array here.
 
+      ChromeUtils.addProfilerMarker("earlyBlankWindowVisible", openTime);
       return win;
     }
   }
@@ -648,12 +627,6 @@ nsBrowserContentHandler.prototype = {
       override = needHomepageOverride(prefb);
       if (override != OVERRIDE_NONE) {
         switch (override) {
-          case OVERRIDE_ALTERNATE_PROFILE:
-            // Override the welcome page to explain why the user has a new
-            // profile. nsBrowserGlue.css will be responsible for showing the
-            // modal dialog.
-            overridePage = NEWINSTALL_PAGE;
-            break;
           case OVERRIDE_NEW_PROFILE:
             // New profile.
             overridePage = Services.urlFormatter.formatURLPref(
@@ -676,7 +649,7 @@ nsBrowserContentHandler.prototype = {
             overridePage = Services.urlFormatter.formatURLPref(
               "startup.homepage_override_url"
             );
-            let update = UpdateManager.activeUpdate;
+            let update = UpdateManager.readyUpdate;
             if (
               update &&
               Services.vc.compare(update.appVersion, old_mstone) > 0
@@ -689,7 +662,7 @@ nsBrowserContentHandler.prototype = {
             overridePage = overridePage.replace("%OLD_VERSION%", old_mstone);
             break;
           case OVERRIDE_NEW_BUILD_ID:
-            if (UpdateManager.activeUpdate) {
+            if (UpdateManager.readyUpdate) {
               // Send the update ping to signal that the update was successful.
               UpdatePing.handleUpdateSuccess(old_mstone, old_buildId);
             }
@@ -774,8 +747,7 @@ nsBrowserContentHandler.prototype = {
     }
 
     let skipStartPage =
-      (override == OVERRIDE_NEW_PROFILE ||
-        override == OVERRIDE_ALTERNATE_PROFILE) &&
+      override == OVERRIDE_NEW_PROFILE &&
       prefb.getBoolPref("browser.startup.firstrunSkipsHomepage");
     // Only show the startPage if we're not restoring an update session and are
     // not set to skip the start page on this profile
@@ -835,6 +807,14 @@ nsBrowserContentHandler.prototype = {
     return gKiosk;
   },
 
+  get majorUpgrade() {
+    return gMajorUpgrade;
+  },
+
+  set majorUpgrade(val) {
+    gMajorUpgrade = val;
+  },
+
   /* nsIContentHandler */
 
   handleContent: function bch_handleContent(contentType, context, request) {
@@ -844,7 +824,7 @@ nsBrowserContentHandler.prototype = {
       var webNavInfo = Cc["@mozilla.org/webnavigation-info;1"].getService(
         Ci.nsIWebNavigationInfo
       );
-      if (!webNavInfo.isTypeSupported(contentType, null)) {
+      if (!webNavInfo.isTypeSupported(contentType)) {
         throw NS_ERROR_WONT_HANDLE_CONTENT;
       }
     } catch (e) {
@@ -944,6 +924,21 @@ nsDefaultCommandLineHandler.prototype = {
   /* nsICommandLineHandler */
   handle: function dch_handle(cmdLine) {
     var urilist = [];
+
+    if (
+      cmdLine.state == Ci.nsICommandLine.STATE_INITIAL_LAUNCH &&
+      Services.startup.wasSilentlyStarted
+    ) {
+      // If we are starting up in silent mode, don't open a window. We also need
+      // to make sure that the application doesn't immediately exit, so stay in
+      // a LastWindowClosingSurvivalArea until a window opens.
+      Services.startup.enterLastWindowClosingSurvivalArea();
+      Services.obs.addObserver(function windowOpenObserver() {
+        Services.startup.exitLastWindowClosingSurvivalArea();
+        Services.obs.removeObserver(windowOpenObserver, "domwindowopened");
+      }, "domwindowopened");
+      return;
+    }
 
     if (AppConstants.platform == "win") {
       // If we don't have a profile selected yet (e.g. the Profile Manager is

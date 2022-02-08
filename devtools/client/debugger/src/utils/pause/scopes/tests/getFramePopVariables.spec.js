@@ -3,14 +3,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
 import { getFramePopVariables } from "../utils";
-import type { NamedValue } from "../types";
 
 const errorGrip = {
   type: "object",
-  actor: "server2.conn66.child1/pausedobj243",
+  actor: "server2.conn66.child1/obj243",
   class: "Error",
   extensible: true,
   frozen: false,
@@ -46,11 +43,11 @@ function throwWhy(grip) {
   };
 }
 
-function getContentsValue(v: NamedValue) {
-  return (v.contents: any).value;
+function getContentsValue(v) {
+  return v.contents.value;
 }
 
-function getContentsClass(v: NamedValue) {
+function getContentsClass(v) {
   const value = getContentsValue(v);
   return value ? value.class || undefined : "";
 }

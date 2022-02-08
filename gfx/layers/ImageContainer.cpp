@@ -5,13 +5,21 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ImageContainer.h"
-#include <string.h>    // for memcpy, memset
-#include "GLImages.h"  // for SurfaceTextureImage
+
+#include <string.h>  // for memcpy, memset
+
+#include "GLImages.h"    // for SurfaceTextureImage
+#include "YCbCrUtils.h"  // for YCbCr conversions
 #include "gfx2DGlue.h"
 #include "gfxPlatform.h"  // for gfxPlatform
 #include "gfxUtils.h"     // for gfxUtils
 #include "libyuv.h"
-#include "mozilla/RefPtr.h"                 // for already_AddRefed
+#include "mozilla/CheckedInt.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/RefPtr.h"  // for already_AddRefed
+#include "mozilla/StaticPrefs_layers.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/ipc/CrossProcessMutex.h"  // for CrossProcessMutex, etc
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/layers/ImageBridgeChild.h"     // for ImageBridgeChild
@@ -19,24 +27,20 @@
 #include "mozilla/layers/ImageDataSerializer.h"  // for SurfaceDescriptorBuffer
 #include "mozilla/layers/LayersMessages.h"
 #include "mozilla/layers/SharedPlanarYCbCrImage.h"
-#include "mozilla/layers/SharedSurfacesChild.h"  // for SharedSurfacesAnimation
 #include "mozilla/layers/SharedRGBImage.h"
 #include "mozilla/layers/TextureClientRecycleAllocator.h"
-#include "mozilla/StaticPrefs_layers.h"
-#include "mozilla/gfx/gfxVars.h"
+#include "nsProxyRelease.h"
 #include "nsISupportsUtils.h"  // for NS_IF_ADDREF
-#include "YCbCrUtils.h"        // for YCbCr conversions
-#include "gfx2DGlue.h"
-#include "mozilla/gfx/2D.h"
-#include "mozilla/CheckedInt.h"
 
 #ifdef XP_MACOSX
+#  include "MacIOSurfaceImage.h"
 #  include "mozilla/gfx/QuartzSupport.h"
 #endif
 
 #ifdef XP_WIN
-#  include "gfxWindowsPlatform.h"
 #  include <d3d10_1.h>
+
+#  include "gfxWindowsPlatform.h"
 #  include "mozilla/gfx/DeviceManagerDx.h"
 #  include "mozilla/layers/D3D11YCbCrImage.h"
 #endif
@@ -170,13 +174,6 @@ void ImageContainer::EnsureImageClient() {
   }
 }
 
-SharedSurfacesAnimation* ImageContainer::EnsureSharedSurfacesAnimation() {
-  if (!mSharedAnimation) {
-    mSharedAnimation = new SharedSurfacesAnimation();
-  }
-  return mSharedAnimation;
-}
-
 ImageContainer::ImageContainer(Mode flag)
     : mRecursiveMutex("ImageContainer.mRecursiveMutex"),
       mGenerationCounter(++sGenerationCounter),
@@ -215,9 +212,24 @@ ImageContainer::~ImageContainer() {
       imageBridge->ForgetImageContainer(mAsyncContainerHandle);
     }
   }
-  if (mSharedAnimation) {
-    mSharedAnimation->Destroy();
+}
+
+Maybe<SurfaceDescriptor> Image::GetDesc() { return {}; }
+
+Maybe<SurfaceDescriptor> Image::GetDescFromTexClient(
+    TextureClient* const forTc) {
+  RefPtr<TextureClient> tc = forTc;
+  if (!forTc) {
+    tc = GetTextureClient(nullptr);
   }
+
+  const auto& tcd = tc->GetInternalData();
+
+  SurfaceDescriptor ret;
+  if (!tcd->Serialize(ret)) {
+    return {};
+  }
+  return Some(ret);
 }
 
 RefPtr<PlanarYCbCrImage> ImageContainer::CreatePlanarYCbCrImage() {
@@ -235,10 +247,13 @@ RefPtr<PlanarYCbCrImage> ImageContainer::CreatePlanarYCbCrImage() {
 RefPtr<SharedRGBImage> ImageContainer::CreateSharedRGBImage() {
   RecursiveMutexAutoLock lock(mRecursiveMutex);
   EnsureImageClient();
-  if (!mImageClient || !mImageClient->AsImageClientSingle()) {
-    return nullptr;
+  if (mImageClient && mImageClient->AsImageClientSingle()) {
+    return new SharedRGBImage(mImageClient);
   }
-  return new SharedRGBImage(mImageClient);
+  if (mRecycleAllocator) {
+    return new SharedRGBImage(mRecycleAllocator);
+  }
+  return nullptr;
 }
 
 void ImageContainer::SetCurrentImageInternal(
@@ -285,7 +300,7 @@ void ImageContainer::SetCurrentImageInternal(
     }
   }
 
-  mCurrentImages.SwapElements(newImages);
+  mCurrentImages = std::move(newImages);
 }
 
 void ImageContainer::ClearImagesFromImageBridge() {
@@ -423,16 +438,7 @@ void ImageContainer::EnsureRecycleAllocatorForRDD(
     return;
   }
 
-  bool useRecycleAllocator =
-      StaticPrefs::layers_recycle_allocator_rdd_AtStartup();
-#ifdef XP_MACOSX
-  // Disable RecycleAllocator for RDD on MacOS without WebRender.
-  // Recycling caused rendering artifact on a MacOS PC with OpenGL compositor.
-  if (!gfxVars::UseWebRender()) {
-    useRecycleAllocator = false;
-  }
-#endif
-  if (!useRecycleAllocator) {
+  if (!StaticPrefs::layers_recycle_allocator_rdd_AtStartup()) {
     return;
   }
 
@@ -462,19 +468,29 @@ D3D11YCbCrRecycleAllocator* ImageContainer::GetD3D11YCbCrRecycleAllocator(
 }
 #endif
 
+#ifdef XP_MACOSX
+MacIOSurfaceRecycleAllocator*
+ImageContainer::GetMacIOSurfaceRecycleAllocator() {
+  if (!mMacIOSurfaceRecycleAllocator) {
+    mMacIOSurfaceRecycleAllocator = new MacIOSurfaceRecycleAllocator();
+  }
+
+  return mMacIOSurfaceRecycleAllocator;
+}
+#endif
+
 PlanarYCbCrImage::PlanarYCbCrImage()
     : Image(nullptr, ImageFormat::PLANAR_YCBCR),
       mOffscreenFormat(SurfaceFormat::UNKNOWN),
       mBufferSize(0) {}
 
 nsresult PlanarYCbCrImage::BuildSurfaceDescriptorBuffer(
-    SurfaceDescriptorBuffer& aSdBuffer) {
+    SurfaceDescriptorBuffer& aSdBuffer,
+    const std::function<MemoryOrShmem(uint32_t)>& aAllocate) {
   const PlanarYCbCrData* pdata = GetData();
   MOZ_ASSERT(pdata, "must have PlanarYCbCrData");
   MOZ_ASSERT(pdata->mYSkip == 0 && pdata->mCbSkip == 0 && pdata->mCrSkip == 0,
              "YCbCrDescriptor doesn't hold skip values");
-  MOZ_ASSERT(pdata->mPicX == 0 && pdata->mPicY == 0,
-             "YCbCrDescriptor doesn't hold picx or picy");
 
   uint32_t yOffset;
   uint32_t cbOffset;
@@ -483,11 +499,11 @@ nsresult PlanarYCbCrImage::BuildSurfaceDescriptorBuffer(
       pdata->mYStride, pdata->mYSize.height, pdata->mCbCrStride,
       pdata->mCbCrSize.height, yOffset, cbOffset, crOffset);
 
-  aSdBuffer.desc() = YCbCrDescriptor(
+  uint32_t bufferSize = ImageDataSerializer::ComputeYCbCrBufferSize(
       pdata->mYSize, pdata->mYStride, pdata->mCbCrSize, pdata->mCbCrStride,
-      yOffset, cbOffset, crOffset, pdata->mStereoMode, pdata->mColorDepth,
-      pdata->mYUVColorSpace, pdata->mColorRange,
-      /*hasIntermediateBuffer*/ false);
+      yOffset, cbOffset, crOffset);
+
+  aSdBuffer.data() = aAllocate(bufferSize);
 
   uint8_t* buffer = nullptr;
   const MemoryOrShmem& memOrShmem = aSdBuffer.data();
@@ -499,12 +515,17 @@ nsresult PlanarYCbCrImage::BuildSurfaceDescriptorBuffer(
       buffer = memOrShmem.get_Shmem().get<uint8_t>();
       break;
     default:
-      MOZ_ASSERT(false, "Unknown MemoryOrShmem type");
+      buffer = nullptr;
+      break;
   }
-  MOZ_ASSERT(buffer, "no valid buffer available to copy image data");
   if (!buffer) {
-    return NS_ERROR_INVALID_ARG;
+    return NS_ERROR_OUT_OF_MEMORY;
   }
+
+  aSdBuffer.desc() = YCbCrDescriptor(
+      pdata->GetPictureRect(), pdata->mYSize, pdata->mYStride, pdata->mCbCrSize,
+      pdata->mCbCrStride, yOffset, cbOffset, crOffset, pdata->mStereoMode,
+      pdata->mColorDepth, pdata->mYUVColorSpace, pdata->mColorRange);
 
   CopyPlane(buffer + yOffset, pdata->mYChannel, pdata->mYSize, pdata->mYStride,
             pdata->mYSkip);
@@ -653,9 +674,16 @@ already_AddRefed<gfx::SourceSurface> PlanarYCbCrImage::GetAsSourceSurface() {
   return surface.forget();
 }
 
+PlanarYCbCrImage::~PlanarYCbCrImage() {
+  NS_ReleaseOnMainThread("PlanarYCbCrImage::mSourceSurface",
+                         mSourceSurface.forget());
+}
+
 NVImage::NVImage() : Image(nullptr, ImageFormat::NV_IMAGE), mBufferSize(0) {}
 
-NVImage::~NVImage() = default;
+NVImage::~NVImage() {
+  NS_ReleaseOnMainThread("NVImage::mSourceSurface", mSourceSurface.forget());
+}
 
 IntSize NVImage::GetSize() const { return mSize; }
 
@@ -671,13 +699,13 @@ already_AddRefed<SourceSurface> NVImage::GetAsSourceSurface() {
   // logics in PlanarYCbCrImage::GetAsSourceSurface().
   const int bufferLength = mData.mYSize.height * mData.mYStride +
                            mData.mCbCrSize.height * mData.mCbCrSize.width * 2;
-  auto* buffer = new uint8_t[bufferLength];
+  UniquePtr<uint8_t[]> buffer(new uint8_t[bufferLength]);
 
   Data aData = mData;
   aData.mCbCrStride = aData.mCbCrSize.width;
   aData.mCbSkip = 0;
   aData.mCrSkip = 0;
-  aData.mYChannel = buffer;
+  aData.mYChannel = buffer.get();
   aData.mCbChannel = aData.mYChannel + aData.mYSize.height * aData.mYStride;
   aData.mCrChannel =
       aData.mCbChannel + aData.mCbCrSize.height * aData.mCbCrStride;
@@ -722,9 +750,6 @@ already_AddRefed<SourceSurface> NVImage::GetAsSourceSurface() {
                          mapping.GetStride());
 
   mSourceSurface = surface;
-
-  // Release the temporary buffer.
-  delete[] buffer;
 
   return surface.forget();
 }
@@ -776,8 +801,8 @@ bool NVImage::SetData(const Data& aData) {
 
 const NVImage::Data* NVImage::GetData() const { return &mData; }
 
-UniquePtr<uint8_t> NVImage::AllocateBuffer(uint32_t aSize) {
-  UniquePtr<uint8_t> buffer(new uint8_t[aSize]);
+UniquePtr<uint8_t[]> NVImage::AllocateBuffer(uint32_t aSize) {
+  UniquePtr<uint8_t[]> buffer(new uint8_t[aSize]);
   return buffer;
 }
 
@@ -794,7 +819,10 @@ SourceSurfaceImage::SourceSurfaceImage(gfx::SourceSurface* aSourceSurface)
       mSourceSurface(aSourceSurface),
       mTextureFlags(TextureFlags::DEFAULT) {}
 
-SourceSurfaceImage::~SourceSurfaceImage() = default;
+SourceSurfaceImage::~SourceSurfaceImage() {
+  NS_ReleaseOnMainThread("SourceSurfaceImage::mSourceSurface",
+                         mSourceSurface.forget());
+}
 
 TextureClient* SourceSurfaceImage::GetTextureClient(
     KnowsCompositor* aKnowsCompositor) {
@@ -802,29 +830,28 @@ TextureClient* SourceSurfaceImage::GetTextureClient(
     return nullptr;
   }
 
-  auto entry = mTextureClients.LookupForAdd(aKnowsCompositor->GetSerial());
-  if (entry) {
-    return entry.Data();
-  }
+  return mTextureClients.WithEntryHandle(
+      aKnowsCompositor->GetSerial(), [&](auto&& entry) -> TextureClient* {
+        if (entry) {
+          return entry->get();
+        }
 
-  RefPtr<TextureClient> textureClient;
-  RefPtr<SourceSurface> surface = GetAsSourceSurface();
-  MOZ_ASSERT(surface);
-  if (surface) {
-    // gfx::BackendType::NONE means default to content backend
-    textureClient = TextureClient::CreateFromSurface(
-        aKnowsCompositor, surface, BackendSelector::Content, mTextureFlags,
-        ALLOC_DEFAULT);
-  }
-  if (textureClient) {
-    textureClient->SyncWithObject(aKnowsCompositor->GetSyncObject());
-    entry.OrInsert([&textureClient]() { return textureClient; });
-    return textureClient;
-  }
+        RefPtr<TextureClient> textureClient;
+        RefPtr<SourceSurface> surface = GetAsSourceSurface();
+        MOZ_ASSERT(surface);
+        if (surface) {
+          // gfx::BackendType::NONE means default to content backend
+          textureClient = TextureClient::CreateFromSurface(
+              aKnowsCompositor, surface, BackendSelector::Content,
+              mTextureFlags, ALLOC_DEFAULT);
+        }
+        if (textureClient) {
+          textureClient->SyncWithObject(aKnowsCompositor->GetSyncObject());
+          return entry.Insert(std::move(textureClient)).get();
+        }
 
-  // Remove the speculatively added entry.
-  entry.OrRemove();
-  return nullptr;
+        return nullptr;
+      });
 }
 
 ImageContainer::ProducerID ImageContainer::AllocateProducerID() {

@@ -10,34 +10,53 @@ navbar-tooltip-instruction =
 
 ## Back
 
-main-context-menu-back =
-    .tooltiptext = Go back one page
+# Variables
+#   $shortcut (String) - A keyboard shortcut for the Go Back command.
+main-context-menu-back-2 =
+    .tooltiptext = Go back one page ({ $shortcut })
     .aria-label = Back
     .accesskey = B
 
-navbar-tooltip-back =
-    .value = { main-context-menu-back.tooltiptext }
+# This menuitem is only visible on macOS
+main-context-menu-back-mac =
+    .label = Back
+    .accesskey = B
 
-toolbar-button-back =
-    .label = { main-context-menu-back.aria-label }
+navbar-tooltip-back-2 =
+    .value = { main-context-menu-back-2.tooltiptext }
+
+toolbar-button-back-2 =
+    .label = { main-context-menu-back-2.aria-label }
 
 ## Forward
 
-main-context-menu-forward =
-    .tooltiptext = Go forward one page
+# Variables
+#   $shortcut (String) - A keyboard shortcut for the Go Forward command.
+main-context-menu-forward-2 =
+    .tooltiptext = Go forward one page ({ $shortcut })
     .aria-label = Forward
     .accesskey = F
 
-navbar-tooltip-forward =
-    .value = { main-context-menu-forward.tooltiptext }
+# This menuitem is only visible on macOS
+main-context-menu-forward-mac =
+    .label = Forward
+    .accesskey = F
 
-toolbar-button-forward =
-    .label = { main-context-menu-forward.aria-label }
+navbar-tooltip-forward-2 =
+    .value = { main-context-menu-forward-2.tooltiptext }
+
+toolbar-button-forward-2 =
+    .label = { main-context-menu-forward-2.aria-label }
 
 ## Reload
 
 main-context-menu-reload =
     .aria-label = Reload
+    .accesskey = R
+
+# This menuitem is only visible on macOS
+main-context-menu-reload-mac =
+    .label = Reload
     .accesskey = R
 
 toolbar-button-reload =
@@ -49,6 +68,11 @@ main-context-menu-stop =
     .aria-label = Stop
     .accesskey = S
 
+# This menuitem is only visible on macOS
+main-context-menu-stop-mac =
+    .label = Stop
+    .accesskey = S
+
 toolbar-button-stop =
     .label = { main-context-menu-stop.aria-label }
 
@@ -57,14 +81,17 @@ toolbar-button-stop =
 toolbar-button-stop-reload =
     .title = { main-context-menu-reload.aria-label }
 
+## Firefox Account Button
+
+toolbar-button-fxaccount =
+    .label = { -fxaccount-brand-name(capitalization: "sentence") }
+    .tooltiptext = { -fxaccount-brand-name(capitalization: "sentence") }
+
 ## Save Page
 
 main-context-menu-page-save =
     .label = Save Page As…
     .accesskey = P
-
-toolbar-button-page-save =
-    .label = { main-context-menu-page-save.label }
 
 ## Simple menu items
 
@@ -72,6 +99,20 @@ main-context-menu-bookmark-add =
     .aria-label = Bookmark This Page
     .accesskey = m
     .tooltiptext = Bookmark this page
+
+# This menuitem is only visible on macOS
+# Cannot be shown at the same time as main-context-menu-bookmark-edit-mac,
+# so should probably have the same access key if possible.
+main-context-menu-bookmark-add-mac =
+    .label = Bookmark Page
+    .accesskey = m
+
+# This menuitem is only visible on macOS
+# Cannot be shown at the same time as main-context-menu-bookmark-add-mac,
+# so should probably have the same access key if possible.
+main-context-menu-bookmark-edit-mac =
+    .label = Edit Bookmark
+    .accesskey = m
 
 # Variables
 #   $shortcut (String) - A keyboard shortcut for the add bookmark command.
@@ -102,19 +143,19 @@ main-context-menu-open-link-new-tab =
 
 main-context-menu-open-link-container-tab =
     .label = Open Link in New Container Tab
-    .accesskey = b
+    .accesskey = w
 
 main-context-menu-open-link-new-window =
     .label = Open Link in New Window
-    .accesskey = W
+    .accesskey = d
 
 main-context-menu-open-link-new-private-window =
     .label = Open Link in New Private Window
     .accesskey = P
 
-main-context-menu-bookmark-this-link =
-    .label = Bookmark This Link
-    .accesskey = L
+main-context-menu-bookmark-link =
+    .label = Bookmark Link
+    .accesskey = B
 
 main-context-menu-save-link =
     .label = Save Link As…
@@ -124,17 +165,17 @@ main-context-menu-save-link-to-pocket =
     .label = Save Link to { -pocket-brand-name }
     .accesskey = o
 
-## The access keys for "Copy Link Location" and "Copy Email Address"
+## The access keys for "Copy Link" and "Copy Email Address"
 ## should be the same if possible; the two context menu items
 ## are mutually exclusive.
 
 main-context-menu-copy-email =
     .label = Copy Email Address
-    .accesskey = A
+    .accesskey = l
 
-main-context-menu-copy-link =
-    .label = Copy Link Location
-    .accesskey = a
+main-context-menu-copy-link-simple =
+    .label = Copy Link
+    .accesskey = L
 
 ## Media (video/audio) controls
 ##
@@ -160,31 +201,24 @@ main-context-menu-media-unmute =
     .label = Unmute
     .accesskey = m
 
-main-context-menu-media-play-speed =
-    .label = Play Speed
+main-context-menu-media-play-speed-2 =
+    .label = Speed
     .accesskey = d
 
-main-context-menu-media-play-speed-slow =
-    .label = Slow (0.5×)
-    .accesskey = S
+main-context-menu-media-play-speed-slow-2 =
+    .label = 0.5×
 
-main-context-menu-media-play-speed-normal =
-    .label = Normal
-    .accesskey = N
+main-context-menu-media-play-speed-normal-2 =
+    .label = 1.0×
 
-main-context-menu-media-play-speed-fast =
-    .label = Fast (1.25×)
-    .accesskey = F
+main-context-menu-media-play-speed-fast-2 =
+    .label = 1.25×
 
-main-context-menu-media-play-speed-faster =
-    .label = Faster (1.5×)
-    .accesskey = a
+main-context-menu-media-play-speed-faster-2 =
+    .label = 1.5×
 
-# "Ludicrous" is a reference to the movie "Space Balls" and is meant
-# to say that this speed is very fast.
-main-context-menu-media-play-speed-fastest =
-    .label = Ludicrous (2×)
-    .accesskey = L
+main-context-menu-media-play-speed-fastest-2 =
+    .label = 2×
 
 main-context-menu-media-loop =
     .label = Loop
@@ -213,36 +247,36 @@ main-context-menu-media-video-leave-fullscreen =
 
 # This is used when right-clicking on a video in the
 # content area when the Picture-in-Picture feature is enabled.
-main-context-menu-media-pip =
-    .label = Picture-in-Picture
+main-context-menu-media-watch-pip =
+    .label = Watch in Picture-in-Picture
     .accesskey = u
 
 main-context-menu-image-reload =
     .label = Reload Image
     .accesskey = R
 
-main-context-menu-image-view =
-    .label = View Image
+main-context-menu-image-view-new-tab =
+    .label = Open Image in New Tab
     .accesskey = I
 
-main-context-menu-video-view =
-    .label = View Video
+main-context-menu-video-view-new-tab =
+    .label = Open Video in New Tab
     .accesskey = i
 
 main-context-menu-image-copy =
     .label = Copy Image
     .accesskey = y
 
-main-context-menu-image-copy-location =
-    .label = Copy Image Location
+main-context-menu-image-copy-link =
+    .label = Copy Image Link
     .accesskey = o
 
-main-context-menu-video-copy-location =
-    .label = Copy Video Location
+main-context-menu-video-copy-link =
+    .label = Copy Video Link
     .accesskey = o
 
-main-context-menu-audio-copy-location =
-    .label = Copy Audio Location
+main-context-menu-audio-copy-link =
+    .label = Copy Audio Link
     .accesskey = o
 
 main-context-menu-image-save-as =
@@ -253,8 +287,8 @@ main-context-menu-image-email =
     .label = Email Image…
     .accesskey = g
 
-main-context-menu-image-set-as-background =
-    .label = Set As Desktop Background…
+main-context-menu-image-set-image-as-background =
+    .label = Set Image as Desktop Background…
     .accesskey = S
 
 main-context-menu-image-info =
@@ -273,8 +307,8 @@ main-context-menu-audio-save-as =
     .label = Save Audio As…
     .accesskey = v
 
-main-context-menu-video-image-save-as =
-    .label = Save Snapshot As…
+main-context-menu-video-take-snapshot =
+    .label = Take Snapshot…
     .accesskey = S
 
 main-context-menu-video-email =
@@ -301,13 +335,27 @@ main-context-menu-send-to-device =
     .label = Send Page to Device
     .accesskey = n
 
-main-context-menu-view-background-image =
-    .label = View Background Image
-    .accesskey = w
+## The access keys for "Use Saved Login" and "Use Saved Password"
+## should be the same if possible; the two context menu items
+## are mutually exclusive.
 
-main-context-menu-generate-new-password =
-    .label = Use Generated Password…
-    .accesskey = G
+main-context-menu-use-saved-login =
+    .label = Use Saved Login
+    .accesskey = o
+
+main-context-menu-use-saved-password =
+    .label = Use Saved Password
+    .accesskey = o
+
+##
+
+main-context-menu-suggest-strong-password =
+    .label = Suggest Strong Password…
+    .accesskey = S
+
+main-context-menu-manage-logins2 =
+    .label = Manage Logins
+    .accesskey = M
 
 main-context-menu-keyword =
     .label = Add a Keyword for this Search…
@@ -357,17 +405,25 @@ main-context-menu-frame-view-info =
     .label = View Frame Info
     .accesskey = I
 
+main-context-menu-print-selection =
+    .label = Print Selection
+    .accesskey = r
+
 main-context-menu-view-selection-source =
     .label = View Selection Source
     .accesskey = e
 
+main-context-menu-take-screenshot =
+    .label = Take Screenshot
+    .accesskey = T
+
+main-context-menu-take-frame-screenshot =
+    .label = Take Screenshot
+    .accesskey = o
+
 main-context-menu-view-page-source =
     .label = View Page Source
     .accesskey = V
-
-main-context-menu-view-page-info =
-    .label = View Page Info
-    .accesskey = I
 
 main-context-menu-bidi-switch-text =
     .label = Switch Text Direction
@@ -377,8 +433,8 @@ main-context-menu-bidi-switch-page =
     .label = Switch Page Direction
     .accesskey = D
 
-main-context-menu-inspect-element =
-    .label = Inspect Element
+main-context-menu-inspect =
+    .label = Inspect
     .accesskey = Q
 
 main-context-menu-inspect-a11y-properties =
@@ -387,3 +443,14 @@ main-context-menu-inspect-a11y-properties =
 main-context-menu-eme-learn-more =
     .label = Learn more about DRM…
     .accesskey = D
+
+# Variables
+#   $containerName (String): The name of the current container
+main-context-menu-open-link-in-container-tab =
+    .label = Open Link in New { $containerName } Tab
+    .accesskey = T
+
+# FIXME(emilio): Every single letter has a conflicting accesskey, UX needed.
+main-context-menu-toggle-show-password =
+    .label = Show Password
+    .accesskey = d

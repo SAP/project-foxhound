@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 my{
     Currencies{
         AED{
@@ -52,7 +53,7 @@ my{
         }
         BBD{
             "BBD",
-            "ဘာဘေးဒီယန်း ဒေါ်လာ",
+            "ဘာဘေးဒိုးစ် ဒေါ်လာ",
         }
         BDT{
             "BDT",
@@ -373,6 +374,10 @@ my{
         LRD{
             "LRD",
             "လိုက်ဘေးရီးယား ဒေါ်လာ",
+        }
+        LSL{
+            "LSL",
+            "လီဆိုသို လိုတီ",
         }
         LTL{
             "LTL",
@@ -707,12 +712,12 @@ my{
             "အထူးထုတ်ယူခွင့်",
         }
         XOF{
-            "CFA",
-            "အနောက် အာဖရိက CFA ဖရန့်",
+            "F CFA",
+            "အနောက် အာဖရိက [CFA ]ဖရန့်",
         }
         XPF{
             "CFPF",
-            "CFP ဖရန့်",
+            "[CFP] ဖရန့်",
         }
         XPT{
             "XPT",
@@ -877,7 +882,7 @@ my{
             other{"ဘော့စနီးယားနှင့် ဟာဇီဂိုဘီးနားမတ်က်"}
         }
         BBD{
-            other{"ဘာဘေးဒီယန်း ဒေါ်လာ"}
+            other{"ဘာဘေးဒိုးစ် ဒေါ်လာ"}
         }
         BDT{
             other{"ဘင်္ဂလားဒေ့ရှ် တာကာ"}
@@ -1091,6 +1096,9 @@ my{
         }
         LRD{
             other{"လိုက်ဘေးရီးယား ဒေါ်လာ"}
+        }
+        LSL{
+            other{"လီဆိုသို လိုတီစ်"}
         }
         LTL{
             other{"လစ်သူယေးနီးယားလီတားစ်"}
@@ -1312,10 +1320,10 @@ my{
             other{"အရှေ့ကာရစ်ဘီယံ ဒေါ်လာ"}
         }
         XOF{
-            other{"အနောက် အာဖရိက CFA ဖရန့်"}
+            other{"အနောက် အာဖရိက [CFA] ဖရန့်"}
         }
         XPF{
-            other{"CFP ဖရန့်"}
+            other{"[CFP] ဖရန့်"}
         }
         XXX{
             other{"(မသိသို့မဟုတ်မရှိသောငွေကြေး)"}
@@ -1330,5 +1338,4 @@ my{
             other{"ဇင်ဘာဘွေ ခွါးချာ"}
         }
     }
-    Version{"37"}
 }

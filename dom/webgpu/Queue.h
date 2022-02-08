@@ -8,14 +8,27 @@
 
 #include "nsWrapperCache.h"
 #include "ObjectModel.h"
+#include "mozilla/dom/TypedArray.h"
+#include "mozilla/webgpu/WebGPUTypes.h"
 
 namespace mozilla {
+class ErrorResult;
 namespace dom {
+class RangeEnforcedUnsignedLongSequenceOrGPUExtent3DDict;
+class ArrayBufferViewOrArrayBuffer;
+template <typename T>
+class Optional;
 template <typename T>
 class Sequence;
-}
+struct GPUImageCopyTexture;
+struct GPUImageDataLayout;
+struct TextureCopyView;
+struct TextureDataLayout;
+using GPUExtent3D = RangeEnforcedUnsignedLongSequenceOrGPUExtent3DDict;
+}  // namespace dom
 namespace webgpu {
 
+class Buffer;
 class CommandBuffer;
 class Device;
 class Fence;
@@ -30,8 +43,17 @@ class Queue final : public ObjectBase, public ChildOf<Device> {
   void Submit(
       const dom::Sequence<OwningNonNull<CommandBuffer>>& aCommandBuffers);
 
+  void WriteBuffer(const Buffer& aBuffer, uint64_t aBufferOffset,
+                   const dom::ArrayBufferViewOrArrayBuffer& aData,
+                   uint64_t aDataOffset, const dom::Optional<uint64_t>& aSize,
+                   ErrorResult& aRv);
+
+  void WriteTexture(const dom::GPUImageCopyTexture& aDestination,
+                    const dom::ArrayBufferViewOrArrayBuffer& aData,
+                    const dom::GPUImageDataLayout& aDataLayout,
+                    const dom::GPUExtent3D& aSize, ErrorResult& aRv);
+
  private:
-  Queue() = delete;
   virtual ~Queue();
   void Cleanup() {}
 

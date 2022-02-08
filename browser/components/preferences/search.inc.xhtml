@@ -13,7 +13,7 @@
 
     <groupbox id="searchbarGroup" data-category="paneSearch" hidden="true">
       <label control="searchBarVisibleGroup"><html:h2 data-l10n-id="search-bar-header"/></label>
-      <radiogroup id="searchBarVisibleGroup" preference="browser.search.widget.inNavBar">
+      <radiogroup id="searchBarVisibleGroup" preference="browser.search.widget.inNavBar" align="start">
         <radio id="searchBarHiddenRadio" value="false" data-l10n-id="search-bar-hidden"/>
         <image class="searchBarImage searchBarHiddenImage" role="presentation"/>
         <radio id="searchBarShownRadio" value="true" data-l10n-id="search-bar-shown"/>
@@ -25,11 +25,6 @@
     <groupbox id="defaultEngineGroup" data-category="paneSearch" hidden="true">
       <label><html:h2 data-l10n-id="search-engine-default-header" /></label>
       <description data-l10n-id="search-engine-default-desc-2" />
-
-      <hbox id="browserDefaultSearchExtensionContent"
-            align="center" hidden="true" class="extension-controlled">
-        <description control="disableDefaultSearchExtension" flex="1"/>
-      </hbox>
 
       <hbox>
         <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
@@ -57,7 +52,8 @@
 
     <groupbox id="searchSuggestionsGroup" data-category="paneSearch" hidden="true">
       <label><html:h2 data-l10n-id="search-suggestions-header" /></label>
-      <description data-l10n-id="search-suggestions-desc" />
+      <description id="searchSuggestionsDesc"
+                   data-l10n-id="search-suggestions-desc" />
 
       <checkbox id="suggestionsInSearchFieldsCheckbox"
                 data-l10n-id="search-suggestions-option"
@@ -65,7 +61,8 @@
       <vbox class="indent">
         <checkbox id="urlBarSuggestion" data-l10n-id="search-show-suggestions-url-bar-option" />
         <checkbox id="showSearchSuggestionsFirstCheckbox"
-                  data-l10n-id="search-show-suggestions-above-history-option"/>
+                  data-l10n-id="search-show-suggestions-above-history-option"
+                  preference="browser.urlbar.showSearchSuggestionsFirst"/>
         <checkbox id="showSearchSuggestionsPrivateWindows"
                   data-l10n-id="search-show-suggestions-private-windows"/>
         <hbox id="urlBarSuggestionPermanentPBLabel"
@@ -74,21 +71,20 @@
         </hbox>
       </vbox>
       <label id="openLocationBarPrivacyPreferences" is="text-link"
-             data-l10n-id="suggestions-addressbar-settings-generic"/>
+             data-l10n-id="suggestions-addressbar-settings-generic2"/>
     </groupbox>
 
     <groupbox id="oneClickSearchProvidersGroup" data-category="paneSearch" hidden="true">
-      <label><html:h2 data-l10n-id="search-one-click-header" /></label>
+      <label><html:h2 data-l10n-id="search-one-click-header2" /></label>
       <description data-l10n-id="search-one-click-desc" />
 
-      <tree id="engineList" flex="1" rows="8" hidecolumnpicker="true" editable="true"
+      <tree id="engineList" flex="1" rows="11" hidecolumnpicker="true" editable="true"
             seltype="single" allowunderflowscroll="true">
         <treechildren id="engineChildren" flex="1"/>
         <treecols>
           <treecol id="engineShown" type="checkbox" editable="true" sortable="false"/>
-          <treecol id="engineName" flex="4" data-l10n-id="search-choose-engine-column" sortable="false"/>
-          <treecol id="engineKeyword" flex="1" data-l10n-id="search-choose-keyword-column" editable="true"
-                   sortable="false"/>
+          <treecol id="engineName" flex="1" data-l10n-id="search-choose-engine-column" sortable="false"/>
+          <treecol id="engineKeyword" flex="1" data-l10n-id="search-choose-keyword-column" sortable="false"/>
         </treecols>
       </tree>
 
@@ -104,6 +100,22 @@
                 data-l10n-id="search-remove-engine"
                 disabled="true"
                 />
+        <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
+        <hbox>
+          <button id="addEngineButton"
+                  is="highlightable-button"
+                  class="searchEngineAction"
+                  hidden="true"
+                  data-l10n-id="search-add-engine"
+                  search-l10n-ids="
+                    add-engine-button,
+                    add-engine-name,
+                    add-engine-alias,
+                    add-engine-url,
+                    add-engine-dialog.buttonlabelaccept,
+                  "
+                  />
+        </hbox>
       </hbox>
       <hbox id="addEnginesBox" pack="start">
         <label id="addEngines" data-l10n-id="search-find-more-link" is="text-link"></label>

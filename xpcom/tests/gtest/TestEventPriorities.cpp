@@ -9,6 +9,7 @@
 #include "nsXPCOM.h"
 #include "nsThreadUtils.h"
 #include "gtest/gtest.h"
+#include "mozilla/SpinEventLoopUntil.h"
 
 #include <functional>
 
@@ -63,7 +64,8 @@ TEST(EventPriorities, IdleAfterNormal)
   NS_DispatchToMainThread(evNormal);
 
   MOZ_ALWAYS_TRUE(
-      SpinEventLoopUntil([&]() { return normalRan == 3 && idleRan == 3; }));
+      SpinEventLoopUntil("xpcom:TEST(EventPriorities, IdleAfterNormal)"_ns,
+                         [&]() { return normalRan == 3 && idleRan == 3; }));
 }
 
 TEST(EventPriorities, HighNormal)
@@ -74,7 +76,7 @@ TEST(EventPriorities, HighNormal)
       &normalRan, [&] { ASSERT_TRUE((highRan - normalRan) >= 0); });
   RefPtr<TestEvent> evHigh = new TestEvent(
       &highRan, [&] { ASSERT_TRUE((highRan - normalRan) >= 0); },
-      nsIRunnablePriority::PRIORITY_HIGH);
+      nsIRunnablePriority::PRIORITY_VSYNC);
 
   NS_DispatchToMainThread(evNormal);
   NS_DispatchToMainThread(evNormal);
@@ -84,5 +86,6 @@ TEST(EventPriorities, HighNormal)
   NS_DispatchToMainThread(evHigh);
 
   MOZ_ALWAYS_TRUE(
-      SpinEventLoopUntil([&]() { return normalRan == 3 && highRan == 3; }));
+      SpinEventLoopUntil("xpcom:TEST(EventPriorities, HighNormal)"_ns,
+                         [&]() { return normalRan == 3 && highRan == 3; }));
 }

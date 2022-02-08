@@ -7,7 +7,6 @@
 #ifndef mozilla_OriginAttributes_h
 #define mozilla_OriginAttributes_h
 
-#include "mozilla/dom/ChromeUtils.h"
 #include "mozilla/dom/ChromeUtilsBinding.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "nsIScriptSecurityManager.h"
@@ -63,11 +62,10 @@ class OriginAttributes : public dom::OriginAttributesDictionary {
   }
 
   bool operator==(const OriginAttributes& aOther) const {
-    return mInIsolatedMozBrowser == aOther.mInIsolatedMozBrowser &&
-           mUserContextId == aOther.mUserContextId &&
-           mPrivateBrowsingId == aOther.mPrivateBrowsingId &&
+    return EqualsIgnoringFPD(aOther) &&
            mFirstPartyDomain == aOther.mFirstPartyDomain &&
-           mGeckoViewSessionContextId == aOther.mGeckoViewSessionContextId &&
+           // FIXME(emilio, bug 1667440): Should this be part of
+           // EqualsIgnoringFPD instead?
            mPartitionKey == aOther.mPartitionKey;
   }
 
@@ -75,27 +73,36 @@ class OriginAttributes : public dom::OriginAttributesDictionary {
     return !(*this == aOther);
   }
 
-  MOZ_MUST_USE bool EqualsIgnoringFPD(const OriginAttributes& aOther) const {
+  [[nodiscard]] bool EqualsIgnoringFPD(const OriginAttributes& aOther) const {
     return mInIsolatedMozBrowser == aOther.mInIsolatedMozBrowser &&
            mUserContextId == aOther.mUserContextId &&
            mPrivateBrowsingId == aOther.mPrivateBrowsingId &&
            mGeckoViewSessionContextId == aOther.mGeckoViewSessionContextId;
   }
 
+  [[nodiscard]] bool EqualsIgnoringPartitionKey(
+      const OriginAttributes& aOther) const {
+    return EqualsIgnoringFPD(aOther) &&
+           mFirstPartyDomain == aOther.mFirstPartyDomain;
+  }
+
   // Serializes/Deserializes non-default values into the suffix format, i.e.
-  // |!key1=value1&key2=value2|. If there are no non-default attributes, this
+  // |^key1=value1&key2=value2|. If there are no non-default attributes, this
   // returns an empty string.
   void CreateSuffix(nsACString& aStr) const;
+
+  // Like CreateSuffix, but returns an atom instead of producing a string.
+  already_AddRefed<nsAtom> CreateSuffixAtom() const;
 
   // Don't use this method for anything else than debugging!
   void CreateAnonymizedSuffix(nsACString& aStr) const;
 
-  MOZ_MUST_USE bool PopulateFromSuffix(const nsACString& aStr);
+  [[nodiscard]] bool PopulateFromSuffix(const nsACString& aStr);
 
   // Populates the attributes from a string like
-  // |uri!key1=value1&key2=value2| and returns the uri without the suffix.
-  MOZ_MUST_USE bool PopulateFromOrigin(const nsACString& aOrigin,
-                                       nsACString& aOriginNoSuffix);
+  // |uri^key1=value1&key2=value2| and returns the uri without the suffix.
+  [[nodiscard]] bool PopulateFromOrigin(const nsACString& aOrigin,
+                                        nsACString& aOriginNoSuffix);
 
   // Helper function to match mIsPrivateBrowsing to existing private browsing
   // flags. Once all other flags are removed, this can be removed too.
@@ -125,7 +132,7 @@ class OriginAttributes : public dom::OriginAttributesDictionary {
 
   // Check whether we block the postMessage across different FPDs when the
   // targetOrigin is '*'.
-  static inline MOZ_MUST_USE bool IsBlockPostMessageForFPI() {
+  [[nodiscard]] static inline bool IsBlockPostMessageForFPI() {
     return StaticPrefs::privacy_firstparty_isolate() &&
            StaticPrefs::privacy_firstparty_isolate_block_post_message();
   }
@@ -133,6 +140,14 @@ class OriginAttributes : public dom::OriginAttributesDictionary {
   // returns true if the originAttributes suffix has mPrivateBrowsingId value
   // different than 0.
   static bool IsPrivateBrowsing(const nsACString& aOrigin);
+
+  // Parse a partitionKey of the format "(<scheme>,<baseDomain>,[port])" into
+  // its components.
+  // Returns false if the partitionKey cannot be parsed because the format is
+  // invalid.
+  static bool ParsePartitionKey(const nsAString& aPartitionKey,
+                                nsAString& outScheme, nsAString& outBaseDomain,
+                                int32_t& outPort);
 };
 
 class OriginAttributesPattern : public dom::OriginAttributesPatternDictionary {
@@ -177,9 +192,42 @@ class OriginAttributesPattern : public dom::OriginAttributesPatternDictionary {
       return false;
     }
 
-    if (mPartitionKey.WasPassed() &&
-        mPartitionKey.Value() != aAttrs.mPartitionKey) {
-      return false;
+    // If both mPartitionKey and mPartitionKeyPattern are passed, mPartitionKey
+    // takes precedence.
+    if (mPartitionKey.WasPassed()) {
+      if (mPartitionKey.Value() != aAttrs.mPartitionKey) {
+        return false;
+      }
+    } else if (mPartitionKeyPattern.WasPassed()) {
+      auto& pkPattern = mPartitionKeyPattern.Value();
+
+      if (pkPattern.mScheme.WasPassed() || pkPattern.mBaseDomain.WasPassed() ||
+          pkPattern.mPort.WasPassed()) {
+        if (aAttrs.mPartitionKey.IsEmpty()) {
+          return false;
+        }
+
+        nsString scheme;
+        nsString baseDomain;
+        int32_t port;
+        bool success = OriginAttributes::ParsePartitionKey(
+            aAttrs.mPartitionKey, scheme, baseDomain, port);
+        if (!success) {
+          return false;
+        }
+
+        if (pkPattern.mScheme.WasPassed() &&
+            pkPattern.mScheme.Value() != scheme) {
+          return false;
+        }
+        if (pkPattern.mBaseDomain.WasPassed() &&
+            pkPattern.mBaseDomain.Value() != baseDomain) {
+          return false;
+        }
+        if (pkPattern.mPort.WasPassed() && pkPattern.mPort.Value() != port) {
+          return false;
+        }
+      }
     }
 
     return true;
@@ -218,6 +266,25 @@ class OriginAttributesPattern : public dom::OriginAttributesPatternDictionary {
     if (mPartitionKey.WasPassed() && aOther.mPartitionKey.WasPassed() &&
         mPartitionKey.Value() != aOther.mPartitionKey.Value()) {
       return false;
+    }
+
+    if (mPartitionKeyPattern.WasPassed() &&
+        aOther.mPartitionKeyPattern.WasPassed()) {
+      auto& self = mPartitionKeyPattern.Value();
+      auto& other = aOther.mPartitionKeyPattern.Value();
+
+      if (self.mScheme.WasPassed() && other.mScheme.WasPassed() &&
+          self.mScheme.Value() != other.mScheme.Value()) {
+        return false;
+      }
+      if (self.mBaseDomain.WasPassed() && other.mBaseDomain.WasPassed() &&
+          self.mBaseDomain.Value() != other.mBaseDomain.Value()) {
+        return false;
+      }
+      if (self.mPort.WasPassed() && other.mPort.WasPassed() &&
+          self.mPort.Value() != other.mPort.Value()) {
+        return false;
+      }
     }
 
     return true;

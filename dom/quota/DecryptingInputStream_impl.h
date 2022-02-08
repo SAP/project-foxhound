@@ -9,22 +9,35 @@
 
 #include "DecryptingInputStream.h"
 
+#include <algorithm>
+#include <cstdio>
+#include <type_traits>
+#include <utility>
 #include "CipherStrategy.h"
-
-#include "mozilla/ipc/InputStreamParams.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/Result.h"
+#include "mozilla/ResultExtensions.h"
+#include "mozilla/Span.h"
+#include "mozilla/fallible.h"
+#include "nsDebug.h"
+#include "nsError.h"
 #include "nsFileStreams.h"
-#include "nsIAsyncInputStream.h"
-#include "nsStreamUtils.h"
+#include "nsID.h"
+#include "nsIFileStreams.h"
 
 namespace mozilla::dom::quota {
 
 template <typename CipherStrategy>
 DecryptingInputStream<CipherStrategy>::DecryptingInputStream(
     MovingNotNull<nsCOMPtr<nsIInputStream>> aBaseStream, size_t aBlockSize,
-    CipherStrategy aCipherStrategy, typename CipherStrategy::KeyType aKey)
+    typename CipherStrategy::KeyType aKey)
     : DecryptingInputStreamBase(std::move(aBaseStream), aBlockSize),
-      mCipherStrategy(std::move(aCipherStrategy)),
       mKey(aKey) {
+  // XXX Move this to a fallible init function.
+  MOZ_ALWAYS_SUCCEEDS(mCipherStrategy.Init(CipherMode::Decrypt,
+                                           CipherStrategy::SerializeKey(aKey)));
+
   // This implementation only supports sync base streams.  Verify this in debug
   // builds.
 #ifdef DEBUG
@@ -41,10 +54,8 @@ DecryptingInputStream<CipherStrategy>::~DecryptingInputStream() {
 }
 
 template <typename CipherStrategy>
-DecryptingInputStream<CipherStrategy>::DecryptingInputStream(
-    CipherStrategy aCipherStrategy)
-    : DecryptingInputStreamBase{},
-      mCipherStrategy(std::move(aCipherStrategy)) {}
+DecryptingInputStream<CipherStrategy>::DecryptingInputStream()
+    : DecryptingInputStreamBase{} {}
 
 template <typename CipherStrategy>
 NS_IMETHODIMP DecryptingInputStream<CipherStrategy>::Close() {
@@ -190,9 +201,9 @@ nsresult DecryptingInputStream<CipherStrategy>::ParseNextChunk(
   }
 
   // XXX Do we need to know the actual decrypted size?
-  rv = mCipherStrategy.Cipher(
-      CipherMode::Decrypt, *mKey, mEncryptedBlock->MutableCipherPrefix(),
-      mEncryptedBlock->Payload(), AsWritableBytes(Span{mPlainBuffer}));
+  rv = mCipherStrategy.Cipher(mEncryptedBlock->MutableCipherPrefix(),
+                              mEncryptedBlock->Payload(),
+                              AsWritableBytes(Span{mPlainBuffer}));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -444,10 +455,9 @@ NS_IMETHODIMP DecryptingInputStream<CipherStrategy>::Clone(
     return rv;
   }
 
-  *_retval =
-      MakeAndAddRef<DecryptingInputStream>(WrapNotNull(std::move(clonedStream)),
-                                           *mBlockSize, mCipherStrategy, *mKey)
-          .take();
+  *_retval = MakeAndAddRef<DecryptingInputStream>(
+                 WrapNotNull(std::move(clonedStream)), *mBlockSize, *mKey)
+                 .take();
 
   return NS_OK;
 }
@@ -501,6 +511,10 @@ bool DecryptingInputStream<CipherStrategy>::Deserialize(
   Init(WrapNotNull<nsCOMPtr<nsIInputStream>>(std::move(stream)),
        params.blockSize());
   mKey.init(mCipherStrategy.DeserializeKey(params.key()));
+  if (NS_WARN_IF(
+          NS_FAILED(mCipherStrategy.Init(CipherMode::Decrypt, params.key())))) {
+    return false;
+  }
 
   return true;
 }

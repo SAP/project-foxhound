@@ -1,6 +1,5 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
-/* eslint-disable no-shadow, max-nested-callbacks */
 
 "use strict";
 
@@ -280,7 +279,7 @@ function check_prototype(
 }
 
 function createNullPrincipal() {
-  return Cc["@mozilla.org/nullprincipal;1"].createInstance(Ci.nsIPrincipal);
+  return Services.scriptSecurityManager.createNullPrincipal({});
 }
 
 async function run_tests_in_principal(

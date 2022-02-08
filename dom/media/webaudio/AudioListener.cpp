@@ -4,13 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "AudioListener.h"
 #include "AudioContext.h"
-#include "mozilla/dom/AudioListenerBinding.h"
+#include "AudioListener.h"
 #include "MediaTrackGraphImpl.h"
+#include "Tracing.h"
+#include "mozilla/dom/AudioListenerBinding.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(AudioListener, mContext)
 
@@ -120,6 +120,7 @@ void AudioListener::SendListenerEngineEvent(
           mParameter(aParameter),
           mValue(aValue) {}
     void Run() override {
+      TRACE("AudioListener::RecvListenerEngineEvent");
       mEngine->RecvListenerEngineEvent(mParameter, mValue);
     }
     RefPtr<AudioListenerEngine> mEngine;
@@ -135,5 +136,4 @@ size_t AudioListener::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
   return aMallocSizeOf(this);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

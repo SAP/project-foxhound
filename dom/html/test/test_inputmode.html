@@ -19,6 +19,9 @@
 <input id="a7" inputmode="decimal">
 <input id="a8" inputmode="search">
 <input id="a9">
+<input id="a10" type="number" inputmode="numeric">
+<input id="a11" type="date" inputmode="numeric">
+<input id="a12" type="time" inputmode="numeric">
 <textarea id="b1" inputmode="none"></textarea>
 <textarea id="b2" inputmode="text"></textarea>
 <textarea id="b3" inputmode="tel"></textarea>
@@ -41,11 +44,11 @@
 </div>
 <pre id="test">
 <script class=testbody" type="application/javascript">
-SimpleTest.waitForExplicitFinish();
+add_task(async function setup() {
+  await new Promise(r => SimpleTest.waitForFocus(r));
+});
 
-SimpleTest.waitForFocus(async () => {
-  await SpecialPowers.setBoolPref("dom.forms.inputmode", true);
-
+add_task(async function basic() {
   const tests = [
     { id: "a1", inputmode: "none", desc: "inputmode of input element is none" },
     { id: "a2", inputmode: "text", desc: "inputmode of input element is text" },
@@ -56,6 +59,9 @@ SimpleTest.waitForFocus(async () => {
     { id: "a7", inputmode: "decimal", desc: "inputmode of input element is decimal" },
     { id: "a8", inputmode: "search", desc: "inputmode of input element is search" },
     { id: "a9", inputmode: "", desc: "no inputmode of input element" },
+    { id: "a10", inputmode: "numeric", desc: "inputmode of input type=number is numeric" },
+    { id: "a11", inputmode: "", desc: "no inputmode due to type=date" },
+    { id: "a12", inputmode: "", desc: "no inputmode due to type=time" },
     { id: "b1", inputmode: "none", desc: "inputmode of textarea element is none" },
     { id: "b2", inputmode: "text", desc: "inputmode of textarea element is text" },
     { id: "b3", inputmode: "tel", desc: "inputmode of textarea element is tel" },
@@ -92,9 +98,32 @@ SimpleTest.waitForFocus(async () => {
     }
     is(SpecialPowers.DOMWindowUtils.focusedInputMode, test.inputmode, test.desc);
   }
+});
 
-  SpecialPowers.clearUserPref("dom.forms.inputmode");
-  SimpleTest.finish();
+add_task(async function dynamicChange() {
+  const tests = ["a3", "b3", "c3"];
+  for (let test of tests) {
+    let element = document.getElementById(test);
+    element.focus();
+    is(SpecialPowers.DOMWindowUtils.focusedInputMode, "tel", "Initial inputmode");
+    element.inputMode = "url";
+    is(SpecialPowers.DOMWindowUtils.focusedInputMode, "url",
+       "inputmode in InputContext has to sync with current inputMode property");
+    element.setAttribute("inputmode", "decimal");
+    is(SpecialPowers.DOMWindowUtils.focusedInputMode, "decimal",
+       "inputmode in InputContext has to sync with current inputmode attribute");
+    // Storing the original value may be safer.
+    element.inputMode = "tel";
+  }
+
+  let element = document.getElementById("a3");
+  element.focus();
+  is(SpecialPowers.DOMWindowUtils.focusedInputMode, "tel", "Initial inputmode");
+  document.getElementById("a4").inputMode = "email";
+  is(SpecialPowers.DOMWindowUtils.focusedInputMode, "tel",
+     "inputmode in InputContext keeps focused inputmode value");
+  // Storing the original value may be safer.
+  document.getElementById("a4").inputMode = "url";
 });
 </script>
 </pre>

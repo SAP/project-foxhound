@@ -23,21 +23,6 @@ endif
 
 include $(topsrcdir)/config/config.mk
 
-GARBAGE_DIRS += _javagen _profile staticlib
-# To share compilation of dependencies, Rust libraries all set their
-# CARGO_TARGET_DIR as a subdirectory of topobjdir.  Normally, we would add
-# RUST*TARGET to GARBAGE_DIRS for those directories building Rust libraries.
-# But the directories building Rust libraries don't actually have
-# subdirectories to remove.  So we add to GARBAGE_DIRS once here, globally,
-# for it to have the desired effect.
-GARBAGE_DIRS += $(RUST_TARGET)
-GARBAGE_DIRS += config.statusd
-DIST_GARBAGE = config.cache config.log config.status config-defs.h \
-   config/autoconf.mk \
-   mozilla-config.h \
-   xpcom/xpcom-config.h xpcom/xpcom-private.h \
-   .mozconfig.mk
-
 ifneq (mobile/android,$(MOZ_BUILD_APP))
 $(MDDEPDIR)/buildid.h.stub $(MDDEPDIR)/source-repo.h.stub: FORCE
 endif
@@ -112,9 +97,6 @@ install-test-files:
 
 include $(topsrcdir)/build/moz-automation.mk
 
-# dist and _tests should be purged during cleaning.
-GARBAGE_DIRS += dist _tests
-
 # Dummy rule for the cases below where we don't depend on dist/include
 recurse_pre-export::
 
@@ -128,17 +110,13 @@ ifdef BUILD_VERBOSE_LOG
 verbose_flag = -v
 endif
 
-# Host binaries are not produced for macOS consumers: that is, there's
-# no macOS-hosted job to produce them at this time.  Therefore we
-# enable --host-bins only for automation builds, which only require Linux and
-# Windows host binaries.
 recurse_artifact:
-	$(topsrcdir)/mach --log-no-times artifact install$(if $(MOZ_ARTIFACT_BUILD_SYMBOLS), --symbols$(addprefix =,$(filter full,$(MOZ_ARTIFACT_BUILD_SYMBOLS))))$(if $(MOZ_AUTOMATION), --host-bins) $(verbose_flag)
+	$(PYTHON3) $(topsrcdir)/mach --log-no-times artifact install$(if $(MOZ_ARTIFACT_BUILD_SYMBOLS), --symbols$(addprefix =,$(filter full,$(MOZ_ARTIFACT_BUILD_SYMBOLS)))) $(verbose_flag)
 
 ifdef MOZ_EME_WIN32_ARTIFACT
 recurse_win32-artifact:
 	rm -rf $(DIST)/i686
-	$(topsrcdir)/mach --log-no-times artifact install --job $(if $(MOZ_PGO),win32-pgo,win32-opt) --no-tests --distdir $(DIST)/i686 $(verbose_flag)
+	$(PYTHON3) $(topsrcdir)/mach --log-no-times artifact install --job win32-opt --no-tests --distdir $(DIST)/i686 $(verbose_flag)
 	mv $(DIST)/i686/bin/* $(DIST)/i686
 endif
 
@@ -180,9 +158,6 @@ default::
 	@echo "==================="
 endif
 
-distclean::
-	$(RM) $(DIST_GARBAGE)
-
 ifdef MOZ_CRASHREPORTER
 include $(topsrcdir)/toolkit/mozapps/installer/package-name.mk
 
@@ -199,8 +174,8 @@ endif
 
 .PHONY: symbolsfullarchive
 symbolsfullarchive: prepsymbolsarchive
-	$(RM) '$(DIST)/$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).zip'
-	$(call py_action,symbols_archive,'$(DIST)/$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).zip' \
+	$(RM) '$(DIST)/$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).tar.zst'
+	$(call py_action,symbols_archive,'$(DIST)/$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).tar.zst' \
                                      $(abspath $(DIST)/crashreporter-symbols) \
                                      --full-archive)
 
@@ -211,20 +186,20 @@ symbolsarchive: prepsymbolsarchive
                                      $(abspath $(DIST)/crashreporter-symbols))
 
 ifdef MOZ_CRASHREPORTER
-# Set MOZ_DISABLE_FULL_SYMBOLS to disable generation and upload of the full
+# Set MOZ_ENABLE_FULL_SYMBOLS to enable generation and upload of the full
 # crashreporter symbols archives
-ifdef MOZ_DISABLE_FULL_SYMBOLS
-buildsymbols: symbolsarchive
-else
+ifdef MOZ_ENABLE_FULL_SYMBOLS
 buildsymbols: symbolsfullarchive symbolsarchive
-endif # MOZ_DISABLE_FULL_SYMBOLS
+else
+buildsymbols: symbolsarchive
+endif # MOZ_ENABLE_FULL_SYMBOLS
 else
 buildsymbols:
 endif
 
 uploadsymbols:
 ifdef MOZ_CRASHREPORTER
-	$(PYTHON3) -u $(topsrcdir)/toolkit/crashreporter/tools/upload_symbols.py '$(DIST)/$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).zip'
+	$(PYTHON3) -u $(topsrcdir)/toolkit/crashreporter/tools/upload_symbols.py '$(DIST)/$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).tar.zst'
 endif
 
 .PHONY: update-packaging

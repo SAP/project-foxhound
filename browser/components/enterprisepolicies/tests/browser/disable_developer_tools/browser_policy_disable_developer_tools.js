@@ -38,16 +38,21 @@ add_task(async function test_updates_post_policy() {
     false
   );
 
-  info("Check that devtools menu items are hidden");
-  let toolsMenu = window.document.getElementById("webDeveloperMenu");
-  ok(toolsMenu.hidden, "The Web Developer item of the tools menu is hidden");
-  let hamburgerMenu = window.document.getElementById(
-    "appMenu-developer-button"
+  let menuButton = document.getElementById("PanelUI-menu-button");
+  menuButton.click();
+  await BrowserTestUtils.waitForEvent(window.PanelUI.mainView, "ViewShown");
+  let moreToolsButtonId = "appMenu-more-button2";
+  document.getElementById(moreToolsButtonId).click();
+  await BrowserTestUtils.waitForEvent(
+    document.getElementById("appmenu-moreTools"),
+    "ViewShown"
   );
-  ok(
-    hamburgerMenu.hidden,
-    "The Web Developer item of the hamburger menu is hidden"
+  is(
+    document.getElementById("appmenu-developer-tools-view").children.length,
+    2,
+    "The developer tools are properly populated"
   );
+  window.PanelUI.hide();
 
   BrowserTestUtils.removeTab(tab);
 });

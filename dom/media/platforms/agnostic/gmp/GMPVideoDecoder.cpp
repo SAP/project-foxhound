@@ -9,10 +9,12 @@
 #include "GMPVideoHost.h"
 #include "MediaData.h"
 #include "mozilla/EndianUtils.h"
+#include "nsServiceManagerUtils.h"
 #include "AnnexB.h"
 #include "MP4Decoder.h"
 #include "prsystem.h"
 #include "VPXDecoder.h"
+#include "VideoUtils.h"
 
 namespace mozilla {
 
@@ -25,16 +27,15 @@ static bool IsOnGMPThread() {
   nsCOMPtr<nsIThread> gmpThread;
   nsresult rv = mps->GetThread(getter_AddRefs(gmpThread));
   MOZ_ASSERT(NS_SUCCEEDED(rv) && gmpThread);
-  return gmpThread->EventTarget()->IsOnCurrentThread();
+  return gmpThread->IsOnCurrentThread();
 }
 #endif
 
 GMPVideoDecoderParams::GMPVideoDecoderParams(const CreateDecoderParams& aParams)
     : mConfig(aParams.VideoConfig()),
-      mTaskQueue(aParams.mTaskQueue),
       mImageContainer(aParams.mImageContainer),
-      mLayersBackend(aParams.GetLayersBackend()),
-      mCrashHelper(aParams.mCrashHelper) {}
+      mCrashHelper(aParams.mCrashHelper),
+      mKnowsCompositor(aParams.mKnowsCompositor) {}
 
 void GMPVideoDecoder::Decoded(GMPVideoi420Frame* aDecodedFrame) {
   GMPUniquePtr<GMPVideoi420Frame> decodedFrame(aDecodedFrame);
@@ -64,7 +65,7 @@ void GMPVideoDecoder::Decoded(GMPVideoi420Frame* aDecodedFrame) {
       mConfig, mImageContainer, mLastStreamOffset,
       media::TimeUnit::FromMicroseconds(decodedFrame->Timestamp()),
       media::TimeUnit::FromMicroseconds(decodedFrame->Duration()), b, false,
-      media::TimeUnit::FromMicroseconds(-1), pictureRegion);
+      media::TimeUnit::FromMicroseconds(-1), pictureRegion, mKnowsCompositor);
   RefPtr<GMPVideoDecoder> self = this;
   if (v) {
     mDecodedData.AppendElement(std::move(v));
@@ -123,7 +124,8 @@ GMPVideoDecoder::GMPVideoDecoder(const GMPVideoDecoderParams& aParams)
       mHost(nullptr),
       mConvertNALUnitLengths(false),
       mCrashHelper(aParams.mCrashHelper),
-      mImageContainer(aParams.mImageContainer) {}
+      mImageContainer(aParams.mImageContainer),
+      mKnowsCompositor(aParams.mKnowsCompositor) {}
 
 void GMPVideoDecoder::InitTags(nsTArray<nsCString>& aTags) {
   if (MP4Decoder::IsH264(mConfig.mMimeType)) {
@@ -260,9 +262,8 @@ RefPtr<MediaDataDecoder::InitPromise> GMPVideoDecoder::Init() {
   nsTArray<nsCString> tags;
   InitTags(tags);
   UniquePtr<GetGMPVideoDecoderCallback> callback(new GMPInitDoneCallback(this));
-  if (NS_FAILED(mMPS->GetDecryptingGMPVideoDecoder(
-          mCrashHelper, &tags, GetNodeId(), std::move(callback),
-          DecryptorId()))) {
+  if (NS_FAILED(mMPS->GetGMPVideoDecoder(mCrashHelper, &tags, GetNodeId(),
+                                         std::move(callback)))) {
     mInitPromise.Reject(NS_ERROR_DOM_MEDIA_FATAL_ERR, __func__);
   }
 

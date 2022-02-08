@@ -117,7 +117,7 @@ async function start() {
   });
 
   await test_event_presence("device.sensors.ambientLight.enabled", hasLightListeners, "devicelight");
-  await test_event_presence("device.sensors.proximity.enabled", hasProximityListeners, "deviceproximity");
+  await test_event_presence("device.sensors.proximity.enabled", hasProximityListeners, "userproximity");
   await test_event_presence("device.sensors.motion.enabled", hasMotionListeners, "devicemotion");
   await test_event_presence("device.sensors.orientation.enabled", hasOrientationListeners, "deviceorientation");
 

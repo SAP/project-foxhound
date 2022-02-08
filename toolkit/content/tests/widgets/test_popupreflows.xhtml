@@ -16,13 +16,13 @@
 <![CDATA[
 ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-let panel, anchor, arrow;
+let panel, anchor;
 
 // A reflow observer - it just remembers the stack trace of all sync reflows
 // done by the panel.
 let observer = {
   reflows: [],
-  reflow: function (start, end) {
+  reflow (start, end) {
     // Ignore reflows triggered by native code
     // (Reflows from native code only have an empty stack after the first frame)
     var path = (new Error().stack).split("\n").slice(1).join("");
@@ -33,7 +33,7 @@ let observer = {
     this.reflows.push(new Error().stack);
   },
 
-  reflowInterruptible: function (start, end) {
+  reflowInterruptible (start, end) {
     // We're not interested in interruptible reflows.  Why, you ask?  Because
     // we've simply cargo-culted this test from browser_tabopen_reflows.js!
   },
@@ -64,9 +64,8 @@ function countReflows(testfn, expected) {
 function openPopup() {
   return new Promise(resolve => {
     panel.addEventListener("popupshown", function popupshown() {
-      panel.removeEventListener("popupshown", popupshown);
       resolve();
-    });
+    }, {once: true});
     panel.openPopup(anchor, "before_start");
   });
 }
@@ -87,12 +86,6 @@ SimpleTest.waitForExplicitFinish();
 addEventListener("load", function() {
   anchor = document.getElementById("anchor");
   panel = document.getElementById("testPanel");
-  arrow = panel.shadowRoot.querySelector(".panel-arrow");
-
-  // Cancel the arrow panel slide-in transition (bug 767133) - we are only
-  // testing reflows in the core panel implementation and not reflows that may
-  // or may not be caused by transitioning....
-  arrow.style.transition = "none";
 
   // and off we go...
   countReflows(testSimplePanel, 0).then(SimpleTest.finish);

@@ -17,6 +17,7 @@
 #  include "MediaResource.h"
 #  include "MediaStatistics.h"
 #  include "SeekTarget.h"
+#  include "TelemetryProbesReporter.h"
 #  include "TimeUnits.h"
 #  include "mozilla/Atomics.h"
 #  include "mozilla/CDMProxy.h"
@@ -48,11 +49,11 @@ class VideoFrameContainer;
 class MediaFormatReader;
 class MediaDecoderStateMachine;
 struct MediaPlaybackEvent;
-
-enum class Visibility : uint8_t;
+struct SharedDummyTrack;
 
 struct MOZ_STACK_CLASS MediaDecoderInit {
   MediaDecoderOwner* const mOwner;
+  TelemetryProbesReporterOwner* const mReporterOwner;
   const double mVolume;
   const bool mPreservesPitch;
   const double mPlaybackRate;
@@ -60,12 +61,15 @@ struct MOZ_STACK_CLASS MediaDecoderInit {
   const bool mHasSuspendTaint;
   const bool mLooping;
   const MediaContainerType mContainerType;
+  const nsAutoString mStreamName;
 
-  MediaDecoderInit(MediaDecoderOwner* aOwner, double aVolume,
+  MediaDecoderInit(MediaDecoderOwner* aOwner,
+                   TelemetryProbesReporterOwner* aReporterOwner, double aVolume,
                    bool aPreservesPitch, double aPlaybackRate,
                    bool aMinimizePreroll, bool aHasSuspendTaint, bool aLooping,
                    const MediaContainerType& aContainerType)
       : mOwner(aOwner),
+        mReporterOwner(aReporterOwner),
         mVolume(aVolume),
         mPreservesPitch(aPreservesPitch),
         mPlaybackRate(aPlaybackRate),
@@ -87,7 +91,6 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
 
   // Enumeration for the valid play states (see mPlayState)
   enum PlayState {
-    PLAY_STATE_START,
     PLAY_STATE_LOADING,
     PLAY_STATE_PAUSED,
     PLAY_STATE_PLAYING,
@@ -140,9 +143,8 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   virtual void Play();
 
   // Notify activity of the decoder owner is changed.
-  virtual void NotifyOwnerActivityChanged(bool aIsDocumentVisible,
-                                          Visibility aElementVisibility,
-                                          bool aIsElementInTree);
+  virtual void NotifyOwnerActivityChanged(bool aIsOwnerInvisible,
+                                          bool aIsOwnerConnected);
 
   // Pause video playback.
   virtual void Pause();
@@ -152,6 +154,7 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   void SetPlaybackRate(double aPlaybackRate);
   void SetPreservesPitch(bool aPreservesPitch);
   void SetLooping(bool aLooping);
+  void SetStreamName(const nsAutoString& aStreamName);
 
   // Set the given device as the output device.
   RefPtr<GenericPromise> SetSink(AudioDeviceInfo* aSinkDevice);
@@ -173,13 +176,18 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   // replaying after the input as ended. In the latter case, the new source is
   // not connected to streams created by captureStreamUntilEnded.
 
-  // Turn output capturing of this decoder on or off. If it is on, the
-  // MediaDecoderStateMachine's media sink will only play after output tracks
-  // have been set. This is to ensure that it doesn't skip over any data
-  // while the owner has intended to capture the full output, thus missing to
-  // capture some of it. The owner of the MediaDecoder is responsible for adding
-  // output tracks in a timely fashion while the output is captured.
-  void SetOutputCaptured(bool aCaptured);
+  enum class OutputCaptureState { Capture, Halt, None };
+  // Set the output capture state of this decoder.
+  // @param aState Capture: Output is captured into output tracks, and
+  //                        aDummyTrack must be provided.
+  //               Halt:    A capturing media sink is used, but capture is
+  //                        halted.
+  //               None:    Output is not captured.
+  // @param aDummyTrack A SharedDummyTrack the capturing media sink can use to
+  //                    access a MediaTrackGraph, so it can create tracks even
+  //                    when there are no output tracks available.
+  void SetOutputCaptureState(OutputCaptureState aState,
+                             SharedDummyTrack* aDummyTrack = nullptr);
   // Add an output track. All decoder output for the track's media type will be
   // sent to the track.
   // Note that only one audio track and one video track is supported by
@@ -288,22 +296,13 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
 
   layers::ImageContainer* GetImageContainer();
 
-  // Fire timeupdate events if needed according to the time constraints
-  // outlined in the specification.
-  void FireTimeUpdate();
-
-  // True if we're going to loop back to the head position when media is in
-  // looping.
-  bool IsLoopingBack(double aPrevPos, double aCurPos) const;
-
   // Returns true if we can play the entire media through without stopping
   // to buffer, given the current download and playback rates.
   bool CanPlayThrough();
 
   // Called from HTMLMediaElement when owner document activity changes
-  virtual void SetElementVisibility(bool aIsDocumentVisible,
-                                    Visibility aElementVisibility,
-                                    bool aIsElementInTree);
+  virtual void SetElementVisibility(bool aIsOwnerInvisible,
+                                    bool aIsOwnerConnected);
 
   // Force override the visible state to hidden.
   // Called from HTMLMediaElement when testing of video decode suspend from
@@ -319,7 +318,7 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   void UpdateVideoDecodeMode();
 
   void SetSecondaryVideoContainer(
-      RefPtr<VideoFrameContainer> aSecondaryVideoContainer);
+      const RefPtr<VideoFrameContainer>& aSecondaryVideoContainer);
 
   void SetIsBackgroundVideoDecodingAllowed(bool aAllowed);
 
@@ -445,6 +444,8 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
                               UniquePtr<MetadataTags> aTags,
                               MediaDecoderEventVisibility aEventVisibility);
 
+  void SetLogicalPosition(double aNewPosition);
+
   /******
    * The following members should be accessed with the decoder lock held.
    ******/
@@ -492,7 +493,7 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   void OnNextFrameStatus(MediaDecoderOwner::NextFrameStatus);
 
   void OnSecondaryVideoContainerInstalled(
-      const RefPtr<VideoFrameContainer>& aSecondaryContainer);
+      const RefPtr<VideoFrameContainer>& aSecondaryVideoContainer);
 
   void OnStoreDecoderBenchmark(const VideoInfo& aInfo);
 
@@ -563,14 +564,12 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   // only be accessed from main thread.
   UniquePtr<MediaInfo> mInfo;
 
-  // Tracks the visibility status of owner element's document.
-  bool mIsDocumentVisible;
+  // True if the owner element is actually visible to users.
+  bool mIsOwnerInvisible;
 
-  // Tracks the visibility status of owner element.
-  Visibility mElementVisibility;
-
-  // Tracks the owner is in-tree or not.
-  bool mIsElementInTree;
+  // True if the owner element is connected to a document tree.
+  // https://dom.spec.whatwg.org/#connected
+  bool mIsOwnerConnected;
 
   // If true, forces the decoder to be considered hidden.
   bool mForcedHidden;
@@ -628,6 +627,8 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
 
   Canonical<bool> mLooping;
 
+  Canonical<nsAutoString> mStreamName;
+
   // The device used with SetSink, or nullptr if no explicit device has been
   // set.
   Canonical<RefPtr<AudioDeviceInfo>> mSinkDevice;
@@ -636,9 +637,13 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   // should not suspend the decoder.
   Canonical<RefPtr<VideoFrameContainer>> mSecondaryVideoContainer;
 
-  // Whether this MediaDecoder's output is captured. When captured, all decoded
-  // data must be played out through mOutputTracks.
-  Canonical<bool> mOutputCaptured;
+  // Whether this MediaDecoder's output is captured, halted or not captured.
+  // When captured, all decoded data must be played out through mOutputTracks.
+  Canonical<OutputCaptureState> mOutputCaptureState;
+
+  // A dummy track used to access the right MediaTrackGraph instance. Needed
+  // since there's no guarantee that output tracks are present.
+  Canonical<nsMainThreadPtrHandle<SharedDummyTrack>> mOutputDummyTrack;
 
   // Tracks that, if set, will get data routed through them.
   Canonical<CopyableTArray<RefPtr<ProcessedMediaTrack>>> mOutputTracks;
@@ -683,6 +688,9 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
     return &mPreservesPitch;
   }
   AbstractCanonical<bool>* CanonicalLooping() { return &mLooping; }
+  AbstractCanonical<nsAutoString>* CanonicalStreamName() {
+    return &mStreamName;
+  }
   AbstractCanonical<RefPtr<AudioDeviceInfo>>* CanonicalSinkDevice() {
     return &mSinkDevice;
   }
@@ -690,8 +698,12 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   CanonicalSecondaryVideoContainer() {
     return &mSecondaryVideoContainer;
   }
-  AbstractCanonical<bool>* CanonicalOutputCaptured() {
-    return &mOutputCaptured;
+  AbstractCanonical<OutputCaptureState>* CanonicalOutputCaptureState() {
+    return &mOutputCaptureState;
+  }
+  AbstractCanonical<nsMainThreadPtrHandle<SharedDummyTrack>>*
+  CanonicalOutputDummyTrack() {
+    return &mOutputDummyTrack;
   }
   AbstractCanonical<CopyableTArray<RefPtr<ProcessedMediaTrack>>>*
   CanonicalOutputTracks() {
@@ -702,13 +714,44 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   }
   AbstractCanonical<PlayState>* CanonicalPlayState() { return &mPlayState; }
 
+  void UpdateTelemetryHelperBasedOnPlayState(PlayState aState) const;
+
+  TelemetryProbesReporter::Visibility OwnerVisibility() const;
+
+  // Those methods exist to report telemetry related metrics.
+  double GetTotalVideoPlayTimeInSeconds() const;
+  double GetVisibleVideoPlayTimeInSeconds() const;
+  double GetInvisibleVideoPlayTimeInSeconds() const;
+  double GetVideoDecodeSuspendedTimeInSeconds() const;
+  double GetTotalAudioPlayTimeInSeconds() const;
+  double GetAudiblePlayTimeInSeconds() const;
+  double GetInaudiblePlayTimeInSeconds() const;
+  double GetMutedPlayTimeInSeconds() const;
+
  private:
+  /**
+   * This enum describes the reason why we need to update the logical position.
+   * ePeriodicUpdate : the position grows periodically during playback
+   * eSeamlessLoopingSeeking : the position changes due to demuxer level seek.
+   * eOther : due to normal seeking or other attributes changes, eg. playstate
+   */
+  enum class PositionUpdate {
+    ePeriodicUpdate,
+    eSeamlessLoopingSeeking,
+    eOther,
+  };
+  PositionUpdate GetPositionUpdateReason(double aPrevPos, double aCurPos) const;
+
   // Notify owner when the audible state changed
   void NotifyAudibleStateChanged();
+
+  void NotifyVolumeChanged();
 
   bool mTelemetryReported;
   const MediaContainerType mContainerType;
   bool mCanPlayThrough = false;
+
+  UniquePtr<TelemetryProbesReporter> mTelemetryProbesReporter;
 };
 
 typedef MozPromise<mozilla::dom::MediaMemoryInfo, nsresult, true>

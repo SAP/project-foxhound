@@ -34,11 +34,16 @@ class LIRGeneratorX86Shared : public LIRGeneratorShared {
       LInstructionHelper<INT64_PIECES, INT64_PIECES + 1, Temps>* ins,
       MDefinition* mir, MDefinition* lhs, MDefinition* rhs);
 
+  void lowerForCompareI64AndBranch(MTest* mir, MCompare* comp, JSOp op,
+                                   MDefinition* left, MDefinition* right,
+                                   MBasicBlock* ifTrue, MBasicBlock* ifFalse);
   template <size_t Temps>
   void lowerForFPU(LInstructionHelper<1, 2, Temps>* ins, MDefinition* mir,
                    MDefinition* lhs, MDefinition* rhs);
   void lowerForBitAndAndBranch(LBitAndAndBranch* baab, MInstruction* mir,
                                MDefinition* lhs, MDefinition* rhs);
+  void lowerNegI(MInstruction* ins, MDefinition* input);
+  void lowerNegI64(MInstruction* ins, MDefinition* input);
   void lowerMulI(MMul* mul, MDefinition* lhs, MDefinition* rhs);
   void lowerDivI(MDiv* div);
   void lowerModI(MMod* mod);
@@ -46,6 +51,11 @@ class LIRGeneratorX86Shared : public LIRGeneratorShared {
   void lowerUMod(MMod* mod);
   void lowerUrshD(MUrsh* mir);
   void lowerPowOfTwoI(MPow* mir);
+  void lowerWasmSelectI(MWasmSelect* select);
+  void lowerWasmSelectI64(MWasmSelect* select);
+  void lowerBigIntLsh(MBigIntLsh* ins);
+  void lowerBigIntRsh(MBigIntRsh* ins);
+  void lowerWasmBuiltinTruncateToInt32(MWasmBuiltinTruncateToInt32* ins);
   void lowerTruncateDToInt32(MTruncateToInt32* ins);
   void lowerTruncateFToInt32(MTruncateToInt32* ins);
   void lowerCompareExchangeTypedArrayElement(
@@ -54,6 +64,11 @@ class LIRGeneratorX86Shared : public LIRGeneratorShared {
       MAtomicExchangeTypedArrayElement* ins, bool useI386ByteRegisters);
   void lowerAtomicTypedArrayElementBinop(MAtomicTypedArrayElementBinop* ins,
                                          bool useI386ByteRegisters);
+
+#ifdef ENABLE_WASM_SIMD
+  bool canFoldReduceSimd128AndBranch(wasm::SimdOp op);
+  bool canEmitWasmReduceSimd128AtUses(MWasmReduceSimd128* ins);
+#endif
 };
 
 }  // namespace jit

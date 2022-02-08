@@ -38,7 +38,7 @@ impl ::selectors::parser::PseudoElement for PseudoElement {
                 PseudoElement::After |
                 PseudoElement::Marker |
                 PseudoElement::Placeholder |
-                PseudoElement::FileChooserButton
+                PseudoElement::FileSelectorButton
         )
     }
 
@@ -93,9 +93,10 @@ impl PseudoElement {
         EAGER_PSEUDOS[i].clone()
     }
 
-    /// Whether the current pseudo element is animatable.
+    /// Whether animations for the current pseudo element are stored in the
+    /// parent element.
     #[inline]
-    pub fn is_animatable(&self) -> bool {
+    pub fn animations_stored_in_parent(&self) -> bool {
         matches!(*self, Self::Before | Self::After | Self::Marker)
     }
 
@@ -160,15 +161,7 @@ impl PseudoElement {
 
     /// Whether this pseudo-element is enabled for all content.
     pub fn enabled_in_content(&self) -> bool {
-        match *self {
-            PseudoElement::MozFocusOuter => {
-                static_prefs::pref!("layout.css.moz-focus-outer.enabled")
-            },
-            PseudoElement::FileChooserButton => {
-                static_prefs::pref!("layout.css.file-chooser-button.enabled")
-            },
-            _ => (self.flags() & structs::CSS_PSEUDO_ELEMENT_ENABLED_IN_UA_SHEETS_AND_CHROME) == 0,
-        }
+        self.flags() & structs::CSS_PSEUDO_ELEMENT_ENABLED_IN_UA_SHEETS_AND_CHROME == 0
     }
 
     /// Whether this pseudo is enabled explicitly in UA sheets.

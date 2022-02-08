@@ -34,8 +34,10 @@ class nsCommandLine final : public nsICommandLineRunner {
       nsICommandLineValidator* aValidator, nsICommandLine* aThis,
       void* aClosure);
 
+  nsresult ResolveRelativeFile(const nsAString& aArgument, nsIFile** aResult);
+
   void appendArg(const char* arg);
-  MOZ_MUST_USE nsresult resolveShortcutURL(nsIFile* aFile, nsACString& outURL);
+  [[nodiscard]] nsresult resolveShortcutURL(nsIFile* aFile, nsACString& outURL);
   nsresult EnumerateHandlers(EnumerateHandlersCallback aCallback,
                              void* aClosure);
   nsresult EnumerateValidators(EnumerateValidatorsCallback aCallback,

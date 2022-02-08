@@ -27,6 +27,11 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
+  "PlacesUIUtils",
+  "resource:///modules/PlacesUIUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
   "FormHistory",
   "resource://gre/modules/FormHistory.jsm"
 );
@@ -35,6 +40,7 @@ XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
 function Bookmarks(aBookmarksFile) {
   this._file = aBookmarksFile;
+  this._histogramBookmarkRoots = 0;
 }
 Bookmarks.prototype = {
   type: MigrationUtils.resourceTypes.BOOKMARKS,
@@ -57,6 +63,12 @@ Bookmarks.prototype = {
           ? this.READING_LIST_COLLECTION
           : this.ROOT_COLLECTION;
       await this._migrateCollection(children, collection);
+      if (
+        this._histogramBookmarkRoots &
+        MigrationUtils.SOURCE_BOOKMARK_ROOTS_BOOKMARKS_TOOLBAR
+      ) {
+        PlacesUIUtils.maybeToggleBookmarkToolbarVisibilityAfterMigration();
+      }
     })().then(
       () => aCallback(true),
       e => {
@@ -127,26 +139,20 @@ Bookmarks.prototype = {
         // Because the former is only an implementation detail in our UI,
         // the unfiled root seems to be the best choice.
         folderGuid = PlacesUtils.bookmarks.unfiledGuid;
+        this._histogramBookmarkRoots |=
+          MigrationUtils.SOURCE_BOOKMARK_ROOTS_UNFILED;
         break;
       }
       case this.MENU_COLLECTION: {
         folderGuid = PlacesUtils.bookmarks.menuGuid;
-        if (!MigrationUtils.isStartupMigration) {
-          folderGuid = await MigrationUtils.createImportedBookmarksFolder(
-            "Safari",
-            folderGuid
-          );
-        }
+        this._histogramBookmarkRoots |=
+          MigrationUtils.SOURCE_BOOKMARK_ROOTS_BOOKMARKS_MENU;
         break;
       }
       case this.TOOLBAR_COLLECTION: {
         folderGuid = PlacesUtils.bookmarks.toolbarGuid;
-        if (!MigrationUtils.isStartupMigration) {
-          folderGuid = await MigrationUtils.createImportedBookmarksFolder(
-            "Safari",
-            folderGuid
-          );
-        }
+        this._histogramBookmarkRoots |=
+          MigrationUtils.SOURCE_BOOKMARK_ROOTS_BOOKMARKS_TOOLBAR;
         break;
       }
       case this.READING_LIST_COLLECTION: {
@@ -163,6 +169,8 @@ Bookmarks.prototype = {
             title: readingListTitle,
           })
         ).guid;
+        this._histogramBookmarkRoots |=
+          MigrationUtils.SOURCE_BOOKMARK_ROOTS_READING_LIST;
         break;
       }
       default:
@@ -415,6 +423,56 @@ SafariProfileMigrator.prototype.getLastUsedDate = function SM_getLastUsedDate() 
   return Promise.all(datePromises).then(dates => {
     return new Date(Math.max.apply(Math, dates));
   });
+};
+
+SafariProfileMigrator.prototype.hasPermissions = async function SM_hasPermissions() {
+  if (this._hasPermissions) {
+    return true;
+  }
+  // Check if we have access:
+  let target = FileUtils.getDir(
+    "ULibDir",
+    ["Safari", "Bookmarks.plist"],
+    false
+  );
+  try {
+    // 'stat' is always allowed, but reading is somehow not, if the user hasn't
+    // allowed it:
+    await IOUtils.read(target.path, { maxBytes: 1 });
+    this._hasPermissions = true;
+    return true;
+  } catch (ex) {
+    return false;
+  }
+};
+
+SafariProfileMigrator.prototype.getPermissions = async function SM_getPermissions(
+  win
+) {
+  // Keep prompting the user until they pick a file that grants us access,
+  // or they cancel out of the file open panel.
+  while (!(await this.hasPermissions())) {
+    let fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
+    // The title (second arg) is not displayed on macOS, so leave it blank.
+    fp.init(win, "", Ci.nsIFilePicker.modeOpen);
+    // This is a little weird. You'd expect that it matters which file
+    // the user picks, but it doesn't really, as long as it's in this
+    // directory. Anyway, let's not confuse the user: the sensible idea
+    // here is to ask for permissions for Bookmarks.plist, and we'll
+    // silently accept whatever input as long as we can then read the plist.
+    fp.appendFilter("plist", "*.plist");
+    fp.filterIndex = 1;
+    fp.displayDirectory = FileUtils.getDir("ULibDir", ["Safari"], false);
+    // Now wait for the filepicker to open and close. If the user picks
+    // any file in this directory, macOS will grant us read access, so
+    // we don't need to check or do anything else with the file returned
+    // by the filepicker.
+    let result = await new Promise(resolve => fp.open(resolve));
+    // Bail if the user cancels the dialog:
+    if (result == Ci.nsIFilePicker.returnCancel) {
+      return false;
+    }
+  }
 };
 
 Object.defineProperty(

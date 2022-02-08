@@ -11,7 +11,6 @@ include protocol PTexture;
 
 include "gfxipc/ShadowLayerUtils.h";
 include "mozilla/GfxMessageUtils.h";
-include "ImageLayers.h";
 
 using mozilla::gfx::Glyph from "mozilla/gfx/2D.h";
 using mozilla::gfx::SamplingFilter from "mozilla/gfx/2D.h";
@@ -45,23 +44,19 @@ using mozilla::ParentLayerIntRect from "Units.h";
 using mozilla::ParentLayerRect from "Units.h";
 using mozilla::LayoutDeviceIntRect from "Units.h";
 using mozilla::LayoutDevicePoint from "Units.h";
+using mozilla::LayoutDeviceRect from "Units.h";
 using mozilla::layers::ScaleMode from "mozilla/layers/LayersTypes.h";
-using mozilla::layers::EventRegions from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::EventRegionsOverride from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::DiagnosticTypes from "mozilla/layers/CompositorTypes.h";
-using mozilla::layers::FocusTarget from "mozilla/layers/FocusTarget.h";
-using struct mozilla::layers::ScrollMetadata from "FrameMetrics.h";
 using mozilla::layers::ScrollableLayerGuid::ViewID from "mozilla/layers/ScrollableLayerGuid.h";
 using mozilla::layers::LayersBackend from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::LayerHandle from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::CompositableHandle from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::CompositionPayload from "mozilla/layers/LayersTypes.h";
-using mozilla::layers::SimpleLayerAttributes from "mozilla/layers/LayerAttributes.h";
-using mozilla::CrossProcessSemaphoreHandle from "mozilla/ipc/CrossProcessSemaphore.h";
-using struct mozilla::void_t from "ipc/IPCMessageUtils.h";
+[MoveOnly] using mozilla::CrossProcessSemaphoreHandle from "mozilla/ipc/CrossProcessSemaphore.h";
+using struct mozilla::void_t from "mozilla/ipc/IPCCore.h";
 using mozilla::layers::LayersId from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::TransactionId from "mozilla/layers/LayersTypes.h";
-using mozilla::VsyncId from "mozilla/VsyncDispatcher.h";
 using mozilla::LengthPercentage from "mozilla/ServoStyleConsts.h";
 using mozilla::RayReferenceData from "mozilla/MotionPathUtils.h";
 using mozilla::StyleOffsetPath from "mozilla/ServoStyleConsts.h";
@@ -82,14 +77,6 @@ struct TargetConfig {
   nsIntRegion clearRegion;
 };
 
-// Create a shadow layer for |layer|
-struct OpCreatePaintedLayer    { LayerHandle layer; };
-struct OpCreateContainerLayer  { LayerHandle layer; };
-struct OpCreateImageLayer      { LayerHandle layer; };
-struct OpCreateColorLayer      { LayerHandle layer; };
-struct OpCreateCanvasLayer     { LayerHandle layer; };
-struct OpCreateRefLayer        { LayerHandle layer; };
-
 struct OpAttachCompositable {
   LayerHandle layer;
   CompositableHandle compositable;
@@ -98,11 +85,6 @@ struct OpAttachCompositable {
 struct OpAttachAsyncCompositable {
   LayerHandle layer;
   CompositableHandle compositable;
-};
-
-struct ThebesBufferData {
-  IntRect rect;
-  IntPoint rotation;
 };
 
 struct CubicBezierFunction {
@@ -125,7 +107,7 @@ union TimingFunction {
 
 struct LayerColor { DeviceColor value; };
 
-comparable union Animatable {
+[Comparable] union Animatable {
   null_t;
   float;
   nscolor;
@@ -149,7 +131,7 @@ struct AnimationSegment {
   TimingFunction sampleFn;
 };
 
-comparable struct MotionPathData {
+[Comparable] struct MotionPathData {
   // the transform-origin property for motion in css pixels
   CSSPoint origin;
   // the adjustment for the anchor point of motion path.
@@ -157,8 +139,8 @@ comparable struct MotionPathData {
   RayReferenceData rayReferenceData;
 };
 
-comparable struct PartialPrerenderData {
-  LayoutDeviceIntRect rect;
+[Comparable] struct PartialPrerenderData {
+  LayoutDeviceRect rect;
   SideBits overflowedSides;
   // the scroll id of the nearest scrollable frame of this partial prerender
   // data.
@@ -176,7 +158,7 @@ comparable struct PartialPrerenderData {
 
 // Transforms need extra information to correctly convert the list of transform
 // functions to a Matrix4x4 that can be applied directly to the layer.
-comparable struct TransformData {
+[Comparable] struct TransformData {
   // the origin of the frame being transformed in app units
   nsPoint origin;
   // the transform-origin property for the transform in device pixels
@@ -258,84 +240,6 @@ struct CompositorAnimations {
   uint64_t id;
 };
 
-// Change a layer's attributes
-struct CommonLayerAttributes {
-  LayerIntRegion visibleRegion;
-  EventRegions eventRegions;
-  bool useClipRect;
-  ParentLayerIntRect clipRect;
-  LayerHandle maskLayer;
-  LayerHandle[] ancestorMaskLayers;
-  // Animated colors will only honored for ColorLayers.
-  CompositorAnimations compositorAnimations;
-  nsIntRegion invalidRegion;
-  ScrollMetadata[] scrollMetadata;
-  nsCString displayListLog;
-};
-
-struct PaintedLayerAttributes {
-  nsIntRegion validRegion;
-};
-struct ContainerLayerAttributes {
-  float preXScale;
-  float preYScale;
-  float inheritedXScale;
-  float inheritedYScale;
-  float presShellResolution;
-};
-
-struct ColorLayerAttributes     { LayerColor color; IntRect bounds; };
-struct CanvasLayerAttributes    { SamplingFilter samplingFilter; IntRect bounds; };
-struct RefLayerAttributes {
-  LayersId id;
-  EventRegionsOverride eventRegionsOverride;
-  LayerIntSize remoteDocumentSize;
-};
-struct ImageLayerAttributes     { SamplingFilter samplingFilter; IntSize scaleToSize; ScaleMode scaleMode; };
-
-union SpecificLayerAttributes {
-  null_t;
-  PaintedLayerAttributes;
-  ContainerLayerAttributes;
-  ColorLayerAttributes;
-  CanvasLayerAttributes;
-  RefLayerAttributes;
-  ImageLayerAttributes;
-};
-
-struct LayerAttributes {
-  CommonLayerAttributes common;
-  SpecificLayerAttributes specific;
-};
-
-// See nsIWidget Configurations
-comparable struct PluginWindowData {
-  uintptr_t windowId;
-  LayoutDeviceIntRect[] clip;
-  LayoutDeviceIntRect bounds;
-  bool visible;
-};
-
-struct OpSetSimpleLayerAttributes {
-  LayerHandle layer;
-  SimpleLayerAttributes attrs;
-};
-
-struct OpSetLayerAttributes {
-  LayerHandle layer;
-  LayerAttributes attrs;
-};
-
-// Monkey with the tree structure
-struct OpSetRoot          { LayerHandle root; };
-struct OpInsertAfter      { LayerHandle container; LayerHandle childLayer; LayerHandle after; };
-struct OpPrependChild     { LayerHandle container; LayerHandle childLayer; };
-struct OpRemoveChild      { LayerHandle container; LayerHandle childLayer; };
-struct OpRepositionChild  { LayerHandle container; LayerHandle childLayer; LayerHandle after; };
-struct OpRaiseToTopChild  { LayerHandle container; LayerHandle childLayer; };
-
-struct OpSetDiagnosticTypes { DiagnosticTypes diagnostics; };
-
 struct ShmemSection {
   Shmem shmem;
   uint32_t offset;
@@ -351,47 +255,6 @@ union ReadLockDescriptor {
   CrossProcessSemaphoreDescriptor;
   uintptr_t;
   null_t;
-};
-
-struct TexturedTileDescriptor {
-  PTexture texture;
-  PTexture? textureOnWhite;
-  IntRect updateRect;
-  bool readLocked;
-  bool readLockedOnWhite;
-  bool wasPlaceholder;
-};
-
-struct PlaceholderTileDescriptor {
-};
-
-union TileDescriptor {
-  TexturedTileDescriptor;
-  PlaceholderTileDescriptor;
-};
-
-struct SurfaceDescriptorTiles {
-  nsIntRegion validRegion;
-  TileDescriptor[] tiles;
-  IntPoint    tileOrigin;
-  IntSize     tileSize;
-  int         firstTileX;
-  int         firstTileY;
-  int         retainedWidth;
-  int         retainedHeight;
-  float       resolution;
-  float       frameXResolution;
-  float       frameYResolution;
-  bool        isProgressive;
-};
-
-struct OpUseTiledLayerBuffer {
-  SurfaceDescriptorTiles tileLayerDescriptor;
-};
-
-struct OpPaintTextureRegion {
-  ThebesBufferData bufferData;
-  nsIntRegion updatedRegion;
 };
 
 /**
@@ -424,58 +287,34 @@ struct OpUseTexture {
   TimedTexture[] textures;
 };
 
-struct OpUseComponentAlphaTextures {
-  PTexture textureOnBlack;
-  PTexture textureOnWhite;
-  bool readLockedBlack;
-  bool readLockedWhite;
-};
-
 struct OpNotifyNotUsed {
   uint64_t TextureId;
   uint64_t fwdTransactionId;
 };
 
+struct OpDeliverAcquireFence {
+  PTexture texture;
+  FileDescriptor fenceFd;
+};
+
+struct OpDeliverReleaseFence {
+  FileDescriptor? fenceFd;
+  uint64_t bufferId;
+  uint64_t fwdTransactionId;
+  bool usesImageBridge;
+};
+
 union CompositableOperationDetail {
-  OpPaintTextureRegion;
-
-  OpUseTiledLayerBuffer;
-
   OpRemoveTexture;
 
   OpUseTexture;
-  OpUseComponentAlphaTextures;
+
+  OpDeliverAcquireFence;
 };
 
 struct CompositableOperation {
   CompositableHandle compositable;
   CompositableOperationDetail detail;
-};
-
-// A unit of a changeset; a set of these comprise a changeset
-// If adding a new edit type that requires the hit testing tree to be updated,
-// set the updateHitTestingTree flag to true in RecvUpdate()
-union Edit {
-  OpCreatePaintedLayer;
-  OpCreateContainerLayer;
-  OpCreateImageLayer;
-  OpCreateColorLayer;
-  OpCreateCanvasLayer;
-  OpCreateRefLayer;
-
-  OpSetDiagnosticTypes;
-  
-  OpSetRoot;
-  OpInsertAfter;
-  OpPrependChild;
-  OpRemoveChild;
-  OpRepositionChild;
-  OpRaiseToTopChild;
-
-  OpAttachCompositable;
-  OpAttachAsyncCompositable;
-
-  CompositableOperation;
 };
 
 // Operations related to destroying resources, always handled after the other
@@ -506,44 +345,7 @@ struct ImageCompositeNotification {
 
 union AsyncParentMessageData {
   OpNotifyNotUsed;
-};
-
-struct PaintTiming {
-  float serializeMs;
-  float sendMs;
-  float dlMs;
-  float dl2Ms;
-  float flbMs;
-  float rasterMs;
-};
-
-struct TransactionInfo
-{
-  Edit[] cset;
-  OpSetSimpleLayerAttributes[] setSimpleAttrs;
-  OpSetLayerAttributes[] setAttrs;
-  CompositableOperation[] paints;
-  OpDestroy[] toDestroy;
-  uint64_t fwdTransactionId;
-  TransactionId id;
-  TargetConfig targetConfig;
-  PluginWindowData[] plugins;
-  bool isFirstPaint;
-  FocusTarget focusTarget;
-  bool scheduleComposite;
-  uint32_t paintSequenceNumber;
-  bool isRepeatTransaction;
-  VsyncId vsyncId;
-  TimeStamp vsyncStart;
-  TimeStamp refreshStart;
-  TimeStamp transactionStart;
-  bool containsSVG;
-  nsCString url;
-  TimeStamp fwdTime;
-  /* This provides some timing information on any content that is meant to be
-   * presented during this transaction.
-   */
-  CompositionPayload[] payload;
+  OpDeliverReleaseFence;
 };
 
 union OMTAValue {

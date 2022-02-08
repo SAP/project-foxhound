@@ -9,9 +9,7 @@ const ReferrerInfo = Components.Constructor(
 function test_policy(test) {
   info("Running test: " + test.toSource());
 
-  var prefs = Cc["@mozilla.org/preferences-service;1"].getService(
-    Ci.nsIPrefBranch
-  );
+  var prefs = Services.prefs;
   if (test.defaultReferrerPolicyPref !== undefined) {
     prefs.setIntPref(
       "network.http.referer.defaultPolicy",
@@ -19,6 +17,18 @@ function test_policy(test) {
     );
   } else {
     prefs.setIntPref("network.http.referer.defaultPolicy", 3);
+  }
+
+  if (test.disallowRelaxingDefault) {
+    prefs.setBoolPref(
+      "network.http.referer.disallowCrossSiteRelaxingDefault",
+      test.disallowRelaxingDefault
+    );
+  } else {
+    prefs.setBoolPref(
+      "network.http.referer.disallowCrossSiteRelaxingDefault",
+      false
+    );
   }
 
   var uri = NetUtil.newURI(test.url);
@@ -140,4 +150,5 @@ var gTests = [
 
 function run_test() {
   gTests.forEach(test => test_policy(test));
+  Services.prefs.clearUserPref("network.http.referer.disallowRelaxingDefault");
 }

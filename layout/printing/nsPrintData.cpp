@@ -12,13 +12,12 @@
 #include "nsPrintObject.h"
 #include "nsIWebProgressListener.h"
 #include "mozilla/Services.h"
-#include "PrintPreviewUserEventSuppressor.h"
 
 //-----------------------------------------------------
 // PR LOGGING
 #include "mozilla/Logging.h"
 
-static mozilla::LazyLogModule gPrintingLog("printing");
+extern mozilla::LazyLogModule gPrintingLog;
 
 #define PR_PL(_p1) MOZ_LOG(gPrintingLog, mozilla::LogLevel::Debug, _p1);
 
@@ -34,15 +33,9 @@ nsPrintData::nsPrintData(ePrintDataType aType)
       mPreparingForPrint(false),
       mShrinkToFit(false),
       mNumPrintablePages(0),
-      mNumPagesPrinted(0),
       mShrinkRatio(1.0) {}
 
 nsPrintData::~nsPrintData() {
-  if (mPPEventSuppressor) {
-    mPPEventSuppressor->StopSuppressing();
-    mPPEventSuppressor = nullptr;
-  }
-
   // Only Send an OnEndPrinting if we have started printing
   if (mOnStartSent && mType != eIsPrintPreview) {
     OnEndPrinting();

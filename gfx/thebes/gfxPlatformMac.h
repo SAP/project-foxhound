@@ -22,24 +22,32 @@ class gfxPlatformMac : public gfxPlatform {
   gfxPlatformMac();
   virtual ~gfxPlatformMac();
 
+  // Call early in startup to register the macOS supplemental language fonts
+  // so that they're usable by the browser. This is intended to be called as
+  // early as possible, before most services etc are initialized; it starts
+  // a separate thread to register the fonts, because this is quite slow.
+  static void RegisterSupplementalFonts();
+
+  // Call from the main thread at the point where we need to start using the
+  // font list; this will wait (if necessary) for the registration thread to
+  // finish.
+  static void WaitForFontRegistration();
+
   static gfxPlatformMac* GetPlatform() {
     return (gfxPlatformMac*)gfxPlatform::GetPlatform();
   }
 
-  bool UsesTiling() const override;
-  bool ContentUsesTiling() const override;
-
   already_AddRefed<gfxASurface> CreateOffscreenSurface(
       const IntSize& aSize, gfxImageFormat aFormat) override;
 
-  gfxPlatformFontList* CreatePlatformFontList() override;
+  bool CreatePlatformFontList() override;
 
-  void ReadSystemFontList(
-      nsTArray<mozilla::dom::SystemFontListEntry>* aFontList) override;
+  void ReadSystemFontList(mozilla::dom::SystemFontList* aFontList) override;
 
   bool IsFontFormatSupported(uint32_t aFormatFlags) override;
 
-  void GetCommonFallbackFonts(uint32_t aCh, uint32_t aNextCh, Script aRunScript,
+  void GetCommonFallbackFonts(uint32_t aCh, Script aRunScript,
+                              eFontPresentation aPresentation,
                               nsTArray<const char*>& aFontList) override;
 
   // lookup the system font for a particular system font type and set
@@ -84,6 +92,8 @@ class gfxPlatformMac : public gfxPlatform {
   static uint32_t ReadAntiAliasingThreshold();
 
   uint32_t mFontAntiAliasingThreshold;
+
+  static PRThread* sFontRegistrationThread;
 };
 
 #endif /* GFX_PLATFORM_MAC_H */

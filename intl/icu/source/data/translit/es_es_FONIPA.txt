@@ -1,11 +1,12 @@
 ﻿# © 2016 and later: Unicode, Inc. and others.
-# License & terms of use: http://www.unicode.org/copyright.html#License
+# License & terms of use: http://www.unicode.org/copyright.html
+# Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 #
 # File: es_es_FONIPA.txt
 # Generated from CLDR
 #
 
-# Tranformation from Spanish to Spanish in IPA transcription (es_FONIPA).
+# Transformation from Spanish to Spanish in IPA transcription (es_FONIPA).
 # Not fully phonemic, since we mark up allophonic variants of voiced stops,
 # e.g. we break down /b/ into [b] and [β].
 #

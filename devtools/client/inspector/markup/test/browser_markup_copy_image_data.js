@@ -8,20 +8,23 @@
 
 add_task(async function() {
   await addTab(URL_ROOT + "doc_markup_image_and_canvas.html");
-  const { inspector, testActor } = await openInspector();
+  const { inspector } = await openInspector();
 
   await selectNode("div", inspector);
   await assertCopyImageDataNotAvailable(inspector);
 
   await selectNode("img", inspector);
   await assertCopyImageDataAvailable(inspector);
-  const expectedSrc = await testActor.getAttribute("img", "src");
+  const expectedSrc = await getContentPageElementAttribute("img", "src");
   await triggerCopyImageUrlAndWaitForClipboard(expectedSrc, inspector);
 
   await selectNode("canvas", inspector);
   await assertCopyImageDataAvailable(inspector);
-  const expectedURL = await testActor.eval(`
-    document.querySelector(".canvas").toDataURL();`);
+  const expectedURL = await SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [],
+    () => content.document.querySelector(".canvas").toDataURL()
+  );
   await triggerCopyImageUrlAndWaitForClipboard(expectedURL, inspector);
 
   // Check again that the menu isn't available on the DIV (to make sure our

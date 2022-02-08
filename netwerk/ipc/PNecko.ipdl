@@ -9,14 +9,15 @@ include protocol PContent;
 include protocol PHttpChannel;
 include protocol PCookieService;
 include protocol PBrowser;
-include protocol PFTPChannel;
+#ifdef MOZ_WIDGET_GTK
+include protocol PGIOChannel;
+#endif
 include protocol PWebSocket;
 include protocol PWebSocketEventListener;
 include protocol PTCPSocket;
 include protocol PTCPServerSocket;
 include protocol PUDPSocket;
 include protocol PDNSRequest;
-include protocol PChannelDiverter;
 include protocol PFileDescriptorSet;
 include protocol PDataChannel;
 include protocol PSimpleChannel;
@@ -34,24 +35,25 @@ include IPCStream;
 include NeckoChannelParams;
 include protocol PAltDataOutputStream;
 
+include "mozilla/dom/PermissionMessageUtils.h";
+
 using mozilla::dom::MaybeDiscardedBrowsingContext from "mozilla/dom/BrowsingContext.h";
 using class IPC::SerializedLoadContext from "SerializedLoadContext.h";
 using mozilla::dom::TabId from "mozilla/dom/ipc/IdType.h";
-using refcounted class nsIInputStream from "mozilla/ipc/IPCStreamUtils.h";
-using refcounted class nsIURI from "mozilla/ipc/URIUtils.h";
-using refcounted class nsIPrincipal from "mozilla/dom/PermissionMessageUtils.h";
+[RefCounted] using class nsIInputStream from "mozilla/ipc/IPCStreamUtils.h";
+[RefCounted] using class nsIURI from "mozilla/ipc/URIUtils.h";
+[RefCounted] using class nsIPrincipal from "nsIPrincipal.h";
 
 
 namespace mozilla {
 namespace net {
 
 //-------------------------------------------------------------------
-nested(upto inside_cpow) sync protocol PNecko
+[NestedUpTo=inside_cpow] sync protocol PNecko
 {
   manager PContent;
   manages PHttpChannel;
   manages PCookieService;
-  manages PFTPChannel;
   manages PWebSocket;
   manages PWebSocketEventListener;
   manages PTCPSocket;
@@ -59,9 +61,11 @@ nested(upto inside_cpow) sync protocol PNecko
   manages PUDPSocket;
   manages PDNSRequest;
   manages PDataChannel;
+#ifdef MOZ_WIDGET_GTK
+  manages PGIOChannel;
+#endif
   manages PSimpleChannel;
   manages PFileChannel;
-  manages PChannelDiverter;
   manages PTransportProvider;
   manages PAltDataOutputStream;
   manages PStunAddrsRequest;
@@ -72,12 +76,10 @@ nested(upto inside_cpow) sync protocol PNecko
 parent:
   async __delete__();
 
-  nested(inside_cpow) async PCookieService();
+  [Nested=inside_cpow] async PCookieService();
   async PHttpChannel(nullable PBrowser browser,
                      SerializedLoadContext loadContext,
                      HttpChannelCreationArgs args);
-  async PFTPChannel(nullable PBrowser browser, SerializedLoadContext loadContext,
-                    FTPChannelCreationArgs args);
 
   async PWebSocket(nullable PBrowser browser, SerializedLoadContext loadContext,
                    uint32_t aSerialID);
@@ -112,23 +114,15 @@ parent:
    * the parent and the child when we're redirecting to a data: URI.
    */
   async PDataChannel(uint32_t channelId);
+#ifdef MOZ_WIDGET_GTK
+  async PGIOChannel(nullable PBrowser browser, SerializedLoadContext loadContext, GIOChannelCreationArgs args);
+#endif
   async PSimpleChannel(uint32_t channelId);
   async PFileChannel(uint32_t channelId);
-
-  async PChannelDiverter(ChannelDiverterArgs channel);
 
   async PClassifierDummyChannel(nsIURI uri, nsIURI aTopWindowURI,
                                 nsresult aTopWindowURIResult,
                                 LoadInfoArgs? loadInfo);
-
-  /**
-   * These are called from the child with the results of the auth prompt.
-   * callbackId is the id that was passed in PBrowser::AsyncAuthPrompt,
-   * corresponding to an nsIAuthPromptCallback
-   */
-  async OnAuthAvailable(uint64_t callbackId, nsString user,
-                        nsString password, nsString domain);
-  async OnAuthCancelled(uint64_t callbackId, bool userCancel);
 
   async RequestContextLoadBegin(uint64_t rcid);
   async RequestContextAfterDOMContentLoaded(uint64_t rcid);
@@ -149,6 +143,7 @@ parent:
 
   async InitSocketProcessBridge()
     returns (Endpoint<PSocketProcessBridgeChild> endpoint);
+  async ResetSocketProcessBridge();
 
   async EnsureHSTSData()
     returns (bool result);
@@ -159,14 +154,6 @@ parent:
   async GetPageThumbStream(nsIURI uri) returns (nsIInputStream stream);
 
 child:
-  /*
-   * Bring up the http auth prompt for a nested remote mozbrowser.
-   * NestedFrameId is the id corresponding to the PBrowser.  It is the same id
-   * that was passed to the PBrowserOrId param in to the PHttpChannel constructor
-   */
-  async AsyncAuthPromptForNestedFrame(TabId nestedFrameId, nsCString uri,
-                                      nsString realm, uint64_t callbackId);
-
   /* Predictor Methods */
   async PredOnPredictPrefetch(nsIURI uri, uint32_t httpStatus);
   async PredOnPredictPreconnect(nsIURI uri);
@@ -176,7 +163,7 @@ child:
 
   // Using medium high priority to deliver this notification possibly sooner than we
   // enter poll() on the child process with infinite timeout.
-  prio(mediumhigh) async NetworkChangeNotification(nsCString type);
+  [Priority=mediumhigh] async NetworkChangeNotification(nsCString type);
 
   async PTransportProvider();
 

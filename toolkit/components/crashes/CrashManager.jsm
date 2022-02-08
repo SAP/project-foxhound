@@ -6,17 +6,19 @@
 
 const myScope = this;
 
-ChromeUtils.import("resource://gre/modules/Log.jsm", this);
-ChromeUtils.import("resource://gre/modules/osfile.jsm", this);
 const { PromiseUtils } = ChromeUtils.import(
   "resource://gre/modules/PromiseUtils.jsm"
 );
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
-const { TelemetryController } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryController.jsm"
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
 );
-ChromeUtils.import("resource://gre/modules/Timer.jsm", this);
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
+
+XPCOMUtils.defineLazyModuleGetters(this, {
+  Log: "resource://gre/modules/Log.jsm",
+  TelemetryController: "resource://gre/modules/TelemetryController.jsm",
+});
 
 var EXPORTED_SYMBOLS = ["CrashManager", "getCrashManager"];
 
@@ -111,8 +113,6 @@ function parseAndRemoveField(obj, field) {
  *     Telemetry histogram to report store size under.
  */
 var CrashManager = function(options) {
-  this._log = Log.repository.getLogger("Crashes.CrashManager");
-
   for (let k in options) {
     let value = options[k];
 
@@ -166,9 +166,6 @@ CrashManager.prototype = Object.freeze({
   // A crash in a content process.
   PROCESS_TYPE_CONTENT: "content",
 
-  // A crash in a plugin process.
-  PROCESS_TYPE_PLUGIN: "plugin",
-
   // A crash in a Gecko media plugin process.
   PROCESS_TYPE_GMPLUGIN: "gmplugin",
 
@@ -217,7 +214,7 @@ CrashManager.prototype = Object.freeze({
 
   _lazyGetDir(field, path, leaf) {
     delete this[field];
-    let value = OS.Path.join(path, leaf);
+    let value = PathUtils.join(path, leaf);
     Object.defineProperty(this, field, { value });
     return value;
   },
@@ -225,7 +222,7 @@ CrashManager.prototype = Object.freeze({
   get _crDir() {
     return this._lazyGetDir(
       "_crDir",
-      OS.Constants.Path.userApplicationDataDir,
+      Services.dirsvc.get("UAppData", Ci.nsIFile).path,
       "Crash Reports"
     );
   },
@@ -233,7 +230,7 @@ CrashManager.prototype = Object.freeze({
   get _storeDir() {
     return this._lazyGetDir(
       "_storeDir",
-      OS.Constants.Path.profileDir,
+      Services.dirsvc.get("ProfD", Ci.nsIFile).path,
       "crashes"
     );
   },
@@ -249,8 +246,8 @@ CrashManager.prototype = Object.freeze({
   get _eventsDirs() {
     delete this._eventsDirs;
     let value = [
-      OS.Path.join(this._crDir, "events"),
-      OS.Path.join(this._storeDir, "events"),
+      PathUtils.join(this._crDir, "events"),
+      PathUtils.join(this._storeDir, "events"),
     ];
     Object.defineProperty(this, "_eventsDirs", { value });
     return value;
@@ -364,7 +361,7 @@ CrashManager.prototype = Object.freeze({
                 );
             }
           } catch (ex) {
-            if (ex instanceof OS.File.Error) {
+            if (ex instanceof DOMException) {
               this._log.warn("I/O error reading " + entry.path, ex);
             } else {
               // We should never encounter an exception. This likely represents
@@ -389,7 +386,7 @@ CrashManager.prototype = Object.freeze({
 
         for (let path of deletePaths) {
           try {
-            await OS.File.remove(path);
+            await IOUtils.remove(path);
           } catch (ex) {
             this._log.warn("Error removing event file (" + path + ")", ex);
           }
@@ -532,8 +529,7 @@ CrashManager.prototype = Object.freeze({
   generateSubmissionID() {
     return (
       "sub-" +
-      Cc["@mozilla.org/uuid-generator;1"]
-        .getService(Ci.nsIUUIDGenerator)
+      Services.uuid
         .generateUUID()
         .toString()
         .slice(1, -1)
@@ -595,26 +591,31 @@ CrashManager.prototype = Object.freeze({
    */
   _getUnprocessedEventsFiles() {
     return (async () => {
-      let entries = [];
+      try {
+        let entries = [];
 
-      for (let dir of this._eventsDirs) {
-        for (let e of await this._getDirectoryEntries(dir, this.ALL_REGEX)) {
-          entries.push(e);
+        for (let dir of this._eventsDirs) {
+          for (let e of await this._getDirectoryEntries(dir, this.ALL_REGEX)) {
+            entries.push(e);
+          }
         }
+
+        entries.sort((a, b) => {
+          return a.date - b.date;
+        });
+
+        return entries;
+      } catch (e) {
+        Cu.reportError(e);
+        return [];
       }
-
-      entries.sort((a, b) => {
-        return a.date - b.date;
-      });
-
-      return entries;
     })();
   },
 
   // See docs/crash-events.rst for the file format specification.
   _processEventFile(entry) {
     return (async () => {
-      let data = await OS.File.read(entry.path);
+      let data = await IOUtils.read(entry.path);
       let store = await this._getStore();
 
       let decoder = new TextDecoder();
@@ -787,39 +788,25 @@ CrashManager.prototype = Object.freeze({
    */
   _getDirectoryEntries(path, re) {
     return (async function() {
-      try {
-        await OS.File.stat(path);
-      } catch (ex) {
-        if (!(ex instanceof OS.File.Error) || !ex.becauseNoSuchFile) {
-          throw ex;
-        }
-        return [];
-      }
-
-      let it = new OS.File.DirectoryIterator(path);
+      let children = await IOUtils.getChildren(path);
       let entries = [];
 
-      try {
-        await it.forEach((entry, index, it) => {
-          if (entry.isDir) {
-            return undefined;
-          }
+      for (const entry of children) {
+        let stat = await IOUtils.stat(entry);
+        if (stat.type == "directory") {
+          continue;
+        }
 
-          let match = re.exec(entry.name);
-          if (!match) {
-            return undefined;
-          }
-
-          return OS.File.stat(entry.path).then(info => {
-            entries.push({
-              path: entry.path,
-              id: match[1],
-              date: info.lastModificationDate,
-            });
-          });
+        let filename = PathUtils.filename(entry);
+        let match = re.exec(filename);
+        if (!match) {
+          continue;
+        }
+        entries.push({
+          path: entry,
+          id: match[1],
+          date: stat.lastModified,
         });
-      } finally {
-        it.close();
       }
 
       entries.sort((a, b) => {
@@ -838,9 +825,8 @@ CrashManager.prototype = Object.freeze({
     return (this._getStoreTask = (async () => {
       try {
         if (!this._store) {
-          await OS.File.makeDir(this._storeDir, {
-            ignoreExisting: true,
-            unixMode: OS.Constants.libc.S_IRWXU,
+          await IOUtils.makeDirectory(this._storeDir, {
+            permissions: 0o700,
           });
 
           let store = new CrashStore(
@@ -932,8 +918,7 @@ var gCrashManager;
  *
  * The store has a mechanism for ensuring it doesn't grow too large. A ceiling
  * is placed on the number of daily events that can occur for events that can
- * occur with relatively high frequency, notably plugin crashes and hangs
- * (plugins can enter cycles where they repeatedly crash). If we've reached
+ * occur with relatively high frequency. If we've reached
  * the high water mark and new data arrives, it's silently dropped.
  * However, the count of actual events is always preserved. This allows
  * us to report on the severity of problems beyond the storage threshold.
@@ -951,7 +936,7 @@ function CrashStore(storeDir, telemetrySizeKey) {
   this._storeDir = storeDir;
   this._telemetrySizeKey = telemetrySizeKey;
 
-  this._storePath = OS.Path.join(storeDir, "store.json.mozlz4");
+  this._storePath = PathUtils.join(storeDir, "store.json.mozlz4");
 
   // Holds the read data from disk.
   this._data = null;
@@ -991,7 +976,7 @@ CrashStore.prototype = Object.freeze({
 
       try {
         let decoder = new TextDecoder();
-        let data = await OS.File.read(this._storePath, { compression: "lz4" });
+        let data = await IOUtils.read(this._storePath, { decompress: true });
         data = JSON.parse(decoder.decode(data));
 
         if (data.corruptDate) {
@@ -1070,7 +1055,7 @@ CrashStore.prototype = Object.freeze({
         }
       } catch (ex) {
         // Missing files (first use) are allowed.
-        if (!(ex instanceof OS.File.Error) || !ex.becauseNoSuchFile) {
+        if (!(ex instanceof DOMException) || ex.name != "NotFoundError") {
           // If we can't load for any reason, mark a corrupt date in the instance
           // and swallow the error.
           //
@@ -1138,9 +1123,9 @@ CrashStore.prototype = Object.freeze({
 
       let encoder = new TextEncoder();
       let data = encoder.encode(JSON.stringify(normalized));
-      let size = await OS.File.writeAtomic(this._storePath, data, {
+      let size = await IOUtils.write(this._storePath, data, {
         tmpPath: this._storePath + ".tmp",
-        compression: "lz4",
+        compress: true,
       });
       if (this._telemetrySizeKey) {
         Services.telemetry.getHistogramById(this._telemetrySizeKey).add(size);
@@ -1516,6 +1501,10 @@ CrashRecord.prototype = Object.freeze({
     return this._o.metadata;
   },
 });
+
+XPCOMUtils.defineLazyGetter(CrashManager, "_log", () =>
+  Log.repository.getLogger("Crashes.CrashManager")
+);
 
 /**
  * Obtain the global CrashManager instance used by the running application.

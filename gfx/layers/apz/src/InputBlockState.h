@@ -152,20 +152,6 @@ class CancelableBlockState : public InputBlockState {
   virtual bool SetContentResponse(bool aPreventDefault);
 
   /**
-   * This should be called when this block is starting to wait for the
-   * necessary content response notifications. It is used to gather data
-   * on how long the content response notifications take.
-   */
-  void StartContentResponseTimer();
-
-  /**
-   * This should be called when a content response notification has been
-   * delivered to this block. If all the notifications have arrived, this
-   * will report the total time take to telemetry.
-   */
-  void RecordContentResponseTime();
-
-  /**
    * Record that content didn't respond in time.
    * @return false if this block already timed out, true if not.
    */
@@ -201,7 +187,6 @@ class CancelableBlockState : public InputBlockState {
   bool ShouldDropEvents() const override;
 
  private:
-  TimeStamp mContentResponseTimer;
   bool mPreventDefault;
   bool mContentResponded;
   bool mContentResponseTimerExpired;
@@ -241,7 +226,8 @@ class WheelBlockState : public CancelableBlockState {
    * Called from APZCTM when a mouse move or drag+drop event occurs, before
    * the event has been processed.
    */
-  void OnMouseMove(const ScreenIntPoint& aPoint);
+  void OnMouseMove(const ScreenIntPoint& aPoint,
+                   const Maybe<ScrollableLayerGuid>& aTargetGuid);
 
   /**
    * Returns whether or not the block is participating in a wheel transaction.
@@ -289,6 +275,7 @@ class WheelBlockState : public CancelableBlockState {
   TimeStamp mLastMouseMove;
   uint32_t mScrollSeriesCounter;
   bool mTransactionEnded;
+  bool mIsScrollable = true;
   ScrollDirections mAllowedScrollDirections;
 };
 
@@ -500,6 +487,7 @@ class TouchBlockState : public CancelableBlockState {
    */
   bool UpdateSlopState(const MultiTouchInput& aInput,
                        bool aApzcCanConsumeEvents);
+  bool IsInSlop() const;
 
   /**
    * Based on the slop origin and the given input event, return a best guess
@@ -517,6 +505,7 @@ class TouchBlockState : public CancelableBlockState {
   void DispatchEvent(const InputData& aEvent) const override;
   bool MustStayActive() override;
   const char* Type() override;
+  TimeDuration GetTimeSinceBlockStart() const;
 
  private:
   nsTArray<TouchBehaviorFlags> mAllowedTouchBehaviors;
@@ -527,6 +516,7 @@ class TouchBlockState : public CancelableBlockState {
   ScreenIntPoint mSlopOrigin;
   // A reference to the InputQueue's touch counter
   TouchCounter& mTouchCounter;
+  TimeStamp mStartTime;
 };
 
 /**

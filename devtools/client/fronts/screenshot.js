@@ -5,7 +5,6 @@
 "use strict";
 
 const { screenshotSpec } = require("devtools/shared/specs/screenshot");
-const saveScreenshot = require("devtools/shared/screenshot/save");
 const {
   FrontClassWithSpec,
   registerFront,
@@ -17,11 +16,6 @@ class ScreenshotFront extends FrontClassWithSpec(screenshotSpec) {
 
     // Attribute name from which to retrieve the actorID out of the target actor's form
     this.formAttributeName = "screenshotActor";
-  }
-
-  async captureAndSave(window, args) {
-    const screenshot = await this.capture(args);
-    return saveScreenshot(window, args, screenshot);
   }
 }
 

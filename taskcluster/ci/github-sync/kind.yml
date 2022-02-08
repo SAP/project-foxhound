@@ -2,16 +2,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
-loader: taskgraph.loader.transform:loader
+loader: gecko_taskgraph.loader.transform:loader
 
 kind-dependencies:
     - toolchain
     - build
 
 transforms:
-    - taskgraph.transforms.github_sync:transforms
-    - taskgraph.transforms.job:transforms
-    - taskgraph.transforms.task:transforms
+    - gecko_taskgraph.transforms.github_sync:transforms
+    - gecko_taskgraph.transforms.job:transforms
+    - gecko_taskgraph.transforms.task:transforms
 
 job-defaults:
     attributes:
@@ -30,17 +30,6 @@ job-defaults:
         using: run-task
 
 jobs:
-    wgpu:
-        description: Sync wgpu to github mirror
-        secret: gecko/gfx-github-sync/token
-        run:
-            command: '$GECKO_PATH/tools/github-sync/sync-to-github.sh wgpu gfx/wgpu gfx-rs/wgpu bors'
-        when:
-            files-changed:
-                - 'gfx/wgpu/**'
-        treeherder:
-            symbol: GhS(wgpu)
-
     webrender:
         description: Sync webrender to github mirror
         secret: gecko/gfx-github-sync/token
@@ -51,3 +40,14 @@ jobs:
                 - 'gfx/wr/**'
         treeherder:
             symbol: GhS(wr)
+
+    qcms:
+        description: Sync qcms to github mirror
+        secret: gecko/gfx-github-sync/token
+        run:
+            command: '$GECKO_PATH/tools/github-sync/sync-to-github.sh qcms gfx/qcms FirefoxGraphics/qcms @jrmuizel'
+        when:
+            files-changed:
+                - 'gfx/qcms/**'
+        treeherder:
+            symbol: GhS(qcms)

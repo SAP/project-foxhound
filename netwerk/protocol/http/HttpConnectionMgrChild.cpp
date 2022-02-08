@@ -11,6 +11,7 @@
 #include "HttpTransactionChild.h"
 #include "AltSvcTransactionChild.h"
 #include "EventTokenBucket.h"
+#include "mozilla/net/WebSocketConnectionChild.h"
 #include "nsHttpConnectionInfo.h"
 #include "nsHttpConnectionMgr.h"
 #include "nsHttpHandler.h"
@@ -49,9 +50,9 @@ HttpConnectionMgrChild::RecvDoShiftReloadConnectionCleanupWithConnInfo(
 }
 
 mozilla::ipc::IPCResult
-HttpConnectionMgrChild::RecvUpdateCurrentTopLevelOuterContentWindowId(
-    const uint64_t& aWindowId) {
-  mConnMgr->UpdateCurrentTopLevelOuterContentWindowId(aWindowId);
+HttpConnectionMgrChild::RecvUpdateCurrentTopBrowsingContextId(
+    const uint64_t& aId) {
+  mConnMgr->UpdateCurrentTopBrowsingContextId(aId);
   return IPC_OK();
 }
 
@@ -159,21 +160,33 @@ SpeculativeConnectionOverrider::GetAllow1918(bool* aAllow) {
 }  // anonymous namespace
 
 mozilla::ipc::IPCResult HttpConnectionMgrChild::RecvSpeculativeConnect(
-    HttpConnectionInfoCloneArgs aConnInfo,
+    const HttpConnectionInfoCloneArgs& aConnInfo,
     Maybe<SpeculativeConnectionOverriderArgs> aOverriderArgs, uint32_t aCaps,
-    Maybe<PAltSvcTransactionChild*> aTrans) {
+    Maybe<PAltSvcTransactionChild*> aTrans, const bool& aFetchHTTPSRR) {
   RefPtr<nsHttpConnectionInfo> cinfo =
       nsHttpConnectionInfo::DeserializeHttpConnectionInfoCloneArgs(aConnInfo);
   nsCOMPtr<nsIInterfaceRequestor> overrider =
       aOverriderArgs
           ? new SpeculativeConnectionOverrider(std::move(aOverriderArgs.ref()))
           : nullptr;
-  RefPtr<NullHttpTransaction> trans;
+  RefPtr<SpeculativeTransaction> trans;
   if (aTrans) {
     trans = static_cast<AltSvcTransactionChild*>(*aTrans)->CreateTransaction();
   }
 
-  Unused << mConnMgr->SpeculativeConnect(cinfo, overrider, aCaps, trans);
+  Unused << mConnMgr->SpeculativeConnect(cinfo, overrider, aCaps, trans,
+                                         aFetchHTTPSRR);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult HttpConnectionMgrChild::RecvStartWebSocketConnection(
+    PHttpTransactionChild* aTransWithStickyConn, uint32_t aListenerId) {
+  RefPtr<WebSocketConnectionChild> child = new WebSocketConnectionChild();
+  child->Init(aListenerId);
+  nsCOMPtr<nsIHttpUpgradeListener> listener =
+      static_cast<nsIHttpUpgradeListener*>(child.get());
+  Unused << mConnMgr->CompleteUpgrade(
+      ToRealHttpTransaction(aTransWithStickyConn), listener);
   return IPC_OK();
 }
 

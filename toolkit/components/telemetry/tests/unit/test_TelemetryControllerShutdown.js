@@ -6,13 +6,17 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm", this);
-ChromeUtils.import("resource://gre/modules/Timer.jsm", this);
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/AsyncShutdown.jsm", this);
-ChromeUtils.import("resource://testing-common/httpd.js", this);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { TelemetryController } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryController.jsm"
+);
+const { TelemetrySend } = ChromeUtils.import(
+  "resource://gre/modules/TelemetrySend.jsm"
+);
+const { AsyncShutdown } = ChromeUtils.import(
+  "resource://gre/modules/AsyncShutdown.jsm"
+);
+const { httpd } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 function contentHandler(metadata, response) {
   dump("contentHandler called for path: " + metadata._path + "\n");
@@ -25,7 +29,12 @@ function contentHandler(metadata, response) {
 add_task(async function test_setup() {
   // Addon manager needs a profile directory
   do_get_profile();
-  loadAddonManager("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
+  await loadAddonManager(
+    "xpcshell@tests.mozilla.org",
+    "XPCShell",
+    "1",
+    "1.9.2"
+  );
   finishAddonManagerStartup();
   fakeIntlReady();
   // Make sure we don't generate unexpected pings due to pref changes.

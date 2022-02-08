@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 be{
     AuxExemplarCharacters{
         "[{а\u0301} {е\u0301} {ё\u0301} {і\u0301} {о\u0301} {у\u0301} {ы\u0301} {э"
@@ -14,7 +15,7 @@ be{
         word-medial{"{0} … {1}"}
     }
     ExemplarCharacters{"[а б в г д {дж} {дз} е ё ж з і й к л м н о п р с т у ў ф х ц ч ш ы ь э ю я]"}
-    ExemplarCharactersIndex{"[А Б В Г Д Е Ж З І Й К Л М Н О П Р С Т У Ф Х Ц Ч Ш Ы Э Ю Я]"}
+    ExemplarCharactersIndex{"[А Б В Г Д Е Ё Ж З І Й К Л М Н О П Р С Т У Ф Х Ц Ч Ш Ы Ь Э Ю Я]"}
     ExemplarCharactersNumbers{"[  \\- ‑ , % ‰ + 0 1 2 3 4 5 6 7 8 9]"}
     ExemplarCharactersPunctuation{"[\\- ‑ , ; \\: ! ? . « » ( ) \\[ \\] \\{ \\}]"}
     MoreInformation{"?"}
@@ -149,10 +150,10 @@ be{
                         other{"000 млн ¤"}
                     }
                     1000000000{
-                        few{"0 млрд ¤ "}
-                        many{"0 млрд ¤ "}
-                        one{"0 млрд ¤ "}
-                        other{"0 млрд ¤ "}
+                        few{"0 млрд ¤"}
+                        many{"0 млрд ¤"}
+                        one{"0 млрд ¤"}
+                        other{"0 млрд ¤"}
                     }
                     10000000000{
                         few{"00 млрд ¤"}
@@ -261,6 +262,7 @@ be{
                 }
             }
             symbols{
+                approximatelySign{"≈"}
                 decimal{","}
                 exponential{"E"}
                 group{" "}
@@ -289,7 +291,6 @@ be{
         minimumGroupingDigits{"2"}
         native{"latn"}
     }
-    Version{"37"}
     calendar{
         buddhist{
             DateTimePatterns{
@@ -306,6 +307,16 @@ be{
                 "{1} 'у' {0}",
                 "{1}, {0}",
                 "{1}, {0}",
+            }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "GyMMMMEEEEd",
+                "GyMMMMd",
+                "GyMMMd",
+                "yyMd",
             }
             availableFormats{
                 Ed{"E, d"}
@@ -329,6 +340,61 @@ be{
                 yMMMd{"d MMM y G"}
                 yMd{"d.M.y"}
             }
+            eras{
+                abbreviated{
+                    "б.э.",
+                }
+            }
+        }
+        chinese{
+            monthNames{
+                format{
+                    abbreviated{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                    }
+                }
+                stand-alone{
+                    abbreviated{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                    }
+                    wide{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                    }
+                }
+            }
         }
         generic{
             DateTimePatterns{
@@ -346,6 +412,16 @@ be{
                 "{1}, {0}",
                 "{1}, {0}",
             }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "GyMMMMEEEEd",
+                "GyMMMMd",
+                "GyMd",
+                "GGGGGyMd",
+            }
             availableFormats{
                 Bh{"h B"}
                 Bhm{"h:mm B"}
@@ -362,6 +438,7 @@ be{
                 GyMMM{"LLL y G"}
                 GyMMMEd{"E, d MMM y G"}
                 GyMMMd{"d MMM y G"}
+                GyMd{"dd.MM.y GGGGG"}
                 H{"HH"}
                 Hm{"HH:mm"}
                 Hms{"HH:mm:ss"}
@@ -437,6 +514,20 @@ be{
                     d{"d.M.y – d.M.y GGGGG"}
                     y{"d.M.y GGGGG – d.M.y GGGGG"}
                 }
+                H{
+                    H{"HH–HH"}
+                }
+                Hm{
+                    H{"HH.mm–HH.mm"}
+                    m{"HH.mm–HH.mm"}
+                }
+                Hmv{
+                    H{"HH.mm–HH.mm v"}
+                    m{"HH:mm – HH:mm v"}
+                }
+                Hv{
+                    H{"HH–HH v"}
+                }
                 M{
                     M{"M–M"}
                 }
@@ -463,6 +554,20 @@ be{
                     d{"d–d"}
                 }
                 fallback{"{0} – {1}"}
+                h{
+                    h{"h–h a"}
+                }
+                hm{
+                    h{"h.mm–h.mm a"}
+                    m{"h.mm–h.mm a"}
+                }
+                hmv{
+                    h{"h.mm–h.mm a v"}
+                    m{"h:mm – h:mm a v"}
+                }
+                hv{
+                    h{"h–h a v"}
+                }
                 y{
                     y{"y – y G"}
                 }
@@ -520,13 +625,23 @@ be{
                 "HH:mm",
                 "EEEE, d MMMM y 'г'.",
                 "d MMMM y 'г'.",
-                "d.MM.y",
+                "d MMM y 'г'.",
                 "d.MM.yy",
                 "{1}, {0}",
                 "{1} 'у' {0}",
                 "{1} 'у' {0}",
                 "{1}, {0}",
                 "{1}, {0}",
+            }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "yMMMMEEEEd",
+                "yMMMMd",
+                "yMMd",
+                "yyMMd",
             }
             appendItems{
                 Timezone{"{0} {1}"}
@@ -547,6 +662,7 @@ be{
                 GyMMM{"LLL y 'г'. G"}
                 GyMMMEd{"E, d MMM y 'г'. G"}
                 GyMMMd{"d MMM y 'г'. G"}
+                GyMd{"dd.MM.y GGGGG"}
                 H{"HH"}
                 Hm{"HH:mm"}
                 Hms{"HH:mm:ss"}

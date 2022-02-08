@@ -10,9 +10,10 @@
 #include <inttypes.h>
 #include <limits>
 
-#include "mozilla/Assertions.h"
+#include "ByteWriter.h"
 #include "TimeUnits.h"
 #include "VideoUtils.h"
+#include "mozilla/Assertions.h"
 
 extern mozilla::LazyLogModule gMediaDemuxerLog;
 #define MP3LOG(msg, ...) \
@@ -121,6 +122,16 @@ bool MP3TrackDemuxer::Init() {
   mInfo->mBitDepth = 16;
   mInfo->mMimeType = "audio/mpeg";
   mInfo->mDuration = Duration().valueOr(TimeUnit::FromInfinity());
+  if (mEncoderDelay) {
+    AutoTArray<uint8_t, 8> trimInfo;
+    ByteWriter<BigEndian> writer(trimInfo);
+    bool ok = false;
+    ok = writer.WriteU32(mEncoderDelay);
+    MOZ_ALWAYS_TRUE(ok);
+    ok = writer.WriteU32(mEncoderPadding);
+    MOZ_ALWAYS_TRUE(ok);
+    mInfo->mCodecSpecificConfig->AppendElements(trimInfo);
+  }
 
   MP3LOG("Init mInfo={mRate=%d mChannels=%d mBitDepth=%d mDuration=%" PRId64
          "}",
@@ -439,7 +450,7 @@ MediaByteRange MP3TrackDemuxer::FindFirstFrame() {
           numSuccFrames);
       mFrameLock = true;
       return candidateFrame;
-    } else if (prevFrame.mStart == mParser.ID3Header().TotalTagSize() &&
+    } else if (prevFrame.mStart == mParser.TotalID3HeaderSize() &&
                currentFrame.mEnd == StreamLength()) {
       // We accept streams with only two frames if both frames are valid. This
       // is to handle very short files and provide parity with Chrome. See
@@ -510,7 +521,7 @@ MediaByteRange MP3TrackDemuxer::FindNextFrame() {
       // this parsing session with, we need to discount the ID3 tag size only
       // if we were looking for one during the current frame parsing session.
       if (searchingForID3) {
-        maxSkippableBytes += mParser.ID3Header().TotalTagSize();
+        maxSkippableBytes += mParser.TotalID3HeaderSize();
       }
     } else if (mFrameLock) {
       // We've found a valid MPEG stream, so don't impose any limits
@@ -556,6 +567,11 @@ MediaByteRange MP3TrackDemuxer::FindNextFrame() {
     MP3LOG("FindNext() Exit foundFrame=%d mParser.CurrentFrame().Length()=%d ",
            foundFrame, mParser.CurrentFrame().Length());
     return {0, 0};
+  }
+
+  if (frameHeaderOffset + mParser.CurrentFrame().Length() + BUFFER_SIZE >
+      StreamLength()) {
+    mEOS = true;
   }
 
   MP3LOGV("FindNext() End mOffset=%" PRIu64 " mNumParsedFrames=%" PRIu64
@@ -619,6 +635,7 @@ already_AddRefed<MediaRawData> MP3TrackDemuxer::GetNextFrame(
   frame->mDuration = Duration(1);
   frame->mTimecode = frame->mTime;
   frame->mKeyframe = true;
+  frame->mEOS = mEOS;
 
   MOZ_ASSERT(!frame->mTime.IsNegative());
   MOZ_ASSERT(frame->mDuration.IsPositive());
@@ -626,15 +643,25 @@ already_AddRefed<MediaRawData> MP3TrackDemuxer::GetNextFrame(
   if (mNumParsedFrames == 1) {
     // First frame parsed, let's read VBR info if available.
     BufferReader reader(frame->Data(), frame->Size());
-    mParser.ParseVBRHeader(&reader);
     mFirstFrameOffset = frame->mOffset;
+
+    if (mParser.ParseVBRHeader(&reader)) {
+      // Parsing was successful
+      if (mParser.VBRInfo().Type() == FrameParser::VBRHeader::XING) {
+        MP3LOGV("XING header present, skipping encoder delay (%u frames)",
+                mParser.VBRInfo().EncoderDelay());
+        mEncoderDelay = mParser.VBRInfo().EncoderDelay();
+        mEncoderPadding = mParser.VBRInfo().EncoderPadding();
+      }
+    }
   }
 
   MP3LOGV("GetNext() End mOffset=%" PRIu64 " mNumParsedFrames=%" PRIu64
           " mFrameIndex=%" PRId64 " mTotalFrameLen=%" PRIu64
-          " mSamplesPerFrame=%d mSamplesPerSecond=%d mChannels=%d",
+          " mSamplesPerFrame=%d mSamplesPerSecond=%d mChannels=%d, mEOS=%s",
           mOffset, mNumParsedFrames, mFrameIndex, mTotalFrameLen,
-          mSamplesPerFrame, mSamplesPerSecond, mChannels);
+          mSamplesPerFrame, mSamplesPerSecond, mChannels,
+          mEOS ? "true" : "false");
 
   return frame.forget();
 }
@@ -717,7 +744,8 @@ int32_t MP3TrackDemuxer::Read(uint8_t* aBuffer, int64_t aOffset,
   const int64_t streamLen = StreamLength();
   if (mInfo && streamLen > 0) {
     // Prevent blocking reads after successful initialization.
-    aSize = std::min<int64_t>(aSize, streamLen - aOffset);
+    uint64_t max = streamLen > aOffset ? streamLen - aOffset : 0;
+    aSize = std::min<int64_t>(aSize, max);
   }
 
   uint32_t read = 0;

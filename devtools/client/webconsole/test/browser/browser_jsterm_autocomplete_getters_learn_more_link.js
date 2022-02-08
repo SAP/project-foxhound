@@ -6,7 +6,7 @@
 // Test that accessing properties with getters displays a "learn more" link in the confirm
 // dialog that navigates the user to the expected mdn page.
 
-const TEST_URI = `data:text/html;charset=utf-8,
+const TEST_URI = `data:text/html;charset=utf-8,<!DOCTYPE html>
 <head>
   <script>
     /* Create a prototype-less object so popup does not contain native
@@ -28,8 +28,7 @@ const MDN_URL =
 
 add_task(async function() {
   const hud = await openNewTabAndConsole(TEST_URI);
-  const target = await TargetFactory.forTab(gBrowser.selectedTab);
-  const toolbox = gDevTools.getToolbox(target);
+  const toolbox = await gDevTools.getToolboxForTab(gBrowser.selectedTab);
 
   const tooltip = await setInputValueForGetterConfirmDialog(
     toolbox,

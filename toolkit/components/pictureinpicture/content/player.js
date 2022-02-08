@@ -23,23 +23,36 @@ const CONTROLS_FADE_TIMEOUT_MS = 3000;
 const RESIZE_DEBOUNCE_RATE_MS = 500;
 
 /**
+Quadrants!
+* 2 | 1
+* 3 | 4
+*/
+const TOP_RIGHT_QUADRANT = 1;
+const TOP_LEFT_QUADRANT = 2;
+const BOTTOM_LEFT_QUADRANT = 3;
+const BOTTOM_RIGHT_QUADRANT = 4;
+
+/**
  * Public function to be called from PictureInPicture.jsm. This is the main
  * entrypoint for initializing the player window.
  *
- * @param id (Number)
+ * @param {Number} id
  *   A unique numeric ID for the window, used for Telemetry Events.
- * @param originatingBrowser (xul:browser)
- *   The <xul:browser> that the Picture-in-Picture video is coming from.
+ * @param {WindowGlobalParent} wgp
+ *   The WindowGlobalParent that is hosting the originating video.
+ * @param {ContentDOMReference} videoRef
+ *    A reference to the video element that a Picture-in-Picture window
+ *    is being created for
  */
-function setupPlayer(id, originatingBrowser) {
-  Player.init(id, originatingBrowser);
+function setupPlayer(id, wgp, videoRef) {
+  Player.init(id, wgp, videoRef);
 }
 
 /**
  * Public function to be called from PictureInPicture.jsm. This update the
  * controls based on whether or not the video is playing.
  *
- * @param isPlaying (Boolean)
+ * @param {Boolean} isPlaying
  *   True if the Picture-in-Picture video is playing.
  */
 function setIsPlayingState(isPlaying) {
@@ -50,7 +63,7 @@ function setIsPlayingState(isPlaying) {
  * Public function to be called from PictureInPicture.jsm. This update the
  * controls based on whether or not the video is muted.
  *
- * @param isMuted (Boolean)
+ * @param {Boolean} isMuted
  *   True if the Picture-in-Picture video is muted.
  */
 function setIsMutedState(isMuted) {
@@ -67,7 +80,8 @@ let Player = {
     "contextmenu",
     "dblclick",
     "keydown",
-    "mouseout",
+    "mouseup",
+    "mousemove",
     "MozDOMFullscreen:Entered",
     "MozDOMFullscreen:Exited",
     "resize",
@@ -95,14 +109,24 @@ let Player = {
   showingTimeout: null,
 
   /**
+   * Used to determine old window location when mouseup-ed for corner
+   * snapping drag vector calculation
+   */
+  oldMouseUpWindowX: window.screenX,
+  oldMouseUpWindowY: window.screenY,
+
+  /**
    * Initializes the player browser, and sets up the initial state.
    *
-   * @param id (Number)
+   * @param {Number} id
    *   A unique numeric ID for the window, used for Telemetry Events.
-   * @param originatingBrowser (xul:browser)
-   *   The <xul:browser> that the Picture-in-Picture video is coming from.
+   * @param {WindowGlobalParent} wgp
+   *   The WindowGlobalParent that is hosting the originating video.
+   * @param {ContentDOMReference} videoRef
+   *    A reference to the video element that a Picture-in-Picture window
+   *    is being created for
    */
-  init(id, originatingBrowser) {
+  init(id, wgp, videoRef) {
     this.id = id;
 
     let holder = document.querySelector(".player-holder");
@@ -110,13 +134,26 @@ let Player = {
     browser.remove();
 
     browser.setAttribute("nodefaultsrc", "true");
-    browser.sameProcessAsFrameLoader = originatingBrowser.frameLoader;
+
+    // Set the specific remoteType and browsingContextGroupID to use for the
+    // initial about:blank load. The combination of these two properties will
+    // ensure that the browser loads in the same process as our originating
+    // browser.
+    browser.setAttribute("remoteType", wgp.domProcess.remoteType);
+    browser.setAttribute(
+      "initialBrowsingContextGroupId",
+      wgp.browsingContext.group.id
+    );
     holder.appendChild(browser);
 
     this.actor = browser.browsingContext.currentWindowGlobal.getActor(
       "PictureInPicture"
     );
-    this.actor.sendAsyncMessage("PictureInPicture:SetupPlayer");
+    this.actor.sendAsyncMessage("PictureInPicture:SetupPlayer", {
+      videoRef,
+    });
+
+    PictureInPicture.weakPipToWin.set(this.actor, window);
 
     for (let eventType of this.WINDOW_EVENTS) {
       addEventListener(eventType, this);
@@ -165,7 +202,7 @@ let Player = {
 
   uninit() {
     this.resizeDebouncer.disarm();
-    PictureInPicture.unload(window);
+    PictureInPicture.unload(window, this.actor);
   },
 
   handleEvent(event) {
@@ -200,7 +237,6 @@ let Player = {
           event.preventDefault();
         } else if (
           Services.prefs.getBoolPref(KEYBOARD_CONTROLS_ENABLED_PREF, false) &&
-          !this.controls.hasAttribute("keying") &&
           (event.keyCode != KeyEvent.DOM_VK_SPACE || !event.target.id)
         ) {
           // Pressing "space" fires a "keydown" event which can also trigger a control
@@ -212,8 +248,13 @@ let Player = {
         break;
       }
 
-      case "mouseout": {
-        this.onMouseOut(event);
+      case "mouseup": {
+        this.onMouseUp(event);
+        break;
+      }
+
+      case "mousemove": {
+        this.onMouseMove();
         break;
       }
 
@@ -240,7 +281,7 @@ let Player = {
       }
 
       case "oop-browser-crashed": {
-        PictureInPicture.closePipWindow({ reason: "browser-crash" });
+        this.closePipWindow({ reason: "browser-crash" });
         break;
       }
 
@@ -253,6 +294,16 @@ let Player = {
         this.uninit();
         break;
       }
+    }
+  },
+
+  closePipWindow(closeData) {
+    const { reason } = closeData;
+
+    if (PictureInPicture.isMultiPipEnabled) {
+      PictureInPicture.closeSinglePipWindow({ reason, actorRef: this.actor });
+    } else {
+      PictureInPicture.closeAllPipWindows({ reason });
     }
   },
 
@@ -279,8 +330,10 @@ let Player = {
       }
 
       case "close": {
-        this.actor.sendAsyncMessage("PictureInPicture:Pause");
-        PictureInPicture.closePipWindow({ reason: "close-button" });
+        this.actor.sendAsyncMessage("PictureInPicture:Pause", {
+          reason: "pip-closed",
+        });
+        this.closePipWindow({ reason: "close-button" });
         break;
       }
 
@@ -297,7 +350,7 @@ let Player = {
       }
 
       case "unpip": {
-        PictureInPicture.focusTabAndClosePip();
+        PictureInPicture.focusTabAndClosePip(window, this.actor);
         break;
       }
     }
@@ -313,7 +366,102 @@ let Player = {
     });
   },
 
-  onMouseOut(event) {
+  /**
+   * PiP Corner Snapping Helper Function
+   * Determines the quadrant the PiP window is currently in.
+   */
+  determineCurrentQuadrant() {
+    // Determine center coordinates of window.
+    let windowCenterX = window.screenX + window.innerWidth / 2;
+    let windowCenterY = window.screenY + window.innerHeight / 2;
+    let quadrant = null;
+    let halfWidth = window.screen.availLeft + window.screen.availWidth / 2;
+    let halfHeight = window.screen.availTop + window.screen.availHeight / 2;
+
+    let leftHalf = windowCenterX < halfWidth;
+    let rightHalf = windowCenterX > halfWidth;
+    let topHalf = windowCenterY < halfHeight;
+    let bottomHalf = windowCenterY > halfHeight;
+
+    if (leftHalf && topHalf) {
+      quadrant = TOP_LEFT_QUADRANT;
+    } else if (rightHalf && topHalf) {
+      quadrant = TOP_RIGHT_QUADRANT;
+    } else if (leftHalf && bottomHalf) {
+      quadrant = BOTTOM_LEFT_QUADRANT;
+    } else if (rightHalf && bottomHalf) {
+      quadrant = BOTTOM_RIGHT_QUADRANT;
+    }
+    return quadrant;
+  },
+
+  /**
+   * Helper function to actually move/snap the PiP window.
+   * Moves the PiP window to the top right.
+   */
+  moveToTopRight() {
+    window.moveTo(
+      window.screen.availLeft + window.screen.availWidth - window.innerWidth,
+      window.screen.availTop
+    );
+  },
+
+  /**
+   * Moves the PiP window to the top left.
+   */
+  moveToTopLeft() {
+    window.moveTo(window.screen.availLeft, window.screen.availTop);
+  },
+
+  /**
+   * Moves the PiP window to the bottom right.
+   */
+  moveToBottomRight() {
+    window.moveTo(
+      window.screen.availLeft + window.screen.availWidth - window.innerWidth,
+      window.screen.availTop + window.screen.availHeight - window.innerHeight
+    );
+  },
+
+  /**
+   * Moves the PiP window to the bottom left.
+   */
+  moveToBottomLeft() {
+    window.moveTo(
+      window.screen.availLeft,
+      window.screen.availTop + window.screen.availHeight - window.innerHeight
+    );
+  },
+
+  /**
+   * Uses the PiP window's change in position to determine which direction
+   * the window has been moved in.
+   */
+  determineDirectionDragged() {
+    // Determine change in window location.
+    let deltaX = this.oldMouseUpWindowX - window.screenX;
+    let deltaY = this.oldMouseUpWindowY - window.screenY;
+    let dragDirection = "";
+
+    if (Math.abs(deltaX) > Math.abs(deltaY) && deltaX < 0) {
+      dragDirection = "draggedRight";
+    } else if (Math.abs(deltaX) > Math.abs(deltaY) && deltaX > 0) {
+      dragDirection = "draggedLeft";
+    } else if (Math.abs(deltaX) < Math.abs(deltaY) && deltaY < 0) {
+      dragDirection = "draggedDown";
+    } else if (Math.abs(deltaX) < Math.abs(deltaY) && deltaY > 0) {
+      dragDirection = "draggedUp";
+    }
+    return dragDirection;
+  },
+
+  /**
+   * Event handler for "mouseup" events on the PiP window.
+   *
+   * @param {Event} event
+   *  Event context details
+   */
+  onMouseUp(event) {
     if (
       window.screenX != this.lastScreenX ||
       window.screenY != this.lastScreenY
@@ -323,14 +471,115 @@ let Player = {
         screenY: window.screenY.toString(),
       });
     }
-
     this.lastScreenX = window.screenX;
     this.lastScreenY = window.screenY;
+
+    // Corner snapping changes start here.
+    // Check if metakey pressed and macOS
+    let quadrant = this.determineCurrentQuadrant();
+    let dragAction = this.determineDirectionDragged();
+
+    if (event.metaKey && AppConstants.platform == "macosx" && dragAction) {
+      // Moving logic based on current quadrant and direction of drag.
+      switch (quadrant) {
+        case TOP_RIGHT_QUADRANT:
+          switch (dragAction) {
+            case "draggedRight":
+              this.moveToTopRight();
+              break;
+            case "draggedLeft":
+              this.moveToTopLeft();
+              break;
+            case "draggedDown":
+              this.moveToBottomRight();
+              break;
+            case "draggedUp":
+              this.moveToTopRight();
+              break;
+          }
+          break;
+        case TOP_LEFT_QUADRANT:
+          switch (dragAction) {
+            case "draggedRight":
+              this.moveToTopRight();
+              break;
+            case "draggedLeft":
+              this.moveToTopLeft();
+              break;
+            case "draggedDown":
+              this.moveToBottomLeft();
+              break;
+            case "draggedUp":
+              this.moveToTopLeft();
+              break;
+          }
+          break;
+        case BOTTOM_LEFT_QUADRANT:
+          switch (dragAction) {
+            case "draggedRight":
+              this.moveToBottomRight();
+              break;
+            case "draggedLeft":
+              this.moveToBottomLeft();
+              break;
+            case "draggedDown":
+              this.moveToBottomLeft();
+              break;
+            case "draggedUp":
+              this.moveToTopLeft();
+              break;
+          }
+          break;
+        case BOTTOM_RIGHT_QUADRANT:
+          switch (dragAction) {
+            case "draggedRight":
+              this.moveToBottomRight();
+              break;
+            case "draggedLeft":
+              this.moveToBottomLeft();
+              break;
+            case "draggedDown":
+              this.moveToBottomRight();
+              break;
+            case "draggedUp":
+              this.moveToTopRight();
+              break;
+          }
+          break;
+      } // Switch close.
+    } // Metakey close.
+    this.oldMouseUpWindowX = window.screenX;
+    this.oldMouseUpWindowY = window.screenY;
   },
 
+  /**
+   * Event handler for mousemove the PiP Window
+   */
+  onMouseMove() {
+    if (document.fullscreenElement) {
+      this.revealControls(false);
+    }
+  },
+
+  /**
+   * Event handler for resizing the PiP Window
+   *
+   * @param {Event} event
+   *  Event context data object
+   */
   onResize(event) {
     this.resizeDebouncer.disarm();
     this.resizeDebouncer.arm();
+  },
+
+  /**
+   * Event handler for user issued commands
+   *
+   * @param {Event} event
+   *  Event context data object
+   */
+  onCommand(event) {
+    this.closePipWindow({ reason: "player-shortcut" });
   },
 
   get controls() {
@@ -340,18 +589,17 @@ let Player = {
 
   _isPlaying: false,
   /**
-   * isPlaying returns true if the video is currently playing.
+   * GET isPlaying returns true if the video is currently playing.
    *
-   * @return Boolean
+   * SET isPlaying to true if the video is playing, false otherwise. This will
+   * update the internal state and displayed controls.
+   *
+   * @type {Boolean}
    */
   get isPlaying() {
     return this._isPlaying;
   },
 
-  /**
-   * Set isPlaying to true if the video is playing, false otherwise. This will
-   * update the internal state and displayed controls.
-   */
   set isPlaying(isPlaying) {
     this._isPlaying = isPlaying;
     this.controls.classList.toggle("playing", isPlaying);
@@ -362,18 +610,17 @@ let Player = {
 
   _isMuted: false,
   /**
-   * isMuted returns true if the video is currently muted.
+   * GET isMuted returns true if the video is currently muted.
    *
-   * @return Boolean
+   * SET isMuted to true if the video is muted, false otherwise. This will
+   * update the internal state and displayed controls.
+   *
+   * @type {Boolean}
    */
   get isMuted() {
     return this._isMuted;
   },
 
-  /**
-   * Set isMuted to true if the video is muted, false otherwise. This will
-   * update the internal state and displayed controls.
-   */
   set isMuted(isMuted) {
     this._isMuted = isMuted;
     this.controls.classList.toggle("muted", isMuted);
@@ -382,6 +629,14 @@ let Player = {
     document.l10n.setAttributes(audioButton, strId);
   },
 
+  /**
+   * Used for recording telemetry in Picture-in-Picture.
+   *
+   * @param {string} type
+   *   The type of PiP event being recorded.
+   * @param {object} args
+   *   The data to pass to telemetry when the event is recorded.
+   */
   recordEvent(type, args) {
     Services.telemetry.recordEvent(
       "pictureinpicture",
@@ -395,7 +650,7 @@ let Player = {
   /**
    * Makes the player controls visible.
    *
-   * @param revealIndefinitely (Boolean)
+   * @param {Boolean} revealIndefinitely
    *   If false, this will hide the controls again after
    *   CONTROLS_FADE_TIMEOUT_MS milliseconds has passed. If true, the controls
    *   will remain visible until revealControls is called again with
@@ -421,9 +676,9 @@ let Player = {
    * impose a minimum window size. For other platforms, this function is a
    * no-op.
    *
-   * @param width (Number)
+   * @param {Number} width
    *   The width of the video being played.
-   * @param height (Number)
+   * @param {Number} height
    *   The height of the video being played.
    */
   computeAndSetMinimumSize(width, height) {

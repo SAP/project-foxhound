@@ -13,13 +13,13 @@
 #include "nsError.h"
 #include "nsTArray.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/Tuple.h"
 #include "mozilla/UniquePtr.h"
+#include "NSSErrorsService.h"
 
 class nsICacheEntry;
 
 namespace mozilla {
-
-class Mutex;
 
 namespace net {
 class nsHttpResponseHead;
@@ -36,6 +36,13 @@ enum class HttpVersion {
 };
 
 enum class SpdyVersion { NONE = 0, HTTP_2 = 5 };
+
+enum class SupportedAlpnType : uint8_t {
+  HTTP_3 = 0,
+  HTTP_2,
+  HTTP_1_1,
+  NOT_SUPPORTED
+};
 
 extern const uint32_t kHttp3VersionCount;
 extern const nsCString kHttp3Versions[];
@@ -120,6 +127,17 @@ extern const nsCString kHttp3Versions[];
 // such as HTTP upgrade which are not supported by HTTP3.
 #define NS_HTTP_DISALLOW_HTTP3 (1 << 22)
 
+// Force a transaction to stay in pending queue until the HTTPS RR is
+// available.
+#define NS_HTTP_FORCE_WAIT_HTTP_RR (1 << 23)
+
+// This is used for a temporary workaround for a web-compat issue. The flag is
+// only set on CORS preflight request to allowed sending client certificates
+// on a connection for an anonymous request.
+#define NS_HTTP_LOAD_ANONYMOUS_CONNECT_ALLOW_CLIENT_CERT (1 << 24)
+
+#define NS_HTTP_DISALLOW_HTTPS_RR (1 << 25)
+
 #define NS_HTTP_TRR_FLAGS_FROM_MODE(x) ((static_cast<uint32_t>(x) & 3) << 19)
 
 #define NS_HTTP_TRR_MODE_FROM_FLAGS(x) \
@@ -132,41 +150,20 @@ extern const nsCString kHttp3Versions[];
 #define NS_HTTP_DEFAULT_PORT 80
 #define NS_HTTPS_DEFAULT_PORT 443
 
-#define NS_HTTP_HEADER_SEPS ", \t"
+#define NS_HTTP_HEADER_SEP ','
 
 //-----------------------------------------------------------------------------
 // http atoms...
 //-----------------------------------------------------------------------------
 
-struct nsHttpAtom {
-  nsHttpAtom() : _val(nullptr){};
-  explicit nsHttpAtom(const char* val) : _val(val) {}
-  nsHttpAtom(const nsHttpAtom& other) = default;
-
-  operator const char*() const { return _val; }
-  const char* get() const { return _val; }
-
-  void operator=(const char* v) { _val = v; }
-  void operator=(const nsHttpAtom& a) { _val = a._val; }
-
-  // private
-  const char* _val;
-};
+struct nsHttpAtom;
 
 namespace nsHttp {
 [[nodiscard]] nsresult CreateAtomTable();
 void DestroyAtomTable();
 
-// The mutex is valid any time the Atom Table is valid
-// This mutex is used in the unusual case that the network thread and
-// main thread might access the same data
-Mutex* GetLock();
-
 // will dynamically add atoms to the table if they don't already exist
-nsHttpAtom ResolveAtom(const char*);
-inline nsHttpAtom ResolveAtom(const nsACString& s) {
-  return ResolveAtom(PromiseFlatCString(s).get());
-}
+nsHttpAtom ResolveAtom(const nsACString& s);
 
 // returns true if the specified token [start,end) is valid per RFC 2616
 // section 2.2
@@ -189,8 +186,7 @@ bool IsReasonableHeaderValue(const nsACString& s);
 // |separators| and may appear at the beginning or end of the |input|
 // string.  null is returned if the |token| is not found.  |input| may be
 // null, in which case null is returned.
-const char* FindToken(const char* input, const char* token,
-                      const char* separators);
+const char* FindToken(const char* input, const char* token, const char* seps);
 
 // This function parses a string containing a decimal-valued, non-negative
 // 64-bit integer.  If the value would exceed INT64_MAX, then false is
@@ -219,7 +215,8 @@ const char* GetProtocolVersion(HttpVersion pv);
 bool ValidationRequired(bool isForcedValid,
                         nsHttpResponseHead* cachedResponseHead,
                         uint32_t loadFlags, bool allowStaleCacheContent,
-                        bool isImmutable, bool customConditionalRequest,
+                        bool forceValidateCacheContent, bool isImmutable,
+                        bool customConditionalRequest,
                         nsHttpRequestHead& requestHead, nsICacheEntry* entry,
                         CacheControlParser& cacheControlRequest,
                         bool fromPreviousSession,
@@ -241,7 +238,7 @@ void DetermineFramingAndImmutability(nsICacheEntry* entry,
 // took place.  Called only on the parent process and only updates
 // mLastActiveTabLoadOptimizationHit timestamp to now.
 void NotifyActiveTabLoadOptimization();
-TimeStamp const GetLastActiveTabLoadOptimizationHit();
+TimeStamp GetLastActiveTabLoadOptimizationHit();
 void SetLastActiveTabLoadOptimizationHit(TimeStamp const& when);
 bool IsBeforeLastActiveTabLoadOptimization(TimeStamp const& when);
 
@@ -260,7 +257,58 @@ nsCString ConvertRequestHeadToString(nsHttpRequestHead& aRequestHead,
                                      bool aRequestBodyHasHeaders,
                                      bool aUsingConnect);
 
+template <typename T>
+using SendFunc = std::function<bool(const T&, uint64_t, uint32_t)>;
+
+template <typename T>
+bool SendDataInChunks(const nsCString& aData, uint64_t aOffset, uint32_t aCount,
+                      const SendFunc<T>& aSendFunc) {
+  static uint32_t const kCopyChunkSize = 128 * 1024;
+  uint32_t toRead = std::min<uint32_t>(aCount, kCopyChunkSize);
+
+  uint32_t start = 0;
+  while (aCount) {
+    T data(Substring(aData, start, toRead));
+
+    if (!aSendFunc(data, aOffset, toRead)) {
+      return false;
+    }
+
+    aOffset += toRead;
+    start += toRead;
+    aCount -= toRead;
+    toRead = std::min<uint32_t>(aCount, kCopyChunkSize);
+  }
+
+  return true;
+}
+
 }  // namespace nsHttp
+
+struct nsHttpAtom {
+  nsHttpAtom() = default;
+  nsHttpAtom(const nsHttpAtom& other) = default;
+
+  operator const char*() const { return get(); }
+  const char* get() const {
+    if (_val.IsEmpty()) {
+      return nullptr;
+    }
+    return _val.BeginReading();
+  }
+
+  const nsCString& val() const { return _val; }
+
+  void operator=(const nsHttpAtom& a) { _val = a._val; }
+
+  // This constructor is mainly used to build the static atom list
+  // Avoid using it for anything else.
+  explicit nsHttpAtom(const nsACString& val) : _val(val) {}
+
+ private:
+  nsCString _val;
+  friend nsHttpAtom nsHttp::ResolveAtom(const nsACString& s);
+};
 
 //-----------------------------------------------------------------------------
 // utilities...
@@ -273,7 +321,7 @@ static inline uint32_t PRTimeToSeconds(PRTime t_usec) {
 #define NowInSeconds() PRTimeToSeconds(PR_Now())
 
 // Round q-value to 2 decimal places; return 2 most significant digits as uint.
-#define QVAL_TO_UINT(q) ((unsigned int)((q + 0.005) * 100.0))
+#define QVAL_TO_UINT(q) ((unsigned int)(((q) + 0.005) * 100.0))
 
 #define HTTP_LWS " \t"
 #define HTTP_HEADER_VALUE_SEPS HTTP_LWS ","
@@ -328,7 +376,7 @@ class ParsedHeaderValueListList {
   // Note that ParsedHeaderValueListList is currently used to parse
   // Alt-Svc and Server-Timing header. |allowInvalidValue| is set to true
   // when parsing Alt-Svc for historical reasons.
-  explicit ParsedHeaderValueListList(const nsCString& txt,
+  explicit ParsedHeaderValueListList(const nsCString& fullHeader,
                                      bool allowInvalidValue = true);
   nsTArray<ParsedHeaderValueList> mValues;
 
@@ -342,6 +390,18 @@ void LogHeaders(const char* lineStart);
 // This function should be only used when we get a failed response to the
 // CONNECT method.
 nsresult HttpProxyResponseToErrorCode(uint32_t aStatusCode);
+
+// Convert an alpn string to SupportedAlpnType.
+SupportedAlpnType IsAlpnSupported(const nsACString& aAlpn);
+
+static inline bool AllowedErrorForHTTPSRRFallback(nsresult aError) {
+  return psm::IsNSSErrorCode(-1 * NS_ERROR_GET_CODE(aError)) ||
+         aError == NS_ERROR_NET_RESET ||
+         aError == NS_ERROR_CONNECTION_REFUSED ||
+         aError == NS_ERROR_UNKNOWN_HOST || aError == NS_ERROR_NET_TIMEOUT;
+}
+
+bool SecurityErrorToBeHandledByTransaction(nsresult aReason);
 
 }  // namespace net
 }  // namespace mozilla

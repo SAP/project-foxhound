@@ -8,6 +8,7 @@
 
 #include "jsapi.h"
 #include "js/Class.h"
+#include "js/Object.h"  // JS::GetClass, JS::GetObjectISupports, JS::SetObjectISupports
 
 #include "nsJSPrincipals.h"
 #include "nsThreadUtils.h"
@@ -18,8 +19,7 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/NullPrincipal.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(SimpleGlobalObject)
 
@@ -41,9 +41,10 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(SimpleGlobalObject)
   NS_INTERFACE_MAP_ENTRY(nsIGlobalObject)
 NS_INTERFACE_MAP_END
 
+static SimpleGlobalObject* GetSimpleGlobal(JSObject* global);
+
 static void SimpleGlobal_finalize(JSFreeOp* fop, JSObject* obj) {
-  SimpleGlobalObject* globalObject =
-      static_cast<SimpleGlobalObject*>(JS_GetPrivate(obj));
+  SimpleGlobalObject* globalObject = GetSimpleGlobal(obj);
   if (globalObject) {
     globalObject->ClearWrapper(obj);
     NS_RELEASE(globalObject);
@@ -51,8 +52,7 @@ static void SimpleGlobal_finalize(JSFreeOp* fop, JSObject* obj) {
 }
 
 static size_t SimpleGlobal_moved(JSObject* obj, JSObject* old) {
-  SimpleGlobalObject* globalObject =
-      static_cast<SimpleGlobalObject*>(JS_GetPrivate(obj));
+  SimpleGlobalObject* globalObject = GetSimpleGlobal(obj);
   if (globalObject) {
     globalObject->UpdateWrapper(obj, old);
   }
@@ -76,14 +76,23 @@ static const JSClassOps SimpleGlobalClassOps = {
 static const js::ClassExtension SimpleGlobalClassExtension = {
     SimpleGlobal_moved};
 
+static_assert(JSCLASS_GLOBAL_APPLICATION_SLOTS > 0,
+              "Need at least one slot for JSCLASS_SLOT0_IS_NSISUPPORTS");
+
 const JSClass SimpleGlobalClass = {"",
-                                   JSCLASS_GLOBAL_FLAGS | JSCLASS_HAS_PRIVATE |
-                                       JSCLASS_PRIVATE_IS_NSISUPPORTS |
+                                   JSCLASS_GLOBAL_FLAGS |
+                                       JSCLASS_SLOT0_IS_NSISUPPORTS |
                                        JSCLASS_FOREGROUND_FINALIZE,
                                    &SimpleGlobalClassOps,
                                    JS_NULL_CLASS_SPEC,
                                    &SimpleGlobalClassExtension,
                                    JS_NULL_OBJECT_OPS};
+
+static SimpleGlobalObject* GetSimpleGlobal(JSObject* global) {
+  MOZ_ASSERT(JS::GetClass(global) == &SimpleGlobalClass);
+
+  return JS::GetObjectISupports<SimpleGlobalObject>(global);
+}
 
 // static
 JSObject* SimpleGlobalObject::Create(GlobalType globalType,
@@ -133,7 +142,7 @@ JSObject* SimpleGlobalObject::Create(GlobalType globalType,
         new SimpleGlobalObject(global, globalType);
 
     // Pass on ownership of globalObject to |global|.
-    JS_SetPrivate(global, globalObject.forget().take());
+    JS::SetObjectISupports(global, globalObject.forget().take());
 
     if (proto.isObjectOrNull()) {
       JS::Rooted<JSObject*> protoObj(cx, proto.toObjectOrNull());
@@ -142,7 +151,7 @@ JSObject* SimpleGlobalObject::Create(GlobalType globalType,
         return nullptr;
       }
 
-      if (!JS_SplicePrototype(cx, global, protoObj)) {
+      if (!JS_SetPrototype(cx, global, protoObj)) {
         jsapi.ClearException();
         return nullptr;
       }
@@ -160,14 +169,12 @@ JSObject* SimpleGlobalObject::Create(GlobalType globalType,
 // static
 SimpleGlobalObject::GlobalType SimpleGlobalObject::SimpleGlobalType(
     JSObject* obj) {
-  if (js::GetObjectClass(obj) != &SimpleGlobalClass) {
+  if (JS::GetClass(obj) != &SimpleGlobalClass) {
     return SimpleGlobalObject::GlobalType::NotSimpleGlobal;
   }
 
-  SimpleGlobalObject* globalObject =
-      static_cast<SimpleGlobalObject*>(JS_GetPrivate(obj));
+  SimpleGlobalObject* globalObject = GetSimpleGlobal(obj);
   return globalObject->Type();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

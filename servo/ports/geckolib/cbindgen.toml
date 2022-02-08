@@ -65,7 +65,7 @@ derive_tagged_enum_destructor = true
 derive_tagged_enum_copy_constructor = true
 derive_tagged_enum_copy_assignment = true
 private_default_tagged_enum_constructor = true
-cast_assert_name = "MOZ_ASSERT"
+cast_assert_name = "MOZ_DIAGNOSTIC_ASSERT"
 
 [export]
 prefix = "Style"
@@ -74,28 +74,31 @@ exclude = [
   "NS_LogDtor",
 ]
 include = [
+  "AnimationTimeline",
   "Appearance",
   "BreakBetween",
   "BreakWithin",
   "BorderStyle",
   "OutlineStyle",
+  "CaptionSide",
+  "FontSizeAdjust",
   "ComputedFontStretchRange",
   "ComputedFontStyleDescriptor",
   "ComputedFontWeightRange",
   "ComputedTimingFunction",
   "ComputedValueFlags",
-  "ContrastPref",
   "CursorKind",
   "DisplayOutside",
   "DisplayInside",
   "DisplayMode",
   "PrefersColorScheme",
-  "ExtremumLength",
+  "PrefersContrast",
   "FillRule",
   "FontDisplay",
   "FontFaceSourceListComponent",
   "FontLanguageOverride",
   "GenericFontFamily",
+  "FontFamily",
   "FontFamilyNameSyntax",
   "OverflowWrap",
   "TimingFunction",
@@ -135,6 +138,7 @@ include = [
   "BorderImageSlice",
   "BorderSpacing",
   "BorderRadius",
+  "ColorScheme",
   "NonNegativeLengthOrNumberRect",
   "Perspective",
   "ZIndex",
@@ -149,15 +153,20 @@ include = [
   "TextDecorationLine",
   "TextUnderlinePosition",
   "TextTransform",
+  "TextJustify",
   "TextOverflow",
-  "MozListReversed",
+  "MozControlCharacterVisibility",
+  "RubyPosition",
   "Owned",
   "OwnedOrNull",
   "Strong",
   "ScrollbarColor",
+  "CaretColor",
   "Color",
   "ColorOrAuto",
   "SystemColor",
+  "SystemColorScheme",
+  "SystemFont",
   "GradientItem",
   "VerticalAlign",
   "BasicShape",
@@ -177,7 +186,6 @@ include = [
   "ComputedUrl",
   "ComputedImageUrl",
   "UrlOrNone",
-  "ImageUrlOrNone",
   "Filter",
   "Gradient",
   "GridTemplateAreas",
@@ -193,7 +201,8 @@ include = [
   "PaintOrder",
   "SVGPaintOrder",
   "ClipRectOrAuto",
-  "CounterSetOrReset",
+  "CounterReset",
+  "CounterSet",
   "CounterIncrement",
   "WritingMode",
   "Content",
@@ -221,7 +230,11 @@ include = [
   "FontSizeKeyword",
   "AspectRatio",
   "DefaultFontSizes",
-  "ButtonAppearance",
+  "RuleChangeKind",
+  "PageSize",
+  "DProperty",
+  "ImageRendering",
+  "ScrollbarGutter",
 ]
 item_types = ["enums", "structs", "unions", "typedefs", "functions", "constants"]
 renaming_overrides_prefixing = true
@@ -233,7 +246,6 @@ renaming_overrides_prefixing = true
 "nsIURI" = "nsIURI"
 "imgRequestProxy" = "imgRequestProxy"
 "nsCompatibility" = "nsCompatibility"
-"SharedFontList" = "SharedFontList"
 "nsSimpleContentList" = "nsSimpleContentList"
 "nsACString" = "nsACString"
 "nsAString" = "nsAString"
@@ -463,8 +475,8 @@ renaming_overrides_prefixing = true
   inline bool IsRight() const;
 """
 
-# TODO(emilio): Add hooks to cbindgen to be able to generate MOZ_MUST_USE_TYPE
-# or [[nodiscard]] on the functions.
+# TODO(emilio): Add hooks to cbindgen to be able to generate [[nodiscard]]
+# on the functions.
 "Owned" = """
   UniquePtr<GeckoType> Consume() {
     UniquePtr<GeckoType> ret(ptr);
@@ -490,6 +502,7 @@ renaming_overrides_prefixing = true
 """
 
 "GenericColor" = """
+  static inline StyleGenericColor CurrentColor();
   static inline StyleGenericColor FromColor(nscolor);
   static inline StyleGenericColor Black();
   static inline StyleGenericColor White();
@@ -520,7 +533,7 @@ renaming_overrides_prefixing = true
 """
 
 "OwnedSlice" = """
-  StyleOwnedSlice() :
+  constexpr StyleOwnedSlice() :
     ptr((T*)alignof(T)),
     len(0) {}
 
@@ -567,11 +580,13 @@ renaming_overrides_prefixing = true
   inline StyleArcSlice();
   inline StyleArcSlice(const StyleArcSlice& aOther);
 
-  // Should be easily implementable if wanted, but the default implementation would leak.
-  StyleArcSlice& operator=(const StyleArcSlice&) = delete;
-  StyleArcSlice& operator=(StyleArcSlice&&) = delete;
+  inline StyleArcSlice& operator=(const StyleArcSlice&);
+  inline StyleArcSlice& operator=(StyleArcSlice&&);
 
   inline explicit StyleArcSlice(const StyleForgottenArcSlicePtr<T>& aPtr);
+ private:
+  inline void Release();
+ public:
   inline ~StyleArcSlice();
   inline Span<const T> AsSpan() const;
   inline size_t Length() const;
@@ -785,6 +800,20 @@ renaming_overrides_prefixing = true
 
 "GenericImage" = """
  public:
+  // Returns the intrinsic resolution of the image.
+  //
+  // The resolution is in dppx, and should be used to impact the intrinsic
+  // size of the image.
+  ImageResolution GetResolution() const;
+
+  // Returns the intrinsic size of the image, if there's one, accounting for
+  // resolution as needed.
+  Maybe<CSSIntSize> GetIntrinsicSize() const;
+
+  // If this is an image-set(), the final image we've selected, otherwise it
+  // returns *this.
+  const StyleGenericImage& FinalImage() const;
+
   // Whether this image may have an image request associated with it.
   bool IsImageRequestType() const;
 
@@ -803,12 +832,6 @@ renaming_overrides_prefixing = true
   // Always returns true if there's no image request involved and this image
   // is not `none`.
   bool IsSizeAvailable() const;
-
-  // Starts the decoding of a image. Returns true if the current frame of the
-  // image is complete. The return value is intended to be used instead of
-  // IsComplete because IsComplete may not be up to date if notifications
-  // from decoding are pending because they are being sent async.
-  bool StartDecoding() const;
 
   // Returns true if the item is definitely opaque --- i.e., paints every
   // pixel within its bounds opaquely, and the bounds contains at least a pixel.
@@ -829,14 +852,33 @@ renaming_overrides_prefixing = true
 """
 
 "Ratio" = """
-  inline AspectRatio ToLayoutRatio() const;
+  inline AspectRatio ToLayoutRatio(UseBoxSizing aUseBoxSizing) const;
 """
 
 "GenericAspectRatio" = """
   bool HasRatio() const { return ratio.IsRatio(); }
-  bool HasMappedRatio() const { return auto_ && HasRatio(); }
+  bool HasFiniteRatio() const { return static_cast<bool>(ToLayoutRatio()); }
+  bool BehavesAsAuto() const { return auto_ || !HasFiniteRatio(); }
+  inline AspectRatio ToLayoutRatio() const;
 
   static StyleGenericAspectRatio Auto() {
     return {true, StylePreferredRatio<N>::None()};
   }
+"""
+
+"FontFamilyList" = """
+  static StyleFontFamilyList WithOneUnquotedFamily(const nsACString&);
+  // Constructs a font family list with a list of names.
+  static StyleFontFamilyList WithNames(nsTArray<StyleSingleFontFamily>&&);
+"""
+
+"SingleFontFamily" = """
+  static StyleSingleFontFamily Parse(const nsACString& aName);
+  void AppendToString(nsACString& aFamily, bool aIncludeQuotes = true) const;
+  bool IsNamedFamily(const nsAString&) const;
+"""
+
+"AnimationTimeline" = """
+ public:
+  StyleAnimationTimeline(): tag(Tag::Auto) {}
 """

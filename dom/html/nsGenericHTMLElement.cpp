@@ -9,17 +9,23 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/DeclarationBlock.h"
+#include "mozilla/EditorBase.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/HTMLEditor.h"
+#include "mozilla/IMEContentObserver.h"
+#include "mozilla/IMEStateManager.h"
 #include "mozilla/MappedDeclarations.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/TextEditor.h"
+#include "mozilla/TextEvents.h"
+#include "mozilla/StaticPrefs_html5.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPrefs_accessibility.h"
 
 #include "nscore.h"
 #include "nsGenericHTMLElement.h"
@@ -60,7 +66,6 @@
 #include "nsGkAtoms.h"
 #include "nsDOMCSSDeclaration.h"
 #include "nsITextControlFrame.h"
-#include "nsIForm.h"
 #include "nsIFormControl.h"
 #include "mozilla/dom/HTMLFormElement.h"
 #include "nsFocusManager.h"
@@ -72,6 +77,7 @@
 #include "nsLayoutUtils.h"
 #include "mozAutoDocUpdate.h"
 #include "nsHtml5Module.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/ElementInlines.h"
 #include "HTMLFieldSetElement.h"
 #include "nsTextNode.h"
@@ -142,6 +148,24 @@ static const nsAttrValue::EnumTable kEnterKeyHintTable[] = {
     {"search", NS_ENTERKEYHINT_SEARCH},
     {"send", NS_ENTERKEYHINT_SEND},
     {nullptr, 0}};
+
+static const uint8_t NS_AUTOCAPITALIZE_NONE = 1;
+static const uint8_t NS_AUTOCAPITALIZE_SENTENCES = 2;
+static const uint8_t NS_AUTOCAPITALIZE_WORDS = 3;
+static const uint8_t NS_AUTOCAPITALIZE_CHARACTERS = 4;
+
+static const nsAttrValue::EnumTable kAutocapitalizeTable[] = {
+    {"none", NS_AUTOCAPITALIZE_NONE},
+    {"sentences", NS_AUTOCAPITALIZE_SENTENCES},
+    {"words", NS_AUTOCAPITALIZE_WORDS},
+    {"characters", NS_AUTOCAPITALIZE_CHARACTERS},
+    {"off", NS_AUTOCAPITALIZE_NONE},
+    {"on", NS_AUTOCAPITALIZE_SENTENCES},
+    {"", 0},
+    {nullptr, 0}};
+
+static const nsAttrValue::EnumTable* kDefaultAutocapitalize =
+    &kAutocapitalizeTable[1];
 
 nsresult nsGenericHTMLElement::CopyInnerTo(Element* aDst) {
   MOZ_ASSERT(!aDst->GetUncomposedDoc(),
@@ -231,7 +255,7 @@ static OffsetResult GetUnretargetedOffsetsFor(const Element& aElement) {
     parent = frame;
   } else {
     const bool isPositioned = styleFrame->IsAbsPosContainingBlock();
-    const bool isAbsolutelyPositioned = styleFrame->IsAbsolutelyPositioned();
+    const bool isAbsolutelyPositioned = frame->IsAbsolutelyPositioned();
     origin += frame->GetPositionIgnoringScrolling();
 
     for (; parent; parent = parent->GetParent()) {
@@ -366,14 +390,14 @@ bool nsGenericHTMLElement::Spellcheck() {
   }
 
   // Is this a multiline plaintext input?
-  int32_t controlType = formControl->ControlType();
-  if (controlType == NS_FORM_TEXTAREA) {
+  auto controlType = formControl->ControlType();
+  if (controlType == FormControlType::Textarea) {
     return true;  // Spellchecked by default
   }
 
   // Is this anything other than an input text?
   // Other inputs are not spellchecked.
-  if (controlType != NS_FORM_INPUT_TEXT) {
+  if (controlType != FormControlType::InputText) {
     return false;  // Not spellchecked by default
   }
 
@@ -421,8 +445,11 @@ nsresult nsGenericHTMLElement::BindToTree(BindContext& aContext,
   nsresult rv = nsGenericHTMLElementBase::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  if (IsInComposedDoc()) {
+    RegUnRegAccessKey(true);
+  }
+
   if (IsInUncomposedDoc()) {
-    RegAccessKey();
     if (HasName() && CanHaveName(NodeInfo()->NameAtom())) {
       aContext.OwnerDoc().AddToNameTable(
           this, GetParsedAttr(nsGkAtoms::name)->GetAtomValue());
@@ -443,8 +470,7 @@ nsresult nsGenericHTMLElement::BindToTree(BindContext& aContext,
         [self = RefPtr<nsGenericHTMLElement>(this)]() {
           nsAutoString nonce;
           self->GetNonce(nonce);
-          self->SetAttr(kNameSpaceID_None, nsGkAtoms::nonce, EmptyString(),
-                        true);
+          self->SetAttr(kNameSpaceID_None, nsGkAtoms::nonce, u""_ns, true);
           self->SetNonce(nonce);
         }));
   }
@@ -461,8 +487,8 @@ nsresult nsGenericHTMLElement::BindToTree(BindContext& aContext,
 }
 
 void nsGenericHTMLElement::UnbindFromTree(bool aNullParent) {
-  if (IsInUncomposedDoc()) {
-    UnregAccessKey();
+  if (IsInComposedDoc()) {
+    RegUnRegAccessKey(false);
   }
 
   RemoveFromNameTable();
@@ -593,7 +619,7 @@ nsresult nsGenericHTMLElement::BeforeSetAttr(int32_t aNamespaceID,
   if (aNamespaceID == kNameSpaceID_None) {
     if (aName == nsGkAtoms::accesskey) {
       // Have to unregister before clearing flag. See UnregAccessKey
-      UnregAccessKey();
+      RegUnRegAccessKey(false);
       if (!aValue) {
         UnsetFlags(NODE_HAS_ACCESSKEY);
       }
@@ -682,21 +708,28 @@ nsresult nsGenericHTMLElement::AfterSetAttr(
     } else if (aName == nsGkAtoms::contenteditable) {
       int32_t editableCountDelta = 0;
       if (aOldValue && (aOldValue->Equals(u"true"_ns, eIgnoreCase) ||
-                        aOldValue->Equals(EmptyString(), eIgnoreCase))) {
+                        aOldValue->Equals(u""_ns, eIgnoreCase))) {
         editableCountDelta = -1;
       }
       if (aValue && (aValue->Equals(u"true"_ns, eIgnoreCase) ||
-                     aValue->Equals(EmptyString(), eIgnoreCase))) {
+                     aValue->Equals(u""_ns, eIgnoreCase))) {
         ++editableCountDelta;
       }
       ChangeEditableState(editableCountDelta);
     } else if (aName == nsGkAtoms::accesskey) {
-      if (aValue && !aValue->Equals(EmptyString(), eIgnoreCase)) {
+      if (aValue && !aValue->Equals(u""_ns, eIgnoreCase)) {
         SetFlags(NODE_HAS_ACCESSKEY);
-        RegAccessKey();
+        RegUnRegAccessKey(true);
+      }
+    } else if (aName == nsGkAtoms::inert &&
+               StaticPrefs::html5_inert_enabled()) {
+      if (aValue) {
+        AddStates(NS_EVENT_STATE_MOZINERT);
+      } else {
+        RemoveStates(NS_EVENT_STATE_MOZINERT);
       }
     } else if (aName == nsGkAtoms::name) {
-      if (aValue && !aValue->Equals(EmptyString(), eIgnoreCase)) {
+      if (aValue && !aValue->Equals(u""_ns, eIgnoreCase)) {
         // This may not be quite right because we can have subclass code run
         // before here. But in practice subclasses don't care about this flag,
         // and in particular selector matching does not care.  Otherwise we'd
@@ -705,6 +738,27 @@ nsresult nsGenericHTMLElement::AfterSetAttr(
         SetHasName();
         if (CanHaveName(NodeInfo()->NameAtom())) {
           AddToNameTable(aValue->GetAtomValue());
+        }
+      }
+    } else if ((aName == nsGkAtoms::inputmode &&
+                StaticPrefs::dom_forms_inputmode()) ||
+               (aName == nsGkAtoms::enterkeyhint &&
+                StaticPrefs::dom_forms_enterkeyhint())) {
+      nsPIDOMWindowOuter* window = OwnerDoc()->GetWindow();
+      if (window && window->GetFocusedElement() == this) {
+        IMEContentObserver* observer =
+            IMEStateManager::GetActiveContentObserver();
+        nsPresContext* presContext = GetPresContext(eForComposedDoc);
+        if (observer && observer->IsManaging(presContext, this)) {
+          if (RefPtr<EditorBase> editor =
+                  nsContentUtils::GetActiveEditor(window)) {
+            IMEState newState;
+            editor->GetPreferredIMEState(&newState);
+            IMEStateManager::UpdateIMEState(
+                newState, this, *editor,
+                {IMEStateManager::UpdateIMEStateOption::ForceUpdate,
+                 IMEStateManager::UpdateIMEStateOption::DontCommitComposition});
+          }
         }
       }
     }
@@ -886,6 +940,10 @@ bool nsGenericHTMLElement::ParseAttribute(int32_t aNamespaceID,
     if (aAttribute == nsGkAtoms::enterkeyhint) {
       return aResult.ParseEnumValue(aValue, kEnterKeyHintTable, false);
     }
+
+    if (aAttribute == nsGkAtoms::autocapitalize) {
+      return aResult.ParseEnumValue(aValue, kAutocapitalizeTable, false);
+    }
   }
 
   return nsGenericHTMLElementBase::ParseAttribute(
@@ -945,17 +1003,6 @@ nsIFormControlFrame* nsGenericHTMLElement::GetFormControlFrame(
     if (nsIFormControlFrame* f = do_QueryFrame(kid)) {
       return f;
     }
-  }
-
-  return nullptr;
-}
-
-nsPresContext* nsGenericHTMLElement::GetPresContext(PresContextFor aFor) {
-  // Get the document
-  Document* doc =
-      (aFor == eForComposedDoc) ? GetComposedDoc() : GetUncomposedDoc();
-  if (doc) {
-    return doc->GetPresContext();
   }
 
   return nullptr;
@@ -1324,6 +1371,28 @@ void nsGenericHTMLElement::MapHeightAttributeInto(
   }
 }
 
+static void DoMapAspectRatio(const nsAttrValue& aWidth,
+                             const nsAttrValue& aHeight,
+                             MappedDeclarations& aDecls) {
+  Maybe<double> w;
+  if (aWidth.Type() == nsAttrValue::eInteger) {
+    w.emplace(aWidth.GetIntegerValue());
+  } else if (aWidth.Type() == nsAttrValue::eDoubleValue) {
+    w.emplace(aWidth.GetDoubleValue());
+  }
+
+  Maybe<double> h;
+  if (aHeight.Type() == nsAttrValue::eInteger) {
+    h.emplace(aHeight.GetIntegerValue());
+  } else if (aHeight.Type() == nsAttrValue::eDoubleValue) {
+    h.emplace(aHeight.GetDoubleValue());
+  }
+
+  if (w && h) {
+    aDecls.SetAspectRatio(*w, *h);
+  }
+}
+
 void nsGenericHTMLElement::MapImageSizeAttributesInto(
     const nsMappedAttributes* aAttributes, MappedDeclarations& aDecls,
     MapAspectRatio aMapAspectRatio) {
@@ -1335,25 +1404,17 @@ void nsGenericHTMLElement::MapImageSizeAttributesInto(
   if (height) {
     MapDimensionAttributeInto(aDecls, eCSSProperty_height, *height);
   }
-  if (StaticPrefs::layout_css_width_and_height_map_to_aspect_ratio_enabled() &&
-      aMapAspectRatio == MapAspectRatio::Yes && width && height) {
-    Maybe<double> w;
-    if (width->Type() == nsAttrValue::eInteger) {
-      w.emplace(width->GetIntegerValue());
-    } else if (width->Type() == nsAttrValue::eDoubleValue) {
-      w.emplace(width->GetDoubleValue());
-    }
+  if (aMapAspectRatio == MapAspectRatio::Yes && width && height) {
+    DoMapAspectRatio(*width, *height, aDecls);
+  }
+}
 
-    Maybe<double> h;
-    if (height->Type() == nsAttrValue::eInteger) {
-      h.emplace(height->GetIntegerValue());
-    } else if (height->Type() == nsAttrValue::eDoubleValue) {
-      h.emplace(height->GetDoubleValue());
-    }
-
-    if (w && h && *w != 0 && *h != 0) {
-      aDecls.SetAspectRatio(*w, *h);
-    }
+void nsGenericHTMLElement::MapAspectRatioInto(
+    const nsMappedAttributes* aAttributes, MappedDeclarations& aDecls) {
+  auto* width = aAttributes->GetAttr(nsGkAtoms::width);
+  auto* height = aAttributes->GetAttr(nsGkAtoms::height);
+  if (width && height) {
+    DoMapAspectRatio(*width, *height, aDecls);
   }
 }
 
@@ -1581,69 +1642,40 @@ bool nsGenericHTMLElement::LegacyTouchAPIEnabled(JSContext* aCx,
   return TouchEvent::LegacyAPIEnabled(aCx, aGlobal);
 }
 
+bool nsGenericHTMLElement::IsFormControlDefaultFocusable(
+    bool aWithMouse) const {
+  if (!aWithMouse) {
+    return true;
+  }
+  switch (StaticPrefs::accessibility_mouse_focuses_formcontrol()) {
+    case 0:
+      return false;
+    case 1:
+      return true;
+    default:
+      return !IsInChromeDocument();
+  }
+}
+
 //----------------------------------------------------------------------
 
 nsGenericHTMLFormElement::nsGenericHTMLFormElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo, uint8_t aType)
-    : nsGenericHTMLElement(std::move(aNodeInfo)),
-      nsIFormControl(aType),
-      mForm(nullptr),
-      mFieldSet(nullptr) {
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : nsGenericHTMLElement(std::move(aNodeInfo)) {
   // We should add the NS_EVENT_STATE_ENABLED bit here as needed, but
   // that depends on our type, which is not initialized yet.  So we
   // have to do this in subclasses.
 }
 
-nsGenericHTMLFormElement::~nsGenericHTMLFormElement() {
-  if (mFieldSet) {
-    mFieldSet->RemoveElement(this);
-  }
-
-  // Check that this element doesn't know anything about its form at this point.
-  NS_ASSERTION(!mForm, "mForm should be null at this point!");
-}
-
-NS_IMPL_ISUPPORTS_INHERITED(nsGenericHTMLFormElement, nsGenericHTMLElement,
-                            nsIFormControl)
-
-nsINode* nsGenericHTMLFormElement::GetScopeChainParent() const {
-  return mForm ? mForm : nsGenericHTMLElement::GetScopeChainParent();
-}
-
-bool nsGenericHTMLFormElement::IsNodeOfType(uint32_t aFlags) const {
-  return !(aFlags & ~eHTML_FORM_CONTROL);
-}
-
-void nsGenericHTMLFormElement::SaveSubtreeState() {
-  SaveState();
-
-  nsGenericHTMLElement::SaveSubtreeState();
-}
-
-void nsGenericHTMLFormElement::SetForm(HTMLFormElement* aForm) {
-  MOZ_ASSERT(aForm, "Don't pass null here");
-  NS_ASSERTION(!mForm,
-               "We don't support switching from one non-null form to another.");
-
-  SetForm(aForm, false);
-}
-
-void nsGenericHTMLFormElement::SetForm(HTMLFormElement* aForm,
-                                       bool aBindToTree) {
-  if (aForm) {
-    BeforeSetForm(aBindToTree);
-  }
-
-  // keep a *weak* ref to the form here
-  mForm = aForm;
-}
-
 void nsGenericHTMLFormElement::ClearForm(bool aRemoveFromForm,
                                          bool aUnbindOrDelete) {
-  NS_ASSERTION((mForm != nullptr) == HasFlag(ADDED_TO_FORM),
+  MOZ_ASSERT(IsFormAssociatedElement());
+
+  HTMLFormElement* form = GetFormInternal();
+  NS_ASSERTION((form != nullptr) == HasFlag(ADDED_TO_FORM),
                "Form control should have had flag set correctly");
 
-  if (!mForm) {
+  if (!form) {
     return;
   }
 
@@ -1652,40 +1684,21 @@ void nsGenericHTMLFormElement::ClearForm(bool aRemoveFromForm,
     GetAttr(kNameSpaceID_None, nsGkAtoms::name, nameVal);
     GetAttr(kNameSpaceID_None, nsGkAtoms::id, idVal);
 
-    mForm->RemoveElement(this, true);
+    form->RemoveElement(this, true);
 
     if (!nameVal.IsEmpty()) {
-      mForm->RemoveElementFromTable(this, nameVal);
+      form->RemoveElementFromTable(this, nameVal);
     }
 
     if (!idVal.IsEmpty()) {
-      mForm->RemoveElementFromTable(this, idVal);
+      form->RemoveElementFromTable(this, idVal);
     }
   }
 
   UnsetFlags(ADDED_TO_FORM);
-  mForm = nullptr;
+  SetFormInternal(nullptr, false);
 
   AfterClearForm(aUnbindOrDelete);
-}
-
-HTMLFormElement* nsGenericHTMLFormElement::GetFormElement() { return mForm; }
-
-HTMLFieldSetElement* nsGenericHTMLFormElement::GetFieldSet() {
-  return mFieldSet;
-}
-
-nsIContent::IMEState nsGenericHTMLFormElement::GetDesiredIMEState() {
-  TextEditor* textEditor = GetTextEditorInternal();
-  if (!textEditor) {
-    return nsGenericHTMLElement::GetDesiredIMEState();
-  }
-  IMEState state;
-  nsresult rv = textEditor->GetPreferredIMEState(&state);
-  if (NS_FAILED(rv)) {
-    return nsGenericHTMLElement::GetDesiredIMEState();
-  }
-  return state;
 }
 
 nsresult nsGenericHTMLFormElement::BindToTree(BindContext& aContext,
@@ -1693,20 +1706,16 @@ nsresult nsGenericHTMLFormElement::BindToTree(BindContext& aContext,
   nsresult rv = nsGenericHTMLElement::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (IsAutofocusable() && HasAttr(nsGkAtoms::autofocus) &&
-      aContext.AllowsAutoFocus()) {
-    aContext.OwnerDoc().SetAutoFocusElement(this);
-  }
-
-  // If @form is set, the element *has* to be in a composed document, otherwise
-  // it wouldn't be possible to find an element with the corresponding id.
-  // If @form isn't set, the element *has* to have a parent, otherwise it
-  // wouldn't be possible to find a form ancestor.
-  // We should not call UpdateFormOwner if none of these conditions are
-  // fulfilled.
-  if (HasAttr(kNameSpaceID_None, nsGkAtoms::form) ? IsInComposedDoc()
-                                                  : aParent.IsContent()) {
-    UpdateFormOwner(true, nullptr);
+  if (IsFormAssociatedElement()) {
+    // If @form is set, the element *has* to be in a composed document,
+    // otherwise it wouldn't be possible to find an element with the
+    // corresponding id. If @form isn't set, the element *has* to have a parent,
+    // otherwise it wouldn't be possible to find a form ancestor. We should not
+    // call UpdateFormOwner if none of these conditions are fulfilled.
+    if (HasAttr(kNameSpaceID_None, nsGkAtoms::form) ? IsInComposedDoc()
+                                                    : aParent.IsContent()) {
+      UpdateFormOwner(true, nullptr);
+    }
   }
 
   // Set parent fieldset which should be used for the disabled state.
@@ -1716,35 +1725,34 @@ nsresult nsGenericHTMLFormElement::BindToTree(BindContext& aContext,
 }
 
 void nsGenericHTMLFormElement::UnbindFromTree(bool aNullParent) {
-  // Save state before doing anything
-  SaveState();
-
-  if (mForm) {
-    // Might need to unset mForm
-    if (aNullParent) {
-      // No more parent means no more form
-      ClearForm(true, true);
-    } else {
-      // Recheck whether we should still have an mForm.
-      if (HasAttr(kNameSpaceID_None, nsGkAtoms::form) ||
-          !FindAncestorForm(mForm)) {
+  if (IsFormAssociatedElement()) {
+    if (HTMLFormElement* form = GetFormInternal()) {
+      // Might need to unset form
+      if (aNullParent) {
+        // No more parent means no more form
         ClearForm(true, true);
       } else {
-        UnsetFlags(MAYBE_ORPHAN_FORM_ELEMENT);
+        // Recheck whether we should still have an form.
+        if (HasAttr(kNameSpaceID_None, nsGkAtoms::form) ||
+            !FindAncestorForm(form)) {
+          ClearForm(true, true);
+        } else {
+          UnsetFlags(MAYBE_ORPHAN_FORM_ELEMENT);
+        }
+      }
+
+      if (!GetFormInternal()) {
+        // Our novalidate state might have changed
+        UpdateState(false);
       }
     }
 
-    if (!mForm) {
-      // Our novalidate state might have changed
-      UpdateState(false);
+    // We have to remove the form id observer if there was one.
+    // We will re-add one later if needed (during bind to tree).
+    if (nsContentUtils::HasNonEmptyAttr(this, kNameSpaceID_None,
+                                        nsGkAtoms::form)) {
+      RemoveFormIdObserver();
     }
-  }
-
-  // We have to remove the form id observer if there was one.
-  // We will re-add one later if needed (during bind to tree).
-  if (nsContentUtils::HasNonEmptyAttr(this, kNameSpaceID_None,
-                                      nsGkAtoms::form)) {
-    RemoveFormIdObserver();
   }
 
   nsGenericHTMLElement::UnbindFromTree(aNullParent);
@@ -1761,33 +1769,34 @@ nsresult nsGenericHTMLFormElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, n
 nsresult nsGenericHTMLFormElement::BeforeSetAttr(
     int32_t aNameSpaceID, nsAtom* aName, const nsAttrValueOrString* aValue,
     bool aNotify) {
-  if (aNameSpaceID == kNameSpaceID_None) {
+  if (aNameSpaceID == kNameSpaceID_None && IsFormAssociatedElement()) {
     nsAutoString tmp;
+    HTMLFormElement* form = GetFormInternal();
 
     // remove the control from the hashtable as needed
 
-    if (mForm && (aName == nsGkAtoms::name || aName == nsGkAtoms::id)) {
+    if (form && (aName == nsGkAtoms::name || aName == nsGkAtoms::id)) {
       GetAttr(kNameSpaceID_None, aName, tmp);
 
       if (!tmp.IsEmpty()) {
-        mForm->RemoveElementFromTable(this, tmp);
+        form->RemoveElementFromTable(this, tmp);
       }
     }
 
-    if (mForm && aName == nsGkAtoms::type) {
+    if (form && aName == nsGkAtoms::type) {
       GetAttr(kNameSpaceID_None, nsGkAtoms::name, tmp);
 
       if (!tmp.IsEmpty()) {
-        mForm->RemoveElementFromTable(this, tmp);
+        form->RemoveElementFromTable(this, tmp);
       }
 
       GetAttr(kNameSpaceID_None, nsGkAtoms::id, tmp);
 
       if (!tmp.IsEmpty()) {
-        mForm->RemoveElementFromTable(this, tmp);
+        form->RemoveElementFromTable(this, tmp);
       }
 
-      mForm->RemoveElement(this, false);
+      form->RemoveElement(this, false);
     }
 
     if (aName == nsGkAtoms::form) {
@@ -1810,33 +1819,34 @@ nsresult nsGenericHTMLFormElement::AfterSetAttr(
     int32_t aNameSpaceID, nsAtom* aName, const nsAttrValue* aValue,
     const nsAttrValue* aOldValue, nsIPrincipal* aMaybeScriptedPrincipal,
     bool aNotify) {
-  if (aNameSpaceID == kNameSpaceID_None) {
-    // add the control to the hashtable as needed
+  if (aNameSpaceID == kNameSpaceID_None && IsFormAssociatedElement()) {
+    HTMLFormElement* form = GetFormInternal();
 
-    if (mForm && (aName == nsGkAtoms::name || aName == nsGkAtoms::id) &&
+    // add the control to the hashtable as needed
+    if (form && (aName == nsGkAtoms::name || aName == nsGkAtoms::id) &&
         aValue && !aValue->IsEmptyString()) {
       MOZ_ASSERT(aValue->Type() == nsAttrValue::eAtom,
                  "Expected atom value for name/id");
-      mForm->AddElementToTable(this,
-                               nsDependentAtomString(aValue->GetAtomValue()));
+      form->AddElementToTable(this,
+                              nsDependentAtomString(aValue->GetAtomValue()));
     }
 
-    if (mForm && aName == nsGkAtoms::type) {
+    if (form && aName == nsGkAtoms::type) {
       nsAutoString tmp;
 
       GetAttr(kNameSpaceID_None, nsGkAtoms::name, tmp);
 
       if (!tmp.IsEmpty()) {
-        mForm->AddElementToTable(this, tmp);
+        form->AddElementToTable(this, tmp);
       }
 
       GetAttr(kNameSpaceID_None, nsGkAtoms::id, tmp);
 
       if (!tmp.IsEmpty()) {
-        mForm->AddElementToTable(this, tmp);
+        form->AddElementToTable(this, tmp);
       }
 
-      mForm->AddElement(this, false, aNotify);
+      form->AddElement(this, false, aNotify);
     }
 
     if (aName == nsGkAtoms::form) {
@@ -1860,150 +1870,15 @@ nsresult nsGenericHTMLFormElement::AfterSetAttr(
       aNameSpaceID, aName, aValue, aOldValue, aMaybeScriptedPrincipal, aNotify);
 }
 
-void nsGenericHTMLFormElement::GetEventTargetParent(
-    EventChainPreVisitor& aVisitor) {
-  if (aVisitor.mEvent->IsTrusted() && (aVisitor.mEvent->mMessage == eFocus ||
-                                       aVisitor.mEvent->mMessage == eBlur)) {
-    // We have to handle focus/blur event to change focus states in
-    // PreHandleEvent to prevent it breaks event target chain creation.
-    aVisitor.mWantsPreHandleEvent = true;
-  }
-  nsGenericHTMLElement::GetEventTargetParent(aVisitor);
-}
-
-nsresult nsGenericHTMLFormElement::PreHandleEvent(EventChainVisitor& aVisitor) {
-  if (aVisitor.mEvent->IsTrusted()) {
-    switch (aVisitor.mEvent->mMessage) {
-      case eFocus: {
-        // Check to see if focus has bubbled up from a form control's
-        // child textfield or button.  If that's the case, don't focus
-        // this parent file control -- leave focus on the child.
-        nsIFormControlFrame* formControlFrame = GetFormControlFrame(true);
-        if (formControlFrame &&
-            aVisitor.mEvent->mOriginalTarget == static_cast<nsINode*>(this))
-          formControlFrame->SetFocus(true, true);
-        break;
-      }
-      case eBlur: {
-        nsIFormControlFrame* formControlFrame = GetFormControlFrame(true);
-        if (formControlFrame) formControlFrame->SetFocus(false, false);
-        break;
-      }
-      default:
-        break;
-    }
-  }
-  return nsGenericHTMLElement::PreHandleEvent(aVisitor);
-}
-
 void nsGenericHTMLFormElement::ForgetFieldSet(nsIContent* aFieldset) {
-  if (mFieldSet == aFieldset) {
-    mFieldSet = nullptr;
+  if (IsFormAssociatedElement() && GetFieldSetInternal() == aFieldset) {
+    SetFieldSetInternal(nullptr);
   }
-}
-
-bool nsGenericHTMLFormElement::CanBeDisabled() const {
-  int32_t type = ControlType();
-  // It's easier to test the types that _cannot_ be disabled
-  return type != NS_FORM_OBJECT && type != NS_FORM_OUTPUT;
-}
-
-bool nsGenericHTMLFormElement::DoesReadOnlyApply() const {
-  int32_t type = ControlType();
-  if (!(type & NS_FORM_INPUT_ELEMENT) && type != NS_FORM_TEXTAREA) {
-    return false;
-  }
-
-  switch (type) {
-    case NS_FORM_INPUT_HIDDEN:
-    case NS_FORM_INPUT_BUTTON:
-    case NS_FORM_INPUT_IMAGE:
-    case NS_FORM_INPUT_RESET:
-    case NS_FORM_INPUT_SUBMIT:
-    case NS_FORM_INPUT_RADIO:
-    case NS_FORM_INPUT_FILE:
-    case NS_FORM_INPUT_CHECKBOX:
-    case NS_FORM_INPUT_RANGE:
-    case NS_FORM_INPUT_COLOR:
-      return false;
-#ifdef DEBUG
-    case NS_FORM_TEXTAREA:
-    case NS_FORM_INPUT_TEXT:
-    case NS_FORM_INPUT_PASSWORD:
-    case NS_FORM_INPUT_SEARCH:
-    case NS_FORM_INPUT_TEL:
-    case NS_FORM_INPUT_EMAIL:
-    case NS_FORM_INPUT_URL:
-    case NS_FORM_INPUT_NUMBER:
-    case NS_FORM_INPUT_DATE:
-    case NS_FORM_INPUT_TIME:
-    case NS_FORM_INPUT_MONTH:
-    case NS_FORM_INPUT_WEEK:
-    case NS_FORM_INPUT_DATETIME_LOCAL:
-      return true;
-    default:
-      MOZ_ASSERT_UNREACHABLE("Unexpected input type in DoesReadOnlyApply()");
-      return true;
-#else   // DEBUG
-    default:
-      return true;
-#endif  // DEBUG
-  }
-}
-
-bool nsGenericHTMLFormElement::IsHTMLFocusable(bool aWithMouse,
-                                               bool* aIsFocusable,
-                                               int32_t* aTabIndex) {
-  if (nsGenericHTMLElement::IsHTMLFocusable(aWithMouse, aIsFocusable,
-                                            aTabIndex)) {
-    return true;
-  }
-
-#ifdef XP_MACOSX
-  *aIsFocusable = (!aWithMouse || nsFocusManager::sMouseFocusesFormControl) &&
-                  *aIsFocusable;
-#endif
-  return false;
-}
-
-EventStates nsGenericHTMLFormElement::IntrinsicState() const {
-  // If you add attribute-dependent states here, you need to add them them to
-  // AfterSetAttr too.  And add them to AfterSetAttr for all subclasses that
-  // implement IntrinsicState() and are affected by that attribute.
-  EventStates state = nsGenericHTMLElement::IntrinsicState();
-
-  if (mForm && mForm->IsDefaultSubmitElement(this)) {
-    NS_ASSERTION(IsSubmitControl(),
-                 "Default submit element that isn't a submit control.");
-    // We are the default submit element (:default)
-    state |= NS_EVENT_STATE_DEFAULT;
-  }
-
-  // Make the text controls read-write
-  if (!state.HasState(NS_EVENT_STATE_READWRITE) && DoesReadOnlyApply()) {
-    if (!GetBoolAttr(nsGkAtoms::readonly) && !IsDisabled()) {
-      state |= NS_EVENT_STATE_READWRITE;
-      state &= ~NS_EVENT_STATE_READONLY;
-    }
-  }
-
-  return state;
-}
-
-nsGenericHTMLFormElement::FocusTristate nsGenericHTMLFormElement::FocusState() {
-  // We can't be focused if we aren't in a (composed) document
-  Document* doc = GetComposedDoc();
-  if (!doc) return eUnfocusable;
-
-  // first see if we are disabled or not. If disabled then do nothing.
-  if (IsDisabled()) {
-    return eUnfocusable;
-  }
-
-  return IsInActiveTab(doc) ? eActiveWindow : eInactiveWindow;
 }
 
 Element* nsGenericHTMLFormElement::AddFormIdObserver() {
+  MOZ_ASSERT(IsFormAssociatedElement());
+
   nsAutoString formId;
   DocumentOrShadowRoot* docOrShadow = GetUncomposedDocOrConnectedShadowRoot();
   GetAttr(kNameSpaceID_None, nsGkAtoms::form, formId);
@@ -2015,6 +1890,8 @@ Element* nsGenericHTMLFormElement::AddFormIdObserver() {
 }
 
 void nsGenericHTMLFormElement::RemoveFormIdObserver() {
+  MOZ_ASSERT(IsFormAssociatedElement());
+
   DocumentOrShadowRoot* docOrShadow = GetUncomposedDocOrConnectedShadowRoot();
   if (!docOrShadow) {
     return;
@@ -2057,6 +1934,7 @@ bool nsGenericHTMLFormElement::IsElementDisabledForEvents(WidgetEvent* aEvent,
     case eAnimationEnd:
     case eAnimationIteration:
     case eAnimationCancel:
+    case eFormChange:
     case eMouseMove:
     case eMouseOver:
     case eMouseOut:
@@ -2079,9 +1957,13 @@ bool nsGenericHTMLFormElement::IsElementDisabledForEvents(WidgetEvent* aEvent,
       break;
   }
 
+  if (aEvent->mSpecifiedEventType == nsGkAtoms::oninput) {
+    return false;
+  }
+
   // FIXME(emilio): This poking at the style of the frame is slightly bogus
   // unless we flush before every event, which we don't really want to do.
-  if (aFrame && aFrame->StyleUI()->mUserInput == StyleUserInput::None) {
+  if (aFrame && aFrame->StyleUI()->UserInput() == StyleUserInput::None) {
     return true;
   }
 
@@ -2090,18 +1972,21 @@ bool nsGenericHTMLFormElement::IsElementDisabledForEvents(WidgetEvent* aEvent,
 
 void nsGenericHTMLFormElement::UpdateFormOwner(bool aBindToTree,
                                                Element* aFormIdElement) {
+  MOZ_ASSERT(IsFormAssociatedElement());
   MOZ_ASSERT(!aBindToTree || !aFormIdElement,
              "aFormIdElement shouldn't be set if aBindToTree is true!");
 
   bool needStateUpdate = false;
   if (!aBindToTree) {
-    needStateUpdate = mForm && mForm->IsDefaultSubmitElement(this);
+    HTMLFormElement* form = GetFormInternal();
+    needStateUpdate = form && form->IsDefaultSubmitElement(this);
     ClearForm(true, false);
   }
 
-  HTMLFormElement* oldForm = mForm;
-
-  if (!mForm) {
+  // We have to get form again since the above ClearForm() call might update the
+  // form value.
+  HTMLFormElement* oldForm = GetFormInternal();
+  if (!oldForm) {
     // If @form is set, we have to use that to find the form.
     nsAutoString formId;
     if (GetAttr(kNameSpaceID_None, nsGkAtoms::form, formId)) {
@@ -2122,21 +2007,22 @@ void nsGenericHTMLFormElement::UpdateFormOwner(bool aBindToTree,
 
         if (element && element->IsHTMLElement(nsGkAtoms::form) &&
             nsContentUtils::IsInSameAnonymousTree(this, element)) {
-          SetForm(static_cast<HTMLFormElement*>(element), aBindToTree);
+          SetFormInternal(static_cast<HTMLFormElement*>(element), aBindToTree);
         }
       }
     } else {
       // We now have a parent, so we may have picked up an ancestor form. Search
-      // for it.  Note that if mForm is already set we don't want to do this,
+      // for it.  Note that if form is already set we don't want to do this,
       // because that means someone (probably the content sink) has already set
       // it to the right value.  Also note that even if being bound here didn't
       // change our parent, we still need to search, since our parent chain
       // probably changed _somewhere_.
-      SetForm(FindAncestorForm(), aBindToTree);
+      SetFormInternal(FindAncestorForm(), aBindToTree);
     }
   }
 
-  if (mForm && !HasFlag(ADDED_TO_FORM)) {
+  HTMLFormElement* form = GetFormInternal();
+  if (form && !HasFlag(ADDED_TO_FORM)) {
     // Now we need to add ourselves to the form
     nsAutoString nameVal, idVal;
     GetAttr(kNameSpaceID_None, nsGkAtoms::name, nameVal);
@@ -2144,46 +2030,47 @@ void nsGenericHTMLFormElement::UpdateFormOwner(bool aBindToTree,
 
     SetFlags(ADDED_TO_FORM);
 
-    // Notify only if we just found this mForm.
-    mForm->AddElement(this, true, oldForm == nullptr);
+    // Notify only if we just found this form.
+    form->AddElement(this, true, oldForm == nullptr);
 
     if (!nameVal.IsEmpty()) {
-      mForm->AddElementToTable(this, nameVal);
+      form->AddElementToTable(this, nameVal);
     }
 
     if (!idVal.IsEmpty()) {
-      mForm->AddElementToTable(this, idVal);
+      form->AddElementToTable(this, idVal);
     }
   }
 
-  if (mForm != oldForm || needStateUpdate) {
+  if (form != oldForm || needStateUpdate) {
     UpdateState(true);
   }
 }
 
 void nsGenericHTMLFormElement::UpdateFieldSet(bool aNotify) {
-  if (IsInNativeAnonymousSubtree()) {
-    MOZ_ASSERT(!mFieldSet);
+  if (IsInNativeAnonymousSubtree() || !IsFormAssociatedElement()) {
+    MOZ_ASSERT_IF(IsFormAssociatedElement(), !GetFieldSetInternal());
     return;
   }
 
   nsIContent* parent = nullptr;
   nsIContent* prev = nullptr;
+  HTMLFieldSetElement* fieldset = GetFieldSetInternal();
 
   for (parent = GetParent(); parent;
        prev = parent, parent = parent->GetParent()) {
-    HTMLFieldSetElement* fieldset = HTMLFieldSetElement::FromNode(parent);
-    if (fieldset && (!prev || fieldset->GetFirstLegend() != prev)) {
-      if (mFieldSet == fieldset) {
+    HTMLFieldSetElement* parentFieldset = HTMLFieldSetElement::FromNode(parent);
+    if (parentFieldset && (!prev || parentFieldset->GetFirstLegend() != prev)) {
+      if (fieldset == parentFieldset) {
         // We already have the right fieldset;
         return;
       }
 
-      if (mFieldSet) {
-        mFieldSet->RemoveElement(this);
+      if (fieldset) {
+        fieldset->RemoveElement(this);
       }
-      mFieldSet = fieldset;
-      fieldset->AddElement(this);
+      SetFieldSetInternal(parentFieldset);
+      parentFieldset->AddElement(this);
 
       // The disabled state may have changed
       FieldSetDisabledChanged(aNotify);
@@ -2192,9 +2079,9 @@ void nsGenericHTMLFormElement::UpdateFieldSet(bool aNotify) {
   }
 
   // No fieldset found.
-  if (mFieldSet) {
-    mFieldSet->RemoveElement(this);
-    mFieldSet = nullptr;
+  if (fieldset) {
+    fieldset->RemoveElement(this);
+    SetFieldSetInternal(nullptr);
     // The disabled state may have changed
     FieldSetDisabledChanged(aNotify);
   }
@@ -2205,8 +2092,9 @@ void nsGenericHTMLFormElement::UpdateDisabledState(bool aNotify) {
     return;
   }
 
+  HTMLFieldSetElement* fieldset = GetFieldSetInternal();
   const bool isDisabled =
-      HasAttr(nsGkAtoms::disabled) || (mFieldSet && mFieldSet->IsDisabled());
+      HasAttr(nsGkAtoms::disabled) || (fieldset && fieldset->IsDisabled());
 
   const EventStates disabledStates =
       isDisabled ? NS_EVENT_STATE_DISABLED : NS_EVENT_STATE_ENABLED;
@@ -2223,72 +2111,8 @@ void nsGenericHTMLFormElement::UpdateDisabledState(bool aNotify) {
   }
 }
 
-void nsGenericHTMLFormElement::UpdateRequiredState(bool aIsRequired,
-                                                   bool aNotify) {
-#ifdef DEBUG
-  int32_t type = ControlType();
-#endif
-  MOZ_ASSERT((type & NS_FORM_INPUT_ELEMENT) || type == NS_FORM_SELECT ||
-                 type == NS_FORM_TEXTAREA,
-             "This should be called only on types that @required applies");
-
-#ifdef DEBUG
-  HTMLInputElement* input = HTMLInputElement::FromNode(this);
-  if (input) {
-    MOZ_ASSERT(
-        input->DoesRequiredApply(),
-        "This should be called only on input types that @required applies");
-  }
-#endif
-
-  EventStates requiredStates;
-  if (aIsRequired) {
-    requiredStates |= NS_EVENT_STATE_REQUIRED;
-  } else {
-    requiredStates |= NS_EVENT_STATE_OPTIONAL;
-  }
-
-  EventStates oldRequiredStates = State() & REQUIRED_STATES;
-  EventStates changedStates = requiredStates ^ oldRequiredStates;
-
-  if (!changedStates.IsEmpty()) {
-    ToggleStates(changedStates, aNotify);
-  }
-}
-
 void nsGenericHTMLFormElement::FieldSetDisabledChanged(bool aNotify) {
   UpdateDisabledState(aNotify);
-}
-
-bool nsGenericHTMLFormElement::IsLabelable() const {
-  uint32_t type = ControlType();
-  return (type & NS_FORM_INPUT_ELEMENT && type != NS_FORM_INPUT_HIDDEN) ||
-         type & NS_FORM_BUTTON_ELEMENT || type == NS_FORM_OUTPUT ||
-         type == NS_FORM_SELECT || type == NS_FORM_TEXTAREA;
-}
-
-void nsGenericHTMLFormElement::GetFormAction(nsString& aValue) {
-  uint32_t type = ControlType();
-  if (!(type & NS_FORM_INPUT_ELEMENT) && !(type & NS_FORM_BUTTON_ELEMENT)) {
-    return;
-  }
-
-  if (!GetAttr(kNameSpaceID_None, nsGkAtoms::formaction, aValue) ||
-      aValue.IsEmpty()) {
-    Document* document = OwnerDoc();
-    nsIURI* docURI = document->GetDocumentURI();
-    if (docURI) {
-      nsAutoCString spec;
-      nsresult rv = docURI->GetSpec(spec);
-      if (NS_FAILED(rv)) {
-        return;
-      }
-
-      CopyUTF8toUTF16(spec, aValue);
-    }
-  } else {
-    GetURIAttr(nsGkAtoms::formaction, nullptr, aValue);
-  }
 }
 
 //----------------------------------------------------------------------
@@ -2321,8 +2145,15 @@ void nsGenericHTMLElement::Click(CallerType aCallerType) {
 
 bool nsGenericHTMLElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
                                            int32_t* aTabIndex) {
+  if (ShadowRoot* root = GetShadowRoot()) {
+    if (root->DelegatesFocus()) {
+      *aIsFocusable = false;
+      return true;
+    }
+  }
+
   Document* doc = GetComposedDoc();
-  if (!doc || doc->HasFlag(NODE_IS_EDITABLE)) {
+  if (!doc || IsInDesignMode()) {
     // In designMode documents we only allow focusing the document.
     if (aTabIndex) {
       *aTabIndex = -1;
@@ -2370,47 +2201,21 @@ bool nsGenericHTMLElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
   return disallowOverridingFocusability;
 }
 
-void nsGenericHTMLElement::RegUnRegAccessKey(bool aDoReg) {
-  // first check to see if we have an access key
-  nsAutoString accessKey;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::accesskey, accessKey);
-  if (accessKey.IsEmpty()) {
-    return;
-  }
-
-  // We have an access key, so get the ESM from the pres context.
-  nsPresContext* presContext = GetPresContext(eForUncomposedDoc);
-
-  if (presContext) {
-    EventStateManager* esm = presContext->EventStateManager();
-
-    // Register or unregister as appropriate.
-    if (aDoReg) {
-      esm->RegisterAccessKey(this, (uint32_t)accessKey.First());
-    } else {
-      esm->UnregisterAccessKey(this, (uint32_t)accessKey.First());
-    }
-  }
-}
-
-bool nsGenericHTMLElement::PerformAccesskey(bool aKeyCausesActivation,
-                                            bool aIsTrustedEvent) {
-  nsPresContext* presContext = GetPresContext(eForUncomposedDoc);
+Result<bool, nsresult> nsGenericHTMLElement::PerformAccesskey(
+    bool aKeyCausesActivation, bool aIsTrustedEvent) {
+  nsPresContext* presContext = GetPresContext(eForComposedDoc);
   if (!presContext) {
-    return false;
+    return Err(NS_ERROR_UNEXPECTED);
   }
 
   // It's hard to say what HTML4 wants us to do in all cases.
   bool focused = true;
-  if (nsFocusManager* fm = nsFocusManager::GetFocusManager()) {
+  if (RefPtr<nsFocusManager> fm = nsFocusManager::GetFocusManager()) {
     fm->SetFocus(this, nsIFocusManager::FLAG_BYKEY);
 
     // Return true if the element became the current focus within its window.
-    //
-    // FIXME(emilio): Shouldn't this check `window->GetFocusedElement() == this`
-    // based on the above comment?
     nsPIDOMWindowOuter* window = OwnerDoc()->GetWindow();
-    focused = window && window->GetFocusedElement();
+    focused = window && window->GetFocusedElement() == this;
   }
 
   if (aKeyCausesActivation) {
@@ -2418,9 +2223,64 @@ bool nsGenericHTMLElement::PerformAccesskey(bool aKeyCausesActivation,
     AutoPopupStatePusher popupStatePusher(
         aIsTrustedEvent ? PopupBlocker::openAllowed : PopupBlocker::openAbused);
     DispatchSimulatedClick(this, aIsTrustedEvent, presContext);
+    return focused;
   }
 
-  return focused;
+  // If the accesskey won't cause the activation and the focus isn't changed,
+  // either. Return error so EventStateManager would try to find next element
+  // to handle the accesskey.
+  return focused ? Result<bool, nsresult>{focused} : Err(NS_ERROR_ABORT);
+}
+
+void nsGenericHTMLElement::HandleKeyboardActivation(
+    EventChainPostVisitor& aVisitor) {
+  const auto message = aVisitor.mEvent->mMessage;
+  if (message != eKeyDown && message != eKeyUp && message != eKeyPress) {
+    return;
+  }
+
+  const WidgetKeyboardEvent* keyEvent = aVisitor.mEvent->AsKeyboardEvent();
+  if (nsEventStatus_eIgnore != aVisitor.mEventStatus) {
+    if (message == eKeyUp && keyEvent->mKeyCode == NS_VK_SPACE) {
+      // Unset the flag even if the event is default-prevented or something.
+      UnsetFlags(HTML_ELEMENT_ACTIVE_FOR_KEYBOARD);
+    }
+    return;
+  }
+
+  bool shouldActivate = false;
+  switch (message) {
+    case eKeyDown:
+      if (keyEvent->mKeyCode == NS_VK_SPACE) {
+        SetFlags(HTML_ELEMENT_ACTIVE_FOR_KEYBOARD);
+      }
+      return;
+    case eKeyPress:
+      shouldActivate = keyEvent->mKeyCode == NS_VK_RETURN;
+      if (keyEvent->mKeyCode == NS_VK_SPACE) {
+        // Consume 'space' key to prevent scrolling the page down.
+        aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
+      }
+      break;
+    case eKeyUp:
+      shouldActivate = keyEvent->mKeyCode == NS_VK_SPACE &&
+                       HasFlag(HTML_ELEMENT_ACTIVE_FOR_KEYBOARD);
+      if (shouldActivate) {
+        UnsetFlags(HTML_ELEMENT_ACTIVE_FOR_KEYBOARD);
+      }
+      break;
+    default:
+      MOZ_ASSERT_UNREACHABLE("why didn't we bail out earlier?");
+      break;
+  }
+
+  if (!shouldActivate) {
+    return;
+  }
+
+  DispatchSimulatedClick(this, aVisitor.mEvent->IsTrusted(),
+                         aVisitor.mPresContext);
+  aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
 }
 
 nsresult nsGenericHTMLElement::DispatchSimulatedClick(
@@ -2433,7 +2293,7 @@ nsresult nsGenericHTMLElement::DispatchSimulatedClick(
   return EventDispatcher::Dispatch(ToSupports(aElement), aPresContext, &event);
 }
 
-already_AddRefed<TextEditor> nsGenericHTMLElement::GetAssociatedEditor() {
+already_AddRefed<EditorBase> nsGenericHTMLElement::GetAssociatedEditor() {
   // If contenteditable is ever implemented, it might need to do something
   // different here?
 
@@ -2446,9 +2306,8 @@ void nsGenericHTMLElement::SyncEditorsOnSubtree(nsIContent* content) {
   /* Sync this node */
   nsGenericHTMLElement* element = FromNode(content);
   if (element) {
-    RefPtr<TextEditor> textEditor = element->GetAssociatedEditor();
-    if (textEditor) {
-      textEditor->SyncRealTimeSpell();
+    if (RefPtr<EditorBase> editorBase = element->GetAssociatedEditor()) {
+      editorBase->SyncRealTimeSpell();
     }
   }
 
@@ -2459,34 +2318,12 @@ void nsGenericHTMLElement::SyncEditorsOnSubtree(nsIContent* content) {
   }
 }
 
-void nsGenericHTMLElement::RecompileScriptEventListeners() {
-  int32_t i, count = mAttrs.AttrCount();
-  for (i = 0; i < count; ++i) {
-    const nsAttrName* name = mAttrs.AttrNameAt(i);
-
-    // Eventlistenener-attributes are always in the null namespace
-    if (!name->IsAtom()) {
-      continue;
-    }
-
-    nsAtom* attr = name->Atom();
-    if (!IsEventAttributeName(attr)) {
-      continue;
-    }
-
-    nsAutoString value;
-    GetAttr(kNameSpaceID_None, attr, value);
-    SetEventHandler(GetEventNameForAttr(attr), value, true);
-  }
-}
-
 bool nsGenericHTMLElement::IsEditableRoot() const {
-  Document* document = GetComposedDoc();
-  if (!document) {
+  if (!IsInComposedDoc()) {
     return false;
   }
 
-  if (document->HasFlag(NODE_IS_EDITABLE)) {
+  if (IsInDesignMode()) {
     return false;
   }
 
@@ -2499,8 +2336,7 @@ bool nsGenericHTMLElement::IsEditableRoot() const {
   return !parent || !parent->HasFlag(NODE_IS_EDITABLE);
 }
 
-static void MakeContentDescendantsEditable(nsIContent* aContent,
-                                           Document* aDocument) {
+static void MakeContentDescendantsEditable(nsIContent* aContent) {
   // If aContent is not an element, we just need to update its
   // internal editable state and don't need to notify anyone about
   // that.  For elements, we need to send a ContentStateChanged
@@ -2519,7 +2355,7 @@ static void MakeContentDescendantsEditable(nsIContent* aContent,
     if (!child->IsElement() ||
         !child->AsElement()->HasAttr(kNameSpaceID_None,
                                      nsGkAtoms::contenteditable)) {
-      MakeContentDescendantsEditable(child, aDocument);
+      MakeContentDescendantsEditable(child);
     }
   }
 }
@@ -2536,21 +2372,21 @@ void nsGenericHTMLElement::ChangeEditableState(int32_t aChange) {
     previousEditingState = document->GetEditingState();
   }
 
-  if (document->HasFlag(NODE_IS_EDITABLE)) {
-    document = nullptr;
-  }
-
   // MakeContentDescendantsEditable is going to call ContentStateChanged for
   // this element and all descendants if editable state has changed.
   // We might as well wrap it all in one script blocker.
   nsAutoScriptBlocker scriptBlocker;
-  MakeContentDescendantsEditable(this, document);
+  MakeContentDescendantsEditable(this);
 
   // If the document already had contenteditable and JS adds new
   // contenteditable, that might cause changing editing host to current editing
   // host's ancestor.  In such case, HTMLEditor needs to know that
   // synchronously to update selection limitter.
-  if (document && aChange > 0 &&
+  // Additionally, elements in shadow DOM is not editable in the normal cases,
+  // but if its content has `contenteditable`, only in it can be ediable.
+  // So we don't need to notify HTMLEditor of this change only when we're not
+  // in shadow DOM and the composed document is in design mode.
+  if (IsInDesignMode() && !IsInShadowTree() && aChange > 0 &&
       previousEditingState == Document::EditingState::eContentEditable) {
     if (HTMLEditor* htmlEditor =
             nsContentUtils::GetHTMLEditor(document->GetPresContext())) {
@@ -2561,17 +2397,317 @@ void nsGenericHTMLElement::ChangeEditableState(int32_t aChange) {
 
 //----------------------------------------------------------------------
 
-nsGenericHTMLFormElementWithState::nsGenericHTMLFormElementWithState(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
-    FromParser aFromParser, uint8_t aType)
-    : nsGenericHTMLFormElement(std::move(aNodeInfo), aType),
+nsGenericHTMLFormControlElement::nsGenericHTMLFormControlElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo, FormControlType aType)
+    : nsGenericHTMLFormElement(std::move(aNodeInfo)),
+      nsIFormControl(aType),
+      mForm(nullptr),
+      mFieldSet(nullptr) {}
+
+nsGenericHTMLFormControlElement::~nsGenericHTMLFormControlElement() {
+  if (mFieldSet) {
+    mFieldSet->RemoveElement(this);
+  }
+
+  // Check that this element doesn't know anything about its form at this point.
+  NS_ASSERTION(!mForm, "mForm should be null at this point!");
+}
+
+NS_IMPL_ISUPPORTS_INHERITED(nsGenericHTMLFormControlElement,
+                            nsGenericHTMLFormElement, nsIFormControl)
+
+nsINode* nsGenericHTMLFormControlElement::GetScopeChainParent() const {
+  return mForm ? mForm : nsGenericHTMLElement::GetScopeChainParent();
+}
+
+bool nsGenericHTMLFormControlElement::IsNodeOfType(uint32_t aFlags) const {
+  return !(aFlags & ~eHTML_FORM_CONTROL);
+}
+
+void nsGenericHTMLFormControlElement::SaveSubtreeState() {
+  SaveState();
+
+  nsGenericHTMLFormElement::SaveSubtreeState();
+}
+
+nsIContent::IMEState nsGenericHTMLFormControlElement::GetDesiredIMEState() {
+  TextEditor* textEditor = GetTextEditorInternal();
+  if (!textEditor) {
+    return nsGenericHTMLFormElement::GetDesiredIMEState();
+  }
+  IMEState state;
+  nsresult rv = textEditor->GetPreferredIMEState(&state);
+  if (NS_FAILED(rv)) {
+    return nsGenericHTMLFormElement::GetDesiredIMEState();
+  }
+  return state;
+}
+
+nsresult nsGenericHTMLFormControlElement::BindToTree(BindContext& aContext,
+                                                     nsINode& aParent) {
+  nsresult rv = nsGenericHTMLFormElement::BindToTree(aContext, aParent);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (IsAutofocusable() && HasAttr(nsGkAtoms::autofocus) &&
+      aContext.AllowsAutoFocus()) {
+    aContext.OwnerDoc().SetAutoFocusElement(this);
+  }
+
+  return NS_OK;
+}
+
+void nsGenericHTMLFormControlElement::UnbindFromTree(bool aNullParent) {
+  // Save state before doing anything
+  SaveState();
+
+  nsGenericHTMLFormElement::UnbindFromTree(aNullParent);
+}
+
+void nsGenericHTMLFormControlElement::GetAutocapitalize(
+    nsAString& aValue) const {
+  if (nsContentUtils::HasNonEmptyAttr(this, kNameSpaceID_None,
+                                      nsGkAtoms::autocapitalize)) {
+    nsGenericHTMLFormElement::GetAutocapitalize(aValue);
+    return;
+  }
+
+  if (mForm && IsAutocapitalizeInheriting()) {
+    mForm->GetAutocapitalize(aValue);
+  }
+}
+
+bool nsGenericHTMLFormControlElement::IsHTMLFocusable(bool aWithMouse,
+                                                      bool* aIsFocusable,
+                                                      int32_t* aTabIndex) {
+  if (nsGenericHTMLFormElement::IsHTMLFocusable(aWithMouse, aIsFocusable,
+                                                aTabIndex)) {
+    return true;
+  }
+
+  *aIsFocusable = *aIsFocusable && IsFormControlDefaultFocusable(aWithMouse);
+  return false;
+}
+
+void nsGenericHTMLFormControlElement::GetEventTargetParent(
+    EventChainPreVisitor& aVisitor) {
+  if (aVisitor.mEvent->IsTrusted() && (aVisitor.mEvent->mMessage == eFocus ||
+                                       aVisitor.mEvent->mMessage == eBlur)) {
+    // We have to handle focus/blur event to change focus states in
+    // PreHandleEvent to prevent it breaks event target chain creation.
+    aVisitor.mWantsPreHandleEvent = true;
+  }
+  nsGenericHTMLFormElement::GetEventTargetParent(aVisitor);
+}
+
+nsresult nsGenericHTMLFormControlElement::PreHandleEvent(
+    EventChainVisitor& aVisitor) {
+  if (aVisitor.mEvent->IsTrusted()) {
+    switch (aVisitor.mEvent->mMessage) {
+      case eFocus: {
+        // Check to see if focus has bubbled up from a form control's
+        // child textfield or button.  If that's the case, don't focus
+        // this parent file control -- leave focus on the child.
+        nsIFormControlFrame* formControlFrame = GetFormControlFrame(true);
+        if (formControlFrame &&
+            aVisitor.mEvent->mOriginalTarget == static_cast<nsINode*>(this)) {
+          formControlFrame->SetFocus(true, true);
+        }
+        break;
+      }
+      case eBlur: {
+        nsIFormControlFrame* formControlFrame = GetFormControlFrame(true);
+        if (formControlFrame) {
+          formControlFrame->SetFocus(false, false);
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  return nsGenericHTMLFormElement::PreHandleEvent(aVisitor);
+}
+
+HTMLFieldSetElement* nsGenericHTMLFormControlElement::GetFieldSet() {
+  return GetFieldSetInternal();
+}
+
+void nsGenericHTMLFormControlElement::SetForm(HTMLFormElement* aForm) {
+  MOZ_ASSERT(aForm, "Don't pass null here");
+  NS_ASSERTION(!mForm,
+               "We don't support switching from one non-null form to another.");
+
+  SetFormInternal(aForm, false);
+}
+
+void nsGenericHTMLFormControlElement::ClearForm(bool aRemoveFromForm,
+                                                bool aUnbindOrDelete) {
+  nsGenericHTMLFormElement::ClearForm(aRemoveFromForm, aUnbindOrDelete);
+}
+
+EventStates nsGenericHTMLFormControlElement::IntrinsicState() const {
+  // If you add attribute-dependent states here, you need to add them them to
+  // AfterSetAttr too.  And add them to AfterSetAttr for all subclasses that
+  // implement IntrinsicState() and are affected by that attribute.
+  EventStates state = nsGenericHTMLFormElement::IntrinsicState();
+
+  if (mForm && mForm->IsDefaultSubmitElement(this)) {
+    NS_ASSERTION(IsSubmitControl(),
+                 "Default submit element that isn't a submit control.");
+    // We are the default submit element (:default)
+    state |= NS_EVENT_STATE_DEFAULT;
+  }
+
+  // Make the text controls read-write
+  if (!state.HasState(NS_EVENT_STATE_READWRITE) && DoesReadOnlyApply()) {
+    if (!GetBoolAttr(nsGkAtoms::readonly) && !IsDisabled()) {
+      state |= NS_EVENT_STATE_READWRITE;
+      state &= ~NS_EVENT_STATE_READONLY;
+    }
+  }
+
+  return state;
+}
+
+bool nsGenericHTMLFormControlElement::IsLabelable() const {
+  auto type = ControlType();
+  return (IsInputElement(type) && type != FormControlType::InputHidden) ||
+         IsButtonElement(type) || type == FormControlType::Output ||
+         type == FormControlType::Select || type == FormControlType::Textarea;
+}
+
+bool nsGenericHTMLFormControlElement::CanBeDisabled() const {
+  auto type = ControlType();
+  // It's easier to test the types that _cannot_ be disabled
+  return type != FormControlType::Object && type != FormControlType::Output;
+}
+
+bool nsGenericHTMLFormControlElement::DoesReadOnlyApply() const {
+  auto type = ControlType();
+  if (!IsInputElement(type) && type != FormControlType::Textarea) {
+    return false;
+  }
+
+  switch (type) {
+    case FormControlType::InputHidden:
+    case FormControlType::InputButton:
+    case FormControlType::InputImage:
+    case FormControlType::InputReset:
+    case FormControlType::InputSubmit:
+    case FormControlType::InputRadio:
+    case FormControlType::InputFile:
+    case FormControlType::InputCheckbox:
+    case FormControlType::InputRange:
+    case FormControlType::InputColor:
+      return false;
+#ifdef DEBUG
+    case FormControlType::Textarea:
+    case FormControlType::InputText:
+    case FormControlType::InputPassword:
+    case FormControlType::InputSearch:
+    case FormControlType::InputTel:
+    case FormControlType::InputEmail:
+    case FormControlType::InputUrl:
+    case FormControlType::InputNumber:
+    case FormControlType::InputDate:
+    case FormControlType::InputTime:
+    case FormControlType::InputMonth:
+    case FormControlType::InputWeek:
+    case FormControlType::InputDatetimeLocal:
+      return true;
+    default:
+      MOZ_ASSERT_UNREACHABLE("Unexpected input type in DoesReadOnlyApply()");
+      return true;
+#else   // DEBUG
+    default:
+      return true;
+#endif  // DEBUG
+  }
+}
+
+void nsGenericHTMLFormControlElement::SetFormInternal(HTMLFormElement* aForm,
+                                                      bool aBindToTree) {
+  if (aForm) {
+    BeforeSetForm(aBindToTree);
+  }
+
+  // keep a *weak* ref to the form here
+  mForm = aForm;
+}
+
+HTMLFormElement* nsGenericHTMLFormControlElement::GetFormInternal() const {
+  return mForm;
+}
+
+HTMLFieldSetElement* nsGenericHTMLFormControlElement::GetFieldSetInternal()
+    const {
+  return mFieldSet;
+}
+
+void nsGenericHTMLFormControlElement::SetFieldSetInternal(
+    HTMLFieldSetElement* aFieldset) {
+  mFieldSet = aFieldset;
+}
+
+void nsGenericHTMLFormControlElement::UpdateRequiredState(bool aIsRequired,
+                                                          bool aNotify) {
+#ifdef DEBUG
+  auto type = ControlType();
+#endif
+  MOZ_ASSERT(IsInputElement(type) || type == FormControlType::Select ||
+                 type == FormControlType::Textarea,
+             "This should be called only on types that @required applies");
+
+#ifdef DEBUG
+  if (HTMLInputElement* input = HTMLInputElement::FromNode(this)) {
+    MOZ_ASSERT(
+        input->DoesRequiredApply(),
+        "This should be called only on input types that @required applies");
+  }
+#endif
+
+  EventStates requiredStates;
+  if (aIsRequired) {
+    requiredStates |= NS_EVENT_STATE_REQUIRED;
+  } else {
+    requiredStates |= NS_EVENT_STATE_OPTIONAL;
+  }
+
+  EventStates oldRequiredStates = State() & REQUIRED_STATES;
+  EventStates changedStates = requiredStates ^ oldRequiredStates;
+
+  if (!changedStates.IsEmpty()) {
+    ToggleStates(changedStates, aNotify);
+  }
+}
+
+bool nsGenericHTMLFormControlElement::IsAutocapitalizeInheriting() const {
+  auto type = ControlType();
+  return IsInputElement(type) || IsButtonElement(type) ||
+         type == FormControlType::Fieldset || type == FormControlType::Output ||
+         type == FormControlType::Select || type == FormControlType::Textarea;
+}
+
+bool nsGenericHTMLFormControlElement::IsAutofocusable() const {
+  auto type = ControlType();
+  return IsInputElement(type) || IsButtonElement(type) ||
+         type == FormControlType::Textarea || type == FormControlType::Select;
+}
+
+//----------------------------------------------------------------------
+
+nsGenericHTMLFormControlElementWithState::
+    nsGenericHTMLFormControlElementWithState(
+        already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+        FromParser aFromParser, FormControlType aType)
+    : nsGenericHTMLFormControlElement(std::move(aNodeInfo), aType),
       mControlNumber(!!(aFromParser & FROM_PARSER_NETWORK)
                          ? OwnerDoc()->GetNextControlNumber()
                          : -1) {
   mStateKey.SetIsVoid(true);
 }
 
-void nsGenericHTMLFormElementWithState::GenerateStateKey() {
+void nsGenericHTMLFormControlElementWithState::GenerateStateKey() {
   // Keep the key if already computed
   if (!mStateKey.IsVoid()) {
     return;
@@ -2594,7 +2730,7 @@ void nsGenericHTMLFormElementWithState::GenerateStateKey() {
   }
 }
 
-PresState* nsGenericHTMLFormElementWithState::GetPrimaryPresState() {
+PresState* nsGenericHTMLFormControlElementWithState::GetPrimaryPresState() {
   if (mStateKey.IsEmpty()) {
     return nullptr;
   }
@@ -2617,7 +2753,7 @@ PresState* nsGenericHTMLFormElementWithState::GetPrimaryPresState() {
 }
 
 already_AddRefed<nsILayoutHistoryState>
-nsGenericHTMLFormElementWithState::GetLayoutHistory(bool aRead) {
+nsGenericHTMLFormControlElementWithState::GetLayoutHistory(bool aRead) {
   nsCOMPtr<Document> doc = GetUncomposedDoc();
   if (!doc) {
     return nullptr;
@@ -2638,7 +2774,7 @@ nsGenericHTMLFormElementWithState::GetLayoutHistory(bool aRead) {
   return history.forget();
 }
 
-bool nsGenericHTMLFormElementWithState::RestoreFormControlState() {
+bool nsGenericHTMLFormControlElementWithState::RestoreFormControlState() {
   MOZ_ASSERT(!mStateKey.IsVoid(),
              "GenerateStateKey must already have been called");
 
@@ -2662,8 +2798,9 @@ bool nsGenericHTMLFormElementWithState::RestoreFormControlState() {
   return false;
 }
 
-void nsGenericHTMLFormElementWithState::NodeInfoChanged(Document* aOldDoc) {
-  nsGenericHTMLElement::NodeInfoChanged(aOldDoc);
+void nsGenericHTMLFormControlElementWithState::NodeInfoChanged(
+    Document* aOldDoc) {
+  nsGenericHTMLFormControlElement::NodeInfoChanged(aOldDoc);
 
   // We need to regenerate the state key now we're in a new document.  Clearing
   // mControlNumber means we stop considering this control to be parser
@@ -2673,42 +2810,28 @@ void nsGenericHTMLFormElementWithState::NodeInfoChanged(Document* aOldDoc) {
   mStateKey.SetIsVoid(true);
 }
 
-nsSize nsGenericHTMLElement::GetWidthHeightForImage(
-    RefPtr<imgRequestProxy>& aImageRequest) {
-  nsSize size(0, 0);
-
-  nsIFrame* frame = GetPrimaryFrame(FlushType::Layout);
-
-  if (frame) {
-    size = frame->GetContentRect().Size();
-
-    size.width = nsPresContext::AppUnitsToIntCSSPixels(size.width);
-    size.height = nsPresContext::AppUnitsToIntCSSPixels(size.height);
-  } else {
-    const nsAttrValue* value;
-    nsCOMPtr<imgIContainer> image;
-    if (aImageRequest) {
-      aImageRequest->GetImage(getter_AddRefs(image));
-    }
-
-    if ((value = GetParsedAttr(nsGkAtoms::width)) &&
-        value->Type() == nsAttrValue::eInteger) {
-      size.width = value->GetIntegerValue();
-    } else if (image) {
-      image->GetWidth(&size.width);
-    }
-
-    if ((value = GetParsedAttr(nsGkAtoms::height)) &&
-        value->Type() == nsAttrValue::eInteger) {
-      size.height = value->GetIntegerValue();
-    } else if (image) {
-      image->GetHeight(&size.height);
-    }
+void nsGenericHTMLFormControlElementWithState::GetFormAction(nsString& aValue) {
+  auto type = ControlType();
+  if (!IsInputElement(type) && !IsButtonElement(type)) {
+    return;
   }
 
-  NS_ASSERTION(size.width >= 0, "negative width");
-  NS_ASSERTION(size.height >= 0, "negative height");
-  return size;
+  if (!GetAttr(kNameSpaceID_None, nsGkAtoms::formaction, aValue) ||
+      aValue.IsEmpty()) {
+    Document* document = OwnerDoc();
+    nsIURI* docURI = document->GetDocumentURI();
+    if (docURI) {
+      nsAutoCString spec;
+      nsresult rv = docURI->GetSpec(spec);
+      if (NS_FAILED(rv)) {
+        return;
+      }
+
+      CopyUTF8toUTF16(spec, aValue);
+    }
+  } else {
+    GetURIAttr(nsGkAtoms::formaction, nullptr, aValue);
+  }
 }
 
 bool nsGenericHTMLElement::IsEventAttributeNameInternal(nsAtom* aName) {
@@ -2842,7 +2965,7 @@ void nsGenericHTMLElement::SetInnerText(const nsAString& aValue) {
         RefPtr<nsTextNode> textContent = new (NodeInfo()->NodeInfoManager())
             nsTextNode(NodeInfo()->NodeInfoManager());
         textContent->SetText(str, true);
-        AppendChildTo(textContent, true);
+        AppendChildTo(textContent, true, IgnoreErrors());
       }
       if (s == end) {
         break;
@@ -2853,7 +2976,7 @@ void nsGenericHTMLElement::SetInnerText(const nsAString& aValue) {
               nsGkAtoms::br, nullptr, kNameSpaceID_XHTML, ELEMENT_NODE);
       auto* nim = ni->NodeInfoManager();
       RefPtr<HTMLBRElement> br = new (nim) HTMLBRElement(ni.forget());
-      AppendChildTo(br, true);
+      AppendChildTo(br, true, IgnoreErrors());
     } else {
       str.Append(*s);
     }
@@ -2864,68 +2987,21 @@ void nsGenericHTMLElement::SetInnerText(const nsAString& aValue) {
   mb.NodesAdded();
 }
 
-// https://html.spec.whatwg.org/commit-snapshots/b48bb2238269d90ea4f455a52cdf29505aff3df0/#dom-attachinternals
 already_AddRefed<ElementInternals> nsGenericHTMLElement::AttachInternals(
     ErrorResult& aRv) {
-  CustomElementData* ceData = GetCustomElementData();
+  // ElementInternals is only available on autonomous custom element, so throws
+  // an error by default. The spec steps are implemented in HTMLElement because
+  // ElementInternals needs to hold a pointer to HTMLElement in order to forward
+  // form operation to it.
+  aRv.ThrowNotSupportedError(nsPrintfCString(
+      "Cannot attach ElementInternals to a customized built-in or non-custom "
+      "element "
+      "'%s'",
+      NS_ConvertUTF16toUTF8(NodeInfo()->NameAtom()->GetUTF16String()).get()));
+  return nullptr;
+}
 
-  // 1. If element's is value is not null, then throw a "NotSupportedError"
-  //    DOMException.
-  nsAtom* isAtom = ceData ? ceData->GetIs(this) : nullptr;
-  nsAtom* nameAtom = NodeInfo()->NameAtom();
-  if (isAtom) {
-    aRv.ThrowNotSupportedError(nsPrintfCString(
-        "Cannot attach ElementInternals to a customized built-in element "
-        "'%s'",
-        NS_ConvertUTF16toUTF8(isAtom->GetUTF16String()).get()));
-    return nullptr;
-  }
-
-  // 2. Let definition be the result of looking up a custom element definition
-  //    given element's node document, its namespace, its local name, and null
-  //    as is value.
-  CustomElementDefinition* definition = nullptr;
-  if (ceData) {
-    definition = ceData->GetCustomElementDefinition();
-
-    // If the definition is null, the element possible hasn't yet upgraded.
-    // Fallback to use LookupCustomElementDefinition to find its definition.
-    if (!definition) {
-      definition = nsContentUtils::LookupCustomElementDefinition(
-          NodeInfo()->GetDocument(), nameAtom, NodeInfo()->NamespaceID(),
-          ceData->GetCustomElementType());
-    }
-  }
-
-  // 3. If definition is null, then throw an "NotSupportedError" DOMException.
-  if (!definition) {
-    aRv.ThrowNotSupportedError(nsPrintfCString(
-        "Cannot attach ElementInternals to a non-custom element '%s'",
-        NS_ConvertUTF16toUTF8(nameAtom->GetUTF16String()).get()));
-    return nullptr;
-  }
-
-  // 4. If definition's disable internals is true, then throw a
-  //    "NotSupportedError" DOMException.
-  if (definition->mDisableInternals) {
-    aRv.ThrowNotSupportedError(nsPrintfCString(
-        "AttachInternal() to '%s' is disabled by disabledFeatures",
-        NS_ConvertUTF16toUTF8(nameAtom->GetUTF16String()).get()));
-    return nullptr;
-  }
-
-  // 5. If element's attached internals is true, then throw an
-  //    "NotSupportedError" DOMException.
-  if (ceData->HasAttachedInternals()) {
-    aRv.ThrowNotSupportedError(nsPrintfCString(
-        "AttachInternals() has already been called from '%s'",
-        NS_ConvertUTF16toUTF8(nameAtom->GetUTF16String()).get()));
-    return nullptr;
-  }
-
-  // 6. Set element's attached internals to true.
-  ceData->AttachedInternals();
-
-  // 7. Create a new ElementInternals instance targeting element, and return it.
-  return MakeAndAddRef<ElementInternals>(this);
+void nsGenericHTMLElement::GetAutocapitalize(nsAString& aValue) const {
+  GetEnumAttr(nsGkAtoms::autocapitalize, nullptr, kDefaultAutocapitalize->tag,
+              aValue);
 }

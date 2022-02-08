@@ -10,53 +10,48 @@
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/StaticPtr.h"
-#include "nsDataHashtable.h"
+#include "mozilla/Telemetry.h"
 #include "nsGlobalWindowOuter.h"
 
-namespace mozilla {
-namespace dom {
-
-using ControllerMap =
-    nsDataHashtable<nsUint64HashKey, RefPtr<ContentMediaController>>;
-static StaticAutoPtr<ControllerMap> sControllers;
+namespace mozilla::dom {
 
 #undef LOG
 #define LOG(msg, ...)                        \
   MOZ_LOG(gMediaControlLog, LogLevel::Debug, \
           ("ContentMediaController=%p, " msg, this, ##__VA_ARGS__))
 
-static already_AddRefed<ContentMediaController>
-GetContentMediaControllerFromBrowsingContext(
+static Maybe<bool> sXPCOMShutdown;
+
+static void InitXPCOMShutdownMonitor() {
+  if (sXPCOMShutdown) {
+    return;
+  }
+  sXPCOMShutdown.emplace(false);
+  RunOnShutdown([&] { sXPCOMShutdown = Some(true); });
+}
+
+static ContentMediaController* GetContentMediaControllerFromBrowsingContext(
     BrowsingContext* aBrowsingContext) {
   MOZ_ASSERT(NS_IsMainThread());
-  if (!sControllers) {
-    sControllers = new ControllerMap();
-    ClearOnShutdown(&sControllers);
-  }
-
-  RefPtr<BrowsingContext> topLevelBC =
-      GetAliveTopBrowsingContext(aBrowsingContext);
-  if (!topLevelBC) {
+  InitXPCOMShutdownMonitor();
+  if (!aBrowsingContext || aBrowsingContext->IsDiscarded()) {
     return nullptr;
   }
 
-  const uint64_t topLevelBCId = topLevelBC->Id();
-  RefPtr<ContentMediaController> controller;
-  if (!sControllers->Contains(topLevelBCId)) {
-    controller = new ContentMediaController(topLevelBCId);
-    sControllers->Put(topLevelBCId, controller);
-  } else {
-    controller = sControllers->Get(topLevelBCId);
+  nsPIDOMWindowOuter* outer = aBrowsingContext->GetDOMWindow();
+  if (!outer) {
+    return nullptr;
   }
-  return controller.forget();
+
+  nsGlobalWindowInner* inner =
+      nsGlobalWindowInner::Cast(outer->GetCurrentInnerWindow());
+  return inner ? inner->GetContentMediaController() : nullptr;
 }
 
 static already_AddRefed<BrowsingContext> GetBrowsingContextForAgent(
     uint64_t aBrowsingContextId) {
-  // The content media agent would only be created after having `sControllers`.
-  // If the `sControllers` doesn't exist, which means XPCOM has been shutdown
-  // and we're not able to access browsing context as well.
-  if (!sControllers) {
+  // If XPCOM has been shutdown, then we're not able to access browsing context.
+  if (sXPCOMShutdown && *sXPCOMShutdown) {
     return nullptr;
   }
   return BrowsingContext::Get(aBrowsingContextId);
@@ -66,20 +61,13 @@ static already_AddRefed<BrowsingContext> GetBrowsingContextForAgent(
 ContentMediaControlKeyReceiver* ContentMediaControlKeyReceiver::Get(
     BrowsingContext* aBC) {
   MOZ_ASSERT(NS_IsMainThread());
-  RefPtr<ContentMediaController> controller =
-      GetContentMediaControllerFromBrowsingContext(aBC);
-  return controller
-             ? static_cast<ContentMediaControlKeyReceiver*>(controller.get())
-             : nullptr;
+  return GetContentMediaControllerFromBrowsingContext(aBC);
 }
 
 /* static */
 ContentMediaAgent* ContentMediaAgent::Get(BrowsingContext* aBC) {
   MOZ_ASSERT(NS_IsMainThread());
-  RefPtr<ContentMediaController> controller =
-      GetContentMediaControllerFromBrowsingContext(aBC);
-  return controller ? static_cast<ContentMediaAgent*>(controller.get())
-                    : nullptr;
+  return GetContentMediaControllerFromBrowsingContext(aBC);
 }
 
 void ContentMediaAgent::NotifyMediaPlaybackChanged(uint64_t aBrowsingContextId,
@@ -316,8 +304,9 @@ void ContentMediaAgent::UpdatePositionState(uint64_t aBrowsingContextId,
   }
 }
 
-ContentMediaController::ContentMediaController(uint64_t aId)
-    : mTopLevelBrowsingContextId(aId) {}
+ContentMediaController::ContentMediaController(uint64_t aId) {
+  LOG("Create content media controller for BC %" PRId64, aId);
+}
 
 void ContentMediaController::AddReceiver(
     ContentMediaControlKeyReceiver* aListener) {
@@ -329,22 +318,59 @@ void ContentMediaController::RemoveReceiver(
     ContentMediaControlKeyReceiver* aListener) {
   MOZ_ASSERT(NS_IsMainThread());
   mReceivers.RemoveElement(aListener);
-  // No more media needs to be controlled, so we can release this and recreate
-  // it when someone needs it. We have to check `sControllers` because this can
-  // be called via CC after we clear `sControllers`.
-  if (mReceivers.IsEmpty() && sControllers) {
-    sControllers->Remove(mTopLevelBrowsingContextId);
-  }
 }
 
 void ContentMediaController::HandleMediaKey(MediaControlKey aKey) {
   MOZ_ASSERT(NS_IsMainThread());
+  if (mReceivers.IsEmpty()) {
+    return;
+  }
   LOG("Handle '%s' event, receiver num=%zu", ToMediaControlKeyStr(aKey),
       mReceivers.Length());
-  for (auto& receiver : mReceivers) {
-    receiver->HandleMediaKey(aKey);
+  // We have default handlers for play, pause and stop.
+  // https://w3c.github.io/mediasession/#ref-for-dom-mediasessionaction-play%E2%91%A3
+  switch (aKey) {
+    case MediaControlKey::Pause:
+      PauseOrStopMedia();
+      return;
+    case MediaControlKey::Play:
+      [[fallthrough]];
+    case MediaControlKey::Stop:
+      // When receiving `Stop`, the amount of receiver would vary during the
+      // iteration, so we use the backward iteration to avoid accessing the
+      // index which is over the array length.
+      for (auto& receiver : Reversed(mReceivers)) {
+        receiver->HandleMediaKey(aKey);
+      }
+      return;
+    default:
+      MOZ_ASSERT_UNREACHABLE("Not supported media key for default handler");
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+void ContentMediaController::PauseOrStopMedia() {
+  // When receiving `pause`, if a page contains playing media and paused media
+  // at that moment, that means a user intends to pause those playing
+  // media, not the already paused ones. Then, we're going to stop those already
+  // paused media and keep those latest paused media in `mReceivers`.
+  // The reason for doing that is, when resuming paused media, we only want to
+  // resume latest paused media, not all media, in order to get a better user
+  // experience, which matches Chrome's behavior.
+  bool isAnyMediaPlaying = false;
+  for (const auto& receiver : mReceivers) {
+    if (receiver->IsPlaying()) {
+      isAnyMediaPlaying = true;
+      break;
+    }
+  }
+
+  for (auto& receiver : Reversed(mReceivers)) {
+    if (isAnyMediaPlaying && !receiver->IsPlaying()) {
+      receiver->HandleMediaKey(MediaControlKey::Stop);
+    } else {
+      receiver->HandleMediaKey(MediaControlKey::Pause);
+    }
+  }
+}
+
+}  // namespace mozilla::dom

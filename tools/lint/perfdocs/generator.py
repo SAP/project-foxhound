@@ -58,19 +58,6 @@ class Generator(object):
             }
         """
 
-        def _append_rst_section(title, content, documentation, type=None):
-            """
-            Adds a section to the documentation with the title as the type mentioned
-            and paragraph as content mentioned.
-            :param title: title of the section
-            :param content: content of section paragraph
-            :param documentation: documentation object to add section to
-            :param type: type of the title heading
-            """
-            heading_map = {"H4": "-", "H5": "^"}
-            heading_symbol = heading_map.get(type, "-")
-            documentation.extend([title, heading_symbol * len(title), content, ""])
-
         # Using the verified `perfdocs_tree`, build up the documentation.
         frameworks_info = {}
         for framework in self._perfdocs_tree:
@@ -86,27 +73,27 @@ class Generator(object):
             for suite_name in sorted(suites.keys()):
                 suite_info = suites[suite_name]
 
-                # Add the suite with an H4 heading
-                _append_rst_section(
-                    suite_name.capitalize(),
-                    suite_info["description"],
-                    documentation,
-                    type="H4",
+                # Add the suite section
+                documentation.extend(
+                    self._verifier._gatherer.framework_gatherers[
+                        yaml_content["name"]
+                    ].build_suite_section(suite_name, suite_info["description"])
                 )
+
                 tests = suite_info.get("tests", {})
                 for test_name in sorted(tests.keys()):
-                    documentation.extend(
-                        self._verifier._gatherer.framework_gatherers[
-                            yaml_content["name"]
-                        ].build_test_description(
-                            test_name, tests[test_name], suite_name
-                        )
+                    gatherer = self._verifier._gatherer.framework_gatherers[
+                        yaml_content["name"]
+                    ]
+                    test_description = gatherer.build_test_description(
+                        test_name, tests[test_name], suite_name
                     )
+                    documentation.extend(test_description)
                 documentation.append("")
 
             # Insert documentation into `.rst` file
             framework_rst = re.sub(
-                r"{documentation}", os.linesep.join(documentation), rst_content
+                r"{documentation}", "\n".join(documentation), rst_content
             )
             frameworks_info[yaml_content["name"]] = {
                 "dynamic": framework_rst,
@@ -175,9 +162,7 @@ class Generator(object):
         mainpage = read_file(
             os.path.join(self.templates_path, "index.rst"), stringify=True
         )
-        fmt_frameworks = os.linesep.join(
-            ["  * :doc:`%s`" % name for name in frameworks]
-        )
+        fmt_frameworks = "\n".join(["  * :doc:`%s`" % name for name in frameworks])
         fmt_mainpage = re.sub(r"{test_documentation}", fmt_frameworks, mainpage)
         save_file(fmt_mainpage, os.path.join(perfdocs_tmpdir, "index"))
 

@@ -5,14 +5,15 @@
 
 const {
   STUBS_UPDATE_ENV,
-  createResourceWatcherForTab,
+  createCommandsForTab,
   getCleanedPacket,
+  getSerializedPacket,
   getStubFile,
   writeStubsToFile,
 } = require(`${CHROME_URL_ROOT}stub-generator-helpers`);
 
 const TEST_URI =
-  "http://example.com/browser/devtools/client/webconsole/test/browser/stub-generators/test-css-message.html";
+  "https://example.com/browser/devtools/client/webconsole/test/browser/stub-generators/test-css-message.html";
 const STUB_FILE = "cssMessage.js";
 
 add_task(async function() {
@@ -40,11 +41,13 @@ add_task(async function() {
 
   let failed = false;
   for (const [key, packet] of generatedStubs) {
-    const packetStr = JSON.stringify(packet, null, 2);
-    const existingPacketStr = JSON.stringify(
-      existingStubs.stubPackets.get(key),
-      null,
-      2
+    const packetStr = getSerializedPacket(packet, {
+      sortKeys: true,
+      replaceActorIds: true,
+    });
+    const existingPacketStr = getSerializedPacket(
+      existingStubs.rawPackets.get(key),
+      { sortKeys: true, replaceActorIds: true }
     );
     is(packetStr, existingPacketStr, `"${key}" packet has expected value`);
     failed = failed || packetStr !== existingPacketStr;
@@ -61,18 +64,22 @@ async function generateCssMessageStubs() {
   const stubs = new Map();
 
   const tab = await addTab(TEST_URI);
-  const resourceWatcher = await createResourceWatcherForTab(tab);
+  const commands = await createCommandsForTab(tab);
+  await commands.targetCommand.startListening();
+  const resourceCommand = commands.resourceCommand;
 
-  // The resource-watcher only supports a single call to watch/unwatch per
+  // The resource command only supports a single call to watch/unwatch per
   // instance, so we attach a unique watch callback, which will forward the
   // resource to `handleErrorMessage`, dynamically updated for each command.
   let handleCSSMessage = function() {};
 
-  const onCSSMessageAvailable = ({ resource }) => {
-    handleCSSMessage(resource);
+  const onCSSMessageAvailable = resources => {
+    for (const resource of resources) {
+      handleCSSMessage(resource);
+    }
   };
 
-  await resourceWatcher.watchResources([resourceWatcher.TYPES.CSS_MESSAGE], {
+  await resourceCommand.watchResources([resourceCommand.TYPES.CSS_MESSAGE], {
     onAvailable: onCSSMessageAvailable,
   });
 
@@ -97,11 +104,11 @@ async function generateCssMessageStubs() {
     await received;
   }
 
-  resourceWatcher.unwatchResources([resourceWatcher.TYPES.CSS_MESSAGE], {
+  resourceCommand.unwatchResources([resourceCommand.TYPES.CSS_MESSAGE], {
     onAvailable: onCSSMessageAvailable,
   });
 
-  await closeTabAndToolbox().catch(() => {});
+  await commands.destroy();
   return stubs;
 }
 

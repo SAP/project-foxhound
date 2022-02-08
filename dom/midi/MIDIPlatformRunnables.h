@@ -9,8 +9,10 @@
 
 #include "mozilla/dom/MIDITypes.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
+
+enum class MIDIPortConnectionState : uint8_t;
+enum class MIDIPortDeviceState : uint8_t;
 
 class MIDIPortParent;
 class MIDIMessage;
@@ -118,7 +120,6 @@ class SetStatusRunnable final : public MIDIBackgroundRunnable {
   MIDIPortConnectionState mConnection;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_MIDIPlatformRunnables_h

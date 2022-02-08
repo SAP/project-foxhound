@@ -33,6 +33,7 @@ class nsPIDOMWindowInner;
 
 namespace mozilla {
 class DOMEventTargetHelper;
+enum class StorageAccess;
 namespace dom {
 class VoidFunction;
 class DebuggerNotificationManager;
@@ -183,6 +184,14 @@ class nsIGlobalObject : public nsISupports,
   GetOrCreateServiceWorkerRegistration(
       const mozilla::dom::ServiceWorkerRegistrationDescriptor& aDescriptor);
 
+  /**
+   * Returns the storage access of this global.
+   *
+   * If you have a global that needs storage access, you should be overriding
+   * this method in your subclass of this class!
+   */
+  virtual mozilla::StorageAccess GetStorageAccess();
+
   // Returns a pointer to this object as an inner window if this is one or
   // nullptr otherwise.
   nsPIDOMWindowInner* AsInnerWindow();
@@ -199,6 +208,18 @@ class nsIGlobalObject : public nsISupports,
   MOZ_CAN_RUN_SCRIPT void NotifyReportingObservers();
 
   void RemoveReportRecords();
+
+  /**
+   * Check whether we should avoid leaking distinguishing information to JS/CSS.
+   * https://w3c.github.io/fingerprinting-guidance/
+   */
+  virtual bool ShouldResistFingerprinting() const;
+
+  /**
+   * Threadsafe way to get nsIPrincipal::GetHashValue for the associated
+   * principal.
+   */
+  virtual uint32_t GetPrincipalHashValue() const { return 0; }
 
  protected:
   virtual ~nsIGlobalObject();

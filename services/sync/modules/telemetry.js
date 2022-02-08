@@ -22,7 +22,9 @@ const { XPCOMUtils } = ChromeUtils.import(
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   Async: "resource://services-common/async.js",
-  AuthenticationError: "resource://services-sync/browserid_identity.js",
+  AuthenticationError: "resource://services-sync/sync_auth.js",
+  fxAccounts: "resource://gre/modules/FxAccounts.jsm",
+  FxAccounts: "resource://gre/modules/FxAccounts.jsm",
   Log: "resource://gre/modules/Log.jsm",
   ObjectUtils: "resource://gre/modules/ObjectUtils.jsm",
   Observers: "resource://services-common/observers.js",
@@ -40,17 +42,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 let constants = {};
 ChromeUtils.import("resource://services-sync/constants.js", constants);
 
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "Telemetry",
-  "@mozilla.org/base/telemetry;1",
-  "nsITelemetry"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "fxAccounts",
-  "resource://gre/modules/FxAccounts.jsm"
-);
 XPCOMUtils.defineLazyGetter(
   this,
   "WeaveService",
@@ -59,13 +50,11 @@ XPCOMUtils.defineLazyGetter(
 const log = Log.repository.getLogger("Sync.Telemetry");
 
 const TOPICS = [
-  "profile-before-change",
-
   // For tracking change to account/device identifiers.
   "fxaccounts:new_device_id",
   "fxaccounts:onlogout",
   "weave:service:ready",
-  "weave:service:login:change",
+  "weave:service:login:got-hashed-id",
 
   // For whole-of-sync metrics.
   "weave:service:sync:start",
@@ -120,7 +109,7 @@ const reProfileDir = new RegExp(
 
 function tryGetMonotonicTimestamp() {
   try {
-    return Telemetry.msSinceProcessStart();
+    return Services.telemetry.msSinceProcessStart();
   } catch (e) {
     log.warn("Unable to get a monotonic timestamp!");
     return -1;
@@ -265,7 +254,8 @@ class EngineRecord {
     }
 
     let incomingData = {};
-    let properties = ["applied", "failed", "newFailed", "reconciled"];
+    // Counts has extra stuff used for logging, but we only care about a few
+    let properties = ["applied", "failed"];
     // Only record non-zero properties and only record incoming at all if
     // there's at least one property we care about.
     for (let property of properties) {
@@ -570,7 +560,7 @@ class SyncTelemetryImpl {
     this.maxPayloadCount = Svc.Prefs.get("telemetry.maxPayloadCount");
     this.submissionInterval =
       Svc.Prefs.get("telemetry.submissionInterval") * 1000;
-    this.lastSubmissionTime = Telemetry.msSinceProcessStart();
+    this.lastSubmissionTime = Services.telemetry.msSinceProcessStart();
     this.lastUID = EMPTY_UID;
     this.lastSyncNodeType = null;
     this.currentSyncNodeType = null;
@@ -583,6 +573,7 @@ class SyncTelemetryImpl {
     this.sessionStartDate = TelemetryUtils.toLocalTimeISOString(
       TelemetryUtils.truncateToHours(sessionStartDate)
     );
+    TelemetryController.registerSyncPingShutdown(() => this.shutdown());
   }
 
   sanitizeFxaDeviceId(deviceId) {
@@ -737,8 +728,12 @@ class SyncTelemetryImpl {
   }
 
   isProductionSyncUser() {
+    // If FxA isn't production then we treat sync as not being production.
+    // Further, there's the deprecated "services.sync.tokenServerURI" pref we
+    // need to consider - fxa doesn't consider that as if that's the only
+    // pref set, they *are* running a production fxa, just not production sync.
     if (
-      Services.prefs.prefHasUserValue("identity.sync.tokenserver.uri") ||
+      !FxAccounts.config.isProductionConfig() ||
       Services.prefs.prefHasUserValue("services.sync.tokenServerURI")
     ) {
       log.trace(`Not sending telemetry ping for self-hosted Sync user`);
@@ -849,7 +844,7 @@ class SyncTelemetryImpl {
         "Early submission of sync telemetry due to changed IDs/NodeType"
       );
       this.finish("idchange"); // this actually submits.
-      this.lastSubmissionTime = Telemetry.msSinceProcessStart();
+      this.lastSubmissionTime = Services.telemetry.msSinceProcessStart();
     }
 
     // Only update the last UIDs if we actually know them.
@@ -868,11 +863,11 @@ class SyncTelemetryImpl {
     // the sync and the events caused by it in different pings.
     if (
       this.current == null &&
-      Telemetry.msSinceProcessStart() - this.lastSubmissionTime >
+      Services.telemetry.msSinceProcessStart() - this.lastSubmissionTime >
         this.submissionInterval
     ) {
       this.finish("schedule");
-      this.lastSubmissionTime = Telemetry.msSinceProcessStart();
+      this.lastSubmissionTime = Services.telemetry.msSinceProcessStart();
     }
   }
 
@@ -899,7 +894,7 @@ class SyncTelemetryImpl {
   }
 
   _addHistogram(hist) {
-    let histogram = Telemetry.getHistogramById(hist);
+    let histogram = Services.telemetry.getHistogramById(hist);
     let s = histogram.snapshot();
     this.histograms[hist] = s;
   }
@@ -950,12 +945,8 @@ class SyncTelemetryImpl {
     log.trace(`observed ${topic} ${data}`);
 
     switch (topic) {
-      case "profile-before-change":
-        this.shutdown();
-        break;
-
       case "weave:service:ready":
-      case "weave:service:login:change":
+      case "weave:service:login:got-hashed-id":
       case "fxaccounts:new_device_id":
         this.onAccountInitOrChange();
         break;

@@ -53,7 +53,6 @@ Structure:
         sessionLength: <integer>, // the session length until now in seconds, monotonic
         subsessionLength: <integer>, // the subsession length in seconds, monotonic
 
-        flashVersion: <string>, // obsolete, use ``environment.addons.activePlugins``
         addons: <string>, // obsolete, use ``environment.addons``
       },
 
@@ -65,7 +64,6 @@ Structure:
       keyedHistograms: {...},
       chromeHangs: {...}, // removed in firefox 62
       threadHangStats: [...], // obsolete in firefox 57, use the 'bhr' ping
-      capturedStacks: {...},
       log: [...], // obsolete in firefox 61, use Event Telemetry or Scalars
       gc: {...},
       fileIOReports: {...},
@@ -134,11 +132,11 @@ This format was adopted in Firefox 51 via bug 1218576.
 
 scalars and keyedScalars
 ~~~~~~~~~~~~~~~~~~~~~~~~
-This section contains the :doc:`../collection/scalars` that are valid for the current platform. Scalars are only submitted if data was added to them, and are only reported with subsession pings. The recorded scalars are described in the `Scalars.yaml <https://dxr.mozilla.org/mozilla-central/source/toolkit/components/telemetry/Scalars.yaml>`_ file. The ``info.revision`` field indicates the revision of the file that describes the reported scalars.
+This section contains the :doc:`../collection/scalars` that are valid for the current platform. Scalars are only submitted if data was added to them, and are only reported with subsession pings. The recorded scalars are described in the `Scalars.yaml <https://searchfox.org/mozilla-central/source/toolkit/components/telemetry/Scalars.yaml>`_ file. The ``info.revision`` field indicates the revision of the file that describes the reported scalars.
 
 simpleMeasurements
 ------------------
-This section contains a list of simple measurements, or counters. In addition to the ones highlighted below, Telemetry timestamps (see `here <https://dxr.mozilla.org/mozilla-central/search?q=%22TelemetryTimestamps.add%22&redirect=false&case=true>`__ and `here <https://dxr.mozilla.org/mozilla-central/search?q=%22recordTimestamp%22&redirect=false&case=true>`__) can be reported.
+This section contains a list of simple measurements, or counters. In addition to the ones highlighted below, Telemetry timestamps (see `here <https://searchfox.org/mozilla-central/search?q=TelemetryTimestamps.add&redirect=false&case=true>`__ and `here <https://searchfox.org/mozilla-central/search?q=recordTimestamp&redirect=false&case=true>`__) can be reported.
 
 totalTime
 ~~~~~~~~~
@@ -146,7 +144,7 @@ A non-monotonic integer representing the number of seconds the session has been 
 
 addonManager
 ~~~~~~~~~~~~
-Only available in the extended set of measures, it contains a set of counters related to Addons. See `here <https://dxr.mozilla.org/mozilla-central/search?q=%22AddonManagerPrivate.recordSimpleMeasure%22&redirect=false&case=true>`__ for a list of recorded measures.
+Only available in the extended set of measures, it contains a set of counters related to Addons. See `here <https://searchfox.org/mozilla-central/search?q=AddonManagerPrivate.recordSimpleMeasure&redirect=false&case=true>`__ for a list of recorded measures.
 
 UITelemetry
 ~~~~~~~~~~~
@@ -206,13 +204,13 @@ The number of times the system failed to lock the user profile.
 
 activeTicks
 ~~~~~~~~~~~
-Integer count of the number of five-second intervals ('ticks') the user was considered 'active' (sending UI events to the window). An extra event is fired immediately when the user becomes active after being inactive. This is for some mouse and gamepad events, and all touch, keyboard, wheel, and pointer events (see `EventStateManager.cpp <https://dxr.mozilla.org/mozilla-central/rev/e6463ae7eda2775bc84593bb4a0742940bb87379/dom/events/EventStateManager.cpp#549>`_).
+Integer count of the number of five-second intervals ('ticks') the user was considered 'active' (sending UI events to the window). An extra event is fired immediately when the user becomes active after being inactive. This is for some mouse and gamepad events, and all touch, keyboard, wheel, and pointer events (see `EventStateManager.cpp <https://searchfox.org/mozilla-central/source/dom/events/EventStateManager.cpp#504>`__).
 This measure might be useful to give a trend of how much a user actually interacts with the browser when compared to overall session duration. It does not take into account whether or not the window has focus or is in the foreground. Just if it is receiving these interaction events.
 Note that in ``main`` pings, this measure is reset on subsession splits, while in ``saved-session`` pings it covers the whole browser session.
 
 histograms
 ----------
-This section contains the histograms that are valid for the current platform. ``Flag`` histograms are always created and submitted with a default value of ``false`` if a value of ``true`` is not recorded during the time period. Other histogram types (see :ref:`choosing-histogram-type`) are not created nor submitted if no data was added to them. The type and format of the reported histograms is described by the ``Histograms.json`` file. Its most recent version is available `here <https://dxr.mozilla.org/mozilla-central/source/toolkit/components/telemetry/Histograms.json>`_. The ``info.revision`` field indicates the revision of the file that describes the reported histograms.
+This section contains the histograms that are valid for the current platform. ``Flag`` histograms are always created and submitted with a default value of ``false`` if a value of ``true`` is not recorded during the time period. Other histogram types (see :ref:`choosing-histogram-type`) are not created nor submitted if no data was added to them. The type and format of the reported histograms is described by the ``Histograms.json`` file. Its most recent version is available `here <https://searchfox.org/mozilla-central/source/toolkit/components/telemetry/Histograms.json>`__. The ``info.revision`` field indicates the revision of the file that describes the reported histograms.
 
 keyedHistograms
 ---------------
@@ -281,46 +279,6 @@ Structure:
       },
       ... other threads ...
     ]
-
-capturedStacks
---------------
-Contains information about stacks captured on demand via Telemetry API. For more
-information see :doc:`stack capture <../collection/stack-capture>`.
-
-This is similar to :ref:`chromeHangs`, but only Precise C++ stacks on the main thread of
-the parent process are reported. This data is only available on Windows, either
-in Firefox Nightly or in builds using ``--enable-profiling`` switch.
-
-Limits for captured stacks are the same as for chromeHangs (see below). Furthermore:
-
-* the key length is limited to 50 characters,
-* keys are restricted to alphanumeric characters and `-`.
-
-The module names can contain unicode characters.
-
-Structure:
-
-.. code-block:: js
-
-    "capturedStacks" : {
-      "memoryMap": [
-        ["wgdi32.pdb", "08A541B5942242BDB4AEABD8C87E4CFF2"],
-        ["igd10iumd32.pdb", "D36DEBF2E78149B5BE1856B772F1C3991"],
-        // ... other entries in the format ["module name", "breakpad identifier"] ...
-      ],
-      "stacks": [
-        [
-           [
-             0, // the module index or -1 for invalid module indices
-             190649 // the offset of this program counter in its module or an absolute pc
-           ],
-           [1, 2540075],
-           // ... other frames ...
-        ],
-        // ... other stacks ...
-      ],
-      "captures": [["string-key", stack-index, count], ... ]
-    }
 
 .. _chromeHangs:
 
@@ -449,7 +407,7 @@ Structure:
 
 addonDetails
 ------------
-This section contains per add-on telemetry details, as reported by each add-on provider. The XPI provider is the only one reporting at the time of writing (`see DXR <https://dxr.mozilla.org/mozilla-central/search?q=setTelemetryDetails&case=true>`_). Telemetry does not manipulate or enforce a specific format for the supplied provider's data.
+This section contains per add-on telemetry details, as reported by each add-on provider. The XPI provider is the only one reporting at the time of writing (`see Searchfox <https://searchfox.org/mozilla-central/search?q=setTelemetryDetails&case=true>`_). Telemetry does not manipulate or enforce a specific format for the supplied provider's data.
 
 Structure:
 
@@ -498,7 +456,7 @@ This section contains the slow SQL statements gathered at startup (until the "se
 
 UIMeasurements
 --------------
-This section is Android-only and contains UI specific Telemetry measurements and events (`see here <https://dxr.mozilla.org/mozilla-central/search?q=regexp%3AUITelemetry.%28addEvent|startSession|stopSession%29&redirect=false&case=false>`_).
+This section is Android-only and contains UI specific Telemetry measurements and events (`see here <https://searchfox.org/mozilla-central/search?q=UITelemetry.%28addEvent|startSession|stopSession%29&redirect=false&case=false&regexp=true>`_).
 
 Structure:
 
@@ -525,6 +483,10 @@ Structure:
 
 Version History
 ---------------
+
+- Firefox 88:
+
+  - Stopped reporting ``flashVersion`` since Flash is no longer supported. (`bug 1682030 <https://bugzilla.mozilla.org/show_bug.cgi?id=1682030>`_)
 
 - Firefox 61:
 

@@ -1,8 +1,6 @@
-#[macro_use]
-extern crate log;
-extern crate regex;
-extern crate tempfile;
-extern crate walkdir;
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 pub mod adb;
 pub mod shell;
@@ -10,82 +8,93 @@ pub mod shell;
 #[cfg(test)]
 pub mod test;
 
+use log::{debug, warn};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
-use std::fmt;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::iter::FromIterator;
 use std::net::TcpStream;
 use std::num::{ParseIntError, TryFromIntError};
-use std::path::Path;
-use std::str::Utf8Error;
+use std::path::{Component, Path};
+use std::str::{FromStr, Utf8Error};
 use std::time::{Duration, SystemTime};
+use thiserror::Error;
+pub use unix_path::{Path as UnixPath, PathBuf as UnixPathBuf};
+use uuid::Uuid;
 use walkdir::WalkDir;
 
 use crate::adb::{DeviceSerial, SyncCommand};
 
 pub type Result<T> = std::result::Result<T, DeviceError>;
 
-#[derive(Debug)]
-pub enum DeviceError {
-    Adb(String),
-    Io(io::Error),
-    FromInt(TryFromIntError),
-    MultipleDevices,
-    ParseInt(ParseIntError),
-    UnknownDevice(String),
-    Utf8(Utf8Error),
-    WalkDir(walkdir::Error),
+static SYNC_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"[^A-Za-z0-9_@%+=:,./-]").unwrap());
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AndroidStorageInput {
+    Auto,
+    App,
+    Internal,
+    Sdcard,
 }
 
-impl fmt::Display for DeviceError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            DeviceError::Adb(ref message) => message.fmt(f),
-            DeviceError::MultipleDevices => write!(f, "Multiple Android devices online"),
-            DeviceError::UnknownDevice(ref serial) => {
-                write!(f, "Unknown Android device with serial '{}'", serial)
-            }
-            _ => self.to_string().fmt(f),
+impl FromStr for AndroidStorageInput {
+    type Err = DeviceError;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "auto" => Ok(AndroidStorageInput::Auto),
+            "app" => Ok(AndroidStorageInput::App),
+            "internal" => Ok(AndroidStorageInput::Internal),
+            "sdcard" => Ok(AndroidStorageInput::Sdcard),
+            _ => Err(DeviceError::InvalidStorage),
         }
     }
 }
 
-impl From<io::Error> for DeviceError {
-    fn from(value: io::Error) -> DeviceError {
-        DeviceError::Io(value)
+impl Default for AndroidStorageInput {
+    fn default() -> Self {
+        AndroidStorageInput::Auto
     }
 }
 
-impl From<ParseIntError> for DeviceError {
-    fn from(value: ParseIntError) -> DeviceError {
-        DeviceError::ParseInt(value)
-    }
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AndroidStorage {
+    App,
+    Internal,
+    Sdcard,
 }
 
-impl From<TryFromIntError> for DeviceError {
-    fn from(value: TryFromIntError) -> DeviceError {
-        DeviceError::FromInt(value)
-    }
-}
-
-impl From<Utf8Error> for DeviceError {
-    fn from(value: Utf8Error) -> DeviceError {
-        DeviceError::Utf8(value)
-    }
-}
-
-impl From<walkdir::Error> for DeviceError {
-    fn from(value: walkdir::Error) -> DeviceError {
-        DeviceError::WalkDir(value)
-    }
+#[derive(Debug, Error)]
+pub enum DeviceError {
+    #[error("{0}")]
+    Adb(String),
+    #[error(transparent)]
+    FromInt(#[from] TryFromIntError),
+    #[error("Invalid storage")]
+    InvalidStorage,
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error("Missing package")]
+    MissingPackage,
+    #[error("Multiple Android devices online")]
+    MultipleDevices,
+    #[error(transparent)]
+    ParseInt(#[from] ParseIntError),
+    #[error("Unknown Android device with serial '{0}'")]
+    UnknownDevice(String),
+    #[error(transparent)]
+    Utf8(#[from] Utf8Error),
+    #[error(transparent)]
+    WalkDir(#[from] walkdir::Error),
 }
 
 fn encode_message(payload: &str) -> Result<String> {
     let hex_length = u16::try_from(payload.len()).map(|len| format!("{:0>4X}", len))?;
 
-    Ok(format!("{}{}", hex_length, payload).to_owned())
+    Ok(format!("{}{}", hex_length, payload))
 }
 
 fn parse_device_info(line: &str) -> Option<DeviceInfo> {
@@ -121,7 +130,7 @@ fn read_length<R: Read>(stream: &mut R) -> Result<usize> {
 
     let response = std::str::from_utf8(&bytes)?;
 
-    Ok(usize::from_str_radix(&response, 16)?)
+    Ok(usize::from_str_radix(response, 16)?)
 }
 
 /// Reads the payload length of a device message from the stream.
@@ -153,7 +162,7 @@ fn read_response(stream: &mut TcpStream, has_output: bool, has_length: bool) -> 
 
     stream.read_exact(&mut bytes[0..4])?;
 
-    if &bytes[0..4] != SyncCommand::Okay.code() {
+    if !bytes.starts_with(SyncCommand::Okay.code()) {
         let n = bytes.len().min(read_length(stream)?);
         stream.read_exact(&mut bytes[0..n])?;
 
@@ -167,13 +176,13 @@ fn read_response(stream: &mut TcpStream, has_output: bool, has_length: bool) -> 
     if has_output {
         stream.read_to_end(&mut response)?;
 
-        if response.len() >= 4 && &response[0..4] == SyncCommand::Okay.code() {
+        if response.starts_with(SyncCommand::Okay.code()) {
             // Sometimes the server produces OKAYOKAY.  Sometimes there is a transport OKAY and
             // then the underlying command OKAY.  This is straight from `chromedriver`.
             response = response.split_off(4);
         }
 
-        if response.len() >= 4 && &response[0..4] == SyncCommand::Fail.code() {
+        if response.starts_with(SyncCommand::Fail.code()) {
             // The server may even produce OKAYFAIL, which means the underlying
             // command failed. First split-off the `FAIL` and length of the message.
             response = response.split_off(8);
@@ -189,11 +198,12 @@ fn read_response(stream: &mut TcpStream, has_output: bool, has_length: bool) -> 
                 let slice: &mut &[u8] = &mut &*response;
 
                 let n = read_length(slice)?;
-                warn!(
-                    "adb server response contained hexstring length {} and message length was {} \
-                     and message was {:?}",
-                    n,
-                    message.len(),
+                if n != message.len() {
+                    warn!("adb server response contained hexstring len {} but remaining message length is {}", n, message.len());
+                }
+
+                debug!(
+                    "adb server response was {:?}",
                     std::str::from_utf8(&message)?
                 );
 
@@ -247,7 +257,11 @@ impl Host {
     ///
     /// If multiple devices are online, and no device has been specified,
     /// the `ANDROID_SERIAL` environment variable can be used to select one.
-    pub fn device_or_default<T: AsRef<str>>(self, device_serial: Option<&T>) -> Result<Device> {
+    pub fn device_or_default<T: AsRef<str>>(
+        self,
+        device_serial: Option<&T>,
+        storage: AndroidStorageInput,
+    ) -> Result<Device> {
         let serials: Vec<String> = self
             .devices::<Vec<_>>()?
             .into_iter()
@@ -262,10 +276,7 @@ impl Host {
                 return Err(DeviceError::UnknownDevice(serial.clone()));
             }
 
-            return Ok(Device {
-                host: self,
-                serial: serial.to_owned(),
-            });
+            return Device::new(self, serial.to_owned(), storage);
         }
 
         if serials.len() > 1 {
@@ -273,10 +284,7 @@ impl Host {
         }
 
         if let Some(ref serial) = serials.first() {
-            return Ok(Device {
-                host: self,
-                serial: serial.to_string(),
-            });
+            return Device::new(self, serial.to_owned().to_string(), storage);
         }
 
         Err(DeviceError::Adb("No Android devices are online".to_owned()))
@@ -341,9 +349,106 @@ pub struct Device {
 
     /// Serial number uniquely identifying this ADB device.
     pub serial: DeviceSerial,
+
+    /// adb running as root
+    pub adbd_root: bool,
+
+    /// Flag for rooted device
+    pub is_rooted: bool,
+
+    /// "su 0" command available
+    pub su_0_root: bool,
+
+    /// "su -c" command available
+    pub su_c_root: bool,
+
+    pub run_as_package: Option<String>,
+
+    pub storage: AndroidStorage,
+
+    /// Cache intermediate tempfile name used in pushing via run_as.
+    pub tempfile: UnixPathBuf,
 }
 
 impl Device {
+    pub fn new(host: Host, serial: DeviceSerial, storage: AndroidStorageInput) -> Result<Device> {
+        let mut device = Device {
+            host,
+            serial,
+            adbd_root: false,
+            is_rooted: false,
+            run_as_package: None,
+            storage: AndroidStorage::App,
+            su_c_root: false,
+            su_0_root: false,
+            tempfile: UnixPathBuf::from("/data/local/tmp"),
+        };
+        device
+            .tempfile
+            .push(Uuid::new_v4().to_hyphenated().to_string());
+
+        // check for rooted devices
+        let uid_check = |id: String| id.contains("uid=0");
+        device.adbd_root = device
+            .execute_host_shell_command("id")
+            .map_or(false, uid_check);
+        device.su_0_root = device
+            .execute_host_shell_command("su 0 id")
+            .map_or(false, uid_check);
+        device.su_c_root = device
+            .execute_host_shell_command("su -c id")
+            .map_or(false, uid_check);
+        device.is_rooted = device.adbd_root || device.su_0_root || device.su_c_root;
+
+        device.storage = match storage {
+            AndroidStorageInput::App => AndroidStorage::App,
+            AndroidStorageInput::Internal => AndroidStorage::Internal,
+            AndroidStorageInput::Sdcard => AndroidStorage::Sdcard,
+            AndroidStorageInput::Auto => AndroidStorage::Sdcard,
+        };
+
+        if device.is_rooted {
+            debug!("Device is rooted");
+
+            // Set Permissive=1 if we have root.
+            device.execute_host_shell_command("setenforce permissive")?;
+        } else {
+            debug!("Device is unrooted");
+        }
+
+        Ok(device)
+    }
+
+    pub fn clear_app_data(&self, package: &str) -> Result<bool> {
+        self.execute_host_shell_command(&format!("pm clear {}", package))
+            .map(|v| v.contains("Success"))
+    }
+
+    pub fn create_dir(&self, path: &UnixPath) -> Result<()> {
+        debug!("Creating {}", path.display());
+
+        let enable_run_as = self.enable_run_as_for_path(path);
+        self.execute_host_shell_command_as(&format!("mkdir -p {}", path.display()), enable_run_as)?;
+
+        Ok(())
+    }
+
+    pub fn chmod(&self, path: &UnixPath, mask: &str, recursive: bool) -> Result<()> {
+        let enable_run_as = self.enable_run_as_for_path(path);
+
+        let recursive = match recursive {
+            true => " -R",
+            false => "",
+        };
+
+        self.execute_host_shell_command_as(
+            &format!("chmod {} {} {}", recursive, mask, path.display()),
+            enable_run_as,
+        )?;
+
+        Ok(())
+    }
+
     pub fn execute_host_command(
         &self,
         command: &str,
@@ -360,30 +465,114 @@ impl Device {
         // TODO: should we assert no bytes were read?
 
         debug!("execute_host_command: >> {:?}", &command);
-        stream.write_all(encode_message(&command)?.as_bytes())?;
+        stream.write_all(encode_message(command)?.as_bytes())?;
         let bytes = read_response(&mut stream, has_output, has_length)?;
 
         let response = std::str::from_utf8(&bytes)?;
         debug!("execute_host_command: << {:?}", response);
 
-        Ok(response.to_owned())
+        // Unify new lines by removing possible carriage returns
+        Ok(response.replace("\r\n", "\n"))
+    }
+
+    pub fn enable_run_as_for_path(&self, path: &UnixPath) -> bool {
+        match &self.run_as_package {
+            Some(package) => {
+                let mut p = UnixPathBuf::from("/data/data/");
+                p.push(package);
+                path.starts_with(p)
+            }
+            None => false,
+        }
     }
 
     pub fn execute_host_shell_command(&self, shell_command: &str) -> Result<String> {
-        let response =
-            self.execute_host_command(&format!("shell:{}", shell_command), true, false)?;
+        self.execute_host_shell_command_as(shell_command, false)
+    }
 
-        Ok(response)
+    pub fn execute_host_shell_command_as(
+        &self,
+        shell_command: &str,
+        enable_run_as: bool,
+    ) -> Result<String> {
+        // We don't want to duplicate su invocations.
+        if shell_command.starts_with("su") {
+            return self.execute_host_command(&format!("shell:{}", shell_command), true, false);
+        }
+
+        let has_outer_quotes = shell_command.starts_with('"') && shell_command.ends_with('"')
+            || shell_command.starts_with('\'') && shell_command.ends_with('\'');
+
+        if self.adbd_root {
+            return self.execute_host_command(&format!("shell:{}", shell_command), true, false);
+        }
+
+        if self.su_0_root {
+            return self.execute_host_command(
+                &format!("shell:su 0 {}", shell_command),
+                true,
+                false,
+            );
+        }
+
+        if self.su_c_root {
+            if has_outer_quotes {
+                return self.execute_host_command(
+                    &format!("shell:su -c {}", shell_command),
+                    true,
+                    false,
+                );
+            }
+
+            if SYNC_REGEX.is_match(shell_command) {
+                let arg: &str = &shell_command.replace("'", "'\"'\"'")[..];
+                return self.execute_host_command(&format!("shell:su -c '{}'", arg), true, false);
+            }
+
+            return self.execute_host_command(
+                &format!("shell:su -c \"{}\"", shell_command),
+                true,
+                false,
+            );
+        }
+
+        // Execute command as package
+        if enable_run_as {
+            let run_as_package = self
+                .run_as_package
+                .as_ref()
+                .ok_or(DeviceError::MissingPackage)?;
+
+            if has_outer_quotes {
+                return self.execute_host_command(
+                    &format!("shell:run-as {} {}", run_as_package, shell_command),
+                    true,
+                    false,
+                );
+            }
+
+            if SYNC_REGEX.is_match(shell_command) {
+                let arg: &str = &shell_command.replace("'", "'\"'\"'")[..];
+                return self.execute_host_command(
+                    &format!("shell:run-as {} {}", run_as_package, arg),
+                    true,
+                    false,
+                );
+            }
+
+            return self.execute_host_command(
+                &format!("shell:run-as {} \"{}\"", run_as_package, shell_command),
+                true,
+                false,
+            );
+        }
+
+        self.execute_host_command(&format!("shell:{}", shell_command), true, false)
     }
 
     pub fn is_app_installed(&self, package: &str) -> Result<bool> {
         self.execute_host_shell_command(&format!("pm path {}", package))
             .map(|v| v.contains("package:"))
-    }
-
-    pub fn clear_app_data(&self, package: &str) -> Result<bool> {
-        self.execute_host_shell_command(&format!("pm clear {}", package))
-            .map(|v| v.contains("Success"))
     }
 
     pub fn launch<T: AsRef<str>>(
@@ -395,8 +584,12 @@ impl Device {
         let mut am_start = format!("am start -W -n {}/{}", package, activity);
 
         for arg in am_start_args {
-            am_start.push_str(" ");
-            am_start.push_str(&shell::escape(arg.as_ref()));
+            am_start.push(' ');
+            if SYNC_REGEX.is_match(arg.as_ref()) {
+                am_start.push_str(&format!("\"{}\"", &shell::escape(arg.as_ref())));
+            } else {
+                am_start.push_str(&shell::escape(arg.as_ref()));
+            };
         }
 
         self.execute_host_shell_command(&am_start)
@@ -424,12 +617,13 @@ impl Device {
     }
 
     pub fn kill_forward_port(&self, local: u16) -> Result<()> {
-        let command = format!("killforward:tcp:{}", local);
+        let command = format!("host-serial:{}:killforward:tcp:{}", self.serial, local);
         self.execute_host_command(&command, true, false).and(Ok(()))
     }
 
     pub fn kill_forward_all_ports(&self) -> Result<()> {
-        self.execute_host_command(&"killforward-all".to_owned(), false, false)
+        let command = format!("host-serial:{}:killforward-all", self.serial);
+        self.execute_host_command(&command, false, false)
             .and(Ok(()))
     }
 
@@ -455,7 +649,12 @@ impl Device {
             .and(Ok(()))
     }
 
-    pub fn push(&self, buffer: &mut dyn Read, dest: &Path, mode: u32) -> Result<()> {
+    pub fn path_exists(&self, path: &UnixPath, enable_run_as: bool) -> Result<bool> {
+        self.execute_host_shell_command_as(format!("ls {}", path.display()).as_str(), enable_run_as)
+            .map(|path| !path.contains("No such file or directory"))
+    }
+
+    pub fn push(&self, buffer: &mut dyn Read, dest: &UnixPath, mode: u32) -> Result<()> {
         // Implement the ADB protocol to send a file to the device.
         // The protocol consists of the following steps:
         // * Send "host:transport" command with device serial
@@ -463,6 +662,47 @@ impl Device {
         // * Send "SEND" command with name and mode of the file
         // * Send "DATA" command one or more times for the file content
         // * Send "DONE" command to indicate end of file transfer
+
+        let enable_run_as = self.enable_run_as_for_path(&dest.to_path_buf());
+        let dest1 = match enable_run_as {
+            true => self.tempfile.as_path(),
+            false => UnixPath::new(dest),
+        };
+
+        // If the destination directory does not exist, adb will
+        // create it and any necessary ancestors however it will not
+        // set the directory permissions to 0o777.  In addition,
+        // Android 9 (P) has a bug in its push implementation which
+        // will cause a push which creates directories to fail with
+        // the error `secure_mkdirs failed: Operation not
+        // permitted`. We can work around this by creating the
+        // destination directories prior to the push.  Collect the
+        // ancestors of the destination directory which do not yet
+        // exist so we can create them and adjust their permissions
+        // prior to performing the push.
+        let mut current = dest.parent();
+        let mut leaf: Option<&UnixPath> = None;
+        let mut root: Option<&UnixPath> = None;
+
+        while let Some(path) = current {
+            if self.path_exists(path, enable_run_as)? {
+                break;
+            }
+            if leaf.is_none() {
+                leaf = Some(path);
+            }
+            root = Some(path);
+            current = path.parent();
+        }
+
+        if let Some(path) = leaf {
+            self.create_dir(path)?;
+        }
+
+        if let Some(path) = root {
+            self.chmod(path, "777", true)?;
+        }
+
         let mut stream = self.host.connect()?;
 
         let message = encode_message(&format!("host:transport:{}", self.serial))?;
@@ -474,7 +714,7 @@ impl Device {
         let _bytes = read_response(&mut stream, false, true)?;
 
         stream.write_all(SyncCommand::Send.code())?;
-        let args_ = format!("{},{}", dest.display(), mode);
+        let args_ = format!("{},{}", dest1.display(), mode);
         let args = args_.as_bytes();
         write_length_little_endian(&mut stream, args.len())?;
         stream.write_all(args)?;
@@ -512,9 +752,23 @@ impl Device {
         // Status.
         stream.read_exact(&mut buf[0..4])?;
 
-        if &buf[0..4] == SyncCommand::Okay.code() {
+        if buf.starts_with(SyncCommand::Okay.code()) {
+            if enable_run_as {
+                // Use cp -a to preserve the permissions set by push.
+                let result = self.execute_host_shell_command_as(
+                    format!("cp -aR {} {}", dest1.display(), dest.display()).as_str(),
+                    enable_run_as,
+                );
+                if self.remove(dest1).is_err() {
+                    debug!("Failed to remove {}", dest1.display());
+                }
+                result?;
+            }
             Ok(())
-        } else if &buf[0..4] == SyncCommand::Fail.code() {
+        } else if buf.starts_with(SyncCommand::Fail.code()) {
+            if enable_run_as && self.remove(dest1).is_err() {
+                debug!("Failed to remove {}", dest1.display());
+            }
             let n = buf.len().min(read_length_little_endian(&mut stream)?);
 
             stream.read_exact(&mut buf[0..n])?;
@@ -525,11 +779,16 @@ impl Device {
 
             Err(DeviceError::Adb(message))
         } else {
+            if self.remove(dest1).is_err() {
+                debug!("Failed to remove {}", dest1.display());
+            }
             Err(DeviceError::Adb("FAIL (unknown)".to_owned()))
         }
     }
 
-    pub fn push_dir(&self, source: &Path, dest_dir: &Path, mode: u32) -> Result<()> {
+    pub fn push_dir(&self, source: &Path, dest_dir: &UnixPath, mode: u32) -> Result<()> {
+        debug!("Pushing {} to {}", source.display(), dest_dir.display());
+
         let walker = WalkDir::new(source).follow_links(false).into_iter();
 
         for entry in walker {
@@ -542,15 +801,51 @@ impl Device {
 
             let mut file = File::open(path)?;
 
-            let mut dest = dest_dir.to_path_buf();
-            dest.push(
-                path.strip_prefix(source)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?,
-            );
+            let tail = path
+                .strip_prefix(source)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
+            let dest = append_components(dest_dir, tail)?;
             self.push(&mut file, &dest, mode)?;
         }
 
         Ok(())
     }
+
+    pub fn remove(&self, path: &UnixPath) -> Result<()> {
+        debug!("Deleting {}", path.display());
+
+        self.execute_host_shell_command_as(
+            &format!("rm -rf {}", path.display()),
+            self.enable_run_as_for_path(path),
+        )?;
+
+        Ok(())
+    }
+}
+
+pub(crate) fn append_components(
+    base: &UnixPath,
+    tail: &Path,
+) -> std::result::Result<UnixPathBuf, io::Error> {
+    let mut buf = base.to_path_buf();
+
+    for component in tail.components() {
+        if let Component::Normal(segment) = component {
+            let utf8 = segment.to_str().ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    "Could not represent path segment as UTF-8",
+                )
+            })?;
+            buf.push(utf8);
+        } else {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Unexpected path component".to_owned(),
+            ));
+        }
+    }
+
+    Ok(buf)
 }

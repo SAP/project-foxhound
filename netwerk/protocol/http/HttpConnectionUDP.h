@@ -21,12 +21,14 @@
 
 #include "nsIAsyncInputStream.h"
 #include "nsIAsyncOutputStream.h"
+#include "nsISupportsPriority.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsITimer.h"
 #include "Http3Session.h"
 
 class nsISocketTransport;
 class nsISSLSocketControl;
+class nsIDNSRecord;
 
 namespace mozilla {
 namespace net {
@@ -50,11 +52,7 @@ class ASpdySession;
 //-----------------------------------------------------------------------------
 
 class HttpConnectionUDP final : public HttpConnectionBase,
-                                public nsAHttpSegmentReader,
-                                public nsAHttpSegmentWriter,
-                                public nsIInputStreamCallback,
-                                public nsIOutputStreamCallback,
-                                public nsITransportEventSink,
+                                public nsIUDPSocketSyncListener,
                                 public nsIInterfaceRequestor {
  private:
   virtual ~HttpConnectionUDP();
@@ -63,14 +61,14 @@ class HttpConnectionUDP final : public HttpConnectionBase,
   NS_DECLARE_STATIC_IID_ACCESSOR(HTTPCONNECTIONUDP_IID)
   NS_DECL_HTTPCONNECTIONBASE
   NS_DECL_THREADSAFE_ISUPPORTS
-  NS_DECL_NSAHTTPSEGMENTREADER
-  NS_DECL_NSAHTTPSEGMENTWRITER
-  NS_DECL_NSIINPUTSTREAMCALLBACK
-  NS_DECL_NSIOUTPUTSTREAMCALLBACK
-  NS_DECL_NSITRANSPORTEVENTSINK
+  NS_DECL_NSIUDPSOCKETSYNCLISTENER
   NS_DECL_NSIINTERFACEREQUESTOR
 
   HttpConnectionUDP();
+
+  [[nodiscard]] nsresult Init(nsHttpConnectionInfo* info,
+                              nsIDNSRecord* dnsRecord, nsresult status,
+                              nsIInterfaceRequestor* callbacks, uint32_t caps);
 
   friend class HttpConnectionUDPForceIO;
 
@@ -83,45 +81,48 @@ class HttpConnectionUDP final : public HttpConnectionBase,
   static void OnQuicTimeout(nsITimer* aTimer, void* aClosure);
   void OnQuicTimeoutExpired();
 
+  int64_t BytesWritten() override;
+
+  nsresult GetSelfAddr(NetAddr* addr) override;
+  nsresult GetPeerAddr(NetAddr* addr) override;
+  bool ResolvedByTRR() override;
+  bool GetEchConfigUsed() override { return false; }
+
  private:
   [[nodiscard]] nsresult OnTransactionDone(nsresult reason);
-  [[nodiscard]] nsresult OnSocketWritable();
-  [[nodiscard]] nsresult OnSocketReadable();
+  nsresult RecvData();
+  nsresult SendData();
 
  private:
-  nsCOMPtr<nsIAsyncInputStream> mSocketIn;
-  nsCOMPtr<nsIAsyncOutputStream> mSocketOut;
-
   RefPtr<nsHttpHandler> mHttpHandler;  // keep gHttpHandler alive
-
-  PRIntervalTime mLastReadTime;
-  PRIntervalTime mLastWriteTime;
-  int64_t mTotalBytesRead;       // total data read
-  int64_t mContentBytesWritten;  // does not include CONNECT tunnel or TLS
 
   RefPtr<nsIAsyncInputStream> mInputOverflow;
 
-  bool mConnectedTransport;
-  bool mDontReuse;
-  bool mIsReused;
-  bool mLastTransactionExpectedNoContent;
+  bool mConnectedTransport = false;
+  bool mDontReuse = false;
+  bool mIsReused = false;
+  bool mLastTransactionExpectedNoContent = false;
 
-  int32_t mPriority;
+  int32_t mPriority = nsISupportsPriority::PRIORITY_NORMAL;
 
  private:
   // For ForceSend()
   static void ForceSendIO(nsITimer* aTimer, void* aClosure);
   [[nodiscard]] nsresult MaybeForceSendIO();
-  bool mForceSendPending;
+  bool mForceSendPending = false;
   nsCOMPtr<nsITimer> mForceSendTimer;
 
-  PRIntervalTime mLastRequestBytesSentTime;
+  PRIntervalTime mLastRequestBytesSentTime = 0;
+  nsCOMPtr<nsIUDPSocket> mSocket;
+
+  nsCOMPtr<nsINetAddr> mSelfAddr;
+  nsCOMPtr<nsINetAddr> mPeerAddr;
+  bool mResolvedByTRR = false;
 
  private:
-  bool mThroughCaptivePortal;
-
   // Http3
   RefPtr<Http3Session> mHttp3Session;
+  nsCString mAlpnToken;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(HttpConnectionUDP, HTTPCONNECTIONUDP_IID)

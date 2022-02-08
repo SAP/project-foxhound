@@ -8,19 +8,32 @@
 #define mozilla_dom_SessionStoreUtils_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/SessionStoreUtilsBinding.h"
 #include "SessionStoreData.h"
+#include "SessionStoreRestoreData.h"
 
 class nsIDocument;
 class nsGlobalWindowInner;
 
 namespace mozilla {
+class ErrorResult;
+
 namespace dom {
 
+class CanonicalBrowsingContext;
 class GlobalObject;
 struct SSScrollPositionDict;
+class SSCacheCopy;
+class SSSetItemInfo;
+
+namespace sessionstore {
+class DocShellRestoreState;
+class FormData;
+class FormEntry;
+class StorageEntry;
+}  // namespace sessionstore
 
 class SessionStoreUtils {
  public:
@@ -44,8 +57,12 @@ class SessionStoreUtils {
                                           nsCString& aRetVal);
 
   static void RestoreDocShellCapabilities(
+      nsIDocShell* aDocShell, const nsCString& aDisallowCapabilities);
+  static void RestoreDocShellCapabilities(
       const GlobalObject& aGlobal, nsIDocShell* aDocShell,
-      const nsCString& aDisallowCapabilities);
+      const nsCString& aDisallowCapabilities) {
+    return RestoreDocShellCapabilities(aDocShell, aDisallowCapabilities);
+  }
 
   static void CollectScrollPosition(const GlobalObject& aGlobal,
                                     WindowProxyHolder& aWindow,
@@ -54,6 +71,11 @@ class SessionStoreUtils {
   static void RestoreScrollPosition(const GlobalObject& aGlobal,
                                     nsGlobalWindowInner& aWindow,
                                     const CollectedData& data);
+  static void RestoreScrollPosition(nsGlobalWindowInner& aWindow,
+                                    const nsCString& aScrollPosition);
+
+  static uint32_t CollectFormData(Document* aDocument,
+                                  sessionstore::FormData& aFormData);
 
   /*
     @param aDocument: DOMDocument instance to obtain form data for.
@@ -80,18 +102,51 @@ class SessionStoreUtils {
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   static bool RestoreFormData(const GlobalObject& aGlobal, Document& aDocument,
                               const CollectedData& aData);
-
-  static void CollectedSessionStorage(BrowsingContext* aBrowsingContext,
-                                      nsTArray<nsCString>& aOrigins,
-                                      nsTArray<nsString>& aKeys,
-                                      nsTArray<nsString>& aValues);
-
-  static void RestoreSessionStorage(
-      const GlobalObject& aGlobal, nsIDocShell* aDocShell,
-      const Record<nsString, Record<nsString, nsString>>& aData);
+  static void RestoreFormData(
+      Document& aDocument, const nsString& aInnerHTML,
+      const nsTArray<SessionStoreRestoreData::Entry>& aEntries);
 
   static void ComposeInputData(const nsTArray<CollectedInputDataValue>& aData,
                                InputElementData& ret);
+
+  static already_AddRefed<nsISessionStoreRestoreData>
+  ConstructSessionStoreRestoreData(const GlobalObject& aGlobal);
+
+  static already_AddRefed<Promise> InitializeRestore(
+      const GlobalObject& aGlobal, CanonicalBrowsingContext& aContext,
+      nsISessionStoreRestoreData* aData, ErrorResult& aError);
+
+  static void RestoreDocShellState(
+      nsIDocShell* aDocShell, const sessionstore::DocShellRestoreState& aState);
+
+  static already_AddRefed<Promise> RestoreDocShellState(
+      const GlobalObject& aGlobal, CanonicalBrowsingContext& aContext,
+      const nsACString& aURL, const nsCString& aDocShellCaps,
+      ErrorResult& aError);
+
+  static void RestoreSessionStorageFromParent(
+      const GlobalObject& aGlobal, const CanonicalBrowsingContext& aContext,
+      const Record<nsCString, Record<nsString, nsString>>& aSessionStorage);
+
+  static nsresult ConstructFormDataValues(
+      JSContext* aCx, const nsTArray<sessionstore::FormEntry>& aValues,
+      nsTArray<Record<nsString, OwningStringOrBooleanOrObject>::EntryType>&
+          aEntries,
+      bool aParseSessionData = false);
+
+  static nsresult ConstructSessionStorageValues(
+      CanonicalBrowsingContext* aBrowsingContext,
+      const nsTArray<SSCacheCopy>& aValues,
+      Record<nsCString, Record<nsString, nsString>>& aStorage);
+
+  static void ResetSessionStore(BrowsingContext* aContext);
+
+#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_THUNDERBIRD) || \
+    defined(MOZ_SUITE)
+  static constexpr bool NATIVE_LISTENER = false;
+#else
+  static constexpr bool NATIVE_LISTENER = true;
+#endif
 };
 
 }  // namespace dom

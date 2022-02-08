@@ -8,7 +8,7 @@ requestLongerTimeout(10);
 
 const TEST_PAGE =
   "http://mochi.test:8888/browser/dom/ipc/tests/file_cancel_content_js.html";
-const NEXT_PAGE = "https://example.org/";
+const NEXT_PAGE = "http://mochi.test:8888/browser/dom/ipc/tests/";
 const JS_URI = "javascript:void(document.title = 'foo')";
 
 async function test_navigation(nextPage, cancelContentJSPref, shouldCancel) {
@@ -16,6 +16,10 @@ async function test_navigation(nextPage, cancelContentJSPref, shouldCancel) {
     set: [
       ["dom.ipc.cancel_content_js_when_navigating", cancelContentJSPref],
       ["dom.max_script_run_time", 20],
+      // Force a single process so that the navigation will complete in the same
+      // process as the previous page which is running the long-running script.
+      ["dom.ipc.processCount", 1],
+      ["dom.ipc.processCount.webIsolated", 1],
     ],
   });
   let tab = await BrowserTestUtils.openNewForegroundTab({

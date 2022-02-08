@@ -8,7 +8,7 @@ job-defaults:
         linux64.*: build-linux64-shippable/opt
     worker-type:
         by-platform:
-            linux64.*: t-linux-talos
+            linux64.*: t-linux-talos-1804
     worker:
         by-platform:
             linux64.*:
@@ -20,13 +20,12 @@ job-defaults:
                         v8:
                             SHELL: /bin/bash
                             JSSHELL: d8/release/d8
-                max-run-time: 1800
+                max-run-time: 3600
     treeherder:
         kind: test
         tier: 2
     run:
         using: mach
-        workdir: /home/cltbld
         mach: jsshell-bench --perfherder={shell} --binary=$MOZ_FETCHES_DIR/$JSSHELL {test}
     run-on-projects:
         by-shell:
@@ -44,7 +43,7 @@ job-defaults:
         toolchain:
             - linux64-custom-v8
     optimization:
-        push-interval-10: null
+        skip-unless-expanded: null
 
 bench-ares6:
     description: Ares6 JavaScript shell benchmark suite

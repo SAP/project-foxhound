@@ -7,7 +7,6 @@ from __future__ import absolute_import
 import json
 import os
 import types
-import urllib2
 
 import six
 from six.moves.urllib_request import urlopen
@@ -92,4 +91,4 @@ def test_handler(server):
 
 
 if __name__ == "__main__":
-    mozunit.main('-p', 'no:terminalreporter', '--log-tbpl=-', '--capture', 'no')
+    mozunit.main("-p", "no:terminalreporter", "--log-tbpl=-", "--capture", "no")

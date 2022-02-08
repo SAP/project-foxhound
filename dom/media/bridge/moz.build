@@ -5,34 +5,31 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 XPIDL_SOURCES += [
-    'IPeerConnection.idl',
+    "IPeerConnection.idl",
 ]
 
-XPIDL_MODULE = 'peerconnection'
+XPIDL_MODULE = "peerconnection"
 
 SOURCES += [
-    'MediaModule.cpp',
+    "MediaModule.cpp",
 ]
 
 LOCAL_INCLUDES += [
-    '/ipc/chromium/src',
-    '/media/mtransport',
-    '/media/mtransport',
-    '/media/webrtc/',
-    '/media/webrtc/signaling/src/common/time_profiling',
-    '/media/webrtc/signaling/src/media-conduit',
-    '/media/webrtc/signaling/src/mediapipeline',
-    '/media/webrtc/signaling/src/peerconnection',
-    '/media/webrtc/trunk/',
-    '/media/webrtc/trunk/webrtc/',
+    "/dom/media/webrtc/",
+    "/dom/media/webrtc/common/time_profiling",
+    "/dom/media/webrtc/jsapi",
+    "/dom/media/webrtc/libwebrtcglue",
+    "/dom/media/webrtc/transport",
+    "/dom/media/webrtc/transportbridge",
+    "/ipc/chromium/src",
+    "/media/webrtc/",
+    "/third_party/libwebrtc",
+    "/third_party/libwebrtc/third_party/abseil-cpp",
 ]
 
-if CONFIG['MOZ_WEBRTC']:
+if CONFIG["MOZ_WEBRTC"]:
     XPCOM_MANIFESTS += [
-        'components.conf',
+        "components.conf",
     ]
 
-FINAL_LIBRARY = 'xul'
-
-if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
-    CXXFLAGS += ['-Wno-error=shadow']
+FINAL_LIBRARY = "xul"

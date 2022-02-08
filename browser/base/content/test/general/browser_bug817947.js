@@ -4,56 +4,48 @@
 const URL = "http://mochi.test:8888/browser/";
 const PREF = "browser.sessionstore.restore_on_demand";
 
-function test() {
-  waitForExplicitFinish();
-
+add_task(async () => {
   Services.prefs.setBoolPref(PREF, true);
   registerCleanupFunction(function() {
     Services.prefs.clearUserPref(PREF);
   });
 
-  preparePendingTab(function(aTab) {
-    let win = gBrowser.replaceTabWithWindow(aTab);
+  let tab = await preparePendingTab();
 
-    whenDelayedStartupFinished(win, function() {
-      let [tab] = win.gBrowser.tabs;
+  let deferredTab = PromiseUtils.defer();
 
-      whenLoaded(tab.linkedBrowser, function() {
-        is(
-          tab.linkedBrowser.currentURI.spec,
-          URL,
-          "correct url should be loaded"
-        );
-        ok(!tab.hasAttribute("pending"), "tab should not be pending");
+  let win = gBrowser.replaceTabWithWindow(tab);
+  win.addEventListener(
+    "before-initial-tab-adopted",
+    async () => {
+      let [newTab] = win.gBrowser.tabs;
+      await BrowserTestUtils.browserLoaded(newTab.linkedBrowser);
+      deferredTab.resolve(newTab);
+    },
+    { once: true }
+  );
 
-        win.close();
-        finish();
-      });
-    });
-  });
-}
+  let newTab = await deferredTab.promise;
+  is(newTab.linkedBrowser.currentURI.spec, URL, "correct url should be loaded");
+  ok(!newTab.hasAttribute("pending"), "tab should not be pending");
 
-function preparePendingTab(aCallback) {
+  win.close();
+});
+
+async function preparePendingTab(aCallback) {
   let tab = BrowserTestUtils.addTab(gBrowser, URL);
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
-  whenLoaded(tab.linkedBrowser, function() {
-    let sessionUpdatePromise = BrowserTestUtils.waitForSessionStoreUpdate(tab);
-    BrowserTestUtils.removeTab(tab);
-    sessionUpdatePromise.then(() => {
-      let [{ state }] = JSON.parse(SessionStore.getClosedTabData(window));
+  let sessionUpdatePromise = BrowserTestUtils.waitForSessionStoreUpdate(tab);
+  BrowserTestUtils.removeTab(tab);
+  await sessionUpdatePromise;
 
-      tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
-      whenLoaded(tab.linkedBrowser, function() {
-        SessionStore.setTabState(tab, JSON.stringify(state));
-        ok(tab.hasAttribute("pending"), "tab should be pending");
-        aCallback(tab);
-      });
-    });
-  });
-}
+  let [{ state }] = SessionStore.getClosedTabData(window);
 
-function whenLoaded(aBrowser, aCallback) {
-  BrowserTestUtils.browserLoaded(aBrowser).then(() => {
-    executeSoon(aCallback);
-  });
+  tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  SessionStore.setTabState(tab, JSON.stringify(state));
+  ok(tab.hasAttribute("pending"), "tab should be pending");
+
+  return tab;
 }

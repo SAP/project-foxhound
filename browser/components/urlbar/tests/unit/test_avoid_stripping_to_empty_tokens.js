@@ -2,12 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const ENGINE_NAME = "engine-suggestions.xml";
-
 testEngine_setup();
 
 add_task(async function test_protocol_trimming() {
-  for (let prot of ["http", "https", "ftp"]) {
+  for (let prot of ["http", "https"]) {
     let visit = {
       // Include the protocol in the query string to ensure we get matches (see bug 1059395)
       uri: Services.io.newURI(
@@ -70,6 +68,7 @@ add_task(async function test_protocol_trimming() {
       context,
       matches: [
         makeVisitResult(context, {
+          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: `${input.trim()}/`,
           title: `${input.trim()}/`,
           iconUri: "",
@@ -79,7 +78,7 @@ add_task(async function test_protocol_trimming() {
         makeVisitResult(context, {
           uri: visit.uri.spec,
           title: visit.title,
-          providerName: "UnifiedComplete",
+          providerName: "Places",
         }),
       ],
     });
@@ -102,14 +101,14 @@ add_task(async function test_protocol_trimming() {
         context,
         matches: [
           makeSearchResult(context, {
-            engineName: ENGINE_NAME,
+            engineName: SUGGESTIONS_ENGINE_NAME,
             query: input,
             heuristic: true,
           }),
           makeVisitResult(context, {
             uri: visit.uri.spec,
             title: visit.title,
-            providerName: "UnifiedComplete",
+            providerName: "Places",
           }),
         ],
       });

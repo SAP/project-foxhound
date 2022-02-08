@@ -17,36 +17,13 @@ MainProcessSingleton.prototype = {
   observe(subject, topic, data) {
     switch (topic) {
       case "app-startup": {
-        Services.obs.addObserver(this, "ipc:first-content-process-created");
+        // Imported for side-effects.
+        ChromeUtils.import("resource://gre/modules/CustomElementsListener.jsm");
 
-        ChromeUtils.import(
-          "resource://gre/modules/CustomElementsListener.jsm",
-          null
-        );
-
-        // Load this script early so that console.* is initialized
-        // before other frame scripts.
-        Services.mm.loadFrameScript(
-          "chrome://global/content/browser-content.js",
-          true,
-          true
-        );
         Services.ppmm.loadProcessScript(
           "chrome://global/content/process-content.js",
           true
         );
-        Services.ppmm.loadProcessScript(
-          "resource:///modules/ContentObservers.js",
-          true
-        );
-        break;
-      }
-
-      case "ipc:first-content-process-created": {
-        // L10nRegistry needs to be initialized before any content
-        // process is loaded to populate the registered FileSource
-        // categories.
-        ChromeUtils.import("resource://gre/modules/L10nRegistry.jsm");
         break;
       }
     }

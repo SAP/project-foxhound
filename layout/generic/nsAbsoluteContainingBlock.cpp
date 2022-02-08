@@ -11,6 +11,7 @@
 
 #include "nsAbsoluteContainingBlock.h"
 
+#include "nsAtomicContainerFrame.h"
 #include "nsContainerFrame.h"
 #include "nsGkAtoms.h"
 #include "mozilla/CSSAlignUtils.h"
@@ -155,9 +156,16 @@ void nsAbsoluteContainingBlock::Reflow(nsContainerFrame* aDelegatingFrame,
                                        nsReflowStatus& aReflowStatus,
                                        const nsRect& aContainingBlock,
                                        AbsPosReflowFlags aFlags,
-                                       nsOverflowAreas* aOverflowAreas) {
-  nsReflowStatus reflowStatus;
+                                       OverflowAreas* aOverflowAreas) {
+  // PageContentFrame replicates fixed pos children so we really don't want
+  // them contributing to overflow areas because that means we'll create new
+  // pages ad infinitum if one of them overflows the page.
+  if (aDelegatingFrame->IsPageContentFrame()) {
+    MOZ_ASSERT(mChildListID == nsAtomicContainerFrame::kFixedList);
+    aOverflowAreas = nullptr;
+  }
 
+  nsReflowStatus reflowStatus;
   const bool reflowAll = aReflowInput.ShouldReflowAllKids();
   const bool isGrid = !!(aFlags & AbsPosReflowFlags::IsGridContainerCB);
   nsIFrame* kidFrame;
@@ -199,7 +207,8 @@ void nsAbsoluteContainingBlock::Reflow(nsContainerFrame* aDelegatingFrame,
                             kidFrame->GetPosition(),
                         aContainingBlock.Size())
                 .BEnd(containerWM);
-        MOZ_ASSERT(kidOverflowBEnd >= kidBEnd);
+        NS_ASSERTION(kidOverflowBEnd >= kidBEnd,
+                     "overflow area should be at least as large as frame rect");
         if (kidOverflowBEnd > availBSize ||
             (kidBEnd < availBSize && kidFrame->GetNextInFlow())) {
           kidNeedsReflow = true;
@@ -504,12 +513,12 @@ static nscoord OffsetToAlignedStaticPos(const ReflowInput& aKidReflowInput,
       // absolute containing block.
       alignAreaSize = aAbsPosCBSize.ConvertTo(pcWM, aAbsPosCBWM);
     } else {
-      // The alignment container is a the grid container's padding box (which
-      // we can get by subtracting away its border from frame's size):
+      // The alignment container is a the grid container's content box (which
+      // we can get by subtracting away its border & padding from frame's size):
       alignAreaSize = aPlaceholderContainer->GetLogicalSize(pcWM);
-      LogicalMargin pcBorder =
-          aPlaceholderContainer->GetLogicalUsedBorder(pcWM);
-      alignAreaSize -= pcBorder.Size(pcWM);
+      LogicalMargin pcBorderPadding =
+          aPlaceholderContainer->GetLogicalUsedBorderAndPadding(pcWM);
+      alignAreaSize -= pcBorderPadding.Size(pcWM);
     }
   } else {
     NS_ERROR("Unsupported container for abpsos CSS Box Alignment");
@@ -642,7 +651,58 @@ void nsAbsoluteContainingBlock::ResolveSizeDependentOffsets(
           logicalCBSizeOuterWM.BSize(outerWM) -
           (aOffsets->BStart(outerWM) + aKidSize.BSize(outerWM));
     }
-    aKidReflowInput.SetComputedLogicalOffsets(aOffsets->ConvertTo(wm, outerWM));
+    aKidReflowInput.SetComputedLogicalOffsets(outerWM, *aOffsets);
+  }
+}
+
+void nsAbsoluteContainingBlock::ResolveAutoMarginsAfterLayout(
+    ReflowInput& aKidReflowInput, const LogicalSize* aLogicalCBSize,
+    const LogicalSize& aKidSize, LogicalMargin& aMargin,
+    LogicalMargin& aOffsets) {
+  MOZ_ASSERT(aKidReflowInput.mFrame->HasIntrinsicKeywordForBSize());
+
+  WritingMode wm = aKidReflowInput.GetWritingMode();
+  WritingMode outerWM = aKidReflowInput.mParentReflowInput->GetWritingMode();
+
+  const LogicalSize kidSizeInWM = aKidSize.ConvertTo(wm, outerWM);
+  LogicalMargin marginInWM = aMargin.ConvertTo(wm, outerWM);
+  LogicalMargin offsetsInWM = aOffsets.ConvertTo(wm, outerWM);
+
+  // No need to substract border sizes because aKidSize has it included
+  // already
+  nscoord availMarginSpace = aLogicalCBSize->BSize(wm) - kidSizeInWM.BSize(wm) -
+                             offsetsInWM.BStartEnd(wm) -
+                             marginInWM.BStartEnd(wm);
+
+  if (availMarginSpace < 0) {
+    availMarginSpace = 0;
+  }
+
+  const auto& styleMargin = aKidReflowInput.mStyleMargin;
+  if (wm.IsOrthogonalTo(outerWM)) {
+    ReflowInput::ComputeAbsPosInlineAutoMargin(
+        availMarginSpace, outerWM,
+        styleMargin->mMargin.GetIStart(outerWM).IsAuto(),
+        styleMargin->mMargin.GetIEnd(outerWM).IsAuto(), aMargin, aOffsets);
+  } else {
+    ReflowInput::ComputeAbsPosBlockAutoMargin(
+        availMarginSpace, outerWM,
+        styleMargin->mMargin.GetBStart(outerWM).IsAuto(),
+        styleMargin->mMargin.GetBEnd(outerWM).IsAuto(), aMargin, aOffsets);
+  }
+
+  aKidReflowInput.SetComputedLogicalMargin(outerWM, aMargin);
+  aKidReflowInput.SetComputedLogicalOffsets(outerWM, aOffsets);
+
+  nsMargin* propValue =
+      aKidReflowInput.mFrame->GetProperty(nsIFrame::UsedMarginProperty());
+  // InitOffsets should've created a UsedMarginProperty for us, if any margin is
+  // auto.
+  MOZ_ASSERT_IF(styleMargin->HasInlineAxisAuto(outerWM) ||
+                    styleMargin->HasBlockAxisAuto(outerWM),
+                propValue);
+  if (propValue) {
+    *propValue = aMargin.GetPhysicalMargin(outerWM);
   }
 }
 
@@ -658,7 +718,7 @@ void nsAbsoluteContainingBlock::ReflowAbsoluteFrame(
     nsIFrame* aDelegatingFrame, nsPresContext* aPresContext,
     const ReflowInput& aReflowInput, const nsRect& aContainingBlock,
     AbsPosReflowFlags aFlags, nsIFrame* aKidFrame, nsReflowStatus& aStatus,
-    nsOverflowAreas* aOverflowAreas) {
+    OverflowAreas* aOverflowAreas) {
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
 
 #ifdef DEBUG
@@ -691,7 +751,7 @@ void nsAbsoluteContainingBlock::ReflowAbsoluteFrame(
     availISize = aReflowInput.ComputedSizeWithPadding(wm).ISize(wm);
   }
 
-  uint32_t rsFlags = 0;
+  ReflowInput::InitFlags initFlags;
   if (aFlags & AbsPosReflowFlags::IsGridContainerCB) {
     // When a grid container generates the abs.pos. CB for a *child* then
     // the static position is determined via CSS Box Alignment within the
@@ -701,28 +761,8 @@ void nsAbsoluteContainingBlock::ReflowAbsoluteFrame(
     // abs.pos. CB origin, and then we'll align & offset it from there.
     nsIFrame* placeholder = aKidFrame->GetPlaceholderFrame();
     if (placeholder && placeholder->GetParent() == aDelegatingFrame) {
-      rsFlags |= ReflowInput::STATIC_POS_IS_CB_ORIGIN;
+      initFlags += ReflowInput::InitFlag::StaticPosIsCBOrigin;
     }
-  }
-  ReflowInput kidReflowInput(aPresContext, aReflowInput, aKidFrame,
-                             LogicalSize(wm, availISize, NS_UNCONSTRAINEDSIZE),
-                             Some(logicalCBSize), rsFlags);
-
-  // Get the border values
-  WritingMode outerWM = aReflowInput.GetWritingMode();
-  const LogicalMargin border(outerWM, aDelegatingFrame->GetUsedBorder());
-
-  LogicalMargin margin =
-      kidReflowInput.ComputedLogicalMargin().ConvertTo(outerWM, wm);
-
-  // If we're doing CSS Box Alignment in either axis, that will apply the
-  // margin for us in that axis (since the thing that's aligned is the margin
-  // box).  So, we clear out the margin here to avoid applying it twice.
-  if (kidReflowInput.mFlags.mIOffsetsNeedCSSAlign) {
-    margin.IStart(outerWM) = margin.IEnd(outerWM) = 0;
-  }
-  if (kidReflowInput.mFlags.mBOffsetsNeedCSSAlign) {
-    margin.BStart(outerWM) = margin.BEnd(outerWM) = 0;
   }
 
   bool constrainBSize =
@@ -744,14 +784,27 @@ void nsAbsoluteContainingBlock::ReflowAbsoluteFrame(
       (aKidFrame->GetLogicalRect(aContainingBlock.Size()).BStart(wm) <=
        aReflowInput.AvailableBSize());
 
-  if (constrainBSize) {
-    kidReflowInput.AvailableBSize() =
-        aReflowInput.AvailableBSize() -
-        border.ConvertTo(wm, outerWM).BStart(wm) -
-        kidReflowInput.ComputedLogicalMargin().BStart(wm);
-    if (NS_AUTOOFFSET != kidReflowInput.ComputedLogicalOffsets().BStart(wm)) {
-      kidReflowInput.AvailableBSize() -=
-          kidReflowInput.ComputedLogicalOffsets().BStart(wm);
+  // Get the border values
+  const WritingMode outerWM = aReflowInput.GetWritingMode();
+  const LogicalMargin border = aDelegatingFrame->GetLogicalUsedBorder(outerWM);
+
+  const nscoord availBSize = constrainBSize
+                                 ? aReflowInput.AvailableBSize() -
+                                       border.ConvertTo(wm, outerWM).BStart(wm)
+                                 : NS_UNCONSTRAINEDSIZE;
+
+  ReflowInput kidReflowInput(aPresContext, aReflowInput, aKidFrame,
+                             LogicalSize(wm, availISize, availBSize),
+                             Some(logicalCBSize), initFlags);
+
+  if (kidReflowInput.AvailableBSize() != NS_UNCONSTRAINEDSIZE) {
+    // Shrink available block-size if it's constrained.
+    kidReflowInput.AvailableBSize() -=
+        kidReflowInput.ComputedLogicalMargin(wm).BStart(wm);
+    const nscoord kidOffsetBStart =
+        kidReflowInput.ComputedLogicalOffsets(wm).BStart(wm);
+    if (NS_AUTOOFFSET != kidOffsetBStart) {
+      kidReflowInput.AvailableBSize() -= kidOffsetBStart;
     }
   }
 
@@ -759,15 +812,30 @@ void nsAbsoluteContainingBlock::ReflowAbsoluteFrame(
   ReflowOutput kidDesiredSize(kidReflowInput);
   aKidFrame->Reflow(aPresContext, kidDesiredSize, kidReflowInput, aStatus);
 
-  const LogicalSize kidSize = kidDesiredSize.Size(wm).ConvertTo(outerWM, wm);
+  const LogicalSize kidSize = kidDesiredSize.Size(outerWM);
 
-  LogicalMargin offsets =
-      kidReflowInput.ComputedLogicalOffsets().ConvertTo(outerWM, wm);
+  LogicalMargin offsets = kidReflowInput.ComputedLogicalOffsets(outerWM);
+  LogicalMargin margin = kidReflowInput.ComputedLogicalMargin(outerWM);
+
+  // If we're doing CSS Box Alignment in either axis, that will apply the
+  // margin for us in that axis (since the thing that's aligned is the margin
+  // box).  So, we clear out the margin here to avoid applying it twice.
+  if (kidReflowInput.mFlags.mIOffsetsNeedCSSAlign) {
+    margin.IStart(outerWM) = margin.IEnd(outerWM) = 0;
+  }
+  if (kidReflowInput.mFlags.mBOffsetsNeedCSSAlign) {
+    margin.BStart(outerWM) = margin.BEnd(outerWM) = 0;
+  }
 
   // If we're solving for start in either inline or block direction,
   // then compute it now that we know the dimensions.
   ResolveSizeDependentOffsets(aPresContext, kidReflowInput, kidSize, margin,
                               &offsets, &logicalCBSize);
+
+  if (kidReflowInput.mFrame->HasIntrinsicKeywordForBSize()) {
+    ResolveAutoMarginsAfterLayout(kidReflowInput, &logicalCBSize, kidSize,
+                                  margin, offsets);
+  }
 
   // Position the child relative to our padding edge
   LogicalRect rect(

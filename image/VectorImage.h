@@ -8,6 +8,7 @@
 
 #include "Image.h"
 #include "nsIStreamListener.h"
+#include "mozilla/gfx/Point.h"
 #include "mozilla/MemoryReporting.h"
 
 class nsIRequest;
@@ -18,6 +19,7 @@ struct MediaFeatureChange;
 
 namespace image {
 
+class SourceSurfaceBlobImage;
 struct SVGDrawingParameters;
 class SVGDocumentWrapper;
 class SVGRootRenderingObserver;
@@ -39,16 +41,12 @@ class VectorImage final : public ImageResource, public nsIStreamListener {
   size_t GetNativeSizesLength() const override;
   virtual size_t SizeOfSourceWithComputedFallback(
       SizeOfState& aState) const override;
-  virtual void CollectSizeOfSurfaces(nsTArray<SurfaceMemoryCounter>& aCounters,
-                                     MallocSizeOf aMallocSizeOf) const override;
 
   virtual nsresult OnImageDataAvailable(nsIRequest* aRequest,
-                                        nsISupports* aContext,
                                         nsIInputStream* aInStr,
                                         uint64_t aSourceOffset,
                                         uint32_t aCount) override;
-  virtual nsresult OnImageDataComplete(nsIRequest* aRequest,
-                                       nsISupports* aContext, nsresult aResult,
+  virtual nsresult OnImageDataComplete(nsIRequest* aRequest, nsresult aResult,
                                        bool aLastPart) override;
 
   virtual void OnSurfaceDiscarded(const SurfaceKey& aSurfaceKey) override;
@@ -79,21 +77,15 @@ class VectorImage final : public ImageResource, public nsIStreamListener {
   virtual bool ShouldAnimate() override;
 
  private:
-  Tuple<ImgDrawResult, IntSize, RefPtr<SourceSurface>> GetFrameInternal(
-      const IntSize& aSize, const Maybe<SVGImageContext>& aSVGContext,
-      uint32_t aWhichFrame, uint32_t aFlags) override;
-
-  Tuple<ImgDrawResult, IntSize> GetImageContainerSize(
-      layers::LayerManager* aManager, const IntSize& aSize,
-      uint32_t aFlags) override;
+  friend class SourceSurfaceBlobImage;
 
   /**
    * Attempt to find a matching cached surface in the SurfaceCache. Returns the
    * cached surface, if found, and the size to rasterize at, if applicable.
    * If we cannot rasterize, it will be the requested size to draw at (aSize).
    */
-  Tuple<RefPtr<SourceSurface>, IntSize> LookupCachedSurface(
-      const IntSize& aSize, const Maybe<SVGImageContext>& aSVGContext,
+  Tuple<RefPtr<gfx::SourceSurface>, gfx::IntSize> LookupCachedSurface(
+      const gfx::IntSize& aSize, const Maybe<SVGImageContext>& aSVGContext,
       uint32_t aFlags);
 
   bool MaybeRestrictSVGContext(Maybe<SVGImageContext>& aNewSVGContext,
@@ -106,7 +98,7 @@ class VectorImage final : public ImageResource, public nsIStreamListener {
 
   /// Rasterize the SVG into a surface. aWillCache will be set to whether or
   /// not the new surface was put into the cache.
-  already_AddRefed<SourceSurface> CreateSurface(
+  already_AddRefed<gfx::SourceSurface> CreateSurface(
       const SVGDrawingParameters& aParams, gfxDrawable* aSVGDrawable,
       bool& aWillCache);
 
@@ -128,6 +120,8 @@ class VectorImage final : public ImageResource, public nsIStreamListener {
   void CancelAllListeners();
   void SendInvalidationNotifications();
 
+  void ReportDocumentUseCounters();
+
   RefPtr<SVGDocumentWrapper> mSVGDocumentWrapper;
   RefPtr<SVGRootRenderingObserver> mRenderingObserver;
   RefPtr<SVGLoadEventListener> mLoadEventListener;
@@ -146,7 +140,6 @@ class VectorImage final : public ImageResource, public nsIStreamListener {
   bool mDiscardable;             // Are we discardable?
   bool mIsFullyLoaded;           // Has the SVG document finished
                                  // loading?
-  bool mIsDrawing;               // Are we currently drawing?
   bool mHaveAnimations;          // Is our SVG content SMIL-animated?
                                  // (Only set after mIsFullyLoaded.)
   bool mHasPendingInvalidation;  // Invalidate observers next refresh

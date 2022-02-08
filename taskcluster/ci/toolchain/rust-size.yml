@@ -17,10 +17,10 @@ linux64-rust-size:
         symbol: TL(rust-size)
     worker-type: b-linux
     run:
-        toolchain-artifact: public/build/rust-size.tar.xz
+        toolchain-artifact: public/build/rust-size.tar.zst
     fetches:
         toolchain:
-            - linux64-rust-1.41
+            - linux64-rust-1.47
 
 win64-rust-size:
     treeherder:
@@ -28,12 +28,12 @@ win64-rust-size:
     worker-type: b-win2012
     worker:
         env:
-            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/vs2017.manifest"
+            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/vs2017-15.9.manifest"
     run:
-        toolchain-artifact: public/build/rust-size.tar.bz2
+        toolchain-artifact: public/build/rust-size.tar.zst
         resources:
             - 'taskcluster/scripts/misc/tooltool-download.sh'
         tooltool-downloads: internal
     fetches:
         toolchain:
-            - win64-rust-1.41
+            - win64-rust-1.47

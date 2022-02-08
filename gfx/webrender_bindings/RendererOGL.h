@@ -7,6 +7,7 @@
 #ifndef MOZILLA_LAYERS_RENDEREROGL_H
 #define MOZILLA_LAYERS_RENDEREROGL_H
 
+#include "mozilla/ipc/FileDescriptor.h"
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/webrender/RenderThread.h"
@@ -61,10 +62,13 @@ class RendererOGL {
   RenderedFrameId UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
                                   const Maybe<wr::ImageFormat>& aReadbackFormat,
                                   const Maybe<Range<uint8_t>>& aReadbackBuffer,
-                                  RendererStats* aOutStats);
+                                  bool* aNeedsYFlip, RendererStats* aOutStats);
 
   /// This can be called on the render thread only.
   void WaitForGPU();
+
+  /// This can be called on the render thread only.
+  ipc::FileDescriptor GetAndResetReleaseFence();
 
   /// This can be called on the render thread only.
   RenderedFrameId GetLastCompletedFrameId();
@@ -77,6 +81,13 @@ class RendererOGL {
 
   /// This can be called on the render thread only.
   void SetFrameStartTime(const TimeStamp& aTime);
+
+  /// These can be called on the render thread only.
+  void BeginRecording(const TimeStamp& aRecordingStart,
+                      wr::PipelineId aPipelineId);
+  void MaybeRecordFrame(const WebRenderPipelineInfo* aPipelineInfo);
+  void WriteCollectedFrames();
+  Maybe<layers::CollectedFrames> GetCollectedFrames();
 
   /// This can be called on the render thread only.
   ~RendererOGL();
@@ -93,7 +104,10 @@ class RendererOGL {
   bool Resume();
 
   /// This can be called on the render thread only.
-  void CheckGraphicsResetStatus();
+  bool IsPaused();
+
+  /// This can be called on the render thread only.
+  void CheckGraphicsResetStatus(const char* aCaller, bool aForce);
 
   layers::SyncObjectHost* GetSyncObject() const;
 
@@ -103,17 +117,30 @@ class RendererOGL {
 
   RenderTextureHost* GetRenderTexture(wr::ExternalImageId aExternalImageId);
 
+  RenderCompositor* GetCompositor() { return mCompositor.get(); }
+
   void AccumulateMemoryReport(MemoryReport* aReport);
+
+  void SetProfilerUI(const nsCString& aUI);
 
   wr::Renderer* GetRenderer() { return mRenderer; }
 
   gl::GLContext* gl() const;
 
+  void* swgl() const;
+
   bool EnsureAsyncScreenshot();
 
  protected:
+  /**
+   * Determine if any content pipelines updated, and update
+   * mContentPipelineEpochs.
+   */
+  bool DidPaintContent(const wr::WebRenderPipelineInfo* aFrameEpochs);
+
   RefPtr<RenderThread> mThread;
   UniquePtr<RenderCompositor> mCompositor;
+  UniquePtr<layers::CompositionRecorder> mCompositionRecorder;  // can be null
   wr::Renderer* mRenderer;
   layers::CompositorBridgeParent* mBridge;
   wr::WindowId mWindowId;
@@ -122,6 +149,17 @@ class RendererOGL {
   bool mDisableNativeCompositor;
 
   RendererScreenshotGrabber mScreenshotGrabber;
+
+  // The id of the root WebRender pipeline.
+  //
+  // All other pipelines are considered content.
+  wr::PipelineId mRootPipelineId;
+
+  // A mapping of wr::PipelineId to the epochs when last they updated.
+  //
+  // We need to use uint64_t here since wr::PipelineId is not default
+  // constructable.
+  std::unordered_map<uint64_t, wr::Epoch> mContentPipelineEpochs;
 };
 
 }  // namespace wr

@@ -10,7 +10,6 @@ use crate::emitter_scope::{EmitterScopeStack, NameLocation};
 use crate::expression_emitter::*;
 use crate::function_declaration_emitter::{
     AnnexBFunctionDeclarationEmitter, LazyFunctionEmitter, LexicalFunctionDeclarationEmitter,
-    TopLevelFunctionDeclarationEmitter,
 };
 use crate::object_emitter::*;
 use crate::reference_op_emitter::{
@@ -46,13 +45,14 @@ pub fn emit_program<'alloc>(
         }
     };
 
+    compilation_info.scripts.set_top_level(script);
+
     Ok(EmitResult::new(
         compilation_info.atoms.into(),
         compilation_info.slices.into(),
         compilation_info.scope_data_map.into(),
         compilation_info.regexps.into(),
-        script,
-        compilation_info.functions.into(),
+        compilation_info.scripts.into(),
         compilation_info.script_data_list.into(),
     ))
 }
@@ -83,6 +83,10 @@ impl<'alloc, 'opt> AstEmitter<'alloc, 'opt> {
         self.scope_stack.lookup_name(name)
     }
 
+    pub fn lookup_name_in_var(&mut self, name: SourceAtomSetIndex) -> NameLocation {
+        self.scope_stack.lookup_name_in_var(name)
+    }
+
     fn emit_script(mut self, ast: &Script) -> Result<ScriptStencil, EmitError> {
         let scope_data_map = &self.compilation_info.scope_data_map;
         let function_declarations = &self.compilation_info.function_declarations;
@@ -108,9 +112,10 @@ impl<'alloc, 'opt> AstEmitter<'alloc, 'opt> {
         }
         .emit(&mut self)?;
 
-        let script = self
-            .emit
-            .into_stencil(&mut self.compilation_info.script_data_list)?;
+        let script = self.emit.into_stencil(
+            &mut self.compilation_info.script_data_list,
+            self.options.extent.clone(),
+        )?;
 
         Ok(script)
     }
@@ -128,13 +133,12 @@ impl<'alloc, 'opt> AstEmitter<'alloc, 'opt> {
             .function_stencil_indices
             .get(fun)
             .expect("ScriptStencil should be created");
-        let fun_index = LazyFunctionEmitter { stencil_index }.emit(self);
 
-        TopLevelFunctionDeclarationEmitter { fun_index }.emit(self);
+        // NOTE: GCIndex for the function is implicitly handled by
+        //       global_or_eval_decl_instantiation.
+        LazyFunctionEmitter { stencil_index }.emit(self);
 
-        Err(EmitError::NotImplemented(
-            "TODO: Populate ScriptStencil fields",
-        ))
+        Ok(())
     }
 
     fn emit_non_top_level_function_declaration(&mut self, fun: &Function) -> Result<(), EmitError> {
@@ -160,7 +164,7 @@ impl<'alloc, 'opt> AstEmitter<'alloc, 'opt> {
 
         let name = self
             .compilation_info
-            .functions
+            .scripts
             .get(stencil_index)
             .fun_name()
             .expect("Function declaration should have name");
@@ -171,9 +175,7 @@ impl<'alloc, 'opt> AstEmitter<'alloc, 'opt> {
             LexicalFunctionDeclarationEmitter { fun_index, name }.emit(self)?;
         }
 
-        Err(EmitError::NotImplemented(
-            "TODO: Populate ScriptStencil fields",
-        ))
+        Ok(())
     }
 
     fn emit_statement(&mut self, ast: &Statement) -> Result<(), EmitError> {
@@ -376,7 +378,7 @@ impl<'alloc, 'opt> AstEmitter<'alloc, 'opt> {
         self.emit_expression(&if_statement.test)?;
 
         let alternate_jump = ForwardJumpEmitter {
-            jump: JumpKind::IfEq,
+            jump: JumpKind::JumpIfFalse,
         }
         .emit(self);
 
@@ -756,7 +758,7 @@ impl<'alloc, 'opt> AstEmitter<'alloc, 'opt> {
         self.emit_expression(test)?;
 
         let else_jump = ForwardJumpEmitter {
-            jump: JumpKind::IfEq,
+            jump: JumpKind::JumpIfFalse,
         }
         .emit(self);
 

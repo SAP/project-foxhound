@@ -11,7 +11,7 @@
 #include "nsCOMPtr.h"
 #include "nscore.h"
 #include "nsClassHashtable.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsHashKeys.h"
 #include "nsISupports.h"
 #include "prinrval.h"
@@ -29,8 +29,7 @@ namespace net {
 
 #define IO_ACTIVITY_ENABLED_PREF "io.activity.enabled"
 
-typedef nsDataHashtable<nsCStringHashKey, dom::IOActivityDataDictionary>
-    Activities;
+using Activities = nsTHashMap<nsCStringHashKey, dom::IOActivityDataDictionary>;
 
 // IOActivityMonitor has several roles:
 // - maintains an IOActivity per resource and updates it

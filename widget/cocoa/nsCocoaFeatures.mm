@@ -22,8 +22,9 @@
 #define MACOS_VERSION_10_13_HEX 0x000A0D00
 #define MACOS_VERSION_10_14_HEX 0x000A0E00
 #define MACOS_VERSION_10_15_HEX 0x000A0F00
-//#define MACOS_VERSION_10_16_HEX 0x000A1000
-//#define MACOS_VERSION_11_0_HEX 0x000B0000
+#define MACOS_VERSION_10_16_HEX 0x000A1000
+#define MACOS_VERSION_11_0_HEX 0x000B0000
+#define MACOS_VERSION_12_0_HEX 0x000C0000
 
 #include "nsCocoaFeatures.h"
 #include "nsCocoaUtils.h"
@@ -31,6 +32,7 @@
 #include "nsObjCExceptions.h"
 
 #import <Cocoa/Cocoa.h>
+#include <sys/sysctl.h>
 
 /*static*/ int32_t nsCocoaFeatures::mOSVersion = 0;
 
@@ -109,7 +111,7 @@ int32_t nsCocoaFeatures::GetVersion(int32_t aMajor, int32_t aMinor, int32_t aBug
 }
 
 /*static*/ void nsCocoaFeatures::InitializeVersionNumbers() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   // Provide an autorelease pool to avoid leaking Cocoa objects,
   // as this gets called before the main autorelease pool is in place.
@@ -119,7 +121,7 @@ int32_t nsCocoaFeatures::GetVersion(int32_t aMajor, int32_t aMinor, int32_t aBug
   GetSystemVersion(major, minor, bugfix);
   mOSVersion = GetVersion(major, minor, bugfix);
 
-  NS_OBJC_END_TRY_ABORT_BLOCK;
+  NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
 /* static */ int32_t nsCocoaFeatures::macOSVersion() {
@@ -144,14 +146,6 @@ int32_t nsCocoaFeatures::GetVersion(int32_t aMajor, int32_t aMinor, int32_t aBug
   return ExtractBugFixVersion(macOSVersion());
 }
 
-/* static */ bool nsCocoaFeatures::OnYosemiteOrLater() {
-  return (macOSVersion() >= MACOS_VERSION_10_10_HEX);
-}
-
-/* static */ bool nsCocoaFeatures::OnElCapitanOrLater() {
-  return (macOSVersion() >= MACOS_VERSION_10_11_HEX);
-}
-
 /* static */ bool nsCocoaFeatures::OnSierraExactly() {
   return (macOSVersion() >= MACOS_VERSION_10_12_HEX) && (macOSVersion() < MACOS_VERSION_10_13_HEX);
 }
@@ -159,15 +153,9 @@ int32_t nsCocoaFeatures::GetVersion(int32_t aMajor, int32_t aMinor, int32_t aBug
 /* Version of OnSierraExactly as global function callable from cairo & skia */
 bool Gecko_OnSierraExactly() { return nsCocoaFeatures::OnSierraExactly(); }
 
-/* static */ bool nsCocoaFeatures::OnSierraOrLater() {
-  return (macOSVersion() >= MACOS_VERSION_10_12_HEX);
-}
-
 /* static */ bool nsCocoaFeatures::OnHighSierraOrLater() {
   return (macOSVersion() >= MACOS_VERSION_10_13_HEX);
 }
-
-bool Gecko_OnHighSierraOrLater() { return nsCocoaFeatures::OnHighSierraOrLater(); }
 
 /* static */ bool nsCocoaFeatures::OnMojaveOrLater() {
   return (macOSVersion() >= MACOS_VERSION_10_14_HEX);
@@ -177,7 +165,50 @@ bool Gecko_OnHighSierraOrLater() { return nsCocoaFeatures::OnHighSierraOrLater()
   return (macOSVersion() >= MACOS_VERSION_10_15_HEX);
 }
 
+/* static */ bool nsCocoaFeatures::OnBigSurOrLater() {
+  // Account for the version being 10.16 or 11.0 on Big Sur.
+  // The version is reported as 10.16 if SYSTEM_VERSION_COMPAT is set to 1,
+  // or if SYSTEM_VERSION_COMPAT is not set and the application is linked
+  // with a pre-Big Sur SDK.
+  // Firefox sets SYSTEM_VERSION_COMPAT to 0 in its Info.plist, so it'll
+  // usually see the correct 11.* version, despite being linked against an
+  // old SDK. However, it still sees the 10.16 compatibility version when
+  // launched from the command line, see bug 1727624. (This only applies to
+  // the Intel build - the arm64 build is linked against a Big Sur SDK and
+  // always sees the correct version.)
+  return ((macOSVersion() >= MACOS_VERSION_10_16_HEX) ||
+          (macOSVersion() >= MACOS_VERSION_11_0_HEX));
+}
+
+/* static */ bool nsCocoaFeatures::OnMontereyOrLater() {
+  // This check only works if SYSTEM_VERSION_COMPAT is off, otherwise
+  // Monterey pretends to be 10.16 and is indistinguishable from Big Sur.
+  // In practice, this means that an Intel Firefox build can return false
+  // from this function if it's launched from the command line, see bug 1727624.
+  // This will not be an issue anymore once we link against the Big Sur SDK.
+  return (macOSVersion() >= MACOS_VERSION_12_0_HEX);
+}
+
 /* static */ bool nsCocoaFeatures::IsAtLeastVersion(int32_t aMajor, int32_t aMinor,
                                                     int32_t aBugFix) {
   return macOSVersion() >= GetVersion(aMajor, aMinor, aBugFix);
+}
+
+/*
+ * Returns true if the process is running under Rosetta translation. Returns
+ * false if running natively or if an error was encountered. We use the
+ * `sysctl.proc_translated` sysctl which is documented by Apple to be used
+ * for this purpose. Note: using this in a sandboxed process requires allowing
+ * the sysctl in the sandbox policy.
+ */
+/* static */ bool nsCocoaFeatures::ProcessIsRosettaTranslated() {
+  int ret = 0;
+  size_t size = sizeof(ret);
+  if (sysctlbyname("sysctl.proc_translated", &ret, &size, NULL, 0) == -1) {
+    if (errno != ENOENT) {
+      fprintf(stderr, "Failed to check for translation environment\n");
+    }
+    return false;
+  }
+  return (ret == 1);
 }

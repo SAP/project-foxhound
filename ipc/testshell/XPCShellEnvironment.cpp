@@ -18,7 +18,9 @@
 #include "jsapi.h"
 #include "js/CharacterEncoding.h"
 #include "js/CompilationAndEvaluation.h"  // JS::Compile{,Utf8File}
+#include "js/PropertyAndElement.h"  // JS_DefineFunctions, JS_DefineProperty, JS_GetProperty
 #include "js/PropertySpec.h"
+#include "js/RealmOptions.h"
 #include "js/SourceText.h"  // JS::Source{Ownership,Text}
 
 #include "xpcpublic.h"
@@ -27,6 +29,8 @@
 
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 #include "mozilla/XPCOM.h"
+#include "mozilla/dom/AutoEntryScript.h"
+#include "mozilla/dom/ScriptSettings.h"
 
 #include "nsIPrincipal.h"
 #include "nsIScriptSecurityManager.h"

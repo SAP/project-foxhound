@@ -10,50 +10,22 @@ body {
   padding: 0;
   height: 100%;
   width: 100%;
-  overflow: -moz-hidden-unscrollable;
+  overflow: clip;
 }
 
 :root {
   text-rendering: optimizeLegibility;
   min-height: 95px;
   min-width: 95px;
-
-  /* variables */
-  --panelui-subview-transition-duration: 150ms;
-  --lwt-additional-images: none;
-  --lwt-background-alignment: right top;
-  --lwt-background-tiling: no-repeat;
-
-  --toolbar-bgcolor: var(--toolbar-non-lwt-bgcolor);
-  --toolbar-bgimage: var(--toolbar-non-lwt-bgimage);
-  --toolbar-color: var(--toolbar-non-lwt-textcolor);
 }
 
 :root:-moz-locale-dir(rtl) {
   direction: rtl;
 }
 
-:root:-moz-lwtheme {
-  --toolbar-bgcolor: rgba(255,255,255,.4);
-  --toolbar-bgimage: none;
-  --toolbar-color: var(--lwt-text-color, inherit);
-
-  background-color: var(--lwt-accent-color);
-  color: var(--lwt-text-color);
-}
-
-:root:-moz-lwtheme[lwtheme-image] {
-  background-image: var(--lwt-header-image) !important;
-  background-repeat: no-repeat;
-  background-position: right top !important;
-}
-
-:root:-moz-lwtheme:-moz-window-inactive {
-  background-color: var(--lwt-accent-color-inactive, var(--lwt-accent-color));
-}
-
 :root:not([chromehidden~="toolbar"]) {
   min-width: 450px;
+  min-height: 120px;
 }
 
 :root[customizing] {
@@ -61,7 +33,7 @@ body {
 }
 
 /* Prevent shrinking the page content to 0 height and width */
-.browserStack > browser {
+.browserStack {
   min-height: 25px;
   min-width: 25px;
 }
@@ -72,17 +44,54 @@ body {
   -moz-box-flex: 1;
 }
 
-/* Set additional backgrounds alignment relative to toolbox */
-
 #navigator-toolbox:-moz-lwtheme {
   background-image: var(--lwt-additional-images);
-  background-position: var(--lwt-background-alignment);
   background-repeat: var(--lwt-background-tiling);
+  background-position: var(--lwt-background-alignment);
 }
 
-.search-one-offs[compact=true] .search-setting-button,
-.search-one-offs:not([compact=true]) .search-setting-button-compact {
-  display: none;
+/* TODO bug 1695280: Remove these media selectors and merge the rule below
+   with the ruleset above. We must set background properties on :root and not
+   #navigator-toolbox on Windows 7/8 due to a WebRender bug that hides the
+   minimize/maximize/close buttons. */
+@media not (-moz-os-version: windows-win7) {
+  @media not (-moz-os-version: windows-win8) {
+    #navigator-toolbox:-moz-lwtheme {
+      background-color: var(--lwt-accent-color);
+    }
+
+    /* When a theme defines both theme_frame and additional_backgrounds, show
+       the latter atop the former. */
+   :root[lwtheme-image] #navigator-toolbox {
+     background-image: var(--lwt-header-image), var(--lwt-additional-images);
+     background-repeat: no-repeat, var(--lwt-background-tiling);
+     background-position: right top, var(--lwt-background-alignment);
+   }
+
+   #navigator-toolbox:-moz-window-inactive:-moz-lwtheme {
+     background-color: var(--lwt-accent-color-inactive, var(--lwt-accent-color));
+   }
+  }
+}
+/* TODO bug 1695280: Remove this block. */
+@media (-moz-os-version: windows-win7),
+       (-moz-os-version: windows-win8) {
+  :root:-moz-lwtheme {
+    background-color: var(--lwt-accent-color);
+    background-image: var(--lwt-additional-images);
+    background-repeat: var(--lwt-background-tiling);
+    background-position: var(--lwt-background-alignment);
+  }
+
+  :root[lwtheme-image] {
+    background-image: var(--lwt-header-image, linear-gradient(transparent, transparent)),  var(--lwt-additional-images) !important;
+    background-repeat: no-repeat, var(--lwt-background-tiling);
+    background-position: right top, var(--lwt-background-alignment) !important;
+  }
+
+  :root:-moz-lwtheme:-moz-window-inactive {
+    background-color: var(--lwt-accent-color-inactive, var(--lwt-accent-color));
+  }
 }
 
 %ifdef MENUBAR_CAN_AUTOHIDE
@@ -156,7 +165,7 @@ panelview[mainview] > .panel-header {
 }
 
 @supports not -moz-bool-pref("browser.tabs.tabmanager.enabled") {
-  #tabbrowser-tabs:not([overflow="true"]):not([hashiddentabs]) ~ #alltabs-button {
+  #tabbrowser-tabs:not([overflow="true"], [hashiddentabs]) ~ #alltabs-button {
     display: none;
   }
   #tabbrowser-tabs:not([overflow="true"])[using-closing-tabs-spacer] ~ #alltabs-button {
@@ -187,7 +196,7 @@ panelview[mainview] > .panel-header {
   min-width: calc(var(--tab-min-width) + 10px);
 }
 
-.tabbrowser-tab:not([pinned]):not([fadein]) {
+.tabbrowser-tab:not([pinned], [fadein]) {
   max-width: 0.1px;
   min-width: 0.1px;
   visibility: hidden;
@@ -223,7 +232,7 @@ panelview[mainview] > .panel-header {
 %endif
 
 #tabbrowser-tabs[positionpinnedtabs] > #tabbrowser-arrowscrollbox > .tabbrowser-tab[pinned] {
-  position: fixed !important;
+  position: absolute !important;
   display: block;
 }
 
@@ -234,9 +243,12 @@ panelview[mainview] > .panel-header {
   pointer-events: none; /* avoid blocking dragover events on scroll buttons */
 }
 
-.tabbrowser-tab[tab-grouping],
-.tabbrowser-tab[tabdrop-samewindow] {
-  transition: transform 200ms var(--animation-easing-function);
+@media (prefers-reduced-motion: no-preference) {
+  #tabbrowser-tabs[movingtab] > #tabbrowser-arrowscrollbox > .tabbrowser-tab[fadein]:not([selected]):not([multiselected]),
+  .tabbrowser-tab[tab-grouping],
+  .tabbrowser-tab[tabdrop-samewindow] {
+    transition: transform 200ms var(--animation-easing-function);
+  }
 }
 
 .tabbrowser-tab[tab-grouping][multiselected]:not([selected]) {
@@ -269,7 +281,7 @@ panelview[mainview] > .panel-header {
  * from the overflow menu, but we still don't want to render them outside of
  * the customization target. */
 toolbar[overflowable][customizing] > .customization-target {
-  overflow: -moz-hidden-unscrollable;
+  overflow: clip;
 }
 
 toolbar:not([overflowing]) > .overflow-button,
@@ -277,7 +289,7 @@ toolbar[customizing] > .overflow-button {
   display: none;
 }
 
-toolbar[customizing] #pioneer-button,
+toolbar[customizing] #ion-button,
 toolbar[customizing] #whats-new-menu-button {
   display: none;
 }
@@ -297,16 +309,17 @@ toolbar[customizing] #whats-new-menu-button {
 
 
 %ifdef MENUBAR_CAN_AUTOHIDE
-:root:not([chromehidden~="menubar"]) #toolbar-menubar:not([autohide=true]) + #TabsToolbar > .titlebar-buttonbox-container,
-:root:not([chromehidden~="menubar"]) #toolbar-menubar:not([autohide=true]) + #TabsToolbar .titlebar-spacer,
+/* Hide the TabsToolbar titlebar controls if the menubar is permanently shown.
+ * (That is, if the menu bar doesn't autohide, and we're not in a fullscreen or
+ * popup window.) */
+:root:not([chromehidden~="menubar"], [inFullscreen]) #toolbar-menubar:not([autohide=true]) + #TabsToolbar > :is(.titlebar-buttonbox-container, .titlebar-spacer),
 %endif
 %ifndef MOZ_WIDGET_COCOA
 %ifndef MOZ_WIDGET_GTK
 :root:not([sizemode=normal]) .titlebar-spacer[type="pre-tabs"],
 %endif
 %endif
-:root:not([chromemargin]) .titlebar-buttonbox-container,
-:root[inFullscreen] .titlebar-buttonbox-container,
+:root:not([chromemargin], [inFullscreen]) .titlebar-buttonbox-container,
 :root[inFullscreen] .titlebar-spacer,
 :root:not([tabsintitlebar]) .titlebar-spacer {
   display: none;
@@ -326,8 +339,8 @@ toolbar[customizing] #whats-new-menu-button {
 }
 %endif
 
-:root:not([sizemode=maximized]) .titlebar-restore,
-:root[sizemode=maximized] .titlebar-max {
+:root:not([sizemode=maximized], [sizemode=fullscreen]) .titlebar-restore,
+:root:is([sizemode=maximized], [sizemode=fullscreen]) .titlebar-max {
   display: none;
 }
 
@@ -345,7 +358,7 @@ toolbar[customizing] #whats-new-menu-button {
   position: relative;
 }
 
-:root:not([tabsintitlebar]) .titlebar-buttonbox {
+:root:not([tabsintitlebar], [sizemode=fullscreen]) .titlebar-buttonbox {
   display: none;
 }
 
@@ -353,6 +366,10 @@ toolbar[customizing] #whats-new-menu-button {
   appearance: auto;
   -moz-default-appearance: -moz-window-button-box;
   position: relative;
+}
+
+#personal-toolbar-empty-description {
+  -moz-window-dragging: no-drag;
 }
 
 #personal-bookmarks {
@@ -369,32 +386,26 @@ toolbarpaletteitem {
 }
 
 %ifdef XP_MACOSX
-#titlebar-fullscreen-button {
-  appearance: auto;
-  -moz-default-appearance: -moz-mac-fullscreen-button;
+
+@media not (-moz-mac-rtl) {
+  .titlebar-buttonbox-container:-moz-locale-dir(ltr) {
+    -moz-box-ordinal-group: 0;
+  }
 }
 
-/**
- * On macOS, the window caption buttons are on the left side of the window titlebar,
- * even when using the RTL UI direction. Similarly, the fullscreen button is on the
- * right side of the window titlebar, even when using the RTL UI direction. These
- * next rules enforce that ordering.
- */
-#titlebar-secondary-buttonbox:-moz-locale-dir(ltr) {
-  -moz-box-ordinal-group: 1000;
+@media (-moz-mac-rtl) {
+  .titlebar-buttonbox-container:-moz-locale-dir(rtl) {
+    -moz-box-ordinal-group: 0;
+  }
 }
 
-#titlebar-secondary-buttonbox:-moz-locale-dir(rtl),
-.titlebar-buttonbox-container:-moz-locale-dir(ltr) {
-  -moz-box-ordinal-group: 0;
-}
 %endif
 
 :root[inDOMFullscreen] #navigator-toolbox,
 :root[inDOMFullscreen] #fullscr-toggler,
 :root[inDOMFullscreen] #sidebar-box,
 :root[inDOMFullscreen] #sidebar-splitter,
-:root[inFullscreen]:not([OSXLionFullscreen]) toolbar:not([fullscreentoolbar=true]),
+:root[inFullscreen]:not([macOSNativeFullscreen]) toolbar:not([fullscreentoolbar=true]),
 :root[inFullscreen] .global-notificationbox {
   visibility: collapse;
 }
@@ -490,13 +501,13 @@ toolbarpaletteitem[place="toolbar"] {
 #bookmarks-toolbar-placeholder,
 #bookmarks-toolbar-button,
 toolbarpaletteitem > #personal-bookmarks > #PlacesToolbar,
-#personal-bookmarks:-moz-any([overflowedItem=true], [cui-areatype="menu-panel"]) > #PlacesToolbar {
+#personal-bookmarks:is([overflowedItem=true], [cui-areatype="menu-panel"]) > #PlacesToolbar {
   display: none;
 }
 
 toolbarpaletteitem[place="toolbar"] > #personal-bookmarks > #bookmarks-toolbar-placeholder,
 toolbarpaletteitem[place="palette"] > #personal-bookmarks > #bookmarks-toolbar-button,
-#personal-bookmarks:-moz-any([overflowedItem=true], [cui-areatype="menu-panel"]) > #bookmarks-toolbar-button {
+#personal-bookmarks:is([overflowedItem=true], [cui-areatype="menu-panel"]) > #bookmarks-toolbar-button {
   display: -moz-box;
 }
 
@@ -581,15 +592,28 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
  *
  * Attribute is controlled by browser.js:/gRemoteControl.
  */
+:root[remotecontrol] #remote-control-box {
+  visibility: visible;
+  padding-inline: var(--urlbar-icon-padding);
+}
+
+:root[remotecontrol] #remote-control-icon {
+  list-style-image: url(chrome://browser/content/static-robot.png);
+  width: 16px;
+  height: 16px;
+}
+
 :root[remotecontrol] #urlbar-background {
-  background: repeating-linear-gradient(
+  background-image: repeating-linear-gradient(
     -45deg,
-    transparent,
-    transparent 25px,
-    rgba(255,255,255,.3) 25px,
-    rgba(255,255,255,.3) 50px);
-  background-color: rgba(255,170,68,.8);
-  color: black;
+    rgba(255, 60, 60, 0.25) 0 25px,
+    rgba(175, 0, 0, 0.25) 25px 50px
+  );
+
+  background-attachment: fixed;
+  /* Override the usual breakout animation so the gradient doesn't shift around
+     when the panel opens. */
+  animation: none !important;
 }
 
 /* Show the url scheme in a static box when overflowing to the left */
@@ -647,8 +671,8 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
   }
 }
 
-#urlbar[actionoverride] > #urlbar-input-container > #urlbar-label-box,
-#urlbar:not([actiontype="switchtab"]):not([actiontype="extension"]):not([searchmode]) > #urlbar-input-container > #urlbar-label-box,
+#urlbar[actiontype="switchtab"][actionoverride] > #urlbar-input-container > #urlbar-label-box,
+#urlbar:not([actiontype="switchtab"], [actiontype="extension"], [searchmode]) > #urlbar-input-container > #urlbar-label-box,
 #urlbar:not([actiontype="switchtab"]) > #urlbar-input-container > #urlbar-label-box > #urlbar-label-switchtab,
 #urlbar:not([actiontype="extension"]) > #urlbar-input-container > #urlbar-label-box > #urlbar-label-extension,
 #urlbar[searchmode][breakout-extend] > #urlbar-input-container > #urlbar-label-box,
@@ -659,7 +683,7 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
 
 #PopupAutoComplete > richlistbox > richlistitem[originaltype="loginsFooter"] {
   -moz-box-pack: center;
-  color: -moz-fieldText;
+  color: FieldText;
   min-height: 2.6666em;
   border-top: 1px solid rgba(38,38,38,.15);
   background-color: hsla(0,0%,80%,.35); /* match arrowpanel-dimmed */;
@@ -677,12 +701,9 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
   min-width: 17em;
 }
 
+#PopupAutoComplete[resultstyles~="importableLogins"],
 #PopupAutoComplete[resultstyles~="generatedPassword"] {
   min-width: 22em;
-}
-
-#PopupAutoComplete[resultstyles~="importableLogins"] {
-  min-width: 24em;
 }
 
 #PopupAutoComplete > richlistbox > richlistitem[originaltype="insecureWarning"] {
@@ -737,8 +758,8 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
   min-width: 280px;
 }
 
-#identity-box {
-  max-width: calc(30px + 10em);
+#identity-icon-box {
+  max-width: calc(30px + 13em);
 }
 
 @media (max-width: 770px) {
@@ -751,7 +772,7 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
   :root[customizing] #urlbar-container {
     min-width: 245px;
   }
-  #identity-box {
+  #identity-icon-box {
     max-width: 80px;
   }
   /* Contenxtual identity labels are user-customizable and can be very long,
@@ -760,6 +781,13 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
     display: none;
   }
 }
+
+/* The page actions menu is hidden by default, it is only shown in small
+   windows as the overflow target of multiple page action buttons */
+#pageActionButton {
+  visibility: collapse;
+}
+
 /* 680px is just below half of popular 1366px wide screens, so when putting two
    browser windows next to each other on such a screen, they'll be above this
    threshold. */
@@ -767,18 +795,21 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
   /* Page action buttons are duplicated in the page action menu so we can
      safely hide them in small windows. */
   #pageActionSeparator,
-  #pageActionButton ~ .urlbar-page-action {
+  #pageActionButton[multiple-children] ~ .urlbar-page-action {
     display: none;
+  }
+  #pageActionButton[multiple-children] {
+    visibility: visible;
   }
 }
 @media (max-width: 550px) {
   #urlbar-container {
-    min-width: calc(225px + 24px + 2 * var(--toolbarbutton-inner-padding));
+    min-width: calc(216px + 24px + 2 * var(--toolbarbutton-inner-padding));
   }
   #nav-bar[downloadsbuttonshown] #urlbar-container {
-    min-width: 225px;
+    min-width: 216px;
   }
-  #identity-box {
+  #identity-icon-box {
     max-width: 70px;
   }
   #urlbar-zoom-button {
@@ -865,31 +896,28 @@ menupopup[emptyplacesresult="true"] > .hide-if-empty-places-result {
   transform: rotate(180deg);
 }
 
-/* Pocket */
-:root[pocketdisabled=true] #context-pocket,
-:root[pocketdisabled=true] #context-savelinktopocket,
-:root[pocketdisabled=true] #appMenu-library-pocket-button {
-  display: none;
-}
-
 /*  Full Screen UI */
 
 #fullscr-toggler {
+  top: 0;
+  left: 0;
+  right: 0;
   height: 1px;
-  background: black;
+  position: fixed;
+  z-index: 2147483647;
 }
 
 #fullscreen-and-pointerlock-wrapper {
   position: fixed;
-  width: 100vw;
-  height: 100vh;
+  z-index: 2147483647 !important;
+  width: 100%;
+  height: 100%;
   top: 0;
   pointer-events: none;
 }
 
 .pointerlockfswarning {
   position: fixed;
-  z-index: 2147483647 !important;
   visibility: visible;
   transition: transform 300ms ease-in;
   /* To center the warning box horizontally,
@@ -912,7 +940,7 @@ menupopup[emptyplacesresult="true"] > .hide-if-empty-places-result {
   /* Use -10px to hide the border and border-radius on the top */
   transform: translate(-50%, -10px);
 }
-:root[OSXLionFullscreen] .pointerlockfswarning[ontop] {
+:root[macOSNativeFullscreen] .pointerlockfswarning[ontop] {
   transform: translate(-50%, 80px);
 }
 
@@ -952,7 +980,7 @@ menupopup[emptyplacesresult="true"] > .hide-if-empty-places-result {
   position: absolute;
 }
 
-browser[tabmodalPromptShowing] {
+browser[tabmodalPromptShowing], browser[tabDialogShowing] {
   -moz-user-focus: none !important;
 }
 
@@ -989,7 +1017,7 @@ browser[tabmodalPromptShowing] {
   transition: opacity 120ms ease-out, visibility 120ms;
 }
 
-#statuspanel[type=overLink] > #statuspanel-inner {
+#statuspanel:is([type=overLink], [inactive][previoustype=overLink]) > #statuspanel-inner {
   direction: ltr;
 }
 
@@ -1011,11 +1039,8 @@ browser[tabmodalPromptShowing] {
 
 /*** Visibility of downloads indicator controls ***/
 
-/* Bug 924050: If we've loaded the indicator, for now we hide it in the menu panel,
-   and just show the icon. This is a hack to side-step very weird layout bugs that
-   seem to be caused by the indicator stack interacting with the menu panel. */
-#downloads-button[indicator]:not([cui-areatype="menu-panel"]) > .toolbarbutton-badge-stack > image.toolbarbutton-icon,
-#downloads-button[indicator][cui-areatype="menu-panel"] > .toolbarbutton-badge-stack > #downloads-indicator-anchor {
+/* Hide the default icon, show the anchor instead. */
+#downloads-button[indicator] > .toolbarbutton-badge-stack > image.toolbarbutton-icon {
   display: none;
 }
 
@@ -1027,25 +1052,16 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbut
   display: none;
 }
 
-/* Combobox dropdown renderer */
-#ContentSelectDropdown > menupopup {
-  /* The menupopup itself should always be rendered LTR to ensure the scrollbar aligns with
-   * the dropdown arrow on the dropdown widget. If a menuitem is RTL, its style will be set accordingly */
-  direction: ltr;
-}
-
-/* Indent options in optgroups */
-.contentSelectDropdown-ingroup .menu-iconic-text {
-  padding-inline-start: 2em;
-}
-
-/* Give this menupopup an arrow panel styling */
-#BMB_bookmarksPopup {
-  appearance: none;
+/* Give these menupopups an arrow panel styling */
+#BMB_bookmarksPopup,
+#PlacesToolbar menupopup {
   background: transparent;
   border: none;
-  /* The popup inherits -moz-image-region from the button, must reset it */
-  -moz-image-region: auto;
+}
+
+#BMB_bookmarksPopup,
+#BMB_bookmarksPopup menupopup {
+  appearance: none;
 }
 
 @supports -moz-bool-pref("xul.panel-animations.enabled") {
@@ -1060,16 +1076,23 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbut
      for repaints.
      These properties are not implemented on other platforms. */
   #BMB_bookmarksPopup:not([animate="false"]) {
-    -moz-window-opacity: 0;
-    -moz-window-transform: translateY(-70px);
     transition-property: -moz-window-transform, -moz-window-opacity;
     transition-duration: 0.18s, 0.18s;
     transition-timing-function:
       var(--animation-easing-function), ease-out;
   }
 
-  #BMB_bookmarksPopup[side="bottom"]:not([animate="false"]) {
-    -moz-window-transform: translateY(70px);
+  /* Only do the fade-in animation on pre-Big Sur to avoid missing shadows on
+   * Big Sur, see bug 1672091. */
+  @media (-moz-mac-big-sur-theme: 0) {
+    #BMB_bookmarksPopup:not([animate="false"]) {
+      -moz-window-opacity: 0;
+      -moz-window-transform: translateY(-70px);
+    }
+
+    #BMB_bookmarksPopup[side="bottom"]:not([animate="false"]) {
+      -moz-window-transform: translateY(70px);
+    }
   }
 
   /* [animate] is here only so that this rule has greater specificity than the
@@ -1083,6 +1106,7 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbut
   }
 
   #BMB_bookmarksPopup[animate][animate="cancel"] {
+    -moz-window-opacity: 0;
     -moz-window-transform: none;
   }
 %else
@@ -1206,11 +1230,17 @@ toolbarpaletteitem[dragover] {
 
 #customization-footer {
   display: flex;
+  align-items: center;
   flex-shrink: 0;
   flex-wrap: wrap;
 }
 
 #customization-toolbar-visibility-button > .box-inherit > .button-menu-dropmarker {
+  display: -moz-box;
+}
+
+#customization-lwtheme-button > .box-inherit > .button-menu-dropmarker,
+#customization-uidensity-button > .box-inherit > .button-menu-dropmarker {
   display: -moz-box;
 }
 
@@ -1236,6 +1266,10 @@ toolbarpaletteitem > toolbaritem {
   /* Prevent children from getting events */
   pointer-events: none;
   -moz-box-pack: center;
+}
+
+toolbarpaletteitem:not([place="palette"]) > #stop-reload-button {
+  -moz-box-pack: inherit;
 }
 
 :root[customizing=true] .addon-banner-item,
@@ -1332,12 +1366,6 @@ toolbarpaletteitem > toolbaritem {
   -moz-window-shadow: none;
 }
 
-/* Page action panel */
-#pageAction-panel-sendToDevice-subview-body:not([state="notready"]) > .pageAction-sendToDevice-notReady,
-#pageAction-urlbar-sendToDevice-subview-body:not([state="notready"]) > .pageAction-sendToDevice-notReady {
-  display: none;
-}
-
 /* Page action buttons */
 .pageAction-panel-button > .toolbarbutton-icon {
   list-style-image: var(--pageAction-image-16px, inherit);
@@ -1354,15 +1382,86 @@ toolbarpaletteitem > toolbaritem {
   }
 }
 
-/* Page action context menu */
-#pageActionContextMenu > .pageActionContextMenuItem {
-  visibility: collapse;
+/* Print pending */
+.printSettingsBrowser {
+  width: 250px !important;
 }
-#pageActionContextMenu[state=builtInPinned] > .pageActionContextMenuItem.builtInPinned,
-#pageActionContextMenu[state=builtInUnpinned] > .pageActionContextMenuItem.builtInUnpinned,
-#pageActionContextMenu[state=extensionPinned] > .pageActionContextMenuItem.extensionPinned,
-#pageActionContextMenu[state=extensionUnpinned] > .pageActionContextMenuItem.extensionUnpinned {
-  visibility: visible;
+
+.previewStack {
+  background-color: #f9f9fa;
+  color: #0c0c0d;
+}
+
+.previewRendering {
+  background-repeat: no-repeat;
+  background-size: 60px 60px;
+  background-position: center center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  visibility: hidden;
+}
+
+.printPreviewBrowser {
+  visibility: collapse;
+  opacity: 1;
+}
+
+.previewStack[rendering=true] > .previewRendering,
+.previewStack[previewtype="source"] > .printPreviewBrowser[previewtype="source"],
+.previewStack[previewtype="selection"] > .printPreviewBrowser[previewtype="selection"],
+.previewStack[previewtype="simplified"] > .printPreviewBrowser[previewtype="simplified"] {
+  visibility: inherit;
+}
+
+.previewStack[rendering=true] > .printPreviewBrowser {
+  opacity: 0;
+}
+
+.print-pending-label {
+  margin-top: 110px;
+  font-size: large;
+}
+
+printpreview-pagination {
+  opacity: 0;
+}
+printpreview-pagination:focus-within,
+.previewStack:hover printpreview-pagination {
+  opacity: 1;
+}
+.previewStack[rendering=true] printpreview-pagination {
+  opacity: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .previewStack {
+    background-color: #2A2A2E;
+    color: rgb(249, 249, 250);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .previewRendering {
+    background-image: url("chrome://browser/skin/tabbrowser/pendingpaint.png");
+  }
+
+  .printPreviewBrowser {
+    transition: opacity 60ms;
+  }
+
+  .previewStack[rendering=true] > .printPreviewBrowser {
+    transition: opacity 1ms 250ms;
+  }
+
+  printpreview-pagination {
+    transition: opacity 100ms 500ms;
+  }
+
+  printpreview-pagination:focus-within,
+  .previewStack:hover printpreview-pagination {
+    transition: opacity 100ms;
+  }
 }
 
 /* WebExtension Sidebars */
@@ -1380,18 +1479,14 @@ toolbarpaletteitem > toolbaritem {
   }
 }
 
-toolbar[keyNav=true]:not([collapsed=true]):not([customizing=true]) toolbartabstop {
+toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
   -moz-user-focus: normal;
 }
 
 /* Frame used for rendering the DevTools inspector highlighters */
-iframe.devtools-highlighter-renderer {
+:root > iframe.devtools-highlighter-renderer {
   border: none;
   pointer-events: none;
-}
-
-/* Highlighter for the Browser Toolbox */
-:root > iframe.devtools-highlighter-renderer {
   position: fixed;
   top: 0;
   left: 0;
@@ -1400,7 +1495,175 @@ iframe.devtools-highlighter-renderer {
   z-index: 2;
 }
 
-/* Highlighter for web content */
-.browserStack > iframe.devtools-highlighter-renderer {
-  -moz-box-flex: 1;
+/**
+ * Dialogs
+ */
+
+.dialogStack {
+  /* Should outrank the z-index values of other UI elements, particularly the devtools
+     splitter element. */
+  z-index: 2;
 }
+
+.dialogStack.temporarilyHidden {
+  /* For some printing use cases we need to visually hide the dialog before
+   * actually closing it / make it disappear from the frame tree. */
+  visibility: hidden;
+}
+
+.dialogOverlay {
+  visibility: hidden;
+}
+
+.dialogOverlay[topmost="true"] {
+  z-index: 1;
+}
+
+.dialogBox {
+  background-clip: content-box;
+  box-shadow: 0 2px 14px 0 rgba(0, 0, 0, 0.2);
+  display: -moz-box;
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+}
+
+/*
+ * In High Contrast Mode, this prevents a dialog from visually bleeding into
+ * the window behind it, which looks jarring.
+ *
+ * In some ideal world, we would also put a transparent border in the general
+ * case for .dialogBox, so that everything would layout the same either way,
+ * which would presumably make it easier for prefers-contrast renderings to
+ * Just Work. Doing that _would_ change the layout for any existing subdialog
+ * in the tree which doesn't already have a border of some sort, but we could
+ * choose to bite the bullet at some point, as it may turn out to not cause
+ * any real problems.
+ */
+@media (prefers-contrast) {
+.dialogBox {
+  border: 1px solid WindowText;
+}
+}
+
+.dialogBox {
+  border-radius: 8px;
+}
+
+.dialogBox[resizable="true"] {
+  resize: both;
+  overflow: hidden;
+  min-height: 20em;
+}
+
+.dialogBox[sizeto="available"] {
+  --box-inline-margin: 4px;
+  --box-block-margin: 4px;
+  --box-ideal-width: 1000;
+  --box-ideal-height: 650;
+  --box-max-width-margin: calc(100vw - 2 * var(--box-inline-margin));
+  --box-max-height-margin: calc(100vh - var(--box-top-px) - var(--box-block-margin));
+  --box-max-width-ratio: 70vw;
+  --box-max-height-ratio: calc(var(--box-ideal-height) / var(--box-ideal-width) * var(--box-max-width-ratio));
+  max-width: min(max(var(--box-ideal-width) * 1px, var(--box-max-width-ratio)), var(--box-max-width-margin));
+  max-height: min(max(var(--box-ideal-height) * 1px, var(--box-max-height-ratio)), var(--box-max-height-margin));
+  width: 100vw;
+  height: 100vh;
+}
+
+@media (min-width: 550px) {
+  .dialogBox[sizeto="available"] {
+    --box-inline-margin: min(calc(4px + (100vw - 550px) / 4), 16px);
+  }
+}
+
+@media (min-width: 800px) {
+  .dialogBox[sizeto="available"] {
+    --box-inline-margin: min(calc(16px + (100vw - 800px) / 4), 32px);
+  }
+}
+
+@media (min-height: 350px) {
+  .dialogBox[sizeto="available"] {
+    --box-block-margin: min(calc(4px + (100vh - 350px) / 4), 16px);
+  }
+}
+
+@media (min-height: 550px) {
+  .dialogBox[sizeto="available"] {
+    --box-block-margin: min(calc(16px + (100vh - 550px) / 4), 32px);
+  }
+}
+
+.content-prompt-dialog > .dialogOverlay {
+  display: grid;
+  place-content: center;
+  /* 90% for 5% top/bottom margins, the document height so that
+   * smaller dialogs don't become too big. */
+  grid-auto-rows: min(90%, var(--doc-height-px));
+}
+
+:not(.content-prompt-dialog) > .dialogOverlay > .dialogBox {
+  /* Make dialogs overlap with upper chrome UI. */
+  margin-top: -5px;
+}
+
+#window-modal-dialog {
+  overflow: visible;
+  padding: 0;
+  --chrome-offset: 20px; /* gets overridden from JS, but pick some default... */
+  margin-top: max(
+    /* Do not go below 8px, corresponding to the negative margin above plus
+     * a tiny bit of space, as otherwise the top of the dialog would be
+     * adjacent to or clipped by the top of the window. */
+    8px,
+    /* Otherwise, use the chrome height,
+     * or the height of the parent window minus the height of the dialog,
+     * whichever is smaller. */
+    min(
+      var(--chrome-offset),
+      calc(100vh - var(--inner-height))
+    )
+  );
+}
+
+.dialogFrame {
+  margin: 0;
+  -moz-box-flex: 1;
+  /* Default dialog dimensions */
+  width: 34em;
+  /* will get overridden, but need to change the default so small
+   * dialogs don't end up being 150px tall */
+  height: 80px;
+}
+
+/* Override default <html:dialog> styles */
+#window-modal-dialog {
+  border-width: 0;
+  background-color: transparent;
+}
+
+.dialogOverlay[topmost="true"],
+#window-modal-dialog::backdrop {
+  background-color: rgba(28, 27, 34, 0.45);
+}
+
+#window-modal-dialog.showToolbar::backdrop {
+  background: linear-gradient(transparent, rgba(28, 27, 34, 0.45) 50%);
+}
+
+/* For the window-modal dialog, the background is supplied by the HTML dialog
+ * backdrop, so the dialogOverlay background above "double backgrounds" - so
+ * we remove it here: */
+#window-modal-dialog > .dialogOverlay[topmost="true"] {
+  background-color: transparent;
+}
+
+/* Hide tab-modal dialogs when a window-modal one is up. */
+:root[window-modal-open] .browserStack > .dialogStack {
+  visibility: hidden;
+}
+
+/**
+ * End Dialogs
+ */

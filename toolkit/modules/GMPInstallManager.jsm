@@ -36,6 +36,11 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
+  "FileUtils",
+  "resource://gre/modules/FileUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
   "UpdateUtils",
   "resource://gre/modules/UpdateUtils.jsm"
 );
@@ -88,7 +93,7 @@ function downloadJSON(uri) {
  * load the sources from local build configuration.
  */
 function downloadLocalConfig() {
-  let log = getScopedLogger("GMPInstallManager.checkForAddons");
+  let log = getScopedLogger("GMPInstallManager.downloadLocalConfig");
   return Promise.all(
     LOCAL_GMP_SOURCES.map(conf => {
       return downloadJSON(conf.src).then(addons => {
@@ -163,6 +168,47 @@ GMPInstallManager.prototype = {
     log.info("Using url (with replacement): " + url);
     return url;
   },
+
+  /**
+   * Records telemetry results on if fetching update.xml from Balrog succeeded
+   * and the method that was used to verify the response from Balrog.
+   * @param didGetAddonList
+   *        A boolean indicating if an update.xml containing the addon list was
+   *        successfully fetched (true) or not (false).
+   * @param checkContentSignature
+   *        If the update.xml response was verified using a content signature.
+   *        If this is false, then it's assumed that response was
+   *        verified using cert pinning.
+   */
+  recordUpdateXmlTelemetry(didGetAddonList, checkContentSignature) {
+    let log = getScopedLogger("GMPInstallManager.recordUpdateXmlTelemetry");
+
+    try {
+      let updateResultHistogram = Services.telemetry.getHistogramById(
+        "MEDIA_GMP_UPDATE_XML_FETCH_RESULT"
+      );
+
+      if (didGetAddonList) {
+        if (checkContentSignature) {
+          updateResultHistogram.add("content_sig_ok");
+        } else {
+          updateResultHistogram.add("cert_pinning_ok");
+        }
+      } else if (checkContentSignature) {
+        updateResultHistogram.add("content_sig_fail");
+      } else {
+        updateResultHistogram.add("cert_pinning_fail");
+      }
+    } catch (e) {
+      // We don't expect this path to be hit, but we don't want telemetry
+      // failures to break GMP updates, so catch any issues here and let the
+      // update machinery continue.
+      log.error(
+        `Failed to record telemetry result of getProductAddonList, got error: ${e}`
+      );
+    }
+  },
+
   /**
    * Performs an addon check.
    * @return a promise which will be resolved or rejected.
@@ -189,9 +235,21 @@ GMPInstallManager.prototype = {
 
     this._deferred = PromiseUtils.defer();
 
+    // Should content signature checking of Balrog replies be used? If so this
+    // will be done instead of the older cert pinning method.
+    let checkContentSignature = GMPPrefs.getBool(
+      GMPPrefs.KEY_CHECK_CONTENT_SIGNATURE,
+      false
+    );
+
     let allowNonBuiltIn = true;
     let certs = null;
-    if (!Services.prefs.prefHasUserValue(GMPPrefs.KEY_URL_OVERRIDE)) {
+    // Only check certificates if we're not using a custom URL, and only if
+    // we're not checking a content signature.
+    if (
+      !Services.prefs.prefHasUserValue(GMPPrefs.KEY_URL_OVERRIDE) &&
+      !checkContentSignature
+    ) {
       allowNonBuiltIn = !GMPPrefs.getString(
         GMPPrefs.KEY_CERT_REQUIREBUILTIN,
         true
@@ -203,11 +261,23 @@ GMPInstallManager.prototype = {
 
     let url = await this._getURL();
 
+    log.info(
+      `Fetching product addon list url=${url}, allowNonBuiltIn=${allowNonBuiltIn}, certs=${certs}, checkContentSignature=${checkContentSignature}`
+    );
     let addonPromise = ProductAddonChecker.getProductAddonList(
       url,
       allowNonBuiltIn,
-      certs
-    ).catch(downloadLocalConfig);
+      certs,
+      checkContentSignature
+    )
+      .then(res => {
+        this.recordUpdateXmlTelemetry(true, checkContentSignature);
+        return res;
+      })
+      .catch(() => {
+        this.recordUpdateXmlTelemetry(false, checkContentSignature);
+        return downloadLocalConfig();
+      });
 
     addonPromise.then(
       res => {
@@ -506,8 +576,10 @@ GMPAddon.prototype = {
 };
 /**
  * Constructs a GMPExtractor object which is used to extract a GMP zip
- * into the specified location. (Which typically leties per platform)
+ * into the specified location.
  * @param zipPath The path on disk of the zip file to extract
+ * @param relativePath The relative path inside the profile directory to
+ * extract the zip to.
  */
 function GMPExtractor(zipPath, relativeInstallPath) {
   this.zipPath = zipPath;
@@ -525,6 +597,9 @@ GMPExtractor.prototype = {
     this._deferred = PromiseUtils.defer();
     let deferredPromise = this._deferred;
     let { zipPath, relativeInstallPath } = this;
+    // Escape the zip path since the worker will use it as a URI
+    let zipFile = new FileUtils.File(zipPath);
+    let zipURI = Services.io.newFileURI(zipFile).spec;
     let worker = new ChromeWorker(
       "resource://gre/modules/GMPExtractorWorker.js"
     );
@@ -532,17 +607,17 @@ GMPExtractor.prototype = {
       let log = getScopedLogger("GMPExtractor");
       worker.terminate();
       if (msg.data.result != "success") {
-        log.error("Failed to extract zip file: " + zipPath);
+        log.error("Failed to extract zip file: " + zipURI);
         return deferredPromise.reject({
           target: this,
           status: msg.data.exception,
           type: "exception",
         });
       }
-      log.info("Successfully extracted zip file: " + zipPath);
+      log.info("Successfully extracted zip file: " + zipURI);
       return deferredPromise.resolve(msg.data.extractedPaths);
     };
-    worker.postMessage({ zipPath, relativeInstallPath });
+    worker.postMessage({ zipURI, relativeInstallPath });
     return this._deferred.promise;
   },
 };

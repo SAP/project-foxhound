@@ -12,6 +12,9 @@
 
 #include "jsfriendapi.h"
 #include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject, JS::NewArrayObject
+#include "js/friend/StackLimits.h"  // js::AutoCheckRecursionLimit
+#include "js/friend/WindowProxy.h"  // js::ToWindowIfWindowProxy
+#include "js/PropertyAndElement.h"  // JS_GetElement
 #include "js/Wrapper.h"
 
 using namespace JS;
@@ -55,10 +58,11 @@ XPCTraceableVariant::~XPCTraceableVariant() {
   Value val = GetJSValPreserveColor();
 
   MOZ_ASSERT(val.isGCThing() || val.isNull(), "Must be traceable or unlinked");
+  bool unroot = val.isGCThing();
 
   mData.Cleanup();
 
-  if (!val.isNull()) {
+  if (unroot) {
     RemoveFromRootSet();
   }
 }
@@ -74,7 +78,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(XPCVariant)
   JS::Value val = tmp->GetJSValPreserveColor();
   if (val.isObject()) {
     NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mJSVal");
-    cb.NoteJSChild(JS::GCCellPtr(val));
+    cb.NoteJSChild(val.toGCCellPtr());
   }
 
   tmp->mData.Traverse(cb);
@@ -82,10 +86,11 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(XPCVariant)
   JS::Value val = tmp->GetJSValPreserveColor();
+  bool unroot = val.isGCThing();
 
   tmp->mData.Cleanup();
 
-  if (val.isGCThing()) {
+  if (unroot) {
     XPCTraceableVariant* v = static_cast<XPCTraceableVariant*>(tmp);
     v->RemoveFromRootSet();
   }
@@ -257,7 +262,8 @@ bool XPCArrayHomogenizer::GetTypeForArray(JSContext* cx, HandleObject array,
 }
 
 bool XPCVariant::InitializeData(JSContext* cx) {
-  if (!js::CheckRecursionLimit(cx)) {
+  js::AutoCheckRecursionLimit recursion(cx);
+  if (!recursion.check(cx)) {
     return false;
   }
 

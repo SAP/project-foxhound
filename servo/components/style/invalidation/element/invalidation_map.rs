@@ -185,7 +185,7 @@ pub struct DocumentStateDependency {
 /// In particular, we want to lookup as few things as possible to get the fewer
 /// selectors the better, so this looks up by id, class, or looks at the list of
 /// state/other attribute affecting selectors.
-#[derive(Debug, MallocSizeOf)]
+#[derive(Clone, Debug, MallocSizeOf)]
 pub struct InvalidationMap {
     /// A map from a given class name to all the selectors with that class
     /// selector.
@@ -478,7 +478,7 @@ impl<'a> SelectorVisitor for SelectorDependencyCollector<'a> {
                     Component::Class(..) => &mut self.map.class_to_selector,
                     _ => unreachable!(),
                 };
-                let entry = match map.try_entry(atom.clone(), self.quirks_mode) {
+                let entry = match map.try_entry(atom.0.clone(), self.quirks_mode) {
                     Ok(entry) => entry,
                     Err(err) => {
                         *self.alloc_error = Some(err);
@@ -494,11 +494,7 @@ impl<'a> SelectorVisitor for SelectorDependencyCollector<'a> {
                 }
             },
             Component::NonTSPseudoClass(ref pc) => {
-                self.compound_state.element_state |= match *pc {
-                    #[cfg(feature = "gecko")]
-                    NonTSPseudoClass::Dir(ref dir) => dir.element_state(),
-                    _ => pc.state_flag(),
-                };
+                self.compound_state.element_state |= pc.state_flag();
                 *self.document_state |= pc.document_state_flag();
 
                 let attr_name = match *pc {

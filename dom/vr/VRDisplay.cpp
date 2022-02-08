@@ -14,6 +14,8 @@
 #include "mozilla/dom/VRDisplayBinding.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/Base64.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
 #include "Navigator.h"
@@ -379,7 +381,7 @@ uint32_t VRDisplay::DisplayId() const {
 
 void VRDisplay::GetDisplayName(nsAString& aDisplayName) const {
   const gfx::VRDisplayInfo& info = mClient->GetDisplayInfo();
-  aDisplayName = NS_ConvertUTF8toUTF16(info.GetDisplayName());
+  CopyUTF8toUTF16(MakeStringSpan(info.GetDisplayName()), aDisplayName);
 }
 
 void VRDisplay::UpdateFrameInfo() {

@@ -62,6 +62,9 @@ var EXPORTED_SYMBOLS = ["SchemaRoot", "Schemas"];
 const KEY_CONTENT_SCHEMAS = "extensions-framework/schemas/content";
 const KEY_PRIVILEGED_SCHEMAS = "extensions-framework/schemas/privileged";
 
+const MIN_MANIFEST_VERSION = 2;
+const MAX_MANIFEST_VERSION = 3;
+
 const { DEBUG } = AppConstants;
 
 const isParentProcess =
@@ -290,6 +293,19 @@ const POSTPROCESSORS = {
     context.logError(context.makeError(msg));
     throw new Error(msg);
   },
+
+  manifestVersionCheck(value, context) {
+    if (
+      value == 2 ||
+      (value == 3 &&
+        Services.prefs.getBoolPref("extensions.manifestV3.enabled", false))
+    ) {
+      return value;
+    }
+    const msg = `Unsupported manifest version: ${value}`;
+    context.logError(context.makeError(msg));
+    throw new Error(msg);
+  },
 };
 
 // Parses a regular expression, with support for the Python extended
@@ -357,6 +373,12 @@ class Context {
   constructor(params, overridableMethods = CONTEXT_FOR_VALIDATION) {
     this.params = params;
 
+    if (typeof params.manifestVersion !== "number") {
+      throw new Error(
+        `Unexpected params.manifestVersion value: ${params.manifestVersion}`
+      );
+    }
+
     this.path = [];
     this.preprocessors = {
       localize(value, context) {
@@ -375,7 +397,7 @@ class Context {
       }
     }
 
-    let props = ["preprocessors", "isChromeCompat"];
+    let props = ["preprocessors", "isChromeCompat", "manifestVersion"];
     for (let prop of props) {
       if (prop in params) {
         if (prop in this && typeof this[prop] == "object") {
@@ -527,7 +549,21 @@ class Context {
    * @param {Error|string} error
    */
   logError(error) {
-    Cu.reportError(error);
+    if (this.cloneScope) {
+      Cu.reportError(
+        // Error objects logged using Cu.reportError are not associated
+        // to the related innerWindowID. This results in a leaked docshell
+        // since consoleService cannot release the error object when the
+        // extension global is destroyed.
+        typeof error == "string" ? error : String(error),
+        // Report the error with the appropriate stack trace when the
+        // is related to an actual extension global (instead of being
+        // related to a manifest validation).
+        this.principal && ChromeUtils.getCallerLocation(this.principal)
+      );
+    } else {
+      Cu.reportError(error);
+    }
   }
 
   /**
@@ -604,6 +640,14 @@ class Context {
     } finally {
       this.path.pop();
     }
+  }
+
+  matchManifestVersion(entry) {
+    let { manifestVersion } = this;
+    return (
+      manifestVersion >= entry.min_manifest_version &&
+      manifestVersion <= entry.max_manifest_version
+    );
   }
 }
 
@@ -682,10 +726,13 @@ class InjectionEntry {
    *        context, without respect to permissions.
    */
   get shouldInject() {
-    return this.context.shouldInject(
-      this.path.join("."),
-      this.name,
-      this.allowedContexts
+    return (
+      this.context.matchManifestVersion(this.entry) &&
+      this.context.shouldInject(
+        this.path.join("."),
+        this.name,
+        this.allowedContexts
+      )
     );
   }
 
@@ -1004,6 +1051,30 @@ const FORMATS = {
     return url;
   },
 
+  origin(string, context) {
+    let url;
+    try {
+      url = new URL(string);
+    } catch (e) {
+      throw new Error(`Invalid origin: ${string}`);
+    }
+    if (!/^https?:/.test(url.protocol)) {
+      throw new Error(`Invalid origin must be http or https for URL ${string}`);
+    }
+    // url.origin is punycode so a direct check against string wont work.
+    // url.href appends a slash even if not in the original string, we we
+    // additionally check that string does not end in slash.
+    if (string.endsWith("/") || url.href != new URL(url.origin).href) {
+      throw new Error(
+        `Invalid origin for URL ${string}, replace with origin ${url.origin}`
+      );
+    }
+    if (!context.checkLoadURL(url.origin)) {
+      throw new Error(`Access denied for URL ${url}`);
+    }
+    return url.origin;
+  },
+
   relativeUrl(string, context) {
     if (!context.url) {
       // If there's no context URL, return relative URLs unresolved, and
@@ -1072,13 +1143,20 @@ const FORMATS = {
   },
 
   contentSecurityPolicy(string, context) {
-    let error = contentPolicyService.validateAddonCSP(string);
+    // Manifest V3 extension_pages allows localhost.  When sandbox is
+    // implemented, or any other V3 or later directive, the flags
+    // logic will need to be updated.
+    let flags =
+      context.manifestVersion < 3
+        ? Ci.nsIAddonContentPolicy.CSP_ALLOW_ANY
+        : Ci.nsIAddonContentPolicy.CSP_ALLOW_LOCALHOST;
+    let error = contentPolicyService.validateAddonCSP(string, flags);
     if (error != null) {
-      // The SyntaxError raised below is not reported as part of the "choices" error message,
+      // The CSP validation error is not reported as part of the "choices" error message,
       // we log the CSP validation error explicitly here to make it easier for the addon developers
       // to see and fix the extension CSP.
       context.logError(`Error processing ${context.currentTarget}: ${error}`);
-      throw new SyntaxError(error);
+      return null;
     }
     return string;
   },
@@ -1161,6 +1239,11 @@ class Entry {
      * These are not parsed by the schema, but passed to `shouldInject`.
      */
     this.allowedContexts = schema.allowedContexts || [];
+
+    this.min_manifest_version =
+      schema.min_manifest_version ?? MIN_MANIFEST_VERSION;
+    this.max_manifest_version =
+      schema.max_manifest_version ?? MAX_MANIFEST_VERSION;
   }
 
   /**
@@ -1291,6 +1374,8 @@ class Type extends Entry {
       "preprocess",
       "postprocess",
       "allowedContexts",
+      "min_manifest_version",
+      "max_manifest_version",
     ];
   }
 
@@ -1438,6 +1523,12 @@ class ChoiceType extends Type {
     let error;
     let { choices, result } = context.withChoices(() => {
       for (let choice of this.choices) {
+        // Ignore a possible choice if it is not supported by
+        // the manifest version we are normalizing.
+        if (!context.matchManifestVersion(choice)) {
+          continue;
+        }
+
         let r = choice.normalize(value, context);
         if (!r.error) {
           return r;
@@ -1471,6 +1562,34 @@ class ChoiceType extends Type {
 
   checkBaseType(baseType) {
     return this.choices.some(t => t.checkBaseType(baseType));
+  }
+
+  getDescriptor(path, context) {
+    // In StringType.getDescriptor, unlike any other Type, a descriptor is returned if
+    // it is an enumeration.  Since we need versioned choices in some cases, here we
+    // build a list of valid enumerations that will work for a given manifest version.
+    if (
+      !this.choices.length ||
+      !this.choices.every(t => t.checkBaseType("string") && t.enumeration)
+    ) {
+      return;
+    }
+
+    let obj = Cu.createObjectIn(context.cloneScope);
+    let descriptor = { value: obj };
+    for (let choice of this.choices) {
+      // Ignore a possible choice if it is not supported by
+      // the manifest version we are normalizing.
+      if (!context.matchManifestVersion(choice)) {
+        continue;
+      }
+      let d = choice.getDescriptor(path, context);
+      if (d) {
+        Object.assign(obj, d.descriptor.value);
+      }
+    }
+
+    return { descriptor };
   }
 }
 
@@ -1888,7 +2007,20 @@ class ObjectType extends Type {
     let { type, optional, unsupported, onError } = propType;
     let error = null;
 
-    if (unsupported) {
+    if (!context.matchManifestVersion(type)) {
+      if (prop in properties) {
+        error = context.error(
+          `Property "${prop}" is unsupported in Manifest Version ${context.manifestVersion}`,
+          `not contain an unsupported "${prop}" property`
+        );
+        if (context.manifestVersion === 2) {
+          // Existing MV2 extensions might have some of the new MV3 properties.
+          // Since we've ignored them till now, we should just warn and bail.
+          this.logWarning(context, forceString(error.error));
+          return;
+        }
+      }
+    } else if (unsupported) {
       if (prop in properties) {
         error = context.error(
           `Property "${prop}" is unsupported by Firefox`,
@@ -2057,11 +2189,14 @@ SubModuleType = class SubModuleType extends Type {
         .map(event => Event.parseSchema(root, event, path));
     }
 
-    return new this(functions, events);
+    return new this(schema, functions, events);
   }
 
-  constructor(functions, events) {
-    super();
+  constructor(schema, functions, events) {
+    // schema contains properties such as min/max_manifest_version needed
+    // in the base class so that the Context class can version compare
+    // any entries against the manifest version.
+    super(schema);
     this.functions = functions;
     this.events = events;
   }
@@ -2357,6 +2492,11 @@ class ValueProperty extends Entry {
   }
 
   getDescriptor(path, context) {
+    // Prevent injection if not a supported version.
+    if (!context.matchManifestVersion(this)) {
+      return;
+    }
+
     return {
       descriptor: { value: this.value },
     };
@@ -2380,7 +2520,7 @@ class TypeProperty extends Entry {
   }
 
   getDescriptor(path, context) {
-    if (this.unsupported) {
+    if (this.unsupported || !context.matchManifestVersion(this)) {
       return;
     }
 
@@ -2449,6 +2589,10 @@ class SubModuleProperty extends Entry {
       let [namespaceName, ref] = this.reference.split(".");
       ns = this.root.getNamespace(namespaceName);
       type = ns.get(ref);
+    }
+    // Prevent injection if not a supported version.
+    if (!context.matchManifestVersion(type)) {
+      return;
     }
 
     if (DEBUG) {
@@ -2605,9 +2749,11 @@ FunctionEntry = class FunctionEntry extends CallEntry {
         "returns",
         "permissions",
         "allowAmbiguousOptionalArguments",
+        "allowCrossOriginArguments",
       ]),
       schema.unsupported || false,
       schema.allowAmbiguousOptionalArguments || false,
+      schema.allowCrossOriginArguments || false,
       returns,
       schema.permissions || null
     );
@@ -2620,6 +2766,7 @@ FunctionEntry = class FunctionEntry extends CallEntry {
     type,
     unsupported,
     allowAmbiguousOptionalArguments,
+    allowCrossOriginArguments,
     returns,
     permissions
   ) {
@@ -2627,6 +2774,7 @@ FunctionEntry = class FunctionEntry extends CallEntry {
     this.unsupported = unsupported;
     this.returns = returns;
     this.permissions = permissions;
+    this.allowCrossOriginArguments = allowCrossOriginArguments;
 
     this.isAsync = type.isAsync;
     this.hasAsyncCallback = type.hasAsyncCallback;
@@ -2719,7 +2867,11 @@ FunctionEntry = class FunctionEntry extends CallEntry {
     }
 
     return {
-      descriptor: { value: Cu.exportFunction(stub, context.cloneScope) },
+      descriptor: {
+        value: Cu.exportFunction(stub, context.cloneScope, {
+          allowCrossOriginArguments: this.allowCrossOriginArguments,
+        }),
+      },
       revoke() {
         apiImpl.revoke();
         apiImpl = null;
@@ -2861,6 +3013,9 @@ class Namespace extends Map {
 
     this.superNamespace = null;
 
+    this.min_manifest_version = MIN_MANIFEST_VERSION;
+    this.max_manifest_version = MAX_MANIFEST_VERSION;
+
     this.permissions = null;
     this.allowedContexts = [];
     this.defaultContexts = [];
@@ -2877,7 +3032,13 @@ class Namespace extends Map {
   addSchema(schema) {
     this._lazySchemas.push(schema);
 
-    for (let prop of ["permissions", "allowedContexts", "defaultContexts"]) {
+    for (let prop of [
+      "permissions",
+      "allowedContexts",
+      "defaultContexts",
+      "min_manifest_version",
+      "max_manifest_version",
+    ]) {
       if (schema[prop]) {
         this[prop] = schema[prop];
       }
@@ -3063,6 +3224,15 @@ class Namespace extends Map {
    */
   injectInto(dest, context) {
     for (let name of this.keys()) {
+      // If the entry does not match the manifest version do not
+      // inject the property.  This prevents the item from being
+      // enumerable in the namespace object.  We cannot accomplish
+      // this inside exportLazyProperty, it specifically injects
+      // an enumerable object.
+      let entry = this.get(name);
+      if (!context.matchManifestVersion(entry)) {
+        continue;
+      }
       exportLazyProperty(dest, name, () => {
         let entry = this.get(name);
 
@@ -3443,6 +3613,14 @@ this.Schemas = {
 
   _rootSchema: null,
 
+  // A weakmap for the validation Context class instances given an extension
+  // context (keyed by the extensin context instance).
+  // This is used instead of the InjectionContext for webIDL API validation
+  // and normalization (see Schemas.checkParameters).
+  paramsValidationContexts: new DefaultWeakMap(
+    extContext => new Context(extContext)
+  ),
+
   get rootSchema() {
     if (!this.initialized) {
       this.init();
@@ -3529,7 +3707,9 @@ this.Schemas = {
       return;
     }
 
+    const startTime = Cu.now();
     let schemaCache = await this.loadCachedSchemas();
+    const fromCache = schemaCache.has(url);
 
     let blob =
       schemaCache.get(url) ||
@@ -3538,6 +3718,12 @@ this.Schemas = {
     if (!this.schemaJSON.has(url)) {
       this.addSchema(url, blob, content);
     }
+
+    ChromeUtils.addProfilerMarker(
+      "ExtensionSchemas",
+      { startTime },
+      `load ${url}, from cache: ${fromCache}`
+    );
   },
 
   /**
@@ -3609,5 +3795,32 @@ this.Schemas = {
    */
   normalize(obj, typeName, context) {
     return this.rootSchema.normalize(obj, typeName, context);
+  },
+
+  /**
+   * Validate and normalize the arguments for an API request originated
+   * from the webIDL API bindings.
+   *
+   * This provides for calls originating through WebIDL the parameters
+   * validation and normalization guarantees that the ext-APINAMESPACE.js
+   * scripts expects (what InjectionContext does for the regular bindings).
+   *
+   * @param {object}     extContext
+   * @param {string}     apiNamespace
+   * @param {string}     apiName
+   * @param {Array<any>} args
+   *
+   * @returns {Array<any>} Normalized arguments array.
+   */
+  checkParameters(extContext, apiNamespace, apiName, args) {
+    const apiSchema = this.getNamespace(apiNamespace)?.get(apiName);
+    if (!apiSchema) {
+      throw new Error(`API Schema not found for ${apiNamespace}.${apiName}`);
+    }
+
+    return apiSchema.checkParameters(
+      args,
+      this.paramsValidationContexts.get(extContext)
+    );
   },
 };

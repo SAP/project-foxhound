@@ -45,7 +45,7 @@ const ALT_R   = 0x2000;
 
 const DOM_PAGE_SCROLL_DELTA = 32768;
 
-const kSystemScrollSpeedOverridePref = "mousewheel.system_scroll_override_on_root_content.enabled";
+const kSystemScrollSpeedOverridePref = "mousewheel.system_scroll_override.enabled";
 
 const kAltKeyActionPref         = "mousewheel.with_alt.action";
 const kCtrlKeyActionPref        = "mousewheel.with_control.action";
@@ -1368,7 +1368,7 @@ var gDeactiveWindowTests = [
 ];
 
 function runDeactiveWindowTests() {
-  gOtherWindow = window.open("data:text/html,", "_blank",
+  gOtherWindow = window.open("window_mouse_scroll_win_2.html", "_blank",
                              "chrome,width=100,height=100,top=700,left=700");
 
   window.arguments[0].SimpleTest.waitForFocus(function() {

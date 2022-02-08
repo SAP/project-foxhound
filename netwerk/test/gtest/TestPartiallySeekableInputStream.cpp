@@ -5,9 +5,11 @@
 #include "nsStreamUtils.h"
 #include "nsString.h"
 #include "nsStringStream.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/net/PartiallySeekableInputStream.h"
 
 using mozilla::GetCurrentSerialEventTarget;
+using mozilla::MakeRefPtr;
 using mozilla::SpinEventLoopUntil;
 using mozilla::net::PartiallySeekableInputStream;
 
@@ -307,7 +309,9 @@ TEST(TestPartiallySeekableInputStream, AsyncInputStreamLength)
   nsresult rv = qi->AsyncLengthWait(callback, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback->Called(); }));
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil(
+      "TEST(TestPartiallySeekableInputStream, AsyncInputStreamLength)"_ns,
+      [&]() { return callback->Called(); }));
   ASSERT_EQ(buf.Length(), callback->Size());
 }
 
@@ -331,7 +335,9 @@ TEST(TestPartiallySeekableInputStream, NegativeAsyncInputStreamLength)
   nsresult rv = qi->AsyncLengthWait(callback, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback->Called(); }));
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil(
+      "TEST(TestPartiallySeekableInputStream, NegativeAsyncInputStreamLength)"_ns,
+      [&]() { return callback->Called(); }));
   ASSERT_EQ(-1, callback->Size());
 }
 
@@ -358,7 +364,9 @@ TEST(TestPartiallySeekableInputStream, AbortLengthCallback)
   rv = qi->AsyncLengthWait(callback2, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback2->Called(); }));
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil(
+      "TEST(TestPartiallySeekableInputStream, AbortLengthCallback)"_ns,
+      [&]() { return callback2->Called(); }));
   ASSERT_TRUE(!callback1->Called());
   ASSERT_EQ(-1, callback2->Size());
 }
@@ -378,7 +386,9 @@ TEST(TestPartiallySeekableInputStream, AsyncWaitAfterConsumed)
   nsresult rv = psis->AsyncWait(callback, 0, 0, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback->Called(); }));
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil(
+      "TEST(TestPartiallySeekableInputStream, AsyncWaitAfterConsumed) 1"_ns,
+      [&]() { return callback->Called(); }));
 
   char rdbuf[bufsize] = {'\0'};
   uint32_t count;
@@ -390,7 +400,9 @@ TEST(TestPartiallySeekableInputStream, AsyncWaitAfterConsumed)
   rv = psis->AsyncWait(callback, 0, 0, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback->Called(); }));
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil(
+      "TEST(TestPartiallySeekableInputStream, AsyncWaitAfterConsumed) 2"_ns,
+      [&]() { return callback->Called(); }));
 
   memset(rdbuf, 0x0, bufsize);
   ASSERT_EQ(NS_OK, psis->Read(rdbuf, sizeof(rdbuf), &count));
@@ -412,7 +424,9 @@ TEST(TestPartiallySeekableInputStream, AsyncWaitAfterClosed)
   nsresult rv = psis->AsyncWait(callback, 0, 0, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback->Called(); }));
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil(
+      "TEST(TestPartiallySeekableInputStream, AsyncWaitAfterClosed) 1"_ns,
+      [&]() { return callback->Called(); }));
 
   ASSERT_EQ(NS_OK, psis->Close());
 
@@ -421,7 +435,9 @@ TEST(TestPartiallySeekableInputStream, AsyncWaitAfterClosed)
   rv = psis->AsyncWait(callback, 0, 0, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback->Called(); }));
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil(
+      "TEST(TestPartiallySeekableInputStream, AsyncWaitAfterClosed) 2"_ns,
+      [&]() { return callback->Called(); }));
 }
 
 TEST(TestPartiallySeekableInputStream, AsyncLengthWaitAfterClosed)
@@ -440,7 +456,9 @@ TEST(TestPartiallySeekableInputStream, AsyncLengthWaitAfterClosed)
   nsresult rv = qi->AsyncLengthWait(callback, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback->Called(); }));
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil(
+      "TEST(TestPartiallySeekableInputStream, AsyncLengthWaitAfterClosed) 1"_ns,
+      [&]() { return callback->Called(); }));
   ASSERT_EQ(buf.Length(), callback->Size());
 
   ASSERT_EQ(NS_OK, psis->Close());
@@ -450,7 +468,9 @@ TEST(TestPartiallySeekableInputStream, AsyncLengthWaitAfterClosed)
   rv = qi->AsyncLengthWait(callback, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback->Called(); }));
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil(
+      "TEST(TestPartiallySeekableInputStream, AsyncLengthWaitAfterClosed) 2"_ns,
+      [&]() { return callback->Called(); }));
   ASSERT_EQ(-1, callback->Size());
 }
 
@@ -471,7 +491,9 @@ TEST(TestPartiallySeekableInputStream, AsyncLengthWaitAfterConsumed)
   nsresult rv = qi->AsyncLengthWait(callback, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback->Called(); }));
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil(
+      "TEST(TestPartiallySeekableInputStream, AsyncLengthWaitAfterConsumed) 1"_ns,
+      [&]() { return callback->Called(); }));
   ASSERT_EQ(buf.Length(), callback->Size());
 
   char rdbuf[bufsize] = {'\0'};
@@ -484,7 +506,9 @@ TEST(TestPartiallySeekableInputStream, AsyncLengthWaitAfterConsumed)
   rv = qi->AsyncLengthWait(callback, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback->Called(); }));
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil(
+      "TEST(TestPartiallySeekableInputStream, AsyncLengthWaitAfterConsumed) 2"_ns,
+      [&]() { return callback->Called(); }));
   ASSERT_EQ(0U, callback->Size());
 
   memset(rdbuf, 0x0, bufsize);

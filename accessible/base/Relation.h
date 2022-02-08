@@ -24,7 +24,7 @@ class Relation {
 
   explicit Relation(AccIterable* aIter) : mFirstIter(aIter), mLastIter(aIter) {}
 
-  explicit Relation(Accessible* aAcc)
+  explicit Relation(LocalAccessible* aAcc)
       : mFirstIter(nullptr), mLastIter(nullptr) {
     AppendTarget(aAcc);
   }
@@ -47,10 +47,11 @@ class Relation {
   }
 
   inline void AppendIter(AccIterable* aIter) {
-    if (mLastIter)
+    if (mLastIter) {
       mLastIter->mNextIter.reset(aIter);
-    else
+    } else {
       mFirstIter.reset(aIter);
+    }
 
     mLastIter = aIter;
   }
@@ -58,7 +59,7 @@ class Relation {
   /**
    * Append the given accessible to the set of related accessibles.
    */
-  inline void AppendTarget(Accessible* aAcc) {
+  inline void AppendTarget(LocalAccessible* aAcc) {
     if (aAcc) AppendIter(new SingleAccIterator(aAcc));
   }
 
@@ -73,11 +74,12 @@ class Relation {
   /**
    * compute and return the next related accessible.
    */
-  inline Accessible* Next() {
-    Accessible* target = nullptr;
+  inline LocalAccessible* Next() {
+    LocalAccessible* target = nullptr;
 
-    while (mFirstIter && !(target = mFirstIter->Next()))
+    while (mFirstIter && !(target = mFirstIter->Next())) {
       mFirstIter = std::move(mFirstIter->mNextIter);
+    }
 
     if (!mFirstIter) mLastIter = nullptr;
 

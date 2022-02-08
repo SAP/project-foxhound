@@ -13,7 +13,9 @@
 
 var EXPORTED_SYMBOLS = ["TelemetryUntrustedModulesPing"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   Log: "resource://gre/modules/Log.jsm",
@@ -23,7 +25,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 });
 
 XPCOMUtils.defineLazyServiceGetters(this, {
-  Telemetry: ["@mozilla.org/base/telemetry;1", "nsITelemetry"],
   UpdateTimerManager: [
     "@mozilla.org/updates/timer-manager;1",
     "nsIUpdateTimerManager",
@@ -53,7 +54,7 @@ var TelemetryUntrustedModulesPing = Object.freeze({
 
   notify() {
     try {
-      Telemetry.getUntrustedModuleLoadEvents().then(payload => {
+      Services.telemetry.getUntrustedModuleLoadEvents().then(payload => {
         try {
           if (payload) {
             TelemetryController.submitExternalPing(

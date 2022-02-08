@@ -26,7 +26,7 @@
 static const char* introspect_template =
     "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection "
     "1.0//EN\"\n"
-    "\"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\";>\n"
+    "\"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">\n"
     "<node>\n"
     " <interface name=\"org.freedesktop.DBus.Introspectable\">\n"
     "   <method name=\"Introspect\">\n"
@@ -35,7 +35,7 @@ static const char* introspect_template =
     " </interface>\n"
     " <interface name=\"org.mozilla.%s\">\n"
     "   <method name=\"OpenURL\">\n"
-    "     <arg name=\"url\" direction=\"in\" type=\"s\"/>\n"
+    "     <arg name=\"url\" direction=\"in\" type=\"ay\"/>\n"
     "   </method>\n"
     " </interface>\n"
     "</node>\n";
@@ -155,7 +155,8 @@ nsresult nsDBusRemoteServer::Startup(const char* aAppName,
   // D-Bus names can contain only [a-z][A-Z][0-9]_
   // characters so adjust the profile string properly.
   nsAutoCString profileName;
-  nsresult rv = mozilla::Base64Encode(nsAutoCString(aProfileName), profileName);
+  nsresult rv =
+      mozilla::Base64Encode(aProfileName, strlen(aProfileName), profileName);
   NS_ENSURE_SUCCESS(rv, rv);
 
   profileName.ReplaceChar("+/=-", '_');

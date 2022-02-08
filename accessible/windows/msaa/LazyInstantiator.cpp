@@ -7,7 +7,8 @@
 #include "LazyInstantiator.h"
 
 #include "MainThreadUtils.h"
-#include "mozilla/a11y/Accessible.h"
+#include "mozilla/a11y/LocalAccessible.h"
+#include "mozilla/a11y/AccessibleHandler.h"
 #include "mozilla/a11y/Compatibility.h"
 #include "mozilla/a11y/Platform.h"
 #include "mozilla/Assertions.h"
@@ -15,13 +16,14 @@
 #include "mozilla/mscom/Registration.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
+#include "MsaaRootAccessible.h"
 #include "nsAccessibilityService.h"
 #include "nsWindowsHelpers.h"
 #include "nsCOMPtr.h"
 #include "nsIFile.h"
 #include "nsXPCOM.h"
-#include "RootAccessibleWrap.h"
 #include "WinUtils.h"
+#include "prenv.h"
 
 #include <oaidl.h>
 
@@ -68,26 +70,27 @@ already_AddRefed<IAccessible> LazyInstantiator::GetRootAccessible(HWND aHwnd) {
   }
 
   // a11y is running, so we just resolve the real root accessible.
-  a11y::Accessible* rootAcc = widget::WinUtils::GetRootAccessibleForHWND(aHwnd);
+  a11y::LocalAccessible* rootAcc =
+      widget::WinUtils::GetRootAccessibleForHWND(aHwnd);
   if (!rootAcc) {
     return nullptr;
   }
 
   if (!rootAcc->IsRoot()) {
     // rootAcc might represent a popup as opposed to a true root accessible.
-    // In that case we just use the regular Accessible::GetNativeInterface.
+    // In that case we just use the regular LocalAccessible::GetNativeInterface.
     rootAcc->GetNativeInterface(getter_AddRefs(result));
     return result.forget();
   }
 
-  // Subtle: rootAcc might still be wrapped by a LazyInstantiator, but we
+  auto msaaRoot =
+      static_cast<MsaaRootAccessible*>(MsaaAccessible::GetFrom(rootAcc));
+  // Subtle: msaaRoot might still be wrapped by a LazyInstantiator, but we
   // don't need LazyInstantiator's capabilities anymore (since a11y is already
   // running). We can bypass LazyInstantiator by retrieving the internal
   // unknown (which is not wrapped by the LazyInstantiator) and then querying
   // that for IID_IAccessible.
-  a11y::RootAccessibleWrap* rootWrap =
-      static_cast<a11y::RootAccessibleWrap*>(rootAcc);
-  RefPtr<IUnknown> punk(rootWrap->GetInternalUnknown());
+  RefPtr<IUnknown> punk(msaaRoot->GetInternalUnknown());
 
   MOZ_ASSERT(punk);
   if (!punk) {
@@ -121,7 +124,7 @@ void LazyInstantiator::EnableBlindAggregation(HWND aHwnd) {
 LazyInstantiator::LazyInstantiator(HWND aHwnd)
     : mHwnd(aHwnd),
       mAllowBlindAggregation(false),
-      mWeakRootAccWrap(nullptr),
+      mWeakMsaaRoot(nullptr),
       mWeakAccessible(nullptr),
       mWeakDispatch(nullptr) {
   MOZ_ASSERT(aHwnd);
@@ -134,7 +137,7 @@ LazyInstantiator::LazyInstantiator(HWND aHwnd)
 LazyInstantiator::~LazyInstantiator() {
   if (mRealRootUnk) {
     // Disconnect ourselves from the root accessible.
-    RefPtr<IUnknown> dummy(mWeakRootAccWrap->Aggregate(nullptr));
+    RefPtr<IUnknown> dummy(mWeakMsaaRoot->Aggregate(nullptr));
   }
 
   ClearProp();
@@ -166,7 +169,8 @@ LazyInstantiator::GetClientPid(const DWORD aClientTid) {
  */
 static const char* gBlockedRemoteClients[] = {
     "tbnotifier.exe",  // Ask.com Toolbar, bug 1453876
-    "flow.exe"         // Conexant Flow causes performance issues, bug 1569712
+    "flow.exe",        // Conexant Flow causes performance issues, bug 1569712
+    "rtop_bg.exe",     // ByteFence Anti-Malware, bug 1713383
 };
 
 /**
@@ -244,13 +248,15 @@ bool LazyInstantiator::ShouldInstantiate(const DWORD aClientTid) {
   return true;
 }
 
-RootAccessibleWrap* LazyInstantiator::ResolveRootAccWrap() {
-  Accessible* acc = widget::WinUtils::GetRootAccessibleForHWND(mHwnd);
+MsaaRootAccessible* LazyInstantiator::ResolveMsaaRoot() {
+  LocalAccessible* acc = widget::WinUtils::GetRootAccessibleForHWND(mHwnd);
   if (!acc || !acc->IsRoot()) {
     return nullptr;
   }
 
-  return static_cast<RootAccessibleWrap*>(acc);
+  RefPtr<IAccessible> ia;
+  acc->GetNativeInterface(getter_AddRefs(ia));
+  return static_cast<MsaaRootAccessible*>(ia.get());
 }
 
 /**
@@ -293,13 +299,13 @@ LazyInstantiator::MaybeResolveRoot() {
 
   if (GetAccService() ||
       ShouldInstantiate(mscom::ProcessRuntime::GetClientThreadId())) {
-    mWeakRootAccWrap = ResolveRootAccWrap();
-    if (!mWeakRootAccWrap) {
+    mWeakMsaaRoot = ResolveMsaaRoot();
+    if (!mWeakMsaaRoot) {
       return E_POINTER;
     }
 
     // Wrap ourselves around the root accessible wrap
-    mRealRootUnk = mWeakRootAccWrap->Aggregate(static_cast<IAccessible*>(this));
+    mRealRootUnk = mWeakMsaaRoot->Aggregate(static_cast<IAccessible*>(this));
     if (!mRealRootUnk) {
       return E_FAIL;
     }
@@ -370,6 +376,10 @@ IMPL_IUNKNOWN_QUERY_IFACE(IDispatch)
 IMPL_IUNKNOWN_QUERY_IFACE(IServiceProvider)
 // See EnableBlindAggregation for comments.
 if (!mAllowBlindAggregation) {
+  return E_NOINTERFACE;
+}
+
+if (aIID == IID_IAccIdentity) {
   return E_NOINTERFACE;
 }
 // If the client queries for an interface that LazyInstantiator does not
@@ -499,6 +509,12 @@ LazyInstantiator::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid,
 
 HRESULT
 LazyInstantiator::get_accParent(IDispatch** ppdispParent) {
+  if (!mWeakAccessible) {
+    // If we'd resolve the root right now this would be the codepath we'd end
+    // up in anyway. So we might as well return it here.
+    return ::AccessibleObjectFromWindow(mHwnd, OBJID_WINDOW, IID_IAccessible,
+                                        (void**)ppdispParent);
+  }
   RESOLVE_ROOT;
   return mWeakAccessible->get_accParent(ppdispParent);
 }
@@ -517,6 +533,12 @@ HRESULT
 LazyInstantiator::get_accChild(VARIANT varChild, IDispatch** ppdispChild) {
   if (!ppdispChild) {
     return E_INVALIDARG;
+  }
+
+  if (V_VT(&varChild) == VT_I4 && V_I4(&varChild) == CHILDID_SELF) {
+    RefPtr<IDispatch> disp(this);
+    disp.forget(ppdispChild);
+    return S_OK;
   }
 
   RESOLVE_ROOT;
@@ -557,6 +579,12 @@ HRESULT
 LazyInstantiator::get_accRole(VARIANT varChild, VARIANT* pvarRole) {
   if (!pvarRole) {
     return E_INVALIDARG;
+  }
+
+  if (V_VT(&varChild) == VT_I4 && V_I4(&varChild) == CHILDID_SELF) {
+    V_VT(pvarRole) = VT_I4;
+    V_I4(pvarRole) = ROLE_SYSTEM_APPLICATION;
+    return S_OK;
   }
 
   RESOLVE_ROOT;
@@ -683,6 +711,12 @@ LazyInstantiator::QueryService(REFGUID aServiceId, REFIID aServiceIid,
                                void** aOutInterface) {
   if (!aOutInterface) {
     return E_INVALIDARG;
+  }
+
+  for (const GUID& unsupportedService : kUnsupportedServices) {
+    if (aServiceId == unsupportedService) {
+      return E_NOINTERFACE;
+    }
   }
 
   *aOutInterface = nullptr;

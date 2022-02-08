@@ -24,6 +24,8 @@
 #  include "nsXULAppAPI.h"
 #endif  // #ifdef DEBUG
 
+class nsIPrincipal;
+
 namespace IPC {
 template <typename T>
 struct ParamTraits;
@@ -480,7 +482,8 @@ class WidgetEvent : public WidgetEventTime {
         break;
       default:
         if (mMessage == eResize || mMessage == eMozVisualResize ||
-            mMessage == eMozVisualScroll || mMessage == eEditorInput) {
+            mMessage == eMozVisualScroll || mMessage == eEditorInput ||
+            mMessage == eFormSelect) {
           mFlags.mCancelable = false;
         } else {
           mFlags.mCancelable = true;
@@ -768,10 +771,6 @@ class WidgetEvent : public WidgetEventTime {
    * Returns true if the event is a content command event.
    */
   bool IsContentCommandEvent() const;
-  /**
-   * Returns true if the event is a native event deliverer event for plugin.
-   */
-  bool IsNativeEventDelivererForPlugin() const;
 
   /**
    * Returns true if the event mMessage is one of mouse events.
@@ -805,16 +804,6 @@ class WidgetEvent : public WidgetEventTime {
    * will be posted to the remote process later.
    */
   bool WillBeSentToRemoteProcess() const;
-  /**
-   * Returns true if the event is native event deliverer event for plugin and
-   * it should be retarted to focused document.
-   */
-  bool IsRetargetedNativeEventDelivererForPlugin() const;
-  /**
-   * Returns true if the event is native event deliverer event for plugin and
-   * it should NOT be retarted to focused document.
-   */
-  bool IsNonRetargetedNativeEventDelivererForPlugin() const;
   /**
    * Returns true if the event is related to IME handling.  It includes
    * IME events, query content events and selection events.
@@ -870,6 +859,9 @@ class WidgetEvent : public WidgetEventTime {
    */
   void SetDefaultComposed() {
     switch (mClass) {
+      case eClipboardEventClass:
+        mFlags.mComposed = true;
+        break;
       case eCompositionEventClass:
         mFlags.mComposed =
             mMessage == eCompositionStart || mMessage == eCompositionUpdate ||
@@ -902,7 +894,7 @@ class WidgetEvent : public WidgetEventTime {
             mMessage == eMouseOut || mMessage == eMouseMove ||
             mMessage == eContextMenu || mMessage == eXULPopupShowing ||
             mMessage == eXULPopupHiding || mMessage == eXULPopupShown ||
-            mMessage == eXULPopupHidden || mMessage == eXULPopupPositioned;
+            mMessage == eXULPopupHidden;
         break;
       case ePointerEventClass:
         // All pointer events are composed

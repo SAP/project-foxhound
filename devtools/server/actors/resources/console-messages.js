@@ -8,9 +8,13 @@ const {
   TYPES: { CONSOLE_MESSAGE },
 } = require("devtools/server/actors/resources/index");
 const { WebConsoleUtils } = require("devtools/server/actors/webconsole/utils");
-const {
-  ConsoleAPIListener,
-} = require("devtools/server/actors/webconsole/listeners/console-api");
+const Targets = require("devtools/server/actors/targets/index");
+
+const consoleAPIListenerModule = isWorker
+  ? "devtools/server/actors/webconsole/worker-listeners"
+  : "devtools/server/actors/webconsole/listeners/console-api";
+const { ConsoleAPIListener } = require(consoleAPIListenerModule);
+
 const { isArray } = require("devtools/server/actors/object/utils");
 
 const {
@@ -34,13 +38,7 @@ const {
  *          This will be called for each resource.
  */
 class ConsoleMessageWatcher {
-  constructor(targetActor, { onAvailable }) {
-    // The following code expects the ThreadActor to be instantiated, via:
-    // prepareConsoleMessageForRemote > TabSources.getActorIdForInternalSourceId
-    // The Thread Actor is instantiated via Target.attach, but we should
-    // probably review this and only instantiate the actor instead of attaching the target.
-    targetActor.attach();
-
+  async watch(targetActor, { onAvailable }) {
     // Bug 1642297: Maybe we could merge ConsoleAPI Listener into this module?
     const onConsoleAPICall = message => {
       onAvailable([
@@ -51,21 +49,36 @@ class ConsoleMessageWatcher {
       ]);
     };
 
-    // Create the consoleAPIListener
-    // (and apply the filtering options defined in the target actor).
-    const listener = new ConsoleAPIListener(
-      targetActor.window,
-      onConsoleAPICall,
-      targetActor.consoleAPIListenerOptions
-    );
+    const isTargetActorContentProcess =
+      targetActor.targetType === Targets.TYPES.PROCESS;
+
+    // Only consider messages from a given window for all FRAME targets (this includes
+    // WebExt and ParentProcess which inherits from WindowGlobalTargetActor)
+    // But ParentProcess should be ignored as we want all messages emitted directly from
+    // that process (window and window-less).
+    // To do that we pass a null window and ConsoleAPIListener will catch everything.
+    // And also ignore WebExtension as we will filter out only by addonId, which is
+    // passed via consoleAPIListenerOptions. WebExtension may have multiple windows/documents
+    // but all of them will be flagged with the same addon ID.
+    const window =
+      targetActor.targetType === Targets.TYPES.FRAME &&
+      targetActor.typeName != "parentProcessTarget" &&
+      targetActor.typeName != "webExtensionTarget"
+        ? targetActor.window
+        : null;
+
+    const listener = new ConsoleAPIListener(window, onConsoleAPICall, {
+      excludeMessagesBoundToWindow: isTargetActorContentProcess,
+      matchExactWindow: targetActor.ignoreSubFrames,
+      ...(targetActor.consoleAPIListenerOptions || {}),
+    });
     this.listener = listener;
     listener.init();
 
-    // See `window` definition. It isn't always a DOM Window.
+    // It can happen that the targetActor does not have a window reference (e.g. in worker
+    // thread, targetActor exposes a workerGlobal property)
     const winStartTime =
-      targetActor.window && targetActor.window.performance
-        ? targetActor.window.performance.timing.navigationStart
-        : 0;
+      targetActor.window?.performance?.timing?.navigationStart || 0;
 
     const cachedMessages = listener.getCachedMessages(!targetActor.isRootActor);
     const messages = [];

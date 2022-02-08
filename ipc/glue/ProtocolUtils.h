@@ -7,39 +7,44 @@
 #ifndef mozilla_ipc_ProtocolUtils_h
 #define mozilla_ipc_ProtocolUtils_h 1
 
-#include "base/process.h"
-#include "base/process_util.h"
-#include "chrome/common/ipc_message_utils.h"
-
-#include "prenv.h"
-
+#include <cstddef>
+#include <cstdint>
+#include <utility>
 #include "IPCMessageStart.h"
+#include "base/basictypes.h"
+#include "base/process.h"
+#include "chrome/common/ipc_message.h"
+#include "mojo/core/ports/port_ref.h"
 #include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/ipc/ByteBuf.h"
-#include "mozilla/ipc/FileDescriptor.h"
-#include "mozilla/ipc/MessageChannel.h"
-#include "mozilla/ipc/Shmem.h"
-#include "mozilla/ipc/Transport.h"
-#include "mozilla/ipc/MessageLink.h"
-#include "mozilla/LinkedList.h"
+#include "mozilla/FunctionRef.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/MozPromise.h"
 #include "mozilla/Mutex.h"
-#include "mozilla/NotNull.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/Scoped.h"
 #include "mozilla/UniquePtr.h"
-#include "MainThreadUtils.h"
+#include "mozilla/ipc/MessageChannel.h"
+#include "mozilla/ipc/MessageLink.h"
+#include "mozilla/ipc/SharedMemory.h"
+#include "mozilla/ipc/Shmem.h"
+#include "nsTHashMap.h"
+#include "nsDebug.h"
+#include "nsISupports.h"
+#include "nsTArrayForwardDeclare.h"
+#include "nsTHashSet.h"
 
-#include "nsDataHashtable.h"
-#include "nsHashKeys.h"
+// XXX Things that could be replaced by a forward header
+#include "mozilla/ipc/Transport.h"  // for Transport
+
+// XXX Things that could be moved to ProtocolUtils.cpp
+#include "base/process_util.h"  // for CloseProcessHandle
+#include "prenv.h"              // for PR_GetEnv
 
 #if defined(ANDROID) && defined(DEBUG)
 #  include <android/log.h>
 #endif
 
-template <typename T>
-class nsTHashtable;
 template <typename T>
 class nsPtrHashKey;
 
@@ -53,6 +58,16 @@ namespace {
 // protocol 0.  Oops!  We can get away with this until protocol 0
 // starts approaching its 65,536th message.
 enum {
+  // Message types used by NodeChannel
+  ACCEPT_INVITE_MESSAGE_TYPE = kuint16max - 16,
+  REQUEST_INTRODUCTION_MESSAGE_TYPE = kuint16max - 15,
+  INTRODUCE_MESSAGE_TYPE = kuint16max - 14,
+  BROADCAST_MESSAGE_TYPE = kuint16max - 13,
+  EVENT_MESSAGE_TYPE = kuint16max - 12,
+
+  // Message types used by MessageChannel
+  MANAGED_ENDPOINT_DROPPED_MESSAGE_TYPE = kuint16max - 11,
+  MANAGED_ENDPOINT_BOUND_MESSAGE_TYPE = kuint16max - 10,
   IMPENDING_SHUTDOWN_MESSAGE_TYPE = kuint16max - 9,
   BUILD_IDS_MATCH_MESSAGE_TYPE = kuint16max - 8,
   BUILD_ID_MESSAGE_TYPE = kuint16max - 7,  // unused
@@ -67,6 +82,8 @@ enum {
 
 }  // namespace
 
+class MessageLoop;
+class PickleIterator;
 class nsISerialEventTarget;
 
 namespace mozilla {
@@ -86,31 +103,14 @@ namespace ipc {
 class ProtocolFuzzerHelper;
 #endif
 
-class MessageChannel;
-
-#ifdef XP_WIN
-const base::ProcessHandle kInvalidProcessHandle = INVALID_HANDLE_VALUE;
-
-// In theory, on Windows, this is a valid process ID, but in practice they are
-// currently divisible by four. Process IDs share the kernel handle allocation
-// code and they are guaranteed to be divisible by four.
-// As this could change for process IDs we shouldn't generally rely on this
-// property, however even if that were to change, it seems safe to rely on this
-// particular value never being used.
-const base::ProcessId kInvalidProcessId = kuint32max;
-#else
-const base::ProcessHandle kInvalidProcessHandle = -1;
-const base::ProcessId kInvalidProcessId = -1;
-#endif
-
 // Scoped base::ProcessHandle to ensure base::CloseProcessHandle is called.
 struct ScopedProcessHandleTraits {
   typedef base::ProcessHandle type;
 
-  static type empty() { return kInvalidProcessHandle; }
+  static type empty() { return base::kInvalidProcessHandle; }
 
   static void release(type aProcessHandle) {
-    if (aProcessHandle && aProcessHandle != kInvalidProcessHandle) {
+    if (aProcessHandle && aProcessHandle != base::kInvalidProcessHandle) {
       base::CloseProcessHandle(aProcessHandle);
     }
   }
@@ -160,6 +160,9 @@ const char* ProtocolIdToName(IPCMessageStart aId);
 
 class IToplevelProtocol;
 class ActorLifecycleProxy;
+class WeakActorLifecycleProxy;
+class IPDLResolverInner;
+class UntypedManagedEndpoint;
 
 class IProtocol : public HasResultCodes {
  public:
@@ -168,7 +171,8 @@ class IProtocol : public HasResultCodes {
     Deletion,
     AncestorDeletion,
     NormalShutdown,
-    AbnormalShutdown
+    AbnormalShutdown,
+    ManagedEndpointDropped
   };
 
   typedef base::ProcessId ProcessId;
@@ -185,6 +189,7 @@ class IProtocol : public HasResultCodes {
         mToplevel(nullptr) {}
 
   IToplevelProtocol* ToplevelProtocol() { return mToplevel; }
+  const IToplevelProtocol* ToplevelProtocol() const { return mToplevel; }
 
   // The following methods either directly forward to the toplevel protocol, or
   // almost directly do.
@@ -221,8 +226,6 @@ class IProtocol : public HasResultCodes {
   nsISerialEventTarget* GetActorEventTarget();
   already_AddRefed<nsISerialEventTarget> GetActorEventTarget(IProtocol* aActor);
 
-  ProcessId OtherPid() const;
-
   // Actor lifecycle and other properties.
   ProtocolId GetProtocolId() const { return mProtocolId; }
   const char* GetProtocolName() const { return ProtocolIdToName(mProtocolId); }
@@ -231,6 +234,7 @@ class IProtocol : public HasResultCodes {
   IProtocol* Manager() const { return mManager; }
 
   ActorLifecycleProxy* GetLifecycleProxy() { return mLifecycleProxy; }
+  WeakActorLifecycleProxy* GetWeakLifecycleProxy();
 
   Side GetSide() const { return mSide; }
   bool CanSend() const { return mLinkStatus == LinkStatus::Connected; }
@@ -267,6 +271,8 @@ class IProtocol : public HasResultCodes {
 
   friend class IToplevelProtocol;
   friend class ActorLifecycleProxy;
+  friend class IPDLResolverInner;
+  friend class UntypedManagedEndpoint;
 
   void SetId(int32_t aId);
 
@@ -292,7 +298,7 @@ class IProtocol : public HasResultCodes {
       GetIPCChannel()->Send(std::move(msg), this, std::move(aResolve),
                             std::move(aReject));
     } else {
-      NS_WARNING("IPC message discarded: actor cannot send");
+      WarnMessageDiscarded(msg.get());
       aReject(ResponseRejectReason::SendError);
     }
   }
@@ -336,6 +342,12 @@ class IProtocol : public HasResultCodes {
   static const int32_t kFreedActorId = 1;
 
  private:
+#ifdef DEBUG
+  void WarnMessageDiscarded(IPC::Message* aMsg);
+#else
+  void WarnMessageDiscarded(IPC::Message*) {}
+#endif
+
   int32_t mId;
   ProtocolId mProtocolId;
   Side mSide;
@@ -371,6 +383,9 @@ class IPCResult {
 
 template <class PFooSide>
 class Endpoint;
+
+template <class PFooSide>
+class ManagedEndpoint;
 
 /**
  * All top-level protocols should inherit this class.
@@ -417,17 +432,13 @@ class IToplevelProtocol : public IProtocol {
   nsISerialEventTarget* GetActorEventTarget();
   already_AddRefed<nsISerialEventTarget> GetActorEventTarget(IProtocol* aActor);
 
-  ProcessId OtherPid() const;
   void SetOtherProcessId(base::ProcessId aOtherPid);
 
   virtual void OnChannelClose() = 0;
   virtual void OnChannelError() = 0;
   virtual void ProcessingError(Result aError, const char* aMsgName) {}
-  virtual void OnChannelConnected(int32_t peer_pid) {}
 
-  bool Open(UniquePtr<Transport> aTransport, base::ProcessId aOtherPid,
-            MessageLoop* aThread = nullptr,
-            mozilla::ipc::Side aSide = mozilla::ipc::UnknownSide);
+  bool Open(ScopedPort aPort, base::ProcessId aOtherPid);
 
   bool Open(MessageChannel* aChannel, nsISerialEventTarget* aEventTarget,
             mozilla::ipc::Side aSide = mozilla::ipc::UnknownSide);
@@ -513,13 +524,13 @@ class IToplevelProtocol : public IProtocol {
   already_AddRefed<nsISerialEventTarget> GetMessageEventTarget(
       const Message& aMsg);
 
- private:
   base::ProcessId OtherPidMaybeInvalid() const { return mOtherPid; }
 
+ private:
   int32_t NextId();
 
   template <class T>
-  using IDMap = nsDataHashtable<nsUint32HashKey, T>;
+  using IDMap = nsTHashMap<nsUint32HashKey, T>;
 
   base::ProcessId mOtherPid;
 
@@ -617,227 +628,11 @@ MOZ_NEVER_INLINE void ArrayLengthReadError(const char* aElementName);
 
 MOZ_NEVER_INLINE void SentinelReadError(const char* aElementName);
 
-struct PrivateIPDLInterface {};
-
-#if defined(XP_WIN)
-// This is a restricted version of Windows' DuplicateHandle() function
-// that works inside the sandbox and can send handles but not retrieve
-// them.  Unlike DuplicateHandle(), it takes a process ID rather than
-// a process handle.  It returns true on success, false otherwise.
-bool DuplicateHandle(HANDLE aSourceHandle, DWORD aTargetProcessId,
-                     HANDLE* aTargetHandle, DWORD aDesiredAccess,
-                     DWORD aOptions);
-#endif
-
 /**
  * Annotate the crash reporter with the error code from the most recent system
  * call. Returns the system error.
  */
 void AnnotateSystemError();
-
-/**
- * An endpoint represents one end of a partially initialized IPDL channel. To
- * set up a new top-level protocol:
- *
- * Endpoint<PFooParent> parentEp;
- * Endpoint<PFooChild> childEp;
- * nsresult rv;
- * rv = PFoo::CreateEndpoints(parentPid, childPid, &parentEp, &childEp);
- *
- * You're required to pass in parentPid and childPid, which are the pids of the
- * processes in which the parent and child endpoints will be used.
- *
- * Endpoints can be passed in IPDL messages or sent to other threads using
- * PostTask. Once an Endpoint has arrived at its destination process and thread,
- * you need to create the top-level actor and bind it to the endpoint:
- *
- * FooParent* parent = new FooParent();
- * bool rv1 = parentEp.Bind(parent, processActor);
- * bool rv2 = parent->SendBar(...);
- *
- * (See Bind below for an explanation of processActor.) Once the actor is bound
- * to the endpoint, it can send and receive messages.
- */
-template <class PFooSide>
-class Endpoint {
- public:
-  typedef base::ProcessId ProcessId;
-
-  Endpoint()
-      : mValid(false),
-        mMode(static_cast<mozilla::ipc::Transport::Mode>(0)),
-        mMyPid(0),
-        mOtherPid(0) {}
-
-  Endpoint(const PrivateIPDLInterface&, mozilla::ipc::Transport::Mode aMode,
-           TransportDescriptor aTransport, ProcessId aMyPid,
-           ProcessId aOtherPid)
-      : mValid(true),
-        mMode(aMode),
-        mTransport(aTransport),
-        mMyPid(aMyPid),
-        mOtherPid(aOtherPid) {}
-
-  Endpoint(Endpoint&& aOther)
-      : mValid(aOther.mValid),
-        mTransport(aOther.mTransport),
-        mMyPid(aOther.mMyPid),
-        mOtherPid(aOther.mOtherPid) {
-    if (aOther.mValid) {
-      mMode = aOther.mMode;
-    }
-    aOther.mValid = false;
-  }
-
-  Endpoint& operator=(Endpoint&& aOther) {
-    mValid = aOther.mValid;
-    if (aOther.mValid) {
-      mMode = aOther.mMode;
-    }
-    mTransport = aOther.mTransport;
-    mMyPid = aOther.mMyPid;
-    mOtherPid = aOther.mOtherPid;
-
-    aOther.mValid = false;
-    return *this;
-  }
-
-  ~Endpoint() {
-    if (mValid) {
-      CloseDescriptor(mTransport);
-    }
-  }
-
-  ProcessId OtherPid() const { return mOtherPid; }
-
-  // This method binds aActor to this endpoint. After this call, the actor can
-  // be used to send and receive messages. The endpoint becomes invalid.
-  bool Bind(PFooSide* aActor) {
-    MOZ_RELEASE_ASSERT(mValid);
-    MOZ_RELEASE_ASSERT(mMyPid == base::GetCurrentProcId());
-
-    UniquePtr<Transport> transport =
-        mozilla::ipc::OpenDescriptor(mTransport, mMode);
-    if (!transport) {
-      return false;
-    }
-    if (!aActor->Open(
-            std::move(transport), mOtherPid, XRE_GetIOMessageLoop(),
-            mMode == Transport::MODE_SERVER ? ParentSide : ChildSide)) {
-      return false;
-    }
-    mValid = false;
-    return true;
-  }
-
-  bool IsValid() const { return mValid; }
-
- private:
-  friend struct IPC::ParamTraits<Endpoint<PFooSide>>;
-
-  Endpoint(const Endpoint&) = delete;
-  Endpoint& operator=(const Endpoint&) = delete;
-
-  bool mValid;
-  mozilla::ipc::Transport::Mode mMode;
-  TransportDescriptor mTransport;
-  ProcessId mMyPid, mOtherPid;
-};
-
-#if defined(XP_MACOSX)
-void AnnotateCrashReportWithErrno(CrashReporter::Annotation tag, int error);
-#else
-static inline void AnnotateCrashReportWithErrno(CrashReporter::Annotation tag,
-                                                int error) {}
-#endif
-
-// This function is used internally to create a pair of Endpoints. See the
-// comment above Endpoint for a description of how it might be used.
-template <class PFooParent, class PFooChild>
-nsresult CreateEndpoints(const PrivateIPDLInterface& aPrivate,
-                         base::ProcessId aParentDestPid,
-                         base::ProcessId aChildDestPid,
-                         Endpoint<PFooParent>* aParentEndpoint,
-                         Endpoint<PFooChild>* aChildEndpoint) {
-  MOZ_RELEASE_ASSERT(aParentDestPid);
-  MOZ_RELEASE_ASSERT(aChildDestPid);
-
-  TransportDescriptor parentTransport, childTransport;
-  nsresult rv;
-  if (NS_FAILED(rv = CreateTransport(aParentDestPid, &parentTransport,
-                                     &childTransport))) {
-    AnnotateCrashReportWithErrno(
-        CrashReporter::Annotation::IpcCreateEndpointsNsresult, int(rv));
-    return rv;
-  }
-
-  *aParentEndpoint =
-      Endpoint<PFooParent>(aPrivate, mozilla::ipc::Transport::MODE_SERVER,
-                           parentTransport, aParentDestPid, aChildDestPid);
-
-  *aChildEndpoint =
-      Endpoint<PFooChild>(aPrivate, mozilla::ipc::Transport::MODE_CLIENT,
-                          childTransport, aChildDestPid, aParentDestPid);
-
-  return NS_OK;
-}
-
-/**
- * A managed endpoint represents one end of a partially initialized managed
- * IPDL actor. It is used for situations where the usual IPDL Constructor
- * methods do not give sufficient control over the construction of actors, such
- * as when constructing actors within replies, or constructing multiple related
- * actors simultaneously.
- *
- * FooParent* parent = new FooParent();
- * ManagedEndpoint<PFooChild> childEp = parentMgr->OpenPFooEndpoint(parent);
- *
- * ManagedEndpoints should be sent using IPDL messages or other mechanisms to
- * the other side of the manager channel. Once the ManagedEndpoint has arrived
- * at its destination, you can create the actor, and bind it to the endpoint.
- *
- * FooChild* child = new FooChild();
- * childMgr->BindPFooEndpoint(childEp, child);
- *
- * WARNING: If the remote side of an endpoint has not been bound before it
- * begins to receive messages, an IPC routing error will occur, likely causing
- * a browser crash.
- */
-template <class PFooSide>
-class ManagedEndpoint {
- public:
-  ManagedEndpoint() : mId(0) {}
-
-  ManagedEndpoint(const PrivateIPDLInterface&, int32_t aId) : mId(aId) {}
-
-  ManagedEndpoint(ManagedEndpoint&& aOther) : mId(aOther.mId) {
-    aOther.mId = 0;
-  }
-
-  ManagedEndpoint& operator=(ManagedEndpoint&& aOther) {
-    mId = aOther.mId;
-    aOther.mId = 0;
-    return *this;
-  }
-
-  bool IsValid() const { return mId != 0; }
-
-  Maybe<int32_t> ActorId() const { return IsValid() ? Some(mId) : Nothing(); }
-
-  bool operator==(const ManagedEndpoint& _o) const { return mId == _o.mId; }
-
- private:
-  friend struct IPC::ParamTraits<ManagedEndpoint<PFooSide>>;
-
-  ManagedEndpoint(const ManagedEndpoint&) = delete;
-  ManagedEndpoint& operator=(const ManagedEndpoint&) = delete;
-
-  // The routing ID for the to-be-created endpoint.
-  int32_t mId;
-
-  // XXX(nika): Might be nice to have other info for assertions?
-  // e.g. mManagerId, mManagerType, etc.
-};
 
 // The ActorLifecycleProxy is a helper type used internally by IPC to maintain a
 // maybe-owning reference to an IProtocol object. For well-behaved actors
@@ -863,6 +658,8 @@ class ActorLifecycleProxy {
 
   IProtocol* Get() { return mActor; }
 
+  WeakActorLifecycleProxy* GetWeakProxy();
+
  private:
   friend class IProtocol;
 
@@ -877,31 +674,108 @@ class ActorLifecycleProxy {
   // Hold a reference to the actor's manager's ActorLifecycleProxy to help
   // prevent it from dying while we're still alive!
   RefPtr<ActorLifecycleProxy> mManager;
+
+  // When requested, the current self-referencing weak reference for this
+  // ActorLifecycleProxy.
+  RefPtr<WeakActorLifecycleProxy> mWeakProxy;
 };
 
-void TableToArray(const nsTHashtable<nsPtrHashKey<void>>& aTable,
-                  nsTArray<void*>& aArray);
+// Unlike ActorLifecycleProxy, WeakActorLifecycleProxy only holds a weak
+// reference to both the proxy and the actual actor, meaning that holding this
+// type will not attempt to keep the actor object alive.
+//
+// This type is safe to hold on threads other than the actor's thread, but is
+// _NOT_ safe to access on other threads, as actors and ActorLifecycleProxy
+// objects are not threadsafe.
+class WeakActorLifecycleProxy final {
+ public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WeakActorLifecycleProxy)
+
+  // May only be called on the actor's event target.
+  // Will return `nullptr` if the actor has already been destroyed from IPC's
+  // point of view.
+  IProtocol* Get() const;
+
+  // Safe to call on any thread.
+  nsISerialEventTarget* ActorEventTarget() const { return mActorEventTarget; }
+
+ private:
+  friend class ActorLifecycleProxy;
+
+  explicit WeakActorLifecycleProxy(ActorLifecycleProxy* aProxy);
+  ~WeakActorLifecycleProxy();
+
+  WeakActorLifecycleProxy(const WeakActorLifecycleProxy&) = delete;
+  WeakActorLifecycleProxy& operator=(const WeakActorLifecycleProxy&) = delete;
+
+  // This field may only be accessed on the actor's thread, and will be
+  // automatically cleared when the ActorLifecycleProxy is destroyed.
+  ActorLifecycleProxy* MOZ_NON_OWNING_REF mProxy;
+
+  // The serial event target which owns the actor, and is the only thread where
+  // it is OK to access the ActorLifecycleProxy.
+  const nsCOMPtr<nsISerialEventTarget> mActorEventTarget;
+};
+
+class IPDLResolverInner final {
+ public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_DESTROY(IPDLResolverInner,
+                                                     Destroy())
+
+  explicit IPDLResolverInner(UniquePtr<IPC::Message> aReply, IProtocol* aActor);
+
+  template <typename F>
+  void Resolve(F&& aWrite) {
+    ResolveOrReject(true, aWrite);
+  }
+
+ private:
+  void ResolveOrReject(bool aResolve,
+                       FunctionRef<void(IPC::Message*, IProtocol*)> aWrite);
+
+  void Destroy();
+  ~IPDLResolverInner();
+
+  UniquePtr<IPC::Message> mReply;
+  RefPtr<WeakActorLifecycleProxy> mWeakProxy;
+};
 
 }  // namespace ipc
 
 template <typename Protocol>
-class ManagedContainer : public nsTHashtable<nsPtrHashKey<Protocol>> {
-  typedef nsTHashtable<nsPtrHashKey<Protocol>> BaseClass;
-
+class ManagedContainer {
  public:
-  // Having the core logic work on void pointers, rather than typed pointers,
-  // means that we can have one instance of this code out-of-line, rather
-  // than several hundred instances of this code out-of-lined.  (Those
-  // repeated instances don't necessarily get folded together by the linker
-  // because they contain member offsets and such that differ between the
-  // functions.)  We do have to pay for it with some eye-bleedingly bad casts,
-  // though.
+  using iterator = typename nsTArray<Protocol*>::const_iterator;
+
+  iterator begin() const { return mArray.begin(); }
+  iterator end() const { return mArray.end(); }
+  iterator cbegin() const { return begin(); }
+  iterator cend() const { return end(); }
+
+  bool IsEmpty() const { return mArray.IsEmpty(); }
+  uint32_t Count() const { return mArray.Length(); }
+
   void ToArray(nsTArray<Protocol*>& aArray) const {
-    ::mozilla::ipc::TableToArray(
-        *reinterpret_cast<const nsTHashtable<nsPtrHashKey<void>>*>(
-            static_cast<const BaseClass*>(this)),
-        reinterpret_cast<nsTArray<void*>&>(aArray));
+    aArray.AppendElements(mArray);
   }
+
+  bool EnsureRemoved(Protocol* aElement) {
+    return mArray.RemoveElementSorted(aElement);
+  }
+
+  void Insert(Protocol* aElement) {
+    // Equivalent to `InsertElementSorted`, avoiding inserting a duplicate
+    // element.
+    size_t index = mArray.IndexOfFirstElementGt(aElement);
+    if (index == 0 || mArray[index - 1] != aElement) {
+      mArray.InsertElementAt(index, aElement);
+    }
+  }
+
+  void Clear() { mArray.Clear(); }
+
+ private:
+  nsTArray<Protocol*> mArray;
 };
 
 template <typename Protocol>
@@ -911,7 +785,7 @@ Protocol* LoneManagedOrNullAsserts(
     return nullptr;
   }
   MOZ_ASSERT(aManagees.Count() == 1);
-  return aManagees.ConstIter().Get()->GetKey();
+  return *aManagees.cbegin();
 }
 
 template <typename Protocol>
@@ -919,111 +793,9 @@ Protocol* SingleManagedOrNull(const ManagedContainer<Protocol>& aManagees) {
   if (aManagees.Count() != 1) {
     return nullptr;
   }
-  return aManagees.ConstIter().Get()->GetKey();
+  return *aManagees.cbegin();
 }
 
 }  // namespace mozilla
-
-namespace IPC {
-
-template <>
-struct ParamTraits<mozilla::ipc::ActorHandle> {
-  typedef mozilla::ipc::ActorHandle paramType;
-
-  static void Write(Message* aMsg, const paramType& aParam) {
-    IPC::WriteParam(aMsg, aParam.mId);
-  }
-
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   paramType* aResult) {
-    int id;
-    if (IPC::ReadParam(aMsg, aIter, &id)) {
-      aResult->mId = id;
-      return true;
-    }
-    return false;
-  }
-
-  static void Log(const paramType& aParam, std::wstring* aLog) {
-    aLog->append(StringPrintf(L"(%d)", aParam.mId));
-  }
-};
-
-template <class PFooSide>
-struct ParamTraits<mozilla::ipc::Endpoint<PFooSide>> {
-  typedef mozilla::ipc::Endpoint<PFooSide> paramType;
-
-  static void Write(Message* aMsg, const paramType& aParam) {
-    IPC::WriteParam(aMsg, aParam.mValid);
-    if (!aParam.mValid) {
-      return;
-    }
-
-    IPC::WriteParam(aMsg, static_cast<uint32_t>(aParam.mMode));
-
-    // We duplicate the descriptor so that our own file descriptor remains
-    // valid after the write. An alternative would be to set
-    // aParam.mTransport.mValid to false, but that won't work because aParam
-    // is const.
-    mozilla::ipc::TransportDescriptor desc =
-        mozilla::ipc::DuplicateDescriptor(aParam.mTransport);
-    IPC::WriteParam(aMsg, desc);
-
-    IPC::WriteParam(aMsg, aParam.mMyPid);
-    IPC::WriteParam(aMsg, aParam.mOtherPid);
-  }
-
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   paramType* aResult) {
-    MOZ_RELEASE_ASSERT(!aResult->mValid);
-
-    if (!IPC::ReadParam(aMsg, aIter, &aResult->mValid)) {
-      return false;
-    }
-    if (!aResult->mValid) {
-      // Object is empty, but read succeeded.
-      return true;
-    }
-
-    uint32_t mode;
-    if (!IPC::ReadParam(aMsg, aIter, &mode) ||
-        !IPC::ReadParam(aMsg, aIter, &aResult->mTransport) ||
-        !IPC::ReadParam(aMsg, aIter, &aResult->mMyPid) ||
-        !IPC::ReadParam(aMsg, aIter, &aResult->mOtherPid)) {
-      return false;
-    }
-    aResult->mMode = Channel::Mode(mode);
-    return true;
-  }
-
-  static void Log(const paramType& aParam, std::wstring* aLog) {
-    aLog->append(StringPrintf(L"Endpoint"));
-  }
-};
-
-template <class PFooSide>
-struct ParamTraits<mozilla::ipc::ManagedEndpoint<PFooSide>> {
-  typedef mozilla::ipc::ManagedEndpoint<PFooSide> paramType;
-
-  static void Write(Message* aMsg, const paramType& aParam) {
-    IPC::WriteParam(aMsg, aParam.mId);
-  }
-
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   paramType* aResult) {
-    MOZ_RELEASE_ASSERT(aResult->mId == 0);
-
-    if (!IPC::ReadParam(aMsg, aIter, &aResult->mId)) {
-      return false;
-    }
-    return true;
-  }
-
-  static void Log(const paramType& aParam, std::wstring* aLog) {
-    aLog->append(StringPrintf(L"ManagedEndpoint"));
-  }
-};
-
-}  // namespace IPC
 
 #endif  // mozilla_ipc_ProtocolUtils_h

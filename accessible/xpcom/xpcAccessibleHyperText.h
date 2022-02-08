@@ -24,13 +24,7 @@ class xpcAccessibleHyperText : public xpcAccessibleGeneric,
  public:
   explicit xpcAccessibleHyperText(Accessible* aIntl)
       : xpcAccessibleGeneric(aIntl) {
-    if (aIntl->IsHyperText() && aIntl->AsHyperText()->IsTextRole())
-      mSupportedIfaces |= eText;
-  }
-
-  xpcAccessibleHyperText(ProxyAccessible* aProxy, uint32_t aInterfaces)
-      : xpcAccessibleGeneric(aProxy, aInterfaces) {
-    mSupportedIfaces |= eText;
+    if (aIntl->IsHyperText() && aIntl->IsTextRole()) mSupportedIfaces |= eText;
   }
 
   NS_DECL_ISUPPORTS_INHERITED
@@ -43,8 +37,10 @@ class xpcAccessibleHyperText : public xpcAccessibleGeneric,
   virtual ~xpcAccessibleHyperText() {}
 
  private:
-  HyperTextAccessible* Intl() {
-    if (Accessible* acc = mIntl.AsAccessible()) {
+  HyperTextAccessibleBase* Intl() { return mIntl->AsHyperTextBase(); }
+
+  HyperTextAccessible* IntlLocal() {
+    if (LocalAccessible* acc = mIntl->AsLocal()) {
       return acc->AsHyperText();
     }
 

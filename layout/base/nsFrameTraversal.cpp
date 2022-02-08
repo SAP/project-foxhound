@@ -11,6 +11,7 @@
 
 #include "nsFrameList.h"
 #include "nsPlaceholderFrame.h"
+#include "nsPresContext.h"
 #include "nsContainerFrame.h"
 
 using namespace mozilla;
@@ -204,7 +205,7 @@ bool nsFrameIterator::IsDone() { return mOffEdge != 0; }
 void nsFrameIterator::First() { mCurrent = mStart; }
 
 static bool IsRootFrame(nsIFrame* aFrame) {
-  return aFrame->IsCanvasFrame() || aFrame->IsRootFrame();
+  return aFrame->IsCanvasFrame() || aFrame->IsXULRootFrame();
 }
 
 void nsFrameIterator::Last() {
@@ -305,16 +306,15 @@ void nsFrameIterator::Prev() {
           result = parent;
         }
         break;
-      } else {
-        result = GetParentFrameNotPopup(parent);
-        if (!result || IsRootFrame(result) ||
-            (mLockScroll && result->IsScrollFrame())) {
-          result = nullptr;
-          break;
-        }
-        if (mType == ePreOrder) break;
-        parent = result;
       }
+      result = GetParentFrameNotPopup(parent);
+      if (!result || IsRootFrame(result) ||
+          (mLockScroll && result->IsScrollFrame())) {
+        result = nullptr;
+        break;
+      }
+      if (mType == ePreOrder) break;
+      parent = result;
     }
   }
 

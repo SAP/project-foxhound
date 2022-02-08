@@ -40,7 +40,6 @@
 
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
-#include "nsIObserverService.h"
 #include "WidgetUtils.h"
 
 #include "mozilla/java/EventDispatcherWrappers.h"
@@ -53,7 +52,7 @@ using namespace mozilla::gfx;
 
 AndroidBridge* AndroidBridge::sBridge = nullptr;
 static jobject sGlobalContext = nullptr;
-nsDataHashtable<nsStringHashKey, nsString> AndroidBridge::sStoragePaths;
+nsTHashMap<nsStringHashKey, nsString> AndroidBridge::sStoragePaths;
 
 jmethodID AndroidBridge::GetMethodID(JNIEnv* env, jclass jClass,
                                      const char* methodName,
@@ -158,78 +157,6 @@ AndroidBridge::AndroidBridge() {
   // mMessageQueueMessages may be null (e.g. due to proguard optimization)
   mMessageQueueMessages = jEnv->GetFieldID(msgQueueClass.Get(), "mMessages",
                                            "Landroid/os/Message;");
-
-  AutoJNIClass string(jEnv, "java/lang/String");
-  jStringClass = string.getGlobalRef();
-
-  mAPIVersion = jni::GetAPIVersion();
-
-  AutoJNIClass channels(jEnv, "java/nio/channels/Channels");
-  jChannels = channels.getGlobalRef();
-  jChannelCreate = channels.getStaticMethod(
-      "newChannel",
-      "(Ljava/io/InputStream;)Ljava/nio/channels/ReadableByteChannel;");
-
-  AutoJNIClass readableByteChannel(jEnv,
-                                   "java/nio/channels/ReadableByteChannel");
-  jReadableByteChannel = readableByteChannel.getGlobalRef();
-  jByteBufferRead =
-      readableByteChannel.getMethod("read", "(Ljava/nio/ByteBuffer;)I");
-
-  AutoJNIClass inputStream(jEnv, "java/io/InputStream");
-  jInputStream = inputStream.getGlobalRef();
-  jClose = inputStream.getMethod("close", "()V");
-  jAvailable = inputStream.getMethod("available", "()I");
-}
-
-static void getHandlersFromStringArray(
-    JNIEnv* aJNIEnv, jni::ObjectArray::Param aArr, size_t aLen,
-    nsIMutableArray* aHandlersArray, nsIHandlerApp** aDefaultApp,
-    const nsAString& aAction = EmptyString(),
-    const nsACString& aMimeType = EmptyCString()) {
-  nsString empty = EmptyString();
-
-  auto getNormalizedString = [](jni::Object::Param obj) -> nsString {
-    nsString out;
-    if (!obj) {
-      out.SetIsVoid(true);
-    } else {
-      out.Assign(jni::String::Ref::From(obj)->ToString());
-    }
-    return out;
-  };
-
-  for (size_t i = 0; i < aLen; i += 4) {
-    nsString name(getNormalizedString(aArr->GetElement(i)));
-    nsString isDefault(getNormalizedString(aArr->GetElement(i + 1)));
-    nsString packageName(getNormalizedString(aArr->GetElement(i + 2)));
-    nsString className(getNormalizedString(aArr->GetElement(i + 3)));
-
-    nsIHandlerApp* app = nsOSHelperAppService::CreateAndroidHandlerApp(
-        name, className, packageName, className, aMimeType, aAction);
-
-    aHandlersArray->AppendElement(app);
-    if (aDefaultApp && isDefault.Length() > 0) *aDefaultApp = app;
-  }
-}
-
-bool AndroidBridge::GetHandlersForMimeType(const nsAString& aMimeType,
-                                           nsIMutableArray* aHandlersArray,
-                                           nsIHandlerApp** aDefaultApp,
-                                           const nsAString& aAction) {
-  ALOG_BRIDGE("AndroidBridge::GetHandlersForMimeType");
-
-  auto arr = java::GeckoAppShell::GetHandlersForMimeType(aMimeType, aAction);
-  if (!arr) return false;
-
-  JNIEnv* const env = arr.Env();
-  size_t len = arr->Length();
-
-  if (!aHandlersArray) return len > 0;
-
-  getHandlersFromStringArray(env, arr, len, aHandlersArray, aDefaultApp,
-                             aAction, NS_ConvertUTF16toUTF8(aMimeType));
-  return true;
 }
 
 bool AndroidBridge::HasHWVP8Encoder() {
@@ -252,47 +179,6 @@ bool AndroidBridge::HasHWH264() {
   ALOG_BRIDGE("AndroidBridge::HasHWH264");
 
   return java::HardwareCodecCapabilityUtils::HasHWH264();
-}
-
-bool AndroidBridge::GetHandlersForURL(const nsAString& aURL,
-                                      nsIMutableArray* aHandlersArray,
-                                      nsIHandlerApp** aDefaultApp,
-                                      const nsAString& aAction) {
-  ALOG_BRIDGE("AndroidBridge::GetHandlersForURL");
-
-  auto arr = java::GeckoAppShell::GetHandlersForURL(aURL, aAction);
-  if (!arr) return false;
-
-  JNIEnv* const env = arr.Env();
-  size_t len = arr->Length();
-
-  if (!aHandlersArray) return len > 0;
-
-  getHandlersFromStringArray(env, arr, len, aHandlersArray, aDefaultApp,
-                             aAction);
-  return true;
-}
-
-void AndroidBridge::GetMimeTypeFromExtensions(const nsACString& aFileExt,
-                                              nsCString& aMimeType) {
-  ALOG_BRIDGE("AndroidBridge::GetMimeTypeFromExtensions");
-
-  auto jstrType = java::GeckoAppShell::GetMimeTypeFromExtensions(aFileExt);
-
-  if (jstrType) {
-    aMimeType = jstrType->ToCString();
-  }
-}
-
-void AndroidBridge::GetExtensionFromMimeType(const nsACString& aMimeType,
-                                             nsACString& aFileExt) {
-  ALOG_BRIDGE("AndroidBridge::GetExtensionFromMimeType");
-
-  auto jstrExt = java::GeckoAppShell::GetExtensionFromMimeType(aMimeType);
-
-  if (jstrExt) {
-    aFileExt = jstrExt->ToCString();
-  }
 }
 
 gfx::Rect AndroidBridge::getScreenSize() {
@@ -571,8 +457,7 @@ jobject AndroidBridge::GetGlobalContextRef() {
 }
 
 /* Implementation file */
-NS_IMPL_ISUPPORTS(nsAndroidBridge, nsIAndroidEventDispatcher, nsIAndroidBridge,
-                  nsIObserver)
+NS_IMPL_ISUPPORTS(nsAndroidBridge, nsIAndroidEventDispatcher, nsIAndroidBridge)
 
 nsAndroidBridge::nsAndroidBridge() {
   if (jni::IsAvailable()) {
@@ -581,46 +466,23 @@ nsAndroidBridge::nsAndroidBridge() {
                        /* window */ nullptr);
     mEventDispatcher = dispatcher;
   }
-
-  AddObservers();
-}
-
-nsAndroidBridge::~nsAndroidBridge() {}
-
-NS_IMETHODIMP nsAndroidBridge::ContentDocumentChanged(
-    mozIDOMWindowProxy* aWindow) {
-  AndroidBridge::Bridge()->ContentDocumentChanged(aWindow);
-  return NS_OK;
-}
-
-NS_IMETHODIMP nsAndroidBridge::IsContentDocumentDisplayed(
-    mozIDOMWindowProxy* aWindow, bool* aRet) {
-  *aRet = AndroidBridge::Bridge()->IsContentDocumentDisplayed(aWindow);
-  return NS_OK;
 }
 
 NS_IMETHODIMP
-nsAndroidBridge::Observe(nsISupports* aSubject, const char* aTopic,
-                         const char16_t* aData) {
-  if (!strcmp(aTopic, "xpcom-shutdown")) {
-    RemoveObservers();
+nsAndroidBridge::GetDispatcherByName(const char* aName,
+                                     nsIAndroidEventDispatcher** aResult) {
+  if (!jni::IsAvailable()) {
+    return NS_ERROR_FAILURE;
   }
+
+  RefPtr<widget::EventDispatcher> dispatcher = new widget::EventDispatcher();
+  dispatcher->Attach(java::EventDispatcher::ByName(aName),
+                     /* window */ nullptr);
+  dispatcher.forget(aResult);
   return NS_OK;
 }
 
-void nsAndroidBridge::AddObservers() {
-  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-  if (obs) {
-    obs->AddObserver(this, "xpcom-shutdown", false);
-  }
-}
-
-void nsAndroidBridge::RemoveObservers() {
-  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-  if (obs) {
-    obs->RemoveObserver(this, "xpcom-shutdown");
-  }
-}
+nsAndroidBridge::~nsAndroidBridge() {}
 
 uint32_t AndroidBridge::GetScreenOrientation() {
   ALOG_BRIDGE("AndroidBridge::GetScreenOrientation");
@@ -674,84 +536,4 @@ bool AndroidBridge::PumpMessageLoop() {
   }
 
   return java::GeckoThread::PumpMessageLoop(msg);
-}
-
-NS_IMETHODIMP nsAndroidBridge::GetIsFennec(bool* aIsFennec) {
-  *aIsFennec = false;
-  return NS_OK;
-}
-
-NS_IMETHODIMP nsAndroidBridge::GetBrowserApp(
-    nsIAndroidBrowserApp** aBrowserApp) {
-  nsAppShell* const appShell = nsAppShell::Get();
-  if (appShell) NS_IF_ADDREF(*aBrowserApp = appShell->GetBrowserApp());
-  return NS_OK;
-}
-
-NS_IMETHODIMP nsAndroidBridge::SetBrowserApp(
-    nsIAndroidBrowserApp* aBrowserApp) {
-  nsAppShell* const appShell = nsAppShell::Get();
-  if (appShell) appShell->SetBrowserApp(aBrowserApp);
-  return NS_OK;
-}
-
-extern "C" __attribute__((visibility("default"))) jobject JNICALL
-Java_org_mozilla_gecko_GeckoAppShell_allocateDirectBuffer(JNIEnv* env, jclass,
-                                                          jlong size);
-
-void AndroidBridge::ContentDocumentChanged(mozIDOMWindowProxy* aWindow) {
-  if (RefPtr<nsWindow> widget =
-          nsWindow::From(nsPIDOMWindowOuter::From(aWindow))) {
-    widget->SetContentDocumentDisplayed(false);
-  }
-}
-
-bool AndroidBridge::IsContentDocumentDisplayed(mozIDOMWindowProxy* aWindow) {
-  if (RefPtr<nsWindow> widget =
-          nsWindow::From(nsPIDOMWindowOuter::From(aWindow))) {
-    return widget->IsContentDocumentDisplayed();
-  }
-  return false;
-}
-
-jni::Object::LocalRef AndroidBridge::ChannelCreate(jni::Object::Param stream) {
-  JNIEnv* const env = jni::GetEnvForThread();
-  auto rv = jni::Object::LocalRef::Adopt(
-      env, env->CallStaticObjectMethod(sBridge->jChannels,
-                                       sBridge->jChannelCreate, stream.Get()));
-  MOZ_CATCH_JNI_EXCEPTION(env);
-  return rv;
-}
-
-void AndroidBridge::InputStreamClose(jni::Object::Param obj) {
-  JNIEnv* const env = jni::GetEnvForThread();
-  env->CallVoidMethod(obj.Get(), sBridge->jClose);
-  MOZ_CATCH_JNI_EXCEPTION(env);
-}
-
-uint32_t AndroidBridge::InputStreamAvailable(jni::Object::Param obj) {
-  JNIEnv* const env = jni::GetEnvForThread();
-  auto rv = env->CallIntMethod(obj.Get(), sBridge->jAvailable);
-  MOZ_CATCH_JNI_EXCEPTION(env);
-  return rv;
-}
-
-nsresult AndroidBridge::InputStreamRead(jni::Object::Param obj, char* aBuf,
-                                        uint32_t aCount, uint32_t* aRead) {
-  JNIEnv* const env = jni::GetEnvForThread();
-  auto arr = jni::ByteBuffer::New(aBuf, aCount);
-  jint read =
-      env->CallIntMethod(obj.Get(), sBridge->jByteBufferRead, arr.Get());
-
-  if (env->ExceptionCheck()) {
-    env->ExceptionClear();
-    return NS_ERROR_FAILURE;
-  }
-
-  if (read <= 0) {
-    *aRead = 0;
-    return NS_OK;
-  }
-  *aRead = read;
-  return NS_OK;
 }

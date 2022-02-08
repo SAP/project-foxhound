@@ -5,9 +5,11 @@
 
 #include "DirectManipulationOwner.h"
 #include "nsWindow.h"
+#include "WinModifierKeyState.h"
 #include "InputData.h"
 #include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/VsyncDispatcher.h"
 
 #if !defined(__MINGW32__) && !defined(__MINGW64__)
 
@@ -85,8 +87,19 @@ class DManipEventHandler : public IDirectManipulationViewportEventHandler,
   void TransitionToState(State aNewState);
 
   enum class Phase { eStart, eMiddle, eEnd };
-  void SendPinch(Phase aPhase, float aScale);
+  // Return value indicates if we sent an event or not and hence if we should
+  // update mLastScale. (We only want to send pinch events if the computed
+  // deltaY for the corresponding WidgetWheelEvent would be non-zero.)
+  bool SendPinch(Phase aPhase, float aScale);
   void SendPan(Phase aPhase, float x, float y, bool aIsInertia);
+  static void SendPanCommon(nsWindow* aWindow, Phase aPhase,
+                            ScreenPoint aPosition, double aDeltaX,
+                            double aDeltaY, Modifiers aMods, bool aIsInertia);
+
+  static void SynthesizeNativeTouchpadPan(
+      nsWindow* aWindow, nsIWidget::TouchpadGesturePhase aEventPhase,
+      LayoutDeviceIntPoint aPoint, double aDeltaX, double aDeltaY,
+      int32_t aModifierFlags);
 
  private:
   virtual ~DManipEventHandler() = default;
@@ -215,7 +228,11 @@ void DManipEventHandler::TransitionToState(State aNewState) {
       MOZ_ASSERT(aNewState == State::eNone);
       // ePinching -> eNone: PinchEnd. ePinching should only transition to
       // eNone.
-      SendPinch(Phase::eEnd, 0.f);
+      // Only send a pinch end if we sent a pinch start.
+      if (!mShouldSendPinchStart) {
+        SendPinch(Phase::eEnd, 0.f);
+      }
+      mShouldSendPinchStart = false;
       break;
     }
     case State::eNone: {
@@ -293,6 +310,18 @@ DManipEventHandler::OnContentUpdated(IDirectManipulationViewport* viewport,
     TransitionToState(State::ePinching);
   }
 
+  if (mState == State::ePanning || mState == State::eInertia) {
+    // Accumulate the offset (by not updating mLastX/YOffset) until we have at
+    // least one pixel both before and after scaling by the window scale.
+    float dx = std::abs(mLastXOffset - xoffset);
+    float dy = std::abs(mLastYOffset - yoffset);
+    float minDelta = std::max(1.f, windowScale);
+    if (dx < minDelta && dy < minDelta) {
+      return S_OK;
+    }
+  }
+
+  bool updateLastScale = true;
   if (mState == State::ePanning) {
     if (mShouldSendPanStart) {
       SendPan(Phase::eStart, mLastXOffset - xoffset, mLastYOffset - yoffset,
@@ -307,14 +336,20 @@ DManipEventHandler::OnContentUpdated(IDirectManipulationViewport* viewport,
             true);
   } else if (mState == State::ePinching) {
     if (mShouldSendPinchStart) {
-      SendPinch(Phase::eStart, scale);
-      mShouldSendPinchStart = false;
+      updateLastScale = SendPinch(Phase::eStart, scale);
+      // Only clear mShouldSendPinchStart if we actually sent the event
+      // (updateLastScale tells us if we sent an event).
+      if (updateLastScale) {
+        mShouldSendPinchStart = false;
+      }
     } else {
-      SendPinch(Phase::eMiddle, scale);
+      updateLastScale = SendPinch(Phase::eMiddle, scale);
     }
   }
 
-  mLastScale = scale;
+  if (updateLastScale) {
+    mLastScale = scale;
+  }
   mLastXOffset = xoffset;
   mLastYOffset = yoffset;
 
@@ -366,9 +401,13 @@ DirectManipulationOwner::~DirectManipulationOwner() { Destroy(); }
 
 #if !defined(__MINGW32__) && !defined(__MINGW64__)
 
-void DManipEventHandler::SendPinch(Phase aPhase, float aScale) {
+bool DManipEventHandler::SendPinch(Phase aPhase, float aScale) {
   if (!mWindow) {
-    return;
+    return false;
+  }
+
+  if (aScale == mLastScale && aPhase != Phase::eEnd) {
+    return false;
   }
 
   PinchGestureInput::PinchGestureType pinchGestureType =
@@ -390,8 +429,8 @@ void DManipEventHandler::SendPinch(Phase aPhase, float aScale) {
   PRIntervalTime eventIntervalTime = PR_IntervalNow();
   TimeStamp eventTimeStamp = TimeStamp::Now();
 
-  Modifiers mods =
-      MODIFIER_NONE;  // xxx should we get getting key state for this?
+  ModifierKeyState modifierKeyState;
+  Modifiers mods = modifierKeyState.GetModifiers();
 
   ExternalPoint screenOffset = ViewAs<ExternalPixel>(
       mWindow->WidgetToScreenOffset(),
@@ -413,12 +452,39 @@ void DManipEventHandler::SendPinch(Phase aPhase, float aScale) {
                           100.0 * ((aPhase == Phase::eEnd) ? 1.f : mLastScale),
                           mods};
 
+  if (!event.SetLineOrPageDeltaY(mWindow)) {
+    return false;
+  }
+
   mWindow->SendAnAPZEvent(event);
+
+  return true;
 }
 
 void DManipEventHandler::SendPan(Phase aPhase, float x, float y,
                                  bool aIsInertia) {
   if (!mWindow) {
+    return;
+  }
+
+  ModifierKeyState modifierKeyState;
+  Modifiers mods = modifierKeyState.GetModifiers();
+
+  POINT cursor_pos;
+  ::GetCursorPos(&cursor_pos);
+  HWND wnd = static_cast<HWND>(mWindow->GetNativeData(NS_NATIVE_WINDOW));
+  ::ScreenToClient(wnd, &cursor_pos);
+  ScreenPoint position = {(float)cursor_pos.x, (float)cursor_pos.y};
+
+  SendPanCommon(mWindow, aPhase, position, x, y, mods, aIsInertia);
+}
+
+/* static */
+void DManipEventHandler::SendPanCommon(nsWindow* aWindow, Phase aPhase,
+                                       ScreenPoint aPosition, double aDeltaX,
+                                       double aDeltaY, Modifiers aMods,
+                                       bool aIsInertia) {
+  if (!aWindow) {
     return;
   }
 
@@ -457,23 +523,14 @@ void DManipEventHandler::SendPan(Phase aPhase, float x, float y,
   PRIntervalTime eventIntervalTime = PR_IntervalNow();
   TimeStamp eventTimeStamp = TimeStamp::Now();
 
-  Modifiers mods = MODIFIER_NONE;
+  PanGestureInput event{panGestureType,
+                        eventIntervalTime,
+                        eventTimeStamp,
+                        aPosition,
+                        ScreenPoint(aDeltaX, aDeltaY),
+                        aMods};
 
-  POINT cursor_pos;
-  ::GetCursorPos(&cursor_pos);
-  HWND wnd = static_cast<HWND>(mWindow->GetNativeData(NS_NATIVE_WINDOW));
-  ::ScreenToClient(wnd, &cursor_pos);
-  ScreenPoint position = {(float)cursor_pos.x, (float)cursor_pos.y};
-
-  PanGestureInput event{panGestureType, eventIntervalTime, eventTimeStamp,
-                        position,       ScreenPoint(x, y), mods};
-
-  gfx::IntPoint lineOrPageDelta =
-      PanGestureInput::GetIntegerDeltaForEvent((aPhase == Phase::eStart), x, y);
-  event.mLineOrPageDeltaX = lineOrPageDelta.x;
-  event.mLineOrPageDeltaY = lineOrPageDelta.y;
-
-  mWindow->SendAnAPZEvent(event);
+  aWindow->SendAnAPZEvent(event);
 }
 
 #endif  // !defined(__MINGW32__) && !defined(__MINGW64__)
@@ -676,6 +733,35 @@ void DirectManipulationOwner::SetContact(UINT aContactId) {
   }
 #endif
 }
+
+/*static  */ void DirectManipulationOwner::SynthesizeNativeTouchpadPan(
+    nsWindow* aWindow, nsIWidget::TouchpadGesturePhase aEventPhase,
+    LayoutDeviceIntPoint aPoint, double aDeltaX, double aDeltaY,
+    int32_t aModifierFlags) {
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
+  DManipEventHandler::SynthesizeNativeTouchpadPan(
+      aWindow, aEventPhase, aPoint, aDeltaX, aDeltaY, aModifierFlags);
+#endif
+}
+
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
+/*static  */ void DManipEventHandler::SynthesizeNativeTouchpadPan(
+    nsWindow* aWindow, nsIWidget::TouchpadGesturePhase aEventPhase,
+    LayoutDeviceIntPoint aPoint, double aDeltaX, double aDeltaY,
+    int32_t aModifierFlags) {
+  ScreenPoint position = {(float)aPoint.x, (float)aPoint.y};
+  Phase phase = Phase::eStart;
+  if (aEventPhase == nsIWidget::PHASE_UPDATE) {
+    phase = Phase::eMiddle;
+  }
+
+  if (aEventPhase == nsIWidget::PHASE_END) {
+    phase = Phase::eEnd;
+  }
+  SendPanCommon(aWindow, phase, position, aDeltaX, aDeltaY, aModifierFlags,
+                /* aIsInertia = */ false);
+}
+#endif
 
 }  // namespace widget
 }  // namespace mozilla

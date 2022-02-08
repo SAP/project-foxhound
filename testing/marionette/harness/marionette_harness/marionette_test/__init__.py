@@ -4,10 +4,9 @@
 
 from __future__ import absolute_import
 
-__version__ = '3.1.0'
+__version__ = "3.1.0"
 
 from unittest.case import (
-    expectedFailure,
     skip,
     SkipTest,
 )
@@ -24,6 +23,8 @@ from .decorators import (
 
 from .testcases import (
     CommonTestCase,
+    expectedFailure,
     MarionetteTestCase,
     MetaParameterized,
+    unexpectedSuccess,
 )

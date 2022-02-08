@@ -4,6 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "StorageAccess.h"
+
 #include "mozilla/dom/Document.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/ContentBlocking.h"
@@ -65,7 +67,8 @@ static void GetCookieLifetimePolicyFromCookieJarSettings(
  * status.
  *
  * Used in the implementation of StorageAllowedForWindow,
- * StorageAllowedForChannel and StorageAllowedForServiceWorker.
+ * StorageAllowedForDocument, StorageAllowedForChannel and
+ * StorageAllowedForServiceWorker.
  */
 static StorageAccess InternalStorageAllowedCheck(
     nsIPrincipal* aPrincipal, nsPIDOMWindowInner* aWindow, nsIURI* aURI,
@@ -177,6 +180,43 @@ static StorageAccess InternalStorageAllowedCheck(
   return StorageAccess::eDeny;
 }
 
+/**
+ * Wrapper around InternalStorageAllowedCheck which caches the check result on
+ * the inner window to improve performance. nsGlobalWindowInner is responsible
+ * for invalidating the cache state if storage access changes during window
+ * lifetime.
+ */
+static StorageAccess InternalStorageAllowedCheckCached(
+    nsIPrincipal* aPrincipal, nsPIDOMWindowInner* aWindow, nsIURI* aURI,
+    nsIChannel* aChannel, nsICookieJarSettings* aCookieJarSettings,
+    uint32_t& aRejectedReason) {
+  // If enabled, check if we have already computed the storage access field
+  // for this window. This avoids repeated calls to
+  // InternalStorageAllowedCheck.
+  nsGlobalWindowInner* win = nullptr;
+  if (aWindow &&
+      StaticPrefs::privacy_antitracking_cacheStorageAllowedForWindow()) {
+    win = nsGlobalWindowInner::Cast(aWindow);
+
+    Maybe<StorageAccess> storageAccess =
+        win->GetStorageAllowedCache(aRejectedReason);
+    if (storageAccess.isSome()) {
+      return storageAccess.value();
+    }
+  }
+
+  StorageAccess result = InternalStorageAllowedCheck(
+      aPrincipal, aWindow, aURI, aChannel, aCookieJarSettings, aRejectedReason);
+  if (win) {
+    // Remember check result for the lifetime of the window. It's the windows
+    // responsibility to invalidate this field if storage access changes
+    // because a storage access permission is granted.
+    win->SetStorageAllowedCache(result, aRejectedReason);
+  }
+
+  return result;
+}
+
 static bool StorageDisabledByAntiTrackingInternal(
     nsPIDOMWindowInner* aWindow, nsIChannel* aChannel, nsIPrincipal* aPrincipal,
     nsIURI* aURI, nsICookieJarSettings* aCookieJarSettings,
@@ -221,9 +261,9 @@ StorageAccess StorageAllowedForWindow(nsPIDOMWindowInner* aWindow,
     // callee is able to deal with a null channel argument, and if passed null,
     // will only fail to notify the UI in case storage gets blocked.
     nsIChannel* channel = document->GetChannel();
-    return InternalStorageAllowedCheck(principal, aWindow, nullptr, channel,
-                                       document->CookieJarSettings(),
-                                       *aRejectedReason);
+    return InternalStorageAllowedCheckCached(
+        principal, aWindow, nullptr, channel, document->CookieJarSettings(),
+        *aRejectedReason);
   }
 
   // No document? Let's return a generic rejected reason.
@@ -241,7 +281,7 @@ StorageAccess StorageAllowedForDocument(const Document* aDoc) {
     nsIChannel* channel = aDoc->GetChannel();
 
     uint32_t rejectedReason = 0;
-    return InternalStorageAllowedCheck(
+    return InternalStorageAllowedCheckCached(
         principal, inner, nullptr, channel,
         const_cast<Document*>(aDoc)->CookieJarSettings(), rejectedReason);
   }
@@ -260,7 +300,7 @@ StorageAccess StorageAllowedForNewWindow(nsIPrincipal* aPrincipal, nsIURI* aURI,
   if (aParent && aParent->GetExtantDoc()) {
     cjs = aParent->GetExtantDoc()->CookieJarSettings();
   } else {
-    cjs = net::CookieJarSettings::Create();
+    cjs = net::CookieJarSettings::Create(aPrincipal);
   }
   return InternalStorageAllowedCheck(aPrincipal, aParent, aURI, nullptr, cjs,
                                      rejectedReason);
@@ -310,7 +350,7 @@ bool StorageDisabledByAntiTracking(nsPIDOMWindowInner* aWindow,
     Unused << loadInfo->GetCookieJarSettings(getter_AddRefs(cookieJarSettings));
   }
   if (!cookieJarSettings) {
-    cookieJarSettings = net::CookieJarSettings::Create();
+    cookieJarSettings = net::CookieJarSettings::Create(aPrincipal);
   }
   bool disabled = StorageDisabledByAntiTrackingInternal(
       aWindow, aChannel, aPrincipal, aURI, cookieJarSettings, aRejectedReason);
@@ -331,6 +371,38 @@ bool StorageDisabledByAntiTracking(nsPIDOMWindowInner* aWindow,
   return disabled;
 }
 
+bool StorageDisabledByAntiTracking(dom::Document* aDocument, nsIURI* aURI,
+                                   uint32_t& aRejectedReason) {
+  aRejectedReason = 0;
+  // Note that GetChannel() below may return null, but that's OK, since the
+  // callee is able to deal with a null channel argument, and if passed null,
+  // will only fail to notify the UI in case storage gets blocked.
+  return StorageDisabledByAntiTracking(
+      aDocument->GetInnerWindow(), aDocument->GetChannel(),
+      aDocument->NodePrincipal(), aURI, aRejectedReason);
+}
+
+RefPtr<AsyncStorageDisabledByAntiTrackingPromise>
+AsyncStorageDisabledByAntiTracking(dom::BrowsingContext* aContext,
+                                   nsIPrincipal* aPrincipal) {
+  MOZ_ASSERT(aContext);
+  MOZ_ASSERT(aPrincipal);
+
+  return ContentBlocking::AsyncShouldAllowAccessFor(aContext, aPrincipal)
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [](const ContentBlocking::AsyncShouldAllowAccessForPromise::
+                 ResolveOrRejectValue&& aValue) {
+            if (aValue.IsResolve()) {
+              return AsyncStorageDisabledByAntiTrackingPromise::CreateAndReject(
+                  aValue.ResolveValue(), __func__);
+            }
+
+            return AsyncStorageDisabledByAntiTrackingPromise::CreateAndResolve(
+                aValue.RejectValue(), __func__);
+          });
+}
+
 bool ShouldPartitionStorage(StorageAccess aAccess) {
   return aAccess == StorageAccess::ePartitionTrackersOrDeny ||
          aAccess == StorageAccess::ePartitionForeignOrDeny;
@@ -347,34 +419,17 @@ bool ShouldPartitionStorage(uint32_t aRejectedReason) {
 
 bool StoragePartitioningEnabled(StorageAccess aAccess,
                                 nsICookieJarSettings* aCookieJarSettings) {
-  if (aAccess == StorageAccess::ePartitionTrackersOrDeny) {
-    return aCookieJarSettings->GetCookieBehavior() ==
-               nsICookieService::BEHAVIOR_REJECT_TRACKER &&
-           StaticPrefs::privacy_storagePrincipal_enabledForTrackers();
-  }
-  if (aAccess == StorageAccess::ePartitionForeignOrDeny) {
-    return aCookieJarSettings->GetCookieBehavior() ==
-           nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
-  }
-  return false;
+  return aAccess == StorageAccess::ePartitionForeignOrDeny &&
+         aCookieJarSettings->GetCookieBehavior() ==
+             nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
 }
 
 bool StoragePartitioningEnabled(uint32_t aRejectedReason,
                                 nsICookieJarSettings* aCookieJarSettings) {
-  if (aRejectedReason ==
-          nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER ||
-      aRejectedReason ==
-          nsIWebProgressListener::STATE_COOKIES_BLOCKED_SOCIALTRACKER) {
-    return aCookieJarSettings->GetCookieBehavior() ==
-               nsICookieService::BEHAVIOR_REJECT_TRACKER &&
-           StaticPrefs::privacy_storagePrincipal_enabledForTrackers();
-  }
-  if (aRejectedReason ==
-      nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN) {
-    return aCookieJarSettings->GetCookieBehavior() ==
-           nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
-  }
-  return false;
+  return aRejectedReason ==
+             nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN &&
+         aCookieJarSettings->GetCookieBehavior() ==
+             nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
 }
 
 }  // namespace mozilla

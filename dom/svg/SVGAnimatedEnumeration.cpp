@@ -17,6 +17,33 @@ using namespace mozilla::dom;
 
 namespace mozilla {
 
+//----------------------------------------------------------------------
+// Helper class: AutoChangeEnumNotifier
+// Stack-based helper class to ensure DidChangeEnum is called.
+class MOZ_RAII AutoChangeEnumNotifier {
+ public:
+  AutoChangeEnumNotifier(SVGAnimatedEnumeration* aEnum, SVGElement* aSVGElement,
+                         bool aDoSetAttr = true)
+      : mEnum(aEnum), mSVGElement(aSVGElement), mDoSetAttr(aDoSetAttr) {
+    MOZ_ASSERT(mEnum, "Expecting non-null enum");
+    MOZ_ASSERT(mSVGElement, "Expecting non-null element");
+  }
+
+  ~AutoChangeEnumNotifier() {
+    if (mDoSetAttr) {
+      mSVGElement->DidChangeEnum(mEnum->mAttrEnum);
+    }
+    if (mEnum->mIsAnimated) {
+      mSVGElement->AnimationNeedsResample();
+    }
+  }
+
+ private:
+  SVGAnimatedEnumeration* const mEnum;
+  SVGElement* const mSVGElement;
+  bool mDoSetAttr;
+};
+
 static SVGAttrTearoffTable<SVGAnimatedEnumeration,
                            SVGAnimatedEnumeration::DOMAnimatedEnum>
     sSVGAnimatedEnumTearoffTable;
@@ -25,10 +52,10 @@ const SVGEnumMapping* SVGAnimatedEnumeration::GetMapping(
     SVGElement* aSVGElement) {
   SVGElement::EnumAttributesInfo info = aSVGElement->GetEnumInfo();
 
-  NS_ASSERTION(info.mEnumCount > 0 && mAttrEnum < info.mEnumCount,
+  NS_ASSERTION(info.mCount > 0 && mAttrEnum < info.mCount,
                "mapping request for a non-attrib enum");
 
-  return info.mEnumInfo[mAttrEnum].mMapping;
+  return info.mInfos[mAttrEnum].mMapping;
 }
 
 bool SVGAnimatedEnumeration::SetBaseValueAtom(const nsAtom* aValue,
@@ -37,17 +64,17 @@ bool SVGAnimatedEnumeration::SetBaseValueAtom(const nsAtom* aValue,
 
   while (mapping && mapping->mKey) {
     if (aValue == mapping->mKey) {
-      mIsBaseSet = true;
-      if (mBaseVal != mapping->mVal) {
-        mBaseVal = mapping->mVal;
-        if (!mIsAnimated) {
-          mAnimVal = mBaseVal;
-        } else {
-          aSVGElement->AnimationNeedsResample();
-        }
+      if (!mIsBaseSet || mBaseVal != mapping->mVal) {
+        mIsBaseSet = true;
         // We don't need to call DidChange* here - we're only called by
         // SVGElement::ParseAttribute under Element::SetAttr,
         // which takes care of notifying.
+        AutoChangeEnumNotifier notifier(this, aSVGElement, false);
+
+        mBaseVal = mapping->mVal;
+        if (!mIsAnimated) {
+          mAnimVal = mBaseVal;
+        }
       }
       return true;
     }
@@ -77,15 +104,14 @@ void SVGAnimatedEnumeration::SetBaseValue(uint16_t aValue,
 
   while (mapping && mapping->mKey) {
     if (mapping->mVal == aValue) {
-      mIsBaseSet = true;
-      if (mBaseVal != uint8_t(aValue)) {
+      if (!mIsBaseSet || mBaseVal != uint8_t(aValue)) {
+        mIsBaseSet = true;
+        AutoChangeEnumNotifier notifier(this, aSVGElement);
+
         mBaseVal = uint8_t(aValue);
         if (!mIsAnimated) {
           mAnimVal = mBaseVal;
-        } else {
-          aSVGElement->AnimationNeedsResample();
         }
-        aSVGElement->DidChangeEnum(mAttrEnum);
       }
       return;
     }

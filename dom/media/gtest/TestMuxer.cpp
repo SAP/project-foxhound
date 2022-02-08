@@ -14,6 +14,7 @@
 #include "WebMWriter.h"
 
 using namespace mozilla;
+using media::TimeUnit;
 using testing::_;
 using testing::ElementsAre;
 using testing::Return;
@@ -48,27 +49,24 @@ static RefPtr<TrackMetadataBase> CreateVP8Metadata(int32_t aWidth,
 }
 
 static RefPtr<EncodedFrame> CreateFrame(EncodedFrame::FrameType aType,
-                                        uint64_t aTimeUs, uint64_t aDurationUs,
+                                        const TimeUnit& aTime,
+                                        const TimeUnit& aDuration,
                                         size_t aDataSize) {
-  auto frame = MakeRefPtr<EncodedFrame>();
-  frame->mTime = aTimeUs;
+  auto data = MakeRefPtr<EncodedFrame::FrameData>();
+  data->SetLength(aDataSize);
   if (aType == EncodedFrame::OPUS_AUDIO_FRAME) {
     // Opus duration is in samples, so figure out how many samples will put us
     // closest to aDurationUs without going over.
-    frame->mDuration = UsecsToFrames(aDurationUs, 48000).value();
-  } else {
-    frame->mDuration = aDurationUs;
+    return MakeRefPtr<EncodedFrame>(aTime,
+                                    TimeUnitToFrames(aDuration, 48000).value(),
+                                    48000, aType, std::move(data));
   }
-  frame->mFrameType = aType;
-
-  nsTArray<uint8_t> data;
-  data.SetLength(aDataSize);
-  frame->SwapInFrameData(data);
-  return frame;
+  return MakeRefPtr<EncodedFrame>(
+      aTime, TimeUnitToFrames(aDuration, USECS_PER_S).value(), USECS_PER_S,
+      aType, std::move(data));
 }
 
-namespace testing {
-namespace internal {
+namespace testing::internal {
 // This makes the googletest framework treat nsTArray as an std::vector, so all
 // the regular Matchers (like ElementsAre) work for it.
 template <typename Element>
@@ -85,8 +83,7 @@ class StlContainerView<nsTArray<Element>> {
     return type(aContainer.begin(), aContainer.end());
   }
 };
-}  // namespace internal
-}  // namespace testing
+}  // namespace testing::internal
 
 class MockContainerWriter : public ContainerWriter {
  public:
@@ -101,13 +98,18 @@ class MockContainerWriter : public ContainerWriter {
 
 TEST(MuxerTest, AudioOnly)
 {
+  MediaQueue<EncodedFrame> audioQueue;
+  MediaQueue<EncodedFrame> videoQueue;
+  videoQueue.Finish();
   MockContainerWriter* writer = new MockContainerWriter();
-  Muxer muxer(WrapUnique<ContainerWriter>(writer));
+  Muxer muxer(WrapUnique<ContainerWriter>(writer), audioQueue, videoQueue);
 
   // Prepare data
 
   auto opusMeta = CreateOpusMetadata(1, 48000, 16, 16);
-  auto audioFrame = CreateFrame(EncodedFrame::OPUS_AUDIO_FRAME, 0, 48000, 4096);
+  auto audioFrame =
+      CreateFrame(EncodedFrame::OPUS_AUDIO_FRAME, TimeUnit::FromSeconds(0),
+                  TimeUnit::FromSeconds(0.2), 4096);
 
   // Expectations
 
@@ -126,23 +128,29 @@ TEST(MuxerTest, AudioOnly)
 
   EXPECT_EQ(muxer.SetMetadata(nsTArray<RefPtr<TrackMetadataBase>>({opusMeta})),
             NS_OK);
-  muxer.AddEncodedAudioFrame(audioFrame);
-  muxer.AudioEndOfStream();
+  audioQueue.Push(audioFrame);
+  audioQueue.Finish();
   nsTArray<nsTArray<uint8_t>> buffers;
   EXPECT_EQ(muxer.GetData(&buffers), NS_OK);
 }
 
 TEST(MuxerTest, AudioVideo)
 {
+  MediaQueue<EncodedFrame> audioQueue;
+  MediaQueue<EncodedFrame> videoQueue;
   MockContainerWriter* writer = new MockContainerWriter();
-  Muxer muxer(WrapUnique<ContainerWriter>(writer));
+  Muxer muxer(WrapUnique<ContainerWriter>(writer), audioQueue, videoQueue);
 
   // Prepare data
 
   auto opusMeta = CreateOpusMetadata(1, 48000, 16, 16);
   auto vp8Meta = CreateVP8Metadata(640, 480);
-  auto audioFrame = CreateFrame(EncodedFrame::OPUS_AUDIO_FRAME, 0, 48000, 4096);
-  auto videoFrame = CreateFrame(EncodedFrame::VP8_I_FRAME, 0, 50000, 65536);
+  auto audioFrame =
+      CreateFrame(EncodedFrame::OPUS_AUDIO_FRAME, TimeUnit::FromSeconds(0),
+                  TimeUnit::FromSeconds(0.2), 4096);
+  auto videoFrame =
+      CreateFrame(EncodedFrame::VP8_I_FRAME, TimeUnit::FromSeconds(0),
+                  TimeUnit::FromSeconds(0.05), 65536);
 
   // Expectations
 
@@ -162,27 +170,37 @@ TEST(MuxerTest, AudioVideo)
   EXPECT_EQ(muxer.SetMetadata(
                 nsTArray<RefPtr<TrackMetadataBase>>({opusMeta, vp8Meta})),
             NS_OK);
-  muxer.AddEncodedAudioFrame(audioFrame);
-  muxer.AudioEndOfStream();
-  muxer.AddEncodedVideoFrame(videoFrame);
-  muxer.VideoEndOfStream();
+  audioQueue.Push(audioFrame);
+  audioQueue.Finish();
+  videoQueue.Push(videoFrame);
+  videoQueue.Finish();
   nsTArray<nsTArray<uint8_t>> buffers;
   EXPECT_EQ(muxer.GetData(&buffers), NS_OK);
 }
 
 TEST(MuxerTest, AudioVideoOutOfOrder)
 {
+  MediaQueue<EncodedFrame> audioQueue;
+  MediaQueue<EncodedFrame> videoQueue;
   MockContainerWriter* writer = new MockContainerWriter();
-  Muxer muxer(WrapUnique<ContainerWriter>(writer));
+  Muxer muxer(WrapUnique<ContainerWriter>(writer), audioQueue, videoQueue);
 
   // Prepare data
 
   auto opusMeta = CreateOpusMetadata(1, 48000, 16, 16);
   auto vp8Meta = CreateVP8Metadata(640, 480);
-  auto a0 = CreateFrame(EncodedFrame::OPUS_AUDIO_FRAME, 0, 48, 4096);
-  auto v0 = CreateFrame(EncodedFrame::VP8_I_FRAME, 0, 50, 65536);
-  auto a48 = CreateFrame(EncodedFrame::OPUS_AUDIO_FRAME, 48, 48, 4096);
-  auto v50 = CreateFrame(EncodedFrame::VP8_I_FRAME, 50, 50, 65536);
+  auto a0 =
+      CreateFrame(EncodedFrame::OPUS_AUDIO_FRAME, TimeUnit::FromMicroseconds(0),
+                  TimeUnit::FromMicroseconds(48), 4096);
+  auto v0 =
+      CreateFrame(EncodedFrame::VP8_I_FRAME, TimeUnit::FromMicroseconds(0),
+                  TimeUnit::FromMicroseconds(50), 65536);
+  auto a48 = CreateFrame(EncodedFrame::OPUS_AUDIO_FRAME,
+                         TimeUnit::FromMicroseconds(48),
+                         TimeUnit::FromMicroseconds(48), 4096);
+  auto v50 =
+      CreateFrame(EncodedFrame::VP8_I_FRAME, TimeUnit::FromMicroseconds(50),
+                  TimeUnit::FromMicroseconds(50), 65536);
 
   // Expectations
 
@@ -202,12 +220,12 @@ TEST(MuxerTest, AudioVideoOutOfOrder)
   EXPECT_EQ(muxer.SetMetadata(
                 nsTArray<RefPtr<TrackMetadataBase>>({opusMeta, vp8Meta})),
             NS_OK);
-  muxer.AddEncodedAudioFrame(a0);
-  muxer.AddEncodedVideoFrame(v0);
-  muxer.AddEncodedVideoFrame(v50);
-  muxer.VideoEndOfStream();
-  muxer.AddEncodedAudioFrame(a48);
-  muxer.AudioEndOfStream();
+  audioQueue.Push(a0);
+  videoQueue.Push(v0);
+  videoQueue.Push(v50);
+  videoQueue.Finish();
+  audioQueue.Push(a48);
+  audioQueue.Finish();
   nsTArray<nsTArray<uint8_t>> buffers;
   EXPECT_EQ(muxer.GetData(&buffers), NS_OK);
 }

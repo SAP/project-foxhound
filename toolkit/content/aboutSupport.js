@@ -25,6 +25,11 @@ ChromeUtils.defineModuleGetter(
   "PlacesDBUtils",
   "resource://gre/modules/PlacesDBUtils.jsm"
 );
+ChromeUtils.defineModuleGetter(
+  this,
+  "ProcessType",
+  "resource://gre/modules/ProcessType.jsm"
+);
 
 window.addEventListener("load", function onload(event) {
   try {
@@ -36,12 +41,35 @@ window.addEventListener("load", function onload(event) {
     });
     populateActionBox();
     setupEventListeners();
+
+    let hasWinPackageId = false;
+    try {
+      hasWinPackageId = Services.sysinfo.getProperty("hasWinPackageId");
+    } catch (_ex) {
+      // The hasWinPackageId property doesn't exist; assume it would be false.
+    }
+    if (hasWinPackageId) {
+      $("update-dir-row").hidden = true;
+      $("update-history-row").hidden = true;
+    }
   } catch (e) {
     Cu.reportError(
       "stack of load error for about:support: " + e + ": " + e.stack
     );
   }
 });
+
+function prefsTable(data) {
+  return sortedArrayFromObject(data).map(function([name, value]) {
+    return $.new("tr", [
+      $.new("td", name, "pref-name"),
+      // Very long preference values can cause users problems when they
+      // copy and paste them into some text editors.  Long values generally
+      // aren't useful anyway, so truncate them to a reasonable length.
+      $.new("td", String(value).substr(0, 120), "pref-value"),
+    ]);
+  });
+}
 
 // Fluent uses lisp-case IDs so this converts
 // the SentenceCase info IDs to lisp-case.
@@ -64,6 +92,14 @@ var snapshotFormatters = {
     $("application-box").textContent = data.name;
     $("useragent-box").textContent = data.userAgent;
     $("os-box").textContent = data.osVersion;
+    if (data.osTheme) {
+      $("os-theme-box").textContent = data.osTheme;
+    } else {
+      $("os-theme-row").hidden = true;
+    }
+    if (AppConstants.platform == "macosx") {
+      $("rosetta-box").textContent = data.rosetta;
+    }
     $("binary-box").textContent = Services.dirsvc.get(
       "XREExeF",
       Ci.nsIFile
@@ -107,20 +143,21 @@ var snapshotFormatters = {
       );
     } catch (e) {}
 
-    let statusTextId = "multi-process-status-unknown";
+    const STATUS_STRINGS = {
+      experimentControl: "fission-status-experiment-control",
+      experimentTreatment: "fission-status-experiment-treatment",
+      disabledByE10sEnv: "fission-status-disabled-by-e10s-env",
+      enabledByEnv: "fission-status-enabled-by-env",
+      disabledBySafeMode: "fission-status-disabled-by-safe-mode",
+      enabledByDefault: "fission-status-enabled-by-default",
+      disabledByDefault: "fission-status-disabled-by-default",
+      enabledByUserPref: "fission-status-enabled-by-user-pref",
+      disabledByUserPref: "fission-status-disabled-by-user-pref",
+      disabledByE10sOther: "fission-status-disabled-by-e10s-other",
+      enabledByRollout: "fission-status-enabled-by-rollout",
+    };
 
-    // Whitelist of known values with string descriptions:
-    switch (data.autoStartStatus) {
-      case 0:
-      case 1:
-      case 2:
-      case 4:
-      case 6:
-      case 7:
-      case 8:
-        statusTextId = "multi-process-status-" + data.autoStartStatus;
-        break;
-    }
+    let statusTextId = STATUS_STRINGS[data.fissionDecisionStatus];
 
     document.l10n.setAttributes(
       $("multiprocess-box-process-count"),
@@ -130,7 +167,15 @@ var snapshotFormatters = {
         totalWindows: data.numTotalWindows,
       }
     );
-    document.l10n.setAttributes($("multiprocess-box-status"), statusTextId);
+    document.l10n.setAttributes(
+      $("fission-box-process-count"),
+      "fission-windows",
+      {
+        fissionWindows: data.numFissionWindows,
+        totalWindows: data.numTotalWindows,
+      }
+    );
+    document.l10n.setAttributes($("fission-box-status"), statusTextId);
 
     if (Services.policies) {
       let policiesStrId = "";
@@ -192,7 +237,7 @@ var snapshotFormatters = {
     }
 
     let daysRange = Troubleshoot.kMaxCrashAge / (24 * 60 * 60 * 1000);
-    document.l10n.setAttributes($("crashes-title"), "report-crash-for-days", {
+    document.l10n.setAttributes($("crashes"), "report-crash-for-days", {
       days: daysRange,
     });
     let reportURL;
@@ -269,7 +314,7 @@ var snapshotFormatters = {
 
   securitySoftware(data) {
     if (!AppConstants.isPlatformAndVersionAtLeast("win", "6.2")) {
-      $("security-software-title").hidden = true;
+      $("security-software").hidden = true;
       $("security-software-table").hidden = true;
       return;
     }
@@ -294,11 +339,8 @@ var snapshotFormatters = {
 
   async processes(data) {
     async function buildEntry(name, value) {
-      let entryName =
-        (await document.l10n.formatValue(
-          `process-type-${name.toLowerCase()}`
-        )) || name;
-
+      const fluentName = ProcessType.fluentNameFromProcessTypeString(name);
+      let entryName = (await document.l10n.formatValue(fluentName)) || name;
       $("processes-tbody").appendChild(
         $.new("tr", [$.new("td", entryName), $.new("td", value)])
       );
@@ -354,30 +396,43 @@ var snapshotFormatters = {
     );
   },
 
-  modifiedPreferences(data) {
+  environmentVariables(data) {
+    if (!data) {
+      return;
+    }
     $.append(
-      $("prefs-tbody"),
-      sortedArrayFromObject(data).map(function([name, value]) {
+      $("environment-variables-tbody"),
+      Object.entries(data).map(([name, value]) => {
         return $.new("tr", [
           $.new("td", name, "pref-name"),
-          // Very long preference values can cause users problems when they
-          // copy and paste them into some text editors.  Long values generally
-          // aren't useful anyway, so truncate them to a reasonable length.
-          $.new("td", String(value).substr(0, 120), "pref-value"),
+          $.new("td", value, "pref-value"),
         ]);
       })
     );
   },
 
+  modifiedPreferences(data) {
+    $.append($("prefs-tbody"), prefsTable(data));
+  },
+
   lockedPreferences(data) {
-    $.append(
-      $("locked-prefs-tbody"),
-      sortedArrayFromObject(data).map(function([name, value]) {
-        return $.new("tr", [
-          $.new("td", name, "pref-name"),
-          $.new("td", String(value).substr(0, 120), "pref-value"),
-        ]);
-      })
+    $.append($("locked-prefs-tbody"), prefsTable(data));
+  },
+
+  printingPreferences(data) {
+    if (AppConstants.platform == "android") {
+      return;
+    }
+    const tbody = $("support-printing-prefs-tbody");
+    $.append(tbody, prefsTable(data));
+    $("support-printing-clear-settings-button").addEventListener(
+      "click",
+      function() {
+        for (let name in data) {
+          Services.prefs.clearUserPref(name);
+        }
+        tbody.textContent = "";
+      }
     );
   },
 
@@ -583,9 +638,6 @@ var snapshotFormatters = {
     let compositor = "";
     if (data.windowLayerManagerRemote) {
       compositor = data.windowLayerManagerType;
-      if (data.windowUsingAdvancedLayers) {
-        compositor += " (Advanced Layers)";
-      }
     } else {
       let noOMTCString = await document.l10n.formatValue("main-thread-no-omtc");
       compositor = "BasicLayers (" + noOMTCString + ")";
@@ -596,7 +648,6 @@ var snapshotFormatters = {
     delete data.numTotalWindows;
     delete data.numAcceleratedWindows;
     delete data.numAcceleratedWindowsMessage;
-    delete data.windowUsingAdvancedLayers;
 
     addRow(
       "features",
@@ -630,10 +681,6 @@ var snapshotFormatters = {
       ["direct2DEnabled", "#Direct2D"],
       ["windowProtocol", "graphics-window-protocol"],
       ["desktopEnvironment", "graphics-desktop-environment"],
-      "usesTiling",
-      "contentUsesTiling",
-      "offMainThreadPaintEnabled",
-      "offMainThreadPaintWorkerCount",
       "targetFrameRate",
     ];
     for (let feature of featureKeys) {
@@ -989,7 +1036,7 @@ var snapshotFormatters = {
   },
 
   remoteAgent(data) {
-    if (!AppConstants.ENABLE_REMOTE_AGENT) {
+    if (!AppConstants.ENABLE_WEBDRIVER) {
       return;
     }
     $("remote-debugging-accepting-connections").textContent = data.listening;
@@ -1125,6 +1172,51 @@ var snapshotFormatters = {
       data.osPrefs.regionalPrefsLocales
     );
   },
+
+  normandy(data) {
+    if (!data) {
+      return;
+    }
+
+    const {
+      prefStudies,
+      addonStudies,
+      prefRollouts,
+      nimbusExperiments,
+      remoteConfigs,
+    } = data;
+    $.append(
+      $("remote-features-tbody"),
+      prefRollouts.map(({ slug, state }) =>
+        $.new("tr", [
+          $.new("td", [document.createTextNode(slug)]),
+          $.new("td", [document.createTextNode(state)]),
+        ])
+      )
+    );
+
+    $.append(
+      $("remote-features-tbody"),
+      remoteConfigs.map(({ featureId, slug }) =>
+        $.new("tr", [
+          $.new("td", [document.createTextNode(featureId)]),
+          $.new("td", [document.createTextNode(`(${slug})`)]),
+        ])
+      )
+    );
+
+    $.append(
+      $("remote-experiments-tbody"),
+      [addonStudies, prefStudies, nimbusExperiments]
+        .flat()
+        .map(({ userFacingName, branch }) =>
+          $.new("tr", [
+            $.new("td", [document.createTextNode(userFacingName)]),
+            $.new("td", [document.createTextNode(branch?.slug || branch)]),
+          ])
+        )
+    );
+  },
 };
 
 var $ = document.getElementById.bind(document);
@@ -1216,7 +1308,7 @@ function copyRawDataToClipboard(button) {
       ].createInstance(Ci.nsITransferable);
       transferable.init(getLoadContext());
       transferable.addDataFlavor("text/unicode");
-      transferable.setTransferData("text/unicode", str, str.data.length * 2);
+      transferable.setTransferData("text/unicode", str);
       Services.clipboard.setData(
         transferable,
         null,
@@ -1266,12 +1358,12 @@ async function copyContentsToClipboard() {
   // Add the HTML flavor.
   transferable.addDataFlavor("text/html");
   ssHtml.data = dataHtml;
-  transferable.setTransferData("text/html", ssHtml, dataHtml.length * 2);
+  transferable.setTransferData("text/html", ssHtml);
 
   // Add the plain text flavor.
   transferable.addDataFlavor("text/unicode");
   ssText.data = dataText;
-  transferable.setTransferData("text/unicode", ssText, dataText.length * 2);
+  transferable.setTransferData("text/unicode", ssText);
 
   // Store the data into the clipboard.
   Services.clipboard.setData(
@@ -1323,7 +1415,7 @@ Serializer.prototype = {
   },
 
   set _currentLine(val) {
-    return (this._lines[this._lines.length - 1] = val);
+    this._lines[this._lines.length - 1] = val;
   },
 
   _serializeElement(elem) {
@@ -1536,8 +1628,8 @@ function setupEventListeners() {
         promptBody,
         restartButtonLabel,
       ] = await document.l10n.formatValues([
-        { id: "startup-cache-dialog-title" },
-        { id: "startup-cache-dialog-body" },
+        { id: "startup-cache-dialog-title2" },
+        { id: "startup-cache-dialog-body2" },
         { id: "restart-button-label" },
       ]);
       const buttonFlags =
@@ -1545,7 +1637,7 @@ function setupEventListeners() {
         Services.prompt.BUTTON_POS_1 * Services.prompt.BUTTON_TITLE_CANCEL +
         Services.prompt.BUTTON_POS_0_DEFAULT;
       const result = Services.prompt.confirmEx(
-        window,
+        window.docShell.chromeEventHandler.ownerGlobal,
         promptTitle,
         promptBody,
         buttonFlags,
@@ -1572,7 +1664,10 @@ function setupEventListeners() {
           .enumerateObservers("restart-in-safe-mode")
           .hasMoreElements()
       ) {
-        Services.obs.notifyObservers(null, "restart-in-safe-mode");
+        Services.obs.notifyObservers(
+          window.docShell.chromeEventHandler.ownerGlobal,
+          "restart-in-safe-mode"
+        );
       } else {
         safeModeRestart();
       }

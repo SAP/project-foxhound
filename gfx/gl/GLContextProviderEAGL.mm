@@ -10,9 +10,9 @@
 #include "gfxFailure.h"
 #include "prenv.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ProfilerLabels.h"
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/widget/CompositorWidget.h"
-#include "GeckoProfiler.h"
 
 #import <UIKit/UIKit.h>
 
@@ -123,10 +123,6 @@ bool GLContextEAGL::SwapBuffers() {
 
 void GLContextEAGL::GetWSIInfo(nsCString* const out) const { out->AppendLiteral("EAGL"); }
 
-already_AddRefed<GLContext> GLContextProviderEAGL::CreateWrappingExisting(void*, void*) {
-  return nullptr;
-}
-
 static GLContextEAGL* GetGlobalContextEAGL() {
   return static_cast<GLContextEAGL*>(GLContextProviderEAGL::GetGlobalContext());
 }
@@ -164,7 +160,7 @@ static RefPtr<GLContext> CreateEAGLContext(const GLContextDesc& desc,
 }
 
 already_AddRefed<GLContext> GLContextProviderEAGL::CreateForCompositorWidget(
-    CompositorWidget* aCompositorWidget, bool aWebRender, bool aForceAccelerated) {
+    CompositorWidget* aCompositorWidget, bool aHardwareWebRender, bool aForceAccelerated) {
   if (!aCompositorWidget) {
     MOZ_ASSERT(false);
     return nullptr;

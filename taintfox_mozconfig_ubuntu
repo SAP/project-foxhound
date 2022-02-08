@@ -26,9 +26,10 @@ export MOZ_PACKAGE_JSSHELL=1
 #
 # RELEASE BUILD
 #
+mk_add_options MOZ_APP_NAME=foxhound
 mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-release
+ac_add_options --enable-bootstrap
 ac_add_options --disable-tests
-ac_add_options --enable-cdp
 ac_add_options --disable-sandbox
 #
 # OPTIMIZED BUILD WITH DEBUG SYMBOLS

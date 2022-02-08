@@ -42,7 +42,9 @@ pub type ino_t = u16;
 pub enum timezone {}
 impl ::Copy for timezone {}
 impl ::Clone for timezone {
-    fn clone(&self) -> timezone { *self }
+    fn clone(&self) -> timezone {
+        *self
+    }
 }
 pub type time64_t = i64;
 
@@ -115,16 +117,27 @@ pub const BUFSIZ: ::c_uint = 512;
 pub const FOPEN_MAX: ::c_uint = 20;
 pub const FILENAME_MAX: ::c_uint = 260;
 
-pub const O_RDONLY: ::c_int = 0;
-pub const O_WRONLY: ::c_int = 1;
-pub const O_RDWR: ::c_int = 2;
-pub const O_APPEND: ::c_int = 8;
-pub const O_CREAT: ::c_int = 256;
-pub const O_EXCL: ::c_int = 1024;
-pub const O_TEXT: ::c_int = 16384;
-pub const O_BINARY: ::c_int = 32768;
-pub const O_NOINHERIT: ::c_int = 128;
-pub const O_TRUNC: ::c_int = 512;
+// fcntl.h
+pub const O_RDONLY: ::c_int = 0x0000;
+pub const O_WRONLY: ::c_int = 0x0001;
+pub const O_RDWR: ::c_int = 0x0002;
+pub const O_APPEND: ::c_int = 0x0008;
+pub const O_CREAT: ::c_int = 0x0100;
+pub const O_TRUNC: ::c_int = 0x0200;
+pub const O_EXCL: ::c_int = 0x0400;
+pub const O_TEXT: ::c_int = 0x4000;
+pub const O_BINARY: ::c_int = 0x8000;
+pub const _O_WTEXT: ::c_int = 0x10000;
+pub const _O_U16TEXT: ::c_int = 0x20000;
+pub const _O_U8TEXT: ::c_int = 0x40000;
+pub const O_RAW: ::c_int = O_BINARY;
+pub const O_NOINHERIT: ::c_int = 0x0080;
+pub const O_TEMPORARY: ::c_int = 0x0040;
+pub const _O_SHORT_LIVED: ::c_int = 0x1000;
+pub const _O_OBTAIN_DIR: ::c_int = 0x2000;
+pub const O_SEQUENTIAL: ::c_int = 0x0020;
+pub const O_RANDOM: ::c_int = 0x0010;
+
 pub const S_IFCHR: ::c_int = 8192;
 pub const S_IFDIR: ::c_int = 16384;
 pub const S_IFREG: ::c_int = 32768;
@@ -181,6 +194,48 @@ pub const ENOTEMPTY: ::c_int = 41;
 pub const EILSEQ: ::c_int = 42;
 pub const STRUNCATE: ::c_int = 80;
 
+// POSIX Supplement (from errno.h)
+pub const EADDRINUSE: ::c_int = 100;
+pub const EADDRNOTAVAIL: ::c_int = 101;
+pub const EAFNOSUPPORT: ::c_int = 102;
+pub const EALREADY: ::c_int = 103;
+pub const EBADMSG: ::c_int = 104;
+pub const ECANCELED: ::c_int = 105;
+pub const ECONNABORTED: ::c_int = 106;
+pub const ECONNREFUSED: ::c_int = 107;
+pub const ECONNRESET: ::c_int = 108;
+pub const EDESTADDRREQ: ::c_int = 109;
+pub const EHOSTUNREACH: ::c_int = 110;
+pub const EIDRM: ::c_int = 111;
+pub const EINPROGRESS: ::c_int = 112;
+pub const EISCONN: ::c_int = 113;
+pub const ELOOP: ::c_int = 114;
+pub const EMSGSIZE: ::c_int = 115;
+pub const ENETDOWN: ::c_int = 116;
+pub const ENETRESET: ::c_int = 117;
+pub const ENETUNREACH: ::c_int = 118;
+pub const ENOBUFS: ::c_int = 119;
+pub const ENODATA: ::c_int = 120;
+pub const ENOLINK: ::c_int = 121;
+pub const ENOMSG: ::c_int = 122;
+pub const ENOPROTOOPT: ::c_int = 123;
+pub const ENOSR: ::c_int = 124;
+pub const ENOSTR: ::c_int = 125;
+pub const ENOTCONN: ::c_int = 126;
+pub const ENOTRECOVERABLE: ::c_int = 127;
+pub const ENOTSOCK: ::c_int = 128;
+pub const ENOTSUP: ::c_int = 129;
+pub const EOPNOTSUPP: ::c_int = 130;
+pub const EOVERFLOW: ::c_int = 132;
+pub const EOWNERDEAD: ::c_int = 133;
+pub const EPROTO: ::c_int = 134;
+pub const EPROTONOSUPPORT: ::c_int = 135;
+pub const EPROTOTYPE: ::c_int = 136;
+pub const ETIME: ::c_int = 137;
+pub const ETIMEDOUT: ::c_int = 138;
+pub const ETXTBSY: ::c_int = 139;
+pub const EWOULDBLOCK: ::c_int = 140;
+
 // signal codes
 pub const SIGINT: ::c_int = 2;
 pub const SIGILL: ::c_int = 4;
@@ -189,28 +244,38 @@ pub const SIGSEGV: ::c_int = 11;
 pub const SIGTERM: ::c_int = 15;
 pub const SIGABRT: ::c_int = 22;
 pub const NSIG: ::c_int = 23;
+
 pub const SIG_ERR: ::c_int = -1;
+pub const SIG_DFL: ::sighandler_t = 0;
+pub const SIG_IGN: ::sighandler_t = 1;
+pub const SIG_GET: ::sighandler_t = 2;
+pub const SIG_SGE: ::sighandler_t = 3;
+pub const SIG_ACK: ::sighandler_t = 4;
 
 // inline comment below appeases style checker
 #[cfg(all(target_env = "msvc", feature = "rustc-dep-of-std"))] // " if "
 #[link(name = "msvcrt", cfg(not(target_feature = "crt-static")))]
 #[link(name = "libcmt", cfg(target_feature = "crt-static"))]
-extern {}
+extern "C" {}
 
 #[cfg_attr(feature = "extra_traits", derive(Debug))]
 pub enum FILE {}
 impl ::Copy for FILE {}
 impl ::Clone for FILE {
-    fn clone(&self) -> FILE { *self }
+    fn clone(&self) -> FILE {
+        *self
+    }
 }
 #[cfg_attr(feature = "extra_traits", derive(Debug))]
-pub enum fpos_t {} // TODO: fill this out with a struct
+pub enum fpos_t {} // FIXME: fill this out with a struct
 impl ::Copy for fpos_t {}
 impl ::Clone for fpos_t {
-    fn clone(&self) -> fpos_t { *self }
+    fn clone(&self) -> fpos_t {
+        *self
+    }
 }
 
-extern {
+extern "C" {
     pub fn isalnum(c: c_int) -> c_int;
     pub fn isalpha(c: c_int) -> c_int;
     pub fn iscntrl(c: c_int) -> c_int;
@@ -222,18 +287,17 @@ extern {
     pub fn isspace(c: c_int) -> c_int;
     pub fn isupper(c: c_int) -> c_int;
     pub fn isxdigit(c: c_int) -> c_int;
+    pub fn isblank(c: c_int) -> c_int;
     pub fn tolower(c: c_int) -> c_int;
     pub fn toupper(c: c_int) -> c_int;
     pub fn fopen(filename: *const c_char, mode: *const c_char) -> *mut FILE;
-    pub fn freopen(filename: *const c_char, mode: *const c_char,
-                   file: *mut FILE) -> *mut FILE;
+    pub fn freopen(filename: *const c_char, mode: *const c_char, file: *mut FILE) -> *mut FILE;
     pub fn fflush(file: *mut FILE) -> c_int;
     pub fn fclose(file: *mut FILE) -> c_int;
     pub fn remove(filename: *const c_char) -> c_int;
     pub fn rename(oldname: *const c_char, newname: *const c_char) -> c_int;
     pub fn tmpfile() -> *mut FILE;
-    pub fn setvbuf(stream: *mut FILE, buffer: *mut c_char, mode: c_int,
-                   size: size_t) -> c_int;
+    pub fn setvbuf(stream: *mut FILE, buffer: *mut c_char, mode: c_int, size: size_t) -> c_int;
     pub fn setbuf(stream: *mut FILE, buf: *mut c_char);
     pub fn getchar() -> c_int;
     pub fn putchar(c: c_int) -> c_int;
@@ -243,10 +307,8 @@ extern {
     pub fn fputs(s: *const c_char, stream: *mut FILE) -> c_int;
     pub fn puts(s: *const c_char) -> c_int;
     pub fn ungetc(c: c_int, stream: *mut FILE) -> c_int;
-    pub fn fread(ptr: *mut c_void, size: size_t, nobj: size_t,
-                 stream: *mut FILE) -> size_t;
-    pub fn fwrite(ptr: *const c_void, size: size_t, nobj: size_t,
-                  stream: *mut FILE) -> size_t;
+    pub fn fread(ptr: *mut c_void, size: size_t, nobj: size_t, stream: *mut FILE) -> size_t;
+    pub fn fwrite(ptr: *const c_void, size: size_t, nobj: size_t, stream: *mut FILE) -> size_t;
     pub fn fseek(stream: *mut FILE, offset: c_long, whence: c_int) -> c_int;
     pub fn ftell(stream: *mut FILE) -> c_long;
     pub fn rewind(stream: *mut FILE);
@@ -257,10 +319,8 @@ extern {
     pub fn perror(s: *const c_char);
     pub fn atoi(s: *const c_char) -> c_int;
     pub fn strtod(s: *const c_char, endp: *mut *mut c_char) -> c_double;
-    pub fn strtol(s: *const c_char, endp: *mut *mut c_char,
-                  base: c_int) -> c_long;
-    pub fn strtoul(s: *const c_char, endp: *mut *mut c_char,
-                   base: c_int) -> c_ulong;
+    pub fn strtol(s: *const c_char, endp: *mut *mut c_char, base: c_int) -> c_long;
+    pub fn strtoul(s: *const c_char, endp: *mut *mut c_char, base: c_int) -> c_ulong;
     pub fn calloc(nobj: size_t, size: size_t) -> *mut c_void;
     pub fn malloc(size: size_t) -> *mut c_void;
     pub fn realloc(p: *mut c_void, size: size_t) -> *mut c_void;
@@ -268,16 +328,14 @@ extern {
     pub fn abort() -> !;
     pub fn exit(status: c_int) -> !;
     pub fn _exit(status: c_int) -> !;
-    pub fn atexit(cb: extern fn()) -> c_int;
+    pub fn atexit(cb: extern "C" fn()) -> c_int;
     pub fn system(s: *const c_char) -> c_int;
     pub fn getenv(s: *const c_char) -> *mut c_char;
 
     pub fn strcpy(dst: *mut c_char, src: *const c_char) -> *mut c_char;
-    pub fn strncpy(dst: *mut c_char, src: *const c_char,
-                   n: size_t) -> *mut c_char;
+    pub fn strncpy(dst: *mut c_char, src: *const c_char, n: size_t) -> *mut c_char;
     pub fn strcat(s: *mut c_char, ct: *const c_char) -> *mut c_char;
-    pub fn strncat(s: *mut c_char, ct: *const c_char,
-                   n: size_t) -> *mut c_char;
+    pub fn strncat(s: *mut c_char, ct: *const c_char, n: size_t) -> *mut c_char;
     pub fn strcmp(cs: *const c_char, ct: *const c_char) -> c_int;
     pub fn strncmp(cs: *const c_char, ct: *const c_char, n: size_t) -> c_int;
     pub fn strcoll(cs: *const c_char, ct: *const c_char) -> c_int;
@@ -294,15 +352,12 @@ extern {
     pub fn strtok(s: *mut c_char, t: *const c_char) -> *mut c_char;
     pub fn strxfrm(s: *mut c_char, ct: *const c_char, n: size_t) -> size_t;
     pub fn wcslen(buf: *const wchar_t) -> size_t;
-    pub fn wcstombs(dest: *mut c_char, src: *const wchar_t,
-                    n: size_t) -> ::size_t;
+    pub fn wcstombs(dest: *mut c_char, src: *const wchar_t, n: size_t) -> ::size_t;
 
     pub fn memchr(cx: *const c_void, c: c_int, n: size_t) -> *mut c_void;
     pub fn memcmp(cx: *const c_void, ct: *const c_void, n: size_t) -> c_int;
-    pub fn memcpy(dest: *mut c_void, src: *const c_void,
-                  n: size_t) -> *mut c_void;
-    pub fn memmove(dest: *mut c_void, src: *const c_void,
-                   n: size_t) -> *mut c_void;
+    pub fn memcpy(dest: *mut c_void, src: *const c_void, n: size_t) -> *mut c_void;
+    pub fn memmove(dest: *mut c_void, src: *const c_void, n: size_t) -> *mut c_void;
     pub fn memset(dest: *mut c_void, c: c_int, n: size_t) -> *mut c_void;
 
     pub fn abs(i: c_int) -> c_int;
@@ -314,6 +369,10 @@ extern {
     pub fn signal(signum: c_int, handler: sighandler_t) -> sighandler_t;
     pub fn raise(signum: c_int) -> c_int;
 
+    #[link_name = "_gmtime64_s"]
+    pub fn gmtime_s(destTime: *mut tm, srcTime: *const time_t) -> ::c_int;
+    #[link_name = "_time64"]
+    pub fn time(destTime: *mut time_t) -> time_t;
     #[link_name = "_chmod"]
     pub fn chmod(path: *const c_char, mode: ::c_int) -> ::c_int;
     #[link_name = "_wchmod"]
@@ -354,16 +413,54 @@ extern {
     pub fn dup(fd: ::c_int) -> ::c_int;
     #[link_name = "_dup2"]
     pub fn dup2(src: ::c_int, dst: ::c_int) -> ::c_int;
+    #[link_name = "_execl"]
+    pub fn execl(path: *const c_char, arg0: *const c_char, ...) -> intptr_t;
+    #[link_name = "_wexecl"]
+    pub fn wexecl(path: *const wchar_t, arg0: *const wchar_t, ...) -> intptr_t;
+    #[link_name = "_execle"]
+    pub fn execle(path: *const c_char, arg0: *const c_char, ...) -> intptr_t;
+    #[link_name = "_wexecle"]
+    pub fn wexecle(path: *const wchar_t, arg0: *const wchar_t, ...) -> intptr_t;
+    #[link_name = "_execlp"]
+    pub fn execlp(path: *const c_char, arg0: *const c_char, ...) -> intptr_t;
+    #[link_name = "_wexeclp"]
+    pub fn wexeclp(path: *const wchar_t, arg0: *const wchar_t, ...) -> intptr_t;
+    #[link_name = "_execlpe"]
+    pub fn execlpe(path: *const c_char, arg0: *const c_char, ...) -> intptr_t;
+    #[link_name = "_wexeclpe"]
+    pub fn wexeclpe(path: *const wchar_t, arg0: *const wchar_t, ...) -> intptr_t;
     #[link_name = "_execv"]
     pub fn execv(prog: *const c_char, argv: *const *const c_char) -> ::intptr_t;
     #[link_name = "_execve"]
-    pub fn execve(prog: *const c_char, argv: *const *const c_char,
-                  envp: *const *const c_char) -> ::c_int;
+    pub fn execve(
+        prog: *const c_char,
+        argv: *const *const c_char,
+        envp: *const *const c_char,
+    ) -> ::c_int;
     #[link_name = "_execvp"]
     pub fn execvp(c: *const c_char, argv: *const *const c_char) -> ::c_int;
     #[link_name = "_execvpe"]
-    pub fn execvpe(c: *const c_char, argv: *const *const c_char,
-                   envp: *const *const c_char) -> ::c_int;
+    pub fn execvpe(
+        c: *const c_char,
+        argv: *const *const c_char,
+        envp: *const *const c_char,
+    ) -> ::c_int;
+    #[link_name = "_wexecv"]
+    pub fn wexecv(prog: *const wchar_t, argv: *const *const wchar_t) -> ::intptr_t;
+    #[link_name = "_wexecve"]
+    pub fn wexecve(
+        prog: *const wchar_t,
+        argv: *const *const wchar_t,
+        envp: *const *const wchar_t,
+    ) -> ::intptr_t;
+    #[link_name = "_wexecvp"]
+    pub fn wexecvp(c: *const wchar_t, argv: *const *const wchar_t) -> ::intptr_t;
+    #[link_name = "_wexecvpe"]
+    pub fn wexecvpe(
+        c: *const wchar_t,
+        argv: *const *const wchar_t,
+        envp: *const *const wchar_t,
+    ) -> ::intptr_t;
     #[link_name = "_getcwd"]
     pub fn getcwd(buf: *mut c_char, size: ::c_int) -> *mut c_char;
     #[link_name = "_getpid"]
@@ -372,10 +469,10 @@ extern {
     pub fn isatty(fd: ::c_int) -> ::c_int;
     #[link_name = "_lseek"]
     pub fn lseek(fd: ::c_int, offset: c_long, origin: ::c_int) -> c_long;
+    #[link_name = "_lseeki64"]
+    pub fn lseek64(fd: ::c_int, offset: c_longlong, origin: ::c_int) -> c_longlong;
     #[link_name = "_pipe"]
-    pub fn pipe(fds: *mut ::c_int,
-                psize: ::c_uint,
-                textmode: ::c_int) -> ::c_int;
+    pub fn pipe(fds: *mut ::c_int, psize: ::c_uint, textmode: ::c_int) -> ::c_int;
     #[link_name = "_read"]
     pub fn read(fd: ::c_int, buf: *mut ::c_void, count: ::c_uint) -> ::c_int;
     #[link_name = "_rmdir"]
@@ -392,36 +489,49 @@ extern {
     pub fn open_osfhandle(osfhandle: ::intptr_t, flags: ::c_int) -> ::c_int;
     pub fn setlocale(category: ::c_int, locale: *const c_char) -> *mut c_char;
     #[link_name = "_wsetlocale"]
-    pub fn wsetlocale(category: ::c_int,
-                      locale: *const wchar_t) -> *mut wchar_t;
+    pub fn wsetlocale(category: ::c_int, locale: *const wchar_t) -> *mut wchar_t;
+    #[link_name = "_aligned_malloc"]
+    pub fn aligned_malloc(size: size_t, alignment: size_t) -> *mut c_void;
 }
 
 extern "system" {
     pub fn listen(s: SOCKET, backlog: ::c_int) -> ::c_int;
-    pub fn accept(s: SOCKET, addr: *mut ::sockaddr,
-                  addrlen: *mut ::c_int) -> SOCKET;
-    pub fn bind(s: SOCKET, name: *const ::sockaddr,
-                namelen: ::c_int) -> ::c_int;
-    pub fn connect(s: SOCKET, name: *const ::sockaddr,
-                   namelen: ::c_int) -> ::c_int;
-    pub fn getpeername(s: SOCKET, name: *mut ::sockaddr,
-                       nameln: *mut ::c_int) -> ::c_int;
-    pub fn getsockname(s: SOCKET, name: *mut ::sockaddr,
-                       nameln: *mut ::c_int) -> ::c_int;
-    pub fn getsockopt(s: SOCKET, level: ::c_int, optname: ::c_int,
-                      optval: *mut ::c_char,
-                      optlen: *mut ::c_int) -> ::c_int;
-    pub fn recvfrom(s: SOCKET, buf: *mut  ::c_char, len: ::c_int,
-                    flags: ::c_int, from: *mut ::sockaddr,
-                    fromlen: *mut ::c_int) -> ::c_int;
-    pub fn sendto(s: SOCKET, buf: *const  ::c_char, len: ::c_int,
-                  flags: ::c_int, to: *const ::sockaddr,
-                  tolen: ::c_int) -> ::c_int;
-    pub fn setsockopt(s: SOCKET, level: ::c_int, optname: ::c_int,
-                      optval: *const  ::c_char,
-                      optlen: ::c_int) -> ::c_int;
-    pub fn socket(af: ::c_int, socket_type: ::c_int,
-                  protocol: ::c_int) -> SOCKET;
+    pub fn accept(s: SOCKET, addr: *mut ::sockaddr, addrlen: *mut ::c_int) -> SOCKET;
+    pub fn bind(s: SOCKET, name: *const ::sockaddr, namelen: ::c_int) -> ::c_int;
+    pub fn connect(s: SOCKET, name: *const ::sockaddr, namelen: ::c_int) -> ::c_int;
+    pub fn getpeername(s: SOCKET, name: *mut ::sockaddr, nameln: *mut ::c_int) -> ::c_int;
+    pub fn getsockname(s: SOCKET, name: *mut ::sockaddr, nameln: *mut ::c_int) -> ::c_int;
+    pub fn getsockopt(
+        s: SOCKET,
+        level: ::c_int,
+        optname: ::c_int,
+        optval: *mut ::c_char,
+        optlen: *mut ::c_int,
+    ) -> ::c_int;
+    pub fn recvfrom(
+        s: SOCKET,
+        buf: *mut ::c_char,
+        len: ::c_int,
+        flags: ::c_int,
+        from: *mut ::sockaddr,
+        fromlen: *mut ::c_int,
+    ) -> ::c_int;
+    pub fn sendto(
+        s: SOCKET,
+        buf: *const ::c_char,
+        len: ::c_int,
+        flags: ::c_int,
+        to: *const ::sockaddr,
+        tolen: ::c_int,
+    ) -> ::c_int;
+    pub fn setsockopt(
+        s: SOCKET,
+        level: ::c_int,
+        optname: ::c_int,
+        optval: *const ::c_char,
+        optlen: ::c_int,
+    ) -> ::c_int;
+    pub fn socket(af: ::c_int, socket_type: ::c_int, protocol: ::c_int) -> SOCKET;
 }
 
 cfg_if! {

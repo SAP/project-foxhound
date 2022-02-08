@@ -1,14 +1,14 @@
 "use strict";
 /* eslint-env mozilla/frame-script */
 
-const { ExtensionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/ExtensionXPCShellUtils.jsm"
+const { XPCShellContentUtils } = ChromeUtils.import(
+  "resource://testing-common/XPCShellContentUtils.jsm"
 );
 
-ExtensionTestUtils.init(this);
+XPCShellContentUtils.init(this);
 
 add_task(async function test() {
-  let page = await ExtensionTestUtils.loadContentPage("about:blank", {
+  let page = await XPCShellContentUtils.loadContentPage("about:blank", {
     remote: true,
   });
 
@@ -44,6 +44,10 @@ add_task(async function test() {
 
     // Inject a frame script in the child process:
     page.loadFrameScript(async function() {
+      const { Services } = ChromeUtils.import(
+        "resource://gre/modules/Services.jsm"
+      );
+
       var chromeEventHandler = docShell.chromeEventHandler;
       sendAsyncMessage("chromeEventHandler", {
         processType: Services.appinfo.processType,

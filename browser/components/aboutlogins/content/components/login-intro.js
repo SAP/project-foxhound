@@ -40,7 +40,7 @@ export default class LoginIntro extends HTMLElement {
   updateState(syncState) {
     let l10nId = syncState.loggedIn
       ? "about-logins-login-intro-heading-logged-in"
-      : "about-logins-login-intro-heading-logged-out";
+      : "about-logins-login-intro-heading-logged-out2";
     document.l10n.setAttributes(
       this.shadowRoot.querySelector(".heading"),
       l10nId
@@ -49,9 +49,9 @@ export default class LoginIntro extends HTMLElement {
     this.shadowRoot
       .querySelector(".illustration")
       .classList.toggle("logged-in", syncState.loggedIn);
-
     let supportURL =
-      window.AboutLoginsUtils.supportBaseURL + "firefox-lockwise";
+      window.AboutLoginsUtils.supportBaseURL +
+      "password-manager-remember-delete-edit-logins";
     this.shadowRoot
       .querySelector(".intro-help-link")
       .setAttribute("href", supportURL);

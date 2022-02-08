@@ -11,6 +11,7 @@
 #include "mozilla/SMILAnimationController.h"
 #include "mozilla/SMILAnimationFunction.h"
 #include "mozilla/SMILTimeContainer.h"
+#include "mozilla/SVGObserverUtils.h"
 #include "nsContentUtils.h"
 #include "nsIContentInlines.h"
 #include "nsIReferrerInfo.h"
@@ -27,6 +28,7 @@ NS_IMPL_ADDREF_INHERITED(SVGAnimationElement, SVGAnimationElementBase)
 NS_IMPL_RELEASE_INHERITED(SVGAnimationElement, SVGAnimationElementBase)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(SVGAnimationElement)
+  NS_INTERFACE_MAP_ENTRY_CONCRETE(SVGAnimationElement)
   NS_INTERFACE_MAP_ENTRY(mozilla::dom::SVGTests)
 NS_INTERFACE_MAP_END_INHERITING(SVGAnimationElementBase)
 
@@ -281,10 +283,6 @@ nsresult SVGAnimationElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
   return rv;
 }
 
-bool SVGAnimationElement::IsNodeOfType(uint32_t aFlags) const {
-  return !(aFlags & ~eANIMATION);
-}
-
 //----------------------------------------------------------------------
 // SVG utility methods
 
@@ -356,9 +354,13 @@ bool SVGAnimationElement::IsEventAttributeNameInternal(nsAtom* aName) {
 }
 
 void SVGAnimationElement::UpdateHrefTarget(const nsAString& aHrefStr) {
+  nsCOMPtr<nsIURI> baseURI = GetBaseURI();
+  if (nsContentUtils::IsLocalRefURL(aHrefStr)) {
+    baseURI = SVGObserverUtils::GetBaseURLForLocalRef(this, baseURI);
+  }
   nsCOMPtr<nsIURI> targetURI;
   nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(targetURI), aHrefStr,
-                                            OwnerDoc(), GetBaseURI());
+                                            OwnerDoc(), baseURI);
   nsCOMPtr<nsIReferrerInfo> referrerInfo =
       ReferrerInfo::CreateForSVGResources(OwnerDoc());
 

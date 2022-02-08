@@ -7,18 +7,21 @@
 #ifndef jit_JitAllocPolicy_h
 #define jit_JitAllocPolicy_h
 
+#include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/GuardObjects.h"
+#include "mozilla/Likely.h"
 #include "mozilla/OperatorNewExtensions.h"
+#include "mozilla/TemplateLib.h"
 
 #include <algorithm>
+#include <stddef.h>
+#include <string.h>
 #include <type_traits>
 #include <utility>
 
 #include "ds/LifoAlloc.h"
 #include "jit/InlineList.h"
-#include "jit/JitContext.h"
-#include "vm/JSContext.h"
+#include "js/Utility.h"
 
 namespace js {
 namespace jit {
@@ -42,13 +45,13 @@ class TempAllocator {
     return lifoScope_.alloc().allocInfallible(bytes);
   }
 
-  MOZ_MUST_USE void* allocate(size_t bytes) {
+  [[nodiscard]] void* allocate(size_t bytes) {
     LifoAlloc::AutoFallibleScope fallibleAllocator(lifoAlloc());
     return lifoScope_.alloc().allocEnsureUnused(bytes, BallastSize);
   }
 
   template <typename T>
-  MOZ_MUST_USE T* allocateArray(size_t n) {
+  [[nodiscard]] T* allocateArray(size_t n) {
     LifoAlloc::AutoFallibleScope fallibleAllocator(lifoAlloc());
     size_t bytes;
     if (MOZ_UNLIKELY(!CalculateAllocSize<T>(n, &bytes))) {
@@ -66,7 +69,7 @@ class TempAllocator {
 
   LifoAlloc* lifoAlloc() { return &lifoScope_.alloc(); }
 
-  MOZ_MUST_USE bool ensureBallast() {
+  [[nodiscard]] bool ensureBallast() {
     JS_OOM_POSSIBLY_FAIL_BOOL();
     return lifoScope_.alloc().ensureUnusedApproximate(BallastSize);
   }
@@ -118,27 +121,8 @@ class JitAllocPolicy {
   template <typename T>
   void free_(T* p, size_t numElems = 0) {}
   void reportAllocOverflow() const {}
-  MOZ_MUST_USE bool checkSimulatedOOM() const {
+  [[nodiscard]] bool checkSimulatedOOM() const {
     return !js::oom::ShouldFailWithOOM();
-  }
-};
-
-class AutoJitContextAlloc {
-  TempAllocator tempAlloc_;
-  JitContext* jcx_;
-  TempAllocator* prevAlloc_;
-
- public:
-  explicit AutoJitContextAlloc(JSContext* cx)
-      : tempAlloc_(&cx->tempLifoAlloc()),
-        jcx_(GetJitContext()),
-        prevAlloc_(jcx_->temp) {
-    jcx_->temp = &tempAlloc_;
-  }
-
-  ~AutoJitContextAlloc() {
-    MOZ_ASSERT(jcx_->temp == &tempAlloc_);
-    jcx_->temp = prevAlloc_;
   }
 };
 

@@ -23,9 +23,6 @@ class xpcAccessibleTableCell : public xpcAccessibleHyperText,
   explicit xpcAccessibleTableCell(Accessible* aIntl)
       : xpcAccessibleHyperText(aIntl) {}
 
-  xpcAccessibleTableCell(ProxyAccessible* aProxy, uint32_t aInterfaces)
-      : xpcAccessibleHyperText(aProxy, aInterfaces) {}
-
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIAccessibleTableCell
@@ -43,7 +40,7 @@ class xpcAccessibleTableCell : public xpcAccessibleHyperText,
 
  private:
   TableCellAccessible* Intl() {
-    if (Accessible* acc = mIntl.AsAccessible()) {
+    if (LocalAccessible* acc = mIntl->AsLocal()) {
       return acc->AsTableCell();
     }
 

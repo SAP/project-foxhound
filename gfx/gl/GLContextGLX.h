@@ -20,11 +20,11 @@ class GLContextGLX : public GLContext {
  public:
   MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(GLContextGLX, override)
   static already_AddRefed<GLContextGLX> CreateGLContext(
-      const GLContextDesc&, Display* display, GLXDrawable drawable,
-      GLXFBConfig cfg, bool deleteDrawable, gfxXlibSurface* pixmap);
+      const GLContextDesc&, std::shared_ptr<gfx::XlibDisplay> display,
+      GLXDrawable drawable, GLXFBConfig cfg, bool deleteDrawable,
+      gfxXlibSurface* pixmap);
 
-  static bool FindVisual(Display* display, int screen, bool useWebRender,
-                         bool useAlpha, int* const out_visualId);
+  static bool FindVisual(Display* display, int screen, int* const out_visualId);
 
   // Finds a GLXFBConfig compatible with the provided window.
   static bool FindFBConfigForWindow(
@@ -53,9 +53,7 @@ class GLContextGLX : public GLContext {
 
   bool SwapBuffers() override;
 
-  void CopySubBuffer(int x, int y, int w, int h) override;
-
-  bool HasCopySubBuffer() const override;
+  GLint GetBufferAge() const override;
 
   void GetWSIInfo(nsCString* const out) const override;
 
@@ -69,20 +67,20 @@ class GLContextGLX : public GLContext {
  private:
   friend class GLContextProviderGLX;
 
-  GLContextGLX(const GLContextDesc&, Display* aDisplay, GLXDrawable aDrawable,
-               GLXContext aContext, bool aDeleteDrawable, bool aDoubleBuffered,
-               gfxXlibSurface* aPixmap);
+  GLContextGLX(const GLContextDesc&, std::shared_ptr<gfx::XlibDisplay> aDisplay,
+               GLXDrawable aDrawable, GLXContext aContext, bool aDeleteDrawable,
+               bool aDoubleBuffered, gfxXlibSurface* aPixmap);
 
-  GLXContext mContext;
-  Display* mDisplay;
-  GLXDrawable mDrawable;
-  bool mDeleteDrawable;
-  bool mDoubleBuffered;
+  const GLXContext mContext;
+  const std::shared_ptr<gfx::XlibDisplay> mDisplay;
+  const GLXDrawable mDrawable;
+  const bool mDeleteDrawable;
+  const bool mDoubleBuffered;
 
-  GLXLibrary* mGLX;
+  GLXLibrary* const mGLX;
 
-  RefPtr<gfxXlibSurface> mPixmap;
-  bool mOwnsContext = true;
+  const RefPtr<gfxXlibSurface> mPixmap;
+  const bool mOwnsContext = true;
 };
 
 }  // namespace gl

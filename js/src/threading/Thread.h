@@ -8,7 +8,6 @@
 #define threading_Thread_h
 
 #include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Tuple.h"
 
@@ -76,7 +75,7 @@ class Thread {
   // result in the value being copied, which may not be the intended behavior.
   // See the comment below on ThreadTrampoline::args for an explanation.
   template <typename F, typename... Args>
-  MOZ_MUST_USE bool init(F&& f, Args&&... args) {
+  [[nodiscard]] bool init(F&& f, Args&&... args) {
     MOZ_RELEASE_ASSERT(id_ == ThreadId());
     using Trampoline = detail::ThreadTrampoline<F, Args...>;
     auto trampoline =
@@ -133,8 +132,8 @@ class Thread {
   Options options_;
 
   // Dispatch to per-platform implementation of thread creation.
-  MOZ_MUST_USE bool create(THREAD_RETURN_TYPE(THREAD_CALL_API* aMain)(void*),
-                           void* aArg);
+  [[nodiscard]] bool create(THREAD_RETURN_TYPE(THREAD_CALL_API* aMain)(void*),
+                            void* aArg);
 
   // An internal version of JS_IsInitialized() that returns whether SpiderMonkey
   // is currently initialized or is in the process of being initialized.
@@ -157,6 +156,10 @@ void SetName(const char* name);
 // storing NUL in nameBuffer[0]). 'len' is the bytes available to be written in
 // 'nameBuffer', including the terminating NUL.
 void GetName(char* nameBuffer, size_t len);
+
+// Causes the current thread to sleep until the
+// number of real-time milliseconds specified have elapsed.
+void SleepMilliseconds(size_t ms);
 
 }  // namespace ThisThread
 
@@ -214,7 +217,7 @@ class ThreadTrampoline {
     // thread that spawned us is ready.
     createMutex.lock();
     createMutex.unlock();
-    f(mozilla::Get<Indices>(args)...);
+    f(std::move(mozilla::Get<Indices>(args))...);
   }
 };
 

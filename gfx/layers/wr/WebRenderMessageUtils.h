@@ -9,9 +9,11 @@
 
 #include "chrome/common/ipc_message_utils.h"
 
+#include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtils.h"
 #include "mozilla/webrender/webrender_ffi.h"
 #include "mozilla/webrender/WebRenderTypes.h"
+#include "mozilla/dom/MediaIPCUtils.h"
 
 namespace IPC {
 
@@ -142,6 +144,10 @@ struct ParamTraits<mozilla::wr::OpacityType>
 template <>
 struct ParamTraits<mozilla::wr::ExternalImageKeyPair>
     : public PlainOldDataSerializer<mozilla::wr::ExternalImageKeyPair> {};
+
+template <>
+struct ParamTraits<mozilla::wr::RenderReasons>
+    : public PlainOldDataSerializer<mozilla::wr::RenderReasons> {};
 
 }  // namespace IPC
 

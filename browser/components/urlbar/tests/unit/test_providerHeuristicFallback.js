@@ -6,22 +6,27 @@
  * UrlbarProviderHeuristicFallback.
  */
 
-const ENGINE_NAME = "engine-suggestions.xml";
 const SUGGEST_PREF = "browser.urlbar.suggest.searches";
 const SUGGEST_ENABLED_PREF = "browser.search.suggest.enabled";
 const PRIVATE_SEARCH_PREF = "browser.search.separatePrivateDefault.ui.enabled";
 
+// We make sure that restriction tokens and search terms are correctly
+// recognized when they are separated by each of these different types of spaces
+// and combinations of spaces.  U+3000 is the ideographic space in CJK and is
+// commonly used by CJK speakers.
+const TEST_SPACES = [" ", "\u3000", " \u3000", "\u3000 "];
+
 add_task(async function setup() {
-  // Install a test engine so we're sure of ENGINE_NAME.
+  // Install a test engine.
   let engine = await addTestSuggestionsEngine();
 
-  // Install the test engine.
   let oldDefaultEngine = await Services.search.getDefault();
   registerCleanupFunction(async () => {
     Services.search.setDefault(oldDefaultEngine);
     Services.prefs.clearUserPref(SUGGEST_PREF);
     Services.prefs.clearUserPref(SUGGEST_ENABLED_PREF);
     Services.prefs.clearUserPref(PRIVATE_SEARCH_PREF);
+    Services.prefs.clearUserPref("keyword.enabled");
   });
   Services.search.setDefault(engine);
   Services.prefs.setBoolPref(SUGGEST_PREF, false);
@@ -37,13 +42,13 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `http://${query}/`,
         title: `http://${query}/`,
-        iconUri: "",
         heuristic: true,
       }),
       makeSearchResult(context, {
-        engineName: ENGINE_NAME,
+        engineName: SUGGESTIONS_ENGINE_NAME,
       }),
     ],
   });
@@ -55,13 +60,13 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `http://${query}/`,
         title: `http://${query}/`,
-        iconUri: "",
         heuristic: true,
       }),
       makeSearchResult(context, {
-        engineName: ENGINE_NAME,
+        engineName: SUGGESTIONS_ENGINE_NAME,
       }),
     ],
   });
@@ -73,13 +78,13 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `http://${query}/`,
         title: `http://${query}/`,
-        iconUri: "",
         heuristic: true,
       }),
       makeSearchResult(context, {
-        engineName: ENGINE_NAME,
+        engineName: SUGGESTIONS_ENGINE_NAME,
       }),
     ],
   });
@@ -91,9 +96,9 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `${query}/`,
         title: `${query}/`,
-        iconUri: "",
         heuristic: true,
       }),
     ],
@@ -106,9 +111,9 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `${query}/`,
         title: `${query}/`,
-        iconUri: "",
         heuristic: true,
       }),
     ],
@@ -121,9 +126,9 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `${query}/`,
         title: `${query}/`,
-        iconUri: "",
         heuristic: true,
       }),
     ],
@@ -136,9 +141,9 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: query,
         title: query,
-        iconUri: "",
         heuristic: true,
       }),
     ],
@@ -151,9 +156,9 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `${query}/`,
         title: `${query}/`,
-        iconUri: "",
         heuristic: true,
       }),
     ],
@@ -175,6 +180,7 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `http://${query}`,
         title: `http://${query}`,
         iconUri: "page-icon:http://mozilla.org/",
@@ -192,7 +198,7 @@ add_task(async function() {
     context,
     matches: [
       makeSearchResult(context, {
-        engineName: ENGINE_NAME,
+        engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
     ],
@@ -205,7 +211,7 @@ add_task(async function() {
     context,
     matches: [
       makeSearchResult(context, {
-        engineName: ENGINE_NAME,
+        engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
     ],
@@ -223,13 +229,13 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `http://${query}/`,
         title: `http://${query}/`,
-        iconUri: "",
         heuristic: true,
       }),
       makeSearchResult(context, {
-        engineName: ENGINE_NAME,
+        engineName: SUGGESTIONS_ENGINE_NAME,
       }),
     ],
   });
@@ -241,6 +247,7 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `http://${query}`,
         title: `http://${query}`,
         iconUri: "page-icon:http://firefox/",
@@ -260,6 +267,7 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `http://${query}`,
         title: `http://${query}`,
         iconUri: "page-icon:http://mozilla/",
@@ -276,9 +284,9 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `http://${query}/`,
         title: `http://${query}/`,
-        iconUri: "",
         heuristic: true,
       }),
     ],
@@ -291,9 +299,9 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `http://${query}/`,
         title: `http://${query}/`,
-        iconUri: "",
         heuristic: true,
       }),
     ],
@@ -312,9 +320,9 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `http://${query}/`,
         title: `http://${query}/`,
-        iconUri: "",
         heuristic: true,
       }),
     ],
@@ -327,13 +335,28 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: query,
         title: query,
-        iconUri: "",
         heuristic: true,
       }),
     ],
   });
+
+  info("Forced search through a restriction token, keyword.enabled = false");
+  query = "?bacon";
+  context = createContext(query, { isPrivate: false });
+  await check_results({
+    context,
+    matches: [
+      makeSearchResult(context, {
+        engineName: SUGGESTIONS_ENGINE_NAME,
+        heuristic: true,
+        query: "bacon",
+      }),
+    ],
+  });
+
   Services.prefs.setBoolPref("keyword.enabled", true);
   info("visit two word query, keyword.enabled = true");
   query = "bacon lovers";
@@ -342,7 +365,7 @@ add_task(async function() {
     context,
     matches: [
       makeSearchResult(context, {
-        engineName: ENGINE_NAME,
+        engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
     ],
@@ -357,9 +380,9 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `${query}/`,
         title: `${query}/`,
-        iconUri: "",
         heuristic: true,
       }),
     ],
@@ -372,9 +395,9 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `${query}/`,
         title: `${query}/`,
-        iconUri: "",
         heuristic: true,
       }),
     ],
@@ -387,9 +410,9 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `http://${query}/`,
         title: `http://${query}/`,
-        iconUri: "",
         heuristic: true,
       }),
     ],
@@ -402,7 +425,7 @@ add_task(async function() {
     context,
     matches: [
       makeSearchResult(context, {
-        engineName: ENGINE_NAME,
+        engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
     ],
@@ -415,7 +438,7 @@ add_task(async function() {
     context,
     matches: [
       makeSearchResult(context, {
-        engineName: ENGINE_NAME,
+        engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
     ],
@@ -427,9 +450,9 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: query,
         title: query,
-        iconUri: "",
         heuristic: true,
       }),
     ],
@@ -442,9 +465,9 @@ add_task(async function() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: query,
         title: query,
-        iconUri: "",
         heuristic: true,
       }),
     ],
@@ -457,19 +480,21 @@ add_task(async function() {
     context,
     matches: [
       makeSearchResult(context, {
-        engineName: ENGINE_NAME,
+        engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
     ],
   });
 
   info("change default engine");
-  let originalTestEngine = Services.search.getEngineByName(ENGINE_NAME);
-  let engine2 = await Services.search.addEngineWithDetails("AliasEngine", {
-    alias: "alias",
-    method: "GET",
-    template: "http://example.com/?q={searchTerms}",
+  let originalTestEngine = Services.search.getEngineByName(
+    SUGGESTIONS_ENGINE_NAME
+  );
+  await SearchTestUtils.installSearchExtension({
+    name: "AliasEngine",
+    keyword: "alias",
   });
+  let engine2 = Services.search.getEngineByName("AliasEngine");
   Assert.notEqual(
     Services.search.defaultEngine,
     engine2,
@@ -490,30 +515,175 @@ add_task(async function() {
   await Services.search.setDefault(originalTestEngine);
 
   info(
-    "Leading restriction tokens are not removed from the search result, apart from the search token."
+    "Leading search-mode restriction tokens are removed from the search result."
   );
-  // Note that we use the alias from AliasEngine in the query. Since we're using
-  // a restriction token, we expect that the default engine be used.
+  for (let token of UrlbarTokenizer.SEARCH_MODE_RESTRICT) {
+    for (let spaces of TEST_SPACES) {
+      query = token + spaces + "query";
+      info("Testing: " + JSON.stringify({ query, spaces: codePoints(spaces) }));
+      let expectedQuery = query.substring(1).trimStart();
+      context = createContext(query, { isPrivate: false });
+      info(`Searching for "${query}", expecting "${expectedQuery}"`);
+      let payload = {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        heuristic: true,
+        query: expectedQuery,
+        alias: token,
+      };
+      if (token == UrlbarTokenizer.RESTRICT.SEARCH) {
+        payload.source = UrlbarUtils.RESULT_SOURCE.SEARCH;
+        payload.engineName = SUGGESTIONS_ENGINE_NAME;
+      }
+      await check_results({
+        context,
+        matches: [makeSearchResult(context, payload)],
+      });
+    }
+  }
+
+  info(
+    "Leading search-mode restriction tokens are removed from the search result with keyword.enabled = false."
+  );
+  Services.prefs.setBoolPref("keyword.enabled", false);
+  for (let token of UrlbarTokenizer.SEARCH_MODE_RESTRICT) {
+    for (let spaces of TEST_SPACES) {
+      query = token + spaces + "query";
+      info("Testing: " + JSON.stringify({ query, spaces: codePoints(spaces) }));
+      let expectedQuery = query.substring(1).trimStart();
+      context = createContext(query, { isPrivate: false });
+      info(`Searching for "${query}", expecting "${expectedQuery}"`);
+      let payload = {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        heuristic: true,
+        query: expectedQuery,
+        alias: token,
+      };
+      if (token == UrlbarTokenizer.RESTRICT.SEARCH) {
+        payload.source = UrlbarUtils.RESULT_SOURCE.SEARCH;
+        payload.engineName = SUGGESTIONS_ENGINE_NAME;
+      }
+      await check_results({
+        context,
+        matches: [makeSearchResult(context, payload)],
+      });
+    }
+  }
+  Services.prefs.clearUserPref("keyword.enabled");
+
+  info(
+    "Leading non-search-mode restriction tokens are not removed from the search result."
+  );
   for (let token of Object.values(UrlbarTokenizer.RESTRICT)) {
-    for (query of [`${token} alias query`, `query ${token}`]) {
-      let expectedQuery =
-        token == UrlbarTokenizer.RESTRICT.SEARCH &&
-        query.startsWith(UrlbarTokenizer.RESTRICT.SEARCH)
-          ? query.substring(2)
-          : query;
+    if (UrlbarTokenizer.SEARCH_MODE_RESTRICT.has(token)) {
+      continue;
+    }
+    for (let spaces of TEST_SPACES) {
+      query = token + spaces + "query";
+      info("Testing: " + JSON.stringify({ query, spaces: codePoints(spaces) }));
+      let expectedQuery = query;
       context = createContext(query, { isPrivate: false });
       info(`Searching for "${query}", expecting "${expectedQuery}"`);
       await check_results({
         context,
         matches: [
           makeSearchResult(context, {
-            engineName: ENGINE_NAME,
-            query: expectedQuery,
             heuristic: true,
+            query: expectedQuery,
+            engineName: SUGGESTIONS_ENGINE_NAME,
           }),
         ],
       });
     }
   }
-  await Services.search.removeEngine(engine2);
+
+  info(
+    "Test the format inputed is user@host, and the host is in domainwhitelist"
+  );
+  Services.prefs.setBoolPref("browser.fixup.domainwhitelist.test-host", true);
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref("browser.fixup.domainwhitelist.test-host");
+  });
+
+  query = "any@test-host";
+  context = createContext(query, { isPrivate: false });
+  await check_results({
+    context,
+    matches: [
+      makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        uri: `http://${query}/`,
+        title: `http://${query}/`,
+        heuristic: true,
+      }),
+      makeSearchResult(context, {
+        engineName: SUGGESTIONS_ENGINE_NAME,
+      }),
+    ],
+  });
+
+  info(
+    "Test the format inputed is user@host, but the host is not in domainwhitelist"
+  );
+  query = "any@not-host";
+  context = createContext(query, { isPrivate: false });
+  await check_results({
+    context,
+    matches: [
+      makeSearchResult(context, {
+        heuristic: true,
+        query,
+        engineName: SUGGESTIONS_ENGINE_NAME,
+      }),
+    ],
+  });
+
+  info(
+    "Test if the format of user:pass@host is handled as visit even if the host is not in domainwhitelist"
+  );
+  query = "user:pass@not-host";
+  context = createContext(query, { isPrivate: false });
+  await check_results({
+    context,
+    matches: [
+      makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        uri: "http://user:pass@not-host/",
+        title: "http://user:pass@not-host/",
+        heuristic: true,
+      }),
+    ],
+  });
+
+  info("Test if the format of user@ipaddress is handled as visit");
+  query = "user@192.168.0.1";
+  context = createContext(query, { isPrivate: false });
+  await check_results({
+    context,
+    matches: [
+      makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        uri: "http://user@192.168.0.1/",
+        title: "http://user@192.168.0.1/",
+        heuristic: true,
+      }),
+      makeSearchResult(context, {
+        heuristic: false,
+        query,
+        engineName: SUGGESTIONS_ENGINE_NAME,
+      }),
+    ],
+  });
 });
+
+/**
+ * Returns an array of code points in the given string.  Each code point is
+ * returned as a hexidecimal string.
+ *
+ * @param {string} str
+ *   The code points of this string will be returned.
+ * @returns {array}
+ *   Array of code points in the string, where each is a hexidecimal string.
+ */
+function codePoints(str) {
+  return str.split("").map(s => s.charCodeAt(0).toString(16));
+}

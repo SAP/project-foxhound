@@ -16,9 +16,10 @@ loader.lazyGetter(this, "EventEmitter", () =>
 /**
  * A DevToolPanel that controls the Web Console.
  */
-function WebConsolePanel(iframeWindow, toolbox) {
+function WebConsolePanel(iframeWindow, toolbox, commands) {
   this._frameWindow = iframeWindow;
   this._toolbox = toolbox;
+  this._commands = commands;
   EventEmitter.decorate(this);
 }
 
@@ -67,6 +68,7 @@ WebConsolePanel.prototype = {
       // Open the Web Console.
       this.hud = new WebConsole(
         this._toolbox,
+        this._commands,
         webConsoleUIWindow,
         chromeWindow
       );
@@ -77,9 +79,6 @@ WebConsolePanel.prototype = {
       this.hud.ui.on("reloaded", () => {
         this.emit("reloaded");
       });
-
-      this._isReady = true;
-      this.emit("ready");
     } catch (e) {
       const msg = "WebConsolePanel open failed. " + e.error + ": " + e.message;
       dump(msg + "\n");
@@ -91,11 +90,6 @@ WebConsolePanel.prototype = {
 
   get currentTarget() {
     return this._toolbox.target;
-  },
-
-  _isReady: false,
-  get isReady() {
-    return this._isReady;
   },
 
   destroy: function() {

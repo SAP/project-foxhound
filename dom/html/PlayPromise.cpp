@@ -13,8 +13,7 @@ extern mozilla::LazyLogModule gMediaElementLog;
 #define PLAY_PROMISE_LOG(msg, ...) \
   MOZ_LOG(gMediaElementLog, LogLevel::Debug, (msg, ##__VA_ARGS__))
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 PlayPromise::PlayPromise(nsIGlobalObject* aGlobal) : Promise(aGlobal) {}
 
@@ -32,66 +31,44 @@ already_AddRefed<PlayPromise> PlayPromise::Create(nsIGlobalObject* aGlobal,
   return aRv.Failed() ? nullptr : promise.forget();
 }
 
+/* static */
+void PlayPromise::ResolvePromisesWithUndefined(
+    const PlayPromiseArr& aPromises) {
+  for (const auto& promise : aPromises) {
+    promise->MaybeResolveWithUndefined();
+  }
+}
+
+/* static */
+void PlayPromise::RejectPromises(const PlayPromiseArr& aPromises,
+                                 nsresult aError) {
+  for (const auto& promise : aPromises) {
+    promise->MaybeReject(aError);
+  }
+}
+
 void PlayPromise::MaybeResolveWithUndefined() {
   if (mFulfilled) {
     return;
   }
   mFulfilled = true;
   PLAY_PROMISE_LOG("PlayPromise %p resolved with undefined", this);
-  auto reason = Telemetry::LABELS_MEDIA_PLAY_PROMISE_RESOLUTION::Resolved;
-  Telemetry::AccumulateCategorical(reason);
   Promise::MaybeResolveWithUndefined();
 }
 
-using PlayLabel = Telemetry::LABELS_MEDIA_PLAY_PROMISE_RESOLUTION;
-
-struct PlayPromiseTelemetryResult {
-  nsresult mValue;
-  PlayLabel mLabel;
-  const char* mName;
-};
-
-static const PlayPromiseTelemetryResult sPlayPromiseTelemetryResults[] = {
-    {
-        NS_ERROR_DOM_MEDIA_NOT_ALLOWED_ERR,
-        PlayLabel::NotAllowedErr,
-        "NotAllowedErr",
-    },
-    {
-        NS_ERROR_DOM_MEDIA_NOT_SUPPORTED_ERR,
-        PlayLabel::SrcNotSupportedErr,
-        "SrcNotSupportedErr",
-    },
-    {
-        NS_ERROR_DOM_MEDIA_ABORT_ERR,
-        PlayLabel::PauseAbortErr,
-        "PauseAbortErr",
-    },
-    {
-        NS_ERROR_DOM_ABORT_ERR,
-        PlayLabel::AbortErr,
-        "AbortErr",
-    },
-};
-
-static const PlayPromiseTelemetryResult* FindPlayPromiseTelemetryResult(
-    nsresult aReason) {
-  for (const auto& p : sPlayPromiseTelemetryResults) {
-    if (p.mValue == aReason) {
-      return &p;
-    }
-  }
-  return nullptr;
-}
-
-static PlayLabel ToPlayResultLabel(nsresult aReason) {
-  auto p = FindPlayPromiseTelemetryResult(aReason);
-  return p ? p->mLabel : PlayLabel::UnknownErr;
-}
-
 static const char* ToPlayResultStr(nsresult aReason) {
-  auto p = FindPlayPromiseTelemetryResult(aReason);
-  return p ? p->mName : "UnknownErr";
+  switch (aReason) {
+    case NS_ERROR_DOM_MEDIA_NOT_ALLOWED_ERR:
+      return "NotAllowedErr";
+    case NS_ERROR_DOM_MEDIA_NOT_SUPPORTED_ERR:
+      return "SrcNotSupportedErr";
+    case NS_ERROR_DOM_MEDIA_ABORT_ERR:
+      return "PauseAbortErr";
+    case NS_ERROR_DOM_ABORT_ERR:
+      return "AbortErr";
+    default:
+      return "UnknownErr";
+  }
 }
 
 void PlayPromise::MaybeReject(nsresult aReason) {
@@ -101,9 +78,7 @@ void PlayPromise::MaybeReject(nsresult aReason) {
   mFulfilled = true;
   PLAY_PROMISE_LOG("PlayPromise %p rejected with 0x%x (%s)", this,
                    static_cast<uint32_t>(aReason), ToPlayResultStr(aReason));
-  Telemetry::AccumulateCategorical(ToPlayResultLabel(aReason));
   Promise::MaybeReject(aReason);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

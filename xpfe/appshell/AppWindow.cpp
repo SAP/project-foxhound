@@ -17,6 +17,7 @@
 #include "nsThreadUtils.h"
 #include "nsNetCID.h"
 #include "nsQueryObject.h"
+#include "mozilla/ProfilerLabels.h"
 #include "mozilla/Sprintf.h"
 
 // Interfaces needed to be included
@@ -48,26 +49,39 @@
 #include "nsXULPopupManager.h"
 #include "nsFocusManager.h"
 #include "nsContentList.h"
+#include "nsIDOMWindowUtils.h"
+#include "nsServiceManagerUtils.h"
 
 #include "prenv.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/Services.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/dom/BarProps.h"
+#include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/BrowserHost.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/LoadURIOptionsBinding.h"
+#include "mozilla/intl/LocaleService.h"
 #include "mozilla/EventDispatcher.h"
+
+#ifdef XP_WIN
+#  include "mozilla/PreXULSkeletonUI.h"
+#  include "nsIWindowsUIUtils.h"
+#endif
 
 #ifdef MOZ_NEW_XULSTORE
 #  include "mozilla/XULStore.h"
 #endif
 
+#include "mozilla/dom/DocumentL10n.h"
+
 #ifdef XP_MACOSX
-#  include "nsINativeMenuService.h"
+#  include "mozilla/widget/NativeMenuSupport.h"
 #  define USE_NATIVE_MENUS
 #endif
 
@@ -99,9 +113,11 @@ using dom::AutoNoJSAPI;
 using dom::BrowserHost;
 using dom::BrowsingContext;
 using dom::Document;
+using dom::DocumentL10n;
 using dom::Element;
 using dom::EventTarget;
 using dom::LoadURIOptions;
+using dom::Promise;
 
 AppWindow::AppWindow(uint32_t aChromeFlags)
     : mChromeTreeOwner(nullptr),
@@ -252,6 +268,8 @@ nsresult AppWindow::Initialize(nsIAppWindow* aParent, nsIAppWindow* aOpener,
 
   // Attach a WebProgress listener.during initialization...
   mDocShell->AddProgressListener(this, nsIWebProgress::NOTIFY_STATE_NETWORK);
+
+  mWindow->MaybeDispatchInitialFocusEvent();
 
   return rv;
 }
@@ -494,7 +512,8 @@ NS_IMETHODIMP AppWindow::ShowModal() {
 
   {
     AutoNoJSAPI nojsapi;
-    SpinEventLoopUntil([&]() { return !mContinueModalLoop; });
+    SpinEventLoopUntil("AppWindow::ShowModal"_ns,
+                       [&]() { return !mContinueModalLoop; });
   }
 
   mContinueModalLoop = false;
@@ -942,6 +961,9 @@ NS_IMETHODIMP AppWindow::SetVisibility(bool aVisibility) {
   if (mDebuting) {
     return NS_OK;
   }
+
+  NS_ENSURE_STATE(mDocShell);
+
   mDebuting = true;  // (Show / Focus is recursive)
 
   // XXXTAB Do we really need to show docshell and the window?  Isn't
@@ -996,12 +1018,6 @@ NS_IMETHODIMP AppWindow::GetMainWidget(nsIWidget** aMainWidget) {
 
   *aMainWidget = mWindow;
   NS_IF_ADDREF(*aMainWidget);
-  return NS_OK;
-}
-
-NS_IMETHODIMP AppWindow::SetFocus() {
-  // XXX First Check In
-  NS_ASSERTION(false, "Not Yet Implemented");
   return NS_OK;
 }
 
@@ -1744,18 +1760,17 @@ nsresult AppWindow::GetPersistentValue(const nsAtom* aAttr, nsAString& aValue) {
   return NS_OK;
 }
 
-nsresult AppWindow::SetPersistentValue(const nsAtom* aAttr,
-                                       const nsAString& aValue) {
+nsresult AppWindow::GetDocXulStoreKeys(nsString& aUriSpec,
+                                       nsString& aWindowElementId) {
   nsCOMPtr<dom::Element> docShellElement = GetWindowDOMElement();
   if (!docShellElement) {
     return NS_ERROR_FAILURE;
   }
 
-  nsAutoString windowElementId;
-  docShellElement->GetId(windowElementId);
+  docShellElement->GetId(aWindowElementId);
   // Match the behavior of XULPersist and only persist values if the element
   // has an ID.
-  if (windowElementId.IsEmpty()) {
+  if (aWindowElementId.IsEmpty()) {
     return NS_OK;
   }
 
@@ -1770,7 +1785,181 @@ nsresult AppWindow::SetPersistentValue(const nsAtom* aAttr,
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
-  NS_ConvertUTF8toUTF16 uri(utf8uri);
+
+  aUriSpec = NS_ConvertUTF8toUTF16(utf8uri);
+
+  return NS_OK;
+}
+
+nsresult AppWindow::MaybeSaveEarlyWindowPersistentValues(
+    const LayoutDeviceIntRect& aRect) {
+#ifdef XP_WIN
+  nsAutoString uri;
+  nsAutoString windowElementId;
+  nsresult rv = GetDocXulStoreKeys(uri, windowElementId);
+
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  if (!windowElementId.EqualsLiteral("main-window") ||
+      !uri.EqualsLiteral("chrome://browser/content/browser.xhtml")) {
+    return NS_OK;
+  }
+
+  SkeletonUISettings settings;
+
+  settings.screenX = aRect.X();
+  settings.screenY = aRect.Y();
+  settings.width = aRect.Width();
+  settings.height = aRect.Height();
+
+  settings.maximized = mWindow->SizeMode() == nsSizeMode_Maximized;
+  settings.cssToDevPixelScaling = mWindow->GetDefaultScale().scale;
+
+  nsCOMPtr<dom::Element> windowElement = GetWindowDOMElement();
+  Document* doc = windowElement->GetComposedDoc();
+  Element* urlbarEl = doc->GetElementById(u"urlbar"_ns);
+
+  nsCOMPtr<nsPIDOMWindowOuter> window = mDocShell->GetWindow();
+  nsCOMPtr<nsIDOMWindowUtils> utils =
+      nsGlobalWindowOuter::Cast(window)->WindowUtils();
+  RefPtr<dom::DOMRect> urlbarRect;
+  rv = utils->GetBoundsWithoutFlushing(urlbarEl, getter_AddRefs(urlbarRect));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  double urlbarX = urlbarRect->X();
+  double urlbarWidth = urlbarRect->Width();
+
+  // Hard-coding the following values and this behavior in general is rather
+  // fragile, and can easily get out of sync with the actual front-end values.
+  // This is not intended as a long-term solution, but only as the relatively
+  // straightforward implementation of an experimental feature. If we want to
+  // ship the skeleton UI to all users, we should strongly consider a more
+  // robust solution than this. The vertical position of the urlbar will be
+  // fixed.
+  nsAutoString attributeValue;
+  urlbarEl->GetAttribute(u"breakout-extend"_ns, attributeValue);
+  // Scale down the urlbar if it is focused
+  if (attributeValue.EqualsLiteral("true")) {
+    // defined in browser.inc.css as 2px
+    int urlbarBreakoutExtend = 2;
+    // defined in urlbar-searchbar.inc.css as 5px
+    int urlbarMarginInline = 5;
+
+    // breakout-extend measurements are defined in urlbar-searchbar.inc.css
+    urlbarX += (double)(urlbarBreakoutExtend + urlbarMarginInline);
+    urlbarWidth -= (double)(2 * (urlbarBreakoutExtend + urlbarMarginInline));
+  }
+  CSSPixelSpan urlbar;
+  urlbar.start = urlbarX;
+  urlbar.end = urlbar.start + urlbarWidth;
+  settings.urlbarSpan = urlbar;
+
+  Element* navbar = doc->GetElementById(u"nav-bar"_ns);
+
+  Element* searchbarEl = doc->GetElementById(u"searchbar"_ns);
+  CSSPixelSpan searchbar;
+  if (navbar->Contains(searchbarEl)) {
+    RefPtr<dom::DOMRect> searchbarRect;
+    rv = utils->GetBoundsWithoutFlushing(searchbarEl,
+                                         getter_AddRefs(searchbarRect));
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+    searchbar.start = searchbarRect->X();
+    searchbar.end = searchbar.start + searchbarRect->Width();
+  } else {
+    // There is no searchbar in the UI
+    searchbar.start = 0;
+    searchbar.end = 0;
+  }
+  settings.searchbarSpan = searchbar;
+
+  nsAutoString bookmarksVisibility;
+  Preferences::GetString("browser.toolbars.bookmarks.visibility",
+                         bookmarksVisibility);
+  settings.bookmarksToolbarShown =
+      bookmarksVisibility.EqualsLiteral("always") ||
+      bookmarksVisibility.EqualsLiteral("newtab");
+
+  Element* menubar = doc->GetElementById(u"toolbar-menubar"_ns);
+  menubar->GetAttribute(u"autohide"_ns, attributeValue);
+  settings.menubarShown = attributeValue.EqualsLiteral("false");
+
+  ErrorResult err;
+  nsCOMPtr<nsIHTMLCollection> toolbarSprings = navbar->GetElementsByTagNameNS(
+      u"http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"_ns,
+      u"toolbarspring"_ns, err);
+  if (err.Failed()) {
+    return NS_ERROR_FAILURE;
+  }
+  mozilla::Vector<CSSPixelSpan> springs;
+  for (int i = 0; i < toolbarSprings->Length(); i++) {
+    RefPtr<Element> springEl = toolbarSprings->Item(i);
+    RefPtr<dom::DOMRect> springRect;
+    rv = utils->GetBoundsWithoutFlushing(springEl, getter_AddRefs(springRect));
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+    CSSPixelSpan spring;
+    spring.start = springRect->X();
+    spring.end = spring.start + springRect->Width();
+    if (!settings.springs.append(spring)) {
+      return NS_ERROR_FAILURE;
+    }
+  }
+
+  settings.rtlEnabled = intl::LocaleService::GetInstance()->IsAppLocaleRTL();
+
+  bool isInTabletMode = false;
+  bool autoTouchModePref =
+      Preferences::GetBool("browser.touchmode.auto", false);
+  if (autoTouchModePref) {
+    nsCOMPtr<nsIWindowsUIUtils> uiUtils(
+        do_GetService("@mozilla.org/windows-ui-utils;1"));
+    if (!NS_WARN_IF(!uiUtils)) {
+      uiUtils->GetInTabletMode(&isInTabletMode);
+    }
+  }
+
+  if (isInTabletMode) {
+    settings.uiDensity = SkeletonUIDensity::Touch;
+  } else {
+    int uiDensityPref = Preferences::GetInt("browser.uidensity", 0);
+    switch (uiDensityPref) {
+      case 0: {
+        settings.uiDensity = SkeletonUIDensity::Default;
+        break;
+      }
+      case 1: {
+        settings.uiDensity = SkeletonUIDensity::Compact;
+        break;
+      }
+      case 2: {
+        settings.uiDensity = SkeletonUIDensity::Touch;
+        break;
+      }
+    }
+  }
+
+  Unused << PersistPreXULSkeletonUIValues(settings);
+#endif
+
+  return NS_OK;
+}
+
+nsresult AppWindow::SetPersistentValue(const nsAtom* aAttr,
+                                       const nsAString& aValue) {
+  nsAutoString uri;
+  nsAutoString windowElementId;
+  nsresult rv = GetDocXulStoreKeys(uri, windowElementId);
+
+  if (NS_FAILED(rv) || windowElementId.IsEmpty()) {
+    return rv;
+  }
 
   nsAutoString maybeConvertedValue(aValue);
   if (aAttr == nsGkAtoms::width || aAttr == nsGkAtoms::height) {
@@ -1877,6 +2066,8 @@ NS_IMETHODIMP AppWindow::SavePersistentAttributes() {
       }
     }
   }
+
+  Unused << MaybeSaveEarlyWindowPersistentValues(rect);
 
   if (mPersistentAttributesDirty & PAD_MISC) {
     nsSizeMode sizeMode = mWindow->SizeMode();
@@ -2148,7 +2339,8 @@ NS_IMETHODIMP AppWindow::CreateNewContentWindow(
 
   {
     AutoNoJSAPI nojsapi;
-    SpinEventLoopUntil([&]() { return !appWin->IsLocked(); });
+    SpinEventLoopUntil("AppWindow::CreateNewContentWindow"_ns,
+                       [&]() { return !appWin->IsLocked(); });
   }
 
   NS_ENSURE_STATE(appWin->mPrimaryContentShell ||
@@ -2751,6 +2943,15 @@ void AppWindow::FinishFullscreenChange(bool aInFullscreen) {
   }
 }
 
+void AppWindow::MacFullscreenMenubarOverlapChanged(
+    mozilla::DesktopCoord aOverlapAmount) {
+  if (mDocShell) {
+    if (nsCOMPtr<nsPIDOMWindowOuter> ourWindow = mDocShell->GetWindow()) {
+      ourWindow->MacFullscreenMenubarOverlapChanged(aOverlapAmount);
+    }
+  }
+}
+
 void AppWindow::OcclusionStateChanged(bool aIsFullyOccluded) {
   nsCOMPtr<nsPIDOMWindowOuter> ourWindow =
       mDocShell ? mDocShell->GetWindow() : nullptr;
@@ -2801,7 +3002,9 @@ void AppWindow::WindowActivated() {
   nsCOMPtr<nsPIDOMWindowOuter> window =
       mDocShell ? mDocShell->GetWindow() : nullptr;
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
-  if (fm && window) fm->WindowRaised(window);
+  if (fm && window) {
+    fm->WindowRaised(window, nsFocusManager::GenerateFocusActionId());
+  }
 
   if (mChromeLoaded) {
     PersistentAttributesDirty(PAD_POSITION | PAD_SIZE | PAD_MISC);
@@ -2815,17 +3018,14 @@ void AppWindow::WindowDeactivated() {
   nsCOMPtr<nsPIDOMWindowOuter> window =
       mDocShell ? mDocShell->GetWindow() : nullptr;
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
-  if (fm && window && !fm->IsTestMode()) fm->WindowLowered(window);
+  if (fm && window && !fm->IsTestMode()) {
+    fm->WindowLowered(window, nsFocusManager::GenerateFocusActionId());
+  }
 }
 
 #ifdef USE_NATIVE_MENUS
 static void LoadNativeMenus(Document* aDoc, nsIWidget* aParentWindow) {
   if (gfxPlatform::IsHeadless()) {
-    return;
-  }
-  nsCOMPtr<nsINativeMenuService> nms =
-      do_GetService("@mozilla.org/widget/nativemenuservice;1");
-  if (!nms) {
     return;
   }
 
@@ -2841,13 +3041,43 @@ static void LoadNativeMenus(Document* aDoc, nsIWidget* aParentWindow) {
     menubarNode = menubarElements->Item(0);
   }
 
+  using widget::NativeMenuSupport;
   if (menubarNode) {
     nsCOMPtr<Element> menubarContent(do_QueryInterface(menubarNode));
-    nms->CreateNativeMenuBar(aParentWindow, menubarContent);
+    NativeMenuSupport::CreateNativeMenuBar(aParentWindow, menubarContent);
   } else {
-    nms->CreateNativeMenuBar(aParentWindow, nullptr);
+    NativeMenuSupport::CreateNativeMenuBar(aParentWindow, nullptr);
   }
 }
+
+class L10nReadyPromiseHandler final : public dom::PromiseNativeHandler {
+ public:
+  NS_DECL_ISUPPORTS
+
+  L10nReadyPromiseHandler(Document* aDoc, nsIWidget* aParentWindow)
+      : mDocument(aDoc), mWindow(aParentWindow) {}
+
+  void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override {
+    LoadNativeMenus(mDocument, mWindow);
+  }
+
+  void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override {
+    // Again, this shouldn't happen, but fallback to loading the menus as is.
+    NS_WARNING(
+        "L10nReadyPromiseHandler rejected - loading fallback native "
+        "menu.");
+    LoadNativeMenus(mDocument, mWindow);
+  }
+
+ private:
+  ~L10nReadyPromiseHandler() = default;
+
+  RefPtr<Document> mDocument;
+  nsCOMPtr<nsIWidget> mWindow;
+};
+
+NS_IMPL_ISUPPORTS0(L10nReadyPromiseHandler)
+
 #endif
 
 class AppWindowTimerCallback final : public nsITimerCallback, public nsINamed {
@@ -2945,7 +3175,22 @@ AppWindow::OnStateChange(nsIWebProgress* aProgress, nsIRequest* aRequest,
   mDocShell->GetContentViewer(getter_AddRefs(cv));
   if (cv) {
     RefPtr<Document> menubarDoc = cv->GetDocument();
-    if (menubarDoc) LoadNativeMenus(menubarDoc, mWindow);
+    if (menubarDoc) {
+      RefPtr<DocumentL10n> l10n = menubarDoc->GetL10n();
+      if (l10n) {
+        // Wait for l10n to be ready so the menus are localized.
+        RefPtr<Promise> promise = l10n->Ready();
+        MOZ_ASSERT(promise);
+        RefPtr<L10nReadyPromiseHandler> handler =
+            new L10nReadyPromiseHandler(menubarDoc, mWindow);
+        promise->AppendNativeHandler(handler);
+      } else {
+        // Something went wrong loading the doc and l10n wasn't created. This
+        // shouldn't really happen, but if it does fallback to trying to load
+        // the menus as is.
+        LoadNativeMenus(menubarDoc, mWindow);
+      }
+    }
   }
 #endif  // USE_NATIVE_MENUS
 
@@ -3091,6 +3336,12 @@ void AppWindow::WidgetListenerDelegate::FullscreenWillChange(
 void AppWindow::WidgetListenerDelegate::FullscreenChanged(bool aInFullscreen) {
   RefPtr<AppWindow> holder = mAppWindow;
   holder->FullscreenChanged(aInFullscreen);
+}
+
+void AppWindow::WidgetListenerDelegate::MacFullscreenMenubarOverlapChanged(
+    DesktopCoord aOverlapAmount) {
+  RefPtr<AppWindow> holder = mAppWindow;
+  return holder->MacFullscreenMenubarOverlapChanged(aOverlapAmount);
 }
 
 void AppWindow::WidgetListenerDelegate::OcclusionStateChanged(

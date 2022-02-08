@@ -9,8 +9,6 @@
 
 #include <stdint.h>  // For uint16_t
 
-#include "jspubtd.h"  // For JSClass
-
 #define INLINABLE_NATIVE_LIST(_)                   \
   _(Array)                                         \
   _(ArrayIsArray)                                  \
@@ -30,6 +28,9 @@
   _(AtomicsOr)                                     \
   _(AtomicsXor)                                    \
   _(AtomicsIsLockFree)                             \
+                                                   \
+  _(BigIntAsIntN)                                  \
+  _(BigIntAsUintN)                                 \
                                                    \
   _(Boolean)                                       \
                                                    \
@@ -61,6 +62,9 @@
   _(IntlGuardToNumberFormat)                       \
   _(IntlGuardToPluralRules)                        \
   _(IntlGuardToRelativeTimeFormat)                 \
+                                                   \
+  _(MapGet)                                        \
+  _(MapHas)                                        \
                                                    \
   _(MathAbs)                                       \
   _(MathFloor)                                     \
@@ -98,6 +102,8 @@
   _(MathTrunc)                                     \
   _(MathCbrt)                                      \
                                                    \
+  _(NumberToString)                                \
+                                                   \
   _(ReflectGetPrototypeOf)                         \
                                                    \
   _(RegExpMatcher)                                 \
@@ -109,7 +115,11 @@
   _(RegExpInstanceOptimizable)                     \
   _(GetFirstDollarIndex)                           \
                                                    \
+  _(SetHas)                                        \
+                                                   \
   _(String)                                        \
+  _(StringToString)                                \
+  _(StringValueOf)                                 \
   _(StringCharCodeAt)                              \
   _(StringFromCharCode)                            \
   _(StringFromCodePoint)                           \
@@ -123,6 +133,7 @@
   _(Object)                                        \
   _(ObjectCreate)                                  \
   _(ObjectIs)                                      \
+  _(ObjectIsPrototypeOf)                           \
   _(ObjectToString)                                \
                                                    \
   _(TestBailout)                                   \
@@ -184,9 +195,10 @@
   _(IntrinsicTypedArrayLength)                     \
   _(IntrinsicPossiblyWrappedTypedArrayLength)      \
   _(IntrinsicTypedArrayByteOffset)                 \
-  _(IntrinsicTypedArrayElementShift)
+  _(IntrinsicTypedArrayElementSize)
 
-struct JSJitInfo;
+struct JSClass;
+class JSJitInfo;
 
 namespace js {
 namespace jit {

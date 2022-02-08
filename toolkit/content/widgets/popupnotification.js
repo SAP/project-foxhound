@@ -10,9 +10,9 @@
   class MozPopupNotification extends MozXULElement {
     static get inheritedAttributes() {
       return {
-        ".popup-notification-icon": "popupid,src=icon,class=iconclass",
+        ".popup-notification-icon": "popupid,src=icon,class=iconclass,hasicon",
         ".popup-notification-origin": "value=origin,tooltiptext=origin",
-        ".popup-notification-description": "popupid",
+        ".popup-notification-description": "popupid,id=descriptionid",
         ".popup-notification-description > span:first-of-type":
           "text=label,popupid",
         ".popup-notification-description > b:first-of-type":
@@ -30,7 +30,7 @@
           "onclick=learnmoreclick,href=learnmoreurl",
         ".popup-notification-warning": "hidden=warninghidden,text=warninglabel",
         ".popup-notification-button-container > .popup-notification-secondary-button":
-          "oncommand=secondarybuttoncommand,label=secondarybuttonlabel,accesskey=secondarybuttonaccesskey,hidden=secondarybuttonhidden",
+          "oncommand=secondarybuttoncommand,label=secondarybuttonlabel,accesskey=secondarybuttonaccesskey,hidden=secondarybuttonhidden,dropmarkerhidden",
         ".popup-notification-button-container > toolbarseparator":
           "hidden=dropmarkerhidden",
         ".popup-notification-dropmarker":
@@ -82,9 +82,11 @@
             </vbox>
             <toolbarbutton class="messageCloseButton close-icon popup-notification-closebutton tabbable" tooltiptext="&closeNotification.tooltip;"></toolbarbutton>
           </hbox>
-          <label class="popup-notification-learnmore-link" is="text-link">&learnMoreNoEllipsis;</label>
-          <checkbox class="popup-notification-checkbox" oncommand="PopupNotifications._onCheckboxCommand(event)"></checkbox>
-          <description class="popup-notification-warning"></description>
+          <vbox class="popup-notification-bottom-content" align="start">
+            <label class="popup-notification-learnmore-link" is="text-link">&learnMoreNoEllipsis;</label>
+            <checkbox class="popup-notification-checkbox" oncommand="PopupNotifications._onCheckboxCommand(event)"/>
+            <description class="popup-notification-warning"/>
+          </vbox>
         </vbox>
       </hbox>
       <hbox class="popup-notification-footer-container"></hbox>
@@ -148,10 +150,7 @@
     }
 
     appendNotificationContent(el) {
-      let nextSibling = this.querySelector(
-        ".popup-notification-body > .popup-notification-learnmore-link"
-      );
-      nextSibling.before(el);
+      this.querySelector(".popup-notification-bottom-content").before(el);
     }
   }
 

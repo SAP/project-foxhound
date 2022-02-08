@@ -15,10 +15,7 @@ const TEST_CONFIG = [
 ];
 
 add_task(async function setup() {
-  Services.prefs.setBoolPref("browser.search.gModernConfig", true);
-  Services.prefs.setBoolPref("browser.search.geoSpecificDefaults", true);
-
-  await useTestEngines("test-extensions", null, TEST_CONFIG);
+  await SearchTestUtils.useTestEngines("test-extensions", null, TEST_CONFIG);
   await AddonTestUtils.promiseStartupManager();
 
   registerCleanupFunction(AddonTestUtils.promiseShutdownManager);
@@ -30,11 +27,11 @@ add_task(async function basic_multilocale_test() {
   useCustomGeoServer("FR", initPromise);
 
   await Services.search.init();
-  await Services.search.getDefaultEngines();
+  await Services.search.getAppProvidedEngines();
   resolver();
   await SearchTestUtils.promiseSearchNotification("engines-reloaded");
 
-  let engines = await Services.search.getDefaultEngines();
+  let engines = await Services.search.getAppProvidedEngines();
 
   Assert.deepEqual(
     engines.map(e => e._name),
@@ -46,12 +43,9 @@ add_task(async function basic_multilocale_test() {
     Assert.ok(!engine._metaData.order, "Order is not defined");
   });
 
-  let useDBForOrder = Services.prefs.getBoolPref(
-    `${SearchUtils.BROWSER_SEARCH_PREF}useDBForOrder`,
-    false
-  );
-  Assert.ok(
-    !useDBForOrder,
+  Assert.equal(
+    Services.search.wrappedJSObject._settings.getAttribute("useSavedOrder"),
+    false,
     "We should not set the engine order during maybeReloadEngines"
   );
 });

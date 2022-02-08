@@ -44,10 +44,6 @@ namespace mozilla {
 
 class MediaContainerType;
 
-// EME Key System String.
-#define EME_KEY_SYSTEM_CLEARKEY "org.w3.clearkey"
-#define EME_KEY_SYSTEM_WIDEVINE "com.widevine.alpha"
-
 /**
  * ReentrantMonitorConditionallyEnter
  *
@@ -155,6 +151,10 @@ void DownmixStereoToMono(mozilla::AudioDataValue* aBuffer, uint32_t aFrames);
 // given AudioInfo and the prefs that are being set.
 uint32_t DecideAudioPlaybackChannels(const AudioInfo& info);
 
+// Decide the sample-rate to use for audio output according to the
+// given AudioInfo and the prefs that are being set.
+uint32_t DecideAudioPlaybackSampleRate(const AudioInfo& info);
+
 bool IsDefaultPlaybackDeviceMono();
 
 bool IsVideoContentType(const nsCString& aContentType);
@@ -181,11 +181,12 @@ class AutoSetOnScopeExit {
 };
 
 enum class MediaThreadType {
-  CONTROLLER,  // MediaFormatReader, RemoteDecoderManager, MediaDecodeTask and
+  SUPERVISOR,  // MediaFormatReader, RemoteDecoderManager, MediaDecodeTask and
                // others
   PLATFORM_DECODER,  // MediaDataDecoder
   PLATFORM_ENCODER,  // MediaDataEncoder
-  WEBRTC_DECODER,
+  WEBRTC_CALL_THREAD,
+  WEBRTC_WORKER,
   MDSM,  // MediaDecoderStateMachine
 };
 // Returns the thread pool that is shared amongst all decoder state machines

@@ -10,33 +10,59 @@
 #ifndef xpcpublic_h
 #define xpcpublic_h
 
-#include "jsapi.h"
-#include "js/BuildId.h"  // JS::BuildIdCharVector
-#include "js/HeapAPI.h"
+#include <cstddef>
+#include <cstdint>
+#include "ErrorList.h"
+#include "js/BuildId.h"
+#include "js/ErrorReport.h"
 #include "js/GCAPI.h"
-#include "js/Proxy.h"
-#include "js/Wrapper.h"
-
+#include "js/Object.h"
+#include "js/RootingAPI.h"
+#include "js/String.h"
+#include "js/TypeDecls.h"
+#include "js/Utility.h"
+#include "js/Value.h"
+#include "jsapi.h"
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/MemoryReporting.h"
+#include "mozilla/dom/DOMString.h"
+#include "mozilla/fallible.h"
 #include "nsAtom.h"
+#include "nsCOMPtr.h"
 #include "nsISupports.h"
 #include "nsIURI.h"
-#include "nsIPrincipal.h"
-#include "nsIGlobalObject.h"
-#include "nsWrapperCache.h"
-#include "nsString.h"
-#include "nsTArray.h"
-#include "mozilla/dom/JSSlots.h"
-#include "mozilla/fallible.h"
-#include "nsMathUtils.h"
 #include "nsStringBuffer.h"
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/Preferences.h"
+#include "nsStringFwd.h"
+#include "nsTArray.h"
+#include "nsWrapperCache.h"
 
+// XXX only for NukeAllWrappersForRealm, which is only used in
+// dom/base/WindowDestroyedEvent.cpp outside of js
+#include "jsfriendapi.h"
+
+class JSObject;
+class JSString;
+class JSTracer;
 class nsGlobalWindowInner;
+class nsIAddonInterposition;
 class nsIGlobalObject;
-class nsIPrincipal;
 class nsIHandleReportCallback;
+class nsIPrincipal;
+class nsPIDOMWindowInner;
+struct JSContext;
+struct nsID;
 struct nsXPTInterfaceInfo;
+
+namespace JS {
+class Compartment;
+class Realm;
+class RealmOptions;
+class Value;
+struct RuntimeStats;
+}  // namespace JS
 
 namespace mozilla {
 class BasePrincipal;
@@ -58,7 +84,7 @@ class Scriptability {
 
   void Block();
   void Unblock();
-  void SetDocShellAllowsScript(bool aAllowed);
+  void SetWindowAllowsScript(bool aAllowed);
 
   static Scriptability& Get(JSObject* aScope);
 
@@ -69,9 +95,9 @@ class Scriptability {
   // Script may not run if this value is non-zero.
   uint32_t mScriptBlocks;
 
-  // Whether the docshell allows javascript in this scope. If this scope
-  // doesn't have a docshell, this value is always true.
-  bool mDocShellAllowsScript;
+  // Whether the DOM window allows javascript in this scope. If this scope
+  // doesn't have a window, this value is always true.
+  bool mWindowAllowsScript;
 
   // Whether this scope is immune to user-defined or addon-defined script
   // policy.
@@ -115,6 +141,7 @@ bool AllowContentXBLScope(JS::Realm* realm);
 JSObject* NACScope(JSObject* global);
 
 bool IsSandboxPrototypeProxy(JSObject* obj);
+bool IsWebExtensionContentScriptSandbox(JSObject* obj);
 
 // The JSContext argument represents the Realm that's asking the question.  This
 // is needed to properly answer without exposing information unnecessarily
@@ -169,10 +196,11 @@ struct RuntimeStats;
 
 }  // namespace JS
 
-#define XPC_WRAPPER_FLAGS (JSCLASS_HAS_PRIVATE | JSCLASS_FOREGROUND_FINALIZE)
+static_assert(JSCLASS_GLOBAL_APPLICATION_SLOTS > 0,
+              "Need at least one slot for JSCLASS_SLOT0_IS_NSISUPPORTS");
 
-#define XPCONNECT_GLOBAL_FLAGS_WITH_EXTRA_SLOTS(n)                            \
-  JSCLASS_DOM_GLOBAL | JSCLASS_HAS_PRIVATE | JSCLASS_PRIVATE_IS_NSISUPPORTS | \
+#define XPCONNECT_GLOBAL_FLAGS_WITH_EXTRA_SLOTS(n)    \
+  JSCLASS_DOM_GLOBAL | JSCLASS_SLOT0_IS_NSISUPPORTS | \
       JSCLASS_GLOBAL_FLAGS_WITH_SLOTS(DOM_GLOBAL_SLOTS + n)
 
 #define XPCONNECT_GLOBAL_EXTRA_SLOT_OFFSET \
@@ -185,7 +213,7 @@ inline JSObject* xpc_FastGetCachedWrapper(JSContext* cx, nsWrapperCache* cache,
   if (cache) {
     JSObject* wrapper = cache->GetWrapper();
     if (wrapper &&
-        js::GetObjectCompartment(wrapper) == js::GetContextCompartment(cx)) {
+        JS::GetCompartment(wrapper) == js::GetContextCompartment(cx)) {
       vp.setObject(*wrapper);
       return wrapper;
     }
@@ -279,7 +307,7 @@ class XPCStringConvert {
       JSString* str, const JSExternalStringCallbacks* desiredCallbacks,
       const char16_t** chars) {
     const JSExternalStringCallbacks* callbacks;
-    return js::IsExternalString(str, &callbacks, chars) &&
+    return JS::IsExternalString(str, &callbacks, chars) &&
            callbacks == desiredCallbacks;
   }
 
@@ -538,6 +566,13 @@ nsGlobalWindowInner* WindowOrNull(JSObject* aObj);
 nsGlobalWindowInner* WindowGlobalOrNull(JSObject* aObj);
 
 /**
+ * If |aObj| is a Sandbox object associated with a DOMWindow via a
+ * sandboxPrototype, then return that DOMWindow.
+ * |aCx| is used for checked unwrapping of the Window.
+ */
+nsGlobalWindowInner* SandboxWindowOrNull(JSObject* aObj, JSContext* aCx);
+
+/**
  * If |cx| is in a realm whose global is a window, returns the associated
  * nsGlobalWindow. Otherwise, returns null.
  */
@@ -679,7 +714,11 @@ void AddGCCallback(xpcGCCallback cb);
 void RemoveGCCallback(xpcGCCallback cb);
 
 // We need an exact page size only if we run the binary in automation.
+#if defined(XP_DARWIN) && defined(__aarch64__)
+const size_t kAutomationPageSize = 16384;
+#else
 const size_t kAutomationPageSize = 4096;
+#endif
 
 struct alignas(kAutomationPageSize) ReadOnlyPage final {
   bool mNonLocalConnectionsDisabled = false;

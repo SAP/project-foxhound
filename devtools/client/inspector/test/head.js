@@ -81,8 +81,6 @@ var startEyeDropper = async function(toolbox) {
  *
  * @param {Inspector} inspector
  *        Inspector instance
- * @param {TestActor} testActor
- *        TestActor instance
  * @param {String} selector
  *        CSS selector to identify the click target
  * @param {Number} x
@@ -92,12 +90,18 @@ var startEyeDropper = async function(toolbox) {
  * @return {Promise} promise that resolves when the selection is updated with the picked
  *         node.
  */
-function pickElement(inspector, testActor, selector, x, y) {
+function pickElement(inspector, selector, x, y) {
   info("Waiting for element " + selector + " to be picked");
   // Use an empty options argument in order trigger the default synthesizeMouse behavior
   // which will trigger mousedown, then mouseup.
   const onNewNodeFront = inspector.selection.once("new-node-front");
-  testActor.synthesizeMouse({ selector, x, y, options: {} });
+  BrowserTestUtils.synthesizeMouse(
+    selector,
+    x,
+    y,
+    {},
+    gBrowser.selectedTab.linkedBrowser
+  );
   return onNewNodeFront;
 }
 
@@ -106,22 +110,101 @@ function pickElement(inspector, testActor, selector, x, y) {
  *
  * @param {Inspector} inspector
  *        Inspector instance
- * @param {TestActor} testActor
- *        TestActor instance
- * @param {String} selector
- *        CSS selector to identify the hover target
+ * @param {String|Array} selector
+ *        CSS selector to identify the hover target.
+ *        Example: ".target"
+ *        If the element is at the bottom of a nested iframe stack, the selector should
+ *        be an array with each item identifying the iframe within its host document.
+ *        The last item of the array should be the element selector within the deepest
+ *        nested iframe.
+          Example: ["iframe#top", "iframe#nested", ".target"]
  * @param {Number} x
  *        X-offset from the top-left corner of the element matching the provided selector
  * @param {Number} y
  *        Y-offset from the top-left corner of the element matching the provided selector
- * @return {Promise} promise that resolves when the "picker-node-hovered" event is
- *         emitted.
+ * @return {Promise} promise that resolves when both the "picker-node-hovered" and
+ *                   "highlighter-shown" events are emitted.
  */
-function hoverElement(inspector, testActor, selector, x, y) {
-  info("Waiting for element " + selector + " to be hovered");
+async function hoverElement(inspector, selector, x, y) {
+  const { waitForHighlighterTypeShown } = getHighlighterTestHelpers(inspector);
+  info(`Waiting for element "${selector}" to be hovered`);
   const onHovered = inspector.toolbox.nodePicker.once("picker-node-hovered");
-  testActor.synthesizeMouse({ selector, x, y, options: { type: "mousemove" } });
-  return onHovered;
+  const onHighlighterShown = waitForHighlighterTypeShown(
+    inspector.highlighters.TYPES.BOXMODEL
+  );
+
+  // Default to the top-level target browsing context
+  let browsingContext = gBrowser.selectedTab.linkedBrowser;
+
+  if (Array.isArray(selector)) {
+    // Get the browsing context for the deepest nested frame; exclude the last array item.
+    // Cloning the array so it can be safely mutated.
+    browsingContext = await getBrowsingContextForNestedFrame(
+      selector.slice(0, selector.length - 1)
+    );
+    // Assume the last item in the selector array is the actual element selector.
+    // DO NOT mutate the selector array with .pop(), it might still be used by a test.
+    selector = selector[selector.length - 1];
+  }
+
+  if (isNaN(x) || isNaN(y)) {
+    BrowserTestUtils.synthesizeMouseAtCenter(
+      selector,
+      { type: "mousemove" },
+      browsingContext
+    );
+  } else {
+    BrowserTestUtils.synthesizeMouse(
+      selector,
+      x,
+      y,
+      { type: "mousemove" },
+      browsingContext
+    );
+  }
+
+  info("Wait for picker-node-hovered");
+  await onHovered;
+
+  info("Wait for highlighter shown");
+  await onHighlighterShown;
+
+  return Promise.all([onHighlighterShown, onHovered]);
+}
+
+/**
+ * Get the browsing context for the deepest nested iframe
+ * as identified by an array of selectors.
+ *
+ * @param  {Array} selectorArray
+ *         Each item in the array is a selector that identifies the iframe
+ *         within its host document.
+ *         Example: ["iframe#top", "iframe#nested"]
+ * @return {BrowsingContext}
+ *         BrowsingContext for the deepest nested iframe.
+ */
+async function getBrowsingContextForNestedFrame(selectorArray = []) {
+  // Default to the top-level target browsing context
+  let browsingContext = gBrowser.selectedTab.linkedBrowser;
+
+  // Return the top-level target browsing context if the selector is not an array.
+  if (!Array.isArray(selectorArray)) {
+    return browsingContext;
+  }
+
+  // Recursively get the browsing context for each nested iframe.
+  while (selectorArray.length) {
+    browsingContext = await SpecialPowers.spawn(
+      browsingContext,
+      [selectorArray.shift()],
+      function(selector) {
+        const iframe = content.document.querySelector(selector);
+        return iframe.browsingContext;
+      }
+    );
+  }
+
+  return browsingContext;
 }
 
 /**
@@ -133,9 +216,15 @@ function hoverElement(inspector, testActor, selector, x, y) {
  * @return a promise that resolves when the inspector is updated with the new
  * node
  */
-function selectAndHighlightNode(selector, inspector) {
+async function selectAndHighlightNode(selector, inspector) {
+  const { waitForHighlighterTypeShown } = getHighlighterTestHelpers(inspector);
   info("Highlighting and selecting the node " + selector);
-  return selectNode(selector, inspector, "test-highlight");
+  const onHighlighterShown = waitForHighlighterTypeShown(
+    inspector.highlighters.TYPES.BOXMODEL
+  );
+
+  await selectNode(selector, inspector, "test-highlight");
+  await onHighlighterShown;
 }
 
 /**
@@ -170,21 +259,19 @@ function clearCurrentNodeSelection(inspector) {
 
 /**
  * Right click on a node in the test page and click on the inspect menu item.
- * @param {TestActor}
  * @param {String} selector The selector for the node to click on in the page.
  * @return {Promise} Resolves to the inspector when it has opened and is updated
  */
-var clickOnInspectMenuItem = async function(testActor, selector) {
+var clickOnInspectMenuItem = async function(selector) {
   info("Showing the contextual menu on node " + selector);
   const contentAreaContextMenu = document.querySelector(
     "#contentAreaContextMenu"
   );
   const contextOpened = once(contentAreaContextMenu, "popupshown");
 
-  await testActor.synthesizeMouse({
-    selector: selector,
-    center: true,
-    options: { type: "contextmenu", button: 2 },
+  await safeSynthesizeMouseEventAtCenterInContentPage(selector, {
+    type: "contextmenu",
+    button: 2,
   });
 
   await contextOpened;
@@ -198,22 +285,6 @@ var clickOnInspectMenuItem = async function(testActor, selector) {
   await contextClosed;
 
   return getActiveInspector();
-};
-
-/**
- * Get the NodeFront for a node that matches a given css selector inside a
- * given iframe.
- * @param {String|NodeFront} selector
- * @param {String|NodeFront} frameSelector A selector that matches the iframe
- * the node is in
- * @param {InspectorPanel} inspector The instance of InspectorPanel currently
- * loaded in the toolbox
- * @return {Promise} Resolves when the inspector is updated with the new node
- */
-var getNodeFrontInFrame = async function(selector, frameSelector, inspector) {
-  const iframe = await getNodeFront(frameSelector, inspector);
-  const { nodes } = await inspector.walker.children(iframe);
-  return inspector.walker.querySelector(nodes[0], selector);
 };
 
 /**
@@ -344,18 +415,21 @@ var getContainerForSelector = async function(
  * is shown on the corresponding node
  */
 var hoverContainer = async function(selector, inspector) {
+  const { waitForHighlighterTypeShown } = getHighlighterTestHelpers(inspector);
   info("Hovering over the markup-container for node " + selector);
 
   const nodeFront = await getNodeFront(selector, inspector);
   const container = getContainerForNodeFront(nodeFront, inspector);
 
-  const highlit = inspector.highlighter.once("node-highlight");
+  const onHighlighterShown = waitForHighlighterTypeShown(
+    inspector.highlighters.TYPES.BOXMODEL
+  );
   EventUtils.synthesizeMouseAtCenter(
     container.tagLine,
     { type: "mousemove" },
     inspector.markup.doc.defaultView
   );
-  return highlit;
+  await onHighlighterShown;
 };
 
 /**
@@ -430,7 +504,7 @@ function undoChange(inspector) {
   const canUndo = inspector.markup.undo.canUndo();
   ok(canUndo, "The last change in the markup-view can be undone");
   if (!canUndo) {
-    return promise.reject();
+    return Promise.reject();
   }
 
   const mutated = inspector.once("markupmutation");
@@ -450,7 +524,7 @@ function redoChange(inspector) {
   const canRedo = inspector.markup.undo.canRedo();
   ok(canRedo, "The last change in the markup-view can be redone");
   if (!canRedo) {
-    return promise.reject();
+    return Promise.reject();
   }
 
   const mutated = inspector.once("markupmutation");
@@ -498,16 +572,16 @@ async function poll(check, desc, attempts = 10, timeBetweenAttempts = 200) {
 /**
  * Encapsulate some common operations for highlighter's tests, to have
  * the tests cleaner, without exposing directly `inspector`, `highlighter`, and
- * `testActor` if not needed.
+ * `highlighterTestFront` if not needed.
  *
  * @param  {String}
  *    The highlighter's type
  * @return
- *    A generator function that takes an object with `inspector` and `testActor`
+ *    A generator function that takes an object with `inspector` and `highlighterTestFront`
  *    properties. (see `openInspector`)
  */
 const getHighlighterHelperFor = type =>
-  async function({ inspector, testActor }) {
+  async function({ inspector, highlighterTestFront }) {
     const front = inspector.inspectorFront;
     const highlighter = await front.getHighlighterByType(type);
 
@@ -547,9 +621,8 @@ const getHighlighterHelperFor = type =>
 
       show: async function(selector = ":root", options, frameSelector = null) {
         if (frameSelector) {
-          highlightedNode = await getNodeFrontInFrame(
-            selector,
-            frameSelector,
+          highlightedNode = await getNodeFrontInFrames(
+            [frameSelector, selector],
             inspector
           );
         } else {
@@ -564,7 +637,7 @@ const getHighlighterHelperFor = type =>
 
       isElementHidden: async function(id) {
         return (
-          (await testActor.getHighlighterNodeAttribute(
+          (await highlighterTestFront.getHighlighterNodeAttribute(
             prefix + id,
             "hidden",
             highlighter
@@ -573,14 +646,14 @@ const getHighlighterHelperFor = type =>
       },
 
       getElementTextContent: async function(id) {
-        return testActor.getHighlighterNodeTextContent(
+        return highlighterTestFront.getHighlighterNodeTextContent(
           prefix + id,
           highlighter
         );
       },
 
       getElementAttribute: async function(id, name) {
-        return testActor.getHighlighterNodeAttribute(
+        return highlighterTestFront.getHighlighterNodeAttribute(
           prefix + id,
           name,
           highlighter
@@ -589,7 +662,7 @@ const getHighlighterHelperFor = type =>
 
       waitForElementAttributeSet: async function(id, name) {
         await poll(async function() {
-          const value = await testActor.getHighlighterNodeAttribute(
+          const value = await highlighterTestFront.getHighlighterNodeAttribute(
             prefix + id,
             name,
             highlighter
@@ -600,7 +673,7 @@ const getHighlighterHelperFor = type =>
 
       waitForElementAttributeRemoved: async function(id, name) {
         await poll(async function() {
-          const value = await testActor.getHighlighterNodeAttribute(
+          const value = await highlighterTestFront.getHighlighterNodeAttribute(
             prefix + id,
             name,
             highlighter
@@ -609,13 +682,25 @@ const getHighlighterHelperFor = type =>
         }, `Waiting for element ${id} to have attribute ${name} removed`);
       },
 
-      synthesizeMouse: async function(options) {
-        options = Object.assign({ selector: ":root" }, options);
-        await testActor.synthesizeMouse(options);
+      synthesizeMouse: async function({
+        selector = ":root",
+        center,
+        x,
+        y,
+        options,
+      } = {}) {
+        if (center === true) {
+          await safeSynthesizeMouseEventAtCenterInContentPage(
+            selector,
+            options
+          );
+        } else {
+          await safeSynthesizeMouseEventInContentPage(selector, x, y, options);
+        }
       },
 
       // This object will synthesize any "mouse" prefixed event to the
-      // `testActor`, using the name of method called as suffix for the
+      // `highlighterTestFront`, using the name of method called as suffix for the
       // event's name.
       // If no x, y coords are given, the previous ones are used.
       //
@@ -630,19 +715,12 @@ const getHighlighterHelperFor = type =>
             async function(x = prevX, y = prevY, selector = ":root") {
               prevX = x;
               prevY = y;
-              await testActor.synthesizeMouse({
-                selector,
-                x,
-                y,
-                options: { type: "mouse" + name },
+              await safeSynthesizeMouseEventInContentPage(selector, x, y, {
+                type: "mouse" + name,
               });
             },
         }
       ),
-
-      reflow: async function() {
-        await testActor.reflow();
-      },
 
       finalize: async function() {
         highlightedNode = null;
@@ -650,6 +728,60 @@ const getHighlighterHelperFor = type =>
       },
     };
   };
+
+/**
+ * Inspector-scoped wrapper for highlighter helpers to be used in tests.
+ *
+ * @param  {Inspector} inspector
+ *         Inspector client object instance.
+ * @return {Object} Object with helper methods
+ */
+function getHighlighterTestHelpers(inspector) {
+  /**
+   * Return a promise which resolves when a highlighter triggers the given event.
+   *
+   * @param  {String} type
+   *         Highlighter type.
+   * @param  {String} eventName
+   *         Name of the event to listen to.
+   * @return {Promise}
+   *         Promise which resolves when the highlighter event occurs.
+   *         Resolves with the data payload attached to the event.
+   */
+  function _waitForHighlighterTypeEvent(type, eventName) {
+    return new Promise(resolve => {
+      function _handler(data) {
+        if (type === data.type) {
+          inspector.highlighters.off(eventName, _handler);
+          resolve(data);
+        }
+      }
+
+      inspector.highlighters.on(eventName, _handler);
+    });
+  }
+
+  return {
+    getActiveHighlighter(type) {
+      return inspector.highlighters.getActiveHighlighter(type);
+    },
+    getNodeForActiveHighlighter(type) {
+      return inspector.highlighters.getNodeForActiveHighlighter(type);
+    },
+    waitForHighlighterTypeShown(type) {
+      return _waitForHighlighterTypeEvent(type, "highlighter-shown");
+    },
+    waitForHighlighterTypeHidden(type) {
+      return _waitForHighlighterTypeEvent(type, "highlighter-hidden");
+    },
+    waitForHighlighterTypeRestored(type) {
+      return _waitForHighlighterTypeEvent(type, "highlighter-restored");
+    },
+    waitForHighlighterTypeDiscarded(type) {
+      return _waitForHighlighterTypeEvent(type, "highlighter-discarded");
+    },
+  };
+}
 
 // The expand all operation of the markup-view calls itself recursively and
 // there's not one event we can wait for to know when it's done so use this
@@ -765,35 +897,6 @@ var waitForTab = async function() {
   info("The tab load completed");
   return tab;
 };
-
-/**
- * Wait for a predicate to return a result.
- *
- * @param {Function} condition
- *        Invoked once in a while until it returns a truthy value. This should be an
- *        idempotent function, since we have to run it a second time after it returns
- *        true in order to return the value.
- * @param {String} message [optional]
- *        A message to output if the condition fails.
- * @param {Number} interval [optional]
- *        How often the predicate is invoked, in milliseconds.
- * @return {Object}
- *         A promise that is resolved with the result of the condition.
- */
-async function waitFor(
-  condition,
-  message = "waitFor",
-  interval = 10,
-  maxTries = 500
-) {
-  await BrowserTestUtils.waitForCondition(
-    condition,
-    message,
-    interval,
-    maxTries
-  );
-  return condition();
-}
 
 /**
  * Simulate the key input for the given input in the window.
@@ -1016,20 +1119,33 @@ async function expandContainer(inspector, container) {
 }
 
 /**
- * Expand the provided markup container by clicking on the expand arrow and waiting for
- * inspector and children to update. Similar to expandContainer helper, but this method
+ * Toggle the provided markup container by clicking on the expand arrow and waiting for
+ * children to update. Similar to expandContainer helper, but this method
  * uses a click rather than programatically calling expandNode().
+ *
+ * @param {InspectorPanel} inspector
+ *        The current inspector instance.
+ * @param {MarkupContainer} container
+ *        The markup container to click on.
+ * @param {Object} modifiers
+ *        options.altKey {Boolean} Use the altKey modifier, to recursively apply
+ *        the action to all the children of the container.
  */
-async function expandContainerByClick(inspector, container) {
-  const onChildren = waitForChildrenUpdated(inspector);
-  const onUpdated = inspector.once("inspector-updated");
+async function toggleContainerByClick(
+  inspector,
+  container,
+  { altKey = false } = {}
+) {
   EventUtils.synthesizeMouseAtCenter(
     container.expander,
-    {},
+    {
+      altKey,
+    },
     inspector.markup.doc.defaultView
   );
-  await onChildren;
-  await onUpdated;
+
+  // Wait for any pending children updates
+  await waitForMultipleChildrenUpdates(inspector);
 }
 
 /**
@@ -1218,4 +1334,156 @@ function waitForNMutations(inspector, type, count) {
       }
     });
   });
+}
+
+/**
+ * Move the mouse on the content page at the x,y position and check the color displayed
+ * in the eyedropper label.
+ *
+ * @param {HighlighterTestFront} highlighterTestFront
+ * @param {Number} x
+ * @param {Number} y
+ * @param {String} expectedColor: Hexa string of the expected color
+ * @param {String} assertionDescription
+ */
+async function checkEyeDropperColorAt(
+  highlighterTestFront,
+  x,
+  y,
+  expectedColor,
+  assertionDescription
+) {
+  info(`Move mouse to ${x},${y}`);
+  await safeSynthesizeMouseEventInContentPage(":root", x, y, {
+    type: "mousemove",
+  });
+
+  const colorValue = await highlighterTestFront.getEyeDropperColorValue();
+  is(colorValue, expectedColor, assertionDescription);
+}
+
+/**
+ * Delete the provided node front using the context menu in the markup view.
+ * Will resolve after the inspector UI was fully updated.
+ *
+ * @param {NodeFront} node
+ *        The node front to delete.
+ * @param {Inspector} inspector
+ *        The current inspector panel instance.
+ */
+async function deleteNodeWithContextMenu(node, inspector) {
+  const container = inspector.markup.getContainer(node);
+
+  const allMenuItems = openContextMenuAndGetAllItems(inspector, {
+    target: container.tagLine,
+  });
+  const menuItem = allMenuItems.find(item => item.id === "node-menu-delete");
+  const onInspectorUpdated = inspector.once("inspector-updated");
+
+  info("Clicking 'Delete Node' in the context menu.");
+  is(menuItem.disabled, false, "delete menu item is enabled");
+  menuItem.click();
+
+  // close the open context menu
+  EventUtils.synthesizeKey("KEY_Escape");
+
+  info("Waiting for inspector to update.");
+  await onInspectorUpdated;
+
+  // Since the mutations are sent asynchronously from the server, the
+  // inspector-updated event triggered by the deletion might happen before
+  // the mutation is received and the element is removed from the
+  // breadcrumbs. See bug 1284125.
+  if (inspector.breadcrumbs.indexOf(node) > -1) {
+    info("Crumbs haven't seen deletion. Waiting for breadcrumbs-updated.");
+    await inspector.once("breadcrumbs-updated");
+  }
+}
+
+/**
+ * Forces the content page to reflow and waits for the next repaint.
+ */
+function reflowContentPage() {
+  return SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
+    return new Promise(resolve => {
+      content.document.documentElement.offsetWidth;
+      content.requestAnimationFrame(resolve);
+    });
+  });
+}
+
+/**
+ * Get all box-model regions' adjusted boxquads for the given element
+ * @param {String|Array} selector The node selector to target a given element
+ * @return {Promise<Object>} A promise that resolves with an object with each property of
+ *         a box-model region, each of them being an object with the p1/p2/p3/p4 properties.
+ */
+async function getAllAdjustedQuadsForContentPageElement(
+  selector,
+  useTopWindowAsBoundary = true
+) {
+  const selectors = Array.isArray(selector) ? selector : [selector];
+
+  const browsingContext =
+    selectors.length == 1
+      ? gBrowser.selectedBrowser.browsingContext
+      : await getBrowsingContextInFrames(
+          gBrowser.selectedBrowser.browsingContext,
+          selectors.slice(0, -1)
+        );
+
+  const inBrowsingContextSelector = selectors.at(-1);
+  return SpecialPowers.spawn(
+    browsingContext,
+    [inBrowsingContextSelector, useTopWindowAsBoundary],
+    (_selector, _useTopWindowAsBoundary) => {
+      const { require } = ChromeUtils.import(
+        "resource://devtools/shared/loader/Loader.jsm"
+      );
+      const { getAdjustedQuads } = require("devtools/shared/layout/utils");
+
+      const node = content.document.querySelector(_selector);
+
+      const boundaryWindow = _useTopWindowAsBoundary ? content.top : content;
+      const regions = {};
+      for (const boxType of ["content", "padding", "border", "margin"]) {
+        regions[boxType] = getAdjustedQuads(boundaryWindow, node, boxType);
+      }
+
+      return regions;
+    }
+  );
+}
+
+/**
+ * Assert that the box-model highlighter's current position corresponds to the
+ * given node boxquads.
+ *
+ * @param {HighlighterTestFront} highlighterTestFront
+ * @param {String} selector The node selector to get the boxQuads from
+ */
+async function isNodeCorrectlyHighlighted(highlighterTestFront, selector) {
+  const boxModel = await highlighterTestFront.getBoxModelStatus();
+
+  const useTopWindowAsBoundary = !!highlighterTestFront.parentFront.isTopLevel;
+  const regions = await getAllAdjustedQuadsForContentPageElement(
+    selector,
+    useTopWindowAsBoundary
+  );
+
+  for (const boxType of ["content", "padding", "border", "margin"]) {
+    const [quad] = regions[boxType];
+    for (const point in boxModel[boxType].points) {
+      is(
+        boxModel[boxType].points[point].x,
+        quad[point].x,
+        `${selector} ${boxType} point ${point} x coordinate is correct`
+      );
+      is(
+        boxModel[boxType].points[point].y,
+        quad[point].y,
+        `${selector} ${boxType} point ${point} y coordinate is correct`
+      );
+    }
+  }
 }

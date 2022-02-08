@@ -16,6 +16,11 @@
 #ifdef MOZ_WIDGET_ANDROID
 #  include <sys/mman.h>
 #endif
+#if defined(XP_LINUX) && !defined(ANDROID)
+// For MesaMemoryLeakWorkaround
+#  include <dlfcn.h>
+#  include <link.h>
+#endif
 
 #include "GLBlitHelper.h"
 #include "GLReadTexImageHelper.h"
@@ -25,6 +30,7 @@
 #include "gfxEnv.h"
 #include "gfxUtils.h"
 #include "GLContextProvider.h"
+#include "GLLibraryLoader.h"
 #include "GLTextureImage.h"
 #include "nsPrintfCString.h"
 #include "nsThreadUtils.h"
@@ -38,11 +44,13 @@
 #include "mozilla/StaticPrefs_gl.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/gfx/Logging.h"
+#include "mozilla/layers/BuildConstants.h"
 #include "mozilla/layers/TextureForwarder.h"  // for LayersIPCChannel
 
 #include "OGLShaderProgram.h"  // for ShaderProgramType
 
 #include "mozilla/DebugOnly.h"
+#include "mozilla/Maybe.h"
 
 #ifdef XP_MACOSX
 #  include <CoreServices/CoreServices.h>
@@ -155,7 +163,6 @@ static const char* const sExtensionNames[] = {
     "GL_EXT_sRGB",
     "GL_EXT_sRGB_write_control",
     "GL_EXT_shader_texture_lod",
-    "GL_EXT_texture3D",
     "GL_EXT_texture_compression_bptc",
     "GL_EXT_texture_compression_dxt1",
     "GL_EXT_texture_compression_rgtc",
@@ -163,6 +170,7 @@ static const char* const sExtensionNames[] = {
     "GL_EXT_texture_compression_s3tc_srgb",
     "GL_EXT_texture_filter_anisotropic",
     "GL_EXT_texture_format_BGRA8888",
+    "GL_EXT_texture_norm16",
     "GL_EXT_texture_sRGB",
     "GL_EXT_texture_storage",
     "GL_EXT_timer_query",
@@ -194,6 +202,7 @@ static const char* const sExtensionNames[] = {
     "GL_OES_depth24",
     "GL_OES_depth32",
     "GL_OES_depth_texture",
+    "GL_OES_draw_buffers_indexed",
     "GL_OES_element_index_uint",
     "GL_OES_fbo_render_mipmap",
     "GL_OES_framebuffer_object",
@@ -515,7 +524,10 @@ bool GLContext::InitImpl() {
         END_SYMBOLS};
     (void)fnLoadSymbols(symbols, nullptr);
 
-    auto err = fGetError();
+    // We need to call the fGetError symbol directly here because if there is an
+    // unflushed reset status, we don't want to mark the context as lost. That
+    // would prevent us from recovering.
+    auto err = mSymbols.fGetError();
     if (err == LOCAL_GL_CONTEXT_LOST) {
       MOZ_ASSERT(mSymbols.fGetGraphicsResetStatus);
       const auto status = fGetGraphicsResetStatus();
@@ -536,6 +548,12 @@ bool GLContext::InitImpl() {
   const std::string versionStr = (const char*)fGetString(LOCAL_GL_VERSION);
   if (versionStr.find("OpenGL ES") == 0) {
     mProfile = ContextProfile::OpenGLES;
+  }
+
+  if (versionStr.empty()) {
+    // This can happen with Pernosco.
+    NS_WARNING("Empty GL version string");
+    return false;
   }
 
   uint32_t majorVer, minorVer;
@@ -649,11 +667,28 @@ bool GLContext::InitImpl() {
     }
   }
 
-  if (ShouldSpew()) {
+  {
+    const auto versionStr = (const char*)fGetString(LOCAL_GL_VERSION);
+    if (strstr(versionStr, "Mesa")) {
+      mIsMesa = true;
+    }
+  }
+
+  const auto Once = []() {
+    static bool did = false;
+    if (did) return false;
+    did = true;
+    return true;
+  };
+
+  bool printRenderer = ShouldSpew();
+  printRenderer |= (kIsDebug && Once());
+  if (printRenderer) {
     printf_stderr("GL_VENDOR: %s\n", glVendorString);
     printf_stderr("mVendor: %s\n", vendorMatchStrings[size_t(mVendor)]);
     printf_stderr("GL_RENDERER: %s\n", glRendererString);
     printf_stderr("mRenderer: %s\n", rendererMatchStrings[size_t(mRenderer)]);
+    printf_stderr("mIsMesa: %i\n", int(mIsMesa));
   }
 
   ////////////////
@@ -698,6 +733,11 @@ bool GLContext::InitImpl() {
       MarkUnsupported(GLFeature::standard_derivatives);
     }
 
+    if (Renderer() == GLRenderer::AndroidEmulator) {
+      // Bug 1665300
+      mSymbols.fGetGraphicsResetStatus = 0;
+    }
+
     if (Vendor() == GLVendor::Vivante) {
       // bug 958256
       MarkUnsupported(GLFeature::standard_derivatives);
@@ -710,8 +750,7 @@ bool GLContext::InitImpl() {
       MarkUnsupported(GLFeature::framebuffer_multisample);
     }
 
-    const auto versionStr = (const char*)fGetString(LOCAL_GL_VERSION);
-    if (strstr(versionStr, "Mesa")) {
+    if (IsMesa()) {
       // DrawElementsInstanced hangs the driver.
       MarkUnsupported(GLFeature::robust_buffer_access_behavior);
     }
@@ -1233,6 +1272,26 @@ void GLContext::LoadMoreSymbols(const SymbolLoader& loader) {
         fnLoadFeatureByCore(coreSymbols, extSymbols, GLFeature::draw_buffers);
     }
 
+    if (IsSupported(GLFeature::draw_buffers_indexed)) {
+        const SymLoadStruct coreSymbols[] = {
+            { (PRFuncPtr*) &mSymbols.fBlendEquationSeparatei, {{ "glBlendEquationSeparatei" }} },
+            { (PRFuncPtr*) &mSymbols.fBlendFuncSeparatei, {{ "glBlendFuncSeparatei" }} },
+            { (PRFuncPtr*) &mSymbols.fColorMaski, {{ "glColorMaski" }} },
+            { (PRFuncPtr*) &mSymbols.fDisablei, {{ "glDisablei" }} },
+            { (PRFuncPtr*) &mSymbols.fEnablei, {{ "glEnablei" }} },
+            END_SYMBOLS
+        };
+        const SymLoadStruct extSymbols[] = {
+            { (PRFuncPtr*) &mSymbols.fBlendEquationSeparatei, {{ "glBlendEquationSeparateiOES" }} },
+            { (PRFuncPtr*) &mSymbols.fBlendFuncSeparatei, {{ "glBlendFuncSeparateiOES" }} },
+            { (PRFuncPtr*) &mSymbols.fColorMaski, {{ "glColorMaskiOES" }} },
+            { (PRFuncPtr*) &mSymbols.fDisablei, {{ "glDisableiOES" }} },
+            { (PRFuncPtr*) &mSymbols.fEnablei, {{ "glEnableiOES" }} },
+            END_SYMBOLS
+        };
+        fnLoadFeatureByCore(coreSymbols, extSymbols, GLFeature::draw_buffers);
+    }
+
     if (IsSupported(GLFeature::get_integer_indexed)) {
         const SymLoadStruct coreSymbols[] = {
             { (PRFuncPtr*) &mSymbols.fGetIntegeri_v, {{ "glGetIntegeri_v" }} },
@@ -1294,7 +1353,8 @@ void GLContext::LoadMoreSymbols(const SymbolLoader& loader) {
             END_SYMBOLS
         };
         const SymLoadStruct extSymbols[] = {
-            { (PRFuncPtr*) &mSymbols.fTexSubImage3D, {{ "glTexSubImage3DEXT", "glTexSubImage3DOES" }} },
+            { (PRFuncPtr*) &mSymbols.fTexImage3D, {{ "glTexImage3DOES" }} },
+            { (PRFuncPtr*) &mSymbols.fTexSubImage3D, {{ "glTexSubImage3DOES" }} },
             END_SYMBOLS
         };
         fnLoadFeatureByCore(coreSymbols, extSymbols, GLFeature::texture_3D);
@@ -2129,39 +2189,72 @@ void GLContext::fCopyTexImage2D(GLenum target, GLint level,
   AfterGLReadCall();
 }
 
-void GLContext::fGetIntegerv(GLenum pname, GLint* params) const {
+void GLContext::fGetIntegerv(const GLenum pname, GLint* const params) const {
+  const auto AssertBinding = [&](const char* const name, const GLenum binding,
+                                 const GLuint expected) {
+    if (MOZ_LIKELY(!mDebugFlags)) return;
+    GLuint actual = 0;
+    raw_fGetIntegerv(binding, (GLint*)&actual);
+    if (actual != expected) {
+      gfxCriticalError() << "Misprediction: " << name << " expected "
+                         << expected << ", was " << actual;
+    }
+  };
+
   switch (pname) {
     case LOCAL_GL_MAX_TEXTURE_SIZE:
       MOZ_ASSERT(mMaxTextureSize > 0);
       *params = mMaxTextureSize;
-      break;
+      return;
 
     case LOCAL_GL_MAX_CUBE_MAP_TEXTURE_SIZE:
       MOZ_ASSERT(mMaxCubeMapTextureSize > 0);
       *params = mMaxCubeMapTextureSize;
-      break;
+      return;
 
     case LOCAL_GL_MAX_RENDERBUFFER_SIZE:
       MOZ_ASSERT(mMaxRenderbufferSize > 0);
       *params = mMaxRenderbufferSize;
-      break;
+      return;
 
     case LOCAL_GL_VIEWPORT:
       for (size_t i = 0; i < 4; i++) {
         params[i] = mViewportRect[i];
       }
-      break;
+      return;
 
     case LOCAL_GL_SCISSOR_BOX:
       for (size_t i = 0; i < 4; i++) {
         params[i] = mScissorRect[i];
       }
+      return;
+
+    case LOCAL_GL_DRAW_FRAMEBUFFER_BINDING:
+      if (mElideDuplicateBindFramebuffers) {
+        static_assert(LOCAL_GL_DRAW_FRAMEBUFFER_BINDING ==
+                      LOCAL_GL_FRAMEBUFFER_BINDING);
+        AssertBinding("GL_DRAW_FRAMEBUFFER_BINDING",
+                      LOCAL_GL_DRAW_FRAMEBUFFER_BINDING, mCachedDrawFb);
+        *params = static_cast<GLint>(mCachedDrawFb);
+        return;
+      }
+      break;
+
+    case LOCAL_GL_READ_FRAMEBUFFER_BINDING:
+      if (mElideDuplicateBindFramebuffers) {
+        if (IsSupported(GLFeature::framebuffer_blit)) {
+          AssertBinding("GL_READ_FRAMEBUFFER_BINDING",
+                        LOCAL_GL_READ_FRAMEBUFFER_BINDING, mCachedReadFb);
+        }
+        *params = static_cast<GLint>(mCachedReadFb);
+        return;
+      }
       break;
 
     default:
-      raw_fGetIntegerv(pname, params);
       break;
   }
+  raw_fGetIntegerv(pname, params);
 }
 
 void GLContext::fReadPixels(GLint x, GLint y, GLsizei width, GLsizei height,
@@ -2523,6 +2616,37 @@ void GLContext::OnImplicitMakeCurrentFailure(const char* const funcName) {
 bool GLContext::CreateOffscreenDefaultFb(const gfx::IntSize& size) {
   mOffscreenDefaultFb = MozFramebuffer::Create(this, size, 0, true);
   return bool(mOffscreenDefaultFb);
+}
+
+// Some of Mesa's drivers allocate heap memory when loaded and don't
+// free it when unloaded; this causes Leak Sanitizer to detect leaks and
+// fail to unwind the stack, so suppressions don't work.  This
+// workaround leaks a reference to the driver library so that it's never
+// unloaded.  Because the leak isn't significant for real usage, only
+// ASan runs in CI, this is applied only to the software renderer.
+//
+// See bug 1702394 for more details.
+void MesaMemoryLeakWorkaround() {
+#if defined(XP_LINUX) && !defined(ANDROID)
+  Maybe<nsAutoCString> foundPath;
+
+  dl_iterate_phdr(
+      [](dl_phdr_info* info, size_t size, void* data) {
+        auto& foundPath = *reinterpret_cast<Maybe<nsAutoCString>*>(data);
+        nsDependentCString thisPath(info->dlpi_name);
+        if (StringEndsWith(thisPath, "/swrast_dri.so"_ns)) {
+          foundPath.emplace(thisPath);
+          return 1;
+        }
+        return 0;
+      },
+      &foundPath);
+
+  if (foundPath) {
+    // Deliberately leak to prevent unload
+    Unused << dlopen(foundPath->get(), RTLD_LAZY);
+  }
+#endif  // XP_LINUX but not ANDROID
 }
 
 } /* namespace gl */

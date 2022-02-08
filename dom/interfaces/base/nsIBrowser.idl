@@ -11,26 +11,9 @@ interface nsIWebProgress;
 interface nsIReferrerInfo;
 interface nsIOpenWindowInfo;
 
-webidl FrameLoader;
-
 [scriptable, uuid(14e5a0cb-e223-4202-95e8-fe53275193ea)]
 interface nsIBrowser : nsISupports
 {
-  /**
-   * Gets an optional frame loader that is "related" to this browser.
-   * If this exists, then we should attempt to use the same content parent as
-   * this frame loader for any new remote tabs.  For example, view source
-   * browsers set this to the frame loader for the original content to ensure
-   * they are loaded in the same process as the content.
-   */
-  readonly attribute FrameLoader sameProcessAsFrameLoader;
-
-  /**
-   * Gets the optional open window information provided by the window creation
-   * code and used to initialize a new browser.
-   */
-  attribute nsIOpenWindowInfo openWindowInfo;
-
   /*
    * Called by the child to inform the parent that links are dropped into
    * content area.
@@ -68,9 +51,14 @@ interface nsIBrowser : nsISupports
    */
   readonly attribute boolean isRemoteBrowser;
 
+  /**
+   * The browser's permanent key. This was added temporarily for Session Store,
+   * and will be removed in bug 1716788.
+   */
+  readonly attribute jsval permanentKey;
+
   readonly attribute nsIPrincipal contentPrincipal;
   readonly attribute nsIPrincipal contentPartitionedPrincipal;
-  readonly attribute nsIPrincipal contentBlockingAllowListPrincipal;
   readonly attribute nsIContentSecurityPolicy csp;
   readonly attribute nsIReferrerInfo referrerInfo;
 
@@ -84,12 +72,6 @@ interface nsIBrowser : nsISupports
    * Whether or not the character encoding menu may be enabled.
    */
   attribute boolean mayEnableCharacterEncodingMenu;
-
-  /**
-   * Whether or not the character encoding was detected by analyzing
-   * content (as opposed to reading a protocol label).
-   */
-  attribute boolean charsetAutodetected;
 
   /**
    * Called by Gecko to update the browser when its state changes.
@@ -120,8 +102,6 @@ interface nsIBrowser : nsISupports
    * @param aCharset the character set of the document
    * @param aMayEnableCharacterEncodingMenu whether or not the content encoding
    *                                        menu may be enabled
-   * @param aCharsetAutodetected whether or not the given character set was
-   *                             autodetected
    * @param aDocumentURI the URI of the new document
    * @param aTitle the title of the new doucment
    * @param aContentPrincipal the security principal of the new document
@@ -138,7 +118,6 @@ interface nsIBrowser : nsISupports
   void updateForLocationChange(in nsIURI aLocation,
                                in AString aCharset,
                                in boolean aMayEnableCharacterEncodingMenu,
-                               in boolean aCharsetAutodetected,
                                in nsIURI aDocumentURI,
                                in AString aTitle,
                                in nsIPrincipal aContentPrincipal,
@@ -149,28 +128,6 @@ interface nsIBrowser : nsISupports
                                in boolean aHasRequestContextID,
                                in uint64_t aRequestContextID,
                                in AString aContentType);
-
-  /**
-   * Determine what process switching behavior this browser element should have.
-   */
-  cenum ProcessBehavior : 8 {
-    // Gecko won't automatically change which process this frame, or it's
-    // subframes, are loaded in.
-    PROCESS_BEHAVIOR_DISABLED,
-
-    // If `useRemoteTabs` is enabled, Gecko will change which process this frame
-    // is loaded in automatically, without calling `performProcessSwitch`.
-    // When `useRemoteSubframes` is enabled, subframes will change processes.
-    PROCESS_BEHAVIOR_STANDARD,
-
-    // Gecko won't automatically change which process this frame is loaded, but
-    // when `useRemoteSubframes` is enabled, subframes will change processes.
-    //
-    // NOTE: This configuration is included only for backwards compatibility,
-    // and will be removed, as it can easily lead to invalid behavior.
-    PROCESS_BEHAVIOR_SUBFRAME_ONLY,
-  };
-  readonly attribute nsIBrowser_ProcessBehavior processSwitchBehavior;
 
   /**
    * Called to perform any async tasks which must be completed before changing

@@ -29,14 +29,14 @@ class MemoryDownloader final : public nsIStreamListener {
   NS_DECL_NSIREQUESTOBSERVER
   NS_DECL_NSISTREAMLISTENER
 
-  typedef mozilla::UniquePtr<FallibleTArray<uint8_t>> Data;
+  using Data = mozilla::UniquePtr<FallibleTArray<uint8_t>>;
 
   class IObserver : public nsISupports {
    public:
     // Note: aData may be null if (and only if) aStatus indicates failure.
     virtual void OnDownloadComplete(MemoryDownloader* aDownloader,
-                                    nsIRequest* aRequest, nsISupports* aCtxt,
-                                    nsresult aStatus, Data aData) = 0;
+                                    nsIRequest* aRequest, nsresult aStatus,
+                                    Data aData) = 0;
   };
 
   explicit MemoryDownloader(IObserver* aObserver);

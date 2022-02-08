@@ -9,11 +9,11 @@ use crate::metrics::time_unit::TimeUnit;
 use crate::metrics::Metric;
 use crate::metrics::MetricType;
 use crate::storage::StorageManager;
-use crate::util::{get_iso_time_string, local_now_with_offset};
+use crate::util::{get_iso_time_string, local_now_with_offset_and_record};
 use crate::CommonMetricData;
 use crate::Glean;
 
-use chrono::{DateTime, FixedOffset, TimeZone};
+use chrono::{DateTime, FixedOffset, TimeZone, Timelike};
 
 /// A datetime type.
 ///
@@ -40,16 +40,19 @@ impl MetricType for DatetimeMetric {
     }
 }
 
+// IMPORTANT:
+//
+// When changing this implementation, make sure all the operations are
+// also declared in the related trait in `../traits/`.
 impl DatetimeMetric {
-    /// Create a new datetime metric.
+    /// Creates a new datetime metric.
     pub fn new(meta: CommonMetricData, time_unit: TimeUnit) -> Self {
         Self { meta, time_unit }
     }
 
-    /// Public facing API for setting the metric to a date/time which
-    /// includes the timezone offset.
+    /// Sets the metric to a date/time including the timezone offset.
     ///
-    /// ## Arguments:
+    /// # Arguments
     ///
     /// * `glean` - the Glean instance this metric belongs to.
     /// * `year` - the year to set the metric to.
@@ -73,6 +76,10 @@ impl DatetimeMetric {
         nano: u32,
         offset_seconds: i32,
     ) {
+        if !self.should_record(glean) {
+            return;
+        }
+
         let timezone_offset = FixedOffset::east_opt(offset_seconds);
         if timezone_offset.is_none() {
             let msg = format!("Invalid timezone offset {}. Not recording.", offset_seconds);
@@ -98,39 +105,39 @@ impl DatetimeMetric {
         }
     }
 
-    /// Public facing API for setting the metric to a date/time which
-    /// includes the timezone offset.
+    /// Sets the metric to a date/time which including the timezone offset.
     ///
-    /// ## Arguments:
+    /// # Arguments
     ///
     /// * `glean` - the Glean instance this metric belongs to.
-    /// * `value` - Some date/time value, with offset, to set the metric to.
+    /// * `value` - Some [`DateTime`] value, with offset, to set the metric to.
     ///             If none, the current local time is used.
     pub fn set(&self, glean: &Glean, value: Option<Datetime>) {
         if !self.should_record(glean) {
             return;
         }
 
-        let value = value.unwrap_or_else(local_now_with_offset);
+        let value = value.unwrap_or_else(|| local_now_with_offset_and_record(glean));
         let value = Metric::Datetime(value, self.time_unit);
         glean.storage().record(glean, &self.meta, &value)
     }
 
-    /// Get the stored datetime value.
+    /// Gets the stored datetime value.
     ///
-    /// ## Arguments
+    /// # Arguments
     ///
     /// * `glean` - the Glean instance this metric belongs to.
     /// * `storage_name` - the storage name to look into.
     ///
-    /// ## Return value
+    /// # Returns
     ///
-    /// Returns the stored value or `None` if nothing stored.
+    /// The stored value or `None` if nothing stored.
     pub(crate) fn get_value(&self, glean: &Glean, storage_name: &str) -> Option<Datetime> {
         match StorageManager.snapshot_metric(
             glean.storage(),
             storage_name,
-            &self.meta().identifier(glean),
+            &self.meta.identifier(glean),
+            self.meta.lifetime,
         ) {
             Some(Metric::Datetime(dt, _)) => Some(dt),
             _ => None,
@@ -139,16 +146,76 @@ impl DatetimeMetric {
 
     /// **Test-only API (exported for FFI purposes).**
     ///
-    /// Get the currently stored value as a String.
-    /// The precision of this value is truncated to the `time_unit`
-    /// precision.
+    /// Gets the stored datetime value.
     ///
-    /// This doesn't clear the stored value.
-    pub fn test_get_value_as_string(&self, glean: &Glean, storage_name: &str) -> Option<String> {
-        match StorageManager.snapshot_metric(
+    /// The precision of this value is truncated to the `time_unit` precision.
+    ///
+    /// # Arguments
+    ///
+    /// * `glean` - the Glean instance this metric belongs to.
+    /// * `storage_name` - the storage name to look into.
+    ///
+    /// # Returns
+    ///
+    /// The stored value or `None` if nothing stored.
+    pub fn test_get_value(&self, glean: &Glean, storage_name: &str) -> Option<Datetime> {
+        match StorageManager.snapshot_metric_for_test(
             glean.storage(),
             storage_name,
             &self.meta.identifier(glean),
+            self.meta.lifetime,
+        ) {
+            Some(Metric::Datetime(d, tu)) => {
+                // The string version of the test function truncates using string
+                // parsing. Unfortunately `parse_from_str` errors with `NotEnough` if we
+                // try to truncate with `get_iso_time_string` and then parse it back
+                // in a `Datetime`. So we need to truncate manually.
+                let time = d.time();
+                match tu {
+                    TimeUnit::Nanosecond => d.date().and_hms_nano_opt(
+                        time.hour(),
+                        time.minute(),
+                        time.second(),
+                        time.nanosecond(),
+                    ),
+                    TimeUnit::Microsecond => d.date().and_hms_nano_opt(
+                        time.hour(),
+                        time.minute(),
+                        time.second(),
+                        time.nanosecond() / 1000,
+                    ),
+                    TimeUnit::Millisecond => d.date().and_hms_nano_opt(
+                        time.hour(),
+                        time.minute(),
+                        time.second(),
+                        time.nanosecond() / 1000000,
+                    ),
+                    TimeUnit::Second => {
+                        d.date()
+                            .and_hms_nano_opt(time.hour(), time.minute(), time.second(), 0)
+                    }
+                    TimeUnit::Minute => d.date().and_hms_nano_opt(time.hour(), time.minute(), 0, 0),
+                    TimeUnit::Hour => d.date().and_hms_nano_opt(time.hour(), 0, 0, 0),
+                    TimeUnit::Day => d.date().and_hms_nano_opt(0, 0, 0, 0),
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// **Test-only API (exported for FFI purposes).**
+    ///
+    /// Gets the currently stored value as a String.
+    ///
+    /// The precision of this value is truncated to the `time_unit` precision.
+    ///
+    /// This doesn't clear the stored value.
+    pub fn test_get_value_as_string(&self, glean: &Glean, storage_name: &str) -> Option<String> {
+        match StorageManager.snapshot_metric_for_test(
+            glean.storage(),
+            storage_name,
+            &self.meta.identifier(glean),
+            self.meta.lifetime,
         ) {
             Some(Metric::Datetime(d, tu)) => Some(get_iso_time_string(d, tu)),
             _ => None,

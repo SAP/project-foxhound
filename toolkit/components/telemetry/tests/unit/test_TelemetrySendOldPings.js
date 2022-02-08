@@ -9,10 +9,6 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryStorage.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm", this);
 const {
   OS: { File, Path, Constants },
 } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
@@ -81,11 +77,10 @@ var clearPings = async function(aPingIds) {
  * @param {Integer} aPendingQuota The new quota, in bytes.
  */
 function fakePendingPingsQuota(aPendingQuota) {
-  let storage = ChromeUtils.import(
-    "resource://gre/modules/TelemetryStorage.jsm",
-    null
+  let { Policy } = ChromeUtils.import(
+    "resource://gre/modules/TelemetryStorage.jsm"
   );
-  storage.Policy.getPendingPingsQuota = () => aPendingQuota;
+  Policy.getPendingPingsQuota = () => aPendingQuota;
 }
 
 /**
@@ -142,7 +137,12 @@ add_task(async function test_setup() {
   PingServer.start();
   PingServer.registerPingHandler(pingHandler);
   do_get_profile();
-  loadAddonManager("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
+  await loadAddonManager(
+    "xpcshell@tests.mozilla.org",
+    "XPCShell",
+    "1",
+    "1.9.2"
+  );
   finishAddonManagerStartup();
   fakeIntlReady();
   // Make sure we don't generate unexpected pings due to pref changes.

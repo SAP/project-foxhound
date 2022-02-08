@@ -8,13 +8,15 @@ include PBackgroundSharedTypes;
 
 include protocol PRemoteLazyInputStream;
 
-using HeadersGuardEnum from "mozilla/dom/FetchIPCTypes.h";
-using ReferrerPolicy from "mozilla/dom/FetchIPCTypes.h";
-using RequestCache from "mozilla/dom/FetchIPCTypes.h";
-using RequestCredentials from "mozilla/dom/FetchIPCTypes.h";
-using RequestMode from "mozilla/dom/FetchIPCTypes.h";
-using RequestRedirect from "mozilla/dom/FetchIPCTypes.h";
-using ResponseType from "mozilla/dom/FetchIPCTypes.h";
+include "mozilla/dom/FetchIPCTypes.h";
+
+using HeadersGuardEnum from "mozilla/dom/HeadersBinding.h";
+using ReferrerPolicy from "mozilla/dom/ReferrerPolicyBinding.h";
+using RequestCache from "mozilla/dom/RequestBinding.h";
+using RequestCredentials from "mozilla/dom/RequestBinding.h";
+using RequestMode from "mozilla/dom/RequestBinding.h";
+using RequestRedirect from "mozilla/dom/RequestBinding.h";
+using ResponseType from "mozilla/dom/ResponseBinding.h";
 using struct nsID from "nsID.h";
 
 namespace mozilla {
@@ -64,20 +66,38 @@ struct IPCInternalRequest {
   PrincipalInfo? principalInfo;
 };
 
-struct IPCInternalResponse {
+struct InternalResponseMetadata {
   ResponseType type;
   nsCString[] urlList;
   uint16_t status;
   nsCString statusText;
   HeadersGuardEnum headersGuard;
   HeadersEntry[] headers;
-  BodyStreamVariant? body;
-  int64_t bodySize;
   nsresult errorCode;
   nsCString alternativeDataType;
-  BodyStreamVariant? alternativeBody;
   IPCChannelInfo channelInfo;
   PrincipalInfo? principalInfo;
+};
+
+struct ParentToParentInternalResponse {
+  InternalResponseMetadata metadata;
+  ParentToParentStream? body;
+  int64_t bodySize;
+  ParentToParentStream? alternativeBody;
+};
+
+struct ParentToChildInternalResponse {
+  InternalResponseMetadata metadata;
+  ParentToChildStream? body;
+  int64_t bodySize;
+  ParentToChildStream? alternativeBody;
+};
+
+struct ChildToParentInternalResponse {
+  InternalResponseMetadata metadata;
+  ChildToParentStream? body;
+  int64_t bodySize;
+  ChildToParentStream? alternativeBody;
 };
 
 } // namespace ipc

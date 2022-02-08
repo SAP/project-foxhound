@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { normalizeToKebabCase } from "../utils.js";
+import { b64ToPEM, normalizeToKebabCase } from "./utils.js";
 
 export class InfoItem extends HTMLElement {
   constructor(item) {
@@ -26,8 +26,58 @@ export class InfoItem extends HTMLElement {
   handleTimeZone(infoElement) {
     let localTime = this.item.info.local;
     let UTCTime = this.item.info.utc;
-    infoElement.textContent = localTime;
-    infoElement.setAttribute("title", UTCTime);
+    infoElement.textContent = UTCTime;
+    infoElement.setAttribute("title", localTime);
+  }
+
+  addLongHexOverflow(info) {
+    info.classList.add("hex");
+
+    // For visual appeal, we want to collapse large hex values into single
+    // line items that can be clicked to expand.
+    // This function measures the size of the info item relative to its
+    // container and adds the "long-hex" class if it's overflowing. Since the
+    // container size changes on window resize this function is hooked up to
+    // a resize event listener.
+    function resize() {
+      if (info.classList.contains("hex-open")) {
+        info.classList.toggle("long-hex", true);
+        return;
+      }
+
+      // If the item is not currently drawn and we can't measure its dimensions
+      // then attach an observer that will measure it once it appears.
+      if (info.clientWidth <= 0) {
+        let observer = new IntersectionObserver(function([
+          { intersectionRatio },
+        ]) {
+          if (intersectionRatio > 0) {
+            info.classList.toggle(
+              "long-hex",
+              info.scrollWidth > info.clientWidth
+            );
+            observer.unobserve(info);
+          }
+        },
+        {});
+
+        observer.observe(info);
+      }
+      info.classList.toggle("long-hex", info.scrollWidth > info.clientWidth);
+    }
+    window.addEventListener("resize", resize);
+    window.requestAnimationFrame(resize);
+
+    this.addEventListener("mouseup", () => {
+      // If a range of text is selected, don't toggle the class that
+      // hides/shows additional text.
+      if (
+        info.classList.contains("long-hex") &&
+        window.getSelection().type !== "Range"
+      ) {
+        info.classList.toggle("hex-open");
+      }
+    });
   }
 
   render() {
@@ -67,15 +117,8 @@ export class InfoItem extends HTMLElement {
 
     this.classList.add(labelId);
 
-    if (labelId === "modulus" || labelId === "public-value") {
-      info.classList.add("long-hex");
-      this.addEventListener("mouseup", () => {
-        // If a range of text is selected, don't toggle the class that
-        // hides/shows additional text.
-        if (window.getSelection().type !== "Range") {
-          info.classList.toggle("long-hex-open");
-        }
-      });
+    if (this.item.isHex) {
+      this.addLongHexOverflow(info);
     }
 
     let isURL = false;
@@ -90,6 +133,7 @@ export class InfoItem extends HTMLElement {
     }
 
     if (isURL) {
+      info.classList.add("url");
       let link = document.createElement("a");
       link.setAttribute("href", this.item.info);
       link.setAttribute("rel", "noreferrer noopener");
@@ -113,11 +157,7 @@ export class InfoItem extends HTMLElement {
     let certArray = url.searchParams.getAll("cert");
     let encodedCertArray = [];
     for (let i = 0; i < certArray.length; i++) {
-      encodedCertArray.push(
-        encodeURI(
-          `-----BEGIN CERTIFICATE-----\r\n${certArray[i]}\r\n-----END CERTIFICATE-----\r\n`
-        )
-      );
+      encodedCertArray.push(encodeURI(b64ToPEM(certArray[i])));
     }
     encodedCertArray = encodedCertArray.join("");
 

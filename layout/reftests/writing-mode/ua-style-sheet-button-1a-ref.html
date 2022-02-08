@@ -2,6 +2,8 @@
 <meta charset=utf-8>
 <title>Test for logical properties of button in the UA stylesheet</title>
 <style>
+:root { color-scheme: light }
+
 .v-rl { writing-mode: vertical-rl; }
 .ltr, .rtl, .v-rl { border: 1px solid blue; }
 .a { -moz-appearance: none; }
@@ -10,12 +12,24 @@
 .rtl button,
 .ltr input[type="button"],
 .rtl input[type="button"] {
-  padding: 0px 8px;
+  padding: 1px 8px;
 }
 
 .v-rl button,
 .v-rl input[type="button"] {
-  padding: 8px 0px;
+  padding: 8px 1px;
+}
+
+.ltr button,
+.rtl button,
+.ltr input[type="button"],
+.rtl input[type="button"] {
+  padding: 1px 4px;
+}
+
+.v-rl button,
+.v-rl input[type="button"] {
+  padding: 4px 1px;
 }
 </style>
 <div class=ltr>

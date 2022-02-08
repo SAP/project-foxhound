@@ -17,11 +17,11 @@ XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   E10SUtils: "resource://gre/modules/E10SUtils.jsm",
-  BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
   SpellCheckHelper: "resource://gre/modules/InlineSpellChecker.jsm",
   LoginManagerChild: "resource://gre/modules/LoginManagerChild.jsm",
   WebNavigationFrames: "resource://gre/modules/WebNavigationFrames.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
+  SelectionUtils: "resource://gre/modules/SelectionUtils.jsm",
   InlineSpellCheckerContent:
     "resource://gre/modules/InlineSpellCheckerContent.jsm",
   ContentDOMReference: "resource://gre/modules/ContentDOMReference.jsm",
@@ -160,6 +160,12 @@ class ContextMenuChild extends JSWindowActorChild {
         break;
       }
 
+      case "ContextMenu:ToggleShowPassword": {
+        let target = ContentDOMReference.resolve(message.data.targetIdentifier);
+        target.showPassword = !target.showPassword;
+        break;
+      }
+
       case "ContextMenu:ReloadImage": {
         let image = ContentDOMReference.resolve(message.data.targetIdentifier);
 
@@ -237,9 +243,9 @@ class ContextMenuChild extends JSWindowActorChild {
 
         if (!disable) {
           try {
-            BrowserUtils.urlSecurityCheck(
-              target.currentURI.spec,
-              target.ownerDocument.nodePrincipal
+            Services.scriptSecurityManager.checkLoadURIWithPrincipal(
+              target.ownerDocument.nodePrincipal,
+              target.currentURI
             );
             let canvas = this.document.createElement("canvas");
             canvas.width = target.naturalWidth;
@@ -260,18 +266,6 @@ class ContextMenuChild extends JSWindowActorChild {
           dataURL: null,
           imageName: null,
         });
-      }
-
-      case "ContextMenu:PluginCommand": {
-        let target = ContentDOMReference.resolve(message.data.targetIdentifier);
-        let actor = this.manager.getActor("Plugin");
-        let { command } = message.data;
-        if (command == "play") {
-          actor.showClickToPlayNotification(target, true);
-        } else if (command == "hide") {
-          actor.hideClickToPlayOverlay(target);
-        }
-        break;
       }
     }
 
@@ -519,7 +513,7 @@ class ContextMenuChild extends JSWindowActorChild {
     return false;
   }
 
-  handleEvent(aEvent) {
+  async handleEvent(aEvent) {
     contextMenus.set(this.browsingContext, this);
 
     let defaultPrevented = aEvent.defaultPrevented;
@@ -530,22 +524,6 @@ class ContextMenuChild extends JSWindowActorChild {
       !aEvent.composedTarget.nodePrincipal.isSystemPrincipal &&
       !Services.prefs.getBoolPref("dom.event.contextmenu.enabled")
     ) {
-      let plugin = null;
-
-      try {
-        plugin = aEvent.composedTarget.QueryInterface(
-          Ci.nsIObjectLoadingContent
-        );
-      } catch (e) {}
-
-      if (
-        plugin &&
-        plugin.displayedType == Ci.nsIObjectLoadingContent.TYPE_PLUGIN
-      ) {
-        // Don't open a context menu for plugins.
-        return;
-      }
-
       defaultPrevented = false;
     }
 
@@ -564,6 +542,7 @@ class ContextMenuChild extends JSWindowActorChild {
       mozDocumentURIIfNotForErrorPages: docLocation,
       characterSet: charSet,
       baseURI,
+      cookieJarSettings,
     } = doc;
     docLocation = docLocation && docLocation.spec;
     let frameID = WebNavigationFrames.getFrameId(doc.defaultView);
@@ -571,9 +550,6 @@ class ContextMenuChild extends JSWindowActorChild {
     let loginFillInfo = LoginManagerChild.forWindow(
       doc.defaultView
     ).getFieldContext(aEvent.composedTarget);
-
-    // The same-origin check will be done in nsContextMenu.openLinkInTab.
-    let parentAllowsMixedContent = !!this.docShell.mixedContentChannel;
 
     let disableSetDesktopBackground = null;
 
@@ -613,7 +589,7 @@ class ContextMenuChild extends JSWindowActorChild {
       } catch (e) {}
     }
 
-    let selectionInfo = BrowserUtils.getSelectionDetails(this.contentWindow);
+    let selectionInfo = SelectionUtils.getSelectionDetails(this.contentWindow);
     let loadContext = this.docShell.QueryInterface(Ci.nsILoadContext);
     let userContextId = loadContext.originAttributes.userContextId;
 
@@ -675,7 +651,6 @@ class ContextMenuChild extends JSWindowActorChild {
       referrerInfo,
       editFlags,
       principal,
-      spellInfo,
       contentType,
       docLocation,
       loginFillInfo,
@@ -686,7 +661,6 @@ class ContextMenuChild extends JSWindowActorChild {
       frameID,
       frameBrowsingContextID,
       disableSetDesktopBackground,
-      parentAllowsMixedContent,
     };
 
     if (context.inFrame && !context.inSrcdocFrame) {
@@ -713,12 +687,25 @@ class ContextMenuChild extends JSWindowActorChild {
     data.storagePrincipal = doc.effectiveStoragePrincipal;
     data.context.storagePrincipal = context.storagePrincipal;
 
+    data.cookieJarSettings = E10SUtils.serializeCookieJarSettings(
+      cookieJarSettings
+    );
+
     // In the event that the content is running in the parent process, we don't
     // actually want the contextmenu events to reach the parent - we'll dispatch
     // a new contextmenu event after the async message has reached the parent
     // instead.
     aEvent.stopPropagation();
 
+    data.spellInfo = null;
+    if (!spellInfo) {
+      this.sendAsyncMessage("contextmenu", data);
+      return;
+    }
+
+    try {
+      data.spellInfo = await spellInfo;
+    } catch (ex) {}
     this.sendAsyncMessage("contextmenu", data);
   }
 
@@ -796,22 +783,15 @@ class ContextMenuChild extends JSWindowActorChild {
     let node = aEvent.composedTarget;
 
     // Set the node to containing <video>/<audio>/<embed>/<object> if the node
-    // is in the videocontrols/pluginProblem UA Widget.
-    if (this.contentWindow.ShadowRoot) {
-      let n = node;
-      while (n) {
-        if (n instanceof this.contentWindow.ShadowRoot) {
-          if (
-            n.host instanceof this.contentWindow.HTMLMediaElement ||
-            n.host instanceof this.contentWindow.HTMLEmbedElement ||
-            n.host instanceof this.contentWindow.HTMLObjectElement
-          ) {
-            node = n.host;
-            break;
-          }
-          break;
-        }
-        n = n.parentNode;
+    // is in the videocontrols UA Widget.
+    if (node.containingShadowRoot?.isUAWidget()) {
+      const host = node.containingShadowRoot.host;
+      if (
+        host instanceof this.contentWindow.HTMLMediaElement ||
+        host instanceof this.contentWindow.HTMLEmbedElement ||
+        host instanceof this.contentWindow.HTMLObjectElement
+      ) {
+        node = host;
       }
     }
 
@@ -872,10 +852,8 @@ class ContextMenuChild extends JSWindowActorChild {
     context.onAudio = false;
     context.onCanvas = false;
     context.onCompletedImage = false;
-    context.onCTPPlugin = false;
     context.onDRMMedia = false;
     context.onPiPVideo = false;
-    context.onMediaStreamVideo = false;
     context.onEditable = false;
     context.onImage = false;
     context.onKeywordField = false;
@@ -885,6 +863,7 @@ class ContextMenuChild extends JSWindowActorChild {
     context.onMozExtLink = false;
     context.onNumeric = false;
     context.onPassword = false;
+    context.passwordRevealed = false;
     context.onSaveableLink = false;
     context.onSpellcheckable = false;
     context.onTextInput = false;
@@ -905,14 +884,15 @@ class ContextMenuChild extends JSWindowActorChild {
     );
 
     context.frameOuterWindowID =
-      context.target.ownerGlobal.windowUtils.outerWindowID;
+      context.target.ownerGlobal.docShell.outerWindowID;
 
     context.frameBrowsingContextID =
       context.target.ownerGlobal.browsingContext.id;
 
     // Check if we are in the PDF Viewer.
     context.inPDFViewer =
-      context.target.ownerDocument.nodePrincipal.origin == "resource://pdf.js";
+      context.target.ownerDocument.nodePrincipal.originNoSuffix ==
+      "resource://pdf.js";
 
     // Check if we are in a synthetic document (stand alone image, video, etc.).
     context.inSyntheticDoc = context.target.ownerDocument.mozSyntheticDocument;
@@ -1002,6 +982,16 @@ class ContextMenuChild extends JSWindowActorChild {
         context.onCompletedImage = true;
       }
 
+      // The URL of the image before redirects is the currentURI.  This is
+      // intended to be used for "Copy Image Link".
+      context.originalMediaURL = (() => {
+        let currentURI = context.target.currentURI?.spec;
+        if (currentURI && this._isMediaURLReusable(currentURI)) {
+          return currentURI;
+        }
+        return "";
+      })();
+
       // The actual URL the image was loaded from (after redirects) is the
       // currentRequestFinalURI.  We should use that as the URL for purposes of
       // deciding on the filename, if it is present. It might not be present
@@ -1046,8 +1036,6 @@ class ContextMenuChild extends JSWindowActorChild {
         context.onPiPVideo = true;
       }
 
-      context.onMediaStreamVideo = !!context.target.srcObject;
-
       // Firefox always creates a HTMLVideoElement when loading an ogg file
       // directly. If the media is actually audio, be smarter and provide a
       // context menu with audio operations.
@@ -1078,6 +1066,8 @@ class ContextMenuChild extends JSWindowActorChild {
       context.onNumeric = (editFlags & SpellCheckHelper.NUMERIC) !== 0;
       context.onEditable = (editFlags & SpellCheckHelper.EDITABLE) !== 0;
       context.onPassword = (editFlags & SpellCheckHelper.PASSWORD) !== 0;
+      context.passwordRevealed =
+        context.onPassword && context.target.showPassword;
       context.onSpellcheckable =
         (editFlags & SpellCheckHelper.SPELLCHECKABLE) !== 0;
 
@@ -1109,15 +1099,6 @@ class ContextMenuChild extends JSWindowActorChild {
           );
         }
       }
-    } else if (
-      (context.target instanceof this.contentWindow.HTMLEmbedElement ||
-        context.target instanceof this.contentWindow.HTMLObjectElement) &&
-      context.target.displayedType ==
-        this.contentWindow.HTMLObjectElement.TYPE_NULL &&
-      context.target.pluginFallbackType ==
-        this.contentWindow.HTMLObjectElement.PLUGIN_CLICK_TO_PLAY
-    ) {
-      context.onCTPPlugin = true;
     }
 
     context.canSpellCheck = this._isSpellCheckEnabled(context.target);
@@ -1196,7 +1177,7 @@ class ContextMenuChild extends JSWindowActorChild {
         }
       }
 
-      elem = elem.parentNode;
+      elem = elem.flattenedTreeParentNode;
     }
 
     // See if the user clicked in a frame.

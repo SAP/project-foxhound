@@ -10,7 +10,7 @@ describe("MomentsPageHub", () => {
   let handleMessageRequestStub;
   let addImpressionStub;
   let blockMessageByIdStub;
-  let dispatchStub;
+  let sendTelemetryStub;
   let getStringPrefStub;
   let setStringPrefStub;
   let setIntervalStub;
@@ -30,7 +30,7 @@ describe("MomentsPageHub", () => {
     setStringPrefStub = sandbox.stub();
     setIntervalStub = sandbox.stub();
     clearIntervalStub = sandbox.stub();
-    dispatchStub = sandbox.stub();
+    sendTelemetryStub = sandbox.stub();
     globals.set({
       setInterval: setIntervalStub,
       clearInterval: clearIntervalStub,
@@ -62,6 +62,33 @@ describe("MomentsPageHub", () => {
     assert.equal(instance.state._intervalId, 42);
   });
 
+  it("should init only once", async () => {
+    assert.notCalled(handleMessageRequestStub);
+
+    await instance.init(Promise.resolve(), {
+      handleMessageRequest: handleMessageRequestStub,
+      addImpression: addImpressionStub,
+      blockMessageById: blockMessageByIdStub,
+    });
+    await instance.init(Promise.resolve(), {
+      handleMessageRequest: handleMessageRequestStub,
+      addImpression: addImpressionStub,
+      blockMessageById: blockMessageByIdStub,
+    });
+
+    assert.calledOnce(handleMessageRequestStub);
+
+    instance.uninit();
+
+    await instance.init(Promise.resolve(), {
+      handleMessageRequest: handleMessageRequestStub,
+      addImpression: addImpressionStub,
+      blockMessageById: blockMessageByIdStub,
+    });
+
+    assert.calledTwice(handleMessageRequestStub);
+  });
+
   it("should uninit the instance", () => {
     instance.uninit();
     assert.calledOnce(clearIntervalStub);
@@ -88,7 +115,7 @@ describe("MomentsPageHub", () => {
         handleMessageRequest: handleMessageRequestStub,
         addImpression: addImpressionStub,
         blockMessageById: blockMessageByIdStub,
-        dispatch: dispatchStub,
+        sendTelemetry: sendTelemetryStub,
       });
     });
     afterEach(() => {
@@ -200,7 +227,7 @@ describe("MomentsPageHub", () => {
       await instance.init(sandbox.stub().resolves(), {
         addImpression: addImpressionStub,
         blockMessageById: blockMessageByIdStub,
-        dispatch: dispatchStub,
+        sendTelemetry: sendTelemetryStub,
       });
     });
     it("should set HOMEPAGE_OVERRIDE_PREF on `moments-wnp` action", async () => {
@@ -276,9 +303,9 @@ describe("MomentsPageHub", () => {
       );
       instance.executeAction(msg);
 
-      assert.calledOnce(dispatchStub);
+      assert.calledOnce(sendTelemetryStub);
       assert.calledWithExactly(sendUserEventTelemetrySpy, msg);
-      assert.calledWithExactly(dispatchStub, {
+      assert.calledWithExactly(sendTelemetryStub, {
         type: "MOMENTS_PAGE_TELEMETRY",
         data: {
           action: "moments_user_event",

@@ -4,8 +4,6 @@
 
 #include "mozilla/DebugOnly.h"
 
-#include "base/basictypes.h"
-
 #include "nsXULAppAPI.h"
 
 #include <stdlib.h>
@@ -17,20 +15,21 @@
 
 #include "nsIAppShell.h"
 #include "nsAppStartupNotifier.h"
-#include "nsIFile.h"
 #include "nsIToolkitProfile.h"
 
 #ifdef XP_WIN
 #  include <process.h>
 #  include <shobjidl.h>
 #  include "mozilla/ipc/WindowsMessageLoop.h"
+#  ifdef MOZ_SANDBOX
+#    include "mozilla/RandomNum.h"
+#  endif
+#  include "mozilla/ScopeExit.h"
 #  include "mozilla/WinDllServices.h"
+#  include "WinUtils.h"
 #endif
 
-#include "nsAppDirectoryServiceDefs.h"
 #include "nsAppRunner.h"
-#include "nsAutoRef.h"
-#include "nsDirectoryServiceDefs.h"
 #include "nsExceptionHandler.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
@@ -39,24 +38,25 @@
 #include "nsXREDirProvider.h"
 #ifdef MOZ_ASAN_REPORTER
 #  include "CmdLineAndEnvUtils.h"
+#  include "nsIFile.h"
 #endif
 
 #include "mozilla/Omnijar.h"
 #if defined(XP_MACOSX)
+#  include <mach/mach.h>
+#  include <servers/bootstrap.h>
 #  include "nsVersionComparator.h"
 #  include "chrome/common/mach_ipc_mac.h"
+#  include "gfxPlatformMac.h"
 #endif
-#include "nsX11ErrorHandler.h"
 #include "nsGDKErrorHandler.h"
 #include "base/at_exit.h"
-#include "base/command_line.h"
 #include "base/message_loop.h"
 #include "base/process_util.h"
-#include "chrome/common/child_process.h"
 #if defined(MOZ_WIDGET_ANDROID)
 #  include "chrome/common/ipc_channel.h"
 #  include "mozilla/jni/Utils.h"
-#  include "ProcessUtils.h"
+#  include "mozilla/ipc/ProcessUtils.h"
 #endif  //  defined(MOZ_WIDGET_ANDROID)
 
 #include "mozilla/AbstractThread.h"
@@ -66,18 +66,13 @@
 #include "mozilla/UniquePtr.h"
 
 #include "mozilla/ipc/BrowserProcessSubThread.h"
-#include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "mozilla/ipc/IOThreadChild.h"
 #include "mozilla/ipc/ProcessChild.h"
-#include "ScopedXREEmbed.h"
 
-#include "mozilla/plugins/PluginProcessChild.h"
 #include "mozilla/dom/ContentProcess.h"
 #include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/ContentChild.h"
 
 #include "mozilla/ipc/TestShellParent.h"
-#include "mozilla/ipc/XPCShellEnvironment.h"
 #if defined(XP_WIN)
 #  include "mozilla/WindowsConsole.h"
 #  include "mozilla/WindowsDllBlocklist.h"
@@ -97,8 +92,8 @@
 #endif
 
 #if defined(MOZ_SANDBOX)
+#  include "XREChildData.h"
 #  include "mozilla/SandboxSettings.h"
-#  include "mozilla/Preferences.h"
 #endif
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
@@ -135,6 +130,10 @@ using mozilla::_ipdltest::IPDLUnitTestProcessChild;
 #  include "mozilla/ipc/ForkServer.h"
 #endif
 
+#if defined(MOZ_X11)
+#  include <X11/Xlib.h>
+#endif
+
 #include "VRProcessChild.h"
 
 using namespace mozilla;
@@ -147,7 +146,6 @@ using mozilla::ipc::ScopedXREEmbed;
 
 using mozilla::dom::ContentParent;
 using mozilla::dom::ContentProcess;
-using mozilla::plugins::PluginProcessChild;
 
 using mozilla::gmp::GMPProcessChild;
 
@@ -225,16 +223,21 @@ void XRE_TermEmbedding() {
 }
 
 const char* XRE_GeckoProcessTypeToString(GeckoProcessType aProcessType) {
-  return (aProcessType < GeckoProcessType_End)
-             ? kGeckoProcessTypeString[aProcessType]
-             : "invalid";
+  switch (aProcessType) {
+#define GECKO_PROCESS_TYPE(enum_value, enum_name, string_name, xre_name, \
+                           bin_type)                                     \
+  case GeckoProcessType::GeckoProcessType_##enum_name:                   \
+    return string_name;
+#include "mozilla/GeckoProcessTypes.h"
+#undef GECKO_PROCESS_TYPE
+    default:
+      return "invalid";
+  }
 }
 
 const char* XRE_ChildProcessTypeToAnnotation(GeckoProcessType aProcessType) {
   switch (aProcessType) {
     case GeckoProcessType_GMPlugin:
-      // The gecko media plugin and normal plugin processes are lumped together
-      // as a historical artifact.
       return "plugin";
     case GeckoProcessType_Default:
       return "";
@@ -268,9 +271,10 @@ void XRE_SetProcessType(const char* aProcessTypeString) {
   called = true;
 
   sChildProcessType = GeckoProcessType_Invalid;
-  for (int i = 0; i < (int)ArrayLength(kGeckoProcessTypeString); ++i) {
-    if (!strcmp(kGeckoProcessTypeString[i], aProcessTypeString)) {
-      sChildProcessType = static_cast<GeckoProcessType>(i);
+  for (GeckoProcessType t :
+       MakeEnumeratedRange(GeckoProcessType::GeckoProcessType_End)) {
+    if (!strcmp(XRE_GeckoProcessTypeToString(t), aProcessTypeString)) {
+      sChildProcessType = t;
       return;
     }
   }
@@ -402,6 +406,10 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   AUTO_PROFILER_INIT;
   AUTO_PROFILER_LABEL("XRE_InitChildProcess", OTHER);
 
+#ifdef XP_MACOSX
+  gfxPlatformMac::RegisterSupplementalFonts();
+#endif
+
   // Ensure AbstractThread is minimally setup, so async IPC messages
   // work properly.
   AbstractThread::InitTLS();
@@ -417,76 +425,28 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   int allArgc = aArgc;
 #  endif /* MOZ_SANDBOX */
 
+  // Acquire the mach bootstrap port name from our command line, and send our
+  // task_t to the parent process.
   const char* const mach_port_name = aArgv[--aArgc];
 
   const int kTimeoutMs = 1000;
 
-  MachSendMessage child_message(0);
-  if (!child_message.AddDescriptor(MachMsgPortDescriptor(mach_task_self()))) {
-    NS_WARNING("child AddDescriptor(mach_task_self()) failed.");
+  UniqueMachSendRight task_sender;
+  kern_return_t kr = bootstrap_look_up(bootstrap_port, mach_port_name,
+                                       getter_Transfers(task_sender));
+  if (kr != KERN_SUCCESS) {
+    NS_WARNING(nsPrintfCString("child bootstrap_look_up failed: %s",
+                               mach_error_string(kr))
+                   .get());
     return NS_ERROR_FAILURE;
   }
 
-  ReceivePort child_recv_port;
-  mach_port_t raw_child_recv_port = child_recv_port.GetPort();
-  if (!child_message.AddDescriptor(
-          MachMsgPortDescriptor(raw_child_recv_port))) {
-    NS_WARNING("Adding descriptor to message failed");
-    return NS_ERROR_FAILURE;
-  }
-
-  ReceivePort* ports_out_receiver = new ReceivePort();
-  if (!child_message.AddDescriptor(
-          MachMsgPortDescriptor(ports_out_receiver->GetPort()))) {
-    NS_WARNING("Adding descriptor to message failed");
-    return NS_ERROR_FAILURE;
-  }
-
-  ReceivePort* ports_in_receiver = new ReceivePort();
-  if (!child_message.AddDescriptor(
-          MachMsgPortDescriptor(ports_in_receiver->GetPort()))) {
-    NS_WARNING("Adding descriptor to message failed");
-    return NS_ERROR_FAILURE;
-  }
-
-  MachPortSender child_sender(mach_port_name);
-  kern_return_t err = child_sender.SendMessage(child_message, kTimeoutMs);
-  if (err != KERN_SUCCESS) {
-    NS_WARNING("child SendMessage() failed");
-    return NS_ERROR_FAILURE;
-  }
-
-  MachReceiveMessage parent_message;
-  err = child_recv_port.WaitForMessage(&parent_message, kTimeoutMs);
-  if (err != KERN_SUCCESS) {
-    NS_WARNING("child WaitForMessage() failed");
-    return NS_ERROR_FAILURE;
-  }
-
-  if (parent_message.GetTranslatedPort(0) == MACH_PORT_NULL) {
-    NS_WARNING("child GetTranslatedPort(0) failed");
-    return NS_ERROR_FAILURE;
-  }
-
-  err = task_set_bootstrap_port(mach_task_self(),
-                                parent_message.GetTranslatedPort(0));
-
-  if (parent_message.GetTranslatedPort(1) == MACH_PORT_NULL) {
-    NS_WARNING("child GetTranslatedPort(1) failed");
-    return NS_ERROR_FAILURE;
-  }
-  MachPortSender* ports_out_sender =
-      new MachPortSender(parent_message.GetTranslatedPort(1));
-
-  if (parent_message.GetTranslatedPort(2) == MACH_PORT_NULL) {
-    NS_WARNING("child GetTranslatedPort(2) failed");
-    return NS_ERROR_FAILURE;
-  }
-  MachPortSender* ports_in_sender =
-      new MachPortSender(parent_message.GetTranslatedPort(2));
-
-  if (err != KERN_SUCCESS) {
-    NS_WARNING("child task_set_bootstrap_port() failed");
+  kr = MachSendPortSendRight(task_sender.get(), mach_task_self(),
+                             Some(kTimeoutMs));
+  if (kr != KERN_SUCCESS) {
+    NS_WARNING(nsPrintfCString("child MachSendPortSendRight failed: %s",
+                               mach_error_string(kr))
+                   .get());
     return NS_ERROR_FAILURE;
   }
 
@@ -504,28 +464,27 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
 
   bool exceptionHandlerIsSet = false;
   if (!CrashReporter::IsDummy()) {
+    CrashReporter::FileHandle crashTimeAnnotationFile =
+        CrashReporter::kInvalidFileHandle;
 #if defined(XP_WIN)
     if (aArgc < 1) {
       return NS_ERROR_FAILURE;
     }
+    // Pop the first argument, this is used by the WER runtime exception module
+    // which reads it from the command-line so we can just discard it here.
+    --aArgc;
+
     const char* const crashTimeAnnotationArg = aArgv[--aArgc];
-    uintptr_t crashTimeAnnotationFile =
-        static_cast<uintptr_t>(std::stoul(std::string(crashTimeAnnotationArg)));
+    crashTimeAnnotationFile = reinterpret_cast<CrashReporter::FileHandle>(
+        std::stoul(std::string(crashTimeAnnotationArg)));
 #endif
 
     if (aArgc < 1) return NS_ERROR_FAILURE;
     const char* const crashReporterArg = aArgv[--aArgc];
 
     if (IsCrashReporterEnabled(crashReporterArg)) {
-#if defined(XP_MACOSX)
-      exceptionHandlerIsSet =
-          CrashReporter::SetRemoteExceptionHandler(crashReporterArg);
-#elif defined(XP_WIN)
       exceptionHandlerIsSet = CrashReporter::SetRemoteExceptionHandler(
           crashReporterArg, crashTimeAnnotationFile);
-#else
-      exceptionHandlerIsSet = CrashReporter::SetRemoteExceptionHandler();
-#endif
 
       if (!exceptionHandlerIsSet) {
         // Bug 684322 will add better visibility into this condition
@@ -581,18 +540,14 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   base::ProcessId parentPID = strtol(parentPIDString, &end, 10);
   MOZ_ASSERT(!*end, "invalid parent PID");
 
-#ifdef XP_MACOSX
-  mozilla::ipc::SharedMemoryBasic::SetupMachMemory(
-      parentPID, ports_in_receiver, ports_in_sender, ports_out_sender,
-      ports_out_receiver, true);
-#endif
-
 #if defined(XP_WIN)
-  // On Win7+, register the application user model id passed in by
-  // parent. This insures windows created by the container properly
-  // group with the parent app on the Win7 taskbar.
+  // On Win7+, when not running as an MSIX package, register the application
+  // user model id passed in by parent. This ensures windows created by the
+  // container properly group with the parent app on the Win7 taskbar.
+  // MSIX packages explicitly do not support setting the appid from within
+  // the app, as it is set in the package manifest instead.
   const char* const appModelUserId = aArgv[--aArgc];
-  if (appModelUserId) {
+  if (appModelUserId && !mozilla::widget::WinUtils::HasPackageIdentity()) {
     // '-' implies no support
     if (*appModelUserId != '-') {
       nsString appId;
@@ -636,6 +591,10 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
     SandboxBroker::Initialize(aChildData->sandboxBrokerServices);
     SandboxBroker::GeckoDependentInitialize();
   }
+
+  // Call RandomUint64 to pre-load bcryptPrimitives.dll while the current
+  // thread still has an unrestricted impersonation token.
+  RandomUint64OrDie();
 #endif
 
   {
@@ -655,11 +614,8 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
           MOZ_CRASH("This makes no sense");
           break;
 
-        case GeckoProcessType_Plugin:
-          process = MakeUnique<PluginProcessChild>(parentPID);
-          break;
-
         case GeckoProcessType_Content:
+          ioInterposerGuard.emplace();
           process = MakeUnique<ContentProcess>(parentPID);
           break;
 
@@ -747,11 +703,6 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
       // scope and being deleted
       process->CleanUp();
       mozilla::Omnijar::CleanUp();
-
-#if defined(XP_MACOSX)
-      // Everybody should be done using shared memory by now.
-      mozilla::ipc::SharedMemoryBasic::Shutdown();
-#endif
     }
   }
 
@@ -828,7 +779,6 @@ nsresult XRE_InitParentProcess(int aArgc, char* aArgv[],
     if (aMainFunction) {
       nsCOMPtr<nsIRunnable> runnable =
           new MainFunctionRunnable(aMainFunction, aMainFunctionData);
-      NS_ENSURE_TRUE(runnable, NS_ERROR_OUT_OF_MEMORY);
 
       nsresult rv = NS_DispatchToCurrentThread(runnable);
       NS_ENSURE_SUCCESS(rv, rv);
@@ -948,7 +898,7 @@ TestShellParent* GetOrCreateTestShellParent() {
     // chrome mochitest where you can have multiple types of content
     // processes.
     RefPtr<ContentParent> parent =
-        ContentParent::GetNewOrUsedBrowserProcess(nullptr, DEFAULT_REMOTE_TYPE);
+        ContentParent::GetNewOrUsedBrowserProcess(DEFAULT_REMOTE_TYPE);
     parent.forget(&gContentParent);
   } else if (!gContentParent->IsAlive()) {
     return nullptr;

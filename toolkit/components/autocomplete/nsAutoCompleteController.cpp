@@ -12,6 +12,7 @@
 #include "nsUnicharUtils.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsIObserverService.h"
+#include "nsServiceManagerUtils.h"
 #include "mozilla/Services.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/KeyboardEventBinding.h"
@@ -677,6 +678,14 @@ nsAutoCompleteController::HandleDelete(bool* _retval) {
   nsIAutoCompleteResult* result = mResults.SafeObjectAt(searchIndex);
   NS_ENSURE_TRUE(result, NS_ERROR_FAILURE);
 
+  bool removable;
+  nsresult rv = result->IsRemovableAt(matchIndex, &removable);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (!removable) {
+    return NS_OK;
+  }
+
   nsAutoString search;
   input->GetSearchParam(search);
 
@@ -970,7 +979,8 @@ nsresult nsAutoCompleteController::StartSearch(uint16_t aSearchType) {
     }
 
     rv = search->StartSearch(mSearchString, searchParam, result,
-                             static_cast<nsIAutoCompleteObserver*>(this));
+                             static_cast<nsIAutoCompleteObserver*>(this),
+                             nullptr);
     if (NS_FAILED(rv)) {
       ++mSearchesFailed;
       MOZ_ASSERT(mSearchesOngoing > 0);

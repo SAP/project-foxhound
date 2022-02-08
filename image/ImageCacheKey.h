@@ -51,6 +51,8 @@ class ImageCacheKey final {
     return mOriginAttributes;
   }
 
+  const nsCString& IsolationKeyRef() const { return mIsolationKey; }
+
   /// Is this cache entry for a chrome image?
   bool IsChrome() const { return mIsChrome; }
 
@@ -69,11 +71,8 @@ class ImageCacheKey final {
   static nsCString GetIsolationKey(dom::Document* aDocument, nsIURI* aURI);
 
   void EnsureHash() const;
-  void EnsureBlobRef() const;
 
   nsCOMPtr<nsIURI> mURI;
-  Maybe<uint64_t> mBlobSerial;
-  mutable nsCString mBlobRef;
   OriginAttributes mOriginAttributes;
   void* mControlledDocument;
   nsCString mIsolationKey;

@@ -8,7 +8,7 @@
 #define DOM_SVG_SVGFEDISPLACEMENTMAPELEMENT_H_
 
 #include "SVGAnimatedEnumeration.h"
-#include "SVGFilters.h"
+#include "mozilla/dom/SVGFilters.h"
 
 nsresult NS_NewSVGFEDisplacementMapElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -42,6 +42,8 @@ class SVGFEDisplacementMapElement : public SVGFEDisplacementMapElementBase {
   virtual void GetSourceImageNames(nsTArray<SVGStringInfo>& aSources) override;
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+
+  virtual nsresult BindToTree(BindContext& aCtx, nsINode& aParent) override;
 
   // WebIDL
   already_AddRefed<DOMSVGAnimatedString> In1();

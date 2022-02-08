@@ -14,6 +14,7 @@
 #include "mozilla/dom/nsSpeechTask.h"
 
 #include "nsThreadUtils.h"
+#include "nsXULAppAPI.h"
 #include "prenv.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/DebugOnly.h"
@@ -21,8 +22,7 @@
 #define CHANNELS 1
 #define SAMPLERATE 1600
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 StaticRefPtr<nsFakeSynthServices> nsFakeSynthServices::sSingleton;
 
@@ -285,5 +285,4 @@ nsFakeSynthServices::GetInstanceForService() {
   return picoService.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

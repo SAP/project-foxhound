@@ -8,7 +8,7 @@
  */
 
 add_task(async function() {
-  const { tab, monitor } = await initNetMonitor(SIMPLE_URL, {
+  const { monitor, tab } = await initNetMonitor(HTTPS_SIMPLE_URL, {
     requestCount: 1,
   });
   info("Starting test... ");
@@ -22,7 +22,7 @@ add_task(async function() {
 
   // Reload to have one request in the list
   let waitForEvents = waitForNetworkEvents(monitor, 1);
-  await navigateTo(SIMPLE_URL);
+  await navigateTo(HTTPS_SIMPLE_URL);
   await waitForEvents;
 
   // Capture normal request
@@ -132,7 +132,7 @@ add_task(async function() {
   // Reload to have one request in the list
   info("Reloading to check unblock");
   waitForEvents = waitForNetworkEvents(monitor, 1);
-  tab.linkedBrowser.reload();
+  await reloadBrowser();
   await waitForEvents;
 
   // Capture unblocked request

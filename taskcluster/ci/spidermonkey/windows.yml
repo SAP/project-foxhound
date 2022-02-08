@@ -7,7 +7,7 @@ job-defaults:
     worker:
         max-run-time: 36000
         env:
-            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/releng.manifest"
+            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/vs2017-15.9.manifest"
     run:
         tooltool-downloads: internal
 
@@ -23,8 +23,9 @@ sm-plain-win64/debug:
         spidermonkey-platform: win64
     fetches:
         toolchain:
-            - win64-clang-cl
+            - win64-clang
             - win64-rust
+            - win64-mozmake
 
 sm-plain-win32/debug:
     description: "Spidermonkey Plain win32 debug"
@@ -40,11 +41,12 @@ sm-plain-win32/debug:
     run-on-projects: ['mozilla-central']
     fetches:
         toolchain:
-            - win64-clang-cl
+            - win64-clang
             - win64-rust
+            - win64-mozmake
     worker:
         env:
-            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win32/releng.manifest"
+            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/vs2017-15.9.manifest"
 
 sm-plain-win64/opt:
     description: "Spidermonkey Plain win64 opt"
@@ -58,8 +60,9 @@ sm-plain-win64/opt:
         spidermonkey-platform: win64
     fetches:
         toolchain:
-            - win64-clang-cl
+            - win64-clang
             - win64-rust
+            - win64-mozmake
 
 sm-plain-win32/opt:
     description: "Spidermonkey Plain win32 opt"
@@ -75,11 +78,12 @@ sm-plain-win32/opt:
     run-on-projects: ['mozilla-central']
     fetches:
         toolchain:
-            - win64-clang-cl
+            - win64-clang
             - win64-rust
+            - win64-mozmake
     worker:
         env:
-            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win32/releng.manifest"
+            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/vs2017-15.9.manifest"
 
 sm-compacting-win64/debug:
     description: "Spidermonkey Compacting win64 debug"
@@ -93,8 +97,9 @@ sm-compacting-win64/debug:
         spidermonkey-platform: win64
     fetches:
         toolchain:
-            - win64-clang-cl
+            - win64-clang
             - win64-rust
+            - win64-mozmake
 
 sm-compacting-win32/debug:
     description: "Spidermonkey Compacting win32 debug"
@@ -110,8 +115,9 @@ sm-compacting-win32/debug:
     run-on-projects: []
     fetches:
         toolchain:
-            - win64-clang-cl
+            - win64-clang
             - win64-rust
+            - win64-mozmake
     worker:
         env:
-            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win32/releng.manifest"
+            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/vs2017-15.9.manifest"

@@ -5,9 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use cocoa_foundation::foundation::NSUInteger;
-
-use crate::depthstencil::MTLCompareFunction;
+use super::{depthstencil::MTLCompareFunction, DeviceRef, NSUInteger};
 
 #[repr(u64)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -121,6 +119,20 @@ impl SamplerDescriptorRef {
     pub fn set_border_color(&self, color: MTLSamplerBorderColor) {
         unsafe { msg_send![self, setBorderColor: color] }
     }
+
+    pub fn label(&self) -> &str {
+        unsafe {
+            let label = msg_send![self, label];
+            crate::nsstring_as_str(label)
+        }
+    }
+
+    pub fn set_label(&self, label: &str) {
+        unsafe {
+            let nslabel = crate::nsstring_from_str(label);
+            let () = msg_send![self, setLabel: nslabel];
+        }
+    }
 }
 
 pub enum MTLSamplerState {}
@@ -129,4 +141,17 @@ foreign_obj_type! {
     type CType = MTLSamplerState;
     pub struct SamplerState;
     pub struct SamplerStateRef;
+}
+
+impl SamplerStateRef {
+    pub fn device(&self) -> &DeviceRef {
+        unsafe { msg_send![self, device] }
+    }
+
+    pub fn label(&self) -> &str {
+        unsafe {
+            let label = msg_send![self, label];
+            crate::nsstring_as_str(label)
+        }
+    }
 }

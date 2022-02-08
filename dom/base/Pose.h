@@ -7,10 +7,13 @@
 #ifndef mozilla_dom_Pose_h
 #define mozilla_dom_Pose_h
 
-#include "mozilla/ErrorResult.h"
+#include "js/RootingAPI.h"
+#include "nsCOMPtr.h"
 #include "nsWrapperCache.h"
 
 namespace mozilla {
+class ErrorResult;
+
 namespace dom {
 
 class Pose : public nsWrapperCache {

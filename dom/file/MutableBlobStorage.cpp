@@ -21,8 +21,7 @@
 
 #define BLOB_MEMORY_TEMPORARY_FILE 1048576
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -632,7 +631,7 @@ nsresult MutableBlobStorage::DispatchToIOThread(
         do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID);
     MOZ_ASSERT(target);
 
-    mTaskQueue = new TaskQueue(target.forget());
+    mTaskQueue = new TaskQueue(target.forget(), "BlobStorage");
   }
 
   nsCOMPtr<nsIRunnable> runnable(aRunnable);
@@ -665,5 +664,4 @@ void MutableBlobStorage::CloseFD() {
   mFD = nullptr;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -84,7 +84,7 @@ add_task(async function test_logins_decrypt_failure() {
   Assert.equal(Services.logins.countLogins("", "", ""), logins.length);
 
   // Removing all logins removes the non-decryptable entries also.
-  Services.logins.removeAllLogins();
+  Services.logins.removeAllUserFacingLogins();
   Assert.equal(Services.logins.getAllLogins().length, 0);
   Assert.equal(Services.logins.countLogins("", "", ""), 0);
 });
@@ -151,5 +151,26 @@ add_task(function test_add_logins_with_decrypt_failure() {
   Services.logins.addLogin(login);
   equal(Services.logins.searchLogins(searchProp).length, 1);
 
-  Services.logins.removeAllLogins();
+  Services.logins.removeAllUserFacingLogins();
+});
+
+// Test the "syncID" metadata works as expected on decryption failure.
+add_task(async function test_sync_metadata_with_decrypt_failure() {
+  // And some sync metadata
+  await Services.logins.setSyncID("sync-id");
+  await Services.logins.setLastSync(123);
+  equal(await Services.logins.getSyncID(), "sync-id");
+  equal(await Services.logins.getLastSync(), 123);
+
+  // This makes the existing login and syncID non-decryptable.
+  resetMasterPassword();
+
+  // The syncID is now null.
+  equal(await Services.logins.getSyncID(), null);
+  // The sync timestamp isn't impacted.
+  equal(await Services.logins.getLastSync(), 123);
+
+  // But we should be able to set it again.
+  await Services.logins.setSyncID("new-id");
+  equal(await Services.logins.getSyncID(), "new-id");
 });

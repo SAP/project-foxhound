@@ -5,7 +5,7 @@
 "use strict";
 
 const { BrowserLoader } = ChromeUtils.import(
-  "resource://devtools/client/shared/browser-loader.js"
+  "resource://devtools/shared/loader/browser-loader.js"
 );
 const require = BrowserLoader({
   baseURI: "resource://devtools/client/application/",
@@ -46,12 +46,9 @@ const { safeAsyncMethod } = require("devtools/shared/async-utils");
  * called to start the UI for the panel.
  */
 window.Application = {
-  async bootstrap({ toolbox, panel }) {
+  async bootstrap({ toolbox, commands, panel }) {
     // bind event handlers to `this`
-    this.handleOnNavigate = this.handleOnNavigate.bind(this);
     this.updateDomain = this.updateDomain.bind(this);
-    this.onTargetAvailable = this.onTargetAvailable.bind(this);
-    this.onTargetDestroyed = this.onTargetDestroyed.bind(this);
 
     // wrap updateWorkers to swallow rejections occurring after destroy
     this.safeUpdateWorkers = safeAsyncMethod(
@@ -60,9 +57,8 @@ window.Application = {
     );
 
     this.toolbox = toolbox;
-    // NOTE: the client is the same through the lifecycle of the toolbox, even
-    // though we get it from toolbox.target
-    this.client = toolbox.target.client;
+    this._commands = commands;
+    this.client = commands.client;
 
     this.telemetry = new Telemetry();
     this.store = configureStore(this.telemetry, toolbox.sessionId);
@@ -81,12 +77,12 @@ window.Application = {
       canDebugServiceWorkers && services.features.doesDebuggerSupportWorkers
     );
 
-    // awaiting for watchTargets will return the targets that are currently
-    // available, so we can have our first render with all the data ready
-    await this.toolbox.targetList.watchTargets(
-      [this.toolbox.targetList.TYPES.FRAME],
-      this.onTargetAvailable,
-      this.onTargetDestroyed
+    this.onResourceAvailable = this.onResourceAvailable.bind(this);
+    await this._commands.resourceCommand.watchResources(
+      [this._commands.resourceCommand.TYPES.DOCUMENT_EVENT],
+      {
+        onAvailable: this.onResourceAvailable,
+      }
     );
 
     // Render the root Application component.
@@ -98,11 +94,6 @@ window.Application = {
     render(Provider({ store: this.store }, app), this.mount);
   },
 
-  handleOnNavigate() {
-    this.updateDomain();
-    this.actions.resetManifest();
-  },
-
   async updateWorkers() {
     const registrationsWithWorkers = await this.client.mainRoot.listAllServiceWorkers();
     this.actions.updateWorkers(registrationsWithWorkers);
@@ -112,46 +103,38 @@ window.Application = {
     this.actions.updateDomain(this.toolbox.target.url);
   },
 
-  setupTarget(targetFront) {
-    this.handleOnNavigate(); // update domain and manifest for the new target
-    targetFront.on("navigate", this.handleOnNavigate);
+  handleOnNavigate() {
+    this.updateDomain();
+    this.actions.resetManifest();
   },
 
-  cleanUpTarget(targetFront) {
-    targetFront.off("navigate", this.handleOnNavigate);
-  },
-
-  onTargetAvailable({ targetFront }) {
-    if (!targetFront.isTopLevel) {
-      return; // ignore target frames that are not top level for now
+  onResourceAvailable(resources) {
+    // Only consider top level document, and ignore remote iframes top document
+    const hasDocumentDomComplete = resources.some(
+      resource =>
+        resource.resourceType ===
+          this._commands.resourceCommand.TYPES.DOCUMENT_EVENT &&
+        resource.name === "dom-complete" &&
+        resource.targetFront.isTopLevel
+    );
+    if (hasDocumentDomComplete) {
+      this.handleOnNavigate(); // update domain and manifest for the new target
     }
-
-    this.setupTarget(targetFront);
-  },
-
-  onTargetDestroyed({ targetFront }) {
-    if (!targetFront.isTopLevel) {
-      return; // ignore target frames that are not top level for now
-    }
-
-    this.cleanUpTarget(targetFront);
   },
 
   destroy() {
     this.workersListener.removeListener();
 
-    this.toolbox.targetList.unwatchTargets(
-      [this.toolbox.targetList.TYPES.FRAME],
-      this.onTargetAvailable,
-      this.onTargetDestroyed
+    this._commands.resourceCommand.unwatchResources(
+      [this._commands.resourceCommand.TYPES.DOCUMENT_EVENT],
+      { onAvailable: this.onResourceAvailable }
     );
-
-    this.cleanUpTarget(this.toolbox.target);
 
     unmountComponentAtNode(this.mount);
     this.mount = null;
     this.toolbox = null;
     this.client = null;
+    this._commands = null;
     this.workersListener = null;
     this._destroyed = true;
   },

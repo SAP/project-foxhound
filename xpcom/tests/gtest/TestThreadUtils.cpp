@@ -5,9 +5,11 @@
 #include <type_traits>
 
 #include "nsComponentManagerUtils.h"
+#include "nsIThread.h"
 #include "nsThreadUtils.h"
 #include "mozilla/IdleTaskRunner.h"
 #include "mozilla/RefCounted.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/UniquePtr.h"
 
 #include "gtest/gtest.h"
@@ -477,6 +479,21 @@ TEST(ThreadUtils, NewNamedCancelableRunnableFunction)
     EXPECT_EQ(foo->refCount(), 1u);
     EXPECT_FALSE(ran);
   }
+
+  // Test no-op after cancelation.
+  {
+    auto foo = MakeRefPtr<TestRefCounted>();
+    bool ran = false;
+
+    RefPtr<CancelableRunnable> func =
+        NS_NewCancelableRunnableFunction("unused", [foo, &ran] { ran = true; });
+
+    EXPECT_EQ(foo->refCount(), 2u);
+    func->Cancel();
+    func->Run();
+
+    EXPECT_FALSE(ran);
+  }
 }
 
 static void TestNewRunnableMethod(bool aNamed) {
@@ -494,6 +511,15 @@ static void TestNewRunnableMethod(bool aNamed) {
 
     // Read only string. Dereferencing in runnable method to check this works.
     char* message = (char*)"Test message";
+
+    {
+      auto bar = MakeRefPtr<nsBar>();
+
+      NS_DispatchToMainThread(
+          aNamed ? NewRunnableMethod("unused", std::move(bar), &nsBar::DoBar1)
+                 : NewRunnableMethod("nsBar::DoBar1", std::move(bar),
+                                     &nsBar::DoBar1));
+    }
 
     NS_DispatchToMainThread(
         aNamed ? NewRunnableMethod("unused", bar, &nsBar::DoBar1)
@@ -773,7 +799,8 @@ TEST(ThreadUtils, IdleTaskRunner)
         cnt1++;
         return true;
       },
-      "runner1", 10, 3, true, nullptr);
+      "runner1", 0, TimeDuration::FromMilliseconds(10),
+      TimeDuration::FromMilliseconds(3), true, nullptr);
 
   // Non-repeating but callback always return false so it's still repeating.
   int cnt2 = 0;
@@ -782,7 +809,8 @@ TEST(ThreadUtils, IdleTaskRunner)
         cnt2++;
         return false;
       },
-      "runner2", 10, 3, false, nullptr);
+      "runner2", 0, TimeDuration::FromMilliseconds(10),
+      TimeDuration::FromMilliseconds(3), false, nullptr);
 
   // Repeating until cnt3 >= 2 by returning 'true' in MayStopProcessing
   // callback. The strategy is to stop repeating as early as possible so that we
@@ -793,7 +821,8 @@ TEST(ThreadUtils, IdleTaskRunner)
         cnt3++;
         return true;
       },
-      "runner3", 10, 3, true, [&cnt3] { return cnt3 >= 2; });
+      "runner3", 0, TimeDuration::FromMilliseconds(10),
+      TimeDuration::FromMilliseconds(3), true, [&cnt3] { return cnt3 >= 2; });
 
   // Non-repeating can callback return true so the callback will
   // be only run once.
@@ -803,32 +832,39 @@ TEST(ThreadUtils, IdleTaskRunner)
         cnt4++;
         return true;
       },
-      "runner4", 10, 3, false, nullptr);
+      "runner4", 0, TimeDuration::FromMilliseconds(10),
+      TimeDuration::FromMilliseconds(3), false, nullptr);
 
   // Firstly we wait until the two repeating tasks reach their limits.
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return cnt1 >= 100; }));
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return cnt2 >= 100; }));
+  MOZ_ALWAYS_TRUE(
+      SpinEventLoopUntil("xpcom:TEST(ThreadUtils, IdleTaskRunner) cnt1"_ns,
+                         [&]() { return cnt1 >= 100; }));
+  MOZ_ALWAYS_TRUE(
+      SpinEventLoopUntil("xpcom:TEST(ThreadUtils, IdleTaskRunner) cnt2"_ns,
+                         [&]() { return cnt2 >= 100; }));
 
   // At any point ==> 0 <= cnt3 <= 2 since MayStopProcessing() would return
   // true when cnt3 >= 2.
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() {
-    if (cnt3 > 2) {
-      EXPECT_TRUE(false) << "MaybeContinueProcess() doesn't work.";
-      return true;  // Stop on failure.
-    }
-    return cnt3 == 2;  // Stop finish if we have reached its max value.
-  }));
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil(
+      "xpcom:TEST(ThreadUtils, IdleTaskRunner) cnt3"_ns, [&]() {
+        if (cnt3 > 2) {
+          EXPECT_TRUE(false) << "MaybeContinueProcess() doesn't work.";
+          return true;  // Stop on failure.
+        }
+        return cnt3 == 2;  // Stop finish if we have reached its max value.
+      }));
 
   // At any point ==> 0 <= cnt4 <= 1 since this is a non-repeating
   // idle runner.
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() {
-    // At any point: 0 <= cnt4 <= 1
-    if (cnt4 > 1) {
-      EXPECT_TRUE(false) << "The 'mRepeating' flag doesn't work.";
-      return true;  // Stop on failure.
-    }
-    return cnt4 == 1;
-  }));
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil(
+      "xpcom:TEST(ThreadUtils, IdleTaskRunner) cnt4"_ns, [&]() {
+        // At any point: 0 <= cnt4 <= 1
+        if (cnt4 > 1) {
+          EXPECT_TRUE(false) << "The 'mRepeating' flag doesn't work.";
+          return true;  // Stop on failure.
+        }
+        return cnt4 == 1;
+      }));
 
   // The repeating timers require an explicit Cancel() call.
   runner1->Cancel();

@@ -47,6 +47,7 @@
 #include "mozilla/dom/Link.h"
 #include "mozilla/dom/RangeBinding.h"
 #include "mozilla/dom/Selection.h"
+#include "nsLayoutUtils.h"
 #include "nsRange.h"
 
 #include "nsTypeAheadFind.h"
@@ -229,7 +230,7 @@ nsTypeAheadFind::SetDocShell(nsIDocShell* aDocShell) {
   mWebBrowserFind = do_GetInterface(aDocShell);
   NS_ENSURE_TRUE(mWebBrowserFind, NS_ERROR_FAILURE);
 
-  mPresShell = do_GetWeakReference(aDocShell->GetPresShell());
+  mDocument = do_GetWeakReference(aDocShell->GetExtantDocument());
 
   ReleaseStrongMemberVariables();
   return NS_OK;
@@ -266,8 +267,7 @@ nsTypeAheadFind::SetSelectionModeAndRepaint(int16_t aToggle) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsTypeAheadFind::CollapseSelection() {
+MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP nsTypeAheadFind::CollapseSelection() {
   nsCOMPtr<nsISelectionController> selectionController =
       do_QueryReferent(mSelectionController);
   if (!selectionController) {
@@ -340,27 +340,17 @@ nsresult nsTypeAheadFind::FindItNow(uint32_t aMode, bool aIsLinksOnly,
   mFoundEditable = nullptr;
   mFoundRange = nullptr;
   mCurrentWindow = nullptr;
-  RefPtr<PresShell> startingPresShell = GetPresShell();
-  if (!startingPresShell) {
-    nsCOMPtr<nsIDocShell> ds = do_QueryReferent(mDocShell);
-    NS_ENSURE_TRUE(ds, NS_ERROR_FAILURE);
-
-    startingPresShell = ds->GetPresShell();
-    mPresShell = do_GetWeakReference(startingPresShell);
-  }
-
-  RefPtr<PresShell> presShell = startingPresShell;
-  if (!presShell) {
-    return NS_ERROR_FAILURE;
-  }
+  RefPtr<Document> startingDocument = GetDocument();
+  NS_ENSURE_TRUE(startingDocument, NS_ERROR_FAILURE);
 
   // There could be unflushed notifications which hide textareas or other
   // elements that we don't want to find text in.
-  presShell->FlushPendingNotifications(mozilla::FlushType::Layout);
+  startingDocument->FlushPendingNotifications(mozilla::FlushType::Layout);
 
+  RefPtr<PresShell> presShell = startingDocument->GetPresShell();
+  NS_ENSURE_TRUE(presShell, NS_ERROR_FAILURE);
   RefPtr<nsPresContext> presContext = presShell->GetPresContext();
-
-  if (!presContext) return NS_ERROR_FAILURE;
+  NS_ENSURE_TRUE(presContext, NS_ERROR_FAILURE);
 
   RefPtr<Selection> selection;
   nsCOMPtr<nsISelectionController> selectionController =
@@ -493,21 +483,23 @@ nsresult nsTypeAheadFind::FindItNow(uint32_t aMode, bool aIsLinksOnly,
         SetSelectionModeAndRepaint(nsISelectionController::SELECTION_ON);
       }
 
-      // Make sure new document is selected
-      if (presShell != startingPresShell) {
-        // We are in a new document (because of frames/iframes)
-        mPresShell = do_GetWeakReference(presShell);
-      }
-
       RefPtr<Document> document = presShell->GetDocument();
       NS_ASSERTION(document, "Wow, presShell doesn't have document!");
-      if (!document) return NS_ERROR_UNEXPECTED;
+      if (!document) {
+        return NS_ERROR_UNEXPECTED;
+      }
+
+      // Make sure new document is selected
+      if (document != startingDocument) {
+        // We are in a new document (because of frames/iframes)
+        mDocument = do_GetWeakReference(document);
+      }
 
       nsCOMPtr<nsPIDOMWindowInner> window = document->GetInnerWindow();
       NS_ASSERTION(window, "document has no window");
       if (!window) return NS_ERROR_UNEXPECTED;
 
-      nsFocusManager* fm = nsFocusManager::GetFocusManager();
+      RefPtr<nsFocusManager> fm = nsFocusManager::GetFocusManager();
       if (usesIndependentSelection) {
         /* If a search result is found inside an editable element, we'll focus
          * the element only if focus is in our content window, i.e.
@@ -532,7 +524,7 @@ nsresult nsTypeAheadFind::FindItNow(uint32_t aMode, bool aIsLinksOnly,
         // We may be inside an editable element, and therefore the selection
         // may be controlled by a different selection controller.  Walk up the
         // chain of parent nodes to see if we find one.
-        nsCOMPtr<nsINode> node = returnRange->GetStartContainer();
+        nsINode* node = returnRange->GetStartContainer();
         while (node) {
           nsCOMPtr<nsIEditor> editor;
           if (RefPtr<HTMLInputElement> input =
@@ -565,7 +557,8 @@ nsresult nsTypeAheadFind::FindItNow(uint32_t aMode, bool aIsLinksOnly,
 
           // Otherwise move focus/caret to editable element
           if (fm) {
-            fm->SetFocus(mFoundEditable, 0);
+            nsCOMPtr<Element> newFocusElement = mFoundEditable;
+            fm->SetFocus(newFocusElement, 0);
           }
           break;
         }
@@ -777,9 +770,8 @@ nsresult nsTypeAheadFind::GetSearchContainers(
   // Consider current selection as null if
   // it's not in the currently focused document
   RefPtr<const nsRange> currentSelectionRange;
-  RefPtr<PresShell> selectionPresShell = GetPresShell();
-  if (aSelectionController && selectionPresShell &&
-      selectionPresShell == presShell) {
+  RefPtr<Document> selectionDocument = GetDocument();
+  if (aSelectionController && selectionDocument && selectionDocument == doc) {
     RefPtr<Selection> selection = aSelectionController->GetSelection(
         nsISelectionController::SELECTION_NORMAL);
     if (selection) {
@@ -848,10 +840,8 @@ void nsTypeAheadFind::RangeStartsInsideLink(nsRange* aRange,
       // look for non whitespace character before start offset
       for (uint32_t index = 0; index < startOffset; index++) {
         // FIXME: take content language into account when deciding whitespace.
-        if (!mozilla::dom::IsSpaceCharacter(
-                textFrag->CharAt(static_cast<int32_t>(index)))) {
+        if (!mozilla::dom::IsSpaceCharacter(textFrag->CharAt(index))) {
           *aIsStartingLink = false;  // not at start of a node
-
           break;
         }
       }
@@ -914,10 +904,9 @@ void nsTypeAheadFind::RangeStartsInsideLink(nsRange* aRange,
   *aIsStartingLink = false;
 }
 
-NS_IMETHODIMP
-nsTypeAheadFind::Find(const nsAString& aSearchString, bool aLinksOnly,
-                      uint32_t aMode, bool aDontIterateFrames,
-                      uint16_t* aResult) {
+MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP nsTypeAheadFind::Find(
+    const nsAString& aSearchString, bool aLinksOnly, uint32_t aMode,
+    bool aDontIterateFrames, uint16_t* aResult) {
   if (aMode == nsITypeAheadFind::FIND_PREVIOUS ||
       aMode == nsITypeAheadFind::FIND_NEXT) {
     if (mTypeAheadBuffer.IsEmpty()) {
@@ -941,15 +930,11 @@ nsresult nsTypeAheadFind::FindInternal(uint32_t aMode,
                                        uint16_t* aResult) {
   *aResult = FIND_NOTFOUND;
 
-  RefPtr<PresShell> presShell = GetPresShell();
-  if (!presShell) {
-    nsCOMPtr<nsIDocShell> ds(do_QueryReferent(mDocShell));
-    NS_ENSURE_TRUE(ds, NS_ERROR_FAILURE);
+  RefPtr<Document> doc = GetDocument();
+  NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
 
-    presShell = ds->GetPresShell();
-    NS_ENSURE_TRUE(presShell, NS_ERROR_FAILURE);
-    mPresShell = do_GetWeakReference(presShell);
-  }
+  RefPtr<PresShell> presShell = doc->GetPresShell();
+  NS_ENSURE_TRUE(presShell, NS_ERROR_FAILURE);
 
   RefPtr<Selection> selection;
   nsCOMPtr<nsISelectionController> selectionController =
@@ -1187,9 +1172,9 @@ bool nsTypeAheadFind::IsRangeRendered(nsRange* aRange) {
     // Append visible frames to frames array.
     nsLayoutUtils::GetFramesForArea(
         RelativeTo{rootFrame}, r, frames,
-        {FrameForPointOption::IgnorePaintSuppression,
-         FrameForPointOption::IgnoreRootScrollFrame,
-         FrameForPointOption::OnlyVisible});
+        {{FrameForPointOption::IgnorePaintSuppression,
+          FrameForPointOption::IgnoreRootScrollFrame,
+          FrameForPointOption::OnlyVisible}});
 
     // See if any of the frames contain the content. If they do, then the range
     // is visible. We search for the content rather than the original frame,
@@ -1207,16 +1192,21 @@ bool nsTypeAheadFind::IsRangeRendered(nsRange* aRange) {
   return false;
 }
 
-already_AddRefed<PresShell> nsTypeAheadFind::GetPresShell() {
-  if (!mPresShell) {
+already_AddRefed<Document> nsTypeAheadFind::GetDocument() {
+  // Try the last document we found and ensure it's sane.
+  RefPtr<Document> doc = do_QueryReferent(mDocument);
+  if (doc && doc->GetPresShell() && doc->GetDocShell()) {
+    return doc.forget();
+  }
+
+  // Otherwise fall back to the document from which we were initialized (the one
+  // from mDocShell).
+  mDocument = nullptr;
+  nsCOMPtr<nsIDocShell> ds = do_QueryReferent(mDocShell);
+  if (!ds) {
     return nullptr;
   }
-  RefPtr<PresShell> presShell = do_QueryReferent(mPresShell);
-  if (presShell) {
-    nsPresContext* pc = presShell->GetPresContext();
-    if (!pc || !pc->GetContainerWeak()) {
-      return nullptr;
-    }
-  }
-  return presShell.forget();
+  doc = ds->GetExtantDocument();
+  mDocument = do_GetWeakReference(doc);
+  return doc.forget();
 }

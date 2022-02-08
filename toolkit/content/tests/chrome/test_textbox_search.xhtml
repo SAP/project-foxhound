@@ -9,7 +9,7 @@
   <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
   <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 
-  <hbox>
+  <hbox id="searchbox-container">
     <search-textbox id="searchbox"
                     oncommand="doSearch(this.value);"
                     placeholder="random placeholder"
@@ -29,6 +29,14 @@ var gLastTest;
 
 function doTests() {
   var textbox = $("searchbox");
+
+  // Reconnect the searchbox to ensure connectedCallback only runs once
+  // (bug 1650486).
+  textbox.remove();
+  $("searchbox-container").append(textbox);
+  is(textbox.shadowRoot.querySelectorAll(".textbox-search-sign").length, 1,
+      "only one search icon in the search box");
+
   var icons = textbox._searchIcons;
   var searchIcon = icons.querySelector(".textbox-search-icon");
   var clearIcon = icons.querySelector(".textbox-search-clear");
@@ -40,6 +48,7 @@ function doTests() {
 
   is(textbox.placeholder, "random placeholder", "search textbox supports placeholder");
   is(textbox.value, "", "placeholder doesn't interfere with the real value");
+  is(textbox.shadowRoot.querySelector("input").getAttribute("inputmode"), "search", "inputmode of search textbox is search by default");
 
   function iconClick(aIcon) {
     is(icons.selectedPanel, aIcon, aIcon.className + " icon must be displayed in order to be clickable");
@@ -137,7 +146,7 @@ function doTests() {
   gExpectedValue = false;
   textbox.value = "foo";
   iconClick(searchIcon);
-  ok(gExpectedValue == false, "search *not* triggered when clicking the search icon in search button mode while the textbox is disabled");
+  ok(!gExpectedValue, "search *not* triggered when clicking the search icon in search button mode while the textbox is disabled");
   is(icons.selectedPanel, searchIcon, "search icon persists in search button mode when trying to submit while the textbox is disabled");
   textbox.disabled = false;
   ok(!searchIcon.hasAttribute("disabled"), "disabled attribute removed from the search icon");

@@ -17,6 +17,7 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 class LightweightThemeChild extends JSWindowActorChild {
   constructor() {
     super();
+    this._initted = false;
     Services.cpmm.sharedData.addEventListener("change", this);
   }
 
@@ -25,12 +26,17 @@ class LightweightThemeChild extends JSWindowActorChild {
   }
 
   _getChromeOuterWindowID() {
-    if (this.docShell.messageManager) {
-      return this.docShell.messageManager.chromeOuterWindowID;
-    }
+    try {
+      // Getting the browserChild throws an exception when it is null.
+      let browserChild = this.docShell.browserChild;
+      if (browserChild) {
+        return browserChild.chromeOuterWindowID;
+      }
+    } catch (ex) {}
+
     // We don't have a message manager, so presumable we're running in a sidebar
     // in the parent process.
-    return this.contentWindow.top.windowUtils.outerWindowID;
+    return this.contentWindow.top?.docShell?.outerWindowID;
   }
 
   /**
@@ -41,7 +47,11 @@ class LightweightThemeChild extends JSWindowActorChild {
     switch (event.type) {
       // Make sure to update the theme data on first page show.
       case "pageshow":
-        this.update();
+      case "DOMContentLoaded":
+        if (!this._initted && this._getChromeOuterWindowID()) {
+          this._initted = true;
+          this.update();
+        }
         break;
 
       case "change":

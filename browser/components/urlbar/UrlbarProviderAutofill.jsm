@@ -27,10 +27,8 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 // AutoComplete query type constants.
 // Describes the various types of queries that we can process rows for.
 const QUERYTYPE = {
-  FILTERED: 0,
   AUTOFILL_ORIGIN: 1,
   AUTOFILL_URL: 2,
-  ADAPTIVE: 3,
 };
 
 // `WITH` clause for the autofill queries.  autofill_frecency_threshold.value is
@@ -157,69 +155,61 @@ const QUERY_ORIGIN_PREFIX_BOOKMARK = originQuery(
 
 const QUERY_URL_HISTORY_BOOKMARK = urlQuery(
   `AND (bookmarked OR frecency > 20)
-     AND strip_prefix_and_userinfo(url) BETWEEN :strippedURL AND :strippedURL || X'FFFF'`,
+     AND strip_prefix_and_userinfo(url) COLLATE NOCASE
+       BETWEEN :strippedURL AND :strippedURL || X'FFFF'`,
   `AND (bookmarked OR frecency > 20)
-     AND strip_prefix_and_userinfo(url) BETWEEN 'www.' || :strippedURL AND 'www.' || :strippedURL || X'FFFF'`
+     AND strip_prefix_and_userinfo(url) COLLATE NOCASE
+       BETWEEN 'www.' || :strippedURL AND 'www.' || :strippedURL || X'FFFF'`
 );
 
 const QUERY_URL_PREFIX_HISTORY_BOOKMARK = urlQuery(
   `AND (bookmarked OR frecency > 20)
-     AND url BETWEEN :prefix || :strippedURL AND :prefix || :strippedURL || X'FFFF'`,
+     AND url COLLATE NOCASE
+       BETWEEN :prefix || :strippedURL AND :prefix || :strippedURL || X'FFFF'`,
   `AND (bookmarked OR frecency > 20)
-     AND url BETWEEN :prefix || 'www.' || :strippedURL AND :prefix || 'www.' || :strippedURL || X'FFFF'`
+     AND url COLLATE NOCASE
+       BETWEEN :prefix || 'www.' || :strippedURL AND :prefix || 'www.' || :strippedURL || X'FFFF'`
 );
 
 const QUERY_URL_HISTORY = urlQuery(
   `AND (visited OR NOT bookmarked)
      AND frecency > 20
-     AND strip_prefix_and_userinfo(url) BETWEEN :strippedURL AND :strippedURL || X'FFFF'`,
+     AND strip_prefix_and_userinfo(url) COLLATE NOCASE
+       BETWEEN :strippedURL AND :strippedURL || X'FFFF'`,
   `AND (visited OR NOT bookmarked)
      AND frecency > 20
-     AND strip_prefix_and_userinfo(url) BETWEEN 'www.' || :strippedURL AND 'www.' || :strippedURL || X'FFFF'`
+     AND strip_prefix_and_userinfo(url) COLLATE NOCASE
+       BETWEEN 'www.' || :strippedURL AND 'www.' || :strippedURL || X'FFFF'`
 );
 
 const QUERY_URL_PREFIX_HISTORY = urlQuery(
   `AND (visited OR NOT bookmarked)
      AND frecency > 20
-     AND url BETWEEN :prefix || :strippedURL AND :prefix || :strippedURL || X'FFFF'`,
+     AND url COLLATE NOCASE
+       BETWEEN :prefix || :strippedURL AND :prefix || :strippedURL || X'FFFF'`,
   `AND (visited OR NOT bookmarked)
      AND frecency > 20
-     AND url BETWEEN :prefix || 'www.' || :strippedURL AND :prefix || 'www.' || :strippedURL || X'FFFF'`
+     AND url COLLATE NOCASE
+       BETWEEN :prefix || 'www.' || :strippedURL AND :prefix || 'www.' || :strippedURL || X'FFFF'`
 );
 
 const QUERY_URL_BOOKMARK = urlQuery(
   `AND bookmarked
-     AND strip_prefix_and_userinfo(url) BETWEEN :strippedURL AND :strippedURL || X'FFFF'`,
+     AND strip_prefix_and_userinfo(url) COLLATE NOCASE
+       BETWEEN :strippedURL AND :strippedURL || X'FFFF'`,
   `AND bookmarked
-     AND strip_prefix_and_userinfo(url) BETWEEN 'www.' || :strippedURL AND 'www.' || :strippedURL || X'FFFF'`
+     AND strip_prefix_and_userinfo(url) COLLATE NOCASE
+       BETWEEN 'www.' || :strippedURL AND 'www.' || :strippedURL || X'FFFF'`
 );
 
 const QUERY_URL_PREFIX_BOOKMARK = urlQuery(
   `AND bookmarked
-     AND url BETWEEN :prefix || :strippedURL AND :prefix || :strippedURL || X'FFFF'`,
+     AND url COLLATE NOCASE
+       BETWEEN :prefix || :strippedURL AND :prefix || :strippedURL || X'FFFF'`,
   `AND bookmarked
-     AND url BETWEEN :prefix || 'www.' || :strippedURL AND :prefix || 'www.' || :strippedURL || X'FFFF'`
+     AND url COLLATE NOCASE
+       BETWEEN :prefix || 'www.' || :strippedURL AND :prefix || 'www.' || :strippedURL || X'FFFF'`
 );
-
-const kProtocolsWithIcons = [
-  "chrome:",
-  "moz-extension:",
-  "about:",
-  "http:",
-  "https:",
-  "ftp:",
-];
-function iconHelper(url) {
-  if (typeof url == "string") {
-    return kProtocolsWithIcons.some(p => url.startsWith(p))
-      ? "page-icon:" + url
-      : UrlbarUtils.ICON.DEFAULT;
-  }
-  if (url && url instanceof URL && kProtocolsWithIcons.includes(url.protocol)) {
-    return "page-icon:" + url.href;
-  }
-  return UrlbarUtils.ICON.DEFAULT;
-}
 
 /**
  * Class used to create the provider.
@@ -271,6 +261,12 @@ class ProviderAutofill extends UrlbarProvider {
     }
 
     if (queryContext.tokens.length != 1) {
+      return false;
+    }
+
+    // Trying to autofill an extremely long string would be expensive, and
+    // not particularly useful since the filled part falls out of screen anyway.
+    if (queryContext.searchString.length > UrlbarUtils.MAX_TEXT_LENGTH) {
       return false;
     }
 
@@ -375,6 +371,68 @@ class ProviderAutofill extends UrlbarProvider {
   }
 
   /**
+   * Filters hosts by retaining only the ones over the autofill threshold, then
+   * sorts them by their frecency, and extracts the one with the highest value.
+   * @param {UrlbarQueryContext} queryContext The current queryContext.
+   * @param {Array} hosts Array of host names to examine.
+   * @returns {Promise} Resolved when the filtering is complete.
+   * @resolves {string} The top matching host, or null if not found.
+   */
+  async getTopHostOverThreshold(queryContext, hosts) {
+    let db = await PlacesUtils.promiseLargeCacheDBConnection();
+    let conditions = [];
+    // Pay attention to the order of params, since they are not named.
+    let params = [UrlbarPrefs.get("autoFill.stddevMultiplier"), ...hosts];
+    let sources = queryContext.sources;
+    if (
+      sources.includes(UrlbarUtils.RESULT_SOURCE.HISTORY) &&
+      sources.includes(UrlbarUtils.RESULT_SOURCE.BOOKMARKS)
+    ) {
+      conditions.push(`(bookmarked OR ${SQL_AUTOFILL_FRECENCY_THRESHOLD})`);
+    } else if (sources.includes(UrlbarUtils.RESULT_SOURCE.HISTORY)) {
+      conditions.push(`visited AND ${SQL_AUTOFILL_FRECENCY_THRESHOLD}`);
+    } else if (sources.includes(UrlbarUtils.RESULT_SOURCE.BOOKMARKS)) {
+      conditions.push("bookmarked");
+    }
+
+    let rows = await db.executeCached(
+      `
+        ${SQL_AUTOFILL_WITH},
+        origins(id, prefix, host_prefix, host, fixed, host_frecency, frecency, bookmarked, visited) AS (
+          SELECT
+          id,
+          prefix,
+          first_value(prefix) OVER (
+            PARTITION BY host ORDER BY frecency DESC, prefix = "https://" DESC, id DESC
+          ),
+          host,
+          fixup_url(host),
+          TOTAL(frecency) OVER (PARTITION BY fixup_url(host)),
+          frecency,
+          MAX(EXISTS(
+            SELECT 1 FROM moz_places WHERE origin_id = o.id AND foreign_count > 0
+          )) OVER (PARTITION BY fixup_url(host)),
+          MAX(EXISTS(
+            SELECT 1 FROM moz_places WHERE origin_id = o.id AND visit_count > 0
+          )) OVER (PARTITION BY fixup_url(host))
+          FROM moz_origins o
+          WHERE o.host IN (${new Array(hosts.length).fill("?").join(",")})
+        )
+        SELECT host
+        FROM origins
+        ${conditions.length ? "WHERE " + conditions.join(" AND ") : ""}
+        ORDER BY frecency DESC, prefix = "https://" DESC, id DESC
+        LIMIT 1
+      `,
+      params
+    );
+    if (!rows.length) {
+      return null;
+    }
+    return rows[0].getResultByName("host");
+  }
+
+  /**
    * Obtains the query to search for autofill origin results.
    *
    * @param {UrlbarQueryContext} queryContext
@@ -455,10 +513,10 @@ class ProviderAutofill extends UrlbarProvider {
         .join("") + ".";
 
     // Build a string that's the URL stripped of its prefix, i.e., the host plus
-    // everything after the host.  Use queryContext.searchString instead of
+    // everything after.  Use queryContext.trimmedSearchString instead of
     // this._searchString because this._searchString has had unEscapeURIForUI()
     // called on it.  It's therefore not necessarily the literal URL.
-    let strippedURL = queryContext.searchString.trim();
+    let strippedURL = queryContext.trimmedSearchString;
     if (this._strippedPrefix) {
       strippedURL = strippedURL.substr(this._strippedPrefix.length);
     }
@@ -517,12 +575,21 @@ class ProviderAutofill extends UrlbarProvider {
       case QUERYTYPE.AUTOFILL_URL:
         let url = row.getResultByName("url");
         let strippedURL = row.getResultByName("stripped_url");
+
+        if (!UrlbarUtils.canAutofillURL(url, strippedURL, true)) {
+          return null;
+        }
+
         // We autofill urls to-the-next-slash.
         // http://mozilla.org/foo/bar/baz will be autofilled to:
         //  - http://mozilla.org/f[oo/]
         //  - http://mozilla.org/foo/b[ar/]
         //  - http://mozilla.org/foo/bar/b[az]
-        let strippedURLIndex = url.indexOf(strippedURL);
+        // And, toLowerCase() is preferred over toLocaleLowerCase() here
+        // because "COLLATE NOCASE" in the SQL only handles ASCII characters.
+        let strippedURLIndex = url
+          .toLowerCase()
+          .indexOf(strippedURL.toLowerCase());
         let strippedPrefix = url.substr(0, strippedURLIndex);
         let nextSlashIndex = url.indexOf(
           "/",
@@ -548,7 +615,7 @@ class ProviderAutofill extends UrlbarProvider {
       ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
         title: [title, UrlbarUtils.HIGHLIGHT.TYPED],
         url: [finalCompleteValue, UrlbarUtils.HIGHLIGHT.TYPED],
-        icon: iconHelper(finalCompleteValue),
+        icon: UrlbarUtils.getIconForUrl(finalCompleteValue),
       })
     );
     autofilledValue =
@@ -575,7 +642,7 @@ class ProviderAutofill extends UrlbarProvider {
       return result;
     }
 
-    // Or it may look like a search engine domain.
+    // Or we may want to fill a search engine domain regardless of the threshold.
     result = await this._matchSearchEngineDomain(queryContext);
     if (result) {
       return result;
@@ -604,7 +671,7 @@ class ProviderAutofill extends UrlbarProvider {
           ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
             title: [trimmedUrl, UrlbarUtils.HIGHLIGHT.TYPED],
             url: [aboutUrl, UrlbarUtils.HIGHLIGHT.TYPED],
-            icon: iconHelper(aboutUrl),
+            icon: UrlbarUtils.getIconForUrl(aboutUrl),
           })
         );
         let autofilledValue =
@@ -655,7 +722,7 @@ class ProviderAutofill extends UrlbarProvider {
       return null;
     }
 
-    // engineForDomainPrefix only matches against engine domains.
+    // enginesForDomainPrefix only matches against engine domains.
     // Remove an eventual trailing slash from the search string (without the
     // prefix) and check if the resulting string is worth matching.
     // Later, we'll verify that the found result matches the original
@@ -671,7 +738,9 @@ class ProviderAutofill extends UrlbarProvider {
       return null;
     }
 
-    let engine = await UrlbarSearchUtils.engineForDomainPrefix(searchStr);
+    // Since we are autofilling, we can only pick one matching engine. Use the
+    // first.
+    let engine = (await UrlbarSearchUtils.enginesForDomainPrefix(searchStr))[0];
     if (!engine) {
       return null;
     }
@@ -697,7 +766,7 @@ class ProviderAutofill extends UrlbarProvider {
       UrlbarUtils.RESULT_SOURCE.SEARCH,
       ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
         engine: [engine.name, UrlbarUtils.HIGHLIGHT.TYPED],
-        icon: engine.iconURI ? engine.iconURI.spec : "",
+        icon: engine.iconURI?.spec,
       })
     );
     let autofilledValue =

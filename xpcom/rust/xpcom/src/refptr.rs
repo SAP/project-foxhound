@@ -2,20 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use crate::interfaces::nsrefcnt;
+use libc;
+use nserror::{nsresult, NS_OK};
 use std::cell::Cell;
 use std::fmt;
 use std::marker::PhantomData;
 use std::mem;
 use std::ops::Deref;
-use std::ptr;
+use std::ptr::{self, NonNull};
 use std::sync::atomic::{self, AtomicUsize, Ordering};
-
-use nserror::{nsresult, NS_OK};
-
-use libc;
-
-use interfaces::nsrefcnt;
-
 use threadbound::ThreadBound;
 
 /// A trait representing a type which can be reference counted invasively.
@@ -32,14 +28,8 @@ pub unsafe trait RefCounted {
 /// own memory. RefPtr will invoke the addref and release methods at the
 /// appropriate times to facilitate the bookkeeping.
 pub struct RefPtr<T: RefCounted + 'static> {
-    // We're going to cheat and store the internal reference as an &'static T
-    // instead of an *const T or Shared<T>, because Shared and NonZero are
-    // unstable, and we need to build on stable rust.
-    // I believe that this is "safe enough", as this module is private and
-    // no other module can read this reference.
-    _ptr: &'static T,
-    // As we aren't using Shared<T>, we need to add this phantomdata to
-    // prevent unsoundness in dropck
+    _ptr: NonNull<T>,
+    // Tell dropck that we own an instance of T.
     _marker: PhantomData<T>,
 }
 
@@ -49,22 +39,20 @@ impl<T: RefCounted + 'static> RefPtr<T> {
     pub fn new(p: &T) -> RefPtr<T> {
         unsafe {
             p.addref();
-            RefPtr {
-                _ptr: mem::transmute(p),
-                _marker: PhantomData,
-            }
+        }
+        RefPtr {
+            _ptr: p.into(),
+            _marker: PhantomData,
         }
     }
 
     /// Construct a RefPtr from a raw pointer, addrefing it.
     #[inline]
     pub unsafe fn from_raw(p: *const T) -> Option<RefPtr<T>> {
-        if p.is_null() {
-            return None;
-        }
-        (*p).addref();
+        let ptr = NonNull::new(p as *mut T)?;
+        ptr.as_ref().addref();
         Some(RefPtr {
-            _ptr: &*p,
+            _ptr: ptr,
             _marker: PhantomData,
         })
     }
@@ -72,11 +60,8 @@ impl<T: RefCounted + 'static> RefPtr<T> {
     /// Construct a RefPtr from a raw pointer, without addrefing it.
     #[inline]
     pub unsafe fn from_raw_dont_addref(p: *const T) -> Option<RefPtr<T>> {
-        if p.is_null() {
-            return None;
-        }
         Some(RefPtr {
-            _ptr: &*p,
+            _ptr: NonNull::new(p as *mut T)?,
             _marker: PhantomData,
         })
     }
@@ -84,8 +69,14 @@ impl<T: RefCounted + 'static> RefPtr<T> {
     /// Write this RefPtr's value into an outparameter.
     #[inline]
     pub fn forget(self, into: &mut *const T) {
-        *into = &*self;
-        mem::forget(self);
+        *into = Self::forget_into_raw(self);
+    }
+
+    #[inline]
+    pub fn forget_into_raw(this: RefPtr<T>) -> *const T {
+        let into = &*this as *const T;
+        mem::forget(this);
+        into
     }
 }
 
@@ -93,7 +84,7 @@ impl<T: RefCounted + 'static> Deref for RefPtr<T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        self._ptr
+        unsafe { self._ptr.as_ref() }
     }
 }
 
@@ -101,7 +92,7 @@ impl<T: RefCounted + 'static> Drop for RefPtr<T> {
     #[inline]
     fn drop(&mut self) {
         unsafe {
-            self._ptr.release();
+            self._ptr.as_ref().release();
         }
     }
 }
@@ -118,6 +109,12 @@ impl<T: RefCounted + 'static + fmt::Debug> fmt::Debug for RefPtr<T> {
         write!(f, "RefPtr<{:?}>", self.deref())
     }
 }
+
+// Both `Send` and `Sync` bounds are required for `RefPtr<T>` to implement
+// either, as sharing a `RefPtr<T>` also allows transferring ownership, and
+// vice-versa.
+unsafe impl<T: RefCounted + 'static + Send + Sync> Send for RefPtr<T> {}
+unsafe impl<T: RefCounted + 'static + Send + Sync> Sync for RefPtr<T> {}
 
 /// A wrapper that binds a RefCounted value to its original thread,
 /// preventing retrieval from other threads and panicking if the value
@@ -301,8 +298,18 @@ impl AtomicRefcnt {
     pub unsafe fn dec(&self) -> nsrefcnt {
         let result = self.0.fetch_sub(1, Ordering::Release) as nsrefcnt - 1;
         if result == 0 {
-            // We're going to destroy the object on this thread.
-            atomic::fence(Ordering::Acquire);
+            // We're going to destroy the object on this thread, so we need
+            // acquire semantics to synchronize with the memory released by
+            // the last release on other threads, that is, to ensure that
+            // writes prior to that release are now visible on this thread.
+            if cfg!(feature = "thread_sanitizer") {
+                // TSan doesn't understand atomic::fence, so in order to avoid
+                // a false positive for every time a refcounted object is
+                // deleted, we replace the fence with an atomic operation.
+                self.0.load(Ordering::Acquire);
+            } else {
+                atomic::fence(Ordering::Acquire);
+            }
         }
         result
     }
@@ -310,5 +317,59 @@ impl AtomicRefcnt {
     /// Get the current value of the reference count.
     pub fn get(&self) -> nsrefcnt {
         self.0.load(Ordering::Acquire) as nsrefcnt
+    }
+}
+
+#[cfg(feature = "gecko_refcount_logging")]
+pub mod trace_refcnt {
+    use crate::interfaces::nsrefcnt;
+
+    extern "C" {
+        pub fn NS_LogCtor(aPtr: *mut libc::c_void, aTypeName: *const libc::c_char, aSize: u32);
+        pub fn NS_LogDtor(aPtr: *mut libc::c_void, aTypeName: *const libc::c_char, aSize: u32);
+        pub fn NS_LogAddRef(
+            aPtr: *mut libc::c_void,
+            aRefcnt: nsrefcnt,
+            aClass: *const libc::c_char,
+            aClassSize: u32,
+        );
+        pub fn NS_LogRelease(
+            aPtr: *mut libc::c_void,
+            aRefcnt: nsrefcnt,
+            aClass: *const libc::c_char,
+            aClassSize: u32,
+        );
+    }
+}
+
+// stub inline methods for the refcount logging functions for when the feature
+// is disabled.
+#[cfg(not(feature = "gecko_refcount_logging"))]
+pub mod trace_refcnt {
+    use crate::interfaces::nsrefcnt;
+
+    #[inline]
+    #[allow(non_snake_case)]
+    pub unsafe extern "C" fn NS_LogCtor(_: *mut libc::c_void, _: *const libc::c_char, _: u32) {}
+    #[inline]
+    #[allow(non_snake_case)]
+    pub unsafe extern "C" fn NS_LogDtor(_: *mut libc::c_void, _: *const libc::c_char, _: u32) {}
+    #[inline]
+    #[allow(non_snake_case)]
+    pub unsafe extern "C" fn NS_LogAddRef(
+        _: *mut libc::c_void,
+        _: nsrefcnt,
+        _: *const libc::c_char,
+        _: u32,
+    ) {
+    }
+    #[inline]
+    #[allow(non_snake_case)]
+    pub unsafe extern "C" fn NS_LogRelease(
+        _: *mut libc::c_void,
+        _: nsrefcnt,
+        _: *const libc::c_char,
+        _: u32,
+    ) {
     }
 }

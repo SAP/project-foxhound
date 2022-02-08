@@ -27,8 +27,8 @@ var EXPORTED_SYMBOLS = [
  * (set as the current default value of the "dom.ipc.processCount.extension"
  * preference), if we switch to use more than one extension process, we have to
  * be sure that all the browser's frameLoader are associated to the same process,
- * e.g. by using the `sameProcessAsFrameLoader` property.
- * (http://searchfox.org/mozilla-central/source/dom/interfaces/base/nsIBrowser.idl)
+ * e.g. by enabling the `maychangeremoteness` attribute, and/or setting
+ * `initialBrowsingContextGroupId` attribute to the correct value.
  *
  * At that point we are going to keep track of the existing browsers associated to
  * a webextension to ensure that they are all running in the same process (and we
@@ -47,7 +47,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AddonManagerPrivate: "resource://gre/modules/AddonManager.jsm",
   AddonSettings: "resource://gre/modules/addons/AddonSettings.jsm",
-  AMTelemetry: "resource://gre/modules/AddonManager.jsm",
   AppConstants: "resource://gre/modules/AppConstants.jsm",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
   E10SUtils: "resource://gre/modules/E10SUtils.jsm",
@@ -58,25 +57,18 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   ExtensionStorage: "resource://gre/modules/ExtensionStorage.jsm",
   ExtensionStorageIDB: "resource://gre/modules/ExtensionStorageIDB.jsm",
   ExtensionTelemetry: "resource://gre/modules/ExtensionTelemetry.jsm",
-  FileSource: "resource://gre/modules/L10nRegistry.jsm",
-  L10nRegistry: "resource://gre/modules/L10nRegistry.jsm",
   LightweightThemeManager: "resource://gre/modules/LightweightThemeManager.jsm",
   Log: "resource://gre/modules/Log.jsm",
-  MessageChannel: "resource://gre/modules/MessageChannel.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
-  OS: "resource://gre/modules/osfile.jsm",
   PluralForm: "resource://gre/modules/PluralForm.jsm",
   Schemas: "resource://gre/modules/Schemas.jsm",
   ServiceWorkerCleanUp: "resource://gre/modules/ServiceWorkerCleanUp.jsm",
   XPIProvider: "resource://gre/modules/addons/XPIProvider.jsm",
-});
 
-// This is used for manipulating jar entry paths, which always use Unix
-// separators.
-XPCOMUtils.defineLazyGetter(this, "OSPath", () => {
-  let obj = {};
-  ChromeUtils.import("resource://gre/modules/osfile/ospath_unix.jsm", obj);
-  return obj;
+  // These are used for manipulating jar entry paths, which always use Unix
+  // separators.
+  basename: "resource://gre/modules/osfile/ospath_unix.jsm",
+  dirname: "resource://gre/modules/osfile/ospath_unix.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(this, "resourceProtocol", () =>
@@ -101,7 +93,6 @@ XPCOMUtils.defineLazyServiceGetters(this, {
     "amIAddonManagerStartup",
   ],
   spellCheck: ["@mozilla.org/spellchecker/engine;1", "mozISpellCheckingEngine"],
-  uuidGen: ["@mozilla.org/uuid-generator;1", "nsIUUIDGenerator"],
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -113,9 +104,16 @@ XPCOMUtils.defineLazyPreferenceGetter(
 // Temporary pref to be turned on when ready.
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
-  "allowPrivateBrowsingByDefault",
-  "extensions.allowPrivateBrowsingByDefault",
-  true
+  "userContextIsolation",
+  "extensions.userContextIsolation.enabled",
+  false
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "userContextIsolationDefaultRestricted",
+  "extensions.userContextIsolation.defaults.restricted",
+  "[]"
 );
 
 var {
@@ -151,6 +149,8 @@ XPCOMUtils.defineLazyGetter(this, "LAZY_NO_PROMPT_PERMISSIONS", async () => {
 const { sharedData } = Services.ppmm;
 
 const PRIVATE_ALLOWED_PERMISSION = "internal:privateBrowsingAllowed";
+const SVG_CONTEXT_PROPERTIES_PERMISSION =
+  "internal:svgContextPropertiesAllowed";
 
 // The userContextID reserved for the extension storage (its purpose is ensuring that the IndexedDB
 // storage used by the browser.storage.local API is not directly accessible from the extension code,
@@ -171,6 +171,56 @@ const PRIVILEGED_PERMS = new Set([
   "normandyAddonStudy",
   "networkStatus",
 ]);
+
+if (AppConstants.platform == "android") {
+  PRIVILEGED_PERMS.add("nativeMessaging");
+}
+
+const INSTALL_AND_UPDATE_STARTUP_REASONS = new Set([
+  "ADDON_INSTALL",
+  "ADDON_UPGRADE",
+  "ADDON_DOWNGRADE",
+]);
+
+// Returns true if the extension is owned by Mozilla (is either privileged,
+// using one of the @mozilla.com/@mozilla.org protected addon id suffixes).
+//
+// This method throws if the extension's startupReason is not one of the expected
+// ones (either ADDON_INSTALL, ADDON_UPGRADE or ADDON_DOWNGRADE).
+//
+// NOTE: This methos is internally referring to "addonData.recommendationState" to
+// identify a Mozilla line extension. That property is part of the addonData only when
+// the extension is installed or updated, and so we enforce the expected
+// startup reason values to prevent it from silently returning different results
+// if called with an unexpected startupReason.
+function isMozillaExtension(extension) {
+  const { addonData, id, isPrivileged, startupReason } = extension;
+
+  if (!INSTALL_AND_UPDATE_STARTUP_REASONS.has(startupReason)) {
+    throw new Error(
+      `isMozillaExtension called with unexpected startupReason: ${startupReason}`
+    );
+  }
+
+  if (isPrivileged) {
+    return true;
+  }
+
+  if (id.endsWith("@mozilla.com") || id.endsWith("@mozilla.org")) {
+    return true;
+  }
+
+  // This check is a subset of what is being checked in AddonWrapper's
+  // recommendationStates (states expire dates for line extensions are
+  // not consideredcimportant in determining that the extension is
+  // provided by mozilla, and so they are omitted here on purpose).
+  const isMozillaLineExtension = addonData.recommendationState?.states?.includes(
+    "line"
+  );
+  const isSigned = addonData.signedState > AddonManager.SIGNEDSTATE_MISSING;
+
+  return isSigned && isMozillaLineExtension;
+}
 
 /**
  * Classify an individual permission from a webextension manifest
@@ -258,7 +308,7 @@ var UUIDMap = {
 
     let uuid = null;
     if (create) {
-      uuid = uuidGen.generateUUID().number;
+      uuid = Services.uuid.generateUUID().number;
       uuid = uuid.slice(1, -1); // Strip { and } off the UUID.
 
       map[id] = uuid;
@@ -339,24 +389,26 @@ var ExtensionAddonObserver = {
     );
 
     // Clear all the registered service workers for the extension
-    // principal.
+    // principal (the one that may have been registered through the
+    // manifest.json file and the ones that may have been registered
+    // from an extension page through the service worker API).
+    //
     // Any stored data would be cleared below (if the pref
     // "extensions.webextensions.keepStorageOnUninstall has not been
     // explicitly set to true, which is usually only done in
     // tests and by some extensions developers for testing purpose).
-    if (WebExtensionPolicy.backgroundServiceWorkerEnabled) {
-      // TODO: ServiceWorkerCleanUp may go away once Bug 1183245
-      // is fixed, and so this may actually go away, replaced by
-      // marking the registration as disabled or to be removed on
-      // shutdown (where we do know if the extension is shutting
-      // down because is being uninstalled) and then cleared from
-      // the persisted serviceworker registration on the next
-      // startup.
-      AsyncShutdown.profileChangeTeardown.addBlocker(
-        `Clear ServiceWorkers for ${addon.id}`,
-        ServiceWorkerCleanUp.removeFromPrincipal(principal)
-      );
-    }
+    //
+    // TODO: ServiceWorkerCleanUp may go away once Bug 1183245
+    // is fixed, and so this may actually go away, replaced by
+    // marking the registration as disabled or to be removed on
+    // shutdown (where we do know if the extension is shutting
+    // down because is being uninstalled) and then cleared from
+    // the persisted serviceworker registration on the next
+    // startup.
+    AsyncShutdown.profileChangeTeardown.addBlocker(
+      `Clear ServiceWorkers for ${addon.id}`,
+      ServiceWorkerCleanUp.removeFromPrincipal(principal)
+    );
 
     if (!Services.prefs.getBoolPref(LEAVE_STORAGE_PREF, false)) {
       // Clear browser.storage.local backends.
@@ -365,7 +417,7 @@ var ExtensionAddonObserver = {
         ExtensionStorage.clear(addon.id, { shouldNotifyListeners: false })
       );
 
-      // Clear any IndexedDB storage created by the extension
+      // Clear any IndexedDB and Cache API storage created by the extension.
       // If LSNG is enabled, this also clears localStorage.
       Services.qms.clearStoragesForPrincipal(principal);
 
@@ -533,27 +585,35 @@ class ExtensionData {
     return `moz-extension://${this.uuid}/${path}`;
   }
 
-  async readDirectory(path) {
+  /**
+   * Discovers the file names within a directory or JAR file.
+   *
+   * @param {Ci.nsIFileURL|Ci.nsIJARURI} path
+   *   The path to the directory or jar file to look at.
+   * @param {boolean} [directoriesOnly]
+   *   If true, this will return only the directories present within the directory.
+   * @returns {string[]}
+   *   An array of names of files/directories (only the name, not the path).
+   */
+  async _readDirectory(path, directoriesOnly = false) {
     if (this.rootURI instanceof Ci.nsIFileURL) {
       let uri = Services.io.newURI("./" + path, null, this.rootURI);
       let fullPath = uri.QueryInterface(Ci.nsIFileURL).file.path;
 
-      let iter = new OS.File.DirectoryIterator(fullPath);
       let results = [];
-
       try {
-        await iter.forEach(entry => {
-          results.push(entry);
-        });
-      } catch (e) {
-        // Always return a list, even if the directory does not exist (or is
-        // not a directory) for symmetry with the ZipReader behavior.
-        if (!e.becauseNoSuchFile) {
-          Cu.reportError(e);
+        let children = await IOUtils.getChildren(fullPath);
+        for (let child of children) {
+          if (
+            !directoriesOnly ||
+            (await IOUtils.stat(child)).type == "directory"
+          ) {
+            results.push(PathUtils.filename(child));
+          }
         }
+      } catch (ex) {
+        // Fall-through, return what we have.
       }
-      iter.close();
-
       return results;
     }
 
@@ -576,11 +636,12 @@ class ExtensionData {
       // Trim off the leading path, and filter out entries from
       // subdirectories.
       name = name.slice(entry.length);
-      if (name && !/\/./.test(name)) {
-        results.push({
-          name: name.replace("/", ""),
-          isDir: name.endsWith("/"),
-        });
+      if (
+        name &&
+        !/\/./.test(name) &&
+        (!directoriesOnly || name.endsWith("/"))
+      ) {
+        results.push(name.replace("/", ""));
       }
     }
 
@@ -618,10 +679,24 @@ class ExtensionData {
     });
   }
 
+  canCheckSignature() {
+    // ExtensionData instances can't check the signature because it is not yet
+    // available when XPIProvider does use it to load the extension manifest.
+    //
+    // This method will return true for the ExtensionData subclasses (like
+    // the Extension class) to enable the additional validation that would require
+    // the signature to be available (e.g. to check if the extension is allowed to
+    // use a privileged permission).
+    return this.constructor != ExtensionData;
+  }
+
   get restrictSchemes() {
-    // ExtensionData can't check the signature (as it is not yet passed to its constructor
-    // as it is for the Extension class, where this getter is overridden to check both the
-    // signature and the permissions).
+    // mozillaAddons permission is only allowed for privileged addons and
+    // filtered out if the extension isn't privileged.
+    // When the manifest is loaded by an explicit ExtensionData class
+    // instance, the signature data isn't available yet and this helper
+    // would always return false, but it will return true when appropriate
+    // (based on the isPrivileged boolean property) for the Extension class.
     return !this.hasPermission("mozillaAddons");
   }
 
@@ -630,13 +705,15 @@ class ExtensionData {
    * that contains seperate host origins and permissions arrays.
    *
    * @param {Array} permissionsArray
+   * @param {Array} [hostPermissions]
    * @returns {Object} permissions object
    */
-  permissionsObject(permissionsArray) {
+  permissionsObject(permissionsArray = [], hostPermissions = []) {
     let permissions = new Set();
     let origins = new Set();
     let { restrictSchemes, isPrivileged } = this;
-    for (let perm of permissionsArray || []) {
+
+    for (let perm of permissionsArray.concat(hostPermissions)) {
       let type = classifyPermission(perm, restrictSchemes, isPrivileged);
       if (type.origin) {
         origins.add(perm);
@@ -644,6 +721,7 @@ class ExtensionData {
         permissions.add(perm);
       }
     }
+
     return {
       permissions,
       origins,
@@ -663,7 +741,8 @@ class ExtensionData {
     }
 
     let { permissions, origins } = this.permissionsObject(
-      this.manifest.permissions
+      this.manifest.permissions,
+      this.manifest.host_permissions
     );
 
     if (
@@ -821,6 +900,14 @@ class ExtensionData {
     return this.experimentsAllowed && manifest.experiment_apis;
   }
 
+  get manifestVersion() {
+    return this.manifest.manifest_version;
+  }
+
+  async getExtensionVersionWithoutValidation() {
+    return (await this.readJSON("manifest.json")).version;
+  }
+
   /**
    * Load a locale and return a localized manifest.  The extension must
    * be initialized, and manifest parsed prior to calling.
@@ -869,6 +956,7 @@ class ExtensionData {
         this.manifestWarning(error);
       },
       preprocessors: {},
+      manifestVersion: this.manifestVersion,
     };
 
     if (this.fluentL10n || this.localeData) {
@@ -888,16 +976,6 @@ class ExtensionData {
 
     this.manifest = manifest;
     this.rawManifest = manifest;
-
-    if (
-      allowPrivateBrowsingByDefault &&
-      "incognito" in manifest &&
-      manifest.incognito == "not_allowed"
-    ) {
-      throw new Error(
-        `manifest.incognito set to "not_allowed" is currently unvailable for use.`
-      );
-    }
 
     if (manifest && manifest.default_locale) {
       await this.initLocale();
@@ -934,18 +1012,20 @@ class ExtensionData {
 
     manifest = normalized.value;
 
-    let id;
-    try {
-      if (manifest.applications.gecko.id) {
-        id = manifest.applications.gecko.id;
+    // browser_specific_settings is documented, but most internal code is written
+    // using applications.  Use browser_specific_settings if it is in the manifest.  If
+    // both are set, we probably should make it an error, but we don't know if addons
+    // in the wild have done that, so let the chips fall where they may.
+    if (manifest.browser_specific_settings?.gecko) {
+      if (manifest.applications) {
+        this.manifestWarning(
+          `"applications" property ignored and overridden by "browser_specific_settings"`
+        );
       }
-    } catch (e) {
-      // Errors are handled by the type checks above.
+      manifest.applications = manifest.browser_specific_settings;
     }
 
-    if (!this.id) {
-      this.id = id;
-    }
+    this.id ??= manifest.applications?.gecko?.id;
 
     let apiNames = new Set();
     let dependencies = new Set();
@@ -958,7 +1038,7 @@ class ExtensionData {
     let result = {
       apiNames,
       dependencies,
-      id,
+      id: this.id,
       manifest,
       modules: null,
       originPermissions,
@@ -974,13 +1054,15 @@ class ExtensionData {
         isPrivileged && manifest.permissions.includes("mozillaAddons")
       );
 
-      for (let perm of manifest.permissions) {
+      let host_permissions = manifest.host_permissions ?? [];
+
+      for (let perm of manifest.permissions.concat(host_permissions)) {
         if (perm === "geckoProfiler" && !isPrivileged) {
           const acceptedExtensions = Services.prefs.getStringPref(
             "extensions.geckoProfiler.acceptedExtensionIds",
             ""
           );
-          if (!acceptedExtensions.split(",").includes(id)) {
+          if (!acceptedExtensions.split(",").includes(this.id)) {
             this.manifestError(
               "Only specific extensions are allowed to access the geckoProfiler."
             );
@@ -995,11 +1077,26 @@ class ExtensionData {
         } else if (type.api) {
           apiNames.add(type.api);
         } else if (type.invalid) {
+          if (!this.canCheckSignature() && PRIVILEGED_PERMS.has(perm)) {
+            // Do not emit the warning if the invalid permission is a privileged one
+            // and the current instance can't yet check for a valid signature
+            // (see Bug 1675858 and the inline comment inside the canCheckSignature
+            // method for more details).
+            //
+            // This parseManifest method will be called again on the Extension class
+            // instance, which will have the signature available and the invalid
+            // extension permission warnings will be collected and logged if necessary.
+            continue;
+          }
+
           this.manifestWarning(`Invalid extension permission: ${perm}`);
           continue;
         }
 
-        permissions.add(perm);
+        // Unfortunately, we treat <all_urls> as an API permission as well.
+        if (!type.origin || perm === "<all_urls>") {
+          permissions.add(perm);
+        }
       }
 
       if (this.id) {
@@ -1084,10 +1181,18 @@ class ExtensionData {
 
       // Normalize all patterns to contain a single leading /
       if (manifest.web_accessible_resources) {
+        // Normalize into V3 objects
+        let wac =
+          this.manifestVersion >= 3
+            ? manifest.web_accessible_resources
+            : [{ resources: manifest.web_accessible_resources }];
         webAccessibleResources.push(
-          ...manifest.web_accessible_resources.map(path =>
-            path.replace(/^\/*/, "/")
-          )
+          ...wac.map(obj => {
+            obj.resources = obj.resources.map(path =>
+              path.replace(/^\/*/, "/")
+            );
+            return obj;
+          })
         );
       }
     } else if (this.type == "langpack") {
@@ -1125,7 +1230,7 @@ class ExtensionData {
 
       // Check if there's a root directory `/localization` in the langpack.
       // If there is one, add it with the name `toolkit` as a FileSource.
-      const entries = await this.readDirectory("localization");
+      const entries = await this._readDirectory("localization");
       if (entries.length) {
         l10nRegistrySources.toolkit = "";
       }
@@ -1153,17 +1258,14 @@ class ExtensionData {
       for (let [lang, path] of Object.entries(manifest.dictionaries)) {
         path = path.replace(/^\/+/, "");
 
-        let dir = OSPath.dirname(path);
+        let dir = dirname(path);
         if (dir === ".") {
           dir = "";
         }
-        let leafName = OSPath.basename(path);
+        let leafName = basename(path);
         let affixPath = leafName.slice(0, -3) + "aff";
 
-        let entries = Array.from(
-          await this.readDirectory(dir),
-          entry => entry.name
-        );
+        let entries = await this._readDirectory(dir);
         if (!entries.includes(leafName)) {
           this.manifestError(
             `Invalid dictionary path specified for '${lang}': ${path}`
@@ -1222,9 +1324,8 @@ class ExtensionData {
     this.apiManager = this.getAPIManager();
     await this.apiManager.lazyInit();
 
-    this.webAccessibleResources = manifestData.webAccessibleResources.map(
-      res => new MatchGlob(res)
-    );
+    this.webAccessibleResources = manifestData.webAccessibleResources;
+
     this.allowedOrigins = new MatchPatternSet(manifestData.originPermissions, {
       restrictSchemes: this.restrictSchemes,
     });
@@ -1356,12 +1457,10 @@ class ExtensionData {
   async _promiseLocaleMap() {
     let locales = new Map();
 
-    let entries = await this.readDirectory("_locales");
-    for (let file of entries) {
-      if (file.isDir) {
-        let locale = this.normalizeLocaleCode(file.name);
-        locales.set(locale, file.name);
-      }
+    let entries = await this._readDirectory("_locales", true);
+    for (let name of entries) {
+      let locale = this.normalizeLocaleCode(name);
+      locales.set(locale, name);
     }
 
     return locales;
@@ -1455,6 +1554,44 @@ class ExtensionData {
   }
 
   /**
+   * Classify host permissions
+   * @param {array<string>} origins
+   *                        permission origins
+   * @returns {object}
+   *              "object.allUrls" contains the permission used to obtain all urls access
+   *              "object.wildcards" set contains permissions with wildcards
+   *              "object.sites" set contains explicit host permissions
+   */
+  static classifyOriginPermissions(origins = []) {
+    let allUrls = null,
+      wildcards = new Set(),
+      sites = new Set();
+    for (let permission of origins) {
+      if (permission == "<all_urls>") {
+        allUrls = permission;
+        break;
+      }
+
+      // Privileged extensions may request access to "about:"-URLs, such as
+      // about:reader.
+      let match = /^[a-z*]+:\/\/([^/]*)\/|^about:/.exec(permission);
+      if (!match) {
+        throw new Error(`Unparseable host permission ${permission}`);
+      }
+      // Note: the scheme is ignored in the permission warnings. If this ever
+      // changes, update the comparePermissions method as needed.
+      if (!match[1] || match[1] == "*") {
+        allUrls = permission;
+      } else if (match[1].startsWith("*.")) {
+        wildcards.add(match[1].slice(2));
+      } else {
+        sites.add(match[1]);
+      }
+    }
+    return { allUrls, wildcards, sites };
+  }
+
+  /**
    * Formats all the strings for a permissions dialog/notification.
    *
    * @param {object} info Information about the permissions being requested.
@@ -1463,6 +1600,10 @@ class ExtensionData {
    *                        Origin permissions requested.
    * @param {array<string>} info.permissions.permissions
    *                        Regular (non-origin) permissions requested.
+   * @param {array<string>} info.optionalPermissions.origins
+   *                        Optional origin permissions listed in the manifest.
+   * @param {array<string>} info.optionalPermissions.permissions
+   *                        Optional (non-origin) permissions listed in the manifest.
    * @param {boolean} info.unsigned
    *                  True if the prompt is for installing an unsigned addon.
    * @param {string} info.type
@@ -1478,53 +1619,57 @@ class ExtensionData {
    * @param {boolean} options.collapseOrigins
    *                  Wether to limit the number of displayed host permissions.
    *                  Default is false.
+   * @param {function} options.getKeyForPermission
+   *                   An optional callback function that returns the locale key for a given
+   *                   permission name (set by default to a callback returning the locale
+   *                   key following the default convention `webextPerms.description.PERMNAME`).
+   *                   Overriding the default mapping can become necessary, when a permission
+   *                   description needs to be modified and a non-default locale key has to be
+   *                   used. There is at least one non-default locale key used in Thunderbird.
    *
    * @returns {object} An object with properties containing localized strings
    *                   for various elements of a permission dialog. The "header"
    *                   property on this object is the notification header text
    *                   and it has the string "<>" as a placeholder for the
    *                   addon name.
+   *
+   *                   "object.msgs" is an array of localized strings describing required permissions
+   *
+   *                   "object.optionalPermissions" is a map of permission name to localized
+   *                   strings describing the permission.
+   *
+   *                   "object.optionalOrigins" is a map of a host permission to localized strings
+   *                   describing the host permission, where appropriate.  Currently only
+   *                   all url style permissions are included.
    */
   static formatPermissionStrings(
     info,
     bundle,
-    { collapseOrigins = false } = {}
+    {
+      collapseOrigins = false,
+      getKeyForPermission = perm => `webextPerms.description.${perm}`,
+    } = {}
   ) {
-    let result = {};
+    let result = {
+      msgs: [],
+      optionalPermissions: {},
+      optionalOrigins: {},
+    };
 
     let perms = info.permissions || { origins: [], permissions: [] };
+    let optional_permissions = info.optionalPermissions || {
+      origins: [],
+      permissions: [],
+    };
 
     // First classify our host permissions
-    let allUrls = false,
-      wildcards = new Set(),
-      sites = new Set();
-    for (let permission of perms.origins) {
-      if (permission == "<all_urls>") {
-        allUrls = true;
-        break;
-      }
-
-      // Privileged extensions may request access to "about:"-URLs, such as
-      // about:reader.
-      let match = /^[a-z*]+:\/\/([^/]*)\/|^about:/.exec(permission);
-      if (!match) {
-        throw new Error(`Unparseable host permission ${permission}`);
-      }
-      // Note: the scheme is ignored in the permission warnings. If this ever
-      // changes, update the comparePermissions method as needed.
-      if (!match[1] || match[1] == "*") {
-        allUrls = true;
-      } else if (match[1].startsWith("*.")) {
-        wildcards.add(match[1].slice(2));
-      } else {
-        sites.add(match[1]);
-      }
-    }
+    let { allUrls, wildcards, sites } = ExtensionData.classifyOriginPermissions(
+      perms.origins
+    );
 
     // Format the host permissions.  If we have a wildcard for all urls,
     // a single string will suffice.  Otherwise, show domain wildcards
     // first, then individual host permissions.
-    result.msgs = [];
     if (allUrls) {
       result.msgs.push(
         bundle.GetStringFromName("webextPerms.hostDescription.allUrls")
@@ -1566,13 +1711,11 @@ class ExtensionData {
       );
     }
 
-    let permissionKey = perm => `webextPerms.description.${perm}`;
-
     // Next, show the native messaging permission if it is present.
     const NATIVE_MSG_PERM = "nativeMessaging";
     if (perms.permissions.includes(NATIVE_MSG_PERM)) {
       result.msgs.push(
-        bundle.formatStringFromName(permissionKey(NATIVE_MSG_PERM), [
+        bundle.formatStringFromName(getKeyForPermission(NATIVE_MSG_PERM), [
           info.appName,
         ])
       );
@@ -1584,25 +1727,53 @@ class ExtensionData {
     let permissionsCopy = perms.permissions.slice(0);
     for (let permission of permissionsCopy.sort()) {
       // Handled above
-      if (permission == "nativeMessaging") {
+      if (permission == NATIVE_MSG_PERM) {
         continue;
       }
       try {
-        result.msgs.push(bundle.GetStringFromName(permissionKey(permission)));
+        result.msgs.push(
+          bundle.GetStringFromName(getKeyForPermission(permission))
+        );
       } catch (err) {
         // We deliberately do not include all permissions in the prompt.
         // So if we don't find one then just skip it.
       }
     }
 
+    // Generate a map of permission names to permission strings for optional
+    // permissions.  The key is necessary to handle toggling those permissions.
+    for (let permission of optional_permissions.permissions) {
+      if (permission == NATIVE_MSG_PERM) {
+        result.optionalPermissions[
+          permission
+        ] = bundle.formatStringFromName(getKeyForPermission(permission), [
+          info.appName,
+        ]);
+        continue;
+      }
+      try {
+        result.optionalPermissions[permission] = bundle.GetStringFromName(
+          getKeyForPermission(permission)
+        );
+      } catch (err) {
+        // We deliberately do not have strings for all permissions.
+        // So if we don't find one then just skip it.
+      }
+    }
+    allUrls = ExtensionData.classifyOriginPermissions(
+      optional_permissions.origins
+    ).allUrls;
+    if (allUrls) {
+      result.optionalOrigins[allUrls] = bundle.GetStringFromName(
+        "webextPerms.hostDescription.allUrls"
+      );
+    }
+
     const haveAccessKeys = AppConstants.platform !== "android";
 
-    result.header = bundle.formatStringFromName("webextPerms.header", ["<>"]);
-    result.text = info.unsigned
-      ? bundle.GetStringFromName("webextPerms.unsignedWarning")
-      : "";
-    result.listIntro = bundle.GetStringFromName("webextPerms.listIntro");
-
+    let headerKey;
+    result.text = "";
+    result.listIntro = "";
     result.acceptText = bundle.GetStringFromName("webextPerms.add.label");
     result.cancelText = bundle.GetStringFromName("webextPerms.cancel.label");
     if (haveAccessKeys) {
@@ -1613,10 +1784,7 @@ class ExtensionData {
     }
 
     if (info.type == "sideload") {
-      result.header = bundle.formatStringFromName(
-        "webextPerms.sideloadHeader",
-        ["<>"]
-      );
+      headerKey = "webextPerms.sideloadHeader";
       let key = !result.msgs.length
         ? "webextPerms.sideloadTextNoPerms"
         : "webextPerms.sideloadText2";
@@ -1636,9 +1804,7 @@ class ExtensionData {
         );
       }
     } else if (info.type == "update") {
-      result.header = bundle.formatStringFromName("webextPerms.updateText", [
-        "<>",
-      ]);
+      headerKey = "webextPerms.updateText2";
       result.text = "";
       result.acceptText = bundle.GetStringFromName(
         "webextPerms.updateAccept.label"
@@ -1649,10 +1815,7 @@ class ExtensionData {
         );
       }
     } else if (info.type == "optional") {
-      result.header = bundle.formatStringFromName(
-        "webextPerms.optionalPermsHeader",
-        ["<>"]
-      );
+      headerKey = "webextPerms.optionalPermsHeader";
       result.text = "";
       result.listIntro = bundle.GetStringFromName(
         "webextPerms.optionalPermsListIntro"
@@ -1671,8 +1834,17 @@ class ExtensionData {
           "webextPerms.optionalPermsDeny.accessKey"
         );
       }
+    } else {
+      headerKey = "webextPerms.header";
+      if (result.msgs.length) {
+        headerKey = info.unsigned
+          ? "webextPerms.headerUnsignedWithPerms"
+          : "webextPerms.headerWithPerms";
+      } else if (info.unsigned) {
+        headerKey = "webextPerms.headerUnsigned";
+      }
     }
-
+    result.header = bundle.formatStringFromName(headerKey, ["<>"]);
     return result;
   }
 }
@@ -1776,18 +1948,19 @@ class DictionaryBootstrapScope extends BootstrapScope {
   }
 }
 
-class LangpackBootstrapScope {
+class LangpackBootstrapScope extends BootstrapScope {
   install(data, reason) {}
   uninstall(data, reason) {}
+  update(data, reason) {}
 
   startup(data, reason) {
     // eslint-disable-next-line no-use-before-define
     this.langpack = new Langpack(data);
-    return this.langpack.startup();
+    return this.langpack.startup(this.BOOTSTRAP_REASON_TO_STRING_MAP[reason]);
   }
 
   shutdown(data, reason) {
-    this.langpack.shutdown();
+    this.langpack.shutdown(this.BOOTSTRAP_REASON_TO_STRING_MAP[reason]);
     this.langpack = null;
   }
 }
@@ -1807,6 +1980,7 @@ class Extension extends ExtensionData {
 
     this.startupStates = new Set();
     this.state = "Not started";
+    this.userContextIsolation = userContextIsolation;
 
     this.sharedDataKeys = new Set();
 
@@ -1941,19 +2115,14 @@ class Extension extends ExtensionData {
     }
   }
 
-  get restrictSchemes() {
-    return !(this.isPrivileged && this.hasPermission("mozillaAddons"));
-  }
-
   // Some helpful properties added elsewhere:
-  /**
-   * An object used to map between extension-visible tab ids and
-   * native Tab object
-   * @property {TabManager} tabManager
-   */
 
   static getBootstrapScope() {
     return new BootstrapScope();
+  }
+
+  get browsingContextGroupId() {
+    return this.policy.browsingContextGroupId;
   }
 
   get groupFrameLoader() {
@@ -2053,8 +2222,12 @@ class Extension extends ExtensionData {
       this.addonData.signedState === AddonManager.SIGNEDSTATE_PRIVILEGED ||
       this.addonData.signedState === AddonManager.SIGNEDSTATE_SYSTEM ||
       this.addonData.builtIn ||
-      (AddonSettings.EXPERIMENTS_ENABLED && this.addonData.temporarilyInstalled)
+      (AddonSettings.EXPERIMENTS_ENABLED && this.temporarilyInstalled)
     );
+  }
+
+  get temporarilyInstalled() {
+    return !!this.addonData.temporarilyInstalled;
   }
 
   get experimentsAllowed() {
@@ -2094,6 +2267,8 @@ class Extension extends ExtensionData {
 
   get extensionPageCSP() {
     const { content_security_policy } = this.manifest;
+    // While only manifest v3 should contain an object,
+    // we'll remain lenient here.
     if (
       content_security_policy &&
       typeof content_security_policy === "object"
@@ -2101,19 +2276,6 @@ class Extension extends ExtensionData {
       return content_security_policy.extension_pages;
     }
     return content_security_policy;
-  }
-
-  get contentScriptCSP() {
-    let { content_security_policy } = this.manifest;
-    if (
-      content_security_policy &&
-      typeof content_security_policy === "object"
-    ) {
-      return (
-        content_security_policy.content_scripts ||
-        content_security_policy.isolated_world
-      );
-    }
   }
 
   get backgroundScripts() {
@@ -2136,6 +2298,28 @@ class Extension extends ExtensionData {
     return this.policy.canAccessWindow(window);
   }
 
+  // TODO bug 1699481: move this logic to WebExtensionPolicy
+  canAccessContainer(userContextId) {
+    userContextId = userContextId ?? 0; // firefox-default has userContextId as 0.
+    let defaultRestrictedContainers = JSON.parse(
+      userContextIsolationDefaultRestricted
+    );
+    let extensionRestrictedContainers = JSON.parse(
+      Services.prefs.getStringPref(
+        `extensions.userContextIsolation.${this.id}.restricted`,
+        "[]"
+      )
+    );
+    if (
+      extensionRestrictedContainers.includes(userContextId) ||
+      defaultRestrictedContainers.includes(userContextId)
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
   // Representation of the extension to send to content
   // processes. This should include anything the content process might
   // need.
@@ -2144,16 +2328,17 @@ class Extension extends ExtensionData {
       id: this.id,
       uuid: this.uuid,
       name: this.name,
+      manifestVersion: this.manifestVersion,
       extensionPageCSP: this.extensionPageCSP,
-      contentScriptCSP: this.contentScriptCSP,
       instanceId: this.instanceId,
       resourceURL: this.resourceURL,
       contentScripts: this.contentScripts,
-      webAccessibleResources: this.webAccessibleResources.map(res => res.glob),
+      webAccessibleResources: this.webAccessibleResources,
       allowedOrigins: this.allowedOrigins.patterns.map(pat => pat.pattern),
       permissions: this.permissions,
       optionalPermissions: this.optionalPermissions,
       isPrivileged: this.isPrivileged,
+      temporarilyInstalled: this.temporarilyInstalled,
     };
   }
 
@@ -2374,25 +2559,6 @@ class Extension extends ExtensionData {
     }
   }
 
-  static async migratePrivateBrowsing(addonData) {
-    if (addonData.incognito !== "not_allowed") {
-      ExtensionPermissions.add(addonData.id, {
-        permissions: [PRIVATE_ALLOWED_PERMISSION],
-        origins: [],
-      });
-      await StartupCache.clearAddonData(addonData.id);
-
-      // Record a telemetry event for the extension automatically allowed on private browsing as
-      // part of the Firefox upgrade.
-      AMTelemetry.recordActionEvent({
-        extra: { addonId: addonData.id },
-        object: "appUpgrade",
-        action: "privateBrowsingAllowed",
-        value: "on",
-      });
-    }
-  }
-
   async startup() {
     this.state = "Startup";
 
@@ -2410,6 +2576,7 @@ class Extension extends ExtensionData {
       mozExtensionHostname: this.uuid,
       baseURL: this.resourceURL,
       isPrivileged: this.isPrivileged,
+      temporarilyInstalled: this.temporarilyInstalled,
       allowedOrigins: new MatchPatternSet([]),
       localizeCallback() {},
       readyPromise,
@@ -2449,31 +2616,49 @@ class Extension extends ExtensionData {
 
       // We automatically add permissions to system/built-in extensions.
       // Extensions expliticy stating not_allowed will never get permission.
-      if (!allowPrivateBrowsingByDefault) {
-        let isAllowed = this.permissions.has(PRIVATE_ALLOWED_PERMISSION);
-        if (this.manifest.incognito === "not_allowed") {
-          // If an extension previously had permission, but upgrades/downgrades to
-          // a version that specifies "not_allowed" in manifest, remove the
-          // permission.
-          if (isAllowed) {
-            ExtensionPermissions.remove(this.id, {
-              permissions: [PRIVATE_ALLOWED_PERMISSION],
-              origins: [],
-            });
-            this.permissions.delete(PRIVATE_ALLOWED_PERMISSION);
-          }
-        } else if (
-          !isAllowed &&
-          this.isPrivileged &&
-          !this.addonData.temporarilyInstalled
-        ) {
-          // Add to EP so it is preserved after ADDON_INSTALL.  We don't wait on the add here
-          // since we are pushing the value into this.permissions.  EP will eventually save.
-          ExtensionPermissions.add(this.id, {
+      let isAllowed = this.permissions.has(PRIVATE_ALLOWED_PERMISSION);
+      if (this.manifest.incognito === "not_allowed") {
+        // If an extension previously had permission, but upgrades/downgrades to
+        // a version that specifies "not_allowed" in manifest, remove the
+        // permission.
+        if (isAllowed) {
+          ExtensionPermissions.remove(this.id, {
             permissions: [PRIVATE_ALLOWED_PERMISSION],
             origins: [],
           });
-          this.permissions.add(PRIVATE_ALLOWED_PERMISSION);
+          this.permissions.delete(PRIVATE_ALLOWED_PERMISSION);
+        }
+      } else if (
+        !isAllowed &&
+        this.isPrivileged &&
+        !this.temporarilyInstalled
+      ) {
+        // Add to EP so it is preserved after ADDON_INSTALL.  We don't wait on the add here
+        // since we are pushing the value into this.permissions.  EP will eventually save.
+        ExtensionPermissions.add(this.id, {
+          permissions: [PRIVATE_ALLOWED_PERMISSION],
+          origins: [],
+        });
+        this.permissions.add(PRIVATE_ALLOWED_PERMISSION);
+      }
+
+      // We only want to update the SVG_CONTEXT_PROPERTIES_PERMISSION during install and
+      // upgrade/downgrade startups.
+      if (INSTALL_AND_UPDATE_STARTUP_REASONS.has(this.startupReason)) {
+        if (isMozillaExtension(this)) {
+          // Add to EP so it is preserved after ADDON_INSTALL.  We don't wait on the add here
+          // since we are pushing the value into this.permissions.  EP will eventually save.
+          ExtensionPermissions.add(this.id, {
+            permissions: [SVG_CONTEXT_PROPERTIES_PERMISSION],
+            origins: [],
+          });
+          this.permissions.add(SVG_CONTEXT_PROPERTIES_PERMISSION);
+        } else {
+          ExtensionPermissions.remove(this.id, {
+            permissions: [SVG_CONTEXT_PROPERTIES_PERMISSION],
+            origins: [],
+          });
+          this.permissions.delete(SVG_CONTEXT_PROPERTIES_PERMISSION);
         }
       }
 
@@ -2640,6 +2825,20 @@ class Extension extends ExtensionData {
 
     this.updatePermissions(reason);
 
+    // The service worker registrations related to the extensions are unregistered
+    // only when the extension is not shutting down as part of the application
+    // shutdown (a previously registered service worker is expected to stay
+    // active across browser restarts), the service worker may have been
+    // registered through the manifest.json background.service_worker property
+    // or from an extension page through the service worker API if allowed
+    // through the about:config pref.
+    if (!isAppShutdown) {
+      this.state = "Shutdown: ServiceWorkers";
+      // TODO: ServiceWorkerCleanUp may go away once Bug 1183245 is fixed.
+      await ServiceWorkerCleanUp.removeFromPrincipal(this.principal);
+      this.state = "Shutdown: ServiceWorkers completed";
+    }
+
     if (!this.manifest) {
       this.state = "Shutdown: Complete: No manifest";
       this.policy.active = false;
@@ -2671,8 +2870,6 @@ class Extension extends ExtensionData {
         `Timeout while waiting for extension child to shutdown: ${this.policy.debugName}`
       );
     }
-
-    MessageChannel.abortResponses({ extensionId: this.id });
 
     this.policy.active = false;
 
@@ -2786,14 +2983,15 @@ class Langpack extends ExtensionData {
 
     const fileSources = Object.entries(l10nRegistrySources).map(entry => {
       const [sourceName, basePath] = entry;
-      return new FileSource(
+      return new L10nFileSource(
         `${sourceName}-${langpackId}`,
+        langpackId,
         this.startupData.languages,
         `resource://${langpackId}/${basePath}localization/{locale}/`
       );
     });
 
-    L10nRegistry.registerSources(fileSources);
+    L10nRegistry.getInstance().registerSources(fileSources);
 
     Services.obs.notifyObservers(
       { wrappedJSObject: { langpack: this } },
@@ -2811,7 +3009,7 @@ class Langpack extends ExtensionData {
     const sourcesToRemove = Object.keys(
       this.startupData.l10nRegistrySources
     ).map(sourceName => `${sourceName}-${this.startupData.langpackId}`);
-    L10nRegistry.removeSources(sourcesToRemove);
+    L10nRegistry.getInstance().removeSources(sourcesToRemove);
 
     if (this.chromeRegistryHandle) {
       this.chromeRegistryHandle.destruct();

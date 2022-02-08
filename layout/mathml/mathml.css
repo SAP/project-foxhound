@@ -26,22 +26,16 @@ math {
   letter-spacing: normal;
   text-rendering: optimizeLegibility;
   -moz-float-edge: margin-box;
-  -moz-math-display: inline;
+  math-style: compact;
 }
 math[display="block" i] {
   display: block;
   text-align: -moz-center;
-  -moz-math-display: block;
+  math-style: normal;
 }
 math[display="inline" i] {
   display: inline;
-  -moz-math-display: inline;
-}
-math[displaystyle="false" i] {
-  -moz-math-display: inline;
-}
-math[displaystyle="true" i] {
-  -moz-math-display: block;
+  math-style: compact;
 }
 
 /**************************************************************************/
@@ -62,15 +56,10 @@ ms[rquote]:after {
  }
 
 /**************************************************************************/
-/* Links and focusable elements                                           */
+/* Links                                                                  */
 /**************************************************************************/
 :any-link {
   text-decoration: none !important;
-}
-
-*:-moz-focusring {
-  /* Don't specify the outline-color, we should always use initial value. */
-  outline: 1px dotted;
 }
 
 /**************************************************************************/
@@ -88,7 +77,7 @@ ms[rquote]:after {
    - mathvariant -> -moz-math-variant
    - scriptsizemultiplier -> -moz-script-size-multiplier
    - scriptminsize -> -moz-script-min-size
-   - scriptlevel -> -moz-script-level
+   - scriptlevel -> math-depth
    - mathsize -> font-size
    - mathcolor -> color
    - mathbackground -> background
@@ -149,7 +138,7 @@ mtd {
 /* Don't support m(labeled)tr without mtable, nor mtd without m(labeled)tr */
 :not(mtable) > mtr,
 :not(mtable) > mlabeledtr,
-:not(mtr):not(mlabeledtr) > mtd {
+:not(mtr, mlabeledtr) > mtd {
   display: none !important;
 }
 
@@ -223,34 +212,24 @@ mtable[framespacing] > mtr > mtd {
 /*
   http://www.w3.org/Math/draft-spec/chapter3.html#presm.scriptlevel
 
-  The determination of -moz-math-display for <math> involves the displaystyle
+  The determination of math-style for <math> involves the displaystyle
   and display attributes. See the <math> section above.
 */
-
-/*
-  Map mstyle@displaystyle to -moz-math-display.
-*/
-mstyle[displaystyle="false" i] {
-  -moz-math-display: inline;
-}
-mstyle[displaystyle="true" i] {
-  -moz-math-display: block;
-}
 
 /*  munder, mover and munderover change the scriptlevels of their children
    using -moz-math-increment-script-level because regular CSS rules are
    insufficient to control when the scriptlevel should be incremented. All other
    cases can be described using regular CSS, so we do it this way because it's
    more efficient and less code. */
-:-moz-math-increment-script-level { -moz-script-level: +1; }
+:-moz-math-increment-script-level { math-depth: add(1); }
 
 /*
    The mfrac element sets displaystyle to "false", or if it was already false
    increments scriptlevel by 1, within numerator and denominator.
 */
 mfrac > * {
-    -moz-script-level: auto;
-    -moz-math-display: inline;
+    math-depth: auto-add;
+    math-style: compact;
 }
 
 /*
@@ -259,8 +238,8 @@ mfrac > * {
    The msqrt element leaves both attributes unchanged within its argument.
 */
 mroot > :not(:first-child) {
-    -moz-script-level: +2;
-    -moz-math-display: inline;
+    math-depth: add(2);
+    math-style: compact;
 }
 
 /*
@@ -283,8 +262,8 @@ msub > :not(:first-child),
 msup > :not(:first-child),
 msubsup > :not(:first-child),
 mmultiscripts > :not(:first-child) {
-    -moz-script-level: +1;
-    -moz-math-display: inline;
+    math-depth: add(1);
+    math-style: compact;
 }
 
 /*
@@ -304,7 +283,7 @@ mmultiscripts > :not(:first-child) {
 munder > :not(:first-child),
 mover > :not(:first-child),
 munderover > :not(:first-child) {
-    -moz-math-display: inline;
+    math-style: compact;
 }
 
 /*
@@ -312,16 +291,15 @@ munderover > :not(:first-child) {
    inherited value of the attribute. If the attribute is not present, the
    mtable element sets displaystyle to "false" within the table elements.
 */
-mtable { -moz-math-display: inline; }
-mtable[displaystyle="true" i] { -moz-math-display: block; }
+mtable { math-style: compact; }
 
 /*
    The mscarries element sets displaystyle to "false", and increments
    scriptlevel by 1, so the children are typically displayed in a smaller font.
    XXXfredw: This element is not implemented yet. See bug 534967.
 mscarries {
-  -moz-script-level: +1;
-  -moz-math-display: inline;
+  math-depth: add(1);
+  math-style: compact;
 }
 */
 

@@ -14,13 +14,14 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "nsCOMPtr.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsRect.h"
 
 class nsDeviceContext;
 
 // Script "screen" object
 class nsScreen : public mozilla::DOMEventTargetHelper {
-  typedef mozilla::ErrorResult ErrorResult;
+  using ErrorResult = mozilla::ErrorResult;
 
  public:
   static already_AddRefed<nsScreen> Create(nsPIDOMWindowInner* aWindow);

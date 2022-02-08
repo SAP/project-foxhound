@@ -7,6 +7,7 @@
 #include "ChromeProcessController.h"
 
 #include "MainThreadUtils.h"  // for NS_IsMainThread()
+#include "base/task.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
@@ -16,6 +17,7 @@
 #include "mozilla/layers/IAPZCTreeManager.h"
 #include "mozilla/layers/InputAPZContext.h"
 #include "mozilla/layers/DoubleTapToZoom.h"
+#include "mozilla/layers/RepaintRequest.h"
 #include "mozilla/dom/Document.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsLayoutUtils.h"
@@ -51,11 +53,13 @@ void ChromeProcessController::InitializeRoot() {
 }
 
 void ChromeProcessController::NotifyLayerTransforms(
-    const nsTArray<MatrixMessage>& aTransforms) {
+    nsTArray<MatrixMessage>&& aTransforms) {
   if (!mUIThread->IsOnCurrentThread()) {
-    mUIThread->Dispatch(NewRunnableMethod<CopyableTArray<MatrixMessage>>(
-        "layers::ChromeProcessController::NotifyLayerTransforms", this,
-        &ChromeProcessController::NotifyLayerTransforms, aTransforms));
+    mUIThread->Dispatch(
+        NewRunnableMethod<StoreCopyPassByRRef<nsTArray<MatrixMessage>>>(
+            "layers::ChromeProcessController::NotifyLayerTransforms", this,
+            &ChromeProcessController::NotifyLayerTransforms,
+            std::move(aTransforms)));
     return;
   }
 
@@ -134,18 +138,15 @@ void ChromeProcessController::HandleDoubleTap(
     return;
   }
 
-  CSSRect zoomToRect = CalculateRectToZoomTo(document, aPoint);
+  ZoomTarget zoomTarget = CalculateRectToZoomTo(document, aPoint);
 
   uint32_t presShellId;
   ScrollableLayerGuid::ViewID viewId;
   if (APZCCallbackHelper::GetOrCreateScrollIdentifiers(
           document->GetDocumentElement(), &presShellId, &viewId)) {
-    APZThreadUtils::RunOnControllerThread(
-        NewRunnableMethod<ScrollableLayerGuid, CSSRect, uint32_t>(
-            "IAPZCTreeManager::ZoomToRect", mAPZCTreeManager,
-            &IAPZCTreeManager::ZoomToRect,
-            ScrollableLayerGuid(aGuid.mLayersId, presShellId, viewId),
-            zoomToRect, ZoomToRectBehavior::DEFAULT_BEHAVIOR));
+    mAPZCTreeManager->ZoomToRect(
+        ScrollableLayerGuid(aGuid.mLayersId, presShellId, viewId), zoomTarget,
+        ZoomToRectBehavior::DEFAULT_BEHAVIOR);
   }
 }
 

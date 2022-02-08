@@ -29,46 +29,24 @@
 # NB: because oncommand fires after click, by the time we've fired, the checkbox binding
 #    will already have switched the button's state, so this is correct:
           oncommand="gCustomizeMode.toggleTitlebar(this.checked)" data-l10n-id="customize-mode-titlebar"/>
-<checkbox id="customization-extra-drag-space-checkbox" class="customizationmode-checkbox"
-          data-l10n-id="customize-mode-extra-drag-space"
-          oncommand="gCustomizeMode.toggleDragSpace(this.checked)"/>
 <button id="customization-toolbar-visibility-button" class="customizationmode-button" type="menu" data-l10n-id="customize-mode-toolbars">
   <menupopup id="customization-toolbar-menu" onpopupshowing="onViewToolbarsPopupShowing(event)"/>
-</button>
-<button id="customization-lwtheme-button" data-l10n-id="customize-mode-lwthemes" class="customizationmode-button" type="menu">
-  <panel type="arrow" id="customization-lwtheme-menu"
-         orient="vertical"
-         onpopupshowing="gCustomizeMode.onThemesMenuShowing(event);"
-         position="topcenter bottomleft"
-         flip="none"
-         role="menu">
-    <label id="customization-lwtheme-menu-header" data-l10n-id="customize-mode-lwthemes-my-themes"/>
-    <hbox id="customization-lwtheme-menu-footer">
-      <toolbarbutton class="customization-lwtheme-menu-footeritem"
-                     data-l10n-id="customize-mode-lwthemes-menu-manage"
-                     tabindex="0"
-                     oncommand="gCustomizeMode.openAddonsManagerThemes(event);"/>
-      <toolbarbutton class="customization-lwtheme-menu-footeritem"
-                     data-l10n-id="customize-mode-lwthemes-menu-get-more"
-                     tabindex="0"
-                     oncommand="gCustomizeMode.getMoreThemes(event);"/>
-    </hbox>
-  </panel>
 </button>
 <button id="customization-uidensity-button"
         data-l10n-id="customize-mode-uidensity"
         class="customizationmode-button"
-        type="menu">
+        type="menu"
+        hidden="true">
   <panel type="arrow" id="customization-uidensity-menu"
          orient="vertical"
          onpopupshowing="gCustomizeMode.onUIDensityMenuShowing();"
-         position="topcenter bottomleft"
+         position="topleft bottomleft"
          flip="none"
          role="menu">
     <menuitem id="customization-uidensity-menuitem-compact"
               class="menuitem-iconic customization-uidensity-menuitem"
               role="menuitemradio"
-              data-l10n-id="customize-mode-uidensity-menu-compact"
+              data-l10n-id="customize-mode-uidensity-menu-compact-unsupported"
               tabindex="0"
               onfocus="gCustomizeMode.updateUIDensity(this.mode);"
               onmouseover="gCustomizeMode.updateUIDensity(this.mode);"
@@ -105,6 +83,10 @@
 #endif
   </panel>
 </button>
+<label is="text-link"
+       id="customization-lwtheme-link"
+       data-l10n-id="customize-mode-lwthemes-link"
+       onclick="gCustomizeMode.openAddonsManagerThemes();" />
 
 <button id="whimsy-button"
         type="checkbox"

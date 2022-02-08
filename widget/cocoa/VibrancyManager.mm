@@ -6,104 +6,95 @@
 
 #include "VibrancyManager.h"
 
+#import <objc/message.h>
+
 #include "nsChildView.h"
 #include "nsCocoaFeatures.h"
-#import <objc/message.h>
+#include "SDKDeclarations.h"
 
 using namespace mozilla;
 
-bool VibrancyManager::UpdateVibrantRegion(VibrancyType aType,
-                                          const LayoutDeviceIntRegion& aRegion) {
-  if (aRegion.IsEmpty()) {
-    return mVibrantRegions.Remove(uint32_t(aType));
+@interface MOZVibrantView : NSVisualEffectView {
+  VibrancyType mType;
+}
+- (instancetype)initWithFrame:(NSRect)aRect vibrancyType:(VibrancyType)aVibrancyType;
+@end
+
+@interface MOZVibrantLeafView : MOZVibrantView
+@end
+
+static NSAppearance* AppearanceForVibrancyType(VibrancyType aType) {
+  if (@available(macOS 10.14, *)) {
+    switch (aType) {
+      case VibrancyType::TITLEBAR_LIGHT:
+        // This must always be light (regular aqua), regardless of window appearance.
+        return [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+      case VibrancyType::TITLEBAR_DARK:
+        // This must always be dark (dark aqua), regardless of window appearance.
+        return [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+      case VibrancyType::TOOLTIP:
+      case VibrancyType::MENU:
+      case VibrancyType::HIGHLIGHTED_MENUITEM:
+      case VibrancyType::SOURCE_LIST:
+      case VibrancyType::SOURCE_LIST_SELECTION:
+      case VibrancyType::ACTIVE_SOURCE_LIST_SELECTION:
+        // Inherit the appearance from the window. If the window is using Dark Mode, the vibrancy
+        // will automatically be dark, too. This is available starting with macOS 10.14.
+        return nil;
+    }
   }
-  auto& vr = *mVibrantRegions.LookupOrAdd(uint32_t(aType));
-  return vr.UpdateRegion(aRegion, mCoordinateConverter, mContainerView, ^() {
-    return this->CreateEffectView(aType);
-  });
-}
 
-LayoutDeviceIntRegion VibrancyManager::GetUnionOfVibrantRegions() const {
-  LayoutDeviceIntRegion result;
-  for (auto it = mVibrantRegions.ConstIter(); !it.Done(); it.Next()) {
-    result.OrWith(it.UserData()->Region());
-  }
-  return result;
-}
-
-static NSView* HitTestNil(id self, SEL _cmd, NSPoint aPoint) {
-  // This view must be transparent to mouse events.
-  return nil;
-}
-
-static BOOL AllowsVibrancyYes(id self, SEL _cmd) {
-  // Means that the foreground is blended using a vibrant blend mode.
-  return YES;
-}
-
-static Class CreateEffectViewClass(BOOL aForegroundVibrancy, BOOL aIsContainer) {
-  // Create a class that inherits from NSVisualEffectView and overrides the
-  // methods -[NSView hitTest:] and  -[NSVisualEffectView allowsVibrancy].
-  Class NSVisualEffectViewClass = NSClassFromString(@"NSVisualEffectView");
-  const char* className = aForegroundVibrancy ? "EffectViewWithForegroundVibrancy"
-                                              : "EffectViewWithoutForegroundVibrancy";
-  Class EffectViewClass = objc_allocateClassPair(NSVisualEffectViewClass, className, 0);
-  if (!aIsContainer) {
-    // Make this view transparent to mouse events.
-    class_addMethod(EffectViewClass, @selector(hitTest:), (IMP)HitTestNil, "@@:{CGPoint=dd}");
-  }
-  if (aForegroundVibrancy) {
-    // Override the -[NSView allowsVibrancy] method to return YES.
-    class_addMethod(EffectViewClass, @selector(allowsVibrancy), (IMP)AllowsVibrancyYes, "I@:");
-  }
-  return EffectViewClass;
-}
-
-static id AppearanceForVibrancyType(VibrancyType aType) {
-  Class NSAppearanceClass = NSClassFromString(@"NSAppearance");
+  // For 10.13 and below, a vibrant appearance name must be used. There is no system dark mode and
+  // no automatic adaptation to the window; all windows are light.
   switch (aType) {
-    case VibrancyType::LIGHT:
+    case VibrancyType::TITLEBAR_LIGHT:
     case VibrancyType::TOOLTIP:
     case VibrancyType::MENU:
     case VibrancyType::HIGHLIGHTED_MENUITEM:
-    case VibrancyType::SHEET:
     case VibrancyType::SOURCE_LIST:
     case VibrancyType::SOURCE_LIST_SELECTION:
     case VibrancyType::ACTIVE_SOURCE_LIST_SELECTION:
-      return [NSAppearanceClass performSelector:@selector(appearanceNamed:)
-                                     withObject:@"NSAppearanceNameVibrantLight"];
-    case VibrancyType::DARK:
-      return [NSAppearanceClass performSelector:@selector(appearanceNamed:)
-                                     withObject:@"NSAppearanceNameVibrantDark"];
+      return [NSAppearance appearanceNamed:NSAppearanceNameVibrantLight];
+    case VibrancyType::TITLEBAR_DARK:
+      return [NSAppearance appearanceNamed:NSAppearanceNameVibrantDark];
   }
 }
 
-#if !defined(MAC_OS_X_VERSION_10_10) || MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_10
-enum {
-  NSVisualEffectStateFollowsWindowActiveState,
-  NSVisualEffectStateActive,
-  NSVisualEffectStateInactive
-};
-
-enum { NSVisualEffectMaterialTitlebar = 3 };
-#endif
-
-#if !defined(MAC_OS_X_VERSION_10_11) || MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_11
-enum { NSVisualEffectMaterialMenu = 5, NSVisualEffectMaterialSidebar = 7 };
-#endif
-
-static NSUInteger VisualEffectStateForVibrancyType(VibrancyType aType) {
+static NSVisualEffectState VisualEffectStateForVibrancyType(VibrancyType aType) {
   switch (aType) {
     case VibrancyType::TOOLTIP:
     case VibrancyType::MENU:
     case VibrancyType::HIGHLIGHTED_MENUITEM:
-    case VibrancyType::SHEET:
-      // Tooltip and menu windows are never "key" and sheets always looks
-      // active, so we need to tell the vibrancy effect to look active
-      // regardless of window state.
+      // Tooltip and menu windows are never "key", so we need to tell the vibrancy effect to look
+      // active regardless of window state.
       return NSVisualEffectStateActive;
     default:
       return NSVisualEffectStateFollowsWindowActiveState;
+  }
+}
+
+static NSVisualEffectMaterial VisualEffectMaterialForVibrancyType(VibrancyType aType,
+                                                                  BOOL* aOutIsEmphasized) {
+  switch (aType) {
+    case VibrancyType::TITLEBAR_LIGHT:
+    case VibrancyType::TITLEBAR_DARK:
+      return NSVisualEffectMaterialTitlebar;
+    case VibrancyType::TOOLTIP:
+      if (@available(macOS 10.14, *)) {
+        return (NSVisualEffectMaterial)NSVisualEffectMaterialToolTip;
+      } else {
+        return NSVisualEffectMaterialMenu;
+      }
+    case VibrancyType::MENU:
+      return NSVisualEffectMaterialMenu;
+    case VibrancyType::SOURCE_LIST:
+      return NSVisualEffectMaterialSidebar;
+    case VibrancyType::SOURCE_LIST_SELECTION:
+      return NSVisualEffectMaterialSelection;
+    case VibrancyType::HIGHLIGHTED_MENUITEM:
+    case VibrancyType::ACTIVE_SOURCE_LIST_SELECTION:
+      *aOutIsEmphasized = YES;
+      return NSVisualEffectMaterialSelection;
   }
 }
 
@@ -116,67 +107,63 @@ static BOOL HasVibrantForeground(VibrancyType aType) {
   }
 }
 
-#if !defined(MAC_OS_X_VERSION_10_12) || MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_12
-enum { NSVisualEffectMaterialSelection = 4 };
-#endif
+@implementation MOZVibrantView
 
-@interface NSView (NSVisualEffectViewMethods)
-- (void)setState:(NSUInteger)state;
-- (void)setMaterial:(NSUInteger)material;
-- (void)setEmphasized:(BOOL)emphasized;
+- (instancetype)initWithFrame:(NSRect)aRect vibrancyType:(VibrancyType)aType {
+  self = [super initWithFrame:aRect];
+  mType = aType;
+
+  self.appearance = AppearanceForVibrancyType(mType);
+  self.state = VisualEffectStateForVibrancyType(mType);
+
+  BOOL isEmphasized = NO;
+  self.material = VisualEffectMaterialForVibrancyType(mType, &isEmphasized);
+  self.emphasized = isEmphasized;
+
+  return self;
+}
+
+// Don't override allowsVibrancy here, because this view may have subviews, and
+// returning YES from allowsVibrancy forces on foreground vibrancy for all
+// descendant views, which can have unintended effects.
+
 @end
 
-/* static */ NSView* VibrancyManager::CreateEffectView(VibrancyType aType, BOOL aIsContainer) {
-  static Class EffectViewWithoutForegroundVibrancy = CreateEffectViewClass(NO, NO);
-  static Class EffectViewWithForegroundVibrancy = CreateEffectViewClass(YES, NO);
-  static Class EffectViewContainer = CreateEffectViewClass(NO, YES);
+@implementation MOZVibrantLeafView
 
-  // Pick the right NSVisualEffectView subclass for the desired vibrancy mode.
-  // For "container" views, never use foreground vibrancy, because returning
-  // YES from allowsVibrancy forces on foreground vibrancy for all descendant
-  // views which can have unintended effects.
-  Class EffectViewClass = aIsContainer
-                              ? EffectViewContainer
-                              : (HasVibrantForeground(aType) ? EffectViewWithForegroundVibrancy
-                                                             : EffectViewWithoutForegroundVibrancy);
+- (NSView*)hitTest:(NSPoint)aPoint {
+  // This view must be transparent to mouse events.
+  return nil;
+}
 
-  NSView* effectView = [[EffectViewClass alloc] initWithFrame:NSZeroRect];
-  [effectView performSelector:@selector(setAppearance:)
-                   withObject:AppearanceForVibrancyType(aType)];
-  [effectView setState:VisualEffectStateForVibrancyType(aType)];
+// MOZVibrantLeafView does not have subviews, so we can return YES here without
+// having unintended effects on other contents of the window.
+- (BOOL)allowsVibrancy {
+  return HasVibrantForeground(mType);
+}
 
-  BOOL canUseElCapitanMaterials = nsCocoaFeatures::OnElCapitanOrLater();
-  if (aType == VibrancyType::MENU) {
-    // Before 10.11 there is no material that perfectly matches the menu
-    // look. Of all available material types, NSVisualEffectMaterialTitlebar
-    // is the one that comes closest.
-    [effectView setMaterial:canUseElCapitanMaterials ? NSVisualEffectMaterialMenu
-                                                     : NSVisualEffectMaterialTitlebar];
-  } else if (aType == VibrancyType::SOURCE_LIST && canUseElCapitanMaterials) {
-    [effectView setMaterial:NSVisualEffectMaterialSidebar];
-  } else if (aType == VibrancyType::HIGHLIGHTED_MENUITEM ||
-             aType == VibrancyType::SOURCE_LIST_SELECTION ||
-             aType == VibrancyType::ACTIVE_SOURCE_LIST_SELECTION) {
-    [effectView setMaterial:NSVisualEffectMaterialSelection];
-    if ([effectView respondsToSelector:@selector(setEmphasized:)] &&
-        aType != VibrancyType::SOURCE_LIST_SELECTION) {
-      [effectView setEmphasized:YES];
-    }
+@end
+
+bool VibrancyManager::UpdateVibrantRegion(VibrancyType aType,
+                                          const LayoutDeviceIntRegion& aRegion) {
+  if (aRegion.IsEmpty()) {
+    return mVibrantRegions.Remove(uint32_t(aType));
   }
-
-  return effectView;
+  auto& vr = *mVibrantRegions.GetOrInsertNew(uint32_t(aType));
+  return vr.UpdateRegion(aRegion, mCoordinateConverter, mContainerView, ^() {
+    return this->CreateEffectView(aType);
+  });
 }
 
-static bool ComputeSystemSupportsVibrancy() {
-#ifdef __x86_64__
-  return NSClassFromString(@"NSAppearance") && NSClassFromString(@"NSVisualEffectView");
-#else
-  // objc_allocateClassPair doesn't work in 32 bit mode, so turn off vibrancy.
-  return false;
-#endif
+LayoutDeviceIntRegion VibrancyManager::GetUnionOfVibrantRegions() const {
+  LayoutDeviceIntRegion result;
+  for (const auto& region : mVibrantRegions.Values()) {
+    result.OrWith(region->Region());
+  }
+  return result;
 }
 
-/* static */ bool VibrancyManager::SystemSupportsVibrancy() {
-  static bool supportsVibrancy = ComputeSystemSupportsVibrancy();
-  return supportsVibrancy;
+/* static */ NSView* VibrancyManager::CreateEffectView(VibrancyType aType, BOOL aIsContainer) {
+  return aIsContainer ? [[MOZVibrantView alloc] initWithFrame:NSZeroRect vibrancyType:aType]
+                      : [[MOZVibrantLeafView alloc] initWithFrame:NSZeroRect vibrancyType:aType];
 }

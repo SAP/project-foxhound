@@ -7,16 +7,21 @@
 #ifndef mozilla_MediaUtils_h
 #define mozilla_MediaUtils_h
 
+#include <map>
+
 #include "mozilla/Assertions.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/UniquePtr.h"
+#include "MediaEventSource.h"
 #include "nsCOMPtr.h"
 #include "nsIAsyncShutdown.h"
 #include "nsISupportsImpl.h"
+#include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
 
 class nsIEventTarget;
@@ -108,45 +113,57 @@ class RefcountableBase {
 template <typename T>
 class Refcountable : public T, public RefcountableBase {
  public:
-  NS_METHOD_(MozExternalRefCountType) AddRef() {
-    return RefcountableBase::AddRef();
-  }
-
-  NS_METHOD_(MozExternalRefCountType) Release() {
-    return RefcountableBase::Release();
-  }
-
-  Refcountable<T>& operator=(T&& aOther) {
+  Refcountable& operator=(T&& aOther) {
     T::operator=(std::move(aOther));
     return *this;
   }
 
-  Refcountable<T>& operator=(T& aOther) {
+  Refcountable& operator=(T& aOther) {
     T::operator=(aOther);
     return *this;
   }
-
- private:
-  ~Refcountable<T>() = default;
 };
 
 template <typename T>
-class Refcountable<UniquePtr<T>> : public UniquePtr<T> {
+class Refcountable<UniquePtr<T>> : public UniquePtr<T>,
+                                   public RefcountableBase {
  public:
-  explicit Refcountable<UniquePtr<T>>(T* aPtr) : UniquePtr<T>(aPtr) {}
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(Refcountable<T>)
- private:
-  ~Refcountable<UniquePtr<T>>() = default;
+  explicit Refcountable(T* aPtr) : UniquePtr<T>(aPtr) {}
 };
 
-/* Async shutdown helpers
+template <>
+class Refcountable<bool> : public RefcountableBase {
+ public:
+  explicit Refcountable(bool aValue) : mValue(aValue) {}
+
+  Refcountable& operator=(bool aOther) {
+    mValue = aOther;
+    return *this;
+  }
+
+  Refcountable& operator=(const Refcountable& aOther) {
+    mValue = aOther.mValue;
+    return *this;
+  }
+
+  explicit operator bool() const { return mValue; }
+
+ private:
+  bool mValue;
+};
+
+/*
+ * Async shutdown helpers
  */
 
-RefPtr<nsIAsyncShutdownClient> GetShutdownBarrier();
+nsCOMPtr<nsIAsyncShutdownClient> GetShutdownBarrier();
+
+// Like GetShutdownBarrier but will release assert that the result is not null.
+nsCOMPtr<nsIAsyncShutdownClient> MustGetShutdownBarrier();
 
 class ShutdownBlocker : public nsIAsyncShutdownBlocker {
  public:
-  ShutdownBlocker(const nsString& aName) : mName(aName) {}
+  ShutdownBlocker(nsString aName) : mName(std::move(aName)) {}
 
   NS_IMETHOD
   BlockShutdown(nsIAsyncShutdownClient* aProfileBeforeChange) override = 0;
@@ -166,15 +183,28 @@ class ShutdownBlocker : public nsIAsyncShutdownBlocker {
   const nsString mName;
 };
 
-class ShutdownTicket final {
+/**
+ * A convenience class representing a "ticket" that keeps the process from
+ * shutting down until it is destructed. It does this by blocking
+ * xpcom-will-shutdown. Constructed and destroyed on any thread.
+ */
+class ShutdownBlockingTicket {
  public:
-  explicit ShutdownTicket(nsIAsyncShutdownBlocker* aBlocker)
-      : mBlocker(aBlocker) {}
-  NS_INLINE_DECL_REFCOUNTING(ShutdownTicket)
- private:
-  ~ShutdownTicket() { GetShutdownBarrier()->RemoveBlocker(mBlocker); }
+  /**
+   * Construct with an arbitrary name, __FILE__ and __LINE__.
+   * Note that __FILE__ needs to be made wide, typically through
+   * NS_LITERAL_STRING_FROM_CSTRING(__FILE__).
+   */
+  static UniquePtr<ShutdownBlockingTicket> Create(nsString aName,
+                                                  nsString aFileName,
+                                                  int32_t aLineNr);
 
-  nsCOMPtr<nsIAsyncShutdownBlocker> mBlocker;
+  virtual ~ShutdownBlockingTicket() = default;
+
+  /**
+   * MediaEvent that gets notified once upon xpcom-will-shutdown.
+   */
+  virtual MediaEventSource<void>& ShutdownEvent() = 0;
 };
 
 /**
@@ -293,6 +323,89 @@ AwaitAll(already_AddRefed<nsIEventTarget> aPool,
 }
 
 }  // namespace media
+
+/**
+ * AsyncBlockers provide a simple registration service that allows to suspend
+ * completion of a particular task until all registered entries have been
+ * cleared. This can be used to implement a similar service to
+ * nsAsyncShutdownService in processes where it wouldn't normally be available.
+ * This class is thread-safe.
+ */
+class AsyncBlockers {
+ public:
+  AsyncBlockers()
+      : mLock("AsyncRegistrar"),
+        mPromise(new GenericPromise::Private(__func__)) {}
+  void Register(void* aBlocker) {
+    MutexAutoLock lock(mLock);
+    if (mResolved) {
+      // Too late.
+      return;
+    }
+    mBlockers.insert({aBlocker, true});
+  }
+  void Deregister(void* aBlocker) {
+    MutexAutoLock lock(mLock);
+    if (mResolved) {
+      // Too late.
+      return;
+    }
+    auto it = mBlockers.find(aBlocker);
+    MOZ_ASSERT(it != mBlockers.end());
+
+    mBlockers.erase(it);
+    MaybeResolve();
+  }
+  RefPtr<GenericPromise> WaitUntilClear(uint32_t aTimeOutInMs = 0) {
+    if (!aTimeOutInMs) {
+      // We don't need to wait, resolve the promise right away.
+      MutexAutoLock lock(mLock);
+      if (!mResolved) {
+        mPromise->Resolve(true, __func__);
+        mResolved = true;
+      }
+    } else {
+      GetCurrentEventTarget()->DelayedDispatch(
+          NS_NewRunnableFunction("AsyncBlockers::WaitUntilClear",
+                                 [promise = mPromise]() {
+                                   // The AsyncBlockers object may have been
+                                   // deleted by now and the object isn't
+                                   // refcounted (nor do we want it to be). We
+                                   // can unconditionally resolve the promise
+                                   // even it has already been resolved as
+                                   // MozPromise are thread-safe and will just
+                                   // ignore the action if already resolved.
+                                   promise->Resolve(true, __func__);
+                                 }),
+          aTimeOutInMs);
+    }
+    return mPromise;
+  }
+
+  virtual ~AsyncBlockers() {
+    if (!mResolved) {
+      mPromise->Resolve(true, __func__);
+    }
+  }
+
+ private:
+  void MaybeResolve() {
+    mLock.AssertCurrentThreadOwns();
+    if (mResolved) {
+      return;
+    }
+    if (!mBlockers.empty()) {
+      return;
+    }
+    mPromise->Resolve(true, __func__);
+    mResolved = true;
+  }
+  Mutex mLock;  // protects mBlockers and mResolved.
+  std::map<void*, bool> mBlockers;
+  bool mResolved = false;
+  const RefPtr<GenericPromise::Private> mPromise;
+};
+
 }  // namespace mozilla
 
 #endif  // mozilla_MediaUtils_h

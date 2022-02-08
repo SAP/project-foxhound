@@ -5,37 +5,30 @@
 #ifndef mozilla_intl_LineBreaker_h__
 #define mozilla_intl_LineBreaker_h__
 
-#include "nscore.h"
-#include "nsISupports.h"
+#include <cstdint>
 
 #define NS_LINEBREAKER_NEED_MORE_TEXT -1
 
 namespace mozilla {
 namespace intl {
+enum class LineBreakRule : uint8_t;
+enum class WordBreakRule : uint8_t;
 
-class LineBreaker {
+class LineBreaker final {
  public:
-  NS_INLINE_DECL_REFCOUNTING(LineBreaker)
+  // LineBreaker is a utility class with only static methods. No need to
+  // instantiate it.
+  LineBreaker() = delete;
+  ~LineBreaker() = delete;
 
-  enum class WordBreak : uint8_t {
-    Normal = 0,    // default
-    BreakAll = 1,  // break all
-    KeepAll = 2    // always keep
-  };
-
-  enum class Strictness : uint8_t {
-    Auto = 0,
-    Loose = 1,
-    Normal = 2,
-    Strict = 3,
-    Anywhere = 4
-  };
-
-  static already_AddRefed<LineBreaker> Create();
-
-  int32_t Next(const char16_t* aText, uint32_t aLen, uint32_t aPos);
-
-  int32_t Prev(const char16_t* aText, uint32_t aLen, uint32_t aPos);
+  // Find the next line break opportunity starting from aPos + 1. It can return
+  // aLen if there's no break opportunity between [aPos + 1, aLen - 1].
+  //
+  // If aPos is already at the end of aText or beyond, i.e. aPos >= aLen, return
+  // NS_LINEBREAKER_NEED_MORE_TEXT.
+  //
+  // DEPRECATED: Use LineBreakIteratorUtf16 instead.
+  static int32_t Next(const char16_t* aText, uint32_t aLen, uint32_t aPos);
 
   // Call this on a word with whitespace at either end. We will apply JISx4051
   // rules to find breaks inside the word. aBreakBefore is set to the break-
@@ -43,18 +36,16 @@ class LineBreaker {
   // because we never return a break before the first character.
   // aLength is the length of the aText array and also the length of the
   // aBreakBefore output array.
-  void GetJISx4051Breaks(const char16_t* aText, uint32_t aLength,
-                         WordBreak aWordBreak, Strictness aLevel,
-                         bool aIsChineseOrJapanese, uint8_t* aBreakBefore);
-  void GetJISx4051Breaks(const uint8_t* aText, uint32_t aLength,
-                         WordBreak aWordBreak, Strictness aLevel,
-                         bool aIsChineseOrJapanese, uint8_t* aBreakBefore);
-
- private:
-  ~LineBreaker() = default;
-
-  int32_t WordMove(const char16_t* aText, uint32_t aLen, uint32_t aPos,
-                   int8_t aDirection);
+  static void ComputeBreakPositions(const char16_t* aText, uint32_t aLength,
+                                    WordBreakRule aWordBreak,
+                                    LineBreakRule aLevel,
+                                    bool aIsChineseOrJapanese,
+                                    uint8_t* aBreakBefore);
+  static void ComputeBreakPositions(const uint8_t* aText, uint32_t aLength,
+                                    WordBreakRule aWordBreak,
+                                    LineBreakRule aLevel,
+                                    bool aIsChineseOrJapanese,
+                                    uint8_t* aBreakBefore);
 };
 
 static inline bool NS_IsSpace(char16_t u) {
@@ -73,8 +64,8 @@ static inline bool NS_IsSpace(char16_t u) {
 
 static inline bool NS_NeedsPlatformNativeHandling(char16_t aChar) {
   return
-#if ANDROID  // Bug 1647377: no "platform native" support for Tibetan;
-             // better to just use our class-based breaker.
+#if ANDROID || XP_WIN  // Bug 1647377/1736393: no "platform native" support for
+                       // Tibetan; better to just use our class-based breaker.
       (0x0e01 <= aChar && aChar <= 0x0eff) ||  // Thai, Lao
 #else
       (0x0e01 <= aChar && aChar <= 0x0fff) ||  // Thai, Lao, Tibetan

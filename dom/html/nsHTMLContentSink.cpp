@@ -50,6 +50,7 @@
 
 #include "nsError.h"
 #include "nsContentPolicyUtils.h"
+#include "nsIDocShell.h"
 #include "nsIScriptContext.h"
 
 #include "nsLayoutCID.h"
@@ -358,9 +359,10 @@ nsIContent* SinkContext::Node::Add(nsIContent* child) {
                  "Inserting multiple children without flushing.");
     nsCOMPtr<nsIContent> nodeToInsertBefore =
         mContent->GetChildAt_Deprecated(mInsertionPoint++);
-    mContent->InsertChildBefore(child, nodeToInsertBefore, false);
+    mContent->InsertChildBefore(child, nodeToInsertBefore, false,
+                                IgnoreErrors());
   } else {
-    mContent->AppendChildTo(child, false);
+    mContent->AppendChildTo(child, false, IgnoreErrors());
   }
   return child;
 }
@@ -615,8 +617,11 @@ nsresult HTMLContentSink::Init(Document* aDoc, nsIURI* aURI,
 
   NS_ASSERTION(mDocument->GetChildCount() == 0,
                "Document should have no kids here!");
-  rv = mDocument->AppendChildTo(mRoot, false);
-  NS_ENSURE_SUCCESS(rv, rv);
+  ErrorResult error;
+  mDocument->AppendChildTo(mRoot, false, error);
+  if (error.Failed()) {
+    return error.StealNSResult();
+  }
 
   // Make head part
   nodeInfo = mNodeInfoManager->GetNodeInfo(
@@ -627,7 +632,7 @@ nsresult HTMLContentSink::Init(Document* aDoc, nsIURI* aURI,
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  mRoot->AppendChildTo(mHead, false);
+  mRoot->AppendChildTo(mHead, false, IgnoreErrors());
 
   mCurrentContext = new SinkContext(this);
   mCurrentContext->Begin(eHTMLTag_html, mRoot, 0, -1);
@@ -799,7 +804,6 @@ HTMLContentSink::OpenContainer(ElementType aElementType) {
         if (!mNotifiedRootInsertion) {
           NotifyRootInsertion();
         }
-        ProcessOfflineManifest(mRoot);
       }
       break;
   }

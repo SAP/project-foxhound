@@ -76,7 +76,9 @@ const childSpec = protocol.generateActorSpec({
     },
     getIntArray: {
       request: { inputArray: Arg(0, "array:number") },
-      response: RetVal("array:number"),
+      response: {
+        intArray: RetVal("array:number"),
+      },
     },
     getSibling: {
       request: { id: Arg(0) },
@@ -163,6 +165,7 @@ var ChildActor = protocol.ActorClassWithSpec(childSpec, {
 class ChildFront extends protocol.FrontClassWithSpec(childSpec) {
   constructor(client, targetFront, parentFront) {
     super(client, targetFront, parentFront);
+    this._parentFront = parentFront;
 
     this.before("event1", this.onEvent1.bind(this));
     this.before("event2", this.onEvent2a.bind(this));
@@ -171,6 +174,8 @@ class ChildFront extends protocol.FrontClassWithSpec(childSpec) {
 
   destroy() {
     this.destroyed = true;
+    // Call parent's destroy, which may be re-entrant and recall this function
+    this._parentFront.destroy();
     super.destroy();
   }
 
@@ -204,10 +209,19 @@ protocol.registerFront(ChildFront);
 
 const otherChildSpec = protocol.generateActorSpec({
   typeName: "otherChildActor",
-  methods: {},
+  methods: {
+    getOtherChild: {
+      request: {},
+      response: { sibling: RetVal("otherChildActor") },
+    },
+  },
   events: {},
 });
-const OtherChildActor = protocol.ActorClassWithSpec(otherChildSpec, {});
+const OtherChildActor = protocol.ActorClassWithSpec(otherChildSpec, {
+  getOtherChild() {
+    return new OtherChildActor(this.conn);
+  },
+});
 class OtherChildFront extends protocol.FrontClassWithSpec(otherChildSpec) {}
 protocol.registerFront(OtherChildFront);
 
@@ -216,8 +230,6 @@ types.addDictType("manyChildrenDict", {
   more: "array:childActor",
 });
 
-types.addLifetime("temp", "_temporaryHolder");
-
 const rootSpec = protocol.generateActorSpec({
   typeName: "root",
 
@@ -225,6 +237,10 @@ const rootSpec = protocol.generateActorSpec({
     getChild: {
       request: { str: Arg(0) },
       response: { actor: RetVal("childActor") },
+    },
+    getOtherChild: {
+      request: {},
+      response: { sibling: RetVal("otherChildActor") },
     },
     getChildren: {
       request: { ids: Arg(0, "array:string") },
@@ -237,10 +253,6 @@ const rootSpec = protocol.generateActorSpec({
     getManyChildren: {
       response: RetVal("manyChildrenDict"),
     },
-    getTemporaryChild: {
-      request: { id: Arg(0) },
-      response: { child: RetVal("temp:childActor") },
-    },
     getPolymorphism: {
       request: { id: Arg(0, "number") },
       response: { child: RetVal("polytype") },
@@ -252,7 +264,6 @@ const rootSpec = protocol.generateActorSpec({
       },
       response: { child: RetVal("polytype") },
     },
-    clearTemporaryChildren: {},
   },
 });
 
@@ -280,6 +291,12 @@ const RootActor = protocol.ActorClassWithSpec(rootSpec, {
     return child;
   },
 
+  // Other child actor won't all be own by the root actor
+  // and can have their own children
+  getOtherChild() {
+    return new OtherChildActor(this.conn);
+  },
+
   getChildren(ids) {
     return ids.map(id => this.getChild(id));
   },
@@ -300,23 +317,6 @@ const RootActor = protocol.ActorClassWithSpec(rootSpec, {
       child5: this.getChild("child5"),
       more: [this.getChild("child6"), this.getChild("child7")],
     };
-  },
-
-  // This should remind you of a pause actor.
-  getTemporaryChild(id) {
-    if (!this._temporaryHolder) {
-      this._temporaryHolder = new protocol.Actor(this.conn);
-      this.manage(this._temporaryHolder);
-    }
-    return new ChildActor(this.conn, id);
-  },
-
-  clearTemporaryChildren(id) {
-    if (!this._temporaryHolder) {
-      return;
-    }
-    this._temporaryHolder.destroy();
-    delete this._temporaryHolder;
   },
 
   getPolymorphism: function(id) {
@@ -348,28 +348,6 @@ class RootFront extends protocol.FrontClassWithSpec(rootSpec) {
 
   toString() {
     return "[root front]";
-  }
-
-  getTemporaryChild(id) {
-    if (!this._temporaryHolder) {
-      this._temporaryHolder = new protocol.Front(
-        this.conn,
-        this.targetFront,
-        this
-      );
-      this._temporaryHolder.actorID = this.actorID + "_temp";
-      this.manage(this._temporaryHolder);
-    }
-    return super.getTemporaryChild(id);
-  }
-
-  clearTemporaryChildren() {
-    if (!this._temporaryHolder) {
-      return Promise.resolve(undefined);
-    }
-    this._temporaryHolder.destroy();
-    delete this._temporaryHolder;
-    return super.clearTemporaryChildren();
   }
 }
 
@@ -409,12 +387,13 @@ add_task(async function() {
   await testSimpleChildren(trace);
   await testDetail(trace);
   await testSibling(trace);
-  await testTemporary(trace);
   await testEvents(trace);
   await testManyChildren(trace);
   await testGenerator(trace);
   await testPolymorphism(trace);
   await testUnmanageChildren(trace);
+  // Execute that assertion very last as it destroy the root front and actor
+  await testDestroy(trace);
 
   await client.close();
 });
@@ -476,61 +455,6 @@ async function testSibling(trace) {
   });
 
   expectRootChildren(2);
-}
-
-async function testTemporary(trace) {
-  await rootFront.getTemporaryChild("temp1");
-  trace.expectSend({
-    type: "getTemporaryChild",
-    id: "temp1",
-    to: "<actorid>",
-  });
-  trace.expectReceive({
-    child: { actor: "<actorid>", childID: "temp1" },
-    from: "<actorid>",
-  });
-
-  // At this point we expect two direct children, plus the temporary holder
-  // which should hold 1 itself.
-  Assert.equal(rootActor._temporaryHolder.__poolMap.size, 1);
-  Assert.equal(rootFront._temporaryHolder.__poolMap.size, 1);
-
-  expectRootChildren(3);
-
-  await rootFront.getTemporaryChild("temp2");
-  trace.expectSend({
-    type: "getTemporaryChild",
-    id: "temp2",
-    to: "<actorid>",
-  });
-  trace.expectReceive({
-    child: { actor: "<actorid>", childID: "temp2" },
-    from: "<actorid>",
-  });
-
-  // Same amount of direct children, and an extra in the temporary holder.
-  expectRootChildren(3);
-  Assert.equal(rootActor._temporaryHolder.__poolMap.size, 2);
-  Assert.equal(rootFront._temporaryHolder.__poolMap.size, 2);
-
-  // Get the children of the temporary holder...
-  const checkActors = rootActor._temporaryHolder.__poolMap.values();
-
-  // Now release the temporary holders and expect them to drop again.
-  await rootFront.clearTemporaryChildren();
-  trace.expectSend({
-    type: "clearTemporaryChildren",
-    to: "<actorid>",
-  });
-  trace.expectReceive({ from: "<actorid>" });
-
-  expectRootChildren(2);
-  Assert.ok(!rootActor._temporaryHolder);
-  Assert.ok(!rootFront._temporaryHolder);
-  for (const checkActor of checkActors) {
-    Assert.ok(checkActor.destroyed);
-    Assert.ok(checkActor.destroyed);
-  }
 }
 
 async function testEvents(trace) {
@@ -735,5 +659,37 @@ async function testUnmanageChildren(trace) {
 
   // Remove all fronts of type OtherChildFront
   rootFront.unmanageChildren(OtherChildFront);
+  Assert.ok(
+    !front.isDestroyed(),
+    "Unmanaged front is not considered as destroyed"
+  );
   Assert.equal(childrenOfType(rootFront, OtherChildFront).length, 0);
+}
+
+async function testDestroy(trace) {
+  const front = await rootFront.getOtherChild();
+  const otherChildFront = await front.getOtherChild();
+  Assert.equal(
+    otherChildFront.getParent(),
+    front,
+    "the child is a children of first front"
+  );
+
+  front.destroy();
+  Assert.ok(front.isDestroyed(), "sibling is correctly reported as destroyed");
+  Assert.ok(!front.getParent(), "sibling has no more parent declared");
+  Assert.ok(otherChildFront.isDestroyed(), "the child is also destroyed");
+  Assert.ok(
+    !otherChildFront.getParent(),
+    "the child also has no more parent declared"
+  );
+  Assert.ok(
+    !otherChildFront.parentPool,
+    "the child also has its parentPool attribute nullified"
+  );
+
+  // Verify that re-entrant Front.destroy doesn't throw, nor loop
+  // Execute that very last as it will destroy the root actor and front
+  const sibling = await childFront.getSibling("siblingID");
+  sibling.destroy();
 }

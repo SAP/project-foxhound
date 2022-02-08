@@ -12,6 +12,7 @@
 #include "MediaTrackGraph.h"
 #include "MediaTrackGraphImpl.h"
 #include "MediaTrackListener.h"
+#include "Tracing.h"
 #include "VideoStreamTrack.h"
 #include "mozilla/dom/AudioTrack.h"
 #include "mozilla/dom/AudioTrackList.h"
@@ -68,14 +69,12 @@ static bool ContainsLiveAudioTracks(
 
 class DOMMediaStream::PlaybackTrackListener : public MediaStreamTrackConsumer {
  public:
-  explicit PlaybackTrackListener(DOMMediaStream* aStream) : mStream(aStream) {}
+  NS_INLINE_DECL_REFCOUNTING(PlaybackTrackListener)
 
-  NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(PlaybackTrackListener)
-  NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(PlaybackTrackListener)
+  explicit PlaybackTrackListener(DOMMediaStream* aStream) : mStream(aStream) {}
 
   void NotifyEnded(MediaStreamTrack* aTrack) override {
     if (!mStream) {
-      MOZ_ASSERT(false);
       return;
     }
 
@@ -91,33 +90,23 @@ class DOMMediaStream::PlaybackTrackListener : public MediaStreamTrackConsumer {
  protected:
   virtual ~PlaybackTrackListener() = default;
 
-  RefPtr<DOMMediaStream> mStream;
+  WeakPtr<DOMMediaStream> mStream;
 };
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(DOMMediaStream::PlaybackTrackListener,
-                                     AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(DOMMediaStream::PlaybackTrackListener,
-                                       Release)
-NS_IMPL_CYCLE_COLLECTION(DOMMediaStream::PlaybackTrackListener, mStream)
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(DOMMediaStream)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(DOMMediaStream,
                                                 DOMEventTargetHelper)
   tmp->Destroy();
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mWindow)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mTracks)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mConsumersToKeepAlive)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mPlaybackTrackListener)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_PTR
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(DOMMediaStream,
                                                   DOMEventTargetHelper)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTracks)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mConsumersToKeepAlive)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPlaybackTrackListener)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_ADDREF_INHERITED(DOMMediaStream, DOMEventTargetHelper)
@@ -128,7 +117,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMMediaStream)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 DOMMediaStream::DOMMediaStream(nsPIDOMWindowInner* aWindow)
-    : mWindow(aWindow),
+    : DOMEventTargetHelper(aWindow),
       mPlaybackTrackListener(MakeAndAddRef<PlaybackTrackListener>(this)) {
   nsresult rv;
   nsCOMPtr<nsIUUIDGenerator> uuidgen =
@@ -250,6 +239,7 @@ already_AddRefed<Promise> DOMMediaStream::CountUnderlyingStreams(
     }
 
     void Run() override {
+      TRACE("DOMMediaStream::Counter")
       uint32_t streams =
           mGraph->mTracks.Length() + mGraph->mSuspendedTracks.Length();
       mGraph->DispatchToMainThreadStableState(NS_NewRunnableFunction(
@@ -338,7 +328,10 @@ void DOMMediaStream::AddTrack(MediaStreamTrack& aTrack) {
   }
 
   mTracks.AppendElement(&aTrack);
-  NotifyTrackAdded(&aTrack);
+
+  if (!aTrack.Ended()) {
+    NotifyTrackAdded(&aTrack);
+  }
 }
 
 void DOMMediaStream::RemoveTrack(MediaStreamTrack& aTrack) {
@@ -357,7 +350,7 @@ void DOMMediaStream::RemoveTrack(MediaStreamTrack& aTrack) {
 }
 
 already_AddRefed<DOMMediaStream> DOMMediaStream::Clone() {
-  auto newStream = MakeRefPtr<DOMMediaStream>(GetParentObject());
+  auto newStream = MakeRefPtr<DOMMediaStream>(GetOwner());
 
   LOG(LogLevel::Info,
       ("DOMMediaStream %p created clone %p", this, newStream.get()));
@@ -410,7 +403,7 @@ void DOMMediaStream::RemoveTrackInternal(MediaStreamTrack* aTrack) {
 
 already_AddRefed<nsIPrincipal> DOMMediaStream::GetPrincipal() {
   nsCOMPtr<nsIPrincipal> principal =
-      nsGlobalWindowInner::Cast(mWindow)->GetPrincipal();
+      nsGlobalWindowInner::Cast(GetOwner())->GetPrincipal();
   for (const auto& t : mTracks) {
     if (t->Ended()) {
       continue;

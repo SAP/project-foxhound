@@ -14,12 +14,13 @@ add_task(async function() {
   await dbg.toolbox.target.waitForRequestsToSettle();
   invokeInTab("startWorker");
   await waitForPaused(dbg, "scopes-worker.js");
-  const onRemoved = waitForDispatch(dbg, "REMOVE_BREAKPOINT");
+  const onRemoved = waitForDispatch(dbg.store, "REMOVE_BREAKPOINT");
   await removeBreakpoint(dbg, workerSource.id, 11);
   await onRemoved;
 
   // We should be paused at the first line of simple-worker.js
-  assertPausedAtSourceAndLine(dbg, workerSource.id, 11);
+  const workerSource2 = dbg.selectors.getSelectedSourceWithContent();
+  assertPausedAtSourceAndLine(dbg, workerSource2.id, 11);
 
   await toggleNode(dbg, "var_array");
   ok(findNodeValue(dbg, "0") == '"mango"', "array elem0");

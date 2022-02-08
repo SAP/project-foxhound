@@ -9,26 +9,32 @@ use neqo_common::{
     hex_with_len, qtrace, Decoder, Encoder, IncrementalDecoderBuffer, IncrementalDecoderIgnore,
     IncrementalDecoderUint,
 };
-use neqo_transport::Connection;
+use neqo_crypto::random;
+use neqo_transport::{Connection, StreamId};
 use std::convert::TryFrom;
+use std::io::Write;
 use std::mem;
 
-use crate::{Error, Res};
+use crate::{Error, Priority, Res};
 
 pub(crate) type HFrameType = u64;
 
 pub(crate) const H3_FRAME_TYPE_DATA: HFrameType = 0x0;
 pub(crate) const H3_FRAME_TYPE_HEADERS: HFrameType = 0x1;
 const H3_FRAME_TYPE_CANCEL_PUSH: HFrameType = 0x3;
-const H3_FRAME_TYPE_SETTINGS: HFrameType = 0x4;
+pub(crate) const H3_FRAME_TYPE_SETTINGS: HFrameType = 0x4;
 const H3_FRAME_TYPE_PUSH_PROMISE: HFrameType = 0x5;
 const H3_FRAME_TYPE_GOAWAY: HFrameType = 0x7;
 const H3_FRAME_TYPE_MAX_PUSH_ID: HFrameType = 0xd;
+const H3_FRAME_TYPE_PRIORITY_UPDATE_REQUEST: HFrameType = 0xf0700;
+const H3_FRAME_TYPE_PRIORITY_UPDATE_PUSH: HFrameType = 0xf0701;
+
+pub const H3_RESERVED_FRAME_TYPES: &[HFrameType] = &[0x2, 0x6, 0x8, 0x9];
 
 const MAX_READ_SIZE: usize = 4096;
 // data for DATA frame is not read into HFrame::Data.
 #[derive(PartialEq, Debug)]
-pub(crate) enum HFrame {
+pub enum HFrame {
     Data {
         len: u64, // length of the data
     },
@@ -46,10 +52,19 @@ pub(crate) enum HFrame {
         header_block: Vec<u8>,
     },
     Goaway {
-        stream_id: u64,
+        stream_id: StreamId,
     },
     MaxPushId {
         push_id: u64,
+    },
+    Grease,
+    PriorityUpdateRequest {
+        element_id: u64,
+        priority: Priority,
+    },
+    PriorityUpdatePush {
+        element_id: u64,
+        priority: Priority,
     },
 }
 
@@ -63,6 +78,12 @@ impl HFrame {
             Self::PushPromise { .. } => H3_FRAME_TYPE_PUSH_PROMISE,
             Self::Goaway { .. } => H3_FRAME_TYPE_GOAWAY,
             Self::MaxPushId { .. } => H3_FRAME_TYPE_MAX_PUSH_ID,
+            Self::PriorityUpdateRequest { .. } => H3_FRAME_TYPE_PRIORITY_UPDATE_REQUEST,
+            Self::PriorityUpdatePush { .. } => H3_FRAME_TYPE_PRIORITY_UPDATE_PUSH,
+            Self::Grease => {
+                let r = random(7);
+                Decoder::from(&r).decode_uint(7).unwrap() * 0x1f + 0x21
+            }
         }
     }
 
@@ -95,13 +116,36 @@ impl HFrame {
             }
             Self::Goaway { stream_id } => {
                 enc.encode_vvec_with(|enc_inner| {
-                    enc_inner.encode_varint(*stream_id);
+                    enc_inner.encode_varint(stream_id.as_u64());
                 });
             }
             Self::MaxPushId { push_id } => {
                 enc.encode_vvec_with(|enc_inner| {
                     enc_inner.encode_varint(*push_id);
                 });
+            }
+            Self::Grease => {
+                // Encode some number of random bytes.
+                let r = random(8);
+                enc.encode_vvec(&r[1..usize::from(1 + (r[0] & 0x7))]);
+            }
+            Self::PriorityUpdateRequest {
+                element_id,
+                priority,
+            }
+            | Self::PriorityUpdatePush {
+                element_id,
+                priority,
+            } => {
+                let mut update_frame = Encoder::new();
+                update_frame.encode_varint(*element_id);
+
+                let mut priority_enc: Vec<u8> = Vec::new();
+                write!(priority_enc, "{}", priority).unwrap();
+
+                update_frame.encode(&priority_enc);
+                enc.encode_varint(update_frame.len() as u64);
+                enc.encode(&update_frame);
             }
         }
     }
@@ -116,7 +160,7 @@ enum HFrameReaderState {
 }
 
 #[derive(Debug)]
-pub(crate) struct HFrameReader {
+pub struct HFrameReader {
     state: HFrameReaderState,
     hframe_type: u64,
     hframe_len: u64,
@@ -137,6 +181,18 @@ impl HFrameReader {
                 decoder: IncrementalDecoderUint::default(),
             },
             hframe_type: 0,
+            hframe_len: 0,
+            payload: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn new_with_type(hframe_type: u64) -> Self {
+        Self {
+            state: HFrameReaderState::GetLength {
+                decoder: IncrementalDecoderUint::default(),
+            },
+            hframe_type,
             hframe_len: 0,
             payload: Vec::new(),
         }
@@ -166,7 +222,6 @@ impl HFrameReader {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
     /// returns true if quic stream was closed.
     /// # Errors
     /// May return `HttpFrame` if a frame cannot be decoded.
@@ -174,7 +229,7 @@ impl HFrameReader {
     pub fn receive(
         &mut self,
         conn: &mut Connection,
-        stream_id: u64,
+        stream_id: StreamId,
     ) -> Res<(Option<HFrame>, bool)> {
         loop {
             let to_read = std::cmp::min(self.min_remaining(), MAX_READ_SIZE);
@@ -202,9 +257,8 @@ impl HFrameReader {
             if fin {
                 if self.decoding_in_progress() {
                     break Err(Error::HttpFrame);
-                } else {
-                    break Ok((None, fin));
                 }
+                break Ok((None, fin));
             }
 
             if !read {
@@ -222,6 +276,9 @@ impl HFrameReader {
                 if let Some(v) = decoder.consume(&mut input) {
                     qtrace!("HFrameReader::receive: read frame type {}", v);
                     self.hframe_type = v;
+                    if H3_RESERVED_FRAME_TYPES.contains(&self.hframe_type) {
+                        return Err(Error::HttpFrameUnexpected);
+                    }
                     self.state = HFrameReaderState::GetLength {
                         decoder: IncrementalDecoderUint::default(),
                     };
@@ -248,15 +305,16 @@ impl HFrameReader {
                         | H3_FRAME_TYPE_GOAWAY
                         | H3_FRAME_TYPE_MAX_PUSH_ID
                         | H3_FRAME_TYPE_PUSH_PROMISE
-                        | H3_FRAME_TYPE_HEADERS => {
+                        | H3_FRAME_TYPE_HEADERS
+                        | H3_FRAME_TYPE_PRIORITY_UPDATE_REQUEST
+                        | H3_FRAME_TYPE_PRIORITY_UPDATE_PUSH => {
                             if len == 0 {
                                 return Ok(Some(self.get_frame()?));
-                            } else {
-                                HFrameReaderState::GetData {
-                                    decoder: IncrementalDecoderBuffer::new(
-                                        usize::try_from(len).or(Err(Error::HttpFrame))?,
-                                    ),
-                                }
+                            }
+                            HFrameReaderState::GetData {
+                                decoder: IncrementalDecoderBuffer::new(
+                                    usize::try_from(len).or(Err(Error::HttpFrame))?,
+                                ),
                             }
                         }
                         _ => {
@@ -298,7 +356,7 @@ impl HFrameReader {
     /// # Errors
     /// May return `HttpFrame` if a frame cannot be decoded.
     fn get_frame(&mut self) -> Res<HFrame> {
-        let payload = mem::replace(&mut self.payload, Vec::new());
+        let payload = mem::take(&mut self.payload);
         let mut dec = Decoder::from(&payload[..]);
         let f = match self.hframe_type {
             H3_FRAME_TYPE_DATA => HFrame::Data {
@@ -312,9 +370,13 @@ impl HFrameReader {
             },
             H3_FRAME_TYPE_SETTINGS => {
                 let mut settings = HSettings::default();
-                settings
-                    .decode_frame_contents(&mut dec)
-                    .map_err(|_| Error::HttpFrame)?;
+                settings.decode_frame_contents(&mut dec).map_err(|e| {
+                    if e == Error::HttpSettings {
+                        e
+                    } else {
+                        Error::HttpFrame
+                    }
+                })?;
                 HFrame::Settings { settings }
             }
             H3_FRAME_TYPE_PUSH_PROMISE => HFrame::PushPromise {
@@ -322,11 +384,27 @@ impl HFrameReader {
                 header_block: dec.decode_remainder().to_vec(),
             },
             H3_FRAME_TYPE_GOAWAY => HFrame::Goaway {
-                stream_id: dec.decode_varint().ok_or(Error::HttpFrame)?,
+                stream_id: StreamId::new(dec.decode_varint().ok_or(Error::HttpFrame)?),
             },
             H3_FRAME_TYPE_MAX_PUSH_ID => HFrame::MaxPushId {
                 push_id: dec.decode_varint().ok_or(Error::HttpFrame)?,
             },
+            H3_FRAME_TYPE_PRIORITY_UPDATE_REQUEST | H3_FRAME_TYPE_PRIORITY_UPDATE_PUSH => {
+                let element_id = dec.decode_varint().ok_or(Error::HttpFrame)?;
+                let priority = dec.decode_remainder();
+                let priority = Priority::from_bytes(priority)?;
+                if self.hframe_type == H3_FRAME_TYPE_PRIORITY_UPDATE_REQUEST {
+                    HFrame::PriorityUpdateRequest {
+                        element_id,
+                        priority,
+                    }
+                } else {
+                    HFrame::PriorityUpdatePush {
+                        element_id,
+                        priority,
+                    }
+                }
+            }
             _ => panic!("We should not be calling this function with unknown frame type!"),
         };
         self.reset();
@@ -336,12 +414,13 @@ impl HFrameReader {
 
 #[cfg(test)]
 mod tests {
-    use super::{Encoder, Error, HFrame, HFrameReader, HSettings};
+    use super::{Decoder, Encoder, Error, HFrame, HFrameReader, HSettings};
     use crate::settings::{HSetting, HSettingType};
+    use crate::Priority;
     use neqo_crypto::AuthenticationStatus;
-    use neqo_transport::{Connection, StreamType};
-    use num_traits::Num;
-    use test_fixture::{connect, default_client, default_server, now};
+    use neqo_transport::{Connection, StreamId, StreamType};
+    use std::mem;
+    use test_fixture::{connect, default_client, default_server, fixture_init, now};
 
     #[allow(clippy::many_single_char_names)]
     fn enc_dec(f: &HFrame, st: &str, remaining: usize) {
@@ -358,10 +437,10 @@ mod tests {
         let out = conn_c.process(None, now());
         let out = conn_s.process(out.dgram(), now());
         let out = conn_c.process(out.dgram(), now());
-        let _ = conn_s.process(out.dgram(), now());
+        mem::drop(conn_s.process(out.dgram(), now()));
         conn_c.authenticated(AuthenticationStatus::Ok, now());
         let out = conn_c.process(None, now());
-        let _ = conn_s.process(out.dgram(), now());
+        mem::drop(conn_s.process(out.dgram(), now()));
 
         // create a stream
         let stream_id = conn_s.stream_create(StreamType::BiDi).unwrap();
@@ -369,21 +448,13 @@ mod tests {
         let mut fr: HFrameReader = HFrameReader::new();
 
         // conver string into u8 vector
-        let mut buf: Vec<u8> = Vec::new();
-        if st.len() % 2 != 0 {
-            panic!("Needs to be even length");
-        }
-        for i in 0..st.len() / 2 {
-            let x = st.get(i * 2..i * 2 + 2);
-            let v = <u8 as Num>::from_str_radix(x.unwrap(), 16).unwrap();
-            buf.push(v);
-        }
-        conn_s.stream_send(stream_id, &buf).unwrap();
+        let buf = Encoder::from_hex(st);
+        conn_s.stream_send(stream_id, &buf[..]).unwrap();
         let out = conn_s.process(None, now());
-        let _ = conn_c.process(out.dgram(), now());
+        mem::drop(conn_c.process(out.dgram(), now()));
 
         let (frame, fin) = fr.receive(&mut conn_c, stream_id).unwrap();
-        assert_eq!(fin, false);
+        assert!(!fin);
         assert!(frame.is_some());
         assert_eq!(*f, frame.unwrap());
 
@@ -432,7 +503,9 @@ mod tests {
 
     #[test]
     fn test_goaway_frame4() {
-        let f = HFrame::Goaway { stream_id: 5 };
+        let f = HFrame::Goaway {
+            stream_id: StreamId::new(5),
+        };
         enc_dec(&f, "070105", 0);
     }
 
@@ -442,11 +515,75 @@ mod tests {
         enc_dec(&f, "0d0105", 0);
     }
 
+    #[test]
+    fn grease() {
+        fn make_grease() -> u64 {
+            let mut enc = Encoder::default();
+            HFrame::Grease.encode(&mut enc);
+            let mut dec = Decoder::from(&enc);
+            let ft = dec.decode_varint().unwrap();
+            assert_eq!((ft - 0x21) % 0x1f, 0);
+            let body = dec.decode_vvec().unwrap();
+            assert!(body.len() <= 7);
+            ft
+        }
+
+        fixture_init();
+        let t1 = make_grease();
+        let t2 = make_grease();
+        assert_ne!(t1, t2);
+    }
+
+    #[test]
+    fn test_priority_update_request_default() {
+        let f = HFrame::PriorityUpdateRequest {
+            element_id: 6,
+            priority: Priority::default(),
+        };
+        enc_dec(&f, "800f07000106", 0);
+    }
+
+    #[test]
+    fn test_priority_update_request_incremental_default() {
+        let f = HFrame::PriorityUpdateRequest {
+            element_id: 7,
+            priority: Priority::new(6, false),
+        };
+        enc_dec(&f, "800f07000407753d36", 0); // "u=6"
+    }
+
+    #[test]
+    fn test_priority_update_request_urgency_default() {
+        let f = HFrame::PriorityUpdateRequest {
+            element_id: 8,
+            priority: Priority::new(3, true),
+        };
+        enc_dec(&f, "800f0700020869", 0); // "i"
+    }
+
+    #[test]
+    fn test_priority_update_request() {
+        let f = HFrame::PriorityUpdateRequest {
+            element_id: 9,
+            priority: Priority::new(5, true),
+        };
+        enc_dec(&f, "800f07000609753d352c69", 0); // "u=5,i"
+    }
+
+    #[test]
+    fn test_priority_update_push_default() {
+        let f = HFrame::PriorityUpdatePush {
+            element_id: 10,
+            priority: Priority::default(),
+        };
+        enc_dec(&f, "800f0701010a", 0);
+    }
+
     struct HFrameReaderTest {
         pub fr: HFrameReader,
         pub conn_c: Connection,
         pub conn_s: Connection,
-        pub stream_id: u64,
+        pub stream_id: StreamId,
     }
 
     impl HFrameReaderTest {
@@ -464,9 +601,9 @@ mod tests {
         fn process(&mut self, v: &[u8]) -> Option<HFrame> {
             self.conn_s.stream_send(self.stream_id, v).unwrap();
             let out = self.conn_s.process(None, now());
-            let _ = self.conn_c.process(out.dgram(), now());
+            mem::drop(self.conn_c.process(out.dgram(), now()));
             let (frame, fin) = self.fr.receive(&mut self.conn_c, self.stream_id).unwrap();
-            assert_eq!(fin, false);
+            assert!(!fin);
             frame
         }
     }
@@ -599,18 +736,18 @@ mod tests {
     ) {
         let mut fr = HFrameReaderTest::new();
 
-        fr.conn_s.stream_send(fr.stream_id, &buf).unwrap();
+        fr.conn_s.stream_send(fr.stream_id, buf).unwrap();
         if let FrameReadingTestSend::DataWithFin = test_to_send {
             fr.conn_s.stream_close_send(fr.stream_id).unwrap();
         }
 
         let out = fr.conn_s.process(None, now());
-        let _ = fr.conn_c.process(out.dgram(), now());
+        mem::drop(fr.conn_c.process(out.dgram(), now()));
 
         if let FrameReadingTestSend::DataThenFin = test_to_send {
             fr.conn_s.stream_close_send(fr.stream_id).unwrap();
             let out = fr.conn_s.process(None, now());
-            let _ = fr.conn_c.process(out.dgram(), now());
+            mem::drop(fr.conn_c.process(out.dgram(), now()));
         }
 
         let rv = fr.fr.receive(&mut fr.conn_c, fr.stream_id);
@@ -622,17 +759,17 @@ mod tests {
             }
             FrameReadingTestExpect::FrameComplete => {
                 let (f, fin) = rv.unwrap();
-                assert_eq!(fin, false);
+                assert!(!fin);
                 assert!(f.is_some());
             }
             FrameReadingTestExpect::FrameAndStreamComplete => {
                 let (f, fin) = rv.unwrap();
-                assert_eq!(fin, true);
+                assert!(fin);
                 assert!(f.is_some());
             }
             FrameReadingTestExpect::StreamDoneWithoutFrame => {
                 let (f, fin) = rv.unwrap();
-                assert_eq!(fin, true);
+                assert!(fin);
                 assert!(f.is_none());
             }
         };
@@ -811,7 +948,9 @@ mod tests {
         test_complete_and_incomplete_frame(&buf, buf.len());
 
         // H3_FRAME_TYPE_GOAWAY
-        let f = HFrame::Goaway { stream_id: 5 };
+        let f = HFrame::Goaway {
+            stream_id: StreamId::new(5),
+        };
         let mut enc = Encoder::default();
         f.encode(&mut enc);
         let buf: Vec<_> = enc.into();
@@ -832,11 +971,11 @@ mod tests {
 
         fr.conn_s.stream_send(fr.stream_id, &[0x00]).unwrap();
         let out = fr.conn_s.process(None, now());
-        let _ = fr.conn_c.process(out.dgram(), now());
+        mem::drop(fr.conn_c.process(out.dgram(), now()));
 
         assert_eq!(Ok(()), fr.conn_c.stream_close_send(fr.stream_id));
         let out = fr.conn_c.process(None, now());
-        let _ = fr.conn_s.process(out.dgram(), now());
+        mem::drop(fr.conn_s.process(out.dgram(), now()));
         assert_eq!(
             Ok((None, true)),
             fr.fr.receive(&mut fr.conn_s, fr.stream_id)

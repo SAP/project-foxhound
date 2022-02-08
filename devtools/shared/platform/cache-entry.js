@@ -38,7 +38,7 @@ exports.CacheEntry = {
           // Get default load context if we can't fetch.
           loadContext = Services.loadContextInfo.default;
         }
-        this.cacheSession = cacheService.diskCacheStorage(loadContext, false);
+        this.cacheSession = cacheService.diskCacheStorage(loadContext);
         this.isCacheSessionInitialized = true;
       }
     } catch (e) {
@@ -92,16 +92,15 @@ exports.CacheEntry = {
       this.initializeCacheSession(request);
     }
     if (this.cacheSession) {
-      const uri = NetworkHelper.nsIURL(request.URI.spec);
       this.cacheSession.asyncOpenURI(
-        uri,
+        request.URI,
         "",
         Ci.nsICacheStorage.OPEN_SECRETLY,
         {
-          onCacheEntryCheck: (entry, appcache) => {
+          onCacheEntryCheck: entry => {
             return Ci.nsICacheEntryOpenCallback.ENTRY_WANTED;
           },
-          onCacheEntryAvailable: (descriptor, isnew, appcache, status) => {
+          onCacheEntryAvailable: (descriptor, isnew, status) => {
             if (descriptor) {
               const descriptorObj = this.parseCacheDescriptor(descriptor);
               onCacheDescriptorAvailable(descriptorObj);

@@ -150,40 +150,13 @@ spidermonkey portion.  Each task runs specific tests after the build.
 test
 ----
 
-The ``desktop-test`` kind defines tests for builds.  Its ``tests.yml`` defines
-the full suite of desktop tests and their particulars, leaving it to the
-transforms to determine how those particulars apply to the various platforms.
+See the :doc:`test kind documentation <kinds/test>` for more info.
 
-The process of generating tests goes like this, based on a set of YAML files
-named in ``kind.yml``:
+.. toctree::
+   :hidden:
 
- * For each build task, determine the related test platforms based on the build
-   platform.  For example, a Windows 2010 build might be tested on Windows 7
-   and Windows 10.  Each test platform specifies "test sets" indicating which
-   tests to run.  This is configured in the file named
-   ``test-platforms.yml``.
+   kinds/test
 
- * Each test set is expanded to a list of tests to run.  This is configured in
-   the file named by ``test-sets.yml``. A platform may specify several test
-   sets, in which case the union of those sets is used.
-
- * Each named test is looked up in the file named by ``tests.yml`` to find a
-   test description.  This test description indicates what the test does, how
-   it is reported to treeherder, and how to perform the test, all in a
-   platform-independent fashion.
-
- * Each test description is converted into one or more tasks.  This is
-   performed by a sequence of transforms defined in the ``transforms`` key in
-   ``kind.yml``.  See :doc:`transforms`: for more information on these
-   transforms.
-
- * The resulting tasks become a part of the task graph.
-
-.. important::
-
-    This process generates *all* test jobs, regardless of tree or try syntax.
-    It is up to a later stages of the task-graph generation (the target set and
-    optimization) to select the tests that will actually be performed.
 
 docker-image
 ------------
@@ -192,7 +165,7 @@ Tasks of the ``docker-image`` kind build the Docker images in which other
 Docker tasks run.
 
 The tasks to generate each docker image have predictable labels:
-``build-docker-image-<name>``.
+``docker-image-<name>``.
 
 Docker images are built from subdirectories of ``taskcluster/docker``, using
 ``docker build``.  There is currently no capability for one Docker image to
@@ -310,18 +283,9 @@ release-flatpak-repackage
 -------------------------
 Generate an installer using Flathub's Flatpak format.
 
-release-snap-push
------------------
-Pushes Snap repackage on Snap store.
-
 release-flatpak-push
 --------------------
 Pushes Flatpak repackage on Flathub
-
-release-secondary-snap-push
----------------------------
-Performs the same function as `release-snap-push`, except for the beta channel as part of RC
-Releases.
 
 release-secondary-flatpak-push
 ------------------------------
@@ -451,6 +415,10 @@ release-partner-repack
 ----------------------
 Generates customized versions of releases for partners.
 
+release-partner-attribution
+---------------------------
+Generates attributed versions of releases for partners.
+
 release-partner-repack-chunking-dummy
 -------------------------------------
 Chunks the partner repacks by locale.
@@ -482,6 +450,10 @@ External signing of partner repacks.
 release-partner-repack-beetmover
 --------------------------------
 Moves the partner repacks to S3 buckets.
+
+release-partner-attribution-beetmover
+-------------------------------------
+Moves the partner attributions to S3 buckets.
 
 release-partner-repack-bouncer-sub
 ----------------------------------
@@ -567,15 +539,36 @@ repackage-signing-msi
 ---------------------
 Repackage-signing-msi takes the repackaged msi installers and signs them.
 
+repackage-msix
+--------------
+Repackage-msix takes a (possibly unsigned) package and produces a Windows MSIX package containing no langpacks using the
+```./mach repackage``` command.
+
+These tasks are supposed intended for rapid iteration in ```try```.
+
+repackage-shippable-l10n-msix
+-----------------------------
+Repackage-msix takes a signed package and a list of signed langpacks and produces a Windows MSIX package using the
+```./mach repackage``` command.
+
+The signed langpacks are produced on Linux, since langpacks are platform agnostic.
+
+These tasks are for releases; they are complete, and therefore slower, and not intended for rapid iteration in
+```try```.
+
+repackage-signing-msix
+----------------------
+Repackage-signing-msix takes Windows MSIX packages produced in ```repackage-msix``` and signs them.
+
+repackage-signing-shippable-l10n-msix
+-------------------------------------
+Repackage-signing-shippable-l10n-msix takes Windows MSIX packages produced in
+```repackage-signing-shippable-l10n-msix``` and signs them.
+
 repo-update
 -----------
 Repo-Update tasks are tasks that perform some action on the project repo itself,
 in order to update its state in some way.
-
-python-dependency-update
-------------------------
-Python-dependency-update runs `pip-compile --generate-hashes` against the specified `requirements.in` and
-submits patches to Phabricator.
 
 partials
 --------
@@ -602,6 +595,10 @@ Dummy tasks to consolidate beetmover-checksums dependencies to avoid taskcluster
 post-langpack-dummy
 -------------------
 Dummy tasks to consolidate language pack beetmover dependencies to avoid taskcluster limits on number of dependencies per task.
+
+post-update-verify-dummy
+------------------------
+Dummy tasks to consolidate update verify dependencies to avoid taskcluster limits on number of dependencies per task.
 
 fetch
 -----
@@ -635,11 +632,6 @@ webrender
 ---------
 Tasks used to do testing of WebRender standalone (without gecko). The
 WebRender code lives in gfx/wr and has its own testing infrastructure.
-
-wgpu
----------
-Tasks used to do testing of WebGPU standalone (without gecko). The
-WebGPU code lives in gfx/wgpu and has its own testing infrastructure.
 
 github-sync
 ------------
@@ -693,6 +685,10 @@ merge-automation
 ----------------
 Hook-driven tasks that automate "Merge Day" tasks during the release cycle.
 
+sentry
+------
+Interact with Sentry, such as by publishing new project releases.
+
 system-symbols
 --------------
 Generate missing macOS and windows system symbols from crash reports.
@@ -704,3 +700,29 @@ Upload macOS and windows system symbols to tecken.
 scriptworker-canary
 -------------------
 Push tasks to try to test new scriptworker deployments.
+
+updatebot
+------------------
+Check for updates to (supported) third party libraries, and manage their lifecycle.
+
+fuzzing
+-------
+
+Performs fuzzing smoke tests
+
+startup-test
+------------
+
+Runs Firefox for a short period of time to see if it crashes
+
+l10n-cross-channel
+------------------
+
+Compiles a set of en-US strings from all shipping release trains and pushes to
+the quarantine strings repo.
+
+fxrecord
+--------
+
+Visual metrics computation of desktop Firefox startup. The performance team
+monitors this task to watch for regressions in Firefox startup performance.

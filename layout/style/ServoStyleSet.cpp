@@ -15,6 +15,7 @@
 #include "mozilla/Keyframe.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ProfilerLabels.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/ServoStyleRuleMap.h"
@@ -24,6 +25,20 @@
 #include "mozilla/StyleAnimationValue.h"
 #include "mozilla/css/Loader.h"
 #include "mozilla/dom/AnonymousContent.h"
+#include "mozilla/dom/CSSCounterStyleRule.h"
+#include "mozilla/dom/CSSRuleBinding.h"
+#include "mozilla/dom/CSSFontFaceRule.h"
+#include "mozilla/dom/CSSFontFeatureValuesRule.h"
+#include "mozilla/dom/CSSImportRule.h"
+#include "mozilla/dom/CSSLayerRule.h"
+#include "mozilla/dom/CSSMediaRule.h"
+#include "mozilla/dom/CSSMozDocumentRule.h"
+#include "mozilla/dom/CSSKeyframesRule.h"
+#include "mozilla/dom/CSSKeyframeRule.h"
+#include "mozilla/dom/CSSNamespaceRule.h"
+#include "mozilla/dom/CSSPageRule.h"
+#include "mozilla/dom/CSSScrollTimelineRule.h"
+#include "mozilla/dom/CSSSupportsRule.h"
 #include "mozilla/dom/ChildIterator.h"
 #include "mozilla/dom/FontFaceSet.h"
 #include "mozilla/dom/Element.h"
@@ -34,12 +49,11 @@
 #include "nsDeviceContext.h"
 #include "nsHTMLStyleSheet.h"
 #include "nsIAnonymousContentCreator.h"
+#include "nsLayoutUtils.h"
 #include "mozilla/dom/DocumentInlines.h"
-#include "nsMediaFeatures.h"
 #include "nsPrintfCString.h"
 #include "gfxUserFontSet.h"
 #include "nsWindowSizes.h"
-#include "GeckoProfiler.h"
 
 namespace mozilla {
 
@@ -118,8 +132,7 @@ nsPresContext* ServoStyleSet::GetPresContext() {
 template <typename Functor>
 static void EnumerateShadowRoots(const Document& aDoc, const Functor& aCb) {
   const Document::ShadowRootSet& shadowRoots = aDoc.ComposedShadowRoots();
-  for (auto iter = shadowRoots.ConstIter(); !iter.Done(); iter.Next()) {
-    ShadowRoot* root = iter.Get()->GetKey();
+  for (ShadowRoot* root : shadowRoots) {
     MOZ_ASSERT(root);
     MOZ_DIAGNOSTIC_ASSERT(root->IsInComposedDoc());
     aCb(*root);
@@ -208,12 +221,14 @@ RestyleHint ServoStyleSet::MediumFeaturesChanged(
     }
   });
 
-  bool mayAffectDefaultStyle =
+  const bool mayAffectDefaultStyle =
       bool(aReason & kMediaFeaturesAffectingDefaultStyle);
-
+  const bool viewportChanged =
+      bool(aReason & MediaFeatureChangeReason::ViewportChange);
   const MediumFeaturesChangedResult result =
-      Servo_StyleSet_MediumFeaturesChanged(mRawSet.get(), &nonDocumentStyles,
-                                           mayAffectDefaultStyle);
+      Servo_StyleSet_MediumFeaturesChanged(
+          mRawSet.get(), &nonDocumentStyles, mayAffectDefaultStyle,
+          viewportChanged, mDocument->GetRootElement());
 
   const bool rulesChanged =
       result.mAffectsDocumentRules || result.mAffectsNonDocumentRules;
@@ -229,12 +244,6 @@ RestyleHint ServoStyleSet::MediumFeaturesChanged(
   if (rulesChanged) {
     // TODO(emilio): This could be more granular.
     return RestyleHint::RestyleSubtree();
-  }
-
-  const bool viewportChanged =
-      bool(aReason & MediaFeatureChangeReason::ViewportChange);
-  if (result.mUsesViewportUnits && viewportChanged) {
-    return RestyleHint::RecascadeSubtree();
   }
 
   return RestyleHint{0};
@@ -329,8 +338,6 @@ void ServoStyleSet::PreTraverseSync() {
 
   ResolveMappedAttrDeclarationBlocks();
 
-  nsMediaFeatures::InitSystemMetrics();
-
   LookAndFeel::NativeInit();
 
   mDocument->CacheAllKnownLangPrefs();
@@ -344,7 +351,7 @@ void ServoStyleSet::PreTraverseSync() {
     uint64_t generation = userFontSet->GetGeneration();
     if (generation != mUserFontSetUpdateGeneration) {
       mDocument->GetFonts()->CacheFontLoadability();
-      presContext->DeviceContext()->UpdateFontCacheUserFonts(userFontSet);
+      presContext->UpdateFontCacheUserFonts(userFontSet);
       mUserFontSetUpdateGeneration = generation;
     }
   }
@@ -516,12 +523,6 @@ ServoStyleSet::ResolveInheritingAnonymousBoxStyle(PseudoStyleType aType,
 already_AddRefed<ComputedStyle>
 ServoStyleSet::ResolveNonInheritingAnonymousBoxStyle(PseudoStyleType aType) {
   MOZ_ASSERT(PseudoStyle::IsNonInheritingAnonBox(aType));
-  MOZ_ASSERT(aType != PseudoStyleType::pageContent,
-             "If pageContent ends up non-inheriting, check "
-             "whether we need to do anything to move the "
-             "@page handling from ResolveInheritingAnonymousBoxStyle to "
-             "ResolveNonInheritingAnonymousBoxStyle");
-
   nsCSSAnonBoxes::NonInheriting type =
       nsCSSAnonBoxes::NonInheritingTypeForPseudoType(aType);
   RefPtr<ComputedStyle>& cache = mNonInheritingComputedStyles[type];
@@ -630,6 +631,28 @@ StyleSheet* ServoStyleSet::SheetAt(Origin aOrigin, size_t aIndex) const {
       Servo_StyleSet_GetSheetAt(mRawSet.get(), aOrigin, aIndex));
 }
 
+Maybe<StyleOrientation> ServoStyleSet::GetDefaultPageOrientation() {
+  const RefPtr<ComputedStyle> style =
+      ResolveNonInheritingAnonymousBoxStyle(PseudoStyleType::pageContent);
+  const StylePageSize& pageSize = style->StylePage()->mSize;
+  if (pageSize.IsOrientation()) {
+    return Some(pageSize.AsOrientation());
+  }
+  if (pageSize.IsSize()) {
+    const CSSCoord w = pageSize.AsSize().width.ToCSSPixels();
+    const CSSCoord h = pageSize.AsSize().height.ToCSSPixels();
+    if (w > h) {
+      return Some(StyleOrientation::Landscape);
+    }
+    if (w < h) {
+      return Some(StyleOrientation::Portrait);
+    }
+  } else {
+    MOZ_ASSERT(pageSize.IsAuto(), "Impossible page size");
+  }
+  return Nothing();
+}
+
 void ServoStyleSet::AppendAllNonDocumentAuthorSheets(
     nsTArray<StyleSheet*>& aArray) const {
   EnumerateShadowRoots(*mDocument, [&](ShadowRoot& aShadowRoot) {
@@ -675,20 +698,35 @@ bool ServoStyleSet::GeneratedContentPseudoExists(
     if (!aParentStyle.StyleDisplay()->IsListItem()) {
       return false;
     }
-    // display:none is equivalent to not having the pseudo-element at all.
+    const auto& content = aPseudoStyle.StyleContent()->mContent;
+    // ::marker does not exist if 'content' is 'none' (this trumps
+    // any 'list-style-type' or 'list-style-image' values).
+    if (content.IsNone()) {
+      return false;
+    }
+    // ::marker only exist if we have 'content' or at least one of
+    // 'list-style-type' or 'list-style-image'.
+    if (aPseudoStyle.StyleList()->mCounterStyle.IsNone() &&
+        aPseudoStyle.StyleList()->mListStyleImage.IsNone() &&
+        content.IsNormal()) {
+      return false;
+    }
+    // display:none is equivalent to not having a pseudo at all.
     if (aPseudoStyle.StyleDisplay()->mDisplay == StyleDisplay::None) {
       return false;
     }
   }
 
-  // For :before and :after pseudo-elements, having display: none or no
-  // 'content' property is equivalent to not having the pseudo-element
-  // at all.
+  // For ::before and ::after pseudo-elements, no 'content' items is
+  // equivalent to not having the pseudo-element at all.
   if (type == PseudoStyleType::before || type == PseudoStyleType::after) {
-    if (aPseudoStyle.StyleDisplay()->mDisplay == StyleDisplay::None) {
+    if (!aPseudoStyle.StyleContent()->mContent.IsItems()) {
       return false;
     }
-    if (!aPseudoStyle.StyleContent()->ContentCount()) {
+    MOZ_ASSERT(aPseudoStyle.StyleContent()->ContentCount() > 0,
+               "IsItems() implies we have at least one item");
+    // display:none is equivalent to not having a pseudo at all.
+    if (aPseudoStyle.StyleDisplay()->mDisplay == StyleDisplay::None) {
       return false;
     }
   }
@@ -872,8 +910,7 @@ void ServoStyleSet::RuleAdded(StyleSheet& aSheet, css::Rule& aRule) {
     return;
   }
 
-  // FIXME(emilio): Could be more granular based on aRule.
-  MarkOriginsDirty(ToOriginFlags(aSheet.GetOrigin()));
+  RuleChangedInternal(aSheet, aRule, StyleRuleChangeKind::Insertion);
 }
 
 void ServoStyleSet::RuleRemoved(StyleSheet& aSheet, css::Rule& aRule) {
@@ -885,17 +922,68 @@ void ServoStyleSet::RuleRemoved(StyleSheet& aSheet, css::Rule& aRule) {
     return;
   }
 
-  // FIXME(emilio): Could be more granular based on aRule.
-  MarkOriginsDirty(ToOriginFlags(aSheet.GetOrigin()));
+  RuleChangedInternal(aSheet, aRule, StyleRuleChangeKind::Removal);
 }
 
-void ServoStyleSet::RuleChanged(StyleSheet& aSheet, css::Rule* aRule) {
+void ServoStyleSet::RuleChangedInternal(StyleSheet& aSheet, css::Rule& aRule,
+                                        StyleRuleChangeKind aKind) {
+  MOZ_ASSERT(aSheet.IsApplicable());
+  SetStylistStyleSheetsDirty();
+
+#define CASE_FOR(constant_, type_)                                       \
+  case StyleCssRuleType::constant_:                                      \
+    return Servo_StyleSet_##type_##RuleChanged(                          \
+        mRawSet.get(), static_cast<dom::CSS##type_##Rule&>(aRule).Raw(), \
+        &aSheet, aKind);
+
+  switch (aRule.Type()) {
+    CASE_FOR(CounterStyle, CounterStyle)
+    CASE_FOR(Style, Style)
+    CASE_FOR(Import, Import)
+    CASE_FOR(Media, Media)
+    CASE_FOR(Keyframes, Keyframes)
+    CASE_FOR(FontFeatureValues, FontFeatureValues)
+    CASE_FOR(FontFace, FontFace)
+    CASE_FOR(Page, Page)
+    CASE_FOR(Document, MozDocument)
+    CASE_FOR(Supports, Supports)
+    CASE_FOR(Layer, Layer)
+    CASE_FOR(ScrollTimeline, ScrollTimeline)
+    // @namespace can only be inserted / removed when there are only other
+    // @namespace and @import rules, and can't be mutated.
+    case StyleCssRuleType::Namespace:
+      break;
+    case StyleCssRuleType::Viewport:
+      MOZ_ASSERT_UNREACHABLE("Gecko doesn't implement @viewport");
+      break;
+    case StyleCssRuleType::Keyframe:
+      // FIXME: We should probably just forward to the parent @keyframes rule? I
+      // think that'd do the right thing, but meanwhile...
+      return MarkOriginsDirty(ToOriginFlags(aSheet.GetOrigin()));
+  }
+
+#undef CASE_FOR
+}
+
+void ServoStyleSet::RuleChanged(StyleSheet& aSheet, css::Rule* aRule,
+                                StyleRuleChangeKind aKind) {
   if (!aSheet.IsApplicable()) {
     return;
   }
 
-  // FIXME(emilio): Could be more granular based on aRule.
-  MarkOriginsDirty(ToOriginFlags(aSheet.GetOrigin()));
+  if (!aRule) {
+    // FIXME: This is done for StyleSheet.media attribute changes and such
+    MarkOriginsDirty(ToOriginFlags(aSheet.GetOrigin()));
+  } else {
+    RuleChangedInternal(aSheet, *aRule, aKind);
+  }
+}
+
+void ServoStyleSet::SheetCloned(StyleSheet& aSheet) {
+  mNeedsRestyleAfterEnsureUniqueInner = true;
+  if (mStyleRuleMap) {
+    mStyleRuleMap->SheetCloned(aSheet);
+  }
 }
 
 #ifdef DEBUG
@@ -1044,7 +1132,7 @@ void ServoStyleSet::ClearNonInheritingComputedStyles() {
 }
 
 already_AddRefed<ComputedStyle> ServoStyleSet::ResolveStyleLazily(
-    Element& aElement, PseudoStyleType aPseudoType,
+    const Element& aElement, PseudoStyleType aPseudoType,
     StyleRuleInclusion aRuleInclusion) {
   PreTraverseSync();
   MOZ_ASSERT(GetPresContext(),
@@ -1064,7 +1152,7 @@ already_AddRefed<ComputedStyle> ServoStyleSet::ResolveStyleLazily(
    * getComputedStyle, the only API where this can be observed, to look at the
    * style of the pseudo-element if it exists instead.
    */
-  Element* elementForStyleResolution = &aElement;
+  const Element* elementForStyleResolution = &aElement;
   PseudoStyleType pseudoTypeForStyleResolution = aPseudoType;
   if (aPseudoType == PseudoStyleType::before) {
     if (Element* pseudo = nsLayoutUtils::GetBeforePseudo(&aElement)) {
@@ -1137,6 +1225,7 @@ void ServoStyleSet::UpdateStylist() {
         Servo_AuthorStyles_Flush(authorStyles, mRawSet.get());
       }
     });
+    Servo_StyleSet_RemoveUniqueEntriesFromAuthorStylesCache(mRawSet.get());
   }
 
   mStylistState = StylistState::NotDirty;
@@ -1172,11 +1261,9 @@ bool ServoStyleSet::ShouldTraverseInParallel() const {
   if (!mDocument->GetPresShell()->IsActive()) {
     return false;
   }
-#ifdef MOZ_GECKO_PROFILER
   if (profiler_feature_active(ProfilerFeature::SequentialStyle)) {
     return false;
   }
-#endif
   return true;
 }
 
@@ -1187,8 +1274,7 @@ void ServoStyleSet::RunPostTraversalTasks() {
     return;
   }
 
-  nsTArray<PostTraversalTask> tasks;
-  tasks.SwapElements(mPostTraversalTasks);
+  nsTArray<PostTraversalTask> tasks = std::move(mPostTraversalTasks);
 
   for (auto& task : tasks) {
     task.Run();

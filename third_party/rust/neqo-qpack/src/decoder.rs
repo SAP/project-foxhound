@@ -7,14 +7,14 @@
 use crate::decoder_instructions::DecoderInstruction;
 use crate::encoder_instructions::{DecodedEncoderInstruction, EncoderInstructionReader};
 use crate::header_block::{HeaderDecoder, HeaderDecoderResult};
-use crate::qpack_send_buf::QPData;
+use crate::qpack_send_buf::QpackData;
 use crate::reader::ReceiverConnWrapper;
 use crate::stats::Stats;
 use crate::table::HeaderTable;
-use crate::{Error, Header, QpackSettings, Res};
-use neqo_common::qdebug;
-use neqo_transport::Connection;
-use std::convert::TryInto;
+use crate::{Error, QpackSettings, Res};
+use neqo_common::{qdebug, Header};
+use neqo_transport::{Connection, StreamId};
+use std::convert::TryFrom;
 
 pub const QPACK_UNI_STREAM_TYPE_DECODER: u64 = 0x3;
 
@@ -24,29 +24,31 @@ pub struct QPackDecoder {
     table: HeaderTable,
     acked_inserts: u64,
     max_entries: u64,
-    send_buf: QPData,
-    local_stream_id: Option<u64>,
-    remote_stream_id: Option<u64>,
+    send_buf: QpackData,
+    local_stream_id: Option<StreamId>,
     max_table_size: u64,
     max_blocked_streams: usize,
-    blocked_streams: Vec<(u64, u64)>, //stream_id and requested inserts count.
+    blocked_streams: Vec<(StreamId, u64)>, //stream_id and requested inserts count.
     stats: Stats,
 }
 
 impl QPackDecoder {
+    /// # Panics
+    /// If settings include invalid values.
     #[must_use]
-    pub fn new(qpack_settings: QpackSettings) -> Self {
+    pub fn new(qpack_settings: &QpackSettings) -> Self {
         qdebug!("Decoder: creating a new qpack decoder.");
+        let mut send_buf = QpackData::default();
+        send_buf.encode_varint(QPACK_UNI_STREAM_TYPE_DECODER);
         Self {
             instruction_reader: EncoderInstructionReader::new(),
             table: HeaderTable::new(false),
             acked_inserts: 0,
             max_entries: qpack_settings.max_table_size_decoder >> 5,
-            send_buf: QPData::default(),
+            send_buf,
             local_stream_id: None,
-            remote_stream_id: None,
             max_table_size: qpack_settings.max_table_size_decoder,
-            max_blocked_streams: qpack_settings.max_blocked_streams.try_into().unwrap(),
+            max_blocked_streams: usize::try_from(qpack_settings.max_blocked_streams).unwrap(),
             blocked_streams: Vec::new(),
             stats: Stats::default(),
         }
@@ -62,16 +64,18 @@ impl QPackDecoder {
         self.max_table_size
     }
 
+    /// # Panics
+    /// If the number of blocked streams is too large.
     #[must_use]
     pub fn get_blocked_streams(&self) -> u16 {
-        self.max_blocked_streams.try_into().unwrap()
+        u16::try_from(self.max_blocked_streams).unwrap()
     }
 
     /// returns a list of unblocked streams
     /// # Errors
     /// May return: `ClosedCriticalStream` if stream has been closed or `EncoderStream`
     /// in case of any other transport error.
-    pub fn receive(&mut self, conn: &mut Connection, stream_id: u64) -> Res<Vec<u64>> {
+    pub fn receive(&mut self, conn: &mut Connection, stream_id: StreamId) -> Res<Vec<StreamId>> {
         let base_old = self.table.base();
         self.read_instructions(conn, stream_id)
             .map_err(|e| map_error(&e))?;
@@ -89,7 +93,7 @@ impl QPackDecoder {
         Ok(r)
     }
 
-    fn read_instructions(&mut self, conn: &mut Connection, stream_id: u64) -> Res<()> {
+    fn read_instructions(&mut self, conn: &mut Connection, stream_id: StreamId) -> Res<()> {
         let mut recv = ReceiverConnWrapper::new(conn, stream_id);
         loop {
             match self.instruction_reader.read_instructions(&mut recv) {
@@ -104,32 +108,32 @@ impl QPackDecoder {
         match instruction {
             DecodedEncoderInstruction::Capacity { value } => self.set_capacity(value)?,
             DecodedEncoderInstruction::InsertWithNameRefStatic { index, value } => {
-                self.table
-                    .insert_with_name_ref(true, index, &value)
-                    .map_err(|_| Error::EncoderStream)?;
+                Error::map_error(
+                    self.table.insert_with_name_ref(true, index, &value),
+                    Error::EncoderStream,
+                )?;
                 self.stats.dynamic_table_inserts += 1;
             }
             DecodedEncoderInstruction::InsertWithNameRefDynamic { index, value } => {
-                self.table
-                    .insert_with_name_ref(false, index, &value)
-                    .map_err(|_| Error::EncoderStream)?;
+                Error::map_error(
+                    self.table.insert_with_name_ref(false, index, &value),
+                    Error::EncoderStream,
+                )?;
                 self.stats.dynamic_table_inserts += 1;
             }
             DecodedEncoderInstruction::InsertWithNameLiteral { name, value } => {
-                self.table
-                    .insert(&name, &value)
-                    .map(|_| ())
-                    .map_err(|_| Error::EncoderStream)?;
+                Error::map_error(
+                    self.table.insert(&name, &value).map(|_| ()),
+                    Error::EncoderStream,
+                )?;
                 self.stats.dynamic_table_inserts += 1;
             }
             DecodedEncoderInstruction::Duplicate { index } => {
-                self.table
-                    .duplicate(index)
-                    .map_err(|_| Error::EncoderStream)?;
+                Error::map_error(self.table.duplicate(index), Error::EncoderStream)?;
                 self.stats.dynamic_table_inserts += 1;
             }
             DecodedEncoderInstruction::NoInstruction => {
-                unreachable!("This can be call only with an instruction.")
+                unreachable!("This can be call only with an instruction.");
             }
         }
         Ok(())
@@ -143,19 +147,25 @@ impl QPackDecoder {
         self.table.set_capacity(cap)
     }
 
-    fn header_ack(&mut self, stream_id: u64, required_inserts: u64) {
+    fn header_ack(&mut self, stream_id: StreamId, required_inserts: u64) {
         DecoderInstruction::HeaderAck { stream_id }.marshal(&mut self.send_buf);
         if required_inserts > self.acked_inserts {
             self.acked_inserts = required_inserts;
         }
     }
 
-    pub fn cancel_stream(&mut self, stream_id: u64) {
-        DecoderInstruction::StreamCancellation { stream_id }.marshal(&mut self.send_buf);
+    pub fn cancel_stream(&mut self, stream_id: StreamId) {
+        if self.table.capacity() > 0 {
+            self.blocked_streams.retain(|(id, _)| *id != stream_id);
+            DecoderInstruction::StreamCancellation { stream_id }.marshal(&mut self.send_buf);
+        }
     }
 
     /// # Errors
-    ///     May return an error in case of any transport error. TODO: define transport errors.
+    /// May return an error in case of any transport error. TODO: define transport errors.
+    /// # Panics
+    /// Never, but rust doesn't know that.
+    #[allow(clippy::map_err_ignore)]
     pub fn send(&mut self, conn: &mut Connection) -> Res<()> {
         // Encode increment instruction if needed.
         let increment = self.table.base() - self.acked_inserts;
@@ -183,16 +193,32 @@ impl QPackDecoder {
     /// 'buf' must contain the complete header block.
     /// # Errors
     /// May return `DecompressionFailed` if header block is incorrect or incomplete.
-    pub fn decode_header_block(&mut self, buf: &[u8], stream_id: u64) -> Res<Option<Vec<Header>>> {
+    /// # Panics
+    /// When there is a programming error.
+    pub fn decode_header_block(
+        &mut self,
+        buf: &[u8],
+        stream_id: StreamId,
+    ) -> Res<Option<Vec<Header>>> {
         qdebug!([self], "decode header block.");
         let mut decoder = HeaderDecoder::new(buf);
 
         match decoder.decode_header_block(&self.table, self.max_entries, self.table.base()) {
             Ok(HeaderDecoderResult::Blocked(req_insert_cnt)) => {
-                self.blocked_streams.push((stream_id, req_insert_cnt));
                 if self.blocked_streams.len() > self.max_blocked_streams {
                     Err(Error::DecompressionFailed)
                 } else {
+                    let r = self
+                        .blocked_streams
+                        .iter()
+                        .filter_map(|(id, req)| if *id == stream_id { Some(*req) } else { None })
+                        .collect::<Vec<_>>();
+                    if !r.is_empty() {
+                        debug_assert!(r.len() == 1);
+                        debug_assert!(r[0] == req_insert_cnt);
+                        return Ok(None);
+                    }
+                    self.blocked_streams.push((stream_id, req_insert_cnt));
                     Ok(None)
                 }
             }
@@ -207,46 +233,23 @@ impl QPackDecoder {
         }
     }
 
-    #[must_use]
-    pub fn is_recv_stream(&self, stream_id: u64) -> bool {
-        match self.remote_stream_id {
-            Some(id) => id == stream_id,
-            None => false,
-        }
-    }
-
-    pub fn add_send_stream(&mut self, stream_id: u64) {
+    /// # Panics
+    /// When a stream has already been added.
+    pub fn add_send_stream(&mut self, stream_id: StreamId) {
         if self.local_stream_id.is_some() {
             panic!("Adding multiple local streams");
         }
         self.local_stream_id = Some(stream_id);
-        self.send_buf.encode_varint(QPACK_UNI_STREAM_TYPE_DECODER);
-    }
-
-    /// # Errors
-    ///     May return WrongStreamCount if Http3 has received multiple encoder streams.
-    pub fn add_recv_stream(&mut self, stream_id: u64) -> Res<()> {
-        if self.remote_stream_id.is_some() {
-            Err(Error::WrongStreamCount)
-        } else {
-            self.remote_stream_id = Some(stream_id);
-            Ok(())
-        }
     }
 
     #[must_use]
-    pub fn local_stream_id(&self) -> Option<u64> {
+    pub fn local_stream_id(&self) -> Option<StreamId> {
         self.local_stream_id
     }
 
     #[must_use]
-    pub fn remote_stream_id(&self) -> Option<u64> {
-        self.remote_stream_id
-    }
-
-    #[must_use]
-    pub fn stats(&self) -> &Stats {
-        &self.stats
+    pub fn stats(&self) -> Stats {
+        self.stats.clone()
     }
 }
 
@@ -266,16 +269,20 @@ fn map_error(err: &Error) -> Error {
 
 #[cfg(test)]
 mod tests {
-    use super::{Connection, Error, Header, QPackDecoder, Res};
+    use super::{Connection, Error, QPackDecoder, Res};
     use crate::QpackSettings;
-    use neqo_transport::StreamType;
-    use std::convert::TryInto;
+    use neqo_common::Header;
+    use neqo_transport::{StreamId, StreamType};
+    use std::convert::TryFrom;
+    use std::mem;
     use test_fixture::now;
+
+    const STREAM_0: StreamId = StreamId::new(0);
 
     struct TestDecoder {
         decoder: QPackDecoder,
-        send_stream_id: u64,
-        recv_stream_id: u64,
+        send_stream_id: StreamId,
+        recv_stream_id: StreamId,
         conn: Connection,
         peer_conn: Connection,
     }
@@ -288,7 +295,7 @@ mod tests {
         let send_stream_id = conn.stream_create(StreamType::UniDi).unwrap();
 
         // create a decoder
-        let mut decoder = QPackDecoder::new(QpackSettings {
+        let mut decoder = QPackDecoder::new(&QpackSettings {
             max_table_size_encoder: 0,
             max_table_size_decoder: 300,
             max_blocked_streams: 100,
@@ -307,9 +314,10 @@ mod tests {
     fn recv_instruction(decoder: &mut TestDecoder, encoder_instruction: &[u8], res: &Res<()>) {
         let _ = decoder
             .peer_conn
-            .stream_send(decoder.recv_stream_id, encoder_instruction);
+            .stream_send(decoder.recv_stream_id, encoder_instruction)
+            .unwrap();
         let out = decoder.peer_conn.process(None, now());
-        let _ = decoder.conn.process(out.dgram(), now());
+        mem::drop(decoder.conn.process(out.dgram(), now()));
         assert_eq!(
             decoder
                 .decoder
@@ -321,13 +329,13 @@ mod tests {
     fn send_instructions_and_check(decoder: &mut TestDecoder, decoder_instruction: &[u8]) {
         decoder.decoder.send(&mut decoder.conn).unwrap();
         let out = decoder.conn.process(None, now());
-        let _ = decoder.peer_conn.process(out.dgram(), now());
+        mem::drop(decoder.peer_conn.process(out.dgram(), now()));
         let mut buf = [0_u8; 100];
         let (amount, fin) = decoder
             .peer_conn
             .stream_recv(decoder.send_stream_id, &mut buf)
             .unwrap();
-        assert_eq!(fin, false);
+        assert!(!fin);
         assert_eq!(&buf[..amount], decoder_instruction);
     }
 
@@ -335,7 +343,7 @@ mod tests {
         decoder: &mut TestDecoder,
         header_block: &[u8],
         headers: &[Header],
-        stream_id: u64,
+        stream_id: StreamId,
     ) {
         let decoded_headers = decoder
             .decoder
@@ -461,8 +469,8 @@ mod tests {
         //    a header block.
         // 4. Now it sends only a header ack and an increment instruction with increment==1.
         let headers = vec![
-            (String::from("my-headera"), String::from("my-valuea")),
-            (String::from("my-headerb"), String::from("my-valueb")),
+            Header::new("my-headera", "my-valuea"),
+            Header::new("my-headerb", "my-valueb"),
         ];
         let header_block = &[0x03, 0x81, 0x10, 0x11];
         let first_encoder_inst = &[
@@ -485,7 +493,7 @@ mod tests {
 
         recv_instruction(&mut decoder, second_encoder_inst, &Ok(()));
 
-        decode_headers(&mut decoder, header_block, &headers, 0);
+        decode_headers(&mut decoder, header_block, &headers, STREAM_0);
 
         send_instructions_and_check(&mut decoder, &[0x80, 0x1]);
     }
@@ -498,8 +506,8 @@ mod tests {
         //    a header block.
         // 4. Now it sends only a header ack.
         let headers = vec![
-            (String::from("my-headera"), String::from("my-valuea")),
-            (String::from("my-headerb"), String::from("my-valueb")),
+            Header::new("my-headera", "my-valuea"),
+            Header::new("my-headerb", "my-valueb"),
         ];
         let header_block = &[0x03, 0x81, 0x10, 0x11];
         let first_encoder_inst = &[
@@ -521,7 +529,7 @@ mod tests {
 
         recv_instruction(&mut decoder, second_encoder_inst, &Ok(()));
 
-        decode_headers(&mut decoder, header_block, &headers, 0);
+        decode_headers(&mut decoder, header_block, &headers, STREAM_0);
 
         send_instructions_and_check(&mut decoder, &[0x80]);
     }
@@ -531,8 +539,8 @@ mod tests {
         // Send two instructions to insert values into the dynamic table and then send a header
         // that references them both. The result should be only a header acknowledgement.
         let headers = vec![
-            (String::from("my-headera"), String::from("my-valuea")),
-            (String::from("my-headerb"), String::from("my-valueb")),
+            Header::new("my-headera", "my-valuea"),
+            Header::new("my-headerb", "my-valueb"),
         ];
         let header_block = &[0x03, 0x81, 0x10, 0x11];
         let encoder_inst = &[
@@ -547,7 +555,7 @@ mod tests {
 
         recv_instruction(&mut decoder, encoder_inst, &Ok(()));
 
-        decode_headers(&mut decoder, header_block, &headers, 0);
+        decode_headers(&mut decoder, header_block, &headers, STREAM_0);
 
         send_instructions_and_check(&mut decoder, &[0x03, 0x80]);
     }
@@ -557,7 +565,7 @@ mod tests {
         // Send two instructions to insert values into the dynamic table and then send a header
         // that references only the first. The result should be a header acknowledgement and a
         // increment instruction.
-        let headers = vec![(String::from("my-headera"), String::from("my-valuea"))];
+        let headers = vec![Header::new("my-headera", "my-valuea")];
         let header_block = &[0x02, 0x80, 0x10];
         let encoder_inst = &[
             0x4a, 0x6d, 0x79, 0x2d, 0x68, 0x65, 0x61, 0x64, 0x65, 0x72, 0x61, 0x09, 0x6d, 0x79,
@@ -571,7 +579,7 @@ mod tests {
 
         recv_instruction(&mut decoder, encoder_inst, &Ok(()));
 
-        decode_headers(&mut decoder, header_block, &headers, 0);
+        decode_headers(&mut decoder, header_block, &headers, STREAM_0);
 
         send_instructions_and_check(&mut decoder, &[0x03, 0x80, 0x01]);
     }
@@ -581,13 +589,13 @@ mod tests {
         let test_cases: [TestElement; 6] = [
             // test a header with ref to static - encode_indexed
             TestElement {
-                headers: vec![(String::from(":method"), String::from("GET"))],
+                headers: vec![Header::new(":method", "GET")],
                 header_block: &[0x00, 0x00, 0xd1],
                 encoder_inst: &[],
             },
             // test encode_literal_with_name_ref
             TestElement {
-                headers: vec![(String::from(":path"), String::from("/somewhere"))],
+                headers: vec![Header::new(":path", "/somewhere")],
                 header_block: &[
                     0x00, 0x00, 0x51, 0x0a, 0x2f, 0x73, 0x6f, 0x6d, 0x65, 0x77, 0x68, 0x65, 0x72,
                     0x65,
@@ -596,7 +604,7 @@ mod tests {
             },
             // test adding a new header and encode_post_base_index, also test fix_header_block_prefix
             TestElement {
-                headers: vec![(String::from("my-header"), String::from("my-value"))],
+                headers: vec![Header::new("my-header", "my-value")],
                 header_block: &[0x02, 0x80, 0x10],
                 encoder_inst: &[
                     0x49, 0x6d, 0x79, 0x2d, 0x68, 0x65, 0x61, 0x64, 0x65, 0x72, 0x08, 0x6d, 0x79,
@@ -605,13 +613,13 @@ mod tests {
             },
             // test encode_indexed with a ref to dynamic table.
             TestElement {
-                headers: vec![(String::from("my-header"), String::from("my-value"))],
+                headers: vec![Header::new("my-header", "my-value")],
                 header_block: &[0x02, 0x00, 0x80],
                 encoder_inst: &[],
             },
             // test encode_literal_with_name_ref.
             TestElement {
-                headers: vec![(String::from("my-header"), String::from("my-value2"))],
+                headers: vec![Header::new("my-header", "my-value2")],
                 header_block: &[
                     0x02, 0x00, 0x40, 0x09, 0x6d, 0x79, 0x2d, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x32,
                 ],
@@ -620,10 +628,10 @@ mod tests {
             // test multiple headers
             TestElement {
                 headers: vec![
-                    (String::from(":method"), String::from("GET")),
-                    (String::from(":path"), String::from("/somewhere")),
-                    (String::from(":authority"), String::from("example.com")),
-                    (String::from(":scheme"), String::from("https")),
+                    Header::new(":method", "GET"),
+                    Header::new(":path", "/somewhere"),
+                    Header::new(":authority", "example.com"),
+                    Header::new(":scheme", "https"),
                 ],
                 header_block: &[
                     0x00, 0x01, 0xd1, 0x51, 0x0a, 0x2f, 0x73, 0x6f, 0x6d, 0x65, 0x77, 0x68, 0x65,
@@ -648,7 +656,7 @@ mod tests {
                 &mut decoder,
                 t.header_block,
                 &t.headers,
-                i.try_into().unwrap(),
+                StreamId::from(u64::try_from(i).unwrap()),
             );
         }
 
@@ -661,13 +669,13 @@ mod tests {
         let test_cases: [TestElement; 6] = [
             // test a header with ref to static - encode_indexed
             TestElement {
-                headers: vec![(String::from(":method"), String::from("GET"))],
+                headers: vec![Header::new(":method", "GET")],
                 header_block: &[0x00, 0x00, 0xd1],
                 encoder_inst: &[],
             },
             // test encode_literal_with_name_ref
             TestElement {
-                headers: vec![(String::from(":path"), String::from("/somewhere"))],
+                headers: vec![Header::new(":path", "/somewhere")],
                 header_block: &[
                     0x00, 0x00, 0x51, 0x87, 0x61, 0x07, 0xa4, 0xbe, 0x27, 0x2d, 0x85,
                 ],
@@ -675,7 +683,7 @@ mod tests {
             },
             // test adding a new header and encode_post_base_index, also test fix_header_block_prefix
             TestElement {
-                headers: vec![(String::from("my-header"), String::from("my-value"))],
+                headers: vec![Header::new("my-header", "my-value")],
                 header_block: &[0x02, 0x80, 0x10],
                 encoder_inst: &[
                     0x67, 0xa7, 0xd2, 0xd3, 0x94, 0x72, 0x16, 0xcf, 0x86, 0xa7, 0xd2, 0xdd, 0xc7,
@@ -684,13 +692,13 @@ mod tests {
             },
             // test encode_indexed with a ref to dynamic table.
             TestElement {
-                headers: vec![(String::from("my-header"), String::from("my-value"))],
+                headers: vec![Header::new("my-header", "my-value")],
                 header_block: &[0x02, 0x00, 0x80],
                 encoder_inst: &[],
             },
             // test encode_literal_with_name_ref.
             TestElement {
-                headers: vec![(String::from("my-header"), String::from("my-value2"))],
+                headers: vec![Header::new("my-header", "my-value2")],
                 header_block: &[
                     0x02, 0x00, 0x40, 0x87, 0xa7, 0xd2, 0xdd, 0xc7, 0x45, 0xa5, 0x17,
                 ],
@@ -699,10 +707,10 @@ mod tests {
             // test multiple headers
             TestElement {
                 headers: vec![
-                    (String::from(":method"), String::from("GET")),
-                    (String::from(":path"), String::from("/somewhere")),
-                    (String::from(":authority"), String::from("example.com")),
-                    (String::from(":scheme"), String::from("https")),
+                    Header::new(":method", "GET"),
+                    Header::new(":path", "/somewhere"),
+                    Header::new(":authority", "example.com"),
+                    Header::new(":scheme", "https"),
                 ],
                 header_block: &[
                     0x00, 0x01, 0xd1, 0x51, 0x87, 0x61, 0x07, 0xa4, 0xbe, 0x27, 0x2d, 0x85, 0x50,
@@ -726,7 +734,7 @@ mod tests {
                 &mut decoder,
                 t.header_block,
                 &t.headers,
-                i.try_into().unwrap(),
+                StreamId::from(u64::try_from(i).unwrap()),
             );
         }
 
@@ -749,8 +757,8 @@ mod tests {
         // to 2. Then send a header that references only one of them which shouldn't increase
         // number of acked inserts.
         let headers = vec![
-            (String::from("my-headera"), String::from("my-valuea")),
-            (String::from("my-headerb"), String::from("my-valueb")),
+            Header::new("my-headera", "my-valuea"),
+            Header::new("my-headerb", "my-valueb"),
         ];
 
         let mut decoder = connect();
@@ -759,11 +767,11 @@ mod tests {
 
         recv_instruction(&mut decoder, ENCODER_INST, &Ok(()));
 
-        decode_headers(&mut decoder, HEADER_BLOCK_1, &headers, 0);
+        decode_headers(&mut decoder, HEADER_BLOCK_1, &headers, STREAM_0);
 
-        let headers = vec![(String::from("my-headera"), String::from("my-valuea"))];
+        let headers = vec![Header::new("my-headera", "my-valuea")];
 
-        decode_headers(&mut decoder, HEADER_BLOCK_2, &headers, 0);
+        decode_headers(&mut decoder, HEADER_BLOCK_2, &headers, STREAM_0);
     }
 
     #[test]
@@ -780,8 +788,8 @@ mod tests {
         const HEADER_BLOCK: &[u8] = &[0x03, 0x03, 0x83, 0x84];
 
         let headers = vec![
-            (String::from("my-headerb"), String::from("my-valueb")),
-            (String::from("my-headera"), String::from("my-valuea")),
+            Header::new("my-headerb", "my-valueb"),
+            Header::new("my-headera", "my-valuea"),
         ];
 
         let mut decoder = connect();
@@ -790,6 +798,6 @@ mod tests {
 
         recv_instruction(&mut decoder, ENCODER_INST, &Ok(()));
 
-        decode_headers(&mut decoder, HEADER_BLOCK, &headers, 0);
+        decode_headers(&mut decoder, HEADER_BLOCK, &headers, STREAM_0);
     }
 }

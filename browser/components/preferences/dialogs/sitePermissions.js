@@ -111,6 +111,8 @@ var gSitePermissionsManager = {
       this._isObserving = true;
     }
 
+    document.addEventListener("dialogaccept", () => this.onApplyChanges());
+
     this._type = params.permissionType;
     this._list = document.getElementById("permissionsBox");
     this._removeButton = document.getElementById("removePermission");
@@ -226,8 +228,8 @@ var gSitePermissionsManager = {
     }
 
     if (this._currentDefaultPermissionsState === null) {
-      this._checkbox.setAttribute("hidden", true);
-      this._permissionsDisableDescription.setAttribute("hidden", true);
+      this._checkbox.hidden = true;
+      this._permissionsDisableDescription.hidden = true;
     } else if (this._currentDefaultPermissionsState == SitePermissions.BLOCK) {
       this._checkbox.checked = true;
     } else {
@@ -395,12 +397,6 @@ var gSitePermissionsManager = {
     return richlistitem;
   },
 
-  onWindowKeyPress(event) {
-    if (event.keyCode == KeyEvent.DOM_VK_ESCAPE) {
-      window.close();
-    }
-  },
-
   onPermissionKeyPress(event) {
     if (!this._list.selectedItem) {
       return;
@@ -500,8 +496,6 @@ var gSitePermissionsManager = {
         SitePermissions.UNKNOWN
       );
     }
-
-    window.close();
   },
 
   buildPermissionsList(sortCol) {

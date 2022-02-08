@@ -4,7 +4,7 @@
 Browser Usage Telemetry
 =======================
 
-The `BrowserUsageTelemetry.jsm <https://dxr.mozilla.org/mozilla-central/source/browser/modules/BrowserUsageTelemetry.jsm>`_ module is the main module for measurements regarding the browser usage (e.g. tab and window counts, search counts, ...).
+The `BrowserUsageTelemetry.jsm <https://searchfox.org/mozilla-central/source/browser/modules/BrowserUsageTelemetry.jsm>`_ module is the main module for measurements regarding the browser usage (e.g. tab and window counts, search counts, ...).
 
 The measurements recording begins right after the ``SessionStore`` has finished restoring the session (i.e. restoring tabs/windows after Firefox starts).
 
@@ -12,9 +12,7 @@ Search telemetry
 ================
 This module exposes the ``recordSearch`` method, which serves as the main entry point for recording search related Telemetry. It records only the search *counts* per engine and the origin of the search, but nothing pertaining the search contents themselves.
 
-As the transition to the ``BrowserUsageTelemetry`` happens, the ``recordSearch`` calls are dispatched through `BrowserSearch.recordSearchInTelemetry <https://dxr.mozilla.org/mozilla-central/rev/3e73fd638e687a4d7f46613586e5156b8e2af846/browser/base/content/browser.js#3752>`_, that is called by all the search related UI components (urlbar, searchbar, context menu and about\:\* pages).
-
-A list of the components recording search Telemetry can be found using the following `DXR search <https://dxr.mozilla.org/mozilla-central/search?q=recordSearchInTelemetry>`_.
+A list of the components recording search Telemetry can be found using the following `Searchfox search <https://searchfox.org/mozilla-central/search?q=recordSearch>`_.
 
 Tab and window interactions
 ===========================
@@ -25,7 +23,7 @@ The usage telemetry module currently measures these interactions with the browse
 - *navigation events*: at this time, this only counts the number of time a page load is triggered by a particular UI interaction (e.g. by searching through the URL bar, see ``browser.engagement.navigation.urlbar``).
 
 
-Please see `Scalars.yaml <https://dxr.mozilla.org/mozilla-central/source/toolkit/components/telemetry/Scalars.yaml>`_ for the full list of tracked interactions.
+Please see `Scalars.yaml <https://searchfox.org/mozilla-central/source/toolkit/components/telemetry/Scalars.yaml>`_ for the full list of tracked interactions.
 
 Customizable UI
 ===============
@@ -43,7 +41,6 @@ For the purposes of this telemetry a set of areas are defined:
 
   * ``menu-bar`` - The main menu.
   * ``menu-toolbar`` - The normally hidden toolbar that holds the main menu.
-  * ``drag-space`` - The optional drag space.
   * ``titlebar`` - The optional title bar.
   * ``tabs-bar`` - The area where tabs are displayed.
   * ``bookmarks-bar`` - The bookmarks toolbar.
@@ -91,7 +88,9 @@ setting the scalar key ``<widget id>_pinned_<area>`` to true. The widget ID are
 the IDs of the elements in the DOM. The area is one of the areas listed above
 from the browser UI that can be customised.
 
-For the areas that can be controlled the scalar keys ``<area>_<off/on>`` are set.
+For the areas that can be controlled the scalar keys ``<area>_<off/on/newtab>`` are set.
+``newtab`` is special to the Bookmarks Toolbar and is used when the toolbar will only
+be shown on the New Tab page.
 
 Widget Customization
 --------------------
@@ -119,3 +118,19 @@ is a number. The number used is stable for a single session. Everytime the user
 moves or interacts with an add-on the same number is used but then the numbers
 for each add-on may change after Firefox has been restarted.
 
+Profile Count
+=============
+
+The scalar ``browser.engagement.profile_count`` records how many profiles have
+been used by the current Firefox installation. It reports a bucketed result,
+which will be 0 if there is an error. The raw value will be reported for 1-10,
+but above that, it will report 10 for 10-99, 100 for 100-999, 1000 for
+1000-9999, and 10000 for any values greater than that.
+
+The profile count data for an installation is stored in the root of the
+update directory in a file called ``profile_count_<install hash>.json``. The
+full path to the file will typically look something like
+``C:\ProgramData\Mozilla\profile_count_5A9E6E2F272F7AA0.json``.
+
+This value is meant to be resilient to re-installation, so that file will not
+be removed when Firefox is uninstalled.

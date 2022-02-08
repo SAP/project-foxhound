@@ -29,7 +29,7 @@ class CompositorWidgetParent final : public PCompositorWidgetParent,
   bool PreRender(WidgetRenderingContext*) override;
   void PostRender(WidgetRenderingContext*) override;
   already_AddRefed<gfx::DrawTarget> StartRemoteDrawingInRegion(
-      LayoutDeviceIntRegion& aInvalidRegion,
+      const LayoutDeviceIntRegion& aInvalidRegion,
       layers::BufferMode* aBufferMode) override;
   void EndRemoteDrawingInRegion(
       gfx::DrawTarget* aDrawTarget,
@@ -45,12 +45,17 @@ class CompositorWidgetParent final : public PCompositorWidgetParent,
 
   bool HasGlass() const override;
 
+  nsSizeMode GetWindowSizeMode() const override;
+  bool GetWindowIsFullyOccluded() const override;
+
   mozilla::ipc::IPCResult RecvInitialize(
       const RemoteBackbufferHandles& aRemoteHandles) override;
   mozilla::ipc::IPCResult RecvEnterPresentLock() override;
   mozilla::ipc::IPCResult RecvLeavePresentLock() override;
   mozilla::ipc::IPCResult RecvUpdateTransparency(
       const nsTransparencyMode& aMode) override;
+  mozilla::ipc::IPCResult RecvNotifyVisibilityUpdated(
+      const nsSizeMode& aSizeMode, const bool& aIsFullyOccluded) override;
   mozilla::ipc::IPCResult RecvClearTransparentWindow() override;
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
@@ -75,8 +80,9 @@ class CompositorWidgetParent final : public PCompositorWidgetParent,
   mozilla::Atomic<nsTransparencyMode, MemoryOrdering::Relaxed>
       mTransparencyMode;
 
-  // Locked back buffer of BasicCompositor
-  uint8_t* mLockedBackBufferData;
+  // Visibility handling.
+  mozilla::Atomic<nsSizeMode, MemoryOrdering::Relaxed> mSizeMode;
+  mozilla::Atomic<bool, MemoryOrdering::Relaxed> mIsFullyOccluded;
 
   std::unique_ptr<remote_backbuffer::Client> mRemoteBackbufferClient;
 };

@@ -11,7 +11,6 @@
 #include "mozilla/webrender/WebRenderTypes.h"
 #include "mozilla/layers/WebRenderMessages.h"
 #include "mozilla/layers/WebRenderScrollData.h"
-#include "mozilla/Variant.h"
 
 namespace mozilla {
 
@@ -21,8 +20,9 @@ struct DisplayListData {
   wr::IdNamespace mIdNamespace;
   LayoutDeviceRect mRect;
   nsTArray<WebRenderParentCommand> mCommands;
-  wr::LayoutSize mContentSize;
-  Maybe<mozilla::ipc::ByteBuf> mDL;
+  Maybe<mozilla::ipc::ByteBuf> mDLItems;
+  Maybe<mozilla::ipc::ByteBuf> mDLCache;
+  Maybe<mozilla::ipc::ByteBuf> mDLSpatialTree;
   wr::BuiltDisplayListDescriptor mDLDesc;
   nsTArray<wr::PipelineId> mRemotePipelineIds;
   nsTArray<OpUpdateResource> mResourceUpdates;
@@ -32,6 +32,7 @@ struct DisplayListData {
 };
 
 struct TransactionData {
+  wr::IdNamespace mIdNamespace;
   nsTArray<WebRenderParentCommand> mCommands;
   nsTArray<OpUpdateResource> mResourceUpdates;
   nsTArray<RefCountedShmem> mSmallShmems;

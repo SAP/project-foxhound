@@ -8,9 +8,11 @@
 
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
 
+%include ../../shared/checkbox.inc.css
+
 /* ::::: checkbox ::::: */
 
-checkbox {
+checkbox:where([native]) {
   appearance: auto;
   -moz-default-appearance: checkbox-container;
   -moz-box-align: center;
@@ -21,28 +23,24 @@ checkbox {
   padding-inline-end: 2px;
 }
 
-.checkbox-icon[src] {
-  margin-inline-end: 2px;
-}
-
-.checkbox-label {
+.checkbox-label[native] {
   margin: 0;
 }
 
 /* ..... focused state ..... */
 
-checkbox:-moz-focusring > .checkbox-label-box {
+checkbox[native]:-moz-focusring > .checkbox-label-box {
   outline: 1px dotted;
 }
 
 /* ..... disabled state ..... */
 
-checkbox[disabled="true"] {
+checkbox[native][disabled="true"] {
   color: GrayText;
 }
 
 @media (-moz-windows-classic) {
-  checkbox[disabled="true"] {
+  checkbox[native][disabled="true"] {
     color: ThreeDShadow;
     text-shadow: 1px 1px ThreeDHighlight;
   }
@@ -50,11 +48,11 @@ checkbox[disabled="true"] {
 
 /* ::::: checkmark image ::::: */
 
-.checkbox-check {
+.checkbox-check[native] {
   appearance: auto;
   -moz-default-appearance: checkbox;
   -moz-box-align: center;
   min-width: 13px;
   min-height: 13px;
-  margin-inline-end: 3px;
+  margin-inline-end: 5px;
 }

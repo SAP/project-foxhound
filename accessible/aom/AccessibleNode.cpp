@@ -8,12 +8,16 @@
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/DOMStringList.h"
 #include "mozilla/StaticPrefs_accessibility.h"
-#include "nsIPersistentProperties2.h"
+#include "nsContentUtils.h"
 #include "nsISimpleEnumerator.h"
 
-#include "Accessible-inl.h"
+#include "AccAttributes.h"
+#include "LocalAccessible-inl.h"
 #include "nsAccessibilityService.h"
 #include "DocAccessible.h"
+
+#include "mozilla/dom/Document.h"  // for inline nsINode::GetParentObject
+#include "mozilla/dom/ToJSValue.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -100,21 +104,10 @@ void AccessibleNode::GetAttributes(nsTArray<nsString>& aAttributes) {
     return;
   }
 
-  nsCOMPtr<nsIPersistentProperties> attrs = mIntl->Attributes();
+  RefPtr<AccAttributes> attrs = mIntl->Attributes();
 
-  nsCOMPtr<nsISimpleEnumerator> props;
-  attrs->Enumerate(getter_AddRefs(props));
-
-  bool hasMore = false;
-  while (NS_SUCCEEDED(props->HasMoreElements(&hasMore)) && hasMore) {
-    nsCOMPtr<nsISupports> supp;
-    props->GetNext(getter_AddRefs(supp));
-
-    nsCOMPtr<nsIPropertyElement> prop(do_QueryInterface(supp));
-
-    nsAutoCString attr;
-    prop->GetKey(attr);
-    aAttributes.AppendElement(NS_ConvertUTF8toUTF16(attr));
+  for (auto iter : *attrs) {
+    aAttributes.AppendElement(nsAtomString(iter.Name()));
   }
 }
 
@@ -149,11 +142,10 @@ bool AccessibleNode::Has(const Sequence<nsString>& aAttributes) {
   if (!mIntl) {
     return false;
   }
-  nsCOMPtr<nsIPersistentProperties> attrs = mIntl->Attributes();
+  RefPtr<AccAttributes> attrs = mIntl->Attributes();
   for (const auto& attr : aAttributes) {
-    bool has = false;
-    attrs->Has(NS_ConvertUTF16toUTF8(attr).get(), &has);
-    if (!has) {
+    RefPtr<nsAtom> attrAtom = NS_Atomize(attr);
+    if (!attrs->HasAttribute(attrAtom)) {
       return false;
     }
   }
@@ -168,11 +160,11 @@ void AccessibleNode::Get(JSContext* aCX, const nsAString& aAttribute,
     return;
   }
 
-  nsCOMPtr<nsIPersistentProperties> attrs = mIntl->Attributes();
-  nsAutoString value;
-  attrs->GetStringProperty(NS_ConvertUTF16toUTF8(aAttribute), value);
-
-  if (!ToJSValue(aCX, value, aValue)) {
+  RefPtr<nsAtom> attrAtom = NS_Atomize(aAttribute);
+  RefPtr<AccAttributes> attrs = mIntl->Attributes();
+  nsAutoString valueStr;
+  attrs->GetAttribute(attrAtom, valueStr);
+  if (!ToJSValue(aCX, valueStr, aValue)) {
     aRv.NoteJSContextException(aCX);
     return;
   }

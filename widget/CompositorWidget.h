@@ -8,10 +8,13 @@
 #include "nsISupports.h"
 #include "mozilla/RefPtr.h"
 #include "Units.h"
-#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/Rect.h"
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/layers/LayersTypes.h"
-#include "mozilla/layers/NativeLayer.h"
+
+#ifdef MOZ_IS_GCC
+#  include "mozilla/layers/NativeLayer.h"
+#endif
 
 class nsIWidget;
 class nsBaseWidget;
@@ -24,8 +27,7 @@ class GLContext;
 namespace layers {
 class Compositor;
 class LayerManager;
-class LayerManagerComposite;
-class Compositor;
+class NativeLayerRoot;
 }  // namespace layers
 namespace gfx {
 class DrawTarget;
@@ -60,7 +62,7 @@ class CompositorWidgetDelegate {
 };
 
 // Platforms that support out-of-process widgets.
-#if defined(XP_WIN) || defined(MOZ_X11)
+#if defined(XP_WIN) || defined(MOZ_X11) || defined(MOZ_WIDGET_ANDROID)
 // CompositorWidgetParent should implement CompositorWidget and
 // PCompositorWidgetParent.
 class CompositorWidgetParent;
@@ -134,7 +136,8 @@ class CompositorWidget {
    */
   virtual already_AddRefed<gfx::DrawTarget> StartRemoteDrawing();
   virtual already_AddRefed<gfx::DrawTarget> StartRemoteDrawingInRegion(
-      LayoutDeviceIntRegion& aInvalidRegion, layers::BufferMode* aBufferMode) {
+      const LayoutDeviceIntRegion& aInvalidRegion,
+      layers::BufferMode* aBufferMode) {
     return StartRemoteDrawing();
   }
 
@@ -161,6 +164,13 @@ class CompositorWidget {
   virtual bool NeedsToDeferEndRemoteDrawing() { return false; }
 
   /**
+   * Some widgets (namely Gtk) may need clean up underlying surface
+   * before painting to draw transparent objects correctly. Return
+   * the transparent region where this clearing is required.
+   */
+  virtual LayoutDeviceIntRegion GetTransparentRegion();
+
+  /**
    * Called when shutting down the LayerManager to clean-up any cached
    * resources.
    *
@@ -179,6 +189,16 @@ class CompositorWidget {
    * a different compositor backend will be used (if any).
    */
   virtual bool InitCompositor(layers::Compositor* aCompositor) { return true; }
+
+  /**
+   * A hook that is ran whenever composition is resumed.
+   *
+   * This is called from CompositorBridgeParent::ResumeComposition,
+   * immediately prior to webrender being resumed.
+   *
+   * Returns true if composition can be successfully resumed, else false.
+   */
+  virtual bool OnResumeComposition() { return true; }
 
   /**
    * Return the size of the drawable area of the widget.
@@ -253,7 +273,7 @@ class CompositorWidget {
   virtual RefPtr<VsyncObserver> GetVsyncObserver() const;
 
   virtual WinCompositorWidget* AsWindows() { return nullptr; }
-  virtual GtkCompositorWidget* AsX11() { return nullptr; }
+  virtual GtkCompositorWidget* AsGTK() { return nullptr; }
   virtual AndroidCompositorWidget* AsAndroid() { return nullptr; }
 
   /**

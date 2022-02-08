@@ -24,15 +24,22 @@ const AppConstants = ChromeUtils.import(
 ).AppConstants;
 
 /**
- * @typedef {import("../@types/perf").RecordingStateFromPreferences} RecordingStateFromPreferences
- * @typedef {import("../@types/perf").PopupBackgroundFeatures} PopupBackgroundFeatures
+ * @typedef {import("../@types/perf").RecordingSettings} RecordingSettings
  * @typedef {import("../@types/perf").SymbolTableAsTuple} SymbolTableAsTuple
  * @typedef {import("../@types/perf").Library} Library
  * @typedef {import("../@types/perf").PerformancePref} PerformancePref
  * @typedef {import("../@types/perf").ProfilerWebChannel} ProfilerWebChannel
- * @typedef {import("../@types/perf").MessageFromFrontend} MessageFromFrontend
  * @typedef {import("../@types/perf").PageContext} PageContext
+ * @typedef {import("../@types/perf").PrefObserver} PrefObserver
+ * @typedef {import("../@types/perf").PrefPostfix} PrefPostfix
  * @typedef {import("../@types/perf").Presets} Presets
+ * @typedef {import("../@types/perf").ProfilerViewMode} ProfilerViewMode
+ * @typedef {import("../@types/perf").MessageFromFrontend} MessageFromFrontend
+ * @typedef {import("../@types/perf").RequestFromFrontend} RequestFromFrontend
+ * @typedef {import("../@types/perf").ResponseToFrontend} ResponseToFrontend
+ * @typedef {import("../@types/perf").SymbolicationService} SymbolicationService
+ * @typedef {import("../@types/perf").ProfilerBrowserInfo} ProfilerBrowserInfo
+ * @typedef {import("../@types/perf").ProfileCaptureResult} ProfileCaptureResult
  */
 
 /** @type {PerformancePref["Entries"]} */
@@ -51,12 +58,21 @@ const DURATION_PREF = "devtools.performance.recording.duration";
 const PRESET_PREF = "devtools.performance.recording.preset";
 /** @type {PerformancePref["PopupFeatureFlag"]} */
 const POPUP_FEATURE_FLAG_PREF = "devtools.performance.popup.feature-flag";
+/* This will be used to observe all profiler-related prefs. */
+const PREF_PREFIX = "devtools.performance.recording.";
+
+// The version of the profiler WebChannel.
+// This is reported from the STATUS_QUERY message, and identifies the
+// capabilities of the WebChannel. The front-end can handle old WebChannel
+// versions and has a full list of versions and capabilities here:
+// https://github.com/firefox-devtools/profiler/blob/main/src/app-logic/web-channel.js
+const CURRENT_WEBCHANNEL_VERSION = 1;
 
 // Lazily load the require function, when it's needed.
 ChromeUtils.defineModuleGetter(
   this,
   "require",
-  "resource://devtools/shared/Loader.jsm"
+  "resource://devtools/shared/loader/Loader.jsm"
 );
 
 // The following utilities are lazily loaded as they are not needed when controlling the
@@ -74,118 +90,201 @@ const lazy = createLazyLoaders({
     ChromeUtils.import(
       "resource://devtools/client/performance-new/symbolication.jsm.js"
     ),
-  PreferenceManagement: () =>
-    require("devtools/client/performance-new/preference-management"),
   ProfilerMenuButton: () =>
     ChromeUtils.import(
       "resource://devtools/client/performance-new/popup/menu-button.jsm.js"
     ),
 });
 
+// The presets that we find in all interfaces are defined here.
+
+// The property l10nIds contain all FTL l10n IDs for these cases:
+// - properties in "popup" are used in the popup's select box.
+// - properties in "devtools" are used in other UIs (about:profiling and devtools panels).
+//
+// Properties for both cases have the same values, but because they're not used
+// in the same way we need to duplicate them.
+// Their values for the en-US locale are in the files:
+//   devtools/client/locales/en-US/perftools.ftl
+//   browser/locales/en-US/browser/appmenu.ftl
+
 /** @type {Presets} */
 const presets = {
   "web-developer": {
-    label: "Web Developer",
-    description:
-      "Recommended preset for most web app debugging, with low overhead.",
     entries: 128 * 1024 * 1024,
     interval: 1,
-    features: ["screenshots", "js"],
+    features: ["screenshots", "js", "cpu"],
     threads: ["GeckoMain", "Compositor", "Renderer", "DOM Worker"],
     duration: 0,
+    profilerViewMode: "active-tab",
+    l10nIds: {
+      popup: {
+        label: "profiler-popup-presets-web-developer-label",
+        description: "profiler-popup-presets-web-developer-description",
+      },
+      devtools: {
+        label: "perftools-presets-web-developer-label",
+        description: "perftools-presets-web-developer-description",
+      },
+    },
   },
   "firefox-platform": {
-    label: "Firefox Platform",
-    description: "Recommended preset for internal Firefox platform debugging.",
     entries: 128 * 1024 * 1024,
     interval: 1,
-    features: ["screenshots", "js", "leaf", "stackwalk", "java"],
-    threads: ["GeckoMain", "Compositor", "Renderer"],
-    duration: 0,
-  },
-  "firefox-front-end": {
-    label: "Firefox Front-End",
-    description: "Recommended preset for internal Firefox front-end debugging.",
-    entries: 128 * 1024 * 1024,
-    interval: 1,
-    features: ["screenshots", "js", "leaf", "stackwalk", "java"],
-    threads: ["GeckoMain", "Compositor", "Renderer", "DOM Worker"],
-    duration: 0,
-  },
-  media: {
-    label: "Media",
-    description: "Recommended preset for diagnosing audio and video problems.",
-    entries: 128 * 1024 * 1024,
-    interval: 1,
-    features: ["js", "leaf", "stackwalk", "audiocallbacktracing"],
+    features: ["screenshots", "js", "leaf", "stackwalk", "cpu", "java"],
     threads: [
-      "AsyncCubebTask",
-      "AudioIPC",
-      "Compositor",
       "GeckoMain",
-      "GraphRunner",
-      "MediaDecoderStateMachine",
-      "MediaPDecoder",
-      "MediaPlayback",
-      "MediaTimer",
-      "NativeAudioCallback",
-      "RenderBackend",
+      "Compositor",
       "Renderer",
+      "SwComposite",
+      "DOM Worker",
     ],
     duration: 0,
+    l10nIds: {
+      popup: {
+        label: "profiler-popup-presets-firefox-label",
+        description: "profiler-popup-presets-firefox-description",
+      },
+      devtools: {
+        label: "perftools-presets-firefox-label",
+        description: "perftools-presets-firefox-description",
+      },
+    },
+  },
+  graphics: {
+    entries: 128 * 1024 * 1024,
+    interval: 1,
+    features: ["leaf", "stackwalk", "js", "cpu", "java"],
+    threads: [
+      "GeckoMain",
+      "Compositor",
+      "Renderer",
+      "SwComposite",
+      "RenderBackend",
+      "SceneBuilder",
+      "WrWorker",
+      "CanvasWorkers",
+    ],
+    duration: 0,
+    l10nIds: {
+      popup: {
+        label: "profiler-popup-presets-graphics-label",
+        description: "profiler-popup-presets-graphics-description",
+      },
+      devtools: {
+        label: "perftools-presets-graphics-label",
+        description: "perftools-presets-graphics-description",
+      },
+    },
+  },
+  media: {
+    entries: 128 * 1024 * 1024,
+    interval: 1,
+    features: ["js", "leaf", "stackwalk", "cpu", "audiocallbacktracing"],
+    threads: [
+      "AsyncCubebTask",
+      "AudioEncoderQueue",
+      "AudioIPC",
+      "call_worker_queue",
+      "Compositor",
+      "DecodingThread",
+      "GeckoMain",
+      "GraphRunner",
+      "IncomingVideoStream",
+      "InotifyEventThread",
+      "libwebrtcModuleThread",
+      "MediaDecoderStateMachine",
+      "MediaPDecoder",
+      "MediaSupervisor",
+      "MediaTimer",
+      "ModuleProcessThread",
+      "NativeAudioCallback",
+      "PacerThread",
+      "RemVidChild",
+      "RenderBackend",
+      "Renderer",
+      "SwComposite",
+      "VoiceProcessThread",
+      "WebrtcWorker",
+    ],
+    duration: 0,
+    l10nIds: {
+      popup: {
+        label: "profiler-popup-presets-media-label",
+        description: "profiler-popup-presets-media-description2",
+      },
+      devtools: {
+        label: "perftools-presets-media-label",
+        description: "perftools-presets-media-description2",
+      },
+    },
+  },
+  networking: {
+    entries: 128 * 1024 * 1024,
+    interval: 1,
+    features: ["screenshots", "js", "leaf", "stackwalk", "cpu", "java"],
+    threads: [
+      "Compositor",
+      "DNS Resolver",
+      "DOM Worker",
+      "GeckoMain",
+      "Renderer",
+      "Socket Thread",
+      "StreamTrans",
+      "SwComposite",
+      "TRR Background",
+    ],
+    duration: 0,
+    l10nIds: {
+      popup: {
+        label: "profiler-popup-presets-networking-label",
+        description: "profiler-popup-presets-networking-description",
+      },
+      devtools: {
+        label: "perftools-presets-networking-label",
+        description: "perftools-presets-networking-description",
+      },
+    },
   },
 };
 
 /**
- * This Map caches the symbols from the shared libraries.
- * @type {Map<string, Library>}
- */
-const symbolCache = new Map();
-
-/**
+ * Return the proper view mode for the Firefox Profiler front-end timeline by
+ * looking at the proper preset that is selected.
+ * Return value can be undefined when the preset is unknown or custom.
  * @param {PageContext} pageContext
- * @param {string} debugName
- * @param {string} breakpadId
+ * @return {ProfilerViewMode | undefined}
  */
-async function getSymbolsFromThisBrowser(pageContext, debugName, breakpadId) {
-  if (symbolCache.size === 0) {
-    // Prime the symbols cache.
-    for (const lib of Services.profiler.sharedLibraries) {
-      symbolCache.set(`${lib.debugName}/${lib.breakpadId}`, lib);
-    }
+function getProfilerViewModeForCurrentPreset(pageContext) {
+  const prefPostfix = getPrefPostfix(pageContext);
+  const presetName = Services.prefs.getCharPref(PRESET_PREF + prefPostfix);
+
+  if (presetName === "custom") {
+    return undefined;
   }
 
-  const cachedLib = symbolCache.get(`${debugName}/${breakpadId}`);
-  if (!cachedLib) {
-    throw new Error(
-      `The library ${debugName} ${breakpadId} is not in the ` +
-        "Services.profiler.sharedLibraries list, so the local path for it is not known " +
-        "and symbols for it can not be obtained. This usually happens if a content " +
-        "process uses a library that's not used in the parent process - " +
-        "Services.profiler.sharedLibraries only knows about libraries in the " +
-        "parent process."
-    );
+  const preset = presets[presetName];
+  if (!preset) {
+    console.error(`Unknown profiler preset was encountered: "${presetName}"`);
+    return undefined;
   }
-
-  const lib = cachedLib;
-  const objdirs = getObjdirPrefValue(pageContext);
-  const { getSymbolTableMultiModal } = lazy.PerfSymbolication();
-  return getSymbolTableMultiModal(lib, objdirs);
+  return preset.profilerViewMode;
 }
 
 /**
- * This function is called directly by devtools/startup/DevToolsStartup.jsm when
- * using the shortcut keys to capture a profile.
+ * This function is called when the profile is captured with the shortcut
+ * keys, with the profiler toolbarbutton, or with the button inside the
+ * popup.
  * @param {PageContext} pageContext
  * @return {Promise<void>}
  */
 async function captureProfile(pageContext) {
   if (!Services.profiler.IsActive()) {
-    // The profiler is not active, ignore this shortcut.
+    // The profiler is not active, ignore.
     return;
   }
   if (Services.profiler.IsPaused()) {
-    // The profiler is already paused for capture, ignore this shortcut.
+    // The profiler is already paused for capture, ignore.
     return;
   }
 
@@ -193,50 +292,65 @@ async function captureProfile(pageContext) {
   // more samples while the parent process waits for subprocess profiles.
   Services.profiler.Pause();
 
-  const profile = await Services.profiler
+  /**
+   * @type {ProfileCaptureResult}
+   */
+  const profileCaptureResult = await Services.profiler
     .getProfileDataAsGzippedArrayBuffer()
-    .catch(
-      /** @type {(e: any) => {}} */ e => {
-        console.error(e);
-        return {};
+    .then(
+      profile => ({ type: "SUCCESS", profile }),
+      error => {
+        console.error(error);
+        return { type: "ERROR", error };
       }
     );
 
-  const receiveProfile = lazy.BrowserModule().receiveProfile;
-  receiveProfile(profile, (debugName, breakpadId) => {
-    return getSymbolsFromThisBrowser(pageContext, debugName, breakpadId);
-  });
+  const profilerViewMode = getProfilerViewModeForCurrentPreset(pageContext);
+  const sharedLibraries = Services.profiler.sharedLibraries;
+  const objdirs = getObjdirPrefValue();
+
+  const { createLocalSymbolicationService } = lazy.PerfSymbolication();
+  const symbolicationService = createLocalSymbolicationService(
+    sharedLibraries,
+    objdirs
+  );
+
+  const { openProfilerTab } = lazy.BrowserModule();
+  const browser = openProfilerTab(profilerViewMode);
+  registerProfileCaptureForBrowser(
+    browser,
+    profileCaptureResult,
+    symbolicationService
+  );
 
   Services.profiler.StopProfiler();
 }
 
 /**
- * This function is only called by devtools/startup/DevToolsStartup.jsm when
- * starting the profiler using the shortcut keys, through toggleProfiler below.
+ * This function is called when the profiler is started with the shortcut
+ * keys, with the profiler toolbarbutton, or with the button inside the
+ * popup.
  * @param {PageContext} pageContext
  */
 function startProfiler(pageContext) {
-  const { translatePreferencesToState } = lazy.PreferenceManagement();
   const {
     entries,
     interval,
     features,
     threads,
     duration,
-  } = translatePreferencesToState(
-    getRecordingPreferences(pageContext, Services.profiler.GetFeatures())
-  );
+  } = getRecordingSettings(pageContext, Services.profiler.GetFeatures());
 
-  // Get the active BrowsingContext ID from browser.
-  const { getActiveBrowsingContextID } = lazy.RecordingUtils();
-  const activeBrowsingContextID = getActiveBrowsingContextID();
+  // Get the active Browser ID from browser.
+  const { getActiveBrowserID } = lazy.RecordingUtils();
+  const activeTabID = getActiveBrowserID();
 
   Services.profiler.StartProfiler(
     entries,
     interval,
     features,
     threads,
-    activeBrowsingContextID,
+    activeTabID,
     duration
   );
 }
@@ -287,22 +401,13 @@ function _getArrayOfStringsPref(prefName) {
 }
 
 /**
- * @param {string} prefName
- * @return {string[]}
- */
-function _getArrayOfStringsHostPref(prefName) {
-  const text = Services.prefs.getStringPref(prefName);
-  return JSON.parse(text);
-}
-
-/**
  * The profiler recording workflow uses two different pref paths. One set of prefs
  * is stored for local profiling, and another for remote profiling. This function
  * decides which to use. The remote prefs have ".remote" appended to the end of
  * their pref names.
  *
  * @param {PageContext} pageContext
- * @returns {string}
+ * @returns {PrefPostfix}
  */
 function getPrefPostfix(pageContext) {
   switch (pageContext) {
@@ -321,43 +426,118 @@ function getPrefPostfix(pageContext) {
 }
 
 /**
- * @param {PageContext} pageContext
+ * @param {string[]} objdirs
+ */
+function setObjdirPrefValue(objdirs) {
+  Services.prefs.setCharPref(OBJDIRS_PREF, JSON.stringify(objdirs));
+}
+
+/**
+ * Before Firefox 92, the objdir lists for local and remote profiling were
+ * stored in separate lists. In Firefox 92 those two prefs were merged into
+ * one. This function performs the migration.
+ */
+function migrateObjdirsPrefsIfNeeded() {
+  const OLD_REMOTE_OBJDIRS_PREF = OBJDIRS_PREF + ".remote";
+  const remoteString = Services.prefs.getCharPref(OLD_REMOTE_OBJDIRS_PREF, "");
+  if (remoteString === "") {
+    // No migration necessary.
+    return;
+  }
+
+  const remoteList = JSON.parse(remoteString);
+  const localList = _getArrayOfStringsPref(OBJDIRS_PREF);
+
+  // Merge the two lists, eliminating any duplicates.
+  const mergedList = [...new Set(localList.concat(remoteList))];
+  setObjdirPrefValue(mergedList);
+  Services.prefs.clearUserPref(OLD_REMOTE_OBJDIRS_PREF);
+}
+
+/**
  * @returns {string[]}
  */
-function getObjdirPrefValue(pageContext) {
-  const postfix = getPrefPostfix(pageContext);
-  return _getArrayOfStringsHostPref(OBJDIRS_PREF + postfix);
+function getObjdirPrefValue() {
+  migrateObjdirsPrefsIfNeeded();
+  return _getArrayOfStringsPref(OBJDIRS_PREF);
 }
 
 /**
  * @param {PageContext} pageContext
  * @param {string[]} supportedFeatures
- * @returns {RecordingStateFromPreferences}
+ * @returns {RecordingSettings}
  */
-function getRecordingPreferences(pageContext, supportedFeatures) {
-  const postfix = getPrefPostfix(pageContext);
+function getRecordingSettings(pageContext, supportedFeatures) {
+  const objdirs = getObjdirPrefValue();
+  const prefPostfix = getPrefPostfix(pageContext);
+  const presetName = Services.prefs.getCharPref(PRESET_PREF + prefPostfix);
 
-  // If you add a new preference here, please do not forget to update
-  // `revertRecordingPreferences` as well.
-  const objdirs = getObjdirPrefValue(pageContext);
-  const presetName = Services.prefs.getCharPref(PRESET_PREF + postfix);
-
-  // First try to get the values from a preset.
-  const recordingPrefs = getRecordingPrefsFromPreset(
-    presetName,
-    supportedFeatures,
-    objdirs
+  // First try to get the values from a preset. If the preset is "custom" or
+  // unrecognized, getRecordingSettingsFromPreset will return null and we will
+  // get the settings from individual prefs instead.
+  return (
+    getRecordingSettingsFromPreset(presetName, supportedFeatures, objdirs) ??
+    getRecordingSettingsFromPrefs(supportedFeatures, objdirs, prefPostfix)
   );
-  if (recordingPrefs) {
-    return recordingPrefs;
+}
+
+/**
+ * @param {string} presetName
+ * @param {string[]} supportedFeatures
+ * @param {string[]} objdirs
+ * @return {RecordingSettings | null}
+ */
+function getRecordingSettingsFromPreset(
+  presetName,
+  supportedFeatures,
+  objdirs
+) {
+  if (presetName === "custom") {
+    return null;
   }
 
-  // Next use the preferences to get the values.
-  const entries = Services.prefs.getIntPref(ENTRIES_PREF + postfix);
-  const interval = Services.prefs.getIntPref(INTERVAL_PREF + postfix);
-  const features = _getArrayOfStringsPref(FEATURES_PREF + postfix);
-  const threads = _getArrayOfStringsPref(THREADS_PREF + postfix);
-  const duration = Services.prefs.getIntPref(DURATION_PREF + postfix);
+  const preset = presets[presetName];
+  if (!preset) {
+    console.error(`Unknown profiler preset was encountered: "${presetName}"`);
+    return null;
+  }
+
+  return {
+    presetName,
+    entries: preset.entries,
+    interval: preset.interval,
+    // Validate the features before passing them to the profiler.
+    features: preset.features.filter(feature =>
+      supportedFeatures.includes(feature)
+    ),
+    threads: preset.threads,
+    objdirs,
+    duration: preset.duration,
+  };
+}
+
+/**
+ * @param {string[]} supportedFeatures
+ * @param {string[]} objdirs
+ * @param {PrefPostfix} prefPostfix
+ * @return {RecordingSettings}
+ */
+function getRecordingSettingsFromPrefs(
+  supportedFeatures,
+  objdirs,
+  prefPostfix
+) {
+  // If you add a new preference here, please do not forget to update
+  // `revertRecordingSettings` as well.
+
+  const entries = Services.prefs.getIntPref(ENTRIES_PREF + prefPostfix);
+  const intervalInMicroseconds = Services.prefs.getIntPref(
+    INTERVAL_PREF + prefPostfix
+  );
+  const interval = intervalInMicroseconds / 1000;
+  const features = _getArrayOfStringsPref(FEATURES_PREF + prefPostfix);
+  const threads = _getArrayOfStringsPref(THREADS_PREF + prefPostfix);
+  const duration = Services.prefs.getIntPref(DURATION_PREF + prefPostfix);
 
   return {
     presetName: "custom",
@@ -372,60 +552,28 @@ function getRecordingPreferences(pageContext, supportedFeatures) {
 }
 
 /**
- * @param {string} presetName
- * @param {string[]} supportedFeatures
- * @param {string[]} objdirs
- * @return {RecordingStateFromPreferences | null}
- */
-function getRecordingPrefsFromPreset(presetName, supportedFeatures, objdirs) {
-  if (presetName === "custom") {
-    return null;
-  }
-
-  const preset = presets[presetName];
-  if (!preset) {
-    console.error(`Unknown profiler preset was encountered: "${presetName}"`);
-    return null;
-  }
-
-  return {
-    presetName,
-    entries: preset.entries,
-    // The interval is stored in preferences as microseconds, but the preset
-    // defines it in terms of milliseconds. Make the conversion here.
-    interval: preset.interval * 1000,
-    // Validate the features before passing them to the profiler.
-    features: preset.features.filter(feature =>
-      supportedFeatures.includes(feature)
-    ),
-    threads: preset.threads,
-    objdirs,
-    duration: preset.duration,
-  };
-}
-
-/**
  * @param {PageContext} pageContext
- * @param {RecordingStateFromPreferences} prefs
+ * @param {RecordingSettings} prefs
  */
-function setRecordingPreferences(pageContext, prefs) {
-  const postfix = getPrefPostfix(pageContext);
-  Services.prefs.setCharPref(PRESET_PREF + postfix, prefs.presetName);
-  Services.prefs.setIntPref(ENTRIES_PREF + postfix, prefs.entries);
+function setRecordingSettings(pageContext, prefs) {
+  const prefPostfix = getPrefPostfix(pageContext);
+  Services.prefs.setCharPref(PRESET_PREF + prefPostfix, prefs.presetName);
+  Services.prefs.setIntPref(ENTRIES_PREF + prefPostfix, prefs.entries);
   // The interval pref stores the value in microseconds for extra precision.
-  Services.prefs.setIntPref(INTERVAL_PREF + postfix, prefs.interval);
+  const intervalInMicroseconds = prefs.interval * 1000;
+  Services.prefs.setIntPref(
+    INTERVAL_PREF + prefPostfix,
+    intervalInMicroseconds
+  );
   Services.prefs.setCharPref(
-    FEATURES_PREF + postfix,
+    FEATURES_PREF + prefPostfix,
     JSON.stringify(prefs.features)
   );
   Services.prefs.setCharPref(
-    THREADS_PREF + postfix,
+    THREADS_PREF + prefPostfix,
     JSON.stringify(prefs.threads)
   );
-  Services.prefs.setCharPref(
-    OBJDIRS_PREF + postfix,
-    JSON.stringify(prefs.objdirs)
-  );
+  setObjdirPrefValue(prefs.objdirs);
 }
 
 const platform = AppConstants.platform;
@@ -434,16 +582,16 @@ const platform = AppConstants.platform;
  * Revert the recording prefs for both local and remote profiling.
  * @return {void}
  */
-function revertRecordingPreferences() {
-  for (const postfix of ["", ".remote"]) {
-    Services.prefs.clearUserPref(PRESET_PREF + postfix);
-    Services.prefs.clearUserPref(ENTRIES_PREF + postfix);
-    Services.prefs.clearUserPref(INTERVAL_PREF + postfix);
-    Services.prefs.clearUserPref(FEATURES_PREF + postfix);
-    Services.prefs.clearUserPref(THREADS_PREF + postfix);
-    Services.prefs.clearUserPref(OBJDIRS_PREF + postfix);
-    Services.prefs.clearUserPref(DURATION_PREF + postfix);
+function revertRecordingSettings() {
+  for (const prefPostfix of ["", ".remote"]) {
+    Services.prefs.clearUserPref(PRESET_PREF + prefPostfix);
+    Services.prefs.clearUserPref(ENTRIES_PREF + prefPostfix);
+    Services.prefs.clearUserPref(INTERVAL_PREF + prefPostfix);
+    Services.prefs.clearUserPref(FEATURES_PREF + prefPostfix);
+    Services.prefs.clearUserPref(THREADS_PREF + prefPostfix);
+    Services.prefs.clearUserPref(DURATION_PREF + prefPostfix);
   }
+  Services.prefs.clearUserPref(OBJDIRS_PREF);
   Services.prefs.clearUserPref(POPUP_FEATURE_FLAG_PREF);
 }
 
@@ -456,60 +604,86 @@ function revertRecordingPreferences() {
  * @return {void}
  */
 function changePreset(pageContext, presetName, supportedFeatures) {
-  const postfix = getPrefPostfix(pageContext);
-  const objdirs = _getArrayOfStringsHostPref(OBJDIRS_PREF + postfix);
-  let recordingPrefs = getRecordingPrefsFromPreset(
+  const prefPostfix = getPrefPostfix(pageContext);
+  const objdirs = getObjdirPrefValue();
+  let recordingSettings = getRecordingSettingsFromPreset(
     presetName,
     supportedFeatures,
     objdirs
   );
 
-  if (!recordingPrefs) {
-    // No recordingPrefs were found for that preset. Most likely this means this
+  if (!recordingSettings) {
+    // No recordingSettings were found for that preset. Most likely this means this
     // is a custom preset, or it's one that we dont recognize for some reason.
     // Get the preferences from the individual preference values.
-    Services.prefs.setCharPref(PRESET_PREF + postfix, presetName);
-    recordingPrefs = getRecordingPreferences(pageContext, supportedFeatures);
+    Services.prefs.setCharPref(PRESET_PREF + prefPostfix, presetName);
+    recordingSettings = getRecordingSettings(pageContext, supportedFeatures);
   }
 
-  setRecordingPreferences(pageContext, recordingPrefs);
+  setRecordingSettings(pageContext, recordingSettings);
 }
 
 /**
- * This handler handles any messages coming from the WebChannel from profiler.firefox.com.
- *
- * @param {ProfilerWebChannel} channel
- * @param {string} id
- * @param {any} message
- * @param {MockedExports.WebChannelTarget} target
+ * Add an observer for the profiler-related preferences.
+ * @param {PrefObserver} observer
+ * @return {void}
  */
-function handleWebChannelMessage(channel, id, message, target) {
-  if (typeof message !== "object" || typeof message.type !== "string") {
-    console.error(
-      "An malformed message was received by the profiler's WebChannel handler.",
-      message
-    );
-    return;
-  }
-  const messageFromFrontend = /** @type {MessageFromFrontend} */ (message);
-  const { requestId } = messageFromFrontend;
-  switch (messageFromFrontend.type) {
+function addPrefObserver(observer) {
+  Services.prefs.addObserver(PREF_PREFIX, observer);
+}
+
+/**
+ * Removes an observer for the profiler-related preferences.
+ * @param {PrefObserver} observer
+ * @return {void}
+ */
+function removePrefObserver(observer) {
+  Services.prefs.removeObserver(PREF_PREFIX, observer);
+}
+
+/**
+ * This map stores information that is associated with a "profile capturing"
+ * action, so that we can look up this information for WebChannel messages
+ * from the profiler tab.
+ * Most importantly, this stores the captured profile. When the profiler tab
+ * requests the profile, we can respond to the message with the correct profile.
+ * This works even if the request happens long after the tab opened. It also
+ * works for an "old" tab even if new profiles have been captured since that
+ * tab was opened.
+ * Supporting tab refresh is important because the tab sometimes reloads itself:
+ * If an old version of the front-end is cached in the service worker, and the
+ * browser supplies a profile with a newer format version, then the front-end
+ * updates its service worker and reloads itself, so that the updated version
+ * can parse the profile.
+ *
+ * This is a WeakMap so that the profile can be garbage-collected when the tab
+ * is closed.
+ *
+ * @type {WeakMap<MockedExports.Browser, ProfilerBrowserInfo>}
+ */
+const infoForBrowserMap = new WeakMap();
+
+/**
+ * This handler computes the response for any messages coming
+ * from the WebChannel from profiler.firefox.com.
+ *
+ * @param {RequestFromFrontend} request
+ * @param {MockedExports.Browser} browser - The tab's browser.
+ * @return {Promise<ResponseToFrontend>}
+ */
+async function getResponseForMessage(request, browser) {
+  switch (request.type) {
     case "STATUS_QUERY": {
       // The content page wants to know if this channel exists. It does, so respond
       // back to the ping.
       const { ProfilerMenuButton } = lazy.ProfilerMenuButton();
-      channel.send(
-        {
-          type: "STATUS_RESPONSE",
-          menuButtonIsEnabled: ProfilerMenuButton.isInNavbar(),
-          requestId,
-        },
-        target
-      );
-      break;
+      return {
+        version: CURRENT_WEBCHANNEL_VERSION,
+        menuButtonIsEnabled: ProfilerMenuButton.isInNavbar(),
+      };
     }
     case "ENABLE_MENU_BUTTON": {
-      const { ownerDocument } = target.browser;
+      const { ownerDocument } = browser;
       if (!ownerDocument) {
         throw new Error(
           "Could not find the owner document for the current browser while enabling " +
@@ -518,6 +692,13 @@ function handleWebChannelMessage(channel, id, message, target) {
       }
       // Ensure the widget is enabled.
       Services.prefs.setBoolPref(POPUP_FEATURE_FLAG_PREF, true);
+
+      // Force the preset to be "firefox-platform" if we enable the menu button
+      // via web channel. If user goes through profiler.firefox.com to enable
+      // it, it means that either user is a platform developer or filing a bug
+      // report for performance engineers to look at.
+      const supportedFeatures = Services.profiler.GetFeatures();
+      changePreset("aboutprofiling", "firefox-platform", supportedFeatures);
 
       // Enable the profiler menu button.
       const { ProfilerMenuButton } = lazy.ProfilerMenuButton();
@@ -531,22 +712,140 @@ function handleWebChannelMessage(channel, id, message, target) {
       // Open the popup with a message.
       ProfilerMenuButton.openPopup(ownerDocument);
 
-      // Respond back that we've done it.
-      channel.send(
-        {
-          type: "ENABLE_MENU_BUTTON_DONE",
-          requestId,
-        },
-        target
-      );
-      break;
+      // There is no response data for this message.
+      return undefined;
+    }
+    case "GET_PROFILE": {
+      const infoForBrowser = infoForBrowserMap.get(browser);
+      if (infoForBrowser === undefined) {
+        throw new Error("Could not find a profile for this tab.");
+      }
+      const { profileCaptureResult } = infoForBrowser;
+      switch (profileCaptureResult.type) {
+        case "SUCCESS":
+          return profileCaptureResult.profile;
+        case "ERROR":
+          throw profileCaptureResult.error;
+        default:
+          const { UnhandledCaseError } = lazy.Utils();
+          throw new UnhandledCaseError(
+            profileCaptureResult,
+            "profileCaptureResult"
+          );
+      }
+    }
+    case "GET_SYMBOL_TABLE": {
+      const { debugName, breakpadId } = request;
+      const symbolicationService = getSymbolicationServiceForBrowser(browser);
+      return symbolicationService.getSymbolTable(debugName, breakpadId);
+    }
+    case "QUERY_SYMBOLICATION_API": {
+      const { path, requestJson } = request;
+      const symbolicationService = getSymbolicationServiceForBrowser(browser);
+      return symbolicationService.querySymbolicationApi(path, requestJson);
     }
     default:
       console.error(
         "An unknown message type was received by the profiler's WebChannel handler.",
-        message
+        request
       );
+      const { UnhandledCaseError } = lazy.Utils();
+      throw new UnhandledCaseError(request, "WebChannel request");
   }
+}
+
+/**
+ * Get the symbolicationService for the capture that opened this browser's
+ * tab, or a fallback service for browsers from tabs opened by the user.
+ *
+ * @param {MockedExports.Browser} browser
+ * @return {SymbolicationService}
+ */
+function getSymbolicationServiceForBrowser(browser) {
+  // We try to serve symbolication requests that come from tabs that we
+  // opened when a profile was captured, and for tabs that the user opened
+  // independently, for example because the user wants to load an existing
+  // profile from a file.
+  const infoForBrowser = infoForBrowserMap.get(browser);
+  if (infoForBrowser !== undefined) {
+    // We opened this tab when a profile was captured. Use the symbolication
+    // service for that capture.
+    return infoForBrowser.symbolicationService;
+  }
+
+  // For the "foreign" tabs, we provide a fallback symbolication service so that
+  // we can find symbols for any libraries that are loaded in this process. This
+  // means that symbolication will work if the existing file has been captured
+  // from the same build.
+  const { createLocalSymbolicationService } = lazy.PerfSymbolication();
+  return createLocalSymbolicationService(
+    Services.profiler.sharedLibraries,
+    getObjdirPrefValue()
+  );
+}
+
+/**
+ * This handler handles any messages coming from the WebChannel from profiler.firefox.com.
+ *
+ * @param {ProfilerWebChannel} channel
+ * @param {string} id
+ * @param {any} message
+ * @param {MockedExports.WebChannelTarget} target
+ */
+async function handleWebChannelMessage(channel, id, message, target) {
+  if (typeof message !== "object" || typeof message.type !== "string") {
+    console.error(
+      "An malformed message was received by the profiler's WebChannel handler.",
+      message
+    );
+    return;
+  }
+  const messageFromFrontend = /** @type {MessageFromFrontend} */ (message);
+  const { requestId } = messageFromFrontend;
+
+  try {
+    const response = await getResponseForMessage(
+      messageFromFrontend,
+      target.browser
+    );
+    channel.send(
+      {
+        type: "SUCCESS_RESPONSE",
+        requestId,
+        response,
+      },
+      target
+    );
+  } catch (error) {
+    channel.send(
+      {
+        type: "ERROR_RESPONSE",
+        requestId,
+        error: `${error.name}: ${error.message}`,
+      },
+      target
+    );
+  }
+}
+
+/**
+ * @param {MockedExports.Browser} browser - The tab's browser.
+ * @param {ProfileCaptureResult} profileCaptureResult - The Gecko profile.
+ * @param {SymbolicationService} symbolicationService - An object which implements the
+ *   SymbolicationService interface, whose getSymbolTable method will be invoked
+ *   when profiler.firefox.com sends GET_SYMBOL_TABLE WebChannel messages to us. This
+ *   method should obtain a symbol table for the requested binary and resolve the
+ *   returned promise with it.
+ */
+function registerProfileCaptureForBrowser(
+  browser,
+  profileCaptureResult,
+  symbolicationService
+) {
+  infoForBrowserMap.set(browser, {
+    profileCaptureResult,
+    symbolicationService,
+  });
 }
 
 // Provide a fake module.exports for the JSM to be properly read by TypeScript.
@@ -560,12 +859,15 @@ module.exports = {
   restartProfiler,
   toggleProfiler,
   platform,
-  getSymbolsFromThisBrowser,
-  getRecordingPreferences,
-  setRecordingPreferences,
-  revertRecordingPreferences,
+  getRecordingSettings,
+  setRecordingSettings,
+  revertRecordingSettings,
   changePreset,
   handleWebChannelMessage,
+  registerProfileCaptureForBrowser,
+  addPrefObserver,
+  removePrefObserver,
+  getProfilerViewModeForCurrentPreset,
 };
 
 // Object.keys() confuses the linting which expects a static array expression.

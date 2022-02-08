@@ -28,7 +28,6 @@
 #include "nsStyleStruct.h"
 #include "nsStyleTransformMatrix.h"
 #include "SVGAnimatedLength.h"
-#include "SVGFilterPaintCallback.h"
 #include "SVGPaintServerFrame.h"
 #include "nsTextFrame.h"
 #include "mozilla/CSSClipPathInstance.h"
@@ -79,12 +78,10 @@ namespace mozilla {
 // we only take the address of this:
 static gfx::UserDataKey sSVGAutoRenderStateKey;
 
-SVGAutoRenderState::SVGAutoRenderState(
-    DrawTarget* aDrawTarget MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
+SVGAutoRenderState::SVGAutoRenderState(DrawTarget* aDrawTarget)
     : mDrawTarget(aDrawTarget),
       mOriginalRenderState(nullptr),
       mPaintingToWindow(false) {
-  MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   mOriginalRenderState = aDrawTarget->RemoveUserData(&sSVGAutoRenderStateKey);
   // We always remove ourselves from aContext before it dies, so
   // passing nullptr as the destroy function is okay.
@@ -154,8 +151,8 @@ void SVGUtils::ScheduleReflowSVG(nsIFrame* aFrame) {
   // If this is triggered, the callers should be fixed to call us before
   // ReflowSVG is called. If we try to mark dirty bits on frames while we're
   // in the process of removing them, things will get messed up.
-  NS_ASSERTION(!OuterSVGIsCallingReflowSVG(aFrame),
-               "Do not call under ISVGDisplayableFrame::ReflowSVG!");
+  MOZ_ASSERT(!OuterSVGIsCallingReflowSVG(aFrame),
+             "Do not call under ISVGDisplayableFrame::ReflowSVG!");
 
   // We don't call SVGObserverUtils::InvalidateRenderingObservers here because
   // we should only be called under InvalidateAndScheduleReflowSVG (which
@@ -384,37 +381,6 @@ void SVGUtils::NotifyChildrenOfSVGChange(nsIFrame* aFrame, uint32_t aFlags) {
 
 // ************************************************************
 
-class SVGPaintCallback : public SVGFilterPaintCallback {
- public:
-  virtual void Paint(gfxContext& aContext, nsIFrame* aTarget,
-                     const gfxMatrix& aTransform, const nsIntRect* aDirtyRect,
-                     imgDrawingParams& aImgParams) override {
-    ISVGDisplayableFrame* svgFrame = do_QueryFrame(aTarget);
-    NS_ASSERTION(svgFrame, "Expected SVG frame here");
-
-    nsIntRect* dirtyRect = nullptr;
-    nsIntRect tmpDirtyRect;
-
-    // aDirtyRect is in user-space pixels, we need to convert to
-    // outer-SVG-frame-relative device pixels.
-    if (aDirtyRect) {
-      gfxMatrix userToDeviceSpace = aTransform;
-      if (userToDeviceSpace.IsSingular()) {
-        return;
-      }
-      gfxRect dirtyBounds = userToDeviceSpace.TransformBounds(gfxRect(
-          aDirtyRect->x, aDirtyRect->y, aDirtyRect->width, aDirtyRect->height));
-      dirtyBounds.RoundOut();
-      if (gfxUtils::GfxRectToIntRect(dirtyBounds, &tmpDirtyRect)) {
-        dirtyRect = &tmpDirtyRect;
-      }
-    }
-
-    svgFrame->PaintSVG(aContext, SVGUtils::GetCSSPxToDevPxMatrix(aTarget),
-                       aImgParams, dirtyRect);
-  }
-};
-
 float SVGUtils::ComputeOpacity(nsIFrame* aFrame, bool aHandleOpacity) {
   float opacity = aFrame->StyleEffects()->mOpacity;
 
@@ -475,7 +441,7 @@ void SVGUtils::DetermineMaskUsage(nsIFrame* aFrame, bool aHandleOpacity,
 
 class MixModeBlender {
  public:
-  typedef mozilla::gfx::Factory Factory;
+  using Factory = gfx::Factory;
 
   MixModeBlender(nsIFrame* aFrame, gfxContext* aContext)
       : mFrame(aFrame), mSourceCtx(aContext) {
@@ -792,9 +758,36 @@ void SVGUtils::PaintFrameWithEffects(nsIFrame* aFrame, gfxContext& aContext,
     target->SetMatrixDouble(reverseScaleMatrix * aTransform *
                             target->CurrentMatrixDouble());
 
-    SVGPaintCallback paintCallback;
-    FilterInstance::PaintFilteredFrame(aFrame, target, &paintCallback,
-                                       dirtyRegion, aImgParams);
+    auto callback = [](gfxContext& aContext, nsIFrame* aTarget,
+                       const gfxMatrix& aTransform, const nsIntRect* aDirtyRect,
+                       imgDrawingParams& aImgParams) {
+      ISVGDisplayableFrame* svgFrame = do_QueryFrame(aTarget);
+      NS_ASSERTION(svgFrame, "Expected SVG frame here");
+
+      nsIntRect* dirtyRect = nullptr;
+      nsIntRect tmpDirtyRect;
+
+      // aDirtyRect is in user-space pixels, we need to convert to
+      // outer-SVG-frame-relative device pixels.
+      if (aDirtyRect) {
+        gfxMatrix userToDeviceSpace = aTransform;
+        if (userToDeviceSpace.IsSingular()) {
+          return;
+        }
+        gfxRect dirtyBounds = userToDeviceSpace.TransformBounds(
+            gfxRect(aDirtyRect->x, aDirtyRect->y, aDirtyRect->width,
+                    aDirtyRect->height));
+        dirtyBounds.RoundOut();
+        if (gfxUtils::GfxRectToIntRect(dirtyBounds, &tmpDirtyRect)) {
+          dirtyRect = &tmpDirtyRect;
+        }
+      }
+
+      svgFrame->PaintSVG(aContext, SVGUtils::GetCSSPxToDevPxMatrix(aTarget),
+                         aImgParams, dirtyRect);
+    };
+    FilterInstance::PaintFilteredFrame(aFrame, target, callback, dirtyRegion,
+                                       aImgParams);
   } else {
     svgFrame->PaintSVG(*target, aTransform, aImgParams, aDirtyRect);
   }
@@ -1515,19 +1508,13 @@ bool SVGUtils::HasStroke(nsIFrame* aFrame, SVGContextPaint* aContextPaint) {
 
 float SVGUtils::GetStrokeWidth(nsIFrame* aFrame,
                                SVGContextPaint* aContextPaint) {
-  const nsStyleSVG* style = aFrame->StyleSVG();
-  if (style->mStrokeWidth.IsContextValue()) {
-    return aContextPaint ? aContextPaint->GetStrokeWidth() : 1.0f;
-  }
-
   nsIContent* content = aFrame->GetContent();
   if (content->IsText()) {
     content = content->GetParent();
   }
 
-  SVGElement* ctx = static_cast<SVGElement*>(content);
-  return SVGContentUtils::CoordToFloat(
-      ctx, style->mStrokeWidth.AsLengthPercentage());
+  auto* ctx = SVGElement::FromNode(content);
+  return SVGContentUtils::GetStrokeWidth(ctx, aFrame->Style(), aContextPaint);
 }
 
 void SVGUtils::SetupStrokeGeometry(nsIFrame* aFrame, gfxContext* aContext,
@@ -1552,7 +1539,7 @@ void SVGUtils::SetupStrokeGeometry(nsIFrame* aFrame, gfxContext* aContext,
 uint16_t SVGUtils::GetGeometryHitTestFlags(nsIFrame* aFrame) {
   uint16_t flags = 0;
 
-  switch (aFrame->StyleUI()->mPointerEvents) {
+  switch (aFrame->Style()->PointerEvents()) {
     case StylePointerEvents::None:
       break;
     case StylePointerEvents::Auto:

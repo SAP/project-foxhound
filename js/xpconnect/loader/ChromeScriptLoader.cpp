@@ -9,6 +9,7 @@
 
 #include "PrecompiledScript.h"
 
+#include "nsIIncrementalStreamLoader.h"
 #include "nsIURI.h"
 #include "nsIChannel.h"
 #include "nsNetUtil.h"
@@ -17,6 +18,7 @@
 #include "jsapi.h"
 #include "jsfriendapi.h"
 #include "js/CompilationAndEvaluation.h"
+#include "js/experimental/JSStencil.h"  // JS::CompileGlobalScriptToStencil, JS::InstantiateGlobalStencil, JS::OffThreadCompileToStencil
 #include "js/SourceText.h"
 #include "js/Utility.h"
 
@@ -53,9 +55,9 @@ class AsyncScriptCompiler final : public nsIIncrementalStreamLoaderObserver,
         mToken(nullptr),
         mScriptLength(0) {}
 
-  MOZ_MUST_USE nsresult Start(JSContext* aCx,
-                              const CompileScriptOptionsDictionary& aOptions,
-                              nsIPrincipal* aPrincipal);
+  [[nodiscard]] nsresult Start(JSContext* aCx,
+                               const CompileScriptOptionsDictionary& aOptions,
+                               nsIPrincipal* aPrincipal);
 
   inline void SetToken(JS::OffThreadToken* aToken) { mToken = aToken; }
 
@@ -72,7 +74,7 @@ class AsyncScriptCompiler final : public nsIIncrementalStreamLoaderObserver,
 
   bool StartCompile(JSContext* aCx);
   void FinishCompile(JSContext* aCx);
-  void Finish(JSContext* aCx, Handle<JSScript*> script);
+  void Finish(JSContext* aCx, RefPtr<JS::Stencil> aStencil);
 
   OwningCompileOptions mOptions;
   nsCString mURL;
@@ -137,17 +139,15 @@ static void OffThreadScriptLoaderCallback(JS::OffThreadToken* aToken,
 }
 
 bool AsyncScriptCompiler::StartCompile(JSContext* aCx) {
-  Rooted<JSObject*> global(aCx, mGlobalObject->GetGlobalJSObject());
-
   JS::SourceText<char16_t> srcBuf;
   if (!srcBuf.init(aCx, std::move(mScriptText), mScriptLength)) {
     return false;
   }
 
   if (JS::CanCompileOffThread(aCx, mOptions, mScriptLength)) {
-    if (!JS::CompileOffThread(aCx, mOptions, srcBuf,
-                              OffThreadScriptLoaderCallback,
-                              static_cast<void*>(this))) {
+    if (!JS::CompileToStencilOffThread(aCx, mOptions, srcBuf,
+                                       OffThreadScriptLoaderCallback,
+                                       static_cast<void*>(this))) {
       return false;
     }
 
@@ -155,12 +155,13 @@ bool AsyncScriptCompiler::StartCompile(JSContext* aCx) {
     return true;
   }
 
-  Rooted<JSScript*> script(aCx, JS::Compile(aCx, mOptions, srcBuf));
-  if (!script) {
+  RefPtr<Stencil> stencil =
+      JS::CompileGlobalScriptToStencil(aCx, mOptions, srcBuf);
+  if (!stencil) {
     return false;
   }
 
-  Finish(aCx, script);
+  Finish(aCx, stencil);
   return true;
 }
 
@@ -171,7 +172,7 @@ AsyncScriptCompiler::Run() {
     FinishCompile(jsapi.cx());
   } else {
     jsapi.Init();
-    JS::CancelOffThreadScript(jsapi.cx(), mToken);
+    JS::CancelOffThreadCompileToStencil(jsapi.cx(), mToken);
 
     mPromise->MaybeReject(NS_ERROR_FAILURE);
   }
@@ -180,17 +181,18 @@ AsyncScriptCompiler::Run() {
 }
 
 void AsyncScriptCompiler::FinishCompile(JSContext* aCx) {
-  Rooted<JSScript*> script(aCx, JS::FinishOffThreadScript(aCx, mToken));
-  if (script) {
-    Finish(aCx, script);
+  RefPtr<JS::Stencil> stencil =
+      JS::FinishOffThreadCompileToStencil(aCx, mToken);
+  if (stencil) {
+    Finish(aCx, stencil);
   } else {
     Reject(aCx);
   }
 }
 
-void AsyncScriptCompiler::Finish(JSContext* aCx, Handle<JSScript*> aScript) {
+void AsyncScriptCompiler::Finish(JSContext* aCx, RefPtr<JS::Stencil> aStencil) {
   RefPtr<PrecompiledScript> result =
-      new PrecompiledScript(mGlobalObject, aScript, mOptions);
+      new PrecompiledScript(mGlobalObject, aStencil, mOptions);
 
   mPromise->MaybeResolve(result);
 }
@@ -288,19 +290,19 @@ already_AddRefed<Promise> ChromeUtils::CompileScript(
 }
 
 PrecompiledScript::PrecompiledScript(nsISupports* aParent,
-                                     Handle<JSScript*> aScript,
+                                     RefPtr<JS::Stencil> aStencil,
                                      JS::ReadOnlyCompileOptions& aOptions)
     : mParent(aParent),
-      mScript(aScript),
+      mStencil(aStencil),
       mURL(aOptions.filename()),
       mHasReturnValue(!aOptions.noScriptRval) {
   MOZ_ASSERT(aParent);
-  MOZ_ASSERT(aScript);
-
-  mozilla::HoldJSObjects(this);
+  MOZ_ASSERT(aStencil);
+#ifdef DEBUG
+  JS::InstantiateOptions options(aOptions);
+  options.assertDefault();
+#endif
 };
-
-PrecompiledScript::~PrecompiledScript() { mozilla::DropJSObjects(this); }
 
 void PrecompiledScript::ExecuteInGlobal(JSContext* aCx, HandleObject aGlobal,
                                         MutableHandleValue aRval,
@@ -309,8 +311,16 @@ void PrecompiledScript::ExecuteInGlobal(JSContext* aCx, HandleObject aGlobal,
     RootedObject targetObj(aCx, JS_FindCompilationScope(aCx, aGlobal));
     JSAutoRealm ar(aCx, targetObj);
 
-    Rooted<JSScript*> script(aCx, mScript);
-    if (!JS::CloneAndExecuteScript(aCx, script, aRval)) {
+    // See assertion in constructor.
+    JS::InstantiateOptions options;
+    Rooted<JSScript*> script(
+        aCx, JS::InstantiateGlobalStencil(aCx, options, mStencil));
+    if (!script) {
+      aRv.NoteJSContextException(aCx);
+      return;
+    }
+
+    if (!JS_ExecuteScript(aCx, script, aRval)) {
       aRv.NoteJSContextException(aCx);
       return;
     }
@@ -333,34 +343,15 @@ bool PrecompiledScript::IsBlackForCC(bool aTracingNeeded) {
           (!aTracingNeeded || HasNothingToTrace(this)));
 }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(PrecompiledScript)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(PrecompiledScript, mParent)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(PrecompiledScript)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(PrecompiledScript)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mParent)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
-
-  tmp->mScript = nullptr;
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(PrecompiledScript)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mParent)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(PrecompiledScript)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mScript)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
-
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(PrecompiledScript)
-  if (tmp->IsBlackForCC(false)) {
-    tmp->mScript.exposeToActiveJS();
-    return true;
-  }
+  return tmp->IsBlackForCC(false);
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_END
 
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_IN_CC_BEGIN(PrecompiledScript)

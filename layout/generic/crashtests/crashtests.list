@@ -51,7 +51,6 @@ load 345617-1.html
 load 348510-1.html
 load 348510-2.html
 load 348887-1.html
-load 348991-1.xhtml
 load 350370.html
 load 354458-1.html
 load 354458-2.html
@@ -86,7 +85,6 @@ load 369547-1.html
 load 370174-1.html
 load 370174-2.html
 load 370174-3.html
-load 370174-4.html
 load 370699-1.html
 load 370794-1.html
 load 370866-1.xhtml
@@ -364,12 +362,10 @@ load 499862-1.html
 load 501535-1.html
 load 503961-1.xhtml
 load 503961-2.html
-load 505912-1.html
 load 507566.html
 load 508154-1.xhtml
 load 508168-1.html
 load chrome://reftest/content/crashtests/layout/generic/crashtests/508816-1.xhtml
-load 508908-1.html
 load 509749-1.html
 load 511482.html
 load 512724-1.html
@@ -512,7 +508,7 @@ load 810726.html
 load 812822-1.html
 load 812879-1.html
 load 812879-2.html
-asserts-if(winWidget,4-26) asserts-if(Android,4-34) load 812893.html # bug 1581653
+asserts-if(winWidget,4-26) load 812893.html # bug 1581653
 load 814995.html
 load 822910.xhtml
 load 824297-1.html
@@ -569,10 +565,10 @@ load 986899.html
 load 1001233.html
 load 1001258-1.html
 load 1001994.html
-load chrome://reftest/content/crashtests/layout/generic/crashtests/1003441.xhtml
+skip-if(ThreadSanitizer) load chrome://reftest/content/crashtests/layout/generic/crashtests/1003441.xhtml
 load 1015562.html
-asserts(1-2) load 1015563-1.html
-asserts(1-2) load 1015563-2.html
+load 1015563-1.html
+load 1015563-2.html
 load 1015844.html
 asserts-if(Android,0-358) pref(font.size.inflation.minTwips,200) load 1032450.html # Bug 1607658
 load 1032613-1.svg
@@ -582,7 +578,7 @@ load 1039454-1.html
 load 1042489.html
 load 1054010-1.html
 load 1058954-1.html
-skip-if(verify&&isDebugBuild&&(gtkWidget||OSX)) load 1059138-1.html
+load 1059138-1.html
 load 1102175-2.html
 load 1134531.html
 load 1134667.html
@@ -698,13 +694,14 @@ load 1460158-2.html
 load 1460158-3.html
 load 1461039.html
 load 1461979-1.html
+asserts(0-1) load 1466224.html # assertion is bug 1683800
 load 1467239.html
 load 1472403.html
 load 1474768.html
 load 1478178.html
 load 1483972.html
 load 1486457.html
-asserts(8) load 1488762-1.html # asserts from integer overflow & bogus sizes
+asserts(2-4) load 1488762-1.html # asserts from integer overflow & bogus sizes
 load 1489287.html
 load 1489863.html
 load 1489770.html
@@ -774,12 +771,32 @@ load 1633737-3.html
 load 1633737-4.html
 load 1633737-5.html
 load 1633828.html
+load 1638860-1.html
+load 1638860-2.html
+load 1638906.html
 load 1640028.html
 load 1640051.html
 load 1640275.html
-pref(layout.accessiblecaret.enabled,true) load 1644819.html
+pref(layout.accessiblecaret.enabled,true) asserts(16-23) load 1644819.html # bug 1688115
 load 1645549-1.html
 load 1648577.html
 load 1652618.html
 load 1652897.html
 asserts(0-7) load 1654925.html
+load 1663222.html
+load 1666592.html
+load 1670336.html
+load 1676970.html
+HTTP load 1677518-1.html
+load 1679794.html
+load 1680406.html
+load 1681788.html
+HTTP load 1682882.html
+load 1683126.html
+load 1697262-1.html
+pref(layout.css.aspect-ratio.enabled,true) load 1682032.html
+pref(layout.css.aspect-ratio.enabled,true) load 1699263.html
+pref(layout.css.aspect-ratio.enabled,true) load 1699468.html
+load 1728319.html
+asserts(4-8) load 1730506.html # asserts from integer overflow & bogus sizes
+asserts(1-4) load 1730570.html # asserts from integer overflow & bogus sizes

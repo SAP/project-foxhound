@@ -8,6 +8,11 @@
  */
 
 add_task(async function() {
+  // Using https-first for this test is blocked on Bug 1733420.
+  // We cannot assert status text "OK" with HTTPS requests to httpd.js, instead
+  // we get "Connected"
+  await pushPref("dom.security.https_first", false);
+
   const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
 
   const { tab, monitor } = await initNetMonitor(JSON_TEXT_MIME_URL, {
@@ -48,7 +53,7 @@ add_task(async function() {
     }
   );
 
-  let wait = waitForDOM(document, "#response-panel .accordion-item", 2);
+  let wait = waitForDOM(document, "#response-panel .data-header");
   const waitForPropsView = waitForDOM(
     document,
     "#response-panel .properties-view",
@@ -56,19 +61,16 @@ add_task(async function() {
   );
 
   store.dispatch(Actions.toggleNetworkDetails());
-  EventUtils.sendMouseEvent(
-    { type: "click" },
-    document.querySelector("#response-tab")
-  );
+  clickOnSidebarTab(document, "response");
   await Promise.all([wait, waitForPropsView]);
 
   testJsonSectionInResponseTab();
 
   wait = waitForDOM(document, "#response-panel .CodeMirror-code");
-  const payloadHeader = document.querySelector(
-    "#response-panel .accordion-item:last-child .accordion-header"
+  const rawResponseToggle = document.querySelector(
+    "#response-panel .raw-data-toggle-input .devtools-checkbox-toggle"
   );
-  clickElement(payloadHeader, monitor);
+  clickElement(rawResponseToggle, monitor);
   await wait;
 
   testResponseTab();
@@ -106,8 +108,7 @@ add_task(async function() {
       true,
       "The response error header doesn't have the intended visibility."
     );
-    const jsonView =
-      tabpanel.querySelector(".accordion-item .accordion-header-label") || {};
+    const jsonView = tabpanel.querySelector(".data-label") || {};
     is(
       jsonView.textContent === L10N.getStr("jsonScopeName"),
       true,
@@ -119,15 +120,15 @@ add_task(async function() {
       "The response editor has the intended visibility."
     );
     is(
+      tabpanel.querySelector(".raw-data-toggle-input .devtools-checkbox-toggle")
+        .checked,
+      true,
+      "The raw response toggle should be on."
+    );
+    is(
       tabpanel.querySelector(".response-image-box") === null,
       true,
       "The response image box doesn't have the intended visibility."
-    );
-
-    is(
-      tabpanel.querySelectorAll(".accordion-item").length,
-      2,
-      "There should be 2 accordion items displayed in this tabpanel."
     );
     is(
       tabpanel.querySelectorAll(".empty-notice").length,
