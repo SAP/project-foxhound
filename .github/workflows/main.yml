@@ -67,3 +67,20 @@ jobs:
       # Test
       - name: Test
         run: obj-spider-release/dist/bin/js js/src/Y.js
+
+  # This workflow contains a single job called "build"
+  build_docker:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      # Bootstrap
+      - name: Builder Docker
+        working-directory: ./dockerfiles
+        run: docker build -t foxhound .
+
