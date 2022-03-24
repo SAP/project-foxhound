@@ -28,12 +28,13 @@ jobs:
 
       # Bootstrap
       - name: Bootstrap Build Environment
+        run: apt-get update
         run: ./mach bootstrap --application-choice=browser
 
       # Configure
       - name: Copy configuration
         run: cp taintfox_mozconfig_ubuntu .mozconfig
-        
+
       # Build
       - name: Build
         run: ./mach build
@@ -55,6 +56,7 @@ jobs:
 
       # Bootstrap
       - name: Bootstrap Build Environment
+        run: apt-get update
         run: ./mach bootstrap --application-choice=browser
 
       # Configure
