@@ -10,6 +10,9 @@ mk_add_options MOZ_MAKE_FLAGS="-s "
 # diasble updater
 ac_add_options --disable-updater
 
+# Add-on signing is not required for DevEdition
+MOZ_REQUIRE_SIGNING=
+
 #
 # DEBUG BUILD
 #

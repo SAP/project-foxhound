@@ -3,9 +3,12 @@ mk_add_options MOZ_MAKE_FLAGS="-s"
 # Export path to Windows C runtime libraries.
 # This will cause those DLLs to be packaged with the application, which is required to run taintfox on non-developer machines
 
+# Add-on signing is not required for DevEdition
+MOZ_REQUIRE_SIGNING=
+
 # Force Visual Studio compiler (default is clang)
 #export CC=cl
-#export LINKER=link 
+#export LINKER=link
 
 # Set 32-bit build
 #ac_add_options --target=i686-pc-mingw32
