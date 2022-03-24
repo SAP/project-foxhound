@@ -15,11 +15,11 @@
 ##
 ## Reference: https://www.mozilla.org/styleguide/communications/translation/
 
--brand-shorter-name = Taintfox
--brand-short-name = Taintfox
--brand-full-name = SAP Taintfox
+-brand-shorter-name = Foxhound
+-brand-short-name = Foxhound
+-brand-full-name = Project Foxhound
 # This brand name can be used in messages where the product name needs to
 # remain unchanged across different versions (Nightly, Beta, etc.).
--brand-product-name = Taintfox
+-brand-product-name = Foxhound
 -vendor-short-name = SAP
-trademarkInfo = Taintfox is the best taint-aware browser in the worldz.
+trademarkInfo = Project Foxhound is an experimental taint-aware web browser based on Firefox.

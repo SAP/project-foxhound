@@ -11,11 +11,11 @@
 
 # BrandFullNameInternal is used for some registry and file system values
 # instead of BrandFullName and typically should not be modified.
-!define BrandFullNameInternal "Taintfox"
-!define BrandFullName         "Taintfox"
+!define BrandFullNameInternal "Foxhound"
+!define BrandFullName         "Foxhound"
 !define CompanyName           "SAP SE"
-!define URLInfoAbout          "https://github.wdf.sap.corp/WebSecResearch/taintfox"
-!define HelpLink              "https://github.wdf.sap.corp/WebSecResearch/taintfox/issues"
+!define URLInfoAbout          "https://github.com/SAP/project-foxhound"
+!define HelpLink              "https://github.com/SAP/project-foxhound"
 
 !define URLStubDownloadX86 "https://download.mozilla.org/?os=win&lang=${AB_CD}&product=firefox-latest"
 !define URLStubDownloadAMD64 "https://download.mozilla.org/?os=win64&lang=${AB_CD}&product=firefox-latest"
