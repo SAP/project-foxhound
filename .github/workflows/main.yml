@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Update
-        run: apt-get update
+        run: sudo apt-get update
 
       # Bootstrap
       - name: Bootstrap Build Environment
@@ -57,7 +57,7 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Update
-        run: apt-get update
+        run: sudo apt-get update
 
       # Bootstrap
       - name: Bootstrap Build Environment
