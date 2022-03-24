@@ -22,13 +22,15 @@ jobs:
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      
+
       - name: Checkout
         uses: actions/checkout@v2
 
+      - name: Update
+        run: apt-get update
+
       # Bootstrap
       - name: Bootstrap Build Environment
-        run: apt-get update
         run: ./mach bootstrap --application-choice=browser
 
       # Configure
@@ -54,9 +56,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
+      - name: Update
+        run: apt-get update
+
       # Bootstrap
       - name: Bootstrap Build Environment
-        run: apt-get update
         run: ./mach bootstrap --application-choice=browser
 
       # Configure
