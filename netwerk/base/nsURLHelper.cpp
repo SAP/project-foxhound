@@ -1045,12 +1045,11 @@ void URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput) {
 }
 
 /* static */
-bool URLParams::ParseNextInternal(const char*& aStart, const char* const aEnd, const StringTaint& aTaint,
+bool URLParams::ParseNextInternal(const char*& aStart, const char* const aEnd,
+                                  const char* stringStart, const StringTaint& aTaint,
                                   nsAString* aOutDecodedName,
                                   nsAString* aOutDecodedValue) {
   nsDependentCSubstring string;
-  // Taintfox: keep track of start of the string
-  const char* const stringStart = aStart;
 
   const char* const iter = std::find(aStart, aEnd, '&');
   if (iter != aEnd) {

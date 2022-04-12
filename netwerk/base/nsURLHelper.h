@@ -253,13 +253,15 @@ class URLParams final {
   template <typename ParamHandler>
   static bool Parse(const nsACString& aInput, ParamHandler aParamHandler) {
     const char* start = aInput.BeginReading();
+    // Taintfox: keep track of start of the string
+    const char* stringStart = start;
     const char* const end = aInput.EndReading();
 
     while (start != end) {
       nsAutoString decodedName;
       nsAutoString decodedValue;
 
-      if (!ParseNextInternal(start, end, aInput.Taint(), &decodedName, &decodedValue)) {
+      if (!ParseNextInternal(start, end, stringStart, aInput.Taint(), &decodedName, &decodedValue)) {
         continue;
       }
 
@@ -346,7 +348,8 @@ class URLParams final {
  private:
   static void DecodeString(const nsACString& aInput, nsAString& aOutput);
   static void ConvertString(const nsACString& aInput, nsAString& aOutput);
-  static bool ParseNextInternal(const char*& aStart, const char* aEnd, const StringTaint& aTaint,
+  static bool ParseNextInternal(const char*& aStart, const char* aEnd,
+                                const char* stringStart, const StringTaint& aTaint,
                                 nsAString* aOutDecodedName,
                                 nsAString* aOutDecodedValue);
 
