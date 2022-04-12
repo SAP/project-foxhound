@@ -1084,7 +1084,7 @@ bool URLParams::ParseNextInternal(const char*& aStart, const char* const aEnd,
                                              std::distance(eqStart, eqIter)));
     value.Rebind(eqIter + 1, eqEnd);
     // Taintfox: propagate taint
-    value.AssignTaint(string.Taint().subtaint(std::distance(eqStart, eqIter),
+    value.AssignTaint(string.Taint().subtaint(std::distance(eqStart, eqIter + 1),
                                               std::distance(eqStart, eqEnd)));
   } else {
     // Taintfox: taint should be propagated here
