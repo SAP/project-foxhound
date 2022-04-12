@@ -996,6 +996,7 @@ void URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput) {
   for (const char* iter = start; iter != end;) {
     // replace '+' with U+0020
     if (*iter == '+') {
+      unescaped.Taint().concat(aInput.Taint().subtaint(std::distance(start, iter), std::distance(start, iter) +1), unescaped.Length());
       unescaped.Append(' ');
       ++iter;
       continue;
@@ -1019,11 +1020,12 @@ void URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput) {
 
       if (first != end && second != end && asciiHexDigit(*first) &&
           asciiHexDigit(*second)) {
-        unescaped.Taint().concat(aInput.Taint().subtaint(std::distance(start, iter), std::distance(start, second)),
-                                 unescaped.Length());
+        // Taintfox: this is an approximation as we compress the taint of 3 chars (e.g. %40) into just one
+        unescaped.Taint().concat(aInput.Taint().subtaint(std::distance(start, first), std::distance(start, first) +1), unescaped.Length());
         unescaped.Append(hexDigit(*first) * 16 + hexDigit(*second));
         iter = second + 1;
       } else {
+        unescaped.Taint().concat(aInput.Taint().subtaint(std::distance(start, iter), std::distance(start, iter) + 1), unescaped.Length());
         unescaped.Append('%');
         ++iter;
       }
@@ -1031,8 +1033,7 @@ void URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput) {
       continue;
     }
     // Taintfox: append single char taint
-    unescaped.Taint().concat(aInput.Taint().subtaint(std::distance(start, iter), std::distance(start, iter) + 1),
-                             unescaped.Length());
+    unescaped.Taint().concat(aInput.Taint().subtaint(std::distance(start, iter), std::distance(start, iter) +1), unescaped.Length());
     unescaped.Append(*iter);
     ++iter;
   }
