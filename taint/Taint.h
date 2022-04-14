@@ -531,6 +531,13 @@ class StringTaint
     // start at zero.
     StringTaint subtaint(uint32_t begin, uint32_t end) const;
 
+    // Returns a new string taint instance holding the taint information of
+    // a part of the current string, and thus of a substring of the associated
+    // string.
+    // Taint ranges in the returned instance will be offsetted by -begin to
+    // start at zero.
+    StringTaint subtaint(uint32_t index) const;
+
     // Adds a taint operation to the taint flows of all ranges in this instance.
     StringTaint& extend(const TaintOperation& operation);
 

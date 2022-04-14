@@ -594,6 +594,11 @@ StringTaint StringTaint::subtaint(uint32_t begin, uint32_t end) const
     return newtaint;
 }
 
+StringTaint StringTaint::subtaint(uint32_t index) const
+{
+    return subtaint(index, index + 1);
+}
+
 StringTaint& StringTaint::extend(const TaintOperation& operation)
 {
     for (auto& range : *this)
