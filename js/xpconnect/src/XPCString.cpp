@@ -93,7 +93,7 @@ bool XPCStringConvert::ReadableToJSVal(JSContext* cx, const nsAString& readable,
   uint32_t length = readable.Length();
 
   if (readable.IsLiteral()) {
-    return StringLiteralToJSVal(cx, readable.BeginReading(), length, vp);
+    return StringLiteralToJSVal(cx, readable.BeginReading(), length, readable.Taint(), vp);
   }
 
   nsStringBuffer* buf = nsStringBuffer::FromString(readable);
