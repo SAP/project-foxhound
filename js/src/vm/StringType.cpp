@@ -1614,9 +1614,10 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineStringDeflated(
 template <AllowGC allowGC>
 static JSLinearString* NewStringDeflated(JSContext* cx, const char16_t* s,
                                          size_t n, gc::InitialHeap heap) {
-  if (JSLinearString* str = TryEmptyOrStaticString(cx, s, n)) {
-    return str;
-  }
+// Foxhound: Avoid creating atoms
+//  if (JSLinearString* str = TryEmptyOrStaticString(cx, s, n)) {
+//    return str;
+//  }
 
   if (JSInlineString::lengthFits<Latin1Char>(n)) {
     return NewInlineStringDeflated<allowGC>(
@@ -1714,9 +1715,10 @@ namespace js {
 template <AllowGC allowGC, typename CharT>
 JSLinearString* NewStringCopyNDontDeflate(JSContext* cx, const CharT* s,
                                           size_t n, gc::InitialHeap heap) {
-  if (JSLinearString* str = TryEmptyOrStaticString(cx, s, n)) {
-    return str;
-  }
+// Foxhound: Avoid creating atoms
+//  if (JSLinearString* str = TryEmptyOrStaticString(cx, s, n)) {
+//    return str;
+//  }
 
   if (JSInlineString::lengthFits<CharT>(n)) {
     return NewInlineString<allowGC>(cx, mozilla::Range<const CharT>(s, n),
@@ -1868,10 +1870,11 @@ JSString* NewMaybeExternalString(JSContext* cx, const char16_t* s, size_t n,
                                  const JSExternalStringCallbacks* callbacks,
                                  bool* allocatedExternal,
                                  gc::InitialHeap heap) {
-  if (JSString* str = TryEmptyOrStaticString(cx, s, n)) {
-    *allocatedExternal = false;
-    return str;
-  }
+// Foxhound: Avoid creating atoms
+//  if (JSString* str = TryEmptyOrStaticString(cx, s, n)) {
+//    *allocatedExternal = false;
+//    return str;
+//  }
 
   if (JSThinInlineString::lengthFits<Latin1Char>(n) &&
       CanStoreCharsAsLatin1(s, n)) {
