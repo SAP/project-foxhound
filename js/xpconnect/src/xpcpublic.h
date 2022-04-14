@@ -268,6 +268,7 @@ class XPCStringConvert {
   static inline bool StringLiteralToJSVal(JSContext* cx,
                                           const char16_t* literal,
                                           uint32_t length,
+                                          const StringTaint& taint,
                                           JS::MutableHandleValue rval) {
     bool ignored;
     JSString* str = JS_NewMaybeExternalString(
@@ -276,11 +277,18 @@ class XPCStringConvert {
       return false;
     }
 
-    // TaintFox: empty taint
-    JS_SetStringTaint(cx, str, EmptyTaint);
+    // TaintFox: propagate taint
+    JS_SetStringTaint(cx, str, taint);
 
     rval.setString(str);
     return true;
+  }
+
+  static inline bool StringLiteralToJSVal(JSContext* cx,
+                                          const char16_t* literal,
+                                          uint32_t length,
+                                          JS::MutableHandleValue rval) {
+    return StringLiteralToJSVal(cx, literal, length, EmptyTaint, rval);
   }
 
   static inline bool DynamicAtomToJSVal(JSContext* cx, nsDynamicAtom* atom,
@@ -407,6 +415,7 @@ inline bool NonVoidStringToJsval(JSContext* cx, mozilla::dom::DOMString& str,
     uint32_t length = str.StringBufferLength();
     nsStringBuffer* buf = str.StringBuffer();
     bool shared;
+    // Taint propagated in StringBufferToJSVal
     if (!XPCStringConvert::StringBufferToJSVal(cx, buf, length, rval,
                                                &shared)) {
       return false;
@@ -420,7 +429,8 @@ inline bool NonVoidStringToJsval(JSContext* cx, mozilla::dom::DOMString& str,
 
   if (str.HasLiteral()) {
     return XPCStringConvert::StringLiteralToJSVal(cx, str.Literal(),
-                                                  str.LiteralLength(), rval);
+                                                  str.LiteralLength(),
+                                                  str.Taint(), rval);
   }
 
   if (str.HasAtom()) {
