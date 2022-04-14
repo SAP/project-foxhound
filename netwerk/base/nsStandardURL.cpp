@@ -108,6 +108,9 @@ int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
     return 0;
   }
 
+  // Tainting: check whether to encode URL
+  bool encodeURL = NS_IsMainThread() ? Preferences::GetBool("taintfox.escapeURL", false) : true;
+
   uint32_t origLen = aOut.Length();
   Span<const char> span = Span(aStr + aSeg.mPos, aSeg.mLen);
   StringTaint subtaint = taint.subtaint(aSeg.mPos, aSeg.mPos + aSeg.mLen);
@@ -157,7 +160,7 @@ int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
         totalRead += read;
         auto bufferWritten = buffer.To(written);
         bool escaped = false;
-        if (Preferences::GetBool("taintfox.escapeURL", false)) {
+        if (encodeURL) {
           if (!NS_EscapeURLSpan(bufferWritten, subsubTaint, aMask, aOut)) {
             escaped = true;
           }
@@ -186,7 +189,7 @@ int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
     }
   }
 
-  if (Preferences::GetBool("taintfox.escapeURL", false)) {
+  if (encodeURL) {
     if (NS_EscapeURLSpan(span, subtaint, aMask, aOut)) {
       aAppended = true;
       // Difference between original and current output
