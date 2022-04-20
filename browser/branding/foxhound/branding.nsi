@@ -13,16 +13,16 @@
 # instead of BrandFullName and typically should not be modified.
 !define BrandFullNameInternal "Foxhound"
 !define BrandFullName         "Foxhound"
-!define CompanyName           "SAP SE"
+!define CompanyName           "SAP Security Research"
 !define URLInfoAbout          "https://github.com/SAP/project-foxhound"
 !define HelpLink              "https://github.com/SAP/project-foxhound"
 
-!define URLStubDownloadX86 "https://download.mozilla.org/?os=win&lang=${AB_CD}&product=firefox-latest"
-!define URLStubDownloadAMD64 "https://download.mozilla.org/?os=win64&lang=${AB_CD}&product=firefox-latest"
-!define URLStubDownloadAArch64 "https://download.mozilla.org/?os=win64-aarch64&lang=${AB_CD}&product=firefox-latest"
-!define URLManualDownload "https://www.mozilla.org/${AB_CD}/firefox/installer-help/?channel=release&installer_lang=${AB_CD}"
-!define URLSystemRequirements "https://www.mozilla.org/firefox/system-requirements/"
-!define Channel "Taintfox"
+#!define URLStubDownloadX86 "https://download.mozilla.org/?os=win&lang=${AB_CD}&product=firefox-latest"
+#!define URLStubDownloadAMD64 "https://download.mozilla.org/?os=win64&lang=${AB_CD}&product=firefox-latest"
+#!define URLStubDownloadAArch64 "https://download.mozilla.org/?os=win64-aarch64&lang=${AB_CD}&product=firefox-latest"
+#!define URLManualDownload "https://www.mozilla.org/${AB_CD}/firefox/installer-help/?channel=release&installer_lang=${AB_CD}"
+#!define URLSystemRequirements "https://www.mozilla.org/firefox/system-requirements/"
+#!define Channel "Foxhound"
 
 # The installer's certificate name and issuer expected by the stub installer
 !define CertNameDownload   "Mozilla Corporation"

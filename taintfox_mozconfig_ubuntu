@@ -1,4 +1,6 @@
-mk_add_options MOZ_MAKE_FLAGS="-s "
+. $topsrcdir/browser/config/mozconfig
+
+mk_add_options MOZ_MAKE_FLAGS="-s -j4"
 
 # Use ccache, make sure the path is correct
 #ac_add_options --with-ccache=/usr/bin/ccache
@@ -13,10 +15,13 @@ ac_add_options --disable-updater
 # Add-on signing is not required for DevEdition
 MOZ_REQUIRE_SIGNING=
 
+ac_add_options --with-branding=browser/branding/foxhound
+
 #
 # DEBUG BUILD
 #
 #mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-dbg
+#ac_add_options --enable-debug-symbols
 #ac_add_options --enable-debug
 #ac_add_options --disable-optimize
 #ac_add_options --disable-tests
@@ -29,6 +34,7 @@ export MOZ_PACKAGE_JSSHELL=1
 #
 # RELEASE BUILD
 #
+ac_add_options --with-app-name=foxhound
 mk_add_options MOZ_APP_NAME=foxhound
 mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-release
 ac_add_options --enable-bootstrap

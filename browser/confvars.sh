@@ -6,8 +6,8 @@
 # Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
 #
 
-MOZ_APP_BASENAME=Taintfox
-MOZ_APP_VENDOR=SAP
+MOZ_APP_BASENAME=Foxhound
+MOZ_APP_VENDOR=SAP Security Research
 MOZ_UPDATER=0
 
 if test "$OS_ARCH" = "WINNT"; then

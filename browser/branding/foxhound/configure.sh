@@ -5,4 +5,7 @@
 # Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
 #
 
-MOZ_APP_DISPLAYNAME=Taintfox
+MOZ_APP_NAME=foxhound
+MOZ_APP_DISPLAYNAME=Foxhound
+MOZ_APP_REMOTINGNAME=foxhound
+MOZ_DEV_EDITION=1
