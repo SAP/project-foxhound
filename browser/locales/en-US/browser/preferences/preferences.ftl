@@ -577,7 +577,7 @@ home-restore-defaults =
 # "Firefox" should be treated as a brand and kept in English,
 # while "Home" and "(Default)" can be localized.
 home-mode-choice-default =
-    .label = Firefox Home (Default)
+    .label = { -brand-short-name } Home (Default)
 
 home-mode-choice-custom =
     .label = Custom URLs…
@@ -604,10 +604,10 @@ choose-bookmark =
     .label = Use Bookmark…
     .accesskey = B
 
-## Home Section - Firefox Home Content Customization
+## Home Section - { -brand-short-name } Home Content Customization
 
-home-prefs-content-header = Firefox Home Content
-home-prefs-content-description = Choose what content you want on your Firefox Home screen.
+home-prefs-content-header = { -brand-short-name } Home Content
+home-prefs-content-description = Choose what content you want on your { -brand-short-name } Home screen.
 
 home-prefs-search-header =
     .label = Web Search
@@ -766,7 +766,7 @@ sync-signedout-account-signin3 =
 #
 # They can be moved within the sentence as needed to adapt
 # to your language, but should not be changed or translated.
-sync-mobile-promo = Download Firefox for <img data-l10n-name="android-icon"/> <a data-l10n-name="android-link">Android</a> or <img data-l10n-name="ios-icon"/> <a data-l10n-name="ios-link">iOS</a> to sync with your mobile device.
+sync-mobile-promo = Download { -brand-short-name } for <img data-l10n-name="android-icon"/> <a data-l10n-name="android-link">Android</a> or <img data-l10n-name="ios-icon"/> <a data-l10n-name="ios-link">iOS</a> to sync with your mobile device.
 
 ## Firefox Account - Signed in
 
@@ -869,7 +869,7 @@ sync-engine-creditcards =
 
 sync-engine-addons =
     .label = Add-ons
-    .tooltiptext = Extensions and themes for Firefox desktop
+    .tooltiptext = Extensions and themes for { -brand-short-name } desktop
     .accesskey = A
 
 sync-engine-settings =
