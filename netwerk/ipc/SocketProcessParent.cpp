@@ -12,6 +12,7 @@
 #include "SocketProcessHost.h"
 #include "mozilla/Components.h"
 #include "mozilla/dom/MemoryReportRequest.h"
+#include "mozilla/FOGIPC.h"
 #include "mozilla/ipc/FileDescriptorSetParent.h"
 #include "mozilla/ipc/IPCStreamAlloc.h"
 #include "mozilla/ipc/PChildToParentStreamParent.h"
@@ -25,11 +26,11 @@
 #include "nsIConsoleService.h"
 #include "nsIHttpActivityObserver.h"
 #include "nsIObserverService.h"
+#include "nsNSSComponent.h"
 #include "nsNSSIOLayer.h"
 #include "nsIOService.h"
 #include "nsHttpHandler.h"
 #include "nsHttpConnectionInfo.h"
-#include "PSMIPCCommon.h"
 #include "secerr.h"
 #ifdef MOZ_WEBRTC
 #  include "mozilla/dom/ContentProcessManager.h"
@@ -40,6 +41,9 @@
 #  include "mozilla/java/GeckoProcessManagerWrappers.h"
 #  include "mozilla/java/GeckoProcessTypeWrappers.h"
 #endif  // defined(MOZ_WIDGET_ANDROID)
+#if defined(XP_WIN)
+#  include "mozilla/WinDllServices.h"
+#endif
 
 namespace mozilla {
 namespace net {
@@ -291,9 +295,9 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvObserveHttpActivity(
 }
 
 mozilla::ipc::IPCResult SocketProcessParent::RecvInitBackground(
-    Endpoint<PBackgroundParent>&& aEndpoint) {
+    Endpoint<PBackgroundStarterParent>&& aEndpoint) {
   LOG(("SocketProcessParent::RecvInitBackground\n"));
-  if (!ipc::BackgroundParent::Alloc(nullptr, std::move(aEndpoint))) {
+  if (!ipc::BackgroundParent::AllocStarter(nullptr, std::move(aEndpoint))) {
     return IPC_FAIL(this, "BackgroundParent::Alloc failed");
   }
 
@@ -311,8 +315,7 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvGetTLSClientCert(
     const int32_t& aPort, const uint32_t& aProviderFlags,
     const uint32_t& aProviderTlsFlags, const ByteArray& aServerCert,
     Maybe<ByteArray>&& aClientCert, nsTArray<ByteArray>&& aCollectedCANames,
-    bool* aSucceeded, ByteArray* aOutCert, ByteArray* aOutKey,
-    nsTArray<ByteArray>* aBuiltChain) {
+    bool* aSucceeded, ByteArray* aOutCert, nsTArray<ByteArray>* aBuiltChain) {
   *aSucceeded = false;
 
   SECItem serverCertItem = {
@@ -326,12 +329,7 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvGetTLSClientCert(
 
   RefPtr<nsIX509Cert> clientCert;
   if (aClientCert) {
-    clientCert = nsNSSCertificate::ConstructFromDER(
-        BitwiseCast<char*, uint8_t*>(aClientCert->data().Elements()),
-        aClientCert->data().Length());
-    if (!clientCert) {
-      return IPC_OK();
-    }
+    clientCert = new nsNSSCertificate(std::move(aClientCert->data()));
   }
 
   ClientAuthInfo info(aHostName, aOriginAttributes, aPort, aProviderFlags,
@@ -342,16 +340,15 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvGetTLSClientCert(
   }
 
   UniqueCERTCertificate cert;
-  UniqueSECKEYPrivateKey key;
   UniqueCERTCertList builtChain;
   SECStatus status =
       DoGetClientAuthData(std::move(info), serverCert,
-                          std::move(collectedCANames), cert, key, builtChain);
+                          std::move(collectedCANames), cert, builtChain);
   if (status != SECSuccess) {
     return IPC_OK();
   }
 
-  SerializeClientCertAndKey(cert, key, *aOutCert, *aOutKey);
+  aOutCert->data().AppendElements(cert->derCert.data, cert->derCert.len);
 
   if (builtChain) {
     for (CERTCertListNode* n = CERT_LIST_HEAD(builtChain);
@@ -469,6 +466,27 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvOnConsoleMessage(
   }
   return IPC_OK();
 }
+
+mozilla::ipc::IPCResult SocketProcessParent::RecvFOGData(ByteBuf&& aBuf) {
+  glean::FOGData(std::move(aBuf));
+  return IPC_OK();
+}
+
+#if defined(XP_WIN)
+mozilla::ipc::IPCResult SocketProcessParent::RecvGetModulesTrust(
+    ModulePaths&& aModPaths, bool aRunAtNormalPriority,
+    GetModulesTrustResolver&& aResolver) {
+  RefPtr<DllServices> dllSvc(DllServices::Get());
+  dllSvc->GetModulesTrust(std::move(aModPaths), aRunAtNormalPriority)
+      ->Then(
+          GetMainThreadSerialEventTarget(), __func__,
+          [aResolver](ModulesMapResult&& aResult) {
+            aResolver(Some(ModulesMapResult(std::move(aResult))));
+          },
+          [aResolver](nsresult aRv) { aResolver(Nothing()); });
+  return IPC_OK();
+}
+#endif  // defined(XP_WIN)
 
 }  // namespace net
 }  // namespace mozilla

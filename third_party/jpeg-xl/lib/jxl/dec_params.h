@@ -26,6 +26,8 @@ struct DecompressParams {
   bool keep_dct = false;
   // If true, render spot colors (otherwise only returned as extra channels)
   bool render_spotcolors = true;
+  // If true, coalesce frames (otherwise return unblended frames)
+  bool coalescing = true;
 
   // These cannot be kOn because they need encoder support.
   Override preview = Override::kDefault;
@@ -42,6 +44,10 @@ struct DecompressParams {
   bool allow_partial_files = false;
   // Allow even more progression.
   bool allow_more_progressive_steps = false;
+
+  // Internal test-only setting: whether or not to use the slow rendering
+  // pipeline.
+  bool use_slow_render_pipeline = false;
 };
 
 }  // namespace jxl

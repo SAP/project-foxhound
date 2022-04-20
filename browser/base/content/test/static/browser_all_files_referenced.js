@@ -107,7 +107,7 @@ var whitelist = [
   },
   {
     file: "resource://gre/localization/en-US/toolkit/printing/printDialogs.ftl",
-    platforms: ["macosx"],
+    platforms: ["linux", "macosx"],
   },
 
   // toolkit/content/aboutRights-unbranded.xhtml doesn't use aboutRights.css
@@ -135,12 +135,19 @@ var whitelist = [
     file:
       "chrome://browser/content/preferences/more-from-mozilla-qr-code-simple.svg",
   },
+  {
+    file:
+      "chrome://browser/content/preferences/more-from-mozilla-qr-code-simple-cn.svg",
+  },
 
   { file: "resource://gre/greprefs.js" },
 
   // layout/mathml/nsMathMLChar.cpp
   { file: "resource://gre/res/fonts/mathfontSTIXGeneral.properties" },
   { file: "resource://gre/res/fonts/mathfontUnicode.properties" },
+
+  // toolkit/mozapps/extensions/AddonContentPolicy.cpp
+  { file: "resource://gre/localization/en-US/toolkit/global/cspErrors.ftl" },
 
   // The l10n build system can't package string files only for some platforms.
   {
@@ -270,10 +277,6 @@ var whitelist = [
   // (The references to these files are dynamically generated, so the test can't
   // find the references)
   { file: "chrome://browser/content/screenshots/copied-notification.svg" },
-  {
-    file:
-      "chrome://browser/content/screenshots/icon-welcome-face-without-eyes.svg",
-  },
 
   { file: "resource://app/modules/SnapshotSelector.jsm" },
 

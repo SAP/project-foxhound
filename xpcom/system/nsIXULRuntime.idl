@@ -19,8 +19,8 @@ uint32_t GetMaxWebProcessCount();
 // global value of the pref. For other use cases, you should use
 // nsILoadContext::UseRemoteSubframes instead. This will also check for special
 // conditions, like safe mode, which may require fission to be disabled, or
-// environment variable MOZ_FORCE_ENABLE_FISSION, used by mach run to
-// enable fission regardless of pref settings.
+// environment variables MOZ_FORCE_ENABLE_FISSION and MOZ_FORCE_DISABLE_FISSION,
+// used by mach run to enable/disable fission regardless of pref settings.
 bool FissionAutostart();
 
 // Returns whether or not we are currently enrolled in the fission experiment.
@@ -72,6 +72,41 @@ interface nsIXULRuntime : nsISupports
     eExperimentStatusCount,
   };
 
+  // If you update this enum, don't forget to raise the limit in
+  // TelemetryEnvironmentTesting.jsm and record the new value in
+  // environment.rst
+  cenum ContentWin32kLockdownState : 8 {
+    LockdownEnabled = 1,  // no longer used
+    MissingWebRender = 2,
+    OperatingSystemNotSupported = 3,
+    PrefNotSet = 4,  // no longer used
+    MissingRemoteWebGL = 5,
+    MissingNonNativeTheming = 6,
+    DisabledByEnvVar = 7,  // - MOZ_ENABLE_WIN32K is set
+    DisabledBySafeMode = 8,
+    DisabledByE10S = 9,      // - E10S is disabled for whatever reason
+    DisabledByUserPref = 10,  // - The user manually set
+                             // security.sandbox.content.win32k-disable to false
+    EnabledByUserPref = 11,  // The user manually set
+                             // security.sandbox.content.win32k-disable to true
+    DisabledByControlGroup =
+        12,  // The user is in the Control Group, so it is disabled
+    EnabledByTreatmentGroup =
+        13,  // The user is in the Treatment Group, so it is enabled
+    DisabledByDefault = 14,  // The default value of the pref is false
+    EnabledByDefault = 15,    // The default value of the pref is true
+    DecodersArentRemote = 16
+  };
+
+  // This is the current value of the experiment for the session
+  readonly attribute nsIXULRuntime_ExperimentStatus win32kExperimentStatus;
+  // This will return what the browser thinks is the _current_ status of win32k lockdown
+  // but this should only be used for testing
+  readonly attribute nsIXULRuntime_ContentWin32kLockdownState win32kLiveStatusTestingOnly;
+  // This is the current value of win32k lockdown for the session. It is set at startup,
+  // and never changed.
+  readonly attribute nsIXULRuntime_ContentWin32kLockdownState win32kSessionStatus;
+
   // NOTE: Please do not add new values to this enum without also updating the
   // mapping in aboutSupport.js
   cenum FissionDecisionStatus : 8 {
@@ -88,25 +123,28 @@ interface nsIXULRuntime : nsISupports
     // Fission is enabled because the `MOZ_FORCE_ENABLE_FISSION` environment
     // variable is set.
     eFissionEnabledByEnv = 4,
+    // Fission is disabled because the `MOZ_FORCE_DISABLE_FISSION` environment
+    // variable is set.
+    eFissionDisabledByEnv = 5,
     // Fission is disabled because the current session is running in safe
     // mode.
-    eFissionDisabledBySafeMode = 5,
+    eFissionDisabledBySafeMode = 6,
     // Fission is enabled because the "fission.autostart" preference is true
     // by default.
-    eFissionEnabledByDefault = 6,
+    eFissionEnabledByDefault = 7,
     // Fission is disabled because the "fission.autostart" preference is false
     // by default.
-    eFissionDisabledByDefault = 7,
+    eFissionDisabledByDefault = 8,
     // Fission is enabled because the "fission.autostart" preference was
     // turned on by the user.
-    eFissionEnabledByUserPref = 8,
+    eFissionEnabledByUserPref = 9,
     // Fission is enabled because the "fission.autostart" preference was
     // turned on by the user.
-    eFissionDisabledByUserPref = 9,
+    eFissionDisabledByUserPref = 10,
     // Fission is disabled because e10s is disabled for some other reason.
-    eFissionDisabledByE10sOther = 10,
+    eFissionDisabledByE10sOther = 11,
     // Fission is enabled by a Normandy phased rollout.
-    eFissionEnabledByRollout = 11,
+    eFissionEnabledByRollout = 12,
   };
 
   /**
@@ -188,8 +226,9 @@ interface nsIXULRuntime : nsISupports
   const unsigned long PROCESS_TYPE_VR = 6;
   const unsigned long PROCESS_TYPE_RDD = 7;
   const unsigned long PROCESS_TYPE_SOCKET = 8;
-  const unsigned long PROCESS_TYPE_SANDBOX_BROKER = 9;
+  const unsigned long PROCESS_TYPE_REMOTESANDBOXBROKER = 9;
   const unsigned long PROCESS_TYPE_FORKSERVER = 10;
+  const unsigned long PROCESS_TYPE_UTILITY = 11;
 
   /**
    * The type of the caller's process.  Returns one of the values above.
@@ -285,16 +324,6 @@ interface nsIXULRuntime : nsISupports
   readonly attribute PRTime replacedLockTime;
 
   /**
-   * True if this is RELEASE_OR_BETA.
-   */
-  readonly attribute boolean isReleaseOrBeta;
-
-  /**
-   * True if this build uses official branding (MOZ_OFFICIAL_BRANDING).
-   */
-  readonly attribute boolean isOfficialBranding;
-
-  /**
    * The default update channel (MOZ_UPDATE_CHANNEL).
    */
   readonly attribute AUTF8String defaultUpdateChannel;
@@ -357,3 +386,14 @@ interface nsIXULRuntime : nsISupports
    */
   readonly attribute ACString lastAppBuildID;
 };
+
+
+%{C++
+
+namespace mozilla {
+
+nsIXULRuntime::ContentWin32kLockdownState GetWin32kLockdownState();
+
+}
+
+%}

@@ -16,6 +16,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Services: "resource://gre/modules/Services.jsm",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
   UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.jsm",
+  UrlbarProviderTopSites: "resource:///modules/UrlbarProviderTopSites.jsm",
   UrlbarSearchOneOffs: "resource:///modules/UrlbarSearchOneOffs.jsm",
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.jsm",
   UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
@@ -509,6 +510,12 @@ class UrlbarView {
       this.input.getAttribute("pageproxystate") == "valid"
     ) {
       if (!this.isOpen && ["mousedown", "command"].includes(event.type)) {
+        // Try to reuse the cached top-sites context. If it's not cached, then
+        // there will be a gap of time between when the input is focused and
+        // when the view opens that can be perceived as flicker.
+        if (!this.input.searchMode && this._queryContextCache.topSitesContext) {
+          this.onQueryResults(this._queryContextCache.topSitesContext);
+        }
         this.input.startQuery(queryOptions);
         if (suppressFocusBorder) {
           this.input.toggleAttribute("suppress-focus-border", true);
@@ -1141,40 +1148,7 @@ class UrlbarView {
     item._content.appendChild(url);
     item._elements.set("url", url);
 
-    // Usually we create all child elements for the row regardless of whether
-    // the specific result will use them, but we don't expect the vast majority
-    // of results to have help URLs, so as an optimization, only create the help
-    // button if the result will use it.
-    if (result.payload.helpUrl) {
-      let helpButton = this._createElement("span");
-      helpButton.className = "urlbarView-help";
-      helpButton.setAttribute("role", "button");
-      if (result.payload.helpL10nId) {
-        helpButton.setAttribute("data-l10n-id", result.payload.helpL10nId);
-      }
-      item.appendChild(helpButton);
-      item._elements.set("helpButton", helpButton);
-      item._content.setAttribute("selectable", "true");
-
-      // If the content is marked as selectable, the screen reader will not be
-      // able to read the text directly child of the "urlbarView-row". As the
-      // group label is shown as pseudo element of urlbarView-row now, it isn't
-      // readable. To avoid it, we add an element for aria-label explictly,
-      // and set group label that should be read into it in _updateIndices().
-      const groupAriaLabel = this._createElement("span");
-      groupAriaLabel.className = "urlbarView-group-aria-label";
-      item._content.insertBefore(groupAriaLabel, item._content.firstChild);
-      item._elements.set("groupAriaLabel", groupAriaLabel);
-
-      // Remove role=option on the row and set it on row-inner since the latter
-      // is the selectable logical row element when the help button is present.
-      // Since row-inner is not a child of the role=listbox element (the row
-      // container, this._rows), screen readers will not automatically recognize
-      // it as a listbox option.  To compensate, set role=presentation on the
-      // row so that screen readers ignore it.
-      item.setAttribute("role", "presentation");
-      item._content.setAttribute("role", "option");
-    }
+    this._maybeCreateRowHelpButton(item, result);
   }
 
   _createRowContentForTip(item) {
@@ -1261,6 +1235,91 @@ class UrlbarView {
     }
   }
 
+  _createRowContentForBestMatch(item, result) {
+    let favicon = this._createElement("img");
+    favicon.className = "urlbarView-favicon";
+    item._content.appendChild(favicon);
+    item._elements.set("favicon", favicon);
+
+    let typeIcon = this._createElement("span");
+    typeIcon.className = "urlbarView-type-icon";
+    item._content.appendChild(typeIcon);
+
+    let body = this._createElement("span");
+    body.className = "urlbarView-row-body";
+    item._content.appendChild(body);
+
+    let top = this._createElement("div");
+    top.className = "urlbarView-row-body-top";
+    body.appendChild(top);
+
+    let noWrap = this._createElement("div");
+    noWrap.className = "urlbarView-row-body-top-no-wrap";
+    top.appendChild(noWrap);
+    item._elements.set("noWrap", noWrap);
+
+    let title = this._createElement("span");
+    title.className = "urlbarView-title";
+    noWrap.appendChild(title);
+    item._elements.set("title", title);
+
+    let titleSeparator = this._createElement("span");
+    titleSeparator.className = "urlbarView-title-separator";
+    noWrap.appendChild(titleSeparator);
+    item._elements.set("titleSeparator", titleSeparator);
+
+    let url = this._createElement("span");
+    url.className = "urlbarView-url";
+    top.appendChild(url);
+    item._elements.set("url", url);
+
+    let bottom = this._createElement("div");
+    bottom.className = "urlbarView-row-body-bottom";
+    body.appendChild(bottom);
+    item._elements.set("bottom", bottom);
+
+    this._maybeCreateRowHelpButton(item, result);
+  }
+
+  _maybeCreateRowHelpButton(item, result) {
+    // Usually we create all child elements for the row regardless of whether
+    // the specific result will use them, but we don't expect the vast majority
+    // of results to have help URLs, so as an optimization, only create the help
+    // button if the result will use it.
+    if (!result.payload.helpUrl) {
+      return;
+    }
+
+    let helpButton = this._createElement("span");
+    helpButton.className = "urlbarView-help";
+    helpButton.setAttribute("role", "button");
+    if (result.payload.helpL10nId) {
+      helpButton.setAttribute("data-l10n-id", result.payload.helpL10nId);
+    }
+    item.appendChild(helpButton);
+    item._elements.set("helpButton", helpButton);
+    item._content.setAttribute("selectable", "true");
+
+    // If the content is marked as selectable, the screen reader will not be
+    // able to read the text directly child of the "urlbarView-row". As the
+    // group label is shown as pseudo element of urlbarView-row now, it isn't
+    // readable. To avoid it, we add an element for aria-label explictly,
+    // and set group label that should be read into it in _updateIndices().
+    const groupAriaLabel = this._createElement("span");
+    groupAriaLabel.className = "urlbarView-group-aria-label";
+    item._content.insertBefore(groupAriaLabel, item._content.firstChild);
+    item._elements.set("groupAriaLabel", groupAriaLabel);
+
+    // Remove role=option on the row and set it on row-inner since the latter
+    // is the selectable logical row element when the help button is present.
+    // Since row-inner is not a child of the role=listbox element (the row
+    // container, this._rows), screen readers will not automatically recognize
+    // it as a listbox option.  To compensate, set role=presentation on the
+    // row so that screen readers ignore it.
+    item.setAttribute("role", "presentation");
+    item._content.setAttribute("role", "option");
+  }
+
   _updateRow(item, result) {
     let oldResult = item.result;
     let oldResultType = item.result && item.result.type;
@@ -1277,6 +1336,7 @@ class UrlbarView {
       (oldResultType == UrlbarUtils.RESULT_TYPE.DYNAMIC &&
         result.type == UrlbarUtils.RESULT_TYPE.DYNAMIC &&
         oldResult.dynamicType != result.dynamicType) ||
+      oldResult.isBestMatch != result.isBestMatch ||
       !!result.payload.helpUrl != item._elements.has("helpButton");
 
     if (needsNewContent) {
@@ -1292,6 +1352,8 @@ class UrlbarView {
         this._createRowContentForTip(item);
       } else if (item.result.type == UrlbarUtils.RESULT_TYPE.DYNAMIC) {
         this._createRowContentForDynamicType(item, result);
+      } else if (item.result.isBestMatch) {
+        this._createRowContentForBestMatch(item, result);
       } else {
         this._createRowContent(item, result);
       }
@@ -1320,6 +1382,10 @@ class UrlbarView {
       return;
     } else if (result.providerName == "TabToSearch") {
       item.setAttribute("type", "tabtosearch");
+    } else if (result.isBestMatch) {
+      item.setAttribute("type", "bestmatch");
+      this._updateRowForBestMatch(item, result);
+      return;
     } else {
       item.removeAttribute("type");
     }
@@ -1375,16 +1441,15 @@ class UrlbarView {
     switch (result.type) {
       case UrlbarUtils.RESULT_TYPE.TAB_SWITCH:
         actionSetter = () => {
-          this.document.l10n.setAttributes(
-            action,
-            "urlbar-result-action-switch-tab"
-          );
+          this._setElementL10n(action, {
+            id: "urlbar-result-action-switch-tab",
+          });
         };
         setURL = true;
         break;
       case UrlbarUtils.RESULT_TYPE.REMOTE_TAB:
         actionSetter = () => {
-          action.removeAttribute("data-l10n-id");
+          this._removeElementL10n(action);
           action.textContent = result.payload.device;
         };
         setURL = true;
@@ -1393,37 +1458,33 @@ class UrlbarView {
         if (result.payload.inPrivateWindow) {
           if (result.payload.isPrivateEngine) {
             actionSetter = () => {
-              this.document.l10n.setAttributes(
-                action,
-                "urlbar-result-action-search-in-private-w-engine",
-                { engine: result.payload.engine }
-              );
+              this._setElementL10n(action, {
+                id: "urlbar-result-action-search-in-private-w-engine",
+                args: { engine: result.payload.engine },
+              });
             };
           } else {
             actionSetter = () => {
-              this.document.l10n.setAttributes(
-                action,
-                "urlbar-result-action-search-in-private"
-              );
+              this._setElementL10n(action, {
+                id: "urlbar-result-action-search-in-private",
+              });
             };
           }
         } else if (result.providerName == "TabToSearch") {
           actionSetter = () => {
-            this.document.l10n.setAttributes(
-              action,
-              result.payload.isGeneralPurposeEngine
+            this._setElementL10n(action, {
+              id: result.payload.isGeneralPurposeEngine
                 ? "urlbar-result-action-tabtosearch-web"
                 : "urlbar-result-action-tabtosearch-other-engine",
-              { engine: result.payload.engine }
-            );
+              args: { engine: result.payload.engine },
+            });
           };
         } else if (!result.payload.providesSearchMode) {
           actionSetter = () => {
-            this.document.l10n.setAttributes(
-              action,
-              "urlbar-result-action-search-w-engine",
-              { engine: result.payload.engine }
-            );
+            this._setElementL10n(action, {
+              id: "urlbar-result-action-search-w-engine",
+              args: { engine: result.payload.engine },
+            });
           };
         }
         break;
@@ -1432,7 +1493,7 @@ class UrlbarView {
         break;
       case UrlbarUtils.RESULT_TYPE.OMNIBOX:
         actionSetter = () => {
-          action.removeAttribute("data-l10n-id");
+          this._removeElementL10n(action);
           action.textContent = result.payload.content;
         };
         break;
@@ -1500,7 +1561,9 @@ class UrlbarView {
 
     if (isVisitAction) {
       actionSetter = () => {
-        this.document.l10n.setAttributes(action, "urlbar-result-action-visit");
+        this._setElementL10n(action, {
+          id: "urlbar-result-action-visit",
+        });
       };
       title.setAttribute("isurl", "true");
     } else {
@@ -1513,7 +1576,7 @@ class UrlbarView {
       item.setAttribute("has-action", "true");
     } else {
       item._originalActionSetter = () => {
-        action.removeAttribute("data-l10n-id");
+        this._removeElementL10n(action);
         action.textContent = "";
       };
       item._originalActionSetter();
@@ -1559,11 +1622,8 @@ class UrlbarView {
     title.id = item.id + "-title";
     // Add-ons will provide text, rather than l10n ids.
     if (result.payload.textData) {
-      this.document.l10n.setAttributes(
-        title,
-        result.payload.textData.id,
-        result.payload.textData.args
-      );
+      this._l10nCache.ensureAll([result.payload.textData]);
+      this._setElementL10n(title, result.payload.textData);
     } else {
       title.textContent = result.payload.text;
     }
@@ -1574,11 +1634,8 @@ class UrlbarView {
     tipButton.id = item.id + "-tip-button";
     // Add-ons will provide buttonText, rather than l10n ids.
     if (result.payload.buttonTextData) {
-      this.document.l10n.setAttributes(
-        tipButton,
-        result.payload.buttonTextData.id,
-        result.payload.buttonTextData.args
-      );
+      this._l10nCache.ensureAll([result.payload.buttonTextData]);
+      this._setElementL10n(tipButton, result.payload.buttonTextData);
     } else {
       tipButton.textContent = result.payload.buttonText;
     }
@@ -1651,14 +1708,55 @@ class UrlbarView {
         node.style[styleName] = value;
       }
       if (update.l10n) {
-        this.document.l10n.setAttributes(
-          node,
-          update.l10n.id,
-          update.l10n.args || undefined
-        );
+        this._setElementL10n(node, {
+          id: update.l10n.id,
+          args: update.l10n.args || undefined,
+        });
       } else if (update.textContent) {
         node.textContent = update.textContent;
       }
+    }
+  }
+
+  _updateRowForBestMatch(item, result) {
+    let favicon = item._elements.get("favicon");
+    favicon.src = this._iconForResult(result);
+
+    let title = item._elements.get("title");
+    this._setResultTitle(result, title);
+    title._tooltip = result.title;
+    if (title.hasAttribute("overflow")) {
+      title.setAttribute("title", title._tooltip);
+    } else {
+      title.removeAttribute("title");
+    }
+
+    let url = item._elements.get("url");
+    this._addTextContentWithHighlights(
+      url,
+      result.payload.displayUrl,
+      result.payloadHighlights.displayUrl || []
+    );
+    url._tooltip = result.payload.displayUrl;
+    if (url.hasAttribute("overflow")) {
+      url.setAttribute("title", url._tooltip);
+    } else {
+      url.removeAttribute("title");
+    }
+
+    let bottom = item._elements.get("bottom");
+    if (result.payload.isSponsored) {
+      this._setElementL10n(bottom, { id: "urlbar-result-action-sponsored" });
+    } else {
+      this._removeElementL10n(bottom);
+    }
+
+    let helpButton = item._elements.get("helpButton");
+    if (helpButton) {
+      helpButton.id = item.id + "-help";
+      item.toggleAttribute("has-help", true);
+    } else {
+      item.removeAttribute("has-help");
     }
   }
 
@@ -1745,6 +1843,9 @@ class UrlbarView {
       this._queryContext?.searchString &&
       !row.result.heuristic
     ) {
+      if (row.result.isBestMatch) {
+        return { id: "urlbar-group-best-match" };
+      }
       switch (row.result.type) {
         case UrlbarUtils.RESULT_TYPE.KEYWORD:
         case UrlbarUtils.RESULT_TYPE.REMOTE_TAB:
@@ -1752,7 +1853,7 @@ class UrlbarView {
         case UrlbarUtils.RESULT_TYPE.URL:
           return { id: "urlbar-group-firefox-suggest" };
         case UrlbarUtils.RESULT_TYPE.SEARCH:
-          // Show "{ $engine } Suggestions" if it's not the first label.
+          // Show "{ $engine } suggestions" if it's not the first label.
           if (currentLabel && row.result.payload.suggestion) {
             let engineName =
               row.result.payload.engine || Services.search.defaultEngine.name;
@@ -1779,7 +1880,10 @@ class UrlbarView {
       // again, we'll get new overflow events if needed.
       this._setElementOverflowing(row._elements.get("title"), false);
       this._setElementOverflowing(row._elements.get("url"), false);
-      this._setElementOverflowing(row._elements.get("tagsContainer"), false);
+      let tagsContainer = row._elements.get("tagsContainer");
+      if (tagsContainer) {
+        this._setElementOverflowing(tagsContainer, false);
+      }
     }
   }
 
@@ -2035,15 +2139,14 @@ class UrlbarView {
       // We localize the title instead of using the action text as a title
       // because some keyword offer results use both a title and action text
       // (e.g. tab-to-search).
-      this.document.l10n.setAttributes(
-        titleNode,
-        "urlbar-result-action-search-w-engine",
-        { engine: result.payload.engine }
-      );
+      this._setElementL10n(titleNode, {
+        id: "urlbar-result-action-search-w-engine",
+        args: { engine: result.payload.engine },
+      });
       return;
     }
 
-    titleNode.removeAttribute("data-l10n-id");
+    this._removeElementL10n(titleNode);
     this._addTextContentWithHighlights(
       titleNode,
       result.title,
@@ -2169,21 +2272,21 @@ class UrlbarView {
    *   static values like search engine names.
    */
   async _cacheL10nStrings() {
-    let idArgs = [];
+    let idArgs = [
+      ...this._cacheL10nIDArgsForSearchService(),
+      { id: "urlbar-result-action-search-bookmarks" },
+      { id: "urlbar-result-action-search-history" },
+      { id: "urlbar-result-action-search-in-private" },
+      { id: "urlbar-result-action-search-tabs" },
+      { id: "urlbar-result-action-switch-tab" },
+      { id: "urlbar-result-action-visit" },
+    ];
 
     if (UrlbarPrefs.get("groupLabels.enabled")) {
-      idArgs.push(
-        { id: "urlbar-group-firefox-suggest" },
-        ...[
-          Services.search.defaultEngine?.name,
-          Services.search.defaultPrivateEngine?.name,
-        ]
-          .filter(engineName => engineName)
-          .map(engineName => ({
-            id: "urlbar-group-search-suggestions",
-            args: { engine: engineName },
-          }))
-      );
+      idArgs.push({ id: "urlbar-group-firefox-suggest" });
+      if (UrlbarPrefs.get("bestMatchEnabled")) {
+        idArgs.push({ id: "urlbar-group-best-match" });
+      }
     }
 
     if (UrlbarPrefs.get("quickSuggestEnabled")) {
@@ -2191,6 +2294,62 @@ class UrlbarView {
     }
 
     await this._l10nCache.ensureAll(idArgs);
+  }
+
+  /**
+   * A helper for l10n string caching that returns `{ id, args }` objects for
+   * strings that depend on the search service.
+   *
+   * @returns {array}
+   *   Array of `{ id, args }` objects, possibly empty.
+   */
+  _cacheL10nIDArgsForSearchService() {
+    // The search service may not be initialized if the user opens the view very
+    // quickly after startup. Skip caching related strings in that case. Strings
+    // are cached opportunistically every time the view opens, so they'll be
+    // cached soon. We could use the search service's async methods, which
+    // internally await initialization, but that would allow previously cached
+    // out-of-date strings to appear in the view while the async calls are
+    // ongoing. Generally there's no reason for our string-caching paths to be
+    // async and it may even be a bad idea (except for the final necessary
+    // `this._l10nCache.ensureAll()` call).
+    if (!Services.search.isInitialized) {
+      return [];
+    }
+
+    let idArgs = [];
+
+    let { defaultEngine, defaultPrivateEngine } = Services.search;
+    let engineNames = [defaultEngine?.name, defaultPrivateEngine?.name].filter(
+      name => name
+    );
+
+    if (defaultPrivateEngine) {
+      idArgs.push({
+        id: "urlbar-result-action-search-in-private-w-engine",
+        args: { engine: defaultPrivateEngine.name },
+      });
+    }
+
+    let engineStringIDs = [
+      "urlbar-result-action-tabtosearch-web",
+      "urlbar-result-action-tabtosearch-other-engine",
+      "urlbar-result-action-search-w-engine",
+    ];
+    for (let id of engineStringIDs) {
+      idArgs.push(...engineNames.map(name => ({ id, args: { engine: name } })));
+    }
+
+    if (UrlbarPrefs.get("groupLabels.enabled")) {
+      idArgs.push(
+        ...engineNames.map(name => ({
+          id: "urlbar-group-search-suggestions",
+          args: { engine: name },
+        }))
+      );
+    }
+
+    return idArgs;
   }
 
   /**
@@ -2213,6 +2372,7 @@ class UrlbarView {
   _setElementL10n(element, { id, args = undefined, attribute = undefined }) {
     let message = this._l10nCache.get(id, args);
     if (message) {
+      element.removeAttribute("data-l10n-id");
       if (attribute) {
         element.setAttribute(attribute, message.attributes[attribute]);
       } else {
@@ -2233,7 +2393,7 @@ class UrlbarView {
    * @param {string} [options.attribute]
    *   If you passed an attribute to `_setElementL10n`, then pass it here too.
    */
-  _removeElementL10n(element, { attribute = undefined }) {
+  _removeElementL10n(element, { attribute = undefined } = {}) {
     if (attribute) {
       element.removeAttribute(attribute);
       element.removeAttribute("data-l10n-attrs");
@@ -2348,20 +2508,18 @@ class UrlbarView {
       if (localSearchMode) {
         // Update the result action text for a local one-off.
         let name = UrlbarUtils.getResultSourceName(localSearchMode.source);
-        this.document.l10n.setAttributes(
-          action,
-          `urlbar-result-action-search-${name}`
-        );
+        this._setElementL10n(action, {
+          id: `urlbar-result-action-search-${name}`,
+        });
         if (result.heuristic) {
           item.setAttribute("source", name);
         }
       } else if (engine && !result.payload.inPrivateWindow) {
         // Update the result action text for an engine one-off.
-        this.document.l10n.setAttributes(
-          action,
-          "urlbar-result-action-search-w-engine",
-          { engine: engine.name }
-        );
+        this._setElementL10n(action, {
+          id: "urlbar-result-action-search-w-engine",
+          args: { engine: engine.name },
+        });
       } else {
         // No one-off is selected. If we replaced the action while a one-off
         // button was selected, it should be restored.
@@ -2475,19 +2633,53 @@ class QueryContextCache {
    * @param {number} size The number of entries to keep in the cache.
    */
   constructor(size) {
-    this.size = size;
+    this._size = size;
     this._cache = [];
+
+    // We store the top-sites context separately since it will often be needed
+    // and therefore shouldn't be evicted except when the top sites change.
+    this._topSitesContext = null;
+    this._topSitesListener = () => (this._topSitesContext = null);
+    UrlbarProviderTopSites.addTopSitesListener(this._topSitesListener);
+  }
+
+  /**
+   * @returns {number} The number of entries to keep in the cache.
+   */
+  get size() {
+    return this._size;
+  }
+
+  /**
+   * @returns {UrlbarQueryContext} The cached top-sites context or null if none.
+   */
+  get topSitesContext() {
+    return this._topSitesContext;
   }
 
   /**
    * Adds a new entry to the cache.
    * @param {UrlbarQueryContext} queryContext The UrlbarQueryContext to add.
-   * @note QueryContexts without a searchString or without results are ignored
-   *       and not added.
+   * @note QueryContexts without results are ignored and not added. Contexts
+   *       with an empty searchString that are not the top-sites context are
+   *       also ignored.
    */
   put(queryContext) {
+    if (!queryContext.results.length) {
+      return;
+    }
+
     let searchString = queryContext.searchString;
-    if (!searchString || !queryContext.results.length) {
+    if (!searchString) {
+      // Cache the context if it's the top-sites context. An empty search string
+      // doesn't necessarily imply top sites since there are other queries that
+      // use it too, like search mode. If the first result is from the top-sites
+      // provider, assume the context is top sites.
+      if (
+        queryContext.results?.[0]?.providerName == UrlbarProviderTopSites.name
+      ) {
+        this._topSitesContext = queryContext;
+      }
       return;
     }
 

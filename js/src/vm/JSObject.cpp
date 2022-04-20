@@ -63,6 +63,12 @@
 #include "vm/Shape.h"
 #include "vm/TypedArrayObject.h"
 #include "vm/WellKnownAtom.h"  // js_*_str
+#ifdef ENABLE_RECORD_TUPLE
+#  include "builtin/RecordObject.h"
+#  include "builtin/TupleObject.h"
+#  include "vm/RecordType.h"
+#  include "vm/TupleType.h"
+#endif
 
 #include "builtin/Boolean-inl.h"
 #include "gc/Marking-inl.h"
@@ -131,7 +137,10 @@ JS_PUBLIC_API const char* JS::InformalValueTypeName(const Value& v) {
     case ValueType::BigInt:
       return "bigint";
     case ValueType::Object:
-      return v.toObject().getClass()->name;
+#ifdef ENABLE_RECORD_TUPLE
+    case ValueType::ExtendedPrimitive:
+#endif
+      return v.getObjectPayload().getClass()->name;
     case ValueType::Magic:
       return "magic";
     case ValueType::PrivateGCThing:
@@ -2153,6 +2162,15 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
     return true;
   }
 
+#ifdef NIGHTLY_BUILD
+  if (key == JSProto_Array &&
+      !cx->realm()->creationOptions().getArrayGroupingEnabled() &&
+      (id == NameToId(cx->names().groupBy) ||
+       id == NameToId(cx->names().groupByToMap))) {
+    return true;
+  }
+#endif
+
 #ifdef ENABLE_CHANGE_ARRAY_BY_COPY
   if (key == JSProto_Array && !cx->options().changeArrayByCopy() &&
       (id == NameToId(cx->names().withAt) ||
@@ -2246,7 +2264,7 @@ static bool ReportCantConvert(JSContext* cx, unsigned errorNumber,
   // Avoid recursive death when decompiling in ReportValueError.
   RootedString str(cx);
   if (hint == JSTYPE_STRING) {
-    str = JS_AtomizeAndPinString(cx, clasp->name);
+    str = JS_AtomizeString(cx, clasp->name);
     if (!str) {
       return false;
     }
@@ -2442,6 +2460,22 @@ JSObject* js::PrimitiveToObject(JSContext* cx, const Value& v) {
       RootedBigInt bigInt(cx, v.toBigInt());
       return BigIntObject::create(cx, bigInt);
     }
+#ifdef ENABLE_RECORD_TUPLE
+    case ValueType::ExtendedPrimitive: {
+      JSObject& obj = v.toExtendedPrimitive();
+
+      if (obj.is<RecordType>()) {
+        Rooted<RecordType*> rec(cx, &obj.as<RecordType>());
+        return RecordObject::create(cx, rec);
+      }
+      if (obj.is<TupleType>()) {
+        Rooted<TupleType*> tuple(cx, &obj.as<TupleType>());
+        return TupleObject::create(cx, tuple);
+      }
+
+      MOZ_CRASH("Unexpected ExtendedPrimitive type.");
+    }
+#endif
     case ValueType::Undefined:
     case ValueType::Null:
     case ValueType::Magic:
@@ -2470,6 +2504,16 @@ JSProtoKey js::PrimitiveToProtoKey(JSContext* cx, const Value& v) {
       return JSProto_Symbol;
     case ValueType::BigInt:
       return JSProto_BigInt;
+#ifdef ENABLE_RECORD_TUPLE
+    case ValueType::ExtendedPrimitive:
+      if (v.toExtendedPrimitive().is<TupleType>()) {
+        return JSProto_Tuple;
+      }
+      if (v.toExtendedPrimitive().is<RecordType>()) {
+        return JSProto_Null;
+      }
+      MOZ_CRASH("Unsupported ExtendedPrimitive");
+#endif
     case ValueType::Undefined:
     case ValueType::Null:
     case ValueType::Magic:
@@ -2710,6 +2754,13 @@ static void dumpValue(const Value& v, js::GenericPrinter& out) {
                    (void*)obj);
       }
       break;
+#  ifdef ENABLE_RECORD_TUPLE
+    case ValueType::ExtendedPrimitive: {
+      JSObject* obj = &v.toExtendedPrimitive();
+      out.printf("<%s at %p>", obj->getClass()->name, (void*)obj);
+      break;
+    }
+#  endif
     case ValueType::Boolean:
       if (v.toBoolean()) {
         out.put("true");
@@ -3446,6 +3497,12 @@ bool js::Unbox(JSContext* cx, HandleObject obj, MutableHandleValue vp) {
     vp.setSymbol(obj->as<SymbolObject>().unbox());
   } else if (obj->is<BigIntObject>()) {
     vp.setBigInt(obj->as<BigIntObject>().unbox());
+#ifdef ENABLE_RECORD_TUPLE
+  } else if (obj->is<RecordObject>()) {
+    vp.setExtendedPrimitive(*obj->as<RecordObject>().unbox());
+  } else if (obj->is<TupleObject>()) {
+    vp.setExtendedPrimitive(obj->as<TupleObject>().unbox());
+#endif
   } else {
     vp.setUndefined();
   }

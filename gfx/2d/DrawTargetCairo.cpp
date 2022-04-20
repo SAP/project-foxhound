@@ -254,6 +254,15 @@ static cairo_surface_t* GetAsImageSurface(cairo_surface_t* aSurface) {
   return nullptr;
 }
 
+// We're creating a subimage from the parent image's data (in aData) without
+// altering that data or its stride. This constrains the values in aRect, and
+// how they're used. Callers must see to it that the parent fully contains the
+// subimage. Here we ensure that no clipping is done in the X dimension at the
+// beginning of any line. (To do otherwise would require creating a copy of
+// aData from parts of every line in aData (from aRect.Y() to aRect.Height()),
+// and setting the copy to a different stride.) A non-zero aRect.X() is used
+// only to specify the subimage's location in its parent (via
+// cairo_surface_set_device_offset()). This change resolves bug 1719215.
 static cairo_surface_t* CreateSubImageForData(unsigned char* aData,
                                               const IntRect& aRect, int aStride,
                                               SurfaceFormat aFormat) {
@@ -261,12 +270,12 @@ static cairo_surface_t* CreateSubImageForData(unsigned char* aData,
     gfxWarning() << "DrawTargetCairo.CreateSubImageForData null aData";
     return nullptr;
   }
-  unsigned char* data =
-      aData + aRect.Y() * aStride + aRect.X() * BytesPerPixel(aFormat);
+  unsigned char* data = aData + aRect.Y() * aStride;
 
   cairo_surface_t* image = cairo_image_surface_create_for_data(
       data, GfxFormatToCairoFormat(aFormat), aRect.Width(), aRect.Height(),
       aStride);
+  // Set the subimage's location in its parent
   cairo_surface_set_device_offset(image, -aRect.X(), -aRect.Y());
   return image;
 }
@@ -664,12 +673,25 @@ void DrawTargetCairo::Link(const char* aDestination, const Rect& aRect) {
 
   // We need to \-escape any single-quotes in the destination string, in order
   // to pass it via the attributes arg to cairo_tag_begin.
+  //
+  // We also need to escape any backslashes (bug 1748077), as per doc at
+  // https://www.cairographics.org/manual/cairo-Tags-and-Links.html#cairo-tag-begin
+  // The cairo-pdf-interchange backend (used on all platforms EXCEPT macOS)
+  // actually requires that we *doubly* escape the backslashes (this may be a
+  // cairo bug), while the quartz backend is fine with them singly-escaped.
+  //
   // (Encoding of non-ASCII chars etc gets handled later by the PDF backend.)
   nsAutoCString dest(aDestination);
   for (size_t i = dest.Length(); i > 0;) {
     --i;
     if (dest[i] == '\'') {
       dest.ReplaceLiteral(i, 1, "\\'");
+    } else if (dest[i] == '\\') {
+#ifdef XP_MACOSX
+      dest.ReplaceLiteral(i, 1, "\\\\");
+#else
+      dest.ReplaceLiteral(i, 1, "\\\\\\\\");
+#endif
     }
   }
 
@@ -1621,7 +1643,7 @@ void DrawTargetCairo::PushLayerWithBlend(bool aOpaque, Float aOpacity,
 }
 
 void DrawTargetCairo::PopLayer() {
-  MOZ_ASSERT(mPushedLayers.size());
+  MOZ_ASSERT(!mPushedLayers.empty());
 
   cairo_set_operator(mContext, CAIRO_OPERATOR_OVER);
 

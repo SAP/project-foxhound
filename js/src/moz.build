@@ -442,6 +442,7 @@ UNIFIED_SOURCES += [
     "vm/SourceHook.cpp",
     "vm/Stack.cpp",
     "vm/StaticStrings.cpp",
+    "vm/StencilCache.cpp",
     "vm/StencilObject.cpp",
     "vm/StringType.cpp",
     "vm/SymbolType.cpp",
@@ -456,6 +457,7 @@ UNIFIED_SOURCES += [
     "vm/UsageStatistics.cpp",
     "vm/Value.cpp",
     "vm/Warnings.cpp",
+    "vm/Watchtower.cpp",
     "vm/WellKnownAtom.cpp",
     "vm/WindowProxy.cpp",
     "vm/Xdr.cpp",
@@ -473,6 +475,15 @@ SOURCES += [
     "vm/Interpreter.cpp",
     "vm/ProfilingStack.cpp",
 ]
+
+if CONFIG["ENABLE_RECORD_TUPLE"]:
+    UNIFIED_SOURCES += [
+        "builtin/RecordObject.cpp",
+        "builtin/TupleObject.cpp",
+        "vm/RecordTupleShared.cpp",
+        "vm/RecordType.cpp",
+        "vm/TupleType.cpp",
+    ]
 
 if CONFIG["JS_HAS_INTL_API"]:
     UNIFIED_SOURCES += [
@@ -504,6 +515,10 @@ if CONFIG["ENABLE_TRACE_LOGGING"]:
     ]
 
 if CONFIG["OS_ARCH"] == "WINNT":
+    OS_LIBS += [
+        "advapi32",
+        "winmm",
+    ]
     UNIFIED_SOURCES += [
         "threading/windows/CpuCount.cpp",
         "threading/windows/WindowsThread.cpp",
@@ -547,6 +562,18 @@ if CONFIG["MOZ_VTUNE"]:
             SOURCES["vtune/ittnotify_static.c"].flags += ["-Wno-stringop-truncation"]
 
 DIRS += ["build", "debugger", "frontend", "gc", "irregexp", "jit", "util", "wasm"]
+
+# Bug 1739321 - clang 13+ only emits debuginfo for classes that are actually
+# constructed, and we cheat in a number of cases. The flag exists at least
+# back to clang 4.
+if CONFIG["CC_TYPE"] == "clang":
+    CXXFLAGS += ["-fstandalone-debug"]
+
+# Bug 1722102 - This should never be enabled in Release without explicit
+# security and SpiderMonkey review.
+# See https://bugzilla.mozilla.org/show_bug.cgi?id=1722102#c16
+if CONFIG["NIGHTLY_BUILD"] and CONFIG["INTEL_ARCHITECTURE"]:
+    DIRS += ["intgemm"]
 
 if CONFIG["JS_JITSPEW"]:
     DIRS += ["zydis"]
@@ -604,6 +631,9 @@ selfhosted_inputs = [
     if CONFIG["JS_HAS_INTL_API"]
     else []
 )
+
+if CONFIG["ENABLE_RECORD_TUPLE"]:
+    selfhosted_inputs += ["builtin/Tuple.js"]
 
 # Prepare self-hosted JS code for embedding
 GeneratedFile(

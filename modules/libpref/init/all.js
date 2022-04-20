@@ -164,10 +164,6 @@ pref("security.xfocsp.errorReporting.automatic", false);
 // 2: Enable and enforce revocations via CRLite
 pref("security.pki.crlite_mode", 1);
 
-// Represents the expected certificate transparency log merge delay (including
-// the time to generate a CRLite filter). Currently 28 hours in seconds.
-pref("security.pki.crlite_ct_merge_delay_seconds", 100800);
-
 // Issuer we use to detect MitM proxies. Set to the issuer of the cert of the
 // Firefox update service. The string format is whatever NSS uses to print a DN.
 // This value is set and cleared automatically.
@@ -433,7 +429,6 @@ pref("media.decoder-doctor.verbose", false);
 pref("media.decoder-doctor.new-issue-endpoint", "https://webcompat.com/issues/new");
 
 pref("media.videocontrols.picture-in-picture.enabled", false);
-pref("media.videocontrols.picture-in-picture.allow-multiple", true);
 pref("media.videocontrols.picture-in-picture.video-toggle.enabled", false);
 pref("media.videocontrols.picture-in-picture.video-toggle.always-show", false);
 pref("media.videocontrols.picture-in-picture.video-toggle.min-video-secs", 45);
@@ -812,6 +807,7 @@ pref("findbar.iteratorTimeout", 100);
 //     1 - "always" (match diacritics)
 // other - "auto"   (match diacritics if input has diacritics, ignore otherwise)
 pref("findbar.matchdiacritics", 0);
+pref("findbar.modalHighlight", false);
 
 // use Mac OS X Appearance panel text smoothing setting when rendering text, disabled by default
 pref("gfx.use_text_smoothing_setting", false);
@@ -904,6 +900,13 @@ pref("devtools.performance.recording.child.timeout_s", 0);
   pref("devtools.performance.recording.preset", "web-developer");
   pref("devtools.performance.recording.preset.remote", "web-developer");
 #endif
+// The profiler's active tab view has a few issues. Disable it in most
+// environments until the issues are ironed out.
+#if defined(NIGHTLY_BUILD)
+  pref("devtools.performance.recording.active-tab-view.enabled", true);
+#else
+  pref("devtools.performance.recording.active-tab-view.enabled", false);
+#endif
 // Profiler buffer size. It is the maximum number of 8-bytes entries in the
 // profiler's buffer. 10000000 is ~80mb.
 pref("devtools.performance.recording.entries", 10000000);
@@ -970,6 +973,9 @@ pref("print.shrink-to-fit.scale-limit-percent", 20);
 // Whether we should display simplify page checkbox on print preview UI
 pref("print.use_simplify_page", false);
 
+// Whether or not to force the Page Setup submenu of the File menu to shown
+pref("print.show_page_setup_menu", false);
+
 // Print header customization
 // Use the following codes:
 // &T - Title
@@ -1019,18 +1025,6 @@ pref("print.print_edge_bottom", 0);
   pref("print.print_in_color", true);
 #endif
 
-// Whether inserting <div> when typing Enter in a block element which can
-// contain <div>.  If false, inserts <br> instead.
-pref("editor.use_div_for_default_newlines",  true);
-
-// Prefs specific to seamonkey composer belong in
-// comm-central/editor/ui/composer.js
-pref("editor.use_custom_colors", false);
-pref("editor.use_css",                       false);
-pref("editor.css.default_length_unit",       "px");
-pref("editor.resizing.preserve_ratio",       true);
-pref("editor.positioning.offset",            0);
-
 // Scripts & Windows prefs
 pref("dom.beforeunload_timeout_ms",         1000);
 pref("dom.disable_window_flip",             false);
@@ -1063,7 +1057,6 @@ pref("dom.forms.selectSearch", false);
 #else
   pref("dom.forms.select.customstyling", true);
 #endif
-pref("dom.select_popup_in_parent.enabled", false);
 
 pref("dom.cycle_collector.incremental", true);
 
@@ -1446,9 +1439,6 @@ pref("network.http.spdy.default-concurrent", 100);
 pref("network.http.spdy.default-hpack-buffer", 65536); // 64k
 pref("network.http.spdy.websockets", true);
 pref("network.http.spdy.enable-hpack-dump", false);
-
-// Http3 parameters
-pref("network.http.http3.enabled", true);
 
 // Http3 qpack table size.
 pref("network.http.http3.default-qpack-table-size", 65536); // 64k
@@ -1979,6 +1969,7 @@ pref("intl.hyphenation-alias.en-*", "en-us");
 
 pref("intl.hyphenation-alias.af-*", "af");
 pref("intl.hyphenation-alias.bg-*", "bg");
+pref("intl.hyphenation-alias.bn-*", "bn");
 pref("intl.hyphenation-alias.ca-*", "ca");
 pref("intl.hyphenation-alias.cy-*", "cy");
 pref("intl.hyphenation-alias.da-*", "da");
@@ -1988,6 +1979,8 @@ pref("intl.hyphenation-alias.et-*", "et");
 pref("intl.hyphenation-alias.fi-*", "fi");
 pref("intl.hyphenation-alias.fr-*", "fr");
 pref("intl.hyphenation-alias.gl-*", "gl");
+pref("intl.hyphenation-alias.gu-*", "gu");
+pref("intl.hyphenation-alias.hi-*", "hi");
 pref("intl.hyphenation-alias.hr-*", "hr");
 pref("intl.hyphenation-alias.hsb-*", "hsb");
 pref("intl.hyphenation-alias.hu-*", "hu");
@@ -1995,17 +1988,29 @@ pref("intl.hyphenation-alias.ia-*", "ia");
 pref("intl.hyphenation-alias.is-*", "is");
 pref("intl.hyphenation-alias.it-*", "it");
 pref("intl.hyphenation-alias.kmr-*", "kmr");
+pref("intl.hyphenation-alias.kn-*", "kn");
 pref("intl.hyphenation-alias.la-*", "la");
 pref("intl.hyphenation-alias.lt-*", "lt");
+pref("intl.hyphenation-alias.ml-*", "ml");
 pref("intl.hyphenation-alias.mn-*", "mn");
 pref("intl.hyphenation-alias.nl-*", "nl");
+pref("intl.hyphenation-alias.or-*", "or");
+pref("intl.hyphenation-alias.pa-*", "pa");
 pref("intl.hyphenation-alias.pl-*", "pl");
 pref("intl.hyphenation-alias.pt-*", "pt");
 pref("intl.hyphenation-alias.ru-*", "ru");
 pref("intl.hyphenation-alias.sl-*", "sl");
 pref("intl.hyphenation-alias.sv-*", "sv");
+pref("intl.hyphenation-alias.ta-*", "ta");
+pref("intl.hyphenation-alias.te-*", "te");
 pref("intl.hyphenation-alias.tr-*", "tr");
 pref("intl.hyphenation-alias.uk-*", "uk");
+
+// Assamese and Marathi use the same patterns as Bengali and Hindi respectively
+pref("intl.hyphenation-alias.as", "bn");
+pref("intl.hyphenation-alias.as-*", "bn");
+pref("intl.hyphenation-alias.mr", "hi");
+pref("intl.hyphenation-alias.mr-*", "hi");
 
 // use reformed (1996) German patterns by default unless specifically tagged as de-1901
 // (these prefs may soon be obsoleted by better BCP47-based tag matching, but for now...)
@@ -2387,9 +2392,6 @@ pref("plugin.override_internal_types", false);
 
 // enable single finger gesture input (win7+ tablets)
 pref("gestures.enable_single_finger_input", true);
-
-pref("editor.resizing.preserve_ratio",       true);
-pref("editor.positioning.offset",            0);
 
 pref("dom.use_watchdog", true);
 
@@ -2937,6 +2939,13 @@ pref("font.size.monospace.x-math", 13);
   // available.  Note that this is ignored if active ATOK is or older than
   // 2016 and create_native_caret is true.
   pref("intl.tsf.hack.atok.do_not_return_no_layout_error_of_composition_string", true);
+  // Whether disable "search" input scope when the ATOK is active on windows. 
+  // When "search" is set to the input scope, ATOK may stop their suggestions.
+  // To avoid it, turn this pref on, or changing the settings in ATOK.
+  // Note that if you enable this pref and you use the touch keyboard for touch
+  // screens, you cannot access some specific features for a "search" input 
+  // field.
+  pref("intl.tsf.hack.atok.search_input_scope_disabled", false);
   // Whether use available composition string rect for result of
   // ITextStoreACP::GetTextExt() even if the specified range is same as or is
   // in the range of composition string but some character rects of them are
@@ -3733,9 +3742,6 @@ pref("network.psl.onUpdate_notify", false);
   pref("widget.disable-workspace-management", false);
   pref("widget.titlebar-x11-use-shape-mask", false);
 #endif
-#ifdef MOZ_WAYLAND
-  pref("widget.use-xdg-desktop-portal", false);
-#endif
 
 // All the Geolocation preferences are here.
 //
@@ -3916,9 +3922,6 @@ pref("dom.push.http2.reset_retry_count_after_ms", 60000);
 pref("dom.push.http2.maxRetries", 2);
 pref("dom.push.http2.retryInterval", 5000);
 
-// W3C MediaDevices devicechange fake event
-pref("media.ondevicechange.fakeDeviceChangeEvent.enabled", false);
-
 // How long must we wait before declaring that a window is a "ghost" (i.e., a
 // likely leak)?  This should be longer than it usually takes for an eligible
 // window to be collected via the GC/CC.
@@ -3967,9 +3970,6 @@ pref("network.trr.custom_uri", "");
 // Before TRR is widely used the NS record for this host is fetched
 // from the DOH end point to ensure proper configuration
 pref("network.trr.confirmationNS", "example.com");
-// TRR blacklist entry expire time (in seconds). Default is one minute.
-// Meant to survive basically a page load.
-pref("network.trr.blacklist-duration", 60);
 // Comma separated list of domains that we should not use TRR for
 pref("network.trr.excluded-domains", "");
 pref("network.trr.builtin-excluded-domains", "localhost,local");
@@ -4128,17 +4128,11 @@ pref("dom.wakelock.enabled", false);
 // Search service settings
 pref("browser.search.log", false);
 pref("browser.search.update", true);
-pref("browser.search.update.log", false);
-pref("browser.search.update.interval", 21600);
 pref("browser.search.suggest.enabled", true);
 pref("browser.search.suggest.enabled.private", false);
 pref("browser.search.separatePrivateDefault", false);
 pref("browser.search.separatePrivateDefault.ui.enabled", false);
-
-#ifdef MOZ_OFFICIAL_BRANDING
-  // {moz:official} expands to "official"
-  pref("browser.search.official", true);
-#endif
+pref("browser.search.removeEngineInfobar.enabled", true);
 
 // GMPInstallManager prefs
 
@@ -4270,9 +4264,6 @@ pref("plugins.rewrite_youtube_embeds", true);
 
 // Default media volume
 pref("media.default_volume", "1.0");
-
-// return the maximum number of cores that navigator.hardwareCurrency returns
-pref("dom.maxHardwareConcurrency", 16);
 
 pref("dom.storageManager.prompt.testing", false);
 pref("dom.storageManager.prompt.testing.allow", false);

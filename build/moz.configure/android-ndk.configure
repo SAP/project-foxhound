@@ -159,7 +159,6 @@ def android_platform(target, android_version, ndk):
     return platform_dir
 
 
-add_old_configure_assignment("android_platform", android_platform)
 set_config("ANDROID_PLATFORM", android_platform)
 
 
@@ -376,8 +375,7 @@ def extra_toolchain_flags(
         android_system,
         "-isystem",
         os.path.join(android_sysroot, "usr", "include"),
-        "-gcc-toolchain",
-        toolchain_dir,
+        "--gcc-toolchain={}".format(toolchain_dir),
         "-D__ANDROID_API__=%d" % android_version,
     ]
     return flags

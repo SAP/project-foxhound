@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import { asSettled } from "../utils/async-value";
 import {
   createInitial,
   insertResources,
@@ -10,20 +9,29 @@ import {
   removeResources,
   hasResource,
   getResource,
-  getMappedResource,
-  makeWeakQuery,
-  makeIdQuery,
-  makeReduceAllQuery,
 } from "../utils/resource";
 
 import { asyncActionAsValue } from "../actions/utils/middleware/promise";
 
+/**
+ * This reducer stores the list of all source actors.
+ * There is a one-one relationship with Source Actors from the server codebase,
+ * as well as SOURCE Resources distributed by the ResourceCommand API.
+ *
+ * See create.js: `createSourceActor` for the shape of the source actor objects.
+ * This reducer will append the following attributes:
+ * - breakableLines: { state: <"pending"|"fulfilled">, value: Array<Number> }
+ *   List of all lines where breakpoints can be set
+ * - breakpointPositions: Map<line, { state: <"pending"|"fulfilled">, value: Array<Number> }>
+ *   Map of the column positions per line where breakpoints can be set
+ */
 export const initial = createInitial();
 
 export default function update(state = initial, action) {
   switch (action.type) {
     case "INSERT_SOURCE_ACTORS": {
       const { items } = action;
+      // The `item` objects are defined from create.js: `createSource` method.
       state = insertResources(
         state,
         items.map(item => ({
@@ -99,102 +107,3 @@ function updateBreakableLines(state, action) {
 
   return updateResources(state, [{ id: sourceId, breakableLines: value }]);
 }
-
-export function resourceAsSourceActor({
-  breakpointPositions,
-  breakableLines,
-  ...sourceActor
-}) {
-  return sourceActor;
-}
-
-// Because we are using an opaque type for our source actor IDs, these
-// functions are required to convert back and forth in order to get a string
-// version of the IDs. That should be super rarely used, but it means that
-// we can very easily see where we're relying on the string version of IDs.
-export function stringToSourceActorId(s) {
-  return s;
-}
-
-export function hasSourceActor(state, id) {
-  return hasResource(state.sourceActors, id);
-}
-
-export function getSourceActor(state, id) {
-  return getMappedResource(state.sourceActors, id, resourceAsSourceActor);
-}
-
-/**
- * Get all of the source actors for a set of IDs. Caches based on the identity
- * of "ids" when possible.
- */
-const querySourceActorsById = makeIdQuery(resourceAsSourceActor);
-
-export function getSourceActors(state, ids) {
-  return querySourceActorsById(state.sourceActors, ids);
-}
-
-const querySourcesByThreadID = makeReduceAllQuery(
-  resourceAsSourceActor,
-  actors => {
-    return actors.reduce((acc, actor) => {
-      acc[actor.thread] = acc[actor.thread] || [];
-      acc[actor.thread].push(actor);
-      return acc;
-    }, {});
-  }
-);
-export function getSourceActorsForThread(state, ids) {
-  const sourcesByThread = querySourcesByThreadID(state.sourceActors);
-
-  let sources = [];
-  for (const id of Array.isArray(ids) ? ids : [ids]) {
-    sources = sources.concat(sourcesByThread[id] || []);
-  }
-  return sources;
-}
-
-const queryThreadsBySourceObject = makeReduceAllQuery(
-  actor => ({ thread: actor.thread, source: actor.source }),
-  actors =>
-    actors.reduce((acc, { source, thread }) => {
-      let sourceThreads = acc[source];
-      if (!sourceThreads) {
-        sourceThreads = [];
-        acc[source] = sourceThreads;
-      }
-
-      sourceThreads.push(thread);
-      return acc;
-    }, {})
-);
-
-export function getAllThreadsBySource(state) {
-  return queryThreadsBySourceObject(state.sourceActors);
-}
-
-export function getSourceActorBreakableLines(state, id) {
-  const { breakableLines } = getResource(state.sourceActors, id);
-
-  return asSettled(breakableLines);
-}
-
-export function getSourceActorBreakpointColumns(state, id, line) {
-  const { breakpointPositions } = getResource(state.sourceActors, id);
-
-  return asSettled(breakpointPositions.get(line) || null);
-}
-
-export const getBreakableLinesForSourceActors = makeWeakQuery({
-  filter: (state, ids) => ids,
-  map: ({ breakableLines }) => breakableLines,
-  reduce: items =>
-    Array.from(
-      items.reduce((acc, item) => {
-        if (item && item.state === "fulfilled") {
-          acc = acc.concat(item.value);
-        }
-        return acc;
-      }, [])
-    ),
-});

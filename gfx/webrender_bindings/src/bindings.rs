@@ -41,8 +41,8 @@ use webrender::{
     CompositorCapabilities, CompositorConfig, CompositorSurfaceTransform, DebugFlags, Device, MappableCompositor,
     MappedTileInfo, NativeSurfaceId, NativeSurfaceInfo, NativeTileId, PartialPresentCompositor, PipelineInfo,
     ProfilerHooks, RecordedFrameHandle, Renderer, RendererOptions, RendererStats, SWGLCompositeSurfaceInfo,
-    SceneBuilderHooks, ShaderPrecacheFlags, Shaders, SharedShaders, TextureCacheConfig, UploadMethod,
-    ONE_TIME_USAGE_HINT, WindowVisibility,
+    SceneBuilderHooks, ShaderPrecacheFlags, Shaders, SharedShaders, TextureCacheConfig, UploadMethod, WindowVisibility,
+    ONE_TIME_USAGE_HINT,
 };
 use wr_malloc_size_of::MallocSizeOfOps;
 
@@ -173,8 +173,9 @@ pub struct DocumentHandle {
     api: RenderApi,
     document_id: DocumentId,
     // One of the two options below is Some and the other None at all times.
-    // It would be nice to model with an enum, however it is tricky to express moving
-    // a variant's content into another variant without movign the containing enum.
+    // It would be nice to model with an enum, however it is tricky to express
+    // moving a variant's content into another variant without moving the
+    // containing enum.
     hit_tester_request: Option<HitTesterRequest>,
     hit_tester: Option<Arc<dyn ApiHitTester>>,
 }
@@ -203,10 +204,12 @@ impl DocumentHandle {
         }
     }
 
-    fn ensure_hit_tester(&mut self) {
-        if self.hit_tester.is_none() {
-            self.hit_tester = Some(self.hit_tester_request.take().unwrap().resolve());
+    fn ensure_hit_tester(&mut self) -> &Arc<dyn ApiHitTester> {
+        if let Some(ref ht) = self.hit_tester {
+            return ht;
         }
+        self.hit_tester = Some(self.hit_tester_request.take().unwrap().resolve());
+        self.hit_tester.as_ref().unwrap()
     }
 }
 
@@ -1729,12 +1732,12 @@ pub unsafe extern "C" fn wr_api_delete_document(dh: &mut DocumentHandle) {
 pub extern "C" fn wr_api_clone(dh: &mut DocumentHandle, out_handle: &mut *mut DocumentHandle) {
     assert!(unsafe { is_in_compositor_thread() });
 
-    dh.ensure_hit_tester();
+    let hit_tester = dh.ensure_hit_tester().clone();
 
     let handle = DocumentHandle {
         api: dh.api.create_sender().create_api_by_client(next_namespace_id()),
         document_id: dh.document_id,
-        hit_tester: dh.hit_tester.clone(),
+        hit_tester: Some(hit_tester),
         hit_tester_request: None,
     };
     *out_handle = Box::into_raw(Box::new(handle));
@@ -1993,10 +1996,10 @@ pub extern "C" fn wr_transaction_scroll_layer(
     txn: &mut Transaction,
     pipeline_id: WrPipelineId,
     scroll_id: u64,
-    new_scroll_origin: LayoutPoint,
+    sampled_scroll_offsets: &ThinVec<SampledScrollOffset>,
 ) {
     let scroll_id = ExternalScrollId(scroll_id, pipeline_id);
-    txn.scroll_node_with_id(new_scroll_origin, scroll_id, ScrollClamping::NoClamping);
+    txn.set_scroll_offsets(scroll_id, sampled_scroll_offsets.to_vec());
 }
 
 #[no_mangle]
@@ -2475,6 +2478,7 @@ pub struct WrStackingContextParams {
     pub reference_frame_kind: WrReferenceFrameKind,
     pub is_2d_scale_translation: bool,
     pub should_snap: bool,
+    pub paired_with_perspective: bool,
     pub scrolling_relative_to: *const u64,
     pub prim_flags: PrimitiveFlags,
     pub mix_blend_mode: MixBlendMode,
@@ -2571,8 +2575,6 @@ pub extern "C" fn wr_dp_push_stacking_context(
     // This is resolved into proper `Maybe<WrSpatialId>` inside `WebRenderAPI::PushStackingContext`.
     let mut result = WrSpatialId { id: 0 };
     if let Some(transform_binding) = transform_binding {
-        let is_2d_scale_translation = params.is_2d_scale_translation;
-        let should_snap = params.should_snap;
         let scrolling_relative_to = match unsafe { params.scrolling_relative_to.as_ref() } {
             Some(scroll_id) => {
                 debug_assert_eq!(params.reference_frame_kind, WrReferenceFrameKind::Perspective);
@@ -2583,8 +2585,9 @@ pub extern "C" fn wr_dp_push_stacking_context(
 
         let reference_frame_kind = match params.reference_frame_kind {
             WrReferenceFrameKind::Transform => ReferenceFrameKind::Transform {
-                is_2d_scale_translation,
-                should_snap,
+                is_2d_scale_translation: params.is_2d_scale_translation,
+                should_snap: params.should_snap,
+                paired_with_perspective: params.paired_with_perspective,
             },
             WrReferenceFrameKind::Perspective => ReferenceFrameKind::Perspective { scrolling_relative_to },
         };
@@ -2796,7 +2799,9 @@ pub extern "C" fn wr_dp_define_scroll_layer(
     parent: &WrSpatialId,
     content_rect: LayoutRect,
     clip_rect: LayoutRect,
-    scroll_offset: LayoutPoint,
+    scroll_offset: LayoutVector2D,
+    scroll_offset_generation: APZScrollGeneration,
+    has_scroll_linked_effect: HasScrollLinkedEffect,
     key: SpatialTreeItemKey,
 ) -> WrSpatialId {
     assert!(unsafe { is_in_main_thread() });
@@ -2806,9 +2811,9 @@ pub extern "C" fn wr_dp_define_scroll_layer(
         ExternalScrollId(external_scroll_id, state.pipeline_id),
         content_rect,
         clip_rect,
-        // TODO(gw): We should also update the Gecko-side APIs to provide
-        //           this as a vector rather than a point.
-        scroll_offset.to_vector(),
+        scroll_offset,
+        scroll_offset_generation,
+        has_scroll_linked_effect,
         key,
     );
 
@@ -3377,6 +3382,7 @@ pub extern "C" fn wr_dp_push_border(
 pub struct WrBorderImage {
     widths: LayoutSideOffsets,
     image: WrImageKey,
+    image_rendering: ImageRendering,
     width: i32,
     height: i32,
     fill: bool,
@@ -3397,7 +3403,7 @@ pub extern "C" fn wr_dp_push_border_image(
 ) {
     debug_assert!(unsafe { is_in_main_thread() });
     let border_details = BorderDetails::NinePatch(NinePatchBorder {
-        source: NinePatchBorderSource::Image(params.image),
+        source: NinePatchBorderSource::Image(params.image, params.image_rendering),
         width: params.width,
         height: params.height,
         slice: params.slice,
@@ -3844,10 +3850,7 @@ pub struct HitResult {
 
 #[no_mangle]
 pub extern "C" fn wr_api_hit_test(dh: &mut DocumentHandle, point: WorldPoint, out_results: &mut ThinVec<HitResult>) {
-    dh.ensure_hit_tester();
-
-    let result = dh.hit_tester.as_ref().unwrap().hit_test(point);
-
+    let result = dh.ensure_hit_tester().hit_test(point);
     for item in &result.items {
         out_results.push(HitResult {
             pipeline_id: item.pipeline,

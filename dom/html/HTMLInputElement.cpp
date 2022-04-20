@@ -1133,6 +1133,8 @@ nsresult HTMLInputElement::Clone(dom::NodeInfo* aNodeInfo,
     it->mShouldInitChecked = false;
   }
 
+  it->mIndeterminate = mIndeterminate;
+
   it->DoneCreatingElement();
 
   it->SetLastValueChangeWasInteractive(mLastValueChangeWasInteractive);
@@ -1406,8 +1408,8 @@ void HTMLInputElement::AfterClearForm(bool aUnbindOrDelete) {
 void HTMLInputElement::ResultForDialogSubmit(nsAString& aResult) {
   if (mType == FormControlType::InputImage) {
     // Get a property set by the frame to find out where it was clicked.
-    nsIntPoint* lastClickedPoint =
-        static_cast<nsIntPoint*>(GetProperty(nsGkAtoms::imageClickedPoint));
+    const auto* lastClickedPoint =
+        static_cast<CSSIntPoint*>(GetProperty(nsGkAtoms::imageClickedPoint));
     int32_t x, y;
     if (lastClickedPoint) {
       x = lastClickedPoint->x;
@@ -1477,8 +1479,9 @@ void HTMLInputElement::SetIndeterminateInternal(bool aValue,
 
   if (aShouldInvalidate) {
     // Repaint the frame
-    nsIFrame* frame = GetPrimaryFrame();
-    if (frame) frame->InvalidateFrameSubtree();
+    if (nsIFrame* frame = GetPrimaryFrame()) {
+      frame->InvalidateFrameSubtree();
+    }
   }
 
   UpdateState(true);
@@ -1593,7 +1596,7 @@ Decimal HTMLInputElement::StringToDecimal(const nsAString& aValue) {
     return Decimal::nan();
   }
   NS_LossyConvertUTF16toASCII asciiString(aValue);
-  std::string stdString = asciiString.get();
+  std::string stdString(asciiString.get(), asciiString.Length());
   return Decimal::fromString(stdString);
 }
 
@@ -2946,15 +2949,15 @@ HTMLInputElement* HTMLInputElement::GetSelectedRadioButton() const {
   return selected;
 }
 
-nsresult HTMLInputElement::MaybeSubmitForm(nsPresContext* aPresContext) {
+void HTMLInputElement::MaybeSubmitForm(nsPresContext* aPresContext) {
   if (!mForm) {
     // Nothing to do here.
-    return NS_OK;
+    return;
   }
 
   RefPtr<PresShell> presShell = aPresContext->GetPresShell();
   if (!presShell) {
-    return NS_OK;
+    return;
   }
 
   // Get the default submit element
@@ -2969,8 +2972,6 @@ nsresult HTMLInputElement::MaybeSubmitForm(nsPresContext* aPresContext) {
     RefPtr<mozilla::dom::HTMLFormElement> form(mForm);
     form->MaybeSubmit(nullptr);
   }
-
-  return NS_OK;
 }
 
 void HTMLInputElement::SetCheckedInternal(bool aChecked, bool aNotify) {
@@ -3602,10 +3603,12 @@ bool HTMLInputElement::StepsInputValue(
   return true;
 }
 
-static bool ActivatesWithKeyboard(FormControlType aType) {
+static bool ActivatesWithKeyboard(FormControlType aType, uint32_t aKeyCode) {
   switch (aType) {
     case FormControlType::InputCheckbox:
     case FormControlType::InputRadio:
+      // Checkbox and Radio try to submit on Enter press
+      return aKeyCode != NS_VK_RETURN;
     case FormControlType::InputButton:
     case FormControlType::InputReset:
     case FormControlType::InputSubmit:
@@ -3762,14 +3765,9 @@ nsresult HTMLInputElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
       FireChangeEventIfNeeded();
       aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
     } else if (!preventDefault) {
-      // Checkbox and Radio try to submit on Enter press
-      if (aVisitor.mEvent->mMessage == eKeyPress &&
-          (mType == FormControlType::InputCheckbox ||
-           mType == FormControlType::InputRadio) &&
-          keyEvent->mKeyCode == NS_VK_RETURN && aVisitor.mPresContext) {
-        MaybeSubmitForm(aVisitor.mPresContext);
-      } else if (ActivatesWithKeyboard(mType)) {
-        // Otherwise we maybe dispatch a synthesized click.
+      if (keyEvent && ActivatesWithKeyboard(mType, keyEvent->mKeyCode) &&
+          keyEvent->IsTrusted()) {
+        // We maybe dispatch a synthesized click for keyboard activation.
         HandleKeyboardActivation(aVisitor);
       }
 
@@ -3787,11 +3785,18 @@ nsresult HTMLInputElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
               !aVisitor.mEvent->AsFocusEvent()->mFromRaise &&
               SelectTextFieldOnFocus()) {
             if (Document* document = GetComposedDoc()) {
-              uint32_t lastFocusMethod;
-              fm->GetLastFocusMethod(document->GetWindow(), &lastFocusMethod);
-              if (lastFocusMethod & (nsIFocusManager::FLAG_BYKEY |
-                                     nsIFocusManager::FLAG_BYMOVEFOCUS) &&
-                  !(lastFocusMethod & nsIFocusManager::FLAG_BYJS)) {
+              uint32_t lastFocusMethod =
+                  fm->GetLastFocusMethod(document->GetWindow());
+              const bool shouldSelectAllOnFocus = [&] {
+                if (lastFocusMethod & nsIFocusManager::FLAG_BYMOVEFOCUS) {
+                  return true;
+                }
+                if (lastFocusMethod & nsIFocusManager::FLAG_BYJS) {
+                  return false;
+                }
+                return bool(lastFocusMethod & nsIFocusManager::FLAG_BYKEY);
+              }();
+              if (shouldSelectAllOnFocus) {
                 RefPtr<nsPresContext> presContext =
                     GetPresContext(eForComposedDoc);
                 DispatchSelectEvent(presContext);
@@ -3854,14 +3859,18 @@ nsresult HTMLInputElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
            *     not submit, period.
            */
 
-          if (keyEvent->mKeyCode == NS_VK_RETURN &&
+          if (keyEvent->mKeyCode == NS_VK_RETURN && keyEvent->IsTrusted() &&
               (IsSingleLineTextControl(false, mType) ||
-               mType == FormControlType::InputNumber ||
-               IsDateTimeInputType(mType))) {
-            FireChangeEventIfNeeded();
+               IsDateTimeInputType(mType) ||
+               mType == FormControlType::InputCheckbox ||
+               mType == FormControlType::InputRadio)) {
+            if (IsSingleLineTextControl(false, mType) ||
+                IsDateTimeInputType(mType)) {
+              FireChangeEventIfNeeded();
+            }
+
             if (aVisitor.mPresContext) {
-              rv = MaybeSubmitForm(aVisitor.mPresContext);
-              NS_ENSURE_SUCCESS(rv, rv);
+              MaybeSubmitForm(aVisitor.mPresContext);
             }
           }
 
@@ -4040,10 +4049,9 @@ nsresult HTMLInputElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
             } else if (mType == FormControlType::InputPassword) {
               if (nsTextControlFrame* textControlFrame =
                       do_QueryFrame(GetPrimaryFrame())) {
-                auto* showPassword = textControlFrame->GetShowPasswordButton();
-                if (showPassword &&
-                    aVisitor.mEvent->mOriginalTarget == showPassword) {
-                  SetShowPassword(!ShowPassword());
+                auto* reveal = textControlFrame->GetRevealButton();
+                if (reveal && aVisitor.mEvent->mOriginalTarget == reveal) {
+                  SetRevealPassword(!RevealPassword());
                   // TODO(emilio): This should focus the input, but calling
                   // SetFocus(this, FLAG_NOSCROLL) for some reason gets us into
                   // an inconsistent state where we're focused but don't match
@@ -5696,8 +5704,8 @@ HTMLInputElement::SubmitNamesValues(FormData* aFormData) {
   // Submit .x, .y for input type=image
   if (mType == FormControlType::InputImage) {
     // Get a property set by the frame to find out where it was clicked.
-    nsIntPoint* lastClickedPoint =
-        static_cast<nsIntPoint*>(GetProperty(nsGkAtoms::imageClickedPoint));
+    const auto* lastClickedPoint =
+        static_cast<CSSIntPoint*>(GetProperty(nsGkAtoms::imageClickedPoint));
     int32_t x, y;
     if (lastClickedPoint) {
       // Convert the values to strings for submission
@@ -6728,7 +6736,7 @@ bool HTMLInputElement::HasCachedSelection() {
              state->GetSelectionProperties().GetEnd();
 }
 
-void HTMLInputElement::SetShowPassword(bool aValue) {
+void HTMLInputElement::SetRevealPassword(bool aValue) {
   if (NS_WARN_IF(mType != FormControlType::InputPassword)) {
     return;
   }
@@ -6739,7 +6747,7 @@ void HTMLInputElement::SetShowPassword(bool aValue) {
   }
 }
 
-bool HTMLInputElement::ShowPassword() const {
+bool HTMLInputElement::RevealPassword() const {
   if (NS_WARN_IF(mType != FormControlType::InputPassword)) {
     return false;
   }

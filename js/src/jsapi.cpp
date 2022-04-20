@@ -116,12 +116,6 @@ using JS::CompileOptions;
 using JS::ReadOnlyCompileOptions;
 using JS::SourceText;
 
-#ifdef HAVE_VA_LIST_AS_ARRAY
-#  define JS_ADDRESSOF_VA_LIST(ap) ((va_list*)(ap))
-#else
-#  define JS_ADDRESSOF_VA_LIST(ap) (&(ap))
-#endif
-
 // See preprocessor definition of JS_BITS_PER_WORD in jstypes.h; make sure
 // JS_64BIT (used internally) agrees with it
 #ifdef JS_64BIT
@@ -2296,12 +2290,12 @@ void JS::TransitiveCompileOptions::copyPODTransitiveOptions(
   // filename_, introducerFilename_, sourceMapURL_ should be handled in caller.
 
   mutedErrors_ = rhs.mutedErrors_;
-  forceFullParse_ = rhs.forceFullParse_;
   forceStrictMode_ = rhs.forceStrictMode_;
   sourcePragmas_ = rhs.sourcePragmas_;
   skipFilenameValidation_ = rhs.skipFilenameValidation_;
   hideScriptFromDebugger_ = rhs.hideScriptFromDebugger_;
   deferDebugMetadata_ = rhs.deferDebugMetadata_;
+  eagerDelazificationStrategy_ = rhs.eagerDelazificationStrategy_;
 
   selfHostingMode = rhs.selfHostingMode;
   asmJSOption = rhs.asmJSOption;
@@ -2321,6 +2315,7 @@ void JS::TransitiveCompileOptions::copyPODTransitiveOptions(
 
   borrowBuffer = rhs.borrowBuffer;
   usePinnedBytecode = rhs.usePinnedBytecode;
+  allocateInstantiationStorage = rhs.allocateInstantiationStorage;
 
   introductionType = rhs.introductionType;
   introductionLineno = rhs.introductionLineno;
@@ -2420,7 +2415,9 @@ JS::CompileOptions::CompileOptions(JSContext* cx) : ReadOnlyCompileOptions() {
   forceStrictMode_ = cx->options().strictMode();
 
   // Certain modes of operation disallow syntax parsing in general.
-  forceFullParse_ = coverage::IsLCovEnabled();
+  if (coverage::IsLCovEnabled()) {
+    eagerDelazificationStrategy_ = DelazificationOption::ParseEverythingEagerly;
+  }
 
   // Note: If we parse outside of a specific realm, we do not inherit any realm
   // behaviours. These can still be set manually on the options though.
@@ -2958,14 +2955,14 @@ JS_PUBLIC_API JSString* JS_NewStringCopyUTF8Z(JSContext* cx,
                                               const JS::ConstUTF8CharsZ s) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
-  return NewStringCopyUTF8Z<CanGC>(cx, s);
+  return NewStringCopyUTF8Z(cx, s);
 }
 
 JS_PUBLIC_API JSString* JS_NewStringCopyUTF8N(JSContext* cx,
                                               const JS::UTF8Chars s) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
-  return NewStringCopyUTF8N<CanGC>(cx, s);
+  return NewStringCopyUTF8N(cx, s);
 }
 
 JS_PUBLIC_API bool JS_StringHasBeenPinned(JSContext* cx, JSString* str) {

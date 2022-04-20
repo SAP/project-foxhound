@@ -12,12 +12,6 @@ const NEW_TAB_URL = `data:text/html,<title>${NEW_TAB_TITLE}</title>`;
  * the specified URL.
  */
 add_task(async function() {
-  // Disable bfcache for Fission for now.
-  // If Fission is disabled, the pref is no-op.
-  await SpecialPowers.pushPrefEnv({
-    set: [["fission.bfcacheInParent", false]],
-  });
-
   const { document, tab, window } = await openAboutDebugging();
 
   info("Open a new background tab.");
@@ -31,12 +25,16 @@ add_task(async function() {
     "PAGE"
   );
   const { devtoolsDocument, devtoolsTab, devtoolsWindow } = devToolsToolbox;
+  const toolbox = getToolbox(devtoolsWindow);
 
   const urlInput = devtoolsDocument.querySelector(".devtools-textinput");
+  const waitForLoadedPanelsReload = await watchForLoadedPanelsReload(toolbox);
+
   await synthesizeUrlKeyInput(devToolsToolbox, urlInput, NEW_TAB_URL);
 
+  await waitForLoadedPanelsReload();
+
   info("Test that the debug target navigated to the specified URL.");
-  const toolbox = getToolbox(devtoolsWindow);
   await waitUntil(
     () =>
       toolbox.target.url === NEW_TAB_URL &&

@@ -115,7 +115,6 @@
 #include "mozilla/net/CookieServiceChild.h"
 #include "mozilla/net/DocumentChannelChild.h"
 #include "mozilla/net/HttpChannelChild.h"
-#include "mozilla/net/NeckoChild.h"
 #include "mozilla/widget/RemoteLookAndFeel.h"
 #include "mozilla/widget/ScreenManager.h"
 #include "mozilla/widget/WidgetMessageUtils.h"
@@ -1648,6 +1647,16 @@ mozilla::ipc::IPCResult ContentChild::RecvReinitRendering(
     }
   }
 
+  // Notify any observers that the compositor has been reinitialized,
+  // eg the ZoomConstraintsClients for documents in this process.
+  // This must occur after the ReinitRendering call above so that the
+  // APZCTreeManagers have been connected.
+  nsCOMPtr<nsIObserverService> observerService = services::GetObserverService();
+  if (observerService) {
+    observerService->NotifyObservers(nullptr, "compositor-reinitialized",
+                                     nullptr);
+  }
+
   RemoteDecoderManagerChild::InitForGPUProcess(std::move(aVideoManager));
   return IPC_OK();
 }
@@ -1993,8 +2002,6 @@ mozilla::ipc::IPCResult ContentChild::RecvPScriptCacheConstructor(
   return IPC_OK();
 }
 
-PNeckoChild* ContentChild::AllocPNeckoChild() { return new NeckoChild(); }
-
 mozilla::ipc::IPCResult ContentChild::RecvNetworkLinkTypeChange(
     const uint32_t& aType) {
   mNetworkLinkType = aType;
@@ -2004,11 +2011,6 @@ mozilla::ipc::IPCResult ContentChild::RecvNetworkLinkTypeChange(
                          nullptr);
   }
   return IPC_OK();
-}
-
-bool ContentChild::DeallocPNeckoChild(PNeckoChild* necko) {
-  delete necko;
-  return true;
 }
 
 PPrintingChild* ContentChild::AllocPPrintingChild() {
@@ -2084,23 +2086,17 @@ bool ContentChild::DeallocPSpeechSynthesisChild(PSpeechSynthesisChild* aActor) {
 }
 #endif
 
-PWebrtcGlobalChild* ContentChild::AllocPWebrtcGlobalChild() {
 #ifdef MOZ_WEBRTC
+PWebrtcGlobalChild* ContentChild::AllocPWebrtcGlobalChild() {
   auto* child = new WebrtcGlobalChild();
   return child;
-#else
-  return nullptr;
-#endif
 }
 
 bool ContentChild::DeallocPWebrtcGlobalChild(PWebrtcGlobalChild* aActor) {
-#ifdef MOZ_WEBRTC
   delete static_cast<WebrtcGlobalChild*>(aActor);
   return true;
-#else
-  return false;
-#endif
 }
+#endif
 
 mozilla::ipc::IPCResult ContentChild::RecvRegisterChrome(
     nsTArray<ChromePackage>&& packages,
@@ -2360,8 +2356,6 @@ mozilla::ipc::IPCResult ContentChild::RecvNotifyAlertsObserver(
   return IPC_OK();
 }
 
-// NOTE: This method is being run in the SystemGroup, and thus cannot directly
-// touch pages. See GetSpecificMessageEventTarget.
 mozilla::ipc::IPCResult ContentChild::RecvNotifyVisited(
     nsTArray<VisitedQueryResult>&& aURIs) {
   nsCOMPtr<IHistory> history = components::History::Service();
@@ -2837,6 +2831,12 @@ mozilla::ipc::IPCResult ContentChild::RecvNotifyProcessPriorityChanged(
                       ProcessPriorityToString(mProcessPriority)),
                   ProfilerString8View::WrapNullTerminatedString(
                       ProcessPriorityToString(aPriority)));
+
+  // Record FOG data before the priority change.
+  // Ignore the change if it's the first time we set the process priority.
+  if (mProcessPriority != hal::PROCESS_PRIORITY_UNKNOWN) {
+    glean::RecordPowerMetrics();
+  }
   mProcessPriority = aPriority;
 
   os->NotifyObservers(static_cast<nsIPropertyBag2*>(props),
@@ -4448,65 +4448,6 @@ mozilla::ipc::IPCResult ContentChild::RecvDispatchBeforeUnloadToSubtree(
   } else {
     DispatchBeforeUnloadToSubtree(aStartingAt.get(), std::move(aResolver));
   }
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult ContentChild::RecvCanSavePresentation(
-    const MaybeDiscarded<BrowsingContext>& aTopLevelContext,
-    Maybe<uint64_t> aDocumentChannelId,
-    CanSavePresentationResolver&& aResolver) {
-  if (aTopLevelContext.IsNullOrDiscarded()) {
-    aResolver(false);
-    return IPC_OK();
-  }
-
-  bool canSave = true;
-  // XXXBFCache pass the flags to telemetry.
-  uint32_t flags = 0;
-  BrowsingContext* browsingContext = aTopLevelContext.get();
-  browsingContext->PreOrderWalk([&](BrowsingContext* aContext) {
-    Document* doc = aContext->GetDocument();
-    if (doc) {
-      nsIRequest* request = nullptr;
-      if (aDocumentChannelId.isSome() && aContext->IsTop()) {
-        nsCOMPtr<nsILoadGroup> loadGroup = doc->GetDocumentLoadGroup();
-        if (loadGroup) {
-          nsCOMPtr<nsISimpleEnumerator> requests;
-          loadGroup->GetRequests(getter_AddRefs(requests));
-          bool hasMore = false;
-          if (NS_SUCCEEDED(requests->HasMoreElements(&hasMore)) && hasMore) {
-            // If there are any requests, the only one we allow with bfcache
-            // is the DocumentChannel request.
-            nsCOMPtr<nsISupports> elem;
-            requests->GetNext(getter_AddRefs(elem));
-            nsCOMPtr<nsIIdentChannel> identChannel = do_QueryInterface(elem);
-            if (identChannel &&
-                identChannel->ChannelId() == aDocumentChannelId.value()) {
-              request = identChannel;
-            }
-          }
-        }
-      }
-      // Go through also the subdocuments so that flags are collected.
-      bool canSaveDoc = doc->CanSavePresentation(request, flags, false);
-      canSave = canSaveDoc && canSave;
-
-      if (MOZ_LOG_TEST(gSHIPBFCacheLog, LogLevel::Debug)) {
-        nsAutoCString uri;
-        if (doc->GetDocumentURI()) {
-          uri = doc->GetDocumentURI()->GetSpecOrDefault();
-        }
-
-        MOZ_LOG(gSHIPBFCacheLog, LogLevel::Debug,
-                ("ContentChild::RecvCanSavePresentation can save presentation "
-                 "[%i] for [%s]",
-                 canSaveDoc, uri.get()));
-      }
-    }
-  });
-
-  aResolver(canSave);
-
   return IPC_OK();
 }
 

@@ -929,6 +929,11 @@ async function check_results({
       expected.heuristic,
       `result.heuristic at result index ${i}`
     );
+    Assert.equal(
+      actual.isBestMatch,
+      expected.isBestMatch,
+      `result.isBestMatch at result index ${i}`
+    );
     if (expected.providerName) {
       Assert.equal(
         actual.providerName,
@@ -936,11 +941,14 @@ async function check_results({
         `result.providerName at result index ${i}`
       );
     }
-    Assert.deepEqual(
-      getPayload(actual),
-      getPayload(expected),
-      `result.payload at result index ${i}`
-    );
+
+    if (expected.payload) {
+      Assert.deepEqual(
+        getPayload(actual),
+        getPayload(expected),
+        `result.payload at result index ${i}`
+      );
+    }
   }
 }
 

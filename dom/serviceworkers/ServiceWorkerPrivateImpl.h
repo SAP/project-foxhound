@@ -41,6 +41,9 @@ class ServiceWorkerRegistrationInfo;
 
 class ServiceWorkerPrivateImpl final : public ServiceWorkerPrivate::Inner,
                                        public RemoteWorkerObserver {
+  using PromiseExtensionWorkerHasListener =
+      ServiceWorkerPrivate::PromiseExtensionWorkerHasListener;
+
  public:
   NS_INLINE_DECL_REFCOUNTING(ServiceWorkerPrivateImpl, override);
 
@@ -49,6 +52,18 @@ class ServiceWorkerPrivateImpl final : public ServiceWorkerPrivate::Inner,
   nsresult Initialize();
 
   RefPtr<GenericPromise> SetSkipWaitingFlag();
+
+  static void RunningShutdown() {
+    // Force a final update of the number of running ServiceWorkers
+    UpdateRunning(0, 0);
+    MOZ_ASSERT(sRunningServiceWorkers == 0);
+    MOZ_ASSERT(sRunningServiceWorkersFetch == 0);
+  }
+
+  /**
+   * Update Telemetry for # of running ServiceWorkers
+   */
+  static void UpdateRunning(int32_t aDelta, int32_t aFetchDelta);
 
  private:
   class RAIIActorPtrHolder;
@@ -89,6 +104,10 @@ class ServiceWorkerPrivateImpl final : public ServiceWorkerPrivate::Inner,
                           const nsAString& aClientId,
                           const nsAString& aResultingClientId) override;
 
+  RefPtr<PromiseExtensionWorkerHasListener> WakeForExtensionAPIEvent(
+      const nsAString& aExtensionAPINamespace,
+      const nsAString& aExtensionAPIEventName) override;
+
   nsresult SpawnWorkerIfNeeded() override;
 
   void TerminateWorker() override;
@@ -121,6 +140,12 @@ class ServiceWorkerPrivateImpl final : public ServiceWorkerPrivate::Inner,
   nsresult SendPushEventInternal(
       RefPtr<ServiceWorkerRegistrationInfo>&& aRegistration,
       ServiceWorkerPushEventOpArgs&& aArgs);
+
+  // Setup the navigation preload by the intercepted channel and the
+  // RegistrationInfo.
+  RefPtr<FetchServiceResponsePromise> SetupNavigationPreload(
+      nsCOMPtr<nsIInterceptedChannel>& aChannel,
+      const RefPtr<ServiceWorkerRegistrationInfo>& aRegistration);
 
   nsresult SendFetchEventInternal(
       RefPtr<ServiceWorkerRegistrationInfo>&& aRegistration,
@@ -243,6 +268,18 @@ class ServiceWorkerPrivateImpl final : public ServiceWorkerPrivate::Inner,
   RemoteWorkerData mRemoteWorkerData;
 
   TimeStamp mServiceWorkerLaunchTimeStart;
+
+  // Counters for Telemetry - totals running simultaneously, and those that
+  // handle Fetch, plus Max values for each
+  static uint32_t sRunningServiceWorkers;
+  static uint32_t sRunningServiceWorkersFetch;
+  static uint32_t sRunningServiceWorkersMax;
+  static uint32_t sRunningServiceWorkersFetchMax;
+
+  // We know the state after we've evaluated the worker, and we then store
+  // it in the registration.  The only valid state transition should be
+  // from Unknown to Enabled or Disabled.
+  enum { Unknown, Enabled, Disabled } mHandlesFetch{Unknown};
 };
 
 }  // namespace dom

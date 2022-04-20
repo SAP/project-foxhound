@@ -112,6 +112,17 @@ class DocAccessible : public HyperTextAccessibleWrap,
   void DocType(nsAString& aType) const;
 
   /**
+   * Adds an entry to mQueuedCacheUpdates indicating aAcc requires
+   * a cache update on domain aNewDomain. If we've already queued an update
+   * for aAcc, aNewDomain is or'd with the existing domain(s)
+   * and the map is updated. Otherwise, the entry is simply inserted.
+   * This function also schedules processing on the controller.
+   * Note that this CANNOT be used for anything which fires events, since events
+   * must be fired after their associated cache update.
+   */
+  void QueueCacheUpdate(LocalAccessible* aAcc, uint64_t aNewDomain);
+
+  /**
    * Return virtual cursor associated with the document.
    */
   nsIAccessiblePivot* VirtualCursor();
@@ -336,17 +347,15 @@ class DocAccessible : public HyperTextAccessibleWrap,
   void ContentInserted(nsIContent* aStartChildNode, nsIContent* aEndChildNode);
 
   /**
+   * @see nsAccessibilityService::ScheduleAccessibilitySubtreeUpdate
+   */
+  void ScheduleTreeUpdate(nsIContent* aContent);
+
+  /**
    * Update the tree on content removal.
    */
   void ContentRemoved(LocalAccessible* aAccessible);
   void ContentRemoved(nsIContent* aContentNode);
-
-  /*
-   * Add the given accessible to mMaybeBoundsChanged so we
-   * can (later) check if its bounds have changed, and update
-   * the cache appropriately.
-   */
-  void MarkForBoundsProcessing(LocalAccessible* aAcc);
 
   /**
    * Updates accessible tree when rendered text is changed.
@@ -491,11 +500,39 @@ class DocAccessible : public HyperTextAccessibleWrap,
   void ProcessInvalidationList();
 
   /**
-   * Called from NotificationController to process this doc's
-   * mMaybeBoundsChanged list. Sends a cache update for each acc in this
-   * doc whose bounds have changed since reflow.
+   * Process mPendingUpdates
    */
-  void ProcessBoundsChanged();
+  void ProcessPendingUpdates();
+
+  /**
+   * Called from NotificationController to process this doc's
+   * mQueuedCacheUpdates list. For each acc in the map, this function
+   * sends a cache update with its corresponding CacheDomain.
+   */
+  void ProcessQueuedCacheUpdates();
+
+  /**
+   * Only works in content process documents.
+   */
+  bool IsAccessibleBeingMoved(LocalAccessible* aAcc) {
+    return mMovedAccessibles.Contains(aAcc);
+  }
+
+  /**
+   * Called from NotificationController before mutation events are processed to
+   * notify the parent process which Accessibles are being moved (if any).
+   */
+  void SendAccessiblesWillMove();
+
+  /**
+   * Called from NotificationController after all mutation events have been
+   * processed to clear our data about Accessibles that were moved during this
+   * tick.
+   */
+  void ClearMovedAccessibles() {
+    mMovedAccessibles.Clear();
+    mInsertedAccessibles.Clear();
+  }
 
   /**
    * Steals or puts back accessible subtrees.
@@ -699,6 +736,11 @@ class DocAccessible : public HyperTextAccessibleWrap,
       mARIAOwnsHash;
 
   /**
+   * Keeps a list of pending subtrees to update post-refresh.
+   */
+  nsTArray<RefPtr<nsIContent>> mPendingUpdates;
+
+  /**
    * Used to process notification from core and accessible events.
    */
   RefPtr<NotificationController> mNotificationController;
@@ -708,12 +750,31 @@ class DocAccessible : public HyperTextAccessibleWrap,
  private:
   void SetRoleMapEntryForDoc(dom::Element* aElement);
 
+  /**
+   * This must be called whenever an Accessible is moved in a content process.
+   * It keeps track of Accessibles moved during this tick.
+   */
+  void TrackMovedAccessible(LocalAccessible* aAcc);
+
   PresShell* mPresShell;
 
   // Exclusively owned by IPDL so don't manually delete it!
   DocAccessibleChild* mIPCDoc;
 
   nsTHashSet<RefPtr<LocalAccessible>> mMaybeBoundsChanged;
+
+  // A hash map between LocalAccessibles and CacheDomains, tracking
+  // cache updates that have been queued during the current tick
+  // but not yet sent.
+  nsTHashMap<RefPtr<LocalAccessible>, uint64_t> mQueuedCacheUpdates;
+
+  // A set of Accessibles moved during this tick. Only used in content
+  // processes.
+  nsTHashSet<RefPtr<LocalAccessible>> mMovedAccessibles;
+  // A set of Accessibles inserted during this tick. Only used in content
+  // processes. This is needed to prevent insertions + moves of the same
+  // Accessible in the same tick from being tracked as moves.
+  nsTHashSet<RefPtr<LocalAccessible>> mInsertedAccessibles;
 };
 
 inline DocAccessible* LocalAccessible::AsDoc() {

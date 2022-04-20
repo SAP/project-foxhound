@@ -63,6 +63,7 @@
 #include "mozilla/FilePreferences.h"
 #include "mozilla/IOInterposer.h"
 #include "mozilla/RDDProcessImpl.h"
+#include "mozilla/ipc/UtilityProcessImpl.h"
 #include "mozilla/UniquePtr.h"
 
 #include "mozilla/ipc/BrowserProcessSubThread.h"
@@ -224,9 +225,10 @@ void XRE_TermEmbedding() {
 
 const char* XRE_GeckoProcessTypeToString(GeckoProcessType aProcessType) {
   switch (aProcessType) {
-#define GECKO_PROCESS_TYPE(enum_value, enum_name, string_name, xre_name, \
-                           bin_type)                                     \
-  case GeckoProcessType::GeckoProcessType_##enum_name:                   \
+#define GECKO_PROCESS_TYPE(enum_value, enum_name, string_name, proc_typename, \
+                           process_bin_type, procinfo_typename,               \
+                           webidl_typename, allcaps_name)                     \
+  case GeckoProcessType::GeckoProcessType_##enum_name:                        \
     return string_name;
 #include "mozilla/GeckoProcessTypes.h"
 #undef GECKO_PROCESS_TYPE
@@ -574,6 +576,7 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
     case GeckoProcessType_VR:
     case GeckoProcessType_RDD:
     case GeckoProcessType_Socket:
+    case GeckoProcessType_Utility:
       // Content processes need the XPCOM/chromium frankenventloop
       uiLoopType = MessageLoop::TYPE_MOZILLA_CHILD;
       break;
@@ -592,10 +595,18 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
     SandboxBroker::GeckoDependentInitialize();
   }
 
-  // Call RandomUint64 to pre-load bcryptPrimitives.dll while the current
-  // thread still has an unrestricted impersonation token.
-  RandomUint64OrDie();
-#endif
+  // Call BCryptGenRandom() to pre-load bcryptPrimitives.dll while the current
+  // thread still has an unrestricted impersonation token. We need to perform
+  // that operation to warmup the BCryptGenRandom() call that is used by
+  // others, especially rust.  See bug 1746524, bug 1751094, bug 1751177
+  UCHAR buffer[32];
+  NTSTATUS status = BCryptGenRandom(NULL,            // hAlgorithm
+                                    buffer,          // pbBuffer
+                                    sizeof(buffer),  // cbBuffer
+                                    BCRYPT_USE_SYSTEM_PREFERRED_RNG  // dwFlags
+  );
+  MOZ_RELEASE_ASSERT(status == STATUS_SUCCESS);
+#endif  // defined(MOZ_SANDBOX) && defined(XP_WIN)
 
   {
     // This is a lexical scope for the MessageLoop below.  We want it
@@ -646,6 +657,10 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
         case GeckoProcessType_Socket:
           ioInterposerGuard.emplace();
           process = MakeUnique<net::SocketProcessImpl>(parentPID);
+          break;
+
+        case GeckoProcessType_Utility:
+          process = MakeUnique<ipc::UtilityProcessImpl>(parentPID);
           break;
 
 #if defined(MOZ_SANDBOX) && defined(XP_WIN)

@@ -546,11 +546,11 @@ urlbar-group-firefox-suggest =
   .label = { -firefox-suggest-brand-name }
 
 # A label shown above the search suggestions group in the urlbar results. It
-# should use title case.
+# should use sentence case.
 # Variables
 #  $engine (String): the name of the search engine providing the suggestions
 urlbar-group-search-suggestions =
-  .label = { $engine } Suggestions
+  .label = { $engine } suggestions
 
 ## Full Screen and Pointer Lock UI
 
@@ -796,10 +796,6 @@ navbar-overflow =
 navbar-print =
     .label = Print
     .tooltiptext = Print this page… ({ $shortcut })
-
-navbar-print-tab-modal-disabled =
-    .label = Print
-    .tooltiptext = Print this page
 
 navbar-home =
     .label = Home

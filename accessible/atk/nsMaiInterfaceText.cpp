@@ -69,6 +69,12 @@ void ConvertTextAttributeToAtkAttribute(const nsACString& aName,
 
 static AtkAttributeSet* ConvertToAtkTextAttributeSet(
     AccAttributes* aAttributes) {
+  if (!aAttributes) {
+    // This can happen if an Accessible dies in the content process, but the
+    // parent hasn't been udpated yet.
+    return nullptr;
+  }
+
   AtkAttributeSet* objAttributeSet = nullptr;
 
   for (auto iter : *aAttributes) {
@@ -88,10 +94,9 @@ static AtkAttributeSet* ConvertToAtkTextAttributeSet(
   return objAttributeSet;
 }
 
-static void ConvertTexttoAsterisks(AccessibleWrap* accWrap,
-                                   nsAString& aString) {
+static void ConvertTexttoAsterisks(Accessible* aAcc, nsAString& aString) {
   // convert each char to "*" when it's "password text"
-  if (accWrap->IsPassword()) {
+  if (aAcc->IsPassword()) {
     DOMtoATK::ConvertTexttoAsterisks(aString);
   }
 }
@@ -153,19 +158,24 @@ static gchar* getTextAfterOffsetCB(AtkText* aText, gint aOffset,
     return getCharTextAtOffset(aText, aOffset + 1, aStartOffset, aEndOffset);
   }
 
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
+    return nullptr;
+  }
+
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text || !acc->IsTextRole()) {
+    return nullptr;
+  }
+
   nsAutoString autoStr;
   int32_t startOffset = 0, endOffset = 0;
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole()) return nullptr;
-
-    text->TextAfterOffset(aOffset, aBoundaryType, &startOffset, &endOffset,
-                          autoStr);
-    ConvertTexttoAsterisks(accWrap, autoStr);
-  } else if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    proxy->GetTextAfterOffset(aOffset, aBoundaryType, autoStr, &startOffset,
-                              &endOffset);
+  text->TextAfterOffset(aOffset, aBoundaryType, &startOffset, &endOffset,
+                        autoStr);
+  if (acc->IsLocal()) {
+    // XXX Is this needed any more? Masking of passwords is handled in
+    // cross-platform code.
+    ConvertTexttoAsterisks(acc, autoStr);
   }
 
   *aStartOffset = startOffset;
@@ -182,19 +192,23 @@ static gchar* getTextAtOffsetCB(AtkText* aText, gint aOffset,
     return getCharTextAtOffset(aText, aOffset, aStartOffset, aEndOffset);
   }
 
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
+    return nullptr;
+  }
+
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text || !acc->IsTextRole()) {
+    return nullptr;
+  }
+
   nsAutoString autoStr;
   int32_t startOffset = 0, endOffset = 0;
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole()) return nullptr;
-
-    text->TextAtOffset(aOffset, aBoundaryType, &startOffset, &endOffset,
-                       autoStr);
-    ConvertTexttoAsterisks(accWrap, autoStr);
-  } else if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    proxy->TextAtOffset(aOffset, aBoundaryType, &startOffset, &endOffset,
-                        autoStr);
+  text->TextAtOffset(aOffset, aBoundaryType, &startOffset, &endOffset, autoStr);
+  if (acc->IsLocal()) {
+    // XXX Is this needed any more? Masking of passwords is handled in
+    // cross-platform code.
+    ConvertTexttoAsterisks(acc, autoStr);
   }
 
   *aStartOffset = startOffset;
@@ -228,19 +242,24 @@ static gchar* getTextBeforeOffsetCB(AtkText* aText, gint aOffset,
     return getCharTextAtOffset(aText, aOffset - 1, aStartOffset, aEndOffset);
   }
 
+  Accessible* acc = GetInternalObj(ATK_OBJECT(aText));
+  if (!acc) {
+    return nullptr;
+  }
+
+  HyperTextAccessibleBase* text = acc->AsHyperTextBase();
+  if (!text || !acc->IsTextRole()) {
+    return nullptr;
+  }
+
   nsAutoString autoStr;
   int32_t startOffset = 0, endOffset = 0;
-  AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aText));
-  if (accWrap) {
-    HyperTextAccessible* text = accWrap->AsHyperText();
-    if (!text || !text->IsTextRole()) return nullptr;
-
-    text->TextBeforeOffset(aOffset, aBoundaryType, &startOffset, &endOffset,
-                           autoStr);
-    ConvertTexttoAsterisks(accWrap, autoStr);
-  } else if (RemoteAccessible* proxy = GetProxy(ATK_OBJECT(aText))) {
-    proxy->GetTextBeforeOffset(aOffset, aBoundaryType, autoStr, &startOffset,
-                               &endOffset);
+  text->TextBeforeOffset(aOffset, aBoundaryType, &startOffset, &endOffset,
+                         autoStr);
+  if (acc->IsLocal()) {
+    // XXX Is this needed any more? Masking of passwords is handled in
+    // cross-platform code.
+    ConvertTexttoAsterisks(acc, autoStr);
   }
 
   *aStartOffset = startOffset;
@@ -317,7 +336,7 @@ static void getCharacterExtentsCB(AtkText* aText, gint aOffset, gint* aX,
   }
   *aX = *aY = *aWidth = *aHeight = -1;
 
-  nsIntRect rect;
+  LayoutDeviceIntRect rect;
   uint32_t geckoCoordType;
   if (aCoords == ATK_XY_SCREEN) {
     geckoCoordType = nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE;
@@ -353,7 +372,7 @@ static void getRangeExtentsCB(AtkText* aText, gint aStartOffset,
   }
   aRect->x = aRect->y = aRect->width = aRect->height = -1;
 
-  nsIntRect rect;
+  LayoutDeviceIntRect rect;
   uint32_t geckoCoordType;
   if (aCoords == ATK_XY_SCREEN) {
     geckoCoordType = nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE;

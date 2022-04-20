@@ -38,7 +38,9 @@ namespace widget {
 using namespace mozilla::layers;
 
 WindowSurfaceProvider::WindowSurfaceProvider()
-    : mWindowSurface(nullptr)
+    : mWindowSurface(nullptr),
+      mMutex("WindowSurfaceProvider"),
+      mWindowSurfaceValid(false)
 #ifdef MOZ_WAYLAND
       ,
       mWidget(nullptr)
@@ -55,12 +57,14 @@ WindowSurfaceProvider::WindowSurfaceProvider()
 
 #ifdef MOZ_WAYLAND
 void WindowSurfaceProvider::Initialize(RefPtr<nsWindow> aWidget) {
+  mWindowSurfaceValid = false;
   mWidget = std::move(aWidget);
 }
 #endif
 #ifdef MOZ_X11
 void WindowSurfaceProvider::Initialize(Window aWindow, Visual* aVisual,
                                        int aDepth, bool aIsShaped) {
+  mWindowSurfaceValid = false;
   mXWindow = aWindow;
   mXVisual = aVisual;
   mXDepth = aDepth;
@@ -69,7 +73,8 @@ void WindowSurfaceProvider::Initialize(Window aWindow, Visual* aVisual,
 #endif
 
 void WindowSurfaceProvider::CleanupResources() {
-  mWindowSurface = nullptr;
+  MutexAutoLock lock(mMutex);
+  mWindowSurfaceValid = false;
 #ifdef MOZ_WAYLAND
   mWidget = nullptr;
 #endif
@@ -124,6 +129,13 @@ WindowSurfaceProvider::StartRemoteDrawingInRegion(
     return nullptr;
   }
 
+  MutexAutoLock lock(mMutex);
+
+  if (!mWindowSurfaceValid) {
+    mWindowSurface = nullptr;
+    mWindowSurfaceValid = true;
+  }
+
   if (!mWindowSurface) {
     mWindowSurface = CreateWindowSurface();
     if (!mWindowSurface) {
@@ -149,7 +161,11 @@ WindowSurfaceProvider::StartRemoteDrawingInRegion(
 
 void WindowSurfaceProvider::EndRemoteDrawingInRegion(
     gfx::DrawTarget* aDrawTarget, const LayoutDeviceIntRegion& aInvalidRegion) {
-  if (mWindowSurface) mWindowSurface->Commit(aInvalidRegion);
+  MutexAutoLock lock(mMutex);
+  // Commit to mWindowSurface only when we have a valid one.
+  if (mWindowSurface && mWindowSurfaceValid) {
+    mWindowSurface->Commit(aInvalidRegion);
+  }
 }
 
 }  // namespace widget

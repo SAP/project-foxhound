@@ -240,6 +240,7 @@ fn push_rotated_rect(
         ReferenceFrameKind::Transform {
             is_2d_scale_translation: false,
             should_snap: false,
+            paired_with_perspective: false,
         },
         SpatialTreeItemKey::new(0, 0),
     );
@@ -280,6 +281,8 @@ fn build_display_list(
         LayoutRect::from_size(layout_size),
         LayoutRect::from_size(layout_size),
         LayoutVector2D::zero(),
+        APZScrollGeneration::default(),
+        HasScrollLinkedEffect::No,
         SpatialTreeItemKey::new(0, 1),
     );
 
@@ -525,10 +528,9 @@ fn main() {
                 }
                 Invalidations::Scrolling => {
                     let d = 0.5 - 0.5 * (2.0 * f32::consts::PI * 5.0 * time).cos();
-                    txn.scroll_node_with_id(
-                        LayoutPoint::new(0.0, (d * 100.0).round()),
+                    txn.set_scroll_offset(
                         scroll_id,
-                        ScrollClamping::NoClamping,
+                        LayoutPoint::new(0.0, (d * 100.0).round()),
                     );
                 }
             }

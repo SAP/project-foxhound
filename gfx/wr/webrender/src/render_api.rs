@@ -19,7 +19,7 @@ use crate::api::{BlobImageData, BlobImageKey, ImageData, ImageDescriptor, ImageK
 use crate::api::{BlobImageParams, BlobImageRequest, BlobImageResult, AsyncBlobImageRasterizer, BlobImageHandler};
 use crate::api::{DocumentId, PipelineId, PropertyBindingId, PropertyBindingKey, ExternalEvent};
 use crate::api::{HitTestResult, HitTesterRequest, ApiHitTester, PropertyValue, DynamicProperties};
-use crate::api::{ScrollClamping, TileSize, NotificationRequest, DebugFlags};
+use crate::api::{SampledScrollOffset, TileSize, NotificationRequest, DebugFlags};
 use crate::api::{GlyphDimensionRequest, GlyphIndexRequest, GlyphIndex, GlyphDimensions};
 use crate::api::{FontInstanceOptions, FontInstancePlatformOptions, FontVariation, RenderReasons};
 use crate::api::DEFAULT_TILE_SIZE;
@@ -325,24 +325,15 @@ impl Transaction {
         );
     }
 
-    /// Scrolls the node identified by the given external scroll id to the
-    /// given scroll position, relative to the pre-scrolled offset for the
-    /// scrolling layer. That is, providing an origin of (0,0) will reset
-    /// any WR-side scrolling and just render the display items at the
-    /// pre-scrolled offsets as provided in the display list. Larger `origin`
-    /// values will cause the layer to be scrolled further towards the end of
-    /// the scroll range.
-    /// If the ScrollClamping argument is set to clamp, the scroll position
-    /// is clamped to what WebRender understands to be the bounds of the
-    /// scroll range, based on the sizes of the scrollable content and the
-    /// scroll port.
-    pub fn scroll_node_with_id(
+    /// Set multiple scroll offsets with generations to the node identified by
+    /// the given external scroll id, the scroll offsets are relative to the
+    /// pre-scrolled offset for the scrolling layer.
+    pub fn set_scroll_offsets(
         &mut self,
-        origin: LayoutPoint,
         id: ExternalScrollId,
-        clamp: ScrollClamping,
+        sampled_scroll_offsets: Vec<SampledScrollOffset>,
     ) {
-        self.frame_ops.push(FrameMsg::ScrollNodeWithId(origin, id, clamp));
+        self.frame_ops.push(FrameMsg::SetScrollOffsets(id, sampled_scroll_offsets));
     }
 
     /// Set the current quality / performance settings for this document.
@@ -802,7 +793,7 @@ pub enum FrameMsg {
     ///
     RequestHitTester(Sender<Arc<dyn ApiHitTester>>),
     ///
-    ScrollNodeWithId(LayoutPoint, ExternalScrollId, ScrollClamping),
+    SetScrollOffsets(ExternalScrollId, Vec<SampledScrollOffset>),
     ///
     ResetDynamicProperties,
     ///
@@ -832,7 +823,7 @@ impl fmt::Debug for FrameMsg {
             FrameMsg::UpdateEpoch(..) => "FrameMsg::UpdateEpoch",
             FrameMsg::HitTest(..) => "FrameMsg::HitTest",
             FrameMsg::RequestHitTester(..) => "FrameMsg::RequestHitTester",
-            FrameMsg::ScrollNodeWithId(..) => "FrameMsg::ScrollNodeWithId",
+            FrameMsg::SetScrollOffsets(..) => "FrameMsg::SetScrollOffsets",
             FrameMsg::ResetDynamicProperties => "FrameMsg::ResetDynamicProperties",
             FrameMsg::AppendDynamicProperties(..) => "FrameMsg::AppendDynamicProperties",
             FrameMsg::AppendDynamicTransformProperties(..) => "FrameMsg::AppendDynamicTransformProperties",

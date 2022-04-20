@@ -148,7 +148,6 @@ JSRuntime::JSRuntime(JSRuntime* parentRuntime)
       beingDestroyed_(false),
       allowContentJS_(true),
       atoms_(nullptr),
-      permanentAtomsDuringInit_(nullptr),
       permanentAtoms_(nullptr),
       staticStrings(nullptr),
       commonNames(nullptr),
@@ -249,6 +248,10 @@ void JSRuntime::destroyRuntime() {
   sharedIntlData.ref().destroyInstance();
 #endif
 
+  // Caches might hold on ScriptData which are saved in the ScriptDataTable.
+  // Clear all stencils from caches to remove ScriptDataTable entries.
+  caches().purgeStencils();
+
   if (gcInitialized) {
     /*
      * Finish any in-progress GCs first.
@@ -269,6 +272,7 @@ void JSRuntime::destroyRuntime() {
      */
     CancelOffThreadIonCompile(this);
     CancelOffThreadParses(this);
+    CancelOffThreadDelazify(this);
     CancelOffThreadCompressions(this);
 
     /*

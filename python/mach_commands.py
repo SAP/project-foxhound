@@ -10,8 +10,6 @@ import os
 import tempfile
 from multiprocessing import cpu_count
 
-import six
-
 from concurrent.futures import ThreadPoolExecutor, as_completed, thread
 
 import mozinfo
@@ -19,8 +17,6 @@ from mozfile import which
 from mach.decorators import CommandArgument, Command
 from manifestparser import TestManifest
 from manifestparser import filters as mpf
-
-here = os.path.abspath(os.path.dirname(__file__))
 
 
 @Command("python", category="devenv", description="Run Python.")
@@ -144,10 +140,7 @@ def python(
 def python_test(command_context, *args, **kwargs):
     try:
         tempdir = str(tempfile.mkdtemp(suffix="-python-test"))
-        if six.PY2:
-            os.environ[b"PYTHON_TEST_TMP"] = tempdir
-        else:
-            os.environ["PYTHON_TEST_TMP"] = tempdir
+        os.environ["PYTHON_TEST_TMP"] = tempdir
         return run_python_tests(command_context, *args, **kwargs)
     finally:
         import mozfile
@@ -231,46 +224,60 @@ def run_python_tests(
     jobs = jobs or cpu_count()
 
     return_code = 0
+    failure_output = []
 
     def on_test_finished(result):
         output, ret, test_path = result
 
-        for line in output:
+        if ret:
+            # Log the output of failed tests at the end so it's easy to find.
+            failure_output.extend(output)
+
+            if not return_code:
+                command_context.log(
+                    logging.ERROR,
+                    "python-test",
+                    {"test_path": test_path, "ret": ret},
+                    "Setting retcode to {ret} from {test_path}",
+                )
+        else:
+            for line in output:
+                command_context.log(
+                    logging.INFO, "python-test", {"line": line.rstrip()}, "{line}"
+                )
+
+        return return_code or ret
+
+    try:
+        with ThreadPoolExecutor(max_workers=jobs) as executor:
+            futures = [
+                executor.submit(_run_python_test, command_context, test, jobs, verbose)
+                for test in parallel
+            ]
+
+            try:
+                for future in as_completed(futures):
+                    return_code = on_test_finished(future.result())
+            except KeyboardInterrupt:
+                # Hack to force stop currently running threads.
+                # https://gist.github.com/clchiou/f2608cbe54403edb0b13
+                executor._threads.clear()
+                thread._threads_queues.clear()
+                raise
+
+        for test in sequential:
+            return_code = on_test_finished(
+                _run_python_test(command_context, test, jobs, verbose)
+            )
+            if return_code and exitfirst:
+                break
+    finally:
+        # Now log failed tests (even if there was a KeyboardInterrupt or other
+        # exception).
+        for line in failure_output:
             command_context.log(
                 logging.INFO, "python-test", {"line": line.rstrip()}, "{line}"
             )
-
-        if ret and not return_code:
-            command_context.log(
-                logging.ERROR,
-                "python-test",
-                {"test_path": test_path, "ret": ret},
-                "Setting retcode to {ret} from {test_path}",
-            )
-        return return_code or ret
-
-    with ThreadPoolExecutor(max_workers=jobs) as executor:
-        futures = [
-            executor.submit(_run_python_test, command_context, test, jobs, verbose)
-            for test in parallel
-        ]
-
-        try:
-            for future in as_completed(futures):
-                return_code = on_test_finished(future.result())
-        except KeyboardInterrupt:
-            # Hack to force stop currently running threads.
-            # https://gist.github.com/clchiou/f2608cbe54403edb0b13
-            executor._threads.clear()
-            thread._threads_queues.clear()
-            raise
-
-    for test in sequential:
-        return_code = on_test_finished(
-            _run_python_test(command_context, test, jobs, verbose)
-        )
-        if return_code and exitfirst:
-            break
 
     command_context.log(
         logging.INFO,
@@ -298,7 +305,6 @@ def _run_python_test(command_context, test, jobs, verbose):
     file_displayed_test = []  # used as boolean
 
     def _line_handler(line):
-        line = six.ensure_str(line)
         if not file_displayed_test:
             output = "Ran" in line or "collected" in line or line.startswith("TEST-")
             if output:
@@ -314,13 +320,14 @@ def _run_python_test(command_context, test, jobs, verbose):
     python = command_context.virtualenv_manager.python_path
     cmd = [python, test["path"]]
     env = os.environ.copy()
-    if six.PY2:
-        env[b"PYTHONDONTWRITEBYTECODE"] = b"1"
-    else:
-        env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
 
     proc = ProcessHandler(
-        cmd, env=env, processOutputLine=_line_handler, storeOutput=False
+        cmd,
+        env=env,
+        processOutputLine=_line_handler,
+        storeOutput=False,
+        universal_newlines=True,
     )
     proc.run()
 

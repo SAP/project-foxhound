@@ -1672,7 +1672,6 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
       ApplyRenderingChangeToTree(presContext->PresShell(), frame, hint);
     }
     if ((hint & nsChangeHint_RecomputePosition) && !didReflowThisFrame) {
-      ActiveLayerTracker::NotifyOffsetRestyle(frame);
       // It is possible for this to fall back to a reflow
       if (!RecomputePosition(frame)) {
         StyleChangeReflow(frame, nsChangeHint_NeedReflow |

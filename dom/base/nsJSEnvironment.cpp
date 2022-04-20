@@ -83,7 +83,6 @@
 #include "mozilla/ContentEvents.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "nsCycleCollectionNoteRootCallback.h"
-#include "mozilla/IdleTaskRunner.h"
 #include "nsViewManager.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/ProfilerLabels.h"
@@ -380,9 +379,10 @@ class ScriptErrorEvent : public Runnable {
         mError(aRootingCx, aError),
         mErrorStack(aRootingCx, aErrorStack) {}
 
-  NS_IMETHOD Run() override {
+  // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230, bug 1535398)
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD Run() override {
     nsEventStatus status = nsEventStatus_eIgnore;
-    nsPIDOMWindowInner* win = mWindow;
+    nsCOMPtr<nsPIDOMWindowInner> win = mWindow;
     MOZ_ASSERT(win);
     MOZ_ASSERT(NS_IsMainThread());
     // First, notify the DOM that we have a script error, but only if
@@ -1029,15 +1029,13 @@ void nsJSContext::SetLowMemoryState(bool aState) {
   JS::SetLowMemoryState(cx, aState);
 }
 
-// static
-void nsJSContext::GarbageCollectNow(JS::GCReason aReason,
-                                    IsIncremental aIncremental,
-                                    IsShrinking aShrinking,
-                                    int64_t aSliceMillis) {
+static void GarbageCollectImpl(JS::GCReason aReason,
+                               nsJSContext::IsShrinking aShrinking,
+                               const js::SliceBudget& aBudget) {
   AUTO_PROFILER_LABEL_DYNAMIC_CSTR_NONSENSITIVE(
       "nsJSContext::GarbageCollectNow", GCCC, JS::ExplainGCReason(aReason));
 
-  MOZ_ASSERT_IF(aSliceMillis, aIncremental == IncrementalGC);
+  bool wantIncremental = !aBudget.isUnlimited();
 
   // We use danger::GetJSContext() since AutoJSAPI will assert if the current
   // thread's context is null (such as during shutdown).
@@ -1047,18 +1045,18 @@ void nsJSContext::GarbageCollectNow(JS::GCReason aReason,
     return;
   }
 
-  if (sScheduler.InIncrementalGC() && aIncremental == IncrementalGC) {
+  if (sScheduler.InIncrementalGC() && wantIncremental) {
     // We're in the middle of incremental GC. Do another slice.
     JS::PrepareForIncrementalGC(cx);
-    JS::IncrementalGCSlice(cx, aReason, aSliceMillis);
+    JS::IncrementalGCSlice(cx, aReason, aBudget);
     return;
   }
 
-  JS::GCOptions options =
-      aShrinking == ShrinkingGC ? JS::GCOptions::Shrink : JS::GCOptions::Normal;
+  JS::GCOptions options = aShrinking == nsJSContext::ShrinkingGC
+                              ? JS::GCOptions::Shrink
+                              : JS::GCOptions::Normal;
 
-  if (aIncremental == NonIncrementalGC ||
-      aReason == JS::GCReason::FULL_GC_TIMER) {
+  if (!wantIncremental || aReason == JS::GCReason::FULL_GC_TIMER) {
     sScheduler.SetNeedsFullGC();
   }
 
@@ -1066,14 +1064,29 @@ void nsJSContext::GarbageCollectNow(JS::GCReason aReason,
     JS::PrepareForFullGC(cx);
   }
 
-  if (aIncremental == IncrementalGC) {
+  if (wantIncremental) {
     // Incremental GC slices will be triggered by the GC Runner. If one doesn't
     // already exist, create it in the GC_SLICE_END callback for the first
     // slice being executed here.
-    JS::StartIncrementalGC(cx, options, aReason, aSliceMillis);
+    JS::StartIncrementalGC(cx, options, aReason, aBudget);
   } else {
     JS::NonIncrementalGC(cx, options, aReason);
   }
+}
+
+// static
+void nsJSContext::GarbageCollectNow(JS::GCReason aReason,
+                                    IsShrinking aShrinking) {
+  GarbageCollectImpl(aReason, aShrinking, js::SliceBudget::unlimited());
+}
+
+// static
+void nsJSContext::RunIncrementalGCSlice(JS::GCReason aReason,
+                                        IsShrinking aShrinking,
+                                        TimeDuration aBudget) {
+  js::SliceBudget budget = sScheduler.CreateGCSliceBudget(
+      aReason, static_cast<int64_t>(aBudget.ToMilliseconds()));
+  GarbageCollectImpl(aReason, aShrinking, budget);
 }
 
 static void FinishAnyIncrementalGC() {
@@ -1185,7 +1198,9 @@ void CycleCollectorStats::AfterCycleCollectionSlice() {
     if (!mIdleDeadline.IsNull()) {
       if (mIdleDeadline < mEndSliceTime) {
         // This slice overflowed the idle period.
-        idleDuration = mIdleDeadline - mBeginSliceTime;
+        if (mIdleDeadline > mBeginSliceTime) {
+          idleDuration = mIdleDeadline - mBeginSliceTime;
+        }
       } else {
         idleDuration = duration;
       }
@@ -1645,12 +1660,10 @@ void nsJSContext::DoLowMemoryGC() {
     return;
   }
   nsJSContext::GarbageCollectNow(JS::GCReason::MEM_PRESSURE,
-                                 nsJSContext::NonIncrementalGC,
                                  nsJSContext::ShrinkingGC);
   nsJSContext::CycleCollectNow(CCReason::MEM_PRESSURE);
   if (sScheduler.NeedsGCAfterCC()) {
     nsJSContext::GarbageCollectNow(JS::GCReason::MEM_PRESSURE,
-                                   nsJSContext::NonIncrementalGC,
                                    nsJSContext::ShrinkingGC);
   }
 }
@@ -1926,6 +1939,11 @@ static bool ConsumeStream(JSContext* aCx, JS::HandleObject aObj,
                                        nullptr);
 }
 
+static js::SliceBudget CreateGCSliceBudget(JS::GCReason aReason,
+                                           int64_t aMillis) {
+  return sScheduler.CreateGCSliceBudget(aReason, aMillis);
+}
+
 void nsJSContext::EnsureStatics() {
   if (sIsInitialized) {
     if (!nsContentUtils::XPConnect()) {
@@ -1941,6 +1959,8 @@ void nsJSContext::EnsureStatics() {
   jsapi.Init();
 
   sPrevGCSliceCallback = JS::SetGCSliceCallback(jsapi.cx(), DOMGCSliceCallback);
+
+  JS::SetCreateGCSliceBudgetCallback(jsapi.cx(), CreateGCSliceBudget);
 
   JS::InitDispatchToEventLoop(jsapi.cx(), DispatchToEventLoop, nullptr);
   JS::InitConsumeStreamCallback(jsapi.cx(), ConsumeStream,

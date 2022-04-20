@@ -68,19 +68,6 @@ void TreeSize(const char* aTitle, const char* aMsgText, LocalAccessible* aRoot);
 };  // namespace logging
 #endif
 
-/**
- * Group position (level, position in set and set size).
- */
-struct GroupPos {
-  GroupPos() : level(0), posInSet(0), setSize(0) {}
-  GroupPos(int32_t aLevel, int32_t aPosInSet, int32_t aSetSize)
-      : level(aLevel), posInSet(aPosInSet), setSize(aSetSize) {}
-
-  int32_t level;
-  int32_t posInSet;
-  int32_t setSize;
-};
-
 typedef nsRefPtrHashtable<nsPtrHashKey<const void>, LocalAccessible>
     AccessibleHashtable;
 
@@ -242,15 +229,7 @@ class LocalAccessible : public nsISupports, public Accessible {
    */
   virtual bool NativelyUnavailable() const;
 
-  /**
-   * Return object attributes for the accessible.
-   */
-  virtual already_AddRefed<AccAttributes> Attributes();
-
-  /**
-   * Return group position (level, position in set and set size).
-   */
-  virtual mozilla::a11y::GroupPos GroupPosition();
+  virtual already_AddRefed<AccAttributes> Attributes() override;
 
   /**
    * Return direct or deepest child at the given point.
@@ -273,21 +252,6 @@ class LocalAccessible : public nsISupports, public Accessible {
    * Return the focused child if any.
    */
   virtual LocalAccessible* FocusedChild();
-
-  /**
-   * Return calculated group level based on accessible hierarchy.
-   */
-  virtual int32_t GetLevelInternal();
-
-  /**
-   * Calculate position in group and group size ('posinset' and 'setsize') based
-   * on accessible hierarchy.
-   *
-   * @param  aPosInSet  [out] accessible position in the group
-   * @param  aSetSize   [out] the group size
-   */
-  virtual void GetPositionAndSizeInternal(int32_t* aPosInSet,
-                                          int32_t* aSetSize);
 
   /**
    * Get the relation of the given type.
@@ -442,10 +406,7 @@ class LocalAccessible : public nsISupports, public Accessible {
    */
   virtual nsRect BoundsInAppUnits() const;
 
-  /**
-   * Return boundaries in screen coordinates.
-   */
-  virtual nsIntRect Bounds() const override;
+  virtual LayoutDeviceIntRect Bounds() const override;
 
   /**
    * Return boundaries in screen coordinates in CSS pixels.
@@ -543,29 +504,11 @@ class LocalAccessible : public nsISupports, public Accessible {
   //////////////////////////////////////////////////////////////////////////////
   // ActionAccessible
 
-  /**
-   * Return the number of actions that can be performed on this accessible.
-   */
-  virtual uint8_t ActionCount() const;
+  virtual uint8_t ActionCount() const override;
 
-  /**
-   * Return action name at given index.
-   */
-  virtual void ActionNameAt(uint8_t aIndex, nsAString& aName);
+  virtual void ActionNameAt(uint8_t aIndex, nsAString& aName) override;
 
-  /**
-   * Default to localized action name.
-   */
-  void ActionDescriptionAt(uint8_t aIndex, nsAString& aDescription) {
-    nsAutoString name;
-    ActionNameAt(aIndex, name);
-    TranslateString(name, aDescription);
-  }
-
-  /**
-   * Invoke the accessible action.
-   */
-  virtual bool DoAction(uint8_t aIndex) const;
+  virtual bool DoAction(uint8_t aIndex) const override;
 
   /**
    * Return access key, such as Alt+D.
@@ -718,11 +661,6 @@ class LocalAccessible : public nsISupports, public Accessible {
   bool IsActiveDescendant(LocalAccessible** aWidget = nullptr) const;
 
   /**
-   * Return the localized string for the given key.
-   */
-  static void TranslateString(const nsString& aKey, nsAString& aStringOut);
-
-  /**
    * Return true if the accessible is defunct.
    */
   bool IsDefunct() const;
@@ -737,13 +675,6 @@ class LocalAccessible : public nsISupports, public Accessible {
    */
   bool IsNodeMapEntry() const {
     return HasOwnContent() && !(mStateFlags & eNotNodeMapEntry);
-  }
-
-  /**
-   * Return true if the accessible's group info needs to be updated.
-   */
-  inline bool HasDirtyGroupInfo() const {
-    return mStateFlags & eGroupInfoDirty;
   }
 
   /**
@@ -851,6 +782,15 @@ class LocalAccessible : public nsISupports, public Accessible {
 
   already_AddRefed<AccAttributes> BundleFieldsForCache(
       uint64_t aCacheDomain, CacheUpdateType aUpdateType);
+
+  /**
+   * Push fields to cache.
+   * aCacheDomain - describes which fields to bundle and ultimately send
+   * aUpdate - describes whether this is an initial or subsequent update
+   */
+  void SendCache(uint64_t aCacheDomain, CacheUpdateType aUpdate);
+
+  virtual nsAtom* TagName() const override;
 
  protected:
   virtual ~LocalAccessible();
@@ -1030,19 +970,16 @@ class LocalAccessible : public nsISupports, public Accessible {
    */
   uint32_t GetActionRule() const;
 
-  /**
-   * Return group info.
-   */
-  AccGroupInfo* GetGroupInfo() const;
+  virtual AccGroupInfo* GetGroupInfo() const override;
 
-  /**
-   * Push fields to cache.
-   * aCacheDomain - describes which fields to bundle and ultimately send
-   * aUpdate - describes whether this is an initial or subsequent update
-   */
-  void SendCache(uint64_t aCacheDomain, CacheUpdateType aUpdate);
+  virtual AccGroupInfo* GetOrCreateGroupInfo() override;
+
+  virtual void ARIAGroupPosition(int32_t* aLevel, int32_t* aSetSize,
+                                 int32_t* aPosInSet) const override;
 
   // Data Members
+  // mContent can be null in a DocAccessible if the document has no body or
+  // root element.
   nsCOMPtr<nsIContent> mContent;
   RefPtr<DocAccessible> mDoc;
 

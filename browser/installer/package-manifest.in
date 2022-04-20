@@ -372,6 +372,8 @@ bin/libfreebl_64int_3.so
 #endif
 #endif
 
+@BINPATH@/@DLL_PREFIX@ipcclientcerts@DLL_SUFFIX@
+
 ; For process sandboxing
 #if defined(MOZ_SANDBOX)
 #if defined(XP_LINUX)
@@ -431,10 +433,6 @@ bin/libfreebl_64int_3.so
 
 #ifdef LLVM_SYMBOLIZER
 @BINPATH@/@LLVM_SYMBOLIZER@
-; On Windows, llvm-symbolizer depends on the MS DIA library.
-#ifdef WIN_DIA_SDK_BIN_DIR
-@BINPATH@/msdia140.dll
-#endif
 #endif
 
 #ifdef MOZ_CLANG_RT_ASAN_LIB

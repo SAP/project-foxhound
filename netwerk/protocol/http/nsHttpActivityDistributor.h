@@ -29,6 +29,8 @@ class nsHttpActivityDistributor : public nsIHttpActivityDistributor {
   ObserverArray mObservers;
   Mutex mLock{"nsHttpActivityDistributor.mLock"};
   bool mActivated{false};
+  bool mObserveProxyResponse{false};
+  bool mObserveConnection{false};
 };
 
 }  // namespace net

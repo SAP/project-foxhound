@@ -3,13 +3,96 @@
 
 "use strict";
 
-const { ContentTaskUtils } = ChromeUtils.import(
-  "resource://testing-common/ContentTaskUtils.jsm"
-);
-
 let { TelemetryTestUtils } = ChromeUtils.import(
   "resource://testing-common/TelemetryTestUtils.jsm"
 );
+
+add_task(async function testDefaultUIWithoutTemplatePref() {
+  await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
+    leaveOpen: true,
+  });
+  let doc = gBrowser.contentDocument;
+  let tab = gBrowser.selectedTab;
+
+  let moreFromMozillaCategory = doc.getElementById(
+    "category-more-from-mozilla"
+  );
+  ok(moreFromMozillaCategory, "The category exists");
+  ok(!moreFromMozillaCategory.hidden, "The category is not hidden");
+
+  moreFromMozillaCategory.click();
+
+  let productCards = doc.querySelectorAll(".mozilla-product-item.simple");
+  Assert.ok(productCards, "Default UI uses simple template");
+  Assert.equal(productCards.length, 3, "3 product cards displayed");
+
+  const expectedUrl = "https://www.mozilla.org/firefox/browsers/mobile/";
+  let tabOpened = BrowserTestUtils.waitForNewTab(gBrowser, url =>
+    url.startsWith(expectedUrl)
+  );
+  let mobileLink = doc.getElementById("default-fxMobile");
+  mobileLink.click();
+  let openedTab = await tabOpened;
+  Assert.ok(gBrowser.selectedBrowser.documentURI.spec.startsWith(expectedUrl));
+
+  let searchParams = new URL(gBrowser.selectedBrowser.documentURI.spec)
+    .searchParams;
+  Assert.equal(
+    searchParams.get("utm_source"),
+    "about-prefs",
+    "expected utm_source sent"
+  );
+  Assert.equal(
+    searchParams.get("utm_campaign"),
+    "morefrommozilla",
+    "utm_campaign set"
+  );
+  Assert.equal(
+    searchParams.get("utm_medium"),
+    "firefox-desktop",
+    "utm_medium set"
+  );
+  Assert.equal(
+    searchParams.get("utm_content"),
+    "default-global",
+    "default utm_content set"
+  );
+  Assert.ok(
+    !searchParams.has("entrypoint_variation"),
+    "entrypoint_variation should not be set"
+  );
+  Assert.ok(
+    !searchParams.has("entrypoint_experiment"),
+    "entrypoint_experiment should not be set"
+  );
+  BrowserTestUtils.removeTab(openedTab);
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function testDefaulEmailClick() {
+  await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
+    leaveOpen: true,
+  });
+  let doc = gBrowser.contentDocument;
+  let tab = gBrowser.selectedTab;
+
+  let moreFromMozillaCategory = doc.getElementById(
+    "category-more-from-mozilla"
+  );
+  moreFromMozillaCategory.click();
+
+  const expectedUrl = "https://www.mozilla.org/firefox/mobile/get-app/?v=mfm";
+  let sendEmailLink = doc.getElementById("default-qr-code-send-email");
+
+  Assert.ok(
+    sendEmailLink.href.startsWith(expectedUrl),
+    `Expected URL ${sendEmailLink.href}`
+  );
+
+  let searchParams = new URL(sendEmailLink.href).searchParams;
+  Assert.equal(searchParams.get("v"), "mfm", "expected send email param set");
+  BrowserTestUtils.removeTab(tab);
+});
 
 /**
  * Test that we don't show moreFromMozilla pane when it's disabled.
@@ -33,28 +116,6 @@ add_task(async function testwhenPrefDisabled() {
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
-add_task(async function testwhenPrefEnabledWithoutTemplatePref() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.preferences.moreFromMozilla", true]],
-  });
-
-  await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
-    leaveOpen: true,
-  });
-  let doc = gBrowser.contentDocument;
-
-  let moreFromMozillaCategory = doc.getElementById(
-    "category-more-from-mozilla"
-  );
-  ok(moreFromMozillaCategory, "The category exists");
-  ok(!moreFromMozillaCategory.hidden, "The category is not hidden");
-
-  let productCard = doc.querySelector("vbox.list-item");
-  ok(productCard, "productCard found");
-
-  BrowserTestUtils.removeTab(gBrowser.selectedTab);
-});
-
 add_task(async function test_aboutpreferences_event_telemetry() {
   Services.telemetry.clearEvents();
   Services.telemetry.setEventRecordingEnabled("aboutpreferences", true);
@@ -71,7 +132,7 @@ add_task(async function test_aboutpreferences_event_telemetry() {
     "category-more-from-mozilla"
   );
 
-  let clickedPromise = ContentTaskUtils.waitForEvent(
+  let clickedPromise = BrowserTestUtils.waitForEvent(
     moreFromMozillaCategory,
     "click"
   );
@@ -108,14 +169,9 @@ add_task(async function test_aboutpreferences_simple_template() {
     "category-more-from-mozilla"
   );
 
-  let clickedPromise = ContentTaskUtils.waitForEvent(
-    moreFromMozillaCategory,
-    "click"
-  );
   moreFromMozillaCategory.click();
-  await clickedPromise;
 
-  let productCards = doc.querySelectorAll("vbox.simple");
+  let productCards = doc.querySelectorAll(".mozilla-product-item");
   Assert.ok(productCards, "The product cards from simple template found");
   Assert.equal(productCards.length, 3, "3 product cards displayed");
 
@@ -130,6 +186,7 @@ add_task(async function test_aboutpreferences_advanced_template() {
     set: [
       ["browser.preferences.moreFromMozilla", true],
       ["browser.preferences.moreFromMozilla.template", "advanced"],
+      ["browser.vpn_promo.enabled", true],
     ],
   });
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
@@ -141,14 +198,9 @@ add_task(async function test_aboutpreferences_advanced_template() {
     "category-more-from-mozilla"
   );
 
-  let clickedPromise = ContentTaskUtils.waitForEvent(
-    moreFromMozillaCategory,
-    "click"
-  );
   moreFromMozillaCategory.click();
-  await clickedPromise;
 
-  let productCards = doc.querySelectorAll("vbox.advanced");
+  let productCards = doc.querySelectorAll(".mozilla-product-item.advanced");
   Assert.ok(productCards, "The product cards from advanced template found");
   Assert.equal(productCards.length, 3, "3 product cards displayed");
   Assert.deepEqual(
@@ -179,15 +231,17 @@ add_task(async function test_aboutpreferences_clickBtnVPN() {
   let doc = gBrowser.contentDocument;
   let tab = gBrowser.selectedTab;
 
-  let productCards = doc.querySelectorAll("vbox.simple");
+  let productCards = doc.querySelectorAll(".mozilla-product-item.simple");
   Assert.ok(productCards, "Simple template loaded");
 
   const expectedUrl = "https://www.mozilla.org/products/vpn/";
   let tabOpened = BrowserTestUtils.waitForNewTab(gBrowser, url =>
     url.startsWith(expectedUrl)
   );
+
   let vpnButton = doc.getElementById("simple-mozillaVPN");
-  vpnButton.doCommand();
+  vpnButton.click();
+
   let openedTab = await tabOpened;
   Assert.ok(gBrowser.selectedBrowser.documentURI.spec.startsWith(expectedUrl));
 
@@ -209,21 +263,141 @@ add_task(async function test_aboutpreferences_clickBtnVPN() {
     "utm_medium set"
   );
   Assert.equal(
+    searchParams.get("utm_content"),
+    "fxvt-113-a-global",
+    "utm_content set"
+  );
+  Assert.equal(
     searchParams.get("entrypoint_experiment"),
     "morefrommozilla-experiment-1846",
     "entrypoint_experiment set"
-  );
-  Assert.equal(
-    searchParams.get("utm_content"),
-    "fxvt-113-a-na",
-    "utm_content set"
   );
   Assert.equal(
     searchParams.get("entrypoint_variation"),
     "treatment-simple",
     "entrypoint_variation set"
   );
-
   BrowserTestUtils.removeTab(openedTab);
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_aboutpreferences_clickBtnMobile() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.preferences.moreFromMozilla", true],
+      ["browser.preferences.moreFromMozilla.template", "simple"],
+    ],
+  });
+  await openPreferencesViaOpenPreferencesAPI("paneMoreFromMozilla", {
+    leaveOpen: true,
+  });
+
+  let doc = gBrowser.contentDocument;
+  let tab = gBrowser.selectedTab;
+
+  let productCards = doc.querySelectorAll("vbox.simple");
+  Assert.ok(productCards, "Simple template loaded");
+
+  const expectedUrl = "https://www.mozilla.org/firefox/browsers/mobile/";
+
+  let mobileUrl = new URL(doc.getElementById("simple-fxMobile").href);
+
+  Assert.ok(mobileUrl.href.startsWith(expectedUrl));
+
+  let searchParams = mobileUrl.searchParams;
+  Assert.equal(
+    searchParams.get("utm_source"),
+    "about-prefs",
+    "expected utm_source sent"
+  );
+  Assert.equal(
+    searchParams.get("utm_campaign"),
+    "morefrommozilla",
+    "utm_campaign set"
+  );
+  Assert.equal(
+    searchParams.get("utm_medium"),
+    "firefox-desktop",
+    "utm_medium set"
+  );
+  Assert.equal(
+    searchParams.get("utm_content"),
+    "fxvt-113-a-global",
+    "default-global",
+    "utm_content set"
+  );
+
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_aboutpreferences_search() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.preferences.moreFromMozilla", true],
+      ["browser.preferences.moreFromMozilla.template", "advanced"],
+    ],
+  });
+
+  await openPreferencesViaOpenPreferencesAPI(null, {
+    leaveOpen: true,
+  });
+
+  await runSearchInput("Rally");
+
+  let doc = gBrowser.contentDocument;
+  let tab = gBrowser.selectedTab;
+
+  let productCards = doc.querySelectorAll(".mozilla-product-item");
+  Assert.equal(productCards.length, 3, "All products in the group are found");
+  let [mobile, vpn, rally] = productCards;
+  Assert.ok(BrowserTestUtils.is_hidden(mobile), "Mobile hidden");
+  Assert.ok(BrowserTestUtils.is_hidden(vpn), "VPN hidden");
+  Assert.ok(BrowserTestUtils.is_visible(rally), "Rally shown");
+
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_aboutpreferences_clickBtnRally() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.preferences.moreFromMozilla", true],
+      ["browser.preferences.moreFromMozilla.template", "simple"],
+    ],
+  });
+  await openPreferencesViaOpenPreferencesAPI("paneMoreFromMozilla", {
+    leaveOpen: true,
+  });
+
+  let doc = gBrowser.contentDocument;
+  let tab = gBrowser.selectedTab;
+
+  let expectedUrl = new URL("https://rally.mozilla.org");
+  expectedUrl.searchParams.set("utm_source", "about-prefs");
+  expectedUrl.searchParams.set("utm_campaign", "morefrommozilla");
+  expectedUrl.searchParams.set("utm_medium", "firefox-desktop");
+  expectedUrl.searchParams.set("utm_content", "fxvt-113-a-na");
+  expectedUrl.searchParams.set(
+    "entrypoint_experiment",
+    "morefrommozilla-experiment-1846"
+  );
+  expectedUrl.searchParams.set("entrypoint_variation", "treatment-simple");
+
+  let tabOpened = BrowserTestUtils.waitForDocLoadAndStopIt(
+    expectedUrl.toString(),
+    gBrowser,
+    channel => {
+      Assert.equal(
+        channel.originalURI.spec,
+        expectedUrl.toString(),
+        "URL matched"
+      );
+      return true;
+    }
+  );
+  let rallyButton = doc.getElementById("simple-mozillaRally");
+  rallyButton.click();
+
+  await tabOpened;
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
   BrowserTestUtils.removeTab(tab);
 });

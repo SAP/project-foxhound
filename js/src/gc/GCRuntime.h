@@ -285,6 +285,10 @@ class GCRuntime {
   void finishRoots();
   void finish();
 
+#ifdef DEBUG
+  void assertNoPermanentSharedThings();
+#endif
+
   void freezePermanentSharedThings();
   template <typename T>
   void freezeAtomsZoneArenas(AllocKind kind, ArenaList& arenaList);
@@ -311,6 +315,7 @@ class GCRuntime {
   uint32_t getParameter(JSGCParamKey key, const AutoLockGC& lock);
 
   void setPerformanceHint(PerformanceHint hint);
+  bool isInPageLoad() const { return inPageLoadCount != 0; }
 
   [[nodiscard]] bool triggerGC(JS::GCReason reason);
   // Check whether to trigger a zone GC after allocating GC cells.
@@ -329,12 +334,13 @@ class GCRuntime {
   // The return value indicates whether a major GC was performed.
   bool gcIfRequested();
   void gc(JS::GCOptions options, JS::GCReason reason);
-  void startGC(JS::GCOptions options, JS::GCReason reason, int64_t millis = 0);
-  void gcSlice(JS::GCReason reason, int64_t millis = 0);
+  void startGC(JS::GCOptions options, JS::GCReason reason,
+               const SliceBudget& budget);
+  void gcSlice(JS::GCReason reason, const SliceBudget& budget);
   void finishGC(JS::GCReason reason);
   void abortGC();
-  void startDebugGC(JS::GCOptions options, SliceBudget& budget);
-  void debugGCSlice(SliceBudget& budget);
+  void startDebugGC(JS::GCOptions options, const SliceBudget& budget);
+  void debugGCSlice(const SliceBudget& budget);
 
   void runDebugGC();
   void notifyRootsRemoved();
@@ -696,7 +702,6 @@ class GCRuntime {
   void incrementalSlice(SliceBudget& budget, const MaybeGCOptions& options,
                         JS::GCReason reason, bool budgetWasIncreased);
 
-  void waitForBackgroundTasksBeforeSlice();
   bool mightSweepInThisSlice(bool nonIncremental);
   void collectNurseryFromMajorGC(const MaybeGCOptions& options,
                                  JS::GCReason reason);
@@ -804,8 +809,10 @@ class GCRuntime {
 
   bool allCCVisibleZonesWereCollected();
   void sweepZones(JSFreeOp* fop, bool destroyingRuntime);
+  bool shouldDecommit() const;
   void startDecommit();
-  void decommitFreeArenas(const bool& canel, AutoLockGC& lock);
+  void decommitEmptyChunks(const bool& cancel, AutoLockGC& lock);
+  void decommitFreeArenas(const bool& cancel, AutoLockGC& lock);
   void decommitFreeArenasWithoutUnlocking(const AutoLockGC& lock);
 
   // Compacting GC. Implemented in Compacting.cpp.
@@ -920,6 +927,12 @@ class GCRuntime {
 
   // State used for managing atom mark bitmaps in each zone.
   AtomMarkingRuntime atomMarking;
+
+  /*
+   * Pointer to a callback that, if set, will be used to create a
+   * budget for internally-triggered GCs.
+   */
+  MainThreadData<JS::CreateSliceBudgetCallback> createBudgetCallback;
 
  private:
   // Arenas used for permanent things created at startup and shared by child

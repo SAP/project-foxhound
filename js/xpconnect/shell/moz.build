@@ -13,6 +13,11 @@ SOURCES += [
     "xpcshell.cpp",
 ]
 
+# The pthred_create() interposer needs to be linked as early as possible so
+# that it will appear before libpthread when resolving symbols.
+if CONFIG["OS_ARCH"] == "Linux" and CONFIG["MOZ_CRASHREPORTER"]:
+    USE_LIBS += ["pthread_create_interposer"]
+
 if CONFIG["LIBFUZZER"]:
     USE_LIBS += ["fuzzer"]
 
@@ -42,7 +47,10 @@ if CONFIG["OS_ARCH"] == "WINNT":
         ]
 
         OS_LIBS += [
+            "advapi32",
+            "user32",
             "version",
+            "winmm",
         ]
 
         USE_LIBS += [
@@ -66,6 +74,12 @@ if CONFIG["OS_ARCH"] == "WINNT":
     # only enable it for processes that are not using JIT in xul.dll.
     LINK_FLAGS["CETCOMPAT"] = []
 
-CFLAGS += CONFIG["TK_CFLAGS"]
-CXXFLAGS += CONFIG["TK_CFLAGS"]
-OS_LIBS += CONFIG["TK_LIBS"]
+if CONFIG["OS_TARGET"] == "Darwin":
+    OS_LIBS += [
+        "-framework Foundation",
+    ]
+
+if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
+    CFLAGS += CONFIG["MOZ_GTK3_CFLAGS"]
+    CXXFLAGS += CONFIG["MOZ_GTK3_CFLAGS"]
+    OS_LIBS += CONFIG["MOZ_GTK3_LIBS"]

@@ -321,7 +321,7 @@ function internalSave(
     };
 
     // Find a URI to use for determining last-downloaded-to directory
-    let relatedURI = aReferrerInfo ? aReferrerInfo.originalReferrer : sourceURI;
+    let relatedURI = aReferrerInfo?.originalReferrer || sourceURI;
 
     promiseTargetFile(fpParams, aSkipPrompt, relatedURI)
       .then(aDialogAccepted => {
@@ -1021,7 +1021,12 @@ function getDefaultFileName(
       } catch (e) {}
     }
     if (fileName) {
-      return validateFileName(Services.textToSubURI.unEscapeURIForUI(fileName));
+      return validateFileName(
+        Services.textToSubURI.unEscapeURIForUI(
+          fileName,
+          /* dontEscape = */ true
+        )
+      );
     }
   }
 
@@ -1047,7 +1052,10 @@ function getDefaultFileName(
     if (url.fileName != "") {
       // 3) Use the actual file name, if present
       return validateFileName(
-        Services.textToSubURI.unEscapeURIForUI(url.fileName)
+        Services.textToSubURI.unEscapeURIForUI(
+          url.fileName,
+          /* dontEscape = */ true
+        )
       );
     }
   } catch (e) {

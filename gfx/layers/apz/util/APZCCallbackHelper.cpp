@@ -6,7 +6,6 @@
 
 #include "APZCCallbackHelper.h"
 
-#include "TouchActionHelper.h"
 #include "gfxPlatform.h"  // For gfxPlatform::UseTiling
 
 #include "mozilla/EventForwards.h"
@@ -19,7 +18,6 @@
 #include "mozilla/layers/WebRenderBridgeChild.h"
 #include "mozilla/DisplayPortUtils.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/TouchEvents.h"
 #include "mozilla/ToString.h"
 #include "mozilla/ViewportUtils.h"
 #include "nsContainerFrame.h"
@@ -153,6 +151,7 @@ static DisplayPortMargins ScrollFrame(nsIContent* aContent,
       nsLayoutUtils::FindScrollableFrameFor(aRequest.GetScrollId());
   if (sf) {
     sf->ResetScrollInfoIfNeeded(aRequest.GetScrollGeneration(),
+                                aRequest.GetScrollGenerationOnApz(),
                                 aRequest.GetScrollAnimationType());
     sf->SetScrollableByAPZ(!aRequest.IsScrollInfoLayer());
     if (sf->IsRootScrollFrameOfDocument()) {
@@ -676,14 +675,9 @@ static bool PrepareForSetTargetAPZCNotification(
 }
 
 static void SendLayersDependentApzcTargetConfirmation(
-    nsPresContext* aPresContext, uint64_t aInputBlockId,
+    nsIWidget* aWidget, uint64_t aInputBlockId,
     nsTArray<ScrollableLayerGuid>&& aTargets) {
-  PresShell* ps = aPresContext->GetPresShell();
-  if (!ps) {
-    return;
-  }
-
-  WindowRenderer* renderer = ps->GetWindowRenderer();
+  WindowRenderer* renderer = aWidget->GetWindowRenderer();
   if (!renderer) {
     return;
   }
@@ -722,7 +716,7 @@ void DisplayportSetListener::Register() {
 void DisplayportSetListener::OnPostRefresh() {
   APZCCH_LOG("Got refresh, sending target APZCs for input block %" PRIu64 "\n",
              mInputBlockId);
-  SendLayersDependentApzcTargetConfirmation(mPresContext, mInputBlockId,
+  SendLayersDependentApzcTargetConfirmation(mWidget, mInputBlockId,
                                             std::move(mTargets));
 }
 
@@ -783,28 +777,6 @@ APZCCallbackHelper::SendSetTargetAPZCNotification(nsIWidget* aWidget,
     }
   }
   return nullptr;
-}
-
-nsTArray<TouchBehaviorFlags>
-APZCCallbackHelper::SendSetAllowedTouchBehaviorNotification(
-    nsIWidget* aWidget, dom::Document* aDocument,
-    const WidgetTouchEvent& aEvent, uint64_t aInputBlockId,
-    const SetAllowedTouchBehaviorCallback& aCallback) {
-  nsTArray<TouchBehaviorFlags> flags;
-  if (!aWidget || !aDocument) {
-    return flags;
-  }
-  if (PresShell* presShell = aDocument->GetPresShell()) {
-    if (nsIFrame* rootFrame = presShell->GetRootFrame()) {
-      for (uint32_t i = 0; i < aEvent.mTouches.Length(); i++) {
-        flags.AppendElement(TouchActionHelper::GetAllowedTouchBehavior(
-            aWidget, RelativeTo{rootFrame, ViewportType::Visual},
-            aEvent.mTouches[i]->mRefPoint));
-      }
-      aCallback(aInputBlockId, flags);
-    }
-  }
-  return flags;
 }
 
 void APZCCallbackHelper::NotifyMozMouseScrollEvent(

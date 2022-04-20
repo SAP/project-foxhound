@@ -9,6 +9,8 @@ SPHINX_TREES["crash-manager"] = "docs"
 with Files("docs/**"):
     SCHEDULES.exclusive = ["docs"]
 
+DEFINES["OBJDIR"] = OBJDIR
+
 XPIDL_MODULE = "toolkit_crashservice"
 
 XPIDL_SOURCES += [
@@ -16,8 +18,15 @@ XPIDL_SOURCES += [
 ]
 
 if CONFIG["MOZ_CRASHREPORTER"]:
-    EXTRA_JS_MODULES += [
+    GeneratedFile(
         "CrashManager.jsm",
+        script="gen_CrashManager.py",
+        entry_point="main",
+        inputs=["CrashManager.jsm.in"],
+    )
+
+    EXTRA_JS_MODULES += [
+        "!CrashManager.jsm",
         "CrashService.jsm",
     ]
 

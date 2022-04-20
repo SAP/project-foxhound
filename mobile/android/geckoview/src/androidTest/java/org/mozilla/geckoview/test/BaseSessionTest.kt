@@ -22,6 +22,7 @@ import org.json.JSONObject
 import org.junit.Assume.assumeThat
 import org.junit.Rule
 import org.junit.rules.ErrorCollector
+import org.junit.rules.RuleChain
 
 import kotlin.reflect.KClass
 
@@ -42,6 +43,9 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
         const val FORMS3_HTML_PATH = "/assets/www/forms3.html"
         const val FORMS4_HTML_PATH = "/assets/www/forms4.html"
         const val FORMS5_HTML_PATH = "/assets/www/forms5.html"
+        const val SELECT_HTML_PATH = "/assets/www/select.html"
+        const val SELECT_MULTIPLE_HTML_PATH = "/assets/www/select-multiple.html"
+        const val SELECT_LISTBOX_HTML_PATH = "/assets/www/select-listbox.html"
         const val ADDRESS_FORM_HTML_PATH = "/assets/www/address_form.html"
         const val FORMS_AUTOCOMPLETE_HTML_PATH = "/assets/www/forms_autocomplete.html"
         const val FORMS_ID_VALUE_HTML_PATH = "/assets/www/forms_id_value.html"
@@ -117,7 +121,11 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
         const val TEST_PORT = GeckoSessionTestRule.TEST_PORT
     }
 
-    @get:Rule val sessionRule = GeckoSessionTestRule()
+    val sessionRule = GeckoSessionTestRule()
+
+    // Override this to include more `evaluate` rules in the chain
+    @get:Rule
+    open val rules = RuleChain.outerRule(sessionRule)
 
     @get:Rule var temporaryProfile = TemporaryProfileRule()
 
@@ -227,6 +235,11 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
     fun GeckoSession.flushApzRepaints() = sessionRule.flushApzRepaints(this)
 
     fun GeckoSession.promiseAllPaintsDone() = sessionRule.promiseAllPaintsDone(this)
+
+    fun GeckoSession.getLinkColor(selector: String) = sessionRule.getLinkColor(this, selector)
+
+    fun GeckoSession.setResolutionAndScaleTo(resolution: Float) =
+            sessionRule.setResolutionAndScaleTo(this, resolution)
 
     var GeckoSession.active: Boolean
             get() = sessionRule.getActive(this)

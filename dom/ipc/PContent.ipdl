@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-include protocol PBackground;
+include protocol PBackgroundStarter;
 include protocol PBrowser;
 include protocol PCompositorManager;
 include protocol PContentPermissionRequest;
@@ -35,7 +35,9 @@ include protocol PSpeechSynthesis;
 include protocol PTestShell;
 include protocol PRemoteSpellcheckEngine;
 include protocol PWebBrowserPersistDocument;
+#ifdef MOZ_WEBRTC
 include protocol PWebrtcGlobal;
+#endif
 include protocol PWindowGlobal;
 include protocol PURLClassifier;
 include protocol PURLClassifierLocal;
@@ -151,6 +153,7 @@ using mozilla::PDMFactory::MediaCodecsSupported from "PDMFactory.h";
 using mozilla::RemoteDecodeIn from "mozilla/RemoteDecoderManagerChild.h";
 using mozilla::dom::PerformanceTimingData from "mozilla/dom/PerformanceTiming.h";
 [RefCounted] using mozilla::dom::FeaturePolicy from "mozilla/dom/FeaturePolicy.h";
+using Wireframe from "mozilla/dom/DocumentBinding.h";
 
 union ChromeRegistryItem
 {
@@ -451,7 +454,9 @@ sync protocol PContent
     manages PTestShell;
     manages PRemoteSpellcheckEngine;
     manages PWebBrowserPersistDocument;
+#ifdef MOZ_WEBRTC
     manages PWebrtcGlobal;
+#endif
     manages PURLClassifier;
     manages PURLClassifierLocal;
     manages PScriptCache;
@@ -979,9 +984,6 @@ child:
   async DispatchBeforeUnloadToSubtree(MaybeDiscardedBrowsingContext aStartingAt)
       returns (PermitUnloadResult result);
 
-  async CanSavePresentation(MaybeDiscardedBrowsingContext aTopLevelContext,
-      uint64_t? aDocumentChannelId) returns (bool success);
-
   // Update the cached list of codec supported in the given process.
   async UpdateMediaCodecsSupported(RemoteDecodeIn aLocation, MediaCodecsSupported aSupported);
 
@@ -1015,12 +1017,15 @@ parent:
     async SessionHistoryEntryStoreWindowNameInContiguousEntries(MaybeDiscardedBrowsingContext aContext,
                                                                 nsString aName);
 
+    async SessionHistoryEntryWireframe(MaybeDiscardedBrowsingContext aContext,
+                                       Wireframe aWireframe);
+
     async GetLoadingSessionHistoryInfoFromParent(MaybeDiscardedBrowsingContext aContext)
         returns (LoadingSessionHistoryInfo? aLoadingInfo);
 
     async RemoveFromBFCache(MaybeDiscardedBrowsingContext aContext);
 
-    async InitBackground(Endpoint<PBackgroundParent> aEndpoint);
+    async InitBackground(Endpoint<PBackgroundStarterParent> aEndpoint);
 
     async CreateGMPService();
 
@@ -1054,7 +1059,9 @@ parent:
 
     async PMedia();
 
+#ifdef MOZ_WEBRTC
     async PWebrtcGlobal();
+#endif
 
     async CreateAudioIPCConnection() returns (FileDescOrError fd);
 
@@ -1721,7 +1728,7 @@ parent:
     async HistoryCommit(MaybeDiscardedBrowsingContext aContext,
                         uint64_t aLoadID, nsID aChangeID, uint32_t aLoadType,
                         bool aPersist, bool aCloneEntryChildren,
-                        bool aChannelExpired);
+                        bool aChannelExpired, uint32_t aCacheKey);
 
     async HistoryGo(MaybeDiscardedBrowsingContext aContext, int32_t aOffset,
                     uint64_t aHistoryEpoch, bool aRequireUserInteraction,

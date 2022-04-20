@@ -126,7 +126,7 @@ void AssertUniqueItem(nsDisplayItem* aItem) {
   for (nsDisplayItem* i : aItem->Frame()->DisplayItems()) {
     if (i != aItem && !i->HasDeletedFrame() && i->Frame() == aItem->Frame() &&
         i->GetPerFrameKey() == aItem->GetPerFrameKey()) {
-      if (i->IsPreProcessedItem()) {
+      if (i->IsPreProcessedItem() || i->IsPreProcessed()) {
         continue;
       }
       MOZ_DIAGNOSTIC_ASSERT(false, "Duplicate display item!");
@@ -694,6 +694,8 @@ nsDisplayListBuilder::nsDisplayListBuilder(nsIFrame* aReferenceFrame,
       static_cast<uint32_t>(DisplayItemType::TYPE_MAX) < (1 << TYPE_BITS),
       "Check TYPE_MAX should not overflow");
   mIsForContent = XRE_IsContentProcess();
+  mIsReusingStackingContextItems =
+      mRetainingDisplayList && StaticPrefs::layout_display_list_retain_sc();
 }
 
 static PresShell* GetFocusedPresShell() {
@@ -1550,6 +1552,7 @@ const nsIFrame* nsDisplayListBuilder::FindReferenceFrameFor(
 
   if (aOffset) {
     *aOffset = aFrame->GetOffsetToCrossDoc(mReferenceFrame);
+    MaybeApplyAdditionalOffset();
   }
 
   return mReferenceFrame;
@@ -2004,6 +2007,46 @@ void nsDisplayListBuilder::BuildCompositorHitTestInfoIfNeeded(
   if (info != CompositorHitTestInvisibleToHit) {
     aList->AppendNewToTop<nsDisplayCompositorHitTestInfo>(this, aFrame);
   }
+}
+
+void nsDisplayListBuilder::AddReusableDisplayItem(nsDisplayItem* aItem) {
+  mReuseableItems.Insert(aItem);
+}
+
+void nsDisplayListBuilder::RemoveReusedDisplayItem(nsDisplayItem* aItem) {
+  MOZ_ASSERT(aItem->IsReusedItem());
+  mReuseableItems.Remove(aItem);
+}
+
+void nsDisplayListBuilder::ClearReuseableDisplayItems() {
+  const size_t total = mReuseableItems.Count();
+
+  size_t reused = 0;
+  for (auto* item : mReuseableItems) {
+    if (item->IsReusedItem()) {
+      reused++;
+      item->SetReusable();
+    } else {
+      item->Destroy(this);
+    }
+  }
+
+  DL_LOGI("RDL - Reused %zu of %zu SC display items", reused, total);
+  mReuseableItems.Clear();
+}
+
+void nsDisplayListBuilder::ReuseDisplayItem(nsDisplayItem* aItem) {
+  const auto* previous = mCurrentContainerASR;
+  const auto* asr = aItem->GetActiveScrolledRoot();
+  mCurrentContainerASR =
+      ActiveScrolledRoot::PickAncestor(asr, mCurrentContainerASR);
+
+  if (previous != mCurrentContainerASR) {
+    DL_LOGV("RDL - Changed mCurrentContainerASR from %p to %p", previous,
+            mCurrentContainerASR);
+  }
+
+  aItem->SetReusedItem();
 }
 
 void nsDisplayListSet::MoveTo(const nsDisplayListSet& aDestination) const {
@@ -3349,6 +3392,20 @@ static void CheckForBorderItem(nsDisplayItem* aItem, uint32_t& aFlags) {
 
     break;
   }
+}
+
+bool nsDisplayBackgroundImage::CanApplyOpacity(
+    WebRenderLayerManager* aManager, nsDisplayListBuilder* aBuilder) const {
+  // Bug 1752919: WebRender does not properly handle opacity flattening for
+  // images larger than 4096 dest pixels.
+  static const nscoord WR_NSCOORD_LIMIT =
+      NSIntPixelsToAppUnits(4096, AppUnitsPerCSSPixel());
+  if MOZ_UNLIKELY (mDestRect.width > WR_NSCOORD_LIMIT ||
+                   mDestRect.height > WR_NSCOORD_LIMIT) {
+    return false;
+  }
+
+  return CanBuildWebRenderDisplayItems(aManager, aBuilder);
 }
 
 bool nsDisplayBackgroundImage::CanBuildWebRenderDisplayItems(
@@ -5982,7 +6039,8 @@ nsDisplayTransform::nsDisplayTransform(nsDisplayListBuilder* aBuilder,
       mChildrenBuildingRect(aChildrenBuildingRect),
       mPrerenderDecision(PrerenderDecision::No),
       mIsTransformSeparator(true),
-      mHasTransformGetter(false) {
+      mHasTransformGetter(false),
+      mHasAssociatedPerspective(false) {
   MOZ_COUNT_CTOR(nsDisplayTransform);
   MOZ_ASSERT(aFrame, "Must have a frame!");
   Init(aBuilder, aList);
@@ -5996,7 +6054,8 @@ nsDisplayTransform::nsDisplayTransform(nsDisplayListBuilder* aBuilder,
       mChildrenBuildingRect(aChildrenBuildingRect),
       mPrerenderDecision(aPrerenderDecision),
       mIsTransformSeparator(false),
-      mHasTransformGetter(false) {
+      mHasTransformGetter(false),
+      mHasAssociatedPerspective(false) {
   MOZ_COUNT_CTOR(nsDisplayTransform);
   MOZ_ASSERT(aFrame, "Must have a frame!");
   SetReferenceFrameToAncestor(aBuilder);
@@ -6011,7 +6070,8 @@ nsDisplayTransform::nsDisplayTransform(nsDisplayListBuilder* aBuilder,
       mChildrenBuildingRect(aChildrenBuildingRect),
       mPrerenderDecision(PrerenderDecision::No),
       mIsTransformSeparator(false),
-      mHasTransformGetter(true) {
+      mHasTransformGetter(true),
+      mHasAssociatedPerspective(false) {
   MOZ_COUNT_CTOR(nsDisplayTransform);
   MOZ_ASSERT(aFrame, "Must have a frame!");
   MOZ_ASSERT(aFrame->GetTransformGetter());
@@ -6668,6 +6728,7 @@ bool nsDisplayTransform::CreateWebRenderCommands(
   params.prim_flags = !BackfaceIsHidden()
                           ? wr::PrimitiveFlags::IS_BACKFACE_VISIBLE
                           : wr::PrimitiveFlags{0};
+  params.paired_with_perspective = mHasAssociatedPerspective;
   params.mDeferredTransformItem = deferredTransformItem;
   params.mAnimated = animated;
   // Determine if we would have to rasterize any items in local raster space
@@ -7654,8 +7715,7 @@ void nsDisplayText::WriteDebugInfo(std::stringstream& aStream) {
 
   nsTextFrame* f = static_cast<nsTextFrame*>(mFrame);
   nsCString buf;
-  int32_t totalContentLength;
-  f->ToCString(buf, &totalContentLength);
+  f->ToCString(buf);
 
   aStream << buf.get() << "\")";
 #endif

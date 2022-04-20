@@ -186,8 +186,8 @@ bool Module::finishTier2(const LinkData& linkData2,
 
     const MetadataTier& metadataTier1 = metadata(Tier::Baseline);
 
-    auto stubs1 = code().codeTier(Tier::Baseline).lazyStubs().lock();
-    auto stubs2 = borrowedTier2->lazyStubs().lock();
+    auto stubs1 = code().codeTier(Tier::Baseline).lazyStubs().readLock();
+    auto stubs2 = borrowedTier2->lazyStubs().writeLock();
 
     MOZ_ASSERT(stubs2->entryStubsEmpty());
 
@@ -927,7 +927,7 @@ bool Module::instantiateLocalTable(JSContext* cx, const TableDesc& td,
 
   SharedTable table;
   Rooted<WasmTableObject*> tableObj(cx);
-  if (td.importedOrExported) {
+  if (td.isImportedOrExported) {
     RootedObject proto(cx, &cx->global()->getPrototype(JSProto_WasmTable));
     tableObj.set(WasmTableObject::create(cx, td.initialLength, td.maximumLength,
                                          td.elemType, proto));

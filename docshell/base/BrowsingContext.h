@@ -127,6 +127,8 @@ enum class ExplicitActiveStatus : uint8_t {
   FIELD(ShouldDelayMediaFromStart, bool)                                      \
   /* See nsSandboxFlags.h for the possible flags. */                          \
   FIELD(SandboxFlags, uint32_t)                                               \
+  /* The value of SandboxFlags when the BrowsingContext is first created.     \
+   * Used for sandboxing the initial about:blank document. */                 \
   FIELD(InitialSandboxFlags, uint32_t)                                        \
   /* A non-zero unique identifier for the browser element that is hosting     \
    * this                                                                     \
@@ -221,7 +223,11 @@ enum class ExplicitActiveStatus : uint8_t {
   /* The count of request that are used to prevent the browsing context tree  \
    * from being suspended, which would ONLY be modified on the top level      \
    * context in the chrome process because that's a non-atomic counter */     \
-  FIELD(PageAwakeRequestCount, uint32_t)
+  FIELD(PageAwakeRequestCount, uint32_t)                                      \
+  /* This field only gets incrememented when we start navigations in the      \
+   * parent process. This is used for keeping track of the racing navigations \
+   * between the parent and content processes. */                             \
+  FIELD(ParentInitiatedNavigationEpoch, uint64_t)
 
 // BrowsingContext, in this context, is the cross process replicated
 // environment in which information about documents is stored. In
@@ -797,7 +803,8 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   void SessionHistoryCommit(const LoadingSessionHistoryInfo& aInfo,
                             uint32_t aLoadType, nsIURI* aCurrentURI,
                             bool aHadActiveEntry, bool aPersist,
-                            bool aCloneEntryChildren, bool aChannelExpired);
+                            bool aCloneEntryChildren, bool aChannelExpired,
+                            uint32_t aCacheKey);
 
   // Set a new active entry on this browsing context. This is used for
   // implementing history.pushState/replaceState and same document navigations.
@@ -903,6 +910,8 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
 
   static bool ShouldAddEntryForRefresh(nsIURI* aCurrentURI,
                                        const SessionHistoryInfo& aInfo);
+  static bool ShouldAddEntryForRefresh(nsIURI* aCurrentURI, nsIURI* aNewURI,
+                                       bool aHasPostData);
 
  private:
   void Attach(bool aFromIPC, ContentParent* aOriginProcess);
@@ -1056,6 +1065,9 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
                       const uint64_t& aValue, ContentParent* aSource);
 
   void DidSet(FieldIndex<IDX_CurrentInnerWindowId>);
+
+  bool CanSet(FieldIndex<IDX_ParentInitiatedNavigationEpoch>,
+              const uint64_t& aValue, ContentParent* aSource);
 
   bool CanSet(FieldIndex<IDX_IsPopupSpam>, const bool& aValue,
               ContentParent* aSource);

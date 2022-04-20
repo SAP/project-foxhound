@@ -368,7 +368,7 @@ already_AddRefed<BrowsingContext> BrowsingContext::CreateDetached(
                            nsILoadInfo::OPENER_POLICY_SAME_ORIGIN_ALLOW_POPUPS);
   }
 
-  nsContentUtils::GenerateUUIDInPlace(fields.mHistoryID);
+  fields.mHistoryID = nsID::GenerateUUID();
   fields.mExplicitActive = [&] {
     if (parentBC) {
       // Non-root browsing-contexts inherit their status from its parent.
@@ -771,6 +771,11 @@ void BrowsingContext::Attach(bool aFromIPC, ContentParent* aOriginProcess) {
     CreateChildSHistory();
   }
 
+  // Why the context is being attached. This will always be "attach" in the
+  // content process, but may be "replace" if it's known the context being
+  // replaced in the parent process.
+  const char16_t* why = u"attach";
+
   if (XRE_IsContentProcess() && !aFromIPC) {
     // Send attach to our parent if we need to.
     ContentChild::GetSingleton()->SendCreateBrowsingContext(
@@ -797,6 +802,10 @@ void BrowsingContext::Attach(bool aFromIPC, ContentParent* aOriginProcess) {
       }
     });
 
+    if (IsTop() && IsContent() && Canonical()->GetWebProgress()) {
+      why = u"replace";
+    }
+
     // We want to create a BrowsingContextWebProgress for all content
     // BrowsingContexts.
     if (IsContent() && !Canonical()->mWebProgress) {
@@ -806,7 +815,7 @@ void BrowsingContext::Attach(bool aFromIPC, ContentParent* aOriginProcess) {
 
   if (nsCOMPtr<nsIObserverService> obs = services::GetObserverService()) {
     obs->NotifyWhenScriptSafe(ToSupports(this), "browsing-context-attached",
-                              nullptr);
+                              why);
   }
 
   if (XRE_IsParentProcess()) {
@@ -3186,6 +3195,11 @@ auto BrowsingContext::CanSet(FieldIndex<IDX_CurrentInnerWindowId>,
   return CanSetResult::Allow;
 }
 
+bool BrowsingContext::CanSet(FieldIndex<IDX_ParentInitiatedNavigationEpoch>,
+                             const uint64_t& aValue, ContentParent* aSource) {
+  return XRE_IsParentProcess() && !aSource;
+}
+
 void BrowsingContext::DidSet(FieldIndex<IDX_CurrentInnerWindowId>) {
   RefPtr<WindowContext> prevWindowContext = mCurrentWindowContext.forget();
   mCurrentWindowContext = WindowContext::GetById(GetCurrentInnerWindowId());
@@ -3485,13 +3499,21 @@ bool BrowsingContext::IsPopupAllowed() {
 /* static */
 bool BrowsingContext::ShouldAddEntryForRefresh(
     nsIURI* aCurrentURI, const SessionHistoryInfo& aInfo) {
-  if (aInfo.GetPostData()) {
+  return ShouldAddEntryForRefresh(aCurrentURI, aInfo.GetURI(),
+                                  aInfo.GetPostData());
+}
+
+/* static */
+bool BrowsingContext::ShouldAddEntryForRefresh(nsIURI* aCurrentURI,
+                                               nsIURI* aNewURI,
+                                               bool aHasPostData) {
+  if (aHasPostData) {
     return true;
   }
 
   bool equalsURI = false;
   if (aCurrentURI) {
-    aCurrentURI->Equals(aInfo.GetURI(), &equalsURI);
+    aCurrentURI->Equals(aNewURI, &equalsURI);
   }
   return !equalsURI;
 }
@@ -3499,7 +3521,7 @@ bool BrowsingContext::ShouldAddEntryForRefresh(
 void BrowsingContext::SessionHistoryCommit(
     const LoadingSessionHistoryInfo& aInfo, uint32_t aLoadType,
     nsIURI* aCurrentURI, bool aHadActiveEntry, bool aPersist,
-    bool aCloneEntryChildren, bool aChannelExpired) {
+    bool aCloneEntryChildren, bool aChannelExpired, uint32_t aCacheKey) {
   nsID changeID = {};
   if (XRE_IsContentProcess()) {
     RefPtr<ChildSHistory> rootSH = Top()->GetChildSessionHistory();
@@ -3530,11 +3552,11 @@ void BrowsingContext::SessionHistoryCommit(
     ContentChild* cc = ContentChild::GetSingleton();
     mozilla::Unused << cc->SendHistoryCommit(
         this, aInfo.mLoadId, changeID, aLoadType, aPersist, aCloneEntryChildren,
-        aChannelExpired);
+        aChannelExpired, aCacheKey);
   } else {
     Canonical()->SessionHistoryCommit(aInfo.mLoadId, changeID, aLoadType,
                                       aPersist, aCloneEntryChildren,
-                                      aChannelExpired);
+                                      aChannelExpired, aCacheKey);
   }
 }
 

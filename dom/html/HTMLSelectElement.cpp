@@ -18,6 +18,7 @@
 #include "mozilla/dom/HTMLSelectElementBinding.h"
 #include "mozilla/dom/UnionTypes.h"
 #include "mozilla/MappedDeclarations.h"
+#include "mozilla/Maybe.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsContentList.h"
 #include "nsError.h"
@@ -180,7 +181,8 @@ void HTMLSelectElement::GetAutocompleteInfo(AutocompleteInfo& aInfo) {
 void HTMLSelectElement::InsertChildBefore(nsIContent* aKid,
                                           nsIContent* aBeforeThis, bool aNotify,
                                           ErrorResult& aRv) {
-  int32_t index = aBeforeThis ? ComputeIndexOf(aBeforeThis) : GetChildCount();
+  const uint32_t index =
+      aBeforeThis ? *ComputeIndexOf(aBeforeThis) : GetChildCount();
   SafeOptionListMutation safeMutation(this, this, aKid, index, aNotify);
   nsGenericHTMLFormControlElementWithState::InsertChildBefore(aKid, aBeforeThis,
                                                               aNotify, aRv);
@@ -190,8 +192,8 @@ void HTMLSelectElement::InsertChildBefore(nsIContent* aKid,
 }
 
 void HTMLSelectElement::RemoveChildNode(nsIContent* aKid, bool aNotify) {
-  SafeOptionListMutation safeMutation(this, this, nullptr, ComputeIndexOf(aKid),
-                                      aNotify);
+  SafeOptionListMutation safeMutation(this, this, nullptr,
+                                      *ComputeIndexOf(aKid), aNotify);
   nsGenericHTMLFormControlElementWithState::RemoveChildNode(aKid, aNotify);
 }
 
@@ -447,8 +449,8 @@ int32_t HTMLSelectElement::GetOptionIndexAfter(nsIContent* aOptions) {
   nsCOMPtr<nsIContent> parent = aOptions->GetParent();
 
   if (parent) {
-    int32_t index = parent->ComputeIndexOf(aOptions);
-    int32_t count = parent->GetChildCount();
+    const int32_t index = parent->ComputeIndexOf_Deprecated(aOptions);
+    const int32_t count = static_cast<int32_t>(parent->GetChildCount());
 
     retval = GetFirstChildOptionIndex(parent, index + 1, count);
 
@@ -1421,20 +1423,9 @@ HTMLSelectElement::SubmitNamesValues(FormData* aFormData) {
 }
 
 void HTMLSelectElement::DispatchContentReset() {
-  nsIFormControlFrame* formControlFrame = GetFormControlFrame(false);
-  if (formControlFrame) {
-    // Only dispatch content reset notification if this is a list control
-    // frame or combo box control frame.
-    if (IsCombobox()) {
-      nsComboboxControlFrame* comboFrame = do_QueryFrame(formControlFrame);
-      if (comboFrame) {
-        comboFrame->OnContentReset();
-      }
-    } else {
-      nsListControlFrame* listFrame = do_QueryFrame(formControlFrame);
-      if (listFrame) {
-        listFrame->OnContentReset();
-      }
+  if (nsIFormControlFrame* formControlFrame = GetFormControlFrame(false)) {
+    if (nsListControlFrame* listFrame = do_QueryFrame(formControlFrame)) {
+      listFrame->OnContentReset();
     }
   }
 }

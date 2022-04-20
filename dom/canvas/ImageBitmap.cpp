@@ -24,6 +24,7 @@
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Logging.h"
+#include "mozilla/gfx/Scale.h"
 #include "mozilla/gfx/Swizzle.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/ScopeExit.h"
@@ -268,6 +269,83 @@ static already_AddRefed<DataSourceSurface> CropAndCopyDataSourceSurface(
   return dstDataSurface.forget();
 }
 
+/*
+ * This helper function scales the data of the given DataSourceSurface,
+ *  _aSurface_, in the given area, _aCropRect_, into a new DataSourceSurface.
+ * This might return null if it can not create a new SourceSurface or it cannot
+ * read data from the given _aSurface_.
+ *
+ */
+static already_AddRefed<DataSourceSurface> ScaleDataSourceSurface(
+    DataSourceSurface* aSurface, const ImageBitmapOptions& aOptions) {
+  MOZ_ASSERT(aSurface);
+
+  const SurfaceFormat format = aSurface->GetFormat();
+  const int bytesPerPixel = BytesPerPixel(format);
+
+  const IntSize srcSize = aSurface->GetSize();
+  int32_t tmp;
+
+  CheckedInt<int32_t> checked;
+  CheckedInt<int32_t> dstWidth(
+      aOptions.mResizeWidth.WasPassed() ? aOptions.mResizeWidth.Value() : 0);
+  CheckedInt<int32_t> dstHeight(
+      aOptions.mResizeHeight.WasPassed() ? aOptions.mResizeHeight.Value() : 0);
+
+  if (!dstWidth.isValid() || !dstHeight.isValid()) {
+    return nullptr;
+  }
+
+  if (!dstWidth.value()) {
+    checked = srcSize.width * dstHeight;
+    if (!checked.isValid()) {
+      return nullptr;
+    }
+
+    tmp = ceil(checked.value() / double(srcSize.height));
+    dstWidth = tmp;
+  } else if (!dstHeight.value()) {
+    checked = srcSize.height * dstWidth;
+    if (!checked.isValid()) {
+      return nullptr;
+    }
+
+    tmp = ceil(checked.value() / double(srcSize.width));
+    dstHeight = tmp;
+  }
+
+  const IntSize dstSize(dstWidth.value(), dstHeight.value());
+  const int32_t dstStride = dstSize.width * bytesPerPixel;
+
+  // Create a new SourceSurface.
+  RefPtr<DataSourceSurface> dstDataSurface =
+      Factory::CreateDataSourceSurfaceWithStride(dstSize, format, dstStride,
+                                                 true);
+
+  if (NS_WARN_IF(!dstDataSurface)) {
+    return nullptr;
+  }
+
+  // Copy the raw data into the newly created DataSourceSurface.
+  DataSourceSurface::ScopedMap srcMap(aSurface, DataSourceSurface::READ);
+  DataSourceSurface::ScopedMap dstMap(dstDataSurface, DataSourceSurface::WRITE);
+  if (NS_WARN_IF(!srcMap.IsMapped()) || NS_WARN_IF(!dstMap.IsMapped())) {
+    return nullptr;
+  }
+
+  uint8_t* srcBufferPtr = srcMap.GetData();
+  uint8_t* dstBufferPtr = dstMap.GetData();
+
+  bool res = Scale(srcBufferPtr, srcSize.width, srcSize.height,
+                   srcMap.GetStride(), dstBufferPtr, dstSize.width,
+                   dstSize.height, dstMap.GetStride(), aSurface->GetFormat());
+  if (!res) {
+    return nullptr;
+  }
+
+  return dstDataSurface.forget();
+}
+
 static DataSourceSurface* FlipYDataSourceSurface(DataSourceSurface* aSurface) {
   MOZ_ASSERT(aSurface);
 
@@ -369,6 +447,14 @@ static already_AddRefed<SourceSurface> CreateSurfaceFromRawData(
   if (aOptions.mImageOrientation == ImageOrientation::FlipY) {
     result = FlipYDataSourceSurface(result);
 
+    if (NS_WARN_IF(!result)) {
+      return nullptr;
+    }
+  }
+
+  if (aOptions.mResizeWidth.WasPassed() || aOptions.mResizeHeight.WasPassed()) {
+    dataSurface = result->GetDataSurface();
+    result = ScaleDataSourceSurface(dataSurface, aOptions);
     if (NS_WARN_IF(!result)) {
       return nullptr;
     }
@@ -505,6 +591,11 @@ static already_AddRefed<SourceSurface> GetSurfaceFromElement(
     flags |= nsLayoutUtils::SFE_ALLOW_NON_PREMULT;
   }
 
+  if (aOptions.mColorSpaceConversion == ColorSpaceConversion::None &&
+      aElement.IsHTMLElement(nsGkAtoms::img)) {
+    flags |= nsLayoutUtils::SFE_NO_COLORSPACE_CONVERSION;
+  }
+
   SurfaceFromElementResult res =
       nsLayoutUtils::SurfaceFromElement(&aElement, flags);
 
@@ -590,7 +681,6 @@ already_AddRefed<SourceSurface> ImageBitmap::PrepareForDrawTarget(
     }
   }
 
-  RefPtr<DrawTarget> target = aTarget;
   IntRect surfRect(0, 0, mSurface->GetSize().width, mSurface->GetSize().height);
 
   // Check if we still need to crop our surface
@@ -600,8 +690,7 @@ already_AddRefed<SourceSurface> ImageBitmap::PrepareForDrawTarget(
     // the crop lies entirely outside the surface area, nothing to draw
     if (surfPortion.IsEmpty()) {
       mSurface = nullptr;
-      RefPtr<gfx::SourceSurface> surface(mSurface);
-      return surface.forget();
+      return nullptr;
     }
 
     IntPoint dest(std::max(0, surfPortion.X() - mPictureRect.X()),
@@ -609,18 +698,28 @@ already_AddRefed<SourceSurface> ImageBitmap::PrepareForDrawTarget(
 
     // We must initialize this target with mPictureRect.Size() because the
     // specification states that if the cropping area is given, then return an
-    // ImageBitmap with the size equals to the cropping area.
-    target = target->CreateSimilarDrawTarget(mPictureRect.Size(),
-                                             target->GetFormat());
-
-    if (!target) {
+    // ImageBitmap with the size equals to the cropping area. Ensure that the
+    // format matches the surface, even though the DT type is similar to the
+    // destination, i.e. blending an alpha surface to an opaque DT. However,
+    // any pixels outside the surface portion must be filled with transparent
+    // black, even if the surface is opaque, so force to an alpha format in
+    // that case.
+    SurfaceFormat format = mSurface->GetFormat();
+    if (!surfPortion.IsEqualEdges(mPictureRect) && IsOpaque(format)) {
+      format = SurfaceFormat::B8G8R8A8;
+    }
+    RefPtr<DrawTarget> cropped =
+        aTarget->CreateSimilarDrawTarget(mPictureRect.Size(), format);
+    if (!cropped) {
       mSurface = nullptr;
-      RefPtr<gfx::SourceSurface> surface(mSurface);
-      return surface.forget();
+      return nullptr;
     }
 
-    target->CopySurface(mSurface, surfPortion, dest);
-    mSurface = target->Snapshot();
+    cropped->CopySurface(mSurface, surfPortion, dest);
+    mSurface = cropped->Snapshot();
+    if (!mSurface) {
+      return nullptr;
+    }
 
     // Make mCropRect match new surface we've cropped to
     mPictureRect.MoveTo(0, 0);
@@ -636,9 +735,12 @@ already_AddRefed<SourceSurface> ImageBitmap::PrepareForDrawTarget(
                mSurface->GetFormat() == SurfaceFormat::A8R8G8B8);
 
     RefPtr<DataSourceSurface> srcSurface = mSurface->GetDataSurface();
+    if (NS_WARN_IF(!srcSurface)) {
+      return nullptr;
+    }
     RefPtr<DataSourceSurface> dstSurface = Factory::CreateDataSourceSurface(
         srcSurface->GetSize(), srcSurface->GetFormat());
-    if (NS_WARN_IF(!srcSurface) || NS_WARN_IF(!dstSurface)) {
+    if (NS_WARN_IF(!dstSurface)) {
       return nullptr;
     }
 
@@ -667,10 +769,8 @@ already_AddRefed<SourceSurface> ImageBitmap::PrepareForDrawTarget(
   // Replace our surface with one optimized for the target we're about to draw
   // to, under the assumption it'll likely be drawn again to that target.
   // This call should be a no-op for already-optimized surfaces
-  mSurface = target->OptimizeSourceSurface(mSurface);
-
-  RefPtr<gfx::SourceSurface> surface(mSurface);
-  return surface.forget();
+  mSurface = aTarget->OptimizeSourceSurface(mSurface);
+  return do_AddRef(mSurface);
 }
 
 already_AddRefed<layers::Image> ImageBitmap::TransferAsImage() {
@@ -811,7 +911,8 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateImageBitmapInternal(
     }
 
     surface = dataSurface;
-    cropRect.MoveTo(0, 0);
+    cropRect.SetRect(0, 0, dataSurface->GetSize().width,
+                     dataSurface->GetSize().height);
     needToReportMemoryAllocation = true;
   }
 
@@ -825,6 +926,22 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateImageBitmapInternal(
     if (NS_WARN_IF(!surface)) {
       return nullptr;
     }
+  }
+
+  // resize if required
+  if (aOptions.mResizeWidth.WasPassed() || aOptions.mResizeHeight.WasPassed()) {
+    if (!dataSurface) {
+      dataSurface = surface->GetDataSurface();
+    };
+
+    surface = ScaleDataSourceSurface(dataSurface, aOptions);
+    if (NS_WARN_IF(!surface)) {
+      aRv.ThrowInvalidStateError("Failed to create resized image");
+      return nullptr;
+    }
+
+    needToReportMemoryAllocation = true;
+    cropRect.SetRect(0, 0, surface->GetSize().width, surface->GetSize().height);
   }
 
   if (requiresPremultiply || requiresUnpremultiply) {
@@ -1001,6 +1118,56 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
 
 /* static */
 already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
+    nsIGlobalObject* aGlobal, OffscreenCanvas& aOffscreenCanvas,
+    const Maybe<IntRect>& aCropRect, const ImageBitmapOptions& aOptions,
+    ErrorResult& aRv) {
+  if (aOffscreenCanvas.Width() == 0) {
+    aRv.ThrowInvalidStateError("Passed-in canvas has width 0");
+    return nullptr;
+  }
+
+  if (aOffscreenCanvas.Height() == 0) {
+    aRv.ThrowInvalidStateError("Passed-in canvas has height 0");
+    return nullptr;
+  }
+
+  uint32_t flags = nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE;
+
+  // by default surfaces have premultiplied alpha
+  // attempt to get non premultiplied if required
+  if (aOptions.mPremultiplyAlpha == PremultiplyAlpha::None) {
+    flags |= nsLayoutUtils::SFE_ALLOW_NON_PREMULT;
+  }
+
+  SurfaceFromElementResult res =
+      nsLayoutUtils::SurfaceFromOffscreenCanvas(&aOffscreenCanvas, flags);
+
+  RefPtr<SourceSurface> surface = res.GetSourceSurface();
+  if (NS_WARN_IF(!surface)) {
+    aRv.ThrowInvalidStateError("Passed-in canvas failed to create snapshot");
+    return nullptr;
+  }
+
+  gfxAlphaType alphaType = res.mAlphaType;
+  bool writeOnly = res.mIsWriteOnly;
+
+  // If the OffscreenCanvas's rendering context is WebGL/WebGPU, then the
+  // snapshot we got from the OffscreenCanvas is a DataSourceSurface which
+  // is a copy of the rendering context. We handle cropping in this case.
+  bool needToReportMemoryAllocation = false;
+  bool mustCopy =
+      aCropRect.isSome() &&
+      (aOffscreenCanvas.GetContextType() == CanvasContextType::WebGL1 ||
+       aOffscreenCanvas.GetContextType() == CanvasContextType::WebGL2 ||
+       aOffscreenCanvas.GetContextType() == CanvasContextType::WebGPU);
+
+  return CreateImageBitmapInternal(aGlobal, surface, aCropRect, aOptions,
+                                   writeOnly, needToReportMemoryAllocation,
+                                   mustCopy, alphaType, aRv);
+}
+
+/* static */
+already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
     nsIGlobalObject* aGlobal, ImageData& aImageData,
     const Maybe<IntRect>& aCropRect, const ImageBitmapOptions& aOptions,
     ErrorResult& aRv) {
@@ -1127,14 +1294,48 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
     return nullptr;
   }
 
-  RefPtr<layers::Image> data = aImageBitmap.mData;
-
-  RefPtr<SourceSurface> surface = data->GetAsSourceSurface();
+  IntRect cropRect = aImageBitmap.mPictureRect;
+  RefPtr<SourceSurface> surface;
 
   bool needToReportMemoryAllocation = false;
 
+  if (aImageBitmap.mSurface) {
+    // the source imageBitmap already has a cropped surface, just use this
+    surface = aImageBitmap.mSurface;
+    cropRect = aCropRect.valueOr(cropRect);
+  } else {
+    RefPtr<layers::Image> data = aImageBitmap.mData;
+    surface = data->GetAsSourceSurface();
+
+    if (aCropRect.isSome()) {
+      // get new crop rect relative to original uncropped surface
+      IntRect newCropRect = aCropRect.ref();
+      newCropRect = FixUpNegativeDimension(newCropRect, aRv);
+
+      newCropRect.MoveBy(cropRect.X(), cropRect.Y());
+
+      if (cropRect.Contains(newCropRect)) {
+        // new crop region within existing surface
+        // safe to just crop this with new rect
+        cropRect = newCropRect;
+      } else {
+        // crop includes area outside original cropped region
+        // create new surface cropped by original bitmap crop rect
+        RefPtr<DataSourceSurface> dataSurface = surface->GetDataSurface();
+
+        surface = CropAndCopyDataSourceSurface(dataSurface, cropRect);
+        if (NS_WARN_IF(!surface)) {
+          aRv.Throw(NS_ERROR_NOT_AVAILABLE);
+          return nullptr;
+        }
+        needToReportMemoryAllocation = true;
+        cropRect = aCropRect.ref();
+      }
+    }
+  }
+
   return CreateImageBitmapInternal(
-      aGlobal, surface, aCropRect, aOptions, aImageBitmap.mWriteOnly,
+      aGlobal, surface, Some(cropRect), aOptions, aImageBitmap.mWriteOnly,
       needToReportMemoryAllocation, false, aImageBitmap.mAlphaType, aRv);
 }
 
@@ -1237,7 +1438,6 @@ class CreateImageBitmapFromBlob final : public DiscardableRunnable,
         mGlobalObject(aGlobal),
         mInputStream(std::move(aInputStream)),
         mCropRect(aCropRect),
-        mOriginalCropRect(aCropRect),
         mMainThreadEventTarget(aMainThreadEventTarget),
         mOptions(aOptions),
         mThread(PR_GetCurrentThread()) {}
@@ -1285,8 +1485,6 @@ class CreateImageBitmapFromBlob final : public DiscardableRunnable,
 
   nsCOMPtr<nsIInputStream> mInputStream;
   Maybe<IntRect> mCropRect;
-  Maybe<IntRect> mOriginalCropRect;
-  IntSize mSourceSize;
   nsCOMPtr<nsIEventTarget> mMainThreadEventTarget;
   const ImageBitmapOptions mOptions;
   void* mThread;
@@ -1369,6 +1567,19 @@ already_AddRefed<Promise> ImageBitmap::Create(
     }
   }
 
+  if (aOptions.mResizeWidth.WasPassed() && aOptions.mResizeWidth.Value() == 0) {
+    aRv.ThrowInvalidStateError(
+        "The resizeWidth passed to createImageBitmap must be nonzero");
+    return promise.forget();
+  }
+
+  if (aOptions.mResizeHeight.WasPassed() &&
+      aOptions.mResizeHeight.Value() == 0) {
+    aRv.ThrowInvalidStateError(
+        "The resizeHeight passed to createImageBitmap must be nonzero");
+    return promise.forget();
+  }
+
   RefPtr<ImageBitmap> imageBitmap;
 
   if (aSrc.IsHTMLImageElement()) {
@@ -1394,6 +1605,9 @@ already_AddRefed<Promise> ImageBitmap::Create(
         NS_IsMainThread(),
         "Creating ImageBitmap from HTMLCanvasElement off the main thread.");
     imageBitmap = CreateInternal(aGlobal, aSrc.GetAsHTMLCanvasElement(),
+                                 aCropRect, aOptions, aRv);
+  } else if (aSrc.IsOffscreenCanvas()) {
+    imageBitmap = CreateInternal(aGlobal, aSrc.GetAsOffscreenCanvas(),
                                  aCropRect, aOptions, aRv);
   } else if (aSrc.IsImageData()) {
     imageBitmap = CreateInternal(aGlobal, aSrc.GetAsImageData(), aCropRect,
@@ -1731,6 +1945,10 @@ CreateImageBitmapFromBlob::OnImageReady(imgIContainer* aImgContainer,
     frameFlags |= imgIContainer::FLAG_DECODE_NO_PREMULTIPLY_ALPHA;
   }
 
+  if (mOptions.mColorSpaceConversion == ColorSpaceConversion::None) {
+    frameFlags |= imgIContainer::FLAG_DECODE_NO_COLORSPACE_CONVERSION;
+  }
+
   RefPtr<SourceSurface> surface =
       aImgContainer->GetFrame(whichFrame, frameFlags);
 
@@ -1739,10 +1957,6 @@ CreateImageBitmapFromBlob::OnImageReady(imgIContainer* aImgContainer,
         nullptr, NS_ERROR_DOM_INVALID_STATE_ERR);
     return NS_OK;
   }
-
-  // Store the sourceSize value for the
-  // MimeTypeAndDecodeAndCropBlobCompletedMainThread call.
-  mSourceSize = surface->GetSize();
 
   // Crop the source surface if needed.
   RefPtr<SourceSurface> croppedSurface = surface;
@@ -1780,12 +1994,27 @@ CreateImageBitmapFromBlob::OnImageReady(imgIContainer* aImgContainer,
     dataSurface = croppedSurface->GetDataSurface();
 
     if (mCropRect.isSome()) {
-      mCropRect->MoveTo(0, 0);
+      mCropRect->SetRect(0, 0, dataSurface->GetSize().width,
+                         dataSurface->GetSize().height);
     }
   }
 
   if (mOptions.mImageOrientation == ImageOrientation::FlipY) {
     croppedSurface = FlipYDataSourceSurface(dataSurface);
+  }
+
+  if (mOptions.mResizeWidth.WasPassed() || mOptions.mResizeHeight.WasPassed()) {
+    dataSurface = croppedSurface->GetDataSurface();
+    croppedSurface = ScaleDataSourceSurface(dataSurface, mOptions);
+    if (NS_WARN_IF(!croppedSurface)) {
+      MimeTypeAndDecodeAndCropBlobCompletedMainThread(
+          nullptr, NS_ERROR_DOM_INVALID_STATE_ERR);
+      return NS_OK;
+    }
+    if (mCropRect.isSome()) {
+      mCropRect->SetRect(0, 0, croppedSurface->GetSize().width,
+                         croppedSurface->GetSize().height);
+    }
   }
 
   if (NS_WARN_IF(!croppedSurface)) {

@@ -110,6 +110,7 @@ class nsTextFrame : public nsIFrame {
     mozilla::StyleHyphens GetHyphensOption() const final {
       return mTextStyle->mHyphens;
     }
+    mozilla::gfx::ShapedTextFlags GetShapedTextFlags() const final;
 
     already_AddRefed<DrawTarget> GetDrawTarget() const final;
 
@@ -309,7 +310,7 @@ class nsTextFrame : public nsIFrame {
   void List(FILE* out = stderr, const char* aPrefix = "",
             ListFlags aFlags = ListFlags()) const final;
   nsresult GetFrameName(nsAString& aResult) const final;
-  void ToCString(nsCString& aBuf, int32_t* aTotalContentLength) const;
+  void ToCString(nsCString& aBuf) const;
   void ListTextRuns(FILE* out, nsTHashSet<const void*>& aSeen) const final;
 #endif
 

@@ -21,10 +21,17 @@
 #include "threading/Mutex.h"
 #include "wasm/WasmConstants.h"
 
+namespace mozilla {
+union Utf8Unit;
+}
+
 namespace JS {
 class OffThreadToken {};
 class ReadOnlyCompileOptions;
 class Zone;
+
+template <typename UnitT>
+class SourceText;
 }  // namespace JS
 
 namespace js {
@@ -178,6 +185,9 @@ inline void CancelOffThreadIonCompile(JSRuntime* runtime) {
 bool HasOffThreadIonCompile(JS::Realm* realm);
 #endif
 
+// True iff the current thread is a ParseTask or a DelazifyTask.
+bool CurrentThreadIsParseThread();
+
 /*
  * Cancel all scheduled, in progress or finished parses for runtime.
  *
@@ -189,17 +199,15 @@ bool HasOffThreadIonCompile(JS::Realm* realm);
 void CancelOffThreadParses(JSRuntime* runtime);
 
 /*
+ * Cancel all scheduled or in progress eager delazification phases for a
+ * runtime.
+ */
+void CancelOffThreadDelazify(JSRuntime* runtime);
+
+/*
  * Start a parse/emit cycle for a stream of source. The characters must stay
  * alive until the compilation finishes.
  */
-JS::OffThreadToken* StartOffThreadParseScript(
-    JSContext* cx, const JS::ReadOnlyCompileOptions& options,
-    JS::SourceText<char16_t>& srcBuf, JS::OffThreadCompileCallback callback,
-    void* callbackData);
-JS::OffThreadToken* StartOffThreadParseScript(
-    JSContext* cx, const JS::ReadOnlyCompileOptions& options,
-    JS::SourceText<mozilla::Utf8Unit>& srcBuf,
-    JS::OffThreadCompileCallback callback, void* callbackData);
 
 JS::OffThreadToken* StartOffThreadCompileToStencil(
     JSContext* cx, const JS::ReadOnlyCompileOptions& options,
@@ -210,22 +218,22 @@ JS::OffThreadToken* StartOffThreadCompileToStencil(
     JS::SourceText<mozilla::Utf8Unit>& srcBuf,
     JS::OffThreadCompileCallback callback, void* callbackData);
 
-JS::OffThreadToken* StartOffThreadParseModule(
+JS::OffThreadToken* StartOffThreadCompileModuleToStencil(
     JSContext* cx, const JS::ReadOnlyCompileOptions& options,
     JS::SourceText<char16_t>& srcBuf, JS::OffThreadCompileCallback callback,
     void* callbackData);
-JS::OffThreadToken* StartOffThreadParseModule(
+JS::OffThreadToken* StartOffThreadCompileModuleToStencil(
     JSContext* cx, const JS::ReadOnlyCompileOptions& options,
     JS::SourceText<mozilla::Utf8Unit>& srcBuf,
     JS::OffThreadCompileCallback callback, void* callbackData);
 
-JS::OffThreadToken* StartOffThreadDecodeScript(
-    JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+JS::OffThreadToken* StartOffThreadDecodeStencil(
+    JSContext* cx, const JS::DecodeOptions& options,
     const JS::TranscodeRange& range, JS::OffThreadCompileCallback callback,
     void* callbackData);
 
 JS::OffThreadToken* StartOffThreadDecodeMultiStencils(
-    JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+    JSContext* cx, const JS::DecodeOptions& options,
     JS::TranscodeSources& sources, JS::OffThreadCompileCallback callback,
     void* callbackData);
 

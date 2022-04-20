@@ -4,9 +4,6 @@ const { E10SUtils } = ChromeUtils.import(
 );
 const triggeringPrincipal_base64 = E10SUtils.SERIALIZED_SYSTEMPRINCIPAL;
 
-// Glean's here on `window`, but eslint doesn't know that. bug 1715542.
-/* global Glean:false */
-
 const MAX_CONCURRENT_TABS = "browser.engagement.max_concurrent_tab_count";
 const TAB_EVENT_COUNT = "browser.engagement.tab_open_event_count";
 const MAX_CONCURRENT_WINDOWS = "browser.engagement.max_concurrent_window_count";
@@ -32,8 +29,7 @@ function promiseBrowserStateRestored() {
 add_task(async function test_privateMode() {
   // Let's reset the counts.
   Services.telemetry.clearScalars();
-  let FOG = Cc["@mozilla.org/toolkit/glean;1"].createInstance(Ci.nsIFOG);
-  FOG.testResetFOG();
+  Services.fog.testResetFOG();
 
   // Open a private window and load a website in it.
   let privateWin = await BrowserTestUtils.openNewBrowserWindow({

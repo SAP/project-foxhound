@@ -11,17 +11,20 @@ typedef long long GLint64;
 typedef unsigned long long GLuint64;
 
 [Pref="webgl.enable-webgl2",
- Exposed=Window]
+ Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread",
+ Exposed=(Window,Worker)]
 interface WebGLSampler {
 };
 
 [Pref="webgl.enable-webgl2",
- Exposed=Window]
+ Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread",
+ Exposed=(Window,Worker)]
 interface WebGLSync {
 };
 
 [Pref="webgl.enable-webgl2",
- Exposed=Window]
+ Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread",
+ Exposed=(Window,Worker)]
 interface WebGLTransformFeedback {
 };
 
@@ -30,7 +33,8 @@ typedef ([AllowShared] Uint32Array or sequence<GLuint>) Uint32List;
 // WebGL2 spec has this as an empty interface that pulls in everything
 // via WebGL2RenderingContextBase.
 [Pref="webgl.enable-webgl2",
- Exposed=Window]
+ Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread",
+ Exposed=(Window,Worker)]
 interface WebGL2RenderingContext
 {
 };
@@ -372,6 +376,9 @@ interface mixin WebGL2RenderingContextBase
     [Throws] // Another overhead throws.
     void texImage2D(GLenum target, GLint level, GLint internalformat,
                     GLenum format, GLenum type, ImageData source);
+    [Throws] // Another overhead throws.
+    void texImage2D(GLenum target, GLint level, GLint internalformat,
+                    GLenum format, GLenum type, OffscreenCanvas source);
 
     [Throws] // Another overhead throws.
     void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
@@ -392,6 +399,9 @@ interface mixin WebGL2RenderingContextBase
     [Throws] // Another overhead throws.
     void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
                        GLenum format, GLenum type, ImageData source);
+    [Throws] // Another overhead throws.
+    void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
+                       GLenum format, GLenum type, OffscreenCanvas source);
 
     // WebGL2 entrypoints:
     [Throws] // Another overhead throws.
@@ -417,6 +427,10 @@ interface mixin WebGL2RenderingContextBase
     void texImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height,
                     GLint border, GLenum format, GLenum type,
                     ImageData source);
+    [Throws] // Another overhead throws.
+    void texImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height,
+                    GLint border, GLenum format, GLenum type,
+                    OffscreenCanvas source);
     [Throws] // Another overhead throws.
     void texImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height,
                     GLint border, GLenum format, GLenum type, [AllowShared] ArrayBufferView srcData,
@@ -445,6 +459,10 @@ interface mixin WebGL2RenderingContextBase
     void texImage3D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height,
                     GLsizei depth, GLint border, GLenum format, GLenum type,
                     ImageData source);
+    [Throws] // Another overhead throws.
+    void texImage3D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height,
+                    GLsizei depth, GLint border, GLenum format, GLenum type,
+                    OffscreenCanvas source);
     [Throws] // Another overhead throws.
     void texImage3D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height,
                     GLsizei depth, GLint border, GLenum format, GLenum type, [AllowShared] ArrayBufferView? srcData);
@@ -478,6 +496,10 @@ interface mixin WebGL2RenderingContextBase
                        ImageData source);
     [Throws] // Another overhead throws.
     void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width,
+                       GLsizei height, GLenum format, GLenum type,
+                       OffscreenCanvas source);
+    [Throws] // Another overhead throws.
+    void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width,
                        GLsizei height, GLenum format, GLenum type, [AllowShared] ArrayBufferView srcData,
                        GLuint srcOffset);
 
@@ -505,6 +527,10 @@ interface mixin WebGL2RenderingContextBase
     void texSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset,
                        GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type,
                        ImageData source);
+    [Throws] // Another overhead throws.
+    void texSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset,
+                       GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type,
+                       OffscreenCanvas source);
     [Throws] // Another overhead throws.
     void texSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset,
                        GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type,
@@ -700,12 +726,12 @@ WebGL2RenderingContext includes WebGLRenderingContextBase;
 WebGL2RenderingContext includes WebGL2RenderingContextBase;
 
 [LegacyNoInterfaceObject,
- Exposed=Window]
+ Exposed=(Window,Worker)]
 interface EXT_color_buffer_float {
 };
 
 [LegacyNoInterfaceObject,
- Exposed=Window]
+ Exposed=(Window,Worker)]
 interface OVR_multiview2 {
     const GLenum FRAMEBUFFER_ATTACHMENT_TEXTURE_NUM_VIEWS_OVR = 0x9630;
     const GLenum FRAMEBUFFER_ATTACHMENT_TEXTURE_BASE_VIEW_INDEX_OVR = 0x9632;

@@ -40,6 +40,16 @@ var wasmGlobalInterfaces = [
     insecureContext: true,
     nightly: true,
   },
+  {
+    name: "Exception",
+    insecureContext: true,
+    nightly: true,
+  },
+  {
+    name: "Tag",
+    insecureContext: true,
+    nightly: true,
+  },
 ];
 // IMPORTANT: Do not change this list without review from
 //            a JavaScript Engine peer!
@@ -279,6 +289,8 @@ var interfaceNamesInGlobalScope = [
   "URLSearchParams",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "WebSocket",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebGLQuery",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "WindowClient",
   // IMPORTANT: Do not change this list without review from a DOM peer!

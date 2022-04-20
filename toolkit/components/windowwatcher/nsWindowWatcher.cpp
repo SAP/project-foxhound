@@ -29,6 +29,7 @@
 #include "mozilla/dom/BrowsingContextGroup.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
+#include "nsIDragService.h"
 #include "nsIDOMChromeWindow.h"
 #include "nsIPrompt.h"
 #include "nsIScriptObjectPrincipal.h"
@@ -415,6 +416,14 @@ nsresult nsWindowWatcher::CreateChromeWindow(nsIWebBrowserChrome* aParentChrome,
   }
 
   bool cancel = false;
+  if (aChromeFlags & nsIWebBrowserChrome::CHROME_OPENAS_DIALOG) {
+    // If there are any drag and drop operations in flight, try to end them.
+    nsCOMPtr<nsIDragService> ds =
+        do_GetService("@mozilla.org/widget/dragservice;1");
+    if (ds) {
+      ds->EndDragSession(true, 0);
+    }
+  }
   nsCOMPtr<nsIWebBrowserChrome> newWindowChrome;
   nsresult rv = mWindowCreator->CreateChromeWindow(
       aParentChrome, aChromeFlags, aOpenWindowInfo, &cancel,
@@ -1025,6 +1034,8 @@ nsresult nsWindowWatcher::OpenWindowInternal(
       SANDBOX_PROPAGATES_TO_AUXILIARY_BROWSING_CONTEXTS) {
     MOZ_ASSERT(windowIsNew, "Should only get here for new windows");
     MOZ_ALWAYS_SUCCEEDS(newBC->SetSandboxFlags(activeDocsSandboxFlags));
+    MOZ_ALWAYS_SUCCEEDS(
+        newBC->SetInitialSandboxFlags(newBC->GetSandboxFlags()));
   }
 
   RefPtr<nsGlobalWindowOuter> win(

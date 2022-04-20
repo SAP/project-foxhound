@@ -71,6 +71,8 @@
 #include "mozilla/net/HttpBackgroundChannelParent.h"
 #include "mozilla/net/HttpConnectionMgrParent.h"
 #include "mozilla/net/WebSocketConnectionParent.h"
+#include "mozilla/psm/IPCClientCertsChild.h"
+#include "mozilla/psm/IPCClientCertsParent.h"
 #include "mozilla/psm/VerifySSLServerCertParent.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIPrincipal.h"
@@ -79,14 +81,6 @@
 #include "nsThreadUtils.h"
 #include "nsTraceRefcnt.h"
 #include "nsXULAppAPI.h"
-
-#ifdef DISABLE_ASSERTS_FOR_FUZZING
-#  define ASSERT_UNLESS_FUZZING(...) \
-    do {                             \
-    } while (0)
-#else
-#  define ASSERT_UNLESS_FUZZING(...) MOZ_ASSERT(false)
-#endif
 
 using mozilla::AssertIsOnMainThread;
 using mozilla::dom::FileSystemRequestParent;
@@ -131,7 +125,6 @@ using mozilla::dom::ContentParent;
 
 BackgroundParentImpl::BackgroundParentImpl() {
   AssertIsInMainOrSocketProcess();
-  AssertIsOnMainThread();
 
   MOZ_COUNT_CTOR(mozilla::ipc::BackgroundParentImpl);
 }
@@ -718,26 +711,14 @@ bool BackgroundParentImpl::DeallocPParentToChildStreamParent(
   return true;
 }
 
-BackgroundParentImpl::PVsyncParent* BackgroundParentImpl::AllocPVsyncParent() {
+already_AddRefed<BackgroundParentImpl::PVsyncParent>
+BackgroundParentImpl::AllocPVsyncParent() {
   AssertIsInMainOrSocketProcess();
   AssertIsOnBackgroundThread();
 
   RefPtr<mozilla::dom::VsyncParent> actor = new mozilla::dom::VsyncParent();
   actor->UpdateVsyncSource(nullptr);
-  // There still has one ref-count after return, and it will be released in
-  // DeallocPVsyncParent().
-  return actor.forget().take();
-}
-
-bool BackgroundParentImpl::DeallocPVsyncParent(PVsyncParent* aActor) {
-  AssertIsInMainOrSocketProcess();
-  AssertIsOnBackgroundThread();
-  MOZ_ASSERT(aActor);
-
-  // This actor already has one ref-count. Please check AllocPVsyncParent().
-  RefPtr<mozilla::dom::VsyncParent> actor =
-      dont_AddRef(static_cast<mozilla::dom::VsyncParent*>(aActor));
-  return true;
+  return actor.forget();
 }
 
 camera::PCamerasParent* BackgroundParentImpl::AllocPCamerasParent() {
@@ -812,9 +793,8 @@ bool BackgroundParentImpl::DeallocPUDPSocketParent(PUDPSocketParent* actor) {
 
 already_AddRefed<mozilla::psm::PVerifySSLServerCertParent>
 BackgroundParentImpl::AllocPVerifySSLServerCertParent(
-    const ByteArray& aServerCert, const nsTArray<ByteArray>& aPeerCertChain,
-    const nsCString& aHostName, const int32_t& aPort,
-    const OriginAttributes& aOriginAttributes,
+    const nsTArray<ByteArray>& aPeerCertChain, const nsCString& aHostName,
+    const int32_t& aPort, const OriginAttributes& aOriginAttributes,
     const Maybe<ByteArray>& aStapledOCSPResponse,
     const Maybe<ByteArray>& aSctsFromTLSExtension,
     const Maybe<DelegatedCredentialInfoArg>& aDcInfo,
@@ -826,17 +806,17 @@ BackgroundParentImpl::AllocPVerifySSLServerCertParent(
 
 mozilla::ipc::IPCResult
 BackgroundParentImpl::RecvPVerifySSLServerCertConstructor(
-    PVerifySSLServerCertParent* aActor, const ByteArray& aServerCert,
-    nsTArray<ByteArray>&& aPeerCertChain, const nsCString& aHostName,
-    const int32_t& aPort, const OriginAttributes& aOriginAttributes,
+    PVerifySSLServerCertParent* aActor, nsTArray<ByteArray>&& aPeerCertChain,
+    const nsCString& aHostName, const int32_t& aPort,
+    const OriginAttributes& aOriginAttributes,
     const Maybe<ByteArray>& aStapledOCSPResponse,
     const Maybe<ByteArray>& aSctsFromTLSExtension,
     const Maybe<DelegatedCredentialInfoArg>& aDcInfo,
     const uint32_t& aProviderFlags, const uint32_t& aCertVerifierFlags) {
   mozilla::psm::VerifySSLServerCertParent* authCert =
       static_cast<mozilla::psm::VerifySSLServerCertParent*>(aActor);
-  if (!authCert->Dispatch(aServerCert, std::move(aPeerCertChain), aHostName,
-                          aPort, aOriginAttributes, aStapledOCSPResponse,
+  if (!authCert->Dispatch(std::move(aPeerCertChain), aHostName, aPort,
+                          aOriginAttributes, aStapledOCSPResponse,
                           aSctsFromTLSExtension, aDcInfo, aProviderFlags,
                           aCertVerifierFlags)) {
     return IPC_FAIL_NO_REASON(this);
@@ -1045,6 +1025,21 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvPMessagePortConstructor(
     return IPC_FAIL_NO_REASON(this);
   }
   return IPC_OK();
+}
+
+already_AddRefed<psm::PIPCClientCertsParent>
+BackgroundParentImpl::AllocPIPCClientCertsParent() {
+  // This should only be called in the parent process with the socket process
+  // as the child process, not any content processes, hence the check that the
+  // child ID be 0.
+  MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(mozilla::ipc::BackgroundParent::GetChildID(this) == 0);
+  if (!XRE_IsParentProcess() ||
+      mozilla::ipc::BackgroundParent::GetChildID(this) != 0) {
+    return nullptr;
+  }
+  RefPtr<psm::IPCClientCertsParent> result = new psm::IPCClientCertsParent();
+  return result.forget();
 }
 
 bool BackgroundParentImpl::DeallocPMessagePortParent(

@@ -1687,9 +1687,13 @@ bool KeyframeEffect::ShouldBlockAsyncTransformAnimations(
     return true;
   }
 
+  MOZ_ASSERT(mAnimation);
+  // Note: If the geometric animations are using scroll-timeline, we don't need
+  // to synchronize transform animations with them.
   const bool enableMainthreadSynchronizationWithGeometricAnimations =
       StaticPrefs::
-          dom_animations_mainthread_synchronization_with_geometric_animations();
+          dom_animations_mainthread_synchronization_with_geometric_animations() &&
+      !mAnimation->UsingScrollTimeline();
 
   for (const AnimationProperty& property : mProperties) {
     // If there is a property for animations level that is overridden by
@@ -2025,6 +2029,13 @@ KeyframeEffect::MatchForCompositor KeyframeEffect::IsMatchForCompositor(
     return KeyframeEffect::MatchForCompositor::NoAndBlockThisProperty;
   }
 
+  // Unconditionally disable OMTA for scroll-timeline.
+  // FIXME: Bug 1737180: Once we support OMTA for scroll-timeline, we can just
+  // drop this.
+  if (mAnimation->UsingScrollTimeline()) {
+    return KeyframeEffect::MatchForCompositor::No;
+  }
+
   if (!HasEffectiveAnimationOfPropertySet(aPropertySet, aEffects)) {
     return KeyframeEffect::MatchForCompositor::No;
   }
@@ -2043,11 +2054,12 @@ KeyframeEffect::MatchForCompositor KeyframeEffect::IsMatchForCompositor(
     }
 
     // We don't yet support off-main-thread background-color animations on
-    // canvas frame or on <body> which genarate nsDisplayCanvasBackgroundColor
-    // or nsDisplaySolidColor display item.
+    // canvas frame or on <html> or <body> which genarate
+    // nsDisplayCanvasBackgroundColor or nsDisplaySolidColor display item.
     if (nsCSSRendering::IsCanvasFrame(aFrame) ||
         (aFrame->GetContent() &&
-         aFrame->GetContent()->IsHTMLElement(nsGkAtoms::body))) {
+         (aFrame->GetContent()->IsHTMLElement(nsGkAtoms::body) ||
+          aFrame->GetContent()->IsHTMLElement(nsGkAtoms::html)))) {
       return KeyframeEffect::MatchForCompositor::No;
     }
   }

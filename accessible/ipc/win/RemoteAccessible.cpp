@@ -223,12 +223,12 @@ uint64_t RemoteAccessible::State() {
   return state;
 }
 
-nsIntRect RemoteAccessible::Bounds() const {
+LayoutDeviceIntRect RemoteAccessible::Bounds() const {
   if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
     return RemoteAccessibleBase<RemoteAccessible>::Bounds();
   }
 
-  nsIntRect rect;
+  LayoutDeviceIntRect rect;
 
   RefPtr<IAccessible> acc;
   if (!GetCOMInterface((void**)getter_AddRefs(acc))) {
@@ -353,28 +353,32 @@ static bool ConvertBSTRAttributesToAccAttributes(
   return true;
 }
 
-void RemoteAccessible::Attributes(RefPtr<AccAttributes>* aAttrs) const {
+already_AddRefed<AccAttributes> RemoteAccessible::Attributes() {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::Attributes();
+  }
+  RefPtr<AccAttributes> attrsObj = new AccAttributes();
   RefPtr<IAccessible> acc;
   if (!GetCOMInterface((void**)getter_AddRefs(acc))) {
-    return;
+    return attrsObj.forget();
   }
 
   RefPtr<IAccessible2> acc2;
   if (FAILED(acc->QueryInterface(IID_IAccessible2,
                                  (void**)getter_AddRefs(acc2)))) {
-    return;
+    return attrsObj.forget();
   }
 
   BSTR attrs;
   HRESULT hr = acc2->get_attributes(&attrs);
   _bstr_t attrsWrap(attrs, false);
   if (FAILED(hr)) {
-    return;
+    return attrsObj.forget();
   }
 
-  *aAttrs = new AccAttributes();
   ConvertBSTRAttributesToAccAttributes(
-      nsDependentString((wchar_t*)attrs, attrsWrap.length()), *aAttrs);
+      nsDependentString((wchar_t*)attrs, attrsWrap.length()), attrsObj);
+  return attrsObj.forget();
 }
 
 nsTArray<RemoteAccessible*> RemoteAccessible::RelationByType(
@@ -553,11 +557,14 @@ void RemoteAccessible::TextSubstring(int32_t aStartOffset, int32_t aEndOffset,
   aText = (wchar_t*)result;
 }
 
-void RemoteAccessible::GetTextBeforeOffset(int32_t aOffset,
-                                           AccessibleTextBoundary aBoundaryType,
-                                           nsString& aText,
-                                           int32_t* aStartOffset,
-                                           int32_t* aEndOffset) {
+void RemoteAccessible::TextBeforeOffset(int32_t aOffset,
+                                        AccessibleTextBoundary aBoundaryType,
+                                        int32_t* aStartOffset,
+                                        int32_t* aEndOffset, nsAString& aText) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::TextBeforeOffset(
+        aOffset, aBoundaryType, aStartOffset, aEndOffset, aText);
+  }
   RefPtr<IAccessibleText> acc = QueryInterface<IAccessibleText>(this);
   if (!acc) {
     return;
@@ -577,11 +584,14 @@ void RemoteAccessible::GetTextBeforeOffset(int32_t aOffset,
   aText = (wchar_t*)result;
 }
 
-void RemoteAccessible::GetTextAfterOffset(int32_t aOffset,
-                                          AccessibleTextBoundary aBoundaryType,
-                                          nsString& aText,
-                                          int32_t* aStartOffset,
-                                          int32_t* aEndOffset) {
+void RemoteAccessible::TextAfterOffset(int32_t aOffset,
+                                       AccessibleTextBoundary aBoundaryType,
+                                       int32_t* aStartOffset,
+                                       int32_t* aEndOffset, nsAString& aText) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::TextAfterOffset(
+        aOffset, aBoundaryType, aStartOffset, aEndOffset, aText);
+  }
   RefPtr<IAccessibleText> acc = QueryInterface<IAccessibleText>(this);
   if (!acc) {
     return;
@@ -853,6 +863,15 @@ Accessible* RemoteAccessible::ChildAtPoint(
     }
   }
   return proxy;
+}
+
+GroupPos RemoteAccessible::GroupPosition() {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::GroupPosition();
+  }
+
+  // This is only supported when cache is enabled.
+  return GroupPos();
 }
 
 }  // namespace a11y

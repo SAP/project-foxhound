@@ -102,7 +102,7 @@ LoadInfo::LoadInfo(
                                         : aLoadingPrincipal),
       mTriggeringPrincipal(aTriggeringPrincipal ? aTriggeringPrincipal
                                                 : mLoadingPrincipal.get()),
-      mSandboxedNullPrincipalID(nsContentUtils::GenerateUUID()),
+      mSandboxedNullPrincipalID(nsID::GenerateUUID()),
       mClientInfo(aLoadingClientInfo),
       mController(aController),
       mLoadingContext(do_GetWeakReference(aLoadingContext)),
@@ -315,7 +315,7 @@ LoadInfo::LoadInfo(nsPIDOMWindowOuter* aOuterWindow,
                    nsISupports* aContextForTopLevelLoad,
                    nsSecurityFlags aSecurityFlags, uint32_t aSandboxFlags)
     : mTriggeringPrincipal(aTriggeringPrincipal),
-      mSandboxedNullPrincipalID(nsContentUtils::GenerateUUID()),
+      mSandboxedNullPrincipalID(nsID::GenerateUUID()),
       mContextForTopLevelLoad(do_GetWeakReference(aContextForTopLevelLoad)),
       mSecurityFlags(aSecurityFlags),
       mSandboxFlags(aSandboxFlags),
@@ -374,7 +374,7 @@ LoadInfo::LoadInfo(dom::CanonicalBrowsingContext* aBrowsingContext,
                    const OriginAttributes& aOriginAttributes,
                    nsSecurityFlags aSecurityFlags, uint32_t aSandboxFlags)
     : mTriggeringPrincipal(aTriggeringPrincipal),
-      mSandboxedNullPrincipalID(nsContentUtils::GenerateUUID()),
+      mSandboxedNullPrincipalID(nsID::GenerateUUID()),
       mSecurityFlags(aSecurityFlags),
       mSandboxFlags(aSandboxFlags),
 
@@ -416,7 +416,7 @@ LoadInfo::LoadInfo(dom::WindowGlobalParent* aParentWGP,
                    nsContentPolicyType aContentPolicyType,
                    nsSecurityFlags aSecurityFlags, uint32_t aSandboxFlags)
     : mTriggeringPrincipal(aTriggeringPrincipal),
-      mSandboxedNullPrincipalID(nsContentUtils::GenerateUUID()),
+      mSandboxedNullPrincipalID(nsID::GenerateUUID()),
       mSecurityFlags(aSecurityFlags),
       mSandboxFlags(aSandboxFlags),
       mInternalContentPolicyType(aContentPolicyType) {
@@ -522,6 +522,7 @@ LoadInfo::LoadInfo(const LoadInfo& rhs)
       mPrincipalToInherit(rhs.mPrincipalToInherit),
       mTopLevelPrincipal(rhs.mTopLevelPrincipal),
       mResultPrincipalURI(rhs.mResultPrincipalURI),
+      mChannelCreationOriginalURI(rhs.mChannelCreationOriginalURI),
       mCookieJarSettings(rhs.mCookieJarSettings),
       mCspToInherit(rhs.mCspToInherit),
       mSandboxedNullPrincipalID(rhs.mSandboxedNullPrincipalID),
@@ -883,7 +884,7 @@ const nsID& LoadInfo::GetSandboxedNullPrincipalID() {
 }
 
 void LoadInfo::ResetSandboxedNullPrincipalID() {
-  mSandboxedNullPrincipalID = nsContentUtils::GenerateUUID();
+  mSandboxedNullPrincipalID = nsID::GenerateUUID();
 }
 
 nsIPrincipal* LoadInfo::GetTopLevelPrincipal() { return mTopLevelPrincipal; }
@@ -1779,6 +1780,18 @@ LoadInfo::SetResultPrincipalURI(nsIURI* aURI) {
 }
 
 NS_IMETHODIMP
+LoadInfo::GetChannelCreationOriginalURI(nsIURI** aURI) {
+  *aURI = do_AddRef(mChannelCreationOriginalURI).take();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::SetChannelCreationOriginalURI(nsIURI* aURI) {
+  mChannelCreationOriginalURI = aURI;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 LoadInfo::SetRequestBlockingReason(uint32_t aReason) {
   mRequestBlockingReason = aReason;
   return NS_OK;
@@ -1827,9 +1840,12 @@ void LoadInfo::SetReservedClientInfo(const ClientInfo& aClientInfo) {
   MOZ_DIAGNOSTIC_ASSERT(mInitialClientInfo.isNothing());
   // Treat assignments of the same value as a no-op.  The emplace below
   // will normally assert when overwriting an existing value.
-  if (mReservedClientInfo.isSome() &&
-      mReservedClientInfo.ref() == aClientInfo) {
-    return;
+  if (mReservedClientInfo.isSome()) {
+    if (mReservedClientInfo.ref() == aClientInfo) {
+      return;
+    }
+    MOZ_DIAGNOSTIC_ASSERT(false, "mReservedClientInfo already set");
+    mReservedClientInfo.reset();
   }
   mReservedClientInfo.emplace(aClientInfo);
 }

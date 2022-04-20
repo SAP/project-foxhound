@@ -3,28 +3,39 @@
 XPCOMUtils.defineLazyModuleGetters(this, {
   ctypes: "resource://gre/modules/ctypes.jsm",
   MockRegistry: "resource://testing-common/MockRegistry.jsm",
-  OS: "resource://gre/modules/osfile.jsm",
 });
 
 do_get_profile();
-let tmpDir = FileUtils.getDir("TmpD", ["PKCS11"]);
+
+let tmpDir;
+let baseDir;
 let slug =
   AppConstants.platform === "linux" ? "pkcs11-modules" : "PKCS11Modules";
-tmpDir.createUnique(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
-let baseDir = OS.Path.join(tmpDir.path, slug);
-OS.File.makeDir(baseDir);
 
-registerCleanupFunction(() => {
-  tmpDir.remove(true);
+add_task(async function setupTest() {
+  tmpDir = await IOUtils.createUniqueDirectory(
+    Services.dirsvc.get("TmpD", Ci.nsIFile).path,
+    "PKCS11"
+  );
+
+  baseDir = PathUtils.join(tmpDir, slug);
+  await IOUtils.makeDirectory(baseDir);
 });
 
-function getPath(filename) {
-  return OS.Path.join(baseDir, filename);
-}
+registerCleanupFunction(async () => {
+  await IOUtils.remove(tmpDir, { recursive: true });
+});
 
-const testmodule =
-  "../../../../../security/manager/ssl/tests/unit/pkcs11testmodule/" +
-  ctypes.libraryName("pkcs11testmodule");
+const testmodule = PathUtils.join(
+  PathUtils.parent(Services.dirsvc.get("CurWorkD", Ci.nsIFile).path, 5),
+  "security",
+  "manager",
+  "ssl",
+  "tests",
+  "unit",
+  "pkcs11testmodule",
+  ctypes.libraryName("pkcs11testmodule")
+);
 
 // This function was inspired by the native messaging test under
 // toolkit/components/extensions
@@ -39,8 +50,8 @@ async function setupManifests(modules) {
       allowed_extensions: [module.id],
     };
 
-    let manifestPath = getPath(`${module.name}.json`);
-    await OS.File.writeAtomic(manifestPath, JSON.stringify(manifest));
+    let manifestPath = PathUtils.join(baseDir, `${module.name}.json`);
+    await IOUtils.writeJSON(manifestPath, manifest);
 
     return manifestPath;
   }
@@ -50,10 +61,11 @@ async function setupManifests(modules) {
     case "linux":
       let dirProvider = {
         getFile(property) {
-          if (property == "XREUserNativeManifests") {
-            return tmpDir.clone();
-          } else if (property == "XRESysNativeManifests") {
-            return tmpDir.clone();
+          if (
+            property == "XREUserNativeManifests" ||
+            property == "XRESysNativeManifests"
+          ) {
+            return new FileUtils.File(tmpDir);
           }
           return null;
         },
@@ -78,10 +90,6 @@ async function setupManifests(modules) {
       });
 
       for (let module of modules) {
-        if (!OS.Path.winIsAbsolute(module.path)) {
-          let cwd = await OS.File.getCurrentDirectory();
-          module.path = OS.Path.join(cwd, module.path);
-        }
         let manifestPath = await writeManifest(module);
         registry.setValue(
           Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
@@ -103,6 +111,17 @@ async function setupManifests(modules) {
 add_task(async function test_pkcs11() {
   async function background() {
     try {
+      const { os } = await browser.runtime.getPlatformInfo();
+      if (os !== "win") {
+        // Expect this call to not throw (explicitly cover regression fixed in Bug 1759162).
+        let isInstalledNonAbsolute = await browser.pkcs11.isModuleInstalled(
+          "testmoduleNonAbsolutePath"
+        );
+        browser.test.assertFalse(
+          isInstalledNonAbsolute,
+          "PKCS#11 module with non absolute path expected to not be installed"
+        );
+      }
       let isInstalled = await browser.pkcs11.isModuleInstalled("testmodule");
       browser.test.assertFalse(
         isInstalled,
@@ -204,6 +223,26 @@ add_task(async function test_pkcs11() {
         /No such PKCS#11 module osclientcerts/,
         "getModuleSlots should not work on the built-in osclientcerts module"
       );
+      await browser.test.assertRejects(
+        browser.pkcs11.installModule("ipcclientcerts", 0),
+        /No such PKCS#11 module ipcclientcerts/,
+        "installModule should not work on the built-in ipcclientcerts module"
+      );
+      await browser.test.assertRejects(
+        browser.pkcs11.uninstallModule("ipcclientcerts"),
+        /No such PKCS#11 module ipcclientcerts/,
+        "uninstallModule should not work on the built-in ipcclientcerts module"
+      );
+      await browser.test.assertRejects(
+        browser.pkcs11.isModuleInstalled("ipcclientcerts"),
+        /No such PKCS#11 module ipcclientcerts/,
+        "isModuleLoaded should not work on the built-in ipcclientcerts module"
+      );
+      await browser.test.assertRejects(
+        browser.pkcs11.getModuleSlots("ipcclientcerts"),
+        /No such PKCS#11 module ipcclientcerts/,
+        "getModuleSlots should not work on the built-in ipcclientcerts module"
+      );
       browser.test.notifyPass("pkcs11");
     } catch (e) {
       browser.test.fail(`Error: ${String(e)} :: ${e.stack}`);
@@ -220,6 +259,12 @@ add_task(async function test_pkcs11() {
       id: "pkcs11@tests.mozilla.org",
     },
     {
+      name: "testmoduleNonAbsolutePath",
+      description: "PKCS#11 Test Module",
+      path: ctypes.libraryName("pkcs11testmodule"),
+      id: "pkcs11@tests.mozilla.org",
+    },
+    {
       name: "othermodule",
       description: "PKCS#11 Test Module",
       path: testmodule,
@@ -228,13 +273,16 @@ add_task(async function test_pkcs11() {
     {
       name: "internalmodule",
       description: "Builtin Roots Module",
-      path: ctypes.libraryName("nssckbi"),
+      path: PathUtils.join(
+        Services.dirsvc.get("CurWorkD", Ci.nsIFile).path,
+        ctypes.libraryName("nssckbi")
+      ),
       id: "pkcs11@tests.mozilla.org",
     },
     {
       name: "osclientcerts",
       description: "OS Client Cert Module",
-      path: OS.Path.join(libDir.path, ctypes.libraryName("osclientcerts")),
+      path: PathUtils.join(libDir.path, ctypes.libraryName("osclientcerts")),
       id: "pkcs11@tests.mozilla.org",
     },
   ]);

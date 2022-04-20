@@ -84,6 +84,7 @@
 #include "mozilla/EventQueue.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/FlushType.h"
+#include "mozilla/FOGIPC.h"
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/HangAnnotations.h"
 #include "mozilla/IMEStateManager.h"
@@ -271,7 +272,6 @@
 #include "nsIContentSecurityPolicy.h"
 #include "nsIContentSink.h"
 #include "nsIContentViewer.h"
-#include "nsID.h"
 #include "nsIDOMWindowUtils.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
@@ -329,7 +329,6 @@
 #if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
 #  include "nsIURIWithSpecialOrigin.h"
 #endif
-#include "nsIUUIDGenerator.h"
 #include "nsIUserIdleService.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsIWebNavigation.h"
@@ -418,7 +417,6 @@ nsIScriptSecurityManager* nsContentUtils::sSecurityManager;
 nsIPrincipal* nsContentUtils::sSystemPrincipal;
 nsIPrincipal* nsContentUtils::sNullSubjectPrincipal;
 nsIIOService* nsContentUtils::sIOService;
-nsIUUIDGenerator* nsContentUtils::sUUIDGenerator;
 nsIConsoleService* nsContentUtils::sConsoleService;
 nsTHashMap<nsRefPtrHashKey<nsAtom>, EventNameMapping>*
     nsContentUtils::sAtomEventTable = nullptr;
@@ -813,13 +811,6 @@ nsresult nsContentUtils::Init() {
   Element::InitCCCallbacks();
 
   Unused << nsRFPService::GetOrCreate();
-
-  nsCOMPtr<nsIUUIDGenerator> uuidGenerator =
-      do_GetService("@mozilla.org/uuid-generator;1", &rv);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-  uuidGenerator.forget(&sUUIDGenerator);
 
   if (XRE_IsParentProcess()) {
     AsyncPrecreateStringBundles();
@@ -1343,23 +1334,20 @@ nsContentUtils::InternalSerializeAutocompleteAttribute(
 }
 
 // Parse an integer according to HTML spec
-template <class StringT>
+template <class CharT>
 int32_t nsContentUtils::ParseHTMLIntegerImpl(
-    const StringT& aValue, ParseHTMLIntegerResultFlags* aResult) {
-  using CharT = typename StringT::char_type;
-
+    const CharT* aStart, const CharT* aEnd,
+    ParseHTMLIntegerResultFlags* aResult) {
   int result = eParseHTMLInteger_NoFlags;
 
-  typename StringT::const_iterator iter, end;
-  aValue.BeginReading(iter);
-  aValue.EndReading(end);
+  const CharT* iter = aStart;
 
-  while (iter != end && nsContentUtils::IsHTMLWhitespace(*iter)) {
+  while (iter != aEnd && nsContentUtils::IsHTMLWhitespace(*iter)) {
     result |= eParseHTMLInteger_NonStandard;
     ++iter;
   }
 
-  if (iter == end) {
+  if (iter == aEnd) {
     result |= eParseHTMLInteger_Error | eParseHTMLInteger_ErrorNoValue;
     *aResult = (ParseHTMLIntegerResultFlags)result;
     return 0;
@@ -1380,7 +1368,7 @@ int32_t nsContentUtils::ParseHTMLIntegerImpl(
 
   // Check for leading zeros first.
   uint64_t leadingZeros = 0;
-  while (iter != end) {
+  while (iter != aEnd) {
     if (*iter != CharT('0')) {
       break;
     }
@@ -1390,7 +1378,7 @@ int32_t nsContentUtils::ParseHTMLIntegerImpl(
     ++iter;
   }
 
-  while (iter != end) {
+  while (iter != aEnd) {
     if (*iter >= CharT('0') && *iter <= CharT('9')) {
       value = (value * 10) + (*iter - CharT('0')) * sign;
       ++iter;
@@ -1414,7 +1402,7 @@ int32_t nsContentUtils::ParseHTMLIntegerImpl(
     result |= eParseHTMLInteger_NonStandard;
   }
 
-  if (iter != end) {
+  if (iter != aEnd) {
     result |= eParseHTMLInteger_DidNotConsumeAllInput;
   }
 
@@ -1423,14 +1411,15 @@ int32_t nsContentUtils::ParseHTMLIntegerImpl(
 }
 
 // Parse an integer according to HTML spec
-int32_t nsContentUtils::ParseHTMLInteger(const nsAString& aValue,
+int32_t nsContentUtils::ParseHTMLInteger(const char16_t* aStart,
+                                         const char16_t* aEnd,
                                          ParseHTMLIntegerResultFlags* aResult) {
-  return ParseHTMLIntegerImpl(aValue, aResult);
+  return ParseHTMLIntegerImpl(aStart, aEnd, aResult);
 }
 
-int32_t nsContentUtils::ParseHTMLInteger(const nsACString& aValue,
+int32_t nsContentUtils::ParseHTMLInteger(const char* aStart, const char* aEnd,
                                          ParseHTMLIntegerResultFlags* aResult) {
-  return ParseHTMLIntegerImpl(aValue, aResult);
+  return ParseHTMLIntegerImpl(aStart, aEnd, aResult);
 }
 
 #define SKIP_WHITESPACE(iter, end_iter, end_res)                 \
@@ -1904,7 +1893,7 @@ void nsContentUtils::Shutdown() {
   NS_IF_RELEASE(sSystemPrincipal);
   NS_IF_RELEASE(sNullSubjectPrincipal);
   NS_IF_RELEASE(sIOService);
-  NS_IF_RELEASE(sUUIDGenerator);
+
   sBidiKeyboard = nullptr;
 
   delete sAtomEventTable;
@@ -2120,10 +2109,18 @@ bool nsContentUtils::InProlog(nsINode* aNode) {
     return false;
   }
 
-  Document* doc = parent->AsDocument();
-  nsIContent* root = doc->GetRootElement();
-
-  return !root || doc->ComputeIndexOf(aNode) < doc->ComputeIndexOf(root);
+  const Document* doc = parent->AsDocument();
+  const nsIContent* root = doc->GetRootElement();
+  if (!root) {
+    return true;
+  }
+  const Maybe<uint32_t> indexOfNode = doc->ComputeIndexOf(aNode);
+  const Maybe<uint32_t> indexOfRoot = doc->ComputeIndexOf(root);
+  if (MOZ_LIKELY(indexOfNode.isSome() && indexOfRoot.isSome())) {
+    return *indexOfNode < *indexOfRoot;
+  }
+  // XXX Keep the odd traditional behavior for now.
+  return indexOfNode.isNothing() && indexOfRoot.isSome();
 }
 
 bool nsContentUtils::IsCallerChrome() {
@@ -2202,6 +2199,11 @@ bool nsContentUtils::ShouldResistFingerprinting(nsIPrincipal* aPrincipal) {
   }
   bool isChrome = aPrincipal->IsSystemPrincipal();
   return !isChrome && ShouldResistFingerprinting();
+}
+
+/* static */
+bool nsContentUtils::ShouldResistFingerprinting(char* aChar) {
+  return ShouldResistFingerprinting();
 }
 
 inline void LogDomainAndPrefList(const char* exemptedDomainsPrefName,
@@ -2564,8 +2566,8 @@ nsresult nsContentUtils::GetInclusiveAncestors(nsINode* aNode,
 
 // static
 nsresult nsContentUtils::GetInclusiveAncestorsAndOffsets(
-    nsINode* aNode, int32_t aOffset, nsTArray<nsIContent*>* aAncestorNodes,
-    nsTArray<int32_t>* aAncestorOffsets) {
+    nsINode* aNode, uint32_t aOffset, nsTArray<nsIContent*>* aAncestorNodes,
+    nsTArray<Maybe<uint32_t>>* aAncestorOffsets) {
   NS_ENSURE_ARG_POINTER(aNode);
 
   if (!aNode->IsContent()) {
@@ -2585,7 +2587,7 @@ nsresult nsContentUtils::GetInclusiveAncestorsAndOffsets(
 
   // insert the node itself
   aAncestorNodes->AppendElement(content);
-  aAncestorOffsets->AppendElement(aOffset);
+  aAncestorOffsets->AppendElement(Some(aOffset));
 
   // insert all the ancestors
   nsIContent* child = content;
@@ -2658,8 +2660,8 @@ Element* nsContentUtils::GetCommonFlattenedTreeAncestorForStyle(
 
 /* static */
 bool nsContentUtils::PositionIsBefore(nsINode* aNode1, nsINode* aNode2,
-                                      int32_t* aNode1Index,
-                                      int32_t* aNode2Index) {
+                                      Maybe<uint32_t>* aNode1Index,
+                                      Maybe<uint32_t>* aNode2Index) {
   // Note, CompareDocumentPosition takes the latter params in different order.
   return (aNode2->CompareDocumentPosition(*aNode1, aNode2Index, aNode1Index) &
           (Node_Binding::DOCUMENT_POSITION_PRECEDING |
@@ -2669,8 +2671,8 @@ bool nsContentUtils::PositionIsBefore(nsINode* aNode1, nsINode* aNode2,
 
 /* static */
 Maybe<int32_t> nsContentUtils::ComparePoints(
-    const nsINode* aParent1, int32_t aOffset1, const nsINode* aParent2,
-    int32_t aOffset2, ComparePointsCache* aParent1Cache) {
+    const nsINode* aParent1, uint32_t aOffset1, const nsINode* aParent2,
+    uint32_t aOffset2, ComparePointsCache* aParent1Cache) {
   bool disconnected{false};
 
   const int32_t order = ComparePoints_Deprecated(
@@ -2684,12 +2686,9 @@ Maybe<int32_t> nsContentUtils::ComparePoints(
 
 /* static */
 int32_t nsContentUtils::ComparePoints_Deprecated(
-    const nsINode* aParent1, int32_t aOffset1, const nsINode* aParent2,
-    int32_t aOffset2, bool* aDisconnected, ComparePointsCache* aParent1Cache) {
+    const nsINode* aParent1, uint32_t aOffset1, const nsINode* aParent2,
+    uint32_t aOffset2, bool* aDisconnected, ComparePointsCache* aParent1Cache) {
   if (aParent1 == aParent2) {
-    // XXX This is odd.  aOffset1 and/or aOffset2 may be -1, e.g., it's result
-    //     of nsINode::ComputeIndexOf(), but this compares such invalid
-    //     offset with valid offset.
     return aOffset1 < aOffset2 ? -1 : aOffset1 > aOffset2 ? 1 : 0;
   }
 
@@ -2724,10 +2723,15 @@ int32_t nsContentUtils::ComparePoints_Deprecated(
     const nsINode* child1 = parents1.ElementAt(--pos1);
     const nsINode* child2 = parents2.ElementAt(--pos2);
     if (child1 != child2) {
-      int32_t child1index = aParent1Cache
-                                ? aParent1Cache->ComputeIndexOf(parent, child1)
-                                : parent->ComputeIndexOf(child1);
-      return child1index < parent->ComputeIndexOf(child2) ? -1 : 1;
+      const Maybe<uint32_t> child1Index =
+          aParent1Cache ? aParent1Cache->ComputeIndexOf(parent, child1)
+                        : parent->ComputeIndexOf(child1);
+      const Maybe<uint32_t> child2Index = parent->ComputeIndexOf(child2);
+      if (MOZ_LIKELY(child1Index.isSome() && child2Index.isSome())) {
+        return *child1Index < *child2Index ? -1 : 1;
+      }
+      // XXX Keep the odd traditional behavior for now.
+      return child1Index.isNothing() && child2Index.isSome() ? -1 : 1;
     }
     parent = child1;
   }
@@ -2740,18 +2744,21 @@ int32_t nsContentUtils::ComparePoints_Deprecated(
 
   if (!pos1) {
     const nsINode* child2 = parents2.ElementAt(--pos2);
-    // XXX aOffset1 may be -1 as mentioned above.  So, why does this return
-    //     it's *before* of the valid DOM point?
-    return aOffset1 <= parent->ComputeIndexOf(child2) ? -1 : 1;
+    const Maybe<uint32_t> child2Index = parent->ComputeIndexOf(child2);
+    if (MOZ_UNLIKELY(NS_WARN_IF(child2Index.isNothing()))) {
+      return 1;
+    }
+    return aOffset1 <= *child2Index ? -1 : 1;
   }
 
   const nsINode* child1 = parents1.ElementAt(--pos1);
-  // XXX aOffset2 may be -1 as mentioned above.  So, why does this return it's
-  //     *after* of the valid DOM point?
-  int32_t child1index = aParent1Cache
-                            ? aParent1Cache->ComputeIndexOf(parent, child1)
-                            : parent->ComputeIndexOf(child1);
-  return child1index < aOffset2 ? -1 : 1;
+  const Maybe<uint32_t> child1Index =
+      aParent1Cache ? aParent1Cache->ComputeIndexOf(parent, child1)
+                    : parent->ComputeIndexOf(child1);
+  if (MOZ_UNLIKELY(NS_WARN_IF(child1Index.isNothing()))) {
+    return -1;
+  }
+  return *child1Index < aOffset2 ? -1 : 1;
 }
 
 // static
@@ -3154,7 +3161,7 @@ void nsContentUtils::GenerateStateKey(nsIContent* aContent, Document* aDocument,
     nsINode* parent = aContent->GetParentNode();
     nsINode* content = aContent;
     while (parent) {
-      KeyAppendInt(parent->ComputeIndexOf(content), aKey);
+      KeyAppendInt(parent->ComputeIndexOf_Deprecated(content), aKey);
       content = parent;
       parent = content->GetParentNode();
     }
@@ -3822,6 +3829,24 @@ bool nsContentUtils::IsExactSitePermDeny(nsIPrincipal* aPrincipal,
                                          const nsACString& aType) {
   return TestSitePerm(aPrincipal, aType, nsIPermissionManager::DENY_ACTION,
                       true);
+}
+
+bool nsContentUtils::HasExactSitePerm(nsIPrincipal* aPrincipal,
+                                      const nsACString& aType) {
+  if (!aPrincipal) {
+    return false;
+  }
+
+  nsCOMPtr<nsIPermissionManager> permMgr =
+      components::PermissionManager::Service();
+  NS_ENSURE_TRUE(permMgr, false);
+
+  uint32_t perm;
+  nsresult rv =
+      permMgr->TestExactPermissionFromPrincipal(aPrincipal, aType, &perm);
+  NS_ENSURE_SUCCESS(rv, false);
+
+  return perm != nsIPermissionManager::UNKNOWN_ACTION;
 }
 
 static const char* gEventNames[] = {"event"};
@@ -5802,13 +5827,11 @@ bool nsContentUtils::IsInStableOrMetaStableState() {
 
 /* static */
 void nsContentUtils::HidePopupsInDocument(Document* aDocument) {
-#ifdef MOZ_XUL
   nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
   if (pm && aDocument) {
     nsCOMPtr<nsIDocShellTreeItem> docShellToHide = aDocument->GetDocShell();
     if (docShellToHide) pm->HidePopupsInDocShell(docShellToHide);
   }
-#endif
 }
 
 /* static */
@@ -7351,27 +7374,6 @@ bool nsContentUtils::IsJavascriptMIMEType(const nsAString& aMIMEType) {
   return false;
 }
 
-nsresult nsContentUtils::GenerateUUIDInPlace(nsID& aUUID) {
-  MOZ_ASSERT(sUUIDGenerator);
-
-  nsresult rv = sUUIDGenerator->GenerateUUIDInPlace(&aUUID);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  return NS_OK;
-}
-
-nsID nsContentUtils::GenerateUUID() {
-  MOZ_DIAGNOSTIC_ASSERT(sUUIDGenerator);
-
-  nsID uuid;
-  nsresult rv = sUUIDGenerator->GenerateUUIDInPlace(&uuid);
-  MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
-
-  return uuid;
-}
-
 bool nsContentUtils::PrefetchPreloadEnabled(nsIDocShell* aDocShell) {
   //
   // SECURITY CHECK: disable prefetching and preloading from mailnews!
@@ -8229,6 +8231,8 @@ nsresult nsContentUtils::SendMouseEvent(
     contextMenuKey = (aButton == 0);
   } else if (aType.EqualsLiteral("MozMouseHittest")) {
     msg = eMouseHitTest;
+  } else if (aType.EqualsLiteral("MozMouseExploreByTouch")) {
+    msg = eMouseExploreByTouch;
   } else {
     return NS_ERROR_FAILURE;
   }
@@ -10178,8 +10182,14 @@ nsContentUtils::UserInteractionObserver::Observe(nsISupports* aSubject,
                                                  const char* aTopic,
                                                  const char16_t* aData) {
   if (!strcmp(aTopic, kUserInteractionInactive)) {
+    if (sUserActive && XRE_IsParentProcess()) {
+      glean::RecordPowerMetrics();
+    }
     sUserActive = false;
   } else if (!strcmp(aTopic, kUserInteractionActive)) {
+    if (!sUserActive && XRE_IsParentProcess()) {
+      glean::RecordPowerMetrics();
+    }
     sUserActive = true;
   } else {
     NS_WARNING("Unexpected observer notification");
@@ -10543,30 +10553,34 @@ ScreenIntMargin nsContentUtils::GetWindowSafeAreaInsets(
     return windowSafeAreaInsets;
   }
 
-  // Screen's rect of safe area
-  LayoutDeviceIntRect safeAreaRect(
-      screenLeft + aSafeAreaInsets.left, screenTop + aSafeAreaInsets.top,
-      screenWidth - aSafeAreaInsets.right - aSafeAreaInsets.left,
-      screenHeight - aSafeAreaInsets.bottom - aSafeAreaInsets.top);
-  // window's rect of safe area
-  safeAreaRect = safeAreaRect.Intersect(aWindowRect);
+  const ScreenIntRect screenRect(screenLeft, screenTop, screenWidth,
+                                 screenHeight);
 
-  windowSafeAreaInsets.top =
-      aSafeAreaInsets.top ? std::max(safeAreaRect.y - aWindowRect.y, 0) : 0;
-  windowSafeAreaInsets.left =
-      aSafeAreaInsets.left ? std::max(safeAreaRect.x - aWindowRect.x, 0) : 0;
+  ScreenIntRect safeAreaRect = screenRect;
+  safeAreaRect.Deflate(aSafeAreaInsets);
+
+  ScreenIntRect windowRect = ViewAs<ScreenPixel>(
+      aWindowRect, PixelCastJustification::LayoutDeviceIsScreenForTabDims);
+
+  // FIXME(bug 1754323): This can trigger because the screen rect is not
+  // orientation-aware.
+  // MOZ_ASSERT(screenRect.Contains(windowRect),
+  //            "Screen doesn't contain window rect? Something seems off");
+
+  // window's rect of safe area
+  safeAreaRect = safeAreaRect.Intersect(windowRect);
+
+  windowSafeAreaInsets.top = safeAreaRect.y - aWindowRect.y;
+  windowSafeAreaInsets.left = safeAreaRect.x - aWindowRect.x;
   windowSafeAreaInsets.right =
-      aSafeAreaInsets.right
-          ? std::max((aWindowRect.x + aWindowRect.width) -
-                         (safeAreaRect.x + safeAreaRect.width),
-                     0)
-          : 0;
-  windowSafeAreaInsets.bottom =
-      aSafeAreaInsets.bottom
-          ? std::max(aWindowRect.y + aWindowRect.height -
-                         (safeAreaRect.y + safeAreaRect.height),
-                     0)
-          : 0;
+      aWindowRect.x + aWindowRect.width - (safeAreaRect.x + safeAreaRect.width);
+  windowSafeAreaInsets.bottom = aWindowRect.y + aWindowRect.height -
+                                (safeAreaRect.y + safeAreaRect.height);
+
+  windowSafeAreaInsets.EnsureAtLeast(ScreenIntMargin());
+  // This shouldn't be needed, but it wallpapers orientation issues, see bug
+  // 1754323.
+  windowSafeAreaInsets.EnsureAtMost(aSafeAreaInsets);
 
   return windowSafeAreaInsets;
 }
@@ -10574,8 +10588,7 @@ ScreenIntMargin nsContentUtils::GetWindowSafeAreaInsets(
 /* static */
 nsContentUtils::SubresourceCacheValidationInfo
 nsContentUtils::GetSubresourceCacheValidationInfo(nsIRequest* aRequest,
-                                                  nsIURI* aURI,
-                                                  SubresourceKind aKind) {
+                                                  nsIURI* aURI) {
   SubresourceCacheValidationInfo info;
   if (nsCOMPtr<nsICacheInfoChannel> cache = do_QueryInterface(aRequest)) {
     uint32_t value = 0;
@@ -10604,13 +10617,9 @@ nsContentUtils::GetSubresourceCacheValidationInfo(nsIRequest* aRequest,
     if (!aURI) {
       return false;
     }
-    if (aURI->SchemeIs("data") || aURI->SchemeIs("moz-page-thumb")) {
+    if (aURI->SchemeIs("data") || aURI->SchemeIs("moz-page-thumb") ||
+        aURI->SchemeIs("moz-extension")) {
       return true;
-    }
-    if (aURI->SchemeIs("moz-extension")) {
-      // TODO(bug 1746841): This should be true always, but we force style to be
-      // revalidated until bug 1746841 is fixed.
-      return aKind != SubresourceKind::Style;
     }
     if (dom::IsChromeURI(aURI)) {
       return !StaticPrefs::nglayout_debug_disable_xul_cache();
@@ -10627,8 +10636,7 @@ nsContentUtils::GetSubresourceCacheValidationInfo(nsIRequest* aRequest,
   return info;
 }
 
-nsCString nsContentUtils::TruncatedURLForDisplay(nsIURI* aURL,
-                                                 uint32_t aMaxLen) {
+nsCString nsContentUtils::TruncatedURLForDisplay(nsIURI* aURL, size_t aMaxLen) {
   nsCString spec;
   if (aURL) {
     aURL->GetSpec(spec);

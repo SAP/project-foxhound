@@ -54,7 +54,8 @@ class XMLHttpRequestStringBuffer final {
     return aString.Assign(mData, mozilla::fallible);
   }
 
-  size_t SizeOfThis(MallocSizeOf aMallocSizeOf) const {
+  size_t SizeOfThis(MallocSizeOf aMallocSizeOf) {
+    MutexAutoLock lock(mMutex);
     return mData.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
   }
 

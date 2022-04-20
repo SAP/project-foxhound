@@ -10,6 +10,7 @@
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/IntegerRange.h"
+#include "mozilla/intl/Segmenter.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/SVGContextPaint.h"
@@ -577,39 +578,51 @@ void gfxFontShaper::MergeFontFeatures(
 void gfxShapedText::SetupClusterBoundaries(uint32_t aOffset,
                                            const char16_t* aString,
                                            uint32_t aLength) {
-  CompressedGlyph* glyphs = GetCharacterGlyphs() + aOffset;
-
-  CompressedGlyph extendCluster = CompressedGlyph::MakeComplex(false, true);
-
-  ClusterIterator iter(aString, aLength);
-
-  // the ClusterIterator won't be able to tell us if the string
-  // _begins_ with a cluster-extender, so we handle that here
-  if (aLength) {
-    uint32_t ch = *aString;
-    if (aLength > 1 && NS_IS_SURROGATE_PAIR(ch, aString[1])) {
-      ch = SURROGATE_TO_UCS4(ch, aString[1]);
-    }
-    if (IsClusterExtender(ch)) {
-      *glyphs = extendCluster;
-    }
+  if (aLength == 0) {
+    return;
   }
 
+  CompressedGlyph* const glyphs = GetCharacterGlyphs() + aOffset;
+  CompressedGlyph extendCluster = CompressedGlyph::MakeComplex(false, true);
+
+  // GraphemeClusterBreakIteratorUtf16 won't be able to tell us if the string
+  // _begins_ with a cluster-extender, so we handle that here
+  uint32_t ch = aString[0];
+  if (aLength > 1 && NS_IS_SURROGATE_PAIR(ch, aString[1])) {
+    ch = SURROGATE_TO_UCS4(ch, aString[1]);
+  }
+  if (IsClusterExtender(ch)) {
+    glyphs[0] = extendCluster;
+  }
+
+  intl::GraphemeClusterBreakIteratorUtf16 iter(
+      Span<const char16_t>(aString, aLength));
+  uint32_t pos = 0;
+
   const char16_t kIdeographicSpace = 0x3000;
-  while (!iter.AtEnd()) {
-    if (*iter == char16_t(' ') || *iter == kIdeographicSpace) {
-      glyphs->SetIsSpace();
+  // Special case for Bengali: although Virama normally clusters with the
+  // preceding letter, we *also* want to cluster it with a following Ya
+  // so that when the Virama+Ya form ya-phala, this is not separated from the
+  // preceding letter by any letter-spacing or justification.
+  const char16_t kBengaliVirama = 0x09CD;
+  const char16_t kBengaliYa = 0x09AF;
+  while (pos < aLength) {
+    const char16_t ch = aString[pos];
+    if (ch == char16_t(' ') || ch == kIdeographicSpace) {
+      glyphs[pos].SetIsSpace();
+    } else if (ch == kBengaliYa) {
+      // Unless we're at the start, check for a preceding virama.
+      if (pos > 0 && aString[pos - 1] == kBengaliVirama) {
+        glyphs[pos] = extendCluster;
+      }
     }
     // advance iter to the next cluster-start (or end of text)
-    iter.Next();
+    const uint32_t nextPos = *iter.Next();
     // step past the first char of the cluster
-    aString++;
-    glyphs++;
+    ++pos;
     // mark all the rest as cluster-continuations
-    while (aString < iter) {
-      *glyphs = extendCluster;
-      glyphs++;
-      aString++;
+    for (; pos < nextPos; ++pos) {
+      glyphs[pos] = extendCluster;
     }
   }
 }
@@ -1105,10 +1118,10 @@ static void HasLookupRuleWithGlyph(hb_face_t* aFace, hb_tag_t aTableTag,
   hb_set_destroy(otherLookups);
 }
 
-nsTHashMap<nsUint32HashKey, Script>* gfxFont::sScriptTagToCode = nullptr;
+nsTHashMap<nsUint32HashKey, intl::Script>* gfxFont::sScriptTagToCode = nullptr;
 nsTHashSet<uint32_t>* gfxFont::sDefaultFeatures = nullptr;
 
-static inline bool HasSubstitution(uint32_t* aBitVector, Script aScript) {
+static inline bool HasSubstitution(uint32_t* aBitVector, intl::Script aScript) {
   return (aBitVector[static_cast<uint32_t>(aScript) >> 5] &
           (1 << (static_cast<uint32_t>(aScript) & 0x1f))) != 0;
 }
@@ -1165,9 +1178,9 @@ void gfxFont::CheckForFeaturesInvolvingSpace() {
       // Ensure that we don't try to look at script codes beyond what the
       // current version of ICU (at runtime -- in case of system ICU)
       // knows about.
-      Script scriptCount =
-          Script(std::min<int>(u_getIntPropertyMaxValue(UCHAR_SCRIPT) + 1,
-                               int(Script::NUM_SCRIPT_CODES)));
+      Script scriptCount = Script(
+          std::min<int>(intl::UnicodeProperties::GetMaxNumberOfScripts() + 1,
+                        int(Script::NUM_SCRIPT_CODES)));
       for (Script s = Script::ARABIC; s < scriptCount;
            s = Script(static_cast<int>(s) + 1)) {
         hb_script_t script = hb_script_t(GetScriptTagForCode(s));
@@ -1533,14 +1546,22 @@ bool gfxFont::HasFeatureSet(uint32_t aFeature, bool& aFeatureOn) {
   return featureSet;
 }
 
-void gfxFont::InitializeScaledFont() {
-  if (!mAzureScaledFont) {
+already_AddRefed<mozilla::gfx::ScaledFont> gfxFont::GetScaledFont(
+    mozilla::gfx::DrawTarget* aDrawTarget) {
+  TextRunDrawParams params;
+  params.dt = aDrawTarget;
+  return GetScaledFont(params);
+}
+
+void gfxFont::InitializeScaledFont(
+    const RefPtr<mozilla::gfx::ScaledFont>& aScaledFont) {
+  if (!aScaledFont) {
     return;
   }
 
   float angle = AngleForSyntheticOblique();
   if (angle != 0.0f) {
-    mAzureScaledFont->SetSyntheticObliqueAngle(angle);
+    aScaledFont->SetSyntheticObliqueAngle(angle);
   }
 }
 
@@ -2086,11 +2107,7 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
     fontParams.drawOptions = *aRunParams.drawOpts;
   }
 
-  if (aRunParams.allowGDI) {
-    fontParams.scaledFont = GetScaledFont(aRunParams.dt);
-  } else {
-    fontParams.scaledFont = GetScaledFontNoGDI(aRunParams.dt);
-  }
+  fontParams.scaledFont = GetScaledFont(aRunParams);
   if (!fontParams.scaledFont) {
     return;
   }
@@ -2967,7 +2984,7 @@ bool gfxFont::ShapeFragmentWithoutWordCache(DrawTarget* aDrawTarget,
 
       // in the 8-bit case, there are no multi-char clusters,
       // so we don't need to do this check
-      if (sizeof(T) == sizeof(char16_t)) {
+      if constexpr (sizeof(T) == sizeof(char16_t)) {
         uint32_t i;
         for (i = 0; i < BACKTRACK_LIMIT; ++i) {
           if (aTextRun->IsClusterStart(aOffset + fragLen - i)) {
@@ -3148,7 +3165,7 @@ bool gfxFont::SplitAndInitTextRun(
             gfx::ShapedTextFlags::TEXT_DISABLE_OPTIONAL_LIGATURES |
             gfx::ShapedTextFlags::TEXT_USE_MATH_SCRIPT |
             gfx::ShapedTextFlags::TEXT_ORIENT_MASK);
-  if (sizeof(T) == sizeof(uint8_t)) {
+  if constexpr (sizeof(T) == sizeof(uint8_t)) {
     flags |= gfx::ShapedTextFlags::TEXT_IS_8BIT;
   }
 
@@ -3796,15 +3813,16 @@ void gfxFont::SanitizeMetrics(gfxFont::Metrics* aMetrics,
 // usual font tables (which can happen in the case of a legacy bitmap or Type1
 // font for which the platform-specific backend used platform APIs instead of
 // sfnt tables to create the horizontal metrics).
-UniquePtr<const gfxFont::Metrics> gfxFont::CreateVerticalMetrics() {
+void gfxFont::CreateVerticalMetrics() {
   const uint32_t kHheaTableTag = TRUETYPE_TAG('h', 'h', 'e', 'a');
   const uint32_t kVheaTableTag = TRUETYPE_TAG('v', 'h', 'e', 'a');
   const uint32_t kPostTableTag = TRUETYPE_TAG('p', 'o', 's', 't');
   const uint32_t kOS_2TableTag = TRUETYPE_TAG('O', 'S', '/', '2');
   uint32_t len;
 
-  UniquePtr<Metrics> metrics = MakeUnique<Metrics>();
-  ::memset(metrics.get(), 0, sizeof(Metrics));
+  mVerticalMetrics = MakeUnique<Metrics>();
+  auto* metrics = mVerticalMetrics.get();
+  ::memset(metrics, 0, sizeof(Metrics));
 
   // Some basic defaults, in case the font lacks any real metrics tables.
   // TODO: consider what rounding (if any) we should apply to these.
@@ -3869,6 +3887,7 @@ UniquePtr<const gfxFont::Metrics> gfxFont::CreateVerticalMetrics() {
   }
 
   // Read real vertical metrics if available.
+  metrics->ideographicWidth = -1.0;
   gfxFontEntry::AutoTable vheaTable(mFontEntry, kVheaTableTag);
   if (vheaTable && mFUnitsConvFactor >= 0.0) {
     const MetricsHeader* vhea = reinterpret_cast<const MetricsHeader*>(
@@ -3888,6 +3907,7 @@ UniquePtr<const gfxFont::Metrics> gfxFont::CreateVerticalMetrics() {
         metrics->maxDescent = halfExtent;
         SET_SIGNED(externalLeading, vhea->lineGap);
       }
+      metrics->ideographicWidth = GetCharAdvance(kWaterIdeograph, true);
     }
   }
 
@@ -3948,8 +3968,6 @@ UniquePtr<const gfxFont::Metrics> gfxFont::CreateVerticalMetrics() {
   metrics->maxHeight = metrics->maxAscent + metrics->maxDescent;
   metrics->xHeight = metrics->emHeight / 2;
   metrics->capHeight = metrics->maxAscent;
-
-  return std::move(metrics);
 }
 
 gfxFloat gfxFont::SynthesizeSpaceWidth(uint32_t aCh) {

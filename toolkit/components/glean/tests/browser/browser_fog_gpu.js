@@ -3,9 +3,6 @@
 
 "use strict";
 
-// Glean's here on `window`, but eslint doesn't know that. bug 1715542.
-/* global Glean:false */
-
 add_task(async () => {
   if (
     !(await ChromeUtils.requestProcInfo()).children.some(p => p.type == "gpu")
@@ -18,8 +15,7 @@ add_task(async () => {
   }
   ok(true, "GPU Process found: Let's test.");
 
-  let FOG = Cc["@mozilla.org/toolkit/glean;1"].createInstance(Ci.nsIFOG);
-  FOG.testResetFOG();
+  Services.fog.testResetFOG();
 
   is(
     undefined,
@@ -27,12 +23,12 @@ add_task(async () => {
     "Ensure we begin without value."
   );
 
-  FOG.testTriggerGPUMetrics();
-  await FOG.testFlushAllChildren();
+  await Services.fog.testTriggerMetrics(Ci.nsIXULRuntime.PROCESS_TYPE_GPU);
+  await Services.fog.testFlushAllChildren();
 
   is(
-    45326, // See gfx/ipc/GPUParent.cpp's RecvTestTriggerMetrics().
     Glean.testOnlyIpc.aCounter.testGetValue(),
+    Ci.nsIXULRuntime.PROCESS_TYPE_GPU,
     "Ensure the GPU-process-set value shows up in the parent process."
   );
 });

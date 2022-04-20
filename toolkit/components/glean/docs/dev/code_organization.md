@@ -1,12 +1,5 @@
 # FOG code organization
 
-```eval_rst
-.. note::
-
-    Project FOG is currently being designed and implemented.
-    This documentation is incomplete and may change significantly before FOG is usable inside mozilla-central.
-```
-
 ![Modules of Project FOG](images/fog-modules.svg)
 
 The diagram shows the different modules of Project FOG.

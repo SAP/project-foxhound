@@ -25,6 +25,7 @@ from mozversioncontrol import (
     HgRepository,
     InvalidRepoPath,
     MissingConfigureInfo,
+    MissingVCSTool,
 )
 
 from .backend.configenvironment import (
@@ -295,7 +296,9 @@ class MozbuildObject(ProcessExecutionMixin):
         if self._virtualenv_manager is None:
             self._virtualenv_manager = CommandSiteManager.from_environment(
                 self.topsrcdir,
-                get_state_dir(specific_to_topsrcdir=True, topsrcdir=self.topsrcdir),
+                lambda: get_state_dir(
+                    specific_to_topsrcdir=True, topsrcdir=self.topsrcdir
+                ),
                 self._virtualenv_name,
                 os.path.join(self.topobjdir, "_virtualenvs"),
             )
@@ -454,7 +457,11 @@ class MozbuildObject(ProcessExecutionMixin):
         # If we don't have a configure context, fall back to auto-detection.
         try:
             return get_repository_from_build_config(self)
-        except (BuildEnvironmentNotFoundException, MissingConfigureInfo):
+        except (
+            BuildEnvironmentNotFoundException,
+            MissingConfigureInfo,
+            MissingVCSTool,
+        ):
             pass
 
         return get_repository_object(self.topsrcdir)

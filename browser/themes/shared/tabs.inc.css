@@ -20,7 +20,7 @@
   --tabpanel-background-color: #F9F9FB;
 }
 
-@media (prefers-color-scheme: dark) {
+@media (-moz-content-prefers-color-scheme: dark) {
   :root {
     /* --tabpanel-background-color matches $in-content-page-background in newtab
        (browser/components/newtab/content-src/styles/_variables.scss) */
@@ -277,9 +277,13 @@
 }
 
 .tab-icon-image {
-  list-style-image: url("chrome://global/skin/icons/defaultFavicon.svg");
   -moz-context-properties: fill;
   fill: currentColor;
+}
+
+.tab-icon-image:not([src]),
+.tab-icon-image:-moz-broken {
+  content: url("chrome://global/skin/icons/defaultFavicon.svg");
 }
 
 .tab-icon-image[sharing]:not([selected]),
@@ -722,7 +726,11 @@
 }
 
 .all-tabs-item:hover {
-  background-color: var(--button-hover-bgcolor);
+  background-color: var(--panel-item-hover-bgcolor);
+}
+
+.all-tabs-item:hover:active {
+  background-color: var(--panel-item-active-bgcolor);
 }
 
 .all-tabs-item:hover > .all-tabs-button,

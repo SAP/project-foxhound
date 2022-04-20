@@ -4,6 +4,7 @@
 
 package org.mozilla.geckoview;
 
+import android.annotation.SuppressLint;
 import android.os.Build;
 import android.util.Log;
 import android.util.SparseArray;
@@ -545,7 +546,7 @@ public class WebExtensionController {
 
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({EnableSource.USER, EnableSource.APP})
-  @interface EnableSources {}
+  public @interface EnableSources {}
 
   /**
    * Contains the possible values for the <code>source</code> parameter in {@link #enable} and
@@ -870,6 +871,7 @@ public class WebExtensionController {
             }));
   }
 
+  @SuppressLint("WrongThread") // for .toGeckoBundle
   private void getSettings(final Message message, final WebExtension extension) {
     final WebExtension.BrowsingDataDelegate delegate = mListener.getBrowsingDataDelegate(extension);
     if (delegate == null) {
@@ -1091,8 +1093,8 @@ public class WebExtensionController {
 
     final String url = sender.getString("url");
     final boolean isTopLevel;
-    if (session == null) {
-      // This message is coming from the background page
+    if (session == null || environmentType == WebExtension.MessageSender.ENV_TYPE_EXTENSION) {
+      // This message is coming from the background page, a popup, or an extension page
       isTopLevel = true;
     } else {
       // If session is present we are either receiving this message from a content script or

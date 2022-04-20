@@ -89,6 +89,10 @@ class SocketProcessChild final
   mozilla::ipc::IPCResult RecvUpdateDeviceModelId(const nsCString& aModelId);
   mozilla::ipc::IPCResult RecvOnHttpActivityDistributorActivated(
       const bool& aIsActivated);
+  mozilla::ipc::IPCResult RecvOnHttpActivityDistributorObserveProxyResponse(
+      const bool& aIsEnabled);
+  mozilla::ipc::IPCResult RecvOnHttpActivityDistributorObserveConnection(
+      const bool& aIsEnabled);
 
   already_AddRefed<PInputChannelThrottleQueueChild>
   AllocPInputChannelThrottleQueueChild(const uint32_t& aMeanBytesPerSecond,
@@ -147,6 +151,16 @@ class SocketProcessChild final
 
   mozilla::ipc::IPCResult RecvRecheckIPConnectivity();
   mozilla::ipc::IPCResult RecvRecheckDNS();
+
+  mozilla::ipc::IPCResult RecvFlushFOGData(FlushFOGDataResolver&& aResolver);
+
+  mozilla::ipc::IPCResult RecvTestTriggerMetrics(
+      TestTriggerMetricsResolver&& aResolve);
+
+#if defined(XP_WIN)
+  mozilla::ipc::IPCResult RecvGetUntrustedModulesData(
+      GetUntrustedModulesDataResolver&& aResolver);
+#endif  // defined(XP_WIN)
 
  protected:
   friend class SocketProcessImpl;

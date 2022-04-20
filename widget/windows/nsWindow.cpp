@@ -66,6 +66,7 @@
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/SwipeTracker.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/TimeStamp.h"
 
@@ -683,10 +684,8 @@ nsWindow::nsWindow(bool aIsChildWindow)
   mCachedHitTestPoint.y = 0;
   mCachedHitTestTime = TimeStamp::Now();
   mCachedHitTestResult = 0;
-#ifdef MOZ_XUL
   mTransparencyMode = eTransparencyOpaque;
   memset(&mGlassMargins, 0, sizeof mGlassMargins);
-#endif
   DWORD background = ::GetSysColor(COLOR_BTNFACE);
   mBrush = ::CreateSolidBrush(NSRGB_2_COLOREF(background));
   mSendingSetText = false;
@@ -796,6 +795,17 @@ void nsWindow::SendAnAPZEvent(InputData& aEvent) {
     return;
   }
 
+  if (mSwipeTracker && aEvent.mInputType == PANGESTURE_INPUT) {
+    // Give the swipe tracker a first pass at the event. If a new pan gesture
+    // has been started since the beginning of the swipe, the swipe tracker
+    // will know to ignore the event.
+    nsEventStatus status =
+        mSwipeTracker->ProcessEvent(aEvent.AsPanGestureInput());
+    if (status == nsEventStatus_eConsumeNoDefault) {
+      return;
+    }
+  }
+
   APZEventResult result;
   if (mAPZC) {
     result = mAPZC->InputBridge()->ReceiveInputEvent(aEvent);
@@ -810,6 +820,16 @@ void nsWindow::SendAnAPZEvent(InputData& aEvent) {
   if (aEvent.mInputType == PANGESTURE_INPUT) {
     PanGestureInput& panInput = aEvent.AsPanGestureInput();
     WidgetWheelEvent event = panInput.ToWidgetEvent(this);
+    bool canTriggerSwipe = SwipeTracker::CanTriggerSwipe(panInput);
+    if (!mAPZC) {
+      if (MayStartSwipeForNonAPZ(panInput, CanTriggerSwipe{canTriggerSwipe})) {
+        return;
+      }
+    } else {
+      event = MayStartSwipeForAPZ(panInput, result,
+                                  CanTriggerSwipe{canTriggerSwipe});
+    }
+
     ProcessUntransformedAPZEvent(&event, result);
 
     return;
@@ -1703,14 +1723,12 @@ void nsWindow::Show(bool bState) {
     }
   }
 
-#ifdef MOZ_XUL
   if (!wasVisible && bState) {
     Invalidate();
     if (syncInvalidate && !mInDtor && !mOnDestroyCalled) {
       ::UpdateWindow(mWnd);
     }
   }
-#endif
 
   if (mOpeningAnimationSuppressed) {
     SuppressAnimation(false);
@@ -2276,13 +2294,44 @@ static UINT GetCurrentShowCmd(HWND aWnd) {
   return pl.showCmd;
 }
 
+void nsWindow::SetSizeModeInternal(nsSizeMode aMode) {
+  // save the requested state
+  mLastSizeMode = mSizeMode;
+  nsBaseWidget::SetSizeMode(aMode);
+  if (mIsVisible) {
+    switch (aMode) {
+      case nsSizeMode_Fullscreen:
+        ::ShowWindow(mWnd, SW_SHOW);
+        break;
+
+      case nsSizeMode_Maximized:
+        ::ShowWindow(mWnd, SW_MAXIMIZE);
+        break;
+
+      case nsSizeMode_Minimized:
+        ::ShowWindow(mWnd, SW_MINIMIZE);
+        break;
+
+      default:
+        // Don't call ::ShowWindow if we're trying to "restore" a window that is
+        // already in a normal state.  Prevents a bug where snapping to one side
+        // of the screen and then minimizing would cause Windows to forget our
+        // window's correct restored position/size.
+        if (GetCurrentShowCmd(mWnd) != SW_SHOWNORMAL) {
+          ::ShowWindow(mWnd, SW_RESTORE);
+        }
+    }
+  }
+
+  // we activate here to ensure that the right child window is focused
+  if (mIsVisible &&
+      (aMode == nsSizeMode_Maximized || aMode == nsSizeMode_Fullscreen)) {
+    DispatchFocusToTopLevelWindow(true);
+  }
+}
+
 // Maximize, minimize or restore the window.
 void nsWindow::SetSizeMode(nsSizeMode aMode) {
-  // Let's not try and do anything if we're already in that state.
-  // (This is needed to prevent problems when calling window.minimize(), which
-  // calls us directly, and then the OS triggers another call to us.)
-  if (aMode == mSizeMode) return;
-
   // If we are still displaying a maximized pre-XUL skeleton UI, ignore the
   // noise of sizemode changes. Once we have "shown" the window for the first
   // time (called nsWindow::Show(true), even though the window is already
@@ -2291,39 +2340,22 @@ void nsWindow::SetSizeMode(nsSizeMode aMode) {
     return;
   }
 
-  // save the requested state
-  mLastSizeMode = mSizeMode;
-  nsBaseWidget::SetSizeMode(aMode);
-  if (mIsVisible) {
-    int mode;
+  // Let's not try and do anything if we're already in that state.
+  // (This is needed to prevent problems when calling window.minimize(), which
+  // calls us directly, and then the OS triggers another call to us.)
+  if (aMode == mSizeMode) return;
 
-    switch (aMode) {
-      case nsSizeMode_Fullscreen:
-        mode = SW_SHOW;
-        break;
-
-      case nsSizeMode_Maximized:
-        mode = SW_MAXIMIZE;
-        break;
-
-      case nsSizeMode_Minimized:
-        mode = SW_MINIMIZE;
-        break;
-
-      default:
-        mode = SW_RESTORE;
-    }
-
-    // Don't call ::ShowWindow if we're trying to "restore" a window that is
-    // already in a normal state.  Prevents a bug where snapping to one side
-    // of the screen and then minimizing would cause Windows to forget our
-    // window's correct restored position/size.
-    if (!(GetCurrentShowCmd(mWnd) == SW_SHOWNORMAL && mode == SW_RESTORE)) {
-      ::ShowWindow(mWnd, mode);
-    }
-    // we activate here to ensure that the right child window is focused
-    if (mode == SW_MAXIMIZE || mode == SW_SHOW)
-      DispatchFocusToTopLevelWindow(true);
+  if (aMode == nsSizeMode_Fullscreen) {
+    MakeFullScreen(true);
+  } else if ((mSizeMode == nsSizeMode_Fullscreen) &&
+             (aMode == nsSizeMode_Normal)) {
+    // If we are in fullscreen mode, minimize should work like normal and
+    // return us to fullscreen mode when unminimized. Maximize isn't really
+    // available and won't do anything. "Restore" should do the same thing as
+    // requesting to end fullscreen.
+    MakeFullScreen(false);
+  } else {
+    SetSizeModeInternal(aMode);
   }
 }
 
@@ -3264,7 +3296,6 @@ void nsWindow::SetCursor(const Cursor& aCursor) {
  *
  **************************************************************/
 
-#ifdef MOZ_XUL
 nsTransparencyMode nsWindow::GetTransparencyMode() {
   return GetTopLevelWindow(true)->GetWindowTranslucencyInner();
 }
@@ -3370,7 +3401,6 @@ void nsWindow::UpdateGlass() {
                           sizeof policy);
   }
 }
-#endif
 
 /**************************************************************
  *
@@ -3650,9 +3680,10 @@ void nsWindow::CleanupFullscreenTransition() {
   mTransitionWnd = nullptr;
 }
 
-nsresult nsWindow::MakeFullScreen(bool aFullScreen, nsIScreen* aTargetScreen) {
-  // taskbarInfo will be nullptr pre Windows 7 until Bug 680227 is resolved.
-  nsCOMPtr<nsIWinTaskbar> taskbarInfo = do_GetService(NS_TASKBAR_CONTRACTID);
+nsresult nsWindow::MakeFullScreen(bool aFullScreen) {
+  if (mFullscreenMode == aFullScreen) {
+    return NS_OK;
+  }
 
   if (mWidgetListener) {
     mWidgetListener->FullscreenWillChange(aFullScreen);
@@ -3660,16 +3691,22 @@ nsresult nsWindow::MakeFullScreen(bool aFullScreen, nsIScreen* aTargetScreen) {
 
   mFullscreenMode = aFullScreen;
   if (aFullScreen) {
-    if (mSizeMode == nsSizeMode_Fullscreen) return NS_OK;
     mOldSizeMode = mSizeMode;
-    SetSizeMode(nsSizeMode_Fullscreen);
-
-    // Notify the taskbar that we will be entering full screen mode.
-    if (taskbarInfo) {
-      taskbarInfo->PrepareFullScreenHWND(mWnd, TRUE);
-    }
+    SetSizeModeInternal(nsSizeMode_Fullscreen);
   } else {
-    SetSizeMode(mOldSizeMode);
+    if (mSizeMode != mOldSizeMode) {
+      SetSizeModeInternal(mOldSizeMode);
+    }
+
+    MOZ_ASSERT(mSizeMode == mOldSizeMode);
+  }
+
+  // taskbarInfo will be nullptr pre Windows 7 until Bug 680227 is resolved.
+  nsCOMPtr<nsIWinTaskbar> taskbarInfo = do_GetService(NS_TASKBAR_CONTRACTID);
+
+  // Notify the taskbar that we will be entering full screen mode.
+  if (aFullScreen && taskbarInfo) {
+    taskbarInfo->PrepareFullScreenHWND(mWnd, TRUE);
   }
 
   // If we are going fullscreen, the window size continues to change
@@ -3679,9 +3716,11 @@ nsresult nsWindow::MakeFullScreen(bool aFullScreen, nsIScreen* aTargetScreen) {
   // Will call hide chrome, reposition window. Note this will
   // also cache dimensions for restoration, so it should only
   // be called once per fullscreen request.
-  nsBaseWidget::InfallibleMakeFullScreen(aFullScreen, aTargetScreen);
+  nsBaseWidget::InfallibleMakeFullScreen(aFullScreen);
 
-  if (mIsVisible && !aFullScreen && mOldSizeMode == nsSizeMode_Normal) {
+  if (mIsVisible && !aFullScreen && mSizeMode == nsSizeMode_Normal) {
+    MOZ_ASSERT(mSizeMode == mOldSizeMode);
+
     // Ensure the window exiting fullscreen get activated. Window
     // activation might be bypassed in SetSizeMode.
     DispatchFocusToTopLevelWindow(true);
@@ -3851,6 +3890,18 @@ void nsWindow::SetIcon(const nsAString& aIconSpec) {
              ::GetLastError()));
   }
 #endif
+}
+
+void nsWindow::SetBigIconNoData() {
+  HICON bigIcon =
+      ::LoadIconW(::GetModuleHandleW(nullptr), gStockApplicationIcon);
+  SetBigIcon(bigIcon);
+}
+
+void nsWindow::SetSmallIconNoData() {
+  HICON smallIcon =
+      ::LoadIconW(::GetModuleHandleW(nullptr), gStockApplicationIcon);
+  SetSmallIcon(smallIcon);
 }
 
 /**************************************************************
@@ -4298,7 +4349,7 @@ bool nsWindow::DispatchStandardEvent(EventMessage aMsg) {
   WidgetGUIEvent event(true, aMsg, this);
   InitEvent(event);
 
-  bool result = DispatchWindowEvent(&event);
+  bool result = DispatchWindowEvent(event);
   return result;
 }
 
@@ -4317,18 +4368,6 @@ bool nsWindow::DispatchWheelEvent(WidgetWheelEvent* aEvent) {
   nsEventStatus status =
       DispatchInputEvent(aEvent->AsInputEvent()).mContentStatus;
   return ConvertStatus(status);
-}
-
-bool nsWindow::DispatchWindowEvent(WidgetGUIEvent* event) {
-  nsEventStatus status;
-  DispatchEvent(event, status);
-  return ConvertStatus(status);
-}
-
-bool nsWindow::DispatchWindowEvent(WidgetGUIEvent* event,
-                                   nsEventStatus& aStatus) {
-  DispatchEvent(event, aStatus);
-  return ConvertStatus(aStatus);
 }
 
 // Recursively dispatch synchronous paints for nsIWidget
@@ -4717,10 +4756,6 @@ bool nsWindow::IsTopLevelMouseExit(HWND aWnd) {
   if (mouseWnd == mouseTopLevel) return true;
 
   return WinUtils::GetTopLevelHWND(aWnd) != mouseTopLevel;
-}
-
-bool nsWindow::ConvertStatus(nsEventStatus aStatus) {
-  return aStatus == nsEventStatus_eConsumeNoDefault;
 }
 
 /**************************************************************
@@ -6161,38 +6196,38 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
 
     case WM_CLEAR: {
       WidgetContentCommandEvent command(true, eContentCommandDelete, this);
-      DispatchWindowEvent(&command);
+      DispatchWindowEvent(command);
       result = true;
     } break;
 
     case WM_CUT: {
       WidgetContentCommandEvent command(true, eContentCommandCut, this);
-      DispatchWindowEvent(&command);
+      DispatchWindowEvent(command);
       result = true;
     } break;
 
     case WM_COPY: {
       WidgetContentCommandEvent command(true, eContentCommandCopy, this);
-      DispatchWindowEvent(&command);
+      DispatchWindowEvent(command);
       result = true;
     } break;
 
     case WM_PASTE: {
       WidgetContentCommandEvent command(true, eContentCommandPaste, this);
-      DispatchWindowEvent(&command);
+      DispatchWindowEvent(command);
       result = true;
     } break;
 
     case EM_UNDO: {
       WidgetContentCommandEvent command(true, eContentCommandUndo, this);
-      DispatchWindowEvent(&command);
+      DispatchWindowEvent(command);
       *aRetValue = (LRESULT)(command.mSucceeded && command.mIsEnabled);
       result = true;
     } break;
 
     case EM_REDO: {
       WidgetContentCommandEvent command(true, eContentCommandRedo, this);
-      DispatchWindowEvent(&command);
+      DispatchWindowEvent(command);
       *aRetValue = (LRESULT)(command.mSucceeded && command.mIsEnabled);
       result = true;
     } break;
@@ -6203,7 +6238,7 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
       if (wParam == 0 || wParam == CF_TEXT || wParam == CF_UNICODETEXT) {
         WidgetContentCommandEvent command(true, eContentCommandPaste, this,
                                           true);
-        DispatchWindowEvent(&command);
+        DispatchWindowEvent(command);
         *aRetValue = (LRESULT)(command.mSucceeded && command.mIsEnabled);
         result = true;
       }
@@ -6211,14 +6246,14 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
 
     case EM_CANUNDO: {
       WidgetContentCommandEvent command(true, eContentCommandUndo, this, true);
-      DispatchWindowEvent(&command);
+      DispatchWindowEvent(command);
       *aRetValue = (LRESULT)(command.mSucceeded && command.mIsEnabled);
       result = true;
     } break;
 
     case EM_CANREDO: {
       WidgetContentCommandEvent command(true, eContentCommandRedo, this, true);
-      DispatchWindowEvent(&command);
+      DispatchWindowEvent(command);
       *aRetValue = (LRESULT)(command.mSucceeded && command.mIsEnabled);
       result = true;
     } break;
@@ -7577,8 +7612,6 @@ a11y::LocalAccessible* nsWindow::GetAccessible() {
  **************************************************************
  **************************************************************/
 
-#ifdef MOZ_XUL
-
 void nsWindow::SetWindowTranslucencyInner(nsTransparencyMode aMode) {
   if (aMode == mTransparencyMode) return;
 
@@ -7657,8 +7690,6 @@ void nsWindow::SetWindowTranslucencyInner(nsTransparencyMode aMode) {
     GPUProcessManager::Get()->ResetCompositors();
   }
 }
-
-#endif  // MOZ_XUL
 
 /**************************************************************
  **************************************************************

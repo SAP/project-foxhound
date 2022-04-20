@@ -54,6 +54,9 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // this value.  See UrlbarProviderPlaces.
   ["autoFill.stddevMultiplier", [0.0, "float"]],
 
+  // Whether best match results are enabled.
+  ["bestMatch.enabled", true],
+
   // Whether using `ctrl` when hitting return/enter in the URL bar
   // (or clicking 'go') should prefix 'www.' and suffix
   // browser.fixup.alternate.suffix to the URL bar value prior to
@@ -194,6 +197,10 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Whether results will include switch-to-tab results.
   ["suggest.openpage", true],
 
+  // Whether results will include synced tab results. The syncing of open tabs
+  // must also be enabled, from Sync preferences.
+  ["suggest.remotetab", true],
+
   // Whether results will include non-sponsored quick suggest suggestions.
   ["suggest.quicksuggest.nonsponsored", false],
 
@@ -258,6 +265,10 @@ const PREF_URLBAR_DEFAULTS = new Map([
 
   // Count the restarts before showing the onboarding dialog.
   ["quicksuggest.seenRestarts", 0],
+
+  // Whether quick suggest results can be shown in position specified in the
+  // suggestions.
+  ["quicksuggest.allowPositionInSuggestions", true],
 
   // When using switch to tabs, if set to true this will move the tab into the
   // active window.

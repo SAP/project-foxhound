@@ -7,8 +7,11 @@
 #include "CanvasManagerChild.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRef.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/Swizzle.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/layers/CompositorManagerChild.h"
+#include "mozilla/webgpu/WebGPUChild.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::layers;
@@ -21,7 +24,9 @@ namespace mozilla::gfx {
 // via a shutdown callback from IPCWorkerRef for worker threads.
 MOZ_THREAD_LOCAL(CanvasManagerChild*) CanvasManagerChild::sLocalManager;
 
-CanvasManagerChild::CanvasManagerChild() = default;
+Atomic<uint32_t> CanvasManagerChild::sNextId(1);
+
+CanvasManagerChild::CanvasManagerChild(uint32_t aId) : mId(aId) {}
 CanvasManagerChild::~CanvasManagerChild() = default;
 
 void CanvasManagerChild::ActorDestroy(ActorDestroyReason aReason) {
@@ -91,7 +96,7 @@ void CanvasManagerChild::Destroy() {
     return nullptr;
   }
 
-  auto manager = MakeRefPtr<CanvasManagerChild>();
+  auto manager = MakeRefPtr<CanvasManagerChild>(sNextId++);
 
   if (worker) {
     // The IPCWorkerRef will let us know when the worker is shutting down. This
@@ -122,8 +127,90 @@ void CanvasManagerChild::Destroy() {
     return nullptr;
   }
 
+  manager->SendInitialize(manager->Id());
   sLocalManager.set(manager);
   return manager;
+}
+
+RefPtr<webgpu::WebGPUChild> CanvasManagerChild::GetWebGPUChild() {
+  if (!mWebGPUChild) {
+    mWebGPUChild = MakeAndAddRef<webgpu::WebGPUChild>();
+    if (!SendPWebGPUConstructor(mWebGPUChild)) {
+      mWebGPUChild = nullptr;
+    }
+  }
+
+  return mWebGPUChild;
+}
+
+already_AddRefed<DataSourceSurface> CanvasManagerChild::GetSnapshot(
+    uint32_t aManagerId, int32_t aProtocolId, bool aHasAlpha) {
+  if (!CanSend()) {
+    return nullptr;
+  }
+
+  webgl::FrontBufferSnapshotIpc res;
+  if (!SendGetSnapshot(aManagerId, aProtocolId, &res)) {
+    return nullptr;
+  }
+
+  if (!res.shmem || !res.shmem->IsReadable()) {
+    return nullptr;
+  }
+
+  auto guard = MakeScopeExit([&] { DeallocShmem(res.shmem.ref()); });
+
+  if (!res.surfSize.x || !res.surfSize.y || res.surfSize.x > INT32_MAX ||
+      res.surfSize.y > INT32_MAX) {
+    return nullptr;
+  }
+
+  IntSize size(res.surfSize.x, res.surfSize.y);
+  CheckedInt32 stride = CheckedInt32(size.width) * sizeof(uint32_t);
+  if (!stride.isValid()) {
+    return nullptr;
+  }
+
+  CheckedInt32 length = stride * size.height;
+  if (!length.isValid() ||
+      size_t(length.value()) != res.shmem->Size<uint8_t>()) {
+    return nullptr;
+  }
+
+  SurfaceFormat format =
+      aHasAlpha ? SurfaceFormat::B8G8R8A8 : SurfaceFormat::B8G8R8X8;
+  RefPtr<DataSourceSurface> surface =
+      Factory::CreateDataSourceSurfaceWithStride(size, format, stride.value(),
+                                                 /* aZero */ false);
+  if (!surface) {
+    return nullptr;
+  }
+
+  gfx::DataSourceSurface::ScopedMap map(surface,
+                                        gfx::DataSourceSurface::READ_WRITE);
+  if (!map.IsMapped()) {
+    return nullptr;
+  }
+
+  // The buffer we read back from WebGL is R8G8B8A8, not premultiplied and has
+  // its rows inverted. For the general case, we want surfaces represented as
+  // premultiplied B8G8R8A8, with its rows ordered top to bottom. Given this
+  // path is used for screenshots/SurfaceFromElement, that's the representation
+  // we need.
+  if (aHasAlpha) {
+    if (!PremultiplyYFlipData(res.shmem->get<uint8_t>(), stride.value(),
+                              SurfaceFormat::R8G8B8A8, map.GetData(),
+                              map.GetStride(), format, size)) {
+      return nullptr;
+    }
+  } else {
+    if (!SwizzleYFlipData(res.shmem->get<uint8_t>(), stride.value(),
+                          SurfaceFormat::R8G8B8X8, map.GetData(),
+                          map.GetStride(), format, size)) {
+      return nullptr;
+    }
+  }
+  return surface.forget();
 }
 
 }  // namespace mozilla::gfx

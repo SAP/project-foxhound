@@ -7,9 +7,6 @@ const { AddonManager, AddonManagerPrivate } = ChromeUtils.import(
 const { TelemetryEnvironment } = ChromeUtils.import(
   "resource://gre/modules/TelemetryEnvironment.jsm"
 );
-const { ContentTaskUtils } = ChromeUtils.import(
-  "resource://testing-common/ContentTaskUtils.jsm"
-);
 const { SearchTestUtils } = ChromeUtils.import(
   "resource://testing-common/SearchTestUtils.jsm"
 );
@@ -44,7 +41,7 @@ MockAddonWrapper.prototype = {
   },
 
   get type() {
-    return "service";
+    return this.addon.type;
   },
 
   get appDisabled() {
@@ -140,8 +137,7 @@ add_task(async function setup() {
   do_get_profile();
 
   // We need to ensure FOG is initialized, otherwise we will panic trying to get test values.
-  let FOG = Cc["@mozilla.org/toolkit/glean;1"].createInstance(Ci.nsIFOG);
-  FOG.initializeFOG();
+  Services.fog.initializeFOG();
 
   // The system add-on must be installed before AddonManager is started.
   const distroDir = FileUtils.getDir("ProfD", ["sysfeatures", "app0"], true);
@@ -491,9 +487,13 @@ add_task(async function test_addonsWatch_InterestingChange() {
 });
 
 add_task(async function test_addonsWatch_NotInterestingChange() {
-  // We are not interested to dictionary addons changes.
-  const DICTIONARY_ADDON_INSTALL_URL = gDataRoot + "dictionary.xpi";
-  const INTERESTING_ADDON_INSTALL_URL = gDataRoot + "restartless.xpi";
+  // Plugins from GMPProvider are listed separately in addons.activeGMPlugins.
+  // We simulate the "plugin" type in this test and verify that it is excluded.
+  const PLUGIN_ID = "tel-fake-gmp-plugin@tests.mozilla.org";
+  // "theme" type is already covered by addons.theme, so we aren't interested.
+  const THEME_ID = "tel-theme@tests.mozilla.org";
+  // "dictionary" type should be in addon.activeAddons.
+  const DICT_ID = "tel-dict@tests.mozilla.org";
 
   let receivedNotification = false;
   let deferred = PromiseUtils.defer();
@@ -506,23 +506,53 @@ add_task(async function test_addonsWatch_NotInterestingChange() {
     deferred.resolve();
   });
 
-  let dictionaryAddon = await installXPIFromURL(DICTIONARY_ADDON_INSTALL_URL);
-  let interestingAddon = await installXPIFromURL(INTERESTING_ADDON_INSTALL_URL);
+  // "plugin" type, to verify that non-XPIProvider types such as the "plugin"
+  // type from GMPProvider are not included in activeAddons.
+  let fakePluginProvider = createMockAddonProvider("Fake GMPProvider");
+  AddonManagerPrivate.registerProvider(fakePluginProvider);
+  fakePluginProvider.addAddon({
+    id: PLUGIN_ID,
+    name: "Fake plugin",
+    version: "1",
+    type: "plugin",
+  });
+
+  // "theme" type.
+  let themeXpi = AddonTestUtils.createTempWebExtensionFile({
+    manifest: {
+      theme: {},
+      applications: { gecko: { id: THEME_ID } },
+    },
+  });
+  let themeAddon = (await AddonTestUtils.promiseInstallFile(themeXpi)).addon;
+
+  let dictXpi = AddonTestUtils.createTempWebExtensionFile({
+    manifest: {
+      dictionaries: {},
+      applications: { gecko: { id: DICT_ID } },
+    },
+  });
+  let dictAddon = (await AddonTestUtils.promiseInstallFile(dictXpi)).addon;
 
   await deferred.promise;
   Assert.ok(
-    !(
-      "telemetry-dictionary@tests.mozilla.org" in
-      TelemetryEnvironment.currentEnvironment.addons.activeAddons
-    ),
-    "Dictionaries should not appear in active addons."
+    !(PLUGIN_ID in TelemetryEnvironment.currentEnvironment.addons.activeAddons),
+    "GMP plugins should not appear in active addons."
+  );
+  Assert.ok(
+    !(THEME_ID in TelemetryEnvironment.currentEnvironment.addons.activeAddons),
+    "Themes should not appear in active addons."
+  );
+  Assert.ok(
+    DICT_ID in TelemetryEnvironment.currentEnvironment.addons.activeAddons,
+    "Dictionaries should appear in active addons."
   );
 
   TelemetryEnvironment.unregisterChangeListener("testNotInteresting");
 
-  dictionaryAddon.uninstall();
-  await interestingAddon.startupPromise;
-  interestingAddon.uninstall();
+  AddonManagerPrivate.unregisterProvider(fakePluginProvider);
+  await themeAddon.uninstall();
+  await dictAddon.uninstall();
 });
 
 add_task(async function test_addons() {
@@ -601,6 +631,7 @@ add_task(async function test_addons() {
   let addon = await installXPIFromURL(ADDON_INSTALL_URL);
 
   // Install a webextension as well.
+  // Note: all addons are webextensions, so doing this again is redundant...
   ExtensionTestUtils.init(this);
 
   let webextension = ExtensionTestUtils.loadExtension({
@@ -844,8 +875,8 @@ add_task(async function test_collectionWithbrokenAddonData() {
   await checkpointPromise;
   assertCheckpoint(2);
 
-  // Check that the new environment contains the Social addon installed with the broken
-  // manifest and the rest of the data.
+  // Check that the new environment contains the info from the broken provider,
+  // despite the addon missing some details.
   let data = TelemetryEnvironment.currentEnvironment;
   TelemetryEnvironmentTesting.checkEnvironmentData(data, {
     expectBrokenAddons: true,

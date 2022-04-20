@@ -114,6 +114,9 @@ DefaultJitOptions::DefaultJitOptions() {
   // Toggles whether sink code motion is globally disabled.
   SET_DEFAULT(disableSink, true);
 
+  // Toggles whether redundant shape guard elimination is globally disabled.
+  SET_DEFAULT(disableRedundantShapeGuards, false);
+
   // Toggles whether we verify that we don't recompile with the same CacheIR.
   SET_DEFAULT(disableBailoutLoopCheck, false);
 
@@ -150,6 +153,10 @@ DefaultJitOptions::DefaultJitOptions() {
 
   // Toggles whether functions may be entered at loop headers.
   SET_DEFAULT(osr, true);
+
+  // Whether the JIT backend (used by JITs, Wasm, Baseline Interpreter) has been
+  // disabled for this process. See JS::DisableJitBackend.
+  SET_DEFAULT(disableJitBackend, false);
 
   // Whether to enable extra code to perform dynamic validations.
   SET_DEFAULT(runExtraChecks, false);
@@ -260,8 +267,7 @@ DefaultJitOptions::DefaultJitOptions() {
   SET_DEFAULT(spectreJitToCxxCalls, true);
 #endif
 
-  // These are set to their actual values in InitializeJit.
-  SET_DEFAULT(supportsFloatingPoint, false);
+  // This is set to its actual value in InitializeJit.
   SET_DEFAULT(supportsUnalignedAccesses, false);
 
   // Toggles the optimization whereby offsets are folded into loads and not
