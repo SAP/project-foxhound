@@ -46,14 +46,18 @@ using mozilla::StreamBufferSource;
 
 class nsTArraySource final : public StreamBufferSource {
  public:
-  explicit nsTArraySource(nsTArray<uint8_t>&& aArray)
-      : mArray(std::move(aArray)) {}
+  explicit nsTArraySource(nsTArray<uint8_t>&& aArray, const StringTaint& aTaint)
+    : mArray(std::move(aArray)), mTaint(aTaint) {}
 
   Span<const char> Data() override {
     return Span{reinterpret_cast<const char*>(mArray.Elements()),
                 mArray.Length()};
   }
 
+  const StringTaint& Taint() override { return mTaint; }
+
+  void setTaint(const StringTaint& aTaint) override { mTaint = aTaint; }
+  
   bool Owning() override { return true; }
 
   size_t SizeOfExcludingThisEvenIfShared(MallocSizeOf aMallocSizeOf) override {
@@ -61,6 +65,7 @@ class nsTArraySource final : public StreamBufferSource {
   }
 
   nsTArray<uint8_t> mArray;
+  StringTaint mTaint;
 };
 
 class nsCStringSource final : public StreamBufferSource {
@@ -69,6 +74,10 @@ class nsCStringSource final : public StreamBufferSource {
 
   Span<const char> Data() override { return mString; }
 
+  const StringTaint& Taint() override { return mString.Taint(); }
+
+  void setTaint(const StringTaint& aTaint) override { mString.AssignTaint(aTaint); }
+  
   nsresult GetData(nsACString& aString) override {
     if (!aString.Assign(mString, mozilla::fallible)) {
       return NS_ERROR_OUT_OF_MEMORY;
@@ -91,10 +100,15 @@ class nsCStringSource final : public StreamBufferSource {
 
 class nsBorrowedSource final : public StreamBufferSource {
  public:
-  explicit nsBorrowedSource(Span<const char> aBuffer) : mBuffer(aBuffer) {}
+  explicit nsBorrowedSource(Span<const char> aBuffer, const StringTaint& aTaint)
+    : mBuffer(aBuffer), mTaint(aTaint) {}
 
   Span<const char> Data() override { return mBuffer; }
 
+  const StringTaint& Taint() override { return mTaint; }
+
+  void setTaint(const StringTaint& aTaint) override { mTaint = aTaint; }
+  
   bool Owning() override { return false; }
 
   size_t SizeOfExcludingThisEvenIfShared(MallocSizeOf aMallocSizeOf) override {
@@ -102,6 +116,7 @@ class nsBorrowedSource final : public StreamBufferSource {
   }
 
   Span<const char> mBuffer;
+  StringTaint mTaint;
 };
 
 //-----------------------------------------------------------------------------
@@ -133,7 +148,11 @@ class nsStringInputStream final : public nsIStringInputStream,
 
   nsresult Init(nsTArray<uint8_t>&& aArray);
 
-  void SetTaint(const StringTaint& aTaint) { mData.AssignTaint(aTaint); }
+  void SetTaint(const StringTaint& aTaint) {
+    if (mSource) {
+      mSource->setTaint(aTaint);
+    }
+  }
 
  private:
   ~nsStringInputStream() = default;
@@ -152,7 +171,7 @@ class nsStringInputStream final : public nsIStringInputStream,
 
   size_t Length() const { return mSource ? mSource->Data().Length() : 0; }
 
-  StringTaint Taint() const { return mData.Taint().subtaint(mOffset, Length()); }
+  StringTaint Taint() const { return mSource ? mSource->Taint().subtaint(mOffset, Length()) : EmptyTaint; }
 
   size_t LengthRemaining() const { return Length() - mOffset; }
 
@@ -175,7 +194,7 @@ nsresult nsStringInputStream::Init(nsCString&& aString) {
 }
 
 nsresult nsStringInputStream::Init(nsTArray<uint8_t>&& aArray) {
-  auto source = MakeRefPtr<nsTArraySource>(std::move(aArray));
+  auto source = MakeRefPtr<nsTArraySource>(std::move(aArray), EmptyTaint);
   return SetDataSource(source);
 }
 
@@ -279,7 +298,7 @@ nsStringInputStream::ShareData(const char* aData, int32_t aDataLen) {
   }
 
   size_t length = aDataLen < 0 ? strlen(aData) : size_t(aDataLen);
-  auto source = MakeRefPtr<nsBorrowedSource>(Span{aData, length});
+  auto source = MakeRefPtr<nsBorrowedSource>(Span{aData, length}, EmptyTaint);
   return SetDataSource(source);
 }
 
@@ -386,9 +405,9 @@ nsStringInputStream::ReadSegmentsInternal(nsWriteSegmentFun aWriter, nsWriteTain
   nsresult rv = NS_OK;
 
   if (aWriter) {
-    rv = aWriter(this, aClosure, mData.BeginReading() + mOffset, 0, aCount, aResult);
+    rv = aWriter(this, aClosure, mSource->Data().Elements() + mOffset, 0, aCount, aResult);
   } else {
-    rv = aTaintedWriter(this, aClosure, mData.BeginReading() + mOffset, 0, aCount,
+    rv = aTaintedWriter(this, aClosure, mSource->Data().Elements() + mOffset, 0, aCount,
                         Taint(), aResult);
   }
 

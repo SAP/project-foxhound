@@ -1150,9 +1150,9 @@ static bool Revive(JSContext* cx, HandleValue reviver, MutableHandleValue vp) {
 
 template <typename CharT>
 bool ParseJSON(JSContext* cx, const mozilla::Range<const CharT> chars,
-               MutableHandleValue vp) {
+               const StringTaint& aTaint, MutableHandleValue vp) {
   Rooted<JSONParser<CharT>> parser(
-      cx, JSONParser<CharT>(cx, chars, JSONParserBase::ParseType::JSONParse));
+    cx, JSONParser<CharT>(cx, chars, aTaint, JSONParserBase::ParseType::JSONParse));
   return parser.parse(vp);
 }
 

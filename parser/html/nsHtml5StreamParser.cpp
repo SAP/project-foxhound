@@ -792,7 +792,7 @@ nsresult nsHtml5StreamParser::SniffStreamBytes(Span<const uint8_t> aFromSegment,
     }
     mTreeBuilder->SetDocumentCharset(mEncoding, mCharsetSource, false);
     return SetupDecodingAndWriteSniffingBufferAndCurrentSegment(
-        Span(prefix, prefixLength), aFromSegment);
+      Span(prefix, prefixLength), aFromSegment, aTaint);
   }
 
   return NS_OK;
@@ -1253,7 +1253,7 @@ void nsHtml5StreamParser::DoStopRequest() {
     mTreeBuilder->SetDocumentCharset(mEncoding, mCharsetSource, false);
 
     for (auto&& buffer : mBufferedBytes) {
-      Unused << WriteStreamBytes(buffer);
+      Unused << WriteStreamBytes(buffer, EmptyTaint);
     }
   } else if (!mUnicodeDecoder) {
     nsresult rv;
@@ -1362,7 +1362,7 @@ nsresult nsHtml5StreamParser::OnStopRequest(nsIRequest* aRequest,
 void nsHtml5StreamParser::DoDataAvailableBuffer(
     mozilla::Buffer<uint8_t>&& aBuffer, const StringTaint& aTaint) {
   if (MOZ_UNLIKELY(!mBufferingBytes)) {
-    DoDataAvailable(aBuffer);
+    DoDataAvailable(aBuffer, aTaint);
     return;
   }
   if (MOZ_UNLIKELY(mLookingForXmlDeclarationForXmlViewSource)) {
@@ -1401,9 +1401,9 @@ void nsHtml5StreamParser::DoDataAvailableBuffer(
     mTreeBuilder->SetDocumentCharset(mEncoding, mCharsetSource, false);
 
     for (auto&& buffer : mBufferedBytes) {
-      DoDataAvailable(buffer);
+      DoDataAvailable(buffer, aTaint);
     }
-    DoDataAvailable(aBuffer);
+    DoDataAvailable(aBuffer, aTaint);
     mBufferedBytes.Clear();
     return;
   }
@@ -1617,28 +1617,21 @@ nsresult nsHtml5StreamParser::OnDataAvailable(nsIRequest* aRequest,
         return NS_ERROR_OUT_OF_MEMORY;
       }
       Buffer<uint8_t> data(std::move(*maybe));
-      rv = aInStream->Read(reinterpret_cast<char*>(data.Elements()),
-                           data.Length(), &totalRead);
-      NS_ENSURE_SUCCESS(rv, rv);
-      MOZ_ASSERT(totalRead == aLength);
-      DoDataAvailableBuffer(std::move(data));
-      return rv;
-    }
-    Buffer<uint8_t> data(std::move(*maybe));
-    StringTaint taint;
+      StringTaint taint;
 
-    if (taintInputStream) {
+      if (taintInputStream) {
         rv = taintInputStream->TaintedRead(reinterpret_cast<char*>(data.Elements()),
                                            data.Length(), &taint, &totalRead);
-    } else {
+      } else {
         rv = aInStream->Read(reinterpret_cast<char*>(data.Elements()),
                              data.Length(), &totalRead);
-    }
+      }
 
-    NS_ENSURE_SUCCESS(rv, rv);
-    MOZ_ASSERT(totalRead == aLength);
-    DoDataAvailableBuffer(std::move(data), taint);
-    return rv;
+      NS_ENSURE_SUCCESS(rv, rv);
+      MOZ_ASSERT(totalRead == aLength);
+      DoDataAvailableBuffer(std::move(data), taint);
+      return rv;
+    }
   }
   // Read directly from response buffer.
   if (taintInputStream) {
@@ -1887,12 +1880,13 @@ void nsHtml5StreamParser::SwitchDecoderIfAsciiSoFar(
       continue;
     }
     if (skipped >= numAscii) {
-      WriteStreamBytes(buffer);
+      WriteStreamBytes(buffer, EmptyTaint);
       skipped = nextSkipped;
       continue;
     }
     size_t tailLength = nextSkipped - numAscii;
-    WriteStreamBytes(Span<uint8_t>(buffer).From(buffer.Length() - tailLength));
+    // Taintfox: TODO: check if EmptyTaint is correct here
+    WriteStreamBytes(Span<uint8_t>(buffer).From(buffer.Length() - tailLength), EmptyTaint);
     skipped = nextSkipped;
   }
 }
@@ -2249,7 +2243,7 @@ bool nsHtml5StreamParser::ProcessLookingForMetaCharset(bool aEof) {
                  "Must have set mLookingForMetaCharset to false to report data "
                  "to dev tools below");
       for (auto&& buffer : mBufferedBytes) {
-        WriteStreamBytes(buffer);
+        WriteStreamBytes(buffer, EmptyTaint);
       }
     }
   } else if (!mLookingForMetaCharset && !mDecodingLocalFileWithoutTokenizing) {

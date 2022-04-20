@@ -2947,8 +2947,8 @@ static already_AddRefed<nsINode> TextToNode(const nsAString& aString,
     if (s == end || *s == '\r' || *s == '\n') {
       if (!str.IsEmpty()) {
         // TaintFox: extract input taint for innerText.
-        str.AssignTaint(aValue.Taint().subtaint(startTaintIndex, curTaintIndex));
-        curTaintIndex = s - aValue.BeginReading();
+        str.AssignTaint(aString.Taint().subtaint(startTaintIndex, curTaintIndex));
+        curTaintIndex = s - aString.BeginReading();
         startTaintIndex = curTaintIndex + 1;
 
         RefPtr<nsTextNode> textContent = new (aNim) nsTextNode(aNim);

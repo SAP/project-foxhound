@@ -19,6 +19,10 @@ class StreamBufferSource {
 
   virtual Span<const char> Data() = 0;
 
+  virtual const StringTaint& Taint() { return EmptyTaint; }
+
+  virtual void setTaint(const StringTaint& aTaint) {};
+  
   virtual nsresult GetData(nsACString& aString) {
     Span<const char> data = Data();
     if (!aString.Assign(data.Elements(), data.Length(), fallible)) {
