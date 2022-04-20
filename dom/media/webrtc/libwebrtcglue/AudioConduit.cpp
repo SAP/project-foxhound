@@ -675,22 +675,6 @@ bool WebrtcAudioConduit::SendReceiverRtcp(const uint8_t* aData,
 }
 
 /**
- * Converts between CodecConfig to WebRTC Codec Structure.
- */
-
-bool WebrtcAudioConduit::CodecConfigToWebRTCCodec(
-    const AudioCodecConfig& codecInfo,
-    webrtc::AudioSendStream::Config& config) {
-  config.encoder_factory = webrtc::CreateBuiltinAudioEncoderFactory();
-
-  webrtc::AudioSendStream::Config::SendCodecSpec spec(
-      codecInfo.mType, CodecConfigToLibwebrtcFormat(codecInfo));
-  config.send_codec_spec = spec;
-
-  return true;
-}
-
-/**
  *  Supported Sampling Frequencies.
  */
 bool WebrtcAudioConduit::IsSamplingFreqSupported(int freq) const {
@@ -889,6 +873,36 @@ void WebrtcAudioConduit::DeliverPacket(rtc::CopyOnWriteBuffer packet,
     CSFLogError(LOGTAG, "%s DeliverPacket Failed for %s packet, %d",
                 __FUNCTION__, type == PacketType::RTP ? "RTP" : "RTCP", status);
   }
+}
+
+Maybe<int> WebrtcAudioConduit::ActiveSendPayloadType() const {
+  MOZ_ASSERT(mCallThread->IsOnCurrentThread());
+
+  auto stats = GetSenderStats();
+  if (!stats) {
+    return Nothing();
+  }
+
+  if (!stats->codec_payload_type) {
+    return Nothing();
+  }
+
+  return Some(*stats->codec_payload_type);
+}
+
+Maybe<int> WebrtcAudioConduit::ActiveRecvPayloadType() const {
+  MOZ_ASSERT(mCallThread->IsOnCurrentThread());
+
+  auto stats = GetReceiverStats();
+  if (!stats) {
+    return Nothing();
+  }
+
+  if (!stats->codec_payload_type) {
+    return Nothing();
+  }
+
+  return Some(*stats->codec_payload_type);
 }
 
 }  // namespace mozilla

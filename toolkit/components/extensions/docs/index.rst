@@ -28,6 +28,6 @@ in particular.
    lifecycle
    incognito
    webidl_bindings
+   webext-storage
    other
    reference
-

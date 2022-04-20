@@ -63,12 +63,6 @@ class NativeLayerRootWayland final : public NativeLayerRoot {
   void PrepareForCommit() override { mFrameInProcess = true; };
   bool CommitToScreen() override;
 
-  // When the compositor is paused the wl_surface of the MozContainer will
-  // get destroyed. We thus have to recreate subsurface relationships for
-  // all tiles after resume. This is a implementation specific quirk of
-  // our GTK-Wayland backend.
-  void PauseCompositor() override;
-
   void UpdateLayersOnMainThread();
   void AfterFrameClockAfterPaint();
   void RequestFrameCallback(CallbackFunc aCallbackFunc, void* aCallbackData);
@@ -132,7 +126,7 @@ class NativeLayerWayland final : public NativeLayer {
   const RefPtr<SurfacePoolHandleWayland> GetSurfacePoolHandle() {
     return mSurfacePoolHandle;
   };
-  void SetBufferTransformFlipped(bool aFlipped);
+  void SetBufferTransformFlipped(bool aFlippedX, bool aFlippedY);
   void SetSubsurfacePosition(int aX, int aY);
   void SetViewportSourceRect(const gfx::Rect aSourceRect);
   void SetViewportDestinationSize(int aWidth, int aHeight);
@@ -172,7 +166,8 @@ class NativeLayerWayland final : public NativeLayer {
   wl_subsurface* mWlSubsurface = nullptr;
   wl_callback* mCallback = nullptr;
   wp_viewport* mViewport = nullptr;
-  bool mBufferTransformFlipped = false;
+  bool mBufferTransformFlippedX = false;
+  bool mBufferTransformFlippedY = false;
   gfx::IntPoint mSubsurfacePosition = gfx::IntPoint(0, 0);
   gfx::Rect mViewportSourceRect = gfx::Rect(-1, -1, -1, -1);
   gfx::IntSize mViewportDestinationSize = gfx::IntSize(-1, -1);

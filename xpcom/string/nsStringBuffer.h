@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include "mozilla/MemoryReporting.h"
+#include "nsStringFwd.h"
 
 #include "Taint.h"
 

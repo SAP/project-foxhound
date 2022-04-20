@@ -26,7 +26,6 @@ job-defaults:
 jobs-from:
     - android.yml
     - cbindgen.yml
-    - cctools-port.yml
     - clang-tidy.yml
     - clang.yml
     - compiler-rt.yml
@@ -43,6 +42,7 @@ jobs-from:
     - misc.yml
     - nasm.yml
     - node.yml
+    - pkgconf.yml
     - resourcemonitor.yml
     - rust.yml
     - rust-size.yml

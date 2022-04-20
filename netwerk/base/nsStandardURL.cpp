@@ -72,6 +72,7 @@ constexpr bool TestForInvalidHostCharacters(char c) {
   // Testing for these:
   // CONTROL_CHARACTERS " #/:?@[\\]*<>|\"";
   return (c > 0 && c < 32) ||  // The control characters are [1, 31]
+         c == 0x7F ||          // // DEL (delete)
          c == ' ' || c == '#' || c == '/' || c == ':' || c == '?' || c == '@' ||
          c == '[' || c == '\\' || c == ']' || c == '*' || c == '<' ||
          c == '^' ||
@@ -297,7 +298,7 @@ bool nsStandardURL::IsValid() {
 void nsStandardURL::SanityCheck() {
   if (!IsValid()) {
     nsPrintfCString msg(
-        "mLen:%X, mScheme (%X,%X), mAuthority (%X,%X), mUsername (%X,%X), "
+        "mLen:%zX, mScheme (%X,%X), mAuthority (%X,%X), mUsername (%X,%X), "
         "mPassword (%X,%X), mHost (%X,%X), mPath (%X,%X), mFilepath (%X,%X), "
         "mDirectory (%X,%X), mBasename (%X,%X), mExtension (%X,%X), mQuery "
         "(%X,%X), mRef (%X,%X)",
@@ -3138,7 +3139,7 @@ nsresult nsStandardURL::SetRef(const nsACString& input) {
 
   InvalidateCache();
 
-  if (!ref || !*ref) {
+  if (input.IsEmpty()) {
     // remove existing ref
     if (mRef.mLen >= 0) {
       // remove ref and leading '#'

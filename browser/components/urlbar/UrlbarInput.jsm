@@ -227,6 +227,7 @@ class UrlbarInput {
       "focus",
       "blur",
       "input",
+      "beforeinput",
       "keydown",
       "keyup",
       "mouseover",
@@ -833,8 +834,10 @@ class UrlbarInput {
           ),
         };
 
+        // We cache the search string because switching tab may clear it.
+        let searchString = this._lastSearchString;
         this.controller.engagementEvent.record(event, {
-          searchString: this._lastSearchString,
+          searchString,
           selIndex,
           selType: "tabswitch",
           provider: result.providerName,
@@ -848,6 +851,15 @@ class UrlbarInput {
         if (switched && prevTab.isEmpty) {
           this.window.gBrowser.removeTab(prevTab);
         }
+
+        if (switched && !this.isPrivate && !result.heuristic) {
+          // We don't await for this, because a rejection should not interrupt
+          // the load. Just reportError it.
+          UrlbarUtils.addToInputHistory(url, searchString).catch(
+            Cu.reportError
+          );
+        }
+
         return;
       }
       case UrlbarUtils.RESULT_TYPE.SEARCH: {
@@ -1001,7 +1013,8 @@ class UrlbarInput {
     }
 
     if (!this.isPrivate && !result.heuristic) {
-      // This should not interrupt the load anyway.
+      // We don't await for this, because a rejection should not interrupt
+      // the load. Just reportError it.
       UrlbarUtils.addToInputHistory(url, this._lastSearchString).catch(
         Cu.reportError
       );
@@ -1382,16 +1395,20 @@ class UrlbarInput {
     let firstToken = end == -1 ? trimmedValue : trimmedValue.substring(0, end);
     // Enter search mode if the string starts with a restriction token.
     let searchMode = UrlbarUtils.searchModeForToken(firstToken);
+    let firstTokenIsRestriction = !!searchMode;
     if (!searchMode && searchEngine) {
       searchMode = { engineName: searchEngine.name };
+      firstTokenIsRestriction = searchEngine.aliases.includes(firstToken);
     }
 
     if (searchMode) {
       searchMode.entry = searchModeEntry;
       this.searchMode = searchMode;
-      // Remove the restriction token/alias from the string to be searched for
-      // in search mode.
-      value = value.replace(firstToken, "");
+      if (firstTokenIsRestriction) {
+        // Remove the restriction token/alias from the string to be searched for
+        // in search mode.
+        value = value.replace(firstToken, "");
+      }
       if (UrlbarTokenizer.REGEXP_SPACES.test(value[0])) {
         // If there was a trailing space after the restriction token/alias,
         // remove it.
@@ -2447,11 +2464,21 @@ class UrlbarInput {
       params.initiatingDoc = this.window.document;
     }
 
-    if (event?.keyCode === KeyEvent.DOM_VK_RETURN) {
-      if (openUILinkWhere === "current") {
-        params.avoidBrowserFocus = true;
-        this._keyDownEnterDeferred?.resolve(browser);
-      }
+    if (
+      this._keyDownEnterDeferred &&
+      event?.keyCode === KeyEvent.DOM_VK_RETURN &&
+      openUILinkWhere === "current"
+    ) {
+      // In this case, we move the focus to the browser that loads the content
+      // upon key up the enter key.
+      // To do it, send avoidBrowserFocus flag to openTrustedLinkIn() to avoid
+      // focusing on the browser in the function. And also, set loadedContent
+      // flag that whether the content is loaded in the current tab by this enter
+      // key. _keyDownEnterDeferred promise is processed at key up the enter,
+      // focus on the browser passed by _keyDownEnterDeferred.resolve().
+      params.avoidBrowserFocus = true;
+      this._keyDownEnterDeferred.loadedContent = true;
+      this._keyDownEnterDeferred.resolve(browser);
     }
 
     // Focus the content area before triggering loads, since if the load
@@ -3188,6 +3215,13 @@ class UrlbarInput {
     this._afterTabSelectAndFocusChange();
   }
 
+  _on_beforeinput(event) {
+    if (event.data && this._keyDownEnterDeferred) {
+      // Ignore char key input while processing enter key.
+      event.preventDefault();
+    }
+  }
+
   _on_keydown(event) {
     if (event.keyCode === KeyEvent.DOM_VK_RETURN) {
       if (this._keyDownEnterDeferred) {
@@ -3216,31 +3250,39 @@ class UrlbarInput {
   }
 
   async _on_keyup(event) {
-    if (
-      event.keyCode === KeyEvent.DOM_VK_RETURN &&
-      this._keyDownEnterDeferred
-    ) {
-      try {
-        const loadingBrowser = await this._keyDownEnterDeferred.promise;
-        // Ensure the selected browser didn't change in the meanwhile.
-        if (this.window.gBrowser.selectedBrowser === loadingBrowser) {
-          loadingBrowser.focus();
-          // Make sure the domain name stays visible for spoof protection and usability.
-          this.selectionStart = this.selectionEnd = 0;
-        }
-        this._keyDownEnterDeferred = null;
-      } catch (ex) {
-        // Not all the Enter actions in the urlbar will cause a navigation, then it
-        // is normal for this to be rejected.
-        // If _keyDownEnterDeferred was rejected on keydown, we don't nullify it here
-        // to ensure not overwriting the new value created by keydown.
-      }
-      return;
-    } else if (event.keyCode === KeyEvent.DOM_VK_CONTROL) {
+    if (event.keyCode === KeyEvent.DOM_VK_CONTROL) {
       this._isKeyDownWithCtrl = false;
     }
 
     this._toggleActionOverride(event);
+
+    // Pressing Enter key while pressing Meta key, and next, even when releasing
+    // Enter key before releasing Meta key, the keyup event is not fired.
+    // Therefore, if Enter keydown is detecting, continue the post processing
+    // for Enter key when any keyup event is detected.
+    if (this._keyDownEnterDeferred) {
+      if (this._keyDownEnterDeferred.loadedContent) {
+        try {
+          const loadingBrowser = await this._keyDownEnterDeferred.promise;
+          // Ensure the selected browser didn't change in the meanwhile.
+          if (this.window.gBrowser.selectedBrowser === loadingBrowser) {
+            loadingBrowser.focus();
+            // Make sure the domain name stays visible for spoof protection and usability.
+            this.selectionStart = this.selectionEnd = 0;
+          }
+        } catch (ex) {
+          // Not all the Enter actions in the urlbar will cause a navigation, then it
+          // is normal for this to be rejected.
+          // If _keyDownEnterDeferred was rejected on keydown, we don't nullify it here
+          // to ensure not overwriting the new value created by keydown.
+        }
+      } else {
+        // Discard the _keyDownEnterDeferred promise to receive any key inputs immediately.
+        this._keyDownEnterDeferred.resolve();
+      }
+
+      this._keyDownEnterDeferred = null;
+    }
   }
 
   _on_compositionstart(event) {

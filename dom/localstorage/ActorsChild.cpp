@@ -77,8 +77,8 @@ mozilla::ipc::IPCResult LSDatabaseChild::RecvRequestAllowToClose() {
 
 PBackgroundLSSnapshotChild* LSDatabaseChild::AllocPBackgroundLSSnapshotChild(
     const nsString& aDocumentURI, const nsString& aKey,
-    const bool& aIncreasePeakUsage, const int64_t& aRequestedSize,
-    const int64_t& aMinSize, LSSnapshotInitInfo* aInitInfo) {
+    const bool& aIncreasePeakUsage, const int64_t& aMinSize,
+    LSSnapshotInitInfo* aInitInfo) {
   MOZ_CRASH("PBackgroundLSSnapshotChild actor should be manually constructed!");
 }
 
@@ -141,7 +141,7 @@ mozilla::ipc::IPCResult LSObserverChild::RecvObserve(
 
   QM_TRY_INSPECT(const auto& principal,
                  PrincipalInfoToPrincipal(aPrincipalInfo),
-                 IPC_FAIL_NO_REASON(this));
+                 IPC_FAIL(this, "PrincipalInfoToPrincipal failed!"));
 
   Storage::NotifyChange(/* aStorage */ nullptr, principal, aKey,
                         aOldValue.AsString(), aNewValue.AsString(),

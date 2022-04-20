@@ -96,9 +96,9 @@ class ServiceWorkerRegistrar : public nsIObserver,
 
   bool IsSupportedVersion(const nsACString& aVersion) const;
 
+ protected:
   mozilla::Monitor mMonitor;
 
- protected:
   // protected by mMonitor.
   nsCOMPtr<nsIFile> mProfileDir;
   nsTArray<ServiceWorkerRegistrationData> mData;
@@ -109,7 +109,7 @@ class ServiceWorkerRegistrar : public nsIObserver,
   uint32_t mFileGeneration;
   uint32_t mRetryCount;
   bool mShuttingDown;
-  bool mRunnableDispatched;
+  bool mSaveDataRunnableDispatched;
 };
 
 }  // namespace mozilla::dom

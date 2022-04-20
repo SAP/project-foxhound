@@ -39,6 +39,7 @@ struct DefaultJitOptions {
 #endif
   bool checkRangeAnalysis;
   bool runExtraChecks;
+  bool disableJitBackend;
   bool disableAma;
   bool disableEaa;
   bool disableEdgeCaseAnalysis;
@@ -52,6 +53,7 @@ struct DefaultJitOptions {
   bool disableScalarReplacement;
   bool disableCacheIR;
   bool disableSink;
+  bool disableRedundantShapeGuards;
   bool disableBailoutLoopCheck;
   bool baselineInterpreter;
   bool baselineJit;
@@ -118,7 +120,6 @@ struct DefaultJitOptions {
   bool spectreValueMasking;
   bool spectreJitToCxxCalls;
 
-  bool supportsFloatingPoint;
   bool supportsUnalignedAccesses;
 
   DefaultJitOptions();
@@ -135,12 +136,16 @@ struct DefaultJitOptions {
 
 extern DefaultJitOptions JitOptions;
 
-inline bool IsBaselineInterpreterEnabled() {
-#ifdef JS_CODEGEN_NONE
+inline bool HasJitBackend() {
+#if defined(JS_CODEGEN_NONE)
   return false;
 #else
-  return JitOptions.baselineInterpreter && JitOptions.supportsFloatingPoint;
+  return !JitOptions.disableJitBackend;
 #endif
+}
+
+inline bool IsBaselineInterpreterEnabled() {
+  return HasJitBackend() && JitOptions.baselineInterpreter;
 }
 
 }  // namespace jit

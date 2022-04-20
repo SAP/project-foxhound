@@ -21,8 +21,8 @@
 class nsIPrincipal;
 
 namespace mozilla {
-class DataChannel;
 class PeerIdentity;
+class RTCStatsIdGenerator;
 namespace dom {
 class MediaStreamTrack;
 }  // namespace dom
@@ -34,13 +34,7 @@ class MediaStreamTrack;
 namespace mozilla {
 
 class JsepSession;
-class MediaPipeline;
-class MediaPipelineFilter;
-class MediaPipelineReceive;
-class MediaPipelineTransmit;
-class PCUuidGenerator;
 class PeerConnectionImpl;
-class PeerConnectionMedia;
 class SharedWebrtcState;
 
 // TODO(bug 1402997): If we move the TransceiverImpl stuff out of here, this
@@ -92,11 +86,8 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
   nsresult AddTransceiver(JsepTransceiver* aJsepTransceiver,
                           dom::MediaStreamTrack* aSendTrack,
                           SharedWebrtcState* aSharedWebrtcState,
+                          RTCStatsIdGenerator* aIdGenerator,
                           RefPtr<TransceiverImpl>* aTransceiverImpl);
-
-  void GetTransmitPipelinesMatching(
-      const dom::MediaStreamTrack* aTrack,
-      nsTArray<RefPtr<MediaPipelineTransmit>>* aPipelines);
 
   std::string GetTransportIdMatchingSendTrack(
       const dom::MediaStreamTrack& aTrack) const;

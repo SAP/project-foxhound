@@ -210,15 +210,12 @@ class BackgroundParentImpl : public PBackgroundParent,
   bool DeallocPFileDescriptorSetParent(
       PFileDescriptorSetParent* aActor) override;
 
-  PVsyncParent* AllocPVsyncParent() override;
-
-  bool DeallocPVsyncParent(PVsyncParent* aActor) override;
+  already_AddRefed<PVsyncParent> AllocPVsyncParent() override;
 
   already_AddRefed<mozilla::psm::PVerifySSLServerCertParent>
   AllocPVerifySSLServerCertParent(
-      const ByteArray& aServerCert, const nsTArray<ByteArray>& aPeerCertChain,
-      const nsCString& aHostName, const int32_t& aPort,
-      const OriginAttributes& aOriginAttributes,
+      const nsTArray<ByteArray>& aPeerCertChain, const nsCString& aHostName,
+      const int32_t& aPort, const OriginAttributes& aOriginAttributes,
       const Maybe<ByteArray>& aStapledOCSPResponse,
       const Maybe<ByteArray>& aSctsFromTLSExtension,
       const Maybe<DelegatedCredentialInfoArg>& aDcInfo,
@@ -226,9 +223,9 @@ class BackgroundParentImpl : public PBackgroundParent,
       const uint32_t& aCertVerifierFlags) override;
 
   mozilla::ipc::IPCResult RecvPVerifySSLServerCertConstructor(
-      PVerifySSLServerCertParent* aActor, const ByteArray& aServerCert,
-      nsTArray<ByteArray>&& aPeerCertChain, const nsCString& aHostName,
-      const int32_t& aPort, const OriginAttributes& aOriginAttributes,
+      PVerifySSLServerCertParent* aActor, nsTArray<ByteArray>&& aPeerCertChain,
+      const nsCString& aHostName, const int32_t& aPort,
+      const OriginAttributes& aOriginAttributes,
       const Maybe<ByteArray>& aStapledOCSPResponse,
       const Maybe<ByteArray>& aSctsFromTLSExtension,
       const Maybe<DelegatedCredentialInfoArg>& aDcInfo,
@@ -294,6 +291,8 @@ class BackgroundParentImpl : public PBackgroundParent,
   mozilla::ipc::IPCResult RecvPMessagePortConstructor(
       PMessagePortParent* aActor, const nsID& aUUID,
       const nsID& aDestinationUUID, const uint32_t& aSequenceID) override;
+
+  already_AddRefed<PIPCClientCertsParent> AllocPIPCClientCertsParent() override;
 
   bool DeallocPMessagePortParent(PMessagePortParent* aActor) override;
 

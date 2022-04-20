@@ -5,7 +5,11 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = ["backgroundTaskTimeoutSec", "runBackgroundTask"];
+var EXPORTED_SYMBOLS = [
+  "backgroundTaskTimeoutSec",
+  "maybeSubmitBackgroundUpdatePing",
+  "runBackgroundTask",
+];
 
 const { EXIT_CODE } = ChromeUtils.import(
   "resource://gre/modules/BackgroundUpdate.jsm"
@@ -43,8 +47,6 @@ XPCOMUtils.defineLazyGetter(this, "log", () => {
   };
   return new ConsoleAPI(consoleOptions);
 });
-
-Cu.importGlobalProperties(["Glean", "GleanPings"]);
 
 const backgroundTaskTimeoutSec = Services.prefs.getIntPref(
   "app.update.background.timeoutSec",
@@ -315,8 +317,7 @@ async function runBackgroundTask() {
     "glean",
     "__dummy__",
   ]).parent.path;
-  let FOG = Cc["@mozilla.org/toolkit/glean;1"].createInstance(Ci.nsIFOG);
-  FOG.initializeFOG(gleanRoot, "firefox.desktop.background.update");
+  Services.fog.initializeFOG(gleanRoot, "firefox.desktop.background.update");
 
   // For convenience, mirror our loglevel.
   Services.prefs.setCharPref(

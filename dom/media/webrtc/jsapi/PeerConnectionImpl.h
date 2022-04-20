@@ -381,7 +381,9 @@ class PeerConnectionImpl final
 
   void Close(ErrorResult& rv) { rv = Close(); }
 
-  bool PluginCrash(uint32_t aPluginID, const nsAString& aPluginName);
+  // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY bool PluginCrash(uint32_t aPluginID,
+                                               const nsAString& aPluginName);
 
   void RecordEndOfCallTelemetry();
 
@@ -408,6 +410,9 @@ class PeerConnectionImpl final
 
   // initialize telemetry for when calls start
   void StartCallTelem();
+
+  // Gets all codec stats for all transports, coalesced to transport level.
+  nsTArray<dom::RTCCodecStats> GetCodecStats(DOMHighResTimeStamp aNow);
 
   RefPtr<dom::RTCStatsReportPromise> GetStats(dom::MediaStreamTrack* aSelector,
                                               bool aInternalStats);
@@ -449,7 +454,7 @@ class PeerConnectionImpl final
   PeerConnectionImpl& operator=(PeerConnectionImpl);
 
   nsTArray<RefPtr<dom::RTCStatsPromise>> GetSenderStats(
-      const RefPtr<MediaPipelineTransmit>& aPipeline);
+      const RefPtr<TransceiverImpl>& aTransceiver);
   RefPtr<dom::RTCStatsPromise> GetDataChannelStats(
       const RefPtr<DataChannelConnection>& aDataChannelConnection,
       const DOMHighResTimeStamp aTimestamp);

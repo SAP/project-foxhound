@@ -412,9 +412,8 @@ void AddrHostRecord::ResolveComplete() {
       break;
   }
 
-  if (mResolverType == DNSResolverType::TRR &&
-      !StaticPrefs::network_trr_strict_native_fallback() && !mTRRSuccess &&
-      mNativeSuccess && TRRService::Get()) {
+  if (mResolverType == DNSResolverType::TRR && !mTRRSuccess && mNativeSuccess &&
+      !LoadGetTtl() && TRRService::Get()) {
     TRRService::Get()->AddToBlocklist(nsCString(host), originSuffix, pb, true);
   }
 }
@@ -428,6 +427,12 @@ AddrHostRecord::DnsPriority AddrHostRecord::GetPriority(uint16_t aFlags) {
   }
 
   return AddrHostRecord::DNS_PRIORITY_LOW;
+}
+
+nsresult AddrHostRecord::GetTtl(uint32_t* aResult) {
+  NS_ENSURE_ARG(aResult);
+  *aResult = mTtl;
+  return NS_OK;
 }
 
 //----------------------------------------------------------------------------

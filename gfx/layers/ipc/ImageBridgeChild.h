@@ -292,8 +292,7 @@ class ImageBridgeChild final : public PImageBridgeChild,
   PTextureChild* CreateTexture(
       const SurfaceDescriptor& aSharedData, ReadLockDescriptor&& aReadLock,
       LayersBackend aLayersBackend, TextureFlags aFlags, uint64_t aSerial,
-      wr::MaybeExternalImageId& aExternalImageId,
-      nsISerialEventTarget* aTarget = nullptr) override;
+      wr::MaybeExternalImageId& aExternalImageId) override;
 
   bool IsSameProcess() const override;
 
@@ -360,13 +359,6 @@ class ImageBridgeChild final : public PImageBridgeChild,
       mImageContainerListeners;
   RefPtr<ImageContainerListener> FindListener(
       const CompositableHandle& aHandle);
-
-#if defined(XP_WIN)
-  /**
-   * Used for checking if D3D11Device is updated.
-   */
-  RefPtr<ID3D11Device> mImageDevice;
-#endif
 };
 
 }  // namespace layers

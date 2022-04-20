@@ -91,14 +91,16 @@ class CanvasContext final : public nsICanvasRenderingContextInternal,
   void DidRefresh() override {}
 
   void MarkContextCleanForFrameCapture() override {}
-  bool IsContextCleanForFrameCapture() override { return false; }
+  Watchable<FrameCaptureState>* GetFrameCaptureState() override {
+    return nullptr;
+  }
 
  public:
   void Configure(const dom::GPUCanvasConfiguration& aDesc);
   void Unconfigure();
 
   dom::GPUTextureFormat GetPreferredFormat(Adapter& aAdapter) const;
-  RefPtr<Texture> GetCurrentTexture();
+  RefPtr<Texture> GetCurrentTexture(ErrorResult& aRv);
 
  private:
   uint32_t mWidth = 0, mHeight = 0;

@@ -45,7 +45,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   ExtensionData: "resource://gre/modules/Extension.jsm",
   FileUtils: "resource://gre/modules/FileUtils.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
-  OS: "resource://gre/modules/osfile.jsm",
   ProductAddonChecker: "resource://gre/modules/addons/ProductAddonChecker.jsm",
   UpdateUtils: "resource://gre/modules/UpdateUtils.jsm",
 
@@ -111,7 +110,7 @@ const PREF_SELECTED_THEME = "extensions.activeThemeID";
 const TOOLKIT_ID = "toolkit@mozilla.org";
 
 /* globals BOOTSTRAP_REASONS, DIR_STAGE, DIR_TRASH, KEY_APP_PROFILE, KEY_APP_SYSTEM_ADDONS, KEY_APP_SYSTEM_DEFAULTS,
-   KEY_APP_SYSTEM_PROFILE, KEY_PROFILEDIR, PREF_BRANCH_INSTALLED_ADDON, PREF_SYSTEM_ADDON_SET, TEMPORARY_ADDON_SUFFIX,
+   KEY_APP_SYSTEM_PROFILE, PREF_BRANCH_INSTALLED_ADDON, PREF_SYSTEM_ADDON_SET, TEMPORARY_ADDON_SUFFIX,
    XPI_PERMISSION, XPIStates, getURIForResourceInFile, iterDirectory */
 const XPI_INTERNAL_SYMBOLS = [
   "BOOTSTRAP_REASONS",
@@ -121,7 +120,6 @@ const XPI_INTERNAL_SYMBOLS = [
   "KEY_APP_SYSTEM_ADDONS",
   "KEY_APP_SYSTEM_DEFAULTS",
   "KEY_APP_SYSTEM_PROFILE",
-  "KEY_PROFILEDIR",
   "PREF_BRANCH_INSTALLED_ADDON",
   "PREF_SYSTEM_ADDON_SET",
   "TEMPORARY_ADDON_SUFFIX",
@@ -271,15 +269,21 @@ DirPackage = class DirPackage extends Package {
   }
 
   hasResource(...path) {
-    return OS.File.exists(OS.Path.join(this.filePath, ...path));
+    return IOUtils.exists(PathUtils.join(this.filePath, ...path));
   }
 
   async iterDirectory(path, callback) {
-    let fullPath = OS.Path.join(this.filePath, ...path);
+    let fullPath = PathUtils.join(this.filePath, ...path);
 
-    let iter = new OS.File.DirectoryIterator(fullPath);
-    await iter.forEach(callback);
-    iter.close();
+    let children = await IOUtils.getChildren(fullPath);
+    for (let path of children) {
+      let { type } = await IOUtils.stat(path);
+      callback({
+        isDir: type == "directory",
+        name: PathUtils.filename(path),
+        path,
+      });
+    }
   }
 
   iterFiles(callback, path = []) {
@@ -301,7 +305,7 @@ DirPackage = class DirPackage extends Package {
   }
 
   readBinary(...path) {
-    return OS.File.read(OS.Path.join(this.filePath, ...path));
+    return IOUtils.read(PathUtils.join(this.filePath, ...path));
   }
 
   async verifySignedStateForRoot(addon, root) {
@@ -490,6 +494,11 @@ async function loadManifestFromWebManifest(aPackage) {
 
   if (addon.type === "theme" && (await aPackage.hasResource("preview.png"))) {
     addon.previewImage = "preview.png";
+  }
+
+  if (addon.type == "sitepermission") {
+    addon.sitePermissions = manifest.site_permissions;
+    addon.siteOrigin = manifest.install_origins[0];
   }
 
   if (manifest.options_ui) {
@@ -789,6 +798,17 @@ function computeSha256HashAsString(input) {
   return getHashStringForCrypto(crypto);
 }
 
+function getHashForFile(file, algorithm) {
+  let crypto = CryptoHash(algorithm);
+  let fis = new FileInputStream(file, -1, -1, false);
+  try {
+    crypto.updateFromStream(fis, file.fileSize);
+  } finally {
+    fis.close();
+  }
+  return getHashStringForCrypto(crypto);
+}
+
 /**
  * Returns the signedState for a given return code and certificate by verifying
  * it against the expected ID.
@@ -955,20 +975,7 @@ function addonMap(addons) {
 }
 
 async function removeAsync(aFile) {
-  let info = null;
-  try {
-    info = await OS.File.stat(aFile.path);
-    if (info.isDir) {
-      await OS.File.removeDir(aFile.path);
-    } else {
-      await OS.File.remove(aFile.path);
-    }
-  } catch (e) {
-    if (!(e instanceof OS.File.Error) || !e.becauseNoSuchFile) {
-      throw e;
-    }
-    // The file has already gone away
-  }
+  await IOUtils.remove(aFile.path, { ignoreAbsent: true, recursive: true });
 }
 
 /**
@@ -1217,6 +1224,9 @@ function getHashStringForCrypto(aCrypto) {
   return hash.join("").toLowerCase();
 }
 
+// A hash algorithm if the caller of AddonInstall did not specify one.
+const DEFAULT_HASH_ALGO = "sha256";
+
 /**
  * Base class for objects that manage the installation of an addon.
  * This class isn't instantiated directly, see the derived classes below.
@@ -1267,6 +1277,7 @@ class AddonInstall {
       };
     }
     this.hash = this.originalHash;
+    this.fileHash = null;
     this.existingAddon = options.existingAddon || null;
     this.promptHandler = options.promptHandler || (() => Promise.resolve());
     this.releaseNotesURI = options.releaseNotesURI || null;
@@ -1493,6 +1504,18 @@ class AddonInstall {
     }
   }
 
+  _setFileHash(calculatedHash) {
+    this.fileHash = {
+      algorithm: this.hash ? this.hash.algorithm : DEFAULT_HASH_ALGO,
+      data: calculatedHash,
+    };
+
+    if (this.hash && calculatedHash != this.hash.data) {
+      return false;
+    }
+    return true;
+  }
+
   /**
    * Updates the addon metadata that has to be propagated across restarts.
    */
@@ -1532,8 +1555,15 @@ class AddonInstall {
       }
 
       if (!this.addon.id) {
-        let err = new Error(`Cannot find id for addon ${file.path}`);
-        return Promise.reject([AddonManager.ERROR_CORRUPT_FILE, err]);
+        let msg = `Cannot find id for addon ${file.path}.`;
+        if (Services.prefs.getBoolPref(PREF_XPI_SIGNATURES_DEV_ROOT, false)) {
+          msg += ` Preference ${PREF_XPI_SIGNATURES_DEV_ROOT} is set.`;
+        }
+
+        return Promise.reject([
+          AddonManager.ERROR_CORRUPT_FILE,
+          new Error(msg),
+        ]);
       }
 
       if (this.existingAddon) {
@@ -1546,9 +1576,17 @@ class AddonInstall {
         }
 
         if (this.existingAddon.isWebExtension && !this.addon.isWebExtension) {
+          // This condition is never met on regular Firefox builds.
+          // Remove it along with externalExtensionLoaders (bug 1674799).
           return Promise.reject([
             AddonManager.ERROR_UNEXPECTED_ADDON_TYPE,
             "WebExtensions may not be updated to other extension types",
+          ]);
+        }
+        if (this.existingAddon.type != this.addon.type) {
+          return Promise.reject([
+            AddonManager.ERROR_UNEXPECTED_ADDON_TYPE,
+            `Refusing to change addon type from ${this.existingAddon.type} to ${this.addon.type}`,
           ]);
         }
       }
@@ -1764,11 +1802,9 @@ class AddonInstall {
         }
 
         // Install the new add-on into its final location
-        let existingAddonID = this.existingAddon ? this.existingAddon.id : null;
         let file = await this.location.installer.installAddon({
           id: this.addon.id,
           source: stagedAddon,
-          existingAddonID,
         });
 
         // Update the metadata in the database
@@ -1854,6 +1890,7 @@ class AddonInstall {
       }
       this.state = AddonManager.STATE_INSTALL_FAILED;
       this.error = AddonManager.ERROR_FILE_ACCESS;
+      this._cleanup();
       AddonManagerPrivate.callAddonListeners(
         "onOperationCancelled",
         this.addon.wrapper
@@ -1871,17 +1908,31 @@ class AddonInstall {
    * @param {boolean} restartRequired
    *        If true, the final installation will be deferred until the
    *        next app startup.
-   * @param {AddonInternal} stagedAddon
-   *        The AddonInternal object for the staged install.
+   * @param {nsIFile} stagedAddon
+   *        The file where the add-on should be staged.
    * @param {boolean} isSameLocation
    *        True if this installation is an upgrade for an existing
    *        add-on in the same location.
+   * @throws if the file cannot be staged.
    */
   async stageInstall(restartRequired, stagedAddon, isSameLocation) {
     logger.debug(`Addon ${this.addon.id} will be installed as a packed xpi`);
     stagedAddon.leafName = `${this.addon.id}.xpi`;
 
-    await OS.File.copy(this.file.path, stagedAddon.path);
+    try {
+      await IOUtils.copy(this.file.path, stagedAddon.path);
+
+      let calculatedHash = getHashForFile(stagedAddon, this.fileHash.algorithm);
+      if (calculatedHash != this.fileHash.data) {
+        logger.warn(
+          `Staged file hash (${calculatedHash}) did not match initial hash (${this.fileHash.data})`
+        );
+        throw new Error("Refusing to stage add-on because it has been damaged");
+      }
+    } catch (e) {
+      await IOUtils.remove(stagedAddon.path, { ignoreAbsent: true });
+      throw e;
+    }
 
     if (restartRequired) {
       // Point the add-on to its extracted files as the xpi may get deleted
@@ -1925,12 +1976,23 @@ class AddonInstall {
 
     let stagingDir = this.location.installer.getStagingDir();
 
-    await this.location.installer.requestStagingDir();
-    await this.unstageInstall(stagingDir);
+    try {
+      await this.location.installer.requestStagingDir();
+      await this.unstageInstall(stagingDir);
 
-    let stagedAddon = getFile(`${this.addon.id}.xpi`, stagingDir);
+      let stagedAddon = getFile(`${this.addon.id}.xpi`, stagingDir);
 
-    await this.stageInstall(true, stagedAddon, true);
+      await this.stageInstall(true, stagedAddon, true);
+    } catch (e) {
+      logger.warn(`Failed to postpone install of ${this.addon.id}`, e);
+      this.state = AddonManager.STATE_INSTALL_FAILED;
+      this.error = AddonManager.ERROR_FILE_ACCESS;
+      this._cleanup();
+      this.removeTemporaryFile();
+      this.location.installer.releaseStagingDir();
+      this._callInstallListeners("onInstallFailed");
+      return;
+    }
 
     this._callInstallListeners("onInstallPostponed");
 
@@ -2006,10 +2068,10 @@ var LocalAddonInstall = class extends AddonInstall {
     this.progress = this.file.fileSize;
     this.maxProgress = this.file.fileSize;
 
+    let algorithm = this.hash ? this.hash.algorithm : DEFAULT_HASH_ALGO;
     if (this.hash) {
-      let crypto;
       try {
-        crypto = CryptoHash(this.hash.algorithm);
+        CryptoHash(this.hash.algorithm);
       } catch (e) {
         logger.warn(
           "Unknown hash algorithm '" +
@@ -2023,23 +2085,16 @@ var LocalAddonInstall = class extends AddonInstall {
         this._cleanup();
         return;
       }
+    }
 
-      let fis = new FileInputStream(this.file, -1, -1, false);
-      crypto.updateFromStream(fis, this.file.fileSize);
-      let calculatedHash = getHashStringForCrypto(crypto);
-      if (calculatedHash != this.hash.data) {
-        logger.warn(
-          "File hash (" +
-            calculatedHash +
-            ") did not match provided hash (" +
-            this.hash.data +
-            ")"
-        );
-        this.state = AddonManager.STATE_DOWNLOAD_FAILED;
-        this.error = AddonManager.ERROR_INCORRECT_HASH;
-        this._cleanup();
-        return;
-      }
+    if (!this._setFileHash(getHashForFile(this.file, algorithm))) {
+      logger.warn(
+        `File hash (${this.fileHash.data}) did not match provided hash (${this.hash.data})`
+      );
+      this.state = AddonManager.STATE_DOWNLOAD_FAILED;
+      this.error = AddonManager.ERROR_INCORRECT_HASH;
+      this._cleanup();
+      return;
     }
 
     try {
@@ -2172,6 +2227,7 @@ var DownloadAddonInstall = class extends AddonInstall {
         this.progress = 0;
         this.maxProgress = -1;
         this.hash = this.originalHash;
+        this.fileHash = null;
         this.startDownload();
         break;
       default:
@@ -2372,7 +2428,7 @@ var DownloadAddonInstall = class extends AddonInstall {
     } else {
       // We always need something to consume data from the inputstream passed
       // to onDataAvailable so just create a dummy cryptohasher to do that.
-      this.crypto = CryptoHash("sha1");
+      this.crypto = CryptoHash(DEFAULT_HASH_ALGO);
     }
 
     this.progress = 0;
@@ -2399,6 +2455,9 @@ var DownloadAddonInstall = class extends AddonInstall {
     this.channel = null;
     this.badCerthandler = null;
     Services.obs.removeObserver(this, "network:offline-about-to-go-offline");
+
+    let crypto = this.crypto;
+    this.crypto = null;
 
     // If the download was cancelled then update the state and send events
     if (aStatus == Cr.NS_BINDING_ABORTED) {
@@ -2440,17 +2499,10 @@ var DownloadAddonInstall = class extends AddonInstall {
           }
         }
 
-        // convert the binary hash data to a hex string.
-        let calculatedHash = getHashStringForCrypto(this.crypto);
-        this.crypto = null;
-        if (this.hash && calculatedHash != this.hash.data) {
+        if (!this._setFileHash(getHashStringForCrypto(crypto))) {
           this.downloadFailed(
             AddonManager.ERROR_INCORRECT_HASH,
-            "Downloaded file hash (" +
-              calculatedHash +
-              ") did not match provided hash (" +
-              this.hash.data +
-              ")"
+            `Downloaded file hash (${this.fileHash.data}) did not match provided hash (${this.hash.data})`
           );
           return;
         }
@@ -2535,7 +2587,6 @@ var DownloadAddonInstall = class extends AddonInstall {
     this.addon.updateDate = Date.now();
 
     if (this.existingAddon) {
-      this.addon.existingAddonID = this.existingAddon.id;
       this.addon.installDate = this.existingAddon.installDate;
     } else {
       this.addon.installDate = this.addon.updateDate;
@@ -3106,12 +3157,11 @@ class DirectoryInstaller {
       return this._stagingDirPromise;
     }
 
-    OS.File.makeDir(this.dir.path);
-    let stagepath = OS.Path.join(this.dir.path, DIR_STAGE);
-    return (this._stagingDirPromise = OS.File.makeDir(stagepath).catch(e => {
-      if (e instanceof OS.File.Error && e.becauseExists) {
-        return;
-      }
+    let stagepath = PathUtils.join(this.dir.path, DIR_STAGE);
+    return (this._stagingDirPromise = IOUtils.makeDirectory(stagepath, {
+      createAncestors: true,
+      ignoreExisting: true,
+    }).catch(e => {
       logger.error("Failed to create staging directory", e);
       throw e;
     }));
@@ -3197,8 +3247,6 @@ class DirectoryInstaller {
    *        The ID of the add-on to install
    * @param {nsIFile} options.source
    *        The source nsIFile to install from
-   * @param {string?} [options.existingAddonID]
-   *        The ID of an existing add-on to uninstall at the same time
    * @param {string} options.action
    *        What to we do with the given source file:
    *          "move"
@@ -3211,7 +3259,7 @@ class DirectoryInstaller {
    * @returns {nsIFile}
    *        An nsIFile indicating where the add-on was installed to
    */
-  installAddon({ id, source, existingAddonID, action = "move" }) {
+  installAddon({ id, source, action = "move" }) {
     let trashDir = this.getTrashDir();
 
     let transaction = new SafeInstallOperation();
@@ -3233,39 +3281,6 @@ class DirectoryInstaller {
     // temporary directory
     try {
       moveOldAddon(id);
-      if (existingAddonID && existingAddonID != id) {
-        moveOldAddon(existingAddonID);
-
-        {
-          // Move the data directories.
-          /* XXX ajvincent We can't use OS.File:  installAddon isn't compatible
-           * with Promises, nor is SafeInstallOperation.  Bug 945540 has been filed
-           * for porting to OS.File.
-           */
-          let oldDataDir = FileUtils.getDir(
-            KEY_PROFILEDIR,
-            ["extension-data", existingAddonID],
-            false,
-            true
-          );
-
-          if (oldDataDir.exists()) {
-            let newDataDir = FileUtils.getDir(
-              KEY_PROFILEDIR,
-              ["extension-data", id],
-              false,
-              true
-            );
-            if (newDataDir.exists()) {
-              let trashData = getFile("data-directory", trashDir);
-              transaction.moveUnder(newDataDir, trashData);
-            }
-
-            transaction.moveTo(oldDataDir, newDataDir);
-          }
-        }
-      }
-
       if (action == "copy") {
         transaction.copy(source, this.dir);
       } else if (action == "move") {
@@ -3498,51 +3513,28 @@ class SystemAddonInstaller extends DirectoryInstaller {
    * to cleanup again next time.
    */
   async cleanDirectories() {
-    // System add-ons directory does not exist
-    if (!(await OS.File.exists(this._baseDir.path))) {
-      return;
-    }
-
-    let iterator;
     try {
-      iterator = new OS.File.DirectoryIterator(this._baseDir.path);
-    } catch (e) {
-      logger.error("Failed to clean updated system add-ons directories.", e);
-      return;
-    }
-
-    try {
-      for (;;) {
-        let { value: entry, done } = await iterator.next();
-        if (done) {
-          break;
-        }
-
+      let children = await IOUtils.getChildren(this._baseDir.path, {
+        ignoreAbsent: true,
+      });
+      for (let path of children) {
         // Skip the directory currently in use
-        if (this.dir && this.dir.path == entry.path) {
+        if (this.dir && this.dir.path == path) {
           continue;
         }
 
         // Skip the next directory
-        if (this._nextDir && this._nextDir.path == entry.path) {
+        if (this._nextDir && this._nextDir.path == path) {
           continue;
         }
 
-        if (entry.isDir) {
-          await OS.File.removeDir(entry.path, {
-            ignoreAbsent: true,
-            ignorePermissions: true,
-          });
-        } else {
-          await OS.File.remove(entry.path, {
-            ignoreAbsent: true,
-          });
-        }
+        await IOUtils.remove(path, {
+          ignoreAbsent: true,
+          recursive: true,
+        });
       }
     } catch (e) {
       logger.error("Failed to clean updated system add-ons directories.", e);
-    } finally {
-      iterator.close();
     }
   }
 
@@ -3554,7 +3546,7 @@ class SystemAddonInstaller extends DirectoryInstaller {
    */
   async installAddonSet(aAddons) {
     // Make sure the base dir exists
-    await OS.File.makeDir(this._baseDir.path, { ignoreExisting: true });
+    await IOUtils.makeDirectory(this._baseDir.path, { ignoreExisting: true });
 
     let addonSet = SystemAddonInstaller._loadAddonSet();
 
@@ -3572,7 +3564,7 @@ class SystemAddonInstaller extends DirectoryInstaller {
     while (true) {
       newDir.leafName = Services.uuid.generateUUID().toString();
       try {
-        await OS.File.makeDir(newDir.path, { ignoreExisting: false });
+        await IOUtils.makeDirectory(newDir.path, { ignoreExisting: false });
         break;
       } catch (e) {
         logger.debug(
@@ -3661,7 +3653,7 @@ class SystemAddonInstaller extends DirectoryInstaller {
       await this.resetAddonSet();
 
       try {
-        await OS.File.removeDir(newDir.path, { ignorePermissions: true });
+        await IOUtils.remove(newDir.path, { recursive: true });
       } catch (e) {
         logger.warn(
           `Failed to remove failed system add-on directory ${newDir.path}.`,
@@ -4012,7 +4004,6 @@ var XPIInstall = {
       addon.sourceBundle = location.installer.installAddon({
         id,
         source,
-        existingAddonID: id,
       });
       XPIStates.addAddon(addon);
     } catch (e) {
@@ -4116,14 +4107,13 @@ var XPIInstall = {
           // downloading a fresh copy. We later mark the install object with
           // ownsTempFile so that we will cleanup later (see installAddonSet).
           try {
-            let path = OS.Path.join(OS.Constants.Path.tmpDir, "tmpaddon");
-            let unique = await OS.File.openUnique(path);
-            unique.file.close();
-            await OS.File.copy(sourceAddon._sourceBundle.path, unique.path);
+            let tmpDir = Services.dirsvc.get("TmpD", Ci.nsIFile).path;
+            let uniquePath = await IOUtils.createUniqueFile(tmpDir, "tmpaddon");
+            await IOUtils.copy(sourceAddon._sourceBundle.path, uniquePath);
             // Make sure to update file modification times so this is detected
             // as a new add-on.
-            await OS.File.setDates(unique.path);
-            item.path = unique.path;
+            await IOUtils.setModificationTime(uniquePath);
+            item.path = uniquePath;
           } catch (e) {
             logger.warn(
               `Failed make temporary copy of ${sourceAddon._sourceBundle.path}.`,

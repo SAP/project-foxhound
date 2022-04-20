@@ -104,6 +104,9 @@ function monotonicNow() {
  *   Creation time as the number of milliseconds since the epoch.
  * @property {number} updated_at
  *   Last updated time as the number of milliseconds since the epoch.
+ * @property {string} referrer
+ *   The referrer to the url of the page that was interacted with (may be empty)
+ *
  */
 
 /**
@@ -390,16 +393,17 @@ class _Interactions {
         result => {
           interaction.scrollingTime += result.interactionTimeInMilliseconds;
           interaction.scrollingDistance += result.scrollingDistanceInPixels;
-
-          interaction.updated_at = monotonicNow();
-
-          logConsole.debug("Add to store: ", interaction);
-          store.add(interaction);
         },
         reason => {
           Cu.reportError(reason);
         }
-      );
+      )
+      .then(() => {
+        interaction.updated_at = monotonicNow();
+
+        logConsole.debug("Add to store: ", interaction);
+        store.add(interaction);
+      });
   }
 
   /**

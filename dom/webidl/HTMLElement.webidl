@@ -27,6 +27,8 @@ interface HTMLElement : Element {
 
   [CEReactions, GetterThrows, Pure]
            attribute [LegacyNullToEmptyString] DOMString innerText;
+  [CEReactions, GetterThrows, SetterThrows, Pure]
+           attribute [LegacyNullToEmptyString] DOMString outerText;
 
   // user interaction
   [CEReactions, SetterThrows, Pure]
@@ -80,6 +82,14 @@ partial interface HTMLElement {
   readonly attribute long offsetLeft;
   readonly attribute long offsetWidth;
   readonly attribute long offsetHeight;
+};
+
+partial interface HTMLElement {
+  [ChromeOnly]
+  readonly attribute ElementInternals? internals;
+
+  [ChromeOnly]
+  readonly attribute boolean isFormAssociatedCustomElements;
 };
 
 interface mixin TouchEventHandlers {

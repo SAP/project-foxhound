@@ -171,8 +171,6 @@ class ProviderQuickSuggest extends UrlbarProvider {
     this._replaceSuggestionTemplates(suggestion);
 
     let payload = {
-      qsSuggestion: [suggestion.full_keyword, UrlbarUtils.HIGHLIGHT.SUGGESTED],
-      title: suggestion.title,
       url: suggestion.url,
       urlTimestampIndex: suggestion.urlTimestampIndex,
       icon: suggestion.icon,
@@ -187,17 +185,45 @@ class ProviderQuickSuggest extends UrlbarProvider {
       requestId: suggestion.request_id,
     };
 
+    let isBestMatch =
+      suggestion.is_best_match && UrlbarPrefs.get("bestMatchEnabled");
+    if (isBestMatch) {
+      // Show the result as a best match. Best match titles don't include the
+      // `full_keyword`, and the user's search string is highlighted.
+      payload.title = [suggestion.title, UrlbarUtils.HIGHLIGHT.TYPED];
+    } else {
+      // Show the result as a usual quick suggest. Include the `full_keyword`
+      // and highlight the parts that aren't in the search string.
+      payload.title = suggestion.title;
+      payload.qsSuggestion = [
+        suggestion.full_keyword,
+        UrlbarUtils.HIGHLIGHT.SUGGESTED,
+      ];
+    }
+
     let result = new UrlbarResult(
       UrlbarUtils.RESULT_TYPE.URL,
       UrlbarUtils.RESULT_SOURCE.SEARCH,
       ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, payload)
     );
-    result.isSuggestedIndexRelativeToGroup = true;
-    result.suggestedIndex = UrlbarPrefs.get(
-      suggestion.is_sponsored
-        ? "quickSuggestSponsoredIndex"
-        : "quickSuggestNonSponsoredIndex"
-    );
+
+    if (isBestMatch) {
+      result.isBestMatch = true;
+      result.suggestedIndex = 1;
+    } else if (
+      !isNaN(suggestion.position) &&
+      UrlbarPrefs.get("quickSuggestAllowPositionInSuggestions")
+    ) {
+      result.suggestedIndex = suggestion.position;
+    } else {
+      result.isSuggestedIndexRelativeToGroup = true;
+      result.suggestedIndex = UrlbarPrefs.get(
+        suggestion.is_sponsored
+          ? "quickSuggestSponsoredIndex"
+          : "quickSuggestNonSponsoredIndex"
+      );
+    }
+
     addCallback(this, result);
 
     this._addedResultInLastQuery = true;
@@ -287,37 +313,21 @@ class ProviderQuickSuggest extends UrlbarProvider {
       let isQuickSuggestLinkClicked =
         details.selIndex == resultIndex && details.selType !== "help";
       let {
-        qsSuggestion, // The full keyword
         sponsoredAdvertiser,
         sponsoredImpressionUrl,
         sponsoredClickUrl,
         sponsoredBlockId,
-        source,
         requestId,
       } = result.payload;
+      // Always use lowercase to make the reporting consistent
+      let advertiser = sponsoredAdvertiser.toLocaleLowerCase();
 
       let scenario = UrlbarPrefs.get("quicksuggest.scenario");
-
-      // Collect the search query and matched keywords only when the user has
-      // opted in to data collection and only for remote settings suggestions.
-      // Otherwise record those fields as undefined.
-      let matchedKeywords;
-      let searchQuery;
-      if (
-        UrlbarPrefs.get("quicksuggest.dataCollection.enabled") &&
-        source === QUICK_SUGGEST_SOURCE.REMOTE_SETTINGS
-      ) {
-        matchedKeywords = qsSuggestion || details.searchString;
-        searchQuery = details.searchString;
-      }
-
       // impression
       PartnerLinkAttribution.sendContextualServicesPing(
         {
           scenario,
-          search_query: searchQuery,
-          matched_keywords: matchedKeywords,
-          advertiser: sponsoredAdvertiser,
+          advertiser,
           block_id: sponsoredBlockId,
           position: telemetryResultIndex,
           reporting_url: sponsoredImpressionUrl,
@@ -331,7 +341,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
         PartnerLinkAttribution.sendContextualServicesPing(
           {
             scenario,
-            advertiser: sponsoredAdvertiser,
+            advertiser,
             block_id: sponsoredBlockId,
             position: telemetryResultIndex,
             reporting_url: sponsoredClickUrl,

@@ -95,7 +95,6 @@
 #include "mozilla/dom/PerformanceStorage.h"
 #include "mozilla/Telemetry.h"
 #include "AlternateServices.h"
-#include "InterceptedChannel.h"
 #include "NetworkMarker.h"
 #include "nsIHttpPushListener.h"
 #include "nsIX509Cert.h"
@@ -551,6 +550,15 @@ nsresult nsHttpChannel::MaybeUseHTTPSRRForUpgrade(bool aShouldUpgrade,
   }
 
   auto shouldSkipUpgradeWithHTTPSRR = [&]() -> bool {
+    // Skip using HTTPS RR to upgrade when this is not a top-level load and the
+    // loading principal is http.
+    if ((mLoadInfo->GetExternalContentPolicyType() !=
+         ExtContentPolicy::TYPE_DOCUMENT) &&
+        (mLoadInfo->GetLoadingPrincipal() &&
+         mLoadInfo->GetLoadingPrincipal()->SchemeIs("http"))) {
+      return true;
+    }
+
     nsAutoCString uriHost;
     mURI->GetAsciiHost(uriHost);
 
@@ -949,7 +957,7 @@ void nsHttpChannel::SpeculativeConnect() {
       mCaps & (NS_HTTP_DISALLOW_SPDY | NS_HTTP_TRR_MODE_MASK |
                NS_HTTP_DISABLE_IPV4 | NS_HTTP_DISABLE_IPV6 |
                NS_HTTP_DISALLOW_HTTP3),
-      gHttpHandler->UseHTTPSRRForSpeculativeConnection());
+      gHttpHandler->EchConfigEnabled());
 }
 
 void nsHttpChannel::DoNotifyListenerCleanup() {
@@ -1287,10 +1295,6 @@ nsresult nsHttpChannel::SetupTransaction() {
   // See bug #466080. Transfer LOAD_ANONYMOUS flag to socket-layer.
   if (mLoadFlags & LOAD_ANONYMOUS) mCaps |= NS_HTTP_LOAD_ANONYMOUS;
 
-  if (mLoadFlags & LOAD_CALL_CONTENT_SNIFFERS) {
-    mCaps |= NS_HTTP_CALL_CONTENT_SNIFFER;
-  }
-
   if (LoadTimingEnabled()) mCaps |= NS_HTTP_TIMING_ENABLED;
 
   if (mUpgradeProtocolCallback) {
@@ -1600,8 +1604,8 @@ nsresult nsHttpChannel::CallOnStartRequest() {
       }
     } else {
       if (docListener) {
-        docListener->AttachStreamFilter(request.mChildProcessId)
-            ->ChainTo(request.mPromise.forget(), __func__);
+        docListener->AttachStreamFilter()->ChainTo(request.mPromise.forget(),
+                                                   __func__);
       } else {
         request.mPromise->Reject(false, __func__);
       }
@@ -1880,29 +1884,6 @@ void nsHttpChannel::ProcessSSLInformation() {
       nsString consoleErrorTag = u"WeakCipherSuiteWarning"_ns;
       nsString consoleErrorCategory = u"SSL"_ns;
       Unused << AddSecurityMessage(consoleErrorTag, consoleErrorCategory);
-    }
-  }
-
-  // Send (SHA-1) signature algorithm errors to the web console
-  nsCOMPtr<nsIX509Cert> cert;
-  securityInfo->GetServerCert(getter_AddRefs(cert));
-  if (cert) {
-    UniqueCERTCertificate nssCert(cert->GetCert());
-    if (nssCert) {
-      SECOidTag tag = SECOID_GetAlgorithmTag(&nssCert->signature);
-      LOG(("Checking certificate signature: The OID tag is %i [this=%p]\n", tag,
-           this));
-      // Check to see if the signature is sha-1 based.
-      // Not including checks for SEC_OID_ISO_SHA1_WITH_RSA_SIGNATURE
-      // from http://tools.ietf.org/html/rfc2437#section-8 since I
-      // can't see reference to it outside this spec
-      if (tag == SEC_OID_PKCS1_SHA1_WITH_RSA_ENCRYPTION ||
-          tag == SEC_OID_ANSIX9_DSA_SIGNATURE_WITH_SHA1_DIGEST ||
-          tag == SEC_OID_ANSIX962_ECDSA_SHA1_SIGNATURE) {
-        nsString consoleErrorTag = u"SHA1Sig"_ns;
-        nsString consoleErrorMessage = u"SHA-1 Signature"_ns;
-        Unused << AddSecurityMessage(consoleErrorTag, consoleErrorMessage);
-      }
     }
   }
 
@@ -2380,9 +2361,10 @@ nsresult nsHttpChannel::ContinueProcessResponse3(nsresult rv) {
       }
       break;
 
+    case 408:
     case 425:
     case 429:
-      // Do not cache 425 and 429.
+      // Do not cache 408, 425 and 429.
       CloseCacheEntry(false);
       [[fallthrough]];  // process normally
     default:
@@ -5052,7 +5034,8 @@ nsresult nsHttpChannel::SetupReplacementChannel(nsIURI* newURI,
     profiler_add_network_marker(
         mURI, requestMethod, priority, mChannelId,
         NetworkLoadType::LOAD_REDIRECT, mLastStatusReported, TimeStamp::Now(),
-        size, mCacheDisposition, mLoadInfo->GetInnerWindowID(), &timings,
+        size, mCacheDisposition, mLoadInfo->GetInnerWindowID(),
+        mLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0, &timings,
         std::move(mSource), Some(nsDependentCString(contentType.get())), newURI,
         redirectFlags, channelId);
   }
@@ -5573,8 +5556,9 @@ nsresult nsHttpChannel::CancelInternal(nsresult status) {
     profiler_add_network_marker(
         mURI, requestMethod, priority, mChannelId, NetworkLoadType::LOAD_CANCEL,
         mLastStatusReported, TimeStamp::Now(), size, mCacheDisposition,
-        mLoadInfo->GetInnerWindowID(), &mTransactionTimings,
-        std::move(mSource));
+        mLoadInfo->GetInnerWindowID(),
+        mLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0,
+        &mTransactionTimings, std::move(mSource));
   }
 
   if (mProxyRequest) mProxyRequest->Cancel(status);
@@ -5883,7 +5867,8 @@ void nsHttpChannel::AsyncOpenFinal(TimeStamp aTimeStamp) {
     profiler_add_network_marker(
         mURI, requestMethod, mPriority, mChannelId, NetworkLoadType::LOAD_START,
         mChannelCreationTimestamp, mLastStatusReported, 0, mCacheDisposition,
-        mLoadInfo->GetInnerWindowID());
+        mLoadInfo->GetInnerWindowID(),
+        mLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0);
   }
 
   // Added due to PauseTask/DelayHttpChannel
@@ -5940,7 +5925,7 @@ void nsHttpChannel::MaybeResolveProxyAndBeginConnect() {
   // settings if we are never going to make a network connection.
   if (!mProxyInfo &&
       !(mLoadFlags & (LOAD_ONLY_FROM_CACHE | LOAD_NO_NETWORK_IO)) &&
-      !LoadBypassProxy() && NS_SUCCEEDED(ResolveProxy())) {
+      !BypassProxy() && NS_SUCCEEDED(ResolveProxy())) {
     return;
   }
 
@@ -6328,9 +6313,8 @@ nsresult nsHttpChannel::MaybeStartDNSPrefetch() {
       mDNSBlockingThenable = mDNSBlockingPromise.Ensure(__func__);
     }
 
-    if ((gHttpHandler->UseHTTPSRRAsAltSvcEnabled() ||
-         gHttpHandler->UseHTTPSRRForSpeculativeConnection()) &&
-        !mHTTPSSVCRecord && !(mCaps & NS_HTTP_DISALLOW_HTTPS_RR)) {
+    if (gHttpHandler->UseHTTPSRRAsAltSvcEnabled() && !mHTTPSSVCRecord &&
+        !(mCaps & NS_HTTP_DISALLOW_HTTPS_RR)) {
       MOZ_ASSERT(!mHTTPSSVCRecord);
 
       OriginAttributes originAttributes;
@@ -6394,8 +6378,7 @@ base::ProcessId nsHttpChannel::ProcessId() {
   return base::GetCurrentProcId();
 }
 
-auto nsHttpChannel::AttachStreamFilter(base::ProcessId aChildProcessId)
-    -> RefPtr<ChildEndpointPromise> {
+auto nsHttpChannel::AttachStreamFilter() -> RefPtr<ChildEndpointPromise> {
   LOG(("nsHttpChannel::AttachStreamFilter [this=%p]", this));
   MOZ_ASSERT(!LoadOnStartRequestCalled());
 
@@ -6414,7 +6397,6 @@ auto nsHttpChannel::AttachStreamFilter(base::ProcessId aChildProcessId)
   if (RefPtr<DocumentLoadListener> docParent = do_QueryObject(parentChannel)) {
     StreamFilterRequest* request = mStreamFilterRequests.AppendElement();
     request->mPromise = new ChildEndpointPromise::Private(__func__);
-    request->mChildProcessId = aChildProcessId;
     return request->mPromise;
   }
 
@@ -7043,8 +7025,8 @@ static void ReportHTTPSRRTelemetry(
                                                 getter_AddRefs(svcbRecord)))) {
     MOZ_ASSERT(svcbRecord);
 
-    Maybe<Tuple<nsCString, SupportedAlpnType>> alpn = svcbRecord->GetAlpn();
-    bool isHttp3 = alpn ? Get<1>(*alpn) == SupportedAlpnType::HTTP_3 : false;
+    Maybe<Tuple<nsCString, SupportedAlpnRank>> alpn = svcbRecord->GetAlpn();
+    bool isHttp3 = alpn ? IsHttp3(Get<1>(*alpn)) : false;
     Telemetry::Accumulate(Telemetry::HTTPS_RR_WITH_HTTP3_PRESENTED, isHttp3);
   }
 }
@@ -7531,7 +7513,9 @@ nsresult nsHttpChannel::ContinueOnStopRequest(nsresult aStatus, bool aIsFromNet,
     profiler_add_network_marker(
         mURI, requestMethod, priority, mChannelId, NetworkLoadType::LOAD_STOP,
         mLastStatusReported, TimeStamp::Now(), size, mCacheDisposition,
-        mLoadInfo->GetInnerWindowID(), &mTransactionTimings, std::move(mSource),
+        mLoadInfo->GetInnerWindowID(),
+        mLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0,
+        &mTransactionTimings, std::move(mSource),
         Some(nsDependentCString(contentType.get())));
   }
 

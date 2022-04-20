@@ -12,7 +12,9 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   setTimeout: "resource://gre/modules/Timer.jsm",
   Services: "resource://gre/modules/Services.jsm",
+  SnapshotGroups: "resource:///modules/SnapshotGroups.jsm",
   Snapshots: "resource:///modules/Snapshots.jsm",
+  SnapshotMonitor: "resource:///modules/SnapshotMonitor.jsm",
   SnapshotScorer: "resource:///modules/SnapshotScorer.jsm",
   SnapshotSelector: "resource:///modules/SnapshotSelector.jsm",
   TestUtils: "resource://testing-common/TestUtils.jsm",
@@ -47,6 +49,7 @@ async function addInteractions(interactions) {
       scrollingDistance: interaction.scrollingDistance ?? 0,
       created_at: interaction.created_at || Date.now(),
       updated_at: interaction.updated_at || Date.now(),
+      referrer: interaction.referrer || "",
     });
   }
   await Interactions.store.flush();
@@ -171,7 +174,7 @@ function assertSnapshot(actual, expected) {
   // Avoid falsey-types that we might get from the database.
   Assert.strictEqual(
     actual.userPersisted,
-    expected.userPersisted ?? false,
+    expected.userPersisted ?? Snapshots.USER_PERSISTED.NO,
     "Should have the expected user persisted value"
   );
   Assert.strictEqual(
@@ -242,6 +245,13 @@ function assertSnapshot(actual, expected) {
       "Should not have a removed at time"
     );
   }
+  if (expected.commonReferrerScoreEqualTo != null) {
+    Assert.equal(
+      actual.commonReferrerScore,
+      expected.commonReferrerScoreEqualTo,
+      "Should have a commonReferrerScore equal to the expected score"
+    );
+  }
 }
 
 /**
@@ -279,18 +289,78 @@ async function assertSnapshots(expected, options) {
 }
 
 /**
- * Asserts that the snapshots in the database match the expected values.
+ * Asserts that the snapshot groups match the expected values.
+ *
+ * @param {SnapshotGroup} group
+ *   The actual snapshot groups.
+ * @param {SnapshotGroup} expected
+ *   The expected snapshot group.
+ */
+function assertSnapshotGroup(group, expected) {
+  if (expected.title != null) {
+    Assert.equal(group.title, expected.title, "Should have the expected title");
+  }
+  if (expected.builder != null) {
+    Assert.equal(
+      group.builder,
+      expected.builder,
+      "Should have the expected builder"
+    );
+  }
+  if (expected.builderMetadata != null) {
+    Assert.deepEqual(
+      group.builderMetadata,
+      expected.builderMetadata,
+      "Should have the expected builderMetadata"
+    );
+  }
+  if (expected.snapshotCount != null) {
+    Assert.equal(
+      group.snapshotCount,
+      expected.snapshotCount,
+      "Should have the expected snapshotCount"
+    );
+  }
+  if (expected.lastAccessed != null) {
+    Assert.equal(
+      group.lastAccessed,
+      expected.lastAccessed,
+      "Should have the expected lastAccessed value"
+    );
+  }
+}
+
+/**
+ * Queries overlapping snapshots from the database and asserts their expected values.
  *
  * @param {Snapshot[]} expected
  *   The expected snapshots.
  * @param {object} context
  *   @see SnapshotSelector.#context.
  */
-async function assertSnapshotsWithContext(expected, context) {
+async function assertOverlappingSnapshots(expected, context) {
   let snapshots = await Snapshots.queryOverlapping(context.url);
 
   await assertSnapshotList(snapshots, expected);
 }
+
+/**
+ * Queries common referrer snapshots from the database and asserts their expected values.
+ *
+ * @param {Snapshot[]} expected
+ *   The expected snapshots.
+ * @param {object} context
+ *   @see SnapshotSelector.#context.
+ */
+async function assertCommonReferrerSnapshots(expected, context) {
+  let snapshots = await Snapshots.queryCommonReferrer(
+    context.url,
+    context.referrerUrl
+  );
+
+  await assertSnapshotList(snapshots, expected);
+}
+
 /**
  * Clears all data from the snapshots and metadata tables.
  */

@@ -124,17 +124,19 @@ class Suggestions {
       return null;
     }
     return {
+      is_best_match: result._test_is_best_match,
       full_keyword: this.getFullKeyword(phrase, result.keywords),
       title: result.title,
       url: result.url,
       click_url: result.click_url,
       impression_url: result.impression_url,
       block_id: result.id,
-      advertiser: result.advertiser.toLocaleLowerCase(),
+      advertiser: result.advertiser,
       is_sponsored: !NONSPONSORED_IAB_CATEGORIES.has(result.iab_category),
       score: SUGGESTION_SCORE,
       source: QUICK_SUGGEST_SOURCE.REMOTE_SETTINGS,
       icon: await this._fetchIcon(result.icon),
+      position: result.position,
     };
   }
 

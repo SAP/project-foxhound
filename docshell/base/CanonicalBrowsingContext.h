@@ -91,6 +91,8 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   // BrowsingContextGroup.
   uint64_t GetCrossGroupOpenerId() const { return mCrossGroupOpenerId; }
   void SetCrossGroupOpenerId(uint64_t aOpenerId);
+  void SetCrossGroupOpener(CanonicalBrowsingContext& aCrossGroupOpener,
+                           ErrorResult& aRv);
 
   void GetWindowGlobals(nsTArray<RefPtr<WindowGlobalParent>>& aWindows);
 
@@ -140,7 +142,8 @@ class CanonicalBrowsingContext final : public BrowsingContext {
 
   void SessionHistoryCommit(uint64_t aLoadId, const nsID& aChangeID,
                             uint32_t aLoadType, bool aPersist,
-                            bool aCloneEntryChildren, bool aChannelExpired);
+                            bool aCloneEntryChildren, bool aChannelExpired,
+                            uint32_t aCacheKey);
 
   // Calls the session history listeners' OnHistoryReload, storing the result in
   // aCanReload. If aCanReload is set to true and we have an active or a loading
@@ -287,7 +290,8 @@ class CanonicalBrowsingContext final : public BrowsingContext {
 
   void SetRestoreData(SessionStoreRestoreData* aData, ErrorResult& aError);
   void ClearRestoreState();
-  void RequestRestoreTabContent(WindowGlobalParent* aWindow);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void RequestRestoreTabContent(
+      WindowGlobalParent* aWindow);
   already_AddRefed<Promise> GetRestorePromise();
 
   nsresult WriteSessionStorageToSessionStore(
@@ -305,7 +309,7 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   void StartUnloadingHost(uint64_t aChildID);
   void ClearUnloadingHost(uint64_t aChildID);
 
-  bool AllowedInBFCache(const Maybe<uint64_t>& aChannelId);
+  bool AllowedInBFCache(const Maybe<uint64_t>& aChannelId, nsIURI* aNewURI);
 
   // Methods for getting and setting the active state for top level
   // browsing contexts, for the process priority manager.
@@ -460,9 +464,13 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   void RemovePendingDiscard();
 
   bool ShouldAddEntryForRefresh(const SessionHistoryEntry* aEntry) {
+    return ShouldAddEntryForRefresh(aEntry->Info().GetURI(),
+                                    aEntry->Info().GetPostData());
+  }
+  bool ShouldAddEntryForRefresh(nsIURI* aNewURI, bool aHasPostData) {
     nsCOMPtr<nsIURI> currentURI = GetCurrentURI();
-    return BrowsingContext::ShouldAddEntryForRefresh(currentURI,
-                                                     aEntry->Info());
+    return BrowsingContext::ShouldAddEntryForRefresh(currentURI, aNewURI,
+                                                     aHasPostData);
   }
 
   // XXX(farre): Store a ContentParent pointer here rather than mProcessId?

@@ -91,6 +91,8 @@ nsresult imgRequest::Init(nsIURI* aURI, nsIURI* aFinalURI,
                           mozilla::CORSMode aCORSMode,
                           nsIReferrerInfo* aReferrerInfo) {
   MOZ_ASSERT(NS_IsMainThread(), "Cannot use nsIURI off main thread!");
+  // Init() can only be called once, and that's before it can be used off
+  // mainthread
 
   LOG_FUNC(gImgLog, "imgRequest::Init");
 
@@ -554,8 +556,7 @@ void imgRequest::SetCacheValidation(imgCacheEntry* aCacheEntry,
   //
   // We have the original URI in the cache key though, probably we should be
   // using that instead of relying on Init() getting called.
-  auto info = nsContentUtils::GetSubresourceCacheValidationInfo(
-      aRequest, uri, nsContentUtils::SubresourceKind::Image);
+  auto info = nsContentUtils::GetSubresourceCacheValidationInfo(aRequest, uri);
 
   // Expiration time defaults to 0. We set the expiration time on our entry if
   // it hasn't been set yet.
@@ -694,7 +695,14 @@ imgRequest::OnStopRequest(nsIRequest* aRequest, nsresult status) {
 
   RefPtr<imgRequest> strongThis = this;
 
-  if (mIsMultiPartChannel && mNewPartPending) {
+  bool isMultipart = false;
+  bool newPartPending = false;
+  {
+    MutexAutoLock lock(mMutex);
+    isMultipart = mIsMultiPartChannel;
+    newPartPending = mNewPartPending;
+  }
+  if (isMultipart && newPartPending) {
     OnDataAvailable(aRequest, nullptr, 0, 0);
   }
 

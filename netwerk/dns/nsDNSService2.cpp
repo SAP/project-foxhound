@@ -351,6 +351,9 @@ nsDNSRecord::GetEffectiveTRRMode(uint32_t* aMode) {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsDNSRecord::GetTtl(uint32_t* aTtl) { return mHostRecord->GetTtl(aTtl); }
+
 class nsDNSByTypeRecord : public nsIDNSByTypeRecord,
                           public nsIDNSTXTRecord,
                           public nsIDNSHTTPSSVCRecord {
@@ -649,11 +652,11 @@ already_AddRefed<nsIDNSService> nsDNSService::GetXPCOMSingleton() {
       return nullptr;
     }
 
-    if (XRE_IsParentProcess()) {
+    if (XRE_IsParentProcess() || XRE_IsSocketProcess()) {
       return GetSingleton();
     }
 
-    if (XRE_IsContentProcess() || XRE_IsSocketProcess()) {
+    if (XRE_IsContentProcess()) {
       return ChildDNSService::GetSingleton();
     }
 
@@ -673,7 +676,6 @@ already_AddRefed<nsIDNSService> nsDNSService::GetXPCOMSingleton() {
 
 already_AddRefed<nsDNSService> nsDNSService::GetSingleton() {
   MOZ_ASSERT_IF(nsIOService::UseSocketProcess(), XRE_IsSocketProcess());
-  MOZ_ASSERT_IF(!nsIOService::UseSocketProcess(), XRE_IsParentProcess());
 
   if (!gDNSService) {
     if (!NS_IsMainThread()) {

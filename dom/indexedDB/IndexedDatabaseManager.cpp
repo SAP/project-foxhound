@@ -22,7 +22,6 @@
 #include "mozilla/dom/ErrorEvent.h"
 #include "mozilla/dom/ErrorEventBinding.h"
 #include "mozilla/dom/WorkerScope.h"
-#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/intl/LocaleCanonicalizer.h"
 #include "mozilla/ipc/BackgroundChild.h"
@@ -460,7 +459,7 @@ nsresult IndexedDatabaseManager::CommonPostHandleEvent(
 
     errorEvent->SetTrusted(true);
 
-    auto* target = static_cast<EventTarget*>(globalScope.get());
+    RefPtr<EventTarget> target = static_cast<EventTarget*>(globalScope.get());
 
     if (NS_WARN_IF(NS_FAILED(EventDispatcher::DispatchDOMEvent(
             target,

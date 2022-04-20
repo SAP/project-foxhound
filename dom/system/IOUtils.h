@@ -124,6 +124,47 @@ class IOUtils final {
   static already_AddRefed<Promise> Exists(GlobalObject& aGlobal,
                                           const nsAString& aPath);
 
+  static already_AddRefed<Promise> CreateUniqueFile(
+      GlobalObject& aGlobal, const nsAString& aParent, const nsAString& aPrefix,
+      const uint32_t aPermissions);
+  static already_AddRefed<Promise> CreateUniqueDirectory(
+      GlobalObject& aGlobal, const nsAString& aParent, const nsAString& aPrefix,
+      const uint32_t aPermissions);
+
+ private:
+  /**
+   * A helper method for CreateUniqueFile and CreateUniqueDirectory.
+   */
+  static already_AddRefed<Promise> CreateUnique(GlobalObject& aGlobal,
+                                                const nsAString& aParent,
+                                                const nsAString& aPrefix,
+                                                const uint32_t aFileType,
+                                                const uint32_t aPermissions);
+
+ public:
+#if defined(XP_WIN)
+  static already_AddRefed<Promise> GetWindowsAttributes(GlobalObject& aGlobal,
+                                                        const nsAString& aPath);
+
+  static already_AddRefed<Promise> SetWindowsAttributes(
+      GlobalObject& aGlobal, const nsAString& aPath,
+      const mozilla::dom::WindowsFileAttributes& aAttrs);
+#elif defined(XP_MACOSX)
+  static already_AddRefed<Promise> HasMacXAttr(GlobalObject& aGlobal,
+                                               const nsAString& aPath,
+                                               const nsACString& aAttr);
+  static already_AddRefed<Promise> GetMacXAttr(GlobalObject& aGlobal,
+                                               const nsAString& aPath,
+                                               const nsACString& aAttr);
+  static already_AddRefed<Promise> SetMacXAttr(GlobalObject& aGlobal,
+                                               const nsAString& aPath,
+                                               const nsACString& aAttr,
+                                               const Uint8Array& aValue);
+  static already_AddRefed<Promise> DelMacXAttr(GlobalObject& aGlobal,
+                                               const nsAString& aPath,
+                                               const nsACString& aAttr);
+#endif
+
   static void GetProfileBeforeChange(GlobalObject& aGlobal,
                                      JS::MutableHandle<JS::Value>,
                                      ErrorResult& aRv);
@@ -158,9 +199,16 @@ class IOUtils final {
   class EventQueue;
   class State;
 
+  template <typename Fn>
+  static already_AddRefed<Promise> WithPromiseAndState(GlobalObject& aGlobal,
+                                                       Fn aFn);
+
   /**
    * Dispatch a task on the event queue and resolve or reject the associated
    * promise based on the result.
+   *
+   * NB: If the calling thread is a worker, this function takes care of keepting
+   *     it alive until the |IOPromise| can complete.
    *
    * @param aPromise The promise corresponding to the task running on the event
    * queue.
@@ -368,6 +416,51 @@ class IOUtils final {
    */
   static Result<bool, IOError> ExistsSync(nsIFile* aFile);
 
+  /**
+   * Create a file or directory with a unique path.
+   *
+   * @param aFile     The location of the file or directory (including prefix)
+   * @param aFileType One of |nsIFile::NORMAL_FILE_TYPE| or
+   *                  |nsIFile::DIRECTORY_TYPE|.
+   * @param aperms    The permissions to create the file or directory with.
+   *
+   * @return A unique path.
+   */
+  static Result<nsString, IOError> CreateUniqueSync(
+      nsIFile* aFile, const uint32_t aFileType, const uint32_t aPermissions);
+
+#if defined(XP_WIN)
+  /**
+   * Return the Windows-specific attributes of the file.
+   *
+   * @param aFile The location of the file.
+   *
+   * @return The Windows-specific attributes of the file.
+   */
+  static Result<uint32_t, IOError> GetWindowsAttributesSync(nsIFile* aFile);
+
+  /**
+   * Set the Windows-specific attributes of the file.
+   *
+   * @param aFile  The location of the file.
+   * @param aAttrs The attributes to set on the file.
+   *
+   * @return |Ok| if the attributes were successfully set, or an error.
+   */
+  static Result<Ok, IOError> SetWindowsAttributesSync(
+      nsIFile* aFile, const uint32_t aSetAttrs, const uint32_t aClearAttrs);
+#elif defined(XP_MACOSX)
+  static Result<bool, IOError> HasMacXAttrSync(nsIFile* aFile,
+                                               const nsCString& aAttr);
+  static Result<nsTArray<uint8_t>, IOError> GetMacXAttrSync(
+      nsIFile* aFile, const nsCString& aAttr);
+  static Result<Ok, IOError> SetMacXAttrSync(nsIFile* aFile,
+                                             const nsCString& aAttr,
+                                             const nsTArray<uint8_t>& aValue);
+  static Result<Ok, IOError> DelMacXAttrSync(nsIFile* aFile,
+                                             const nsCString& aAttr);
+#endif
+
   enum class EventQueueStatus {
     Uninitialized,
     Initialized,
@@ -427,6 +520,21 @@ class IOUtils::EventQueue final {
   EventQueue& operator=(const EventQueue&) = delete;
   EventQueue& operator=(EventQueue&&) = delete;
 
+  /**
+   * Dispatch a task on the event queue.
+   *
+   * NB: If using this directly from |IOUtils| instead of
+   *     |IOUtils::DispatchAndResolve| *and* the calling thread is a worker, you
+   *     *must* take care to keep the worker thread alive until the |IOPromise|
+   *     resolves or rejects. See the implementation of
+   *     |IOUtils::DispatchAndResolve| or |IOUtils::GetWindowsAttributes| for an
+   *     example.
+   *
+   * @param aFunc The task to dispatch on the event queue.
+   *
+   * @return A promise that resolves to the task's return value or rejects with
+   *         an error.
+   */
   template <typename OkT, typename Fn>
   RefPtr<IOPromise<OkT>> Dispatch(Fn aFunc);
 

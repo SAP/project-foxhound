@@ -132,6 +132,7 @@ extern bool enableWeakRefs;
 extern bool enableToSource;
 extern bool enablePropertyErrorMessageFix;
 extern bool enableIteratorHelpers;
+extern bool enableArrayGrouping;
 extern bool enablePrivateClassFields;
 extern bool enablePrivateClassMethods;
 extern bool enableErgonomicBrandChecks;
@@ -176,7 +177,7 @@ extern UniqueChars processWideModuleLoadPath;
 bool CreateAlias(JSContext* cx, const char* dstName,
                  JS::HandleObject namespaceObj, const char* srcName);
 
-enum class ScriptKind { Script, ScriptStencil, DecodeScript, Module };
+enum class OffThreadJobKind { CompileScript, CompileModule, Decode };
 
 class NonshrinkingGCObjectVector
     : public GCVector<HeapPtrObject, 0, SystemAllocPolicy> {
@@ -263,9 +264,6 @@ extern ShellContext* GetShellContext(JSContext* cx);
 
 [[nodiscard]] extern bool PrintStackTrace(JSContext* cx,
                                           JS::Handle<JSObject*> stackObj);
-
-extern JSObject* CreateScriptPrivate(JSContext* cx,
-                                     HandleString path = nullptr);
 
 } /* namespace shell */
 } /* namespace js */

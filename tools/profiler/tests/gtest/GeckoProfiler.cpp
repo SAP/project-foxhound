@@ -14,7 +14,12 @@
 #include "mozilla/ProfilerThreadRegistrationInfo.h"
 #include "mozilla/ProfilerThreadRegistry.h"
 #include "mozilla/ProfilerUtils.h"
+#include "mozilla/ProgressLogger.h"
 #include "mozilla/UniquePtrExtensions.h"
+
+#include "nsIThread.h"
+#include "nsThreadUtils.h"
+#include "prthread.h"
 
 #include "gtest/gtest.h"
 
@@ -655,6 +660,31 @@ static const char* GetThreadName() {
       nullptr);
 }
 
+// Get the thread name, as registered in the PRThread, nullptr on failure.
+static const char* GetPRThreadName() {
+  nsIThread* nsThread = NS_GetCurrentThread();
+  if (!nsThread) {
+    return nullptr;
+  }
+  PRThread* prThread = nullptr;
+  if (NS_FAILED(nsThread->GetPRThread(&prThread))) {
+    return nullptr;
+  }
+  if (!prThread) {
+    return nullptr;
+  }
+  return PR_GetThreadName(prThread);
+}
+
+TEST(GeckoProfiler, ThreadRegistration_MainThreadName)
+{
+  EXPECT_TRUE(profiler::ThreadRegistration::IsRegistered());
+  EXPECT_STREQ(GetThreadName(), "GeckoMain");
+
+  // Check that the real thread name (outside the profiler) is *not* GeckoMain.
+  EXPECT_STRNE(GetPRThreadName(), "GeckoMain");
+}
+
 TEST(GeckoProfiler, ThreadRegistration_NestedRegistrations)
 {
   using TR = profiler::ThreadRegistration;
@@ -680,6 +710,7 @@ TEST(GeckoProfiler, ThreadRegistration_NestedRegistrations)
       TR rt{"Test thread #1", &onStackChar};
       ASSERT_TRUE(TR::IsRegistered());
       EXPECT_STREQ(GetThreadName(), "Test thread #1");
+      EXPECT_STREQ(GetPRThreadName(), "Test thread #1");
     }
     ASSERT_FALSE(TR::IsRegistered());
 
@@ -688,6 +719,7 @@ TEST(GeckoProfiler, ThreadRegistration_NestedRegistrations)
       TR::RegisterThread("Test thread #2", &onStackChar);
       ASSERT_TRUE(TR::IsRegistered());
       EXPECT_STREQ(GetThreadName(), "Test thread #2");
+      EXPECT_STREQ(GetPRThreadName(), "Test thread #2");
 
       TR::UnregisterThread();
       ASSERT_FALSE(TR::IsRegistered());
@@ -702,17 +734,21 @@ TEST(GeckoProfiler, ThreadRegistration_NestedRegistrations)
       TR rt2{"Test thread #3", &onStackChar};
       ASSERT_TRUE(TR::IsRegistered());
       EXPECT_STREQ(GetThreadName(), "Test thread #3");
+      EXPECT_STREQ(GetPRThreadName(), "Test thread #3");
 
       {
         TR rt3{"Test thread #4", &onStackChar};
         ASSERT_TRUE(TR::IsRegistered());
         EXPECT_STREQ(GetThreadName(), "Test thread #3")
             << "Nested registration shouldn't change the name";
+        EXPECT_STREQ(GetPRThreadName(), "Test thread #3")
+            << "Nested registration shouldn't change the PRThread name";
       }
       ASSERT_TRUE(TR::IsRegistered())
       << "Thread should still be registered after nested un-registration";
       EXPECT_STREQ(GetThreadName(), "Test thread #3")
           << "Thread should still be registered after nested un-registration";
+      EXPECT_STREQ(GetPRThreadName(), "Test thread #3");
     }
     ASSERT_FALSE(TR::IsRegistered());
 
@@ -721,18 +757,22 @@ TEST(GeckoProfiler, ThreadRegistration_NestedRegistrations)
       TR::RegisterThread("Test thread #5", &onStackChar);
       ASSERT_TRUE(TR::IsRegistered());
       EXPECT_STREQ(GetThreadName(), "Test thread #5");
+      EXPECT_STREQ(GetPRThreadName(), "Test thread #5");
 
       {
         TR::RegisterThread("Test thread #6", &onStackChar);
         ASSERT_TRUE(TR::IsRegistered());
         EXPECT_STREQ(GetThreadName(), "Test thread #5")
             << "Nested registration shouldn't change the name";
+        EXPECT_STREQ(GetPRThreadName(), "Test thread #5")
+            << "Nested registration shouldn't change the PRThread name";
 
         TR::UnregisterThread();
         ASSERT_TRUE(TR::IsRegistered())
         << "Thread should still be registered after nested un-registration";
         EXPECT_STREQ(GetThreadName(), "Test thread #5")
             << "Thread should still be registered after nested un-registration";
+        EXPECT_STREQ(GetPRThreadName(), "Test thread #5");
       }
 
       TR::UnregisterThread();
@@ -744,18 +784,22 @@ TEST(GeckoProfiler, ThreadRegistration_NestedRegistrations)
       TR rt2{"Test thread #7", &onStackChar};
       ASSERT_TRUE(TR::IsRegistered());
       EXPECT_STREQ(GetThreadName(), "Test thread #7");
+      EXPECT_STREQ(GetPRThreadName(), "Test thread #7");
 
       {
         TR::RegisterThread("Test thread #8", &onStackChar);
         ASSERT_TRUE(TR::IsRegistered());
         EXPECT_STREQ(GetThreadName(), "Test thread #7")
             << "Nested registration shouldn't change the name";
+        EXPECT_STREQ(GetPRThreadName(), "Test thread #7")
+            << "Nested registration shouldn't change the PRThread name";
 
         TR::UnregisterThread();
         ASSERT_TRUE(TR::IsRegistered())
         << "Thread should still be registered after nested un-registration";
         EXPECT_STREQ(GetThreadName(), "Test thread #7")
             << "Thread should still be registered after nested un-registration";
+        EXPECT_STREQ(GetPRThreadName(), "Test thread #7");
       }
     }
     ASSERT_FALSE(TR::IsRegistered());
@@ -765,17 +809,21 @@ TEST(GeckoProfiler, ThreadRegistration_NestedRegistrations)
       TR::RegisterThread("Test thread #9", &onStackChar);
       ASSERT_TRUE(TR::IsRegistered());
       EXPECT_STREQ(GetThreadName(), "Test thread #9");
+      EXPECT_STREQ(GetPRThreadName(), "Test thread #9");
 
       {
         TR rt3{"Test thread #10", &onStackChar};
         ASSERT_TRUE(TR::IsRegistered());
         EXPECT_STREQ(GetThreadName(), "Test thread #9")
             << "Nested registration shouldn't change the name";
+        EXPECT_STREQ(GetPRThreadName(), "Test thread #9")
+            << "Nested registration shouldn't change the PRThread name";
       }
       ASSERT_TRUE(TR::IsRegistered())
       << "Thread should still be registered after nested un-registration";
       EXPECT_STREQ(GetThreadName(), "Test thread #9")
           << "Thread should still be registered after nested un-registration";
+      EXPECT_STREQ(GetPRThreadName(), "Test thread #9");
 
       TR::UnregisterThread();
       ASSERT_FALSE(TR::IsRegistered());
@@ -786,6 +834,7 @@ TEST(GeckoProfiler, ThreadRegistration_NestedRegistrations)
       TR rt2{"Test thread #11", &onStackChar};
       ASSERT_TRUE(TR::IsRegistered());
       EXPECT_STREQ(GetThreadName(), "Test thread #11");
+      EXPECT_STREQ(GetPRThreadName(), "Test thread #11");
 
       TR::UnregisterThread();
       ASSERT_TRUE(TR::IsRegistered())
@@ -794,6 +843,7 @@ TEST(GeckoProfiler, ThreadRegistration_NestedRegistrations)
       EXPECT_STREQ(GetThreadName(), "Test thread #11")
           << "On-stack thread should still be registered after off-stack "
              "un-registration";
+      EXPECT_STREQ(GetPRThreadName(), "Test thread #11");
     }
     ASSERT_FALSE(TR::IsRegistered());
 
@@ -803,12 +853,15 @@ TEST(GeckoProfiler, ThreadRegistration_NestedRegistrations)
       TR::RegisterThread("Test thread #12", &onStackChar);
       ASSERT_TRUE(TR::IsRegistered());
       EXPECT_STREQ(GetThreadName(), "Test thread #12");
+      EXPECT_STREQ(GetPRThreadName(), "Test thread #12");
 
       {
         TR rt3{"Test thread #13", &onStackChar};
         ASSERT_TRUE(TR::IsRegistered());
         EXPECT_STREQ(GetThreadName(), "Test thread #12")
             << "Nested registration shouldn't change the name";
+        EXPECT_STREQ(GetPRThreadName(), "Test thread #12")
+            << "Nested registration shouldn't change the PRThread name";
 
         // Note that we unregister the root registration, while nested `rt3` is
         // still alive.
@@ -1509,7 +1562,7 @@ TEST(GeckoProfiler, FeaturesAndParams)
 
   // Try a couple of features and filters.
   {
-    uint32_t features = ProfilerFeature::JS | ProfilerFeature::Threads;
+    uint32_t features = ProfilerFeature::JS;
     const char* filters[] = {"GeckoMain", "Compositor"};
 
     profiler_start(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL,
@@ -1545,9 +1598,7 @@ TEST(GeckoProfiler, FeaturesAndParams)
     ASSERT_TRUE(profiler_feature_active(ProfilerFeature::MainThreadIO));
     ASSERT_TRUE(profiler_feature_active(ProfilerFeature::IPCMessages));
 
-    // Profiler::Threads is added because filters has multiple entries.
-    ActiveParamsCheck(PowerOfTwo32(999999).Value(), 3,
-                      features | ProfilerFeature::Threads, filters,
+    ActiveParamsCheck(int(PowerOfTwo32(999999).Value()), 3, features, filters,
                       MOZ_ARRAY_LENGTH(filters), 123, Some(25.0));
 
     profiler_stop();
@@ -1568,9 +1619,7 @@ TEST(GeckoProfiler, FeaturesAndParams)
     ASSERT_TRUE(profiler_feature_active(ProfilerFeature::MainThreadIO));
     ASSERT_TRUE(profiler_feature_active(ProfilerFeature::IPCMessages));
 
-    // Profiler::Threads is added because filters has multiple entries.
-    ActiveParamsCheck(PowerOfTwo32(999999).Value(), 3,
-                      features | ProfilerFeature::Threads, filters,
+    ActiveParamsCheck(int(PowerOfTwo32(999999).Value()), 3, features, filters,
                       MOZ_ARRAY_LENGTH(filters), 0, Nothing());
 
     profiler_stop();
@@ -1612,8 +1661,7 @@ TEST(GeckoProfiler, FeaturesAndParams)
 
     // Entries and intervals go to defaults if 0 is specified.
     ActiveParamsCheck(PROFILER_DEFAULT_ENTRIES.Value(),
-                      PROFILER_DEFAULT_INTERVAL,
-                      features | ProfilerFeature::Threads, filters,
+                      PROFILER_DEFAULT_INTERVAL, features, filters,
                       MOZ_ARRAY_LENGTH(filters), 0, Nothing());
 
     profiler_stop();
@@ -1632,7 +1680,7 @@ TEST(GeckoProfiler, EnsureStarted)
 {
   InactiveFeaturesAndParamsCheck();
 
-  uint32_t features = ProfilerFeature::JS | ProfilerFeature::Threads;
+  uint32_t features = ProfilerFeature::JS;
   const char* filters[] = {"GeckoMain", "Compositor"};
   {
     // Inactive -> Active
@@ -1770,7 +1818,7 @@ TEST(GeckoProfiler, DifferentThreads)
   // Control the profiler on a background thread and verify flags on the
   // main thread.
   {
-    uint32_t features = ProfilerFeature::JS | ProfilerFeature::Threads;
+    uint32_t features = ProfilerFeature::JS;
     const char* filters[] = {"GeckoMain", "Compositor"};
 
     thread->Dispatch(
@@ -1802,7 +1850,7 @@ TEST(GeckoProfiler, DifferentThreads)
   // Control the profiler on the main thread and verify flags on a
   // background thread.
   {
-    uint32_t features = ProfilerFeature::JS | ProfilerFeature::Threads;
+    uint32_t features = ProfilerFeature::JS;
     const char* filters[] = {"GeckoMain", "Compositor"};
 
     profiler_start(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL,
@@ -2393,7 +2441,8 @@ TEST(GeckoProfiler, Markers)
       /* int64_t aCount */ 56,
       /* mozilla::net::CacheDisposition aCacheDisposition */
       net::kCacheHit,
-      /* uint64_t aInnerWindowID */ 78
+      /* uint64_t aInnerWindowID */ 78,
+      /* bool aIsPrivateBrowsing */ false
       /* const mozilla::net::TimingStruct* aTimings = nullptr */
       /* mozilla::UniquePtr<mozilla::ProfileChunkedBuffer> aSource =
          nullptr */
@@ -2415,6 +2464,7 @@ TEST(GeckoProfiler, Markers)
       /* mozilla::net::CacheDisposition aCacheDisposition */
       net::kCacheUnresolved,
       /* uint64_t aInnerWindowID */ 78,
+      /* bool aIsPrivateBrowsing */ false,
       /* const mozilla::net::TimingStruct* aTimings = nullptr */ nullptr,
       /* mozilla::UniquePtr<mozilla::ProfileChunkedBuffer> aSource =
          nullptr */
@@ -2440,6 +2490,7 @@ TEST(GeckoProfiler, Markers)
       /* mozilla::net::CacheDisposition aCacheDisposition */
       net::kCacheUnresolved,
       /* uint64_t aInnerWindowID */ 78,
+      /* bool aIsPrivateBrowsing */ false,
       /* const mozilla::net::TimingStruct* aTimings = nullptr */ nullptr,
       /* mozilla::UniquePtr<mozilla::ProfileChunkedBuffer> aSource =
          nullptr */
@@ -2464,6 +2515,7 @@ TEST(GeckoProfiler, Markers)
       /* mozilla::net::CacheDisposition aCacheDisposition */
       net::kCacheUnresolved,
       /* uint64_t aInnerWindowID */ 78,
+      /* bool aIsPrivateBrowsing */ false,
       /* const mozilla::net::TimingStruct* aTimings = nullptr */ nullptr,
       /* mozilla::UniquePtr<mozilla::ProfileChunkedBuffer> aSource =
          nullptr */
@@ -2488,6 +2540,7 @@ TEST(GeckoProfiler, Markers)
       /* mozilla::net::CacheDisposition aCacheDisposition */
       net::kCacheUnresolved,
       /* uint64_t aInnerWindowID */ 78,
+      /* bool aIsPrivateBrowsing */ false,
       /* const mozilla::net::TimingStruct* aTimings = nullptr */ nullptr,
       /* mozilla::UniquePtr<mozilla::ProfileChunkedBuffer> aSource =
          nullptr */
@@ -2511,6 +2564,7 @@ TEST(GeckoProfiler, Markers)
       /* mozilla::net::CacheDisposition aCacheDisposition */
       net::kCacheUnresolved,
       /* uint64_t aInnerWindowID */ 78,
+      /* bool aIsPrivateBrowsing */ false,
       /* const mozilla::net::TimingStruct* aTimings = nullptr */ nullptr,
       /* mozilla::UniquePtr<mozilla::ProfileChunkedBuffer> aSource =
          nullptr */
@@ -2522,6 +2576,27 @@ TEST(GeckoProfiler, Markers)
       /* uint32_t aRedirectFlags = 0 */ nsIChannelEventSink::REDIRECT_INTERNAL |
           nsIChannelEventSink::REDIRECT_STS_UPGRADE,
       /* uint64_t aRedirectChannelId = 0 */ 106);
+  profiler_add_network_marker(
+      /* nsIURI* aURI */ uri,
+      /* const nsACString& aRequestMethod */ "GET"_ns,
+      /* int32_t aPriority */ 34,
+      /* uint64_t aChannelId */ 7,
+      /* NetworkLoadType aType */ net::NetworkLoadType::LOAD_START,
+      /* mozilla::TimeStamp aStart */ ts1,
+      /* mozilla::TimeStamp aEnd */ ts2,
+      /* int64_t aCount */ 56,
+      /* mozilla::net::CacheDisposition aCacheDisposition */
+      net::kCacheUnresolved,
+      /* uint64_t aInnerWindowID */ 78,
+      /* bool aIsPrivateBrowsing */ true
+      /* const mozilla::net::TimingStruct* aTimings = nullptr */
+      /* mozilla::UniquePtr<mozilla::ProfileChunkedBuffer> aSource =
+         nullptr */
+      /* const mozilla::Maybe<nsDependentCString>& aContentType =
+         mozilla::Nothing() */
+      /* nsIURI* aRedirectURI = nullptr */
+      /* uint64_t aRedirectChannelId = 0 */
+  );
 
   EXPECT_TRUE(profiler_add_marker(
       "Text in main thread with stack", geckoprofiler::category::OTHER,
@@ -2606,6 +2681,7 @@ TEST(GeckoProfiler, Markers)
     S_NetworkMarkerPayload_redirect_permanent,
     S_NetworkMarkerPayload_redirect_internal,
     S_NetworkMarkerPayload_redirect_internal_sts,
+    S_NetworkMarkerPayload_private_browsing,
 
     S_TextWithStack,
     S_TextToMTWithStack,
@@ -2895,6 +2971,7 @@ TEST(GeckoProfiler, Markers)
                   EXPECT_EQ_JSON(payload["pri"], Int64, 34);
                   EXPECT_EQ_JSON(payload["count"], Int64, 56);
                   EXPECT_EQ_JSON(payload["cache"], String, "Hit");
+                  EXPECT_TRUE(payload["isPrivateBrowsing"].isNull());
                   EXPECT_TRUE(payload["RedirectURI"].isNull());
                   EXPECT_TRUE(payload["redirectType"].isNull());
                   EXPECT_TRUE(payload["isHttpToHttpsRedirect"].isNull());
@@ -2913,6 +2990,7 @@ TEST(GeckoProfiler, Markers)
                   EXPECT_EQ_JSON(payload["pri"], Int64, 34);
                   EXPECT_EQ_JSON(payload["count"], Int64, 56);
                   EXPECT_EQ_JSON(payload["cache"], String, "Unresolved");
+                  EXPECT_TRUE(payload["isPrivateBrowsing"].isNull());
                   EXPECT_TRUE(payload["RedirectURI"].isNull());
                   EXPECT_TRUE(payload["redirectType"].isNull());
                   EXPECT_TRUE(payload["isHttpToHttpsRedirect"].isNull());
@@ -2931,6 +3009,7 @@ TEST(GeckoProfiler, Markers)
                   EXPECT_EQ_JSON(payload["pri"], Int64, 34);
                   EXPECT_EQ_JSON(payload["count"], Int64, 56);
                   EXPECT_EQ_JSON(payload["cache"], String, "Unresolved");
+                  EXPECT_TRUE(payload["isPrivateBrowsing"].isNull());
                   EXPECT_EQ_JSON(payload["RedirectURI"], String,
                                  "http://example.com/");
                   EXPECT_EQ_JSON(payload["redirectType"], String, "Temporary");
@@ -2950,6 +3029,7 @@ TEST(GeckoProfiler, Markers)
                   EXPECT_EQ_JSON(payload["pri"], Int64, 34);
                   EXPECT_EQ_JSON(payload["count"], Int64, 56);
                   EXPECT_EQ_JSON(payload["cache"], String, "Unresolved");
+                  EXPECT_TRUE(payload["isPrivateBrowsing"].isNull());
                   EXPECT_EQ_JSON(payload["RedirectURI"], String,
                                  "http://example.com/");
                   EXPECT_EQ_JSON(payload["redirectType"], String, "Permanent");
@@ -2969,6 +3049,7 @@ TEST(GeckoProfiler, Markers)
                   EXPECT_EQ_JSON(payload["pri"], Int64, 34);
                   EXPECT_EQ_JSON(payload["count"], Int64, 56);
                   EXPECT_EQ_JSON(payload["cache"], String, "Unresolved");
+                  EXPECT_TRUE(payload["isPrivateBrowsing"].isNull());
                   EXPECT_EQ_JSON(payload["RedirectURI"], String,
                                  "http://example.com/");
                   EXPECT_EQ_JSON(payload["redirectType"], String, "Internal");
@@ -2990,6 +3071,7 @@ TEST(GeckoProfiler, Markers)
                   EXPECT_EQ_JSON(payload["pri"], Int64, 34);
                   EXPECT_EQ_JSON(payload["count"], Int64, 56);
                   EXPECT_EQ_JSON(payload["cache"], String, "Unresolved");
+                  EXPECT_TRUE(payload["isPrivateBrowsing"].isNull());
                   EXPECT_EQ_JSON(payload["RedirectURI"], String,
                                  "http://example.com/");
                   EXPECT_EQ_JSON(payload["redirectType"], String, "Internal");
@@ -2997,6 +3079,24 @@ TEST(GeckoProfiler, Markers)
                   EXPECT_EQ_JSON(payload["redirectId"], Int64, 106);
                   EXPECT_TRUE(payload["contentType"].isNull());
 
+                } else if (nameString == "Load 7: http://mozilla.org/") {
+                  EXPECT_EQ(state, S_NetworkMarkerPayload_private_browsing);
+                  state = State(S_NetworkMarkerPayload_private_browsing + 1);
+                  EXPECT_EQ(typeString, "Network");
+                  EXPECT_EQ_JSON(payload["startTime"], Double, ts1Double);
+                  EXPECT_EQ_JSON(payload["endTime"], Double, ts2Double);
+                  EXPECT_EQ_JSON(payload["id"], Int64, 7);
+                  EXPECT_EQ_JSON(payload["URI"], String, "http://mozilla.org/");
+                  EXPECT_EQ_JSON(payload["requestMethod"], String, "GET");
+                  EXPECT_EQ_JSON(payload["pri"], Int64, 34);
+                  EXPECT_EQ_JSON(payload["count"], Int64, 56);
+                  EXPECT_EQ_JSON(payload["cache"], String, "Unresolved");
+                  EXPECT_EQ_JSON(payload["isPrivateBrowsing"], Bool, true);
+                  EXPECT_TRUE(payload["RedirectURI"].isNull());
+                  EXPECT_TRUE(payload["redirectType"].isNull());
+                  EXPECT_TRUE(payload["isHttpToHttpsRedirect"].isNull());
+                  EXPECT_TRUE(payload["redirectId"].isNull());
+                  EXPECT_TRUE(payload["contentType"].isNull());
                 } else if (nameString == "Text in main thread with stack") {
                   EXPECT_EQ(state, S_TextWithStack);
                   state = State(S_TextWithStack + 1);
@@ -3348,7 +3448,7 @@ PROFILER_DEFINE_COUNT_TOTAL(TestCounter2, COUNTER_NAME2, COUNTER_DESCRIPTION2);
 
 TEST(GeckoProfiler, Counters)
 {
-  uint32_t features = ProfilerFeature::Threads;
+  uint32_t features = 0;
   const char* filters[] = {"GeckoMain"};
 
   // We will record some counter values, and check that they're present (and no
@@ -3514,8 +3614,6 @@ TEST(GeckoProfiler, GetProfile)
   ASSERT_TRUE(activeFeatures.isSome());
   // Not all platforms support stack-walking.
   const bool hasStackWalk = ProfilerFeature::HasStackWalk(*activeFeatures);
-  // "threads" may automatically be added when `filters` is not empty.
-  const bool hasThreads = ProfilerFeature::HasThreads(*activeFeatures);
 
   UniquePtr<char[]> profile = profiler_get_profile();
   JSONOutputCheck(profile.get(), [&](const Json::Value& aRoot) {
@@ -3525,13 +3623,9 @@ TEST(GeckoProfiler, GetProfile)
       {
         GET_JSON(features, configuration["features"], Array);
         {
-          EXPECT_EQ(features.size(),
-                    (hasStackWalk ? 1u : 0u) + (hasThreads ? 1u : 0u));
+          EXPECT_EQ(features.size(), (hasStackWalk ? 1u : 0u));
           if (hasStackWalk) {
             EXPECT_JSON_ARRAY_CONTAINS(features, String, "stackwalk");
-          }
-          if (hasThreads) {
-            EXPECT_JSON_ARRAY_CONTAINS(features, String, "threads");
           }
         }
         GET_JSON(threads, configuration["threads"], Array);
@@ -3572,6 +3666,14 @@ TEST(GeckoProfiler, StreamJSONForThisProcess)
   ASSERT_TRUE(!::profiler_stream_json_for_this_process(w));
 }
 
+// Internal version of profiler_stream_json_for_this_process, which allows being
+// called from a non-main thread of the parent process, at the risk of getting
+// an incomplete profile.
+bool do_profiler_stream_json_for_this_process(
+    SpliceableJSONWriter& aWriter, double aSinceTime, bool aIsShuttingDown,
+    ProfilerCodeAddressService* aService,
+    mozilla::ProgressLogger aProgressLogger);
+
 TEST(GeckoProfiler, StreamJSONForThisProcessThreaded)
 {
   // Same as the previous test, but calling some things on background threads.
@@ -3595,7 +3697,11 @@ TEST(GeckoProfiler, StreamJSONForThisProcessThreaded)
           "GeckoProfiler_StreamJSONForThisProcessThreaded_Test::TestBody",
           [&]() {
             w.Start();
-            ASSERT_TRUE(::profiler_stream_json_for_this_process(w));
+            ASSERT_TRUE(::do_profiler_stream_json_for_this_process(
+                w, /* double aSinceTime */ 0.0,
+                /* bool aIsShuttingDown */ false,
+                /* ProfilerCodeAddressService* aService */ nullptr,
+                mozilla::ProgressLogger{}));
             w.End();
           }),
       NS_DISPATCH_SYNC);
@@ -3611,7 +3717,11 @@ TEST(GeckoProfiler, StreamJSONForThisProcessThreaded)
           "GeckoProfiler_StreamJSONForThisProcessThreaded_Test::TestBody",
           [&]() {
             profiler_stop();
-            ASSERT_TRUE(!::profiler_stream_json_for_this_process(w));
+            ASSERT_TRUE(!::do_profiler_stream_json_for_this_process(
+                w, /* double aSinceTime */ 0.0,
+                /* bool aIsShuttingDown */ false,
+                /* ProfilerCodeAddressService* aService */ nullptr,
+                mozilla::ProgressLogger{}));
           }),
       NS_DISPATCH_SYNC);
   thread->Shutdown();
@@ -3722,7 +3832,7 @@ TEST(GeckoProfiler, SuspendAndSample)
 
   DoSuspendAndSample(ProfilerThreadId{}, thread);
 
-  uint32_t features = ProfilerFeature::JS | ProfilerFeature::Threads;
+  uint32_t features = ProfilerFeature::JS;
   const char* filters[] = {"GeckoMain", "Compositor"};
 
   profiler_start(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL, features,
@@ -4071,8 +4181,7 @@ TEST(GeckoProfiler, FeatureCombinations)
 }
 
 static void CountCPUDeltas(const Json::Value& aThread, size_t& aOutSamplings,
-                           unsigned& aOutCPUDeltaZeroCount,
-                           unsigned& aOutCPUDeltaNonZeroCount) {
+                           uint64_t& aOutCPUDeltaSum) {
   GET_JSON(samples, aThread["samples"], Object);
   {
     Json::ArrayIndex threadCPUDeltaIndex = 0;
@@ -4083,8 +4192,7 @@ static void CountCPUDeltas(const Json::Value& aThread, size_t& aOutSamplings,
     }
 
     aOutSamplings = 0;
-    aOutCPUDeltaZeroCount = 0;
-    aOutCPUDeltaNonZeroCount = 0;
+    aOutCPUDeltaSum = 0;
     GET_JSON(data, samples["data"], Array);
     aOutSamplings = data.size();
     for (const Json::Value& sample : data) {
@@ -4092,11 +4200,7 @@ static void CountCPUDeltas(const Json::Value& aThread, size_t& aOutSamplings,
       if (sample.isValidIndex(threadCPUDeltaIndex)) {
         if (!sample[threadCPUDeltaIndex].isNull()) {
           GET_JSON(cpuDelta, sample[threadCPUDeltaIndex], UInt64);
-          if (cpuDelta == 0) {
-            ++aOutCPUDeltaZeroCount;
-          } else {
-            ++aOutCPUDeltaNonZeroCount;
-          }
+          aOutCPUDeltaSum += uint64_t(cpuDelta.asUInt64());
         }
       }
     }
@@ -4109,7 +4213,7 @@ TEST(GeckoProfiler, CPUUsage)
   ASSERT_TRUE(profiler_is_main_thread())
   << "This test assumes it runs on the main thread";
 
-  const char* filters[] = {"GeckoMain", "Idle test"};
+  const char* filters[] = {"GeckoMain", "Idle test", "Busy test"};
 
   enum class TestThreadsState {
     // Initial state, while constructing and starting the idle thread.
@@ -4237,12 +4341,19 @@ TEST(GeckoProfiler, CPUUsage)
         }
       }
 
+      bool foundMain = false;
+      bool foundIdle = false;
+      uint64_t idleThreadCPUDeltaSum = 0u;
+      bool foundBusy = false;
+      uint64_t busyThreadCPUDeltaSum = 0u;
+
       // Check that the sample schema contains "threadCPUDelta".
       GET_JSON(threads, aRoot["threads"], Array);
       for (const Json::Value& thread : threads) {
         ASSERT_TRUE(thread.isObject());
         GET_JSON(name, thread["name"], String);
         if (name.asString() == "GeckoMain") {
+          foundMain = true;
           GET_JSON(samples, thread["samples"], Object);
           {
             Json::ArrayIndex stackIndex = 0;
@@ -4303,11 +4414,9 @@ TEST(GeckoProfiler, CPUUsage)
 #  endif
           }
         } else if (name.asString() == "Idle test") {
+          foundIdle = true;
           size_t samplings;
-          unsigned threadCPUDeltaZeroCount;
-          unsigned threadCPUDeltaNonZeroCount;
-          CountCPUDeltas(thread, samplings, threadCPUDeltaZeroCount,
-                         threadCPUDeltaNonZeroCount);
+          CountCPUDeltas(thread, samplings, idleThreadCPUDeltaSum);
           if (testWithNoStackSampling) {
             // When not sampling stacks, the first sampling loop will have no
             // running times, so it won't output anything.
@@ -4315,43 +4424,17 @@ TEST(GeckoProfiler, CPUUsage)
           } else {
             EXPECT_GE(samplings, scMinSamplings);
           }
-#  if defined(GP_OS_windows) || defined(GP_OS_darwin) || \
-      defined(GP_OS_linux) || defined(GP_OS_android) || defined(GP_OS_freebsd)
-          EXPECT_GE(threadCPUDeltaZeroCount + threadCPUDeltaNonZeroCount,
-                    samplings - 1u)
-              << "There should be 'threadCPUDelta' values in all but 1 "
-                 "samples";
-#    if defined(GP_OS_windows)
-          // On Windows, sampling threads makes them work a little bit, even
-          // when removing the CPU values around the sampling itself, so we
-          // cannot expect any zeroes!
-          // TODO: Would it be possible to reliably test that the values are
-          // at least "small"? (Whatever that means for cycles.)
-          if (testWithNoStackSampling) {
-            // Note: This test is a bit hand-wavy, and may not be reliable. If
-            // intermittents happen, it may need tweaking (by increasing the
-            // loop count, or re-trying the whole test).
-            EXPECT_GT(threadCPUDeltaZeroCount, 0u)
-                << "There should be some zero-CPUs due to the idle loop body";
-          }
-#    else
-            // Note: This test is a bit hand-wavy, and may not be reliable. If
-            // intermittents happen, it may need tweaking (by increasing the
-            // loop count, or re-trying the whole test).
-            EXPECT_GT(threadCPUDeltaZeroCount, 0u)
-                << "There should be some zero-CPUs due to the idle loop body";
-#    endif
-#  else
+#  if !(defined(GP_OS_windows) || defined(GP_OS_darwin) || \
+        defined(GP_OS_linux) || defined(GP_OS_android) ||  \
+        defined(GP_OS_freebsd))
           // All "threadCPUDelta" data should be absent or null on unsupported
           // platforms.
-          EXPECT_EQ(threadCPUDeltaCount, 0u);
+          EXPECT_EQ(idleThreadCPUDeltaSum, 0u);
 #  endif
         } else if (name.asString() == "Busy test") {
+          foundBusy = true;
           size_t samplings;
-          unsigned threadCPUDeltaZeroCount;
-          unsigned threadCPUDeltaNonZeroCount;
-          CountCPUDeltas(thread, samplings, threadCPUDeltaZeroCount,
-                         threadCPUDeltaNonZeroCount);
+          CountCPUDeltas(thread, samplings, busyThreadCPUDeltaSum);
           if (testWithNoStackSampling) {
             // When not sampling stacks, the first sampling loop will have no
             // running times, so it won't output anything.
@@ -4359,21 +4442,20 @@ TEST(GeckoProfiler, CPUUsage)
           } else {
             EXPECT_GE(samplings, scMinSamplings);
           }
-#  if defined(GP_OS_windows) || defined(GP_OS_darwin) || \
-      defined(GP_OS_linux) || defined(GP_OS_android) || defined(GP_OS_freebsd)
-          EXPECT_GE(threadCPUDeltaZeroCount + threadCPUDeltaNonZeroCount,
-                    samplings - 1u)
-              << "There should be 'threadCPUDelta' values in all but 1 "
-                 "samples";
-          EXPECT_GT(threadCPUDeltaNonZeroCount, 0u)
-              << "There should be some non-zero CPU values";
-#  else
+#  if !(defined(GP_OS_windows) || defined(GP_OS_darwin) || \
+        defined(GP_OS_linux) || defined(GP_OS_android) ||  \
+        defined(GP_OS_freebsd))
           // All "threadCPUDelta" data should be absent or null on unsupported
           // platforms.
-          EXPECT_EQ(threadCPUDeltaCount, 0u);
+          EXPECT_EQ(busyThreadCPUDeltaSum, 0u);
 #  endif
         }
       }
+
+      EXPECT_TRUE(foundMain);
+      EXPECT_TRUE(foundIdle);
+      EXPECT_TRUE(foundBusy);
+      EXPECT_LE(idleThreadCPUDeltaSum, busyThreadCPUDeltaSum);
     });
 
     // Note: There is no non-racy way to test for SamplingState::JustStopped, as
@@ -4417,7 +4499,7 @@ TEST(GeckoProfiler, AllThreads)
 
     ASSERT_TRUE(!profiler_is_active());
 
-    uint32_t features = ProfilerFeature::StackWalk | ProfilerFeature::Threads;
+    uint32_t features = ProfilerFeature::StackWalk;
     std::string featuresString = "Features: StackWalk Threads";
     if (threadCPU) {
       features |= ProfilerFeature::CPUAllThreads;

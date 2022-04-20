@@ -29,6 +29,9 @@ struct DtmfEvent;
 class WebrtcAudioConduit : public AudioSessionConduit,
                            public webrtc::RtcpEventObserver {
  public:
+  Maybe<int> ActiveSendPayloadType() const override;
+  Maybe<int> ActiveRecvPayloadType() const override;
+
   void OnRtpReceived(MediaPacket&& aPacket, webrtc::RTPHeader&& aHeader);
   void OnRtcpReceived(MediaPacket&& aPacket);
 
@@ -180,10 +183,6 @@ class WebrtcAudioConduit : public AudioSessionConduit,
  private:
   WebrtcAudioConduit(const WebrtcAudioConduit& other) = delete;
   void operator=(const WebrtcAudioConduit& other) = delete;
-
-  // Function to convert between WebRTC and Conduit codec structures
-  bool CodecConfigToWebRTCCodec(const AudioCodecConfig& codecInfo,
-                                webrtc::AudioSendStream::Config& config);
 
   // Generate block size in sample length for a given sampling frequency
   unsigned int GetNum10msSamplesForFrequency(int samplingFreqHz) const;

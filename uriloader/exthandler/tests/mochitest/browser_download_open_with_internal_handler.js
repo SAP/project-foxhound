@@ -121,6 +121,7 @@ add_task(async function setup() {
   registerRestoreHandler("application/pdf", "pdf");
   registerRestoreHandler("binary/octet-stream", "pdf");
   registerRestoreHandler("application/unknown", "pdf");
+  registerRestoreHandler("image/webp", "webp");
 });
 
 /**
@@ -147,10 +148,12 @@ add_task(async function test_check_open_with_internal_handler() {
       await publicList.removeFinished();
     });
     let dialogWindowPromise = BrowserTestUtils.domWindowOpenedAndLoaded();
-    let loadingTab = await BrowserTestUtils.openNewForegroundTab(
+    let loadingTab = await BrowserTestUtils.openNewForegroundTab({
       gBrowser,
-      TEST_PATH + file
-    );
+      opening: TEST_PATH + file,
+      waitForLoad: false,
+      waitForStateStop: true,
+    });
     // Add an extra tab after the loading tab so we can test that
     // pdf.js is opened in the adjacent tab and not at the end of
     // the tab strip.
@@ -272,21 +275,25 @@ add_task(async function test_check_open_with_internal_handler() {
     };
     gBrowser.tabContainer.addEventListener("TabOpen", tabOpenListener);
 
-    let oldLaunchFile = DownloadIntegration.launchFile;
-    let waitForLaunchFileCalled = new Promise(resolve => {
-      DownloadIntegration.launchFile = async () => {
-        ok(true, "The file should be launched with an external application");
-        resolve();
-      };
-    });
-
-    downloadFinishedPromise = promiseDownloadFinished(publicList);
+    let openingPromise = TestUtils.topicObserved(
+      "test-only-opening-downloaded-file",
+      (subject, data) => {
+        subject.QueryInterface(Ci.nsISupportsPRBool);
+        // Block opening the file:
+        subject.data = false;
+        return true;
+      }
+    );
 
     info("Accepting the dialog");
     subDoc.querySelector("#unknownContentType").acceptDialog();
-    info("Waiting until DownloadIntegration.launchFile is called");
-    await waitForLaunchFileCalled;
-    DownloadIntegration.launchFile = oldLaunchFile;
+    info("Waiting until we try to open the file with an external app");
+    let [, downloadPath] = await openingPromise;
+    is(
+      downloadPath,
+      download.target.path,
+      "Path opened with external app should be the same."
+    );
 
     // Remove the first file (can't do this sooner or the second load fails):
     if (download?.target.exists) {
@@ -303,16 +310,6 @@ add_task(async function test_check_open_with_internal_handler() {
     BrowserTestUtils.removeTab(newTab);
     BrowserTestUtils.removeTab(extraTab);
 
-    // Remove the remaining file once complete.
-    download = await downloadFinishedPromise;
-    if (download?.target.exists) {
-      try {
-        info("removing " + download.target.path);
-        await IOUtils.remove(download.target.path);
-      } catch (ex) {
-        /* ignore */
-      }
-    }
     await publicList.removeFinished();
   }
   for (let mimeInfo of mimeInfosToRestore) {
@@ -342,10 +339,12 @@ add_task(async function test_check_open_with_external_application() {
       await publicList.removeFinished();
     });
     let dialogWindowPromise = BrowserTestUtils.domWindowOpenedAndLoaded();
-    let loadingTab = await BrowserTestUtils.openNewForegroundTab(
+    let loadingTab = await BrowserTestUtils.openNewForegroundTab({
       gBrowser,
-      TEST_PATH + file
-    );
+      opening: TEST_PATH + file,
+      waitForLoad: false,
+      waitForStateStop: true,
+    });
     let dialogWindow = await dialogWindowPromise;
     is(
       dialogWindow.location.href,
@@ -444,10 +443,12 @@ add_task(async function test_check_open_with_external_then_internal() {
     let dialogWindowPromise = BrowserTestUtils.domWindowOpenedAndLoaded();
     // Open a new tab to the PDF file which will trigger the Unknown Content Type dialog
     // and choose to open the PDF with an external application.
-    let loadingTab = await BrowserTestUtils.openNewForegroundTab(
+    let loadingTab = await BrowserTestUtils.openNewForegroundTab({
       gBrowser,
-      TEST_PATH + file
-    );
+      opening: TEST_PATH + file,
+      waitForLoad: false,
+      waitForStateStop: true,
+    });
     let dialogWindow = await dialogWindowPromise;
     is(
       dialogWindow.location.href,
@@ -501,10 +502,12 @@ add_task(async function test_check_open_with_external_then_internal() {
     // and choose to open the PDF internally. The previously used external application should be shown as
     // the external option.
     dialogWindowPromise = BrowserTestUtils.domWindowOpenedAndLoaded();
-    loadingTab = await BrowserTestUtils.openNewForegroundTab(
+    loadingTab = await BrowserTestUtils.openNewForegroundTab({
       gBrowser,
-      TEST_PATH + file
-    );
+      opening: TEST_PATH + file,
+      waitForLoad: false,
+      waitForStateStop: true,
+    });
     dialogWindow = await dialogWindowPromise;
     is(
       dialogWindow.location.href,
@@ -570,24 +573,29 @@ add_task(async function test_check_open_with_external_then_internal() {
  */
 add_task(
   async function test_internal_handler_hidden_with_viewable_internally_type() {
+    await SpecialPowers.pushPrefEnv({
+      set: [["image.webp.enabled", true]],
+    });
     Services.telemetry.clearEvents();
 
     const mimeInfosToRestore = alwaysAskForHandlingTypes({
-      "text/xml": "xml",
       "binary/octet-stream": "xml",
+      "image/webp": "webp",
     });
 
     for (let [file, checkDefault] of [
       // The default for binary/octet-stream is changed by the PDF tests above,
       // this may change given bug 1659008, so I'm just ignoring the default for now.
       ["file_xml_attachment_binary_octet_stream.xml", false],
-      ["file_xml_attachment_test.xml", true],
+      ["file_green.webp", true],
     ]) {
       let dialogWindowPromise = BrowserTestUtils.domWindowOpenedAndLoaded();
-      let loadingTab = await BrowserTestUtils.openNewForegroundTab(
+      let loadingTab = await BrowserTestUtils.openNewForegroundTab({
         gBrowser,
-        TEST_PATH + file
-      );
+        opening: TEST_PATH + file,
+        waitForLoad: false,
+        waitForStateStop: true,
+      });
       let dialogWindow = await dialogWindowPromise;
       is(
         dialogWindow.location.href,
@@ -604,13 +612,21 @@ add_task(
       checkTelemetry(
         "open " + file + " for viewable internal type",
         "ask",
-        file == "file_xml_attachment_test.xml" ? "other" : "octetstream",
+        file.endsWith(".webp") ? "other" : "octetstream",
         "attachment"
       );
 
-      ok(!internalHandlerRadio.hidden, "The option should be visible for XML");
+      let fileDesc = file.substring(file.lastIndexOf(".") + 1);
+
+      ok(
+        !internalHandlerRadio.hidden,
+        `The option should be visible for ${fileDesc}`
+      );
       if (checkDefault) {
-        ok(internalHandlerRadio.selected, "The option should be selected");
+        ok(
+          internalHandlerRadio.selected,
+          `The option should be selected for ${fileDesc}`
+        );
       }
 
       let dialog = doc.querySelector("#unknownContentType");
@@ -635,10 +651,12 @@ add_task(async function test_internal_handler_hidden_with_other_type() {
   });
 
   let dialogWindowPromise = BrowserTestUtils.domWindowOpenedAndLoaded();
-  let loadingTab = await BrowserTestUtils.openNewForegroundTab(
+  let loadingTab = await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
-    TEST_PATH + "file_txt_attachment_test.txt"
-  );
+    opening: TEST_PATH + "file_txt_attachment_test.txt",
+    waitForLoad: false,
+    waitForStateStop: true,
+  });
   let dialogWindow = await dialogWindowPromise;
   is(
     dialogWindow.location.href,
@@ -689,10 +707,12 @@ add_task(async function test_internal_handler_hidden_with_pdf_pref_disabled() {
     "file_pdf_binary_octet_stream.pdf",
   ]) {
     let dialogWindowPromise = BrowserTestUtils.domWindowOpenedAndLoaded();
-    let loadingTab = await BrowserTestUtils.openNewForegroundTab(
+    let loadingTab = await BrowserTestUtils.openNewForegroundTab({
       gBrowser,
-      TEST_PATH + file
-    );
+      opening: TEST_PATH + file,
+      waitForLoad: false,
+      waitForStateStop: true,
+    });
     let dialogWindow = await dialogWindowPromise;
     is(
       dialogWindow.location.href,
@@ -731,10 +751,12 @@ add_task(
       set: [["browser.helperApps.showOpenOptionForViewableInternally", false]],
     });
     let dialogWindowPromise = BrowserTestUtils.domWindowOpenedAndLoaded();
-    let loadingTab = await BrowserTestUtils.openNewForegroundTab(
+    let loadingTab = await BrowserTestUtils.openNewForegroundTab({
       gBrowser,
-      TEST_PATH + "file_xml_attachment_test.xml"
-    );
+      opening: TEST_PATH + "file_xml_attachment_test.xml",
+      waitForLoad: false,
+      waitForStateStop: true,
+    });
     let dialogWindow = await dialogWindowPromise;
     is(
       dialogWindow.location.href,

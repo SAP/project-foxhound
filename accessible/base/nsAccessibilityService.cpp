@@ -77,16 +77,14 @@
 #include "mozilla/SVGGeometryFrame.h"
 #include "nsDeckFrame.h"
 
-#ifdef MOZ_XUL
-#  include "XULAlertAccessible.h"
-#  include "XULComboboxAccessible.h"
-#  include "XULElementAccessibles.h"
-#  include "XULFormControlAccessible.h"
-#  include "XULListboxAccessibleWrap.h"
-#  include "XULMenuAccessibleWrap.h"
-#  include "XULTabAccessible.h"
-#  include "XULTreeGridAccessibleWrap.h"
-#endif
+#include "XULAlertAccessible.h"
+#include "XULComboboxAccessible.h"
+#include "XULElementAccessibles.h"
+#include "XULFormControlAccessible.h"
+#include "XULListboxAccessibleWrap.h"
+#include "XULMenuAccessibleWrap.h"
+#include "XULTabAccessible.h"
+#include "XULTreeGridAccessibleWrap.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -164,10 +162,9 @@ static bool MustSVGElementBeAccessible(nsIContent* aContent) {
 /**
  * Used by XULMap.h to map both menupopup and popup elements
  */
-#ifdef MOZ_XUL
 LocalAccessible* CreateMenupopupAccessible(Element* aElement,
                                            LocalAccessible* aContext) {
-#  ifdef MOZ_ACCESSIBILITY_ATK
+#ifdef MOZ_ACCESSIBILITY_ATK
   // ATK considers this node to be redundant when within menubars, and it makes
   // menu navigation with assistive technologies more difficult
   // XXX In the future we will should this for consistency across the
@@ -176,11 +173,10 @@ LocalAccessible* CreateMenupopupAccessible(Element* aElement,
   // class for each platform.
   nsIContent* parent = aElement->GetParent();
   if (parent && parent->IsXULElement(nsGkAtoms::menu)) return nullptr;
-#  endif
+#endif
 
   return new XULMenupopupAccessible(aElement, aContext->Document());
 }
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // LocalAccessible constructors
@@ -236,23 +232,21 @@ static const MarkupMapInfo sMathMLMarkupMapList[] = {
 
 #undef MARKUPMAP
 
-#ifdef MOZ_XUL
-#  define XULMAP(atom, ...) {nsGkAtoms::atom, __VA_ARGS__},
+#define XULMAP(atom, ...) {nsGkAtoms::atom, __VA_ARGS__},
 
-#  define XULMAP_TYPE(atom, new_type)                                          \
-    XULMAP(                                                                    \
-        atom,                                                                  \
-        [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* { \
-          return new new_type(aElement, aContext->Document());                 \
-        })
+#define XULMAP_TYPE(atom, new_type)                                          \
+  XULMAP(                                                                    \
+      atom,                                                                  \
+      [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* { \
+        return new new_type(aElement, aContext->Document());                 \
+      })
 
 static const XULMarkupMapInfo sXULMarkupMapList[] = {
-#  include "XULMap.h"
+#include "XULMap.h"
 };
 
-#  undef XULMAP_TYPE
-#  undef XULMAP
-#endif
+#undef XULMAP_TYPE
+#undef XULMAP
 
 #undef Attr
 #undef AttrFromDOM
@@ -272,13 +266,8 @@ nsAccessibilityService::nsAccessibilityService()
     : DocManager(),
       FocusManager(),
       mHTMLMarkupMap(ArrayLength(sHTMLMarkupMapList)),
-      mMathMLMarkupMap(ArrayLength(sMathMLMarkupMapList))
-#ifdef MOZ_XUL
-      ,
-      mXULMarkupMap(ArrayLength(sXULMarkupMapList))
-#endif
-{
-}
+      mMathMLMarkupMap(ArrayLength(sMathMLMarkupMapList)),
+      mXULMarkupMap(ArrayLength(sXULMarkupMapList)) {}
 
 nsAccessibilityService::~nsAccessibilityService() {
   NS_ASSERTION(IsShutdown(), "Accessibility wasn't shutdown!");
@@ -319,12 +308,17 @@ nsAccessibilityService::ListenersChanged(nsIArray* aEventChanges) {
           // Create an accessible for a inaccessible element having click event
           // handler.
           document->ContentInserted(content, content->GetNextSibling());
-        } else if (acc && acc->IsHTMLLink() && !acc->AsHTMLLink()->IsLinked()) {
-          // Notify of a LINKED state change if an HTML link gets a click
-          // listener but does not have an href attribute.
-          RefPtr<AccEvent> linkedChangeEvent =
-              new AccStateChangeEvent(acc, states::LINKED);
-          document->FireDelayedEvent(linkedChangeEvent);
+        } else if (acc) {
+          if (acc->IsHTMLLink() && !acc->AsHTMLLink()->IsLinked()) {
+            // Notify of a LINKED state change if an HTML link gets a click
+            // listener but does not have an href attribute.
+            RefPtr<AccEvent> linkedChangeEvent =
+                new AccStateChangeEvent(acc, states::LINKED);
+            document->FireDelayedEvent(linkedChangeEvent);
+          }
+
+          // A click listener change might mean losing or gaining an action.
+          acc->SendCache(CacheDomain::Actions, CacheUpdateType::Update);
         }
       }
     }
@@ -372,8 +366,7 @@ void nsAccessibilityService::NotifyOfPossibleBoundsChange(
     if (document) {
       LocalAccessible* accessible = document->GetAccessible(aContent);
       if (accessible) {
-        document->MarkForBoundsProcessing(accessible);
-        document->Controller()->ScheduleProcessing();
+        document->QueueCacheUpdate(accessible, CacheDomain::Bounds);
       }
     }
   }
@@ -495,6 +488,22 @@ void nsAccessibilityService::ContentRangeInserted(PresShell* aPresShell,
   }
 }
 
+void nsAccessibilityService::ScheduleAccessibilitySubtreeUpdate(
+    PresShell* aPresShell, nsIContent* aContent) {
+  DocAccessible* document = GetDocAccessible(aPresShell);
+#ifdef A11Y_LOG
+  if (logging::IsEnabled(logging::eTree)) {
+    logging::MsgBegin("TREE", "schedule update; doc: %p", document);
+    logging::Node("content node", aContent);
+    logging::MsgEnd();
+  }
+#endif
+
+  if (document) {
+    document->ScheduleTreeUpdate(aContent);
+  }
+}
+
 void nsAccessibilityService::ContentRemoved(PresShell* aPresShell,
                                             nsIContent* aChildNode) {
   DocAccessible* document = GetDocAccessible(aPresShell);
@@ -525,6 +534,27 @@ void nsAccessibilityService::TableLayoutGuessMaybeChanged(
     if (LocalAccessible* accessible = document->GetAccessible(aContent)) {
       document->FireDelayedEvent(
           nsIAccessibleEvent::EVENT_TABLE_STYLING_CHANGED, accessible);
+    }
+  }
+}
+
+void nsAccessibilityService::ComboboxOptionMaybeChanged(
+    PresShell* aPresShell, nsIContent* aMutatingNode) {
+  DocAccessible* document = GetDocAccessible(aPresShell);
+  if (!document) {
+    return;
+  }
+
+  for (nsIContent* cur = aMutatingNode; cur; cur = cur->GetParent()) {
+    if (cur->IsHTMLElement(nsGkAtoms::option)) {
+      if (LocalAccessible* accessible = document->GetAccessible(cur)) {
+        document->FireDelayedEvent(nsIAccessibleEvent::EVENT_NAME_CHANGE,
+                                   accessible);
+        break;
+      }
+      if (cur->IsHTMLElement(nsGkAtoms::select)) {
+        break;
+      }
     }
   }
 }
@@ -893,7 +923,7 @@ LocalAccessible* nsAccessibilityService::CreateAccessible(
   if (!frame || !frame->StyleVisibility()->IsVisible()) {
     // display:contents element doesn't have a frame, but retains the semantics.
     // All its children are unaffected.
-    if (nsCoreUtils::IsDisplayContents(content)) {
+    if (nsCoreUtils::CanCreateAccessibleWithoutFrame(content)) {
       const MarkupMapInfo* markupMap = GetMarkupMapInfoForNode(content);
       if (markupMap && markupMap->new_func) {
         RefPtr<LocalAccessible> newAcc =
@@ -1087,14 +1117,12 @@ LocalAccessible* nsAccessibilityService::CreateAccessible(
       }
     }
 
-#ifdef MOZ_XUL
     // Prefer to use XUL to decide if and what kind of accessible to create.
     const XULMarkupMapInfo* xulMap =
         mXULMarkupMap.Get(content->NodeInfo()->NameAtom());
     if (xulMap && xulMap->new_func) {
       newAcc = xulMap->new_func(content->AsElement(), aContext);
     }
-#endif
 
     // Any XUL box can be used as tabpanel, make sure we create a proper
     // accessible for it.
@@ -1214,12 +1242,10 @@ bool nsAccessibilityService::Init() {
     mMathMLMarkupMap.InsertOrUpdate(info.tag, &info);
   }
 
-#ifdef MOZ_XUL
   for (uint32_t i = 0; i < ArrayLength(sXULMarkupMapList); i++) {
     mXULMarkupMap.InsertOrUpdate(sXULMarkupMapList[i].tag,
                                  &sXULMarkupMapList[i]);
   }
-#endif
 
 #ifdef A11Y_LOG
   logging::CheckEnv();

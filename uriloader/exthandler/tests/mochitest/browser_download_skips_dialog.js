@@ -13,6 +13,7 @@ add_task(async function skipDialogAndDownloadFile() {
     set: [
       ["browser.download.improvements_to_download_panel", true],
       ["browser.download.useDownloadDir", true],
+      ["image.webp.enabled", true],
     ],
   });
 
@@ -24,10 +25,12 @@ add_task(async function skipDialogAndDownloadFile() {
 
   let initialTabsCount = gBrowser.tabs.length;
 
-  let loadingTab = await BrowserTestUtils.openNewForegroundTab(
+  let loadingTab = await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
-    TEST_PATH + "file_image_svgxml.svg"
-  );
+    opening: TEST_PATH + "file_green.webp",
+    waitForLoad: false,
+    waitForStateStop: true,
+  });
 
   // We just open the file to be downloaded... and wait for it to be downloaded!
   // We see no dialogs to be accepted in the process.

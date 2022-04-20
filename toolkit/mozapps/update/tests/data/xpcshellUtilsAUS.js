@@ -1769,17 +1769,11 @@ function getMockUpdRootDWin(aGetOldLocation) {
   }
 
   let relPathUpdates = "";
-  let dataDirectory;
+  let dataDirectory = gCommonAppDataDir.clone();
   if (aGetOldLocation) {
-    dataDirectory = gLocalAppDataDir.clone();
-    if (MOZ_APP_VENDOR || MOZ_APP_BASENAME) {
-      relPathUpdates += MOZ_APP_VENDOR ? MOZ_APP_VENDOR : MOZ_APP_BASENAME;
-    } else {
-      relPathUpdates += "Mozilla";
-    }
-  } else {
-    dataDirectory = gCommonAppDataDir.clone();
     relPathUpdates += "Mozilla";
+  } else {
+    relPathUpdates += "Mozilla-1de4eec8-1241-4177-a864-e594e8d1fb38";
   }
 
   relPathUpdates += "\\" + DIR_UPDATES + "\\" + gInstallDirPathHash;
@@ -1853,8 +1847,7 @@ function createUpdateInProgressLockFile(aDir) {
   file.append(FILE_UPDATE_IN_PROGRESS_LOCK);
   file.create(file.NORMAL_FILE_TYPE, 0o444);
   file.QueryInterface(Ci.nsILocalFileWin);
-  file.fileAttributesWin |= file.WFA_READONLY;
-  file.fileAttributesWin &= ~file.WFA_READWRITE;
+  file.readOnly = true;
   Assert.ok(file.exists(), MSG_SHOULD_EXIST + getMsgPath(file.path));
   Assert.ok(!file.isWritable(), "the lock file should not be writeable");
 }
@@ -1875,8 +1868,7 @@ function removeUpdateInProgressLockFile(aDir) {
   let file = aDir.clone();
   file.append(FILE_UPDATE_IN_PROGRESS_LOCK);
   file.QueryInterface(Ci.nsILocalFileWin);
-  file.fileAttributesWin |= file.WFA_READWRITE;
-  file.fileAttributesWin &= ~file.WFA_READONLY;
+  file.readOnly = false;
   file.remove(false);
   Assert.ok(!file.exists(), MSG_SHOULD_NOT_EXIST + getMsgPath(file.path));
 }
@@ -3850,9 +3842,14 @@ function checkFilesAfterUpdateCommon(aStageDirExists, aToBeDeletedDirExists) {
  * Helper function for updater binary tests for verifying the contents of the
  * updater callback application log which should contain the arguments passed to
  * the callback application.
+ *
+ * @param appLaunchLog (optional)
+ *        The application log nsIFile to verify.  Defaults to the second
+ *        parameter passed to the callback executable (in the apply directory).
  */
-function checkCallbackLog() {
-  let appLaunchLog = getApplyDirFile(DIR_RESOURCES + gCallbackArgs[1]);
+function checkCallbackLog(
+  appLaunchLog = getApplyDirFile(DIR_RESOURCES + gCallbackArgs[1])
+) {
   if (!appLaunchLog.exists()) {
     // Uses do_timeout instead of do_execute_soon to lessen log spew.
     do_timeout(FILE_IN_USE_TIMEOUT_MS, checkCallbackLog);

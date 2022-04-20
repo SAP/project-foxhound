@@ -1002,7 +1002,7 @@ impl BatchBuilder {
                             self.add_split_composite_instance_to_batches(
                                 key,
                                 BatchFeatures::CLIP_MASK,
-                                &child_prim_info.clip_chain.pic_clip_rect,
+                                &child_prim_info.clip_chain.pic_coverage_rect,
                                 z_id,
                                 prim_header_index,
                                 child.gpu_address,
@@ -1055,7 +1055,7 @@ impl BatchBuilder {
         //           the scroll node...
         let transform_kind = transform_id.transform_kind();
         let prim_info = &prim_instance.vis;
-        let bounding_rect = &prim_info.clip_chain.pic_clip_rect;
+        let bounding_rect = &prim_info.clip_chain.pic_coverage_rect;
 
         // If this primitive is a backdrop, that means that it is known to cover
         // the entire picture cache background. In that case, the renderer will
@@ -1570,7 +1570,7 @@ impl BatchBuilder {
                         let surface = &ctx.surfaces[raster_config.surface_index.0];
 
                         let mut is_opaque = prim_info.clip_task_index == ClipTaskIndex::INVALID
-                            && surface.is_opaque
+                            && surface.opaque_rect.contains_box(&surface.rect)
                             && transform_kind == TransformedRectKind::AxisAligned;
 
                         let pic_task_id = picture.primary_render_task_id.unwrap();

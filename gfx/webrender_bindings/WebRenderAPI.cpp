@@ -332,8 +332,8 @@ void TransactionWrapper::AppendTransformProperties(
 void TransactionWrapper::UpdateScrollPosition(
     const wr::WrPipelineId& aPipelineId,
     const layers::ScrollableLayerGuid::ViewID& aScrollId,
-    const wr::LayoutPoint& aScrollPosition) {
-  wr_transaction_scroll_layer(mTxn, aPipelineId, aScrollId, aScrollPosition);
+    const nsTArray<wr::SampledScrollOffset>& aSampledOffsets) {
+  wr_transaction_scroll_layer(mTxn, aPipelineId, aScrollId, &aSampledOffsets);
 }
 
 void TransactionWrapper::UpdateIsTransformAsyncZooming(uint64_t aAnimationId,
@@ -1152,7 +1152,9 @@ Maybe<wr::WrSpatialId> DisplayListBuilder::GetScrollIdForDefinedScrollLayer(
 wr::WrSpatialId DisplayListBuilder::DefineScrollLayer(
     const layers::ScrollableLayerGuid::ViewID& aViewId,
     const Maybe<wr::WrSpatialId>& aParent, const wr::LayoutRect& aContentRect,
-    const wr::LayoutRect& aClipRect, const wr::LayoutPoint& aScrollOffset,
+    const wr::LayoutRect& aClipRect, const wr::LayoutVector2D& aScrollOffset,
+    wr::APZScrollGeneration aScrollOffsetGeneration,
+    wr::HasScrollLinkedEffect aHasScrollLinkedEffect,
     wr::SpatialTreeItemKey aKey) {
   auto it = mScrollIds.find(aViewId);
   if (it != mScrollIds.end()) {
@@ -1164,12 +1166,16 @@ wr::WrSpatialId DisplayListBuilder::DefineScrollLayer(
 
   auto space = wr_dp_define_scroll_layer(
       mWrState, aViewId, aParent ? aParent.ptr() : &defaultParent, aContentRect,
-      aClipRect, aScrollOffset, aKey);
+      aClipRect, aScrollOffset, aScrollOffsetGeneration, aHasScrollLinkedEffect,
+      aKey);
 
-  WRDL_LOG("DefineScrollLayer id=%" PRIu64 "/%zu p=%s co=%s cl=%s\n", mWrState,
-           aViewId, space->id,
+  WRDL_LOG("DefineScrollLayer id=%" PRIu64
+           "/%zu p=%s co=%s cl=%s generation=%s hasScrollLinkedEffect=%s\n",
+           mWrState, aViewId, space->id,
            aParent ? ToString(aParent->space.id).c_str() : "(nil)",
-           ToString(aContentRect).c_str(), ToString(aClipRect).c_str());
+           ToString(aContentRect).c_str(), ToString(aClipRect).c_str(),
+           ToString(aScrollOffsetGeneration).c_str(),
+           ToString(aHasScrollLinkedEffect).c_str());
 
   mScrollIds[aViewId] = space;
   return space;

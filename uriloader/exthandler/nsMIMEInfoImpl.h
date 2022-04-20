@@ -95,6 +95,8 @@ class nsMIMEInfoBase : public nsIMIMEInfo {
    */
   bool HasExtensions() const { return mExtensions.Length() != 0; }
 
+  static already_AddRefed<nsIFile> GetCanonicalExecutable(nsIFile* aFile);
+
  protected:
   virtual ~nsMIMEInfoBase();  // must be virtual, as the the base class's
                               // Release should call the subclass's destructor
@@ -114,6 +116,8 @@ class nsMIMEInfoBase : public nsIMIMEInfo {
    * @param aURI The URI to pass off to the OS.
    */
   virtual nsresult LoadUriInternal(nsIURI* aURI) = 0;
+
+  bool AutomationOnlyCheckIfLaunchStubbed(nsIFile* aFile);
 
   static already_AddRefed<nsIProcess> InitProcess(nsIFile* aApp,
                                                   nsresult* aResult);

@@ -167,6 +167,7 @@
 #include "mozilla/dom/StorageNotifierService.h"
 #include "mozilla/dom/StorageUtils.h"
 #include "mozilla/dom/TabMessageTypes.h"
+#include "mozilla/dom/TestUtils.h"
 #include "mozilla/dom/Timeout.h"
 #include "mozilla/dom/TimeoutHandler.h"
 #include "mozilla/dom/TimeoutManager.h"
@@ -314,15 +315,12 @@
 #include "xpcprivate.h"
 #include "xpcpublic.h"
 
-#ifdef MOZ_XUL
-#  include "nsIDOMXULControlElement.h"
-#  include "nsMenuPopupFrame.h"
-#endif
+#include "nsIDOMXULControlElement.h"
+#include "nsMenuPopupFrame.h"
 
 #ifdef NS_PRINTING
 #  include "nsIPrintSettings.h"
 #  include "nsIPrintSettingsService.h"
-#  include "nsIWebBrowserPrint.h"
 #endif
 
 #ifdef MOZ_WEBSPEECH
@@ -4181,7 +4179,7 @@ void nsGlobalWindowInner::ReportError(JSContext* aCx,
 
   JS::ErrorReportBuilder jsReport(aCx);
   JS::ExceptionStack exnStack(aCx, aError, nullptr);
-  if (!jsReport.init(aCx, exnStack, JS::ErrorReportBuilder::WithSideEffects)) {
+  if (!jsReport.init(aCx, exnStack, JS::ErrorReportBuilder::NoSideEffects)) {
     return aRv.NoteJSContextException(aCx);
   }
 
@@ -4233,8 +4231,9 @@ bool nsGlobalWindowInner::DispatchEvent(Event& aEvent, CallerType aCallerType,
   RefPtr<nsPresContext> presContext = mDoc->GetPresContext();
 
   nsEventStatus status = nsEventStatus_eIgnore;
+  // TODO: Bug 1506441
   nsresult rv = EventDispatcher::DispatchDOMEvent(
-      ToSupports(this), nullptr, &aEvent, presContext, &status);
+      MOZ_KnownLive(ToSupports(this)), nullptr, &aEvent, presContext, &status);
   bool retval = !aEvent.DefaultPrevented(aCallerType);
   if (NS_FAILED(rv)) {
     aRv.Throw(rv);
@@ -6035,6 +6034,10 @@ nsIPrincipal* nsGlobalWindowInner::GetTopLevelAntiTrackingPrincipal() {
   return topLevelPrincipal;
 }
 
+nsIPrincipal* nsGlobalWindowInner::GetClientPrincipal() {
+  return mClientSource ? mClientSource->GetPrincipal() : nullptr;
+}
+
 //*****************************************************************************
 // nsGlobalWindowInner: Timeout Functions
 //*****************************************************************************
@@ -7187,7 +7190,6 @@ void nsGlobalWindowInner::SetBrowserDOMWindow(
 
 void nsGlobalWindowInner::NotifyDefaultButtonLoaded(Element& aDefaultButton,
                                                     ErrorResult& aError) {
-#ifdef MOZ_XUL
   // Don't snap to a disabled button.
   nsCOMPtr<nsIDOMXULControlElement> xulControl = aDefaultButton.AsXULControl();
   if (!xulControl) {
@@ -7224,9 +7226,6 @@ void nsGlobalWindowInner::NotifyDefaultButtonLoaded(Element& aDefaultButton,
   if (NS_FAILED(rv) && rv != NS_ERROR_NOT_IMPLEMENTED) {
     aError.Throw(rv);
   }
-#else
-  aError.Throw(NS_ERROR_NOT_IMPLEMENTED);
-#endif
 }
 
 ChromeMessageBroadcaster* nsGlobalWindowInner::MessageManager() {

@@ -6,6 +6,7 @@
 #include "SocketProcessBridgeChild.h"
 #include "SocketProcessLogging.h"
 
+#include "mozilla/AppShutdown.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/Endpoint.h"
@@ -13,6 +14,7 @@
 #include "nsIObserverService.h"
 #include "nsThreadUtils.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_network.h"
 
 namespace mozilla {
 
@@ -33,6 +35,8 @@ bool SocketProcessBridgeChild::Create(
   sSocketProcessBridgeChild =
       new SocketProcessBridgeChild(std::move(aEndpoint));
   if (sSocketProcessBridgeChild->Inited()) {
+    mozilla::ipc::BackgroundChild::InitSocketBridgeStarter(
+        sSocketProcessBridgeChild);
     return true;
   }
 
@@ -47,24 +51,12 @@ SocketProcessBridgeChild::GetSingleton() {
   return child.forget();
 }
 
-static bool SocketProcessEnabled() {
-  static bool sInited = false;
-  static bool sSocketProcessEnabled = false;
-  if (!sInited) {
-    sSocketProcessEnabled = Preferences::GetBool("network.process.enabled") &&
-                            XRE_IsContentProcess();
-    sInited = true;
-  }
-
-  return sSocketProcessEnabled;
-}
-
 // static
 RefPtr<SocketProcessBridgeChild::GetPromise>
 SocketProcessBridgeChild::GetSocketProcessBridge() {
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (!SocketProcessEnabled()) {
+  if (!StaticPrefs::network_process_enabled()) {
     return GetPromise::CreateAndReject(nsCString("Socket process disabled!"),
                                        __func__);
   }
@@ -154,7 +146,8 @@ mozilla::ipc::IPCResult SocketProcessBridgeChild::RecvTest() {
 void SocketProcessBridgeChild::ActorDestroy(ActorDestroyReason aWhy) {
   LOG(("SocketProcessBridgeChild::ActorDestroy\n"));
   if (AbnormalShutdown == aWhy) {
-    if (gNeckoChild) {
+    if (gNeckoChild &&
+        !AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
       // Let NeckoParent know that the socket process connections must be
       // rebuilt.
       gNeckoChild->SendResetSocketProcessBridge();

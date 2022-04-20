@@ -248,13 +248,12 @@ menuitem.bookmark-item {
   border-top-style: solid;
   color: -moz-dialogText;
   text-shadow: none;
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
+@media (-moz-content-prefers-color-scheme: dark) {
   #statuspanel-label {
-    background-color: hsl(240, 1%, 20%);
-    border-color: hsl(240, 1%, 40%);
-    color: rgb(249, 249, 250);
+    color-scheme: dark;
   }
 }
 
@@ -399,10 +398,7 @@ menuitem.bookmark-item {
   /* When temporarily showing the menu bar, make it at least as tall as the tab
    * bar such that the window controls don't appear to move up. */
   :root[tabsintitlebar] #toolbar-menubar[autohide="true"] {
-    height: var(--tab-min-height);
-  }
-  :root[tabsintitlebar][sizemode="normal"] #toolbar-menubar[autohide="true"] {
-    height: var(--tab-min-height);
+    height: calc(var(--tab-min-height) + 2 * var(--tab-block-margin));
   }
 
   /* Make #TabsToolbar transparent as we style underlying #titlebar with

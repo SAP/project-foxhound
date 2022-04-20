@@ -545,15 +545,16 @@ bool GLContext::InitImpl() {
 
   ////////////////
 
-  const std::string versionStr = (const char*)fGetString(LOCAL_GL_VERSION);
-  if (versionStr.find("OpenGL ES") == 0) {
-    mProfile = ContextProfile::OpenGLES;
-  }
-
-  if (versionStr.empty()) {
+  const auto* const versionRawStr = (const char*)fGetString(LOCAL_GL_VERSION);
+  if (!versionRawStr || !*versionRawStr) {
     // This can happen with Pernosco.
     NS_WARNING("Empty GL version string");
     return false;
+  }
+
+  const std::string versionStr = versionRawStr;
+  if (versionStr.find("OpenGL ES") == 0) {
+    mProfile = ContextProfile::OpenGLES;
   }
 
   uint32_t majorVer, minorVer;
@@ -1151,7 +1152,7 @@ void GLContext::LoadMoreSymbols(const SymbolLoader& loader) {
             { (PRFuncPtr*) &mSymbols.fResumeTransformFeedback, {{ "glResumeTransformFeedbackNV" }} },
             END_SYMBOLS
         };
-        if (!fnLoadFeatureByCore(coreSymbols, extSymbols, GLFeature::texture_storage)) {
+        if (!fnLoadFeatureByCore(coreSymbols, extSymbols, GLFeature::transform_feedback2)) {
             // Also mark bind_buffer_offset as unsupported.
             MarkUnsupported(GLFeature::bind_buffer_offset);
         }
@@ -1289,7 +1290,7 @@ void GLContext::LoadMoreSymbols(const SymbolLoader& loader) {
             { (PRFuncPtr*) &mSymbols.fEnablei, {{ "glEnableiOES" }} },
             END_SYMBOLS
         };
-        fnLoadFeatureByCore(coreSymbols, extSymbols, GLFeature::draw_buffers);
+        fnLoadFeatureByCore(coreSymbols, extSymbols, GLFeature::draw_buffers_indexed);
     }
 
     if (IsSupported(GLFeature::get_integer_indexed)) {

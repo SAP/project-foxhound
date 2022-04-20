@@ -24,7 +24,7 @@ const EXT_SCROLL_ID_CONTENT: u64 = 2;
 
 struct App {
     cursor_position: WorldPoint,
-    scroll_origin: LayoutPoint,
+    scroll_offset: LayoutVector2D,
 }
 
 impl Example for App {
@@ -60,6 +60,8 @@ impl Example for App {
                 (0, 0).by(1000, 1000),
                 scrollbox,
                 LayoutVector2D::zero(),
+                APZScrollGeneration::default(),
+                HasScrollLinkedEffect::No,
                 SpatialTreeItemKey::new(0, 0),
             );
             let space_and_clip1 = SpaceAndClipInfo {
@@ -96,6 +98,8 @@ impl Example for App {
                 (0, 100).to(300, 1000),
                 (0, 100).to(200, 300),
                 LayoutVector2D::zero(),
+                APZScrollGeneration::default(),
+                HasScrollLinkedEffect::No,
                 SpatialTreeItemKey::new(0, 1),
             );
             let space_and_clip2 = SpaceAndClipInfo {
@@ -181,12 +185,14 @@ impl Example for App {
                 };
 
                 if let Some(offset) = offset {
-                    self.scroll_origin += offset;
+                    self.scroll_offset += offset;
 
-                    txn.scroll_node_with_id(
-                        self.scroll_origin,
+                    txn.set_scroll_offsets(
                         ExternalScrollId(EXT_SCROLL_ID_CONTENT, PipelineId::dummy()),
-                        ScrollClamping::ToContentBounds,
+                        vec![SampledScrollOffset {
+                            offset: self.scroll_offset,
+                            generation: APZScrollGeneration::default(),
+                        }],
                     );
                     txn.generate_frame(0, RenderReasons::empty());
                 }
@@ -201,12 +207,14 @@ impl Example for App {
                     winit::MouseScrollDelta::PixelDelta(pos) => (pos.x as f32, pos.y as f32),
                 };
 
-                self.scroll_origin += LayoutVector2D::new(dx, dy);
+                self.scroll_offset += LayoutVector2D::new(dx, dy);
 
-                txn.scroll_node_with_id(
-                    self.scroll_origin,
+                txn.set_scroll_offsets(
                     ExternalScrollId(EXT_SCROLL_ID_CONTENT, PipelineId::dummy()),
-                    ScrollClamping::ToContentBounds,
+                    vec![SampledScrollOffset {
+                            offset: self.scroll_offset,
+                            generation: APZScrollGeneration::default(),
+                    }],
                 );
 
                 txn.generate_frame(0, RenderReasons::empty());
@@ -235,7 +243,7 @@ impl Example for App {
 fn main() {
     let mut app = App {
         cursor_position: WorldPoint::zero(),
-        scroll_origin: LayoutPoint::zero(),
+        scroll_offset: LayoutVector2D::zero(),
     };
     boilerplate::main_wrapper(&mut app, None);
 }

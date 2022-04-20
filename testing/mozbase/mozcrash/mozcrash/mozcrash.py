@@ -250,11 +250,10 @@ class CrashInfo(object):
         self._dump_files = None
 
     def _get_symbols(self):
-        # If no symbols path has been set create a temporary folder to let the
-        # minidump stackwalk download the symbols.
         if not self.symbols_path:
-            self.symbols_path = tempfile.mkdtemp()
-            self.remove_symbols = True
+            self.logger.warning(
+                "No local symbols_path provided, only http symbols will be used."
+            )
 
         # This updates self.symbols_path so we only download once.
         if mozfile.is_url(self.symbols_path):
@@ -332,17 +331,67 @@ class CrashInfo(object):
         reason = None
         java_stack = None
         if (
-            self.symbols_path
-            and self.stackwalk_binary
+            self.stackwalk_binary
             and os.path.exists(self.stackwalk_binary)
             and os.access(self.stackwalk_binary, os.X_OK)
         ):
+            # If minidump_stackwalk -V fails, then we're using the old breakpad version,
+            # which is implicitly "human" output and doesn't support the --human flag.
+            #
+            # Otherwise we're using rust-minidump's minidump_stackwalk. Before 0.9.6
+            # --human had to be passed explicitly to get human output, but now it's
+            # the default (to behave more similarly to breakpad). But since we've
+            # already filtered out breakpad as an option, we can explicitly pass
+            # --human.
+            #
+            # In the future we would also like to use rust-minidump's --cyborg
+            # (introduced in 0.9.5), which outputs both human-readable *and*
+            # machine-readable (JSON) output, so we can output something nice to the
+            # CLI, but more reliably parse all the details we care about.
+            # The machine-readable output is also exactly what socorro (crash-stats)
+            # consumes, so in theory using it will make the two more compatible.
+            stackwalk_version_check = subprocess.Popen(
+                [self.stackwalk_binary, "-V"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            stackwalk_version_check.wait()
 
-            command = [self.stackwalk_binary, "--human", path, self.symbols_path]
+            # Right now we don't have any rust-minidump-version-specific handling,
+            # so we don't need to bother parsing the output at all. But when we
+            # want to start using newer features (like --cyborg) we should parse
+            # the version string, so here's some notes on that:
+            #
+            # Example outputs:
+            # minidump_stackwalk 0.9.2
+            # minidump-stackwalk 0.9.5
+            #
+            # Either `_` or `-` may be used in the name, so be careful of that
+            # (newer versions should use `-`). Otherwise the actual version number
+            # is the usual `<major>.<minor>.<patch>` that can be parsed with
+            # `distutils.version.LooseVersion`.
+            rust_minidump = stackwalk_version_check.returncode == 0
+
+            # Now build up the actual command
+            command = [self.stackwalk_binary]
+
             # Fallback to the symbols server for unknown symbols on automation
             # (mostly for system libraries).
             if "MOZ_AUTOMATION" in os.environ:
                 command.append("--symbols-url=https://symbols.mozilla.org/")
+
+            # Specify the kind of output
+            if rust_minidump:
+                command.append("--human")
+
+            # The minidump path and symbols_path values are positional and come last
+            # (in practice the CLI parsers are more permissive, but best not to
+            # unecessarily play with fire).
+            command.append(path)
+
+            if self.symbols_path:
+                command.append(self.symbols_path)
+
             self.logger.info(u"Copy/paste: {}".format(" ".join(command)))
             # run minidump_stackwalk
             p = subprocess.Popen(
@@ -388,8 +437,6 @@ class CrashInfo(object):
                 include_stderr = True
 
         else:
-            if not self.symbols_path:
-                errors.append("No symbols path given, can't process dump.")
             if not self.stackwalk_binary:
                 errors.append(
                     "MINIDUMP_STACKWALK not set, can't process dump. Either set "

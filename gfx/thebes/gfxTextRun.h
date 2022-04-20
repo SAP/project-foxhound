@@ -19,6 +19,7 @@
 #include "gfxUserFontSet.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/intl/UnicodeScriptCodes.h"
 #include "nsPoint.h"
 #include "nsString.h"
 #include "nsTArray.h"
@@ -26,7 +27,6 @@
 #include "nsTextFrameUtils.h"
 #include "DrawMode.h"
 #include "harfbuzz/hb.h"
-#include "nsUnicodeScriptCodes.h"
 #include "nsColor.h"
 #include "nsFrameList.h"
 #include "X11UndefineNone.h"
@@ -225,6 +225,9 @@ class gfxTextRun : public gfxShapedText {
     // Returns the extra width that will be consumed by a hyphen. This should
     // be constant for a given textrun.
     virtual gfxFloat GetHyphenWidth() const = 0;
+
+    // Return orientation flags to be used when creating a hyphen textrun.
+    virtual mozilla::gfx::ShapedTextFlags GetShapedTextFlags() const = 0;
 
     typedef gfxFont::Spacing Spacing;
 
@@ -901,7 +904,7 @@ class gfxTextRun : public gfxShapedText {
 
 class gfxFontGroup final : public gfxTextRunFactory {
  public:
-  typedef mozilla::unicode::Script Script;
+  typedef mozilla::intl::Script Script;
   typedef gfxShapedText::CompressedGlyph CompressedGlyph;
 
   static void
@@ -989,8 +992,9 @@ class gfxFontGroup final : public gfxTextRunFactory {
    * The caller is responsible for deleting the returned text run
    * when no longer required.
    */
-  already_AddRefed<gfxTextRun> MakeHyphenTextRun(DrawTarget* aDrawTarget,
-                                                 uint32_t aAppUnitsPerDevUnit);
+  already_AddRefed<gfxTextRun> MakeHyphenTextRun(
+      DrawTarget* aDrawTarget, mozilla::gfx::ShapedTextFlags aFlags,
+      uint32_t aAppUnitsPerDevUnit);
 
   /**
    * Check whether a given font (specified by its gfxFontEntry)
@@ -1508,7 +1512,7 @@ class gfxMissingFontRecorder {
   }
 
   // record this script code in our mMissingFonts bitset
-  void RecordScript(mozilla::unicode::Script aScriptCode) {
+  void RecordScript(mozilla::intl::Script aScriptCode) {
     mMissingFonts[static_cast<uint32_t>(aScriptCode) >> 5] |=
         (1 << (static_cast<uint32_t>(aScriptCode) & 0x1f));
   }
@@ -1524,8 +1528,7 @@ class gfxMissingFontRecorder {
  private:
   // Number of 32-bit words needed for the missing-script flags
   static const uint32_t kNumScriptBitsWords =
-      ((static_cast<int>(mozilla::unicode::Script::NUM_SCRIPT_CODES) + 31) /
-       32);
+      ((static_cast<int>(mozilla::intl::Script::NUM_SCRIPT_CODES) + 31) / 32);
   uint32_t mMissingFonts[kNumScriptBitsWords];
 };
 

@@ -14,14 +14,27 @@
 #include "nsCURILoader.h"
 #include "nsCExternalHandlerService.h"
 #include "nsIExternalProtocolService.h"
+#include "nsIObserverService.h"
 #include "mozilla/StaticPtr.h"
+#include "xpcpublic.h"
 
 static bool sInitializedOurData = false;
 StaticRefPtr<nsIFile> sOurAppFile;
 
-static already_AddRefed<nsIFile> GetCanonicalExecutable(nsIFile* aFile) {
+/* static */
+already_AddRefed<nsIFile> nsMIMEInfoBase::GetCanonicalExecutable(
+    nsIFile* aFile) {
   nsCOMPtr<nsIFile> binary = aFile;
 #ifdef XP_MACOSX
+  nsAutoString path;
+  if (binary) {
+    binary->GetPath(path);
+  }
+  if (!StringEndsWith(path, u".app"_ns) && path.RFind(u".app/"_ns) == -1) {
+    // This shouldn't ever happen with Firefox's own binary, tracked in
+    // sOurAppFile, but might happen when called with other files.
+    return binary.forget();
+  }
   nsAutoString leafName;
   if (binary) {
     binary->GetLeafName(leafName);
@@ -29,7 +42,7 @@ static already_AddRefed<nsIFile> GetCanonicalExecutable(nsIFile* aFile) {
   while (binary && !StringEndsWith(leafName, u".app"_ns)) {
     nsCOMPtr<nsIFile> parent;
     binary->GetParent(getter_AddRefs(parent));
-    binary = parent;
+    binary = std::move(parent);
     if (binary) {
       binary->GetLeafName(leafName);
     }
@@ -45,7 +58,7 @@ static void EnsureAppDetailsAvailable() {
   sInitializedOurData = true;
   nsCOMPtr<nsIFile> binary;
   XRE_GetBinaryPath(getter_AddRefs(binary));
-  sOurAppFile = GetCanonicalExecutable(binary);
+  sOurAppFile = nsMIMEInfoBase::GetCanonicalExecutable(binary);
   ClearOnShutdown(&sOurAppFile);
 }
 
@@ -288,6 +301,10 @@ nsMIMEInfoBase::LaunchWithFile(nsIFile* aFile) {
   NS_ASSERTION(mClass == eMIMEInfo,
                "nsMIMEInfoBase should have mClass == eMIMEInfo");
 
+  if (AutomationOnlyCheckIfLaunchStubbed(aFile)) {
+    return NS_OK;
+  }
+
   if (mPreferredAction == useSystemDefault) {
     return LaunchDefaultWithFile(aFile);
   }
@@ -308,6 +325,26 @@ nsMIMEInfoBase::LaunchWithFile(nsIFile* aFile) {
   }
 
   return NS_ERROR_INVALID_ARG;
+}
+
+bool nsMIMEInfoBase::AutomationOnlyCheckIfLaunchStubbed(nsIFile* aFile) {
+  // This is pretty gross and hacky, but otherwise we can't automatically
+  // test this, and we keep breaking edgecases around this, so...
+  if (!xpc::IsInAutomation()) {
+    return false;
+  }
+  nsAutoString path;
+  aFile->GetPath(path);
+  nsCOMPtr<nsISupportsPRBool> canOpen =
+      do_CreateInstance("@mozilla.org/supports-PRBool;1");
+  canOpen->SetData(true);
+  nsCOMPtr<nsIObserverService> observerService =
+      mozilla::services::GetObserverService();
+  observerService->NotifyObservers(canOpen, "test-only-opening-downloaded-file",
+                                   path.get());
+  bool data = true;
+  canOpen->GetData(&data);
+  return !data;
 }
 
 NS_IMETHODIMP

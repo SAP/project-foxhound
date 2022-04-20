@@ -198,19 +198,15 @@ nsresult txToFragmentHandlerFactory::createHandlerWith(
 
 class txVariable : public txIGlobalParameter {
  public:
-  explicit txVariable(nsIVariant* aValue) : mValue(aValue) {
-    NS_ASSERTION(aValue, "missing value");
+  explicit txVariable(nsIVariant* aValue, txAExprResult* aTxValue)
+      : mValue(aValue), mTxValue(aTxValue) {
+    NS_ASSERTION(aValue && aTxValue, "missing value");
   }
   explicit txVariable(txAExprResult* aValue) : mTxValue(aValue) {
     NS_ASSERTION(aValue, "missing value");
   }
   nsresult getValue(txAExprResult** aValue) override {
-    NS_ASSERTION(mValue || mTxValue, "variablevalue is null");
-
-    if (!mTxValue) {
-      nsresult rv = Convert(mValue, getter_AddRefs(mTxValue));
-      NS_ENSURE_SUCCESS(rv, rv);
-    }
+    NS_ASSERTION(mTxValue, "variablevalue is null");
 
     *aValue = mTxValue;
     NS_ADDREF(*aValue);
@@ -223,10 +219,10 @@ class txVariable : public txIGlobalParameter {
     return NS_OK;
   }
   nsIVariant* getValue() { return mValue; }
-  void setValue(nsIVariant* aValue) {
-    NS_ASSERTION(aValue, "setting variablevalue to null");
+  void setValue(nsIVariant* aValue, txAExprResult* aTxValue) {
+    NS_ASSERTION(aValue && aTxValue, "setting variablevalue to null");
     mValue = aValue;
-    mTxValue = nullptr;
+    mTxValue = aTxValue;
   }
   void setValue(txAExprResult* aValue) {
     NS_ASSERTION(aValue, "setting variablevalue to null");
@@ -234,14 +230,14 @@ class txVariable : public txIGlobalParameter {
     mTxValue = aValue;
   }
 
+  static nsresult Convert(nsIVariant* aValue, txAExprResult** aResult);
+
   friend void ImplCycleCollectionUnlink(txVariable& aVariable);
   friend void ImplCycleCollectionTraverse(
       nsCycleCollectionTraversalCallback& aCallback, txVariable& aVariable,
       const char* aName, uint32_t aFlags);
 
  private:
-  static nsresult Convert(nsIVariant* aValue, txAExprResult** aResult);
-
   nsCOMPtr<nsIVariant> mValue;
   RefPtr<txAExprResult> mTxValue;
 };
@@ -538,6 +534,79 @@ already_AddRefed<Document> txMozillaXSLTProcessor::TransformToDocument(
   return doc.forget();
 }
 
+class XSLTProcessRequest final : public nsIRequest {
+ public:
+  explicit XSLTProcessRequest(txExecutionState* aState) : mState(aState) {}
+
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIREQUEST
+
+  void Done() { mState = nullptr; }
+
+ private:
+  ~XSLTProcessRequest() {}
+  txExecutionState* mState;
+};
+NS_IMPL_ISUPPORTS(XSLTProcessRequest, nsIRequest)
+
+NS_IMETHODIMP
+XSLTProcessRequest::GetName(nsACString& aResult) {
+  aResult.AssignLiteral("about:xslt-load-blocker");
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+XSLTProcessRequest::IsPending(bool* _retval) {
+  *_retval = true;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+XSLTProcessRequest::GetStatus(nsresult* status) {
+  *status = NS_OK;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+XSLTProcessRequest::Cancel(nsresult status) {
+  mState->stopProcessing();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+XSLTProcessRequest::Suspend(void) { return NS_OK; }
+
+NS_IMETHODIMP
+XSLTProcessRequest::Resume(void) { return NS_OK; }
+
+NS_IMETHODIMP
+XSLTProcessRequest::GetLoadGroup(nsILoadGroup** aLoadGroup) {
+  *aLoadGroup = nullptr;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+XSLTProcessRequest::SetLoadGroup(nsILoadGroup* aLoadGroup) { return NS_OK; }
+
+NS_IMETHODIMP
+XSLTProcessRequest::GetLoadFlags(nsLoadFlags* aLoadFlags) {
+  *aLoadFlags = nsIRequest::LOAD_NORMAL;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+XSLTProcessRequest::SetLoadFlags(nsLoadFlags aLoadFlags) { return NS_OK; }
+
+NS_IMETHODIMP
+XSLTProcessRequest::GetTRRMode(nsIRequest::TRRMode* aTRRMode) {
+  return GetTRRModeImpl(aTRRMode);
+}
+
+NS_IMETHODIMP
+XSLTProcessRequest::SetTRRMode(nsIRequest::TRRMode aTRRMode) {
+  return SetTRRModeImpl(aTRRMode);
+}
+
 nsresult txMozillaXSLTProcessor::TransformToDoc(Document** aResult,
                                                 bool aCreateDataDocument) {
   UniquePtr<txXPathNode> sourceNode(
@@ -548,10 +617,29 @@ nsresult txMozillaXSLTProcessor::TransformToDoc(Document** aResult,
 
   txExecutionState es(mStylesheet, IsLoadDisabled());
 
+  Document* sourceDoc = mSource->OwnerDoc();
+  nsCOMPtr<nsILoadGroup> loadGroup = sourceDoc->GetDocumentLoadGroup();
+  if (!loadGroup) {
+    nsCOMPtr<nsPIDOMWindowInner> win = do_QueryInterface(mOwner);
+    if (win && win->IsCurrentInnerWindow()) {
+      Document* doc = win->GetDoc();
+      if (doc) {
+        loadGroup = doc->GetDocumentLoadGroup();
+      }
+    }
+
+    if (!loadGroup) {
+      return NS_ERROR_FAILURE;
+    }
+  }
+
+  RefPtr<XSLTProcessRequest> xsltProcessRequest = new XSLTProcessRequest(&es);
+  loadGroup->AddRequest(xsltProcessRequest, nullptr);
+
   // XXX Need to add error observers
 
   // If aResult is non-null, we're a data document
-  txToDocHandlerFactory handlerFactory(&es, mSource->OwnerDoc(), mObserver,
+  txToDocHandlerFactory handlerFactory(&es, sourceDoc, mObserver,
                                        aCreateDataDocument);
   es.mOutputHandlerFactory = &handlerFactory;
 
@@ -561,6 +649,9 @@ nsresult txMozillaXSLTProcessor::TransformToDoc(Document** aResult,
   if (NS_SUCCEEDED(rv)) {
     rv = txXSLTProcessor::execute(es);
   }
+
+  xsltProcessRequest->Done();
+  loadGroup->RemoveRequest(xsltProcessRequest, nullptr, NS_OK);
 
   nsresult endRv = es.end(rv);
   if (NS_SUCCEEDED(rv)) {
@@ -816,13 +907,17 @@ nsresult txMozillaXSLTProcessor::SetParameter(const nsAString& aNamespaceURI,
   RefPtr<nsAtom> localName = NS_Atomize(aLocalName);
   txExpandedName varName(nsId, localName);
 
+  RefPtr<txAExprResult> txValue;
+  rv = txVariable::Convert(value, getter_AddRefs(txValue));
+  NS_ENSURE_SUCCESS(rv, rv);
+
   txVariable* var = static_cast<txVariable*>(mVariables.get(varName));
   if (var) {
-    var->setValue(value);
+    var->setValue(value, txValue);
     return NS_OK;
   }
 
-  var = new txVariable(value);
+  var = new txVariable(value, txValue);
   return mVariables.add(varName, var);
 }
 

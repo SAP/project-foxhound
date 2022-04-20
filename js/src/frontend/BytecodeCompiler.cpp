@@ -209,7 +209,7 @@ class MOZ_STACK_CLASS ScriptCompiler : public SourceAwareCompiler<Unit> {
 
 using BytecodeCompilerOutput =
     mozilla::Variant<UniquePtr<ExtensibleCompilationStencil>,
-                     UniquePtr<CompilationStencil>, CompilationGCOutput*>;
+                     RefPtr<CompilationStencil>, CompilationGCOutput*>;
 
 // Compile global script, and return it as one of:
 //   * ExtensibleCompilationStencil (without instantiation)
@@ -229,14 +229,15 @@ template <typename Unit>
       if (output.is<UniquePtr<ExtensibleCompilationStencil>>()) {
         output.as<UniquePtr<ExtensibleCompilationStencil>>() =
             std::move(extensibleStencil);
-      } else if (output.is<UniquePtr<CompilationStencil>>()) {
-        auto stencil = cx->make_unique<frontend::CompilationStencil>(
-            std::move(extensibleStencil));
+      } else if (output.is<RefPtr<CompilationStencil>>()) {
+        RefPtr<CompilationStencil> stencil =
+            cx->new_<frontend::CompilationStencil>(
+                std::move(extensibleStencil));
         if (!stencil) {
           return false;
         }
 
-        output.as<UniquePtr<CompilationStencil>>() = std::move(stencil);
+        output.as<RefPtr<CompilationStencil>>() = std::move(stencil);
       } else {
         BorrowingCompilationStencil borrowingStencil(*extensibleStencil);
         if (!InstantiateStencils(cx, input, borrowingStencil,
@@ -284,7 +285,7 @@ template <typename Unit>
       return false;
     }
     output.as<UniquePtr<ExtensibleCompilationStencil>>() = std::move(stencil);
-  } else if (output.is<UniquePtr<CompilationStencil>>()) {
+  } else if (output.is<RefPtr<CompilationStencil>>()) {
     AutoGeckoProfilerEntry pseudoFrame(cx, "script emit",
                                        JS::ProfilingCategoryPair::JS_Parsing);
 
@@ -295,13 +296,13 @@ template <typename Unit>
       return false;
     }
 
-    auto stencil =
-        cx->make_unique<CompilationStencil>(std::move(extensibleStencil));
+    RefPtr<CompilationStencil> stencil =
+        cx->new_<CompilationStencil>(std::move(extensibleStencil));
     if (!stencil) {
       return false;
     }
 
-    output.as<UniquePtr<CompilationStencil>>() = std::move(stencil);
+    output.as<RefPtr<CompilationStencil>>() = std::move(stencil);
   } else {
     BorrowingCompilationStencil borrowingStencil(compiler.stencil());
     if (!InstantiateStencils(cx, input, borrowingStencil,
@@ -315,25 +316,25 @@ template <typename Unit>
 }
 
 template <typename Unit>
-static UniquePtr<CompilationStencil> CompileGlobalScriptToStencilImpl(
+static already_AddRefed<CompilationStencil> CompileGlobalScriptToStencilImpl(
     JSContext* cx, CompilationInput& input, JS::SourceText<Unit>& srcBuf,
     ScopeKind scopeKind) {
-  using OutputType = UniquePtr<CompilationStencil>;
+  using OutputType = RefPtr<CompilationStencil>;
   BytecodeCompilerOutput output((OutputType()));
   if (!CompileGlobalScriptToStencilAndMaybeInstantiate(cx, input, srcBuf,
                                                        scopeKind, output)) {
     return nullptr;
   }
-  return std::move(output.as<OutputType>());
+  return output.as<OutputType>().forget();
 }
 
-UniquePtr<CompilationStencil> frontend::CompileGlobalScriptToStencil(
+already_AddRefed<CompilationStencil> frontend::CompileGlobalScriptToStencil(
     JSContext* cx, CompilationInput& input, JS::SourceText<char16_t>& srcBuf,
     ScopeKind scopeKind) {
   return CompileGlobalScriptToStencilImpl(cx, input, srcBuf, scopeKind);
 }
 
-UniquePtr<CompilationStencil> frontend::CompileGlobalScriptToStencil(
+already_AddRefed<CompilationStencil> frontend::CompileGlobalScriptToStencil(
     JSContext* cx, CompilationInput& input, JS::SourceText<Utf8Unit>& srcBuf,
     ScopeKind scopeKind) {
   return CompileGlobalScriptToStencilImpl(cx, input, srcBuf, scopeKind);
@@ -889,7 +890,7 @@ template <typename Unit>
       return false;
     }
     output.as<UniquePtr<ExtensibleCompilationStencil>>() = std::move(stencil);
-  } else if (output.is<UniquePtr<CompilationStencil>>()) {
+  } else if (output.is<RefPtr<CompilationStencil>>()) {
     AutoGeckoProfilerEntry pseudoFrame(cx, "script emit",
                                        JS::ProfilingCategoryPair::JS_Parsing);
 
@@ -900,13 +901,13 @@ template <typename Unit>
       return false;
     }
 
-    auto stencil =
-        cx->make_unique<CompilationStencil>(std::move(extensibleStencil));
+    RefPtr<CompilationStencil> stencil =
+        cx->new_<CompilationStencil>(std::move(extensibleStencil));
     if (!stencil) {
       return false;
     }
 
-    output.as<UniquePtr<CompilationStencil>>() = std::move(stencil);
+    output.as<RefPtr<CompilationStencil>>() = std::move(stencil);
   } else {
     BorrowingCompilationStencil borrowingStencil(compiler.stencil());
     if (!InstantiateStencils(cx, input, borrowingStencil,
@@ -920,22 +921,22 @@ template <typename Unit>
 }
 
 template <typename Unit>
-UniquePtr<CompilationStencil> ParseModuleToStencilImpl(
+already_AddRefed<CompilationStencil> ParseModuleToStencilImpl(
     JSContext* cx, CompilationInput& input, SourceText<Unit>& srcBuf) {
-  using OutputType = UniquePtr<CompilationStencil>;
+  using OutputType = RefPtr<CompilationStencil>;
   BytecodeCompilerOutput output((OutputType()));
   if (!ParseModuleToStencilAndMaybeInstantiate(cx, input, srcBuf, output)) {
     return nullptr;
   }
-  return std::move(output.as<OutputType>());
+  return output.as<OutputType>().forget();
 }
 
-UniquePtr<CompilationStencil> frontend::ParseModuleToStencil(
+already_AddRefed<CompilationStencil> frontend::ParseModuleToStencil(
     JSContext* cx, CompilationInput& input, SourceText<char16_t>& srcBuf) {
   return ParseModuleToStencilImpl(cx, input, srcBuf);
 }
 
-UniquePtr<CompilationStencil> frontend::ParseModuleToStencil(
+already_AddRefed<CompilationStencil> frontend::ParseModuleToStencil(
     JSContext* cx, CompilationInput& input, SourceText<Utf8Unit>& srcBuf) {
   return ParseModuleToStencilImpl(cx, input, srcBuf);
 }
@@ -1000,6 +1001,105 @@ ModuleObject* frontend::CompileModule(JSContext* cx,
   return CompileModuleImpl(cx, options, srcBuf);
 }
 
+static bool InstantiateLazyFunction(JSContext* cx, CompilationInput& input,
+                                    CompilationStencil& stencil,
+                                    BytecodeCompilerOutput& output) {
+  // We do check the type, but do not write anything to it as this is not
+  // necessary for lazy function, as the script is patched inside the
+  // JSFunction when instantiating.
+  MOZ_ASSERT(output.is<CompilationGCOutput*>());
+  MOZ_ASSERT(!output.as<CompilationGCOutput*>());
+
+  mozilla::DebugOnly<uint32_t> lazyFlags =
+      static_cast<uint32_t>(input.immutableFlags());
+
+  Rooted<CompilationGCOutput> gcOutput(cx);
+
+  if (input.source->hasEncoder()) {
+    if (!input.source->addDelazificationToIncrementalEncoding(cx, stencil)) {
+      return false;
+    }
+  }
+
+  if (!CompilationStencil::instantiateStencils(cx, input, stencil,
+                                               gcOutput.get())) {
+    return false;
+  }
+
+  // NOTE: After instantiation succeeds and bytecode is attached, the rest of
+  //       this operation should be infallible. Any failure during
+  //       delazification should restore the function back to a consistent
+  //       lazy state.
+
+  MOZ_ASSERT(lazyFlags == gcOutput.get().script->immutableFlags());
+  MOZ_ASSERT(gcOutput.get().script->outermostScope()->hasOnChain(
+                 ScopeKind::NonSyntactic) ==
+             gcOutput.get().script->immutableFlags().hasFlag(
+                 JSScript::ImmutableFlags::HasNonSyntacticScope));
+
+  return true;
+}
+
+enum class GetCachedResult {
+  // Similar to return false.
+  Error,
+
+  // We have not found any entry.
+  NotFound,
+
+  // We have found an entry, and set everything according to the desired
+  // BytecodeCompilerOutput out-param.
+  Found
+};
+
+// When we have a cache hit, the addPtr out-param would evaluate to a true-ish
+// value.
+static GetCachedResult GetCachedLazyFunctionStencilMaybeInstantiate(
+    JSContext* cx, CompilationInput& input, BytecodeCompilerOutput& output) {
+  RefPtr<CompilationStencil> stencil;
+  {
+    StencilCache& cache = cx->runtime()->caches().delazificationCache;
+    auto guard = cache.isSourceCached(input.source);
+    if (!guard) {
+      return GetCachedResult::NotFound;
+    }
+
+    // Before releasing the guard, which is locking the cache, we increment the
+    // reference counter such that we do not reclaim the CompilationStencil
+    // while we are instantiating it.
+    StencilContext key(input.source, input.extent());
+    stencil = cache.lookup(guard, key);
+    if (!stencil) {
+      return GetCachedResult::NotFound;
+    }
+  }
+
+  if (output.is<RefPtr<CompilationStencil>>()) {
+    output.as<RefPtr<CompilationStencil>>() = stencil;
+    return GetCachedResult::Found;
+  }
+
+  if (output.is<UniquePtr<ExtensibleCompilationStencil>>()) {
+    auto extensible = cx->make_unique<ExtensibleCompilationStencil>(cx, input);
+    if (!extensible) {
+      return GetCachedResult::Error;
+    }
+    if (!extensible->cloneFrom(cx, *stencil)) {
+      return GetCachedResult::Error;
+    }
+
+    output.as<UniquePtr<ExtensibleCompilationStencil>>() =
+        std::move(extensible);
+    return GetCachedResult::Found;
+  }
+
+  if (!InstantiateLazyFunction(cx, input, *stencil, output)) {
+    return GetCachedResult::Error;
+  }
+
+  return GetCachedResult::Found;
+}
+
 template <typename Unit>
 static bool CompileLazyFunctionToStencilMaybeInstantiate(
     JSContext* cx, CompilationInput& input, const Unit* units, size_t length,
@@ -1007,6 +1107,16 @@ static bool CompileLazyFunctionToStencilMaybeInstantiate(
   MOZ_ASSERT(input.source);
 
   AutoAssertReportedException assertException(cx);
+  auto res = GetCachedLazyFunctionStencilMaybeInstantiate(cx, input, output);
+  switch (res) {
+    case GetCachedResult::Error:
+      return false;
+    case GetCachedResult::Found:
+      assertException.reset();
+      return true;
+    case GetCachedResult::NotFound:
+      break;
+  }
 
   InheritThis inheritThis =
       input.functionFlags().isArrow() ? InheritThis::Yes : InheritThis::No;
@@ -1060,7 +1170,7 @@ static bool CompileLazyFunctionToStencilMaybeInstantiate(
       return false;
     }
     output.as<UniquePtr<ExtensibleCompilationStencil>>() = std::move(stencil);
-  } else if (output.is<UniquePtr<CompilationStencil>>()) {
+  } else if (output.is<RefPtr<CompilationStencil>>()) {
     AutoGeckoProfilerEntry pseudoFrame(cx, "script emit",
                                        JS::ProfilingCategoryPair::JS_Parsing);
 
@@ -1071,48 +1181,18 @@ static bool CompileLazyFunctionToStencilMaybeInstantiate(
       return false;
     }
 
-    auto stencil =
-        cx->make_unique<CompilationStencil>(std::move(extensibleStencil));
+    RefPtr<CompilationStencil> stencil =
+        cx->new_<CompilationStencil>(std::move(extensibleStencil));
     if (!stencil) {
       return false;
     }
 
-    output.as<UniquePtr<CompilationStencil>>() = std::move(stencil);
+    output.as<RefPtr<CompilationStencil>>() = std::move(stencil);
   } else {
-    // We do check the type, but do not write anything to it as this is not
-    // necessary for lazy function, as the script is patched inside the
-    // JSFunction when instantiating.
-    MOZ_ASSERT(output.is<CompilationGCOutput*>());
-    MOZ_ASSERT(!output.as<CompilationGCOutput*>());
-
-    mozilla::DebugOnly<uint32_t> lazyFlags =
-        static_cast<uint32_t>(input.immutableFlags());
-
-    Rooted<CompilationGCOutput> gcOutput(cx);
     BorrowingCompilationStencil borrowingStencil(compilationState);
-
-    if (input.source->hasEncoder()) {
-      if (!input.source->addDelazificationToIncrementalEncoding(
-              cx, borrowingStencil)) {
-        return false;
-      }
-    }
-
-    if (!CompilationStencil::instantiateStencils(cx, input, borrowingStencil,
-                                                 gcOutput.get())) {
+    if (!InstantiateLazyFunction(cx, input, borrowingStencil, output)) {
       return false;
     }
-
-    // NOTE: After instantiation succeeds and bytecode is attached, the rest of
-    //       this operation should be infallible. Any failure during
-    //       delazification should restore the function back to a consistent
-    //       lazy state.
-
-    MOZ_ASSERT(lazyFlags == gcOutput.get().script->immutableFlags());
-    MOZ_ASSERT(gcOutput.get().script->outermostScope()->hasOnChain(
-                   ScopeKind::NonSyntactic) ==
-               gcOutput.get().script->immutableFlags().hasFlag(
-                   JSScript::ImmutableFlags::HasNonSyntacticScope));
   }
 
   assertException.reset();
@@ -1184,18 +1264,23 @@ bool frontend::DelazifyCanonicalScriptedFunction(JSContext* cx,
 }
 
 template <typename Unit>
-static UniquePtr<CompilationStencil> DelazifyCanonicalScriptedFunctionImpl(
-    JSContext* cx, CompilationStencil& context, ScriptIndex scriptIndex) {
+static already_AddRefed<CompilationStencil>
+DelazifyCanonicalScriptedFunctionImpl(JSContext* cx,
+                                      CompilationStencil& context,
+                                      ScriptIndex scriptIndex) {
   ScriptStencilRef script{context, scriptIndex};
   const ScriptStencilExtra& extra = script.scriptExtra();
 
-#if defined(NIGHTLY_BUILD) || defined(MOZ_DEV_EDITION) || defined(DEBUG)
+#if defined(EARLY_BETA_OR_EARLIER) || defined(DEBUG)
   const ScriptStencil& data = script.scriptData();
   MOZ_ASSERT(!data.hasSharedData(), "Script is already compiled!");
   MOZ_DIAGNOSTIC_ASSERT(!data.isGhost());
 #endif
 
-  AutoIncrementalTimer timer(cx->realm()->timers.delazificationTime);
+  Maybe<AutoIncrementalTimer> timer;
+  if (cx->realm()) {
+    timer.emplace(cx->realm()->timers.delazificationTime);
+  }
 
   size_t sourceStart = extra.extent.sourceStart;
   size_t sourceLength = extra.extent.sourceEnd - sourceStart;
@@ -1225,17 +1310,19 @@ static UniquePtr<CompilationStencil> DelazifyCanonicalScriptedFunctionImpl(
   Rooted<CompilationInput> input(cx, CompilationInput(options));
   input.get().initFromStencil(context, scriptIndex, ss);
 
-  using OutputType = UniquePtr<CompilationStencil>;
+  using OutputType = RefPtr<CompilationStencil>;
   BytecodeCompilerOutput output((OutputType()));
   if (!CompileLazyFunctionToStencilMaybeInstantiate(
           cx, input.get(), units.get(), sourceLength, output)) {
     return nullptr;
   }
-  return std::move(output.as<OutputType>());
+  return output.as<OutputType>().forget();
 }
 
-UniquePtr<CompilationStencil> frontend::DelazifyCanonicalScriptedFunction(
-    JSContext* cx, CompilationStencil& context, ScriptIndex scriptIndex) {
+already_AddRefed<CompilationStencil>
+frontend::DelazifyCanonicalScriptedFunction(JSContext* cx,
+                                            CompilationStencil& context,
+                                            ScriptIndex scriptIndex) {
   AutoGeckoProfilerEntry pseudoFrame(cx, "stencil script delazify",
                                      JS::ProfilingCategoryPair::JS_Parsing);
 

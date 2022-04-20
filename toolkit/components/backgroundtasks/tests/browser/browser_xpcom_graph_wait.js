@@ -35,10 +35,6 @@ const backgroundtaskPhases = {
         "resource://gre/modules/AppConstants.jsm",
         "resource://gre/modules/AsyncShutdown.jsm",
         "resource://gre/modules/BackgroundTasksManager.jsm",
-        {
-          name: "resource://gre/modules/Console.jsm",
-          condition: WIN,
-        },
         "resource://gre/modules/EnterprisePolicies.jsm",
         "resource://gre/modules/EnterprisePoliciesParent.jsm",
         "resource://gre/modules/PromiseUtils.jsm",
@@ -81,14 +77,12 @@ const backgroundtaskPhases = {
         "@mozilla.org/network/url-parser;1?auth=no",
         "@mozilla.org/network/url-parser;1?auth=yes",
         "@mozilla.org/observer-service;1",
-        "@mozilla.org/permissionmanager;1",
         "@mozilla.org/power/powermanagerservice;1",
         "@mozilla.org/preferences-service;1",
         "@mozilla.org/process/environment;1",
         "@mozilla.org/storage/service;1",
         "@mozilla.org/thirdpartyutil;1",
         "@mozilla.org/toolkit/app-startup;1",
-        "@mozilla.org/uuid-generator;1",
         {
           name: "@mozilla.org/widget/appshell/mac;1",
           condition: MAC,
@@ -114,7 +108,6 @@ const backgroundtaskPhases = {
         "resource:///modules/backgroundtasks/BackgroundTask_wait.jsm",
         {
           name: "resource://gre/modules/Console.jsm",
-          condition: !WIN,
         },
         "resource://gre/modules/ConsoleAPIStorage.jsm",
         "resource://gre/modules/Timer.jsm",
@@ -129,12 +122,7 @@ const backgroundtaskPhases = {
     allowlist: {
       components: [],
       modules: [],
-      services: [
-        "@mozilla.org/network/protocol/about;1?what=preferences",
-        "@mozilla.org/network/protocol;1?name=about",
-        "@mozilla.org/network/protocol;1?name=http",
-        "@mozilla.org/network/protocol;1?name=https",
-      ],
+      services: [],
     },
   },
 };

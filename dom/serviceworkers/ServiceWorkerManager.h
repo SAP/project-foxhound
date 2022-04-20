@@ -44,6 +44,9 @@ class PrincipalInfo;
 
 namespace dom {
 
+extern uint32_t gServiceWorkersRegistered;
+extern uint32_t gServiceWorkersRegisteredFetch;
+
 class ContentParent;
 class ServiceWorkerInfo;
 class ServiceWorkerJobQueue;
@@ -265,6 +268,15 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
       uint32_t aShutdownStateId,
       ServiceWorkerShutdownState::Progress aProgress) const;
 
+  // Record periodic telemetry on number of running ServiceWorkers.  When
+  // the number of running ServiceWorkers changes (or on shutdown),
+  // ServiceWorkerPrivateImpl will call RecordTelemetry with the number of
+  // running serviceworkers and those supporting Fetch.  We use
+  // mTelemetryLastChange to determine how many datapoints to inject into
+  // Telemetry, and dispatch a background runnable to call
+  // RecordTelemetryGap() and Accumulate them.
+  void RecordTelemetry(uint32_t aNumber, uint32_t aFetch);
+
  private:
   struct RegistrationDataPerPrincipal;
 
@@ -414,6 +426,9 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
   };
 
   nsTArray<UniquePtr<PendingReadyData>> mPendingReadyList;
+
+  const uint32_t mTelemetryPeriodMs = 5 * 1000;
+  TimeStamp mTelemetryLastChange;
 };
 
 }  // namespace dom

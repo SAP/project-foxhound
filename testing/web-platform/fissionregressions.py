@@ -18,7 +18,6 @@ run_infos = {
         "os_version": "18.04",
         "bits": 64,
         "has_sandbox": True,
-        "webrender": True,
         "automation": True,
         "linux_distro": "Ubuntu",
         "apple_silicon": False,
@@ -62,6 +61,7 @@ run_infos = {
         "sessionHistoryInParent": True,
         "swgl": False,
         "win10_2004": False,
+        "domstreams": False,
     },
     "linux-debug": {
         "os": "linux",
@@ -70,7 +70,6 @@ run_infos = {
         "os_version": "18.04",
         "bits": 64,
         "has_sandbox": True,
-        "webrender": True,
         "automation": True,
         "linux_distro": "Ubuntu",
         "apple_silicon": False,
@@ -114,6 +113,7 @@ run_infos = {
         "sessionHistoryInParent": False,
         "swgl": False,
         "win10_2004": False,
+        "domstreams": False,
     },
     "win-opt": {
         "os": "win",
@@ -122,7 +122,6 @@ run_infos = {
         "os_version": "10.0",
         "bits": 64,
         "has_sandbox": True,
-        "webrender": True,
         "automation": True,
         "service_pack": "",
         "apple_silicon": False,
@@ -166,6 +165,7 @@ run_infos = {
         "sessionHistoryInParent": False,
         "swgl": False,
         "win10_2004": False,
+        "domstreams": False,
     },
 }
 

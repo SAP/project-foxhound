@@ -239,10 +239,6 @@ class ContentChild final : public PContentChild,
       PScriptCacheChild*, const FileDescOrError& cacheFile,
       const bool& wantCacheData) override;
 
-  PNeckoChild* AllocPNeckoChild();
-
-  bool DeallocPNeckoChild(PNeckoChild*);
-
   PPrintingChild* AllocPPrintingChild();
 
   bool DeallocPPrintingChild(PPrintingChild*);
@@ -499,9 +495,10 @@ class ContentChild final : public PContentChild,
 
   void GetAvailableDictionaries(nsTArray<nsCString>& aDictionaries);
 
+#ifdef MOZ_WEBRTC
   PWebrtcGlobalChild* AllocPWebrtcGlobalChild();
-
   bool DeallocPWebrtcGlobalChild(PWebrtcGlobalChild* aActor);
+#endif
 
   PContentPermissionRequestChild* AllocPContentPermissionRequestChild(
       const nsTArray<PermissionRequest>& aRequests,
@@ -818,11 +815,6 @@ class ContentChild final : public PContentChild,
       const MaybeDiscarded<BrowsingContext>& aStartingAt,
       DispatchBeforeUnloadToSubtreeResolver&& aResolver);
 
-  mozilla::ipc::IPCResult RecvCanSavePresentation(
-      const MaybeDiscarded<BrowsingContext>& aTopLevelContext,
-      Maybe<uint64_t> aDocumentChannelId,
-      CanSavePresentationResolver&& aResolve);
-
   mozilla::ipc::IPCResult RecvFlushTabState(
       const MaybeDiscarded<BrowsingContext>& aContext,
       FlushTabStateResolver&& aResolver);
@@ -837,6 +829,8 @@ class ContentChild final : public PContentChild,
   static void DispatchBeforeUnloadToSubtree(
       BrowsingContext* aStartingAt,
       const DispatchBeforeUnloadToSubtreeResolver& aResolver);
+
+  hal::ProcessPriority GetProcessPriority() const { return mProcessPriority; }
 
  private:
   mozilla::ipc::IPCResult RecvFlushFOGData(FlushFOGDataResolver&& aResolver);

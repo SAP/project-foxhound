@@ -26,6 +26,7 @@
 #include "mozilla/dom/VideoStreamTrack.h"
 #include "mozilla/dom/MouseEvent.h"
 #include "mozilla/dom/OffscreenCanvas.h"
+#include "mozilla/dom/OffscreenCanvasDisplayHelper.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/layers/CanvasRenderer.h"
@@ -70,7 +71,9 @@ class RequestedFrameRefreshObserver : public nsARefreshObserver {
       : mRegistered(false),
         mReturnPlaceholderData(aReturnPlaceholderData),
         mOwningElement(aOwningElement),
-        mRefreshDriver(aRefreshDriver) {
+        mRefreshDriver(aRefreshDriver),
+        mWatchManager(this, AbstractThread::MainThread()),
+        mPendingThrottledCapture(false) {
     MOZ_ASSERT(mOwningElement);
   }
 
@@ -117,55 +120,160 @@ class RequestedFrameRefreshObserver : public nsARefreshObserver {
     mReturnPlaceholderData = aReturnPlaceholderData;
   }
 
-  void WillRefresh(TimeStamp aTime) override {
-    MOZ_ASSERT(NS_IsMainThread());
-
-    AUTO_PROFILER_LABEL("RequestedFrameRefreshObserver::WillRefresh", OTHER);
+  void NotifyCaptureStateChange() {
+    if (mPendingThrottledCapture) {
+      return;
+    }
 
     if (!mOwningElement) {
       return;
     }
 
-    if (mOwningElement->IsWriteOnly()) {
+    Watchable<FrameCaptureState>* captureState =
+        mOwningElement->GetFrameCaptureState();
+    if (!captureState) {
+      PROFILER_MARKER_TEXT("Canvas CaptureStream", MEDIA_RT, {},
+                           "Abort: No capture state"_ns);
       return;
     }
 
-    if (mOwningElement->IsContextCleanForFrameCapture()) {
+    if (captureState->Ref() == FrameCaptureState::CLEAN) {
+      PROFILER_MARKER_TEXT("Canvas CaptureStream", MEDIA_RT, {},
+                           "Abort: CLEAN"_ns);
       return;
     }
+
+    if (!mRefreshDriver) {
+      PROFILER_MARKER_TEXT("Canvas CaptureStream", MEDIA_RT, {},
+                           "Abort: no refresh driver"_ns);
+      return;
+    }
+
+    if (!mRefreshDriver->IsThrottled()) {
+      PROFILER_MARKER_TEXT("Canvas CaptureStream", MEDIA_RT, {},
+                           "Abort: not throttled"_ns);
+      return;
+    }
+
+    TimeStamp now = TimeStamp::Now();
+    TimeStamp next =
+        mLastCaptureTime.IsNull()
+            ? now
+            : mLastCaptureTime + TimeDuration::FromMilliseconds(
+                                     nsRefreshDriver::DefaultInterval());
+    if (mLastCaptureTime.IsNull() || next <= now) {
+      AUTO_PROFILER_MARKER_TEXT("Canvas CaptureStream", MEDIA_RT, {},
+                                "CaptureFrame direct while throttled"_ns);
+      CaptureFrame(now);
+      return;
+    }
+
+    nsCString str;
+    if (profiler_thread_is_being_profiled_for_markers()) {
+      str.AppendPrintf("Delaying CaptureFrame by %.2fms",
+                       (next - now).ToMilliseconds());
+    }
+    AUTO_PROFILER_MARKER_TEXT("Canvas CaptureStream", MEDIA_RT, {}, str);
+
+    mPendingThrottledCapture = true;
+    AbstractThread::MainThread()->DelayedDispatch(
+        NS_NewRunnableFunction(
+            __func__,
+            [this, self = RefPtr<RequestedFrameRefreshObserver>(this), next] {
+              mPendingThrottledCapture = false;
+              AUTO_PROFILER_MARKER_TEXT(
+                  "Canvas CaptureStream", MEDIA_RT, {},
+                  "CaptureFrame after delay while throttled"_ns);
+              CaptureFrame(next);
+            }),
+        // next >= now, so this is a guard for (next - now) flooring to 0.
+        std::max<uint32_t>(
+            1, static_cast<uint32_t>((next - now).ToMilliseconds())));
+  }
+
+  void WillRefresh(TimeStamp aTime) override {
+    AUTO_PROFILER_MARKER_TEXT("Canvas CaptureStream", MEDIA_RT, {},
+                              "CaptureFrame by refresh driver"_ns);
+
+    CaptureFrame(aTime);
+  }
+
+  void CaptureFrame(TimeStamp aTime) {
+    MOZ_ASSERT(NS_IsMainThread());
+
+    if (!mOwningElement) {
+      PROFILER_MARKER_TEXT("Canvas CaptureStream", MEDIA_RT, {},
+                           "Abort: no owning element"_ns);
+      return;
+    }
+
+    if (mOwningElement->IsWriteOnly()) {
+      PROFILER_MARKER_TEXT("Canvas CaptureStream", MEDIA_RT, {},
+                           "Abort: write only"_ns);
+      return;
+    }
+
+    if (auto* captureStateWatchable = mOwningElement->GetFrameCaptureState();
+        captureStateWatchable &&
+        *captureStateWatchable == FrameCaptureState::CLEAN) {
+      PROFILER_MARKER_TEXT("Canvas CaptureStream", MEDIA_RT, {},
+                           "Abort: CLEAN"_ns);
+      return;
+    }
+
+    // Mark the context already now, since if the frame capture state is DIRTY
+    // and we catch an early return below (not marking it CLEAN), the next draw
+    // will not trigger a capture state change from the
+    // Watchable<FrameCaptureState>.
+    mOwningElement->MarkContextCleanForFrameCapture();
 
     mOwningElement->ProcessDestroyedFrameListeners();
 
-    if (!mOwningElement->IsFrameCaptureRequested()) {
+    if (!mOwningElement->IsFrameCaptureRequested(aTime)) {
+      PROFILER_MARKER_TEXT("Canvas CaptureStream", MEDIA_RT, {},
+                           "Abort: no capture requested"_ns);
       return;
     }
 
     RefPtr<SourceSurface> snapshot;
     {
-      AUTO_PROFILER_LABEL(
-          "RequestedFrameRefreshObserver::WillRefresh:GetSnapshot", OTHER);
+      AUTO_PROFILER_MARKER_TEXT("Canvas CaptureStream", MEDIA_RT, {},
+                                "GetSnapshot"_ns);
       snapshot = mOwningElement->GetSurfaceSnapshot(nullptr);
       if (!snapshot) {
+        PROFILER_MARKER_TEXT("Canvas CaptureStream", MEDIA_RT, {},
+                             "Abort: snapshot failed"_ns);
         return;
       }
     }
 
     RefPtr<DataSourceSurface> copy;
     {
-      AUTO_PROFILER_LABEL(
-          "RequestedFrameRefreshObserver::WillRefresh:CopySurface", OTHER);
+      AUTO_PROFILER_MARKER_TEXT("Canvas CaptureStream", MEDIA_RT, {},
+                                "CopySurface"_ns);
       copy = CopySurface(snapshot, mReturnPlaceholderData);
       if (!copy) {
+        PROFILER_MARKER_TEXT("Canvas CaptureStream", MEDIA_RT, {},
+                             "Abort: copy failed"_ns);
         return;
       }
     }
 
-    {
-      AUTO_PROFILER_LABEL("RequestedFrameRefreshObserver::WillRefresh:SetFrame",
-                          OTHER);
-      mOwningElement->SetFrameCapture(copy.forget(), aTime);
-      mOwningElement->MarkContextCleanForFrameCapture();
+    nsCString str;
+    if (profiler_thread_is_being_profiled_for_markers()) {
+      TimeDuration sinceLast =
+          aTime - (mLastCaptureTime.IsNull() ? aTime : mLastCaptureTime);
+      str.AppendPrintf("Forwarding captured frame %.2fms after last",
+                       sinceLast.ToMilliseconds());
     }
+    AUTO_PROFILER_MARKER_TEXT("Canvas CaptureStream", MEDIA_RT, {}, str);
+
+    if (!mLastCaptureTime.IsNull() && aTime <= mLastCaptureTime) {
+      aTime = mLastCaptureTime + TimeDuration::FromMilliseconds(1);
+    }
+    mLastCaptureTime = aTime;
+
+    mOwningElement->SetFrameCapture(copy.forget(), aTime);
   }
 
   void DetachFromRefreshDriver() {
@@ -174,6 +282,7 @@ class RequestedFrameRefreshObserver : public nsARefreshObserver {
 
     Unregister();
     mRefreshDriver = nullptr;
+    mWatchManager.Shutdown();
   }
 
   void Register() {
@@ -187,6 +296,17 @@ class RequestedFrameRefreshObserver : public nsARefreshObserver {
                                          "Canvas frame capture listeners");
       mRegistered = true;
     }
+
+    if (!mOwningElement) {
+      return;
+    }
+
+    if (Watchable<FrameCaptureState>* captureState =
+            mOwningElement->GetFrameCaptureState()) {
+      mWatchManager.Watch(
+          *captureState,
+          &RequestedFrameRefreshObserver::NotifyCaptureStateChange);
+    }
   }
 
   void Unregister() {
@@ -199,6 +319,17 @@ class RequestedFrameRefreshObserver : public nsARefreshObserver {
       mRefreshDriver->RemoveRefreshObserver(this, FlushType::Display);
       mRegistered = false;
     }
+
+    if (!mOwningElement) {
+      return;
+    }
+
+    if (Watchable<FrameCaptureState>* captureState =
+            mOwningElement->GetFrameCaptureState()) {
+      mWatchManager.Unwatch(
+          *captureState,
+          &RequestedFrameRefreshObserver::NotifyCaptureStateChange);
+    }
   }
 
  private:
@@ -209,8 +340,11 @@ class RequestedFrameRefreshObserver : public nsARefreshObserver {
 
   bool mRegistered;
   bool mReturnPlaceholderData;
-  HTMLCanvasElement* const mOwningElement;
+  const WeakPtr<HTMLCanvasElement> mOwningElement;
   RefPtr<nsRefreshDriver> mRefreshDriver;
+  WatchManager<RequestedFrameRefreshObserver> mWatchManager;
+  TimeStamp mLastCaptureTime;
+  bool mPendingThrottledCapture;
 };
 
 // ---------------------------------------------------------------------------
@@ -269,7 +403,6 @@ void HTMLCanvasPrintState::NotifyDone() {
 HTMLCanvasElementObserver::HTMLCanvasElementObserver(
     HTMLCanvasElement* aElement)
     : mElement(aElement) {
-  RegisterVisibilityChangeEvent();
   RegisterObserverEvents();
 }
 
@@ -277,26 +410,7 @@ HTMLCanvasElementObserver::~HTMLCanvasElementObserver() { Destroy(); }
 
 void HTMLCanvasElementObserver::Destroy() {
   UnregisterObserverEvents();
-  UnregisterVisibilityChangeEvent();
   mElement = nullptr;
-}
-
-void HTMLCanvasElementObserver::RegisterVisibilityChangeEvent() {
-  if (!mElement) {
-    return;
-  }
-
-  Document* document = mElement->OwnerDoc();
-  document->AddSystemEventListener(u"visibilitychange"_ns, this, true, false);
-}
-
-void HTMLCanvasElementObserver::UnregisterVisibilityChangeEvent() {
-  if (!mElement) {
-    return;
-  }
-
-  Document* document = mElement->OwnerDoc();
-  document->RemoveSystemEventListener(u"visibilitychange"_ns, this, true);
 }
 
 void HTMLCanvasElementObserver::RegisterObserverEvents() {
@@ -348,19 +462,6 @@ HTMLCanvasElementObserver::Observe(nsISupports*, const char* aTopic,
   return NS_OK;
 }
 
-NS_IMETHODIMP
-HTMLCanvasElementObserver::HandleEvent(Event* aEvent) {
-  nsAutoString type;
-  aEvent->GetType(type);
-  if (!mElement || !type.EqualsLiteral("visibilitychange")) {
-    return NS_OK;
-  }
-
-  mElement->OnVisibilityChange();
-
-  return NS_OK;
-}
-
 NS_IMPL_ISUPPORTS(HTMLCanvasElementObserver, nsIObserver)
 
 // ---------------------------------------------------------------------------
@@ -373,6 +474,10 @@ HTMLCanvasElement::HTMLCanvasElement(
       mWriteOnly(false) {}
 
 HTMLCanvasElement::~HTMLCanvasElement() {
+  if (mOffscreenDisplay) {
+    mOffscreenDisplay->Destroy();
+  }
+
   if (mContextObserver) {
     mContextObserver->Destroy();
     mContextObserver = nullptr;
@@ -498,7 +603,6 @@ nsresult HTMLCanvasElement::DispatchPrintCallback(nsITimerCallback* aCallback) {
   return OwnerDoc()->Dispatch(TaskCategory::Other, renderEvent.forget());
 }
 
-MOZ_CAN_RUN_SCRIPT
 void HTMLCanvasElement::CallPrintCallback() {
   if (!mPrintState) {
     // `mPrintState` might have been destroyed by cancelling the previous
@@ -744,7 +848,8 @@ already_AddRefed<CanvasCaptureMediaStream> HTMLCanvasElement::CaptureStream(
   // If no permission, arrange for the frame capture listener to return
   // all-white, opaque image data.
   bool usePlaceholder = !CanvasUtils::IsImageExtractionAllowed(
-      OwnerDoc(), nsContentUtils::GetCurrentJSContext(), aSubjectPrincipal);
+      OwnerDoc(), nsContentUtils::GetCurrentJSContext(),
+      Some(&aSubjectPrincipal));
 
   rv = RegisterFrameCaptureListener(stream->FrameCaptureListener(),
                                     usePlaceholder);
@@ -764,7 +869,7 @@ nsresult HTMLCanvasElement::ExtractData(JSContext* aCx,
   // Check site-specific permission and display prompt if appropriate.
   // If no permission, return all-white, opaque image data.
   bool usePlaceholder = !CanvasUtils::IsImageExtractionAllowed(
-      OwnerDoc(), aCx, aSubjectPrincipal);
+      OwnerDoc(), aCx, Some(&aSubjectPrincipal));
   return ImageEncoder::ExtractData(aType, aOptions, GetSize(), usePlaceholder,
                                    mCurrentContext, mCanvasRenderer, aStream);
 }
@@ -848,44 +953,49 @@ void HTMLCanvasElement::ToBlob(JSContext* aCx, BlobCallback& aCallback,
   // Check site-specific permission and display prompt if appropriate.
   // If no permission, return all-white, opaque image data.
   bool usePlaceholder = !CanvasUtils::IsImageExtractionAllowed(
-      OwnerDoc(), aCx, aSubjectPrincipal);
+      OwnerDoc(), aCx, Some(&aSubjectPrincipal));
   CanvasRenderingContextHelper::ToBlob(aCx, global, aCallback, aType, aParams,
                                        usePlaceholder, aRv);
 }
-#define DISABLE_OFFSCREEN_CANVAS 1
+
 OffscreenCanvas* HTMLCanvasElement::TransferControlToOffscreen(
     ErrorResult& aRv) {
-  if (DISABLE_OFFSCREEN_CANVAS) {
-    aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
-    return nullptr;
-  }
-  if (mCurrentContext) {
+  if (mCurrentContext || mOffscreenCanvas) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return nullptr;
   }
 
-  if (!mOffscreenCanvas) {
-    MOZ_CRASH("todo");
+  MOZ_ASSERT(!mOffscreenDisplay);
 
-    nsPIDOMWindowInner* win = OwnerDoc()->GetInnerWindow();
-    if (!win) {
-      aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
-      return nullptr;
-    }
-
-    // nsIntSize sz = GetWidthHeight();
-    // mOffscreenCanvas =
-    //    new OffscreenCanvas(win->AsGlobal(), sz.width, sz.height,
-    //                        GetCompositorBackendType(), renderer);
-    if (mWriteOnly) {
-      mOffscreenCanvas->SetWriteOnly();
-    }
-
-    if (!mContextObserver) {
-      mContextObserver = new HTMLCanvasElementObserver(this);
-    }
-  } else {
+  nsPIDOMWindowInner* win = OwnerDoc()->GetInnerWindow();
+  if (!win) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    return nullptr;
+  }
+
+  LayersBackend backend = LayersBackend::LAYERS_NONE;
+  TextureType textureType = TextureType::Unknown;
+  nsIWidget* docWidget = nsContentUtils::WidgetForDocument(OwnerDoc());
+  if (docWidget) {
+    WindowRenderer* renderer = docWidget->GetWindowRenderer();
+    if (renderer) {
+      backend = renderer->GetCompositorBackendType();
+      textureType = TexTypeForWebgl(renderer->AsKnowsCompositor());
+    }
+  }
+
+  nsIntSize sz = GetWidthHeight();
+  mOffscreenDisplay =
+      MakeRefPtr<OffscreenCanvasDisplayHelper>(this, sz.width, sz.height);
+  mOffscreenCanvas =
+      new OffscreenCanvas(win->AsGlobal(), sz.width, sz.height, backend,
+                          textureType, mOffscreenDisplay);
+  if (mWriteOnly) {
+    mOffscreenCanvas->SetWriteOnly();
+  }
+
+  if (!mContextObserver) {
+    mContextObserver = new HTMLCanvasElementObserver(this);
   }
 
   return mOffscreenCanvas;
@@ -950,11 +1060,12 @@ already_AddRefed<nsISupports> HTMLCanvasElement::GetContext(
     JSContext* aCx, const nsAString& aContextId,
     JS::Handle<JS::Value> aContextOptions, ErrorResult& aRv) {
   if (mOffscreenCanvas) {
+    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return nullptr;
   }
 
   mMaybeModified = true;  // For FirstContentfulPaint
-  return CanvasRenderingContextHelper::GetContext(
+  return CanvasRenderingContextHelper::GetOrCreateContext(
       aCx, aContextId,
       aContextOptions.isObject() ? aContextOptions : JS::NullHandleValue, aRv);
 }
@@ -967,6 +1078,11 @@ already_AddRefed<nsISupports> HTMLCanvasElement::MozGetIPCContext(
   // We only support 2d shmem contexts for now.
   if (!aContextId.EqualsLiteral("2d")) {
     aRv.Throw(NS_ERROR_INVALID_ARG);
+    return nullptr;
+  }
+
+  if (mOffscreenCanvas) {
+    aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
     return nullptr;
   }
 
@@ -1035,13 +1151,50 @@ bool HTMLCanvasElement::CallerCanRead(JSContext* aCx) {
                                                 nsGkAtoms::all_urlsPermission);
 }
 
+void HTMLCanvasElement::SetWidth(uint32_t aWidth, ErrorResult& aRv) {
+  if (mOffscreenCanvas) {
+    aRv.ThrowInvalidStateError(
+        "Cannot set width of placeholder canvas transferred to "
+        "OffscreenCanvas.");
+    return;
+  }
+
+  SetUnsignedIntAttr(nsGkAtoms::width, aWidth, DEFAULT_CANVAS_WIDTH, aRv);
+}
+
+void HTMLCanvasElement::SetHeight(uint32_t aHeight, ErrorResult& aRv) {
+  if (mOffscreenCanvas) {
+    aRv.ThrowInvalidStateError(
+        "Cannot set height of placeholder canvas transferred to "
+        "OffscreenCanvas.");
+    return;
+  }
+
+  SetUnsignedIntAttr(nsGkAtoms::height, aHeight, DEFAULT_CANVAS_HEIGHT, aRv);
+}
+
+void HTMLCanvasElement::InvalidateCanvasPlaceholder(uint32_t aWidth,
+                                                    uint32_t aHeight) {
+  // We need to keep our placeholder canvas dimensions in sync with the actual
+  // offscreen canvas. It is only a placeholder if we transferred the object to
+  // a worker thread.
+  if (mOffscreenCanvas->IsNeutered()) {
+    mOffscreenCanvas->UpdateNeuteredSize(aWidth, aHeight);
+  }
+
+  // We always need to update the canvas element itself however.
+  ErrorResult rv;
+  SetUnsignedIntAttr(nsGkAtoms::width, aWidth, DEFAULT_CANVAS_WIDTH, rv);
+  MOZ_ASSERT(!rv.Failed());
+  SetUnsignedIntAttr(nsGkAtoms::height, aHeight, DEFAULT_CANVAS_HEIGHT, rv);
+  MOZ_ASSERT(!rv.Failed());
+}
+
 void HTMLCanvasElement::InvalidateCanvasContent(const gfx::Rect* damageRect) {
   // We don't need to flush anything here; if there's no frame or if
   // we plan to reframe we don't need to invalidate it anyway.
   nsIFrame* frame = GetPrimaryFrame();
   if (!frame) return;
-
-  ActiveLayerTracker::NotifyContentChange(frame);
 
   // When using layers-free WebRender, we cannot invalidate the layer (because
   // there isn't one). Instead, we mark the CanvasRenderer dirty and scheduling
@@ -1116,16 +1269,19 @@ bool HTMLCanvasElement::GetOpaqueAttr() {
 }
 
 CanvasContextType HTMLCanvasElement::GetCurrentContextType() {
+  if (mOffscreenDisplay) {
+    return mOffscreenDisplay->GetContextType();
+  }
   return mCurrentContextType;
 }
 
 already_AddRefed<Image> HTMLCanvasElement::GetAsImage() {
-  if (mCurrentContext) {
-    return mCurrentContext->GetAsImage();
+  if (mOffscreenDisplay) {
+    return mOffscreenDisplay->GetAsImage();
   }
 
-  if (mOffscreenCanvas) {
-    MOZ_CRASH("todo");
+  if (mCurrentContext) {
+    return mCurrentContext->GetAsImage();
   }
 
   return nullptr;
@@ -1133,11 +1289,10 @@ already_AddRefed<Image> HTMLCanvasElement::GetAsImage() {
 
 bool HTMLCanvasElement::UpdateWebRenderCanvasData(
     nsDisplayListBuilder* aBuilder, WebRenderCanvasData* aCanvasData) {
+  MOZ_ASSERT(!mOffscreenDisplay);
+
   if (mCurrentContext) {
     return mCurrentContext->UpdateWebRenderCanvasData(aBuilder, aCanvasData);
-  }
-  if (mOffscreenCanvas) {
-    MOZ_CRASH("todo");
   }
 
   // Clear CanvasRenderer of WebRenderCanvasData
@@ -1147,12 +1302,10 @@ bool HTMLCanvasElement::UpdateWebRenderCanvasData(
 
 bool HTMLCanvasElement::InitializeCanvasRenderer(nsDisplayListBuilder* aBuilder,
                                                  CanvasRenderer* aRenderer) {
+  MOZ_ASSERT(!mOffscreenDisplay);
+
   if (mCurrentContext) {
     return mCurrentContext->InitializeCanvasRenderer(aBuilder, aRenderer);
-  }
-
-  if (mOffscreenCanvas) {
-    MOZ_CRASH("todo");
   }
 
   return false;
@@ -1170,8 +1323,11 @@ void HTMLCanvasElement::MarkContextCleanForFrameCapture() {
   mCurrentContext->MarkContextCleanForFrameCapture();
 }
 
-bool HTMLCanvasElement::IsContextCleanForFrameCapture() {
-  return mCurrentContext && mCurrentContext->IsContextCleanForFrameCapture();
+Watchable<FrameCaptureState>* HTMLCanvasElement::GetFrameCaptureState() {
+  if (!mCurrentContext) {
+    return nullptr;
+  }
+  return mCurrentContext->GetFrameCaptureState();
 }
 
 nsresult HTMLCanvasElement::RegisterFrameCaptureListener(
@@ -1220,13 +1376,13 @@ nsresult HTMLCanvasElement::RegisterFrameCaptureListener(
   return NS_OK;
 }
 
-bool HTMLCanvasElement::IsFrameCaptureRequested() const {
+bool HTMLCanvasElement::IsFrameCaptureRequested(const TimeStamp& aTime) const {
   for (WeakPtr<FrameCaptureListener> listener : mRequestedFrameListeners) {
     if (!listener) {
       continue;
     }
 
-    if (listener->FrameCaptureRequested()) {
+    if (listener->FrameCaptureRequested(aTime)) {
       return true;
     }
   }
@@ -1261,9 +1417,12 @@ void HTMLCanvasElement::SetFrameCapture(
 
 already_AddRefed<SourceSurface> HTMLCanvasElement::GetSurfaceSnapshot(
     gfxAlphaType* const aOutAlphaType) {
-  if (!mCurrentContext) return nullptr;
-
-  return mCurrentContext->GetSurfaceSnapshot(aOutAlphaType);
+  if (mCurrentContext) {
+    return mCurrentContext->GetSurfaceSnapshot(aOutAlphaType);
+  } else if (mOffscreenDisplay) {
+    return mOffscreenDisplay->GetSurfaceSnapshot();
+  }
+  return nullptr;
 }
 
 layers::LayersBackend HTMLCanvasElement::GetCompositorBackendType() const {
@@ -1278,28 +1437,9 @@ layers::LayersBackend HTMLCanvasElement::GetCompositorBackendType() const {
   return LayersBackend::LAYERS_NONE;
 }
 
-void HTMLCanvasElement::OnVisibilityChange() {
-  if (OwnerDoc()->Hidden()) {
-    return;
-  }
-
-  if (mOffscreenCanvas) {
-    MOZ_CRASH("todo");
-    // Dispatch to GetActiveEventTarget.
-    return;
-  }
-
-  if (mCurrentContext) {
-    mCurrentContext->OnVisibilityChange();
-  }
-}
-
 void HTMLCanvasElement::OnMemoryPressure() {
-  if (mOffscreenCanvas) {
-    MOZ_CRASH("todo");
-    // Dispatch to GetActiveEventTarget.
-    return;
-  }
+  // FIXME(aosmond): We need to implement memory pressure handling for
+  // OffscreenCanvas when it is on worker threads. See bug 1746260.
 
   if (mCurrentContext) {
     mCurrentContext->OnMemoryPressure();
@@ -1327,6 +1467,13 @@ webgpu::CanvasContext* HTMLCanvasElement::GetWebGPUContext() {
   }
 
   return static_cast<webgpu::CanvasContext*>(GetCurrentContext());
+}
+
+RefPtr<ImageContainer> HTMLCanvasElement::GetImageContainer() {
+  if (mOffscreenDisplay) {
+    return mOffscreenDisplay->GetImageContainer();
+  }
+  return nullptr;
 }
 
 }  // namespace mozilla::dom

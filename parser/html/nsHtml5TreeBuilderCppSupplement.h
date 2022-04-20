@@ -43,7 +43,8 @@ nsHtml5TreeBuilder::nsHtml5TreeBuilder(nsHtml5OplessBuilder* aBuilder)
       mSpeculativeLoadStage(nullptr),
       mBroken(NS_OK),
       mCurrentHtmlScriptIsAsyncOrDefer(false),
-      mPreventScriptExecution(false)
+      mPreventScriptExecution(false),
+      mGenerateSpeculativeLoads(false)
 #ifdef DEBUG
       ,
       mActive(false)
@@ -53,7 +54,8 @@ nsHtml5TreeBuilder::nsHtml5TreeBuilder(nsHtml5OplessBuilder* aBuilder)
 }
 
 nsHtml5TreeBuilder::nsHtml5TreeBuilder(nsAHtml5TreeOpSink* aOpSink,
-                                       nsHtml5TreeOpStage* aStage)
+                                       nsHtml5TreeOpStage* aStage,
+                                       bool aGenerateSpeculativeLoads)
     : mode(0),
       originalMode(0),
       framesetOk(false),
@@ -82,12 +84,15 @@ nsHtml5TreeBuilder::nsHtml5TreeBuilder(nsAHtml5TreeOpSink* aOpSink,
       mSpeculativeLoadStage(aStage),
       mBroken(NS_OK),
       mCurrentHtmlScriptIsAsyncOrDefer(false),
-      mPreventScriptExecution(false)
+      mPreventScriptExecution(false),
+      mGenerateSpeculativeLoads(aGenerateSpeculativeLoads)
 #ifdef DEBUG
       ,
       mActive(false)
 #endif
 {
+  MOZ_ASSERT(!(!aStage && aGenerateSpeculativeLoads),
+             "Must not generate speculative loads without a stage");
   MOZ_COUNT_CTOR(nsHtml5TreeBuilder);
 }
 
@@ -170,7 +175,7 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
 
   // Start wall of code for speculative loading and line numbers
 
-  if (mSpeculativeLoadStage && mode != IN_TEMPLATE) {
+  if (mGenerateSpeculativeLoads && mode != IN_TEMPLATE) {
     switch (aNamespace) {
       case kNameSpaceID_XHTML:
         if (nsGkAtoms::img == aName) {
@@ -992,12 +997,15 @@ void nsHtml5TreeBuilder::elementPushed(int32_t aNamespace, nsAtom* aName,
     }
     return;
   }
-  if (mSpeculativeLoadStage && aName == nsGkAtoms::picture) {
-    // mSpeculativeLoadStage is non-null only in the off-the-main-thread
-    // tree builder, which handles the network stream
-    //
+  if (mGenerateSpeculativeLoads && aName == nsGkAtoms::picture) {
     // See comments in nsHtml5SpeculativeLoad.h about <picture> preloading
     mSpeculativeLoadQueue.AppendElement()->InitOpenPicture();
+    return;
+  }
+  if (aName == nsGkAtoms::_template) {
+    if (tokenizer->TemplatePushedOrHeadPopped()) {
+      requestSuspension();
+    }
   }
 }
 
@@ -1065,6 +1073,11 @@ void nsHtml5TreeBuilder::elementPopped(int32_t aNamespace, nsAtom* aName,
     }
     opDoneAddingChildren operation(aElement);
     treeOp->Init(mozilla::AsVariant(operation));
+    if (aNamespace == kNameSpaceID_XHTML && aName == nsGkAtoms::head) {
+      if (tokenizer->TemplatePushedOrHeadPopped()) {
+        requestSuspension();
+      }
+    }
     return;
   }
   if (aName == nsGkAtoms::style ||
@@ -1112,12 +1125,10 @@ void nsHtml5TreeBuilder::elementPopped(int32_t aNamespace, nsAtom* aName,
     return;
   }
 
-  if (mSpeculativeLoadStage && aName == nsGkAtoms::picture) {
-    // mSpeculativeLoadStage is non-null only in the off-the-main-thread
-    // tree builder, which handles the network stream
-    //
+  if (mGenerateSpeculativeLoads && aName == nsGkAtoms::picture) {
     // See comments in nsHtml5SpeculativeLoad.h about <picture> preloading
     mSpeculativeLoadQueue.AppendElement()->InitEndPicture();
+    return;
   }
 }
 
@@ -1247,16 +1258,26 @@ void nsHtml5TreeBuilder::FlushLoads() {
 }
 
 void nsHtml5TreeBuilder::SetDocumentCharset(NotNull<const Encoding*> aEncoding,
-                                            int32_t aCharsetSource) {
-  if (mBuilder) {
-    mBuilder->SetDocumentCharsetAndSource(aEncoding, aCharsetSource);
-  } else if (mSpeculativeLoadStage) {
-    mSpeculativeLoadQueue.AppendElement()->InitSetDocumentCharset(
-        aEncoding, aCharsetSource);
-  } else {
-    opSetDocumentCharset opearation(aEncoding, aCharsetSource);
-    mOpQueue.AppendElement()->Init(mozilla::AsVariant(opearation));
+                                            nsCharsetSource aCharsetSource,
+                                            bool aCommitEncodingSpeculation) {
+  MOZ_ASSERT(!mBuilder, "How did we call this with builder?");
+  MOZ_ASSERT(mSpeculativeLoadStage,
+             "How did we call this without a speculative load stage?");
+  mSpeculativeLoadQueue.AppendElement()->InitSetDocumentCharset(
+      aEncoding, aCharsetSource, aCommitEncodingSpeculation);
+}
+
+void nsHtml5TreeBuilder::UpdateCharsetSource(nsCharsetSource aCharsetSource) {
+  MOZ_ASSERT(!mBuilder, "How did we call this with builder?");
+  MOZ_ASSERT(mSpeculativeLoadStage,
+             "How did we call this without a speculative load stage (even "
+             "though we don't need it right here)?");
+  if (mViewSource) {
+    mViewSource->UpdateCharsetSource(aCharsetSource);
+    return;
   }
+  opUpdateCharsetSource operation(aCharsetSource);
+  mOpQueue.AppendElement()->Init(mozilla::AsVariant(operation));
 }
 
 void nsHtml5TreeBuilder::StreamEnded() {
@@ -1293,9 +1314,15 @@ void nsHtml5TreeBuilder::MaybeComplainAboutCharset(const char* aMsgId,
     MOZ_ASSERT_UNREACHABLE("Must never complain about charset with builder.");
     return;
   }
-  opMaybeComplainAboutCharset opeartion(const_cast<char*>(aMsgId), aError,
-                                        aLineNumber);
-  mOpQueue.AppendElement()->Init(mozilla::AsVariant(opeartion));
+
+  if (mSpeculativeLoadStage) {
+    mSpeculativeLoadQueue.AppendElement()->InitMaybeComplainAboutCharset(
+        aMsgId, aError, aLineNumber);
+  } else {
+    opMaybeComplainAboutCharset opeartion(const_cast<char*>(aMsgId), aError,
+                                          aLineNumber);
+    mOpQueue.AppendElement()->Init(mozilla::AsVariant(opeartion));
+  }
 }
 
 void nsHtml5TreeBuilder::TryToEnableEncodingMenu() {

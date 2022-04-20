@@ -236,8 +236,8 @@ class HTMLInputElement final : public TextControlElement,
   MOZ_CAN_RUN_SCRIPT nsresult
   SetValueFromSetRangeText(const nsAString& aValue) override;
   bool HasCachedSelection() override;
-  void SetShowPassword(bool aValue);
-  bool ShowPassword() const;
+  void SetRevealPassword(bool aValue);
+  bool RevealPassword() const;
 
   /**
    * TextEditorValueEquals() is designed for internal use so that aValue
@@ -969,8 +969,9 @@ class HTMLInputElement final : public TextControlElement,
 
   /**
    * Dispatch a select event.
+   * XXX: This dispatches select event synchronously, see bug 1679474.
    */
-  void DispatchSelectEvent(nsPresContext* aPresContext);
+  MOZ_CAN_RUN_SCRIPT void DispatchSelectEvent(nsPresContext* aPresContext);
 
   void SelectAll(nsPresContext* aPresContext);
   bool IsImage() const {
@@ -1010,7 +1011,7 @@ class HTMLInputElement final : public TextControlElement,
    * MaybeSubmitForm looks for a submit input or a single text control
    * and submits the form if either is present.
    */
-  MOZ_CAN_RUN_SCRIPT nsresult MaybeSubmitForm(nsPresContext* aPresContext);
+  MOZ_CAN_RUN_SCRIPT void MaybeSubmitForm(nsPresContext* aPresContext);
 
   /**
    * Update mFileList with the currently selected file.

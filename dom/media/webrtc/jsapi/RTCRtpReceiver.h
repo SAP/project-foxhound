@@ -25,6 +25,7 @@ class MediaPipelineReceive;
 class MediaSessionConduit;
 class MediaTransportHandler;
 class JsepTransceiver;
+class RTCStatsIdGenerator;
 class TransceiverImpl;
 
 namespace dom {
@@ -43,6 +44,7 @@ class RTCRtpReceiver : public nsISupports, public nsWrapperCache {
                  nsISerialEventTarget* aMainThread, AbstractThread* aCallThread,
                  nsISerialEventTarget* aStsThread,
                  MediaSessionConduit* aConduit,
+                 RTCStatsIdGenerator* aIdGenerator,
                  TransceiverImpl* aTransceiverImpl);
 
   // nsISupports
@@ -129,7 +131,7 @@ class RTCRtpReceiver : public nsISupports, public nsWrapperCache {
 
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
   const std::string mPCHandle;
-  RefPtr<JsepTransceiver> mJsepTransceiver;
+  const RefPtr<JsepTransceiver> mJsepTransceiver;
   bool mHaveStartedReceiving = false;
   bool mHaveSetupTransport = false;
   nsCOMPtr<nsISerialEventTarget> mMainThread;
@@ -138,6 +140,7 @@ class RTCRtpReceiver : public nsISupports, public nsWrapperCache {
   RefPtr<dom::MediaStreamTrack> mTrack;
   RefPtr<MediaPipelineReceive> mPipeline;
   RefPtr<MediaTransportHandler> mTransportHandler;
+  RefPtr<RTCStatsIdGenerator> mIdGenerator;
   RefPtr<TransceiverImpl> mTransceiverImpl;
   // This is [[AssociatedRemoteMediaStreams]], basically. We do not keep the
   // streams themselves here, because that would require this object to know

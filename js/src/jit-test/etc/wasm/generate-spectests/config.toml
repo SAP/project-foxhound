@@ -35,6 +35,7 @@ excluded_tests = [
 name = "spec"
 url = "https://github.com/WebAssembly/spec"
 excluded_tests = []
+directive = "; test-also=--enable-avx; skip-variant-if: --enable-avx, !isAvxPresent()"
 
 [[repos]]
 name = "threads"
@@ -52,15 +53,6 @@ excluded_tests = [
 skip_wpt = true
 # Skip in jit-test when it's not enabled
 directive = "; skip-if: !wasmThreadsEnabled()"
-
-[[repos]]
-name = "simd"
-url = "https://github.com/WebAssembly/simd"
-branch = "main"
-parent = "spec"
-# Skip in jit-test when it's not enabled
-directive = "; skip-if: !wasmSimdEnabled()"
-excluded_tests = []
 
 [[repos]]
 name = "exception-handling"

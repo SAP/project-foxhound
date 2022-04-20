@@ -5,10 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CanvasManagerParent.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/WebGLParent.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/layers/CompositorThread.h"
+#include "mozilla/webgpu/WebGPUParent.h"
 #include "mozilla/webrender/RenderThread.h"
 #include "nsIThread.h"
 
@@ -85,6 +87,63 @@ void CanvasManagerParent::ActorDestroy(ActorDestroyReason aWhy) {
 
 already_AddRefed<dom::PWebGLParent> CanvasManagerParent::AllocPWebGLParent() {
   return MakeAndAddRef<dom::WebGLParent>();
+}
+
+already_AddRefed<webgpu::PWebGPUParent>
+CanvasManagerParent::AllocPWebGPUParent() {
+  if (!StaticPrefs::dom_webgpu_enabled()) {
+    return nullptr;
+  }
+
+  return MakeAndAddRef<webgpu::WebGPUParent>();
+}
+
+mozilla::ipc::IPCResult CanvasManagerParent::RecvInitialize(
+    const uint32_t& aId) {
+  if (!aId) {
+    return IPC_FAIL(this, "invalid id");
+  }
+  if (mId) {
+    return IPC_FAIL(this, "already initialized");
+  }
+  mId = aId;
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult CanvasManagerParent::RecvGetSnapshot(
+    const uint32_t& aManagerId, const int32_t& aProtocolId,
+    webgl::FrontBufferSnapshotIpc* aResult) {
+  if (!aManagerId) {
+    return IPC_FAIL(this, "invalid id");
+  }
+
+  IProtocol* actor = nullptr;
+  for (CanvasManagerParent* i : sManagers) {
+    if (i->OtherPidMaybeInvalid() == OtherPidMaybeInvalid() &&
+        i->mId == aManagerId) {
+      actor = i->Lookup(aProtocolId);
+      break;
+    }
+  }
+
+  if (!actor) {
+    return IPC_FAIL(this, "invalid actor");
+  }
+
+  if (actor->GetProtocolId() != ProtocolId::PWebGLMsgStart ||
+      actor->GetSide() != mozilla::ipc::Side::ParentSide) {
+    return IPC_FAIL(this, "unsupported actor");
+  }
+
+  RefPtr<dom::WebGLParent> webgl = static_cast<dom::WebGLParent*>(actor);
+  webgl::FrontBufferSnapshotIpc buffer;
+  mozilla::ipc::IPCResult rv = webgl->GetFrontBufferSnapshot(&buffer, this);
+  if (!rv) {
+    return rv;
+  }
+
+  *aResult = std::move(buffer);
+  return IPC_OK();
 }
 
 }  // namespace mozilla::gfx

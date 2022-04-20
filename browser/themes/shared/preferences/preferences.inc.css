@@ -28,6 +28,8 @@
   vertical-align: top; /* See bug 1606130 */
   display: -moz-box;
   -moz-box-orient: vertical;
+
+  --main-pane-width: 664px;
 }
 
 * {
@@ -51,7 +53,7 @@
 .pane-container {
   /* A workaround to keep the container always float on the `top: 0` (Bug 1377009) */
   display: block;
-  width: 664px;
+  width: var(--main-pane-width);
 }
 
 #mainPrefPane {
@@ -217,6 +219,16 @@ checkbox {
   -moz-context-properties: fill, stroke, fill-opacity, stroke-opacity;
   fill: currentColor;
   stroke: var(--in-content-page-background);
+}
+
+@media (prefers-contrast) {
+  #category-more-from-mozilla:hover > .category-icon {
+    stroke: var(--in-content-button-background-hover);
+  }
+
+  #category-more-from-mozilla[selected] > .category-icon {
+    stroke: var(--in-content-button-background-hover);
+  }
 }
 
 /* All panes */
@@ -910,6 +922,11 @@ image.update-throbber {
   margin-inline-end: 8px;
 }
 
+.main-content {
+  /* the 32px min-height, plus 20+30px margin below, plus some leeway: */
+  scroll-padding-top: 90px;
+}
+
 #policies-container,
 #searchInput {
   min-height: 32px;
@@ -963,6 +980,11 @@ image.update-throbber {
   width: calc(100% + 8px);
   margin-inline: -4px;
   padding-inline: 4px;
+}
+
+.sticky-inner-container {
+  -moz-box-flex: 1;
+  max-width: var(--main-pane-width);
 }
 
 .search-tooltip {
@@ -1050,7 +1072,7 @@ menulist[indicator=true] > menupopup menuitem[indicator=true]:not([image]) > .me
   margin-inline-start: 4px;
 }
 
-#defaultBrowserLanguage {
+#primaryBrowserLocale {
   margin-inline-start: 0;
   min-width: 20em;
 }
@@ -1176,18 +1198,27 @@ richlistitem .text-link:hover {
   margin-inline-start: 6px;
 }
 
-#moreFromMozillaCategory .subtitle {
-  color: var(--in-content-deemphasized-text);
-  margin: 4px 0 10px;
+#moreFromMozillaCategory-header .title {
+  margin-block-end: 4px;
+}
+
+#moreFromMozillaCategory-header .subtitle {
+  color: var(--in-content-text-color);
+  margin-block-end: 24px;
   line-height: 1.4em;
 }
 
-#moreFromMozillaCategory .list-item {
+#moreFromMozillaCategory:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+}
+
+#moreFromMozillaCategory .mozilla-product-item {
   margin-top: 30px;
 }
 
 #moreFromMozillaCategory .product-title {
-  margin: 4px 0;
+  margin: 4px 0 3px;
   background-repeat: no-repeat;
   background-size: contain;
   padding-inline-start: 30px;
@@ -1204,7 +1235,7 @@ richlistitem .text-link:hover {
 /* The firefox-mobile product has three columns and needs to constrain the
  * .product-info section to one of them.
  */
-#firefox-mobile-vbox.advanced .product-info {
+#firefox-mobile-div.advanced .product-info {
   max-width: 200px;
 }
 
@@ -1220,7 +1251,8 @@ richlistitem .text-link:hover {
 }
 
 #moreFromMozillaCategory .description {
-  color: var(--in-content-deemphasized-text);
+  display: inline flow-root;
+  color: var(--in-content-text-color);
   padding-inline-start: 30px;
   margin: 2px 0;
   line-height: 1.4em;
@@ -1231,7 +1263,7 @@ richlistitem .text-link:hover {
 }
 
 #moreFromMozillaCategory .small-button {
-  margin-block: 16px;
+  margin-block: 14px 2px;
   margin-inline: 30px 0;
 }
 
@@ -1239,42 +1271,39 @@ richlistitem .text-link:hover {
   margin: 24px 0;
 }
 
-#moreFromMozillaCategory vbox.advanced {
+#moreFromMozillaCategory .mozilla-product-item.advanced {
   box-shadow: 0 2px 6px rgba(58, 57, 68, 0.2);
   border-radius: 4px;
 
   margin-block: 20px 10px;
   margin-inline: 2px 0;
   padding: 16px;
-
-  min-width: 725px;
-  max-width: 725px;
-  height: 219px;
 }
 
 @media (prefers-color-scheme: dark) {
-  #moreFromMozillaCategory vbox.advanced {
+  #moreFromMozillaCategory .mozilla-product-item.advanced {
     background-color: rgb(66, 65, 77);
   }
 }
 
 #moreFromMozillaCategory .advanced .product-info {
-  min-height: 200px;
+  width: 500px;
 }
 
 #moreFromMozillaCategory .text-link {
-  font-size: .87em;
   line-height: 1.4em;
-
-  text-decoration: underline;
 
   margin-block: 2px 0;
   margin-inline: 6px 0;
 }
 
 #moreFromMozillaCategory .simple .text-link {
-  display: block;
+  display: inline flow-root;
   margin-inline-start: 4px;
+}
+
+#moreFromMozillaCategory .text-link.hidden {
+  display: none;
 }
 
 #firefox-mobile {
@@ -1294,6 +1323,10 @@ richlistitem .text-link:hover {
   background-image: url("chrome://browser/skin/preferences/img-mobile.svg");
 }
 
+.advanced #firefox-mobile-image {
+  display: flex;
+}
+
 #mozilla-vpn-image {
   background-image: url("chrome://browser/skin/preferences/img-vpn.svg");
 }
@@ -1309,19 +1342,24 @@ richlistitem .text-link:hover {
 .qr-code-box:not([hidden="true"]) {
   max-width: 320px; /* a unit better than px for this & next? */
   min-height: 204px;
-  margin-block: 10px;
+  margin-block: 10px 0;
   margin-inline-start: 30px;
-  background-color: #f9f9fb;
+  background-color: var(--in-content-box-info-background);
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: space-around;
+  justify-content: space-evenly;
+  border-radius: 4px;
+}
+
+@media (prefers-contrast) {
+  .qr-code-box:not([hidden="true"]) {
+    border: 1px solid currentColor;
+  }
 }
 
 .advanced .qr-code-box {
   align-items: flex-start;
-  max-width: 307px;
-  min-height: 187px;
   margin-inline-start: 12px;
 }
 
@@ -1331,6 +1369,7 @@ richlistitem .text-link:hover {
 
 .advanced .qr-code-top-box {
   align-items: center;
+  width: 310px;
 }
 
 .qr-code-box-image {
@@ -1338,6 +1377,8 @@ richlistitem .text-link:hover {
   padding: 2px;
   width: 80px;
   flex: 0 0 auto;
+  -moz-context-properties: fill;
+  fill: currentColor;
 }
 
 .advanced .qr-code-box-image {
@@ -1359,7 +1400,7 @@ richlistitem .text-link:hover {
 
 .qr-code-box-title {
   font-size: .87em;
-  font-weight: 600;
+  font-weight: normal;
   line-height: 1.42em;
 
   text-align: center;
@@ -1368,27 +1409,36 @@ richlistitem .text-link:hover {
   margin-inline: 40px;
 }
 
+.simple .qr-code-box-title {
+  margin-block: 0;
+  width: 296px;
+}
+
+.simple .qr-code-box {
+  padding-inline: 24px;
+  padding-block: 20px
+}
+
+.simple .qr-code-box-image {
+  padding: 10px;
+}
+
 .advanced .qr-code-box-title {
   text-align: start;
   margin-inline: 16px;
   margin-block: revert;
 }
 
-#moreFromMozillaCategory .qr-code-button {
+#moreFromMozillaCategory .qr-code-link {
   font-size: .87em;
-  font-weight: 400;
   line-height: 1.42em;
-  text-decoration: underline;
-  color: #5b5b66;
-
-  flex: 2 0 auto;
-  margin-block-start: 10px;
+  margin-block-start: 0;
   margin-inline: 0; /* make sure we're correctly centered by overriding button rule */
 }
 
-#moreFromMozillaCategory .advanced .qr-code-button {
+#moreFromMozillaCategory .advanced .qr-code-link {
   margin-inline: 16px;
-  padding-block-start: 30px;
+  margin-block-start: 30px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1396,18 +1446,9 @@ richlistitem .text-link:hover {
     background-color: rgba(91,91,102,0.45);
   }
 
-  .qr-code-box-image {
-    -moz-context-properties: fill;
-    fill: white;
-  }
-
   .advanced .qr-code-box-image {
     background-color: white;
     fill: black;
-  }
-
-  #moreFromMozillaCategory .qr-code-button {
-    color: #fbfbfe;
   }
 
   .qr-code-box-title {

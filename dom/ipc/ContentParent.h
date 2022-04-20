@@ -443,7 +443,7 @@ class ContentParent final
   mozilla::ipc::IPCResult RecvInitCrashReporter(
       const NativeThreadId& aThreadId);
 
-  PNeckoParent* AllocPNeckoParent();
+  already_AddRefed<PNeckoParent> AllocPNeckoParent();
 
   virtual mozilla::ipc::IPCResult RecvPNeckoConstructor(
       PNeckoParent* aActor) override {
@@ -917,7 +917,7 @@ class ContentParent final
       const nsACString& aContentProcessType);
 
   mozilla::ipc::IPCResult RecvInitBackground(
-      Endpoint<mozilla::ipc::PBackgroundParent>&& aEndpoint);
+      Endpoint<mozilla::ipc::PBackgroundStarterParent>&& aEndpoint);
 
   mozilla::ipc::IPCResult RecvAddMemoryReport(const MemoryReport& aReport);
   mozilla::ipc::IPCResult RecvAddPerformanceMetrics(
@@ -965,8 +965,6 @@ class ContentParent final
                                               const bool& wantCacheData);
 
   bool DeallocPScriptCacheParent(PScriptCacheParent* shell);
-
-  bool DeallocPNeckoParent(PNeckoParent* necko);
 
   already_AddRefed<PExternalHelperAppParent> AllocPExternalHelperAppParent(
       nsIURI* aUri, const Maybe<mozilla::net::LoadInfoArgs>& aLoadInfoArgs,
@@ -1165,8 +1163,10 @@ class ContentParent final
 
   bool DeallocPFileDescriptorSetParent(PFileDescriptorSetParent*);
 
+#ifdef MOZ_WEBRTC
   PWebrtcGlobalParent* AllocPWebrtcGlobalParent();
   bool DeallocPWebrtcGlobalParent(PWebrtcGlobalParent* aActor);
+#endif
 
   mozilla::ipc::IPCResult RecvUpdateDropEffect(const uint32_t& aDragAction,
                                                const uint32_t& aDropEffect);
@@ -1350,7 +1350,8 @@ class ContentParent final
   mozilla::ipc::IPCResult RecvHistoryCommit(
       const MaybeDiscarded<BrowsingContext>& aContext, const uint64_t& aLoadID,
       const nsID& aChangeID, const uint32_t& aLoadType, const bool& aPersist,
-      const bool& aCloneEntryChildren, const bool& aChannelExpired);
+      const bool& aCloneEntryChildren, const bool& aChannelExpired,
+      const uint32_t& aCacheKey);
 
   mozilla::ipc::IPCResult RecvHistoryGo(
       const MaybeDiscarded<BrowsingContext>& aContext, int32_t aOffset,
@@ -1374,6 +1375,10 @@ class ContentParent final
   mozilla::ipc::IPCResult RecvSessionHistoryEntryCacheKey(
       const MaybeDiscarded<BrowsingContext>& aContext,
       const uint32_t& aCacheKey);
+
+  mozilla::ipc::IPCResult RecvSessionHistoryEntryWireframe(
+      const MaybeDiscarded<BrowsingContext>& aContext,
+      const Wireframe& aWireframe);
 
   mozilla::ipc::IPCResult
   RecvSessionHistoryEntryStoreWindowNameInContiguousEntries(

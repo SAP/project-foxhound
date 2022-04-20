@@ -144,6 +144,7 @@ EXPORTS.mozilla += [
     "ReflowInput.h",
     "ReflowOutput.h",
     "ScrollbarPreferences.h",
+    "ScrollGeneration.h",
     "ScrollOrigin.h",
     "ScrollPositionUpdate.h",
     "ViewportFrame.h",
@@ -225,6 +226,12 @@ UNIFIED_SOURCES += [
     "WBRFrame.cpp",
 ]
 
+SOURCES += [
+    # If this file gets compiled with ScrollPositionUpdate.cpp, the specialized
+    # `operator<<` for ScrollGeneration<> won't be visible
+    "ScrollGeneration.cpp",
+]
+
 GeneratedFile(
     "FrameIdList.h",
     script="GenerateFrameLists.py",
@@ -266,4 +273,4 @@ MOCHITEST_MANIFESTS += ["test/mochitest.ini"]
 MOCHITEST_CHROME_MANIFESTS += ["test/chrome.ini"]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
-    CXXFLAGS += CONFIG["TK_CFLAGS"]
+    CXXFLAGS += CONFIG["MOZ_GTK3_CFLAGS"]

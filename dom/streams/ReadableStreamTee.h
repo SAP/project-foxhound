@@ -36,7 +36,7 @@ class ReadableStreamDefaultTeePullAlgorithm final
 
   MOZ_CAN_RUN_SCRIPT
   virtual already_AddRefed<Promise> PullCallback(
-      JSContext* aCx, ReadableStreamDefaultController& aController,
+      JSContext* aCx, ReadableStreamController& aController,
       ErrorResult& aRv) override {
     nsCOMPtr<nsIGlobalObject> global(aController.GetParentObject());
     return PullCallback(aCx, global, aRv);
@@ -61,7 +61,8 @@ struct ReadableStreamDefaultTeeReadRequest final : public ReadRequest {
   virtual void ChunkSteps(JSContext* aCx, JS::Handle<JS::Value> aChunk,
                           ErrorResult& aRv) override;
 
-  virtual void CloseSteps(JSContext* aCx, ErrorResult& aRv) override;
+  MOZ_CAN_RUN_SCRIPT virtual void CloseSteps(JSContext* aCx,
+                                             ErrorResult& aRv) override;
 
   virtual void ErrorSteps(JSContext* aCx, JS::Handle<JS::Value> aError,
                           ErrorResult& aRv) override;
@@ -69,6 +70,10 @@ struct ReadableStreamDefaultTeeReadRequest final : public ReadRequest {
  protected:
   virtual ~ReadableStreamDefaultTeeReadRequest() = default;
 };
+
+MOZ_CAN_RUN_SCRIPT void ReadableByteStreamTee(
+    JSContext* aCx, ReadableStream* aStream,
+    nsTArray<RefPtr<ReadableStream>>& aResult, ErrorResult& aRv);
 
 }  // namespace mozilla::dom
 #endif

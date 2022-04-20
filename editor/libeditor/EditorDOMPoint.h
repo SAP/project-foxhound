@@ -497,8 +497,7 @@ class EditorDOMPointBase final {
     if (mChild == mParent->GetFirstChild()) {
       const_cast<SelfType*>(this)->mOffset = mozilla::Some(0);
     } else {
-      const_cast<SelfType*>(this)->mOffset =
-          mozilla::Some(mParent->ComputeIndexOf(mChild));
+      const_cast<SelfType*>(this)->mOffset = mParent->ComputeIndexOf(mChild);
     }
     return mOffset.value();
   }
@@ -765,7 +764,8 @@ class EditorDOMPointBase final {
       return false;
     }
 
-    if (mChild && mChild->GetParentNode() != mParent) {
+    if (mChild &&
+        (mChild->GetParentNode() != mParent || mChild->IsBeingRemoved())) {
       return false;
     }
     if (mOffset.isSome() && mOffset.value() > mParent->Length()) {
@@ -1212,6 +1212,34 @@ class EditorDOMRangeBase final {
   MOZ_NEVER_INLINE_DEBUG EditorDOMRangeInTexts AsInTexts() const {
     MOZ_ASSERT(IsInTextNodes());
     return EditorDOMRangeInTexts(mStart.AsInText(), mEnd.AsInText());
+  }
+
+  bool EnsureNotInNativeAnonymousSubtree() {
+    if (mStart.IsInNativeAnonymousSubtree()) {
+      nsIContent* parent = nullptr;
+      for (parent = mStart.ContainerAsContent()
+                        ->GetClosestNativeAnonymousSubtreeRootParent();
+           parent && parent->IsInNativeAnonymousSubtree();
+           parent = parent->GetClosestNativeAnonymousSubtreeRootParent()) {
+      }
+      if (MOZ_UNLIKELY(!parent)) {
+        return false;
+      }
+      mStart.Set(parent);
+    }
+    if (mEnd.IsInNativeAnonymousSubtree()) {
+      nsIContent* parent = nullptr;
+      for (parent = mEnd.ContainerAsContent()
+                        ->GetClosestNativeAnonymousSubtreeRootParent();
+           parent && parent->IsInNativeAnonymousSubtree();
+           parent = parent->GetClosestNativeAnonymousSubtreeRootParent()) {
+      }
+      if (MOZ_UNLIKELY(!parent)) {
+        return false;
+      }
+      mEnd.SetAfter(parent);
+    }
+    return true;
   }
 
  private:

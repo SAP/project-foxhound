@@ -116,14 +116,15 @@ var Utils = {
         if (
           // At most one recursive Utils.fetch call (bypassProxy=false to true).
           bypassProxy ||
+          Services.startup.shuttingDown ||
+          Utils.isOffline ||
           !request.isProxied ||
           !request.bypassProxyEnabled
         ) {
           reject(err);
           return;
         }
-        // TODO: Remove ?. when https://phabricator.services.mozilla.com/D127170 lands
-        ServiceRequest.logProxySource?.(request.channel, "remote-settings");
+        ServiceRequest.logProxySource(request.channel, "remote-settings");
         resolve(Utils.fetch(input, { ...init, bypassProxy: true }));
       }
 
@@ -337,8 +338,7 @@ var Utils = {
     serverTimeMillis += cacheAgeSeconds * 1000;
 
     // Age of data (time between publication and now).
-    let lastModifiedMillis = Date.parse(response.headers.get("Last-Modified"));
-    const ageSeconds = (serverTimeMillis - lastModifiedMillis) / 1000;
+    const ageSeconds = (serverTimeMillis - timestamp) / 1000;
 
     // Check if the server asked the clients to back off.
     let backoffSeconds;
