@@ -520,7 +520,10 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
     return nullptr;
   }
 
-  // Taintfox: TODO: Add fetch sink here...
+  // Taintfox: Sink: Add fetch sink here...
+  nsAutoString url;
+  request->GetUrl(url);
+  ReportTaintSink(url, "fetch");
 
   SafeRefPtr<InternalRequest> r = request->GetInternalRequest();
   RefPtr<AbortSignalImpl> signalImpl = request->GetSignalImpl();

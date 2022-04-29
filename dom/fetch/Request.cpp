@@ -103,6 +103,8 @@ already_AddRefed<nsIURI> ParseURLFromDocument(Document* aDocument,
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return nullptr;
   }
+  // Taintfox: propagate taint
+  input.AssignTaint(aInput.Taint());
 
   nsCOMPtr<nsIURI> resolvedURI;
   nsresult rv = NS_NewURI(getter_AddRefs(resolvedURI), input, nullptr,
@@ -139,6 +141,7 @@ void GetRequestURLFromDocument(Document* aDocument, const nsAString& aInput,
     return;
   }
   CopyUTF8toUTF16(spec, aRequestURL);
+  aRequestURL.AssignTaint(spec.Taint());
 
   // Get the fragment from nsIURI.
   aRv = resolvedURI->GetRef(aURLfragment);
@@ -155,6 +158,8 @@ already_AddRefed<nsIURI> ParseURLFromChrome(const nsAString& aInput,
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return nullptr;
   }
+  // Taintfox: propagate taint
+  input.AssignTaint(aInput.Taint());
 
   nsCOMPtr<nsIURI> uri;
   nsresult rv = NS_NewURI(getter_AddRefs(uri), input);
@@ -189,6 +194,7 @@ void GetRequestURLFromChrome(const nsAString& aInput, nsAString& aRequestURL,
     return;
   }
   CopyUTF8toUTF16(spec, aRequestURL);
+  aRequestURL.AssignTaint(spec.Taint());
 
   // Get the fragment from nsIURI.
   aRv = uri->GetRef(aURLfragment);
@@ -394,6 +400,7 @@ SafeRefPtr<Request> Request::Constructor(nsIGlobalObject* aGlobal,
         nsAutoCString spec;
         uri->GetSpec(spec);
         CopyUTF8toUTF16(spec, referrerURL);
+        referrerURL.AssignTaint(spec.Taint());
         if (!referrerURL.EqualsLiteral(kFETCH_CLIENT_REFERRER_STR)) {
           nsCOMPtr<nsIPrincipal> principal = aGlobal->PrincipalOrNull();
           if (principal) {

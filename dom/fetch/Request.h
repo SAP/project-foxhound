@@ -42,6 +42,7 @@ class Request final : public FetchBody<Request>, public nsWrapperCache {
     nsAutoCString url;
     mRequest->GetURL(url);
     CopyUTF8toUTF16(url, aUrl);
+    aUrl.AssignTaint(url.Taint());
   }
 
   void GetMethod(nsCString& aMethod) const { aMethod = mRequest->mMethod; }
