@@ -548,12 +548,41 @@ nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name)
   return NS_OK;
 }
 
+nsresult ReportTaintSink(JSContext *cx, const nsACString &str, const char* name)
+{
+  if (!str.isTainted()) {
+    return NS_OK;
+  }
+
+  if (!cx) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (!nsContentUtils::IsSafeToRunScript() || !JS::CurrentGlobalOrNull(cx)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  JS::RootedValue strval(cx);
+  if (!mozilla::dom::ToJSValue(cx, str, &strval)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  JS_ReportTaintSink(cx, strval, name);
+
+  return NS_OK;
+}
+
 nsresult ReportTaintSink(const nsAString &str, const char* name, const nsAString &arg)
 {
   return ReportTaintSink(nsContentUtils::GetCurrentJSContext(), str, name, arg);
 }
 
 nsresult ReportTaintSink(const nsAString &str, const char* name)
+{
+  return ReportTaintSink(nsContentUtils::GetCurrentJSContext(), str, name);
+}
+
+nsresult ReportTaintSink(const nsACString &str, const char* name)
 {
   return ReportTaintSink(nsContentUtils::GetCurrentJSContext(), str, name);
 }

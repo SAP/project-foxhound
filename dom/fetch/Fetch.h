@@ -353,6 +353,7 @@ class EmptyBody final : public FetchBody<EmptyBody> {
   RefPtr<AbortSignalImpl> mAbortSignalImpl;
   nsCString mMimeType;
   nsCOMPtr<nsIInputStream> mBodyStream;
+
 };
 }  // namespace dom
 }  // namespace mozilla
