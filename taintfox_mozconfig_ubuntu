@@ -1,7 +1,3 @@
-. $topsrcdir/browser/config/mozconfig
-
-mk_add_options MOZ_MAKE_FLAGS="-s -j4"
-
 # Use ccache, make sure the path is correct
 #ac_add_options --with-ccache=/usr/bin/ccache
 
