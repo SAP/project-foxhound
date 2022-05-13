@@ -1106,7 +1106,9 @@ class Element : public FragmentOrElement {
     if (val) {
       val->ToString(aResult);
       // Taintfox element.getAttr source
-      SetTaintSourceGetAttr(aNameSpaceID, aName, aResult); 
+      if (aResult.Length() > 0) {
+        SetTaintSourceGetAttr(aNameSpaceID, aName, aResult);
+      }
       return true;
     }
     // else DOMString comes pre-emptied.
@@ -1122,7 +1124,9 @@ class Element : public FragmentOrElement {
     if (val) {
       val->ToString(aResult);
       // Taintfox element.getAttr source
-      SetTaintSourceGetAttr(aName, aResult);
+      if (aResult.Length() > 0) {
+        SetTaintSourceGetAttr(aName, aResult);
+      }
       return true;
     }
     // else DOMString comes pre-emptied.

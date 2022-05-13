@@ -625,8 +625,10 @@ static bool Unescape(StringBuffer& sb,
         outTaint->append(TaintRange(ti, ni, current->flow()));
         current++;
       }
-      if (k <= current->begin()) {
-        ti = ni;
+      if (current != inTaint.end()) {
+        if (k <= current->begin()) {
+          ti = ni;
+        }
       }
     }
   }
@@ -651,6 +653,10 @@ static bool str_unescape(JSContext* cx, unsigned argc, Value* vp) {
   if (str->hasTwoByteChars() && !sb.ensureTwoByteChars()) {
     return false;
   }
+
+  // Save operation to avoid GC issues
+  StringTaint taint = str->taint();
+  TaintOperation op = TaintOperationFromContext(cx, "unescape", true, str);
 
   // Steps 2, 4-5.
   StringTaint newtaint;
@@ -678,7 +684,7 @@ static bool str_unescape(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // TaintFox: add taint operation.
-  newtaint.extend(TaintOperationFromContext(cx, "unescape", true, str));
+  newtaint.extend(op);
   result->setTaint(cx, newtaint);
 
   args.rval().setString(result);

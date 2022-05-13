@@ -111,6 +111,8 @@ static JSString* CopyStringPure(JSContext* cx, JSString* str) {
    */
 
   size_t len = str->length();
+  // Copy taint up here to avoid GC problems later
+  StringTaint taint = str->Taint();
   JSString* copy;
   if (str->isLinear()) {
     /* Only use AutoStableStringChars if the NoGC allocation fails. */
@@ -124,7 +126,7 @@ static JSString* CopyStringPure(JSContext* cx, JSString* str) {
     }
     if (copy) {
       // TaintFox: Here and below, propagate taint when wrapping strings.
-      copy->setTaint(cx, str->taint());
+      copy->setTaint(cx, taint);
       return copy;
     }
 
@@ -136,7 +138,7 @@ static JSString* CopyStringPure(JSContext* cx, JSString* str) {
     copy = chars.isLatin1()
       ? NewStringCopyN<CanGC>(cx, chars.latin1Range().begin().get(), len)
       : NewStringCopyNDontDeflate<CanGC>(cx, chars.twoByteRange().begin().get(), len);
-    copy->setTaint(cx, str->taint());
+    copy->setTaint(cx, taint);
     return copy;
   }
 
@@ -148,7 +150,7 @@ static JSString* CopyStringPure(JSContext* cx, JSString* str) {
     }
   
     copy = NewString<CanGC>(cx, std::move(copiedChars), len);
-    copy->setTaint(cx, str->taint());
+    copy->setTaint(cx, taint);
     return copy;
   }
 

@@ -886,7 +886,7 @@ nsresult nsHtml5StreamParser::WriteStreamBytes(
     // (should be done during the conversion)
     if (aTaint.hasTaint()) {
 #if (DEBUG_E2E_TAINTING)
-      printf("+++++ Writing taint of length %d, %d/%d bytes written +++++\n", aTaint.begin()->end(), read, written);
+      printf("+++++ Writing taint of length %d, %d/%lu bytes written +++++\n", aTaint.begin()->end(), read, written);
 #endif
       mLastBuffer->setTaint(aTaint.subtaint(totalRead, totalRead + read));
     }
