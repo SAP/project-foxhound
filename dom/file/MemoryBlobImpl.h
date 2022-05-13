@@ -114,6 +114,10 @@ class MemoryBlobImpl final : public BaseBlobImpl {
 
     Span<const char> Data() override { return mData; }
 
+    const StringTaint& Taint() override { return mTaint; }
+
+    void setTaint(const StringTaint& aTaint) override { mTaint = aTaint; }
+
     // This StreamBufferSource is owning, as the `mData` span references the
     // immutable data buffer owned by `mDataOwner` which is being kept alive.
     bool Owning() override { return true; }
@@ -130,6 +134,7 @@ class MemoryBlobImpl final : public BaseBlobImpl {
 
     RefPtr<DataOwner> mDataOwner;
     Span<const char> mData;
+    StringTaint mTaint;
   };
 
  private:
