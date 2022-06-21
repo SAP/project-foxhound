@@ -2934,13 +2934,13 @@ static bool TrimString(JSContext* cx, const CallArgs& args, const char* funName,
   // NewDependentString (StringType-inl.h, JSDependentString::init)
   if (result->taint().hasTaint()) {
     if (trimStart && trimEnd) {
-      result->taint().extend(TaintOperationFromContextJSString(cx, "trim", true, str));
+      result->taint().extend(TaintOperationFromContextJSString(cx, "trim", true, linear));
     } else if (trimStart) {
-      result->taint().extend(TaintOperationFromContextJSString(cx, "trimLeft", true, str));
+      result->taint().extend(TaintOperationFromContextJSString(cx, "trimLeft", true, linear));
     } else if (trimEnd) {
-      result->taint().extend(TaintOperationFromContextJSString(cx, "trimRight", true, str));
+      result->taint().extend(TaintOperationFromContextJSString(cx, "trimRight", true, linear));
     } else {
-      result->taint().extend(TaintOperationFromContextJSString(cx, "trim", true, str));
+      result->taint().extend(TaintOperationFromContextJSString(cx, "trim", true, linear));
     }
   }
 
