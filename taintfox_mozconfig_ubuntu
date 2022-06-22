@@ -1,3 +1,6 @@
+# limit number of parallel jobs
+mk_add_options MOZ_PARALLEL_BUILD=4
+
 # Use ccache, make sure the path is correct
 #ac_add_options --with-ccache=/usr/bin/ccache
 
