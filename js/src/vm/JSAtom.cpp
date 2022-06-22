@@ -746,7 +746,11 @@ JSAtom* js::AtomizeString(JSContext* cx, JSString* str) {
     return &str->asAtom();
   }
 
-
+#if defined(DEBUG)
+  if (str->taint().hasTaint()) {
+    JS::TaintFoxReport(cx, "Warning: atomizing tainted string!");
+  }
+#endif
 
   JSLinearString* linear = str->ensureLinear(cx);
   if (!linear) {

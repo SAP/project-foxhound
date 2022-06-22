@@ -700,7 +700,7 @@ JSString* js::TenuringTracer::moveToTenured(JSString* src) {
   // complicated. See StringRelocationOverlay and DeduplicationStringHasher
   // comments.
   if (src->inStringToAtomCache() && src->isDeduplicatable() &&
-      !src->hasBase()) {
+      !src->hasBase() && !src->taint().hasTaint()) {
     JSLinearString* linear = &src->asLinear();
     JSAtom* atom = runtime()->caches().stringToAtomCache.lookup(linear);
     MOZ_ASSERT(atom, "Why was the cache purged before minor GC?");
@@ -737,7 +737,8 @@ JSString* js::TenuringTracer::moveToTenured(JSString* src) {
   // 4. It matches an entry in stringDeDupSet.
 
   if (src->length() < MAX_DEDUPLICATABLE_STRING_LENGTH && src->isLinear() &&
-      src->isDeduplicatable() && nursery().stringDeDupSet.isSome()) {
+      src->isDeduplicatable() && nursery().stringDeDupSet.isSome() &&
+      !src->taint().hasTaint()) {
     if (auto p = nursery().stringDeDupSet->lookup(src)) {
       // Deduplicate to the looked-up string!
       dst = *p;

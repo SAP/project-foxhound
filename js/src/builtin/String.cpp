@@ -3842,7 +3842,6 @@ static ArrayObject* CharSplitHelper(JSContext* cx, HandleLinearString str,
     if (!sub) {
       return nullptr;
     }
-
     // TaintFox: extend taint flow
     sub->taint().extend(TaintOperation("split", true, TaintLocationFromContext(cx), { taintarg(cx, u""), taintarg(cx, count++) }));
 
@@ -4113,10 +4112,11 @@ bool js::str_fromCharCode(JSContext* cx, unsigned argc, Value* vp) {
 
 static inline bool CodeUnitToString(JSContext* cx, uint16_t ucode,
                                     MutableHandleValue rval) {
-  if (StaticStrings::hasUnit(ucode)) {
-    rval.setString(cx->staticStrings().getUnit(ucode));
-    return true;
-  }
+  // Foxhound: avoid atoms
+  // if (StaticStrings::hasUnit(ucode)) {
+  //   rval.setString(cx->staticStrings().getUnit(ucode));
+  //   return true;
+  // }
 
   char16_t c = char16_t(ucode);
   JSString* str = NewStringCopyNDontDeflate<CanGC>(cx, &c, 1);

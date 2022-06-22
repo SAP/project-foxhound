@@ -1719,9 +1719,10 @@ template JSLinearString* NewStringCopyNDontDeflateNonStaticValidLength<CanGC>(
 template <AllowGC allowGC, typename CharT>
 JSLinearString* NewStringCopyNDontDeflate(JSContext* cx, const CharT* s,
                                           size_t n, gc::InitialHeap heap) {
-  if (JSLinearString* str = TryEmptyOrStaticString(cx, s, n)) {
-    return str;
-  }
+  // Foxhound: don't create atoms
+  // if (JSLinearString* str = TryEmptyOrStaticString(cx, s, n)) {
+  //   return str;
+  // }
 
   if (MOZ_UNLIKELY(!JSLinearString::validateLength(cx, n))) {
     return nullptr;

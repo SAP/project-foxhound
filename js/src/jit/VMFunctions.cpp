@@ -719,9 +719,10 @@ bool CharCodeAt(JSContext* cx, HandleString str, int32_t index,
 JSLinearString* StringFromCharCode(JSContext* cx, int32_t code) {
   char16_t c = char16_t(code);
 
-  if (StaticStrings::hasUnit(c)) {
-    return cx->staticStrings().getUnit(c);
-  }
+  // Foxhound: avoid atoms
+  // if (StaticStrings::hasUnit(c)) {
+  //   return cx->staticStrings().getUnit(c);
+  // }
 
   return NewStringCopyNDontDeflate<CanGC>(cx, &c, 1);
 }
@@ -731,9 +732,10 @@ JSLinearString* StringFromCharCodeNoGC(JSContext* cx, int32_t code) {
 
   char16_t c = char16_t(code);
 
-  if (StaticStrings::hasUnit(c)) {
-    return cx->staticStrings().getUnit(c);
-  }
+  // Foxhound: avoid atoms
+  // if (StaticStrings::hasUnit(c)) {
+  //   return cx->staticStrings().getUnit(c);
+  // }
 
   return NewStringCopyNDontDeflate<NoGC>(cx, &c, 1);
 }

@@ -93,7 +93,7 @@ if (typeof assertNotTainted === 'undefined') {
     // Assert that the given string is not tainted.
     var assertNotTainted = function(str) {
         if (str.taint.length != 0) {
-            throw Error("String ('" + str + "') is tainted");
+            throw Error("String ('" + str + "') is tainted: " + JSON.stringify(str.taint));
         }
     }
 }
