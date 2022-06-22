@@ -74,6 +74,9 @@ jobs:
       - name: Test
         run: obj-spider-release/dist/bin/js js/src/Y.js
 
+      - name: Taint Tests
+        run: js/src/tests/jstests.py obj-spider-release/dist/bin/js taint/
+
   # This workflow contains a single job called "build"
   build_docker:
     if: ${{ false }}  # disable for now the job is killed
