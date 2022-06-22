@@ -9,9 +9,11 @@ function stringRepeatTest() {
 function stringSingleRepeatTest() {
     var str = randomTaintedString();
     var repStr = str.repeat(1);
-    assertLastTaintOperationEquals(repStr, "repeat");
+
+    assertFullTainted(str);
     assertNotHasTaintOperation(str, "repeat");
     assertFullTainted(repStr);
+    assertLastTaintOperationEquals(repStr, "repeat");
 }
 
 runTaintTest(stringRepeatTest);

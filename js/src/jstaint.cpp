@@ -257,6 +257,10 @@ TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, bo
   return TaintOperation(name, is_native, TaintLocationFromContext(cx), taintargs(cx, arg));
 }
 
+TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleString arg1, JS::HandleString arg2 ) {
+  return TaintOperation(name, is_native, TaintLocationFromContext(cx), taintargs(cx, arg1, arg2));
+}
+
 TaintOperation JS::TaintOperationFromContextJSString(JSContext* cx, const char* name, bool is_native, JSString* const& arg ) {
   return TaintOperation(name, is_native, TaintLocationFromContext(cx), taintargs_jsstring(cx, arg));
 }

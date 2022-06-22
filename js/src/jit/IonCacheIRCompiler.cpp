@@ -1366,10 +1366,18 @@ bool IonCacheIRCompiler::emitLoadStringCharResult(StringOperandId strId,
   // Bounds check, load string char.
   masm.spectreBoundsCheck32(index, Address(str, JSString::offsetOfLength()),
                             scratch1, failure->label());
+
+  // Foxhound: also check whether the string is tainted
+  masm.branchPtr(Assembler::NotEqual,
+                 Address(str, JSString::offsetOfTaint()),
+                 ImmPtr(nullptr),
+                 failure->label());
+
   masm.loadStringChar(str, index, scratch1, scratch2, failure->label());
 
   // Load StaticString for this char. For larger code units perform a VM call.
   Label vmCall;
+
   masm.boundsCheck32PowerOfTwo(scratch1, StaticStrings::UNIT_STATIC_LIMIT,
                                &vmCall);
   masm.movePtr(ImmPtr(&cx_->staticStrings().unitStaticTable), scratch2);

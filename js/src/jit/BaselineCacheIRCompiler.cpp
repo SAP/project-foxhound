@@ -1169,6 +1169,13 @@ bool BaselineCacheIRCompiler::emitLoadStringCharResult(StringOperandId strId,
   // Bounds check, load string char.
   masm.spectreBoundsCheck32(index, Address(str, JSString::offsetOfLength()),
                             scratch1, failure->label());
+
+  // Foxhound: also check whether the string is tainted
+  masm.branchPtr(Assembler::NotEqual,
+                 Address(str, JSString::offsetOfTaint()),
+                 ImmPtr(nullptr),
+                 failure->label());
+
   masm.loadStringChar(str, index, scratch1, scratch2, failure->label());
 
   allocator.discardStack(masm);

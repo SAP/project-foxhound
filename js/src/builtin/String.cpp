@@ -125,7 +125,6 @@ static bool str_encodeURI_Component(JSContext* cx, unsigned argc, Value* vp);
  * Global string methods
  */
 
-
 /*
  * TaintFox: String.tainted() implementation.
  */
@@ -1948,7 +1947,6 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
 
 static bool str_charAt(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-
   RootedString str(cx);
   size_t i;
   if (args.thisv().isString() && args.length() != 0 && args[0].isInt32()) {
@@ -3038,7 +3036,6 @@ static JSString* BuildFlatRopeReplacement(JSContext* cx, HandleString textstr,
   MOZ_ASSERT(textstr->isRope());
 
   size_t matchEnd = match + patternLength;
-  size_t repLength = repstr->length();
 
   /*
    * If we are replacing over a rope, avoid flattening it by iterating
@@ -3107,14 +3104,7 @@ static JSString* BuildFlatRopeReplacement(JSContext* cx, HandleString textstr,
     }
   }
 
-  JSString* result = builder.result();
-  // Taintfox: Reconstruct Taint based on Rope
-  if(textstr->isTainted()) {
-      StringTaint lhs = textstr->taint().subtaint(0, match);
-      StringTaint rhs = textstr->taint().subtaint(matchEnd, textstr->length());
-      result->setTaint(cx, lhs.concat(rhs, match+repLength));
-  }
-  return result;
+  return builder.result();
 }
 
 template <typename CharT>

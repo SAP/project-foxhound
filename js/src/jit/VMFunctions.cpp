@@ -1310,8 +1310,12 @@ JSString* StringReplace(JSContext* cx, HandleString string,
   MOZ_ASSERT(string);
   MOZ_ASSERT(pattern);
   MOZ_ASSERT(repl);
-
-  return str_replace_string_raw(cx, string, pattern, repl);
+  // Foxhound: this will propagate the taint but not add the operation
+  JSString* str = str_replace_string_raw(cx, string, pattern, repl);
+  if (str && str->taint().hasTaint()) {
+    str->taint().extend(TaintOperationFromContext(cx, "replace", true, pattern, repl));
+  }
+  return str;;
 }
 
 bool SetDenseElement(JSContext* cx, HandleNativeObject obj, int32_t index,

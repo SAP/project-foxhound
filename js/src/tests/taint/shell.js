@@ -66,7 +66,7 @@ if (typeof assertRangeTainted === 'undefined') {
 
         if (!(begin >= curBegin && begin < curEnd && end <= curEnd))
             // Target range not included in current range
-            throw Error("Range " + stringifyRange(range) + " not tainted in string '" + str + "'");
+            throw Error("Range " + stringifyRange(range) + " not tainted in string '" + str + "'. Taint: " + JSON.stringify(str.taint));
     }
 }
 
@@ -206,7 +206,7 @@ if (typeof assertNotHasTaintOperation === 'undefined') {
             for (var j = 0; j < range.flow.length; j++) {
                 var node = range.flow[j];
                 if (node.operation === opName) {
-                    throw Error("String does contain \"" + opName + "\" as taint operation. Taint: " + JSON.stringify(str.taint));
+                    throw Error("String '" + str + "' does contain \"" + opName + "\" as taint operation. Taint: " + JSON.stringify(str.taint));
                 }
             }
         }
@@ -222,7 +222,8 @@ if (typeof assertLastTaintOperationEquals === 'undefined') {
             // Quirk: ignore "function call arguments" nodes for now...
             var index = 0;
             while (index < range.flow.length &&
-		   range.flow[index].operation.startsWith("assert"))
+		   range.flow[index].operation == "function" &&
+		   range.flow[index].arguments[0].startsWith("assert"))
                 index++;
 
             var node = range.flow[index];
@@ -230,7 +231,7 @@ if (typeof assertLastTaintOperationEquals === 'undefined') {
                 return true;
             }
         }
-        throw Error("String does not contain \"" + opName + "\" as last taint operation. Taint: " + JSON.stringify(str.taint));
+        throw Error("String '" + str + "' does not contain \"" + opName + "\" as last taint operation. Taint: " + JSON.stringify(str.taint));
     }
 }
 
@@ -240,7 +241,8 @@ if (typeof runTaintTest === 'undefined') {
         // Separate function so it's visible in the backtrace
         var runJITTest = function(doTest) {
             // Force JIT compilation
-            for (var i = 0; i < 500; i++) {
+            for (var i = 0; i < 1000; i++) {
+		//console.log(i);
                 doTest();
             }
         }
