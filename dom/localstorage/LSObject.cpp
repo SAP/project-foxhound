@@ -653,7 +653,7 @@ void LSObject::GetItem(const nsAString& aKey, nsAString& aResult,
   aResult = result;
 
   // TaintFox: localStorage.getItem source
-  MarkTaintSource(aResult, "localStorage.getItem");
+  MarkTaintSource(aResult, "localStorage.getItem", aKey);
 }
 
 void LSObject::GetSupportedNames(nsTArray<nsString>& aNames) {
@@ -692,7 +692,8 @@ void LSObject::SetItem(const nsAString& aKey, const nsAString& aValue,
   }
 
   // TaintFox: localStorage.setItem sink.
-  ReportTaintSink(aValue, "localStorage.setItem");
+  ReportTaintSink(aValue, "localStorage.setItem", aKey);
+  ReportTaintSink(aKey, "localStorage.setItem(key)", aValue);
 
   LSNotifyInfo info;
   rv = mDatabase->SetItem(this, aKey, aValue, info);

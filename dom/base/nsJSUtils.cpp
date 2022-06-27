@@ -453,6 +453,11 @@ nsresult MarkTaintSource(nsAString &str, const char* name)
   return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name));
 }
 
+nsresult MarkTaintSource(nsAString &str, const char* name, const nsAString &arg)
+{
+  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg));
+}
+
 nsresult MarkTaintSource(nsAString &str, const char* name, const nsTArray<nsString> &arg)
 {
   return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg));
