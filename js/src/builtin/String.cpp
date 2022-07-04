@@ -2931,14 +2931,15 @@ static bool TrimString(JSContext* cx, const CallArgs& args, const char* funName,
   // the acutal trimming of taint ranges has been done in
   // NewDependentString (StringType-inl.h, JSDependentString::init)
   if (result->taint().hasTaint()) {
+    AutoCheckCannotGC nogc;
     if (trimStart && trimEnd) {
-      result->taint().extend(TaintOperationFromContextJSString(cx, "trim", true, linear));
+      result->taint().extend(TaintOperationFromContext(cx, "trim", true));
     } else if (trimStart) {
-      result->taint().extend(TaintOperationFromContextJSString(cx, "trimLeft", true, linear));
+      result->taint().extend(TaintOperationFromContext(cx, "trimLeft", true));
     } else if (trimEnd) {
-      result->taint().extend(TaintOperationFromContextJSString(cx, "trimRight", true, linear));
+      result->taint().extend(TaintOperationFromContext(cx, "trimRight", true));
     } else {
-      result->taint().extend(TaintOperationFromContextJSString(cx, "trim", true, linear));
+      result->taint().extend(TaintOperationFromContext(cx, "trim", true));
     }
   }
 
