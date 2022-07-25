@@ -353,6 +353,12 @@ class Nursery {
 
   bool enableProfiling() const { return enableProfiling_; }
 
+  bool addStringWithNurseryMemory(JSString* obj) {
+    MOZ_ASSERT_IF(!stringsWithNurseryMemory_.empty(),
+                  stringsWithNurseryMemory_.back() != obj);
+    return stringsWithNurseryMemory_.append(obj);
+  }
+
   bool addMapWithNurseryMemory(MapObject* obj) {
     MOZ_ASSERT_IF(!mapsWithNurseryMemory_.empty(),
                   mapsWithNurseryMemory_.back() != obj);
@@ -581,6 +587,7 @@ class Nursery {
   // allocated there. Such objects need to be swept after minor GC.
   Vector<MapObject*, 0, SystemAllocPolicy> mapsWithNurseryMemory_;
   Vector<SetObject*, 0, SystemAllocPolicy> setsWithNurseryMemory_;
+  Vector<JSString*, 0, SystemAllocPolicy>  stringsWithNurseryMemory_;
 
   NurseryDecommitTask decommitTask;
 
@@ -667,6 +674,9 @@ class Nursery {
   void clear();
 
   void sweepMapAndSetObjects();
+
+  // Taintfox: we also need to sweep strings to clean up taint information
+  void sweepStrings();
 
   // Change the allocable space provided by the nursery.
   void maybeResizeNursery(JS::GCOptions options, JS::GCReason reason);

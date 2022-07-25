@@ -669,6 +669,9 @@ class JSString : public js::gc::CellWithLengthAndFlags {
     return offsetof(JSString, d.taint_);
   }
 
+  /* Taintfox: enable cleanup of strings in nursery */
+  static void sweepAfterMinorGC(JSFreeOp* fop, JSString* str);
+
  private:
   // To help avoid writing Spectre-unsafe code, we only allow MacroAssembler
   // to call the method below.

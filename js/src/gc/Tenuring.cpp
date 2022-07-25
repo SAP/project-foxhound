@@ -772,6 +772,7 @@ JSString* js::TenuringTracer::moveToTenured(JSString* src) {
   }
 
   gcprobes::PromoteToTenured(src, dst);
+
   return dst;
 }
 

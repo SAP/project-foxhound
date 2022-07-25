@@ -715,14 +715,12 @@ StringTaint& StringTaint::append(TaintRange range)
     return *this;
 }
 
-StringTaint& StringTaint::concat(const StringTaint& other, uint32_t offset)
+void StringTaint::concat(const StringTaint& other, uint32_t offset)
 {
     MOZ_ASSERT_IF(ranges_, ranges_->back().end() <= offset);
 
     for (auto& range : other)
         append(TaintRange(range.begin() + offset, range.end() + offset, range.flow()));
-
-    return *this;
 }
 
 // Slight hack, see below.
@@ -761,7 +759,8 @@ std::vector<TaintRange>::const_iterator StringTaint::end() const
 StringTaint StringTaint::concat(const StringTaint& left, uint32_t leftlen, const StringTaint& right)
 {
     StringTaint newtaint = left;
-    return newtaint.concat(right, leftlen);
+    newtaint.concat(right, leftlen);
+    return newtaint;
 }
 
 StringTaint StringTaint::substr(const StringTaint& taint, uint32_t begin, uint32_t end)

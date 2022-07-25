@@ -560,7 +560,7 @@ class StringTaint
     // All new ranges will be offsetted by the given factor, which must be
     // larger or equal to the end of the current last range.
     // TODO rename to append
-    StringTaint& concat(const StringTaint& other, uint32_t offset);
+    void concat(const StringTaint& other, uint32_t offset);
 
     // Re-sizes all taint ranges to convert from ASCII to base64
     StringTaint& toBase64();

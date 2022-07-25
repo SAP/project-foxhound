@@ -27,6 +27,7 @@
 #include "gc/FreeOp-inl.h"
 #include "gc/StoreBuffer-inl.h"
 
+
 namespace js {
 
 // Allocate a thin inline string if possible, and a fat inline string if not.
@@ -200,9 +201,10 @@ MOZ_ALWAYS_INLINE void JSRope::init(JSContext* cx, JSString* left,
 
   // TaintFox: Construct new taint information.
   initTaint();
-  if (left->isTainted() || right->isTainted())
-    setTaint(cx, StringTaint::concat(left->taint(), left->length(), right->taint()));
-
+  if (left->isTainted() || right->isTainted()) {
+    taint() = left->taint();
+    taint().concat(right->taint(), left->length());
+  }
   // Post-barrier by inserting into the whole cell buffer if either
   // this -> left or this -> right is a tenured -> nursery edge.
   if (isTenured()) {
@@ -549,6 +551,9 @@ inline void JSLinearString::finalize(JSFreeOp* fop) {
     fop->free_(this, nonInlineCharsRaw(), allocSize(),
                js::MemoryUse::StringContents);
   }
+
+  // TaintFox
+  clearTaint();
 }
 
 inline void JSFatInlineString::finalize(JSFreeOp* fop) {
