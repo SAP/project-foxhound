@@ -521,6 +521,8 @@ Cell* js::Nursery::allocateString(gc::AllocSite* site, size_t size) {
   Cell* cell = allocateCell(site, size, JS::TraceKind::String);
   if (cell) {
     site->zone()->nurseryAllocatedStrings++;
+    // Taintfox: register the string so we can clean up later on
+    addStringWithNurseryMemory(static_cast<JSString*>(cell));
   }
   return cell;
 }
@@ -1469,6 +1471,9 @@ void js::Nursery::sweep() {
 
   sweepMapAndSetObjects();
 
+  // Taintfox: clean up strings (mostly taint)
+  sweepStrings();
+
   runtime()->caches().sweepAfterMinorGC(&trc);
 }
 
@@ -1887,6 +1892,15 @@ void js::Nursery::sweepMapAndSetObjects() {
     SetObject::sweepAfterMinorGC(fop, setobj);
   }
   setsWithNurseryMemory_.clearAndFree();
+}
+
+void js::Nursery::sweepStrings() {
+  auto fop = runtime()->defaultFreeOp();
+
+  for (auto str : stringsWithNurseryMemory_) {
+    JSString::sweepAfterMinorGC(fop, str);
+  }
+  mapsWithNurseryMemory_.clearAndFree();
 }
 
 JS_PUBLIC_API void JS::EnableNurseryStrings(JSContext* cx) {

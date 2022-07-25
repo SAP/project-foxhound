@@ -726,6 +726,7 @@ JSLinearString* JSRope::flattenInternal(JSRope* root) {
    * change its address, only its owning JSExtensibleString, so all chars()
    * pointers in the JSDependentStrings are still valid.
    */
+
   const size_t wholeLength = root->length();
   size_t wholeCapacity;
   CharT* wholeChars;
@@ -787,7 +788,6 @@ first_visit_node : {
   str->setFlagBit(parentFlag);
   parent = nullptr;
   parentFlag = 0;
-
   if (left.isRope()) {
     /* Return to this node when 'left' done, then goto visit_right_child. */
     parent = str;
@@ -846,7 +846,6 @@ finish_node : {
   if (str->isTenured() && !root->isTenured()) {
     root->storeBuffer()->putWholeCell(str);
   }
-
   str = strParent;
   if (finishNode) {
     goto finish_node;
@@ -987,6 +986,7 @@ JSString* js::ConcatStringsQuiet(
     if (str->length() > 0) {
         str->setTaint(cx, newTaint);
     }
+    newTaint.clear();
     return str;
   }
 
@@ -2289,4 +2289,13 @@ template JSString* js::ToStringSlow<NoGC>(JSContext* cx, const Value& arg);
 
 JS_PUBLIC_API JSString* js::ToStringSlow(JSContext* cx, HandleValue v) {
   return ToStringSlow<CanGC>(cx, v);
+}
+
+/* static */
+void JSString::sweepAfterMinorGC(JSFreeOp* fop, JSString* str) {
+  bool wasInsideNursery = IsInsideNursery(str);
+  if (wasInsideNursery && !IsForwarded(str)) {
+    str->clearTaint();
+    return;
+  }
 }
