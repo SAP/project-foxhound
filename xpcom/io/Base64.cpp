@@ -407,7 +407,7 @@ static nsresult Base64EncodeHelper(const T* const aBinary,
   Encode(aBinary, aBinaryLen, handle.Elements() + prefixLen);
   handle.Finish(base64Len, false);
   // Taintfox: propagate taint
-  aBase64.AssignTaint(StringTaint::toBase64(aTaint));
+  aBase64.AssignTaint(aTaint.safeCopy().toBase64());
 
   return NS_OK;
 }
@@ -617,7 +617,7 @@ static nsresult Base64DecodeString(const T& aBase64, T& aBinary) {
 
   handle.Finish(binaryLen, true);
   // Taintfox: propagate taint and truncate taint if needed (due to padding)
-  aBinary.AssignTaint(StringTaint::fromBase64(aBase64.Taint()).subtaint(0, binaryLen));
+  aBinary.AssignTaint(aBase64.Taint().safeCopy().fromBase64().subtaint(0, binaryLen));
 
   return NS_OK;
 }

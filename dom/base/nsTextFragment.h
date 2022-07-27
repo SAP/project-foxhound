@@ -203,7 +203,7 @@ class nsTextFragment final : public TaintableString {
                               uint32_t aLength,
                               const mozilla::fallible_t& aFallible) const {
     // TaintFox: propagate taint when accessing text fragments.
-    aString.AppendTaint(Taint().subtaint(aOffset, aOffset + aLength));
+    aString.AppendTaint(Taint().safeCopy().subtaint(aOffset, aOffset + aLength));
 
     if (mState.mIs2b) {
       bool ok = aString.Append(Get2b() + aOffset, aLength, aFallible);

@@ -1066,12 +1066,12 @@ nsresult nsContentUtils::Atob(const nsAString& aAsciiBase64String,
     }
 
     // Taintfox: also remove any taint associated with the whitespace
-    trimmedString.AppendTaint(aAsciiBase64String.Taint().subtaint(0, i + 1));
+    trimmedString.AppendTaint(aAsciiBase64String.Taint().safeCopy().subtaint(0, i + 1));
     trimmedString.Append(start, cur - start);
 
     while (cur < end) {
       if (!nsContentUtils::IsHTMLWhitespace(*cur)) {
-        trimmedString.AppendTaint(aAsciiBase64String.Taint().subtaint(i, i + 1));
+        trimmedString.AppendTaint(aAsciiBase64String.Taint().safeCopy().subtaint(i, i + 1));
         trimmedString.Append(*cur);
       }
       cur++;
@@ -8710,7 +8710,7 @@ class StringBuilder {
     size_t currentPosition = 0;
     for (char16_t c : aStr) {
       TaintFlow flow(aTaint.atRef(currentPosition));
-      StringTaint taint = aTaint.subtaint(flushedUntil, currentPosition);
+      StringTaint taint = aTaint.safeCopy().subtaint(flushedUntil, currentPosition);
       switch (c) {
         case '"':
           aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
@@ -8733,8 +8733,8 @@ class StringBuilder {
       currentPosition++;
     }
     if (currentPosition > flushedUntil) {
-          StringTaint taint = aTaint.subtaint(flushedUntil, currentPosition);
-          aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
+      StringTaint taint = aTaint.safeCopy().subtaint(flushedUntil, currentPosition);
+      aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
     }
     // Taintfox: Add the taint operation to all flows
     MarkTaintOperation(aAppender.Taint(), "nsContentUtils::EncodeAttrString");
@@ -8746,7 +8746,7 @@ class StringBuilder {
     size_t currentPosition = 0;
     for (T c : aStr) {
       TaintFlow flow(aTaint.atRef(currentPosition));
-      StringTaint taint = aTaint.subtaint(flushedUntil, currentPosition);
+      StringTaint taint = aTaint.safeCopy().subtaint(flushedUntil, currentPosition);
       switch (c) {
         case '<':
           aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
@@ -8774,7 +8774,7 @@ class StringBuilder {
       currentPosition++;
     }
     if (currentPosition > flushedUntil) {
-      StringTaint taint = aTaint.subtaint(flushedUntil, currentPosition);
+      StringTaint taint = aTaint.safeCopy().subtaint(flushedUntil, currentPosition);
       aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
     }
     // Taintfox: Add the taint operation to all flows

@@ -241,7 +241,7 @@ if (typeof runTaintTest === 'undefined') {
         // Separate function so it's visible in the backtrace
         var runJITTest = function(doTest) {
             // Force JIT compilation
-            for (var i = 0; i < 1000; i++) {
+            for (var i = 0; i < 100; i++) {
 		//console.log(i);
                 doTest();
             }

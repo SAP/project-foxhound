@@ -408,6 +408,7 @@ class TaintRange {
     TaintFlow flow_;
 };
 
+class SafeStringTaint;
 
 /*
  * String taint information.
@@ -429,6 +430,17 @@ class TaintRange {
  *
  * This class stores no information about the length of the associated string
  * (to avoid data duplication). Thus, most methods require an index.
+ *
+ * WARNING:
+ *
+ * This class stores taint ranges as a pointer, but does not delete that
+ * pointer during destruction. The reason is that to appear in constexpr
+ * statements (as needed by nsString), the destructor must be default.
+ *
+ * The creator of StringTaint needs to ensure that the clear() method is
+ * called before the object is destroyed.
+ *
+ * For a more convenient version which deletes its own ranges, use SafeStringTaint.
  */
 class StringTaint
 {
@@ -450,7 +462,7 @@ class StringTaint
     // Default destructor needed to allow the StringTaint class to
     // act as a literal and appear in constexpr's, e.g. EmptyTaint
     // This means that any instance of StringTaint needs to call
-    // clear() before the object goes out of scope.
+    // clear() before the object goes out of scope to prevent memory leaks
     ~StringTaint() = default;
 
     StringTaint(const StringTaint& other);
@@ -524,19 +536,18 @@ class StringTaint
     // This will override any previous taint information for that character.
     void set(uint32_t index, const TaintFlow& flow);
 
-    // Returns a new string taint instance holding the taint information of
+    // Transforms the string taint instance holding the taint information of
     // a part of the current string, and thus of a substring of the associated
     // string.
     // Taint ranges in the returned instance will be offsetted by -begin to
     // start at zero.
-    StringTaint subtaint(uint32_t begin, uint32_t end) const;
+    StringTaint& subtaint(uint32_t begin, uint32_t end);
 
-    // Returns a new string taint instance holding the taint information of
-    // a part of the current string, and thus of a substring of the associated
-    // string.
+    // Transforms the taint to hold a part of the current taint, and thus
+    // of a substring of the associated string.
     // Taint ranges in the returned instance will be offsetted by -begin to
     // start at zero.
-    StringTaint subtaint(uint32_t index) const;
+    StringTaint& subtaint(uint32_t index);
 
     // Adds a taint operation to the taint flows of all ranges in this instance.
     StringTaint& extend(const TaintOperation& operation);
@@ -573,27 +584,7 @@ class StringTaint
     std::vector<TaintRange>::const_iterator begin() const;
     std::vector<TaintRange>::const_iterator end() const;
 
-    //
-    // Static constructors corresponding to common string operations.
-    //
-    // These are useful since JavaScript strings are immutable, thus a new
-    // instance with new taint information is created for most operations.
-
-    // Concatenates the taint information of the two provided strings.
-    static StringTaint concat(const StringTaint& left, uint32_t leftlen, const StringTaint& right);
-
-    // Creates taint information for a substring.
-    // TODO remove
-    static StringTaint substr(const StringTaint& taint, uint32_t begin, uint32_t end);
-
-    // Creates a copy of the provided taint information with each flow extended
-    // by the given taint operation.
-    static StringTaint extend(const StringTaint& taint, const TaintOperation& operation);
-
-    // Creates a copy of the provided taint information with each range adjusted to base64
-    static StringTaint toBase64(const StringTaint& taint);
-    // Creates a copy of the provided taint information with each range adjusted from base64
-    static StringTaint fromBase64(const StringTaint& taint);
+    SafeStringTaint safeCopy() const;
 
   private:
     // Assign a new range vector and delete the old one.
@@ -623,6 +614,43 @@ static_assert(sizeof(StringTaint) == sizeof(void*), "Class StringTaint must be c
 // TODO: in c++17 it should be possible to use something like
 // inline constexpr const StringTaint& EmptyTaint = StringTaint();
 #define EmptyTaint (StringTaint())
+
+/*
+ * A version of StringTaint which deletes the taint range pointer when destroyed.
+ */
+class SafeStringTaint : public StringTaint
+{
+  public:
+    // Constructs an empty instance without any taint flows.
+    explicit constexpr SafeStringTaint() : StringTaint() { }
+
+    // Constructs a new instance containing a single taint range.
+    explicit SafeStringTaint(TaintRange range) : StringTaint(range) {}
+
+    // As above, but also constructs the taint range.
+    // TODO make StringTaint(operaton, length) instead.
+    SafeStringTaint(uint32_t begin, uint32_t end, const TaintOperation& operation) : StringTaint(begin, end, operation) {}
+
+    // Construct taint information for a uniformly tainted string.
+    explicit SafeStringTaint(TaintFlow flow, uint32_t length) : StringTaint(flow, length) {}
+
+    // Default destructor needed to allow the StringTaint class to
+    // act as a literal and appear in constexpr's, e.g. EmptyTaint
+    // This means that any instance of StringTaint needs to call
+    // clear() before the object goes out of scope.
+    ~SafeStringTaint() { clear(); }
+
+    SafeStringTaint(const SafeStringTaint& other) : StringTaint(other) {}
+    SafeStringTaint(SafeStringTaint&& other) : StringTaint(other) {}
+    SafeStringTaint& operator=(const SafeStringTaint& other) { StringTaint::operator=(other); return *this; }
+    SafeStringTaint& operator=(SafeStringTaint&& other) { StringTaint::operator=(other); return *this; }
+
+    SafeStringTaint(const StringTaint& other) : StringTaint(other) {}
+    SafeStringTaint(StringTaint&& other) : StringTaint(other) {}
+    SafeStringTaint& operator=(const StringTaint& other) { StringTaint::operator=(other); return *this; }
+    SafeStringTaint& operator=(StringTaint&& other) { StringTaint::operator=(other); return *this; }
+
+};
 
 /*
  * Base class for taint aware string-like objects.
@@ -702,7 +730,7 @@ class TaintableString {
     //
     // This can be used instead of the public constructor, as done by JSString
     // and its derived classes.
-    void initTaint() { new (&taint_) StringTaint(); }
+    void initTaint() { new (&taint_) SafeStringTaint(); }
     void InitTaint() { initTaint(); }
 
     // Finalize this instance.
@@ -713,7 +741,7 @@ class TaintableString {
 
   protected:
     // Protected so child classes can do offset assertions (see js/src/vm/String.h).
-    StringTaint taint_;
+    SafeStringTaint taint_;
 };
 
 // Make sure the TaintableString class is no larger than its StringTaint member.

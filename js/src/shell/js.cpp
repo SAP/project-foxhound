@@ -1493,7 +1493,7 @@ static bool AddIntlExtras(JSContext* cx, unsigned argc, Value* vp) {
 
 static bool
 PrintTaintedString(JSContext* cx, RootedValue *result) {
-    StringTaint taint = result->toString()->taint();
+    SafeStringTaint taint = result->toString()->taint();
 
     RootedString str(cx);
     str = JS_ValueToSource(cx, *result);

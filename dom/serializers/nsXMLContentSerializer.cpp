@@ -157,7 +157,7 @@ nsresult nsXMLContentSerializer::AppendTextData(nsIContent* aNode,
     const char16_t* strStart = frag->Get2b() + aStartOffset;
     if (aTranslateEntities) {
       // Taintfox: propagate taint
-      aStr.Taint().concat(frag->Taint().subtaint(aStartOffset, endoffset), aStr.Length());
+      aStr.Taint().concat(frag->Taint().safeCopy().subtaint(aStartOffset, endoffset), aStr.Length());
       NS_ENSURE_TRUE(AppendAndTranslateEntities(
                          Substring(strStart, strStart + length), aStr),
                      NS_ERROR_OUT_OF_MEMORY);
@@ -177,7 +177,7 @@ nsresult nsXMLContentSerializer::AppendTextData(nsIContent* aNode,
                      NS_ERROR_OUT_OF_MEMORY);
     } else {
       // Taintfox: propagate taint
-      aStr.Taint().concat(frag->Taint().subtaint(aStartOffset, endoffset), aStr.Length());
+      aStr.Taint().concat(frag->Taint().safeCopy().subtaint(aStartOffset, endoffset), aStr.Length());
       NS_ENSURE_TRUE(aStr.Append(utf16, mozilla::fallible),
                      NS_ERROR_OUT_OF_MEMORY);
     }
@@ -1245,8 +1245,8 @@ bool nsXMLContentSerializer::AppendAndTranslateEntities(
 
     // Taintfox: propagate taint for non replaced chars
     aOutputStr.Taint().concat(
-      aStr.Taint().subtaint(chunkStart, chunkStart + advanceLength),
-      aOutputStr.Length());
+                              aStr.Taint().safeCopy().subtaint(chunkStart, chunkStart + advanceLength),
+                              aOutputStr.Length());
 
     NS_ENSURE_TRUE(
         aOutputStr.Append(fragmentStart, advanceLength, mozilla::fallible),

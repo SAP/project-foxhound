@@ -458,8 +458,15 @@ StringTaint& StringTaint::operator=(StringTaint&& other)
 
 void StringTaint::clear()
 {
-    delete ranges_;
-    ranges_ = nullptr;
+    if (ranges_ != nullptr) {
+        delete ranges_;
+        ranges_ = nullptr;
+    }
+}
+
+SafeStringTaint StringTaint::safeCopy() const
+{
+    return SafeStringTaint(*this);
 }
 
 void StringTaint::clearBetween(uint32_t begin, uint32_t end)
@@ -573,28 +580,26 @@ void StringTaint::set(uint32_t index, const TaintFlow& flow)
     CHECK_RANGES(ranges_);
 }
 
-StringTaint StringTaint::subtaint(uint32_t begin, uint32_t end) const
+StringTaint& StringTaint::subtaint(uint32_t begin, uint32_t end)
 {
     MOZ_ASSERT(begin <= end);
 
-    StringTaint newtaint;
-    if (begin == end) {
-        return newtaint;
-    }
+    auto ranges = new std::vector<TaintRange>();
 
     for (auto& range : *this) {
         if (range.begin() < end && range.end() > begin) {
-	    newtaint.append(TaintRange(std::max(range.begin(), begin) - begin,
-				       std::min(range.end(), end) - begin,
-				       range.flow()));
+	    ranges->push_back(TaintRange(std::max(range.begin(), begin) - begin,
+                                        std::min(range.end(), end) - begin,
+                                        range.flow()));
         }
     }
 
-    CHECK_RANGES(newtaint.ranges_);
-    return newtaint;
+    CHECK_RANGES(ranges);
+    assign(ranges);
+    return *this;
 }
 
-StringTaint StringTaint::subtaint(uint32_t index) const
+StringTaint& StringTaint::subtaint(uint32_t index)
 {
     return subtaint(index, index + 1);
 }
@@ -756,27 +761,6 @@ std::vector<TaintRange>::const_iterator StringTaint::end() const
     return ranges_->end();
 }
 
-StringTaint StringTaint::concat(const StringTaint& left, uint32_t leftlen, const StringTaint& right)
-{
-    StringTaint newtaint = left;
-    newtaint.concat(right, leftlen);
-    return newtaint;
-}
-
-StringTaint StringTaint::substr(const StringTaint& taint, uint32_t begin, uint32_t end)
-{
-    return taint.subtaint(begin, end);
-}
-
-StringTaint StringTaint::extend(const StringTaint& taint, const TaintOperation& operation)
-{
-    StringTaint newtaint;
-    for (auto& range : taint)
-        newtaint.append(TaintRange(range.begin(), range.end(), TaintFlow::extend(range.flow(), operation)));
-
-    return newtaint;
-}
-
 void StringTaint::assign(std::vector<TaintRange>* ranges)
 {
     clear();
@@ -843,18 +827,6 @@ StringTaint& StringTaint::fromBase64()
     removeOverlaps();
 
     return *this;
-}
-
-StringTaint StringTaint::toBase64(const StringTaint& taint)
-{
-    StringTaint newTaint = taint;
-    return newTaint.toBase64();
-}
-
-StringTaint StringTaint::fromBase64(const StringTaint& taint)
-{
-    StringTaint newTaint = taint;
-    return newTaint.fromBase64();
 }
 
 // Simple parser for a JSON like representation of taint information.

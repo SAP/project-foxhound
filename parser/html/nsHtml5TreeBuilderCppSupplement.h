@@ -1138,7 +1138,7 @@ nsHtml5TreeBuilder::accumulateCharacters(const char16_t* aBuf, const StringTaint
   MOZ_RELEASE_ASSERT(charBufferLen + aLength <= charBuffer.length,
                      "About to memcpy past the end of the buffer!");
   memcpy(charBuffer + charBufferLen, aBuf + aStart, sizeof(char16_t) * aLength);
-  charTaint.concat(taint.subtaint(aStart, aStart + aLength), charBufferLen);
+  charTaint.concat(taint.safeCopy().subtaint(aStart, aStart + aLength), charBufferLen);
   charBufferLen += aLength;
 }
 
