@@ -1900,7 +1900,7 @@ void js::Nursery::sweepStrings() {
   for (auto str : stringsWithNurseryMemory_) {
     JSString::sweepAfterMinorGC(fop, str);
   }
-  mapsWithNurseryMemory_.clearAndFree();
+  stringsWithNurseryMemory_.clearAndFree();
 }
 
 JS_PUBLIC_API void JS::EnableNurseryStrings(JSContext* cx) {
