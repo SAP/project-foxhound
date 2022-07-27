@@ -141,7 +141,7 @@ js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
   // the original value of a manually tainted string was for debugging/testing.
   TaintOperation op = TaintOperation("manual taint source", true, TaintLocationFromContext(cx), { taintarg(cx, str) });
   op.setSource();
-  StringTaint taint(0, str->length(), op);
+  SafeStringTaint taint(0, str->length(), op);
 
   JSString* tainted_str = NewDependentString(cx, str, 0, str->length());
   if (!tainted_str)
@@ -322,7 +322,7 @@ str_taint_setter(JSContext* cx, unsigned argc, Value* vp)
     return false;
 
   RootedValue v(cx);
-  StringTaint taint;
+  SafeStringTaint taint;
 
   for (uint32_t i = 0; i < length; ++i) {
     if (!JS_GetElement(cx, array, i, &v) || !v.isObject())
@@ -483,7 +483,7 @@ static bool str_escape(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // TaintFox: Build new taint information and add it to the result string.
-  StringTaint newtaint;
+  SafeStringTaint newtaint;
 
   InlineCharBuffer<Latin1Char> newChars;
   uint32_t newLength = 0;  // initialize to silence GCC warning
@@ -654,11 +654,11 @@ static bool str_unescape(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Save operation to avoid GC issues
-  StringTaint taint = str->taint();
+  SafeStringTaint taint = str->taint();
   TaintOperation op = TaintOperationFromContext(cx, "unescape", true, str);
 
   // Steps 2, 4-5.
-  StringTaint newtaint;
+  SafeStringTaint newtaint;
   if (str->hasLatin1Chars()) {
     AutoCheckCannotGC nogc;
     if (!Unescape(sb, str->latin1Range(nogc), str->taint(), &newtaint)) {
@@ -894,7 +894,7 @@ JSString* js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt,
   uint32_t len = lengthInt;
 
   // TaintFox
-  StringTaint newTaint = str->taint().subtaint(begin, begin + len);
+  SafeStringTaint newTaint = str->taint().safeCopy().subtaint(begin, begin + len);
   
   /*
    * Optimization for one level deep ropes.
@@ -1111,7 +1111,7 @@ static JSString* ToLowerCase(JSContext* cx, JSLinearString* str) {
 
   InlineCharBuffer<CharT> newChars;
   // Taintfox: cache the taint up here to prevent GC issues
-  StringTaint taint = str->taint();
+  SafeStringTaint taint = str->taint();
   if (taint.hasTaint()) {
     taint.extend(TaintOperationFromContextJSString(cx, "toLowerCase", true, str));
   }
@@ -1351,7 +1351,7 @@ static bool str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
 
     // TaintFox: propagate taint and add operation
     MOZ_ASSERT(result.isString());
-    result.toString()->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLocaleLowerCase", true, str)));
+    result.toString()->setTaint(cx, str->taint().safeCopy().extend(TaintOperationFromContext(cx, "toLocaleLowerCase", true, str)));
 
     args.rval().set(result);
     return true;
@@ -1534,7 +1534,7 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
   using TwoByteBuffer = InlineCharBuffer<char16_t>;
 
   mozilla::MaybeOneOf<Latin1Buffer, TwoByteBuffer> newChars;
-  StringTaint taint = str->taint();
+  SafeStringTaint taint = str->taint();
   if (taint.hasTaint()) {
     taint.extend(TaintOperationFromContextJSString(cx, "toUpperCase", true, str));
   }
@@ -1773,7 +1773,7 @@ static bool str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
 
     // TaintFox: propagate taint and add operation
     MOZ_ASSERT(result.isString());
-    result.toString()->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLocaleUpperCase", true, str)));
+    result.toString()->setTaint(cx, str->taint().safeCopy().extend(TaintOperationFromContext(cx, "toLocaleUpperCase", true, str)));
 
     args.rval().set(result);
     return true;
@@ -1935,7 +1935,7 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
 
   // TaintFox: Add taint operation.
   if (str->taint().hasTaint()) {
-    ns->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "normalize", true, str)));
+    ns->setTaint(cx, str->taint().safeCopy().extend(TaintOperationFromContext(cx, "normalize", true, str)));
   }
 
   // Step 7.
@@ -3484,7 +3484,7 @@ static JSString* ReplaceAll(JSContext* cx, JSLinearString* string,
       // Append the substring before the current match.
 
       // Taintfox - first append taint for the substring before the current match
-      result.taint().concat(string->taint().subtaint(endOfLastMatch, position), result.length());
+      result.taint().concat(string->taint().safeCopy().subtaint(endOfLastMatch, position), result.length());
 
       if (!result.append(strChars + endOfLastMatch,
                          position - endOfLastMatch)) {
@@ -3517,7 +3517,7 @@ static JSString* ReplaceAll(JSContext* cx, JSLinearString* string,
 
     // Taintfox: append the final taint
     // Taintfox - first append taint for the substring before the current match
-    result.taint().concat(string->taint().subtaint(endOfLastMatch, stringLength), result.length());
+    result.taint().concat(string->taint().safeCopy().subtaint(endOfLastMatch, stringLength), result.length());
 
     // Step 15.
     // Append the substring after the last match.
@@ -4497,7 +4497,7 @@ static MOZ_NEVER_INLINE EncodeResult Encode(StringBuffer& sb,
           return false;
         }
       }
-      sb.taint().concat(taint.subtaint(start, end), sb.length());
+      sb.taint().concat(taint.safeCopy().subtaint(start, end), sb.length());
       return sb.append(chars + start, chars + end);
     }
     return true;
@@ -4599,7 +4599,7 @@ static MOZ_ALWAYS_INLINE bool Encode(JSContext* cx, HandleLinearString str,
   }
 
   // TaintFox: Add encode operation to output taint.
-  StringTaint taint = sb.empty() ? str->taint() : sb.taint();
+  SafeStringTaint taint = sb.empty() ? str->taint() : sb.taint();
   if (unescapedSet == js_isUriReservedPlusPound) {
     taint.extend(TaintOperationFromContext(cx, "encodeURI", true, str));
   } else {
@@ -4619,7 +4619,7 @@ static DecodeResult Decode(StringBuffer& sb, const CharT* chars, size_t length,
     MOZ_ASSERT(start <= end);
 
     if (start < end) {
-      sb.taint().concat(taint.subtaint(start, end), sb.length());
+      sb.taint().concat(taint.safeCopy().subtaint(start, end), sb.length());
       return sb.append(chars + start, chars + end);
     }
     return true;
@@ -4763,7 +4763,7 @@ static bool Decode(JSContext* cx, HandleLinearString str,
   }
 
   // TaintFox: Add decode operation to output taint.
-  StringTaint taint = sb.empty() ? str->taint() : sb.taint();
+  SafeStringTaint taint = sb.empty() ? str->taint() : sb.taint();
   if(reservedSet == js_isUriReservedPlusPound) {
     taint.extend(TaintOperationFromContext(cx, "decodeURI", true, str));
   } else {

@@ -112,7 +112,7 @@ static JSString* CopyStringPure(JSContext* cx, JSString* str) {
 
   size_t len = str->length();
   // Copy taint up here to avoid GC problems later
-  StringTaint taint = str->Taint();
+  SafeStringTaint taint = str->Taint();
   JSString* copy;
   if (str->isLinear()) {
     /* Only use AutoStableStringChars if the NoGC allocation fails. */

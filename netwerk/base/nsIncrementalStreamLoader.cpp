@@ -123,7 +123,7 @@ nsresult nsIncrementalStreamLoader::WriteSegmentFun(
     }
 
     if (consumedCount < count) {
-      self->mTaint.concat(taint.subtaint(consumedCount, count), self->mData.length());
+      self->mTaint.concat(taint.safeCopy().subtaint(consumedCount, count), self->mData.length());
       if (!self->mData.append(fromSegment + consumedCount,
                               count - consumedCount)) {
         self->mData.clearAndFree();
@@ -164,7 +164,7 @@ nsresult nsIncrementalStreamLoader::WriteSegmentFun(
       if (consumedCount > 0) {
         self->mData.erase(self->mData.begin() + consumedCount);
       }
-      self->mTaint = self->mTaint.subtaint(consumedCount, length);
+      self->mTaint = self->mTaint.safeCopy().subtaint(consumedCount, length);
     }
   }
 

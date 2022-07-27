@@ -108,6 +108,9 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineStringForAtom(
     return nullptr;
   }
 
+  // TaintFox: Init taint information.
+  str->initTaint();
+
   mozilla::PodCopy(storage, chars, length);
   return str;
 }
@@ -130,7 +133,7 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineString(
   if (optTaint != nullptr) {
     s->setTaint(cx, *optTaint);
   } else if (base->isTainted()) {
-    StringTaint newTaint = base->taint().subtaint(start, start + length);
+    SafeStringTaint newTaint = base->taint().safeCopy().subtaint(start, start + length);
     s->setTaint(cx, newTaint);
   }
 
@@ -258,7 +261,7 @@ MOZ_ALWAYS_INLINE void JSDependentString::init(JSContext* cx,
   if (optTaint != nullptr) {
     this->setTaint(cx, *optTaint);
   } else if (base->isTainted()) {
-    this->setTaint(cx, base->taint().subtaint(start, start + length));
+    this->setTaint(cx, base->taint().safeCopy().subtaint(start, start + length));
   }
 }
 
@@ -269,7 +272,7 @@ MOZ_ALWAYS_INLINE JSLinearString* JSDependentString::new_(
    * Try to avoid long chains of dependent strings. We can't avoid these
    * entirely, however, due to how ropes are flattened.
    */
-  StringTaint taint = baseArg->taint().subtaint(start, start + length);
+  SafeStringTaint taint = baseArg->taint().safeCopy().subtaint(start, start + length);
   if (baseArg->isDependent()) {
     // Taintfox: taint lost if the base is followed and is untainted
     // We ensure taint is propagated in NewDependentString function

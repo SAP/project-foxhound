@@ -433,7 +433,7 @@ class MOZ_STACK_CLASS AutoReadSegment final {
   StringTaint Taint() const
   {
     MOZ_ASSERT(NS_SUCCEEDED(mStatus));
-    return mTaint.subtaint(mOffset, mLength);
+    return mTaint.safeCopy().subtaint(mOffset, mLength);
   }
 
   uint32_t Length() const {
@@ -662,7 +662,7 @@ nsPipe::GetReadSegment(nsPipeReadState& aReadState, const char*& aSegment,
 
   // Taintfox
   if (aTaint)
-    *aTaint = mTaint.subtaint(aReadState.mBytesRead, aReadState.mBytesRead + aLength);
+    *aTaint = mTaint.safeCopy().subtaint(aReadState.mBytesRead, aReadState.mBytesRead + aLength);
 
   return NS_OK;
 }

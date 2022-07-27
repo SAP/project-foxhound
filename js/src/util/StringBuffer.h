@@ -392,7 +392,7 @@ inline void StringBuffer::infallibleAppendSubstring(JSLinearString* base,
   MOZ_ASSERT_IF(base->hasTwoByteChars(), isTwoByte());
 
   // TaintFox: append taint information.
-  taint_.concat(StringTaint::substr(base->taint(), off, off + len), length());
+  taint_.concat(base->taint().safeCopy().subtaint(off, off + len), length());
 
   JS::AutoCheckCannotGC nogc;
   if (base->hasLatin1Chars()) {
@@ -408,7 +408,7 @@ inline bool StringBuffer::appendSubstring(JSLinearString* base, size_t off,
 
   // TaintFox: append taint information.
   // This probably behaves incorrectly if the appendSubstring operation fails..
-  taint_.concat(StringTaint::substr(base->taint(), off, off + len), length());
+  taint_.concat(base->taint().safeCopy().subtaint(off, off + len), length());
 
   JS::AutoCheckCannotGC nogc;
   if (isLatin1()) {

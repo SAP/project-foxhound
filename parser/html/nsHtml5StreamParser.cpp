@@ -558,7 +558,7 @@ nsresult nsHtml5StreamParser::SniffStreamBytes(Span<const uint8_t> aFromSegment,
       case SEEN_UTF_16_LE_FIRST_BYTE:
         if (!aEof && aFromSegment[i] == 0xFE) {
           SetupDecodingFromBom(UTF_16LE_ENCODING);
-          return WriteStreamBytes(aFromSegment.From(i + 1), aTaint.subtaint(i + 1, aFromSegment.Length()));
+          return WriteStreamBytes(aFromSegment.From(i + 1), aTaint.safeCopy().subtaint(i + 1, aFromSegment.Length()));
         }
         prefix = utf16le;
         prefixLength = 1 - i;
@@ -567,7 +567,7 @@ nsresult nsHtml5StreamParser::SniffStreamBytes(Span<const uint8_t> aFromSegment,
       case SEEN_UTF_16_BE_FIRST_BYTE:
         if (!aEof && aFromSegment[i] == 0xFF) {
           SetupDecodingFromBom(UTF_16BE_ENCODING);
-          return WriteStreamBytes(aFromSegment.From(i + 1), aTaint.subtaint(i + 1, aFromSegment.Length()));
+          return WriteStreamBytes(aFromSegment.From(i + 1), aTaint.safeCopy().subtaint(i + 1, aFromSegment.Length()));
         }
         prefix = utf16be;
         prefixLength = 1 - i;
@@ -584,7 +584,7 @@ nsresult nsHtml5StreamParser::SniffStreamBytes(Span<const uint8_t> aFromSegment,
       case SEEN_UTF_8_SECOND_BYTE:
         if (!aEof && aFromSegment[i] == 0xBF) {
           SetupDecodingFromBom(UTF_8_ENCODING);
-          return WriteStreamBytes(aFromSegment.From(i + 1), aTaint.subtaint(i + 1, aFromSegment.Length()));
+          return WriteStreamBytes(aFromSegment.From(i + 1), aTaint.safeCopy().subtaint(i + 1, aFromSegment.Length()));
         }
         prefixLength = 2 - i;
         mBomState = BOM_SNIFFING_OVER;
@@ -628,7 +628,7 @@ nsresult nsHtml5StreamParser::SniffStreamBytes(Span<const uint8_t> aFromSegment,
       case SEEN_UTF_16_BE_XML_FIFTH:
         if (!aEof && aFromSegment[i] == 'x') {
           SetupDecodingFromUtf16BogoXml(UTF_16BE_ENCODING);
-          return WriteStreamBytes(aFromSegment.From(i + 1), aTaint.subtaint(i + 1, aFromSegment.Length()));
+          return WriteStreamBytes(aFromSegment.From(i + 1), aTaint.safeCopy().subtaint(i + 1, aFromSegment.Length()));
         }
         prefix = utf16beXml;
         prefixLength = 5 - i;
@@ -677,7 +677,7 @@ nsresult nsHtml5StreamParser::SniffStreamBytes(Span<const uint8_t> aFromSegment,
       case SEEN_UTF_16_LE_XML_FIFTH:
         if (!aEof && aFromSegment[i] == 0x00) {
           SetupDecodingFromUtf16BogoXml(UTF_16LE_ENCODING);
-          return WriteStreamBytes(aFromSegment.From(i + 1), aTaint.subtaint(i + 1, aFromSegment.Length()));
+          return WriteStreamBytes(aFromSegment.From(i + 1), aTaint.safeCopy().subtaint(i + 1, aFromSegment.Length()));
         }
         prefix = utf16leXml;
         prefixLength = 5 - i;
@@ -888,7 +888,7 @@ nsresult nsHtml5StreamParser::WriteStreamBytes(
 #if (DEBUG_E2E_TAINTING)
       printf("+++++ Writing taint of length %d, %d/%lu bytes written +++++\n", aTaint.begin()->end(), read, written);
 #endif
-      mLastBuffer->setTaint(aTaint.subtaint(totalRead, totalRead + read));
+      mLastBuffer->setTaint(aTaint.safeCopy().subtaint(totalRead, totalRead + read));
     }
 
     src = src.From(read);
@@ -1452,7 +1452,7 @@ void nsHtml5StreamParser::DoDataAvailableBuffer(
     }
     mNumBytesBuffered = boundary;
     mBufferedBytes.AppendElement(std::move(*maybeHead));
-    DoDataAvailable(mBufferedBytes.LastElement(), aTaint.subtaint(0, untilBoundary));
+    DoDataAvailable(mBufferedBytes.LastElement(), aTaint.safeCopy().subtaint(0, untilBoundary));
     // Re-decode may have happened here.
 
     Maybe<Buffer<uint8_t>> maybeTail = Buffer<uint8_t>::CopyFrom(tail);
@@ -1462,7 +1462,7 @@ void nsHtml5StreamParser::DoDataAvailableBuffer(
     }
     mNumBytesBuffered += tail.Length();
     mBufferedBytes.AppendElement(std::move(*maybeTail));
-    DoDataAvailable(mBufferedBytes.LastElement(), aTaint.subtaint(untilBoundary, aBuffer.Length()));
+    DoDataAvailable(mBufferedBytes.LastElement(), aTaint.safeCopy().subtaint(untilBoundary, aBuffer.Length()));
   }
   // Do this clean-up here to avoid use-after-free when
   // DoDataAvailable is passed a span pointing into an

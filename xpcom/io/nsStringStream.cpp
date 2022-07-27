@@ -171,7 +171,7 @@ class nsStringInputStream final : public nsIStringInputStream,
 
   size_t Length() const { return mSource ? mSource->Data().Length() : 0; }
 
-  StringTaint Taint() const { return mSource ? mSource->Taint().subtaint(mOffset, Length()) : EmptyTaint; }
+  StringTaint Taint() const { return mSource ? mSource->Taint().safeCopy().subtaint(mOffset, Length()) : EmptyTaint; }
 
   size_t LengthRemaining() const { return Length() - mOffset; }
 

@@ -379,7 +379,7 @@ static nsresult T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
       if (!writing) {
 
         // Taintfox: propagate taint before string append
-        aResult.Taint().concat(aTaint.subtaint(0, i), aResult.Length());
+        aResult.Taint().concat(aTaint.safeCopy().subtaint(0, i), aResult.Length());
 
         if (!aResult.Append(aPart, i, mozilla::fallible)) {
           return NS_ERROR_OUT_OF_MEMORY;
@@ -416,7 +416,7 @@ static nsresult T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
       if (!writing) {
 
         // Taintfox: propagate taint before string append
-        aResult.Taint().concat(aTaint.subtaint(0, i), aResult.Length());
+        aResult.Taint().concat(aTaint.safeCopy().subtaint(0, i), aResult.Length());
 
         if (!aResult.Append(aPart, i, mozilla::fallible)) {
           return NS_ERROR_OUT_OF_MEMORY;
@@ -667,7 +667,7 @@ nsresult NS_UnescapeURL(const char* aStr, int32_t aLen, const StringTaint& aTain
           auto toCopy = p - last;
           memcpy(destPtr + destPos, last, toCopy);
           // Taintfox: direct copy taint for unescaped chars
-          aResult.Taint().concat(aTaint.subtaint(srcPos, srcPos + toCopy), destPos);
+          aResult.Taint().concat(aTaint.safeCopy().subtaint(srcPos, srcPos + toCopy), destPos);
           destPos += toCopy;
           srcPos += toCopy;
           MOZ_ASSERT(destPos <= len);
@@ -676,7 +676,7 @@ nsresult NS_UnescapeURL(const char* aStr, int32_t aLen, const StringTaint& aTain
         destPtr[destPos] = u;
         // Taintfox: copy single taint from source
         if (aTaint.hasTaint()) {
-          StringTaint charTaint = aTaint.subtaint(srcPos, srcPos + 3);
+          StringTaint charTaint = aTaint.safeCopy().subtaint(srcPos, srcPos + 3);
           // Take the taintflow of the first tainted character
           aResult.Taint().set(destPos, charTaint.begin()->flow());
         }
@@ -693,7 +693,7 @@ nsresult NS_UnescapeURL(const char* aStr, int32_t aLen, const StringTaint& aTain
     memcpy(destPtr + destPos, last, toCopy);
 
     // Taintfox: direct copy taint for unescaped chars
-    aResult.Taint().concat(aTaint.subtaint(srcPos, srcPos + toCopy), destPos);
+    aResult.Taint().concat(aTaint.safeCopy().subtaint(srcPos, srcPos + toCopy), destPos);
 
     destPos += toCopy;
     MOZ_ASSERT(destPos <= len);

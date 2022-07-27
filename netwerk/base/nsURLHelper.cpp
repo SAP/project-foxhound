@@ -996,7 +996,7 @@ void URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput) {
   for (const char* iter = start; iter != end;) {
     // replace '+' with U+0020
     if (*iter == '+') {
-      unescaped.Taint().concat(aInput.Taint().subtaint(std::distance(start, iter)), unescaped.Length());
+      unescaped.Taint().concat(aInput.Taint().safeCopy().subtaint(std::distance(start, iter)), unescaped.Length());
       unescaped.Append(' ');
       ++iter;
       continue;
@@ -1021,11 +1021,11 @@ void URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput) {
       if (first != end && second != end && asciiHexDigit(*first) &&
           asciiHexDigit(*second)) {
         // Taintfox: this is an approximation as we compress the taint of 3 chars (e.g. %40) into just one
-        unescaped.Taint().concat(aInput.Taint().subtaint(std::distance(start, first)), unescaped.Length());
+        unescaped.Taint().concat(aInput.Taint().safeCopy().subtaint(std::distance(start, first)), unescaped.Length());
         unescaped.Append(hexDigit(*first) * 16 + hexDigit(*second));
         iter = second + 1;
       } else {
-        unescaped.Taint().concat(aInput.Taint().subtaint(std::distance(start, iter)), unescaped.Length());
+        unescaped.Taint().concat(aInput.Taint().safeCopy().subtaint(std::distance(start, iter)), unescaped.Length());
         unescaped.Append('%');
         ++iter;
       }
@@ -1033,7 +1033,7 @@ void URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput) {
       continue;
     }
     // Taintfox: append single char taint
-    unescaped.Taint().concat(aInput.Taint().subtaint(std::distance(start, iter)), unescaped.Length());
+    unescaped.Taint().concat(aInput.Taint().safeCopy().subtaint(std::distance(start, iter)), unescaped.Length());
     unescaped.Append(*iter);
     ++iter;
   }
@@ -1056,14 +1056,14 @@ bool URLParams::ParseNextInternal(const char*& aStart, const char* const aEnd,
   if (iter != aEnd) {
     string.Rebind(aStart, iter);
     // Taintfox: propagate taint
-    string.AssignTaint(aTaint.subtaint(std::distance(stringStart, aStart),
-                                       std::distance(stringStart, iter)));
+    string.AssignTaint(aTaint.safeCopy().subtaint(std::distance(stringStart, aStart),
+                                                  std::distance(stringStart, iter)));
     aStart = iter + 1;
   } else {
     string.Rebind(aStart, aEnd);
     // Taintfox: propagate taint
-    string.AssignTaint(aTaint.subtaint(std::distance(stringStart, aStart),
-                                       std::distance(stringStart, aEnd)));
+    string.AssignTaint(aTaint.safeCopy().subtaint(std::distance(stringStart, aStart),
+                                                  std::distance(stringStart, aEnd)));
     aStart = aEnd;
   }
 
@@ -1081,12 +1081,12 @@ bool URLParams::ParseNextInternal(const char*& aStart, const char* const aEnd,
   if (eqIter != eqEnd) {
     name.Rebind(eqStart, eqIter);
     // Taintfox: propagate taint
-    name.AssignTaint(string.Taint().subtaint(std::distance(eqStart, eqStart),
-                                             std::distance(eqStart, eqIter)));
+    name.AssignTaint(string.Taint().safeCopy().subtaint(std::distance(eqStart, eqStart),
+                                                        std::distance(eqStart, eqIter)));
     value.Rebind(eqIter + 1, eqEnd);
     // Taintfox: propagate taint
-    value.AssignTaint(string.Taint().subtaint(std::distance(eqStart, eqIter + 1),
-                                              std::distance(eqStart, eqEnd)));
+    value.AssignTaint(string.Taint().safeCopy().subtaint(std::distance(eqStart, eqIter + 1),
+                                                         std::distance(eqStart, eqEnd)));
   } else {
     // Taintfox: taint should be propagated here
     name.Rebind(string, 0);

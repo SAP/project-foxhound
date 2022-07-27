@@ -942,7 +942,7 @@ JSString* js::ConcatStringsQuiet(
                           : JSInlineString::lengthFits<char16_t>(wholeLength);
   if (canUseInline) {
     // Taintfox: compute the taint here
-    StringTaint newTaint = left->taint();
+    SafeStringTaint newTaint = left->taint();
     newTaint.concat(right->taint(), left->length());
 
     Latin1Char* latin1Buf = nullptr;  // initialize to silence GCC warning
@@ -2293,9 +2293,10 @@ JS_PUBLIC_API JSString* js::ToStringSlow(JSContext* cx, HandleValue v) {
 
 /* static */
 void JSString::sweepAfterMinorGC(JSFreeOp* fop, JSString* str) {
-  bool wasInsideNursery = IsInsideNursery(str);
-  if (wasInsideNursery && !IsForwarded(str)) {
-    str->clearTaint();
-    return;
+  if (str) {
+    bool wasInsideNursery = IsInsideNursery(str);
+    if (wasInsideNursery && !IsForwarded(str)) {
+      str->clearTaint();
+    }
   }
 }
