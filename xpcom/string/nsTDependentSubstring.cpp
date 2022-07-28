@@ -16,7 +16,7 @@ void nsTDependentSubstring<T>::Rebind(const substring_type& str,
   this->Finalize();
 
   size_type strLength = str.Length();
-  StringTaint taint = str.Taint();
+  SafeStringTaint taint = str.Taint().safeCopy();
 
   if (startPos > strLength) {
     startPos = strLength;

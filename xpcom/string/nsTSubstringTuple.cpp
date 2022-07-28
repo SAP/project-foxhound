@@ -15,10 +15,10 @@
 template <typename T>
 StringTaint nsTSubstringTuple<T>::Taint() const
 {
-  StringTaint res;
+  SafeStringTaint res;
   uint32_t len;
   if (mHead) {
-    res = mHead->Taint();
+    res = mHead->Taint().safeCopy();
     len = mHead->Length();
   } else {
     res = TO_SUBSTRING(mFragA).Taint();

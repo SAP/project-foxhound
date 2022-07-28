@@ -195,7 +195,7 @@ static size_t QuoteHelper(const JSLinearString& linear, StringBuffer& sb,
                           size_t sbOffset) {
   size_t len = linear.length();
 
-  StringTaint taint;
+  SafeStringTaint taint;
   JS::AutoCheckCannotGC nogc;
   RangedPtr<const SrcCharT> srcBegin{linear.chars<SrcCharT>(nogc), len};
   RangedPtr<DstCharT> dstBegin{sb.begin<DstCharT>(), sb.begin<DstCharT>(),
@@ -1205,7 +1205,7 @@ static bool json_parse(JSContext* cx, unsigned argc, Value* vp) {
 
   // Taintfox: save the taint in a local variable
   // Calling linear->taint() later is not valid
-  StringTaint taint = linear->taint();
+  SafeStringTaint taint = linear->taint().safeCopy();
 
   AutoStableStringChars linearChars(cx);
   if (!linearChars.init(cx, linear)) {

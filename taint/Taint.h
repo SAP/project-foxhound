@@ -16,8 +16,6 @@
 #include <string>
 #include <vector>
 
-#include "mozilla/Assertions.h"
-
 /*
  * How to taint:
  *

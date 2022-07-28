@@ -8710,7 +8710,7 @@ class StringBuilder {
     size_t currentPosition = 0;
     for (char16_t c : aStr) {
       TaintFlow flow(aTaint.atRef(currentPosition));
-      StringTaint taint = aTaint.safeCopy().subtaint(flushedUntil, currentPosition);
+      SafeStringTaint taint = aTaint.safeCopy().subtaint(flushedUntil, currentPosition);
       switch (c) {
         case '"':
           aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
@@ -8733,7 +8733,7 @@ class StringBuilder {
       currentPosition++;
     }
     if (currentPosition > flushedUntil) {
-      StringTaint taint = aTaint.safeCopy().subtaint(flushedUntil, currentPosition);
+      SafeStringTaint taint = aTaint.safeCopy().subtaint(flushedUntil, currentPosition);
       aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
     }
     // Taintfox: Add the taint operation to all flows
@@ -8746,7 +8746,7 @@ class StringBuilder {
     size_t currentPosition = 0;
     for (T c : aStr) {
       TaintFlow flow(aTaint.atRef(currentPosition));
-      StringTaint taint = aTaint.safeCopy().subtaint(flushedUntil, currentPosition);
+      SafeStringTaint taint = aTaint.safeCopy().subtaint(flushedUntil, currentPosition);
       switch (c) {
         case '<':
           aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
@@ -8774,7 +8774,7 @@ class StringBuilder {
       currentPosition++;
     }
     if (currentPosition > flushedUntil) {
-      StringTaint taint = aTaint.safeCopy().subtaint(flushedUntil, currentPosition);
+      SafeStringTaint taint = aTaint.safeCopy().subtaint(flushedUntil, currentPosition);
       aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
     }
     // Taintfox: Add the taint operation to all flows
