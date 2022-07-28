@@ -15,6 +15,8 @@
 #include <string>   // stoi and u32string
 #include <algorithm>
 
+#include "mozilla/Assertions.h"
+
 #define DEBUG_LINE() std::cout << __PRETTY_FUNCTION__ << std::endl;
 
 TaintLocation::TaintLocation(std::u16string filename, int32_t line, int32_t pos, std::u16string function)

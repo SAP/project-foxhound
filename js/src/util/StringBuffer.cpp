@@ -90,7 +90,7 @@ JSLinearString* StringBuffer::finishStringInternal(JSContext* cx) {
   size_t len = length();
 
   // Taintfox: propagate taint
-  StringTaint taint = this->taint();
+  SafeStringTaint taint = this->taint().safeCopy();
 
   // Taintfox: Disable static string return
   // if (JSAtom* staticStr = cx->staticStrings().lookup(begin<CharT>(), len)) {
