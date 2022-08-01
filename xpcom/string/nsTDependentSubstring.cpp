@@ -30,7 +30,7 @@ void nsTDependentSubstring<T>::Rebind(const substring_type& str,
   DataFlags newDataFlags = DataFlags(0);
   this->SetData(newData, newLength, newDataFlags);
   // TaintFox: propagate taint
-  this->AssignTaint(taint.subtaint(startPos, startPos + newLength));
+  this->AssignTaint(taint.safeCopy().subtaint(startPos, startPos + newLength));
 }
 
 template <typename T>

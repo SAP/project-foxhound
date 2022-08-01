@@ -374,6 +374,8 @@ class TaintRange {
 
     TaintRange(const TaintRange& other);
 
+    ~TaintRange();
+
     TaintRange& operator=(const TaintRange& other);
 
     // Returns a reference to the taint flow associated with this range.

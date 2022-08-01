@@ -45,7 +45,7 @@ struct String {
 #endif
 
   // TaintFox: make shadow::String compatible with JSString.
-  StringTaint taint;
+  SafeStringTaint taint;
 
   union {
     const JS::Latin1Char* nonInlineCharsLatin1;

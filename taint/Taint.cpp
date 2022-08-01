@@ -17,6 +17,8 @@
 
 #include "mozilla/Assertions.h"
 
+#include "nsISupportsImpl.h"
+
 #define DEBUG_LINE() std::cout << __PRETTY_FUNCTION__ << std::endl;
 
 TaintLocation::TaintLocation(std::u16string filename, int32_t line, int32_t pos, std::u16string function)
@@ -125,21 +127,33 @@ void TaintOperation::dump(const TaintOperation& op) {
 void TaintOperation::dump(const TaintOperation& op) {}
 #endif
 
-TaintNode::TaintNode(TaintNode* parent, const TaintOperation& operation) : parent_(parent), refcount_(1), operation_(operation)
+TaintNode::TaintNode(TaintNode* parent, const TaintOperation& operation)
+    : parent_(parent), refcount_(1), operation_(operation)
 {
+    MOZ_COUNT_CTOR(TaintNode);
     if (parent_)
         parent_->addref();
 }
 
-TaintNode::TaintNode(TaintNode* parent, TaintOperation&& operation) : parent_(parent), refcount_(1), operation_(operation)
+TaintNode::TaintNode(TaintNode* parent, TaintOperation&& operation)
+    : parent_(parent), refcount_(1), operation_(operation)
 {
+    MOZ_COUNT_CTOR(TaintNode);
     if (parent_)
         parent_->addref();
 }
 
-TaintNode::TaintNode(const TaintOperation& operation) : parent_(nullptr), refcount_(1), operation_(operation) { }
+TaintNode::TaintNode(const TaintOperation& operation)
+    : parent_(nullptr), refcount_(1), operation_(operation)
+{
+    MOZ_COUNT_CTOR(TaintNode);
+}
 
-TaintNode::TaintNode(TaintOperation&& operation) : parent_(nullptr), refcount_(1), operation_(operation) { }
+TaintNode::TaintNode(TaintOperation&& operation)
+    : parent_(nullptr), refcount_(1), operation_(operation)
+{
+    MOZ_COUNT_CTOR(TaintNode);
+}
 
 void TaintNode::addref()
 {
@@ -160,13 +174,16 @@ void TaintNode::release()
 
 TaintNode::~TaintNode()
 {
+    MOZ_COUNT_DTOR(TaintNode);
     if (parent_)
         parent_->release();
 }
 
 
 TaintFlow::Iterator::Iterator(TaintNode* head) : current_(head) { }
+
 TaintFlow::Iterator::Iterator() : current_(nullptr) { }
+
 TaintFlow::Iterator::Iterator(const Iterator& other) : current_(other.current_) { }
 
 TaintFlow::Iterator& TaintFlow::Iterator::operator++()
@@ -190,20 +207,36 @@ bool TaintFlow::Iterator::operator!=(const Iterator& other) const
     return current_ != other.current_;
 }
 
-TaintFlow::TaintFlow() : head_(nullptr) { }
-
-TaintFlow::TaintFlow(TaintNode* head) : head_(head) { }
-
-TaintFlow::TaintFlow(const TaintOperation& source) : head_(new TaintNode(source)) { }
-
-TaintFlow::TaintFlow(const TaintFlow& other) : head_(other.head_)
+TaintFlow::TaintFlow()
+    : head_(nullptr)
 {
+    MOZ_COUNT_CTOR(TaintFlow);
+}
+
+TaintFlow::TaintFlow(TaintNode* head)
+    : head_(head)
+{
+    MOZ_COUNT_CTOR(TaintFlow);
+}
+
+TaintFlow::TaintFlow(const TaintOperation& source)
+    : head_(new TaintNode(source))
+{
+    MOZ_COUNT_CTOR(TaintFlow);
+}
+
+TaintFlow::TaintFlow(const TaintFlow& other)
+    : head_(other.head_)
+{
+    MOZ_COUNT_CTOR(TaintFlow);
     if (head_)
         head_->addref();
 }
 
-TaintFlow::TaintFlow(const TaintFlow* other) : head_(nullptr)
+TaintFlow::TaintFlow(const TaintFlow* other)
+    : head_(nullptr)
 {
+    MOZ_COUNT_CTOR(TaintFlow);
     if (other) {
         head_ = other->head_;
         if (head_)
@@ -211,14 +244,17 @@ TaintFlow::TaintFlow(const TaintFlow* other) : head_(nullptr)
     }
 }
 
-TaintFlow::TaintFlow(TaintFlow&& other) : head_(other.head_)
+TaintFlow::TaintFlow(TaintFlow&& other)
+    : head_(other.head_)
 {
+    MOZ_COUNT_CTOR(TaintFlow);
     other.head_ = nullptr;
 }
 
 
 TaintFlow::~TaintFlow()
 {
+    MOZ_COUNT_DTOR(TaintFlow);
     if (head_)
         head_->release();
 }
@@ -289,12 +325,29 @@ TaintFlow TaintFlow::extend(const TaintFlow& flow, const TaintOperation& operati
 }
 
 
-TaintRange::TaintRange() : begin_(0), end_(0), flow_() { }
-TaintRange::TaintRange(uint32_t begin, uint32_t end, TaintFlow flow) : begin_(begin), end_(end), flow_(flow)
+TaintRange::TaintRange()
+    : begin_(0), end_(0), flow_()
 {
+    MOZ_COUNT_CTOR(TaintRange);
+}
+
+TaintRange::TaintRange(uint32_t begin, uint32_t end, TaintFlow flow)
+    : begin_(begin), end_(end), flow_(flow)
+{
+    MOZ_COUNT_CTOR(TaintRange);
     MOZ_ASSERT(begin <= end);
 }
-TaintRange::TaintRange(const TaintRange& other) : begin_(other.begin_), end_(other.end_), flow_(other.flow_) { }
+
+TaintRange::TaintRange(const TaintRange& other)
+    : begin_(other.begin_), end_(other.end_), flow_(other.flow_)
+{
+    MOZ_COUNT_CTOR(TaintRange);
+}
+
+TaintRange::~TaintRange()
+{
+    MOZ_COUNT_DTOR(TaintRange);
+}
 
 TaintRange& TaintRange::operator=(const TaintRange& other)
 {
@@ -391,6 +444,7 @@ static void check_ranges(const std::vector<TaintRange>* ranges)
 
 StringTaint::StringTaint(TaintRange range)
 {
+    MOZ_COUNT_CTOR(StringTaint);
     ranges_ = new std::vector<TaintRange>;
     ranges_->push_back(range);
     CHECK_RANGES(ranges_);
@@ -398,6 +452,7 @@ StringTaint::StringTaint(TaintRange range)
 
 StringTaint::StringTaint(uint32_t begin, uint32_t end, const TaintOperation& operation)
 {
+    MOZ_COUNT_CTOR(StringTaint);
     ranges_ = new std::vector<TaintRange>;
     TaintRange range(begin, end, TaintFlow(new TaintNode(operation)));
     ranges_->push_back(range);
@@ -408,6 +463,7 @@ StringTaint::StringTaint(TaintFlow flow, uint32_t length) : ranges_(nullptr)
 {
     // Only create the taint if there are entries in the flow
     if (flow) {
+        MOZ_COUNT_CTOR(StringTaint);
         ranges_ = new std::vector<TaintRange>;
         ranges_->emplace_back(0, length, flow);
         CHECK_RANGES(ranges_);
@@ -416,8 +472,10 @@ StringTaint::StringTaint(TaintFlow flow, uint32_t length) : ranges_(nullptr)
 
 StringTaint::StringTaint(const StringTaint& other) : ranges_(nullptr)
 {
-    if (other.ranges_)
+    if (other.ranges_) {
+        MOZ_COUNT_CTOR(StringTaint);
         ranges_ = new std::vector<TaintRange>(*other.ranges_);
+    }
     CHECK_RANGES(ranges_);
 }
 
@@ -435,11 +493,12 @@ StringTaint& StringTaint::operator=(const StringTaint& other)
 
     clear();
 
-    if (other.ranges_)
+    if (other.ranges_) {
+        MOZ_COUNT_CTOR(StringTaint);
         ranges_ = new std::vector<TaintRange>(*other.ranges_);
-    else
+    } else {
         ranges_ = nullptr;
-
+    }
     CHECK_RANGES(ranges_);
     return *this;
 }
@@ -461,6 +520,7 @@ StringTaint& StringTaint::operator=(StringTaint&& other)
 void StringTaint::clear()
 {
     if (ranges_ != nullptr) {
+        MOZ_COUNT_DTOR(StringTaint);
         delete ranges_;
         ranges_ = nullptr;
     }
@@ -479,6 +539,7 @@ void StringTaint::clearBetween(uint32_t begin, uint32_t end)
         return;
     }
 
+    MOZ_COUNT_CTOR(StringTaint);
     auto ranges = new std::vector<TaintRange>();
     for (auto& range : *this) {
         if (range.end() <= begin || range.begin() >= end) {
@@ -502,6 +563,7 @@ void StringTaint::shift(uint32_t index, int amount)
         return;
     }
 
+    MOZ_COUNT_CTOR(StringTaint);
     auto ranges = new std::vector<TaintRange>();
     for (auto& range : *this) {
         if (range.begin() >= index) {
@@ -520,12 +582,13 @@ void StringTaint::shift(uint32_t index, int amount)
 
 void StringTaint::insert(uint32_t index, const StringTaint& taint)
 {
-    auto ranges = new std::vector<TaintRange>();
-    auto it = begin();
-
     if (!taint.ranges_) {
         return;
     }
+
+    MOZ_COUNT_CTOR(StringTaint);
+    auto ranges = new std::vector<TaintRange>();
+    auto it = begin();
 
     while (it != end() && it->begin() < index) {
         auto& range = *it;
@@ -585,7 +648,7 @@ void StringTaint::set(uint32_t index, const TaintFlow& flow)
 StringTaint& StringTaint::subtaint(uint32_t begin, uint32_t end)
 {
     MOZ_ASSERT(begin <= end);
-
+    MOZ_COUNT_CTOR(StringTaint);
     auto ranges = new std::vector<TaintRange>();
 
     for (auto& range : *this) {
@@ -633,11 +696,13 @@ StringTaint& StringTaint::overlay(uint32_t begin, uint32_t end, const TaintOpera
 
     // If there are no ranges, get out quick
     if (!ranges_) {
+        MOZ_COUNT_CTOR(StringTaint);
         ranges_ = new std::vector<TaintRange>();
         ranges_->emplace_back(begin, end, TaintFlow(operation));
         return *this;
     }
 
+    MOZ_COUNT_CTOR(StringTaint);
     auto ranges = new std::vector<TaintRange>();
 
     auto current = this->begin();
@@ -705,9 +770,10 @@ StringTaint& StringTaint::append(TaintRange range)
 {
     MOZ_ASSERT_IF(ranges_, ranges_->back().end() <= range.begin());
 
-    if (!ranges_)
+    if (!ranges_) {
+        MOZ_COUNT_CTOR(StringTaint);
         ranges_ = new std::vector<TaintRange>;
-
+    }
     // See if we can merge the two taint ranges.
     if (ranges_->size() > 0) {
         TaintRange& last = ranges_->back();
@@ -771,6 +837,7 @@ void StringTaint::assign(std::vector<TaintRange>* ranges)
     } else {
         ranges_ = nullptr;
         // XXX is this really correct?
+        MOZ_COUNT_DTOR(StringTaint);
         delete ranges;
     }
     CHECK_RANGES(ranges_);
