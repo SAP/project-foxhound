@@ -17,7 +17,7 @@
 
 #include "mozilla/Assertions.h"
 
-#include "nsISupportsImpl.h"
+#include "nsISupports.h"
 
 #define DEBUG_LINE() std::cout << __PRETTY_FUNCTION__ << std::endl;
 
