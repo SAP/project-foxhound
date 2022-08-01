@@ -192,7 +192,7 @@ void CharacterData::SubstringData(uint32_t aStart, uint32_t aCount,
   }
 
   // TaintFox: propagate taint.
-  aReturn.AssignTaint(mText.Taint().subtaint(aStart, aStart + aCount));
+  aReturn.AssignTaint(mText.Taint().safeCopy().subtaint(aStart, aStart + aCount));
 }
 
 //----------------------------------------------------------------------

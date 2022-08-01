@@ -61,6 +61,7 @@ class MOZ_STACK_CLASS DOMString {
       MOZ_ASSERT(mStringBuffer);
       mStringBuffer->Release();
     }
+    mTaint.clear();
   }
 
   operator nsString&() { return AsAString(); }
@@ -116,7 +117,7 @@ class MOZ_STACK_CLASS DOMString {
       // Just hand that ref over.
       mState = State::UnownedStringBuffer;
       // Also store the taint
-      mTaint = mStringBuffer->Taint().subtaint(0, mLength);
+      mTaint = mStringBuffer->Taint().safeCopy().subtaint(0, mLength);
     } else {
       // Caller should end up holding a ref.
       mStringBuffer->AddRef();
@@ -169,7 +170,7 @@ class MOZ_STACK_CLASS DOMString {
       SetStringBufferInternal(aStringBuffer, aLength);
       mState = State::UnownedStringBuffer;
       // Create a copy of the taint information
-      mTaint = aStringBuffer->Taint().subtaint(0, aLength);
+      mTaint = aStringBuffer->Taint().safeCopy().subtaint(0, aLength);
     }
     // else nothing to do
   }
