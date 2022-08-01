@@ -17,7 +17,17 @@
 
 #include "mozilla/Assertions.h"
 
-#include "nsISupports.h"
+#ifndef JS_STANDALONE
+#include "nsISupportsImpl.h"
+#endif
+
+#ifndef MOZ_COUNT_CTOR
+#define MOZ_COUNT_CTOR(X)
+#endif
+
+#ifndef MOZ_COUNT_DTOR
+#define MOZ_COUNT_DTOR(X)
+#endif
 
 #define DEBUG_LINE() std::cout << __PRETTY_FUNCTION__ << std::endl;
 
