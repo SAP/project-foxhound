@@ -448,6 +448,15 @@ nsresult MarkTaintSource(JSContext* cx, JS::MutableHandle<JS::Value> aValue, con
   return NS_OK;
 }
 
+nsresult MarkTaintSource(JSContext* cx, JS::MutableHandle<JS::Value> aValue, const char* name, const nsAString &arg)
+{
+  TaintOperation op = GetTaintOperation(cx, name, arg);
+  op.setSource();
+  op.set_native();
+  JS_MarkTaintSource(cx, aValue, op);
+  return NS_OK;
+}
+
 nsresult MarkTaintSource(nsAString &str, const char* name)
 {
   return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name));
