@@ -65,8 +65,8 @@ void MessageEvent::GetData(JSContext* aCx, JS::MutableHandle<JS::Value> aData,
     aRv.Throw(NS_ERROR_FAILURE);
   }
 
-  // Taintfox: window.MessageEvent source
-  MarkTaintSource(aCx, aData, "window.MessageEvent");
+  // Taintfox: MessageEvent source
+  MarkTaintSource(aCx, aData, "MessageEvent", mOrigin);
 }
 
 void MessageEvent::GetOrigin(nsAString& aOrigin) const { aOrigin = mOrigin; }
