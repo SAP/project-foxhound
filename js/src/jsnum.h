@@ -26,6 +26,10 @@ class TaggedParserAtomIndex;
 }  // namespace frontend
 
 class GlobalObject;
+
+// TaintFox: Exported for the js shell: taint(number).
+bool Number_tainted(JSContext* cx, unsigned argc, Value* vp);
+
 class StringBuffer;
 
 [[nodiscard]] extern bool InitRuntimeNumberState(JSRuntime* rt);
@@ -209,9 +213,10 @@ bool CharsToNumber(JSContext* cx, const CharT* chars, size_t length,
                                               double* result);
 
 /* ES5 9.3 ToNumber, overwriting *vp with the appropriate number value. */
+
 [[nodiscard]] MOZ_ALWAYS_INLINE bool ToNumber(JSContext* cx,
                                               JS::MutableHandleValue vp) {
-  if (vp.isNumber()) {
+  if (vp.isNumber() || isTaintedNumber(vp)) {
     return true;
   }
   double d;

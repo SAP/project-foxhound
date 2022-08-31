@@ -83,6 +83,20 @@ TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool i
 // This is mainly useful for tracing tainted arguments through the code.
 void MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const JS::CallArgs& args);
 
+// Check if the argument value is a tainted number object.
+bool isTaintedNumber(const JS::Value& val);
+
+// Extract the taint information from a number.
+TaintFlow getNumberTaint(const JS::Value& val);
+
+// Check if any of the argument values is a tainted number object.
+// TODO make this accept a variable amount of arguments using variadic templates
+bool isAnyTaintedNumber(const JS::Value& val1, const JS::Value& val2);
+
+// Extract the taint information from the first tainted number argument.
+// TODO make this accept a variable amount of arguments using variadic templates
+TaintFlow getAnyNumberTaint(const JS::Value& val1, const JS::Value& val2);
+
 // Print a message to stdout.
 void TaintFoxReport(JSContext* cx, const char* msg);
 

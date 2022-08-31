@@ -27,6 +27,7 @@
 #include "vm/GlobalObject-inl.h"
 #include "vm/JSAtom-inl.h"
 #include "vm/JSObject-inl.h"
+#include "vm/NumberObject-inl.h"
 #include "vm/ObjectOperations-inl.h"
 #include "vm/Stack-inl.h"
 #include "vm/StringType-inl.h"
@@ -303,6 +304,14 @@ static MOZ_ALWAYS_INLINE bool NegOperation(JSContext* cx,
    * INT32_FITS_IN_JSVAL(-i) unless i is 0 or INT32_MIN when the
    * results, -0.0 or INT32_MAX + 1, are double values.
    */
+  // TaintFox: handle tainted numbers
+  if (isTaintedNumber(val)) {
+    double d;
+    if (!ToNumber(cx, val, &d))
+      return false;
+    res.setObject(*NumberObject::createTainted(cx, d, getNumberTaint(val)));
+  }
+
   int32_t i;
   if (val.isInt32() && (i = val.toInt32()) != 0 && i != INT32_MIN) {
     res.setInt32(-i);
@@ -378,6 +387,10 @@ static MOZ_ALWAYS_INLINE bool GetObjectElementOperation(
   MOZ_ASSERT(op == JSOp::GetElem || op == JSOp::GetElemSuper);
   MOZ_ASSERT_IF(op == JSOp::GetElem, obj == &receiver.toObject());
 
+  // TaintFox: tainted numbers or strings might be used for element access. In that case, also
+  // try to taint the resulting value.
+  TaintFlow taint;
+  
   do {
     uint32_t index;
     if (IsDefinitelyIndex(key, &index)) {
@@ -393,6 +406,12 @@ static MOZ_ALWAYS_INLINE bool GetObjectElementOperation(
 
     if (key.isString()) {
       JSString* str = key.toString();
+
+      // TaintFox: if tainted, just pick the first taintflow.
+      if (str->isTainted()) {
+        taint = str->taint().begin()->flow();
+      }
+
       JSAtom* name = str->isAtom() ? &str->asAtom() : AtomizeString(cx, str);
       if (!name) {
         return false;
@@ -409,6 +428,10 @@ static MOZ_ALWAYS_INLINE bool GetObjectElementOperation(
       }
     }
 
+    if (isTaintedNumber(key)) {
+      taint = getNumberTaint(key);
+    }
+    
     RootedId id(cx);
     if (!ToPropertyKey(cx, key, &id)) {
       return false;
@@ -418,6 +441,36 @@ static MOZ_ALWAYS_INLINE bool GetObjectElementOperation(
     }
   } while (false);
 
+  // TaintFox: add taint information to looked up element.
+  if (taint) {
+    if (res.isString()) {
+      // Simple heuristic. In essence we want to apply taint in case of a
+      // lookup table or similar, since there the resulting string is completely controlled
+      // if the index is controlled.
+      // On the other hand, here is an example where we probably don't want to apply taint:
+      //
+      //   var fortunes = [ //.. array of strings ];
+      //   function fortune(i) {
+      //     return fortunes[i];
+      //   }
+      //
+      // In this case we aren't able to control the content of the string but only which
+      // string is choosen, which probably isn't relevant security wise.
+      //
+      // Our heuristic here tries to differentiate both cases simply by looking at the length
+      // of the returned string.
+      if (res.toString()->length() < 3) {
+        // We only want to taint the returned string, not the element of the object.
+        RootedString str(cx, res.toString());
+        JSString* tainted_str = NewDependentString(cx, str, 0, str->length());
+        tainted_str->setTaint(cx, SafeStringTaint(taint, str->length()));
+        res.setString(tainted_str);
+      }
+    } else if (res.isNumber()) {
+      res.setObject(*NumberObject::createTainted(cx, res.toNumber(), taint));
+    }
+  }
+  
   cx->debugOnlyCheck(res);
   return true;
 }
@@ -483,6 +536,17 @@ static MOZ_ALWAYS_INLINE bool GetPrimitiveElementOperation(
     if (!GetProperty(cx, boxed, receiver, id, res)) {
       return false;
     }
+
+    // TaintFox:Like with arrays, taint should be propagated here
+    // if the index is a tainted number and the receiver a string.
+    if (isTaintedNumber(key) && res.isString()) {
+      RootedString str(cx, res.toString());
+      SafeStringTaint taint(getNumberTaint(key), str->length());
+      JSString* tainted_str = NewDependentString(cx, str, 0, str->length());
+      tainted_str->setTaint(cx, taint);
+      res.setString(tainted_str);
+    }
+
   } while (false);
 
   cx->debugOnlyCheck(res);
