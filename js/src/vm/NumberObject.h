@@ -7,6 +7,8 @@
 #ifndef vm_NumberObject_h
 #define vm_NumberObject_h
 
+#include <iostream>
+
 #include "jsnum.h"
 #include "Taint.h"
 
@@ -20,12 +22,12 @@ class NumberObject : public NativeObject {
   static const unsigned PRIMITIVE_VALUE_SLOT = 0;
 
   /* Taintfox: Stores the Number object's taint information */
-  static const unsigned TAINT_SLOT = 0;
+  static const unsigned TAINT_SLOT = 1;
 
   static const ClassSpec classSpec_;
 
  public:
-  static const unsigned RESERVED_SLOTS = 1;
+  static const unsigned RESERVED_SLOTS = 2;
 
   static const JSClass class_;
 
@@ -82,23 +84,13 @@ private:
     setFixedSlot(PRIMITIVE_VALUE_SLOT, NumberValue(d));
   }
 
-  inline TaintNode** getTaintNodeImpl() const {
-    return maybePtrFromReservedSlot<TaintNode*>(TAINT_SLOT);
-  }
-
   inline TaintNode* getTaintNode() const {
-    TaintNode** n = getTaintNodeImpl();
-    if (!n) {
-      return nullptr;
-    }
-    return *n;
+    TaintNode* n = maybePtrFromReservedSlot<TaintNode>(TAINT_SLOT);
+    return n;
   }
 
   inline void setTaintNode(TaintNode* node) {
-    TaintNode** n = getTaintNodeImpl();
-    if (n != nullptr) {
-      *n = node;
-    }
+    setReservedSlot(TAINT_SLOT, PrivateValue(node));
   }
   
 };
