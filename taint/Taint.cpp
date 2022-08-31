@@ -1101,15 +1101,18 @@ void DumpTaint(const StringTaint& taint)
 {
     for (auto& range : taint) {
         std::cout << "    " << range.begin() << " - " << range.end() << " : " << range.flow().source().name() << ":\n";
-        auto& flow = range.flow();
-
-        for(auto& node : flow) {
-            auto& op = node.operation();
-            DumpTaintOperation(op);
-
-        }
+        DumpTaintFlow(range.flow());
     }
 }
+
+void DumpTaintFlow(const TaintFlow& flow)
+{
+    for(auto& node : flow) {
+        auto& op = node.operation();
+        DumpTaintOperation(op);
+    }
+}
+
 
 void DumpTaintOperation(const TaintOperation& operation) {
     std::wstring_convert<std::codecvt_utf8<char16_t>, char16_t> convert;

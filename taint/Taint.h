@@ -763,6 +763,7 @@ StringTaint ParseTaint(const std::string& str);
 void PrintTaint(const StringTaint& taint);
 
 void DumpTaint(const StringTaint& taint);
+void DumpTaintFlow(const TaintFlow& flow);
 void DumpTaintOperation(const TaintOperation& operation);
 
 #endif
