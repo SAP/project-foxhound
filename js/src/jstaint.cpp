@@ -15,6 +15,7 @@
 #include "vm/FrameIter.h"
 #include "vm/JSContext.h"
 #include "vm/JSFunction.h"
+#include "vm/NumberObject.h"
 #include "vm/StringType.h"
 
 using namespace JS;
@@ -338,6 +339,38 @@ void JS::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const
                          { taintarg(cx, name), sourceinfo, taintarg(cx, i), taintarg(cx, args.length()) } ));
       }
     }
+  }
+}
+
+bool JS::isTaintedNumber(const Value& val)
+{
+    if (val.isObject() && val.toObject().is<NumberObject>()) {
+        NumberObject& number = val.toObject().as<NumberObject>();
+        return number.isTainted();
+    }
+    return false;
+}
+
+TaintFlow JS::getNumberTaint(const Value& val)
+{
+    if (val.isObject() && val.toObject().is<NumberObject>()) {
+        NumberObject& number = val.toObject().as<NumberObject>();
+        return number.taint();
+    }
+    return TaintFlow();
+}
+
+bool JS::isAnyTaintedNumber(const Value& val1, const Value& val2)
+{
+    return isTaintedNumber(val1) || isTaintedNumber(val2);
+}
+
+TaintFlow JS::getAnyNumberTaint(const Value& val1, const Value& val2)
+{
+  if (isTaintedNumber(val1)) {
+    return getNumberTaint(val1);
+  } else {
+    return getNumberTaint(val2);
   }
 }
 

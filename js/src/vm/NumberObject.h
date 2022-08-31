@@ -7,13 +7,20 @@
 #ifndef vm_NumberObject_h
 #define vm_NumberObject_h
 
+#include "jsnum.h"
+#include "Taint.h"
+
 #include "vm/NativeObject.h"
 
 namespace js {
 
+// TaintFox: Number objects can be tainted.
 class NumberObject : public NativeObject {
   /* Stores this Number object's [[PrimitiveValue]]. */
   static const unsigned PRIMITIVE_VALUE_SLOT = 0;
+
+  /* Taintfox: Stores the Number object's taint information */
+  static const unsigned TAINT_SLOT = 0;
 
   static const ClassSpec classSpec_;
 
@@ -31,12 +38,69 @@ class NumberObject : public NativeObject {
 
   double unbox() const { return getFixedSlot(PRIMITIVE_VALUE_SLOT).toNumber(); }
 
- private:
+  static inline NumberObject* createTainted(JSContext* cx, double d,
+                                            const TaintFlow& taint,
+                                            HandleObject proto = nullptr);
+
+  // TaintFox: A finalizer is required for correct memory handling.
+  static void Finalize(JSFreeOp* fop, JSObject* obj) {
+    NumberObject& number = obj->as<NumberObject>();
+    TaintNode* head = number.getTaintNode();
+    if (head) {
+      head->release();
+    }
+  }
+
+  TaintFlow taint() const {
+    TaintNode* head = getTaintNode();
+    if (head) {
+      head->addref();
+    }
+    return TaintFlow(head);
+  }
+
+  void setTaint(const TaintFlow& taint) {
+    TaintNode* current = getTaintNode();
+    if (current) {
+      current->release();
+    }
+    TaintNode* head = taint.head();
+    if (head) {
+      head->addref();
+    }
+    setTaintNode(head);
+  }
+
+  bool isTainted() const {
+    return !!getTaintNode();
+  }
+
+private:
   static JSObject* createPrototype(JSContext* cx, JSProtoKey key);
 
   inline void setPrimitiveValue(double d) {
     setFixedSlot(PRIMITIVE_VALUE_SLOT, NumberValue(d));
   }
+
+  inline TaintNode** getTaintNodeImpl() const {
+    return maybePtrFromReservedSlot<TaintNode*>(TAINT_SLOT);
+  }
+
+  inline TaintNode* getTaintNode() const {
+    TaintNode** n = getTaintNodeImpl();
+    if (!n) {
+      return nullptr;
+    }
+    return *n;
+  }
+
+  inline void setTaintNode(TaintNode* node) {
+    TaintNode** n = getTaintNodeImpl();
+    if (n != nullptr) {
+      *n = node;
+    }
+  }
+  
 };
 
 }  // namespace js

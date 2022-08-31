@@ -78,6 +78,7 @@ void LinkIonScript(JSContext* cx, HandleScript calleescript);
 uint8_t* LazyLinkTopActivation(JSContext* cx, LazyLinkExitFrameLayout* frame);
 
 inline bool IsIonInlinableGetterOrSetterOp(JSOp op) {
+  // Taintfox: TODO: May need to disable Ion with primitive tainting
   // JSOp::GetProp, JSOp::CallProp, JSOp::Length, JSOp::GetElem,
   // and JSOp::CallElem. (Inlined Getters)
   // JSOp::SetProp, JSOp::SetName, JSOp::SetGName (Inlined Setters)

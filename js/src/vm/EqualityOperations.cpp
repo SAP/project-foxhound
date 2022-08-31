@@ -237,6 +237,18 @@ bool js::StrictlyEqual(JSContext* cx, JS::Handle<JS::Value> lval,
     return true;
   }
 
+  // TaintFox: special case to handle strict equality of tainted numbers.
+  if (isAnyTaintedNumber(lval, rval) &&
+      (lval.isNumber() || isTaintedNumber(lval)) &&
+      (rval.isNumber() || isTaintedNumber(rval))) {
+    double l, r;
+    if (!ToNumber(cx, lval, &l) || !ToNumber(cx, rval, &r))
+      return false;
+
+    *equal = (l == r);
+    return true;
+  }
+
   *equal = false;
   return true;
 }

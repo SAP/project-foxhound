@@ -26,6 +26,7 @@
 #include <math.h>
 #include <string.h>  // memmove
 
+#include "jstaint.h"
 #include "jstypes.h"
 
 #include "double-conversion/double-conversion.h"
@@ -653,8 +654,10 @@ static const JSFunctionSpec number_functions[] = {
 
 const JSClass NumberObject::class_ = {
     js_Number_str,
-    JSCLASS_HAS_RESERVED_SLOTS(1) | JSCLASS_HAS_CACHED_PROTO(JSProto_Number),
-    JS_NULL_CLASS_OPS, &NumberObject::classSpec_};
+    // TaintFox: The number object now needs a private slot to store the taint information
+    JSCLASS_HAS_RESERVED_SLOTS(NumberObject::RESERVED_SLOTS) | JSCLASS_HAS_CACHED_PROTO(JSProto_Number),
+    JS_NULL_CLASS_OPS, &NumberObject::classSpec_
+};
 
 static bool Number(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -740,11 +743,19 @@ static bool num_toSource(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   JSStringBuilder sb(cx);
-  if (!sb.append("(new Number(") ||
-      !NumberValueToStringBuffer(cx, NumberValue(d), sb) || !sb.append("))")) {
-    return false;
-  }
+  // TaintFox: Hide the fact that tainted numbers are NumberObjects.
+  if (isTaintedNumber(args.thisv())) {
+    if (!NumberValueToStringBuffer(cx, NumberValue(d), sb)) {
+      return false;
+    }
+  } else {
 
+    if (!sb.append("(new Number(") ||
+        !NumberValueToStringBuffer(cx, NumberValue(d), sb) || !sb.append("))")) {
+      return false;
+    }
+  }
+  
   JSString* str = sb.finishString();
   if (!str) {
     return false;
@@ -1352,6 +1363,83 @@ static const JSFunctionSpec number_methods[] = {
     JS_FN("toPrecision", num_toPrecision, 1, 0),
     JS_FS_END};
 
+static bool
+num_taint_getter(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    args.rval().setNull();
+
+    // This will be the case for unboxed integers. In that case just return null.
+    if (!args.thisv().isObject())
+        return true;
+
+    RootedObject number(cx, &args.thisv().toObject());
+    if (!number->is<NumberObject>())
+        return true;
+
+    const TaintFlow& taint = number->as<NumberObject>().taint();
+
+    // TODO(samuel) refactor into separate function
+    ValueVector taint_flow(cx);
+    for (TaintNode& taint_node : taint) {
+        RootedObject node(cx, JS_NewObject(cx, nullptr));
+        if (!node)
+            return false;
+
+        RootedString operation(cx, JS_NewStringCopyZ(cx, taint_node.operation().name()));
+        if (!operation)
+            return false;
+
+        if (!JS_DefineProperty(cx, node, "operation", operation, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+            return false;
+
+        // Wrap the arguments.
+        ValueVector taint_arguments(cx);
+        for (auto& taint_argument : taint_node.operation().arguments()) {
+            RootedString argument(cx, JS_NewUCStringCopyZ(cx, taint_argument.c_str()));
+            if (!argument)
+                return false;
+
+            if (!taint_arguments.append(StringValue(argument)))
+                return false;
+        }
+
+        RootedObject arguments(cx, NewDenseCopiedArray(cx, taint_arguments.length(), taint_arguments.begin()));
+        if (!JS_DefineProperty(cx, node, "arguments", arguments, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+            return false;
+
+        taint_flow.append(ObjectValue(*node));
+    }
+
+    args.rval().setObject(*NewDenseCopiedArray(cx, taint_flow.length(), taint_flow.begin()));
+
+    return true;
+}
+
+/* TaintFox: Add |taint| property. */
+static const
+JSPropertySpec number_taint_properties[] = {
+    JS_PSG("taint", num_taint_getter, JSPROP_PERMANENT),
+    JS_PS_END
+};
+
+// TaintFox: taint numbers manually using this method.
+bool
+js::Number_tainted(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    double d;
+    if (!ToNumber(cx, args.get(0), &d)) {
+        return false;
+    }
+
+    JSObject* number = NumberObject::createTainted(cx, d, TaintFlow(TaintOperation("manual taint source", { taintarg(cx, d) })));
+    args.rval().setObject(*number);
+
+    return true;
+}
+
 bool js::IsInteger(const Value& val) {
   return val.isInt32() || IsInteger(val.toDouble());
 }
@@ -1365,6 +1453,7 @@ static const JSFunctionSpec number_static_methods[] = {
     JS_SELF_HOSTED_FN("isInteger", "Number_isInteger", 1, 0),
     JS_SELF_HOSTED_FN("isNaN", "Number_isNaN", 1, 0),
     JS_SELF_HOSTED_FN("isSafeInteger", "Number_isSafeInteger", 1, 0),
+    JS_FN("tainted", Number_tainted, 1,0),
     JS_FS_END};
 
 static const JSPropertySpec number_static_properties[] = {
@@ -1429,7 +1518,7 @@ bool js::InitRuntimeNumberState(JSRuntime* rt) {
   if (!storage) {
     return false;
   }
-
+  
   js_memcpy(storage, thousandsSeparator, thousandsSeparatorSize);
   rt->thousandsSeparator = storage;
   storage += thousandsSeparatorSize;
@@ -1526,7 +1615,7 @@ const ClassSpec NumberObject::classSpec_ = {
     number_static_methods,
     number_static_properties,
     number_methods,
-    nullptr,
+    number_taint_properties,
     NumberClassFinish};
 
 static char* FracNumberToCString(JSContext* cx, ToCStringBuf* cbuf, double d,

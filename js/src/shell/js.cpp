@@ -8717,7 +8717,19 @@ static bool EntryPoints(JSContext* cx, unsigned argc, Value* vp) {
 static bool
 Taint(JSContext* cx, unsigned argc, Value* vp)
 {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  RootedObject callee(cx, &args.callee());
+
+  if (args.length() != 1) {
+    ReportUsageErrorASCII(cx, callee, "Wrong number of arguments");
+    return false;
+  }
+
+  if (args[0].isNumber()) {
+    return Number_tainted(cx, argc, vp);
+  } else {
     return str_tainted(cx, argc, vp);
+  }
 }
 
 #ifndef __wasi__

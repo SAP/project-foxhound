@@ -251,3 +251,12 @@ if (typeof runTaintTest === 'undefined') {
         runJITTest(doTest);
     }
 }
+
+if (typeof assertNumberTainted === 'undefined') {
+    // Assert that the given number is tainted.
+    var assertNumberTainted = function(num) {
+        if (num.taint.length == 0) {
+            throw Error("Number ('" + num + "') is not tainted");
+        }
+    }
+}
