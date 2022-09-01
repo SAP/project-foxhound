@@ -35,6 +35,12 @@ function numberTaintingTest() {
     assertEq(a % b, 42 % 13.37);
     assertEq(a % b == 42 % 13.37, true);
 
+    assertNumberTainted(a ** 13.37);
+    assertNumberTainted(13.37 ** a);
+    assertNumberTainted(a ** b);
+    assertEq(a ** b, 42 ** 13.37);
+    assertEq(a ** b == 42 ** 13.37, true);
+
     assertNumberTainted(a++);
     assertNumberTainted(a);
     assertNumberTainted(a--);

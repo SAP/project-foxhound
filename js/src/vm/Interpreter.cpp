@@ -1487,6 +1487,10 @@ static MOZ_ALWAYS_INLINE bool MulOperation(JSContext* cx,
                                            MutableHandleValue lhs,
                                            MutableHandleValue rhs,
                                            MutableHandleValue res) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
   if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
     return false;
   }
@@ -1497,8 +1501,8 @@ static MOZ_ALWAYS_INLINE bool MulOperation(JSContext* cx,
 
   res.setNumber(lhs.toNumber() * rhs.toNumber());
   // TaintFox: Taint propagation when multiplying tainted numbers.
-  if (isAnyTaintedNumber(lhs, rhs)) {
-    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(lhs, rhs)));
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
   }
   return true;
 }
@@ -1507,6 +1511,10 @@ static MOZ_ALWAYS_INLINE bool DivOperation(JSContext* cx,
                                            MutableHandleValue lhs,
                                            MutableHandleValue rhs,
                                            MutableHandleValue res) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
   if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
     return false;
   }
@@ -1517,8 +1525,8 @@ static MOZ_ALWAYS_INLINE bool DivOperation(JSContext* cx,
 
   res.setNumber(NumberDiv(lhs.toNumber(), rhs.toNumber()));
   // TaintFox: Taint propagation when dividing tainted numbers.
-  if (isAnyTaintedNumber(lhs, rhs)) {
-    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(lhs, rhs)));
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
   }
   return true;
 }
@@ -1527,6 +1535,10 @@ static MOZ_ALWAYS_INLINE bool ModOperation(JSContext* cx,
                                            MutableHandleValue lhs,
                                            MutableHandleValue rhs,
                                            MutableHandleValue res) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
   int32_t l, r;
   if (lhs.isInt32() && rhs.isInt32() && (l = lhs.toInt32()) >= 0 &&
       (r = rhs.toInt32()) > 0) {
@@ -1545,8 +1557,8 @@ static MOZ_ALWAYS_INLINE bool ModOperation(JSContext* cx,
 
   res.setNumber(NumberMod(lhs.toNumber(), rhs.toNumber()));
   // TaintFox: Taint propagation when modding tainted numbers.
-  if (isAnyTaintedNumber(lhs, rhs)) {
-    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(lhs, rhs)));
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
   }
   return true;
 }
@@ -1555,6 +1567,10 @@ static MOZ_ALWAYS_INLINE bool PowOperation(JSContext* cx,
                                            MutableHandleValue lhs,
                                            MutableHandleValue rhs,
                                            MutableHandleValue res) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
   if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
     return false;
   }
@@ -1565,8 +1581,8 @@ static MOZ_ALWAYS_INLINE bool PowOperation(JSContext* cx,
 
   res.setNumber(ecmaPow(lhs.toNumber(), rhs.toNumber()));
   // TaintFox: Taint propagation when taking power of tainted numbers.
-  if (isAnyTaintedNumber(lhs, rhs)) {
-    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(lhs, rhs)));
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
   }
   return true;
 }
