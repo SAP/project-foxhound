@@ -1463,6 +1463,10 @@ static MOZ_ALWAYS_INLINE bool SubOperation(JSContext* cx,
                                            MutableHandleValue lhs,
                                            MutableHandleValue rhs,
                                            MutableHandleValue res) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
   if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
     return false;
   }
@@ -1473,8 +1477,8 @@ static MOZ_ALWAYS_INLINE bool SubOperation(JSContext* cx,
 
   res.setNumber(lhs.toNumber() - rhs.toNumber());
   // TaintFox: Taint propagation when subtracting tainted numbers.
-  if (isAnyTaintedNumber(lhs, rhs)) {
-    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(lhs, rhs)));
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
   }
   return true;
 }
