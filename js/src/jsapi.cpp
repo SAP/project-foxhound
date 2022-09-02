@@ -4545,6 +4545,9 @@ JS_MarkTaintSource(JSContext* cx, JS::MutableHandleValue value, const TaintOpera
   if (value.isString()) {
     // If we have a string, set taint directly
     JS_MarkTaintSource(cx, value.toString(), op);
+  } else if (value.isNumber()) {
+    double d = value.toNumber();
+    value.setObject(*NumberObject::createTainted(cx, d, TaintFlow(op)));
   } else if (value.isObject()) {
     // If it is an object, loop over contents
     // This function is used for convenience to taint all
