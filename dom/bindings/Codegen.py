@@ -7885,6 +7885,7 @@ def getWrapTemplateForType(
     exceptionCode,
     spiderMonkeyInterfacesAreStructs,
     isConstructorRetval=False,
+    taintSource=None
 ):
     """
     Reflect a C++ value stored in "result", of IDL type "type" into JS.  The
@@ -7964,6 +7965,18 @@ def getWrapTemplateForType(
                 exceptionCode=exceptionCode,
                 successCode=successCode,
             )
+        # Attach taint metadata to the return value if it is a source
+        if taintSource is not None:
+            print("Generating taint source:", taintSource)
+            taintHandler = dedent(
+                (
+                    """
+                    // Add taint source
+                    MarkTaintSource(cx, ${jsvalRef}, "%s");
+                    """
+                    % (taintSource))
+            )
+            tail = taintHandler + tail
         return ("${jsvalRef}.%s(%s);\n" % (setter, value)) + tail
 
     def wrapAndSetPtr(wrapCall, failureCode=None):
@@ -8398,7 +8411,7 @@ def getWrapTemplateForType(
         raise TypeError("Need to learn to wrap primitive: %s" % type)
 
 
-def wrapForType(type, descriptorProvider, templateValues):
+def wrapForType(type, descriptorProvider, templateValues, taintSource = None):
     """
     Reflect a C++ value of IDL type "type" into JS.  TemplateValues is a dict
     that should contain:
@@ -8441,6 +8454,7 @@ def wrapForType(type, descriptorProvider, templateValues):
         templateValues.get("exceptionCode", "return false;\n"),
         templateValues.get("spiderMonkeyInterfacesAreStructs", False),
         isConstructorRetval=templateValues.get("isConstructorRetval", False),
+        taintSource=taintSource
     )[0]
 
     defaultValues = {"obj": "obj"}
@@ -9201,6 +9215,10 @@ class CGPerSignatureCall(CGThing):
         self.setSlot = (
             not dontSetSlot and idlNode.isAttr() and idlNode.slotIndices is not None
         )
+
+        # Taintfox: create a label for the taint source
+        self.taintSource = GetLabelForErrorReporting(descriptor, idlNode, isConstructor) if  memberIsTaintSource(self.idlNode) else None
+
         cgThings = []
 
         deprecated = idlNode.getExtendedAttribute("Deprecated") or (
@@ -9692,7 +9710,7 @@ class CGPerSignatureCall(CGThing):
             "obj": "conversionScope" if self.setSlot else "obj",
         }
 
-        wrapCode += wrapForType(self.returnType, self.descriptor, resultTemplateValues)
+        wrapCode += wrapForType(self.returnType, self.descriptor, resultTemplateValues, self.taintSource)
 
         if self.setSlot:
             if self.idlNode.isStatic():
@@ -11617,6 +11635,9 @@ class CGSpecializedLenientSetter(CGSpecializedSetter):
 def memberReturnsNewObject(member):
     return member.getExtendedAttribute("NewObject") is not None
 
+def memberIsTaintSource(member):
+    # Taintfox: check if this function is marked as a taint source:
+    return member.getExtendedAttribute("TaintSource") is not None
 
 class CGMemberJITInfo(CGThing):
     """
@@ -18309,8 +18330,16 @@ class CGBindingRoot(CGThing):
                 for m in descriptor.interface.members
             )
 
+        def hasAtLeastOneTaintsource(descriptor):
+            return any(
+                m.isAttr() and m.getExtendedAttribute("TaintSource")
+                for m in descriptor.interface.members
+            )
+
         bindingHeaders["nsJSUtils.h"] = any(
             descriptorClearsPropsInSlots(d) for d in descriptors
+        ) or any (
+            hasAtLeastOneTaintsource(d) for d in descriptors
         )
 
         # Make sure we can sanely use binding_detail in generated code.

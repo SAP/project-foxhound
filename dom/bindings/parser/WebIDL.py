@@ -5410,6 +5410,7 @@ class IDLAttribute(IDLInterfaceMember):
             or identifier == "ReturnValueNeedsContainsHack"
             or identifier == "BinaryName"
             or identifier == "NonEnumerable"
+            or identifier == "TaintSource"  # Taintfox added
         ):
             # Known attributes that we don't need to do anything with here
             pass

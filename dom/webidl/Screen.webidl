@@ -11,9 +11,9 @@ interface Screen : EventTarget {
   readonly attribute long availWidth;
   [Throws]
   readonly attribute long availHeight;
-  [Throws]
+  [Throws, TaintSource]
   readonly attribute long width;
-  [Throws]
+  [Throws, TaintSource]
   readonly attribute long height;
   [Throws]
   readonly attribute long colorDepth;
