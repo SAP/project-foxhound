@@ -1,6 +1,7 @@
 function numberStringConversionTests() {
     // Test single character taint propagation
     var taintedStr = randomTaintedString();
+    assertTainted(taintedStr.charCodeAt(0));
     assertTainted(String.fromCharCode(taintedStr.charCodeAt(0)));
 
     // Test multi character taint propagation

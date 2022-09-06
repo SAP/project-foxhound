@@ -2016,6 +2016,12 @@ bool js::str_charCodeAt_impl(JSContext* cx, HandleString string,
     return false;
   }
   res.setInt32(c);
+
+  // TaintFox: Taint propagation for char codes of tainted strings via charCodeAt().
+  if (string->taint().at(i)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), string->taint().at(i)));
+  }
+
   return true;
 
 out_of_range:
@@ -4077,10 +4083,13 @@ bool js::str_fromCharCode(JSContext* cx, unsigned argc, Value* vp) {
 
   MOZ_ASSERT(args.length() <= ARGS_LENGTH_MAX);
 
+  // FoxHound: Disable optimization to simplify changes needed
+  /*
   // Optimize the single-char case.
   if (args.length() == 1) {
     return str_fromCharCode_one_arg(cx, args[0], args.rval());
   }
+  */
 
   // Optimize the case where the result will definitely fit in an inline
   // string (thin or fat) and so we don't need to malloc the chars. (We could
@@ -4105,6 +4114,14 @@ bool js::str_fromCharCode(JSContext* cx, unsigned argc, Value* vp) {
   JSString* str = chars.toString(cx, args.length());
   if (!str) {
     return false;
+  }
+
+  // TaintFox: todo: loop at input args, scan for tainted numbers and propagate
+  // taint to string
+  for (unsigned i = 0; i < args.length(); i++) {
+    if (isTaintedNumber(args[i])) {
+      str->taint().set(i, getNumberTaint(args[i]));
+    }
   }
 
   args.rval().setString(str);
