@@ -14,15 +14,31 @@ function numberStringConversionTests() {
     var copiedString = String.fromCharCode.apply(null, chars);
     assertEqualTaint(copiedString, taintedStr);
 
-    // Test explicit number.toString()
+    // Test explicit string conversion
     var taintedNumber = taint(42);
     assertTainted(taintedNumber.toString());
+    assertTainted(String(taintedNumber));
 
     // Test implicit string conversion
-    var taintedNumber = taint(42);
     assertTainted(taintedNumber + "abc");
     assertTainted((taintedNumber + "abc")[1]);
     assertNotTainted((taintedNumber + "abc")[2]);
+
+    // Test explicit number conversion
+    assertNumberTainted(Number(taint("42")));
+    assertNumberTainted(parseInt(taint("42")));
+    assertNumberTainted(parseFloat(taint("42.42")));
+
+    // Test implicit number conversion
+    assertNumberTainted(42 - taint("2"));
+    assertNumberTainted(taint("42") - 2);
+    assertNumberTainted(taint("42") - taint("2"));
+    assertNumberTainted(42 * taint("2"));
+    assertNumberTainted(taint("42") * 2);
+    assertNumberTainted(taint("42") * taint("2"));
+    assertNumberTainted(42 / taint("2"));
+    assertNumberTainted(taint("42") / 2);
+    assertNumberTainted(taint("42") / taint("2"));
 
 }
 
