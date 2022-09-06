@@ -1,7 +1,7 @@
 function numberStringConversionTests() {
     // Test single character taint propagation
     var taintedStr = randomTaintedString();
-    assertTainted(taintedStr.charCodeAt(0));
+    assertNumberTainted(taintedStr.charCodeAt(0));
     assertTainted(String.fromCharCode(taintedStr.charCodeAt(0)));
 
     // Test multi character taint propagation
@@ -14,7 +14,16 @@ function numberStringConversionTests() {
     var copiedString = String.fromCharCode.apply(null, chars);
     assertEqualTaint(copiedString, taintedStr);
 
-    // TODO do we care about number.toString()?
+    // Test explicit number.toString()
+    var taintedNumber = taint(42);
+    assertTainted(taintedNumber.toString());
+
+    // Test implicit string conversion
+    var taintedNumber = taint(42);
+    assertTainted(taintedNumber + "abc");
+    assertTainted((taintedNumber + "abc")[1]);
+    assertNotTainted((taintedNumber + "abc")[2]);
+
 }
 
 runTaintTest(numberStringConversionTests);
