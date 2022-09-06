@@ -4116,8 +4116,7 @@ bool js::str_fromCharCode(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  // TaintFox: todo: loop at input args, scan for tainted numbers and propagate
-  // taint to string
+  // TaintFox: loop at input args, scan for tainted numbers and propagate taint to string
   for (unsigned i = 0; i < args.length(); i++) {
     if (isTaintedNumber(args[i])) {
       str->taint().set(i, getNumberTaint(args[i]));
