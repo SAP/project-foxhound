@@ -41,6 +41,9 @@ function numberTaintingTest() {
     assertEq(a ** b, 42 ** 13.37);
     assertEq(a ** b == 42 ** 13.37, true);
 
+
+    //
+    // Number increment/decrement
     assertNumberTainted(a++);
     assertNumberTainted(a);
     assertNumberTainted(a--);
@@ -50,6 +53,7 @@ function numberTaintingTest() {
     assertNumberTainted(--a);
     assertNumberTainted(a);
 
+    
     //
     // Bitwise operations
     b = taint(3);
@@ -60,6 +64,11 @@ function numberTaintingTest() {
     assertNumberTainted(a >> 1);
     assertNumberTainted(a >> b);
     assertEq(a >> b, 42 >> 3);
+
+    assertNumberTainted(a >>> 1);
+    assertNumberTainted(a >>> b);
+    assertEq(a >> b, 42 >>> 3);
+    assertEq(taint(-5) >>> taint(2), 1073741822);
 
     assertNumberTainted(a & 1);
     assertNumberTainted(a & b);
