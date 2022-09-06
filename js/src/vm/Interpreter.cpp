@@ -1590,6 +1590,9 @@ static MOZ_ALWAYS_INLINE bool PowOperation(JSContext* cx,
 static MOZ_ALWAYS_INLINE bool BitNotOperation(JSContext* cx,
                                               MutableHandleValue in,
                                               MutableHandleValue out) {
+  // TaintFox: copy in since it is mutable.
+  RootedValue origIn(cx, in);
+
   if (!ToInt32OrBigInt(cx, in)) {
     return false;
   }
@@ -1599,8 +1602,10 @@ static MOZ_ALWAYS_INLINE bool BitNotOperation(JSContext* cx,
   }
 
   out.setInt32(~in.toInt32());
-  if (isTaintedNumber(in)) {
-    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getNumberTaint(in)));
+
+  // TaintFox: Taint propagation for bitwise not.
+  if (isTaintedNumber(origIn)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getNumberTaint(origIn)));
   }
   return true;
 }
@@ -1609,6 +1614,10 @@ static MOZ_ALWAYS_INLINE bool BitXorOperation(JSContext* cx,
                                               MutableHandleValue lhs,
                                               MutableHandleValue rhs,
                                               MutableHandleValue out) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
   if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
     return false;
   }
@@ -1618,8 +1627,10 @@ static MOZ_ALWAYS_INLINE bool BitXorOperation(JSContext* cx,
   }
 
   out.setInt32(lhs.toInt32() ^ rhs.toInt32());
-  if (isAnyTaintedNumber(lhs, rhs)) {
-    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(lhs, rhs)));
+
+  // TaintFox: Taint propagation for bitwise xor.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
   }
   return true;
 }
@@ -1628,6 +1639,10 @@ static MOZ_ALWAYS_INLINE bool BitOrOperation(JSContext* cx,
                                              MutableHandleValue lhs,
                                              MutableHandleValue rhs,
                                              MutableHandleValue out) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
   if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
     return false;
   }
@@ -1637,8 +1652,10 @@ static MOZ_ALWAYS_INLINE bool BitOrOperation(JSContext* cx,
   }
 
   out.setInt32(lhs.toInt32() | rhs.toInt32());
-  if (isAnyTaintedNumber(lhs, rhs)) {
-    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(lhs, rhs)));
+
+  // TaintFox: Taint propagation for bitwise or.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
   }
   return true;
 }
@@ -1647,6 +1664,10 @@ static MOZ_ALWAYS_INLINE bool BitAndOperation(JSContext* cx,
                                               MutableHandleValue lhs,
                                               MutableHandleValue rhs,
                                               MutableHandleValue out) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
   if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
     return false;
   }
@@ -1656,8 +1677,10 @@ static MOZ_ALWAYS_INLINE bool BitAndOperation(JSContext* cx,
   }
 
   out.setInt32(lhs.toInt32() & rhs.toInt32());
-  if (isAnyTaintedNumber(lhs, rhs)) {
-    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(lhs, rhs)));
+
+  // TaintFox: Taint propagation for bitwise and.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
   }
   return true;
 }
@@ -1666,6 +1689,10 @@ static MOZ_ALWAYS_INLINE bool BitLshOperation(JSContext* cx,
                                               MutableHandleValue lhs,
                                               MutableHandleValue rhs,
                                               MutableHandleValue out) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
   if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
     return false;
   }
@@ -1680,8 +1707,10 @@ static MOZ_ALWAYS_INLINE bool BitLshOperation(JSContext* cx,
   uint32_t left = static_cast<uint32_t>(lhs.toInt32());
   uint8_t right = rhs.toInt32() & 31;
   out.setInt32(mozilla::WrapToSigned(left << right));
-  if (isAnyTaintedNumber(lhs, rhs)) {
-    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(lhs, rhs)));
+
+  // TaintFox: Taint propagation for bitwise left shift.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
   }
   return true;
 }
@@ -1690,6 +1719,10 @@ static MOZ_ALWAYS_INLINE bool BitRshOperation(JSContext* cx,
                                               MutableHandleValue lhs,
                                               MutableHandleValue rhs,
                                               MutableHandleValue out) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
   if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
     return false;
   }
@@ -1699,8 +1732,10 @@ static MOZ_ALWAYS_INLINE bool BitRshOperation(JSContext* cx,
   }
 
   out.setInt32(lhs.toInt32() >> (rhs.toInt32() & 31));
-  if (isAnyTaintedNumber(lhs, rhs)) {
-    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(lhs, rhs)));
+
+  // TaintFox: Taint propagation for bitwise right shift.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
   }
   return true;
 }
@@ -1709,6 +1744,10 @@ static MOZ_ALWAYS_INLINE bool UrshOperation(JSContext* cx,
                                             MutableHandleValue lhs,
                                             MutableHandleValue rhs,
                                             MutableHandleValue out) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
   if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
     return false;
   }
@@ -1726,8 +1765,10 @@ static MOZ_ALWAYS_INLINE bool UrshOperation(JSContext* cx,
   }
   left >>= right & 31;
   out.setNumber(uint32_t(left));
-  if (isAnyTaintedNumber(lhs, rhs)) {
-    out.setObject(*NumberObject::createTainted(cx, out.toNumber(), getAnyNumberTaint(lhs, rhs)));
+
+  // TaintFox: Taint propagation for unsigned right shift.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
   }
   return true;
 }
