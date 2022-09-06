@@ -255,8 +255,17 @@ if (typeof runTaintTest === 'undefined') {
 if (typeof assertNumberTainted === 'undefined') {
     // Assert that the given number is tainted.
     var assertNumberTainted = function(num) {
-        if (num.taint.length == 0) {
-            throw Error("Number ('" + num + "') is not tainted");
+        if (!num.taint || num.taint.length == 0) {
+            throw Error("Number (" + num + ") is not tainted");
+        }
+    }
+}
+
+if (typeof assertNumberNotTainted === 'undefined') {
+    // Assert that the given number is not tainted.
+    var assertNumberNotTainted = function(num) {
+        if (num.taint && num.taint.length > 0) {
+            throw Error("Number (" + num + ") is tainted");
         }
     }
 }
