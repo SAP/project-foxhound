@@ -8687,6 +8687,7 @@ class StringBuilder {
     }
     // Taintfox: Add the taint operation to all flows
     MarkTaintOperation(appender.Taint(), "element.textContent");
+    appender.Finish();
     aOut.AssignTaint(appender.Taint());
     return true;
   }
