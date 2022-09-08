@@ -47,10 +47,7 @@ class PushSubscription final : public nsISupports, public nsWrapperCache {
 
   nsIGlobalObject* GetParentObject() const { return mGlobal; }
 
-  void GetEndpoint(nsAString& aEndpoint) const {
-    aEndpoint = mEndpoint;
-    MarkTaintSource(aEndpoint, "PushSubscription.endpoint");
-  }
+  void GetEndpoint(nsAString& aEndpoint) const { aEndpoint = mEndpoint; }
 
   void GetKey(JSContext* cx, PushEncryptionKeyName aType,
               JS::MutableHandle<JSObject*> aKey, ErrorResult& aRv);
