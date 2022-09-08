@@ -893,6 +893,7 @@ bool nsTSubstring<T>::Append(const self_type& aStr,
                    !(this->mDataFlags & DataFlags::REFCOUNTED))) {
     return Assign(aStr, mozilla::fallible);
   }
+  AppendTaint(aStr.Taint());
   return Append(aStr.BeginReading(), aStr.Length(), mozilla::fallible);
 }
 
