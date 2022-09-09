@@ -1398,12 +1398,19 @@ static MOZ_ALWAYS_INLINE bool AddOperation(JSContext* cx,
     }
   }
 
+  // TaintFox: Deactivate generic ToPrimitive() without preffered type here.
+  // This would cause taintedNumber objects to be converted to primitive numbers
+  // without taint. This is bad, if we later have to convert to String.
+  // ToString() is internally using ToPrimitive() with a preffered type, which
+  // supports taint propagation.
+  /*
   if (!ToPrimitive(cx, lhs)) {
     return false;
   }
   if (!ToPrimitive(cx, rhs)) {
     return false;
   }
+  */
 
   bool lIsString = lhs.isString();
   bool rIsString = rhs.isString();
@@ -1440,6 +1447,16 @@ static MOZ_ALWAYS_INLINE bool AddOperation(JSContext* cx,
     }
     res.setString(str);
     return true;
+  }
+
+  // TaintFox: If no string conversion of numbers is needed, we can safely
+  // use the generic ToPrimitive() taint is also lost in this case but will
+  // later be added based on origLhs and origRhs
+  if (!ToPrimitive(cx, lhs)) {
+    return false;
+  }
+  if (!ToPrimitive(cx, rhs)) {
+    return false;
   }
 
   if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {

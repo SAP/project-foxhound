@@ -14,15 +14,24 @@ function numberStringConversionTests() {
     var copiedString = String.fromCharCode.apply(null, chars);
     assertEqualTaint(copiedString, taintedStr);
 
+    // Small numbers <=6bit are sometimes transformed to Atoms, when
+    // converted to strings, which can cause problems
+    var taintedNumberSmall = taint(42);
+    var taintedNumberLarge = taint(42);
+
     // Test explicit string conversion
-    var taintedNumber = taint(42);
-    assertTainted(taintedNumber.toString());
-    assertTainted(String(taintedNumber));
+    assertTainted(taintedNumberLarge.toString());
+    assertTainted(String(taintedNumberLarge));
+    assertTainted(taintedNumberSmall.toString());
+    assertTainted(String(taintedNumberSmall));
 
     // Test implicit string conversion
-    assertTainted(taintedNumber + "abc");
-    assertTainted((taintedNumber + "abc")[1]);
-    assertNotTainted((taintedNumber + "abc")[2]);
+    assertTainted(taintedNumberLarge + "abc");
+    assertTainted((taintedNumberLarge + "abc")[1]);
+    assertNotTainted((taintedNumberLarge + "abc")[2]);
+    assertTainted(taintedNumberSmall + "abc");
+    assertTainted((taintedNumberSmall + "abc")[1]);
+    assertNotTainted((taintedNumberSmall + "abc")[2]);
 
     // Test explicit number conversion
     assertNumberTainted(Number(taint("42")));

@@ -957,6 +957,19 @@ static bool num_toString(JSContext* cx, unsigned argc, Value* vp) {
   if (!str) {
     return false;
   }
+
+  // TaintFox: Propagate Number Taint to String
+  if (isTaintedNumber(args.thisv())) {
+    // Atoms cannot be tainted. Atoms are created for ints<6bit and other
+    // common strings. If we are dealing with an Atom, wrap it inside a
+    // dependent String, which can be tainted.
+    if(str->isAtom()){
+      str = NewDependentString(cx,str,0,str->length());
+    }
+    SafeStringTaint newTaint(getNumberTaint(args.thisv()),str->length());
+    str->setTaint(cx, newTaint);
+  }
+
   args.rval().setString(str);
   return true;
 }
