@@ -121,7 +121,9 @@ DefaultJitOptions::DefaultJitOptions() {
   SET_DEFAULT(disableBailoutLoopCheck, false);
 
   // Whether the Baseline Interpreter is enabled.
-  SET_DEFAULT(baselineInterpreter, true);
+  // TaintFox: disable Baseline Interpreter because it is not compatible with the current
+  // number tainting functionality
+  SET_DEFAULT(baselineInterpreter, false);
 
   // Whether the Baseline JIT is enabled.
   SET_DEFAULT(baselineJit, true);
