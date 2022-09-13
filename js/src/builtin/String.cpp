@@ -895,7 +895,7 @@ JSString* js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt,
 
   // TaintFox
   SafeStringTaint newTaint = str->taint().safeCopy().subtaint(begin, begin + len);
-  
+
   /*
    * Optimization for one level deep ropes.
    * This is common for the following pattern:
@@ -1949,6 +1949,13 @@ static bool str_charAt(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   RootedString str(cx);
   size_t i;
+
+  // TaintFox: try to get taint from parameter
+  SafeStringTaint parameterTaint;
+  if(args.length() != 0 && isTaintedNumber(args[0])){
+    parameterTaint.set(0, getNumberTaint(args[0]));
+  }
+
   if (args.thisv().isString() && args.length() != 0 && args[0].isInt32()) {
     str = args.thisv().toString();
     i = size_t(args[0].toInt32());
@@ -1973,10 +1980,15 @@ static bool str_charAt(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // TaintFox: avoid atoms here if the base string is tainted. TODO(samuel)
+  // Taintfox: there is currently no branch for both the this-string and the
+  // parameter-number being tainted; should be added later once model is expanded
   str = NewDependentString(cx, str, i, 1);
   if (str->isTainted()) {
     str->taint().extend(TaintOperation("charAt", true, TaintLocationFromContext(cx), { taintarg(cx, i) }));
+  } else if(parameterTaint.hasTaint()) {
+    str->setTaint(cx,parameterTaint);
   }
+
   // Taintfox: avoid creating atoms
   //str = cx->staticStrings().getUnitStringForElement(cx, str, i);
 

@@ -14,6 +14,11 @@ function numberStringConversionTests() {
     var copiedString = String.fromCharCode.apply(null, chars);
     assertEqualTaint(copiedString, taintedStr);
 
+    //Test number as parameter taint propagation
+    index = taint(3)
+    untaintedStr = "Hello World"
+    assertTainted(untaintedStr.charAt(index))
+
     // Small numbers <=6bit are sometimes transformed to Atoms, when
     // converted to strings, which can cause problems
     var taintedNumberSmall = taint(42);
