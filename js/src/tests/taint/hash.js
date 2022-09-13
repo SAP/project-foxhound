@@ -385,7 +385,7 @@ fpFlow4Hash = (inputString)=>{
         }
     }
 
-	return MD5.core_md5(inputString);
+    return MD5.hex_md5(inputString);
 }
 
 
