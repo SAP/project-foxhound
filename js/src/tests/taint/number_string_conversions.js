@@ -14,7 +14,7 @@ function numberStringConversionTests() {
     var copiedString = String.fromCharCode.apply(null, chars);
     assertEqualTaint(copiedString, taintedStr);
 
-    //Test number as parameter taint propagation
+    // Test number as parameter taint propagation
     index = taint(3)
     untaintedStr = "Hello World"
     assertTainted(untaintedStr.charAt(index))
@@ -22,7 +22,13 @@ function numberStringConversionTests() {
     // Small numbers <=6bit are sometimes transformed to Atoms, when
     // converted to strings, which can cause problems
     var taintedNumberSmall = taint(42);
-    var taintedNumberLarge = taint(42);
+    var taintedNumberLarge = taint(9000);
+
+    // Text JSON.stringify with inputs including tainted numbers
+    assertTainted(JSON.stringify(taintedNumberSmall))
+    assertTainted(JSON.stringify([1,2,3,taintedNumberSmall,5]))
+    assertTainted(JSON.stringify({"num":taintedNumberSmall}))
+    assertTainted(JSON.stringify([1,2,3,{"num":taintedNumberSmall},5]))
 
     // Test explicit string conversion
     assertTainted(taintedNumberLarge.toString());
@@ -33,7 +39,7 @@ function numberStringConversionTests() {
     // Test implicit string conversion
     assertTainted(taintedNumberLarge + "abc");
     assertTainted((taintedNumberLarge + "abc")[1]);
-    assertNotTainted((taintedNumberLarge + "abc")[2]);
+    assertNotTainted((taintedNumberLarge + "abc")[5]);
     assertTainted(taintedNumberSmall + "abc");
     assertTainted((taintedNumberSmall + "abc")[1]);
     assertNotTainted((taintedNumberSmall + "abc")[2]);

@@ -404,6 +404,14 @@ static bool PreprocessValue(JSContext* cx, HandleObject holder, KeyType key,
     }
 
     if (cls == ESClass::Number) {
+
+      // TaintFox: Abort, if object is a tainted number, to prevent taint loss.
+      // special handling for tainted numbers at later stage (method Str())
+      if (isTaintedNumber(vp)){
+        return true;
+      }
+
+
       double d;
       if (!ToNumber(cx, vp, &d)) {
         return false;
@@ -784,6 +792,14 @@ static bool Str(JSContext* cx, const Value& v, StringifyContext* scx) {
   /* Steps 6-7. */
   if (v.isBoolean()) {
     return v.toBoolean() ? scx->sb.append("true") : scx->sb.append("false");
+  }
+
+
+  // TaintFox: Convert tainted number to string (internally propagates taint)
+  // and append to string builder
+  if (isTaintedNumber(v)){
+    HandleValue hv = HandleValue::fromMarkedLocation(&v);
+    return scx->sb.append(JS::ToString(cx, hv));
   }
 
   /* Step 9. */
