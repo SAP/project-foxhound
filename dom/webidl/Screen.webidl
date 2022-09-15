@@ -7,17 +7,17 @@
 interface Screen : EventTarget {
   // CSSOM-View
   // http://dev.w3.org/csswg/cssom-view/#the-screen-interface
-  [Throws]
+  [Throws, TaintSource]
   readonly attribute long availWidth;
-  [Throws]
+  [Throws, TaintSource]
   readonly attribute long availHeight;
   [Throws, TaintSource]
   readonly attribute long width;
   [Throws, TaintSource]
   readonly attribute long height;
-  [Throws]
+  [Throws, TaintSource]
   readonly attribute long colorDepth;
-  [Throws]
+  [Throws, TaintSource]
   readonly attribute long pixelDepth;
 
   [Throws]
