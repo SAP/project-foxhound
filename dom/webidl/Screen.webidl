@@ -24,9 +24,9 @@ interface Screen : EventTarget {
   readonly attribute long top;
   [Throws]
   readonly attribute long left;
-  [Throws]
+  [Throws, TaintSource]
   readonly attribute long availTop;
-  [Throws]
+  [Throws, TaintSource]
   readonly attribute long availLeft;
 
   /**

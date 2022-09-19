@@ -104,8 +104,11 @@ interface WebGLActiveInfo {
 [Exposed=(Window,Worker),
  Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
 interface WebGLShaderPrecisionFormat {
+    [TaintSource]
     readonly attribute GLint rangeMin;
+    [TaintSource]
     readonly attribute GLint rangeMax;
+    [TaintSource]
     readonly attribute GLint precision;
 };
 

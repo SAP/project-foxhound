@@ -347,8 +347,8 @@ partial interface Window {
   // like a [Replaceable] attribute would, which needs the original JS value.
   //[Replaceable, Throws] readonly attribute double innerWidth;
   //[Replaceable, Throws] readonly attribute double innerHeight;
-  [Throws, NeedsCallerType] attribute any innerWidth;
-  [Throws, NeedsCallerType] attribute any innerHeight;
+  [Throws, NeedsCallerType, TaintSource] attribute any innerWidth;
+  [Throws, NeedsCallerType, TaintSource] attribute any innerHeight;
 
   // viewport scrolling
   void scroll(unrestricted double x, unrestricted double y);
@@ -364,14 +364,14 @@ partial interface Window {
   [ChromeOnly] void mozScrollSnap();
   // The four properties below are double per spec at the moment, but whether
   // that will continue is unclear.
-  [Replaceable, Throws] readonly attribute double scrollX;
-  [Replaceable, Throws] readonly attribute double pageXOffset;
-  [Replaceable, Throws] readonly attribute double scrollY;
-  [Replaceable, Throws] readonly attribute double pageYOffset;
+  [Replaceable, Throws, TaintSource] readonly attribute double scrollX;
+  [Replaceable, Throws, TaintSource] readonly attribute double pageXOffset;
+  [Replaceable, Throws, TaintSource] readonly attribute double scrollY;
+  [Replaceable, Throws, TaintSource] readonly attribute double pageYOffset;
 
   // Aliases for screenX / screenY.
-  [Replaceable, Throws, NeedsCallerType] readonly attribute double screenLeft;
-  [Replaceable, Throws, NeedsCallerType] readonly attribute double screenTop;
+  [Replaceable, Throws, NeedsCallerType, TaintSource] readonly attribute double screenLeft;
+  [Replaceable, Throws, NeedsCallerType, TaintSource] readonly attribute double screenTop;
 
   // client
   // These are writable because we allow chrome to write them.  And they need
@@ -381,10 +381,10 @@ partial interface Window {
   //[Replaceable, Throws] readonly attribute double screenY;
   //[Replaceable, Throws] readonly attribute double outerWidth;
   //[Replaceable, Throws] readonly attribute double outerHeight;
-  [Throws, NeedsCallerType] attribute any screenX;
-  [Throws, NeedsCallerType] attribute any screenY;
-  [Throws, NeedsCallerType] attribute any outerWidth;
-  [Throws, NeedsCallerType] attribute any outerHeight;
+  [Throws, NeedsCallerType, TaintSource] attribute any screenX;
+  [Throws, NeedsCallerType, TaintSource] attribute any screenY;
+  [Throws, NeedsCallerType, TaintSource] attribute any outerWidth;
+  [Throws, NeedsCallerType, TaintSource] attribute any outerHeight;
 };
 
 // https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#animation-frames
@@ -445,7 +445,7 @@ partial interface Window {
   readonly attribute float mozInnerScreenX;
   [Throws, NeedsCallerType]
   readonly attribute float mozInnerScreenY;
-  [Replaceable, Throws, NeedsCallerType]
+  [Replaceable, Throws, NeedsCallerType, TaintSource]
   readonly attribute double devicePixelRatio;
 
   /* The maximum offset that the window can be scrolled to
