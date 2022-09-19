@@ -44,17 +44,17 @@ Navigator includes GPUProvider;
 
 interface mixin NavigatorID {
   // WebKit/Blink/Trident/Presto support this (hardcoded "Mozilla").
-  [Constant, Cached, Throws]
+  [Constant, Cached, Throws, TaintSource]
   readonly attribute DOMString appCodeName; // constant "Mozilla"
-  [Constant, Cached, NeedsCallerType]
+  [Constant, Cached, NeedsCallerType, TaintSource]
   readonly attribute DOMString appName;
-  [Constant, Cached, Throws, NeedsCallerType]
+  [Constant, Cached, Throws, NeedsCallerType, TaintSource]
   readonly attribute DOMString appVersion;
-  [Pure, Cached, Throws, NeedsCallerType]
+  [Pure, Cached, Throws, NeedsCallerType, TaintSource]
   readonly attribute DOMString platform;
-  [Pure, Cached, Throws, NeedsCallerType]
+  [Pure, Cached, Throws, NeedsCallerType, TaintSource]
   readonly attribute DOMString userAgent;
-  [Constant, Cached]
+  [Constant, Cached, TaintSource]
   readonly attribute DOMString product; // constant "Gecko"
 
   // Everyone but WebKit/Blink supports this.  See bug 679971.
@@ -69,7 +69,7 @@ interface mixin NavigatorLanguage {
   // main-thread from the worker thread anytime we need to retrieve them. They
   // are updated when pref intl.accept_languages is changed.
 
-  [Pure, Cached]
+  [Pure, Cached, TaintSource]
   readonly attribute DOMString? language;
   [Pure, Cached, Frozen]
   readonly attribute sequence<DOMString> languages;
@@ -149,7 +149,7 @@ partial interface Navigator {
 
 // http://www.w3.org/TR/pointerevents/#extensions-to-the-navigator-interface
 partial interface Navigator {
-    [NeedsCallerType]
+    [NeedsCallerType, TaintSource]
     readonly attribute long maxTouchPoints;
 };
 
@@ -174,7 +174,7 @@ partial interface Navigator {
 };
 
 partial interface Navigator {
-  [Throws, Constant, Cached, NeedsCallerType]
+  [Throws, Constant, Cached, NeedsCallerType, TaintSource]
   readonly attribute DOMString oscpu;
   // WebKit/Blink support this; Trident/Presto do not.
   readonly attribute DOMString vendor;
@@ -184,7 +184,7 @@ partial interface Navigator {
   readonly attribute DOMString productSub;
   // WebKit/Blink/Trident/Presto support this.
   readonly attribute boolean cookieEnabled;
-  [Throws, Constant, Cached, NeedsCallerType]
+  [Throws, Constant, Cached, NeedsCallerType, TaintSource]
   readonly attribute DOMString buildID;
 
   // WebKit/Blink/Trident/Presto support this.
