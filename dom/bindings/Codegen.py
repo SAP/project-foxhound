@@ -11167,6 +11167,11 @@ class CGSpecializedGetter(CGAbstractStaticMethod):
 
     def __init__(self, descriptor, attr):
         self.attr = attr
+
+        # TaintFox: Check if return value should de marked as taint source and
+        # get name for taint source if needed
+        self.taintSource = GetLabelForErrorReporting(descriptor, attr, False) if  memberIsTaintSource(attr) else None
+
         name = "get_" + IDLToCIdentifier(attr.identifier.name)
         args = [
             Argument("JSContext*", "cx"),
@@ -11288,6 +11293,17 @@ class CGSpecializedGetter(CGAbstractStaticMethod):
                     slotIndex=memberReservedSlot(self.attr, self.descriptor),
                 )
 
+            # TaintFox: create source code for tainting cached return value
+            markTaintSnippet = ""
+            if self.taintSource is not None:
+                print("Generating taint source for cached value:", self.taintSource)
+                markTaintSnippet = \
+                f"""
+                        // Add taint source for cached value
+                        MarkTaintSource(cx, args.rval(), "{self.taintSource}");
+                """
+
+
             prefix += fill(
                 """
                 MOZ_ASSERT(JSCLASS_RESERVED_SLOTS(JS::GetClass(slotStorage)) > slotIndex);
@@ -11296,6 +11312,9 @@ class CGSpecializedGetter(CGAbstractStaticMethod):
                   JS::Value cachedVal = JS::GetReservedSlot(slotStorage, slotIndex);
                   if (!cachedVal.isUndefined()) {
                     args.rval().set(cachedVal);
+
+                    ${markTaintSnippet}
+
                     // The cached value is in the compartment of slotStorage,
                     // so wrap into the caller compartment as needed.
                     return ${maybeWrap}(cx, args.rval());
@@ -11303,6 +11322,7 @@ class CGSpecializedGetter(CGAbstractStaticMethod):
                 }
 
                 """,
+                markTaintSnippet=markTaintSnippet,
                 maybeWrap=getMaybeWrapValueFuncForType(self.attr.type),
             )
 
