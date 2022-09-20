@@ -629,7 +629,7 @@ interface mixin WebGLRenderingContextBase {
     [WebGLHandlesContextLoss] GLint getAttribLocation(WebGLProgram program, DOMString name);
 
     any getBufferParameter(GLenum target, GLenum pname);
-    [Throws]
+    [Throws, TaintSource]
     any getParameter(GLenum pname);
 
     [WebGLHandlesContextLoss] GLenum getError();
