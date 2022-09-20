@@ -116,6 +116,7 @@ partial interface Navigator {
 
 // http://www.w3.org/TR/tracking-dnt/ sort of
 partial interface Navigator {
+  [TaintSource]
   readonly attribute DOMString doNotTrack;
 };
 
@@ -177,10 +178,13 @@ partial interface Navigator {
   [Throws, Constant, Cached, NeedsCallerType, TaintSource]
   readonly attribute DOMString oscpu;
   // WebKit/Blink support this; Trident/Presto do not.
+  [TaintSource]
   readonly attribute DOMString vendor;
   // WebKit/Blink supports this (hardcoded ""); Trident/Presto do not.
+  [TaintSource]
   readonly attribute DOMString vendorSub;
   // WebKit/Blink supports this (hardcoded "20030107"); Trident/Presto don't
+  [TaintSource]
   readonly attribute DOMString productSub;
   // WebKit/Blink/Trident/Presto support this.
   readonly attribute boolean cookieEnabled;
@@ -287,6 +291,7 @@ partial interface Navigator {
 };
 
 interface mixin NavigatorConcurrentHardware {
+  [TaintSource]
   readonly attribute unsigned long long hardwareConcurrency;
 };
 

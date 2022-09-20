@@ -7986,16 +7986,31 @@ def getWrapTemplateForType(
         """
         if failureCode is None:
             failureCode = exceptionCode
+
+        # TaintFox: create source code for tainting wrapped return value
+        markTaintSnippet = ""
+        if taintSource is not None:
+            print("Generating taint source for wrapped value:", taintSource)
+            markTaintSnippet = dedent(
+                f"""
+                // Add taint source for wrapped value
+                MarkTaintSource(cx, args.rval(), "{taintSource}");"""
+            )
+
         return fill(
             """
             if (!${wrapCall}) {
               $*{failureCode}
             }
+
+            ${markTaintSnippet}
+
             $*{successCode}
             """,
             wrapCall=wrapCall,
             failureCode=failureCode,
             successCode=successCode,
+            markTaintSnippet=markTaintSnippet,
         )
 
     if type is None or type.isVoid():
@@ -11297,11 +11312,11 @@ class CGSpecializedGetter(CGAbstractStaticMethod):
             markTaintSnippet = ""
             if self.taintSource is not None:
                 print("Generating taint source for cached value:", self.taintSource)
-                markTaintSnippet = \
+            markTaintSnippet = dedent(
                 f"""
-                        // Add taint source for cached value
-                        MarkTaintSource(cx, args.rval(), "{self.taintSource}");
-                """
+                // Add taint source for cached value
+                MarkTaintSource(cx, args.rval(), "{self.taintSource}");"""
+            )
 
 
             prefix += fill(
@@ -18352,7 +18367,7 @@ class CGBindingRoot(CGThing):
 
         def hasAtLeastOneTaintsource(descriptor):
             return any(
-                m.isAttr() and m.getExtendedAttribute("TaintSource")
+                (m.isAttr() or m.isMethod()) and m.getExtendedAttribute("TaintSource")
                 for m in descriptor.interface.members
             )
 
