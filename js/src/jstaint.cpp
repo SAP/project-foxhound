@@ -210,6 +210,21 @@ std::vector<std::u16string> JS::taintargs_jsstring(JSContext* cx, JSString* cons
   return args;
 }
 
+void JS::Md5ComputeBuffer(unsigned char digest[16], md5byte const *buf, unsigned len) {
+  MD5Context cx;
+  MD5Init(&cx);
+  MD5Update(&cx, buf, len);
+  MD5Final(digest, &cx);
+}
+
+void JS::Md5CheckSum(JSLinearString* str, unsigned char digest[16]) {
+  JS::AutoCheckCannotGC nogc;
+  size_t len = str->length();
+  return str->hasLatin1Chars()
+    ? Md5ComputeBuffer(digest, reinterpret_cast<const md5byte*>(str->latin1Chars(nogc)),  len * sizeof(JS::Latin1Char) / sizeof(md5byte))
+    : Md5ComputeBuffer(digest, reinterpret_cast<const md5byte*>(str->twoByteChars(nogc)), len * sizeof(char16_t)       / sizeof(md5byte));
+}
+
 TaintLocation JS::TaintLocationFromContext(JSContext* cx)
 {
   if (!cx) {
@@ -217,12 +232,27 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
   }
 
   const char* filename = NULL;
-  uint32_t line;
-  uint32_t pos;
+  uint32_t line = 0;
+  uint32_t pos = 0;
+  uint32_t scriptStartline = 0;
+  TaintMd5 hash;
+
   RootedString function(cx);
 
   for (js::AllFramesIter i(cx); !i.done(); ++i) {
     if (i.hasScript()) {
+      // Get source
+      JSScript* script = i.script();
+      ScriptSource* ss = script->scriptSource();
+      if (ss) {
+        scriptStartline = ss->startLine();
+        if (ss->hasSourceText()) {
+          JSLinearString* sourceString = ss->substring(cx, script->sourceStart(), script->sourceEnd());
+          if (sourceString) {
+            Md5CheckSum(sourceString, hash.data());
+          }
+        }
+      }
       filename = JS_GetScriptFilename(i.script());
       line = PCToLineNumber(i.script(), i.pc(), &pos);
     } else {
@@ -246,7 +276,7 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
     return TaintLocation();
   }
 
-  return TaintLocation(ascii2utf16(std::string(filename)), line, pos, taintarg(cx, function));
+  return TaintLocation(ascii2utf16(std::string(filename)), line, pos, scriptStartline, hash, taintarg(cx, function));
 }
 
 TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleValue args) {
