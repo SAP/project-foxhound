@@ -4,8 +4,10 @@
 #include "jstaint.h"
 
 #include <algorithm>
+#include <iomanip>
 #include <iostream>
 #include <locale>
+#include <sstream>
 #include <string>
 #include <utility>
 
@@ -210,14 +212,26 @@ std::vector<std::u16string> JS::taintargs_jsstring(JSContext* cx, JSString* cons
   return args;
 }
 
-void JS::Md5ComputeBuffer(unsigned char digest[16], md5byte const *buf, unsigned len) {
+std::string JS::convertDigestToHexString(const TaintMd5& digest)
+{
+  std::stringstream ss;
+  ss << std::hex;
+  for (const auto& byte : digest) {
+    ss << std::setw(2) << std::setfill('0') << static_cast<unsigned int>(byte);
+  }
+  return ss.str();
+}
+
+void JS::Md5ComputeBuffer(unsigned char digest[16], md5byte const *buf, unsigned len)
+{
   MD5Context cx;
   MD5Init(&cx);
   MD5Update(&cx, buf, len);
   MD5Final(digest, &cx);
 }
 
-void JS::Md5CheckSum(JSLinearString* str, unsigned char digest[16]) {
+void JS::Md5CheckSum(JSLinearString* str, unsigned char digest[16])
+{
   JS::AutoCheckCannotGC nogc;
   size_t len = str->length();
   return str->hasLatin1Chars()

@@ -215,21 +215,19 @@ str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
       RootedString function(cx, JS_NewUCStringCopyZ(cx, taint_node.operation().location().function().c_str()));
       if (!function)
         return false;
+      // Also add the MD5 hash of the containing function
+      RootedString hash(cx, JS_NewStringCopyZ(cx, JS::convertDigestToHexString(taint_node.operation().location().scriptHash()).c_str()));
+      if (!hash)
+        return false;
 
       if (!JS_DefineProperty(cx, location, "filename", filename, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
           !JS_DefineProperty(cx, location, "function", function, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
           !JS_DefineProperty(cx, location, "line", taint_node.operation().location().line(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
           !JS_DefineProperty(cx, location, "pos", taint_node.operation().location().pos(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
-          !JS_DefineProperty(cx, location, "scriptline", taint_node.operation().location().scriptStartLine(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+          !JS_DefineProperty(cx, location, "scriptline", taint_node.operation().location().scriptStartLine(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
+          !JS_DefineProperty(cx, location, "scripthash", hash, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
         return false;
 
-      // Also add the MD5 hash of the containing function
-      const std::array<unsigned char, 16> &hash = taint_node.operation().location().scriptHash();
-      RootedArrayBufferObject hashBuffer(cx, ArrayBufferObject::createZeroed(cx, sizeof(hash)));
-      memcpy(hashBuffer->dataPointer(), hash.data(), sizeof(hash));
-      JS_DefineProperty(cx, location, "scriptMd5", hashBuffer, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT);
-
-      
       if (!JS_DefineProperty(cx, node, "location", location, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
         return false;
 
