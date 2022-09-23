@@ -61,7 +61,7 @@ std::string convertDigestToHexString(const TaintMd5& digest);
 
 void Md5ComputeBuffer(unsigned char digest[16], md5byte const *buf, unsigned len);
 
-void Md5CheckSum(JSLinearString* str, unsigned char digest[16]);
+void Md5CheckSum(JSContext* cx, JSLinearString* str, unsigned char digest[16]);
   
 // Extracts the current filename, linenumber and function from the JSContext
 TaintLocation TaintLocationFromContext(JSContext* cx);

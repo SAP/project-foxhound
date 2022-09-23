@@ -13,6 +13,7 @@
 
 #include "jsapi.h"
 #include "js/Array.h"
+#include "js/CharacterEncoding.h"
 #include "js/UniquePtr.h"
 #include "vm/FrameIter.h"
 #include "vm/JSContext.h"
@@ -222,7 +223,7 @@ std::string JS::convertDigestToHexString(const TaintMd5& digest)
   return ss.str();
 }
 
-void JS::Md5ComputeBuffer(unsigned char digest[16], md5byte const *buf, unsigned len)
+void JS::Md5ComputeBuffer(unsigned char digest[16], const md5byte *buf, unsigned len)
 {
   MD5Context cx;
   MD5Init(&cx);
@@ -230,13 +231,12 @@ void JS::Md5ComputeBuffer(unsigned char digest[16], md5byte const *buf, unsigned
   MD5Final(digest, &cx);
 }
 
-void JS::Md5CheckSum(JSLinearString* str, unsigned char digest[16])
+void JS::Md5CheckSum(JSContext* cx, JSLinearString* str, unsigned char digest[16])
 {
-  JS::AutoCheckCannotGC nogc;
-  size_t len = str->length();
-  return str->hasLatin1Chars()
-    ? Md5ComputeBuffer(digest, reinterpret_cast<const md5byte*>(str->latin1Chars(nogc)),  len * sizeof(JS::Latin1Char) / sizeof(md5byte))
-    : Md5ComputeBuffer(digest, reinterpret_cast<const md5byte*>(str->twoByteChars(nogc)), len * sizeof(char16_t)       / sizeof(md5byte));
+  // Encode the string into UTF8 before taking the checksum
+  size_t len = JS::GetDeflatedUTF8StringLength(str);
+  JS::UniqueChars chars = StringToNewUTF8CharsZ(cx, *str);
+  Md5ComputeBuffer(digest, reinterpret_cast<md5byte*>(chars.get()), len);
 }
 
 TaintLocation JS::TaintLocationFromContext(JSContext* cx)
@@ -263,7 +263,7 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
         if (ss->hasSourceText()) {
           JSLinearString* sourceString = ss->substring(cx, script->sourceStart(), script->sourceEnd());
           if (sourceString) {
-            Md5CheckSum(sourceString, hash.data());
+            Md5CheckSum(cx, sourceString, hash.data());
           }
         }
       }
