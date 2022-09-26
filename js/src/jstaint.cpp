@@ -261,7 +261,7 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
       if (ss) {
         scriptStartline = ss->startLine();
         if (ss->hasSourceText()) {
-          JSLinearString* sourceString = ss->substring(cx, script->sourceStart(), script->sourceEnd());
+          JSLinearString* sourceString = ss->substring(cx, 0, ss->length());
           if (sourceString) {
             Md5CheckSum(cx, sourceString, hash.data());
           }
