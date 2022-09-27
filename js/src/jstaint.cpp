@@ -223,22 +223,6 @@ std::string JS::convertDigestToHexString(const TaintMd5& digest)
   return ss.str();
 }
 
-void JS::Md5ComputeBuffer(unsigned char digest[16], const md5byte *buf, unsigned len)
-{
-  MD5Context cx;
-  MD5Init(&cx);
-  MD5Update(&cx, buf, len);
-  MD5Final(digest, &cx);
-}
-
-void JS::Md5CheckSum(JSContext* cx, JSLinearString* str, unsigned char digest[16])
-{
-  // Encode the string into UTF8 before taking the checksum
-  size_t len = JS::GetDeflatedUTF8StringLength(str);
-  JS::UniqueChars chars = StringToNewUTF8CharsZ(cx, *str);
-  Md5ComputeBuffer(digest, reinterpret_cast<md5byte*>(chars.get()), len);
-}
-
 TaintLocation JS::TaintLocationFromContext(JSContext* cx)
 {
   if (!cx) {
@@ -260,12 +244,7 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
       ScriptSource* ss = script->scriptSource();
       if (ss) {
         scriptStartline = ss->startLine();
-        if (ss->hasSourceText()) {
-          JSLinearString* sourceString = ss->substring(cx, 0, ss->length());
-          if (sourceString) {
-            Md5CheckSum(cx, sourceString, hash.data());
-          }
-        }
+        hash = ss->md5Checksum(cx);
       }
       filename = JS_GetScriptFilename(i.script());
       line = PCToLineNumber(i.script(), i.pc(), &pos);

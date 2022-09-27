@@ -35,7 +35,7 @@ TaintLocation::TaintLocation(std::u16string filename, uint32_t line, uint32_t po
     : filename_(filename), line_(line), pos_(pos), scriptStartLine_(scriptStartLine), scriptHash_(scriptHash), function_(function) {}
 
 TaintLocation::TaintLocation()
-    : filename_(), line_(0), pos_(0), scriptStartLine_(0), scriptHash_(), function_() {}
+    : filename_(), line_(0), pos_(0), scriptStartLine_(0), scriptHash_({0}), function_() {}
 
 TaintLocation::TaintLocation(TaintLocation&& other)
     : filename_(std::move(other.filename_)),
