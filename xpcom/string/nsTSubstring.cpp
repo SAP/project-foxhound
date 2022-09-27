@@ -997,6 +997,8 @@ bool nsTSubstring<T>::SetLength(size_type aLength,
   if (r.isErr()) {
     return false;
   }
+  // TaintFox: resize the taint ranges
+  base_string_type::mTaint.subtaint(0, aLength);
 
   FinishBulkWriteImpl(aLength);
 

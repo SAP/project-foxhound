@@ -473,6 +473,7 @@ void net_FilterURIString(const nsACString& input, nsACString& result) {
   }
 
   result.Assign(Substring(newStart, newEnd));
+  result.AssignTaint(input.Taint().safeCopy().subtaint(std::distance(newStart, start), std::distance(newEnd, end)));
   if (needsStrip) {
     result.StripTaggedASCII(mask);
   }
