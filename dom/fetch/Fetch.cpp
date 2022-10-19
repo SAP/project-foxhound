@@ -523,7 +523,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
   // Taintfox: Sink: Add fetch sink here...
   nsAutoString url;
   request->GetUrl(url);
-  ReportTaintSink(url, "fetch");
+  ReportTaintSink(url, "fetch.url");
 
   SafeRefPtr<InternalRequest> r = request->GetInternalRequest();
   RefPtr<AbortSignalImpl> signalImpl = request->GetSignalImpl();
@@ -972,6 +972,7 @@ nsresult ExtractByteStreamFromBody(const fetch::OwningBodyInit& aBodyInit,
   }
 
   if (aBodyInit.IsUSVString()) {
+    ReportTaintSink(aBodyInit.GetAsUSVString(), "fetch.body");
     BodyExtractor<const nsAString> body(&aBodyInit.GetAsUSVString());
     return body.GetAsStream(aStream, &aContentLength, aContentTypeWithCharset,
                             charset);

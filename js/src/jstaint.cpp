@@ -4,13 +4,16 @@
 #include "jstaint.h"
 
 #include <algorithm>
+#include <iomanip>
 #include <iostream>
 #include <locale>
+#include <sstream>
 #include <string>
 #include <utility>
 
 #include "jsapi.h"
 #include "js/Array.h"
+#include "js/CharacterEncoding.h"
 #include "js/UniquePtr.h"
 #include "vm/FrameIter.h"
 #include "vm/JSContext.h"
@@ -211,6 +214,16 @@ std::vector<std::u16string> JS::taintargs_jsstring(JSContext* cx, JSString* cons
   return args;
 }
 
+std::string JS::convertDigestToHexString(const TaintMd5& digest)
+{
+  std::stringstream ss;
+  ss << std::hex;
+  for (const auto& byte : digest) {
+    ss << std::setw(2) << std::setfill('0') << static_cast<unsigned int>(byte);
+  }
+  return ss.str();
+}
+
 TaintLocation JS::TaintLocationFromContext(JSContext* cx)
 {
   if (!cx) {
@@ -218,12 +231,22 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
   }
 
   const char* filename = NULL;
-  uint32_t line;
-  uint32_t pos;
+  uint32_t line = 0;
+  uint32_t pos = 0;
+  uint32_t scriptStartline = 0;
+  TaintMd5 hash;
+
   RootedString function(cx);
 
   for (js::AllFramesIter i(cx); !i.done(); ++i) {
     if (i.hasScript()) {
+      // Get source
+      JSScript* script = i.script();
+      ScriptSource* ss = script->scriptSource();
+      if (ss) {
+        scriptStartline = ss->startLine();
+        hash = ss->md5Checksum(cx);
+      }
       filename = JS_GetScriptFilename(i.script());
       line = PCToLineNumber(i.script(), i.pc(), &pos);
     } else {
@@ -247,7 +270,7 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
     return TaintLocation();
   }
 
-  return TaintLocation(ascii2utf16(std::string(filename)), line, pos, taintarg(cx, function));
+  return TaintLocation(ascii2utf16(std::string(filename)), line, pos, scriptStartline, hash, taintarg(cx, function));
 }
 
 TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleValue args) {

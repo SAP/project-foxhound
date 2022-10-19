@@ -25,6 +25,8 @@
 
 #include "jstypes.h"
 
+#include "Taint.h"
+
 #include "frontend/ScriptIndex.h"  // ScriptIndex
 #include "gc/Barrier.h"
 #include "gc/Rooting.h"
@@ -605,6 +607,9 @@ class ScriptSource {
   // See: CompileOptions::mutedErrors.
   bool mutedErrors_ = false;
 
+  // Taintfox: keep a record of the MD5 checksum of the source
+  TaintMd5 md5_;
+
   //
   // End of fields.
   //
@@ -632,7 +637,7 @@ class ScriptSource {
   static const size_t SourceDeflateLimit = 100;
 
   explicit ScriptSource()
-      : id_(++idCount_), readers_(js::mutexid::SourceCompression) {}
+    : id_(++idCount_), readers_(js::mutexid::SourceCompression), md5_({0}) {}
   ~ScriptSource() { MOZ_ASSERT(refs == 0); }
 
   void AddRef() { refs++; }
@@ -866,6 +871,9 @@ class ScriptSource {
   };
 
  public:
+  // Taintfox: compute the MD5 of script source
+  TaintMd5 md5Checksum(JSContext* cx);
+
   size_t length() const {
     MOZ_ASSERT(hasSourceText());
     return data.match(UncompressedLengthMatcher());

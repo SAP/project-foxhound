@@ -2570,6 +2570,7 @@ nsStandardURL::Resolve(const nsACString& in, nsACString& out) {
   int32_t relpathLen = buf.Length();
 
   char* result = nullptr;
+  SafeStringTaint taint;
 
   LOG(("nsStandardURL::Resolve [this=%p spec=%s relpath=%s]\n", this,
        mSpec.get(), relpath));
@@ -2661,6 +2662,7 @@ nsStandardURL::Resolve(const nsACString& in, nsACString& out) {
         // now this is really absolute
         // because a :// follows the scheme
         result = NS_xstrdup(relpath);
+        taint.concat(buf.Taint(), 0);
       } else {
         // This is a deprecated form of relative urls like
         // http:file or http:/path/file
@@ -2672,6 +2674,7 @@ nsStandardURL::Resolve(const nsACString& in, nsACString& out) {
       // the schemes are not the same, we are also done
       // because we have to assume this is absolute
       result = NS_xstrdup(relpath);
+      taint.concat(buf.Taint(), 0);
     }
   } else {
     // add some flags to coalesceFlag if it is an ftp-url
@@ -2684,6 +2687,7 @@ nsStandardURL::Resolve(const nsACString& in, nsACString& out) {
     if (relpath[0] == '/' && relpath[1] == '/') {
       // this URL //host/path is almost absolute
       result = AppendToSubstring(mScheme.mPos, mScheme.mLen + 1, relpath);
+      taint.concat(buf.Taint(), mScheme.mLen);
     } else {
       // then it must be relative
       relative = true;
@@ -2733,6 +2737,7 @@ nsStandardURL::Resolve(const nsACString& in, nsACString& out) {
         }
     }
     result = AppendToSubstring(0, len, realrelpath);
+    taint.concat(buf.Taint().safeCopy().subtaint(offset, relpathLen - offset), len);
     // locate result path
     resultPath = result + mPath.mPos;
   }
@@ -2752,7 +2757,14 @@ nsStandardURL::Resolve(const nsACString& in, nsACString& out) {
       }
     }
   }
+
+  // Taintfox: Truncate the taint to the final length of the string
+  // after any directory coalescence. This is not completely accurate
+  // as it doesn't take into account if only part of the relative path
+  // is tainted. Full implementation needs instrumentation of net_CoalesceDirs
+  taint.subtaint(0, strlen(result));
   out.Adopt(result);
+  out.AssignTaint(taint);
   return NS_OK;
 }
 

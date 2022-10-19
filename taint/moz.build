@@ -9,9 +9,11 @@
 Library('taint')
 
 EXPORTS += [
-    'Taint.h',
+    'md5_utils.h',
+    'Taint.h'
 ]
 
 SOURCES += [
+    'md5_utils.c',
     'Taint.cpp'
 ]

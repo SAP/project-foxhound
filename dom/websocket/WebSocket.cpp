@@ -1262,6 +1262,9 @@ already_AddRefed<WebSocket> WebSocket::ConstructorCommon(
   nsCOMPtr<nsIPrincipal> principal;
   nsCOMPtr<nsIPrincipal> partitionedPrincipal;
 
+  // Taintfox: WebSocket constructor sink
+  ReportTaintSink(aUrl, "WebSocket");
+
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
   if (NS_WARN_IF(!global)) {
     aRv.Throw(NS_ERROR_FAILURE);
