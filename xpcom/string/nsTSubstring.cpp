@@ -893,6 +893,7 @@ bool nsTSubstring<T>::Append(const self_type& aStr,
                    !(this->mDataFlags & DataFlags::REFCOUNTED))) {
     return Assign(aStr, mozilla::fallible);
   }
+  AppendTaint(aStr.Taint());
   return Append(aStr.BeginReading(), aStr.Length(), mozilla::fallible);
 }
 
@@ -996,6 +997,8 @@ bool nsTSubstring<T>::SetLength(size_type aLength,
   if (r.isErr()) {
     return false;
   }
+  // TaintFox: resize the taint ranges
+  base_string_type::mTaint.subtaint(0, aLength);
 
   FinishBulkWriteImpl(aLength);
 

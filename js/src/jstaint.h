@@ -11,8 +11,8 @@
 #ifndef jstaint_h
 #define jstaint_h
 
+#include "md5_utils.h"
 #include "NamespaceImports.h"
-
 #include "Taint.h"
 
 //
@@ -56,6 +56,8 @@ std::vector<std::u16string> taintargs_jsstring(JSContext* cx, JSString* const& s
 std::vector<std::u16string> taintargs(JSContext* cx, HandleString str1, HandleString str2);
 
 std::vector<std::u16string> taintargs_jsstring(JSContext* cx, JSString* const& str1, JSString* const& str2);
+
+std::string convertDigestToHexString(const TaintMd5& digest);
 
 // Extracts the current filename, linenumber and function from the JSContext
 TaintLocation TaintLocationFromContext(JSContext* cx);

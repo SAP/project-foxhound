@@ -4867,11 +4867,6 @@ nsresult nsHttpChannel::FinalizeCacheEntry() {
 // the chain of response listeners.
 nsresult nsHttpChannel::InstallCacheListener(int64_t offset) {
 
-  // TaintFox: don't currently want to use caching. For one, the cache isn't taint aware.
-  // So disable the whole feature...
-  // TODO maybe think of something better, or set no caching headers in the responses?
-  return NS_OK;
-
   nsresult rv;
 
   LOG(("Preparing to write data into the cache [uri=%s]\n", mSpec.get()));

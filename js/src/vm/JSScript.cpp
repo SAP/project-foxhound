@@ -31,6 +31,9 @@
 #include "jsapi.h"
 #include "jstypes.h"
 
+#include "md5_utils.h"
+#include "Taint.h"
+
 #include "frontend/BytecodeSection.h"
 #include "frontend/CompilationStencil.h"  // frontend::CompilationStencil
 #include "frontend/ParseContext.h"
@@ -1216,6 +1219,25 @@ const Unit* ScriptSource::units(JSContext* cx,
   const Unit* ret = decompressed.get();
   holder.holdUnits(std::move(decompressed));
   return ret;
+}
+
+TaintMd5 ScriptSource::md5Checksum(JSContext* cx)
+{
+  // Lazy compute the MD5
+  static TaintMd5 empty = {0};
+  if ((md5_ == empty) && hasSourceText()) {
+    size_t len = length();
+    JSLinearString* str = substring(cx, 0, len);
+    // Encode to UTF8
+    JS::UniqueChars chars = StringToNewUTF8CharsZ(cx, *str);
+    size_t utf8len = JS::GetDeflatedUTF8StringLength(str);
+    // Compute the MD5
+    MD5Context mcx;
+    MD5Init(&mcx);
+    MD5Update(&mcx, reinterpret_cast<md5byte*>(chars.get()), utf8len);
+    MD5Final(md5_.data(), &mcx);
+  }
+  return md5_;
 }
 
 template <typename Unit>

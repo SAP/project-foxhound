@@ -75,6 +75,7 @@ included_inclnames_to_ignore = set(
         "fdlibm.h",  # fdlibm
         "FuzzerDefs.h",  # included without a path
         "FuzzingInterface.h",  # included without a path
+        "md5_utils.h",                  # md5 external include
         "mozmemory.h",  # included without a path
         "pratom.h",  # NSPR
         "prcvar.h",  # NSPR

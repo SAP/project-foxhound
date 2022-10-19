@@ -9,6 +9,7 @@
 
 #include "js/RootingAPI.h"
 #include "nsCOMPtr.h"
+#include "nsJSUtils.h"
 #include "nsWrapperCache.h"
 
 #include "mozilla/AlreadyAddRefed.h"
