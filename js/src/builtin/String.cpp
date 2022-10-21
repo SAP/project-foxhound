@@ -299,8 +299,9 @@ construct_taint_flow(JSContext* cx, HandleObject flow_object, TaintNode** flow)
     UniqueChars op_str = JS_EncodeStringToUTF8(cx, operation);
 
     *flow = new TaintNode(*flow, TaintOperation(op_str.get()));
-    if ((*flow)->parent())
-      (*flow)->parent()->release();
+    // Foxhound: Commented out for testing 2022-10-20
+    // if ((*flow)->parent())
+    //   (*flow)->parent()->release();
   }
 
   return true;
