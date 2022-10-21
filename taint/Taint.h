@@ -13,6 +13,8 @@
 #define _Taint_h
 
 #include <initializer_list>
+#include <iterator>
+#include <stack>
 #include <string>
 #include <vector>
 #include <array>
@@ -180,16 +182,45 @@ class TaintOperation
  */
 class TaintNode
 {
+  private:
+    // Iterate over this node and its parents
+    class Iterator {
+      public:
+        Iterator(TaintNode * head);
+        Iterator();
+
+        Iterator(const Iterator& other);
+        // Iterator(Iterator&& other);
+
+        ~Iterator();
+
+        Iterator& operator++();
+        TaintNode& operator*() const;
+        bool operator==(const Iterator& other) const;
+        bool operator!=(const Iterator& other) const;
+
+      private:
+        TaintNode* root_;
+        TaintNode* current_;
+        TaintNode::Iterator * currentParentIterator_;
+        int parentNum = 0;
+    };
+    friend class TaintFlow;
+
   public:
     // Constructing a taint node sets the initial reference count to 1.
     // Constructs an intermediate node.
     TaintNode(TaintNode* parent, const TaintOperation& operation);
+    // Constructs an intermediate node with multiple parents.
+    TaintNode(const std::vector<TaintNode*>, const TaintOperation& operation);
     // Constructs a root node.
     TaintNode(const TaintOperation& operation);
 
     // Constructing a taint node sets the initial reference count to 1.
     // Constructs an intermediate node.
     TaintNode(TaintNode* parent, TaintOperation&& operation);
+    // Constructs an intermediate node with multiple parents.
+    TaintNode(const std::vector<TaintNode*>, TaintOperation&& operation);
     // Constructs a root node.
     TaintNode(TaintOperation&& operation);
     
@@ -201,18 +232,29 @@ class TaintNode
     void release();
 
     // Returns the parent node of this node or nullptr if this is a root node.
-    TaintNode* parent() { return parent_; }
+    std::vector<TaintNode*> parents() { return parents_; }
 
     // Returns the operation associated with this taint node.
     const TaintOperation& operation() const { return operation_; }
+
+    // Iterator support
+    //
+    // Makes it possible to conveniently iterate over all taint nodes of a flow,
+    // starting at the newest node.
+    // Since TaintNodes are inherently immutable, we can safely return non-const
+    // pointers here.
+    TaintNode::Iterator begin();
+    TaintNode::Iterator end();
 
   private:
     // Prevent clients from deleting us. TaintNodes can only be destroyed
     // through release().
     ~TaintNode();
 
-    // A node takes care of correctly addref()ing and release()ing its parent node.
-    TaintNode* parent_;
+    // A node takes care of correctly addref()ing and release()ing its parent nodes.
+    // parents_ is a vector, which enables taint nodes to form a directed acyclic graph
+    // TaintNode* parent_;
+    std::vector<TaintNode*> parents_ = std::vector<TaintNode*>();
 
     uint32_t refcount_;
 
@@ -223,6 +265,13 @@ class TaintNode
     // refcount them), so these operations are unavailable.
     TaintNode(const TaintNode& other) = delete;
     TaintNode& operator=(const TaintNode& other) = delete;
+
+    // Wrapper around addParent() for multiple parents
+    void addParents(const std::vector<TaintNode*> &parents);
+
+    // Add parent to internal parents_ vector and addref() parent
+    void addParent(TaintNode* parent);
+
 };
 
 /*
@@ -283,7 +332,8 @@ class TaintFlow
         bool operator!=(const Iterator& other) const;
 
       private:
-        TaintNode* current_;
+        // TaintNode* current_;
+        TaintNode::Iterator nodeIterator_;
     };
 
   public:
@@ -307,6 +357,8 @@ class TaintFlow
     TaintFlow(TaintFlow&& other);
 
     TaintFlow(const TaintFlow* other);
+
+    TaintFlow(const TaintOperation& operation, const std::vector<TaintFlow*> parents);
  
     ~TaintFlow();
 
@@ -317,7 +369,7 @@ class TaintFlow
     TaintNode* head() const { return head_; }
 
     // Returns the source of this taint flow.
-    const TaintOperation& source() const;
+    std::vector<const TaintOperation*> sources() const;
 
     // Constructs a new taint node as child of the current head node and sets
     // the newly constructed node as head of this taint flow.

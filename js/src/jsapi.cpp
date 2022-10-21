@@ -4622,7 +4622,16 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
   // DumpBacktrace(cx);
 
   // Report a warning to show up on the web console
-  JS_ReportWarningUTF8(cx, "Tainted flow from %s into %s!", firstRange.flow().source().name(), sink);
+  std::string sourceString = "";
+  for (auto source : firstRange.flow().sources()){
+      if (sourceString == ""){
+        sourceString = source->name();
+      } else{
+        sourceString = sourceString + "," + source->name();
+      }
+  }
+  // JS_ReportWarningUTF8(cx, "Tainted flow from %s into %s!", firstRange.flow().source().name(), sink);
+  JS_ReportWarningUTF8(cx, "Tainted flow from %s into %s!", sourceString.c_str(), sink);
 
   // Extend the taint flow to include the sink function
   str->taint().extend(TaintOperationFromContext(cx, sink, true, arg));
