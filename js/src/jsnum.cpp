@@ -1453,6 +1453,11 @@ static bool num_taint_getter(JSContext* cx, unsigned argc, Value* vp)
     return true;
   }
 
+  // Return, if number is not tainted
+  if (!number->as<NumberObject>().isTainted()) {
+    return true;
+  }
+
   const TaintFlow& taint = number->as<NumberObject>().taint();
   // TODO(samuel) refactor into separate function
   RootedValueVector taint_flow(cx);
