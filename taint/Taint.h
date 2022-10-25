@@ -190,7 +190,7 @@ class TaintNode
         Iterator();
 
         Iterator(const Iterator& other);
-        // Iterator(Iterator&& other);
+        Iterator(Iterator&& other);
 
         ~Iterator();
 
@@ -212,7 +212,7 @@ class TaintNode
     // Constructs an intermediate node.
     TaintNode(TaintNode* parent, const TaintOperation& operation);
     // Constructs an intermediate node with multiple parents.
-    TaintNode(const std::vector<TaintNode*>, const TaintOperation& operation);
+    TaintNode(const std::vector<TaintNode*> parents, const TaintOperation& operation);
     // Constructs a root node.
     TaintNode(const TaintOperation& operation);
 
@@ -220,7 +220,7 @@ class TaintNode
     // Constructs an intermediate node.
     TaintNode(TaintNode* parent, TaintOperation&& operation);
     // Constructs an intermediate node with multiple parents.
-    TaintNode(const std::vector<TaintNode*>, TaintOperation&& operation);
+    TaintNode(const std::vector<TaintNode*> parents, TaintOperation&& operation);
     // Constructs a root node.
     TaintNode(TaintOperation&& operation);
     
@@ -395,6 +395,10 @@ class TaintFlow
     // Constructs a new taint node as child of the head node in this flow and
     // returns a new taint flow starting at that node.
     static TaintFlow extend(const TaintFlow& flow, const TaintOperation& operation);
+
+    static TaintFlow extend(const TaintFlow& flow1, const TaintFlow& flow2, const TaintOperation& operation);
+    
+    static TaintFlow extend(const std::vector<TaintFlow*> flows, const TaintOperation& operation);
 
     // Two TaintFlows are equal if they point to the same taint node.
     bool operator==(const TaintFlow& other) const { return head_ == other.head_; }

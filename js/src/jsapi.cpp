@@ -4624,7 +4624,7 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
   // Report a warning to show up on the web console
   std::string sourceString = "";
   for (auto source : firstRange.flow().sources()){
-      if (sourceString == ""){
+      if (sourceString.empty()){
         sourceString = source->name();
       } else{
         sourceString = sourceString + "," + source->name();

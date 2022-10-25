@@ -390,7 +390,12 @@ bool JS::isAnyTaintedNumber(const Value& val1, const Value& val2)
 
 TaintFlow JS::getAnyNumberTaint(const Value& val1, const Value& val2)
 {
-  if (isTaintedNumber(val1)) {
+  // add info for operation
+  // add getting combined taint flow 
+  if (isTaintedNumber(val1) && isTaintedNumber(val2)){
+    return TaintFlow::extend(getNumberTaint(val1),getNumberTaint(val2),TaintOperation("Unspecified Operation"));
+  }
+  else if (isTaintedNumber(val1)) {
     return getNumberTaint(val1);
   } else {
     return getNumberTaint(val2);

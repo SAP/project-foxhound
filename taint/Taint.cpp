@@ -215,9 +215,9 @@ TaintNode::~TaintNode()
 
 void TaintNode::addParents(const std::vector<TaintNode*> &parents)
 {
-    std::for_each(parents_.begin(), parents_.end(), 
-        [this](auto * parent){addParent(parent);}
-    );
+    for(auto parent : parents){
+        addParent(parent);
+    }
 }
 
 void TaintNode::addParent(TaintNode* parent)
@@ -231,21 +231,22 @@ TaintNode::Iterator::Iterator(TaintNode* head) :
     current_(root_)
     { 
         if (parentNum<root_->parents().size()) {
-            currentParentIterator_ = new Iterator(root_->parents()[parentNum]->begin());
+            // currentParentIterator_ = new Iterator(root_->parents()[parentNum]->begin());
+            currentParentIterator_ = new Iterator(std::move(root_->parents()[parentNum]->begin()));
         } else{
             currentParentIterator_ = nullptr;
         }
     }
 
 TaintNode::Iterator::Iterator() :
+    root_(nullptr),
     current_(nullptr),
-    currentParentIterator_(nullptr),
-    root_(nullptr) { }
+    currentParentIterator_(nullptr) { }
 
 TaintNode::Iterator::Iterator(const Iterator& other) :
+    root_(other.root_),
     current_(other.current_),
-    parentNum(other.parentNum),
-    root_(other.root_)
+    parentNum(other.parentNum)
     {
         if (other.currentParentIterator_ == nullptr){
             currentParentIterator_ = nullptr;
@@ -255,13 +256,13 @@ TaintNode::Iterator::Iterator(const Iterator& other) :
     }
 
 
-// TaintNode::Iterator::Iterator(Iterator&& other) :
-//     current_(other.current_),
-//     parentNum(other.parentNum),
-//     root_(other.root_){
-//         currentParentIterator_ = other.currentParentIterator_;
-//         other.currentParentIterator_ = nullptr;
-// };
+TaintNode::Iterator::Iterator(Iterator&& other) :
+    root_(other.root_),
+    current_(other.current_),
+    parentNum(other.parentNum){
+        currentParentIterator_ = other.currentParentIterator_;
+        other.currentParentIterator_ = nullptr;
+};
 
 TaintNode::Iterator::~Iterator()
 {
@@ -270,7 +271,7 @@ TaintNode::Iterator::~Iterator()
 
 TaintNode::Iterator& TaintNode::Iterator::operator++()
 {
-    if (currentParentIterator_ == nullptr) {
+    if (currentParentIterator_ == nullptr || root_ == nullptr) {
         current_ = nullptr;
         return *this;
     }
@@ -289,7 +290,8 @@ TaintNode::Iterator& TaintNode::Iterator::operator++()
         // if next parent exists
         if (parentNum<root_->parents().size()) {
             // get iterator from this parent
-            currentParentIterator_ = new Iterator(root_->parents()[parentNum]->begin());
+            // currentParentIterator_ = new Iterator(root_->parents()[parentNum]->begin());
+            currentParentIterator_ = new Iterator(std::move(root_->parents()[parentNum]->begin()));
             // use value of thisiterator
             current_ = &*(*currentParentIterator_);
             ++(*currentParentIterator_);
@@ -484,6 +486,20 @@ TaintFlow::Iterator TaintFlow::end() const
 TaintFlow TaintFlow::extend(const TaintFlow& flow, const TaintOperation& operation)
 {
     return TaintFlow(new TaintNode(flow.head_, operation));
+}
+
+TaintFlow TaintFlow::extend(const TaintFlow& flow1, const TaintFlow& flow2, const TaintOperation& operation)
+{
+    return TaintFlow(new TaintNode({flow1.head_ ,flow2.head_}, operation));
+}
+
+TaintFlow TaintFlow::extend(const std::vector<TaintFlow*> flows, const TaintOperation& operation)
+{
+    std::vector<TaintNode*> parents = {};
+    for (auto &&flow : flows) {
+        parents.push_back(flow->head());
+    }
+    return TaintFlow(new TaintNode(parents, operation));
 }
 
 
