@@ -347,6 +347,12 @@ whitelist-types = [
     "nsStyleTransformMatrix::MatrixTransformOperator",
 ]
 opaque-types = [
+    #"TaintNodeIterator",
+    #"std:set",
+    #"std:shared_ptr",
+    #"_NodeHandle",
+    #"_Node_handle",
+    "StringTaint",
     "mozilla::StyleThinArc", # https://github.com/rust-lang/rust-bindgen/issues/1557
     "std::pair__PCCP",
     "std::namespace::atomic___base", "std::atomic__My_base",

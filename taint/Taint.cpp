@@ -16,6 +16,7 @@
 #include <locale>   // wstring_convert
 #include <codecvt>  // codecvt_utf8
 #include <iostream> // cout
+#include <memory>
 #include <set>
 #include <string>   // stoi and u32string
 #include <algorithm>
@@ -226,27 +227,38 @@ void TaintNode::addParent(TaintNode* parent)
     parent->addref();
 }
 
-TaintNode::Iterator::Iterator(TaintNode* head) : 
+TaintNode::Iterator::Iterator(TaintNode* head)
+    : Iterator(head, std::make_shared<std::set<TaintNode*, PtrComp>>()){};
+
+
+
+TaintNode::Iterator::Iterator(TaintNode * head, std::shared_ptr<std::set<TaintNode*,PtrComp>> visited) :
     root_(head),
-    current_(root_)
-    { 
-        if (parentNum<root_->parents().size()) {
-            // currentParentIterator_ = new Iterator(root_->parents()[parentNum]->begin());
-            currentParentIterator_ = new Iterator(std::move(root_->parents()[parentNum]->begin()));
+    current_(root_),
+    visited_(visited)
+    {
+        parentCount_ = root_->parents().size();
+        if (parentCount_ > 0) {
+            currentParent_ = root_->parents()[currentParentNum_];
+            currentParentIterator_ = new Iterator(currentParent_,visited_);
         } else{
             currentParentIterator_ = nullptr;
+            finished = true;
         }
     }
 
 TaintNode::Iterator::Iterator() :
     root_(nullptr),
     current_(nullptr),
-    currentParentIterator_(nullptr) { }
+    currentParentIterator_(nullptr),
+    finished(true) { }
 
 TaintNode::Iterator::Iterator(const Iterator& other) :
     root_(other.root_),
     current_(other.current_),
-    parentNum(other.parentNum)
+    currentParent_(other.currentParent_),
+    // parentNum(other.parentNum),
+    visited_(other.visited_)
     {
         if (other.currentParentIterator_ == nullptr){
             currentParentIterator_ = nullptr;
@@ -256,54 +268,56 @@ TaintNode::Iterator::Iterator(const Iterator& other) :
     }
 
 
-TaintNode::Iterator::Iterator(Iterator&& other) :
-    root_(other.root_),
-    current_(other.current_),
-    parentNum(other.parentNum){
-        currentParentIterator_ = other.currentParentIterator_;
-        other.currentParentIterator_ = nullptr;
-};
+// TaintNode::Iterator::Iterator(Iterator&& other) :
+//     root_(other.root_),
+//     current_(other.current_),
+//     parentNum(other.parentNum),
+//     visited_(other.visited_){
+//         currentParentIterator_ = other.currentParentIterator_;
+//         other.currentParentIterator_ = nullptr;
+// };
 
 TaintNode::Iterator::~Iterator()
 {
     delete currentParentIterator_;
-} 
+}
 
-TaintNode::Iterator& TaintNode::Iterator::operator++()
-{
-    if (currentParentIterator_ == nullptr || root_ == nullptr) {
-        current_ = nullptr;
-        return *this;
-    }
+TaintNode::Iterator& TaintNode::Iterator::operator++() {
+  if (finished) {
+    current_ = nullptr;
+    return *this;
+  }
 
-    // try to get next element from current parent node
-    // if current parent node still has elements
-    if (*currentParentIterator_ != root_->parents()[parentNum]->end()) {
-        current_ = & *(*currentParentIterator_);
+  // if current parent node still has elements
+  if (*currentParentIterator_ != currentParent_->end()) {
+    // get next element from current parent node
+    current_ = &*(*currentParentIterator_);
+    ++(*currentParentIterator_);
+    return *this;
+  }
+  // no elements left --> go to next parent
+  else {
+    // while there are parents, try to get their iterator
+    while (++currentParentNum_ < parentCount_) {
+      // go to next parent
+      currentParent_ = root_->parents()[currentParentNum_];
+      // if next parent has not yet been visited
+      if (visited_->insert(currentParent_).second) {
+        // get iterator from this parent
+        delete currentParentIterator_;
+        currentParentIterator_ = new Iterator(currentParent_, visited_);
+        // use value of this iterator
+        current_ = &*(*currentParentIterator_);
         ++(*currentParentIterator_);
         return *this;
+      }
     }
-    // no elements left --> go to next parent
-    else{
-        // next parent
-        parentNum++;
-        // if next parent exists
-        if (parentNum<root_->parents().size()) {
-            // get iterator from this parent
-            // currentParentIterator_ = new Iterator(root_->parents()[parentNum]->begin());
-            currentParentIterator_ = new Iterator(std::move(root_->parents()[parentNum]->begin()));
-            // use value of thisiterator
-            current_ = &*(*currentParentIterator_);
-            ++(*currentParentIterator_);
-            return *this;
-        } else {
-            // no parents left --> no values left
-            delete currentParentIterator_;
-            currentParentIterator_ = nullptr;
-            current_ = nullptr;
-            return *this;
-        }
-    }
+
+    // no parents left --> no values left
+    current_ = nullptr;
+    finished = true;
+    return *this;
+  }
 }
 
 TaintNode& TaintNode::Iterator::operator*() const
