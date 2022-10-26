@@ -14,6 +14,8 @@
 
 #include <initializer_list>
 #include <iterator>
+#include <memory>
+#include <set>
 #include <stack>
 #include <string>
 #include <vector>
@@ -167,6 +169,8 @@ class TaintOperation
 };
 
 
+class TaintNodeIterator;
+
 /*
  * The nodes of the taint flow graph.
  *
@@ -190,7 +194,7 @@ class TaintNode
         Iterator();
 
         Iterator(const Iterator& other);
-        Iterator(Iterator&& other);
+        // Iterator(Iterator&& other);
 
         ~Iterator();
 
@@ -200,10 +204,24 @@ class TaintNode
         bool operator!=(const Iterator& other) const;
 
       private:
+
+        struct PtrComp
+        {
+          bool operator()(const TaintNode* lhs, const TaintNode* rhs) const  { return lhs<rhs; }
+        };
+
+        Iterator(TaintNode * head, std::shared_ptr<std::set<TaintNode*,PtrComp>> visited);
+
         TaintNode* root_;
         TaintNode* current_;
-        TaintNode::Iterator * currentParentIterator_;
-        int parentNum = 0;
+        Iterator * currentParentIterator_;
+
+        int parentCount_;
+        int currentParentNum_ = 0;
+        TaintNode * currentParent_ = nullptr;
+
+        bool finished = false;
+        std::shared_ptr<std::set<TaintNode*,PtrComp>> visited_;
     };
     friend class TaintFlow;
 
