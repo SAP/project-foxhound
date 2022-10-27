@@ -285,23 +285,18 @@ const TaintFlow& TaintFlow::getEmptyTaintFlow() {
 
 std::vector<const TaintOperation*> TaintFlow::sources() const
 {
-    std::set<const TaintOperation*> taintSources = {};
-
+    std::vector<const TaintOperation*> taintSources_vector;
     for (auto node = this->begin(); node != this->end(); ++node) {
         if((*node)->operation().isSource()){
-            taintSources.insert(& ((*node)->operation()));
+            taintSources_vector.push_back(& ((*node)->operation()));
         }
     }
-
-    std::vector<const TaintOperation*> taintSources_vector(taintSources.begin(), taintSources.end());
-
-    // std::copy(taintSources.begin(), taintSources.end(), std::back_inserter(taintSources_vector));
-
     return taintSources_vector;
 }
 
 TaintFlow& TaintFlow::extend(const TaintOperation& operation)
 {
+    nodes_.insert(new TaintNode(operation));
     return *this;
 }
 
@@ -314,16 +309,19 @@ TaintFlow& TaintFlow::extend(const TaintOperation& operation) const
 
 TaintFlow& TaintFlow::extend(TaintOperation&& operation)
 {
+    nodes_.insert(new TaintNode(operation));
     return *this;
 }
 
 
 TaintFlow TaintFlow::extend(const TaintFlow& flow, const TaintOperation& operation)
 {
-    return flow;
+    auto newFlow = flow;
+    newFlow.extend(operation);
+    return newFlow;
 }
 
-TaintFlow TaintFlow::extend(const TaintFlow& flow1, const TaintFlow& flow2, const TaintOperation& operation)
+TaintFlow TaintFlow::extend(const TaintFlow& flow1, const TaintFlow& flow2)
 {
     return TaintFlow(flow1,flow2);
     // return TaintFlow(new TaintNode({flow1.head_ ,flow2.head_}, operation));
