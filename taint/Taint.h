@@ -336,7 +336,7 @@ class TaintFlow
     // returns a new taint flow starting at that node.
     static TaintFlow extend(const TaintFlow& flow, const TaintOperation& operation);
 
-    static TaintFlow extend(const TaintFlow& flow1, const TaintFlow& flow2, const TaintOperation& operation);
+    static TaintFlow extend(const TaintFlow& flow1, const TaintFlow& flow2);
 
     // Two TaintFlows are equal if they point to the same taint node.
     bool operator==(const TaintFlow& other) const { return nodes_ == other.nodes_; }
