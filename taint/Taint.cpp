@@ -149,33 +149,6 @@ void TaintOperation::dump(const TaintOperation& op) {
 void TaintOperation::dump(const TaintOperation& op) {}
 #endif
 
-TaintNode::TaintNode(const std::vector<TaintNode*> parents, const TaintOperation& operation)
-    :  refcount_(1), operation_(operation)
-{
-    MOZ_COUNT_CTOR(TaintNode);
-    addParents(parents);
-}
-
-TaintNode::TaintNode(const std::vector<TaintNode*> parents, TaintOperation&& operation)
-    : refcount_(1), operation_(operation)
-{
-    MOZ_COUNT_CTOR(TaintNode);
-    addParents(parents);
-}
-
-TaintNode::TaintNode(TaintNode* parent, const TaintOperation& operation)
-    :  refcount_(1), operation_(operation)
-{
-    MOZ_COUNT_CTOR(TaintNode);
-    addParent(parent);
-}
-
-TaintNode::TaintNode(TaintNode* parent, TaintOperation&& operation)
-    : refcount_(1), operation_(operation)
-{
-    MOZ_COUNT_CTOR(TaintNode);
-    addParent(parent);
-}
 
 TaintNode::TaintNode(const TaintOperation& operation)
     : refcount_(1), operation_(operation)
@@ -214,229 +187,92 @@ TaintNode::~TaintNode()
     );
 }
 
-void TaintNode::addParents(const std::vector<TaintNode*> &parents)
-{
-    for(auto parent : parents){
-        addParent(parent);
-    }
-}
-
-void TaintNode::addParent(TaintNode* parent)
-{
-    parents_.push_back(parent);
-    parent->addref();
-}
-
-TaintNode::Iterator::Iterator(TaintNode* head)
-    : Iterator(head, std::make_shared<std::set<TaintNode*, PtrComp>>()){};
-
-
-
-TaintNode::Iterator::Iterator(TaintNode * head, std::shared_ptr<std::set<TaintNode*,PtrComp>> visited) :
-    root_(head),
-    current_(root_),
-    visited_(visited)
-    {
-        parentCount_ = root_->parents().size();
-        if (parentCount_ > 0) {
-            currentParent_ = root_->parents()[currentParentNum_];
-            currentParentIterator_ = new Iterator(currentParent_,visited_);
-        } else{
-            currentParentIterator_ = nullptr;
-            finished = true;
-        }
-    }
-
-TaintNode::Iterator::Iterator() :
-    root_(nullptr),
-    current_(nullptr),
-    currentParentIterator_(nullptr),
-    finished(true) { }
-
-TaintNode::Iterator::Iterator(const Iterator& other) :
-    root_(other.root_),
-    current_(other.current_),
-    currentParent_(other.currentParent_),
-    // parentNum(other.parentNum),
-    visited_(other.visited_)
-    {
-        if (other.currentParentIterator_ == nullptr){
-            currentParentIterator_ = nullptr;
-        } else {
-            currentParentIterator_ = new Iterator(*other.currentParentIterator_);
-        }
-    }
-
-
-// TaintNode::Iterator::Iterator(Iterator&& other) :
-//     root_(other.root_),
-//     current_(other.current_),
-//     parentNum(other.parentNum),
-//     visited_(other.visited_){
-//         currentParentIterator_ = other.currentParentIterator_;
-//         other.currentParentIterator_ = nullptr;
-// };
-
-TaintNode::Iterator::~Iterator()
-{
-    delete currentParentIterator_;
-}
-
-TaintNode::Iterator& TaintNode::Iterator::operator++() {
-  if (finished) {
-    current_ = nullptr;
-    return *this;
-  }
-
-  // if current parent node still has elements
-  if (*currentParentIterator_ != currentParent_->end()) {
-    // get next element from current parent node
-    current_ = &*(*currentParentIterator_);
-    ++(*currentParentIterator_);
-    return *this;
-  }
-  // no elements left --> go to next parent
-  else {
-    // while there are parents, try to get their iterator
-    while (++currentParentNum_ < parentCount_) {
-      // go to next parent
-      currentParent_ = root_->parents()[currentParentNum_];
-      // if next parent has not yet been visited
-      if (visited_->insert(currentParent_).second) {
-        // get iterator from this parent
-        delete currentParentIterator_;
-        currentParentIterator_ = new Iterator(currentParent_, visited_);
-        // use value of this iterator
-        current_ = &*(*currentParentIterator_);
-        ++(*currentParentIterator_);
-        return *this;
-      }
-    }
-
-    // no parents left --> no values left
-    current_ = nullptr;
-    finished = true;
-    return *this;
-  }
-}
-
-TaintNode& TaintNode::Iterator::operator*() const
-{
-    return *current_;
-}
-
-bool TaintNode::Iterator::operator==(const Iterator& other) const
-{
-    return current_ == other.current_;
-}
-
-bool TaintNode::Iterator::operator!=(const Iterator& other) const
-{
-    return current_ != other.current_;
-}
-
-TaintNode::Iterator TaintNode::begin()
-{
-    return Iterator(this);
-}
-
-TaintNode::Iterator TaintNode::end()
-{
-    return Iterator();
-}
-
-
-
-
-
-
-TaintFlow::Iterator::Iterator(TaintNode* head) : nodeIterator_(head->begin()){}
-
-TaintFlow::Iterator::Iterator() : nodeIterator_() {}
-
-TaintFlow::Iterator::Iterator(const Iterator& other) : nodeIterator_(other.nodeIterator_) { }
-
-TaintFlow::Iterator& TaintFlow::Iterator::operator++()
-{
-    ++nodeIterator_;
-    return *this;
-}
-
-TaintNode& TaintFlow::Iterator::operator*() const
-{
-    return *nodeIterator_;
-}
-
-bool TaintFlow::Iterator::operator==(const Iterator& other) const
-{
-    return nodeIterator_ == other.nodeIterator_;
-}
-
-bool TaintFlow::Iterator::operator!=(const Iterator& other) const
-{
-    return nodeIterator_ != other.nodeIterator_;
-}
 
 TaintFlow::TaintFlow()
-    : head_(nullptr)
+    : nodes_()
 {
     MOZ_COUNT_CTOR(TaintFlow);
 }
 
 TaintFlow::TaintFlow(TaintNode* head)
-    : head_(head)
+    : nodes_()
 {
     MOZ_COUNT_CTOR(TaintFlow);
+    nodes_.insert(head);
+    // ToDo: probably remove addref
+    // addrefNodes();
 }
 
 TaintFlow::TaintFlow(const TaintOperation& source)
-    : head_(new TaintNode(source))
+    : nodes_()
 {
+    nodes_.insert(new TaintNode(source));
     MOZ_COUNT_CTOR(TaintFlow);
 }
 
 TaintFlow::TaintFlow(const TaintFlow& other)
-    : head_(other.head_)
-{
-    MOZ_COUNT_CTOR(TaintFlow);
-    if (head_)
-        head_->addref();
-}
-
-TaintFlow::TaintFlow(const TaintFlow* other)
-    : head_(nullptr)
 {
     MOZ_COUNT_CTOR(TaintFlow);
     if (other) {
-        head_ = other->head_;
-        if (head_)
-            head_->addref();
+        nodes_=other.nodes_;
+        addrefNodes();
+    }
+}
+
+TaintFlow::TaintFlow(const TaintFlow* other)
+{
+    MOZ_COUNT_CTOR(TaintFlow);
+    if (other) {
+        nodes_=other->nodes_;
+        addrefNodes();
     }
 }
 
 TaintFlow::TaintFlow(TaintFlow&& other)
-    : head_(other.head_)
+    : nodes_(other.nodes_)
 {
     MOZ_COUNT_CTOR(TaintFlow);
-    other.head_ = nullptr;
+    other.nodes_ = std::set<TaintNode*,PtrComp>();
+}
+
+TaintFlow::TaintFlow(const TaintFlow& flow1, const TaintFlow& flow2)
+{
+    nodes_ = flow1.nodes_;
+    nodes_.insert(flow2.nodes_.begin(), flow2.nodes_.end());
+    addrefNodes();
 }
 
 
 TaintFlow::~TaintFlow()
 {
     MOZ_COUNT_DTOR(TaintFlow);
-    if (head_)
-        head_->release();
+    releaseNodes();
+}
+
+void TaintFlow::addrefNodes()
+{
+    for(auto node : nodes_){
+        node->addref();
+    }
+}
+
+void TaintFlow::releaseNodes()
+{
+    for(auto node : nodes_){
+        node->release();
+    }
 }
 
 TaintFlow& TaintFlow::operator=(const TaintFlow& other)
 {
-    if (head_)
-        head_->release();
-
-    head_ = other.head_;
-    if (head_)
-        head_->addref();
+    MOZ_COUNT_CTOR(TaintFlow);
+    if (other) {
+        nodes_=other.nodes_;
+        addrefNodes();
+    }
+    // releaseNodes();
+    // nodes_ = other.nodes_;
+    // addrefNodes();
 
     return *this;
 }
@@ -452,23 +288,20 @@ std::vector<const TaintOperation*> TaintFlow::sources() const
     std::set<const TaintOperation*> taintSources = {};
 
     for (auto node = this->begin(); node != this->end(); ++node) {
-        if((*node).parents().empty()){
-            taintSources.insert(& ((*node).operation()));
+        if((*node)->operation().isSource()){
+            taintSources.insert(& ((*node)->operation()));
         }
     }
 
     std::vector<const TaintOperation*> taintSources_vector(taintSources.begin(), taintSources.end());
 
-    std::copy(taintSources.begin(), taintSources.end(), std::back_inserter(taintSources_vector));
+    // std::copy(taintSources.begin(), taintSources.end(), std::back_inserter(taintSources_vector));
 
     return taintSources_vector;
 }
 
 TaintFlow& TaintFlow::extend(const TaintOperation& operation)
 {
-    TaintNode* newhead = new TaintNode(head_, operation);
-    head_->release();
-    head_ = newhead;
     return *this;
 }
 
@@ -481,40 +314,21 @@ TaintFlow& TaintFlow::extend(const TaintOperation& operation) const
 
 TaintFlow& TaintFlow::extend(TaintOperation&& operation)
 {
-    TaintNode* newhead = new TaintNode(head_, operation);
-    head_->release();
-    head_ = newhead;
     return *this;
 }
 
-TaintFlow::Iterator TaintFlow::begin() const
-{
-    return Iterator(head_);
-}
-
-TaintFlow::Iterator TaintFlow::end() const
-{
-    return Iterator();
-}
 
 TaintFlow TaintFlow::extend(const TaintFlow& flow, const TaintOperation& operation)
 {
-    return TaintFlow(new TaintNode(flow.head_, operation));
+    return flow;
 }
 
 TaintFlow TaintFlow::extend(const TaintFlow& flow1, const TaintFlow& flow2, const TaintOperation& operation)
 {
-    return TaintFlow(new TaintNode({flow1.head_ ,flow2.head_}, operation));
+    return TaintFlow(flow1,flow2);
+    // return TaintFlow(new TaintNode({flow1.head_ ,flow2.head_}, operation));
 }
 
-TaintFlow TaintFlow::extend(const std::vector<TaintFlow*> flows, const TaintOperation& operation)
-{
-    std::vector<TaintNode*> parents = {};
-    for (auto &&flow : flows) {
-        parents.push_back(flow->head());
-    }
-    return TaintFlow(new TaintNode(parents, operation));
-}
 
 
 TaintRange::TaintRange()
@@ -1295,7 +1109,7 @@ void DumpTaint(const StringTaint& taint)
 void DumpTaintFlow(const TaintFlow& flow)
 {
     for(auto& node : flow) {
-        auto& op = node.operation();
+        auto& op = node->operation();
         DumpTaintOperation(op);
     }
 }

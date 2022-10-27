@@ -181,12 +181,12 @@ str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
 
     // Wrap the taint flow for the current range.
     RootedValueVector taint_flow(cx);
-    for (TaintNode& taint_node : taint_range.flow()) {
+    for (auto& taint_node : taint_range.flow()) {
       RootedObject node(cx, JS_NewObject(cx, nullptr));
       if (!node)
         return false;
 
-      RootedString operation(cx, JS_NewStringCopyZ(cx, taint_node.operation().name()));
+      RootedString operation(cx, JS_NewStringCopyZ(cx, taint_node->operation().name()));
       if (!operation)
         return false;
 
@@ -194,13 +194,13 @@ str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
         return false;
 
       RootedValue isBuiltIn(cx);
-      isBuiltIn.setBoolean(taint_node.operation().is_native());
+      isBuiltIn.setBoolean(taint_node->operation().is_native());
 
       if (!JS_DefineProperty(cx, node, "builtin", isBuiltIn, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
         return false;
 
       RootedValue isSource(cx);
-      isSource.setBoolean(taint_node.operation().isSource());
+      isSource.setBoolean(taint_node->operation().isSource());
 
       if (!JS_DefineProperty(cx, node, "source", isSource, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
         return false;
@@ -209,22 +209,22 @@ str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
       RootedObject location(cx, JS_NewObject(cx, nullptr));
       if (!location)
         return false;
-      RootedString filename(cx, JS_NewUCStringCopyZ(cx, taint_node.operation().location().filename().c_str()));
+      RootedString filename(cx, JS_NewUCStringCopyZ(cx, taint_node->operation().location().filename().c_str()));
       if (!filename)
         return false;
-      RootedString function(cx, JS_NewUCStringCopyZ(cx, taint_node.operation().location().function().c_str()));
+      RootedString function(cx, JS_NewUCStringCopyZ(cx, taint_node->operation().location().function().c_str()));
       if (!function)
         return false;
       // Also add the MD5 hash of the containing function
-      RootedString hash(cx, JS_NewStringCopyZ(cx, JS::convertDigestToHexString(taint_node.operation().location().scriptHash()).c_str()));
+      RootedString hash(cx, JS_NewStringCopyZ(cx, JS::convertDigestToHexString(taint_node->operation().location().scriptHash()).c_str()));
       if (!hash)
         return false;
 
       if (!JS_DefineProperty(cx, location, "filename", filename, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
           !JS_DefineProperty(cx, location, "function", function, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
-          !JS_DefineProperty(cx, location, "line", taint_node.operation().location().line(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
-          !JS_DefineProperty(cx, location, "pos", taint_node.operation().location().pos(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
-          !JS_DefineProperty(cx, location, "scriptline", taint_node.operation().location().scriptStartLine(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
+          !JS_DefineProperty(cx, location, "line", taint_node->operation().location().line(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
+          !JS_DefineProperty(cx, location, "pos", taint_node->operation().location().pos(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
+          !JS_DefineProperty(cx, location, "scriptline", taint_node->operation().location().scriptStartLine(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
           !JS_DefineProperty(cx, location, "scripthash", hash, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
         return false;
 
@@ -233,7 +233,7 @@ str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
 
       // Wrap the arguments
       RootedValueVector taint_arguments(cx);
-      for (auto& taint_argument : taint_node.operation().arguments()) {
+      for (auto& taint_argument : taint_node->operation().arguments()) {
         RootedString argument(cx, JS_NewUCStringCopyZ(cx, taint_argument.c_str()));
         if (!argument)
           return false;
@@ -298,7 +298,7 @@ construct_taint_flow(JSContext* cx, HandleObject flow_object, TaintNode** flow)
     // TODO process arguments as well
     UniqueChars op_str = JS_EncodeStringToUTF8(cx, operation);
 
-    *flow = new TaintNode(*flow, TaintOperation(op_str.get()));
+    *flow = new TaintNode(TaintOperation(op_str.get()));
     // Foxhound: Commented out for testing 2022-10-20
     // if ((*flow)->parent())
     //   (*flow)->parent()->release();
