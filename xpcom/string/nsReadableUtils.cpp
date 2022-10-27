@@ -242,7 +242,6 @@ void ToUpperCase(const nsACString& aSource, nsACString& aDest) {
 
   // TaintFox: propagate taint into aDest.
   aDest.AssignTaint(aSource.Taint());
-  aDest.Taint().extend(TaintOperation("ToUpperCase", true));
 }
 
 void ToLowerCase(nsACString& aCString) {
@@ -275,7 +274,6 @@ void ToLowerCase(const nsACString& aSource, nsACString& aDest) {
 
   // TaintFox: propagate taint into aDest.
   aDest.AssignTaint(aSource.Taint());
-  aDest.Taint().extend(TaintOperation("ToLowerCase", true));
 }
 
 void ParseString(const nsACString& aSource, char aDelimiter,

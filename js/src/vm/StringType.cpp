@@ -1009,16 +1009,7 @@ JSString* js::ConcatStrings(
     typename MaybeRooted<JSString*, allowGC>::HandleType right,
     gc::InitialHeap heap) {
 
-  TaintOperation op("concat");
-  if ((left && right) && (left->taint().hasTaint() || right->taint().hasTaint())) {
-    op = JS::TaintOperationConcat(cx, "concat", true, left, right);
-  }
-  
   JSString* str = ConcatStringsQuiet<allowGC>(cx, left, right, heap);
-
-  if (str && str->taint().hasTaint()) {
-     str->taint().extend(op);
-  }
 
   return str;
 }
