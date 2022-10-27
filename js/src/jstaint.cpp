@@ -356,11 +356,6 @@ void JS::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const
   for (unsigned i = 0; i < args.length(); i++) {
     if (args[i].isString()) {
       RootedString arg(cx, args[i].toString());
-      if (arg->isTainted()) {
-        arg->taint().extend(
-          TaintOperation("function", location,
-                         { taintarg(cx, name), sourceinfo, taintarg(cx, i), taintarg(cx, args.length()) } ));
-      }
     }
   }
 }
@@ -393,7 +388,7 @@ TaintFlow JS::getAnyNumberTaint(const Value& val1, const Value& val2)
   // add info for operation
   // add getting combined taint flow 
   if (isTaintedNumber(val1) && isTaintedNumber(val2)){
-    return TaintFlow::extend(getNumberTaint(val1),getNumberTaint(val2),TaintOperation("Unspecified Operation"));
+    return TaintFlow::extend(getNumberTaint(val1),getNumberTaint(val2));
   }
   else if (isTaintedNumber(val1)) {
     return getNumberTaint(val1);
