@@ -1461,12 +1461,12 @@ static bool num_taint_getter(JSContext* cx, unsigned argc, Value* vp)
   const TaintFlow& taint = number->as<NumberObject>().taint();
   // TODO(samuel) refactor into separate function
   RootedValueVector taint_flow(cx);
-  for (TaintNode& taint_node : taint) {
+  for (auto& taint_node : taint) {
     RootedObject node(cx, JS_NewObject(cx, nullptr));
     if (!node)
       return false;
 
-    RootedString operation(cx, JS_NewStringCopyZ(cx, taint_node.operation().name()));
+    RootedString operation(cx, JS_NewStringCopyZ(cx, taint_node->operation().name()));
     if (!operation)
       return false;
 
@@ -1475,7 +1475,7 @@ static bool num_taint_getter(JSContext* cx, unsigned argc, Value* vp)
 
     // Wrap the arguments.
     RootedValueVector taint_arguments(cx);
-    for (auto& taint_argument : taint_node.operation().arguments()) {
+    for (auto& taint_argument : taint_node->operation().arguments()) {
       RootedString argument(cx, JS_NewUCStringCopyZ(cx, taint_argument.c_str()));
       if (!argument)
         return false;

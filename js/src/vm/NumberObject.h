@@ -47,34 +47,36 @@ class NumberObject : public NativeObject {
   // TaintFox: A finalizer is required for correct memory handling.
   static void Finalize(JSFreeOp* fop, JSObject* obj) {
     NumberObject& number = obj->as<NumberObject>();
-    TaintNode* head = number.getTaintNode();
-    if (head) {
-      head->release();
-    }
+    delete number.maybePtrFromReservedSlot<TaintFlow>(TAINT_SLOT);
+    // TaintNode* head = number.getTaintNode();
+    // if (head) {
+    //   head->release();
+    // }
   }
 
   TaintFlow taint() const {
-    TaintNode* head = getTaintNode();
-    if (head) {
-      head->addref();
+    TaintFlow* flow = getTaintFlow();
+    if (flow) {
+      // head->addref();
+      return *flow;
     }
-    return TaintFlow(head);
+    return TaintFlow();
   }
 
   void setTaint(const TaintFlow& taint) {
-    TaintNode* current = getTaintNode();
-    if (current) {
-      current->release();
-    }
-    TaintNode* head = taint.head();
-    if (head) {
-      head->addref();
-    }
-    setTaintNode(head);
+    // TaintNode* current = getTaintNode();
+    // if (current) {
+    //   current->release();
+    // }
+    // TaintNode* head = taint.head();
+    // if (head) {
+    //   head->addref();
+    // }
+    setTaintFlow(taint);
   }
 
   bool isTainted() const {
-    return !!getTaintNode();
+    return !!getTaintFlow();
   }
 
 private:
@@ -84,13 +86,13 @@ private:
     setFixedSlot(PRIMITIVE_VALUE_SLOT, NumberValue(d));
   }
 
-  inline TaintNode* getTaintNode() const {
-    TaintNode* n = maybePtrFromReservedSlot<TaintNode>(TAINT_SLOT);
+  inline TaintFlow* getTaintFlow() const {
+    TaintFlow* n = maybePtrFromReservedSlot<TaintFlow>(TAINT_SLOT);
     return n;
   }
 
-  inline void setTaintNode(TaintNode* node) {
-    setReservedSlot(TAINT_SLOT, PrivateValue(node));
+  inline void setTaintFlow(TaintFlow flow) {
+    setReservedSlot(TAINT_SLOT, PrivateValue(new TaintFlow(flow)));
   }
   
 };

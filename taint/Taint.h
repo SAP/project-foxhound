@@ -168,9 +168,6 @@ class TaintOperation
     TaintLocation location_;
 };
 
-
-class TaintNodeIterator;
-
 /*
  * The nodes of the taint flow graph.
  *
@@ -186,59 +183,13 @@ class TaintNodeIterator;
  */
 class TaintNode
 {
-  private:
-    // Iterate over this node and its parents
-    class Iterator {
-      public:
-        Iterator(TaintNode * head);
-        Iterator();
-
-        Iterator(const Iterator& other);
-        // Iterator(Iterator&& other);
-
-        ~Iterator();
-
-        Iterator& operator++();
-        TaintNode& operator*() const;
-        bool operator==(const Iterator& other) const;
-        bool operator!=(const Iterator& other) const;
-
-      private:
-
-        struct PtrComp
-        {
-          bool operator()(const TaintNode* lhs, const TaintNode* rhs) const  { return lhs<rhs; }
-        };
-
-        Iterator(TaintNode * head, std::shared_ptr<std::set<TaintNode*,PtrComp>> visited);
-
-        TaintNode* root_;
-        TaintNode* current_;
-        Iterator * currentParentIterator_;
-
-        int parentCount_;
-        int currentParentNum_ = 0;
-        TaintNode * currentParent_ = nullptr;
-
-        bool finished = false;
-        std::shared_ptr<std::set<TaintNode*,PtrComp>> visited_;
-    };
-    friend class TaintFlow;
 
   public:
     // Constructing a taint node sets the initial reference count to 1.
-    // Constructs an intermediate node.
-    TaintNode(TaintNode* parent, const TaintOperation& operation);
-    // Constructs an intermediate node with multiple parents.
-    TaintNode(const std::vector<TaintNode*> parents, const TaintOperation& operation);
     // Constructs a root node.
     TaintNode(const TaintOperation& operation);
 
     // Constructing a taint node sets the initial reference count to 1.
-    // Constructs an intermediate node.
-    TaintNode(TaintNode* parent, TaintOperation&& operation);
-    // Constructs an intermediate node with multiple parents.
-    TaintNode(const std::vector<TaintNode*> parents, TaintOperation&& operation);
     // Constructs a root node.
     TaintNode(TaintOperation&& operation);
     
@@ -249,20 +200,8 @@ class TaintNode
     // count drops to zero then this instance will be destroyed.
     void release();
 
-    // Returns the parent node of this node or nullptr if this is a root node.
-    std::vector<TaintNode*> parents() { return parents_; }
-
     // Returns the operation associated with this taint node.
     const TaintOperation& operation() const { return operation_; }
-
-    // Iterator support
-    //
-    // Makes it possible to conveniently iterate over all taint nodes of a flow,
-    // starting at the newest node.
-    // Since TaintNodes are inherently immutable, we can safely return non-const
-    // pointers here.
-    TaintNode::Iterator begin();
-    TaintNode::Iterator end();
 
   private:
     // Prevent clients from deleting us. TaintNodes can only be destroyed
@@ -283,12 +222,6 @@ class TaintNode
     // refcount them), so these operations are unavailable.
     TaintNode(const TaintNode& other) = delete;
     TaintNode& operator=(const TaintNode& other) = delete;
-
-    // Wrapper around addParent() for multiple parents
-    void addParents(const std::vector<TaintNode*> &parents);
-
-    // Add parent to internal parents_ vector and addref() parent
-    void addParent(TaintNode* parent);
 
 };
 
@@ -332,27 +265,13 @@ class TaintNode
 class TaintFlow
 {
   private:
-    // Iterate over the nodes in this flow.
-    //
-    // Note: The iterator does not increment the reference count. Instead, the
-    // caller must ensure that the TaintFlow instance is alive during the
-    // lifetime of any iterator instance.
-    class Iterator {
-      public:
-        Iterator(TaintNode* head);
-        Iterator();
+    // Last (newest) node of this flow.
 
-        Iterator(const Iterator& other);
-
-        Iterator& operator++();
-        TaintNode& operator*() const;
-        bool operator==(const Iterator& other) const;
-        bool operator!=(const Iterator& other) const;
-
-      private:
-        // TaintNode* current_;
-        TaintNode::Iterator nodeIterator_;
-    };
+   struct PtrComp {
+     bool operator()(const TaintNode* lhs, const TaintNode* rhs) const {
+       return lhs < rhs;
+     }
+   };
 
   public:
    
@@ -377,6 +296,8 @@ class TaintFlow
     TaintFlow(const TaintFlow* other);
 
     TaintFlow(const TaintOperation& operation, const std::vector<TaintFlow*> parents);
+
+    TaintFlow(const TaintFlow& flow1, const TaintFlow& flow2);
  
     ~TaintFlow();
 
@@ -384,7 +305,8 @@ class TaintFlow
     TaintFlow& operator=(const TaintFlow& other);
 
     // Returns the head of this flow, i.e. the newest node in the path.
-    TaintNode* head() const { return head_; }
+    // TaintNode* head() const { return nodes_[0]; }
+    std::set<TaintNode*,PtrComp> nodes() const { return nodes_; }
 
     // Returns the source of this taint flow.
     std::vector<const TaintOperation*> sources() const;
@@ -407,29 +329,37 @@ class TaintFlow
     // starting at the newest node.
     // Since TaintNodes are inherently immutable, we can safely return non-const
     // pointers here.
-    TaintFlow::Iterator begin() const;
-    TaintFlow::Iterator end() const;
+    std::set<TaintNode*>::iterator begin() const {return nodes_.begin();};
+    std::set<TaintNode*>::iterator end() const {return nodes_.end();};
 
     // Constructs a new taint node as child of the head node in this flow and
     // returns a new taint flow starting at that node.
     static TaintFlow extend(const TaintFlow& flow, const TaintOperation& operation);
 
     static TaintFlow extend(const TaintFlow& flow1, const TaintFlow& flow2, const TaintOperation& operation);
-    
-    static TaintFlow extend(const std::vector<TaintFlow*> flows, const TaintOperation& operation);
 
     // Two TaintFlows are equal if they point to the same taint node.
-    bool operator==(const TaintFlow& other) const { return head_ == other.head_; }
-    bool operator!=(const TaintFlow& other) const { return head_ != other.head_; }
+    bool operator==(const TaintFlow& other) const { return nodes_ == other.nodes_; }
+    bool operator!=(const TaintFlow& other) const { return nodes_ != other.nodes_; }
 
     // Boolean operator, indicates whether this taint flow is empty or now.
-    operator bool() const { return !!head_; }
+    operator bool() const { return !nodes_.empty(); }
 
     static const TaintFlow& getEmptyTaintFlow();
 
+    void addrefNodes();
+    void releaseNodes();
+
   private:
     // Last (newest) node of this flow.
-    TaintNode* head_;
+
+  //  struct PtrComp {
+  //    bool operator()(const TaintNode* lhs, const TaintNode* rhs) const {
+  //      return lhs < rhs;
+  //    }
+  //  };
+
+    std::set<TaintNode*,PtrComp> nodes_;
 
     static TaintFlow empty_flow_;
 };
