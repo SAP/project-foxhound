@@ -1414,6 +1414,22 @@ static MOZ_ALWAYS_INLINE bool AddOperation(JSContext* cx,
 
   bool lIsString = lhs.isString();
   bool rIsString = rhs.isString();
+
+  // TaintFox: Cast to primitive if values are neither strings nor tainted numbers
+  // Required for some special cases like arrays
+  if (!lIsString && !isTaintedNumber(lhs)) {
+    if (!ToPrimitive(cx, lhs)) {
+      return false;
+    }
+    lIsString = lhs.isString();
+  }
+  if (!rIsString && !isTaintedNumber(rhs)) {
+    if (!ToPrimitive(cx, rhs)) {
+      return false;
+    }
+    rIsString = rhs.isString();
+  }
+
   if (lIsString || rIsString) {
     JSString* lstr;
     if (lIsString) {
