@@ -972,7 +972,6 @@ nsresult ExtractByteStreamFromBody(const fetch::OwningBodyInit& aBodyInit,
   }
 
   if (aBodyInit.IsUSVString()) {
-    ReportTaintSink(aBodyInit.GetAsUSVString(), "fetch.body");
     BodyExtractor<const nsAString> body(&aBodyInit.GetAsUSVString());
     return body.GetAsStream(aStream, &aContentLength, aContentTypeWithCharset,
                             charset);
