@@ -600,6 +600,13 @@ SafeRefPtr<Request> Request::Constructor(nsIGlobalObject* aGlobal,
       nsCOMPtr<nsIInputStream> stream;
       nsAutoCString contentTypeWithCharset;
       uint64_t contentLength = 0;
+      if (bodyInit.IsUSVString()) {
+        nsAutoCString url;
+        request->GetURL(url);
+        nsAutoString aUrl;
+        CopyUTF8toUTF16(url, aUrl);
+        ReportTaintSink(bodyInit.GetAsUSVString(), "fetch.body", aUrl);
+      }
       aRv = ExtractByteStreamFromBody(bodyInit, getter_AddRefs(stream),
                                       contentTypeWithCharset, contentLength);
       if (NS_WARN_IF(aRv.Failed())) {
