@@ -16,9 +16,13 @@ enum MediaDeviceKind {
 [Func="Navigator::HasUserMediaSupport",
  Exposed=Window]
 interface MediaDeviceInfo {
+  [TaintSource]
   readonly attribute DOMString       deviceId;
+  [TaintSource]
   readonly attribute MediaDeviceKind kind;
+  [TaintSource]
   readonly attribute DOMString       label;
+  [TaintSource]
   readonly attribute DOMString       groupId;
 
   [Default] object toJSON();
