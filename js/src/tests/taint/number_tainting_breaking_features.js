@@ -3,6 +3,17 @@
 // In an effort to fixe these errors, this test explicity tests the currently
 // or previously broken functionality to ensure it does not get broken again.
 
+// Test a function using a primitive, a tainted number (object) and an untainted
+// number object
+function testPrimitiveTaintedObject(numberValue, expectedPrimitive, expectedTainted, expectedNumber, testFunc) {
+  let primitive = numberValue
+  let tainted = taint(numberValue)
+  let number = new Number(numberValue)
+  testFunc(primitive, expectedPrimitive)
+  testFunc(tainted, expectedTainted)
+  testFunc(number, expectedNumber)
+}
+
 
 function numberTaintingBreakingFeatures() {
 
@@ -14,11 +25,73 @@ function numberTaintingBreakingFeatures() {
   assertEq([12345] + 6789, '123456789')
 
 
-  // Number.isInteger()
-  assertEq(Number.isInteger(a), True)
-  assertEq(Number.isInteger(b), False)
-  assertEq(Number.isInteger(45542), True)
-  assertEq(Number.isInteger(4525.123), False)
+  // Is Integer
+  testPrimitiveTaintedObject(123, true, true, false, (value, expected) => {
+    assertEq(Number.isInteger(value), expected)
+  })
+
+  testPrimitiveTaintedObject(123.456, false, false, false, (value, expected) => {
+    assertEq(Number.isInteger(value), expected)
+  })
+
+
+  // IsSafeInteger
+  testPrimitiveTaintedObject(123, true, true, false, (value, expected) => {
+    assertEq(Number.isSafeInteger(value), expected)
+  })
+
+  testPrimitiveTaintedObject(2 ** 53 - 1, true, true, false, (value, expected) => {
+    assertEq(Number.isSafeInteger(value), expected)
+  })
+
+  testPrimitiveTaintedObject(NaN, false, false, false, (value, expected) => {
+    assertEq(Number.isSafeInteger(value), expected)
+  })
+
+  testPrimitiveTaintedObject(Infinity, false, false, false, (value, expected) => {
+    assertEq(Number.isSafeInteger(value), expected)
+  })
+
+  testPrimitiveTaintedObject("3", false, false, false, (value, expected) => {
+    assertEq(Number.isSafeInteger(value), expected)
+  })
+
+  testPrimitiveTaintedObject(3.1, false, false, false, (value, expected) => {
+    assertEq(Number.isSafeInteger(value), expected)
+  })
+
+
+  // IsFinite
+  testPrimitiveTaintedObject(2531,true,true,false,(value,expected)=>{
+    assertEq(Number.isFinite(value), expected)
+  })
+
+  testPrimitiveTaintedObject(Infinity, false, false, false, (value, expected) => {
+    assertEq(Number.isFinite(value), expected)
+  })
+
+  testPrimitiveTaintedObject(NaN, false, false, false, (value, expected) => {
+    assertEq(Number.isFinite(value), expected)
+  })
+
+  testPrimitiveTaintedObject(-Infinity, false, false, false, (value, expected) => {
+    assertEq(Number.isFinite(value), expected)
+  })
+
+
+  // IsNaN
+  testPrimitiveTaintedObject(NaN,true,true,false,(value,expected)=>{
+    assertEq(Number.isNaN(value), expected)
+  })
+
+  testPrimitiveTaintedObject(Number.NaN,true,true,false,(value,expected)=>{
+    assertEq(Number.isNaN(value), expected)
+  })
+
+  testPrimitiveTaintedObject(2531, false, false, false, (value, expected) => {
+    assertEq(Number.isNaN(value), expected)
+  })
+
 
 
 }
