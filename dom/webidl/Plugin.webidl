@@ -7,9 +7,13 @@
 [LegacyUnenumerableNamedProperties,
  Exposed=Window]
 interface Plugin {
+  [TaintSource]
   readonly attribute DOMString description;
+  [TaintSource]
   readonly attribute DOMString filename;
+  [TaintSource]
   readonly attribute DOMString version;
+  [TaintSource]
   readonly attribute DOMString name;
 
   readonly attribute unsigned long length;
