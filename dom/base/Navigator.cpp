@@ -1133,6 +1133,7 @@ BeaconStreamListener::OnDataAvailable(nsIRequest* aRequest,
 bool Navigator::SendBeacon(const nsAString& aUrl,
                            const Nullable<fetch::BodyInit>& aData,
                            ErrorResult& aRv) {
+  ReportTaintSink(aUrl, "navigator.sendBeacon(url)");
   if (aData.IsNull()) {
     return SendBeaconInternal(aUrl, nullptr, eBeaconTypeOther, aRv);
   }
@@ -1159,6 +1160,7 @@ bool Navigator::SendBeacon(const nsAString& aUrl,
   }
 
   if (aData.Value().IsUSVString()) {
+    ReportTaintSink(aData.Value().GetAsUSVString(), "navigator.sendBeacon(body)", aUrl);
     BodyExtractor<const nsAString> body(&aData.Value().GetAsUSVString());
     return SendBeaconInternal(aUrl, &body, eBeaconTypeOther, aRv);
   }

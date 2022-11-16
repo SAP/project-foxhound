@@ -2326,7 +2326,9 @@ void WebSocket::Send(const nsAString& aData, ErrorResult& aRv) {
   AssertIsOnTargetThread();
 
   // Taintfox: WebSocket.send() sink
-  ReportTaintSink(aData, "WebSocket.send");
+  nsAutoString url;
+  GetUrl(url);
+  ReportTaintSink(aData, "WebSocket.send", url);
 
   nsAutoCString msgString;
   if (!AppendUTF16toUTF8(aData, msgString, mozilla::fallible_t())) {
