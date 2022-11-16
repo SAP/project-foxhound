@@ -1410,9 +1410,10 @@ void XMLHttpRequestMainThread::Open(const nsACString& aMethod,
                         aAsync ? 0 : 1);
 
   // TaintFox: XMLHttpRequest.open sink
-  ReportTaintSink(NS_ConvertUTF8toUTF16(aUrl), "XMLHttpRequest.open(url)");
-  ReportTaintSink(aUsername, "XMLHttpRequest.open(username)");
-  ReportTaintSink(aPassword, "XMLHttpRequest.open(password)");
+  nsAutoString url = NS_ConvertUTF8toUTF16(aUrl);
+  ReportTaintSink(url, "XMLHttpRequest.open(url)");
+  ReportTaintSink(aUsername, "XMLHttpRequest.open(username)", url);
+  ReportTaintSink(aPassword, "XMLHttpRequest.open(password)", url);
 
   // Step 1
   nsCOMPtr<Document> responsibleDocument = GetDocumentIfCurrent();
@@ -2914,7 +2915,12 @@ void XMLHttpRequestMainThread::Send(
   if (aData.Value().IsUSVString()) {
     BodyExtractor<const nsAString> body(&aData.Value().GetAsUSVString());
     // Taintfox: XMLHttpRequest.send() sink
-    ReportTaintSink(aData.Value().GetAsUSVString(), "XMLHttpRequest.send");
+    nsAutoString aUrl;
+    if (mRequestURL) {
+      nsCString url = mRequestURL->GetSpecOrDefault();
+      aUrl = NS_ConvertUTF8toUTF16(url);
+    }
+    ReportTaintSink(aData.Value().GetAsUSVString(), "XMLHttpRequest.send", aUrl);
     SendInternal(&body, true, aRv);
     return;
   }
@@ -3190,8 +3196,13 @@ void XMLHttpRequestMainThread::SetRequestHeader(const nsACString& aName,
     return;
   }
 
-  ReportTaintSink(NS_ConvertUTF8toUTF16(value), "XMLHttpRequest.setRequestHeader(value)");
-  ReportTaintSink(NS_ConvertUTF8toUTF16(aName), "XMLHttpRequest.setRequestHeader(name)");
+  nsAutoString aUrl;
+  if (mRequestURL) {
+    nsCString url = mRequestURL->GetSpecOrDefault();
+    aUrl = NS_ConvertUTF8toUTF16(url);
+  }
+  ReportTaintSink(NS_ConvertUTF8toUTF16(value), "XMLHttpRequest.setRequestHeader(value)", aUrl);
+  ReportTaintSink(NS_ConvertUTF8toUTF16(aName), "XMLHttpRequest.setRequestHeader(name)", aUrl);
 
   // Step 5
   bool isPrivilegedCaller = IsSystemXHR();
