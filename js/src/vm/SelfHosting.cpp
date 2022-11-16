@@ -23,6 +23,7 @@
 #include "jsfriendapi.h"
 #include "jsmath.h"
 #include "jsnum.h"
+#include "jstaint.h"
 #include "selfhosted.out.h"
 
 #include "builtin/Array.h"
@@ -2163,6 +2164,24 @@ taint_copyString(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
+// TaintFox: Returns a the value of a tainted number object, if the input is a
+// tainted number object. Otherwise returns the input value without changes.
+static bool taint_getNumberObjectValueIfTainted(JSContext* cx, unsigned argc,
+                                                Value* vp) {
+  // String, operation, args...
+  CallArgs args = CallArgsFromVp(argc, vp);
+  if (JS::isTaintedNumber(args[0])) {
+    if (!ToNumeric(cx, args[0])) {
+      return false;
+    }
+    auto value = args[0].toNumber();
+    args.rval().setNumber(value);
+  } else {
+    args.rval().set(args[0]);
+  }
+  return true;
+}
+
 static bool intrinsic_PromiseResolve(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 2);
@@ -2361,6 +2380,7 @@ static const JSFunctionSpec intrinsic_functions[] = {
     JS_INLINABLE_FN("GetNextSetEntryForIterator",
                     intrinsic_GetNextSetEntryForIterator, 2, 0,
                     IntrinsicGetNextSetEntryForIterator),
+    JS_FN("GetNumberObjectValueIfTainted", taint_getNumberObjectValueIfTainted, 1, 0),
     JS_FN("GetOwnPropertyDescriptorToArray", GetOwnPropertyDescriptorToArray, 2,
           0),
     JS_FN("GetStringDataProperty", intrinsic_GetStringDataProperty, 2, 0),

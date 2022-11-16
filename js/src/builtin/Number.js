@@ -41,6 +41,10 @@ function Number_toLocaleString() {
 
 // ES6 draft ES6 20.1.2.4
 function Number_isFinite(num) {
+
+    // TaintFox: get primitive value, if value is tainted number object
+    num = GetNumberObjectValueIfTainted(num);
+
     if (typeof num !== "number")
         return false;
     return num - num === 0;
@@ -48,6 +52,10 @@ function Number_isFinite(num) {
 
 // ES6 draft ES6 20.1.2.2
 function Number_isNaN(num) {
+
+    // TaintFox: get primitive value, if value is tainted number object
+    num = GetNumberObjectValueIfTainted(num);
+
     if (typeof num !== "number")
         return false;
     return num !== num;
@@ -56,6 +64,10 @@ function Number_isNaN(num) {
 // ES2021 draft rev 889f2f30cf554b7ed812c0984626db1c8a4997c7
 // 20.1.2.3 Number.isInteger ( number )
 function Number_isInteger(number) {
+
+    // TaintFox: get primitive value, if value is tainted number object
+    number = GetNumberObjectValueIfTainted(number);
+
     // Step 1. (Inlined call to IsIntegralNumber)
 
     // 7.2.6 IsIntegralNumber, step 1.
@@ -73,6 +85,10 @@ function Number_isInteger(number) {
 // ES2021 draft rev 889f2f30cf554b7ed812c0984626db1c8a4997c7
 // 20.1.2.5 Number.isSafeInteger ( number )
 function Number_isSafeInteger(number) {
+
+    // TaintFox: get primitive value, if value is tainted number object
+    number = GetNumberObjectValueIfTainted(number);
+
     // Step 1. (Inlined call to IsIntegralNumber)
 
     // 7.2.6 IsIntegralNumber, step 1.
