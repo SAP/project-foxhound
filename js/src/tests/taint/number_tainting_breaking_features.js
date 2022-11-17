@@ -92,6 +92,20 @@ function numberTaintingBreakingFeatures() {
     assertEq(Number.isNaN(value), expected)
   })
 
+  // typeof
+  testPrimitiveTaintedObject(2531, 'number', 'number', 'object', (value, expected) => {
+    assertEq(typeof value, expected)
+  })
+
+  testPrimitiveTaintedObject(2531, 'number', 'number', 'object', (value, expected) => {
+    assertEq(typeof(value), expected)
+  })
+
+  testPrimitiveTaintedObject(1, 'number', 'number', 'object', (value, expected) => {
+    assertEq(typeof(value), expected)
+  })
+
+
 
 
 }

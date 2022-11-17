@@ -26,6 +26,7 @@
 #include "jslibmath.h"
 #include "jsmath.h"
 #include "jsnum.h"
+#include "jstaint.h"
 
 #include "builtin/Array.h"
 #include "builtin/Eval.h"
@@ -890,7 +891,6 @@ JSType TypeOfExtendedPrimitive(JSObject* obj) {
 #endif
 
 JSType js::TypeOfValue(const Value& v) {
-  // Taintfox: where do tainted numbers fit in here?
   switch (v.type()) {
     case ValueType::Double:
     case ValueType::Int32:
@@ -902,6 +902,10 @@ JSType js::TypeOfValue(const Value& v) {
     case ValueType::Undefined:
       return JSTYPE_UNDEFINED;
     case ValueType::Object:
+      // TaintFox: Hide the fact, that tainted numbers are number objects
+      if (JS::isTaintedNumber(v)){
+        return JSTYPE_NUMBER;
+      }
       return TypeOfObject(&v.toObject());
 #ifdef ENABLE_RECORD_TUPLE
     case ValueType::ExtendedPrimitive:
