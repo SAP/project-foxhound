@@ -14,6 +14,7 @@
  Exposed=Window]
 interface AudioDestinationNode : AudioNode {
 
+    [TaintSource]
     readonly attribute unsigned long maxChannelCount;
 
 };
