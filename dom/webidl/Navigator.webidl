@@ -71,7 +71,7 @@ interface mixin NavigatorLanguage {
 
   [Pure, Cached, TaintSource]
   readonly attribute DOMString? language;
-  [Pure, Cached, Frozen]
+  [Pure, Cached, Frozen, TaintSource]
   readonly attribute sequence<DOMString> languages;
 };
 
