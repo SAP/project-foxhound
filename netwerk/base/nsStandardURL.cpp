@@ -114,7 +114,7 @@ int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
 
   uint32_t origLen = aOut.Length();
   Span<const char> span = Span(aStr + aSeg.mPos, aSeg.mLen);
-  SafeStringTaint subtaint = taint.safeCopy().subtaint(aSeg.mPos, aSeg.mPos + aSeg.mLen);
+  SafeStringTaint subtaint = taint.safeSubTaint(aSeg.mPos, aSeg.mPos + aSeg.mLen);
 
   // first honor the origin charset if appropriate. as an optimization,
   // only do this if the segment is non-ASCII.  Further, if mEncoding is
@@ -156,7 +156,7 @@ int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
                 AsBytes(span.From(totalRead)), AsWritableBytes(buffer), true);
 
         // Taintfox: Calculate taint for this chunk
-        SafeStringTaint subsubTaint = subtaint.safeCopy().subtaint(totalRead, totalRead + read);
+        SafeStringTaint subsubTaint = subtaint.safeSubTaint(totalRead, totalRead + read);
 
         totalRead += read;
         auto bufferWritten = buffer.To(written);
@@ -757,7 +757,7 @@ uint32_t nsStandardURL::AppendSegmentToBuf(char* buf, uint32_t i,
     } else {
       memcpy(buf + i, str + segInput.mPos, segInput.mLen);
       // Taintfox: propagate taint
-      bufTaint.concat(strTaint.safeCopy().subtaint(segInput.mPos, segInput.mPos + segInput.mLen), i);
+      bufTaint.concat(strTaint.safeSubTaint(segInput.mPos, segInput.mPos + segInput.mLen), i);
     }
     segOutput.mPos = i;
     i += segOutput.mLen;
@@ -863,7 +863,7 @@ nsresult nsStandardURL::BuildNormalizedSpec(const char* spec,
     nsAutoCString tempHost;
     SafeStringTaint mHostTaint;
     if (taint.hasTaint()) {
-      mHostTaint = taint.safeCopy().subtaint(mHost.mPos, mHost.mPos + mHost.mLen);
+      mHostTaint = taint.safeSubTaint(mHost.mPos, mHost.mPos + mHost.mLen);
     }
     NS_UnescapeURL(spec + mHost.mPos, mHost.mLen, mHostTaint, esc_AlwaysCopy | esc_Host,
                    tempHost);
@@ -2737,7 +2737,7 @@ nsStandardURL::Resolve(const nsACString& in, nsACString& out) {
         }
     }
     result = AppendToSubstring(0, len, realrelpath);
-    taint.concat(buf.Taint().safeCopy().subtaint(offset, relpathLen - offset), len);
+    taint.concat(buf.Taint().safeSubTaint(offset, relpathLen - offset), len);
     // locate result path
     resultPath = result + mPath.mPos;
   }

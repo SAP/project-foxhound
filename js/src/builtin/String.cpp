@@ -900,7 +900,7 @@ JSString* js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt,
   uint32_t len = lengthInt;
 
   // TaintFox
-  SafeStringTaint newTaint = str->taint().safeCopy().subtaint(begin, begin + len);
+  SafeStringTaint newTaint = str->taint().safeSubTaint(begin, begin + len);
   
   /*
    * Optimization for one level deep ropes.
@@ -3490,7 +3490,7 @@ static JSString* ReplaceAll(JSContext* cx, JSLinearString* string,
       // Append the substring before the current match.
 
       // Taintfox - first append taint for the substring before the current match
-      result.taint().concat(string->taint().safeCopy().subtaint(endOfLastMatch, position), result.length());
+      result.taint().concat(string->taint().safeSubTaint(endOfLastMatch, position), result.length());
 
       if (!result.append(strChars + endOfLastMatch,
                          position - endOfLastMatch)) {
@@ -3523,7 +3523,7 @@ static JSString* ReplaceAll(JSContext* cx, JSLinearString* string,
 
     // Taintfox: append the final taint
     // Taintfox - first append taint for the substring before the current match
-    result.taint().concat(string->taint().safeCopy().subtaint(endOfLastMatch, stringLength), result.length());
+    result.taint().concat(string->taint().safeSubTaint(endOfLastMatch, stringLength), result.length());
 
     // Step 15.
     // Append the substring after the last match.
@@ -4503,7 +4503,7 @@ static MOZ_NEVER_INLINE EncodeResult Encode(StringBuffer& sb,
           return false;
         }
       }
-      sb.taint().concat(taint.safeCopy().subtaint(start, end), sb.length());
+      sb.taint().concat(taint.safeSubTaint(start, end), sb.length());
       return sb.append(chars + start, chars + end);
     }
     return true;
@@ -4625,7 +4625,7 @@ static DecodeResult Decode(StringBuffer& sb, const CharT* chars, size_t length,
     MOZ_ASSERT(start <= end);
 
     if (start < end) {
-      sb.taint().concat(taint.safeCopy().subtaint(start, end), sb.length());
+      sb.taint().concat(taint.safeSubTaint(start, end), sb.length());
       return sb.append(chars + start, chars + end);
     }
     return true;

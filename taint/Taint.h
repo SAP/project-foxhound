@@ -487,6 +487,7 @@ class StringTaint
 
     // Create subtaint
     StringTaint(const StringTaint& other, uint32_t begin, uint32_t end);
+    StringTaint(const StringTaint& other, uint32_t index);
 
     // Returns true if any characters are tainted.
     bool hasTaint() const {
@@ -604,6 +605,7 @@ class StringTaint
 
     SafeStringTaint safeCopy() const;
     SafeStringTaint safeSubTaint(uint32_t begin, uint32_t end) const;
+    SafeStringTaint safeSubTaint(uint32_t index) const;
 
   private:
     // Assign a new range vector and delete the old one.
@@ -611,6 +613,9 @@ class StringTaint
 
     // Resize any overlapping ranges
     void removeOverlaps();
+
+    // Set the contents to subtaint of another taint
+    void assignFromSubTaint(const StringTaint& other, uint32_t begin, uint32_t end);
 
     // Here we optimize for the (common) case of untainted strings by only
     // storing a single pointer per instance. This keeps untainted strings
@@ -666,6 +671,7 @@ class SafeStringTaint : public StringTaint
 
     // Create subtaint
     SafeStringTaint(const StringTaint& other, uint32_t begin, uint32_t end) : StringTaint(other, begin, end) {}
+    SafeStringTaint(const StringTaint& other, uint32_t index) : StringTaint(other, index) {}
 
     SafeStringTaint(const StringTaint& other) : StringTaint(other) {}
     SafeStringTaint(StringTaint&& other) : StringTaint(other) {}

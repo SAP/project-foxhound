@@ -518,7 +518,7 @@ StringTaint::StringTaint(const StringTaint& other) : ranges_(nullptr)
     CHECK_RANGES(ranges_);
 }
 
-StringTaint::StringTaint(const StringTaint& other, uint32_t begin, uint32_t end) : ranges_(nullptr)
+void StringTaint::assignFromSubTaint(const StringTaint& other, uint32_t begin, uint32_t end)
 {
     if (other.ranges_) {
         MOZ_COUNT_CTOR(StringTaint);
@@ -541,6 +541,15 @@ StringTaint::StringTaint(const StringTaint& other, uint32_t begin, uint32_t end)
     CHECK_RANGES(ranges_);
 }
 
+StringTaint::StringTaint(const StringTaint& other, uint32_t begin, uint32_t end) : ranges_(nullptr)
+{
+    assignFromSubTaint(other, begin, end);
+}
+
+StringTaint::StringTaint(const StringTaint& other, uint32_t index) : ranges_(nullptr)
+{
+    assignFromSubTaint(other, index, index + 1);
+}
 
 StringTaint::StringTaint(StringTaint&& other) : ranges_(nullptr)
 {
@@ -598,6 +607,12 @@ SafeStringTaint StringTaint::safeSubTaint(uint32_t begin, uint32_t end) const
 {
     // Create subtaint directly instead of having to copy entire range vector
     return SafeStringTaint(*this, begin, end);
+}
+
+SafeStringTaint StringTaint::safeSubTaint(uint32_t index) const
+{
+    // Create subtaint directly instead of having to copy entire range vector
+    return SafeStringTaint(*this, index);
 }
 
 void StringTaint::clearBetween(uint32_t begin, uint32_t end)
