@@ -385,6 +385,14 @@ class TaintRange {
 
     TaintRange& operator=(const TaintRange& other);
 
+    // Comparison Operators for searches
+    bool operator<(const TaintRange& other) const;
+    bool operator<(uint32_t index) const;
+    bool operator>(uint32_t index) const;
+    bool operator==(uint32_t index) const;
+
+    bool contains(uint32_t index) const;
+
     // Returns a reference to the taint flow associated with this range.
     // All bytes in a taint range share the same taint flow.
     TaintFlow& flow() { return flow_; }
@@ -476,6 +484,9 @@ class StringTaint
     StringTaint(StringTaint&& other);
     StringTaint& operator=(const StringTaint& other);
     StringTaint& operator=(StringTaint&& other);
+
+    // Create subtaint
+    StringTaint(const StringTaint& other, uint32_t begin, uint32_t end);
 
     // Returns true if any characters are tainted.
     bool hasTaint() const {
@@ -592,6 +603,7 @@ class StringTaint
     std::vector<TaintRange>::const_iterator end() const;
 
     SafeStringTaint safeCopy() const;
+    SafeStringTaint safeSubTaint(uint32_t begin, uint32_t end) const;
 
   private:
     // Assign a new range vector and delete the old one.
@@ -651,6 +663,9 @@ class SafeStringTaint : public StringTaint
     SafeStringTaint(SafeStringTaint&& other) : StringTaint(other) {}
     SafeStringTaint& operator=(const SafeStringTaint& other) { StringTaint::operator=(other); return *this; }
     SafeStringTaint& operator=(SafeStringTaint&& other) { StringTaint::operator=(other); return *this; }
+
+    // Create subtaint
+    SafeStringTaint(const StringTaint& other, uint32_t begin, uint32_t end) : StringTaint(other, begin, end) {}
 
     SafeStringTaint(const StringTaint& other) : StringTaint(other) {}
     SafeStringTaint(StringTaint&& other) : StringTaint(other) {}

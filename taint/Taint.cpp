@@ -372,6 +372,31 @@ TaintRange& TaintRange::operator=(const TaintRange& other)
     return *this;
 }
 
+bool TaintRange::operator<(const TaintRange& other) const
+{
+    return this->end() < other.begin();
+}
+
+bool TaintRange::operator<(uint32_t index) const
+{
+    return this->end() < index;
+}
+
+bool TaintRange::operator>(uint32_t index) const
+{
+    return this->begin() > index;
+}
+
+bool TaintRange::operator==(uint32_t index) const
+{
+    return this->contains(index);
+}
+
+bool TaintRange::contains(uint32_t index) const
+{
+    return this->begin() <= index && this->end() > index;
+}
+
 void TaintRange::resize(uint32_t begin, uint32_t end)
 {
     MOZ_ASSERT(begin <= end);
@@ -493,6 +518,30 @@ StringTaint::StringTaint(const StringTaint& other) : ranges_(nullptr)
     CHECK_RANGES(ranges_);
 }
 
+StringTaint::StringTaint(const StringTaint& other, uint32_t begin, uint32_t end) : ranges_(nullptr)
+{
+    if (other.ranges_) {
+        MOZ_COUNT_CTOR(StringTaint);
+        ranges_ = new std::vector<TaintRange>();
+
+        // Use binary search to get first range
+        auto range = std::lower_bound(other.begin(), other.end(), begin);
+        for (; range != other.end(); range++) {
+            if (range->begin() < end && range->end() > begin) {
+                ranges_->push_back(TaintRange(std::max(range->begin(), begin) - begin,
+                                              std::min(range->end(), end) - begin,
+                                              range->flow()));
+            }
+            // Break out early if possible
+            if (range->end() > end) {
+                break;
+            }
+        }
+    }
+    CHECK_RANGES(ranges_);
+}
+
+
 StringTaint::StringTaint(StringTaint&& other) : ranges_(nullptr)
 {
     ranges_ = other.ranges_;
@@ -543,6 +592,12 @@ void StringTaint::clear()
 SafeStringTaint StringTaint::safeCopy() const
 {
     return SafeStringTaint(*this);
+}
+
+SafeStringTaint StringTaint::safeSubTaint(uint32_t begin, uint32_t end) const
+{
+    // Create subtaint directly instead of having to copy entire range vector
+    return SafeStringTaint(*this, begin, end);
 }
 
 void StringTaint::clearBetween(uint32_t begin, uint32_t end)
@@ -611,10 +666,8 @@ void StringTaint::insert(uint32_t index, const StringTaint& taint)
         it++;
     }
 
-    uint32_t last = index;
     for (auto& range : taint) {
         ranges->emplace_back(range.begin() + index, range.end() + index, range.flow());
-        last = range.end() + index;
     }
 
     while (it != end()) {
@@ -629,10 +682,11 @@ void StringTaint::insert(uint32_t index, const StringTaint& taint)
 
 const TaintFlow* StringTaint::at(uint32_t index) const
 {
-    // TODO make this a binary search
-    for (auto& range : *this) {
-        if (range.begin() <= index && range.end() > index)
-            return &range.flow();
+    auto rangeItr = std::lower_bound(begin(), end(), index);
+    if (rangeItr != end()) {
+        if (rangeItr->contains(index)) {
+            return &rangeItr->flow();
+        }
     }
     return nullptr;
 }
@@ -662,19 +716,9 @@ void StringTaint::set(uint32_t index, const TaintFlow& flow)
 StringTaint& StringTaint::subtaint(uint32_t begin, uint32_t end)
 {
     MOZ_ASSERT(begin <= end);
-    MOZ_COUNT_CTOR(StringTaint);
-    auto ranges = new std::vector<TaintRange>();
-
-    for (auto& range : *this) {
-        if (range.begin() < end && range.end() > begin) {
-	    ranges->push_back(TaintRange(std::max(range.begin(), begin) - begin,
-                                        std::min(range.end(), end) - begin,
-                                        range.flow()));
-        }
-    }
-
-    CHECK_RANGES(ranges);
-    assign(ranges);
+    StringTaint st(*this, begin, end);
+    // Assign will steal the pointer from st
+    assign(st.ranges_);
     return *this;
 }
 
@@ -846,7 +890,7 @@ std::vector<TaintRange>::const_iterator StringTaint::end() const
 void StringTaint::assign(std::vector<TaintRange>* ranges)
 {
     clear();
-    if (ranges->size() > 0) {
+    if (ranges && ranges->size() > 0) {
         ranges_ = ranges;
     } else {
         ranges_ = nullptr;
