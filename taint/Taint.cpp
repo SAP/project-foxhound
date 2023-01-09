@@ -25,9 +25,25 @@
 #define MOZ_COUNT_CTOR(X)
 #endif
 
+
+#ifndef MOZ_ASSERT
+#define MOZ_ASSERT(X)
+#endif
+
+
 #ifndef MOZ_COUNT_DTOR
 #define MOZ_COUNT_DTOR(X)
 #endif
+
+#ifndef MOZ_CRASH
+#define MOZ_CRASH(X)
+#endif
+
+#ifndef MOZ_ASSERT_IF
+#define MOZ_ASSERT_IF(X,Y)
+#endif
+
+
 
 #define DEBUG_LINE() std::cout << __PRETTY_FUNCTION__ << std::endl;
 
