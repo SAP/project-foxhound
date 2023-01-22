@@ -17,6 +17,7 @@ on:
 jobs:
   # This workflow contains a single job called "build"
   build:
+    if: ${{ false }}  # disable for now the job is killed
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
 
@@ -47,6 +48,7 @@ jobs:
 
   # This workflow contains a single job called "build"
   build_js:
+    if: ${{ false }}  # disable for now the job is killed
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
 
@@ -76,6 +78,51 @@ jobs:
 
       - name: Taint Tests
         run: js/src/tests/jstests.py obj-spider-release/dist/bin/js taint/
+
+  build_playwright:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+    env:
+      FF_CHECKOUT_PATH: ${GITHUB_WORKSPACE}
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Update
+        run: sudo apt-get update
+
+      # Bootstrap
+      - name: Bootstrap Build Environment
+        run: ./mach bootstrap --application-choice=browser
+
+      # Configure
+      - name: Copy configuration
+        run: cp taintfox_mozconfig_ubuntu .mozconfig
+
+      # Get playwright
+      - name: Clone Playwright Source Code
+        run: git clone --branch v1.21.1 https://github.com/microsoft/playwright.git
+
+      # Copy correct build script
+      - name: Copy build.sh
+        run: cp ./scripts/build.sh ./playwright/browser_patches/firefox && cp ./scripts/UPSTREAM_CONFIG.sh ./playwright/browser_patches/firefox
+
+      - name: Go into playwright Folder
+        run: cd ./playwright/browser_patches
+
+      # Prepare Checkout
+      - name: Prepare checkout
+        run: bash prepare_checkout.sh firefox
+
+      - name: Go into playwright Folder
+        run: cd ./firefox
+
+      # Prepare Checkout
+      - name: Prepare checkout
+        run: bash build.sh
 
   # This workflow contains a single job called "build"
   build_docker:
