@@ -116,7 +116,7 @@ jobs:
 
       # Prepare Checkout
       - name: Prepare checkout
-        run: bash ./prepare_checkout.sh firefox
+        run: ls && pwd && bash ./prepare_checkout.sh firefox
 
       - name: Go into playwright Folder
         run: cd ./firefox
