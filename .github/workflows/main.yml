@@ -110,20 +110,11 @@ jobs:
       - name: Copy build.sh
         run: cp ./scripts/build.sh ./playwright/browser_patches/firefox && cp ./scripts/UPSTREAM_CONFIG.sh ./playwright/browser_patches/firefox
 
-      # Change Directory
-      - name: Go into playwright Folder
-        run: cd ./playwright/browser_patches
-
-      # Prepare Checkout
       - name: Prepare checkout
-        run: ls && pwd && bash ./prepare_checkout.sh firefox
+        run: cd ./playwright/browser_patches && bash ./prepare_checkout.sh firefox
 
       - name: Go into playwright Folder
-        run: cd ./firefox
-
-      # Prepare Checkout
-      - name: Prepare checkout
-        run: bash ./build.sh
+        run: cd ./playwright/browser_patches/firefox && bash ./build.sh
 
   # This workflow contains a single job called "build"
   build_docker:
