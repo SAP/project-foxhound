@@ -110,6 +110,7 @@ jobs:
       - name: Copy build.sh
         run: cp ./scripts/build.sh ./playwright/browser_patches/firefox && cp ./scripts/UPSTREAM_CONFIG.sh ./playwright/browser_patches/firefox
 
+      # Change Directory
       - name: Go into playwright Folder
         run: cd ./playwright/browser_patches
 
