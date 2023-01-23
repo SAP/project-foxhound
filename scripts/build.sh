@@ -65,7 +65,7 @@ echo "MOZ_PACKAGE_JSSHELL=1" >> .mozconfig
 echo "ac_add_options --with-branding=browser/branding/foxhound" >> .mozconfig
 echo "ac_add_options --with-app-name=foxhound" >> .mozconfig
 echo "mk_add_options MOZ_APP_NAME=foxhound" >> .mozconfig
-echo "mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-release" >> .mozconfig
+# echo "mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-release" >> .mozconfig
 echo "ac_add_options --enable-bootstrap" >> .mozconfig
 echo "ac_add_options --disable-tests" >> .mozconfig
 echo "ac_add_options --disable-sandbox" >> .mozconfig
