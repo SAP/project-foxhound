@@ -56,7 +56,7 @@ if [[ $1 == "--linux-arm64" || $2 == "--linux-arm64" ]]; then
 fi
 
 OBJ_FOLDER="obj-build-playwright"
-echo "mk_add_options MOZ_PARALLEL_BUILD=4" >> .mozconfig
+# echo "mk_add_options MOZ_PARALLEL_BUILD=4" >> .mozconfig
 echo "mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/${OBJ_FOLDER}" >> .mozconfig
 echo "ac_add_options --disable-crashreporter" >> .mozconfig
 echo "ac_add_options --disable-backgroundtasks" >> .mozconfig
