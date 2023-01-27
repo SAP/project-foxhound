@@ -27,6 +27,7 @@ nsresult NS_SerializeToString(nsISerializable* obj, nsACString& str) {
 }
 
 nsresult NS_DeserializeObject(const nsACString& str, nsISupports** obj) {
+  puts(__PRETTY_FUNCTION__);
   nsCString decodedData;
   nsresult rv = Base64Decode(str, decodedData);
   NS_ENSURE_SUCCESS(rv, rv);

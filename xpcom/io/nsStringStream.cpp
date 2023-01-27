@@ -379,6 +379,7 @@ nsStringInputStream::TaintedReadSegments(nsWriteTaintedSegmentFun aWriter,
                                        uint32_t aCount,
                                        uint32_t* aReadCount)
 {
+  puts(__PRETTY_FUNCTION__);
   return ReadSegmentsInternal(nullptr, aWriter, aClosure, aCount, aReadCount);
 }
 

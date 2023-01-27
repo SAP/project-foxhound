@@ -846,6 +846,13 @@ class TaintList
 StringTaint ParseTaint(const std::string& str);
 
 /*
+ * This Piece of code is added to add the ability to deserialize a Taintstring object 
+ * and convert it to a json like Taint representation as a string : [{begin: 10, end: 20, source: 'src1'}, {begin: 80, end: 90, source: 'src2'}]
+*/
+
+std::string serializeStringtaint(const StringTaint& taintstr);
+
+/*
  * Print a string representation of the given StringTaint instance to stdout.
  */
 

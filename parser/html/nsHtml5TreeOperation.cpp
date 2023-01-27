@@ -227,6 +227,7 @@ nsresult nsHtml5TreeOperation::AppendTextToTextNode(
   MOZ_ASSERT(aBuilder);
   MOZ_ASSERT(aBuilder->IsInDocUpdate());
   uint32_t oldLength = aTextNode->TextLength();
+  printf("Function %s: length: %u\n", __PRETTY_FUNCTION__, aLength);
   CharacterDataChangeInfo info = {true, oldLength, oldLength, aLength};
   MutationObservers::NotifyCharacterDataWillChange(aTextNode, info);
 
@@ -245,6 +246,7 @@ nsHtml5TreeOperation::AppendText(const char16_t* aBuffer,
                                  nsIContent* aParent,
                                  nsHtml5DocumentBuilder* aBuilder)
 {
+  printf("Function %s: length: %u\n", __PRETTY_FUNCTION__, aLength);
   nsresult rv = NS_OK;
   nsIContent* lastChild = aParent->GetLastChild();
   if (lastChild && lastChild->IsText()) {
@@ -899,7 +901,11 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       nsIContent* parent = *aOperation.mParent;
       char16_t* buffer = aOperation.mBuffer;
       uint32_t length = aOperation.mLength;
+<<<<<<< HEAD
       const StringTaint taint = aOperation.mTaint;
+=======
+      const StringTaint& taint = aOperation.mTaint;
+>>>>>>> 0fb671309baf (WIP: debugging end2end tainting)
       return AppendText(buffer, length, taint, parent, mBuilder);
     }
 
