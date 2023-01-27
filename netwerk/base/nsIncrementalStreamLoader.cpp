@@ -181,6 +181,7 @@ nsIncrementalStreamLoader::WriteSegmentFunTaint(nsITaintawareInputStream *inStr,
                                                 const StringTaint& taint,
                                                 uint32_t *writeCount)
 {
+  puts(__PRETTY_FUNCTION__);
     return WriteSegmentFun(closure, fromSegment, toOffset, count, taint, writeCount);
 }
 
@@ -209,12 +210,12 @@ nsIncrementalStreamLoader::OnDataAvailable(nsIRequest* request,
   // TaintFox: see if there's taint information available.
   nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(inStr));
 
-#if (DEBUG_E2E_TAINTING)
+//#if (DEBUG_E2E_TAINTING)
   if (!taintInputStream)
     puts("!!!!! NO taint-aware input stream available in nsIncrementalStreamLoader::OnDataAvailable !!!!!");
   else
     puts("+++++ Taint-aware input stream available in nsIncrementalStreamLoader::OnDataAvailable +++++");
-#endif
+///#endif
 
   uint32_t countRead;
   nsresult rv;

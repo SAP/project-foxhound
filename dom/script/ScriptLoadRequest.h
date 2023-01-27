@@ -332,6 +332,9 @@ class ScriptLoadRequest
   // since mScriptData is cleared when the source is passed to the JS engine.
   size_t mScriptTextLength;
 
+  // The taint corresponding to the script data
+  SafeStringTaint mScriptTextTaint;
+
   // Holds the SRI serialized hash and the script bytecode for non-inline
   // scripts.
   mozilla::Vector<uint8_t> mScriptBytecode;

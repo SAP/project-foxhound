@@ -22,7 +22,7 @@ def serve_tainted_file(path, ctype):
         # Look for TAINTME markers
         taints = []
         for match in re.finditer(b'TAINTME', content):
-            taints.append('{{begin: {}, end: {}, source: "{}"}}'.format(match.span()[0], match.span()[1], 'end2end taint source'))
+            taints.append('{{begin: {}, end: {}, source: "{}"}}'.format(match.span()[0], match.span()[1], 'end2end taint source:' + path))
 
         response.send_header(200, {
             'Content-Type': ctype,

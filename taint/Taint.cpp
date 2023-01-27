@@ -1162,6 +1162,9 @@ void PrintTaint(const StringTaint& taint)
 
 void DumpTaint(const StringTaint& taint)
 {
+    if (!taint.hasTaint()) {
+        std::cout << "EmptyTaint" << std::endl;
+    }
     for (auto& range : taint) {
         std::cout << "    " << range.begin() << " - " << range.end() << " : " << range.flow().source().name() << ":\n";
         auto& flow = range.flow();
@@ -1182,4 +1185,37 @@ void DumpTaintOperation(const TaintOperation& operation) {
     }
     std::cout << "]\n";
 
+}
+
+
+std::string convertToString(const TaintRange& range) 
+{
+  std::stringstream ss;
+  ss << "begin: ";
+  ss << range.begin();
+  ss << ", end: ";
+  ss << range.end();
+  ss << ", source: ";
+  ss << range.flow().source().name();
+  ss << ", sink: ";
+  ss << "\"" << range.flow().head()->operation().name() << "\"";
+  return ss.str();
+}
+
+std::string serializeStringtaint(const StringTaint& taintstr) {
+  std::string s = "[";
+  bool nonempty=false;
+  for (auto& range : taintstr) {
+    nonempty=true;
+    s +="{";
+    s += convertToString(range);
+    s +="},";  }
+
+    if (nonempty) {
+    s=s.substr(0,s.length()-1);
+    }
+    
+  s += "]";
+    
+  return s;
 }

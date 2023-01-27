@@ -62,6 +62,7 @@ class HttpBackgroundChannelChild final : public PHttpBackgroundChannelChild {
                                    const uint64_t& aOffset,
                                    const uint32_t& aCount,
                                    const nsDependentCSubstring& aData,
+                                   const nsDependentCSubstring& aTaint,
                                    const bool& aDataFromSocketProcess);
 
   IPCResult RecvOnStopRequest(

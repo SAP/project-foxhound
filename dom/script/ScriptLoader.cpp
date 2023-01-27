@@ -2375,7 +2375,7 @@ nsresult ScriptLoader::CompileOrDecodeClassicScript(
     JSContext* aCx, JSExecutionContext& aExec, ScriptLoadRequest* aRequest) {
   nsAutoCString profilerLabelString;
   aRequest->GetProfilerLabel(profilerLabelString);
-
+  puts(__PRETTY_FUNCTION__);
   nsresult rv;
   if (aRequest->IsBytecode()) {
     if (aRequest->mOffThreadToken) {
@@ -2457,6 +2457,8 @@ nsresult ScriptLoader::EvaluateScript(nsIGlobalObject* aGlobalObject,
   AutoEntryScript aes(aGlobalObject, "EvaluateScript", true);
   JSContext* cx = aes.cx();
   JS::Rooted<JSObject*> global(cx, aGlobalObject->GetGlobalJSObject());
+
+  puts(__PRETTY_FUNCTION__);
 
   nsAutoCString profilerLabelString;
   aRequest->GetProfilerLabel(profilerLabelString);

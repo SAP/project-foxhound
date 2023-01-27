@@ -587,7 +587,7 @@ void HttpChannelChild::DoOnStartRequest(nsIRequest* aRequest) {
 
 void HttpChannelChild::ProcessOnTransportAndData(
     const nsresult& aChannelStatus, const nsresult& aTransportStatus,
-    const uint64_t& aOffset, const uint32_t& aCount, const nsCString& aData) {
+    const uint64_t& aOffset, const uint32_t& aCount, const nsCString& aData, const nsCString& aTaint) {
   LOG(("HttpChannelChild::ProcessOnTransportAndData [this=%p]\n", this));
   MOZ_ASSERT(OnSocketThread());
   mEventQ->RunOrEnqueue(new ChannelFunctionEvent(
@@ -595,9 +595,9 @@ void HttpChannelChild::ProcessOnTransportAndData(
         return self->GetODATarget();
       },
       [self = UnsafePtr<HttpChannelChild>(this), aChannelStatus,
-       aTransportStatus, aOffset, aCount, aData]() {
+       aTransportStatus, aOffset, aCount, aData, aTaint]() {
         self->OnTransportAndData(aChannelStatus, aTransportStatus, aOffset,
-                                 aCount, aData);
+                                 aCount, aData, aTaint);
       }));
 }
 
@@ -605,7 +605,8 @@ void HttpChannelChild::OnTransportAndData(const nsresult& aChannelStatus,
                                           const nsresult& aTransportStatus,
                                           const uint64_t& aOffset,
                                           const uint32_t& aCount,
-                                          const nsCString& aData) {
+                                          const nsCString& aData,
+                                          const nsCString& aTaint) {
   LOG(("HttpChannelChild::OnTransportAndData [this=%p]\n", this));
 
   if (!mCanceled && NS_SUCCEEDED(mStatus)) {
@@ -658,9 +659,15 @@ void HttpChannelChild::OnTransportAndData(const nsresult& aChannelStatus,
   // support only reading part of the data, allowing later calls to read the
   // rest.
   nsCOMPtr<nsIInputStream> stringStream;
+  puts(__PRETTY_FUNCTION__);
+  puts(aData.BeginReading());
+  std::string taintString(aTaint.BeginReading());
+  SafeStringTaint taint = ParseTaint(taintString);
+  DumpTaint(taint);
+  puts("----DONE---");
   nsresult rv =
       NS_NewByteInputStream(getter_AddRefs(stringStream),
-                            Span(aData).To(aCount), NS_ASSIGNMENT_DEPEND);
+                            Span(aData).To(aCount), NS_ASSIGNMENT_DEPEND, taint);
   if (NS_FAILED(rv)) {
     Cancel(rv);
     return;
@@ -758,6 +765,7 @@ void HttpChannelChild::DoOnProgress(nsIRequest* aRequest, int64_t progress,
 void HttpChannelChild::DoOnDataAvailable(nsIRequest* aRequest,
                                          nsIInputStream* aStream,
                                          uint64_t aOffset, uint32_t aCount) {
+  puts(__PRETTY_FUNCTION__);
   AUTO_PROFILER_LABEL("HttpChannelChild::DoOnDataAvailable", NETWORK);
   LOG(("HttpChannelChild::DoOnDataAvailable [this=%p]\n", this));
   if (mCanceled) return;

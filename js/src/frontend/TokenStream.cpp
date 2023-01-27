@@ -3359,6 +3359,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
 
   TokenStart start(this->sourceUnits, -1);
   this->charBuffer.clear();
+  this->taint.clear();
 
   // Run the bad-token code for every path out of this function except the
   // one success-case.

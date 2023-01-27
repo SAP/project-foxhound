@@ -461,6 +461,9 @@ int32_t nsHtml5Tokenizer::stateLoop(int32_t state, char16_t c, int32_t pos,
                                     char16_t* buf, const StringTaint& taint, bool reconsume,
                                     int32_t returnState, int32_t endPos) {
   bool reportedConsecutiveHyphens = false;
+  puts(__PRETTY_FUNCTION__);
+  DumpTaint(taint);
+  puts("Done!");
 stateloop:
   for (;;) {
     switch (state) {

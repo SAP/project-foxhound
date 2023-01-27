@@ -380,7 +380,9 @@ bool nsTextFragment::Append(const char16_t* aBuffer, uint32_t aLength,
 
   // TaintFox: propagate taint.
   AppendTaintAt(GetLength(), aTaint);
-
+  printf("Function %s: length: %u\n", __PRETTY_FUNCTION__, aLength);
+  DumpTaint(aTaint);
+  DumpTaint(Taint());
 
   // FYI: Don't use CheckedInt in this method since here is very hot path
   //      in some performance tests.

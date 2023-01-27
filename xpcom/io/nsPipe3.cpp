@@ -401,7 +401,9 @@ class MOZ_STACK_CLASS AutoReadSegment final {
         mOffset(0) {
     MOZ_DIAGNOSTIC_ASSERT(mPipe);
     MOZ_DIAGNOSTIC_ASSERT(!mReadState.mActiveRead);
+    puts(__PRETTY_FUNCTION__);
     mStatus = mPipe->GetReadSegment(mReadState, mSegment, mLength, &mTaint);
+    DumpTaint(mTaint);
     if (NS_SUCCEEDED(mStatus)) {
       MOZ_DIAGNOSTIC_ASSERT(mReadState.mActiveRead);
       MOZ_DIAGNOSTIC_ASSERT(mSegment);
@@ -433,6 +435,9 @@ class MOZ_STACK_CLASS AutoReadSegment final {
   StringTaint Taint() const
   {
     MOZ_ASSERT(NS_SUCCEEDED(mStatus));
+    puts(__PRETTY_FUNCTION__);
+    DumpTaint(mTaint);
+    DumpTaint(mTaint.safeSubTaint(mOffset, mLength));
     return mTaint.safeSubTaint(mOffset, mLength);
   }
 
@@ -661,9 +666,11 @@ nsPipe::GetReadSegment(nsPipeReadState& aReadState, const char*& aSegment,
   MOZ_DIAGNOSTIC_ASSERT(aLength <= aReadState.mAvailable);
 
   // Taintfox
-  if (aTaint)
+  if (aTaint) {
     *aTaint = mTaint.safeSubTaint(aReadState.mBytesRead, aReadState.mBytesRead + aLength);
-
+    puts(__PRETTY_FUNCTION__);
+    DumpTaint(*aTaint);
+  }
   return NS_OK;
 }
 
@@ -1370,7 +1377,7 @@ nsPipeInputStream::ReadSegmentsInternal(nsWriteSegmentFun aWriter, nsWriteTainte
                                         uint32_t aCount, uint32_t* aReadCount) {
   LOG(("III ReadSegmentsInternal [this=%p count=%u]\n", this, aCount));
   MOZ_ASSERT(!aWriter || !aTaintedWriter, "one of aWriter and aTaintedWriter must be null");
-
+  puts(__PRETTY_FUNCTION__);
   nsresult rv = NS_OK;
 
   *aReadCount = 0;
@@ -1408,11 +1415,17 @@ nsPipeInputStream::ReadSegmentsInternal(nsWriteSegmentFun aWriter, nsWriteTainte
       writeCount = 0;
 
       if (aWriter) {
+        puts("No Tainted writer!");
         rv = aWriter(static_cast<nsIAsyncInputStream*>(this), aClosure, segment.Data(), *aReadCount,
                      segment.Length(), &writeCount);
       } else {
+        puts("Tainted writer!");
+        puts("Before");
+        DumpTaint(segment.Taint());
         rv = aTaintedWriter(this, aClosure, segment.Data(), *aReadCount,
                             segment.Length(), segment.Taint(), &writeCount);
+        puts("After");
+        DumpTaint(segment.Taint());
       }
 
       if (NS_FAILED(rv) || writeCount == 0) {
@@ -1436,6 +1449,7 @@ nsPipeInputStream::ReadSegmentsInternal(nsWriteSegmentFun aWriter, nsWriteTainte
 
 NS_IMETHODIMP
 nsPipeInputStream::ReadSegments(nsWriteSegmentFun aWriter, void* aClosure, uint32_t aCount, uint32_t* aReadCount) {
+  puts(__PRETTY_FUNCTION__);
   return ReadSegmentsInternal(aWriter, nullptr, aClosure, aCount, aReadCount);
 }
 
@@ -1623,6 +1637,7 @@ nsPipeInputStream::TaintedReadSegments(nsWriteTaintedSegmentFun aWriter,
                                        uint32_t aCount,
                                        uint32_t* aReadCount)
 {
+  puts(__PRETTY_FUNCTION__);
   return ReadSegmentsInternal(nullptr, aWriter, aClosure, aCount, aReadCount);
 }
 

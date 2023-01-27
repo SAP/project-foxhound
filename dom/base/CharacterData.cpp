@@ -234,7 +234,7 @@ nsresult CharacterData::SetTextInternal(
     const StringTaint& aTaint,
     CharacterDataChangeInfo::Details* aDetails) {
   MOZ_ASSERT(aBuffer || !aLength, "Null buffer passed to SetTextInternal!");
-
+  printf("Function %s: start: %u aCount: %u length: %u\n", __PRETTY_FUNCTION__, aCount, aOffset, aLength);
   // sanitize arguments
   uint32_t textLength = mText.GetLength();
   if (aOffset > textLength) {
@@ -293,7 +293,9 @@ nsresult CharacterData::SetTextInternal(
 
     bool bidi = mText.IsBidi();
 
+    printf("Function %s: start: %u offset: %u length: %u\n", __PRETTY_FUNCTION__, aOffset, endOffset, aLength);
     mText.Taint().replace(aOffset, endOffset, aLength, aTaint);
+    DumpTaint(mText.Taint());
 
     // Allocate new buffer
     const uint32_t newLength = textLength - aCount + aLength;

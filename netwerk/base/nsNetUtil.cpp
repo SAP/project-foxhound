@@ -1372,12 +1372,13 @@ class BufferWriter final : public nsIInputStreamCallback {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
 
-  BufferWriter(nsIInputStream* aInputStream, void* aBuffer, int64_t aCount)
+  BufferWriter(nsIInputStream* aInputStream, void* aBuffer, int64_t aCount, StringTaint* aTaint)
       : mMonitor("BufferWriter.mMonitor"),
         mInputStream(aInputStream),
         mBuffer(aBuffer),
         mCount(aCount),
         mWrittenData(0),
+        mTaint(aTaint),
         mBufferType(aBuffer ? eExternal : eInternal),
         mBufferSize(0) {
     MOZ_ASSERT(aInputStream);
@@ -1439,6 +1440,16 @@ class BufferWriter final : public nsIInputStreamCallback {
   }
 
   nsresult WriteSync() {
+  // TaintFox: see if there's taint information available.
+  nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(mInputStream));
+//#if (DEBUG_E2E_TAINTING)
+  if (!taintInputStream) {
+    puts("!!!!! NO taint-aware input stream available in BufferWriter::WriteSync !!!!!");
+  } else {
+    puts("+++++ Taint-aware input stream available in BufferWriter::WriteSync +++++");
+  }
+
+
     NS_ASSERT_OWNINGTHREAD(BufferWriter);
 
     uint64_t length = (uint64_t)mCount;
@@ -1461,8 +1472,16 @@ class BufferWriter final : public nsIInputStreamCallback {
     }
 
     uint32_t writtenData;
-    nsresult rv = mInputStream->ReadSegments(NS_CopySegmentToBuffer, mBuffer,
-                                             length, &writtenData);
+    nsresult rv;
+    if (!taintInputStream) {
+      rv = mInputStream->ReadSegments(NS_CopySegmentToBuffer, mBuffer,
+                                               length, &writtenData);   
+    } else {
+      TaintedBuffer buf((char*)mBuffer, mTaint);
+      rv = taintInputStream->TaintedReadSegments(NS_TaintedCopySegmentToBuffer, &buf,
+                                               length, &writtenData);
+    }
+
     NS_ENSURE_SUCCESS(rv, rv);
 
     mWrittenData = writtenData;
@@ -1609,6 +1628,7 @@ class BufferWriter final : public nsIInputStreamCallback {
   void* mBuffer;
   int64_t mCount;
   uint64_t mWrittenData;
+  StringTaint* mTaint;
 
   enum {
     // The buffer is allocated internally and this object must release it
@@ -1628,7 +1648,17 @@ NS_IMPL_ISUPPORTS(BufferWriter, nsIInputStreamCallback)
 }  // anonymous namespace
 
 nsresult NS_ReadInputStreamToBuffer(nsIInputStream* aInputStream, void** aDest,
-                                    int64_t aCount, uint64_t* aWritten) {
+                                    int64_t aCount, uint64_t* aWritten, StringTaint* aTaint) {
+
+  // TaintFox: see if there's taint information available.
+  nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(aInputStream));
+//#if (DEBUG_E2E_TAINTING)
+  if (!taintInputStream) {
+    puts("!!!!! NO taint-aware input stream available in NS_ReadInputStreamToBuffer !!!!!");
+  } else {
+    puts("+++++ Taint-aware input stream available in NS_ReadInputStreamToBuffer +++++");
+  }
+
   MOZ_ASSERT(aInputStream);
   MOZ_ASSERT(aCount >= -1);
 
@@ -1637,13 +1667,18 @@ nsresult NS_ReadInputStreamToBuffer(nsIInputStream* aInputStream, void** aDest,
     aWritten = &dummyWritten;
   }
 
+  StringTaint dummyTaint;
+  if (!aTaint) {
+    aTaint = &dummyTaint;
+  }
+
   if (aCount == 0) {
     *aWritten = 0;
     return NS_OK;
   }
 
   // This will take care of allocating and reallocating aDest.
-  RefPtr<BufferWriter> writer = new BufferWriter(aInputStream, *aDest, aCount);
+  RefPtr<BufferWriter> writer = new BufferWriter(aInputStream, *aDest, aCount, aTaint);
 
   nsresult rv = writer->Write();
   NS_ENSURE_SUCCESS(rv, rv);
@@ -1660,6 +1695,17 @@ nsresult NS_ReadInputStreamToBuffer(nsIInputStream* aInputStream, void** aDest,
 nsresult NS_ReadInputStreamToString(nsIInputStream* aInputStream,
                                     nsACString& aDest, int64_t aCount,
                                     uint64_t* aWritten) {
+  // TaintFox: see if there's taint information available.
+  nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(aInputStream));
+//#if (DEBUG_E2E_TAINTING)
+  if (!taintInputStream) {
+    puts("!!!!! NO taint-aware input stream available in NS_ReadInputStreamToString !!!!!");
+  } else {
+    puts("+++++ Taint-aware input stream available in NS_ReadInputStreamToString +++++");
+  }
+
+  SafeStringTaint taint;
+                                      
   uint64_t dummyWritten;
   if (!aWritten) {
     aWritten = &dummyWritten;
@@ -1681,8 +1727,10 @@ nsresult NS_ReadInputStreamToString(nsIInputStream* aInputStream,
 
     void* dest = aDest.BeginWriting();
     nsresult rv =
-        NS_ReadInputStreamToBuffer(aInputStream, &dest, aCount, aWritten);
+        NS_ReadInputStreamToBuffer(aInputStream, &dest, aCount, aWritten, &taint);
     NS_ENSURE_SUCCESS(rv, rv);
+
+    aDest.AssignTaint(taint);
 
     if ((uint64_t)aCount > *aWritten) {
       aDest.Truncate(*aWritten);
@@ -1694,9 +1742,11 @@ nsresult NS_ReadInputStreamToString(nsIInputStream* aInputStream,
   // If the size is unknown, BufferWriter will allocate the buffer.
   void* dest = nullptr;
   nsresult rv =
-      NS_ReadInputStreamToBuffer(aInputStream, &dest, aCount, aWritten);
+      NS_ReadInputStreamToBuffer(aInputStream, &dest, aCount, aWritten, &taint);
   MOZ_ASSERT_IF(NS_FAILED(rv), dest == nullptr);
   NS_ENSURE_SUCCESS(rv, rv);
+
+  aDest.AssignTaint(taint);
 
   if (!dest) {
     MOZ_ASSERT(*aWritten == 0);

@@ -284,6 +284,10 @@ nsresult ScriptLoadRequest::GetScriptSource(JSContext* aCx,
     GetScriptElement()->GetScriptText(inlineData);
 
     size_t nbytes = inlineData.Length() * sizeof(char16_t);
+
+    // TaintFox: tainted JavaScript inline script data
+    ReportTaintSink(inlineData, "Inline Script");
+
     JS::UniqueTwoByteChars chars(
         static_cast<char16_t*>(JS_malloc(aCx, nbytes)));
     if (!chars) {
@@ -293,7 +297,7 @@ nsresult ScriptLoadRequest::GetScriptSource(JSContext* aCx,
     memcpy(chars.get(), inlineData.get(), nbytes);
 
     SourceText<char16_t> srcBuf;
-    if (!srcBuf.init(aCx, std::move(chars), inlineData.Length())) {
+    if (!srcBuf.init(aCx, std::move(chars), inlineData.Length(), inlineData.Taint())) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
 

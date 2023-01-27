@@ -1580,7 +1580,7 @@ class TokenStreamCharsShared {
   ParserAtomsTable* parserAtoms;
 
   // Taintfox: TODO: link this taint to the charBuffer
-  StringTaint _taint;
+  SafeStringTaint _taint;
 
  protected:
   explicit TokenStreamCharsShared(JSContext* cx, ParserAtomsTable* parserAtoms, const StringTaint& taint)

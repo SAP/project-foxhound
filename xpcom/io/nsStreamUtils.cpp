@@ -499,6 +499,7 @@ class nsStreamCopierIB final : public nsAStreamCopier {
   static nsresult ConsumeInputBuffer(nsIInputStream* aInStr, void* aClosure,
                                      const char* aBuffer, uint32_t aOffset,
                                      uint32_t aCount, uint32_t* aCountWritten) {
+    puts(__PRETTY_FUNCTION__);
     ReadSegmentsState* state = (ReadSegmentsState*)aClosure;
 
     nsresult rv = state->mSink->Write(aBuffer, aCount, aCountWritten);
@@ -513,6 +514,7 @@ class nsStreamCopierIB final : public nsAStreamCopier {
 
   uint32_t DoCopy(nsresult* aSourceCondition,
                   nsresult* aSinkCondition) override {
+    puts(__PRETTY_FUNCTION__);
     ReadSegmentsState state;
     state.mSink = mSink;
     state.mSinkCondition = NS_OK;
@@ -778,7 +780,12 @@ NS_TaintedCopySegmentToBuffer(nsITaintawareInputStream* aInputStream,
                               const StringTaint& aTaint,
                               uint32_t* aCountWritten)
 {
+  puts(__PRETTY_FUNCTION__);
   TaintedBuffer* toBuf = static_cast<TaintedBuffer*>(aClosure);
+  puts("Taint concat");
+  DumpTaint(*(toBuf->taint));
+  puts("+");
+  DumpTaint(aTaint);
   toBuf->taint->concat(aTaint, aOffset);
   memcpy(&toBuf->buffer[aOffset], aBuffer, aCount);
   *aCountWritten = aCount;

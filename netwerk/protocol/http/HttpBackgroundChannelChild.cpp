@@ -216,11 +216,12 @@ IPCResult HttpBackgroundChannelChild::RecvOnStartRequest(
 IPCResult HttpBackgroundChannelChild::RecvOnTransportAndData(
     const nsresult& aChannelStatus, const nsresult& aTransportStatus,
     const uint64_t& aOffset, const uint32_t& aCount,
-    const nsDependentCSubstring& aData, const bool& aDataFromSocketProcess) {
+    const nsDependentCSubstring& aData, const nsDependentCSubstring& aTaint, const bool& aDataFromSocketProcess) {
   RefPtr<HttpBackgroundChannelChild> self = this;
   nsCString data(aData);
+  nsCString taint(aTaint);
   std::function<void()> callProcessOnTransportAndData =
-      [self, aChannelStatus, aTransportStatus, aOffset, aCount, data,
+      [self, aChannelStatus, aTransportStatus, aOffset, aCount, data, taint,
        aDataFromSocketProcess]() {
         LOG(
             ("HttpBackgroundChannelChild::RecvOnTransportAndData [this=%p, "
@@ -249,7 +250,7 @@ IPCResult HttpBackgroundChannelChild::RecvOnTransportAndData(
         }
 
         self->mChannelChild->ProcessOnTransportAndData(
-            aChannelStatus, aTransportStatus, aOffset, aCount, data);
+            aChannelStatus, aTransportStatus, aOffset, aCount, data, taint);
       };
 
   // Bug 1641336: Race only happens if the data is from socket process.

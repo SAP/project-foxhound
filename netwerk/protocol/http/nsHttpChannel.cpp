@@ -7591,6 +7591,15 @@ class OnTransportStatusAsyncEvent : public Runnable {
 NS_IMETHODIMP
 nsHttpChannel::OnDataAvailable(nsIRequest* request, nsIInputStream* input,
                                uint64_t offset, uint32_t count) {
+  // TaintFox: see if there's taint information available.
+  nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(input));
+//#if (DEBUG_E2E_TAINTING)
+  if (!taintInputStream) {
+    puts("!!!!! NO taint-aware input stream available in nsHttpChannel::OnDataAvailable !!!!!");
+  } else {
+    puts("+++++ Taint-aware input stream available in nsHttpChannel::OnDataAvailable +++++");
+  }
+
   nsresult rv;
   AUTO_PROFILER_LABEL("nsHttpChannel::OnDataAvailable", NETWORK);
 

@@ -885,10 +885,12 @@ nsresult nsHtml5StreamParser::WriteStreamBytes(
     // TaintFox: slight hack: propagate taint information after the conversion
     // (should be done during the conversion)
     if (aTaint.hasTaint()) {
-#if (DEBUG_E2E_TAINTING)
+//#if (DEBUG_E2E_TAINTING)
       printf("+++++ Writing taint of length %d, %d/%lu bytes written +++++\n", aTaint.begin()->end(), read, written);
-#endif
-      mLastBuffer->setTaint(aTaint.safeSubTaint(totalRead, totalRead + read));
+//#endif
+      SafeStringTaint taint = aTaint.safeSubTaint(totalRead, totalRead + read);
+      DumpTaint(taint);
+      mLastBuffer->setTaint(taint);
     }
 
     src = src.From(read);
@@ -1477,7 +1479,8 @@ void nsHtml5StreamParser::DoDataAvailable(Span<const uint8_t> aBuffer, const Str
   MOZ_RELEASE_ASSERT(STREAM_BEING_READ == mStreamState,
                      "DoDataAvailable called when stream not open.");
   mTokenizerMutex.AssertCurrentThreadOwns();
-
+  puts(__PRETTY_FUNCTION__);
+  DumpTaint(aTaint);
   if (IsTerminated()) {
     return;
   }
@@ -1555,13 +1558,13 @@ nsresult nsHtml5StreamParser::OnDataAvailable(nsIRequest* aRequest,
 
   // TaintFox: see if there's taint information available.
   nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(aInStream));
-#if (DEBUG_E2E_TAINTING)
+//#if (DEBUG_E2E_TAINTING)
   if (!taintInputStream) {
     puts("!!!!! NO taint-aware input stream available in StreamParser::OnDataAvailable !!!!!");
   } else {
     puts("+++++ Taint-aware input stream available in StreamParser::OnDataAvailable +++++");
   }
-#endif
+//#endif
 
   MOZ_ASSERT(mRequest == aRequest, "Got data on wrong stream.");
   uint32_t totalRead;
@@ -1575,10 +1578,12 @@ nsresult nsHtml5StreamParser::OnDataAvailable(nsIRequest* aRequest,
       return mExecutor->MarkAsBroken(NS_ERROR_OUT_OF_MEMORY);
     }
     Buffer<uint8_t> data(std::move(*maybe));
-    StringTaint taint;
+    SafeStringTaint taint;
     if (taintInputStream) {
+        puts("taintInputStream in StreamParser::onDataAvailable");
         rv = taintInputStream->TaintedRead(reinterpret_cast<char*>(data.Elements()),
                                            data.Length(), &taint, &totalRead);
+        DumpTaint(taint);
     } else {
         rv = aInStream->Read(reinterpret_cast<char*>(data.Elements()),
                              data.Length(), &totalRead);
@@ -1617,12 +1622,14 @@ nsresult nsHtml5StreamParser::OnDataAvailable(nsIRequest* aRequest,
         return NS_ERROR_OUT_OF_MEMORY;
       }
       Buffer<uint8_t> data(std::move(*maybe));
-      StringTaint taint;
+      SafeStringTaint taint;
 
       if (taintInputStream) {
+        puts("Taint aware input stream in nsHtmlStreamParser 1625");
         rv = taintInputStream->TaintedRead(reinterpret_cast<char*>(data.Elements()),
                                            data.Length(), &taint, &totalRead);
       } else {
+        puts("No Taint aware input stream in nsHtmlStreamParserv 1629");
         rv = aInStream->Read(reinterpret_cast<char*>(data.Elements()),
                              data.Length(), &totalRead);
       }
@@ -1635,8 +1642,10 @@ nsresult nsHtml5StreamParser::OnDataAvailable(nsIRequest* aRequest,
   }
   // Read directly from response buffer.
   if (taintInputStream) {
+    puts("Taint aware input stream in nsHtmlStreamParser 1642");
     rv = taintInputStream->TaintedReadSegments(CopySegmentsToParser, this, aLength, &totalRead);
   } else {
+    puts("No Taint aware input stream in nsHtmlStreamParser 1645");
     rv = aInStream->ReadSegments(CopySegmentsToParserNoTaint, this, aLength, &totalRead);
   }
   NS_ENSURE_SUCCESS(rv, rv);
@@ -1663,7 +1672,11 @@ nsHtml5StreamParser::CopySegmentsToParser(
   uint32_t aToOffset, uint32_t aCount, const StringTaint& aTaint, uint32_t *aWriteCount) {
   nsHtml5StreamParser* parser = static_cast<nsHtml5StreamParser*>(aClosure);
 
+  puts(__PRETTY_FUNCTION__);
+  DumpTaint(aTaint);
+
   parser->DoDataAvailable(AsBytes(Span(aFromSegment, aCount)), aTaint);
+
   // Assume DoDataAvailable consumed all available bytes.
   *aWriteCount = aCount;
   return NS_OK;
