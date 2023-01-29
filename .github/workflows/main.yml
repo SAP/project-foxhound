@@ -122,6 +122,7 @@ jobs:
       # Package Foxhound-Playwright
 
       - run: mkdir ./archive
+      - run: cp $FF_CHECKOUT_PATH/scripts/archive.sh $FF_CHECKOUT_PATH/playwright/browser_patches/firefox
 
       - name: Run archive.sh
         run: cd ./playwright/browser_patches/firefox && bash ./archive.sh $FF_CHECKOUT_PATH/archive/foxhound-playwright.zip
