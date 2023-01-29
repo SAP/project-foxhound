@@ -119,6 +119,18 @@ jobs:
       - name: Go into playwright Folder
         run: cd ./playwright/browser_patches/firefox && bash ./build.sh
 
+      # Package Foxhound-Playwright
+
+      - run: mkdir ./archive
+
+      - name: Run archive.sh
+        run: cd ./playwright/browser_patches/firefox && bash ./archive.sh $FF_CHECKOUT_PATH/archive/foxhound-playwright.zip
+
+      - uses: actions/upload-artifact@master
+        with:
+          name: foxhound-playwright
+          path: $FF_CHECKOUT_PATH/archive/foxhound-playwright.zip
+
   # This workflow contains a single job called "build"
   build_docker:
     if: ${{ false }}  # disable for now the job is killed
