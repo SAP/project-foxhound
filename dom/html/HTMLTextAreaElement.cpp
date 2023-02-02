@@ -157,6 +157,8 @@ void HTMLTextAreaElement::GetValueInternal(nsAString& aValue,
                                            bool aIgnoreWrap) const {
   MOZ_ASSERT(mState);
   mState->GetValue(aValue, aIgnoreWrap, /* aForDisplay = */ true);
+    MarkTaintSourceElement(aValue, "textarea.value", this);
+
 }
 
 void HTMLTextAreaElement::SetTaintSourceGetAttr(const nsAString& aName, nsAString& aResult) const {
