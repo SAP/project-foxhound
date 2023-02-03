@@ -14,6 +14,7 @@
 #include <iostream> // cout
 #include <string>   // stoi and u32string
 #include <algorithm>
+#include <sstream>  // stringstream
 
 #include "mozilla/Assertions.h"
 
