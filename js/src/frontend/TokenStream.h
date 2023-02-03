@@ -1204,7 +1204,7 @@ inline bool IsSingleUnitLineTerminator(mozilla::Utf8Unit unit) {
   return unit == mozilla::Utf8Unit('\n') || unit == mozilla::Utf8Unit('\r');
 }
 
-// This is the low-level interface to the JS source code buffer.  It just gets
+// This is the low-level interface to the JS source code buffer.  It eUnits(just gets
 // raw Unicode code units -- 16-bit char16_t units of source text that are not
 // (always) full code points, and 8-bit units of UTF-8 source text soon.
 // TokenStreams functions are layered on top and do some extra stuff like
@@ -1231,12 +1231,15 @@ class SourceUnits {
   /** Next char to get. */
   const Unit* ptr;
 
+  const StringTaint& taint_;
+
  public:
-  SourceUnits(const Unit* units, size_t length, size_t startOffset)
+  SourceUnits(const Unit* units, size_t length, size_t startOffset, const StringTaint& taint)
       : base_(units),
         startOffset_(startOffset),
         limit_(units + length),
-        ptr(units) {}
+        ptr(units),
+        taint_(taint) {}
 
   bool atStart() const {
     MOZ_ASSERT(!isPoisoned(), "shouldn't be using if poisoned");
@@ -1281,6 +1284,14 @@ class SourceUnits {
 
   MOZ_ALWAYS_INLINE Unit getCodeUnit() {
     return *ptr++;  // this will nullptr-crash if poisoned
+  }
+
+  const TaintFlow* getTaintFlow() {
+    return taint_.at(offset());
+  }
+
+  const TaintFlow* previousTaintFlow() {
+    return atStart() ? taint_.at(offset()) :  taint_.at(offset() - 1);
   }
 
   Unit peekCodeUnit() const {
@@ -1617,10 +1628,15 @@ class TokenStreamCharsShared {
     return mozilla::IsAscii(static_cast<char32_t>(unit));
   }
 
-  TaggedParserAtomIndex drainCharBufferIntoAtom() {
+  TaggedParserAtomIndex drainCharBufferIntoAtom(const StringTaint& taint = EmptyTaint) {
     // Add to parser atoms table.
+<<<<<<< HEAD
     auto atom = this->parserAtoms->internChar16(fc, charBuffer.begin(),
                                                 charBuffer.length());
+=======
+    auto atom = this->parserAtoms->internChar16(cx, charBuffer.begin(),
+                                                charBuffer.length(), taint);
+>>>>>>> 89d342d5308d (Foxhound: enabling JavaScript parser tainting)
     charBuffer.clear();
     return atom;
   }
@@ -2094,6 +2110,14 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
 
     anyCharsAccess().flags.isEOF = true;
     return EOF;
+  }
+
+  const TaintFlow* getTaintFlow() {
+    return this->sourceUnits.getTaintFlow();
+  }
+
+    const TaintFlow* previousTaintFlow() {
+    return this->sourceUnits.previousTaintFlow();
   }
 
   void ungetCodeUnit(int32_t c) {

@@ -107,9 +107,13 @@ HashNumber TaggedParserAtomIndex::staticOrWellKnownHash() const {
 template <typename CharT, typename SeqCharT>
 /* static */ ParserAtom* ParserAtom::allocate(
     FrontendContext* fc, LifoAlloc& alloc, InflatedChar16Sequence<SeqCharT> seq,
-    uint32_t length, HashNumber hash) {
+    uint32_t length, HashNumber hash, const StringTaint& taint) {
   constexpr size_t HeaderSize = sizeof(ParserAtom);
-  void* raw = alloc.alloc(HeaderSize + (sizeof(CharT) * length));
+
+  std::string taintString = serializeStringtaint(taint);
+  uint32_t taintSize = taint.hasTaint() ? taintString.size() : 0;
+
+  void* raw = alloc.alloc(HeaderSize + (sizeof(CharT) * length) + taintSize);
   if (!raw) {
     js::ReportOutOfMemory(fc);
     return nullptr;
@@ -118,15 +122,27 @@ template <typename CharT, typename SeqCharT>
   constexpr bool hasTwoByteChars = (sizeof(CharT) == 2);
   static_assert(sizeof(CharT) == 1 || sizeof(CharT) == 2,
                 "CharT should be 1 or 2 byte type");
-  ParserAtom* entry = new (raw) ParserAtom(length, hash, hasTwoByteChars);
+  ParserAtom* entry = new (raw) ParserAtom(length, hash, hasTwoByteChars, taintSize);
   CharT* entryBuf = entry->chars<CharT>();
   drainChar16Seq(entryBuf, seq, length);
+
+  if (taint.hasTaint()) {
+    // Copy the taint as well
+    memcpy(entry->taint(), taintString.c_str(), taintSize);
+    printf("Allocated parser atom with taint: %s\n", taintString.c_str());
+  }
+
   return entry;
 }
 
 bool ParserAtom::isInstantiatedAsJSAtom() const {
   if (isMarkedAtomize()) {
     return true;
+  }
+
+  // Never use JSAtom for tainted strings
+  if (taint_length_ > 0) {
+    return false;
   }
 
   // Always use JSAtom for short strings.
@@ -141,7 +157,6 @@ JSString* ParserAtom::instantiateString(JSContext* cx, FrontendContext* fc,
                                         ParserAtomIndex index,
                                         CompilationAtomCache& atomCache) const {
   MOZ_ASSERT(!isInstantiatedAsJSAtom());
-
   JSString* str;
   if (hasLatin1Chars()) {
     str = NewStringCopyNDontDeflateNonStaticValidLength<CanGC>(
@@ -149,6 +164,11 @@ JSString* ParserAtom::instantiateString(JSContext* cx, FrontendContext* fc,
   } else {
     str = NewStringCopyNDontDeflateNonStaticValidLength<CanGC>(
         cx, twoByteChars(), length(), gc::Heap::Tenured);
+  }
+  if (taint_length_ > 0) {
+    std::string taintString(taint(), taint_length_);
+    printf("Making tainted String! with taint: %s\n", taintString.c_str());
+    str->setTaint(cx, ParseTaint(taintString));
   }
   if (!str) {
     return nullptr;
@@ -172,6 +192,10 @@ JSAtom* ParserAtom::instantiateAtom(JSContext* cx, FrontendContext* fc,
   } else {
     atom =
         AtomizeCharsNonStaticValidLength(cx, hash(), twoByteChars(), length());
+  }
+  if (taint_length_ > 0) {
+    std::string taintString(taint(), taint_length_);
+    printf("Tried to make tainted Atom! with taint: %s\n", taintString.c_str());
   }
   if (!atom) {
     return nullptr;
@@ -352,11 +376,12 @@ TaggedParserAtomIndex ParserAtomsTable::addEntry(FrontendContext* fc,
 template <typename AtomCharT, typename SeqCharT>
 TaggedParserAtomIndex ParserAtomsTable::internChar16Seq(
     FrontendContext* fc, EntryMap::AddPtr& addPtr, HashNumber hash,
-    InflatedChar16Sequence<SeqCharT> seq, uint32_t length) {
+    InflatedChar16Sequence<SeqCharT> seq, uint32_t length,
+    const StringTaint& taint) {
   MOZ_ASSERT(!addPtr);
 
   ParserAtom* entry =
-      ParserAtom::allocate<AtomCharT>(fc, *alloc_, seq, length, hash);
+      ParserAtom::allocate<AtomCharT>(fc, *alloc_, seq, length, hash, taint);
   if (!entry) {
     return TaggedParserAtomIndex::null();
   }
@@ -588,18 +613,25 @@ TaggedParserAtomIndex ParserAtomsTable::internUtf8(
 
 TaggedParserAtomIndex ParserAtomsTable::internChar16(FrontendContext* fc,
                                                      const char16_t* char16Ptr,
-                                                     uint32_t length) {
-  // Check for tiny strings which are abundant in minified code.
-  if (auto tiny = WellKnownParserAtoms::getSingleton().lookupTinyIndex(
+                                                     uint32_t length,
+                                                     const StringTaint& taint) {
+
+  // If the string is tainted, don't do any lookup
+  if (!taint.hasTaint()) {
+    // Check for tiny strings which are abundant in minified code.
+    if (auto tiny = WellKnownParserAtoms::getSingleton().lookupTinyIndex(
           char16Ptr, length)) {
-    return tiny;
+      return tiny;
+     }
   }
 
   // Check against well-known.
   InflatedChar16Sequence<char16_t> seq(char16Ptr, length);
   SpecificParserAtomLookup<char16_t> lookup(seq);
-  if (auto wk = WellKnownParserAtoms::getSingleton().lookupChar16Seq(lookup)) {
-    return wk;
+  if (!taint.hasTaint()) {
+    if (auto wk = WellKnownParserAtoms::getSingleton().lookupChar16Seq(lookup)) {
+      return wk;
+    }
   }
 
   // Check for existing atom.
@@ -610,9 +642,9 @@ TaggedParserAtomIndex ParserAtomsTable::internChar16(FrontendContext* fc,
 
   // Otherwise, add new entry.
   return IsWide(seq)
-             ? internChar16Seq<char16_t>(fc, addPtr, lookup.hash(), seq, length)
+             ? internChar16Seq<char16_t>(fc, addPtr, lookup.hash(), seq, length, taint)
              : internChar16Seq<Latin1Char>(fc, addPtr, lookup.hash(), seq,
-                                           length);
+                                           length, taint);
 }
 
 TaggedParserAtomIndex ParserAtomsTable::internJSAtom(

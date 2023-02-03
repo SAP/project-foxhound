@@ -48,7 +48,7 @@ class ScriptDecoder {
    */
   nsresult DecodeRawData(JS::loader::ScriptLoadRequest* aRequest,
                          const uint8_t* aData, uint32_t aDataLength,
-                         bool aEndOfStream);
+                         bool aEndOfStream, const StringTaint& aTaint);
 
  private:
   /*
@@ -61,7 +61,7 @@ class ScriptDecoder {
   template <typename Unit>
   nsresult DecodeRawDataHelper(JS::loader::ScriptLoadRequest* aRequest,
                                const uint8_t* aData, uint32_t aDataLength,
-                               bool aEndOfStream);
+                               const StringTaint& aTaint, bool aEndOfStream);
 
   // Unicode decoder for charset.
   mozilla::UniquePtr<mozilla::Decoder> mDecoder;

@@ -34,8 +34,23 @@ function xhrTaintTest() {
     return isTainted(xhr.responseText);
 }
 
+// Test 5: Check eval tainting
+function evalTaintTest() {
+    var s = String.tainted("hello this is a long string");
+    eval("var t = '" + s + "'");
+    return isTainted(t);
+}
 
-var tests = [htmlTaintTest, inlineScriptTaintTest, externalScriptTaintTest, xhrTaintTest];
+// Test 6: Check eval tainting for short strings
+function evalShortTaintTest() {
+    var s = String.tainted("hello");
+    eval("var t = '" + s + "'");
+    return isTainted(t);
+}
+
+
+var tests = [htmlTaintTest, inlineScriptTaintTest, externalScriptTaintTest, xhrTaintTest, evalTaintTest, evalShortTaintTest];
+
 
 function runTests() {
     successes = 0;
