@@ -48,8 +48,15 @@ function evalShortTaintTest() {
     return isTainted(t);
 }
 
+// Test 7: Check eval tainting for short strings
+function domParserTaintTest() {
+    var p = new DOMParser();
+    var s = String.tainted("hello");
+    var doc = p.parseFromString("<html><body>" + s + "</body></html>", "text/html");
+    return isTainted(doc.body.textContent);
+}
 
-var tests = [htmlTaintTest, inlineScriptTaintTest, externalScriptTaintTest, xhrTaintTest, evalTaintTest, evalShortTaintTest];
+var tests = [htmlTaintTest, inlineScriptTaintTest, externalScriptTaintTest, xhrTaintTest, evalTaintTest, evalShortTaintTest, domParserTaintTest];
 
 
 function runTests() {
