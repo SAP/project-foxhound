@@ -2375,6 +2375,7 @@ nsresult ScriptLoader::CompileOrDecodeClassicScript(
     JSContext* aCx, JSExecutionContext& aExec, ScriptLoadRequest* aRequest) {
   nsAutoCString profilerLabelString;
   aRequest->GetProfilerLabel(profilerLabelString);
+
   nsresult rv;
   if (aRequest->IsBytecode()) {
     if (aRequest->mOffThreadToken) {

@@ -234,6 +234,7 @@ nsresult CharacterData::SetTextInternal(
     const StringTaint& aTaint,
     CharacterDataChangeInfo::Details* aDetails) {
   MOZ_ASSERT(aBuffer || !aLength, "Null buffer passed to SetTextInternal!");
+
   // sanitize arguments
   uint32_t textLength = mText.GetLength();
   if (aOffset > textLength) {

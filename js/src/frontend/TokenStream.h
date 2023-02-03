@@ -1187,7 +1187,7 @@ inline bool IsSingleUnitLineTerminator(mozilla::Utf8Unit unit) {
   return unit == mozilla::Utf8Unit('\n') || unit == mozilla::Utf8Unit('\r');
 }
 
-// This is the low-level interface to the JS source code buffer.  It eUnits(just gets
+// This is the low-level interface to the JS source code buffer.  It just gets
 // raw Unicode code units -- 16-bit char16_t units of source text that are not
 // (always) full code points, and 8-bit units of UTF-8 source text soon.
 // TokenStreams functions are layered on top and do some extra stuff like

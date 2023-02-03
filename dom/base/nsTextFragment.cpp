@@ -381,6 +381,7 @@ bool nsTextFragment::Append(const char16_t* aBuffer, uint32_t aLength,
   // TaintFox: propagate taint.
   AppendTaintAt(GetLength(), aTaint);
 
+
   // FYI: Don't use CheckedInt in this method since here is very hot path
   //      in some performance tests.
   if (NS_MAX_TEXT_FRAGMENT_LENGTH - mState.mLength < aLength) {
