@@ -545,7 +545,7 @@ nsresult NS_NewBufferedOutputStream(
  */
 nsresult NS_ReadInputStreamToBuffer(nsIInputStream* aInputStream, void** aDest,
                                     int64_t aCount,
-                                    uint64_t* aWritten = nullptr);
+                                    uint64_t* aWritten = nullptr, StringTaint* aTaint = nullptr);
 
 /**
  * See the comment for NS_ReadInputStreamToBuffer

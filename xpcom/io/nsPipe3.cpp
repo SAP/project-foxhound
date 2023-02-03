@@ -661,9 +661,9 @@ nsPipe::GetReadSegment(nsPipeReadState& aReadState, const char*& aSegment,
   MOZ_DIAGNOSTIC_ASSERT(aLength <= aReadState.mAvailable);
 
   // Taintfox
-  if (aTaint)
+  if (aTaint) {
     *aTaint = mTaint.safeSubTaint(aReadState.mBytesRead, aReadState.mBytesRead + aLength);
-
+  }
   return NS_OK;
 }
 

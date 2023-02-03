@@ -371,7 +371,8 @@ nsresult nsHttpTransaction::Init(
   // create pipe for response stream
   rv = NS_NewPipe2(getter_AddRefs(mPipeIn), getter_AddRefs(mPipeOut), true,
                    true, nsIOService::gDefaultSegmentSize,
-                   nsIOService::gDefaultSegmentCount);
+                   nsIOService::gDefaultSegmentCount,
+                   getter_AddRefs(mPipe));
   if (NS_FAILED(rv)) return rv;
 
   if (transWithPushedStream && aPushedStreamId) {

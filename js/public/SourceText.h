@@ -233,6 +233,16 @@ class SourceText final : public TaintableString {
   }
 
   /**
+   * Initialize this using source units transferred out of |data| with Taint argument
+   */
+  [[nodiscard]] bool init(JSContext* cx,
+                          js::UniquePtr<Unit[], JS::FreePolicy> data,
+                          size_t dataLength,
+                          const StringTaint& taint) {
+    return init(cx, data.release(), dataLength, taint, SourceOwnership::TakeOwnership);
+  }
+
+  /**
    * Exactly identical to the |init()| overload above that accepts
    * |UniquePtr<Unit[], JS::FreePolicy>|, but instead takes character data:
    * |UniquePtr<CharT[], JS::FreePolicy>|.

@@ -37,6 +37,7 @@ child:
                            uint64_t  offset,
                            uint32_t  count,
                            nsDependentCSubstring data,
+                           nsDependentCSubstring taint,
                            bool dataFromSocketProcess);
 
 

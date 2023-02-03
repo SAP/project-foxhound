@@ -911,7 +911,8 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       nsIContent* parent = *aOperation.mParent;
       char16_t* buffer = aOperation.mBuffer;
       uint32_t length = aOperation.mLength;
-      return AppendText(buffer, length, EmptyTaint, parent, mBuilder);
+      const StringTaint& taint = aOperation.mTaint;
+      return AppendText(buffer, length, taint, parent, mBuilder);
     }
 
     nsresult operator()(const opFosterParentText& aOperation) {

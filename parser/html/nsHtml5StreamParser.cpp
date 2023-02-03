@@ -888,7 +888,8 @@ nsresult nsHtml5StreamParser::WriteStreamBytes(
 #if (DEBUG_E2E_TAINTING)
       printf("+++++ Writing taint of length %d, %d/%lu bytes written +++++\n", aTaint.begin()->end(), read, written);
 #endif
-      mLastBuffer->setTaint(aTaint.safeSubTaint(totalRead, totalRead + read));
+      SafeStringTaint taint = aTaint.safeSubTaint(totalRead, totalRead + read);
+      mLastBuffer->setTaint(taint);
     }
 
     src = src.From(read);
@@ -1477,7 +1478,6 @@ void nsHtml5StreamParser::DoDataAvailable(Span<const uint8_t> aBuffer, const Str
   MOZ_RELEASE_ASSERT(STREAM_BEING_READ == mStreamState,
                      "DoDataAvailable called when stream not open.");
   mTokenizerMutex.AssertCurrentThreadOwns();
-
   if (IsTerminated()) {
     return;
   }
@@ -1575,7 +1575,7 @@ nsresult nsHtml5StreamParser::OnDataAvailable(nsIRequest* aRequest,
       return mExecutor->MarkAsBroken(NS_ERROR_OUT_OF_MEMORY);
     }
     Buffer<uint8_t> data(std::move(*maybe));
-    StringTaint taint;
+    SafeStringTaint taint;
     if (taintInputStream) {
         rv = taintInputStream->TaintedRead(reinterpret_cast<char*>(data.Elements()),
                                            data.Length(), &taint, &totalRead);
@@ -1617,7 +1617,7 @@ nsresult nsHtml5StreamParser::OnDataAvailable(nsIRequest* aRequest,
         return NS_ERROR_OUT_OF_MEMORY;
       }
       Buffer<uint8_t> data(std::move(*maybe));
-      StringTaint taint;
+      SafeStringTaint taint;
 
       if (taintInputStream) {
         rv = taintInputStream->TaintedRead(reinterpret_cast<char*>(data.Elements()),
@@ -1664,6 +1664,7 @@ nsHtml5StreamParser::CopySegmentsToParser(
   nsHtml5StreamParser* parser = static_cast<nsHtml5StreamParser*>(aClosure);
 
   parser->DoDataAvailable(AsBytes(Span(aFromSegment, aCount)), aTaint);
+
   // Assume DoDataAvailable consumed all available bytes.
   *aWriteCount = aCount;
   return NS_OK;

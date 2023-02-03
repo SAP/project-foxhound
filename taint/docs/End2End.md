@@ -130,6 +130,14 @@ Additionally, the following classes/interfaces have also been modified to suppor
 
     nsIncrementalStreamLoader: Interface and implementation, mostly used for loading external script data in the browser
 
+## Multi-Process and IPC
+
+Recent versions of Firefox have enforced multi-process builds (e10s), with network and applications running in separate processes. This means taint will be lost when Http data is transported between the parent and child processes.
+
+To get around this, the HttpBackgroundChannel interface  OnTransportAndData method has been enhanced to take two strings, one containing data, and one containing the serialized taint information.
+
+The corresponding Parent and Child implementations have been modified to serialize and parse the taint accordingly.
+
 ## Caveats
 
 Currently, taint propagation into the HTML parser only works for non-compressed responses, since an additional decompression StreamListener is added for compressed streams which isn't taintaware yet. Thus, the end2end Taintfox currently does not send out compression related 'accept' headers. Also the patches for the nsHtml5StreamParser are fairly hackish. The propagation only works correctly if a content type and charset is set for the incoming data. Last, response caching has been disabled as the cache also isn't taint aware yet.

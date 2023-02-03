@@ -221,8 +221,10 @@ bool HttpBackgroundChannelParent::OnTransportAndData(
       [self = UnsafePtr<HttpBackgroundChannelParent>(this), aChannelStatus,
        aTransportStatus](const nsDependentCSubstring& aData, uint64_t aOffset,
                          uint32_t aCount) {
+        nsDependentCSubstring taint;
+        taint.Append(serializeStringtaint(aData.Taint().safeSubTaint(aOffset, aOffset + aCount)));
         return self->SendOnTransportAndData(aChannelStatus, aTransportStatus,
-                                            aOffset, aCount, aData, false);
+                                            aOffset, aCount, aData, taint, false);
       };
 
   return nsHttp::SendDataInChunks(aData, aOffset, aCount, sendFunc);
