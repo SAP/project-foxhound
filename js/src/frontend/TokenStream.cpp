@@ -522,8 +522,8 @@ TokenStreamCharsBase<Unit>::TokenStreamCharsBase(JSContext* cx,
                                                  size_t length,
                                                  const StringTaint& taint,
                                                  size_t startOffset)
-    : TokenStreamCharsShared(cx, pasrerAtoms, taint),
-      sourceUnits(units, length, startOffset) {}
+    : TokenStreamCharsShared(cx, pasrerAtoms),
+      sourceUnits(units, length, startOffset, taint) {}
 
 bool FillCharBufferFromSourceNormalizingAsciiLineBreaks(CharBuffer& charBuffer,
                                                         const char16_t* cur,
@@ -3359,7 +3359,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
 
   TokenStart start(this->sourceUnits, -1);
   this->charBuffer.clear();
-  this->taint.clear();
+  SafeStringTaint taintBuffer;
 
   // Run the bad-token code for every path out of this function except the
   // one success-case.
@@ -3385,7 +3385,9 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
   // equivalents), \\, EOF.  Because we detect EOL sequences here and
   // put them back immediately, we can use getCodeUnit().
   int32_t unit;
+  const TaintFlow* taintFlow = nullptr;
   while ((unit = getCodeUnit()) != untilChar) {
+    taintFlow = this->previousTaintFlow();
     if (unit == EOF) {
       ReportPrematureEndOfLiteral(JSMSG_EOF_BEFORE_END_OF_LITERAL);
       return false;
@@ -3742,12 +3744,18 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
       break;
     }
 
+    // Taintfox: if the incoming Unit is tainted, append the corresponding taint flow to the end
+    if (taintFlow) {
+      taintBuffer.concat(SafeStringTaint(TaintFlow(taintFlow), 1), this->charBuffer.length());
+    }
+
     if (!this->charBuffer.append(unit)) {
       return false;
     }
+
   }
 
-  TaggedParserAtomIndex atom = drainCharBufferIntoAtom();
+  TaggedParserAtomIndex atom = drainCharBufferIntoAtom(taintBuffer);
   if (!atom) {
     return false;
   }

@@ -43,3 +43,152 @@ Now try to compile and fix up any resulting issues :)
 
 Note: Source compression has been disabled for now until further investigation.
 
+## Update
+
+For Firefox version > 90 there have been some changes to the JavaScript parsing. Here are the latest notes.
+
+All source files are in js/src/frontend.
+
+### Token Streams
+
+TokenStream operates on the source buffer and creates a list of tokens. The class structure is as follows:
+
+```C++
+class TokenStreamCharsShared {
+ protected:
+  JSContext* cx;
+
+  /**
+   * Buffer transiently used to store sequences of identifier or string code
+   * points when such can't be directly processed from the original source
+   * text (e.g. because it contains escapes).
+   */
+  CharBuffer charBuffer;
+
+  /** Information for parsing with a lifetime longer than the parser itself. */
+  ParserAtomsTable* parserAtoms;
+
+};
+```
+
+and 
+
+```C++
+class TokenStreamCharsBase : public TokenStreamCharsShared {
+ protected:
+  using SourceUnits = frontend::SourceUnits<Unit>;
+
+  /** Code units in the source code being tokenized. */
+  SourceUnits sourceUnits;
+
+  // End of fields.
+
+ protected:
+  TokenStreamCharsBase(JSContext* cx, ParserAtomsTable* parserAtoms,
+                       const Unit* units, size_t length, const StringTaint& taint, size_t startOffset);
+};
+```
+
+and 
+
+```C++
+template <typename Unit>
+class SourceUnits {
+ private:
+  /** Base of buffer. */
+  const Unit* base_;
+
+  /** Offset of base_[0]. */
+  uint32_t startOffset_;
+
+  /** Limit for quick bounds check. */
+  const Unit* limit_;
+
+  /** Next char to get. */
+  const Unit* ptr;
+
+  const StringTaint& taint_;
+
+};
+```
+During the parsing, the input code (as a SourceUnits object) is consumed and writted into a tempory buffer (a CharBuffer object). In the case of strings literals in the code, these are added to an AtomsTable defined in ParseAtom.h. see e.g. getStringOrTemplateToken:
+
+```C++
+bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
+    char untilChar, Modifier modifier, TokenKind* out) {
+ 
+ // ... decode the input characters
+
+ // Create a new atom index from the char buffer contents
+ TaggedParserAtomIndex atom = drainCharBufferIntoAtom();
+  if (!atom) {
+    return false;
+  }
+
+  noteBadToken.release();
+
+  MOZ_ASSERT_IF(!parsingTemplate, !templateHead);
+
+  TokenKind kind = !parsingTemplate ? TokenKind::String
+                   : templateHead   ? TokenKind::TemplateHead
+                                    : TokenKind::NoSubsTemplate;
+  // Create a new token
+  newAtomToken(kind, atom, start, modifier, taintBuffer, out);
+  return true;
+}
+```
+
+To make sure the input is taint-aware, we need to add a taint field to SourceUnits, and helper functions to extract the Taint Flow per character.
+
+### ParseAtoms
+
+The ParserAtoms (in ParserAtom.h) are similar to JSAtoms, but not quite the same. They consist of a header with the following fields:
+
+```C++
+class alignas(alignof(uint32_t)) ParserAtom {
+
+private:
+  // The JSAtom-compatible hash of the string.
+  HashNumber hash_ = 0;
+
+  // The length of the buffer in chars_.
+  uint32_t length_ = 0;
+
+  uint32_t flags_ = 0;
+
+  // Sneak a taint field in here too?
+
+  // End of fields.
+};
+```
+
+With the atom contents stored inline after the header. A new atom is allocated via the
+
+```C++
+  static ParserAtom* allocate(JSContext* cx, LifoAlloc& alloc,
+                              InflatedChar16Sequence<SeqCharT> seq,
+                              uint32_t length, HashNumber hash);
+```
+
+method, which takes case of allocating the extra inline buffer. Memory is tracked via the ```LifoAlloc& alloc``` argument. All strings are stored in a table:
+
+```C++
+class ParserAtomsTable {
+  friend struct CompilationStencil;
+
+ private:
+  const WellKnownParserAtoms& wellKnownTable_;
+
+  LifoAlloc* alloc_;
+
+  // The ParserAtom are owned by the LifoAlloc.
+  using EntryMap = HashMap<const ParserAtom*, TaggedParserAtomIndex,
+                           ParserAtomLookupHasher, js::SystemAllocPolicy>;
+  EntryMap entryMap_;
+  ParserAtomVector entries_;
+};
+```
+
+The LifoAlloc is passed to the Table via a constructor, which frees all memory when the LifoAlloc itself is deleted. This makes life difficult for storing taint information, which is shared and allocated all over the place.
+
+Solution to store a serialized Taint string after the string buffer in the a ParserAtom entry.

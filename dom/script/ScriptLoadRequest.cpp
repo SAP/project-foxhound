@@ -305,6 +305,9 @@ nsresult ScriptLoadRequest::GetScriptSource(JSContext* aCx,
     return NS_OK;
   }
 
+  puts("************ ScriptLoadRequest!!");
+  DumpTaint(mScriptTextTaint);
+
   size_t length = ScriptTextLength();
   if (IsUTF16Text()) {
     JS::UniqueTwoByteChars chars;
@@ -315,7 +318,7 @@ nsresult ScriptLoadRequest::GetScriptSource(JSContext* aCx,
     }
 
     SourceText<char16_t> srcBuf;
-    if (!srcBuf.init(aCx, std::move(chars), length)) {
+    if (!srcBuf.init(aCx, std::move(chars), length, mScriptTextTaint)) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
 
@@ -332,7 +335,7 @@ nsresult ScriptLoadRequest::GetScriptSource(JSContext* aCx,
   }
 
   SourceText<Utf8Unit> srcBuf;
-  if (!srcBuf.init(aCx, std::move(chars), length)) {
+  if (!srcBuf.init(aCx, std::move(chars), length, mScriptTextTaint)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 

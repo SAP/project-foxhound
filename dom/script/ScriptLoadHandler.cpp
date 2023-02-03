@@ -71,7 +71,8 @@ NS_IMPL_ISUPPORTS(ScriptLoadHandler, nsIIncrementalStreamLoaderObserver)
 template <typename Unit>
 nsresult ScriptLoadHandler::DecodeRawDataHelper(const uint8_t* aData,
                                                 uint32_t aDataLength,
-                                                bool aEndOfStream) {
+                                                bool aEndOfStream,
+                                                const StringTaint& aTaint) {
   CheckedInt<size_t> needed =
       ScriptDecoding<Unit>::MaxBufferLength(mDecoder, aDataLength);
   if (!needed.isValid()) {
@@ -100,6 +101,10 @@ nsresult ScriptLoadHandler::DecodeRawDataHelper(const uint8_t* aData,
   MOZ_ASSERT(haveRead <= capacity.value(),
              "mDecoder produced more data than expected");
   MOZ_ALWAYS_TRUE(scriptText.resize(haveRead));
+
+  // Taintfox: Append Taint
+  mRequest->mScriptTextTaint.concat(aTaint, mRequest->mScriptTextLength);
+
   mRequest->mScriptTextLength = scriptText.length();
 
   return NS_OK;
@@ -107,12 +112,13 @@ nsresult ScriptLoadHandler::DecodeRawDataHelper(const uint8_t* aData,
 
 nsresult ScriptLoadHandler::DecodeRawData(const uint8_t* aData,
                                           uint32_t aDataLength,
-                                          bool aEndOfStream) {
+                                          bool aEndOfStream,
+                                          const StringTaint& aTaint) {
   if (mRequest->IsUTF16Text()) {
-    return DecodeRawDataHelper<char16_t>(aData, aDataLength, aEndOfStream);
+    return DecodeRawDataHelper<char16_t>(aData, aDataLength, aEndOfStream, aTaint);
   }
 
-  return DecodeRawDataHelper<Utf8Unit>(aData, aDataLength, aEndOfStream);
+  return DecodeRawDataHelper<Utf8Unit>(aData, aDataLength, aEndOfStream, aTaint);
 }
 
 NS_IMETHODIMP
@@ -152,7 +158,9 @@ ScriptLoadHandler::OnIncrementalData(nsIIncrementalStreamLoader* aLoader,
 
     // Decoder has already been initialized. -- trying to decode all loaded
     // bytes.
-    rv = DecodeRawData(aData, aDataLength, /* aEndOfStream = */ false);
+    puts(__PRETTY_FUNCTION__);
+    DumpTaint(aTaint);
+    rv = DecodeRawData(aData, aDataLength, /* aEndOfStream = */ false, aTaint);
     NS_ENSURE_SUCCESS(rv, rv);
 
     // If SRI is required for this load, appending new bytes to the hash.
@@ -360,7 +368,7 @@ ScriptLoadHandler::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
       DebugOnly<bool> encoderSet =
           EnsureDecoder(aLoader, aData, aDataLength, /* aEndOfStream = */ true);
       MOZ_ASSERT(encoderSet);
-      rv = DecodeRawData(aData, aDataLength, /* aEndOfStream = */ true);
+      rv = DecodeRawData(aData, aDataLength, /* aEndOfStream = */ true, aTaint);
       NS_ENSURE_SUCCESS(rv, rv);
 
       LOG(("ScriptLoadRequest (%p): Source length in code units = %u",

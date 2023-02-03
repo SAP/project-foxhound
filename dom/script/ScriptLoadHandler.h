@@ -48,14 +48,14 @@ class ScriptLoadHandler final : public nsIIncrementalStreamLoaderObserver {
    */
   template <typename Unit>
   nsresult DecodeRawDataHelper(const uint8_t* aData, uint32_t aDataLength,
-                               bool aEndOfStream);
+                               bool aEndOfStream, const StringTaint& aTaint);
 
   /*
    * Once the charset is found by the EnsureDecoder function, we can
    * incrementally convert the charset to the one expected by the JS Parser.
    */
   nsresult DecodeRawData(const uint8_t* aData, uint32_t aDataLength,
-                         bool aEndOfStream);
+                         bool aEndOfStream, const StringTaint& aTaint);
 
   /*
    * Discover the charset by looking at the stream data, the script tag, and
