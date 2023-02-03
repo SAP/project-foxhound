@@ -356,7 +356,6 @@ nsInputStreamTee::TaintedReadSegments(nsWriteTaintedSegmentFun aWriter,
                                       uint32_t aCount,
                                       uint32_t* aBytesRead)
 {
-  puts(__PRETTY_FUNCTION__);
   if (NS_WARN_IF(!mSource)) {
     return NS_ERROR_NOT_INITIALIZED;
   }

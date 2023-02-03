@@ -195,7 +195,6 @@ bool HttpBackgroundChannelParent::OnStartRequest(
 bool HttpBackgroundChannelParent::OnTransportAndData(
     const nsresult& aChannelStatus, const nsresult& aTransportStatus,
     const uint64_t& aOffset, const uint32_t& aCount, const nsCString& aData) {
-  puts(__PRETTY_FUNCTION__);
   LOG(("HttpBackgroundChannelParent::OnTransportAndData [this=%p]\n", this));
   AssertIsInMainProcess();
 
@@ -224,8 +223,6 @@ bool HttpBackgroundChannelParent::OnTransportAndData(
                          uint32_t aCount) {
         nsDependentCSubstring taint;
         taint.Append(serializeStringtaint(aData.Taint().safeSubTaint(aOffset, aOffset + aCount)));
-        puts("!!!!!!!!!! Sending subtaint!");
-        puts(taint.BeginReading());
         return self->SendOnTransportAndData(aChannelStatus, aTransportStatus,
                                             aOffset, aCount, aData, taint, false);
       };

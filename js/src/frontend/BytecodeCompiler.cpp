@@ -250,9 +250,6 @@ template <typename Unit>
   }
 #endif  // JS_ENABLE_SMOOSH
 
-  puts(__PRETTY_FUNCTION__);
-  DumpTaint(srcBuf.Taint());
-
   if (input.options.selfHostingMode) {
     if (!input.initForSelfHostingGlobal(cx)) {
       return false;
@@ -687,7 +684,6 @@ bool ScriptCompiler<Unit>::compile(JSContext* cx, SharedContext* sc) {
   assertSourceParserAndScriptCreated();
 
   TokenStreamPosition startPosition(parser->tokenStream);
-  puts(__PRETTY_FUNCTION__);
   // Emplace the topLevel stencil
   MOZ_ASSERT(compilationState_.scriptData.length() ==
              CompilationStencil::TopLevelIndex);

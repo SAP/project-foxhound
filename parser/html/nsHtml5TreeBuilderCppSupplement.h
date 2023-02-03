@@ -740,11 +740,7 @@ nsHtml5TreeBuilder::appendCharacters(nsIContentHandle* aParent, char16_t* aBuffe
   MOZ_ASSERT(aParent, "Null parent");
   MOZ_ASSERT(!aStart, "aStart must always be zero.");
   
-  printf("Function %s: start: %u length: %u\n", __PRETTY_FUNCTION__, aStart, aLength);
-  DumpTaint(aTaint);
-
   if (mBuilder) {
-    puts("mBuilder");
     nsresult rv = nsHtml5TreeOperation::AppendText(
       aBuffer, // XXX aStart always ignored???
       aLength,
@@ -1143,8 +1139,6 @@ nsHtml5TreeBuilder::accumulateCharacters(const char16_t* aBuf, const StringTaint
                      "About to memcpy past the end of the buffer!");
   memcpy(charBuffer + charBufferLen, aBuf + aStart, sizeof(char16_t) * aLength);
   charTaint.concat(taint.safeSubTaint(aStart, aStart + aLength), charBufferLen);
-  printf("Function %s: start: %u length: %u\n", __PRETTY_FUNCTION__, aStart, aLength);
-  DumpTaint(charTaint);
   charBufferLen += aLength;
 }
 

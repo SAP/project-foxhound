@@ -102,7 +102,6 @@ template <typename CharT, typename SeqCharT>
   if (taint.hasTaint()) {
     // Copy the taint as well
     memcpy(entry->taint(), taintString.c_str(), taintSize);
-    printf("Allocated parser atom with taint: %s\n", taintString.c_str());
   }
 
   return entry;
@@ -129,6 +128,7 @@ bool ParserAtom::isInstantiatedAsJSAtom() const {
 JSString* ParserAtom::instantiateString(JSContext* cx, ParserAtomIndex index,
                                         CompilationAtomCache& atomCache) const {
   MOZ_ASSERT(!isInstantiatedAsJSAtom());
+
   JSString* str;
   if (hasLatin1Chars()) {
     str = NewStringCopyNDontDeflateNonStaticValidLength<CanGC>(
@@ -139,7 +139,6 @@ JSString* ParserAtom::instantiateString(JSContext* cx, ParserAtomIndex index,
   }
   if (taint_length_ > 0) {
     std::string taintString(taint(), taint_length_);
-    printf("Making tainted String! with taint: %s\n", taintString.c_str());
     str->setTaint(cx, ParseTaint(taintString));
   }
   if (!str) {
@@ -166,7 +165,6 @@ JSAtom* ParserAtom::instantiateAtom(JSContext* cx, ParserAtomIndex index,
   }
   if (taint_length_ > 0) {
     std::string taintString(taint(), taint_length_);
-    printf("Tried to make tainted Atom! with taint: %s\n", taintString.c_str());
   }
   if (!atom) {
     return nullptr;

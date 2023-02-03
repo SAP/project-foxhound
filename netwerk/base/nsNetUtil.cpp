@@ -1442,13 +1442,13 @@ class BufferWriter final : public nsIInputStreamCallback {
   nsresult WriteSync() {
   // TaintFox: see if there's taint information available.
   nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(mInputStream));
-//#if (DEBUG_E2E_TAINTING)
+#if (DEBUG_E2E_TAINTING)
   if (!taintInputStream) {
     puts("!!!!! NO taint-aware input stream available in BufferWriter::WriteSync !!!!!");
   } else {
     puts("+++++ Taint-aware input stream available in BufferWriter::WriteSync +++++");
   }
-
+#endif
 
     NS_ASSERT_OWNINGTHREAD(BufferWriter);
 
@@ -1652,13 +1652,13 @@ nsresult NS_ReadInputStreamToBuffer(nsIInputStream* aInputStream, void** aDest,
 
   // TaintFox: see if there's taint information available.
   nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(aInputStream));
-//#if (DEBUG_E2E_TAINTING)
+#if (DEBUG_E2E_TAINTING)
   if (!taintInputStream) {
     puts("!!!!! NO taint-aware input stream available in NS_ReadInputStreamToBuffer !!!!!");
   } else {
     puts("+++++ Taint-aware input stream available in NS_ReadInputStreamToBuffer +++++");
   }
-
+#endif
   MOZ_ASSERT(aInputStream);
   MOZ_ASSERT(aCount >= -1);
 
@@ -1697,13 +1697,13 @@ nsresult NS_ReadInputStreamToString(nsIInputStream* aInputStream,
                                     uint64_t* aWritten) {
   // TaintFox: see if there's taint information available.
   nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(aInputStream));
-//#if (DEBUG_E2E_TAINTING)
+#if (DEBUG_E2E_TAINTING)
   if (!taintInputStream) {
     puts("!!!!! NO taint-aware input stream available in NS_ReadInputStreamToString !!!!!");
   } else {
     puts("+++++ Taint-aware input stream available in NS_ReadInputStreamToString +++++");
   }
-
+#endif
   SafeStringTaint taint;
                                       
   uint64_t dummyWritten;

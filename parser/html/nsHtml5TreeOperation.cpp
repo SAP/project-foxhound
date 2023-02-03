@@ -215,7 +215,6 @@ nsresult nsHtml5TreeOperation::AppendTextToTextNode(
   MOZ_ASSERT(aBuilder);
   MOZ_ASSERT(aBuilder->IsInDocUpdate());
   uint32_t oldLength = aTextNode->TextLength();
-  printf("Function %s: length: %u\n", __PRETTY_FUNCTION__, aLength);
   CharacterDataChangeInfo info = {true, oldLength, oldLength, aLength};
   MutationObservers::NotifyCharacterDataWillChange(aTextNode, info);
 
@@ -235,7 +234,6 @@ nsHtml5TreeOperation::AppendText(const char16_t* aBuffer,
                                  nsIContent* aParent,
                                  nsHtml5DocumentBuilder* aBuilder)
 {
-  printf("Function %s: length: %u\n", __PRETTY_FUNCTION__, aLength);
   nsresult rv = NS_OK;
   nsIContent* lastChild = aParent->GetLastChild();
   if (lastChild && lastChild->IsText()) {

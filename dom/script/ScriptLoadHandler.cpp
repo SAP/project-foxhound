@@ -158,8 +158,6 @@ ScriptLoadHandler::OnIncrementalData(nsIIncrementalStreamLoader* aLoader,
 
     // Decoder has already been initialized. -- trying to decode all loaded
     // bytes.
-    puts(__PRETTY_FUNCTION__);
-    DumpTaint(aTaint);
     rv = DecodeRawData(aData, aDataLength, /* aEndOfStream = */ false, aTaint);
     NS_ENSURE_SUCCESS(rv, rv);
 

@@ -659,12 +659,8 @@ void HttpChannelChild::OnTransportAndData(const nsresult& aChannelStatus,
   // support only reading part of the data, allowing later calls to read the
   // rest.
   nsCOMPtr<nsIInputStream> stringStream;
-  puts(__PRETTY_FUNCTION__);
-  puts(aData.BeginReading());
   std::string taintString(aTaint.BeginReading());
   SafeStringTaint taint = ParseTaint(taintString);
-  DumpTaint(taint);
-  puts("----DONE---");
   nsresult rv =
       NS_NewByteInputStream(getter_AddRefs(stringStream),
                             Span(aData).To(aCount), NS_ASSIGNMENT_DEPEND, taint);
@@ -765,7 +761,6 @@ void HttpChannelChild::DoOnProgress(nsIRequest* aRequest, int64_t progress,
 void HttpChannelChild::DoOnDataAvailable(nsIRequest* aRequest,
                                          nsIInputStream* aStream,
                                          uint64_t aOffset, uint32_t aCount) {
-  puts(__PRETTY_FUNCTION__);
   AUTO_PROFILER_LABEL("HttpChannelChild::DoOnDataAvailable", NETWORK);
   LOG(("HttpChannelChild::DoOnDataAvailable [this=%p]\n", this));
   if (mCanceled) return;

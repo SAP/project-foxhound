@@ -531,9 +531,6 @@ nsresult XMLHttpRequestMainThread::AppendToResponseText(
     auto handle = handleOrErr.unwrap();
 
     // TaintFox: propagate taint. TODO(samuel) deal with encoding
-    puts("XHR XHR XHR Propagate Taint!");
-    DumpTaint(aTaint);
-    printf("%u", len);
     helper.AppendTaintAt(len, aTaint);
 
     uint32_t result;
@@ -573,7 +570,7 @@ void XMLHttpRequestMainThread::GetResponseText(DOMString& aResponseText,
   }
 
   // Taintfox: XMLHttpRequest.response source
-  //MarkTaintSource(aResponseText, "XMLHttpRequest.response");
+  MarkTaintSource(aResponseText, "XMLHttpRequest.response");
 }
 
 void XMLHttpRequestMainThread::GetResponseText(
@@ -2925,8 +2922,6 @@ void XMLHttpRequestMainThread::Send(
       aUrl = NS_ConvertUTF8toUTF16(url);
     }
     ReportTaintSink(aData.Value().GetAsUSVString(), "XMLHttpRequest.send", aUrl);
-    // Place to add headers! One option!?!
-   // mAuthorRequestHeaders.Set("X-Taint", SerializeTaint(aData.Value().GetAsUSVString().Taint()));
     SendInternal(&body, true, aRv);
     return;
   }

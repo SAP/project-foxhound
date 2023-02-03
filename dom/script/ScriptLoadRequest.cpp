@@ -305,9 +305,6 @@ nsresult ScriptLoadRequest::GetScriptSource(JSContext* aCx,
     return NS_OK;
   }
 
-  puts("************ ScriptLoadRequest!!");
-  DumpTaint(mScriptTextTaint);
-
   size_t length = ScriptTextLength();
   if (IsUTF16Text()) {
     JS::UniqueTwoByteChars chars;
