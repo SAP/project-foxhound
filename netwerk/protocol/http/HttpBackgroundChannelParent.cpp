@@ -228,8 +228,6 @@ bool HttpBackgroundChannelParent::OnTransportAndData(
                               uint64_t aOffset, uint32_t aCount) {
         nsDependentCSubstring taint;
         taint.Append(serializeStringtaint(aData.Taint().safeSubTaint(aOffset, aOffset + aCount)));
-        puts("!!!!!!!!!! Sending subtaint!");
-        puts(taint.BeginReading());
         return self->SendOnTransportAndData(aChannelStatus, aTransportStatus,
                                             aOffset, aCount, aData, taint, false,
                                             aOnDataAvailableStart);

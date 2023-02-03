@@ -89,7 +89,6 @@ already_AddRefed<Document> DOMParser::ParseFromString(const nsAString& aStr,
       document->ForceSkipDTDSecurityChecks();
     }
 
-    PrintTaint(strCopy.Taint());
     nsresult rv = nsContentUtils::ParseDocumentHTML(strCopy, document, false);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       aRv.Throw(rv);

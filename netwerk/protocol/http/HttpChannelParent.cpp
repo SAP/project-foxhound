@@ -1495,13 +1495,13 @@ HttpChannelParent::OnDataAvailable(nsIRequest* aRequest,
 
   // TaintFox: see if there's taint information available.
   nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(aInputStream));
-//#if (DEBUG_E2E_TAINTING)
+#if (DEBUG_E2E_TAINTING)
   if (!taintInputStream) {
     puts("!!!!! NO taint-aware input stream available in HttpChannelParent::OnDataAvailable !!!!!");
   } else {
     puts("+++++ Taint-aware input stream available in HttpChannelParent::OnDataAvailable +++++");
   }
-
+#endif
   LOG(("HttpChannelParent::OnDataAvailable [this=%p aRequest=%p offset=%" PRIu64
        " count=%" PRIu32 "]\n",
        this, aRequest, aOffset, aCount));
@@ -1530,11 +1530,6 @@ HttpChannelParent::OnDataAvailable(nsIRequest* aRequest,
   if (NS_FAILED(rv)) {
     return rv;
   }
-
-  puts(__PRETTY_FUNCTION__);
-  puts(data.BeginReading());
-  DumpTaint(data.Taint());
-  puts("----DONE---");
 
   // Either IPC channel is closed or background channel
   // is ready to send OnTransportAndData.

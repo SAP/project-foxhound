@@ -267,9 +267,6 @@ void nsHtml5TreeBuilder::comment(char16_t* buf, const StringTaint& taint, int32_
 void
 nsHtml5TreeBuilder::characters(const char16_t* buf, const StringTaint& taint, int32_t start, int32_t length)
 {
-  printf("Function %s: start: %u length: %u\n", __PRETTY_FUNCTION__, start, length);
-  DumpTaint(taint);
-
   if (tokenizer->isViewingXmlSource()) {
     return;
   }

@@ -196,14 +196,12 @@ ScriptLoadHandler::OnIncrementalData(nsIIncrementalStreamLoader* aLoader,
 
     // Decoder has already been initialized. -- trying to decode all loaded
     // bytes.
-<<<<<<< HEAD
+
     rv = mDecoder->DecodeRawData(mRequest, aData, aDataLength,
-                                 /* aEndOfStream = */ false);
-=======
+                                 /* aEndOfStream = */ false, aTaint);
     puts(__PRETTY_FUNCTION__);
     DumpTaint(aTaint);
-    rv = DecodeRawData(aData, aDataLength, /* aEndOfStream = */ false, aTaint);
->>>>>>> 89d342d5308d (Foxhound: enabling JavaScript parser tainting)
+
     NS_ENSURE_SUCCESS(rv, rv);
 
     // If SRI is required for this load, appending new bytes to the hash.
@@ -429,12 +427,8 @@ ScriptLoadHandler::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
       DebugOnly<bool> encoderSet =
           EnsureDecoder(aLoader, aData, aDataLength, /* aEndOfStream = */ true);
       MOZ_ASSERT(encoderSet);
-<<<<<<< HEAD
       rv = mDecoder->DecodeRawData(mRequest, aData, aDataLength,
-                                   /* aEndOfStream = */ true);
-=======
-      rv = DecodeRawData(aData, aDataLength, /* aEndOfStream = */ true, aTaint);
->>>>>>> 89d342d5308d (Foxhound: enabling JavaScript parser tainting)
+                                   /* aEndOfStream = */ true, aTaint);
       NS_ENSURE_SUCCESS(rv, rv);
 
       LOG(("ScriptLoadRequest (%p): Source length in code units = %u",
