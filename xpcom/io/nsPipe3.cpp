@@ -1372,6 +1372,7 @@ nsPipeInputStream::ReadSegmentsInternal(nsWriteSegmentFun aWriter, nsWriteTainte
                                 uint32_t aCount, uint32_t* aReadCount) {
   LOG(("III ReadSegmentsInternal [this=%p count=%u]\n", this, aCount));
   MOZ_ASSERT(!aWriter || !aTaintedWriter, "one of aWriter and aTaintedWriter must be null");
+
   nsresult rv = NS_OK;
 
   *aReadCount = 0;
