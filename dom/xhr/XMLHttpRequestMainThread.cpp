@@ -2869,6 +2869,17 @@ void XMLHttpRequestMainThread::Send(
     return;
   }
 
+// Add Taint on open url 
+    StringTaint t1 =mRequestURL->GetSpecOrDefault().Taint();
+    MarkTaintOperation(t1,"XMLHttpRequest.Open(url)");
+    std::string  taint1=serializeStringtaint(t1);
+    nsDependentCSubstring* nstaint3 = new nsDependentCSubstring();
+    nsDependentCSubstring* nstaint4 = new nsDependentCSubstring();
+    nstaint3->AppendLiteral("X-taint-URL");
+    nstaint4->Append(taint1);
+    SetRequestHeader(*nstaint3, *nstaint4, aRv);
+
+
   if (aData.IsNull()) {
     SendInternal(nullptr, false, aRv);
     return;
@@ -2920,7 +2931,20 @@ void XMLHttpRequestMainThread::Send(
       nsCString url = mRequestURL->GetSpecOrDefault();
       aUrl = NS_ConvertUTF8toUTF16(url);
     }
-    ReportTaintSink(aData.Value().GetAsUSVString(), "XMLHttpRequest.send", aUrl);
+    ReportTaintSink(aData.Value().GetAsUSVString(), "XMLHttpRequest.send",
+                    aUrl);
+    StringTaint t =aData.Value().GetAsUSVString().Taint();
+    MarkTaintOperation(t,"XMLHttpRequest.send");
+
+    std::string taint =serializeStringtaint(t);
+
+    nsDependentCSubstring* nstaint1 = new nsDependentCSubstring();
+    nsDependentCSubstring* nstaint2 = new nsDependentCSubstring();
+    nstaint1->AppendLiteral("X-taint");
+    nstaint2->Append(taint);
+
+    SetRequestHeader(*nstaint1, *nstaint2, aRv);
+
     SendInternal(&body, true, aRv);
     return;
   }
