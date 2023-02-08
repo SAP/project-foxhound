@@ -22,6 +22,8 @@
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/Unused.h"
 
+
+
 #ifdef MOZ_DOM_STREAMS
 #  include "mozilla/dom/ReadableStreamDefaultReader.h"
 #endif
@@ -606,6 +608,17 @@ SafeRefPtr<Request> Request::Constructor(nsIGlobalObject* aGlobal,
         nsAutoString aUrl;
         CopyUTF8toUTF16(url, aUrl);
         ReportTaintSink(bodyInit.GetAsUSVString(), "fetch.body", aUrl);
+        
+        nsDependentCSubstring* aName = new nsDependentCSubstring();
+        nsDependentCSubstring* aValue = new nsDependentCSubstring();
+        aName->AppendLiteral("X-taint-body");
+        // make a copy of the taint object and parse the copy to serialize function.
+        StringTaint t = bodyInit.GetAsUSVString().Taint();
+        MarkTaintOperation(t,"fetch.body");
+        // mark taint sink, dom/base/nsjsutils
+        aValue->Append(serializeStringtaint(t));
+        request->Headers()->Append(*aName,*aValue,aRv);
+  
       }
       aRv = ExtractByteStreamFromBody(bodyInit, getter_AddRefs(stream),
                                       contentTypeWithCharset, contentLength);
@@ -693,3 +706,4 @@ AbortSignalImpl* Request::GetSignalImplToConsumeBody() const {
 }
 
 }  // namespace mozilla::dom
+
