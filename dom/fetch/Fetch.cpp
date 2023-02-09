@@ -525,6 +525,20 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
   request->GetUrl(url);
   ReportTaintSink(url, "fetch.url");
 
+  
+    // The tainted data here is the URL  it self so we would be adding the taint
+  // spec of the URL to the header
+  nsDependentCSubstring* aName = new nsDependentCSubstring();
+  nsDependentCSubstring* aValue = new nsDependentCSubstring();
+  
+  MarkTaintOperation(url.Taint(),"fetch.url");
+  
+  // mark taint sink, dom/base/nsjsutils
+  aValue->Append(serializeStringtaint(url.Taint()));
+  aName->AppendLiteral("X-taint-Url");
+  request->SetTaintHeader(*aName, *aValue, aRv);
+  // above code added to add a new taint header 
+  
   SafeRefPtr<InternalRequest> r = request->GetInternalRequest();
   RefPtr<AbortSignalImpl> signalImpl = request->GetSignalImpl();
 
