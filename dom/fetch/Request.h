@@ -75,6 +75,12 @@ class Request final : public FetchBody<Request>, public nsWrapperCache {
   void GetReferrer(nsAString& aReferrer) const {
     mRequest->GetReferrer(aReferrer);
   }
+  
+   void SetTaintHeader(const nsACString& key, const nsACString& value, ErrorResult& aRv)
+  {
+    // add header
+    mRequest->Headers()->Append(key,value,aRv);
+  }
 
   ReferrerPolicy ReferrerPolicy_() const { return mRequest->ReferrerPolicy_(); }
 
