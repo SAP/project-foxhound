@@ -12,6 +12,7 @@
 #ifndef _Taint_h
 #define _Taint_h
 
+#include <chrono>
 #include <initializer_list>
 #include <iterator>
 #include <memory>
@@ -203,6 +204,8 @@ class TaintNode
     // Returns the operation associated with this taint node.
     const TaintOperation& operation() const { return operation_; }
 
+    std::chrono::time_point<std::chrono::system_clock> creationTime() const {return creationTime_;}
+
   private:
     // Prevent clients from deleting us. TaintNodes can only be destroyed
     // through release().
@@ -222,6 +225,11 @@ class TaintNode
     // refcount them), so these operations are unavailable.
     TaintNode(const TaintNode& other) = delete;
     TaintNode& operator=(const TaintNode& other) = delete;
+
+    // Creation time of node is used to order nodes within a taint flow
+    std::chrono::time_point<std::chrono::system_clock> creationTime_ = std::chrono::system_clock::now();
+
+
 
 };
 
@@ -267,9 +275,15 @@ class TaintFlow
   private:
     // Last (newest) node of this flow.
 
-   struct PtrComp {
-     bool operator()(const TaintNode* lhs, const TaintNode* rhs) const {
-       return lhs < rhs;
+   struct TaintNodeComp {
+      bool operator() (const TaintNode* lhs, const TaintNode* rhs) const {
+      if(lhs->creationTime() < rhs->creationTime()){
+        return false;
+      } else if (lhs->creationTime() > rhs->creationTime()) {
+        return true;
+      } else {
+        return lhs > rhs;
+      }
      }
    };
 
@@ -306,7 +320,7 @@ class TaintFlow
 
     // Returns the head of this flow, i.e. the newest node in the path.
     // TaintNode* head() const { return nodes_[0]; }
-    std::set<TaintNode*,PtrComp> nodes() const { return nodes_; }
+    std::set<TaintNode*,TaintNodeComp> nodes() const { return nodes_; }
 
     // Returns the source of this taint flow.
     std::vector<const TaintOperation*> sources() const;
@@ -359,7 +373,7 @@ class TaintFlow
   //    }
   //  };
 
-    std::set<TaintNode*,PtrComp> nodes_;
+    std::set<TaintNode*,TaintNodeComp> nodes_;
 
     static TaintFlow empty_flow_;
 };

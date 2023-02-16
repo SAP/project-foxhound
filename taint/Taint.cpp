@@ -232,7 +232,7 @@ TaintFlow::TaintFlow(TaintFlow&& other)
     : nodes_(other.nodes_)
 {
     MOZ_COUNT_CTOR(TaintFlow);
-    other.nodes_ = std::set<TaintNode*,PtrComp>();
+    other.nodes_ = std::set<TaintNode*,TaintNodeComp>();
 }
 
 TaintFlow::TaintFlow(const TaintFlow& flow1, const TaintFlow& flow2)
