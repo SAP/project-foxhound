@@ -1397,6 +1397,9 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
+  // TaintFox: add taint operation.
+  str->taint().extend(TaintOperationFromContext(cx, "Array.join", true, sepstr));
+
   args.rval().setString(str);
   return true;
 }

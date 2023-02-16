@@ -356,6 +356,11 @@ void JS::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const
   for (unsigned i = 0; i < args.length(); i++) {
     if (args[i].isString()) {
       RootedString arg(cx, args[i].toString());
+      if (arg->isTainted()) {
+        arg->taint().extend(
+          TaintOperation("function", location,
+                         { taintarg(cx, name), sourceinfo, taintarg(cx, i), taintarg(cx, args.length()) } ));
+      }
     }
   }
 }
