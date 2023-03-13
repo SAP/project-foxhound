@@ -1,0 +1,12 @@
+[
+    {
+        "begin": 22,
+        "end": 30,
+        "flow": [
+            {"operation": "function"},
+            {"operation": "location.hash"},
+            {"operation": "JSON.stringify"},
+            {"operation": "location.hash"}
+        ]
+    }
+]

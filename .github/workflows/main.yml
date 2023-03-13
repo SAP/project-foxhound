@@ -127,10 +127,26 @@ jobs:
       - name: Run archive.sh
         run: cd ./playwright/browser_patches/firefox && bash ./archive.sh $FF_CHECKOUT_PATH/archive/foxhound-playwright.zip
 
-      - uses: actions/upload-artifact@master
+      - uses: actions/upload-artifact@v3
         with:
           name: foxhound-playwright
           path: $FF_CHECKOUT_PATH/archive/foxhound-playwright.zip
+
+  test_playwright:
+    name: Execute Playwright test suite
+    needs: build_playwright
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download built foxhound
+        uses: actions/download-artifact@v3
+        with:
+          name: foxhound-playwright
+      - name: Unzip Artifact
+        run: cd ./archive && unzip ./foxhound-playwright.zip
+      - name: Install dependencies
+        run: cd ./taint/taintwright && npm install && npm run go
 
   # This workflow contains a single job called "build"
   build_docker:
