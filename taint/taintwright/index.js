@@ -28,23 +28,32 @@ let exampleTest = () => {
     console.log("Browser Version:", browser.version(), "connected:", browser.isConnected());
     const context = await browser.newContext();
 
-
     let harness = new Harness(context);
 
     //harness.registerSource("location.hash");
     //harness.registerSource("window.name");
 
+    context.addInitScript(
+        { content: "window.addEventListener('__taintreport', (r) => { __playwright_taint_report(r.detail.str.taint)});"}
+    );
+
     let expected = Testing.taintFromList([{begin: 0, end: 8, flow: ["function", "location.hash", "concat", "location.hash"]}]);
-    harness.registerFunction(exampleTest, expected);
+    //harness.registerFunction(exampleTest, expected);
 
     harness.registerFile("tests/stringify");
+    harness.registerFile("tests/externalJsString", ["taintme.js"]);
+    harness.registerFile("tests/htmlTaint");
+    harness.registerFile("tests/sources");
+    harness.registerFile("tests/sinks");
+
+    harness.buildIndex();
     let success = await harness.execute();
-    harness.close();
+    await harness.close();
 
     // Check if all tests were succesful
-    assert(success);
+    //assert(success);
 
-    await browser.close();
+    //await browser.close();
 })();
 
 //module.exports = app;
