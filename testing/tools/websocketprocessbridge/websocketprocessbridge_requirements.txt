@@ -1,6 +1,6 @@
 six
 vcversioner==2.16.0.0
-twisted==10.2.0
+twisted==22.10.0
 
 # websocket adapter for twisted, might be built into twisted someday
 autobahn==21.2.1
