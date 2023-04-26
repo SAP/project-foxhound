@@ -37,6 +37,7 @@ TEST("stringify", () => {
     // Sink
     location.hash = out;
     assertIsTainted(out);
+    assertSinkHit();
     //assertIsTainted
     assertTaintEqual(out, [
     {

@@ -6,6 +6,9 @@ const Testing = require('./testing.js');
 
 const assert = require('assert');
 
+const fs = require('fs');
+const path = require('path');
+
 let exampleTest = () => {
     location.hash = "initial";
     // Source
@@ -39,6 +42,17 @@ let exampleTest = () => {
 
     let expected = Testing.taintFromList([{begin: 0, end: 8, flow: ["function", "location.hash", "concat", "location.hash"]}]);
     //harness.registerFunction(exampleTest, expected);
+
+    /*
+    fs.readdir('tests', undefined, (err, files) => {
+        for(let fileName of files) {
+            if(path.extname(fileName) === ".js") {
+                let testName = path.basename(fileName, ".js");
+                harness.registerFile(path.join("tests", testName));
+            }
+        }
+    });
+    */
 
     harness.registerFile("tests/stringify");
     harness.registerFile("tests/externalJsString", ["taintme.js"]);
