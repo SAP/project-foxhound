@@ -17,7 +17,6 @@ on:
 jobs:
   # This workflow contains a single job called "build"
   build:
-    if: ${{ false }}  # disable for now the job is killed
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
 
@@ -48,7 +47,6 @@ jobs:
 
   # This workflow contains a single job called "build"
   build_js:
-    if: ${{ false }}  # disable for now the job is killed
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
 
@@ -78,75 +76,6 @@ jobs:
 
       - name: Taint Tests
         run: js/src/tests/jstests.py obj-spider-release/dist/bin/js taint/
-
-  build_playwright:
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest
-    env:
-      FF_CHECKOUT_PATH: ${{ github.workspace }}
-        
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
-    steps:
-
-      - name: Checkout
-        uses: actions/checkout@v2
-
-      - run: git config user.name "GitHub Actions" && git config user.email "actions@users.noreply.github.com"
-
-      - name: Update
-        run: sudo apt-get update
-
-      # Bootstrap
-      - name: Bootstrap Build Environment
-        run: ./mach bootstrap --application-choice=browser
-
-      # Configure
-      - name: Copy configuration
-        run: cp taintfox_mozconfig_ubuntu .mozconfig
-
-      # Get playwright
-      - name: Clone Playwright Source Code
-        run: git clone --branch v1.21.1 https://github.com/microsoft/playwright.git
-
-      # Copy correct build script
-      - name: Copy build.sh
-        run: cp ./scripts/build.sh ./playwright/browser_patches/firefox && cp ./scripts/UPSTREAM_CONFIG.sh ./playwright/browser_patches/firefox
-
-      - name: Prepare checkout
-        run: cd ./playwright/browser_patches && bash ./prepare_checkout.sh firefox
-
-      - name: Go into playwright Folder
-        run: cd ./playwright/browser_patches/firefox && bash ./build.sh
-
-      # Package Foxhound-Playwright
-
-      - run: mkdir ./archive
-      - run: cp $FF_CHECKOUT_PATH/scripts/archive.sh $FF_CHECKOUT_PATH/playwright/browser_patches/firefox
-
-      - name: Run archive.sh
-        run: cd ./playwright/browser_patches/firefox && bash ./archive.sh $FF_CHECKOUT_PATH/archive/foxhound-playwright.zip
-
-      - uses: actions/upload-artifact@v3
-        with:
-          name: foxhound-playwright
-          path: $FF_CHECKOUT_PATH/archive/foxhound-playwright.zip
-
-  test_playwright:
-    name: Execute Playwright test suite
-    needs: build_playwright
-
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download built foxhound
-        uses: actions/download-artifact@v3
-        with:
-          name: foxhound-playwright
-      - name: Unzip Artifact
-        run: cd ./archive && unzip ./foxhound-playwright.zip
-      - name: Install dependencies
-        run: cd ./taint/taintwright && npm install && npm run go
 
   # This workflow contains a single job called "build"
   build_docker:
